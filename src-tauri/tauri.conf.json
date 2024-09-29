@@ -13,8 +13,13 @@
     "windows": [
       {
         "title": "terminal",
-        "width": 800,
-        "height": 600
+        "width": 1440,
+        "height": 880,
+        "minWidth": 720,
+        "minHeight": 440,
+        "center": true,
+        "hiddenTitle": true,
+        "titleBarStyle": "Overlay"
       }
     ],
     "security": {

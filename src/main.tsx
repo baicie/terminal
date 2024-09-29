@@ -1,9 +1,10 @@
-import React from "react";
+import "virtual:uno.css";
 import ReactDOM from "react-dom/client";
-import App from "./App";
+import "reflect-metadata";
+import App from "./App.tsx";
+import { registerGlobalModules } from "./di.ts";
+import "./index.css";
+import "./locales";
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+registerGlobalModules();
+ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
