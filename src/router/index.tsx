@@ -1,19 +1,20 @@
-import { Suspense, lazy } from 'react'
-import type { RouteObject } from 'react-router-dom'
-import { createBrowserRouter } from 'react-router-dom'
-import Layout from '../layout'
+import { Suspense, lazy } from "react";
+import type { RouteObject } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
+import Layout from "../layout";
+import VaultsLayout from "../layout/vaults";
 
-const Overview = lazy(() => import('../view/overview/overview-container'))
-const Demo = lazy(() => import('../view/demo/demo-container'))
-const Loading = () => <div>Loading...</div>
+const Vaults = lazy(() => import("../view/vaults/vaults-container"));
+const Sftp = lazy(() => import("../view/sftp/sftp-container"));
+const Loading = () => <div>Loading...</div>;
 
 const warpCom = (Com: any) => {
   return (
     <Suspense fallback={<Loading />}>
       <Com />
     </Suspense>
-  )
-}
+  );
+};
 
 export const routes: RouteObject[] = [
   {
@@ -21,17 +22,25 @@ export const routes: RouteObject[] = [
     errorElement: <div>error</div>,
     children: [
       {
-        path: '/',
-        element: warpCom(Overview),
+        path: "/",
+        element: <Navigate to="/vaults" />,
       },
       {
-        path: '/demo',
-        element: warpCom(Demo),
+        path: "vaults",
+        element: <VaultsLayout />,
+        children: [
+          {
+            path: "",
+            element: warpCom(Vaults),
+          },
+        ],
+      },
+      {
+        path: "sftp",
+        element: warpCom(Sftp),
       },
     ],
   },
-]
+];
 
-const router = createBrowserRouter(routes)
-
-export default router
+export const router = createBrowserRouter(routes);

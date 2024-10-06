@@ -1,6 +1,7 @@
 * {
   margin: 0;
   padding: 0;
+  user-select: none;
 }
 
 *[data-tauri-drag-region] { app-region: unset !important }

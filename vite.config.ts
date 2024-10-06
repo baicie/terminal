@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import path from "node:path";
 import UnoCSS from "unocss/vite";
 import presetUno from "@unocss/preset-uno";
+import autoprefixer from "autoprefixer";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -17,6 +18,15 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
+    },
+  },
+  css: {
+    postcss: {
+      plugins: [
+        autoprefixer({
+          overrideBrowserslist: ["last 2 versions", ">1%", "ie >= 11"],
+        }),
+      ],
     },
   },
   clearScreen: false,
