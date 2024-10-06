@@ -1,11 +1,12 @@
-import { Suspense, lazy } from "react";
+import { Suspense } from "react";
 import type { RouteObject } from "react-router-dom";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import Layout from "../layout";
 import VaultsLayout from "../layout/vaults";
+import Vaults from "../view/vaults/vaults-container";
+import Sftp from "../view/sftp/sftp-container";
+import Terminal from "../view/terminal/terminal-container";
 
-const Vaults = lazy(() => import("../view/vaults/vaults-container"));
-const Sftp = lazy(() => import("../view/sftp/sftp-container"));
 const Loading = () => <div>Loading...</div>;
 
 const warpCom = (Com: any) => {
@@ -39,7 +40,15 @@ export const routes: RouteObject[] = [
         path: "sftp",
         element: warpCom(Sftp),
       },
+      {
+        path: "terminal",
+        element: warpCom(Terminal),
+      },
     ],
+  },
+  {
+    path: "*",
+    element: <div>not found</div>,
   },
 ];
 
