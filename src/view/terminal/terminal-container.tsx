@@ -1,5 +1,5 @@
 import { observer } from "mobx-react-lite";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useInjectable } from "../../hooks/use-di";
 import { useLogger } from "../../hooks/use-logger";
 import { Demo } from "../../store/demo";
@@ -20,6 +20,8 @@ export default observer(() => {
   const demo = useInjectable(Demo);
   const logger = useLogger();
   const { t } = useTranslation();
+  const terminalRef = useRef<HTMLDivElement>(null); // 引用 DOM 元素
+  const terminal = useRef<Terminal | null>(null); // 引用 Xterm 实例
 
   const handleClick = useCallback(() => {
     logger.debug("click debug");
@@ -31,19 +33,53 @@ export default observer(() => {
   }, [demo, logger]);
 
   useEffect(() => {
-    const terminal = new Terminal();
-    terminal.loadAddon(new FitAddon());
-    terminal.loadAddon(new CanvasAddon());
-    terminal.loadAddon(new ImageAddon());
-    // terminal.loadAddon(new LigaturesAddon());
-    terminal.loadAddon(new SearchAddon());
-    terminal.loadAddon(new Unicode11Addon());
-    terminal.loadAddon(new WebLinksAddon());
-    terminal.loadAddon(new WebglAddon());
-    terminal.open(document.getElementById("terminal")!);
-    terminal.write("Hello from \x1B[1;3;31mxterm.js\x1B[0m $ ");
-    console.log("Terminal container mounted");
+    terminal.current = new Terminal({
+      allowProposedApi: true,
+      cursorBlink: true,
+      theme: {
+        background: "red",
+        // foreground
+      },
+    });
+
+    if (terminalRef.current) {
+      terminal.current.open(terminalRef.current);
+    }
+
+    terminal.current.loadAddon(new FitAddon());
+    terminal.current.loadAddon(new CanvasAddon());
+    terminal.current.loadAddon(new ImageAddon());
+    terminal.current.loadAddon(new LigaturesAddon());
+    terminal.current.loadAddon(new SearchAddon());
+    terminal.current.loadAddon(new Unicode11Addon());
+    terminal.current.loadAddon(new WebLinksAddon());
+    terminal.current.loadAddon(new WebglAddon());
+
+    terminal.current?.write("Welcome to Xterm.js in React!\r\n");
+
+    // 监听用户输入事件
+    terminal.current?.onData((data) => {
+      // 回显输入的字符
+      terminal.current?.write(data);
+
+      // 你可以在这里处理输入，例如解析命令或发送到服务器
+      console.log("User input:", data);
+    });
+
+    // terminal.current.
+
+    return () => {
+      // 卸载时销毁终端实例
+      terminal.current?.dispose();
+    };
   });
 
-  return <View msg={"Terminal"} onClick={handleClick} t={t} />;
+  return (
+    <View
+      terminalRef={terminalRef}
+      msg={"Terminal"}
+      onClick={handleClick}
+      t={t}
+    />
+  );
 });

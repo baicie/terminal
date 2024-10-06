@@ -4,11 +4,12 @@ import { TFunction } from "i18next";
 
 interface Props {
   msg: string;
+  terminalRef: React.RefObject<HTMLDivElement>;
   onClick: () => void;
   t: TFunction<"translation", undefined>;
 }
 
-const TerminalView = ({ msg, onClick, t }: Props): ReactElement => (
-  <div id="terminal"></div>
+const TerminalView = ({ terminalRef }: Props): ReactElement => (
+  <div ref={terminalRef}></div>
 );
 export default TerminalView;
