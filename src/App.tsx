@@ -51,10 +51,6 @@ export default observer(() => {
     };
   }, [i18n]);
 
-  useEffect(() => {
-    config.queryConfig();
-  }, []);
-
   return (
     <ConfigProvider
       locale={antdLocale}

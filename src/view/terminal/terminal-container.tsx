@@ -37,7 +37,6 @@ export default observer(() => {
       allowProposedApi: true,
       cursorBlink: true,
       theme: {
-        background: "red",
         // foreground
       },
     });
@@ -54,8 +53,6 @@ export default observer(() => {
     terminal.current.loadAddon(new Unicode11Addon());
     terminal.current.loadAddon(new WebLinksAddon());
     terminal.current.loadAddon(new WebglAddon());
-
-    terminal.current?.write("Welcome to Xterm.js in React!\r\n");
 
     // 监听用户输入事件
     terminal.current?.onData((data) => {
