@@ -1,11 +1,12 @@
 import { Suspense } from "react";
 import type { RouteObject } from "react-router-dom";
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter } from "react-router-dom";
 import Layout from "../layout";
 import VaultsLayout from "../layout/vaults";
 import Vaults from "../view/vaults/vaults-container";
 import Sftp from "../view/sftp/sftp-container";
 import Terminal from "../view/terminal/terminal-container";
+import HomeView from "../view/home/home-view";
 
 const Loading = () => <div>Loading...</div>;
 
@@ -24,7 +25,7 @@ export const routes: RouteObject[] = [
     children: [
       {
         path: "/",
-        element: <Navigate to="/vaults" />,
+        element: warpCom(HomeView),
       },
       {
         path: "vaults",
