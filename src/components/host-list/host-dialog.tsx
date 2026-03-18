@@ -4,6 +4,8 @@ import { HostStore } from "@/store/host";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Host, AuthType } from "@/types";
+import PortForwardDialog from "@/components/port-forward";
+import { Network } from "lucide-react";
 
 interface HostDialogProps {
   open: boolean;
@@ -32,6 +34,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
   const hostStore = useInjectable(HostStore);
   const [form, setForm] = useState(defaultHost);
   const [saving, setSaving] = useState(false);
+  const [portForwardDialogOpen, setPortForwardDialogOpen] = useState(false);
 
   useEffect(() => {
     if (host) {
@@ -168,13 +171,51 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
               <>
                 <div className="col-span-2">
                   <label className="block text-sm font-medium mb-1">Private Key</label>
-                  <textarea
-                    className="w-full px-3 py-2 text-sm bg-background border rounded-md focus:outline-none focus:ring-1 focus:ring-primary font-mono"
-                    rows={5}
-                    value={form.privateKey}
-                    onChange={(e) => setForm({ ...form, privateKey: e.target.value })}
-                    placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                  />
+                  <div className="flex gap-2">
+                    <textarea
+                      className="flex-1 px-3 py-2 text-sm bg-background border rounded-md focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+                      rows={5}
+                      value={form.privateKey}
+                      onChange={(e) => setForm({ ...form, privateKey: e.target.value })}
+                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={async () => {
+                        // Use Tauri's dialog API to open file picker
+                        try {
+                          const { open } = await import('@tauri-apps/plugin-dialog');
+                          const selected = await open({
+                            multiple: false,
+                            filters: [
+                              { name: 'SSH Keys', extensions: ['pem', 'key', 'ppk', '*'] }
+                            ]
+                          });
+                          if (selected) {
+                            // Read the file content
+                            const { readTextFile } = await import('@tauri-apps/plugin-fs');
+                            const content = await readTextFile(selected as string);
+                            setForm({ ...form, privateKey: content });
+                          }
+                        } catch (e) {
+                          console.error("Failed to open file dialog:", e);
+                          // Fallback: prompt user to enter path manually
+                          const path = prompt("Enter private key file path:");
+                          if (path) {
+                            try {
+                              const { readTextFile } = await import('@tauri-apps/plugin-fs');
+                              const content = await readTextFile(path);
+                              setForm({ ...form, privateKey: content });
+                            } catch (err) {
+                              console.error("Failed to read key file:", err);
+                            }
+                          }
+                        }
+                      }}
+                    >
+                      Browse
+                    </Button>
+                  </div>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm font-medium mb-1">Key Passphrase (optional)</label>
@@ -196,6 +237,18 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
                 placeholder="ls -la"
               />
             </div>
+
+            <div className="col-span-2">
+              <label className="block text-sm font-medium mb-1">Port Forwards</label>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPortForwardDialogOpen(true)}
+              >
+                <Network className="h-4 w-4 mr-1" />
+                Configure Port Forwards ({form.portForwards?.length || 0})
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -215,6 +268,13 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
           </div>
         </div>
       </div>
+
+      <PortForwardDialog
+        open={portForwardDialogOpen}
+        onClose={() => setPortForwardDialogOpen(false)}
+        portForwards={form.portForwards || []}
+        onSave={(forwards) => setForm({ ...form, portForwards: forwards })}
+      />
     </div>
   );
 };

@@ -1,0 +1,171 @@
+import { useState, useEffect } from "react";
+import { observer } from "mobx-react-lite";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Search,
+  Trash2,
+  Clock,
+  X,
+  Terminal,
+} from "lucide-react";
+import {
+  getCommandHistory,
+  searchCommandHistory,
+  clearCommandHistory,
+  type CommandHistoryRecord,
+} from "@/service/database";
+
+interface CommandHistoryDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onSelect?: (command: string) => void;
+}
+
+const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = observer(
+  ({ open, onClose, onSelect }) => {
+    const [history, setHistory] = useState<CommandHistoryRecord[]>([]);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+      if (open) {
+        loadHistory();
+      }
+    }, [open, searchQuery]);
+
+    const loadHistory = async () => {
+      setLoading(true);
+      try {
+        let records: CommandHistoryRecord[];
+        if (searchQuery) {
+          records = await searchCommandHistory(searchQuery, 50);
+        } else {
+          records = await getCommandHistory(undefined, 100);
+        }
+        setHistory(records);
+      } catch (error) {
+        console.error("Failed to load command history:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const handleClearHistory = async () => {
+      if (confirm("Are you sure you want to clear all command history?")) {
+        try {
+          await clearCommandHistory();
+          setHistory([]);
+        } catch (error) {
+          console.error("Failed to clear history:", error);
+        }
+      }
+    };
+
+    const handleSelectCommand = (command: string) => {
+      if (onSelect) {
+        onSelect(command);
+      }
+      onClose();
+    };
+
+    const formatDate = (timestamp: number): string => {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diff = now.getTime() - date.getTime();
+      
+      if (diff < 60000) return "Just now";
+      if (diff < 3600000) return `${Math.floor(diff / 60000)} min ago`;
+      if (diff < 86400000) return `${Math.floor(diff / 3600000)} hours ago`;
+      if (diff < 604800000) return `${Math.floor(diff / 86400000)} days ago`;
+      
+      return date.toLocaleDateString();
+    };
+
+    return (
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Command History
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex items-center gap-2 mb-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search commands..."
+                className="pl-8"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button
+                  className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground"
+                  onClick={() => setSearchQuery("")}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleClearHistory}
+              title="Clear history"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="text-center text-muted-foreground py-8">
+                Loading...
+              </div>
+            ) : history.length === 0 ? (
+              <div className="text-center text-muted-foreground py-8">
+                {searchQuery ? "No commands found" : "No command history"}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {history.map((record, index) => (
+                  <div
+                    key={record.id || index}
+                    className="flex items-start gap-3 p-2 rounded hover:bg-accent/50 cursor-pointer group"
+                    onClick={() => handleSelectCommand(record.command)}
+                  >
+                    <Terminal className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-mono text-sm truncate">
+                        {record.command}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {formatDate(record.executed_at)}
+                        {record.host_id && ` • Host: ${record.host_id.substring(0, 8)}...`}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="text-xs text-muted-foreground text-center pt-2 border-t">
+            {history.length} command{history.length !== 1 ? 's' : ''} in history
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+);
+
+export default CommandHistoryDialog;

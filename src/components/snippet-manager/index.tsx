@@ -49,12 +49,16 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
     );
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [isPackageDialogOpen, setIsPackageDialogOpen] = useState(false);
+    const [isExecuteDialogOpen, setIsExecuteDialogOpen] = useState(false);
+    const [executingSnippet, setExecutingSnippet] = useState<SnippetRecord | null>(null);
+    const [variableValues, setVariableValues] = useState<Record<string, string>>({});
     const [newPackageName, setNewPackageName] = useState("");
     const [formData, setFormData] = useState({
       name: "",
       description: "",
       script: "",
       packageId: "",
+      variables: "" as string | undefined,
     });
 
     useEffect(() => {
@@ -86,7 +90,7 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
       try {
         await createSnippet(newSnippet);
         setIsCreateDialogOpen(false);
-        setFormData({ name: "", description: "", script: "", packageId: "" });
+        setFormData({ name: "", description: "", script: "", packageId: "", variables: "" });
         loadData();
       } catch (error) {
         console.error("Failed to create snippet:", error);
@@ -145,6 +149,57 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
         s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.description?.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+    // Parse variables from script (format: ${VAR_NAME} or $VAR_NAME)
+    const parseVariables = (script: string): string[] => {
+      const variables = new Set<string>();
+      const regex = /\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g;
+      let match;
+      while ((match = regex.exec(script)) !== null) {
+        variables.add(match[1]);
+      }
+      return Array.from(variables);
+    };
+
+    // Replace variables in script with values
+    const replaceVariables = (script: string, values: Record<string, string>): string => {
+      return script.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (_match, varName) => {
+        return values[varName] ?? _match;
+      });
+    };
+
+    const handleExecuteClick = (snippet: SnippetRecord) => {
+      const variables = parseVariables(snippet.script);
+      if (variables.length > 0) {
+        // Open dialog to enter variable values
+        setExecutingSnippet(snippet);
+        const initialValues: Record<string, string> = {};
+        variables.forEach(v => {
+          // Try to get default value from stored variables
+          try {
+            const storedVars = snippet.variables ? JSON.parse(snippet.variables) : [];
+            const varDef = storedVars.find((v2: { name: string; defaultValue?: string }) => v2.name === v);
+            if (varDef?.defaultValue) {
+              initialValues[v] = varDef.defaultValue;
+            }
+          } catch { /* ignore */ }
+        });
+        setVariableValues(initialValues);
+        setIsExecuteDialogOpen(true);
+      } else {
+        // No variables, execute directly
+        handleExecute(snippet.script);
+      }
+    };
+
+    const handleExecuteWithVariables = () => {
+      if (!executingSnippet) return;
+      const finalScript = replaceVariables(executingSnippet.script, variableValues);
+      handleExecute(finalScript);
+      setIsExecuteDialogOpen(false);
+      setExecutingSnippet(null);
+      setVariableValues({});
+    };
 
     return (
       <Dialog open={open} onOpenChange={onClose}>
@@ -254,7 +309,7 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleExecute(snippet.script)}
+                            onClick={() => handleExecuteClick(snippet)}
                             title="Execute"
                           >
                             <Play className="h-4 w-4" />
@@ -415,6 +470,49 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                 Cancel
               </Button>
               <Button onClick={handleUpdate}>Save</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Execute Snippet with Variables Dialog */}
+        <Dialog open={isExecuteDialogOpen} onOpenChange={setIsExecuteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Execute Snippet - Set Variables</DialogTitle>
+            </DialogHeader>
+            {executingSnippet && (
+              <div className="space-y-4">
+                <div className="text-sm text-muted-foreground">
+                  Enter values for the variables in this snippet:
+                </div>
+                <div className="text-xs font-mono bg-muted p-2 rounded">
+                  {executingSnippet.script}
+                </div>
+                <div className="space-y-3">
+                  {parseVariables(executingSnippet.script).map((varName) => (
+                    <div key={varName}>
+                      <Label htmlFor={`var-${varName}`}>{varName}</Label>
+                      <Input
+                        id={`var-${varName}`}
+                        value={variableValues[varName] || ""}
+                        onChange={(e) =>
+                          setVariableValues({ ...variableValues, [varName]: e.target.value })
+                        }
+                        placeholder={`Enter ${varName}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsExecuteDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleExecuteWithVariables}>
+                <Play className="h-4 w-4 mr-1" />
+                Execute
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

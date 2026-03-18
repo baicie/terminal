@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Host } from "@/types";
+import { addCommandHistory } from "@/service/database";
 
 export interface SSHConnectionResult {
   success: boolean;
@@ -262,6 +263,21 @@ export class SSHService {
       return { success: true };
     } catch (error) {
       return { success: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  // Command history methods
+
+  async saveCommandHistory(hostId: string, command: string, sessionId?: string): Promise<void> {
+    try {
+      await addCommandHistory({
+        host_id: hostId,
+        command,
+        executed_at: Date.now(),
+        session_id: sessionId,
+      });
+    } catch (error) {
+      console.error("Failed to save command history:", error);
     }
   }
 }

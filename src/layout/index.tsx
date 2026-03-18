@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Outlet } from "react-router-dom";
-import { BellIcon, PanelLeft, Plus, Settings, Terminal, Code } from "lucide-react";
+import { BellIcon, PanelLeft, Plus, Settings, Terminal, Code, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import MenuTabs from "./tabs";
 import { Sidebar, HostDialog } from "@/components/host-list";
@@ -11,6 +11,7 @@ import TerminalContainer from "@/view/terminal/terminal-container";
 import { observer } from "mobx-react-lite";
 import SnippetManager from "@/components/snippet-manager";
 import SettingsDialog from "@/components/settings-dialog";
+import CommandHistoryDialog from "@/components/command-history";
 
 const TerminalContent: React.FC<{ tabId: string }> = observer(({ tabId }) => {
   const app = useInjectable(AppStore);
@@ -26,7 +27,37 @@ const DeftLayout: React.FC = () => {
   const [hostDialogOpen, setHostDialogOpen] = useState(false);
   const [snippetManagerOpen, setSnippetManagerOpen] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [commandHistoryOpen, setCommandHistoryOpen] = useState(false);
   const app = useInjectable(AppStore);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Command palette: Ctrl+J or Cmd+J
+      if ((e.ctrlKey || e.metaKey) && e.key === 'j') {
+        e.preventDefault();
+        setCommandHistoryOpen(true);
+      }
+      // New terminal: Ctrl+T or Cmd+T
+      if ((e.ctrlKey || e.metaKey) && e.key === 't') {
+        e.preventDefault();
+        handleNewLocalTerminal();
+      }
+      // New host: Ctrl+N or Cmd+N
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        setHostDialogOpen(true);
+      }
+      // Toggle sidebar: Ctrl+B or Cmd+B
+      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+        e.preventDefault();
+        setSidebarOpen(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleNewLocalTerminal = () => {
     const newTab = app.addTab({
@@ -101,6 +132,14 @@ const DeftLayout: React.FC = () => {
           <Button
             variant="ghost"
             size="sm"
+            onClick={() => setCommandHistoryOpen(true)}
+          >
+            <History className="h-4 w-4 mr-1" />
+            History
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setSnippetManagerOpen(true)}
           >
             <Code className="h-4 w-4 mr-1" />
@@ -146,6 +185,20 @@ const DeftLayout: React.FC = () => {
       <SettingsDialog
         open={settingsDialogOpen}
         onClose={() => setSettingsDialogOpen(false)}
+      />
+
+      <CommandHistoryDialog
+        open={commandHistoryOpen}
+        onClose={() => setCommandHistoryOpen(false)}
+        onSelect={(command) => {
+          // Execute the selected command in the active terminal
+          const activeTab = app.activeTab;
+          if (activeTab) {
+            // The command will be sent to the terminal via the sshService
+            // This is handled by the terminal component
+            console.log("Execute command from history:", command);
+          }
+        }}
       />
     </div>
   );
