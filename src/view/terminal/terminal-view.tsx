@@ -1,11 +1,8 @@
 import type { ReactElement } from "react";
-import styles from "./terminal.module.scss";
 import { TFunction } from "i18next";
 
 interface Props {
-  msg: string;
-  terminalRef: React.RefObject<HTMLDivElement>;
-  onClick: () => void;
+  terminalRef: React.RefObject<HTMLDivElement | null>;
   t: TFunction<"translation", undefined>;
 }
 

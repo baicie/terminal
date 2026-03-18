@@ -18,7 +18,7 @@ import locales from "./locales";
 export default observer(() => {
   const { i18n } = useTranslation();
   const [antdLocale, setAntdLocale] = useState(enUS);
-  const config = useInjectable(AppStore);
+  useInjectable(AppStore);
 
   useEffect(() => {
     const handleLanguageChange = (lng: string) => {

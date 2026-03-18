@@ -1,58 +1,82 @@
-use russh::client::*;
+use anyhow::Result;
+use russh::client::Handler;
 use russh::*;
-use russh_keys::*;
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
 
-#[tokio::main]
-async fn main() {
-    // 配置客户端
-    let config = Arc::new(client::Config {
-        keys: vec![],
-        ..Default::default()
-    });
+struct Client;
 
-    // 创建SSH客户端会话
-    let client = MyClient {};
-    let mut session = client::connect(config, "127.0.0.1:22", client)
-        .await
-        .unwrap();
-
-    // 使用macOS用户名和密码进行身份验证
-    session
-        .authenticate_password("your_mac_username", "your_mac_password")
-        .await
-        .unwrap();
-
-    // 检查是否成功认证
-    if session.is_authenticated() {
-        let mut channel = session.channel_open_session().await.unwrap();
-
-        // 在终端上执行命令，例如 `ls`
-        channel.exec(true, "ls").await.unwrap();
-
-        // 读取并输出命令结果
-        let mut output = Vec::new();
-        channel.read_to_end(&mut output).await.unwrap();
-        println!("Output: {}", String::from_utf8_lossy(&output));
-
-        // 关闭通道
-        channel.close().await.unwrap();
-    } else {
-        println!("Authentication failed.");
-    }
+impl Handler for Client {
+    type Error = anyhow::Error;
 }
 
-// 定义客户端结构体
-struct MyClient {}
+#[tauri::command]
+pub async fn ssh_connect(
+    host: String,
+    port: u16,
+    username: String,
+    password: String,
+) -> Result<String, String> {
+    let config = Arc::new(client::Config::default());
+    let addr = format!("{}:{}", host, port);
 
-impl client::Handler for MyClient {
-    type Error = anyhow::Error;
-    type FutureUnit = futures::future::Ready<Result<(Self, Session), anyhow::Error>>;
-    type FutureBool = futures::future::Ready<Result<(Self, bool), anyhow::Error>>;
+    let mut handle = client::connect(config, addr, Client)
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
 
-    // 当连接成功时会调用此方法
-    fn finished(self, session: Session) -> Self::FutureUnit {
-        futures::future::ready(Ok((self, session)))
+    handle
+        .authenticate_password(&username, &password)
+        .await
+        .map_err(|e| format!("Authentication failed: {}", e))?;
+
+    Ok("Connected successfully".to_string())
+}
+
+#[tauri::command]
+pub async fn ssh_execute(
+    host: String,
+    port: u16,
+    username: String,
+    password: String,
+    command: String,
+) -> Result<String, String> {
+    let config = Arc::new(client::Config::default());
+    let addr = format!("{}:{}", host, port);
+
+    let mut handle = client::connect(config, addr, Client)
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    handle
+        .authenticate_password(&username, &password)
+        .await
+        .map_err(|e| format!("Authentication failed: {}", e))?;
+
+    let mut channel = handle
+        .channel_open_session()
+        .await
+        .map_err(|e| format!("Failed to open channel: {}", e))?;
+
+    channel
+        .exec(false, command.as_str())
+        .await
+        .map_err(|e| format!("Failed to execute command: {}", e))?;
+
+    let mut output = String::new();
+    loop {
+        match channel.wait().await {
+            Some(ChannelMsg::Data { data }) => {
+                output.push_str(&String::from_utf8_lossy(&data));
+            }
+            Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) => break,
+            None => break,
+            _ => continue,
+        }
     }
+
+    Ok(output)
+}
+
+#[tauri::command]
+pub fn greet(name: &str) -> String {
+    format!("Hello, {}! You've been greeted from Rust!", name)
 }
