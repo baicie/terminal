@@ -1,20 +1,15 @@
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react-swc";
+import react from "@vitejs/plugin-react";
 import path from "node:path";
 import UnoCSS from "unocss/vite";
-import presetUno from "@unocss/preset-uno";
+import { presetWind3 } from "@unocss/preset-wind3";
 import autoprefixer from "autoprefixer";
 
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
-  plugins: [
-    UnoCSS({ presets: [presetUno()] }),
-    react({
-      tsDecorators: true,
-    }),
-  ],
+  plugins: [UnoCSS({ presets: [presetWind3()] }), react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
