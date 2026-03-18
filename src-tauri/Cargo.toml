@@ -12,16 +12,17 @@ name = "terminal_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.0.1", features = [] }
+tauri-build = { version = "2.5.6", features = [] }
 
 [dependencies]
-tauri = { version = "2.0.1", features = [] }
-tauri-plugin-shell = "2.0.1"
-serde = { version = "1.0.210", features = ["derive"] }
-serde_json = "1.0.128"
+tauri = { version = "2.10.3", features = [] }
+tauri-plugin-shell = "2.3.5"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
 ssh-rs = "0.5.0"
-rusqlite = "0.32.1"
-russh = "0.45.0"
-russh-keys = "0.45.0"
-tokio = { version = "1.40.0", features = ["full"] }
-tauri-plugin-sql = { version = "2.0.1", features = ["sqlite"] }
+russh = "0.57.1"
+russh-keys = "0.49.2"
+tokio = { version = "1.50.0", features = ["full"] }
+tauri-plugin-sql = { version = "2.3.2", features = ["sqlite"] }
+anyhow = "1.0"
+futures = "0.3"
