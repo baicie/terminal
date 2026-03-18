@@ -1,13 +1,9 @@
-import { ConfigProvider, theme } from "antd";
-import enUS from "antd/lib/locale/en_US";
-import frFR from "antd/lib/locale/fr_FR";
-import zhCN from "antd/lib/locale/zh_CN";
 import dayjs from "dayjs";
 import "dayjs/locale/en";
 import "dayjs/locale/fr";
 import "dayjs/locale/zh-cn";
 import { observer } from "mobx-react-lite";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import { RouterProvider } from "react-router-dom";
 import { router } from "./router";
@@ -17,33 +13,14 @@ import locales from "./locales";
 
 export default observer(() => {
   const { i18n } = useTranslation();
-  const [antdLocale, setAntdLocale] = useState(enUS);
   useInjectable(AppStore);
 
   useEffect(() => {
     const handleLanguageChange = (lng: string) => {
-      // 同步 antd 语言
-      switch (lng) {
-        case "fr":
-          setAntdLocale(frFR);
-          dayjs.locale(lng);
-          break;
-        case "en":
-          setAntdLocale(enUS);
-          dayjs.locale(lng);
-          break;
-        case "cn":
-        default:
-          setAntdLocale(zhCN);
-          dayjs.locale("zh-cn");
-          break;
-      }
+      dayjs.locale(lng === "cn" ? "zh-cn" : lng);
     };
 
-    // 初始化时设置语言
     handleLanguageChange(i18n.language);
-
-    // 监听语言变化
     i18n.on("languageChanged", handleLanguageChange);
 
     return () => {
@@ -52,15 +29,10 @@ export default observer(() => {
   }, [i18n]);
 
   return (
-    <ConfigProvider
-      locale={antdLocale}
-      theme={{
-        algorithm: theme.darkAlgorithm,
-      }}
-    >
+    <div className="h-screen w-screen overflow-hidden bg-background text-foreground">
       <I18nextProvider i18n={locales}>
         <RouterProvider router={router} />
       </I18nextProvider>
-    </ConfigProvider>
+    </div>
   );
 });

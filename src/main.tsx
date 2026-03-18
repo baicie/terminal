@@ -1,4 +1,3 @@
-import "virtual:uno.css";
 import ReactDOM from "react-dom/client";
 import "reflect-metadata";
 import App from "./App.tsx";

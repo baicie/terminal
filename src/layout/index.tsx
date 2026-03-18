@@ -1,76 +1,28 @@
-import { BellOutlined } from "@ant-design/icons";
-import { Flex, Layout } from "antd";
 import React from "react";
 import { Outlet } from "react-router-dom";
+import { BellIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import MenuTabs from "./tabs";
 
-const { Header, Content } = Layout;
-
 const DeftLayout: React.FC = () => {
-  // const items: MenuProps["items"] = [
-  //   {
-  //     key: "en",
-  //     label: "English",
-  //     onClick: () => i18n.changeLanguage("en"),
-  //   },
-  //   {
-  //     key: "cn",
-  //     label: "中文",
-  //     onClick: () => i18n.changeLanguage("cn"),
-  //   },
-  //   {
-  //     key: "fr",
-  //     label: "Français",
-  //     onClick: () => i18n.changeLanguage("fr"),
-  //   },
-  // ];
-
   return (
-    <Layout>
-      <Header
+    <div className="h-screen flex flex-col">
+      <header
+        className="h-[50px] flex items-center justify-between px-4"
         data-tauri-drag-region
-        style={{ height: 50, padding: "0 12px 0 72px" }}
       >
-        <Flex
-          justify="space-between"
-          style={{ width: "100%", height: "50px" }}
-          align="center"
-        >
+        <div className="flex items-center gap-4">
           <MenuTabs />
-
-          <BellOutlined />
-        </Flex>
-      </Header>
-      <Content>
+        </div>
+        <Button variant="ghost" size="icon">
+          <BellIcon className="h-5 w-5" />
+        </Button>
+      </header>
+      <main className="flex-1 overflow-hidden">
         <Outlet />
-      </Content>
-    </Layout>
+      </main>
+    </div>
   );
 };
 
 export default DeftLayout;
-
-{
-  /* <Header
-            style={{ padding: "0 24px 0 0", background: colorBgContainer }}
-          >
-            <Flex justify="space-between" align="center">
-              <Button
-                type="text"
-                icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-                onClick={() => setCollapsed(!collapsed)}
-                style={{
-                  fontSize: "16px",
-                  width: 64,
-                  height: 64,
-                }}
-              />
-
-              <Dropdown menu={{ items }}>
-                <div onClick={(e) => e.preventDefault()}>
-                  {t("layout.language")} <DownOutlined />
-                </div>
-              </Dropdown>
-            </Flex>
-          </Header> */
-}

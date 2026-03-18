@@ -1,72 +1,49 @@
-import {
-  UserOutlined,
-  VideoCameraOutlined,
-  UploadOutlined,
-} from "@ant-design/icons";
-import { Layout, Menu, theme } from "antd";
 import { useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
-
-const { Sider, Content } = Layout;
+import { Button } from "@/components/ui/button";
+import { UserIcon, VideoIcon, UploadIcon } from "lucide-react";
 
 const VaultsLayout: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
 
-  const {
-    token: { colorBgContainer, borderRadiusLG },
-  } = theme.useToken();
-
   return (
-    <Layout>
-      <Sider
-        breakpoint="lg"
-        collapsedWidth={50}
-        trigger={null}
-        collapsible
-        collapsed={collapsed}
-        onBreakpoint={(broken) => {
-          setCollapsed(broken);
-        }}
-      >
-        <Menu
-          theme="dark"
-          mode="inline"
-          defaultSelectedKeys={["1"]}
-          items={[
-            {
-              key: "1",
-              icon: <UserOutlined />,
-              label: "nav 1",
-              onClick: () => navigate("/"),
-            },
-            {
-              key: "2",
-              icon: <VideoCameraOutlined />,
-              label: "nav 2",
-              onClick: () => navigate("/demo"),
-            },
-            {
-              key: "3",
-              icon: <UploadOutlined />,
-              label: "nav 3",
-            },
-          ]}
-        />
-      </Sider>
-
-      <Content
-        style={{
-          margin: "24px 16px",
-          padding: 24,
-          minHeight: 280,
-          background: colorBgContainer,
-          borderRadius: borderRadiusLG,
-        }}
-      >
+    <div className="flex h-full">
+      <aside className={`${collapsed ? "w-16" : "w-64"} border-r transition-all`}>
+        <div className="flex flex-col gap-2 p-4">
+          <Button
+            variant="ghost"
+            className="justify-start gap-2"
+            onClick={() => navigate("/")}
+          >
+            <UserIcon className="h-4 w-4" />
+            {!collapsed && "nav 1"}
+          </Button>
+          <Button
+            variant="ghost"
+            className="justify-start gap-2"
+            onClick={() => navigate("/demo")}
+          >
+            <VideoIcon className="h-4 w-4" />
+            {!collapsed && "nav 2"}
+          </Button>
+          <Button variant="ghost" className="justify-start gap-2">
+            <UploadIcon className="h-4 w-4" />
+            {!collapsed && "nav 3"}
+          </Button>
+          <Button
+            variant="ghost"
+            className="justify-start"
+            onClick={() => setCollapsed(!collapsed)}
+          >
+            {collapsed ? ">" : "<"}
+          </Button>
+        </div>
+      </aside>
+      <main className="flex-1 p-4">
         <Outlet />
-      </Content>
-    </Layout>
+      </main>
+    </div>
   );
 };
 

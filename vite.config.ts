@@ -1,27 +1,16 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
-import UnoCSS from "unocss/vite";
-import { presetWind3 } from "@unocss/preset-wind3";
-import autoprefixer from "autoprefixer";
+import tailwindcss from "@tailwindcss/vite";
 
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
-  plugins: [UnoCSS({ presets: [presetWind3()] }), react()],
+  plugins: [tailwindcss(), react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
-    },
-  },
-  css: {
-    postcss: {
-      plugins: [
-        autoprefixer({
-          overrideBrowserslist: ["last 2 versions", ">1%", "ie >= 11"],
-        }),
-      ],
     },
   },
   clearScreen: false,
@@ -37,7 +26,7 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell vite to ignore watching `src-tauri`
+      // tell vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
   },
