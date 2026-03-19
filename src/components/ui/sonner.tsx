@@ -1,3 +1,5 @@
+"use client"
+
 import {
   CircleCheckIcon,
   InfoIcon,
@@ -35,7 +37,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
   )
 }
 
-export { Toaster };
+export { Toaster }
 
 export const toast = {
   success: (title: string, opts?: { description?: string }) => sonnerToast.success(title, opts),
