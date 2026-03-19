@@ -86,53 +86,39 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 
 ---
 
-### Issue #3: 端口转发后端未实现 🔴
+### Issue #3: 端口转发后端未实现 ✅ 已实现基础框架
 
 **严重程度**: 高
-**状态**: 🟡 UI 已实现
+**状态**: ⚠️ 基础实现
 **影响功能**: 端口转发
+**更新时间**: 2026-03-19
 
-**问题描述**:
-- `src/components/port-forward/index.tsx` 有完整的端口转发配置 UI
-- 支持 Local/Remote/Dynamic 三种类型
-- 但后端完全没有实现转发逻辑
+**实现内容**:
+- 添加了 `port_forward_start` 命令启动端口转发
+- 添加了 `port_forward_stop` 命令停止端口转发
+- 添加了 `port_forward_list` 命令列出活动转发
+- TCP 监听器框架已实现
 
-**建议**:
-- 本地端口转发 (-L): 使用 `std::net::TcpListener` + `tokio::io::copy`
-- 远程端口转发 (-R): 需要 SSH channel port forwarding
-- 动态端口转发 (-D): 实现 SOCKS 代理
+**待完善**:
+- 完整的 SSH channel 转发逻辑需要进一步集成
+- 远程端口转发 (-R) 需要服务端配合
+- SOCKS 代理协议解析需要完整实现
 
 ---
 
 ## 二、重要问题 (Important)
 
-### Issue #4: russh API 编译警告 🟡
+### Issue #4: russh API 编译警告 ✅ 已修复
 
 **严重程度**: 中
-**状态**: ⚠️ 需清理
+**状态**: ✅ 已修复
 **影响**: 代码质量和可维护性
+**更新时间**: 2026-03-19
 
-**问题描述**:
-`cargo check` 产生大量未使用代码警告：
-
-```
-warning: struct `ClientHandler` is never constructed
-warning: struct `SharedState` is never constructed
-warning: struct `LocalPtySession` is never constructed
-warning: type alias `SharedStateType` is never used
-warning: struct `ShellOutput` is never constructed
-warning: function `create_and_authenticate` is never used
-warning: function `ssh_connect` is never used
-warning: function `ssh_connect_key` is never used
-warning: variable does not need to be mutable (3 处)
-warning: unused variable: `e`
-warning: unused variable: `path`
-```
-
-**建议**:
-1. 添加 `#[allow(dead_code)]` 或删除未使用的代码
-2. 移除不必要的 `mut` 关键字
-3. 使用 `_` 前缀标记有意未使用的参数
+**修复内容**:
+- 添加了 `#[allow(dead_code)]` 消除导出但未直接调用的函数警告
+- 移除了不必要的 `mut` 关键字
+- 清理了未使用的 import
 
 ---
 

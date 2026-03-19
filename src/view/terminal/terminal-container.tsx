@@ -1,5 +1,5 @@
 import { observer } from "mobx-react-lite";
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import View from "./terminal-view";
 import { useTranslation } from "react-i18next";
 import { Terminal } from "@xterm/xterm";
@@ -11,6 +11,7 @@ import { useInjectable } from "@/hooks/use-di";
 import { AppStore } from "@/store/app";
 import { HostStore } from "@/store/host";
 import { sshService, ShellOutput } from "@/service/ssh";
+import { getCommandHistory } from "@/service/database";
 import type { Host } from "@/types";
 
 interface TerminalContainerProps {
@@ -29,9 +30,107 @@ export default observer((props: TerminalContainerProps) => {
   const unlistenDataRef = useRef<(() => void) | null>(null);
   const unlistenCloseRef = useRef<(() => void) | null>(null);
 
+  // Command history for autocomplete
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const currentInputRef = useRef<string>("");
+  const terminalInstanceRef = useRef<Terminal | null>(null);
+  const activeTabIdRef = useRef<string | null>(null);
+
+  // Load command history on mount
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const history = await getCommandHistory();
+        const commands = history.map(h => h.command).filter(Boolean);
+        setCommandHistory(commands);
+      } catch (e) {
+        console.error("Failed to load command history:", e);
+      }
+    };
+    loadHistory();
+  }, []);
+
+  // Get current command line from cursor position
+  const getCurrentLine = useCallback((term: Terminal): string => {
+    const cursorY = term.buffer.active.cursorY;
+    const line = term.buffer.active.getLine(cursorY);
+    if (!line) return "";
+
+    let result = "";
+    for (let x = 0; x < term.cols; x++) {
+      const cell = line.getCell(x);
+      if (!cell || cell.getChars() === '') break;
+      const char = cell.getChars();
+      if (char === '\x00') break;
+      result += char;
+    }
+    return result.trim();
+  }, []);
+
+  // Set terminal line
+  const setCurrentLine = useCallback((term: Terminal, newLine: string) => {
+    const cursorY = term.buffer.active.cursorY;
+    const startX = 0;
+
+    // Clear from startX to end of line
+    for (let x = startX; x < term.cols; x++) {
+      term.write('\x1b[K'); // Clear line from cursor to end
+    }
+
+    // Go to start of line
+    for (let x = cursorY; x > startX; x--) {
+      term.write('\x08'); // Backspace
+    }
+
+    // Write new line
+    term.write(newLine);
+  }, []);
+
+  // Handle command history navigation (Up/Down arrows)
+  const handleHistoryNavigation = useCallback((key: 'ArrowUp' | 'ArrowDown') => {
+    const term = terminalInstanceRef.current;
+    if (!term || commandHistory.length === 0) return false;
+
+    if (key === 'ArrowUp') {
+      if (historyIndexRef.current === -1) {
+        // Save current input
+        currentInputRef.current = getCurrentLine(term);
+        historyIndexRef.current = commandHistory.length - 1;
+      } else if (historyIndexRef.current > 0) {
+        historyIndexRef.current--;
+      }
+
+      if (historyIndexRef.current >= 0) {
+        const cmd = commandHistory[historyIndexRef.current];
+        setCurrentLine(term, cmd);
+      }
+      return true;
+    } else if (key === 'ArrowDown') {
+      if (historyIndexRef.current === -1) return true;
+
+      if (historyIndexRef.current < commandHistory.length - 1) {
+        historyIndexRef.current++;
+        const cmd = commandHistory[historyIndexRef.current];
+        setCurrentLine(term, cmd);
+      } else {
+        // Back to current input
+        historyIndexRef.current = -1;
+        setCurrentLine(term, currentInputRef.current);
+      }
+      return true;
+    }
+    return false;
+  }, [commandHistory, getCurrentLine, setCurrentLine]);
+
   // Use props.tabId or fall back to active tab
   const activeTabId = props.tabId || app.activeTabId;
   const activeTab = app.tabs.find((tab) => tab.id === activeTabId);
+
+  // Keep ref in sync
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId || null;
+  }, [activeTabId]);
 
   const connectToHost = useCallback(async (host: Host) => {
     if (!terminal.current) return;
@@ -138,13 +237,41 @@ export default observer((props: TerminalContainerProps) => {
     terminal.current.loadAddon(new SearchAddon());
     terminal.current.loadAddon(new WebLinksAddon());
 
+    // Store terminal instance
+    terminalInstanceRef.current = terminal.current;
+
     // Handle user input - send to SSH or local
     terminal.current.onData((data) => {
-      if (sessionIdRef.current) {
+      const term = terminalInstanceRef.current;
+      const sessionId = sessionIdRef.current;
+      const tabId = activeTabIdRef.current;
+
+      // Check for history navigation (ArrowUp/ArrowDown)
+      if (data === '\x1b[A' || data === '\x1b[B') {
+        const handled = handleHistoryNavigation(data === '\x1b[A' ? 'ArrowUp' : 'ArrowDown');
+        if (handled) return;
+      }
+
+      if (sessionId) {
         if (isLocalRef.current) {
-          sshService.writeLocal(sessionIdRef.current, data);
+          sshService.writeLocal(sessionId, data);
         } else {
-          sshService.write(sessionIdRef.current, data);
+          sshService.write(sessionId, data);
+        }
+
+        // Save command to history when Enter is pressed
+        if (data === '\r' && !isLocalRef.current && term && tabId) {
+          const currentCmd = getCurrentLine(term);
+          if (currentCmd) {
+            sshService.saveCommandHistory(tabId, currentCmd, sessionId);
+            // Update local history state
+            setCommandHistory(prev => {
+              if (prev.includes(currentCmd)) return prev;
+              return [...prev, currentCmd];
+            });
+          }
+          // Reset history index
+          historyIndexRef.current = -1;
         }
       }
     });
@@ -173,9 +300,8 @@ export default observer((props: TerminalContainerProps) => {
         if (sid === sessionIdRef.current && !isLocalRef.current && terminal.current) {
           terminal.current.write('\r\n\r\n[Connection closed]\r\n');
           sessionIdRef.current = null;
-          app.updateTab(activeTabId!, {
-            connectionStatus: 'disconnected'
-          });
+          const tabId = activeTabIdRef.current;
+          if (tabId) app.updateTab(tabId, { connectionStatus: 'disconnected' });
         }
       });
 
@@ -190,9 +316,8 @@ export default observer((props: TerminalContainerProps) => {
         if (sid === sessionIdRef.current && isLocalRef.current && terminal.current) {
           terminal.current.write('\r\n\r\n[Local shell closed]\r\n');
           sessionIdRef.current = null;
-          app.updateTab(activeTabId!, {
-            connectionStatus: 'disconnected'
-          });
+          const tabId = activeTabIdRef.current;
+          if (tabId) app.updateTab(tabId, { connectionStatus: 'disconnected' });
         }
       });
     };

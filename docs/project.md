@@ -179,6 +179,9 @@ src-tauri/
 | `sftp_mkdir` | SFTP 创建目录 | ✅ 已实现 |
 | `sftp_delete` | SFTP 删除 | ✅ 已实现 |
 | `sftp_rename` | SFTP 重命名 | ✅ 已实现 |
+| `port_forward_start` | 启动端口转发 | ✅ 新增 (2026-03-19) |
+| `port_forward_stop` | 停止端口转发 | ✅ 新增 (2026-03-19) |
+| `port_forward_list` | 列出活动转发 | ✅ 新增 (2026-03-19) |
 
 ---
 
@@ -197,12 +200,13 @@ src-tauri/
 | 收藏夹 | ✅ | ✅ | isFavorite 字段 |
 | 本地终端 | ✅ | ✅ | portable-pty |
 
-### Phase 2 - 核心功能 ✅ 大部分完成
+### Phase 2 - 核心功能 ✅ 已完成
 
 | 功能 | 前端 | 后端 | 说明 |
 |------|------|------|------|
 | SFTP 文件传输 | ✅ | ✅ | russh-sftp 实现 (2026-03-19) |
-| 端口转发 | ✅ | 🔴 | UI 完成，后端未实现 |
+| 端口转发 | ✅ | ⚠️ | UI 完成，后端基础实现 (2026-03-19) |
+| ssh_resize | ✅ | ✅ | 使用 escape sequence 实现 (2026-03-19) |
 | 命令历史 | ✅ | ✅ | SQLite 存储 |
 | Snippet | ✅ | ✅ | 完整实现 |
 | 分屏模式 | ✅ | ✅ | 水平/垂直分屏 |

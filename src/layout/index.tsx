@@ -12,6 +12,8 @@ import { observer } from "mobx-react-lite";
 import SnippetManager from "@/components/snippet-manager";
 import SettingsDialog from "@/components/settings-dialog";
 import CommandHistoryDialog from "@/components/command-history";
+import CommandPalette from "@/components/command-palette";
+import WorkspaceSwitcher from "@/components/workspace-switcher";
 
 const TerminalContent: React.FC<{ tabId: string }> = observer(({ tabId }) => {
   const app = useInjectable(AppStore);
@@ -28,6 +30,7 @@ const DeftLayout: React.FC = () => {
   const [snippetManagerOpen, setSnippetManagerOpen] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [commandHistoryOpen, setCommandHistoryOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const app = useInjectable(AppStore);
 
   // Keyboard shortcuts
@@ -36,7 +39,7 @@ const DeftLayout: React.FC = () => {
       // Command palette: Ctrl+J or Cmd+J
       if ((e.ctrlKey || e.metaKey) && e.key === 'j') {
         e.preventDefault();
-        setCommandHistoryOpen(true);
+        setCommandPaletteOpen(true);
       }
       // New terminal: Ctrl+T or Cmd+T
       if ((e.ctrlKey || e.metaKey) && e.key === 't') {
@@ -105,6 +108,7 @@ const DeftLayout: React.FC = () => {
         data-tauri-drag-region
       >
         <div className="flex items-center gap-4">
+          <WorkspaceSwitcher />
           <Button
             variant="ghost"
             size="icon"
@@ -136,6 +140,15 @@ const DeftLayout: React.FC = () => {
           >
             <History className="h-4 w-4 mr-1" />
             History
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setCommandPaletteOpen(true)}
+            title="Command Palette (Ctrl+J)"
+          >
+            <Terminal className="h-4 w-4 mr-1" />
+            ⌘J
           </Button>
           <Button
             variant="ghost"
@@ -199,6 +212,11 @@ const DeftLayout: React.FC = () => {
             console.log("Execute command from history:", command);
           }
         }}
+      />
+
+      <CommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
       />
     </div>
   );

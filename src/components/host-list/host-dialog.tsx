@@ -28,6 +28,8 @@ const defaultHost: Omit<Host, "id" | "createdAt" | "updatedAt"> = {
   portForwards: [],
   startupCommand: undefined,
   environment: undefined,
+  jumpHostId: undefined,
+  jumpHostAuthType: undefined,
 };
 
 export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) => {
@@ -53,6 +55,8 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
         portForwards: host.portForwards,
         startupCommand: host.startupCommand,
         environment: host.environment,
+        jumpHostId: host.jumpHostId,
+        jumpHostAuthType: host.jumpHostAuthType,
       });
     } else {
       setForm(defaultHost);
@@ -141,6 +145,48 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
                 ))}
               </select>
             </div>
+
+            {/* Jump Host Selector */}
+            <div className="col-span-2">
+              <label className="block text-sm font-medium mb-1 flex items-center gap-1">
+                <Network className="w-3.5 h-3.5" />
+                Jump Host (Bastion)
+              </label>
+              <select
+                className="w-full px-3 py-1.5 text-sm bg-background border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                value={form.jumpHostId || ""}
+                onChange={(e) => setForm({ ...form, jumpHostId: e.target.value || undefined })}
+              >
+                <option value="">Direct Connection</option>
+                {hostStore.hosts
+                  .filter(h => h.id !== host?.id) // Can't jump to self
+                  .map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name} ({h.username}@{h.hostname})
+                    </option>
+                  ))}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Connect through a bastion/jump server
+              </p>
+            </div>
+
+            {/* Jump Host Auth Override (optional) */}
+            {form.jumpHostId && (
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-1">Jump Host Auth</label>
+                <select
+                  className="w-full px-3 py-1.5 text-sm bg-background border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                  value={form.jumpHostAuthType || ""}
+                  onChange={(e) => setForm({ ...form, jumpHostAuthType: e.target.value as AuthType || undefined })}
+                >
+                  <option value="">Use Default Auth</option>
+                  <option value="password">Password</option>
+                  <option value="key">SSH Key</option>
+                  <option value="agent">SSH Agent</option>
+                </select>
+              </div>
+            )}
 
             <div className="col-span-2">
               <label className="block text-sm font-medium mb-1">Authentication</label>

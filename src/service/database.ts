@@ -112,6 +112,28 @@ async function initSchema() {
   await database.execute(`
     CREATE INDEX IF NOT EXISTS idx_command_history_executed_at ON command_history(executed_at DESC)
   `);
+
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      icon TEXT,
+      color TEXT,
+      "order" INTEGER DEFAULT 0,
+      is_active INTEGER DEFAULT 0,
+      created_at INTEGER,
+      updated_at INTEGER
+    )
+  `);
+
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS workspace_layouts (
+      workspace_id TEXT PRIMARY KEY,
+      layout_data TEXT,
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+    )
+  `);
 }
 
 export async function executeQuery(sql: string, params: unknown[] = []) {
@@ -312,4 +334,94 @@ export async function saveAppSettings(settings: Partial<AppSettings>): Promise<v
   const current = await getAppSettings();
   const merged = { ...current, ...settings };
   await setSetting("app_settings", merged);
+}
+
+// Workspace Operations
+export interface WorkspaceRecord {
+  id: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  color: string | null;
+  order: number;
+  is_active: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function createWorkspace(workspace: WorkspaceRecord): Promise<void> {
+  const database = await getDb();
+  await database.execute(
+    "INSERT INTO workspaces (id, name, description, icon, color, \"order\", is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [workspace.id, workspace.name, workspace.description, workspace.icon, workspace.color, workspace.order, workspace.is_active, workspace.created_at, workspace.updated_at]
+  );
+}
+
+export async function updateWorkspace(id: string, updates: Partial<WorkspaceRecord>): Promise<void> {
+  const database = await getDb();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (updates.name !== undefined) { fields.push("name = ?"); values.push(updates.name); }
+  if (updates.description !== undefined) { fields.push("description = ?"); values.push(updates.description); }
+  if (updates.icon !== undefined) { fields.push("icon = ?"); values.push(updates.icon); }
+  if (updates.color !== undefined) { fields.push("color = ?"); values.push(updates.color); }
+  if (updates.order !== undefined) { fields.push("\"order\" = ?"); values.push(updates.order); }
+  if (updates.is_active !== undefined) { fields.push("is_active = ?"); values.push(updates.is_active); }
+  if (updates.updated_at !== undefined) { fields.push("updated_at = ?"); values.push(updates.updated_at); }
+
+  if (fields.length > 0) {
+    values.push(id);
+    await database.execute(`UPDATE workspaces SET ${fields.join(", ")} WHERE id = ?`, values);
+  }
+}
+
+export async function deleteWorkspace(id: string): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM workspaces WHERE id = ?", [id]);
+}
+
+export async function getWorkspaces(): Promise<WorkspaceRecord[]> {
+  const database = await getDb();
+  return database.select("SELECT * FROM workspaces ORDER BY \"order\"");
+}
+
+export async function getActiveWorkspace(): Promise<WorkspaceRecord | null> {
+  const database = await getDb();
+  const results = await database.select<WorkspaceRecord[]>(
+    "SELECT * FROM workspaces WHERE is_active = 1 LIMIT 1"
+  );
+  return results[0] || null;
+}
+
+export async function setActiveWorkspace(id: string): Promise<void> {
+  const database = await getDb();
+  // Deactivate all workspaces first
+  await database.execute("UPDATE workspaces SET is_active = 0");
+  // Activate the selected one
+  await database.execute("UPDATE workspaces SET is_active = 1 WHERE id = ?", [id]);
+}
+
+// Workspace Layout Operations
+export interface WorkspaceLayoutRecord {
+  workspace_id: string;
+  layout_data: string;  // JSON string of layout
+}
+
+export async function saveWorkspaceLayout(workspaceId: string, layoutData: unknown): Promise<void> {
+  const database = await getDb();
+  const jsonData = JSON.stringify(layoutData);
+  await database.execute(
+    "INSERT OR REPLACE INTO workspace_layouts (workspace_id, layout_data) VALUES (?, ?)",
+    [workspaceId, jsonData]
+  );
+}
+
+export async function getWorkspaceLayout(workspaceId: string): Promise<WorkspaceLayoutRecord | null> {
+  const database = await getDb();
+  const results = await database.select<WorkspaceLayoutRecord[]>(
+    "SELECT * FROM workspace_layouts WHERE workspace_id = ?",
+    [workspaceId]
+  );
+  return results[0] || null;
 }

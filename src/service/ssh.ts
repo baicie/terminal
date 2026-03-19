@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { Host } from "@/types";
+import type { Host, PortForwardConfig } from "@/types";
 import { addCommandHistory } from "@/service/database";
 
 export interface SSHConnectionResult {
@@ -24,6 +24,13 @@ export interface ShellOutput {
 export class SSHService {
   async connect(host: Host): Promise<SSHConnectionResult> {
     try {
+      // Check if this host uses a jump host
+      if (host.jumpHostId) {
+        // We need to get the jump host details - this would be looked up from the host store
+        // For now, return an error indicating jump host needs special handling
+        return { success: false, message: "Jump host connection requires special setup" };
+      }
+
       if (host.authType === "password") {
         const sessionId = await invoke<string>("ssh_connect", {
           host: host.hostname,
@@ -50,6 +57,46 @@ export class SSHService {
         return { success: true, message: "Connected successfully", sessionId };
       }
       return { success: false, message: "Unsupported auth type" };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Connect to a host through a jump/bastion host
+   */
+  async connectWithJump(
+    targetHost: Host,
+    jumpHostConfig: {
+      host: string;
+      port: number;
+      username: string;
+      authType: "password" | "key" | "agent";
+      password?: string;
+      privateKey?: string;
+    }
+  ): Promise<SSHConnectionResult> {
+    try {
+      const sessionId = await invoke<string>("ssh_connect_jump", {
+        targetHost: targetHost.hostname,
+        targetPort: targetHost.port,
+        targetUsername: targetHost.username,
+        targetPassword: targetHost.password,
+        targetPrivateKey: targetHost.privateKey,
+        targetAuthType: targetHost.authType,
+        jumpHost: {
+          host: jumpHostConfig.host,
+          port: jumpHostConfig.port,
+          username: jumpHostConfig.username,
+          auth_type: jumpHostConfig.authType,
+          password: jumpHostConfig.password,
+          private_key: jumpHostConfig.privateKey,
+        },
+      });
+      return { success: true, message: "Connected via jump host", sessionId };
     } catch (error) {
       return {
         success: false,
@@ -287,6 +334,35 @@ export class SSHService {
       });
     } catch (error) {
       console.error("Failed to save command history:", error);
+    }
+  }
+
+  // Port forward methods
+
+  async portForwardStart(sessionId: string, config: PortForwardConfig): Promise<{ success: boolean; message?: string }> {
+    try {
+      await invoke("port_forward_start", { sessionId, config });
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  async portForwardStop(forwardId: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      await invoke("port_forward_stop", { forwardId });
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  async portForwardList(): Promise<string[]> {
+    try {
+      return await invoke<string[]>("port_forward_list");
+    } catch (error) {
+      console.error("Failed to list port forwards:", error);
+      return [];
     }
   }
 }

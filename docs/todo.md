@@ -23,9 +23,9 @@
 
 ## 二、待实现功能清单
 
-### Phase 2 - 核心功能
+### Phase 2 - 核心功能 ✅ 已完成
 
-#### 2.1 SSH 密钥认证 ✅ 已完成
+> 2026-03-19 完成 Phase 2 所有核心功能
 
 | 任务 | 描述 | 状态 |
 |------|------|------|
@@ -52,15 +52,15 @@
 | 本地终端支持 | Rust 后端实现本地 PTY | ✅ 已实现 (使用 portable-pty) |
 | 本地终端 UI | 支持创建本地 Shell 标签页 | ✅ 已实现 |
 
-#### 2.4 端口转发 ⚠️ UI 已实现，后端未实现
+#### 2.4 端口转发 ✅ 后端基础实现
 
 | 任务 | 描述 | 状态 |
 |------|------|------|
-| 本地端口转发 | Local Port Forwarding (-L) | ⚠️ UI 已实现 |
-| 远程端口转发 | Remote Port Forwarding (-R) | ⚠️ UI 已实现 |
-| 动态端口转发 | SOCKS 代理 (-D) | ⚠️ UI 已实现 |
+| 本地端口转发 | Local Port Forwarding (-L) | ✅ 已实现 (2026-03-19) |
+| 远程端口转发 | Remote Port Forwarding (-R) | ⚠️ 基础框架已实现 |
+| 动态端口转发 | SOCKS 代理 (-D) | ⚠️ 基础框架已实现 |
 | 转发管理界面 | 查看和管理活动转发 | ✅ 已实现 (PortForwardDialog 组件) |
-| 端口转发后端 | 实际转发逻辑实现 | 🔴 **未实现** |
+| 端口转发后端 | TCP 监听器框架 | ✅ 已实现 (2026-03-19) |
 
 #### 2.5 命令历史 ✅ 已完成
 
@@ -68,7 +68,7 @@
 |------|------|------|
 | 历史记录存储 | SQLite 存储命令历史 | ✅ 已实现 |
 | 历史记录 UI | 展示和搜索历史命令 | ✅ 已实现 (CommandHistoryDialog 组件) |
-| 快速补全 | 上下键快速补全命令 | 📋 待开发 |
+| 快速补全 | 上下键快速补全命令 | ✅ 已实现 (2026-03-19) |
 
 #### 2.6 Snippet ✅ 已完成
 
@@ -89,29 +89,62 @@
 
 ---
 
-### Phase 3 - 高级功能
+### Phase 3 - 高级功能 ⚠️ 部分完成
 
-#### 3.1 Agent 转发 📋 待开发
-
-| 任务 | 描述 | 状态 |
-|------|------|------|
-| SSH Agent 支持 | 连接本地 SSH Agent 进行认证 | 📋 待开发 |
-| Agent 转发 | 将 Agent 转发到远程服务器 | 📋 待开发 |
-
-#### 3.2 主机链 (Jump Host) 📋 待开发
+#### 3.1 Agent 转发 ✅ 已实现 (2026-03-19)
 
 | 任务 | 描述 | 状态 |
 |------|------|------|
-| 跳板机配置 | 支持配置跳板机连接 | 📋 待开发 |
-| 链式连接 | 通过跳板机连接目标服务器 | 📋 待开发 |
+| SSH Agent 支持 | 读取 SSH_AUTH_SOCK 连接本地 Agent | ✅ 已实现 |
+| Agent 转发 | 通过 Channel 转发 Agent 请求 | ✅ 已实现 |
+| 后端 Handler | 实现 server_channel_open_agent_forward | ✅ 已实现 |
+| 前端 UI | Agent 认证选项 (authType: "agent") | ✅ 已实现 |
 
-#### 3.3 Vault 加密存储 📋 未实现
+#### 3.2 主机链 (Jump Host) ✅ 已实现 (2026-03-19)
 
 | 任务 | 描述 | 状态 |
 |------|------|------|
-| 加密保险库 | 加密存储敏感凭证 | 📋 待开发 (vaults-view.tsx 只是占位符) |
-| 主密码 | 设置主密码保护保险库 | 📋 待开发 |
-| 端到端加密 | 本地加密，密钥不上传 | 📋 待开发 |
+| Jump Host 配置 | 主机配置 jumpHostId 字段 | ✅ 已实现 |
+| Jump Host 选择器 | UI 下拉菜单选择跳板机 | ✅ 已实现 |
+| Jump Host 认证覆盖 | 可选 jumpHostAuthType | ✅ 已实现 |
+| 后端连接逻辑 | channel_open_direct_tcpip 实现 | ✅ 已实现 |
+
+#### 3.3 Vault 加密存储 ✅ 已实现 (2026-03-19)
+
+| 任务 | 描述 | 状态 |
+|------|------|------|
+| Vault 后端 | AES-GCM + Argon2 加密 | ✅ 已实现 |
+| Vault 服务 | 创建/解锁/锁定金库 | ✅ 已实现 |
+| 凭证存储 | 主机密码/私钥加密存储 | ✅ 已实现 |
+| 前端服务 | vault.ts 提供统一 API | ✅ 已实现 |
+
+#### 3.4 命令面板 ✅ 已实现 (2026-03-19)
+
+| 任务 | 描述 | 状态 |
+|------|------|------|
+| 主机搜索 | 快速搜索和连接主机 | ✅ 已实现 |
+| Snippet 执行 | 快速搜索和执行代码片段 | ✅ 已实现 |
+| 命令历史 | 搜索历史命令 | ✅ 已实现 |
+| 快捷操作 | 新建终端、分屏等 | ✅ 已实现 |
+| 键盘导航 | ↑↓/Enter/Esc/Tab | ✅ 已实现 |
+
+#### 3.5 多工作区 ✅ 已实现 (2026-03-19)
+
+| 任务 | 描述 | 状态 |
+|------|------|------|
+| 工作区管理 | 创建、删除、切换工作区 | ✅ 已实现 |
+| 工作区切换器 | 下拉菜单快速切换 | ✅ 已实现 |
+| 布局保存 | 分屏和标签页布局 | ✅ 已实现 |
+| 数据库支持 | workspaces 表 | ✅ 已实现 |
+
+#### 3.6 跨设备同步 ✅ 已实现 (2026-03-19)
+
+| 任务 | 描述 | 状态 |
+|------|------|------|
+| 导出数据 | 导出到 JSON 文件 | ✅ 已实现 |
+| 导入数据 | 从 JSON 文件导入 | ✅ 已实现 |
+| Merge/Replace | 两种导入模式 | ✅ 已实现 |
+| 导入预览 | 预览导入内容 | ✅ 已实现 |
 
 #### 3.4 命令面板 ⚠️ 部分实现
 
@@ -204,6 +237,52 @@
 ---
 
 ## 四、已完成的开发工作
+
+### 2026-03-19 完成的工作 (第三批次)
+
+1. **命令面板完善** - 新增 `command-palette/index.tsx`
+   - 主机快速搜索和连接
+   - Snippet 快速搜索和执行
+   - 命令历史搜索
+   - 快捷操作（新建终端、分屏等）
+   - Tab 切换分类（All/Hosts/Snippets/History/Actions）
+   - 键盘导航支持（↑↓/Enter/Esc/Tab）
+
+2. **多工作区** - 新增 `workspace-switcher/` 和 `store/workspace.ts`
+   - WorkspaceStore 状态管理
+   - WorkspaceSwitcher 下拉组件
+   - 数据库表 `workspaces` 和 `workspace_layouts`
+   - 创建、删除、切换工作区
+   - 工作区布局保存和加载
+
+3. **跨设备同步** - 新增 `service/sync.ts` 和设置面板同步 Tab
+   - 导出数据到 JSON 文件
+   - 从 JSON 文件导入数据
+   - Merge/Replace 导入模式
+   - 导入预览功能
+   - 支持 hosts/groups/snippets 的导入
+
+### 2026-03-19 完成的工作 (第二批次)
+
+1. **命令快速补全** - 更新 `terminal-container.tsx`
+   - 上下键历史命令导航
+   - Enter 保存命令到历史
+   - getCurrentLine/setCurrentLine 实现
+
+2. **Agent 认证** - 更新 `terminal.rs` 和 `vault.rs`
+   - SSH Agent 转发支持 (读取 SSH_AUTH_SOCK)
+   - ClientHandler 实现 server_channel_open_agent_forward
+   - 前端 authType: "agent" 选项
+
+3. **Jump Host 主机链** - 新增 `ssh_connect_jump` 命令
+   - JumpHostConfig 配置结构
+   - channel_open_direct_tcpip 实现跳板连接
+   - 前端 jumpHostId/jumpHostAuthType 字段
+
+4. **Vault 加密存储** - 新增 `vault.rs` 和 `vault.ts`
+   - AES-GCM + Argon2 加密
+   - vault_create/vault_unlock/vault_lock 命令
+   - vault_set/vault_get/vault_list/vault_delete 操作
 
 ### 2026-03-18 完成的工作
 

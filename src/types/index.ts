@@ -15,6 +15,17 @@ export interface PortForward {
   active: boolean;
 }
 
+// Port forward config for backend
+export interface PortForwardConfig {
+  id: string;
+  name: string;
+  forward_type: PortForwardType;
+  local_host: string;
+  local_port: number;
+  remote_host: string;
+  remote_port: number;
+}
+
 export interface Host {
   id: string;
   name: string;
@@ -31,6 +42,9 @@ export interface Host {
   portForwards: PortForward[];
   startupCommand?: string;
   environment?: Record<string, string>;
+  // Jump host configuration
+  jumpHostId?: string;  // ID of the jump/bastion host to use
+  jumpHostAuthType?: AuthType;  // Override auth type for jump host (optional)
   createdAt: number;
   updatedAt: number;
 }
@@ -90,4 +104,26 @@ export interface SplitGroup {
   mode: 'horizontal' | 'vertical';
   tabs: string[];  // Tab IDs in this split group
   sizes?: number[];  // Optional sizes for each pane
+}
+
+// Workspace for multi-workspace support
+export interface Workspace {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;  // Emoji or icon name
+  color?: string;  // Color for the workspace
+  order: number;  // Display order
+  isActive: boolean;  // Is this the current workspace
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Layout saved with workspace
+export interface WorkspaceLayout {
+  workspaceId: string;
+  tabs: Tab[];
+  splitGroups: SplitGroup[];
+  activeTabId: string | null;
+  sidebarVisible: boolean;
 }
