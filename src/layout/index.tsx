@@ -102,69 +102,75 @@ const DeftLayout: React.FC = () => {
   };
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-screen flex flex-col bg-background">
       <header
-        className="h-[50px] flex items-center justify-between px-4 border-b"
+        className="h-11 flex items-center justify-between px-4 border-b border-border/60 bg-background shrink-0"
         data-tauri-drag-region
       >
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-0.5">
           <WorkspaceSwitcher />
           <Button
             variant="ghost"
             size="icon"
+            className="size-8 text-muted-foreground hover:text-foreground"
             onClick={() => setSidebarOpen(!sidebarOpen)}
           >
-            <PanelLeft className="h-5 w-5" />
+            <PanelLeft className="size-4" />
           </Button>
           <MenuTabs />
           <Button
             variant="ghost"
             size="sm"
+            className="gap-1.5 h-8 px-2.5 text-muted-foreground hover:text-foreground"
             onClick={handleNewLocalTerminal}
           >
-            <Terminal className="h-4 w-4 mr-1" />
+            <Terminal className="size-4" data-icon="inline-start" />
             Local
           </Button>
           <Button
             variant="ghost"
             size="sm"
+            className="gap-1.5 h-8 px-2.5 text-muted-foreground hover:text-foreground"
             onClick={() => setHostDialogOpen(true)}
           >
-            <Plus className="h-4 w-4 mr-1" />
+            <Plus className="size-4" data-icon="inline-start" />
             New Host
           </Button>
           <Button
             variant="ghost"
             size="sm"
+            className="gap-1.5 h-8 px-2.5 text-muted-foreground hover:text-foreground"
             onClick={() => setCommandHistoryOpen(true)}
           >
-            <History className="h-4 w-4 mr-1" />
+            <History className="size-4" data-icon="inline-start" />
             History
           </Button>
           <Button
             variant="ghost"
             size="sm"
+            className="gap-1.5 h-8 px-2.5 text-muted-foreground hover:text-foreground"
             onClick={() => setCommandPaletteOpen(true)}
-            title="Command Palette (Ctrl+J)"
+            title="Command Palette (⌘J)"
           >
-            <Terminal className="h-4 w-4 mr-1" />
-            ⌘J
+            <Terminal className="size-4" data-icon="inline-start" />
+            <span className="opacity-60">⌘J</span>
           </Button>
           <Button
             variant="ghost"
             size="sm"
+            className="gap-1.5 h-8 px-2.5 text-muted-foreground hover:text-foreground"
             onClick={() => setSnippetManagerOpen(true)}
           >
-            <Code className="h-4 w-4 mr-1" />
+            <Code className="size-4" data-icon="inline-start" />
             Snippets
           </Button>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => setSettingsDialogOpen(true)}>
-            <Settings className="h-5 w-5" />
+        <div className="flex items-center gap-0.5">
+          <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-foreground" onClick={() => setSettingsDialogOpen(true)}>
+            <Settings className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon">
-            <BellIcon className="h-5 w-5" />
+          <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-foreground">
+            <BellIcon className="size-4" />
           </Button>
         </div>
       </header>
@@ -179,7 +185,7 @@ const DeftLayout: React.FC = () => {
             app.setActiveTab(newTab.id);
           }} />
         )}
-        <main className="flex-1 overflow-hidden">
+        <main className="flex-1 overflow-hidden bg-background">
           {app.activeTabId ? renderTabContent(app.activeTabId) : <Outlet />}
         </main>
       </div>

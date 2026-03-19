@@ -39,7 +39,8 @@
 | **docs/design.md**           | 产品设计、功能规划、优先级         | 新功能设计时查阅   |
 | **docs/todo.md**             | 开发待办事项清单                   | 规划开发任务时查阅 |
 | **docs/ui/**                 | UI/功能规格与界面描述（便于 AI 阅读）| 实现或还原 UI 时  |
-| **AGENTS.md**                | 本文件 - Agent 使用指南            | 初次接手项目时阅读 |
+| **docs/shadcn-components.md** | shadcn/ui 全部组件索引与用法说明    | 查阅组件选型与用法 |
+| **AGENTS.md**                | 本文件 - Agent 使用指南             | 初次接手项目时阅读 |
 
 ---
 
@@ -54,6 +55,7 @@ terminal/
     ├── issue.md                  # 问题追踪
     ├── design.md                 # 设计文档
     ├── todo.md                   # 待办事项
+    ├── shadcn-components.md      # shadcn/ui 全部组件索引
     └── ui/                       # UI/功能规格（便于 AI 阅读实现 UI）
 ```
 
@@ -150,9 +152,10 @@ src-tauri/
 
 #### 使用流程
 
-1. **添加组件**: 使用 `npx shadcn@latest add <component>` 添加组件
+1. **添加组件**: 使用 `pnpm dlx shadcn@latest add <component>` 添加组件
 2. **复用现有**: 优先使用 shadcn/ui 已安装组件，而非自定义实现
 3. **组件组合**: 使用 shadcn/ui 组件组合构建复杂 UI
+4. **查阅文档**: 详细用法见 `docs/shadcn-components.md`，或执行 `pnpm dlx shadcn@latest docs <component>` 查看组件文档
 
 #### 组件选择参考
 
@@ -168,6 +171,62 @@ src-tauri/
 | 消息提示   | `sonner` (toast)                                    |
 | 加载占位   | `Skeleton`                                          |
 | 分割线     | `Separator`                                         |
+
+#### 组件优先级规范（强制）
+
+> **禁止使用原生 HTML 表单元素**，所有 UI 必须使用 shadcn/ui 组件。
+
+**正确示例：**
+
+```tsx
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+
+<Select value={form.type} onValueChange={(v) => setForm({ type: v })}>
+  <Label htmlFor="type">Type</Label>
+  <SelectTrigger id="type">
+    <SelectValue placeholder="Select type" />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem value="a">Option A</SelectItem>
+    <SelectItem value="b">Option B</SelectItem>
+  </SelectContent>
+</Select>
+```
+
+**错误示例（严格禁止）：**
+
+```tsx
+// ❌ 禁止：原生 <select>
+<select value={form.type} onChange={(e) => setForm({ type: e.target.value })}>
+  <option value="a">Option A</option>
+  <option value="b">Option B</option>
+</select>
+
+// ❌ 禁止：原生 <input type="checkbox/radio">
+<input type="checkbox" checked={form.enabled} onChange={(e) => ...} />
+
+// ❌ 禁止：原生 <textarea>
+<textarea value={form.content} onChange={(e) => ...} />
+```
+
+**表单控件对应关系：**
+
+| 需求           | 使用组件                         |
+| -------------- | -------------------------------- |
+| 下拉选择       | `Select`                         |
+| 多行文本输入   | `Textarea`                       |
+| 布尔开关       | `Switch`（设置类）或 `Checkbox`（表单） |
+| 单选/多选列表  | `RadioGroup` / `Checkbox`        |
+| 搜索式下拉     | `Command` + `Combobox` 模式      |
+
+**其他禁止项：**
+
+| 需求         | 错误写法                     | 正确写法              |
+| ------------ | ---------------------------- | --------------------- |
+| 标签         | `<label>` 原生标签           | `Label` 组件          |
+| 输入框按钮组 | 原生 `div` + `position: absolute` | `InputGroup` 组件     |
+| 分割线       | `<hr>` 或 `border-t` div     | `Separator` 组件      |
 
 #### 样式规范
 

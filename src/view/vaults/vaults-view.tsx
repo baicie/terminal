@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import styles from "./vaults.module.scss";
 import { TFunction } from "i18next";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   msg: string;
@@ -12,9 +13,9 @@ const VaultsView = ({ msg, onClick, t }: Props): ReactElement => (
   <div>
     <h1>{t("demo.Welcome to React")}</h1>
     <h1 className={styles.text}>{msg}</h1>
-    <button type="button" className={styles.button} onClick={onClick}>
+    <Button onClick={onClick}>
       click
-    </button>
+    </Button>
   </div>
 );
 export default VaultsView;

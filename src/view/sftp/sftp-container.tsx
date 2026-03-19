@@ -5,16 +5,17 @@ import { AppStore } from "@/store/app";
 import { HostStore } from "@/store/host";
 import { Terminal, Folder, File, Upload, Download, RefreshCw, ChevronRight, Home, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/sonner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { sshService } from "@/service/ssh";
-
-export interface FileItem {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  size: number;
-  modifiedTime: number;
-  permissions: string;
-}
 
 export interface FileItem {
   name: string;
@@ -155,41 +156,53 @@ const SFTPContainer: React.FC<SFTPContainerProps> = observer(({ sessionId }) => 
   };
 
   const handleUpload = async () => {
-    // In a real implementation, this would open a file picker
-    // For now, we'll use a simple prompt
-    const localPath = prompt("Enter local file path:");
-    if (!localPath) return;
-    
-    const fileName = localPath.split(/[\\/]/).pop() || "file";
-    const remotePath = currentPath === '/' ? `/${fileName}` : `${currentPath}/${fileName}`;
-    
     try {
+      const selected = await openDialog({
+        multiple: false,
+        filters: [
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+      if (!selected) return;
+
+      const localPath = selected as string;
+      const fileName = localPath.split(/[\\/]/).pop() || "file";
+      const remotePath = currentPath === '/' ? `/${fileName}` : `${currentPath}/${fileName}`;
+
       const result = await sshService.sftpUpload(sessionId!, localPath, remotePath);
       if (result.success) {
+        toast.success("Upload successful", { description: fileName });
         loadFiles();
       } else {
-        alert(`Failed to upload: ${result.message}`);
+        toast.error("Upload failed", { description: result.message });
       }
     } catch (error) {
       console.error("Error uploading file:", error);
+      toast.error("Upload failed");
     }
   };
 
   const handleDownload = async () => {
     if (!selectedFile || !sessionId) return;
-    
-    const localPath = prompt("Enter local save path:");
-    if (!localPath) return;
-    
+
     try {
-      const result = await sshService.sftpDownload(sessionId, selectedFile, localPath);
+      const savePath = await saveDialog({
+        defaultPath: selectedFile.split('/').pop() || "file",
+        filters: [
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+      if (!savePath) return;
+
+      const result = await sshService.sftpDownload(sessionId, selectedFile, savePath);
       if (result.success) {
-        alert("File downloaded successfully!");
+        toast.success("Download successful", { description: savePath });
       } else {
-        alert(`Failed to download: ${result.message}`);
+        toast.error("Download failed", { description: result.message });
       }
     } catch (error) {
       console.error("Error downloading file:", error);
+      toast.error("Download failed");
     }
   };
 
@@ -238,8 +251,8 @@ const SFTPContainer: React.FC<SFTPContainerProps> = observer(({ sessionId }) => 
         </div>
 
         <div className="flex items-center gap-1">
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="sm"
             disabled
             title="New folder (coming soon)"
@@ -247,8 +260,8 @@ const SFTPContainer: React.FC<SFTPContainerProps> = observer(({ sessionId }) => 
             <Folder className="h-4 w-4 mr-1" />
             New Folder
           </Button>
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="sm"
             onClick={handleUpload}
             disabled={!sessionId}
@@ -257,8 +270,8 @@ const SFTPContainer: React.FC<SFTPContainerProps> = observer(({ sessionId }) => 
             <Upload className="h-4 w-4 mr-1" />
             Upload
           </Button>
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="sm"
             disabled={!selectedFile || !sessionId}
             onClick={handleDownload}
@@ -295,57 +308,55 @@ const SFTPContainer: React.FC<SFTPContainerProps> = observer(({ sessionId }) => 
 
       {/* File List */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-muted/50 text-left">
-            <tr>
-              <th className="px-4 py-2 font-medium">Name</th>
-              <th className="px-4 py-2 font-medium w-24">Size</th>
-              <th className="px-4 py-2 font-medium w-32">Modified</th>
-              <th className="px-4 py-2 font-medium w-32">Permissions</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-64">Name</TableHead>
+              <TableHead className="w-24">Size</TableHead>
+              <TableHead className="w-32">Modified</TableHead>
+              <TableHead className="w-32">Permissions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {loading ? (
-              <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+              <TableRow>
+                <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                   Loading...
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ) : (
               files.map((file, index) => (
-                <tr
+                <TableRow
                   key={index}
-                  className={`cursor-pointer hover:bg-muted/50 ${
-                    selectedFile === file.path ? 'bg-accent' : ''
-                  }`}
+                  className={`cursor-pointer ${selectedFile === file.path ? 'bg-accent' : ''}`}
                   onClick={() => handleFileClick(file)}
                 >
-                  <td className="px-4 py-2">
+                  <TableCell>
                     <div className="flex items-center gap-2">
                       {file.isDirectory ? (
-                        <Folder className="h-4 w-4 text-yellow-500" />
+                        <Folder className="h-4 w-4 text-yellow-500 shrink-0" />
                       ) : (
-                        <File className="h-4 w-4 text-muted-foreground" />
+                        <File className="h-4 w-4 text-muted-foreground shrink-0" />
                       )}
                       <span className={file.name === '..' ? 'text-muted-foreground' : ''}>
                         {file.name}
                       </span>
                     </div>
-                  </td>
-                  <td className="px-4 py-2 text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
                     {file.isDirectory ? '-' : formatSize(file.size)}
-                  </td>
-                  <td className="px-4 py-2 text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
                     {formatDate(file.modifiedTime)}
-                  </td>
-                  <td className="px-4 py-2 text-muted-foreground font-mono text-xs">
+                  </TableCell>
+                  <TableCell className="text-muted-foreground font-mono text-xs">
                     {file.permissions}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       {/* Status Bar */}

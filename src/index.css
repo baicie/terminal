@@ -49,26 +49,43 @@
     --radius: 0.5rem;
   }
 
+  /* Tokyo Night / Termius dark theme */
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    /* Main backgrounds - deep navy/charcoal */
+    --background: 225 25% 11%;       /* #1a1b26 - deep navy, matches reference */
+    --foreground: 220 15% 90%;       /* #cdd6f4 - soft white text */
+
+    /* Cards, popovers - slightly lighter */
+    --card: 225 20% 13%;             /* #1f2335 */
+    --card-foreground: 220 15% 90%;
+
+    --popover: 225 20% 13%;
+    --popover-foreground: 220 15% 90%;
+
+    /* Primary - blue accent */
+    --primary: 217 91% 65%;          /* #7aa2f7 - blue accent, matches reference */
+    --primary-foreground: 225 25% 6%;
+
+    /* Secondary - muted surface */
+    --secondary: 225 18% 16%;        /* #24283b - slightly lighter than bg */
+    --secondary-foreground: 220 15% 85%;
+
+    /* Muted - dimmed elements */
+    --muted: 225 18% 16%;
+    --muted-foreground: 220 12% 50%; /* #565f89 - muted text */
+
+    /* Accent - subtle highlight */
+    --accent: 225 18% 20%;           /* hover state */
+    --accent-foreground: 220 15% 85%;
+
+    /* Destructive */
+    --destructive: 0 72% 58%;        /* #f7768e - red/pink */
+    --destructive-foreground: 0 0% 100%;
+
+    /* Border / input - subtle lines */
+    --border: 225 18% 20%;           /* #414868 - visible but not loud */
+    --input: 225 18% 16%;
+    --ring: 217 91% 65%;             /* blue ring to match primary */
   }
 
   * {

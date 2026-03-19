@@ -11,6 +11,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Plus,
   Edit,
@@ -110,8 +118,6 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
     };
 
     const handleDelete = async (id: string) => {
-      if (!confirm("Are you sure you want to delete this snippet?")) return;
-
       try {
         await deleteSnippet(id);
         loadData();
@@ -223,38 +229,57 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                 </Button>
               </div>
               <div className="space-y-1">
-                <button
-                  className={`w-full text-left px-2 py-1 rounded text-sm ${
+                <Button
+                  variant="ghost"
+                  className={`w-full justify-start px-2 py-1 h-auto text-sm ${
                     selectedPackage === null
                       ? "bg-secondary"
-                      : "hover:bg-accent"
+                      : "hover:bg-secondary/60"
                   }`}
                   onClick={() => setSelectedPackage(null)}
                 >
                   All Snippets
-                </button>
+                </Button>
                 {packages.map((pkg) => (
                   <div
                     key={pkg.id}
-                    className={`flex items-center justify-between w-full text-left px-2 py-1 rounded text-sm ${
+                    className={`group flex items-center justify-between w-full text-left px-2 py-1 rounded text-sm ${
                       selectedPackage === pkg.id
                         ? "bg-secondary"
-                        : "hover:bg-accent"
+                        : "hover:bg-secondary/60"
                     }`}
-                    onClick={() => setSelectedPackage(pkg.id)}
                   >
-                    <span className="truncate">{pkg.name}</span>
                     <Button
                       variant="ghost"
-                      size="icon"
-                      className="h-5 w-5 opacity-0 group-hover:opacity-100"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteSnippetPackage(pkg.id).then(loadData);
-                      }}
+                      className="flex-1 justify-start truncate px-0"
+                      onClick={() => setSelectedPackage(pkg.id)}
                     >
-                      <Trash2 className="h-3 w-3" />
+                      {pkg.name}
                     </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-5 opacity-0 group-hover:opacity-100"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Trash2 className="size-3" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Package</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete "{pkg.name}"? All snippets in this package will be moved to uncategorized.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => deleteSnippetPackage(pkg.id).then(loadData)}>Delete</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 ))}
               </div>
@@ -322,14 +347,29 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(snippet.id)}
-                            title="Delete"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Delete"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Snippet</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to delete "{snippet.name}"? This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleDelete(snippet.id)}>Delete</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </div>
                     </div>
@@ -386,21 +426,16 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
               </div>
               <div>
                 <Label htmlFor="package">Package</Label>
-                <select
-                  id="package"
-                  className="w-full border rounded-md px-3 py-2"
-                  value={formData.packageId}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                    setFormData({ ...formData, packageId: e.target.value })
-                  }
-                >
-                  <option value="">No Package</option>
-                  {packages.map((pkg) => (
-                    <option key={pkg.id} value={pkg.id}>
-                      {pkg.name}
-                    </option>
-                  ))}
-                </select>
+                <Select value={formData.packageId} onValueChange={(v) => setFormData({ ...formData, packageId: v })}>
+                  <SelectTrigger id="package">
+                    <SelectValue placeholder="No Package" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {packages.map((pkg) => (
+                      <SelectItem key={pkg.id} value={pkg.id}>{pkg.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <DialogFooter>

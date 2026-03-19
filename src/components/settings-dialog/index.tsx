@@ -9,6 +9,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -19,6 +21,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getAppSettings, saveAppSettings, select, executeQuery, type AppSettings } from "@/service/database";
 import { exportDataToFile, previewImportData, type ExportData } from "@/service/sync";
+import { toast } from "@/components/ui/sonner";
 import {
   Upload,
   Download,
@@ -109,7 +112,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
     try {
       const filePath = await exportDataToFile();
       if (filePath) {
-        alert(`Exported successfully to:\n${filePath}`);
+        toast.success("Export successful", { description: filePath });
       }
     } catch (error) {
       console.error("Export failed:", error);
@@ -404,12 +407,10 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
 
             <div className="flex items-center justify-between">
               <Label htmlFor="cursorBlink">Cursor Blink</Label>
-              <input
+              <Switch
                 id="cursorBlink"
-                type="checkbox"
                 checked={settings.cursorBlink}
-                onChange={(e) => updateSetting("cursorBlink", e.target.checked)}
-                className="w-4 h-4"
+                onCheckedChange={(checked) => updateSetting("cursorBlink", checked)}
               />
             </div>
 
@@ -432,12 +433,10 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
                 <Label htmlFor="copyOnSelect">Copy on Select</Label>
                 <p className="text-sm text-muted-foreground">Automatically copy selection to clipboard</p>
               </div>
-              <input
+              <Switch
                 id="copyOnSelect"
-                type="checkbox"
                 checked={settings.copyOnSelect}
-                onChange={(e) => updateSetting("copyOnSelect", e.target.checked)}
-                className="w-4 h-4"
+                onCheckedChange={(checked) => updateSetting("copyOnSelect", checked)}
               />
             </div>
 
@@ -446,12 +445,10 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
                 <Label htmlFor="pasteOnMiddleClick">Paste on Middle Click</Label>
                 <p className="text-sm text-muted-foreground">Paste clipboard content on middle mouse button click</p>
               </div>
-              <input
+              <Switch
                 id="pasteOnMiddleClick"
-                type="checkbox"
                 checked={settings.pasteOnMiddleClick}
-                onChange={(e) => updateSetting("pasteOnMiddleClick", e.target.checked)}
-                className="w-4 h-4"
+                onCheckedChange={(checked) => updateSetting("pasteOnMiddleClick", checked)}
               />
             </div>
 
@@ -460,12 +457,10 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
                 <Label htmlFor="allowProposedApi">Allow Proposed API</Label>
                 <p className="text-sm text-muted-foreground">Enable xterm.js proposed API features</p>
               </div>
-              <input
+              <Switch
                 id="allowProposedApi"
-                type="checkbox"
                 checked={settings.allowProposedApi}
-                onChange={(e) => updateSetting("allowProposedApi", e.target.checked)}
-                className="w-4 h-4"
+                onCheckedChange={(checked) => updateSetting("allowProposedApi", checked)}
               />
             </div>
           </TabsContent>
@@ -500,7 +495,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
               </Button>
             </div>
 
-            <div className="border-t" />
+            <Separator />
 
             {/* Import Section */}
             <div className="space-y-3">

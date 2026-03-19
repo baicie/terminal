@@ -3,6 +3,16 @@ import { useInjectable } from "@/hooks/use-di";
 import { HostStore } from "@/store/host";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { Host, AuthType } from "@/types";
 import PortForwardDialog from "@/components/port-forward";
 import { Network } from "lucide-react";
@@ -78,9 +88,12 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
     }
   };
 
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
   const handleDelete = async () => {
-    if (host && confirm("Are you sure you want to delete this host?")) {
+    if (host) {
       await hostStore.deleteHost(host.id);
+      setDeleteDialogOpen(false);
       onClose();
     }
   };
@@ -97,8 +110,9 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="block text-sm font-medium mb-1">Name</label>
+              <Label htmlFor="name" className="text-sm font-medium mb-1 block">Name</Label>
               <Input
+                id="name"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="My Server"
@@ -106,8 +120,9 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Hostname</label>
+              <Label htmlFor="hostname" className="text-sm font-medium mb-1 block">Hostname</Label>
               <Input
+                id="hostname"
                 value={form.hostname}
                 onChange={(e) => setForm({ ...form, hostname: e.target.value })}
                 placeholder="192.168.1.1 or example.com"
@@ -115,8 +130,9 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Port</label>
+              <Label htmlFor="port" className="text-sm font-medium mb-1 block">Port</Label>
               <Input
+                id="port"
                 type="number"
                 value={form.port}
                 onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) || 22 })}
@@ -124,8 +140,9 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Username</label>
+              <Label htmlFor="username" className="text-sm font-medium mb-1 block">Username</Label>
               <Input
+                id="username"
                 value={form.username}
                 onChange={(e) => setForm({ ...form, username: e.target.value })}
                 placeholder="root"
@@ -133,39 +150,39 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Group</label>
-              <select
-                className="w-full px-3 py-1.5 text-sm bg-background border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
-                value={form.groupId || ""}
-                onChange={(e) => setForm({ ...form, groupId: e.target.value || undefined })}
-              >
-                <option value="">No Group</option>
-                {hostStore.groups.map((g) => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </select>
+              <Label htmlFor="group" className="text-sm font-medium mb-1 block">Group</Label>
+              <Select value={form.groupId || ""} onValueChange={(v) => setForm({ ...form, groupId: v || undefined })}>
+                <SelectTrigger id="group">
+                  <SelectValue placeholder="No Group" />
+                </SelectTrigger>
+                <SelectContent>
+                  {hostStore.groups.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Jump Host Selector */}
             <div className="col-span-2">
-              <label className="block text-sm font-medium mb-1 flex items-center gap-1">
+              <Label htmlFor="jumpHost" className="text-sm font-medium mb-1 flex items-center gap-1">
                 <Network className="w-3.5 h-3.5" />
                 Jump Host (Bastion)
-              </label>
-              <select
-                className="w-full px-3 py-1.5 text-sm bg-background border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
-                value={form.jumpHostId || ""}
-                onChange={(e) => setForm({ ...form, jumpHostId: e.target.value || undefined })}
-              >
-                <option value="">Direct Connection</option>
-                {hostStore.hosts
-                  .filter(h => h.id !== host?.id) // Can't jump to self
-                  .map((h) => (
-                    <option key={h.id} value={h.id}>
-                      {h.name} ({h.username}@{h.hostname})
-                    </option>
-                  ))}
-              </select>
+              </Label>
+              <Select value={form.jumpHostId || ""} onValueChange={(v) => setForm({ ...form, jumpHostId: v || undefined })}>
+                <SelectTrigger id="jumpHost">
+                  <SelectValue placeholder="Direct Connection" />
+                </SelectTrigger>
+                <SelectContent>
+                  {hostStore.hosts
+                    .filter(h => h.id !== host?.id)
+                    .map((h) => (
+                      <SelectItem key={h.id} value={h.id}>
+                        {h.name} ({h.username}@{h.hostname})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground mt-1">
                 Connect through a bastion/jump server
               </p>
@@ -174,37 +191,39 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
             {/* Jump Host Auth Override (optional) */}
             {form.jumpHostId && (
               <div className="col-span-2">
-                <label className="block text-sm font-medium mb-1">Jump Host Auth</label>
-                <select
-                  className="w-full px-3 py-1.5 text-sm bg-background border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
-                  value={form.jumpHostAuthType || ""}
-                  onChange={(e) => setForm({ ...form, jumpHostAuthType: e.target.value as AuthType || undefined })}
-                >
-                  <option value="">Use Default Auth</option>
-                  <option value="password">Password</option>
-                  <option value="key">SSH Key</option>
-                  <option value="agent">SSH Agent</option>
-                </select>
+                <Label htmlFor="jumpHostAuth" className="text-sm font-medium mb-1 block">Jump Host Auth</Label>
+                <Select value={form.jumpHostAuthType || ""} onValueChange={(v) => setForm({ ...form, jumpHostAuthType: v as AuthType || undefined })}>
+                  <SelectTrigger id="jumpHostAuth">
+                    <SelectValue placeholder="Use Default Auth" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="password">Password</SelectItem>
+                    <SelectItem value="key">SSH Key</SelectItem>
+                    <SelectItem value="agent">SSH Agent</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             )}
 
             <div className="col-span-2">
-              <label className="block text-sm font-medium mb-1">Authentication</label>
-              <select
-                className="w-full px-3 py-1.5 text-sm bg-background border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
-                value={form.authType}
-                onChange={(e) => setForm({ ...form, authType: e.target.value as AuthType })}
-              >
-                <option value="password">Password</option>
-                <option value="key">SSH Key</option>
-                <option value="agent">SSH Agent</option>
-              </select>
+              <Label htmlFor="authType" className="text-sm font-medium mb-1 block">Authentication</Label>
+              <Select value={form.authType} onValueChange={(v) => setForm({ ...form, authType: v as AuthType })}>
+                <SelectTrigger id="authType">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="password">Password</SelectItem>
+                  <SelectItem value="key">SSH Key</SelectItem>
+                  <SelectItem value="agent">SSH Agent</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {form.authType === "password" && (
               <div className="col-span-2">
-                <label className="block text-sm font-medium mb-1">Password</label>
+                <Label htmlFor="password" className="text-sm font-medium mb-1 block">Password</Label>
                 <Input
+                  id="password"
                   type="password"
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
@@ -216,11 +235,11 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
             {form.authType === "key" && (
               <>
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium mb-1">Private Key</label>
+                  <Label htmlFor="privateKey" className="text-sm font-medium mb-1 block">Private Key</Label>
                   <div className="flex gap-2">
-                    <textarea
-                      className="flex-1 px-3 py-2 text-sm bg-background border rounded-md focus:outline-none focus:ring-1 focus:ring-primary font-mono"
-                      rows={5}
+                    <Textarea
+                      id="privateKey"
+                      className="flex-1 font-mono min-h-[120px]"
                       value={form.privateKey}
                       onChange={(e) => setForm({ ...form, privateKey: e.target.value })}
                       placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
@@ -228,7 +247,6 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
                     <Button
                       variant="outline"
                       onClick={async () => {
-                        // Use Tauri's dialog API to open file picker
                         try {
                           const { open } = await import('@tauri-apps/plugin-dialog');
                           const selected = await open({
@@ -238,24 +256,12 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
                             ]
                           });
                           if (selected) {
-                            // Read the file content
                             const { readTextFile } = await import('@tauri-apps/plugin-fs');
                             const content = await readTextFile(selected as string);
                             setForm({ ...form, privateKey: content });
                           }
                         } catch (e) {
                           console.error("Failed to open file dialog:", e);
-                          // Fallback: prompt user to enter path manually
-                          const path = prompt("Enter private key file path:");
-                          if (path) {
-                            try {
-                              const { readTextFile } = await import('@tauri-apps/plugin-fs');
-                              const content = await readTextFile(path);
-                              setForm({ ...form, privateKey: content });
-                            } catch (err) {
-                              console.error("Failed to read key file:", err);
-                            }
-                          }
                         }
                       }}
                     >
@@ -264,8 +270,9 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
                   </div>
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium mb-1">Key Passphrase (optional)</label>
+                  <Label htmlFor="passphrase" className="text-sm font-medium mb-1 block">Key Passphrase (optional)</Label>
                   <Input
+                    id="passphrase"
                     type="password"
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
@@ -276,8 +283,9 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
             )}
 
             <div className="col-span-2">
-              <label className="block text-sm font-medium mb-1">Startup Command (optional)</label>
+              <Label htmlFor="startupCommand" className="text-sm font-medium mb-1 block">Startup Command (optional)</Label>
               <Input
+                id="startupCommand"
                 value={form.startupCommand}
                 onChange={(e) => setForm({ ...form, startupCommand: e.target.value })}
                 placeholder="ls -la"
@@ -285,8 +293,9 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
             </div>
 
             <div className="col-span-2">
-              <label className="block text-sm font-medium mb-1">Port Forwards</label>
+              <Label htmlFor="portForwards" className="text-sm font-medium mb-1 block">Port Forwards</Label>
               <Button
+                id="portForwards"
                 variant="outline"
                 size="sm"
                 onClick={() => setPortForwardDialogOpen(true)}
@@ -301,9 +310,23 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
         <div className="p-4 border-t flex justify-between">
           <div>
             {host && (
-              <Button variant="destructive" onClick={handleDelete}>
-                Delete
-              </Button>
+              <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive">Delete</Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Host</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to delete "{host.name}"? This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
           </div>
           <div className="flex gap-2">

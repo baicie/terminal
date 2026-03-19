@@ -3,6 +3,7 @@ import { useInjectable } from "@/hooks/use-di";
 import { HostStore } from "@/store/host";
 import { AppStore } from "@/store/app";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { Host, Group } from "@/types";
 import {
   ChevronRight,
@@ -29,24 +30,24 @@ const HostItem: React.FC<HostItemProps> = ({ host, onConnect }) => {
 
   return (
     <div
-      className="group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent cursor-pointer text-sm"
+      className="group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/60 cursor-pointer text-sm transition-colors"
       onClick={() => onConnect?.(host)}
     >
-      <Server className="h-4 w-4 text-muted-foreground flex-shrink-0" style={{ color: host.color }} />
-      <span className="flex-1 truncate">{host.name}</span>
+      <Server className="size-4 text-muted-foreground shrink-0" style={{ color: host.color }} />
+      <span className="flex-1 truncate text-foreground/80">{host.name}</span>
       <Button
         variant="ghost"
         size="icon"
-        className="h-6 w-6 opacity-0 group-hover:opacity-100"
+        className="size-6 opacity-0 group-hover:opacity-100"
         onClick={(e) => {
           e.stopPropagation();
           hostStore.toggleFavorite(host.id);
         }}
       >
         {host.isFavorite ? (
-          <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
+          <Star className="size-3 fill-yellow-500 text-yellow-500" />
         ) : (
-          <StarOff className="h-3 w-3 text-muted-foreground" />
+          <StarOff className="size-3 text-muted-foreground" />
         )}
       </Button>
     </div>
@@ -64,20 +65,20 @@ const GroupItem: React.FC<GroupItemProps> = ({ group, children }) => {
   return (
     <div>
       <div
-        className="flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-accent cursor-pointer"
+        className="flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-secondary/60 cursor-pointer transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
         {expanded ? (
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          <ChevronDown className="size-4 text-muted-foreground" />
         ) : (
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          <ChevronRight className="size-4 text-muted-foreground" />
         )}
         {expanded ? (
-          <FolderOpen className="h-4 w-4 text-muted-foreground" style={{ color: group.color }} />
+          <FolderOpen className="size-4 text-muted-foreground" style={{ color: group.color }} />
         ) : (
-          <Folder className="h-4 w-4 text-muted-foreground" style={{ color: group.color }} />
+          <Folder className="size-4 text-muted-foreground" style={{ color: group.color }} />
         )}
-        <span className="text-sm font-medium">{group.name}</span>
+        <span className="text-sm font-medium text-foreground/80">{group.name}</span>
       </div>
       {expanded && <div className="ml-4">{children}</div>}
     </div>
@@ -92,7 +93,7 @@ const FavoritesSection: React.FC<{ onConnect?: (host: Host) => void }> = ({ onCo
 
   return (
     <div className="mb-2">
-      <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase">
+      <div className="px-2 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
         Favorites
       </div>
       {favorites.map((host) => (
@@ -143,27 +144,25 @@ const Sidebar: React.FC<HostListProps> = ({ onConnect }) => {
   }, [hostStore]);
 
   return (
-    <div className="w-64 h-full bg-card border-r flex flex-col">
-      <div className="p-2">
-        <input
-          type="text"
+    <div className="w-60 h-full bg-secondary/40 border-r border-border/60 flex flex-col shrink-0">
+      <div className="p-3">
+        <Input
           placeholder="Search hosts..."
-          className="w-full px-3 py-1.5 text-sm bg-background border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+          className="h-8 text-sm"
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2">
-        {/* Local Terminal Section */}
+      <div className="flex-1 overflow-y-auto px-3 pb-3">
         <div className="mb-4">
-          <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase">
-            Sessions
+          <div className="px-2 py-2 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
+            SESSIONS
           </div>
           <div
-            className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent cursor-pointer text-sm"
+            className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-secondary/60 cursor-pointer text-sm text-foreground/80 transition-colors"
             onClick={handleNewLocalTerminal}
           >
-            <Monitor className="h-4 w-4 text-muted-foreground" />
-            <span className="flex-1">Local Terminal</span>
+            <Monitor className="size-4 text-muted-foreground shrink-0" />
+            <span className="truncate">Local Terminal</span>
           </div>
         </div>
 

@@ -20,6 +20,7 @@ pub fn run() {
         .manage(shared_state)
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             greet,
             ssh_connect,

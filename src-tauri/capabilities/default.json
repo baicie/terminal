@@ -10,6 +10,8 @@
     "sql:default",
     "sql:allow-load",
     "sql:allow-execute",
-    "sql:allow-select"
+    "sql:allow-select",
+    "window-state:allow-restore-state",
+    "window-state:allow-save-window-state"
   ]
 }

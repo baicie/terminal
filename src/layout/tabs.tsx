@@ -1,6 +1,8 @@
 import { useInjectable } from "@/hooks/use-di";
 import { AppStore } from "@/store/app";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import { X, Columns, Rows } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useRef, useEffect } from "react";
@@ -58,12 +60,20 @@ const MenuTabs: React.FC = () => {
     return "";
   };
 
+  const isHomeActive = app.activeTabId === null;
+
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-0.5">
       <Button
-        variant={app.activeTabId === null ? "secondary" : "ghost"}
+        variant="ghost"
         size="sm"
         onClick={() => navigate("/")}
+        className={cn(
+          "rounded-md px-4 py-1 h-auto text-sm font-medium transition-all duration-150",
+          isHomeActive
+            ? "bg-secondary/80 text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+        )}
       >
         Home
       </Button>
@@ -71,27 +81,28 @@ const MenuTabs: React.FC = () => {
       {app.tabs.map((tab) => (
         <div
           key={tab.id}
-          className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm ${
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1 rounded-md text-sm transition-all duration-150 cursor-pointer",
             app.activeTabId === tab.id
-              ? "bg-secondary text-secondary-foreground"
-              : "hover:bg-accent"
-          }`}
+              ? "bg-secondary/80 text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
+          )}
           onClick={() => app.setActiveTab(tab.id)}
           onContextMenu={(e) => handleContextMenu(e, tab.id)}
         >
-          <span className="cursor-pointer">
+          <span>
             {tab.label} {getTabStatus(tab)}
           </span>
           <Button
             variant="ghost"
             size="icon"
-            className="h-4 w-4"
+            className="size-5 opacity-60 hover:opacity-100"
             onClick={(e) => {
               e.stopPropagation();
               app.removeTab(tab.id);
             }}
           >
-            <X className="h-3 w-3" />
+            <X className="size-3" />
           </Button>
         </div>
       ))}
@@ -102,28 +113,31 @@ const MenuTabs: React.FC = () => {
           className="fixed z-50 bg-popover border rounded-md shadow-lg py-1 min-w-[160px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
-          <button
-            className="w-full px-3 py-1.5 text-left text-sm hover:bg-accent flex items-center gap-2"
+          <Button
+            variant="ghost"
+            className="w-full justify-start px-3 py-1.5 h-auto text-sm gap-2"
             onClick={handleSplitVertical}
           >
-            <Columns className="w-4 h-4" />
+            <Columns className="size-4" />
             Split Vertical
-          </button>
-          <button
-            className="w-full px-3 py-1.5 text-left text-sm hover:bg-accent flex items-center gap-2"
+          </Button>
+          <Button
+            variant="ghost"
+            className="w-full justify-start px-3 py-1.5 h-auto text-sm gap-2"
             onClick={handleSplitHorizontal}
           >
-            <Rows className="w-4 h-4" />
+            <Rows className="size-4" />
             Split Horizontal
-          </button>
-          <div className="border-t my-1" />
-          <button
-            className="w-full px-3 py-1.5 text-left text-sm hover:bg-accent flex items-center gap-2"
+          </Button>
+          <Separator className="my-1" />
+          <Button
+            variant="ghost"
+            className="w-full justify-start px-3 py-1.5 h-auto text-sm gap-2"
             onClick={handleCloseSplit}
           >
-            <X className="w-4 h-4" />
+            <X className="size-4" />
             Close Split
-          </button>
+          </Button>
         </div>
       )}
     </div>

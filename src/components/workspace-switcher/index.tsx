@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import {
   Layers,
   Plus,
@@ -61,18 +62,6 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = observer(({ onSettin
     // TODO: Load layout for selected workspace
   };
 
-  const handleDeleteWorkspace = async (e: React.MouseEvent, workspace: Workspace) => {
-    e.stopPropagation();
-
-    if (workspaceStore.workspaces.length <= 1) {
-      alert("Cannot delete the last workspace");
-      return;
-    }
-
-    if (confirm(`Delete workspace "${workspace.name}"?`)) {
-      await workspaceStore.deleteWorkspace(workspace.id);
-    }
-  };
 
   const handleSaveEdit = async () => {
     if (editingId && editName.trim()) {
@@ -102,10 +91,10 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = observer(({ onSettin
         <Button
           variant="ghost"
           size="sm"
-          className="gap-2"
+          className="gap-2 h-8 px-2.5 text-muted-foreground hover:text-foreground"
         >
-          <Layers className="h-4 w-4" />
-          <span className="max-w-[100px] truncate">
+          <Layers className="size-4" />
+          <span className="max-w-[100px] truncate text-sm">
             {workspaceStore.activeWorkspace?.name || "Workspace"}
           </span>
         </Button>
@@ -143,26 +132,48 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = observer(({ onSettin
                   <Check className="h-4 w-4 text-primary shrink-0" />
                 )}
                 <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100">
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6"
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingId(workspace.id);
                       setEditName(workspace.name);
                       setTimeout(() => inputRef.current?.focus(), 0);
                     }}
-                    className="p-1 hover:bg-muted rounded"
                     title="Rename"
                   >
-                    <Settings className="h-3 w-3" />
-                  </button>
+                    <Settings className="size-3" />
+                  </Button>
                   {workspaceStore.workspaces.length > 1 && (
-                    <button
-                      onClick={(e) => handleDeleteWorkspace(e, workspace)}
-                      className="p-1 hover:bg-destructive/10 hover:text-destructive rounded"
-                      title="Delete"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6 text-destructive hover:text-destructive"
+                          onClick={(e) => e.stopPropagation()}
+                          title="Delete"
+                        >
+                          <Trash2 className="size-3" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Workspace</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete "{workspace.name}"? This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => workspaceStore.deleteWorkspace(workspace.id)}>
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   )}
                 </div>
               </>

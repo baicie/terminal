@@ -11,6 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Plus,
   Trash2,
   Play,
@@ -221,18 +228,16 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
 
               <div>
                 <Label htmlFor="forward-type">Type</Label>
-                <select
-                  id="forward-type"
-                  className="w-full border rounded-md px-3 py-2"
-                  value={formData.type}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                    setFormData({ ...formData, type: e.target.value as PortForwardType })
-                  }
-                >
-                  <option value="local">Local Port Forward (-L)</option>
-                  <option value="remote">Remote Port Forward (-R)</option>
-                  <option value="dynamic">Dynamic Port Forward (-D)</option>
-                </select>
+                <Select value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v as PortForwardType })}>
+                  <SelectTrigger id="forward-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="local">Local Port Forward (-L)</SelectItem>
+                    <SelectItem value="remote">Remote Port Forward (-R)</SelectItem>
+                    <SelectItem value="dynamic">Dynamic Port Forward (-D)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {formData.type === "dynamic" ? (

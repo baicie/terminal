@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import {
   Search,
   Trash2,
@@ -58,13 +59,11 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = observer(
     };
 
     const handleClearHistory = async () => {
-      if (confirm("Are you sure you want to clear all command history?")) {
-        try {
-          await clearCommandHistory();
-          setHistory([]);
-        } catch (error) {
-          console.error("Failed to clear history:", error);
-        }
+      try {
+        await clearCommandHistory();
+        setHistory([]);
+      } catch (error) {
+        console.error("Failed to clear history:", error);
       }
     };
 
@@ -108,22 +107,39 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = observer(
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
               {searchQuery && (
-                <button
-                  className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground"
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 size-6"
                   onClick={() => setSearchQuery("")}
                 >
-                  <X className="h-4 w-4" />
-                </button>
+                  <X className="size-3" />
+                </Button>
               )}
             </div>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={handleClearHistory}
-              title="Clear history"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title="Clear history"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear Command History</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to clear all command history? This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleClearHistory}>Clear</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
 
           <div className="flex-1 overflow-y-auto">

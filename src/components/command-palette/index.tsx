@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { observer } from "mobx-react-lite";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Search,
   Terminal,
@@ -358,18 +359,20 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(({ open, onClose 
         {/* Tabs */}
         <div className="flex border-b bg-muted/30">
           {tabs.map((tab) => (
-            <button
+            <Button
               key={tab.key}
-              className={`flex items-center gap-1.5 px-4 py-2 text-sm transition-colors ${
+              variant="ghost"
+              size="sm"
+              onClick={() => setActiveTab(tab.key)}
+              className={`rounded-none px-4 py-2 h-auto gap-1.5 text-sm ${
                 activeTab === tab.key
-                  ? "bg-background border-b-2 border-primary"
+                  ? "bg-background border-b-2 border-primary rounded-t-md"
                   : "hover:bg-muted/50"
               }`}
-              onClick={() => setActiveTab(tab.key)}
             >
               {tab.icon}
               {tab.label}
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -393,9 +396,10 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(({ open, onClose 
           ) : (
             <div className="space-y-1">
               {results.map((result, index) => (
-                <button
+                <Button
                   key={result.id}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${
+                  variant="ghost"
+                  className={`w-full justify-start h-auto py-3 px-3 gap-3 ${
                     index === selectedIndex
                       ? "bg-primary/10 border border-primary/20"
                       : "hover:bg-muted/50"
@@ -438,11 +442,11 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(({ open, onClose 
                     {result.type}
                   </span>
                   <ChevronRight
-                    className={`h-4 w-4 shrink-0 ${
+                    className={`size-4 shrink-0 ${
                       index === selectedIndex ? "text-primary" : "text-muted-foreground"
                     }`}
                   />
-                </button>
+                </Button>
               ))}
             </div>
           )}
