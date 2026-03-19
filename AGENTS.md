@@ -28,37 +28,115 @@
 
 - **所有回复都使用中文**：在与用户交互时，始终使用中文进行回复和说明
 
-## 项目结构
+## 项目文档索引
+
+> **重要**: 开始任何开发工作前，请先查阅相关文档
+
+| 文档                | 用途                               | 何时查阅           |
+| ------------------- | ---------------------------------- | ------------------ |
+| **docs/project.md** | 完整项目结构、实现状态、数据库结构 | 每次开发前必读     |
+| **docs/issue.md**   | 所有已知问题、BUG、待修复项        | 解决问题时查阅     |
+| **docs/design.md**  | 产品设计、功能规划、优先级         | 新功能设计时查阅   |
+| **docs/todo.md**    | 开发待办事项清单                   | 规划开发任务时查阅 |
+| **AGENTS.md**       | 本文件 - Agent 使用指南            | 初次接手项目时阅读 |
+
+---
+
+## 项目结构概览
 
 ```
 terminal/
-├── src/                          # 前端源代码
-│   ├── view/                     # 页面组件
-│   │   ├── terminal/             # 终端视图
-│   │   ├── sftp/                # SFTP 视图
-│   │   └── vaults/              # 保险库/连接视图
-│   ├── layout/                  # 布局组件
-│   ├── hooks/                   # 自定义 React hooks
-│   ├── store/                   # MobX 状态存储
-│   ├── service/                 # API 服务
-│   ├── utils/                   # 工具函数 (logger, axios)
-│   ├── locales/                 # 国际化翻译
-│   │   ├── en/
-│   │   ├── fr/
-│   │   └── cn/
-│   ├── router/                  # React Router 配置
-│   ├── di.ts                    # 依赖注入容器配置
-│   └── App.tsx                  # 根组件
-├── src-tauri/                   # Rust 后端
-│   ├── src/
-│   │   ├── lib.rs               # 库入口
-│   │   ├── main.rs              # 二进制入口
-│   │   └── terminal.rs          # SSH 终端逻辑
-│   ├── Cargo.toml               # Rust 依赖
-│   ├── tauri.conf.json          # Tauri 配置
-│   └── capabilities/             # Tauri 权限配置
-└── package.json                 # Node 依赖
+├── src/                          # 前端源代码 (React + TypeScript)
+├── src-tauri/                    # 后端源代码 (Rust)
+└── docs/                         # 项目文档
+    ├── project.md                # 项目文档索引 (你在这里)
+    ├── issue.md                  # 问题追踪
+    ├── design.md                 # 设计文档
+    └── todo.md                   # 待办事项
 ```
+
+### 前端 `src/` 结构
+
+```
+src/
+├── view/                         # 页面组件
+│   ├── terminal/                 # 终端视图
+│   ├── sftp/                    # SFTP 视图
+│   ├── vaults/                   # 保险库视图
+│   └── home/                     # 首页
+├── components/                    # 可复用组件
+│   ├── ui/                       # 基础 UI 组件
+│   ├── host-list/                # 主机列表
+│   ├── command-history/          # 命令历史
+│   ├── snippet-manager/          # Snippet 管理
+│   ├── port-forward/             # 端口转发
+│   ├── split-pane/              # 分屏组件
+│   └── settings-dialog/           # 设置对话框
+├── store/                        # MobX 状态管理
+├── service/                      # 业务服务 (SSH, 数据库等)
+├── hooks/                        # 自定义 React Hooks
+├── utils/                        # 工具函数
+├── locales/                      # 国际化 (en/fr/cn)
+├── router/                       # React Router
+└── layout/                       # 布局组件
+```
+
+### 后端 `src-tauri/` 结构
+
+```
+src-tauri/
+├── src/
+│   ├── main.rs                   # 二进制入口
+│   ├── lib.rs                    # 库入口 (命令注册)
+│   └── terminal.rs               # SSH/SFTP/PTY 核心逻辑
+├── Cargo.toml                     # Rust 依赖
+├── tauri.conf.json               # Tauri 配置
+└── capabilities/                  # 权限配置
+```
+
+---
+
+## Agent 工作规范
+
+### 文档更新规则
+
+完成任何开发工作后，**必须**按以下规则更新相关文档：
+
+#### 1. 完成新功能时
+
+1. 更新 `docs/project.md` 中的"实现状态"部分
+2. 如果有遗留问题，创建或更新 `docs/issue.md` 条目
+3. 检查 `docs/todo.md` 中对应项是否完成
+
+#### 2. 修复 BUG 时
+
+1. 在 `docs/issue.md` 中标记问题为"已修复"
+2. 记录修复方案和日期
+
+#### 3. 添加新待办事项时
+
+1. 在 `docs/todo.md` 中添加新条目
+2. 在 `docs/issue.md` 中创建详细说明（如果需要）
+
+### 文档标记说明
+
+| 标记 | 含义            | 示例                                 |
+| ---- | --------------- | ------------------------------------ |
+| ✅   | 已完成          | SSH 连接 ✅ 已实现                   |
+| ⚠️   | 部分实现        | SSH 密钥认证 ⚠️ 前端完成，后端未实现 |
+| 🔴   | 未实现/严重问题 | SFTP 后端 🔴 未实现                  |
+| 📋   | 待开发/计划中   | Agent 转发 📋 待开发                 |
+| 🔄   | 进行中          | 正在修复...                          |
+| ❌   | 已废弃/不可用   | ❌ 不推荐使用                        |
+
+### 状态徽章
+
+| 徽章 | 含义             |
+| ---- | ---------------- |
+| ✅   | 功能已完成       |
+| 🟡   | 部分完成或警告   |
+| 🔴   | 严重问题或未实现 |
+| 📋   | 待开发           |
 
 ---
 
@@ -142,11 +220,46 @@ pnpm add <package-name>
 
 应用程序使用 SQLite（通过 `tauri-plugin-sql`）。数据库操作从前端使用 SQL 插件 API 完成。
 
+详细表结构请参考 `docs/project.md` 中的"数据库表结构"部分。
+
 ---
 
-## 当前已知问题
+## 实现状态总览
 
-1. **russh API 兼容性**: `src-tauri/src/terminal.rs` 中的 SSH 代码使用了较旧版本的 russh API。需要更新代码以兼容 russh 0.57.1。
+### Phase 1 - MVP ✅ 已完成
+
+- ✅ SSH 连接 (密码认证)
+- ✅ 终端模拟 (xterm.js)
+- ✅ 多标签页
+- ✅ 主机保存/组管理/收藏夹
+- ✅ 本地终端
+
+### Phase 2 - 核心功能 ⚠️ 部分完成
+
+- ⚠️ SSH 密钥认证 (前端完成，后端未实现)
+- 🔴 SFTP 文件传输 (后端全占位符)
+- ⚠️ 端口转发 (UI 完成，后端未实现)
+- ✅ 命令历史、Snippet、分屏模式
+
+### Phase 3/4 - 高级功能 🔴 未实现
+
+- 🔴 Agent 转发、主机链、Vault 加密
+- 🔴 多工作区、跨设备同步
+- 🔴 串口连接、团队协作等
+
+---
+
+## 当前关键问题
+
+> 详细问题列表请查看 `docs/issue.md`
+
+| #   | 问题                   | 严重程度     | 优先级 |
+| --- | ---------------------- | ------------ | ------ |
+| 1   | SFTP 后端未实现        | 🔴 Critical  | P0     |
+| 2   | SSH 密钥认证后端未实现 | 🔴 Critical  | P0     |
+| 3   | 端口转发后端未实现     | 🔴 Critical  | P1     |
+| 4   | Rust 编译警告需清理    | 🟡 Important | P1     |
+| 5   | Agent 认证未实现       | 🟡 Important | P2     |
 
 ---
 
@@ -157,3 +270,9 @@ pnpm add <package-name>
 - [Ant Design](https://ant.design/)
 - [xterm.js](https://xtermjs.org/)
 - [russh](https://github.com/warpdotdev/russh)
+- [russh-keys](https://docs.rs/russh-keys/)
+- [russh-sftp](https://docs.rs/russh-sftp/)
+
+---
+
+_文档更新时间: 2026-03-19_

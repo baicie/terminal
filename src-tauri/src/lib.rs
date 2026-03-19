@@ -3,8 +3,8 @@ mod terminal;
 use terminal::{
     create_shared_state, greet, local_disconnect, local_resize, local_shell, local_write,
     ssh_connect, ssh_connect_agent, ssh_connect_key, ssh_disconnect, ssh_execute, ssh_resize,
-    ssh_shell, ssh_write, sftp_delete, sftp_download, sftp_list, sftp_mkdir, sftp_rename,
-    sftp_upload,
+    ssh_shell, ssh_write, sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_mkdir,
+    sftp_rename, sftp_upload,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -29,6 +29,7 @@ pub fn run() {
             local_write,
             local_resize,
             local_disconnect,
+            sftp_connect,
             sftp_list,
             sftp_upload,
             sftp_download,

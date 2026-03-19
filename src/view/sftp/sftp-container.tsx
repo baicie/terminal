@@ -37,6 +37,7 @@ const SFTPContainer: React.FC<SFTPContainerProps> = observer(({ sessionId }) => 
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [sftpConnected, setSftpConnected] = useState(false);
 
   const activeTab = app.activeTab;
   const host = activeTab?.hostId
@@ -97,9 +98,31 @@ const SFTPContainer: React.FC<SFTPContainerProps> = observer(({ sessionId }) => 
     }
   }, [sessionId, currentPath]);
 
+  // Initialize SFTP connection and load files
   useEffect(() => {
-    loadFiles();
-  }, [loadFiles]);
+    const initSftp = async () => {
+      if (!sessionId) {
+        setSftpConnected(false);
+        loadFiles();
+        return;
+      }
+
+      if (!sftpConnected) {
+        const connectResult = await sshService.sftpConnect(sessionId);
+        if (connectResult.success) {
+          setSftpConnected(true);
+        } else {
+          console.error("Failed to connect SFTP:", connectResult.message);
+          // Fall back to demo mode
+          setSftpConnected(false);
+        }
+      }
+
+      loadFiles();
+    };
+
+    initSftp();
+  }, [sessionId, sftpConnected]);
 
   const handleFileClick = (file: FileItem) => {
     if (file.isDirectory && file.name !== '..' && file.name !== '.') {

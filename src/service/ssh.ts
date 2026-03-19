@@ -212,6 +212,15 @@ export class SSHService {
 
   // SFTP methods
 
+  async sftpConnect(sessionId: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      await invoke("sftp_connect", { sessionId });
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
   async sftpList(sessionId: string, path: string): Promise<{ success: boolean; files?: FileItem[]; message?: string }> {
     try {
       const files = await invoke<FileItem[]>("sftp_list", { sessionId, path });
