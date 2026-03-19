@@ -294,6 +294,27 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
         }
       }
 
+      // Import snippet packages
+      if (data.snippetPackages && data.snippetPackages.length > 0) {
+        for (const pkg of data.snippetPackages as Record<string, unknown>[]) {
+          const existing = await select<{ id: string }>(
+            "SELECT id FROM snippet_packages WHERE id = ?",
+            [pkg.id as string]
+          );
+          if (existing.length === 0) {
+            await executeQuery(
+              `INSERT INTO snippet_packages (id, name, description) VALUES (?, ?, ?)`,
+              [pkg.id, pkg.name, pkg.description]
+            );
+          } else if (importMode === "replace") {
+            await executeQuery(
+              `UPDATE snippet_packages SET name = ?, description = ? WHERE id = ?`,
+              [pkg.name, pkg.description, pkg.id]
+            );
+          }
+        }
+      }
+
       setImportStep("success");
       setTimeout(() => {
         onClose();
@@ -537,6 +558,12 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
                         <Check className="h-3 w-3 inline mr-1 text-green-500" />
                         {importPreview.snippets} snippet(s)
                       </li>
+                      {importPreview.snippetPackages > 0 && (
+                        <li>
+                          <Check className="h-3 w-3 inline mr-1 text-green-500" />
+                          {importPreview.snippetPackages} snippet package(s)
+                        </li>
+                      )}
                     </ul>
                   </div>
 

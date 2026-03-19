@@ -133,6 +133,7 @@ pub struct SharedState {
 pub struct LocalPtySession {
     pty_pair: PtyPair,
     child: Box<dyn portable_pty::Child + Send + Sync>,
+    writer: std::sync::Arc<tokio::sync::Mutex<Box<dyn std::io::Write + Send + 'static>>>,
 }
 
 #[allow(dead_code)]
@@ -466,22 +467,22 @@ pub async fn ssh_write(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    let mut sessions = state.sessions.lock().await;
+    let sessions = state.sessions.lock().await;
     let handle = sessions
-        .get_mut(&session_id)
+        .get(&session_id)
         .ok_or_else(|| "Session not found".to_string())?;
 
-    // Open a new channel for each write
-    let channel = handle
-        .channel_open_session()
-        .await
-        .map_err(|e| format!("Failed to open channel: {}", e))?;
+    // Get the shell channel ID
+    let shell_channels = state.shell_channels.lock().await;
+    let channel_id = shell_channels
+        .get(&session_id)
+        .ok_or_else(|| "Shell channel not found".to_string())?;
 
-    // Execute the command
-    channel
-        .exec(true, data.as_bytes())
+    // Send data through the existing shell channel
+    handle
+        .data(*channel_id, data.into())
         .await
-        .map_err(|e| format!("Failed to execute: {}", e))?;
+        .map_err(|e| format!("Failed to send data: {:?}", e))?;
 
     Ok(())
 }
@@ -625,10 +626,17 @@ pub async fn local_shell(
         .try_clone_reader()
         .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
 
-    // Store the session
+    // Take the writer
+    let writer = pty_pair
+        .master
+        .take_writer()
+        .map_err(|e| format!("Failed to take writer: {}", e))?;
+
+    // Store the session with writer wrapped in Arc<Mutex>
     let session = LocalPtySession {
         pty_pair,
         child,
+        writer: std::sync::Arc::new(tokio::sync::Mutex::new(writer)),
     };
 
     {
@@ -678,15 +686,13 @@ pub async fn local_write(
         .get(&session_id)
         .ok_or_else(|| "Session not found".to_string())?;
 
-    let mut writer = session
-        .pty_pair
-        .master
-        .take_writer()
-        .map_err(|e| format!("Failed to get writer: {}", e))?;
-
+    let mut writer = session.writer.lock().await;
     writer
         .write_all(data.as_bytes())
         .map_err(|e| format!("Failed to write: {}", e))?;
+    writer
+        .flush()
+        .map_err(|e| format!("Failed to flush: {}", e))?;
 
     Ok(())
 }

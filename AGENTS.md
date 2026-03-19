@@ -38,6 +38,7 @@
 | **docs/issue.md**            | 所有已知问题、BUG、待修复项        | 解决问题时查阅     |
 | **docs/design.md**           | 产品设计、功能规划、优先级         | 新功能设计时查阅   |
 | **docs/todo.md**             | 开发待办事项清单                   | 规划开发任务时查阅 |
+| **docs/xterm.md**            | xterm.js 完整 API 文档与插件指南   | 终端开发时必读     |
 | **docs/ui/**                 | UI/功能规格与界面描述（便于 AI 阅读）| 实现或还原 UI 时  |
 | **docs/shadcn-components.md** | shadcn/ui 全部组件索引与用法说明    | 查阅组件选型与用法 |
 | **AGENTS.md**                | 本文件 - Agent 使用指南             | 初次接手项目时阅读 |
@@ -370,6 +371,7 @@ pnpm add <package-name>
 - [shadcn/ui 文档](https://ui.shadcn.com/)
 - [Tailwind CSS](https://tailwindcss.com/)
 - [xterm.js](https://xtermjs.org/)
+- [xterm.js API 参考](https://xtermjs.org/docs/api/terminal/classes/terminal/) - 详细 API 文档
 - [russh](https://github.com/warpdotdev/russh)
 - [russh-keys](https://docs.rs/russh-keys/)
 - [russh-sftp](https://docs.rs/russh-sftp/)
@@ -377,6 +379,54 @@ pnpm add <package-name>
 ---
 
 _文档更新时间: 2026-03-19_
+
+---
+
+## xterm.js 开发规范
+
+终端功能基于 xterm.js 实现，**开发终端相关功能前必须先阅读 `docs/xterm.md`**。
+
+### 已集成的插件
+
+| 插件 | 用途 | 使用方式 |
+|------|------|----------|
+| `@xterm/addon-fit` | 自动调整终端大小 | `fitAddon.fit()` 在容器大小变化时调用 |
+| `@xterm/addon-search` | 终端内搜索 | `searchAddon.findNext()` |
+| `@xterm/addon-web-links` | 链接检测 | 自动检测 URL，点击打开 |
+| `@xterm/addon-canvas` | Canvas 渲染 | 提升渲染性能 |
+| `@xterm/addon-webgl` | WebGL 加速 | GPU 加速渲染 |
+| `@xterm/addon-image` | 图片支持 | 通过六字节序列显示图片 |
+| `@xterm/addon-unicode11` | Unicode 11 | 支持新 Unicode 字符 |
+| `@xterm/addon-ligatures` | 连字字体 | 编程字体连字支持 |
+
+### 常用 API
+
+```typescript
+// 终端实例创建
+const term = new Terminal({ cursorBlink: true, fontSize: 14 });
+
+// 打开到 DOM
+term.open(container);
+
+// 写入数据（支持 VT 序列）
+term.write('\x1b[2K'); // 清除行
+
+// 事件监听
+term.onData(data => sshService.write(sessionId, data));
+term.onResize(({ cols, rows }) => sshService.resize(sessionId, cols, rows));
+
+// 缓冲区操作
+term.buffer.active.getLine(y).getCell(x);
+
+// 插件加载
+term.loadAddon(new FitAddon());
+```
+
+### 性能注意事项
+
+1. 大量数据写入时使用流控或批量写入
+2. 容器大小变化后必须调用 `fitAddon.fit()`
+3. 使用 `term.dispose()` 清理资源
 
 ---
 

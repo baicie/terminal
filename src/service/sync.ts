@@ -22,13 +22,20 @@ export interface SyncService {
 
 // Collect all data for export
 async function collectExportData(): Promise<ExportData> {
-  const [hosts, groups, snippets, snippetPackages] = await Promise.all([
-    select("SELECT * FROM hosts"),
-    select("SELECT * FROM groups"),
-    select("SELECT * FROM snippets"),
-    select("SELECT * FROM snippet_packages"),
-    select("SELECT * FROM settings"),
+  const [hosts, groups, snippets, snippetPackages, settingsRows] = await Promise.all([
+    select<Record<string, unknown>>("SELECT * FROM hosts"),
+    select<Record<string, unknown>>("SELECT * FROM groups"),
+    select<Record<string, unknown>>("SELECT * FROM snippets"),
+    select<Record<string, unknown>>("SELECT * FROM snippet_packages"),
+    select<{ key: string; value: string }>("SELECT * FROM settings"),
   ]);
+
+  const settingsDict = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
+    if (row.key) {
+      acc[row.key] = row.value;
+    }
+    return acc;
+  }, {});
 
   return {
     version: "1.0.0",
@@ -37,8 +44,8 @@ async function collectExportData(): Promise<ExportData> {
     groups,
     snippets,
     snippetPackages,
-    workspaces: [], // TODO: Add workspace support
-    settings: {}, // TODO: Add settings export
+    workspaces: [],
+    settings: settingsDict,
   };
 }
 

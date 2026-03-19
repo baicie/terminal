@@ -37,6 +37,11 @@ export default observer((props: TerminalContainerProps) => {
   const terminalInstanceRef = useRef<Terminal | null>(null);
   const activeTabIdRef = useRef<string | null>(null);
 
+  // Write buffer for batching rapid keystrokes
+  const writeBufferRef = useRef<string>("");
+  const writeTimerRef = useRef<number | null>(null);
+  const writePendingRef = useRef<boolean>(false);
+
   // Load command history on mount
   useEffect(() => {
     const loadHistory = async () => {
@@ -70,18 +75,11 @@ export default observer((props: TerminalContainerProps) => {
 
   // Set terminal line
   const setCurrentLine = useCallback((term: Terminal, newLine: string) => {
-    const cursorY = term.buffer.active.cursorY;
-    const startX = 0;
+    // Move cursor to beginning of line
+    term.write('\x1b[G'); // ANSI: Cursor to column
 
-    // Clear from startX to end of line
-    for (let x = startX; x < term.cols; x++) {
-      term.write('\x1b[K'); // Clear line from cursor to end
-    }
-
-    // Go to start of line
-    for (let x = cursorY; x > startX; x--) {
-      term.write('\x08'); // Backspace
-    }
+    // Clear entire line
+    term.write('\x1b[2K'); // ANSI: Clear entire line
 
     // Write new line
     term.write(newLine);
@@ -240,39 +238,87 @@ export default observer((props: TerminalContainerProps) => {
     // Store terminal instance
     terminalInstanceRef.current = terminal.current;
 
+    // Flush write buffer to backend (defined as regular function inside useEffect)
+    const flushWriteBuffer = (isLocal: boolean, sessionId: string) => {
+      if (writePendingRef.current || writeBufferRef.current.length === 0) return;
+
+      const data = writeBufferRef.current;
+      writeBufferRef.current = "";
+      writePendingRef.current = true;
+
+      if (isLocal) {
+        sshService.writeLocal(sessionId, data);
+      } else {
+        sshService.write(sessionId, data);
+      }
+
+      writePendingRef.current = false;
+    };
+
     // Handle user input - send to SSH or local
     terminal.current.onData((data) => {
       const term = terminalInstanceRef.current;
       const sessionId = sessionIdRef.current;
       const tabId = activeTabIdRef.current;
 
-      // Check for history navigation (ArrowUp/ArrowDown)
+      // Handle special keys immediately (don't batch)
       if (data === '\x1b[A' || data === '\x1b[B') {
+        // Flush any pending writes before history navigation
+        if (sessionId) {
+          flushWriteBuffer(isLocalRef.current, sessionId);
+        }
         const handled = handleHistoryNavigation(data === '\x1b[A' ? 'ArrowUp' : 'ArrowDown');
         if (handled) return;
-      }
+      } else if (data === '\r') {
+        // Enter - flush buffer and process
+        if (sessionId) {
+          flushWriteBuffer(isLocalRef.current, sessionId);
 
-      if (sessionId) {
-        if (isLocalRef.current) {
-          sshService.writeLocal(sessionId, data);
-        } else {
-          sshService.write(sessionId, data);
-        }
-
-        // Save command to history when Enter is pressed
-        if (data === '\r' && !isLocalRef.current && term && tabId) {
-          const currentCmd = getCurrentLine(term);
-          if (currentCmd) {
-            sshService.saveCommandHistory(tabId, currentCmd, sessionId);
-            // Update local history state
-            setCommandHistory(prev => {
-              if (prev.includes(currentCmd)) return prev;
-              return [...prev, currentCmd];
-            });
+          // Save command to history when Enter is pressed
+          if (!isLocalRef.current && term && tabId) {
+            const currentCmd = getCurrentLine(term);
+            if (currentCmd) {
+              sshService.saveCommandHistory(tabId, currentCmd, sessionId);
+              setCommandHistory(prev => {
+                if (prev.includes(currentCmd)) return prev;
+                return [...prev, currentCmd];
+              });
+            }
+            historyIndexRef.current = -1;
           }
-          // Reset history index
-          historyIndexRef.current = -1;
         }
+      } else if (data === '\x03') {
+        // Ctrl+C - flush buffer and send
+        if (sessionId) {
+          flushWriteBuffer(isLocalRef.current, sessionId);
+          if (isLocalRef.current) {
+            sshService.writeLocal(sessionId, data);
+          } else {
+            sshService.write(sessionId, data);
+          }
+        }
+      } else if (data === '\x7f') {
+        // Backspace - flush buffer, then send backspace
+        if (sessionId) {
+          flushWriteBuffer(isLocalRef.current, sessionId);
+          if (isLocalRef.current) {
+            sshService.writeLocal(sessionId, data);
+          } else {
+            sshService.write(sessionId, data);
+          }
+        }
+      } else if (sessionId) {
+        // Regular character - add to buffer
+        writeBufferRef.current += data;
+
+        // Schedule flush (5ms debounce)
+        if (writeTimerRef.current !== null) {
+          clearTimeout(writeTimerRef.current);
+        }
+        writeTimerRef.current = window.setTimeout(() => {
+          flushWriteBuffer(isLocalRef.current, sessionId);
+          writeTimerRef.current = null;
+        }, 5);
       }
     });
 
@@ -354,6 +400,11 @@ export default observer((props: TerminalContainerProps) => {
       window.removeEventListener('resize', handleResize);
       unlistenDataRef.current?.();
       unlistenCloseRef.current?.();
+
+      // Clean up write timer
+      if (writeTimerRef.current !== null) {
+        clearTimeout(writeTimerRef.current);
+      }
 
       if (sessionIdRef.current) {
         if (isLocalRef.current) {
