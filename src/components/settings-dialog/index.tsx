@@ -334,7 +334,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
                 value={settings.theme}
                 onValueChange={(value) => updateSetting("theme", value as "light" | "dark" | "system")}
               >
-                <SelectTrigger>
+                <SelectTrigger id="theme">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -351,7 +351,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
                 value={settings.language}
                 onValueChange={(value: string) => updateSetting("language", value)}
               >
-                <SelectTrigger>
+                <SelectTrigger id="language">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -391,7 +391,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
                 value={settings.cursorStyle}
                 onValueChange={(value) => updateSetting("cursorStyle", value as "block" | "underline" | "bar")}
               >
-                <SelectTrigger>
+                <SelectTrigger id="cursorStyle">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

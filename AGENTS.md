@@ -10,11 +10,11 @@
 | ---------- | ------------------------- |
 | 前端框架   | React 19 + TypeScript     |
 | 构建工具   | Vite 8.x                  |
-| UI 库      | Ant Design 6.x            |
+| **UI 库**  | **shadcn/ui + Tailwind**  |
 | 终端模拟器 | xterm.js                  |
 | 状态管理   | MobX                      |
 | 依赖注入   | tsyringe                  |
-| 样式       | UnoCSS + Sass             |
+| 样式       | Tailwind CSS + Sass       |
 | 国际化     | i18next (en, fr, cn)      |
 | 后端       | Tauri 2.x (Rust)          |
 | SSH/SFTP   | russh                     |
@@ -32,13 +32,14 @@
 
 > **重要**: 开始任何开发工作前，请先查阅相关文档
 
-| 文档                | 用途                               | 何时查阅           |
-| ------------------- | ---------------------------------- | ------------------ |
-| **docs/project.md** | 完整项目结构、实现状态、数据库结构 | 每次开发前必读     |
-| **docs/issue.md**   | 所有已知问题、BUG、待修复项        | 解决问题时查阅     |
-| **docs/design.md**  | 产品设计、功能规划、优先级         | 新功能设计时查阅   |
-| **docs/todo.md**    | 开发待办事项清单                   | 规划开发任务时查阅 |
-| **AGENTS.md**       | 本文件 - Agent 使用指南            | 初次接手项目时阅读 |
+| 文档                         | 用途                               | 何时查阅           |
+| ---------------------------- | ---------------------------------- | ------------------ |
+| **docs/project.md**          | 完整项目结构、实现状态、数据库结构 | 每次开发前必读     |
+| **docs/issue.md**            | 所有已知问题、BUG、待修复项        | 解决问题时查阅     |
+| **docs/design.md**           | 产品设计、功能规划、优先级         | 新功能设计时查阅   |
+| **docs/todo.md**             | 开发待办事项清单                   | 规划开发任务时查阅 |
+| **docs/ui/**                 | UI/功能规格与界面描述（便于 AI 阅读）| 实现或还原 UI 时  |
+| **AGENTS.md**                | 本文件 - Agent 使用指南            | 初次接手项目时阅读 |
 
 ---
 
@@ -52,7 +53,8 @@ terminal/
     ├── project.md                # 项目文档索引 (你在这里)
     ├── issue.md                  # 问题追踪
     ├── design.md                 # 设计文档
-    └── todo.md                   # 待办事项
+    ├── todo.md                   # 待办事项
+    └── ui/                       # UI/功能规格（便于 AI 阅读实现 UI）
 ```
 
 ### 前端 `src/` 结构
@@ -142,6 +144,45 @@ src-tauri/
 
 ## 关键约定
 
+### UI 组件规范 (shadcn/ui)
+
+> **强制要求**: 所有 UI 组件必须使用 shadcn/ui，禁止使用 Ant Design 或其他 UI 库。
+
+#### 使用流程
+
+1. **添加组件**: 使用 `npx shadcn@latest add <component>` 添加组件
+2. **复用现有**: 优先使用 shadcn/ui 已安装组件，而非自定义实现
+3. **组件组合**: 使用 shadcn/ui 组件组合构建复杂 UI
+
+#### 组件选择参考
+
+| 需求       | 使用组件                                            |
+| ---------- | --------------------------------------------------- |
+| 按钮       | `Button`                                            |
+| 表单输入   | `Input`, `Select`, `Switch`, `Checkbox`, `Textarea` |
+| 数据展示   | `Table`, `Card`, `Badge`, `Avatar`                  |
+| 导航       | `Tabs`, `Breadcrumb`, `Pagination`                  |
+| 模态框     | `Dialog`                                            |
+| 侧边栏面板 | `Sheet`                                             |
+| 确认对话框 | `AlertDialog`                                       |
+| 消息提示   | `sonner` (toast)                                    |
+| 加载占位   | `Skeleton`                                          |
+| 分割线     | `Separator`                                         |
+
+#### 样式规范
+
+- 使用 `className` 进行布局，**禁止覆盖组件颜色**
+- 使用语义化颜色：`bg-primary`, `text-muted-foreground` 等
+- 使用 `cn()` 处理条件类名
+- 使用 `gap-*` 替代 `space-y-*` / `space-x-*`
+- 尺寸相同时使用 `size-*` 而非 `w-* h-*`
+
+#### 图标规范
+
+- 项目使用 `lucide-react` 图标库
+- 图标置于 Button 内时使用 `data-icon="inline-start"` / `data-icon="inline-end"`
+- 图标作为独立元素时不设置尺寸类，组件会自动处理
+
 ### 前端 (React/TypeScript)
 
 1. **路径别名**: 使用 `@/` 作为从 `src/` 目录导入的前缀
@@ -178,7 +219,7 @@ src-tauri/
    return <div>{t('common.save')}</div>;
    ```
 
-5. **样式**: 推荐使用 UnoCSS 工具类，复杂样式使用 Sass
+5. **样式**: 使用 Tailwind CSS 工具类，配合 shadcn/ui 组件使用
 
 ### 后端 (Rust)
 
@@ -267,7 +308,8 @@ pnpm add <package-name>
 
 - [Tauri 2.x 文档](https://tauri.app/)
 - [React 19 文档](https://react.dev/)
-- [Ant Design](https://ant.design/)
+- [shadcn/ui 文档](https://ui.shadcn.com/)
+- [Tailwind CSS](https://tailwindcss.com/)
 - [xterm.js](https://xtermjs.org/)
 - [russh](https://github.com/warpdotdev/russh)
 - [russh-keys](https://docs.rs/russh-keys/)
@@ -276,3 +318,36 @@ pnpm add <package-name>
 ---
 
 _文档更新时间: 2026-03-19_
+
+---
+
+## UI 实现参考
+
+开发或还原界面时，**功能与 UI 描述以 `docs/ui/` 目录为准**：
+
+| 文档                       | 内容                                    |
+| -------------------------- | --------------------------------------- |
+| `docs/ui/00-design-system.md` | 主题、颜色、字体、图标、间距、交互状态 |
+| `docs/ui/01-layout-and-navigation.md` | 顶栏、侧栏导航、主内容区、工具栏布局 |
+| `docs/ui/02-views.md`     | Hosts、Terminal、SFTP、Logs、Port Forwarding、Known Hosts、Keychain、Snippets 的功能与 UI 说明 |
+
+- 每个视图章节按「功能概述 → UI 组成 → 交互」结构描述，便于直接对照实现。
+- 关键词统一（侧栏项、按钮、占位符文案），便于 AI 检索与理解。
+- `02-views.md` 末尾有视图与前端路由/组件的对照表。
+
+---
+
+## shadcn/ui Skill
+
+项目已配置 shadcn/ui skill，位于 `.agents/skills/shadcn/`。详细规范请参考该 skill 文件。常用命令：
+
+```bash
+# 添加组件
+npx shadcn@latest add button card dialog
+
+# 查看组件文档
+npx shadcn@latest docs button dialog select
+
+# 搜索组件
+npx shadcn@latest search @shadcn -q "sidebar"
+```

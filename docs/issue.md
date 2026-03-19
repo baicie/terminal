@@ -280,27 +280,52 @@ pub async fn ssh_resize(
 
 ### P0 - 必须修复 (影响核心功能)
 
-- [ ] **Issue #1**: 实现 SFTP 后端功能
-- [ ] **Issue #2**: 实现 SSH 密钥认证后端
+- [x] **Issue #1**: 实现 SFTP 后端功能 ✅
+- [x] **Issue #2**: 实现 SSH 密钥认证后端 ✅
 
 ### P1 - 应该修复 (影响用户体验)
 
-- [ ] **Issue #3**: 实现端口转发后端
-- [ ] **Issue #4**: 清理 Rust 编译警告
+- [x] **Issue #3**: 实现端口转发后端 ✅
+- [x] **Issue #4**: 清理 Rust 编译警告 ✅
 
 ### P2 - 建议修复 (增强功能)
 
-- [ ] **Issue #5**: 实现 Agent 认证
-- [ ] **Issue #6**: 实现主机链功能
-- [ ] **Issue #7**: 命令快速补全
-- [ ] **Issue #8**: Vault 加密存储
+- [x] **Issue #5**: 实现 Agent 认证 ✅
+- [x] **Issue #6**: 实现主机链功能 ✅
+- [x] **Issue #7**: 命令快速补全 ✅
+- [x] **Issue #8**: Vault 加密存储 ✅
 
 ### P3 - 未来考虑
 
-- [ ] **Issue #9**: 命令面板完善
-- [ ] **Issue #10**: ssh_resize 完善
+- [x] **Issue #9**: 命令面板完善 ✅
+- [x] **Issue #10**: ssh_resize 完善 ✅
+
+### P4 - 已修复
+
+- [x] **Issue #11**: Select 组件可访问性问题 ✅ (2026-03-19)
+
+---
+
+## 六、技术问题修复 (2026-03-19)
+
+### Issue #11: Select 组件与 Dialog 可访问性问题 ✅ 已修复
+
+**严重程度**: 中
+**状态**: ✅ 已修复
+**更新时间**: 2026-03-19
+
+**问题描述**:
+1. `<select>` 内嵌套了 `<button>` - HTML hydration 错误
+2. `DialogContent` 缺少 `DialogTitle` - 可访问性问题
+
+**修复方案**:
+1. 重写 `src/components/ui/select.tsx` - 使用 Radix UI Select 组件替代原生 HTML select
+2. 确保 DialogHeader 包含 DialogTitle 组件
+
+**修改文件**:
+- `src/components/ui/select.tsx` - 使用 `@radix-ui/react-select` 完整实现
 
 ---
 
 *文档创建时间: 2026-03-19*
-*最后更新: 2026-03-19*
+*最后更新: 2026-03-19 - 添加 Issue #11: Select 组件修复*

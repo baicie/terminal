@@ -24,7 +24,12 @@ terminal/
 ├── docs/                         # 项目文档
 │   ├── design.md                 # 设计文档
 │   ├── todo.md                   # 待办事项
-│   └── issue.md                  # 问题追踪
+│   ├── issue.md                  # 问题追踪
+│   └── ui/                       # UI 规格（功能与界面描述，便于 AI 阅读）
+│       ├── README.md             # 索引
+│       ├── 00-design-system.md   # 设计系统
+│       ├── 01-layout-and-navigation.md # 布局与导航
+│       └── 02-views.md           # 各功能视图说明
 ├── package.json                  # Node 依赖
 ├── pnpm-lock.yaml               # pnpm 锁文件
 ├── AGENTS.md                    # Agent 指南 (你正在阅读)
