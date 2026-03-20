@@ -1,16 +1,11 @@
-import { observer } from "mobx-react-lite";
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import View from "./terminal-view";
-import { useTranslation } from "react-i18next";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { SearchAddon } from "@xterm/addon-search";
-import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { useInjectable } from "@/hooks/use-di";
 import { AppStore } from "@/store/app";
 import { HostStore } from "@/store/host";
 import { sshService, ShellOutput } from "@/service/ssh";
+import { serialService } from "@/service/serial";
 import { getCommandHistory } from "@/service/database";
 import type { Host } from "@/types";
 
@@ -18,37 +13,39 @@ interface TerminalContainerProps {
   tabId?: string;
 }
 
-export default observer((props: TerminalContainerProps) => {
-  const { t } = useTranslation();
+export default (props: TerminalContainerProps) => {
   const terminalRef = useRef<HTMLDivElement | null>(null);
-  const terminal = useRef<Terminal | null>(null);
-  const fitAddon = useRef<FitAddon | null>(null);
+  const fitAddonRef = useRef<import("@xterm/addon-fit").FitAddon | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const isLocalRef = useRef<boolean>(false);
-  const app = useInjectable(AppStore);
-  const hostStore = useInjectable(HostStore);
+  const isSerialRef = useRef<boolean>(false);
   const unlistenDataRef = useRef<(() => void) | null>(null);
   const unlistenCloseRef = useRef<(() => void) | null>(null);
-
-  // Command history for autocomplete
-  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const unlistenSerialDataRef = useRef<(() => void) | null>(null);
+  const unlistenSerialCloseRef = useRef<(() => void) | null>(null);
+  const terminalInstanceRef = useRef<import("@xterm/xterm").Terminal | null>(null);
+  const activeTabIdRef = useRef<string | null>(null);
+  const inputBufferRef = useRef<string>("");
+  const commandHistoryRef = useRef<string[]>([]);
   const historyIndexRef = useRef<number>(-1);
   const currentInputRef = useRef<string>("");
-  const terminalInstanceRef = useRef<Terminal | null>(null);
-  const activeTabIdRef = useRef<string | null>(null);
+  const appStoreRef = useRef<AppStore | null>(null);
+  const hostStoreRef = useRef<HostStore | null>(null);
 
-  // Write buffer for batching rapid keystrokes
-  const writeBufferRef = useRef<string>("");
-  const writeTimerRef = useRef<number | null>(null);
-  const writePendingRef = useRef<boolean>(false);
+  // Initialize stores once using useRef (stable reference)
+  const appStore = useInjectable(AppStore);
+  const hostStore = useInjectable(HostStore);
+
+  // Store references in refs for async access
+  appStoreRef.current = appStore;
+  hostStoreRef.current = hostStore;
 
   // Load command history on mount
   useEffect(() => {
     const loadHistory = async () => {
       try {
         const history = await getCommandHistory();
-        const commands = history.map(h => h.command).filter(Boolean);
-        setCommandHistory(commands);
+        commandHistoryRef.current = history.map(h => h.command).filter(Boolean);
       } catch (e) {
         console.error("Failed to load command history:", e);
       }
@@ -56,8 +53,8 @@ export default observer((props: TerminalContainerProps) => {
     loadHistory();
   }, []);
 
-  // Get current command line from cursor position
-  const getCurrentLine = useCallback((term: Terminal): string => {
+  // Get current command line from terminal
+  const getCurrentLine = (term: import("@xterm/xterm").Terminal): string => {
     const cursorY = term.buffer.active.cursorY;
     const line = term.buffer.active.getLine(cursorY);
     if (!line) return "";
@@ -71,59 +68,51 @@ export default observer((props: TerminalContainerProps) => {
       result += char;
     }
     return result.trim();
-  }, []);
+  };
 
   // Set terminal line
-  const setCurrentLine = useCallback((term: Terminal, newLine: string) => {
-    // Move cursor to beginning of line
-    term.write('\x1b[G'); // ANSI: Cursor to column
-
-    // Clear entire line
-    term.write('\x1b[2K'); // ANSI: Clear entire line
-
-    // Write new line
+  const setCurrentLine = (term: import("@xterm/xterm").Terminal, newLine: string) => {
+    term.write('\x1b[G');
+    term.write('\x1b[2K');
     term.write(newLine);
-  }, []);
+  };
 
   // Handle command history navigation (Up/Down arrows)
-  const handleHistoryNavigation = useCallback((key: 'ArrowUp' | 'ArrowDown') => {
+  const handleHistoryNavigation = (key: 'ArrowUp' | 'ArrowDown') => {
     const term = terminalInstanceRef.current;
-    if (!term || commandHistory.length === 0) return false;
+    if (!term || commandHistoryRef.current.length === 0) return false;
 
     if (key === 'ArrowUp') {
       if (historyIndexRef.current === -1) {
-        // Save current input
         currentInputRef.current = getCurrentLine(term);
-        historyIndexRef.current = commandHistory.length - 1;
+        historyIndexRef.current = commandHistoryRef.current.length - 1;
       } else if (historyIndexRef.current > 0) {
         historyIndexRef.current--;
       }
 
       if (historyIndexRef.current >= 0) {
-        const cmd = commandHistory[historyIndexRef.current];
+        const cmd = commandHistoryRef.current[historyIndexRef.current];
         setCurrentLine(term, cmd);
       }
       return true;
     } else if (key === 'ArrowDown') {
       if (historyIndexRef.current === -1) return true;
 
-      if (historyIndexRef.current < commandHistory.length - 1) {
+      if (historyIndexRef.current < commandHistoryRef.current.length - 1) {
         historyIndexRef.current++;
-        const cmd = commandHistory[historyIndexRef.current];
+        const cmd = commandHistoryRef.current[historyIndexRef.current];
         setCurrentLine(term, cmd);
       } else {
-        // Back to current input
         historyIndexRef.current = -1;
         setCurrentLine(term, currentInputRef.current);
       }
       return true;
     }
     return false;
-  }, [commandHistory, getCurrentLine, setCurrentLine]);
+  };
 
-  // Use props.tabId or fall back to active tab
-  const activeTabId = props.tabId || app.activeTabId;
-  const activeTab = app.tabs.find((tab) => tab.id === activeTabId);
+  // Get active tab ID - only read once per render, avoid reactive access
+  const activeTabId = props.tabId || (appStoreRef.current?.activeTabId ?? null);
 
   // Keep ref in sync
   useEffect(() => {
@@ -131,72 +120,87 @@ export default observer((props: TerminalContainerProps) => {
   }, [activeTabId]);
 
   const connectToHost = useCallback(async (host: Host) => {
-    if (!terminal.current) return;
+    const term = terminalInstanceRef.current;
+    if (!term) return;
 
     isLocalRef.current = false;
-    terminal.current.write('\r\nConnecting...\r\n');
+    term.write('\r\nConnecting...\r\n');
 
     // Connect to SSH
     const result = await sshService.connect(host);
 
     if (!result.success || !result.sessionId) {
-      terminal.current.write(`\r\nConnection failed: ${result.message}\r\n`);
+      term.write(`\r\nConnection failed: ${result.message}\r\n`);
       return;
     }
 
     sessionIdRef.current = result.sessionId;
-    app.updateTab(activeTabId!, {
-      hostId: host.id,
-      connectionStatus: 'connected'
-    });
+    const currentApp = appStoreRef.current;
+    const tabId = activeTabIdRef.current;
+    if (currentApp && tabId) {
+      currentApp.updateTab(tabId, {
+        hostId: host.id,
+        connectionStatus: 'connected'
+      });
+    }
 
     // Get terminal size
-    const size = terminal.current?.cols && terminal.current?.rows
-      ? { cols: terminal.current.cols, rows: terminal.current.rows }
+    const size = term.cols && term.rows
+      ? { cols: term.cols, rows: term.rows }
       : { cols: 80, rows: 24 };
 
     // Start shell
     const shellResult = await sshService.startShell(result.sessionId, size.cols, size.rows);
 
     if (!shellResult.success) {
-      terminal.current.write(`\r\nFailed to start shell: ${shellResult.message}\r\n`);
+      term.write(`\r\nFailed to start shell: ${shellResult.message}\r\n`);
       return;
     }
 
-    terminal.current.write('\r\n');
-  }, [app, activeTabId]);
+    term.write('\r\n');
+  }, []);
 
   const connectToLocal = useCallback(async () => {
-    if (!terminal.current) return;
+    const term = terminalInstanceRef.current;
+    if (!term) return;
 
     isLocalRef.current = true;
-    terminal.current.write('\r\nStarting local shell...\r\n');
+    term.write('\r\nStarting local shell...\r\n');
 
     // Get terminal size
-    const size = terminal.current?.cols && terminal.current?.rows
-      ? { cols: terminal.current.cols, rows: terminal.current.rows }
+    const size = term.cols && term.rows
+      ? { cols: term.cols, rows: term.rows }
       : { cols: 80, rows: 24 };
 
     // Start local shell
     const result = await sshService.startLocalShell(size.cols, size.rows);
 
     if (!result.success || !result.sessionId) {
-      terminal.current.write(`\r\nFailed to start local shell: ${result.message}\r\n`);
+      term.write(`\r\nFailed to start local shell: ${result.message}\r\n`);
       return;
     }
 
     sessionIdRef.current = result.sessionId;
-    app.updateTab(activeTabId!, {
-      connectionStatus: 'connected'
-    });
+    const currentApp = appStoreRef.current;
+    const tabId = activeTabIdRef.current;
+    if (currentApp && tabId) {
+      currentApp.updateTab(tabId, {
+        connectionStatus: 'connected'
+      });
+    }
 
-    terminal.current.write('\r\n');
-  }, [app, activeTabId]);
+    term.write('\r\n');
+  }, []);
 
   useEffect(() => {
     if (!terminalRef.current) return;
 
-    terminal.current = new Terminal({
+    const { Terminal } = require("@xterm/xterm");
+    const { FitAddon } = require("@xterm/addon-fit");
+    const { SearchAddon } = require("@xterm/addon-search");
+    const { WebLinksAddon } = require("@xterm/addon-web-links");
+
+    const term = new Terminal({
       allowProposedApi: true,
       cursorBlink: true,
       fontSize: 14,
@@ -226,109 +230,105 @@ export default observer((props: TerminalContainerProps) => {
       },
     });
 
-    fitAddon.current = new FitAddon();
-    terminal.current.loadAddon(fitAddon.current);
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
 
-    terminal.current.open(terminalRef.current);
-    fitAddon.current.fit();
+    term.open(terminalRef.current);
+    fitAddon.fit();
+    fitAddonRef.current = fitAddon;
 
-    terminal.current.loadAddon(new SearchAddon());
-    terminal.current.loadAddon(new WebLinksAddon());
+    term.loadAddon(new SearchAddon());
+    term.loadAddon(new WebLinksAddon());
 
     // Store terminal instance
-    terminalInstanceRef.current = terminal.current;
+    terminalInstanceRef.current = term;
 
-    // Flush write buffer to backend (defined as regular function inside useEffect)
-    const flushWriteBuffer = (isLocal: boolean, sessionId: string) => {
-      if (writePendingRef.current || writeBufferRef.current.length === 0) return;
-
-      const data = writeBufferRef.current;
-      writeBufferRef.current = "";
-      writePendingRef.current = true;
-
-      if (isLocal) {
-        sshService.writeLocal(sessionId, data);
-      } else {
-        sshService.write(sessionId, data);
-      }
-
-      writePendingRef.current = false;
-    };
-
-    // Handle user input - send to SSH or local
-    terminal.current.onData((data) => {
-      const term = terminalInstanceRef.current;
-      const sessionId = sessionIdRef.current;
+    // Handle user input - batch input, send to backend only on Enter
+    term.onData((data: string) => {
+      const currentSessionId = sessionIdRef.current;
+      const currentTerm = terminalInstanceRef.current;
       const tabId = activeTabIdRef.current;
 
-      // Handle special keys immediately (don't batch)
-      if (data === '\x1b[A' || data === '\x1b[B') {
-        // Flush any pending writes before history navigation
-        if (sessionId) {
-          flushWriteBuffer(isLocalRef.current, sessionId);
+      // Enter - send entire line to backend
+      if (data === '\r' && currentSessionId) {
+        const line = inputBufferRef.current;
+        inputBufferRef.current = "";
+
+        console.debug('[DEBUG] Enter - sending:', line);
+
+        if (isSerialRef.current) {
+          serialService.write(currentSessionId, line);
+        } else if (isLocalRef.current) {
+          sshService.writeLocal(currentSessionId, line + '\r');
+        } else {
+          sshService.write(currentSessionId, line + '\r');
         }
+
+        // Save command to history (non-blocking, use ref only)
+        if (!isLocalRef.current && !isSerialRef.current && currentTerm && tabId && line) {
+          sshService.saveCommandHistory(tabId, line, currentSessionId);
+          // Add to local ref array (no React state update)
+          if (!commandHistoryRef.current.includes(line)) {
+            commandHistoryRef.current.push(line);
+          }
+          historyIndexRef.current = -1;
+        }
+      }
+      // Backspace
+      else if (data === '\x7f' && currentSessionId) {
+        inputBufferRef.current = inputBufferRef.current.slice(0, -1);
+        // Send backspace to backend for cursor movement
+        if (isSerialRef.current) {
+          serialService.writeRaw(currentSessionId, '\x08 \x08');
+        } else if (isLocalRef.current) {
+          sshService.writeLocal(currentSessionId, data);
+        } else {
+          sshService.write(currentSessionId, data);
+        }
+      }
+      // Ctrl+C
+      else if (data === '\x03' && currentSessionId) {
+        inputBufferRef.current = "";
+        if (isSerialRef.current) {
+          serialService.write(currentSessionId, '\x03');
+        } else if (isLocalRef.current) {
+          sshService.writeLocal(currentSessionId, data);
+        } else {
+          sshService.write(currentSessionId, data);
+        }
+      }
+      // Arrow Up/Down for history
+      else if (data === '\x1b[A' || data === '\x1b[B') {
         const handled = handleHistoryNavigation(data === '\x1b[A' ? 'ArrowUp' : 'ArrowDown');
-        if (handled) return;
-      } else if (data === '\r') {
-        // Enter - flush buffer and process
-        if (sessionId) {
-          flushWriteBuffer(isLocalRef.current, sessionId);
-
-          // Save command to history when Enter is pressed
-          if (!isLocalRef.current && term && tabId) {
-            const currentCmd = getCurrentLine(term);
-            if (currentCmd) {
-              sshService.saveCommandHistory(tabId, currentCmd, sessionId);
-              setCommandHistory(prev => {
-                if (prev.includes(currentCmd)) return prev;
-                return [...prev, currentCmd];
-              });
-            }
-            historyIndexRef.current = -1;
-          }
+        if (handled && currentTerm) {
+          // Update buffer with new line from history
+          inputBufferRef.current = getCurrentLine(currentTerm) || "";
         }
-      } else if (data === '\x03') {
-        // Ctrl+C - flush buffer and send
-        if (sessionId) {
-          flushWriteBuffer(isLocalRef.current, sessionId);
-          if (isLocalRef.current) {
-            sshService.writeLocal(sessionId, data);
-          } else {
-            sshService.write(sessionId, data);
-          }
+      }
+      // Regular characters - add to buffer
+      else if (data && currentSessionId) {
+        inputBufferRef.current += data;
+        // Immediately send to backend
+        if (isSerialRef.current) {
+          serialService.writeRaw(currentSessionId, data);
+        } else if (isLocalRef.current) {
+          sshService.writeLocal(currentSessionId, data);
+        } else {
+          sshService.write(currentSessionId, data);
         }
-      } else if (data === '\x7f') {
-        // Backspace - flush buffer, then send backspace
-        if (sessionId) {
-          flushWriteBuffer(isLocalRef.current, sessionId);
-          if (isLocalRef.current) {
-            sshService.writeLocal(sessionId, data);
-          } else {
-            sshService.write(sessionId, data);
-          }
-        }
-      } else if (sessionId) {
-        // Regular character - add to buffer
-        writeBufferRef.current += data;
-
-        // Schedule flush (5ms debounce)
-        if (writeTimerRef.current !== null) {
-          clearTimeout(writeTimerRef.current);
-        }
-        writeTimerRef.current = window.setTimeout(() => {
-          flushWriteBuffer(isLocalRef.current, sessionId);
-          writeTimerRef.current = null;
-        }, 5);
       }
     });
 
     // Handle resize
-    terminal.current.onResize(({ cols, rows }) => {
-      if (sessionIdRef.current) {
-        if (isLocalRef.current) {
-          sshService.resizeLocal(sessionIdRef.current, cols, rows);
+    term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
+      const currentSessionId = sessionIdRef.current;
+      if (currentSessionId) {
+        if (isSerialRef.current) {
+          // Serial port doesn't need resize
+        } else if (isLocalRef.current) {
+          sshService.resizeLocal(currentSessionId, cols, rows);
         } else {
-          sshService.resize(sessionIdRef.current, cols, rows);
+          sshService.resize(currentSessionId, cols, rows);
         }
       }
     });
@@ -337,33 +337,61 @@ export default observer((props: TerminalContainerProps) => {
     const setupListeners = async () => {
       // SSH listeners
       unlistenDataRef.current = await sshService.onData((output: ShellOutput) => {
-        if (terminal.current && output.session_id === sessionIdRef.current && !isLocalRef.current) {
-          terminal.current.write(output.data);
+        const term = terminalInstanceRef.current;
+        if (term && output.session_id === sessionIdRef.current && !isLocalRef.current) {
+          term.write(output.data);
         }
       });
 
       unlistenCloseRef.current = await sshService.onClose((sid: string) => {
-        if (sid === sessionIdRef.current && !isLocalRef.current && terminal.current) {
-          terminal.current.write('\r\n\r\n[Connection closed]\r\n');
+        const term = terminalInstanceRef.current;
+        const currentSessionId = sessionIdRef.current;
+        if (sid === currentSessionId && !isLocalRef.current && term) {
+          term.write('\r\n\r\n[Connection closed]\r\n');
           sessionIdRef.current = null;
           const tabId = activeTabIdRef.current;
-          if (tabId) app.updateTab(tabId, { connectionStatus: 'disconnected' });
+          const app = appStoreRef.current;
+          if (tabId && app) app.updateTab(tabId, { connectionStatus: 'disconnected' });
         }
       });
 
       // Local terminal listeners
       await sshService.onLocalData((output: ShellOutput) => {
-        if (terminal.current && output.session_id === sessionIdRef.current && isLocalRef.current) {
-          terminal.current.write(output.data);
+        const term = terminalInstanceRef.current;
+        if (term && output.session_id === sessionIdRef.current && isLocalRef.current) {
+          term.write(output.data);
         }
       });
 
       await sshService.onLocalClose((sid: string) => {
-        if (sid === sessionIdRef.current && isLocalRef.current && terminal.current) {
-          terminal.current.write('\r\n\r\n[Local shell closed]\r\n');
+        const term = terminalInstanceRef.current;
+        const currentSessionId = sessionIdRef.current;
+        if (sid === currentSessionId && isLocalRef.current && term) {
+          term.write('\r\n\r\n[Local shell closed]\r\n');
           sessionIdRef.current = null;
           const tabId = activeTabIdRef.current;
-          if (tabId) app.updateTab(tabId, { connectionStatus: 'disconnected' });
+          const app = appStoreRef.current;
+          if (tabId && app) app.updateTab(tabId, { connectionStatus: 'disconnected' });
+        }
+      });
+
+      // Serial port listeners
+      unlistenSerialDataRef.current = await serialService.onData((output: ShellOutput) => {
+        const term = terminalInstanceRef.current;
+        if (term && output.session_id === sessionIdRef.current && isSerialRef.current) {
+          term.write(output.data);
+        }
+      });
+
+      unlistenSerialCloseRef.current = await serialService.onClose((sid: string) => {
+        const term = terminalInstanceRef.current;
+        const currentSessionId = sessionIdRef.current;
+        if (sid === currentSessionId && isSerialRef.current && term) {
+          term.write('\r\n\r\n[Serial port disconnected]\r\n');
+          sessionIdRef.current = null;
+          const tabId = activeTabIdRef.current;
+          const app = appStoreRef.current;
+          if (tabId && app) app.updateTab(tabId, { connectionStatus: 'disconnected' });
         }
       });
     };
@@ -372,12 +400,16 @@ export default observer((props: TerminalContainerProps) => {
 
     // Handle window resize
     const handleResize = () => {
-      fitAddon.current?.fit();
-      if (sessionIdRef.current && terminal.current) {
-        if (isLocalRef.current) {
-          sshService.resizeLocal(sessionIdRef.current, terminal.current.cols, terminal.current.rows);
+      fitAddon.fit();
+      const currentSessionId = sessionIdRef.current;
+      const term = terminalInstanceRef.current;
+      if (term && currentSessionId) {
+        if (isSerialRef.current) {
+          // Serial port doesn't need resize
+        } else if (isLocalRef.current) {
+          sshService.resizeLocal(currentSessionId, term.cols, term.rows);
         } else {
-          sshService.resize(sessionIdRef.current, terminal.current.cols, terminal.current.rows);
+          sshService.resize(currentSessionId, term.cols, term.rows);
         }
       }
     };
@@ -386,12 +418,14 @@ export default observer((props: TerminalContainerProps) => {
 
     // Initial fit
     setTimeout(() => {
-      fitAddon.current?.fit();
-      if (terminal.current && sessionIdRef.current) {
+      fitAddon.fit();
+      const currentSessionId = sessionIdRef.current;
+      const term = terminalInstanceRef.current;
+      if (term && currentSessionId && !isSerialRef.current) {
         if (isLocalRef.current) {
-          sshService.resizeLocal(sessionIdRef.current, terminal.current.cols, terminal.current.rows);
+          sshService.resizeLocal(currentSessionId, term.cols, term.rows);
         } else {
-          sshService.resize(sessionIdRef.current, terminal.current.cols, terminal.current.rows);
+          sshService.resize(currentSessionId, term.cols, term.rows);
         }
       }
     }, 100);
@@ -400,45 +434,92 @@ export default observer((props: TerminalContainerProps) => {
       window.removeEventListener('resize', handleResize);
       unlistenDataRef.current?.();
       unlistenCloseRef.current?.();
-
-      // Clean up write timer
-      if (writeTimerRef.current !== null) {
-        clearTimeout(writeTimerRef.current);
-      }
+      unlistenSerialDataRef.current?.();
+      unlistenSerialCloseRef.current?.();
 
       if (sessionIdRef.current) {
-        if (isLocalRef.current) {
+        if (isSerialRef.current) {
+          serialService.disconnect(sessionIdRef.current);
+        } else if (isLocalRef.current) {
           sshService.disconnectLocal(sessionIdRef.current);
         } else {
           sshService.disconnect(sessionIdRef.current);
         }
       }
 
-      terminal.current?.dispose();
+      term.dispose();
     };
   }, []);
 
   // Connect to host when tab has hostId (remote SSH)
+  // Use a ref-based approach to avoid reactive updates
   useEffect(() => {
-    if (activeTab?.hostId && terminal.current) {
-      const host = hostStore.hosts.find(h => h.id === activeTab.hostId);
+    const tabId = activeTabId;
+    if (!tabId) return;
+
+    const app = appStoreRef.current;
+    const store = hostStoreRef.current;
+    if (!app || !store) return;
+
+    const tab = app.tabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    if (tab.hostId) {
+      const host = store.hosts.find(h => h.id === tab.hostId);
       if (host && !sessionIdRef.current) {
         connectToHost(host);
       }
     }
-  }, [activeTab?.hostId, activeTabId, hostStore.hosts, connectToHost, app]);
+  }, [connectToHost]); // Only re-run when connectToHost changes
 
   // Connect to local shell when tab type is local
   useEffect(() => {
-    if (activeTab?.type === 'local' && terminal.current && !sessionIdRef.current) {
+    const tabId = activeTabId;
+    if (!tabId) return;
+
+    const app = appStoreRef.current;
+    if (!app) return;
+
+    const tab = app.tabs.find(t => t.id === tabId);
+    if (tab?.type === 'local' && !sessionIdRef.current) {
       connectToLocal();
     }
-  }, [activeTab?.type, activeTabId, connectToLocal, app]);
+  }, [connectToLocal]); // Only re-run when connectToLocal changes
+
+  // Connect to serial port when tab type is serial
+  const connectToSerial = useCallback(async (sessionId: string) => {
+    const term = terminalInstanceRef.current;
+    if (!term) return;
+
+    isSerialRef.current = true;
+    term.write('\r\nSerial port connected\r\n');
+
+    sessionIdRef.current = sessionId;
+    const currentApp = appStoreRef.current;
+    const tabId = activeTabIdRef.current;
+    if (currentApp && tabId) {
+      currentApp.updateTab(tabId, {
+        connectionStatus: 'connected'
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const tabId = activeTabId;
+    if (!tabId) return;
+
+    const app = appStoreRef.current;
+    if (!app) return;
+
+    const tab = app.tabs.find(t => t.id === tabId);
+    if (tab?.type === 'serial' && !sessionIdRef.current && tab.serialSessionId) {
+      connectToSerial(tab.serialSessionId);
+    }
+  }, [connectToSerial]);
 
   return (
     <View
       terminalRef={terminalRef}
-      t={t}
     />
   );
-});
+};

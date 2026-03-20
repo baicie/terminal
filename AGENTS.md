@@ -32,16 +32,16 @@
 
 > **重要**: 开始任何开发工作前，请先查阅相关文档
 
-| 文档                         | 用途                               | 何时查阅           |
-| ---------------------------- | ---------------------------------- | ------------------ |
-| **docs/project.md**          | 完整项目结构、实现状态、数据库结构 | 每次开发前必读     |
-| **docs/issue.md**            | 所有已知问题、BUG、待修复项        | 解决问题时查阅     |
-| **docs/design.md**           | 产品设计、功能规划、优先级         | 新功能设计时查阅   |
-| **docs/todo.md**             | 开发待办事项清单                   | 规划开发任务时查阅 |
-| **docs/xterm.md**            | xterm.js 完整 API 文档与插件指南   | 终端开发时必读     |
-| **docs/ui/**                 | UI/功能规格与界面描述（便于 AI 阅读）| 实现或还原 UI 时  |
-| **docs/shadcn-components.md** | shadcn/ui 全部组件索引与用法说明    | 查阅组件选型与用法 |
-| **AGENTS.md**                | 本文件 - Agent 使用指南             | 初次接手项目时阅读 |
+| 文档                          | 用途                                  | 何时查阅           |
+| ----------------------------- | ------------------------------------- | ------------------ |
+| **docs/project.md**           | 完整项目结构、实现状态、数据库结构    | 每次开发前必读     |
+| **docs/issue.md**             | 所有已知问题、BUG、待修复项           | 解决问题时查阅     |
+| **docs/design.md**            | 产品设计、功能规划、优先级            | 新功能设计时查阅   |
+| **docs/todo.md**              | 开发待办事项清单                      | 规划开发任务时查阅 |
+| **docs/xterm.md**             | xterm.js 完整 API 文档与插件指南      | 终端开发时必读     |
+| **docs/ui/**                  | UI/功能规格与界面描述（便于 AI 阅读） | 实现或还原 UI 时   |
+| **docs/shadcn-components.md** | shadcn/ui 全部组件索引与用法说明      | 查阅组件选型与用法 |
+| **AGENTS.md**                 | 本文件 - Agent 使用指南               | 初次接手项目时阅读 |
 
 ---
 
@@ -65,25 +65,35 @@ terminal/
 ```
 src/
 ├── view/                         # 页面组件
-│   ├── terminal/                 # 终端视图
+│   ├── hosts/                   # 主机列表视图
+│   ├── terminal/                # 终端视图
 │   ├── sftp/                    # SFTP 视图
-│   ├── vaults/                   # 保险库视图
-│   └── home/                     # 首页
+│   ├── vaults/                  # 保险库视图
+│   ├── keychain/                # 密钥管理视图
+│   ├── port-forward/            # 端口转发视图
+│   ├── snippets/                # 代码片段视图
+│   ├── known-hosts/             # 已知主机视图
+│   ├── logs/                    # 日志视图
+│   └── home/                    # 首页 (默认跳转至 hosts)
 ├── components/                    # 可复用组件
 │   ├── ui/                       # 基础 UI 组件
+│   ├── app-sidebar/              # 左侧导航栏
+│   ├── top-toolbar/              # 顶部工具栏
+│   ├── view-container/           # 视图容器组件
 │   ├── host-list/                # 主机列表
 │   ├── command-history/          # 命令历史
 │   ├── snippet-manager/          # Snippet 管理
 │   ├── port-forward/             # 端口转发
 │   ├── split-pane/              # 分屏组件
+│   ├── workspace-switcher/       # 工作区切换器
 │   └── settings-dialog/           # 设置对话框
 ├── store/                        # MobX 状态管理
 ├── service/                      # 业务服务 (SSH, 数据库等)
 ├── hooks/                        # 自定义 React Hooks
 ├── utils/                        # 工具函数
 ├── locales/                      # 国际化 (en/fr/cn)
-├── router/                       # React Router
-└── layout/                       # 布局组件
+├── router/                       # React Router 路由配置
+└── layout/                       # 布局组件 (主布局、标签页等)
 ```
 
 ### 后端 `src-tauri/` 结构
@@ -180,7 +190,13 @@ src-tauri/
 **正确示例：**
 
 ```tsx
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 
 <Select value={form.type} onValueChange={(v) => setForm({ type: v })}>
@@ -192,7 +208,7 @@ import { Label } from "@/components/ui/label";
     <SelectItem value="a">Option A</SelectItem>
     <SelectItem value="b">Option B</SelectItem>
   </SelectContent>
-</Select>
+</Select>;
 ```
 
 **错误示例（严格禁止）：**
@@ -213,21 +229,21 @@ import { Label } from "@/components/ui/label";
 
 **表单控件对应关系：**
 
-| 需求           | 使用组件                         |
-| -------------- | -------------------------------- |
-| 下拉选择       | `Select`                         |
-| 多行文本输入   | `Textarea`                       |
-| 布尔开关       | `Switch`（设置类）或 `Checkbox`（表单） |
-| 单选/多选列表  | `RadioGroup` / `Checkbox`        |
-| 搜索式下拉     | `Command` + `Combobox` 模式      |
+| 需求          | 使用组件                                |
+| ------------- | --------------------------------------- |
+| 下拉选择      | `Select`                                |
+| 多行文本输入  | `Textarea`                              |
+| 布尔开关      | `Switch`（设置类）或 `Checkbox`（表单） |
+| 单选/多选列表 | `RadioGroup` / `Checkbox`               |
+| 搜索式下拉    | `Command` + `Combobox` 模式             |
 
 **其他禁止项：**
 
-| 需求         | 错误写法                     | 正确写法              |
-| ------------ | ---------------------------- | --------------------- |
-| 标签         | `<label>` 原生标签           | `Label` 组件          |
-| 输入框按钮组 | 原生 `div` + `position: absolute` | `InputGroup` 组件     |
-| 分割线       | `<hr>` 或 `border-t` div     | `Separator` 组件      |
+| 需求         | 错误写法                          | 正确写法          |
+| ------------ | --------------------------------- | ----------------- |
+| 标签         | `<label>` 原生标签                | `Label` 组件      |
+| 输入框按钮组 | 原生 `div` + `position: absolute` | `InputGroup` 组件 |
+| 分割线       | `<hr>` 或 `border-t` div          | `Separator` 组件  |
 
 #### 样式规范
 
@@ -342,11 +358,13 @@ pnpm add <package-name>
 - ⚠️ 端口转发 (UI 完成，后端未实现)
 - ✅ 命令历史、Snippet、分屏模式
 
-### Phase 3/4 - 高级功能 🔴 未实现
+### Phase 3/4 - 高级功能 ✅ 已完成
 
-- 🔴 Agent 转发、主机链、Vault 加密
-- 🔴 多工作区、跨设备同步
-- 🔴 串口连接、团队协作等
+> 2026-03-20 完成 Phase 3 和串口连接功能
+
+- ✅ Agent 转发、主机链、Vault 加密
+- ✅ 多工作区、跨设备同步
+- ✅ 串口连接 (2026-03-20)
 
 ---
 
@@ -388,16 +406,16 @@ _文档更新时间: 2026-03-19_
 
 ### 已集成的插件
 
-| 插件 | 用途 | 使用方式 |
-|------|------|----------|
-| `@xterm/addon-fit` | 自动调整终端大小 | `fitAddon.fit()` 在容器大小变化时调用 |
-| `@xterm/addon-search` | 终端内搜索 | `searchAddon.findNext()` |
-| `@xterm/addon-web-links` | 链接检测 | 自动检测 URL，点击打开 |
-| `@xterm/addon-canvas` | Canvas 渲染 | 提升渲染性能 |
-| `@xterm/addon-webgl` | WebGL 加速 | GPU 加速渲染 |
-| `@xterm/addon-image` | 图片支持 | 通过六字节序列显示图片 |
-| `@xterm/addon-unicode11` | Unicode 11 | 支持新 Unicode 字符 |
-| `@xterm/addon-ligatures` | 连字字体 | 编程字体连字支持 |
+| 插件                     | 用途             | 使用方式                              |
+| ------------------------ | ---------------- | ------------------------------------- |
+| `@xterm/addon-fit`       | 自动调整终端大小 | `fitAddon.fit()` 在容器大小变化时调用 |
+| `@xterm/addon-search`    | 终端内搜索       | `searchAddon.findNext()`              |
+| `@xterm/addon-web-links` | 链接检测         | 自动检测 URL，点击打开                |
+| `@xterm/addon-canvas`    | Canvas 渲染      | 提升渲染性能                          |
+| `@xterm/addon-webgl`     | WebGL 加速       | GPU 加速渲染                          |
+| `@xterm/addon-image`     | 图片支持         | 通过六字节序列显示图片                |
+| `@xterm/addon-unicode11` | Unicode 11       | 支持新 Unicode 字符                   |
+| `@xterm/addon-ligatures` | 连字字体         | 编程字体连字支持                      |
 
 ### 常用 API
 
@@ -409,10 +427,10 @@ const term = new Terminal({ cursorBlink: true, fontSize: 14 });
 term.open(container);
 
 // 写入数据（支持 VT 序列）
-term.write('\x1b[2K'); // 清除行
+term.write("\x1b[2K"); // 清除行
 
 // 事件监听
-term.onData(data => sshService.write(sessionId, data));
+term.onData((data) => sshService.write(sessionId, data));
 term.onResize(({ cols, rows }) => sshService.resize(sessionId, cols, rows));
 
 // 缓冲区操作
@@ -434,15 +452,126 @@ term.loadAddon(new FitAddon());
 
 开发或还原界面时，**功能与 UI 描述以 `docs/ui/` 目录为准**：
 
-| 文档                       | 内容                                    |
-| -------------------------- | --------------------------------------- |
-| `docs/ui/00-design-system.md` | 主题、颜色、字体、图标、间距、交互状态 |
-| `docs/ui/01-layout-and-navigation.md` | 顶栏、侧栏导航、主内容区、工具栏布局 |
-| `docs/ui/02-views.md`     | Hosts、Terminal、SFTP、Logs、Port Forwarding、Known Hosts、Keychain、Snippets 的功能与 UI 说明 |
+| 文档                                  | 内容                                                                                           |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `docs/ui/00-design-system.md`         | 主题、颜色、字体、图标、间距、交互状态                                                         |
+| `docs/ui/01-layout-and-navigation.md` | 顶栏、侧栏导航、主内容区、工具栏布局                                                           |
+| `docs/ui/02-views.md`                 | Hosts、Terminal、SFTP、Logs、Port Forwarding、Known Hosts、Keychain、Snippets 的功能与 UI 说明 |
 
 - 每个视图章节按「功能概述 → UI 组成 → 交互」结构描述，便于直接对照实现。
 - 关键词统一（侧栏项、按钮、占位符文案），便于 AI 检索与理解。
 - `02-views.md` 末尾有视图与前端路由/组件的对照表。
+
+---
+
+## React Router 使用规范
+
+### 路由结构
+
+项目使用 React Router 6 进行页面路由管理，所有路由配置在 `src/router/index.tsx` 中。
+
+### 布局结构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  TopToolbar (顶栏)                                           │
+│  - WorkspaceSwitcher                                         │
+│  - Host / SFTP 导航按钮                                      │
+│  - 标签页 (MenuTabs)                                        │
+├──────────────┬──────────────────────────────────────────────┤
+│              │                                              │
+│  AppSidebar  │  主内容区 (Outlet)                          │
+│  (左侧导航)   │  - Hosts 视图                               │
+│              │  - SFTP 视图                                │
+│  - Hosts     │  - Terminal 视图                           │
+│  - Keychain  │  - Keychain 视图                           │
+│  - Port Fwd  │  - Snippets 视图                           │
+│  - Snippets  │  - Logs 视图                               │
+│  - Known Hosts│  - 等等...                                │
+│  - Logs      │                                              │
+│              │                                              │
+└──────────────┴──────────────────────────────────────────────┘
+```
+
+### 路由配置
+
+| 路由 | 组件 | 说明 |
+|------|------|------|
+| `/` 或 `/hosts` | `HostsView` | 主机列表页面 |
+| `/terminal` | `TerminalView` | 终端会话页面 |
+| `/sftp` | `SftpView` | SFTP 文件传输页面 |
+| `/keychain` | `KeychainView` | SSH 密钥管理 |
+| `/port-forward` | `PortForwardView` | 端口转发管理 |
+| `/snippets` | `SnippetsView` | 代码片段管理 |
+| `/known-hosts` | `KnownHostsView` | 已知主机管理 |
+| `/logs` | `LogsView` | 日志查看页面 |
+
+### 添加新视图规范
+
+1. **创建视图文件**: 在 `src/view/` 下创建新文件夹，如 `src/view/example/`
+
+```typescript
+// src/view/example/index.tsx
+import { ViewContainer, ViewToolbar, ViewContent, ViewHeader, EmptyState } from "@/components/view-container";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ExampleIcon, Plus } from "lucide-react";
+
+const ExampleView: React.FC = () => {
+  return (
+    <ViewContainer>
+      <ViewToolbar className="gap-4">
+        <Input placeholder="Search..." className="max-w-xs h-9" />
+        <div className="flex-1" />
+        <Button size="sm">
+          <Plus className="size-4 mr-1" data-icon="inline-start" />
+          New Item
+        </Button>
+      </ViewToolbar>
+
+      <ViewContent className="p-6">
+        <ViewHeader title="Example" description="Example view description" />
+        {/* Content here */}
+      </ViewContent>
+    </ViewContainer>
+  );
+};
+
+export default ExampleView;
+```
+
+2. **注册路由**: 在 `src/router/index.tsx` 中添加新路由
+
+```typescript
+import { lazy } from "react";
+const ExampleView = lazy(() => import("../view/example"));
+
+// 在 routes 数组中添加
+{
+  path: "example",
+  element: warpCom(ExampleView),
+},
+```
+
+3. **添加导航项**: 在 `src/components/app-sidebar/index.tsx` 中添加导航链接
+
+```typescript
+const navItems: NavItem[] = [
+  // ... existing items
+  {
+    path: "/example",
+    label: "Example",
+    icon: <ExampleIcon className="size-5" />,
+  },
+];
+```
+
+### 路由最佳实践
+
+1. **使用懒加载**: 使用 `React.lazy` 和 `Suspense` 进行代码分割
+2. **状态管理**: 标签页和会话状态使用 MobX 管理，不依赖 URL
+3. **布局组件**: 使用 `ViewContainer` 及其子组件保持 UI 一致性
+4. **导航链接**: 使用 `NavLink` 和 `useNavigate` 进行编程式导航
 
 ---
 

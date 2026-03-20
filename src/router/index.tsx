@@ -1,16 +1,26 @@
-import { Suspense } from "react";
+import { Suspense, lazy } from "react";
 import type { RouteObject } from "react-router-dom";
 import { createBrowserRouter } from "react-router-dom";
 import Layout from "../layout";
-import VaultsLayout from "../layout/vaults";
-import Vaults from "../view/vaults/vaults-container";
-import Sftp from "../view/sftp/sftp-container";
-import Terminal from "../view/terminal/terminal-container";
-import HomeView from "../view/home/home-view";
 
-const Loading = () => <div>Loading...</div>;
+const Loading = () => (
+  <div className="flex items-center justify-center h-full">
+    <div className="text-muted-foreground">Loading...</div>
+  </div>
+);
 
-const warpCom = (Com: any) => {
+// Lazy load views for better performance
+const HostsView = lazy(() => import("../view/hosts"));
+const SftpView = lazy(() => import("../view/sftp/sftp-container"));
+const TerminalView = lazy(() => import("../view/terminal/terminal-container"));
+const VaultsView = lazy(() => import("../view/vaults/vaults-container"));
+const KeychainView = lazy(() => import("../view/keychain"));
+const PortForwardView = lazy(() => import("../view/port-forward"));
+const SnippetsView = lazy(() => import("../view/snippets"));
+const KnownHostsView = lazy(() => import("../view/known-hosts"));
+const LogsView = lazy(() => import("../view/logs"));
+
+const warpCom = (Com: React.ComponentType) => {
   return (
     <Suspense fallback={<Loading />}>
       <Com />
@@ -21,35 +31,70 @@ const warpCom = (Com: any) => {
 export const routes: RouteObject[] = [
   {
     element: <Layout />,
-    errorElement: <div>error</div>,
+    errorElement: <div>Error loading page</div>,
     children: [
+      // Default route - Home/Hosts
       {
-        path: "/",
-        element: warpCom(HomeView),
+        index: true,
+        element: warpCom(HostsView),
       },
+      // Hosts - SSH connections
       {
-        path: "vaults",
-        element: <VaultsLayout />,
-        children: [
-          {
-            path: "",
-            element: warpCom(Vaults),
-          },
-        ],
+        path: "hosts",
+        element: warpCom(HostsView),
       },
-      {
-        path: "sftp",
-        element: warpCom(Sftp),
-      },
+      // Terminal - Active terminal sessions
       {
         path: "terminal",
-        element: warpCom(Terminal),
+        element: warpCom(TerminalView),
+      },
+      // SFTP - File transfer
+      {
+        path: "sftp",
+        element: warpCom(SftpView),
+      },
+      // Vaults - Encrypted storage
+      {
+        path: "vaults",
+        element: warpCom(VaultsView),
+      },
+      // Keychain - SSH keys and certificates
+      {
+        path: "keychain",
+        element: warpCom(KeychainView),
+      },
+      // Port Forwarding - SSH tunnels
+      {
+        path: "port-forward",
+        element: warpCom(PortForwardView),
+      },
+      // Snippets - Command scripts
+      {
+        path: "snippets",
+        element: warpCom(SnippetsView),
+      },
+      // Known Hosts - SSH host fingerprints
+      {
+        path: "known-hosts",
+        element: warpCom(KnownHostsView),
+      },
+      // Logs - Connection history
+      {
+        path: "logs",
+        element: warpCom(LogsView),
       },
     ],
   },
   {
     path: "*",
-    element: <div>not found</div>,
+    element: (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-2">404</h1>
+          <p className="text-muted-foreground">Page not found</p>
+        </div>
+      </div>
+    ),
   },
 ];
 

@@ -6,6 +6,8 @@ use terminal::{
     ssh_connect, ssh_connect_agent, ssh_connect_key, ssh_disconnect, ssh_execute, ssh_resize,
     ssh_shell, ssh_write, sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_mkdir,
     sftp_rename, sftp_upload, port_forward_start, port_forward_stop, port_forward_list,
+    serial_list, serial_baud_rates, serial_connect, serial_write, serial_write_raw,
+    serial_is_connected, serial_disconnect,
 };
 use vault::{
     vault_exists, vault_create, vault_unlock, vault_lock, vault_is_unlocked,
@@ -55,6 +57,13 @@ pub fn run() {
             vault_list,
             vault_delete,
             vault_change_password,
+            serial_list,
+            serial_baud_rates,
+            serial_connect,
+            serial_write,
+            serial_write_raw,
+            serial_is_connected,
+            serial_disconnect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -90,13 +90,20 @@ export interface Variable {
 export interface Tab {
   id: string;
   label: string;
-  type: 'local' | 'remote';
+  type: 'local' | 'remote' | 'serial';
   hostId?: string;
+  serialSessionId?: string;  // Serial session ID when type is 'serial'
+  serialConfig?: SerialTabConfig;  // Serial port config for display
   connectionStatus?: 'connected' | 'disconnected' | 'connecting';
   // Split screen support
   splitMode?: 'none' | 'horizontal' | 'vertical';
   splitId?: string;  // ID of the split group this tab belongs to
   splitChildren?: string[];  // IDs of child tabs in split mode
+}
+
+export interface SerialTabConfig {
+  port: string;
+  baudRate: number;
 }
 
 export interface SplitGroup {

@@ -270,9 +270,9 @@ pub async fn ssh_resize(
 | 命令面板 | ✅ 已实现 (2026-03-19) |
 | 多工作区 | ✅ 已实现 (2026-03-19) |
 | 跨设备同步 | ✅ 已实现 (2026-03-19) |
+| 串口连接 | ✅ 已实现 (2026-03-20) |
 | 团队协作 | 📋 待开发 |
 | SSH 证书认证 | 📋 待开发 |
-| 串口连接 | 📋 待开发 |
 | 高级脚本 | 📋 待开发 |
 
 ---
@@ -329,4 +329,52 @@ pub async fn ssh_resize(
 ---
 
 *文档创建时间: 2026-03-19*
-*最后更新: 2026-03-19 - 添加 Issue #11: Select 组件修复*
+*最后更新: 2026-03-20 - 添加 Issue #12: 串口连接功能*
+
+---
+
+## 七、Phase 4 企业功能 (2026-03-20)
+
+### Issue #12: 串口连接功能 ✅ 已实现
+
+**严重程度**: 高
+**状态**: ✅ 已实现
+**影响功能**: 串口终端连接
+**更新时间**: 2026-03-20
+
+**实现内容**:
+
+**Rust 后端** (`src-tauri/src/terminal.rs`):
+
+```rust
+// 串口相关命令
+serial_list() -> Vec<SerialPortInfo>           // 列出可用串口
+serial_baud_rates() -> Vec<u32>                 // 获取常用波特率
+serial_connect(name, baud_rate, ...) -> String  // 连接串口
+serial_write(session_id, data)                   // 写入串口 (带回车)
+serial_write_raw(session_id, data)              // 原始写入串口
+serial_is_connected(session_id) -> bool         // 检查连接状态
+serial_disconnect(session_id)                   // 断开连接
+```
+
+**前端服务** (`src/service/serial.ts`):
+
+- `SerialService` 类提供完整的串口 API
+- 支持串口枚举、连接、读写、断开
+
+**UI 组件** (`src/components/serial-dialog/index.tsx`):
+
+- `SerialDialog` 对话框组件
+- 支持选择串口端口、配置波特率、数据位、停止位、校验、流控
+
+**终端集成** (`src/view/terminal/terminal-container.tsx`):
+
+- 支持串口标签页类型 (`type: 'serial'`)
+- 集成串口数据监听和写入
+- 支持 Ctrl+C 中断
+
+**使用方式**:
+
+1. 点击顶部工具栏 "Serial" 按钮
+2. 在串口对话框中选择端口和配置参数
+3. 点击连接，串口终端将打开
