@@ -55,10 +55,10 @@ const navItems: NavItem[] = [
 
 interface NavItemProps {
   item: NavItem;
-  collapsed?: boolean;
+  iconOnly?: boolean;
 }
 
-const NavItem: React.FC<NavItemProps> = ({ item, collapsed }) => {
+const NavItem: React.FC<NavItemProps> = ({ item, iconOnly }) => {
   const { t } = useTranslation("demo");
   const location = useLocation();
   const hostsPaths = ["/", "/hosts"];
@@ -74,17 +74,17 @@ const NavItem: React.FC<NavItemProps> = ({ item, collapsed }) => {
         "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150",
         "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
         pathActive && "bg-secondary/80 text-foreground shadow-sm",
-        collapsed && "justify-center px-2"
+        iconOnly && "justify-center px-2"
       )}
     >
       {item.icon}
-      {!collapsed && (
+      {!iconOnly && (
         <span className="text-sm font-medium truncate">{t(item.labelKey)}</span>
       )}
     </NavLink>
   );
 
-  if (collapsed) {
+  if (iconOnly) {
     return (
       <Tooltip delayDuration={0}>
         <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
@@ -99,39 +99,46 @@ const NavItem: React.FC<NavItemProps> = ({ item, collapsed }) => {
 };
 
 interface AppSidebarProps {
-  collapsed?: boolean;
   onToggleCollapse?: () => void;
-  /** 可拖拽调整宽度时由父级传入像素宽度 */
+  /** 由父级传入像素宽度 */
   width?: number;
   /** 拖拽中禁用过渡 */
   resizing?: boolean;
 }
 
-const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed = false, onToggleCollapse, width, resizing }) => {
+/** 宽度低于此值显示图标模式 */
+const ICON_ONLY_THRESHOLD = 90;
+
+const AppSidebar: React.FC<AppSidebarProps> = ({ onToggleCollapse, width, resizing }) => {
   const { t } = useTranslation("demo");
+  const iconOnly = width != null && width < ICON_ONLY_THRESHOLD;
 
   return (
     <div
       className={cn(
         "h-full bg-secondary/40 border-r border-border/60 flex flex-col shrink-0 min-h-0",
-        !resizing && "transition-all duration-200",
-        collapsed && "w-16"
+        !resizing && "transition-all duration-200"
       )}
-      style={!collapsed && width != null ? { width } : undefined}
+      style={width != null ? { width } : undefined}
     >
       {/* Header with collapse button */}
       <div className="px-3 py-3 border-b border-border/60 flex items-center justify-between">
-        {!collapsed && (
-          <span className="text-sm font-semibold text-foreground">{t("app.name")}</span>
-        )}
+        <span
+          className={cn(
+            "text-sm font-semibold text-foreground truncate transition-opacity duration-200",
+            iconOnly && "opacity-0 pointer-events-none"
+          )}
+        >
+          {t("app.name")}
+        </span>
         <Button
           variant="ghost"
           size="icon"
-          className={cn("size-7 shrink-0", collapsed && "mx-auto")}
+          className={cn("size-7 shrink-0", iconOnly && "mx-auto")}
           onClick={onToggleCollapse}
-          title={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
+          title={iconOnly ? t("sidebar.expand") : t("sidebar.collapse")}
         >
-          {collapsed ? (
+          {iconOnly ? (
             <PanelLeft className="size-4" />
           ) : (
             <PanelLeftClose className="size-4" />
@@ -142,7 +149,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed = false, onToggleColl
       {/* Navigation Items */}
       <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
         {navItems.map((item) => (
-          <NavItem key={item.path} item={item} collapsed={collapsed} />
+          <NavItem key={item.path} item={item} iconOnly={iconOnly} />
         ))}
       </nav>
 
@@ -151,7 +158,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed = false, onToggleColl
         <p
           className={cn(
             "text-[11px] text-muted-foreground/70 px-3 transition-opacity duration-200",
-            collapsed && "opacity-0"
+            iconOnly && "opacity-0"
           )}
         >
           {t("app.version")}

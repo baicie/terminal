@@ -9,10 +9,9 @@ import TopToolbar from "@/components/top-toolbar";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_WIDTH_KEY = "terminal.sidebar.width";
-const SIDEBAR_MIN = 80;  // 软限制（足够窄时自动切换图标模式）
+const SIDEBAR_MIN = 64;     // 图标模式宽度
 const SIDEBAR_MAX = 420;
 const SIDEBAR_DEFAULT = 200;
-const COLLAPSE_THRESHOLD = 160;  // 窄于此值自动切换为图标模式
 
 function readSidebarWidth(): number {
   try {
@@ -23,15 +22,6 @@ function readSidebarWidth(): number {
     return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, n));
   } catch {
     return SIDEBAR_DEFAULT;
-  }
-}
-
-function readSidebarCollapsed(): boolean {
-  try {
-    const raw = localStorage.getItem("terminal.sidebar.collapsed");
-    return raw === "true";
-  } catch {
-    return false;
   }
 }
 
@@ -47,11 +37,9 @@ const TerminalContent: React.FC<{ tabId: string }> = ({ tabId }) => {
 const MainLayoutInner: React.FC<{
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
-  sidebarCollapsed: boolean;
-  setSidebarCollapsed: (v: boolean) => void;
   sidebarWidth: number;
   onSidebarWidthChange: (w: number) => void;
-}> = ({ sidebarOpen, onToggleSidebar, sidebarCollapsed, setSidebarCollapsed, sidebarWidth, onSidebarWidthChange }) => {
+}> = ({ sidebarOpen, onToggleSidebar, sidebarWidth, onSidebarWidthChange }) => {
   const app = useInjectable(AppStore);
   const [resizing, setResizing] = useState(false);
   const dragRef = useRef({ startX: 0, startWidth: SIDEBAR_DEFAULT });
@@ -77,29 +65,22 @@ const MainLayoutInner: React.FC<{
   const onResizeStart = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
-      dragRef.current = {
-        startX: e.clientX,
-        startWidth: sidebarCollapsed ? 64 : sidebarWidth,
-      };
+      dragRef.current = { startX: e.clientX, startWidth: sidebarWidth };
       setResizing(true);
     },
-    [sidebarWidth, sidebarCollapsed]
+    [sidebarWidth]
   );
 
+  // 折叠按钮：切换最小宽度和默认宽度
   const handleToggleCollapse = useCallback(() => {
-    const next = !sidebarCollapsed;
-    setSidebarCollapsed(next);
+    const next = sidebarWidth <= SIDEBAR_MIN ? SIDEBAR_DEFAULT : SIDEBAR_MIN;
+    onSidebarWidthChange(next);
     try {
-      localStorage.setItem("terminal.sidebar.collapsed", String(next));
-      // 展开时恢复默认宽度
-      if (next === false) {
-        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(SIDEBAR_DEFAULT));
-        onSidebarWidthChange(SIDEBAR_DEFAULT);
-      }
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next));
     } catch {
       /* ignore */
     }
-  }, [sidebarCollapsed, setSidebarCollapsed, onSidebarWidthChange]);
+  }, [sidebarWidth, onSidebarWidthChange]);
 
   useEffect(() => {
     if (!resizing) return;
@@ -107,32 +88,6 @@ const MainLayoutInner: React.FC<{
     const onMove = (e: MouseEvent) => {
       const dx = e.clientX - dragRef.current.startX;
       let next = dragRef.current.startWidth + dx;
-
-      // 从图标模式展开
-      if (sidebarCollapsed && dx > 30) {
-        setSidebarCollapsed(false);
-        dragRef.current.startWidth = SIDEBAR_DEFAULT;
-        dragRef.current.startX = e.clientX;
-        onSidebarWidthChange(SIDEBAR_DEFAULT);
-        try {
-          localStorage.setItem("terminal.sidebar.collapsed", "false");
-        } catch {
-          /* ignore */
-        }
-        return;
-      }
-
-      // 缩小到阈值时切换为图标模式
-      if (!sidebarCollapsed && next < COLLAPSE_THRESHOLD) {
-        setSidebarCollapsed(true);
-        try {
-          localStorage.setItem("terminal.sidebar.collapsed", "true");
-        } catch {
-          /* ignore */
-        }
-        setResizing(false);
-        return;
-      }
 
       next = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, next));
       lastWidthRef.current = next;
@@ -154,7 +109,7 @@ const MainLayoutInner: React.FC<{
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [resizing, onSidebarWidthChange, sidebarCollapsed, setSidebarCollapsed]);
+  }, [resizing, onSidebarWidthChange]);
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -164,15 +119,14 @@ const MainLayoutInner: React.FC<{
         {sidebarOpen && (
           <>
             <AppSidebar
-              collapsed={sidebarCollapsed}
               onToggleCollapse={handleToggleCollapse}
-              width={sidebarCollapsed ? undefined : sidebarWidth}
+              width={sidebarWidth}
               resizing={resizing}
             />
             <div
               role="separator"
               aria-orientation="vertical"
-              aria-valuenow={sidebarCollapsed ? 64 : sidebarWidth}
+              aria-valuenow={sidebarWidth}
               tabIndex={0}
               className={cn(
                 "w-1.5 shrink-0 cursor-col-resize flex items-stretch justify-center group outline-none",
@@ -195,7 +149,6 @@ const MainLayoutInner: React.FC<{
 
 const MainLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   const app = useInjectable(AppStore);
 
@@ -227,8 +180,6 @@ const MainLayout: React.FC = () => {
     <MainLayoutInner
       sidebarOpen={sidebarOpen}
       onToggleSidebar={() => setSidebarOpen((p) => !p)}
-      sidebarCollapsed={sidebarCollapsed}
-      setSidebarCollapsed={setSidebarCollapsed}
       sidebarWidth={sidebarWidth}
       onSidebarWidthChange={setSidebarWidth}
     />
