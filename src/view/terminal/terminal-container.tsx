@@ -204,6 +204,7 @@ export default (props: TerminalContainerProps) => {
       cursorBlink: true,
       fontSize: 14,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      allowTransparency: true,
       theme: {
         background: '#1e1e1e',
         foreground: '#cccccc',
@@ -338,7 +339,8 @@ export default (props: TerminalContainerProps) => {
       unlistenDataRef.current = await sshService.onData((output: ShellOutput) => {
         const term = terminalInstanceRef.current;
         if (term && output.session_id === sessionIdRef.current && !isLocalRef.current) {
-          term.write(output.data);
+          // Strip \r from server echo to avoid double characters
+          term.write(output.data.replace(/\r/g, ""));
         }
       });
 
@@ -358,7 +360,8 @@ export default (props: TerminalContainerProps) => {
       await sshService.onLocalData((output: ShellOutput) => {
         const term = terminalInstanceRef.current;
         if (term && output.session_id === sessionIdRef.current && isLocalRef.current) {
-          term.write(output.data);
+          // PTY echo includes \r; strip it to avoid double characters (cursor-back + re-render)
+          term.write(output.data.replace(/\r/g, ""));
         }
       });
 
@@ -378,7 +381,7 @@ export default (props: TerminalContainerProps) => {
       unlistenSerialDataRef.current = await serialService.onData((output: ShellOutput) => {
         const term = terminalInstanceRef.current;
         if (term && output.session_id === sessionIdRef.current && isSerialRef.current) {
-          term.write(output.data);
+          term.write(output.data.replace(/\r/g, ""));
         }
       });
 
