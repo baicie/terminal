@@ -6,9 +6,10 @@ import { cn } from "@/lib/utils";
 import { X, Columns, Rows } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { observer } from "mobx-react-lite";
 
 /** 顶栏会话标签：仅展示已打开的终端/串口等标签（主机列表从左侧栏进入） */
-const MenuTabs: React.FC<{ onNewTab?: () => void }> = () => {
+const MenuTabs: React.FC = observer(() => {
   const { t } = useTranslation("demo");
   const app = useInjectable(AppStore);
   const [contextMenu, setContextMenu] = useState<{
@@ -131,6 +132,6 @@ const MenuTabs: React.FC<{ onNewTab?: () => void }> = () => {
       )}
     </div>
   );
-};
+});
 
 export default MenuTabs;

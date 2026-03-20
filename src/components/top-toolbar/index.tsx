@@ -122,7 +122,7 @@ const TopToolbar: React.FC<{
               {t("toolbar.sftp")}
             </Button>
 
-            <MenuTabs onNewTab={handleNewLocalTerminal} />
+            <MenuTabs />
 
             <Button
               variant="ghost"
