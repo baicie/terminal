@@ -112,7 +112,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed = false, onToggleColl
     <div
       className={cn(
         "h-full bg-secondary/40 border-r border-border/60 flex flex-col shrink-0 min-h-0 transition-all duration-200",
-        collapsed ? "w-16" : "w-60"
+        collapsed && "w-16"
       )}
       style={!collapsed && width != null ? { width } : undefined}
     >
