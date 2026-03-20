@@ -77,10 +77,13 @@ const MainLayoutInner: React.FC<{
   const onResizeStart = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
-      dragRef.current = { startX: e.clientX, startWidth: sidebarWidth };
+      dragRef.current = {
+        startX: e.clientX,
+        startWidth: sidebarCollapsed ? 64 : sidebarWidth,
+      };
       setResizing(true);
     },
-    [sidebarWidth]
+    [sidebarWidth, sidebarCollapsed]
   );
 
   const handleToggleCollapse = useCallback(() => {
@@ -105,8 +108,22 @@ const MainLayoutInner: React.FC<{
       const dx = e.clientX - dragRef.current.startX;
       let next = dragRef.current.startWidth + dx;
 
-      // 窄于阈值时自动切换为图标模式
-      if (next < COLLAPSE_THRESHOLD && !sidebarCollapsed) {
+      // 从图标模式展开
+      if (sidebarCollapsed && dx > 30) {
+        setSidebarCollapsed(false);
+        dragRef.current.startWidth = SIDEBAR_DEFAULT;
+        dragRef.current.startX = e.clientX;
+        onSidebarWidthChange(SIDEBAR_DEFAULT);
+        try {
+          localStorage.setItem("terminal.sidebar.collapsed", "false");
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+
+      // 缩小到阈值时切换为图标模式
+      if (!sidebarCollapsed && next < COLLAPSE_THRESHOLD) {
         setSidebarCollapsed(true);
         try {
           localStorage.setItem("terminal.sidebar.collapsed", "true");
@@ -151,21 +168,19 @@ const MainLayoutInner: React.FC<{
               onToggleCollapse={handleToggleCollapse}
               width={sidebarCollapsed ? undefined : sidebarWidth}
             />
-            {!sidebarCollapsed && (
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                aria-valuenow={sidebarWidth}
-                tabIndex={0}
-                className={cn(
-                  "w-1.5 shrink-0 cursor-col-resize flex items-stretch justify-center group outline-none",
-                  "hover:bg-border/80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-                )}
-                onMouseDown={onResizeStart}
-              >
-                <span className="w-px h-full bg-border/60 group-hover:bg-primary/40 transition-colors" />
-              </div>
-            )}
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-valuenow={sidebarCollapsed ? 64 : sidebarWidth}
+              tabIndex={0}
+              className={cn(
+                "w-1.5 shrink-0 cursor-col-resize flex items-stretch justify-center group outline-none",
+                "hover:bg-border/80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              )}
+              onMouseDown={onResizeStart}
+            >
+              <span className="w-px h-full bg-border/60 group-hover:bg-primary/40 transition-colors" />
+            </div>
           </>
         )}
 
