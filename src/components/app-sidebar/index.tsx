@@ -1,4 +1,5 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -12,39 +13,39 @@ import {
 
 interface NavItem {
   path: string;
-  label: string;
+  labelKey: string;
   icon: React.ReactNode;
 }
 
 const navItems: NavItem[] = [
   {
     path: "/hosts",
-    label: "Hosts",
+    labelKey: "nav.hosts",
     icon: <Server className="size-5" />,
   },
   {
     path: "/keychain",
-    label: "Keychain",
+    labelKey: "nav.keychain",
     icon: <Key className="size-5" />,
   },
   {
     path: "/port-forward",
-    label: "Port Forward",
+    labelKey: "nav.portForward",
     icon: <ArrowLeftRight className="size-5" />,
   },
   {
     path: "/snippets",
-    label: "Snippets",
+    labelKey: "nav.snippets",
     icon: <Code2 className="size-5" />,
   },
   {
     path: "/known-hosts",
-    label: "Known Hosts",
+    labelKey: "nav.knownHosts",
     icon: <Fingerprint className="size-5" />,
   },
   {
     path: "/logs",
-    label: "Logs",
+    labelKey: "nav.logs",
     icon: <FileText className="size-5" />,
   },
 ];
@@ -54,27 +55,35 @@ interface NavItemProps {
 }
 
 const NavItem: React.FC<NavItemProps> = ({ item }) => {
+  const { t } = useTranslation("demo");
+  const location = useLocation();
+  const hostsPaths = ["/", "/hosts"];
+  const pathActive =
+    item.path === "/hosts"
+      ? hostsPaths.includes(location.pathname)
+      : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+
   return (
     <Tooltip delayDuration={0}>
       <TooltipTrigger asChild>
         <NavLink
-          to={item.path}
-          className={({ isActive }) =>
+          to={item.path === "/hosts" ? "/hosts" : item.path}
+          className={() =>
             cn(
               "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors",
               "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
-              isActive && "bg-secondary/80 text-foreground shadow-sm"
+              pathActive && "bg-secondary/80 text-foreground shadow-sm"
             )
           }
         >
           {item.icon}
           <span className="text-sm font-medium hidden group-[.collapsed]:hidden">
-            {item.label}
+            {t(item.labelKey)}
           </span>
         </NavLink>
       </TooltipTrigger>
       <TooltipContent side="right" className="hidden group:hidden">
-        <p>{item.label}</p>
+        <p>{t(item.labelKey)}</p>
       </TooltipContent>
     </Tooltip>
   );
@@ -82,18 +91,22 @@ const NavItem: React.FC<NavItemProps> = ({ item }) => {
 
 interface AppSidebarProps {
   collapsed?: boolean;
+  /** 可拖拽调整宽度时由父级传入像素宽度 */
+  width?: number;
 }
 
-const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed = false }) => {
+const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed = false, width }) => {
+  const { t } = useTranslation("demo");
   return (
     <div
       className={cn(
-        "h-full bg-secondary/40 border-r border-border/60 flex flex-col shrink-0 transition-all duration-200",
-        collapsed ? "w-16" : "w-60"
+        "h-full bg-secondary/40 border-r border-border/60 flex flex-col shrink-0 min-h-0 transition-[width] duration-75",
+        collapsed ? "w-16" : width == null ? "w-60" : ""
       )}
+      style={!collapsed && width != null ? { width } : undefined}
     >
       {/* Navigation Items */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
         {navItems.map((item) => (
           <NavItem key={item.path} item={item} />
         ))}
@@ -107,7 +120,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed = false }) => {
             collapsed && "opacity-0"
           )}
         >
-          Terminal v1.0
+          {t("app.version")}
         </p>
       </div>
     </div>

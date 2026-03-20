@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { X, Columns, Rows } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
-const MenuTabs: React.FC = () => {
+/** 顶栏会话标签：仅展示已打开的终端/串口等标签（主机列表从左侧栏进入） */
+const MenuTabs: React.FC<{ onNewTab?: () => void }> = () => {
+  const { t } = useTranslation("demo");
   const app = useInjectable(AppStore);
-  const navigate = useNavigate();
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -53,36 +54,24 @@ const MenuTabs: React.FC = () => {
     }
   };
 
-  const getTabStatus = (tab: typeof app.tabs[0]) => {
+  const getTabStatus = (tab: (typeof app.tabs)[0]) => {
     if (tab.splitMode && tab.splitMode !== "none") {
       return tab.splitMode === "horizontal" ? "⬜" : "⬛";
     }
     return "";
   };
 
-  const isHomeActive = app.activeTabId === null;
+  if (app.tabs.length === 0) {
+    return null;
+  }
 
   return (
-    <div className="flex items-center gap-0.5">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => navigate("/")}
-        className={cn(
-          "rounded-md px-4 py-1 h-auto text-sm font-medium transition-all duration-150",
-          isHomeActive
-            ? "bg-secondary/80 text-foreground shadow-sm"
-            : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
-        )}
-      >
-        Home
-      </Button>
-
+    <div className="flex items-center gap-0.5 min-w-0 overflow-x-auto">
       {app.tabs.map((tab) => (
         <div
           key={tab.id}
           className={cn(
-            "flex items-center gap-1.5 px-3 py-1 rounded-md text-sm transition-all duration-150 cursor-pointer",
+            "flex items-center gap-1.5 px-3 py-1 rounded-md text-sm transition-all duration-150 cursor-pointer shrink-0 max-w-[200px]",
             app.activeTabId === tab.id
               ? "bg-secondary/80 text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
@@ -90,13 +79,13 @@ const MenuTabs: React.FC = () => {
           onClick={() => app.setActiveTab(tab.id)}
           onContextMenu={(e) => handleContextMenu(e, tab.id)}
         >
-          <span>
+          <span className="truncate">
             {tab.label} {getTabStatus(tab)}
           </span>
           <Button
             variant="ghost"
             size="icon"
-            className="size-5 opacity-60 hover:opacity-100"
+            className="size-5 opacity-60 hover:opacity-100 shrink-0"
             onClick={(e) => {
               e.stopPropagation();
               app.removeTab(tab.id);
@@ -119,7 +108,7 @@ const MenuTabs: React.FC = () => {
             onClick={handleSplitVertical}
           >
             <Columns className="size-4" />
-            Split Vertical
+            {t("tabs.splitVertical")}
           </Button>
           <Button
             variant="ghost"
@@ -127,7 +116,7 @@ const MenuTabs: React.FC = () => {
             onClick={handleSplitHorizontal}
           >
             <Rows className="size-4" />
-            Split Horizontal
+            {t("tabs.splitHorizontal")}
           </Button>
           <Separator className="my-1" />
           <Button
@@ -136,7 +125,7 @@ const MenuTabs: React.FC = () => {
             onClick={handleCloseSplit}
           >
             <X className="size-4" />
-            Close Split
+            {t("tabs.closeSplit")}
           </Button>
         </div>
       )}

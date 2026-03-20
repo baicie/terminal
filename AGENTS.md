@@ -573,6 +573,18 @@ const navItems: NavItem[] = [
 3. **布局组件**: 使用 `ViewContainer` 及其子组件保持 UI 一致性
 4. **导航链接**: 使用 `NavLink` 和 `useNavigate` 进行编程式导航
 
+### 主题（明暗）
+
+- **单一数据源**：`AppStore.theme`（`light` | `dark` | `system`），启动时由 `app.hydrateFromDatabase()` 从 SQLite `app_settings` 同步。
+- **应用到 DOM**：`App.tsx` 根据 `app.theme` 切换 `document.documentElement` 的 `dark` class；`system` 时监听 `prefers-color-scheme` 变化。
+- **设置对话框**：修改主题时须同时调用 `app.setTheme()`（立即生效）并在保存时写入 `saveAppSettings`。
+- **Toast**：`components/ui/sonner.tsx` 通过 `MutationObserver` 跟随 `dark` class，**不要**依赖未包裹的 `next-themes` `ThemeProvider`。
+
+### 主导航布局
+
+- **顶栏**：`WorkspaceSwitcher` 可使用 `variant="vaults"` 对齐产品参考图；主区为 SFTP 入口 + 会话标签 +「新建标签」；次要入口收入「更多」菜单。
+- **左侧栏**：`AppSidebar` 宽度可拖拽调整，像素值持久化到 `localStorage` 键 `terminal.sidebar.width`（约 200–420px）。
+
 ---
 
 ## shadcn/ui Skill

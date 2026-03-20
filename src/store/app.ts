@@ -1,14 +1,17 @@
 import { getConfig } from "@/service/config";
+import { getAppSettings } from "@/service/database";
 import { makeAutoObservable, runInAction } from "mobx";
 import { singleton } from "tsyringe";
 import type { Tab, SplitGroup } from "@/types";
 
 type NewTab = Omit<Tab, "id">;
 
+export type AppThemeMode = "light" | "dark" | "system";
+
 @singleton()
 export class AppStore {
   config = {};
-  theme = "dark";
+  theme: AppThemeMode = "dark";
   language = "en";
   tabs: Tab[] = [];
   splitGroups: SplitGroup[] = [];
@@ -17,6 +20,27 @@ export class AppStore {
 
   constructor() {
     makeAutoObservable(this);
+  }
+
+  setTheme(theme: AppThemeMode) {
+    this.theme = theme;
+  }
+
+  setLanguage(language: string) {
+    this.language = language;
+  }
+
+  /** 从 SQLite 同步主题与语言（启动时调用） */
+  async hydrateFromDatabase() {
+    try {
+      const s = await getAppSettings();
+      runInAction(() => {
+        this.theme = s.theme;
+        this.language = s.language;
+      });
+    } catch (e) {
+      console.error("hydrateFromDatabase failed:", e);
+    }
   }
 
   addTab(tab: NewTab) {

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import {
+  Cloud,
   Layers,
   Plus,
   Settings,
@@ -24,9 +25,11 @@ import type { Workspace } from "@/types";
 
 interface WorkspaceSwitcherProps {
   onSettingsClick?: () => void;
+  /** 与产品参考图一致：顶栏显示为 Vaults */
+  variant?: "workspace" | "vaults";
 }
 
-const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = observer(({ onSettingsClick }) => {
+const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = observer(({ onSettingsClick, variant = "workspace" }) => {
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -93,9 +96,15 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = observer(({ onSettin
           size="sm"
           className="gap-2 h-8 px-2.5 text-muted-foreground hover:text-foreground"
         >
-          <Layers className="size-4" />
+          {variant === "vaults" ? (
+            <Cloud className="size-4 shrink-0" />
+          ) : (
+            <Layers className="size-4 shrink-0" />
+          )}
           <span className="max-w-[100px] truncate text-sm">
-            {workspaceStore.activeWorkspace?.name || "Workspace"}
+            {variant === "vaults"
+              ? "Vaults"
+              : workspaceStore.activeWorkspace?.name || "Workspace"}
           </span>
         </Button>
       </DropdownMenuTrigger>

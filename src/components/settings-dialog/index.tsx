@@ -35,6 +35,9 @@ import {
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
+import { useInjectable } from "@/hooks/use-di";
+import { AppStore } from "@/store/app";
+import i18nCore from "@/locales";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -52,6 +55,7 @@ interface ImportPreview {
 }
 
 const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose }) => {
+  const app = useInjectable(AppStore);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -84,6 +88,9 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
     if (!settings) return;
     try {
       await saveAppSettings(settings);
+      app.setTheme(settings.theme);
+      app.setLanguage(settings.language);
+      await i18nCore.changeLanguage(settings.language);
       onClose();
     } catch (error) {
       console.error("Failed to save settings:", error);
@@ -93,6 +100,13 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
   const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     if (settings) {
       setSettings({ ...settings, [key]: value });
+    }
+    if (key === "theme") {
+      app.setTheme(value as AppSettings["theme"]);
+    }
+    if (key === "language") {
+      app.setLanguage(value as string);
+      void i18nCore.changeLanguage(value as string);
     }
   };
 

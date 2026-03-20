@@ -12,10 +12,15 @@ import { router } from "./router";
 import { useInjectable } from "./hooks/use-di";
 import { AppStore } from "./store/app";
 import locales from "./locales";
+import i18nCore from "./locales";
 
 export default observer(() => {
   const { i18n } = useTranslation();
   const app = useInjectable(AppStore);
+
+  useEffect(() => {
+    void app.hydrateFromDatabase();
+  }, [app]);
 
   useEffect(() => {
     const handleLanguageChange = (lng: string) => {
@@ -30,26 +35,32 @@ export default observer(() => {
     };
   }, [i18n]);
 
-  // Apply dark class on mount and whenever theme changes
+  // 与设置、AppStore.theme 同步：写入 document 的 dark class（不依赖轮询）
   useEffect(() => {
-    const applyTheme = (theme: string) => {
+    const applyTheme = (mode: string) => {
       const root = document.documentElement;
-      if (theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
-        root.classList.add("dark");
-      } else {
-        root.classList.remove("dark");
-      }
+      const dark =
+        mode === "dark" ||
+        (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      root.classList.toggle("dark", dark);
     };
 
     applyTheme(app.theme);
 
-    // Watch for theme changes in app store
-    const interval = setInterval(() => {
-      applyTheme(app.theme);
-    }, 100);
-
-    return () => clearInterval(interval);
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onSystemChange = () => {
+      if (app.theme === "system") applyTheme("system");
+    };
+    mq.addEventListener("change", onSystemChange);
+    return () => mq.removeEventListener("change", onSystemChange);
   }, [app.theme]);
+
+  // 数据库恢复的语言与 i18n 对齐
+  useEffect(() => {
+    if (app.language && i18nCore.language !== app.language) {
+      void i18nCore.changeLanguage(app.language);
+    }
+  }, [app.language]);
 
   return (
     <TooltipProvider>
