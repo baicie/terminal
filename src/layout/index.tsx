@@ -25,6 +25,15 @@ function readSidebarWidth(): number {
   }
 }
 
+function readSidebarCollapsed(): boolean {
+  try {
+    const raw = localStorage.getItem("terminal.sidebar.collapsed");
+    return raw === "true";
+  } catch {
+    return false;
+  }
+}
+
 const TerminalContent: React.FC<{ tabId: string }> = ({ tabId }) => {
   const app = useInjectable(AppStore);
   const tab = app.tabs.find((t) => t.id === tabId);
@@ -37,9 +46,11 @@ const TerminalContent: React.FC<{ tabId: string }> = ({ tabId }) => {
 const MainLayoutInner: React.FC<{
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
+  sidebarCollapsed: boolean;
+  onToggleCollapse: () => void;
   sidebarWidth: number;
   onSidebarWidthChange: (w: number) => void;
-}> = ({ sidebarOpen, onToggleSidebar, sidebarWidth, onSidebarWidthChange }) => {
+}> = ({ sidebarOpen, onToggleSidebar, sidebarCollapsed, onToggleCollapse, sidebarWidth, onSidebarWidthChange }) => {
   const app = useInjectable(AppStore);
   const [resizing, setResizing] = useState(false);
   const dragRef = useRef({ startX: 0, startWidth: SIDEBAR_DEFAULT });
@@ -108,20 +119,26 @@ const MainLayoutInner: React.FC<{
       <div className="flex-1 flex overflow-hidden min-h-0">
         {sidebarOpen && (
           <>
-            <AppSidebar width={sidebarWidth} />
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-valuenow={sidebarWidth}
-              tabIndex={0}
-              className={cn(
-                "w-1.5 shrink-0 cursor-col-resize flex items-stretch justify-center group outline-none",
-                "hover:bg-border/80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-              )}
-              onMouseDown={onResizeStart}
-            >
-              <span className="w-px h-full bg-border/60 group-hover:bg-primary/40 transition-colors" />
-            </div>
+            <AppSidebar
+              collapsed={sidebarCollapsed}
+              onToggleCollapse={onToggleCollapse}
+              width={sidebarCollapsed ? undefined : sidebarWidth}
+            />
+            {!sidebarCollapsed && (
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-valuenow={sidebarWidth}
+                tabIndex={0}
+                className={cn(
+                  "w-1.5 shrink-0 cursor-col-resize flex items-stretch justify-center group outline-none",
+                  "hover:bg-border/80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                )}
+                onMouseDown={onResizeStart}
+              >
+                <span className="w-px h-full bg-border/60 group-hover:bg-primary/40 transition-colors" />
+              </div>
+            )}
           </>
         )}
 
@@ -135,6 +152,7 @@ const MainLayoutInner: React.FC<{
 
 const MainLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   const app = useInjectable(AppStore);
 
@@ -154,6 +172,18 @@ const MainLayout: React.FC = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const handleToggleCollapse = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("terminal.sidebar.collapsed", String(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
   const handleNewLocalTerminal = () => {
     const newTab = app.addTab({
       label: "Local",
@@ -166,6 +196,8 @@ const MainLayout: React.FC = () => {
     <MainLayoutInner
       sidebarOpen={sidebarOpen}
       onToggleSidebar={() => setSidebarOpen((p) => !p)}
+      sidebarCollapsed={sidebarCollapsed}
+      onToggleCollapse={handleToggleCollapse}
       sidebarWidth={sidebarWidth}
       onSidebarWidthChange={setSidebarWidth}
     />

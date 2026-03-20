@@ -128,6 +128,8 @@ export default {
   "sidebar.favorites": "Favoris",
   "sidebar.sessions": "SESSIONS",
   "sidebar.localTerminal": "Terminal local",
+  "sidebar.collapse": "Réduire la barre latérale",
+  "sidebar.expand": "Développer la barre latérale",
 
   // Settings
   "settings.settings": "Paramètres",

@@ -128,6 +128,8 @@ export default {
   "sidebar.favorites": "收藏夹",
   "sidebar.sessions": "会话",
   "sidebar.localTerminal": "本地终端",
+  "sidebar.collapse": "折叠侧边栏",
+  "sidebar.expand": "展开侧边栏",
 
   // Settings
   "settings.settings": "设置",
