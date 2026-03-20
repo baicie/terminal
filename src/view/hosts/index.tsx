@@ -198,7 +198,7 @@ const HostsView: React.FC = observer(() => {
           </AlertDescription>
         </Alert>
 
-        <ViewHeader title={t("hosts.title")} description={`${filteredHosts.length} ${t("hosts.title").toLowerCase()}`} />
+        <ViewHeader title={t("hosts.title")} description={t("hosts.count", { count: filteredHosts.length })} />
 
         {filteredHosts.length === 0 ? (
           <EmptyState

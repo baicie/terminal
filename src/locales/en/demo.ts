@@ -67,6 +67,7 @@ export default {
 
   // Hosts
   "hosts.title": "Hosts",
+  "hosts.count": "{count} host(s)",
   "hosts.search": "Find a host or ssh user@hostname...",
   "hosts.connect": "CONNECT",
   "hosts.newHost": "NEW HOST",

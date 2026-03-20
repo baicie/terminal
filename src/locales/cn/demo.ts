@@ -67,6 +67,7 @@ export default {
 
   // Hosts
   "hosts.title": "主机",
+  "hosts.count": "{count} 台主机",
   "hosts.search": "搜索主机或 ssh user@hostname...",
   "hosts.connect": "连接",
   "hosts.newHost": "新建主机",

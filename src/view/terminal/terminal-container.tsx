@@ -1,6 +1,10 @@
 import { useEffect, useRef, useCallback } from "react";
 import View from "./terminal-view";
 import "@xterm/xterm/css/xterm.css";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { useInjectable } from "@/hooks/use-di";
 import { AppStore } from "@/store/app";
 import { HostStore } from "@/store/host";
@@ -194,11 +198,6 @@ export default (props: TerminalContainerProps) => {
 
   useEffect(() => {
     if (!terminalRef.current) return;
-
-    const { Terminal } = require("@xterm/xterm");
-    const { FitAddon } = require("@xterm/addon-fit");
-    const { SearchAddon } = require("@xterm/addon-search");
-    const { WebLinksAddon } = require("@xterm/addon-web-links");
 
     const term = new Terminal({
       allowProposedApi: true,

@@ -329,7 +329,7 @@ pub async fn ssh_resize(
 ---
 
 *文档创建时间: 2026-03-19*
-*最后更新: 2026-03-20 - 添加 Issue #12: 串口连接功能*
+*最后更新: 2026-03-20 - 添加 Issue #12: 串口连接功能, Issue #13: require() bug, Issue #14: i18n 配置修复*
 
 ---
 
@@ -378,3 +378,74 @@ serial_disconnect(session_id)                   // 断开连接
 1. 点击顶部工具栏 "Serial" 按钮
 2. 在串口对话框中选择端口和配置参数
 3. 点击连接，串口终端将打开
+
+---
+
+## 八、Bug 修复记录 (2026-03-20)
+
+### Issue #13: terminal-container.tsx 使用 require() 导致浏览器报错 ✅ 已修复
+
+**严重程度**: 高
+**状态**: ✅ 已修复
+**影响功能**: 终端视图无法正常加载
+**错误信息**: `ReferenceError: Can't find variable: require`
+**修复时间**: 2026-03-20
+
+**问题描述**:
+`src/view/terminal/terminal-container.tsx` 第 198 行在 `useEffect` 中使用了 `require()` 动态导入 xterm.js 插件，这在 Vite 构建的浏览器环境中无法工作。
+
+**修复方案**:
+将 `require()` 替换为 ES6 的静态 `import` 语句：
+
+```typescript
+// 修复前 (错误)
+const { Terminal } = require("@xterm/xterm");
+const { FitAddon } = require("@xterm/addon-fit");
+const { SearchAddon } = require("@xterm/addon-search");
+const { WebLinksAddon } = require("@xterm/addon-web-links");
+
+// 修复后 (正确)
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+```
+
+**修改文件**:
+- `src/view/terminal/terminal-container.tsx`
+
+---
+
+### Issue #14: i18n 命名空间配置错误导致翻译不显示 ✅ 已修复
+
+**严重程度**: 高
+**状态**: ✅ 已修复
+**影响功能**: 页面显示翻译键名而非翻译文本
+**修复时间**: 2026-03-20
+
+**问题描述**:
+组件使用 `useTranslation("demo")` 访问 `demo` 命名空间的翻译，但 i18n 配置将资源注册为 `translation` 命名空间，导致翻译无法找到。
+
+**修复方案**:
+修改 `src/locales/index.ts` 的 i18n 配置，将资源直接注册到正确的命名空间：
+
+```typescript
+// 修复前
+resources: {
+  en: { translation: en },  // ❌ 错误
+  cn: { translation: cn },
+  fr: { translation: fr },
+},
+
+// 修复后
+resources: {
+  en: en,  // ✅ 正确 - 包含 demo 和 layout 命名空间
+  cn: cn,
+  fr: fr,
+},
+defaultNS: 'demo',
+```
+
+**修改文件**:
+- `src/locales/index.ts`
+- `src/view/hosts/index.tsx` - 添加 `hosts.count` 翻译键

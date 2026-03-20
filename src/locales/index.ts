@@ -10,17 +10,12 @@ i18n
   .use(initReactI18next)
   .init({
     resources: {
-      en: {
-        translation: en,
-      },
-      cn: {
-        translation: cn,
-      },
-      fr: {
-        translation: fr,
-      },
+      en: en,
+      cn: cn,
+      fr: fr,
     },
     fallbackLng: 'en',
+    defaultNS: 'demo',
     interpolation: {
       escapeValue: false,
     },
