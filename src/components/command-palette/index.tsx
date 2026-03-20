@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { observer } from "mobx-react-lite";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -341,6 +341,9 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(({ open, onClose 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-xl p-0 gap-0 overflow-hidden">
+        <DialogHeader className="sr-only">
+          <DialogTitle>Command Palette</DialogTitle>
+        </DialogHeader>
         {/* Search Input */}
         <div className="p-4 border-b">
           <div className="relative">

@@ -344,6 +344,9 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(({ open, onClose 
     return (
       <Dialog open={open} onOpenChange={onClose}>
         <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Settings</DialogTitle>
+          </DialogHeader>
           <div className="py-8 text-center">Loading...</div>
         </DialogContent>
       </Dialog>
