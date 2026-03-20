@@ -9,9 +9,9 @@ import TopToolbar from "@/components/top-toolbar";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_WIDTH_KEY = "terminal.sidebar.width";
-const SIDEBAR_MIN = 200;
+const SIDEBAR_MIN = 64;  // 图标宽度
 const SIDEBAR_MAX = 420;
-const SIDEBAR_DEFAULT = 248;
+const SIDEBAR_DEFAULT = 200;
 
 function readSidebarWidth(): number {
   try {
