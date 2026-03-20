@@ -67,33 +67,35 @@ const NavItem: React.FC<NavItemProps> = ({ item, collapsed }) => {
       ? hostsPaths.includes(location.pathname)
       : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
 
-  return (
-    <Tooltip delayDuration={0}>
-      <TooltipTrigger asChild>
-        <NavLink
-          to={item.path === "/hosts" ? "/hosts" : item.path}
-          className={() =>
-            cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150",
-              "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
-              pathActive && "bg-secondary/80 text-foreground shadow-sm",
-              collapsed && "justify-center px-2"
-            )
-          }
-        >
-          <span className="shrink-0">{item.icon}</span>
-          {!collapsed && (
-            <span className="text-sm font-medium truncate">{t(item.labelKey)}</span>
-          )}
-        </NavLink>
-      </TooltipTrigger>
-      {collapsed && (
+  const linkContent = (
+    <NavLink
+      to={item.path === "/hosts" ? "/hosts" : item.path}
+      className={cn(
+        "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150",
+        "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
+        pathActive && "bg-secondary/80 text-foreground shadow-sm",
+        collapsed && "justify-center px-2"
+      )}
+    >
+      {item.icon}
+      {!collapsed && (
+        <span className="text-sm font-medium truncate">{t(item.labelKey)}</span>
+      )}
+    </NavLink>
+  );
+
+  if (collapsed) {
+    return (
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
         <TooltipContent side="right">
           <p>{t(item.labelKey)}</p>
         </TooltipContent>
-      )}
-    </Tooltip>
-  );
+      </Tooltip>
+    );
+  }
+
+  return linkContent;
 };
 
 interface AppSidebarProps {
