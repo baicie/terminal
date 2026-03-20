@@ -397,20 +397,27 @@ export default (props: TerminalContainerProps) => {
 
     setupListeners();
 
-    // Handle window resize
+    // Handle window resize - use rAF to avoid ResizeObserver loop from sidebar drag
+    let rafId: number | null = null;
+    let resizePending = false;
     const handleResize = () => {
-      fitAddon.fit();
-      const currentSessionId = sessionIdRef.current;
-      const term = terminalInstanceRef.current;
-      if (term && currentSessionId) {
-        if (isSerialRef.current) {
-          // Serial port doesn't need resize
-        } else if (isLocalRef.current) {
-          sshService.resizeLocal(currentSessionId, term.cols, term.rows);
-        } else {
-          sshService.resize(currentSessionId, term.cols, term.rows);
+      if (resizePending) return;
+      resizePending = true;
+      rafId = requestAnimationFrame(() => {
+        resizePending = false;
+        fitAddon.fit();
+        const currentSessionId = sessionIdRef.current;
+        const term = terminalInstanceRef.current;
+        if (term && currentSessionId) {
+          if (isSerialRef.current) {
+            // Serial port doesn't need resize
+          } else if (isLocalRef.current) {
+            sshService.resizeLocal(currentSessionId, term.cols, term.rows);
+          } else {
+            sshService.resize(currentSessionId, term.cols, term.rows);
+          }
         }
-      }
+      });
     };
 
     window.addEventListener('resize', handleResize);
@@ -431,6 +438,7 @@ export default (props: TerminalContainerProps) => {
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      if (rafId !== null) cancelAnimationFrame(rafId);
       unlistenDataRef.current?.();
       unlistenCloseRef.current?.();
       unlistenSerialDataRef.current?.();
