@@ -167,6 +167,7 @@ const MainLayoutInner: React.FC<{
               collapsed={sidebarCollapsed}
               onToggleCollapse={handleToggleCollapse}
               width={sidebarCollapsed ? undefined : sidebarWidth}
+              resizing={resizing}
             />
             <div
               role="separator"

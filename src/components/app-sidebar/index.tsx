@@ -103,15 +103,18 @@ interface AppSidebarProps {
   onToggleCollapse?: () => void;
   /** 可拖拽调整宽度时由父级传入像素宽度 */
   width?: number;
+  /** 拖拽中禁用过渡 */
+  resizing?: boolean;
 }
 
-const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed = false, onToggleCollapse, width }) => {
+const AppSidebar: React.FC<AppSidebarProps> = ({ collapsed = false, onToggleCollapse, width, resizing }) => {
   const { t } = useTranslation("demo");
 
   return (
     <div
       className={cn(
-        "h-full bg-secondary/40 border-r border-border/60 flex flex-col shrink-0 min-h-0 transition-all duration-200",
+        "h-full bg-secondary/40 border-r border-border/60 flex flex-col shrink-0 min-h-0",
+        !resizing && "transition-all duration-200",
         collapsed && "w-16"
       )}
       style={!collapsed && width != null ? { width } : undefined}
