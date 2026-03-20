@@ -12,7 +12,7 @@ const SIDEBAR_WIDTH_KEY = "terminal.sidebar.width";
 const SIDEBAR_MIN = 80;  // 软限制（足够窄时自动切换图标模式）
 const SIDEBAR_MAX = 420;
 const SIDEBAR_DEFAULT = 200;
-const COLLAPSE_THRESHOLD = 90;  // 窄于此值自动切换为图标模式
+const COLLAPSE_THRESHOLD = 160;  // 窄于此值自动切换为图标模式
 
 function readSidebarWidth(): number {
   try {
