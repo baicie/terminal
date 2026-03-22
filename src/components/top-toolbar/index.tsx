@@ -8,19 +8,16 @@ import {
   MoreHorizontal,
   PanelLeft,
   Plus,
-  Settings,
   Usb,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useInjectable } from "@/hooks/use-di";
 import { AppStore } from "@/store/app";
-import WorkspaceSwitcher from "@/components/workspace-switcher";
 import MenuTabs from "@/layout/tabs";
 import SerialDialog from "@/components/serial-dialog";
 import CommandPalette from "@/components/command-palette";
 import CommandHistoryDialog from "@/components/command-history";
-import SettingsDialog from "@/components/settings-dialog";
 import { HostDialog } from "@/components/host-list/host-dialog";
 import type { SerialConfig } from "@/service/serial";
 import {
@@ -41,7 +38,6 @@ const TopToolbar: React.FC<{
   const [serialDialogOpen, setSerialDialogOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandHistoryOpen, setCommandHistoryOpen] = useState(false);
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [hostDialogOpen, setHostDialogOpen] = useState(false);
 
   const isSftpActive = location.pathname === "/sftp";
@@ -102,12 +98,7 @@ const TopToolbar: React.FC<{
             <PanelLeft className="size-4" />
           </Button>
 
-          <WorkspaceSwitcher
-            variant="vaults"
-            onSettingsClick={() => setSettingsDialogOpen(true)}
-          />
-
-          {/* 参考图：顶栏以 SFTP 为主标签；主机从左侧栏进入 */}
+          {/* SFTP + Tabs + New Tab */}
           <div className="flex items-center gap-0.5 ml-2 min-w-0">
             <Button
               variant="ghost"
@@ -151,10 +142,6 @@ const TopToolbar: React.FC<{
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem onClick={() => setSettingsDialogOpen(true)}>
-                <Settings className="size-4" data-icon="inline-start" />
-                {t("toolbar.settings")}
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setSerialDialogOpen(true)}>
                 <Usb className="size-4" data-icon="inline-start" />
                 {t("toolbar.serial")}
@@ -185,11 +172,6 @@ const TopToolbar: React.FC<{
         open={serialDialogOpen}
         onClose={() => setSerialDialogOpen(false)}
         onConnect={handleConnectSerial}
-      />
-
-      <SettingsDialog
-        open={settingsDialogOpen}
-        onClose={() => setSettingsDialogOpen(false)}
       />
 
       <CommandPalette

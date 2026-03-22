@@ -6,7 +6,10 @@ import SplitPane from "@/components/split-pane";
 import TerminalContainer from "@/view/terminal/terminal-container";
 import AppSidebar from "@/components/app-sidebar";
 import TopToolbar from "@/components/top-toolbar";
+import { CustomTitleBar } from "@/components/custom-title-bar";
 import { cn } from "@/lib/utils";
+import type { TitleBarStyle } from "@/components/custom-title-bar";
+import SettingsDialog from "@/components/settings-dialog";
 
 const SIDEBAR_WIDTH_KEY = "terminal.sidebar.width";
 const SIDEBAR_MIN = 64;     // 图标模式宽度
@@ -150,8 +153,27 @@ const MainLayoutInner: React.FC<{
 const MainLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
+  const [titleBarStyle, setTitleBarStyle] = useState<TitleBarStyle | null>(null);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const app = useInjectable(AppStore);
   const navigate = useNavigate();
+
+  // Detect platform for title bar style
+  useEffect(() => {
+    const detect = (): TitleBarStyle => {
+      if (typeof navigator !== "undefined") {
+        const platform = navigator.platform.toLowerCase();
+        if (platform.includes("mac") || platform.includes("darwin")) {
+          return "macos";
+        }
+        if (platform.includes("win") || platform.includes("windows")) {
+          return "windows";
+        }
+      }
+      return "linux";
+    };
+    setTitleBarStyle(detect());
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -179,12 +201,25 @@ const MainLayout: React.FC = () => {
   };
 
   return (
-    <MainLayoutInner
-      sidebarOpen={sidebarOpen}
-      onToggleSidebar={() => setSidebarOpen((p) => !p)}
-      sidebarWidth={sidebarWidth}
-      onSidebarWidthChange={setSidebarWidth}
-    />
+    <>
+      {titleBarStyle && (
+        <CustomTitleBar
+          style={titleBarStyle}
+          onSettingsClick={() => setSettingsDialogOpen(true)}
+        />
+      )}
+      <MainLayoutInner
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((p) => !p)}
+        sidebarWidth={sidebarWidth}
+        onSidebarWidthChange={setSidebarWidth}
+      />
+
+      <SettingsDialog
+        open={settingsDialogOpen}
+        onClose={() => setSettingsDialogOpen(false)}
+      />
+    </>
   );
 };
 

@@ -30,11 +30,30 @@ pub async fn local_shell(
         })
         .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
-    // Get the default shell
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+    // Get the default shell based on OS
+    let shell = if cfg!(windows) {
+        // Try PowerShell first, fall back to cmd.exe
+        std::env::var("PSModulePath")
+            .map(|_| "powershell.exe".to_string())
+            .unwrap_or_else(|_| "cmd.exe".to_string())
+    } else {
+        // Unix-like: try SHELL env, fall back to /bin/bash
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
+    };
 
     // Create command
-    let cmd = CommandBuilder::new(&shell);
+    let mut cmd = CommandBuilder::new(&shell);
+
+    // Set working directory for Windows
+    #[cfg(windows)]
+    {
+        use std::path::PathBuf;
+        // Use user's home directory or current directory
+        let home = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .unwrap_or_else(|_| ".".to_string());
+        cmd.cwd(PathBuf::from(&home));
+    }
 
     // Spawn the child process
     let child = pty_pair

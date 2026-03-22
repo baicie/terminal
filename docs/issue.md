@@ -329,55 +329,7 @@ pub async fn ssh_resize(
 ---
 
 *文档创建时间: 2026-03-19*
-*最后更新: 2026-03-20 - 添加 Issue #12: 串口连接功能, Issue #13: require() bug, Issue #14: i18n 配置修复*
-
----
-
-## 七、Phase 4 企业功能 (2026-03-20)
-
-### Issue #12: 串口连接功能 ✅ 已实现
-
-**严重程度**: 高
-**状态**: ✅ 已实现
-**影响功能**: 串口终端连接
-**更新时间**: 2026-03-20
-
-**实现内容**:
-
-**Rust 后端** (`src-tauri/src/terminal.rs`):
-
-```rust
-// 串口相关命令
-serial_list() -> Vec<SerialPortInfo>           // 列出可用串口
-serial_baud_rates() -> Vec<u32>                 // 获取常用波特率
-serial_connect(name, baud_rate, ...) -> String  // 连接串口
-serial_write(session_id, data)                   // 写入串口 (带回车)
-serial_write_raw(session_id, data)              // 原始写入串口
-serial_is_connected(session_id) -> bool         // 检查连接状态
-serial_disconnect(session_id)                   // 断开连接
-```
-
-**前端服务** (`src/service/serial.ts`):
-
-- `SerialService` 类提供完整的串口 API
-- 支持串口枚举、连接、读写、断开
-
-**UI 组件** (`src/components/serial-dialog/index.tsx`):
-
-- `SerialDialog` 对话框组件
-- 支持选择串口端口、配置波特率、数据位、停止位、校验、流控
-
-**终端集成** (`src/view/terminal/terminal-container.tsx`):
-
-- 支持串口标签页类型 (`type: 'serial'`)
-- 集成串口数据监听和写入
-- 支持 Ctrl+C 中断
-
-**使用方式**:
-
-1. 点击顶部工具栏 "Serial" 按钮
-2. 在串口对话框中选择端口和配置参数
-3. 点击连接，串口终端将打开
+*最后更新: 2026-03-22 - 添加 Issue #15: 重构终端组件移除 react-xtermjs 依赖*
 
 ---
 
@@ -449,3 +401,61 @@ defaultNS: 'demo',
 **修改文件**:
 - `src/locales/index.ts`
 - `src/view/hosts/index.tsx` - 添加 `hosts.count` 翻译键
+
+---
+
+## 九、终端组件重构 (2026-03-22)
+
+### Issue #15: 移除 react-xtermjs，使用原生 xterm.js 重构终端组件 ✅ 已修复
+
+**严重程度**: 高
+**状态**: ✅ 已修复
+**影响功能**: 终端输入回显错乱、快速输入失败
+**修复时间**: 2026-03-22
+
+**问题描述**:
+原实现使用 `react-xtermjs` 库存在以下问题：
+1. 快速输入字符时数据丢失或失败
+2. 终端回显文案错乱
+3. `useXTerm` hook 提供的抽象层反而增加了复杂性
+4. 状态管理混乱，多个 useEffect 依赖导致潜在的竞态条件
+
+**修复方案**:
+完全移除 `react-xtermjs` 依赖，直接使用原生 `@xterm/xterm`：
+
+1. **移除 react-xtermjs 依赖**
+   ```bash
+   pnpm remove react-xtermjs
+   ```
+
+2. **重构 terminal-container.tsx**
+   - 直接创建和管理 `Terminal` 实例
+   - 使用 `useRef` 存储终端 DOM 元素
+   - 使用 `useState` 控制初始化状态 (isReady)
+   - 使用 `useCallback` 缓存连接函数
+   - 统一的事件监听器管理模式
+
+3. **核心改进**:
+   - `isReady` 状态确保只在终端完全初始化后才设置事件监听
+   - `connectionTypeRef` 统一管理连接类型 (ssh/local/serial)
+   - `sessionIdRef` 管理当前会话 ID
+   - 所有事件监听器使用统一的 cleanup 机制
+   - 移除了之前混乱的 `listenersSetupRef` 模式
+
+4. **输入处理优化**:
+   - Enter 键：获取当前行内容，发送到后端
+   - Backspace：直接发送到后端
+   - Ctrl+C：直接发送到后端
+   - Arrow Up/Down：命令历史导航
+   - 普通字符：直接发送到后端（SSH/Local 由服务端处理回显，Serial 也由服务端处理回显）
+
+**修改文件**:
+- `src/view/terminal/terminal-container.tsx` - 完全重写
+- `src/view/terminal/terminal-view.tsx` - 已删除（不再需要）
+- `package.json` - 移除 `react-xtermjs` 依赖
+
+**删除文件**:
+- `src/view/terminal/terminal-view.tsx`
+
+**新增文件**:
+- `src/view/logs/index.tsx` - 日志视图占位符

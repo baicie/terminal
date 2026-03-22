@@ -49,8 +49,7 @@ src/
 │
 ├── view/                         # 页面级组件
 │   ├── terminal/                 # 终端页面
-│   │   ├── terminal-view.tsx    # 终端视图 (简单包装)
-│   │   └── terminal-container.tsx # 终端容器 (xterm.js 集成)
+│   │   └── terminal-container.tsx # 终端容器 (xterm.js 集成，直接管理 Terminal 实例)
 │   ├── sftp/                     # SFTP 页面
 │   │   ├── sftp-view.tsx        # SFTP 视图
 │   │   └── sftp-container.tsx   # SFTP 容器 (文件浏览器)

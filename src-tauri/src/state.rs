@@ -104,7 +104,14 @@ pub struct AgentForwardState {
 /// Get the SSH_AUTH_SOCK path from environment
 #[allow(dead_code)]
 pub fn get_ssh_agent_socket() -> Option<String> {
-    std::env::var("SSH_AUTH_SOCK").ok()
+    #[cfg(unix)]
+    {
+        std::env::var("SSH_AUTH_SOCK").ok()
+    }
+    #[cfg(not(unix))]
+    {
+        None
+    }
 }
 
 /// ClientHandler with SSH Agent forwarding support
@@ -149,10 +156,18 @@ impl Handler for ClientHandler {
         data: &[u8],
         _session: &mut client::Session,
     ) -> Result<(), Self::Error> {
-        if let Some(ref socket_path) = self.agent_socket {
-            if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(socket_path) {
-                let _ = stream.write_all(data);
+        #[cfg(unix)]
+        {
+            if let Some(ref socket_path) = self.agent_socket {
+                use std::os::unix::net::UnixStream;
+                if let Ok(mut stream) = UnixStream::connect(socket_path) {
+                    let _ = stream.write_all(data);
+                }
             }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = data; // Suppress unused warning
         }
         Ok(())
     }
