@@ -6,12 +6,14 @@ import { cn } from "@/lib/utils";
 import { X, Columns, Rows } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { observer } from "mobx-react-lite";
 
 /** 顶栏会话标签：仅展示已打开的终端/串口等标签（主机列表从左侧栏进入） */
 const MenuTabs: React.FC = observer(() => {
   const { t } = useTranslation("demo");
   const app = useInjectable(AppStore);
+  const navigate = useNavigate();
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -32,6 +34,11 @@ const MenuTabs: React.FC = observer(() => {
   const handleContextMenu = (e: React.MouseEvent, tabId: string) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, tabId });
+  };
+
+  const handleTabClick = (tabId: string) => {
+    app.setActiveTab(tabId);
+    navigate("/terminal");
   };
 
   const handleSplitHorizontal = () => {
@@ -77,7 +84,7 @@ const MenuTabs: React.FC = observer(() => {
               ? "bg-secondary/80 text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
           )}
-          onClick={() => app.setActiveTab(tab.id)}
+          onClick={() => handleTabClick(tab.id)}
           onContextMenu={(e) => handleContextMenu(e, tab.id)}
         >
           <span className="truncate">

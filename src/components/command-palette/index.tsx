@@ -18,6 +18,7 @@ import { useInjectable } from "@/hooks/use-di";
 import { AppStore } from "@/store/app";
 import { HostStore } from "@/store/host";
 import { getCommandHistory, searchSnippets, type CommandHistoryRecord, type SnippetRecord } from "@/service/database";
+import { useNavigate } from "react-router-dom";
 import type { Host } from "@/types";
 
 interface CommandPaletteProps {
@@ -48,6 +49,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(({ open, onClose 
 
   const app = useInjectable(AppStore);
   const hostStore = useInjectable(HostStore);
+  const navigate = useNavigate();
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -287,6 +289,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(({ open, onClose 
             hostId: host.id,
           });
           app.setActiveTab(newTab.id);
+          navigate("/terminal");
           break;
         case "snippet":
           const snippet = result.data as SnippetRecord;
@@ -305,6 +308,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(({ open, onClose 
             case "new-local":
               const localTab = app.addTab({ label: "Local", type: "local" });
               app.setActiveTab(localTab.id);
+              navigate("/terminal");
               break;
             case "new-host":
               // Trigger host dialog

@@ -1,10 +1,16 @@
-import type { ReactElement } from "react";
+import type { ReactElement, RefObject } from "react";
 
 interface Props {
-  terminalRef: React.RefObject<HTMLDivElement | null>;
+  terminalRef?: RefObject<HTMLDivElement | null>;
+  xtermRef?: RefObject<HTMLDivElement | null>;
 }
 
-const TerminalView = ({ terminalRef }: Props): ReactElement => (
-  <div ref={terminalRef}></div>
+const TerminalView = ({ xtermRef }: Props): ReactElement => (
+  <div
+    ref={xtermRef}
+    className="w-full h-full"
+    style={{ background: '#1e1e1e' }}
+  />
 );
+
 export default TerminalView;

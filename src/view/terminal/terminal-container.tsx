@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import View from "./terminal-view";
 import "@xterm/xterm/css/xterm.css";
-import { Terminal } from "@xterm/xterm";
+import { useXTerm } from "react-xtermjs";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -18,8 +18,6 @@ interface TerminalContainerProps {
 }
 
 export default (props: TerminalContainerProps) => {
-  const terminalRef = useRef<HTMLDivElement | null>(null);
-  const fitAddonRef = useRef<import("@xterm/addon-fit").FitAddon | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const isLocalRef = useRef<boolean>(false);
   const isSerialRef = useRef<boolean>(false);
@@ -27,7 +25,8 @@ export default (props: TerminalContainerProps) => {
   const unlistenCloseRef = useRef<(() => void) | null>(null);
   const unlistenSerialDataRef = useRef<(() => void) | null>(null);
   const unlistenSerialCloseRef = useRef<(() => void) | null>(null);
-  const terminalInstanceRef = useRef<import("@xterm/xterm").Terminal | null>(null);
+  const unlistenLocalDataRef = useRef<(() => void) | null>(null);
+  const unlistenLocalCloseRef = useRef<(() => void) | null>(null);
   const activeTabIdRef = useRef<string | null>(null);
   const inputBufferRef = useRef<string>("");
   const commandHistoryRef = useRef<string[]>([]);
@@ -35,10 +34,44 @@ export default (props: TerminalContainerProps) => {
   const currentInputRef = useRef<string>("");
   const appStoreRef = useRef<AppStore | null>(null);
   const hostStoreRef = useRef<HostStore | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
+  const listenersSetupRef = useRef<boolean>(false);
 
   // Initialize stores once using useRef (stable reference)
   const appStore = useInjectable(AppStore);
   const hostStore = useInjectable(HostStore);
+
+  // Use react-xtermjs hook
+  const { instance, ref } = useXTerm({
+    options: {
+      cursorBlink: true,
+      fontSize: 14,
+      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      theme: {
+        background: '#1e1e1e',
+        foreground: '#cccccc',
+        cursor: '#ffffff',
+        cursorAccent: '#1e1e1e',
+        selectionBackground: '#264f78',
+        black: '#000000',
+        red: '#cd3131',
+        green: '#0dbc79',
+        yellow: '#e5e510',
+        blue: '#2472c8',
+        magenta: '#bc3fbc',
+        cyan: '#11a8cd',
+        white: '#e5e5e5',
+        brightBlack: '#666666',
+        brightRed: '#f14c4c',
+        brightGreen: '#23d18b',
+        brightYellow: '#f5f543',
+        brightBlue: '#3b8eea',
+        brightMagenta: '#d670d6',
+        brightCyan: '#29b8db',
+        brightWhite: '#ffffff',
+      },
+    },
+  });
 
   // Store references in refs for async access
   appStoreRef.current = appStore;
@@ -56,6 +89,14 @@ export default (props: TerminalContainerProps) => {
     };
     loadHistory();
   }, []);
+
+  // Get active tab ID
+  const activeTabId = props.tabId || (appStoreRef.current?.activeTabId ?? null);
+
+  // Keep ref in sync
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId || null;
+  }, [activeTabId]);
 
   // Get current command line from terminal
   const getCurrentLine = (term: import("@xterm/xterm").Terminal): string => {
@@ -83,7 +124,7 @@ export default (props: TerminalContainerProps) => {
 
   // Handle command history navigation (Up/Down arrows)
   const handleHistoryNavigation = (key: 'ArrowUp' | 'ArrowDown') => {
-    const term = terminalInstanceRef.current;
+    const term = instance;
     if (!term || commandHistoryRef.current.length === 0) return false;
 
     if (key === 'ArrowUp') {
@@ -115,159 +156,44 @@ export default (props: TerminalContainerProps) => {
     return false;
   };
 
-  // Get active tab ID - only read once per render, avoid reactive access
-  const activeTabId = props.tabId || (appStoreRef.current?.activeTabId ?? null);
-
-  // Keep ref in sync
+  // Set up terminal when instance is available - only run once
   useEffect(() => {
-    activeTabIdRef.current = activeTabId || null;
-  }, [activeTabId]);
+    if (!instance || !ref.current || listenersSetupRef.current) return;
 
-  const connectToHost = useCallback(async (host: Host) => {
-    const term = terminalInstanceRef.current;
-    if (!term) return;
+    listenersSetupRef.current = true;
+    const term = instance;
 
-    isLocalRef.current = false;
-    term.write('\r\nConnecting...\r\n');
-
-    // Connect to SSH
-    const result = await sshService.connect(host);
-
-    if (!result.success || !result.sessionId) {
-      term.write(`\r\nConnection failed: ${result.message}\r\n`);
-      return;
-    }
-
-    sessionIdRef.current = result.sessionId;
-    const currentApp = appStoreRef.current;
-    const tabId = activeTabIdRef.current;
-    if (currentApp && tabId) {
-      currentApp.updateTab(tabId, {
-        hostId: host.id,
-        connectionStatus: 'connected'
-      });
-    }
-
-    // Get terminal size
-    const size = term.cols && term.rows
-      ? { cols: term.cols, rows: term.rows }
-      : { cols: 80, rows: 24 };
-
-    // Start shell
-    const shellResult = await sshService.startShell(result.sessionId, size.cols, size.rows);
-
-    if (!shellResult.success) {
-      term.write(`\r\nFailed to start shell: ${shellResult.message}\r\n`);
-      return;
-    }
-
-    term.write('\r\n');
-  }, []);
-
-  const connectToLocal = useCallback(async () => {
-    const term = terminalInstanceRef.current;
-    if (!term) return;
-
-    isLocalRef.current = true;
-    term.write('\r\nStarting local shell...\r\n');
-
-    // Get terminal size
-    const size = term.cols && term.rows
-      ? { cols: term.cols, rows: term.rows }
-      : { cols: 80, rows: 24 };
-
-    // Start local shell
-    const result = await sshService.startLocalShell(size.cols, size.rows);
-
-    if (!result.success || !result.sessionId) {
-      term.write(`\r\nFailed to start local shell: ${result.message}\r\n`);
-      return;
-    }
-
-    sessionIdRef.current = result.sessionId;
-    const currentApp = appStoreRef.current;
-    const tabId = activeTabIdRef.current;
-    if (currentApp && tabId) {
-      currentApp.updateTab(tabId, {
-        connectionStatus: 'connected'
-      });
-    }
-
-    term.write('\r\n');
-  }, []);
-
-  useEffect(() => {
-    if (!terminalRef.current) return;
-
-    const term = new Terminal({
-      allowProposedApi: true,
-      cursorBlink: true,
-      fontSize: 14,
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      allowTransparency: true,
-      theme: {
-        background: '#1e1e1e',
-        foreground: '#cccccc',
-        cursor: '#ffffff',
-        cursorAccent: '#1e1e1e',
-        selectionBackground: '#264f78',
-        black: '#000000',
-        red: '#cd3131',
-        green: '#0dbc79',
-        yellow: '#e5e510',
-        blue: '#2472c8',
-        magenta: '#bc3fbc',
-        cyan: '#11a8cd',
-        white: '#e5e5e5',
-        brightBlack: '#666666',
-        brightRed: '#f14c4c',
-        brightGreen: '#23d18b',
-        brightYellow: '#f5f543',
-        brightBlue: '#3b8eea',
-        brightMagenta: '#d670d6',
-        brightCyan: '#29b8db',
-        brightWhite: '#ffffff',
-      },
-    });
-
+    // Load addons
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-
-    term.open(terminalRef.current);
-    fitAddon.fit();
     fitAddonRef.current = fitAddon;
+    fitAddon.fit();
 
     term.loadAddon(new SearchAddon());
     term.loadAddon(new WebLinksAddon());
 
-    // Store terminal instance
-    terminalInstanceRef.current = term;
-
-    // Handle user input - batch input, send to backend only on Enter
+    // Handle user input
     term.onData((data: string) => {
       const currentSessionId = sessionIdRef.current;
-      const currentTerm = terminalInstanceRef.current;
+      const currentTerm = instance;
       const tabId = activeTabIdRef.current;
 
-      // Enter - send entire line to backend
+      // Enter - send newline to backend
       if (data === '\r' && currentSessionId) {
         const line = inputBufferRef.current;
         inputBufferRef.current = "";
 
-        console.debug('[DEBUG] Enter - sending:', line);
-
         if (isSerialRef.current) {
           serialService.write(currentSessionId, line);
         } else if (isLocalRef.current) {
-          sshService.writeLocal(currentSessionId, line + '\r');
+          sshService.writeLocal(currentSessionId, '\r');
         } else {
-          sshService.write(currentSessionId, line + '\r');
+          sshService.write(currentSessionId, '\r');
         }
 
-        // Save command to history (non-blocking, use ref only)
+        // Save command to history
         if (!isLocalRef.current && !isSerialRef.current && currentTerm && tabId && line) {
           sshService.saveCommandHistory(tabId, line, currentSessionId);
-          // Add to local ref array (no React state update)
           if (!commandHistoryRef.current.includes(line)) {
             commandHistoryRef.current.push(line);
           }
@@ -277,13 +203,12 @@ export default (props: TerminalContainerProps) => {
       // Backspace
       else if (data === '\x7f' && currentSessionId) {
         inputBufferRef.current = inputBufferRef.current.slice(0, -1);
-        // Send backspace to backend for cursor movement
         if (isSerialRef.current) {
           serialService.writeRaw(currentSessionId, '\x08 \x08');
         } else if (isLocalRef.current) {
-          sshService.writeLocal(currentSessionId, data);
+          sshService.writeLocal(currentSessionId, '\x7f');
         } else {
-          sshService.write(currentSessionId, data);
+          sshService.write(currentSessionId, '\x7f');
         }
       }
       // Ctrl+C
@@ -292,30 +217,27 @@ export default (props: TerminalContainerProps) => {
         if (isSerialRef.current) {
           serialService.write(currentSessionId, '\x03');
         } else if (isLocalRef.current) {
-          sshService.writeLocal(currentSessionId, data);
+          sshService.writeLocal(currentSessionId, '\x03');
         } else {
-          sshService.write(currentSessionId, data);
+          sshService.write(currentSessionId, '\x03');
         }
       }
       // Arrow Up/Down for history
       else if (data === '\x1b[A' || data === '\x1b[B') {
         const handled = handleHistoryNavigation(data === '\x1b[A' ? 'ArrowUp' : 'ArrowDown');
-        if (handled && currentTerm) {
-          // Update buffer with new line from history
+        if (handled) {
           inputBufferRef.current = getCurrentLine(currentTerm) || "";
         }
       }
-      // Regular characters - add to buffer
+      // Regular characters
       else if (data && currentSessionId) {
         inputBufferRef.current += data;
-        // Immediately send to backend
         if (isSerialRef.current) {
           serialService.writeRaw(currentSessionId, data);
         } else if (isLocalRef.current) {
           sshService.writeLocal(currentSessionId, data);
-        } else {
-          sshService.write(currentSessionId, data);
         }
+        // SSH: server handles echo
       }
     });
 
@@ -333,19 +255,18 @@ export default (props: TerminalContainerProps) => {
       }
     });
 
-    // Set up event listeners for SSH and local data
+    // Set up event listeners
     const setupListeners = async () => {
       // SSH listeners
       unlistenDataRef.current = await sshService.onData((output: ShellOutput) => {
-        const term = terminalInstanceRef.current;
+        const term = instance;
         if (term && output.session_id === sessionIdRef.current && !isLocalRef.current) {
-          // Strip \r from server echo to avoid double characters
-          term.write(output.data.replace(/\r/g, ""));
+          term.write(output.data);
         }
       });
 
       unlistenCloseRef.current = await sshService.onClose((sid: string) => {
-        const term = terminalInstanceRef.current;
+        const term = instance;
         const currentSessionId = sessionIdRef.current;
         if (sid === currentSessionId && !isLocalRef.current && term) {
           term.write('\r\n\r\n[Connection closed]\r\n');
@@ -357,16 +278,15 @@ export default (props: TerminalContainerProps) => {
       });
 
       // Local terminal listeners
-      await sshService.onLocalData((output: ShellOutput) => {
-        const term = terminalInstanceRef.current;
+      unlistenLocalDataRef.current = await sshService.onLocalData((output: ShellOutput) => {
+        const term = instance;
         if (term && output.session_id === sessionIdRef.current && isLocalRef.current) {
-          // PTY echo includes \r; strip it to avoid double characters (cursor-back + re-render)
-          term.write(output.data.replace(/\r/g, ""));
+          term.write(output.data);
         }
       });
 
-      await sshService.onLocalClose((sid: string) => {
-        const term = terminalInstanceRef.current;
+      unlistenLocalCloseRef.current = await sshService.onLocalClose((sid: string) => {
+        const term = instance;
         const currentSessionId = sessionIdRef.current;
         if (sid === currentSessionId && isLocalRef.current && term) {
           term.write('\r\n\r\n[Local shell closed]\r\n');
@@ -379,14 +299,14 @@ export default (props: TerminalContainerProps) => {
 
       // Serial port listeners
       unlistenSerialDataRef.current = await serialService.onData((output: ShellOutput) => {
-        const term = terminalInstanceRef.current;
+        const term = instance;
         if (term && output.session_id === sessionIdRef.current && isSerialRef.current) {
-          term.write(output.data.replace(/\r/g, ""));
+          term.write(output.data);
         }
       });
 
       unlistenSerialCloseRef.current = await serialService.onClose((sid: string) => {
-        const term = terminalInstanceRef.current;
+        const term = instance;
         const currentSessionId = sessionIdRef.current;
         if (sid === currentSessionId && isSerialRef.current && term) {
           term.write('\r\n\r\n[Serial port disconnected]\r\n');
@@ -400,7 +320,7 @@ export default (props: TerminalContainerProps) => {
 
     setupListeners();
 
-    // Handle window resize - use rAF to avoid ResizeObserver loop from sidebar drag
+    // Handle window resize
     let rafId: number | null = null;
     let resizePending = false;
     const handleResize = () => {
@@ -410,7 +330,7 @@ export default (props: TerminalContainerProps) => {
         resizePending = false;
         fitAddon.fit();
         const currentSessionId = sessionIdRef.current;
-        const term = terminalInstanceRef.current;
+        const term = instance;
         if (term && currentSessionId) {
           if (isSerialRef.current) {
             // Serial port doesn't need resize
@@ -429,7 +349,7 @@ export default (props: TerminalContainerProps) => {
     setTimeout(() => {
       fitAddon.fit();
       const currentSessionId = sessionIdRef.current;
-      const term = terminalInstanceRef.current;
+      const term = instance;
       if (term && currentSessionId && !isSerialRef.current) {
         if (isLocalRef.current) {
           sshService.resizeLocal(currentSessionId, term.cols, term.rows);
@@ -440,12 +360,25 @@ export default (props: TerminalContainerProps) => {
     }, 100);
 
     return () => {
+      listenersSetupRef.current = false;
       window.removeEventListener('resize', handleResize);
       if (rafId !== null) cancelAnimationFrame(rafId);
-      unlistenDataRef.current?.();
-      unlistenCloseRef.current?.();
-      unlistenSerialDataRef.current?.();
-      unlistenSerialCloseRef.current?.();
+
+      // Safe cleanup - check if listeners were set before calling
+      if (unlistenDataRef.current) unlistenDataRef.current();
+      if (unlistenCloseRef.current) unlistenCloseRef.current();
+      if (unlistenLocalDataRef.current) unlistenLocalDataRef.current();
+      if (unlistenLocalCloseRef.current) unlistenLocalCloseRef.current();
+      if (unlistenSerialDataRef.current) unlistenSerialDataRef.current();
+      if (unlistenSerialCloseRef.current) unlistenSerialCloseRef.current();
+
+      // Reset all refs to null
+      unlistenDataRef.current = null;
+      unlistenCloseRef.current = null;
+      unlistenLocalDataRef.current = null;
+      unlistenLocalCloseRef.current = null;
+      unlistenSerialDataRef.current = null;
+      unlistenSerialCloseRef.current = null;
 
       if (sessionIdRef.current) {
         if (isSerialRef.current) {
@@ -459,13 +392,101 @@ export default (props: TerminalContainerProps) => {
 
       term.dispose();
     };
-  }, []);
+  }, []); // Empty deps - run only once
+
+  // Connect functions - use refs to avoid dependency issues
+  const connectToHost = useCallback(async (host: Host) => {
+    const term = instance;
+    if (!term) return;
+
+    isLocalRef.current = false;
+    isSerialRef.current = false;
+    term.write('\r\nConnecting...\r\n');
+
+    const result = await sshService.connect(host);
+
+    if (!result.success || !result.sessionId) {
+      term.write(`\r\nConnection failed: ${result.message}\r\n`);
+      return;
+    }
+
+    sessionIdRef.current = result.sessionId;
+    const currentApp = appStoreRef.current;
+    const tabId = activeTabIdRef.current;
+    if (currentApp && tabId) {
+      currentApp.updateTab(tabId, {
+        hostId: host.id,
+        connectionStatus: 'connected'
+      });
+    }
+
+    const size = term.cols && term.rows
+      ? { cols: term.cols, rows: term.rows }
+      : { cols: 80, rows: 24 };
+
+    const shellResult = await sshService.startShell(result.sessionId, size.cols, size.rows);
+
+    if (!shellResult.success) {
+      term.write(`\r\nFailed to start shell: ${shellResult.message}\r\n`);
+      return;
+    }
+
+    term.write('\r\n');
+  }, []); // No deps - uses refs internally
+
+  const connectToLocal = useCallback(async () => {
+    const term = instance;
+    if (!term) return;
+
+    isLocalRef.current = true;
+    isSerialRef.current = false;
+    term.write('\r\nStarting local shell...\r\n');
+
+    const size = term.cols && term.rows
+      ? { cols: term.cols, rows: term.rows }
+      : { cols: 80, rows: 24 };
+
+    const result = await sshService.startLocalShell(size.cols, size.rows);
+
+    if (!result.success || !result.sessionId) {
+      term.write(`\r\nFailed to start local shell: ${result.message}\r\n`);
+      return;
+    }
+
+    sessionIdRef.current = result.sessionId;
+    const currentApp = appStoreRef.current;
+    const tabId = activeTabIdRef.current;
+    if (currentApp && tabId) {
+      currentApp.updateTab(tabId, {
+        connectionStatus: 'connected'
+      });
+    }
+
+    term.write('\r\n');
+  }, []); // No deps - uses refs internally
+
+  const connectToSerial = useCallback(async (sessionId: string) => {
+    const term = instance;
+    if (!term) return;
+
+    isSerialRef.current = true;
+    isLocalRef.current = false;
+    term.write('\r\nSerial port connected\r\n');
+
+    sessionIdRef.current = sessionId;
+    const currentApp = appStoreRef.current;
+    const tabId = activeTabIdRef.current;
+    if (currentApp && tabId) {
+      currentApp.updateTab(tabId, {
+        connectionStatus: 'connected'
+      });
+    }
+  }, []); // No deps - uses refs internally
 
   // Connect to host when tab has hostId (remote SSH)
-  // Use a ref-based approach to avoid reactive updates
   useEffect(() => {
     const tabId = activeTabId;
-    if (!tabId) return;
+    if (!tabId || !instance) return;
 
     const app = appStoreRef.current;
     const store = hostStoreRef.current;
@@ -480,12 +501,12 @@ export default (props: TerminalContainerProps) => {
         connectToHost(host);
       }
     }
-  }, [connectToHost]); // Only re-run when connectToHost changes
+  }, [activeTabId, instance]); // Only reconnect when tab changes
 
   // Connect to local shell when tab type is local
   useEffect(() => {
     const tabId = activeTabId;
-    if (!tabId) return;
+    if (!tabId || !instance) return;
 
     const app = appStoreRef.current;
     if (!app) return;
@@ -494,29 +515,12 @@ export default (props: TerminalContainerProps) => {
     if (tab?.type === 'local' && !sessionIdRef.current) {
       connectToLocal();
     }
-  }, [connectToLocal]); // Only re-run when connectToLocal changes
+  }, [activeTabId, instance]); // Only reconnect when tab changes
 
   // Connect to serial port when tab type is serial
-  const connectToSerial = useCallback(async (sessionId: string) => {
-    const term = terminalInstanceRef.current;
-    if (!term) return;
-
-    isSerialRef.current = true;
-    term.write('\r\nSerial port connected\r\n');
-
-    sessionIdRef.current = sessionId;
-    const currentApp = appStoreRef.current;
-    const tabId = activeTabIdRef.current;
-    if (currentApp && tabId) {
-      currentApp.updateTab(tabId, {
-        connectionStatus: 'connected'
-      });
-    }
-  }, []);
-
   useEffect(() => {
     const tabId = activeTabId;
-    if (!tabId) return;
+    if (!tabId || !instance) return;
 
     const app = appStoreRef.current;
     if (!app) return;
@@ -525,11 +529,11 @@ export default (props: TerminalContainerProps) => {
     if (tab?.type === 'serial' && !sessionIdRef.current && tab.serialSessionId) {
       connectToSerial(tab.serialSessionId);
     }
-  }, [connectToSerial]);
+  }, [activeTabId, instance]); // Only reconnect when tab changes
 
   return (
     <View
-      terminalRef={terminalRef}
+      xtermRef={ref}
     />
   );
 };

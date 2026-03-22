@@ -40,3 +40,5 @@ once_cell = "1.19"
 parking_lot = "0.12"
 # Serial port support
 serialport = "4.6"
+rustix = { version = "0.38", features = ["std", "termios"] }
+libc = "0.2"

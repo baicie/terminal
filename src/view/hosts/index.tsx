@@ -30,6 +30,7 @@ import { HostDialog } from "@/components/host-list/host-dialog";
 import SerialDialog from "@/components/serial-dialog";
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import type { Host } from "@/types";
 import type { SerialConfig } from "@/service/serial";
 import { toast } from "@/components/ui/sonner";
@@ -39,6 +40,7 @@ const HostsView: React.FC = observer(() => {
   const { t } = useTranslation("demo");
   const hostStore = useInjectable(HostStore);
   const app = useInjectable(AppStore);
+  const navigate = useNavigate();
 
   useEffect(() => {
     void hostStore.loadHosts();
@@ -56,6 +58,7 @@ const HostsView: React.FC = observer(() => {
       hostId: host.id,
     });
     app.setActiveTab(newTab.id);
+    navigate("/terminal");
   };
 
   const handleNewLocalTerminal = () => {
@@ -64,6 +67,7 @@ const HostsView: React.FC = observer(() => {
       type: "local",
     });
     app.setActiveTab(newTab.id);
+    navigate("/terminal");
   };
 
   const handleConnectBarSubmit = () => {
@@ -100,6 +104,7 @@ const HostsView: React.FC = observer(() => {
       },
     });
     app.setActiveTab(newTab.id);
+    navigate("/terminal");
     setSerialDialogOpen(false);
   };
 

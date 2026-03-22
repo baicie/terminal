@@ -67,6 +67,7 @@ const TopToolbar: React.FC<{
       type: "local",
     });
     app.setActiveTab(newTab.id);
+    navigate("/terminal");
   };
 
   const handleConnectSerial = (config: SerialConfig, sessionId: string) => {
@@ -81,6 +82,7 @@ const TopToolbar: React.FC<{
       },
     });
     app.setActiveTab(newTab.id);
+    navigate("/terminal");
   };
 
   return (

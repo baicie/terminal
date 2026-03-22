@@ -4,6 +4,7 @@ import { HostStore } from "@/store/host";
 import { AppStore } from "@/store/app";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useNavigate } from "react-router-dom";
 import type { Host, Group } from "@/types";
 import {
   ChevronRight,
@@ -129,6 +130,7 @@ const GroupsSection: React.FC<{ onConnect?: (host: Host) => void; parentId?: str
 const Sidebar: React.FC<HostListProps> = ({ onConnect }) => {
   const hostStore = useInjectable(HostStore);
   const app = useInjectable(AppStore);
+  const navigate = useNavigate();
 
   const handleNewLocalTerminal = () => {
     const newTab = app.addTab({
@@ -136,6 +138,7 @@ const Sidebar: React.FC<HostListProps> = ({ onConnect }) => {
       type: "local",
     });
     app.setActiveTab(newTab.id);
+    navigate("/terminal");
   };
 
   React.useEffect(() => {

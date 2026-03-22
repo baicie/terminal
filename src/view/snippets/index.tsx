@@ -6,7 +6,7 @@ import SnippetManager from "@/components/snippet-manager";
 import { useState } from "react";
 
 const SnippetsView: React.FC = () => {
-  const [snippetManagerOpen, setSnippetManagerOpen] = useState(true);
+  const [snippetManagerOpen, setSnippetManagerOpen] = useState(false);
 
   return (
     <ViewContainer>

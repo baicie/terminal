@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import { useInjectable } from "@/hooks/use-di";
 import { AppStore } from "@/store/app";
 import SplitPane from "@/components/split-pane";
@@ -151,6 +151,7 @@ const MainLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   const app = useInjectable(AppStore);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -174,6 +175,7 @@ const MainLayout: React.FC = () => {
       type: "local",
     });
     app.setActiveTab(newTab.id);
+    navigate("/terminal");
   };
 
   return (

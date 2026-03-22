@@ -2734,6 +2734,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "linux-raw-sys"
+version = "0.4.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
+
+[[package]]
 name = "litemap"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4436,6 +4442,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustix"
+version = "0.38.44"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
+dependencies = [
+ "bitflags 2.11.0",
+ "errno",
+ "libc",
+ "linux-raw-sys",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "rustversion"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5904,6 +5923,7 @@ dependencies = [
  "base64 0.22.1",
  "dirs 5.0.1",
  "futures",
+ "libc",
  "once_cell",
  "parking_lot",
  "portable-pty",
@@ -5911,6 +5931,7 @@ dependencies = [
  "russh",
  "russh-keys",
  "russh-sftp",
+ "rustix",
  "serde",
  "serde_json",
  "serialport",
