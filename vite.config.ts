@@ -13,6 +13,19 @@ export default defineConfig(async () => ({
       "@": path.resolve(__dirname, "src"),
     },
   },
+  define: {
+    IS_TAURI: JSON.stringify(true),
+    IS_DEV: JSON.stringify(process.env.NODE_ENV === "development"),
+    IS_MACOS: JSON.stringify(
+      process.env.TAURI_ENV_PLATFORM?.includes("darwin") ?? false
+    ),
+    IS_WINDOWS: JSON.stringify(
+      process.env.TAURI_ENV_PLATFORM?.includes("windows") ?? false
+    ),
+    IS_LINUX: JSON.stringify(
+      process.env.TAURI_ENV_PLATFORM?.includes("linux") ?? false
+    ),
+  },
   clearScreen: false,
   server: {
     port: 1420,

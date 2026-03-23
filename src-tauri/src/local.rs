@@ -6,9 +6,7 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::Read;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-
-#[cfg(unix)]
-use libc::{cfmakeraw, tcgetattr, tcsetattr, TCSANOW, termios};
+use tokio::task;
 
 #[tauri::command]
 pub async fn local_shell(
@@ -77,16 +75,18 @@ pub async fn local_shell(
     // This ensures characters typed by user are NOT echoed by PTY
     #[cfg(unix)]
     {
+        use rustix::fd::BorrowedFd;
+        use rustix::termios::{tcgetattr, tcsetattr, OptionalActions};
+
+        // Get raw fd from master PTY using the trait method
+        // as_raw_fd returns Option<RawFd>, we need to handle the None case
         if let Some(raw_fd) = pty_pair.master.as_raw_fd() {
-            unsafe {
-                let mut t: termios = std::mem::zeroed();
-                if tcgetattr(raw_fd, &mut t) == 0 {
-                    // cfmakeraw sets: no echo, no canonical mode, no signals
-                    cfmakeraw(&mut t);
-                    // Make sure echo is explicitly disabled
-                    t.c_lflag &= !(libc::ECHO | libc::ECHOE | libc::ECHOK | libc::ECHOKE | libc::ECHOCTL);
-                    tcsetattr(raw_fd, TCSANOW, &t);
-                }
+            // Borrow the raw fd for use with rustix
+            let fd = unsafe { BorrowedFd::borrow_raw(raw_fd) };
+            if let Ok(mut t) = tcgetattr(fd) {
+                // Use cfmakeraw to set raw mode (disables canonical mode, echo, etc.)
+                t.make_raw();
+                let _ = tcsetattr(fd, OptionalActions::Now, &t);
             }
         }
     }
@@ -105,7 +105,7 @@ pub async fn local_shell(
 
     // Spawn a task to read from PTY and emit events
     let session_id_clone = session_id.clone();
-    tokio::spawn(async move {
+    task::spawn_blocking(move || {
         let mut buf = [0u8; 4096];
         loop {
             match reader.read(&mut buf) {

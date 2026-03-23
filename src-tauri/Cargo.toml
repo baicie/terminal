@@ -42,3 +42,4 @@ parking_lot = "0.12"
 serialport = "4.6"
 rustix = { version = "0.38", features = ["std", "termios"] }
 libc = "0.2"
+tauri-plugin-global-shortcut = "2.3.1"

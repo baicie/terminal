@@ -13,10 +13,66 @@ import { useInjectable } from "./hooks/use-di";
 import { AppStore } from "./store/app";
 import locales from "./locales";
 import i18nCore from "./locales";
+import { register, isRegistered } from "@tauri-apps/plugin-global-shortcut";
 
 export default observer(() => {
   const { i18n } = useTranslation();
   const app = useInjectable(AppStore);
+
+  // Register macOS native shortcuts
+  useEffect(() => {
+    const registerShortcuts = async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+
+        // Cmd+W - Close window (hide to dock)
+        if (!(await isRegistered("CommandOrControl+W"))) {
+          await register("CommandOrControl+W", async (event) => {
+            if (event.state === "Pressed") {
+              await getCurrentWindow().hide();
+            }
+          });
+        }
+
+        // Cmd+M - Minimize window
+        if (!(await isRegistered("CommandOrControl+M"))) {
+          await register("CommandOrControl+M", async (event) => {
+            if (event.state === "Pressed") {
+              await getCurrentWindow().minimize();
+            }
+          });
+        }
+
+        // Cmd+H - Hide window
+        if (!(await isRegistered("CommandOrControl+H"))) {
+          await register("CommandOrControl+H", async (event) => {
+            if (event.state === "Pressed") {
+              await getCurrentWindow().hide();
+            }
+          });
+        }
+
+        // Cmd+, - Open settings (handled by app)
+        if (!(await isRegistered("CommandOrControl+,"))) {
+          await register("CommandOrControl+,", async () => {
+            // This will be handled by the settings dialog component
+            window.dispatchEvent(new CustomEvent("open-settings"));
+          });
+        }
+      } catch (e) {
+        console.warn("Failed to register global shortcuts:", e);
+      }
+    };
+
+    registerShortcuts();
+
+    // Cleanup on unmount
+    return () => {
+      import("@tauri-apps/plugin-global-shortcut").then(({ unregisterAll }) => {
+        unregisterAll().catch(() => {});
+      });
+    };
+  }, []);
 
   useEffect(() => {
     void app.hydrateFromDatabase();

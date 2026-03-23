@@ -12,7 +12,7 @@ import type { TitleBarStyle } from "@/components/custom-title-bar";
 import SettingsDialog from "@/components/settings-dialog";
 
 const SIDEBAR_WIDTH_KEY = "terminal.sidebar.width";
-const SIDEBAR_MIN = 64;     // 图标模式宽度
+const SIDEBAR_MIN = 64; // 图标模式宽度
 const SIDEBAR_MAX = 420;
 const SIDEBAR_DEFAULT = 200;
 
@@ -53,7 +53,9 @@ const MainLayoutInner: React.FC<{
     const tab = app.tabs.find((t) => t.id === tabId);
     if (!tab) return null;
 
-    const splitGroup = tab.splitId ? app.splitGroups.find((g) => g.id === tab.splitId) : null;
+    const splitGroup = tab.splitId
+      ? app.splitGroups.find((g) => g.id === tab.splitId)
+      : null;
 
     if (splitGroup && tab.splitChildren && tab.splitChildren.length > 0) {
       const children = splitGroup.tabs.map((id) => (
@@ -71,7 +73,7 @@ const MainLayoutInner: React.FC<{
       dragRef.current = { startX: e.clientX, startWidth: sidebarWidth };
       setResizing(true);
     },
-    [sidebarWidth]
+    [sidebarWidth],
   );
 
   // 折叠按钮：切换最小宽度和默认宽度
@@ -134,7 +136,7 @@ const MainLayoutInner: React.FC<{
               className={cn(
                 "w-[6px] shrink-0 cursor-col-resize flex items-center justify-center group outline-none select-none",
                 "hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-                resizing && "cursor-col-resize bg-primary/20"
+                resizing && "cursor-col-resize bg-primary/20",
               )}
               onMouseDown={onResizeStart}
             >
@@ -159,7 +161,9 @@ const MainLayoutInner: React.FC<{
 const MainLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
-  const [titleBarStyle, setTitleBarStyle] = useState<TitleBarStyle | null>(null);
+  const [titleBarStyle, setTitleBarStyle] = useState<TitleBarStyle | null>(
+    null,
+  );
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const app = useInjectable(AppStore);
   const navigate = useNavigate();
@@ -208,12 +212,12 @@ const MainLayout: React.FC = () => {
 
   return (
     <>
-      {titleBarStyle && (
+      {/* {titleBarStyle && (
         <CustomTitleBar
           style={titleBarStyle}
           onSettingsClick={() => setSettingsDialogOpen(true)}
         />
-      )}
+      )} */}
       <MainLayoutInner
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((p) => !p)}

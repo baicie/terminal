@@ -39,8 +39,18 @@ const TopToolbar: React.FC<{
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandHistoryOpen, setCommandHistoryOpen] = useState(false);
   const [hostDialogOpen, setHostDialogOpen] = useState(false);
+  /** macOS + Tauri：为原生红绿灯留出左侧空间，避免顶栏盖住系统按钮 */
+  const [padForMacTrafficLights, setPadForMacTrafficLights] = useState(false);
 
   const isSftpActive = location.pathname === "/sftp";
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("__TAURI__" in window)) return;
+    const p = navigator.platform?.toLowerCase() ?? "";
+    const ua = navigator.userAgent?.toLowerCase() ?? "";
+    const isMac = p.includes("mac") || ua.includes("mac");
+    if (isMac) setPadForMacTrafficLights(true);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -84,7 +94,10 @@ const TopToolbar: React.FC<{
   return (
     <>
       <header
-        className="h-11 flex items-center justify-between px-3 border-b border-border/60 bg-background shrink-0 gap-2"
+        className={cn(
+          "h-11 flex items-center justify-between border-b border-border/60 bg-background shrink-0 gap-2",
+          padForMacTrafficLights ? "pl-[76px] pr-3" : "px-3",
+        )}
         data-tauri-drag-region
       >
         <div className="flex items-center gap-1 min-w-0 flex-1" data-tauri-drag-region>
