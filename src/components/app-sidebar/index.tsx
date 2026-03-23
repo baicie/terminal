@@ -12,6 +12,7 @@ import {
   FileText,
   PanelLeftClose,
   PanelLeft,
+  Terminal,
 } from "lucide-react";
 
 interface NavItem {
@@ -50,6 +51,11 @@ const navItems: NavItem[] = [
     path: "/logs",
     labelKey: "nav.logs",
     icon: <FileText className="size-5" />,
+  },
+  {
+    path: "/scripts",
+    labelKey: "nav.scripts",
+    icon: <Terminal className="size-5" />,
   },
 ];
 

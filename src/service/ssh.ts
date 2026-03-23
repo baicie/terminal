@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Host, PortForwardConfig } from "@/types";
-import { addCommandHistory } from "@/service/database";
+import { addCommandHistory, addConnectionLog } from "@/service/database";
 
 export interface SSHConnectionResult {
   success: boolean;
@@ -21,13 +21,14 @@ export interface ShellOutput {
   is_stderr: boolean;
 }
 
+// Active connection log tracking
+const activeConnectionLogs = new Map<string, { logId: string; startTime: number }>();
+
 export class SSHService {
   async connect(host: Host): Promise<SSHConnectionResult> {
     try {
       // Check if this host uses a jump host
       if (host.jumpHostId) {
-        // We need to get the jump host details - this would be looked up from the host store
-        // For now, return an error indicating jump host needs special handling
         return { success: false, message: "Jump host connection requires special setup" };
       }
 
@@ -66,49 +67,13 @@ export class SSHService {
   }
 
   /**
-   * Connect to a host through a jump/bastion host
+   * Start shell and record connection log
    */
-  async connectWithJump(
-    targetHost: Host,
-    jumpHostConfig: {
-      host: string;
-      port: number;
-      username: string;
-      authType: "password" | "key" | "agent";
-      password?: string;
-      privateKey?: string;
-    }
-  ): Promise<SSHConnectionResult> {
-    try {
-      const sessionId = await invoke<string>("ssh_connect_jump", {
-        targetHost: targetHost.hostname,
-        targetPort: targetHost.port,
-        targetUsername: targetHost.username,
-        targetPassword: targetHost.password,
-        targetPrivateKey: targetHost.privateKey,
-        targetAuthType: targetHost.authType,
-        jumpHost: {
-          host: jumpHostConfig.host,
-          port: jumpHostConfig.port,
-          username: jumpHostConfig.username,
-          auth_type: jumpHostConfig.authType,
-          password: jumpHostConfig.password,
-          private_key: jumpHostConfig.privateKey,
-        },
-      });
-      return { success: true, message: "Connected via jump host", sessionId };
-    } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-
   async startShell(
     sessionId: string,
     cols: number = 80,
-    rows: number = 24
+    rows: number = 24,
+    hostInfo?: { id?: string; name: string; hostname: string; username: string }
   ): Promise<SSHConnectionResult> {
     try {
       await invoke("ssh_shell", {
@@ -116,6 +81,24 @@ export class SSHService {
         cols,
         rows,
       });
+
+      // Record connection log
+      if (hostInfo) {
+        const logId = await addConnectionLog({
+          host_id: hostInfo.id || null,
+          host_name: hostInfo.name,
+          host_address: hostInfo.hostname,
+          username: hostInfo.username,
+          connection_type: "ssh",
+          started_at: Date.now(),
+          ended_at: null,
+          duration_seconds: null,
+          is_saved: 0,
+          notes: null,
+        });
+        activeConnectionLogs.set(sessionId, { logId, startTime: Date.now() });
+      }
+
       return { success: true, message: "Shell started" };
     } catch (error) {
       return {
@@ -142,6 +125,19 @@ export class SSHService {
 
   async disconnect(sessionId: string): Promise<void> {
     await invoke("ssh_disconnect", { sessionId });
+    // Update connection log with end time
+    const logInfo = activeConnectionLogs.get(sessionId);
+    if (logInfo) {
+      const endTime = Date.now();
+      const durationSeconds = Math.round((endTime - logInfo.startTime) / 1000);
+      await import("@/service/database").then(({ updateConnectionLog }) => {
+        updateConnectionLog(logInfo.logId, {
+          ended_at: endTime,
+          duration_seconds: durationSeconds,
+        });
+      });
+      activeConnectionLogs.delete(sessionId);
+    }
   }
 
   async execute(

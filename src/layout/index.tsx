@@ -132,12 +132,18 @@ const MainLayoutInner: React.FC<{
               aria-valuenow={sidebarWidth}
               tabIndex={0}
               className={cn(
-                "w-1.5 shrink-0 cursor-col-resize flex items-stretch justify-center group outline-none",
-                "hover:bg-border/80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                "w-[6px] shrink-0 cursor-col-resize flex items-center justify-center group outline-none select-none",
+                "hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                resizing && "cursor-col-resize bg-primary/20"
               )}
               onMouseDown={onResizeStart}
             >
-              <span className="w-px h-full bg-border/60 group-hover:bg-primary/40 transition-colors" />
+              {/* 拖拽手柄点 */}
+              <div className="flex flex-col gap-1.5 py-8 opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="w-1 h-1 rounded-full bg-muted-foreground/60" />
+                <span className="w-1 h-1 rounded-full bg-muted-foreground/60" />
+                <span className="w-1 h-1 rounded-full bg-muted-foreground/60" />
+              </div>
             </div>
           </>
         )}

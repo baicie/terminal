@@ -19,6 +19,7 @@ const PortForwardView = lazy(() => import("../view/port-forward"));
 const SnippetsView = lazy(() => import("../view/snippets"));
 const KnownHostsView = lazy(() => import("../view/known-hosts"));
 const LogsView = lazy(() => import("../view/logs"));
+const ScriptsView = lazy(() => import("../view/scripts"));
 
 const warpCom = (Com: React.ComponentType) => {
   return (
@@ -82,6 +83,11 @@ export const routes: RouteObject[] = [
       {
         path: "logs",
         element: warpCom(LogsView),
+      },
+      // Scripts - Advanced scripting and batch execution
+      {
+        path: "scripts",
+        element: warpCom(ScriptsView),
       },
     ],
   },

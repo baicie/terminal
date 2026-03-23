@@ -41,8 +41,8 @@ pub async fn local_shell(
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
     };
 
-    // Create command
-    let mut cmd = CommandBuilder::new(&shell);
+    // Create command (mut needed for Windows cwd setting)
+    let cmd = CommandBuilder::new(&shell);
 
     // Set working directory for Windows
     #[cfg(windows)]

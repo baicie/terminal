@@ -262,17 +262,18 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
           "border-b border-[#333333]",
           className
         )}
-        data-tauri-drag-region
+        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
         {/* Left: Traffic lights + Workspace */}
-        <div className="flex items-center gap-3 pl-3">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3 pl-3" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+          <div className="flex items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
             <Button
               variant="ghost"
               size="icon"
               className="size-3 rounded-full bg-[#ff5f57] hover:bg-[#ff5f57]/80 border border-[#e0443b]"
               onClick={handleClose}
               aria-label="Close"
+              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             />
             <Button
               variant="ghost"
@@ -280,6 +281,7 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
               className="size-3 rounded-full bg-[#febc2e] hover:bg-[#febc2e]/80 border border-[#e09a1f]"
               onClick={handleMinimize}
               aria-label="Minimize"
+              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             />
             <Button
               variant="ghost"
@@ -287,6 +289,7 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
               className="size-3 rounded-full bg-[#28c840] hover:bg-[#28c840]/80 border border-[#1aab29]"
               onClick={handleMaximize}
               aria-label={isMaximized ? "Restore" : "Maximize"}
+              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             />
           </div>
           <WorkspaceSwitcher onSettingsClick={onSettingsClick} />
@@ -295,13 +298,12 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
         {/* Title */}
         <span
           className="text-xs text-[#cccccc] font-medium absolute left-1/2 -translate-x-1/2"
-          data-tauri-drag-region
         >
           {title}
         </span>
 
         {/* Right: Settings */}
-        <div className="flex items-center gap-2 pr-3">
+        <div className="flex items-center gap-2 pr-3" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
           <Button
             variant="ghost"
             size="icon"
@@ -324,13 +326,12 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
         "border-b border-[#333333]",
         className
       )}
-      data-tauri-drag-region
+      style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       {/* Left: Title + Workspace */}
-      <div className="flex items-center gap-3 pl-3">
+      <div className="flex items-center gap-3 pl-3" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         <span
           className="text-xs text-[#cccccc] font-medium"
-          data-tauri-drag-region
         >
           {title}
         </span>
@@ -339,7 +340,7 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
       </div>
 
       {/* Right: Settings + Window controls */}
-      <div className="flex items-center h-full" data-tauri-drag-region="false">
+      <div className="flex items-center h-full" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         <Button
           variant="ghost"
           size="icon"

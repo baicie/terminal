@@ -1,26 +1,44 @@
 import Database from "@tauri-apps/plugin-sql";
 import { isTauri } from "@tauri-apps/api/core";
+import type { Host } from "@/types";
+import type { SSHOutput } from "@/service/ssh";
+
+// Re-export types for convenience
+export type { Host, SSHOutput };
 
 let db: Database | null = null;
+let initPromise: Promise<Database> | null = null;
 
 export async function getDb(): Promise<Database> {
-  if (!db) {
-    if (!isTauri()) {
-      throw new Error("Database only available in Tauri context");
-    }
+  if (db) return db;
+
+  // If initialization is in progress, wait for it
+  if (initPromise) return initPromise;
+
+  if (!isTauri()) {
+    throw new Error("Database only available in Tauri context");
+  }
+
+  // Start initialization
+  initPromise = (async () => {
     db = await Database.load("sqlite:terminal.db");
     await initSchema();
     await configureSqlite();
-  }
-  return db;
+    return db;
+  })();
+
+  return initPromise;
 }
 
 async function configureSqlite() {
   const database = db!;
   // Enable WAL mode for better concurrent access
   await database.execute("PRAGMA journal_mode=WAL");
-  // Set busy timeout to wait for locks (5 seconds)
-  await database.execute("PRAGMA busy_timeout=5000");
+  // Set busy timeout to wait for locks (30 seconds for Tauri dev mode)
+  await database.execute("PRAGMA busy_timeout=30000");
+  // Optimize for performance
+  await database.execute("PRAGMA synchronous=NORMAL");
+  await database.execute("PRAGMA cache_size=10000");
 }
 
 async function initSchema() {
@@ -89,10 +107,37 @@ async function initSchema() {
 
   await database.execute(`
     CREATE TABLE IF NOT EXISTS known_hosts (
-      hostname TEXT PRIMARY KEY,
-      fingerprint TEXT,
-      added_at INTEGER
+      id TEXT PRIMARY KEY,
+      hostname TEXT NOT NULL,
+      port INTEGER DEFAULT 22,
+      fingerprint TEXT NOT NULL,
+      key_type TEXT,
+      added_at INTEGER NOT NULL
     )
+  `);
+
+  await database.execute(`
+    CREATE INDEX IF NOT EXISTS idx_known_hosts_hostname ON known_hosts(hostname)
+  `);
+
+  // SSH Keys table for Keychain
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS ssh_keys (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      key_type TEXT,
+      private_key TEXT,
+      public_key TEXT,
+      certificate TEXT,
+      passphrase TEXT,
+      is_encrypted INTEGER DEFAULT 0,
+      created_at INTEGER,
+      updated_at INTEGER
+    )
+  `);
+
+  await database.execute(`
+    CREATE INDEX IF NOT EXISTS idx_ssh_keys_name ON ssh_keys(name)
   `);
 
   await database.execute(`
@@ -134,6 +179,73 @@ async function initSchema() {
       FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
     )
   `);
+
+  // Connection logs table
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS connection_logs (
+      id TEXT PRIMARY KEY,
+      host_id TEXT,
+      host_name TEXT NOT NULL,
+      host_address TEXT NOT NULL,
+      username TEXT,
+      connection_type TEXT NOT NULL,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      duration_seconds INTEGER,
+      is_saved INTEGER DEFAULT 0,
+      notes TEXT,
+      FOREIGN KEY (host_id) REFERENCES hosts(id) ON DELETE SET NULL
+    )
+  `);
+
+  await database.execute(`
+    CREATE INDEX IF NOT EXISTS idx_connection_logs_started_at ON connection_logs(started_at DESC)
+  `);
+
+  // Scripts table for advanced scripting
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS scripts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      script TEXT NOT NULL,
+      host_ids TEXT,
+      schedule_type TEXT DEFAULT 'manual',
+      schedule_value TEXT,
+      enabled INTEGER DEFAULT 1,
+      timeout_seconds INTEGER DEFAULT 60,
+      retry_count INTEGER DEFAULT 0,
+      created_at INTEGER,
+      updated_at INTEGER
+    )
+  `);
+
+  await database.execute(`
+    CREATE INDEX IF NOT EXISTS idx_scripts_enabled ON scripts(enabled)
+  `);
+
+  // Script executions table
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS script_executions (
+      id TEXT PRIMARY KEY,
+      script_id TEXT,
+      script_name TEXT NOT NULL,
+      host_id TEXT,
+      host_name TEXT,
+      host_address TEXT,
+      status TEXT NOT NULL,
+      output TEXT,
+      error TEXT,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      duration_ms INTEGER,
+      FOREIGN KEY (script_id) REFERENCES scripts(id) ON DELETE SET NULL
+    )
+  `);
+
+  await database.execute(`
+    CREATE INDEX IF NOT EXISTS idx_script_executions_started_at ON script_executions(started_at DESC)
+  `);
 }
 
 export async function executeQuery(sql: string, params: unknown[] = []) {
@@ -144,6 +256,12 @@ export async function executeQuery(sql: string, params: unknown[] = []) {
 export async function select<T>(sql: string, params: unknown[] = []): Promise<T[]> {
   const database = await getDb();
   return database.select(sql, params);
+}
+
+// Host Operations
+export async function getHosts(): Promise<Host[]> {
+  const database = await getDb();
+  return database.select<Host[]>("SELECT * FROM hosts ORDER BY name");
 }
 
 // Command History Operations
@@ -192,6 +310,69 @@ export async function clearCommandHistory(hostId?: string) {
   } else {
     await database.execute("DELETE FROM command_history");
   }
+}
+
+// Known Hosts Operations
+export interface KnownHostRecord {
+  id: string;
+  hostname: string;
+  port: number;
+  fingerprint: string;
+  key_type: string | null;
+  added_at: number;
+}
+
+export async function addKnownHost(host: Omit<KnownHostRecord, "id">): Promise<string> {
+  const database = await getDb();
+  const id = crypto.randomUUID();
+  await database.execute(
+    `INSERT INTO known_hosts (id, hostname, port, fingerprint, key_type, added_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [id, host.hostname, host.port, host.fingerprint, host.key_type, host.added_at]
+  );
+  return id;
+}
+
+export async function addKnownHosts(hosts: Omit<KnownHostRecord, "id">[]): Promise<void> {
+  const database = await getDb();
+  for (const host of hosts) {
+    // Check if already exists
+    const existing = await database.select<KnownHostRecord[]>(
+      "SELECT * FROM known_hosts WHERE hostname = ? AND port = ?",
+      [host.hostname, host.port]
+    );
+    if (existing.length === 0) {
+      const id = crypto.randomUUID();
+      await database.execute(
+        `INSERT INTO known_hosts (id, hostname, port, fingerprint, key_type, added_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, host.hostname, host.port, host.fingerprint, host.key_type, host.added_at]
+      );
+    }
+  }
+}
+
+export async function deleteKnownHost(id: string): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM known_hosts WHERE id = ?", [id]);
+}
+
+export async function clearAllKnownHosts(): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM known_hosts");
+}
+
+export async function getKnownHosts(): Promise<KnownHostRecord[]> {
+  const database = await getDb();
+  return database.select("SELECT * FROM known_hosts ORDER BY added_at DESC");
+}
+
+export async function searchKnownHosts(query: string): Promise<KnownHostRecord[]> {
+  const database = await getDb();
+  return database.select(
+    "SELECT * FROM known_hosts WHERE hostname LIKE ? ORDER BY added_at DESC LIMIT 50",
+    [`%${query}%`]
+  );
 }
 
 // Snippet Operations
@@ -271,6 +452,76 @@ export async function deleteSnippetPackage(id: string) {
 export async function getSnippetPackages(): Promise<SnippetPackageRecord[]> {
   const database = await getDb();
   return database.select("SELECT * FROM snippet_packages ORDER BY name");
+}
+
+// SSH Keys (Keychain) Operations
+export interface SSHKeyRecord {
+  id: string;
+  name: string;
+  key_type: string | null;
+  private_key: string | null;
+  public_key: string | null;
+  certificate: string | null;
+  passphrase: string | null;
+  is_encrypted: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function createSSHKey(key: Omit<SSHKeyRecord, "created_at" | "updated_at">): Promise<string> {
+  const database = await getDb();
+  const now = Date.now();
+  await database.execute(
+    `INSERT INTO ssh_keys (id, name, key_type, private_key, public_key, certificate, passphrase, is_encrypted, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [key.id, key.name, key.key_type, key.private_key, key.public_key, key.certificate, key.passphrase, key.is_encrypted, now, now]
+  );
+  return key.id;
+}
+
+export async function updateSSHKey(id: string, updates: Partial<SSHKeyRecord>): Promise<void> {
+  const database = await getDb();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (updates.name !== undefined) { fields.push("name = ?"); values.push(updates.name); }
+  if (updates.key_type !== undefined) { fields.push("key_type = ?"); values.push(updates.key_type); }
+  if (updates.private_key !== undefined) { fields.push("private_key = ?"); values.push(updates.private_key); }
+  if (updates.public_key !== undefined) { fields.push("public_key = ?"); values.push(updates.public_key); }
+  if (updates.certificate !== undefined) { fields.push("certificate = ?"); values.push(updates.certificate); }
+  if (updates.passphrase !== undefined) { fields.push("passphrase = ?"); values.push(updates.passphrase); }
+  if (updates.is_encrypted !== undefined) { fields.push("is_encrypted = ?"); values.push(updates.is_encrypted); }
+
+  if (fields.length > 0) {
+    fields.push("updated_at = ?");
+    values.push(Date.now());
+    values.push(id);
+    await database.execute(`UPDATE ssh_keys SET ${fields.join(", ")} WHERE id = ?`, values);
+  }
+}
+
+export async function deleteSSHKey(id: string): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM ssh_keys WHERE id = ?", [id]);
+}
+
+export async function getSSHKeys(): Promise<SSHKeyRecord[]> {
+  const database = await getDb();
+  return database.select("SELECT * FROM ssh_keys ORDER BY name");
+}
+
+export async function getSSHKeyById(id: string): Promise<SSHKeyRecord | null> {
+  const database = await getDb();
+  const results = await database.select<SSHKeyRecord[]>("SELECT * FROM ssh_keys WHERE id = ?", [id]);
+  return results[0] || null;
+}
+
+export async function searchSSHKeys(query: string): Promise<SSHKeyRecord[]> {
+  const database = await getDb();
+  return database.select(
+    "SELECT * FROM ssh_keys WHERE name LIKE ? ORDER BY name LIMIT 50",
+    [`%${query}%`]
+  );
 }
 
 // Settings Operations
@@ -424,4 +675,236 @@ export async function getWorkspaceLayout(workspaceId: string): Promise<Workspace
     [workspaceId]
   );
   return results[0] || null;
+}
+
+// Connection Log Operations
+export interface ConnectionLogRecord {
+  id: string;
+  host_id: string | null;
+  host_name: string;
+  host_address: string;
+  username: string | null;
+  connection_type: 'ssh' | 'local' | 'serial';
+  started_at: number;
+  ended_at: number | null;
+  duration_seconds: number | null;
+  is_saved: number;
+  notes: string | null;
+}
+
+export async function addConnectionLog(log: Omit<ConnectionLogRecord, "id">): Promise<string> {
+  const database = await getDb();
+  const id = crypto.randomUUID();
+  await database.execute(
+    `INSERT INTO connection_logs (id, host_id, host_name, host_address, username, connection_type, started_at, ended_at, duration_seconds, is_saved, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, log.host_id, log.host_name, log.host_address, log.username, log.connection_type, log.started_at, log.ended_at, log.duration_seconds, log.is_saved, log.notes]
+  );
+  return id;
+}
+
+export async function updateConnectionLog(id: string, updates: Partial<ConnectionLogRecord>): Promise<void> {
+  const database = await getDb();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (updates.ended_at !== undefined) { fields.push("ended_at = ?"); values.push(updates.ended_at); }
+  if (updates.duration_seconds !== undefined) { fields.push("duration_seconds = ?"); values.push(updates.duration_seconds); }
+  if (updates.is_saved !== undefined) { fields.push("is_saved = ?"); values.push(updates.is_saved); }
+  if (updates.notes !== undefined) { fields.push("notes = ?"); values.push(updates.notes); }
+
+  if (fields.length > 0) {
+    values.push(id);
+    await database.execute(`UPDATE connection_logs SET ${fields.join(", ")} WHERE id = ?`, values);
+  }
+}
+
+export async function deleteConnectionLog(id: string): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM connection_logs WHERE id = ?", [id]);
+}
+
+export async function getConnectionLogs(limit = 100): Promise<ConnectionLogRecord[]> {
+  const database = await getDb();
+  return database.select(
+    "SELECT * FROM connection_logs ORDER BY started_at DESC LIMIT ?",
+    [limit]
+  );
+}
+
+export async function getConnectionLogsByHost(hostId: string): Promise<ConnectionLogRecord[]> {
+  const database = await getDb();
+  return database.select(
+    "SELECT * FROM connection_logs WHERE host_id = ? ORDER BY started_at DESC",
+    [hostId]
+  );
+}
+
+export async function searchConnectionLogs(query: string): Promise<ConnectionLogRecord[]> {
+  const database = await getDb();
+  return database.select(
+    "SELECT * FROM connection_logs WHERE host_name LIKE ? OR host_address LIKE ? OR username LIKE ? ORDER BY started_at DESC LIMIT 50",
+    [`%${query}%`, `%${query}%`, `%${query}%`]
+  );
+}
+
+export async function toggleConnectionLogSaved(id: string): Promise<void> {
+  const database = await getDb();
+  await database.execute(
+    "UPDATE connection_logs SET is_saved = CASE WHEN is_saved = 1 THEN 0 ELSE 1 END WHERE id = ?",
+    [id]
+  );
+}
+
+// ============================================================
+// Script Operations (Advanced Scripting - Scheduling & Batch)
+// ============================================================
+
+export interface ScriptRecord {
+  id: string;
+  name: string;
+  description: string | null;
+  script: string;
+  host_ids: string;  // JSON array of host IDs
+  schedule_type: 'manual' | 'once' | 'interval' | 'cron';
+  schedule_value: string | null;  // cron expression or interval in ms
+  enabled: number;
+  timeout_seconds: number;
+  retry_count: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ScriptExecutionRecord {
+  id: string;
+  script_id: string;
+  script_name: string;
+  host_id: string | null;
+  host_name: string | null;
+  host_address: string | null;
+  status: 'running' | 'success' | 'failed' | 'timeout';
+  output: string | null;
+  error: string | null;
+  started_at: number;
+  ended_at: number | null;
+  duration_ms: number | null;
+}
+
+export async function createScript(script: ScriptRecord): Promise<string> {
+  const database = await getDb();
+  await database.execute(
+    `INSERT INTO scripts (id, name, description, script, host_ids, schedule_type, schedule_value, enabled, timeout_seconds, retry_count, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [script.id, script.name, script.description, script.script, script.host_ids, script.schedule_type, script.schedule_value, script.enabled, script.timeout_seconds, script.retry_count, script.created_at, script.updated_at]
+  );
+  return script.id;
+}
+
+export async function updateScript(script: ScriptRecord): Promise<void> {
+  const database = await getDb();
+  await database.execute(
+    `UPDATE scripts SET name = ?, description = ?, script = ?, host_ids = ?, schedule_type = ?, schedule_value = ?, enabled = ?, timeout_seconds = ?, retry_count = ?, updated_at = ?
+     WHERE id = ?`,
+    [script.name, script.description, script.script, script.host_ids, script.schedule_type, script.schedule_value, script.enabled, script.timeout_seconds, script.retry_count, script.updated_at, script.id]
+  );
+}
+
+export async function deleteScript(id: string): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM scripts WHERE id = ?", [id]);
+}
+
+export async function getScripts(): Promise<ScriptRecord[]> {
+  const database = await getDb();
+  return database.select("SELECT * FROM scripts ORDER BY name");
+}
+
+export async function getScriptById(id: string): Promise<ScriptRecord | null> {
+  const database = await getDb();
+  const results = await database.select<ScriptRecord[]>("SELECT * FROM scripts WHERE id = ?", [id]);
+  return results[0] || null;
+}
+
+export async function getEnabledScripts(): Promise<ScriptRecord[]> {
+  const database = await getDb();
+  return database.select("SELECT * FROM scripts WHERE enabled = 1 ORDER BY name");
+}
+
+export async function searchScripts(query: string): Promise<ScriptRecord[]> {
+  const database = await getDb();
+  return database.select(
+    "SELECT * FROM scripts WHERE name LIKE ? OR description LIKE ? ORDER BY name LIMIT 50",
+    [`%${query}%`, `%${query}%`]
+  );
+}
+
+export async function toggleScriptEnabled(id: string): Promise<void> {
+  const database = await getDb();
+  await database.execute(
+    "UPDATE scripts SET enabled = CASE WHEN enabled = 1 THEN 0 ELSE 1 END, updated_at = ? WHERE id = ?",
+    [Date.now(), id]
+  );
+}
+
+// Script Execution Operations
+export async function addScriptExecution(execution: Omit<ScriptExecutionRecord, "id">): Promise<string> {
+  const database = await getDb();
+  const id = crypto.randomUUID();
+  await database.execute(
+    `INSERT INTO script_executions (id, script_id, script_name, host_id, host_name, host_address, status, output, error, started_at, ended_at, duration_ms)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, execution.script_id, execution.script_name, execution.host_id, execution.host_name, execution.host_address, execution.status, execution.output, execution.error, execution.started_at, execution.ended_at, execution.duration_ms]
+  );
+  return id;
+}
+
+export async function updateScriptExecution(id: string, updates: Partial<ScriptExecutionRecord>): Promise<void> {
+  const database = await getDb();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (updates.status !== undefined) { fields.push("status = ?"); values.push(updates.status); }
+  if (updates.output !== undefined) { fields.push("output = ?"); values.push(updates.output); }
+  if (updates.error !== undefined) { fields.push("error = ?"); values.push(updates.error); }
+  if (updates.ended_at !== undefined) { fields.push("ended_at = ?"); values.push(updates.ended_at); }
+  if (updates.duration_ms !== undefined) { fields.push("duration_ms = ?"); values.push(updates.duration_ms); }
+
+  if (fields.length > 0) {
+    values.push(id);
+    await database.execute(`UPDATE script_executions SET ${fields.join(", ")} WHERE id = ?`, values);
+  }
+}
+
+export async function getScriptExecutions(scriptId?: string, limit = 100): Promise<ScriptExecutionRecord[]> {
+  const database = await getDb();
+  if (scriptId) {
+    return database.select(
+      "SELECT * FROM script_executions WHERE script_id = ? ORDER BY started_at DESC LIMIT ?",
+      [scriptId, limit]
+    );
+  }
+  return database.select(
+    "SELECT * FROM script_executions ORDER BY started_at DESC LIMIT ?",
+    [limit]
+  );
+}
+
+export async function getScriptExecutionById(id: string): Promise<ScriptExecutionRecord | null> {
+  const database = await getDb();
+  const results = await database.select<ScriptExecutionRecord[]>("SELECT * FROM script_executions WHERE id = ?", [id]);
+  return results[0] || null;
+}
+
+export async function deleteScriptExecution(id: string): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM script_executions WHERE id = ?", [id]);
+}
+
+export async function clearScriptExecutions(scriptId?: string): Promise<void> {
+  const database = await getDb();
+  if (scriptId) {
+    await database.execute("DELETE FROM script_executions WHERE script_id = ?", [scriptId]);
+  } else {
+    await database.execute("DELETE FROM script_executions");
+  }
 }
