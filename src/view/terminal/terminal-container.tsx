@@ -2,9 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useInjectable } from '@/hooks/use-di'
 import { AppStore } from '@/store/app'
+import { HostStore } from '@/store/host'
 import { Terminal as TerminalComponent } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { SearchAddon } from '@xterm/addon-search'
+import { WebLinksAddon } from '@xterm/addon-web-links'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
+import { useTerminal } from '@/hooks/use-terminal'
+import { toast } from 'sonner'
 
 interface TerminalContainerProps {
   tabId: string
@@ -13,6 +19,7 @@ interface TerminalContainerProps {
 const TerminalContainer: React.FC<TerminalContainerProps> = observer(
   ({ tabId }) => {
     const app = useInjectable(AppStore)
+    const hostStore = useInjectable(HostStore)
 
     const containerRef = useRef<HTMLDivElement>(null)
     const termRef = useRef<TerminalComponent | null>(null)
@@ -22,87 +29,109 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(
     const tab = app.tabs.find(t => t.id === tabId)
     const [isReady, setIsReady] = useState(false)
 
-    // Initialize xterm
+    // Derive host from tab.hostId
+    const host = tab?.hostId
+      ? hostStore.hosts.find(h => h.id === tab.hostId)
+      : undefined
+
+    // ---- 终端数据流 hook ----
+    const termForHook = termRef.current
+    const { status, error } = useTerminal(termForHook, {
+      tabType: tab?.type ?? 'local',
+      host,
+      serialSessionId: tab?.serialSessionId,
+    })
+
+    // 连接失败时提示
+    useEffect(() => {
+      if (error) {
+        toast.error(`Terminal error: ${error}`)
+      }
+    }, [error])
+
+    // ---- 初始化 xterm ----
     useEffect(() => {
       if (!containerRef.current || !tab) return
 
       const term = new TerminalComponent({
         cursorBlink: true,
         fontSize: 14,
-        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+        fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
         theme: {
           background: '#1e1e1e',
-          foreground: '#d4d4d4',
-          cursor: '#d4d4d4',
+          foreground: '#cccccc',
+          cursor: '#cccccc',
+          cursorAccent: '#1e1e1e',
+          selectionBackground: '#264f78',
+          black: '#000000',
+          red: '#cd3131',
+          green: '#0dbc79',
+          yellow: '#e5e510',
+          blue: '#2472c8',
+          magenta: '#bc3fbc',
+          cyan: '#11a8cd',
+          white: '#e5e5e5',
+          brightBlack: '#666666',
+          brightRed: '#f14c4c',
+          brightGreen: '#23d18b',
+          brightYellow: '#f5f543',
+          brightBlue: '#3b8eea',
+          brightMagenta: '#d670d6',
+          brightCyan: '#29b8db',
+          brightWhite: '#ffffff',
         },
         scrollback: 10000,
         macOptionIsMeta: true,
         allowTransparency: true,
+        allowProposedApi: true,
       })
 
       termRef.current = term
 
+      // Load addons
       const fitAddon = new FitAddon()
       fitAddonRef.current = fitAddon
       term.loadAddon(fitAddon)
 
+      const searchAddon = new SearchAddon()
+      term.loadAddon(searchAddon)
+
+      const webLinksAddon = new WebLinksAddon()
+      term.loadAddon(webLinksAddon)
+
+      const unicodeAddon = new Unicode11Addon()
+      term.loadAddon(unicodeAddon)
+      term.unicode.activeVersion = '11'
+
+      // Load clipboard addon dynamically
+      ;(async () => {
+        try {
+          const { ClipboardAddon } = await import('@xterm/addon-clipboard')
+          term.loadAddon(new ClipboardAddon())
+        } catch (e) {
+          console.warn('Failed to load ClipboardAddon:', e)
+        }
+      })()
+
       term.open(containerRef.current)
+
       setTimeout(() => {
         fitAddon.fit()
         term.focus()
       }, 50)
-
-      // 使用 attachCustomKeyEventHandler 处理 Safari/WebView 键盘问题
-      // 返回 false = 阻止 xterm 处理字符，返回 true = 让 xterm 处理
-      let buffer = ''
-      let timer: ReturnType<typeof setTimeout> | null = null
-
-      const flush = () => {
-        if (buffer && termRef.current) {
-          console.log('flush:', JSON.stringify(buffer))
-          termRef.current.write(buffer)
-          buffer = ''
-        }
-        timer = null
-      }
-
-      term.attachCustomKeyEventHandler(e => {
-        if (e.type === 'keydown') {
-          // 控制字符：让 xterm 正常处理
-          if (
-            e.key === 'Enter' ||
-            e.key === 'Tab' ||
-            e.key.startsWith('Arrow') ||
-            e.ctrlKey ||
-            e.metaKey
-          ) {
-            return true
-          }
-
-          // 普通字符：缓冲 10ms 合并快速按键
-          if (e.key.length === 1) {
-            buffer += e.key
-            if (timer) clearTimeout(timer)
-            timer = setTimeout(flush, 10)
-            return false // 阻止 xterm 默认处理，我们手动 flush
-          }
-        }
-        return true
-      })
 
       setIsReady(true)
       isMountedRef.current = true
 
       return () => {
         isMountedRef.current = false
-        if (timer) clearTimeout(timer)
         term.dispose()
         termRef.current = null
         setIsReady(false)
       }
     }, [tabId, tab])
 
-    // Handle resize
+    // ---- Resize 监听 ----
     useEffect(() => {
       if (!isReady) return
 
@@ -126,13 +155,25 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(
       }
     }, [isReady])
 
+    // ---- 状态变化时同步 fit ----
+    useEffect(() => {
+      if (isReady && fitAddonRef.current) {
+        setTimeout(() => fitAddonRef.current?.fit(), 10)
+      }
+    }, [isReady, status])
+
+    // ---- 空状态：无标签 ----
     if (!tab) {
       return (
         <div className="h-full flex items-center justify-center bg-[#1e1e1e]">
-          <div className="text-center">
-            <p className="text-[#d4d4d4] mb-4">No active session</p>
-            <p className="text-[#858585] text-sm">
-              Select a host from the Hosts page to start a terminal session.
+          <div className="text-center max-w-sm">
+            <p className="text-[#888] mb-2 text-sm font-medium">No active session</p>
+            <p className="text-[#555] text-xs">
+              Select a host from the sidebar or press{' '}
+              <kbd className="px-1 py-0.5 bg-[#333] rounded text-[#aaa] font-mono text-[10px]">
+                Ctrl+T
+              </kbd>{' '}
+              to open a local terminal.
             </p>
           </div>
         </div>
@@ -155,3 +196,4 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(
 )
 
 export default TerminalContainer
+export { TerminalContainer }

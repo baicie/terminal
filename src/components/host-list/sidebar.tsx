@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import { useInjectable } from '@/hooks/use-di'
 import { HostStore } from '@/store/host'
 import { AppStore } from '@/store/app'
@@ -148,6 +148,21 @@ const Sidebar: React.FC<HostListProps> = ({ onConnect }) => {
   const app = useInjectable(AppStore)
   const navigate = useNavigate()
 
+  const handleConnectHost = useCallback(
+    (host: Host) => {
+      onConnect?.(host)
+      // Create a new tab for the remote connection
+      const newTab = app.addTab({
+        label: host.name,
+        type: 'remote',
+        hostId: host.id,
+      })
+      app.setActiveTab(newTab.id)
+      navigate('/terminal')
+    },
+    [app, navigate, onConnect],
+  )
+
   const handleNewLocalTerminal = () => {
     const newTab = app.addTab({
       label: 'Local',
@@ -182,8 +197,8 @@ const Sidebar: React.FC<HostListProps> = ({ onConnect }) => {
           </div>
         </div>
 
-        <FavoritesSection onConnect={onConnect} />
-        <GroupsSection onConnect={onConnect} />
+        <FavoritesSection onConnect={handleConnectHost} />
+        <GroupsSection onConnect={handleConnectHost} />
       </div>
     </div>
   )

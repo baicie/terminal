@@ -233,10 +233,10 @@ export class SSHService {
   }
 
   async writeLocal(sessionId: string, data: string): Promise<void> {
-    // await invoke("local_write", {
-    //   sessionId,
-    //   data,
-    // });
+    await invoke('local_write', {
+      sessionId,
+      data,
+    })
   }
 
   async resizeLocal(

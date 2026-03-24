@@ -41,6 +41,13 @@ const TopToolbar: React.FC<{
   const [hostDialogOpen, setHostDialogOpen] = useState(false)
   /** macOS + Tauri：为原生红绿灯留出左侧空间，避免顶栏盖住系统按钮 */
   const [padForMacTrafficLights, setPadForMacTrafficLights] = useState(false)
+  // Force re-render when tabs change so MenuTabs gets the updated state
+  const [, setTabsVersion] = useState(0)
+  useEffect(() => {
+    // Subscribe to app.tabs changes and force re-render
+    const _ = app.tabs.length
+    setTabsVersion(n => n + 1)
+  }, [app.tabs.length])
 
   const isSftpActive = location.pathname === '/sftp'
 

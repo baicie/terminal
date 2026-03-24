@@ -8,7 +8,7 @@ const HomeView: React.FC = () => {
 
   // If there are tabs, show the terminal view
   if (app.tabs.length > 0 && app.activeTab) {
-    return <Terminal />
+    return <Terminal tabId={app.activeTabId!} />
   }
 
   // Welcome screen when no tabs are open

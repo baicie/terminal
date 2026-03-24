@@ -1,7 +1,8 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, type ReactNode } from 'react'
 import type { RouteObject } from 'react-router-dom'
 import { createBrowserRouter } from 'react-router-dom'
 import Layout from '../layout'
+import { TerminalContainer } from '@/view/terminal/terminal-container'
 
 const Loading = () => (
   <div className="flex items-center justify-center h-full">
@@ -9,24 +10,19 @@ const Loading = () => (
   </div>
 )
 
-// Lazy load views for better performance
-const HostsView = lazy(() => import('../view/hosts'))
-const SftpView = lazy(() => import('../view/sftp/sftp-container'))
-const TerminalView = lazy(() => import('../view/terminal/terminal-container'))
-const XtermDemo = lazy(() => import('../view/terminal/xterm-demo'))
-const VaultsView = lazy(() => import('../view/vaults/vaults-container'))
-const KeychainView = lazy(() => import('../view/keychain'))
-const PortForwardView = lazy(() => import('../view/port-forward'))
-const SnippetsView = lazy(() => import('../view/snippets'))
-const KnownHostsView = lazy(() => import('../view/known-hosts'))
-const LogsView = lazy(() => import('../view/logs'))
-const ScriptsView = lazy(() => import('../view/scripts'))
-const KeyboardTestView = lazy(() => import('../view/keyboard-test'))
+const TerminalRouteWrapper: React.FC = () => {
+  // TerminalContainer reads activeTabId from AppStore; empty string means no tab
+  return <TerminalContainer tabId="" />
+}
 
-const warpCom = (Com: React.ComponentType) => {
+// Lazy wrapper: accepts any React component and returns a Suspense-wrapped lazy component
+function makeLazyRoute(
+  getComponent: () => Promise<{ default: React.ComponentType<any> }>,
+): ReactNode {
+  const LazyComponent = lazy(getComponent)
   return (
     <Suspense fallback={<Loading />}>
-      <Com />
+      <LazyComponent />
     </Suspense>
   )
 }
@@ -39,66 +35,57 @@ export const routes: RouteObject[] = [
       // Default route - Home/Hosts
       {
         index: true,
-        element: warpCom(HostsView),
+        element: makeLazyRoute(() => import('../view/hosts')),
       },
       // Hosts - SSH connections
       {
         path: 'hosts',
-        element: warpCom(HostsView),
+        element: makeLazyRoute(() => import('../view/hosts')),
       },
-      // Terminal - Active terminal sessions
+      // Terminal - Active terminal sessions (managed by Layout via AppStore tabs)
       {
         path: 'terminal',
-        element: warpCom(TerminalView),
-      },
-      {
-        path: 'xterm-demo',
-        element: warpCom(XtermDemo),
+        element: <TerminalRouteWrapper />,
       },
       // SFTP - File transfer
       {
         path: 'sftp',
-        element: warpCom(SftpView),
+        element: makeLazyRoute(() => import('../view/sftp/sftp-container')),
       },
       // Vaults - Encrypted storage
       {
         path: 'vaults',
-        element: warpCom(VaultsView),
+        element: makeLazyRoute(() => import('../view/vaults/vaults-container')),
       },
       // Keychain - SSH keys and certificates
       {
         path: 'keychain',
-        element: warpCom(KeychainView),
+        element: makeLazyRoute(() => import('../view/keychain')),
       },
       // Port Forwarding - SSH tunnels
       {
         path: 'port-forward',
-        element: warpCom(PortForwardView),
+        element: makeLazyRoute(() => import('../view/port-forward')),
       },
       // Snippets - Command scripts
       {
         path: 'snippets',
-        element: warpCom(SnippetsView),
+        element: makeLazyRoute(() => import('../view/snippets')),
       },
       // Known Hosts - SSH host fingerprints
       {
         path: 'known-hosts',
-        element: warpCom(KnownHostsView),
+        element: makeLazyRoute(() => import('../view/known-hosts')),
       },
       // Logs - Connection history
       {
         path: 'logs',
-        element: warpCom(LogsView),
+        element: makeLazyRoute(() => import('../view/app-logs')),
       },
       // Scripts - Advanced scripting and batch execution
       {
         path: 'scripts',
-        element: warpCom(ScriptsView),
-      },
-      // Keyboard Test - Test keyboard events
-      {
-        path: 'keyboard-test',
-        element: warpCom(KeyboardTestView),
+        element: makeLazyRoute(() => import('../view/scripts')),
       },
     ],
   },

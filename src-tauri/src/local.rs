@@ -75,20 +75,21 @@ pub async fn local_shell(
     // Keep line discipline intact (ICANON etc.) so backspace and line editing work.
     #[cfg(unix)]
     {
-        use rustix::fd::BorrowedFd;
-        use rustix::termios::{tcgetattr, tcsetattr, OptionalActions, LocalModes};
+        use rustix::termios::{tcgetattr, tcsetattr, OptionalActions};
+        use rustix::termios::LocalModes;
 
         if let Some(raw_fd) = pty_pair.master.as_raw_fd() {
-            let fd = unsafe { BorrowedFd::borrow_raw(raw_fd) };
-            if let Ok(mut t) = tcgetattr(fd) {
-                t.local_modes.remove(
-                    LocalModes::ECHO
-                        | LocalModes::ECHOE
-                        | LocalModes::ECHOK
-                        | LocalModes::ECHOCTL
-                        | LocalModes::ECHOKE,
-                );
-                let _ = tcsetattr(fd, OptionalActions::Now, &t);
+            if let Ok(mut t) = tcgetattr(raw_fd) {
+                t.local_modes = t
+                    .local_modes
+                    .difference(
+                        LocalModes::ECHO
+                            | LocalModes::ECHOE
+                            | LocalModes::ECHOK
+                            | LocalModes::ECHOCTL
+                            | LocalModes::ECHOKE,
+                    );
+                let _ = tcsetattr(raw_fd, OptionalActions::Now, &t);
             }
         }
     }

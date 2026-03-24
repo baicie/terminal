@@ -7,19 +7,41 @@ import { X, Columns, Rows } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { observer } from 'mobx-react-lite'
+import { reaction } from 'mobx'
+import type { Tab } from '@/types'
 
-/** 顶栏会话标签：仅展示已打开的终端/串口等标签（主机列表从左侧栏进入） */
-const MenuTabs: React.FC = observer(() => {
+/** 顶栏会话标签：仅展示已打开的终端/串口等标签 */
+const MenuTabs: React.FC = () => {
   const { t } = useTranslation('demo')
   const app = useInjectable(AppStore)
   const navigate = useNavigate()
+  const [tabs, setTabs] = useState<Tab[]>([])
+  const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
     tabId: string
   } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // Subscribe to AppStore tabs and activeTabId changes — forces re-render on any change
+  useEffect(() => {
+    // Initial snapshot
+    setTabs([...app.tabs])
+    setActiveTabId(app.activeTabId)
+
+    const disposer = reaction(
+      () => ({
+        tabs: app.tabs.slice(),
+        activeTabId: app.activeTabId,
+      }),
+      ({ tabs: newTabs, activeTabId: newActiveTabId }) => {
+        setTabs(newTabs)
+        setActiveTabId(newActiveTabId)
+      },
+    )
+    return disposer
+  }, [app])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -62,25 +84,25 @@ const MenuTabs: React.FC = observer(() => {
     }
   }
 
-  const getTabStatus = (tab: (typeof app.tabs)[0]) => {
+  const getTabStatus = (tab: Tab) => {
     if (tab.splitMode && tab.splitMode !== 'none') {
       return tab.splitMode === 'horizontal' ? '⬜' : '⬛'
     }
     return ''
   }
 
-  if (app.tabs.length === 0) {
+  if (tabs.length === 0) {
     return null
   }
 
   return (
     <div className="flex items-center gap-0.5 min-w-0 overflow-x-auto">
-      {app.tabs.map(tab => (
+      {tabs.map(tab => (
         <div
           key={tab.id}
           className={cn(
             'flex items-center gap-1.5 px-3 py-1 rounded-md text-sm transition-all duration-150 cursor-pointer shrink-0 max-w-[200px]',
-            app.activeTabId === tab.id
+            activeTabId === tab.id
               ? 'bg-secondary/80 text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40',
           )}
@@ -139,6 +161,6 @@ const MenuTabs: React.FC = observer(() => {
       )}
     </div>
   )
-})
+}
 
 export default MenuTabs

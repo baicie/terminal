@@ -62,16 +62,6 @@ const navItems: NavItem[] = [
     labelKey: 'nav.scripts',
     icon: <Terminal className="size-5" />,
   },
-  {
-    path: '/keyboard-test',
-    labelKey: 'nav.keyboardTest',
-    icon: <Keyboard className="size-5" />,
-  },
-  {
-    path: '/xterm-demo',
-    labelKey: 'nav.xtermDemo',
-    icon: <Terminal className="size-5" />,
-  },
 ]
 
 interface NavItemProps {

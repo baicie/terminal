@@ -600,4 +600,4 @@ defaultNS: 'demo',
 
 **新增文件**:
 
-- `src/view/logs/index.tsx` - 日志视图占位符
+- `src/view/app-logs/index.tsx` - 日志视图占位符

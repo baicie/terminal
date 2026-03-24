@@ -50,7 +50,9 @@ const MainLayoutInner: React.FC<{
   lastWidthRef.current = sidebarWidth
 
   const renderTabContent = (tabId: string) => {
+    console.log('[DEBUG] renderTabContent called with tabId:', tabId)
     const tab = app.tabs.find(t => t.id === tabId)
+    console.log('[DEBUG] found tab:', tab)
     if (!tab) return null
 
     const splitGroup = tab.splitId

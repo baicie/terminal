@@ -67,10 +67,14 @@ const HostsView: React.FC = observer(() => {
   }
 
   const handleNewLocalTerminal = () => {
+    console.log('[DEBUG] handleNewLocalTerminal called')
+    console.log('[DEBUG] app before addTab:', app.tabs.length, 'tabs')
     const newTab = app.addTab({
       label: 'Local',
       type: 'local',
     })
+    console.log('[DEBUG] newTab:', newTab)
+    console.log('[DEBUG] app after addTab:', app.tabs.length, 'tabs')
     app.setActiveTab(newTab.id)
     navigate('/terminal')
   }
