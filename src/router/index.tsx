@@ -21,6 +21,7 @@ const SnippetsView = lazy(() => import('../view/snippets'))
 const KnownHostsView = lazy(() => import('../view/known-hosts'))
 const LogsView = lazy(() => import('../view/logs'))
 const ScriptsView = lazy(() => import('../view/scripts'))
+const KeyboardTestView = lazy(() => import('../view/keyboard-test'))
 
 const warpCom = (Com: React.ComponentType) => {
   return (
@@ -93,6 +94,11 @@ export const routes: RouteObject[] = [
       {
         path: 'scripts',
         element: warpCom(ScriptsView),
+      },
+      // Keyboard Test - Test keyboard events
+      {
+        path: 'keyboard-test',
+        element: warpCom(KeyboardTestView),
       },
     ],
   },

@@ -17,6 +17,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   Terminal,
+  Keyboard,
 } from 'lucide-react'
 
 interface NavItem {
@@ -59,6 +60,16 @@ const navItems: NavItem[] = [
   {
     path: '/scripts',
     labelKey: 'nav.scripts',
+    icon: <Terminal className="size-5" />,
+  },
+  {
+    path: '/keyboard-test',
+    labelKey: 'nav.keyboardTest',
+    icon: <Keyboard className="size-5" />,
+  },
+  {
+    path: '/xterm-demo',
+    labelKey: 'nav.xtermDemo',
     icon: <Terminal className="size-5" />,
   },
 ]
