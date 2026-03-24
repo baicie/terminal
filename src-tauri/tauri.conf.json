@@ -1,30 +1,35 @@
 {
-  "$schema": "https://schema.tauri.app/config/2.0.1",
-  "productName": "terminal",
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Terminal",
   "version": "0.1.0",
   "identifier": "com.baicie.terminal",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
-    "frontendDist": "../dist"
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
   },
   "app": {
-    "windows": [
-      {
-        "title": "terminal",
-        "width": 1440,
-        "height": 880,
-        "minWidth": 720,
-        "minHeight": 440,
-        "center": true,
-        "decorations": false,
-        "titleBarStyle": "Overlay",
-        "transparent": false
-      }
-    ],
+    "macOSPrivateApi": true,
     "security": {
-      "csp": null
+      "capabilities": ["default"],
+      "csp": {
+        "default-src": "'self' customprotocol: asset: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+        "connect-src": "'self' asset: ipc: data: http://asset.localhost http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https: http:",
+        "font-src": [
+          "https://fonts.gstatic.com blob: data: tauri://localhost http://tauri.localhost"
+        ],
+        "img-src": "'self' asset: http://asset.localhost blob: data: https:",
+        "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
+        "script-src": "'self' 'unsafe-eval' asset: http://asset.localhost https:"
+      },
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "requireLiteralLeadingDot": false,
+          "allow": ["**/*"]
+        }
+      }
     }
   },
   "plugins": {
@@ -33,8 +38,9 @@
     }
   },
   "bundle": {
+    "publisher": "Terminal Team",
     "active": true,
-    "targets": "all",
+    "createUpdaterArtifacts": false,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
