@@ -130,7 +130,19 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(({ tabId })
     const sessionId = sessionIdRef.current;
     const connType = connectionTypeRef.current;
 
-    // Handle special keys
+    // For local PTY and serial: forward all input to backend and rely on its echo.
+    // The backend PTY (in raw mode) provides its own echo; serial does too.
+    // SSH has no echo, so we handle display in the "else" branch below.
+    if (connType === "local" && sessionId) {
+      await sshService.writeLocal(sessionId, data);
+      return;
+    }
+    if (connType === "serial" && sessionId) {
+      await serialService.write(sessionId, data);
+      return;
+    }
+
+    // SSH path (and any unhandled type): frontend controls all display + sends to backend.
     const code = data.charCodeAt(0);
 
     // Enter - execute command
@@ -156,10 +168,6 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(({ tabId })
 
       if (connType === "remote" && sessionId) {
         await sshService.write(sessionId, "\r");
-      } else if (connType === "local" && sessionId) {
-        await sshService.writeLocal(sessionId, "\r");
-      } else if (connType === "serial" && sessionId) {
-        await serialService.write(sessionId, "\r");
       }
 
       currentLineRef.current = "";
@@ -176,7 +184,6 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(({ tabId })
           currentLineRef.current.slice(cursorPosRef.current);
         cursorPosRef.current--;
         term.write("\b \b");
-        // Rewrite characters after cursor
         if (cursorPosRef.current < currentLineRef.current.length) {
           const rest = currentLineRef.current.slice(cursorPosRef.current);
           term.write(rest + " ");
@@ -196,10 +203,6 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(({ tabId })
       historyIndexRef.current = -1;
       if (connType === "remote" && sessionId) {
         await sshService.write(sessionId, "\x03");
-      } else if (connType === "local" && sessionId) {
-        await sshService.writeLocal(sessionId, "\x03");
-      } else if (connType === "serial" && sessionId) {
-        await serialService.write(sessionId, "\x03");
       }
       return;
     }
@@ -213,7 +216,6 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(({ tabId })
     // Arrow Up - previous command
     if (data === "\x1b[A") {
       if (commandHistoryRef.current.length > 0) {
-        // Clear current line
         term.write("\r\x1b[K");
         if (historyIndexRef.current < commandHistoryRef.current.length - 1) {
           historyIndexRef.current++;
@@ -273,7 +275,6 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(({ tabId })
         currentLineRef.current.slice(cursorPosRef.current);
       cursorPosRef.current++;
 
-      // Write character and rewrite rest
       term.write(data);
       if (cursorPosRef.current < currentLineRef.current.length) {
         const rest = currentLineRef.current.slice(cursorPosRef.current);
@@ -283,13 +284,8 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(({ tabId })
         }
       }
 
-      // Send to backend
       if (connType === "remote" && sessionId) {
         await sshService.write(sessionId, data);
-      } else if (connType === "local" && sessionId) {
-        await sshService.writeLocal(sessionId, data);
-      } else if (connType === "serial" && sessionId) {
-        await serialService.write(sessionId, data);
       }
     }
   }, [app.tabs, tabId]);

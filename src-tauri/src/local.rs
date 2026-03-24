@@ -71,21 +71,23 @@ pub async fn local_shell(
         .take_writer()
         .map_err(|e| format!("Failed to take writer: {}", e))?;
 
-    // Disable PTY echo so xterm.js controls all display
-    // This ensures characters typed by user are NOT echoed by PTY
+    // Disable PTY echo so xterm.js controls all display.
+    // Keep line discipline intact (ICANON etc.) so backspace and line editing work.
     #[cfg(unix)]
     {
         use rustix::fd::BorrowedFd;
-        use rustix::termios::{tcgetattr, tcsetattr, OptionalActions};
+        use rustix::termios::{tcgetattr, tcsetattr, OptionalActions, LocalModes};
 
-        // Get raw fd from master PTY using the trait method
-        // as_raw_fd returns Option<RawFd>, we need to handle the None case
         if let Some(raw_fd) = pty_pair.master.as_raw_fd() {
-            // Borrow the raw fd for use with rustix
             let fd = unsafe { BorrowedFd::borrow_raw(raw_fd) };
             if let Ok(mut t) = tcgetattr(fd) {
-                // Use cfmakeraw to set raw mode (disables canonical mode, echo, etc.)
-                t.make_raw();
+                t.local_modes.remove(
+                    LocalModes::ECHO
+                        | LocalModes::ECHOE
+                        | LocalModes::ECHOK
+                        | LocalModes::ECHOCTL
+                        | LocalModes::ECHOKE,
+                );
                 let _ = tcsetattr(fd, OptionalActions::Now, &t);
             }
         }
