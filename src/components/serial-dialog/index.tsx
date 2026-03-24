@@ -1,77 +1,86 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { RefreshCw, Usb, Plug } from "lucide-react";
-import { serialService, type SerialPortInfo, type SerialConfig } from "@/service/serial";
+} from '@/components/ui/select'
+import { RefreshCw, Usb, Plug } from 'lucide-react'
+import {
+  serialService,
+  type SerialPortInfo,
+  type SerialConfig,
+} from '@/service/serial'
 
 interface SerialDialogProps {
-  open: boolean;
-  onClose: () => void;
-  onConnect: (config: SerialConfig, sessionId: string) => void;
+  open: boolean
+  onClose: () => void
+  onConnect: (config: SerialConfig, sessionId: string) => void
 }
 
-const SerialDialog: React.FC<SerialDialogProps> = ({ open, onClose, onConnect }) => {
-  const [ports, setPorts] = useState<SerialPortInfo[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [selectedPort, setSelectedPort] = useState<string>("");
-  const [baudRate, setBaudRate] = useState<number>(115200);
-  const [dataBits, setDataBits] = useState<number>(8);
-  const [stopBits, setStopBits] = useState<number>(1);
-  const [parity, setParity] = useState<string>("none");
-  const [flowControl, setFlowControl] = useState<string>("none");
-  const [error, setError] = useState<string | null>(null);
+const SerialDialog: React.FC<SerialDialogProps> = ({
+  open,
+  onClose,
+  onConnect,
+}) => {
+  const [ports, setPorts] = useState<SerialPortInfo[]>([])
+  const [loading, setLoading] = useState(false)
+  const [connecting, setConnecting] = useState(false)
+  const [selectedPort, setSelectedPort] = useState<string>('')
+  const [baudRate, setBaudRate] = useState<number>(115200)
+  const [dataBits, setDataBits] = useState<number>(8)
+  const [stopBits, setStopBits] = useState<number>(1)
+  const [parity, setParity] = useState<string>('none')
+  const [flowControl, setFlowControl] = useState<string>('none')
+  const [error, setError] = useState<string | null>(null)
 
   const baudRates = [
-    300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600,
-  ];
+    300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800,
+    921600,
+  ]
 
   useEffect(() => {
     if (open) {
-      loadPorts();
+      loadPorts()
     }
-  }, [open]);
+  }, [open])
 
   const loadPorts = async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
-      const availablePorts = await serialService.listPorts();
-      setPorts(availablePorts);
+      const availablePorts = await serialService.listPorts()
+      setPorts(availablePorts)
       if (availablePorts.length > 0) {
-        setSelectedPort(availablePorts[0].name);
+        setSelectedPort(availablePorts[0].name)
       } else {
-        setSelectedPort("");
+        setSelectedPort('')
       }
     } catch (err) {
-      console.error("Failed to load ports:", err);
-      setError("Failed to load serial ports");
+      console.error('Failed to load ports:', err)
+      setError('Failed to load serial ports')
     }
-    setLoading(false);
-  };
+    setLoading(false)
+  }
 
   const handleConnect = async () => {
     if (!selectedPort) {
-      setError("Please select a serial port");
-      return;
+      setError('Please select a serial port')
+      return
     }
 
-    setConnecting(true);
-    setError(null);
+    setConnecting(true)
+    setError(null)
 
     const config: SerialConfig = {
       name: selectedPort,
@@ -80,19 +89,19 @@ const SerialDialog: React.FC<SerialDialogProps> = ({ open, onClose, onConnect })
       stopBits,
       parity,
       flowControl,
-    };
-
-    const result = await serialService.connect(config);
-
-    if (result.success && result.sessionId) {
-      onConnect(config, result.sessionId);
-      onClose();
-    } else {
-      setError(result.message || "Connection failed");
     }
 
-    setConnecting(false);
-  };
+    const result = await serialService.connect(config)
+
+    if (result.success && result.sessionId) {
+      onConnect(config, result.sessionId)
+      onClose()
+    } else {
+      setError(result.message || 'Connection failed')
+    }
+
+    setConnecting(false)
+  }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -119,7 +128,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({ open, onClose, onConnect })
                       No ports available
                     </SelectItem>
                   ) : (
-                    ports.map((port) => (
+                    ports.map(port => (
                       <SelectItem key={port.name} value={port.name}>
                         <div className="flex items-center gap-2">
                           <Usb className="h-4 w-4" />
@@ -139,7 +148,9 @@ const SerialDialog: React.FC<SerialDialogProps> = ({ open, onClose, onConnect })
                 onClick={loadPorts}
                 disabled={loading}
               >
-                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                <RefreshCw
+                  className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
+                />
               </Button>
             </div>
           </div>
@@ -147,12 +158,15 @@ const SerialDialog: React.FC<SerialDialogProps> = ({ open, onClose, onConnect })
           {/* Baud Rate */}
           <div className="space-y-2">
             <Label htmlFor="baudRate">Baud Rate</Label>
-            <Select value={String(baudRate)} onValueChange={(v) => setBaudRate(Number(v))}>
+            <Select
+              value={String(baudRate)}
+              onValueChange={v => setBaudRate(Number(v))}
+            >
               <SelectTrigger id="baudRate">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {baudRates.map((rate) => (
+                {baudRates.map(rate => (
                   <SelectItem key={rate} value={String(rate)}>
                     {rate}
                   </SelectItem>
@@ -166,7 +180,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({ open, onClose, onConnect })
             <Label htmlFor="dataBits">Data Bits</Label>
             <Select
               value={String(dataBits)}
-              onValueChange={(v) => setDataBits(Number(v))}
+              onValueChange={v => setDataBits(Number(v))}
             >
               <SelectTrigger id="dataBits">
                 <SelectValue />
@@ -185,7 +199,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({ open, onClose, onConnect })
             <Label htmlFor="stopBits">Stop Bits</Label>
             <Select
               value={String(stopBits)}
-              onValueChange={(v) => setStopBits(Number(v))}
+              onValueChange={v => setStopBits(Number(v))}
             >
               <SelectTrigger id="stopBits">
                 <SelectValue />
@@ -239,7 +253,10 @@ const SerialDialog: React.FC<SerialDialogProps> = ({ open, onClose, onConnect })
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleConnect} disabled={connecting || !selectedPort}>
+          <Button
+            onClick={handleConnect}
+            disabled={connecting || !selectedPort}
+          >
             {connecting ? (
               <>
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
@@ -255,7 +272,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({ open, onClose, onConnect })
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-};
+  )
+}
 
-export default SerialDialog;
+export default SerialDialog

@@ -42,7 +42,7 @@ const err = (err: AxiosError): Promise<AxiosError | AxiosResponse> => {
   return Promise.reject(err)
 }
 
-service.interceptors.request.use((config) => {
+service.interceptors.request.use(config => {
   const language = cookies.get('language')
   config.headers = config.headers || {}
   if (language) config.headers.language = language

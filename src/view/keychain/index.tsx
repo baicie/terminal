@@ -1,16 +1,21 @@
-import { useEffect, useState, useCallback } from "react";
-import { ViewContainer, ViewToolbar, ViewContent, EmptyState } from "@/components/view-container";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { useEffect, useState, useCallback } from 'react'
+import {
+  ViewContainer,
+  ViewToolbar,
+  ViewContent,
+  EmptyState,
+} from '@/components/view-container'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,15 +25,15 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { toast } from "@/components/ui/sonner";
+} from '@/components/ui/alert-dialog'
+import { toast } from '@/components/ui/sonner'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select'
 import {
   Key,
   Plus,
@@ -42,7 +47,7 @@ import {
   Loader2,
   Eye,
   EyeOff,
-} from "lucide-react";
+} from 'lucide-react'
 import {
   getSSHKeys,
   searchSSHKeys,
@@ -50,127 +55,137 @@ import {
   updateSSHKey,
   deleteSSHKey,
   SSHKeyRecord,
-} from "@/service/database";
-import { sshService } from "@/service/ssh";
-import { format } from "@/lib/date-utils";
+} from '@/service/database'
+import { sshService } from '@/service/ssh'
+import { format } from '@/lib/date-utils'
 
-type KeyFilter = "all" | "key" | "certificate" | "touchid" | "fido2";
+type KeyFilter = 'all' | 'key' | 'certificate' | 'touchid' | 'fido2'
 
 const getKeyTypeIcon = (keyType: string | null) => {
   switch (keyType) {
-    case "certificate":
-      return <Shield className="size-4" />;
-    case "touchid":
-      return <Fingerprint className="size-4" />;
-    case "fido2":
-      return <Shield className="size-4" />;
+    case 'certificate':
+      return <Shield className="size-4" />
+    case 'touchid':
+      return <Fingerprint className="size-4" />
+    case 'fido2':
+      return <Shield className="size-4" />
     default:
-      return <KeyRound className="size-4" />;
+      return <KeyRound className="size-4" />
   }
-};
+}
 
 const getKeyTypeLabel = (keyType: string | null): string => {
   switch (keyType) {
-    case "certificate":
-      return "Certificate";
-    case "touchid":
-      return "Touch ID";
-    case "fido2":
-      return "FIDO2";
+    case 'certificate':
+      return 'Certificate'
+    case 'touchid':
+      return 'Touch ID'
+    case 'fido2':
+      return 'FIDO2'
     default:
-      return "SSH Key";
+      return 'SSH Key'
   }
-};
+}
 
 const detectKeyType = (content: string): string | null => {
-  if (content.includes("CERTIFICATE")) return "certificate";
-  if (content.includes("ssh-rsa") || content.includes("ssh-ed25519") || content.includes("ecdsa-sha2")) return "key";
-  return null;
-};
+  if (content.includes('CERTIFICATE')) return 'certificate'
+  if (
+    content.includes('ssh-rsa') ||
+    content.includes('ssh-ed25519') ||
+    content.includes('ecdsa-sha2')
+  )
+    return 'key'
+  return null
+}
 
 const KeychainView: React.FC = () => {
-  const [keys, setKeys] = useState<SSHKeyRecord[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState<KeyFilter>("all");
-  const [loading, setLoading] = useState(true);
-  const [selectedKey, setSelectedKey] = useState<SSHKeyRecord | null>(null);
-  const [isNewKey, setIsNewKey] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [keyToDelete, setKeyToDelete] = useState<SSHKeyRecord | null>(null);
+  const [keys, setKeys] = useState<SSHKeyRecord[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterType, setFilterType] = useState<KeyFilter>('all')
+  const [loading, setLoading] = useState(true)
+  const [selectedKey, setSelectedKey] = useState<SSHKeyRecord | null>(null)
+  const [isNewKey, setIsNewKey] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [keyToDelete, setKeyToDelete] = useState<SSHKeyRecord | null>(null)
 
   // Form state
-  const [formName, setFormName] = useState("");
-  const [formKeyType, setFormKeyType] = useState<string>("key");
-  const [formPrivateKey, setFormPrivateKey] = useState("");
-  const [formPublicKey, setFormPublicKey] = useState("");
-  const [formCertificate, setFormCertificate] = useState("");
-  const [formPassphrase, setFormPassphrase] = useState("");
+  const [formName, setFormName] = useState('')
+  const [formKeyType, setFormKeyType] = useState<string>('key')
+  const [formPrivateKey, setFormPrivateKey] = useState('')
+  const [formPublicKey, setFormPublicKey] = useState('')
+  const [formCertificate, setFormCertificate] = useState('')
+  const [formPassphrase, setFormPassphrase] = useState('')
 
   // Generate key state
-  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
-  const [genKeyType, setGenKeyType] = useState<string>("ed25519");
-  const [genComment, setGenComment] = useState("");
-  const [genPassphrase, setGenPassphrase] = useState("");
-  const [genConfirmPassphrase, setGenConfirmPassphrase] = useState("");
-  const [showGenPassphrase, setShowGenPassphrase] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [generatedResult, setGeneratedResult] = useState<{ private_key: string; public_key: string; key_type: string; fingerprint: string } | null>(null);
-  const [showPrivateKey, setShowPrivateKey] = useState(false);
-  const [showPublicKey, setShowPublicKey] = useState(false);
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false)
+  const [genKeyType, setGenKeyType] = useState<string>('ed25519')
+  const [genComment, setGenComment] = useState('')
+  const [genPassphrase, setGenPassphrase] = useState('')
+  const [genConfirmPassphrase, setGenConfirmPassphrase] = useState('')
+  const [showGenPassphrase, setShowGenPassphrase] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [generatedResult, setGeneratedResult] = useState<{
+    private_key: string
+    public_key: string
+    key_type: string
+    fingerprint: string
+  } | null>(null)
+  const [showPrivateKey, setShowPrivateKey] = useState(false)
+  const [showPublicKey, setShowPublicKey] = useState(false)
 
   const loadKeys = async () => {
-    setLoading(true);
+    setLoading(true)
     try {
-      const data = await getSSHKeys();
-      setKeys(data);
+      const data = await getSSHKeys()
+      setKeys(data)
     } catch (error) {
-      console.error("Failed to load keys:", error);
+      console.error('Failed to load keys:', error)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   useEffect(() => {
-    loadKeys();
-  }, []);
+    loadKeys()
+  }, [])
 
   const handleSearch = async (query: string) => {
-    setSearchQuery(query);
+    setSearchQuery(query)
     if (query.trim()) {
-      const results = await searchSSHKeys(query);
-      setKeys(results);
+      const results = await searchSSHKeys(query)
+      setKeys(results)
     } else {
-      loadKeys();
+      loadKeys()
     }
-  };
+  }
 
   const handleSelectKey = (key: SSHKeyRecord) => {
-    setSelectedKey(key);
-    setIsNewKey(false);
-    setFormName(key.name);
-    setFormKeyType(key.key_type || "key");
-    setFormPrivateKey(key.private_key || "");
-    setFormPublicKey(key.public_key || "");
-    setFormCertificate(key.certificate || "");
-    setFormPassphrase(key.passphrase || "");
-  };
+    setSelectedKey(key)
+    setIsNewKey(false)
+    setFormName(key.name)
+    setFormKeyType(key.key_type || 'key')
+    setFormPrivateKey(key.private_key || '')
+    setFormPublicKey(key.public_key || '')
+    setFormCertificate(key.certificate || '')
+    setFormPassphrase(key.passphrase || '')
+  }
 
   const handleNewKey = () => {
-    setSelectedKey(null);
-    setIsNewKey(true);
-    setFormName("");
-    setFormKeyType("key");
-    setFormPrivateKey("");
-    setFormPublicKey("");
-    setFormCertificate("");
-    setFormPassphrase("");
-  };
+    setSelectedKey(null)
+    setIsNewKey(true)
+    setFormName('')
+    setFormKeyType('key')
+    setFormPrivateKey('')
+    setFormPublicKey('')
+    setFormCertificate('')
+    setFormPassphrase('')
+  }
 
   const handleSave = async () => {
-    if (!formName.trim()) return;
+    if (!formName.trim()) return
 
     if (isNewKey) {
-      const newKey: Omit<SSHKeyRecord, "created_at" | "updated_at"> = {
+      const newKey: Omit<SSHKeyRecord, 'created_at' | 'updated_at'> = {
         id: crypto.randomUUID(),
         name: formName,
         key_type: formKeyType,
@@ -179,8 +194,8 @@ const KeychainView: React.FC = () => {
         certificate: formCertificate || null,
         passphrase: formPassphrase || null,
         is_encrypted: formPrivateKey ? 0 : 0,
-      };
-      await createSSHKey(newKey);
+      }
+      await createSSHKey(newKey)
     } else if (selectedKey) {
       await updateSSHKey(selectedKey.id, {
         name: formName,
@@ -190,114 +205,128 @@ const KeychainView: React.FC = () => {
         certificate: formCertificate || null,
         passphrase: formPassphrase || null,
         is_encrypted: formPrivateKey ? 1 : 0,
-      });
+      })
     }
 
-    await loadKeys();
-    setSelectedKey(null);
-    setIsNewKey(false);
-  };
+    await loadKeys()
+    setSelectedKey(null)
+    setIsNewKey(false)
+  }
 
   const handleDelete = async () => {
     if (keyToDelete) {
-      await deleteSSHKey(keyToDelete.id);
-      setKeys(keys.filter((k) => k.id !== keyToDelete.id));
+      await deleteSSHKey(keyToDelete.id)
+      setKeys(keys.filter(k => k.id !== keyToDelete.id))
       if (selectedKey?.id === keyToDelete.id) {
-        setSelectedKey(null);
-        setIsNewKey(false);
+        setSelectedKey(null)
+        setIsNewKey(false)
       }
-      setKeyToDelete(null);
-      setDeleteDialogOpen(false);
+      setKeyToDelete(null)
+      setDeleteDialogOpen(false)
     }
-  };
+  }
 
-  const handleImportFromFile = useCallback(async (field: "private" | "public" | "certificate") => {
-    try {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = ".pem,.key,.pub,.crt,.cert";
-      input.onchange = async (e) => {
-        const file = (e.target as HTMLInputElement).files?.[0];
-        if (file) {
-          const text = await file.text();
-          if (field === "private") {
-            setFormPrivateKey(text);
-            const detected = detectKeyType(text);
-            if (detected) setFormKeyType(detected);
-          } else if (field === "public") {
-            setFormPublicKey(text);
-          } else {
-            setFormCertificate(text);
+  const handleImportFromFile = useCallback(
+    async (field: 'private' | 'public' | 'certificate') => {
+      try {
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = '.pem,.key,.pub,.crt,.cert'
+        input.onchange = async e => {
+          const file = (e.target as HTMLInputElement).files?.[0]
+          if (file) {
+            const text = await file.text()
+            if (field === 'private') {
+              setFormPrivateKey(text)
+              const detected = detectKeyType(text)
+              if (detected) setFormKeyType(detected)
+            } else if (field === 'public') {
+              setFormPublicKey(text)
+            } else {
+              setFormCertificate(text)
+            }
           }
         }
-      };
-      input.click();
-    } catch (error) {
-      console.error("Failed to import file:", error);
-    }
-  }, []);
+        input.click()
+      } catch (error) {
+        console.error('Failed to import file:', error)
+      }
+    },
+    [],
+  )
 
   const handleGenerateKey = async () => {
     if (genPassphrase !== genConfirmPassphrase) {
-      toast.error("Passphrases do not match");
-      return;
+      toast.error('Passphrases do not match')
+      return
     }
-    setGenerating(true);
+    setGenerating(true)
     try {
       const result = await sshService.generateSSHKey(
-        genKeyType as "ed25519" | "rsa" | "rsa4096" | "ecdsa" | "ecdsa-nistp256" | "ecdsa-nistp384" | "ecdsa-nistp521",
+        genKeyType as
+          | 'ed25519'
+          | 'rsa'
+          | 'rsa4096'
+          | 'ecdsa'
+          | 'ecdsa-nistp256'
+          | 'ecdsa-nistp384'
+          | 'ecdsa-nistp521',
         genComment,
-        genPassphrase || undefined
-      );
-      setGeneratedResult(result);
-      toast.success("Key generated successfully");
+        genPassphrase || undefined,
+      )
+      setGeneratedResult(result)
+      toast.success('Key generated successfully')
     } catch (error) {
-      console.error("Failed to generate key:", error);
-      toast.error(`Failed to generate key: ${error}`);
+      console.error('Failed to generate key:', error)
+      toast.error(`Failed to generate key: ${error}`)
     } finally {
-      setGenerating(false);
+      setGenerating(false)
     }
-  };
+  }
 
   const handleUseGeneratedKey = () => {
-    if (!generatedResult) return;
-    setFormName(genComment || `Generated ${generatedResult.key_type} Key`);
-    setFormKeyType("key");
-    setFormPrivateKey(generatedResult.private_key);
-    setFormPublicKey(generatedResult.public_key);
-    setFormCertificate("");
-    setFormPassphrase(genPassphrase);
-    setIsNewKey(true);
-    setSelectedKey(null);
-    setGenerateDialogOpen(false);
-    setGeneratedResult(null);
-    setGenComment("");
-    setGenPassphrase("");
-    setGenConfirmPassphrase("");
-  };
+    if (!generatedResult) return
+    setFormName(genComment || `Generated ${generatedResult.key_type} Key`)
+    setFormKeyType('key')
+    setFormPrivateKey(generatedResult.private_key)
+    setFormPublicKey(generatedResult.public_key)
+    setFormCertificate('')
+    setFormPassphrase(genPassphrase)
+    setIsNewKey(true)
+    setSelectedKey(null)
+    setGenerateDialogOpen(false)
+    setGeneratedResult(null)
+    setGenComment('')
+    setGenPassphrase('')
+    setGenConfirmPassphrase('')
+  }
 
   const handleCloseGenerateDialog = () => {
-    setGenerateDialogOpen(false);
-    setGeneratedResult(null);
-    setGenComment("");
-    setGenPassphrase("");
-    setGenConfirmPassphrase("");
-    setShowGenPassphrase(false);
-  };
+    setGenerateDialogOpen(false)
+    setGeneratedResult(null)
+    setGenComment('')
+    setGenPassphrase('')
+    setGenConfirmPassphrase('')
+    setShowGenPassphrase(false)
+  }
 
   const handleCopyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      toast.success(`${label} copied to clipboard`);
-    }).catch(() => {
-      toast.error("Failed to copy");
-    });
-  };
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        toast.success(`${label} copied to clipboard`)
+      })
+      .catch(() => {
+        toast.error('Failed to copy')
+      })
+  }
 
-  const filteredKeys = keys.filter((key) => {
-    if (filterType === "all") return true;
-    if (filterType === "key") return key.key_type === null || key.key_type === "key";
-    return key.key_type === filterType;
-  });
+  const filteredKeys = keys.filter(key => {
+    if (filterType === 'all') return true
+    if (filterType === 'key')
+      return key.key_type === null || key.key_type === 'key'
+    return key.key_type === filterType
+  })
 
   return (
     <ViewContainer className="flex-row">
@@ -309,12 +338,15 @@ const KeychainView: React.FC = () => {
             <Input
               placeholder="Search keys..."
               value={searchQuery}
-              onChange={(e) => handleSearch(e.target.value)}
+              onChange={e => handleSearch(e.target.value)}
               className="pl-9 h-9"
             />
           </div>
           <div className="flex gap-2">
-            <Select value={filterType} onValueChange={(v) => setFilterType(v as KeyFilter)}>
+            <Select
+              value={filterType}
+              onValueChange={v => setFilterType(v as KeyFilter)}
+            >
               <SelectTrigger className="flex-1 h-9">
                 <SelectValue placeholder="Filter" />
               </SelectTrigger>
@@ -330,7 +362,11 @@ const KeychainView: React.FC = () => {
               <Plus className="size-4 mr-1" data-icon="inline-start" />
               New
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setGenerateDialogOpen(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setGenerateDialogOpen(true)}
+            >
               <Wand2 className="size-4 mr-1" data-icon="inline-start" />
               Generate
             </Button>
@@ -353,11 +389,13 @@ const KeychainView: React.FC = () => {
             />
           ) : (
             <div className="divide-y">
-              {filteredKeys.map((key) => (
+              {filteredKeys.map(key => (
                 <div
                   key={key.id}
                   className={`p-4 hover:bg-accent/50 cursor-pointer transition-colors ${
-                    selectedKey?.id === key.id ? "bg-accent border-l-2 border-primary" : ""
+                    selectedKey?.id === key.id
+                      ? 'bg-accent border-l-2 border-primary'
+                      : ''
                   }`}
                   onClick={() => handleSelectKey(key)}
                 >
@@ -396,7 +434,9 @@ const KeychainView: React.FC = () => {
                 <div className="p-2 rounded-md bg-primary/10 text-primary">
                   {getKeyTypeIcon(formKeyType)}
                 </div>
-                <span className="font-semibold">{isNewKey ? "New Key" : "Edit Key"}</span>
+                <span className="font-semibold">
+                  {isNewKey ? 'New Key' : 'Edit Key'}
+                </span>
               </div>
               <div className="flex gap-2">
                 {!isNewKey && selectedKey && (
@@ -405,15 +445,19 @@ const KeychainView: React.FC = () => {
                     size="sm"
                     className="text-destructive hover:text-destructive"
                     onClick={() => {
-                      setKeyToDelete(selectedKey);
-                      setDeleteDialogOpen(true);
+                      setKeyToDelete(selectedKey)
+                      setDeleteDialogOpen(true)
                     }}
                   >
                     <Trash2 className="size-4 mr-1" data-icon="inline-start" />
                     Delete
                   </Button>
                 )}
-                <Button size="sm" onClick={handleSave} disabled={!formName.trim()}>
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={!formName.trim()}
+                >
                   Save
                 </Button>
               </div>
@@ -427,7 +471,7 @@ const KeychainView: React.FC = () => {
                     id="name"
                     placeholder="Add a label..."
                     value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
+                    onChange={e => setFormName(e.target.value)}
                   />
                 </div>
 
@@ -446,7 +490,7 @@ const KeychainView: React.FC = () => {
                   </Select>
                 </div>
 
-                {formKeyType === "key" || formKeyType === "certificate" ? (
+                {formKeyType === 'key' || formKeyType === 'certificate' ? (
                   <>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -454,9 +498,12 @@ const KeychainView: React.FC = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleImportFromFile("private")}
+                          onClick={() => handleImportFromFile('private')}
                         >
-                          <FileKey className="size-4 mr-1" data-icon="inline-start" />
+                          <FileKey
+                            className="size-4 mr-1"
+                            data-icon="inline-start"
+                          />
                           Import from file
                         </Button>
                       </div>
@@ -464,7 +511,7 @@ const KeychainView: React.FC = () => {
                         id="privateKey"
                         placeholder="Paste private key content or import from file..."
                         value={formPrivateKey}
-                        onChange={(e) => setFormPrivateKey(e.target.value)}
+                        onChange={e => setFormPrivateKey(e.target.value)}
                         className="font-mono text-xs h-32"
                       />
                     </div>
@@ -475,9 +522,12 @@ const KeychainView: React.FC = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleImportFromFile("public")}
+                          onClick={() => handleImportFromFile('public')}
                         >
-                          <FileKey className="size-4 mr-1" data-icon="inline-start" />
+                          <FileKey
+                            className="size-4 mr-1"
+                            data-icon="inline-start"
+                          />
                           Import from file
                         </Button>
                       </div>
@@ -485,7 +535,7 @@ const KeychainView: React.FC = () => {
                         id="publicKey"
                         placeholder="Paste public key content..."
                         value={formPublicKey}
-                        onChange={(e) => setFormPublicKey(e.target.value)}
+                        onChange={e => setFormPublicKey(e.target.value)}
                         className="font-mono text-xs h-24"
                       />
                     </div>
@@ -497,22 +547,25 @@ const KeychainView: React.FC = () => {
                         type="password"
                         placeholder="Enter passphrase for encrypted key..."
                         value={formPassphrase}
-                        onChange={(e) => setFormPassphrase(e.target.value)}
+                        onChange={e => setFormPassphrase(e.target.value)}
                       />
                     </div>
                   </>
                 ) : null}
 
-                {formKeyType === "certificate" && (
+                {formKeyType === 'certificate' && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="certificate">Certificate</Label>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleImportFromFile("certificate")}
+                        onClick={() => handleImportFromFile('certificate')}
                       >
-                        <FileKey className="size-4 mr-1" data-icon="inline-start" />
+                        <FileKey
+                          className="size-4 mr-1"
+                          data-icon="inline-start"
+                        />
                         Import from file
                       </Button>
                     </div>
@@ -520,7 +573,7 @@ const KeychainView: React.FC = () => {
                       id="certificate"
                       placeholder="Paste certificate content..."
                       value={formCertificate}
-                      onChange={(e) => setFormCertificate(e.target.value)}
+                      onChange={e => setFormCertificate(e.target.value)}
                       className="font-mono text-xs h-24"
                     />
                   </div>
@@ -529,8 +582,14 @@ const KeychainView: React.FC = () => {
                 {!isNewKey && selectedKey && (
                   <div className="pt-4 border-t">
                     <div className="text-xs text-muted-foreground space-y-1">
-                      <div>Created: {format(selectedKey.created_at, "MMM dd, yyyy HH:mm")}</div>
-                      <div>Updated: {format(selectedKey.updated_at, "MMM dd, yyyy HH:mm")}</div>
+                      <div>
+                        Created:{' '}
+                        {format(selectedKey.created_at, 'MMM dd, yyyy HH:mm')}
+                      </div>
+                      <div>
+                        Updated:{' '}
+                        {format(selectedKey.updated_at, 'MMM dd, yyyy HH:mm')}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -551,7 +610,9 @@ const KeychainView: React.FC = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setKeyToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setKeyToDelete(null)}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -563,7 +624,10 @@ const KeychainView: React.FC = () => {
       </AlertDialog>
 
       {/* Generate SSH Key Dialog */}
-      <Dialog open={generateDialogOpen} onOpenChange={handleCloseGenerateDialog}>
+      <Dialog
+        open={generateDialogOpen}
+        onOpenChange={handleCloseGenerateDialog}
+      >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -581,7 +645,9 @@ const KeychainView: React.FC = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ed25519">Ed25519 (Recommended)</SelectItem>
+                    <SelectItem value="ed25519">
+                      Ed25519 (Recommended)
+                    </SelectItem>
                     <SelectItem value="rsa4096">RSA 4096-bit</SelectItem>
                     <SelectItem value="rsa">RSA 2048-bit</SelectItem>
                     <SelectItem value="ecdsa-nistp256">ECDSA P-256</SelectItem>
@@ -597,7 +663,7 @@ const KeychainView: React.FC = () => {
                   id="gen-comment"
                   placeholder="user@hostname"
                   value={genComment}
-                  onChange={(e) => setGenComment(e.target.value)}
+                  onChange={e => setGenComment(e.target.value)}
                 />
               </div>
 
@@ -606,10 +672,10 @@ const KeychainView: React.FC = () => {
                 <div className="relative">
                   <Input
                     id="gen-passphrase"
-                    type={showGenPassphrase ? "text" : "password"}
+                    type={showGenPassphrase ? 'text' : 'password'}
                     placeholder="Enter passphrase"
                     value={genPassphrase}
-                    onChange={(e) => setGenPassphrase(e.target.value)}
+                    onChange={e => setGenPassphrase(e.target.value)}
                   />
                   <Button
                     variant="ghost"
@@ -617,19 +683,25 @@ const KeychainView: React.FC = () => {
                     className="absolute right-1 top-1/2 -translate-y-1/2 size-7"
                     onClick={() => setShowGenPassphrase(!showGenPassphrase)}
                   >
-                    {showGenPassphrase ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    {showGenPassphrase ? (
+                      <EyeOff className="size-4" />
+                    ) : (
+                      <Eye className="size-4" />
+                    )}
                   </Button>
                 </div>
               </div>
 
               <div>
-                <Label htmlFor="gen-confirm-passphrase">Confirm Passphrase</Label>
+                <Label htmlFor="gen-confirm-passphrase">
+                  Confirm Passphrase
+                </Label>
                 <Input
                   id="gen-confirm-passphrase"
-                  type={showGenPassphrase ? "text" : "password"}
+                  type={showGenPassphrase ? 'text' : 'password'}
                   placeholder="Confirm passphrase"
                   value={genConfirmPassphrase}
-                  onChange={(e) => setGenConfirmPassphrase(e.target.value)}
+                  onChange={e => setGenConfirmPassphrase(e.target.value)}
                 />
               </div>
             </div>
@@ -655,7 +727,12 @@ const KeychainView: React.FC = () => {
                     variant="ghost"
                     size="sm"
                     className="h-6 text-xs"
-                    onClick={() => handleCopyToClipboard(generatedResult.public_key, "Public key")}
+                    onClick={() =>
+                      handleCopyToClipboard(
+                        generatedResult.public_key,
+                        'Public key',
+                      )
+                    }
                   >
                     Copy
                   </Button>
@@ -677,13 +754,22 @@ const KeychainView: React.FC = () => {
                       className="h-6 text-xs"
                       onClick={() => setShowPrivateKey(!showPrivateKey)}
                     >
-                      {showPrivateKey ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+                      {showPrivateKey ? (
+                        <EyeOff className="size-3" />
+                      ) : (
+                        <Eye className="size-3" />
+                      )}
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       className="h-6 text-xs"
-                      onClick={() => handleCopyToClipboard(generatedResult.private_key, "Private key")}
+                      onClick={() =>
+                        handleCopyToClipboard(
+                          generatedResult.private_key,
+                          'Private key',
+                        )
+                      }
                     >
                       Copy
                     </Button>
@@ -691,11 +777,16 @@ const KeychainView: React.FC = () => {
                 </div>
                 <Textarea
                   readOnly
-                  value={showPrivateKey ? generatedResult.private_key : "••••••••••••••••••••••••••••••••"}
+                  value={
+                    showPrivateKey
+                      ? generatedResult.private_key
+                      : '••••••••••••••••••••••••••••••••'
+                  }
                   className="h-32 font-mono text-xs"
                 />
                 <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">
-                  Store your private key securely. Anyone with this key can access your servers.
+                  Store your private key securely. Anyone with this key can
+                  access your servers.
                 </p>
               </div>
             </div>
@@ -726,21 +817,19 @@ const KeychainView: React.FC = () => {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setGeneratedResult(null);
+                    setGeneratedResult(null)
                   }}
                 >
                   Generate Another
                 </Button>
-                <Button onClick={handleUseGeneratedKey}>
-                  Use This Key
-                </Button>
+                <Button onClick={handleUseGeneratedKey}>Use This Key</Button>
               </>
             )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </ViewContainer>
-  );
-};
+  )
+}
 
-export default KeychainView;
+export default KeychainView

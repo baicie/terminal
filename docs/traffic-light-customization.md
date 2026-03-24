@@ -8,11 +8,11 @@
 
 窗口红绿灯的配置位于各平台对应的 Tauri 配置文件中：
 
-| 平台 | 配置文件路径 |
-|------|-------------|
-| macOS | `src-tauri/tauri.macos.conf.json` |
+| 平台    | 配置文件路径                        |
+| ------- | ----------------------------------- |
+| macOS   | `src-tauri/tauri.macos.conf.json`   |
 | Windows | `src-tauri/tauri.windows.conf.json` |
-| Linux | `src-tauri/tauri.linux.conf.json` |
+| Linux   | `src-tauri/tauri.linux.conf.json`   |
 
 ---
 
@@ -20,11 +20,11 @@
 
 本项目为不同平台设计了差异化的窗口控件方案：
 
-| 平台 | 窗口控件类型 | 配置文件 |
-|------|------------|---------|
-| macOS | 原生红绿灯按钮（Traffic Lights） | `tauri.macos.conf.json` |
-| Windows | 自定义窗口控件（React 组件） | `tauri.windows.conf.json` |
-| Linux | 原生窗口装饰 | `tauri.linux.conf.json` |
+| 平台    | 窗口控件类型                     | 配置文件                  |
+| ------- | -------------------------------- | ------------------------- |
+| macOS   | 原生红绿灯按钮（Traffic Lights） | `tauri.macos.conf.json`   |
+| Windows | 自定义窗口控件（React 组件）     | `tauri.windows.conf.json` |
+| Linux   | 原生窗口装饰                     | `tauri.linux.conf.json`   |
 
 ### 2.1 macOS — 原生红绿灯按钮
 
@@ -52,6 +52,7 @@
 ```
 
 **配置特点**：
+
 - `decorations: true` — 保留原生窗口装饰（红绿灯按钮）
 - `titleBarStyle: "Overlay"` — 使用 Overlay 模式，窗口内容延伸到标题栏区域
 - `transparent: true` — 启用透明窗口背景
@@ -64,10 +65,15 @@
 
 ```tsx
 // web-app/src/routes/__root.tsx
-{!IS_LINUX && <div className="fixed w-full h-12 z-20 top-0" data-tauri-drag-region />}
+{
+  !IS_LINUX && (
+    <div className="fixed w-full h-12 z-20 top-0" data-tauri-drag-region />
+  )
+}
 ```
 
 多个组件根据 `IS_MACOS` 调整 padding/margin：
+
 - `HeaderPage.tsx` — macOS 上增加 `pl-24`
 - `left-sidebar/index.tsx` — macOS 上隐藏 Jan logo，居右对齐
 - `settings/*.tsx` — macOS 上减少 `pr-30`
@@ -98,6 +104,7 @@
 ```
 
 **配置特点**：
+
 - `decorations: false` — **禁用**原生窗口装饰，不再显示原生的最小化/最大化/关闭按钮
 - `titleBarStyle: "Overlay"` — 使用 Overlay 模式，窗口内容延伸到标题栏区域
 - `transparent: true` — 启用透明窗口背景
@@ -130,13 +137,28 @@ export const WindowControls = () => {
   return (
     <div className="absolute top-0 z-50 right-4 h-15">
       <div className="flex items-center h-full">
-        <Button onClick={handleMinimize} aria-label="Minimize" variant="ghost" size="icon-sm">
+        <Button
+          onClick={handleMinimize}
+          aria-label="Minimize"
+          variant="ghost"
+          size="icon-sm"
+        >
           <Minus className="size-4" />
         </Button>
-        <Button onClick={handleMaximize} variant="ghost" size="icon-sm" aria-label="Maximize">
+        <Button
+          onClick={handleMaximize}
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Maximize"
+        >
           <Square className="size-3" />
         </Button>
-        <Button onClick={handleClose} variant="ghost" size="icon-sm" aria-label="Close">
+        <Button
+          onClick={handleClose}
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Close"
+        >
           <X className="size-4" />
         </Button>
       </div>
@@ -158,7 +180,12 @@ const AppLayout = () => {
         <KeyboardShortcutsProvider />
         {/* Fake absolute panel top to enable window drag */}
         {IS_WINDOWS && <WindowControls />}
-        {!IS_LINUX && <div className="fixed w-full h-12 z-20 top-0" data-tauri-drag-region />}
+        {!IS_LINUX && (
+          <div
+            className="fixed w-full h-12 z-20 top-0"
+            data-tauri-drag-region
+          />
+        )}
         {/* ... */}
       </SidebarProvider>
     </div>
@@ -192,6 +219,7 @@ const AppLayout = () => {
 ```
 
 **配置特点**：
+
 - `decorations: true` — 使用原生窗口装饰（GTK 原生标题栏）
 - `transparent: false` — **禁用**透明窗口背景（Linux GTK 对透明支持有限）
 - `windowEffects` — 仅启用 `fullScreenUI` 和 `blur` 效果（Mica/Acrylic 是 Windows 专属）
@@ -202,19 +230,25 @@ const AppLayout = () => {
 Linux 使用原生窗口装饰，因此不需要自定义拖拽区域：
 
 ```tsx
-{/* Linux 不需要自定义拖拽区域，原生标题栏自带拖拽功能 */}
-{!IS_LINUX && <div className="fixed w-full h-12 z-20 top-0" data-tauri-drag-region />}
+{
+  /* Linux 不需要自定义拖拽区域，原生标题栏自带拖拽功能 */
+}
+{
+  !IS_LINUX && (
+    <div className="fixed w-full h-12 z-20 top-0" data-tauri-drag-region />
+  )
+}
 ```
 
 **Windows 特效支持差异**：
 
-| 特效 | Windows | Linux |
-|------|---------|-------|
-| `fullScreenUI` | ✅ | ✅ |
-| `mica` | ✅ | ❌ |
-| `tabbed` | ✅ | ❌ |
-| `blur` | ✅ | ✅ |
-| `acrylic` | ✅ | ❌ |
+| 特效           | Windows | Linux |
+| -------------- | ------- | ----- |
+| `fullScreenUI` | ✅      | ✅    |
+| `mica`         | ✅      | ❌    |
+| `tabbed`       | ✅      | ❌    |
+| `blur`         | ✅      | ✅    |
+| `acrylic`      | ✅      | ❌    |
 
 ---
 
@@ -226,7 +260,11 @@ Linux 使用原生窗口装饰，因此不需要自定义拖拽区域：
 
 ```tsx
 // macOS 和 Windows 需要自定义拖拽区域
-{!IS_LINUX && <div className="fixed w-full h-12 z-20 top-0" data-tauri-drag-region />}
+{
+  !IS_LINUX && (
+    <div className="fixed w-full h-12 z-20 top-0" data-tauri-drag-region />
+  )
+}
 ```
 
 - **macOS 和 Windows**：需要自定义拖拽区域（因为禁用了部分原生功能）
@@ -236,17 +274,17 @@ Linux 使用原生窗口装饰，因此不需要自定义拖拽区域：
 
 多个组件通过平台检测常量调整 padding/margin：
 
-| 文件路径 | 调整内容 |
-|----------|----------|
-| `web-app/src/containers/HeaderPage.tsx` | macOS 上增加 `pl-24`，避免被侧边栏遮挡 |
-| `web-app/src/components/left-sidebar/index.tsx` | macOS 上隐藏 Jan logo |
-| `web-app/src/routes/settings/*.tsx` | macOS 上减少 `pr-30`，避免内容被窗口控件遮挡 |
+| 文件路径                                        | 调整内容                                     |
+| ----------------------------------------------- | -------------------------------------------- |
+| `web-app/src/containers/HeaderPage.tsx`         | macOS 上增加 `pl-24`，避免被侧边栏遮挡       |
+| `web-app/src/components/left-sidebar/index.tsx` | macOS 上隐藏 Jan logo                        |
+| `web-app/src/routes/settings/*.tsx`             | macOS 上减少 `pr-30`，避免内容被窗口控件遮挡 |
 
-| 文件路径 | 调整内容 |
-|----------|----------|
-| `web-app/src/containers/HeaderPage.tsx` | macOS 上增加 `pl-24` |
+| 文件路径                                        | 调整内容              |
+| ----------------------------------------------- | --------------------- |
+| `web-app/src/containers/HeaderPage.tsx`         | macOS 上增加 `pl-24`  |
 | `web-app/src/components/left-sidebar/index.tsx` | macOS 上隐藏 Jan logo |
-| `web-app/src/routes/settings/*.tsx` | macOS 上减少 `pr-30` |
+| `web-app/src/routes/settings/*.tsx`             | macOS 上减少 `pr-30`  |
 
 ---
 
@@ -411,39 +449,39 @@ window.set_traffic_light_position(x, y)?;
 
 ### 9.1 各平台窗口控件对比
 
-| 方面 | macOS | Windows | Linux |
-|------|-------|---------|-------|
-| 窗口控件类型 | 原生红绿灯按钮 | 自定义 React 组件 | 原生窗口装饰 |
-| 配置文件 | `tauri.macos.conf.json` | `tauri.windows.conf.json` | `tauri.linux.conf.json` |
-| `decorations` | `true` | `false` | `true` |
-| `transparent` | `true` | `true` | `false` |
-| `titleBarStyle` | `"Overlay"` | `"Overlay"` | `"Overlay"` |
-| `windowEffects` | 全部特效 | 全部特效 | 仅 `blur` |
-| 自定义拖拽区域 | ✅ | ✅ | ❌（原生） |
-| 自定义窗口控件 | ❌ | ✅ `WindowControls.tsx` | ❌ |
+| 方面            | macOS                   | Windows                   | Linux                   |
+| --------------- | ----------------------- | ------------------------- | ----------------------- |
+| 窗口控件类型    | 原生红绿灯按钮          | 自定义 React 组件         | 原生窗口装饰            |
+| 配置文件        | `tauri.macos.conf.json` | `tauri.windows.conf.json` | `tauri.linux.conf.json` |
+| `decorations`   | `true`                  | `false`                   | `true`                  |
+| `transparent`   | `true`                  | `true`                    | `false`                 |
+| `titleBarStyle` | `"Overlay"`             | `"Overlay"`               | `"Overlay"`             |
+| `windowEffects` | 全部特效                | 全部特效                  | 仅 `blur`               |
+| 自定义拖拽区域  | ✅                      | ✅                        | ❌（原生）              |
+| 自定义窗口控件  | ❌                      | ✅ `WindowControls.tsx`   | ❌                      |
 
 ### 9.2 各方面实现方式
 
-| 方面 | 实现方式 |
-|------|----------|
-| macOS 红绿灯位置 | 通过 JSON 配置 `trafficLightPosition` |
-| macOS 红绿灯显示/隐藏 | 通过 JSON 配置 `decorations` |
-| Windows 窗口控件 | React 组件 `WindowControls.tsx` |
-| Linux 窗口控件 | 原生 GTK 标题栏 |
-| 标题栏样式 | 通过 JSON 配置 `titleBarStyle` |
-| 拖拽区域 | 通过 HTML 属性 `data-tauri-drag-region` |
-| 动态控制 | 未实现（仅静态配置） |
+| 方面                  | 实现方式                                |
+| --------------------- | --------------------------------------- |
+| macOS 红绿灯位置      | 通过 JSON 配置 `trafficLightPosition`   |
+| macOS 红绿灯显示/隐藏 | 通过 JSON 配置 `decorations`            |
+| Windows 窗口控件      | React 组件 `WindowControls.tsx`         |
+| Linux 窗口控件        | 原生 GTK 标题栏                         |
+| 标题栏样式            | 通过 JSON 配置 `titleBarStyle`          |
+| 拖拽区域              | 通过 HTML 属性 `data-tauri-drag-region` |
+| 动态控制              | 未实现（仅静态配置）                    |
 
 ### 9.3 关键文件索引
 
-| 文件路径 | 说明 |
-|----------|------|
-| `src-tauri/tauri.macos.conf.json` | macOS 窗口配置 |
-| `src-tauri/tauri.windows.conf.json` | Windows 窗口配置 |
-| `src-tauri/tauri.linux.conf.json` | Linux 窗口配置 |
-| `web-app/src/routes/__root.tsx` | 前端布局和拖拽区域 |
+| 文件路径                                    | 说明                   |
+| ------------------------------------------- | ---------------------- |
+| `src-tauri/tauri.macos.conf.json`           | macOS 窗口配置         |
+| `src-tauri/tauri.windows.conf.json`         | Windows 窗口配置       |
+| `src-tauri/tauri.linux.conf.json`           | Linux 窗口配置         |
+| `web-app/src/routes/__root.tsx`             | 前端布局和拖拽区域     |
 | `web-app/src/components/WindowControls.tsx` | Windows 自定义窗口控件 |
-| `web-app/src/types/global.d.ts` | 平台检测常量声明 |
-| `web-app/vite.config.ts` | 平台检测常量注入 |
-| `src-tauri/capabilities/default.json` | 窗口操作权限配置 |
-| `src-tauri/src/core/setup.rs` | Rust 窗口主题监听 |
+| `web-app/src/types/global.d.ts`             | 平台检测常量声明       |
+| `web-app/vite.config.ts`                    | 平台检测常量注入       |
+| `src-tauri/capabilities/default.json`       | 窗口操作权限配置       |
+| `src-tauri/src/core/setup.rs`               | Rust 窗口主题监听      |

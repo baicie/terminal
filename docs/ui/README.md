@@ -10,11 +10,11 @@
 
 ## 文档列表
 
-| 文档 | 内容 |
-|------|------|
-| [00-design-system.md](./00-design-system.md) | 设计系统：主题、颜色、字体、图标、间距 |
-| [01-layout-and-navigation.md](./01-layout-and-navigation.md) | 全局布局：顶栏、标签页、左侧导航、主内容区 |
-| [02-views.md](./02-views.md) | 各功能视图：Hosts、Terminal、SFTP、Logs、Port Forwarding、Known Hosts、Keychain、Snippets |
+| 文档                                                         | 内容                                                                                      |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| [00-design-system.md](./00-design-system.md)                 | 设计系统：主题、颜色、字体、图标、间距                                                    |
+| [01-layout-and-navigation.md](./01-layout-and-navigation.md) | 全局布局：顶栏、标签页、左侧导航、主内容区                                                |
+| [02-views.md](./02-views.md)                                 | 各功能视图：Hosts、Terminal、SFTP、Logs、Port Forwarding、Known Hosts、Keychain、Snippets |
 
 ## 阅读顺序建议
 

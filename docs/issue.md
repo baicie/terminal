@@ -48,10 +48,12 @@ pub async fn sftp_rename(state, session_id, old_path, new_path) -> Result<(), St
 ```
 
 **前端适配**:
+
 - `src/service/ssh.ts` 添加了 `sftpConnect()` 方法
 - `src/view/sftp/sftp-container.tsx` 在加载文件前调用 `sftpConnect()` 初始化连接
 
 **使用方式**:
+
 1. 先调用 `ssh_connect` 或 `ssh_connect_key` 建立 SSH 会话
 2. 调用 `sftp_connect` 初始化 SFTP 子系统
 3. 使用 `sftp_list`, `sftp_upload`, `sftp_download` 等命令操作文件
@@ -81,6 +83,7 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 ```
 
 **前端适配**:
+
 - `ssh_connect_key` 命令现在正确使用密钥认证
 - 支持带密码的加密私钥
 
@@ -94,12 +97,14 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 **更新时间**: 2026-03-19
 
 **实现内容**:
+
 - 添加了 `port_forward_start` 命令启动端口转发
 - 添加了 `port_forward_stop` 命令停止端口转发
 - 添加了 `port_forward_list` 命令列出活动转发
 - TCP 监听器框架已实现
 
 **待完善**:
+
 - 完整的 SSH channel 转发逻辑需要进一步集成
 - 远程端口转发 (-R) 需要服务端配合
 - SOCKS 代理协议解析需要完整实现
@@ -116,6 +121,7 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 **更新时间**: 2026-03-19
 
 **修复内容**:
+
 - 添加了 `#[allow(dead_code)]` 消除导出但未直接调用的函数警告
 - 移除了不必要的 `mut` 关键字
 - 清理了未使用的 import
@@ -129,6 +135,7 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 **影响功能**: SSH Agent 转发
 
 **问题描述**:
+
 ```117:125:src-tauri/src/terminal.rs
 #[tauri::command]
 pub async fn ssh_connect_agent(...) -> Result<String, String> {
@@ -137,6 +144,7 @@ pub async fn ssh_connect_agent(...) -> Result<String, String> {
 ```
 
 **建议**:
+
 - Unix: 读取 `$SSH_AUTH_SOCK`
 - Windows: 使用 Pageant 或 Windows OpenSSH Agent
 - macOS: 使用 Keychain 或 ssh-agent
@@ -151,6 +159,7 @@ pub async fn ssh_connect_agent(...) -> Result<String, String> {
 
 **设计文档**: `docs/design.md` Section 3.3
 **建议**:
+
 - 实现 SSH 代理跳转 (ProxyJump)
 - 支持配置跳板机连接序列
 - 需要在连接时建立跳板机会话，再通过它连接目标主机
@@ -167,11 +176,13 @@ pub async fn ssh_connect_agent(...) -> Result<String, String> {
 
 **问题描述**:
 根据 `docs/todo.md` Section 2.5:
+
 - ✅ 历史记录存储已实现
 - ✅ 历史记录 UI 已实现
 - ❌ 上下键快速补全命令未实现
 
 **建议**:
+
 - 监听终端按键事件
 - 根据当前输入匹配历史命令
 - 使用上/下箭头导航
@@ -185,11 +196,13 @@ pub async fn ssh_connect_agent(...) -> Result<String, String> {
 **影响功能**: 敏感信息加密
 
 **现状**:
+
 - `src/view/vaults/vaults-view.tsx` 只是占位符
 - 没有加密库依赖
 - 没有主密码机制
 
 **建议**:
+
 - 使用 AES-256-GCM 加密敏感字段
 - 使用 Argon2 或 PBKDF2 派生密钥
 - 参考: `ring`, `aes-gcm`, `argon2` crates
@@ -203,11 +216,13 @@ pub async fn ssh_connect_agent(...) -> Result<String, String> {
 **影响功能**: 快速操作
 
 **现状**:
+
 - ✅ 快捷键 Ctrl+J 打开命令面板
 - ❌ 搜索主机未实现
 - ❌ 快速执行 Snippet 未实现
 
 **建议**:
+
 - 实现主机搜索功能
 - 实现 Snippet 快速执行
 
@@ -239,41 +254,41 @@ pub async fn ssh_resize(
 
 ### Phase 1 - MVP ✅ 大部分完成
 
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| SSH 连接 | ✅ 已实现 | 基础功能完成 |
-| 密码认证 | ✅ 已实现 | 正常工作 |
+| 功能     | 状态      | 说明          |
+| -------- | --------- | ------------- |
+| SSH 连接 | ✅ 已实现 | 基础功能完成  |
+| 密码认证 | ✅ 已实现 | 正常工作      |
 | 终端模拟 | ✅ 已实现 | xterm.js 集成 |
 | 多标签页 | ✅ 已实现 | AppStore 管理 |
-| 主机保存 | ✅ 已实现 | SQLite 存储 |
-| 组管理 | ✅ 已实现 | 支持嵌套组 |
-| 收藏夹 | ✅ 已实现 | 侧边栏展示 |
+| 主机保存 | ✅ 已实现 | SQLite 存储   |
+| 组管理   | ✅ 已实现 | 支持嵌套组    |
+| 收藏夹   | ✅ 已实现 | 侧边栏展示    |
 
 ### Phase 2 - 核心功能
 
-| 功能 | 状态 | 问题 |
-|------|------|------|
-| SSH 密钥认证 | 🟡 部分实现 | 后端未完成密钥解析 |
-| SFTP 文件传输 | 🔴 未实现 | 后端全为占位符 |
-| 端口转发 | 🟡 UI 完成 | 后端未实现 |
-| 命令历史 | ✅ 已实现 | 完整实现 |
-| Snippet | ✅ 已实现 | 完整实现 |
-| 分屏模式 | ✅ 已实现 | 完整实现 |
+| 功能          | 状态        | 问题               |
+| ------------- | ----------- | ------------------ |
+| SSH 密钥认证  | 🟡 部分实现 | 后端未完成密钥解析 |
+| SFTP 文件传输 | 🔴 未实现   | 后端全为占位符     |
+| 端口转发      | 🟡 UI 完成  | 后端未实现         |
+| 命令历史      | ✅ 已实现   | 完整实现           |
+| Snippet       | ✅ 已实现   | 完整实现           |
+| 分屏模式      | ✅ 已实现   | 完整实现           |
 
 ### Phase 3/4 - 高级功能
 
-| 功能 | 状态 |
-|------|------|
-| Agent 转发 | ✅ 已实现 (2026-03-19) |
-| 主机链 | ✅ 已实现 (2026-03-19) |
-| Vault 加密 | ✅ 已实现 (2026-03-19) |
-| 命令面板 | ✅ 已实现 (2026-03-19) |
-| 多工作区 | ✅ 已实现 (2026-03-19) |
-| 跨设备同步 | ✅ 已实现 (2026-03-19) |
-| 串口连接 | ✅ 已实现 (2026-03-20) |
-| 团队协作 | 📋 待开发 |
-| SSH 证书认证 | 📋 待开发 |
-| 高级脚本 | 📋 待开发 |
+| 功能         | 状态                   |
+| ------------ | ---------------------- |
+| Agent 转发   | ✅ 已实现 (2026-03-19) |
+| 主机链       | ✅ 已实现 (2026-03-19) |
+| Vault 加密   | ✅ 已实现 (2026-03-19) |
+| 命令面板     | ✅ 已实现 (2026-03-19) |
+| 多工作区     | ✅ 已实现 (2026-03-19) |
+| 跨设备同步   | ✅ 已实现 (2026-03-19) |
+| 串口连接     | ✅ 已实现 (2026-03-20) |
+| 团队协作     | 📋 待开发              |
+| SSH 证书认证 | 📋 待开发              |
+| 高级脚本     | 📋 待开发              |
 
 ---
 
@@ -316,20 +331,23 @@ pub async fn ssh_resize(
 **更新时间**: 2026-03-19
 
 **问题描述**:
+
 1. `<select>` 内嵌套了 `<button>` - HTML hydration 错误
 2. `DialogContent` 缺少 `DialogTitle` - 可访问性问题
 
 **修复方案**:
+
 1. 重写 `src/components/ui/select.tsx` - 使用 Radix UI Select 组件替代原生 HTML select
 2. 确保 DialogHeader 包含 DialogTitle 组件
 
 **修改文件**:
+
 - `src/components/ui/select.tsx` - 使用 `@radix-ui/react-select` 完整实现
 
 ---
 
-*文档创建时间: 2026-03-19*
-*最后更新: 2026-03-24 - 完善视图集成，终端/SFTP/Vaults/端口转发/命令面板*
+_文档创建时间: 2026-03-19_
+_最后更新: 2026-03-24 - 完善视图集成，终端/SFTP/Vaults/端口转发/命令面板_
 
 ---
 
@@ -346,6 +364,7 @@ pub async fn ssh_resize(
 `terminal-container.tsx` 仅初始化了 xterm.js，但从未连接任何后端服务。用户点击主机后终端显示空白。
 
 **修复方案**:
+
 1. 完整的 SSH 连接流程：`sshService.connect` → `startShell`
 2. 完整的本地终端流程：`sshService.startLocalShell`
 3. 完整的串口连接流程：`serialService.connect`
@@ -355,6 +374,7 @@ pub async fn ssh_resize(
 7. 状态栏显示（连接/连接中/断开）
 
 **修改文件**:
+
 - `src/view/terminal/terminal-container.tsx` - 完全重写
 - `src/service/terminal-emitter.ts` - 新增（命令面板写入终端）
 
@@ -371,6 +391,7 @@ pub async fn ssh_resize(
 `sftp-container.tsx` 仅包含空状态 UI，无实际 SFTP 功能。
 
 **修复方案**:
+
 1. 完整的双栏文件浏览器（本地 + 远程）
 2. 通过 SSH 连接自动初始化 SFTP：`sshService.sftpConnect`
 3. 目录列表/导航/面包屑
@@ -379,6 +400,7 @@ pub async fn ssh_resize(
 6. 排序功能（名称/大小/修改时间）
 
 **修改文件**:
+
 - `src/view/sftp/sftp-container.tsx` - 完全重写
 
 ---
@@ -391,6 +413,7 @@ pub async fn ssh_resize(
 **修复时间**: 2026-03-24
 
 **修复方案**:
+
 1. 创建/解锁/锁定金库流程
 2. 加密存储：`vaultService.set/get/list/delete`
 3. 主密码修改功能
@@ -398,6 +421,7 @@ pub async fn ssh_resize(
 5. 复制到剪贴板
 
 **修改文件**:
+
 - `src/view/vaults/vaults-container.tsx` - 完全重写
 
 ---
@@ -410,12 +434,14 @@ pub async fn ssh_resize(
 **修复时间**: 2026-03-24
 
 **修复方案**:
+
 1. 连接端口转发后端：`portForwardStart/Stop`
 2. 三种转发类型（本地/远程/动态）
 3. 卡片式 UI 显示和管理规则
 4. 启动/停止/删除操作
 
 **修改文件**:
+
 - `src/view/port-forward/index.tsx` - 完全重写
 
 ---
@@ -428,12 +454,14 @@ pub async fn ssh_resize(
 **修复时间**: 2026-03-24
 
 **修复方案**:
+
 1. 新增 `terminalEmitter` 服务（EventEmitter）
 2. TerminalContainer 监听 `terminalEmitter.write` 事件
 3. 命令面板 snippet 执行：解析变量 → 调用 `terminalEmitter.writeCommand`
 4. 命令历史执行：调用 `terminalEmitter.writeCommand`
 
 **修改文件**:
+
 - `src/service/terminal-emitter.ts` - 新增
 - `src/view/terminal/terminal-container.tsx` - 添加 emitter 监听
 - `src/components/command-palette/index.tsx` - 实现执行逻辑
@@ -458,19 +486,20 @@ pub async fn ssh_resize(
 
 ```typescript
 // 修复前 (错误)
-const { Terminal } = require("@xterm/xterm");
-const { FitAddon } = require("@xterm/addon-fit");
-const { SearchAddon } = require("@xterm/addon-search");
-const { WebLinksAddon } = require("@xterm/addon-web-links");
+const { Terminal } = require('@xterm/xterm')
+const { FitAddon } = require('@xterm/addon-fit')
+const { SearchAddon } = require('@xterm/addon-search')
+const { WebLinksAddon } = require('@xterm/addon-web-links')
 
 // 修复后 (正确)
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { SearchAddon } from "@xterm/addon-search";
-import { WebLinksAddon } from "@xterm/addon-web-links";
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import { SearchAddon } from '@xterm/addon-search'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 ```
 
 **修改文件**:
+
 - `src/view/terminal/terminal-container.tsx`
 
 ---
@@ -506,6 +535,7 @@ defaultNS: 'demo',
 ```
 
 **修改文件**:
+
 - `src/locales/index.ts`
 - `src/view/hosts/index.tsx` - 添加 `hosts.count` 翻译键
 
@@ -522,6 +552,7 @@ defaultNS: 'demo',
 
 **问题描述**:
 原实现使用 `react-xtermjs` 库存在以下问题：
+
 1. 快速输入字符时数据丢失或失败
 2. 终端回显文案错乱
 3. `useXTerm` hook 提供的抽象层反而增加了复杂性
@@ -531,6 +562,7 @@ defaultNS: 'demo',
 完全移除 `react-xtermjs` 依赖，直接使用原生 `@xterm/xterm`：
 
 1. **移除 react-xtermjs 依赖**
+
    ```bash
    pnpm remove react-xtermjs
    ```
@@ -557,12 +589,15 @@ defaultNS: 'demo',
    - 普通字符：直接发送到后端（SSH/Local 由服务端处理回显，Serial 也由服务端处理回显）
 
 **修改文件**:
+
 - `src/view/terminal/terminal-container.tsx` - 完全重写
 - `src/view/terminal/terminal-view.tsx` - 已删除（不再需要）
 - `package.json` - 移除 `react-xtermjs` 依赖
 
 **删除文件**:
+
 - `src/view/terminal/terminal-view.tsx`
 
 **新增文件**:
+
 - `src/view/logs/index.tsx` - 日志视图占位符

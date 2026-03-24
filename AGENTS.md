@@ -196,10 +196,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-
-<Select value={form.type} onValueChange={(v) => setForm({ type: v })}>
+} from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
+;<Select value={form.type} onValueChange={v => setForm({ type: v })}>
   <Label htmlFor="type">Type</Label>
   <SelectTrigger id="type">
     <SelectValue placeholder="Select type" />
@@ -208,7 +207,7 @@ import { Label } from "@/components/ui/label";
     <SelectItem value="a">Option A</SelectItem>
     <SelectItem value="b">Option B</SelectItem>
   </SelectContent>
-</Select>;
+</Select>
 ```
 
 **错误示例（严格禁止）：**
@@ -264,8 +263,8 @@ import { Label } from "@/components/ui/label";
 1. **路径别名**: 使用 `@/` 作为从 `src/` 目录导入的前缀
 
    ```typescript
-   import { useTerminal } from "@/hooks/use-terminal";
-   import { AppStore } from "@/store/app";
+   import { useTerminal } from '@/hooks/use-terminal'
+   import { AppStore } from '@/store/app'
    ```
 
 2. **依赖注入**: 使用 tsyringe 进行依赖注入
@@ -281,9 +280,9 @@ import { Label } from "@/components/ui/label";
 
    ```typescript
    class AppStore {
-     @observable count = 0;
+     @observable count = 0
      @action increment() {
-       this.count++;
+       this.count++
      }
    }
    ```
@@ -421,23 +420,23 @@ _文档更新时间: 2026-03-19_
 
 ```typescript
 // 终端实例创建
-const term = new Terminal({ cursorBlink: true, fontSize: 14 });
+const term = new Terminal({ cursorBlink: true, fontSize: 14 })
 
 // 打开到 DOM
-term.open(container);
+term.open(container)
 
 // 写入数据（支持 VT 序列）
-term.write("\x1b[2K"); // 清除行
+term.write('\x1b[2K') // 清除行
 
 // 事件监听
-term.onData((data) => sshService.write(sessionId, data));
-term.onResize(({ cols, rows }) => sshService.resize(sessionId, cols, rows));
+term.onData(data => sshService.write(sessionId, data))
+term.onResize(({ cols, rows }) => sshService.resize(sessionId, cols, rows))
 
 // 缓冲区操作
-term.buffer.active.getLine(y).getCell(x);
+term.buffer.active.getLine(y).getCell(x)
 
 // 插件加载
-term.loadAddon(new FitAddon());
+term.loadAddon(new FitAddon())
 ```
 
 ### 性能注意事项
@@ -495,16 +494,16 @@ term.loadAddon(new FitAddon());
 
 ### 路由配置
 
-| 路由 | 组件 | 说明 |
-|------|------|------|
-| `/` 或 `/hosts` | `HostsView` | 主机列表页面 |
-| `/terminal` | `TerminalView` | 终端会话页面 |
-| `/sftp` | `SftpView` | SFTP 文件传输页面 |
-| `/keychain` | `KeychainView` | SSH 密钥管理 |
-| `/port-forward` | `PortForwardView` | 端口转发管理 |
-| `/snippets` | `SnippetsView` | 代码片段管理 |
-| `/known-hosts` | `KnownHostsView` | 已知主机管理 |
-| `/logs` | `LogsView` | 日志查看页面 |
+| 路由            | 组件              | 说明              |
+| --------------- | ----------------- | ----------------- |
+| `/` 或 `/hosts` | `HostsView`       | 主机列表页面      |
+| `/terminal`     | `TerminalView`    | 终端会话页面      |
+| `/sftp`         | `SftpView`        | SFTP 文件传输页面 |
+| `/keychain`     | `KeychainView`    | SSH 密钥管理      |
+| `/port-forward` | `PortForwardView` | 端口转发管理      |
+| `/snippets`     | `SnippetsView`    | 代码片段管理      |
+| `/known-hosts`  | `KnownHostsView`  | 已知主机管理      |
+| `/logs`         | `LogsView`        | 日志查看页面      |
 
 ### 添加新视图规范
 

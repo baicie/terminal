@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -141,7 +141,7 @@
   app-region: unset !important;
 }
 
-*[data-tauri-drag-region]:not([data-tauri-drag-region="false"]) {
+*[data-tauri-drag-region]:not([data-tauri-drag-region='false']) {
   -webkit-app-region: drag;
   app-region: drag;
 }

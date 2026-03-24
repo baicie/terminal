@@ -1,22 +1,22 @@
-import { useState, useEffect } from "react";
-import { observer } from "mobx-react-lite";
+import { useState, useEffect } from 'react'
+import { observer } from 'mobx-react-lite'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select'
 import {
   Plus,
   Trash2,
@@ -24,33 +24,33 @@ import {
   Pause,
   Network,
   ArrowRightLeft,
-} from "lucide-react";
-import type { PortForward, PortForwardType } from "@/types";
+} from 'lucide-react'
+import type { PortForward, PortForwardType } from '@/types'
 
 interface PortForwardDialogProps {
-  open: boolean;
-  onClose: () => void;
-  portForwards: PortForward[];
-  onSave: (portForwards: PortForward[]) => void;
+  open: boolean
+  onClose: () => void
+  portForwards: PortForward[]
+  onSave: (portForwards: PortForward[]) => void
 }
 
 const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
   ({ open, onClose, portForwards: initialForwards, onSave }) => {
-    const [portForwards, setPortForwards] = useState<PortForward[]>([]);
-    const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+    const [portForwards, setPortForwards] = useState<PortForward[]>([])
+    const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
 
     const [formData, setFormData] = useState({
-      name: "",
-      type: "local" as PortForwardType,
-      localPort: "",
-      localHost: "localhost",
-      remotePort: "",
-      remoteHost: "localhost",
-    });
+      name: '',
+      type: 'local' as PortForwardType,
+      localPort: '',
+      localHost: 'localhost',
+      remotePort: '',
+      remoteHost: 'localhost',
+    })
 
     useEffect(() => {
-      setPortForwards(initialForwards || []);
-    }, [initialForwards, open]);
+      setPortForwards(initialForwards || [])
+    }, [initialForwards, open])
 
     const handleAdd = () => {
       const newForward: PortForward = {
@@ -58,71 +58,69 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
         name: formData.name || `${formData.type} forward`,
         type: formData.type,
         localPort: parseInt(formData.localPort) || 0,
-        localHost: formData.localHost || "localhost",
+        localHost: formData.localHost || 'localhost',
         remotePort: parseInt(formData.remotePort) || 0,
-        remoteHost: formData.remoteHost || "localhost",
+        remoteHost: formData.remoteHost || 'localhost',
         active: false,
-      };
-      setPortForwards([...portForwards, newForward]);
-      setIsAddDialogOpen(false);
-      resetForm();
-    };
+      }
+      setPortForwards([...portForwards, newForward])
+      setIsAddDialogOpen(false)
+      resetForm()
+    }
 
     const handleDelete = (id: string) => {
-      setPortForwards(portForwards.filter((f) => f.id !== id));
-    };
+      setPortForwards(portForwards.filter(f => f.id !== id))
+    }
 
     const handleToggleActive = (id: string) => {
       setPortForwards(
-        portForwards.map((f) =>
-          f.id === id ? { ...f, active: !f.active } : f
-        )
-      );
-    };
+        portForwards.map(f => (f.id === id ? { ...f, active: !f.active } : f)),
+      )
+    }
 
     const resetForm = () => {
       setFormData({
-        name: "",
-        type: "local",
-        localPort: "",
-        localHost: "localhost",
-        remotePort: "",
-        remoteHost: "localhost",
-      });
-    };
+        name: '',
+        type: 'local',
+        localPort: '',
+        localHost: 'localhost',
+        remotePort: '',
+        remoteHost: 'localhost',
+      })
+    }
 
     const handleSave = () => {
-      onSave(portForwards);
-      onClose();
-    };
+      onSave(portForwards)
+      onClose()
+    }
 
     const getTypeLabel = (type: PortForwardType) => {
       switch (type) {
-        case "local":
-          return "Local (-L)";
-        case "remote":
-          return "Remote (-R)";
-        case "dynamic":
-          return "Dynamic (-D)";
+        case 'local':
+          return 'Local (-L)'
+        case 'remote':
+          return 'Remote (-R)'
+        case 'dynamic':
+          return 'Dynamic (-D)'
         default:
-          return type;
+          return type
       }
-    };
+    }
 
     const getForwardDescription = (forward: PortForward) => {
       switch (forward.type) {
-        case "local":
-          return `${forward.localHost}:${forward.localPort} → ${forward.remoteHost}:${forward.remotePort}`;
-        case "remote":
-          return `${forward.remoteHost}:${forward.remotePort} → ${forward.localHost}:${forward.localPort}`;
-        case "dynamic":
-          return `${forward.localHost}:${forward.localPort} (SOCKS)`;
+        case 'local':
+          return `${forward.localHost}:${forward.localPort} → ${forward.remoteHost}:${forward.remotePort}`
+        case 'remote':
+          return `${forward.remoteHost}:${forward.remotePort} → ${forward.localHost}:${forward.localPort}`
+        case 'dynamic':
+          return `${forward.localHost}:${forward.localPort} (SOCKS)`
         default:
-          return "";
+          return ''
       }
-    };
+    }
 
-    if (!open) return null;
+    if (!open) return null
 
     return (
       <>
@@ -137,7 +135,8 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
 
             <div className="flex items-center justify-between mb-4">
               <span className="text-sm text-muted-foreground">
-                {portForwards.length} forward{portForwards.length !== 1 ? "s" : ""} configured
+                {portForwards.length} forward
+                {portForwards.length !== 1 ? 's' : ''} configured
               </span>
               <Button onClick={() => setIsAddDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-1" />
@@ -152,11 +151,11 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {portForwards.map((forward) => (
+                  {portForwards.map(forward => (
                     <div
                       key={forward.id}
                       className={`border rounded-lg p-3 flex items-center justify-between ${
-                        forward.active ? "bg-accent/50" : ""
+                        forward.active ? 'bg-accent/50' : ''
                       }`}
                     >
                       <div className="flex-1 min-w-0">
@@ -175,7 +174,7 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
                           variant="ghost"
                           size="icon"
                           onClick={() => handleToggleActive(forward.id)}
-                          title={forward.active ? "Stop" : "Start"}
+                          title={forward.active ? 'Stop' : 'Start'}
                         >
                           {forward.active ? (
                             <Pause className="h-4 w-4" />
@@ -219,7 +218,7 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
                 <Input
                   id="forward-name"
                   value={formData.name}
-                  onChange={(e) =>
+                  onChange={e =>
                     setFormData({ ...formData, name: e.target.value })
                   }
                   placeholder="My Forward"
@@ -228,25 +227,36 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
 
               <div>
                 <Label htmlFor="forward-type">Type</Label>
-                <Select value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v as PortForwardType })}>
+                <Select
+                  value={formData.type}
+                  onValueChange={v =>
+                    setFormData({ ...formData, type: v as PortForwardType })
+                  }
+                >
                   <SelectTrigger id="forward-type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="local">Local Port Forward (-L)</SelectItem>
-                    <SelectItem value="remote">Remote Port Forward (-R)</SelectItem>
-                    <SelectItem value="dynamic">Dynamic Port Forward (-D)</SelectItem>
+                    <SelectItem value="local">
+                      Local Port Forward (-L)
+                    </SelectItem>
+                    <SelectItem value="remote">
+                      Remote Port Forward (-R)
+                    </SelectItem>
+                    <SelectItem value="dynamic">
+                      Dynamic Port Forward (-D)
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
-              {formData.type === "dynamic" ? (
+              {formData.type === 'dynamic' ? (
                 <div>
                   <Label>SOCKS Proxy</Label>
                   <div className="flex items-center gap-2 mt-1">
                     <Input
                       value={formData.localHost}
-                      onChange={(e) =>
+                      onChange={e =>
                         setFormData({ ...formData, localHost: e.target.value })
                       }
                       placeholder="localhost"
@@ -256,7 +266,7 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
                     <Input
                       type="number"
                       value={formData.localPort}
-                      onChange={(e) =>
+                      onChange={e =>
                         setFormData({ ...formData, localPort: e.target.value })
                       }
                       placeholder="1080"
@@ -264,7 +274,8 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
                     />
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Creates a SOCKS proxy at {formData.localHost}:{formData.localPort || "1080"}
+                    Creates a SOCKS proxy at {formData.localHost}:
+                    {formData.localPort || '1080'}
                   </p>
                 </div>
               ) : (
@@ -274,8 +285,11 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
                     <div className="flex items-center gap-2 mt-1">
                       <Input
                         value={formData.localHost}
-                        onChange={(e) =>
-                          setFormData({ ...formData, localHost: e.target.value })
+                        onChange={e =>
+                          setFormData({
+                            ...formData,
+                            localHost: e.target.value,
+                          })
                         }
                         placeholder="localhost"
                         className="font-mono"
@@ -284,8 +298,11 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
                       <Input
                         type="number"
                         value={formData.localPort}
-                        onChange={(e) =>
-                          setFormData({ ...formData, localPort: e.target.value })
+                        onChange={e =>
+                          setFormData({
+                            ...formData,
+                            localPort: e.target.value,
+                          })
                         }
                         placeholder="Port"
                         className="font-mono"
@@ -302,8 +319,11 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
                     <div className="flex items-center gap-2 mt-1">
                       <Input
                         value={formData.remoteHost}
-                        onChange={(e) =>
-                          setFormData({ ...formData, remoteHost: e.target.value })
+                        onChange={e =>
+                          setFormData({
+                            ...formData,
+                            remoteHost: e.target.value,
+                          })
                         }
                         placeholder="localhost"
                         className="font-mono"
@@ -312,8 +332,11 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
                       <Input
                         type="number"
                         value={formData.remotePort}
-                        onChange={(e) =>
-                          setFormData({ ...formData, remotePort: e.target.value })
+                        onChange={e =>
+                          setFormData({
+                            ...formData,
+                            remotePort: e.target.value,
+                          })
                         }
                         placeholder="Port"
                         className="font-mono"
@@ -324,7 +347,10 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
               )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setIsAddDialogOpen(false)}
+              >
                 Cancel
               </Button>
               <Button onClick={handleAdd}>Add</Button>
@@ -332,8 +358,8 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
           </DialogContent>
         </Dialog>
       </>
-    );
-  }
-);
+    )
+  },
+)
 
-export default PortForwardDialog;
+export default PortForwardDialog

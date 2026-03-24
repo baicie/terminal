@@ -1,7 +1,13 @@
-import { useEffect, useState, useCallback } from "react";
-import { ViewContainer, ViewToolbar, ViewContent, ViewHeader, EmptyState } from "@/components/view-container";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useEffect, useState, useCallback } from 'react'
+import {
+  ViewContainer,
+  ViewToolbar,
+  ViewContent,
+  ViewHeader,
+  EmptyState,
+} from '@/components/view-container'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -9,7 +15,7 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,7 +25,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+} from '@/components/ui/alert-dialog'
 import {
   Fingerprint,
   Upload,
@@ -28,7 +34,7 @@ import {
   Shield,
   Server,
   Key,
-} from "lucide-react";
+} from 'lucide-react'
 import {
   getKnownHosts,
   searchKnownHosts,
@@ -36,99 +42,108 @@ import {
   deleteKnownHost,
   clearAllKnownHosts,
   KnownHostRecord,
-} from "@/service/database";
-import { format } from "@/lib/date-utils";
+} from '@/service/database'
+import { format } from '@/lib/date-utils'
 
 const KnownHostsView: React.FC = () => {
-  const [hosts, setHosts] = useState<KnownHostRecord[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [hostToDelete, setHostToDelete] = useState<KnownHostRecord | null>(null);
-  const [clearAllDialogOpen, setClearAllDialogOpen] = useState(false);
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [importContent, setImportContent] = useState("");
-  const [importError, setImportError] = useState("");
-  const [selectedHost, setSelectedHost] = useState<KnownHostRecord | null>(null);
+  const [hosts, setHosts] = useState<KnownHostRecord[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [hostToDelete, setHostToDelete] = useState<KnownHostRecord | null>(null)
+  const [clearAllDialogOpen, setClearAllDialogOpen] = useState(false)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [importContent, setImportContent] = useState('')
+  const [importError, setImportError] = useState('')
+  const [selectedHost, setSelectedHost] = useState<KnownHostRecord | null>(null)
 
   const loadHosts = async () => {
-    setLoading(true);
+    setLoading(true)
     try {
-      const data = await getKnownHosts();
-      setHosts(data);
+      const data = await getKnownHosts()
+      setHosts(data)
     } catch (error) {
-      console.error("Failed to load known hosts:", error);
+      console.error('Failed to load known hosts:', error)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   useEffect(() => {
-    loadHosts();
-  }, []);
+    loadHosts()
+  }, [])
 
   const handleSearch = async (query: string) => {
-    setSearchQuery(query);
+    setSearchQuery(query)
     if (query.trim()) {
-      const results = await searchKnownHosts(query);
-      setHosts(results);
+      const results = await searchKnownHosts(query)
+      setHosts(results)
     } else {
-      loadHosts();
+      loadHosts()
     }
-  };
+  }
 
   const handleDelete = async () => {
     if (hostToDelete) {
-      await deleteKnownHost(hostToDelete.id);
-      setHosts(hosts.filter((h) => h.id !== hostToDelete.id));
-      setHostToDelete(null);
-      setDeleteDialogOpen(false);
+      await deleteKnownHost(hostToDelete.id)
+      setHosts(hosts.filter(h => h.id !== hostToDelete.id))
+      setHostToDelete(null)
+      setDeleteDialogOpen(false)
     }
-  };
+  }
 
   const handleClearAll = async () => {
-    await clearAllKnownHosts();
-    setHosts([]);
-    setClearAllDialogOpen(false);
-  };
+    await clearAllKnownHosts()
+    setHosts([])
+    setClearAllDialogOpen(false)
+  }
 
-  const parseKnownHostsLine = (line: string): { hostname: string; port: number; fingerprint: string; key_type: string } | null => {
+  const parseKnownHostsLine = (
+    line: string,
+  ): {
+    hostname: string
+    port: number
+    fingerprint: string
+    key_type: string
+  } | null => {
     try {
       // Skip comments and empty lines
-      if (line.trim().startsWith("#") || !line.trim()) {
-        return null;
+      if (line.trim().startsWith('#') || !line.trim()) {
+        return null
       }
 
       // Format: [hostname]:port ssh-rsa AAAA...
       // or: hostname ssh-rsa AAAA...
-      const match = line.match(/^(?:\[([^\]]+)\]|([^\s]+))(?:\s+(\d+))?\s+(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp\d+)\s+([A-Za-z0-9+/=]+)/);
+      const match = line.match(
+        /^(?:\[([^\]]+)\]|([^\s]+))(?:\s+(\d+))?\s+(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp\d+)\s+([A-Za-z0-9+/=]+)/,
+      )
       if (!match) {
-        return null;
+        return null
       }
 
-      const hostWithPort = match[1] || match[2];
-      const port = match[3] ? parseInt(match[3], 10) : 22;
-      const keyType = match[4];
-      const fingerprint = match[5];
+      const hostWithPort = match[1] || match[2]
+      const port = match[3] ? parseInt(match[3], 10) : 22
+      const keyType = match[4]
+      const fingerprint = match[5]
 
       // Parse hostname and port from [host]:port format
-      const portMatch = hostWithPort.match(/^(.+):(\d+)$/);
-      const hostname = portMatch ? portMatch[1] : hostWithPort;
-      const finalPort = portMatch ? parseInt(portMatch[2], 10) : port;
+      const portMatch = hostWithPort.match(/^(.+):(\d+)$/)
+      const hostname = portMatch ? portMatch[1] : hostWithPort
+      const finalPort = portMatch ? parseInt(portMatch[2], 10) : port
 
-      return { hostname, port: finalPort, fingerprint, key_type: keyType };
+      return { hostname, port: finalPort, fingerprint, key_type: keyType }
     } catch {
-      return null;
+      return null
     }
-  };
+  }
 
   const handleImport = async () => {
-    setImportError("");
-    const lines = importContent.split("\n");
-    const validHosts: Omit<KnownHostRecord, "id">[] = [];
+    setImportError('')
+    const lines = importContent.split('\n')
+    const validHosts: Omit<KnownHostRecord, 'id'>[] = []
 
     for (const line of lines) {
-      const parsed = parseKnownHostsLine(line);
+      const parsed = parseKnownHostsLine(line)
       if (parsed) {
         validHosts.push({
           hostname: parsed.hostname,
@@ -136,39 +151,41 @@ const KnownHostsView: React.FC = () => {
           fingerprint: parsed.fingerprint,
           key_type: parsed.key_type,
           added_at: Date.now(),
-        });
+        })
       }
     }
 
     if (validHosts.length === 0) {
-      setImportError("No valid SSH known hosts entries found. Format should be: hostname ssh-rsa KEY");
-      return;
+      setImportError(
+        'No valid SSH known hosts entries found. Format should be: hostname ssh-rsa KEY',
+      )
+      return
     }
 
-    await addKnownHosts(validHosts);
-    await loadHosts();
-    setImportDialogOpen(false);
-    setImportContent("");
-  };
+    await addKnownHosts(validHosts)
+    await loadHosts()
+    setImportDialogOpen(false)
+    setImportContent('')
+  }
 
   const handleImportFromFile = useCallback(async () => {
     try {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = ".known_hosts,.ssh";
-      input.onchange = async (e) => {
-        const file = (e.target as HTMLInputElement).files?.[0];
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = '.known_hosts,.ssh'
+      input.onchange = async e => {
+        const file = (e.target as HTMLInputElement).files?.[0]
         if (file) {
-          const text = await file.text();
-          setImportContent(text);
-          setImportDialogOpen(true);
+          const text = await file.text()
+          setImportContent(text)
+          setImportDialogOpen(true)
         }
-      };
-      input.click();
+      }
+      input.click()
     } catch (error) {
-      console.error("Failed to import file:", error);
+      console.error('Failed to import file:', error)
     }
-  }, []);
+  }, [])
 
   return (
     <ViewContainer>
@@ -178,7 +195,7 @@ const KnownHostsView: React.FC = () => {
           <Input
             placeholder="Search hosts..."
             value={searchQuery}
-            onChange={(e) => handleSearch(e.target.value)}
+            onChange={e => handleSearch(e.target.value)}
             className="pl-9 h-9"
           />
         </div>
@@ -224,7 +241,7 @@ const KnownHostsView: React.FC = () => {
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-              {hosts.map((host) => (
+              {hosts.map(host => (
                 <div
                   key={host.id}
                   className="p-4 rounded-lg border bg-card hover:bg-accent/50 cursor-pointer transition-colors"
@@ -235,7 +252,9 @@ const KnownHostsView: React.FC = () => {
                       <Server className="size-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{host.hostname}</div>
+                      <div className="font-medium truncate">
+                        {host.hostname}
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         Port {host.port}
                       </div>
@@ -247,10 +266,10 @@ const KnownHostsView: React.FC = () => {
                       variant="ghost"
                       size="icon"
                       className="size-8 hover:text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setHostToDelete(host);
-                        setDeleteDialogOpen(true);
+                      onClick={e => {
+                        e.stopPropagation()
+                        setHostToDelete(host)
+                        setDeleteDialogOpen(true)
                       }}
                     >
                       <Trash2 className="size-4" />
@@ -271,9 +290,7 @@ const KnownHostsView: React.FC = () => {
               <Server className="size-5" />
               {selectedHost?.hostname}
             </DialogTitle>
-            <DialogDescription>
-              SSH Known Host Details
-            </DialogDescription>
+            <DialogDescription>SSH Known Host Details</DialogDescription>
           </DialogHeader>
           {selectedHost && (
             <div className="space-y-4">
@@ -288,24 +305,29 @@ const KnownHostsView: React.FC = () => {
                 <span>{selectedHost.port}</span>
               </div>
               <div className="space-y-1">
-                <div className="text-sm text-muted-foreground">Fingerprint:</div>
+                <div className="text-sm text-muted-foreground">
+                  Fingerprint:
+                </div>
                 <div className="p-3 rounded-md bg-muted font-mono text-xs break-all">
                   {selectedHost.fingerprint}
                 </div>
               </div>
               <div className="text-sm text-muted-foreground">
-                Added: {format(selectedHost.added_at, "MMM dd, yyyy HH:mm")}
+                Added: {format(selectedHost.added_at, 'MMM dd, yyyy HH:mm')}
               </div>
             </div>
           )}
           <DialogFooter>
-            <Button variant="destructive" onClick={() => {
-              if (selectedHost) {
-                setHostToDelete(selectedHost);
-                setSelectedHost(null);
-                setDeleteDialogOpen(true);
-              }
-            }}>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (selectedHost) {
+                  setHostToDelete(selectedHost)
+                  setSelectedHost(null)
+                  setDeleteDialogOpen(true)
+                }
+              }}
+            >
               <Trash2 className="size-4 mr-1" data-icon="inline-start" />
               Delete
             </Button>
@@ -322,12 +344,14 @@ const KnownHostsView: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Known Host</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete the known host "{hostToDelete?.hostname}"?
-              This action cannot be undone.
+              Are you sure you want to delete the known host "
+              {hostToDelete?.hostname}"? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setHostToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setHostToDelete(null)}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -339,7 +363,10 @@ const KnownHostsView: React.FC = () => {
       </AlertDialog>
 
       {/* Clear All Confirmation Dialog */}
-      <AlertDialog open={clearAllDialogOpen} onOpenChange={setClearAllDialogOpen}>
+      <AlertDialog
+        open={clearAllDialogOpen}
+        onOpenChange={setClearAllDialogOpen}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Clear All Known Hosts</AlertDialogTitle>
@@ -349,7 +376,9 @@ const KnownHostsView: React.FC = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setClearAllDialogOpen(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setClearAllDialogOpen(false)}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleClearAll}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -377,7 +406,7 @@ const KnownHostsView: React.FC = () => {
                 className="w-full h-48 p-3 rounded-md border bg-background font-mono text-xs"
                 placeholder="Paste known_hosts content here..."
                 value={importContent}
-                onChange={(e) => setImportContent(e.target.value)}
+                onChange={e => setImportContent(e.target.value)}
               />
             </div>
             {importError && (
@@ -385,7 +414,10 @@ const KnownHostsView: React.FC = () => {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setImportDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setImportDialogOpen(false)}
+            >
               Cancel
             </Button>
             <Button onClick={handleImport}>
@@ -396,7 +428,7 @@ const KnownHostsView: React.FC = () => {
         </DialogContent>
       </Dialog>
     </ViewContainer>
-  );
-};
+  )
+}
 
-export default KnownHostsView;
+export default KnownHostsView

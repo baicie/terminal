@@ -1,91 +1,95 @@
-import { useState, useEffect } from "react";
-import { observer } from "mobx-react-lite";
+import { useState, useEffect } from 'react'
+import { observer } from 'mobx-react-lite'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
-  Search,
-  Trash2,
-  Clock,
-  X,
-  Terminal,
-} from "lucide-react";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import { Search, Trash2, Clock, X, Terminal } from 'lucide-react'
 import {
   getCommandHistory,
   searchCommandHistory,
   clearCommandHistory,
   type CommandHistoryRecord,
-} from "@/service/database";
+} from '@/service/database'
 
 interface CommandHistoryDialogProps {
-  open: boolean;
-  onClose: () => void;
-  onSelect?: (command: string) => void;
+  open: boolean
+  onClose: () => void
+  onSelect?: (command: string) => void
 }
 
 const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = observer(
   ({ open, onClose, onSelect }) => {
-    const [history, setHistory] = useState<CommandHistoryRecord[]>([]);
-    const [searchQuery, setSearchQuery] = useState("");
-    const [loading, setLoading] = useState(false);
+    const [history, setHistory] = useState<CommandHistoryRecord[]>([])
+    const [searchQuery, setSearchQuery] = useState('')
+    const [loading, setLoading] = useState(false)
 
     useEffect(() => {
       if (open) {
-        loadHistory();
+        loadHistory()
       }
-    }, [open, searchQuery]);
+    }, [open, searchQuery])
 
     const loadHistory = async () => {
-      setLoading(true);
+      setLoading(true)
       try {
-        let records: CommandHistoryRecord[];
+        let records: CommandHistoryRecord[]
         if (searchQuery) {
-          records = await searchCommandHistory(searchQuery, 50);
+          records = await searchCommandHistory(searchQuery, 50)
         } else {
-          records = await getCommandHistory(undefined, 100);
+          records = await getCommandHistory(undefined, 100)
         }
-        setHistory(records);
+        setHistory(records)
       } catch (error) {
-        console.error("Failed to load command history:", error);
+        console.error('Failed to load command history:', error)
       } finally {
-        setLoading(false);
+        setLoading(false)
       }
-    };
+    }
 
     const handleClearHistory = async () => {
       try {
-        await clearCommandHistory();
-        setHistory([]);
+        await clearCommandHistory()
+        setHistory([])
       } catch (error) {
-        console.error("Failed to clear history:", error);
+        console.error('Failed to clear history:', error)
       }
-    };
+    }
 
     const handleSelectCommand = (command: string) => {
       if (onSelect) {
-        onSelect(command);
+        onSelect(command)
       }
-      onClose();
-    };
+      onClose()
+    }
 
     const formatDate = (timestamp: number): string => {
-      const date = new Date(timestamp);
-      const now = new Date();
-      const diff = now.getTime() - date.getTime();
-      
-      if (diff < 60000) return "Just now";
-      if (diff < 3600000) return `${Math.floor(diff / 60000)} min ago`;
-      if (diff < 86400000) return `${Math.floor(diff / 3600000)} hours ago`;
-      if (diff < 604800000) return `${Math.floor(diff / 86400000)} days ago`;
-      
-      return date.toLocaleDateString();
-    };
+      const date = new Date(timestamp)
+      const now = new Date()
+      const diff = now.getTime() - date.getTime()
+
+      if (diff < 60000) return 'Just now'
+      if (diff < 3600000) return `${Math.floor(diff / 60000)} min ago`
+      if (diff < 86400000) return `${Math.floor(diff / 3600000)} hours ago`
+      if (diff < 604800000) return `${Math.floor(diff / 86400000)} days ago`
+
+      return date.toLocaleDateString()
+    }
 
     return (
       <Dialog open={open} onOpenChange={onClose}>
@@ -104,14 +108,14 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = observer(
                 placeholder="Search commands..."
                 className="pl-8"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={e => setSearchQuery(e.target.value)}
               />
               {searchQuery && (
                 <Button
                   variant="ghost"
                   size="icon"
                   className="absolute right-1 top-1/2 -translate-y-1/2 size-6"
-                  onClick={() => setSearchQuery("")}
+                  onClick={() => setSearchQuery('')}
                 >
                   <X className="size-3" />
                 </Button>
@@ -119,11 +123,7 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = observer(
             </div>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  title="Clear history"
-                >
+                <Button variant="outline" size="icon" title="Clear history">
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </AlertDialogTrigger>
@@ -131,12 +131,15 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = observer(
                 <AlertDialogHeader>
                   <AlertDialogTitle>Clear Command History</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Are you sure you want to clear all command history? This action cannot be undone.
+                    Are you sure you want to clear all command history? This
+                    action cannot be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleClearHistory}>Clear</AlertDialogAction>
+                  <AlertDialogAction onClick={handleClearHistory}>
+                    Clear
+                  </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -149,7 +152,7 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = observer(
               </div>
             ) : history.length === 0 ? (
               <div className="text-center text-muted-foreground py-8">
-                {searchQuery ? "No commands found" : "No command history"}
+                {searchQuery ? 'No commands found' : 'No command history'}
               </div>
             ) : (
               <div className="space-y-1">
@@ -166,7 +169,8 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = observer(
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         {formatDate(record.executed_at)}
-                        {record.host_id && ` • Host: ${record.host_id.substring(0, 8)}...`}
+                        {record.host_id &&
+                          ` • Host: ${record.host_id.substring(0, 8)}...`}
                       </div>
                     </div>
                   </div>
@@ -180,8 +184,8 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = observer(
           </div>
         </DialogContent>
       </Dialog>
-    );
-  }
-);
+    )
+  },
+)
 
-export default CommandHistoryDialog;
+export default CommandHistoryDialog

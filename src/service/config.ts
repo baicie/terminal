@@ -1,5 +1,5 @@
-import { axios } from "@/utils/axios";
+import { axios } from '@/utils/axios'
 
 export function getConfig() {
-  return axios.get("/config");
+  return axios.get('/config')
 }

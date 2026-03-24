@@ -1,24 +1,34 @@
-import { useState, useEffect } from "react";
-import { observer } from "mobx-react-lite";
+import { useState, useEffect } from 'react'
+import { observer } from 'mobx-react-lite'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select'
 import {
   Plus,
   Edit,
@@ -27,7 +37,7 @@ import {
   Search,
   FolderPlus,
   Code,
-} from "lucide-react";
+} from 'lucide-react'
 import {
   getSnippets,
   createSnippet,
@@ -38,54 +48,57 @@ import {
   deleteSnippetPackage,
   type SnippetRecord,
   type SnippetPackageRecord,
-} from "@/service/database";
+} from '@/service/database'
 
 interface SnippetDialogProps {
-  open: boolean;
-  onClose: () => void;
-  onExecute?: (script: string) => void;
+  open: boolean
+  onClose: () => void
+  onExecute?: (script: string) => void
 }
 
 const SnippetManager: React.FC<SnippetDialogProps> = observer(
   ({ open, onClose, onExecute }) => {
-    const [snippets, setSnippets] = useState<SnippetRecord[]>([]);
-    const [packages, setPackages] = useState<SnippetPackageRecord[]>([]);
-    const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
-    const [searchQuery, setSearchQuery] = useState("");
+    const [snippets, setSnippets] = useState<SnippetRecord[]>([])
+    const [packages, setPackages] = useState<SnippetPackageRecord[]>([])
+    const [selectedPackage, setSelectedPackage] = useState<string | null>(null)
+    const [searchQuery, setSearchQuery] = useState('')
     const [editingSnippet, setEditingSnippet] = useState<SnippetRecord | null>(
-      null
-    );
-    const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-    const [isPackageDialogOpen, setIsPackageDialogOpen] = useState(false);
-    const [isExecuteDialogOpen, setIsExecuteDialogOpen] = useState(false);
-    const [executingSnippet, setExecutingSnippet] = useState<SnippetRecord | null>(null);
-    const [variableValues, setVariableValues] = useState<Record<string, string>>({});
-    const [newPackageName, setNewPackageName] = useState("");
+      null,
+    )
+    const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+    const [isPackageDialogOpen, setIsPackageDialogOpen] = useState(false)
+    const [isExecuteDialogOpen, setIsExecuteDialogOpen] = useState(false)
+    const [executingSnippet, setExecutingSnippet] =
+      useState<SnippetRecord | null>(null)
+    const [variableValues, setVariableValues] = useState<
+      Record<string, string>
+    >({})
+    const [newPackageName, setNewPackageName] = useState('')
     const [formData, setFormData] = useState({
-      name: "",
-      description: "",
-      script: "",
-      packageId: "",
-      variables: "" as string | undefined,
-    });
+      name: '',
+      description: '',
+      script: '',
+      packageId: '',
+      variables: '' as string | undefined,
+    })
 
     useEffect(() => {
-      loadData();
-    }, [selectedPackage]);
+      loadData()
+    }, [selectedPackage])
 
     const loadData = async () => {
       try {
-        const snippetData = await getSnippets(selectedPackage || undefined);
-        setSnippets(snippetData);
-        const packageData = await getSnippetPackages();
-        setPackages(packageData);
+        const snippetData = await getSnippets(selectedPackage || undefined)
+        setSnippets(snippetData)
+        const packageData = await getSnippetPackages()
+        setPackages(packageData)
       } catch (error) {
-        console.error("Failed to load snippets:", error);
+        console.error('Failed to load snippets:', error)
       }
-    };
+    }
 
     const handleCreate = async () => {
-      if (!formData.name || !formData.script) return;
+      if (!formData.name || !formData.script) return
 
       const newSnippet: SnippetRecord = {
         id: `snippet-${Date.now()}`,
@@ -93,119 +106,140 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
         description: formData.description,
         script: formData.script,
         package_id: formData.packageId || undefined,
-      };
+      }
 
       try {
-        await createSnippet(newSnippet);
-        setIsCreateDialogOpen(false);
-        setFormData({ name: "", description: "", script: "", packageId: "", variables: "" });
-        loadData();
+        await createSnippet(newSnippet)
+        setIsCreateDialogOpen(false)
+        setFormData({
+          name: '',
+          description: '',
+          script: '',
+          packageId: '',
+          variables: '',
+        })
+        loadData()
       } catch (error) {
-        console.error("Failed to create snippet:", error);
+        console.error('Failed to create snippet:', error)
       }
-    };
+    }
 
     const handleUpdate = async () => {
-      if (!editingSnippet) return;
+      if (!editingSnippet) return
 
       try {
-        await updateSnippet(editingSnippet);
-        setEditingSnippet(null);
-        loadData();
+        await updateSnippet(editingSnippet)
+        setEditingSnippet(null)
+        loadData()
       } catch (error) {
-        console.error("Failed to update snippet:", error);
+        console.error('Failed to update snippet:', error)
       }
-    };
+    }
 
     const handleDelete = async (id: string) => {
       try {
-        await deleteSnippet(id);
-        loadData();
+        await deleteSnippet(id)
+        loadData()
       } catch (error) {
-        console.error("Failed to delete snippet:", error);
+        console.error('Failed to delete snippet:', error)
       }
-    };
+    }
 
     const handleExecute = (script: string) => {
       if (onExecute) {
-        onExecute(script);
+        onExecute(script)
       }
-    };
+    }
 
     const handleCreatePackage = async () => {
-      if (!newPackageName) return;
+      if (!newPackageName) return
 
       const newPackage: SnippetPackageRecord = {
         id: `pkg-${Date.now()}`,
         name: newPackageName,
-      };
+      }
 
       try {
-        await createSnippetPackage(newPackage);
-        setIsPackageDialogOpen(false);
-        setNewPackageName("");
-        loadData();
+        await createSnippetPackage(newPackage)
+        setIsPackageDialogOpen(false)
+        setNewPackageName('')
+        loadData()
       } catch (error) {
-        console.error("Failed to create package:", error);
+        console.error('Failed to create package:', error)
       }
-    };
+    }
 
     const filteredSnippets = snippets.filter(
-      (s) =>
+      s =>
         s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.description?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+        s.description?.toLowerCase().includes(searchQuery.toLowerCase()),
+    )
 
     // Parse variables from script (format: ${VAR_NAME} or $VAR_NAME)
     const parseVariables = (script: string): string[] => {
-      const variables = new Set<string>();
-      const regex = /\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g;
-      let match;
+      const variables = new Set<string>()
+      const regex = /\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g
+      let match
       while ((match = regex.exec(script)) !== null) {
-        variables.add(match[1]);
+        variables.add(match[1])
       }
-      return Array.from(variables);
-    };
+      return Array.from(variables)
+    }
 
     // Replace variables in script with values
-    const replaceVariables = (script: string, values: Record<string, string>): string => {
-      return script.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (_match, varName) => {
-        return values[varName] ?? _match;
-      });
-    };
+    const replaceVariables = (
+      script: string,
+      values: Record<string, string>,
+    ): string => {
+      return script.replace(
+        /\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g,
+        (_match, varName) => {
+          return values[varName] ?? _match
+        },
+      )
+    }
 
     const handleExecuteClick = (snippet: SnippetRecord) => {
-      const variables = parseVariables(snippet.script);
+      const variables = parseVariables(snippet.script)
       if (variables.length > 0) {
         // Open dialog to enter variable values
-        setExecutingSnippet(snippet);
-        const initialValues: Record<string, string> = {};
+        setExecutingSnippet(snippet)
+        const initialValues: Record<string, string> = {}
         variables.forEach(v => {
           // Try to get default value from stored variables
           try {
-            const storedVars = snippet.variables ? JSON.parse(snippet.variables) : [];
-            const varDef = storedVars.find((v2: { name: string; defaultValue?: string }) => v2.name === v);
+            const storedVars = snippet.variables
+              ? JSON.parse(snippet.variables)
+              : []
+            const varDef = storedVars.find(
+              (v2: { name: string; defaultValue?: string }) => v2.name === v,
+            )
             if (varDef?.defaultValue) {
-              initialValues[v] = varDef.defaultValue;
+              initialValues[v] = varDef.defaultValue
             }
-          } catch { /* ignore */ }
-        });
-        setVariableValues(initialValues);
-        setIsExecuteDialogOpen(true);
+          } catch {
+            /* ignore */
+          }
+        })
+        setVariableValues(initialValues)
+        setIsExecuteDialogOpen(true)
       } else {
         // No variables, execute directly
-        handleExecute(snippet.script);
+        handleExecute(snippet.script)
       }
-    };
+    }
 
     const handleExecuteWithVariables = () => {
-      if (!executingSnippet) return;
-      const finalScript = replaceVariables(executingSnippet.script, variableValues);
-      handleExecute(finalScript);
-      setIsExecuteDialogOpen(false);
-      setExecutingSnippet(null);
-      setVariableValues({});
-    };
+      if (!executingSnippet) return
+      const finalScript = replaceVariables(
+        executingSnippet.script,
+        variableValues,
+      )
+      handleExecute(finalScript)
+      setIsExecuteDialogOpen(false)
+      setExecutingSnippet(null)
+      setVariableValues({})
+    }
 
     return (
       <Dialog open={open} onOpenChange={onClose}>
@@ -233,20 +267,20 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                   variant="ghost"
                   className={`w-full justify-start px-2 py-1 h-auto text-sm ${
                     selectedPackage === null
-                      ? "bg-secondary"
-                      : "hover:bg-secondary/60"
+                      ? 'bg-secondary'
+                      : 'hover:bg-secondary/60'
                   }`}
                   onClick={() => setSelectedPackage(null)}
                 >
                   All Snippets
                 </Button>
-                {packages.map((pkg) => (
+                {packages.map(pkg => (
                   <div
                     key={pkg.id}
                     className={`group flex items-center justify-between w-full text-left px-2 py-1 rounded text-sm ${
                       selectedPackage === pkg.id
-                        ? "bg-secondary"
-                        : "hover:bg-secondary/60"
+                        ? 'bg-secondary'
+                        : 'hover:bg-secondary/60'
                     }`}
                   >
                     <Button
@@ -262,7 +296,7 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                           variant="ghost"
                           size="icon"
                           className="size-5 opacity-0 group-hover:opacity-100"
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={e => e.stopPropagation()}
                         >
                           <Trash2 className="size-3" />
                         </Button>
@@ -271,12 +305,20 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                         <AlertDialogHeader>
                           <AlertDialogTitle>Delete Package</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Are you sure you want to delete "{pkg.name}"? All snippets in this package will be moved to uncategorized.
+                            Are you sure you want to delete "{pkg.name}"? All
+                            snippets in this package will be moved to
+                            uncategorized.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => deleteSnippetPackage(pkg.id).then(loadData)}>Delete</AlertDialogAction>
+                          <AlertDialogAction
+                            onClick={() =>
+                              deleteSnippetPackage(pkg.id).then(loadData)
+                            }
+                          >
+                            Delete
+                          </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
@@ -294,7 +336,7 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                     placeholder="Search snippets..."
                     className="pl-8"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={e => setSearchQuery(e.target.value)}
                   />
                 </div>
                 <Button onClick={() => setIsCreateDialogOpen(true)}>
@@ -309,7 +351,7 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                     No snippets found
                   </div>
                 ) : (
-                  filteredSnippets.map((snippet) => (
+                  filteredSnippets.map(snippet => (
                     <div
                       key={snippet.id}
                       className="border rounded-lg p-3 hover:bg-accent/50 transition-colors"
@@ -327,7 +369,7 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                           )}
                           <pre className="text-xs bg-muted p-2 rounded mt-2 overflow-x-auto max-h-20">
                             {snippet.script.substring(0, 200)}
-                            {snippet.script.length > 200 && "..."}
+                            {snippet.script.length > 200 && '...'}
                           </pre>
                         </div>
                         <div className="flex items-center gap-1 ml-2">
@@ -359,14 +401,21 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Snippet</AlertDialogTitle>
+                                <AlertDialogTitle>
+                                  Delete Snippet
+                                </AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Are you sure you want to delete "{snippet.name}"? This action cannot be undone.
+                                  Are you sure you want to delete "
+                                  {snippet.name}"? This action cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => handleDelete(snippet.id)}>Delete</AlertDialogAction>
+                                <AlertDialogAction
+                                  onClick={() => handleDelete(snippet.id)}
+                                >
+                                  Delete
+                                </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
@@ -381,10 +430,7 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
         </DialogContent>
 
         {/* Create Snippet Dialog */}
-        <Dialog
-          open={isCreateDialogOpen}
-          onOpenChange={setIsCreateDialogOpen}
-        >
+        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create Snippet</DialogTitle>
@@ -395,7 +441,7 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                 <Input
                   id="name"
                   value={formData.name}
-                  onChange={(e) =>
+                  onChange={e =>
                     setFormData({ ...formData, name: e.target.value })
                   }
                   placeholder="My Snippet"
@@ -406,7 +452,7 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                 <Input
                   id="description"
                   value={formData.description}
-                  onChange={(e) =>
+                  onChange={e =>
                     setFormData({ ...formData, description: e.target.value })
                   }
                   placeholder="Optional description"
@@ -426,13 +472,20 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
               </div>
               <div>
                 <Label htmlFor="package">Package</Label>
-                <Select value={formData.packageId} onValueChange={(v) => setFormData({ ...formData, packageId: v })}>
+                <Select
+                  value={formData.packageId}
+                  onValueChange={v =>
+                    setFormData({ ...formData, packageId: v })
+                  }
+                >
                   <SelectTrigger id="package">
                     <SelectValue placeholder="No Package" />
                   </SelectTrigger>
                   <SelectContent>
-                    {packages.map((pkg) => (
-                      <SelectItem key={pkg.id} value={pkg.id}>{pkg.name}</SelectItem>
+                    {packages.map(pkg => (
+                      <SelectItem key={pkg.id} value={pkg.id}>
+                        {pkg.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -451,7 +504,10 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
         </Dialog>
 
         {/* Edit Snippet Dialog */}
-        <Dialog open={!!editingSnippet} onOpenChange={() => setEditingSnippet(null)}>
+        <Dialog
+          open={!!editingSnippet}
+          onOpenChange={() => setEditingSnippet(null)}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Edit Snippet</DialogTitle>
@@ -463,7 +519,7 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                   <Input
                     id="edit-name"
                     value={editingSnippet.name}
-                    onChange={(e) =>
+                    onChange={e =>
                       setEditingSnippet({
                         ...editingSnippet,
                         name: e.target.value,
@@ -475,8 +531,8 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                   <Label htmlFor="edit-description">Description</Label>
                   <Input
                     id="edit-description"
-                    value={editingSnippet.description || ""}
-                    onChange={(e) =>
+                    value={editingSnippet.description || ''}
+                    onChange={e =>
                       setEditingSnippet({
                         ...editingSnippet,
                         description: e.target.value,
@@ -489,7 +545,7 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                   <Textarea
                     id="edit-script"
                     value={editingSnippet.script}
-                    onChange={(e) =>
+                    onChange={e =>
                       setEditingSnippet({
                         ...editingSnippet,
                         script: e.target.value,
@@ -510,7 +566,10 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
         </Dialog>
 
         {/* Execute Snippet with Variables Dialog */}
-        <Dialog open={isExecuteDialogOpen} onOpenChange={setIsExecuteDialogOpen}>
+        <Dialog
+          open={isExecuteDialogOpen}
+          onOpenChange={setIsExecuteDialogOpen}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Execute Snippet - Set Variables</DialogTitle>
@@ -524,14 +583,17 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                   {executingSnippet.script}
                 </div>
                 <div className="space-y-3">
-                  {parseVariables(executingSnippet.script).map((varName) => (
+                  {parseVariables(executingSnippet.script).map(varName => (
                     <div key={varName}>
                       <Label htmlFor={`var-${varName}`}>{varName}</Label>
                       <Input
                         id={`var-${varName}`}
-                        value={variableValues[varName] || ""}
-                        onChange={(e) =>
-                          setVariableValues({ ...variableValues, [varName]: e.target.value })
+                        value={variableValues[varName] || ''}
+                        onChange={e =>
+                          setVariableValues({
+                            ...variableValues,
+                            [varName]: e.target.value,
+                          })
                         }
                         placeholder={`Enter ${varName}`}
                       />
@@ -541,7 +603,10 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
               </div>
             )}
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsExecuteDialogOpen(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setIsExecuteDialogOpen(false)}
+              >
                 Cancel
               </Button>
               <Button onClick={handleExecuteWithVariables}>
@@ -553,7 +618,10 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
         </Dialog>
 
         {/* Create Package Dialog */}
-        <Dialog open={isPackageDialogOpen} onOpenChange={setIsPackageDialogOpen}>
+        <Dialog
+          open={isPackageDialogOpen}
+          onOpenChange={setIsPackageDialogOpen}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create Package</DialogTitle>
@@ -564,13 +632,16 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
                 <Input
                   id="package-name"
                   value={newPackageName}
-                  onChange={(e) => setNewPackageName(e.target.value)}
+                  onChange={e => setNewPackageName(e.target.value)}
                   placeholder="My Package"
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsPackageDialogOpen(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setIsPackageDialogOpen(false)}
+              >
                 Cancel
               </Button>
               <Button onClick={handleCreatePackage}>Create</Button>
@@ -578,8 +649,8 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
           </DialogContent>
         </Dialog>
       </Dialog>
-    );
-  }
-);
+    )
+  },
+)
 
-export default SnippetManager;
+export default SnippetManager

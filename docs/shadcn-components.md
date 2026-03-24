@@ -14,22 +14,22 @@
 
 ## 按分类索引
 
-| 分类 | 组件 |
-|---|---|
-| [交互](#1-交互) | Accordion、Alert、Alert Dialog、Collapsible、Dialog、Hover Card、Popover、Progress、Scroll Area、Separator、Sheet、Slider、Switch、Toggle、Tooltip |
-| [按钮](#2-按钮) | Button、Button Group |
-| [表单](#3-表单) | Checkbox、Combobox、Date Picker、Input、Input Group、Input OTP、Label、Native Select、Radio Group、Select、Textarea |
-| [导航](#4-导航) | Breadcrumb、Menubar、Navigation Menu、Pagination、Tabs |
-| [数据展示](#5-数据展示) | Aspect Ratio、Avatar、Badge、Card、Data Table、Empty、Kbd、Skeleton、Table、Typography |
-| [代码](#6-代码) | Command |
-| [时间/日历](#7-时间日历) | Calendar |
-| [设备框架](#8-设备框架) | Resizable |
-| [可视化](#9-可视化) | Chart、Progress |
-| [布局](#10-布局) | Resizable、Separator |
-| [媒体](#11-媒体) | Avatar |
-| [特殊效果](#12-特殊效果) | Toggle |
-| [金融](#13-金融) | (暂无) |
-| [文本与反馈](#14-文本与反馈) | Alert、Badge、Empty、Progress、Skeleton、Sonner、Spinner、Toast |
+| 分类                         | 组件                                                                                                                                               |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [交互](#1-交互)              | Accordion、Alert、Alert Dialog、Collapsible、Dialog、Hover Card、Popover、Progress、Scroll Area、Separator、Sheet、Slider、Switch、Toggle、Tooltip |
+| [按钮](#2-按钮)              | Button、Button Group                                                                                                                               |
+| [表单](#3-表单)              | Checkbox、Combobox、Date Picker、Input、Input Group、Input OTP、Label、Native Select、Radio Group、Select、Textarea                                |
+| [导航](#4-导航)              | Breadcrumb、Menubar、Navigation Menu、Pagination、Tabs                                                                                             |
+| [数据展示](#5-数据展示)      | Aspect Ratio、Avatar、Badge、Card、Data Table、Empty、Kbd、Skeleton、Table、Typography                                                             |
+| [代码](#6-代码)              | Command                                                                                                                                            |
+| [时间/日历](#7-时间日历)     | Calendar                                                                                                                                           |
+| [设备框架](#8-设备框架)      | Resizable                                                                                                                                          |
+| [可视化](#9-可视化)          | Chart、Progress                                                                                                                                    |
+| [布局](#10-布局)             | Resizable、Separator                                                                                                                               |
+| [媒体](#11-媒体)             | Avatar                                                                                                                                             |
+| [特殊效果](#12-特殊效果)     | Toggle                                                                                                                                             |
+| [金融](#13-金融)             | (暂无)                                                                                                                                             |
+| [文本与反馈](#14-文本与反馈) | Alert、Badge、Empty、Progress、Skeleton、Sonner、Spinner、Toast                                                                                    |
 
 ---
 
@@ -48,12 +48,18 @@
 **示例**:
 
 ```tsx
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-
-<Accordion type="single" collapsible>
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
+;<Accordion type="single" collapsible>
   <AccordionItem value="item-1">
     <AccordionTrigger>What is shadcn/ui?</AccordionTrigger>
-    <AccordionContent>It is a collection of re-usable components.</AccordionContent>
+    <AccordionContent>
+      It is a collection of re-usable components.
+    </AccordionContent>
   </AccordionItem>
 </Accordion>
 ```
@@ -73,10 +79,9 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 **示例**:
 
 ```tsx
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertCircle } from "lucide-react";
-
-<Alert>
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { AlertCircle } from 'lucide-react'
+;<Alert>
   <AlertCircle className="size-4" />
   <AlertTitle>Error</AlertTitle>
   <AlertDescription>Your session has expired.</AlertDescription>
@@ -98,14 +103,25 @@ import { AlertCircle } from "lucide-react";
 **示例**:
 
 ```tsx
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-
-<AlertDialog>
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+;<AlertDialog>
   <AlertDialogTrigger>Delete</AlertDialogTrigger>
   <AlertDialogContent>
     <AlertDialogHeader>
       <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-      <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+      <AlertDialogDescription>
+        This action cannot be undone.
+      </AlertDialogDescription>
     </AlertDialogHeader>
     <AlertDialogFooter>
       <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -142,9 +158,15 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 **示例**:
 
 ```tsx
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-
-<Dialog open={open} onOpenChange={setOpen}>
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+;<Dialog open={open} onOpenChange={setOpen}>
   <DialogContent>
     <DialogHeader>
       <DialogTitle>Edit Host</DialogTitle>
@@ -198,9 +220,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 **示例**:
 
 ```tsx
-import { Progress } from "@/components/ui/progress";
-
-<Progress value={66} />
+import { Progress } from '@/components/ui/progress'
+;<Progress value={66} />
 ```
 
 ---
@@ -275,9 +296,8 @@ import { Separator } from "@/components/ui/separator";
 **示例**:
 
 ```tsx
-import { Switch } from "@/components/ui/switch";
-
-<Switch checked={enabled} onCheckedChange={setEnabled} />
+import { Switch } from '@/components/ui/switch'
+;<Switch checked={enabled} onCheckedChange={setEnabled} />
 ```
 
 ---
@@ -307,12 +327,18 @@ import { Switch } from "@/components/ui/switch";
 **示例**:
 
 ```tsx
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-
-<TooltipProvider>
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+;<TooltipProvider>
   <Tooltip>
     <TooltipTrigger asChild>
-      <Button size="icon"><Settings /></Button>
+      <Button size="icon">
+        <Settings />
+      </Button>
     </TooltipTrigger>
     <TooltipContent>Settings</TooltipContent>
   </Tooltip>
@@ -333,25 +359,25 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 **变体（variant）**:
 
-| 值 | 用途 |
-|---|---|
-| `default` | 主操作按钮（蓝色填充） |
-| `destructive` | 危险操作（红色） |
-| `outline` | 次要操作（描边） |
-| `secondary` | 次要操作（灰色填充） |
-| `ghost` | 弱化操作（透明背景） |
-| `link` | 链接样式 |
+| 值            | 用途                   |
+| ------------- | ---------------------- |
+| `default`     | 主操作按钮（蓝色填充） |
+| `destructive` | 危险操作（红色）       |
+| `outline`     | 次要操作（描边）       |
+| `secondary`   | 次要操作（灰色填充）   |
+| `ghost`       | 弱化操作（透明背景）   |
+| `link`        | 链接样式               |
 
 **尺寸（size）**:
 
-| 值 | 尺寸 |
-|---|---|
-| `default` | h-9 px-4 |
-| `sm` | h-8 px-3 |
-| `lg` | h-10 px-6 |
-| `icon` | size-9（正方形图标按钮） |
-| `icon-xs` | size-6 |
-| `icon-sm` | size-8 |
+| 值        | 尺寸                     |
+| --------- | ------------------------ |
+| `default` | h-9 px-4                 |
+| `sm`      | h-8 px-3                 |
+| `lg`      | h-10 px-6                |
+| `icon`    | size-9（正方形图标按钮） |
+| `icon-xs` | size-6                   |
+| `icon-sm` | size-8                   |
 
 **示例**:
 
@@ -394,9 +420,8 @@ import { Button } from "@/components/ui/button";
 **示例**:
 
 ```tsx
-import { Checkbox } from "@/components/ui/checkbox";
-
-<Checkbox id="terms" checked={checked} onCheckedChange={setChecked} />
+import { Checkbox } from '@/components/ui/checkbox'
+;<Checkbox id="terms" checked={checked} onCheckedChange={setChecked} />
 ```
 
 ---
@@ -436,9 +461,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 **示例**:
 
 ```tsx
-import { Input } from "@/components/ui/input";
-
-<Input placeholder="user@hostname" value={value} onChange={(e) => setValue(e.target.value)} />
+import { Input } from '@/components/ui/input'
+;<Input
+  placeholder="user@hostname"
+  value={value}
+  onChange={e => setValue(e.target.value)}
+/>
 ```
 
 > **禁止**: 不要直接使用 `<input>` 原生元素，统一使用 `Input` 组件。
@@ -458,12 +486,17 @@ import { Input } from "@/components/ui/input";
 **示例**:
 
 ```tsx
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
-
-<InputGroup>
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from '@/components/ui/input-group'
+;<InputGroup>
   <InputGroupInput placeholder="Search..." />
   <InputGroupAddon>
-    <Button size="icon"><Search className="size-4" /></Button>
+    <Button size="icon">
+      <Search className="size-4" />
+    </Button>
   </InputGroupAddon>
 </InputGroup>
 ```
@@ -528,9 +561,8 @@ import { Label } from "@/components/ui/label";
 **示例**:
 
 ```tsx
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-
-<RadioGroup value={value} onValueChange={setValue}>
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+;<RadioGroup value={value} onValueChange={setValue}>
   <div className="flex items-center gap-2">
     <RadioGroupItem value="password" />
     <Label htmlFor="r1">Password</Label>
@@ -556,22 +588,27 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 **子组件**:
 
-| 组件 | 用途 |
-|---|---|
-| `SelectTrigger` | 下拉触发器（显示区域） |
-| `SelectContent` | 下拉选项列表 |
-| `SelectItem` | 单个选项 |
-| `SelectValue` | 显示选中值 |
-| `SelectLabel` | 分组标签 |
-| `SelectGroup` | 选项分组 |
-| `SelectSeparator` | 分隔线 |
+| 组件              | 用途                   |
+| ----------------- | ---------------------- |
+| `SelectTrigger`   | 下拉触发器（显示区域） |
+| `SelectContent`   | 下拉选项列表           |
+| `SelectItem`      | 单个选项               |
+| `SelectValue`     | 显示选中值             |
+| `SelectLabel`     | 分组标签               |
+| `SelectGroup`     | 选项分组               |
+| `SelectSeparator` | 分隔线                 |
 
 **示例**:
 
 ```tsx
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-<Select value={value} onValueChange={setValue}>
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+;<Select value={value} onValueChange={setValue}>
   <SelectTrigger>
     <SelectValue placeholder="Select option" />
   </SelectTrigger>
@@ -597,9 +634,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 **示例**:
 
 ```tsx
-import { Textarea } from "@/components/ui/textarea";
-
-<Textarea placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" value={key} onChange={(e) => setKey(e.target.value)} />
+import { Textarea } from '@/components/ui/textarea'
+;<Textarea
+  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+  value={key}
+  onChange={e => setKey(e.target.value)}
+/>
 ```
 
 ---
@@ -619,13 +659,22 @@ import { Textarea } from "@/components/ui/textarea";
 **示例**:
 
 ```tsx
-import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
-
-<Breadcrumb>
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
+;<Breadcrumb>
   <BreadcrumbList>
-    <BreadcrumbItem><BreadcrumbLink>home</BreadcrumbLink></BreadcrumbItem>
+    <BreadcrumbItem>
+      <BreadcrumbLink>home</BreadcrumbLink>
+    </BreadcrumbItem>
     <BreadcrumbSeparator>/</BreadcrumbSeparator>
-    <BreadcrumbItem><BreadcrumbLink>ubuntu</BreadcrumbLink></BreadcrumbItem>
+    <BreadcrumbItem>
+      <BreadcrumbLink>ubuntu</BreadcrumbLink>
+    </BreadcrumbItem>
   </BreadcrumbList>
 </Breadcrumb>
 ```
@@ -678,18 +727,17 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbS
 
 **子组件**:
 
-| 组件 | 用途 |
-|---|---|
-| `TabsList` | 标签列表容器 |
-| `TabsTrigger` | 单个标签 |
+| 组件          | 用途         |
+| ------------- | ------------ |
+| `TabsList`    | 标签列表容器 |
+| `TabsTrigger` | 单个标签     |
 | `TabsContent` | 标签对应内容 |
 
 **示例**:
 
 ```tsx
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-<Tabs defaultValue="general">
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+;<Tabs defaultValue="general">
   <TabsList>
     <TabsTrigger value="general">General</TabsTrigger>
     <TabsTrigger value="terminal">Terminal</TabsTrigger>
@@ -730,9 +778,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 **示例**:
 
 ```tsx
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-
-<Avatar>
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+;<Avatar>
   <AvatarImage src="https://..." />
   <AvatarFallback>ZL</AvatarFallback>
 </Avatar>
@@ -776,9 +823,14 @@ import { Badge } from "@/components/ui/badge";
 **示例**:
 
 ```tsx
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-
-<Card>
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+;<Card>
   <CardHeader>
     <CardTitle>腾讯云4h4g1y</CardTitle>
     <CardDescription>ssh, ubuntu</CardDescription>
@@ -816,9 +868,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 **示例**:
 
 ```tsx
-import { Empty } from "@/components/ui/empty";
-
-<Empty description="No hosts yet. Add your first host to get started.">
+import { Empty } from '@/components/ui/empty'
+;<Empty description="No hosts yet. Add your first host to get started.">
   <Button>Add Host</Button>
 </Empty>
 ```
@@ -838,9 +889,8 @@ import { Empty } from "@/components/ui/empty";
 **示例**:
 
 ```tsx
-import { Kbd } from "@/components/ui/kbd";
-
-<Kbd>⌘N</Kbd>
+import { Kbd } from '@/components/ui/kbd'
+;<Kbd>⌘N</Kbd>
 ```
 
 ---
@@ -858,9 +908,8 @@ import { Kbd } from "@/components/ui/kbd";
 **示例**:
 
 ```tsx
-import { Skeleton } from "@/components/ui/skeleton";
-
-<Skeleton className="h-4 w-[200px]" />
+import { Skeleton } from '@/components/ui/skeleton'
+;<Skeleton className="h-4 w-[200px]" />
 ```
 
 ---
@@ -880,9 +929,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 **示例**:
 
 ```tsx
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-
-<Table>
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+;<Table>
   <TableHeader>
     <TableRow>
       <TableHead>Name</TableHead>
@@ -927,9 +982,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 **示例**:
 
 ```tsx
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
-
-<Command>
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+} from '@/components/ui/command'
+;<Command>
   <CommandInput placeholder="Type a command or search..." />
   <CommandList>
     <CommandEmpty>No results found.</CommandEmpty>
@@ -1054,11 +1114,11 @@ Toast 通知（全局弹出提示）。
 **示例**:
 
 ```tsx
-import { toast } from "sonner";
+import { toast } from 'sonner'
 
-toast.success("Host saved successfully");
-toast.error("Failed to connect");
-toast("Host deleted", { description: "The host has been removed." });
+toast.success('Host saved successfully')
+toast.error('Failed to connect')
+toast('Host deleted', { description: 'The host has been removed.' })
 ```
 
 > **注意**: Sonner 使用方式为 `toast()` 函数调用，不需要组件嵌入。
@@ -1087,47 +1147,47 @@ toast("Host deleted", { description: "The host has been removed." });
 
 ## 快速参考表
 
-| 需求 | 组件 | 安装命令 |
-|---|---|---|
-| 按钮 | `Button` | 已安装 |
-| 输入框 | `Input` | 已安装 |
-| 下拉选择 | `Select` | 已安装 |
-| 文本域 | `Textarea` | 已安装 |
-| 对话框 | `Dialog` | 已安装 |
-| 标签页 | `Tabs` | 已安装 |
-| 卡片 | `Card` | 已安装 |
-| 下拉菜单 | `DropdownMenu` | 已安装 |
-| 表单标签 | `Label` | 已安装 |
-| Toast 通知 | `Sonner` | `pnpm dlx shadcn@latest add sonner` |
-| 侧边抽屉 | `Sheet` | `pnpm dlx shadcn@latest add sheet` |
-| 命令面板 | `Command` | `pnpm dlx shadcn@latest add command` |
-| 确认对话框 | `AlertDialog` | `pnpm dlx shadcn@latest add alert-dialog` |
-| 分割线 | `Separator` | `pnpm dlx shadcn@latest add separator` |
-| 开关 | `Switch` | `pnpm dlx shadcn@latest add switch` |
-| 表格 | `Table` | `pnpm dlx shadcn@latest add table` |
-| 头像 | `Avatar` | `pnpm dlx shadcn@latest add avatar` |
-| 徽章 | `Badge` | `pnpm dlx shadcn@latest add badge` |
-| 加载骨架 | `Skeleton` | `pnpm dlx shadcn@latest add skeleton` |
-| 键盘按键 | `Kbd` | `pnpm dlx shadcn@latest add kbd` |
-| 空状态 | `Empty` | `pnpm dlx shadcn@latest add empty` |
-| 工具提示 | `Tooltip` | `pnpm dlx shadcn@latest add tooltip` |
-| 可拖拽列 | `Resizable` | `pnpm dlx shadcn@latest add resizable` |
-| 面包屑 | `Breadcrumb` | `pnpm dlx shadcn@latest add breadcrumb` |
-| 分页 | `Pagination` | `pnpm dlx shadcn@latest add pagination` |
-| 进度条 | `Progress` | `pnpm dlx shadcn@latest add progress` |
-| 滑动输入 | `Slider` | `pnpm dlx shadcn@latest add slider` |
-| 复选框 | `Checkbox` | `pnpm dlx shadcn@latest add checkbox` |
-| 单选组 | `RadioGroup` | `pnpm dlx shadcn@latest add radio-group` |
-| 滚动区 | `ScrollArea` | `pnpm dlx shadcn@latest add scroll-area` |
-| 折叠面板 | `Accordion` | `pnpm dlx shadcn@latest add accordion` |
-| 手风琴提示 | `Alert` | `pnpm dlx shadcn@latest add alert` |
-| 输入组 | `InputGroup` | `pnpm dlx shadcn@latest add input-group` |
-| 可折叠 | `Collapsible` | `pnpm dlx shadcn@latest add collapsible` |
-| Popover | `Popover` | `pnpm dlx shadcn@latest add popover` |
-| Hover Card | `HoverCard` | `pnpm dlx shadcn@latest add hover-card` |
-| 日期选择 | `DatePicker` | `pnpm dlx shadcn@latest add date-picker` |
-| 日历 | `Calendar` | `pnpm dlx shadcn@latest add calendar` |
-| Toggle | `Toggle` | `pnpm dlx shadcn@latest add toggle` |
+| 需求       | 组件           | 安装命令                                  |
+| ---------- | -------------- | ----------------------------------------- |
+| 按钮       | `Button`       | 已安装                                    |
+| 输入框     | `Input`        | 已安装                                    |
+| 下拉选择   | `Select`       | 已安装                                    |
+| 文本域     | `Textarea`     | 已安装                                    |
+| 对话框     | `Dialog`       | 已安装                                    |
+| 标签页     | `Tabs`         | 已安装                                    |
+| 卡片       | `Card`         | 已安装                                    |
+| 下拉菜单   | `DropdownMenu` | 已安装                                    |
+| 表单标签   | `Label`        | 已安装                                    |
+| Toast 通知 | `Sonner`       | `pnpm dlx shadcn@latest add sonner`       |
+| 侧边抽屉   | `Sheet`        | `pnpm dlx shadcn@latest add sheet`        |
+| 命令面板   | `Command`      | `pnpm dlx shadcn@latest add command`      |
+| 确认对话框 | `AlertDialog`  | `pnpm dlx shadcn@latest add alert-dialog` |
+| 分割线     | `Separator`    | `pnpm dlx shadcn@latest add separator`    |
+| 开关       | `Switch`       | `pnpm dlx shadcn@latest add switch`       |
+| 表格       | `Table`        | `pnpm dlx shadcn@latest add table`        |
+| 头像       | `Avatar`       | `pnpm dlx shadcn@latest add avatar`       |
+| 徽章       | `Badge`        | `pnpm dlx shadcn@latest add badge`        |
+| 加载骨架   | `Skeleton`     | `pnpm dlx shadcn@latest add skeleton`     |
+| 键盘按键   | `Kbd`          | `pnpm dlx shadcn@latest add kbd`          |
+| 空状态     | `Empty`        | `pnpm dlx shadcn@latest add empty`        |
+| 工具提示   | `Tooltip`      | `pnpm dlx shadcn@latest add tooltip`      |
+| 可拖拽列   | `Resizable`    | `pnpm dlx shadcn@latest add resizable`    |
+| 面包屑     | `Breadcrumb`   | `pnpm dlx shadcn@latest add breadcrumb`   |
+| 分页       | `Pagination`   | `pnpm dlx shadcn@latest add pagination`   |
+| 进度条     | `Progress`     | `pnpm dlx shadcn@latest add progress`     |
+| 滑动输入   | `Slider`       | `pnpm dlx shadcn@latest add slider`       |
+| 复选框     | `Checkbox`     | `pnpm dlx shadcn@latest add checkbox`     |
+| 单选组     | `RadioGroup`   | `pnpm dlx shadcn@latest add radio-group`  |
+| 滚动区     | `ScrollArea`   | `pnpm dlx shadcn@latest add scroll-area`  |
+| 折叠面板   | `Accordion`    | `pnpm dlx shadcn@latest add accordion`    |
+| 手风琴提示 | `Alert`        | `pnpm dlx shadcn@latest add alert`        |
+| 输入组     | `InputGroup`   | `pnpm dlx shadcn@latest add input-group`  |
+| 可折叠     | `Collapsible`  | `pnpm dlx shadcn@latest add collapsible`  |
+| Popover    | `Popover`      | `pnpm dlx shadcn@latest add popover`      |
+| Hover Card | `HoverCard`    | `pnpm dlx shadcn@latest add hover-card`   |
+| 日期选择   | `DatePicker`   | `pnpm dlx shadcn@latest add date-picker`  |
+| 日历       | `Calendar`     | `pnpm dlx shadcn@latest add calendar`     |
+| Toggle     | `Toggle`       | `pnpm dlx shadcn@latest add toggle`       |
 
 ---
 

@@ -1,12 +1,17 @@
-import { ViewContainer, ViewToolbar, ViewContent, ViewHeader } from "@/components/view-container";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Plus } from "lucide-react";
-import SnippetManager from "@/components/snippet-manager";
-import { useState } from "react";
+import {
+  ViewContainer,
+  ViewToolbar,
+  ViewContent,
+  ViewHeader,
+} from '@/components/view-container'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Plus } from 'lucide-react'
+import SnippetManager from '@/components/snippet-manager'
+import { useState } from 'react'
 
 const SnippetsView: React.FC = () => {
-  const [snippetManagerOpen, setSnippetManagerOpen] = useState(false);
+  const [snippetManagerOpen, setSnippetManagerOpen] = useState(false)
 
   return (
     <ViewContainer>
@@ -28,13 +33,13 @@ const SnippetsView: React.FC = () => {
         <SnippetManager
           open={snippetManagerOpen}
           onClose={() => setSnippetManagerOpen(false)}
-          onExecute={(script) => {
-            console.log("Execute snippet:", script);
+          onExecute={script => {
+            console.log('Execute snippet:', script)
           }}
         />
       </ViewContent>
     </ViewContainer>
-  );
-};
+  )
+}
 
-export default SnippetsView;
+export default SnippetsView

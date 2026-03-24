@@ -1,14 +1,14 @@
-import React from "react";
-import { useInjectable } from "@/hooks/use-di";
-import { AppStore } from "@/store/app";
-import Terminal from "@/view/terminal/terminal-container";
+import React from 'react'
+import { useInjectable } from '@/hooks/use-di'
+import { AppStore } from '@/store/app'
+import Terminal from '@/view/terminal/terminal-container'
 
 const HomeView: React.FC = () => {
-  const app = useInjectable(AppStore);
+  const app = useInjectable(AppStore)
 
   // If there are tabs, show the terminal view
   if (app.tabs.length > 0 && app.activeTab) {
-    return <Terminal />;
+    return <Terminal />
   }
 
   // Welcome screen when no tabs are open
@@ -22,15 +22,15 @@ const HomeView: React.FC = () => {
           Select a host from the sidebar to connect
         </p>
         <p className="text-xs text-muted-foreground/70">
-          Or press{" "}
+          Or press{' '}
           <kbd className="inline-flex items-center px-2 py-0.5 text-[11px] font-medium bg-secondary text-muted-foreground border border-border/60 rounded shadow-sm">
             ⌘N
-          </kbd>{" "}
+          </kbd>{' '}
           to add a new host
         </p>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default HomeView;
+export default HomeView

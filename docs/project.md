@@ -162,37 +162,37 @@ src-tauri/
 
 ### Rust 核心命令
 
-| 命令 | 功能 | 状态 |
-|------|------|------|
-| `ssh_connect` | SSH 密码连接 | ✅ 已实现 |
-| `ssh_connect_key` | SSH 密钥连接 | ✅ 已实现 (2026-03-19) |
-| `ssh_connect_agent` | SSH Agent 连接 | 🔴 返回未实现 |
-| `ssh_shell` | 打开交互式 shell | ✅ 已实现 |
-| `ssh_write` | 写入数据 | ✅ 已实现 |
-| `ssh_resize` | 调整终端大小 | ⚠️ 空实现 |
-| `ssh_disconnect` | 断开连接 | ✅ 已实现 |
-| `ssh_execute` | 执行单条命令 | ✅ 已实现 |
-| `local_shell` | 本地终端 | ✅ 已实现 |
-| `local_write` | 本地终端写入 | ✅ 已实现 |
-| `local_resize` | 本地终端调整大小 | ✅ 已实现 |
-| `local_disconnect` | 本地终端断开 | ✅ 已实现 |
-| `sftp_connect` | 初始化 SFTP 会话 | ✅ 新增 (2026-03-19) |
-| `sftp_list` | SFTP 列出目录 | ✅ 已实现 |
-| `sftp_upload` | SFTP 上传 | ✅ 已实现 |
-| `sftp_download` | SFTP 下载 | ✅ 已实现 |
-| `sftp_mkdir` | SFTP 创建目录 | ✅ 已实现 |
-| `sftp_delete` | SFTP 删除 | ✅ 已实现 |
-| `sftp_rename` | SFTP 重命名 | ✅ 已实现 |
-| `port_forward_start` | 启动端口转发 | ✅ 新增 (2026-03-19) |
-| `port_forward_stop` | 停止端口转发 | ✅ 新增 (2026-03-19) |
-| `port_forward_list` | 列出活动转发 | ✅ 新增 (2026-03-19) |
-| `serial_list` | 列出可用串口 | ✅ 新增 (2026-03-20) |
-| `serial_baud_rates` | 获取常用波特率 | ✅ 新增 (2026-03-20) |
-| `serial_connect` | 连接串口 | ✅ 新增 (2026-03-20) |
-| `serial_write` | 写入串口 | ✅ 新增 (2026-03-20) |
-| `serial_write_raw` | 原始写入串口 | ✅ 新增 (2026-03-20) |
-| `serial_is_connected` | 检查串口连接状态 | ✅ 新增 (2026-03-20) |
-| `serial_disconnect` | 断开串口 | ✅ 新增 (2026-03-20) |
+| 命令                  | 功能             | 状态                   |
+| --------------------- | ---------------- | ---------------------- |
+| `ssh_connect`         | SSH 密码连接     | ✅ 已实现              |
+| `ssh_connect_key`     | SSH 密钥连接     | ✅ 已实现 (2026-03-19) |
+| `ssh_connect_agent`   | SSH Agent 连接   | 🔴 返回未实现          |
+| `ssh_shell`           | 打开交互式 shell | ✅ 已实现              |
+| `ssh_write`           | 写入数据         | ✅ 已实现              |
+| `ssh_resize`          | 调整终端大小     | ⚠️ 空实现              |
+| `ssh_disconnect`      | 断开连接         | ✅ 已实现              |
+| `ssh_execute`         | 执行单条命令     | ✅ 已实现              |
+| `local_shell`         | 本地终端         | ✅ 已实现              |
+| `local_write`         | 本地终端写入     | ✅ 已实现              |
+| `local_resize`        | 本地终端调整大小 | ✅ 已实现              |
+| `local_disconnect`    | 本地终端断开     | ✅ 已实现              |
+| `sftp_connect`        | 初始化 SFTP 会话 | ✅ 新增 (2026-03-19)   |
+| `sftp_list`           | SFTP 列出目录    | ✅ 已实现              |
+| `sftp_upload`         | SFTP 上传        | ✅ 已实现              |
+| `sftp_download`       | SFTP 下载        | ✅ 已实现              |
+| `sftp_mkdir`          | SFTP 创建目录    | ✅ 已实现              |
+| `sftp_delete`         | SFTP 删除        | ✅ 已实现              |
+| `sftp_rename`         | SFTP 重命名      | ✅ 已实现              |
+| `port_forward_start`  | 启动端口转发     | ✅ 新增 (2026-03-19)   |
+| `port_forward_stop`   | 停止端口转发     | ✅ 新增 (2026-03-19)   |
+| `port_forward_list`   | 列出活动转发     | ✅ 新增 (2026-03-19)   |
+| `serial_list`         | 列出可用串口     | ✅ 新增 (2026-03-20)   |
+| `serial_baud_rates`   | 获取常用波特率   | ✅ 新增 (2026-03-20)   |
+| `serial_connect`      | 连接串口         | ✅ 新增 (2026-03-20)   |
+| `serial_write`        | 写入串口         | ✅ 新增 (2026-03-20)   |
+| `serial_write_raw`    | 原始写入串口     | ✅ 新增 (2026-03-20)   |
+| `serial_is_connected` | 检查串口连接状态 | ✅ 新增 (2026-03-20)   |
+| `serial_disconnect`   | 断开串口         | ✅ 新增 (2026-03-20)   |
 
 ---
 
@@ -200,56 +200,56 @@ src-tauri/
 
 ### Phase 1 - MVP ✅ 已完成
 
-| 功能 | 前端 | 后端 | 说明 |
-|------|------|------|------|
-| SSH 密码连接 | ✅ | ✅ | russh 实现 |
-| SSH 密钥认证 | ✅ | ✅ | russh-keys 实现 (2026-03-19) |
-| 终端模拟 (xterm.js) | ✅ | ✅ | FitAddon, SearchAddon, WebLinksAddon |
-| 多标签页 | ✅ | - | AppStore 管理 |
-| 主机保存 (SQLite) | ✅ | ✅ | hosts 表 |
-| 组管理 | ✅ | ✅ | 支持嵌套组 |
-| 收藏夹 | ✅ | ✅ | isFavorite 字段 |
-| 本地终端 | ✅ | ✅ | portable-pty |
+| 功能                | 前端 | 后端 | 说明                                 |
+| ------------------- | ---- | ---- | ------------------------------------ |
+| SSH 密码连接        | ✅   | ✅   | russh 实现                           |
+| SSH 密钥认证        | ✅   | ✅   | russh-keys 实现 (2026-03-19)         |
+| 终端模拟 (xterm.js) | ✅   | ✅   | FitAddon, SearchAddon, WebLinksAddon |
+| 多标签页            | ✅   | -    | AppStore 管理                        |
+| 主机保存 (SQLite)   | ✅   | ✅   | hosts 表                             |
+| 组管理              | ✅   | ✅   | 支持嵌套组                           |
+| 收藏夹              | ✅   | ✅   | isFavorite 字段                      |
+| 本地终端            | ✅   | ✅   | portable-pty                         |
 
 ### Phase 2 - 核心功能 ✅ 已完成
 
-| 功能 | 前端 | 后端 | 说明 |
-|------|------|------|------|
-| SFTP 文件传输 | ✅ | ✅ | russh-sftp 实现 (2026-03-19) |
-| 端口转发 | ✅ | ⚠️ | UI 完成，后端基础实现 (2026-03-19) |
-| ssh_resize | ✅ | ✅ | 使用 escape sequence 实现 (2026-03-19) |
-| 命令历史 | ✅ | ✅ | SQLite 存储 |
-| Snippet | ✅ | ✅ | 完整实现 |
-| 分屏模式 | ✅ | ✅ | 水平/垂直分屏 |
+| 功能          | 前端 | 后端 | 说明                                   |
+| ------------- | ---- | ---- | -------------------------------------- |
+| SFTP 文件传输 | ✅   | ✅   | russh-sftp 实现 (2026-03-19)           |
+| 端口转发      | ✅   | ⚠️   | UI 完成，后端基础实现 (2026-03-19)     |
+| ssh_resize    | ✅   | ✅   | 使用 escape sequence 实现 (2026-03-19) |
+| 命令历史      | ✅   | ✅   | SQLite 存储                            |
+| Snippet       | ✅   | ✅   | 完整实现                               |
+| 分屏模式      | ✅   | ✅   | 水平/垂直分屏                          |
 
 ### Phase 3 - 高级功能 ✅ 已完成
 
 > 2026-03-19 完成 Phase 3 所有高级功能
 
-| 功能 | 状态 |
-|------|------|
-| Agent 转发 | ✅ 已实现 (2026-03-19) |
+| 功能               | 状态                   |
+| ------------------ | ---------------------- |
+| Agent 转发         | ✅ 已实现 (2026-03-19) |
 | 主机链 (Jump Host) | ✅ 已实现 (2026-03-19) |
-| Vault 加密存储 | ✅ 已实现 (2026-03-19) |
-| 命令面板 | ✅ 已实现 (2026-03-19) |
-| 多工作区 | ✅ 已实现 (2026-03-19) |
-| 跨设备同步 | ✅ 已实现 (2026-03-19) |
+| Vault 加密存储     | ✅ 已实现 (2026-03-19) |
+| 命令面板           | ✅ 已实现 (2026-03-19) |
+| 多工作区           | ✅ 已实现 (2026-03-19) |
+| 跨设备同步         | ✅ 已实现 (2026-03-19) |
 
 ### Phase 4 - 企业功能 ⚠️ 部分完成
 
 > 2026-03-24 完成 Phase 4 部分功能
 
-| 功能 | 状态 |
-|------|------|
-| 团队协作 | 📋 待开发 |
-| SSH 证书认证 | 📋 待开发 |
-| 串口连接 | ✅ 已实现 (2026-03-20) |
-| SSH 密钥生成 | ✅ 已实现 (2026-03-24) |
-| 高级脚本 | 📋 待开发 |
+| 功能                           | 状态                   |
+| ------------------------------ | ---------------------- |
+| 团队协作                       | 📋 待开发              |
+| SSH 证书认证                   | 📋 待开发              |
+| 串口连接                       | ✅ 已实现 (2026-03-20) |
+| SSH 密钥生成                   | ✅ 已实现 (2026-03-24) |
+| 高级脚本                       | 📋 待开发              |
 | 终端工具侧栏 (Snippets + 历史) | ✅ 已实现 (2026-03-24) |
-| xterm.js ClipboardAddon | ✅ 已实现 (2026-03-24) |
-| 主机环境变量编辑 | ✅ 已实现 (2026-03-24) |
-| SFTP Kind 列 + 权限显示 | ✅ 已实现 (2026-03-24) |
+| xterm.js ClipboardAddon        | ✅ 已实现 (2026-03-24) |
+| 主机环境变量编辑               | ✅ 已实现 (2026-03-24) |
+| SFTP Kind 列 + 权限显示        | ✅ 已实现 (2026-03-24) |
 
 ---
 
@@ -287,19 +287,20 @@ src-tauri/
 
 ### 关键问题
 
-| # | 问题 | 严重程度 | 状态 |
-|---|------|---------|------|
-| 1 | SFTP 后端未实现 | 🔴 Critical | ✅ 已实现 (2026-03-19) |
-| 2 | SSH 密钥认证后端未实现 | 🔴 Critical | ✅ 已实现 (2026-03-19) |
-| 3 | 端口转发后端未实现 | 🔴 Critical | 🔴 未实现 |
-| 4 | Rust 编译警告需清理 | 🟡 Important | ⚠️ 需清理 |
-| 5 | Agent 认证未实现 | 🟡 Important | 🔴 未实现 |
+| #   | 问题                   | 严重程度     | 状态                   |
+| --- | ---------------------- | ------------ | ---------------------- |
+| 1   | SFTP 后端未实现        | 🔴 Critical  | ✅ 已实现 (2026-03-19) |
+| 2   | SSH 密钥认证后端未实现 | 🔴 Critical  | ✅ 已实现 (2026-03-19) |
+| 3   | 端口转发后端未实现     | 🔴 Critical  | 🔴 未实现              |
+| 4   | Rust 编译警告需清理    | 🟡 Important | ⚠️ 需清理              |
+| 5   | Agent 认证未实现       | 🟡 Important | 🔴 未实现              |
 
 ---
 
 ## 数据库表结构
 
 ### hosts 表
+
 ```sql
 CREATE TABLE hosts (
   id TEXT PRIMARY KEY,
@@ -319,6 +320,7 @@ CREATE TABLE hosts (
 ```
 
 ### groups 表
+
 ```sql
 CREATE TABLE groups (
   id TEXT PRIMARY KEY,
@@ -331,6 +333,7 @@ CREATE TABLE groups (
 ```
 
 ### command_history 表
+
 ```sql
 CREATE TABLE command_history (
   id TEXT PRIMARY KEY,
@@ -341,6 +344,7 @@ CREATE TABLE command_history (
 ```
 
 ### snippets / snippet_packages 表
+
 ```sql
 CREATE TABLE snippet_packages (
   id TEXT PRIMARY KEY,
@@ -360,6 +364,7 @@ CREATE TABLE snippets (
 ```
 
 ### settings 表
+
 ```sql
 CREATE TABLE settings (
   key TEXT PRIMARY KEY,
@@ -368,6 +373,7 @@ CREATE TABLE settings (
 ```
 
 ### known_hosts 表
+
 ```sql
 CREATE TABLE known_hosts (
   id TEXT PRIMARY KEY,
@@ -380,4 +386,4 @@ CREATE TABLE known_hosts (
 
 ---
 
-*文档更新时间: 2026-03-24*
+_文档更新时间: 2026-03-24_

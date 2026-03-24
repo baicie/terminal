@@ -30,7 +30,7 @@ export class Logger {
   }
 
   public log(level: LogLevel, msg: string): void {
-    this.transports.forEach((transport) => {
+    this.transports.forEach(transport => {
       transport.log(level, 'app', msg)
     })
   }

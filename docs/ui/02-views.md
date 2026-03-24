@@ -184,7 +184,7 @@
   - 标题：「New Key」；上下文下拉「Personal vault」；更多「...」、收起箭头。
   - **表单**：
     - Label：单行输入。
-    - Private key *：多行必填。
+    - Private key \*：多行必填。
     - Public key：多行。
     - Certificate：多行。
   - **导入区**：
@@ -221,7 +221,7 @@
   - **表单**：
     - Action description：单行，占位「Example: check network load」，右侧 AI 图标。
     - Add a Package：依赖输入。
-    - Script *：多行必填。
+    - Script \*：多行必填。
   - **执行目标**：
     - 说明：「Automate work with snippets. Add target hosts and automatically run the snippet on them in one click!」
     - 列表项占位：「IP or Hostname」「SSH」等。
@@ -236,15 +236,15 @@
 
 ## 视图与路由/组件对照建议
 
-| 视图 | 路由示例 | 前端组件/视图 |
-|------|----------|----------------|
-| Hosts | `/hosts` 或 `/` | home-view / host-list |
-| Terminal | `/terminal/:sessionId` | terminal-container |
-| SFTP | `/sftp/:sessionId` | sftp-container |
-| Logs | `/logs` | 待实现 |
-| Port Forwarding | `/port-forwarding` | port-forward |
-| Known Hosts | `/known-hosts` | 待实现 |
-| Keychain | `/keychain` | 待实现 |
-| Snippets | `/snippets` | snippet-manager |
+| 视图            | 路由示例               | 前端组件/视图         |
+| --------------- | ---------------------- | --------------------- |
+| Hosts           | `/hosts` 或 `/`        | home-view / host-list |
+| Terminal        | `/terminal/:sessionId` | terminal-container    |
+| SFTP            | `/sftp/:sessionId`     | sftp-container        |
+| Logs            | `/logs`                | 待实现                |
+| Port Forwarding | `/port-forwarding`     | port-forward          |
+| Known Hosts     | `/known-hosts`         | 待实现                |
+| Keychain        | `/keychain`            | 待实现                |
+| Snippets        | `/snippets`            | snippet-manager       |
 
 以上描述可直接用于需求澄清、UI 还原与实现对照；与 `docs/project.md`、`docs/design.md` 结合可保持文档与代码一致。
