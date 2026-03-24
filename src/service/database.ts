@@ -724,6 +724,11 @@ export async function deleteConnectionLog(id: string): Promise<void> {
   await database.execute("DELETE FROM connection_logs WHERE id = ?", [id]);
 }
 
+export async function clearConnectionLogs(): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM connection_logs WHERE is_saved = 0");
+}
+
 export async function getConnectionLogs(limit = 100): Promise<ConnectionLogRecord[]> {
   const database = await getDb();
   return database.select(

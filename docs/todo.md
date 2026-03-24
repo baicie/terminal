@@ -233,6 +233,49 @@
 
 ## 五、已完成的开发工作
 
+### 2026-03-24 完成的工作 (第六批次)
+
+1. **Terminal 容器完善** - 重写 `src/view/terminal/terminal-container.tsx`
+   - xterm.js 完整初始化（所有插件）
+   - SSH 连接：调用 `sshService.connect` + `startShell`
+   - 本地终端：调用 `sshService.startLocalShell`
+   - 串口连接：调用 `serialService.connect`
+   - 数据监听：`sshService.onData` / `serialService.onData`
+   - 命令历史导航（↑↓）
+   - 终端大小调整（ResizeObserver + fitAddon）
+   - 状态栏显示（连接/连接中/断开）
+   - 新增 `src/service/terminal-emitter.ts` 用于命令面板写入终端
+
+2. **SFTP 容器完善** - 重写 `src/view/sftp/sftp-container.tsx`
+   - 完整的双栏文件浏览器（本地 + 远程）
+   - 面包屑导航 + 后退/前进历史
+   - 文件/目录图标区分（图片/代码/文本等）
+   - 文件排序（名称/大小/修改时间）
+   - 新建文件夹、删除、重命名对话框
+   - 文件上传/下载功能（SFTP 后端已实现）
+   - 空目录提示 + 加载状态
+
+3. **Vaults 容器完善** - 重写 `src/view/vaults/vaults-container.tsx`
+   - 连接 vault 后端：`vaultService.create/unlock/lock`
+   - 加密存储：`vaultService.set/get/list/delete`
+   - 密钥管理 UI：列表 + 详情面板
+   - 复制到剪贴板、密码显示切换
+   - 主密码修改功能
+   - 主机凭证自动填充
+
+4. **端口转发视图完善** - 重写 `src/view/port-forward/index.tsx`
+   - 连接端口转发后端：`portForwardStart/Stop`
+   - 三种转发类型：本地/远程/动态 (SOCKS)
+   - 卡片式 UI 显示转发规则
+   - 启动/停止/删除操作
+   - 通过主机关联转发规则
+
+5. **命令面板完善** - 更新 `src/components/command-palette/index.tsx`
+   - Snippet 执行：通过 `terminalEmitter.writeCommand` 发送到活动终端
+   - 命令历史执行：同样发送到活动终端
+   - 变量替换支持（`${VAR}` 和 `$VAR` 格式）
+   - 新增 `src/service/terminal-emitter.ts` 服务
+
 ### 2026-03-23 完成的工作 (第五批次)
 
 1. **Logs 视图完善** - 更新 `src/view/logs/index.tsx` 和数据库
@@ -431,4 +474,4 @@
 ---
 
 *文档创建时间：2026-03-18*
-*最后更新：2026-03-19 - 根据代码审查更正状态标记*
+*最后更新：2026-03-24 - 完善视图集成，更新终端/SFTP/Vaults/端口转发/命令面板实现*

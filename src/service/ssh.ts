@@ -361,6 +361,28 @@ export class SSHService {
       return [];
     }
   }
+
+  /**
+   * Generate a new SSH key pair
+   */
+  async generateSSHKey(
+    keyType: "ed25519" | "rsa" | "rsa4096" | "ecdsa" | "ecdsa-nistp256" | "ecdsa-nistp384" | "ecdsa-nistp521",
+    comment: string,
+    passphrase?: string
+  ): Promise<KeyGenerationResult> {
+    return await invoke<KeyGenerationResult>("generate_ssh_key", {
+      keyType,
+      comment,
+      passphrase: passphrase || null,
+    });
+  }
+}
+
+export interface KeyGenerationResult {
+  private_key: string;
+  public_key: string;
+  key_type: string;
+  fingerprint: string;
 }
 
 export interface FileItem {

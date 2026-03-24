@@ -329,7 +329,114 @@ pub async fn ssh_resize(
 ---
 
 *文档创建时间: 2026-03-19*
-*最后更新: 2026-03-22 - 添加 Issue #15: 重构终端组件移除 react-xtermjs 依赖*
+*最后更新: 2026-03-24 - 完善视图集成，终端/SFTP/Vaults/端口转发/命令面板*
+
+---
+
+## 十、视图集成修复 (2026-03-24)
+
+### Issue #16: Terminal 容器未连接 SSH 服务 ✅ 已修复
+
+**严重程度**: Critical
+**状态**: ✅ 已修复
+**影响功能**: 所有 SSH/本地/串口终端会话
+**修复时间**: 2026-03-24
+
+**问题描述**:
+`terminal-container.tsx` 仅初始化了 xterm.js，但从未连接任何后端服务。用户点击主机后终端显示空白。
+
+**修复方案**:
+1. 完整的 SSH 连接流程：`sshService.connect` → `startShell`
+2. 完整的本地终端流程：`sshService.startLocalShell`
+3. 完整的串口连接流程：`serialService.connect`
+4. 数据监听：`sshService.onData` / `serialService.onData` 事件
+5. 命令历史导航（↑↓）
+6. ResizeObserver + fitAddon 响应容器大小变化
+7. 状态栏显示（连接/连接中/断开）
+
+**修改文件**:
+- `src/view/terminal/terminal-container.tsx` - 完全重写
+- `src/service/terminal-emitter.ts` - 新增（命令面板写入终端）
+
+---
+
+### Issue #17: SFTP 容器为纯占位符 ✅ 已修复
+
+**严重程度**: High
+**状态**: ✅ 已修复
+**影响功能**: SFTP 文件传输
+**修复时间**: 2026-03-24
+
+**问题描述**:
+`sftp-container.tsx` 仅包含空状态 UI，无实际 SFTP 功能。
+
+**修复方案**:
+1. 完整的双栏文件浏览器（本地 + 远程）
+2. 通过 SSH 连接自动初始化 SFTP：`sshService.sftpConnect`
+3. 目录列表/导航/面包屑
+4. 上传/下载/删除/重命名/新建文件夹
+5. 文件图标区分（文件夹/图片/代码/文本）
+6. 排序功能（名称/大小/修改时间）
+
+**修改文件**:
+- `src/view/sftp/sftp-container.tsx` - 完全重写
+
+---
+
+### Issue #18: Vaults 容器未连接后端 ✅ 已修复
+
+**严重程度**: Medium
+**状态**: ✅ 已修复
+**影响功能**: 敏感信息加密存储
+**修复时间**: 2026-03-24
+
+**修复方案**:
+1. 创建/解锁/锁定金库流程
+2. 加密存储：`vaultService.set/get/list/delete`
+3. 主密码修改功能
+4. 主机凭证自动填充
+5. 复制到剪贴板
+
+**修改文件**:
+- `src/view/vaults/vaults-container.tsx` - 完全重写
+
+---
+
+### Issue #19: 端口转发视图为占位符 ✅ 已修复
+
+**严重程度**: Medium
+**状态**: ✅ 已修复
+**影响功能**: 端口转发管理
+**修复时间**: 2026-03-24
+
+**修复方案**:
+1. 连接端口转发后端：`portForwardStart/Stop`
+2. 三种转发类型（本地/远程/动态）
+3. 卡片式 UI 显示和管理规则
+4. 启动/停止/删除操作
+
+**修改文件**:
+- `src/view/port-forward/index.tsx` - 完全重写
+
+---
+
+### Issue #20: 命令面板 snippet/history 执行未实现 ✅ 已修复
+
+**严重程度**: Medium
+**状态**: ✅ 已修复
+**影响功能**: 命令面板快捷执行
+**修复时间**: 2026-03-24
+
+**修复方案**:
+1. 新增 `terminalEmitter` 服务（EventEmitter）
+2. TerminalContainer 监听 `terminalEmitter.write` 事件
+3. 命令面板 snippet 执行：解析变量 → 调用 `terminalEmitter.writeCommand`
+4. 命令历史执行：调用 `terminalEmitter.writeCommand`
+
+**修改文件**:
+- `src/service/terminal-emitter.ts` - 新增
+- `src/view/terminal/terminal-container.tsx` - 添加 emitter 监听
+- `src/components/command-palette/index.tsx` - 实现执行逻辑
 
 ---
 

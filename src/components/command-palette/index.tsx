@@ -3,6 +3,7 @@ import { observer } from "mobx-react-lite";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { terminalEmitter } from "@/service/terminal-emitter";
 import {
   Search,
   Terminal,
@@ -293,14 +294,30 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(({ open, onClose 
           break;
         case "snippet":
           const snippet = result.data as SnippetRecord;
-          // Execute snippet in active terminal
-          console.log("Execute snippet:", snippet.script);
-          // TODO: Implement actual snippet execution
+          // Parse and execute snippet with variables
+          let script = snippet.script;
+          // Parse variables from JSON string
+          const variables = snippet.variables
+            ? (JSON.parse(snippet.variables) as Array<{ name: string; defaultValue?: string }>)
+            : [];
+          // Simple variable substitution: ${VAR} or $VAR
+          script = script.replace(/\$\{([^}]+)\}/g, (_, varName) => {
+            const variable = variables.find((v) => v.name === varName);
+            return window.prompt(`Enter value for ${varName}:`, variable?.defaultValue || "") || "";
+          });
+          script = script.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, varName) => {
+            const variable = variables.find((v) => v.name === varName);
+            if (variable) {
+              return window.prompt(`Enter value for ${varName}:`, variable?.defaultValue || "") || "";
+            }
+            return "";
+          });
+          terminalEmitter.writeCommand(script);
+          toast.success(`Executing: ${snippet.name}`);
           break;
         case "history":
           const historyRecord = result.data as CommandHistoryRecord;
-          console.log("Execute history command:", historyRecord.command);
-          // TODO: Send command to active terminal
+          terminalEmitter.writeCommand(historyRecord.command);
           break;
         case "action":
           const action = result.data as { action: string };

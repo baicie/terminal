@@ -456,3 +456,119 @@ pub async fn ssh_execute(
 pub fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
+
+/// Generate a new SSH key pair
+#[tauri::command]
+pub async fn generate_ssh_key(
+    key_type: String,
+    comment: String,
+    passphrase: Option<String>,
+) -> Result<KeyGenerationResult, String> {
+    use ssh_key::LineEnding;
+
+    let rng = &mut rand::rngs::OsRng;
+    let passphrase_ref = passphrase.as_deref().filter(|p| !p.is_empty());
+
+    let (key_pair, key_type_name): (ssh_key::PrivateKey, String) =
+        match key_type.to_lowercase().as_str() {
+            "ed25519" => {
+                let kp = ssh_key::PrivateKey::random(rng, ssh_key::Algorithm::Ed25519)
+                    .map_err(|e| format!("Failed to generate Ed25519 key: {}", e))?;
+                (kp, "ed25519".to_string())
+            }
+            "rsa" | "rsa4096" => {
+                let kp = ssh_key::PrivateKey::random(
+                    rng,
+                    ssh_key::Algorithm::Rsa { hash: None },
+                )
+                .map_err(|e| format!("Failed to generate RSA key: {}", e))?;
+                (kp, "rsa".to_string())
+            }
+            "ecdsa" | "ecdsa-nistp256" => {
+                let kp = ssh_key::PrivateKey::random(
+                    rng,
+                    ssh_key::Algorithm::Ecdsa {
+                        curve: ssh_key::EcdsaCurve::NistP256,
+                    },
+                )
+                .map_err(|e| format!("Failed to generate ECDSA key: {}", e))?;
+                (kp, "ecdsa-nistp256".to_string())
+            }
+            "ecdsa-nistp384" => {
+                let kp = ssh_key::PrivateKey::random(
+                    rng,
+                    ssh_key::Algorithm::Ecdsa {
+                        curve: ssh_key::EcdsaCurve::NistP384,
+                    },
+                )
+                .map_err(|e| format!("Failed to generate ECDSA key: {}", e))?;
+                (kp, "ecdsa-nistp384".to_string())
+            }
+            "ecdsa-nistp521" => {
+                let kp = ssh_key::PrivateKey::random(
+                    rng,
+                    ssh_key::Algorithm::Ecdsa {
+                        curve: ssh_key::EcdsaCurve::NistP521,
+                    },
+                )
+                .map_err(|e| format!("Failed to generate ECDSA key: {}", e))?;
+                (kp, "ecdsa-nistp521".to_string())
+            }
+            _ => {
+                return Err(format!("Unsupported key type: {}", key_type));
+            }
+        };
+
+    // Encode private key (OpenSSH format)
+    let mut private_key = key_pair
+        .to_openssh(LineEnding::LF)
+        .map_err(|e| format!("Failed to encode private key: {}", e))?
+        .to_string();
+
+    // Add comment to private key
+    if !comment.is_empty() {
+        // The comment is part of the OpenSSH format
+        private_key = format!("{}\n", private_key.trim_end());
+    }
+
+    // Encrypt private key if passphrase provided
+    let private_key = if let Some(pass) = passphrase_ref {
+        if !pass.is_empty() {
+            key_pair
+                .encrypt(rng, pass)
+                .map_err(|e| format!("Failed to encrypt private key: {}", e))?
+                .to_openssh(LineEnding::LF)
+                .map_err(|e| format!("Failed to encode encrypted private key: {}", e))?
+                .to_string()
+        } else {
+            private_key
+        }
+    } else {
+        private_key
+    };
+
+    // Encode public key
+    let public_key = key_pair
+        .public_key()
+        .to_openssh()
+        .map_err(|e| format!("Failed to encode public key: {}", e))?;
+
+    // Compute fingerprint (SHA256)
+    let fingerprint = key_pair.public_key().fingerprint(ssh_key::HashAlg::Sha256).to_string();
+
+    Ok(KeyGenerationResult {
+        private_key,
+        public_key,
+        key_type: key_type_name,
+        fingerprint,
+    })
+}
+
+/// SSH key pair for generation response
+#[derive(serde::Serialize)]
+pub struct KeyGenerationResult {
+    pub private_key: String,
+    pub public_key: String,
+    pub key_type: String,
+    pub fingerprint: String,
+}

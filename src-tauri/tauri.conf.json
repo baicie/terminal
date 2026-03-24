@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Terminal",
+  "productName": "Termius",
   "version": "0.1.0",
-  "identifier": "com.baicie.terminal",
+  "identifier": "com.baicie.termius",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -10,14 +10,15 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
-        "title": "terminal",
+        "title": "termius",
         "width": 1200,
-        "minWidth": 1024,
+        "minWidth": 512,
         "height": 800,
-        "minHeight": 740,
+        "minHeight": 370,
         "resizable": true,
         "fullscreen": false,
         "zoomHotkeysEnabled": true,

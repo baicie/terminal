@@ -5,6 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import {
   Select,
@@ -15,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import type { Host, AuthType } from "@/types";
 import PortForwardDialog from "@/components/port-forward";
-import { Network } from "lucide-react";
+import { Network, Plus, Trash2 } from "lucide-react";
 
 interface HostDialogProps {
   open: boolean;
@@ -47,6 +54,8 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
   const [form, setForm] = useState(defaultHost);
   const [saving, setSaving] = useState(false);
   const [portForwardDialogOpen, setPortForwardDialogOpen] = useState(false);
+  const [environmentDialogOpen, setEnvironmentDialogOpen] = useState(false);
+  const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
 
   useEffect(() => {
     if (host) {
@@ -68,8 +77,15 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
         jumpHostId: host.jumpHostId,
         jumpHostAuthType: host.jumpHostAuthType,
       });
+      // Sync environment variables
+      if (host.environment) {
+        setEnvVars(Object.entries(host.environment).map(([key, value]) => ({ key, value })));
+      } else {
+        setEnvVars([]);
+      }
     } else {
       setForm(defaultHost);
+      setEnvVars([]);
     }
   }, [host, open]);
 
@@ -293,6 +309,18 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
             </div>
 
             <div className="col-span-2">
+              <Label className="text-sm font-medium mb-1 block">Environment Variables</Label>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEnvironmentDialogOpen(true)}
+              >
+                <Network className="h-4 w-4 mr-1" />
+                Configure Environment ({Object.keys(form.environment || {}).length})
+              </Button>
+            </div>
+
+            <div className="col-span-2">
               <Label htmlFor="portForwards" className="text-sm font-medium mb-1 block">Port Forwards</Label>
               <Button
                 id="portForwards"
@@ -344,6 +372,85 @@ export const HostDialog: React.FC<HostDialogProps> = ({ open, host, onClose }) =
         portForwards={form.portForwards || []}
         onSave={(forwards) => setForm({ ...form, portForwards: forwards })}
       />
+
+      {/* Environment Variables Dialog */}
+      <Dialog open={environmentDialogOpen} onOpenChange={setEnvironmentDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Environment Variables</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 max-h-80 overflow-y-auto py-2">
+            {envVars.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No environment variables configured. Click "Add Variable" to add one.
+              </p>
+            ) : (
+              envVars.map((env, index) => (
+                <div key={index} className="flex gap-2 items-center">
+                  <Input
+                    placeholder="KEY"
+                    value={env.key}
+                    onChange={(e) => {
+                      const updated = [...envVars];
+                      updated[index].key = e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "");
+                      setEnvVars(updated);
+                    }}
+                    className="flex-1 font-mono text-sm"
+                  />
+                  <span className="text-muted-foreground">=</span>
+                  <Input
+                    placeholder="value"
+                    value={env.value}
+                    onChange={(e) => {
+                      const updated = [...envVars];
+                      updated[index].value = e.target.value;
+                      setEnvVars(updated);
+                    }}
+                    className="flex-1 font-mono text-sm"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0 text-destructive"
+                    onClick={() => setEnvVars(envVars.filter((_, i) => i !== index))}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              ))
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setEnvVars([...envVars, { key: "", value: "" }])}
+            >
+              <Plus className="size-4 mr-1" data-icon="inline-start" />
+              Add Variable
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEnvironmentDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                // Convert array to Record<string, string>
+                const envRecord: Record<string, string> = {};
+                for (const { key, value } of envVars) {
+                  if (key.trim()) {
+                    envRecord[key.trim()] = value;
+                  }
+                }
+                setForm({ ...form, environment: Object.keys(envRecord).length > 0 ? envRecord : undefined });
+                setEnvironmentDialogOpen(false);
+              }}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
