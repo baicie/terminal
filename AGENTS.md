@@ -365,6 +365,7 @@ pnpm add <package-name>
 - ✅ Agent 转发、主机链、Vault 加密
 - ✅ 多工作区、跨设备同步
 - ✅ 串口连接 (2026-03-20)
+- ⚠️ 数据存储服务配置 (UI 完成，后端待实现) (2026-03-24)
 
 ---
 
@@ -411,7 +412,6 @@ _文档更新时间: 2026-03-19_
 | `@xterm/addon-fit`       | 自动调整终端大小 | `fitAddon.fit()` 在容器大小变化时调用 |
 | `@xterm/addon-search`    | 终端内搜索       | `searchAddon.findNext()`              |
 | `@xterm/addon-web-links` | 链接检测         | 自动检测 URL，点击打开                |
-| `@xterm/addon-canvas`    | Canvas 渲染      | 提升渲染性能                          |
 | `@xterm/addon-webgl`     | WebGL 加速       | GPU 加速渲染                          |
 | `@xterm/addon-image`     | 图片支持         | 通过六字节序列显示图片                |
 | `@xterm/addon-unicode11` | Unicode 11       | 支持新 Unicode 字符                   |

@@ -245,6 +245,15 @@
    - 终端大小调整（ResizeObserver + fitAddon）
    - 状态栏显示（连接/连接中/断开）
    - 新增 `src/service/terminal-emitter.ts` 用于命令面板写入终端
+   - **修复 xterm.js v6 兼容性问题**：移除不兼容的 `CanvasAddon`，改用 `WebGLAddon`；移除废弃的 `setOption`；添加 `isMountedRef` 防止竞态条件
+
+2. **存储与同步服务配置** - 更新 `src/components/settings-dialog/index.tsx`
+   - 新增「Storage」Tab（替换原「Sync」Tab）
+   - 存储模式切换卡片：Local（SQLite 本地）/ Service（远程服务）
+   - 同步服务类型：WebDAV / S3 / Custom REST API
+   - 服务端点、用户名、Token 配置表单
+   - Token 明文切换显示
+   - `AppSettings` 新增字段：`dataStorageMode`、`syncServiceType`、`syncServiceEndpoint`、`syncServiceUsername`、`syncServiceToken`
 
 2. **SFTP 容器完善** - 重写 `src/view/sftp/sftp-container.tsx`
    - 完整的双栏文件浏览器（本地 + 远程）

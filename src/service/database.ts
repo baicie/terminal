@@ -536,6 +536,11 @@ export interface AppSettings {
   copyOnSelect: boolean;
   pasteOnMiddleClick: boolean;
   allowProposedApi: boolean;
+  dataStorageMode: "local" | "service";
+  syncServiceType: "webdav" | "s3" | "custom";
+  syncServiceEndpoint: string;
+  syncServiceUsername: string;
+  syncServiceToken: string;
 }
 
 const defaultSettings: AppSettings = {
@@ -549,6 +554,11 @@ const defaultSettings: AppSettings = {
   copyOnSelect: false,
   pasteOnMiddleClick: true,
   allowProposedApi: true,
+  dataStorageMode: "local",
+  syncServiceType: "webdav",
+  syncServiceEndpoint: "",
+  syncServiceUsername: "",
+  syncServiceToken: "",
 };
 
 export async function getSetting<T>(key: string, defaultValue: T): Promise<T> {

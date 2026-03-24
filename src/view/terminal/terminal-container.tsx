@@ -7,7 +7,7 @@ import { Terminal as TerminalComponent } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { WebGLAddon } from "@xterm/addon-webgl";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { LigaturesAddon } from "@xterm/addon-ligatures";
 import { sshService } from "@/service/ssh";
@@ -324,7 +324,7 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(({ tabId })
     term.loadAddon(webLinksAddon);
 
     try {
-      const webglAddon = new WebGLAddon();
+      const webglAddon = new WebglAddon();
       webglAddon.onContextLoss(() => {
         webglAddon.dispose();
       });
