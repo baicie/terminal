@@ -52,43 +52,50 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(
         term.focus()
       }, 50)
 
-      // macOS Safari/WebView 兼容性处理
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.target !== term.element) return
-        e.preventDefault()
-        e.stopPropagation()
-        // Safari 可能需要手动将事件传递给 xterm
-        if (term.element) {
-          term.focus()
+      // 使用 attachCustomKeyEventHandler 处理 Safari/WebView 键盘问题
+      // 返回 false = 阻止 xterm 处理字符，返回 true = 让 xterm 处理
+      let buffer = ''
+      let timer: ReturnType<typeof setTimeout> | null = null
+
+      const flush = () => {
+        if (buffer && termRef.current) {
+          console.log('flush:', JSON.stringify(buffer))
+          termRef.current.write(buffer)
+          buffer = ''
         }
+        timer = null
       }
 
-      const handleKeyUp = (e: KeyboardEvent) => {
-        if (e.target !== term.element) return
-        e.preventDefault()
-        e.stopPropagation()
-      }
+      term.attachCustomKeyEventHandler(e => {
+        if (e.type === 'keydown') {
+          // 控制字符：让 xterm 正常处理
+          if (
+            e.key === 'Enter' ||
+            e.key === 'Tab' ||
+            e.key.startsWith('Arrow') ||
+            e.ctrlKey ||
+            e.metaKey
+          ) {
+            return true
+          }
 
-      // 只保留输入监听和打印
-      term.onData(data => {
-        console.log('keydown data:', data)
-        console.log('key:', data)
-        console.log('charCode:', data.charCodeAt(0))
+          // 普通字符：缓冲 10ms 合并快速按键
+          if (e.key.length === 1) {
+            buffer += e.key
+            if (timer) clearTimeout(timer)
+            timer = setTimeout(flush, 10)
+            return false // 阻止 xterm 默认处理，我们手动 flush
+          }
+        }
+        return true
       })
-
-      // Safari/WebView 兼容：确保容器接收键盘事件
-      containerRef.current?.addEventListener('keydown', handleKeyDown, true)
-      containerRef.current?.addEventListener('keyup', handleKeyUp, true)
-      containerRef.current?.addEventListener('keypress', handleKeyDown, true)
 
       setIsReady(true)
       isMountedRef.current = true
 
       return () => {
         isMountedRef.current = false
-        containerRef.current?.removeEventListener('keydown', handleKeyDown, true)
-        containerRef.current?.removeEventListener('keyup', handleKeyUp, true)
-        containerRef.current?.removeEventListener('keypress', handleKeyDown, true)
+        if (timer) clearTimeout(timer)
         term.dispose()
         termRef.current = null
         setIsReady(false)
@@ -140,11 +147,6 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(
             className="flex-1 overflow-hidden"
             tabIndex={0}
             style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
-            onKeyDown={e => {
-              if (e.target === containerRef.current) {
-                e.preventDefault()
-              }
-            }}
           />
         </div>
       </div>
