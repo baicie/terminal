@@ -40,7 +40,7 @@ pub async fn local_shell(
     };
 
     // Create command (mut needed for Windows cwd setting)
-    let cmd = CommandBuilder::new(&shell);
+    let mut cmd = CommandBuilder::new(&shell);
 
     // Set working directory for Windows
     #[cfg(windows)]
