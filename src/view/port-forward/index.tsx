@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { observer } from 'mobx-react-lite'
-import { useInjectable } from '@/hooks/use-di'
-import { AppStore } from '@/store/app'
-import { HostStore } from '@/store/host'
+import { useAppStore } from '@/store/app'
+import { useHostStore } from '@/store/host'
 import { sshService } from '@/service/ssh'
 import type { PortForwardConfig } from '@/types'
 import {
@@ -60,7 +58,6 @@ import {
   Database,
   Server,
   Link,
-  Loader2,
 } from 'lucide-react'
 import { toast } from '@/components/ui/sonner'
 
@@ -78,9 +75,10 @@ interface PortForwardEntry {
   sessionId?: string
 }
 
-const PortForwardView: React.FC = observer(() => {
-  const app = useInjectable(AppStore)
-  const hostStore = useInjectable(HostStore)
+const PortForwardView: React.FC = () => {
+  const tabs = useAppStore(s => s.tabs)
+  const activeTabId = useAppStore(s => s.activeTabId)
+  const hosts = useHostStore(s => s.hosts)
 
   const [forwards, setForwards] = useState<PortForwardEntry[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -103,12 +101,6 @@ const PortForwardView: React.FC = observer(() => {
   const [formRemoteHost, setFormRemoteHost] = useState('')
   const [formRemotePort, setFormRemotePort] = useState('')
   const [formHostId, setFormHostId] = useState('')
-
-  // Get active session
-  const activeTab = app.activeTab
-  const activeHost = activeTab?.hostId
-    ? hostStore.hosts.find(h => h.id === activeTab.hostId)
-    : null
 
   // Load forwards from storage (mock for now - in production would use database)
   const loadForwards = useCallback(async () => {
@@ -142,7 +134,7 @@ const PortForwardView: React.FC = observer(() => {
 
     const forwardId = `pf-${Date.now()}`
     const host = formHostId
-      ? hostStore.hosts.find(h => h.id === formHostId)
+      ? hosts.find(h => h.id === formHostId)
       : null
 
     const newForward: PortForwardEntry = {
@@ -160,7 +152,7 @@ const PortForwardView: React.FC = observer(() => {
 
     try {
       // If we have an active SSH session, try to start port forward through it
-      if (activeTab?.hostId) {
+      if (tabs.find(t => t.id === activeTabId)?.hostId) {
         const config: PortForwardConfig = {
           id: forwardId,
           name: newForward.name,
@@ -514,7 +506,7 @@ const PortForwardView: React.FC = observer(() => {
             </div>
 
             {/* Host selector */}
-            {hostStore.hosts.length > 0 && (
+            {hosts.length > 0 && (
               <div className="space-y-2">
                 <Label htmlFor="forward-host">Via Host</Label>
                 <Select value={formHostId} onValueChange={setFormHostId}>
@@ -523,7 +515,7 @@ const PortForwardView: React.FC = observer(() => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">None</SelectItem>
-                    {hostStore.hosts.map(host => (
+                    {hosts.map(host => (
                       <SelectItem key={host.id} value={host.id}>
                         {host.name} ({host.username}@{host.hostname})
                       </SelectItem>
@@ -649,6 +641,6 @@ const PortForwardView: React.FC = observer(() => {
       </AlertDialog>
     </ViewContainer>
   )
-})
+}
 
 export default PortForwardView

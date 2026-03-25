@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Outlet, useNavigate, useSearchParams } from 'react-router-dom'
-import { useInjectable } from '@/hooks/use-di'
-import { AppStore } from '@/store/app'
+import { useAppStore } from '@/store/app'
 import SplitPane from '@/components/split-pane'
 import TerminalContainer from '@/view/terminal/terminal-container'
 import AppSidebar from '@/components/app-sidebar'
 import TopToolbar from '@/components/top-toolbar'
-import { CustomTitleBar } from '@/components/custom-title-bar'
 import { cn } from '@/lib/utils'
 import type { TitleBarStyle } from '@/components/custom-title-bar'
 import SettingsDialog from '@/components/settings-dialog'
-import { observer } from 'mobx-react-lite'
 
 const SIDEBAR_WIDTH_KEY = 'terminal.sidebar.width'
 const SIDEBAR_MIN = 64 // 图标模式宽度
@@ -30,32 +27,27 @@ function readSidebarWidth(): number {
 }
 
 // 读取 URL query 参数中的 tabId
-const useTerminalTabId = (): string | null => {
-  const [searchParams] = useSearchParams()
-  return searchParams.get('tab')
-}
-
 const TerminalContent: React.FC<{ tabId: string }> = ({ tabId }) => {
-  const app = useInjectable(AppStore)
-  const tab = app.tabs.find(t => t.id === tabId)
-
+  const tabs = useAppStore(s => s.tabs)
+  const tab = tabs.find(t => t.id === tabId)
   if (!tab) return null
-
   return <TerminalContainer key={tabId} tabId={tabId} />
 }
 
-// 根据 URL tab 参数渲染终端内容
-const TerminalByUrl: React.FC = observer(() => {
-  const app = useInjectable(AppStore)
-  const tabId = useTerminalTabId()
+const TerminalByUrl: React.FC = () => {
+  const [searchParams] = useSearchParams()
+  const tabId = searchParams.get('tab') ?? ''
+
+  const tabs = useAppStore(s => s.tabs)
+  const splitGroups = useAppStore(s => s.splitGroups)
 
   if (!tabId) return null
 
-  const tab = app.tabs.find(t => t.id === tabId)
+  const tab = tabs.find(t => t.id === tabId)
   if (!tab) return null
 
   const splitGroup = tab.splitId
-    ? app.splitGroups.find(g => g.id === tab.splitId)
+    ? splitGroups.find(g => g.id === tab.splitId)
     : null
 
   if (splitGroup && tab.splitChildren && tab.splitChildren.length > 0) {
@@ -66,14 +58,14 @@ const TerminalByUrl: React.FC = observer(() => {
   }
 
   return <TerminalContent tabId={tabId} />
-})
+}
 
 const MainLayoutInner: React.FC<{
   sidebarOpen: boolean
   onToggleSidebar: () => void
   sidebarWidth: number
   onSidebarWidthChange: (w: number) => void
-}> = observer(({ sidebarOpen, onToggleSidebar, sidebarWidth, onSidebarWidthChange }) => {
+}> = ({ sidebarOpen, onToggleSidebar, sidebarWidth, onSidebarWidthChange }) => {
   const [resizing, setResizing] = useState(false)
   const dragRef = useRef({ startX: 0, startWidth: SIDEBAR_DEFAULT })
   const lastWidthRef = useRef(sidebarWidth)
@@ -169,14 +161,14 @@ const MainLayoutInner: React.FC<{
       </div>
     </div>
   )
-})
+}
 
 const MainLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth)
-  const [titleBarStyle, setTitleBarStyle] = useState<TitleBarStyle | null>(null)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
-  const app = useInjectable(AppStore)
+  const [, setTitleBarStyle] = useState<TitleBarStyle>('linux')
+  const addTab = useAppStore(s => s.addTab)
   const navigate = useNavigate()
 
   // Detect platform for title bar style
@@ -213,22 +205,15 @@ const MainLayout: React.FC = () => {
   }, [])
 
   const handleNewLocalTerminal = () => {
-    const newTab = app.addTab({
+    const newTab = addTab({
       label: 'Local',
       type: 'local',
     })
-    console.log('[handleNewLocalTerminal] newTab:', newTab, '| app.tabs:', app.tabs.map(t => t.id))
     navigate(`/terminal?tab=${newTab.id}`)
   }
 
   return (
     <>
-      {/* {titleBarStyle && (
-        <CustomTitleBar
-          style={titleBarStyle}
-          onSettingsClick={() => setSettingsDialogOpen(true)}
-        />
-      )} */}
       <MainLayoutInner
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen(p => !p)}

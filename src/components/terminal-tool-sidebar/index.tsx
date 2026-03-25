@@ -1,13 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { observer } from 'mobx-react-lite'
 import {
   Search,
   Clock,
   Code,
   Play,
-  Plus,
   ChevronRight,
-  X,
   Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -18,8 +15,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
-import { Badge } from '@/components/ui/badge'
 import { getSnippets, type SnippetRecord } from '@/service/database'
 import {
   getCommandHistory,
@@ -37,8 +32,7 @@ interface TerminalToolSidebarProps {
 
 type ActiveTab = 'snippets' | 'history'
 
-const TerminalToolSidebar: React.FC<TerminalToolSidebarProps> = observer(
-  ({ visible, onToggle }) => {
+const TerminalToolSidebar: React.FC<TerminalToolSidebarProps> = ({ visible, onToggle }) => {
     const [activeTab, setActiveTab] = useState<ActiveTab>('snippets')
     const [searchQuery, setSearchQuery] = useState('')
     const [snippets, setSnippets] = useState<SnippetRecord[]>([])
@@ -129,12 +123,6 @@ const TerminalToolSidebar: React.FC<TerminalToolSidebarProps> = observer(
     // Execute history command
     const handleExecuteHistory = useCallback((record: CommandHistoryRecord) => {
       terminalEmitter.writeCommand(record.command)
-    }, [])
-
-    // Execute inline snippet from quick bar
-    const handleExecuteInline = useCallback((script: string, name: string) => {
-      terminalEmitter.writeCommand(script)
-      toast.success(`Executing: ${name}`)
     }, [])
 
     return (
@@ -340,7 +328,6 @@ const TerminalToolSidebar: React.FC<TerminalToolSidebarProps> = observer(
         )}
       </div>
     )
-  },
-)
+  }
 
 export default TerminalToolSidebar

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { observer } from 'mobx-react-lite'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -22,7 +21,7 @@ import { toast } from '@/components/ui/sonner'
 
 type VaultState = 'loading' | 'unlocked' | 'locked' | 'not_created'
 
-const VaultsView: React.FC = observer(() => {
+const VaultsView: React.FC = () => {
   const [vaultState, setVaultState] = useState<VaultState>('loading')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -495,6 +494,6 @@ const VaultsView: React.FC = observer(() => {
       </div>
     </div>
   )
-})
+}
 
 export default VaultsView

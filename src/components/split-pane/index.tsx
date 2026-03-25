@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import { observer } from 'mobx-react-lite'
 import type { SplitGroup } from '@/types'
 
 interface SplitPaneProps {
@@ -7,7 +6,7 @@ interface SplitPaneProps {
   children: React.ReactNode[]
 }
 
-const SplitPane: React.FC<SplitPaneProps> = observer(({ group, children }) => {
+const SplitPane: React.FC<SplitPaneProps> = ({ group, children }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [sizes, setSizes] = useState<number[]>(group.sizes || [50, 50])
   const isDragging = useRef(false)
@@ -93,6 +92,6 @@ const SplitPane: React.FC<SplitPaneProps> = observer(({ group, children }) => {
       </div>
     </div>
   )
-})
+}
 
 export default SplitPane

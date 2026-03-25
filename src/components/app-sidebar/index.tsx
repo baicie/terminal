@@ -17,7 +17,6 @@ import {
   PanelLeftClose,
   PanelLeft,
   Terminal,
-  Keyboard,
 } from 'lucide-react'
 
 interface NavItem {

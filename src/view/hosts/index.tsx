@@ -1,7 +1,6 @@
-import { observer } from 'mobx-react-lite'
-import { useInjectable } from '@/hooks/use-di'
-import { HostStore } from '@/store/host'
-import { AppStore } from '@/store/app'
+import { useEffect, useState } from 'react'
+import { useHostStore } from '@/store/host'
+import { useAppStore } from '@/store/app'
 import {
   ViewContainer,
   ViewContent,
@@ -33,7 +32,6 @@ import {
 } from 'lucide-react'
 import { HostDialog } from '@/components/host-list/host-dialog'
 import SerialDialog from '@/components/serial-dialog'
-import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import type { Host } from '@/types'
@@ -41,16 +39,17 @@ import type { SerialConfig } from '@/service/serial'
 import { toast } from '@/components/ui/sonner'
 import { cn } from '@/lib/utils'
 
-const HostsView: React.FC = observer(() => {
+const HostsView: React.FC = () => {
   const { t } = useTranslation('demo')
-  const hostStore = useInjectable(HostStore)
-  const app = useInjectable(AppStore)
+  const app = useAppStore()
+  const hostStore = useHostStore()
+  const hosts = useHostStore(s => s.hosts)
   const navigate = useNavigate()
 
   useEffect(() => {
     void hostStore.loadHosts()
     void hostStore.loadGroups()
-  }, [hostStore])
+  }, [])
   const [hostDialogOpen, setHostDialogOpen] = useState(false)
   const [serialDialogOpen, setSerialDialogOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -80,7 +79,7 @@ const HostsView: React.FC = observer(() => {
       return
     }
     const lower = q.toLowerCase()
-    const match = hostStore.hosts.find(
+    const match = hosts.find(
       h =>
         h.name.toLowerCase().includes(lower) ||
         h.hostname.toLowerCase().includes(lower) ||
@@ -112,7 +111,7 @@ const HostsView: React.FC = observer(() => {
     setSerialDialogOpen(false)
   }
 
-  const filteredHosts = hostStore.hosts.filter(
+  const filteredHosts = hosts.filter(
     host =>
       host.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       host.hostname.toLowerCase().includes(searchQuery.toLowerCase()),
@@ -350,6 +349,6 @@ const HostsView: React.FC = observer(() => {
       />
     </ViewContainer>
   )
-})
+}
 
 export default HostsView

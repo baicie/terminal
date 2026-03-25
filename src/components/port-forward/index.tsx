@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { observer } from 'mobx-react-lite'
 import {
   Dialog,
   DialogContent,
@@ -34,8 +33,7 @@ interface PortForwardDialogProps {
   onSave: (portForwards: PortForward[]) => void
 }
 
-const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
-  ({ open, onClose, portForwards: initialForwards, onSave }) => {
+const PortForwardDialog: React.FC<PortForwardDialogProps> = ({ open, onClose, portForwards: initialForwards, onSave }) => {
     const [portForwards, setPortForwards] = useState<PortForward[]>([])
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
 
@@ -359,7 +357,6 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = observer(
         </Dialog>
       </>
     )
-  },
-)
+  }
 
 export default PortForwardDialog

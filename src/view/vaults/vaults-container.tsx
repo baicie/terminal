@@ -1,8 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { observer } from 'mobx-react-lite'
-import { useInjectable } from '@/hooks/use-di'
-import { AppStore } from '@/store/app'
-import { HostStore } from '@/store/host'
+import { useHostStore } from '@/store/host'
 import { vaultService } from '@/service/vault'
 import {
   ViewContainer,
@@ -45,13 +42,10 @@ import {
   Eye,
   EyeOff,
   Copy,
-  CheckCircle,
-  XCircle,
   ShieldCheck,
   Server,
 } from 'lucide-react'
 import { toast } from '@/components/ui/sonner'
-import { formatRelativeTime } from '@/lib/date-utils'
 
 interface VaultEntry {
   key: string
@@ -59,9 +53,8 @@ interface VaultEntry {
   description?: string
 }
 
-const VaultsContainer: React.FC = observer(() => {
-  const app = useInjectable(AppStore)
-  const hostStore = useInjectable(HostStore)
+const VaultsContainer: React.FC = () => {
+  const hosts = useHostStore(s => s.hosts)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [vaultExists, setVaultExists] = useState<boolean | null>(null)
@@ -262,7 +255,7 @@ const VaultsContainer: React.FC = observer(() => {
 
   // Auto-fill host credentials
   const handleAutofillHost = async (hostId: string) => {
-    const host = hostStore.hosts.find(h => h.id === hostId)
+    const host = hosts.find(h => h.id === hostId)
     if (!host) return
 
     try {
@@ -756,6 +749,6 @@ const VaultsContainer: React.FC = observer(() => {
       </AlertDialog>
     </ViewContainer>
   )
-})
+}
 
 export default VaultsContainer

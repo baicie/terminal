@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useInjectable } from '@/hooks/use-di'
-import { HostStore } from '@/store/host'
+import { useHostStore } from '@/store/host'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -64,7 +63,9 @@ export const HostDialog: React.FC<HostDialogProps> = ({
   host,
   onClose,
 }) => {
-  const hostStore = useInjectable(HostStore)
+  const hostStore = useHostStore()
+  const groups = useHostStore(s => s.groups)
+  const hosts = useHostStore(s => s.hosts)
   const [form, setForm] = useState(defaultHost)
   const [saving, setSaving] = useState(false)
   const [portForwardDialogOpen, setPortForwardDialogOpen] = useState(false)
@@ -218,7 +219,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
                   <SelectValue placeholder="No Group" />
                 </SelectTrigger>
                 <SelectContent>
-                  {hostStore.groups.map(g => (
+                  {groups.map(g => (
                     <SelectItem key={g.id} value={g.id}>
                       {g.name}
                     </SelectItem>
@@ -246,7 +247,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
                   <SelectValue placeholder="Direct Connection" />
                 </SelectTrigger>
                 <SelectContent>
-                  {hostStore.hosts
+                  {hosts
                     .filter(h => h.id !== host?.id)
                     .map(h => (
                       <SelectItem key={h.id} value={h.id}>

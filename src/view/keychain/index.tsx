@@ -131,7 +131,6 @@ const KeychainView: React.FC = () => {
     fingerprint: string
   } | null>(null)
   const [showPrivateKey, setShowPrivateKey] = useState(false)
-  const [showPublicKey, setShowPublicKey] = useState(false)
 
   const loadKeys = async () => {
     setLoading(true)

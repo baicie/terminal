@@ -1,5 +1,3 @@
-import { useInjectable } from '@/hooks/use-di'
-import { AppStore } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
@@ -7,16 +5,13 @@ import { X, Columns, Rows } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { reaction } from 'mobx'
+import { useAppStore } from '@/store/app'
 import type { Tab } from '@/types'
 
 /** 顶栏会话标签：仅展示已打开的终端/串口等标签 */
 const MenuTabs: React.FC = () => {
   const { t } = useTranslation('demo')
-  const app = useInjectable(AppStore)
   const navigate = useNavigate()
-  const [tabs, setTabs] = useState<Tab[]>([])
-  const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -24,24 +19,12 @@ const MenuTabs: React.FC = () => {
   } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // Subscribe to AppStore tabs and activeTabId changes — forces re-render on any change
-  useEffect(() => {
-    // Initial snapshot
-    setTabs([...app.tabs])
-    setActiveTabId(app.activeTabId)
-
-    const disposer = reaction(
-      () => ({
-        tabs: app.tabs.slice(),
-        activeTabId: app.activeTabId,
-      }),
-      ({ tabs: newTabs, activeTabId: newActiveTabId }) => {
-        setTabs(newTabs)
-        setActiveTabId(newActiveTabId)
-      },
-    )
-    return disposer
-  }, [app])
+  const tabs = useAppStore(s => s.tabs)
+  const activeTabId = useAppStore(s => s.activeTabId)
+  const removeTab = useAppStore(s => s.removeTab)
+  const setActiveTab = useAppStore(s => s.setActiveTab)
+  const splitTab = useAppStore(s => s.splitTab)
+  const closeSplit = useAppStore(s => s.closeSplit)
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -59,27 +42,27 @@ const MenuTabs: React.FC = () => {
   }
 
   const handleTabClick = (tabId: string) => {
-    app.setActiveTab(tabId)
+    setActiveTab(tabId)
     navigate(`/terminal?tab=${tabId}`)
   }
 
   const handleSplitHorizontal = () => {
     if (contextMenu) {
-      app.splitTab(contextMenu.tabId, 'horizontal')
+      splitTab(contextMenu.tabId, 'horizontal')
       setContextMenu(null)
     }
   }
 
   const handleSplitVertical = () => {
     if (contextMenu) {
-      app.splitTab(contextMenu.tabId, 'vertical')
+      splitTab(contextMenu.tabId, 'vertical')
       setContextMenu(null)
     }
   }
 
   const handleCloseSplit = () => {
     if (contextMenu) {
-      app.closeSplit(contextMenu.tabId)
+      closeSplit(contextMenu.tabId)
       setContextMenu(null)
     }
   }
@@ -97,7 +80,7 @@ const MenuTabs: React.FC = () => {
 
   return (
     <div className="flex items-center gap-0.5 min-w-0 overflow-x-auto">
-      {tabs.map(tab => (
+      {tabs.map((tab: Tab) => (
         <div
           key={tab.id}
           className={cn(
@@ -123,7 +106,7 @@ const MenuTabs: React.FC = () => {
             className="size-5 opacity-60 hover:opacity-100 shrink-0"
             onClick={e => {
               e.stopPropagation()
-              app.removeTab(tab.id)
+              removeTab(tab.id)
             }}
           >
             <X className="size-3" />

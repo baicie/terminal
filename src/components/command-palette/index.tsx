@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { observer } from 'mobx-react-lite'
 import {
   Dialog,
   DialogContent,
@@ -20,9 +19,8 @@ import {
   Zap,
   Keyboard,
 } from 'lucide-react'
-import { useInjectable } from '@/hooks/use-di'
-import { AppStore } from '@/store/app'
-import { HostStore } from '@/store/host'
+import { useAppStore } from '@/store/app'
+import { useHostStore } from '@/store/host'
 import {
   getCommandHistory,
   searchSnippets,
@@ -31,6 +29,7 @@ import {
 } from '@/service/database'
 import { useNavigate } from 'react-router-dom'
 import type { Host } from '@/types'
+import { toast } from '@/components/ui/sonner'
 
 interface CommandPaletteProps {
   open: boolean
@@ -51,19 +50,21 @@ interface CommandPaletteProps {
   onClose: () => void
 }
 
-const CommandPalette: React.FC<CommandPaletteProps> = observer(
-  ({ open, onClose }) => {
-    const [query, setQuery] = useState('')
-    const [results, setResults] = useState<SearchResult[]>([])
-    const [selectedIndex, setSelectedIndex] = useState(0)
-    const [activeTab, setActiveTab] = useState<
-      'all' | 'hosts' | 'snippets' | 'history' | 'actions'
-    >('all')
-    const [loading, setLoading] = useState(false)
+const CommandPalette: React.FC<CommandPaletteProps> = ({
+  open,
+  onClose,
+}) => {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [activeTab, setActiveTab] = useState<
+    'all' | 'hosts' | 'snippets' | 'history' | 'actions'
+  >('all')
+  const [loading, setLoading] = useState(false)
 
-    const app = useInjectable(AppStore)
-    const hostStore = useInjectable(HostStore)
-    const navigate = useNavigate()
+  const app = useAppStore()
+  const hosts = useHostStore(s => s.hosts)
+  const navigate = useNavigate()
 
     const inputRef = useRef<HTMLInputElement>(null)
     const resultsRef = useRef<HTMLDivElement>(null)
@@ -127,7 +128,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(
     const searchHosts = useCallback(
       (searchQuery: string): SearchResult[] => {
         if (!searchQuery) {
-          return hostStore.hosts.slice(0, 10).map(host => ({
+          return hosts.slice(0, 10).map(host => ({
             id: host.id,
             type: 'host' as const,
             title: host.name,
@@ -138,7 +139,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(
         }
 
         const lowerQuery = searchQuery.toLowerCase()
-        return hostStore.hosts
+        return hosts
           .filter(
             host =>
               host.name.toLowerCase().includes(lowerQuery) ||
@@ -156,7 +157,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(
             data: host,
           }))
       },
-      [hostStore.hosts],
+      [hosts],
     )
 
     // Search snippets
@@ -588,7 +589,6 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(
         </DialogContent>
       </Dialog>
     )
-  },
-)
+  }
 
 export default CommandPalette

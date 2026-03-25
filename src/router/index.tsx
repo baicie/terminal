@@ -4,9 +4,6 @@ import { createBrowserRouter } from 'react-router-dom'
 import Layout from '../layout'
 import { TerminalContainer } from '@/view/terminal/terminal-container'
 import { useSearchParams } from 'react-router-dom'
-import { observer } from 'mobx-react-lite'
-import { useInjectable } from '@/hooks/use-di'
-import { AppStore } from '@/store/host'
 
 const Loading = () => (
   <div className="flex items-center justify-center h-full">

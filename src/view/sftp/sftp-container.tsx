@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { observer } from 'mobx-react-lite'
-import { useInjectable } from '@/hooks/use-di'
-import { AppStore } from '@/store/app'
-import { HostStore } from '@/store/host'
+import { useAppStore } from '@/store/app'
+import { useHostStore } from '@/store/host'
 import { sshService, type FileItem } from '@/service/ssh'
 import {
   ViewContainer,
@@ -45,7 +43,6 @@ import {
   Home,
   ArrowLeft,
   ArrowRight,
-  Search,
   File,
   Folder,
   FileText,
@@ -60,7 +57,6 @@ import {
   Server,
   ChevronRight,
   Loader2,
-  X,
 } from 'lucide-react'
 import { toast } from '@/components/ui/sonner'
 import { format } from '@/lib/date-utils'
@@ -86,27 +82,26 @@ interface FilePaneProps {
   onDownload?: (file: FileItem) => void
 }
 
-const FilePane: React.FC<FilePaneProps> = observer(
-  ({
-    type,
-    files,
-    currentPath,
-    pathHistory,
-    pathHistoryIndex,
-    loading,
-    selectedFile,
-    sessionId,
-    onNavigate,
-    onBack,
-    onForward,
-    onRefresh,
-    onSelectFile,
-    onDelete,
-    onRename,
-    onMkdir,
-    onUpload,
-    onDownload,
-  }) => {
+const FilePane: React.FC<FilePaneProps> = ({
+  type,
+  files,
+  currentPath,
+  pathHistory,
+  pathHistoryIndex,
+  loading,
+  selectedFile,
+  sessionId,
+  onNavigate,
+  onBack,
+  onForward,
+  onRefresh,
+  onSelectFile,
+  onDelete,
+  onRename,
+  onMkdir,
+  onUpload,
+  onDownload,
+}) => {
     const [filter, setFilter] = useState('')
     const [sortBy, setSortBy] = useState<'name' | 'size' | 'modified'>('name')
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -484,12 +479,12 @@ const FilePane: React.FC<FilePaneProps> = observer(
         )}
       </div>
     )
-  },
-)
+  }
 
-const SftpContainer: React.FC = observer(() => {
-  const app = useInjectable(AppStore)
-  const hostStore = useInjectable(HostStore)
+const SftpContainer: React.FC = () => {
+  const tabs = useAppStore(s => s.tabs)
+  const activeTabId = useAppStore(s => s.activeTabId)
+  const hosts = useHostStore(s => s.hosts)
 
   // Remote state
   const [remoteFiles, setRemoteFiles] = useState<FileItem[]>([])
@@ -515,13 +510,11 @@ const SftpContainer: React.FC = observer(() => {
   const [renameValue, setRenameValue] = useState('')
   const [mkdirDialogOpen, setMkdirDialogOpen] = useState(false)
   const [mkdirValue, setMkdirValue] = useState('')
-  const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
-  const [uploadTargetPath, setUploadTargetPath] = useState('')
 
   // Get active SSH session
-  const activeTab = app.activeTab
+  const activeTab = tabs.find(t => t.id === activeTabId)
   const activeHost = activeTab?.hostId
-    ? hostStore.hosts.find(h => h.id === activeTab.hostId)
+    ? hosts.find(h => h.id === activeTab.hostId)
     : null
 
   // Find session ID from app store or create one
@@ -593,35 +586,28 @@ const SftpContainer: React.FC = observer(() => {
   const loadLocalDir = useCallback(async (path: string) => {
     setLocalLoading(true)
     try {
-      // Use webkitRelativePath or handle directory access
-      if (!window.showDirectoryPicker) {
-        toast.error('Local file browser requires Chrome/Edge browser')
-        setLocalLoading(false)
-        return
-      }
-
       // @ts-ignore - DirectoryHandle API
-      if (window.__localDirHandle) {
+      if ((window as any).showDirectoryPicker) {
         // @ts-ignore
-        const dirHandle = window.__localDirHandle
-        const entries: FileItem[] = []
-        for await (const [name, handle] of dirHandle.entries()) {
-          const file = handle.kind === 'file' ? await handle.getFile() : null
-          entries.push({
-            name,
-            path: name,
-            is_directory: handle.kind === 'directory',
-            size: file?.size || 0,
-            modified_time: file?.lastModified || Date.now(),
-            permissions:
-              handle.kind === 'directory' ? 'drwxr-xr-x' : '-rw-r--r--',
-          })
+        if (window.__localDirHandle) {
+          // @ts-ignore
+          const dirHandle = window.__localDirHandle
+          const entries: FileItem[] = []
+          for await (const [name, handle] of dirHandle.entries()) {
+            const file = handle.kind === 'file' ? await handle.getFile() : null
+            entries.push({
+              name,
+              path: name,
+              is_directory: handle.kind === 'directory',
+              size: file?.size || 0,
+              modified_time: file?.lastModified || Date.now(),
+              permissions:
+                handle.kind === 'directory' ? 'drwxr-xr-x' : '-rw-r--r--',
+            })
+          }
+          setLocalFiles(entries)
+          setLocalPath(path || dirHandle.name || 'Selected Folder')
         }
-        setLocalFiles(entries)
-        setLocalPath(path || dirHandle.name || 'Selected Folder')
-      } else {
-        setLocalFiles([])
-        setLocalPath(path)
       }
     } catch (error) {
       console.error('Local dir error:', error)
@@ -713,29 +699,20 @@ const SftpContainer: React.FC = observer(() => {
   }
 
   // Upload file
-  const handleUpload = async (targetPath: string) => {
+  const handleUpload = async () => {
     const input = document.createElement('input')
     input.type = 'file'
     input.multiple = true
     input.onchange = async () => {
       const files = input.files
-      if (!files || !sessionIdRef.current) return
+      if (!files) return
 
       for (const file of Array.from(files)) {
-        const arrayBuffer = await file.arrayBuffer()
-        const tempPath = `/tmp/${file.name}`
-        // Write to temp first, then move - for now just use simple upload
         const reader = new FileReader()
         reader.onload = async () => {
-          // Write using base64 - this is a simplified approach
-          const base64 = (reader.result as string).split(',')[1]
-          // Note: actual upload would need the backend to handle base64 decoding
-          // For now we use a placeholder approach
           toast.info(
-            `Upload ${file.name} - writing to ${targetPath}/${file.name}`,
+            `Upload ${file.name} - select remote destination first`,
           )
-          // The actual implementation would call a custom upload command
-          // or use SFTP protocol directly through the existing session
         }
         reader.readAsDataURL(file)
       }
@@ -901,10 +878,7 @@ const SftpContainer: React.FC = observer(() => {
               setRenameDialogOpen(true)
             }}
             onMkdir={() => setMkdirDialogOpen(true)}
-            onUpload={path => {
-              setUploadTargetPath(path)
-              setUploadDialogOpen(true)
-            }}
+            onUpload={handleUpload}
             onDownload={handleDownload}
           />
         </div>
@@ -1001,6 +975,6 @@ const SftpContainer: React.FC = observer(() => {
       </Dialog>
     </ViewContainer>
   )
-})
+}
 
 export default SftpContainer

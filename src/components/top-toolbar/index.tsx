@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { observer } from 'mobx-react-lite'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -12,8 +11,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { useInjectable } from '@/hooks/use-di'
-import { AppStore } from '@/store/app'
+import { useAppStore } from '@/store/app'
 import MenuTabs from '@/layout/tabs'
 import SerialDialog from '@/components/serial-dialog'
 import CommandPalette from '@/components/command-palette'
@@ -29,25 +27,17 @@ import {
 
 const TopToolbar: React.FC<{
   onToggleSidebar: () => void
-}> = observer(({ onToggleSidebar }) => {
+}> = ({ onToggleSidebar }) => {
   const { t } = useTranslation('demo')
   const navigate = useNavigate()
   const location = useLocation()
-  const app = useInjectable(AppStore)
+  const addTab = useAppStore(s => s.addTab)
 
   const [serialDialogOpen, setSerialDialogOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [commandHistoryOpen, setCommandHistoryOpen] = useState(false)
   const [hostDialogOpen, setHostDialogOpen] = useState(false)
-  /** macOS + Tauri：为原生红绿灯留出左侧空间，避免顶栏盖住系统按钮 */
   const [padForMacTrafficLights, setPadForMacTrafficLights] = useState(false)
-  // Force re-render when tabs change so MenuTabs gets the updated state
-  const [, setTabsVersion] = useState(0)
-  useEffect(() => {
-    // Subscribe to app.tabs changes and force re-render
-    const _ = app.tabs.length
-    setTabsVersion(n => n + 1)
-  }, [app.tabs.length])
 
   const isSftpActive = location.pathname === '/sftp'
 
@@ -75,7 +65,7 @@ const TopToolbar: React.FC<{
   }, [])
 
   const handleNewLocalTerminal = () => {
-    const newTab = app.addTab({
+    const newTab = addTab({
       label: 'Local',
       type: 'local',
     })
@@ -84,7 +74,7 @@ const TopToolbar: React.FC<{
 
   const handleConnectSerial = (config: SerialConfig, sessionId: string) => {
     const portName = config.name.split('/').pop() || config.name
-    const newTab = app.addTab({
+    const newTab = addTab({
       label: `Serial (${portName})`,
       type: 'serial',
       serialSessionId: sessionId,
@@ -215,6 +205,6 @@ const TopToolbar: React.FC<{
       />
     </>
   )
-})
+}
 
 export default TopToolbar

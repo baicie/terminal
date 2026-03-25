@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { observer } from 'mobx-react-lite'
 import {
   Dialog,
   DialogContent,
@@ -49,8 +48,7 @@ import {
 } from 'lucide-react'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { readTextFile } from '@tauri-apps/plugin-fs'
-import { useInjectable } from '@/hooks/use-di'
-import { AppStore } from '@/store/app'
+import { useAppStore } from '@/store/app'
 import i18nCore from '@/locales'
 
 interface SettingsDialogProps {
@@ -68,11 +66,13 @@ interface ImportPreview {
   workspaces: number
 }
 
-const SettingsDialog: React.FC<SettingsDialogProps> = observer(
-  ({ open, onClose }) => {
-    const app = useInjectable(AppStore)
-    const [settings, setSettings] = useState<AppSettings | null>(null)
-    const [loading, setLoading] = useState(true)
+const SettingsDialog: React.FC<SettingsDialogProps> = ({
+  open,
+  onClose,
+}) => {
+  const app = useAppStore()
+  const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [loading, setLoading] = useState(true)
 
     // Sync state
     const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge')
@@ -931,7 +931,6 @@ const SettingsDialog: React.FC<SettingsDialogProps> = observer(
         </DialogContent>
       </Dialog>
     )
-  },
-)
+}
 
 export default SettingsDialog

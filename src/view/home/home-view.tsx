@@ -1,14 +1,15 @@
 import React from 'react'
-import { useInjectable } from '@/hooks/use-di'
-import { AppStore } from '@/store/app'
+import { useAppStore } from '@/store/app'
 import Terminal from '@/view/terminal/terminal-container'
 
 const HomeView: React.FC = () => {
-  const app = useInjectable(AppStore)
+  const tabs = useAppStore(s => s.tabs)
+  const activeTabId = useAppStore(s => s.activeTabId)
+  const activeTab = tabs.find(t => t.id === activeTabId)
 
   // If there are tabs, show the terminal view
-  if (app.tabs.length > 0 && app.activeTab) {
-    return <Terminal tabId={app.activeTabId!} />
+  if (tabs.length > 0 && activeTab) {
+    return <Terminal tabId={activeTabId!} />
   }
 
   // Welcome screen when no tabs are open

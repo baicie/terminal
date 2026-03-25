@@ -1,86 +1,103 @@
-import { getConfig } from '@/service/config'
-import { getAppSettings } from '@/service/database'
-import { makeAutoObservable, runInAction } from 'mobx'
-import { singleton } from 'tsyringe'
+import { create } from 'zustand'
+import { getAppSettings as getAppSettingsFromDb } from '@/service/database'
 import type { Tab, SplitGroup } from '@/types'
 
 type NewTab = Omit<Tab, 'id'>
 
 export type AppThemeMode = 'light' | 'dark' | 'system'
 
-@singleton()
-export class AppStore {
-  config = {}
-  theme: AppThemeMode = 'dark'
-  language = 'en'
-  tabs: Tab[] = []
-  splitGroups: SplitGroup[] = []
-  activeTabId: string | null = null
-  sidebarVisible = true
+export interface AppState {
+  config: Record<string, unknown>
+  theme: AppThemeMode
+  language: string
+  tabs: Tab[]
+  splitGroups: SplitGroup[]
+  activeTabId: string | null
+  sidebarVisible: boolean
+  // Actions
+  setTheme: (theme: AppThemeMode) => void
+  setLanguage: (language: string) => void
+  hydrateFromDatabase: () => Promise<void>
+  addTab: (tab: NewTab) => Tab
+  removeTab: (id: string) => void
+  splitTab: (id: string, direction: 'horizontal' | 'vertical') => string | null
+  removeTabFromSplit: (tabId: string) => void
+  closeSplit: (tabId: string) => void
+  setActiveTab: (id: string) => void
+  updateTab: (id: string, updates: Partial<Tab>) => void
+  toggleSidebar: () => void
+  setConfig: (config: Record<string, unknown>) => void
+  queryConfig: () => Promise<void>
+}
 
-  constructor() {
-    makeAutoObservable(this)
-  }
+export const useAppStore = create<AppState>((set, get) => ({
+  config: {},
+  theme: 'dark',
+  language: 'en',
+  tabs: [],
+  splitGroups: [],
+  activeTabId: null,
+  sidebarVisible: true,
 
-  setTheme(theme: AppThemeMode) {
-    this.theme = theme
-  }
+  setTheme(theme) {
+    set({ theme })
+  },
 
-  setLanguage(language: string) {
-    this.language = language
-  }
+  setLanguage(language) {
+    set({ language })
+  },
 
-  /** 从 SQLite 同步主题与语言（启动时调用） */
   async hydrateFromDatabase() {
     try {
-      const s = await getAppSettings()
-      runInAction(() => {
-        this.theme = s.theme
-        this.language = s.language
-      })
+      const s = await getAppSettingsFromDb()
+      set({ theme: s.theme, language: s.language })
     } catch (e) {
       console.error('hydrateFromDatabase failed:', e)
     }
-  }
+  },
 
-  addTab(tab: NewTab) {
+  addTab(tab) {
     const id = `${tab.type}-${Date.now()}`
     const newTab: Tab = { ...tab, id }
-    this.tabs.push(newTab)
-    this.activeTabId = id
+    set(state => ({
+      tabs: [...state.tabs, newTab],
+      activeTabId: id,
+    }))
     return newTab
-  }
+  },
 
-  removeTab(id: string) {
-    const index = this.tabs.findIndex(t => t.id === id)
+  removeTab(id) {
+    const { tabs, activeTabId } = get()
+    const index = tabs.findIndex(t => t.id === id)
     if (index === -1) return
 
-    // Handle split groups when removing a tab
-    const tab = this.tabs[index]
+    const tab = tabs[index]
     if (tab.splitId) {
-      this.removeTabFromSplit(id)
+      get().removeTabFromSplit(id)
     }
 
-    this.tabs.splice(index, 1)
-
-    if (this.activeTabId === id) {
-      if (this.tabs.length > 0) {
-        const newIndex = Math.min(index, this.tabs.length - 1)
-        this.activeTabId = this.tabs[newIndex].id
-      } else {
-        this.activeTabId = null
+    const newTabs = tabs.filter(t => t.id !== id)
+    let newActiveId: string | null = null
+    if (activeTabId === id) {
+      if (newTabs.length > 0) {
+        const newIndex = Math.min(index, newTabs.length - 1)
+        newActiveId = newTabs[newIndex].id
       }
+    } else {
+      newActiveId = activeTabId
     }
-  }
 
-  splitTab(id: string, direction: 'horizontal' | 'vertical'): string | null {
-    const tabIndex = this.tabs.findIndex(t => t.id === id)
+    set({ tabs: newTabs, activeTabId: newActiveId })
+  },
+
+  splitTab(id, direction) {
+    const { tabs } = get()
+    const tabIndex = tabs.findIndex(t => t.id === id)
     if (tabIndex === -1) return null
 
-    const sourceTab = this.tabs[tabIndex]
+    const sourceTab = tabs[tabIndex]
     const splitId = sourceTab.splitId || `split-${Date.now()}`
 
-    // Create new tab for the split
     const newTabId = `${sourceTab.type}-split-${Date.now()}`
     const newTab: Tab = {
       ...sourceTab,
@@ -90,126 +107,109 @@ export class AppStore {
       splitChildren: [],
     }
 
-    // Update source tab
-    if (!sourceTab.splitId) {
-      sourceTab.splitMode = direction
-      sourceTab.splitId = splitId
-      sourceTab.splitChildren = [newTabId]
-    } else {
-      // Add to existing split group
-      sourceTab.splitChildren = [...(sourceTab.splitChildren || []), newTabId]
-    }
+    // Build updated tabs
+    const updatedTabs = tabs.map(t => {
+      if (t.id === id) {
+        if (!sourceTab.splitId) {
+          return { ...t, splitMode: direction, splitId, splitChildren: [newTabId] }
+        }
+        return { ...t, splitChildren: [...(t.splitChildren || []), newTabId] }
+      }
+      return t
+    })
 
-    // Create or update split group
-    const existingGroup = this.splitGroups.find(g => g.id === splitId)
-    if (existingGroup) {
-      existingGroup.tabs.push(newTabId)
-    } else {
-      this.splitGroups.push({
-        id: splitId,
-        mode: direction,
-        tabs: [id, newTabId],
-        sizes: [50, 50],
-      })
-    }
+    const existingGroup = get().splitGroups.find(g => g.id === splitId)
+    const newGroups = existingGroup
+      ? get().splitGroups.map(g =>
+          g.id === splitId ? { ...g, tabs: [...g.tabs, newTabId] } : g,
+        )
+      : [
+          ...get().splitGroups,
+          { id: splitId, mode: direction, tabs: [id, newTabId], sizes: [50, 50] },
+        ]
 
-    // Add new tab
-    this.tabs.push(newTab)
-    this.activeTabId = newTabId
-
+    set({
+      tabs: [...updatedTabs, newTab],
+      splitGroups: newGroups,
+      activeTabId: newTabId,
+    })
     return newTabId
-  }
+  },
 
-  removeTabFromSplit(tabId: string) {
-    const tab = this.tabs.find(t => t.id === tabId)
+  removeTabFromSplit(tabId) {
+    const { tabs, splitGroups } = get()
+    const tab = tabs.find(t => t.id === tabId)
     if (!tab?.splitId) return
 
-    const group = this.splitGroups.find(g => g.id === tab.splitId)
+    const group = splitGroups.find(g => g.id === tab.splitId)
     if (!group) return
 
-    // Remove tab from group
-    group.tabs = group.tabs.filter(id => id !== tabId)
-
-    // Update remaining tabs in the group
-    const remainingTabs = this.tabs.filter(t => group.tabs.includes(t.id))
-    remainingTabs.forEach(t => {
-      t.splitChildren = group.tabs
-      if (group.tabs.length <= 1) {
-        t.splitMode = 'none'
-        t.splitId = undefined
-        t.splitChildren = undefined
+    const newGroupTabs = group.tabs.filter(tid => tid !== tabId)
+    const updatedTabs = tabs.map(t => {
+      if (newGroupTabs.includes(t.id)) {
+        if (newGroupTabs.length <= 1) {
+          const { splitMode: _, splitId: __, splitChildren: ___, ...rest } = t
+          return { ...rest, splitMode: 'none' as const }
+        }
+        return { ...t, splitChildren: newGroupTabs }
       }
+      return t
     })
 
-    // Remove empty group
-    if (group.tabs.length <= 1) {
-      this.splitGroups = this.splitGroups.filter(g => g.id !== tab.splitId)
-    }
-  }
+    const newGroups =
+      newGroupTabs.length <= 1
+        ? splitGroups.filter(g => g.id !== tab.splitId)
+        : splitGroups.map(g =>
+            g.id === tab.splitId ? { ...g, tabs: newGroupTabs } : g,
+          )
 
-  closeSplit(tabId: string) {
-    const tab = this.tabs.find(t => t.id === tabId)
+    set({ tabs: updatedTabs, splitGroups: newGroups })
+  },
+
+  closeSplit(tabId) {
+    const { tabs, splitGroups } = get()
+    const tab = tabs.find(t => t.id === tabId)
     if (!tab?.splitId) return
 
-    const group = this.splitGroups.find(g => g.id === tab.splitId)
+    const group = splitGroups.find(g => g.id === tab.splitId)
     if (!group) return
 
-    // Close all tabs in the split group
-    const tabsToRemove = [...group.tabs]
-    tabsToRemove.forEach(id => {
-      const t = this.tabs.find(tab => tab.id === id)
-      if (t) {
-        t.splitMode = 'none'
-        t.splitId = undefined
-        t.splitChildren = undefined
+    const updatedTabs = tabs.map(t => {
+      if (group.tabs.includes(t.id)) {
+        const { splitMode: _, splitId: __, splitChildren: ___, ...rest } = t
+        return { ...rest, splitMode: 'none' as const }
       }
+      return t
     })
 
-    // Remove group
-    this.splitGroups = this.splitGroups.filter(g => g.id !== tab.splitId)
-  }
+    const newGroups = splitGroups.filter(g => g.id !== tab.splitId)
+    set({ tabs: updatedTabs, splitGroups: newGroups })
+  },
 
-  setActiveTab(id: string) {
-    this.activeTabId = id
-  }
+  setActiveTab(id) {
+    set({ activeTabId: id })
+  },
 
-  updateTab(id: string, updates: Partial<Tab>) {
-    const tab = this.tabs.find(t => t.id === id)
-    if (tab) {
-      Object.assign(tab, updates)
-    }
-  }
+  updateTab(id, updates) {
+    set(state => ({
+      tabs: state.tabs.map(t => (t.id === id ? { ...t, ...updates } : t)),
+    }))
+  },
 
   toggleSidebar() {
-    this.sidebarVisible = !this.sidebarVisible
-  }
+    set(state => ({ sidebarVisible: !state.sidebarVisible }))
+  },
 
-  setConfig(config: any) {
-    this.config = config
-  }
+  setConfig(config) {
+    set({ config })
+  },
 
   async queryConfig() {
-    const res = await getConfig()
-    runInAction(() => {
-      this.config = res
-    })
-  }
-
-  get env() {
-    return this.config
-  }
-
-  get activeTab() {
-    return this.tabs.find(t => t.id === this.activeTabId)
-  }
-
-  getActiveSplitGroup(): SplitGroup | undefined {
-    const tab = this.activeTab
-    if (!tab?.splitId) return undefined
-    return this.splitGroups.find(g => g.id === tab.splitId)
-  }
-}
-
-// 全局单例，所有模块直接引用此实例
-export const appStore = new AppStore()
-window.__APP_STORE__ = appStore
+    try {
+      const res = await getAppSettingsFromDb()
+      set({ config: res as unknown as Record<string, unknown> })
+    } catch {
+      // ignore
+    }
+  },
+}))

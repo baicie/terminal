@@ -1,5 +1,4 @@
-import { action, makeAutoObservable, runInAction } from 'mobx'
-import { singleton } from 'tsyringe'
+import { create } from 'zustand'
 import type { Host, Group, AuthType } from '@/types'
 import { executeQuery, select } from '@/service/database'
 
@@ -71,43 +70,64 @@ function rowToGroup(row: GroupRow): Group {
   }
 }
 
-@singleton()
-export class HostStore {
-  hosts: Host[] = []
-  groups: Group[] = []
-  selectedHostId: string | null = null
-  selectedGroupId: string | null = null
-  loading = false
+export interface HostState {
+  hosts: Host[]
+  groups: Group[]
+  selectedHostId: string | null
+  selectedGroupId: string | null
+  loading: boolean
+  // Computed
+  favoriteHosts: () => Host[]
+  getGroupChildren: (parentId: string | null) => Group[]
+  getHostsByGroup: (groupId: string | null) => Host[]
+  // Actions
+  loadHosts: () => Promise<void>
+  loadGroups: () => Promise<void>
+  addHost: (host: Omit<Host, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Host>
+  updateHost: (id: string, updates: Partial<Host>) => Promise<void>
+  deleteHost: (id: string) => Promise<void>
+  toggleFavorite: (id: string) => Promise<void>
+  addGroup: (group: Omit<Group, 'id'>) => Promise<Group>
+  updateGroup: (id: string, updates: Partial<Group>) => Promise<void>
+  deleteGroup: (id: string) => Promise<void>
+  setSelectedHost: (id: string | null) => void
+  setSelectedGroup: (id: string | null) => void
+}
 
-  constructor() {
-    makeAutoObservable(this, {
-      loadHosts: action,
-      loadGroups: action,
-    })
-  }
+export const useHostStore = create<HostState>((set, get) => ({
+  hosts: [],
+  groups: [],
+  selectedHostId: null,
+  selectedGroupId: null,
+  loading: false,
+
+  // Computed
+  favoriteHosts(): Host[] {
+    return get().hosts.filter(h => h.isFavorite)
+  },
+  getGroupChildren(parentId: string | null): Group[] {
+    return get().groups.filter(g => g.parentId === parentId)
+  },
+  getHostsByGroup(groupId: string | null): Host[] {
+    return get().hosts.filter(h => h.groupId === groupId)
+  },
 
   async loadHosts() {
-    this.loading = true
+    set({ loading: true })
     try {
       const rows = await select<HostRow>('SELECT * FROM hosts ORDER BY name')
-      runInAction(() => {
-        this.hosts = rows.map(rowToHost)
-      })
+      set({ hosts: rows.map(rowToHost) })
     } finally {
-      runInAction(() => {
-        this.loading = false
-      })
+      set({ loading: false })
     }
-  }
+  },
 
   async loadGroups() {
     const rows = await select<GroupRow>('SELECT * FROM groups ORDER BY "order"')
-    runInAction(() => {
-      this.groups = rows.map(rowToGroup)
-    })
-  }
+    set({ groups: rows.map(rowToGroup) })
+  },
 
-  async addHost(host: Omit<Host, 'id' | 'createdAt' | 'updatedAt'>) {
+  async addHost(host) {
     const now = Date.now()
     const id = generateId()
     const newHost: Host = {
@@ -141,15 +161,12 @@ export class HostStore {
       ],
     )
 
-    runInAction(() => {
-      this.hosts.push(newHost)
-    })
-
+    set(state => ({ hosts: [...state.hosts, newHost] }))
     return newHost
-  }
+  },
 
-  async updateHost(id: string, updates: Partial<Host>) {
-    const existing = this.hosts.find(h => h.id === id)
+  async updateHost(id, updates) {
+    const existing = get().hosts.find(h => h.id === id)
     if (!existing) return
 
     const updated: Host = {
@@ -180,29 +197,24 @@ export class HostStore {
       ],
     )
 
-    runInAction(() => {
-      const index = this.hosts.findIndex(h => h.id === id)
-      if (index !== -1) {
-        this.hosts[index] = updated
-      }
-    })
-  }
+    set(state => ({
+      hosts: state.hosts.map(h => (h.id === id ? updated : h)),
+    }))
+  },
 
-  async deleteHost(id: string) {
+  async deleteHost(id) {
     await executeQuery('DELETE FROM hosts WHERE id = ?', [id])
-    runInAction(() => {
-      this.hosts = this.hosts.filter(h => h.id !== id)
-    })
-  }
+    set(state => ({ hosts: state.hosts.filter(h => h.id !== id) }))
+  },
 
-  async toggleFavorite(id: string) {
-    const host = this.hosts.find(h => h.id === id)
+  async toggleFavorite(id) {
+    const host = get().hosts.find(h => h.id === id)
     if (host) {
-      await this.updateHost(id, { isFavorite: !host.isFavorite })
+      await get().updateHost(id, { isFavorite: !host.isFavorite })
     }
-  }
+  },
 
-  async addGroup(group: Omit<Group, 'id'>) {
+  async addGroup(group) {
     const id = generateId()
     const newGroup: Group = { ...group, id }
 
@@ -219,15 +231,12 @@ export class HostStore {
       ],
     )
 
-    runInAction(() => {
-      this.groups.push(newGroup)
-    })
-
+    set(state => ({ groups: [...state.groups, newGroup] }))
     return newGroup
-  }
+  },
 
-  async updateGroup(id: string, updates: Partial<Group>) {
-    const existing = this.groups.find(g => g.id === id)
+  async updateGroup(id, updates) {
+    const existing = get().groups.find(g => g.id === id)
     if (!existing) return
 
     const updated: Group = { ...existing, ...updates }
@@ -245,45 +254,21 @@ export class HostStore {
       ],
     )
 
-    runInAction(() => {
-      const index = this.groups.findIndex(g => g.id === id)
-      if (index !== -1) {
-        this.groups[index] = updated
-      }
-    })
-  }
+    set(state => ({
+      groups: state.groups.map(g => (g.id === id ? updated : g)),
+    }))
+  },
 
-  async deleteGroup(id: string) {
+  async deleteGroup(id) {
     await executeQuery('DELETE FROM groups WHERE id = ?', [id])
-    runInAction(() => {
-      this.groups = this.groups.filter(g => g.id !== id)
-    })
-  }
+    set(state => ({ groups: state.groups.filter(g => g.id !== id) }))
+  },
 
-  get favoriteHosts() {
-    return this.hosts.filter(h => h.isFavorite)
-  }
+  setSelectedHost(id) {
+    set({ selectedHostId: id })
+  },
 
-  getHostsByGroup(groupId: string | null) {
-    if (!groupId) {
-      return this.hosts.filter(h => !h.groupId)
-    }
-    return this.hosts.filter(h => h.groupId === groupId)
-  }
-
-  getGroupChildren(parentId: string | null) {
-    return this.groups.filter(g => g.parentId === parentId)
-  }
-
-  get selectedHost() {
-    return this.hosts.find(h => h.id === this.selectedHostId)
-  }
-
-  setSelectedHost(id: string | null) {
-    this.selectedHostId = id
-  }
-
-  setSelectedGroup(id: string | null) {
-    this.selectedGroupId = id
-  }
-}
+  setSelectedGroup(id) {
+    set({ selectedGroupId: id })
+  },
+}))

@@ -1,5 +1,4 @@
-import { action, makeAutoObservable, runInAction } from 'mobx'
-import { singleton } from 'tsyringe'
+import { create } from 'zustand'
 import type { Workspace, WorkspaceLayout, Tab, SplitGroup } from '@/types'
 import {
   createWorkspace,
@@ -30,21 +29,29 @@ function rowToWorkspace(row: WorkspaceRecord): Workspace {
   }
 }
 
-@singleton()
-export class WorkspaceStore {
-  workspaces: Workspace[] = []
-  activeWorkspaceId: string | null = null
-  loading = false
+export interface WorkspaceState {
+  workspaces: Workspace[]
+  activeWorkspaceId: string | null
+  loading: boolean
+  // Computed
+  activeWorkspace: () => Workspace | undefined
+  // Actions
+  loadWorkspaces: () => Promise<void>
+  addWorkspace: (workspace: Omit<Workspace, 'id' | 'createdAt' | 'updatedAt' | 'isActive' | 'order'>) => Promise<Workspace>
+  updateWorkspace: (id: string, updates: Partial<Workspace>) => Promise<void>
+  deleteWorkspace: (id: string) => Promise<void>
+  setActiveWorkspace: (id: string) => Promise<void>
+  saveLayout: (workspaceId: string, tabs: Tab[], splitGroups: SplitGroup[], activeTabId: string | null, sidebarVisible: boolean) => Promise<void>
+  loadLayout: (workspaceId: string) => Promise<WorkspaceLayout | null>
+}
 
-  constructor() {
-    makeAutoObservable(this, {
-      loadWorkspaces: action,
-      setActiveWorkspace: action,
-    })
-  }
+export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
+  workspaces: [],
+  activeWorkspaceId: null,
+  loading: false,
 
   async loadWorkspaces() {
-    this.loading = true
+    set({ loading: true })
     try {
       const rows = await getWorkspaces()
 
@@ -66,31 +73,25 @@ export class WorkspaceStore {
         rows.push(defaultWorkspace)
       }
 
-      runInAction(() => {
-        this.workspaces = rows.map(rowToWorkspace)
-        const active = this.workspaces.find(w => w.isActive)
-        this.activeWorkspaceId = active?.id ?? this.workspaces[0]?.id ?? null
+      const workspaces = rows.map(rowToWorkspace)
+      const active = workspaces.find(w => w.isActive)
+      set({
+        workspaces,
+        activeWorkspaceId: active?.id ?? workspaces[0]?.id ?? null,
       })
     } finally {
-      runInAction(() => {
-        this.loading = false
-      })
+      set({ loading: false })
     }
-  }
+  },
 
-  get activeWorkspace(): Workspace | undefined {
-    return this.workspaces.find(w => w.id === this.activeWorkspaceId)
-  }
+  activeWorkspace(): Workspace | undefined {
+    return get().workspaces.find(w => w.id === get().activeWorkspaceId)
+  },
 
-  async addWorkspace(
-    workspace: Omit<
-      Workspace,
-      'id' | 'createdAt' | 'updatedAt' | 'isActive' | 'order'
-    >,
-  ) {
+  async addWorkspace(workspace) {
     const now = Date.now()
     const id = generateId()
-    const order = this.workspaces.length
+    const order = get().workspaces.length
 
     const newWorkspace: Workspace = {
       ...workspace,
@@ -114,16 +115,12 @@ export class WorkspaceStore {
     }
 
     await createWorkspace(record)
-
-    runInAction(() => {
-      this.workspaces.push(newWorkspace)
-    })
-
+    set(state => ({ workspaces: [...state.workspaces, newWorkspace] }))
     return newWorkspace
-  }
+  },
 
-  async updateWorkspace(id: string, updates: Partial<Workspace>) {
-    const existing = this.workspaces.find(w => w.id === id)
+  async updateWorkspace(id, updates) {
+    const existing = get().workspaces.find(w => w.id === id)
     if (!existing) return
 
     const updated: Workspace = {
@@ -141,51 +138,41 @@ export class WorkspaceStore {
       updated_at: updated.updatedAt,
     })
 
-    runInAction(() => {
-      const index = this.workspaces.findIndex(w => w.id === id)
-      if (index !== -1) {
-        this.workspaces[index] = updated
-      }
-    })
-  }
+    set(state => ({
+      workspaces: state.workspaces.map(w => (w.id === id ? updated : w)),
+    }))
+  },
 
-  async deleteWorkspace(id: string) {
-    // Don't delete if it's the last workspace
-    if (this.workspaces.length <= 1) {
+  async deleteWorkspace(id) {
+    if (get().workspaces.length <= 1) {
       console.warn('Cannot delete the last workspace')
       return
     }
 
     await dbDeleteWorkspace(id)
 
-    runInAction(() => {
-      this.workspaces = this.workspaces.filter(w => w.id !== id)
-
-      // If we deleted the active workspace, switch to another
-      if (this.activeWorkspaceId === id) {
-        this.activeWorkspaceId = this.workspaces[0]?.id ?? null
-      }
+    set(state => {
+      const workspaces = state.workspaces.filter(w => w.id !== id)
+      const activeWorkspaceId =
+        state.activeWorkspaceId === id
+          ? workspaces[0]?.id ?? null
+          : state.activeWorkspaceId
+      return { workspaces, activeWorkspaceId }
     })
-  }
+  },
 
-  async setActiveWorkspace(id: string) {
+  async setActiveWorkspace(id) {
     await dbSetActiveWorkspace(id)
+    set(state => ({
+      workspaces: state.workspaces.map(w => ({
+        ...w,
+        isActive: w.id === id,
+      })),
+      activeWorkspaceId: id,
+    }))
+  },
 
-    runInAction(() => {
-      this.workspaces.forEach(w => {
-        w.isActive = w.id === id
-      })
-      this.activeWorkspaceId = id
-    })
-  }
-
-  async saveLayout(
-    workspaceId: string,
-    tabs: Tab[],
-    splitGroups: SplitGroup[],
-    activeTabId: string | null,
-    sidebarVisible: boolean,
-  ) {
+  async saveLayout(workspaceId, tabs, splitGroups, activeTabId, sidebarVisible) {
     const layout: WorkspaceLayout = {
       workspaceId,
       tabs,
@@ -194,9 +181,9 @@ export class WorkspaceStore {
       sidebarVisible,
     }
     await saveWorkspaceLayout(workspaceId, layout)
-  }
+  },
 
-  async loadLayout(workspaceId: string): Promise<WorkspaceLayout | null> {
+  async loadLayout(workspaceId) {
     const record = await getWorkspaceLayout(workspaceId)
     if (!record) return null
     try {
@@ -204,5 +191,5 @@ export class WorkspaceStore {
     } catch {
       return null
     }
-  }
-}
+  },
+}))

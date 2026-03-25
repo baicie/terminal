@@ -1,10 +1,13 @@
-import { Logger } from '../utils/logger/logger'
-import { useInjectable } from './use-di'
+import { Logger } from '@/utils/logger/logger'
+import { ConsoleLogTransport } from '@/utils/logger/console-transport'
+import { LogLevel } from '@/utils/logger/log-level'
 
-/**
- * hook: 获得注入的 Logger
- * @returns
- */
+const _logger = new Logger([new ConsoleLogTransport(LogLevel.Debug)])
+
+export function getLogger(): Logger {
+  return _logger
+}
+
 export function useLogger(): Logger {
-  return useInjectable(Logger)
+  return _logger
 }

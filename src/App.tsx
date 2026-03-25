@@ -2,30 +2,28 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/en'
 import 'dayjs/locale/fr'
 import 'dayjs/locale/zh-cn'
-import { observer } from 'mobx-react-lite'
 import { useEffect } from 'react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import { RouterProvider } from 'react-router-dom'
 import { router } from './router'
-import { useInjectable } from './hooks/use-di'
-import { AppStore } from './store/app'
+import { useAppStore } from './store/app'
 import locales from './locales'
 import i18nCore from './locales'
 import { register, isRegistered } from '@tauri-apps/plugin-global-shortcut'
 
-export default observer(() => {
+export default function App() {
   const { i18n } = useTranslation()
-  const app = useInjectable(AppStore)
+  const theme = useAppStore(s => s.theme)
+  const language = useAppStore(s => s.language)
+  const hydrateFromDatabase = useAppStore(s => s.hydrateFromDatabase)
 
-  // Register macOS native shortcuts
   useEffect(() => {
     const registerShortcuts = async () => {
       try {
         const { getCurrentWindow } = await import('@tauri-apps/api/window')
 
-        // Cmd+W - Close window (hide to dock)
         if (!(await isRegistered('CommandOrControl+W'))) {
           await register('CommandOrControl+W', async event => {
             if (event.state === 'Pressed') {
@@ -33,8 +31,6 @@ export default observer(() => {
             }
           })
         }
-
-        // Cmd+M - Minimize window
         if (!(await isRegistered('CommandOrControl+M'))) {
           await register('CommandOrControl+M', async event => {
             if (event.state === 'Pressed') {
@@ -42,8 +38,6 @@ export default observer(() => {
             }
           })
         }
-
-        // Cmd+H - Hide window
         if (!(await isRegistered('CommandOrControl+H'))) {
           await register('CommandOrControl+H', async event => {
             if (event.state === 'Pressed') {
@@ -51,11 +45,8 @@ export default observer(() => {
             }
           })
         }
-
-        // Cmd+, - Open settings (handled by app)
         if (!(await isRegistered('CommandOrControl+,'))) {
           await register('CommandOrControl+,', async () => {
-            // This will be handled by the settings dialog component
             window.dispatchEvent(new CustomEvent('open-settings'))
           })
         }
@@ -66,7 +57,6 @@ export default observer(() => {
 
     registerShortcuts()
 
-    // Cleanup on unmount
     return () => {
       import('@tauri-apps/plugin-global-shortcut').then(({ unregisterAll }) => {
         unregisterAll().catch(() => {})
@@ -75,8 +65,8 @@ export default observer(() => {
   }, [])
 
   useEffect(() => {
-    void app.hydrateFromDatabase()
-  }, [app])
+    void hydrateFromDatabase()
+  }, [hydrateFromDatabase])
 
   useEffect(() => {
     const handleLanguageChange = (lng: string) => {
@@ -91,7 +81,6 @@ export default observer(() => {
     }
   }, [i18n])
 
-  // 与设置、AppStore.theme 同步：写入 document 的 dark class（不依赖轮询）
   useEffect(() => {
     const applyTheme = (mode: string) => {
       const root = document.documentElement
@@ -102,22 +91,21 @@ export default observer(() => {
       root.classList.toggle('dark', dark)
     }
 
-    applyTheme(app.theme)
+    applyTheme(theme)
 
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const onSystemChange = () => {
-      if (app.theme === 'system') applyTheme('system')
+      if (theme === 'system') applyTheme('system')
     }
     mq.addEventListener('change', onSystemChange)
     return () => mq.removeEventListener('change', onSystemChange)
-  }, [app.theme])
+  }, [theme])
 
-  // 数据库恢复的语言与 i18n 对齐
   useEffect(() => {
-    if (app.language && i18nCore.language !== app.language) {
-      void i18nCore.changeLanguage(app.language)
+    if (language && i18nCore.language !== language) {
+      void i18nCore.changeLanguage(language)
     }
-  }, [app.language])
+  }, [language])
 
   return (
     <TooltipProvider>
@@ -129,4 +117,4 @@ export default observer(() => {
       </div>
     </TooltipProvider>
   )
-})
+}

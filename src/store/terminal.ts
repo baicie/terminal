@@ -1,5 +1,4 @@
-import { makeAutoObservable, runInAction } from 'mobx'
-import { singleton } from 'tsyringe'
+import { create } from 'zustand'
 import type { Terminal as XTerminal } from '@xterm/xterm'
 import { sshService, SSHConnectionResult } from '@/service/ssh'
 import type { Host } from '@/types'
@@ -13,15 +12,22 @@ export interface TerminalSession {
   sessionId?: string
 }
 
-@singleton()
-export class TerminalStore {
-  sessions: Map<string, TerminalSession> = new Map()
+export interface TerminalState {
+  sessions: Map<string, TerminalSession>
+  // Actions
+  createSession: (tabId: string, terminal: XTerminal) => string
+  getSession: (sessionId: string) => TerminalSession | undefined
+  getSessionByTabId: (tabId: string) => TerminalSession | undefined
+  connect: (sessionId: string, host: Host) => Promise<SSHConnectionResult>
+  disconnect: (sessionId: string) => Promise<void>
+  removeSession: (sessionId: string) => void
+  updateTerminal: (sessionId: string, terminal: XTerminal) => void
+}
 
-  constructor() {
-    makeAutoObservable(this)
-  }
+export const useTerminalStore = create<TerminalState>((set, get) => ({
+  sessions: new Map(),
 
-  createSession(tabId: string, terminal: XTerminal): string {
+  createSession(tabId, terminal) {
     const sessionId = `${tabId}-session-${Date.now()}`
     const session: TerminalSession = {
       id: sessionId,
@@ -30,88 +36,101 @@ export class TerminalStore {
       terminal,
       status: 'disconnected',
     }
-    this.sessions.set(sessionId, session)
+    const newSessions = new Map(get().sessions)
+    newSessions.set(sessionId, session)
+    set({ sessions: newSessions })
     return sessionId
-  }
+  },
 
-  getSession(sessionId: string): TerminalSession | undefined {
-    return this.sessions.get(sessionId)
-  }
+  getSession(sessionId) {
+    return get().sessions.get(sessionId)
+  },
 
-  getSessionByTabId(tabId: string): TerminalSession | undefined {
-    for (const session of this.sessions.values()) {
+  getSessionByTabId(tabId) {
+    for (const session of get().sessions.values()) {
       if (session.tabId === tabId) {
         return session
       }
     }
     return undefined
-  }
+  },
 
-  async connect(sessionId: string, host: Host): Promise<SSHConnectionResult> {
-    const session = this.sessions.get(sessionId)
+  async connect(sessionId, host) {
+    const session = get().sessions.get(sessionId)
     if (!session) {
       return { success: false, message: 'Session not found' }
     }
 
-    runInAction(() => {
-      session.status = 'connecting'
-      session.host = host
+    const newSessions = new Map(get().sessions)
+    newSessions.set(sessionId, {
+      ...session,
+      status: 'connecting',
+      host,
     })
+    set({ sessions: newSessions })
 
     try {
       const result = await sshService.connect(host)
+      const current = get().sessions.get(sessionId)
+      if (!current) return { success: false, message: 'Session removed' }
 
-      runInAction(() => {
-        if (result.success) {
-          session.status = 'connected'
-          session.sessionId = result.sessionId
-        } else {
-          session.status = 'disconnected'
-        }
+      const updatedSessions = new Map(get().sessions)
+      updatedSessions.set(sessionId, {
+        ...current,
+        status: result.success ? 'connected' : 'disconnected',
+        sessionId: result.sessionId,
       })
-
+      set({ sessions: updatedSessions })
       return result
     } catch (error) {
-      runInAction(() => {
-        session.status = 'disconnected'
-      })
+      const current = get().sessions.get(sessionId)
+      if (current) {
+        const updatedSessions = new Map(get().sessions)
+        updatedSessions.set(sessionId, { ...current, status: 'disconnected' })
+        set({ sessions: updatedSessions })
+      }
       return {
         success: false,
         message: error instanceof Error ? error.message : String(error),
       }
     }
-  }
+  },
 
-  async disconnect(sessionId: string): Promise<void> {
-    const session = this.sessions.get(sessionId)
+  async disconnect(sessionId) {
+    const session = get().sessions.get(sessionId)
     if (!session) return
 
     if (session.sessionId) {
       await sshService.disconnect(session.sessionId)
     }
 
-    runInAction(() => {
-      session.status = 'disconnected'
-      session.sessionId = undefined
+    const updatedSessions = new Map(get().sessions)
+    updatedSessions.set(sessionId, {
+      ...session,
+      status: 'disconnected',
+      sessionId: undefined,
     })
-  }
+    set({ sessions: updatedSessions })
+  },
 
-  removeSession(sessionId: string) {
-    const session = this.sessions.get(sessionId)
+  removeSession(sessionId) {
+    const session = get().sessions.get(sessionId)
     if (session) {
       if (session.sessionId) {
         sshService.disconnect(session.sessionId)
       }
-      this.sessions.delete(sessionId)
+      const newSessions = new Map(get().sessions)
+      newSessions.delete(sessionId)
+      set({ sessions: newSessions })
     }
-  }
+  },
 
-  updateTerminal(sessionId: string, terminal: XTerminal) {
-    const session = this.sessions.get(sessionId)
+  updateTerminal(sessionId, terminal) {
+    const session = get().sessions.get(sessionId)
     if (session) {
-      session.terminal = terminal
+      const newSessions = new Map(get().sessions)
+      newSessions.set(sessionId, { ...session, terminal })
+      set({ sessions: newSessions })
     }
-  }
-}
-
-export const terminalStore = new TerminalStore()
+  },
+}))

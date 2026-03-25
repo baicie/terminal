@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { observer } from 'mobx-react-lite'
 import {
   Dialog,
   DialogContent,
@@ -56,8 +55,7 @@ interface SnippetDialogProps {
   onExecute?: (script: string) => void
 }
 
-const SnippetManager: React.FC<SnippetDialogProps> = observer(
-  ({ open, onClose, onExecute }) => {
+const SnippetManager: React.FC<SnippetDialogProps> = ({ open, onClose, onExecute }) => {
     const [snippets, setSnippets] = useState<SnippetRecord[]>([])
     const [packages, setPackages] = useState<SnippetPackageRecord[]>([])
     const [selectedPackage, setSelectedPackage] = useState<string | null>(null)
@@ -650,7 +648,6 @@ const SnippetManager: React.FC<SnippetDialogProps> = observer(
         </Dialog>
       </Dialog>
     )
-  },
-)
+  }
 
 export default SnippetManager

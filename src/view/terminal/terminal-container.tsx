@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { observer } from 'mobx-react-lite'
-import { useInjectable } from '@/hooks/use-di'
-import { AppStore } from '@/store/app'
-import { HostStore } from '@/store/host'
+import { useAppStore } from '@/store/app'
+import { useHostStore } from '@/store/host'
 import { Terminal as TerminalComponent } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
@@ -16,24 +14,25 @@ interface TerminalContainerProps {
   tabId: string
 }
 
-const TerminalContainer: React.FC<TerminalContainerProps> = observer(
-  ({ tabId }) => {
-    const app = useInjectable(AppStore)
-    const hostStore = useInjectable(HostStore)
+const TerminalContainer: React.FC<TerminalContainerProps> = ({
+  tabId,
+}) => {
+  const tabs = useAppStore(s => s.tabs)
+  const hosts = useHostStore(s => s.hosts)
 
-    console.log('[TerminalContainer] props.tabId:', tabId, '| app.tabs:', app.tabs.map(t => t.id))
+    console.log('[TerminalContainer] props.tabId:', tabId, '| app.tabs:', tabs.map(t => t.id))
 
     const containerRef = useRef<HTMLDivElement>(null)
     const termRef = useRef<TerminalComponent | null>(null)
     const fitAddonRef = useRef<FitAddon | null>(null)
     const isMountedRef = useRef(false)
 
-    const tab = app.tabs.find(t => t.id === tabId)
+    const tab = tabs.find(t => t.id === tabId)
     const [isReady, setIsReady] = useState(false)
 
     // Derive host from tab.hostId
     const host = tab?.hostId
-      ? hostStore.hosts.find(h => h.id === tab.hostId)
+      ? hosts.find(h => h.id === tab.hostId)
       : undefined
 
     // ---- 终端数据流 hook ----
@@ -194,8 +193,7 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(
         </div>
       </div>
     )
-  },
-)
+  }
 
 export default TerminalContainer
 export { TerminalContainer }

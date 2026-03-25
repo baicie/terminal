@@ -10,8 +10,7 @@ import {
   Cloud,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
-import { useInjectable } from '@/hooks/use-di'
-import { WorkspaceStore } from '@/store/workspace'
+import { useWorkspaceStore } from '@/store/workspace'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,7 +54,9 @@ const WorkspaceSwitcher: React.FC<{ onSettingsClick?: () => void }> = ({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
-  const workspaceStore = useInjectable(WorkspaceStore)
+  const workspaceStore = useWorkspaceStore()
+  const activeWorkspace = useWorkspaceStore(s => s.activeWorkspace())
+  const workspaces = useWorkspaceStore(s => s.workspaces)
 
   useEffect(() => {
     workspaceStore.loadWorkspaces()
@@ -108,7 +109,7 @@ const WorkspaceSwitcher: React.FC<{ onSettingsClick?: () => void }> = ({
         >
           <Cloud className="size-3.5 shrink-0" />
           <span className="max-w-[80px] truncate">
-            {workspaceStore.activeWorkspace?.name || 'Vaults'}
+            {activeWorkspace?.name || 'Vaults'}
           </span>
         </Button>
       </DropdownMenuTrigger>
@@ -118,7 +119,7 @@ const WorkspaceSwitcher: React.FC<{ onSettingsClick?: () => void }> = ({
           Workspaces
         </div>
 
-        {workspaceStore.workspaces.map(workspace => (
+        {workspaces.map(workspace => (
           <DropdownMenuItem
             key={workspace.id}
             onSelect={() => handleSelectWorkspace(workspace)}

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { observer } from 'mobx-react-lite'
 import {
   Dialog,
   DialogContent,
@@ -33,8 +32,7 @@ interface CommandHistoryDialogProps {
   onSelect?: (command: string) => void
 }
 
-const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = observer(
-  ({ open, onClose, onSelect }) => {
+const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({ open, onClose, onSelect }) => {
     const [history, setHistory] = useState<CommandHistoryRecord[]>([])
     const [searchQuery, setSearchQuery] = useState('')
     const [loading, setLoading] = useState(false)
@@ -185,7 +183,6 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = observer(
         </DialogContent>
       </Dialog>
     )
-  },
-)
+  }
 
 export default CommandHistoryDialog

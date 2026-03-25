@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import { observer } from 'mobx-react-lite'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,8 +28,7 @@ import {
   Check,
   FolderOpen,
 } from 'lucide-react'
-import { useInjectable } from '@/hooks/use-di'
-import { WorkspaceStore } from '@/store/workspace'
+import { useWorkspaceStore } from '@/store/workspace'
 import type { Workspace } from '@/types'
 
 interface WorkspaceSwitcherProps {
@@ -39,14 +37,18 @@ interface WorkspaceSwitcherProps {
   variant?: 'workspace' | 'vaults'
 }
 
-const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = observer(
-  ({ onSettingsClick, variant = 'workspace' }) => {
-    const [isCreating, setIsCreating] = useState(false)
-    const [newName, setNewName] = useState('')
-    const [editingId, setEditingId] = useState<string | null>(null)
-    const [editName, setEditName] = useState('')
-    const inputRef = useRef<HTMLInputElement>(null)
-    const workspaceStore = useInjectable(WorkspaceStore)
+const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
+  onSettingsClick,
+  variant = 'workspace',
+}) => {
+  const [isCreating, setIsCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const workspaceStore = useWorkspaceStore()
+  const activeWorkspace = useWorkspaceStore(s => s.activeWorkspace())
+  const workspaces = useWorkspaceStore(s => s.workspaces)
 
     useEffect(() => {
       workspaceStore.loadWorkspaces()
@@ -116,7 +118,7 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = observer(
             <span className="max-w-[100px] truncate text-sm">
               {variant === 'vaults'
                 ? 'Vaults'
-                : workspaceStore.activeWorkspace?.name || 'Workspace'}
+                : activeWorkspace?.name || 'Workspace'}
             </span>
           </Button>
         </DropdownMenuTrigger>
@@ -126,7 +128,7 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = observer(
             Workspaces
           </div>
 
-          {workspaceStore.workspaces.map(workspace => (
+          {workspaces.map(workspace => (
             <DropdownMenuItem
               key={workspace.id}
               onSelect={() => handleSelectWorkspace(workspace)}
@@ -167,7 +169,7 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = observer(
                     >
                       <Settings className="size-3" />
                     </Button>
-                    {workspaceStore.workspaces.length > 1 && (
+                    {workspaces.length > 1 && (
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button
@@ -245,7 +247,6 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = observer(
         </DropdownMenuContent>
       </DropdownMenu>
     )
-  },
-)
+  }
 
 export default WorkspaceSwitcher

@@ -1,10 +1,9 @@
-import React, { useState, useCallback } from 'react'
-import { useInjectable } from '@/hooks/use-di'
-import { HostStore } from '@/store/host'
-import { AppStore } from '@/store/app'
+import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useHostStore } from '@/store/host'
+import { useAppStore } from '@/store/app'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useNavigate } from 'react-router-dom'
 import type { Host, Group } from '@/types'
 import {
   ChevronRight,
@@ -27,7 +26,7 @@ interface HostItemProps {
 }
 
 const HostItem: React.FC<HostItemProps> = ({ host, onConnect }) => {
-  const hostStore = useInjectable(HostStore)
+  const toggleFavorite = useHostStore(s => s.toggleFavorite)
 
   return (
     <div
@@ -45,7 +44,7 @@ const HostItem: React.FC<HostItemProps> = ({ host, onConnect }) => {
         className="size-6 opacity-0 group-hover:opacity-100"
         onClick={e => {
           e.stopPropagation()
-          hostStore.toggleFavorite(host.id)
+          toggleFavorite(host.id)
         }}
       >
         {host.isFavorite ? (
@@ -100,8 +99,11 @@ const GroupItem: React.FC<GroupItemProps> = ({ group, children }) => {
 const FavoritesSection: React.FC<{ onConnect?: (host: Host) => void }> = ({
   onConnect,
 }) => {
-  const hostStore = useInjectable(HostStore)
-  const favorites = hostStore.favoriteHosts
+  const favoriteHosts = useHostStore(s => s.favoriteHosts())
+  const getHostsByGroup = useHostStore(s => s.getHostsByGroup)
+
+  const hosts = getHostsByGroup(null)
+  const favorites = [...favoriteHosts, ...hosts.filter((h: Host) => h.isFavorite)]
 
   if (favorites.length === 0) return null
 
@@ -110,7 +112,7 @@ const FavoritesSection: React.FC<{ onConnect?: (host: Host) => void }> = ({
       <div className="px-2 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
         Favorites
       </div>
-      {favorites.map(host => (
+      {favorites.map((host: Host) => (
         <HostItem key={host.id} host={host} onConnect={onConnect} />
       ))}
     </div>
@@ -121,9 +123,11 @@ const GroupsSection: React.FC<{
   onConnect?: (host: Host) => void
   parentId?: string | null
 }> = ({ onConnect, parentId = null }) => {
-  const hostStore = useInjectable(HostStore)
-  const rootGroups = hostStore.getGroupChildren(parentId)
-  const groupHosts = hostStore.getHostsByGroup(parentId)
+  const getGroupChildren = useHostStore(s => s.getGroupChildren)
+  const getHostsByGroup = useHostStore(s => s.getHostsByGroup)
+
+  const rootGroups = getGroupChildren(parentId)
+  const groupHosts = getHostsByGroup(parentId)
 
   if (rootGroups.length === 0 && groupHosts.length === 0) {
     return null
@@ -131,10 +135,10 @@ const GroupsSection: React.FC<{
 
   return (
     <div>
-      {groupHosts.map(host => (
+      {groupHosts.map((host: Host) => (
         <HostItem key={host.id} host={host} onConnect={onConnect} />
       ))}
-      {rootGroups.map(group => (
+      {rootGroups.map((group: Group) => (
         <GroupItem key={group.id} group={group}>
           <GroupsSection onConnect={onConnect} parentId={group.id} />
         </GroupItem>
@@ -144,36 +148,36 @@ const GroupsSection: React.FC<{
 }
 
 const Sidebar: React.FC<HostListProps> = ({ onConnect }) => {
-  const hostStore = useInjectable(HostStore)
-  const app = useInjectable(AppStore)
+  const addTab = useAppStore(s => s.addTab)
+  const loadHosts = useHostStore(s => s.loadHosts)
+  const loadGroups = useHostStore(s => s.loadGroups)
   const navigate = useNavigate()
 
   const handleConnectHost = useCallback(
     (host: Host) => {
       onConnect?.(host)
-      // Create a new tab for the remote connection
-      const newTab = app.addTab({
+      const newTab = addTab({
         label: host.name,
         type: 'remote',
         hostId: host.id,
       })
       navigate(`/terminal?tab=${newTab.id}`)
     },
-    [app, navigate, onConnect],
+    [addTab, navigate, onConnect],
   )
 
   const handleNewLocalTerminal = () => {
-    const newTab = app.addTab({
+    const newTab = addTab({
       label: 'Local',
       type: 'local',
     })
     navigate(`/terminal?tab=${newTab.id}`)
   }
 
-  React.useEffect(() => {
-    hostStore.loadHosts()
-    hostStore.loadGroups()
-  }, [hostStore])
+  useEffect(() => {
+    loadHosts()
+    loadGroups()
+  }, [loadHosts, loadGroups])
 
   return (
     <div className="w-60 h-full bg-secondary/40 border-r border-border/60 flex flex-col shrink-0">
