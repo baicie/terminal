@@ -96,6 +96,11 @@ export const routes: RouteObject[] = [
         path: 'scripts',
         element: makeLazyRoute(() => import('../view/scripts')),
       },
+      // Teams - Team collaboration
+      {
+        path: 'teams',
+        element: makeLazyRoute(() => import('../view/teams')),
+      },
     ],
   },
   {

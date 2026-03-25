@@ -161,12 +161,30 @@
 | 串口终端 | 串口连接终端界面                   | ✅ 已实现 |
 | 串口写入 | 支持回车发送和原始发送             | ✅ 已实现 |
 
-#### 4.2 团队协作 📋 待开发
+#### 4.2 团队协作 ✅ 本地模式完成 (2026-03-25)
 
 | 任务     | 描述                   | 状态      |
 | -------- | ---------------------- | --------- |
-| 团队共享 | 共享主机配置给团队成员 | 📋 待开发 |
-| 权限管理 | 设置读写权限           | 📋 待开发 |
+| 用户 UUID 生成 | 首次启动生成本地 UUID | ✅ 已实现 (2026-03-25) |
+| 用户模式区分 | TeamStore + 导航动态显示 | ✅ 已实现 (2026-03-25) |
+| 团队数据模型 | TypeScript 类型定义 | ✅ 已实现 (2026-03-25) |
+| 团队存储服务 | SQLite 表和操作函数 | ✅ 已实现 (2026-03-25) |
+| 团队协作视图 | TeamsView 基础 UI | ✅ 已实现 (2026-03-25) |
+| 团队详情页面 | Members/Shares/Audit Tabs | ✅ 已实现 (2026-03-25) |
+| 邀请机制 UI | 链接/码/邮箱三种方式 | ✅ 已实现 (2026-03-25) |
+| 本地导出功能 | 导出团队包为 JSON | ✅ 已实现 (2026-03-25) |
+| 本地导入功能 | 导入 JSON 并处理合并 | ✅ 已实现 (2026-03-25) |
+| 审计日志 | 连接历史记录和展示 | ✅ 已实现 (2026-03-25) |
+| Hosts 视图集成 | 共享主机导入/分享功能 | ✅ 已实现 (2026-03-25) |
+| Snippets 分享 | SnippetManager + Hosts 视图展示 | ✅ 已实现 (2026-03-25) |
+| 设置页面入口 | Team Tab 完善 | ✅ 已实现 (2026-03-25) |
+| 增量同步功能 | 基于时间戳的增量同步 | 📋 待开发（需服务端） |
+| 冲突处理 | 询问用户选择保留版本 | 📋 待开发（需服务端） |
+| 离线操作队列 | 离线操作记录和恢复 | 📋 待开发（需服务端） |
+| 敏感数据加密 | 密码可选加密共享 (AES-256-GCM) | ✅ 已实现 (2026-03-25) |
+| NestJS 服务端 | REST API 服务端 | ✅ 已实现 (2026-03-25) |
+| Docker 部署 | docker-compose 配置 | ✅ 已实现 (2026-03-25) |
+| 前端云端同步 | 前端连接 NestJS 服务端 | ✅ 已实现 (2026-03-25) |
 
 #### 4.3 SSH 证书认证 📋 待开发
 
@@ -483,4 +501,197 @@
 ---
 
 _文档创建时间：2026-03-18_
-_最后更新：2026-03-24 - 完善视图集成，更新终端/SFTP/Vaults/端口转发/命令面板实现_
+_最后更新：2026-03-25 - NestJS 服务端完善 (健康检查/Seed/编译修复)_
+
+---
+
+## 十、团队协作开发记录 (2026-03-25)
+
+### 2026-03-25 完成的工作 (第十一批次 - NestJS 服务端完善)
+
+1. **修复重复模块** - `src/app.module.ts`
+   - 移除重复的 `AuditModule` 导入
+
+2. **健康检查端点** - `src/health/`
+   - `/health` - 服务健康状态 (数据库连接检查)
+   - `/health/live` - K8s 存活探针
+   - `/health/ready` - K8s 就绪探针
+
+3. **Prisma 修复** - `prisma/schema.prisma`
+   - 移除无效的 `receivedInvites` 关系
+   - 修复重复的 `email` 字段
+
+4. **Seed 脚本** - `prisma/seed.ts`
+   - 创建演示用户和团队
+   - 生成演示邀请码
+
+5. **认证流程优化** - `src/auth/auth.service.ts`
+   - `register` 接口自动创建 API Token
+   - 用户首次注册即可获得 Token，无需额外步骤
+
+6. **前端健康检查** - `src/service/team-api.ts`
+   - `healthCheck()` 改为调用 `/health` 端点 (无需认证)
+
+7. **Docker 完善**
+   - 添加 `.dockerignore`
+   - `docker-compose.yml` 添加 healthcheck
+   - `Dockerfile` 启动时运行 `prisma migrate deploy`
+
+8. **TypeScript 编译修复** - `tsconfig.json`
+   - 移除 `baseUrl` 避免 TS 5.9+ 警告
+
+### 2026-03-25 完成的工作 (第十批次 - 前端云端同步)
+
+1. **API 服务** - `src/service/team-api.ts`
+   - 封装所有 NestJS 后端 API 调用
+   - 类型转换辅助函数 (convertApiTeam, convertApiMember 等)
+   - 健康检查和错误处理
+
+2. **Team Store 增强** - `src/store/team.ts`
+   - 添加 `cloudCreateTeam` - 云端创建团队
+   - 添加 `cloudLoadTeams` - 云端加载团队列表
+   - 添加 `cloudLoadMembers` - 云端加载成员
+   - 添加 `cloudLoadShares` - 云端加载共享资源
+   - 添加 `cloudCreateShare` - 云端创建共享
+   - 添加 `cloudDeleteShare` - 云端删除共享
+   - 添加 `cloudCreateInvite` - 云端创建邀请
+   - 添加 `cloudJoinByCode` - 通过邀请码加入
+   - 添加 `cloudJoinByLink` - 通过链接加入
+   - 添加 `cloudLoadAuditLogs` - 云端加载审计日志
+   - 更新 `sync()` 方法实现增量同步
+
+3. **设置对话框增强** - `src/components/settings-dialog/`
+   - 新增 `TeamServerConfig` 组件
+   - 服务端配置 UI (Endpoint, API Token)
+   - 连接测试功能
+   - 自动同步开关和间隔配置
+   - Local/Cloud 模式切换
+
+### 2026-03-25 完成的工作 (第九批次 - NestJS 服务端)
+
+1. **NestJS 服务端项目** - `team-server/`
+   - 项目结构与配置 (package.json, tsconfig.json, nest-cli.json)
+   - Prisma 数据模型 (User, Team, TeamMember, Share, Invite, AuditLog)
+   - Docker 配置 (Dockerfile, docker-compose.yml)
+
+2. **认证模块** - `src/auth/`
+   - API Token 认证 (创建、验证、撤销)
+   - API Key Guard 和装饰器
+
+3. **Teams 模块** - `src/teams/`
+   - CRUD 操作 (创建、查询、更新、删除)
+   - 权限检查 (仅管理员/所有者)
+
+4. **Members 模块** - `src/members/`
+   - 成员管理 (添加、移除、更新角色)
+
+5. **Shares 模块** - `src/shares/`
+   - 资源共享 (主机、代码片段)
+   - 权限管理 (只读/读写)
+
+6. **Invites 模块** - `src/invites/`
+   - 三种邀请方式 (链接、邀请码、邮箱)
+   - 加入团队接口
+
+7. **Audit 模块** - `src/audit/`
+   - 审计日志查询
+
+8. **Sync 模块** - `src/sync/`
+   - 增量同步 (GET /sync?since=timestamp)
+   - 推送更改 (POST /sync)
+
+9. **文档完善**
+   - README.md 完整 API 使用说明
+   - .env.example 环境变量示例
+
+### 2026-03-25 完成的工作 (第八批次 - 本地模式完善)
+
+1. **Snippet 分享功能** - `src/components/snippet-manager/index.tsx`
+   - 添加团队分享按钮到每个 Snippet 卡片
+   - 实现分享对话框，支持选择权限（只读/读写）
+   - 显示分享到的团队名称
+   - Toast 通知分享成功
+
+2. **Hosts 视图 Snippets 展示** - `src/view/hosts/index.tsx`
+   - 添加共享代码片段区域显示
+   - 实现共享 Snippet 一键导入功能
+   - 显示权限标签和描述信息
+   - 团队卡片入口跳转到 Teams 页面
+
+3. **敏感数据加密共享** - `src/utils/team-encryption.ts` + `src/components/share-host-dialog/index.tsx`
+   - AES-256-GCM 加密实现（Web Crypto API）
+   - PBKDF2 密钥派生（100000 次迭代）
+   - 分享对话框添加加密选项
+   - 密码强度验证
+   - 导入时解密对话框
+   - 加密标识显示
+
+4. **国际化翻译完善**
+   - 添加 `readonlyDesc`、`readwriteDesc`、`shareToTeam` 翻译
+   - 中英法三种语言完整支持
+   - 加密相关翻译（加密/解密/密码）
+
+### 2026-03-25 完成的工作 (第七批次 - 续)
+
+1. **Hosts 视图团队集成** - `src/view/hosts/index.tsx`
+   - 添加团队共享主机展示区域
+   - 实现共享主机导入功能（点击导入到本地）
+   - 为主机卡片添加分享到团队操作菜单
+   - 共享主机显示权限标签（只读/读写）
+
+2. **设置页面团队入口完善** - `src/components/settings-dialog/index.tsx`
+   - Team Tab 添加"打开 Teams 视图"按钮
+   - 未启用团队模式时显示"启用团队模式"按钮
+   - 导航到 Teams 页面进行团队配置
+
+3. **国际化翻译完善**
+   - `src/locales/en/demo.ts` - 补充英文翻译缺失条目
+   - `src/locales/fr/demo.ts` - 添加完整法语翻译
+   - Teams 相关翻译（中英法三种语言）
+
+### 2026-03-25 完成的工作 (第七批次)
+
+1. **团队功能基础框架**
+   - `src/store/team.ts` - TeamStore 状态管理
+     - 用户 UUID 自动生成
+     - 团队设置管理（enabled/mode/endpoint/apiToken/autoSync）
+     - 团队 CRUD 操作
+     - 成员管理（添加/移除/更新角色）
+     - 共享主机/代码片段
+     - 邀请管理（链接/码/邮箱三种方式）
+     - 审计日志
+     - 同步状态管理
+
+2. **数据库表扩展** - `src/service/database.ts`
+   - teams 表 - 团队信息
+   - team_members 表 - 团队成员
+   - team_shared_hosts 表 - 共享主机
+   - team_shared_snippets 表 - 共享代码片段
+   - team_invites 表 - 邀请记录
+   - team_audit_logs 表 - 审计日志
+   - sync_queue 表 - 同步队列（离线支持）
+   - user_profile 表 - 用户信息
+
+3. **导航栏动态显示** - `src/components/app-sidebar/index.tsx`
+   - 根据 `teamStore.settings.enabled` 动态显示/隐藏 Teams 入口
+   - 普通用户模式：无 Teams 入口
+   - 团队用户模式：显示 Teams 入口
+
+4. **TeamsView 页面** - `src/view/teams/index.tsx`
+   - 团队列表（左侧边栏）
+   - 团队详情页面（右侧）
+   - Members 标签 - 成员管理
+   - Shared Hosts 标签 - 共享主机
+   - Shared Snippets 标签 - 共享代码片段
+   - Audit Logs 标签 - 审计日志
+   - 创建团队对话框
+   - 邀请成员对话框（支持链接/码/邮箱）
+
+5. **路由注册** - `src/router/index.tsx`
+   - 添加 `/teams` 路由
+
+6. **国际化翻译** - `src/locales/en/demo.ts` 和 `src/locales/cn/demo.ts`
+   - 添加 Teams 相关翻译（中英文）
+
+7. **应用初始化** - `src/App.tsx`
+   - 应用启动时初始化 TeamStore

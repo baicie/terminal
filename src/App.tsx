@@ -9,6 +9,7 @@ import { I18nextProvider, useTranslation } from 'react-i18next'
 import { RouterProvider } from 'react-router-dom'
 import { router } from './router'
 import { useAppStore } from './store/app'
+import { useTeamStore } from './store/team'
 import locales from './locales'
 import i18nCore from './locales'
 import { register, isRegistered } from '@tauri-apps/plugin-global-shortcut'
@@ -18,6 +19,12 @@ export default function App() {
   const theme = useAppStore(s => s.theme)
   const language = useAppStore(s => s.language)
   const hydrateFromDatabase = useAppStore(s => s.hydrateFromDatabase)
+  const initializeTeam = useTeamStore(s => s.initialize)
+
+  useEffect(() => {
+    // Initialize team store on app start
+    void initializeTeam()
+  }, [initializeTeam])
 
   useEffect(() => {
     const registerShortcuts = async () => {

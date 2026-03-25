@@ -36,6 +36,9 @@ import {
   Search,
   FolderPlus,
   Code,
+  Users,
+  Download,
+  Share2,
 } from 'lucide-react'
 import {
   getSnippets,
@@ -48,6 +51,16 @@ import {
   type SnippetRecord,
   type SnippetPackageRecord,
 } from '@/service/database'
+import { useTeamStore, useIsTeamEnabled, useCurrentTeam } from '@/store/team'
+import { useTranslation } from 'react-i18next'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { toast } from '@/components/ui/sonner'
 
 interface SnippetDialogProps {
   open: boolean
@@ -56,29 +69,41 @@ interface SnippetDialogProps {
 }
 
 const SnippetManager: React.FC<SnippetDialogProps> = ({ open, onClose, onExecute }) => {
-    const [snippets, setSnippets] = useState<SnippetRecord[]>([])
-    const [packages, setPackages] = useState<SnippetPackageRecord[]>([])
-    const [selectedPackage, setSelectedPackage] = useState<string | null>(null)
-    const [searchQuery, setSearchQuery] = useState('')
-    const [editingSnippet, setEditingSnippet] = useState<SnippetRecord | null>(
-      null,
-    )
-    const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-    const [isPackageDialogOpen, setIsPackageDialogOpen] = useState(false)
-    const [isExecuteDialogOpen, setIsExecuteDialogOpen] = useState(false)
-    const [executingSnippet, setExecutingSnippet] =
-      useState<SnippetRecord | null>(null)
-    const [variableValues, setVariableValues] = useState<
-      Record<string, string>
-    >({})
-    const [newPackageName, setNewPackageName] = useState('')
-    const [formData, setFormData] = useState({
-      name: '',
-      description: '',
-      script: '',
-      packageId: '',
-      variables: '' as string | undefined,
-    })
+  const { t } = useTranslation('demo')
+  const [snippets, setSnippets] = useState<SnippetRecord[]>([])
+  const [packages, setPackages] = useState<SnippetPackageRecord[]>([])
+  const [selectedPackage, setSelectedPackage] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [editingSnippet, setEditingSnippet] = useState<SnippetRecord | null>(
+    null,
+  )
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [isPackageDialogOpen, setIsPackageDialogOpen] = useState(false)
+  const [isExecuteDialogOpen, setIsExecuteDialogOpen] = useState(false)
+  const [executingSnippet, setExecutingSnippet] =
+    useState<SnippetRecord | null>(null)
+  const [variableValues, setVariableValues] = useState<
+    Record<string, string>
+  >({})
+  const [newPackageName, setNewPackageName] = useState('')
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    script: '',
+    packageId: '',
+    variables: '' as string | undefined,
+  })
+
+  // Team sharing state
+  const [isShareDialogOpen, setIsShareDialogOpen] = useState(false)
+  const [sharingSnippet, setSharingSnippet] = useState<SnippetRecord | null>(null)
+  const [sharePermission, setSharePermission] = useState<'readonly' | 'readwrite'>('readonly')
+
+  // Team store
+  const isTeamEnabled = useIsTeamEnabled()
+  const currentTeam = useCurrentTeam()
+  const shareSnippet = useTeamStore(s => s.shareSnippet)
+  const loadSharedSnippets = useTeamStore(s => s.loadSharedSnippets)
 
     useEffect(() => {
       loadData()
@@ -164,6 +189,31 @@ const SnippetManager: React.FC<SnippetDialogProps> = ({ open, onClose, onExecute
         loadData()
       } catch (error) {
         console.error('Failed to create package:', error)
+      }
+    }
+
+    const handleShareSnippet = async () => {
+      if (!sharingSnippet || !currentTeam) return
+
+      const snippetData = {
+        id: sharingSnippet.id,
+        name: sharingSnippet.name,
+        description: sharingSnippet.description,
+        script: sharingSnippet.script,
+        package_id: sharingSnippet.package_id,
+        tags: sharingSnippet.tags,
+        variables: sharingSnippet.variables,
+      }
+
+      try {
+        await shareSnippet(currentTeam.id, snippetData, sharePermission)
+        toast.success(t('teams.shareSnippet'))
+        setIsShareDialogOpen(false)
+        setSharingSnippet(null)
+        setSharePermission('readonly')
+      } catch (error) {
+        console.error('Failed to share snippet:', error)
+        toast.error(String(error))
       }
     }
 
@@ -379,6 +429,20 @@ const SnippetManager: React.FC<SnippetDialogProps> = ({ open, onClose, onExecute
                           >
                             <Play className="h-4 w-4" />
                           </Button>
+                          {isTeamEnabled && currentTeam && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setSharingSnippet(snippet)
+                                setSharePermission('readonly')
+                                setIsShareDialogOpen(true)
+                              }}
+                              title={t('teams.share')}
+                            >
+                              <Share2 className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -643,6 +707,85 @@ const SnippetManager: React.FC<SnippetDialogProps> = ({ open, onClose, onExecute
                 Cancel
               </Button>
               <Button onClick={handleCreatePackage}>Create</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Share Snippet Dialog */}
+        <Dialog
+          open={isShareDialogOpen}
+          onOpenChange={setIsShareDialogOpen}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t('teams.shareSnippet')}</DialogTitle>
+            </DialogHeader>
+            {sharingSnippet && (
+              <div className="space-y-4">
+                <div className="p-3 bg-muted rounded-lg">
+                  <div className="font-medium">{sharingSnippet.name}</div>
+                  {sharingSnippet.description && (
+                    <div className="text-sm text-muted-foreground mt-1">
+                      {sharingSnippet.description}
+                    </div>
+                  )}
+                  <pre className="text-xs bg-background p-2 rounded mt-2 overflow-x-auto max-h-16">
+                    {sharingSnippet.script.substring(0, 100)}
+                    {sharingSnippet.script.length > 100 && '...'}
+                  </pre>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>{t('teams.permissions')}</Label>
+                  <Select
+                    value={sharePermission}
+                    onValueChange={v => setSharePermission(v as typeof sharePermission)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="readonly">
+                        <div className="flex items-center gap-2">
+                          <span>{t('teams.readonly')}</span>
+                          <span className="text-xs text-muted-foreground">
+                            - {t('teams.readonlyDesc')}
+                          </span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="readwrite">
+                        <div className="flex items-center gap-2">
+                          <span>{t('teams.readwrite')}</span>
+                          <span className="text-xs text-muted-foreground">
+                            - {t('teams.readwriteDesc')}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="p-3 bg-secondary/50 rounded-lg text-sm">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Users className="size-4" />
+                    <span>
+                      {t('teams.shareToTeam', { team: currentTeam?.name })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsShareDialogOpen(false)}
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button onClick={handleShareSnippet}>
+                <Share2 className="size-4 mr-2" />
+                {t('teams.share')}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

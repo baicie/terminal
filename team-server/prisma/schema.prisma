@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String       @id @default(uuid())
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  teams         TeamMember[]
+  apiTokens     ApiToken[]
+  auditLogs     AuditLog[]
+  sentInvites   Invite[]     @relation("InviteCreator")
+}
+
+model ApiToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String?
+  token     String    @unique
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  
+  @@unique([userId, token])
+}
+
+model Team {
+  id        String       @id @default(uuid())
+  name      String
+  ownerId   String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  members   TeamMember[]
+  shares    Share[]
+  auditLogs AuditLog[]
+  invites   Invite[]
+}
+
+model TeamMember {
+  id        String   @id @default(uuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userName  String?
+  userEmail String?
+  role      Role     @default(MEMBER)
+  joinedAt  DateTime @default(now())
+
+  @@unique([teamId, userId])
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+model Share {
+  id         String       @id @default(uuid())
+  teamId     String
+  team       Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  type       ShareType
+  data       Json        // Host or Snippet data
+  sharedBy   String
+  permission Permission   @default(READONLY)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+}
+
+enum ShareType {
+  HOST
+  HOST_GROUP
+  SNIPPET_PACKAGE
+}
+
+enum Permission {
+  READONLY
+  READWRITE
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userName  String?
+  hostName  String?
+  action    String
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([teamId, createdAt])
+}
+
+model Invite {
+  id        String      @id @default(uuid())
+  teamId    String
+  team      Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  type      InviteType
+  code      String?     @unique
+  linkToken String?     @unique
+  email     String?     @map("recipient_email")
+  role      Role       @default(MEMBER)
+  createdBy String
+  creator   User       @relation("InviteCreator", fields: [createdBy], references: [id])
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime    @default(now())
+
+  @@index([teamId, createdAt])
+  @@index([code])
+  @@index([linkToken])
+}
+
+enum InviteType {
+  LINK
+  CODE
+  EMAIL
+}

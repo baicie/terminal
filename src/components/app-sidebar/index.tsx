@@ -7,6 +7,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
+import { useIsTeamEnabled } from '@/store/team'
 import {
   Server,
   Key,
@@ -17,6 +18,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   Terminal,
+  Users,
 } from 'lucide-react'
 
 interface NavItem {
@@ -24,44 +26,6 @@ interface NavItem {
   labelKey: string
   icon: React.ReactNode
 }
-
-const navItems: NavItem[] = [
-  {
-    path: '/hosts',
-    labelKey: 'nav.hosts',
-    icon: <Server className="size-5" />,
-  },
-  {
-    path: '/keychain',
-    labelKey: 'nav.keychain',
-    icon: <Key className="size-5" />,
-  },
-  {
-    path: '/port-forward',
-    labelKey: 'nav.portForward',
-    icon: <ArrowLeftRight className="size-5" />,
-  },
-  {
-    path: '/snippets',
-    labelKey: 'nav.snippets',
-    icon: <Code2 className="size-5" />,
-  },
-  {
-    path: '/known-hosts',
-    labelKey: 'nav.knownHosts',
-    icon: <Fingerprint className="size-5" />,
-  },
-  {
-    path: '/logs',
-    labelKey: 'nav.logs',
-    icon: <FileText className="size-5" />,
-  },
-  {
-    path: '/scripts',
-    labelKey: 'nav.scripts',
-    icon: <Terminal className="size-5" />,
-  },
-]
 
 interface NavItemProps {
   item: NavItem
@@ -131,6 +95,56 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
 }) => {
   const { t } = useTranslation('demo')
   const iconOnly = width != null && width < ICON_ONLY_THRESHOLD
+  const isTeamEnabled = useIsTeamEnabled()
+
+  // Build navigation items based on team mode
+  const navItems: NavItem[] = [
+    {
+      path: '/hosts',
+      labelKey: 'nav.hosts',
+      icon: <Server className="size-5" />,
+    },
+    // Teams item - only show when team mode is enabled
+    ...(isTeamEnabled
+      ? [
+          {
+            path: '/teams',
+            labelKey: 'nav.teams',
+            icon: <Users className="size-5" />,
+          },
+        ]
+      : []),
+    {
+      path: '/keychain',
+      labelKey: 'nav.keychain',
+      icon: <Key className="size-5" />,
+    },
+    {
+      path: '/port-forward',
+      labelKey: 'nav.portForward',
+      icon: <ArrowLeftRight className="size-5" />,
+    },
+    {
+      path: '/snippets',
+      labelKey: 'nav.snippets',
+      icon: <Code2 className="size-5" />,
+    },
+    {
+      path: '/known-hosts',
+      labelKey: 'nav.knownHosts',
+      icon: <Fingerprint className="size-5" />,
+    },
+    {
+      path: '/logs',
+      labelKey: 'nav.logs',
+      icon: <FileText className="size-5" />,
+    },
+    {
+      path: '/scripts',
+      labelKey: 'nav.scripts',
+      icon: <Terminal className="size-5" />,
+    },
+  ]
 
   return (
     <div

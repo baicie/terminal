@@ -1,0 +1,50 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+build
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Git
+.git
+.gitignore
+
+# Environment files (secrets should be injected at runtime)
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage
+.nyc_output
+
+# Documentation
+README.md
+*.md
+
+# Prisma
+prisma/migrations
+
+# Docker
+Dockerfile
+docker-compose*.yml
+
+# Test files
+test
+*.spec.ts
+*.test.ts
+
+# Misc
+.DS_Store
+Thumbs.db

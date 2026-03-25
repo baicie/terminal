@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,9 @@ import {
 import {
   exportDataToFile,
   previewImportData,
+  exportTeamPackage,
+  previewTeamPackage,
+  importTeamPackage,
   type ExportData,
 } from '@/service/sync'
 import { toast } from '@/components/ui/sonner'
@@ -45,10 +49,13 @@ import {
   HardDrive,
   Eye,
   EyeOff,
+  Users,
+  Package,
 } from 'lucide-react'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { readTextFile } from '@tauri-apps/plugin-fs'
 import { useAppStore } from '@/store/app'
+import { useTeamStore, useIsTeamEnabled } from '@/store/team'
 import i18nCore from '@/locales'
 
 interface SettingsDialogProps {
@@ -71,6 +78,8 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onClose,
 }) => {
   const app = useAppStore()
+  const navigate = useNavigate()
+  const isTeamEnabled = useIsTeamEnabled()
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -382,11 +391,12 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
           </DialogHeader>
 
           <Tabs defaultValue="appearance" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="appearance">Appearance</TabsTrigger>
               <TabsTrigger value="terminal">Terminal</TabsTrigger>
               <TabsTrigger value="general">General</TabsTrigger>
               <TabsTrigger value="storage">Storage</TabsTrigger>
+              <TabsTrigger value="team">Team</TabsTrigger>
             </TabsList>
 
             <TabsContent value="appearance" className="space-y-4 py-4">
@@ -747,65 +757,128 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
               </div>
             </TabsContent>
 
-            <TabsContent value="sync" className="space-y-6 py-4">
-              {/* Export Section */}
+            <TabsContent value="team" className="space-y-6 py-4">
+              {/* Team Status */}
               <div className="space-y-3">
                 <h4 className="text-sm font-medium flex items-center gap-2">
-                  <Download className="h-4 w-4" />
-                  Export Data
+                  <Users className="h-4 w-4" />
+                  Team Collaboration
                 </h4>
                 <p className="text-sm text-muted-foreground">
-                  Export all hosts, groups, snippets, and settings to a JSON
-                  file for backup or sync.
+                  Enable team features to share hosts and snippets with your team members.
+                  Use local mode to export/import team packages as JSON files.
                 </p>
-                <Button
-                  variant="outline"
-                  onClick={handleExport}
-                  disabled={exporting}
-                  className="w-full"
-                >
-                  {exporting ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                      Exporting...
-                    </>
-                  ) : (
-                    <>
-                      <FileJson className="h-4 w-4 mr-2" />
-                      Export to JSON File
-                    </>
-                  )}
-                </Button>
+
+                {isTeamEnabled ? (
+                  <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Check className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium">Team mode enabled</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground ml-6">
+                      Teams navigation is visible in the sidebar.
+                      Manage your teams from the Teams view.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 ml-6"
+                      onClick={() => {
+                        onClose()
+                        navigate('/teams')
+                      }}
+                    >
+                      <Users className="h-3 w-3 mr-1" />
+                      Open Teams View
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-muted rounded-lg">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">Team mode disabled</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground ml-6">
+                      Enable team mode to collaborate with team members.
+                    </p>
+                    <Button
+                      size="sm"
+                      className="mt-3 ml-6"
+                      onClick={() => {
+                        onClose()
+                        navigate('/teams')
+                      }}
+                    >
+                      <Users className="h-3 w-3 mr-1" />
+                      Enable Team Mode
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <Separator />
 
-              {/* Import Section */}
+              {/* Cloud Server Configuration */}
+              <TeamServerConfig onClose={onClose} />
+
+              <Separator />
+
+              {/* Local Export / Import */}
               <div className="space-y-3">
                 <h4 className="text-sm font-medium flex items-center gap-2">
-                  <Upload className="h-4 w-4" />
-                  Import Data
+                  <Package className="h-4 w-4" />
+                  Local Export / Import
                 </h4>
+                <p className="text-sm text-muted-foreground">
+                  Export or import your data as a JSON file. This works independently of team mode.
+                </p>
 
-                {importStep === 'idle' && (
-                  <>
-                    <p className="text-sm text-muted-foreground">
-                      Select an exported JSON file to import data.
-                    </p>
+                {/* Export */}
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Export all hosts, groups, snippets, and settings to a JSON file for backup.
+                  </p>
+                  <Button
+                    variant="outline"
+                    onClick={handleExport}
+                    disabled={exporting}
+                    className="w-full"
+                  >
+                    {exporting ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Exporting...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4 mr-2" />
+                        Export to JSON File
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                <Separator />
+
+                {/* Import */}
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Import data from a JSON export file. Supports both full exports and team packages.
+                  </p>
+
+                  {importStep === 'idle' && (
                     <Button
                       variant="outline"
                       onClick={handleSelectImportFile}
                       className="w-full"
                     >
-                      <FileJson className="h-4 w-4 mr-2" />
+                      <Upload className="h-4 w-4 mr-2" />
                       Select Import File
                     </Button>
-                  </>
-                )}
+                  )}
 
-                {importStep === 'preview' && importPreview && (
-                  <div className="space-y-3">
-                    <div className="p-3 bg-muted rounded-lg space-y-2">
+                  {importStep === 'preview' && importPreview && (
+                    <div className="space-y-3 p-3 bg-muted rounded-lg">
                       <p className="text-sm font-medium">Import Preview:</p>
                       <ul className="text-sm text-muted-foreground space-y-1">
                         <li>
@@ -827,96 +900,92 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
                           </li>
                         )}
                       </ul>
-                    </div>
 
-                    <div className="space-y-2">
-                      <Label className="text-sm">Import Mode</Label>
-                      <div className="flex gap-2">
+                      <div className="space-y-2 pt-2">
+                        <Label className="text-xs">Import Mode</Label>
+                        <div className="flex gap-2">
+                          <Button
+                            variant={importMode === 'merge' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setImportMode('merge')}
+                            className="flex-1"
+                          >
+                            <Merge className="h-3 w-3 mr-1" />
+                            Merge
+                          </Button>
+                          <Button
+                            variant={importMode === 'replace' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setImportMode('replace')}
+                            className="flex-1"
+                          >
+                            <Replace className="h-3 w-3 mr-1" />
+                            Replace
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {importMode === 'merge'
+                            ? 'New items will be added, existing items will be kept.'
+                            : 'Existing items with the same ID will be overwritten.'}
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2 pt-2">
                         <Button
-                          variant={
-                            importMode === 'merge' ? 'default' : 'outline'
-                          }
+                          variant="outline"
                           size="sm"
-                          onClick={() => setImportMode('merge')}
+                          onClick={resetSyncState}
                           className="flex-1"
                         >
-                          <Merge className="h-4 w-4 mr-1" />
-                          Merge
+                          Cancel
                         </Button>
-                        <Button
-                          variant={
-                            importMode === 'replace' ? 'default' : 'outline'
-                          }
-                          size="sm"
-                          onClick={() => setImportMode('replace')}
-                          className="flex-1"
-                        >
-                          <Replace className="h-4 w-4 mr-1" />
-                          Replace
+                        <Button size="sm" onClick={handleImport} className="flex-1">
+                          <Upload className="h-3 w-3 mr-1" />
+                          Import
                         </Button>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        {importMode === 'merge'
-                          ? 'New items will be added, existing items will be kept.'
-                          : 'Existing items with the same ID will be overwritten.'}
-                      </p>
                     </div>
+                  )}
 
-                    <div className="flex gap-2">
+                  {importStep === 'importing' && (
+                    <div className="text-center py-4">
+                      <RefreshCw className="h-6 w-6 mx-auto animate-spin text-primary" />
+                      <p className="mt-2 text-sm">Importing data...</p>
+                    </div>
+                  )}
+
+                  {importStep === 'success' && (
+                    <div className="text-center py-4">
+                      <div className="h-8 w-8 mx-auto rounded-full bg-green-100 flex items-center justify-center">
+                        <Check className="h-5 w-5 text-green-600" />
+                      </div>
+                      <p className="mt-2 text-sm">Import successful!</p>
+                    </div>
+                  )}
+
+                  {importStep === 'error' && (
+                    <div className="space-y-2">
+                      <div className="p-3 bg-destructive/10 rounded-lg flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                        <p className="text-sm text-destructive">{errorMessage}</p>
+                      </div>
                       <Button
                         variant="outline"
                         onClick={resetSyncState}
-                        className="flex-1"
+                        className="w-full"
                       >
-                        Cancel
-                      </Button>
-                      <Button onClick={handleImport} className="flex-1">
-                        <Upload className="h-4 w-4 mr-1" />
-                        Import
+                        Try Again
                       </Button>
                     </div>
-                  </div>
-                )}
-
-                {importStep === 'importing' && (
-                  <div className="text-center py-4">
-                    <RefreshCw className="h-8 w-8 mx-auto animate-spin text-primary" />
-                    <p className="mt-2 text-sm">Importing data...</p>
-                  </div>
-                )}
-
-                {importStep === 'success' && (
-                  <div className="text-center py-4">
-                    <div className="h-8 w-8 mx-auto rounded-full bg-green-100 flex items-center justify-center">
-                      <Check className="h-5 w-5 text-green-600" />
-                    </div>
-                    <p className="mt-2 text-sm">Import successful!</p>
-                  </div>
-                )}
-
-                {importStep === 'error' && (
-                  <div className="space-y-3">
-                    <div className="p-3 bg-destructive/10 rounded-lg flex items-start gap-2">
-                      <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-                      <p className="text-sm text-destructive">{errorMessage}</p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      onClick={resetSyncState}
-                      className="w-full"
-                    >
-                      Try Again
-                    </Button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               <div className="p-3 bg-muted/50 rounded-lg flex items-start gap-2">
                 <Shield className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
                 <p className="text-xs text-muted-foreground">
-                  Data is exported as plain JSON. Sensitive information like
-                  passwords may be included depending on your settings. Keep
-                  your export files secure.
+                  Data is exported as plain JSON. Sensitive information like passwords may be
+                  included. Keep your export files secure.
                 </p>
               </div>
             </TabsContent>

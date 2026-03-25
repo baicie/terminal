@@ -237,19 +237,21 @@ src-tauri/
 
 ### Phase 4 - 企业功能 ⚠️ 部分完成
 
-> 2026-03-24 完成 Phase 4 部分功能
+> 2026-03-25 完成团队协作本地模式全部功能
 
-| 功能                           | 状态                   |
-| ------------------------------ | ---------------------- |
-| 团队协作                       | 📋 待开发              |
-| SSH 证书认证                   | 📋 待开发              |
-| 串口连接                       | ✅ 已实现 (2026-03-20) |
-| SSH 密钥生成                   | ✅ 已实现 (2026-03-24) |
-| 高级脚本                       | 📋 待开发              |
-| 终端工具侧栏 (Snippets + 历史) | ✅ 已实现 (2026-03-24) |
-| xterm.js ClipboardAddon        | ✅ 已实现 (2026-03-24) |
-| 主机环境变量编辑               | ✅ 已实现 (2026-03-24) |
-| SFTP Kind 列 + 权限显示        | ✅ 已实现 (2026-03-24) |
+| 功能                           | 状态                              |
+| ------------------------------ | --------------------------------- |
+| 团队协作 - 本地模式             | ✅ 已实现 (2026-03-25)            |
+| 敏感数据加密共享               | ✅ 已实现 (2026-03-25)            |
+| 团队协作 - 云端模式             | 📋 待开发（需自部署服务端）        |
+| SSH 证书认证                   | 📋 待开发                         |
+| 串口连接                       | ✅ 已实现 (2026-03-20)            |
+| SSH 密钥生成                   | ✅ 已实现 (2026-03-24)            |
+| 高级脚本                       | ✅ 已实现 (2026-03-23)            |
+| 终端工具侧栏 (Snippets + 历史) | ✅ 已实现 (2026-03-24)            |
+| xterm.js ClipboardAddon        | ✅ 已实现 (2026-03-24)            |
+| 主机环境变量编辑               | ✅ 已实现 (2026-03-24)            |
+| SFTP Kind 列 + 权限显示        | ✅ 已实现 (2026-03-24)            |
 
 ---
 
@@ -384,6 +386,174 @@ CREATE TABLE known_hosts (
 );
 ```
 
+### teams / team_members / team_shared_hosts 表（团队协作）
+
+```sql
+CREATE TABLE teams (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  mode TEXT DEFAULT 'local',
+  endpoint TEXT,
+  api_token TEXT,
+  auto_sync INTEGER DEFAULT 0,
+  created_at INTEGER,
+  updated_at INTEGER
+);
+
+CREATE TABLE team_members (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  user_name TEXT,
+  user_email TEXT,
+  role TEXT DEFAULT 'member',
+  joined_at INTEGER,
+  UNIQUE(team_id, user_id)
+);
+
+CREATE TABLE team_shared_hosts (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL,
+  host_data TEXT NOT NULL,
+  shared_by TEXT NOT NULL,
+  permission TEXT DEFAULT 'readonly',
+  created_at INTEGER
+);
+
+CREATE TABLE team_shared_snippets (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL,
+  snippet_data TEXT NOT NULL,
+  shared_by TEXT NOT NULL,
+  permission TEXT DEFAULT 'readonly',
+  created_at INTEGER
+);
+
+CREATE TABLE team_invites (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  code TEXT UNIQUE,
+  link_token TEXT UNIQUE,
+  email TEXT,
+  role TEXT DEFAULT 'member',
+  created_by TEXT NOT NULL,
+  expires_at INTEGER,
+  used_at INTEGER,
+  created_at INTEGER
+);
+
+CREATE TABLE team_audit_logs (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  user_name TEXT,
+  host_name TEXT,
+  action TEXT NOT NULL,
+  details TEXT,
+  created_at INTEGER
+);
+
+CREATE TABLE sync_queue (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  team_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  resource TEXT NOT NULL,
+  resource_id TEXT NOT NULL,
+  data TEXT,
+  status TEXT DEFAULT 'pending',
+  retry_count INTEGER DEFAULT 0,
+  error TEXT,
+  created_at INTEGER,
+  synced_at INTEGER
+);
+
+CREATE TABLE user_profile (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at INTEGER,
+  updated_at INTEGER
+);
+```
+
 ---
 
-_文档更新时间: 2026-03-24_
+## Team Server (NestJS 后端)
+
+团队协作服务端，位于 `team-server/` 目录。
+
+### 技术栈
+
+| 层级 | 技术 |
+| ---------- | ------------------------- |
+| 框架 | NestJS 10.x |
+| ORM | Prisma 5.x |
+| 数据库 | PostgreSQL 16 |
+| API 文档 | Swagger/OpenAPI |
+| 容器 | Docker |
+
+### 启动方式
+
+```bash
+cd team-server
+
+# Docker 部署 (推荐)
+docker-compose up -d
+
+# 本地开发
+npm install
+npx prisma generate
+npx prisma migrate dev
+npm run start:dev
+```
+
+### 前端连接
+
+前端通过 `src/service/team-api.ts` 连接服务端：
+
+```typescript
+import { teamApi } from '@/service/team-api'
+
+// 配置 API
+teamApi.configure('http://localhost:3000', 'your-api-token', 'user-id')
+
+// 使用 API
+const response = await teamApi.listTeams()
+```
+
+在设置对话框中配置服务端地址和 API Token。配置成功后会自动同步团队数据。
+
+### API 端点
+
+| 模块 | 前缀 | 方法 | 端点 | 说明 |
+| ----- | ---- | ---- | ---- | ---- |
+| 认证 | /auth | POST | /register | 注册用户 |
+| 认证 | /auth | POST | /tokens | 创建 API Token |
+| 认证 | /auth | GET | /tokens | 获取 Token 列表 |
+| 认证 | /auth | DELETE | /tokens/:id | 撤销 Token |
+| 团队 | /teams | GET | / | 获取我的团队 |
+| 团队 | /teams | POST | / | 创建团队 |
+| 团队 | /teams | GET | /:id | 获取团队详情 |
+| 团队 | /teams | PUT | /:id | 更新团队 |
+| 团队 | /teams | DELETE | /:id | 删除团队 |
+| 成员 | /teams/:id/members | GET | / | 获取成员列表 |
+| 成员 | /teams/:id/members | POST | / | 添加成员 |
+| 成员 | /teams/:id/members | PUT | /:memberId | 更新角色 |
+| 成员 | /teams/:id/members | DELETE | /:memberId | 移除成员 |
+| 共享 | /teams/:id/shares | GET | / | 获取共享列表 |
+| 共享 | /teams/:id/shares | POST | / | 创建共享 |
+| 共享 | /teams/:id/shares | PUT | /:shareId | 更新权限 |
+| 共享 | /teams/:id/shares | DELETE | /:shareId | 删除共享 |
+| 邀请 | /teams/:id/invites | POST | / | 创建邀请 |
+| 邀请 | /teams/:id/invites | GET | / | 获取邀请列表 |
+| 邀请 | /invites/join | POST | / | 通过邀请码加入 |
+| 邀请 | /invites/link/:token | GET | / | 获取链接邀请信息 |
+| 审计 | /teams/:id/audit | GET | / | 获取审计日志 |
+| 同步 | /sync | GET | / | 获取增量更新 |
+| 同步 | /sync | POST | / | 推送本地更改 |
+
+---
+
+_文档更新时间: 2026-03-25_

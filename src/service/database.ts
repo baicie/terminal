@@ -246,6 +246,123 @@ async function initSchema() {
   await database.execute(`
     CREATE INDEX IF NOT EXISTS idx_script_executions_started_at ON script_executions(started_at DESC)
   `)
+
+  // Team collaboration tables
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS teams (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      mode TEXT DEFAULT 'local',
+      endpoint TEXT,
+      api_token TEXT,
+      auto_sync INTEGER DEFAULT 0,
+      created_at INTEGER,
+      updated_at INTEGER
+    )
+  `)
+
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS team_members (
+      id TEXT PRIMARY KEY,
+      team_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      user_name TEXT,
+      user_email TEXT,
+      role TEXT DEFAULT 'member',
+      joined_at INTEGER,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+      UNIQUE(team_id, user_id)
+    )
+  `)
+
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS team_shared_hosts (
+      id TEXT PRIMARY KEY,
+      team_id TEXT NOT NULL,
+      host_data TEXT NOT NULL,
+      shared_by TEXT NOT NULL,
+      permission TEXT DEFAULT 'readonly',
+      created_at INTEGER,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    )
+  `)
+
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS team_shared_snippets (
+      id TEXT PRIMARY KEY,
+      team_id TEXT NOT NULL,
+      snippet_data TEXT NOT NULL,
+      shared_by TEXT NOT NULL,
+      permission TEXT DEFAULT 'readonly',
+      created_at INTEGER,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    )
+  `)
+
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS team_invites (
+      id TEXT PRIMARY KEY,
+      team_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      code TEXT UNIQUE,
+      link_token TEXT UNIQUE,
+      email TEXT,
+      role TEXT DEFAULT 'member',
+      created_by TEXT NOT NULL,
+      expires_at INTEGER,
+      used_at INTEGER,
+      created_at INTEGER,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    )
+  `)
+
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS team_audit_logs (
+      id TEXT PRIMARY KEY,
+      team_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      user_name TEXT,
+      host_name TEXT,
+      action TEXT NOT NULL,
+      details TEXT,
+      created_at INTEGER,
+      FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+    )
+  `)
+
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS sync_queue (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      team_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      resource TEXT NOT NULL,
+      resource_id TEXT NOT NULL,
+      data TEXT,
+      status TEXT DEFAULT 'pending',
+      retry_count INTEGER DEFAULT 0,
+      error TEXT,
+      created_at INTEGER,
+      synced_at INTEGER
+    )
+  `)
+
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS user_profile (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      created_at INTEGER,
+      updated_at INTEGER
+    )
+  `)
+
+  await database.execute(`CREATE INDEX IF NOT EXISTS idx_team_members_team_id ON team_members(team_id)`)
+  await database.execute(`CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id)`)
+  await database.execute(`CREATE INDEX IF NOT EXISTS idx_team_shared_hosts_team_id ON team_shared_hosts(team_id)`)
+  await database.execute(`CREATE INDEX IF NOT EXISTS idx_team_shared_snippets_team_id ON team_shared_snippets(team_id)`)
+  await database.execute(`CREATE INDEX IF NOT EXISTS idx_team_invites_team_id ON team_invites(team_id)`)
+  await database.execute(`CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status)`)
 }
 
 export async function executeQuery(sql: string, params: unknown[] = []) {
@@ -1191,5 +1308,501 @@ export async function clearScriptExecutions(scriptId?: string): Promise<void> {
     )
   } else {
     await database.execute('DELETE FROM script_executions')
+  }
+}
+
+// ============================================================
+// Team Collaboration Database Operations
+// ============================================================
+
+// User Profile
+export interface UserProfileRecord {
+  id: string
+  name: string
+  created_at: number
+  updated_at: number
+}
+
+export async function getUserProfile(): Promise<UserProfileRecord | null> {
+  const database = await getDb()
+  const results = await database.select<UserProfileRecord[]>(
+    'SELECT * FROM user_profile LIMIT 1',
+  )
+  return results[0] || null
+}
+
+export async function createUserProfile(
+  profile: UserProfileRecord,
+): Promise<void> {
+  const database = await getDb()
+  await database.execute(
+    'INSERT INTO user_profile (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)',
+    [profile.id, profile.name, profile.created_at, profile.updated_at],
+  )
+}
+
+export async function updateUserProfile(
+  id: string,
+  updates: Partial<UserProfileRecord>,
+): Promise<void> {
+  const database = await getDb()
+  const fields: string[] = []
+  const values: unknown[] = []
+
+  if (updates.name !== undefined) {
+    fields.push('name = ?')
+    values.push(updates.name)
+  }
+  if (updates.updated_at !== undefined) {
+    fields.push('updated_at = ?')
+    values.push(updates.updated_at)
+  }
+
+  if (fields.length > 0) {
+    values.push(id)
+    await database.execute(
+      `UPDATE user_profile SET ${fields.join(', ')} WHERE id = ?`,
+      values,
+    )
+  }
+}
+
+// Teams
+export interface TeamRecord {
+  id: string
+  name: string
+  owner_id: string
+  mode: string
+  endpoint?: string
+  api_token?: string
+  auto_sync: number
+  created_at: number
+  updated_at: number
+}
+
+export async function getTeams(): Promise<TeamRecord[]> {
+  const database = await getDb()
+  return database.select<TeamRecord[]>('SELECT * FROM teams ORDER BY name')
+}
+
+export async function getTeamById(id: string): Promise<TeamRecord | null> {
+  const database = await getDb()
+  const results = await database.select<TeamRecord[]>(
+    'SELECT * FROM teams WHERE id = ?',
+    [id],
+  )
+  return results[0] || null
+}
+
+export async function createTeam(team: TeamRecord): Promise<void> {
+  const database = await getDb()
+  await database.execute(
+    `INSERT INTO teams (id, name, owner_id, mode, endpoint, api_token, auto_sync, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      team.id,
+      team.name,
+      team.owner_id,
+      team.mode,
+      team.endpoint || null,
+      team.api_token || null,
+      team.auto_sync,
+      team.created_at,
+      team.updated_at,
+    ],
+  )
+}
+
+export async function updateTeam(
+  id: string,
+  updates: Partial<{
+    name: string
+    mode: string
+    endpoint: string
+    api_token: string
+    auto_sync: number
+    updated_at: number
+  }>,
+): Promise<void> {
+  const database = await getDb()
+  const fields: string[] = []
+  const values: unknown[] = []
+
+  if (updates.name !== undefined) {
+    fields.push('name = ?')
+    values.push(updates.name)
+  }
+  if (updates.mode !== undefined) {
+    fields.push('mode = ?')
+    values.push(updates.mode)
+  }
+  if (updates.endpoint !== undefined) {
+    fields.push('endpoint = ?')
+    values.push(updates.endpoint)
+  }
+  if (updates.api_token !== undefined) {
+    fields.push('api_token = ?')
+    values.push(updates.api_token)
+  }
+  if (updates.auto_sync !== undefined) {
+    fields.push('auto_sync = ?')
+    values.push(updates.auto_sync)
+  }
+  if (updates.updated_at !== undefined) {
+    fields.push('updated_at = ?')
+    values.push(updates.updated_at)
+  }
+
+  if (fields.length > 0) {
+    values.push(id)
+    await database.execute(
+      `UPDATE teams SET ${fields.join(', ')} WHERE id = ?`,
+      values,
+    )
+  }
+}
+
+export async function deleteTeam(id: string): Promise<void> {
+  const database = await getDb()
+  await database.execute('DELETE FROM teams WHERE id = ?', [id])
+}
+
+// Team Members
+export interface TeamMemberRecord {
+  id: string
+  team_id: string
+  user_id: string
+  user_name?: string
+  user_email?: string
+  role: string
+  joined_at: number
+}
+
+export async function getTeamMembers(teamId: string): Promise<TeamMemberRecord[]> {
+  const database = await getDb()
+  return database.select<TeamMemberRecord[]>(
+    'SELECT * FROM team_members WHERE team_id = ? ORDER BY joined_at',
+    [teamId],
+  )
+}
+
+export async function addTeamMember(member: TeamMemberRecord): Promise<void> {
+  const database = await getDb()
+  await database.execute(
+    `INSERT INTO team_members (id, team_id, user_id, user_name, user_email, role, joined_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      member.id,
+      member.team_id,
+      member.user_id,
+      member.user_name || null,
+      member.user_email || null,
+      member.role,
+      member.joined_at,
+    ],
+  )
+}
+
+export async function removeTeamMember(id: string): Promise<void> {
+  const database = await getDb()
+  await database.execute('DELETE FROM team_members WHERE id = ?', [id])
+}
+
+export async function updateTeamMember(
+  id: string,
+  updates: Partial<{ role: string }>,
+): Promise<void> {
+  const database = await getDb()
+  if (updates.role) {
+    await database.execute('UPDATE team_members SET role = ? WHERE id = ?', [
+      updates.role,
+      id,
+    ])
+  }
+}
+
+// Shared Hosts
+export interface TeamSharedHostRecord {
+  id: string
+  team_id: string
+  host_data: string
+  shared_by: string
+  permission: string
+  created_at: number
+}
+
+export async function getSharedHosts(teamId: string): Promise<TeamSharedHostRecord[]> {
+  const database = await getDb()
+  return database.select<TeamSharedHostRecord[]>(
+    'SELECT * FROM team_shared_hosts WHERE team_id = ? ORDER BY created_at DESC',
+    [teamId],
+  )
+}
+
+export async function addSharedHost(host: TeamSharedHostRecord): Promise<void> {
+  const database = await getDb()
+  await database.execute(
+    `INSERT INTO team_shared_hosts (id, team_id, host_data, shared_by, permission, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      host.id,
+      host.team_id,
+      host.host_data,
+      host.shared_by,
+      host.permission,
+      host.created_at,
+    ],
+  )
+}
+
+export async function removeSharedHost(id: string): Promise<void> {
+  const database = await getDb()
+  await database.execute('DELETE FROM team_shared_hosts WHERE id = ?', [id])
+}
+
+// Shared Snippets
+export interface TeamSharedSnippetRecord {
+  id: string
+  team_id: string
+  snippet_data: string
+  shared_by: string
+  permission: string
+  created_at: number
+}
+
+export async function getSharedSnippets(
+  teamId: string,
+): Promise<TeamSharedSnippetRecord[]> {
+  const database = await getDb()
+  return database.select<TeamSharedSnippetRecord[]>(
+    'SELECT * FROM team_shared_snippets WHERE team_id = ? ORDER BY created_at DESC',
+    [teamId],
+  )
+}
+
+export async function addSharedSnippet(
+  snippet: TeamSharedSnippetRecord,
+): Promise<void> {
+  const database = await getDb()
+  await database.execute(
+    `INSERT INTO team_shared_snippets (id, team_id, snippet_data, shared_by, permission, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      snippet.id,
+      snippet.team_id,
+      snippet.snippet_data,
+      snippet.shared_by,
+      snippet.permission,
+      snippet.created_at,
+    ],
+  )
+}
+
+export async function removeSharedSnippet(id: string): Promise<void> {
+  const database = await getDb()
+  await database.execute('DELETE FROM team_shared_snippets WHERE id = ?', [id])
+}
+
+// Team Invites
+export interface TeamInviteRecord {
+  id: string
+  team_id: string
+  type: string
+  code?: string
+  link_token?: string
+  email?: string
+  role: string
+  created_by: string
+  expires_at: number
+  used_at?: number
+  created_at: number
+}
+
+export async function getTeamInvites(teamId: string): Promise<TeamInviteRecord[]> {
+  const database = await getDb()
+  return database.select<TeamInviteRecord[]>(
+    'SELECT * FROM team_invites WHERE team_id = ? ORDER BY created_at DESC',
+    [teamId],
+  )
+}
+
+export async function createTeamInvite(invite: TeamInviteRecord): Promise<void> {
+  const database = await getDb()
+  await database.execute(
+    `INSERT INTO team_invites (id, team_id, type, code, link_token, email, role, created_by, expires_at, used_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      invite.id,
+      invite.team_id,
+      invite.type,
+      invite.code || null,
+      invite.link_token || null,
+      invite.email || null,
+      invite.role,
+      invite.created_by,
+      invite.expires_at,
+      invite.used_at || null,
+      invite.created_at,
+    ],
+  )
+}
+
+export async function deleteTeamInvite(id: string): Promise<void> {
+  const database = await getDb()
+  await database.execute('DELETE FROM team_invites WHERE id = ?', [id])
+}
+
+export async function getTeamInviteByCode(
+  code: string,
+): Promise<TeamInviteRecord | null> {
+  const database = await getDb()
+  const results = await database.select<TeamInviteRecord[]>(
+    'SELECT * FROM team_invites WHERE code = ? AND expires_at > ? AND used_at IS NULL',
+    [code, Date.now()],
+  )
+  return results[0] || null
+}
+
+export async function getTeamInviteByToken(
+  token: string,
+): Promise<TeamInviteRecord | null> {
+  const database = await getDb()
+  const results = await database.select<TeamInviteRecord[]>(
+    'SELECT * FROM team_invites WHERE link_token = ? AND expires_at > ? AND used_at IS NULL',
+    [token, Date.now()],
+  )
+  return results[0] || null
+}
+
+export async function markInviteUsed(id: string): Promise<void> {
+  const database = await getDb()
+  await database.execute('UPDATE team_invites SET used_at = ? WHERE id = ?', [
+    Date.now(),
+    id,
+  ])
+}
+
+// Team Audit Logs
+export interface TeamAuditLogRecord {
+  id: string
+  team_id: string
+  user_id: string
+  user_name?: string
+  host_name?: string
+  action: string
+  details?: string
+  created_at: number
+}
+
+export async function getTeamAuditLogs(
+  teamId: string,
+  limit = 100,
+): Promise<TeamAuditLogRecord[]> {
+  const database = await getDb()
+  return database.select<TeamAuditLogRecord[]>(
+    'SELECT * FROM team_audit_logs WHERE team_id = ? ORDER BY created_at DESC LIMIT ?',
+    [teamId, limit],
+  )
+}
+
+export async function addTeamAuditLog(log: TeamAuditLogRecord): Promise<void> {
+  const database = await getDb()
+  await database.execute(
+    `INSERT INTO team_audit_logs (id, team_id, user_id, user_name, host_name, action, details, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      log.id,
+      log.team_id,
+      log.user_id,
+      log.user_name || null,
+      log.host_name || null,
+      log.action,
+      log.details || null,
+      log.created_at,
+    ],
+  )
+}
+
+// Sync Queue
+export interface SyncQueueRecord {
+  id: string
+  user_id: string
+  team_id: string
+  type: string
+  resource: string
+  resource_id: string
+  data?: string
+  status: string
+  retry_count: number
+  error?: string
+  created_at: number
+  synced_at?: number
+}
+
+export async function getPendingSyncItems(): Promise<SyncQueueRecord[]> {
+  const database = await getDb()
+  return database.select<SyncQueueRecord[]>(
+    "SELECT * FROM sync_queue WHERE status = 'pending' ORDER BY created_at",
+  )
+}
+
+export async function addSyncQueueItem(item: SyncQueueRecord): Promise<void> {
+  const database = await getDb()
+  await database.execute(
+    `INSERT INTO sync_queue (id, user_id, team_id, type, resource, resource_id, data, status, retry_count, error, created_at, synced_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      item.id,
+      item.user_id,
+      item.team_id,
+      item.type,
+      item.resource,
+      item.resource_id,
+      item.data || null,
+      item.status,
+      item.retry_count,
+      item.error || null,
+      item.created_at,
+      item.synced_at || null,
+    ],
+  )
+}
+
+export async function updateSyncQueueItem(
+  id: string,
+  updates: Partial<{
+    status: string
+    retry_count: number
+    error: string
+    synced_at: number
+  }>,
+): Promise<void> {
+  const database = await getDb()
+  const fields: string[] = []
+  const values: unknown[] = []
+
+  if (updates.status !== undefined) {
+    fields.push('status = ?')
+    values.push(updates.status)
+  }
+  if (updates.retry_count !== undefined) {
+    fields.push('retry_count = ?')
+    values.push(updates.retry_count)
+  }
+  if (updates.error !== undefined) {
+    fields.push('error = ?')
+    values.push(updates.error)
+  }
+  if (updates.synced_at !== undefined) {
+    fields.push('synced_at = ?')
+    values.push(updates.synced_at)
+  }
+
+  if (fields.length > 0) {
+    values.push(id)
+    await database.execute(
+      `UPDATE sync_queue SET ${fields.join(', ')} WHERE id = ?`,
+      values,
+    )
   }
 }

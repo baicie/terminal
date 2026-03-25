@@ -11,3 +11,4 @@ target
 .gitignore
 .gitignore
 .agents
+team-server/dist
