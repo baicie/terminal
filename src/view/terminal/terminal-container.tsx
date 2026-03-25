@@ -21,6 +21,8 @@ const TerminalContainer: React.FC<TerminalContainerProps> = observer(
     const app = useInjectable(AppStore)
     const hostStore = useInjectable(HostStore)
 
+    console.log('[TerminalContainer] props.tabId:', tabId, '| app.tabs:', app.tabs.map(t => t.id))
+
     const containerRef = useRef<HTMLDivElement>(null)
     const termRef = useRef<TerminalComponent | null>(null)
     const fitAddonRef = useRef<FitAddon | null>(null)

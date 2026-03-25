@@ -331,8 +331,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(
               type: 'remote',
               hostId: host.id,
             })
-            app.setActiveTab(newTab.id)
-            navigate('/terminal')
+            navigate(`/terminal?tab=${newTab.id}`)
             break
           case 'snippet':
             const snippet = result.data as SnippetRecord
@@ -382,8 +381,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = observer(
             switch (action.action) {
               case 'new-local':
                 const localTab = app.addTab({ label: 'Local', type: 'local' })
-                app.setActiveTab(localTab.id)
-                navigate('/terminal')
+                navigate(`/terminal?tab=${localTab.id}`)
                 break
               case 'new-host':
                 // Trigger host dialog

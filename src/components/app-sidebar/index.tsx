@@ -67,9 +67,11 @@ const navItems: NavItem[] = [
 interface NavItemProps {
   item: NavItem
   iconOnly?: boolean
+  className?: string
+  style?: React.CSSProperties
 }
 
-const NavItem: React.FC<NavItemProps> = ({ item, iconOnly }) => {
+const NavItem: React.FC<NavItemProps> = ({ item, iconOnly, className, style }) => {
   const { t } = useTranslation('demo')
   const location = useLocation()
   const hostsPaths = ['/', '/hosts']
@@ -87,7 +89,9 @@ const NavItem: React.FC<NavItemProps> = ({ item, iconOnly }) => {
         'text-muted-foreground hover:text-foreground hover:bg-secondary/60',
         pathActive && 'bg-secondary/80 text-foreground shadow-sm',
         iconOnly && 'justify-center px-2',
+        className,
       )}
+      style={style}
     >
       {item.icon}
       {!iconOnly && (
@@ -164,8 +168,14 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
 
       {/* Navigation Items */}
       <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
-        {navItems.map(item => (
-          <NavItem key={item.path} item={item} iconOnly={iconOnly} />
+        {navItems.map((item, index) => (
+          <NavItem
+            key={item.path}
+            item={item}
+            iconOnly={iconOnly}
+            className="slide-in-from-left fade-in"
+            style={{ animationDelay: `${index * 40}ms` }}
+          />
         ))}
       </nav>
 

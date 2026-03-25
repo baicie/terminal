@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Outlet, useNavigate } from 'react-router-dom'
+import { Outlet, useNavigate, useSearchParams } from 'react-router-dom'
 import { useInjectable } from '@/hooks/use-di'
 import { AppStore } from '@/store/app'
 import SplitPane from '@/components/split-pane'
@@ -10,6 +10,7 @@ import { CustomTitleBar } from '@/components/custom-title-bar'
 import { cn } from '@/lib/utils'
 import type { TitleBarStyle } from '@/components/custom-title-bar'
 import SettingsDialog from '@/components/settings-dialog'
+import { observer } from 'mobx-react-lite'
 
 const SIDEBAR_WIDTH_KEY = 'terminal.sidebar.width'
 const SIDEBAR_MIN = 64 // 图标模式宽度
@@ -28,6 +29,12 @@ function readSidebarWidth(): number {
   }
 }
 
+// 读取 URL query 参数中的 tabId
+const useTerminalTabId = (): string | null => {
+  const [searchParams] = useSearchParams()
+  return searchParams.get('tab')
+}
+
 const TerminalContent: React.FC<{ tabId: string }> = ({ tabId }) => {
   const app = useInjectable(AppStore)
   const tab = app.tabs.find(t => t.id === tabId)
@@ -37,37 +44,40 @@ const TerminalContent: React.FC<{ tabId: string }> = ({ tabId }) => {
   return <TerminalContainer key={tabId} tabId={tabId} />
 }
 
+// 根据 URL tab 参数渲染终端内容
+const TerminalByUrl: React.FC = observer(() => {
+  const app = useInjectable(AppStore)
+  const tabId = useTerminalTabId()
+
+  if (!tabId) return null
+
+  const tab = app.tabs.find(t => t.id === tabId)
+  if (!tab) return null
+
+  const splitGroup = tab.splitId
+    ? app.splitGroups.find(g => g.id === tab.splitId)
+    : null
+
+  if (splitGroup && tab.splitChildren && tab.splitChildren.length > 0) {
+    const children = splitGroup.tabs.map(id => (
+      <TerminalContent key={id} tabId={id} />
+    ))
+    return <SplitPane group={splitGroup}>{children}</SplitPane>
+  }
+
+  return <TerminalContent tabId={tabId} />
+})
+
 const MainLayoutInner: React.FC<{
   sidebarOpen: boolean
   onToggleSidebar: () => void
   sidebarWidth: number
   onSidebarWidthChange: (w: number) => void
-}> = ({ sidebarOpen, onToggleSidebar, sidebarWidth, onSidebarWidthChange }) => {
-  const app = useInjectable(AppStore)
+}> = observer(({ sidebarOpen, onToggleSidebar, sidebarWidth, onSidebarWidthChange }) => {
   const [resizing, setResizing] = useState(false)
   const dragRef = useRef({ startX: 0, startWidth: SIDEBAR_DEFAULT })
   const lastWidthRef = useRef(sidebarWidth)
   lastWidthRef.current = sidebarWidth
-
-  const renderTabContent = (tabId: string) => {
-    console.log('[DEBUG] renderTabContent called with tabId:', tabId)
-    const tab = app.tabs.find(t => t.id === tabId)
-    console.log('[DEBUG] found tab:', tab)
-    if (!tab) return null
-
-    const splitGroup = tab.splitId
-      ? app.splitGroups.find(g => g.id === tab.splitId)
-      : null
-
-    if (splitGroup && tab.splitChildren && tab.splitChildren.length > 0) {
-      const children = splitGroup.tabs.map(id => (
-        <TerminalContent key={id} tabId={id} />
-      ))
-      return <SplitPane group={splitGroup}>{children}</SplitPane>
-    }
-
-    return <TerminalContent tabId={tabId} />
-  }
 
   const onResizeStart = useCallback(
     (e: React.MouseEvent) => {
@@ -153,12 +163,13 @@ const MainLayoutInner: React.FC<{
         )}
 
         <main className="flex-1 min-w-0 overflow-hidden bg-background">
-          {app.activeTabId ? renderTabContent(app.activeTabId) : <Outlet />}
+          <TerminalByUrl />
+          <Outlet />
         </main>
       </div>
     </div>
   )
-}
+})
 
 const MainLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -206,8 +217,8 @@ const MainLayout: React.FC = () => {
       label: 'Local',
       type: 'local',
     })
-    app.setActiveTab(newTab.id)
-    navigate('/terminal')
+    console.log('[handleNewLocalTerminal] newTab:', newTab, '| app.tabs:', app.tabs.map(t => t.id))
+    navigate(`/terminal?tab=${newTab.id}`)
   }
 
   return (

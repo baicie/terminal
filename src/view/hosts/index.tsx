@@ -62,21 +62,15 @@ const HostsView: React.FC = observer(() => {
       type: 'remote',
       hostId: host.id,
     })
-    app.setActiveTab(newTab.id)
-    navigate('/terminal')
+    navigate(`/terminal?tab=${newTab.id}`)
   }
 
   const handleNewLocalTerminal = () => {
-    console.log('[DEBUG] handleNewLocalTerminal called')
-    console.log('[DEBUG] app before addTab:', app.tabs.length, 'tabs')
     const newTab = app.addTab({
       label: 'Local',
       type: 'local',
     })
-    console.log('[DEBUG] newTab:', newTab)
-    console.log('[DEBUG] app after addTab:', app.tabs.length, 'tabs')
-    app.setActiveTab(newTab.id)
-    navigate('/terminal')
+    navigate(`/terminal?tab=${newTab.id}`)
   }
 
   const handleConnectBarSubmit = () => {
@@ -114,8 +108,7 @@ const HostsView: React.FC = observer(() => {
         baudRate: config.baudRate,
       },
     })
-    app.setActiveTab(newTab.id)
-    navigate('/terminal')
+    navigate(`/terminal?tab=${newTab.id}`)
     setSerialDialogOpen(false)
   }
 
@@ -128,7 +121,7 @@ const HostsView: React.FC = observer(() => {
   return (
     <ViewContainer>
       {/* 参考图：主区顶部为连接条 + 工具条 */}
-      <div className="shrink-0 border-b border-border/60 bg-background px-4 py-3 flex flex-col gap-3">
+      <div className="shrink-0 border-b border-border/60 bg-background px-4 py-3 flex flex-col gap-3 slide-in-from-top fade-in">
         <div className="flex items-stretch gap-2 w-full">
           <Input
             placeholder={t('hosts.search')}
@@ -259,6 +252,7 @@ const HostsView: React.FC = observer(() => {
         <ViewHeader
           title={t('hosts.title')}
           description={t('hosts.count', { count: filteredHosts.length })}
+          className="slide-in-from-bottom fade-in"
         />
 
         {filteredHosts.length === 0 ? (
@@ -281,11 +275,12 @@ const HostsView: React.FC = observer(() => {
           />
         ) : gridView ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredHosts.map(host => (
+            {filteredHosts.map((host, index) => (
               <button
                 type="button"
                 key={host.id}
-                className="text-left p-4 rounded-xl border border-border/50 bg-card/80 hover:bg-accent/40 cursor-pointer transition-colors shadow-sm"
+                className="text-left p-4 rounded-xl border border-border/50 bg-card/80 hover:bg-accent/40 hover:border-primary/30 hover:shadow-md hover:shadow-primary/5 cursor-pointer transition-all duration-200 hover-lift slide-in-from-bottom fade-in"
+                style={{ animationDelay: `${Math.min(index, 8) * 50}ms` }}
                 onClick={() => handleConnect(host)}
               >
                 <div className="flex items-start gap-3">
@@ -315,11 +310,12 @@ const HostsView: React.FC = observer(() => {
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            {filteredHosts.map(host => (
+            {filteredHosts.map((host, index) => (
               <button
                 type="button"
                 key={host.id}
-                className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-card/80 hover:bg-accent/40 text-left transition-colors"
+                className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-card/80 hover:bg-accent/40 hover:border-primary/30 hover:shadow-sm text-left transition-all duration-200 hover-lift slide-in-from-right fade-in"
+                style={{ animationDelay: `${Math.min(index, 8) * 50}ms` }}
                 onClick={() => handleConnect(host)}
               >
                 <Server

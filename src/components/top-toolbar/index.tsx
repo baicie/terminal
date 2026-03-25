@@ -79,8 +79,7 @@ const TopToolbar: React.FC<{
       label: 'Local',
       type: 'local',
     })
-    app.setActiveTab(newTab.id)
-    navigate('/terminal')
+    navigate(`/terminal?tab=${newTab.id}`)
   }
 
   const handleConnectSerial = (config: SerialConfig, sessionId: string) => {
@@ -94,8 +93,7 @@ const TopToolbar: React.FC<{
         baudRate: config.baudRate,
       },
     })
-    app.setActiveTab(newTab.id)
-    navigate('/terminal')
+    navigate(`/terminal?tab=${newTab.id}`)
   }
 
   return (

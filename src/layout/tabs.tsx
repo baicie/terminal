@@ -60,7 +60,7 @@ const MenuTabs: React.FC = () => {
 
   const handleTabClick = (tabId: string) => {
     app.setActiveTab(tabId)
-    navigate('/terminal')
+    navigate(`/terminal?tab=${tabId}`)
   }
 
   const handleSplitHorizontal = () => {
@@ -106,6 +106,11 @@ const MenuTabs: React.FC = () => {
               ? 'bg-secondary/80 text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40',
           )}
+          style={
+            activeTabId === tab.id
+              ? { animation: 'fade-in 200ms ease-out both, slide-in-from-top 200ms ease-out both' }
+              : undefined
+          }
           onClick={() => handleTabClick(tab.id)}
           onContextMenu={e => handleContextMenu(e, tab.id)}
         >

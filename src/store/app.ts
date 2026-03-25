@@ -209,3 +209,7 @@ export class AppStore {
     return this.splitGroups.find(g => g.id === tab.splitId)
   }
 }
+
+// 全局单例，所有模块直接引用此实例
+export const appStore = new AppStore()
+window.__APP_STORE__ = appStore

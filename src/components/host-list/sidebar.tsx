@@ -157,8 +157,7 @@ const Sidebar: React.FC<HostListProps> = ({ onConnect }) => {
         type: 'remote',
         hostId: host.id,
       })
-      app.setActiveTab(newTab.id)
-      navigate('/terminal')
+      navigate(`/terminal?tab=${newTab.id}`)
     },
     [app, navigate, onConnect],
   )
@@ -168,8 +167,7 @@ const Sidebar: React.FC<HostListProps> = ({ onConnect }) => {
       label: 'Local',
       type: 'local',
     })
-    app.setActiveTab(newTab.id)
-    navigate('/terminal')
+    navigate(`/terminal?tab=${newTab.id}`)
   }
 
   React.useEffect(() => {

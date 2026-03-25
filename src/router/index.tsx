@@ -3,17 +3,16 @@ import type { RouteObject } from 'react-router-dom'
 import { createBrowserRouter } from 'react-router-dom'
 import Layout from '../layout'
 import { TerminalContainer } from '@/view/terminal/terminal-container'
+import { useSearchParams } from 'react-router-dom'
+import { observer } from 'mobx-react-lite'
+import { useInjectable } from '@/hooks/use-di'
+import { AppStore } from '@/store/host'
 
 const Loading = () => (
   <div className="flex items-center justify-center h-full">
     <div className="text-muted-foreground">Loading...</div>
   </div>
 )
-
-const TerminalRouteWrapper: React.FC = () => {
-  // TerminalContainer reads activeTabId from AppStore; empty string means no tab
-  return <TerminalContainer tabId="" />
-}
 
 // Lazy wrapper: accepts any React component and returns a Suspense-wrapped lazy component
 function makeLazyRoute(
@@ -25,6 +24,19 @@ function makeLazyRoute(
       <LazyComponent />
     </Suspense>
   )
+}
+
+/**
+ * TerminalRoute — 从 URL query 参数 `?tab=xxx` 读取 tabId，
+ * 直接渲染 TerminalContainer，无需复杂的 MobX 同步。
+ */
+const TerminalRoute: React.FC = () => {
+  const [searchParams] = useSearchParams()
+  const tabId = searchParams.get('tab') ?? ''
+
+  console.log('[TerminalRoute] render', { tabId, fullUrl: window.location.href })
+
+  return <TerminalContainer tabId={tabId} />
 }
 
 export const routes: RouteObject[] = [
@@ -42,10 +54,10 @@ export const routes: RouteObject[] = [
         path: 'hosts',
         element: makeLazyRoute(() => import('../view/hosts')),
       },
-      // Terminal - Active terminal sessions (managed by Layout via AppStore tabs)
+      // Terminal - 从 URL query 读取 tabId
       {
         path: 'terminal',
-        element: <TerminalRouteWrapper />,
+        element: <TerminalRoute />,
       },
       // SFTP - File transfer
       {

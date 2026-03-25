@@ -40,7 +40,7 @@ pub async fn local_shell(
     };
 
     // Create command (mut needed for Windows cwd setting)
-    let mut cmd = CommandBuilder::new(&shell);
+    let cmd = CommandBuilder::new(&shell);
 
     // Set working directory for Windows
     #[cfg(windows)]
@@ -75,11 +75,13 @@ pub async fn local_shell(
     // Keep line discipline intact (ICANON etc.) so backspace and line editing work.
     #[cfg(unix)]
     {
+        use rustix::fd::BorrowedFd;
         use rustix::termios::{tcgetattr, tcsetattr, OptionalActions};
         use rustix::termios::LocalModes;
 
         if let Some(raw_fd) = pty_pair.master.as_raw_fd() {
-            if let Ok(mut t) = tcgetattr(raw_fd) {
+            let fd = unsafe { BorrowedFd::borrow_raw(raw_fd) };
+            if let Ok(mut t) = tcgetattr(fd) {
                 t.local_modes = t
                     .local_modes
                     .difference(
@@ -89,7 +91,7 @@ pub async fn local_shell(
                             | LocalModes::ECHOCTL
                             | LocalModes::ECHOKE,
                     );
-                let _ = tcsetattr(raw_fd, OptionalActions::Now, &t);
+                let _ = tcsetattr(fd, OptionalActions::Now, &t);
             }
         }
     }

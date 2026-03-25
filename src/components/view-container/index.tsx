@@ -13,7 +13,7 @@ const ViewContainer: React.FC<ViewContainerProps> & {
   EmptyState: typeof EmptyState
 } = ({ children, className }) => {
   return (
-    <div className={cn('h-full flex flex-col bg-background', className)}>
+    <div className="h-full flex flex-col bg-background fade-in">
       {children}
     </div>
   )
@@ -98,14 +98,18 @@ const EmptyState: React.FC<EmptyStateProps> = ({
         className,
       )}
     >
-      {icon && <div className="mb-4 text-muted-foreground/50">{icon}</div>}
-      <h3 className="text-base font-medium text-foreground mb-1">{title}</h3>
+      {icon && (
+        <div className="mb-4 text-muted-foreground/50 animate-float">{icon}</div>
+      )}
+      <h3 className="text-base font-medium text-foreground mb-1 slide-in-from-bottom fade-in" style={{ animationDelay: '50ms' }}>
+        {title}
+      </h3>
       {description && (
-        <p className="text-sm text-muted-foreground max-w-sm mb-4">
+        <p className="text-sm text-muted-foreground max-w-sm mb-4 slide-in-from-bottom fade-in" style={{ animationDelay: '150ms' }}>
           {description}
         </p>
       )}
-      {action}
+      {action && <div className="slide-in-from-bottom fade-in" style={{ animationDelay: '250ms' }}>{action}</div>}
     </div>
   )
 }
