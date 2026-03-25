@@ -10,7 +10,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   AlertDialog,
@@ -102,13 +102,8 @@ const SnippetManager: React.FC<SnippetDialogProps> = ({
   const isTeamEnabled = useIsTeamEnabled()
   const currentTeam = useCurrentTeam()
   const shareSnippet = useTeamStore(s => s.shareSnippet)
-  const loadSharedSnippets = useTeamStore(s => s.loadSharedSnippets)
 
-  useEffect(() => {
-    loadData()
-  }, [selectedPackage])
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const snippetData = await getSnippets(selectedPackage || undefined)
       setSnippets(snippetData)
@@ -117,7 +112,11 @@ const SnippetManager: React.FC<SnippetDialogProps> = ({
     } catch (error) {
       console.error('Failed to load snippets:', error)
     }
-  }
+  }, [selectedPackage])
+
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
 
   const handleCreate = async () => {
     if (!formData.name || !formData.script) return

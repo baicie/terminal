@@ -33,11 +33,6 @@ const TerminalRoute: React.FC = () => {
   const [searchParams] = useSearchParams()
   const tabId = searchParams.get('tab') ?? ''
 
-  console.log('[TerminalRoute] render', {
-    tabId,
-    fullUrl: window.location.href,
-  })
-
   return <TerminalContainer tabId={tabId} />
 }
 

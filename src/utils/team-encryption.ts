@@ -35,7 +35,7 @@ async function deriveKey(
   return await crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt,
+      salt: salt.buffer as ArrayBuffer,
       iterations: 100000, // OWASP recommended minimum
       hash: 'SHA-256',
     },
@@ -93,13 +93,13 @@ export async function decryptWithPassword(
   const ciphertext = base64ToArrayBuffer(encrypted.ciphertext)
 
   // Derive key from password
-  const key = await deriveKey(password, salt)
+  const key = await deriveKey(password, new Uint8Array(salt))
 
   // Decrypt with AES-GCM
   const decrypted = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: new Uint8Array(iv) },
     key,
-    ciphertext,
+    ciphertext as ArrayBuffer,
   )
 
   const decoder = new TextDecoder()
@@ -120,8 +120,8 @@ export function isEncryptedData(value: unknown): value is EncryptedData {
 }
 
 // Helper functions
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer)
+function arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer)
   let binary = ''
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i])
@@ -135,7 +135,7 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i)
   }
-  return bytes.buffer
+  return bytes.buffer as ArrayBuffer
 }
 
 /**

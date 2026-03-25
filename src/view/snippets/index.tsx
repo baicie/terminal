@@ -33,9 +33,9 @@ const SnippetsView: React.FC = () => {
         <SnippetManager
           open={snippetManagerOpen}
           onClose={() => setSnippetManagerOpen(false)}
-          onExecute={script => {
-            console.log('Execute snippet:', script)
-          }}
+          onExecute={_script => {
+          // script execution handled by parent
+        }}
         />
       </ViewContent>
     </ViewContainer>

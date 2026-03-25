@@ -9,7 +9,6 @@ import {
   Server,
 } from 'lucide-react'
 import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -31,7 +30,6 @@ interface TeamServerConfigProps {
 }
 
 export function TeamServerConfig({ onClose }: TeamServerConfigProps) {
-  const { t } = useTranslation('demo')
   const teamStore = useTeamStore()
   const { settings } = teamStore
 

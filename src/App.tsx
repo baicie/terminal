@@ -5,7 +5,7 @@ import { I18nextProvider, useTranslation } from 'react-i18next'
 import { RouterProvider } from 'react-router-dom'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import locales, { i18nCore } from './locales'
+import locales from './locales'
 import { router } from './router'
 import { useAppStore } from './store/app'
 import { useTeamStore } from './store/team'
@@ -108,10 +108,10 @@ export default function App() {
   }, [theme])
 
   useEffect(() => {
-    if (language && i18nCore.language !== language) {
-      void i18nCore.changeLanguage(language)
+    if (language && i18n.language !== language) {
+      void i18n.changeLanguage(language)
     }
-  }, [language])
+  }, [language, i18n])
 
   return (
     <TooltipProvider>

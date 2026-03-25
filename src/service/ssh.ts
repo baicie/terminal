@@ -2,7 +2,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import type { Host, PortForwardConfig } from '@/types'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { addCommandHistory, addConnectionLog } from '@/service/database'
+import { addCommandHistory, addConnectionLog, updateConnectionLog } from '@/service/database'
 
 export interface SSHConnectionResult {
   success: boolean
@@ -142,12 +142,14 @@ export class SSHService {
     if (logInfo) {
       const endTime = Date.now()
       const durationSeconds = Math.round((endTime - logInfo.startTime) / 1000)
-      await import('@/service/database').then(({ updateConnectionLog }) => {
-        updateConnectionLog(logInfo.logId, {
+      try {
+        await updateConnectionLog(logInfo.logId, {
           ended_at: endTime,
           duration_seconds: durationSeconds,
         })
-      })
+      } catch (error) {
+        console.error('[SSH] Failed to update connection log:', error)
+      }
       activeConnectionLogs.delete(sessionId)
     }
   }

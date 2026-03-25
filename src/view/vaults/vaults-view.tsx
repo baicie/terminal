@@ -13,7 +13,7 @@ import {
   Trash2,
   Unlock,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -35,30 +35,7 @@ const VaultsView: React.FC = () => {
   const [showEntryValue, setShowEntryValue] = useState(false)
   const [creating, setCreating] = useState(false)
 
-  useEffect(() => {
-    checkVaultStatus()
-  }, [])
-
-  const checkVaultStatus = async () => {
-    setVaultState('loading')
-    try {
-      const exists = await vaultService.exists()
-      if (!exists) {
-        setVaultState('not_created')
-      } else {
-        const unlocked = await vaultService.isUnlocked()
-        setVaultState(unlocked ? 'unlocked' : 'locked')
-        if (unlocked) {
-          loadEntries()
-        }
-      }
-    } catch (err) {
-      console.error('Failed to check vault status:', err)
-      setVaultState('not_created')
-    }
-  }
-
-  const loadEntries = async () => {
+  const loadEntries = useCallback(async () => {
     try {
       const keys = await vaultService.list()
       const loadedEntries: VaultEntry[] = []
@@ -74,7 +51,30 @@ const VaultsView: React.FC = () => {
     } catch (err) {
       console.error('Failed to load entries:', err)
     }
-  }
+  }, [])
+
+  const checkVaultStatus = useCallback(async () => {
+    setVaultState('loading')
+    try {
+      const exists = await vaultService.exists()
+      if (!exists) {
+        setVaultState('not_created')
+      } else {
+        const unlocked = await vaultService.isUnlocked()
+        setVaultState(unlocked ? 'unlocked' : 'locked')
+        if (unlocked) {
+          void loadEntries()
+        }
+      }
+    } catch (err) {
+      console.error('Failed to check vault status:', err)
+      setVaultState('not_created')
+    }
+  }, [loadEntries])
+
+  useEffect(() => {
+    void checkVaultStatus()
+  }, [checkVaultStatus])
 
   const handleCreate = async () => {
     if (!password) {

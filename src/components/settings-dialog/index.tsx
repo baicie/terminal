@@ -50,6 +50,7 @@ import {
 import { exportDataToFile, previewImportData } from '@/service/sync'
 import { useAppStore } from '@/store/app'
 import { useIsTeamEnabled } from '@/store/team'
+import { TeamServerConfig } from './team-server-config'
 
 interface SettingsDialogProps {
   open: boolean

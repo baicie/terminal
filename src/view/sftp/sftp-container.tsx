@@ -114,7 +114,7 @@ const FilePane: React.FC<FilePaneProps> = ({
       if (a.is_directory !== b.is_directory) {
         return a.is_directory ? -1 : 1
       }
-      let cmp = 0
+      let cmp: number
       if (sortBy === 'name') {
         cmp = a.name.localeCompare(b.name)
       } else if (sortBy === 'size') {
@@ -578,11 +578,8 @@ const SftpContainer: React.FC = () => {
   const loadLocalDir = useCallback(async (path: string) => {
     setLocalLoading(true)
     try {
-      // @ts-ignore - DirectoryHandle API
-      if ((window as any).showDirectoryPicker) {
-        // @ts-ignore
+      if (window.showDirectoryPicker) {
         if (window.__localDirHandle) {
-          // @ts-ignore
           const dirHandle = window.__localDirHandle
           const entries: FileItem[] = []
           for await (const [name, handle] of dirHandle.entries()) {
@@ -612,10 +609,11 @@ const SftpContainer: React.FC = () => {
   // Handle folder picker
   const handlePickLocalFolder = useCallback(async () => {
     try {
-      // @ts-ignore
-      window.__localDirHandle = await window.showDirectoryPicker()
-      void loadLocalDir('/')
-    } catch (e) {
+      if (window.showDirectoryPicker) {
+        window.__localDirHandle = await window.showDirectoryPicker()
+        void loadLocalDir('/')
+      }
+    } catch {
       // User cancelled
     }
   }, [loadLocalDir])

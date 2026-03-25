@@ -104,7 +104,6 @@ export async function exportTeamPackage(options?: {
   try {
     const userProfile = await getUserProfile()
     const userId = userProfile?.id || ''
-    const userName = userProfile?.name || ''
 
     // Collect data based on options
     const hosts = options?.includeHosts
@@ -403,7 +402,7 @@ export async function exportDataToFile(): Promise<string | null> {
 // Import data from a JSON file
 export async function importDataFromFile(
   content: string,
-  mergeMode: 'replace' | 'merge' = 'merge',
+  _mergeMode: 'replace' | 'merge' = 'merge',
 ): Promise<void> {
   try {
     const data = JSON.parse(content) as ExportData
@@ -414,14 +413,8 @@ export async function importDataFromFile(
     }
 
     // TODO: Implement actual import logic
-    // For now, just log what would be imported
-    console.log('Would import:', {
-      hosts: data.hosts.length,
-      groups: data.groups.length,
-      snippets: data.snippets.length,
-      snippetPackages: data.snippetPackages.length,
-      mergeMode,
-    })
+    // For now, this is a placeholder
+    void data
 
     // This is a placeholder for the actual import implementation
     // In a real implementation, we would:

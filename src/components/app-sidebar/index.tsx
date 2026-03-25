@@ -21,14 +21,14 @@ import {
 import { cn } from '@/lib/utils'
 import { useIsTeamEnabled } from '@/store/team'
 
-interface NavItem {
+interface NavItemConfig {
   path: string
   labelKey: string
   icon: React.ReactNode
 }
 
 interface NavItemProps {
-  item: NavItem
+  item: NavItemConfig
   iconOnly?: boolean
   className?: string
   style?: React.CSSProperties
@@ -103,7 +103,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
   const isTeamEnabled = useIsTeamEnabled()
 
   // Build navigation items based on team mode
-  const navItems: NavItem[] = [
+  const navItems: NavItemConfig[] = [
     {
       path: '/hosts',
       labelKey: 'nav.hosts',

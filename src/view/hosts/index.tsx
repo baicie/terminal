@@ -71,7 +71,6 @@ const HostsView: React.FC = () => {
   const sharedSnippets = useTeamStore(s => s.sharedSnippets)
   const loadSharedHosts = useTeamStore(s => s.loadSharedHosts)
   const loadSharedSnippets = useTeamStore(s => s.loadSharedSnippets)
-  const loadHosts = useHostStore(s => s.loadHosts)
 
   // Dialog states
   const [hostDialogOpen, setHostDialogOpen] = useState(false)
@@ -94,7 +93,7 @@ const HostsView: React.FC = () => {
       void loadSharedHosts(currentTeam.id)
       void loadSharedSnippets(currentTeam.id)
     }
-  }, [isTeamEnabled, currentTeam])
+  }, [isTeamEnabled, currentTeam, hostStore, loadSharedHosts, loadSharedSnippets])
 
   const handleImportSharedSnippet = async (
     sharedSnippet: (typeof sharedSnippets)[0],
@@ -162,6 +161,7 @@ const HostsView: React.FC = () => {
       groupId: hostData.group_id as string | undefined,
       isFavorite: Boolean(hostData.is_favorite),
       color: hostData.color as string | undefined,
+      portForwards: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
@@ -208,7 +208,7 @@ const HostsView: React.FC = () => {
       setDecryptDialogOpen(false)
       setDecryptPassword('')
       setDecryptingHost(null)
-    } catch (error) {
+    } catch {
       toast.error(t('teams.decryptFailed'))
     }
   }
@@ -460,8 +460,8 @@ const HostsView: React.FC = () => {
                                 )}
                               </div>
                               <div className="text-xs text-muted-foreground truncate">
-                                {hostData.username}@{hostData.hostname}:
-                                {hostData.port || 22}
+                                {(hostData.username as string)}@{(hostData.hostname as string)}:
+                                {(hostData.port as number) || 22}
                               </div>
                               <div className="flex items-center gap-2 mt-1">
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary">

@@ -224,6 +224,9 @@ interface TeamState {
   sync: () => Promise<void>
   setSyncing: (isSyncing: boolean) => void
 
+  // User profile actions
+  updateUserProfile: (id: string, updates: { name: string }) => Promise<void>
+
   // Cloud mode specific actions
   cloudCreateTeam: (name: string) => Promise<Team | null>
   cloudLoadTeams: () => Promise<void>
@@ -259,7 +262,7 @@ function toTeam(record: TeamRecord): Team {
     id: record.id,
     name: record.name,
     ownerId: record.owner_id,
-    mode: record.mode,
+    mode: record.mode as 'local' | 'cloud',
     endpoint: record.endpoint,
     apiToken: record.api_token,
     autoSync: record.auto_sync === 1,
@@ -275,7 +278,7 @@ function toTeamMember(record: TeamMemberRecord): TeamMember {
     userId: record.user_id,
     userName: record.user_name,
     userEmail: record.user_email,
-    role: record.role,
+    role: record.role as 'admin' | 'member',
     joinedAt: record.joined_at,
   }
 }
@@ -286,7 +289,7 @@ function toSharedHost(record: TeamSharedHostRecord): SharedHost {
     teamId: record.team_id,
     hostData: JSON.parse(record.host_data),
     sharedBy: record.shared_by,
-    permission: record.permission,
+    permission: record.permission as 'readonly' | 'readwrite',
     createdAt: record.created_at,
   }
 }
@@ -297,7 +300,7 @@ function toSharedSnippet(record: TeamSharedSnippetRecord): SharedSnippet {
     teamId: record.team_id,
     snippetData: JSON.parse(record.snippet_data),
     sharedBy: record.shared_by,
-    permission: record.permission,
+    permission: record.permission as 'readonly' | 'readwrite',
     createdAt: record.created_at,
   }
 }
@@ -306,11 +309,11 @@ function toTeamInvite(record: TeamInviteRecord): TeamInvite {
   return {
     id: record.id,
     teamId: record.team_id,
-    type: record.type,
+    type: record.type as 'link' | 'code' | 'email',
     code: record.code,
     linkToken: record.link_token,
     email: record.email,
-    role: record.role,
+    role: record.role as 'admin' | 'member',
     createdBy: record.created_by,
     expiresAt: record.expires_at,
     usedAt: record.used_at,
@@ -402,6 +405,18 @@ export const useTeamStore = create<TeamState>((set, get) => ({
     }
     set({ userProfile: toUserProfile(profile) })
     return profile.id
+  },
+
+  // Update user profile
+  async updateUserProfile(id: string, updates: { name: string }) {
+    const now = Date.now()
+    await import('@/service/database').then(
+      ({ updateUserProfile: dbUpdate }) => dbUpdate(id, { name: updates.name, updated_at: now }),
+    )
+    const profile = get().userProfile
+    if (profile && profile.id === id) {
+      set({ userProfile: { ...profile, name: updates.name, updatedAt: now } })
+    }
   },
 
   // Get settings from database
@@ -839,7 +854,7 @@ export const useTeamStore = create<TeamState>((set, get) => ({
 
     try {
       // 1. Get changes from server since lastSyncAt
-      const since = get().lastSyncAt
+      const since = get().lastSyncAt ?? undefined
       const changesResponse = await teamApi.getChanges(since)
 
       if (changesResponse.error) {

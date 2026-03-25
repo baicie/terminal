@@ -27,11 +27,6 @@ import { terminalEmitter } from '@/service/terminal-emitter'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
 
-interface CommandPaletteProps {
-  open: boolean
-  onClose: () => void
-}
-
 interface SearchResult {
   id: string
   type: 'host' | 'snippet' | 'history' | 'action'
@@ -260,6 +255,91 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onClose }) => {
     performSearch()
   }, [query, activeTab, performSearch])
 
+  // Handle selection
+  const handleSelect = useCallback(
+    (result: SearchResult) => {
+      switch (result.type) {
+        case 'host': {
+          const host = result.data as Host
+          const newTab = app.addTab({
+            label: host.name,
+            type: 'remote',
+            hostId: host.id,
+          })
+          navigate(`/terminal?tab=${newTab.id}`)
+          break
+        }
+        case 'snippet': {
+          const snippet = result.data as SnippetRecord
+          let script = snippet.script
+          const variables = snippet.variables
+            ? (JSON.parse(snippet.variables) as Array<{
+                name: string
+                defaultValue?: string
+              }>)
+            : []
+          script = script.replace(/\$\{([^}]+)\}/g, (_, varName) => {
+            const variable = variables.find(v => v.name === varName)
+            return (
+              window.prompt(
+                `Enter value for ${varName}:`,
+                variable?.defaultValue || '',
+              ) || ''
+            )
+          })
+          script = script.replace(/\$([A-Z_]\w*)/gi, (_, varName) => {
+            const variable = variables.find(v => v.name === varName)
+            if (variable) {
+              return (
+                window.prompt(
+                  `Enter value for ${varName}:`,
+                  variable?.defaultValue || '',
+                ) || ''
+              )
+            }
+            return ''
+          })
+          terminalEmitter.writeCommand(script)
+          toast.success(`Executing: ${snippet.name}`)
+          break
+        }
+        case 'history': {
+          const historyRecord = result.data as CommandHistoryRecord
+          terminalEmitter.writeCommand(historyRecord.command)
+          break
+        }
+        case 'action': {
+          const action = result.data as { action: string }
+          switch (action.action) {
+            case 'new-local': {
+              const localTab = app.addTab({ label: 'Local', type: 'local' })
+              navigate(`/terminal?tab=${localTab.id}`)
+              break
+            }
+            case 'new-host':
+              break
+            case 'toggle-sidebar':
+              app.toggleSidebar()
+              break
+            case 'split-horizontal':
+              if (app.activeTabId) {
+                app.splitTab(app.activeTabId, 'horizontal')
+              }
+              break
+            case 'split-vertical':
+              if (app.activeTabId) {
+                app.splitTab(app.activeTabId, 'vertical')
+              }
+              break
+          }
+          break
+        }
+      }
+      onClose()
+    },
+    [app, onClose, navigate],
+  )
+
   // Keyboard navigation
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -299,7 +379,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onClose }) => {
           break
       }
     },
-    [results, selectedIndex, onClose],
+    [results, selectedIndex, onClose, activeTab, handleSelect],
   )
 
   // Scroll selected item into view
@@ -313,90 +393,6 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onClose }) => {
       }
     }
   }, [selectedIndex])
-
-  // Handle selection
-  const handleSelect = useCallback(
-    (result: SearchResult) => {
-      switch (result.type) {
-        case 'host':
-          const host = result.data as Host
-          const newTab = app.addTab({
-            label: host.name,
-            type: 'remote',
-            hostId: host.id,
-          })
-          navigate(`/terminal?tab=${newTab.id}`)
-          break
-        case 'snippet':
-          const snippet = result.data as SnippetRecord
-          // Parse and execute snippet with variables
-          let script = snippet.script
-          // Parse variables from JSON string
-          const variables = snippet.variables
-            ? (JSON.parse(snippet.variables) as Array<{
-                name: string
-                defaultValue?: string
-              }>)
-            : []
-          // Simple variable substitution: ${VAR} or $VAR
-          script = script.replace(/\$\{([^}]+)\}/g, (_, varName) => {
-            const variable = variables.find(v => v.name === varName)
-            return (
-              window.prompt(
-                `Enter value for ${varName}:`,
-                variable?.defaultValue || '',
-              ) || ''
-            )
-          })
-          script = script.replace(/\$([A-Z_]\w*)/gi, (_, varName) => {
-            const variable = variables.find(v => v.name === varName)
-            if (variable) {
-              return (
-                window.prompt(
-                  `Enter value for ${varName}:`,
-                  variable?.defaultValue || '',
-                ) || ''
-              )
-            }
-            return ''
-          })
-          terminalEmitter.writeCommand(script)
-          toast.success(`Executing: ${snippet.name}`)
-          break
-        case 'history':
-          const historyRecord = result.data as CommandHistoryRecord
-          terminalEmitter.writeCommand(historyRecord.command)
-          break
-        case 'action':
-          const action = result.data as { action: string }
-          switch (action.action) {
-            case 'new-local':
-              const localTab = app.addTab({ label: 'Local', type: 'local' })
-              navigate(`/terminal?tab=${localTab.id}`)
-              break
-            case 'new-host':
-              // Trigger host dialog
-              break
-            case 'toggle-sidebar':
-              app.toggleSidebar()
-              break
-            case 'split-horizontal':
-              if (app.activeTabId) {
-                app.splitTab(app.activeTabId, 'horizontal')
-              }
-              break
-            case 'split-vertical':
-              if (app.activeTabId) {
-                app.splitTab(app.activeTabId, 'vertical')
-              }
-              break
-          }
-          break
-      }
-      onClose()
-    },
-    [app, onClose],
-  )
 
   const tabs = [
     {

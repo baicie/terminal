@@ -189,6 +189,14 @@ const MainLayout: React.FC = () => {
     setTitleBarStyle(detect())
   }, [])
 
+  const handleNewLocalTerminal = useCallback(() => {
+    const newTab = addTab({
+      label: 'Local',
+      type: 'local',
+    })
+    navigate(`/terminal?tab=${newTab.id}`)
+  }, [addTab, navigate])
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 't') {
@@ -203,15 +211,7 @@ const MainLayout: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
-
-  const handleNewLocalTerminal = () => {
-    const newTab = addTab({
-      label: 'Local',
-      type: 'local',
-    })
-    navigate(`/terminal?tab=${newTab.id}`)
-  }
+  }, [handleNewLocalTerminal])
 
   return (
     <>

@@ -258,11 +258,10 @@ const JoinTeamDialog: React.FC<JoinTeamDialogProps> = ({
     members: number
   } | null>(null)
   const [content, setContent] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const enableTeamMode = useTeamStore(state => state.enableTeamMode)
-  const createTeam = useTeamStore(state => state.createTeam)
 
   useEffect(() => {
     if (!open) {
@@ -993,7 +992,7 @@ const TeamsView: React.FC = () => {
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [profileDialogOpen, setProfileDialogOpen] = useState(false)
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null)
+  const [, setSelectedTeamId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
 
   const isTeamEnabled = useIsTeamEnabled()
@@ -1017,17 +1016,17 @@ const TeamsView: React.FC = () => {
   const userProfile = useTeamStore(state => state.userProfile)
 
   useEffect(() => {
-    loadTeams()
-  }, [])
+    void loadTeams()
+  }, [loadTeams])
 
   useEffect(() => {
     if (currentTeam) {
-      loadMembers(currentTeam.id)
-      loadSharedHosts(currentTeam.id)
-      loadSharedSnippets(currentTeam.id)
-      loadAuditLogs(currentTeam.id)
+      void loadMembers(currentTeam.id)
+      void loadSharedHosts(currentTeam.id)
+      void loadSharedSnippets(currentTeam.id)
+      void loadAuditLogs(currentTeam.id)
     }
-  }, [currentTeam?.id])
+  }, [currentTeam, loadMembers, loadSharedHosts, loadSharedSnippets, loadAuditLogs])
 
   const filteredTeams = teams.filter(team =>
     team.name.toLowerCase().includes(search.toLowerCase()),
@@ -1035,7 +1034,6 @@ const TeamsView: React.FC = () => {
 
   const handleTeamSelect = (teamId: string) => {
     selectTeam(teamId)
-    setSelectedTeamId(teamId)
   }
 
   const formatTime = (timestamp: number) => {

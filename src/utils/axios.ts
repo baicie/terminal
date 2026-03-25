@@ -1,14 +1,14 @@
 import type { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios'
 import axios from 'axios'
 import cookies from 'js-cookie'
-import { useLogger } from '../hooks/use-logger'
+import { getLogger } from '../hooks/use-logger'
 
 /**
  * @description Log and display errors
  * @param {Error} error Error object
  */
 function handleError(res: AxiosResponse<any, any>) {
-  const logger = useLogger()
+  const logger = getLogger()
   console.error(res.data.msg)
   logger.error(res.data.msg)
 }

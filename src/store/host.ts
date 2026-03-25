@@ -1,10 +1,7 @@
 import type { AuthType, Group, Host } from '@/types'
 import { create } from 'zustand'
 import { executeQuery, select } from '@/service/database'
-
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-}
+import { generateId } from '@/utils/id'
 
 interface HostRow {
   id: string

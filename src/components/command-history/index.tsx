@@ -1,6 +1,6 @@
 import type { CommandHistoryRecord } from '@/service/database'
 import { Clock, Search, Terminal, Trash2, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,13 +41,7 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    if (open) {
-      loadHistory()
-    }
-  }, [open, searchQuery])
-
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     setLoading(true)
     try {
       let records: CommandHistoryRecord[]
@@ -62,7 +56,13 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
     } finally {
       setLoading(false)
     }
-  }
+  }, [searchQuery])
+
+  useEffect(() => {
+    if (open) {
+      void loadHistory()
+    }
+  }, [open, loadHistory])
 
   const handleClearHistory = async () => {
     try {

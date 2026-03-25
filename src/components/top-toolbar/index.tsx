@@ -199,8 +199,8 @@ const TopToolbar: React.FC<{
       <CommandHistoryDialog
         open={commandHistoryOpen}
         onClose={() => setCommandHistoryOpen(false)}
-        onSelect={command => {
-          console.log('Execute command from history:', command)
+        onSelect={_command => {
+          // command execution handled by parent
         }}
       />
     </>

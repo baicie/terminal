@@ -18,13 +18,6 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
   const tabs = useAppStore(s => s.tabs)
   const hosts = useHostStore(s => s.hosts)
 
-  console.log(
-    '[TerminalContainer] props.tabId:',
-    tabId,
-    '| app.tabs:',
-    tabs.map(t => t.id),
-  )
-
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<TerminalComponent | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)

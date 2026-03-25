@@ -10,10 +10,7 @@ import {
   saveWorkspaceLayout,
   updateWorkspace,
 } from '@/service/database'
-
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-}
+import { generateId } from '@/utils/id'
 
 function rowToWorkspace(row: WorkspaceRecord): Workspace {
   return {
