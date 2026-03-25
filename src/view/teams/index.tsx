@@ -1,53 +1,46 @@
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import { readTextFile } from '@tauri-apps/plugin-fs'
 import {
-  ViewContainer,
-  ViewToolbar,
-  ViewContent,
-} from '@/components/view-container'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  Plus,
-  Users,
-  Link2,
-  Copy,
-  Mail,
-  Shield,
-  RefreshCw,
-  Trash2,
-  Settings,
-  LogOut,
-  Check,
-  MoreHorizontal,
-  Download,
-  Upload,
-  Package,
-  LogIn,
-  User,
   Clock,
+  Copy,
+  Download,
+  Link2,
+  LogIn,
+  Mail,
+  MoreHorizontal,
+  Package,
+  Plus,
+  RefreshCw,
+  Settings,
+  Shield,
+  Trash2,
+  Upload,
+  User,
+  Users,
   Wifi,
   WifiOff,
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  useTeamStore,
-  useTeams,
-  useCurrentTeam,
-  useIsTeamEnabled,
-  useUserId,
-} from '@/store/team'
-import {
-  exportTeamPackage,
-  previewTeamPackage,
-  importTeamPackage,
-} from '@/service/sync'
+import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -55,9 +48,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
   TableBody,
@@ -66,16 +56,24 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { toast } from 'sonner'
-import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
-import { readTextFile } from '@tauri-apps/plugin-fs'
+  ViewContainer,
+  ViewContent,
+  ViewToolbar,
+} from '@/components/view-container'
+import {
+  exportTeamPackage,
+  importTeamPackage,
+  previewTeamPackage,
+} from '@/service/sync'
+import {
+  useCurrentTeam,
+  useIsTeamEnabled,
+  useTeams,
+  useTeamStore,
+  useUserId,
+} from '@/store/team'
 
 // ============================================================================
 // Create Team Dialog
@@ -167,7 +165,9 @@ const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
                 }`}
                 onClick={() => setMode('local')}
               >
-                <Package className={`mt-0.5 ${mode === 'local' ? 'text-primary' : 'text-muted-foreground'}`} />
+                <Package
+                  className={`mt-0.5 ${mode === 'local' ? 'text-primary' : 'text-muted-foreground'}`}
+                />
                 <div className="text-left">
                   <div className="font-medium">{t('teams.localMode')}</div>
                   <div className="text-sm text-muted-foreground">
@@ -184,7 +184,9 @@ const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
                 }`}
                 onClick={() => setMode('cloud')}
               >
-                <Wifi className={`mt-0.5 ${mode === 'cloud' ? 'text-primary' : 'text-muted-foreground'}`} />
+                <Wifi
+                  className={`mt-0.5 ${mode === 'cloud' ? 'text-primary' : 'text-muted-foreground'}`}
+                />
                 <div className="text-left">
                   <div className="font-medium">{t('teams.cloudMode')}</div>
                   <div className="text-sm text-muted-foreground">
@@ -358,16 +360,16 @@ const JoinTeamDialog: React.FC<JoinTeamDialogProps> = ({
               </div>
               <div className="text-sm text-muted-foreground space-y-1">
                 {previewData.hosts > 0 && (
-                  <div>• {previewData.hosts} host(s)</div>
+                  <div>•{previewData.hosts} host(s)</div>
                 )}
                 {previewData.groups > 0 && (
-                  <div>• {previewData.groups} group(s)</div>
+                  <div>•{previewData.groups} group(s)</div>
                 )}
                 {previewData.snippets > 0 && (
-                  <div>• {previewData.snippets} snippet(s)</div>
+                  <div>•{previewData.snippets} snippet(s)</div>
                 )}
                 {previewData.members > 0 && (
-                  <div>• {previewData.members} member(s)</div>
+                  <div>•{previewData.members} member(s)</div>
                 )}
               </div>
             </div>
@@ -515,10 +517,7 @@ const InviteDialog: React.FC<InviteDialogProps> = ({
                     readOnly
                     className="font-mono text-sm"
                   />
-                  <Button
-                    size="icon"
-                    onClick={() => handleCopy(inviteLink)}
-                  >
+                  <Button size="icon" onClick={() => handleCopy(inviteLink)}>
                     <Copy className="size-4" />
                   </Button>
                 </div>
@@ -691,7 +690,9 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
                 className="size-4"
               />
               <div>
-                <div className="text-sm font-medium">{t('teams.includeHosts')}</div>
+                <div className="text-sm font-medium">
+                  {t('teams.includeHosts')}
+                </div>
                 <div className="text-xs text-muted-foreground">
                   {t('teams.includeHostsDesc')}
                 </div>
@@ -706,7 +707,9 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
                 className="size-4"
               />
               <div>
-                <div className="text-sm font-medium">{t('teams.includeSnippets')}</div>
+                <div className="text-sm font-medium">
+                  {t('teams.includeSnippets')}
+                </div>
                 <div className="text-xs text-muted-foreground">
                   {t('teams.includeSnippetsDesc')}
                 </div>
@@ -721,7 +724,9 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
                 className="size-4"
               />
               <div>
-                <div className="text-sm font-medium">{t('teams.includeMembers')}</div>
+                <div className="text-sm font-medium">
+                  {t('teams.includeMembers')}
+                </div>
                 <div className="text-xs text-muted-foreground">
                   {t('teams.includeMembersDesc')}
                 </div>
@@ -1256,7 +1261,10 @@ const TeamsView: React.FC = () => {
                       setSettingsDialogOpen(true)
                     }}
                   >
-                    <Settings className="size-4 mr-1" data-icon="inline-start" />
+                    <Settings
+                      className="size-4 mr-1"
+                      data-icon="inline-start"
+                    />
                     {t('common.settings')}
                   </Button>
                 </div>
@@ -1300,9 +1308,7 @@ const TeamsView: React.FC = () => {
                                 </span>
                               )}
                             </TableCell>
-                            <TableCell>
-                              {member.userEmail || '—'}
-                            </TableCell>
+                            <TableCell>{member.userEmail || '—'}</TableCell>
                             <TableCell>
                               <Badge className={getRoleBadgeColor(member.role)}>
                                 {t(`teams.${member.role}`)}
@@ -1312,22 +1318,21 @@ const TeamsView: React.FC = () => {
                               {!isCurrentUserMember(member.userId) ? (
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                    >
+                                    <Button variant="ghost" size="icon">
                                       <MoreHorizontal className="size-4" />
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
                                     <DropdownMenuItem
                                       onClick={() => {
-                                        useTeamStore.getState().updateMemberRole(
-                                          member.id,
-                                          member.role === 'admin'
-                                            ? 'member'
-                                            : 'admin',
-                                        )
+                                        useTeamStore
+                                          .getState()
+                                          .updateMemberRole(
+                                            member.id,
+                                            member.role === 'admin'
+                                              ? 'member'
+                                              : 'admin',
+                                          )
                                       }}
                                     >
                                       <Shield className="size-4 mr-2" />
@@ -1338,9 +1343,9 @@ const TeamsView: React.FC = () => {
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
                                       onClick={() => {
-                                        useTeamStore.getState().removeMember(
-                                          member.id,
-                                        )
+                                        useTeamStore
+                                          .getState()
+                                          .removeMember(member.id)
                                       }}
                                       className="text-destructive"
                                     >
@@ -1404,7 +1409,9 @@ const TeamsView: React.FC = () => {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => {
-                                    useTeamStore.getState().unshareHost(share.id)
+                                    useTeamStore
+                                      .getState()
+                                      .unshareHost(share.id)
                                   }}
                                 >
                                   <Trash2 className="size-4" />
@@ -1458,9 +1465,9 @@ const TeamsView: React.FC = () => {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => {
-                                    useTeamStore.getState().unshareSnippet(
-                                      share.id,
-                                    )
+                                    useTeamStore
+                                      .getState()
+                                      .unshareSnippet(share.id)
                                   }}
                                 >
                                   <Trash2 className="size-4" />
@@ -1540,10 +1547,7 @@ const TeamsView: React.FC = () => {
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
       />
-      <JoinTeamDialog
-        open={joinDialogOpen}
-        onOpenChange={setJoinDialogOpen}
-      />
+      <JoinTeamDialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen} />
       {currentTeam && (
         <>
           <InviteDialog

@@ -13,9 +13,7 @@ const ViewContainer: React.FC<ViewContainerProps> & {
   EmptyState: typeof EmptyState
 } = ({ children }) => {
   return (
-    <div className="h-full flex flex-col bg-background fade-in">
-      {children}
-    </div>
+    <div className="h-full flex flex-col bg-background fade-in">{children}</div>
   )
 }
 
@@ -99,17 +97,32 @@ const EmptyState: React.FC<EmptyStateProps> = ({
       )}
     >
       {icon && (
-        <div className="mb-4 text-muted-foreground/50 animate-float">{icon}</div>
+        <div className="mb-4 text-muted-foreground/50 animate-float">
+          {icon}
+        </div>
       )}
-      <h3 className="text-base font-medium text-foreground mb-1 slide-in-from-bottom fade-in" style={{ animationDelay: '50ms' }}>
+      <h3
+        className="text-base font-medium text-foreground mb-1 slide-in-from-bottom fade-in"
+        style={{ animationDelay: '50ms' }}
+      >
         {title}
       </h3>
       {description && (
-        <p className="text-sm text-muted-foreground max-w-sm mb-4 slide-in-from-bottom fade-in" style={{ animationDelay: '150ms' }}>
+        <p
+          className="text-sm text-muted-foreground max-w-sm mb-4 slide-in-from-bottom fade-in"
+          style={{ animationDelay: '150ms' }}
+        >
           {description}
         </p>
       )}
-      {action && <div className="slide-in-from-bottom fade-in" style={{ animationDelay: '250ms' }}>{action}</div>}
+      {action && (
+        <div
+          className="slide-in-from-bottom fade-in"
+          style={{ animationDelay: '250ms' }}
+        >
+          {action}
+        </div>
+      )}
     </div>
   )
 }
@@ -120,5 +133,5 @@ ViewContainer.Content = ViewContent
 ViewContainer.Header = ViewHeader
 ViewContainer.EmptyState = EmptyState
 
-export { ViewContainer, ViewToolbar, ViewContent, ViewHeader, EmptyState }
+export { EmptyState, ViewContainer, ViewContent, ViewHeader, ViewToolbar }
 export default ViewContainer

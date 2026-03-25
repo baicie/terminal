@@ -73,7 +73,7 @@ async function main() {
 }
 
 main()
-  .catch((e) => {
+  .catch(e => {
     console.error('❌ Seed failed:', e)
     process.exit(1)
   })

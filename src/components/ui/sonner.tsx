@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import type { ToasterProps } from 'sonner'
 import {
   CircleCheckIcon,
   InfoIcon,
@@ -6,11 +6,8 @@ import {
   OctagonXIcon,
   TriangleAlertIcon,
 } from 'lucide-react'
-import {
-  Toaster as Sonner,
-  toast as sonnerToast,
-  type ToasterProps,
-} from 'sonner'
+import { useEffect, useState } from 'react'
+import { Toaster as Sonner, toast as sonnerToast } from 'sonner'
 
 /** 与 document.documentElement 的 `dark` class 同步（不使用 next-themes Provider） */
 function useDocumentDarkTheme(): ToasterProps['theme'] {
@@ -35,7 +32,7 @@ function useDocumentDarkTheme(): ToasterProps['theme'] {
   return theme
 }
 
-const Toaster = ({ ...props }: ToasterProps) => {
+function Toaster({ ...props }: ToasterProps) {
   const theme = useDocumentDarkTheme()
 
   return (

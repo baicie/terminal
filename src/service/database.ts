@@ -1,7 +1,7 @@
-import Database from '@tauri-apps/plugin-sql'
-import { isTauri } from '@tauri-apps/api/core'
-import type { Host } from '@/types'
 import type { SSHOutput } from '@/service/ssh'
+import type { Host } from '@/types'
+import { isTauri } from '@tauri-apps/api/core'
+import Database from '@tauri-apps/plugin-sql'
 
 // Re-export types for convenience
 export type { Host, SSHOutput }
@@ -357,12 +357,24 @@ async function initSchema() {
     )
   `)
 
-  await database.execute(`CREATE INDEX IF NOT EXISTS idx_team_members_team_id ON team_members(team_id)`)
-  await database.execute(`CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id)`)
-  await database.execute(`CREATE INDEX IF NOT EXISTS idx_team_shared_hosts_team_id ON team_shared_hosts(team_id)`)
-  await database.execute(`CREATE INDEX IF NOT EXISTS idx_team_shared_snippets_team_id ON team_shared_snippets(team_id)`)
-  await database.execute(`CREATE INDEX IF NOT EXISTS idx_team_invites_team_id ON team_invites(team_id)`)
-  await database.execute(`CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status)`)
+  await database.execute(
+    `CREATE INDEX IF NOT EXISTS idx_team_members_team_id ON team_members(team_id)`,
+  )
+  await database.execute(
+    `CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id)`,
+  )
+  await database.execute(
+    `CREATE INDEX IF NOT EXISTS idx_team_shared_hosts_team_id ON team_shared_hosts(team_id)`,
+  )
+  await database.execute(
+    `CREATE INDEX IF NOT EXISTS idx_team_shared_snippets_team_id ON team_shared_snippets(team_id)`,
+  )
+  await database.execute(
+    `CREATE INDEX IF NOT EXISTS idx_team_invites_team_id ON team_invites(team_id)`,
+  )
+  await database.execute(
+    `CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status)`,
+  )
 }
 
 export async function executeQuery(sql: string, params: unknown[] = []) {
@@ -1478,7 +1490,9 @@ export interface TeamMemberRecord {
   joined_at: number
 }
 
-export async function getTeamMembers(teamId: string): Promise<TeamMemberRecord[]> {
+export async function getTeamMembers(
+  teamId: string,
+): Promise<TeamMemberRecord[]> {
   const database = await getDb()
   return database.select<TeamMemberRecord[]>(
     'SELECT * FROM team_members WHERE team_id = ? ORDER BY joined_at',
@@ -1531,7 +1545,9 @@ export interface TeamSharedHostRecord {
   created_at: number
 }
 
-export async function getSharedHosts(teamId: string): Promise<TeamSharedHostRecord[]> {
+export async function getSharedHosts(
+  teamId: string,
+): Promise<TeamSharedHostRecord[]> {
   const database = await getDb()
   return database.select<TeamSharedHostRecord[]>(
     'SELECT * FROM team_shared_hosts WHERE team_id = ? ORDER BY created_at DESC',
@@ -1618,7 +1634,9 @@ export interface TeamInviteRecord {
   created_at: number
 }
 
-export async function getTeamInvites(teamId: string): Promise<TeamInviteRecord[]> {
+export async function getTeamInvites(
+  teamId: string,
+): Promise<TeamInviteRecord[]> {
   const database = await getDb()
   return database.select<TeamInviteRecord[]>(
     'SELECT * FROM team_invites WHERE team_id = ? ORDER BY created_at DESC',
@@ -1626,7 +1644,9 @@ export async function getTeamInvites(teamId: string): Promise<TeamInviteRecord[]
   )
 }
 
-export async function createTeamInvite(invite: TeamInviteRecord): Promise<void> {
+export async function createTeamInvite(
+  invite: TeamInviteRecord,
+): Promise<void> {
   const database = await getDb()
   await database.execute(
     `INSERT INTO team_invites (id, team_id, type, code, link_token, email, role, created_by, expires_at, used_at, created_at)

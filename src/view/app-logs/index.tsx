@@ -1,6 +1,11 @@
-import { ViewContainer, ViewToolbar, ViewContent, ViewHeader } from "@/components/view-container";
-import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  ViewContainer,
+  ViewContent,
+  ViewHeader,
+  ViewToolbar,
+} from '@/components/view-container'
 
 const LogsView: React.FC = () => {
   return (
@@ -21,7 +26,7 @@ const LogsView: React.FC = () => {
         </div>
       </ViewContent>
     </ViewContainer>
-  );
-};
+  )
+}
 
-export default LogsView;
+export default LogsView

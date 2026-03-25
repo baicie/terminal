@@ -1,8 +1,8 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common'
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
-import { AuditService } from './audit.service'
-import { ApiKeyGuard } from '../auth/api-key.guard'
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { ApiKeyAuth } from '../auth/api-key-auth.decorator'
+import { ApiKeyGuard } from '../auth/api-key.guard'
+import { AuditService } from './audit.service'
 
 @ApiTags('audit')
 @ApiBearerAuth('API_KEY')
@@ -18,6 +18,10 @@ export class AuditController {
     @Query('limit') limit: string,
     @ApiKeyAuth() userId: string,
   ) {
-    return this.auditService.findAll(teamId, userId, limit ? parseInt(limit, 10) : 100)
+    return this.auditService.findAll(
+      teamId,
+      userId,
+      limit ? Number.parseInt(limit, 10) : 100,
+    )
   }
 }

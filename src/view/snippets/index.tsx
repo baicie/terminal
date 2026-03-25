@@ -1,14 +1,14 @@
-import {
-  ViewContainer,
-  ViewToolbar,
-  ViewContent,
-  ViewHeader,
-} from '@/components/view-container'
+import { Plus } from 'lucide-react'
+import { useState } from 'react'
+import SnippetManager from '@/components/snippet-manager'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Plus } from 'lucide-react'
-import SnippetManager from '@/components/snippet-manager'
-import { useState } from 'react'
+import {
+  ViewContainer,
+  ViewContent,
+  ViewHeader,
+  ViewToolbar,
+} from '@/components/view-container'
 
 const SnippetsView: React.FC = () => {
   const [snippetManagerOpen, setSnippetManagerOpen] = useState(false)

@@ -1,15 +1,17 @@
+import type { Host } from '@/types'
+import { AlertTriangle, Lock, Shield } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -17,17 +19,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Shield, Lock, AlertTriangle } from 'lucide-react'
-import { useTranslation } from 'react-i18next'
-import type { Host } from '@/types'
-import { encryptWithPassword, validatePasswordStrength } from '@/utils/team-encryption'
 import { toast } from '@/components/ui/sonner'
+import { Switch } from '@/components/ui/switch'
+import {
+  encryptWithPassword,
+  validatePasswordStrength,
+} from '@/utils/team-encryption'
 
 interface ShareHostDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   host: Host | null
-  onShare: (hostData: Record<string, unknown>, permission: 'readonly' | 'readwrite') => Promise<void>
+  onShare: (
+    hostData: Record<string, unknown>,
+    permission: 'readonly' | 'readwrite',
+  ) => Promise<void>
 }
 
 export function ShareHostDialog({
@@ -37,7 +43,9 @@ export function ShareHostDialog({
   onShare,
 }: ShareHostDialogProps) {
   const { t } = useTranslation('demo')
-  const [permission, setPermission] = useState<'readonly' | 'readwrite'>('readonly')
+  const [permission, setPermission] = useState<'readonly' | 'readwrite'>(
+    'readonly',
+  )
   const [includePassword, setIncludePassword] = useState(false)
   const [encryptPassword, setEncryptPassword] = useState(false)
   const [password, setPassword] = useState('')
@@ -94,7 +102,7 @@ export function ShareHostDialog({
 
       await onShare(hostData, permission)
       toast.success(t('teams.shareHost'))
-      
+
       // Reset form
       setPassword('')
       setConfirmPassword('')
@@ -185,7 +193,10 @@ export function ShareHostDialog({
               {/* Encrypt Password */}
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label htmlFor="encrypt-password" className="cursor-pointer flex items-center gap-1">
+                  <Label
+                    htmlFor="encrypt-password"
+                    className="cursor-pointer flex items-center gap-1"
+                  >
                     <Lock className="size-3" />
                     {t('teams.encryptPassword')}
                   </Label>
@@ -211,7 +222,9 @@ export function ShareHostDialog({
 
                   <div className="space-y-2">
                     <div className="space-y-1">
-                      <Label htmlFor="share-password">{t('teams.sharePassword')}</Label>
+                      <Label htmlFor="share-password">
+                        {t('teams.sharePassword')}
+                      </Label>
                       <Input
                         id="share-password"
                         type="password"
@@ -220,12 +233,16 @@ export function ShareHostDialog({
                         placeholder={t('teams.enterSharePassword')}
                       />
                       {passwordStrength && !passwordStrength.valid && (
-                        <p className="text-xs text-amber-500">{passwordStrength.message}</p>
+                        <p className="text-xs text-amber-500">
+                          {passwordStrength.message}
+                        </p>
                       )}
                     </div>
 
                     <div className="space-y-1">
-                      <Label htmlFor="confirm-password">{t('teams.confirmPassword')}</Label>
+                      <Label htmlFor="confirm-password">
+                        {t('teams.confirmPassword')}
+                      </Label>
                       <Input
                         id="confirm-password"
                         type="password"
@@ -234,7 +251,9 @@ export function ShareHostDialog({
                         placeholder={t('teams.confirmPassword')}
                       />
                       {confirmPassword && !passwordsMatch && (
-                        <p className="text-xs text-destructive">{t('teams.passwordsNotMatch')}</p>
+                        <p className="text-xs text-destructive">
+                          {t('teams.passwordsNotMatch')}
+                        </p>
                       )}
                     </div>
                   </div>

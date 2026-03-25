@@ -1,12 +1,12 @@
+import type { Tab } from '@/types'
+import { Columns, Rows, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
-import { X, Columns, Rows } from 'lucide-react'
-import { useState, useRef, useEffect } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/app'
-import type { Tab } from '@/types'
 
 /** 顶栏会话标签：仅展示已打开的终端/串口等标签 */
 const MenuTabs: React.FC = () => {
@@ -91,7 +91,10 @@ const MenuTabs: React.FC = () => {
           )}
           style={
             activeTabId === tab.id
-              ? { animation: 'fade-in 200ms ease-out both, slide-in-from-top 200ms ease-out both' }
+              ? {
+                  animation:
+                    'fade-in 200ms ease-out both, slide-in-from-top 200ms ease-out both',
+                }
               : undefined
           }
           onClick={() => handleTabClick(tab.id)}

@@ -1,6 +1,6 @@
+import type { SplitGroup, Tab } from '@/types'
 import { create } from 'zustand'
 import { getAppSettings as getAppSettingsFromDb } from '@/service/database'
-import type { Tab, SplitGroup } from '@/types'
 
 type NewTab = Omit<Tab, 'id'>
 
@@ -111,7 +111,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updatedTabs = tabs.map(t => {
       if (t.id === id) {
         if (!sourceTab.splitId) {
-          return { ...t, splitMode: direction, splitId, splitChildren: [newTabId] }
+          return {
+            ...t,
+            splitMode: direction,
+            splitId,
+            splitChildren: [newTabId],
+          }
         }
         return { ...t, splitChildren: [...(t.splitChildren || []), newTabId] }
       }
@@ -125,7 +130,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         )
       : [
           ...get().splitGroups,
-          { id: splitId, mode: direction, tabs: [id, newTabId], sizes: [50, 50] },
+          {
+            id: splitId,
+            mode: direction,
+            tabs: [id, newTabId],
+            sizes: [50, 50],
+          },
         ]
 
     set({

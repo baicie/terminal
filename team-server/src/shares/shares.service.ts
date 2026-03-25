@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
 
 @Injectable()
@@ -13,7 +17,15 @@ export class SharesService {
     })
   }
 
-  async create(teamId: string, userId: string, data: { type: 'HOST' | 'HOST_GROUP' | 'SNIPPET_PACKAGE'; data: any; permission: 'READONLY' | 'READWRITE' }) {
+  async create(
+    teamId: string,
+    userId: string,
+    data: {
+      type: 'HOST' | 'HOST_GROUP' | 'SNIPPET_PACKAGE'
+      data: any
+      permission: 'READONLY' | 'READWRITE'
+    },
+  ) {
     await this.checkMembership(teamId, userId)
     return this.prisma.share.create({
       data: {
@@ -35,7 +47,12 @@ export class SharesService {
     return share
   }
 
-  async update(teamId: string, shareId: string, userId: string, permission: 'READONLY' | 'READWRITE') {
+  async update(
+    teamId: string,
+    shareId: string,
+    userId: string,
+    permission: 'READONLY' | 'READWRITE',
+  ) {
     await this.checkMembership(teamId, userId)
     const share = await this.prisma.share.findFirst({
       where: { id: shareId, teamId },

@@ -1,15 +1,17 @@
-import { Suspense, lazy, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { RouteObject } from 'react-router-dom'
-import { createBrowserRouter } from 'react-router-dom'
-import Layout from '../layout'
+import { lazy, Suspense } from 'react'
+import { createBrowserRouter, useSearchParams } from 'react-router-dom'
 import { TerminalContainer } from '@/view/terminal/terminal-container'
-import { useSearchParams } from 'react-router-dom'
+import Layout from '../layout'
 
-const Loading = () => (
-  <div className="flex items-center justify-center h-full">
-    <div className="text-muted-foreground">Loading...</div>
-  </div>
-)
+function Loading() {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-muted-foreground">Loading...</div>
+    </div>
+  )
+}
 
 // Lazy wrapper: accepts any React component and returns a Suspense-wrapped lazy component
 function makeLazyRoute(
@@ -31,7 +33,10 @@ const TerminalRoute: React.FC = () => {
   const [searchParams] = useSearchParams()
   const tabId = searchParams.get('tab') ?? ''
 
-  console.log('[TerminalRoute] render', { tabId, fullUrl: window.location.href })
+  console.log('[TerminalRoute] render', {
+    tabId,
+    fullUrl: window.location.href,
+  })
 
   return <TerminalContainer tabId={tabId} />
 }

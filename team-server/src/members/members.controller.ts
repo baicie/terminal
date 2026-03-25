@@ -1,8 +1,17 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common'
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
-import { MembersService } from './members.service'
-import { ApiKeyGuard } from '../auth/api-key.guard'
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  UseGuards,
+} from '@nestjs/common'
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { ApiKeyAuth } from '../auth/api-key-auth.decorator'
+import { ApiKeyGuard } from '../auth/api-key.guard'
+import { MembersService } from './members.service'
 
 @ApiTags('members')
 @ApiBearerAuth('API_KEY')
@@ -21,10 +30,23 @@ export class MembersController {
   @ApiOperation({ summary: 'Add a member to team' })
   async addMember(
     @Param('teamId') teamId: string,
-    @Body() body: { userId: string; userName?: string; userEmail?: string; role?: 'ADMIN' | 'MEMBER' },
+    @Body()
+    body: {
+      userId: string
+      userName?: string
+      userEmail?: string
+      role?: 'ADMIN' | 'MEMBER'
+    },
     @ApiKeyAuth() userId: string,
   ) {
-    return this.membersService.addMember(teamId, userId, body.userId, body.userName, body.userEmail, body.role)
+    return this.membersService.addMember(
+      teamId,
+      userId,
+      body.userId,
+      body.userName,
+      body.userEmail,
+      body.role,
+    )
   }
 
   @Put(':memberId')

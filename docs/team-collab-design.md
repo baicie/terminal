@@ -6,18 +6,18 @@
 
 ## 目录
 
-| 章节 | 内容 |
-|------|------|
-| [一、整体架构](#一整体架构) | 本地模式与云端模式概述 |
-| [二、数据格式设计](#二数据格式设计) | JSON 包格式与数据库表结构 |
-| [三、功能模块设计](#三功能模块设计) | 本地模式和云端模式功能 |
-| [四、API 设计](#四api-设计) | REST API 端点设计 |
-| [五、前端 UI 设计](#五前端-ui-设计) | 界面布局与交互 |
-| [六、用户模式区分设计](#六用户模式区分设计) | 普通用户与团队用户区分 |
-| [七、后端服务设计](#七后端服务设计) | NestJS 服务端实现 |
-| [八、实现计划](#八实现计划) | 开发阶段与任务分解 |
-| [九、优先级建议](#九优先级建议) | 任务优先级排序 |
-| [十、关键设计决策](#十关键设计决策) | 用户认证/邀请机制/权限/同步等 |
+| 章节                                        | 内容                          |
+| ------------------------------------------- | ----------------------------- |
+| [一、整体架构](#一整体架构)                 | 本地模式与云端模式概述        |
+| [二、数据格式设计](#二数据格式设计)         | JSON 包格式与数据库表结构     |
+| [三、功能模块设计](#三功能模块设计)         | 本地模式和云端模式功能        |
+| [四、API 设计](#四api-设计)                 | REST API 端点设计             |
+| [五、前端 UI 设计](#五前端-ui-设计)         | 界面布局与交互                |
+| [六、用户模式区分设计](#六用户模式区分设计) | 普通用户与团队用户区分        |
+| [七、后端服务设计](#七后端服务设计)         | NestJS 服务端实现             |
+| [八、实现计划](#八实现计划)                 | 开发阶段与任务分解            |
+| [九、优先级建议](#九优先级建议)             | 任务优先级排序                |
+| [十、关键设计决策](#十关键设计决策)         | 用户认证/邀请机制/权限/同步等 |
 
 ---
 
@@ -147,23 +147,23 @@ CREATE TABLE team_audit_logs (
 
 ### 3.1 本地模式功能
 
-| 功能 | 描述 |
-|------|------|
-| 导出团队包 | 将选中的主机/分组/Snippet 导出为 JSON 文件 |
+| 功能       | 描述                                           |
+| ---------- | ---------------------------------------------- |
+| 导出团队包 | 将选中的主机/分组/Snippet 导出为 JSON 文件     |
 | 导入团队包 | 导入 JSON 文件，支持合并策略（新建/覆盖/询问） |
-| 团队包预览 | 导入前预览包含的内容 |
+| 团队包预览 | 导入前预览包含的内容                           |
 
 ### 3.2 云端模式功能
 
-| 功能 | 描述 |
-|------|------|
-| 服务配置 | 设置服务端点（自部署 URL） |
-| 用户认证 | API Token 认证 |
-| 团队管理 | 创建/加入/退出团队 |
-| 成员管理 | 添加/移除成员，设置角色 |
+| 功能     | 描述                            |
+| -------- | ------------------------------- |
+| 服务配置 | 设置服务端点（自部署 URL）      |
+| 用户认证 | API Token 认证                  |
+| 团队管理 | 创建/加入/退出团队              |
+| 成员管理 | 添加/移除成员，设置角色         |
 | 共享管理 | 共享主机/分组/Snippet，设置权限 |
-| 实时同步 | 自动同步团队共享的配置 |
-| 审计日志 | 查看团队成员的连接记录 |
+| 实时同步 | 自动同步团队共享的配置          |
+| 审计日志 | 查看团队成员的连接记录          |
 
 ---
 
@@ -173,36 +173,36 @@ CREATE TABLE team_audit_logs (
 
 ```typescript
 interface CloudConfig {
-  endpoint: string;      // 服务端点，如 https://team.example.com
-  apiToken: string;      // API Token
-  autoSync: boolean;     // 是否自动同步
-  syncInterval: number;  // 同步间隔（秒）
+  endpoint: string // 服务端点，如 https://team.example.com
+  apiToken: string // API Token
+  autoSync: boolean // 是否自动同步
+  syncInterval: number // 同步间隔（秒）
 }
 ```
 
 ### 4.2 REST API 端点
 
-| 方法 | 端点 | 描述 |
-|------|------|------|
-| GET | `/api/v1/teams` | 获取我的团队列表 |
-| POST | `/api/v1/teams` | 创建团队 |
-| GET | `/api/v1/teams/:id` | 获取团队详情 |
-| PUT | `/api/v1/teams/:id` | 更新团队 |
-| DELETE | `/api/v1/teams/:id` | 删除团队 |
-| GET | `/api/v1/teams/:id/members` | 获取团队成员 |
-| POST | `/api/v1/teams/:id/members` | 添加成员 |
-| DELETE | `/api/v1/teams/:id/members/:userId` | 移除成员 |
-| GET | `/api/v1/teams/:id/shares` | 获取共享资源 |
-| POST | `/api/v1/teams/:id/shares` | 共享资源 |
-| DELETE | `/api/v1/teams/:id/shares/:shareId` | 取消共享 |
-| GET | `/api/v1/teams/:id/shares/:shareId` | 获取共享详情 |
-| GET | `/api/v1/teams/:id/audit` | 获取审计日志 |
-| POST | `/api/v1/teams/:id/invites` | 创建邀请 |
-| GET | `/api/v1/teams/:id/invites` | 获取邀请列表 |
-| DELETE | `/api/v1/teams/:id/invites/:inviteId` | 取消邀请 |
-| GET | `/api/v1/invites/:token` | 通过邀请链接加入 |
-| POST | `/api/v1/invites/join` | 通过邀请码或链接加入 |
-| POST | `/api/v1/sync` | 增量同步数据 |
+| 方法   | 端点                                  | 描述                 |
+| ------ | ------------------------------------- | -------------------- |
+| GET    | `/api/v1/teams`                       | 获取我的团队列表     |
+| POST   | `/api/v1/teams`                       | 创建团队             |
+| GET    | `/api/v1/teams/:id`                   | 获取团队详情         |
+| PUT    | `/api/v1/teams/:id`                   | 更新团队             |
+| DELETE | `/api/v1/teams/:id`                   | 删除团队             |
+| GET    | `/api/v1/teams/:id/members`           | 获取团队成员         |
+| POST   | `/api/v1/teams/:id/members`           | 添加成员             |
+| DELETE | `/api/v1/teams/:id/members/:userId`   | 移除成员             |
+| GET    | `/api/v1/teams/:id/shares`            | 获取共享资源         |
+| POST   | `/api/v1/teams/:id/shares`            | 共享资源             |
+| DELETE | `/api/v1/teams/:id/shares/:shareId`   | 取消共享             |
+| GET    | `/api/v1/teams/:id/shares/:shareId`   | 获取共享详情         |
+| GET    | `/api/v1/teams/:id/audit`             | 获取审计日志         |
+| POST   | `/api/v1/teams/:id/invites`           | 创建邀请             |
+| GET    | `/api/v1/teams/:id/invites`           | 获取邀请列表         |
+| DELETE | `/api/v1/teams/:id/invites/:inviteId` | 取消邀请             |
+| GET    | `/api/v1/invites/:token`              | 通过邀请链接加入     |
+| POST   | `/api/v1/invites/join`                | 通过邀请码或链接加入 |
+| POST   | `/api/v1/sync`                        | 增量同步数据         |
 
 ---
 
@@ -293,10 +293,10 @@ interface CloudConfig {
 
 ### 6.1 两种用户模式
 
-| 模式 | 说明 | 用户体验 |
-|------|------|----------|
-| **普通用户** | 不使用团队功能 | 简洁界面，无团队相关入口 |
-| **团队用户** | 启用团队功能 | 完整界面，显示 Teams 导航和团队设置 |
+| 模式         | 说明           | 用户体验                            |
+| ------------ | -------------- | ----------------------------------- |
+| **普通用户** | 不使用团队功能 | 简洁界面，无团队相关入口            |
+| **团队用户** | 启用团队功能   | 完整界面，显示 Teams 导航和团队设置 |
 
 ### 6.2 导航栏动态显示
 
@@ -335,12 +335,12 @@ interface CloudConfig {
 ```typescript
 // src/store/team.ts
 interface TeamSettings {
-  enabled: boolean;           // 是否启用团队功能
-  mode: 'local' | 'cloud';    // 本地模式 / 云端模式
-  endpoint?: string;          // 云端服务端点
-  apiToken?: string;          // API Token
-  autoSync: boolean;          // 自动同步
-  currentTeamId?: string;     // 当前团队 ID
+  enabled: boolean // 是否启用团队功能
+  mode: 'local' | 'cloud' // 本地模式 / 云端模式
+  endpoint?: string // 云端服务端点
+  apiToken?: string // API Token
+  autoSync: boolean // 自动同步
+  currentTeamId?: string // 当前团队 ID
 }
 
 class TeamStore {
@@ -348,20 +348,20 @@ class TeamStore {
     enabled: false,
     mode: 'local',
     autoSync: false,
-  };
+  }
 
-  @observable currentTeam: Team | null = null;
+  @observable currentTeam: Team | null = null
 
   @computed get isTeamEnabled(): boolean {
-    return this.settings.enabled;
+    return this.settings.enabled
   }
 
   @computed get isCloudMode(): boolean {
-    return this.settings.enabled && this.settings.mode === 'cloud';
+    return this.settings.enabled && this.settings.mode === 'cloud'
   }
 
   @action enableTeamMode(config: Partial<TeamSettings>) {
-    this.settings = { ...this.settings, ...config, enabled: true };
+    this.settings = { ...this.settings, ...config, enabled: true }
   }
 
   @action disableTeamMode() {
@@ -369,8 +369,8 @@ class TeamStore {
       enabled: false,
       mode: 'local',
       autoSync: false,
-    };
-    this.currentTeam = null;
+    }
+    this.currentTeam = null
   }
 }
 ```
@@ -489,14 +489,14 @@ INSERT INTO app_settings (key, value) VALUES
 
 ### 7.1 技术栈
 
-| 组件 | 技术 |
-|------|------|
+| 组件     | 技术                          |
+| -------- | ----------------------------- |
 | Web 框架 | NestJS (Node.js / TypeScript) |
-| ORM | Prisma |
-| 数据库 | PostgreSQL |
-| 认证 | JWT / API Token |
-| 部署 | Docker |
-| API 文档 | Swagger (OpenAPI) |
+| ORM      | Prisma                        |
+| 数据库   | PostgreSQL                    |
+| 认证     | JWT / API Token               |
+| 部署     | Docker                        |
+| API 文档 | Swagger (OpenAPI)             |
 
 ### 7.2 项目结构
 
@@ -706,7 +706,7 @@ services:
   team-server:
     build: .
     ports:
-      - "3000:3000"
+      - '3000:3000'
     environment:
       - DATABASE_URL=postgresql://user:pass@db:5432/team_db
       - JWT_SECRET=${JWT_SECRET}
@@ -726,7 +726,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d team_db"]
+      test: ['CMD-SHELL', 'pg_isready -U user -d team_db']
       interval: 5s
       timeout: 5s
       retries: 5
@@ -763,59 +763,59 @@ CMD ["node", "dist/main"]
 
 ### Phase 1：基础框架
 
-| 任务 | 描述 |
-|------|------|
-| 团队数据模型 | 定义 TypeScript 类型 |
-| 团队存储服务 | 本地 SQLite 存储 |
-| 用户模式区分 | 普通/团队用户导航区分 |
-| 团队协作视图 | 创建 TeamsView 页面组件 |
-| 用户 UUID 生成 | 首次启动生成本地 UUID |
+| 任务           | 描述                    |
+| -------------- | ----------------------- |
+| 团队数据模型   | 定义 TypeScript 类型    |
+| 团队存储服务   | 本地 SQLite 存储        |
+| 用户模式区分   | 普通/团队用户导航区分   |
+| 团队协作视图   | 创建 TeamsView 页面组件 |
+| 用户 UUID 生成 | 首次启动生成本地 UUID   |
 
 ### Phase 2：本地模式
 
-| 任务 | 描述 |
-|------|------|
-| 导出功能 | 导出团队包为 JSON |
+| 任务     | 描述                 |
+| -------- | -------------------- |
+| 导出功能 | 导出团队包为 JSON    |
 | 导入功能 | 导入 JSON 并处理合并 |
-| 预览功能 | 导入前预览内容 |
+| 预览功能 | 导入前预览内容       |
 
 ### Phase 3：云端模式
 
-| 任务 | 描述 |
-|------|------|
-| 服务配置 UI | 配置服务端点和 Token |
-| API 服务端 | NestJS 实现 REST API |
-| 邀请功能 | 三种邀请方式（链接/码/邮箱） |
-| 同步功能 | 增量同步 + 冲突处理 + 离线队列 |
-| 敏感数据加密 | 密码可选加密共享 |
-| 审计日志 | 记录和展示连接历史 |
+| 任务         | 描述                           |
+| ------------ | ------------------------------ |
+| 服务配置 UI  | 配置服务端点和 Token           |
+| API 服务端   | NestJS 实现 REST API           |
+| 邀请功能     | 三种邀请方式（链接/码/邮箱）   |
+| 同步功能     | 增量同步 + 冲突处理 + 离线队列 |
+| 敏感数据加密 | 密码可选加密共享               |
+| 审计日志     | 记录和展示连接历史             |
 
 ### Phase 4：团队服务端
 
-| 任务 | 描述 |
-|------|------|
-| 服务端项目 | 创建 team-server (NestJS) |
-| Docker 部署 | 提供 docker-compose |
-| 数据备份 | 自动备份 + 手动导出 |
+| 任务        | 描述                      |
+| ----------- | ------------------------- |
+| 服务端项目  | 创建 team-server (NestJS) |
+| Docker 部署 | 提供 docker-compose       |
+| 数据备份    | 自动备份 + 手动导出       |
 
 ---
 
 ## 九、优先级建议
 
-| 优先级 | 任务 |
-|--------|------|
-| P0 | 用户模式区分（导航动态显示） |
-| P0 | 本地导出/导入功能 |
-| P0 | 用户 UUID 生成 |
-| P1 | 团队协作视图（TeamsView UI） |
-| P1 | 云端同步功能（增量 + 冲突处理） |
-| P1 | 邀请机制（三种方式） |
-| P1 | 服务端实现 (NestJS) |
-| P2 | 敏感数据加密共享 |
-| P2 | 离线操作队列 |
-| P2 | Docker 部署配置 |
-| P2 | 审计日志 |
-| P2 | 数据备份 |
+| 优先级 | 任务                            |
+| ------ | ------------------------------- |
+| P0     | 用户模式区分（导航动态显示）    |
+| P0     | 本地导出/导入功能               |
+| P0     | 用户 UUID 生成                  |
+| P1     | 团队协作视图（TeamsView UI）    |
+| P1     | 云端同步功能（增量 + 冲突处理） |
+| P1     | 邀请机制（三种方式）            |
+| P1     | 服务端实现 (NestJS)             |
+| P2     | 敏感数据加密共享                |
+| P2     | 离线操作队列                    |
+| P2     | Docker 部署配置                 |
+| P2     | 审计日志                        |
+| P2     | 数据备份                        |
 
 ---
 
@@ -823,24 +823,24 @@ CMD ["node", "dist/main"]
 
 ### 10.1 用户标识与认证
 
-| 设计点 | 方案 |
-|--------|------|
-| 用户 ID | 本地首次启动时生成 UUID |
-| 团队成员标识 | 基于用户 UUID + 用户名 |
-| API Token | 手动输入或通过邀请链接获取 |
+| 设计点       | 方案                       |
+| ------------ | -------------------------- |
+| 用户 ID      | 本地首次启动时生成 UUID    |
+| 团队成员标识 | 基于用户 UUID + 用户名     |
+| API Token    | 手动输入或通过邀请链接获取 |
 
 ```typescript
 // 本地生成用户 UUID
 const generateUserId = (): string => {
-  return crypto.randomUUID();
-};
+  return crypto.randomUUID()
+}
 
 // 用户数据结构
 interface LocalUser {
-  id: string;           // 本地 UUID
-  name: string;         // 用户名（可自定义）
-  createdAt: Date;     // 创建时间
-  teams: string[];     // 所属团队 ID 列表
+  id: string // 本地 UUID
+  name: string // 用户名（可自定义）
+  createdAt: Date // 创建时间
+  teams: string[] // 所属团队 ID 列表
 }
 ```
 
@@ -883,56 +883,57 @@ interface LocalUser {
 ```typescript
 // 邀请码生成
 const generateInviteCode = (teamSlug: string): string => {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const random = Array.from({ length: 4 }, () =>
-    chars[Math.floor(Math.random() * chars.length)]
-  ).join('');
-  return `TEAM-${teamSlug.toUpperCase()}-${random}`;
-};
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const random = Array.from(
+    { length: 4 },
+    () => chars[Math.floor(Math.random() * chars.length)],
+  ).join('')
+  return `TEAM-${teamSlug.toUpperCase()}-${random}`
+}
 ```
 
 ### 10.3 权限模型
 
 #### 角色权限
 
-| 权限 | Owner | Admin | Member |
-|------|:-----:|:-----:|:------:|
-| 创建团队 | ✅ | ❌ | ❌ |
-| 删除团队 | ✅ | ❌ | ❌ |
-| 管理所有成员 | ✅ | ✅ | ❌ |
-| 移除成员 | ✅ | ✅ | ❌ |
-| 共享资源 | ✅ | ✅ | ✅（仅自己的） |
-| 取消共享 | ✅ | ✅ | ✅（仅自己的） |
-| 使用共享资源 | ✅ | ✅ | ✅ |
-| 查看审计日志 | ✅ | ✅ | ❌ |
-| 团队设置 | ✅ | ✅ | ❌ |
+| 权限         | Owner | Admin |     Member     |
+| ------------ | :---: | :---: | :------------: |
+| 创建团队     |  ✅   |  ❌   |       ❌       |
+| 删除团队     |  ✅   |  ❌   |       ❌       |
+| 管理所有成员 |  ✅   |  ✅   |       ❌       |
+| 移除成员     |  ✅   |  ✅   |       ❌       |
+| 共享资源     |  ✅   |  ✅   | ✅（仅自己的） |
+| 取消共享     |  ✅   |  ✅   | ✅（仅自己的） |
+| 使用共享资源 |  ✅   |  ✅   |       ✅       |
+| 查看审计日志 |  ✅   |  ✅   |       ❌       |
+| 团队设置     |  ✅   |  ✅   |       ❌       |
 
 #### 资源权限
 
-| 权限级别 | 查看 | 连接 | 编辑 | 删除 |
-|----------|:----:|:----:|:----:|:----:|
-| Readonly | ✅ | ✅ | ❌ | ❌ |
-| Readwrite | ✅ | ✅ | ✅ | ❌ |
+| 权限级别  | 查看 | 连接 | 编辑 | 删除 |
+| --------- | :--: | :--: | :--: | :--: |
+| Readonly  |  ✅  |  ✅  |  ❌  |  ❌  |
+| Readwrite |  ✅  |  ✅  |  ✅  |  ❌  |
 
 ### 10.4 敏感数据共享
 
 > ⚠️ 默认不共享敏感认证信息，管理员可选择是否共享
 
-| 数据类型 | 默认共享 | 可选加密 |
-|----------|:--------:|:--------:|
-| 主机名/IP/端口 | ✅ | - |
-| 用户名 | ✅ | - |
-| 密码 | ❌ | ✅ 可选 |
-| SSH 私钥 | ❌ | ❌ |
-| SSH 公钥引用 | ✅ | - |
-| Snippet 内容 | ✅ | - |
+| 数据类型       | 默认共享 | 可选加密 |
+| -------------- | :------: | :------: |
+| 主机名/IP/端口 |    ✅    |    -     |
+| 用户名         |    ✅    |    -     |
+| 密码           |    ❌    | ✅ 可选  |
+| SSH 私钥       |    ❌    |    ❌    |
+| SSH 公钥引用   |    ✅    |    -     |
+| Snippet 内容   |    ✅    |    -     |
 
 ```typescript
 // 共享主机时的敏感数据选项
 interface ShareHostOptions {
-  includePassword: boolean;    // 是否包含密码
-  encryptPassword: boolean;     // 是否加密密码（可设置密码保护）
-  passwordProtection?: string;  // 解密密码（如果加密）
+  includePassword: boolean // 是否包含密码
+  encryptPassword: boolean // 是否加密密码（可设置密码保护）
+  passwordProtection?: string // 解密密码（如果加密）
 }
 
 // 加密方式：使用 AES-256-GCM
@@ -943,11 +944,11 @@ interface ShareHostOptions {
 
 #### 同步策略
 
-| 策略 | 说明 |
-|------|------|
-| 同步方式 | **增量同步**，基于 `updatedAt` 时间戳 |
+| 策略     | 说明                                               |
+| -------- | -------------------------------------------------- |
+| 同步方式 | **增量同步**，基于 `updatedAt` 时间戳              |
 | 冲突处理 | **询问用户**，用户可选择保留本地/服务端/两者都保留 |
-| 离线支持 | **完整支持**，离线操作记录到队列，恢复后自动同步 |
+| 离线支持 | **完整支持**，离线操作记录到队列，恢复后自动同步   |
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -989,17 +990,17 @@ interface ShareHostOptions {
 ```typescript
 // 操作队列结构
 interface SyncQueueItem {
-  id: string;
-  type: 'CREATE' | 'UPDATE' | 'DELETE';
-  resource: 'host' | 'snippet' | 'share';
-  data: any;
-  timestamp: Date;
-  retryCount: number;
-  status: 'pending' | 'syncing' | 'failed' | 'completed';
+  id: string
+  type: 'CREATE' | 'UPDATE' | 'DELETE'
+  resource: 'host' | 'snippet' | 'share'
+  data: any
+  timestamp: Date
+  retryCount: number
+  status: 'pending' | 'syncing' | 'failed' | 'completed'
 }
 
 // 本地存储到 IndexedDB
-const syncQueue = new SyncQueue('sync_queue');
+const syncQueue = new SyncQueue('sync_queue')
 ```
 
 ### 10.6 共享主机的展示
@@ -1033,26 +1034,26 @@ Hosts 视图中区分「我的主机」和「团队共享」：
 
 ### 10.7 团队数据备份
 
-| 备份类型 | 说明 |
-|----------|------|
+| 备份类型 | 说明                                   |
+| -------- | -------------------------------------- |
 | 自动备份 | 服务端每日凌晨执行 PostgreSQL 全量备份 |
-| 备份保留 | 保留最近 30 天备份 |
-| 手动导出 | 管理员可随时导出团队完整 JSON 包 |
-| 导入恢复 | 支持导入 JSON 包恢复数据 |
+| 备份保留 | 保留最近 30 天备份                     |
+| 手动导出 | 管理员可随时导出团队完整 JSON 包       |
+| 导入恢复 | 支持导入 JSON 包恢复数据               |
 
 ```typescript
 // 导出团队包结构
 interface TeamExport {
-  version: '1.0';
-  exportedAt: string;
-  exportedBy: string;
+  version: '1.0'
+  exportedAt: string
+  exportedBy: string
   team: {
-    id: string;
-    name: string;
-  };
-  members: TeamMember[];
-  shares: Share[];
-  auditLogs?: AuditLog[];  // 可选，包含或不包含审计日志
+    id: string
+    name: string
+  }
+  members: TeamMember[]
+  shares: Share[]
+  auditLogs?: AuditLog[] // 可选，包含或不包含审计日志
 }
 
 // 服务端备份存储路径
@@ -1069,54 +1070,54 @@ interface TeamExport {
 
 #### 4.2 团队协作 📋 待开发
 
-| 任务 | 描述 | 状态 | 优先级 |
-|------|------|------|--------|
-| 用户 UUID 生成 | 首次启动生成本地 UUID，用于标识用户 | 📋 待开发 | P0 |
-| 团队数据模型 | 定义 TypeScript 类型和 SQLite 本地存储 | 📋 待开发 | P0 |
-| 用户模式区分 | 普通/团队用户导航动态显示 | 📋 待开发 | P0 |
-| 团队协作视图 | TeamsView 页面组件 | 📋 待开发 | P1 |
-| 本地导出功能 | 导出团队包为 JSON 文件 | 📋 待开发 | P0 |
-| 本地导入功能 | 导入 JSON 并处理合并策略 | 📋 待开发 | P0 |
-| 预览功能 | 导入前预览内容 | 📋 待开发 | P1 |
-| 服务配置 UI | 配置服务端点和 Token | 📋 待开发 | P1 |
-| 邀请机制 | 三种邀请方式（链接/码/邮箱） | 📋 待开发 | P1 |
-| 云端同步功能 | 增量同步 + 冲突处理 + 离线队列 | 📋 待开发 | P1 |
-| 敏感数据加密共享 | 密码可选加密共享 | 📋 待开发 | P2 |
-| 审计日志 | 记录和展示连接历史 | 📋 待开发 | P2 |
-| 服务端实现 (NestJS) | REST API 服务端 | 📋 待开发 | P1 |
-| Docker 部署配置 | 提供 docker-compose 部署 | 📋 待开发 | P2 |
-| 数据备份 | 自动备份 + 手动导出 | 📋 待开发 | P2 |
+| 任务                | 描述                                   | 状态      | 优先级 |
+| ------------------- | -------------------------------------- | --------- | ------ |
+| 用户 UUID 生成      | 首次启动生成本地 UUID，用于标识用户    | 📋 待开发 | P0     |
+| 团队数据模型        | 定义 TypeScript 类型和 SQLite 本地存储 | 📋 待开发 | P0     |
+| 用户模式区分        | 普通/团队用户导航动态显示              | 📋 待开发 | P0     |
+| 团队协作视图        | TeamsView 页面组件                     | 📋 待开发 | P1     |
+| 本地导出功能        | 导出团队包为 JSON 文件                 | 📋 待开发 | P0     |
+| 本地导入功能        | 导入 JSON 并处理合并策略               | 📋 待开发 | P0     |
+| 预览功能            | 导入前预览内容                         | 📋 待开发 | P1     |
+| 服务配置 UI         | 配置服务端点和 Token                   | 📋 待开发 | P1     |
+| 邀请机制            | 三种邀请方式（链接/码/邮箱）           | 📋 待开发 | P1     |
+| 云端同步功能        | 增量同步 + 冲突处理 + 离线队列         | 📋 待开发 | P1     |
+| 敏感数据加密共享    | 密码可选加密共享                       | 📋 待开发 | P2     |
+| 审计日志            | 记录和展示连接历史                     | 📋 待开发 | P2     |
+| 服务端实现 (NestJS) | REST API 服务端                        | 📋 待开发 | P1     |
+| Docker 部署配置     | 提供 docker-compose 部署               | 📋 待开发 | P2     |
+| 数据备份            | 自动备份 + 手动导出                    | 📋 待开发 | P2     |
 
 #### 4.3 SSH 证书认证 📋 待开发
 
-| 任务 | 描述 | 状态 | 优先级 |
-|------|------|------|--------|
-| 证书支持 | SSH 证书认证方式 | 📋 待开发 | P3 |
-| 证书管理 | 颁发和管理证书 | 📋 待开发 | P3 |
+| 任务     | 描述             | 状态      | 优先级 |
+| -------- | ---------------- | --------- | ------ |
+| 证书支持 | SSH 证书认证方式 | 📋 待开发 | P3     |
+| 证书管理 | 颁发和管理证书   | 📋 待开发 | P3     |
 
 ### 技术依赖与前置任务
 
-| 任务 | 说明 | 关联文档 |
-|------|------|----------|
-| 用户 UUID 生成 | `app_settings` 表存储 `user_uuid` 字段 | 本文档 §十.10.1 |
-| 团队存储服务 | SQLite 表设计参照本文档 §二.2 | 本文档 §二.2 |
-| 导航动态显示 | `AppSidebar` 根据 `teamStore.enabled` 切换 | 本文档 §六.3 |
-| 导出团队包 | JSON 格式参照本文档 §二.1 | 本文档 §二.1 |
-| 导入合并策略 | 支持 Merge/Replace 两种模式 | 本文档 §十.10.5 |
-| 服务端 API | REST 端点参照本文档 §四 | 本文档 §四 |
-| 同步机制 | 增量同步 + 冲突处理 + 离线队列 | 本文档 §十.10.5 |
-| 邀请机制 | 三种邀请方式实现 | 本文档 §十.10.2 |
-| 敏感数据加密 | AES-256-GCM 加密共享密码 | 本文档 §十.10.4 |
-| 审计日志 | 记录团队成员的连接记录 | 本文档 §十.10.7 |
+| 任务           | 说明                                       | 关联文档        |
+| -------------- | ------------------------------------------ | --------------- |
+| 用户 UUID 生成 | `app_settings` 表存储 `user_uuid` 字段     | 本文档 §十.10.1 |
+| 团队存储服务   | SQLite 表设计参照本文档 §二.2              | 本文档 §二.2    |
+| 导航动态显示   | `AppSidebar` 根据 `teamStore.enabled` 切换 | 本文档 §六.3    |
+| 导出团队包     | JSON 格式参照本文档 §二.1                  | 本文档 §二.1    |
+| 导入合并策略   | 支持 Merge/Replace 两种模式                | 本文档 §十.10.5 |
+| 服务端 API     | REST 端点参照本文档 §四                    | 本文档 §四      |
+| 同步机制       | 增量同步 + 冲突处理 + 离线队列             | 本文档 §十.10.5 |
+| 邀请机制       | 三种邀请方式实现                           | 本文档 §十.10.2 |
+| 敏感数据加密   | AES-256-GCM 加密共享密码                   | 本文档 §十.10.4 |
+| 审计日志       | 记录团队成员的连接记录                     | 本文档 §十.10.7 |
 
 ### 实现优先级排序
 
-| 优先级 | 任务 |
-|--------|------|
-| **P0** | 用户 UUID 生成、团队数据模型、用户模式区分、本地导出/导入功能 |
+| 优先级 | 任务                                                                      |
+| ------ | ------------------------------------------------------------------------- |
+| **P0** | 用户 UUID 生成、团队数据模型、用户模式区分、本地导出/导入功能             |
 | **P1** | 团队协作视图（TeamsView UI）、云端同步功能、邀请机制、服务端实现 (NestJS) |
-| **P2** | 敏感数据加密共享、离线操作队列、Docker 部署配置、审计日志、数据备份 |
-| **P3** | SSH 证书认证、证书管理 |
+| **P2** | 敏感数据加密共享、离线操作队列、Docker 部署配置、审计日志、数据备份       |
+| **P3** | SSH 证书认证、证书管理                                                    |
 
 ---
 

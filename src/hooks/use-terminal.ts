@@ -1,8 +1,9 @@
-import { useEffect, useRef, useCallback } from 'react'
-import { invoke } from '@tauri-apps/api/core'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import type { UnlistenFn } from '@tauri-apps/api/event'
 import type { Terminal as XTerminal } from '@xterm/xterm'
 import type { Host } from '@/types'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import { useCallback, useEffect, useRef } from 'react'
 
 export interface ShellOutput {
   session_id: string
@@ -107,7 +108,11 @@ export function useTerminal(
           })
         }
         // Start shell
-        await invoke('ssh_shell', { sessionId: sid, cols: defaultCols, rows: defaultRows })
+        await invoke('ssh_shell', {
+          sessionId: sid,
+          cols: defaultCols,
+          rows: defaultRows,
+        })
       } else if (tabType === 'serial') {
         if (!serialSessionId) {
           errorRef.current = 'Serial session ID required'
@@ -128,39 +133,45 @@ export function useTerminal(
   }, [tabType, host, serialSessionId, defaultCols, defaultRows])
 
   // ---- 发送数据到后端 ----
-  const sendData = useCallback(async (data: string) => {
-    const sid = sessionIdRef.current
-    if (!sid) return
+  const sendData = useCallback(
+    async (data: string) => {
+      const sid = sessionIdRef.current
+      if (!sid) return
 
-    try {
-      if (tabType === 'local') {
-        await invoke('local_write', { sessionId: sid, data })
-      } else if (tabType === 'remote') {
-        await invoke('ssh_write', { sessionId: sid, data })
-      } else if (tabType === 'serial') {
-        await invoke('serial_write', { sessionId: sid, data })
+      try {
+        if (tabType === 'local') {
+          await invoke('local_write', { sessionId: sid, data })
+        } else if (tabType === 'remote') {
+          await invoke('ssh_write', { sessionId: sid, data })
+        } else if (tabType === 'serial') {
+          await invoke('serial_write', { sessionId: sid, data })
+        }
+      } catch (err) {
+        console.error('[useTerminal] sendData error:', err)
       }
-    } catch (err) {
-      console.error('[useTerminal] sendData error:', err)
-    }
-  }, [tabType])
+    },
+    [tabType],
+  )
 
   // ---- resize ----
-  const resize = useCallback(async (cols: number, rows: number) => {
-    const sid = sessionIdRef.current
-    if (!sid) return
+  const resize = useCallback(
+    async (cols: number, rows: number) => {
+      const sid = sessionIdRef.current
+      if (!sid) return
 
-    try {
-      if (tabType === 'local') {
-        await invoke('local_resize', { sessionId: sid, cols, rows })
-      } else if (tabType === 'remote') {
-        await invoke('ssh_resize', { sessionId: sid, cols, rows })
+      try {
+        if (tabType === 'local') {
+          await invoke('local_resize', { sessionId: sid, cols, rows })
+        } else if (tabType === 'remote') {
+          await invoke('ssh_resize', { sessionId: sid, cols, rows })
+        }
+        // serial resize not supported via this hook (handled in serial service)
+      } catch (err) {
+        console.error('[useTerminal] resize error:', err)
       }
-      // serial resize not supported via this hook (handled in serial service)
-    } catch (err) {
-      console.error('[useTerminal] resize error:', err)
-    }
-  }, [tabType])
+    },
+    [tabType],
+  )
 
   // ---- 断开连接 ----
   const disconnect = useCallback(async () => {
@@ -183,7 +194,8 @@ export function useTerminal(
     if (!term) return
 
     let cancelled = false
-    const eventPrefix = tabType === 'local' ? 'local' : tabType === 'remote' ? 'ssh' : 'serial'
+    const eventPrefix =
+      tabType === 'local' ? 'local' : tabType === 'remote' ? 'ssh' : 'serial'
 
     const init = async () => {
       statusRef.current = 'connecting'
@@ -198,32 +210,43 @@ export function useTerminal(
       statusRef.current = 'connected'
 
       // 2. 监听后端数据 → 写入 xterm
-      const unlistenData = await listen<ShellOutput>(`${eventPrefix}-data`, event => {
-        const output = event.payload
-        if (output.session_id === sid && termRef.current) {
-          termRef.current.write(output.data)
-        }
-      })
+      const unlistenData = await listen<ShellOutput>(
+        `${eventPrefix}-data`,
+        event => {
+          const output = event.payload
+          if (output.session_id === sid && termRef.current) {
+            termRef.current.write(output.data)
+          }
+        },
+      )
       unlistenDataRef.current = unlistenData
 
       // 3. 监听连接关闭
-      const unlistenClose = await listen<string>(`${eventPrefix}-close`, event => {
-        if (event.payload === sid) {
-          termRef.current?.write('\r\n[disconnected]\r\n')
-          cleanup()
-        }
-      })
+      const unlistenClose = await listen<string>(
+        `${eventPrefix}-close`,
+        event => {
+          if (event.payload === sid) {
+            termRef.current?.write('\r\n[disconnected]\r\n')
+            cleanup()
+          }
+        },
+      )
       unlistenCloseRef.current = unlistenClose
 
       // 4. 监听退出码（仅 SSH）
       if (tabType === 'remote') {
-        const unlistenExit = await listen<[string, number]>(`ssh-exit`, event => {
-          const [exitSid, code] = event.payload
-          if (exitSid === sid) {
-            termRef.current?.write(`\r\n[process exited with code ${code}]\r\n`)
-            cleanup()
-          }
-        })
+        const unlistenExit = await listen<[string, number]>(
+          `ssh-exit`,
+          event => {
+            const [exitSid, code] = event.payload
+            if (exitSid === sid) {
+              termRef.current?.write(
+                `\r\n[process exited with code ${code}]\r\n`,
+              )
+              cleanup()
+            }
+          },
+        )
         unlistenExitRef.current = unlistenExit
       }
 

@@ -1,21 +1,14 @@
-import { useEffect, useState, useCallback } from 'react'
+import type { KnownHostRecord } from '@/service/database'
 import {
-  ViewContainer,
-  ViewToolbar,
-  ViewContent,
-  ViewHeader,
-  EmptyState,
-} from '@/components/view-container'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog'
+  Fingerprint,
+  Key,
+  Search,
+  Server,
+  Shield,
+  Trash2,
+  Upload,
+} from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,24 +19,31 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
 import {
-  Fingerprint,
-  Upload,
-  Trash2,
-  Search,
-  Shield,
-  Server,
-  Key,
-} from 'lucide-react'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import {
+  EmptyState,
+  ViewContainer,
+  ViewContent,
+  ViewHeader,
+  ViewToolbar,
+} from '@/components/view-container'
+import { format } from '@/lib/date-utils'
+import {
+  addKnownHosts,
+  clearAllKnownHosts,
+  deleteKnownHost,
   getKnownHosts,
   searchKnownHosts,
-  addKnownHosts,
-  deleteKnownHost,
-  clearAllKnownHosts,
-  KnownHostRecord,
 } from '@/service/database'
-import { format } from '@/lib/date-utils'
 
 const KnownHostsView: React.FC = () => {
   const [hosts, setHosts] = useState<KnownHostRecord[]>([])
@@ -115,21 +115,21 @@ const KnownHostsView: React.FC = () => {
       // Format: [hostname]:port ssh-rsa AAAA...
       // or: hostname ssh-rsa AAAA...
       const match = line.match(
-        /^(?:\[([^\]]+)\]|([^\s]+))(?:\s+(\d+))?\s+(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp\d+)\s+([A-Za-z0-9+/=]+)/,
+        /^(?:\[([^\]]+)\]|(\S+))(?:\s+(\d+))?\s+(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp\d+)\s+([A-Za-z0-9+/=]+)/,
       )
       if (!match) {
         return null
       }
 
       const hostWithPort = match[1] || match[2]
-      const port = match[3] ? parseInt(match[3], 10) : 22
+      const port = match[3] ? Number.parseInt(match[3], 10) : 22
       const keyType = match[4]
       const fingerprint = match[5]
 
       // Parse hostname and port from [host]:port format
       const portMatch = hostWithPort.match(/^(.+):(\d+)$/)
       const hostname = portMatch ? portMatch[1] : hostWithPort
-      const finalPort = portMatch ? parseInt(portMatch[2], 10) : port
+      const finalPort = portMatch ? Number.parseInt(portMatch[2], 10) : port
 
       return { hostname, port: finalPort, fingerprint, key_type: keyType }
     } catch {
@@ -345,7 +345,8 @@ const KnownHostsView: React.FC = () => {
             <AlertDialogTitle>Delete Known Host</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete the known host "
-              {hostToDelete?.hostname}"? This action cannot be undone.
+              {hostToDelete?.hostname}
+              "? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

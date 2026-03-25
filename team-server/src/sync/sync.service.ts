@@ -46,9 +46,18 @@ export class SyncService {
   /**
    * Push local changes to server
    */
-  async pushChanges(userId: string, changes: {
-    shares?: Array<{ id: string; teamId: string; type: string; data: any; permission: string }>
-  }) {
+  async pushChanges(
+    userId: string,
+    changes: {
+      shares?: Array<{
+        id: string
+        teamId: string
+        type: string
+        data: any
+        permission: string
+      }>
+    },
+  ) {
     const results: any = { created: [], updated: [], errors: [] }
 
     // Process share creations/updates
@@ -65,7 +74,9 @@ export class SyncService {
           }
 
           // Upsert share
-          const existing = await this.prisma.share.findUnique({ where: { id: share.id } })
+          const existing = await this.prisma.share.findUnique({
+            where: { id: share.id },
+          })
           if (existing) {
             const updated = await this.prisma.share.update({
               where: { id: share.id },

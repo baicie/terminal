@@ -1,5 +1,5 @@
+import type { AuthType, Group, Host } from '@/types'
 import { create } from 'zustand'
-import type { Host, Group, AuthType } from '@/types'
 import { executeQuery, select } from '@/service/database'
 
 function generateId(): string {

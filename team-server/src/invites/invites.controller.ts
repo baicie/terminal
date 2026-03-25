@@ -1,8 +1,16 @@
-import { Controller, Get, Post, Delete, Body, Param, UseGuards } from '@nestjs/common'
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
-import { InvitesService } from './invites.service'
-import { ApiKeyGuard } from '../auth/api-key.guard'
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common'
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { ApiKeyAuth } from '../auth/api-key-auth.decorator'
+import { ApiKeyGuard } from '../auth/api-key.guard'
+import { InvitesService } from './invites.service'
 
 @ApiTags('invites')
 @ApiBearerAuth('API_KEY')
@@ -15,7 +23,12 @@ export class InvitesController {
   @ApiOperation({ summary: 'Create an invite' })
   async create(
     @Param('teamId') teamId: string,
-    @Body() body: { type: 'LINK' | 'CODE' | 'EMAIL'; email?: string; role?: 'ADMIN' | 'MEMBER' },
+    @Body()
+    body: {
+      type: 'LINK' | 'CODE' | 'EMAIL'
+      email?: string
+      role?: 'ADMIN' | 'MEMBER'
+    },
     @ApiKeyAuth() userId: string,
   ) {
     return this.invitesService.create(teamId, userId, body)

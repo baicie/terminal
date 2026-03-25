@@ -1,21 +1,19 @@
-import { useEffect, useState, useCallback } from 'react'
+import type { SSHKeyRecord } from '@/service/database'
 import {
-  ViewContainer,
-  ViewToolbar,
-  ViewContent,
-  EmptyState,
-} from '@/components/view-container'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
+  Eye,
+  EyeOff,
+  FileKey,
+  Fingerprint,
+  Key,
+  KeyRound,
+  Loader2,
+  Plus,
+  Search,
+  Shield,
+  Trash2,
+  Wand2,
+} from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,7 +24,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { toast } from '@/components/ui/sonner'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -34,34 +41,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { toast } from '@/components/ui/sonner'
+import { Textarea } from '@/components/ui/textarea'
 import {
-  Key,
-  Plus,
-  Trash2,
-  Search,
-  Shield,
-  Fingerprint,
-  KeyRound,
-  FileKey,
-  Wand2,
-  Loader2,
-  Eye,
-  EyeOff,
-} from 'lucide-react'
+  EmptyState,
+  ViewContainer,
+  ViewContent,
+  ViewToolbar,
+} from '@/components/view-container'
+import { format } from '@/lib/date-utils'
 import {
+  createSSHKey,
+  deleteSSHKey,
   getSSHKeys,
   searchSSHKeys,
-  createSSHKey,
   updateSSHKey,
-  deleteSSHKey,
-  SSHKeyRecord,
 } from '@/service/database'
 import { sshService } from '@/service/ssh'
-import { format } from '@/lib/date-utils'
 
 type KeyFilter = 'all' | 'key' | 'certificate' | 'touchid' | 'fido2'
 
-const getKeyTypeIcon = (keyType: string | null) => {
+function getKeyTypeIcon(keyType: string | null) {
   switch (keyType) {
     case 'certificate':
       return <Shield className="size-4" />
@@ -74,7 +74,7 @@ const getKeyTypeIcon = (keyType: string | null) => {
   }
 }
 
-const getKeyTypeLabel = (keyType: string | null): string => {
+function getKeyTypeLabel(keyType: string | null): string {
   switch (keyType) {
     case 'certificate':
       return 'Certificate'
@@ -87,14 +87,15 @@ const getKeyTypeLabel = (keyType: string | null): string => {
   }
 }
 
-const detectKeyType = (content: string): string | null => {
+function detectKeyType(content: string): string | null {
   if (content.includes('CERTIFICATE')) return 'certificate'
   if (
     content.includes('ssh-rsa') ||
     content.includes('ssh-ed25519') ||
     content.includes('ecdsa-sha2')
-  )
+  ) {
     return 'key'
+  }
   return null
 }
 
@@ -604,8 +605,8 @@ const KeychainView: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete SSH Key</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete the key "{keyToDelete?.name}"?
-              This action cannot be undone.
+              Are you sure you want to delete the key "{keyToDelete?.name}
+              "? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

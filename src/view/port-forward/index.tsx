@@ -1,33 +1,18 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useAppStore } from '@/store/app'
-import { useHostStore } from '@/store/host'
-import { sshService } from '@/service/ssh'
 import type { PortForwardConfig } from '@/types'
 import {
-  ViewContainer,
-  ViewToolbar,
-  ViewContent,
-  ViewHeader,
-  EmptyState,
-} from '@/components/view-container'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  ArrowLeftRight,
+  Database,
+  Globe,
+  Link,
+  Play,
+  Plus,
+  RefreshCw,
+  Search,
+  Server,
+  Square,
+  Trash2,
+} from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +24,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
@@ -47,19 +33,33 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import {
-  ArrowLeftRight,
-  Plus,
-  Search,
-  Trash2,
-  Play,
-  Square,
-  RefreshCw,
-  Globe,
-  Database,
-  Server,
-  Link,
-} from 'lucide-react'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
+import {
+  EmptyState,
+  ViewContainer,
+  ViewContent,
+  ViewHeader,
+  ViewToolbar,
+} from '@/components/view-container'
+import { sshService } from '@/service/ssh'
+import { useAppStore } from '@/store/app'
+import { useHostStore } from '@/store/host'
 
 interface PortForwardEntry {
   id: string
@@ -126,16 +126,14 @@ const PortForwardView: React.FC = () => {
       return
     }
 
-    const port = parseInt(formLocalPort, 10)
+    const port = Number.parseInt(formLocalPort, 10)
     if (isNaN(port) || port < 1 || port > 65535) {
       toast.error('Invalid local port number')
       return
     }
 
     const forwardId = `pf-${Date.now()}`
-    const host = formHostId
-      ? hosts.find(h => h.id === formHostId)
-      : null
+    const host = formHostId ? hosts.find(h => h.id === formHostId) : null
 
     const newForward: PortForwardEntry = {
       id: forwardId,
@@ -144,7 +142,7 @@ const PortForwardView: React.FC = () => {
       localHost: formLocalHost,
       localPort: port,
       remoteHost: formRemoteHost,
-      remotePort: parseInt(formRemotePort, 10),
+      remotePort: Number.parseInt(formRemotePort, 10),
       active: true,
       hostId: formHostId || undefined,
       hostName: host?.name || undefined,
@@ -160,7 +158,7 @@ const PortForwardView: React.FC = () => {
           local_host: formLocalHost,
           local_port: port,
           remote_host: formRemoteHost,
-          remote_port: parseInt(formRemotePort, 10),
+          remote_port: Number.parseInt(formRemotePort, 10),
         }
 
         const result = await sshService.portForwardStart('', config)
@@ -622,8 +620,8 @@ const PortForwardView: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Stop Port Forward</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to stop "{forwardToStop?.name}"? Any active
-              connections will be closed.
+              Are you sure you want to stop "{forwardToStop?.name}
+              "? Any active connections will be closed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

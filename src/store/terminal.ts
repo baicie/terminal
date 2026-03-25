@@ -1,7 +1,8 @@
-import { create } from 'zustand'
 import type { Terminal as XTerminal } from '@xterm/xterm'
-import { sshService, SSHConnectionResult } from '@/service/ssh'
+import type { SSHConnectionResult } from '@/service/ssh'
 import type { Host } from '@/types'
+import { create } from 'zustand'
+import { sshService } from '@/service/ssh'
 
 export interface TerminalSession {
   id: string

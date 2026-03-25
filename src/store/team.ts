@@ -1,37 +1,45 @@
+import type {
+  TeamAuditLogRecord,
+  TeamInviteRecord,
+  TeamMemberRecord,
+  TeamRecord,
+  TeamSharedHostRecord,
+  TeamSharedSnippetRecord,
+  UserProfileRecord,
+} from '@/service/database'
 import { create } from 'zustand'
 import {
-  type TeamRecord,
-  type TeamMemberRecord,
-  type TeamSharedHostRecord,
-  type TeamSharedSnippetRecord,
-  type TeamInviteRecord,
-  type TeamAuditLogRecord,
-  type UserProfileRecord,
-  getUserProfile,
-  createUserProfile,
-  updateUserProfile,
-  getTeams,
-  createTeam,
-  updateTeam,
-  deleteTeam,
-  addTeamMember,
-  removeTeamMember,
-  updateTeamMember,
-  getTeamMembers,
-  getSharedHosts,
   addSharedHost,
-  removeSharedHost,
-  getSharedSnippets,
   addSharedSnippet,
-  removeSharedSnippet,
-  getTeamInvites,
-  createTeamInvite,
-  deleteTeamInvite,
-  getTeamAuditLogs,
   addTeamAuditLog,
+  addTeamMember,
+  createTeam,
+  createTeamInvite,
+  createUserProfile,
+  deleteTeam,
+  deleteTeamInvite,
+  getSetting,
+  getSharedHosts,
+  getSharedSnippets,
+  getTeamAuditLogs,
+  getTeamInvites,
+  getTeamMembers,
+  getTeams,
+  getUserProfile,
+  removeSharedHost,
+  removeSharedSnippet,
+  removeTeamMember,
+  setSetting,
+  updateTeam,
+  updateTeamMember,
 } from '@/service/database'
-import { getSetting, setSetting } from '@/service/database'
-import { teamApi, convertApiTeam, convertApiMember, convertApiShare, convertApiInvite, convertApiAuditLog } from '@/service/team-api'
+import {
+  convertApiAuditLog,
+  convertApiMember,
+  convertApiShare,
+  convertApiTeam,
+  teamApi,
+} from '@/service/team-api'
 
 // Team collaboration types
 export interface TeamSettings {
@@ -158,28 +166,59 @@ interface TeamState {
 
   // Member actions
   loadMembers: (teamId: string) => Promise<void>
-  addMember: (teamId: string, userId: string, userName?: string, userEmail?: string, role?: 'admin' | 'member') => Promise<void>
+  addMember: (
+    teamId: string,
+    userId: string,
+    userName?: string,
+    userEmail?: string,
+    role?: 'admin' | 'member',
+  ) => Promise<void>
   removeMember: (memberId: string) => Promise<void>
-  updateMemberRole: (memberId: string, role: 'admin' | 'member') => Promise<void>
+  updateMemberRole: (
+    memberId: string,
+    role: 'admin' | 'member',
+  ) => Promise<void>
 
   // Share actions
   loadSharedHosts: (teamId: string) => Promise<void>
-  shareHost: (teamId: string, hostData: Record<string, unknown>, permission: 'readonly' | 'readwrite') => Promise<void>
+  shareHost: (
+    teamId: string,
+    hostData: Record<string, unknown>,
+    permission: 'readonly' | 'readwrite',
+  ) => Promise<void>
   unshareHost: (shareId: string) => Promise<void>
 
   loadSharedSnippets: (teamId: string) => Promise<void>
-  shareSnippet: (teamId: string, snippetData: Record<string, unknown>, permission: 'readonly' | 'readwrite') => Promise<void>
+  shareSnippet: (
+    teamId: string,
+    snippetData: Record<string, unknown>,
+    permission: 'readonly' | 'readwrite',
+  ) => Promise<void>
   unshareSnippet: (shareId: string) => Promise<void>
 
   // Invite actions
   loadInvites: (teamId: string) => Promise<void>
-  createInvite: (teamId: string, type: 'link' | 'code' | 'email', email?: string, role?: 'admin' | 'member') => Promise<TeamInvite>
+  createInvite: (
+    teamId: string,
+    type: 'link' | 'code' | 'email',
+    email?: string,
+    role?: 'admin' | 'member',
+  ) => Promise<TeamInvite>
   deleteInvite: (inviteId: string) => Promise<void>
-  joinByCode: (code: string) => Promise<{ teamId: string; role: 'admin' | 'member' } | null>
+  joinByCode: (
+    code: string,
+  ) => Promise<{ teamId: string; role: 'admin' | 'member' } | null>
 
   // Audit log actions
   loadAuditLogs: (teamId: string, limit?: number) => Promise<void>
-  addAuditLog: (teamId: string, userId: string, userName: string, action: string, hostName?: string, details?: Record<string, unknown>) => Promise<void>
+  addAuditLog: (
+    teamId: string,
+    userId: string,
+    userName: string,
+    action: string,
+    hostName?: string,
+    details?: Record<string, unknown>,
+  ) => Promise<void>
 
   // Sync actions
   sync: () => Promise<void>
@@ -190,11 +229,27 @@ interface TeamState {
   cloudLoadTeams: () => Promise<void>
   cloudLoadMembers: (teamId: string) => Promise<void>
   cloudLoadShares: (teamId: string) => Promise<void>
-  cloudCreateShare: (teamId: string, type: 'HOST' | 'SNIPPET_PACKAGE', data: unknown, permission: 'readonly' | 'readwrite') => Promise<void>
+  cloudCreateShare: (
+    teamId: string,
+    type: 'HOST' | 'SNIPPET_PACKAGE',
+    data: unknown,
+    permission: 'readonly' | 'readwrite',
+  ) => Promise<void>
   cloudDeleteShare: (teamId: string, shareId: string) => Promise<void>
-  cloudCreateInvite: (teamId: string, type: 'LINK' | 'CODE' | 'EMAIL', email?: string, role?: 'admin' | 'member') => Promise<TeamInvite | null>
-  cloudJoinByCode: (code: string, userName?: string) => Promise<{ teamId: string; role: 'admin' | 'member' } | null>
-  cloudJoinByLink: (linkToken: string, userName?: string) => Promise<{ teamId: string; role: 'admin' | 'member' } | null>
+  cloudCreateInvite: (
+    teamId: string,
+    type: 'LINK' | 'CODE' | 'EMAIL',
+    email?: string,
+    role?: 'admin' | 'member',
+  ) => Promise<TeamInvite | null>
+  cloudJoinByCode: (
+    code: string,
+    userName?: string,
+  ) => Promise<{ teamId: string; role: 'admin' | 'member' } | null>
+  cloudJoinByLink: (
+    linkToken: string,
+    userName?: string,
+  ) => Promise<{ teamId: string; role: 'admin' | 'member' } | null>
   cloudLoadAuditLogs: (teamId: string, limit?: number) => Promise<void>
 }
 
@@ -288,9 +343,9 @@ function toUserProfile(record: UserProfileRecord): UserProfile {
 // Generate invite code
 function generateInviteCode(teamSlug: string): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  const random = Array.from({ length: 4 }, () =>
-    chars[Math.floor(Math.random() * chars.length)]
-  ).join('')
+  const random = Array.from({ length: 4 })
+    .fill(chars[Math.floor(Math.random() * chars.length)])
+    .join('')
   return `TEAM-${teamSlug.toUpperCase()}-${random}`
 }
 
@@ -466,7 +521,7 @@ export const useTeamStore = create<TeamState>((set, get) => ({
 
     set(state => ({
       teams: state.teams.map(t =>
-        t.id === id ? { ...t, ...updates, updatedAt: now } : t
+        t.id === id ? { ...t, ...updates, updatedAt: now } : t,
       ),
       currentTeam:
         state.currentTeam?.id === id
@@ -513,7 +568,13 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   },
 
   // Add team member
-  async addMember(teamId: string, userId: string, userName?: string, userEmail?: string, role: 'admin' | 'member' = 'member') {
+  async addMember(
+    teamId: string,
+    userId: string,
+    userName?: string,
+    userEmail?: string,
+    role: 'admin' | 'member' = 'member',
+  ) {
     const id = crypto.randomUUID()
     const now = Date.now()
     await addTeamMember({
@@ -549,9 +610,7 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   async updateMemberRole(memberId: string, role: 'admin' | 'member') {
     await updateTeamMember(memberId, { role })
     set(state => ({
-      members: state.members.map(m =>
-        m.id === memberId ? { ...m, role } : m
-      ),
+      members: state.members.map(m => (m.id === memberId ? { ...m, role } : m)),
     }))
   },
 
@@ -562,7 +621,11 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   },
 
   // Share a host
-  async shareHost(teamId: string, hostData: Record<string, unknown>, permission: 'readonly' | 'readwrite') {
+  async shareHost(
+    teamId: string,
+    hostData: Record<string, unknown>,
+    permission: 'readonly' | 'readwrite',
+  ) {
     const id = crypto.randomUUID()
     const userId = get().userProfile?.id || ''
     const now = Date.now()
@@ -591,7 +654,9 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   // Unshare a host
   async unshareHost(shareId: string) {
     await removeSharedHost(shareId)
-    set(state => ({ sharedHosts: state.sharedHosts.filter(h => h.id !== shareId) }))
+    set(state => ({
+      sharedHosts: state.sharedHosts.filter(h => h.id !== shareId),
+    }))
   },
 
   // Load shared snippets
@@ -601,7 +666,11 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   },
 
   // Share a snippet
-  async shareSnippet(teamId: string, snippetData: Record<string, unknown>, permission: 'readonly' | 'readwrite') {
+  async shareSnippet(
+    teamId: string,
+    snippetData: Record<string, unknown>,
+    permission: 'readonly' | 'readwrite',
+  ) {
     const id = crypto.randomUUID()
     const userId = get().userProfile?.id || ''
     const now = Date.now()
@@ -630,7 +699,9 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   // Unshare a snippet
   async unshareSnippet(shareId: string) {
     await removeSharedSnippet(shareId)
-    set(state => ({ sharedSnippets: state.sharedSnippets.filter(s => s.id !== shareId) }))
+    set(state => ({
+      sharedSnippets: state.sharedSnippets.filter(s => s.id !== shareId),
+    }))
   },
 
   // Load team invites
@@ -640,14 +711,19 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   },
 
   // Create invite
-  async createInvite(teamId: string, type: 'link' | 'code' | 'email', email?: string, role: 'admin' | 'member' = 'member') {
+  async createInvite(
+    teamId: string,
+    type: 'link' | 'code' | 'email',
+    email?: string,
+    role: 'admin' | 'member' = 'member',
+  ) {
     const id = crypto.randomUUID()
     const userId = get().userProfile?.id || ''
     const now = Date.now()
     const expiresAt = now + 7 * 24 * 60 * 60 * 1000 // 7 days
 
     const team = get().teams.find(t => t.id === teamId)
-    const slug = team?.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 4) || 'TEAM'
+    const slug = team?.name.replace(/[^a-z0-9]/gi, '').substring(0, 4) || 'TEAM'
 
     const inviteRecord: TeamInviteRecord = {
       id,
@@ -701,7 +777,14 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   },
 
   // Add audit log
-  async addAuditLog(teamId: string, userId: string, userName: string, action: string, hostName?: string, details?: Record<string, unknown>) {
+  async addAuditLog(
+    teamId: string,
+    userId: string,
+    userName: string,
+    action: string,
+    hostName?: string,
+    details?: Record<string, unknown>,
+  ) {
     const id = crypto.randomUUID()
     const now = Date.now()
 
@@ -733,10 +816,19 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   // Sync for cloud mode
   async sync() {
     const { settings, currentTeam, userProfile } = get()
-    
+
     // Configure API if in cloud mode
-    if (settings.enabled && settings.mode === 'cloud' && settings.endpoint && settings.apiToken) {
-      teamApi.configure(settings.endpoint, settings.apiToken, userProfile?.id || '')
+    if (
+      settings.enabled &&
+      settings.mode === 'cloud' &&
+      settings.endpoint &&
+      settings.apiToken
+    ) {
+      teamApi.configure(
+        settings.endpoint,
+        settings.apiToken,
+        userProfile?.id || '',
+      )
     }
 
     if (!settings.enabled || settings.mode !== 'cloud' || !currentTeam) {
@@ -757,7 +849,7 @@ export const useTeamStore = create<TeamState>((set, get) => ({
       // 2. Update local data from server changes
       if (changesResponse.data) {
         const { shares } = changesResponse.data
-        
+
         // Update shared hosts/snippets from server
         for (const apiShare of shares as any[]) {
           const converted = convertApiShare(apiShare)
@@ -814,12 +906,21 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   // Create team on cloud server
   async cloudCreateTeam(name: string): Promise<Team | null> {
     const { settings, userProfile } = get()
-    
-    if (!settings.enabled || settings.mode !== 'cloud' || !settings.endpoint || !settings.apiToken) {
+
+    if (
+      !settings.enabled ||
+      settings.mode !== 'cloud' ||
+      !settings.endpoint ||
+      !settings.apiToken
+    ) {
       return null
     }
 
-    teamApi.configure(settings.endpoint, settings.apiToken, userProfile?.id || '')
+    teamApi.configure(
+      settings.endpoint,
+      settings.apiToken,
+      userProfile?.id || '',
+    )
 
     const response = await teamApi.createTeam(name)
     if (response.error || !response.data) {
@@ -835,12 +936,21 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   // Load teams from cloud server
   async cloudLoadTeams(): Promise<void> {
     const { settings, userProfile } = get()
-    
-    if (!settings.enabled || settings.mode !== 'cloud' || !settings.endpoint || !settings.apiToken) {
+
+    if (
+      !settings.enabled ||
+      settings.mode !== 'cloud' ||
+      !settings.endpoint ||
+      !settings.apiToken
+    ) {
       return
     }
 
-    teamApi.configure(settings.endpoint, settings.apiToken, userProfile?.id || '')
+    teamApi.configure(
+      settings.endpoint,
+      settings.apiToken,
+      userProfile?.id || '',
+    )
 
     const response = await teamApi.listTeams()
     if (response.error || !response.data) {
@@ -855,10 +965,14 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   // Load members from cloud server
   async cloudLoadMembers(teamId: string): Promise<void> {
     const { settings, userProfile } = get()
-    
+
     if (!settings.enabled || settings.mode !== 'cloud') return
 
-    teamApi.configure(settings.endpoint || '', settings.apiToken || '', userProfile?.id || '')
+    teamApi.configure(
+      settings.endpoint || '',
+      settings.apiToken || '',
+      userProfile?.id || '',
+    )
 
     const response = await teamApi.listMembers(teamId)
     if (response.error || !response.data) {
@@ -873,10 +987,14 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   // Load shares from cloud server
   async cloudLoadShares(teamId: string): Promise<void> {
     const { settings, userProfile } = get()
-    
+
     if (!settings.enabled || settings.mode !== 'cloud') return
 
-    teamApi.configure(settings.endpoint || '', settings.apiToken || '', userProfile?.id || '')
+    teamApi.configure(
+      settings.endpoint || '',
+      settings.apiToken || '',
+      userProfile?.id || '',
+    )
 
     const response = await teamApi.listShares(teamId)
     if (response.error || !response.data) {
@@ -888,7 +1006,10 @@ export const useTeamStore = create<TeamState>((set, get) => ({
     const sharedSnippets: SharedSnippet[] = []
 
     for (const apiShare of response.data) {
-      const converted = convertApiShare({ ...apiShare, createdAt: apiShare.createdAt?.toString() || new Date().toISOString() })
+      const converted = convertApiShare({
+        ...apiShare,
+        createdAt: apiShare.createdAt?.toString() || new Date().toISOString(),
+      })
       converted.teamId = teamId
       if ('hostData' in converted) {
         sharedHosts.push(converted as SharedHost)
@@ -901,17 +1022,31 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   },
 
   // Create share on cloud server
-  async cloudCreateShare(teamId: string, type: 'HOST' | 'SNIPPET_PACKAGE', data: unknown, permission: 'readonly' | 'readwrite'): Promise<void> {
+  async cloudCreateShare(
+    teamId: string,
+    type: 'HOST' | 'SNIPPET_PACKAGE',
+    data: unknown,
+    permission: 'readonly' | 'readwrite',
+  ): Promise<void> {
     const { settings, userProfile } = get()
-    
+
     if (!settings.enabled || settings.mode !== 'cloud') return
 
-    teamApi.configure(settings.endpoint || '', settings.apiToken || '', userProfile?.id || '')
+    teamApi.configure(
+      settings.endpoint || '',
+      settings.apiToken || '',
+      userProfile?.id || '',
+    )
 
     const apiType = type === 'HOST' ? 'HOST' : 'SNIPPET_PACKAGE'
     const apiPermission = permission.toUpperCase() as 'READONLY' | 'READWRITE'
 
-    const response = await teamApi.createShare(teamId, apiType, data, apiPermission)
+    const response = await teamApi.createShare(
+      teamId,
+      apiType,
+      data,
+      apiPermission,
+    )
     if (response.error) {
       console.error('Cloud create share error:', response.error)
     }
@@ -920,10 +1055,14 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   // Delete share on cloud server
   async cloudDeleteShare(teamId: string, shareId: string): Promise<void> {
     const { settings, userProfile } = get()
-    
+
     if (!settings.enabled || settings.mode !== 'cloud') return
 
-    teamApi.configure(settings.endpoint || '', settings.apiToken || '', userProfile?.id || '')
+    teamApi.configure(
+      settings.endpoint || '',
+      settings.apiToken || '',
+      userProfile?.id || '',
+    )
 
     const response = await teamApi.deleteShare(teamId, shareId)
     if (response.error) {
@@ -932,12 +1071,21 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   },
 
   // Create invite on cloud server
-  async cloudCreateInvite(teamId: string, type: 'LINK' | 'CODE' | 'EMAIL', email?: string, role: 'admin' | 'member' = 'member'): Promise<TeamInvite | null> {
+  async cloudCreateInvite(
+    teamId: string,
+    type: 'LINK' | 'CODE' | 'EMAIL',
+    email?: string,
+    role: 'admin' | 'member' = 'member',
+  ): Promise<TeamInvite | null> {
     const { settings, userProfile } = get()
-    
+
     if (!settings.enabled || settings.mode !== 'cloud') return null
 
-    teamApi.configure(settings.endpoint || '', settings.apiToken || '', userProfile?.id || '')
+    teamApi.configure(
+      settings.endpoint || '',
+      settings.apiToken || '',
+      userProfile?.id || '',
+    )
 
     const apiRole = role.toUpperCase() as 'ADMIN' | 'MEMBER'
     const response = await teamApi.createInvite(teamId, type, email, apiRole)
@@ -965,12 +1113,19 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   },
 
   // Join team by code from cloud server
-  async cloudJoinByCode(code: string, userName?: string): Promise<{ teamId: string; role: 'admin' | 'member' } | null> {
+  async cloudJoinByCode(
+    code: string,
+    userName?: string,
+  ): Promise<{ teamId: string; role: 'admin' | 'member' } | null> {
     const { settings, userProfile } = get()
-    
+
     if (!settings.enabled || settings.mode !== 'cloud') return null
 
-    teamApi.configure(settings.endpoint || '', settings.apiToken || '', userProfile?.id || '')
+    teamApi.configure(
+      settings.endpoint || '',
+      settings.apiToken || '',
+      userProfile?.id || '',
+    )
 
     const response = await teamApi.joinByCode(code, userName)
 
@@ -986,12 +1141,19 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   },
 
   // Join team by link from cloud server
-  async cloudJoinByLink(linkToken: string, userName?: string): Promise<{ teamId: string; role: 'admin' | 'member' } | null> {
+  async cloudJoinByLink(
+    linkToken: string,
+    userName?: string,
+  ): Promise<{ teamId: string; role: 'admin' | 'member' } | null> {
     const { settings, userProfile } = get()
-    
+
     if (!settings.enabled || settings.mode !== 'cloud') return null
 
-    teamApi.configure(settings.endpoint || '', settings.apiToken || '', userProfile?.id || '')
+    teamApi.configure(
+      settings.endpoint || '',
+      settings.apiToken || '',
+      userProfile?.id || '',
+    )
 
     const response = await teamApi.joinByLink(linkToken, userName)
 
@@ -1009,10 +1171,14 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   // Load audit logs from cloud server
   async cloudLoadAuditLogs(teamId: string, limit = 100): Promise<void> {
     const { settings, userProfile } = get()
-    
+
     if (!settings.enabled || settings.mode !== 'cloud') return
 
-    teamApi.configure(settings.endpoint || '', settings.apiToken || '', userProfile?.id || '')
+    teamApi.configure(
+      settings.endpoint || '',
+      settings.apiToken || '',
+      userProfile?.id || '',
+    )
 
     const response = await teamApi.listAuditLogs(teamId, limit)
     if (response.error || !response.data) {
@@ -1021,7 +1187,10 @@ export const useTeamStore = create<TeamState>((set, get) => ({
     }
 
     const auditLogs = response.data.map(log => ({
-      ...convertApiAuditLog({ ...log, createdAt: log.createdAt?.toString() || new Date().toISOString() }),
+      ...convertApiAuditLog({
+        ...log,
+        createdAt: log.createdAt?.toString() || new Date().toISOString(),
+      }),
       teamId,
     }))
     set({ auditLogs })
@@ -1029,8 +1198,14 @@ export const useTeamStore = create<TeamState>((set, get) => ({
 }))
 
 // Selector helpers
-export const useIsTeamEnabled = () => useTeamStore(state => state.settings.enabled)
-export const useIsCloudMode = () => useTeamStore((state) => state.settings.enabled && state.settings.mode === 'cloud')
+export function useIsTeamEnabled() {
+  return useTeamStore(state => state.settings.enabled)
+}
+export function useIsCloudMode() {
+  return useTeamStore(
+    state => state.settings.enabled && state.settings.mode === 'cloud',
+  )
+}
 export const useCurrentTeam = () => useTeamStore(state => state.currentTeam)
 export const useTeams = () => useTeamStore(state => state.teams)
 export const useUserId = () => useTeamStore(state => state.userProfile?.id)

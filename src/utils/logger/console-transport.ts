@@ -1,6 +1,6 @@
+import type { LogTransport } from './transport'
 import dayjs from 'dayjs'
 import { LogLevel } from './log-level'
-import type { LogTransport } from './transport'
 
 const LEVEL_TAGS = {
   [LogLevel.Debug]: 'DBG',

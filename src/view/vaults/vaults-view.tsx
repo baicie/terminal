@@ -1,23 +1,24 @@
-import { useState, useEffect } from 'react'
+import type { VaultEntry } from '@/service/vault'
+import {
+  AlertCircle,
+  Copy,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Loader2,
+  Lock,
+  Plus,
+  Server,
+  Shield,
+  Trash2,
+  Unlock,
+} from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Shield,
-  Lock,
-  Unlock,
-  KeyRound,
-  Plus,
-  Trash2,
-  Eye,
-  EyeOff,
-  AlertCircle,
-  Copy,
-  Server,
-  Loader2,
-} from 'lucide-react'
-import { vaultService, type VaultEntry } from '@/service/vault'
 import { toast } from '@/components/ui/sonner'
+import { vaultService } from '@/service/vault'
 
 type VaultState = 'loading' | 'unlocked' | 'locked' | 'not_created'
 

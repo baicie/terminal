@@ -1,7 +1,7 @@
+import { UploadIcon, UserIcon, VideoIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { UserIcon, VideoIcon, UploadIcon } from 'lucide-react'
 
 const VaultsLayout: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false)

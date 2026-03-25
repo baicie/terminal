@@ -1,20 +1,20 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useHostStore } from '@/store/host'
-import { useAppStore } from '@/store/app'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import type { Host, Group } from '@/types'
+import type { Group, Host } from '@/types'
 import {
-  ChevronRight,
   ChevronDown,
-  Star,
-  StarOff,
+  ChevronRight,
   Folder,
   FolderOpen,
-  Server,
   Monitor,
+  Server,
+  Star,
+  StarOff,
 } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { useAppStore } from '@/store/app'
+import { useHostStore } from '@/store/host'
 
 interface HostListProps {
   onConnect?: (host: Host) => void
@@ -103,7 +103,10 @@ const FavoritesSection: React.FC<{ onConnect?: (host: Host) => void }> = ({
   const getHostsByGroup = useHostStore(s => s.getHostsByGroup)
 
   const hosts = getHostsByGroup(null)
-  const favorites = [...favoriteHosts, ...hosts.filter((h: Host) => h.isFavorite)]
+  const favorites = [
+    ...favoriteHosts,
+    ...hosts.filter((h: Host) => h.isFavorite),
+  ]
 
   if (favorites.length === 0) return null
 

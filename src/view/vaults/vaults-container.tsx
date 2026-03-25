@@ -1,24 +1,18 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useHostStore } from '@/store/host'
-import { vaultService } from '@/service/vault'
 import {
-  ViewContainer,
-  ViewToolbar,
-  ViewContent,
-  ViewHeader,
-  EmptyState,
-} from '@/components/view-container'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  Copy,
+  Eye,
+  EyeOff,
+  Key,
+  Lock,
+  Plus,
+  Search,
+  Server,
+  Shield,
+  ShieldCheck,
+  Trash2,
+  Unlock,
+} from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,23 +23,29 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Textarea } from '@/components/ui/textarea'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { Button } from '@/components/ui/button'
 import {
-  Shield,
-  Plus,
-  Search,
-  Lock,
-  Unlock,
-  Trash2,
-  Key,
-  Eye,
-  EyeOff,
-  Copy,
-  ShieldCheck,
-  Server,
-} from 'lucide-react'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { toast } from '@/components/ui/sonner'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  EmptyState,
+  ViewContainer,
+  ViewContent,
+  ViewHeader,
+  ViewToolbar,
+} from '@/components/view-container'
+import { vaultService } from '@/service/vault'
+import { useHostStore } from '@/store/host'
 
 interface VaultEntry {
   key: string
@@ -730,8 +730,8 @@ const VaultsContainer: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Entry</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{entryToDelete?.key}"? This
-              action cannot be undone.
+              Are you sure you want to delete "{entryToDelete?.key}
+              "? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

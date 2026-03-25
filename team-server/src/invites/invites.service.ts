@@ -1,6 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
-import { PrismaService } from '../prisma.service'
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import { nanoid } from 'nanoid'
+import { PrismaService } from '../prisma.service'
 
 @Injectable()
 export class InvitesService {
@@ -14,9 +18,17 @@ export class InvitesService {
     })
   }
 
-  async create(teamId: string, userId: string, data: { type: 'LINK' | 'CODE' | 'EMAIL'; email?: string; role?: 'ADMIN' | 'MEMBER' }) {
+  async create(
+    teamId: string,
+    userId: string,
+    data: {
+      type: 'LINK' | 'CODE' | 'EMAIL'
+      email?: string
+      role?: 'ADMIN' | 'MEMBER'
+    },
+  ) {
     await this.checkMembership(teamId, userId)
-    
+
     const role = data.role || 'MEMBER'
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
 
@@ -31,12 +43,15 @@ export class InvitesService {
     if (data.type === 'CODE') {
       // Generate invite code: TEAM-XXXX-XXXX
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-      const code = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+      const code = Array.from({ length: 4 })
+        .fill(chars[Math.floor(Math.random() * chars.length)])
+        .join('')
       inviteData.code = `TEAM-${code}-${nanoid(4).toUpperCase()}`
     } else if (data.type === 'LINK') {
       inviteData.linkToken = nanoid(24)
     } else if (data.type === 'EMAIL') {
-      if (!data.email) throw new BadRequestException('Email required for email invite')
+      if (!data.email)
+        throw new BadRequestException('Email required for email invite')
       inviteData.email = data.email
     }
 
@@ -46,7 +61,8 @@ export class InvitesService {
   async joinByCode(code: string, userId: string, userName?: string) {
     const invite = await this.prisma.invite.findUnique({ where: { code } })
     if (!invite) throw new NotFoundException('Invalid invite code')
-    if (invite.expiresAt < new Date()) throw new BadRequestException('Invite expired')
+    if (invite.expiresAt < new Date())
+      throw new BadRequestException('Invite expired')
     if (invite.usedAt) throw new BadRequestException('Invite already used')
 
     // Add user as member
@@ -71,7 +87,8 @@ export class InvitesService {
   async joinByLink(linkToken: string, userId: string, userName?: string) {
     const invite = await this.prisma.invite.findUnique({ where: { linkToken } })
     if (!invite) throw new NotFoundException('Invalid invite link')
-    if (invite.expiresAt < new Date()) throw new BadRequestException('Invite expired')
+    if (invite.expiresAt < new Date())
+      throw new BadRequestException('Invite expired')
     if (invite.usedAt) throw new BadRequestException('Invite already used')
 
     await this.prisma.teamMember.create({
@@ -99,7 +116,9 @@ export class InvitesService {
   async getInviteByCode(code: string) {
     const invite = await this.prisma.invite.findUnique({ where: { code } })
     if (!invite) return null
-    const team = await this.prisma.team.findUnique({ where: { id: invite.teamId } })
+    const team = await this.prisma.team.findUnique({
+      where: { id: invite.teamId },
+    })
     return { invite, team }
   }
 
@@ -113,6 +132,7 @@ export class InvitesService {
 
   private async checkAdmin(teamId: string, userId: string) {
     const membership = await this.checkMembership(teamId, userId)
-    if (membership.role !== 'ADMIN') throw new BadRequestException('Admin access required')
+    if (membership.role !== 'ADMIN')
+      throw new BadRequestException('Admin access required')
   }
 }

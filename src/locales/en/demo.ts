@@ -459,7 +459,8 @@ export default {
   'teams.lastSync': 'Last sync: {time}',
   'teams.leaveTeam': 'Leave Team',
   'teams.deleteTeam': 'Delete Team',
-  'teams.deleteTeamConfirm': 'Are you sure you want to delete this team? This action cannot be undone.',
+  'teams.deleteTeamConfirm':
+    'Are you sure you want to delete this team? This action cannot be undone.',
   'teams.settings': 'Team Settings',
   'teams.serverEndpoint': 'Server Endpoint',
   'teams.apiToken': 'API Token',
@@ -473,7 +474,8 @@ export default {
   'teams.enableTeamMode': 'Enable Team Mode',
   'teams.enableTeamModeDesc': 'Enable team collaboration features',
   'teams.teamSettings': 'Team Settings',
-  'teams.addFirstTeamDesc': 'Create or join a team to share hosts and snippets with team members.',
+  'teams.addFirstTeamDesc':
+    'Create or join a team to share hosts and snippets with team members.',
   'teams.createNewTeam': 'Create New Team',
   'teams.joinExistingTeam': 'Join Existing Team',
   'teams.you': '(You)',
@@ -494,13 +496,15 @@ export default {
   'teams.includeSnippets': 'Include Snippets',
   'teams.includeSnippetsDesc': 'Export all code snippets',
   'teams.includeMembers': 'Include Member Info',
-  'teams.includeMembersDesc': 'Include team member list (excluding sensitive info)',
+  'teams.includeMembersDesc':
+    'Include team member list (excluding sensitive info)',
   'teams.cloud': 'Cloud',
   'teams.local': 'Local',
   'teams.teamCreated': 'Team created successfully',
   'teams.teamModeDisabled': 'Team mode disabled',
   'teams.disableTeamMode': 'Disable Team Mode',
-  'teams.disableConfirm': 'Are you sure you want to disable team features? Your team data will be kept.',
+  'teams.disableConfirm':
+    'Are you sure you want to disable team features? Your team data will be kept.',
   'teams.noMembers': 'No members yet',
   'teams.noSharedHosts': 'No shared hosts yet',
   'teams.noSharedSnippets': 'No shared snippets yet',

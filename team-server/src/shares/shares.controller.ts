@@ -1,8 +1,17 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common'
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
-import { SharesService } from './shares.service'
-import { ApiKeyGuard } from '../auth/api-key.guard'
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  UseGuards,
+} from '@nestjs/common'
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { ApiKeyAuth } from '../auth/api-key-auth.decorator'
+import { ApiKeyGuard } from '../auth/api-key.guard'
+import { SharesService } from './shares.service'
 
 @ApiTags('shares')
 @ApiBearerAuth('API_KEY')
@@ -21,7 +30,12 @@ export class SharesController {
   @ApiOperation({ summary: 'Create a new share' })
   async create(
     @Param('teamId') teamId: string,
-    @Body() body: { type: 'HOST' | 'HOST_GROUP' | 'SNIPPET_PACKAGE'; data: any; permission: 'READONLY' | 'READWRITE' },
+    @Body()
+    body: {
+      type: 'HOST' | 'HOST_GROUP' | 'SNIPPET_PACKAGE'
+      data: any
+      permission: 'READONLY' | 'READWRITE'
+    },
     @ApiKeyAuth() userId: string,
   ) {
     return this.sharesService.create(teamId, userId, body)

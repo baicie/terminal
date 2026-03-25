@@ -1,24 +1,23 @@
 {
   "name": "@terminal/monorepo",
-  "private": true,
-  "version": "0.1.0",
   "type": "module",
+  "version": "0.1.0",
+  "private": true,
   "scripts": {
-    "dev": "pnpm -r --parallel --filter=./src dev",
+    "dev": "vite",
     "dev:all": "pnpm -r --parallel dev",
     "dev:team-server": "pnpm --filter=team-server start:dev",
     "build": "pnpm -r build",
     "build:team-server": "pnpm --filter=team-server build",
-    "format": "pnpm -r format",
-    "lint": "pnpm -r lint",
-    "lint:fix": "pnpm -r lint --fix",
-    "typecheck": "pnpm -r typecheck",
     "tauri": "tauri",
     "shadcn": "shadcn",
     "format": "prettier --write .",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",
@@ -76,6 +75,8 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@antfu/eslint-config": "^7.7.3",
+    "@eslint-react/eslint-plugin": "^3.0.0",
     "@tailwindcss/vite": "^4.2.2",
     "@tauri-apps/cli": ">=2.10.1",
     "@types/js-cookie": "^3.0.6",
@@ -83,19 +84,19 @@
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@typescript-eslint/eslint-plugin": "^8.57.2",
-    "@typescript-eslint/parser": "^8.57.2",
     "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "^4.1.1",
     "autoprefixer": "^10.4.27",
     "eslint": "^10.1.0",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
+    "eslint-plugin-unicorn": "^63.0.0",
+    "jsdom": "^29.0.1",
     "postcss": "^8.5.8",
     "prettier": "^3.8.1",
     "sass": "^1.98.0",
     "tailwind-animate": "^0.2.10",
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.2",
-    "vite": "^8.0.2"
+    "vite": "^8.0.2",
+    "vitest": "^4.1.1"
   }
 }

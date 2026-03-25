@@ -54,11 +54,11 @@ docker-compose up -d
 
 ## 环境变量
 
-| 变量 | 描述 | 默认值 |
-|------|------|--------|
+| 变量         | 描述                  | 默认值                                                |
+| ------------ | --------------------- | ----------------------------------------------------- |
 | DATABASE_URL | PostgreSQL 连接字符串 | postgresql://postgres:postgres@localhost:5432/team_db |
-| PORT | 服务端口 | 3000 |
-| NODE_ENV | 运行环境 | development |
+| PORT         | 服务端口              | 3000                                                  |
+| NODE_ENV     | 运行环境              | development                                           |
 
 ## 健康检查
 

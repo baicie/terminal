@@ -8,7 +8,7 @@ class TerminalEmitterService {
   }
 
   writeCommand(command: string): void {
-    this.write(command + '\r')
+    this.write(`${command}\r`)
   }
 
   onWrite(listener: WriteListener): () => void {

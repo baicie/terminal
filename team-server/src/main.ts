@@ -1,6 +1,6 @@
-import { NestFactory } from '@nestjs/core'
 import { ValidationPipe } from '@nestjs/common'
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger'
+import { NestFactory } from '@nestjs/core'
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
 import { AppModule } from './app.module'
 
 async function bootstrap() {
@@ -30,7 +30,10 @@ async function bootstrap() {
     .setTitle('Team Server API')
     .setDescription('API for Terminal Team Collaboration')
     .setVersion('1.0')
-    .addApiKey({ type: 'apiKey', name: 'Authorization', in: 'header' }, 'API_KEY')
+    .addApiKey(
+      { type: 'apiKey', name: 'Authorization', in: 'header' },
+      'API_KEY',
+    )
     .build()
   const document = SwaggerModule.createDocument(app, config)
   SwaggerModule.setup('api/docs', app, document)

@@ -1,7 +1,21 @@
-import { Controller, Post, Get, Delete, Body, Headers, HttpCode, HttpStatus } from '@nestjs/common'
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger'
-import { AuthService } from './auth.service'
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Post,
+} from '@nestjs/common'
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger'
 import { ApiKeyAuth } from './api-key-auth.decorator'
+import { AuthService } from './auth.service'
 
 @ApiTags('auth')
 @Controller('auth')
@@ -41,7 +55,10 @@ export class AuthController {
   @ApiBearerAuth('API_KEY')
   @ApiOperation({ summary: 'Revoke current API token' })
   @ApiResponse({ status: 204, description: 'Token revoked' })
-  async revokeToken(@ApiKeyAuth() userId: string, @Headers('authorization') auth: string) {
+  async revokeToken(
+    @ApiKeyAuth() userId: string,
+    @Headers('authorization') auth: string,
+  ) {
     const token = auth.replace('Bearer ', '')
     return this.authService.revokeToken(token)
   }

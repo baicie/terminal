@@ -1,6 +1,6 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common'
-import { PrismaService } from '../prisma.service'
+import { Injectable, UnauthorizedException } from '@nestjs/common'
 import { nanoid } from 'nanoid'
+import { PrismaService } from '../prisma.service'
 
 @Injectable()
 export class AuthService {
@@ -10,7 +10,10 @@ export class AuthService {
    * Register a new user (creates if not exists)
    * Returns an API token for immediate use
    */
-  async register(userId: string, name?: string): Promise<{ userId: string; token?: string }> {
+  async register(
+    userId: string,
+    name?: string,
+  ): Promise<{ userId: string; token?: string }> {
     let user = await this.prisma.user.findUnique({
       where: { id: userId },
     })
@@ -98,7 +101,11 @@ export class AuthService {
   /**
    * List all tokens for a user
    */
-  async listTokens(userId: string): Promise<{ id: string; name: string; createdAt: Date; expiresAt: Date | null }[]> {
+  async listTokens(
+    userId: string,
+  ): Promise<
+    { id: string; name: string; createdAt: Date; expiresAt: Date | null }[]
+  > {
     const tokens = await this.prisma.apiToken.findMany({
       where: { userId },
       select: {

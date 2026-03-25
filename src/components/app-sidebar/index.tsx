@@ -1,25 +1,25 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import {
+  ArrowLeftRight,
+  Code2,
+  FileText,
+  Fingerprint,
+  Key,
+  PanelLeft,
+  PanelLeftClose,
+  Server,
+  Terminal,
+  Users,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
+import { NavLink, useLocation } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { useIsTeamEnabled } from '@/store/team'
-import {
-  Server,
-  Key,
-  ArrowLeftRight,
-  Code2,
-  Fingerprint,
-  FileText,
-  PanelLeftClose,
-  PanelLeft,
-  Terminal,
-  Users,
-} from 'lucide-react'
 
 interface NavItem {
   path: string
@@ -34,7 +34,12 @@ interface NavItemProps {
   style?: React.CSSProperties
 }
 
-const NavItem: React.FC<NavItemProps> = ({ item, iconOnly, className, style }) => {
+const NavItem: React.FC<NavItemProps> = ({
+  item,
+  iconOnly,
+  className,
+  style,
+}) => {
   const { t } = useTranslation('demo')
   const location = useLocation()
   const hostsPaths = ['/', '/hosts']

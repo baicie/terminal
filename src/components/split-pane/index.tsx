@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react'
 import type { SplitGroup } from '@/types'
+import * as React from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 interface SplitPaneProps {
   group: SplitGroup

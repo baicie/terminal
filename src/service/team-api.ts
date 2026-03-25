@@ -1,7 +1,14 @@
 /**
  * Team API Service - 连接 NestJS 后端服务
  */
-import type { Team, TeamMember, SharedHost, SharedSnippet, TeamInvite, AuditLog } from '@/store/team'
+import type {
+  AuditLog,
+  SharedHost,
+  SharedSnippet,
+  Team,
+  TeamInvite,
+  TeamMember,
+} from '@/store/team'
 
 interface ApiResponse<T> {
   data?: T
@@ -31,7 +38,7 @@ class TeamApiService {
   private async request<T>(
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     path: string,
-    body?: unknown
+    body?: unknown,
   ): Promise<ApiResponse<T>> {
     if (!this.isConfigured()) {
       return { error: 'API not configured' }
@@ -41,7 +48,7 @@ class TeamApiService {
       const url = `${this.endpoint}/api/v1${path}`
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiToken}`,
+        Authorization: `Bearer ${this.apiToken}`,
       }
 
       const response = await fetch(url, {
@@ -51,7 +58,10 @@ class TeamApiService {
       })
 
       if (!response.ok) {
-        const errorData: ApiError = await response.json().catch(() => ({ statusCode: response.status, message: 'Request failed' }))
+        const errorData: ApiError = await response.json().catch(() => ({
+          statusCode: response.status,
+          message: 'Request failed',
+        }))
         return { error: errorData.message || `HTTP ${response.status}` }
       }
 
@@ -66,15 +76,22 @@ class TeamApiService {
 
   // ==================== Auth ====================
 
-  async register(userId: string, name?: string): Promise<ApiResponse<{ id: string; token?: string }>> {
+  async register(
+    userId: string,
+    name?: string,
+  ): Promise<ApiResponse<{ id: string; token?: string }>> {
     return this.request('POST', '/auth/register', { userId, name })
   }
 
-  async createToken(name: string): Promise<ApiResponse<{ id: string; token: string; name: string }>> {
+  async createToken(
+    name: string,
+  ): Promise<ApiResponse<{ id: string; token: string; name: string }>> {
     return this.request('POST', '/auth/tokens', { name })
   }
 
-  async listTokens(): Promise<ApiResponse<Array<{ id: string; name: string; createdAt: string }>>> {
+  async listTokens(): Promise<
+    ApiResponse<Array<{ id: string; name: string; createdAt: string }>>
+  > {
     return this.request('GET', '/auth/tokens')
   }
 
@@ -84,19 +101,42 @@ class TeamApiService {
 
   // ==================== Teams ====================
 
-  async listTeams(): Promise<ApiResponse<Array<{ id: string; name: string; ownerId: string; memberCount: number; role: string }>>> {
+  async listTeams(): Promise<
+    ApiResponse<
+      Array<{
+        id: string
+        name: string
+        ownerId: string
+        memberCount: number
+        role: string
+      }>
+    >
+  > {
     return this.request('GET', '/teams')
   }
 
-  async getTeam(teamId: string): Promise<ApiResponse<{ id: string; name: string; ownerId: string; memberCount: number; role: string }>> {
+  async getTeam(teamId: string): Promise<
+    ApiResponse<{
+      id: string
+      name: string
+      ownerId: string
+      memberCount: number
+      role: string
+    }>
+  > {
     return this.request('GET', `/teams/${teamId}`)
   }
 
-  async createTeam(name: string): Promise<ApiResponse<{ id: string; name: string; ownerId: string }>> {
+  async createTeam(
+    name: string,
+  ): Promise<ApiResponse<{ id: string; name: string; ownerId: string }>> {
     return this.request('POST', '/teams', { name })
   }
 
-  async updateTeam(teamId: string, name: string): Promise<ApiResponse<{ id: string; name: string }>> {
+  async updateTeam(
+    teamId: string,
+    name: string,
+  ): Promise<ApiResponse<{ id: string; name: string }>> {
     return this.request('PUT', `/teams/${teamId}`, { name })
   }
 
@@ -106,80 +146,207 @@ class TeamApiService {
 
   // ==================== Members ====================
 
-  async listMembers(teamId: string): Promise<ApiResponse<Array<{ id: string; userId: string; userName?: string; userEmail?: string; role: string }>>> {
+  async listMembers(teamId: string): Promise<
+    ApiResponse<
+      Array<{
+        id: string
+        userId: string
+        userName?: string
+        userEmail?: string
+        role: string
+      }>
+    >
+  > {
     return this.request('GET', `/teams/${teamId}/members`)
   }
 
-  async addMember(teamId: string, userId: string, userName?: string, userEmail?: string, role: 'ADMIN' | 'MEMBER' = 'MEMBER'): Promise<ApiResponse<{ id: string }>> {
-    return this.request('POST', `/teams/${teamId}/members`, { userId, userName, userEmail, role })
+  async addMember(
+    teamId: string,
+    userId: string,
+    userName?: string,
+    userEmail?: string,
+    role: 'ADMIN' | 'MEMBER' = 'MEMBER',
+  ): Promise<ApiResponse<{ id: string }>> {
+    return this.request('POST', `/teams/${teamId}/members`, {
+      userId,
+      userName,
+      userEmail,
+      role,
+    })
   }
 
-  async updateMemberRole(teamId: string, memberId: string, role: 'ADMIN' | 'MEMBER'): Promise<ApiResponse<void>> {
+  async updateMemberRole(
+    teamId: string,
+    memberId: string,
+    role: 'ADMIN' | 'MEMBER',
+  ): Promise<ApiResponse<void>> {
     return this.request('PUT', `/teams/${teamId}/members/${memberId}`, { role })
   }
 
-  async removeMember(teamId: string, memberId: string): Promise<ApiResponse<void>> {
+  async removeMember(
+    teamId: string,
+    memberId: string,
+  ): Promise<ApiResponse<void>> {
     return this.request('DELETE', `/teams/${teamId}/members/${memberId}`)
   }
 
   // ==================== Shares ====================
 
-  async listShares(teamId: string): Promise<ApiResponse<Array<{ id: string; type: string; data: unknown; permission: string; sharedBy: string; createdAt: string }>>> {
+  async listShares(teamId: string): Promise<
+    ApiResponse<
+      Array<{
+        id: string
+        type: string
+        data: unknown
+        permission: string
+        sharedBy: string
+        createdAt: string
+      }>
+    >
+  > {
     return this.request('GET', `/teams/${teamId}/shares`)
   }
 
-  async createShare(teamId: string, type: 'HOST' | 'HOST_GROUP' | 'SNIPPET_PACKAGE', data: unknown, permission: 'READONLY' | 'READWRITE'): Promise<ApiResponse<{ id: string }>> {
-    return this.request('POST', `/teams/${teamId}/shares', { type, data, permission })
+  async createShare(
+    teamId: string,
+    type: 'HOST' | 'HOST_GROUP' | 'SNIPPET_PACKAGE',
+    data: unknown,
+    permission: 'READONLY' | 'READWRITE',
+  ): Promise<ApiResponse<{ id: string }>> {
+    return this.request('POST', `/teams/${teamId}/shares`, {
+      type,
+      data,
+      permission,
+    })
   }
 
-  async updateShare(teamId: string, shareId: string, permission: 'READONLY' | 'READWRITE'): Promise<ApiResponse<void>> {
-    return this.request('PUT', `/teams/${teamId}/shares/${shareId}`, { permission })
+  async updateShare(
+    teamId: string,
+    shareId: string,
+    permission: 'READONLY' | 'READWRITE',
+  ): Promise<ApiResponse<void>> {
+    return this.request('PUT', `/teams/${teamId}/shares/${shareId}`, {
+      permission,
+    })
   }
 
-  async deleteShare(teamId: string, shareId: string): Promise<ApiResponse<void>> {
+  async deleteShare(
+    teamId: string,
+    shareId: string,
+  ): Promise<ApiResponse<void>> {
     return this.request('DELETE', `/teams/${teamId}/shares/${shareId}`)
   }
 
   // ==================== Invites ====================
 
-  async listInvites(teamId: string): Promise<ApiResponse<Array<{ id: string; type: string; code?: string; linkToken?: string; email?: string; role: string; expiresAt: string; usedAt?: string }>>> {
+  async listInvites(teamId: string): Promise<
+    ApiResponse<
+      Array<{
+        id: string
+        type: string
+        code?: string
+        linkToken?: string
+        email?: string
+        role: string
+        expiresAt: string
+        usedAt?: string
+      }>
+    >
+  > {
     return this.request('GET', `/teams/${teamId}/invites`)
   }
 
-  async createInvite(teamId: string, type: 'LINK' | 'CODE' | 'EMAIL', email?: string, role: 'ADMIN' | 'MEMBER' = 'MEMBER'): Promise<ApiResponse<{ id: string; code?: string; linkToken?: string }>> {
-    return this.request('POST', `/teams/${teamId}/invites`, { type, email, role })
+  async createInvite(
+    teamId: string,
+    type: 'LINK' | 'CODE' | 'EMAIL',
+    email?: string,
+    role: 'ADMIN' | 'MEMBER' = 'MEMBER',
+  ): Promise<ApiResponse<{ id: string; code?: string; linkToken?: string }>> {
+    return this.request('POST', `/teams/${teamId}/invites`, {
+      type,
+      email,
+      role,
+    })
   }
 
-  async deleteInvite(teamId: string, inviteId: string): Promise<ApiResponse<void>> {
+  async deleteInvite(
+    teamId: string,
+    inviteId: string,
+  ): Promise<ApiResponse<void>> {
     return this.request('DELETE', `/teams/${teamId}/invites/${inviteId}`)
   }
 
-  async joinByCode(code: string, userName?: string): Promise<ApiResponse<{ teamId: string; role: string }>> {
+  async joinByCode(
+    code: string,
+    userName?: string,
+  ): Promise<ApiResponse<{ teamId: string; role: string }>> {
     return this.request('POST', '/invites/join', { code, userName })
   }
 
-  async getInviteByLink(linkToken: string): Promise<ApiResponse<{ teamName: string; role: string }>> {
+  async getInviteByLink(
+    linkToken: string,
+  ): Promise<ApiResponse<{ teamName: string; role: string }>> {
     return this.request('GET', `/invites/link/${linkToken}`)
   }
 
-  async joinByLink(linkToken: string, userName?: string): Promise<ApiResponse<{ teamId: string; role: string }>> {
+  async joinByLink(
+    linkToken: string,
+    userName?: string,
+  ): Promise<ApiResponse<{ teamId: string; role: string }>> {
     return this.request('POST', `/invites/link/${linkToken}/join`, { userName })
   }
 
   // ==================== Audit ====================
 
-  async listAuditLogs(teamId: string, limit = 100): Promise<ApiResponse<Array<{ id: string; userId: string; userName?: string; hostName?: string; action: string; details?: unknown; createdAt: string }>>> {
+  async listAuditLogs(
+    teamId: string,
+    limit = 100,
+  ): Promise<
+    ApiResponse<
+      Array<{
+        id: string
+        userId: string
+        userName?: string
+        hostName?: string
+        action: string
+        details?: unknown
+        createdAt: string
+      }>
+    >
+  > {
     return this.request('GET', `/teams/${teamId}/audit?limit=${limit}`)
   }
 
   // ==================== Sync ====================
 
-  async getChanges(since?: number): Promise<ApiResponse<{ timestamp: number; teams: unknown[]; members: unknown[]; shares: unknown[]; auditLogs: unknown[] }>> {
+  async getChanges(since?: number): Promise<
+    ApiResponse<{
+      timestamp: number
+      teams: unknown[]
+      members: unknown[]
+      shares: unknown[]
+      auditLogs: unknown[]
+    }>
+  > {
     const query = since ? `?since=${since}` : ''
     return this.request('GET', `/sync${query}`)
   }
 
-  async pushChanges(shares: Array<{ id: string; teamId: string; type: string; data: unknown; permission: string }>): Promise<ApiResponse<{ created: unknown[]; updated: unknown[]; errors: Array<{ id: string; error: string }> }>> {
+  async pushChanges(
+    shares: Array<{
+      id: string
+      teamId: string
+      type: string
+      data: unknown
+      permission: string
+    }>,
+  ): Promise<
+    ApiResponse<{
+      created: unknown[]
+      updated: unknown[]
+      errors: Array<{ id: string; error: string }>
+    }>
+  > {
     return this.request('POST', '/sync', { shares })
   }
 
@@ -190,9 +357,11 @@ class TeamApiService {
     try {
       const response = await fetch(`${this.endpoint}/api/v1/health`, {
         method: 'GET',
-        headers: this.apiToken ? {
-          'Authorization': `Bearer ${this.apiToken}`,
-        } : {},
+        headers: this.apiToken
+          ? {
+              Authorization: `Bearer ${this.apiToken}`,
+            }
+          : {},
       })
       return response.ok
     } catch {
@@ -205,7 +374,13 @@ class TeamApiService {
 export const teamApi = new TeamApiService()
 
 // 类型转换辅助函数
-export function convertApiTeam(apiTeam: { id: string; name: string; ownerId: string; memberCount?: number; role?: string }): Team {
+export function convertApiTeam(apiTeam: {
+  id: string
+  name: string
+  ownerId: string
+  memberCount?: number
+  role?: string
+}): Team {
   return {
     id: apiTeam.id,
     name: apiTeam.name,
@@ -217,7 +392,13 @@ export function convertApiTeam(apiTeam: { id: string; name: string; ownerId: str
   }
 }
 
-export function convertApiMember(apiMember: { id: string; userId: string; userName?: string; userEmail?: string; role: string }): TeamMember {
+export function convertApiMember(apiMember: {
+  id: string
+  userId: string
+  userName?: string
+  userEmail?: string
+  role: string
+}): TeamMember {
   return {
     id: apiMember.id,
     teamId: '', // 需要外部设置
@@ -229,7 +410,14 @@ export function convertApiMember(apiMember: { id: string; userId: string; userNa
   }
 }
 
-export function convertApiShare(apiShare: { id: string; type: string; data: unknown; permission: string; sharedBy: string; createdAt: string }): SharedHost | SharedSnippet {
+export function convertApiShare(apiShare: {
+  id: string
+  type: string
+  data: unknown
+  permission: string
+  sharedBy: string
+  createdAt: string
+}): SharedHost | SharedSnippet {
   const base = {
     id: apiShare.id,
     teamId: '', // 需要外部设置
@@ -251,7 +439,16 @@ export function convertApiShare(apiShare: { id: string; type: string; data: unkn
   } as SharedHost
 }
 
-export function convertApiInvite(apiInvite: { id: string; type: string; code?: string; linkToken?: string; email?: string; role: string; expiresAt: string; usedAt?: string }): TeamInvite {
+export function convertApiInvite(apiInvite: {
+  id: string
+  type: string
+  code?: string
+  linkToken?: string
+  email?: string
+  role: string
+  expiresAt: string
+  usedAt?: string
+}): TeamInvite {
   return {
     id: apiInvite.id,
     teamId: '', // 需要外部设置
@@ -267,7 +464,15 @@ export function convertApiInvite(apiInvite: { id: string; type: string; code?: s
   }
 }
 
-export function convertApiAuditLog(apiLog: { id: string; userId: string; userName?: string; hostName?: string; action: string; details?: unknown; createdAt: string }): AuditLog {
+export function convertApiAuditLog(apiLog: {
+  id: string
+  userId: string
+  userName?: string
+  hostName?: string
+  action: string
+  details?: unknown
+  createdAt: string
+}): AuditLog {
   return {
     id: apiLog.id,
     teamId: '', // 需要外部设置

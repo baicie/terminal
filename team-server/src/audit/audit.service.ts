@@ -8,7 +8,7 @@ export class AuditService {
   async findAll(teamId: string, userId: string, limit = 100) {
     // Only admins can view audit logs
     await this.checkAdmin(teamId, userId)
-    
+
     return this.prisma.auditLog.findMany({
       where: { teamId },
       orderBy: { createdAt: 'desc' },
@@ -16,7 +16,14 @@ export class AuditService {
     })
   }
 
-  async create(teamId: string, userId: string, userName: string, action: string, hostName?: string, details?: any) {
+  async create(
+    teamId: string,
+    userId: string,
+    userName: string,
+    action: string,
+    hostName?: string,
+    details?: any,
+  ) {
     return this.prisma.auditLog.create({
       data: {
         teamId,

@@ -1,16 +1,17 @@
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import type { Workspace } from '@/types'
 import {
+  Check,
+  Cloud,
+  Copy,
+  Minimize2,
   Minus,
+  Plus,
+  Settings,
   Square,
   X,
-  Minimize2,
-  Copy,
-  Settings,
-  Cloud,
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
-import { useWorkspaceStore } from '@/store/workspace'
+import { useEffect, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,10 +19,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Check } from 'lucide-react'
-import type { Workspace } from '@/types'
 import { Input } from '@/components/ui/input'
-import { useRef } from 'react'
+import { cn } from '@/lib/utils'
+import { useWorkspaceStore } from '@/store/workspace'
 
 export type TitleBarStyle = 'macos' | 'windows' | 'linux'
 
@@ -32,7 +32,7 @@ interface CustomTitleBarProps {
   onSettingsClick?: () => void
 }
 
-const detectPlatform = (): TitleBarStyle => {
+function detectPlatform(): TitleBarStyle {
   if (typeof navigator !== 'undefined') {
     const platform = navigator.platform.toLowerCase()
     if (platform.includes('mac') || platform.includes('darwin')) {

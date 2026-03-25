@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import type { TitleBarStyle } from '@/components/custom-title-bar'
+import * as React from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Outlet, useNavigate, useSearchParams } from 'react-router-dom'
-import { useAppStore } from '@/store/app'
-import SplitPane from '@/components/split-pane'
-import TerminalContainer from '@/view/terminal/terminal-container'
 import AppSidebar from '@/components/app-sidebar'
+import SettingsDialog from '@/components/settings-dialog'
+import SplitPane from '@/components/split-pane'
 import TopToolbar from '@/components/top-toolbar'
 import { cn } from '@/lib/utils'
-import type { TitleBarStyle } from '@/components/custom-title-bar'
-import SettingsDialog from '@/components/settings-dialog'
+import { useAppStore } from '@/store/app'
+import TerminalContainer from '@/view/terminal/terminal-container'
 
 const SIDEBAR_WIDTH_KEY = 'terminal.sidebar.width'
 const SIDEBAR_MIN = 64 // 图标模式宽度
@@ -18,7 +19,7 @@ function readSidebarWidth(): number {
   try {
     const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY)
     if (!raw) return SIDEBAR_DEFAULT
-    const n = parseInt(raw, 10)
+    const n = Number.parseInt(raw, 10)
     if (Number.isNaN(n)) return SIDEBAR_DEFAULT
     return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, n))
   } catch {

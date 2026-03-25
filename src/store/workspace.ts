@@ -1,14 +1,14 @@
+import type { WorkspaceRecord } from '@/service/database'
+import type { SplitGroup, Tab, Workspace, WorkspaceLayout } from '@/types'
 import { create } from 'zustand'
-import type { Workspace, WorkspaceLayout, Tab, SplitGroup } from '@/types'
 import {
   createWorkspace,
-  updateWorkspace,
   deleteWorkspace as dbDeleteWorkspace,
-  getWorkspaces,
   setActiveWorkspace as dbSetActiveWorkspace,
-  saveWorkspaceLayout,
   getWorkspaceLayout,
-  type WorkspaceRecord,
+  getWorkspaces,
+  saveWorkspaceLayout,
+  updateWorkspace,
 } from '@/service/database'
 
 function generateId(): string {
@@ -37,11 +37,22 @@ export interface WorkspaceState {
   activeWorkspace: () => Workspace | undefined
   // Actions
   loadWorkspaces: () => Promise<void>
-  addWorkspace: (workspace: Omit<Workspace, 'id' | 'createdAt' | 'updatedAt' | 'isActive' | 'order'>) => Promise<Workspace>
+  addWorkspace: (
+    workspace: Omit<
+      Workspace,
+      'id' | 'createdAt' | 'updatedAt' | 'isActive' | 'order'
+    >,
+  ) => Promise<Workspace>
   updateWorkspace: (id: string, updates: Partial<Workspace>) => Promise<void>
   deleteWorkspace: (id: string) => Promise<void>
   setActiveWorkspace: (id: string) => Promise<void>
-  saveLayout: (workspaceId: string, tabs: Tab[], splitGroups: SplitGroup[], activeTabId: string | null, sidebarVisible: boolean) => Promise<void>
+  saveLayout: (
+    workspaceId: string,
+    tabs: Tab[],
+    splitGroups: SplitGroup[],
+    activeTabId: string | null,
+    sidebarVisible: boolean,
+  ) => Promise<void>
   loadLayout: (workspaceId: string) => Promise<WorkspaceLayout | null>
 }
 
@@ -155,7 +166,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const workspaces = state.workspaces.filter(w => w.id !== id)
       const activeWorkspaceId =
         state.activeWorkspaceId === id
-          ? workspaces[0]?.id ?? null
+          ? (workspaces[0]?.id ?? null)
           : state.activeWorkspaceId
       return { workspaces, activeWorkspaceId }
     })
@@ -172,7 +183,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }))
   },
 
-  async saveLayout(workspaceId, tabs, splitGroups, activeTabId, sidebarVisible) {
+  async saveLayout(
+    workspaceId,
+    tabs,
+    splitGroups,
+    activeTabId,
+    sidebarVisible,
+  ) {
     const layout: WorkspaceLayout = {
       workspaceId,
       tabs,

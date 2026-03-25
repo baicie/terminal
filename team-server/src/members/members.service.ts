@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
 
 @Injectable()
@@ -8,14 +12,21 @@ export class MembersService {
   async findAll(teamId: string, userId: string) {
     // Verify user is a member
     await this.checkMembership(teamId, userId)
-    
+
     return this.prisma.teamMember.findMany({
       where: { teamId },
       include: { user: { select: { id: true } } },
     })
   }
 
-  async addMember(teamId: string, userId: string, newUserId: string, userName?: string, userEmail?: string, role: 'ADMIN' | 'MEMBER' = 'MEMBER') {
+  async addMember(
+    teamId: string,
+    userId: string,
+    newUserId: string,
+    userName?: string,
+    userEmail?: string,
+    role: 'ADMIN' | 'MEMBER' = 'MEMBER',
+  ) {
     // Only admins can add members
     await this.checkAdmin(teamId, userId)
 
@@ -38,13 +49,20 @@ export class MembersService {
     })
   }
 
-  async updateRole(teamId: string, userId: string, memberId: string, role: 'ADMIN' | 'MEMBER') {
+  async updateRole(
+    teamId: string,
+    userId: string,
+    memberId: string,
+    role: 'ADMIN' | 'MEMBER',
+  ) {
     // Only admins can update roles
     await this.checkAdmin(teamId, userId)
 
     // Cannot change owner's role
     const team = await this.prisma.team.findUnique({ where: { id: teamId } })
-    const member = await this.prisma.teamMember.findUnique({ where: { id: memberId } })
+    const member = await this.prisma.teamMember.findUnique({
+      where: { id: memberId },
+    })
     if (team?.ownerId === member?.userId) {
       throw new ForbiddenException('Cannot change owner role')
     }
@@ -59,7 +77,9 @@ export class MembersService {
     // Only admins can remove members
     await this.checkAdmin(teamId, userId)
 
-    const member = await this.prisma.teamMember.findUnique({ where: { id: memberId } })
+    const member = await this.prisma.teamMember.findUnique({
+      where: { id: memberId },
+    })
     if (!member) throw new NotFoundException('Member not found')
 
     // Cannot remove owner

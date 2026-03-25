@@ -1,8 +1,17 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common'
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
-import { TeamsService } from './teams.service'
-import { ApiKeyGuard } from '../auth/api-key.guard'
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  UseGuards,
+} from '@nestjs/common'
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { ApiKeyAuth } from '../auth/api-key-auth.decorator'
+import { ApiKeyGuard } from '../auth/api-key.guard'
+import { TeamsService } from './teams.service'
 
 @ApiTags('teams')
 @ApiBearerAuth('API_KEY')

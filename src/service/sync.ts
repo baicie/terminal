@@ -1,6 +1,6 @@
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
-import { select, getUserProfile } from '@/service/database'
+import { getUserProfile, select } from '@/service/database'
 
 export interface ExportData {
   version: string
@@ -36,10 +36,10 @@ export interface TeamPackageExport {
 }
 
 export interface SyncService {
-  exportData(): Promise<ExportData>
-  importData(data: ExportData): Promise<void>
-  exportToFile(): Promise<string | null>
-  importFromFile(): Promise<void>
+  exportData: () => Promise<ExportData>
+  importData: (data: ExportData) => Promise<void>
+  exportToFile: () => Promise<string | null>
+  importFromFile: () => Promise<void>
 }
 
 // Collect all data for export
@@ -170,9 +170,7 @@ export async function exportTeamPackage(options?: {
 /**
  * Preview a team package import - validate and return stats.
  */
-export function previewTeamPackage(
-  content: string,
-): TeamPackageExport | null {
+export function previewTeamPackage(content: string): TeamPackageExport | null {
   try {
     const data = JSON.parse(content) as TeamPackageExport
     if (data.version !== '1.0' || !data.teamName) {
@@ -338,7 +336,15 @@ export async function importTeamPackage(
     if (existing.length === 0) {
       await importExecute(
         `INSERT INTO snippets (id, name, description, script, package_id, tags, variables) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [s.id, s.name, s.description, s.script, s.package_id, s.tags, s.variables],
+        [
+          s.id,
+          s.name,
+          s.description,
+          s.script,
+          s.package_id,
+          s.tags,
+          s.variables,
+        ],
       )
       stats.snippets++
     } else if (mergeMode === 'replace') {

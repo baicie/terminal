@@ -239,19 +239,19 @@ src-tauri/
 
 > 2026-03-25 完成团队协作本地模式全部功能
 
-| 功能                           | 状态                              |
-| ------------------------------ | --------------------------------- |
-| 团队协作 - 本地模式             | ✅ 已实现 (2026-03-25)            |
-| 敏感数据加密共享               | ✅ 已实现 (2026-03-25)            |
-| 团队协作 - 云端模式             | 📋 待开发（需自部署服务端）        |
-| SSH 证书认证                   | 📋 待开发                         |
-| 串口连接                       | ✅ 已实现 (2026-03-20)            |
-| SSH 密钥生成                   | ✅ 已实现 (2026-03-24)            |
-| 高级脚本                       | ✅ 已实现 (2026-03-23)            |
-| 终端工具侧栏 (Snippets + 历史) | ✅ 已实现 (2026-03-24)            |
-| xterm.js ClipboardAddon        | ✅ 已实现 (2026-03-24)            |
-| 主机环境变量编辑               | ✅ 已实现 (2026-03-24)            |
-| SFTP Kind 列 + 权限显示        | ✅ 已实现 (2026-03-24)            |
+| 功能                           | 状态                        |
+| ------------------------------ | --------------------------- |
+| 团队协作 - 本地模式            | ✅ 已实现 (2026-03-25)      |
+| 敏感数据加密共享               | ✅ 已实现 (2026-03-25)      |
+| 团队协作 - 云端模式            | 📋 待开发（需自部署服务端） |
+| SSH 证书认证                   | 📋 待开发                   |
+| 串口连接                       | ✅ 已实现 (2026-03-20)      |
+| SSH 密钥生成                   | ✅ 已实现 (2026-03-24)      |
+| 高级脚本                       | ✅ 已实现 (2026-03-23)      |
+| 终端工具侧栏 (Snippets + 历史) | ✅ 已实现 (2026-03-24)      |
+| xterm.js ClipboardAddon        | ✅ 已实现 (2026-03-24)      |
+| 主机环境变量编辑               | ✅ 已实现 (2026-03-24)      |
+| SFTP Kind 列 + 权限显示        | ✅ 已实现 (2026-03-24)      |
 
 ---
 
@@ -486,13 +486,13 @@ CREATE TABLE user_profile (
 
 ### 技术栈
 
-| 层级 | 技术 |
-| ---------- | ------------------------- |
-| 框架 | NestJS 10.x |
-| ORM | Prisma 5.x |
-| 数据库 | PostgreSQL 16 |
+| 层级     | 技术            |
+| -------- | --------------- |
+| 框架     | NestJS 10.x     |
+| ORM      | Prisma 5.x      |
+| 数据库   | PostgreSQL 16   |
 | API 文档 | Swagger/OpenAPI |
-| 容器 | Docker |
+| 容器     | Docker          |
 
 ### 启动方式
 
@@ -527,32 +527,32 @@ const response = await teamApi.listTeams()
 
 ### API 端点
 
-| 模块 | 前缀 | 方法 | 端点 | 说明 |
-| ----- | ---- | ---- | ---- | ---- |
-| 认证 | /auth | POST | /register | 注册用户 |
-| 认证 | /auth | POST | /tokens | 创建 API Token |
-| 认证 | /auth | GET | /tokens | 获取 Token 列表 |
-| 认证 | /auth | DELETE | /tokens/:id | 撤销 Token |
-| 团队 | /teams | GET | / | 获取我的团队 |
-| 团队 | /teams | POST | / | 创建团队 |
-| 团队 | /teams | GET | /:id | 获取团队详情 |
-| 团队 | /teams | PUT | /:id | 更新团队 |
-| 团队 | /teams | DELETE | /:id | 删除团队 |
-| 成员 | /teams/:id/members | GET | / | 获取成员列表 |
-| 成员 | /teams/:id/members | POST | / | 添加成员 |
-| 成员 | /teams/:id/members | PUT | /:memberId | 更新角色 |
-| 成员 | /teams/:id/members | DELETE | /:memberId | 移除成员 |
-| 共享 | /teams/:id/shares | GET | / | 获取共享列表 |
-| 共享 | /teams/:id/shares | POST | / | 创建共享 |
-| 共享 | /teams/:id/shares | PUT | /:shareId | 更新权限 |
-| 共享 | /teams/:id/shares | DELETE | /:shareId | 删除共享 |
-| 邀请 | /teams/:id/invites | POST | / | 创建邀请 |
-| 邀请 | /teams/:id/invites | GET | / | 获取邀请列表 |
-| 邀请 | /invites/join | POST | / | 通过邀请码加入 |
-| 邀请 | /invites/link/:token | GET | / | 获取链接邀请信息 |
-| 审计 | /teams/:id/audit | GET | / | 获取审计日志 |
-| 同步 | /sync | GET | / | 获取增量更新 |
-| 同步 | /sync | POST | / | 推送本地更改 |
+| 模块 | 前缀                 | 方法   | 端点        | 说明             |
+| ---- | -------------------- | ------ | ----------- | ---------------- |
+| 认证 | /auth                | POST   | /register   | 注册用户         |
+| 认证 | /auth                | POST   | /tokens     | 创建 API Token   |
+| 认证 | /auth                | GET    | /tokens     | 获取 Token 列表  |
+| 认证 | /auth                | DELETE | /tokens/:id | 撤销 Token       |
+| 团队 | /teams               | GET    | /           | 获取我的团队     |
+| 团队 | /teams               | POST   | /           | 创建团队         |
+| 团队 | /teams               | GET    | /:id        | 获取团队详情     |
+| 团队 | /teams               | PUT    | /:id        | 更新团队         |
+| 团队 | /teams               | DELETE | /:id        | 删除团队         |
+| 成员 | /teams/:id/members   | GET    | /           | 获取成员列表     |
+| 成员 | /teams/:id/members   | POST   | /           | 添加成员         |
+| 成员 | /teams/:id/members   | PUT    | /:memberId  | 更新角色         |
+| 成员 | /teams/:id/members   | DELETE | /:memberId  | 移除成员         |
+| 共享 | /teams/:id/shares    | GET    | /           | 获取共享列表     |
+| 共享 | /teams/:id/shares    | POST   | /           | 创建共享         |
+| 共享 | /teams/:id/shares    | PUT    | /:shareId   | 更新权限         |
+| 共享 | /teams/:id/shares    | DELETE | /:shareId   | 删除共享         |
+| 邀请 | /teams/:id/invites   | POST   | /           | 创建邀请         |
+| 邀请 | /teams/:id/invites   | GET    | /           | 获取邀请列表     |
+| 邀请 | /invites/join        | POST   | /           | 通过邀请码加入   |
+| 邀请 | /invites/link/:token | GET    | /           | 获取链接邀请信息 |
+| 审计 | /teams/:id/audit     | GET    | /           | 获取审计日志     |
+| 同步 | /sync                | GET    | /           | 获取增量更新     |
+| 同步 | /sync                | POST   | /           | 推送本地更改     |
 
 ---
 

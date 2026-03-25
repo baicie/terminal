@@ -1,37 +1,15 @@
-import { useEffect, useState } from 'react'
-import { useHostStore } from '@/store/host'
-import { useAppStore } from '@/store/app'
-import { useTeamStore, useIsTeamEnabled, useCurrentTeam } from '@/store/team'
-import {
-  ViewContainer,
-  ViewContent,
-  ViewHeader,
-  EmptyState,
-} from '@/components/view-container'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import type { SnippetRecord } from '@/service/database'
+import type { SerialConfig } from '@/service/serial'
+import type { Host } from '@/types'
+import type { EncryptedData } from '@/utils/team-encryption'
 import {
   CalendarDays,
   ChevronDown,
+  Code,
   Download,
   LayoutGrid,
   List,
+  Lock,
   MoreHorizontal,
   Plus,
   Server,
@@ -42,22 +20,44 @@ import {
   Usb,
   UserPlus,
   Users,
-  RefreshCw,
-  Code,
-  Lock,
 } from 'lucide-react'
-import { HostDialog } from '@/components/host-list/host-dialog'
-import { ShareHostDialog } from '@/components/share-host-dialog'
-import SerialDialog from '@/components/serial-dialog'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import type { Host } from '@/types'
-import type { SnippetRecord } from '@/service/database'
-import type { SerialConfig } from '@/service/serial'
+import { HostDialog } from '@/components/host-list/host-dialog'
+import SerialDialog from '@/components/serial-dialog'
+import { ShareHostDialog } from '@/components/share-host-dialog'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { toast } from '@/components/ui/sonner'
+import {
+  EmptyState,
+  ViewContainer,
+  ViewContent,
+  ViewHeader,
+} from '@/components/view-container'
 import { cn } from '@/lib/utils'
 import { createSnippet } from '@/service/database'
-import { isEncryptedData, decryptWithPassword, type EncryptedData } from '@/utils/team-encryption'
+import { useAppStore } from '@/store/app'
+import { useHostStore } from '@/store/host'
+import { useCurrentTeam, useIsTeamEnabled, useTeamStore } from '@/store/team'
+import { decryptWithPassword, isEncryptedData } from '@/utils/team-encryption'
 
 const HostsView: React.FC = () => {
   const { t } = useTranslation('demo')
@@ -80,7 +80,9 @@ const HostsView: React.FC = () => {
   const [shareDialogHost, setShareDialogHost] = useState<Host | null>(null)
   const [decryptDialogOpen, setDecryptDialogOpen] = useState(false)
   const [decryptPassword, setDecryptPassword] = useState('')
-  const [decryptingHost, setDecryptingHost] = useState<typeof sharedHosts[0] | null>(null)
+  const [decryptingHost, setDecryptingHost] = useState<
+    (typeof sharedHosts)[0] | null
+  >(null)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [gridView, setGridView] = useState(true)
@@ -94,7 +96,9 @@ const HostsView: React.FC = () => {
     }
   }, [isTeamEnabled, currentTeam])
 
-  const handleImportSharedSnippet = async (sharedSnippet: typeof sharedSnippets[0]) => {
+  const handleImportSharedSnippet = async (
+    sharedSnippet: (typeof sharedSnippets)[0],
+  ) => {
     const snippetData = sharedSnippet.snippetData as {
       id?: string
       name: string
@@ -125,7 +129,9 @@ const HostsView: React.FC = () => {
     }
   }
 
-  const handleImportSharedHost = async (sharedHost: typeof sharedHosts[0]) => {
+  const handleImportSharedHost = async (
+    sharedHost: (typeof sharedHosts)[0],
+  ) => {
     const hostData = sharedHost.hostData as Record<string, unknown>
 
     // Check if data is encrypted
@@ -171,21 +177,27 @@ const HostsView: React.FC = () => {
 
     try {
       const hostData = { ...decryptingHost.hostData } as Record<string, unknown>
-      
+
       // Decrypt password if encrypted
-      if (hostData.password_encrypted && isEncryptedData(hostData.password_encrypted)) {
+      if (
+        hostData.password_encrypted &&
+        isEncryptedData(hostData.password_encrypted)
+      ) {
         hostData.password = await decryptWithPassword(
           hostData.password_encrypted as EncryptedData,
-          decryptPassword
+          decryptPassword,
         )
         delete hostData.password_encrypted
       }
 
       // Decrypt private key if encrypted
-      if (hostData.private_key_encrypted && isEncryptedData(hostData.private_key_encrypted)) {
+      if (
+        hostData.private_key_encrypted &&
+        isEncryptedData(hostData.private_key_encrypted)
+      ) {
         hostData.private_key = await decryptWithPassword(
           hostData.private_key_encrypted as EncryptedData,
-          decryptPassword
+          decryptPassword,
         )
         delete hostData.private_key_encrypted
       }
@@ -206,9 +218,14 @@ const HostsView: React.FC = () => {
     setShareDialogOpen(true)
   }
 
-  const handleShareHost = async (hostData: Record<string, unknown>, permission: 'readonly' | 'readwrite') => {
+  const handleShareHost = async (
+    hostData: Record<string, unknown>,
+    permission: 'readonly' | 'readwrite',
+  ) => {
     if (!currentTeam) return
-    await useTeamStore.getState().shareHost(currentTeam.id, hostData, permission)
+    await useTeamStore
+      .getState()
+      .shareHost(currentTeam.id, hostData, permission)
   }
 
   const handleConnect = (host: Host) => {
@@ -395,126 +412,144 @@ const HostsView: React.FC = () => {
 
       <ViewContent className="p-6 flex flex-col gap-4 min-h-0">
         {/* Team Shared Section */}
-        {isTeamEnabled && currentTeam && (sharedHosts.length > 0 || sharedSnippets.length > 0) && (
-          <div className="space-y-4">
-            {/* Shared Hosts */}
-            {sharedHosts.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium flex items-center gap-2">
-                    <Server className="size-4" />
-                    {t('teams.sharedHosts')}
-                    <span className="text-muted-foreground">({sharedHosts.length})</span>
-                  </h3>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => navigate('/teams')}
-                  >
-                    {t('common.settings')}
-                  </Button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {sharedHosts.slice(0, 3).map(sharedHost => {
-                    const hostData = sharedHost.hostData as Record<string, unknown>
-                    const isEncrypted = hostData._encrypted === true
-                    return (
-                      <button
-                        type="button"
-                        key={sharedHost.id}
-                        className="text-left p-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 transition-all duration-200"
-                        onClick={() => handleImportSharedHost(sharedHost)}
+        {isTeamEnabled &&
+          currentTeam &&
+          (sharedHosts.length > 0 || sharedSnippets.length > 0) && (
+            <div className="space-y-4">
+              {/* Shared Hosts */}
+              {sharedHosts.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium flex items-center gap-2">
+                      <Server className="size-4" />
+                      {t('teams.sharedHosts')}
+                      <span className="text-muted-foreground">
+                        ({sharedHosts.length})
+                      </span>
+                    </h3>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => navigate('/teams')}
+                    >
+                      {t('common.settings')}
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {sharedHosts.slice(0, 3).map(sharedHost => {
+                      const hostData = sharedHost.hostData as Record<
+                        string,
+                        unknown
                       >
-                        <div className="flex items-start gap-2">
-                          <Server className="size-4 mt-0.5 text-primary" />
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm truncate flex items-center gap-1">
-                              {(hostData.name as string) || 'Unknown'}
-                              {isEncrypted && <Lock className="size-3 text-amber-500" />}
-                            </div>
-                            <div className="text-xs text-muted-foreground truncate">
-                              {hostData.username}@{hostData.hostname}:{hostData.port || 22}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary">
-                                {sharedHost.permission === 'readonly' ? t('teams.readonly') : t('teams.readwrite')}
-                              </span>
-                              {isEncrypted && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500">
-                                  {t('teams.encrypted')}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <Download className="size-4 text-muted-foreground shrink-0" />
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Shared Snippets */}
-            {sharedSnippets.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium flex items-center gap-2">
-                    <Code className="size-4" />
-                    {t('teams.sharedSnippets')}
-                    <span className="text-muted-foreground">({sharedSnippets.length})</span>
-                  </h3>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => navigate('/teams')}
-                  >
-                    {t('common.settings')}
-                  </Button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {sharedSnippets.slice(0, 3).map(sharedSnippet => {
-                    const snippetData = sharedSnippet.snippetData as {
-                      name?: string
-                      description?: string
-                      script?: string
-                    }
-                    return (
-                      <button
-                        type="button"
-                        key={sharedSnippet.id}
-                        className="text-left p-3 rounded-lg border border-dashed border-secondary/50 bg-secondary/5 hover:bg-secondary/10 hover:border-secondary/70 transition-all duration-200"
-                        onClick={() => handleImportSharedSnippet(sharedSnippet)}
-                      >
-                        <div className="flex items-start gap-2">
-                          <Code className="size-4 mt-0.5 text-secondary" />
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm truncate">
-                              {snippetData.name || 'Unknown'}
-                            </div>
-                            {snippetData.description && (
-                              <div className="text-xs text-muted-foreground truncate">
-                                {snippetData.description}
+                      const isEncrypted = hostData._encrypted === true
+                      return (
+                        <button
+                          type="button"
+                          key={sharedHost.id}
+                          className="text-left p-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 transition-all duration-200"
+                          onClick={() => handleImportSharedHost(sharedHost)}
+                        >
+                          <div className="flex items-start gap-2">
+                            <Server className="size-4 mt-0.5 text-primary" />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm truncate flex items-center gap-1">
+                                {(hostData.name as string) || 'Unknown'}
+                                {isEncrypted && (
+                                  <Lock className="size-3 text-amber-500" />
+                                )}
                               </div>
-                            )}
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary/20 text-secondary">
-                                {sharedSnippet.permission === 'readonly' ? t('teams.readonly') : t('teams.readwrite')}
-                              </span>
+                              <div className="text-xs text-muted-foreground truncate">
+                                {hostData.username}@{hostData.hostname}:
+                                {hostData.port || 22}
+                              </div>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary">
+                                  {sharedHost.permission === 'readonly'
+                                    ? t('teams.readonly')
+                                    : t('teams.readwrite')}
+                                </span>
+                                {isEncrypted && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500">
+                                    {t('teams.encrypted')}
+                                  </span>
+                                )}
+                              </div>
                             </div>
+                            <Download className="size-4 text-muted-foreground shrink-0" />
                           </div>
-                          <Download className="size-4 text-muted-foreground shrink-0" />
-                        </div>
-                      </button>
-                    )
-                  })}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+
+              {/* Shared Snippets */}
+              {sharedSnippets.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium flex items-center gap-2">
+                      <Code className="size-4" />
+                      {t('teams.sharedSnippets')}
+                      <span className="text-muted-foreground">
+                        ({sharedSnippets.length})
+                      </span>
+                    </h3>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => navigate('/teams')}
+                    >
+                      {t('common.settings')}
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {sharedSnippets.slice(0, 3).map(sharedSnippet => {
+                      const snippetData = sharedSnippet.snippetData as {
+                        name?: string
+                        description?: string
+                        script?: string
+                      }
+                      return (
+                        <button
+                          type="button"
+                          key={sharedSnippet.id}
+                          className="text-left p-3 rounded-lg border border-dashed border-secondary/50 bg-secondary/5 hover:bg-secondary/10 hover:border-secondary/70 transition-all duration-200"
+                          onClick={() =>
+                            handleImportSharedSnippet(sharedSnippet)
+                          }
+                        >
+                          <div className="flex items-start gap-2">
+                            <Code className="size-4 mt-0.5 text-secondary" />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm truncate">
+                                {snippetData.name || 'Unknown'}
+                              </div>
+                              {snippetData.description && (
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {snippetData.description}
+                                </div>
+                              )}
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary/20 text-secondary">
+                                  {sharedSnippet.permission === 'readonly'
+                                    ? t('teams.readonly')
+                                    : t('teams.readwrite')}
+                                </span>
+                              </div>
+                            </div>
+                            <Download className="size-4 text-muted-foreground shrink-0" />
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
         {!isTeamEnabled && (
           <Alert className="border-border/60 bg-secondary/20 py-3">
@@ -555,10 +590,7 @@ const HostsView: React.FC = () => {
         ) : gridView ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredHosts.map((host, index) => (
-              <div
-                key={host.id}
-                className="relative group"
-              >
+              <div key={host.id} className="relative group">
                 <button
                   type="button"
                   className="text-left w-full p-4 rounded-xl border border-border/50 bg-card/80 hover:bg-accent/40 hover:border-primary/30 hover:shadow-md hover:shadow-primary/5 cursor-pointer transition-all duration-200 hover-lift slide-in-from-bottom fade-in"
@@ -600,8 +632,13 @@ const HostsView: React.FC = () => {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleShareHostClick(host)}>
-                        <Users className="size-4 mr-2" data-icon="inline-start" />
+                      <DropdownMenuItem
+                        onClick={() => handleShareHostClick(host)}
+                      >
+                        <Users
+                          className="size-4 mr-2"
+                          data-icon="inline-start"
+                        />
                         {t('teams.shareHost')}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
@@ -612,7 +649,10 @@ const HostsView: React.FC = () => {
                         }}
                         className="text-destructive"
                       >
-                        <Trash2 className="size-4 mr-2" data-icon="inline-start" />
+                        <Trash2
+                          className="size-4 mr-2"
+                          data-icon="inline-start"
+                        />
                         {t('common.delete')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -673,7 +713,12 @@ const HostsView: React.FC = () => {
       <DecryptDialog
         open={decryptDialogOpen}
         onOpenChange={setDecryptDialogOpen}
-        hostName={decryptingHost ? (decryptingHost.hostData as Record<string, unknown>).name as string : ''}
+        hostName={
+          decryptingHost
+            ? ((decryptingHost.hostData as Record<string, unknown>)
+                .name as string)
+            : ''
+        }
         password={decryptPassword}
         onPasswordChange={setDecryptPassword}
         onDecrypt={handleDecryptAndImport}
@@ -718,7 +763,9 @@ function DecryptDialog({
           </p>
 
           <div className="space-y-2">
-            <Label htmlFor="decrypt-password">{t('teams.decryptPassword')}</Label>
+            <Label htmlFor="decrypt-password">
+              {t('teams.decryptPassword')}
+            </Label>
             <Input
               id="decrypt-password"
               type="password"

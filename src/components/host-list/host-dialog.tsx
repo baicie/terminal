@@ -1,16 +1,8 @@
-import React, { useState, useEffect } from 'react'
-import { useHostStore } from '@/store/host'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
+import type { AuthType, Host } from '@/types'
+import { Network, Plus, Trash2 } from 'lucide-react'
+import * as React from 'react'
+import { useEffect, useState } from 'react'
+import PortForwardDialog from '@/components/port-forward'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,6 +14,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -29,9 +31,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { Host, AuthType } from '@/types'
-import PortForwardDialog from '@/components/port-forward'
-import { Network, Plus, Trash2 } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
+import { useHostStore } from '@/store/host'
 
 interface HostDialogProps {
   open: boolean
@@ -185,7 +186,10 @@ export const HostDialog: React.FC<HostDialogProps> = ({
                 type="number"
                 value={form.port}
                 onChange={e =>
-                  setForm({ ...form, port: parseInt(e.target.value) || 22 })
+                  setForm({
+                    ...form,
+                    port: Number.parseInt(e.target.value) || 22,
+                  })
                 }
               />
             </div>
@@ -470,8 +474,8 @@ export const HostDialog: React.FC<HostDialogProps> = ({
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete Host</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Are you sure you want to delete "{host.name}"? This action
-                      cannot be undone.
+                      Are you sure you want to delete "{host.name}
+                      "? This action cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

@@ -1,44 +1,25 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import type {
+  Host,
+  ScriptExecutionRecord,
+  ScriptRecord,
+} from '@/service/database'
+import type { ScriptExecutionResult } from '@/service/scripts'
 import {
-  ViewContainer,
-  ViewToolbar,
-  ViewContent,
-  EmptyState,
-} from '@/components/view-container'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  Edit,
+  Loader2,
+  Play,
+  Plus,
+  Search,
+  Server,
+  Trash2,
+  XCircle,
+} from 'lucide-react'
+import * as React from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,33 +30,54 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { scriptService, type ScriptExecutionResult } from '@/service/scripts'
 import {
-  getHosts,
-  type ScriptRecord,
-  type ScriptExecutionRecord,
-  type Host,
-} from '@/service/database'
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  EmptyState,
+  ViewContainer,
+  ViewContent,
+  ViewToolbar,
+} from '@/components/view-container'
 import { formatDuration, formatRelativeTime } from '@/lib/date-utils'
-import { toast } from 'sonner'
-import {
-  Plus,
-  Play,
-  Trash2,
-  Edit,
-  Clock,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  Loader2,
-  Search,
-  Server,
-} from 'lucide-react'
+import { getHosts } from '@/service/database'
+import { scriptService } from '@/service/scripts'
 
 const ScriptsView: React.FC = () => {
   const [scripts, setScripts] = useState<ScriptRecord[]>([])
@@ -394,7 +396,8 @@ const ScriptsView: React.FC = () => {
                           <div className="flex items-center gap-1">
                             <Server className="h-4 w-4" />
                             <span>
-                              {hostCount} host{hostCount !== 1 ? 's' : ''}
+                              {hostCount} host
+                              {hostCount !== 1 ? 's' : ''}
                             </span>
                           </div>
                           <div className="flex items-center gap-1">
@@ -411,7 +414,7 @@ const ScriptsView: React.FC = () => {
                         </div>
                         <pre className="mt-3 p-3 bg-muted rounded-md text-xs overflow-x-auto">
                           {script.script.length > 200
-                            ? script.script.substring(0, 200) + '...'
+                            ? `${script.script.substring(0, 200)}...`
                             : script.script}
                         </pre>
                       </CardContent>
@@ -527,7 +530,7 @@ const ScriptsView: React.FC = () => {
                     type="number"
                     value={formTimeout}
                     onChange={e =>
-                      setFormTimeout(parseInt(e.target.value) || 60)
+                      setFormTimeout(Number.parseInt(e.target.value) || 60)
                     }
                     className="w-32"
                   />
@@ -739,7 +742,7 @@ const ScriptsView: React.FC = () => {
                     type="number"
                     value={formTimeout}
                     onChange={e =>
-                      setFormTimeout(parseInt(e.target.value) || 60)
+                      setFormTimeout(Number.parseInt(e.target.value) || 60)
                     }
                   />
                 </div>
@@ -751,7 +754,7 @@ const ScriptsView: React.FC = () => {
                     type="number"
                     value={formRetryCount}
                     onChange={e =>
-                      setFormRetryCount(parseInt(e.target.value) || 0)
+                      setFormRetryCount(Number.parseInt(e.target.value) || 0)
                     }
                   />
                 </div>
@@ -779,8 +782,8 @@ const ScriptsView: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Script</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{selectedScript?.name}"? This
-              action cannot be undone.
+              Are you sure you want to delete "{selectedScript?.name}
+              "? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

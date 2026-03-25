@@ -1,9 +1,18 @@
+import {
+  AlertCircle,
+  Check,
+  Eye,
+  EyeOff,
+  Key,
+  Link,
+  RefreshCw,
+  Server,
+} from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
-import { Separator } from '@/components/ui/separator'
 import {
   Select,
   SelectContent,
@@ -11,20 +20,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Server,
-  Check,
-  AlertCircle,
-  RefreshCw,
-  Eye,
-  EyeOff,
-  Key,
-  Link,
-} from 'lucide-react'
+import { Separator } from '@/components/ui/separator'
 import { toast } from '@/components/ui/sonner'
-import { useTeamStore } from '@/store/team'
+import { Switch } from '@/components/ui/switch'
 import { teamApi } from '@/service/team-api'
-import { useTranslation } from 'react-i18next'
+import { useTeamStore } from '@/store/team'
 
 interface TeamServerConfigProps {
   onClose?: () => void
@@ -42,7 +42,9 @@ export function TeamServerConfig({ onClose }: TeamServerConfigProps) {
   const [autoSync, setAutoSync] = useState(settings.autoSync)
   const [syncInterval, setSyncInterval] = useState(settings.syncInterval)
   const [testing, setTesting] = useState(false)
-  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [connectionStatus, setConnectionStatus] = useState<
+    'idle' | 'success' | 'error'
+  >('idle')
   const [errorMessage, setErrorMessage] = useState('')
 
   const handleTestConnection = async () => {
@@ -59,7 +61,10 @@ export function TeamServerConfig({ onClose }: TeamServerConfigProps) {
       // Try to register the user first (auto-creates token)
       let currentToken = apiToken
       if (teamStore.userProfile) {
-        const regResult = await teamApi.register(teamStore.userProfile.id, teamStore.userProfile.name)
+        const regResult = await teamApi.register(
+          teamStore.userProfile.id,
+          teamStore.userProfile.name,
+        )
         if (regResult.data?.token) {
           currentToken = regResult.data.token
           setApiToken(currentToken)
@@ -76,12 +81,16 @@ export function TeamServerConfig({ onClose }: TeamServerConfigProps) {
         toast.success('Connection successful!')
       } else {
         setConnectionStatus('error')
-        setErrorMessage('Could not connect to server. Please check your endpoint.')
+        setErrorMessage(
+          'Could not connect to server. Please check your endpoint.',
+        )
         toast.error('Connection failed')
       }
     } catch (error) {
       setConnectionStatus('error')
-      setErrorMessage(error instanceof Error ? error.message : 'Connection failed')
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Connection failed',
+      )
       toast.error('Connection failed')
     } finally {
       setTesting(false)
@@ -114,7 +123,8 @@ export function TeamServerConfig({ onClose }: TeamServerConfigProps) {
         Server Configuration
       </h4>
       <p className="text-sm text-muted-foreground">
-        Configure a self-hosted team server for cloud sync. Leave empty for local-only mode.
+        Configure a self-hosted team server for cloud sync. Leave empty for
+        local-only mode.
       </p>
 
       {/* Mode Selection */}
@@ -125,14 +135,17 @@ export function TeamServerConfig({ onClose }: TeamServerConfigProps) {
             type="button"
             className={`
               flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all text-center
-              ${mode === 'local'
-                ? 'border-primary bg-primary/5'
-                : 'border-border hover:border-primary/50'
+              ${
+                mode === 'local'
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:border-primary/50'
               }
             `}
             onClick={() => setMode('local')}
           >
-            <Server className={`h-6 w-6 ${mode === 'local' ? 'text-primary' : 'text-muted-foreground'}`} />
+            <Server
+              className={`h-6 w-6 ${mode === 'local' ? 'text-primary' : 'text-muted-foreground'}`}
+            />
             <span className="text-sm font-medium">Local</span>
             <span className="text-xs text-muted-foreground">
               Export/Import JSON files
@@ -142,14 +155,17 @@ export function TeamServerConfig({ onClose }: TeamServerConfigProps) {
             type="button"
             className={`
               flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all text-center
-              ${mode === 'cloud'
-                ? 'border-primary bg-primary/5'
-                : 'border-border hover:border-primary/50'
+              ${
+                mode === 'cloud'
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:border-primary/50'
               }
             `}
             onClick={() => setMode('cloud')}
           >
-            <Link className={`h-6 w-6 ${mode === 'cloud' ? 'text-primary' : 'text-muted-foreground'}`} />
+            <Link
+              className={`h-6 w-6 ${mode === 'cloud' ? 'text-primary' : 'text-muted-foreground'}`}
+            />
             <span className="text-sm font-medium">Cloud</span>
             <span className="text-xs text-muted-foreground">
               Sync via server
@@ -211,26 +227,33 @@ export function TeamServerConfig({ onClose }: TeamServerConfigProps) {
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Get your API token from the server admin or create one in your account settings
+              Get your API token from the server admin or create one in your
+              account settings
             </p>
           </div>
 
           {/* Connection Status */}
           {connectionStatus !== 'idle' && (
-            <div className={`p-3 rounded-lg flex items-center gap-2 ${
-              connectionStatus === 'success'
-                ? 'bg-green-500/10 border border-green-500/20'
-                : 'bg-destructive/10 border border-destructive/20'
-            }`}>
+            <div
+              className={`p-3 rounded-lg flex items-center gap-2 ${
+                connectionStatus === 'success'
+                  ? 'bg-green-500/10 border border-green-500/20'
+                  : 'bg-destructive/10 border border-destructive/20'
+              }`}
+            >
               {connectionStatus === 'success' ? (
                 <>
                   <Check className="h-4 w-4 text-green-600" />
-                  <span className="text-sm text-green-600">Connected successfully</span>
+                  <span className="text-sm text-green-600">
+                    Connected successfully
+                  </span>
                 </>
               ) : (
                 <>
                   <AlertCircle className="h-4 w-4 text-destructive" />
-                  <span className="text-sm text-destructive">{errorMessage}</span>
+                  <span className="text-sm text-destructive">
+                    {errorMessage}
+                  </span>
                 </>
               )}
             </div>
@@ -276,7 +299,7 @@ export function TeamServerConfig({ onClose }: TeamServerConfigProps) {
               <Label htmlFor="syncInterval">Sync Interval (ms)</Label>
               <Select
                 value={syncInterval.toString()}
-                onValueChange={v => setSyncInterval(parseInt(v))}
+                onValueChange={v => setSyncInterval(Number.parseInt(v))}
               >
                 <SelectTrigger id="syncInterval">
                   <SelectValue />

@@ -1,6 +1,4 @@
-import { useState, useEffect } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
+import type { SerialConfig } from '@/service/serial'
 import {
   BellIcon,
   FolderUp,
@@ -9,21 +7,23 @@ import {
   Plus,
   Usb,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { useAppStore } from '@/store/app'
-import MenuTabs from '@/layout/tabs'
-import SerialDialog from '@/components/serial-dialog'
-import CommandPalette from '@/components/command-palette'
+import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useLocation, useNavigate } from 'react-router-dom'
 import CommandHistoryDialog from '@/components/command-history'
+import CommandPalette from '@/components/command-palette'
 import { HostDialog } from '@/components/host-list/host-dialog'
-import type { SerialConfig } from '@/service/serial'
+import SerialDialog from '@/components/serial-dialog'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import MenuTabs from '@/layout/tabs'
+import { cn } from '@/lib/utils'
+import { useAppStore } from '@/store/app'
 
 const TopToolbar: React.FC<{
   onToggleSidebar: () => void

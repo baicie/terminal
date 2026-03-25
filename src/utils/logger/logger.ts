@@ -1,5 +1,5 @@
-import { LogLevel } from './log-level'
 import type { LogTransport } from './transport'
+import { LogLevel } from './log-level'
 
 /**
  * Log Service

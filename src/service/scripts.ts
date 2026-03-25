@@ -1,24 +1,27 @@
+import type {
+  Host,
+  ScriptExecutionRecord,
+  ScriptRecord,
+} from '@/service/database'
+import type { SSHOutput } from '@/service/ssh'
 import {
-  type ScriptRecord,
-  type ScriptExecutionRecord,
+  addScriptExecution,
+  clearScriptExecutions,
   createScript,
-  updateScript,
   deleteScript as dbDeleteScript,
-  getScripts,
-  getScriptById,
+  deleteScriptExecution,
   getEnabledScripts,
+  getHosts,
+  getScriptById,
+  getScriptExecutionById,
+  getScriptExecutions,
+  getScripts,
   searchScripts,
   toggleScriptEnabled,
-  addScriptExecution,
+  updateScript,
   updateScriptExecution,
-  getScriptExecutions,
-  getScriptExecutionById,
-  deleteScriptExecution,
-  clearScriptExecutions,
-  type Host,
-  getHosts,
 } from '@/service/database'
-import { SSHService, type SSHOutput } from '@/service/ssh'
+import { SSHService } from '@/service/ssh'
 
 export interface BatchExecutionResult {
   hostId: string
@@ -291,7 +294,7 @@ export class ScriptService {
     switch (script.schedule_type) {
       case 'once': {
         const delay = script.schedule_value
-          ? parseInt(script.schedule_value, 10)
+          ? Number.parseInt(script.schedule_value, 10)
           : 0
         const timeoutId = setTimeout(() => {
           this.executeScript(script.id)
@@ -304,7 +307,7 @@ export class ScriptService {
       }
       case 'interval': {
         const intervalMs = script.schedule_value
-          ? parseInt(script.schedule_value, 10)
+          ? Number.parseInt(script.schedule_value, 10)
           : 60000
         const intervalId = setInterval(() => {
           this.executeScript(script.id)
@@ -348,7 +351,7 @@ export class ScriptService {
       if (pattern.includes(',')) return pattern.split(',').includes(current)
       if (pattern.includes('-')) {
         const [start, end] = pattern.split('-').map(Number)
-        const curr = parseInt(current, 10)
+        const curr = Number.parseInt(current, 10)
         return curr >= start && curr <= end
       }
       return pattern === current

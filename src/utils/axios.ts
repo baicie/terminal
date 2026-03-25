@@ -1,4 +1,5 @@
-import axios, { AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios'
+import type { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios'
+import axios from 'axios'
 import cookies from 'js-cookie'
 import { useLogger } from '../hooks/use-logger'
 
@@ -6,7 +7,7 @@ import { useLogger } from '../hooks/use-logger'
  * @description Log and display errors
  * @param {Error} error Error object
  */
-const handleError = (res: AxiosResponse<any, any>) => {
+function handleError(res: AxiosResponse<any, any>) {
   const logger = useLogger()
   console.error(res.data.msg)
   logger.error(res.data.msg)
@@ -19,7 +20,7 @@ const baseRequestConfig: AxiosRequestConfig = {
 
 const service = axios.create(baseRequestConfig)
 
-const err = (err: AxiosError): Promise<AxiosError | AxiosResponse> => {
+function err(err: AxiosError): Promise<AxiosError | AxiosResponse> {
   const config = err.config as any
   if (!err.response && config && config.retry) {
     config.__retryCount = config.__retryCount || 0
@@ -28,13 +29,13 @@ const err = (err: AxiosError): Promise<AxiosError | AxiosResponse> => {
     }
 
     config.__retryCount += 1
-    const backOff = new Promise<void>(function (resolve) {
-      setTimeout(function () {
+    const backOff = new Promise<void>(resolve => {
+      setTimeout(() => {
         resolve()
       }, config.retryDelay || 1)
     })
 
-    return backOff.then(function () {
+    return backOff.then(() => {
       return service(config)
     })
   }
@@ -62,7 +63,7 @@ service.interceptors.response.use(async (res: AxiosResponse) => {
       return res.data.data
     default:
       handleError(res)
-      throw new Error()
+      throw new Error(`Unhandled response status: ${res.status}`)
   }
 }, err)
 

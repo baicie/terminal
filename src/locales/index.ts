@@ -10,9 +10,9 @@ i18n
   .use(initReactI18next)
   .init({
     resources: {
-      en: en,
-      cn: cn,
-      fr: fr,
+      en,
+      cn,
+      fr,
     },
     fallbackLng: 'en',
     defaultNS: 'demo',

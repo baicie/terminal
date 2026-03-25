@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react'
+import type { SerialConfig, SerialPortInfo } from '@/service/serial'
+import { Plug, RefreshCw, Usb } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -15,12 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { RefreshCw, Usb, Plug } from 'lucide-react'
-import {
-  serialService,
-  type SerialPortInfo,
-  type SerialConfig,
-} from '@/service/serial'
+import { serialService } from '@/service/serial'
 
 interface SerialDialogProps {
   open: boolean

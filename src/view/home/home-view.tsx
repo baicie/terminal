@@ -1,4 +1,4 @@
-import React from 'react'
+import * as React from 'react'
 import { useAppStore } from '@/store/app'
 import Terminal from '@/view/terminal/terminal-container'
 
