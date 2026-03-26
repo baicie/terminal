@@ -88,7 +88,7 @@ const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
   open,
   onOpenChange,
 }) => {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const [name, setName] = useState('')
   const [mode, setMode] = useState<'local' | 'cloud'>('local')
   const [endpoint, setEndpoint] = useState('')
@@ -248,7 +248,7 @@ const JoinTeamDialog: React.FC<JoinTeamDialogProps> = ({
   open,
   onOpenChange,
 }) => {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const [step, setStep] = useState<'select' | 'preview' | 'importing'>('select')
   const [previewData, setPreviewData] = useState<{
     teamName: string
@@ -417,7 +417,7 @@ const InviteDialog: React.FC<InviteDialogProps> = ({
   onOpenChange,
   teamId,
 }) => {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const [tab, setTab] = useState<'link' | 'code' | 'email'>('link')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<'admin' | 'member'>('member')
@@ -639,7 +639,7 @@ const ExportDialog: React.FC<ExportDialogProps> = ({
   teamId,
   teamName,
 }) => {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const [includeHosts, setIncludeHosts] = useState(true)
   const [includeSnippets, setIncludeSnippets] = useState(true)
   const [includeMembers, setIncludeMembers] = useState(false)
@@ -770,7 +770,7 @@ const TeamSettingsDialog: React.FC<TeamSettingsDialogProps> = ({
   onOpenChange,
   teamId,
 }) => {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const teams = useTeams()
   const team = teams.find(t => t.id === teamId)
 
@@ -914,7 +914,7 @@ const UserProfileDialog: React.FC<UserProfileDialogProps> = ({
   open,
   onOpenChange,
 }) => {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const userProfile = useTeamStore(state => state.userProfile)
   const updateUserProfile = useTeamStore(state => state.updateUserProfile)
   const [name, setName] = useState(userProfile?.name || '')
@@ -985,7 +985,7 @@ const UserProfileDialog: React.FC<UserProfileDialogProps> = ({
 // ============================================================================
 
 const TeamsView: React.FC = () => {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [joinDialogOpen, setJoinDialogOpen] = useState(false)
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)

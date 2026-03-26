@@ -1,0 +1,20 @@
+export default {
+  // SFTP
+  'sftp.title': 'SFTP',
+  'sftp.newFolder': 'Nouveau dossier',
+  'sftp.newFolderSoon': 'Nouveau dossier (bientôt)',
+  'sftp.upload': 'Envoyer',
+  'sftp.download': 'Télécharger',
+  'sftp.goUp': 'Remonter',
+  'sftp.goHome': 'Accueil',
+  'sftp.refresh': 'Actualiser',
+  'sftp.uploadFile': 'Envoyer un fichier',
+  'sftp.downloadFile': 'Télécharger le fichier',
+  'sftp.tableName': 'Nom',
+  'sftp.tableSize': 'Taille',
+  'sftp.tableModified': 'Modifié',
+  'sftp.tablePermissions': 'Permissions',
+  'sftp.items': '{count} élément(s)',
+  'sftp.connectedTo': 'Connecté à {host} ({hostname})',
+  'sftp.loading': 'Chargement...',
+}

@@ -64,7 +64,7 @@ const SnippetManager: React.FC<SnippetDialogProps> = ({
   onClose,
   onExecute,
 }) => {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const [snippets, setSnippets] = useState<SnippetRecord[]>([])
   const [packages, setPackages] = useState<SnippetPackageRecord[]>([])
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null)

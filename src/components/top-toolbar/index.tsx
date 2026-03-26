@@ -28,7 +28,7 @@ import { useAppStore } from '@/store/app'
 const TopToolbar: React.FC<{
   onToggleSidebar: () => void
 }> = ({ onToggleSidebar }) => {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
   const addTab = useAppStore(s => s.addTab)

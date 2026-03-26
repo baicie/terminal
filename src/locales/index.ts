@@ -15,7 +15,7 @@ i18n
       fr,
     },
     fallbackLng: 'en',
-    defaultNS: 'demo',
+    defaultNS: 'app',
     interpolation: {
       escapeValue: false,
     },

@@ -40,7 +40,7 @@ const NavItem: React.FC<NavItemProps> = ({
   className,
   style,
 }) => {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const location = useLocation()
   const hostsPaths = ['/', '/hosts']
   const pathActive =
@@ -98,7 +98,7 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
   width,
   resizing,
 }) => {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const iconOnly = width != null && width < ICON_ONLY_THRESHOLD
   const isTeamEnabled = useIsTeamEnabled()
 

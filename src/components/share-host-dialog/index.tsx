@@ -42,7 +42,7 @@ export function ShareHostDialog({
   host,
   onShare,
 }: ShareHostDialogProps) {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const [permission, setPermission] = useState<'readonly' | 'readwrite'>(
     'readonly',
   )

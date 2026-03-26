@@ -60,7 +60,7 @@ import { useCurrentTeam, useIsTeamEnabled, useTeamStore } from '@/store/team'
 import { decryptWithPassword, isEncryptedData } from '@/utils/team-encryption'
 
 const HostsView: React.FC = () => {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const app = useAppStore()
   const hostStore = useHostStore()
   const hosts = useHostStore(s => s.hosts)
@@ -746,7 +746,7 @@ function DecryptDialog({
   onPasswordChange,
   onDecrypt,
 }: DecryptDialogProps) {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

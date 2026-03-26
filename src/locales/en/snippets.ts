@@ -1,0 +1,30 @@
+export default {
+  // Snippets
+  'snippets.title': 'Snippets',
+  'snippets.searchSnippets': 'Search snippets...',
+  'snippets.newSnippet': 'New Snippet',
+  'snippets.snippetsManager': 'Snippets Manager',
+  'snippets.createSnippet': 'Create Snippet',
+  'snippets.editSnippet': 'Edit Snippet',
+  'snippets.packages': 'Packages',
+  'snippets.allSnippets': 'All Snippets',
+  'snippets.newPackage': 'New Package',
+  'snippets.createPackage': 'Create Package',
+  'snippets.packageName': 'Package Name',
+  'snippets.noPackage': 'No Package',
+  'snippets.myPackage': 'My Package',
+  'snippets.execute': 'Execute',
+  'snippets.executeSnippet': 'Execute Snippet - Set Variables',
+  'snippets.enterVariables': 'Enter values for the variables in this snippet:',
+  'snippets.script': 'Script',
+  'snippets.optionalDesc': 'Optional description',
+  'snippets.helloWorld': "echo 'Hello World'",
+  'snippets.noSnippets': 'No snippets found',
+  'snippets.deleteSnippet': 'Delete Snippet',
+  'snippets.deletePackage': 'Delete Package',
+  'snippets.deleteSnippetConfirm':
+    'Are you sure you want to delete "{name}"? This action cannot be undone.',
+  'snippets.deletePackageConfirm':
+    'Are you sure you want to delete "{name}"? All snippets in this package will be moved to uncategorized.',
+  'snippets.enterVar': 'Enter {name}',
+}

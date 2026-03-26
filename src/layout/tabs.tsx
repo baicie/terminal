@@ -10,7 +10,7 @@ import { useAppStore } from '@/store/app'
 
 /** 顶栏会话标签：仅展示已打开的终端/串口等标签 */
 const MenuTabs: React.FC = () => {
-  const { t } = useTranslation('demo')
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [contextMenu, setContextMenu] = useState<{
     x: number
