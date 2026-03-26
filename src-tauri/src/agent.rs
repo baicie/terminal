@@ -3,15 +3,21 @@
 //! This module implements the SSH Agent protocol for communicating with ssh-agent.
 //! The protocol is documented in RFC 4716 and OpenSSH documentation.
 
+#[cfg(unix)]
 use anyhow::{anyhow, Result};
+#[cfg(unix)]
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+#[cfg(unix)]
 use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
+#[cfg(unix)]
 use std::path::Path;
 
 /// SSH Agent message types
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
+#[allow(dead_code)]
 pub enum AgentMessageType {
     RequestIdentities = 11,
     SignRequest = 13,
@@ -31,6 +37,8 @@ pub enum AgentMessageType {
     ExtensionRequest = 28,
 }
 
+#[cfg(unix)]
+#[allow(dead_code)]
 impl AgentMessageType {
     pub fn from_u8(v: u8) -> Option<Self> {
         match v {
@@ -57,6 +65,7 @@ impl AgentMessageType {
 
 /// Represents a public key from the agent
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AgentPublicKey {
     pub key_blob: Vec<u8>,
     pub comment: String,
@@ -64,11 +73,13 @@ pub struct AgentPublicKey {
 
 /// SSH Agent client for communicating with ssh-agent
 #[allow(dead_code)]
+#[cfg(unix)]
 pub struct SshAgentClient {
     stream: UnixStream,
 }
 
 #[allow(dead_code)]
+#[cfg(unix)]
 impl SshAgentClient {
     /// Connect to the SSH agent via socket path
     pub fn connect(socket_path: &Path) -> Result<Self> {

@@ -14,7 +14,9 @@ use local::{local_disconnect, local_resize, local_shell, local_write};
 use port_forward::{port_forward_list, port_forward_start, port_forward_stop};
 use serial::{serial_baud_rates, serial_connect, serial_disconnect, serial_is_connected, serial_list, serial_write, serial_write_raw};
 use sftp::{sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_mkdir, sftp_rename, sftp_upload};
-use ssh::{generate_ssh_key, greet, ssh_connect, ssh_connect_agent, ssh_connect_cert, ssh_connect_key, ssh_disconnect, ssh_execute, ssh_resize, ssh_shell, ssh_write};
+use ssh::{generate_ssh_key, greet, ssh_connect, ssh_connect_cert, ssh_connect_key, ssh_disconnect, ssh_execute, ssh_resize, ssh_shell, ssh_write};
+#[cfg(unix)]
+use ssh::ssh_connect_agent;
 use state::create_shared_state;
 use storage::{storage_delete, storage_download, storage_health_check, storage_init, storage_list, storage_upload};
 use vault::{
@@ -38,6 +40,7 @@ pub fn run() {
             ssh_connect,
             ssh_connect_key,
             ssh_connect_cert,
+            #[cfg(unix)]
             ssh_connect_agent,
             ssh_shell,
             ssh_write,

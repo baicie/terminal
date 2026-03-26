@@ -1,14 +1,20 @@
+#[cfg(unix)]
 use crate::agent::SshAgentClient;
 use crate::errors::{validate_ssh_input, SshError, ValidationError};
+#[cfg(unix)]
 use crate::state::{get_ssh_agent_socket, AgentChannel, ClientHandler, JumpHostConfig, ShellOutput};
+#[cfg(not(unix))]
+use crate::state::{ClientHandler, JumpHostConfig, ShellOutput};
 use anyhow::{anyhow, Result};
 use russh::client;
-use russh::keys::PublicKey;
 use russh::keys::PrivateKeyWithHashAlg;
+#[cfg(unix)]
+use russh::keys::PublicKey;
 use russh::*;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(unix)]
+use std::path::PathBuf;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 
@@ -165,6 +171,8 @@ pub async fn ssh_connect_key(
     Ok(session_id)
 }
 
+/// Connect using SSH agent forwarding (Unix only)
+#[cfg(unix)]
 #[tauri::command]
 #[allow(dead_code)]
 pub async fn ssh_connect_agent(
