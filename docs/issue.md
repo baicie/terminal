@@ -855,4 +855,89 @@ pub fn get_ssh_agent_socket() -> Option<String> {
 
 ---
 
+## 十三、Prisma 7.x 升级修复 (2026-03-26)
+
+### Issue #25: team-server Prisma 7.x 构建失败 ✅ 已修复
+
+**严重程度**: High
+**状态**: ✅ 已修复
+**影响功能**: team-server NestJS 服务端无法构建
+**修复时间**: 2026-03-26
+
+**问题描述**:
+
+Prisma 7.x 版本不再支持在 `schema.prisma` 中使用 `url` 属性。需要使用新的配置方式。
+
+**错误信息**:
+
+```
+error: The datasource property `url` is no longer supported in schema files.
+Move connection URLs for Migrate to `prisma.config.ts`...
+```
+
+**修复方案**:
+
+1. 创建 `prisma.config.ts` 配置文件：
+
+```typescript
+import path from 'node:path'
+import { defineConfig } from 'prisma/config'
+
+export default defineConfig({
+  earlyAccess: true,
+  schema: path.join(__dirname, 'prisma', 'schema.prisma'),
+  migrate: {
+    async development() {
+      const { PrismaPostgres } = await import('@prisma/adapter-pg')
+      const { Pool } = await import('pg')
+      const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+      })
+      const adapter = new PrismaPostgres(pool)
+      return { adapter }
+    },
+  },
+})
+```
+
+2. 更新 `schema.prisma`，移除 `url` 配置：
+
+```prisma
+datasource db {
+  provider = "postgresql"
+}
+```
+
+3. 更新 `prisma.service.ts`，使用新的适配器：
+
+```typescript
+import { PrismaPg } from '@prisma/adapter-pg'
+import { Pool } from 'pg'
+
+constructor() {
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+  })
+  const adapter = new PrismaPg(pool)
+  super({ adapter })
+  this.pool = pool
+}
+```
+
+4. 安装必要的依赖：`@prisma/adapter-pg` 和 `pg`
+
+5. 添加 `rootDir` 到 `tsconfig.json` 解决编译错误
+
+6. 运行 `prisma generate` 重新生成 Prisma Client
+
+**修改文件**:
+
+- `team-server/prisma.config.ts` - 新增
+- `team-server/prisma/schema.prisma` - 移除 url 配置
+- `team-server/src/prisma.service.ts` - 使用新适配器
+- `team-server/tsconfig.json` - 添加 rootDir
+- `team-server/package.json` - 添加依赖
+
+---
+
 _最后更新: 2026-03-26_

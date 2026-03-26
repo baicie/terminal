@@ -40,8 +40,8 @@ pub async fn local_shell(
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
     };
 
-    // Create command (mut needed for .cwd() and .uid()/.gid() on some platforms)
-    let mut cmd = CommandBuilder::new(&shell);
+    // Create command
+    let cmd = CommandBuilder::new(&shell);
 
     // Set working directory for Windows
     #[cfg(windows)]

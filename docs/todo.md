@@ -507,6 +507,22 @@ _最后更新：2026-03-26 - 功能完善批次_
 
 ## 十一、功能增强开发记录 (2026-03-26)
 
+### 2026-03-26 完成的工作 (第十三批次 - 构建修复)
+
+#### 1. team-server Prisma 7.x 升级修复
+- **Prisma 7.x 配置变更**: `url` 不再支持在 schema.prisma 中
+- **新增配置文件**: `prisma.config.ts` - Prisma 7.x 新配置方式
+- **更新 schema.prisma**: 移除 `url = env("DATABASE_URL")` 配置
+- **更新 PrismaService**: 使用 `PrismaPg` 适配器连接数据库
+- **tsconfig.json**: 添加 `rootDir: "./src"` 修复编译错误
+- **安装依赖**: `@prisma/adapter-pg` 和 `pg`
+
+#### 2. Rust 编译警告清理
+- 移除 `src-tauri/src/local.rs` 中不必要的 `mut` 关键字
+- 清理 `unused_mut` 警告
+
+---
+
 ### 2026-03-26 完成的工作 (第十二批次 - 功能完善)
 
 #### 1. 数据存储服务前端集成

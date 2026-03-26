@@ -108,7 +108,7 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
       termRef.current = null
       setIsReady(false)
     }
-  }, [tabId, tab])
+  }, [tabId, tab, themeColors])
 
   // ---- Resize 监听 ----
   useEffect(() => {
