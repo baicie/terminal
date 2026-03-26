@@ -21,7 +21,7 @@ import {
   UserPlus,
   Users,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { HostDialog } from '@/components/host-list/host-dialog'
@@ -69,8 +69,6 @@ const HostsView: React.FC = () => {
   const currentTeam = useCurrentTeam()
   const sharedHosts = useTeamStore(s => s.sharedHosts)
   const sharedSnippets = useTeamStore(s => s.sharedSnippets)
-  const loadSharedHosts = useTeamStore(s => s.loadSharedHosts)
-  const loadSharedSnippets = useTeamStore(s => s.loadSharedSnippets)
 
   // Dialog states
   const [hostDialogOpen, setHostDialogOpen] = useState(false)
@@ -86,14 +84,20 @@ const HostsView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [gridView, setGridView] = useState(true)
 
+  // Load hosts and groups on mount - only depend on stable values
   useEffect(() => {
     void hostStore.loadHosts()
     void hostStore.loadGroups()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Load shared data when team is enabled - only depend on stable values
+  useEffect(() => {
     if (isTeamEnabled && currentTeam) {
-      void loadSharedHosts(currentTeam.id)
-      void loadSharedSnippets(currentTeam.id)
+      void useTeamStore.getState().loadSharedHosts(currentTeam.id)
+      void useTeamStore.getState().loadSharedSnippets(currentTeam.id)
     }
-  }, [isTeamEnabled, currentTeam, hostStore, loadSharedHosts, loadSharedSnippets])
+  }, [isTeamEnabled, currentTeam])
 
   const handleImportSharedSnippet = async (
     sharedSnippet: (typeof sharedSnippets)[0],
@@ -245,7 +249,7 @@ const HostsView: React.FC = () => {
     navigate(`/terminal?tab=${newTab.id}`)
   }
 
-  const handleConnectBarSubmit = () => {
+  const handleConnectBarSubmit = useCallback(() => {
     const q = searchQuery.trim()
     if (!q) {
       toast.info(t('toast.enterHost'))
@@ -267,7 +271,7 @@ const HostsView: React.FC = () => {
     toast.info(t('toast.noMatchedHost'), {
       description: t('toast.useNewHost'),
     })
-  }
+  }, [searchQuery, hosts, handleConnect, t])
 
   const handleConnectSerial = (config: SerialConfig, sessionId: string) => {
     const portName = config.name.split('/').pop() || config.name
@@ -300,9 +304,6 @@ const HostsView: React.FC = () => {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="h-10 flex-1 rounded-lg bg-secondary/40 border-border/60"
-            onKeyDown={e => {
-              if (e.key === 'Enter') handleConnectBarSubmit()
-            }}
           />
           <Button
             className="h-10 px-6 shrink-0 rounded-lg"

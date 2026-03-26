@@ -6,12 +6,12 @@ import { executeQuery, select } from './connection'
 import type { GroupRecord } from './types'
 
 export async function getGroups(): Promise<Group[]> {
-  const rows = await select<GroupRecord[]>('SELECT * FROM groups ORDER BY "order"')
+  const rows = await select<GroupRecord>('SELECT * FROM groups ORDER BY "order"')
   return rows.map(rowToGroup)
 }
 
 export async function getGroupById(id: string): Promise<Group | null> {
-  const rows = await select<GroupRecord[]>(
+  const rows = await select<GroupRecord>(
     'SELECT * FROM groups WHERE id = ?',
     [id],
   )
@@ -55,12 +55,12 @@ export async function deleteGroup(id: string): Promise<void> {
 
 export async function getChildGroups(parentId: string | null): Promise<Group[]> {
   if (parentId === null) {
-    const rows = await select<GroupRecord[]>(
+    const rows = await select<GroupRecord>(
       'SELECT * FROM groups WHERE parent_id IS NULL ORDER BY "order"',
     )
     return rows.map(rowToGroup)
   }
-  const rows = await select<GroupRecord[]>(
+  const rows = await select<GroupRecord>(
     'SELECT * FROM groups WHERE parent_id = ? ORDER BY "order"',
     [parentId],
   )

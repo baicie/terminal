@@ -79,11 +79,11 @@ export async function deleteSSHKey(id: string): Promise<void> {
 }
 
 export async function getSSHKeys(): Promise<SSHKeyRecord[]> {
-  return select<SSHKeyRecord[]>('SELECT * FROM ssh_keys ORDER BY name')
+  return select<SSHKeyRecord>('SELECT * FROM ssh_keys ORDER BY name')
 }
 
 export async function getSSHKeyById(id: string): Promise<SSHKeyRecord | null> {
-  const results = await select<SSHKeyRecord[]>(
+  const results = await select<SSHKeyRecord>(
     'SELECT * FROM ssh_keys WHERE id = ?',
     [id],
   )
@@ -92,7 +92,7 @@ export async function getSSHKeyById(id: string): Promise<SSHKeyRecord | null> {
 
 export async function searchSSHKeys(query: string): Promise<SSHKeyRecord[]> {
   const escapedQuery = query.replace(/[%_]/g, '\\$&')
-  return select<SSHKeyRecord[]>(
+  return select<SSHKeyRecord>(
     'SELECT * FROM ssh_keys WHERE name LIKE ? ESCAPE "\\" ORDER BY name LIMIT 50',
     [`%${escapedQuery}%`],
   )

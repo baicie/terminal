@@ -2,9 +2,8 @@
  * 数据库连接和初始化
  * 包含 getDb、executeQuery、select、initSchema、configureSqlite
  */
-import type { Database } from '@tauri-apps/plugin-sql'
+import Database from '@tauri-apps/plugin-sql'
 import { isTauri } from '@tauri-apps/api/core'
-import DatabasePlugin from '@tauri-apps/plugin-sql'
 
 let db: Database | null = null
 let initPromise: Promise<Database> | null = null
@@ -21,7 +20,7 @@ export async function getDb(): Promise<Database> {
 
   // Start initialization
   initPromise = (async () => {
-    db = await DatabasePlugin.load('sqlite:terminal.db')
+    db = await Database.load('sqlite:terminal.db')
     await initSchema()
     await configureSqlite()
     return db
@@ -397,16 +396,23 @@ export async function executeQuery(sql: string, params: unknown[] = []) {
 export async function select<T>(
   sql: string,
   params: unknown[] = [],
-): Promise<T[]> {
+): Promise<T> {
   try {
     const database = await getDb()
-    return await database.select<T[]>(sql, params)
+    const result = await database.select<T>(sql, params)
+    return result
   } catch (error) {
+    // Check if it's a "not in Tauri context" error
+    if (error instanceof Error && error.message === 'Database only available in Tauri context') {
+      // Re-throw this specific error so callers can handle it
+      throw error
+    }
+    // For other errors, log and return empty array (legacy behavior for backwards compat)
     console.error('[Database] Select error:', {
       sql: sql.substring(0, 200),
       params,
       error: error instanceof Error ? error.message : String(error),
     })
-    return []
+    return [] as T
   }
 }

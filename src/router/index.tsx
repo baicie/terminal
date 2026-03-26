@@ -14,6 +14,7 @@ function Loading() {
 }
 
 // Lazy wrapper: accepts any React component and returns a Suspense-wrapped lazy component
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeLazyRoute(
   getComponent: () => Promise<{ default: React.ComponentType<any> }>,
 ): ReactNode {

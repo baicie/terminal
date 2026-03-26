@@ -23,7 +23,7 @@ export const defaultSettings: AppSettings = {
 }
 
 export async function getSetting<T>(key: string, defaultValue: T): Promise<T> {
-  const results = await select<{ value: string }[]>(
+  const results = await select<{ value: string }>(
     'SELECT value FROM settings WHERE key = ?',
     [key],
   )

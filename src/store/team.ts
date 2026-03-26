@@ -866,8 +866,15 @@ export const useTeamStore = create<TeamState>((set, get) => ({
         const { shares } = changesResponse.data
 
         // Update shared hosts/snippets from server
-        for (const apiShare of shares as any[]) {
-          const converted = convertApiShare(apiShare)
+        for (const apiShare of shares) {
+          const converted = convertApiShare({
+            id: apiShare.id,
+            type: apiShare.type,
+            data: apiShare.data,
+            permission: apiShare.permission,
+            sharedBy: apiShare.sharedBy,
+            createdAt: apiShare.createdAt,
+          })
           if ('hostData' in converted) {
             // It's a shared host
             if (settings.currentTeamId) {

@@ -51,11 +51,11 @@ export async function deleteScript(id: string): Promise<void> {
 }
 
 export async function getScripts(): Promise<ScriptRecord[]> {
-  return select<ScriptRecord[]>('SELECT * FROM scripts ORDER BY name')
+  return select<ScriptRecord>('SELECT * FROM scripts ORDER BY name')
 }
 
 export async function getScriptById(id: string): Promise<ScriptRecord | null> {
-  const results = await select<ScriptRecord[]>(
+  const results = await select<ScriptRecord>(
     'SELECT * FROM scripts WHERE id = ?',
     [id],
   )
@@ -63,12 +63,12 @@ export async function getScriptById(id: string): Promise<ScriptRecord | null> {
 }
 
 export async function getEnabledScripts(): Promise<ScriptRecord[]> {
-  return select<ScriptRecord[]>('SELECT * FROM scripts WHERE enabled = 1 ORDER BY name')
+  return select<ScriptRecord>('SELECT * FROM scripts WHERE enabled = 1 ORDER BY name')
 }
 
 export async function searchScripts(query: string): Promise<ScriptRecord[]> {
   const escapedQuery = query.replace(/[%_]/g, '\\$&')
-  return select<ScriptRecord[]>(
+  return select<ScriptRecord>(
     'SELECT * FROM scripts WHERE name LIKE ? ESCAPE "\\" OR description LIKE ? ESCAPE "\\" ORDER BY name LIMIT 50',
     [`%${escapedQuery}%`, `%${escapedQuery}%`],
   )
@@ -149,12 +149,12 @@ export async function getScriptExecutions(
   limit = 100,
 ): Promise<ScriptExecutionRecord[]> {
   if (scriptId) {
-    return select<ScriptExecutionRecord[]>(
+    return select<ScriptExecutionRecord>(
       'SELECT * FROM script_executions WHERE script_id = ? ORDER BY started_at DESC LIMIT ?',
       [scriptId, limit],
     )
   }
-  return select<ScriptExecutionRecord[]>(
+  return select<ScriptExecutionRecord>(
     'SELECT * FROM script_executions ORDER BY started_at DESC LIMIT ?',
     [limit],
   )
@@ -163,7 +163,7 @@ export async function getScriptExecutions(
 export async function getScriptExecutionById(
   id: string,
 ): Promise<ScriptExecutionRecord | null> {
-  const results = await select<ScriptExecutionRecord[]>(
+  const results = await select<ScriptExecutionRecord>(
     'SELECT * FROM script_executions WHERE id = ?',
     [id],
   )

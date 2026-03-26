@@ -72,7 +72,7 @@ export async function clearConnectionLogs(): Promise<void> {
 export async function getConnectionLogs(
   limit = 100,
 ): Promise<ConnectionLogRecord[]> {
-  return select<ConnectionLogRecord[]>(
+  return select<ConnectionLogRecord>(
     'SELECT * FROM connection_logs ORDER BY started_at DESC LIMIT ?',
     [limit],
   )
@@ -81,7 +81,7 @@ export async function getConnectionLogs(
 export async function getConnectionLogsByHost(
   hostId: string,
 ): Promise<ConnectionLogRecord[]> {
-  return select<ConnectionLogRecord[]>(
+  return select<ConnectionLogRecord>(
     'SELECT * FROM connection_logs WHERE host_id = ? ORDER BY started_at DESC',
     [hostId],
   )
@@ -91,7 +91,7 @@ export async function searchConnectionLogs(
   query: string,
 ): Promise<ConnectionLogRecord[]> {
   const escapedQuery = query.replace(/[%_]/g, '\\$&')
-  return select<ConnectionLogRecord[]>(
+  return select<ConnectionLogRecord>(
     'SELECT * FROM connection_logs WHERE host_name LIKE ? ESCAPE "\\" OR host_address LIKE ? ESCAPE "\\" OR username LIKE ? ESCAPE "\\" ORDER BY started_at DESC LIMIT 50',
     [`%${escapedQuery}%`, `%${escapedQuery}%`, `%${escapedQuery}%`],
   )

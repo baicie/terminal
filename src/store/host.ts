@@ -73,6 +73,7 @@ export interface HostState {
   selectedHostId: string | null
   selectedGroupId: string | null
   loading: boolean
+  dbAvailable: boolean
   // Computed
   favoriteHosts: () => Host[]
   getGroupChildren: (parentId: string | null) => Group[]
@@ -97,6 +98,7 @@ export const useHostStore = create<HostState>((set, get) => ({
   selectedHostId: null,
   selectedGroupId: null,
   loading: false,
+  dbAvailable: true,
 
   // Computed
   favoriteHosts(): Host[] {
@@ -113,15 +115,31 @@ export const useHostStore = create<HostState>((set, get) => ({
     set({ loading: true })
     try {
       const rows = await select<HostRow>('SELECT * FROM hosts ORDER BY name')
-      set({ hosts: rows.map(rowToHost) })
+      set({ hosts: rows.map(rowToHost), dbAvailable: true })
+    } catch (error) {
+      // Check if it's a "not in Tauri context" error
+      if (error instanceof Error && error.message === 'Database only available in Tauri context') {
+        set({ hosts: [], dbAvailable: false })
+        return
+      }
+      throw error
     } finally {
       set({ loading: false })
     }
   },
 
   async loadGroups() {
-    const rows = await select<GroupRow>('SELECT * FROM groups ORDER BY "order"')
-    set({ groups: rows.map(rowToGroup) })
+    try {
+      const rows = await select<GroupRow>('SELECT * FROM groups ORDER BY "order"')
+      set({ groups: rows.map(rowToGroup) })
+    } catch (error) {
+      // Check if it's a "not in Tauri context" error - don't throw, just log
+      if (error instanceof Error && error.message === 'Database only available in Tauri context') {
+        set({ groups: [] })
+        return
+      }
+      throw error
+    }
   },
 
   async addHost(host) {

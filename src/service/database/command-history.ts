@@ -23,12 +23,12 @@ export async function getCommandHistory(
   limit = 100,
 ): Promise<CommandHistoryRecord[]> {
   if (hostId) {
-    return select<CommandHistoryRecord[]>(
+    return select<CommandHistoryRecord>(
       'SELECT * FROM command_history WHERE host_id = ? ORDER BY executed_at DESC LIMIT ?',
       [hostId, limit],
     )
   }
-  return select<CommandHistoryRecord[]>(
+  return select<CommandHistoryRecord>(
     'SELECT * FROM command_history ORDER BY executed_at DESC LIMIT ?',
     [limit],
   )
@@ -40,7 +40,7 @@ export async function searchCommandHistory(
 ): Promise<CommandHistoryRecord[]> {
   // Escape special LIKE characters to prevent ReDoS attacks
   const escapedQuery = query.replace(/[%_]/g, '\\$&')
-  return select<CommandHistoryRecord[]>(
+  return select<CommandHistoryRecord>(
     'SELECT * FROM command_history WHERE command LIKE ? ESCAPE "\\" ORDER BY executed_at DESC LIMIT ?',
     [`%${escapedQuery}%`, Math.min(limit, 100)],
   )

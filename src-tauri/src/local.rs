@@ -1,6 +1,7 @@
 // Allow unused imports for cross-platform compatibility
 #![allow(unused_imports)]
 
+use crate::errors::LocalError;
 use crate::state::{LocalPtySession, ShellOutput, SharedStateType};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::io::Read;
@@ -14,7 +15,7 @@ pub async fn local_shell(
     state: tauri::State<'_, SharedStateType>,
     cols: u16,
     rows: u16,
-) -> Result<String, String> {
+) -> Result<String, LocalError> {
     let session_id = format!("local-{}", uuid::Uuid::new_v4());
 
     // Create PTY pair
@@ -26,7 +27,7 @@ pub async fn local_shell(
             pixel_width: 0,
             pixel_height: 0,
         })
-        .map_err(|e| format!("Failed to open PTY: {}", e))?;
+        .map_err(|e| LocalError::PtyFailed(format!("Failed to open PTY: {}", e)))?;
 
     // Get the default shell based on OS
     let shell = if cfg!(windows) {
@@ -57,19 +58,19 @@ pub async fn local_shell(
     let child = pty_pair
         .slave
         .spawn_command(cmd)
-        .map_err(|e| format!("Failed to spawn shell: {}", e))?;
+        .map_err(|e| LocalError::ShellFailed(format!("Failed to spawn shell: {}", e)))?;
 
     // Take the reader and writer
     let mut reader = pty_pair
         .master
         .try_clone_reader()
-        .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
+        .map_err(|e| LocalError::PtyFailed(format!("Failed to clone PTY reader: {}", e)))?;
 
     // Take the writer
     let writer = pty_pair
         .master
         .take_writer()
-        .map_err(|e| format!("Failed to take writer: {}", e))?;
+        .map_err(|e| LocalError::PtyFailed(format!("Failed to take writer: {}", e)))?;
 
     // Disable PTY echo so xterm.js controls all display.
     // Keep line discipline intact (ICANON etc.) so backspace and line editing work.
@@ -144,19 +145,23 @@ pub async fn local_write(
     state: tauri::State<'_, SharedStateType>,
     session_id: String,
     data: String,
-) -> Result<(), String> {
+) -> Result<(), LocalError> {
+    if session_id.is_empty() {
+        return Err(LocalError::SessionNotFound);
+    }
+
     let sessions = state.local_sessions.lock().await;
     let session = sessions
         .get(&session_id)
-        .ok_or_else(|| "Session not found".to_string())?;
+        .ok_or(LocalError::SessionNotFound)?;
 
     let mut writer = session.writer.lock().await;
     writer
         .write_all(data.as_bytes())
-        .map_err(|e| format!("Failed to write: {}", e))?;
+        .map_err(|e| LocalError::WriteFailed(format!("Failed to write: {}", e)))?;
     writer
         .flush()
-        .map_err(|e| format!("Failed to flush: {}", e))?;
+        .map_err(|e| LocalError::WriteFailed(format!("Failed to flush: {}", e)))?;
 
     Ok(())
 }
@@ -167,11 +172,15 @@ pub async fn local_resize(
     session_id: String,
     cols: u16,
     rows: u16,
-) -> Result<(), String> {
+) -> Result<(), LocalError> {
+    if session_id.is_empty() {
+        return Err(LocalError::SessionNotFound);
+    }
+
     let sessions = state.local_sessions.lock().await;
     let session = sessions
         .get(&session_id)
-        .ok_or_else(|| "Session not found".to_string())?;
+        .ok_or(LocalError::SessionNotFound)?;
 
     session
         .pty_pair
@@ -182,7 +191,7 @@ pub async fn local_resize(
             pixel_width: 0,
             pixel_height: 0,
         })
-        .map_err(|e| format!("Failed to resize: {}", e))?;
+        .map_err(|e| LocalError::ResizeFailed(format!("Failed to resize: {}", e)))?;
 
     Ok(())
 }
@@ -191,7 +200,11 @@ pub async fn local_resize(
 pub async fn local_disconnect(
     state: tauri::State<'_, SharedStateType>,
     session_id: String,
-) -> Result<(), String> {
+) -> Result<(), LocalError> {
+    if session_id.is_empty() {
+        return Err(LocalError::SessionNotFound);
+    }
+
     let mut sessions = state.local_sessions.lock().await;
     if let Some(mut session) = sessions.remove(&session_id) {
         let _ = session.child.kill();

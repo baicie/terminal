@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use crate::errors::VaultError;
 
 /// Vault configuration stored on disk
 #[derive(Serialize, Deserialize)]
@@ -41,7 +42,7 @@ pub struct VaultState {
 
 impl VaultState {
     /// Create a new vault with a master password
-    pub fn create(master_password: &str, config_path: PathBuf) -> Result<Self, String> {
+    pub fn create(master_password: &str, config_path: PathBuf) -> Result<Self, VaultError> {
         // Generate a random salt
         let salt = SaltString::generate(&mut OsRng);
 
@@ -49,10 +50,10 @@ impl VaultState {
         let argon2 = Argon2::default();
         let hash = argon2
             .hash_password(master_password.as_bytes(), &salt)
-            .map_err(|e| format!("Failed to derive key: {}", e))?;
+            .map_err(|e| VaultError::CreateFailed(format!("Failed to derive key: {}", e)))?;
 
         // Extract 32 bytes for AES-256
-        let hash_output = hash.hash.ok_or("Failed to get hash output")?;
+        let hash_output = hash.hash.ok_or_else(|| VaultError::CreateFailed("Failed to get hash output".into()))?;
         let mut master_key = [0u8; 32];
         let hash_bytes = hash_output.as_bytes();
         let len = std::cmp::min(hash_bytes.len(), 32);
@@ -75,23 +76,23 @@ impl VaultState {
     }
 
     /// Unlock an existing vault with master password
-    pub fn unlock(master_password: &str, config_path: PathBuf) -> Result<Self, String> {
+    pub fn unlock(master_password: &str, config_path: PathBuf) -> Result<Self, VaultError> {
         let content = fs::read_to_string(&config_path)
-            .map_err(|e| format!("Failed to read vault config: {}", e))?;
+            .map_err(|e| VaultError::UnlockFailed(format!("Failed to read vault config: {}", e)))?;
 
         let config: VaultConfig = serde_json::from_str(&content)
-            .map_err(|e| format!("Invalid vault config: {}", e))?;
+            .map_err(|e| VaultError::UnlockFailed(format!("Invalid vault config: {}", e)))?;
 
         // Re-derive key using stored salt
         let salt = SaltString::from_b64(&config.salt)
-            .map_err(|e| format!("Invalid salt: {}", e))?;
+            .map_err(|e| VaultError::UnlockFailed(format!("Invalid salt: {}", e)))?;
 
         let argon2 = Argon2::default();
         let hash = argon2
             .hash_password(master_password.as_bytes(), &salt)
-            .map_err(|e| format!("Failed to derive key: {}", e))?;
+            .map_err(|e| VaultError::UnlockFailed(format!("Failed to derive key: {}", e)))?;
 
-        let hash_output = hash.hash.ok_or("Failed to get hash output")?;
+        let hash_output = hash.hash.ok_or_else(|| VaultError::UnlockFailed("Failed to get hash output".into()))?;
         let mut master_key = [0u8; 32];
         let hash_bytes = hash_output.as_bytes();
         let len = std::cmp::min(hash_bytes.len(), 32);
@@ -110,19 +111,19 @@ impl VaultState {
     }
 
     /// Encrypt and store a value
-    pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
+    pub fn set(&mut self, key: &str, value: &str) -> Result<(), VaultError> {
         let encrypted = encrypt_value(value, &self.master_key)?;
         self.config.entries.insert(key.to_string(), encrypted);
         self.save_config()
     }
 
     /// Decrypt and retrieve a value
-    pub fn get(&self, key: &str) -> Result<String, String> {
+    pub fn get(&self, key: &str) -> Result<String, VaultError> {
         let encrypted = self
             .config
             .entries
             .get(key)
-            .ok_or_else(|| format!("Key not found: {}", key))?;
+            .ok_or_else(|| VaultError::KeyNotFound(key.to_string()))?;
         decrypt_value(encrypted, &self.master_key)
     }
 
@@ -132,15 +133,15 @@ impl VaultState {
     }
 
     /// Delete a vault entry
-    pub fn delete(&mut self, key: &str) -> Result<(), String> {
+    pub fn delete(&mut self, key: &str) -> Result<(), VaultError> {
         if self.config.entries.remove(key).is_none() {
-            return Err(format!("Key not found: {}", key));
+            return Err(VaultError::KeyNotFound(key.to_string()));
         }
         self.save_config()
     }
 
     /// Change master password
-    pub fn change_password(&mut self, new_password: &str) -> Result<(), String> {
+    pub fn change_password(&mut self, new_password: &str) -> Result<(), VaultError> {
         // Generate new salt
         let new_salt = SaltString::generate(&mut OsRng);
 
@@ -148,9 +149,9 @@ impl VaultState {
         let argon2 = Argon2::default();
         let hash = argon2
             .hash_password(new_password.as_bytes(), &new_salt)
-            .map_err(|e| format!("Failed to derive key: {}", e))?;
+            .map_err(|e| VaultError::CreateFailed(format!("Failed to derive key: {}", e)))?;
 
-        let hash_output = hash.hash.ok_or("Failed to get hash output")?;
+        let hash_output = hash.hash.ok_or_else(|| VaultError::CreateFailed("Failed to get hash output".into()))?;
         let mut new_master_key = [0u8; 32];
         let hash_bytes = hash_output.as_bytes();
         let len = std::cmp::min(hash_bytes.len(), 32);
@@ -174,18 +175,18 @@ impl VaultState {
         self.save_config()
     }
 
-    fn save_config(&self) -> Result<(), String> {
+    fn save_config(&self) -> Result<(), VaultError> {
         let content = serde_json::to_string_pretty(&self.config)
-            .map_err(|e| format!("Failed to serialize config: {}", e))?;
+            .map_err(|e| VaultError::SaveFailed(format!("Failed to serialize config: {}", e)))?;
         fs::write(&self.config_path, content)
-            .map_err(|e| format!("Failed to write config: {}", e))
+            .map_err(|e| VaultError::SaveFailed(format!("Failed to write config: {}", e)))
     }
 }
 
 /// Encrypt a value using AES-256-GCM
-fn encrypt_value(value: &str, key: &[u8; 32]) -> Result<String, String> {
+fn encrypt_value(value: &str, key: &[u8; 32]) -> Result<String, VaultError> {
     let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|e| format!("Failed to create cipher: {}", e))?;
+        .map_err(|e| VaultError::EncryptFailed(format!("Failed to create cipher: {}", e)))?;
 
     // Generate random nonce
     let mut nonce_bytes = [0u8; 12];
@@ -195,7 +196,7 @@ fn encrypt_value(value: &str, key: &[u8; 32]) -> Result<String, String> {
     // Encrypt
     let ciphertext = cipher
         .encrypt(nonce, value.as_bytes())
-        .map_err(|e| format!("Encryption failed: {}", e))?;
+        .map_err(|e| VaultError::EncryptFailed(format!("Encryption failed: {}", e)))?;
 
     // Combine nonce + ciphertext and encode as base64
     let mut combined = nonce_bytes.to_vec();
@@ -205,17 +206,17 @@ fn encrypt_value(value: &str, key: &[u8; 32]) -> Result<String, String> {
 }
 
 /// Decrypt a value using AES-256-GCM
-fn decrypt_value(encrypted: &str, key: &[u8; 32]) -> Result<String, String> {
+fn decrypt_value(encrypted: &str, key: &[u8; 32]) -> Result<String, VaultError> {
     let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|e| format!("Failed to create cipher: {}", e))?;
+        .map_err(|e| VaultError::DecryptFailed(format!("Failed to create cipher: {}", e)))?;
 
     // Decode base64
     let combined = BASE64
         .decode(encrypted)
-        .map_err(|e| format!("Invalid base64: {}", e))?;
+        .map_err(|e| VaultError::DecryptFailed(format!("Invalid base64: {}", e)))?;
 
     if combined.len() < 12 {
-        return Err("Invalid encrypted data".to_string());
+        return Err(VaultError::DecryptFailed("Invalid encrypted data".into()));
     }
 
     // Extract nonce and ciphertext
@@ -225,9 +226,9 @@ fn decrypt_value(encrypted: &str, key: &[u8; 32]) -> Result<String, String> {
     // Decrypt
     let plaintext = cipher
         .decrypt(nonce, ciphertext)
-        .map_err(|e| format!("Decryption failed (wrong password?): {}", e))?;
+        .map_err(|e| VaultError::DecryptFailed(format!("Decryption failed (wrong password?): {}", e)))?;
 
-    String::from_utf8(plaintext).map_err(|e| format!("Invalid UTF-8: {}", e))
+    String::from_utf8(plaintext).map_err(|e| VaultError::DecryptFailed(format!("Invalid UTF-8: {}", e)))
 }
 
 // Global vault state (protected by Mutex for thread safety)
@@ -249,7 +250,10 @@ pub fn vault_exists() -> bool {
 }
 
 #[tauri::command]
-pub fn vault_create(master_password: String) -> Result<(), String> {
+pub fn vault_create(master_password: String) -> Result<(), VaultError> {
+    if master_password.is_empty() {
+        return Err(VaultError::InvalidPassword);
+    }
     let vault = VaultState::create(&master_password, get_vault_path())?;
     let mut state = VAULT_STATE.lock();
     *state = Some(vault);
@@ -257,7 +261,7 @@ pub fn vault_create(master_password: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn vault_unlock(master_password: String) -> Result<(), String> {
+pub fn vault_unlock(master_password: String) -> Result<(), VaultError> {
     let vault = VaultState::unlock(&master_password, get_vault_path())?;
     let mut state = VAULT_STATE.lock();
     *state = Some(vault);
@@ -277,16 +281,22 @@ pub fn vault_is_unlocked() -> bool {
 }
 
 #[tauri::command]
-pub fn vault_set(key: String, value: String) -> Result<(), String> {
+pub fn vault_set(key: String, value: String) -> Result<(), VaultError> {
+    if key.is_empty() {
+        return Err(VaultError::EncryptFailed("Key cannot be empty".into()));
+    }
     let mut state = VAULT_STATE.lock();
-    let vault = state.as_mut().ok_or("Vault is locked")?;
+    let vault = state.as_mut().ok_or(VaultError::VaultLocked)?;
     vault.set(&key, &value)
 }
 
 #[tauri::command]
-pub fn vault_get(key: String) -> Result<String, String> {
+pub fn vault_get(key: String) -> Result<String, VaultError> {
+    if key.is_empty() {
+        return Err(VaultError::KeyNotFound("Key cannot be empty".into()));
+    }
     let state = VAULT_STATE.lock();
-    let vault = state.as_ref().ok_or("Vault is locked")?;
+    let vault = state.as_ref().ok_or(VaultError::VaultLocked)?;
     vault.get(&key)
 }
 
@@ -297,14 +307,23 @@ pub fn vault_list() -> Vec<String> {
 }
 
 #[tauri::command]
-pub fn vault_delete(key: String) -> Result<(), String> {
+pub fn vault_delete(key: String) -> Result<(), VaultError> {
+    if key.is_empty() {
+        return Err(VaultError::KeyNotFound("Key cannot be empty".into()));
+    }
     let mut state = VAULT_STATE.lock();
-    let vault = state.as_mut().ok_or("Vault is locked")?;
+    let vault = state.as_mut().ok_or(VaultError::VaultLocked)?;
     vault.delete(&key)
 }
 
 #[tauri::command]
-pub fn vault_change_password(old_password: String, new_password: String) -> Result<(), String> {
+pub fn vault_change_password(old_password: String, new_password: String) -> Result<(), VaultError> {
+    if old_password.is_empty() {
+        return Err(VaultError::InvalidPassword);
+    }
+    if new_password.is_empty() {
+        return Err(VaultError::InvalidPassword);
+    }
     // First unlock with old password to verify
     let config_path = get_vault_path();
     let mut vault = VaultState::unlock(&old_password, config_path)?;

@@ -1,5 +1,5 @@
+import type { Host } from '@/types'
 import type {
-  Host,
   ScriptExecutionRecord,
   ScriptRecord,
 } from '@/service/database'

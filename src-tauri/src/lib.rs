@@ -1,3 +1,4 @@
+mod errors;
 mod local;
 mod port_forward;
 mod serial;

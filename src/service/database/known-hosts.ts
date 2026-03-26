@@ -28,7 +28,7 @@ export async function addKnownHosts(
 ): Promise<void> {
   for (const host of hosts) {
     // Check if already exists
-    const existing = await select<KnownHostRecord[]>(
+    const existing = await select<KnownHostRecord>(
       'SELECT * FROM known_hosts WHERE hostname = ? AND port = ?',
       [host.hostname, host.port],
     )
@@ -59,14 +59,14 @@ export async function clearAllKnownHosts(): Promise<void> {
 }
 
 export async function getKnownHosts(): Promise<KnownHostRecord[]> {
-  return select<KnownHostRecord[]>('SELECT * FROM known_hosts ORDER BY added_at DESC')
+  return select<KnownHostRecord>('SELECT * FROM known_hosts ORDER BY added_at DESC')
 }
 
 export async function searchKnownHosts(
   query: string,
 ): Promise<KnownHostRecord[]> {
   const escapedQuery = query.replace(/[%_]/g, '\\$&')
-  return select<KnownHostRecord[]>(
+  return select<KnownHostRecord>(
     'SELECT * FROM known_hosts WHERE hostname LIKE ? ESCAPE "\\" ORDER BY added_at DESC LIMIT 50',
     [`%${escapedQuery}%`],
   )

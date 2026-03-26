@@ -15,7 +15,7 @@ import type {
 
 // User Profile
 export async function getUserProfile(): Promise<UserProfileRecord | null> {
-  const results = await select<UserProfileRecord[]>(
+  const results = await select<UserProfileRecord>(
     'SELECT * FROM user_profile LIMIT 1',
   )
   return results[0] || null
@@ -57,11 +57,11 @@ export async function updateUserProfile(
 
 // Teams
 export async function getTeams(): Promise<TeamRecord[]> {
-  return select<TeamRecord[]>('SELECT * FROM teams ORDER BY name')
+  return select<TeamRecord>('SELECT * FROM teams ORDER BY name')
 }
 
 export async function getTeamById(id: string): Promise<TeamRecord | null> {
-  const results = await select<TeamRecord[]>(
+  const results = await select<TeamRecord>(
     'SELECT * FROM teams WHERE id = ?',
     [id],
   )
@@ -135,7 +135,7 @@ export async function deleteTeam(id: string): Promise<void> {
 export async function getTeamMembers(
   teamId: string,
 ): Promise<TeamMemberRecord[]> {
-  return select<TeamMemberRecord[]>(
+  return select<TeamMemberRecord>(
     'SELECT * FROM team_members WHERE team_id = ? ORDER BY joined_at',
     [teamId],
   )
@@ -177,7 +177,7 @@ export async function updateTeamMember(
 export async function getSharedHosts(
   teamId: string,
 ): Promise<TeamSharedHostRecord[]> {
-  return select<TeamSharedHostRecord[]>(
+  return select<TeamSharedHostRecord>(
     'SELECT * FROM team_shared_hosts WHERE team_id = ? ORDER BY created_at DESC',
     [teamId],
   )
@@ -206,7 +206,7 @@ export async function removeSharedHost(id: string): Promise<void> {
 export async function getSharedSnippets(
   teamId: string,
 ): Promise<TeamSharedSnippetRecord[]> {
-  return select<TeamSharedSnippetRecord[]>(
+  return select<TeamSharedSnippetRecord>(
     'SELECT * FROM team_shared_snippets WHERE team_id = ? ORDER BY created_at DESC',
     [teamId],
   )
@@ -237,7 +237,7 @@ export async function removeSharedSnippet(id: string): Promise<void> {
 export async function getTeamInvites(
   teamId: string,
 ): Promise<TeamInviteRecord[]> {
-  return select<TeamInviteRecord[]>(
+  return select<TeamInviteRecord>(
     'SELECT * FROM team_invites WHERE team_id = ? ORDER BY created_at DESC',
     [teamId],
   )
@@ -272,7 +272,7 @@ export async function deleteTeamInvite(id: string): Promise<void> {
 export async function getTeamInviteByCode(
   code: string,
 ): Promise<TeamInviteRecord | null> {
-  const results = await select<TeamInviteRecord[]>(
+  const results = await select<TeamInviteRecord>(
     'SELECT * FROM team_invites WHERE code = ? AND expires_at > ? AND used_at IS NULL',
     [code, Date.now()],
   )
@@ -282,7 +282,7 @@ export async function getTeamInviteByCode(
 export async function getTeamInviteByToken(
   token: string,
 ): Promise<TeamInviteRecord | null> {
-  const results = await select<TeamInviteRecord[]>(
+  const results = await select<TeamInviteRecord>(
     'SELECT * FROM team_invites WHERE link_token = ? AND expires_at > ? AND used_at IS NULL',
     [token, Date.now()],
   )
@@ -301,7 +301,7 @@ export async function getTeamAuditLogs(
   teamId: string,
   limit = 100,
 ): Promise<TeamAuditLogRecord[]> {
-  return select<TeamAuditLogRecord[]>(
+  return select<TeamAuditLogRecord>(
     'SELECT * FROM team_audit_logs WHERE team_id = ? ORDER BY created_at DESC LIMIT ?',
     [teamId, limit],
   )
@@ -326,7 +326,7 @@ export async function addTeamAuditLog(log: TeamAuditLogRecord): Promise<void> {
 
 // Sync Queue
 export async function getPendingSyncItems(): Promise<SyncQueueRecord[]> {
-  return select<SyncQueueRecord[]>(
+  return select<SyncQueueRecord>(
     "SELECT * FROM sync_queue WHERE status = 'pending' ORDER BY created_at",
   )
 }

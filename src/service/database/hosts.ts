@@ -6,12 +6,12 @@ import { executeQuery, select } from './connection'
 import type { HostRecord } from './types'
 
 export async function getHosts(): Promise<Host[]> {
-  const rows = await select<HostRecord[]>('SELECT * FROM hosts ORDER BY name')
+  const rows = await select<HostRecord>('SELECT * FROM hosts ORDER BY name')
   return rows.map(rowToHost)
 }
 
 export async function getHostById(id: string): Promise<Host | null> {
-  const rows = await select<HostRecord[]>(
+  const rows = await select<HostRecord>(
     'SELECT * FROM hosts WHERE id = ?',
     [id],
   )
@@ -76,7 +76,7 @@ export async function deleteHost(id: string): Promise<void> {
 }
 
 export async function searchHosts(query: string): Promise<Host[]> {
-  const rows = await select<HostRecord[]>(
+  const rows = await select<HostRecord>(
     'SELECT * FROM hosts WHERE name LIKE ? OR hostname LIKE ? ORDER BY name LIMIT 50',
     [`%${query}%`, `%${query}%`],
   )
@@ -85,12 +85,12 @@ export async function searchHosts(query: string): Promise<Host[]> {
 
 export async function getHostsByGroup(groupId: string | null): Promise<Host[]> {
   if (groupId === null) {
-    const rows = await select<HostRecord[]>(
+    const rows = await select<HostRecord>(
       'SELECT * FROM hosts WHERE group_id IS NULL ORDER BY name',
     )
     return rows.map(rowToHost)
   }
-  const rows = await select<HostRecord[]>(
+  const rows = await select<HostRecord>(
     'SELECT * FROM hosts WHERE group_id = ? ORDER BY name',
     [groupId],
   )
@@ -98,7 +98,7 @@ export async function getHostsByGroup(groupId: string | null): Promise<Host[]> {
 }
 
 export async function getFavoriteHosts(): Promise<Host[]> {
-  const rows = await select<HostRecord[]>(
+  const rows = await select<HostRecord>(
     'SELECT * FROM hosts WHERE is_favorite = 1 ORDER BY name',
   )
   return rows.map(rowToHost)

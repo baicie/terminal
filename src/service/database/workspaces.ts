@@ -6,11 +6,11 @@ import type { WorkspaceRecord, WorkspaceLayoutRecord } from './types'
 import type { WorkspaceLayout } from '@/types'
 
 export async function getWorkspaces(): Promise<WorkspaceRecord[]> {
-  return select<WorkspaceRecord[]>('SELECT * FROM workspaces ORDER BY "order"')
+  return select<WorkspaceRecord>('SELECT * FROM workspaces ORDER BY "order"')
 }
 
 export async function getActiveWorkspace(): Promise<WorkspaceRecord | null> {
-  const results = await select<WorkspaceRecord[]>(
+  const results = await select<WorkspaceRecord>(
     'SELECT * FROM workspaces WHERE is_active = 1 LIMIT 1',
   )
   return results[0] || null
@@ -103,7 +103,7 @@ export async function saveWorkspaceLayout(
 export async function getWorkspaceLayout(
   workspaceId: string,
 ): Promise<WorkspaceLayout | null> {
-  const results = await select<WorkspaceLayoutRecord[]>(
+  const results = await select<WorkspaceLayoutRecord>(
     'SELECT * FROM workspace_layouts WHERE workspace_id = ?',
     [workspaceId],
   )

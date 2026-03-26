@@ -1,3 +1,4 @@
+use crate::errors::PortForwardError;
 use crate::ssh::get_ssh_sessions;
 use crate::state::{PortForwardConfig, PortForwardTask, SharedStateType};
 use tokio::net::TcpListener;
@@ -7,13 +8,23 @@ pub async fn port_forward_start(
     state: tauri::State<'_, SharedStateType>,
     session_id: String,
     config: PortForwardConfig,
-) -> Result<(), String> {
+) -> Result<(), PortForwardError> {
+    if session_id.is_empty() {
+        return Err(PortForwardError::SessionNotFound);
+    }
+    if config.local_host.is_empty() {
+        return Err(PortForwardError::BindFailed(String::from("Local host cannot be empty")));
+    }
+    if !(1..=65535).contains(&config.local_port) {
+        return Err(PortForwardError::BindFailed(String::from("Invalid local port")));
+    }
+
     // Get SSH session handle
     let sessions = get_ssh_sessions();
     let mut sessions = sessions.lock().await;
     let _handle = sessions
         .get_mut(&session_id)
-        .ok_or_else(|| "SSH session not found".to_string())?;
+        .ok_or(PortForwardError::SessionNotFound)?;
     drop(sessions);
 
     let forward_id = config.id.clone();
@@ -66,7 +77,11 @@ pub async fn port_forward_start(
 pub async fn port_forward_stop(
     state: tauri::State<'_, SharedStateType>,
     forward_id: String,
-) -> Result<(), String> {
+) -> Result<(), PortForwardError> {
+    if forward_id.is_empty() {
+        return Err(PortForwardError::ForwardNotFound);
+    }
+
     let mut port_forwards = state.port_forwards.lock().await;
     if let Some(forward) = port_forwards.remove(&forward_id) {
         forward.task.abort();
@@ -78,7 +93,7 @@ pub async fn port_forward_stop(
 #[tauri::command]
 pub async fn port_forward_list(
     state: tauri::State<'_, SharedStateType>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, PortForwardError> {
     let port_forwards = state.port_forwards.lock().await;
     Ok(port_forwards.keys().cloned().collect())
 }

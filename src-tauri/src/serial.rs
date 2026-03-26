@@ -1,10 +1,11 @@
+use crate::errors::SerialError;
 use crate::state::{SerialSession, SerialPortInfo, ShellOutput, SharedStateType};
 use serialport::{DataBits, FlowControl, Parity, StopBits};
 use std::io::Read;
 use tauri::{AppHandle, Emitter};
 
 #[tauri::command]
-pub async fn serial_list() -> Result<Vec<SerialPortInfo>, String> {
+pub async fn serial_list() -> Result<Vec<SerialPortInfo>, SerialError> {
     serialport::available_ports()
         .map(|ports| {
             ports
@@ -15,7 +16,7 @@ pub async fn serial_list() -> Result<Vec<SerialPortInfo>, String> {
                 })
                 .collect()
         })
-        .map_err(|e| format!("Failed to list serial ports: {}", e))
+        .map_err(|e| SerialError::ListFailed(format!("Failed to list serial ports: {}", e)))
 }
 
 /// Common baud rates for UI dropdown
@@ -37,7 +38,14 @@ pub async fn serial_connect(
     stop_bits: u8,
     parity: String,
     flow_control: String,
-) -> Result<String, String> {
+) -> Result<String, SerialError> {
+    if name.is_empty() {
+        return Err(SerialError::ConnectFailed(String::from("Port name cannot be empty")));
+    }
+    if baud_rate == 0 {
+        return Err(SerialError::ConnectFailed(String::from("Invalid baud rate")));
+    }
+
     let session_id = format!("serial-{}", uuid::Uuid::new_v4());
 
     // Convert config to serialport types
@@ -76,7 +84,7 @@ pub async fn serial_connect(
         .flow_control(flow_control)
         .timeout(std::time::Duration::from_millis(100))
         .open()
-        .map_err(|e| format!("Failed to open serial port {}: {}", name, e))?;
+        .map_err(|e| SerialError::ConnectFailed(format!("Failed to open serial port {}: {}", name, e)))?;
 
     // Store the session
     let session = SerialSession { port };
@@ -90,9 +98,9 @@ pub async fn serial_connect(
     let mut serial_sessions = state.serial_sessions.lock().await;
     let port_clone = serial_sessions
         .get_mut(&session_id)
-        .map(|s| s.port.try_clone().map_err(|e| e.to_string()))
+        .map(|s| s.port.try_clone())
         .transpose()
-        .map_err(|e| format!("Failed to clone port: {}", e))?;
+        .map_err(|e| SerialError::CloneFailed(format!("Failed to clone port: {}", e)))?;
     drop(serial_sessions);
 
     if let Some(mut port_reader) = port_clone {
@@ -135,21 +143,25 @@ pub async fn serial_write(
     state: tauri::State<'_, SharedStateType>,
     session_id: String,
     data: String,
-) -> Result<(), String> {
+) -> Result<(), SerialError> {
+    if session_id.is_empty() {
+        return Err(SerialError::SessionNotFound);
+    }
+
     let mut serial_sessions = state.serial_sessions.lock().await;
     let session = serial_sessions
         .get_mut(&session_id)
-        .ok_or_else(|| "Serial session not found".to_string())?;
+        .ok_or(SerialError::SessionNotFound)?;
 
     session
         .port
         .write(data.as_bytes())
-        .map_err(|e| format!("Failed to write to serial port: {}", e))?;
+        .map_err(|e| SerialError::WriteFailed(format!("Failed to write to serial port: {}", e)))?;
 
     session
         .port
         .write(b"\r")
-        .map_err(|e| format!("Failed to write CR: {}", e))?;
+        .map_err(|e| SerialError::WriteFailed(format!("Failed to write CR: {}", e)))?;
 
     Ok(())
 }
@@ -160,16 +172,20 @@ pub async fn serial_write_raw(
     state: tauri::State<'_, SharedStateType>,
     session_id: String,
     data: String,
-) -> Result<(), String> {
+) -> Result<(), SerialError> {
+    if session_id.is_empty() {
+        return Err(SerialError::SessionNotFound);
+    }
+
     let mut serial_sessions = state.serial_sessions.lock().await;
     let session = serial_sessions
         .get_mut(&session_id)
-        .ok_or_else(|| "Serial session not found".to_string())?;
+        .ok_or(SerialError::SessionNotFound)?;
 
     session
         .port
         .write(data.as_bytes())
-        .map_err(|e| format!("Failed to write to serial port: {}", e))?;
+        .map_err(|e| SerialError::WriteFailed(format!("Failed to write to serial port: {}", e)))?;
 
     Ok(())
 }
@@ -179,7 +195,11 @@ pub async fn serial_write_raw(
 pub async fn serial_is_connected(
     state: tauri::State<'_, SharedStateType>,
     session_id: String,
-) -> Result<bool, String> {
+) -> Result<bool, SerialError> {
+    if session_id.is_empty() {
+        return Err(SerialError::SessionNotFound);
+    }
+
     let serial_sessions = state.serial_sessions.lock().await;
     Ok(serial_sessions.contains_key(&session_id))
 }
@@ -189,10 +209,14 @@ pub async fn serial_is_connected(
 pub async fn serial_disconnect(
     state: tauri::State<'_, SharedStateType>,
     session_id: String,
-) -> Result<(), String> {
+) -> Result<(), SerialError> {
+    if session_id.is_empty() {
+        return Err(SerialError::SessionNotFound);
+    }
+
     let mut serial_sessions = state.serial_sessions.lock().await;
     serial_sessions
         .remove(&session_id)
-        .ok_or_else(|| "Serial session not found".to_string())?;
+        .ok_or(SerialError::SessionNotFound)?;
     Ok(())
 }

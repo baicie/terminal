@@ -1,27 +1,35 @@
-import type { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios'
+import type { AxiosError, AxiosResponse } from 'axios'
 import axios from 'axios'
 import cookies from 'js-cookie'
 import { getLogger } from '../hooks/use-logger'
 
 /**
- * @description Log and display errors
- * @param {Error} error Error object
+ * Extended AxiosRequestConfig with retry support
  */
-function handleError(res: AxiosResponse<any, any>) {
+interface RetryConfig {
+  retry?: number
+  retryDelay?: number
+  __retryCount?: number
+}
+
+/**
+ * @description Log and display errors
+ */
+function handleError(res: AxiosResponse<{ msg: string }>) {
   const logger = getLogger()
   console.error(res.data.msg)
   logger.error(res.data.msg)
 }
 
-const baseRequestConfig: AxiosRequestConfig = {
+const baseRequestConfig: axios.AxiosRequestConfig = {
   baseURL: '/api',
   timeout: 60000,
 }
 
 const service = axios.create(baseRequestConfig)
 
-function err(err: AxiosError): Promise<AxiosError | AxiosResponse> {
-  const config = err.config as any
+function err(err: AxiosError): Promise<AxiosResponse | AxiosError> {
+  const config = err.config as axios.AxiosRequestConfig & RetryConfig | undefined
   if (!err.response && config && config.retry) {
     config.__retryCount = config.__retryCount || 0
     if (config.__retryCount >= config.retry) {

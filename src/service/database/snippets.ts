@@ -42,18 +42,18 @@ export async function getSnippets(
   packageId?: string,
 ): Promise<SnippetRecord[]> {
   if (packageId) {
-    return select<SnippetRecord[]>(
+    return select<SnippetRecord>(
       'SELECT * FROM snippets WHERE package_id = ? ORDER BY name',
       [packageId],
     )
   }
-  return select<SnippetRecord[]>('SELECT * FROM snippets ORDER BY name')
+  return select<SnippetRecord>('SELECT * FROM snippets ORDER BY name')
 }
 
 export async function getSnippetById(
   id: string,
 ): Promise<SnippetRecord | null> {
-  const results = await select<SnippetRecord[]>(
+  const results = await select<SnippetRecord>(
     'SELECT * FROM snippets WHERE id = ?',
     [id],
   )
@@ -62,7 +62,7 @@ export async function getSnippetById(
 
 export async function searchSnippets(query: string): Promise<SnippetRecord[]> {
   const escapedQuery = query.replace(/[%_]/g, '\\$&')
-  return select<SnippetRecord[]>(
+  return select<SnippetRecord>(
     'SELECT * FROM snippets WHERE name LIKE ? ESCAPE "\\" OR description LIKE ? ESCAPE "\\" OR script LIKE ? ESCAPE "\\" ORDER BY name LIMIT 50',
     [`%${escapedQuery}%`, `%${escapedQuery}%`, `%${escapedQuery}%`],
   )
@@ -80,5 +80,5 @@ export async function deleteSnippetPackage(id: string): Promise<void> {
 }
 
 export async function getSnippetPackages(): Promise<SnippetPackageRecord[]> {
-  return select<SnippetPackageRecord[]>('SELECT * FROM snippet_packages ORDER BY name')
+  return select<SnippetPackageRecord>('SELECT * FROM snippet_packages ORDER BY name')
 }
