@@ -501,7 +501,74 @@
 ---
 
 _文档创建时间：2026-03-18_
-_最后更新：2026-03-25 - NestJS 服务端完善 (健康检查/Seed/编译修复)_
+_最后更新：2026-03-26 - 功能完善批次_
+
+---
+
+## 十一、功能增强开发记录 (2026-03-26)
+
+### 2026-03-26 完成的工作 (第十二批次 - 功能完善)
+
+#### 1. 数据存储服务前端集成
+- **后端命令**: `src-tauri/src/storage.rs` 新增存储服务命令
+  - `storage_init` - 初始化存储后端
+  - `storage_health_check` - 健康检查
+  - `storage_upload` - 上传数据
+  - `storage_download` - 下载数据
+  - `storage_list` - 列出文件
+  - `storage_delete` - 删除文件
+
+- **前端服务**: `src/service/storage.ts` 新增存储服务 API
+
+- **设置页面增强**: `src/components/settings-dialog/index.tsx`
+  - 添加连接测试按钮和状态显示
+  - 添加同步到服务器功能
+  - 添加 S3 Bucket 字段
+
+#### 2. 终端体验优化
+- **终端主题预设**: `src/utils/terminal-themes.ts`
+  - 8 种预设主题: Monokai, Solarized, One Dark, GitHub Dark, Dracula, Nord, Catppuccin
+  - 主题选择 UI 集成到设置页面
+
+- **设置页面增强**: Terminal Tab 新增主题选择器
+  - 8 种预设主题可视化展示
+  - 点击选择即可切换
+
+#### 3. 团队协作冲突处理
+- **NestJS 服务端**: `team-server/src/sync/`
+  - `sync.service.ts` 新增:
+    - `checkConflicts` - 检测冲突
+    - `resolveConflict` - 解决冲突 (LOCAL/REMOTE)
+  - `sync.controller.ts` 新增端点:
+    - `POST /sync/conflicts/check`
+    - `POST /sync/conflicts/resolve`
+
+- **前端 API**: `src/service/team-api.ts`
+  - `checkConflicts` - 检查冲突方法
+  - `resolveConflict` - 解决冲突方法
+
+#### 4. SSH Agent 认证完善
+- **agent.rs 更新**: 完善 SSH Agent 协议实现
+  - 完整的请求签名支持
+  - 与 SSH 服务器的 agent 转发集成
+
+- **ssh.rs 更新**: `ssh_connect_agent` 函数完善
+  - Agent 会话建立流程
+  - 密钥获取和日志记录
+
+#### 5. 高级功能服务
+- **录制服务**: `src/service/recording.ts`
+  - `TerminalRecordingService` - 终端录制服务
+  - 支持录制/回放终端会话
+  - 导出/导入 JSON 格式
+
+- **快捷键服务**: `src/service/shortcuts.ts`
+  - `ShortcutsService` - 自定义快捷键服务
+  - 15+ 预设快捷键
+  - 支持自定义快捷键配置
+  - 快捷键冲突检测
+
+---
 
 ---
 

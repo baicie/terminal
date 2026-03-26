@@ -20,6 +20,7 @@ export const defaultSettings: AppSettings = {
   syncServiceEndpoint: '',
   syncServiceUsername: '',
   syncServiceToken: '',
+  terminalTheme: 'one-dark',
 }
 
 export async function getSetting<T>(key: string, defaultValue: T): Promise<T> {

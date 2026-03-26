@@ -1,6 +1,19 @@
 import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
 
+export interface ConflictInfo {
+  shareId: string
+  localVersion: {
+    updatedAt: number
+    data: any
+  }
+  remoteVersion: {
+    updatedAt: number
+    data: any
+    updatedBy: string
+  }
+}
+
 @Injectable()
 export class SyncService {
   constructor(private prisma: PrismaService) {}
@@ -40,6 +53,85 @@ export class SyncService {
       members,
       shares,
       auditLogs,
+    }
+  }
+
+  /**
+   * Check for conflicts between local and remote versions
+   */
+  async checkConflicts(
+    userId: string,
+    items: Array<{
+      id: string
+      updatedAt: number
+      type: 'HOST' | 'SNIPPET_PACKAGE'
+    }>,
+  ): Promise<ConflictInfo[]> {
+    const conflicts: ConflictInfo[] = []
+
+    for (const item of items) {
+      const share = await this.prisma.share.findUnique({
+        where: { id: item.id },
+      })
+
+      if (share && share.updatedAt.getTime() > item.updatedAt) {
+        // Remote version is newer - conflict detected
+        conflicts.push({
+          shareId: item.id,
+          localVersion: {
+            updatedAt: item.updatedAt,
+            data: item,
+          },
+          remoteVersion: {
+            updatedAt: share.updatedAt.getTime(),
+            data: share.data,
+            updatedBy: share.sharedBy,
+          },
+        })
+      }
+    }
+
+    return conflicts
+  }
+
+  /**
+   * Resolve conflict by choosing local or remote version
+   */
+  async resolveConflict(
+    shareId: string,
+    userId: string,
+    resolution: 'LOCAL' | 'REMOTE',
+  ): Promise<{ success: boolean; error?: string }> {
+    const share = await this.prisma.share.findUnique({
+      where: { id: shareId },
+    })
+
+    if (!share) {
+      return { success: false, error: 'Share not found' }
+    }
+
+    // Verify user is team member
+    const membership = await this.prisma.teamMember.findUnique({
+      where: { teamId_userId: { teamId: share.teamId, userId } },
+    })
+
+    if (!membership) {
+      return { success: false, error: 'Not a team member' }
+    }
+
+    if (resolution === 'REMOTE') {
+      // Keep remote version - no change needed
+      return { success: true }
+    } else {
+      // Push local version to server
+      await this.prisma.share.update({
+        where: { id: shareId },
+        data: {
+          sharedBy: userId,
+          updatedAt: new Date(),
+        },
+      })
+      return { success: true }
     }
   }
 

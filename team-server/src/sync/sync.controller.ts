@@ -28,4 +28,29 @@ export class SyncController {
   async pushChanges(@Body() body: any, @ApiKeyAuth() userId: string) {
     return this.syncService.pushChanges(userId, body)
   }
+
+  @Post('conflicts/check')
+  @ApiOperation({ summary: 'Check for sync conflicts' })
+  async checkConflicts(
+    @Body()
+    body: {
+      items: Array<{ id: string; updatedAt: number; type: 'HOST' | 'SNIPPET_PACKAGE' }>
+    },
+    @ApiKeyAuth() userId: string,
+  ) {
+    return this.syncService.checkConflicts(userId, body.items)
+  }
+
+  @Post('conflicts/resolve')
+  @ApiOperation({ summary: 'Resolve a sync conflict' })
+  async resolveConflict(
+    @Body()
+    body: {
+      shareId: string
+      resolution: 'LOCAL' | 'REMOTE'
+    },
+    @ApiKeyAuth() userId: string,
+  ) {
+    return this.syncService.resolveConflict(body.shareId, userId, body.resolution)
+  }
 }

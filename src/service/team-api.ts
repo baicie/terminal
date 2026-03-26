@@ -350,6 +350,29 @@ class TeamApiService {
     return this.request('POST', '/sync', { shares })
   }
 
+  // Check for sync conflicts
+  async checkConflicts(
+    items: Array<{ id: string; updatedAt: number; type: 'HOST' | 'SNIPPET_PACKAGE' }>,
+  ): Promise<
+    ApiResponse<
+      Array<{
+        shareId: string
+        localVersion: { updatedAt: number; data: unknown }
+        remoteVersion: { updatedAt: number; data: unknown; updatedBy: string }
+      }>
+    >
+  > {
+    return this.request('POST', '/sync/conflicts/check', { items })
+  }
+
+  // Resolve a sync conflict
+  async resolveConflict(
+    shareId: string,
+    resolution: 'LOCAL' | 'REMOTE',
+  ): Promise<ApiResponse<{ success: boolean; error?: string }>> {
+    return this.request('POST', '/sync/conflicts/resolve', { shareId, resolution })
+  }
+
   // ==================== Health Check ====================
 
   async healthCheck(): Promise<boolean> {

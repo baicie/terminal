@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   HardDrive,
+  Loader2,
   Merge,
   Package,
   RefreshCw,
@@ -48,6 +49,11 @@ import {
   select,
 } from '@/service/database'
 import { exportDataToFile, previewImportData } from '@/service/sync'
+import {
+  storageHealthCheck,
+  storageInit,
+  storageUpload,
+} from '@/service/storage'
 import { useAppStore } from '@/store/app'
 import { useIsTeamEnabled } from '@/store/team'
 import { TeamServerConfig } from './team-server-config'
@@ -82,6 +88,11 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [showTokenVisible, setShowTokenVisible] = useState(false)
+
+  // Storage state
+  const [testingConnection, setTestingConnection] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -152,6 +163,79 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
       setErrorMessage(`Export failed: ${error}`)
     } finally {
       setExporting(false)
+    }
+  }
+
+  // Storage functions
+  const handleTestConnection = async () => {
+    if (!settings?.syncServiceEndpoint) return
+
+    setTestingConnection(true)
+    setConnectionStatus('idle')
+
+    try {
+      // Initialize storage backend first
+      await storageInit(settings.syncServiceType as 'webdav' | 's3' | 'custom', settings.syncServiceEndpoint, {
+        username: settings.syncServiceUsername || undefined,
+        password: settings.syncServiceToken || undefined,
+      })
+
+      // Then check health
+      const healthy = await storageHealthCheck()
+      if (healthy) {
+        setConnectionStatus('success')
+        toast.success('Connection successful', {
+          description: `Successfully connected to ${settings.syncServiceType} service`,
+        })
+      } else {
+        setConnectionStatus('error')
+        toast.error('Connection failed', {
+          description: 'The service responded but is not healthy',
+        })
+      }
+    } catch (error) {
+      setConnectionStatus('error')
+      toast.error('Connection failed', {
+        description: String(error),
+      })
+    } finally {
+      setTestingConnection(false)
+    }
+  }
+
+  const handleSyncToServer = async () => {
+    if (!settings?.syncServiceEndpoint) return
+
+    setSyncing(true)
+    setErrorMessage(null)
+
+    try {
+      // Export data to JSON
+      const exportData = await exportDataToFile()
+      if (exportData) {
+        // Read the exported file
+        const fileContent = await readTextFile(exportData)
+
+        // Upload to storage
+        const result = await storageUpload('terminal-backup.json', fileContent)
+        if (result.success) {
+          toast.success('Sync successful', {
+            description: 'Data has been uploaded to the storage service',
+          })
+        } else {
+          toast.error('Sync failed', {
+            description: result.message,
+          })
+        }
+      }
+    } catch (error) {
+      console.error('Sync failed:', error)
+      setErrorMessage(`Sync failed: ${error}`)
+      toast.error('Sync failed', {
+        description: String(error),
+      })
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -602,21 +686,79 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
               <Button
                 variant="outline"
                 className="flex-1"
-                disabled={!settings.syncServiceEndpoint}
+                disabled={!settings.syncServiceEndpoint || testingConnection}
+                onClick={handleTestConnection}
               >
-                <Server className="h-4 w-4 mr-2" />
-                Test Connection
+                {testingConnection ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Testing...
+                  </>
+                ) : connectionStatus === 'success' ? (
+                  <>
+                    <Check className="h-4 w-4 mr-2 text-green-500" />
+                    Connected
+                  </>
+                ) : connectionStatus === 'error' ? (
+                  <>
+                    <AlertCircle className="h-4 w-4 mr-2 text-red-500" />
+                    Failed
+                  </>
+                ) : (
+                  <>
+                    <Server className="h-4 w-4 mr-2" />
+                    Test Connection
+                  </>
+                )}
               </Button>
               <Button
                 variant="outline"
                 className="flex-1"
-                disabled={!settings.syncServiceEndpoint}
-                onClick={handleExport}
+                disabled={!settings.syncServiceEndpoint || syncing || connectionStatus !== 'success'}
+                onClick={handleSyncToServer}
               >
-                <Upload className="h-4 w-4 mr-2" />
-                Sync Now
+                {syncing ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Sync Now
+                  </>
+                )}
               </Button>
             </div>
+
+            {/* Additional fields for S3 */}
+            {settings.syncServiceType === 's3' && (
+              <div className="space-y-2">
+                <Label htmlFor="syncServiceBucket">Bucket Name</Label>
+                <Input
+                  id="syncServiceBucket"
+                  placeholder="my-bucket"
+                  value={settings.syncServiceBucket || ''}
+                  onChange={e =>
+                    updateSetting('syncServiceBucket', e.target.value)
+                  }
+                />
+              </div>
+            )}
+
+            {/* Service mode info */}
+            {settings.dataStorageMode === 'service' && (
+              <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                <div className="flex items-center gap-2 mb-1">
+                  <Check className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium">Service mode enabled</span>
+                </div>
+                <p className="text-xs text-muted-foreground ml-6">
+                  Your data will sync with the configured storage service.
+                  Click "Test Connection" first to verify the service is reachable.
+                </p>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="terminal" className="space-y-4 py-4">
@@ -694,6 +836,53 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
                   )
                 }
               />
+            </div>
+
+            <Separator />
+
+            {/* Terminal Theme */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <span className="text-muted-foreground">Terminal Theme</span>
+              </h4>
+              <p className="text-sm text-muted-foreground">
+                Choose a color theme for the terminal.
+              </p>
+
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'one-dark', name: 'One Dark', bg: '#282c34' },
+                  { id: 'monokai', name: 'Monokai', bg: '#272822' },
+                  { id: 'dracula', name: 'Dracula', bg: '#282a36' },
+                  { id: 'nord', name: 'Nord', bg: '#2e3440' },
+                  { id: 'catppuccin', name: 'Catppuccin', bg: '#1e1e28' },
+                  { id: 'github-dark', name: 'GitHub Dark', bg: '#0d1117' },
+                  { id: 'solarized-dark', name: 'Solarized', bg: '#002b36' },
+                  { id: 'solarized-light', name: 'Solarized Light', bg: '#fdf6e3' },
+                ].map(theme => (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    className={`
+                      flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all text-center
+                      ${
+                        (settings.terminalTheme || 'one-dark') === theme.id
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:border-primary/50'
+                      }
+                    `}
+                    onClick={() =>
+                      updateSetting('terminalTheme', theme.id as typeof settings.terminalTheme)
+                    }
+                  >
+                    <div
+                      className="w-full h-6 rounded"
+                      style={{ backgroundColor: theme.bg }}
+                    />
+                    <span className="text-xs font-medium">{theme.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </TabsContent>
 

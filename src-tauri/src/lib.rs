@@ -1,10 +1,12 @@
 mod errors;
+mod agent;
 mod local;
 mod port_forward;
 mod serial;
 mod sftp;
 mod ssh;
 mod state;
+mod storage;
 mod terminal;
 mod vault;
 
@@ -12,8 +14,9 @@ use local::{local_disconnect, local_resize, local_shell, local_write};
 use port_forward::{port_forward_list, port_forward_start, port_forward_stop};
 use serial::{serial_baud_rates, serial_connect, serial_disconnect, serial_is_connected, serial_list, serial_write, serial_write_raw};
 use sftp::{sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_mkdir, sftp_rename, sftp_upload};
-use ssh::{generate_ssh_key, greet, ssh_connect, ssh_connect_agent, ssh_connect_key, ssh_disconnect, ssh_execute, ssh_resize, ssh_shell, ssh_write};
+use ssh::{generate_ssh_key, greet, ssh_connect, ssh_connect_agent, ssh_connect_cert, ssh_connect_key, ssh_disconnect, ssh_execute, ssh_resize, ssh_shell, ssh_write};
 use state::create_shared_state;
+use storage::{storage_delete, storage_download, storage_health_check, storage_init, storage_list, storage_upload};
 use vault::{
     vault_change_password, vault_create, vault_delete, vault_exists, vault_get, vault_is_unlocked,
     vault_list, vault_lock, vault_set, vault_unlock,
@@ -34,6 +37,7 @@ pub fn run() {
             greet,
             ssh_connect,
             ssh_connect_key,
+            ssh_connect_cert,
             ssh_connect_agent,
             ssh_shell,
             ssh_write,
@@ -77,6 +81,13 @@ pub fn run() {
             serial_write_raw,
             serial_is_connected,
             serial_disconnect,
+            // Storage commands
+            storage_init,
+            storage_health_check,
+            storage_upload,
+            storage_download,
+            storage_list,
+            storage_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

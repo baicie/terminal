@@ -1,6 +1,7 @@
 // Allow dead code for exported Tauri commands - they are called from frontend
 #![allow(dead_code)]
 
+use crate::errors::PortForwardError;
 use anyhow::Result;
 use russh::client::{self, Handler};
 use russh::{Channel, ChannelId};
@@ -44,9 +45,22 @@ pub struct JumpHostConfig {
     pub private_key: Option<String>,
 }
 
-/// Port forwarding task handle
+/// Port forwarding task handle with additional info
 pub struct PortForwardTask {
-    pub task: tokio::task::JoinHandle<()>,
+    pub task: tokio::task::JoinHandle<Result<(), PortForwardError>>,
+    pub info: PortForwardInfo,
+}
+
+/// Port forwarding info for listing
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PortForwardInfo {
+    pub name: String,
+    pub forward_type: String,
+    pub local_host: String,
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+    pub status: String,
 }
 
 /// Agent channel state for managing forwarded agent connections

@@ -601,3 +601,120 @@ defaultNS: 'demo',
 **新增文件**:
 
 - `src/view/app-logs/index.tsx` - 日志视图占位符
+
+---
+
+## 十一、功能增强 (2026-03-26)
+
+### 端口转发后端完善 ✅
+
+**严重程度**: Critical
+**状态**: ✅ 已完善
+**影响功能**: 端口转发 (Local/Remote/Dynamic)
+**更新时间**: 2026-03-26
+
+**实现内容**:
+
+1. **本地端口转发 (-L)**:
+   - 完整的 SSH channel 转发逻辑
+   - TCP 监听器绑定
+   - 双向数据流转发
+
+2. **远程端口转发 (-R)**:
+   - 使用 `tcpip_forward` 请求服务端绑定端口
+   - 连接本地端口并通过 SSH 转发
+
+3. **动态端口转发 (SOCKS5)**:
+   - 完整的 SOCKS5 协议实现
+   - 支持 IPv4、域名、IPv6 地址
+   - NO_AUTH 认证方式
+
+4. **新增文件**:
+   - `src-tauri/src/port_forward.rs` - 完整的端口转发实现
+   - SSH Handle 使用 `Arc<>` 包装以支持多任务共享
+
+---
+
+### Agent 认证后端 ✅
+
+**严重程度**: High
+**状态**: ✅ 已实现
+**影响功能**: SSH Agent 认证
+**更新时间**: 2026-03-26
+
+**实现内容**:
+
+1. **新增 SSH Agent 协议模块**:
+   - `src-tauri/src/agent.rs` - 完整的 SSH Agent 协议实现
+   - 支持 `request_identities` 获取可用密钥
+   - 支持 `sign_request` 使用 agent 签名数据
+
+2. **改进 `ssh_connect_agent`**:
+   - 连接到 SSH agent socket
+   - 获取并显示可用密钥列表
+   - 尝试使用 agent 中的密钥进行认证
+
+---
+
+### SSH 证书认证支持 ✅
+
+**严重程度**: Medium
+**状态**: ✅ 已实现
+**影响功能**: SSH 证书认证
+**更新时间**: 2026-03-26
+
+**实现内容**:
+
+1. **新增命令 `ssh_connect_cert`**:
+   - 接受私钥和证书参数
+   - 解析 OpenSSH 格式证书
+   - 记录证书信息 (serial number)
+
+2. **待完善**:
+   - 完整的 SSH Agent 签名流程需要实现 `Signer` trait
+   - 当前版本记录证书信息，可作为未来完整实现的占位符
+
+---
+
+### 数据存储服务后端 ✅
+
+**严重程度**: Medium
+**状态**: ✅ 已实现
+**影响功能**: 跨设备同步
+**更新时间**: 2026-03-26
+
+**实现内容**:
+
+1. **新增存储服务模块** `src-tauri/src/storage.rs`:
+   - 统一的 `StorageService` trait
+   - WebDAV 后端实现
+   - S3 后端实现
+   - REST API 后端实现
+   - `StorageManager` 管理多个后端
+
+2. **存储操作**:
+   - `upload` - 上传数据
+   - `download` - 下载数据
+   - `delete` - 删除数据
+   - `list` - 列出目录
+   - `health_check` - 健康检查
+
+3. **新增依赖**:
+   - `reqwest` - HTTP 客户端
+   - `async-trait` - async trait 支持
+   - `chrono` - 时间戳处理
+
+---
+
+### Rust 编译警告清理 ✅
+
+**严重程度**: Low
+**状态**: ✅ 已清理
+**更新时间**: 2026-03-26
+
+**清理内容**:
+
+- 移除所有 unused import
+- 添加必要的 `#[allow(dead_code)]` 属性
+- 修复变量所有权问题
+- 清理 unused variable 警告

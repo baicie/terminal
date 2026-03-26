@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal as TerminalComponent } from '@xterm/xterm'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { getThemeColors } from '@/utils/terminal-themes'
 import { useTerminal } from '@/hooks/use-terminal'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
@@ -17,6 +18,7 @@ interface TerminalContainerProps {
 const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
   const tabs = useAppStore(s => s.tabs)
   const hosts = useHostStore(s => s.hosts)
+  const settings = useAppStore(s => s.config) as Record<string, unknown>
 
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<TerminalComponent | null>(null)
@@ -28,6 +30,10 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
 
   // Derive host from tab.hostId
   const host = tab?.hostId ? hosts.find(h => h.id === tab.hostId) : undefined
+
+  // Get terminal theme from settings
+  const terminalTheme = (settings.terminalTheme as string) || 'one-dark'
+  const themeColors = getThemeColors(terminalTheme as never)
 
   // ---- 终端数据流 hook ----
   const termForHook = termRef.current
@@ -52,29 +58,7 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
       cursorBlink: true,
       fontSize: 14,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-      theme: {
-        background: '#1e1e1e',
-        foreground: '#cccccc',
-        cursor: '#cccccc',
-        cursorAccent: '#1e1e1e',
-        selectionBackground: '#264f78',
-        black: '#000000',
-        red: '#cd3131',
-        green: '#0dbc79',
-        yellow: '#e5e510',
-        blue: '#2472c8',
-        magenta: '#bc3fbc',
-        cyan: '#11a8cd',
-        white: '#e5e5e5',
-        brightBlack: '#666666',
-        brightRed: '#f14c4c',
-        brightGreen: '#23d18b',
-        brightYellow: '#f5f543',
-        brightBlue: '#3b8eea',
-        brightMagenta: '#d670d6',
-        brightCyan: '#29b8db',
-        brightWhite: '#ffffff',
-      },
+      theme: themeColors,
       scrollback: 10000,
       macOptionIsMeta: true,
       allowTransparency: true,

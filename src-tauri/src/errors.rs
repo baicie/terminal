@@ -90,6 +90,14 @@ pub enum PortForwardError {
     BindFailed(String),
     #[serde(rename = "forward_not_found")]
     ForwardNotFound,
+    #[serde(rename = "connection_failed")]
+    ConnectionFailed(String),
+    #[serde(rename = "channel_failed")]
+    ChannelFailed(String),
+    #[serde(rename = "socks_unsupported")]
+    SocksUnsupported(String),
+    #[serde(rename = "socks_auth_failed")]
+    SocksAuthFailed(String),
 }
 
 /// Vault errors
@@ -112,6 +120,25 @@ pub enum VaultError {
     SaveFailed(String),
     #[serde(rename = "invalid_password")]
     InvalidPassword,
+}
+
+/// Storage service errors
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", content = "message")]
+#[allow(dead_code)]
+pub enum StorageError {
+    #[serde(rename = "not_configured")]
+    NotConfigured,
+    #[serde(rename = "connection_failed")]
+    ConnectionFailed(String),
+    #[serde(rename = "upload_failed")]
+    UploadFailed(String),
+    #[serde(rename = "download_failed")]
+    DownloadFailed(String),
+    #[serde(rename = "delete_failed")]
+    DeleteFailed(String),
+    #[serde(rename = "list_failed")]
+    ListFailed(String),
 }
 
 /// Input validation errors
