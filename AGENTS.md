@@ -41,6 +41,7 @@
 | **docs/xterm.md**             | xterm.js 完整 API 文档与插件指南      | 终端开发时必读     |
 | **docs/ui/**                  | UI/功能规格与界面描述（便于 AI 阅读） | 实现或还原 UI 时   |
 | **docs/shadcn-components.md** | shadcn/ui 全部组件索引与用法说明      | 查阅组件选型与用法 |
+| **docs/build-optimization.md** | 构建体积分析与优化指南                | 优化打包时查阅     |
 | **AGENTS.md**                 | 本文件 - Agent 使用指南               | 初次接手项目时阅读 |
 
 ---
@@ -52,12 +53,13 @@ terminal/
 ├── src/                          # 前端源代码 (React + TypeScript)
 ├── src-tauri/                    # 后端源代码 (Rust)
 └── docs/                         # 项目文档
-    ├── project.md                # 项目文档索引 (你在这里)
-    ├── issue.md                  # 问题追踪
-    ├── design.md                 # 设计文档
-    ├── todo.md                   # 待办事项
-    ├── shadcn-components.md      # shadcn/ui 全部组件索引
-    └── ui/                       # UI/功能规格（便于 AI 阅读实现 UI）
+    ├── project.md                 # 项目文档索引 (你在这里)
+    ├── issue.md                   # 问题追踪
+    ├── design.md                  # 设计文档
+    ├── todo.md                    # 待办事项
+    ├── build-optimization.md       # 构建优化指南
+    ├── shadcn-components.md        # shadcn/ui 全部组件索引
+    └── ui/                        # UI/功能规格（便于 AI 阅读实现 UI）
 ```
 
 ### 前端 `src/` 结构
@@ -303,6 +305,202 @@ import { Label } from '@/components/ui/label'
 2. **异步**: 使用 `tokio` 进行异步运行时
 
 3. **错误处理**: 使用 `anyhow` 进行错误处理
+
+---
+
+## 跨平台兼容性规范
+
+> ⚠️ **重要**: 本项目需要同时支持 macOS、Windows 和 Linux。开发任何新功能时，**必须**考虑跨平台兼容性。
+
+### 平台检测
+
+项目已在 `vite.config.ts` 中定义了平台检测常量：
+
+```typescript
+// 在前端代码中使用
+IS_MACOS  // macOS
+IS_WINDOWS // Windows
+IS_LINUX   // Linux
+
+// 示例
+if (IS_MACOS) {
+  // macOS 特定代码
+} else if (IS_WINDOWS) {
+  // Windows 特定代码
+}
+```
+
+### Rust 后端跨平台
+
+#### 1. Unix 特定代码必须使用条件编译
+
+```rust
+#[cfg(unix)]
+{
+    // Unix 特定代码 (macOS, Linux)
+    use std::os::unix::net::UnixStream;
+}
+
+#[cfg(windows)]
+{
+    // Windows 特定代码
+    use std::os::windows::net::TcpStream;
+}
+```
+
+#### 2. 常见平台差异处理
+
+| 功能 | macOS/Linux | Windows |
+|------|-------------|---------|
+| SSH Agent Socket | `std::env::var("SSH_AUTH_SOCK")` | 使用 Windows OpenSSH Agent |
+| 串口设备路径 | `/dev/tty.*` | `COM1`, `COM2`, ... |
+| 环境变量分隔符 | `:` | `;` |
+| 路径分隔符 | `/` | `\` |
+| 行尾符 | `\n` | `\r\n` |
+
+#### 3. 示例：SSH Agent 连接
+
+```rust
+/// 获取 SSH Agent Socket 路径
+#[cfg(unix)]
+pub fn get_ssh_agent_socket() -> Option<String> {
+    std::env::var("SSH_AUTH_SOCK").ok()
+}
+
+#[cfg(windows)]
+pub fn get_ssh_agent_socket() -> Option<String> {
+    // Windows: 使用 Pageant 或 Windows OpenSSH Agent
+    // 需要实现 Windows 特定的 agent 协议
+    None
+}
+```
+
+#### 4. 示例：串口设备路径
+
+```rust
+#[cfg(unix)]
+pub fn list_serial_ports() -> Vec<String> {
+    // 扫描 /dev/tty.* 或 /dev/cu.*
+    std::fs::read_dir("/dev")
+        .ok()
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    let name = e.file_name().to_string_lossy();
+                    name.starts_with("tty.") || name.starts_with("cu.")
+                })
+                .map(|e| e.path().to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(windows)]
+pub fn list_serial_ports() -> Vec<String> {
+    // Windows: 使用注册表或枚举 COM 端口
+    // 需要 Windows-specific 实现
+    vec![]
+}
+```
+
+### 前端跨平台
+
+#### 1. 平台检测钩子
+
+```typescript
+// src/hooks/use-platform.ts
+import { useMemo } from 'react'
+
+export function usePlatform() {
+  return useMemo(() => {
+    const userAgent = navigator.userAgent.toLowerCase()
+    const isMac = userAgent.includes('mac')
+    const isWindows = userAgent.includes('win')
+    const isLinux = userAgent.includes('linux') && !userAgent.includes('android')
+
+    return {
+      isMac,
+      isWindows,
+      isLinux,
+      isDesktop: isMac || isWindows || isLinux,
+    }
+  }, [])
+}
+```
+
+#### 2. 快捷键差异
+
+```typescript
+// macOS 使用 Cmd (⌘)，其他平台使用 Ctrl
+const shortcut = isMac ? '⌘K' : 'Ctrl+K'
+
+// 修饰键映射
+const modKey = isMac ? 'metaKey' : 'ctrlKey'
+```
+
+#### 3. 系统路径差异
+
+```typescript
+// Windows 路径格式化
+function normalizePath(path: string): string {
+  if (isWindows) {
+    return path.replace(/\//g, '\\')
+  }
+  return path
+}
+
+// 获取用户目录
+async function getHomeDirectory(): Promise<string> {
+  // 使用 Tauri 的 path API
+  const { homeDir } = await import('@tauri-apps/plugin-os')
+  return homeDir()
+}
+```
+
+### Tauri 跨平台配置
+
+#### 1. Cargo.toml 特性
+
+```toml
+[dependencies]
+serial-port = { version = "0.5", features = ["unix"] }  # Unix 特定
+windows-serial = { version = "0.4", optional = true }   # Windows 特定
+
+[target.'cfg(windows)'.dependencies]
+windows-registry = "0.2"
+```
+
+#### 2. tauri.conf.json 配置
+
+```json
+{
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    }
+  }
+}
+```
+
+### 跨平台检查清单
+
+> 开发任何新功能时，请检查以下事项：
+
+- [ ] **Rust 后端**: 是否使用了 `#[cfg(unix)]` / `#[cfg(windows)]` 条件编译？
+- [ ] **路径处理**: 是否正确处理了不同平台的路径分隔符？
+- [ ] **环境变量**: 是否正确处理了不同平台的环境变量格式？
+- [ ] **串口设备**: 是否处理了 macOS (`/dev/tty.*`) 和 Windows (`COM*`) 的差异？
+- [ ] **快捷键**: 是否处理了 macOS (⌘) 和 Windows/Linux (Ctrl) 的差异？
+- [ ] **UI 显示**: 是否有平台特定的 UI 元素需要调整？
+
+### 已知的跨平台问题
+
+> 在 `docs/issue.md` 中记录已发现的跨平台问题
 
 ---
 
@@ -600,3 +798,7 @@ npx shadcn@latest docs button dialog select
 # 搜索组件
 npx shadcn@latest search @shadcn -q "sidebar"
 ```
+
+---
+
+_文档更新时间: 2026-03-26_

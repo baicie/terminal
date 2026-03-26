@@ -718,3 +718,141 @@ defaultNS: 'demo',
 - 添加必要的 `#[allow(dead_code)]` 属性
 - 修复变量所有权问题
 - 清理 unused variable 警告
+
+---
+
+## 十二、跨平台兼容性追踪
+
+> ⚠️ 本项目需要同时支持 macOS、Windows 和 Linux。以下是已知的跨平台问题和待处理项。
+
+### Issue #21: SSH Agent Windows 支持 ⚠️ 待实现
+
+**严重程度**: Medium
+**状态**: ⚠️ 仅 Unix
+**影响功能**: SSH Agent 认证
+**平台**: Windows
+
+**问题描述**:
+
+当前 SSH Agent 连接仅支持 Unix 系统 (macOS/Linux)，通过 `SSH_AUTH_SOCK` 环境变量获取 agent socket。
+
+**当前实现** (`src-tauri/src/state.rs`):
+
+```rust
+pub fn get_ssh_agent_socket() -> Option<String> {
+    #[cfg(unix)]
+    {
+        std::env::var("SSH_AUTH_SOCK").ok()
+    }
+    #[cfg(not(unix))]
+    {
+        None  // Windows 不支持
+    }
+}
+```
+
+**Windows 解决方案**:
+
+1. **Windows OpenSSH Agent**:
+   - 路径: `\\.\\pipe\\openssh-ssh-agent`
+   - 使用 Named Pipe 通信
+
+2. **Pageant**:
+   - 路径: `\\.\\pipe\\pageant`
+   - 使用专有协议
+
+**建议实现**:
+
+```rust
+#[cfg(windows)]
+pub fn get_ssh_agent_socket() -> Option<String> {
+    // 尝试 Windows OpenSSH Agent
+    let pipe_path = r"\\.\pipe\openssh-ssh-agent";
+    if std::fs::metadata(pipe_path).is_ok() {
+        return Some(pipe_path.to_string());
+    }
+    // 尝试 Pageant
+    let pageant_path = r"\\.\pipe\pageant";
+    if std::fs::metadata(pageant_path).is_ok() {
+        return Some(pageant_path.to_string());
+    }
+    None
+}
+```
+
+---
+
+### Issue #22: 串口设备 Windows 支持 ✅ Unix 已实现
+
+**严重程度**: Low
+**状态**: ✅ macOS/Linux 已实现，Windows 待完善
+**影响功能**: 串口连接
+**平台**: Windows
+
+**当前实现**:
+
+使用 `serialport` crate，已支持跨平台。但 Windows 上可能需要额外的驱动支持。
+
+**Windows 设备路径**: `COM1`, `COM2`, ...
+
+---
+
+### Issue #23: 本地终端 Windows PTY ⚠️ 待验证
+
+**严重程度**: Medium
+**状态**: ⚠️ 需要 Windows 测试
+**影响功能**: 本地终端
+**平台**: Windows
+
+**当前实现** (`src-tauri/src/local.rs`):
+
+```rust
+#[cfg(unix)]
+{
+    // 使用 portable-pty 创建 PTY
+}
+
+#[cfg(windows)]
+{
+    // Windows 实现 - 需要验证
+}
+```
+
+**建议**: 使用 `portable-pty` crate 的 Windows 支持。
+
+---
+
+### Issue #24: 快捷键 macOS/Windows 差异 ⚠️ UI 已部分处理
+
+**严重程度**: Low
+**状态**: ⚠️ 需要全面检查
+**影响功能**: 快捷键
+**平台**: macOS / Windows
+
+**当前已知差异**:
+
+| 功能 | macOS | Windows |
+|------|-------|---------|
+| 新标签 | ⌘T | Ctrl+T |
+| 关闭标签 | ⌘W | Ctrl+W |
+| 偏好设置 | ⌘, | Ctrl+, |
+| 复制 | ⌘C | Ctrl+C |
+
+**当前已处理**:
+
+- `src/components/top-toolbar/index.tsx` 已处理 macOS  traffic lights 偏移
+
+**待处理**:
+
+- 全面检查所有快捷键实现
+- 添加 `use-platform` hook 统一管理
+
+---
+
+### 跨平台开发规范
+
+详见 `AGENTS.md` 中的「跨平台兼容性规范」章节。
+
+---
+
+_最后更新: 2026-03-26_

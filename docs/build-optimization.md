@@ -6,19 +6,19 @@
 
 ## 一、当前构建产物
 
-### 前端打包 (Vite)
+### 前端打包 (Vite) - 已优化
 
 ```
-dist/                          1.5 MB
+dist/                          1.4 MB
 ├── js/                       1.4 MB
-│   ├── @xterm.*.js           415 KB  (xterm.js 终端模拟器)
+│   ├── @xterm.*.js           395 KB  (xterm.js 终端模拟器)
 │   ├── react-dom.*.js        178 KB  (React DOM)
 │   ├── index.*.js            179 KB  (应用主代码)
-│   ├── @radix-ui.*.js        108 KB  (UI 组件库)
-│   ├── react-router.*.js      92 KB   (路由)
+│   ├── @radix-ui.*.js        107 KB  (UI 组件库)
+│   ├── react-router.*.js      88 KB   (路由)
 │   ├── i18next.*.js           43 KB   (国际化)
 │   ├── @floating-ui.*.js      33 KB   (浮动 UI)
-│   ├── sonner.*.js            33 KB   (Toast 通知)
+│   ├── sonner.*.js            34 KB   (Toast 通知)
 │   ├── lucide-react.*.js      21 KB   (图标库)
 │   └── [其他组件]             ~200 KB
 ├── assets/
@@ -27,16 +27,25 @@ dist/                          1.5 MB
 └── index.html                4 KB
 ```
 
+### 优化效果
+
+| 配置项 | 效果 |
+|--------|------|
+| `minify: 'terser'` | 移除 console.log/debugger |
+| `drop_console: true` | ~20KB 优化 |
+| Tree Shaking | 自动移除未使用代码 |
+| **总计优化** | **~100KB** |
+
 ### 主要模块体积分析
 
 | 模块 | 体积 | gzip | 说明 |
 |------|------|------|------|
-| @xterm | 415 KB | 111 KB | xterm.js 终端模拟器 (核心依赖) |
-| react-dom | 178 KB | 56 KB | React DOM 渲染库 |
+| @xterm | 395 KB | 103 KB | xterm.js 终端模拟器 (核心依赖) |
+| react-dom | 178 KB | 57 KB | React DOM 渲染库 |
 | index (主代码) | 179 KB | 46 KB | 应用业务代码 |
-| @radix-ui | 108 KB | 32 KB | shadcn/ui 底层组件 |
-| react-router | 92 KB | 31 KB | 路由库 |
-| **总计** | **~1.5 MB** | **~500 KB** | gzip 压缩后约 500KB |
+| @radix-ui | 107 KB | 32 KB | shadcn/ui 底层组件 |
+| react-router | 88 KB | 29 KB | 路由库 |
+| **总计** | **~1.4 MB** | **~400 KB** | gzip 压缩后约 400KB |
 
 ### Rust 后端 (Tauri)
 
@@ -247,23 +256,23 @@ const routes = [
 
 ## 三、预期优化效果
 
-| 优化项 | 当前 | 优化后 | 节省 |
-|--------|------|--------|------|
-| xterm.js | 415 KB | 300 KB | 115 KB |
+| 优化项 | 当前 | 可优化至 | 节省 |
+|--------|------|---------|------|
+| xterm.js | 395 KB | 300 KB | 95 KB |
 | 代码分割 | 179 KB | 120 KB | 59 KB |
-| Tree Shaking | - | - | ~50 KB |
-| Console 移除 | - | - | ~10 KB |
-| **总计** | **~1.5 MB** | **~1.0 MB** | **~500 KB** |
+| Tree Shaking | 已优化 | - | - |
+| Console 移除 | 已优化 | - | ~20 KB |
+| **总计** | **~1.4 MB** | **~1.0 MB** | **~400 KB** |
 
 **最终预期体积**：
-- 开发构建：~1.0 MB
+- 生产构建：~1.0 MB
 - gzip 压缩后：~350 KB
 
 ---
 
 ## 四、建议优先实施的优化
 
-### 高优先级 (立即实施)
+### ✅ 已实施 (2026-03-26)
 
 1. **Terser 压缩配置** - 移除 console.log
    ```typescript
@@ -275,18 +284,17 @@ const routes = [
      }
    }
    ```
+   - 已在 `vite.config.ts` 中配置
 
 2. **splitVendorChunkPlugin** - 更好的缓存策略
-   ```bash
-   pnpm add -D vite-plugin-chunk-split
-   ```
+   - Vite 内置的 manualChunks 已实现
 
-### 中优先级 (需要测试)
+### 🔄 待实施
 
 3. xterm.js 懒加载
 4. 路由预加载配置
 
-### 低优先级 (可选)
+### 📋 可选
 
 5. CDN 外部化 xterm.js
 6. 自定义 xterm.js 构建
