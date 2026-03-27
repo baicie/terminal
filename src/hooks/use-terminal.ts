@@ -210,12 +210,17 @@ export function useTerminal(
       statusRef.current = 'connected'
 
       // 2. 监听后端数据 → 写入 xterm
+      // Remove zsh transient prompt artifacts: backspace-erased right-prompt leaves a trailing %
       const unlistenData = await listen<ShellOutput>(
         `${eventPrefix}-data`,
         event => {
           const output = event.payload
           if (output.session_id === sid && termRef.current) {
-            termRef.current.write(output.data)
+            const data = output.data
+              // Remove % at end of line (zsh transient prompt erasure residue)
+              .replace(/ %+(\r?\n)/g, '$1')
+              .replace(/ %+$/gm, '')
+            termRef.current.write(data)
           }
         },
       )

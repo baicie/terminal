@@ -127,12 +127,22 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
   useEffect(() => {
     if (!isReady) return
 
+    let rafId: number | null = null
+
     const handleWindowResize = () => {
-      fitAddonRef.current?.fit()
+      if (rafId !== null) cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(() => {
+        fitAddonRef.current?.fit()
+        rafId = null
+      })
     }
 
     const resizeObserver = new ResizeObserver(() => {
-      fitAddonRef.current?.fit()
+      if (rafId !== null) cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(() => {
+        fitAddonRef.current?.fit()
+        rafId = null
+      })
     })
 
     if (containerRef.current) {
@@ -143,6 +153,7 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
 
     return () => {
       window.removeEventListener('resize', handleWindowResize)
+      if (rafId !== null) cancelAnimationFrame(rafId)
       resizeObserver.disconnect()
     }
   }, [isReady])
@@ -150,9 +161,19 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
   // ---- 状态变化时同步 fit ----
   useEffect(() => {
     if (isReady && fitAddonRef.current) {
-      setTimeout(() => fitAddonRef.current?.fit(), 10)
+      const rafId = requestAnimationFrame(() => {
+        fitAddonRef.current?.fit()
+      })
+      return () => cancelAnimationFrame(rafId)
     }
   }, [isReady, status])
+
+  // ---- 主题变化时动态更新终端主题 ----
+  useEffect(() => {
+    if (!termRef.current) return
+    const colors = getThemeColors(terminalTheme as never)
+    termRef.current.options.theme = colors
+  }, [terminalTheme])
 
   // ─── 空状态：无标签 ──────────────────────────────────────────────
   if (!tab) {
