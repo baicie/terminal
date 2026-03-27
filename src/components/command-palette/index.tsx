@@ -9,9 +9,11 @@ import {
   Search,
   Server,
   Terminal,
+  X,
   Zap,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import {
@@ -42,6 +44,7 @@ interface CommandPaletteProps {
 }
 
 const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onClose }) => {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -63,53 +66,53 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onClose }) => {
       {
         id: 'new-local',
         type: 'action',
-        title: 'New Local Terminal',
-        description: 'Create a new local shell session',
+        title: t('cmdPalette.newLocalTerminal'),
+        description: t('cmdPalette.createSession'),
         icon: <Terminal className="h-4 w-4" />,
         data: { action: 'new-local' },
       },
       {
         id: 'new-host',
         type: 'action',
-        title: 'New SSH Connection',
-        description: 'Add a new host configuration',
+        title: t('cmdPalette.newSSHConnection'),
+        description: t('cmdPalette.addHost'),
         icon: <Server className="h-4 w-4" />,
         data: { action: 'new-host' },
       },
       {
         id: 'toggle-sidebar',
         type: 'action',
-        title: 'Toggle Sidebar',
-        description: 'Show or hide the host sidebar',
+        title: t('cmdPalette.toggleSidebar'),
+        description: t('cmdPalette.showSidebar'),
         icon: <FolderOpen className="h-4 w-4" />,
         data: { action: 'toggle-sidebar' },
       },
       {
         id: 'split-horizontal',
         type: 'action',
-        title: 'Split Horizontal',
-        description: 'Split terminal horizontally',
+        title: t('cmdPalette.splitHorizontal'),
+        description: t('cmdPalette.splitHoriz'),
         icon: <Zap className="h-4 w-4" />,
         data: { action: 'split-horizontal' },
       },
       {
         id: 'split-vertical',
         type: 'action',
-        title: 'Split Vertical',
-        description: 'Split terminal vertically',
+        title: t('cmdPalette.splitVertical'),
+        description: t('cmdPalette.splitVert'),
         icon: <Zap className="h-4 w-4" />,
         data: { action: 'split-vertical' },
       },
       {
         id: 'shortcuts',
         type: 'action',
-        title: 'Keyboard Shortcuts',
-        description: 'View all keyboard shortcuts',
+        title: t('cmdPalette.keyboardShortcuts'),
+        description: t('cmdPalette.viewShortcuts'),
         icon: <Keyboard className="h-4 w-4" />,
         data: { action: 'shortcuts' },
       },
     ],
-    [],
+    [t],
   )
 
   // Filter hosts based on query

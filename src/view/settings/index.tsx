@@ -112,7 +112,6 @@ const SettingsView: React.FC = () => {
       app.setTheme(settings.theme)
       app.setLanguage(settings.language)
       await i18nCore.changeLanguage(settings.language)
-      loadSettings()
       toast.success(t('settings.saved'))
     } catch (error) {
       console.error('Failed to save settings:', error)

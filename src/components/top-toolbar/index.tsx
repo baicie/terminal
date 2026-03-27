@@ -33,6 +33,7 @@ const TopToolbar: React.FC<{
   const location = useLocation()
   const addTab = useAppStore(s => s.addTab)
 
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const [serialDialogOpen, setSerialDialogOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [commandHistoryOpen, setCommandHistoryOpen] = useState(false)
@@ -144,7 +145,7 @@ const TopToolbar: React.FC<{
           className="flex items-center gap-0.5 shrink-0"
           data-tauri-drag-region
         >
-          <DropdownMenu>
+          <DropdownMenu open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
@@ -156,14 +157,29 @@ const TopToolbar: React.FC<{
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem onClick={() => setSerialDialogOpen(true)}>
+              <DropdownMenuItem
+                onSelect={() => {
+                  setMoreMenuOpen(false)
+                  setSerialDialogOpen(true)
+                }}
+              >
                 <Usb className="size-4" data-icon="inline-start" />
                 {t('toolbar.serial')}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setCommandPaletteOpen(true)}>
+              <DropdownMenuItem
+                onSelect={() => {
+                  setMoreMenuOpen(false)
+                  setCommandPaletteOpen(true)
+                }}
+              >
                 {t('toolbar.commandPalette')}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setCommandHistoryOpen(true)}>
+              <DropdownMenuItem
+                onSelect={() => {
+                  setMoreMenuOpen(false)
+                  setCommandHistoryOpen(true)
+                }}
+              >
                 {t('toolbar.commandHistory')}
               </DropdownMenuItem>
             </DropdownMenuContent>
