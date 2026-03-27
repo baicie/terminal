@@ -1,58 +1,21 @@
 import type { SSHKeyRecord } from '@/service/database'
 import {
-  Eye,
-  EyeOff,
-  FileKey,
-  Fingerprint,
   Key,
   KeyRound,
-  Loader2,
   Plus,
-  Search,
-  Shield,
   Trash2,
   Wand2,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { ResponsiveConfirm } from '@/components/ui/responsive-dialog'
 import { toast } from '@/components/ui/sonner'
-import { Textarea } from '@/components/ui/textarea'
 import {
   EmptyState,
   ViewContainer,
   ViewContent,
   ViewToolbar,
 } from '@/components/view-container'
-import { KeyListSkeleton } from '@/components/ui/view-skeletons'
-import { format } from '@/lib/date-utils'
 import {
   createSSHKey,
   deleteSSHKey,
@@ -60,47 +23,11 @@ import {
   searchSSHKeys,
   updateSSHKey,
 } from '@/service/database'
-import { sshService } from '@/service/ssh'
+import { GenerateKeyDialog } from './generate-dialog'
+import { KeyForm } from './key-form'
+import { KeyListPanel } from './key-list-panel'
 
 type KeyFilter = 'all' | 'key' | 'certificate' | 'touchid' | 'fido2'
-
-function getKeyTypeIcon(keyType: string | null) {
-  switch (keyType) {
-    case 'certificate':
-      return <Shield className="size-4" />
-    case 'touchid':
-      return <Fingerprint className="size-4" />
-    case 'fido2':
-      return <Shield className="size-4" />
-    default:
-      return <KeyRound className="size-4" />
-  }
-}
-
-function getKeyTypeLabel(keyType: string | null): string {
-  switch (keyType) {
-    case 'certificate':
-      return 'Certificate'
-    case 'touchid':
-      return 'Touch ID'
-    case 'fido2':
-      return 'FIDO2'
-    default:
-      return 'SSH Key'
-  }
-}
-
-function detectKeyType(content: string): string | null {
-  if (content.includes('CERTIFICATE')) return 'certificate'
-  if (
-    content.includes('ssh-rsa') ||
-    content.includes('ssh-ed25519') ||
-    content.includes('ecdsa-sha2')
-  ) {
-    return 'key'
-  }
-  return null
-}
 
 const KeychainView: React.FC = () => {
   const [keys, setKeys] = useState<SSHKeyRecord[]>([])
@@ -111,30 +38,14 @@ const KeychainView: React.FC = () => {
   const [isNewKey, setIsNewKey] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [keyToDelete, setKeyToDelete] = useState<SSHKeyRecord | null>(null)
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false)
 
-  // Form state
   const [formName, setFormName] = useState('')
   const [formKeyType, setFormKeyType] = useState<string>('key')
   const [formPrivateKey, setFormPrivateKey] = useState('')
   const [formPublicKey, setFormPublicKey] = useState('')
   const [formCertificate, setFormCertificate] = useState('')
   const [formPassphrase, setFormPassphrase] = useState('')
-
-  // Generate key state
-  const [generateDialogOpen, setGenerateDialogOpen] = useState(false)
-  const [genKeyType, setGenKeyType] = useState<string>('ed25519')
-  const [genComment, setGenComment] = useState('')
-  const [genPassphrase, setGenPassphrase] = useState('')
-  const [genConfirmPassphrase, setGenConfirmPassphrase] = useState('')
-  const [showGenPassphrase, setShowGenPassphrase] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [generatedResult, setGeneratedResult] = useState<{
-    private_key: string
-    public_key: string
-    key_type: string
-    fingerprint: string
-  } | null>(null)
-  const [showPrivateKey, setShowPrivateKey] = useState(false)
 
   const loadKeys = async () => {
     setLoading(true)
@@ -241,8 +152,6 @@ const KeychainView: React.FC = () => {
             const text = await file.text()
             if (field === 'private') {
               setFormPrivateKey(text)
-              const detected = detectKeyType(text)
-              if (detected) setFormKeyType(detected)
             } else if (field === 'public') {
               setFormPublicKey(text)
             } else {
@@ -258,171 +167,48 @@ const KeychainView: React.FC = () => {
     [],
   )
 
-  const handleGenerateKey = async () => {
-    if (genPassphrase !== genConfirmPassphrase) {
-      toast.error('Passphrases do not match')
-      return
-    }
-    setGenerating(true)
-    try {
-      const result = await sshService.generateSSHKey(
-        genKeyType as
-          | 'ed25519'
-          | 'rsa'
-          | 'rsa4096'
-          | 'ecdsa'
-          | 'ecdsa-nistp256'
-          | 'ecdsa-nistp384'
-          | 'ecdsa-nistp521',
-        genComment,
-        genPassphrase || undefined,
-      )
-      setGeneratedResult(result)
-      toast.success('Key generated successfully')
-    } catch (error) {
-      console.error('Failed to generate key:', error)
-      toast.error(`Failed to generate key: ${error}`)
-    } finally {
-      setGenerating(false)
-    }
-  }
-
-  const handleUseGeneratedKey = () => {
-    if (!generatedResult) return
-    setFormName(genComment || `Generated ${generatedResult.key_type} Key`)
+  const handleUseGeneratedKey = (result: {
+    private_key: string
+    public_key: string
+    key_type: string
+    fingerprint: string
+  }) => {
+    setFormName(`Generated ${result.key_type} Key`)
     setFormKeyType('key')
-    setFormPrivateKey(generatedResult.private_key)
-    setFormPublicKey(generatedResult.public_key)
+    setFormPrivateKey(result.private_key)
+    setFormPublicKey(result.public_key)
     setFormCertificate('')
-    setFormPassphrase(genPassphrase)
+    setFormPassphrase('')
     setIsNewKey(true)
     setSelectedKey(null)
-    setGenerateDialogOpen(false)
-    setGeneratedResult(null)
-    setGenComment('')
-    setGenPassphrase('')
-    setGenConfirmPassphrase('')
   }
 
-  const handleCloseGenerateDialog = () => {
-    setGenerateDialogOpen(false)
-    setGeneratedResult(null)
-    setGenComment('')
-    setGenPassphrase('')
-    setGenConfirmPassphrase('')
-    setShowGenPassphrase(false)
+  const handleFormChange = (field: string, value: string) => {
+    switch (field) {
+      case 'name': setFormName(value); break
+      case 'keyType': setFormKeyType(value); break
+      case 'privateKey': setFormPrivateKey(value); break
+      case 'publicKey': setFormPublicKey(value); break
+      case 'certificate': setFormCertificate(value); break
+      case 'passphrase': setFormPassphrase(value); break
+    }
   }
-
-  const handleCopyToClipboard = (text: string, label: string) => {
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        toast.success(`${label} copied to clipboard`)
-      })
-      .catch(() => {
-        toast.error('Failed to copy')
-      })
-  }
-
-  const filteredKeys = keys.filter(key => {
-    if (filterType === 'all') return true
-    if (filterType === 'key')
-      return key.key_type === null || key.key_type === 'key'
-    return key.key_type === filterType
-  })
 
   return (
     <ViewContainer className="min-h-0 flex-row">
-      {/* Left panel - Key list */}
-      <div className="flex min-h-0 w-80 shrink-0 flex-col border-r">
-        <ViewToolbar className="flex-col items-stretch gap-2 p-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <Input
-              placeholder="Search keys..."
-              value={searchQuery}
-              onChange={e => handleSearch(e.target.value)}
-              className="pl-9 h-9"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Select
-              value={filterType}
-              onValueChange={v => setFilterType(v as KeyFilter)}
-            >
-              <SelectTrigger className="flex-1 h-9">
-                <SelectValue placeholder="Filter" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Keys</SelectItem>
-                <SelectItem value="key">KEY</SelectItem>
-                <SelectItem value="certificate">Certificate</SelectItem>
-                <SelectItem value="touchid">Touch ID</SelectItem>
-                <SelectItem value="fido2">FIDO2</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button size="sm" onClick={handleNewKey}>
-              <Plus className="size-4 mr-1" data-icon="inline-start" />
-              New
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setGenerateDialogOpen(true)}
-            >
-              <Wand2 className="size-4 mr-1" data-icon="inline-start" />
-              Generate
-            </Button>
-          </div>
-        </ViewToolbar>
+      <KeyListPanel
+        keys={keys}
+        loading={loading}
+        selectedKey={selectedKey}
+        searchQuery={searchQuery}
+        filterType={filterType}
+        onSearch={handleSearch}
+        onFilterChange={setFilterType}
+        onSelectKey={handleSelectKey}
+        onNewKey={handleNewKey}
+        onGenerate={() => setGenerateDialogOpen(true)}
+      />
 
-        <ViewContent className="flex-1 p-0">
-          {loading ? (
-            <KeyListSkeleton count={5} />
-          ) : filteredKeys.length === 0 && !loading ? (
-            <EmptyState
-              icon={<Key className="size-10" />}
-              title="No keys yet"
-              description="Add your first SSH key to get started"
-              action={
-                <Button onClick={handleNewKey}>
-                  <Plus className="size-4 mr-1" data-icon="inline-start" />
-                  Add Key
-                </Button>
-              }
-              className="py-12"
-            />
-          ) : (
-            <div className="divide-y">
-              {filteredKeys.map(key => (
-                <div
-                  key={key.id}
-                  className={`p-4 hover:bg-accent/50 cursor-pointer transition-colors ${
-                    selectedKey?.id === key.id
-                      ? 'bg-accent border-l-2 border-primary'
-                      : ''
-                  }`}
-                  onClick={() => handleSelectKey(key)}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 rounded-md bg-primary/10 text-primary">
-                      {getKeyTypeIcon(key.key_type)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{key.name}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        Type: {getKeyTypeLabel(key.key_type)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </ViewContent>
-      </div>
-
-      {/* Right panel - Key details */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {!selectedKey && !isNewKey ? (
           <ViewContent className="flex items-center justify-center">
@@ -437,7 +223,7 @@ const KeychainView: React.FC = () => {
             <ViewToolbar className="justify-between">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-md bg-primary/10 text-primary">
-                  {getKeyTypeIcon(formKeyType)}
+                  <KeyRound className="size-4" />
                 </div>
                 <span className="font-semibold">
                   {isNewKey ? 'New Key' : 'Edit Key'}
@@ -469,142 +255,29 @@ const KeychainView: React.FC = () => {
             </ViewToolbar>
 
             <ViewContent className="p-6">
-              <div className="max-w-2xl space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Label *</Label>
-                  <Input
-                    id="name"
-                    placeholder="Add a label..."
-                    value={formName}
-                    onChange={e => setFormName(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Key Type</Label>
-                  <Select value={formKeyType} onValueChange={setFormKeyType}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select key type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="key">KEY</SelectItem>
-                      <SelectItem value="certificate">Certificate</SelectItem>
-                      <SelectItem value="touchid">Touch ID</SelectItem>
-                      <SelectItem value="fido2">FIDO2</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {formKeyType === 'key' || formKeyType === 'certificate' ? (
-                  <>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="privateKey">Private Key *</Label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleImportFromFile('private')}
-                        >
-                          <FileKey
-                            className="size-4 mr-1"
-                            data-icon="inline-start"
-                          />
-                          Import from file
-                        </Button>
-                      </div>
-                      <Textarea
-                        id="privateKey"
-                        placeholder="Paste private key content or import from file..."
-                        value={formPrivateKey}
-                        onChange={e => setFormPrivateKey(e.target.value)}
-                        className="font-mono text-xs h-32"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="publicKey">Public Key</Label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleImportFromFile('public')}
-                        >
-                          <FileKey
-                            className="size-4 mr-1"
-                            data-icon="inline-start"
-                          />
-                          Import from file
-                        </Button>
-                      </div>
-                      <Textarea
-                        id="publicKey"
-                        placeholder="Paste public key content..."
-                        value={formPublicKey}
-                        onChange={e => setFormPublicKey(e.target.value)}
-                        className="font-mono text-xs h-24"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="passphrase">Passphrase</Label>
-                      <Input
-                        id="passphrase"
-                        type="password"
-                        placeholder="Enter passphrase for encrypted key..."
-                        value={formPassphrase}
-                        onChange={e => setFormPassphrase(e.target.value)}
-                      />
-                    </div>
-                  </>
-                ) : null}
-
-                {formKeyType === 'certificate' && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="certificate">Certificate</Label>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleImportFromFile('certificate')}
-                      >
-                        <FileKey
-                          className="size-4 mr-1"
-                          data-icon="inline-start"
-                        />
-                        Import from file
-                      </Button>
-                    </div>
-                    <Textarea
-                      id="certificate"
-                      placeholder="Paste certificate content..."
-                      value={formCertificate}
-                      onChange={e => setFormCertificate(e.target.value)}
-                      className="font-mono text-xs h-24"
-                    />
-                  </div>
-                )}
-
-                {!isNewKey && selectedKey && (
-                  <div className="pt-4 border-t">
-                    <div className="text-xs text-muted-foreground space-y-1">
-                      <div>
-                        Created:{' '}
-                        {format(selectedKey.created_at, 'MMM dd, yyyy HH:mm')}
-                      </div>
-                      <div>
-                        Updated:{' '}
-                        {format(selectedKey.updated_at, 'MMM dd, yyyy HH:mm')}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <KeyForm
+                selectedKey={selectedKey}
+                isNewKey={isNewKey}
+                formName={formName}
+                formKeyType={formKeyType}
+                formPrivateKey={formPrivateKey}
+                formPublicKey={formPublicKey}
+                formCertificate={formCertificate}
+                formPassphrase={formPassphrase}
+                onFormChange={handleFormChange}
+                onImportFromFile={handleImportFromFile}
+                onSave={handleSave}
+                onDelete={() => {
+                  setKeyToDelete(selectedKey)
+                  setDeleteDialogOpen(true)
+                }}
+                onNewKey={handleNewKey}
+              />
             </ViewContent>
           </>
         )}
       </div>
 
-      {/* Delete Confirmation Dialog */}
       <ResponsiveConfirm
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
@@ -620,180 +293,11 @@ const KeychainView: React.FC = () => {
         onCancel={() => setKeyToDelete(null)}
       />
 
-      {/* Generate SSH Key Dialog */}
-      <ResponsiveDialog
+      <GenerateKeyDialog
         open={generateDialogOpen}
-        onOpenChange={handleCloseGenerateDialog}
-        header={
-          <div className="flex items-center gap-2">
-            <Wand2 className="size-5" />
-            <span className="font-semibold">Generate SSH Key</span>
-          </div>
-        }
-        footer={
-          <div className="flex gap-2">
-            {!generatedResult ? (
-              <>
-                <Button variant="outline" onClick={handleCloseGenerateDialog}>
-                  Cancel
-                </Button>
-                <Button onClick={handleGenerateKey} disabled={generating}>
-                  {generating ? (
-                    <>
-                      <Loader2 className="size-4 mr-1 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Wand2 className="size-4 mr-1" data-icon="inline-start" />
-                      Generate Key
-                    </>
-                  )}
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setGeneratedResult(null)
-                  }}
-                >
-                  Generate Another
-                </Button>
-                <Button onClick={handleUseGeneratedKey}>Use This Key</Button>
-              </>
-            )}
-          </div>
-        }
-        contentClassName="space-y-4"
-        mobileHeight="85dvh"
-      >
-        {!generatedResult ? (
-          <>
-            <div>
-              <Label htmlFor="gen-type">Key Type</Label>
-              <Select value={genKeyType} onValueChange={setGenKeyType}>
-                <SelectTrigger id="gen-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ed25519">Ed25519 (Recommended)</SelectItem>
-                  <SelectItem value="rsa4096">RSA 4096-bit</SelectItem>
-                  <SelectItem value="rsa">RSA 2048-bit</SelectItem>
-                  <SelectItem value="ecdsa-nistp256">ECDSA P-256</SelectItem>
-                  <SelectItem value="ecdsa-nistp384">ECDSA P-384</SelectItem>
-                  <SelectItem value="ecdsa-nistp521">ECDSA P-521</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="gen-comment">Comment / Label</Label>
-              <Input
-                id="gen-comment"
-                placeholder="user@hostname"
-                value={genComment}
-                onChange={e => setGenComment(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="gen-passphrase">Passphrase (optional)</Label>
-              <div className="relative">
-                <Input
-                  id="gen-passphrase"
-                  type={showGenPassphrase ? 'text' : 'password'}
-                  placeholder="Enter passphrase"
-                  value={genPassphrase}
-                  onChange={e => setGenPassphrase(e.target.value)}
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 size-7"
-                  onClick={() => setShowGenPassphrase(!showGenPassphrase)}
-                >
-                  {showGenPassphrase ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                </Button>
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="gen-confirm-passphrase">Confirm Passphrase</Label>
-              <Input
-                id="gen-confirm-passphrase"
-                type={showGenPassphrase ? 'text' : 'password'}
-                placeholder="Confirm passphrase"
-                value={genConfirmPassphrase}
-                onChange={e => setGenConfirmPassphrase(e.target.value)}
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="rounded-md bg-green-500/10 border border-green-500/30 p-3 text-sm text-green-600 dark:text-green-400">
-              Key generated successfully! Type: {generatedResult.key_type}
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label>Fingerprint</Label>
-                <span className="text-xs text-muted-foreground font-mono truncate ml-2">
-                  {generatedResult.fingerprint}
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label>Public Key</Label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 text-xs"
-                  onClick={() => handleCopyToClipboard(generatedResult.public_key, 'Public key')}
-                >
-                  Copy
-                </Button>
-              </div>
-              <Textarea readOnly value={generatedResult.public_key} className="h-20 font-mono text-xs" />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label>Private Key</Label>
-                <div className="flex gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 text-xs"
-                    onClick={() => setShowPrivateKey(!showPrivateKey)}
-                  >
-                    {showPrivateKey ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 text-xs"
-                    onClick={() => handleCopyToClipboard(generatedResult.private_key, 'Private key')}
-                  >
-                    Copy
-                  </Button>
-                </div>
-              </div>
-              <Textarea
-                readOnly
-                value={showPrivateKey ? generatedResult.private_key : '••••••••••••••••••••••••••••••••'}
-                className="h-32 font-mono text-xs"
-              />
-              <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">
-                Store your private key securely. Anyone with this key can access your servers.
-              </p>
-            </div>
-          </>
-        )}
-      </ResponsiveDialog>
+        onClose={() => setGenerateDialogOpen(false)}
+        onUseKey={handleUseGeneratedKey}
+      />
     </ViewContainer>
   )
 }

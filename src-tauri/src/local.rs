@@ -41,7 +41,10 @@ pub async fn local_shell(
     };
 
     // Create command
-    let cmd = CommandBuilder::new(&shell);
+    let mut cmd = CommandBuilder::new(&shell);
+
+    // Set TERM so zsh knows this is a full-featured terminal (fixes % suffix issue)
+    cmd.env("TERM", "xterm-256color");
 
     // Set working directory for Windows
     #[cfg(windows)]

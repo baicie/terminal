@@ -50,7 +50,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   async hydrateFromDatabase() {
     try {
       const s = await getAppSettingsFromDb()
-      set({ theme: s.theme, language: s.language })
+      set({
+        theme: s.theme,
+        language: s.language,
+        config: s as unknown as Record<string, unknown>,
+      })
     } catch (e) {
       console.error('hydrateFromDatabase failed:', e)
     }

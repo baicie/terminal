@@ -1,5 +1,5 @@
 import type { AuthType, Host } from '@/types'
-import { Network, Plus, Trash2 } from 'lucide-react'
+import { Network } from 'lucide-react'
 import * as React from 'react'
 import { useEffect, useState } from 'react'
 import PortForwardDialog from '@/components/port-forward'
@@ -15,13 +15,6 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -32,6 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { EnvironmentVariablesDialog } from './environment-dialog'
 import { useHostStore } from '@/store/host'
 
 interface HostDialogProps {
@@ -71,9 +65,8 @@ export const HostDialog: React.FC<HostDialogProps> = ({
   const [saving, setSaving] = useState(false)
   const [portForwardDialogOpen, setPortForwardDialogOpen] = useState(false)
   const [environmentDialogOpen, setEnvironmentDialogOpen] = useState(false)
-  const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>(
-    [],
-  )
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([])
 
   useEffect(() => {
     if (host) {
@@ -95,7 +88,6 @@ export const HostDialog: React.FC<HostDialogProps> = ({
         jumpHostId: host.jumpHostId,
         jumpHostAuthType: host.jumpHostAuthType,
       })
-      // Sync environment variables
       if (host.environment) {
         setEnvVars(
           Object.entries(host.environment).map(([key, value]) => ({
@@ -126,8 +118,6 @@ export const HostDialog: React.FC<HostDialogProps> = ({
       setSaving(false)
     }
   }
-
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   const handleDelete = async () => {
     if (host) {
@@ -163,10 +153,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
             </div>
 
             <div>
-              <Label
-                htmlFor="hostname"
-                className="text-sm font-medium mb-1 block"
-              >
+              <Label htmlFor="hostname" className="text-sm font-medium mb-1 block">
                 Hostname
               </Label>
               <Input
@@ -195,10 +182,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
             </div>
 
             <div>
-              <Label
-                htmlFor="username"
-                className="text-sm font-medium mb-1 block"
-              >
+              <Label htmlFor="username" className="text-sm font-medium mb-1 block">
                 Username
               </Label>
               <Input
@@ -232,12 +216,8 @@ export const HostDialog: React.FC<HostDialogProps> = ({
               </Select>
             </div>
 
-            {/* Jump Host Selector */}
             <div className="col-span-2">
-              <Label
-                htmlFor="jumpHost"
-                className="text-sm font-medium mb-1 flex items-center gap-1"
-              >
+              <Label htmlFor="jumpHost" className="text-sm font-medium mb-1 flex items-center gap-1">
                 <Network className="w-3.5 h-3.5" />
                 Jump Host (Bastion)
               </Label>
@@ -265,13 +245,9 @@ export const HostDialog: React.FC<HostDialogProps> = ({
               </p>
             </div>
 
-            {/* Jump Host Auth Override (optional) */}
             {form.jumpHostId && (
               <div className="col-span-2">
-                <Label
-                  htmlFor="jumpHostAuth"
-                  className="text-sm font-medium mb-1 block"
-                >
+                <Label htmlFor="jumpHostAuth" className="text-sm font-medium mb-1 block">
                   Jump Host Auth
                 </Label>
                 <Select
@@ -296,10 +272,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
             )}
 
             <div className="col-span-2">
-              <Label
-                htmlFor="authType"
-                className="text-sm font-medium mb-1 block"
-              >
+              <Label htmlFor="authType" className="text-sm font-medium mb-1 block">
                 Authentication
               </Label>
               <Select
@@ -321,10 +294,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
 
             {form.authType === 'password' && (
               <div className="col-span-2">
-                <Label
-                  htmlFor="password"
-                  className="text-sm font-medium mb-1 block"
-                >
+                <Label htmlFor="password" className="text-sm font-medium mb-1 block">
                   Password
                 </Label>
                 <Input
@@ -340,10 +310,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
             {form.authType === 'key' && (
               <>
                 <div className="col-span-2">
-                  <Label
-                    htmlFor="privateKey"
-                    className="text-sm font-medium mb-1 block"
-                  >
+                  <Label htmlFor="privateKey" className="text-sm font-medium mb-1 block">
                     Private Key
                   </Label>
                   <div className="flex gap-2">
@@ -389,10 +356,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
                   </div>
                 </div>
                 <div className="col-span-2">
-                  <Label
-                    htmlFor="passphrase"
-                    className="text-sm font-medium mb-1 block"
-                  >
+                  <Label htmlFor="passphrase" className="text-sm font-medium mb-1 block">
                     Key Passphrase (optional)
                   </Label>
                   <Input
@@ -409,10 +373,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
             )}
 
             <div className="col-span-2">
-              <Label
-                htmlFor="startupCommand"
-                className="text-sm font-medium mb-1 block"
-              >
+              <Label htmlFor="startupCommand" className="text-sm font-medium mb-1 block">
                 Startup Command (optional)
               </Label>
               <Input
@@ -435,16 +396,12 @@ export const HostDialog: React.FC<HostDialogProps> = ({
                 onClick={() => setEnvironmentDialogOpen(true)}
               >
                 <Network className="h-4 w-4 mr-1" />
-                Configure Environment (
-                {Object.keys(form.environment || {}).length})
+                Configure Environment ({Object.keys(form.environment || {}).length})
               </Button>
             </div>
 
             <div className="col-span-2">
-              <Label
-                htmlFor="portForwards"
-                className="text-sm font-medium mb-1 block"
-              >
+              <Label htmlFor="portForwards" className="text-sm font-medium mb-1 block">
                 Port Forwards
               </Label>
               <Button
@@ -511,99 +468,25 @@ export const HostDialog: React.FC<HostDialogProps> = ({
         onSave={forwards => setForm({ ...form, portForwards: forwards })}
       />
 
-      {/* Environment Variables Dialog */}
-      <Dialog
+      <EnvironmentVariablesDialog
         open={environmentDialogOpen}
-        onOpenChange={setEnvironmentDialogOpen}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Environment Variables</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 max-h-80 overflow-y-auto py-2">
-            {envVars.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No environment variables configured. Click "Add Variable" to add
-                one.
-              </p>
-            ) : (
-              envVars.map((env, index) => (
-                <div key={index} className="flex gap-2 items-center">
-                  <Input
-                    placeholder="KEY"
-                    value={env.key}
-                    onChange={e => {
-                      const updated = [...envVars]
-                      updated[index].key = e.target.value
-                        .toUpperCase()
-                        .replace(/[^A-Z0-9_]/g, '')
-                      setEnvVars(updated)
-                    }}
-                    className="flex-1 font-mono text-sm"
-                  />
-                  <span className="text-muted-foreground">=</span>
-                  <Input
-                    placeholder="value"
-                    value={env.value}
-                    onChange={e => {
-                      const updated = [...envVars]
-                      updated[index].value = e.target.value
-                      setEnvVars(updated)
-                    }}
-                    className="flex-1 font-mono text-sm"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0 text-destructive"
-                    onClick={() =>
-                      setEnvVars(envVars.filter((_, i) => i !== index))
-                    }
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-              ))
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full"
-              onClick={() => setEnvVars([...envVars, { key: '', value: '' }])}
-            >
-              <Plus className="size-4 mr-1" data-icon="inline-start" />
-              Add Variable
-            </Button>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setEnvironmentDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                // Convert array to Record<string, string>
-                const envRecord: Record<string, string> = {}
-                for (const { key, value } of envVars) {
-                  if (key.trim()) {
-                    envRecord[key.trim()] = value
-                  }
-                }
-                setForm({
-                  ...form,
-                  environment:
-                    Object.keys(envRecord).length > 0 ? envRecord : undefined,
-                })
-                setEnvironmentDialogOpen(false)
-              }}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onClose={() => setEnvironmentDialogOpen(false)}
+        envVars={envVars}
+        onSave={newEnvVars => {
+          const envRecord: Record<string, string> = {}
+          for (const { key, value } of newEnvVars) {
+            if (key.trim()) {
+              envRecord[key.trim()] = value
+            }
+          }
+          setEnvVars(newEnvVars)
+          setForm({
+            ...form,
+            environment:
+              Object.keys(envRecord).length > 0 ? envRecord : undefined,
+          })
+        }}
+      />
     </div>
   )
 }

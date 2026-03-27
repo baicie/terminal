@@ -73,6 +73,7 @@ const MainLayoutInner: React.FC<{
   sidebarWidth: number
   onSidebarWidthChange: (w: number) => void
 }> = ({ sidebarOpen, onToggleSidebar, sidebarWidth, onSidebarWidthChange }) => {
+  const isMobile = useIsMobile()
   const [resizing, setResizing] = useState(false)
   const dragRef = useRef({ startX: 0, startWidth: SIDEBAR_DEFAULT })
   const lastWidthRef = useRef(sidebarWidth)
