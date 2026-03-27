@@ -11,9 +11,13 @@ const ViewContainer: React.FC<ViewContainerProps> & {
   Content: typeof ViewContent
   Header: typeof ViewHeader
   EmptyState: typeof EmptyState
-} = ({ children }) => {
+} = ({ children, className }) => {
   return (
-    <div className="h-full flex flex-col bg-background fade-in">{children}</div>
+    <div
+      className={cn('h-full flex flex-col bg-background fade-in', className)}
+    >
+      {children}
+    </div>
   )
 }
 

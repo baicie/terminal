@@ -12,6 +12,17 @@ export default {
   'nav.knownHosts': 'Known Hosts',
   'nav.logs': 'Logs',
   'nav.scripts': 'Scripts',
+  'nav.settings': 'Settings',
+
+  // Top toolbar
+  'toolbar.toggleSidebar': 'Toggle sidebar',
+  'toolbar.sftp': 'SFTP',
+  'toolbar.newTab': 'New tab',
+  'toolbar.more': 'More',
+  'toolbar.serial': 'Serial',
+  'toolbar.commandPalette': 'Command palette',
+  'toolbar.commandHistory': 'Command history',
+  'toolbar.notifications': 'Notifications',
 
   // Tabs
   'tabs.splitVertical': 'Split Vertical',
@@ -45,4 +56,11 @@ export default {
   'common.copyOnSelect': 'Copy on Select',
   'common.pasteOnMiddleClick': 'Paste on Middle Click',
   'common.allowProposedApi': 'Allow Proposed API',
+  'common.retry': 'Retry',
+  'common.goHome': 'Go Home',
+  'common.errorOccurred': 'Something went wrong',
+
+  // Error boundary
+  'error.title': 'Failed to load page',
+  'error.message': '{{message}}',
 }

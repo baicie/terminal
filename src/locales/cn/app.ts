@@ -12,6 +12,17 @@ export default {
   'nav.knownHosts': '已知主机',
   'nav.logs': '日志',
   'nav.scripts': '脚本',
+  'nav.settings': '设置',
+
+  // Top toolbar
+  'toolbar.toggleSidebar': '切换侧栏',
+  'toolbar.sftp': 'SFTP',
+  'toolbar.newTab': '新建标签',
+  'toolbar.more': '更多',
+  'toolbar.serial': '串口',
+  'toolbar.commandPalette': '命令面板',
+  'toolbar.commandHistory': '命令历史',
+  'toolbar.notifications': '通知',
 
   // Tabs
   'tabs.splitVertical': '垂直分屏',
@@ -45,4 +56,11 @@ export default {
   'common.copyOnSelect': '选中复制',
   'common.pasteOnMiddleClick': '中键粘贴',
   'common.allowProposedApi': '允许实验性 API',
+  'common.retry': '重试',
+  'common.goHome': '返回首页',
+  'common.errorOccurred': '发生错误',
+
+  // Error boundary
+  'error.title': '页面加载失败',
+  'error.message': '{{message}}',
 }

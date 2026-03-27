@@ -16,7 +16,10 @@ function Tabs({
       data-orientation={orientation}
       orientation={orientation}
       className={cn(
-        'group/tabs flex gap-2 data-[orientation=horizontal]/tabs:flex-col',
+        'group/tabs flex gap-2',
+        // 必须显式区分方向：默认曾误用 data 变体导致未应用 flex-col，根节点保持 flex-row，
+        // TabsList 与 TabsContent 并排且被 stretch 成与内容同高，TabsTrigger 的 h-[calc(100%-1px)] 会把标签拉成巨高。
+        orientation === 'horizontal' ? 'flex-col' : 'flex-row',
         className,
       )}
       {...props}
@@ -87,4 +90,4 @@ function TabsContent({
   )
 }
 
-export { Tabs, TabsContent, TabsList, tabsListVariants, TabsTrigger }
+export { Tabs, TabsContent, TabsList, TabsTrigger }

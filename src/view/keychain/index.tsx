@@ -329,9 +329,9 @@ const KeychainView: React.FC = () => {
   })
 
   return (
-    <ViewContainer className="flex-row">
+    <ViewContainer className="min-h-0 flex-row">
       {/* Left panel - Key list */}
-      <div className="w-80 border-r flex flex-col">
+      <div className="flex min-h-0 w-80 shrink-0 flex-col border-r">
         <ViewToolbar className="flex-col items-stretch gap-2 p-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -418,7 +418,7 @@ const KeychainView: React.FC = () => {
       </div>
 
       {/* Right panel - Key details */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {!selectedKey && !isNewKey ? (
           <ViewContent className="flex items-center justify-center">
             <EmptyState

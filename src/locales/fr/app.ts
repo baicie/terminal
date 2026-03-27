@@ -12,6 +12,17 @@ export default {
   'nav.knownHosts': 'Hôtes connus',
   'nav.logs': 'Journaux',
   'nav.scripts': 'Scripts',
+  'nav.settings': 'Paramètres',
+
+  // Top toolbar
+  'toolbar.toggleSidebar': 'Afficher/masquer la barre latérale',
+  'toolbar.sftp': 'SFTP',
+  'toolbar.newTab': 'Nouvel onglet',
+  'toolbar.more': 'Plus',
+  'toolbar.serial': 'Série',
+  'toolbar.commandPalette': 'Palette de commandes',
+  'toolbar.commandHistory': 'Historique des commandes',
+  'toolbar.notifications': 'Notifications',
 
   // Tabs
   'tabs.splitVertical': 'Diviser verticalement',
@@ -45,4 +56,11 @@ export default {
   'common.copyOnSelect': 'Copier à la sélection',
   'common.pasteOnMiddleClick': 'Coller au clic molette',
   'common.allowProposedApi': "Autoriser l'API expérimentale",
+  'common.retry': 'Réessayer',
+  'common.goHome': "Retour à l'accueil",
+  'common.errorOccurred': 'Une erreur est survenue',
+
+  // Error boundary
+  'error.title': "Échec du chargement de la page",
+  'error.message': '{{message}}',
 }

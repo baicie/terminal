@@ -7,6 +7,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   Server,
+  Settings,
   Terminal,
   Users,
 } from 'lucide-react'
@@ -145,9 +146,9 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
       icon: <FileText className="size-5" />,
     },
     {
-      path: '/scripts',
-      labelKey: 'nav.scripts',
-      icon: <Terminal className="size-5" />,
+      path: '/settings',
+      labelKey: 'nav.settings',
+      icon: <Settings className="size-5" />,
     },
   ]
 

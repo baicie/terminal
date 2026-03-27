@@ -7,5 +7,6 @@ declare global {
     __APP_STORE__?: AppStore
     __localDirHandle?: FileSystemDirectoryHandle
     showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>
+    __resetErrorBoundary__?: () => void
   }
 }

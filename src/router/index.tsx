@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import type { RouteObject } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import { createBrowserRouter, useSearchParams } from 'react-router-dom'
+import ErrorBoundary from '@/components/error-boundary'
 import { TerminalContainer } from '@/view/terminal/terminal-container'
 import Layout from '../layout'
 
@@ -14,9 +15,8 @@ function Loading() {
 }
 
 // Lazy wrapper: accepts any React component and returns a Suspense-wrapped lazy component
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeLazyRoute(
-  getComponent: () => Promise<{ default: React.ComponentType<any> }>,
+  getComponent: () => Promise<{ default: React.ComponentType<object> }>,
 ): ReactNode {
   const LazyComponent = lazy(getComponent)
   return (
@@ -40,7 +40,7 @@ const TerminalRoute: React.FC = () => {
 export const routes: RouteObject[] = [
   {
     element: <Layout />,
-    errorElement: <div>Error loading page</div>,
+    errorElement: <ErrorBoundary />,
     children: [
       // Default route - Home/Hosts
       {
@@ -92,15 +92,15 @@ export const routes: RouteObject[] = [
         path: 'logs',
         element: makeLazyRoute(() => import('../view/app-logs')),
       },
-      // Scripts - Advanced scripting and batch execution
-      {
-        path: 'scripts',
-        element: makeLazyRoute(() => import('../view/scripts')),
-      },
       // Teams - Team collaboration
       {
         path: 'teams',
         element: makeLazyRoute(() => import('../view/teams')),
+      },
+      // Settings
+      {
+        path: 'settings',
+        element: makeLazyRoute(() => import('../view/settings')),
       },
     ],
   },
