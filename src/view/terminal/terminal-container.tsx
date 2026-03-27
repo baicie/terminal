@@ -6,9 +6,12 @@ import { Terminal as TerminalComponent } from '@xterm/xterm'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { getThemeColors } from '@/utils/terminal-themes'
+import { useIsMobile } from '@/hooks/use-breakpoint'
 import { useTerminal } from '@/hooks/use-terminal'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
+import { clearTerminalWriteFn, setTerminalWriteFn } from './terminal-write-context'
+import TerminalKeyboardBar from './terminal-keyboard-bar'
 import '@xterm/xterm/css/xterm.css'
 
 interface TerminalContainerProps {
@@ -26,6 +29,10 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
   const isMountedRef = useRef(false)
 
   const tab = tabs.find(t => t.id === tabId)
+  const isMobile = useIsMobile()
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [fontSize, setFontSize] = useState(14)
+  const [termInstance, setTermInstance] = useState<TerminalComponent | null>(null)
   const [isReady, setIsReady] = useState(false)
 
   // Derive host from tab.hostId
@@ -56,11 +63,11 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
 
     const term = new TerminalComponent({
       cursorBlink: true,
-      fontSize: 14,
+      fontSize,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       theme: themeColors,
       scrollback: 10000,
-      macOptionIsMeta: true,
+      macOptionIsMeta: !isMobile,
       allowTransparency: true,
       allowProposedApi: true,
     })
@@ -94,6 +101,10 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
 
     term.open(containerRef.current)
 
+    // Register term instance and write function for mobile keyboard bar
+    setTermInstance(term)
+    setTerminalWriteFn((data: string) => { term.write(data) })
+
     setTimeout(() => {
       fitAddon.fit()
       term.focus()
@@ -104,8 +115,10 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
 
     return () => {
       isMountedRef.current = false
+      clearTerminalWriteFn()
       term.dispose()
       termRef.current = null
+      setTermInstance(null)
       setIsReady(false)
     }
   }, [tabId, tab, themeColors])
@@ -141,7 +154,7 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
     }
   }, [isReady, status])
 
-  // ---- 空状态：无标签 ----
+  // ─── 空状态：无标签 ──────────────────────────────────────────────
   if (!tab) {
     return (
       <div className="h-full flex items-center justify-center bg-[#1e1e1e]">
@@ -161,18 +174,60 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
     )
   }
 
-  return (
+  // ─── 终端就绪后注册写函数 ────────────────────────────────────────
+  const handleSendKey = (key: string) => {
+    termInstance?.write(key)
+  }
+
+  const handleFontSizeChange = (delta: number) => {
+    setFontSize(prev => {
+      const next = prev + delta
+      if (next < 8 || next > 32) return prev
+      termInstance?.options.set('fontSize', next)
+      fitAddonRef.current?.fit()
+      return next
+    })
+  }
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(p => !p)
+  }
+
+  // ─── 终端主体 ─────────────────────────────────────────────────────
+  const terminalBody = (
     <div className="h-full flex bg-[#1e1e1e]">
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Terminal area */}
         <div
           ref={containerRef}
           className="flex-1 overflow-hidden"
           tabIndex={0}
           style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
         />
+        {/* Mobile keyboard bar */}
+        {isMobile && (
+          <TerminalKeyboardBar
+            onSendKey={handleSendKey}
+            onFontSizeChange={handleFontSizeChange}
+            fontSize={fontSize}
+            isFullscreen={isFullscreen}
+            onToggleFullscreen={toggleFullscreen}
+          />
+        )}
       </div>
     </div>
   )
+
+  // Mobile fullscreen: hide everything except terminal + keyboard bar
+  if (isMobile && isFullscreen) {
+    return (
+      <div className="fixed inset-0 z-[300] bg-[#1e1e1e]">
+        {terminalBody}
+      </div>
+    )
+  }
+
+  return terminalBody
 }
 
 export default TerminalContainer

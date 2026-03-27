@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -253,9 +252,9 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
         </div>
 
         <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline">Cancel</Button>
-          </DialogClose>
+          <Button variant="outline" type="button" onClick={onClose}>
+            Cancel
+          </Button>
           <Button
             onClick={handleConnect}
             disabled={connecting || !selectedPort}

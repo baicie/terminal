@@ -57,6 +57,8 @@ import {
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { ResponsiveConfirm } from '@/components/ui/responsive-dialog'
+import { SnippetRowSkeleton } from '@/components/ui/view-skeletons'
 import {
   EmptyState,
   ViewContainer,
@@ -342,9 +344,7 @@ const SnippetsView: React.FC = () => {
               {/* Script List */}
               <TabsContent value="list" className="mt-0">
                 {isLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                  </div>
+                  <SnippetRowSkeleton count={8} />
                 ) : scripts.length === 0 ? (
                   <EmptyState
                     title={t('scripts.empty')}
@@ -665,72 +665,74 @@ const SnippetsView: React.FC = () => {
       </ViewContent>
 
       {/* Edit/Create Script Dialog */}
-      <AlertDialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <AlertDialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {selectedScript ? t('scripts.edit') : t('scripts.create')}
-            </AlertDialogTitle>
-          </AlertDialogHeader>
+      <ResponsiveConfirm
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        title={selectedScript ? t('scripts.edit') : t('scripts.create')}
+        confirmText={selectedScript ? t('scripts.save') : t('scripts.create')}
+        onConfirm={handleSaveScript}
+        onCancel={() => setIsEditDialogOpen(false)}
+        className="space-y-4 p-4"
+        mobileHeight="90dvh"
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">{t('scripts.name')} *</Label>
+            <Input
+              id="name"
+              value={formName}
+              onChange={e => setFormName(e.target.value)}
+              placeholder={t('scripts.namePlaceholder')}
+            />
+          </div>
 
-          <div className="space-y-4 py-4 overflow-y-auto flex-1">
-            <div className="space-y-2">
-              <Label htmlFor="name">{t('scripts.name')} *</Label>
-              <Input
-                id="name"
-                value={formName}
-                onChange={e => setFormName(e.target.value)}
-                placeholder={t('scripts.namePlaceholder')}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="description">{t('scripts.description')}</Label>
+            <Input
+              id="description"
+              value={formDescription}
+              onChange={e => setFormDescription(e.target.value)}
+              placeholder={t('scripts.descriptionPlaceholder')}
+            />
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="description">{t('scripts.description')}</Label>
-              <Input
-                id="description"
-                value={formDescription}
-                onChange={e => setFormDescription(e.target.value)}
-                placeholder={t('scripts.descriptionPlaceholder')}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="script">{t('scripts.script')} *</Label>
+            <Textarea
+              id="script"
+              value={formScript}
+              onChange={e => setFormScript(e.target.value)}
+              placeholder={t('scripts.scriptPlaceholder')}
+              className="font-mono text-sm min-h-[150px]"
+            />
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="script">{t('scripts.script')} *</Label>
-              <Textarea
-                id="script"
-                value={formScript}
-                onChange={e => setFormScript(e.target.value)}
-                placeholder={t('scripts.scriptPlaceholder')}
-                className="font-mono text-sm min-h-[150px]"
-              />
+          <div className="space-y-2">
+            <Label>{t('scripts.targetHosts')}</Label>
+            <div className="flex flex-wrap gap-2 p-3 border rounded-md max-h-48 overflow-y-auto">
+              {hosts.map(host => (
+                <div key={host.id} className="flex items-center gap-2">
+                  <Checkbox
+                    id={`edit-host-${host.id}`}
+                    checked={formHostIds.includes(host.id)}
+                    onCheckedChange={() => handleHostToggle(host.id)}
+                  />
+                  <Label
+                    htmlFor={`edit-host-${host.id}`}
+                    className="text-sm font-normal cursor-pointer"
+                  >
+                    {host.name}
+                  </Label>
+                </div>
+              ))}
             </div>
-
-            <div className="space-y-2">
-              <Label>{t('scripts.targetHosts')}</Label>
-              <div className="flex flex-wrap gap-2 p-3 border rounded-md max-h-48 overflow-y-auto">
-                {hosts.map(host => (
-                  <div key={host.id} className="flex items-center gap-2">
-                    <Checkbox
-                      id={`edit-host-${host.id}`}
-                      checked={formHostIds.includes(host.id)}
-                      onCheckedChange={() => handleHostToggle(host.id)}
-                    />
-                    <Label
-                      htmlFor={`edit-host-${host.id}`}
-                      className="text-sm font-normal cursor-pointer"
-                    >
-                      {host.name}
-                    </Label>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {formHostIds.length}{' '}
-                {formHostIds.length !== 1
-                  ? t('scripts.hostsSelected')
-                  : t('scripts.hostSelected')}
-              </p>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              {formHostIds.length}{' '}
+              {formHostIds.length !== 1
+                ? t('scripts.hostsSelected')
+                : t('scripts.hostSelected')}
+            </p>
+          </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -805,41 +807,20 @@ const SnippetsView: React.FC = () => {
               </div>
             </div>
           </div>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setIsEditDialogOpen(false)}>
-              {t('common.cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleSaveScript}>
-              {selectedScript ? t('scripts.save') : t('scripts.create')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        </div>
+      </ResponsiveConfirm>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog
+      <ResponsiveConfirm
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('scripts.deleteConfirm')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('scripts.deleteConfirmDesc', { name: selectedScript?.name })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteScript}
-              className="bg-destructive text-destructive-foreground"
-            >
-              {t('common.delete')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={t('scripts.deleteConfirm')}
+        description={t('scripts.deleteConfirmDesc', { name: selectedScript?.name })}
+        confirmText={t('common.delete')}
+        destructive
+        onConfirm={handleDeleteScript}
+        onCancel={() => setSelectedScript(null)}
+      />
     </ViewContainer>
   )
 }

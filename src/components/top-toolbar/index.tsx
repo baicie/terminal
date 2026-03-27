@@ -1,29 +1,25 @@
-import type { SerialConfig } from '@/service/serial'
 import {
+  ArrowLeft,
   BellIcon,
   FolderUp,
-  MoreHorizontal,
+  Home,
   PanelLeft,
   Plus,
-  Usb,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
-import CommandHistoryDialog from '@/components/command-history'
 import CommandPalette from '@/components/command-palette'
 import { HostDialog } from '@/components/host-list/host-dialog'
-import SerialDialog from '@/components/serial-dialog'
 import { Button } from '@/components/ui/button'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+  Sheet,
+  SheetContent,
+} from '@/components/ui/sheet'
 import MenuTabs from '@/layout/tabs'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
+import { useIsMobile } from '@/hooks/use-breakpoint'
 
 const TopToolbar: React.FC<{
   onToggleSidebar: () => void
@@ -32,13 +28,12 @@ const TopToolbar: React.FC<{
   const navigate = useNavigate()
   const location = useLocation()
   const addTab = useAppStore(s => s.addTab)
+  const isMobile = useIsMobile()
 
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
-  const [serialDialogOpen, setSerialDialogOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
-  const [commandHistoryOpen, setCommandHistoryOpen] = useState(false)
   const [hostDialogOpen, setHostDialogOpen] = useState(false)
   const [padForMacTrafficLights, setPadForMacTrafficLights] = useState(false)
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
 
   const isSftpActive = location.pathname === '/sftp'
 
@@ -73,20 +68,126 @@ const TopToolbar: React.FC<{
     navigate(`/terminal?tab=${newTab.id}`)
   }
 
-  const handleConnectSerial = (config: SerialConfig, sessionId: string) => {
-    const portName = config.name.split('/').pop() || config.name
-    const newTab = addTab({
-      label: `Serial (${portName})`,
-      type: 'serial',
-      serialSessionId: sessionId,
-      serialConfig: {
-        port: config.name,
-        baudRate: config.baudRate,
-      },
-    })
-    navigate(`/terminal?tab=${newTab.id}`)
+  const handleNavClick = (path: string) => {
+    setMobileDrawerOpen(false)
+    navigate(path)
   }
 
+  const navItems = [
+    { label: 'Hosts', icon: <Home className="size-5" />, path: '/hosts' },
+    { label: 'SFTP', icon: <FolderUp className="size-5" />, path: '/sftp' },
+  ]
+
+  // ─── Mobile layout ───────────────────────────────────────────────
+  if (isMobile) {
+    return (
+      <>
+        <header
+          className="h-12 flex items-center justify-between border-b border-border/60 bg-background shrink-0 gap-2 px-3"
+          data-tauri-drag-region
+        >
+          {/* Left: Hamburger */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => setMobileDrawerOpen(true)}
+            title="Menu"
+            data-tauri-drag-region="false"
+          >
+            <PanelLeft className="size-5" />
+          </Button>
+
+          {/* Center: Current page title */}
+          <div className="flex-1 text-center">
+            <span className="text-sm font-medium text-foreground truncate">
+              {location.pathname === '/sftp'
+                ? 'SFTP'
+                : location.pathname === '/keychain'
+                  ? 'Keychain'
+                  : location.pathname === '/port-forward'
+                    ? 'Port Forward'
+                    : location.pathname === '/snippets'
+                      ? 'Snippets'
+                      : location.pathname === '/known-hosts'
+                        ? 'Known Hosts'
+                        : location.pathname === '/logs'
+                          ? 'Logs'
+                          : location.pathname === '/settings'
+                            ? 'Settings'
+                            : 'Terminal'}
+            </span>
+          </div>
+
+          {/* Right: Back button (when on a sub-page) */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => navigate(-1)}
+            title="Back"
+            data-tauri-drag-region="false"
+          >
+            <ArrowLeft className="size-5" />
+          </Button>
+        </header>
+
+        {/* Mobile left drawer */}
+        <Sheet open={mobileDrawerOpen} onOpenChange={setMobileDrawerOpen}>
+          <SheetContent
+            side="left"
+            className="w-[280px]"
+          >
+            <div className="flex flex-col gap-1 pt-2">
+              <p className="px-2 pb-3 text-sm font-semibold text-muted-foreground">
+                {t('app.name')}
+              </p>
+
+              {navItems.map(item => (
+                <button
+                  key={item.path}
+                  className={cn(
+                    'flex items-center gap-3 w-full px-3 py-3 rounded-lg',
+                    'transition-colors duration-150 active:scale-[0.98]',
+                    location.pathname === item.path
+                      ? 'bg-secondary/80 text-foreground font-medium'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                  )}
+                  onClick={() => handleNavClick(item.path)}
+                >
+                  {item.icon}
+                  <span className="text-sm">{item.label}</span>
+                </button>
+              ))}
+
+              <div className="my-3 border-t border-border/60" />
+
+              {/* Settings shortcut */}
+              <button
+                className="flex items-center gap-3 w-full px-3 py-3 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors duration-150 active:scale-[0.98]"
+                onClick={() => handleNavClick('/settings')}
+              >
+                <BellIcon className="size-5" />
+                <span className="text-sm">Settings</span>
+              </button>
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        <HostDialog
+          open={hostDialogOpen}
+          onClose={() => setHostDialogOpen(false)}
+        />
+
+        <CommandPalette
+          open={commandPaletteOpen}
+          onClose={() => setCommandPaletteOpen(false)}
+        />
+      </>
+    )
+  }
+
+  // ─── Desktop layout ──────────────────────────────────────────────
   return (
     <>
       <header
@@ -98,7 +199,7 @@ const TopToolbar: React.FC<{
       >
         <div
           className="flex items-center gap-1 min-w-0 flex-1"
-          data-tauri-drag-region
+          data-tauri-drag-region="false"
         >
           <Button
             variant="ghost"
@@ -143,48 +244,8 @@ const TopToolbar: React.FC<{
 
         <div
           className="flex items-center gap-0.5 shrink-0"
-          data-tauri-drag-region
+          data-tauri-drag-region="false"
         >
-          <DropdownMenu open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8 text-muted-foreground hover:text-foreground"
-                title={t('toolbar.more')}
-              >
-                <MoreHorizontal className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem
-                onSelect={() => {
-                  setMoreMenuOpen(false)
-                  setSerialDialogOpen(true)
-                }}
-              >
-                <Usb className="size-4" data-icon="inline-start" />
-                {t('toolbar.serial')}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => {
-                  setMoreMenuOpen(false)
-                  setCommandPaletteOpen(true)
-                }}
-              >
-                {t('toolbar.commandPalette')}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => {
-                  setMoreMenuOpen(false)
-                  setCommandHistoryOpen(true)
-                }}
-              >
-                {t('toolbar.commandHistory')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
           <Button
             variant="ghost"
             size="icon"
@@ -201,23 +262,9 @@ const TopToolbar: React.FC<{
         onClose={() => setHostDialogOpen(false)}
       />
 
-      <SerialDialog
-        open={serialDialogOpen}
-        onClose={() => setSerialDialogOpen(false)}
-        onConnect={handleConnectSerial}
-      />
-
       <CommandPalette
         open={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
-      />
-
-      <CommandHistoryDialog
-        open={commandHistoryOpen}
-        onClose={() => setCommandHistoryOpen(false)}
-        onSelect={_command => {
-          // command execution handled by parent
-        }}
       />
     </>
   )

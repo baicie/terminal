@@ -3,11 +3,17 @@ import * as React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Outlet, useNavigate, useSearchParams } from 'react-router-dom'
 import AppSidebar from '@/components/app-sidebar'
+import BottomNav from '@/components/bottom-nav'
 import SettingsDialog from '@/components/settings-dialog'
 import SplitPane from '@/components/split-pane'
 import TopToolbar from '@/components/top-toolbar'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
+import {
+  SwipeBackIndicator,
+  useSwipeBackProgress,
+} from '@/components/swipe-back-indicator'
+import { useIsMobile } from '@/hooks/use-breakpoint'
 import TerminalContainer from '@/view/terminal/terminal-container'
 
 const SIDEBAR_WIDTH_KEY = 'terminal.sidebar.width'
@@ -121,11 +127,59 @@ const MainLayoutInner: React.FC<{
     }
   }, [resizing, onSidebarWidthChange])
 
+  const startXRef = useRef<number | null>(null)
+  const startYRef = useRef<number | null>(null)
+  const swipeProgressRef = useRef(0)
+  const [swipeProgress, setSwipeProgress] = useState(0)
+  const navigate = useNavigate()
+
+  const onSwipeStart = useCallback((e: TouchEvent) => {
+    const touch = e.touches[0]
+    if (touch.clientX <= 24) {
+      startXRef.current = touch.clientX
+      startYRef.current = touch.clientY
+    }
+  }, [])
+
+  const onSwipeMove = useCallback((e: TouchEvent) => {
+    if (startXRef.current === null) return
+    const touch = e.touches[0]
+    const dx = touch.clientX - startXRef.current
+    const dy = Math.abs(touch.clientY - (startYRef.current ?? 0))
+    if (dy > 50) { startXRef.current = null; setSwipeProgress(0); return }
+    if (dx > 0) { e.preventDefault(); setSwipeProgress(Math.min(dx / 80, 1)) }
+    else { setSwipeProgress(0) }
+  }, [])
+
+  const onSwipeEnd = useCallback(() => {
+    if (startXRef.current !== null && swipeProgressRef.current >= 1) {
+      window.history.back()
+    }
+    startXRef.current = null
+    startYRef.current = null
+    swipeProgressRef.current = 0
+    setSwipeProgress(0)
+  }, [])
+
+  useEffect(() => { swipeProgressRef.current = swipeProgress }, [swipeProgress])
+
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div
+      className="h-screen flex flex-col bg-background"
+      onTouchStart={onSwipeStart}
+      onTouchMove={onSwipeMove}
+      onTouchEnd={onSwipeEnd}
+    >
       <TopToolbar onToggleSidebar={onToggleSidebar} />
 
-      <div className="flex-1 flex overflow-hidden min-h-0">
+      <div className="flex-1 flex overflow-hidden min-h-0 relative">
+        {/* Swipe-back indicator */}
+        {swipeProgress > 0 && (
+          <SwipeBackIndicator
+            progress={swipeProgress}
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-50 text-muted-foreground"
+          />
+        )}
         {sidebarOpen && (
           <>
             <AppSidebar
@@ -155,11 +209,20 @@ const MainLayoutInner: React.FC<{
           </>
         )}
 
-        <main className="flex-1 min-w-0 overflow-hidden bg-background">
+        <main
+          className={cn(
+            'flex-1 min-w-0 overflow-hidden bg-background',
+            // On mobile, add safe bottom padding for the bottom nav
+            isMobile && 'mobile-safe-bottom',
+          )}
+        >
           <TerminalByUrl />
           <Outlet />
         </main>
       </div>
+
+      {/* Mobile bottom navigation — hidden on desktop */}
+      {isMobile && <BottomNav />}
     </div>
   )
 }
@@ -171,6 +234,12 @@ const MainLayout: React.FC = () => {
   const [, setTitleBarStyle] = useState<TitleBarStyle>('linux')
   const addTab = useAppStore(s => s.addTab)
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
+
+  // On mobile, always hide sidebar (controlled by BottomNav hamburger instead)
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false)
+  }, [isMobile])
 
   // Detect platform for title bar style
   useEffect(() => {

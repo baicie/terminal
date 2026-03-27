@@ -279,7 +279,7 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: oklch(0.62 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -368,4 +368,110 @@
 *[data-tauri-drag-region]:not([data-tauri-drag-region='false']) {
   -webkit-app-region: drag;
   app-region: drag;
+}
+
+/* Interactive controls inside a drag region must opt out or clicks/ dismiss layers break (e.g. Radix dropdown). */
+*[data-tauri-drag-region='false'] {
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
+}
+
+/* Modal layer is portaled to body; must not use window drag region or overlay clicks / Esc dismiss fail (Tauri). */
+[data-slot='dialog-overlay'],
+[data-slot='dialog-content'],
+[data-slot='dialog-close'] {
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
+}
+
+/* ============================================================
+   Responsive Mobile Styles
+   ============================================================ */
+
+/* Mobile CSS custom properties */
+@media (max-width: 639px) {
+  :root {
+    --bottom-nav-height: 56px;
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* Fix iOS Safari 100vh issue — use 100dvh when supported */
+  body {
+    height: 100dvh;
+    /* Ensure content doesn't get hidden behind keyboard */
+  }
+}
+
+/* Fallback for browsers without dvh support */
+@supports not (height: 100dvh) {
+  @media (max-width: 639px) {
+    body {
+      height: 100vh;
+    }
+  }
+}
+
+/* ============================================================
+   Bottom Navigation Bar (mobile only)
+   ============================================================ */
+@media (max-width: 639px) {
+  .bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    height: var(--bottom-nav-height, 56px);
+    padding-bottom: var(--safe-area-bottom, 0px);
+    background: color-mix(in oklch, var(--background) 90%, transparent);
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+    border-top: 1px solid color-mix(in oklch, var(--border) 50%, transparent);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+  }
+
+  /* Active tab indicator — dot below icon */
+  .bottom-nav-item.active::after {
+    content: '';
+    position: absolute;
+    bottom: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--primary);
+  }
+}
+
+/* ============================================================
+   Mobile-safe content area — avoid bottom nav overlap
+   ============================================================ */
+@media (max-width: 639px) {
+  .mobile-safe-bottom {
+    padding-bottom: calc(var(--bottom-nav-height, 56px) + var(--safe-area-bottom, 0px) + 8px);
+  }
+
+  /* FAB position above bottom nav */
+  .mobile-fab {
+    bottom: calc(var(--bottom-nav-height, 56px) + var(--safe-area-bottom, 0px) + 16px);
+  }
+}
+
+/* ============================================================
+   Scrollbar styling for mobile (thinner / touch-friendly)
+   ============================================================ */
+@media (max-width: 639px) {
+  ::-webkit-scrollbar {
+    width: 3px;
+    height: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--muted-foreground);
+    border-radius: 3px;
+  }
 }

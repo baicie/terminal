@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -41,6 +42,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ResponsiveConfirm } from '@/components/ui/responsive-dialog'
 import { toast } from '@/components/ui/sonner'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -49,6 +51,7 @@ import {
   ViewContent,
   ViewToolbar,
 } from '@/components/view-container'
+import { KeyListSkeleton } from '@/components/ui/view-skeletons'
 import { format } from '@/lib/date-utils'
 import {
   createSSHKey,
@@ -374,7 +377,9 @@ const KeychainView: React.FC = () => {
         </ViewToolbar>
 
         <ViewContent className="flex-1 p-0">
-          {filteredKeys.length === 0 && !loading ? (
+          {loading ? (
+            <KeyListSkeleton count={5} />
+          ) : filteredKeys.length === 0 && !loading ? (
             <EmptyState
               icon={<Key className="size-10" />}
               title="No keys yet"
@@ -600,199 +605,33 @@ const KeychainView: React.FC = () => {
       </div>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete SSH Key</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete the key "{keyToDelete?.name}
-              "? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setKeyToDelete(null)}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ResponsiveConfirm
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="Delete SSH Key"
+        description={
+          keyToDelete
+            ? `Are you sure you want to delete the key "${keyToDelete.name}"? This action cannot be undone.`
+            : undefined
+        }
+        confirmText="Delete"
+        destructive
+        onConfirm={handleDelete}
+        onCancel={() => setKeyToDelete(null)}
+      />
 
       {/* Generate SSH Key Dialog */}
-      <Dialog
+      <ResponsiveDialog
         open={generateDialogOpen}
         onOpenChange={handleCloseGenerateDialog}
-      >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Wand2 className="size-5" />
-              Generate SSH Key
-            </DialogTitle>
-          </DialogHeader>
-
-          {!generatedResult ? (
-            <div className="space-y-4 overflow-y-auto flex-1">
-              <div>
-                <Label htmlFor="gen-type">Key Type</Label>
-                <Select value={genKeyType} onValueChange={setGenKeyType}>
-                  <SelectTrigger id="gen-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ed25519">
-                      Ed25519 (Recommended)
-                    </SelectItem>
-                    <SelectItem value="rsa4096">RSA 4096-bit</SelectItem>
-                    <SelectItem value="rsa">RSA 2048-bit</SelectItem>
-                    <SelectItem value="ecdsa-nistp256">ECDSA P-256</SelectItem>
-                    <SelectItem value="ecdsa-nistp384">ECDSA P-384</SelectItem>
-                    <SelectItem value="ecdsa-nistp521">ECDSA P-521</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label htmlFor="gen-comment">Comment / Label</Label>
-                <Input
-                  id="gen-comment"
-                  placeholder="user@hostname"
-                  value={genComment}
-                  onChange={e => setGenComment(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="gen-passphrase">Passphrase (optional)</Label>
-                <div className="relative">
-                  <Input
-                    id="gen-passphrase"
-                    type={showGenPassphrase ? 'text' : 'password'}
-                    placeholder="Enter passphrase"
-                    value={genPassphrase}
-                    onChange={e => setGenPassphrase(e.target.value)}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 size-7"
-                    onClick={() => setShowGenPassphrase(!showGenPassphrase)}
-                  >
-                    {showGenPassphrase ? (
-                      <EyeOff className="size-4" />
-                    ) : (
-                      <Eye className="size-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="gen-confirm-passphrase">
-                  Confirm Passphrase
-                </Label>
-                <Input
-                  id="gen-confirm-passphrase"
-                  type={showGenPassphrase ? 'text' : 'password'}
-                  placeholder="Confirm passphrase"
-                  value={genConfirmPassphrase}
-                  onChange={e => setGenConfirmPassphrase(e.target.value)}
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4 overflow-y-auto flex-1">
-              <div className="rounded-md bg-green-500/10 border border-green-500/30 p-3 text-sm text-green-600 dark:text-green-400">
-                Key generated successfully! Type: {generatedResult.key_type}
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <Label>Fingerprint</Label>
-                  <span className="text-xs text-muted-foreground font-mono truncate ml-2">
-                    {generatedResult.fingerprint}
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <Label>Public Key</Label>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 text-xs"
-                    onClick={() =>
-                      handleCopyToClipboard(
-                        generatedResult.public_key,
-                        'Public key',
-                      )
-                    }
-                  >
-                    Copy
-                  </Button>
-                </div>
-                <Textarea
-                  readOnly
-                  value={generatedResult.public_key}
-                  className="h-20 font-mono text-xs"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <Label>Private Key</Label>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-xs"
-                      onClick={() => setShowPrivateKey(!showPrivateKey)}
-                    >
-                      {showPrivateKey ? (
-                        <EyeOff className="size-3" />
-                      ) : (
-                        <Eye className="size-3" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-xs"
-                      onClick={() =>
-                        handleCopyToClipboard(
-                          generatedResult.private_key,
-                          'Private key',
-                        )
-                      }
-                    >
-                      Copy
-                    </Button>
-                  </div>
-                </div>
-                <Textarea
-                  readOnly
-                  value={
-                    showPrivateKey
-                      ? generatedResult.private_key
-                      : '••••••••••••••••••••••••••••••••'
-                  }
-                  className="h-32 font-mono text-xs"
-                />
-                <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">
-                  Store your private key securely. Anyone with this key can
-                  access your servers.
-                </p>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter className="shrink-0">
+        header={
+          <div className="flex items-center gap-2">
+            <Wand2 className="size-5" />
+            <span className="font-semibold">Generate SSH Key</span>
+          </div>
+        }
+        footer={
+          <div className="flex gap-2">
             {!generatedResult ? (
               <>
                 <Button variant="outline" onClick={handleCloseGenerateDialog}>
@@ -825,9 +664,136 @@ const KeychainView: React.FC = () => {
                 <Button onClick={handleUseGeneratedKey}>Use This Key</Button>
               </>
             )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        }
+        contentClassName="space-y-4"
+        mobileHeight="85dvh"
+      >
+        {!generatedResult ? (
+          <>
+            <div>
+              <Label htmlFor="gen-type">Key Type</Label>
+              <Select value={genKeyType} onValueChange={setGenKeyType}>
+                <SelectTrigger id="gen-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ed25519">Ed25519 (Recommended)</SelectItem>
+                  <SelectItem value="rsa4096">RSA 4096-bit</SelectItem>
+                  <SelectItem value="rsa">RSA 2048-bit</SelectItem>
+                  <SelectItem value="ecdsa-nistp256">ECDSA P-256</SelectItem>
+                  <SelectItem value="ecdsa-nistp384">ECDSA P-384</SelectItem>
+                  <SelectItem value="ecdsa-nistp521">ECDSA P-521</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="gen-comment">Comment / Label</Label>
+              <Input
+                id="gen-comment"
+                placeholder="user@hostname"
+                value={genComment}
+                onChange={e => setGenComment(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="gen-passphrase">Passphrase (optional)</Label>
+              <div className="relative">
+                <Input
+                  id="gen-passphrase"
+                  type={showGenPassphrase ? 'text' : 'password'}
+                  placeholder="Enter passphrase"
+                  value={genPassphrase}
+                  onChange={e => setGenPassphrase(e.target.value)}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 size-7"
+                  onClick={() => setShowGenPassphrase(!showGenPassphrase)}
+                >
+                  {showGenPassphrase ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </Button>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="gen-confirm-passphrase">Confirm Passphrase</Label>
+              <Input
+                id="gen-confirm-passphrase"
+                type={showGenPassphrase ? 'text' : 'password'}
+                placeholder="Confirm passphrase"
+                value={genConfirmPassphrase}
+                onChange={e => setGenConfirmPassphrase(e.target.value)}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="rounded-md bg-green-500/10 border border-green-500/30 p-3 text-sm text-green-600 dark:text-green-400">
+              Key generated successfully! Type: {generatedResult.key_type}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label>Fingerprint</Label>
+                <span className="text-xs text-muted-foreground font-mono truncate ml-2">
+                  {generatedResult.fingerprint}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label>Public Key</Label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={() => handleCopyToClipboard(generatedResult.public_key, 'Public key')}
+                >
+                  Copy
+                </Button>
+              </div>
+              <Textarea readOnly value={generatedResult.public_key} className="h-20 font-mono text-xs" />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label>Private Key</Label>
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={() => setShowPrivateKey(!showPrivateKey)}
+                  >
+                    {showPrivateKey ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={() => handleCopyToClipboard(generatedResult.private_key, 'Private key')}
+                  >
+                    Copy
+                  </Button>
+                </div>
+              </div>
+              <Textarea
+                readOnly
+                value={showPrivateKey ? generatedResult.private_key : '••••••••••••••••••••••••••••••••'}
+                className="h-32 font-mono text-xs"
+              />
+              <p className="text-xs text-amber-600 dark:text-amber-500 mt-1">
+                Store your private key securely. Anyone with this key can access your servers.
+              </p>
+            </div>
+          </>
+        )}
+      </ResponsiveDialog>
     </ViewContainer>
   )
 }

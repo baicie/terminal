@@ -49,6 +49,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ResponsiveConfirm, ResponsiveDialog } from '@/components/ui/responsive-dialog'
+import { PortForwardSkeleton } from '@/components/ui/view-skeletons'
 import { toast } from '@/components/ui/sonner'
 import {
   EmptyState,
@@ -305,7 +307,9 @@ const PortForwardView: React.FC = () => {
           description="Manage SSH tunnels and port forwarding rules"
         />
 
-        {filteredForwards.length === 0 ? (
+        {loading ? (
+          <PortForwardSkeleton count={3} />
+        ) : filteredForwards.length === 0 ? (
           <EmptyState
             icon={<ArrowLeftRight className="size-12" />}
             title="No port forwards configured"
@@ -443,16 +447,38 @@ const PortForwardView: React.FC = () => {
       </ViewContent>
 
       {/* Add Forward Dialog */}
-      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
+      <ResponsiveDialog
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        header={
+          <>
             <DialogTitle>New Port Forward</DialogTitle>
             <DialogDescription>
               Set up a port forwarding rule to access remote services locally
             </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
+          </>
+        }
+        footer={
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddDialogOpen(false)
+                resetForm()
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void handleStartForward()}>
+              <Play className="size-4 mr-1" />
+              Start Forward
+            </Button>
+          </div>
+        }
+        className="max-w-md"
+        mobileHeight="85dvh"
+      >
+        <div className="space-y-4 p-4">
             {/* Forward type */}
             <div className="space-y-2">
               <Label>Forward Type</Label>
@@ -595,48 +621,23 @@ const PortForwardView: React.FC = () => {
               </div>
             )}
           </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setAddDialogOpen(false)
-                resetForm()
-              }}
-            >
-              Cancel
-            </Button>
-            <Button onClick={() => void handleStartForward()}>
-              <Play className="size-4 mr-1" />
-              Start Forward
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </ResponsiveDialog>
 
       {/* Stop Forward Dialog */}
-      <AlertDialog open={stopDialogOpen} onOpenChange={setStopDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Stop Port Forward</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to stop "{forwardToStop?.name}
-              "? Any active connections will be closed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setForwardToStop(null)}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => void handleStopForward()}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Stop
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ResponsiveConfirm
+        open={stopDialogOpen}
+        onOpenChange={setStopDialogOpen}
+        title="Stop Port Forward"
+        description={
+          forwardToStop
+            ? `Are you sure you want to stop "${forwardToStop.name}"? Any active connections will be closed.`
+            : undefined
+        }
+        confirmText="Stop"
+        destructive
+        onConfirm={() => void handleStopForward()}
+        onCancel={() => setForwardToStop(null)}
+      />
     </ViewContainer>
   )
 }

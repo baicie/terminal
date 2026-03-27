@@ -29,6 +29,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { ResponsiveConfirm } from '@/components/ui/responsive-dialog'
+import { KeyListSkeleton } from '@/components/ui/view-skeletons'
 import {
   EmptyState,
   ViewContainer,
@@ -226,7 +228,9 @@ const KnownHostsView: React.FC = () => {
           description="Manage SSH known host fingerprints"
         />
 
-        {hosts.length === 0 && !loading ? (
+        {loading ? (
+          <KeyListSkeleton count={6} />
+        ) : hosts.length === 0 && !loading ? (
           <EmptyState
             icon={<Fingerprint className="size-12" />}
             title="No known hosts"
@@ -339,56 +343,34 @@ const KnownHostsView: React.FC = () => {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Known Host</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete the known host "
-              {hostToDelete?.hostname}
-              "? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setHostToDelete(null)}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ResponsiveConfirm
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="Delete Known Host"
+        description={
+          hostToDelete
+            ? `Are you sure you want to delete "${hostToDelete.hostname}"? This action cannot be undone.`
+            : undefined
+        }
+        confirmText="Delete"
+        destructive
+        onConfirm={handleDelete}
+        onCancel={() => setHostToDelete(null)}
+      />
 
       {/* Clear All Confirmation Dialog */}
-      <AlertDialog
+      <ResponsiveConfirm
         open={clearAllDialogOpen}
         onOpenChange={setClearAllDialogOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Clear All Known Hosts</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete all {hosts.length} known hosts?
-              This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setClearAllDialogOpen(false)}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleClearAll}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Clear All
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="Clear All Known Hosts"
+        description={
+          `Are you sure you want to delete all ${hosts.length} known hosts? This action cannot be undone.`
+        }
+        confirmText="Clear All"
+        destructive
+        onConfirm={handleClearAll}
+        onCancel={() => setClearAllDialogOpen(false)}
+      />
 
       {/* Import Dialog */}
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
