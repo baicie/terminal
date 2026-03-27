@@ -785,6 +785,234 @@ const navItems: NavItem[] = [
 
 ---
 
+## 代码质量规范
+
+### 文件大小限制
+
+> **强制要求**: 为了保持代码可维护性，**严格限制单个文件的最大行数**。
+
+#### 行数限制规则
+
+| 文件类型 | 最大行数 | 说明 |
+| --- | --- | --- |
+| 视图文件 (`view/**/index.tsx`) | **300 行** | 包含大量 JSX 的页面组件 |
+| 组件文件 (`components/**/index.tsx`) | **400 行** | 可复用组件 |
+| 普通组件 (`.tsx`) | **200 行** | 其他 React 组件 |
+| 工具/服务文件 (`.ts`) | **300 行** | 纯逻辑文件 |
+
+#### 拆分触发条件
+
+当文件接近或超过限制时，**必须**进行拆分：
+
+- 单个组件超过 **150 行** → 考虑拆分内部子组件
+- 单个文件超过 **300 行** → 必须拆分
+- 文件内存在 **独立对话框/弹窗** → 拆分为独立文件
+- 文件内存在 **可复用列表项组件** → 拆分为独立文件
+- 同一文件中存在 **多个功能区域** → 按功能拆分
+
+#### 拆分目录结构规范
+
+```
+src/view/example/
+├── index.tsx           # 主视图 (导入子组件，组合布局)
+├── components/         # 该视图专用的子组件
+│   ├── toolbar.tsx    # 工具栏组件
+│   ├── list.tsx       # 列表组件
+│   ├── dialog.tsx     # 对话框组件
+│   └── card.tsx       # 卡片组件
+└── hooks/              # 该视图专用的 hooks (可选)
+    └── use-example.ts
+```
+
+#### 拆分示例
+
+**拆分前 (单文件，500+ 行)**:
+
+```tsx
+// src/view/settings/index.tsx
+const SettingsView = () => { /* 500+ 行代码 */ }
+const SyncSettings = () => { /* 同步设置 */ }
+const StorageSettings = () => { /* 存储设置 */ }
+const ExportDialog = () => { /* 导出对话框 */ }
+```
+
+**拆分后 (多文件，每个 <300 行)**:
+
+```tsx
+// src/view/settings/index.tsx
+import SyncSettings from './components/sync-settings'
+import StorageSettings from './components/storage-settings'
+import ExportDialog from './components/export-dialog'
+
+const SettingsView = () => {
+  return (
+    <>
+      <SyncSettings />
+      <StorageSettings />
+      <ExportDialog />
+    </>
+  )
+}
+```
+
+#### 已有文件待拆分清单
+
+> 以下文件**需要立即拆分**，已超出限制：
+
+| 文件 | 当前行数 | 目标行数 |
+| --- | --- | --- |
+| `view/teams/index.tsx` | 1583 | 6 个子文件 |
+| `view/settings/index.tsx` | 1203 | 4 个子文件 |
+| `components/settings-dialog/index.tsx` | 1221 | 4 个子文件 |
+| `components/snippet-manager/index.tsx` | 778 | 2 个子文件 |
+| `view/hosts/index.tsx` | 876 | 3 个子文件 |
+| `view/snippets/index.tsx` | 828 | 4 个子文件 |
+| `view/keychain/index.tsx` | 801 | 3 个子文件 |
+| `components/host-list/host-dialog.tsx` | 609 | 2 个子文件 |
+
+---
+
+### 移动端适配规范
+
+> **强制要求**: 所有新增或修改的视图和组件**必须**同时支持桌面端和移动端。
+
+#### 响应式断点
+
+```typescript
+// 断点定义
+sm:  640px  // 小平板、手机横屏
+md:  768px  // 平板
+lg:  1024px // 桌面
+xl:  1280px // 大桌面
+```
+
+#### 必须适配的元素
+
+##### 1. 布局适配
+
+| 元素 | 桌面端 | 移动端 | 适配方式 |
+| --- | --- | --- | --- |
+| 侧边栏 | 固定显示，可拖拽调整宽度 | 隐藏，通过汉堡菜单触发 | 使用 `AppSidebar` 组件 |
+| 表格 | 多列完整显示 | 单列或卡片列表 | 使用响应式表格或 Cards 替代 |
+| 表单 | 多列布局 | 单列堆叠 | 使用 `grid grid-cols-2` → `grid-cols-1` |
+
+##### 2. 组件尺寸适配
+
+```tsx
+// 桌面端
+<Button className="px-4 py-2">Action</Button>
+
+// 移动端
+<Button className="px-3 py-1.5 text-sm">Action</Button>
+
+// 响应式写法
+<Button className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base">
+  Action
+</Button>
+```
+
+##### 3. 移动端专用组件
+
+项目已提供以下移动端适配组件：
+
+| 组件 | 用途 | 使用场景 |
+| --- | --- | --- |
+| `Sheet` | 底部弹出面板 | 工具栏操作、筛选面板 |
+| `ResponsiveDialog` | 响应式对话框 | 表单编辑、确认操作 |
+| `FAB` | 悬浮操作按钮 | 移动端快速添加 |
+| `MobileToolbarSheet` | 底部工具栏 | 替代顶部工具栏 |
+
+##### 4. 移动端适配检查清单
+
+> **开发任何新功能时，必须检查以下所有项**：
+
+- [ ] **侧边栏**: 是否使用 `Sheet` 实现移动端抽屉菜单？
+- [ ] **长列表**: 桌面端表格在移动端是否改为卡片列表？
+- [ ] **表单布局**: 是否使用 `grid-cols-1 md:grid-cols-2` 等响应式布局？
+- [ ] **按钮尺寸**: 是否同时适配移动端小尺寸 (`h-8`, `text-sm`) 和桌面端 (`h-10`, `text-base`)？
+- [ ] **对话框**: 是否使用 `ResponsiveDialog` 替代 `Dialog`？
+- [ ] **操作入口**: 移动端是否有快速操作入口（如 FAB）？
+- [ ] **触摸区域**: 可点击元素是否至少有 `44×44px` 的触摸区域？
+- [ ] **间距调整**: 移动端内边距是否使用 `p-3` 或 `p-4`，而非 `p-6`？
+- [ ] **文字截断**: 长文本是否使用 `truncate` 和 `line-clamp-*`？
+
+##### 5. 响应式布局示例
+
+```tsx
+// ✅ 正确：完整的响应式布局
+const HostCard: React.FC<{ host: Host }> = ({ host }) => {
+  return (
+    <div className="p-3 sm:p-4 rounded-lg border bg-card">
+      {/* 移动端单列，桌面端双列 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <h3 className="font-medium truncate">{host.name}</h3>
+          <p className="text-sm text-muted-foreground truncate">
+            {host.username}@{host.hostname}
+          </p>
+        </div>
+        {/* 桌面端显示详情，移动端隐藏 */}
+        <div className="hidden sm:block">
+          <p className="text-sm">{host.port}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ❌ 错误：没有移动端适配
+const HostCard: React.FC<{ host: Host }> = ({ host }) => {
+  return (
+    <div className="p-6 rounded-lg border">
+      <h3>{host.name}</h3>
+      <p>{host.username}@{host.hostname}:{host.port}</p>
+    </div>
+  )
+}
+```
+
+##### 6. 移动端对话框示例
+
+```tsx
+// ✅ 使用 ResponsiveDialog
+import { ResponsiveDialog } from '@/components/ui/responsive-dialog'
+
+const MyEditDialog: React.FC<Props> = ({ open, onClose }) => {
+  return (
+    <ResponsiveDialog
+      open={open}
+      onOpenChange={onClose}
+      header={<DialogTitle>Edit Item</DialogTitle>}
+      footer={
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      }
+      mobileHeight="85dvh"  // 移动端全屏
+      desktopWidth="sm:max-w-md"  // 桌面端居中
+    >
+      <div className="space-y-4">
+        {/* 表单内容 */}
+      </div>
+    </ResponsiveDialog>
+  )
+}
+
+// ❌ 避免使用原生 Dialog 处理复杂表单
+const BadDialog: React.FC<Props> = ({ open, onClose }) => {
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="p-6">
+        {/* 移动端会溢出或样式错乱 */}
+      </DialogContent>
+    </Dialog>
+  )
+}
+```
+
+---
+
 ## shadcn/ui Skill
 
 项目已配置 shadcn/ui skill，位于 `.agents/skills/shadcn/`。详细规范请参考该 skill 文件。常用命令：
@@ -802,4 +1030,6 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-03-26_
+_文档更新时间: 2026-03-27_
+
+_本文档新增：代码质量规范（文件大小限制 + 移动端适配规范）_
