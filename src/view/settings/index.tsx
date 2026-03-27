@@ -33,12 +33,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   ViewContainer,
   ViewContent,
@@ -51,7 +46,7 @@ import {
   saveAppSettings,
   select,
 } from '@/service/database'
-import { exportDataToFile, previewImportData } from '@/service/sync'
+import { exportDataToFile } from '@/service/sync'
 import {
   storageHealthCheck,
   storageInit,
@@ -90,7 +85,9 @@ const SettingsView: React.FC = () => {
 
   // Storage state
   const [testingConnection, setTestingConnection] = useState(false)
-  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [connectionStatus, setConnectionStatus] = useState<
+    'idle' | 'success' | 'error'
+  >('idle')
   const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
@@ -173,10 +170,14 @@ const SettingsView: React.FC = () => {
     setConnectionStatus('idle')
 
     try {
-      await storageInit(settings.syncServiceType as 'webdav' | 's3' | 'custom', settings.syncServiceEndpoint, {
-        username: settings.syncServiceUsername || undefined,
-        password: settings.syncServiceToken || undefined,
-      })
+      await storageInit(
+        settings.syncServiceType as 'webdav' | 's3' | 'custom',
+        settings.syncServiceEndpoint,
+        {
+          username: settings.syncServiceUsername || undefined,
+          password: settings.syncServiceToken || undefined,
+        },
+      )
 
       const healthy = await storageHealthCheck()
       if (healthy) {
@@ -412,9 +413,13 @@ const SettingsView: React.FC = () => {
       <ViewContent className="px-6 pb-6">
         <Tabs defaultValue="appearance" className="w-full max-w-3xl">
           <TabsList className="grid w-full grid-cols-6 mb-6">
-            <TabsTrigger value="appearance">{t('settings.appearance')}</TabsTrigger>
+            <TabsTrigger value="appearance">
+              {t('settings.appearance')}
+            </TabsTrigger>
             <TabsTrigger value="terminal">{t('settings.terminal')}</TabsTrigger>
-            <TabsTrigger value="connection">{t('settings.connection')}</TabsTrigger>
+            <TabsTrigger value="connection">
+              {t('settings.connection')}
+            </TabsTrigger>
             <TabsTrigger value="storage">{t('settings.storage')}</TabsTrigger>
             <TabsTrigger value="team">{t('settings.team')}</TabsTrigger>
             <TabsTrigger value="data">{t('settings.data')}</TabsTrigger>
@@ -429,43 +434,52 @@ const SettingsView: React.FC = () => {
                   type="button"
                   className={`
                     flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all text-center
-                    ${settings.theme === 'light'
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:border-primary/50'
+                    ${
+                      settings.theme === 'light'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-primary/50'
                     }
                   `}
                   onClick={() => updateSetting('theme', 'light')}
                 >
                   <div className="w-full h-8 rounded bg-white border" />
-                  <span className="text-sm font-medium">{t('settings.light')}</span>
+                  <span className="text-sm font-medium">
+                    {t('settings.light')}
+                  </span>
                 </button>
                 <button
                   type="button"
                   className={`
                     flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all text-center
-                    ${settings.theme === 'dark'
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:border-primary/50'
+                    ${
+                      settings.theme === 'dark'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-primary/50'
                     }
                   `}
                   onClick={() => updateSetting('theme', 'dark')}
                 >
                   <div className="w-full h-8 rounded bg-zinc-900 border border-zinc-700" />
-                  <span className="text-sm font-medium">{t('settings.dark')}</span>
+                  <span className="text-sm font-medium">
+                    {t('settings.dark')}
+                  </span>
                 </button>
                 <button
                   type="button"
                   className={`
                     flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all text-center
-                    ${settings.theme === 'system'
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:border-primary/50'
+                    ${
+                      settings.theme === 'system'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-primary/50'
                     }
                   `}
                   onClick={() => updateSetting('theme', 'system')}
                 >
                   <div className="w-full h-8 rounded bg-gradient-to-r from-white to-zinc-900 border" />
-                  <span className="text-sm font-medium">{t('settings.system')}</span>
+                  <span className="text-sm font-medium">
+                    {t('settings.system')}
+                  </span>
                 </button>
               </div>
             </div>
@@ -474,7 +488,9 @@ const SettingsView: React.FC = () => {
               <h3 className="text-sm font-medium">{t('settings.language')}</h3>
               <Select
                 value={settings.language}
-                onValueChange={(value: string) => updateSetting('language', value)}
+                onValueChange={(value: string) =>
+                  updateSetting('language', value)
+                }
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -524,7 +540,9 @@ const SettingsView: React.FC = () => {
               <h3 className="text-sm font-medium">{t('settings.cursor')}</h3>
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="cursorStyle">{t('settings.cursorStyle')}</Label>
+                  <Label htmlFor="cursorStyle">
+                    {t('settings.cursorStyle')}
+                  </Label>
                   <Select
                     value={settings.cursorStyle}
                     onValueChange={value =>
@@ -538,16 +556,24 @@ const SettingsView: React.FC = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="block">{t('settings.blockCursor')}</SelectItem>
-                      <SelectItem value="underline">{t('settings.underlineCursor')}</SelectItem>
-                      <SelectItem value="bar">{t('settings.barCursor')}</SelectItem>
+                      <SelectItem value="block">
+                        {t('settings.blockCursor')}
+                      </SelectItem>
+                      <SelectItem value="underline">
+                        {t('settings.underlineCursor')}
+                      </SelectItem>
+                      <SelectItem value="bar">
+                        {t('settings.barCursor')}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label htmlFor="cursorBlink">{t('settings.cursorBlink')}</Label>
+                    <Label htmlFor="cursorBlink">
+                      {t('settings.cursorBlink')}
+                    </Label>
                     <p className="text-xs text-muted-foreground">
                       {t('settings.cursorBlinkDesc')}
                     </p>
@@ -555,16 +581,22 @@ const SettingsView: React.FC = () => {
                   <Switch
                     id="cursorBlink"
                     checked={settings.cursorBlink}
-                    onCheckedChange={checked => updateSetting('cursorBlink', checked)}
+                    onCheckedChange={checked =>
+                      updateSetting('cursorBlink', checked)
+                    }
                   />
                 </div>
               </div>
             </div>
 
             <div className="bg-card rounded-lg border p-4 space-y-4">
-              <h3 className="text-sm font-medium">{t('settings.scrollback')}</h3>
+              <h3 className="text-sm font-medium">
+                {t('settings.scrollback')}
+              </h3>
               <div className="space-y-2">
-                <Label htmlFor="scrollback">{t('settings.scrollbackLines')}</Label>
+                <Label htmlFor="scrollback">
+                  {t('settings.scrollbackLines')}
+                </Label>
                 <Input
                   id="scrollback"
                   type="number"
@@ -585,7 +617,9 @@ const SettingsView: React.FC = () => {
             </div>
 
             <div className="bg-card rounded-lg border p-4 space-y-4">
-              <h3 className="text-sm font-medium">{t('settings.terminalTheme')}</h3>
+              <h3 className="text-sm font-medium">
+                {t('settings.terminalTheme')}
+              </h3>
               <div className="grid grid-cols-4 gap-2">
                 {[
                   { id: 'one-dark', name: 'One Dark', bg: '#282c34' },
@@ -595,20 +629,28 @@ const SettingsView: React.FC = () => {
                   { id: 'catppuccin', name: 'Catppuccin', bg: '#1e1e28' },
                   { id: 'github-dark', name: 'GitHub Dark', bg: '#0d1117' },
                   { id: 'solarized-dark', name: 'Solarized', bg: '#002b36' },
-                  { id: 'solarized-light', name: 'Solarized Light', bg: '#fdf6e3' },
+                  {
+                    id: 'solarized-light',
+                    name: 'Solarized Light',
+                    bg: '#fdf6e3',
+                  },
                 ].map(theme => (
                   <button
                     key={theme.id}
                     type="button"
                     className={`
                       flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all text-center
-                      ${(settings.terminalTheme || 'one-dark') === theme.id
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/50'
+                      ${
+                        (settings.terminalTheme || 'one-dark') === theme.id
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:border-primary/50'
                       }
                     `}
                     onClick={() =>
-                      updateSetting('terminalTheme', theme.id as typeof settings.terminalTheme)
+                      updateSetting(
+                        'terminalTheme',
+                        theme.id as typeof settings.terminalTheme,
+                      )
                     }
                   >
                     <div
@@ -629,7 +671,9 @@ const SettingsView: React.FC = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label htmlFor="copyOnSelect">{t('settings.copyOnSelect')}</Label>
+                    <Label htmlFor="copyOnSelect">
+                      {t('settings.copyOnSelect')}
+                    </Label>
                     <p className="text-xs text-muted-foreground">
                       {t('settings.copyOnSelectDesc')}
                     </p>
@@ -637,13 +681,17 @@ const SettingsView: React.FC = () => {
                   <Switch
                     id="copyOnSelect"
                     checked={settings.copyOnSelect}
-                    onCheckedChange={checked => updateSetting('copyOnSelect', checked)}
+                    onCheckedChange={checked =>
+                      updateSetting('copyOnSelect', checked)
+                    }
                   />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label htmlFor="pasteOnMiddleClick">{t('settings.pasteOnMiddleClick')}</Label>
+                    <Label htmlFor="pasteOnMiddleClick">
+                      {t('settings.pasteOnMiddleClick')}
+                    </Label>
                     <p className="text-xs text-muted-foreground">
                       {t('settings.pasteOnMiddleClickDesc')}
                     </p>
@@ -651,7 +699,9 @@ const SettingsView: React.FC = () => {
                   <Switch
                     id="pasteOnMiddleClick"
                     checked={settings.pasteOnMiddleClick}
-                    onCheckedChange={checked => updateSetting('pasteOnMiddleClick', checked)}
+                    onCheckedChange={checked =>
+                      updateSetting('pasteOnMiddleClick', checked)
+                    }
                   />
                 </div>
               </div>
@@ -661,7 +711,9 @@ const SettingsView: React.FC = () => {
               <h3 className="text-sm font-medium">{t('settings.advanced')}</h3>
               <div className="flex items-center justify-between">
                 <div>
-                  <Label htmlFor="allowProposedApi">{t('settings.allowProposedApi')}</Label>
+                  <Label htmlFor="allowProposedApi">
+                    {t('settings.allowProposedApi')}
+                  </Label>
                   <p className="text-xs text-muted-foreground">
                     {t('settings.allowProposedApiDesc')}
                   </p>
@@ -669,7 +721,9 @@ const SettingsView: React.FC = () => {
                 <Switch
                   id="allowProposedApi"
                   checked={settings.allowProposedApi}
-                  onCheckedChange={checked => updateSetting('allowProposedApi', checked)}
+                  onCheckedChange={checked =>
+                    updateSetting('allowProposedApi', checked)
+                  }
                 />
               </div>
             </div>
@@ -690,9 +744,10 @@ const SettingsView: React.FC = () => {
                   type="button"
                   className={`
                     flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all text-center
-                    ${settings.dataStorageMode === 'local'
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:border-primary/50'
+                    ${
+                      settings.dataStorageMode === 'local'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-primary/50'
                     }
                   `}
                   onClick={() => updateSetting('dataStorageMode', 'local')}
@@ -700,7 +755,9 @@ const SettingsView: React.FC = () => {
                   <HardDrive
                     className={`h-6 w-6 ${settings.dataStorageMode === 'local' ? 'text-primary' : 'text-muted-foreground'}`}
                   />
-                  <span className="text-sm font-medium">{t('settings.local')}</span>
+                  <span className="text-sm font-medium">
+                    {t('settings.local')}
+                  </span>
                   <span className="text-xs text-muted-foreground">
                     {t('settings.localDesc')}
                   </span>
@@ -709,9 +766,10 @@ const SettingsView: React.FC = () => {
                   type="button"
                   className={`
                     flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all text-center
-                    ${settings.dataStorageMode === 'service'
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:border-primary/50'
+                    ${
+                      settings.dataStorageMode === 'service'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-primary/50'
                     }
                   `}
                   onClick={() => updateSetting('dataStorageMode', 'service')}
@@ -719,7 +777,9 @@ const SettingsView: React.FC = () => {
                   <Server
                     className={`h-6 w-6 ${settings.dataStorageMode === 'service' ? 'text-primary' : 'text-muted-foreground'}`}
                   />
-                  <span className="text-sm font-medium">{t('settings.service')}</span>
+                  <span className="text-sm font-medium">
+                    {t('settings.service')}
+                  </span>
                   <span className="text-xs text-muted-foreground">
                     {t('settings.serviceDesc')}
                   </span>
@@ -738,7 +798,9 @@ const SettingsView: React.FC = () => {
                 </p>
 
                 <div className="space-y-2">
-                  <Label htmlFor="syncServiceType">{t('settings.serviceType')}</Label>
+                  <Label htmlFor="syncServiceType">
+                    {t('settings.serviceType')}
+                  </Label>
                   <Select
                     value={settings.syncServiceType}
                     onValueChange={value =>
@@ -760,7 +822,9 @@ const SettingsView: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="syncServiceEndpoint">{t('settings.endpoint')}</Label>
+                  <Label htmlFor="syncServiceEndpoint">
+                    {t('settings.endpoint')}
+                  </Label>
                   <Input
                     id="syncServiceEndpoint"
                     placeholder={
@@ -793,7 +857,9 @@ const SettingsView: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="syncServiceToken">{t('settings.password')}</Label>
+                  <Label htmlFor="syncServiceToken">
+                    {t('settings.password')}
+                  </Label>
                   <div className="relative">
                     <Input
                       id="syncServiceToken"
@@ -809,14 +875,20 @@ const SettingsView: React.FC = () => {
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                       onClick={() => setShowTokenVisible(v => !v)}
                     >
-                      {showTokenVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showTokenVisible ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
                     </button>
                   </div>
                 </div>
 
                 {settings.syncServiceType === 's3' && (
                   <div className="space-y-2">
-                    <Label htmlFor="syncServiceBucket">{t('settings.bucket')}</Label>
+                    <Label htmlFor="syncServiceBucket">
+                      {t('settings.bucket')}
+                    </Label>
                     <Input
                       id="syncServiceBucket"
                       value={settings.syncServiceBucket || ''}
@@ -831,7 +903,9 @@ const SettingsView: React.FC = () => {
                   <Button
                     variant="outline"
                     className="flex-1"
-                    disabled={!settings.syncServiceEndpoint || testingConnection}
+                    disabled={
+                      !settings.syncServiceEndpoint || testingConnection
+                    }
                     onClick={handleTestConnection}
                   >
                     {testingConnection ? (
@@ -859,7 +933,11 @@ const SettingsView: React.FC = () => {
                   <Button
                     variant="outline"
                     className="flex-1"
-                    disabled={!settings.syncServiceEndpoint || syncing || connectionStatus !== 'success'}
+                    disabled={
+                      !settings.syncServiceEndpoint ||
+                      syncing ||
+                      connectionStatus !== 'success'
+                    }
                     onClick={handleSyncToServer}
                   >
                     {syncing ? (
@@ -894,7 +972,9 @@ const SettingsView: React.FC = () => {
                 <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
                   <div className="flex items-center gap-2 mb-1">
                     <Check className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">{t('settings.teamEnabled')}</span>
+                    <span className="text-sm font-medium">
+                      {t('settings.teamEnabled')}
+                    </span>
                   </div>
                   <p className="text-xs text-muted-foreground ml-6">
                     {t('settings.teamEnabledDesc')}
@@ -913,7 +993,9 @@ const SettingsView: React.FC = () => {
                 <div className="p-3 bg-muted rounded-lg">
                   <div className="flex items-center gap-2 mb-1">
                     <Users className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">{t('settings.teamDisabled')}</span>
+                    <span className="text-sm font-medium">
+                      {t('settings.teamDisabled')}
+                    </span>
                   </div>
                   <p className="text-xs text-muted-foreground ml-6">
                     {t('settings.teamDisabledDesc')}
@@ -989,7 +1071,9 @@ const SettingsView: React.FC = () => {
 
               {importStep === 'preview' && importPreview && (
                 <div className="space-y-3 p-3 bg-muted rounded-lg">
-                  <p className="text-sm font-medium">{t('settings.importPreview')}</p>
+                  <p className="text-sm font-medium">
+                    {t('settings.importPreview')}
+                  </p>
                   <ul className="text-sm text-muted-foreground space-y-1">
                     <li>
                       <Check className="h-3 w-3 inline mr-1 text-green-500" />
@@ -1001,18 +1085,24 @@ const SettingsView: React.FC = () => {
                     </li>
                     <li>
                       <Check className="h-3 w-3 inline mr-1 text-green-500" />
-                      {t('settings.snippets', { count: importPreview.snippets })}
+                      {t('settings.snippets', {
+                        count: importPreview.snippets,
+                      })}
                     </li>
                     {importPreview.snippetPackages > 0 && (
                       <li>
                         <Check className="h-3 w-3 inline mr-1 text-green-500" />
-                        {t('settings.snippetPackages', { count: importPreview.snippetPackages })}
+                        {t('settings.snippetPackages', {
+                          count: importPreview.snippetPackages,
+                        })}
                       </li>
                     )}
                   </ul>
 
                   <div className="space-y-2 pt-2">
-                    <Label className="text-xs">{t('settings.importMode')}</Label>
+                    <Label className="text-xs">
+                      {t('settings.importMode')}
+                    </Label>
                     <div className="flex gap-2">
                       <Button
                         variant={importMode === 'merge' ? 'default' : 'outline'}
@@ -1024,7 +1114,9 @@ const SettingsView: React.FC = () => {
                         {t('settings.merge')}
                       </Button>
                       <Button
-                        variant={importMode === 'replace' ? 'default' : 'outline'}
+                        variant={
+                          importMode === 'replace' ? 'default' : 'outline'
+                        }
                         size="sm"
                         onClick={() => setImportMode('replace')}
                         className="flex-1"
@@ -1049,11 +1141,7 @@ const SettingsView: React.FC = () => {
                     >
                       {t('common.cancel')}
                     </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleImport}
-                      className="flex-1"
-                    >
+                    <Button size="sm" onClick={handleImport} className="flex-1">
                       <Upload className="h-3 w-3 mr-1" />
                       {t('settings.import')}
                     </Button>

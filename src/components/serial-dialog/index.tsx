@@ -102,7 +102,12 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={isOpen => {
+        if (!isOpen) onClose()
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -249,9 +254,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
 
         <DialogFooter>
           <DialogClose asChild>
-            <Button variant="outline">
-              Cancel
-            </Button>
+            <Button variant="outline">Cancel</Button>
           </DialogClose>
           <Button
             onClick={handleConnect}

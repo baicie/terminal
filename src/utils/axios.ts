@@ -29,7 +29,9 @@ const baseRequestConfig: axios.AxiosRequestConfig = {
 const service = axios.create(baseRequestConfig)
 
 function err(err: AxiosError): Promise<AxiosResponse | AxiosError> {
-  const config = err.config as axios.AxiosRequestConfig & RetryConfig | undefined
+  const config = err.config as
+    | (axios.AxiosRequestConfig & RetryConfig)
+    | undefined
   if (!err.response && config && config.retry) {
     config.__retryCount = config.__retryCount || 0
     if (config.__retryCount >= config.retry) {

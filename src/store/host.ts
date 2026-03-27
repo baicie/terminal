@@ -118,7 +118,10 @@ export const useHostStore = create<HostState>((set, get) => ({
       set({ hosts: rows.map(rowToHost), dbAvailable: true })
     } catch (error) {
       // Check if it's a "not in Tauri context" error
-      if (error instanceof Error && error.message === 'Database only available in Tauri context') {
+      if (
+        error instanceof Error &&
+        error.message === 'Database only available in Tauri context'
+      ) {
         set({ hosts: [], dbAvailable: false })
         return
       }
@@ -130,11 +133,16 @@ export const useHostStore = create<HostState>((set, get) => ({
 
   async loadGroups() {
     try {
-      const rows = await select<GroupRow>('SELECT * FROM groups ORDER BY "order"')
+      const rows = await select<GroupRow>(
+        'SELECT * FROM groups ORDER BY "order"',
+      )
       set({ groups: rows.map(rowToGroup) })
     } catch (error) {
       // Check if it's a "not in Tauri context" error - don't throw, just log
-      if (error instanceof Error && error.message === 'Database only available in Tauri context') {
+      if (
+        error instanceof Error &&
+        error.message === 'Database only available in Tauri context'
+      ) {
         set({ groups: [] })
         return
       }

@@ -130,9 +130,7 @@ export function ShareHostDialog({
             <Shield className="size-5" />
             {t('teams.shareHost')}
           </DialogTitle>
-          <DialogDescription>
-            {t('teams.shareHostDesc')}
-          </DialogDescription>
+          <DialogDescription>{t('teams.shareHostDesc')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">

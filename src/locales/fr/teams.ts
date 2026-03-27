@@ -43,8 +43,7 @@ export default {
   'teams.removeMember': 'Supprimer le membre',
   'teams.removeAdmin': 'Retirer admin',
   'teams.makeAdmin': 'Définir admin',
-  'teams.removeMemberConfirm':
-    'Êtes-vous sûr de vouloir supprimer ce membre ?',
+  'teams.removeMemberConfirm': 'Êtes-vous sûr de vouloir supprimer ce membre ?',
   'teams.joinedAt': 'Rejoint {date}',
   'teams.sharedBy': 'Partagé par {name}',
   'teams.permissions': 'Permissions',
@@ -54,10 +53,8 @@ export default {
   'teams.readwriteDesc': 'Les membres peuvent voir et modifier',
   'teams.shareHost': "Partager l'hôte",
   'teams.shareSnippet': "Partager l'extrait",
-  'teams.shareHostDesc':
-    "Partager cet hôte avec les membres de l'équipe",
-  'teams.shareSnippetDesc':
-    "Partager cet extrait avec les membres de l'équipe",
+  'teams.shareHostDesc': "Partager cet hôte avec les membres de l'équipe",
+  'teams.shareSnippetDesc': "Partager cet extrait avec les membres de l'équipe",
   'teams.share': 'Partager',
   'teams.shareToTeam': 'Partager avec {team}',
   'teams.includePassword': 'Inclure le mot de passe (chiffré)',

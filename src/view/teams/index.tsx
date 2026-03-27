@@ -1026,7 +1026,13 @@ const TeamsView: React.FC = () => {
       void loadSharedSnippets(currentTeam.id)
       void loadAuditLogs(currentTeam.id)
     }
-  }, [currentTeam, loadMembers, loadSharedHosts, loadSharedSnippets, loadAuditLogs])
+  }, [
+    currentTeam,
+    loadMembers,
+    loadSharedHosts,
+    loadSharedSnippets,
+    loadAuditLogs,
+  ])
 
   const filteredTeams = teams.filter(team =>
     team.name.toLowerCase().includes(search.toLowerCase()),

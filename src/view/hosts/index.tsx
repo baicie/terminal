@@ -232,14 +232,17 @@ const HostsView: React.FC = () => {
       .shareHost(currentTeam.id, hostData, permission)
   }
 
-  const handleConnect = (host: Host) => {
-    const newTab = app.addTab({
-      label: host.name,
-      type: 'remote',
-      hostId: host.id,
-    })
-    navigate(`/terminal?tab=${newTab.id}`)
-  }
+  const handleConnect = useCallback(
+    (host: Host) => {
+      const newTab = app.addTab({
+        label: host.name,
+        type: 'remote',
+        hostId: host.id,
+      })
+      navigate(`/terminal?tab=${newTab.id}`)
+    },
+    [app, navigate],
+  )
 
   const handleNewLocalTerminal = () => {
     const newTab = app.addTab({
@@ -461,7 +464,8 @@ const HostsView: React.FC = () => {
                                 )}
                               </div>
                               <div className="text-xs text-muted-foreground truncate">
-                                {(hostData.username as string)}@{(hostData.hostname as string)}:
+                                {hostData.username as string}@
+                                {hostData.hostname as string}:
                                 {(hostData.port as number) || 22}
                               </div>
                               <div className="flex items-center gap-2 mt-1">

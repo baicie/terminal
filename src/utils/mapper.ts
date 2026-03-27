@@ -17,7 +17,9 @@ export interface MappingConfig<TFrom extends object, TTo extends object> {
   /** 需要 JSON.parse 的字段 */
   jsonFields?: (keyof TTo)[]
   /** 需要特殊处理的字段 */
-  transforms?: Partial<Record<keyof TTo, (value: unknown, row: TFrom) => unknown>>
+  transforms?: Partial<
+    Record<keyof TTo, (value: unknown, row: TFrom) => unknown>
+  >
   /** 布尔字段（值为 0/1） */
   booleanFields?: (keyof TTo)[]
   /** 可选字段（值为 null 时转为 undefined） */
@@ -126,7 +128,8 @@ export function createRowMapper<TFrom extends object, TTo>(
     const result = {} as TTo
     for (const [toKey, fromKey] of Object.entries(mapping)) {
       if (fromKey && fromKey in row) {
-        ;(result as Record<string, unknown>)[toKey] = row[fromKey as keyof TFrom]
+        ;(result as Record<string, unknown>)[toKey] =
+          row[fromKey as keyof TFrom]
       }
     }
     return result

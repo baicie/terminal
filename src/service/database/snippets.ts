@@ -68,7 +68,9 @@ export async function searchSnippets(query: string): Promise<SnippetRecord[]> {
   )
 }
 
-export async function createSnippetPackage(pkg: SnippetPackageRecord): Promise<void> {
+export async function createSnippetPackage(
+  pkg: SnippetPackageRecord,
+): Promise<void> {
   await executeQuery(
     'INSERT INTO snippet_packages (id, name, description) VALUES (?, ?, ?)',
     [pkg.id, pkg.name, pkg.description || null],
@@ -80,5 +82,7 @@ export async function deleteSnippetPackage(id: string): Promise<void> {
 }
 
 export async function getSnippetPackages(): Promise<SnippetPackageRecord[]> {
-  return select<SnippetPackageRecord>('SELECT * FROM snippet_packages ORDER BY name')
+  return select<SnippetPackageRecord>(
+    'SELECT * FROM snippet_packages ORDER BY name',
+  )
 }

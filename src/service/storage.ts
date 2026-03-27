@@ -36,7 +36,7 @@ export async function storageInit(
     basePath?: string
     bucket?: string
     region?: string
-  }
+  },
 ): Promise<boolean> {
   return await invoke<boolean>('storage_init', {
     backendType,
@@ -62,7 +62,7 @@ export async function storageHealthCheck(): Promise<boolean> {
  */
 export async function storageUpload(
   path: string,
-  data: string
+  data: string,
 ): Promise<StorageResult> {
   return await invoke<StorageResult>('storage_upload', { path, data })
 }

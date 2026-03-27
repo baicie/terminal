@@ -34,7 +34,11 @@ export class SyncController {
   async checkConflicts(
     @Body()
     body: {
-      items: Array<{ id: string; updatedAt: number; type: 'HOST' | 'SNIPPET_PACKAGE' }>
+      items: Array<{
+        id: string
+        updatedAt: number
+        type: 'HOST' | 'SNIPPET_PACKAGE'
+      }>
     },
     @ApiKeyAuth() userId: string,
   ) {
@@ -51,6 +55,10 @@ export class SyncController {
     },
     @ApiKeyAuth() userId: string,
   ) {
-    return this.syncService.resolveConflict(body.shareId, userId, body.resolution)
+    return this.syncService.resolveConflict(
+      body.shareId,
+      userId,
+      body.resolution,
+    )
   }
 }

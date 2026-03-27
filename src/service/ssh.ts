@@ -2,7 +2,11 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import type { Host, PortForwardConfig } from '@/types'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { addCommandHistory, addConnectionLog, updateConnectionLog } from '@/service/database'
+import {
+  addCommandHistory,
+  addConnectionLog,
+  updateConnectionLog,
+} from '@/service/database'
 
 export interface SSHConnectionResult {
   success: boolean

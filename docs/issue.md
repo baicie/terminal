@@ -831,16 +831,16 @@ pub fn get_ssh_agent_socket() -> Option<String> {
 
 **当前已知差异**:
 
-| 功能 | macOS | Windows |
-|------|-------|---------|
-| 新标签 | ⌘T | Ctrl+T |
-| 关闭标签 | ⌘W | Ctrl+W |
-| 偏好设置 | ⌘, | Ctrl+, |
-| 复制 | ⌘C | Ctrl+C |
+| 功能     | macOS | Windows |
+| -------- | ----- | ------- |
+| 新标签   | ⌘T    | Ctrl+T  |
+| 关闭标签 | ⌘W    | Ctrl+W  |
+| 偏好设置 | ⌘,    | Ctrl+,  |
+| 复制     | ⌘C    | Ctrl+C  |
 
 **当前已处理**:
 
-- `src/components/top-toolbar/index.tsx` 已处理 macOS  traffic lights 偏移
+- `src/components/top-toolbar/index.tsx` 已处理 macOS traffic lights 偏移
 
 **待处理**:
 

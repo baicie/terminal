@@ -32,17 +32,17 @@
 
 > **重要**: 开始任何开发工作前，请先查阅相关文档
 
-| 文档                          | 用途                                  | 何时查阅           |
-| ----------------------------- | ------------------------------------- | ------------------ |
-| **docs/project.md**           | 完整项目结构、实现状态、数据库结构    | 每次开发前必读     |
-| **docs/issue.md**             | 所有已知问题、BUG、待修复项           | 解决问题时查阅     |
-| **docs/design.md**            | 产品设计、功能规划、优先级            | 新功能设计时查阅   |
-| **docs/todo.md**              | 开发待办事项清单                      | 规划开发任务时查阅 |
-| **docs/xterm.md**             | xterm.js 完整 API 文档与插件指南      | 终端开发时必读     |
-| **docs/ui/**                  | UI/功能规格与界面描述（便于 AI 阅读） | 实现或还原 UI 时   |
-| **docs/shadcn-components.md** | shadcn/ui 全部组件索引与用法说明      | 查阅组件选型与用法 |
+| 文档                           | 用途                                  | 何时查阅           |
+| ------------------------------ | ------------------------------------- | ------------------ |
+| **docs/project.md**            | 完整项目结构、实现状态、数据库结构    | 每次开发前必读     |
+| **docs/issue.md**              | 所有已知问题、BUG、待修复项           | 解决问题时查阅     |
+| **docs/design.md**             | 产品设计、功能规划、优先级            | 新功能设计时查阅   |
+| **docs/todo.md**               | 开发待办事项清单                      | 规划开发任务时查阅 |
+| **docs/xterm.md**              | xterm.js 完整 API 文档与插件指南      | 终端开发时必读     |
+| **docs/ui/**                   | UI/功能规格与界面描述（便于 AI 阅读） | 实现或还原 UI 时   |
+| **docs/shadcn-components.md**  | shadcn/ui 全部组件索引与用法说明      | 查阅组件选型与用法 |
 | **docs/build-optimization.md** | 构建体积分析与优化指南                | 优化打包时查阅     |
-| **AGENTS.md**                 | 本文件 - Agent 使用指南               | 初次接手项目时阅读 |
+| **AGENTS.md**                  | 本文件 - Agent 使用指南               | 初次接手项目时阅读 |
 
 ---
 
@@ -318,9 +318,9 @@ import { Label } from '@/components/ui/label'
 
 ```typescript
 // 在前端代码中使用
-IS_MACOS  // macOS
+IS_MACOS // macOS
 IS_WINDOWS // Windows
-IS_LINUX   // Linux
+IS_LINUX // Linux
 
 // 示例
 if (IS_MACOS) {
@@ -350,13 +350,13 @@ if (IS_MACOS) {
 
 #### 2. 常见平台差异处理
 
-| 功能 | macOS/Linux | Windows |
-|------|-------------|---------|
+| 功能             | macOS/Linux                      | Windows                    |
+| ---------------- | -------------------------------- | -------------------------- |
 | SSH Agent Socket | `std::env::var("SSH_AUTH_SOCK")` | 使用 Windows OpenSSH Agent |
-| 串口设备路径 | `/dev/tty.*` | `COM1`, `COM2`, ... |
-| 环境变量分隔符 | `:` | `;` |
-| 路径分隔符 | `/` | `\` |
-| 行尾符 | `\n` | `\r\n` |
+| 串口设备路径     | `/dev/tty.*`                     | `COM1`, `COM2`, ...        |
+| 环境变量分隔符   | `:`                              | `;`                        |
+| 路径分隔符       | `/`                              | `\`                        |
+| 行尾符           | `\n`                             | `\r\n`                     |
 
 #### 3. 示例：SSH Agent 连接
 
@@ -417,7 +417,8 @@ export function usePlatform() {
     const userAgent = navigator.userAgent.toLowerCase()
     const isMac = userAgent.includes('mac')
     const isWindows = userAgent.includes('win')
-    const isLinux = userAgent.includes('linux') && !userAgent.includes('android')
+    const isLinux =
+      userAgent.includes('linux') && !userAgent.includes('android')
 
     return {
       isMac,

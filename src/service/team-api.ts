@@ -352,7 +352,11 @@ class TeamApiService {
 
   // Check for sync conflicts
   async checkConflicts(
-    items: Array<{ id: string; updatedAt: number; type: 'HOST' | 'SNIPPET_PACKAGE' }>,
+    items: Array<{
+      id: string
+      updatedAt: number
+      type: 'HOST' | 'SNIPPET_PACKAGE'
+    }>,
   ): Promise<
     ApiResponse<
       Array<{
@@ -370,7 +374,10 @@ class TeamApiService {
     shareId: string,
     resolution: 'LOCAL' | 'REMOTE',
   ): Promise<ApiResponse<{ success: boolean; error?: string }>> {
-    return this.request('POST', '/sync/conflicts/resolve', { shareId, resolution })
+    return this.request('POST', '/sync/conflicts/resolve', {
+      shareId,
+      resolution,
+    })
   }
 
   // ==================== Health Check ====================

@@ -61,6 +61,6 @@ export default {
   'common.errorOccurred': 'Une erreur est survenue',
 
   // Error boundary
-  'error.title': "Échec du chargement de la page",
+  'error.title': 'Échec du chargement de la page',
   'error.message': '{{message}}',
 }

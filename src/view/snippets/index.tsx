@@ -1,8 +1,5 @@
 import type { Host } from '@/types'
-import type {
-  ScriptExecutionRecord,
-  ScriptRecord,
-} from '@/service/database'
+import type { ScriptExecutionRecord, ScriptRecord } from '@/service/database'
 import type { ScriptExecutionResult } from '@/service/scripts'
 import {
   AlertCircle,
@@ -32,7 +29,13 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -75,18 +78,23 @@ const SnippetsView: React.FC = () => {
   const [hosts, setHosts] = useState<Host[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
-  const [selectedScript, setSelectedScript] = useState<ScriptRecord | null>(null)
+  const [selectedScript, setSelectedScript] = useState<ScriptRecord | null>(
+    null,
+  )
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isExecuting, setIsExecuting] = useState(false)
-  const [executionResult, setExecutionResult] = useState<ScriptExecutionResult | null>(null)
+  const [executionResult, setExecutionResult] =
+    useState<ScriptExecutionResult | null>(null)
 
   // Form state
   const [formName, setFormName] = useState('')
   const [formDescription, setFormDescription] = useState('')
   const [formScript, setFormScript] = useState('')
   const [formHostIds, setFormHostIds] = useState<string[]>([])
-  const [formScheduleType, setFormScheduleType] = useState<'manual' | 'once' | 'interval' | 'cron'>('manual')
+  const [formScheduleType, setFormScheduleType] = useState<
+    'manual' | 'once' | 'interval' | 'cron'
+  >('manual')
   const [formScheduleValue, setFormScheduleValue] = useState('')
   const [formTimeout, setFormTimeout] = useState(60)
   const [formRetryCount, setFormRetryCount] = useState(0)
@@ -122,7 +130,9 @@ const SnippetsView: React.FC = () => {
       setFormDescription(script.description || '')
       setFormScript(script.script)
       setFormHostIds(JSON.parse(script.host_ids || '[]'))
-      setFormScheduleType(script.schedule_type as 'manual' | 'once' | 'interval' | 'cron')
+      setFormScheduleType(
+        script.schedule_type as 'manual' | 'once' | 'interval' | 'cron',
+      )
       setFormScheduleValue(script.schedule_value || '')
       setFormTimeout(script.timeout_seconds)
       setFormRetryCount(script.retry_count)
@@ -251,7 +261,10 @@ const SnippetsView: React.FC = () => {
   }
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, 'default' | 'destructive' | 'outline' | 'secondary'> = {
+    const variants: Record<
+      string,
+      'default' | 'destructive' | 'outline' | 'secondary'
+    > = {
       success: 'default',
       failed: 'destructive',
       running: 'secondary',
@@ -267,10 +280,7 @@ const SnippetsView: React.FC = () => {
   return (
     <ViewContainer>
       <ViewToolbar className="gap-4">
-        <Input
-          placeholder={t('snippets.search')}
-          className="max-w-xs h-9"
-        />
+        <Input placeholder={t('snippets.search')} className="max-w-xs h-9" />
         <div className="flex-1" />
         <Button size="sm" onClick={() => setSnippetManagerOpen(true)}>
           <Plus className="size-4 mr-1" data-icon="inline-start" />
@@ -323,7 +333,9 @@ const SnippetsView: React.FC = () => {
             <Tabs defaultValue="list" className="w-full">
               <TabsList className="mb-4">
                 <TabsTrigger value="list">{t('scripts.list')}</TabsTrigger>
-                <TabsTrigger value="history">{t('scripts.history')}</TabsTrigger>
+                <TabsTrigger value="history">
+                  {t('scripts.history')}
+                </TabsTrigger>
                 <TabsTrigger value="batch">{t('scripts.batch')}</TabsTrigger>
               </TabsList>
 
@@ -339,7 +351,10 @@ const SnippetsView: React.FC = () => {
                     description={t('scripts.emptyDesc')}
                     action={
                       <Button onClick={() => openEditDialog()}>
-                        <Plus className="h-4 w-4 mr-1" data-icon="inline-start" />
+                        <Plus
+                          className="h-4 w-4 mr-1"
+                          data-icon="inline-start"
+                        />
                         {t('scripts.new')}
                       </Button>
                     }
@@ -347,22 +362,33 @@ const SnippetsView: React.FC = () => {
                 ) : (
                   <div className="grid gap-4">
                     {scripts.map(script => {
-                      const hostIds: string[] = JSON.parse(script.host_ids || '[]')
+                      const hostIds: string[] = JSON.parse(
+                        script.host_ids || '[]',
+                      )
                       const hostCount = hostIds.length
                       return (
-                        <Card key={script.id} className="hover:border-primary/50 transition-colors">
+                        <Card
+                          key={script.id}
+                          className="hover:border-primary/50 transition-colors"
+                        >
                           <CardHeader className="pb-3">
                             <div className="flex items-start justify-between">
                               <div className="space-y-1">
-                                <CardTitle className="text-lg">{script.name}</CardTitle>
+                                <CardTitle className="text-lg">
+                                  {script.name}
+                                </CardTitle>
                                 {script.description && (
-                                  <CardDescription>{script.description}</CardDescription>
+                                  <CardDescription>
+                                    {script.description}
+                                  </CardDescription>
                                 )}
                               </div>
                               <div className="flex items-center gap-2">
                                 <Switch
                                   checked={!!script.enabled}
-                                  onCheckedChange={() => handleToggleEnabled(script)}
+                                  onCheckedChange={() =>
+                                    handleToggleEnabled(script)
+                                  }
                                 />
                                 <Button
                                   size="sm"
@@ -370,10 +396,17 @@ const SnippetsView: React.FC = () => {
                                   onClick={() => handleExecuteScript(script)}
                                   disabled={isExecuting || hostCount === 0}
                                 >
-                                  <Play className="h-4 w-4 mr-1" data-icon="inline-start" />
+                                  <Play
+                                    className="h-4 w-4 mr-1"
+                                    data-icon="inline-start"
+                                  />
                                   {t('scripts.run')}
                                 </Button>
-                                <Button size="sm" variant="ghost" onClick={() => openEditDialog(script)}>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => openEditDialog(script)}
+                                >
                                   <Edit className="h-4 w-4" />
                                 </Button>
                                 <Button
@@ -394,16 +427,22 @@ const SnippetsView: React.FC = () => {
                               <div className="flex items-center gap-1">
                                 <Server className="h-4 w-4" />
                                 <span>
-                                  {hostCount} {hostCount !== 1 ? t('scripts.hosts') : t('scripts.host')}
+                                  {hostCount}{' '}
+                                  {hostCount !== 1
+                                    ? t('scripts.hosts')
+                                    : t('scripts.host')}
                                 </span>
                               </div>
                               <div className="flex items-center gap-1">
                                 <Clock className="h-4 w-4" />
-                                <span className="capitalize">{script.schedule_type}</span>
+                                <span className="capitalize">
+                                  {script.schedule_type}
+                                </span>
                               </div>
                               {script.timeout_seconds && (
                                 <Badge variant="outline">
-                                  {script.timeout_seconds}s {t('scripts.timeout')}
+                                  {script.timeout_seconds}s{' '}
+                                  {t('scripts.timeout')}
                                 </Badge>
                               )}
                             </div>
@@ -443,7 +482,9 @@ const SnippetsView: React.FC = () => {
                         <TableBody>
                           {executions.map(execution => (
                             <TableRow key={execution.id}>
-                              <TableCell>{getStatusBadge(execution.status)}</TableCell>
+                              <TableCell>
+                                {getStatusBadge(execution.status)}
+                              </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-2">
                                   <Server className="h-4 w-4 text-muted-foreground" />
@@ -456,9 +497,13 @@ const SnippetsView: React.FC = () => {
                               <TableCell className="max-w-xs truncate">
                                 {execution.script_name}
                               </TableCell>
-                              <TableCell>{formatRelativeTime(execution.started_at)}</TableCell>
                               <TableCell>
-                                {execution.duration_ms ? formatDuration(execution.duration_ms) : '-'}
+                                {formatRelativeTime(execution.started_at)}
+                              </TableCell>
+                              <TableCell>
+                                {execution.duration_ms
+                                  ? formatDuration(execution.duration_ms)
+                                  : '-'}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -478,28 +523,41 @@ const SnippetsView: React.FC = () => {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="host-select">{t('scripts.selectHosts')}</Label>
+                      <Label htmlFor="host-select">
+                        {t('scripts.selectHosts')}
+                      </Label>
                       <div className="flex flex-wrap gap-2 p-3 border rounded-md max-h-48 overflow-y-auto">
                         {hosts.map(host => (
-                          <div key={host.id} className="flex items-center gap-2">
+                          <div
+                            key={host.id}
+                            className="flex items-center gap-2"
+                          >
                             <Checkbox
                               id={`host-${host.id}`}
                               checked={formHostIds.includes(host.id)}
                               onCheckedChange={() => handleHostToggle(host.id)}
                             />
-                            <Label htmlFor={`host-${host.id}`} className="text-sm font-normal cursor-pointer">
+                            <Label
+                              htmlFor={`host-${host.id}`}
+                              className="text-sm font-normal cursor-pointer"
+                            >
                               {host.name}
                             </Label>
                           </div>
                         ))}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {formHostIds.length} {formHostIds.length !== 1 ? t('scripts.hostsSelected') : t('scripts.hostSelected')}
+                        {formHostIds.length}{' '}
+                        {formHostIds.length !== 1
+                          ? t('scripts.hostsSelected')
+                          : t('scripts.hostSelected')}
                       </p>
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="batch-command">{t('scripts.command')}</Label>
+                      <Label htmlFor="batch-command">
+                        {t('scripts.command')}
+                      </Label>
                       <Textarea
                         id="batch-command"
                         placeholder={t('scripts.enterCommand')}
@@ -510,12 +568,16 @@ const SnippetsView: React.FC = () => {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="batch-timeout">{t('scripts.timeout')}</Label>
+                      <Label htmlFor="batch-timeout">
+                        {t('scripts.timeout')}
+                      </Label>
                       <Input
                         id="batch-timeout"
                         type="number"
                         value={formTimeout}
-                        onChange={e => setFormTimeout(Number.parseInt(e.target.value) || 60)}
+                        onChange={e =>
+                          setFormTimeout(Number.parseInt(e.target.value) || 60)
+                        }
                         className="w-32"
                       />
                     </div>
@@ -543,7 +605,9 @@ const SnippetsView: React.FC = () => {
                       disabled={formHostIds.length === 0 || !formScript.trim()}
                     >
                       <Play className="h-4 w-4 mr-1" data-icon="inline-start" />
-                      {t('scripts.executeOnHosts', { count: formHostIds.length })}
+                      {t('scripts.executeOnHosts', {
+                        count: formHostIds.length,
+                      })}
                     </Button>
                   </CardContent>
                 </Card>
@@ -553,27 +617,41 @@ const SnippetsView: React.FC = () => {
                     <CardHeader>
                       <CardTitle>{t('scripts.results')}</CardTitle>
                       <CardDescription>
-                        {executionResult.successCount} {t('scripts.succeeded')}, {executionResult.failedCount} {t('scripts.failed')}
+                        {executionResult.successCount} {t('scripts.succeeded')},{' '}
+                        {executionResult.failedCount} {t('scripts.failed')}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-3">
                         {executionResult.results.map(result => (
-                          <div key={result.hostId} className="p-3 border rounded-md">
+                          <div
+                            key={result.hostId}
+                            className="p-3 border rounded-md"
+                          >
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-2">
                                 {getStatusIcon(result.status)}
-                                <span className="font-medium">{result.hostName}</span>
-                                <span className="text-muted-foreground text-sm">{result.hostAddress}</span>
+                                <span className="font-medium">
+                                  {result.hostName}
+                                </span>
+                                <span className="text-muted-foreground text-sm">
+                                  {result.hostAddress}
+                                </span>
                               </div>
-                              <span className="text-sm text-muted-foreground">{formatDuration(result.durationMs)}</span>
+                              <span className="text-sm text-muted-foreground">
+                                {formatDuration(result.durationMs)}
+                              </span>
                             </div>
                             {result.output && (
                               <pre className="p-2 bg-muted rounded text-xs overflow-x-auto max-h-32">
                                 {result.output}
                               </pre>
                             )}
-                            {result.error && <p className="text-sm text-destructive">{result.error}</p>}
+                            {result.error && (
+                              <p className="text-sm text-destructive">
+                                {result.error}
+                              </p>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -598,12 +676,22 @@ const SnippetsView: React.FC = () => {
           <div className="space-y-4 py-4 overflow-y-auto flex-1">
             <div className="space-y-2">
               <Label htmlFor="name">{t('scripts.name')} *</Label>
-              <Input id="name" value={formName} onChange={e => setFormName(e.target.value)} placeholder={t('scripts.namePlaceholder')} />
+              <Input
+                id="name"
+                value={formName}
+                onChange={e => setFormName(e.target.value)}
+                placeholder={t('scripts.namePlaceholder')}
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="description">{t('scripts.description')}</Label>
-              <Input id="description" value={formDescription} onChange={e => setFormDescription(e.target.value)} placeholder={t('scripts.descriptionPlaceholder')} />
+              <Input
+                id="description"
+                value={formDescription}
+                onChange={e => setFormDescription(e.target.value)}
+                placeholder={t('scripts.descriptionPlaceholder')}
+              />
             </div>
 
             <div className="space-y-2">
@@ -627,40 +715,65 @@ const SnippetsView: React.FC = () => {
                       checked={formHostIds.includes(host.id)}
                       onCheckedChange={() => handleHostToggle(host.id)}
                     />
-                    <Label htmlFor={`edit-host-${host.id}`} className="text-sm font-normal cursor-pointer">
+                    <Label
+                      htmlFor={`edit-host-${host.id}`}
+                      className="text-sm font-normal cursor-pointer"
+                    >
                       {host.name}
                     </Label>
                   </div>
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
-                {formHostIds.length} {formHostIds.length !== 1 ? t('scripts.hostsSelected') : t('scripts.hostSelected')}
+                {formHostIds.length}{' '}
+                {formHostIds.length !== 1
+                  ? t('scripts.hostsSelected')
+                  : t('scripts.hostSelected')}
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="schedule-type">{t('scripts.scheduleType')}</Label>
-                <Select value={formScheduleType} onValueChange={v => setFormScheduleType(v as typeof formScheduleType)}>
+                <Label htmlFor="schedule-type">
+                  {t('scripts.scheduleType')}
+                </Label>
+                <Select
+                  value={formScheduleType}
+                  onValueChange={v =>
+                    setFormScheduleType(v as typeof formScheduleType)
+                  }
+                >
                   <SelectTrigger id="schedule-type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="manual">{t('scripts.manual')}</SelectItem>
+                    <SelectItem value="manual">
+                      {t('scripts.manual')}
+                    </SelectItem>
                     <SelectItem value="once">{t('scripts.once')}</SelectItem>
-                    <SelectItem value="interval">{t('scripts.interval')}</SelectItem>
+                    <SelectItem value="interval">
+                      {t('scripts.interval')}
+                    </SelectItem>
                     <SelectItem value="cron">{t('scripts.cron')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="schedule-value">{t('scripts.scheduleValue')}</Label>
+                <Label htmlFor="schedule-value">
+                  {t('scripts.scheduleValue')}
+                </Label>
                 <Input
                   id="schedule-value"
                   value={formScheduleValue}
                   onChange={e => setFormScheduleValue(e.target.value)}
-                  placeholder={formScheduleType === 'interval' ? '60000' : formScheduleType === 'cron' ? '* * * * *' : ''}
+                  placeholder={
+                    formScheduleType === 'interval'
+                      ? '60000'
+                      : formScheduleType === 'cron'
+                        ? '* * * * *'
+                        : ''
+                  }
                   disabled={formScheduleType === 'manual'}
                 />
               </div>
@@ -673,7 +786,9 @@ const SnippetsView: React.FC = () => {
                   id="timeout"
                   type="number"
                   value={formTimeout}
-                  onChange={e => setFormTimeout(Number.parseInt(e.target.value) || 60)}
+                  onChange={e =>
+                    setFormTimeout(Number.parseInt(e.target.value) || 60)
+                  }
                 />
               </div>
 
@@ -683,14 +798,18 @@ const SnippetsView: React.FC = () => {
                   id="retry-count"
                   type="number"
                   value={formRetryCount}
-                  onChange={e => setFormRetryCount(Number.parseInt(e.target.value) || 0)}
+                  onChange={e =>
+                    setFormRetryCount(Number.parseInt(e.target.value) || 0)
+                  }
                 />
               </div>
             </div>
           </div>
 
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setIsEditDialogOpen(false)}>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setIsEditDialogOpen(false)}>
+              {t('common.cancel')}
+            </AlertDialogCancel>
             <AlertDialogAction onClick={handleSaveScript}>
               {selectedScript ? t('scripts.save') : t('scripts.create')}
             </AlertDialogAction>
@@ -699,7 +818,10 @@ const SnippetsView: React.FC = () => {
       </AlertDialog>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('scripts.deleteConfirm')}</AlertDialogTitle>
@@ -709,7 +831,10 @@ const SnippetsView: React.FC = () => {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteScript} className="bg-destructive text-destructive-foreground">
+            <AlertDialogAction
+              onClick={handleDeleteScript}
+              className="bg-destructive text-destructive-foreground"
+            >
               {t('common.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

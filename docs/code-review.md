@@ -11,10 +11,10 @@
 
 **问题描述**：项目同时使用了 **Zustand** 和 **MobX** 两种状态管理库。
 
-| Store | 状态管理库 | 文件位置 |
-|-------|-----------|----------|
-| `app.ts`, `team.ts`, `workspace.ts` | Zustand | `src/store/` |
-| `host.ts`, `terminal.ts` | MobX (但实为 Zustand) | `src/store/` |
+| Store                               | 状态管理库            | 文件位置     |
+| ----------------------------------- | --------------------- | ------------ |
+| `app.ts`, `team.ts`, `workspace.ts` | Zustand               | `src/store/` |
+| `host.ts`, `terminal.ts`            | MobX (但实为 Zustand) | `src/store/` |
 
 **问题分析**：
 
@@ -23,6 +23,7 @@
 3. MobX 和 Zustand 的响应式机制不同，维护困难
 
 **影响**：
+
 - 学习成本增加
 - 状态同步逻辑复杂
 - 可能出现响应式不一致问题
@@ -38,6 +39,7 @@
 **位置**: `src/store/team.ts`
 
 **问题描述**：单个文件超过 1200 行，包含：
+
 - 本地模式操作
 - 云模式操作
 - 两种模式的大量重复逻辑
@@ -45,6 +47,7 @@
 - 同步/异步操作混在一起
 
 **代码行数统计**：
+
 - 本地模式函数: ~50 个
 - 云模式函数: ~20 个
 - 类型转换函数: ~10 个
@@ -79,6 +82,7 @@ export async function executeQuery(sql: string, params: unknown[] = []) {
 ```
 
 **问题**：
+
 - SQL 执行失败时无错误处理
 - 调用方无法区分成功/失败
 - 可能导致应用崩溃
@@ -92,7 +96,9 @@ export async function executeQuery(sql: string, params: unknown[] = []) {
     return await database.execute(sql, params)
   } catch (error) {
     console.error('Database query error:', { sql, params, error })
-    throw new Error(`Database query failed: ${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(
+      `Database query failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
 }
 
@@ -105,7 +111,7 @@ export async function select<T>(
     return await database.select<T[]>(sql, params)
   } catch (error) {
     console.error('Database select error:', { sql, params, error })
-    return []  // 或抛出错误，视业务需求
+    return [] // 或抛出错误，视业务需求
   }
 }
 ```
@@ -138,6 +144,7 @@ async disconnect(sessionId: string): Promise<void> {
 ```
 
 **问题**：
+
 1. 使用动态 `import()` 不是最佳实践，应在文件顶部静态导入
 2. 没有错误处理，数据库更新失败会导致日志不完整
 3. `activeConnectionLogs` 是内存 Map，刷新页面会丢失数据
@@ -181,6 +188,7 @@ async disconnect(sessionId: string): Promise<void> {
 **问题**：回调函数作为依赖项会导致 effect 频繁重新执行。
 
 **原因分析**：
+
 - `startShell`, `sendData`, `resize`, `disconnect` 在每次渲染时使用 `useCallback` 重新创建
 - 虽然有 `useCallback` 包裹，但依赖变化仍会触发 effect
 
@@ -199,7 +207,7 @@ useEffect(() => {
 
 useEffect(() => {
   // 使用 ref.current 而不是直接使用回调
-}, [term, tabType, startShell])  // 移除频繁变化的依赖
+}, [term, tabType, startShell]) // 移除频繁变化的依赖
 ```
 
 **优先级**: P2
@@ -227,6 +235,7 @@ id: crypto.randomUUID(),
 ```
 
 **问题**：
+
 - `Math.random()` 不是真正的随机，碰撞概率较高
 - 不符合安全最佳实践
 - 代码风格不统一
@@ -269,9 +278,9 @@ function rowToTeam(record: TeamRecord): Team { ... } // ~15 行
 type Mapper<TFrom, TTo> = (row: TFrom) => TTo
 
 function createMapper<TFrom, TTo>(
-  mapping: Partial<Record<keyof TTo, keyof TFrom>>
+  mapping: Partial<Record<keyof TTo, keyof TFrom>>,
 ): Mapper<TFrom, TTo> {
-  return (row) => {
+  return row => {
     const result = {} as TTo
     for (const [toKey, fromKey] of Object.entries(mapping)) {
       if (fromKey && fromKey in row) {
@@ -287,7 +296,7 @@ const hostMapper = createMapper<HostRow, Host>({
   id: 'id',
   name: 'name',
   hostname: 'hostname',
-  authType: 'auth_type',  // 特殊转换可单独处理
+  authType: 'auth_type', // 特殊转换可单独处理
 })
 ```
 
@@ -300,6 +309,7 @@ const hostMapper = createMapper<HostRow, Host>({
 ### 4.1 密码明文存储风险 🔴 严重
 
 **位置**:
+
 - `src/types/index.ts:36` - `password?: string`
 - `src/service/database.ts` - `hosts` 表存储密码
 
@@ -342,6 +352,7 @@ if (settings.apiToken) {
 **问题**：API Token 直接存储在 SQLite，未加密。
 
 **建议**：
+
 - 使用与密码相同的加密策略
 - 限制 Token 的权限范围
 - 定期轮换 Token
@@ -364,6 +375,7 @@ export async function searchCommandHistory(query: string, limit = 20) {
 ```
 
 **问题分析**：
+
 - 使用了参数化查询 `?`，这是正确的
 - 但 LIKE 查询的 `%` 包装在参数中，可能有边缘情况
 
@@ -375,7 +387,7 @@ export async function searchCommandHistory(query: string, limit = 20) {
   const escapedQuery = query.replace(/[%_]/g, '\\$&')
   return database.select(
     'SELECT * FROM command_history WHERE command LIKE ? ESCAPE "\\" ORDER BY executed_at DESC LIMIT ?',
-    [`%${escapedQuery}%`, Math.min(limit, 100)],  // 限制最大数量
+    [`%${escapedQuery}%`, Math.min(limit, 100)], // 限制最大数量
   )
 }
 ```
@@ -415,15 +427,12 @@ const flushBuffer = () => {
   flushTimeout = null
 }
 
-const unlistenData = await listen<ShellOutput>(
-  `${eventPrefix}-data`,
-  event => {
-    writeBuffer += event.payload.data
-    if (!flushTimeout) {
-      flushTimeout = setTimeout(flushBuffer, 16)  // ~60fps
-    }
-  },
-)
+const unlistenData = await listen<ShellOutput>(`${eventPrefix}-data`, event => {
+  writeBuffer += event.payload.data
+  if (!flushTimeout) {
+    flushTimeout = setTimeout(flushBuffer, 16) // ~60fps
+  }
+})
 ```
 
 **优先级**: P2
@@ -441,6 +450,7 @@ const unlistenData = await listen<ShellOutput>(
 ```
 
 **问题**：
+
 - 渲染所有主机，DOM 节点过多
 - 滚动卡顿
 - 内存占用高
@@ -492,11 +502,13 @@ export type { Host, SSHOutput }
 ```
 
 **问题**：
+
 - `Host` 类型实际定义在 `types/index.ts`
 - `database.ts` 重新导出但无注释说明
 - 可能导致类型定义分散，难以追踪
 
 **建议**：
+
 1. 移除重复导出，统一从 `types/index.ts` 导入
 2. 或在注释中明确说明类型来源
 
@@ -567,10 +579,10 @@ sessions: new Map<string, TerminalSession>(),
 
 **依赖使用情况**：
 
-| 依赖 | 状态 | 建议 |
-|------|------|------|
+| 依赖                                    | 状态   | 建议 |
+| --------------------------------------- | ------ | ---- |
 | `mobx`, `mobx-react`, `mobx-react-lite` | 未使用 | 移除 |
-| `tsyringe`, `reflect-metadata` | 未使用 | 移除 |
+| `tsyringe`, `reflect-metadata`          | 未使用 | 移除 |
 
 **执行命令**：
 
@@ -590,20 +602,20 @@ pnpm remove mobx mobx-react mobx-react-lite tsyringe reflect-metadata
 
 ## 八、问题优先级汇总
 
-| 优先级 | 问题 | 影响 | 工作量 | 状态 |
-|-------|------|------|--------|------|
-| **P0** | 密码明文存储 | 安全性 | 中 | 待修复 |
-| **P0** | team.ts 过度膨胀 | 可维护性 | 高 | 待修复 |
-| **P1** | 状态管理不统一 | 可维护性 | 中 | 待修复 |
-| **P1** | 连接日志内存 Map | 数据完整性 | 低 | 待修复 |
-| **P1** | API Token 存储 | 安全性 | 低 | 待修复 |
-| **P2** | SQL 错误处理缺失 | 健壮性 | 低 | 待修复 |
-| **P2** | 终端数据流无缓冲 | 性能 | 中 | 待修复 |
-| **P2** | Host ID 生成不统一 | 一致性 | 低 | 待修复 |
-| **P2** | 未使用依赖 | 包体积 | 低 | 待修复 |
-| **P3** | 大列表无虚拟化 | 性能 | 中 | 待规划 |
-| **P3** | ESLint 配置宽松 | 代码质量 | 低 | 待优化 |
-| **P3** | 类型导出不清晰 | 可维护性 | 低 | 待优化 |
+| 优先级 | 问题               | 影响       | 工作量 | 状态   |
+| ------ | ------------------ | ---------- | ------ | ------ |
+| **P0** | 密码明文存储       | 安全性     | 中     | 待修复 |
+| **P0** | team.ts 过度膨胀   | 可维护性   | 高     | 待修复 |
+| **P1** | 状态管理不统一     | 可维护性   | 中     | 待修复 |
+| **P1** | 连接日志内存 Map   | 数据完整性 | 低     | 待修复 |
+| **P1** | API Token 存储     | 安全性     | 低     | 待修复 |
+| **P2** | SQL 错误处理缺失   | 健壮性     | 低     | 待修复 |
+| **P2** | 终端数据流无缓冲   | 性能       | 中     | 待修复 |
+| **P2** | Host ID 生成不统一 | 一致性     | 低     | 待修复 |
+| **P2** | 未使用依赖         | 包体积     | 低     | 待修复 |
+| **P3** | 大列表无虚拟化     | 性能       | 中     | 待规划 |
+| **P3** | ESLint 配置宽松    | 代码质量   | 低     | 待优化 |
+| **P3** | 类型导出不清晰     | 可维护性   | 低     | 待优化 |
 
 ---
 
@@ -612,6 +624,7 @@ pnpm remove mobx mobx-react mobx-react-lite tsyringe reflect-metadata
 ### 9.1 `src/service/` 目录重构
 
 **当前结构**：
+
 ```
 src/service/
 ├── database.ts   # 1800+ 行，所有数据库操作
@@ -626,6 +639,7 @@ src/service/
 ```
 
 **建议结构**：
+
 ```
 src/service/
 ├── database/
@@ -649,6 +663,7 @@ src/service/
 ### 9.2 `src/store/teams/` 目录重构
 
 **建议结构**：
+
 ```
 src/store/teams/
 ├── index.ts           # 基础状态定义、初始 state、选择器
@@ -659,6 +674,7 @@ src/store/teams/
 ```
 
 **文件大小目标**：
+
 - 单文件不超过 300 行
 - 每个文件职责单一
 
@@ -759,16 +775,16 @@ pnpm remove mobx mobx-react mobx-react-lite tsyringe reflect-metadata
 
 ### 2026-03-25 已完成的修复
 
-| 状态 | 问题 | 修复内容 |
-|------|------|----------|
-| ✅ 已修复 | 清理未使用依赖 | 确认 `mobx`, `mobx-react`, `tsyringe`, `reflect-metadata` 未使用 |
-| ✅ 已修复 | ID 生成不统一 | 创建 `src/utils/id.ts`，统一使用 `crypto.randomUUID()` |
-| ✅ 已修复 | 数据库错误处理 | 修复 `executeQuery` 和 `select` 函数，添加 try-catch |
-| ✅ 已修复 | 动态导入问题 | 修复 `ssh.ts`，改为静态导入 `updateConnectionLog` |
-| ✅ 已修复 | ESLint 配置宽松 | 启用 `consistent-type-imports`，优化规则 |
-| ✅ 已修复 | 数据库模块拆分 | 创建 `src/service/database/` 模块结构 |
-| ✅ 已修复 | RowMapper 工具 | 创建 `src/utils/mapper.ts`，提供通用映射函数 |
-| ✅ 已修复 | store 使用新 ID | 更新 `store/host.ts` 和 `store/workspace.ts` 使用新工具 |
+| 状态      | 问题            | 修复内容                                                         |
+| --------- | --------------- | ---------------------------------------------------------------- |
+| ✅ 已修复 | 清理未使用依赖  | 确认 `mobx`, `mobx-react`, `tsyringe`, `reflect-metadata` 未使用 |
+| ✅ 已修复 | ID 生成不统一   | 创建 `src/utils/id.ts`，统一使用 `crypto.randomUUID()`           |
+| ✅ 已修复 | 数据库错误处理  | 修复 `executeQuery` 和 `select` 函数，添加 try-catch             |
+| ✅ 已修复 | 动态导入问题    | 修复 `ssh.ts`，改为静态导入 `updateConnectionLog`                |
+| ✅ 已修复 | ESLint 配置宽松 | 启用 `consistent-type-imports`，优化规则                         |
+| ✅ 已修复 | 数据库模块拆分  | 创建 `src/service/database/` 模块结构                            |
+| ✅ 已修复 | RowMapper 工具  | 创建 `src/utils/mapper.ts`，提供通用映射函数                     |
+| ✅ 已修复 | store 使用新 ID | 更新 `store/host.ts` 和 `store/workspace.ts` 使用新工具          |
 
 ### 新增文件
 
@@ -797,15 +813,15 @@ src/
 
 ### 待处理问题
 
-| 优先级 | 问题 | 状态 |
-|-------|------|------|
-| P0 | 密码明文存储 | 待评估 |
-| P0 | Team Store 重构 | 待处理 |
-| P1 | 状态管理统一 | 待处理 |
-| P1 | 连接日志内存 Map | 待处理 |
-| P1 | API Token 安全 | 待处理 |
-| P2 | 终端数据流缓冲 | 待优化 |
-| P3 | 大列表虚拟化 | 待优化 |
+| 优先级 | 问题             | 状态   |
+| ------ | ---------------- | ------ |
+| P0     | 密码明文存储     | 待评估 |
+| P0     | Team Store 重构  | 待处理 |
+| P1     | 状态管理统一     | 待处理 |
+| P1     | 连接日志内存 Map | 待处理 |
+| P1     | API Token 安全   | 待处理 |
+| P2     | 终端数据流缓冲   | 待优化 |
+| P3     | 大列表虚拟化     | 待优化 |
 
 ---
 
@@ -818,6 +834,6 @@ src/
 
 ---
 
-*报告生成时间: 2026-03-25*
-*最后更新: 2026-03-25*
-*审查者: Claude Code Assistant*
+_报告生成时间: 2026-03-25_
+_最后更新: 2026-03-25_
+_审查者: Claude Code Assistant_

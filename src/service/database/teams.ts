@@ -61,10 +61,9 @@ export async function getTeams(): Promise<TeamRecord[]> {
 }
 
 export async function getTeamById(id: string): Promise<TeamRecord | null> {
-  const results = await select<TeamRecord>(
-    'SELECT * FROM teams WHERE id = ?',
-    [id],
-  )
+  const results = await select<TeamRecord>('SELECT * FROM teams WHERE id = ?', [
+    id,
+  ])
   return results[0] || null
 }
 

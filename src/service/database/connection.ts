@@ -403,7 +403,10 @@ export async function select<T>(
     return result
   } catch (error) {
     // Check if it's a "not in Tauri context" error
-    if (error instanceof Error && error.message === 'Database only available in Tauri context') {
+    if (
+      error instanceof Error &&
+      error.message === 'Database only available in Tauri context'
+    ) {
       // Re-throw this specific error so callers can handle it
       throw error
     }

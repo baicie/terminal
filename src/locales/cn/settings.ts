@@ -21,7 +21,8 @@ export default {
   'settings.underlineCursor': '下划线',
   'settings.barCursor': '竖线',
   'settings.exportData': '导出数据',
-  'settings.exportDesc': '将所有主机、分组、代码片段和设置导出为 JSON 文件进行备份或同步。',
+  'settings.exportDesc':
+    '将所有主机、分组、代码片段和设置导出为 JSON 文件进行备份或同步。',
   'settings.exportJson': '导出为 JSON 文件',
   'settings.importData': '导入数据',
   'settings.importDesc': '选择已导出的 JSON 文件来导入数据。',
@@ -38,7 +39,8 @@ export default {
   'settings.replaceDesc': '具有相同 ID 的已存在项将被覆盖。',
   'settings.importing': '导入中...',
   'settings.importSuccess': '导入成功！',
-  'settings.securityWarning': '数据以明文 JSON 格式导出。敏感信息（如密码）可能会被包含在导出文件中。请妥善保管您的导出文件。',
+  'settings.securityWarning':
+    '数据以明文 JSON 格式导出。敏感信息（如密码）可能会被包含在导出文件中。请妥善保管您的导出文件。',
 
   // Appearance
   'settings.theme': '主题',
@@ -70,7 +72,8 @@ export default {
 
   // Storage
   'settings.storageMode': '存储模式',
-  'settings.storageModeDesc': '选择数据存储方式。本地模式将所有数据保存在本设备。服务模式可通过远程服务器跨设备同步。',
+  'settings.storageModeDesc':
+    '选择数据存储方式。本地模式将所有数据保存在本设备。服务模式可通过远程服务器跨设备同步。',
   'settings.local': '本地',
   'settings.localDesc': 'SQLite 本地存储',
   'settings.service': '服务',
@@ -91,7 +94,8 @@ export default {
 
   // Team
   'settings.teamCollaboration': '团队协作',
-  'settings.teamCollaborationDesc': '启用团队功能，与团队成员共享主机和代码片段。',
+  'settings.teamCollaborationDesc':
+    '启用团队功能，与团队成员共享主机和代码片段。',
   'settings.teamEnabled': '团队模式已启用',
   'settings.teamEnabledDesc': '侧边栏显示团队导航，可从团队视图管理您的团队。',
   'settings.teamDisabled': '团队模式已禁用',
@@ -99,7 +103,8 @@ export default {
   'settings.openTeams': '打开团队视图',
   'settings.enableTeam': '启用团队模式',
   'settings.serverConfig': '服务器配置',
-  'settings.serverConfigDesc': '配置自托管团队服务器以进行云同步。留空则为本地模式。',
+  'settings.serverConfigDesc':
+    '配置自托管团队服务器以进行云同步。留空则为本地模式。',
   'settings.mode': '模式',
   'settings.cloud': '云端',
   'settings.cloudModeDesc': '通过服务器同步',
@@ -108,7 +113,8 @@ export default {
   'settings.serverEndpointDesc': '自托管团队服务器的 URL',
   'settings.apiToken': 'API 令牌',
   'settings.enterApiToken': '输入您的 API 令牌',
-  'settings.apiTokenDesc': '从服务器管理员处获取 API 令牌，或在您的账户设置中创建一个',
+  'settings.apiTokenDesc':
+    '从服务器管理员处获取 API 令牌，或在您的账户设置中创建一个',
   'settings.autoSync': '自动同步',
   'settings.autoSyncDesc': '自动与服务器同步数据',
   'settings.syncInterval': '同步间隔',

@@ -173,7 +173,9 @@ export function TeamServerConfig({ onClose }: TeamServerConfigProps) {
 
           {/* Server Endpoint */}
           <div className="space-y-2">
-            <Label htmlFor="serverEndpoint">{t('settings.serverEndpoint')}</Label>
+            <Label htmlFor="serverEndpoint">
+              {t('settings.serverEndpoint')}
+            </Label>
             <Input
               id="serverEndpoint"
               placeholder="http://localhost:3000"
@@ -211,7 +213,11 @@ export function TeamServerConfig({ onClose }: TeamServerConfigProps) {
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 onClick={() => setShowToken(v => !v)}
               >
-                {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showToken ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -292,11 +298,19 @@ export function TeamServerConfig({ onClose }: TeamServerConfigProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="15000">{t('settings.seconds15')}</SelectItem>
-                  <SelectItem value="30000">{t('settings.seconds30')}</SelectItem>
+                  <SelectItem value="15000">
+                    {t('settings.seconds15')}
+                  </SelectItem>
+                  <SelectItem value="30000">
+                    {t('settings.seconds30')}
+                  </SelectItem>
                   <SelectItem value="60000">{t('settings.minute1')}</SelectItem>
-                  <SelectItem value="300000">{t('settings.minutes5')}</SelectItem>
-                  <SelectItem value="600000">{t('settings.minutes10')}</SelectItem>
+                  <SelectItem value="300000">
+                    {t('settings.minutes5')}
+                  </SelectItem>
+                  <SelectItem value="600000">
+                    {t('settings.minutes10')}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -11,15 +11,16 @@ export async function getHosts(): Promise<Host[]> {
 }
 
 export async function getHostById(id: string): Promise<Host | null> {
-  const rows = await select<HostRecord>(
-    'SELECT * FROM hosts WHERE id = ?',
-    [id],
-  )
+  const rows = await select<HostRecord>('SELECT * FROM hosts WHERE id = ?', [
+    id,
+  ])
   if (rows.length === 0) return null
   return rowToHost(rows[0])
 }
 
-export async function createHost(host: Omit<Host, 'createdAt' | 'updatedAt'>): Promise<void> {
+export async function createHost(
+  host: Omit<Host, 'createdAt' | 'updatedAt'>,
+): Promise<void> {
   const now = Date.now()
   await executeQuery(
     `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, created_at, updated_at)
@@ -46,7 +47,10 @@ export async function createHost(host: Omit<Host, 'createdAt' | 'updatedAt'>): P
   )
 }
 
-export async function updateHost(id: string, updates: Partial<Host>): Promise<void> {
+export async function updateHost(
+  id: string,
+  updates: Partial<Host>,
+): Promise<void> {
   const now = Date.now()
   await executeQuery(
     `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, updated_at = ? WHERE id = ?`,
@@ -59,7 +63,11 @@ export async function updateHost(id: string, updates: Partial<Host>): Promise<vo
       updates.password ?? null,
       updates.privateKey ?? null,
       updates.groupId ?? null,
-      updates.isFavorite !== undefined ? (updates.isFavorite ? 1 : 0) : undefined,
+      updates.isFavorite !== undefined
+        ? updates.isFavorite
+          ? 1
+          : 0
+        : undefined,
       updates.color ?? null,
       updates.tags ? JSON.stringify(updates.tags) : null,
       JSON.stringify(updates.portForwards),

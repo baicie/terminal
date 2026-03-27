@@ -63,7 +63,9 @@ export async function getScriptById(id: string): Promise<ScriptRecord | null> {
 }
 
 export async function getEnabledScripts(): Promise<ScriptRecord[]> {
-  return select<ScriptRecord>('SELECT * FROM scripts WHERE enabled = 1 ORDER BY name')
+  return select<ScriptRecord>(
+    'SELECT * FROM scripts WHERE enabled = 1 ORDER BY name',
+  )
 }
 
 export async function searchScripts(query: string): Promise<ScriptRecord[]> {
@@ -176,10 +178,9 @@ export async function deleteScriptExecution(id: string): Promise<void> {
 
 export async function clearScriptExecutions(scriptId?: string): Promise<void> {
   if (scriptId) {
-    await executeQuery(
-      'DELETE FROM script_executions WHERE script_id = ?',
-      [scriptId],
-    )
+    await executeQuery('DELETE FROM script_executions WHERE script_id = ?', [
+      scriptId,
+    ])
   } else {
     await executeQuery('DELETE FROM script_executions')
   }

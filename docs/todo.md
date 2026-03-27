@@ -510,6 +510,7 @@ _最后更新：2026-03-26 - 功能完善批次_
 ### 2026-03-26 完成的工作 (第十三批次 - 构建修复)
 
 #### 1. team-server Prisma 7.x 升级修复
+
 - **Prisma 7.x 配置变更**: `url` 不再支持在 schema.prisma 中
 - **新增配置文件**: `prisma.config.ts` - Prisma 7.x 新配置方式
 - **更新 schema.prisma**: 移除 `url = env("DATABASE_URL")` 配置
@@ -518,6 +519,7 @@ _最后更新：2026-03-26 - 功能完善批次_
 - **安装依赖**: `@prisma/adapter-pg` 和 `pg`
 
 #### 2. Rust 编译警告清理
+
 - 移除 `src-tauri/src/local.rs` 中不必要的 `mut` 关键字
 - 清理 `unused_mut` 警告
 
@@ -526,6 +528,7 @@ _最后更新：2026-03-26 - 功能完善批次_
 ### 2026-03-26 完成的工作 (第十二批次 - 功能完善)
 
 #### 1. 数据存储服务前端集成
+
 - **后端命令**: `src-tauri/src/storage.rs` 新增存储服务命令
   - `storage_init` - 初始化存储后端
   - `storage_health_check` - 健康检查
@@ -542,6 +545,7 @@ _最后更新：2026-03-26 - 功能完善批次_
   - 添加 S3 Bucket 字段
 
 #### 2. 终端体验优化
+
 - **终端主题预设**: `src/utils/terminal-themes.ts`
   - 8 种预设主题: Monokai, Solarized, One Dark, GitHub Dark, Dracula, Nord, Catppuccin
   - 主题选择 UI 集成到设置页面
@@ -551,6 +555,7 @@ _最后更新：2026-03-26 - 功能完善批次_
   - 点击选择即可切换
 
 #### 3. 团队协作冲突处理
+
 - **NestJS 服务端**: `team-server/src/sync/`
   - `sync.service.ts` 新增:
     - `checkConflicts` - 检测冲突
@@ -564,6 +569,7 @@ _最后更新：2026-03-26 - 功能完善批次_
   - `resolveConflict` - 解决冲突方法
 
 #### 4. SSH Agent 认证完善
+
 - **agent.rs 更新**: 完善 SSH Agent 协议实现
   - 完整的请求签名支持
   - 与 SSH 服务器的 agent 转发集成
@@ -573,6 +579,7 @@ _最后更新：2026-03-26 - 功能完善批次_
   - 密钥获取和日志记录
 
 #### 5. 高级功能服务
+
 - **录制服务**: `src/service/recording.ts`
   - `TerminalRecordingService` - 终端录制服务
   - 支持录制/回放终端会话

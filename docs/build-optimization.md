@@ -29,23 +29,23 @@ dist/                          1.4 MB
 
 ### 优化效果
 
-| 配置项 | 效果 |
-|--------|------|
-| `minify: 'terser'` | 移除 console.log/debugger |
-| `drop_console: true` | ~20KB 优化 |
-| Tree Shaking | 自动移除未使用代码 |
-| **总计优化** | **~100KB** |
+| 配置项               | 效果                      |
+| -------------------- | ------------------------- |
+| `minify: 'terser'`   | 移除 console.log/debugger |
+| `drop_console: true` | ~20KB 优化                |
+| Tree Shaking         | 自动移除未使用代码        |
+| **总计优化**         | **~100KB**                |
 
 ### 主要模块体积分析
 
-| 模块 | 体积 | gzip | 说明 |
-|------|------|------|------|
-| @xterm | 395 KB | 103 KB | xterm.js 终端模拟器 (核心依赖) |
-| react-dom | 178 KB | 57 KB | React DOM 渲染库 |
-| index (主代码) | 179 KB | 46 KB | 应用业务代码 |
-| @radix-ui | 107 KB | 32 KB | shadcn/ui 底层组件 |
-| react-router | 88 KB | 29 KB | 路由库 |
-| **总计** | **~1.4 MB** | **~400 KB** | gzip 压缩后约 400KB |
+| 模块           | 体积        | gzip        | 说明                           |
+| -------------- | ----------- | ----------- | ------------------------------ |
+| @xterm         | 395 KB      | 103 KB      | xterm.js 终端模拟器 (核心依赖) |
+| react-dom      | 178 KB      | 57 KB       | React DOM 渲染库               |
+| index (主代码) | 179 KB      | 46 KB       | 应用业务代码                   |
+| @radix-ui      | 107 KB      | 32 KB       | shadcn/ui 底层组件             |
+| react-router   | 88 KB       | 29 KB       | 路由库                         |
+| **总计**       | **~1.4 MB** | **~400 KB** | gzip 压缩后约 400KB            |
 
 ### Rust 后端 (Tauri)
 
@@ -66,6 +66,7 @@ src-tauri/target/release/
 **问题**：xterm.js 包含大量 VT 序列解析逻辑，体积较大。
 
 **方案 A - 按需加载插件**：
+
 ```typescript
 // 只加载需要的插件，而不是全部
 import { Terminal } from '@xterm/xterm'
@@ -74,6 +75,7 @@ import { FitAddon } from '@xterm/addon-fit'
 ```
 
 **方案 B - 使用 xterm-bytemc**：
+
 ```bash
 # 安装轻量级替代方案 (如果兼容)
 pnpm remove @xterm/xterm
@@ -81,6 +83,7 @@ pnpm add xterm-bytemc
 ```
 
 **方案 C - 懒加载 xterm**：
+
 ```typescript
 // 在需要时才加载 xterm.js
 const loadXterm = async () => {
@@ -96,6 +99,7 @@ const loadXterm = async () => {
 **当前问题**：主包 `index.js` 有 179KB，可以进一步分割。
 
 **优化 `vite.config.ts`**：
+
 ```typescript
 import { defineConfig } from 'vite'
 import { splitVendorChunkPlugin } from 'vite'
@@ -139,6 +143,7 @@ import debounce from 'lodash/debounce'
 ```
 
 **检查 lucide-react 图标使用**：
+
 ```bash
 # 统计使用了多少图标
 grep -r "from 'lucide-react'" src/ | wc -l
@@ -149,6 +154,7 @@ grep -r "from 'lucide-react'" src/ | wc -l
 ### 4. 依赖优化
 
 **分析依赖体积**：
+
 ```bash
 # 安装依赖分析工具
 pnpm add -D rollup-plugin-visualizer
@@ -167,10 +173,10 @@ plugins: [
 
 **考虑替换重型依赖**：
 
-| 当前依赖 | 建议替换 | 节省体积 |
-|---------|---------|---------|
-| dayjs (10KB) | date-fns (5KB) 或原生 Intl | ~5KB |
-| i18next (43KB) | 轻量替代如 fbt | - |
+| 当前依赖       | 建议替换                   | 节省体积 |
+| -------------- | -------------------------- | -------- |
+| dayjs (10KB)   | date-fns (5KB) 或原生 Intl | ~5KB     |
+| i18next (43KB) | 轻量替代如 fbt             | -        |
 
 ---
 
@@ -185,16 +191,17 @@ export default defineConfig({
     minify: 'terser',
     terserOptions: {
       compress: {
-        drop_console: true,      // 移除 console.log
-        drop_debugger: true,     // 移除 debugger
-        passes: 2               // 多轮压缩
-      }
-    }
-  }
+        drop_console: true, // 移除 console.log
+        drop_debugger: true, // 移除 debugger
+        passes: 2, // 多轮压缩
+      },
+    },
+  },
 })
 ```
 
 **配置服务器压缩**：
+
 ```typescript
 // 在 Tauri 服务端添加 Brotli 支持
 // src-tauri/src/main.rs
@@ -216,16 +223,18 @@ fn main() {
 ### 6. 资源内联与 Base64
 
 **小文件内联**：
+
 ```typescript
 // vite.config.ts
 export default defineConfig({
   build: {
     assetsInlineLimit: 4096, // 4KB 以下的资源转为 base64
-  }
+  },
 })
 ```
 
 **CDN 加载大文件**（可选）：
+
 ```html
 <!-- 在 index.html 中使用 CDN 加载 xterm -->
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.3.0/lib/xterm.min.js"></script>
@@ -256,15 +265,16 @@ const routes = [
 
 ## 三、预期优化效果
 
-| 优化项 | 当前 | 可优化至 | 节省 |
-|--------|------|---------|------|
-| xterm.js | 395 KB | 300 KB | 95 KB |
-| 代码分割 | 179 KB | 120 KB | 59 KB |
-| Tree Shaking | 已优化 | - | - |
-| Console 移除 | 已优化 | - | ~20 KB |
-| **总计** | **~1.4 MB** | **~1.0 MB** | **~400 KB** |
+| 优化项       | 当前        | 可优化至    | 节省        |
+| ------------ | ----------- | ----------- | ----------- |
+| xterm.js     | 395 KB      | 300 KB      | 95 KB       |
+| 代码分割     | 179 KB      | 120 KB      | 59 KB       |
+| Tree Shaking | 已优化      | -           | -           |
+| Console 移除 | 已优化      | -           | ~20 KB      |
+| **总计**     | **~1.4 MB** | **~1.0 MB** | **~400 KB** |
 
 **最终预期体积**：
+
 - 生产构建：~1.0 MB
 - gzip 压缩后：~350 KB
 
@@ -275,6 +285,7 @@ const routes = [
 ### ✅ 已实施 (2026-03-26)
 
 1. **Terser 压缩配置** - 移除 console.log
+
    ```typescript
    // vite.config.ts
    build: {
@@ -284,6 +295,7 @@ const routes = [
      }
    }
    ```
+
    - 已在 `vite.config.ts` 中配置
 
 2. **splitVendorChunkPlugin** - 更好的缓存策略

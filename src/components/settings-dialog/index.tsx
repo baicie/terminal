@@ -91,7 +91,9 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
 
   // Storage state
   const [testingConnection, setTestingConnection] = useState(false)
-  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [connectionStatus, setConnectionStatus] = useState<
+    'idle' | 'success' | 'error'
+  >('idle')
   const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
@@ -175,10 +177,14 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
 
     try {
       // Initialize storage backend first
-      await storageInit(settings.syncServiceType as 'webdav' | 's3' | 'custom', settings.syncServiceEndpoint, {
-        username: settings.syncServiceUsername || undefined,
-        password: settings.syncServiceToken || undefined,
-      })
+      await storageInit(
+        settings.syncServiceType as 'webdav' | 's3' | 'custom',
+        settings.syncServiceEndpoint,
+        {
+          username: settings.syncServiceUsername || undefined,
+          password: settings.syncServiceToken || undefined,
+        },
+      )
 
       // Then check health
       const healthy = await storageHealthCheck()
@@ -714,7 +720,11 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
               <Button
                 variant="outline"
                 className="flex-1"
-                disabled={!settings.syncServiceEndpoint || syncing || connectionStatus !== 'success'}
+                disabled={
+                  !settings.syncServiceEndpoint ||
+                  syncing ||
+                  connectionStatus !== 'success'
+                }
                 onClick={handleSyncToServer}
               >
                 {syncing ? (
@@ -751,11 +761,13 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
               <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
                 <div className="flex items-center gap-2 mb-1">
                   <Check className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium">Service mode enabled</span>
+                  <span className="text-sm font-medium">
+                    Service mode enabled
+                  </span>
                 </div>
                 <p className="text-xs text-muted-foreground ml-6">
-                  Your data will sync with the configured storage service.
-                  Click "Test Connection" first to verify the service is reachable.
+                  Your data will sync with the configured storage service. Click
+                  "Test Connection" first to verify the service is reachable.
                 </p>
               </div>
             )}
@@ -858,7 +870,11 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
                   { id: 'catppuccin', name: 'Catppuccin', bg: '#1e1e28' },
                   { id: 'github-dark', name: 'GitHub Dark', bg: '#0d1117' },
                   { id: 'solarized-dark', name: 'Solarized', bg: '#002b36' },
-                  { id: 'solarized-light', name: 'Solarized Light', bg: '#fdf6e3' },
+                  {
+                    id: 'solarized-light',
+                    name: 'Solarized Light',
+                    bg: '#fdf6e3',
+                  },
                 ].map(theme => (
                   <button
                     key={theme.id}
@@ -872,7 +888,10 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
                       }
                     `}
                     onClick={() =>
-                      updateSetting('terminalTheme', theme.id as typeof settings.terminalTheme)
+                      updateSetting(
+                        'terminalTheme',
+                        theme.id as typeof settings.terminalTheme,
+                      )
                     }
                   >
                     <div

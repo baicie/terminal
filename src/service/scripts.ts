@@ -1,8 +1,5 @@
 import type { Host } from '@/types'
-import type {
-  ScriptExecutionRecord,
-  ScriptRecord,
-} from '@/service/database'
+import type { ScriptExecutionRecord, ScriptRecord } from '@/service/database'
 import type { SSHOutput } from '@/service/ssh'
 import {
   addScriptExecution,

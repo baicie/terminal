@@ -410,8 +410,8 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   // Update user profile
   async updateUserProfile(id: string, updates: { name: string }) {
     const now = Date.now()
-    await import('@/service/database').then(
-      ({ updateUserProfile: dbUpdate }) => dbUpdate(id, { name: updates.name, updated_at: now }),
+    await import('@/service/database').then(({ updateUserProfile: dbUpdate }) =>
+      dbUpdate(id, { name: updates.name, updated_at: now }),
     )
     const profile = get().userProfile
     if (profile && profile.id === id) {

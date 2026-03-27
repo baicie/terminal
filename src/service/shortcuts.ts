@@ -18,21 +18,65 @@ export interface ShortcutAction {
 // Built-in actions
 export const builtInActions: ShortcutAction[] = [
   { id: 'new-tab', name: 'New Tab', description: 'Open a new terminal tab' },
-  { id: 'new-ssh', name: 'New SSH Connection', description: 'Create a new SSH connection' },
-  { id: 'new-local', name: 'New Local Terminal', description: 'Open a new local terminal' },
-  { id: 'command-palette', name: 'Command Palette', description: 'Open the command palette' },
-  { id: 'toggle-sidebar', name: 'Toggle Sidebar', description: 'Show or hide the sidebar' },
-  { id: 'split-horizontal', name: 'Split Horizontal', description: 'Split terminal horizontally' },
-  { id: 'split-vertical', name: 'Split Vertical', description: 'Split terminal vertically' },
+  {
+    id: 'new-ssh',
+    name: 'New SSH Connection',
+    description: 'Create a new SSH connection',
+  },
+  {
+    id: 'new-local',
+    name: 'New Local Terminal',
+    description: 'Open a new local terminal',
+  },
+  {
+    id: 'command-palette',
+    name: 'Command Palette',
+    description: 'Open the command palette',
+  },
+  {
+    id: 'toggle-sidebar',
+    name: 'Toggle Sidebar',
+    description: 'Show or hide the sidebar',
+  },
+  {
+    id: 'split-horizontal',
+    name: 'Split Horizontal',
+    description: 'Split terminal horizontally',
+  },
+  {
+    id: 'split-vertical',
+    name: 'Split Vertical',
+    description: 'Split terminal vertically',
+  },
   { id: 'close-tab', name: 'Close Tab', description: 'Close the current tab' },
   { id: 'next-tab', name: 'Next Tab', description: 'Switch to the next tab' },
-  { id: 'prev-tab', name: 'Previous Tab', description: 'Switch to the previous tab' },
-  { id: 'reload-tab', name: 'Reload Tab', description: 'Reconnect the current session' },
-  { id: 'clear-terminal', name: 'Clear Terminal', description: 'Clear terminal screen' },
-  { id: 'search-terminal', name: 'Search in Terminal', description: 'Open terminal search' },
+  {
+    id: 'prev-tab',
+    name: 'Previous Tab',
+    description: 'Switch to the previous tab',
+  },
+  {
+    id: 'reload-tab',
+    name: 'Reload Tab',
+    description: 'Reconnect the current session',
+  },
+  {
+    id: 'clear-terminal',
+    name: 'Clear Terminal',
+    description: 'Clear terminal screen',
+  },
+  {
+    id: 'search-terminal',
+    name: 'Search in Terminal',
+    description: 'Open terminal search',
+  },
   { id: 'zoom-in', name: 'Zoom In', description: 'Increase font size' },
   { id: 'zoom-out', name: 'Zoom Out', description: 'Decrease font size' },
-  { id: 'reset-zoom', name: 'Reset Zoom', description: 'Reset font size to default' },
+  {
+    id: 'reset-zoom',
+    name: 'Reset Zoom',
+    description: 'Reset font size to default',
+  },
 ]
 
 // Default shortcuts
@@ -185,14 +229,18 @@ class ShortcutsService {
    */
   addShortcut(shortcut: Shortcut): void {
     // Check for conflicts
-    const conflicts = this.shortcuts.filter(s =>
-      s.enabled &&
-      s.id !== shortcut.id &&
-      this.keysMatch(s.keys, shortcut.keys)
+    const conflicts = this.shortcuts.filter(
+      s =>
+        s.enabled &&
+        s.id !== shortcut.id &&
+        this.keysMatch(s.keys, shortcut.keys),
     )
 
     if (conflicts.length > 0) {
-      console.warn('Shortcut conflicts with:', conflicts.map(c => c.name))
+      console.warn(
+        'Shortcut conflicts with:',
+        conflicts.map(c => c.name),
+      )
     }
 
     this.shortcuts.push(shortcut)
@@ -245,20 +293,20 @@ class ShortcutsService {
       // Normalize key names
       const keyMap: Record<string, string> = {
         ' ': 'Space',
-        'ArrowUp': 'Up',
-        'ArrowDown': 'Down',
-        'ArrowLeft': 'Left',
-        'ArrowRight': 'Right',
-        'Enter': 'Enter',
-        'Escape': 'Esc',
-        'Backspace': 'Backspace',
-        'Delete': 'Delete',
-        'Tab': 'Tab',
-        'Home': 'Home',
-        'End': 'End',
-        'PageUp': 'PageUp',
-        'PageDown': 'PageDown',
-        'Insert': 'Insert',
+        ArrowUp: 'Up',
+        ArrowDown: 'Down',
+        ArrowLeft: 'Left',
+        ArrowRight: 'Right',
+        Enter: 'Enter',
+        Escape: 'Esc',
+        Backspace: 'Backspace',
+        Delete: 'Delete',
+        Tab: 'Tab',
+        Home: 'Home',
+        End: 'End',
+        PageUp: 'PageUp',
+        PageDown: 'PageDown',
+        Insert: 'Insert',
       }
       keys.push(keyMap[key] || key)
     }
@@ -272,9 +320,7 @@ class ShortcutsService {
   matchShortcut(event: KeyboardEvent): Shortcut | undefined {
     const keys = this.parseKeyboardEvent(event)
 
-    return this.shortcuts.find(s =>
-      s.enabled && this.keysMatch(s.keys, keys)
-    )
+    return this.shortcuts.find(s => s.enabled && this.keysMatch(s.keys, keys))
   }
 
   /**

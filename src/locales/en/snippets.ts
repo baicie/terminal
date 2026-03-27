@@ -39,7 +39,8 @@ export default {
   'scripts.history': 'Execution History',
   'scripts.batch': 'Batch Execute',
   'scripts.empty': 'No scripts yet',
-  'scripts.emptyDesc': 'Create your first script to automate tasks across multiple hosts',
+  'scripts.emptyDesc':
+    'Create your first script to automate tasks across multiple hosts',
   'scripts.run': 'Run',
   'scripts.host': 'host',
   'scripts.hosts': 'hosts',
@@ -49,7 +50,8 @@ export default {
   'scripts.started': 'Started',
   'scripts.duration': 'Duration',
   'scripts.batchTitle': 'Quick Batch Execute',
-  'scripts.batchDesc': 'Execute a command on multiple hosts without saving as a script',
+  'scripts.batchDesc':
+    'Execute a command on multiple hosts without saving as a script',
   'scripts.selectHosts': 'Select Hosts',
   'scripts.hostSelected': 'host(s) selected',
   'scripts.hostsSelected': 'hosts selected',
@@ -66,7 +68,6 @@ export default {
   'scripts.namePlaceholder': 'Script name',
   'scripts.description': 'Description',
   'scripts.descriptionPlaceholder': 'Brief description',
-  'scripts.script': 'Script',
   'scripts.scriptPlaceholder': 'Enter command(s) to execute...',
   'scripts.targetHosts': 'Target Hosts',
   'scripts.scheduleType': 'Schedule Type',
@@ -84,7 +85,8 @@ export default {
   'scripts.created': 'Script created successfully',
   'scripts.deleted': 'Script deleted successfully',
   'scripts.deleteConfirm': 'Delete Script',
-  'scripts.deleteConfirmDesc': 'Are you sure you want to delete "{name}"? This action cannot be undone.',
+  'scripts.deleteConfirmDesc':
+    'Are you sure you want to delete "{name}"? This action cannot be undone.',
   'scripts.nameAndScriptRequired': 'Name and script are required',
   'scripts.noHosts': 'No hosts selected for this script',
 }

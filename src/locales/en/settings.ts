@@ -25,7 +25,8 @@ export default {
     'Export all hosts, groups, snippets and settings to a JSON file for backup or sync.',
   'settings.exportJson': 'Export to JSON File',
   'settings.importData': 'Import Data',
-  'settings.importDesc': 'Select a previously exported JSON file to import data.',
+  'settings.importDesc':
+    'Select a previously exported JSON file to import data.',
   'settings.selectImportFile': 'Select Import File',
   'settings.importPreview': 'Import Preview:',
   'settings.hosts': '{count} host(s)',
@@ -36,7 +37,8 @@ export default {
   'settings.merge': 'Merge',
   'settings.mergeDesc': 'New items will be added, existing items will be kept.',
   'settings.replace': 'Replace',
-  'settings.replaceDesc': 'Existing items with the same ID will be overwritten.',
+  'settings.replaceDesc':
+    'Existing items with the same ID will be overwritten.',
   'settings.importing': 'Importing...',
   'settings.importSuccess': 'Import successful!',
   'settings.securityWarning':
@@ -65,20 +67,24 @@ export default {
   'settings.copyOnSelect': 'Copy on Select',
   'settings.copyOnSelectDesc': 'Automatically copy selection to clipboard',
   'settings.pasteOnMiddleClick': 'Paste on Middle Click',
-  'settings.pasteOnMiddleClickDesc': 'Paste clipboard content on middle mouse button click',
+  'settings.pasteOnMiddleClickDesc':
+    'Paste clipboard content on middle mouse button click',
   'settings.advanced': 'Advanced',
   'settings.allowProposedApi': 'Allow Proposed API',
-  'settings.allowProposedApiDesc': 'Enable xterm.js proposed API features for advanced functionality',
+  'settings.allowProposedApiDesc':
+    'Enable xterm.js proposed API features for advanced functionality',
 
   // Storage
   'settings.storageMode': 'Storage Mode',
-  'settings.storageModeDesc': 'Choose how your data is stored. Local mode keeps everything on this device. Service mode enables syncing across devices via a remote server.',
+  'settings.storageModeDesc':
+    'Choose how your data is stored. Local mode keeps everything on this device. Service mode enables syncing across devices via a remote server.',
   'settings.local': 'Local',
   'settings.localDesc': 'SQLite on this device',
   'settings.service': 'Service',
   'settings.serviceDesc': 'Sync via remote server',
   'settings.syncService': 'Sync Service',
-  'settings.syncServiceDesc': 'Configure a remote service to sync your data across devices. Credentials are stored locally.',
+  'settings.syncServiceDesc':
+    'Configure a remote service to sync your data across devices. Credentials are stored locally.',
   'settings.serviceType': 'Service Type',
   'settings.endpoint': 'Endpoint URL',
   'settings.username': 'Username',
@@ -93,15 +99,19 @@ export default {
 
   // Team
   'settings.teamCollaboration': 'Team Collaboration',
-  'settings.teamCollaborationDesc': 'Enable team features to share hosts and snippets with your team members.',
+  'settings.teamCollaborationDesc':
+    'Enable team features to share hosts and snippets with your team members.',
   'settings.teamEnabled': 'Team mode enabled',
-  'settings.teamEnabledDesc': 'Teams navigation is visible in the sidebar. Manage your teams from the Teams view.',
+  'settings.teamEnabledDesc':
+    'Teams navigation is visible in the sidebar. Manage your teams from the Teams view.',
   'settings.teamDisabled': 'Team mode disabled',
-  'settings.teamDisabledDesc': 'Enable team mode to collaborate with team members.',
+  'settings.teamDisabledDesc':
+    'Enable team mode to collaborate with team members.',
   'settings.openTeams': 'Open Teams View',
   'settings.enableTeam': 'Enable Team Mode',
   'settings.serverConfig': 'Server Configuration',
-  'settings.serverConfigDesc': 'Configure a self-hosted team server for cloud sync. Leave empty for local-only mode.',
+  'settings.serverConfigDesc':
+    'Configure a self-hosted team server for cloud sync. Leave empty for local-only mode.',
   'settings.mode': 'Mode',
   'settings.cloud': 'Cloud',
   'settings.cloudModeDesc': 'Sync via server',
@@ -110,7 +120,8 @@ export default {
   'settings.serverEndpointDesc': 'The URL of your self-hosted team server',
   'settings.apiToken': 'API Token',
   'settings.enterApiToken': 'Enter your API token',
-  'settings.apiTokenDesc': 'Get your API token from the server admin or create one in your account settings',
+  'settings.apiTokenDesc':
+    'Get your API token from the server admin or create one in your account settings',
   'settings.autoSync': 'Auto Sync',
   'settings.autoSyncDesc': 'Automatically sync data with server',
   'settings.syncInterval': 'Sync Interval',

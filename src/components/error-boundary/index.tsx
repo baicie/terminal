@@ -33,11 +33,17 @@ interface ErrorBoundaryState {
   errorInfo: ErrorInfo | null
 }
 
-type ErrorBoundaryInstance = React.Component<ErrorBoundaryProps, ErrorBoundaryState> & {
+type ErrorBoundaryInstance = React.Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> & {
   reset: () => void
 }
 
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends React.Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
   constructor(props: ErrorBoundaryProps) {
     super(props)
     this.state = { hasError: false, error: null, errorInfo: null }
@@ -171,7 +177,9 @@ const ErrorFallback: React.FC<ErrorFallbackProps> = ({
                 : 'bg-gray-100 rounded-lg p-4 overflow-auto max-h-48 text-xs font-mono text-red-600'
             }
           >
-            <pre className="whitespace-pre-wrap break-all">{errorInfo?.componentStack}</pre>
+            <pre className="whitespace-pre-wrap break-all">
+              {errorInfo?.componentStack}
+            </pre>
           </div>
         </div>
       )}
@@ -190,7 +198,12 @@ const ErrorFallback: React.FC<ErrorFallbackProps> = ({
           <RefreshCcw className="size-3.5" data-icon="inline-start" />
           {t(`${prefix}.retry`, { defaultValue: t('common.retry') })}
         </Button>
-        <Button variant="default" size="sm" onClick={handleGoHome} className="gap-1.5">
+        <Button
+          variant="default"
+          size="sm"
+          onClick={handleGoHome}
+          className="gap-1.5"
+        >
           <Home className="size-3.5" data-icon="inline-start" />
           {t(`${prefix}.goHome`, { defaultValue: t('common.goHome') })}
         </Button>
