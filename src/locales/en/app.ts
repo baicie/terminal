@@ -13,6 +13,7 @@ export default {
   'nav.logs': 'Logs',
   'nav.scripts': 'Scripts',
   'nav.settings': 'Settings',
+  'nav.experiments': 'Experiments',
 
   // Top toolbar
   'toolbar.toggleSidebar': 'Toggle sidebar',
@@ -59,8 +60,50 @@ export default {
   'common.retry': 'Retry',
   'common.goHome': 'Go Home',
   'common.errorOccurred': 'Something went wrong',
+  'common.back': 'Back',
 
   // Error boundary
   'error.title': 'Failed to load page',
   'error.message': '{{message}}',
+
+  // Common (for experiments)
+  'common.back': 'Back',
+  'common.clear': 'Clear',
+  'common.on': 'ON',
+  'common.off': 'OFF',
+
+  // Experiments page
+  'experiments.recording': 'Recording',
+  'experiments.paused': 'Paused',
+  'experiments.auto': 'Auto',
+  'experiments.hide': 'Hide',
+  'experiments.show': 'Show',
+  'experiments.controlChars': 'Control Chars',
+  'experiments.hex': 'Hex',
+  'experiments.named': 'Named',
+  'experiments.eventLog': 'Event Log',
+  'experiments.noEvents': 'No events yet...',
+  'experiments.testDesc': 'Test description:',
+  'experiments.eventDesc1': 'event: contains data and inputType',
+  'experiments.eventDesc2': 'event: contains key, code, which and modifier keys',
+  'experiments.eventDesc3': 'Note: Some browser combinations (like Ctrl+C) may not trigger input events',
+  // Xterm test
+  'experiments.xtermTitle': 'Xterm.js Input Test',
+  'experiments.xtermDesc': 'Monitor onData / onKey events from xterm.js Terminal instance and underlying textarea events',
+  'experiments.xtermTerminal': 'Xterm Terminal',
+  'experiments.xtermHint': 'Focus the terminal and type to see events. Try special keys (arrows, Ctrl+C, etc.)',
+  'experiments.eventExplanation': 'Event explanation:',
+  'experiments.onDataDesc': 'Main data event from xterm, contains all data sent to PTY including characters, control codes (\\r, \\n, \\t, etc.) and escape sequences.',
+  'experiments.onKeyDesc': 'Triggered on each keypress, contains key, code, which and modifier key information.',
+  'experiments.textareaEventDesc': 'Native events from the underlying textarea. Note: textarea_input may not trigger on some browsers/platforms.',
+  // Textarea test
+  'experiments.textareaTitle': 'Textarea Input Test',
+  'experiments.textareaDesc': 'Monitor input / keydown / keyup events from textarea element',
+  'experiments.textarea': 'Textarea',
+  'experiments.textareaPlaceholder': 'Type something here...',
+  'experiments.textareaHint': 'Focus this textarea and type to see events captured below.',
+  'experiments.copy': 'Copy',
+  'experiments.copyEvents': 'Copy event log to clipboard',
+  'experiments.copied': 'Copied!',
+  'experiments.copyFailed': 'Failed to copy to clipboard',
 }

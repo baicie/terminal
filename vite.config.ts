@@ -27,6 +27,8 @@ const sharedConfig = {
   },
 }
 
+const devTestPage = path.resolve(__dirname, 'src/dev-test-page.tsx')
+
 export default defineVitestConfig(({ mode }) => {
   if (mode === 'test') {
     return {
@@ -70,14 +72,8 @@ export default defineVitestConfig(({ mode }) => {
     },
     build: {
       emptyOutDir: true,
-      minify: 'terser',
-      terserOptions: {
-        compress: {
-          drop_console: true,
-          drop_debugger: true,
-        },
-      },
       rollupOptions: {
+        exclude: [devTestPage],
         output: {
           chunkFileNames: 'js/[name].[hash].js',
           entryFileNames: 'js/[name].[hash].js',

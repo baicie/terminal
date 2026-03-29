@@ -74,8 +74,8 @@ const TopToolbar: React.FC<{
   }
 
   const navItems = [
-    { label: 'Hosts', icon: <Home className="size-5" />, path: '/hosts' },
-    { label: 'SFTP', icon: <FolderUp className="size-5" />, path: '/sftp' },
+    { label: t('nav.hosts'), icon: <Home className="size-5" />, path: '/hosts' },
+    { label: t('toolbar.sftp'), icon: <FolderUp className="size-5" />, path: '/sftp' },
   ]
 
   // ─── Mobile layout ───────────────────────────────────────────────
@@ -125,7 +125,7 @@ const TopToolbar: React.FC<{
             size="icon"
             className="size-9 shrink-0 text-muted-foreground hover:text-foreground"
             onClick={() => navigate(-1)}
-            title="Back"
+            title={t('common.back')}
             data-tauri-drag-region="false"
           >
             <ArrowLeft className="size-5" />
@@ -168,7 +168,7 @@ const TopToolbar: React.FC<{
                 onClick={() => handleNavClick('/settings')}
               >
                 <BellIcon className="size-5" />
-                <span className="text-sm">Settings</span>
+                <span className="text-sm">{t('nav.settings')}</span>
               </button>
             </div>
           </SheetContent>

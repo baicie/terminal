@@ -13,6 +13,7 @@ export default {
   'nav.logs': 'Journaux',
   'nav.scripts': 'Scripts',
   'nav.settings': 'Paramètres',
+  'nav.experiments': 'Expériences',
 
   // Top toolbar
   'toolbar.toggleSidebar': 'Afficher/masquer la barre latérale',
@@ -59,8 +60,50 @@ export default {
   'common.retry': 'Réessayer',
   'common.goHome': "Retour à l'accueil",
   'common.errorOccurred': 'Une erreur est survenue',
+  'common.back': 'Retour',
 
   // Error boundary
   'error.title': 'Échec du chargement de la page',
   'error.message': '{{message}}',
+
+  // Common (for experiments)
+  'common.back': 'Retour',
+  'common.clear': 'Effacer',
+  'common.on': 'ON',
+  'common.off': 'OFF',
+
+  // Experiments page
+  'experiments.recording': 'Enregistrement',
+  'experiments.paused': 'En pause',
+  'experiments.auto': 'Auto',
+  'experiments.hide': 'Masquer',
+  'experiments.show': 'Afficher',
+  'experiments.controlChars': 'Caractères contrôle',
+  'experiments.hex': 'Hex',
+  'experiments.named': 'Nom',
+  'experiments.eventLog': "Journal d'événements",
+  'experiments.noEvents': "Pas d'événements...",
+  'experiments.testDesc': "Description du test :",
+  'experiments.eventDesc1': "événement : contient data et inputType",
+  'experiments.eventDesc2': "événement : contient key, code, which et touches de modification",
+  'experiments.eventDesc3': "Note : Certaines combinaisons (comme Ctrl+C) peuvent ne pas déclencher d'événements input",
+  // Xterm test
+  'experiments.xtermTitle': "Test d'entrée Xterm.js",
+  'experiments.xtermDesc': "Surveiller les événements onData / onKey de l'instance Terminal xterm.js et les événements textarea sous-jacents",
+  'experiments.xtermTerminal': 'Terminal Xterm',
+  'experiments.xtermHint': "Cliquez sur le terminal et tapez pour voir les événements. Essayez les touches spéciales (flèches, Ctrl+C, etc.)",
+  'experiments.eventExplanation': "Explication des événements :",
+  'experiments.onDataDesc': "Événement principal de données de xterm, contient toutes les données envoyées au PTY, y compris les caractères, les codes de contrôle et les séquences d'échappement.",
+  'experiments.onKeyDesc': "Déclenché à chaque pression de touche, contient les informations key, code, which et touches de modification.",
+  'experiments.textareaEventDesc': "Événements natifs du textarea sous-jacent. Note : textarea_input peut ne pas se déclencher sur certains navigateurs/plates-formes.",
+  // Textarea test
+  'experiments.textareaTitle': "Test d'entrée Textarea",
+  'experiments.textareaDesc': "Surveiller les événements input / keydown / keyup de l'élément textarea",
+  'experiments.textarea': 'Zone de texte',
+  'experiments.textareaPlaceholder': 'Tapez quelque chose ici...',
+  'experiments.textareaHint': "Cliquez sur cette zone de texte et tapez pour voir les événements capturés ci-dessous.",
+  'experiments.copy': 'Copier',
+  'experiments.copyEvents': "Copier le journal d'événements",
+  'experiments.copied': 'Copié !',
+  'experiments.copyFailed': 'Échec de la copie',
 }

@@ -1,30 +1,12 @@
-import type { ReactNode } from 'react'
 import type { RouteObject } from 'react-router-dom'
-import { lazy, Suspense } from 'react'
 import { createBrowserRouter, useSearchParams } from 'react-router-dom'
 import ErrorBoundary from '@/components/error-boundary'
 import { TerminalContainer } from '@/view/terminal/terminal-container'
 import Layout from '../layout'
+import { buildRoutes } from './nav-config.tsx'
+import { makeLazyRoute } from './lazy-route.tsx'
 
-function Loading() {
-  return (
-    <div className="flex items-center justify-center h-full">
-      <div className="text-muted-foreground">Loading...</div>
-    </div>
-  )
-}
-
-// Lazy wrapper: accepts any React component and returns a Suspense-wrapped lazy component
-function makeLazyRoute(
-  getComponent: () => Promise<{ default: React.ComponentType<object> }>,
-): ReactNode {
-  const LazyComponent = lazy(getComponent)
-  return (
-    <Suspense fallback={<Loading />}>
-      <LazyComponent />
-    </Suspense>
-  )
-}
+export { makeLazyRoute }
 
 /**
  * TerminalRoute — 从 URL query 参数 `?tab=xxx` 读取 tabId，
@@ -37,71 +19,18 @@ const TerminalRoute: React.FC = () => {
   return <TerminalContainer tabId={tabId} />
 }
 
-export const routes: RouteObject[] = [
+const routes: RouteObject[] = [
   {
     element: <Layout />,
     errorElement: <ErrorBoundary />,
     children: [
-      // Default route - Home/Hosts
-      {
-        index: true,
-        element: makeLazyRoute(() => import('../view/hosts')),
-      },
-      // Hosts - SSH connections
-      {
-        path: 'hosts',
-        element: makeLazyRoute(() => import('../view/hosts')),
-      },
-      // Terminal - 从 URL query 读取 tabId
+      // Terminal - 特殊路由，从 URL query 读取 tabId
       {
         path: 'terminal',
         element: <TerminalRoute />,
       },
-      // SFTP - File transfer
-      {
-        path: 'sftp',
-        element: makeLazyRoute(() => import('../view/sftp/sftp-container')),
-      },
-      // Vaults - Encrypted storage
-      {
-        path: 'vaults',
-        element: makeLazyRoute(() => import('../view/vaults/vaults-container')),
-      },
-      // Keychain - SSH keys and certificates
-      {
-        path: 'keychain',
-        element: makeLazyRoute(() => import('../view/keychain')),
-      },
-      // Port Forwarding - SSH tunnels
-      {
-        path: 'port-forward',
-        element: makeLazyRoute(() => import('../view/port-forward')),
-      },
-      // Snippets - Command scripts
-      {
-        path: 'snippets',
-        element: makeLazyRoute(() => import('../view/snippets')),
-      },
-      // Known Hosts - SSH host fingerprints
-      {
-        path: 'known-hosts',
-        element: makeLazyRoute(() => import('../view/known-hosts')),
-      },
-      // Logs - Connection history
-      {
-        path: 'logs',
-        element: makeLazyRoute(() => import('../view/app-logs')),
-      },
-      // Teams - Team collaboration
-      {
-        path: 'teams',
-        element: makeLazyRoute(() => import('../view/teams')),
-      },
-      // Settings
-      {
-        path: 'settings',
-        element: makeLazyRoute(() => import('../view/settings')),
-      },
+      // 其他路由从 nav-config 自动生成
+      ...buildRoutes(),
     ],
   },
   {

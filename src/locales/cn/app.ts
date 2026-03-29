@@ -13,6 +13,7 @@ export default {
   'nav.logs': '日志',
   'nav.scripts': '脚本',
   'nav.settings': '设置',
+  'nav.experiments': '实验',
 
   // Top toolbar
   'toolbar.toggleSidebar': '切换侧栏',
@@ -59,8 +60,50 @@ export default {
   'common.retry': '重试',
   'common.goHome': '返回首页',
   'common.errorOccurred': '发生错误',
+  'common.back': '返回',
 
   // Error boundary
   'error.title': '页面加载失败',
   'error.message': '{{message}}',
+
+  // Common (for experiments)
+  'common.back': '返回',
+  'common.clear': '清除',
+  'common.on': '开',
+  'common.off': '关',
+
+  // Experiments page
+  'experiments.recording': '录制中',
+  'experiments.paused': '已暂停',
+  'experiments.auto': '自动滚动',
+  'experiments.hide': '隐藏',
+  'experiments.show': '显示',
+  'experiments.controlChars': '控制字符',
+  'experiments.hex': '十六进制',
+  'experiments.named': '命名',
+  'experiments.eventLog': '事件日志',
+  'experiments.noEvents': '暂无事件...',
+  'experiments.testDesc': '测试说明：',
+  'experiments.eventDesc1': '事件：包含 data 和 inputType',
+  'experiments.eventDesc2': '事件：包含 key、code、which 和修饰键',
+  'experiments.eventDesc3': '注意：组合键（如 Ctrl+C）可能会触发 input 事件',
+  // Xterm test
+  'experiments.xtermTitle': 'Xterm.js 输入测试',
+  'experiments.xtermDesc': '监听 xterm.js Terminal 实例的 onData / onKey 事件，以及底层 textarea 的事件',
+  'experiments.xtermTerminal': 'Xterm 终端',
+  'experiments.xtermHint': '点击终端并输入以查看事件。尝试特殊按键（方向键、Ctrl+C 等）',
+  'experiments.eventExplanation': '事件说明：',
+  'experiments.onDataDesc': 'xterm 的主要数据事件，包含所有发送到 PTY 的数据。字符、控制码（\\r, \\n, \\t 等）、转义序列都在这里。',
+  'experiments.onKeyDesc': '每次按键触发，包含 key、code、which 和修饰键信息。',
+  'experiments.textareaEventDesc': 'xterm 底层 textarea 的原生事件。注意：某些浏览器/平台可能不触发 textarea_input。',
+  // Textarea test
+  'experiments.textareaTitle': 'Textarea 输入测试',
+  'experiments.textareaDesc': '监听 textarea 元素的 input / keydown / keyup 事件',
+  'experiments.textarea': '文本框',
+  'experiments.textareaPlaceholder': '在此输入...',
+  'experiments.textareaHint': '点击此文本框并输入以在下方查看捕获的事件。',
+  'experiments.copy': '复制',
+  'experiments.copyEvents': '将事件日志复制到剪贴板',
+  'experiments.copied': '已复制！',
+  'experiments.copyFailed': '复制到剪贴板失败',
 }

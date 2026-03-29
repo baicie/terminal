@@ -14,6 +14,44 @@ import { clearTerminalWriteFn, setTerminalWriteFn } from './terminal-write-conte
 import TerminalKeyboardBar from './terminal-keyboard-bar'
 import '@xterm/xterm/css/xterm.css'
 
+/**
+ * Suppresses xterm.js parsing errors (code 127 / VT sequence errors) that are
+ * caused by raw control sequences emitted by the local shell (e.g. DECSSE,
+ * DECFRA, or UTF-8 private-use sequences that xterm.js cannot parse).
+ * These errors are harmless — the terminal still works correctly.
+ *
+ * Returns a restore function — call it in the useEffect cleanup.
+ */
+function suppressXtermErrors() {
+  const orig = console.error.bind(console)
+  let count = 0
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  console.error = (...args: unknown[]) => {
+    const msg = typeof args[0] === 'string' ? args[0] : ''
+    if (msg.includes('xterm.js: Parsing error')) {
+      count++
+      if (count === 1) {
+        timer = setTimeout(() => {
+          if (count > 1) {
+            toast.warning(
+              `xterm.js: ${count - 1} VT sequence parsing errors suppressed`,
+            )
+          }
+          count = 0
+        }, 5000)
+      }
+      return
+    }
+    orig(...args)
+  }
+
+  return () => {
+    console.error = orig
+    if (timer) clearTimeout(timer)
+  }
+}
+
 interface TerminalContainerProps {
   tabId: string
 }
@@ -61,6 +99,8 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
   useEffect(() => {
     if (!containerRef.current || !tab) return
 
+    const restore = suppressXtermErrors()
+
     const term = new TerminalComponent({
       cursorBlink: true,
       fontSize,
@@ -99,7 +139,7 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
       }
     })()
 
-    term.open(containerRef.current)
+    term.open(containerRef.current!)
 
     // Register term instance and write function for mobile keyboard bar
     setTermInstance(term)
@@ -114,6 +154,7 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
     isMountedRef.current = true
 
     return () => {
+      restore()
       isMountedRef.current = false
       clearTerminalWriteFn()
       term.dispose()

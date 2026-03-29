@@ -20,12 +20,8 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useIsTeamEnabled } from '@/store/team'
-
-interface NavItemConfig {
-  path: string
-  labelKey: string
-  icon: React.ReactNode
-}
+import { navConfig, type NavItemConfig } from '@/router/nav-config.tsx'
+import { getVisibleNavItems } from '@/router/nav-config.tsx'
 
 interface NavItemProps {
   item: NavItemConfig
@@ -102,54 +98,13 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
   const iconOnly = width != null && width < ICON_ONLY_THRESHOLD
   const isTeamEnabled = useIsTeamEnabled()
 
-  // Build navigation items based on team mode
-  const navItems: NavItemConfig[] = [
-    {
-      path: '/hosts',
-      labelKey: 'nav.hosts',
-      icon: <Server className="size-5" />,
-    },
-    // Teams item - only show when team mode is enabled
-    ...(isTeamEnabled
-      ? [
-          {
-            path: '/teams',
-            labelKey: 'nav.teams',
-            icon: <Users className="size-5" />,
-          },
-        ]
-      : []),
-    {
-      path: '/keychain',
-      labelKey: 'nav.keychain',
-      icon: <Key className="size-5" />,
-    },
-    {
-      path: '/port-forward',
-      labelKey: 'nav.portForward',
-      icon: <ArrowLeftRight className="size-5" />,
-    },
-    {
-      path: '/snippets',
-      labelKey: 'nav.snippets',
-      icon: <Code2 className="size-5" />,
-    },
-    {
-      path: '/known-hosts',
-      labelKey: 'nav.knownHosts',
-      icon: <Fingerprint className="size-5" />,
-    },
-    {
-      path: '/logs',
-      labelKey: 'nav.logs',
-      icon: <FileText className="size-5" />,
-    },
-    {
-      path: '/settings',
-      labelKey: 'nav.settings',
-      icon: <Settings className="size-5" />,
-    },
-  ]
+  // 从共享配置获取可见导航项
+  // - IS_DEV 控制 dev-test 等开发模式项
+  // - isTeamEnabled 控制 teams 项
+  const navItems = getVisibleNavItems().filter(item => {
+    if (item.path === '/teams' && !isTeamEnabled) return false
+    return true
+  })
 
   return (
     <div

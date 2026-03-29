@@ -2,12 +2,12 @@ import type { SnippetPackageRecord, SnippetRecord } from '@/service/database'
 import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
-  Button,
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import {
   createSnippet,
   createSnippetPackage,
