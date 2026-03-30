@@ -1,12 +1,7 @@
 import type { SnippetPackageRecord, SnippetRecord } from '@/service/database'
 import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   createSnippet,
@@ -28,17 +23,12 @@ import { SnippetList } from './snippet-list'
 import { SnippetPackageDialog } from './snippet-package-dialog'
 import { SnippetShareDialog } from './snippet-share-dialog'
 
-interface SnippetDialogProps {
-  open: boolean
-  onClose: () => void
+interface SnippetManagerProps {
   onExecute?: (script: string) => void
 }
 
-const SnippetManager: React.FC<SnippetDialogProps> = ({
-  open,
-  onClose,
-  onExecute,
-}) => {
+const SnippetManager: React.FC<SnippetManagerProps> = ({ onExecute }) => {
+  const { t } = useTranslation()
   const [snippets, setSnippets] = useState<SnippetRecord[]>([])
   const [packages, setPackages] = useState<SnippetPackageRecord[]>([])
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null)
@@ -221,33 +211,33 @@ const SnippetManager: React.FC<SnippetDialogProps> = ({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Snippets Manager</DialogTitle>
-        </DialogHeader>
+    <>
+      <div className="flex min-h-[min(70vh,560px)] flex-col overflow-hidden rounded-xl border bg-card shadow-sm md:flex-row">
+        <PackageSidebar
+          packages={packages}
+          selectedPackage={selectedPackage}
+          onSelectPackage={setSelectedPackage}
+          onCreatePackage={() => setIsPackageDialogOpen(true)}
+          onDeletePackage={id => deleteSnippetPackage(id).then(loadData)}
+        />
 
-        <div className="flex gap-4 flex-1 min-h-0">
-          <PackageSidebar
-            packages={packages}
-            selectedPackage={selectedPackage}
-            onSelectPackage={setSelectedPackage}
-            onCreatePackage={() => setIsPackageDialogOpen(true)}
-            onDeletePackage={id => deleteSnippetPackage(id).then(loadData)}
-          />
+        <div className="flex min-h-[280px] min-w-0 flex-1 flex-col p-4 sm:p-5">
+          <div className="mb-4 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <Button
+              className="w-full sm:w-auto"
+              onClick={() => setIsCreateDialogOpen(true)}
+            >
+              <Plus className="size-4" data-icon="inline-start" />
+              {t('snippets.new')}
+            </Button>
+          </div>
 
-          <div className="flex-1 flex flex-col min-w-0">
-            <div className="flex items-center justify-between mb-4">
-              <Button onClick={() => setIsCreateDialogOpen(true)}>
-                <Plus className="h-4 w-4 mr-1" />
-                New Snippet
-              </Button>
-            </div>
-
+          <div className="min-h-0 flex-1">
             <SnippetList
               snippets={snippets}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
+              onCreateNew={() => setIsCreateDialogOpen(true)}
               onEdit={setEditingSnippet}
               onDelete={handleDelete}
               onExecute={handleExecuteClick}
@@ -260,56 +250,76 @@ const SnippetManager: React.FC<SnippetDialogProps> = ({
             />
           </div>
         </div>
-      </DialogContent>
+      </div>
 
-      <SnippetFormDialog
-        open={isCreateDialogOpen}
-        onClose={() => setIsCreateDialogOpen(false)}
-        mode="create"
-        packages={packages}
-        formData={formData}
-        onFormChange={handleFormChange}
-        onSubmit={handleCreate}
-      />
+      {/* 同时挂载多个 Radix Dialog 会在 WebKit/Tauri 下叠加 RemoveScroll / 遮罩，导致无法点关闭；按需挂载 */}
+      {isCreateDialogOpen ? (
+        <SnippetFormDialog
+          open
+          onClose={() => setIsCreateDialogOpen(false)}
+          mode="create"
+          packages={packages}
+          formData={formData}
+          onFormChange={handleFormChange}
+          onSubmit={handleCreate}
+        />
+      ) : null}
 
-      <SnippetFormDialog
-        open={!!editingSnippet}
-        onClose={() => setEditingSnippet(null)}
-        mode="edit"
-        snippet={editingSnippet}
-        packages={packages}
-        formData={formData}
-        onFormChange={() => {}}
-        onSubmit={handleUpdate}
-      />
+      {editingSnippet ? (
+        <SnippetFormDialog
+          key={editingSnippet.id}
+          open
+          onClose={() => setEditingSnippet(null)}
+          mode="edit"
+          snippet={editingSnippet}
+          packages={packages}
+          formData={formData}
+          onFormChange={() => {}}
+          onSubmit={handleUpdate}
+        />
+      ) : null}
 
-      <SnippetExecuteDialog
-        open={isExecuteDialogOpen}
-        onClose={() => setIsExecuteDialogOpen(false)}
-        snippet={executingSnippet}
-        variableValues={variableValues}
-        onVariableChange={setVariableValues}
-        onExecute={handleExecuteWithVariables}
-      />
+      {isExecuteDialogOpen && executingSnippet ? (
+        <SnippetExecuteDialog
+          open
+          onClose={() => {
+            setIsExecuteDialogOpen(false)
+            setExecutingSnippet(null)
+            setVariableValues({})
+          }}
+          snippet={executingSnippet}
+          variableValues={variableValues}
+          onVariableChange={setVariableValues}
+          onExecute={handleExecuteWithVariables}
+        />
+      ) : null}
 
-      <SnippetPackageDialog
-        open={isPackageDialogOpen}
-        onClose={() => setIsPackageDialogOpen(false)}
-        packageName={newPackageName}
-        onPackageNameChange={setNewPackageName}
-        onSubmit={handleCreatePackage}
-      />
+      {isPackageDialogOpen ? (
+        <SnippetPackageDialog
+          open
+          onClose={() => setIsPackageDialogOpen(false)}
+          packageName={newPackageName}
+          onPackageNameChange={setNewPackageName}
+          onSubmit={handleCreatePackage}
+        />
+      ) : null}
 
-      <SnippetShareDialog
-        open={isShareDialogOpen}
-        onClose={() => setIsShareDialogOpen(false)}
-        snippet={sharingSnippet}
-        permission={sharePermission}
-        onPermissionChange={setSharePermission}
-        teamName={currentTeam?.name}
-        onShare={handleShareSnippet}
-      />
-    </Dialog>
+      {isShareDialogOpen && sharingSnippet ? (
+        <SnippetShareDialog
+          open
+          onClose={() => {
+            setIsShareDialogOpen(false)
+            setSharingSnippet(null)
+            setSharePermission('readonly')
+          }}
+          snippet={sharingSnippet}
+          permission={sharePermission}
+          onPermissionChange={setSharePermission}
+          teamName={currentTeam?.name}
+          onShare={handleShareSnippet}
+        />
+      ) : null}
+    </>
   )
 }
 

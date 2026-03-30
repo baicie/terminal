@@ -12,10 +12,8 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
 } from '@/components/ui/dialog'
 import {
   Sheet,
@@ -52,9 +50,13 @@ function ResponsiveConfirm({
 }: ResponsiveConfirmProps) {
   const isMobile = useIsMobile()
 
+  if (!open) {
+    return null
+  }
+
   if (isMobile) {
     return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
+      <Sheet open onOpenChange={onOpenChange}>
         <SheetContent
           side="bottom"
           className="h-auto rounded-t-2xl pb-[env(safe-area-inset-bottom)]"
@@ -88,7 +90,7 @@ function ResponsiveConfirm({
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog open onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
@@ -146,9 +148,13 @@ function ResponsiveDialog({
 }: ResponsiveDialogProps) {
   const isMobile = useIsMobile()
 
+  if (!open) {
+    return null
+  }
+
   if (isMobile) {
     return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
+      <Sheet open onOpenChange={onOpenChange}>
         <SheetContent
           side="bottom"
           className={`rounded-t-2xl pb-[env(safe-area-inset-bottom)] flex flex-col ${className ?? ''}`}
@@ -176,7 +182,7 @@ function ResponsiveDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className={className}>
         {header && <DialogHeader>{header}</DialogHeader>}
         <div className={contentClassName}>{children}</div>

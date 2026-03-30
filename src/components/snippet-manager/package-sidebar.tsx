@@ -1,5 +1,6 @@
 import type { SnippetPackageRecord } from '@/service/database'
 import { FolderPlus, Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,30 +29,33 @@ export const PackageSidebar: React.FC<PackageSidebarProps> = ({
   onCreatePackage,
   onDeletePackage,
 }) => {
+  const { t } = useTranslation()
+
   return (
-    <div className="w-48 border-r pr-4">
-      <div className="flex items-center justify-between mb-2">
-        <span className="font-medium text-sm">Packages</span>
+    <div className="w-full shrink-0 border-border bg-muted/30 p-3 sm:p-4 md:w-48 md:border-r md:border-b-0 border-b">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-sm font-medium">{t('snippets.packages')}</span>
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6"
+          className="size-8 shrink-0"
           onClick={onCreatePackage}
+          title={t('snippets.newPackage')}
         >
-          <FolderPlus className="h-4 w-4" />
+          <FolderPlus className="size-4" />
         </Button>
       </div>
-      <div className="space-y-1">
+      <div className="max-h-40 space-y-1 overflow-y-auto md:max-h-none">
         <Button
           variant="ghost"
-          className={`w-full justify-start px-2 py-1 h-auto text-sm ${
+          className={`h-auto w-full justify-start px-2 py-1.5 text-sm ${
             selectedPackage === null
               ? 'bg-secondary'
               : 'hover:bg-secondary/60'
           }`}
           onClick={() => onSelectPackage(null)}
         >
-          All Snippets
+          {t('snippets.allSnippets')}
         </Button>
         {packages.map(pkg => (
           <div
@@ -82,17 +86,15 @@ export const PackageSidebar: React.FC<PackageSidebarProps> = ({
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Delete Package</AlertDialogTitle>
+                  <AlertDialogTitle>{t('snippets.deletePackage')}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Are you sure you want to delete "{pkg.name}
-                    "? All snippets in this package will be moved to
-                    uncategorized.
+                    {t('snippets.deletePackageConfirm', { name: pkg.name })}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                   <AlertDialogAction onClick={() => onDeletePackage(pkg.id)}>
-                    Delete
+                    {t('common.delete')}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

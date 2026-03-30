@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -21,7 +22,7 @@ import {
 interface SnippetShareDialogProps {
   open: boolean
   onClose: () => void
-  snippet: SnippetRecord | null
+  snippet: SnippetRecord
   permission: 'readonly' | 'readwrite'
   onPermissionChange: (permission: 'readonly' | 'readwrite') => void
   teamName?: string
@@ -39,10 +40,13 @@ export const SnippetShareDialog: React.FC<SnippetShareDialogProps> = ({
 }) => {
   const { t } = useTranslation()
 
-  if (!snippet) return null
-
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog
+      open={open}
+      onOpenChange={next => {
+        if (!next) onClose()
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('teams.shareSnippet')}</DialogTitle>
@@ -105,10 +109,12 @@ export const SnippetShareDialog: React.FC<SnippetShareDialogProps> = ({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button onClick={onShare}>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
+              {t('common.cancel')}
+            </Button>
+          </DialogClose>
+          <Button type="button" onClick={onShare}>
             <Share2 className="size-4 mr-2" />
             {t('teams.share')}
           </Button>

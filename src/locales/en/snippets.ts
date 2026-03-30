@@ -1,5 +1,6 @@
 export default {
   // Snippets
+  'snippets.pageTitle': 'Snippets & batch scripts',
   'snippets.title': 'Snippets',
   'snippets.search': 'Search snippets...',
   'snippets.new': 'New Snippet',
@@ -23,6 +24,11 @@ export default {
   'snippets.optionalDesc': 'Optional description',
   'snippets.helloWorld': "echo 'Hello World'",
   'snippets.noSnippets': 'No snippets found',
+  'snippets.emptyTitle': 'No snippets yet',
+  'snippets.emptyDesc':
+    'Create reusable commands to insert quickly in the terminal.',
+  'snippets.noMatch': 'No matching snippets',
+  'snippets.noMatchDesc': 'Try another keyword or clear the search.',
   'snippets.deleteSnippet': 'Delete Snippet',
   'snippets.deletePackage': 'Delete Package',
   'snippets.deleteSnippetConfirm':

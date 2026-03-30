@@ -7,9 +7,11 @@ import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-function Dialog({
-  ...props
-}: React.ComponentProps<typeof DialogPrimitive.Root>) {
+function Dialog(props: React.ComponentProps<typeof DialogPrimitive.Root>) {
+  // 受控且关闭时不挂载 Root：避免同页多个 Dialog 叠层（RemoveScroll / 遮罩）在 WebKit、Tauri 下吞掉点击导致无法关闭
+  if (props.open === false) {
+    return null
+  }
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 

@@ -426,7 +426,12 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onClose }) => {
   ]
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog
+      open={open}
+      onOpenChange={next => {
+        if (!next) onClose()
+      }}
+    >
       <DialogContent className="max-w-xl p-0 gap-0 overflow-hidden">
         <DialogHeader className="sr-only">
           <DialogTitle>Command Palette</DialogTitle>

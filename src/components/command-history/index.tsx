@@ -94,7 +94,12 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog
+      open={open}
+      onOpenChange={next => {
+        if (!next) onClose()
+      }}
+    >
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

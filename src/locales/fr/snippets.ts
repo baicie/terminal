@@ -1,5 +1,6 @@
 export default {
   // Snippets
+  'snippets.pageTitle': 'Extraits et scripts par lot',
   'snippets.title': 'Extraits',
   'snippets.search': 'Rechercher des extraits...',
   'snippets.new': 'Nouvel extrait',
@@ -25,6 +26,12 @@ export default {
   'snippets.optionalDesc': 'Description optionnelle',
   'snippets.helloWorld': "echo 'Bonjour le monde'",
   'snippets.noSnippets': 'Aucun extrait trouvé',
+  'snippets.emptyTitle': "Pas encore d'extraits",
+  'snippets.emptyDesc':
+    'Créez des commandes réutilisables à coller rapidement dans le terminal.',
+  'snippets.noMatch': 'Aucun extrait ne correspond',
+  'snippets.noMatchDesc':
+    'Essayez un autre mot-clé ou effacez la recherche.',
   'snippets.deleteSnippet': "Supprimer l'extrait",
   'snippets.deletePackage': 'Supprimer le paquet',
   'snippets.deleteSnippetConfirm':

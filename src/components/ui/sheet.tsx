@@ -4,7 +4,10 @@ import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
-function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
+function Sheet(props: React.ComponentProps<typeof SheetPrimitive.Root>) {
+  if (props.open === false) {
+    return null
+  }
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
 }
 
@@ -33,6 +36,7 @@ function SheetOverlay({
   return (
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
+      data-tauri-drag-region="false"
       className={cn(
         'fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0',
         className,

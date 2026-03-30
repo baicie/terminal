@@ -1,17 +1,13 @@
 import type { ScriptExecutionRecord } from '@/service/database'
 import type { ScriptExecutionResult } from '@/service/scripts'
-import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  EmptyState,
   ViewContainer,
-  ViewToolbar,
+  ViewContent,
+  ViewHeader,
 } from '@/components/view-container'
 import { getHosts } from '@/service/database'
 import { scriptService } from '@/service/scripts'
@@ -21,7 +17,7 @@ import type { Host, ScriptRecord } from '@/types'
 
 const SnippetsView: React.FC = () => {
   const { t } = useTranslation()
-  const [snippetManagerOpen, setSnippetManagerOpen] = useState(false)
+  const [mainTab, setMainTab] = useState('snippets')
 
   const [scripts, setScripts] = useState<ScriptRecord[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -199,35 +195,33 @@ const SnippetsView: React.FC = () => {
 
   return (
     <ViewContainer>
-      <ViewToolbar className="gap-4">
-        <Input placeholder={t('snippets.search')} className="max-w-xs h-9" />
-        <div className="flex-1" />
-        <Button size="sm" onClick={() => setSnippetManagerOpen(true)}>
-          <Plus className="size-4 mr-1" data-icon="inline-start" />
-          {t('snippets.new')}
-        </Button>
-      </ViewToolbar>
+      <ViewHeader
+        title={t('snippets.pageTitle')}
+        description={t('snippets.description')}
+      />
 
-      <div className="p-6">
-        <Tabs defaultValue="snippets" className="w-full">
-          <TabsList className="mb-4">
+      <ViewContent className="flex min-h-0 flex-col px-4 pb-6 sm:px-6">
+        <Tabs
+          value={mainTab}
+          onValueChange={setMainTab}
+          className="flex min-h-0 flex-1 flex-col gap-4"
+        >
+          <TabsList className="grid h-auto w-full grid-cols-2 p-1 sm:inline-flex sm:w-auto">
             <TabsTrigger value="snippets">{t('snippets.title')}</TabsTrigger>
             <TabsTrigger value="scripts">{t('scripts.title')}</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="snippets" className="mt-0">
-            <Card>
-              <Card className="p-6">
-                <SnippetManager
-                  open={snippetManagerOpen}
-                  onClose={() => setSnippetManagerOpen(false)}
-                  onExecute={_script => {}}
-                />
-              </Card>
-            </Card>
+          <TabsContent
+            value="snippets"
+            className="mt-0 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+          >
+            <SnippetManager onExecute={_script => {}} />
           </TabsContent>
 
-          <TabsContent value="scripts" className="mt-0">
+          <TabsContent
+            value="scripts"
+            className="mt-0 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+          >
             <ScriptTab
               scripts={scripts}
               executions={executions}
@@ -263,7 +257,7 @@ const SnippetsView: React.FC = () => {
             />
           </TabsContent>
         </Tabs>
-      </div>
+      </ViewContent>
     </ViewContainer>
   )
 }

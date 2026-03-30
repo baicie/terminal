@@ -1,5 +1,5 @@
 import type { SnippetRecord } from '@/service/database'
-import { Code, Edit, Play, Share2, Trash2 } from 'lucide-react'
+import { Code, Edit, Play, Search, Share2, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   AlertDialog,
@@ -14,14 +14,14 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Search } from 'lucide-react'
-import { useState } from 'react'
+import { EmptyState } from '@/components/view-container'
 import { parseVariables } from './snippet-execute-dialog'
 
 interface SnippetListProps {
   snippets: SnippetRecord[]
   searchQuery: string
   onSearchChange: (query: string) => void
+  onCreateNew?: () => void
   onEdit: (snippet: SnippetRecord) => void
   onDelete: (id: string) => void
   onExecute: (snippet: SnippetRecord) => void
@@ -33,6 +33,7 @@ export const SnippetList: React.FC<SnippetListProps> = ({
   snippets,
   searchQuery,
   onSearchChange,
+  onCreateNew,
   onEdit,
   onDelete,
   onExecute,
@@ -71,25 +72,49 @@ export const SnippetList: React.FC<SnippetListProps> = ({
     }
   }
 
+  const hasNoSnippets = snippets.length === 0
+  const noMatches =
+    !hasNoSnippets && filteredSnippets.length === 0 && searchQuery.trim() !== ''
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+    <div className="flex h-full min-h-[200px] flex-col">
+      <div className="mb-4 flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search snippets..."
-            className="pl-8"
+            placeholder={t('snippets.searchSnippets')}
+            className="h-9 pl-9"
             value={searchQuery}
             onChange={e => onSearchChange(e.target.value)}
           />
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-2">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
         {filteredSnippets.length === 0 ? (
-          <div className="text-center text-muted-foreground py-8">
-            No snippets found
-          </div>
+          <EmptyState
+            className="min-h-[220px] py-10"
+            icon={<Code className="size-12 stroke-[1.25]" />}
+            title={
+              noMatches
+                ? t('snippets.noMatch')
+                : hasNoSnippets
+                  ? t('snippets.emptyTitle')
+                  : t('snippets.noSnippets')
+            }
+            description={
+              noMatches
+                ? t('snippets.noMatchDesc')
+                : hasNoSnippets
+                  ? t('snippets.emptyDesc')
+                  : undefined
+            }
+            action={
+              hasNoSnippets && onCreateNew ? (
+                <Button onClick={onCreateNew}>{t('snippets.new')}</Button>
+              ) : undefined
+            }
+          />
         ) : (
           filteredSnippets.map(snippet => (
             <div
@@ -117,7 +142,7 @@ export const SnippetList: React.FC<SnippetListProps> = ({
                     variant="ghost"
                     size="icon"
                     onClick={() => handleExecuteClick(snippet)}
-                    title="Execute"
+                    title={t('snippets.execute')}
                   >
                     <Play className="h-4 w-4" />
                   </Button>
@@ -135,28 +160,37 @@ export const SnippetList: React.FC<SnippetListProps> = ({
                     variant="ghost"
                     size="icon"
                     onClick={() => onEdit(snippet)}
-                    title="Edit"
+                    title={t('snippets.editSnippet')}
                   >
                     <Edit className="h-4 w-4" />
                   </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="icon" title="Delete">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title={t('snippets.deleteSnippet')}
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Delete Snippet</AlertDialogTitle>
+                        <AlertDialogTitle>
+                          {t('snippets.deleteSnippet')}
+                        </AlertDialogTitle>
                         <AlertDialogDescription>
-                          Are you sure you want to delete "{snippet.name}
-                          "? This action cannot be undone.
+                          {t('snippets.deleteSnippetConfirm', {
+                            name: snippet.name,
+                          })}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogCancel>
+                          {t('common.cancel')}
+                        </AlertDialogCancel>
                         <AlertDialogAction onClick={() => onDelete(snippet.id)}>
-                          Delete
+                          {t('common.delete')}
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>

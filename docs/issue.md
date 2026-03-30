@@ -941,3 +941,84 @@ constructor() {
 ---
 
 _最后更新: 2026-03-26_
+
+---
+
+## 十四、Apple WebKit (Safari) 键盘事件问题 (2026-03-29)
+
+### Issue #26: Safari 同时按键丢失字符 🟡 已知问题，待修复
+
+**严重程度**: Medium
+**状态**: 🟡 已知问题，测试中
+**影响功能**: 终端输入
+**浏览器**: Safari (Apple WebKit)
+**修复时间**: 2026-03-29
+
+**问题描述**:
+
+在 Safari 中同时按下两个键（如 `c+d`）时，xterm.js 的 `onData` 事件只触发一次，导致只收到第一个字符。
+
+**事件时序对比**:
+
+| 浏览器 | 时序 |
+|--------|------|
+| **Chrome (Blink)** | `keydown(c)` → `keydown(d)` → `onData(c)` → `onData(d)` ✅ |
+| **Safari (WebKit)** | `keydown(c)` → `onData(c)` → `input(c)` → **`keydown(d)` (无 onData)** → `input(d)` ❌ |
+
+**根本原因**:
+
+这是 Apple WebKit 的已知问题，不是 xterm.js 的 bug。WebKit 在处理同时按键时有事件时序问题：
+
+1. Safari 在同一个宏任务中处理多个 `keydown` 事件
+2. xterm.js 取消第一个 `keydown` 后，Safari 不会为第二个键触发 `keypress`
+3. 即使触发 `input` 事件，WebKit 的实现也可能不完整
+
+**相关 Issues**:
+
+- [xtermjs/xterm.js #5374](https://github.com/xtermjs/xterm.js/issues/5374) - Cannot type shifted characters or overlapping keys in Safari
+- [xtermjs/xterm.js #5721](https://github.com/xtermjs/xterm.js/issues/5721) - ctrl-c sends keyCode 13 on iOS Safari
+
+**解决方案（测试中）**:
+
+在 `src/experiments/xterm-test.tsx` 中实现了 WebKit 回退机制：
+
+1. **检测 WebKit**: `/AppleWebKit/i.test(navigator.userAgent)`
+2. **追踪已发送字符**: 在 `onData` 中记录已发送的字符到 `Set`
+3. **回退机制**: 在 `textarea.input` 事件中检查字符是否被遗漏，如果是则补充发送
+
+```typescript
+// 核心逻辑
+const isAppleWebKit = /AppleWebKit/i.test(navigator.userAgent)
+const sentCharsRef = { current: new Set<string>() }
+
+// onData 中追踪
+term.onData((data: string) => {
+  if (isAppleWebKit) {
+    for (const ch of data) {
+      sentCharsRef.current.add(ch)
+    }
+  }
+})
+
+// input 事件中回退
+textarea.addEventListener('input', (e: Event) => {
+  const inputData = (e as InputEvent).data ?? ''
+  if (isAppleWebKit && !sentCharsRef.current.has(inputData)) {
+    // 补充发送遗漏的字符
+    term.write(inputData)
+  }
+})
+```
+
+**待完成**:
+
+- [ ] 在 `terminal-container.tsx` 中应用同样的修复
+- [ ] 将 `term.write()` 替换为 `sshService.write(sessionId, text)` 发送到后端
+- [ ] 测试 Safari 中的实际效果
+- [ ] 验证 Ctrl+C、方向键等特殊键仍正常工作
+
+**修改文件**:
+
+- `src/experiments/xterm-test.tsx` - 测试页面已实现
+
+---

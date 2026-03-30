@@ -5,12 +5,14 @@ import {
   Home,
   PanelLeft,
   Plus,
+  Settings,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import CommandPalette from '@/components/command-palette'
 import { HostDialog } from '@/components/host-list/host-dialog'
+import { NotificationPanel } from '@/components/notification-panel'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -19,6 +21,7 @@ import {
 import MenuTabs from '@/layout/tabs'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
+import { useNotificationStore } from '@/store/notification'
 import { useIsMobile } from '@/hooks/use-breakpoint'
 
 const TopToolbar: React.FC<{
@@ -29,11 +32,13 @@ const TopToolbar: React.FC<{
   const location = useLocation()
   const addTab = useAppStore(s => s.addTab)
   const isMobile = useIsMobile()
+  const unreadCount = useNotificationStore(s => s.notifications.filter(n => !n.read).length)
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [hostDialogOpen, setHostDialogOpen] = useState(false)
   const [padForMacTrafficLights, setPadForMacTrafficLights] = useState(false)
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
 
   const isSftpActive = location.pathname === '/sftp'
 
@@ -167,7 +172,7 @@ const TopToolbar: React.FC<{
                 className="flex items-center gap-3 w-full px-3 py-3 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors duration-150 active:scale-[0.98]"
                 onClick={() => handleNavClick('/settings')}
               >
-                <BellIcon className="size-5" />
+                <Settings className="size-5" />
                 <span className="text-sm">{t('nav.settings')}</span>
               </button>
             </div>
@@ -249,10 +254,16 @@ const TopToolbar: React.FC<{
           <Button
             variant="ghost"
             size="icon"
-            className="size-8 text-muted-foreground hover:text-foreground"
+            className="size-8 text-muted-foreground hover:text-foreground relative"
             title={t('toolbar.notifications')}
+            onClick={() => setNotificationPanelOpen(true)}
           >
             <BellIcon className="size-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 rounded-full bg-primary text-[10px] font-medium text-primary-foreground flex items-center justify-center px-1 leading-none">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
           </Button>
         </div>
       </header>
@@ -265,6 +276,11 @@ const TopToolbar: React.FC<{
       <CommandPalette
         open={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
+      />
+
+      <NotificationPanel
+        open={notificationPanelOpen}
+        onOpenChange={setNotificationPanelOpen}
       />
     </>
   )

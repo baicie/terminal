@@ -2,6 +2,7 @@ import type { SnippetPackageRecord, SnippetRecord } from '@/service/database'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -58,7 +59,12 @@ export const SnippetFormDialog: React.FC<SnippetFormDialogProps> = ({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog
+      open={open}
+      onOpenChange={next => {
+        if (!next) onClose()
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Edit Snippet' : 'Create Snippet'}</DialogTitle>
@@ -123,10 +129,12 @@ export const SnippetFormDialog: React.FC<SnippetFormDialogProps> = ({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit}>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button type="button" onClick={handleSubmit}>
             {isEdit ? 'Save' : 'Create'}
           </Button>
         </DialogFooter>

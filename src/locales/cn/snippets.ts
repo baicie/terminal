@@ -1,5 +1,6 @@
 export default {
   // Snippets
+  'snippets.pageTitle': '代码片段与批量脚本',
   'snippets.title': '代码片段',
   'snippets.search': '搜索片段...',
   'snippets.new': '新建片段',
@@ -23,6 +24,10 @@ export default {
   'snippets.optionalDesc': '可选描述',
   'snippets.helloWorld': "echo '你好世界'",
   'snippets.noSnippets': '未找到片段',
+  'snippets.emptyTitle': '暂无代码片段',
+  'snippets.emptyDesc': '创建可复用的命令，在终端中快速插入。',
+  'snippets.noMatch': '没有匹配的片段',
+  'snippets.noMatchDesc': '换个关键词试试，或清空搜索。',
   'snippets.deleteSnippet': '删除片段',
   'snippets.deletePackage': '删除包',
   'snippets.deleteSnippetConfirm': '确定要删除 "{name}" 吗？此操作无法撤销。',
@@ -64,4 +69,6 @@ export default {
   'scripts.deleteConfirmDesc': '确定要删除 "{name}" 吗？此操作无法撤销。',
   'scripts.nameAndScriptRequired': '名称和脚本内容是必填的',
   'scripts.noHosts': '此脚本未选择任何主机',
+  'scripts.noHistory': '暂无执行历史',
+  'scripts.noHistoryDesc': '运行一次脚本后，可在此查看结果',
 }

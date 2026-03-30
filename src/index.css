@@ -379,7 +379,11 @@
 /* Modal layer is portaled to body; must not use window drag region or overlay clicks / Esc dismiss fail (Tauri). */
 [data-slot='dialog-overlay'],
 [data-slot='dialog-content'],
-[data-slot='dialog-close'] {
+[data-slot='dialog-close'],
+[data-slot='alert-dialog-overlay'],
+[data-slot='alert-dialog-content'],
+[data-slot='sheet-overlay'],
+[data-slot='sheet-content'] {
   -webkit-app-region: no-drag !important;
   app-region: no-drag !important;
 }

@@ -1,5 +1,6 @@
 import type { PortForward, PortForwardType } from '@/types'
 import {
+  ArrowLeft,
   ArrowRightLeft,
   Network,
   Pause,
@@ -33,6 +34,8 @@ interface PortForwardDialogProps {
   onSave: (portForwards: PortForward[]) => void
 }
 
+type Panel = 'list' | 'add'
+
 const PortForwardDialog: React.FC<PortForwardDialogProps> = ({
   open,
   onClose,
@@ -40,7 +43,7 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = ({
   onSave,
 }) => {
   const [portForwards, setPortForwards] = useState<PortForward[]>([])
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [panel, setPanel] = useState<Panel>('list')
 
   const [formData, setFormData] = useState({
     name: '',
@@ -52,7 +55,10 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = ({
   })
 
   useEffect(() => {
-    setPortForwards(initialForwards || [])
+    if (open) {
+      setPortForwards(initialForwards || [])
+      setPanel('list')
+    }
   }, [initialForwards, open])
 
   const handleAdd = () => {
@@ -67,7 +73,7 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = ({
       active: false,
     }
     setPortForwards([...portForwards, newForward])
-    setIsAddDialogOpen(false)
+    setPanel('list')
     resetForm()
   }
 
@@ -97,6 +103,11 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = ({
     onClose()
   }
 
+  const leaveAddPanel = () => {
+    setPanel('list')
+    resetForm()
+  }
+
   const getTypeLabel = (type: PortForwardType) => {
     switch (type) {
       case 'local':
@@ -123,174 +134,159 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = ({
     }
   }
 
-  if (!open) return null
-
   return (
-    <>
-      <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Network className="h-5 w-5" />
-              Port Forwards
-            </DialogTitle>
-          </DialogHeader>
+    <Dialog
+      open={open}
+      onOpenChange={next => {
+        if (!next) {
+          leaveAddPanel()
+          onClose()
+        }
+      }}
+    >
+      <DialogContent className="flex max-h-[80vh] max-w-2xl flex-col overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Network className="size-5" />
+            {panel === 'list' ? 'Port Forwards' : 'Add Port Forward'}
+          </DialogTitle>
+        </DialogHeader>
 
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-sm text-muted-foreground">
-              {portForwards.length} forward
-              {portForwards.length !== 1 ? 's' : ''} configured
-            </span>
-            <Button onClick={() => setIsAddDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-1" />
-              Add Forward
-            </Button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {portForwards.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8">
-                No port forwards configured
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {portForwards.map(forward => (
-                  <div
-                    key={forward.id}
-                    className={`border rounded-lg p-3 flex items-center justify-between ${
-                      forward.active ? 'bg-accent/50' : ''
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{forward.name}</span>
-                        <span className="text-xs px-2 py-0.5 bg-muted rounded">
-                          {getTypeLabel(forward.type)}
-                        </span>
-                      </div>
-                      <div className="text-sm text-muted-foreground mt-1 font-mono">
-                        {getForwardDescription(forward)}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 ml-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleToggleActive(forward.id)}
-                        title={forward.active ? 'Stop' : 'Start'}
-                      >
-                        {forward.active ? (
-                          <Pause className="h-4 w-4" />
-                        ) : (
-                          <Play className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(forward.id)}
-                        title="Delete"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave}>Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Forward Dialog */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Port Forward</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="forward-name">Name</Label>
-              <Input
-                id="forward-name"
-                value={formData.name}
-                onChange={e =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                placeholder="My Forward"
-              />
+        {panel === 'list' ? (
+          <>
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">
+                {portForwards.length} forward
+                {portForwards.length !== 1 ? 's' : ''} configured
+              </span>
+              <Button type="button" onClick={() => setPanel('add')}>
+                <Plus className="mr-1 size-4" />
+                Add Forward
+              </Button>
             </div>
 
-            <div>
-              <Label htmlFor="forward-type">Type</Label>
-              <Select
-                value={formData.type}
-                onValueChange={v =>
-                  setFormData({ ...formData, type: v as PortForwardType })
-                }
-              >
-                <SelectTrigger id="forward-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="local">Local Port Forward (-L)</SelectItem>
-                  <SelectItem value="remote">
-                    Remote Port Forward (-R)
-                  </SelectItem>
-                  <SelectItem value="dynamic">
-                    Dynamic Port Forward (-D)
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {formData.type === 'dynamic' ? (
-              <div>
-                <Label>SOCKS Proxy</Label>
-                <div className="flex items-center gap-2 mt-1">
-                  <Input
-                    value={formData.localHost}
-                    onChange={e =>
-                      setFormData({ ...formData, localHost: e.target.value })
-                    }
-                    placeholder="localhost"
-                    className="font-mono"
-                  />
-                  <span>:</span>
-                  <Input
-                    type="number"
-                    value={formData.localPort}
-                    onChange={e =>
-                      setFormData({ ...formData, localPort: e.target.value })
-                    }
-                    placeholder="1080"
-                    className="font-mono"
-                  />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {portForwards.length === 0 ? (
+                <div className="py-8 text-center text-muted-foreground">
+                  No port forwards configured
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Creates a SOCKS proxy at {formData.localHost}:
-                  {formData.localPort || '1080'}
-                </p>
+              ) : (
+                <div className="space-y-2">
+                  {portForwards.map(forward => (
+                    <div
+                      key={forward.id}
+                      className={`flex items-center justify-between rounded-lg border p-3 ${
+                        forward.active ? 'bg-accent/50' : ''
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{forward.name}</span>
+                          <span className="rounded bg-muted px-2 py-0.5 text-xs">
+                            {getTypeLabel(forward.type)}
+                          </span>
+                        </div>
+                        <div className="mt-1 font-mono text-sm text-muted-foreground">
+                          {getForwardDescription(forward)}
+                        </div>
+                      </div>
+                      <div className="ml-2 flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          type="button"
+                          onClick={() => handleToggleActive(forward.id)}
+                          title={forward.active ? 'Stop' : 'Start'}
+                        >
+                          {forward.active ? (
+                            <Pause className="size-4" />
+                          ) : (
+                            <Play className="size-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          type="button"
+                          onClick={() => handleDelete(forward.id)}
+                          title="Delete"
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={handleSave}>
+                Save
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <div className="space-y-4 overflow-y-auto">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="mb-1 -ml-2 w-fit gap-1 px-2"
+                onClick={leaveAddPanel}
+              >
+                <ArrowLeft className="size-4" />
+                Back to list
+              </Button>
+              <div>
+                <Label htmlFor="forward-name">Name</Label>
+                <Input
+                  id="forward-name"
+                  value={formData.name}
+                  onChange={e =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                  placeholder="My Forward"
+                />
               </div>
-            ) : (
-              <>
+
+              <div>
+                <Label htmlFor="forward-type">Type</Label>
+                <Select
+                  value={formData.type}
+                  onValueChange={v =>
+                    setFormData({ ...formData, type: v as PortForwardType })
+                  }
+                >
+                  <SelectTrigger id="forward-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="local">
+                      Local Port Forward (-L)
+                    </SelectItem>
+                    <SelectItem value="remote">
+                      Remote Port Forward (-R)
+                    </SelectItem>
+                    <SelectItem value="dynamic">
+                      Dynamic Port Forward (-D)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {formData.type === 'dynamic' ? (
                 <div>
-                  <Label>Local</Label>
-                  <div className="flex items-center gap-2 mt-1">
+                  <Label>SOCKS Proxy</Label>
+                  <div className="mt-1 flex items-center gap-2">
                     <Input
                       value={formData.localHost}
                       onChange={e =>
-                        setFormData({
-                          ...formData,
-                          localHost: e.target.value,
-                        })
+                        setFormData({ ...formData, localHost: e.target.value })
                       }
                       placeholder="localhost"
                       className="font-mono"
@@ -300,62 +296,97 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = ({
                       type="number"
                       value={formData.localPort}
                       onChange={e =>
-                        setFormData({
-                          ...formData,
-                          localPort: e.target.value,
-                        })
+                        setFormData({ ...formData, localPort: e.target.value })
                       }
-                      placeholder="Port"
+                      placeholder="1080"
                       className="font-mono"
                     />
                   </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Creates a SOCKS proxy at {formData.localHost}:
+                    {formData.localPort || '1080'}
+                  </p>
                 </div>
-
-                <div className="flex justify-center">
-                  <ArrowRightLeft className="h-5 w-5 text-muted-foreground" />
-                </div>
-
-                <div>
-                  <Label>Remote</Label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Input
-                      value={formData.remoteHost}
-                      onChange={e =>
-                        setFormData({
-                          ...formData,
-                          remoteHost: e.target.value,
-                        })
-                      }
-                      placeholder="localhost"
-                      className="font-mono"
-                    />
-                    <span>:</span>
-                    <Input
-                      type="number"
-                      value={formData.remotePort}
-                      onChange={e =>
-                        setFormData({
-                          ...formData,
-                          remotePort: e.target.value,
-                        })
-                      }
-                      placeholder="Port"
-                      className="font-mono"
-                    />
+              ) : (
+                <>
+                  <div>
+                    <Label>Local</Label>
+                    <div className="mt-1 flex items-center gap-2">
+                      <Input
+                        value={formData.localHost}
+                        onChange={e =>
+                          setFormData({
+                            ...formData,
+                            localHost: e.target.value,
+                          })
+                        }
+                        placeholder="localhost"
+                        className="font-mono"
+                      />
+                      <span>:</span>
+                      <Input
+                        type="number"
+                        value={formData.localPort}
+                        onChange={e =>
+                          setFormData({
+                            ...formData,
+                            localPort: e.target.value,
+                          })
+                        }
+                        placeholder="Port"
+                        className="font-mono"
+                      />
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleAdd}>Add</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+
+                  <div className="flex justify-center">
+                    <ArrowRightLeft className="size-5 text-muted-foreground" />
+                  </div>
+
+                  <div>
+                    <Label>Remote</Label>
+                    <div className="mt-1 flex items-center gap-2">
+                      <Input
+                        value={formData.remoteHost}
+                        onChange={e =>
+                          setFormData({
+                            ...formData,
+                            remoteHost: e.target.value,
+                          })
+                        }
+                        placeholder="localhost"
+                        className="font-mono"
+                      />
+                      <span>:</span>
+                      <Input
+                        type="number"
+                        value={formData.remotePort}
+                        onChange={e =>
+                          setFormData({
+                            ...formData,
+                            remotePort: e.target.value,
+                          })
+                        }
+                        placeholder="Port"
+                        className="font-mono"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={leaveAddPanel}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={handleAdd}>
+                Add
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 

@@ -3,6 +3,7 @@ import { Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -14,7 +15,7 @@ import { Label } from '@/components/ui/label'
 interface SnippetExecuteDialogProps {
   open: boolean
   onClose: () => void
-  snippet: SnippetRecord | null
+  snippet: SnippetRecord
   variableValues: Record<string, string>
   onVariableChange: (values: Record<string, string>) => void
   onExecute: () => void
@@ -39,12 +40,15 @@ export const SnippetExecuteDialog: React.FC<SnippetExecuteDialogProps> = ({
   onVariableChange,
   onExecute,
 }) => {
-  if (!snippet) return null
-
   const variables = parseVariables(snippet.script)
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog
+      open={open}
+      onOpenChange={next => {
+        if (!next) onClose()
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Execute Snippet - Set Variables</DialogTitle>
@@ -80,10 +84,12 @@ export const SnippetExecuteDialog: React.FC<SnippetExecuteDialogProps> = ({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={onExecute}>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button type="button" onClick={onExecute}>
             <Play className="h-4 w-4 mr-1" />
             Execute
           </Button>

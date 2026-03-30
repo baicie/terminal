@@ -13,7 +13,8 @@ function Label({
     <LabelPrimitive.Root
       data-slot="label"
       className={cn(
-        '@container/label inline-flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50',
+        // Safari/WebKit：@container + inline-flex 曾导致标签可用宽度过窄，中文被逐字换行
+        'inline-flex w-max max-w-full shrink-0 flex-wrap items-center gap-2 text-sm leading-normal font-medium whitespace-normal select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50',
         className,
       )}
       {...props}

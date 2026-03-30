@@ -117,7 +117,12 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
 
   if (loading || !settings) {
     return (
-      <Dialog open={open} onOpenChange={onClose}>
+      <Dialog
+        open={open}
+        onOpenChange={next => {
+          if (!next) onClose()
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Settings</DialogTitle>
@@ -129,7 +134,12 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog
+      open={open}
+      onOpenChange={next => {
+        if (!next) onClose()
+      }}
+    >
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
