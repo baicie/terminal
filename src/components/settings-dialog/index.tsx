@@ -294,49 +294,92 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
                 <span className="text-muted-foreground">Terminal Theme</span>
               </h4>
               <p className="text-sm text-muted-foreground">
-                Choose a color theme for the terminal.
+                Choose color themes for light and dark app modes.
               </p>
 
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: 'one-dark', name: 'One Dark', bg: '#282c34' },
-                  { id: 'monokai', name: 'Monokai', bg: '#272822' },
-                  { id: 'dracula', name: 'Dracula', bg: '#282a36' },
-                  { id: 'nord', name: 'Nord', bg: '#2e3440' },
-                  { id: 'catppuccin', name: 'Catppuccin', bg: '#1e1e28' },
-                  { id: 'github-dark', name: 'GitHub Dark', bg: '#0d1117' },
-                  { id: 'solarized-dark', name: 'Solarized', bg: '#002b36' },
-                  {
-                    id: 'solarized-light',
-                    name: 'Solarized Light',
-                    bg: '#fdf6e3',
-                  },
-                ].map(theme => (
-                  <button
-                    key={theme.id}
-                    type="button"
-                    className={`
-                      flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all text-center
-                      ${
-                        (settings.terminalTheme || 'one-dark') === theme.id
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border hover:border-primary/50'
-                      }
-                    `}
-                    onClick={() =>
-                      updateSetting(
-                        'terminalTheme',
-                        theme.id as typeof settings.terminalTheme,
-                      )
-                    }
-                  >
-                    <div
-                      className="w-full h-6 rounded"
-                      style={{ backgroundColor: theme.bg }}
-                    />
-                    <span className="text-xs font-medium">{theme.name}</span>
-                  </button>
-                ))}
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Dark Mode</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'one-dark', name: 'One Dark', bg: '#282c34' },
+                      { id: 'monokai', name: 'Monokai', bg: '#272822' },
+                      { id: 'dracula', name: 'Dracula', bg: '#282a36' },
+                      { id: 'nord', name: 'Nord', bg: '#2e3440' },
+                      { id: 'catppuccin', name: 'Catppuccin', bg: '#1e1e28' },
+                      { id: 'github-dark', name: 'GitHub Dark', bg: '#0d1117' },
+                      { id: 'solarized-dark', name: 'Solarized', bg: '#002b36' },
+                    ].map(theme => (
+                      <button
+                        key={theme.id}
+                        type="button"
+                        className={`
+                          flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all text-center
+                          ${
+                            (settings.terminalThemeDark || 'one-dark') === theme.id
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border hover:border-primary/50'
+                          }
+                        `}
+                        onClick={() =>
+                          updateSetting(
+                            'terminalThemeDark',
+                            theme.id as typeof settings.terminalThemeDark,
+                          )
+                        }
+                      >
+                        <div
+                          className="w-full h-6 rounded"
+                          style={{ backgroundColor: theme.bg }}
+                        />
+                        <span className="text-xs font-medium">{theme.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Light Mode</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      {
+                        id: 'solarized-light',
+                        name: 'Solarized Light',
+                        bg: '#fdf6e3',
+                      },
+                      {
+                        id: 'github-dark',
+                        name: 'GitHub Dark',
+                        bg: '#0d1117',
+                      },
+                    ].map(theme => (
+                      <button
+                        key={theme.id}
+                        type="button"
+                        className={`
+                          flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all text-center
+                          ${
+                            (settings.terminalThemeLight || 'solarized-light') === theme.id
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border hover:border-primary/50'
+                          }
+                        `}
+                        onClick={() =>
+                          updateSetting(
+                            'terminalThemeLight',
+                            theme.id as typeof settings.terminalThemeLight,
+                          )
+                        }
+                      >
+                        <div
+                          className="w-full h-6 rounded"
+                          style={{ backgroundColor: theme.bg }}
+                        />
+                        <span className="text-xs font-medium">{theme.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </TabsContent>

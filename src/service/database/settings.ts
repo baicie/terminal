@@ -21,6 +21,8 @@ export const defaultSettings: AppSettings = {
   syncServiceUsername: '',
   syncServiceToken: '',
   terminalTheme: 'one-dark',
+  terminalThemeDark: 'one-dark',
+  terminalThemeLight: 'solarized-light',
 }
 
 export async function getSetting<T>(key: string, defaultValue: T): Promise<T> {

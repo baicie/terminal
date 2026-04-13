@@ -76,9 +76,21 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
   // Derive host from tab.hostId
   const host = tab?.hostId ? hosts.find(h => h.id === tab.hostId) : undefined
 
-  // Get terminal theme from settings
-  const terminalTheme = (settings.terminalTheme as string) || 'one-dark'
-  const themeColors = getThemeColors(terminalTheme as never)
+  const appTheme = useAppStore(s => s.theme)
+
+  // Resolve the currently active terminal theme preset (settings + system preference)
+  const darkPreset = (settings.terminalThemeDark as string) || 'one-dark'
+  const lightPreset = (settings.terminalThemeLight as string) || 'solarized-light'
+
+  const activeTerminalTheme = (() => {
+    if (appTheme === 'light') return lightPreset
+    if (appTheme === 'dark') return darkPreset
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+      ? darkPreset
+      : lightPreset
+  })()
+
+  const themeColors = getThemeColors(activeTerminalTheme as never)
 
   // ---- 终端数据流 hook ----
   const termForHook = termRef.current
@@ -162,7 +174,13 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
       setTermInstance(null)
       setIsReady(false)
     }
-  }, [tabId, tab, themeColors])
+  }, [tabId, tab])
+
+  // ---- App 主题或预设变化时动态更新终端颜色 ----
+  useEffect(() => {
+    if (!termRef.current) return
+    termRef.current.options.theme = themeColors
+  }, [themeColors])
 
   // ---- Resize 监听 ----
   useEffect(() => {
@@ -208,13 +226,6 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
       return () => cancelAnimationFrame(rafId)
     }
   }, [isReady, status])
-
-  // ---- 主题变化时动态更新终端主题 ----
-  useEffect(() => {
-    if (!termRef.current) return
-    const colors = getThemeColors(terminalTheme as never)
-    termRef.current.options.theme = colors
-  }, [terminalTheme])
 
   // ─── 空状态：无标签 ──────────────────────────────────────────────
   if (!tab) {
