@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal as TerminalComponent } from '@baicie/xterm'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import {
   ViewContainer,
   ViewToolbar,
@@ -17,8 +18,45 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ArrowLeft, Clipboard, Check } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { toast } from 'sonner'
 import '@baicie/xterm/css/xterm.css'
+
+/**
+ * Suppresses xterm.js parsing errors (code 127 / VT sequence errors) that are
+ * caused by raw control sequences emitted by the local shell (e.g. DECSSE,
+ * DECFRA, or UTF-8 private-use sequences that xterm.js cannot parse).
+ * These errors are harmless — the terminal still works correctly.
+ *
+ * Returns a restore function — call it in the useEffect cleanup.
+ */
+function suppressXtermErrors() {
+  const orig = console.error.bind(console)
+  let count = 0
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  console.error = (...args: unknown[]) => {
+    const msg = typeof args[0] === 'string' ? args[0] : ''
+    if (msg.includes('xterm.js: Parsing error')) {
+      count++
+      if (count === 1) {
+        timer = setTimeout(() => {
+          if (count > 1) {
+            toast.warning(
+              `xterm.js: ${count - 1} VT sequence parsing errors suppressed`,
+            )
+          }
+          count = 0
+        }, 5000)
+      }
+      return
+    }
+    orig(...args)
+  }
+
+  return () => {
+    console.error = orig
+    if (timer) clearTimeout(timer)
+  }
+}
 
 interface XtermEvent {
   id: number
@@ -115,10 +153,12 @@ const XtermTest: React.FC = () => {
   useEffect(() => {
     if (!containerRef.current) return
 
+    const restore = suppressXtermErrors()
+
     const term = new TerminalComponent({
       cursorBlink: true,
       fontSize,
-      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       theme: {
         background: '#1e1e1e',
         foreground: '#d4d4d4',
@@ -142,7 +182,9 @@ const XtermTest: React.FC = () => {
         brightCyan: '#4ec9b0',
         brightWhite: '#ffffff',
       },
-      scrollback: 2000,
+      scrollback: 10000,
+      macOptionIsMeta: true,
+      allowTransparency: true,
       allowProposedApi: true,
     })
 
@@ -158,6 +200,50 @@ const XtermTest: React.FC = () => {
 
     const webLinksAddon = new WebLinksAddon()
     term.loadAddon(webLinksAddon)
+
+    const unicodeAddon = new Unicode11Addon()
+    term.loadAddon(unicodeAddon)
+    term.unicode.activeVersion = '11'
+
+    // Load WebGL addon for GPU acceleration
+    ;(async () => {
+      try {
+        const { WebglAddon } = await import('@xterm/addon-webgl')
+        term.loadAddon(new WebglAddon())
+      } catch (e) {
+        console.warn('Failed to load WebglAddon:', e)
+      }
+    })()
+
+    // Load Image addon for image support
+    ;(async () => {
+      try {
+        const { ImageAddon } = await import('@xterm/addon-image')
+        term.loadAddon(new ImageAddon())
+      } catch (e) {
+        console.warn('Failed to load ImageAddon:', e)
+      }
+    })()
+
+    // Load Ligatures addon for programming font ligatures
+    ;(async () => {
+      try {
+        const { LigaturesAddon } = await import('@xterm/addon-ligatures')
+        term.loadAddon(new LigaturesAddon())
+      } catch (e) {
+        console.warn('Failed to load LigaturesAddon:', e)
+      }
+    })()
+
+    // Load Clipboard addon
+    ;(async () => {
+      try {
+        const { ClipboardAddon } = await import('@xterm/addon-clipboard')
+        term.loadAddon(new ClipboardAddon())
+      } catch (e) {
+        console.warn('Failed to load ClipboardAddon:', e)
+      }
+    })()
 
     term.open(containerRef.current)
 
@@ -192,7 +278,7 @@ const XtermTest: React.FC = () => {
     })
 
     // --- xterm onKey: fired for keyboard key presses ---
-    term.onKey(({ key, domEvent }) => {
+    term.onKey(({ key, domEvent }: { key: string; domEvent: KeyboardEvent }) => {
       addEvent({
         id: ++eventId,
         type: 'onKey',
@@ -262,6 +348,7 @@ const XtermTest: React.FC = () => {
     if (containerRef.current) ro.observe(containerRef.current)
 
     return () => {
+      restore()
       if (roRafId !== null) cancelAnimationFrame(roRafId)
       ro.disconnect()
       term.dispose()
