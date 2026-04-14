@@ -256,7 +256,7 @@ async fn forward_socket<S: AsyncRead + AsyncWrite + Send + 'static + std::marker
                 result = rx.recv() => {
                     match result {
                         Ok(data) => {
-                            if handle.data(channel_id, data.into()).await.is_err() {
+                            if handle.data(channel_id, data).await.is_err() {
                                 break;
                             }
                         }

@@ -479,7 +479,7 @@ pub async fn ssh_write(
         .ok_or_else(|| SshError::ChannelError("Shell channel not found".to_string()))?;
 
     handle
-        .data(*channel_id, data.into())
+        .data(*channel_id, data)
         .await
         .map_err(|e| SshError::ChannelError(format!("Failed to send data: {:?}", e)))?;
 
@@ -514,7 +514,7 @@ pub async fn ssh_resize(
     let resize_cmd = format!("\x1b[8;{};{}t", rows, cols);
 
     handle
-        .data(channel_id, resize_cmd.into())
+        .data(channel_id, resize_cmd)
         .await
         .map_err(|e| SshError::ChannelError(format!("Failed to send resize signal: {:?}", e)))?;
 
