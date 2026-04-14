@@ -4,16 +4,13 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  '@baicie/xterm': npm:@baicie/xterm@0.1.4
-
 importers:
 
   .:
     dependencies:
       '@baicie/xterm':
-        specifier: npm:@baicie/xterm@0.1.4
-        version: 0.1.4
+        specifier: ^0.1.6
+        version: 0.1.6
       '@radix-ui/react-avatar':
         specifier: ^1.1.11
         version: 1.1.11(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -542,8 +539,8 @@ packages:
     resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
     engines: {node: '>=6.9.0'}
 
-  '@baicie/xterm@0.1.4':
-    resolution: {integrity: sha512-M1WETcDPVkCcj/tQ8rQbx60QIID8mUwNO6Td7/J1Dwf2qgdy/sJjTadDCNVeBTAooHWd1Rn0lX4rQyRh17etOg==, tarball: https://registry.npmjs.org/@baicie/xterm/-/xterm-0.1.4.tgz}
+  '@baicie/xterm@0.1.6':
+    resolution: {integrity: sha512-yGWu6pcsiP17RfDB1OFFJEFB6fpAFel+vANCB/VYnE7fIT+KjcLpkRhoFcFmz9klxp3un32mhhDQBhIj1HgPDA==}
 
   '@bcoe/v8-coverage@1.0.2':
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
@@ -6573,7 +6570,7 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
 
-  '@baicie/xterm@0.1.4': {}
+  '@baicie/xterm@0.1.6': {}
 
   '@bcoe/v8-coverage@1.0.2': {}
 
