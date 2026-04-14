@@ -2,7 +2,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import { Terminal as TerminalComponent } from '@xterm/xterm'
+import { Terminal as TerminalComponent } from '@baicie/xterm'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { getThemeColors } from '@/utils/terminal-themes'
@@ -10,9 +10,12 @@ import { useIsMobile } from '@/hooks/use-breakpoint'
 import { useTerminal } from '@/hooks/use-terminal'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
-import { clearTerminalWriteFn, setTerminalWriteFn } from './terminal-write-context'
+import {
+  clearTerminalWriteFn,
+  setTerminalWriteFn,
+} from './terminal-write-context'
 import TerminalKeyboardBar from './terminal-keyboard-bar'
-import '@xterm/xterm/css/xterm.css'
+import '@baicie/xterm/css/xterm.css'
 
 /**
  * Suppresses xterm.js parsing errors (code 127 / VT sequence errors) that are
@@ -70,7 +73,9 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
   const isMobile = useIsMobile()
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [fontSize, setFontSize] = useState(14)
-  const [termInstance, setTermInstance] = useState<TerminalComponent | null>(null)
+  const [termInstance, setTermInstance] = useState<TerminalComponent | null>(
+    null,
+  )
   const [isReady, setIsReady] = useState(false)
 
   // Derive host from tab.hostId
@@ -80,7 +85,8 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
 
   // Resolve the currently active terminal theme preset (settings + system preference)
   const darkPreset = (settings.terminalThemeDark as string) || 'one-dark'
-  const lightPreset = (settings.terminalThemeLight as string) || 'solarized-light'
+  const lightPreset =
+    (settings.terminalThemeLight as string) || 'solarized-light'
 
   const activeTerminalTheme = (() => {
     if (appTheme === 'light') return lightPreset
@@ -155,7 +161,9 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
 
     // Register term instance and write function for mobile keyboard bar
     setTermInstance(term)
-    setTerminalWriteFn((data: string) => { term.write(data) })
+    setTerminalWriteFn((data: string) => {
+      term.write(data)
+    })
 
     setTimeout(() => {
       fitAddon.fit()
@@ -294,9 +302,7 @@ const TerminalContainer: React.FC<TerminalContainerProps> = ({ tabId }) => {
   // Mobile fullscreen: hide everything except terminal + keyboard bar
   if (isMobile && isFullscreen) {
     return (
-      <div className="fixed inset-0 z-[300] bg-[#1e1e1e]">
-        {terminalBody}
-      </div>
+      <div className="fixed inset-0 z-[300] bg-[#1e1e1e]">{terminalBody}</div>
     )
   }
 

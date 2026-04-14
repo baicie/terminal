@@ -69,7 +69,7 @@ src-tauri/target/release/
 
 ```typescript
 // 只加载需要的插件，而不是全部
-import { Terminal } from '@xterm/xterm'
+import { Terminal } from '@baicie/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 // 移除不用的插件 (WebGL, Image 等)
 ```
@@ -78,7 +78,7 @@ import { FitAddon } from '@xterm/addon-fit'
 
 ```bash
 # 安装轻量级替代方案 (如果兼容)
-pnpm remove @xterm/xterm
+pnpm remove @baicie/xterm
 pnpm add xterm-bytemc
 ```
 
@@ -87,7 +87,7 @@ pnpm add xterm-bytemc
 ```typescript
 // 在需要时才加载 xterm.js
 const loadXterm = async () => {
-  const { Terminal } = await import('@xterm/xterm')
+  const { Terminal } = await import('@baicie/xterm')
   return new Terminal()
 }
 ```
@@ -116,7 +116,7 @@ export default defineConfig({
           // 分离 UI 库
           'vendor-ui': ['@radix-ui/react-dialog', '@radix-ui/react-select', ...],
           // 分离 xterm
-          'vendor-xterm': ['@xterm/xterm', '@xterm/addon-fit', ...],
+          'vendor-xterm': ['@baicie/xterm', '@xterm/addon-fit', ...],
         }
       }
     },
@@ -237,7 +237,7 @@ export default defineConfig({
 
 ```html
 <!-- 在 index.html 中使用 CDN 加载 xterm -->
-<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@baicie/xterm@5.3.0/lib/xterm.min.js"></script>
 ```
 
 ---

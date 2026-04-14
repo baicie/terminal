@@ -1,6 +1,6 @@
 // Terminal Recording Service - Record and replay terminal sessions
 
-import type { Terminal } from '@xterm/xterm'
+import type { Terminal } from '@baicie/xterm'
 
 export interface RecordingFrame {
   timestamp: number

@@ -15,7 +15,7 @@
 
 | 插件                     | 版本    | 用途             | 状态      |
 | ------------------------ | ------- | ---------------- | --------- |
-| `@xterm/xterm`           | ^6.0.0  | 核心库           | ✅ 已使用 |
+| `@baicie/xterm`          | ^6.0.0  | 核心库           | ✅ 已使用 |
 | `@xterm/addon-fit`       | ^0.11.0 | 自动调整终端大小 | ✅ 已使用 |
 | `@xterm/addon-search`    | ^0.16.0 | 终端内搜索       | ✅ 已使用 |
 | `@xterm/addon-web-links` | ^0.12.0 | 链接检测与点击   | ✅ 已使用 |
@@ -30,11 +30,11 @@
 主要在 `src/view/terminal/terminal-container.tsx` 中使用：
 
 ```typescript
-import { Terminal } from '@xterm/xterm'
+import { Terminal } from '@baicie/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import '@xterm/xterm/css/xterm.css'
+import '@baicie/xterm/css/xterm.css'
 ```
 
 ---
@@ -540,7 +540,7 @@ term.loadAddon(new LigaturesAddon())
 创建自定义插件只需导出具有 `activate` 和 `dispose` 方法的对象：
 
 ```typescript
-import { Terminal, IDisposable } from '@xterm/xterm'
+import { Terminal, IDisposable } from '@baicie/xterm'
 
 class CustomAddon {
   private disposables: IDisposable[] = []
@@ -819,7 +819,7 @@ const term = new Terminal({
 - **API 参考**: https://xtermjs.org/docs/api/terminal/classes/terminal/
 - **插件指南**: https://xtermjs.org/docs/guides/using-addons/
 - **GitHub**: https://github.com/xtermjs/xterm.js
-- **npm 包**: https://www.npmjs.com/package/@xterm/xterm
+- **npm 包**: https://www.npmjs.com/package/@baicie/xterm
 
 ---
 

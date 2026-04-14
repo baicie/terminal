@@ -1,10 +1,16 @@
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import { Terminal as TerminalComponent } from '@xterm/xterm'
+import { Terminal as TerminalComponent } from '@baicie/xterm'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ViewContainer, ViewToolbar, ViewContent, ViewHeader } from '@/components/view-container'
+import {
+  ViewContainer,
+  ViewToolbar,
+  ViewContent,
+  ViewHeader,
+} from '@/components/view-container'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
@@ -12,11 +18,16 @@ import { Separator } from '@/components/ui/separator'
 import { ArrowLeft, Clipboard, Check } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import '@xterm/xterm/css/xterm.css'
+import '@baicie/xterm/css/xterm.css'
 
 interface XtermEvent {
   id: number
-  type: 'onData' | 'onKey' | 'textarea_keydown' | 'textarea_input' | 'textarea_keyup'
+  type:
+    | 'onData'
+    | 'onKey'
+    | 'textarea_keydown'
+    | 'textarea_input'
+    | 'textarea_keyup'
   data: string
   key?: string
   code?: string
@@ -49,7 +60,11 @@ const XtermTest: React.FC = () => {
   const [copied, setCopied] = useState(false)
 
   const scrollToBottom = () => {
-    const viewport = scrollRef.current?.closest('[data-slot="scroll-area"]')?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null
+    const viewport = scrollRef.current
+      ?.closest('[data-slot="scroll-area"]')
+      ?.querySelector(
+        '[data-slot="scroll-area-viewport"]',
+      ) as HTMLDivElement | null
     if (viewport) {
       requestAnimationFrame(() => {
         viewport.scrollTop = viewport.scrollHeight
@@ -152,10 +167,14 @@ const XtermTest: React.FC = () => {
     }, 50)
 
     // Write a welcome message
-    term.write('\r\n\x1b[1;32m[Xterm Test]\x1b[0m Terminal ready. Type something!\r\n\r\n$ ')
+    term.write(
+      '\r\n\x1b[1;32m[Xterm Test]\x1b[0m Terminal ready. Type something!\r\n\r\n$ ',
+    )
 
     // Access underlying textarea (xterm.js uses a hidden textarea for keyboard input)
-    const textarea = containerRef.current.querySelector('textarea') as HTMLTextAreaElement | null
+    const textarea = containerRef.current.querySelector(
+      'textarea',
+    ) as HTMLTextAreaElement | null
     textareaRef.current = textarea
 
     // --- xterm onData: fired for all input (keypress, mouse, paste, etc.) ---
@@ -250,7 +269,7 @@ const XtermTest: React.FC = () => {
       xtermEvents.length = 0
       setEvents([])
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Font size
@@ -263,25 +282,39 @@ const XtermTest: React.FC = () => {
 
   const getEventColor = (type: XtermEvent['type']) => {
     switch (type) {
-      case 'onData': return 'bg-green-500/10 text-green-600 border-green-500/20'
-      case 'onKey': return 'bg-blue-500/10 text-blue-600 border-blue-500/20'
-      case 'textarea_keydown': return 'bg-purple-500/10 text-purple-600 border-purple-500/20'
-      case 'textarea_input': return 'bg-orange-500/10 text-orange-600 border-orange-500/20'
-      case 'textarea_keyup': return 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20'
+      case 'onData':
+        return 'bg-green-500/10 text-green-600 border-green-500/20'
+      case 'onKey':
+        return 'bg-blue-500/10 text-blue-600 border-blue-500/20'
+      case 'textarea_keydown':
+        return 'bg-purple-500/10 text-purple-600 border-purple-500/20'
+      case 'textarea_input':
+        return 'bg-orange-500/10 text-orange-600 border-orange-500/20'
+      case 'textarea_keyup':
+        return 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20'
     }
   }
 
   const formatData = (data: string, type: XtermEvent['type']) => {
     if (!data) return ''
     if (type === 'onData') {
-      return data.split('').map(c => {
-        const code = c.charCodeAt(0)
-        if (code < 32) {
-          const names: Record<number, string> = { 13: '\\r', 10: '\\n', 9: '\\t', 27: '\\e', 127: '\\b' }
-          return names[code] ?? `\\x${code.toString(16).padStart(2, '0')}`
-        }
-        return c === ' ' ? '<sp>' : c
-      }).join('')
+      return data
+        .split('')
+        .map(c => {
+          const code = c.charCodeAt(0)
+          if (code < 32) {
+            const names: Record<number, string> = {
+              13: '\\r',
+              10: '\\n',
+              9: '\\t',
+              27: '\\e',
+              127: '\\b',
+            }
+            return names[code] ?? `\\x${code.toString(16).padStart(2, '0')}`
+          }
+          return c === ' ' ? '<sp>' : c
+        })
+        .join('')
     }
     return data
   }
@@ -307,11 +340,21 @@ const XtermTest: React.FC = () => {
         </Link>
         <div className="flex-1" />
         {/* Font size controls */}
-        <Button variant="outline" size="sm" onClick={() => setFontSize(f => Math.max(8, f - 1))}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setFontSize(f => Math.max(8, f - 1))}
+        >
           A-
         </Button>
-        <span className="text-xs text-muted-foreground w-8 text-center">{fontSize}</span>
-        <Button variant="outline" size="sm" onClick={() => setFontSize(f => Math.min(32, f + 1))}>
+        <span className="text-xs text-muted-foreground w-8 text-center">
+          {fontSize}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setFontSize(f => Math.min(32, f + 1))}
+        >
           A+
         </Button>
         <Button
@@ -347,7 +390,8 @@ const XtermTest: React.FC = () => {
             if (!autoScroll) scrollToBottom()
           }}
         >
-          {t('experiments.auto')}{autoScroll ? ': ' + t('common.on') : ': ' + t('common.off')}
+          {t('experiments.auto')}
+          {autoScroll ? ': ' + t('common.on') : ': ' + t('common.off')}
         </Button>
       </ViewToolbar>
 
@@ -360,7 +404,9 @@ const XtermTest: React.FC = () => {
         <div className="mt-4 flex flex-col lg:flex-row gap-4">
           {/* Left: Xterm */}
           <div className="flex-1 flex flex-col gap-2">
-            <label className="text-sm font-medium text-muted-foreground">{t('experiments.xtermTerminal')}</label>
+            <label className="text-sm font-medium text-muted-foreground">
+              {t('experiments.xtermTerminal')}
+            </label>
             <div
               ref={containerRef}
               className="flex-1 min-h-[300px] rounded-lg border overflow-hidden"
@@ -378,9 +424,24 @@ const XtermTest: React.FC = () => {
                 {t('experiments.eventLog')} ({events.length})
               </label>
               <div className="flex gap-2">
-                <Badge variant="outline" className="text-[10px] bg-green-500/10 text-green-600">onData</Badge>
-                <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-600">onKey</Badge>
-                <Badge variant="outline" className="text-[10px] bg-purple-500/10 text-purple-600">textarea</Badge>
+                <Badge
+                  variant="outline"
+                  className="text-[10px] bg-green-500/10 text-green-600"
+                >
+                  onData
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className="text-[10px] bg-blue-500/10 text-blue-600"
+                >
+                  onKey
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className="text-[10px] bg-purple-500/10 text-purple-600"
+                >
+                  textarea
+                </Badge>
                 <Button
                   variant="outline"
                   size="sm"
@@ -389,7 +450,10 @@ const XtermTest: React.FC = () => {
                   title={t('experiments.copyEvents')}
                 >
                   {copied ? (
-                    <Check className="size-3 text-green-500" data-icon="inline-start" />
+                    <Check
+                      className="size-3 text-green-500"
+                      data-icon="inline-start"
+                    />
                   ) : (
                     <Clipboard className="size-3" data-icon="inline-start" />
                   )}
@@ -400,29 +464,42 @@ const XtermTest: React.FC = () => {
             <div className="h-[400px]">
               <ScrollArea className="h-full rounded-lg border bg-muted/30">
                 <div ref={scrollRef} className="p-3 space-y-1">
-                {events.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    {t('experiments.noEvents')}
-                  </p>
-                )}
-                {events.slice().reverse().map(evt => (
-                  <div key={evt.id} className="flex items-start gap-2 text-xs font-mono py-0.5">
-                    <span className="text-muted-foreground shrink-0">{evt.time}</span>
-                    <Badge
-                      variant="outline"
-                      className={`shrink-0 font-mono text-[10px] px-1 ${getEventColor(evt.type)}`}
-                    >
-                      {evt.type}
-                    </Badge>
-                    <span className="break-all text-muted-foreground">
-                      {evt.type === 'onData' && `data="${formatData(evt.data, evt.type)}"`}
-                      {evt.type === 'onKey' && `key="${formatModKey(evt)}" which=${evt.which}`}
-                      {evt.type === 'textarea_keydown' && `key="${formatModKey(evt)}" code="${evt.code}" which=${evt.which}`}
-                      {evt.type === 'textarea_input' && `data="${formatData(evt.data, evt.type)}"`}
-                      {evt.type === 'textarea_keyup' && `key="${evt.key}" which=${evt.which}`}
-                    </span>
-                  </div>
-                ))}
+                  {events.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      {t('experiments.noEvents')}
+                    </p>
+                  )}
+                  {events
+                    .slice()
+                    .reverse()
+                    .map(evt => (
+                      <div
+                        key={evt.id}
+                        className="flex items-start gap-2 text-xs font-mono py-0.5"
+                      >
+                        <span className="text-muted-foreground shrink-0">
+                          {evt.time}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className={`shrink-0 font-mono text-[10px] px-1 ${getEventColor(evt.type)}`}
+                        >
+                          {evt.type}
+                        </Badge>
+                        <span className="break-all text-muted-foreground">
+                          {evt.type === 'onData' &&
+                            `data="${formatData(evt.data, evt.type)}"`}
+                          {evt.type === 'onKey' &&
+                            `key="${formatModKey(evt)}" which=${evt.which}`}
+                          {evt.type === 'textarea_keydown' &&
+                            `key="${formatModKey(evt)}" code="${evt.code}" which=${evt.which}`}
+                          {evt.type === 'textarea_input' &&
+                            `data="${formatData(evt.data, evt.type)}"`}
+                          {evt.type === 'textarea_keyup' &&
+                            `key="${evt.key}" which=${evt.which}`}
+                        </span>
+                      </div>
+                    ))}
                 </div>
               </ScrollArea>
             </div>
@@ -432,18 +509,35 @@ const XtermTest: React.FC = () => {
         <Separator className="my-6" />
 
         <div className="text-sm text-muted-foreground space-y-2">
-          <p className="font-medium text-foreground">{t('experiments.eventExplanation')}</p>
+          <p className="font-medium text-foreground">
+            {t('experiments.eventExplanation')}
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Badge variant="outline" className="bg-green-500/10 text-green-600 text-xs">onData</Badge>
+              <Badge
+                variant="outline"
+                className="bg-green-500/10 text-green-600 text-xs"
+              >
+                onData
+              </Badge>
               <p className="text-xs">{t('experiments.onDataDesc')}</p>
             </div>
             <div className="space-y-1">
-              <Badge variant="outline" className="bg-blue-500/10 text-blue-600 text-xs">onKey</Badge>
+              <Badge
+                variant="outline"
+                className="bg-blue-500/10 text-blue-600 text-xs"
+              >
+                onKey
+              </Badge>
               <p className="text-xs">{t('experiments.onKeyDesc')}</p>
             </div>
             <div className="space-y-1">
-              <Badge variant="outline" className="bg-purple-500/10 text-purple-600 text-xs">textarea_*</Badge>
+              <Badge
+                variant="outline"
+                className="bg-purple-500/10 text-purple-600 text-xs"
+              >
+                textarea_*
+              </Badge>
               <p className="text-xs">{t('experiments.textareaEventDesc')}</p>
             </div>
           </div>

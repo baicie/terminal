@@ -1,4 +1,4 @@
-import type { Terminal as XTerminal } from '@xterm/xterm'
+import type { Terminal as XTerminal } from '@baicie/xterm'
 import type { SSHConnectionResult } from '@/service/ssh'
 import type { Host } from '@/types'
 import { create } from 'zustand'

@@ -486,13 +486,13 @@ _最后更新: 2026-03-24 - 完善视图集成，终端/SFTP/Vaults/端口转发
 
 ```typescript
 // 修复前 (错误)
-const { Terminal } = require('@xterm/xterm')
+const { Terminal } = require('@baicie/xterm')
 const { FitAddon } = require('@xterm/addon-fit')
 const { SearchAddon } = require('@xterm/addon-search')
 const { WebLinksAddon } = require('@xterm/addon-web-links')
 
 // 修复后 (正确)
-import { Terminal } from '@xterm/xterm'
+import { Terminal } from '@baicie/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -559,7 +559,7 @@ defaultNS: 'demo',
 4. 状态管理混乱，多个 useEffect 依赖导致潜在的竞态条件
 
 **修复方案**:
-完全移除 `react-xtermjs` 依赖，直接使用原生 `@xterm/xterm`：
+完全移除 `react-xtermjs` 依赖，直接使用原生 `@baicie/xterm`：
 
 1. **移除 react-xtermjs 依赖**
 
@@ -960,9 +960,9 @@ _最后更新: 2026-03-26_
 
 **事件时序对比**:
 
-| 浏览器 | 时序 |
-|--------|------|
-| **Chrome (Blink)** | `keydown(c)` → `keydown(d)` → `onData(c)` → `onData(d)` ✅ |
+| 浏览器              | 时序                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| **Chrome (Blink)**  | `keydown(c)` → `keydown(d)` → `onData(c)` → `onData(d)` ✅                             |
 | **Safari (WebKit)** | `keydown(c)` → `onData(c)` → `input(c)` → **`keydown(d)` (无 onData)** → `input(d)` ❌ |
 
 **根本原因**:

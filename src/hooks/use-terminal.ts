@@ -1,5 +1,5 @@
 import type { UnlistenFn } from '@tauri-apps/api/event'
-import type { Terminal as XTerminal } from '@xterm/xterm'
+import type { Terminal as XTerminal } from '@baicie/xterm'
 import type { Host } from '@/types'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
