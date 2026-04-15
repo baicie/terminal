@@ -75,7 +75,7 @@ export function useTerminal(
       let sid: string
 
       if (tabType === 'local') {
-        sid = await invoke<string>('local_shell', {
+        sid = await invoke<string>('session_create_local', {
           cols: defaultCols,
           rows: defaultRows,
         })
@@ -84,35 +84,35 @@ export function useTerminal(
           errorRef.current = 'Host info required for remote connection'
           return null
         }
-        // Connect SSH first
+        // Connect SSH using unified session API
         if (host.authType === 'password') {
-          sid = await invoke<string>('ssh_connect', {
+          sid = await invoke<string>('session_create_ssh_password', {
             host: host.hostname,
             port: host.port,
             username: host.username,
             password: host.password,
+            cols: defaultCols,
+            rows: defaultRows,
           })
         } else if (host.authType === 'key') {
-          sid = await invoke<string>('ssh_connect_key', {
+          sid = await invoke<string>('session_create_ssh_key', {
             host: host.hostname,
             port: host.port,
             username: host.username,
             privateKey: host.privateKey ?? '',
             password: host.password ?? null,
+            cols: defaultCols,
+            rows: defaultRows,
           })
+        } else if (host.authType === 'agent') {
+          // Agent auth - fall back to password prompt for now
+          // TODO: Implement agent auth with session_create_ssh_agent
+          errorRef.current = 'Agent authentication not yet supported'
+          return null
         } else {
-          sid = await invoke<string>('ssh_connect_agent', {
-            host: host.hostname,
-            port: host.port,
-            username: host.username,
-          })
+          errorRef.current = `Unsupported auth type: ${host.authType}`
+          return null
         }
-        // Start shell
-        await invoke('ssh_shell', {
-          sessionId: sid,
-          cols: defaultCols,
-          rows: defaultRows,
-        })
       } else if (tabType === 'serial') {
         if (!serialSessionId) {
           errorRef.current = 'Serial session ID required'
@@ -139,10 +139,8 @@ export function useTerminal(
       if (!sid) return
 
       try {
-        if (tabType === 'local') {
-          await invoke('local_write', { sessionId: sid, data })
-        } else if (tabType === 'remote') {
-          await invoke('ssh_write', { sessionId: sid, data })
+        if (tabType === 'local' || tabType === 'remote') {
+          await invoke('session_write', { sessionId: sid, data })
         } else if (tabType === 'serial') {
           await invoke('serial_write', { sessionId: sid, data })
         }
@@ -160,10 +158,8 @@ export function useTerminal(
       if (!sid) return
 
       try {
-        if (tabType === 'local') {
-          await invoke('local_resize', { sessionId: sid, cols, rows })
-        } else if (tabType === 'remote') {
-          await invoke('ssh_resize', { sessionId: sid, cols, rows })
+        if (tabType === 'local' || tabType === 'remote') {
+          await invoke('session_resize', { sessionId: sid, cols, rows })
         }
         // serial resize not supported via this hook (handled in serial service)
       } catch (err) {
@@ -179,10 +175,8 @@ export function useTerminal(
     if (!sid) return
 
     try {
-      if (tabType === 'local') {
-        await invoke('local_disconnect', { sessionId: sid })
-      } else if (tabType === 'remote') {
-        await invoke('ssh_disconnect', { sessionId: sid })
+      if (tabType === 'local' || tabType === 'remote') {
+        await invoke('session_close', { sessionId: sid })
       }
     } catch (err) {
       console.error('[useTerminal] disconnect error:', err)

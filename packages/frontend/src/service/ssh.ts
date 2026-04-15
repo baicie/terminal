@@ -26,6 +26,13 @@ export interface ShellOutput {
   is_stderr: boolean
 }
 
+export interface SessionInfo {
+  id: string
+  session_type: 'local' | 'ssh'
+  is_alive: boolean
+  created_at: number
+}
+
 // Active connection log tracking
 const activeConnectionLogs = new Map<
   string,
@@ -33,79 +40,34 @@ const activeConnectionLogs = new Map<
 >()
 
 export class SSHService {
-  async connect(host: Host): Promise<SSHConnectionResult> {
-    try {
-      // Check if this host uses a jump host
-      if (host.jumpHostId) {
-        return {
-          success: false,
-          message: 'Jump host connection requires special setup',
-        }
-      }
-
-      if (host.authType === 'password') {
-        const sessionId = await invoke<string>('ssh_connect', {
-          host: host.hostname,
-          port: host.port,
-          username: host.username,
-          password: host.password,
-        })
-        return { success: true, message: 'Connected successfully', sessionId }
-      } else if (host.authType === 'key') {
-        const sessionId = await invoke<string>('ssh_connect_key', {
-          host: host.hostname,
-          port: host.port,
-          username: host.username,
-          privateKey: host.privateKey,
-          password: host.password,
-        })
-        return { success: true, message: 'Connected successfully', sessionId }
-      } else if (host.authType === 'agent') {
-        const sessionId = await invoke<string>('ssh_connect_agent', {
-          host: host.hostname,
-          port: host.port,
-          username: host.username,
-        })
-        return { success: true, message: 'Connected successfully', sessionId }
-      }
-      return { success: false, message: 'Unsupported auth type' }
-    } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : String(error),
-      }
-    }
-  }
+  // ========================================================================
+  // Unified Session API
+  // ========================================================================
 
   /**
-   * Start shell and record connection log
+   * Create a local shell session
    */
-  async startShell(
-    sessionId: string,
+  async createLocalSession(
     cols: number = 80,
     rows: number = 24,
     hostInfo?: {
       id?: string
       name: string
-      hostname: string
-      username: string
+      hostname?: string
+      username?: string
     },
   ): Promise<SSHConnectionResult> {
     try {
-      await invoke('ssh_shell', {
-        sessionId,
-        cols,
-        rows,
-      })
+      const sessionId = await invoke<string>('session_create_local', { cols, rows })
 
       // Record connection log
       if (hostInfo) {
         const logId = await addConnectionLog({
           host_id: hostInfo.id || null,
           host_name: hostInfo.name,
-          host_address: hostInfo.hostname,
-          username: hostInfo.username,
-          connection_type: 'ssh',
+          host_address: hostInfo.hostname || 'localhost',
+          username: hostInfo.username || 'local',
+          connection_type: 'local',
           started_at: Date.now(),
           ended_at: null,
           duration_seconds: null,
@@ -115,7 +77,7 @@ export class SSHService {
         activeConnectionLogs.set(sessionId, { logId, startTime: Date.now() })
       }
 
-      return { success: true, message: 'Shell started' }
+      return { success: true, message: 'Local session created', sessionId }
     } catch (error) {
       return {
         success: false,
@@ -124,23 +86,163 @@ export class SSHService {
     }
   }
 
+  /**
+   * Create an SSH session with password authentication
+   */
+  async createSshSessionPassword(
+    host: Host,
+    cols: number = 80,
+    rows: number = 24,
+  ): Promise<SSHConnectionResult> {
+    try {
+      const sessionId = await invoke<string>('session_create_ssh_password', {
+        host: host.hostname,
+        port: host.port,
+        username: host.username,
+        password: host.password,
+        cols,
+        rows,
+      })
+
+      // Record connection log
+      const logId = await addConnectionLog({
+        host_id: host.id || null,
+        host_name: host.name,
+        host_address: host.hostname,
+        username: host.username,
+        connection_type: 'ssh',
+        started_at: Date.now(),
+        ended_at: null,
+        duration_seconds: null,
+        is_saved: 0,
+        notes: null,
+      })
+      activeConnectionLogs.set(sessionId, { logId, startTime: Date.now() })
+
+      return { success: true, message: 'SSH session created', sessionId }
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }
+
+  /**
+   * Create an SSH session with key authentication
+   */
+  async createSshSessionKey(
+    host: Host,
+    cols: number = 80,
+    rows: number = 24,
+  ): Promise<SSHConnectionResult> {
+    try {
+      const sessionId = await invoke<string>('session_create_ssh_key', {
+        host: host.hostname,
+        port: host.port,
+        username: host.username,
+        privateKey: host.privateKey,
+        password: host.password,
+        cols,
+        rows,
+      })
+
+      // Record connection log
+      const logId = await addConnectionLog({
+        host_id: host.id || null,
+        host_name: host.name,
+        host_address: host.hostname,
+        username: host.username,
+        connection_type: 'ssh',
+        started_at: Date.now(),
+        ended_at: null,
+        duration_seconds: null,
+        is_saved: 0,
+        notes: null,
+      })
+      activeConnectionLogs.set(sessionId, { logId, startTime: Date.now() })
+
+      return { success: true, message: 'SSH session created', sessionId }
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }
+
+  /**
+   * Create an SSH session via jump host
+   */
+  async createSshSessionJump(
+    targetHost: Host,
+    jumpHost: {
+      host: string
+      port: number
+      username: string
+      authType: 'password' | 'key'
+      password?: string
+      privateKey?: string
+    },
+    cols: number = 80,
+    rows: number = 24,
+  ): Promise<SSHConnectionResult> {
+    try {
+      const sessionId = await invoke<string>('session_create_ssh_jump', {
+        targetHost: targetHost.hostname,
+        targetPort: targetHost.port,
+        targetUsername: targetHost.username,
+        targetPassword: targetHost.password,
+        targetPrivateKey: targetHost.privateKey,
+        jumpHost,
+        cols,
+        rows,
+      })
+
+      // Record connection log
+      const logId = await addConnectionLog({
+        host_id: targetHost.id || null,
+        host_name: targetHost.name,
+        host_address: `${targetHost.hostname} (via ${jumpHost.host})`,
+        username: targetHost.username,
+        connection_type: 'ssh',
+        started_at: Date.now(),
+        ended_at: null,
+        duration_seconds: null,
+        is_saved: 0,
+        notes: null,
+      })
+      activeConnectionLogs.set(sessionId, { logId, startTime: Date.now() })
+
+      return { success: true, message: 'SSH session via jump host created', sessionId }
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }
+
+  /**
+   * Write data to a session (unified for local and SSH)
+   */
   async write(sessionId: string, data: string): Promise<void> {
-    await invoke('ssh_write', {
-      sessionId,
-      data,
-    })
+    await invoke('session_write', { sessionId, data })
   }
 
+  /**
+   * Resize a session (unified for local and SSH)
+   */
   async resize(sessionId: string, cols: number, rows: number): Promise<void> {
-    await invoke('ssh_resize', {
-      sessionId,
-      cols,
-      rows,
-    })
+    await invoke('session_resize', { sessionId, cols, rows })
   }
 
-  async disconnect(sessionId: string): Promise<void> {
-    await invoke('ssh_disconnect', { sessionId })
+  /**
+   * Close a session (unified for local and SSH)
+   */
+  async close(sessionId: string): Promise<void> {
+    await invoke('session_close', { sessionId })
+
     // Update connection log with end time
     const logInfo = activeConnectionLogs.get(sessionId)
     if (logInfo) {
@@ -158,58 +260,43 @@ export class SSHService {
     }
   }
 
-  async execute(host: Host, command: string): Promise<SSHOutput> {
+  /**
+   * List all active sessions
+   */
+  async listSessions(): Promise<SessionInfo[]> {
     try {
-      if (host.authType === 'password') {
-        const stdout = await invoke<string>('ssh_execute', {
-          host: host.hostname,
-          port: host.port,
-          username: host.username,
-          password: host.password,
-          command,
-        })
-        return { stdout, stderr: '', exitCode: 0 }
-      } else if (host.authType === 'key') {
-        const stdout = await invoke<string>('ssh_execute', {
-          host: host.hostname,
-          port: host.port,
-          username: host.username,
-          password: host.password,
-          command,
-        })
-        return { stdout, stderr: '', exitCode: 0 }
-      } else if (host.authType === 'agent') {
-        const stdout = await invoke<string>('ssh_execute', {
-          host: host.hostname,
-          port: host.port,
-          username: host.username,
-          password: '',
-          command,
-        })
-        return { stdout, stderr: '', exitCode: 0 }
-      }
-      return { stdout: '', stderr: 'Unsupported auth type', exitCode: 1 }
+      return await invoke<SessionInfo[]>('session_list')
     } catch (error) {
-      return {
-        stdout: '',
-        stderr: error instanceof Error ? error.message : String(error),
-        exitCode: 1,
-      }
+      console.error('Failed to list sessions:', error)
+      return []
     }
   }
 
+  // ========================================================================
+  // Event Listeners
+  // ========================================================================
+
+  /**
+   * Listen for SSH data events
+   */
   async onData(callback: (output: ShellOutput) => void): Promise<UnlistenFn> {
     return listen<ShellOutput>('ssh-data', event => {
       callback(event.payload)
     })
   }
 
+  /**
+   * Listen for SSH session close events
+   */
   async onClose(callback: (sessionId: string) => void): Promise<UnlistenFn> {
     return listen<string>('ssh-close', event => {
       callback(event.payload)
     })
   }
 
+  /**
+   * Listen for SSH exit events
+   */
   async onExit(
     callback: (sessionId: string, exitCode: number) => void,
   ): Promise<UnlistenFn> {
@@ -219,49 +306,9 @@ export class SSHService {
     })
   }
 
-  // Local terminal methods
-
-  async startLocalShell(
-    cols: number = 80,
-    rows: number = 24,
-  ): Promise<SSHConnectionResult> {
-    try {
-      const sessionId = await invoke<string>('local_shell', {
-        cols,
-        rows,
-      })
-      return { success: true, message: 'Local shell started', sessionId }
-    } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : String(error),
-      }
-    }
-  }
-
-  async writeLocal(sessionId: string, data: string): Promise<void> {
-    await invoke('local_write', {
-      sessionId,
-      data,
-    })
-  }
-
-  async resizeLocal(
-    sessionId: string,
-    cols: number,
-    rows: number,
-  ): Promise<void> {
-    await invoke('local_resize', {
-      sessionId,
-      cols,
-      rows,
-    })
-  }
-
-  async disconnectLocal(sessionId: string): Promise<void> {
-    await invoke('local_disconnect', { sessionId })
-  }
-
+  /**
+   * Listen for local session data events
+   */
   async onLocalData(
     callback: (output: ShellOutput) => void,
   ): Promise<UnlistenFn> {
@@ -270,6 +317,9 @@ export class SSHService {
     })
   }
 
+  /**
+   * Listen for local session close events
+   */
   async onLocalClose(
     callback: (sessionId: string) => void,
   ): Promise<UnlistenFn> {
@@ -278,7 +328,9 @@ export class SSHService {
     })
   }
 
-  // SFTP methods
+  // ========================================================================
+  // SFTP Methods
+  // ========================================================================
 
   async sftpConnect(
     sessionId: string,
@@ -388,7 +440,9 @@ export class SSHService {
     }
   }
 
-  // Command history methods
+  // ========================================================================
+  // Command History
+  // ========================================================================
 
   async saveCommandHistory(
     hostId: string,
@@ -407,7 +461,9 @@ export class SSHService {
     }
   }
 
-  // Port forward methods
+  // ========================================================================
+  // Port Forward Methods
+  // ========================================================================
 
   async portForwardStart(
     sessionId: string,
@@ -446,35 +502,6 @@ export class SSHService {
       return []
     }
   }
-
-  /**
-   * Generate a new SSH key pair
-   */
-  async generateSSHKey(
-    keyType:
-      | 'ed25519'
-      | 'rsa'
-      | 'rsa4096'
-      | 'ecdsa'
-      | 'ecdsa-nistp256'
-      | 'ecdsa-nistp384'
-      | 'ecdsa-nistp521',
-    comment: string,
-    passphrase?: string,
-  ): Promise<KeyGenerationResult> {
-    return await invoke<KeyGenerationResult>('generate_ssh_key', {
-      keyType,
-      comment,
-      passphrase: passphrase || null,
-    })
-  }
-}
-
-export interface KeyGenerationResult {
-  private_key: string
-  public_key: string
-  key_type: string
-  fingerprint: string
 }
 
 export interface FileItem {

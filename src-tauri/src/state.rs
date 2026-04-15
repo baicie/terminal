@@ -64,7 +64,7 @@ pub struct PortForwardInfo {
 }
 
 /// Agent channel state for managing forwarded agent connections
-pub(crate) struct AgentChannel {
+pub struct AgentChannel {
     pub socket_path: PathBuf,
 }
 

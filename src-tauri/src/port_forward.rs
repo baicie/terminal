@@ -1,5 +1,5 @@
 use crate::errors::PortForwardError;
-use crate::ssh::get_ssh_sessions;
+use crate::session::get_ssh_sessions;
 use crate::state::{PortForwardConfig, PortForwardInfo, PortForwardTask, SharedStateType};
 use futures::channel::mpsc;
 use futures::SinkExt;

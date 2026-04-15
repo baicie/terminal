@@ -1,5 +1,5 @@
 use crate::errors::SftpError;
-use crate::ssh::get_ssh_sessions;
+use crate::session::get_ssh_sessions;
 use crate::state::{SftpFileItem, SharedStateType};
 use russh_sftp::client::SftpSession;
 

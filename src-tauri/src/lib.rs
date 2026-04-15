@@ -1,22 +1,33 @@
-mod errors;
+//! Terminal module
+//!
+//! This module provides re-exports for terminal-related types and functions.
+
 mod agent;
-mod local;
+mod commands;
+mod errors;
 mod port_forward;
 mod serial;
 mod sftp;
-mod ssh;
 mod state;
 mod storage;
-mod terminal;
 mod vault;
 
-use local::{local_disconnect, local_resize, local_shell, local_write};
+// Session 模块 - 统一会话抽象层
+pub mod session;
+
+// Re-export session types for public API
+pub use session::{
+    ChannelConfig, ChannelManager, SessionChannel, SessionConfig, SessionError, SessionInfo,
+    SessionManager, SessionOutput, SessionState, SessionType, SshConfig, JumpHostConfig,
+};
+
+use commands::{
+    session_close, session_create_local, session_create_ssh_jump, session_create_ssh_key,
+    session_create_ssh_password, session_list, session_resize, session_write,
+};
 use port_forward::{port_forward_list, port_forward_start, port_forward_stop};
 use serial::{serial_baud_rates, serial_connect, serial_disconnect, serial_is_connected, serial_list, serial_write, serial_write_raw};
 use sftp::{sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_mkdir, sftp_rename, sftp_upload};
-use ssh::{generate_ssh_key, greet, ssh_connect, ssh_connect_cert, ssh_connect_key, ssh_disconnect, ssh_execute, ssh_resize, ssh_shell, ssh_write};
-#[cfg(unix)]
-use ssh::ssh_connect_agent;
 use state::create_shared_state;
 use storage::{storage_delete, storage_download, storage_health_check, storage_init, storage_list, storage_upload};
 use vault::{
@@ -35,24 +46,15 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            // SSH commands
-            greet,
-            ssh_connect,
-            ssh_connect_key,
-            ssh_connect_cert,
-            #[cfg(unix)]
-            ssh_connect_agent,
-            ssh_shell,
-            ssh_write,
-            ssh_resize,
-            ssh_disconnect,
-            ssh_execute,
-            generate_ssh_key,
-            // Local shell commands
-            local_shell,
-            local_write,
-            local_resize,
-            local_disconnect,
+            // Session commands (unified API)
+            session_create_local,
+            session_create_ssh_password,
+            session_create_ssh_key,
+            session_create_ssh_jump,
+            session_write,
+            session_resize,
+            session_close,
+            session_list,
             // SFTP commands
             sftp_connect,
             sftp_list,

@@ -521,7 +521,17 @@ const SftpContainer: React.FC = () => {
       try {
         // First ensure we have an SSH connection
         if (!sessionIdRef.current) {
-          const connResult = await sshService.connect(activeHost)
+          let connResult
+          if (activeHost.authType === 'password') {
+            connResult = await sshService.createSshSessionPassword(activeHost)
+          } else if (activeHost.authType === 'key') {
+            connResult = await sshService.createSshSessionKey(activeHost)
+          } else {
+            toast.error('Unsupported auth type')
+            setRemoteLoading(false)
+            return
+          }
+
           if (!connResult.success || !connResult.sessionId) {
             toast.error(`Connection failed: ${connResult.message}`)
             setRemoteLoading(false)
