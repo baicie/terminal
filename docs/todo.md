@@ -556,7 +556,7 @@ _最后更新：2026-03-26 - 功能完善批次_
 
 #### 3. 团队协作冲突处理
 
-- **NestJS 服务端**: `team-server/src/sync/`
+- **NestJS 服务端**: `packages/team-server/src/sync/`
   - `sync.service.ts` 新增:
     - `checkConflicts` - 检测冲突
     - `resolveConflict` - 解决冲突 (LOCAL/REMOTE)
@@ -659,7 +659,7 @@ _最后更新：2026-03-26 - 功能完善批次_
 
 ### 2026-03-25 完成的工作 (第九批次 - NestJS 服务端)
 
-1. **NestJS 服务端项目** - `team-server/`
+1. **NestJS 服务端项目** - `packages/team-server/`
    - 项目结构与配置 (package.json, tsconfig.json, nest-cli.json)
    - Prisma 数据模型 (User, Team, TeamMember, Share, Invite, AuditLog)
    - Docker 配置 (Dockerfile, docker-compose.yml)

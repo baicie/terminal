@@ -501,7 +501,7 @@ INSERT INTO app_settings (key, value) VALUES
 ### 7.2 项目结构
 
 ```
-team-server/
+packages/team-server/
 ├── package.json
 ├── tsconfig.json
 ├── nest-cli.json
@@ -704,7 +704,7 @@ version: '3.8'
 
 services:
   team-server:
-    build: .
+    build: packages/team-server
     ports:
       - '3000:3000'
     environment:

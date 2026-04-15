@@ -51,7 +51,7 @@
     "@vitest/coverage-v8": "^4.1.4",
     "@vitest/spy": "^4.1.4",
     "eslint": "^10.2.0",
-    "prettier": "^3.8.2",
+    "prettier": "^3.8.3",
     "prisma": "^7.7.0",
     "source-map-support": "^0.5.21",
     "ts-node": "^10.9.2",

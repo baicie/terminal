@@ -485,7 +485,7 @@ CREATE TABLE user_profile (
 
 ## Team Server (NestJS 后端)
 
-团队协作服务端，位于 `team-server/` 目录。
+团队协作服务端，位于 `packages/team-server/` 目录。
 
 ### 技术栈
 
@@ -500,7 +500,7 @@ CREATE TABLE user_profile (
 ### 启动方式
 
 ```bash
-cd team-server
+cd packages/team-server
 
 # Docker 部署 (推荐)
 docker-compose up -d

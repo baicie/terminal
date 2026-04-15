@@ -861,7 +861,7 @@ pub fn get_ssh_agent_socket() -> Option<String> {
 
 **严重程度**: High
 **状态**: ✅ 已修复
-**影响功能**: team-server NestJS 服务端无法构建
+**影响功能**: packages/team-server NestJS 服务端无法构建
 **修复时间**: 2026-03-26
 
 **问题描述**:
@@ -932,11 +932,11 @@ constructor() {
 
 **修改文件**:
 
-- `team-server/prisma.config.ts` - 新增
-- `team-server/prisma/schema.prisma` - 移除 url 配置
-- `team-server/src/prisma.service.ts` - 使用新适配器
-- `team-server/tsconfig.json` - 添加 rootDir
-- `team-server/package.json` - 添加依赖
+- `packages/team-server/prisma.config.ts` - 新增
+- `packages/team-server/prisma/schema.prisma` - 移除 url 配置
+- `packages/team-server/src/prisma.service.ts` - 使用新适配器
+- `packages/team-server/tsconfig.json` - 添加 rootDir
+- `packages/team-server/package.json` - 添加依赖
 
 ---
 

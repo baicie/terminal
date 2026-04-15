@@ -158,7 +158,7 @@ Body: { "shares": [...] }
 ## 项目结构
 
 ```
-team-server/
+packages/team-server/
 ├── src/
 │   ├── auth/          # 认证模块
 │   ├── teams/         # 团队模块
