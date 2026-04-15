@@ -3,13 +3,15 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig as defineVitestConfig } from 'vitest/config'
 
+const FE_DIR = path.resolve(__dirname, '.')
+
 const host = process.env.TAURI_DEV_HOST
 
 const sharedConfig = {
   plugins: [tailwindcss(), react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src'),
+      '@': path.resolve(FE_DIR, 'src'),
     },
   },
   define: {
@@ -27,7 +29,7 @@ const sharedConfig = {
   },
 }
 
-const devTestPage = path.resolve(__dirname, 'src/dev-test-page.tsx')
+const devTestPage = path.resolve(FE_DIR, 'src/dev-test-page.tsx')
 
 export default defineVitestConfig(({ mode }) => {
   if (mode === 'test') {
@@ -71,6 +73,7 @@ export default defineVitestConfig(({ mode }) => {
       },
     },
     build: {
+      outDir: '../../dist',
       emptyOutDir: true,
       rollupOptions: {
         exclude: [devTestPage],

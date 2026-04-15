@@ -10,19 +10,15 @@ import globals from 'globals'
 export default [
   {
     ignores: [
-      'src-tauri/**',
-      'team-server/**',
       'dist/**',
       'node_modules/**',
       'coverage/**',
-      '.agents/**',
-      'skills-lock.json',
     ],
   },
   js.configs.recommended,
   {
     files: ['**/*.ts', '**/*.tsx'],
-    ignores: ['vite.config.ts', 'src-tauri/**'],
+    ignores: ['vite.config.ts'],
     languageOptions: {
       parser: tseslintParser,
       parserOptions: {
@@ -48,10 +44,8 @@ export default [
       import: importPlugin,
     },
     rules: {
-      // 允许 any 但设为警告（方便调试时使用）
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-use-before-define': 'off',
-      // 启用类型导入一致性检查
       '@typescript-eslint/consistent-type-imports': [
         'error',
         {
