@@ -19,9 +19,11 @@
     "typecheck": "pnpm --filter=@terminal/frontend typecheck",
     "test": "pnpm --filter=@terminal/frontend test",
     "test:watch": "pnpm --filter=@terminal/frontend test:watch",
-    "test:coverage": "pnpm --filter=@terminal/frontend test:coverage"
+    "test:coverage": "pnpm --filter=@terminal/frontend test:coverage",
+    "analyze:bundle": "tsx scripts/analyze-bundle-size.ts"
   },
   "devDependencies": {
-    "@tauri-apps/cli": ">=2.10.1"
+    "@tauri-apps/cli": ">=2.10.1",
+    "tsx": "^4.21.0"
   }
 }

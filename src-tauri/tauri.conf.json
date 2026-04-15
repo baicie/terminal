@@ -7,7 +7,7 @@
     "beforeDevCommand": "pnpm --filter=@terminal/frontend dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm --filter=@terminal/frontend build",
-    "frontendDist": "../../dist"
+    "frontendDist": "../dist"
   },
   "app": {
     "macOSPrivateApi": true,
