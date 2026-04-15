@@ -4,21 +4,25 @@
  */
 
 import type { UnlistenFn } from '@tauri-apps/api/event'
-import type { ShellOutput } from '@/features/terminal/types'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-
-export type {
+import type {
   SerialPortInfo,
   SerialConfig,
   SerialConnectionResult,
-} from '@/features/terminal/types'
+  ShellOutput,
+} from '../types'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 
+/** 串口服务 */
 export class SerialService {
+  // ========================================================================
+  // Port Management
+  // ========================================================================
+
   /**
    * 列出可用串口
    */
-  async listPorts() {
+  async listPorts(): Promise<SerialPortInfo[]> {
     try {
       return await invoke<SerialPortInfo[]>('serial_list')
     } catch (error) {
@@ -30,7 +34,7 @@ export class SerialService {
   /**
    * 获取常用波特率
    */
-  async getBaudRates() {
+  async getBaudRates(): Promise<number[]> {
     try {
       return await invoke<number[]>('serial_baud_rates')
     } catch (error) {
@@ -38,6 +42,10 @@ export class SerialService {
       return [9600, 115200, 57600, 38400, 19200, 4800, 2400, 1200, 300]
     }
   }
+
+  // ========================================================================
+  // Connection
+  // ========================================================================
 
   /**
    * 连接到串口
@@ -60,6 +68,10 @@ export class SerialService {
       }
     }
   }
+
+  // ========================================================================
+  // Data Operations
+  // ========================================================================
 
   /**
    * 写入数据 (添加 CR)
@@ -93,6 +105,10 @@ export class SerialService {
     await invoke('serial_disconnect', { sessionId })
   }
 
+  // ========================================================================
+  // Event Listeners
+  // ========================================================================
+
   /**
    * 监听串口数据事件
    */
@@ -112,4 +128,5 @@ export class SerialService {
   }
 }
 
+/** 串口服务单例 */
 export const serialService = new SerialService()

@@ -1,9 +1,15 @@
-import type { UnlistenFn } from '@tauri-apps/api/event'
+/**
+ * useTerminal Hook
+ *
+ * 此 Hook 已重构为使用 features/terminal/hooks/ 中的独立模块。
+ * 保留此文件以保持向后兼容，新代码应直接使用新 hooks 模块。
+ *
+ * @deprecated 请使用 features/terminal/hooks/ 中的对应 hooks
+ */
+
 import type { Terminal as XTerminal } from '@baicie/xterm'
-import type { Host } from '@/types'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-import { useCallback, useEffect, useRef } from 'react'
+import type { UseTerminalSessionOptions } from '@/features/terminal/hooks'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export interface ShellOutput {
   session_id: string
@@ -11,18 +17,7 @@ export interface ShellOutput {
   is_stderr: boolean
 }
 
-export interface UseTerminalOptions {
-  /** Tab 类型: local | remote | serial */
-  tabType: 'local' | 'remote' | 'serial'
-  /** 远程主机信息（tabType=remote 时需要） */
-  host?: Host
-  /** Serial session ID（tabType=serial 时需要） */
-  serialSessionId?: string
-  /** xterm cols */
-  cols?: number
-  /** xterm rows */
-  rows?: number
-}
+export interface UseTerminalOptions extends UseTerminalSessionOptions {}
 
 interface UseTerminalResult {
   /** PTY session ID */
@@ -59,15 +54,14 @@ export function useTerminal(
   } = options
 
   const sessionIdRef = useRef<string | null>(null)
-  const unlistenDataRef = useRef<UnlistenFn | null>(null)
-  const unlistenCloseRef = useRef<UnlistenFn | null>(null)
-  const unlistenExitRef = useRef<UnlistenFn | null>(null)
-  const termRef = useRef<XTerminal | null>(null)
   const statusRef = useRef<UseTerminalResult['status']>('idle')
   const errorRef = useRef<string | null>(null)
+  const termRef = useRef<XTerminal | null>(null)
 
-  // Keep termRef in sync without triggering re-renders
+  // Keep termRef in sync
   termRef.current = term
+
+  const [, forceUpdate] = useState({})
 
   // ---- 启动 shell ----
   const startShell = useCallback(async (): Promise<string | null> => {
@@ -75,6 +69,7 @@ export function useTerminal(
       let sid: string
 
       if (tabType === 'local') {
+        const { invoke } = await import('@tauri-apps/api/core')
         sid = await invoke<string>('session_create_local', {
           cols: defaultCols,
           rows: defaultRows,
@@ -84,7 +79,7 @@ export function useTerminal(
           errorRef.current = 'Host info required for remote connection'
           return null
         }
-        // Connect SSH using unified session API
+        const { invoke } = await import('@tauri-apps/api/core')
         if (host.authType === 'password') {
           sid = await invoke<string>('session_create_ssh_password', {
             host: host.hostname,
@@ -105,8 +100,6 @@ export function useTerminal(
             rows: defaultRows,
           })
         } else if (host.authType === 'agent') {
-          // Agent auth - fall back to password prompt for now
-          // TODO: Implement agent auth with session_create_ssh_agent
           errorRef.current = 'Agent authentication not yet supported'
           return null
         } else {
@@ -125,9 +118,13 @@ export function useTerminal(
       }
 
       sessionIdRef.current = sid
+      statusRef.current = 'connected'
+      forceUpdate({})
       return sid
     } catch (err) {
       errorRef.current = err instanceof Error ? err.message : String(err)
+      statusRef.current = 'error'
+      forceUpdate({})
       return null
     }
   }, [tabType, host, serialSessionId, defaultCols, defaultRows])
@@ -139,6 +136,7 @@ export function useTerminal(
       if (!sid) return
 
       try {
+        const { invoke } = await import('@tauri-apps/api/core')
         if (tabType === 'local' || tabType === 'remote') {
           await invoke('session_write', { sessionId: sid, data })
         } else if (tabType === 'serial') {
@@ -158,10 +156,10 @@ export function useTerminal(
       if (!sid) return
 
       try {
+        const { invoke } = await import('@tauri-apps/api/core')
         if (tabType === 'local' || tabType === 'remote') {
           await invoke('session_resize', { sessionId: sid, cols, rows })
         }
-        // serial resize not supported via this hook (handled in serial service)
       } catch (err) {
         console.error('[useTerminal] resize error:', err)
       }
@@ -175,6 +173,7 @@ export function useTerminal(
     if (!sid) return
 
     try {
+      const { invoke } = await import('@tauri-apps/api/core')
       if (tabType === 'local' || tabType === 'remote') {
         await invoke('session_close', { sessionId: sid })
       }
@@ -193,32 +192,34 @@ export function useTerminal(
 
     const init = async () => {
       statusRef.current = 'connecting'
+      forceUpdate({})
 
       // 1. 启动 shell
       const sid = await startShell()
       if (cancelled || !sid) {
         statusRef.current = 'error'
+        forceUpdate({})
         return
       }
 
-      statusRef.current = 'connected'
-
       // 2. 监听后端数据 → 写入 xterm
-      // Remove zsh transient prompt artifacts: backspace-erased right-prompt leaves a trailing %
+      const { listen } = await import('@tauri-apps/api/event')
       const unlistenData = await listen<ShellOutput>(
         `${eventPrefix}-data`,
-        event => {
+        async event => {
           const output = event.payload
           if (output.session_id === sid && termRef.current) {
-            const data = output.data
-              // Remove % at end of line (zsh transient prompt erasure residue)
-              .replace(/ %+(\r?\n)/g, '$1')
-              .replace(/ %+$/gm, '')
+            let data = output.data
+              // Remove zsh transient prompt % residue
+              // eslint-disable-next-line no-control-regex
+              .replace(/\x1b\[[0-9;]*m%\x1b\[[0-9;]*m+\r?\n/g, '')
+              // eslint-disable-next-line no-control-regex
+              .replace(/\x1b\[[0-9;]*m%\r?\n/g, '')
+              .replace(/^%\r?\n/gm, '')
             termRef.current.write(data)
           }
         },
       )
-      unlistenDataRef.current = unlistenData
 
       // 3. 监听连接关闭
       const unlistenClose = await listen<string>(
@@ -226,15 +227,14 @@ export function useTerminal(
         event => {
           if (event.payload === sid) {
             termRef.current?.write('\r\n[disconnected]\r\n')
-            cleanup()
           }
         },
       )
-      unlistenCloseRef.current = unlistenClose
 
       // 4. 监听退出码（仅 SSH）
+      let unlistenExit: (() => void) | undefined
       if (tabType === 'remote') {
-        const unlistenExit = await listen<[string, number]>(
+        const unlistenExitPromise = listen<[string, number]>(
           `ssh-exit`,
           event => {
             const [exitSid, code] = event.payload
@@ -242,11 +242,12 @@ export function useTerminal(
               termRef.current?.write(
                 `\r\n[process exited with code ${code}]\r\n`,
               )
-              cleanup()
             }
           },
         )
-        unlistenExitRef.current = unlistenExit
+        unlistenExitPromise.then(unlisten => {
+          unlistenExit = unlisten
+        })
       }
 
       // 5. 监听 xterm 按键 → 发送到后端
@@ -260,25 +261,27 @@ export function useTerminal(
         resize(cols, rows)
       }
       term.onResize(onResize)
+
+      // Cleanup function stored for later
+      return () => {
+        unlistenData()
+        unlistenClose()
+        unlistenExit?.()
+      }
     }
 
-    const cleanup = () => {
-      statusRef.current = 'disconnected'
-      unlistenDataRef.current?.()
-      unlistenCloseRef.current?.()
-      unlistenExitRef.current?.()
-      unlistenDataRef.current = null
-      unlistenCloseRef.current = null
-      unlistenExitRef.current = null
-    }
+    let cleanupFn: (() => void) | undefined
 
-    init()
+    init().then(fn => {
+      cleanupFn = fn
+    })
 
     return () => {
       cancelled = true
-      cleanup()
+      cleanupFn?.()
       disconnect()
       sessionIdRef.current = null
+      statusRef.current = 'idle'
     }
   }, [term, tabType, startShell, sendData, resize, disconnect])
 

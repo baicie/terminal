@@ -58,7 +58,10 @@ impl LocalSession {
         };
 
         // 创建命令
-        let cmd = CommandBuilder::new(&shell);
+        let mut cmd = CommandBuilder::new(&shell);
+
+        // 设置 TERM 环境变量
+        cmd.env("TERM", "xterm-256color");
 
         // 设置工作目录（Windows）
         #[cfg(windows)]

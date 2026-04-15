@@ -68,7 +68,8 @@ export default [
       'no-case-declarations': 'off',
       'no-alert': 'off',
       'no-cond-assign': 'warn',
-      'no-undef': 'error',
+      // Disable no-undef as TypeScript handles type checking
+      'no-undef': 'off',
       'react-hooks/exhaustive-deps': 'warn',
       'react-hooks/rules-of-hooks': 'warn',
       'react-refresh/only-export-components': 'off',
