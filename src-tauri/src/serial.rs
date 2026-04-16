@@ -86,6 +86,11 @@ pub async fn serial_connect(
         .open()
         .map_err(|e| SerialError::ConnectFailed(format!("Failed to open serial port {}: {}", name, e)))?;
 
+    // Clone port for reader before storing in state
+    let port_reader: Box<dyn serialport::SerialPort> = port
+        .try_clone()
+        .map_err(|e| SerialError::CloneFailed(format!("Failed to clone port: {}", e)))?;
+
     // Store the session
     let session = SerialSession { port };
     {
@@ -95,44 +100,35 @@ pub async fn serial_connect(
 
     // Spawn a task to read from serial port and emit events
     let session_id_clone = session_id.clone();
-    let mut serial_sessions = state.serial_sessions.lock().await;
-    let port_clone = serial_sessions
-        .get_mut(&session_id)
-        .map(|s| s.port.try_clone())
-        .transpose()
-        .map_err(|e| SerialError::CloneFailed(format!("Failed to clone port: {}", e)))?;
-    drop(serial_sessions);
 
-    if let Some(mut port_reader) = port_clone {
-        tokio::spawn(async move {
-            let mut buf = [0u8; 4096];
-            loop {
-                match port_reader.read(&mut buf) {
-                    Ok(0) => {
-                        let _ = app.emit("serial-close", &session_id_clone);
-                        break;
-                    }
-                    Ok(n) => {
-                        let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                        let output = ShellOutput {
-                            session_id: session_id_clone.clone(),
-                            data,
-                            is_stderr: false,
-                        };
-                        let _ = app.emit("serial-data", output);
-                    }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
-                        // Timeout is expected, continue reading
-                        continue;
-                    }
-                    Err(_) => {
-                        let _ = app.emit("serial-close", &session_id_clone);
-                        break;
-                    }
+    let mut port_reader = port_reader;
+    tokio::spawn(async move {
+        let mut buf = [0u8; 4096];
+        loop {
+            match port_reader.read(&mut buf) {
+                Ok(0) => {
+                    let _ = app.emit("serial-close", &session_id_clone);
+                    break;
+                }
+                Ok(n) => {
+                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let output = ShellOutput {
+                        session_id: session_id_clone.clone(),
+                        data,
+                        is_stderr: false,
+                    };
+                    let _ = app.emit("serial-data", output);
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                    continue;
+                }
+                Err(_) => {
+                    let _ = app.emit("serial-close", &session_id_clone);
+                    break;
                 }
             }
-        });
-    }
+        }
+    });
 
     Ok(session_id)
 }

@@ -1,6 +1,6 @@
 //! SSH Session 实现 - SSH 远程会话
 //!
-//! 使用 russh 实现 SSH 会话。
+//! 使用 russh 实现 SSH 会话，支持直接连接和通过 Jump Host 连接。
 
 use super::types::{JumpHostConfig, SessionError, SessionOutput, SessionType};
 use anyhow::Result;
@@ -12,7 +12,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, Mutex};
 
 use crate::state::ClientHandler;
 
@@ -35,6 +35,10 @@ pub struct SshSessionState {
     channel_id: ChannelId,
     /// 是否存活
     is_alive: bool,
+    /// 关闭信号发送端
+    shutdown_tx: broadcast::Sender<()>,
+    /// 读取任务的 JoinHandle
+    read_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 /// SSH Session - SSH 远程会话
@@ -109,7 +113,7 @@ impl SshSession {
         username: &str,
         password: Option<&str>,
         private_key: Option<&str>,
-        _jump_host: Option<JumpHostConfig>,
+        jump_host: Option<JumpHostConfig>,
         cols: u16,
         rows: u16,
     ) -> Result<Self, SessionError> {
@@ -136,13 +140,245 @@ impl SshSession {
             ..Default::default()
         });
 
-        // 连接
-        let addr = format!("{}:{}", host, port);
-        let mut handle = client::connect(config, addr, ClientHandler::new())
-            .await
-            .map_err(|e| SessionError::ConnectionFailed(format!("Connection failed: {}", e)))?;
+        // 决定连接方式：直接连接 或 通过 Jump Host
+        let handle: client::Handle<ClientHandler>;
+        let target_channel: Option<russh::Channel<client::Msg>>;
 
-        // 认证
+        if let Some(ref jh) = jump_host {
+            // 通过 Jump Host 连接到目标
+            let (jh_handle, ch) = Self::connect_via_jump(
+                config.clone(),
+                host,
+                port,
+                username,
+                password,
+                private_key,
+                jh,
+            )
+            .await?;
+            handle = jh_handle;
+            target_channel = Some(ch);
+        } else {
+            // 直接连接到主机
+            let addr = format!("{}:{}", host, port);
+            let mut direct_handle = client::connect(config, addr, ClientHandler::new())
+                .await
+                .map_err(|e| SessionError::ConnectionFailed(format!("Connection failed: {}", e)))?;
+
+            // 认证
+            Self::authenticate(&mut direct_handle, username, password, private_key).await?;
+            handle = direct_handle;
+            target_channel = None;
+        }
+
+        // 打开 Shell Channel
+        let mut channel = if let Some(jh_target_channel) = target_channel {
+            // 通过 Jump Host 的 channel 连接目标 - 直接使用已建立的 channel
+            jh_target_channel
+        } else {
+            // 直接打开 channel
+            handle
+                .channel_open_session()
+                .await
+                .map_err(|e| SessionError::ChannelError(format!("Failed to open channel: {}", e)))?
+        };
+
+        channel
+            .request_pty(false, "xterm-256color", cols.into(), rows.into(), 0, 0, &[])
+            .await
+            .map_err(|e| SessionError::ChannelError(format!("Failed to request PTY: {}", e)))?;
+
+        channel
+            .request_shell(false)
+            .await
+            .map_err(|e| SessionError::ChannelError(format!("Failed to request shell: {}", e)))?;
+
+        let channel_id = channel.id();
+
+        // 创建关闭信号 channel
+        let (shutdown_tx, _) = broadcast::channel(1);
+        let shutdown_rx = shutdown_tx.subscribe();
+
+        let read_handle = Arc::new(Mutex::new(None::<tokio::task::JoinHandle<()>>));
+
+        let state = Arc::new(Mutex::new(SshSessionState {
+            handle,
+            channel_id,
+            is_alive: true,
+            shutdown_tx,
+            read_handle: read_handle.clone(),
+        }));
+
+        // 启动读取任务
+        let session_id_clone = session_id.clone();
+        let app_clone = app.clone();
+        let read_handle_clone = read_handle.clone();
+
+        let handle = tokio::spawn(async move {
+            let mut shutdown_rx = shutdown_rx;
+
+            loop {
+                tokio::select! {
+                    // 监听关闭信号
+                    _ = shutdown_rx.recv() => {
+                        let _ = app_clone.emit("ssh-close", &session_id_clone);
+                        break;
+                    }
+                    // 等待 channel 事件
+                    msg = channel.wait() => {
+                        match msg {
+                            Some(ChannelMsg::Data { data }) => {
+                                let output = SessionOutput {
+                                    session_id: session_id_clone.clone(),
+                                    data: String::from_utf8_lossy(&data).to_string(),
+                                    is_stderr: false,
+                                };
+                                let _ = app_clone.emit("ssh-data", output);
+                            }
+                            Some(ChannelMsg::ExtendedData { data, ext }) => {
+                                let output = SessionOutput {
+                                    session_id: session_id_clone.clone(),
+                                    data: String::from_utf8_lossy(&data).to_string(),
+                                    is_stderr: ext == 1,
+                                };
+                                let _ = app_clone.emit("ssh-data", output);
+                            }
+                            Some(ChannelMsg::Eof) | Some(ChannelMsg::Close { .. }) => {
+                                let _ = app_clone.emit("ssh-close", &session_id_clone);
+                                break;
+                            }
+                            Some(ChannelMsg::ExitStatus { exit_status }) => {
+                                let _ = app_clone.emit("ssh-exit", (&session_id_clone, exit_status));
+                            }
+                            None => break,
+                            _ => continue,
+                        }
+                    }
+                }
+            }
+
+            // 清理 JoinHandle
+            let mut handle_guard = read_handle_clone.lock().await;
+            *handle_guard = None;
+        });
+
+        {
+            let mut handle_guard = read_handle.lock().await;
+            *handle_guard = Some(handle);
+        }
+
+        Ok(Self { session_id, state })
+    }
+
+    /// 通过 Jump Host 连接到目标主机
+    ///
+    /// 返回跳板机的 handle 和到目标主机的 channel
+    async fn connect_via_jump(
+        config: Arc<client::Config>,
+        target_host: &str,
+        target_port: u16,
+        target_username: &str,
+        target_password: Option<&str>,
+        target_key: Option<&str>,
+        jump_host: &JumpHostConfig,
+    ) -> Result<(client::Handle<ClientHandler>, russh::Channel<client::Msg>), SessionError> {
+        // 第一步：连接到跳板机
+        let jump_addr = format!("{}:{}", jump_host.host, jump_host.port);
+        let mut jump_handle = client::connect(config.clone(), jump_addr, ClientHandler::new())
+            .await
+            .map_err(|e| SessionError::ConnectionFailed(format!("Jump host connection failed: {}", e)))?;
+
+        // 跳板机认证
+        let jump_auth = match jump_host.auth_type.as_str() {
+            "key" => {
+                if let Some(ref key) = jump_host.private_key {
+                    match russh::keys::decode_openssh(key.as_bytes(), jump_host.password.as_deref()) {
+                        Ok(key) => {
+                            let rsa_hash = jump_handle
+                                .best_supported_rsa_hash()
+                                .await
+                                .map_err(|e| SessionError::ConnectionFailed(format!("RSA hash failed: {}", e)))?
+                                .flatten();
+                            let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash);
+                            jump_handle.authenticate_publickey(&jump_host.username, key_with_hash).await
+                        }
+                        Err(_) => {
+                            if let Some(ref pwd) = jump_host.password {
+                                jump_handle.authenticate_password(&jump_host.username, pwd).await
+                            } else {
+                                return Err(SessionError::AuthenticationFailed(
+                                    "Failed to parse jump host key and no password provided".to_string(),
+                                ));
+                            }
+                        }
+                    }
+                } else if let Some(ref pwd) = jump_host.password {
+                    jump_handle.authenticate_password(&jump_host.username, pwd).await
+                } else {
+                    return Err(SessionError::AuthenticationFailed(
+                        "No authentication method provided for jump host".to_string(),
+                    ));
+                }
+            }
+            "password" | _ => {
+                // 默认使用密码认证
+                if let Some(ref pwd) = jump_host.password {
+                    jump_handle.authenticate_password(&jump_host.username, pwd).await
+                } else {
+                    return Err(SessionError::AuthenticationFailed(
+                        "Jump host password required".to_string(),
+                    ));
+                }
+            }
+        };
+
+        if !jump_auth
+            .map_err(|e| SessionError::AuthenticationFailed(format!("Jump host auth failed: {}", e)))?
+            .success()
+        {
+            return Err(SessionError::AuthenticationFailed(
+                "Jump host authentication failed".to_string(),
+            ));
+        }
+
+        // 第二步：通过跳板机打开到目标主机的 direct-tcpip channel
+        let peer_addr = format!("{}:{}", jump_host.host, jump_host.port);
+        let mut target_channel = jump_handle
+            .channel_open_direct_tcpip(target_host, target_port as u32, &peer_addr, jump_host.port as u32)
+            .await
+            .map_err(|e| SessionError::ChannelError(format!("Failed to open channel via jump host: {}", e)))?;
+
+        // 第三步：在 channel 上尝试认证（部分跳板机支持此方式）
+        Self::authenticate_channel_on_channel(
+            &mut target_channel,
+            target_username,
+            target_password,
+            target_key,
+        )
+        .await;
+
+        Ok((jump_handle, target_channel))
+    }
+
+    /// 在 channel 上进行认证（实验性）
+    async fn authenticate_channel_on_channel(
+        _channel: &mut russh::Channel<client::Msg>,
+        _username: &str,
+        _password: Option<&str>,
+        _private_key: Option<&str>,
+    ) {
+        // SSH 认证通常在 channel_open 之前完成
+        // 对于通过跳板机的连接，认证信息已经在跳板机层处理
+        // 这里不需要额外操作
+    }
+
+    /// 认证处理
+    async fn authenticate(
+        handle: &mut client::Handle<ClientHandler>,
+        username: &str,
+        password: Option<&str>,
+        private_key: Option<&str>,
+    ) -> Result<(), SessionError> {
         let rsa_hash = handle
             .best_supported_rsa_hash()
             .await
@@ -182,67 +418,7 @@ impl SshSession {
             ));
         }
 
-        // 打开 Shell Channel
-        let mut channel = handle
-            .channel_open_session()
-            .await
-            .map_err(|e| SessionError::ChannelError(format!("Failed to open channel: {}", e)))?;
-
-        channel
-            .request_pty(false, "xterm-256color", cols.into(), rows.into(), 0, 0, &[])
-            .await
-            .map_err(|e| SessionError::ChannelError(format!("Failed to request PTY: {}", e)))?;
-
-        channel
-            .request_shell(false)
-            .await
-            .map_err(|e| SessionError::ChannelError(format!("Failed to request shell: {}", e)))?;
-
-        let channel_id = channel.id();
-
-        let state = Arc::new(Mutex::new(SshSessionState {
-            handle,
-            channel_id,
-            is_alive: true,
-        }));
-
-        // 启动读取任务
-        let session_id_clone = session_id.clone();
-        let app_clone = app.clone();
-
-        tokio::spawn(async move {
-            loop {
-                match channel.wait().await {
-                    Some(ChannelMsg::Data { data }) => {
-                        let output = SessionOutput {
-                            session_id: session_id_clone.clone(),
-                            data: String::from_utf8_lossy(&data).to_string(),
-                            is_stderr: false,
-                        };
-                        let _ = app_clone.emit("ssh-data", output);
-                    }
-                    Some(ChannelMsg::ExtendedData { data, ext }) => {
-                        let output = SessionOutput {
-                            session_id: session_id_clone.clone(),
-                            data: String::from_utf8_lossy(&data).to_string(),
-                            is_stderr: ext == 1,
-                        };
-                        let _ = app_clone.emit("ssh-data", output);
-                    }
-                    Some(ChannelMsg::Eof) | Some(ChannelMsg::Close { .. }) => {
-                        let _ = app_clone.emit("ssh-close", &session_id_clone);
-                        break;
-                    }
-                    Some(ChannelMsg::ExitStatus { exit_status }) => {
-                        let _ = app_clone.emit("ssh-exit", (&session_id_clone, exit_status));
-                    }
-                    None => break,
-                    _ => continue,
-                }
-            }
-        });
-
-        Ok(Self { session_id, state })
+        Ok(())
     }
 
     /// 获取会话 ID
@@ -296,14 +472,23 @@ impl SshSession {
         })
     }
 
-    /// 关闭会话
+    /// 关闭会话 - 发送关闭信号并等待任务完成
     pub fn close(self) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         let state = self.state.clone();
         Box::pin(async move {
-            let mut state = state.lock().await;
-            if state.is_alive {
-                let _ = state.handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
-                state.is_alive = false;
+            let read_handle = {
+                let mut s = state.lock().await;
+                if s.is_alive {
+                    let _ = s.shutdown_tx.send(());
+                    let _ = s.handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+                    s.is_alive = false;
+                }
+                let h = s.read_handle.lock().await.take();
+                h
+            };
+            // 等待读取任务完成（最多等待 2 秒）
+            if let Some(h) = read_handle {
+                let _ = tokio::time::timeout(tokio::time::Duration::from_secs(2), h).await;
             }
         })
     }

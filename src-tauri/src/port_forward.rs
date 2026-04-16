@@ -3,6 +3,7 @@ use crate::session::get_ssh_sessions;
 use crate::state::{PortForwardConfig, PortForwardInfo, PortForwardTask, SharedStateType};
 use futures::channel::mpsc;
 use futures::SinkExt;
+use log::{info, warn};
 use russh::ChannelId;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -81,7 +82,7 @@ pub async fn port_forward_start(
     };
     port_forwards.insert(forward_id.clone(), PortForwardTask { task, info });
 
-    println!(
+    info!(
         "Port forward started: {} ({}:{} -> {}:{})",
         forward_id, config_local_host, local_port, config_remote_host, remote_port
     );
@@ -101,7 +102,7 @@ async fn start_local_forward(
         .await
         .map_err(|e| PortForwardError::BindFailed(format!("Failed to bind {}: {}", addr, e)))?;
 
-    println!("Local port forward listening on {}", addr);
+    info!("Local port forward listening on {}", addr);
 
     loop {
         match listener.accept().await {
@@ -117,17 +118,17 @@ async fn start_local_forward(
                         Ok(channel) => {
                             let channel_id = channel.id();
                             if let Err(e) = forward_socket(handle_clone, channel_id, channel, socket).await {
-                                eprintln!("Local forward error: {:?}", e);
+                                warn!("Local forward error: {:?}", e);
                             }
                         }
                         Err(e) => {
-                            eprintln!("Failed to open SSH channel for forward: {:?}", e);
+                            warn!("Failed to open SSH channel for forward: {:?}", e);
                         }
                     }
                 });
             }
             Err(e) => {
-                eprintln!("Failed to accept connection: {:?}", e);
+                warn!("Failed to accept connection: {:?}", e);
             }
         }
     }
@@ -140,7 +141,7 @@ async fn start_remote_forward(
     remote_host: String,
     remote_port: u16,
 ) -> Result<(), PortForwardError> {
-    println!(
+    info!(
         "Remote port forward: connecting to {}:{} via local port {}",
         remote_host, remote_port, local_port
     );
@@ -165,17 +166,17 @@ async fn start_remote_forward(
                         Ok(channel) => {
                             let channel_id = channel.id();
                             if let Err(e) = forward_socket(handle_clone, channel_id, channel, socket).await {
-                                eprintln!("Remote forward error: {:?}", e);
+                                warn!("Remote forward error: {:?}", e);
                             }
                         }
                         Err(e) => {
-                            eprintln!("Failed to open SSH channel for remote forward: {:?}", e);
+                            warn!("Failed to open SSH channel for remote forward: {:?}", e);
                         }
                     }
                 });
             }
             Err(e) => {
-                eprintln!("Failed to connect to local port {}: {:?}", local_addr, e);
+                warn!("Failed to connect to local port {}: {:?}", local_addr, e);
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
         }
@@ -193,7 +194,7 @@ async fn start_dynamic_forward(
         .await
         .map_err(|e| PortForwardError::BindFailed(format!("Failed to bind {}: {}", addr, e)))?;
 
-    println!("Dynamic (SOCKS5) port forward listening on {}", addr);
+    info!("Dynamic (SOCKS5) port forward listening on {}", addr);
 
     loop {
         match listener.accept().await {
@@ -201,12 +202,12 @@ async fn start_dynamic_forward(
                 let handle_clone = handle.clone();
                 tokio::spawn(async move {
                     if let Err(e) = handle_socks5_client(&handle_clone, socket, peer_addr).await {
-                        eprintln!("SOCKS5 client error: {:?}", e);
+                        warn!("SOCKS5 client error: {:?}", e);
                     }
                 });
             }
             Err(e) => {
-                eprintln!("Failed to accept SOCKS5 connection: {:?}", e);
+                warn!("Failed to accept SOCKS5 connection: {:?}", e);
             }
         }
     }
@@ -440,7 +441,7 @@ async fn handle_socks5_client(
 
             let channel_id = channel.id();
             if let Err(e) = forward_socket(handle.clone(), channel_id, channel, socket).await {
-                eprintln!("SOCKS5 forward error: {:?}", e);
+                warn!("SOCKS5 forward error: {:?}", e);
             }
         }
         Err(e) => {
@@ -472,7 +473,7 @@ pub async fn port_forward_stop(
     let mut port_forwards = state.port_forwards.lock().await;
     if let Some(forward) = port_forwards.remove(&forward_id) {
         forward.task.abort();
-        println!("Port forward stopped: {}", forward_id);
+        info!("Port forward stopped: {}", forward_id);
     }
     Ok(())
 }

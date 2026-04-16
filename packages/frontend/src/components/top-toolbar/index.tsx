@@ -83,6 +83,21 @@ const TopToolbar: React.FC<{
     { label: t('toolbar.sftp'), icon: <FolderUp className="size-5" />, path: '/sftp' },
   ]
 
+  const getPageTitle = (pathname: string): string => {
+    const item = navItems.find(n => n.path === pathname)
+    if (item) return item.label
+    switch (pathname) {
+      case '/keychain': return 'Keychain'
+      case '/port-forward': return 'Port Forward'
+      case '/snippets': return 'Snippets'
+      case '/known-hosts': return 'Known Hosts'
+      case '/logs': return 'Logs'
+      case '/settings': return 'Settings'
+      case '/terminal': return 'Terminal'
+      default: return 'Hosts'
+    }
+  }
+
   // ─── Mobile layout ───────────────────────────────────────────────
   if (isMobile) {
     return (
@@ -104,23 +119,9 @@ const TopToolbar: React.FC<{
           </Button>
 
           {/* Center: Current page title */}
-          <div className="flex-1 text-center">
+          <div className="flex-1 text-center" data-tauri-drag-region="false">
             <span className="text-sm font-medium text-foreground truncate">
-              {location.pathname === '/sftp'
-                ? 'SFTP'
-                : location.pathname === '/keychain'
-                  ? 'Keychain'
-                  : location.pathname === '/port-forward'
-                    ? 'Port Forward'
-                    : location.pathname === '/snippets'
-                      ? 'Snippets'
-                      : location.pathname === '/known-hosts'
-                        ? 'Known Hosts'
-                        : location.pathname === '/logs'
-                          ? 'Logs'
-                          : location.pathname === '/settings'
-                            ? 'Settings'
-                            : 'Terminal'}
+              {getPageTitle(location.pathname)}
             </span>
           </div>
 
@@ -202,16 +203,14 @@ const TopToolbar: React.FC<{
         )}
         data-tauri-drag-region
       >
-        <div
-          className="flex items-center gap-1 min-w-0 flex-1"
-          data-tauri-drag-region="false"
-        >
+        <div className="flex items-center gap-1 min-w-0 flex-1">
           <Button
             variant="ghost"
             size="icon"
             className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
             onClick={onToggleSidebar}
             title={t('toolbar.toggleSidebar')}
+            data-tauri-drag-region="false"
           >
             <PanelLeft className="size-4" />
           </Button>
@@ -228,6 +227,7 @@ const TopToolbar: React.FC<{
                   ? 'bg-secondary/80 text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground',
               )}
+              data-tauri-drag-region="false"
             >
               <FolderUp className="size-4" data-icon="inline-start" />
               {t('toolbar.sftp')}
@@ -241,22 +241,21 @@ const TopToolbar: React.FC<{
               className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
               title={t('toolbar.newTab')}
               onClick={handleNewLocalTerminal}
+              data-tauri-drag-region="false"
             >
               <Plus className="size-4" />
             </Button>
           </div>
         </div>
 
-        <div
-          className="flex items-center gap-0.5 shrink-0"
-          data-tauri-drag-region="false"
-        >
+        <div className="flex items-center gap-0.5 shrink-0">
           <Button
             variant="ghost"
             size="icon"
             className="size-8 text-muted-foreground hover:text-foreground relative"
             title={t('toolbar.notifications')}
             onClick={() => setNotificationPanelOpen(true)}
+            data-tauri-drag-region="false"
           >
             <BellIcon className="size-4" />
             {unreadCount > 0 && (

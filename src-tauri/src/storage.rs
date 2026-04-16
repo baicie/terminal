@@ -102,9 +102,15 @@ impl WebDAVStorage {
     }
 
     fn make_url(&self, path: &str) -> String {
+        let endpoint = self.endpoint.trim_end_matches('/');
         let base = self.base_path.trim_end_matches('/');
         let p = path.trim_start_matches('/');
-        format!("{}/{}/{}", self.endpoint.trim_end_matches('/'), base, p)
+
+        if base.is_empty() {
+            format!("{}/{}", endpoint, p)
+        } else {
+            format!("{}/{}/{}", endpoint, base, p)
+        }
     }
 }
 
@@ -279,7 +285,10 @@ impl S3Storage {
     }
 
     fn make_url(&self, path: &str) -> String {
-        format!("{}/{}/{}", self.endpoint.trim_end_matches('/'), self.bucket, path.trim_start_matches('/'))
+        let endpoint = self.endpoint.trim_end_matches('/');
+        let bucket = self.bucket.trim_start_matches('/');
+        let p = path.trim_start_matches('/');
+        format!("{}/{}/{}", endpoint, bucket, p)
     }
 }
 

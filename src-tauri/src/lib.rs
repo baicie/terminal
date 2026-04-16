@@ -37,6 +37,9 @@ use vault::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize logger
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     let shared_state = create_shared_state();
 
     tauri::Builder::default()

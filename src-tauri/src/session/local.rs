@@ -3,13 +3,13 @@
 //! 使用 portable-pty 实现本地 PTY 会话。
 
 use super::types::{SessionError, SessionOutput, SessionType};
+use parking_lot::Mutex as ParkingMutex;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-use std::sync::Arc;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::Mutex;
-use uuid::Uuid;
+use tokio::sync::{broadcast, Mutex};
 
 /// Local Session 内部状态
 pub struct LocalPtyState {
@@ -21,6 +21,10 @@ pub struct LocalPtyState {
     writer: Arc<Mutex<Box<dyn std::io::Write + Send + 'static>>>,
     /// 是否存活
     is_alive: bool,
+    /// 关闭信号发送端
+    shutdown_tx: broadcast::Sender<()>,
+    /// 读取任务的 JoinHandle
+    read_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 /// Local Session - 本地 PTY 会话
@@ -35,7 +39,7 @@ pub struct LocalSession {
 impl LocalSession {
     /// 创建新的 LocalSession
     pub async fn new(app: AppHandle, cols: u16, rows: u16) -> Result<Self, SessionError> {
-        let session_id = format!("local-{}", Uuid::new_v4());
+        let session_id = format!("local-{}", uuid::Uuid::new_v4());
 
         // 创建 PTY 对
         let pty_system = native_pty_system();
@@ -80,7 +84,7 @@ impl LocalSession {
             .map_err(|e| SessionError::ConnectionFailed(format!("Failed to spawn shell: {}", e)))?;
 
         // 获取读写器
-        let mut reader = pty_pair
+        let reader = pty_pair
             .master
             .try_clone_reader()
             .map_err(|e| SessionError::ConnectionFailed(format!("Failed to clone PTY reader: {}", e)))?;
@@ -112,39 +116,83 @@ impl LocalSession {
             }
         }
 
+        // 创建关闭信号 channel
+        let (shutdown_tx, _) = broadcast::channel(1);
+        let shutdown_rx = shutdown_tx.subscribe();
+
+        let read_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>> =
+            Arc::new(Mutex::new(None));
+
+        // 将 reader 包装在 Arc 中以便在循环中共享
+        let reader = Arc::new(ParkingMutex::new(reader));
+
         let state = Arc::new(Mutex::new(LocalPtyState {
             pty_pair,
             child,
             writer: Arc::new(Mutex::new(writer)),
             is_alive: true,
+            shutdown_tx,
+            read_handle: read_handle.clone(),
         }));
 
         // 启动读取任务
         let session_id_clone = session_id.clone();
         let app_clone = app.clone();
-        tokio::task::spawn_blocking(move || {
+        let read_handle_clone = read_handle.clone();
+        let reader_clone = reader.clone();
+
+        let handle = tokio::spawn(async move {
+            let mut shutdown_rx = shutdown_rx;
             let mut buf = [0u8; 4096];
+
             loop {
-                match reader.read(&mut buf) {
-                    Ok(0) => {
+                tokio::select! {
+                    biased;
+
+                    // 优先处理关闭信号
+                    _ = shutdown_rx.recv() => {
                         let _ = app_clone.emit("local-close", &session_id_clone);
                         break;
                     }
-                    Ok(n) => {
-                        let output = SessionOutput {
-                            session_id: session_id_clone.clone(),
-                            data: String::from_utf8_lossy(&buf[..n]).to_string(),
-                            is_stderr: false,
-                        };
-                        let _ = app_clone.emit("local-data", output);
-                    }
-                    Err(_) => {
-                        let _ = app_clone.emit("local-close", &session_id_clone);
-                        break;
+                    // 读取 PTY 数据
+                    result = tokio::task::spawn_blocking({
+                        let reader = reader_clone.clone();
+                        move || {
+                            let mut r = reader.lock();
+                            r.read(&mut buf)
+                        }
+                    }) => {
+                        match result {
+                            Ok(Ok(0)) => {
+                                let _ = app_clone.emit("local-close", &session_id_clone);
+                                break;
+                            }
+                            Ok(Ok(n)) => {
+                                let output = SessionOutput {
+                                    session_id: session_id_clone.clone(),
+                                    data: String::from_utf8_lossy(&buf[..n]).to_string(),
+                                    is_stderr: false,
+                                };
+                                let _ = app_clone.emit("local-data", output);
+                            }
+                            Ok(Err(_)) | Err(_) => {
+                                let _ = app_clone.emit("local-close", &session_id_clone);
+                                break;
+                            }
+                        }
                     }
                 }
             }
+
+            // 清理 JoinHandle
+            let mut handle_guard = read_handle_clone.lock().await;
+            *handle_guard = None;
         });
+
+        {
+            let mut handle_guard = read_handle.lock().await;
+            *handle_guard = Some(handle);
+        }
 
         Ok(Self { session_id, state })
     }
@@ -205,14 +253,23 @@ impl LocalSession {
         })
     }
 
-    /// 关闭会话
+    /// 关闭会话 - 发送关闭信号并等待任务完成
     pub fn close(self) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         let state = self.state.clone();
         Box::pin(async move {
-            let mut state = state.lock().await;
-            if state.is_alive {
-                let _ = state.child.kill();
-                state.is_alive = false;
+            let read_handle = {
+                let mut s = state.lock().await;
+                if s.is_alive {
+                    let _ = s.shutdown_tx.send(());
+                    let _ = s.child.kill();
+                    s.is_alive = false;
+                }
+                let h = s.read_handle.lock().await.take();
+                h
+            };
+            // 等待读取任务完成（最多等待 2 秒）
+            if let Some(h) = read_handle {
+                let _ = tokio::time::timeout(tokio::time::Duration::from_secs(2), h).await;
             }
         })
     }
@@ -226,3 +283,4 @@ impl LocalSession {
         }
     }
 }
+

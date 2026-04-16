@@ -5,80 +5,11 @@
    Custom Keyframes (beyond tailwind-animate)
    ================================================ */
 
-@keyframes pulse-subtle {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
+/* Unused keyframes removed. Add new ones here when needed. */
 
-@keyframes bounce-subtle {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-4px);
-  }
-}
-
-@keyframes shake {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  20% {
-    transform: translateX(-6px);
-  }
-  40% {
-    transform: translateX(6px);
-  }
-  60% {
-    transform: translateX(-4px);
-  }
-  80% {
-    transform: translateX(4px);
-  }
-}
-
-@keyframes scale-bounce {
-  0% {
-    transform: scale(1);
-  }
-  30% {
-    transform: scale(0.94);
-  }
-  60% {
-    transform: scale(1.04);
-  }
-  80% {
-    transform: scale(0.98);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-@keyframes spin-slow {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* ================================================
+   Custom Animation Utilities
+   ================================================ */
 
 @keyframes float {
   0%,
@@ -90,107 +21,8 @@
   }
 }
 
-@keyframes glow-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 8px 0px var(--glow-color, rgba(99, 102, 241, 0.3));
-  }
-  50% {
-    box-shadow: 0 0 16px 4px var(--glow-color, rgba(99, 102, 241, 0.6));
-  }
-}
-
-@keyframes blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-}
-
-@keyframes progress-indeterminate {
-  0% {
-    left: -35%;
-    right: 100%;
-  }
-  60% {
-    left: 100%;
-    right: -90%;
-  }
-  100% {
-    left: 100%;
-    right: -90%;
-  }
-}
-
-/* ================================================
-   Custom Animation Utilities
-   ================================================ */
-
-.animate-pulse-subtle {
-  animation: pulse-subtle 2s ease-in-out infinite;
-}
-.animate-bounce-subtle {
-  animation: bounce-subtle 600ms ease-in-out infinite;
-}
-.animate-shake {
-  animation: shake 500ms ease-in-out;
-}
-.animate-scale-bounce {
-  animation: scale-bounce 400ms cubic-bezier(0.36, 0.11, 0.89, 0.32);
-}
-.animate-shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent 25%,
-    rgba(255, 255, 255, 0.15) 50%,
-    transparent 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-}
-.animate-spin-slow {
-  animation: spin-slow 3s linear infinite;
-}
 .animate-float {
   animation: float 3s ease-in-out infinite;
-}
-.animate-glow-pulse {
-  animation: glow-pulse 2s ease-in-out infinite;
-}
-.animate-blink {
-  animation: blink 1s step-end infinite;
-}
-.animate-progress-indeterminate {
-  animation: progress-indeterminate 2s infinite ease-in-out;
-}
-
-/* Stagger delays for list items (配合 tailwind-animate 使用) */
-.stagger-1 {
-  animation-delay: 50ms;
-}
-.stagger-2 {
-  animation-delay: 100ms;
-}
-.stagger-3 {
-  animation-delay: 150ms;
-}
-.stagger-4 {
-  animation-delay: 200ms;
-}
-.stagger-5 {
-  animation-delay: 250ms;
-}
-.stagger-6 {
-  animation-delay: 300ms;
-}
-.stagger-7 {
-  animation-delay: 350ms;
-}
-.stagger-8 {
-  animation-delay: 400ms;
 }
 
 /* Hover lift */
@@ -210,18 +42,6 @@
 }
 .press-effect:active {
   transform: scale(0.95);
-}
-
-/* Skeleton shimmer override */
-.skeleton-shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent 25%,
-    rgba(255, 255, 255, 0.12) 50%,
-    transparent 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -361,32 +181,6 @@
   }
 }
 
-*[data-tauri-drag-region] {
-  app-region: unset !important;
-}
-
-*[data-tauri-drag-region]:not([data-tauri-drag-region='false']) {
-  -webkit-app-region: drag;
-  app-region: drag;
-}
-
-/* Interactive controls inside a drag region must opt out or clicks/ dismiss layers break (e.g. Radix dropdown). */
-*[data-tauri-drag-region='false'] {
-  -webkit-app-region: no-drag !important;
-  app-region: no-drag !important;
-}
-
-/* Modal layer is portaled to body; must not use window drag region or overlay clicks / Esc dismiss fail (Tauri). */
-[data-slot='dialog-overlay'],
-[data-slot='dialog-content'],
-[data-slot='dialog-close'],
-[data-slot='alert-dialog-overlay'],
-[data-slot='alert-dialog-content'],
-[data-slot='sheet-overlay'],
-[data-slot='sheet-content'] {
-  -webkit-app-region: no-drag !important;
-  app-region: no-drag !important;
-}
 
 /* ============================================================
    Responsive Mobile Styles

@@ -128,7 +128,7 @@ impl SessionManager {
         }
 
         // 创建对应的 channel
-        self.channel_manager.create_channel(session_id);
+        self.channel_manager.create_channel(session_id).await;
     }
 
     /// 获取 Session
@@ -174,7 +174,7 @@ impl SessionManager {
         }
 
         // 清理 channel
-        self.channel_manager.remove_channel(session_id);
+        self.channel_manager.remove_channel(session_id).await;
 
         // 清理元信息
         {
@@ -193,7 +193,7 @@ impl SessionManager {
 
     /// 广播输出
     pub async fn broadcast_output(&self, data: &str, is_stderr: bool) {
-        let channels = self.channel_manager.list_sessions();
+        let channels = self.channel_manager.list_sessions().await;
         for session_id in channels {
             let output = make_output(&session_id, data, is_stderr);
             let _ = self.channel_manager.send(&session_id, output).await;

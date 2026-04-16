@@ -27,15 +27,10 @@
         "transparent": true,
         "trafficLightPosition": {
           "x": 20,
-          "y": 32
+          "y": 16
         },
-        "decorations": true,
-        "titleBarStyle": "Overlay",
-        "windowEffects": {
-          "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
-          "state": "active"
-        },
-        "dragDropEnabled": false
+        "decorations": false,
+        "titleBarStyle": "Overlay"
       }
     ],
     "security": {
@@ -51,6 +46,14 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
   }
 }
