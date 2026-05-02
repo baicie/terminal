@@ -1,28 +1,25 @@
 import type { SSHKeyRecord } from '@/service/database'
 import {
+  getSSHKeys,
+  searchSSHKeys,
+  createSSHKey,
+  updateSSHKey,
+  deleteSSHKey,
+} from '@/service/database'
+import {
   Key,
   KeyRound,
-  Plus,
   Trash2,
-  Wand2,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ResponsiveConfirm } from '@/components/ui/responsive-dialog'
-import { toast } from '@/components/ui/sonner'
 import {
   EmptyState,
   ViewContainer,
   ViewContent,
   ViewToolbar,
 } from '@/components/view-container'
-import {
-  createSSHKey,
-  deleteSSHKey,
-  getSSHKeys,
-  searchSSHKeys,
-  updateSSHKey,
-} from '@/service/database'
 import { GenerateKeyDialog } from './generate-dialog'
 import { KeyForm } from './key-form'
 import { KeyListPanel } from './key-list-panel'

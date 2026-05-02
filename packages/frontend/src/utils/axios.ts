@@ -1,6 +1,6 @@
-import type { AxiosError, AxiosResponse } from 'axios'
+import type { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios'
 import axios from 'axios'
-import cookies from 'js-cookie'
+import Cookies from 'js-cookie'
 import { getLogger } from '../hooks/use-logger'
 
 /**
@@ -21,7 +21,7 @@ function handleError(res: AxiosResponse<{ msg: string }>) {
   logger.error(res.data.msg)
 }
 
-const baseRequestConfig: axios.AxiosRequestConfig = {
+const baseRequestConfig: AxiosRequestConfig = {
   baseURL: '/api',
   timeout: 60000,
 }
@@ -30,7 +30,7 @@ const service = axios.create(baseRequestConfig)
 
 function err(err: AxiosError): Promise<AxiosResponse | AxiosError> {
   const config = err.config as
-    | (axios.AxiosRequestConfig & RetryConfig)
+    | (AxiosRequestConfig & RetryConfig)
     | undefined
   if (!err.response && config && config.retry) {
     config.__retryCount = config.__retryCount || 0
@@ -54,7 +54,7 @@ function err(err: AxiosError): Promise<AxiosResponse | AxiosError> {
 }
 
 service.interceptors.request.use(config => {
-  const language = cookies.get('language')
+  const language = Cookies.get('language')
   config.headers = config.headers || {}
   if (language) config.headers.language = language
 

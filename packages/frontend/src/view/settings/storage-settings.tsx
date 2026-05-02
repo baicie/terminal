@@ -23,7 +23,6 @@ import {
 import {
   storageHealthCheck,
   storageInit,
-  storageUpload,
 } from '@/service/storage'
 import { exportDataToFile } from '@/service/sync'
 
@@ -46,7 +45,6 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
   >('idle')
   const [syncing, setSyncing] = useState(false)
   const [showTokenVisible, setShowTokenVisible] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const handleTestConnection = async () => {
     if (!settings.syncServiceEndpoint) return
@@ -82,15 +80,12 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
     if (!settings.syncServiceEndpoint) return
 
     setSyncing(true)
-    setErrorMessage(null)
 
     try {
       await exportDataToFile()
       // Simplified - actual implementation would upload file
-      setErrorMessage('Sync functionality not fully implemented')
     } catch (error) {
       console.error('Sync failed:', error)
-      setErrorMessage(`Sync failed: ${error}`)
     } finally {
       setSyncing(false)
     }

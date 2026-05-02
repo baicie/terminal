@@ -1,5 +1,5 @@
 import { ViewContainer, ViewToolbar, ViewContent, ViewHeader } from '@/components/view-container'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowRight, Bug, Terminal } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
@@ -21,7 +21,9 @@ const experiments = [
 const ExperimentsIndex: React.FC = () => {
   return (
     <ViewContainer>
-      <ViewToolbar />
+      <ViewToolbar>
+        <span className="text-sm font-medium">开发测试</span>
+      </ViewToolbar>
       <ViewContent className="p-6">
         <ViewHeader
           title="开发测试"

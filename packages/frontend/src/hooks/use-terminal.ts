@@ -220,7 +220,7 @@ export function useTerminal(
     cleanupFns.push(setupWebKitInputCompensation(term, sendInput))
 
     if (tabType !== 'serial') {
-      const onResizeDisp = term.onResize(({ cols, rows }) => {
+      const onResizeDisp = term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
         const sid = sessionIdRef.current
         if (!sid) return
         void invoke('session_resize', { sessionId: sid, cols, rows }).catch(

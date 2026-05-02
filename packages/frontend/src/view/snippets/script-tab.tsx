@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { DialogTitle } from '@/components/ui/dialog'
 import {
   Table,
   TableBody,
@@ -14,7 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ResponsiveConfirm } from '@/components/ui/responsive-dialog'
+import { ResponsiveConfirm, ResponsiveDialog } from '@/components/ui/responsive-dialog'
 import { SnippetRowSkeleton } from '@/components/ui/view-skeletons'
 import {
   EmptyState,
@@ -44,7 +45,7 @@ interface ScriptTabProps {
   formScheduleValue: string
   formTimeout: number
   formRetryCount: number
-  t: (key: string) => string
+  t: (key: string, options?: Record<string, unknown>) => string
   onSearchChange: (query: string) => void
   onOpenEditDialog: (script?: ScriptRecord) => void
   onSaveScript: () => Promise<void>
@@ -220,13 +221,24 @@ export function ScriptTab({
         </TabsContent>
       </Tabs>
 
-      <ResponsiveConfirm
+      <ResponsiveDialog
         open={isEditDialogOpen}
         onOpenChange={onEditDialogOpenChange}
-        title={selectedScript ? t('scripts.edit') : t('scripts.create')}
-        confirmText={selectedScript ? t('scripts.save') : t('scripts.create')}
-        onConfirm={onSaveScript}
-        onCancel={() => onEditDialogOpenChange(false)}
+        header={
+          <DialogTitle>
+            {selectedScript ? t('scripts.edit') : t('scripts.create')}
+          </DialogTitle>
+        }
+        footer={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => onEditDialogOpenChange(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={onSaveScript}>
+              {selectedScript ? t('scripts.save') : t('scripts.create')}
+            </Button>
+          </div>
+        }
         className="space-y-4 p-4"
         mobileHeight="90dvh"
       >
@@ -244,7 +256,7 @@ export function ScriptTab({
           onFormChange={onFormChange}
           onHostToggle={onHostToggle}
         />
-      </ResponsiveConfirm>
+      </ResponsiveDialog>
 
       <ResponsiveConfirm
         open={isDeleteDialogOpen}

@@ -63,7 +63,7 @@ interface TransferQueueState {
 }
 
 function makeId() {
-  return `xfer-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  return crypto.randomUUID()
 }
 
 export const useTransferQueue = create<TransferQueueState>((set, get) => ({

@@ -1,5 +1,4 @@
 import { useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
 
 /**
  * Swipe-back gesture: touch from left edge → navigate back.
@@ -19,7 +18,6 @@ interface UseSwipeBackOptions {
 
 export function useSwipeBack(options: UseSwipeBackOptions = {}) {
   const { threshold = 60, edgeWidth = 20, disabled = false } = options
-  const navigate = useNavigate()
   const startXRef = useRef<number | null>(null)
   const startYRef = useRef<number | null>(null)
   const isTrackingRef = useRef(false)

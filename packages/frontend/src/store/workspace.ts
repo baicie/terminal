@@ -201,7 +201,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const record = await getWorkspaceLayout(workspaceId)
     if (!record) return null
     try {
-      return JSON.parse(record.layout_data) as WorkspaceLayout
+      // record is already the parsed WorkspaceLayout from getWorkspaceLayout
+      return record as WorkspaceLayout
     } catch {
       return null
     }

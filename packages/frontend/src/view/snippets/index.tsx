@@ -13,7 +13,8 @@ import { getHosts } from '@/service/database'
 import { scriptService } from '@/service/scripts'
 import SnippetManager from '@/components/snippet-manager'
 import { ScriptTab } from './script-tab'
-import type { Host, ScriptRecord } from '@/types'
+import type { ScriptRecord } from '@/service/database'
+import type { Host } from '@/types'
 
 const SnippetsView: React.FC = () => {
   const { t } = useTranslation()

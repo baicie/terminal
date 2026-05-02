@@ -1,7 +1,7 @@
 import type { SnippetRecord } from '@/service/database'
 import type { SerialConfig } from '@/service/serial'
 import type { Host } from '@/types'
-import type { TeamMember , SharedHostRecord, SharedSnippetRecord } from '@/store/team'
+import type { SharedHost, SharedSnippet } from '@/store/team'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
@@ -24,7 +24,7 @@ export function useHostsViewHandlers() {
   const [shareDialogHost, setShareDialogHost] = useState<Host | null>(null)
   const [decryptDialogOpen, setDecryptDialogOpen] = useState(false)
   const [decryptPassword, setDecryptPassword] = useState('')
-  const [decryptingHost, setDecryptingHost] = useState<SharedHostRecord | null>(null)
+  const [decryptingHost, setDecryptingHost] = useState<SharedHost | null>(null)
   const [serialDialogOpen, setSerialDialogOpen] = useState(false)
 
   const importHostData = useCallback(
@@ -52,7 +52,7 @@ export function useHostsViewHandlers() {
   )
 
   const handleImportSharedSnippet = useCallback(
-    async (sharedSnippet: SharedSnippetRecord) => {
+    async (sharedSnippet: SharedSnippet) => {
       const snippetData = sharedSnippet.snippetData as {
         name: string
         description?: string
@@ -81,7 +81,7 @@ export function useHostsViewHandlers() {
   )
 
   const handleImportSharedHost = useCallback(
-    async (sharedHost: SharedHostRecord) => {
+    async (sharedHost: SharedHost) => {
       const hostData = sharedHost.hostData as Record<string, unknown>
       const isEncrypted = hostData._encrypted === true
       if (isEncrypted) {

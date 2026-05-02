@@ -1,5 +1,4 @@
 import {
-  Plus,
   Server,
   Terminal,
   Usb,

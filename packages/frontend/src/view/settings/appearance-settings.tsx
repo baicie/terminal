@@ -1,7 +1,5 @@
 import type { AppSettings } from '@/service/database'
 import { useTranslation } from 'react-i18next'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,

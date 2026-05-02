@@ -12,6 +12,12 @@ use tauri::{
 
 const TRAY_ID: &str = "main-tray";
 
+/// 跨平台快捷键提示
+#[cfg(target_os = "macos")]
+const QUIT_SHORTCUT: Option<&str> = Some("Cmd+Q");
+#[cfg(not(target_os = "macos"))]
+const QUIT_SHORTCUT: Option<&str> = Some("Ctrl+Q");
+
 /// 在 setup 阶段初始化系统托盘
 pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let show_window = MenuItem::with_id(
@@ -19,13 +25,13 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         "tray-show",
         "Show Window",
         true,
-        Some("Cmd+Shift+T"),
+        None::<&str>,
     )?;
     let new_local = MenuItem::with_id(app, "tray-new-local", "New Local Terminal", true, None::<&str>)?;
     let new_ssh = MenuItem::with_id(app, "tray-new-ssh", "New SSH Connection…", true, None::<&str>)?;
     let command_palette = MenuItem::with_id(app, "tray-command-palette", "Command Palette…", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "tray-quit", "Quit", true, Some("Cmd+Q"))?;
+    let quit = MenuItem::with_id(app, "tray-quit", "Quit", true, QUIT_SHORTCUT)?;
 
     let menu = Menu::with_items(
         app,

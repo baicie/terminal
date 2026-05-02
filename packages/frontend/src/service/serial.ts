@@ -7,12 +7,17 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import type { ShellOutput } from '@/features/terminal/types'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import type {
+  SerialPortInfo,
+  SerialConfig,
+  SerialConnectionResult,
+} from '@/features/terminal/types'
 
 export type {
   SerialPortInfo,
   SerialConfig,
   SerialConnectionResult,
-} from '@/features/terminal/types'
+}
 
 export class SerialService {
   /**

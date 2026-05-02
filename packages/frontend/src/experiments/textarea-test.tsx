@@ -8,7 +8,7 @@ import { Separator } from '@/components/ui/separator'
 import { ArrowLeft } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
-interface InputEvent {
+interface TestInputEvent {
   id: number
   type: string
   data: string
@@ -24,7 +24,7 @@ interface InputEvent {
   time: string
 }
 
-const textareaTestEvents: InputEvent[] = []
+const textareaTestEvents: TestInputEvent[] = []
 
 let eventId = 0
 
@@ -32,7 +32,7 @@ const TextareaTest: React.FC = () => {
   const { t } = useTranslation()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [events, setEvents] = useState<InputEvent[]>([])
+  const [events, setEvents] = useState<TestInputEvent[]>([])
   const [recording, setRecording] = useState(true)
   const [showControlChars, setShowControlChars] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
@@ -46,7 +46,7 @@ const TextareaTest: React.FC = () => {
     }
   }
 
-  const addEvent = useCallback((event: InputEvent) => {
+  const addEvent = useCallback((event: TestInputEvent) => {
     if (!recording) return
     textareaTestEvents.push(event)
     if (textareaTestEvents.length > 200) textareaTestEvents.shift()
@@ -58,12 +58,13 @@ const TextareaTest: React.FC = () => {
     const textarea = textareaRef.current
     if (!textarea) return
 
-    const handleInput = (e: InputEvent) => {
+    const handleInput = (e: Event) => {
+      const inputEvent = e as unknown as { data: string | null; inputType: string }
       addEvent({
         id: ++eventId,
         type: 'input',
-        data: (e as InputEvent).data ?? '',
-        inputType: (e as InputEvent).inputType ?? '',
+        data: inputEvent.data ?? '',
+        inputType: inputEvent.inputType ?? '',
         time: new Date().toISOString().split('T')[1].replace('Z', ''),
       })
     }
@@ -123,7 +124,7 @@ const TextareaTest: React.FC = () => {
     return s === ' ' ? '<sp>' : s
   }
 
-  const formatKey = (e: InputEvent) => {
+  const formatKey = (e: TestInputEvent) => {
     const parts: string[] = []
     if (e.ctrlKey) parts.push('Ctrl')
     if (e.shiftKey) parts.push('Shift')

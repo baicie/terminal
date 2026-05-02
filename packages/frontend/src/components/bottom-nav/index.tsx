@@ -9,7 +9,6 @@ import {
   Key,
   Keyboard,
   MoreHorizontal,
-  Server,
   Settings,
   Terminal,
   Usb,

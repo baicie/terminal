@@ -414,11 +414,11 @@ export async function executeQuery(sql: string, params: unknown[] = []) {
 export async function select<T>(
   sql: string,
   params: unknown[] = [],
-): Promise<T> {
+): Promise<T[]> {
   try {
     const database = await getDb()
     const result = await database.select<T>(sql, params)
-    return result
+    return Array.isArray(result) ? result : [result as T]
   } catch (error) {
     // Check if it's a "not in Tauri context" error
     if (
@@ -434,6 +434,6 @@ export async function select<T>(
       params,
       error: error instanceof Error ? error.message : String(error),
     })
-    return [] as T
+    return [] as T[]
   }
 }

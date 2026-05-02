@@ -206,7 +206,7 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
     })()
 
     // 拦截 Cmd/Ctrl + F：触发自定义搜索浮层，阻止 xterm 默认处理
-    term.attachCustomKeyEventHandler(e => {
+    term.attachCustomKeyEventHandler((e: { type: string; key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }) => {
       if (
         e.type === 'keydown' &&
         (e.metaKey || e.ctrlKey) &&
@@ -329,7 +329,8 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
     setFontSize(prev => {
       const next = prev + delta
       if (next < 8 || next > 32) return prev
-      termInstance?.options.set('fontSize', next)
+      // Use type-safe approach since ITerminalOptions.set may not be in types
+      ;(termInstance?.options as unknown as { set: (key: string, value: number) => void }).set('fontSize', next)
       fitAddonRef.current?.fit()
       return next
     })

@@ -1,6 +1,9 @@
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
 import { getUserProfile, select } from '@/service/database'
+import { getWorkspaces, getWorkspaceLayout } from '@/service/database/workspaces'
+import { getSSHKeys } from '@/service/database/ssh-keys'
+import { getKnownHosts } from '@/service/database/known-hosts'
 
 export interface ExportData {
   version: string
@@ -12,6 +15,9 @@ export interface ExportData {
   snippets: unknown[]
   snippetPackages: unknown[]
   workspaces: unknown[]
+  workspaceLayouts: unknown[]
+  sshKeys: unknown[]
+  knownHosts: unknown[]
   settings: Record<string, unknown>
   // Team package fields
   team?: {
@@ -33,6 +39,10 @@ export interface TeamPackageExport {
   groups: unknown[]
   snippets: unknown[]
   snippetPackages: unknown[]
+  sshKeys: unknown[]
+  knownHosts: unknown[]
+  workspaces: unknown[]
+  workspaceLayouts: unknown[]
 }
 
 export interface SyncService {
@@ -44,14 +54,28 @@ export interface SyncService {
 
 // Collect all data for export
 async function collectExportData(includeTeam = false): Promise<ExportData> {
-  const [hosts, groups, snippets, snippetPackages, settingsRows] =
+  const [hosts, groups, snippets, snippetPackages, settingsRows, workspaces, sshKeys, knownHosts] =
     await Promise.all([
       select<Record<string, unknown>>('SELECT * FROM hosts'),
       select<Record<string, unknown>>('SELECT * FROM groups'),
       select<Record<string, unknown>>('SELECT * FROM snippets'),
       select<Record<string, unknown>>('SELECT * FROM snippet_packages'),
       select<{ key: string; value: string }>('SELECT * FROM settings'),
+      getWorkspaces(),
+      getSSHKeys(),
+      getKnownHosts(),
     ])
+
+  // Collect workspace layouts
+  const workspaceLayouts = await Promise.all(
+    workspaces.map(async (ws) => {
+      const layout = await getWorkspaceLayout(ws.id)
+      return {
+        workspaceId: ws.id,
+        layoutData: layout,
+      }
+    }),
+  )
 
   const settingsDict = settingsRows.reduce<Record<string, unknown>>(
     (acc, row) => {
@@ -74,7 +98,10 @@ async function collectExportData(includeTeam = false): Promise<ExportData> {
     groups,
     snippets,
     snippetPackages,
-    workspaces: [],
+    workspaces,
+    workspaceLayouts,
+    sshKeys,
+    knownHosts,
     settings: settingsDict,
     ...(includeTeam && userProfile
       ? {
@@ -100,32 +127,57 @@ export async function exportTeamPackage(options?: {
   includeHosts?: boolean
   includeSnippets?: boolean
   includeMembers?: boolean
+  includeSSHKeys?: boolean
+  includeKnownHosts?: boolean
+  includeWorkspaces?: boolean
 }): Promise<string | null> {
   try {
     const userProfile = await getUserProfile()
     const userId = userProfile?.id || ''
 
-    // Collect data based on options
-    const hosts = options?.includeHosts
-      ? await select<Record<string, unknown>>('SELECT * FROM hosts')
-      : []
+    const [
+      hosts,
+      groups,
+      snippets,
+      snippetPackages,
+      members,
+      sshKeys,
+      knownHosts,
+      workspaces,
+    ] = await Promise.all([
+      options?.includeHosts
+        ? select<Record<string, unknown>>('SELECT * FROM hosts')
+        : [],
+      options?.includeHosts
+        ? select<Record<string, unknown>>('SELECT * FROM groups')
+        : [],
+      options?.includeSnippets
+        ? select<Record<string, unknown>>('SELECT * FROM snippets')
+        : [],
+      options?.includeSnippets
+        ? select<Record<string, unknown>>('SELECT * FROM snippet_packages')
+        : [],
+      options?.includeMembers
+        ? select<Record<string, unknown>>(
+            `SELECT user_id, user_name, user_email, role, joined_at FROM team_members WHERE team_id = ?`,
+            [options.teamId || ''],
+          )
+        : [],
+      options?.includeSSHKeys ? getSSHKeys() : [],
+      options?.includeKnownHosts ? getKnownHosts() : [],
+      options?.includeWorkspaces ? getWorkspaces() : [],
+    ])
 
-    const groups = options?.includeHosts
-      ? await select<Record<string, unknown>>('SELECT * FROM groups')
-      : []
-
-    const snippets = options?.includeSnippets
-      ? await select<Record<string, unknown>>('SELECT * FROM snippets')
-      : []
-
-    const snippetPackages = options?.includeSnippets
-      ? await select<Record<string, unknown>>('SELECT * FROM snippet_packages')
-      : []
-
-    const members = options?.includeMembers
-      ? await select<Record<string, unknown>>(
-          `SELECT user_id, user_name, user_email, role, joined_at FROM team_members WHERE team_id = ?`,
-          [options.teamId || ''],
+    // Collect workspace layouts
+    const workspaceLayouts = options?.includeWorkspaces
+      ? await Promise.all(
+          workspaces.map(async (ws) => {
+            const layout = await getWorkspaceLayout(ws.id)
+            return {
+              workspaceId: ws.id,
+              layoutData: layout,
+            }
+          }),
         )
       : []
 
@@ -139,6 +191,10 @@ export async function exportTeamPackage(options?: {
       groups,
       snippets,
       snippetPackages,
+      sshKeys,
+      knownHosts,
+      workspaces,
+      workspaceLayouts,
     }
 
     const jsonContent = JSON.stringify(packageData, null, 2)
@@ -193,6 +249,9 @@ export async function importTeamPackage(
   groups: number
   snippets: number
   snippetPackages: number
+  sshKeys: number
+  knownHosts: number
+  workspaces: number
   members: number
 }> {
   const data = previewTeamPackage(content)
@@ -205,6 +264,9 @@ export async function importTeamPackage(
     groups: 0,
     snippets: 0,
     snippetPackages: 0,
+    sshKeys: 0,
+    knownHosts: 0,
+    workspaces: 0,
     members: 0,
   }
 
@@ -363,6 +425,125 @@ export async function importTeamPackage(
     }
   }
 
+  // Import SSH Keys
+  for (const key of data.sshKeys || []) {
+    const k = key as Record<string, unknown>
+    const existing = await select<{ id: string }>(
+      'SELECT id FROM ssh_keys WHERE id = ?',
+      [k.id as string],
+    )
+    if (existing.length === 0) {
+      await importExecute(
+        `INSERT INTO ssh_keys (id, name, key_type, private_key, public_key, certificate, passphrase, is_encrypted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          k.id,
+          k.name,
+          k.key_type,
+          k.private_key,
+          k.public_key,
+          k.certificate,
+          k.passphrase,
+          k.is_encrypted,
+          k.created_at,
+          k.updated_at,
+        ],
+      )
+      stats.sshKeys++
+    } else if (mergeMode === 'replace') {
+      await importExecute(
+        `UPDATE ssh_keys SET name = ?, key_type = ?, private_key = ?, public_key = ?, certificate = ?, passphrase = ?, is_encrypted = ?, updated_at = ? WHERE id = ?`,
+        [
+          k.name,
+          k.key_type,
+          k.private_key,
+          k.public_key,
+          k.certificate,
+          k.passphrase,
+          k.is_encrypted,
+          Date.now(),
+          k.id,
+        ],
+      )
+      stats.sshKeys++
+    }
+  }
+
+  // Import Known Hosts
+  for (const knownHost of data.knownHosts || []) {
+    const kh = knownHost as Record<string, unknown>
+    const existing = await select<{ id: string }>(
+      'SELECT id FROM known_hosts WHERE hostname = ? AND port = ?',
+      [kh.hostname as string, kh.port as number],
+    )
+    if (existing.length === 0) {
+      await importExecute(
+        `INSERT INTO known_hosts (id, hostname, port, fingerprint, key_type, added_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          crypto.randomUUID(),
+          kh.hostname,
+          kh.port,
+          kh.fingerprint,
+          kh.key_type,
+          kh.added_at,
+        ],
+      )
+      stats.knownHosts++
+    }
+  }
+
+  // Import Workspaces
+  for (const workspace of data.workspaces || []) {
+    const ws = workspace as Record<string, unknown>
+    const existing = await select<{ id: string }>(
+      'SELECT id FROM workspaces WHERE id = ?',
+      [ws.id as string],
+    )
+    if (existing.length === 0) {
+      await importExecute(
+        `INSERT INTO workspaces (id, name, description, icon, color, "order", is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          ws.id,
+          ws.name,
+          ws.description,
+          ws.icon,
+          ws.color,
+          ws.order,
+          ws.is_active,
+          ws.created_at,
+          ws.updated_at,
+        ],
+      )
+      stats.workspaces++
+    } else if (mergeMode === 'replace') {
+      await importExecute(
+        `UPDATE workspaces SET name = ?, description = ?, icon = ?, color = ?, "order" = ?, is_active = ?, updated_at = ? WHERE id = ?`,
+        [
+          ws.name,
+          ws.description,
+          ws.icon,
+          ws.color,
+          ws.order,
+          ws.is_active,
+          Date.now(),
+          ws.id,
+        ],
+      )
+      stats.workspaces++
+    }
+  }
+
+  // Import Workspace Layouts
+  for (const wl of data.workspaceLayouts || []) {
+    const wld = wl as Record<string, unknown>
+    const layoutData = wld.layoutData as Record<string, unknown> | null
+    if (layoutData) {
+      await importExecute(
+        `INSERT OR REPLACE INTO workspace_layouts (workspace_id, layout_data) VALUES (?, ?)`,
+        [wld.workspaceId as string, JSON.stringify(layoutData)],
+      )
+    }
+  }
+
   return stats
 }
 
@@ -439,6 +620,9 @@ export function previewImportData(content: string): ExportData | null {
       snippets: data.snippets || [],
       snippetPackages: data.snippetPackages || [],
       workspaces: data.workspaces || [],
+      workspaceLayouts: data.workspaceLayouts || [],
+      sshKeys: data.sshKeys || [],
+      knownHosts: data.knownHosts || [],
       settings: data.settings || {},
     }
   } catch {

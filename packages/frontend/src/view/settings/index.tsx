@@ -146,7 +146,7 @@ const SettingsView: React.FC = () => {
 
           {/* Data Tab */}
           <TabsContent value="data">
-            <DataSettings settings={settings} />
+            <DataSettings />
           </TabsContent>
         </Tabs>
 

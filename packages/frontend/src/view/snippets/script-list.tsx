@@ -11,7 +11,6 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
-import { t } from 'i18next'
 
 interface ScriptListProps {
   scripts: ScriptRecord[]

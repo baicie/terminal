@@ -1,13 +1,10 @@
 import type { SSHKeyRecord } from '@/service/database'
 import { FileKey, KeyRound, Shield } from 'lucide-react'
-import { useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-
-type KeyFilter = 'all' | 'key' | 'certificate' | 'touchid' | 'fido2'
 
 interface KeyFormProps {
   selectedKey: SSHKeyRecord | null
@@ -25,14 +22,6 @@ interface KeyFormProps {
   onNewKey: () => void
 }
 
-function detectKeyType(content: string): string | null {
-  if (content.includes('CERTIFICATE')) return 'certificate'
-  if (content.includes('ssh-rsa') || content.includes('ssh-ed25519') || content.includes('ecdsa-sha2')) {
-    return 'key'
-  }
-  return null
-}
-
 export const KeyForm: React.FC<KeyFormProps> = ({
   selectedKey,
   isNewKey,
@@ -46,7 +35,6 @@ export const KeyForm: React.FC<KeyFormProps> = ({
   onImportFromFile,
   onSave,
   onDelete,
-  onNewKey,
 }) => {
   return (
     <>

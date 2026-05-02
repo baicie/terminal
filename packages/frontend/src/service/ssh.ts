@@ -13,12 +13,10 @@ import {
   sftpService,
   portForwardService,
 } from '@/features/terminal/services'
+import type { SessionInfo, ShellOutput } from '@/features/terminal/types'
 
 // Re-export types from new location
-export type {
-  SessionInfo,
-  ShellOutput,
-} from '@/features/terminal/types'
+export type { SessionInfo, ShellOutput } from '@/features/terminal/types'
 
 // Re-export SSH-specific types
 export interface SSHConnectionResult {
@@ -31,19 +29,6 @@ export interface SSHOutput {
   stdout: string
   stderr: string
   exitCode: number
-}
-
-export interface SessionInfo {
-  id: string
-  session_type: 'local' | 'ssh'
-  is_alive: boolean
-  created_at: number
-}
-
-export interface ShellOutput {
-  session_id: string
-  data: string
-  is_stderr: boolean
 }
 
 export interface FileItem {
@@ -164,6 +149,88 @@ class SSHServiceLegacy {
 
   async portForwardList() {
     return portForwardService.list()
+  }
+
+  // Generate SSH key pair
+  async generateSSHKey(
+    _keyType: 'ed25519' | 'rsa' | 'rsa4096' | 'ecdsa' | 'ecdsa-nistp256' | 'ecdsa-nistp384' | 'ecdsa-nistp521',
+    _comment: string,
+    _passphrase?: string,
+  ): Promise<{ private_key: string; public_key: string; key_type: string; fingerprint: string }> {
+    // This would need Tauri backend implementation for actual key generation
+    // For now, return a placeholder that indicates this needs implementation
+    throw new Error('SSH key generation not yet implemented - requires Tauri backend')
+  }
+
+  // Execute a command on a host (opens a session, runs command, returns output)
+  async execute(host: Host, command: string): Promise<SSHOutput> {
+    // Create SSH session based on auth type
+    let result: SSHConnectionResult
+    if (host.authType === 'key' && host.privateKey) {
+      result = await sessionService.createSshKey({ host, cols: 80, rows: 24 })
+    } else {
+      result = await sessionService.createSshPassword({ host, cols: 80, rows: 24 })
+    }
+
+    if (!result.success || !result.sessionId) {
+      return { stdout: '', stderr: result.message, exitCode: 1 }
+    }
+
+    const sessionId = result.sessionId
+
+    // Write the command
+    await sessionService.write(sessionId, command + '\n')
+
+    // Wait for output - simplified, real implementation would need proper buffering
+    return new Promise<SSHOutput>((resolve) => {
+      let stdout = ''
+      let stderr = ''
+      let unsub: (() => void) | undefined
+      let resolved = false
+
+      const doResolve = (out: SSHOutput) => {
+        if (!resolved) {
+          resolved = true
+          resolve(out)
+        }
+      }
+
+      const timeout = setTimeout(() => {
+        cleanup()
+        doResolve({ stdout, stderr, exitCode: 0 })
+      }, 5000) // 5 second timeout
+
+      const handleOutput = (output: ShellOutput) => {
+        if (output.session_id === sessionId) {
+          if (output.is_stderr) {
+            stderr += output.data
+          } else {
+            stdout += output.data
+          }
+          // Simple heuristic: if we get prompt back, command completed
+          if (stdout.includes('$') || stdout.includes('#')) {
+            cleanup()
+            doResolve({ stdout, stderr, exitCode: 0 })
+          }
+        }
+      }
+
+      // Set up listener
+      sessionService.onData(handleOutput)
+        .then((unlisten) => {
+          unsub = unlisten
+        })
+        .catch(() => {
+          clearTimeout(timeout)
+          doResolve({ stdout, stderr, exitCode: 0 })
+        })
+
+      const cleanup = () => {
+        clearTimeout(timeout)
+        unsub?.()
+        sessionService.close(sessionId).catch(() => {})
+      }
+    })
   }
 
   // Command history (placeholder - needs database service)

@@ -324,7 +324,14 @@ class TeamApiService {
       timestamp: number
       teams: unknown[]
       members: unknown[]
-      shares: unknown[]
+      shares: Array<{
+        id: string
+        type: string
+        data: unknown
+        permission: string
+        sharedBy: string
+        createdAt: string
+      }>
       auditLogs: unknown[]
     }>
   > {

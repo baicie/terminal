@@ -1,19 +1,17 @@
-import { Code, Download, Lock, Server, Users } from 'lucide-react'
-import type { SharedHostRecord, SharedSnippetRecord } from '@/store/team'
-import type { Host } from '@/types'
-import type { SnippetRecord } from '@/service/database'
+import { Code, Download, Lock, Server } from 'lucide-react'
+import type { SharedHost, SharedSnippet } from '@/store/team'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
 interface TeamSharedSectionProps {
   isMobile?: boolean
-  sharedHosts: SharedHostRecord[]
-  sharedSnippets: SharedSnippetRecord[]
+  sharedHosts: SharedHost[]
+  sharedSnippets: SharedSnippet[]
   isTeamEnabled: boolean
   currentTeamId?: string
-  onImportSharedHost: (host: SharedHostRecord) => void
-  onImportSharedSnippet: (snippet: SharedSnippetRecord) => void
+  onImportSharedHost: (host: SharedHost) => void
+  onImportSharedSnippet: (snippet: SharedSnippet) => void
 }
 
 export function TeamSharedSection({

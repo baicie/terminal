@@ -14,7 +14,6 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 import {
   SwipeBackIndicator,
-  useSwipeBackProgress,
 } from '@/components/swipe-back-indicator'
 import { useIsMobile } from '@/hooks/use-breakpoint'
 import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts'
@@ -160,9 +159,8 @@ const MainLayoutInner: React.FC<{
   const startYRef = useRef<number | null>(null)
   const swipeProgressRef = useRef(0)
   const [swipeProgress, setSwipeProgress] = useState(0)
-  const navigate = useNavigate()
 
-  const onSwipeStart = useCallback((e: TouchEvent) => {
+  const onSwipeStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
     const touch = e.touches[0]
     if (touch.clientX <= 24) {
       startXRef.current = touch.clientX
@@ -170,7 +168,7 @@ const MainLayoutInner: React.FC<{
     }
   }, [])
 
-  const onSwipeMove = useCallback((e: TouchEvent) => {
+  const onSwipeMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
     if (startXRef.current === null) return
     const touch = e.touches[0]
     const dx = touch.clientX - startXRef.current

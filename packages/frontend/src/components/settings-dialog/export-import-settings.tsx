@@ -26,6 +26,8 @@ interface ImportPreview {
   snippets: number
   snippetPackages: number
   workspaces: number
+  sshKeys: number
+  knownHosts: number
 }
 
 interface ExportImportSettingsProps {
@@ -87,7 +89,9 @@ export function ExportImportSettings({ onClose }: ExportImportSettingsProps) {
             groups: preview.groups?.length || 0,
             snippets: preview.snippets?.length || 0,
             snippetPackages: preview.snippetPackages?.length || 0,
-            workspaces: preview.workspaces?.length || 0,
+            workspaces: (preview.workspaces as unknown[])?.length || 0,
+            sshKeys: (preview.sshKeys as unknown[])?.length || 0,
+            knownHosts: (preview.knownHosts as unknown[])?.length || 0,
           })
           setImportStep('preview')
         } else {
@@ -257,6 +261,124 @@ export function ExportImportSettings({ onClose }: ExportImportSettingsProps) {
         }
       }
 
+      // Import SSH Keys
+      if (data.sshKeys && data.sshKeys.length > 0) {
+        for (const key of data.sshKeys as Record<string, unknown>[]) {
+          const existing = await select<{ id: string }>(
+            'SELECT id FROM ssh_keys WHERE id = ?',
+            [key.id as string],
+          )
+          if (existing.length === 0) {
+            await executeQuery(
+              `INSERT INTO ssh_keys (id, name, key_type, private_key, public_key, certificate, passphrase, is_encrypted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                key.id,
+                key.name,
+                key.key_type,
+                key.private_key,
+                key.public_key,
+                key.certificate,
+                key.passphrase,
+                key.is_encrypted,
+                key.created_at,
+                key.updated_at,
+              ],
+            )
+          } else if (importMode === 'replace') {
+            await executeQuery(
+              `UPDATE ssh_keys SET name = ?, key_type = ?, private_key = ?, public_key = ?, certificate = ?, passphrase = ?, is_encrypted = ?, updated_at = ? WHERE id = ?`,
+              [
+                key.name,
+                key.key_type,
+                key.private_key,
+                key.public_key,
+                key.certificate,
+                key.passphrase,
+                key.is_encrypted,
+                Date.now(),
+                key.id,
+              ],
+            )
+          }
+        }
+      }
+
+      // Import Known Hosts
+      if (data.knownHosts && data.knownHosts.length > 0) {
+        for (const knownHost of data.knownHosts as Record<string, unknown>[]) {
+          const existing = await select<{ id: string }>(
+            'SELECT id FROM known_hosts WHERE hostname = ? AND port = ?',
+            [knownHost.hostname as string, knownHost.port as number],
+          )
+          if (existing.length === 0) {
+            await executeQuery(
+              `INSERT INTO known_hosts (id, hostname, port, fingerprint, key_type, added_at) VALUES (?, ?, ?, ?, ?, ?)`,
+              [
+                crypto.randomUUID(),
+                knownHost.hostname,
+                knownHost.port,
+                knownHost.fingerprint,
+                knownHost.key_type,
+                knownHost.added_at,
+              ],
+            )
+          }
+        }
+      }
+
+      // Import Workspaces
+      if (data.workspaces && data.workspaces.length > 0) {
+        for (const workspace of data.workspaces as Record<string, unknown>[]) {
+          const existing = await select<{ id: string }>(
+            'SELECT id FROM workspaces WHERE id = ?',
+            [workspace.id as string],
+          )
+          if (existing.length === 0) {
+            await executeQuery(
+              `INSERT INTO workspaces (id, name, description, icon, color, "order", is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                workspace.id,
+                workspace.name,
+                workspace.description,
+                workspace.icon,
+                workspace.color,
+                workspace.order,
+                workspace.is_active,
+                workspace.created_at,
+                workspace.updated_at,
+              ],
+            )
+          } else if (importMode === 'replace') {
+            await executeQuery(
+              `UPDATE workspaces SET name = ?, description = ?, icon = ?, color = ?, "order" = ?, is_active = ?, updated_at = ? WHERE id = ?`,
+              [
+                workspace.name,
+                workspace.description,
+                workspace.icon,
+                workspace.color,
+                workspace.order,
+                workspace.is_active,
+                Date.now(),
+                workspace.id,
+              ],
+            )
+          }
+        }
+      }
+
+      // Import Workspace Layouts
+      if (data.workspaceLayouts && data.workspaceLayouts.length > 0) {
+        for (const wl of data.workspaceLayouts as Record<string, unknown>[]) {
+          const layoutData = wl.layoutData as Record<string, unknown> | null
+          if (layoutData) {
+            await executeQuery(
+              `INSERT OR REPLACE INTO workspace_layouts (workspace_id, layout_data) VALUES (?, ?)`,
+              [wl.workspaceId as string, JSON.stringify(layoutData)],
+            )
+          }
+        }
+      }
+
       setImportStep('success')
       setTimeout(() => {
         onClose?.()
@@ -343,6 +465,24 @@ export function ExportImportSettings({ onClose }: ExportImportSettingsProps) {
                 <li>
                   <Check className="h-3 w-3 inline mr-1 text-green-500" />
                   {importPreview.snippetPackages} snippet package(s)
+                </li>
+              )}
+              {importPreview.sshKeys > 0 && (
+                <li>
+                  <Check className="h-3 w-3 inline mr-1 text-green-500" />
+                  {importPreview.sshKeys} SSH key(s)
+                </li>
+              )}
+              {importPreview.workspaces > 0 && (
+                <li>
+                  <Check className="h-3 w-3 inline mr-1 text-green-500" />
+                  {importPreview.workspaces} workspace(s)
+                </li>
+              )}
+              {importPreview.knownHosts > 0 && (
+                <li>
+                  <Check className="h-3 w-3 inline mr-1 text-green-500" />
+                  {importPreview.knownHosts} known host(s)
                 </li>
               )}
             </ul>

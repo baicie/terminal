@@ -53,7 +53,7 @@ export function mapRow<TFrom extends object, TTo extends object>(
 
   // 直接映射
   if (config.direct) {
-    for (const [toKey, fromKey] of Object.entries(config.direct)) {
+    for (const [toKey, fromKey] of Object.entries(config.direct) as [string & keyof TTo, (keyof TFrom) | undefined][]) {
       if (fromKey && fromKey in row) {
         const value = row[fromKey as keyof TFrom]
         ;(result as Record<string, unknown>)[toKey] = value
@@ -96,7 +96,7 @@ export function mapRow<TFrom extends object, TTo extends object>(
 
   // 特殊转换
   if (config.transforms) {
-    for (const [key, transform] of Object.entries(config.transforms)) {
+    for (const [key, transform] of Object.entries(config.transforms) as [string & keyof TTo, ((value: unknown, row: TFrom) => unknown) | undefined][]) {
       if (transform) {
         const value = (row as Record<string, unknown>)[key as string]
         ;(result as Record<string, unknown>)[key] = transform(value, row)
@@ -126,7 +126,7 @@ export function createRowMapper<TFrom extends object, TTo>(
 ): RowMapper<TFrom, TTo> {
   return (row: TFrom) => {
     const result = {} as TTo
-    for (const [toKey, fromKey] of Object.entries(mapping)) {
+    for (const [toKey, fromKey] of Object.entries(mapping) as [string & keyof TTo, (keyof TFrom) | undefined][]) {
       if (fromKey && fromKey in row) {
         ;(result as Record<string, unknown>)[toKey] =
           row[fromKey as keyof TFrom]

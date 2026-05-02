@@ -1,16 +1,6 @@
-import {
-  Check,
-  Download,
-  Eye,
-  EyeOff,
-  HardDrive,
-  Loader2,
-  RefreshCw,
-  Server,
-  Users,
-} from 'lucide-react'
+import type { TerminalThemePreset } from '@/service/database'
+import { Check } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -55,9 +45,9 @@ type AppSettingsKey = {
   cursorStyle?: 'block' | 'underline' | 'bar'
   cursorBlink?: boolean
   scrollback?: number
-  terminalTheme?: string
-  terminalThemeDark?: string
-  terminalThemeLight?: string
+  terminalTheme?: TerminalThemePreset
+  terminalThemeDark?: TerminalThemePreset
+  terminalThemeLight?: TerminalThemePreset
   copyOnSelect?: boolean
   pasteOnMiddleClick?: boolean
   allowProposedApi?: boolean
@@ -74,10 +64,8 @@ type AppSettingsKey = {
 
 const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
   const app = useAppStore()
-  const navigate = useNavigate()
   const [settings, setSettings] = useState<AppSettingsKey | null>(null)
   const [loading, setLoading] = useState(true)
-  const [showTokenVisible, setShowTokenVisible] = useState(false)
 
   useEffect(() => {
     if (open) {

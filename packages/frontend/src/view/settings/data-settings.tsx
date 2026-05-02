@@ -1,4 +1,3 @@
-import type { AppSettings } from '@/service/database'
 import type { ExportData } from '@/service/sync'
 import {
   AlertCircle,
@@ -14,19 +13,10 @@ import {
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
 import {
   executeQuery,
-  getAppSettings,
   select,
 } from '@/service/database'
 
@@ -40,11 +30,7 @@ interface ImportPreview {
   workspaces: number
 }
 
-interface DataSettingsProps {
-  settings: AppSettings
-}
-
-export const DataSettings: React.FC<DataSettingsProps> = ({ settings }) => {
+export const DataSettings: React.FC = () => {
   const { t } = useTranslation()
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge')
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null)

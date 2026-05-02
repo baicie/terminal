@@ -12,7 +12,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { scriptService } from '@/service/scripts'
 import { formatDuration } from '@/lib/date-utils'
-import { Badge } from '@/components/ui/badge'
 
 interface BatchExecutePanelProps {
   hosts: Host[]

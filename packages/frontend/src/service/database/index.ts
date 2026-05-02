@@ -54,6 +54,7 @@ export type {
   SyncQueueRecord,
   UserProfileRecord,
   WorkspaceLayoutRecord,
+  TerminalThemePreset,
 } from './types'
 
 // Settings
