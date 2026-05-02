@@ -23,7 +23,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ConnectionLogRecord } from '@/service/database/types'
+import type { ConnectionLogRecord } from '@/service/database/types'
 import { getConnectionLogs, clearConnectionLogs, toggleConnectionLogSaved, deleteConnectionLog } from '@/service/database'
 import { getReadableTerminalError } from '@/features/terminal/utils/readable-error'
 import { useState, useEffect } from 'react'
@@ -57,7 +57,7 @@ const LogsView: React.FC = () => {
       await clearConnectionLogs()
       await loadLogs()
       toast.success(t('common.success'))
-    } catch (error) {
+    } catch (_error) {
       toast.error(t('common.error'))
     }
   }
@@ -66,7 +66,7 @@ const LogsView: React.FC = () => {
     try {
       await toggleConnectionLogSaved(id)
       await loadLogs()
-    } catch (error) {
+    } catch (_error) {
       toast.error(t('common.error'))
     }
   }
@@ -76,7 +76,7 @@ const LogsView: React.FC = () => {
       await deleteConnectionLog(id)
       await loadLogs()
       toast.success(t('common.success'))
-    } catch (error) {
+    } catch (_error) {
       toast.error(t('common.error'))
     }
   }

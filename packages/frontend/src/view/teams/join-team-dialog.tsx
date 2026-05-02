@@ -1,6 +1,6 @@
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { readTextFile } from '@tauri-apps/plugin-fs'
-import { Download, RefreshCw, Upload } from 'lucide-react'
+import { Download, Package, RefreshCw, Upload } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -12,7 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Package } from 'lucide-react'
 import { importTeamPackage, previewTeamPackage } from '@/service/sync'
 import { useTeamStore } from '@/store/team'
 

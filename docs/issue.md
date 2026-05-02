@@ -1,4 +1,4 @@
-# Terminal 项目 Issues 追踪
+﻿# Terminal 项目 Issues 追踪
 
 > 基于 2026-03-19 代码审查生成
 > 对应文档：`docs/design.md` 和 `docs/todo.md`
@@ -213,44 +213,31 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 
 ## 三、一般问题 (Minor)
 
-### Issue #7: 命令快速补全未实现 🟢
+### Issue #7: 命令快速补全 ⚠️ 部分实现
 
 **严重程度**: 低
-**状态**: 📋 待开发
+**状态**: ⚠️ 命令历史存储和命令面板搜索已实现；终端内上下键导航未实现
 **影响功能**: 终端命令补全
 
-**问题描述**:
-根据 `docs/todo.md` Section 2.5:
-
-- ✅ 历史记录存储已实现
-- ✅ 历史记录 UI 已实现
-- ❌ 上下键快速补全命令未实现
-
-**建议**:
-
-- 监听终端按键事件
-- 根据当前输入匹配历史命令
-- 使用上/下箭头导航
+**实现状态**:
+- ✅ 历史记录存储已实现（SQLite）
+- ✅ 命令面板历史搜索已实现
+- ❌ 终端内上下键快速补全未实现（需在 `use-terminal.ts` 或 Terminal 实例中添加）
 
 ---
 
-### Issue #8: Vault 加密存储未实现 🟢
+### Issue #8: Vault 加密存储 ✅ 已实现
 
 **严重程度**: 低
-**状态**: 🔴 未实现
+**状态**: ✅ 已实现
 **影响功能**: 敏感信息加密
+**实现时间**: 2026-03-19
 
-**现状**:
-
-- `src/view/vaults/vaults-view.tsx` 只是占位符
-- 没有加密库依赖
-- 没有主密码机制
-
-**建议**:
-
-- 使用 AES-256-GCM 加密敏感字段
-- 使用 Argon2 或 PBKDF2 派生密钥
-- 参考: `ring`, `aes-gcm`, `argon2` crates
+**实现内容**:
+- `vault.rs` 完整 AES-GCM + Argon2 加密实现
+- `vault_create/vault_unlock/vault_lock/vault_set/vault_get/vault_delete/vault_list` Tauri 命令
+- AES-256-GCM 对称加密，Argon2 密钥派生
+- 前端 vaults-view 已连接后端服务
 
 ---
 
@@ -307,9 +294,9 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 
 | 功能          | 状态        | 问题               |
 | ------------- | ----------- | ------------------ |
-| SSH 密钥认证  | 🟡 部分实现 | 后端未完成密钥解析 |
-| SFTP 文件传输 | 🔴 未实现   | 后端全为占位符     |
-| 端口转发      | 🟡 UI 完成  | 后端未实现         |
+| SSH 密钥认证  | ✅ 已实现 | 完整实现 (russh-keys) |
+| SFTP 文件传输 | ✅ 已实现 | 完整实现 (russh-sftp) |
+| 端口转发      | ✅ 已实现 | 完整实现 (port_forward.rs) |
 | 命令历史      | ✅ 已实现   | 完整实现           |
 | Snippet       | ✅ 已实现   | 完整实现           |
 | 分屏模式      | ✅ 已实现   | 完整实现           |
@@ -347,7 +334,7 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 
 - [x] **Issue #5**: 实现 Agent 认证 ✅
 - [x] **Issue #6**: 实现主机链功能 ✅
-- [x] **Issue #7**: 命令快速补全 ✅
+- [ ] **Issue #7**: 命令快速补全 ⚠️ (仅命令面板，终端内未实现)
 - [x] **Issue #8**: Vault 加密存储 ✅
 
 ### P3 - 未来考虑

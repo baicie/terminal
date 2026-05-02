@@ -82,6 +82,12 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
   const fitAddonRef = useRef<FitAddon | null>(null)
   const searchAddonRef = useRef<SearchAddon | null>(null)
   const isMountedRef = useRef(false)
+  const longPressRef = useRef<{
+    timer: ReturnType<typeof setTimeout> | null
+    startX: number
+    startY: number
+    triggered: boolean
+  }>({ timer: null, startX: 0, startY: 0, triggered: false })
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -342,14 +348,6 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
 
   // 仅在桌面端 + 非全屏时显示状态条
   const showStatusBar = !isMobile && !isFullscreen
-
-  // 移动端长按 ≥500ms 弹出操作菜单。短点击 / 拖动均不触发。
-  const longPressRef = useRef<{
-    timer: ReturnType<typeof setTimeout> | null
-    startX: number
-    startY: number
-    triggered: boolean
-  }>({ timer: null, startX: 0, startY: 0, triggered: false })
 
   const startLongPress = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length !== 1) return

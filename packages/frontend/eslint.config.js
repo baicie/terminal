@@ -13,6 +13,7 @@ export default [
       'dist/**',
       'node_modules/**',
       'coverage/**',
+      'scripts/**',
     ],
   },
   js.configs.recommended,
@@ -77,7 +78,7 @@ export default [
     },
   },
   {
-    files: ['vite.config.ts'],
+    files: ['vite.config.ts', 'vite.config.js'],
     languageOptions: {
       globals: globals.node,
     },

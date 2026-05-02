@@ -105,7 +105,7 @@ async function emitNative(title: string, body?: string): Promise<void> {
       return
     }
     if (typeof Notification !== 'undefined') {
-      // eslint-disable-next-line no-new
+       
       new Notification(title, { body })
     }
   } catch (e) {

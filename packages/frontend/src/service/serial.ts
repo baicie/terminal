@@ -4,14 +4,13 @@
  */
 
 import type { UnlistenFn } from '@tauri-apps/api/event'
-import type { ShellOutput } from '@/features/terminal/types'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-import type {
+import type { ShellOutput ,
   SerialPortInfo,
   SerialConfig,
   SerialConnectionResult,
 } from '@/features/terminal/types'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 
 export type {
   SerialPortInfo,

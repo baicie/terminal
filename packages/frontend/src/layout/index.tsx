@@ -16,8 +16,7 @@ import {
   SwipeBackIndicator,
 } from '@/components/swipe-back-indicator'
 import { useIsMobile } from '@/hooks/use-breakpoint'
-import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts'
-import { SHORTCUT_EVENT_PREFIX } from '@/hooks/use-global-shortcuts'
+import { useGlobalShortcuts , SHORTCUT_EVENT_PREFIX } from '@/hooks/use-global-shortcuts'
 import { useTrayEvents } from '@/hooks/use-tray-events'
 import { RouteTransition } from './route-transition'
 

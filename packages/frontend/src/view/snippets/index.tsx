@@ -1,4 +1,4 @@
-import type { ScriptExecutionRecord } from '@/service/database'
+import type { ScriptExecutionRecord , ScriptRecord } from '@/service/database'
 import type { ScriptExecutionResult } from '@/service/scripts'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -13,7 +13,6 @@ import { getHosts } from '@/service/database'
 import { scriptService } from '@/service/scripts'
 import SnippetManager from '@/components/snippet-manager'
 import { ScriptTab } from './script-tab'
-import type { ScriptRecord } from '@/service/database'
 import type { Host } from '@/types'
 
 const SnippetsView: React.FC = () => {
