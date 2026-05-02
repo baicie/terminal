@@ -1,7 +1,6 @@
 import type { RouteObject } from 'react-router-dom'
-import { createBrowserRouter, useSearchParams } from 'react-router-dom'
+import { createBrowserRouter } from 'react-router-dom'
 import ErrorBoundary from '@/components/error-boundary'
-import { TerminalContainer } from '@/view/terminal/terminal-container'
 import Layout from '../layout'
 import { buildRoutes } from './nav-config.tsx'
 import { makeLazyRoute } from './lazy-route.tsx'
@@ -9,15 +8,18 @@ import { makeLazyRoute } from './lazy-route.tsx'
 export { makeLazyRoute }
 
 /**
- * TerminalRoute — 从 URL query 参数 `?tab=xxx` 读取 tabId，
- * 直接渲染 TerminalContainer，无需复杂的 MobX 同步。
+ * TerminalRoute — 占位路由，**故意返回 null**。
+ *
+ * 终端的实际渲染由 layout 中始终挂载的 `<TerminalByUrl />` 处理，
+ * 这样在切换到非 /terminal 路由（如 /hosts）时，终端实例不会被
+ * Outlet 销毁，继续在后台保持连接。
+ *
+ * 如果这里再渲染一份 TerminalContainer，就会出现「同一个 tabId
+ * 同时存在两个 TerminalContainer 实例」，导致后端创建 2 个 PTY
+ * session、注册 2 个事件监听器，且两个实例的 sessionId 互相不
+ * 匹配，输出永远写不到任何一个 xterm 上。
  */
-const TerminalRoute: React.FC = () => {
-  const [searchParams] = useSearchParams()
-  const tabId = searchParams.get('tab') ?? ''
-
-  return <TerminalContainer tabId={tabId} />
-}
+const TerminalRoute: React.FC = () => null
 
 const routes: RouteObject[] = [
   {

@@ -1,15 +1,4 @@
-import {
-  ArrowLeftRight,
-  Code2,
-  FileText,
-  Fingerprint,
-  Key,
-  PanelLeft,
-  PanelLeftClose,
-  Server,
-  Settings,
-  Users,
-} from 'lucide-react'
+import { PanelLeft, PanelLeftClose } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -20,8 +9,7 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useIsTeamEnabled } from '@/store/team'
-import { navConfig, type NavItemConfig } from '@/router/nav-config.tsx'
-import { getVisibleNavItems } from '@/router/nav-config.tsx'
+import { getVisibleNavItems, type NavItemConfig } from '@/router/nav-config.tsx'
 
 interface NavItemProps {
   item: NavItemConfig
@@ -49,15 +37,22 @@ const NavItem: React.FC<NavItemProps> = ({
     <NavLink
       to={item.path === '/hosts' ? '/hosts' : item.path}
       className={cn(
-        'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150',
+        'group/nav relative flex items-center gap-3 px-3 py-2 rounded-md transition-colors duration-150',
         'text-muted-foreground hover:text-foreground hover:bg-secondary/60',
-        pathActive && 'bg-secondary/80 text-foreground shadow-sm',
+        // 激活态：背景 + 文字加深 + 左侧 3px 实心竖条
+        pathActive && [
+          'bg-secondary/70 text-foreground',
+          'before:absolute before:left-0 before:top-1.5 before:bottom-1.5',
+          'before:w-[3px] before:rounded-r-full before:bg-primary',
+        ],
         iconOnly && 'justify-center px-2',
         className,
       )}
       style={style}
     >
-      {item.icon}
+      <span className={cn('shrink-0', pathActive && 'text-primary')}>
+        {item.icon}
+      </span>
       {!iconOnly && (
         <span className="text-sm font-medium truncate">{t(item.labelKey)}</span>
       )}

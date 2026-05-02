@@ -20,6 +20,7 @@ import {
   setTerminalWriteFn,
 } from '@/view/terminal/terminal-write-context'
 import { TerminalKeyboardBar } from './keyboard-bar'
+import { SessionStatusBar } from './session-status-bar'
 import '@baicie/xterm/css/xterm.css'
 
 /**
@@ -104,8 +105,9 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
   const themeColors = getThemeColors(activeTerminalTheme as never)
 
   // 终端数据流 hook
-  const termForHook = termRef.current
-  const { status, error } = useTerminal(termForHook, {
+  // 注意：使用 termInstance state 而非 termRef.current，确保 React 能正确追踪
+  // term 实例的创建/销毁，避免在第一次渲染时 termRef 还是 null 而错过 effect 触发
+  const { status, error } = useTerminal(termInstance, {
     tabType: tab?.type ?? 'local',
     host,
     serialSessionId: tab?.serialSessionId,
@@ -119,8 +121,10 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
   }, [error])
 
   // 初始化 xterm
+  // 仅依赖 tabId：tab 对象引用可能因 store 重渲染而变化，但只要 tabId 不变
+  // 就不需要销毁/重建 xterm 实例（这会顺带关闭后端 session 并丢失内容）
   useEffect(() => {
-    if (!containerRef.current || !tab) return
+    if (!containerRef.current || !tabId) return
 
     const restore = suppressXtermErrors()
 
@@ -188,7 +192,7 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
       setIsReady(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabId, tab])
+  }, [tabId])
 
   // App 主题或预设变化时动态更新终端颜色
   useEffect(() => {
@@ -280,10 +284,16 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
     setIsFullscreen(p => !p)
   }
 
+  // 仅在桌面端 + 非全屏时显示状态条
+  const showStatusBar = !isMobile && !isFullscreen
+
   // 终端主体
   const terminalBody = (
     <div className="h-full flex bg-[#1e1e1e]">
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {showStatusBar && (
+          <SessionStatusBar tab={tab} host={host} status={status} />
+        )}
         {/* Terminal area */}
         <div
           ref={containerRef}

@@ -1,15 +1,20 @@
 /**
  * useTerminal Hook
  *
- * 此 Hook 已重构为使用 features/terminal/hooks/ 中的独立模块。
- * 保留此文件以保持向后兼容，新代码应直接使用新 hooks 模块。
- *
- * @deprecated 请使用 features/terminal/hooks/ 中的对应 hooks
+ * 终端数据流统一 hook，负责：
+ * 1. 注册 xterm 输入/resize 监听（同步注册，保证用户输入永不丢失）
+ * 2. 注册后端数据/关闭/退出事件监听（在 invoke 启动 shell *之前* 注册，
+ *    保证 shell 启动后输出的初始 prompt 不会因竞态而丢失）
+ * 3. 启动 shell（local / SSH-password / SSH-key / serial）
+ * 4. cleanup 时关闭 session 并取消所有监听
  */
 
 import type { Terminal as XTerminal } from '@baicie/xterm'
 import type { UseTerminalSessionOptions } from '@/features/terminal/hooks'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import type { Host } from '@/types'
+import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { useEffect, useRef, useState } from 'react'
 
 export interface ShellOutput {
   session_id: string
@@ -20,27 +25,69 @@ export interface ShellOutput {
 export interface UseTerminalOptions extends UseTerminalSessionOptions {}
 
 interface UseTerminalResult {
-  /** PTY session ID */
   sessionId: string | null
-  /** 连接状态 */
   status: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
-  /** 错误信息 */
   error: string | null
 }
 
-/**
- * 终端数据流 hook
- *
- * 职责：
- * 1. 启动 shell（本地 / SSH / 串口）
- * 2. 监听后端数据 → 写入 xterm
- * 3. 监听 xterm 按键 → 发送到后端
- * 4. 处理终端 resize
- * 5. 断开连接 & 清理
- *
- * @param term    xterm 实例（外部传入，由 terminal-container 管理）
- * @param options 连接选项
- */
+/** 清理 zsh transient prompt 的 `%` 残留 */
+function sanitize(data: string): string {
+  return data
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\[[0-9;]*m%\x1b\[[0-9;]*m+\r?\n/g, '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\[[0-9;]*m%\r?\n/g, '')
+    .replace(/^%\r?\n/gm, '')
+}
+
+async function startShell(
+  tabType: UseTerminalOptions['tabType'],
+  host: Host | undefined,
+  serialSessionId: string | undefined,
+  cols: number,
+  rows: number,
+): Promise<string> {
+  if (tabType === 'local') {
+    return invoke<string>('session_create_local', { cols, rows })
+  }
+
+  if (tabType === 'remote') {
+    if (!host) throw new Error('Host info required for remote connection')
+    if (host.authType === 'password') {
+      return invoke<string>('session_create_ssh_password', {
+        host: host.hostname,
+        port: host.port,
+        username: host.username,
+        password: host.password,
+        cols,
+        rows,
+      })
+    }
+    if (host.authType === 'key') {
+      return invoke<string>('session_create_ssh_key', {
+        host: host.hostname,
+        port: host.port,
+        username: host.username,
+        privateKey: host.privateKey ?? '',
+        password: host.password ?? null,
+        cols,
+        rows,
+      })
+    }
+    if (host.authType === 'agent') {
+      throw new Error('Agent authentication not yet supported')
+    }
+    throw new Error(`Unsupported auth type: ${host.authType}`)
+  }
+
+  if (tabType === 'serial') {
+    if (!serialSessionId) throw new Error('Serial session ID required')
+    return serialSessionId
+  }
+
+  throw new Error(`Unknown tab type: ${tabType}`)
+}
+
 export function useTerminal(
   term: XTerminal | null,
   options: UseTerminalOptions,
@@ -53,245 +100,190 @@ export function useTerminal(
     rows: defaultRows = 24,
   } = options
 
-  const sessionIdRef = useRef<string | null>(null)
-  const statusRef = useRef<UseTerminalResult['status']>('idle')
-  const errorRef = useRef<string | null>(null)
+  // 用 state 触发重渲染，让 SessionStatusBar 等订阅 status 的 UI 即时更新
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [status, setStatus] = useState<UseTerminalResult['status']>('idle')
+  const [error, setError] = useState<string | null>(null)
+
+  // 监听器回调内动态读取的可变引用
   const termRef = useRef<XTerminal | null>(null)
+  const sessionIdRef = useRef<string | null>(null)
+  const hostRef = useRef<Host | undefined>(host)
 
-  // Keep termRef in sync
   termRef.current = term
+  hostRef.current = host
 
-  const [, forceUpdate] = useState({})
-
-  // ---- 启动 shell ----
-  const startShell = useCallback(async (): Promise<string | null> => {
-    try {
-      let sid: string
-
-      if (tabType === 'local') {
-        const { invoke } = await import('@tauri-apps/api/core')
-        sid = await invoke<string>('session_create_local', {
-          cols: defaultCols,
-          rows: defaultRows,
-        })
-      } else if (tabType === 'remote') {
-        if (!host) {
-          errorRef.current = 'Host info required for remote connection'
-          return null
-        }
-        const { invoke } = await import('@tauri-apps/api/core')
-        if (host.authType === 'password') {
-          sid = await invoke<string>('session_create_ssh_password', {
-            host: host.hostname,
-            port: host.port,
-            username: host.username,
-            password: host.password,
-            cols: defaultCols,
-            rows: defaultRows,
-          })
-        } else if (host.authType === 'key') {
-          sid = await invoke<string>('session_create_ssh_key', {
-            host: host.hostname,
-            port: host.port,
-            username: host.username,
-            privateKey: host.privateKey ?? '',
-            password: host.password ?? null,
-            cols: defaultCols,
-            rows: defaultRows,
-          })
-        } else if (host.authType === 'agent') {
-          errorRef.current = 'Agent authentication not yet supported'
-          return null
-        } else {
-          errorRef.current = `Unsupported auth type: ${host.authType}`
-          return null
-        }
-      } else if (tabType === 'serial') {
-        if (!serialSessionId) {
-          errorRef.current = 'Serial session ID required'
-          return null
-        }
-        sid = serialSessionId
-      } else {
-        errorRef.current = `Unknown tab type: ${tabType}`
-        return null
-      }
-
-      sessionIdRef.current = sid
-      statusRef.current = 'connected'
-      forceUpdate({})
-      return sid
-    } catch (err) {
-      errorRef.current = err instanceof Error ? err.message : String(err)
-      statusRef.current = 'error'
-      forceUpdate({})
-      return null
-    }
-  }, [tabType, host, serialSessionId, defaultCols, defaultRows])
-
-  // ---- 发送数据到后端 ----
-  const sendData = useCallback(
-    async (data: string) => {
-      const sid = sessionIdRef.current
-      if (!sid) return
-
-      try {
-        const { invoke } = await import('@tauri-apps/api/core')
-        if (tabType === 'local' || tabType === 'remote') {
-          await invoke('session_write', { sessionId: sid, data })
-        } else if (tabType === 'serial') {
-          await invoke('serial_write', { sessionId: sid, data })
-        }
-      } catch (err) {
-        console.error('[useTerminal] sendData error:', err)
-      }
-    },
-    [tabType],
-  )
-
-  // ---- resize ----
-  const resize = useCallback(
-    async (cols: number, rows: number) => {
-      const sid = sessionIdRef.current
-      if (!sid) return
-
-      try {
-        const { invoke } = await import('@tauri-apps/api/core')
-        if (tabType === 'local' || tabType === 'remote') {
-          await invoke('session_resize', { sessionId: sid, cols, rows })
-        }
-      } catch (err) {
-        console.error('[useTerminal] resize error:', err)
-      }
-    },
-    [tabType],
-  )
-
-  // ---- 断开连接 ----
-  const disconnect = useCallback(async () => {
-    const sid = sessionIdRef.current
-    if (!sid) return
-
-    try {
-      const { invoke } = await import('@tauri-apps/api/core')
-      if (tabType === 'local' || tabType === 'remote') {
-        await invoke('session_close', { sessionId: sid })
-      }
-    } catch (err) {
-      console.error('[useTerminal] disconnect error:', err)
-    }
-  }, [tabType])
-
-  // ---- 主 effect：启动 + 监听 + 转发 ----
   useEffect(() => {
     if (!term) return
 
     let cancelled = false
+    let started = false
+    const cleanupFns: Array<() => void | Promise<void>> = []
     const eventPrefix =
       tabType === 'local' ? 'local' : tabType === 'remote' ? 'ssh' : 'serial'
 
+    // ── 1. 立即同步注册 xterm 监听器 ─────────────────────────
+    // 必须在 effect 第一行注册（不等 await），否则 React Strict Mode 下
+    // 双重 mount 或依赖项变化导致 init() 中途 cleanup 时，onData 可能
+    // 永远绑不上 → 用户输入完全没反应
+    const onDataDisp = term.onData(data => {
+      const sid = sessionIdRef.current
+      if (!sid) return
+      const cmd = tabType === 'serial' ? 'serial_write' : 'session_write'
+      void invoke(cmd, { sessionId: sid, data }).catch(err => {
+        console.error('[useTerminal] write failed:', err)
+      })
+    })
+    cleanupFns.push(() => onDataDisp.dispose())
+
+    if (tabType !== 'serial') {
+      const onResizeDisp = term.onResize(({ cols, rows }) => {
+        const sid = sessionIdRef.current
+        if (!sid) return
+        void invoke('session_resize', { sessionId: sid, cols, rows }).catch(
+          err => {
+            console.error('[useTerminal] resize failed:', err)
+          },
+        )
+      })
+      cleanupFns.push(() => onResizeDisp.dispose())
+    }
+
+    // ── 2. 异步：先注册后端事件监听，再启动 shell ─────────────
     const init = async () => {
-      statusRef.current = 'connecting'
-      forceUpdate({})
+      setStatus('connecting')
+      setError(null)
 
-      // 1. 启动 shell
-      const sid = await startShell()
-      if (cancelled || !sid) {
-        statusRef.current = 'error'
-        forceUpdate({})
-        return
-      }
+      const listens: UnlistenFn[] = []
 
-      // 2. 监听后端数据 → 写入 xterm
-      const { listen } = await import('@tauri-apps/api/event')
-      const unlistenData = await listen<ShellOutput>(
-        `${eventPrefix}-data`,
-        async event => {
-          const output = event.payload
-          if (output.session_id === sid && termRef.current) {
-            let data = output.data
-              // Remove zsh transient prompt % residue
-              // eslint-disable-next-line no-control-regex
-              .replace(/\x1b\[[0-9;]*m%\x1b\[[0-9;]*m+\r?\n/g, '')
-              // eslint-disable-next-line no-control-regex
-              .replace(/\x1b\[[0-9;]*m%\r?\n/g, '')
-              .replace(/^%\r?\n/gm, '')
-            termRef.current.write(data)
-          }
-        },
-      )
+      // 数据缓冲：在 sessionId 确定前到达的数据先缓存，sessionId 设置后再 flush。
+      // 关键：shell 启动后立刻输出 prompt，emit 事件可能早于 invoke 返回 sid 给
+      // 前端，监听器若直接用 sessionIdRef 过滤会丢弃这部分数据。
+      const pendingData: ShellOutput[] = []
+      let sidReady = false
 
-      // 3. 监听连接关闭
-      const unlistenClose = await listen<string>(
-        `${eventPrefix}-close`,
-        event => {
-          if (event.payload === sid) {
-            termRef.current?.write('\r\n[disconnected]\r\n')
-          }
-        },
-      )
-
-      // 4. 监听退出码（仅 SSH）
-      let unlistenExit: (() => void) | undefined
-      if (tabType === 'remote') {
-        const unlistenExitPromise = listen<[string, number]>(
-          `ssh-exit`,
+      try {
+        // 先注册 data 监听器（关键：在 invoke 启动 shell 之前）
+        const unlistenData = await listen<ShellOutput>(
+          `${eventPrefix}-data`,
           event => {
-            const [exitSid, code] = event.payload
-            if (exitSid === sid) {
-              termRef.current?.write(
-                `\r\n[process exited with code ${code}]\r\n`,
-              )
+            const out = event.payload
+            if (!sidReady) {
+              pendingData.push(out)
+              return
+            }
+            if (out.session_id !== sessionIdRef.current) return
+            termRef.current?.write(sanitize(out.data))
+          },
+        )
+        listens.push(unlistenData)
+
+        const unlistenClose = await listen<string>(
+          `${eventPrefix}-close`,
+          event => {
+            if (event.payload === sessionIdRef.current) {
+              termRef.current?.write('\r\n[disconnected]\r\n')
+              setStatus('disconnected')
             }
           },
         )
-        unlistenExitPromise.then(unlisten => {
-          unlistenExit = unlisten
-        })
-      }
+        listens.push(unlistenClose)
 
-      // 5. 监听 xterm 按键 → 发送到后端
-      const onData = (data: string) => {
-        sendData(data)
-      }
-      term.onData(onData)
+        if (tabType === 'remote') {
+          const unlistenExit = await listen<[string, number]>(
+            'ssh-exit',
+            event => {
+              const [exitSid, code] = event.payload
+              if (exitSid === sessionIdRef.current) {
+                termRef.current?.write(
+                  `\r\n[process exited with code ${code}]\r\n`,
+                )
+              }
+            },
+          )
+          listens.push(unlistenExit)
+        }
 
-      // 6. 监听 xterm resize → 通知后端
-      const onResize = ({ cols, rows }: { cols: number; rows: number }) => {
-        resize(cols, rows)
-      }
-      term.onResize(onResize)
+        if (cancelled) {
+          listens.forEach(fn => fn())
+          return
+        }
 
-      // Cleanup function stored for later
-      return () => {
-        unlistenData()
-        unlistenClose()
-        unlistenExit?.()
+        // 把所有 unlisten 加入 cleanup（要在启动 shell 之前注册到 cleanup
+        // 列表，否则 cleanup 早触发时会漏掉）
+        for (const fn of listens) cleanupFns.push(fn)
+
+        const sid = await startShell(
+          tabType,
+          hostRef.current,
+          serialSessionId,
+          defaultCols,
+          defaultRows,
+        )
+
+        if (cancelled) {
+          // 启动后才被取消：主动关闭后端会话
+          if (tabType === 'local' || tabType === 'remote') {
+            void invoke('session_close', { sessionId: sid }).catch(() => {})
+          }
+          return
+        }
+
+        sessionIdRef.current = sid
+        sidReady = true
+        setSessionId(sid)
+        setStatus('connected')
+        started = true
+
+        // flush 缓冲数据：写入 session_id 匹配的早期输出
+        for (const out of pendingData) {
+          if (out.session_id === sid) {
+            termRef.current?.write(sanitize(out.data))
+          }
+        }
+        pendingData.length = 0
+
+        // sid 就绪后立即同步当前实际尺寸到后端，避免 fit() 触发的 resize
+        // 因 sid 还未 ready 而被 onResize 内的 if(!sid) 丢弃
+        if (termRef.current && tabType !== 'serial') {
+          const { cols, rows } = termRef.current
+          void invoke('session_resize', { sessionId: sid, cols, rows }).catch(
+            err => {
+              console.error('[useTerminal] post-connect resize failed:', err)
+            },
+          )
+        }
+      } catch (err) {
+        if (cancelled) return
+        console.error('[useTerminal] init failed:', err)
+        listens.forEach(fn => fn())
+        const msg = err instanceof Error ? err.message : String(err)
+        setError(msg)
+        setStatus('error')
       }
     }
 
-    let cleanupFn: (() => void) | undefined
-
-    init().then(fn => {
-      cleanupFn = fn
-    })
+    void init()
 
     return () => {
       cancelled = true
-      cleanupFn?.()
-      disconnect()
+      for (const fn of cleanupFns) {
+        try {
+          const ret = fn()
+          if (ret instanceof Promise) ret.catch(() => {})
+        } catch {
+          /* ignore */
+        }
+      }
+      const sid = sessionIdRef.current
+      if (sid && started && (tabType === 'local' || tabType === 'remote')) {
+        void invoke('session_close', { sessionId: sid }).catch(() => {})
+      }
       sessionIdRef.current = null
-      statusRef.current = 'idle'
     }
-  }, [term, tabType, startShell, sendData, resize, disconnect])
+    // 依赖项保持最小：term 实例、tab 类型、host 标识、serial session。
+    // host 字段变化通过 hostRef 透传，避免每次 hosts 数组变化都重启会话。
+  }, [term, tabType, host?.id, serialSessionId, defaultCols, defaultRows])
 
-  return {
-    sessionId: sessionIdRef.current,
-    get status() {
-      return statusRef.current
-    },
-    get error() {
-      return errorRef.current
-    },
-  }
+  return { sessionId, status, error }
 }

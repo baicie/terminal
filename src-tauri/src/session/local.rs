@@ -52,8 +52,14 @@ impl LocalSession {
             })
             .map_err(|e| SessionError::ConnectionFailed(format!("Failed to open PTY: {}", e)))?;
 
-        // 获取默认 shell
-        let shell = if cfg!(windows) {
+        // 获取默认 shell：
+        // - 允许通过环境变量 TERMINAL_DEFAULT_SHELL 覆盖（调试用，例如设为
+        //   "cmd.exe" 测试 PowerShell 启动慢的问题）
+        // - Windows 默认优先 powershell.exe，回退 cmd.exe
+        // - Unix 用 $SHELL，回退 /bin/bash
+        let shell = if let Ok(s) = std::env::var("TERMINAL_DEFAULT_SHELL") {
+            s
+        } else if cfg!(windows) {
             std::env::var("PSModulePath")
                 .map(|_| "powershell.exe".to_string())
                 .unwrap_or_else(|_| "cmd.exe".to_string())
@@ -66,6 +72,14 @@ impl LocalSession {
 
         // 设置 TERM 环境变量
         cmd.env("TERM", "xterm-256color");
+
+        // PowerShell 在 PTY 中启动时，加 -NoLogo 抑制版权 banner，
+        // 让 prompt 立即出现（否则会卡在等 banner 渲染）
+        if shell.eq_ignore_ascii_case("powershell.exe")
+            || shell.eq_ignore_ascii_case("pwsh.exe")
+        {
+            cmd.arg("-NoLogo");
+        }
 
         // 设置工作目录（Windows）
         #[cfg(windows)]
@@ -143,7 +157,6 @@ impl LocalSession {
 
         let handle = tokio::spawn(async move {
             let mut shutdown_rx = shutdown_rx;
-            let mut buf = [0u8; 4096];
 
             loop {
                 tokio::select! {
@@ -154,20 +167,23 @@ impl LocalSession {
                         let _ = app_clone.emit("local-close", &session_id_clone);
                         break;
                     }
-                    // 读取 PTY 数据
+                    // 读取 PTY 数据：buffer 必须放在 spawn_blocking 内，
+                    // 否则跨 await 会被 borrow-checker 拒绝。
                     result = tokio::task::spawn_blocking({
                         let reader = reader_clone.clone();
                         move || {
+                            let mut buf = [0u8; 4096];
                             let mut r = reader.lock();
-                            r.read(&mut buf)
+                            let n = r.read(&mut buf)?;
+                            Ok::<(usize, [u8; 4096]), std::io::Error>((n, buf))
                         }
                     }) => {
                         match result {
-                            Ok(Ok(0)) => {
+                            Ok(Ok((0, _))) => {
                                 let _ = app_clone.emit("local-close", &session_id_clone);
                                 break;
                             }
-                            Ok(Ok(n)) => {
+                            Ok(Ok((n, buf))) => {
                                 let output = SessionOutput {
                                     session_id: session_id_clone.clone(),
                                     data: String::from_utf8_lossy(&buf[..n]).to_string(),

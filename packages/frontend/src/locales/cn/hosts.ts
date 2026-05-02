@@ -23,6 +23,7 @@ export default {
   'hosts.calendar': '日历',
   'hosts.invite': '邀请',
   'hosts.sshAuth': 'ssh, {username}',
+  'hosts.copySsh': '复制 SSH 命令',
 
   // Host dialog
   'hostDialog.editHost': '编辑主机',

@@ -7,6 +7,54 @@
 
 ## 一、关键问题 (Critical)
 
+### Issue #0: 本地终端连接慢 + 屏幕空白 + 无法输入 ✅ 已修复
+
+**严重程度**: 🔴 Critical
+**状态**: ✅ 已修复
+**影响功能**: 本地终端 (PowerShell / cmd / bash)
+**修复时间**: 2026-05-02
+
+**症状**:
+
+1. 本地终端连接慢
+2. 状态栏显示 `Connected` 但屏幕完全空白，看不到 prompt
+3. 终端区域无法输入任何字符
+
+**根因分析（按定位顺序）**:
+
+| # | Bug | 影响 |
+| - | --- | --- |
+| 1 | `useTerminal` 先 `invoke('session_create_local')` 才 `listen('local-data')`，存在竞态：shell 启动后立即输出的初始 prompt 在前端注册监听器之前就 emit 完毕，事件丢失 | 屏幕看不到 prompt |
+| 2 | `term.onData(...)` 在 `init()` 异步流程末尾才注册，Strict Mode 双重 mount 或依赖项变化导致 effect 中途 cleanup 时永远绑不上 | 用户输入完全没反应 |
+| 3 | `useTerminal` effect 依赖项过宽（包含多个 `useCallback`，间接依赖 `hosts` 数组），每次 store 更新都触发 effect cleanup → `disconnect()` → 重启会话 | 连接慢、偶发断连 |
+| 4 | `TerminalContainer` 的 init effect 依赖 `[tabId, tab]`，`tab` 引用每次 store 更新都变，导致 xterm 实例频繁销毁重建（顺带关闭后端 session） | 体感卡顿、内容丢失 |
+| 5 | **致命**: `Layout` 同时存在两份终端渲染入口：始终挂载的 `<TerminalByUrl />` 和路由 `Outlet` 内的 `<TerminalRoute />`。在 `/terminal?tab=xxx` 路由下两个 `TerminalContainer` 实例并存，各自创建 PTY session、注册 listener，互相收到对方的 sid 后 mismatch 过滤，谁都写不进 xterm | 屏幕全空 |
+| 6 | `fitAddon.fit()` 50ms 后调用，触发的 `onResize` 因 sid 还未 ready 被 `if(!sid) return` 丢弃，后端 PTY 永远停留在 80x24 | 显示尺寸不对 |
+| 7 | Windows 上 PowerShell 在 PTY 中启动会同步等待版权 banner 渲染完成才进入 REPL，加上 .NET 框架首次加载，prompt 卡很久才出现 | 即使所有上面修完，仍只收到 4 字节 escape sequence 后无下文 |
+
+**修复内容**:
+
+- **`packages/frontend/src/hooks/use-terminal.ts`**: 完全重写
+  - `term.onData` / `term.onResize` 立即同步注册（不等任何 await）
+  - `listen('*-data')` 在 `invoke('session_create_*')` 之前注册
+  - 增加 `pendingData` buffer，缓存 sid 确定前到达的数据，sid ready 后 flush
+  - 依赖项收紧为 `[term, tabType, host?.id, serialSessionId]`，`host` 通过 `hostRef` 透传
+  - sid 就绪后立即用 `term.cols/rows` 给后端补一次 `session_resize`
+
+- **`packages/frontend/src/features/terminal/components/terminal-container/container.tsx`**:
+  - `useTerminal` 入参从 `termRef.current` 改为 `termInstance` state（让 React 正确追踪）
+  - init effect 依赖从 `[tabId, tab]` 收紧为 `[tabId]`
+
+- **`packages/frontend/src/router/index.tsx`**:
+  - `TerminalRoute` 改为返回 `null`，由始终挂载的 `<TerminalByUrl />` 独占渲染，避免双重实例
+
+- **`src-tauri/src/session/local.rs`**:
+  - PowerShell / pwsh 启动时自动追加 `-NoLogo` 参数，抑制版权 banner 让 prompt 立即出现
+  - 支持环境变量 `TERMINAL_DEFAULT_SHELL` 覆盖默认 shell（调试/排障用）
+  - 修复 PTY 读取循环中 buffer 跨 await 的潜在借用问题
+
+---
+
 ### Issue #1: SFTP 后端完全未实现 ✅ 已实现
 
 **严重程度**: 高

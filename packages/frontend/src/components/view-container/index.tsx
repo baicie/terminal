@@ -31,7 +31,7 @@ const ViewToolbar: React.FC<ViewToolbarProps> = ({ children, className }) => {
   return (
     <div
       className={cn(
-        'flex items-center justify-between px-4 py-3 border-b border-border/60',
+        'flex min-h-14 shrink-0 items-center gap-2 px-4 py-2.5 border-b border-border/60 bg-background',
         className,
       )}
     >

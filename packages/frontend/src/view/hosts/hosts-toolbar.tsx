@@ -1,11 +1,8 @@
-import type { Host } from '@/types'
 import {
-  CalendarDays,
   ChevronDown,
   LayoutGrid,
   List,
   Server,
-  Tag,
   Terminal,
   Usb,
 } from 'lucide-react'
@@ -20,26 +17,27 @@ import {
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
-interface HostToolbarProps {
+interface HostsToolbarProps {
   searchQuery: string
-  onSearchChange: (query: string) => void
+  onSearchChange: (q: string) => void
+  onConnectBarSubmit: (q: string) => void
+  onOpenHostDialog: () => void
+  onNewLocalTerminal: () => void
+  onOpenSerialDialog: () => void
   gridView: boolean
-  onGridViewChange: (gridView: boolean) => void
-  onConnect: () => void
-  onNewHost: () => void
-  onNewTerminal: () => void
-  onSerialConnection: () => void
+  onGridViewChange: (grid: boolean) => void
 }
 
-export const HostToolbar: React.FC<HostToolbarProps> = ({
+/** 桌面端 Hosts 视图工具栏 */
+export const HostsToolbar: React.FC<HostsToolbarProps> = ({
   searchQuery,
   onSearchChange,
+  onConnectBarSubmit,
+  onOpenHostDialog,
+  onNewLocalTerminal,
+  onOpenSerialDialog,
   gridView,
   onGridViewChange,
-  onConnect,
-  onNewHost,
-  onNewTerminal,
-  onSerialConnection,
 }) => {
   const { t } = useTranslation()
 
@@ -50,9 +48,15 @@ export const HostToolbar: React.FC<HostToolbarProps> = ({
           placeholder={t('hosts.search')}
           value={searchQuery}
           onChange={e => onSearchChange(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') onConnectBarSubmit(searchQuery)
+          }}
           className="h-10 flex-1 rounded-lg bg-secondary/40 border-border/60"
         />
-        <Button className="h-10 px-6 shrink-0 rounded-lg" onClick={onConnect}>
+        <Button
+          className="h-10 px-6 shrink-0 rounded-lg"
+          onClick={() => onConnectBarSubmit(searchQuery)}
+        >
           {t('hosts.connect')}
         </Button>
       </div>
@@ -66,44 +70,42 @@ export const HostToolbar: React.FC<HostToolbarProps> = ({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuItem onClick={onNewHost}>
+            <DropdownMenuItem onClick={onOpenHostDialog}>
               <Server className="size-4" data-icon="inline-start" />
               {t('hosts.sshHost')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onNewLocalTerminal}>
+              <Terminal className="size-4" data-icon="inline-start" />
+              {t('hosts.terminal')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onOpenSerialDialog}>
+              <Usb className="size-4" data-icon="inline-start" />
+              {t('hosts.serial')}
             </DropdownMenuItem>
             <DropdownMenuItem disabled>{t('hosts.importFromFile')}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button variant="outline" size="sm" className="h-9 rounded-md" onClick={onNewTerminal}>
-          <Terminal className="size-4" data-icon="inline-start" />
-          {t('hosts.terminal')}
-        </Button>
-
-        <Button variant="outline" size="sm" className="h-9 rounded-md" onClick={onSerialConnection}>
-          <Usb className="size-4" data-icon="inline-start" />
-          {t('hosts.serial')}
-        </Button>
-
         <div className="flex-1" />
 
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-0.5 rounded-md bg-secondary/40 p-0.5">
           <Button
-            variant="ghost" size="icon"
-            className={cn('size-9 rounded-md', gridView && 'bg-secondary/80')}
-            title={t('hosts.grid')} onClick={() => onGridViewChange(true)}>
+            variant="ghost"
+            size="icon"
+            className={cn('size-8 rounded', gridView && 'bg-background shadow-sm')}
+            title={t('hosts.grid')}
+            onClick={() => onGridViewChange(true)}
+          >
             <LayoutGrid className="size-4" />
           </Button>
           <Button
-            variant="ghost" size="icon"
-            className={cn('size-9 rounded-md', !gridView && 'bg-secondary/80')}
-            title={t('hosts.list')} onClick={() => onGridViewChange(false)}>
+            variant="ghost"
+            size="icon"
+            className={cn('size-8 rounded', !gridView && 'bg-background shadow-sm')}
+            title={t('hosts.list')}
+            onClick={() => onGridViewChange(false)}
+          >
             <List className="size-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="size-9 rounded-md" title={t('hosts.tags')}>
-            <Tag className="size-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="size-9 rounded-md" title={t('hosts.calendar')}>
-            <CalendarDays className="size-4" />
           </Button>
         </div>
       </div>

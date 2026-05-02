@@ -5,6 +5,7 @@ import {
   Home,
   PanelLeft,
   Plus,
+  Search,
   Settings,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -14,10 +15,16 @@ import CommandPalette from '@/components/command-palette'
 import { HostDialog } from '@/components/host-list/host-dialog'
 import { NotificationPanel } from '@/components/notification-panel'
 import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
 import {
   Sheet,
   SheetContent,
 } from '@/components/ui/sheet'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import MenuTabs from '@/layout/tabs'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
@@ -194,20 +201,25 @@ const TopToolbar: React.FC<{
   }
 
   // ─── Desktop layout ──────────────────────────────────────────────
+  const isMac =
+    typeof navigator !== 'undefined' && /mac|darwin/i.test(navigator.platform)
+  const cmdKeyLabel = isMac ? '⌘J' : 'Ctrl+J'
+
   return (
     <>
       <header
         className={cn(
-          'h-11 flex items-center justify-between border-b border-border/60 bg-background shrink-0 gap-2',
+          'h-11 flex items-center border-b border-border/60 bg-background shrink-0 gap-2',
           padForMacTrafficLights ? 'pl-[76px] pr-3' : 'px-3',
         )}
         data-tauri-drag-region
       >
-        <div className="flex items-center gap-1 min-w-0 flex-1">
+        {/* ─ Region 1: 折叠按钮 + 视图入口 ───────────────── */}
+        <div className="flex items-center gap-1 shrink-0">
           <Button
             variant="ghost"
             size="icon"
-            className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+            className="size-8 text-muted-foreground hover:text-foreground"
             onClick={onToggleSidebar}
             title={t('toolbar.toggleSidebar')}
             data-tauri-drag-region="false"
@@ -215,55 +227,81 @@ const TopToolbar: React.FC<{
             <PanelLeft className="size-4" />
           </Button>
 
-          {/* SFTP + Tabs + New Tab */}
-          <div className="flex items-center gap-0.5 ml-2 min-w-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate('/sftp')}
-              className={cn(
-                'gap-1.5 h-8 px-3 rounded-md shrink-0 transition-all duration-150',
-                isSftpActive
-                  ? 'bg-secondary/80 text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-              data-tauri-drag-region="false"
-            >
-              <FolderUp className="size-4" data-icon="inline-start" />
-              {t('toolbar.sftp')}
-            </Button>
-
-            <MenuTabs />
-
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
-              title={t('toolbar.newTab')}
-              onClick={handleNewLocalTerminal}
-              data-tauri-drag-region="false"
-            >
-              <Plus className="size-4" />
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate('/sftp')}
+            className={cn(
+              'gap-1.5 h-8 px-3 rounded-md transition-colors duration-150',
+              isSftpActive
+                ? 'bg-secondary/80 text-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+            data-tauri-drag-region="false"
+          >
+            <FolderUp className="size-4" data-icon="inline-start" />
+            {t('toolbar.sftp')}
+          </Button>
         </div>
 
-        <div className="flex items-center gap-0.5 shrink-0">
+        <Separator orientation="vertical" className="h-5 mx-1" />
+
+        {/* ─ Region 2: 会话标签（可滚动）+ 新建 ─────────── */}
+        <div className="flex items-center gap-0.5 min-w-0 flex-1">
+          <MenuTabs />
           <Button
             variant="ghost"
             size="icon"
-            className="size-8 text-muted-foreground hover:text-foreground relative"
-            title={t('toolbar.notifications')}
-            onClick={() => setNotificationPanelOpen(true)}
+            className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+            title={t('toolbar.newTab')}
+            onClick={handleNewLocalTerminal}
             data-tauri-drag-region="false"
           >
-            <BellIcon className="size-4" />
-            {unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 rounded-full bg-primary text-[10px] font-medium text-primary-foreground flex items-center justify-center px-1 leading-none">
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </span>
-            )}
+            <Plus className="size-4" />
           </Button>
+        </div>
+
+        <Separator orientation="vertical" className="h-5 mx-1" />
+
+        {/* ─ Region 3: 全局操作 ────────────────────────── */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCommandPaletteOpen(true)}
+                className="gap-2 h-8 px-2.5 text-muted-foreground hover:text-foreground"
+                data-tauri-drag-region="false"
+              >
+                <Search className="size-4" />
+                <kbd className="hidden lg:inline-flex h-5 items-center gap-0.5 rounded border border-border/60 bg-secondary/50 px-1.5 text-[10px] font-mono text-muted-foreground">
+                  {cmdKeyLabel}
+                </kbd>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('toolbar.commandPalette')}</TooltipContent>
+          </Tooltip>
+
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 text-muted-foreground hover:text-foreground relative"
+                onClick={() => setNotificationPanelOpen(true)}
+                data-tauri-drag-region="false"
+              >
+                <BellIcon className="size-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-0.5 right-0.5 min-w-[16px] h-[16px] rounded-full bg-primary text-[9px] font-semibold text-primary-foreground flex items-center justify-center px-1 leading-none">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('toolbar.notifications')}</TooltipContent>
+          </Tooltip>
         </div>
       </header>
 

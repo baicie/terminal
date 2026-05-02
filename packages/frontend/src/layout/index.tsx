@@ -15,11 +15,12 @@ import {
 } from '@/components/swipe-back-indicator'
 import { useIsMobile } from '@/hooks/use-breakpoint'
 import TerminalContainer from '@/view/terminal/terminal-container'
+import { RouteTransition } from './route-transition'
 
 const SIDEBAR_WIDTH_KEY = 'terminal.sidebar.width'
 const SIDEBAR_MIN = 64 // 图标模式宽度
 const SIDEBAR_MAX = 420
-const SIDEBAR_DEFAULT = 200
+const SIDEBAR_DEFAULT = 176
 
 function readSidebarWidth(): number {
   try {
@@ -218,7 +219,9 @@ const MainLayoutInner: React.FC<{
           )}
         >
           <TerminalByUrl />
-          <Outlet />
+          <RouteTransition>
+            <Outlet />
+          </RouteTransition>
         </main>
       </div>
 

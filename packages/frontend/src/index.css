@@ -25,6 +25,28 @@
   animation: float 3s ease-in-out infinite;
 }
 
+/* Route transition — used by RouteTransition component */
+@keyframes route-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.route-transition-enter {
+  animation: route-enter 200ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-transition-enter {
+    animation: none;
+  }
+}
+
 /* Hover lift */
 .hover-lift {
   transition:
@@ -42,6 +64,49 @@
 }
 .press-effect:active {
   transform: scale(0.95);
+}
+
+/* ================================================
+   Unified interactive card
+   ================================================ */
+/*
+ * Use on any clickable card / list item to get a consistent
+ * hover + focus + press behavior across the app.
+ *
+ * Example: <button className="card-interactive p-4 rounded-xl …" />
+ */
+.card-interactive {
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 200ms ease,
+    transform 200ms ease;
+}
+.card-interactive:hover {
+  background-color: color-mix(in oklch, var(--accent) 40%, transparent);
+  border-color: color-mix(in oklch, var(--primary) 30%, var(--border));
+  box-shadow: 0 4px 16px -6px color-mix(in oklch, var(--primary) 12%, transparent);
+  transform: translateY(-1px);
+}
+.card-interactive:active {
+  transform: translateY(0);
+  transition-duration: 100ms;
+}
+.card-interactive:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+@media (max-width: 639px) {
+  /* On touch devices skip the lift, keep press feedback */
+  .card-interactive:hover {
+    transform: none;
+    box-shadow: none;
+  }
+  .card-interactive:active {
+    transform: scale(0.98);
+    background-color: color-mix(in oklch, var(--accent) 50%, transparent);
+  }
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -80,6 +145,13 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Semantic state colors — automatically themed via CSS variables */
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -119,6 +191,13 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  /* Semantic state colors (light theme) */
+  --info: oklch(0.62 0.18 250);
+  --info-foreground: oklch(0.985 0 0);
+  --success: oklch(0.62 0.18 150);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.74 0.16 75);
+  --warning-foreground: oklch(0.205 0 0);
 }
 
 .dark {
@@ -153,6 +232,13 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  /* Semantic state colors (dark theme) */
+  --info: oklch(0.7 0.16 245);
+  --info-foreground: oklch(0.145 0 0);
+  --success: oklch(0.7 0.17 150);
+  --success-foreground: oklch(0.145 0 0);
+  --warning: oklch(0.78 0.16 80);
+  --warning-foreground: oklch(0.145 0 0);
 }
 
 @layer base {

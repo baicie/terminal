@@ -25,6 +25,7 @@ export default {
   'hosts.calendar': 'Calendar',
   'hosts.invite': 'Invite',
   'hosts.sshAuth': 'ssh, {username}',
+  'hosts.copySsh': 'Copy SSH command',
 
   // Host dialog
   'hostDialog.editHost': 'Edit Host',
