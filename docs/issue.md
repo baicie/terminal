@@ -213,16 +213,28 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 
 ## 三、一般问题 (Minor)
 
-### Issue #7: 命令快速补全 ⚠️ 部分实现
+### Issue #7: 命令快速补全 ✅ 已实现
 
 **严重程度**: 低
-**状态**: ⚠️ 命令历史存储和命令面板搜索已实现；终端内上下键导航未实现
+**状态**: ✅ 已实现
 **影响功能**: 终端命令补全
+**实现时间**: 2026-05-02
 
-**实现状态**:
-- ✅ 历史记录存储已实现（SQLite）
-- ✅ 命令面板历史搜索已实现
-- ❌ 终端内上下键快速补全未实现（需在 `use-terminal.ts` 或 Terminal 实例中添加）
+**实现内容**:
+- `use-terminal.ts` 中新增命令历史导航拦截层
+- 在 `onData` 层拦截 `ArrowUp` / `ArrowDown` 键
+- 维护本地缓存的命令历史（`historyCacheRef`），首次按 ↑ 时从 SQLite DB 加载
+- 使用 VT 序列 `\x1b[H`（回到行首）清行并回填历史命令
+- Enter 时自动将命令存入 SQLite（通过 `addCommandHistory`）
+- Backspace 时同步追踪当前行 buffer（支持在历史命令中间退格）
+- 按任意非方向键重置导航状态
+
+**修改文件**:
+- `packages/frontend/src/hooks/use-terminal.ts` — 命令历史导航拦截
+
+**待完善**:
+- 重复命令去重（同一 session 内 Enter 连续按两次同一命令）
+- 跨 session 累积历史（目前按 hostId 隔离）
 
 ---
 
@@ -334,7 +346,7 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 
 - [x] **Issue #5**: 实现 Agent 认证 ✅
 - [x] **Issue #6**: 实现主机链功能 ✅
-- [ ] **Issue #7**: 命令快速补全 ⚠️ (仅命令面板，终端内未实现)
+- [x] **Issue #7**: 命令快速补全 ✅ (终端内 ↑↓ 导航已实现，2026-05-02)
 - [x] **Issue #8**: Vault 加密存储 ✅
 
 ### P3 - 未来考虑

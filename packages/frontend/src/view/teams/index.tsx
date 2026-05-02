@@ -1,18 +1,8 @@
-import {
-  Clock,
-  Download,
-  LogIn,
-  Plus,
-  RefreshCw,
-  Settings,
-  User,
-  Users,
-} from 'lucide-react'
+import { LogIn, Plus, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   ViewContainer,
@@ -32,6 +22,8 @@ import {
   SharedHostList,
   SharedSnippetList,
 } from './team-lists'
+import { TeamDetailsHeader } from './components/team-details-header'
+import { TeamToolbar } from './components/team-toolbar'
 import { CreateTeamDialog } from './create-team-dialog'
 import { ExportDialog } from './export-dialog'
 import { InviteDialog } from './invite-dialog'
@@ -100,10 +92,6 @@ const TeamsView: React.FC = () => {
     await sync()
   }
 
-  const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleString()
-  }
-
   if (!isTeamEnabled) {
     return (
       <ViewContainer>
@@ -152,59 +140,20 @@ const TeamsView: React.FC = () => {
   return (
     <ViewContainer>
       <ViewToolbar className="gap-4">
-        <Input
-          placeholder={t('common.search')}
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="max-w-xs h-9"
+        <TeamToolbar
+          search={search}
+          onSearchChange={setSearch}
+          currentTeam={currentTeam}
+          userProfile={userProfile}
+          isSyncing={isSyncing}
+          onSync={handleSync}
+          onExport={() => setExportDialogOpen(true)}
+          onInvite={() => {
+            setSelectedTeamId(currentTeam?.id ?? null)
+            setInviteDialogOpen(true)
+          }}
+          onProfile={() => setProfileDialogOpen(true)}
         />
-        <div className="flex-1" />
-        {userProfile && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setProfileDialogOpen(true)}
-          >
-            <User className="size-4 mr-1" data-icon="inline-start" />
-            {userProfile.name}
-          </Button>
-        )}
-        {currentTeam?.mode === 'cloud' && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleSync}
-            disabled={isSyncing}
-          >
-            <RefreshCw
-              className={`size-4 mr-1 ${isSyncing ? 'animate-spin' : ''}`}
-              data-icon="inline-start"
-            />
-            {isSyncing ? t('teams.syncing') : t('teams.syncNow')}
-          </Button>
-        )}
-        {currentTeam && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setExportDialogOpen(true)}
-          >
-            <Download className="size-4 mr-1" data-icon="inline-start" />
-            {t('teams.export')}
-          </Button>
-        )}
-        {currentTeam && (
-          <Button
-            size="sm"
-            onClick={() => {
-              setSelectedTeamId(currentTeam.id)
-              setInviteDialogOpen(true)
-            }}
-          >
-            <Plus className="size-4 mr-1" data-icon="inline-start" />
-            {t('teams.invite')}
-          </Button>
-        )}
       </ViewToolbar>
 
       <ViewContent className="p-6">
@@ -275,46 +224,14 @@ const TeamsView: React.FC = () => {
             {currentTeam ? (
               <>
                 {/* Team Header */}
-                <div className="flex items-start justify-between mb-6">
-                  <div className="space-y-1">
-                    <h2 className="text-xl font-semibold flex items-center gap-2">
-                      <Users className="size-5" />
-                      {currentTeam.name}
-                    </h2>
-                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                      <Badge variant="outline">
-                        {currentTeam.mode === 'cloud'
-                          ? t('teams.cloud')
-                          : t('teams.local')}
-                      </Badge>
-                      {currentTeam.mode === 'cloud' && currentTeam.endpoint && (
-                        <span className="text-xs">{currentTeam.endpoint}</span>
-                      )}
-                      {lastSyncAt && (
-                        <span className="flex items-center gap-1 text-xs">
-                          <Clock className="size-3" />
-                          {t('teams.lastSync', {
-                            time: formatTime(lastSyncAt),
-                          })}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setSelectedTeamId(currentTeam.id)
-                      setSettingsDialogOpen(true)
-                    }}
-                  >
-                    <Settings
-                      className="size-4 mr-1"
-                      data-icon="inline-start"
-                    />
-                    {t('common.settings')}
-                  </Button>
-                </div>
+                <TeamDetailsHeader
+                  team={currentTeam}
+                  lastSyncAt={lastSyncAt}
+                  onSettings={() => {
+                    setSelectedTeamId(currentTeam.id)
+                    setSettingsDialogOpen(true)
+                  }}
+                />
 
                 {/* Tabs */}
                 <Tabs defaultValue="members">

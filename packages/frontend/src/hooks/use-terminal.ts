@@ -213,7 +213,142 @@ export function useTerminal(
       })
     }
 
-    const onDataDisp = term.onData(sendInput)
+    // ── 命令历史导航（↑↓ 拦截）──────────────────────────────
+    // 在 onData 层拦截方向键，提供终端内历史命令导航。
+    // 同时维护 currentLineRef 和 cursorPosRef 追踪用户当前输入行内容。
+    const currentLineRef = { value: '' }
+    const cursorPosRef = { value: 0 } // 光标在当前行中的位置（字符数）
+    const historyIndexRef = { value: -1 }
+    const currentInputBeforeNavRef = { value: '' }
+    const historyCacheRef = { value: [] as string[] }
+    let historyLoaded = false
+
+    // 写内容并清行（回到行首，清除到行尾，写新内容）
+    const writeAndMoveEnd = (text: string) => {
+      term.write(`\x1b[H${text}`)
+      currentLineRef.value = text
+      cursorPosRef.value = text.length
+    }
+
+    // 保存命令到历史（Enter 后调用）
+    const saveToHistory = async (cmd: string) => {
+      if (!cmd.trim()) return
+      const cache = historyCacheRef.value
+      if (cache[0] !== cmd.trim()) {
+        cache.unshift(cmd.trim())
+        if (cache.length > 100) cache.length = 100
+      }
+      historyIndexRef.value = -1
+      currentInputBeforeNavRef.value = ''
+      const hid = hostRef.current?.id
+      if (hid) {
+        const { addCommandHistory } = await import(
+          '@/service/database'
+        )
+        void addCommandHistory({
+          host_id: hid,
+          command: cmd.trim(),
+          executed_at: Date.now(),
+          session_id: sessionIdRef.current ?? undefined,
+        }).catch(() => {})
+      }
+    }
+
+    // 从 DB 加载历史命令到缓存
+    const loadHistoryFromDb = async () => {
+      const hid = hostRef.current?.id
+      if (!hid) return
+      try {
+        const { getCommandHistory } = await import(
+          '@/service/database'
+        )
+        const records = await getCommandHistory(hid, 50)
+        const seen = new Set<string>()
+        const cmds = records
+          .map(r => r.command)
+          .filter(c => {
+            if (!c || seen.has(c)) return false
+            seen.add(c)
+            return true
+          })
+        historyCacheRef.value = cmds
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const onDataDisp = term.onData((data: string) => {
+      // Enter：保存命令后继续正常流程
+      if (data === '\r') {
+        const cmd = currentLineRef.value
+        currentLineRef.value = ''
+        cursorPosRef.value = 0
+        void saveToHistory(cmd)
+        sendInput(data)
+        return
+      }
+
+      // Backspace：同步追踪 buffer
+      if (data === '\x7f') {
+        if (cursorPosRef.value > 0) {
+          currentLineRef.value =
+            currentLineRef.value.slice(0, cursorPosRef.value - 1) +
+            currentLineRef.value.slice(cursorPosRef.value)
+          cursorPosRef.value--
+        }
+        sendInput(data)
+        return
+      }
+
+      // ArrowUp：历史导航
+      if (data === '\x1b[A') {
+        if (historyIndexRef.value === -1) {
+          currentInputBeforeNavRef.value = currentLineRef.value
+          if (!historyLoaded) {
+            void loadHistoryFromDb()
+            historyLoaded = true
+          }
+        }
+        const hist = historyCacheRef.value
+        if (hist.length === 0) return // 无历史，拦截不发送
+        historyIndexRef.value++
+        if (historyIndexRef.value >= hist.length) {
+          historyIndexRef.value = hist.length - 1
+        }
+        writeAndMoveEnd(hist[historyIndexRef.value])
+        return // 拦截，不发送到后端
+      }
+
+      // ArrowDown：历史导航
+      if (data === '\x1b[B') {
+        const hist = historyCacheRef.value
+        if (hist.length === 0) return
+        historyIndexRef.value--
+        if (historyIndexRef.value < 0) {
+          historyIndexRef.value = -1
+          writeAndMoveEnd(currentInputBeforeNavRef.value)
+        } else {
+          writeAndMoveEnd(hist[historyIndexRef.value])
+        }
+        return // 拦截，不发送到后端
+      }
+
+      // 其他可打印字符：追加到追踪 buffer
+      if (data.length === 1 && data.charCodeAt(0) >= 32) {
+        const pos = cursorPosRef.value
+        currentLineRef.value =
+          currentLineRef.value.slice(0, pos) +
+          data +
+          currentLineRef.value.slice(pos)
+        cursorPosRef.value++
+      }
+
+      // 重置导航状态（任何其他按键都取消历史导航）
+      historyIndexRef.value = -1
+      currentInputBeforeNavRef.value = ''
+
+      sendInput(data)
+    })
     cleanupFns.push(() => onDataDisp.dispose())
 
     // WebKit (macOS Tauri / Safari) onData 漏发同时按键的补偿

@@ -24,8 +24,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { EnvironmentVariablesDialog } from './environment-dialog'
+import { AuthFields } from './host-dialog-auth-fields'
 import { useHostStore } from '@/store/host'
 
 interface HostDialogProps {
@@ -292,85 +292,14 @@ export const HostDialog: React.FC<HostDialogProps> = ({
               </Select>
             </div>
 
-            {form.authType === 'password' && (
-              <div className="col-span-2">
-                <Label htmlFor="password" className="text-sm font-medium mb-1 block">
-                  Password
-                </Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={form.password}
-                  onChange={e => setForm({ ...form, password: e.target.value })}
-                  placeholder="••••••••"
-                />
-              </div>
-            )}
-
-            {form.authType === 'key' && (
-              <>
-                <div className="col-span-2">
-                  <Label htmlFor="privateKey" className="text-sm font-medium mb-1 block">
-                    Private Key
-                  </Label>
-                  <div className="flex gap-2">
-                    <Textarea
-                      id="privateKey"
-                      className="flex-1 font-mono min-h-[120px]"
-                      value={form.privateKey}
-                      onChange={e =>
-                        setForm({ ...form, privateKey: e.target.value })
-                      }
-                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                    />
-                    <Button
-                      variant="outline"
-                      onClick={async () => {
-                        try {
-                          const { open } =
-                            await import('@tauri-apps/plugin-dialog')
-                          const selected = await open({
-                            multiple: false,
-                            filters: [
-                              {
-                                name: 'SSH Keys',
-                                extensions: ['pem', 'key', 'ppk', '*'],
-                              },
-                            ],
-                          })
-                          if (selected) {
-                            const { readTextFile } =
-                              await import('@tauri-apps/plugin-fs')
-                            const content = await readTextFile(
-                              selected as string,
-                            )
-                            setForm({ ...form, privateKey: content })
-                          }
-                        } catch (e) {
-                          console.error('Failed to open file dialog:', e)
-                        }
-                      }}
-                    >
-                      Browse
-                    </Button>
-                  </div>
-                </div>
-                <div className="col-span-2">
-                  <Label htmlFor="passphrase" className="text-sm font-medium mb-1 block">
-                    Key Passphrase (optional)
-                  </Label>
-                  <Input
-                    id="passphrase"
-                    type="password"
-                    value={form.password}
-                    onChange={e =>
-                      setForm({ ...form, password: e.target.value })
-                    }
-                    placeholder="••••••••"
-                  />
-                </div>
-              </>
-            )}
+            <AuthFields
+              authType={form.authType}
+              password={form.password}
+              privateKey={form.privateKey}
+              onAuthTypeChange={(v: AuthType) => setForm({ ...form, authType: v })}
+              onPasswordChange={(v: string) => setForm({ ...form, password: v })}
+              onPrivateKeyChange={(v: string) => setForm({ ...form, privateKey: v })}
+            />
 
             <div className="col-span-2">
               <Label htmlFor="startupCommand" className="text-sm font-medium mb-1 block">
