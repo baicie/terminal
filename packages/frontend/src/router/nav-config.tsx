@@ -140,11 +140,16 @@ function getRouteElement(path: string) {
       return lazyRoute(() => import('@/view/app-logs'))
     case '/settings':
       return lazyRoute(() => import('@/view/settings'))
-    case '/terminal':
-      return lazyRoute(() => import('@/view/terminal/terminal-container'))
     case '/experiments':
       return lazyRoute(() => import('@/experiments/index'))
     default:
       return lazyRoute(() => import('@/view/hosts'))
   }
 }
+
+// 注意：故意没有 '/terminal' 分支。
+// 终端路由由 router/index.tsx 写死为 <TerminalRoute /> → null，
+// 实际渲染走 layout 内常驻的 <TerminalByUrl />，这样切换路由时
+// 终端实例不会被 Outlet 销毁，可在后台继续保持连接。
+// 同时 navConfig 数组里也没有 '/terminal'，所以这个 switch case
+// 永远到不了，曾经存在的分支是死代码并触发 INEFFECTIVE_DYNAMIC_IMPORT。

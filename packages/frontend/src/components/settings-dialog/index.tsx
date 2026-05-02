@@ -31,6 +31,11 @@ import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import i18nCore from '@/locales'
 import { getAppSettings, saveAppSettings } from '@/service/database'
+import {
+  applyNotificationPrefs,
+  resetNotificationPermissionCache,
+} from '@/service/notifications'
+import { syncCloseToTray } from '@/service/window-ux'
 import { useAppStore } from '@/store/app'
 import { GeneralSettings } from './general-settings'
 import { StorageSettingsDialog } from './storage-settings-dialog'
@@ -51,9 +56,14 @@ type AppSettingsKey = {
   cursorBlink?: boolean
   scrollback?: number
   terminalTheme?: string
+  terminalThemeDark?: string
+  terminalThemeLight?: string
   copyOnSelect?: boolean
   pasteOnMiddleClick?: boolean
   allowProposedApi?: boolean
+  minimizeToTray?: boolean
+  nativeNotifications?: boolean
+  notifyOnlyWhenUnfocused?: boolean
   dataStorageMode?: 'local' | 'service'
   syncServiceType?: 'webdav' | 's3' | 'custom'
   syncServiceEndpoint?: string
@@ -112,6 +122,18 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
     if (key === 'language') {
       app.setLanguage(value as string)
       void i18nCore.changeLanguage(value as string)
+    }
+    if (key === 'minimizeToTray') {
+      void syncCloseToTray(value as boolean)
+    }
+    if (key === 'nativeNotifications') {
+      resetNotificationPermissionCache()
+      applyNotificationPrefs({ nativeNotifications: value as boolean })
+    }
+    if (key === 'notifyOnlyWhenUnfocused') {
+      applyNotificationPrefs({
+        notifyOnlyWhenUnfocused: value as boolean,
+      })
     }
   }
 
@@ -390,6 +412,10 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
                 copyOnSelect: settings.copyOnSelect || false,
                 pasteOnMiddleClick: settings.pasteOnMiddleClick || false,
                 allowProposedApi: settings.allowProposedApi || false,
+                minimizeToTray: settings.minimizeToTray ?? false,
+                nativeNotifications: settings.nativeNotifications ?? true,
+                notifyOnlyWhenUnfocused:
+                  settings.notifyOnlyWhenUnfocused ?? true,
               }}
               updateSetting={updateSetting}
             />

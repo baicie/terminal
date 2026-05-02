@@ -1,7 +1,7 @@
 # Terminal 项目待办事项
 
 > 基于设计文档 `docs/design.md` 整理的待办事项
-> 更新时间：2026-03-19（根据代码审查更新）
+> 更新时间：2026-05-02（Phase 6.2 — 桌面化 + SFTP 队列 + 单测 + Rust 可观测性）
 
 ---
 
@@ -250,6 +250,153 @@
 ---
 
 ## 五、已完成的开发工作
+
+### 2026-05-02 第三轮 (Phase 6.2 — 桌面化 + SFTP 队列 + 单测 + Rust 可观测性) ✅
+
+> 在第二轮（首屏 gzip 242 KB / `index.js` 159 KB / 0 警告）之上，按序完成 t1–t4 四个细项。
+
+#### t1 — Tauri 桌面 UX
+
+- 系统托盘 (`src-tauri/src/tray.rs`)：图标 + 菜单 (Show / New Local / New SSH / Command Palette / Quit)，菜单 emit `tray://*` event → 前端 `useTrayEvents` 转 `shortcut:*` CustomEvent，复用既有调度
+- 最小化到托盘 (`src-tauri/src/window_cmd.rs` + `lib.rs::on_window_event`)：用户偏好持久化到 SQLite，关闭按钮拦截后 `window.hide()`
+- 原生通知 (`packages/frontend/src/service/notifications.ts`)：Tauri plugin → 浏览器 → in-app toast 三级回退；`notifyOnlyWhenUnfocused` 默认开
+- 焦点感知 (`packages/frontend/src/hooks/use-window-focus.ts`)：监听 `tauri://focus` / `tauri://blur`，状态条失焦半透明 + tooltip
+- 设置面板：`general-settings.tsx` 加 *Desktop UX* section（3 个 Switch + i18n 三语）
+
+#### t2 — SFTP 体验
+
+- 后端分片 (`src-tauri/src/sftp.rs`)：`CHUNK_SIZE = 64 KiB`，每 100ms emit 一次 `sftp-progress`（带 `transfer_id`）；`SharedState.sftp_sessions` 改 `Arc<SftpSession>`，列表/上传可在同一 SSH session 并发
+- 前端拖拽 (`packages/frontend/src/view/sftp/use-sftp-drop.ts`)：监听 Tauri webview drag-drop，拿到原生本地路径直接 `uploadPaths`
+- 队列 store (`packages/frontend/src/store/transfer-queue.ts`)：Zustand 状态机（queued/running/done/error）+ 速率滑动窗口 + ETA
+- 浮层 UI (`packages/frontend/src/view/sftp/transfer-panel.tsx`)：右下角悬浮，按状态分组，单条移除 + clear finished
+- 兼容：`features/terminal/services/sftp.ts` 内部生成 `transferId`，与新后端兼容但不接队列（标 legacy）
+
+#### t3 — 测试覆盖
+
+- 新增 `service/shortcuts.test.ts`：`parseKeyboardEvent` 修饰键 + `matchShortcut` 默认/禁用 + `handleKeyboardEvent` editable 白名单
+- 新增 `store/transfer-queue.test.ts`：enqueue 展开浮层、updateProgress 速率、finish 终态、clearFinished、togglePanel
+- 新增 `hooks/use-window-focus.test.ts`：初始值 = `document.hasFocus()`、focus/blur 后切换、unmount 清理
+- 踩坑：jsdom `document.hasFocus()` 默认 false；PowerShell `Select-Object -Last N` 与长输出会缓冲死，改 `Tee-Object -FilePath`
+
+#### t4 — Rust 后端清理
+
+- `cargo check` 警告：**14 → 0**
+- 引入 `tracing` + `tracing-subscriber` + `tracing-log`，`init_tracing()` 兼容 `RUST_LOG`，桥接 russh / tauri 等 `log::*` 调用
+- 全部 `eprintln!` / `log::info!` 迁移到 `tracing::*`，加结构化字段（`session_id` / `transfer_id` / `total_bytes` / `backend` 等）
+- `state.rs` / `storage.rs` 顶部的 blanket `#![allow(dead_code)]` 全部移除：
+  - `state.rs` 改为按字段加 allow + 注释，标注 *ownership-only* 或 *reserved for future*
+  - `storage.rs` 改为单条带 docstring 的模块级 allow，明确"整个模块是 stub"
+  - `ClientHandler.agent_socket` 用 `#[cfg_attr(not(unix), allow(dead_code))]` 仅在非 Unix 平台 allow
+
+#### 文件变更（本轮）
+
+- 新增（Rust）：`src-tauri/src/{tray,window_cmd}.rs`
+- 新增（前端）：`packages/frontend/src/service/{notifications,window-ux,sftp-transfer}.ts`、`packages/frontend/src/store/transfer-queue.ts`、`packages/frontend/src/hooks/{use-window-focus,use-tray-events}.ts`、`packages/frontend/src/view/sftp/{transfer-panel.tsx,use-sftp-drop.ts}`
+- 新增（测试）：`packages/frontend/src/service/shortcuts.test.ts`、`packages/frontend/src/store/transfer-queue.test.ts`、`packages/frontend/src/hooks/use-window-focus.test.ts`
+- 修改（Rust）：`src-tauri/Cargo.toml`、`src-tauri/src/{lib,state,storage,sftp,window_cmd}.rs`、`src-tauri/src/session/channel.rs`、`src-tauri/capabilities/default.json`、`src-tauri/tauri.conf.json`
+- 修改（前端）：`packages/frontend/src/App.tsx`、`packages/frontend/src/layout/index.tsx`、`packages/frontend/src/components/settings-dialog/{index,general-settings}.tsx`、`packages/frontend/src/features/terminal/components/terminal-container/{container,session-status-bar}.tsx`、`packages/frontend/src/features/terminal/services/sftp.ts`、`packages/frontend/src/view/sftp/sftp-container.tsx`、`packages/frontend/src/locales/{cn,en,fr}/app.ts`
+
+---
+
+### 2026-05-02 第二轮 (P0+P1+P2 全做完) ✅
+
+> 在第一轮 UX/构建优化基线（gzip 418 KB / 首屏 ~290 KB）之上，继续做了 8 个细项。
+> 最终首屏 **gzip 242 KB / brotli 210 KB**，首屏 raw 840 KB（第一轮 ~919 KB），主入口 `index.js` **159 KB**（vs 256 KB，省 38%）。
+
+#### P0 — 警告 + 验证
+
+1. **修复 `INEFFECTIVE_DYNAMIC_IMPORT`** ✅
+   - 删除 `nav-config.tsx` 中死代码 case `/terminal`、`view/home/`、`service/recording.ts`、`store/terminal.ts`、`features/terminal/stores/`、`view/terminal/{terminal-container,terminal-write-context,terminal-keyboard-bar,terminal.module.scss}` 共 9 处死代码
+   - `layout/index.tsx` 改为 `React.lazy` 直接加载真正的 `features/terminal/components/terminal-container/container.tsx`，xterm 体积彻底从首屏移走（~452 KB raw）
+2. **修复 `Invalid input options exclude` warning** ✅
+   - 从 `vite.config.ts` 拆出 `vitest.config.ts`，避免 vitest coverage 配置泄漏到 rolldown
+3. **静态验证 SSH / 串口终端走同一修复路径** ✅
+   - `useTerminal` hook 同时被 local / SSH / serial 复用，后端 emit 名 `local-data` / `ssh-data` / `serial-data` 对齐前端 listener，第一轮的「同步 onData + 数据缓冲 + WebKit 补偿」自动覆盖三个场景
+
+#### P1 — bundle 进一步缩小
+
+4. **审计 `index.js` 大头并拆包** ✅
+   - 5 个全局 dialog 改为 `React.lazy + open && <Suspense>`：`SettingsDialog` / `HostDialog` / `CommandPalette` / `NotificationPanel` / `SerialDialog`
+   - 影响位置：`layout/index.tsx`、`top-toolbar/index.tsx`、`bottom-nav/index.tsx`
+   - 主入口 `index.js` 从 256 KB → 159 KB（**↓ 38%**），首屏 gzip 从 259 → 242 KB
+5. **Tailwind production purge 验证** ✅
+   - Tailwind v4 vite 插件已自动 purge，CSS 仅 94 KB raw / **15.7 KB gzip**，无需手动配置
+
+#### P2 — UI 增强
+
+6. **终端搜索 UI（Cmd/Ctrl + F 浮层）** ✅
+   - 新增 `features/terminal/components/terminal-container/terminal-search-overlay.tsx`
+   - 通过 `term.attachCustomKeyEventHandler` 拦截 Cmd/Ctrl+F，避免被 xterm 吞掉
+   - 支持 next / prev、case-sensitive、whole-word、regex 三个 toggle，复用 `SearchAddon`
+   - 右键菜单「搜索…」入口；i18n 加 `terminal.search*` 键
+7. **命令面板接入 `shortcutsService`** ✅
+   - 新增 `hooks/use-global-shortcuts.ts`：单一 `keydown` listener → `shortcutsService.handleKeyboardEvent` → 派发 `shortcut:*` CustomEvent
+   - 增强 `shortcutsService.parseKeyboardEvent`：正确处理 macOS Ctrl/Meta + 单字母大小写归一
+   - `top-toolbar` 移除自写 `addEventListener('keydown')`，改订阅 `shortcut:command-palette` / `shortcut:new-ssh`
+   - `layout` 订阅 `shortcut:new-tab` / `shortcut:new-local` / `shortcut:toggle-sidebar`
+   - `command-palette` action 项改为派发 CustomEvent，统一调度
+8. **移动端长按菜单** ✅ 新增 `terminal-mobile-menu.tsx`
+   - `Sheet` 从底部弹出，等价于桌面右键菜单（复制 / 粘贴 / 全选 / 清屏 / 字号 / 搜索）
+   - 触摸长按 ≥ 500ms 且无明显移动时触发，支持 `navigator.vibrate(20)` 触觉反馈
+
+#### 文件变更（本轮）
+
+- 新增：`hooks/use-global-shortcuts.ts`、`features/terminal/components/terminal-container/{terminal-search-overlay,terminal-mobile-menu}.tsx`、`vitest.config.ts`、`features/terminal/contexts/terminal-write-context.ts`
+- 修改：`vite.config.ts`、`layout/index.tsx`、`top-toolbar/index.tsx`、`bottom-nav/index.tsx`、`features/terminal/components/terminal-container/{container,terminal-context-menu}.tsx`、`service/shortcuts.ts`、`components/command-palette/index.tsx`、`scripts/bundle-stats.mjs`、`locales/{cn,en,fr}/app.ts`
+- 删除：`view/home/`、`service/recording.ts`、`store/terminal.ts`、`features/terminal/stores/`、`view/terminal/{terminal-container,terminal-write-context,terminal-keyboard-bar,terminal.module.scss}`、`router/nav-config.tsx` 中死代码 case
+
+#### 收益对比
+
+| 指标 | r0 原始 | r1 第一轮 | r2 第二轮 | 累计 |
+| --- | --- | --- | --- | --- |
+| 首屏 gzip | ~290 KB | 259 KB | **242 KB** | **↓ 17%** |
+| `index.js` raw | ~290 KB | 256 KB | **159 KB** | **↓ 45%** |
+| 首屏 raw | ~960 KB | ~919 KB | **840 KB** | ↓ 12% |
+| 警告 | 2 | 2 | **0**（exclude 仅 vite info） | — |
+
+---
+
+### 2026-05-02 第一轮 (本地终端修复 + UX/构建优化)
+
+> 修复本地终端关键 bug 后，继续清理 + 增强 UX + 构建分析。
+
+1. **本地终端三合一 bug 修复** - 详见 `docs/issue.md` Issue #0
+   - `useTerminal` hook 重写（同步 onData 注册、listen-before-invoke、数据缓冲、post-connect resize）
+   - `container.tsx` 改用 `termInstance` 状态、tab → tabId-only 依赖
+   - `router/index.tsx` 移除重复 `TerminalContainer` 渲染
+   - `local.rs` 增加 PowerShell `-NoLogo`、`TERMINAL_DEFAULT_SHELL` 环境变量
+2. **死代码清理** ✅
+   - 删除 `features/terminal/hooks/` 目录（3 个未引用的 hook：`useTerminalSession`、`useTerminalEvents`、`useTerminalResize`）
+   - `useTerminal` 内联 `UseTerminalOptions`，断开对 deprecated 目录的依赖
+3. **WebKit 输入补偿** ✅
+   - `useTerminal` 新增 `setupWebKitInputCompensation`：仅在 Safari/macOS WKWebView 启用
+   - 监听 textarea `input` 事件 + recentSent 滚动 buffer，补发 onData 漏掉的字符
+4. **终端右键菜单** ✅ 新增 `features/terminal/components/terminal-container/terminal-context-menu.tsx`
+   - 复制 / 粘贴 / 全选 / 清屏 / 字号缩放
+   - shadcn/ui 风格，新增 `components/ui/context-menu.tsx`（与 dropdown-menu 同风格）
+   - 仅桌面端启用，移动端保持原触摸交互
+5. **全局快捷键速查面板** ✅ 新增 `components/shortcuts-help/`
+   - 触发：`Cmd/Ctrl + /` 或 `Shift + ?`（在输入框时不触发）
+   - 数据源：`shortcutsService.getShortcuts()`，按 Navigation/Terminal/View/Other 自动分组
+   - macOS 自动渲染 ⌘ ⇧ ⌥ 符号
+6. **终端无障碍** ✅
+   - 终端容器加 `role="application"` + `aria-label="Terminal"` + `focus-visible:ring`
+7. **构建分析工具链** ✅
+   - 新增 `packages/frontend/scripts/bundle-stats.mjs`：扫描 dist/ 输出 raw + gzip + brotli markdown 报告
+   - 新增 `pnpm build:analyze` / `pnpm stats` 脚本
+   - 不依赖 `rollup-plugin-visualizer`（Vite 8 + rolldown 后端不兼容）
+   - 基线产物：raw 1.50 MB / gzip 418 KB / brotli 353 KB
+8. **i18n 补齐** ✅ cn / en / fr 同步加 `terminal.*` + `shortcuts.*` 键
+
+文件变更：
+- `packages/frontend/src/hooks/use-terminal.ts`（清理 deprecated 引用 + WebKit 补偿）
+- `packages/frontend/src/features/terminal/components/terminal-container/{container,terminal-context-menu}.tsx`
+- `packages/frontend/src/components/{ui/context-menu,shortcuts-help/index}.tsx`
+- `packages/frontend/src/layout/index.tsx`（挂载快捷键面板 + Cmd+/ 监听）
+- `packages/frontend/src/locales/{cn,en,fr}/app.ts`
+- `packages/frontend/{vite.config.ts,package.json,scripts/bundle-stats.mjs}`
+- `.gitignore`（dist-stats.* 忽略）
+- 删除：`packages/frontend/src/features/terminal/hooks/` 整个目录
 
 ### 2026-03-24 完成的工作 (第六批次)
 

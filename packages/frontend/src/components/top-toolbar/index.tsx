@@ -8,12 +8,23 @@ import {
   Search,
   Settings,
 } from 'lucide-react'
+import * as React from 'react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
-import CommandPalette from '@/components/command-palette'
-import { HostDialog } from '@/components/host-list/host-dialog'
-import { NotificationPanel } from '@/components/notification-panel'
+
+// 三个弹窗都仅在用户主动触发时显示，懒加载到独立 chunk 节省首屏体积
+const CommandPalette = React.lazy(() => import('@/components/command-palette'))
+const HostDialog = React.lazy(() =>
+  import('@/components/host-list/host-dialog').then(m => ({
+    default: m.HostDialog,
+  })),
+)
+const NotificationPanel = React.lazy(() =>
+  import('@/components/notification-panel').then(m => ({
+    default: m.NotificationPanel,
+  })),
+)
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -57,19 +68,17 @@ const TopToolbar: React.FC<{
     if (isMac) setPadForMacTrafficLights(true)
   }, [])
 
+  // 全局快捷键由 layout 内 useGlobalShortcuts 注册一次，所有组件
+  // 通过 `shortcut:<action>` 自定义事件订阅；此处只关心两个 action
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'j') {
-        e.preventDefault()
-        setCommandPaletteOpen(true)
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-        e.preventDefault()
-        setHostDialogOpen(true)
-      }
+    const onCommandPalette = () => setCommandPaletteOpen(true)
+    const onNewSsh = () => setHostDialogOpen(true)
+    window.addEventListener('shortcut:command-palette', onCommandPalette)
+    window.addEventListener('shortcut:new-ssh', onNewSsh)
+    return () => {
+      window.removeEventListener('shortcut:command-palette', onCommandPalette)
+      window.removeEventListener('shortcut:new-ssh', onNewSsh)
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   const handleNewLocalTerminal = () => {
@@ -187,15 +196,23 @@ const TopToolbar: React.FC<{
           </SheetContent>
         </Sheet>
 
-        <HostDialog
-          open={hostDialogOpen}
-          onClose={() => setHostDialogOpen(false)}
-        />
+        {hostDialogOpen && (
+          <React.Suspense fallback={null}>
+            <HostDialog
+              open={hostDialogOpen}
+              onClose={() => setHostDialogOpen(false)}
+            />
+          </React.Suspense>
+        )}
 
-        <CommandPalette
-          open={commandPaletteOpen}
-          onClose={() => setCommandPaletteOpen(false)}
-        />
+        {commandPaletteOpen && (
+          <React.Suspense fallback={null}>
+            <CommandPalette
+              open={commandPaletteOpen}
+              onClose={() => setCommandPaletteOpen(false)}
+            />
+          </React.Suspense>
+        )}
       </>
     )
   }
@@ -305,20 +322,32 @@ const TopToolbar: React.FC<{
         </div>
       </header>
 
-      <HostDialog
-        open={hostDialogOpen}
-        onClose={() => setHostDialogOpen(false)}
-      />
+      {hostDialogOpen && (
+        <React.Suspense fallback={null}>
+          <HostDialog
+            open={hostDialogOpen}
+            onClose={() => setHostDialogOpen(false)}
+          />
+        </React.Suspense>
+      )}
 
-      <CommandPalette
-        open={commandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
-      />
+      {commandPaletteOpen && (
+        <React.Suspense fallback={null}>
+          <CommandPalette
+            open={commandPaletteOpen}
+            onClose={() => setCommandPaletteOpen(false)}
+          />
+        </React.Suspense>
+      )}
 
-      <NotificationPanel
-        open={notificationPanelOpen}
-        onOpenChange={setNotificationPanelOpen}
-      />
+      {notificationPanelOpen && (
+        <React.Suspense fallback={null}>
+          <NotificationPanel
+            open={notificationPanelOpen}
+            onOpenChange={setNotificationPanelOpen}
+          />
+        </React.Suspense>
+      )}
     </>
   )
 }

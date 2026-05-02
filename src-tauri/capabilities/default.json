@@ -11,6 +11,14 @@
     "core:window:allow-maximize",
     "core:window:allow-unmaximize",
     "core:window:allow-is-maximized",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-unminimize",
+    "core:window:allow-is-focused",
+    "core:window:allow-is-visible",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "shell:allow-open",
     "sql:default",
     "sql:allow-load",
@@ -22,6 +30,7 @@
     "global-shortcut:allow-register",
     "global-shortcut:allow-register-all",
     "global-shortcut:allow-unregister",
-    "global-shortcut:allow-unregister-all"
+    "global-shortcut:allow-unregister-all",
+    "notification:default"
   ]
 }

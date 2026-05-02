@@ -14,9 +14,11 @@ import {
   Terminal,
   Usb,
 } from 'lucide-react'
+import * as React from 'react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import SerialDialog from '@/components/serial-dialog'
+
+const SerialDialog = React.lazy(() => import('@/components/serial-dialog'))
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
@@ -173,12 +175,15 @@ const BottomNav: React.FC = () => {
         </button>
       </nav>
 
-      {/* Serial Dialog */}
-      <SerialDialog
-        open={serialDialogOpen}
-        onClose={() => setSerialDialogOpen(false)}
-        onConnect={handleConnectSerial}
-      />
+      {serialDialogOpen && (
+        <React.Suspense fallback={null}>
+          <SerialDialog
+            open={serialDialogOpen}
+            onClose={() => setSerialDialogOpen(false)}
+            onConnect={handleConnectSerial}
+          />
+        </React.Suspense>
+      )}
 
       {/* More Sheet — slides from bottom */}
       <Sheet open={moreOpen} onOpenChange={setMoreOpen}>

@@ -278,14 +278,23 @@ class ShortcutsService {
 
   /**
    * Parse keyboard event to key combination
+   *
+   * 跨平台说明：在 macOS 上，⌘ 通常承担 Windows/Linux 上 Ctrl 的角色。
+   * 配置里我们统一用 'Ctrl' 表示「主修饰键」，因此在 mac 上 metaKey
+   * 也被映射为 'Ctrl'，用户按 ⌘+J 与按 Ctrl+J 行为一致。
    */
   parseKeyboardEvent(event: KeyboardEvent): string[] {
     const keys: string[] = []
 
-    if (event.ctrlKey) keys.push('Ctrl')
+    const isMac =
+      typeof navigator !== 'undefined' &&
+      /Mac|iPhone|iPad/.test(navigator.platform)
+
+    if (event.ctrlKey || (isMac && event.metaKey)) keys.push('Ctrl')
     if (event.shiftKey) keys.push('Shift')
     if (event.altKey) keys.push('Alt')
-    if (event.metaKey) keys.push('Meta')
+    // 非 mac 才单独记录 Meta（Win key），避免在 mac 重复
+    if (!isMac && event.metaKey) keys.push('Meta')
 
     // Add the main key
     const key = event.key
@@ -308,10 +317,24 @@ class ShortcutsService {
         PageDown: 'PageDown',
         Insert: 'Insert',
       }
-      keys.push(keyMap[key] || key)
+      // 单字母统一大写匹配（配置存的是 'J'，KeyboardEvent.key 给的是 'j'）
+      const normalized =
+        keyMap[key] ?? (key.length === 1 ? key.toUpperCase() : key)
+      keys.push(normalized)
     }
 
     return keys
+  }
+
+  /**
+   * 判断事件目标是否为可编辑元素，可编辑元素里大部分快捷键应让位
+   * （让用户可以正常 Cmd+A、Cmd+C 等）。
+   */
+  private isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false
+    const tag = target.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+    return target.isContentEditable
   }
 
   /**
@@ -325,15 +348,29 @@ class ShortcutsService {
 
   /**
    * Trigger action for matched shortcut
+   *
+   * 注意：可编辑元素（input/textarea/contenteditable）里只有少数白名单
+   * 快捷键会触发，避免抢用户的输入按键。
    */
   handleKeyboardEvent(event: KeyboardEvent): boolean {
     const shortcut = this.matchShortcut(event)
-    if (shortcut) {
-      event.preventDefault()
-      this.triggerAction(shortcut.action)
-      return true
+    if (!shortcut) return false
+
+    if (this.isEditableTarget(event.target)) {
+      // 输入框中只放行确定不会跟编辑冲突的「打开类」动作
+      const editableSafe = new Set([
+        'command-palette',
+        'toggle-sidebar',
+        'new-tab',
+        'new-local',
+        'new-ssh',
+      ])
+      if (!editableSafe.has(shortcut.action)) return false
     }
-    return false
+
+    event.preventDefault()
+    this.triggerAction(shortcut.action)
+    return true
   }
 
   /**

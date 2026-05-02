@@ -23,6 +23,9 @@ export const defaultSettings: AppSettings = {
   terminalTheme: 'one-dark',
   terminalThemeDark: 'one-dark',
   terminalThemeLight: 'solarized-light',
+  minimizeToTray: false,
+  nativeNotifications: true,
+  notifyOnlyWhenUnfocused: true,
 }
 
 export async function getSetting<T>(key: string, defaultValue: T): Promise<T> {

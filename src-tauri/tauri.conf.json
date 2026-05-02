@@ -35,7 +35,7 @@
           "effects": ["fullScreenUI", "blur", "acrylic"],
           "state": "active"
         },
-        "dragDropEnabled": false
+        "dragDropEnabled": true
       }
     ],
     "security": {

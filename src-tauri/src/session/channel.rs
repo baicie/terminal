@@ -73,7 +73,12 @@ impl SessionChannel {
             let session_id = output.session_id.clone();
 
             if let Err(e) = app.emit(&event_name, output) {
-                eprintln!("Failed to emit session data for {}: {}", session_id, e);
+                tracing::warn!(
+                    session_id = %session_id,
+                    event = %event_name,
+                    error = %e,
+                    "failed to emit session data event",
+                );
             }
         }
     }

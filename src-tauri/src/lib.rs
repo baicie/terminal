@@ -10,7 +10,9 @@ mod serial;
 mod sftp;
 mod state;
 mod storage;
+mod tray;
 mod vault;
+mod window_cmd;
 
 // Session 模块 - 统一会话抽象层
 pub mod session;
@@ -34,11 +36,41 @@ use vault::{
     vault_change_password, vault_create, vault_delete, vault_exists, vault_get, vault_is_unlocked,
     vault_list, vault_lock, vault_set, vault_unlock,
 };
+use window_cmd::{
+    close_to_tray_enabled, get_close_to_tray, hide_main_window, is_main_window_focused,
+    set_close_to_tray, show_main_window,
+};
+
+/// 初始化结构化日志（tracing）。
+///
+/// - 默认级别：`info`，可通过 `RUST_LOG` env 覆盖（与原 env_logger 兼容）
+/// - 桥接 `log` crate：第三方依赖（russh, tauri 等）的 `log::info!` 也会
+///   被路由到 tracing subscriber，统一输出格式
+/// - 输出包含：时间戳、target（模块路径）、级别、字段（结构化）
+fn init_tracing() {
+    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+
+    // 兼容旧 RUST_LOG 配置；若未设置则默认 info 级别
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    let layer = fmt::layer()
+        .with_target(true)
+        .with_thread_ids(false)
+        .with_line_number(false)
+        .compact();
+
+    let _ = tracing_subscriber::registry()
+        .with(filter)
+        .with(layer)
+        .try_init();
+
+    // 把 log crate 的事件桥接到 tracing
+    let _ = tracing_log::LogTracer::init();
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Initialize logger
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    init_tracing();
 
     let shared_state = create_shared_state();
 
@@ -48,6 +80,23 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            tracing::info!("tauri app starting up");
+            if let Err(e) = tray::build_tray(app.handle()) {
+                tracing::error!(error = %e, "failed to build tray icon");
+            }
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // 点 X 拦截：若用户在设置里开启了 minimize-to-tray，则隐藏窗口而非退出
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" && close_to_tray_enabled() {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             // Session commands (unified API)
             session_create_local,
@@ -96,6 +145,12 @@ pub fn run() {
             storage_download,
             storage_list,
             storage_delete,
+            // Window / tray commands
+            set_close_to_tray,
+            get_close_to_tray,
+            show_main_window,
+            hide_main_window,
+            is_main_window_focused,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1070,3 +1070,148 @@ textarea.addEventListener('input', (e: Event) => {
 - `src/experiments/xterm-test.tsx` - 测试页面已实现
 
 ---
+
+## 十五、桌面化体验 + SFTP 队列 + Rust 可观测性 (2026-05-02)
+
+> Phase 6.2，对应 t1–t4 四个子任务。详见 `docs/project.md` → "Phase 6.2"。
+
+### Issue #27 (t1): Tauri 桌面 UX —— 托盘 / 焦点感知 / 原生通知 ✅ 已实现
+
+**严重程度**: Medium
+**状态**: ✅ 已实现
+**影响功能**: 桌面集成体验
+**实现时间**: 2026-05-02
+
+**目标**:
+
+让应用在三大桌面平台上"像桌面 app"——窗口失焦时能给出系统级通知，能最小化到托盘，托盘菜单可以快速 new local / new SSH / 打开命令面板。
+
+**实现要点**:
+
+1. **托盘 (`src-tauri/src/tray.rs`, 新增)**：
+   - `TrayIconBuilder` 注入主窗口图标 + Show Window / New Local Terminal / New SSH Connection / Command Palette / Quit 菜单项
+   - `on_menu_event` 把动作 emit 为 `tray://new-local` / `tray://new-ssh` / `tray://command-palette` 自定义事件，前端 `useTrayEvents()` 把它们再 dispatch 成现有的 `shortcut:*` CustomEvent，复用既有快捷键链路
+   - 托盘左键点击 → 切换主窗口可见 / 聚焦
+2. **窗口最小化到托盘 (`src-tauri/src/window_cmd.rs`, 新增)**：
+   - `set_close_to_tray` / `get_close_to_tray` Tauri 命令，背后是 `AtomicBool`
+   - `lib.rs::on_window_event` 拦截 `WindowEvent::CloseRequested`，若 `close_to_tray_enabled()` 则 `api.prevent_close()` + `window.hide()`
+3. **原生通知 (`packages/frontend/src/service/notifications.ts`, 新增)**：
+   - 统一 `notify({title, body, type})`：优先 Tauri `tauri-plugin-notification`，回退浏览器 Notification API，再回退 in-app toast
+   - 用户偏好 `nativeNotifications` / `notifyOnlyWhenUnfocused` 由 `applyNotificationPrefs()` 缓存
+   - `ensureNativePermission()` 仅在首次需要时请求权限
+4. **窗口焦点感知 (`packages/frontend/src/hooks/use-window-focus.ts`, 新增)**：
+   - Tauri 环境监听 `tauri://focus` / `tauri://blur` webview event；浏览器环境降级到 `window.addEventListener('focus'/'blur')`
+   - 终端 `session-status-bar` 在失焦时半透明 + tooltip 提示
+   - 终端断连/出错时只在窗口失焦时弹原生通知，否则仅 toast，避免干扰
+5. **设置面板**：`general-settings.tsx` 新增 *Desktop UX* section，三个开关 + 文案 + i18n 三语
+6. **能力清单 (`src-tauri/capabilities/default.json`)**：补齐 `core:window:allow-{show,hide,set-focus,unminimize,is-focused,is-visible}` + `core:event:allow-{listen,unlisten}` + `notification:default`
+
+**新增 / 修改文件**:
+
+- 新增：`src-tauri/src/tray.rs`、`src-tauri/src/window_cmd.rs`、`packages/frontend/src/service/notifications.ts`、`packages/frontend/src/service/window-ux.ts`、`packages/frontend/src/hooks/use-window-focus.ts`、`packages/frontend/src/hooks/use-tray-events.ts`
+- 修改：`src-tauri/Cargo.toml`、`src-tauri/src/lib.rs`、`src-tauri/capabilities/default.json`、`packages/frontend/src/App.tsx`、`packages/frontend/src/layout/index.tsx`、`packages/frontend/src/components/settings-dialog/{index,general-settings}.tsx`、`packages/frontend/src/features/terminal/components/terminal-container/{container,session-status-bar}.tsx`、`packages/frontend/src/locales/{cn,en,fr}/app.ts`
+
+---
+
+### Issue #28 (t2): SFTP 体验 —— 拖拽 + 队列 + 分块进度 ✅ 已实现
+
+**严重程度**: Medium
+**状态**: ✅ 已实现
+**影响功能**: SFTP 文件传输
+**实现时间**: 2026-05-02
+
+**痛点**:
+
+旧版 SFTP `sftp_upload` / `sftp_download` 是一次 `fs::read` + 一次 `file.write_all`，对大文件无任何反馈；选文件只能走 dialog；同时 `sftp_sessions: Mutex<HashMap<String, SftpSession>>` 持锁时间过长，列出和上传相互阻塞。
+
+**实现要点**:
+
+1. **后端分片传输 (`src-tauri/src/sftp.rs`)**：
+   - `CHUNK_SIZE = 64 * 1024` + `PROGRESS_INTERVAL_MS = 100`：用 `russh_sftp::client::File` + `tokio::fs::File` 流式读写，每超过 100ms 或完成时 emit 一次 `sftp-progress` event（`{kind, transfer_id, bytes_done, bytes_total, error?}`）
+   - `SharedState.sftp_sessions` 存 `Arc<SftpSession>`，`get_sftp` 帮助函数从 map 里 `Arc::clone` 后立刻释放全局锁，列表与上传可在同一 SSH session 内并发
+   - `sftp_upload` / `sftp_download` 接受新参数 `transfer_id: String`，并在关键节点写带 `session_id` / `local_path` / `remote_path` / `total_bytes` 的 `tracing::info!`
+2. **前端拖拽 (`packages/frontend/src/view/sftp/use-sftp-drop.ts`, 新增)**：
+   - 监听 Tauri `drag-enter` / `drag-over` / `drag-leave` / `drag-drop` webview event，拿到原生本地路径
+   - drop 时调用 `uploadPaths(paths, remoteDir)` → 自动入队 + 上传，无需中转 `File` 对象
+3. **传输队列 (`packages/frontend/src/store/transfer-queue.ts`, 新增)**：
+   - Zustand store，记录每条 `TransferRecord`（`status: 'queued' | 'running' | 'done' | 'error'`、`bytesDone` / `bytesTotal` / `speed` / `etaMs`）
+   - `enqueue` 自动展开浮层；`updateProgress` 使用最近 1.5s 的滑动窗口算速率；`finish` 决定终态；`clearFinished` 清理
+4. **传输服务 (`packages/frontend/src/service/sftp-transfer.ts`, 新增)**：
+   - `ensureListener()` 全局只挂一次 `sftp-progress` 监听，把事件路由到 `useTransferQueue`
+   - `uploadFile` / `downloadFile` / `uploadPaths`：入队 → invoke 后端 → 失败时 `notify` + `finish('error')`
+5. **浮层 UI (`packages/frontend/src/view/sftp/transfer-panel.tsx`, 新增)**：
+   - 右下角悬浮、可折叠、按 active / done / error 分组；每行带 `Progress` + 速率 + ETA + 状态图标 + 单条移除
+6. **Tauri 配置**：`tauri.conf.json` 给 main window 打开 `dragDropEnabled: true`
+
+**已知限制**:
+
+- 上传/下载本身仍按队列里的顺序串行（同一时刻一个 SFTP 操作），后续如需并发可在 store 层引入并发上限；当前对单连接稳定性更友好。
+- `features/terminal/services/sftp.ts` 仍是 legacy 单文件接口，但已内部生成 `transferId` 兼容新后端，未接队列。
+
+**新增 / 修改文件**:
+
+- 新增：`src-tauri/src/sftp.rs` 内的分片实现段、`packages/frontend/src/store/transfer-queue.ts`、`packages/frontend/src/service/sftp-transfer.ts`、`packages/frontend/src/view/sftp/{transfer-panel,use-sftp-drop}.tsx|.ts`
+- 修改：`src-tauri/src/state.rs`（`Arc<SftpSession>`）、`src-tauri/tauri.conf.json`、`packages/frontend/src/view/sftp/sftp-container.tsx`、`packages/frontend/src/features/terminal/services/sftp.ts`、`packages/frontend/src/locales/{cn,en,fr}/app.ts`
+
+---
+
+### Issue #29 (t3): 测试覆盖 —— shortcutsService / transfer-queue / use-window-focus ✅ 已实现
+
+**严重程度**: Low
+**状态**: ✅ 已实现
+**实现时间**: 2026-05-02
+
+**新增测试**:
+
+| 文件 | 关注点 |
+| --- | --- |
+| `packages/frontend/src/service/shortcuts.test.ts` | `parseKeyboardEvent` 修饰键 / `matchShortcut` 默认绑定 + 禁用 / `handleKeyboardEvent` 触发 + 阻止默认 + editable 白名单门禁 |
+| `packages/frontend/src/store/transfer-queue.test.ts` | `enqueue` 入队并展开浮层、`updateProgress` 速率计算、`finish` 终态切换、`clearFinished`、`togglePanel` |
+| `packages/frontend/src/hooks/use-window-focus.test.ts` | 初始化值与 `document.hasFocus()` 一致、`focus`/`blur` 事件后状态切换、unmount 清理监听 |
+
+**踩过的坑**:
+
+- jsdom 下 `document.hasFocus()` 默认返回 `false`，hook 的"初始为 true"断言改为 `expect(...).toBe(document.hasFocus())`，并相应调整测试中事件分发顺序
+- PowerShell 下 `pnpm typecheck | Select-Object -Last 80` 会缓冲死，改为 `Tee-Object -FilePath ...` 旁路文件读
+
+---
+
+### Issue #30 (t4): Rust 后端 —— dead_code 清理 + tracing 结构化日志 ✅ 已实现
+
+**严重程度**: Low
+**状态**: ✅ 已实现
+**实现时间**: 2026-05-02
+
+**结果**:
+
+- `cargo check` 警告：**14 → 0**
+- 全部 `eprintln!` / `println!` / `log::info!` 已被 `tracing::*` 取代，并补结构化字段
+- 移除 `state.rs` / `storage.rs` 顶部的 blanket `#![allow(dead_code)]`
+
+**实现要点**:
+
+1. **统一日志 (`src-tauri/Cargo.toml` + `lib.rs`)**：
+   - 引入 `tracing = "0.1"`、`tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }`、`tracing-log = "0.2"`
+   - 新 `init_tracing()`：`EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))` + `fmt::layer().compact()` + `LogTracer::init()` 桥接 russh / tauri / sqlx 等仍走 `log` crate 的依赖
+2. **结构化字段**：`session/channel.rs` (`session_id`, `event`, `error`)、`storage.rs` (`backend`, `endpoint`, `path`)、`sftp.rs` (`transfer_id`, `total_bytes`)、`window_cmd.rs` (`enabled`, `label`)
+3. **dead_code 精细化**（按字段而非整文件）：
+   - `state.rs::SharedState`：`local_sessions` / `shell_channels` / `agent_channels` 加 *字段级* `#[allow(dead_code)]` + 注释说明它们是 ownership-only 或未来命令的预留点
+   - `state.rs::LocalPtySession.{pty_pair, child, writer}`：同上，强调是 *ownership-only*，drop 时统一释放
+   - `state.rs::ClientHandler.agent_socket`：`#[cfg_attr(not(unix), allow(dead_code))]`，因为 Windows 上没有 Unix socket 路径会被读
+   - `state.rs::ClientHandler.session_id`：`#[allow(dead_code)] // reserved for tracing span correlation`
+   - `state.rs::AgentChannel.socket_path`、`state.rs::SerialConfig`、`state.rs::AgentForwardState`：保留为 IPC payload / 生命周期占位，加注释 + `#[allow(dead_code)]`
+   - `storage.rs`：从全文件 allow 改为单条带 docstring 的模块级 allow，明确"整个模块是 stub，待对应 Tauri 命令落地后即可移除"
+
+**新增 / 修改文件**:
+
+- 修改：`src-tauri/Cargo.toml`、`src-tauri/src/{lib,state,storage,window_cmd,sftp}.rs`、`src-tauri/src/session/channel.rs`
+
+**验证**:
+
+```text
+$ cargo check
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.32s
+# zero warnings
+```
+
+---

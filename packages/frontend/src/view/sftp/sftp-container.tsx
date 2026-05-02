@@ -58,9 +58,13 @@ import {
   ViewToolbar,
 } from '@/components/view-container'
 import { format } from '@/lib/date-utils'
+import { cn } from '@/lib/utils'
 import { sshService } from '@/service/ssh'
+import { downloadFile, uploadPaths } from '@/service/sftp-transfer'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
+import TransferPanel from './transfer-panel'
+import { useSftpDrop } from './use-sftp-drop'
 
 interface FilePaneProps {
   type: 'local' | 'remote'
@@ -698,46 +702,50 @@ const SftpContainer: React.FC = () => {
     setMkdirValue('')
   }
 
-  // Upload file
+  // Upload file: 使用 Tauri 文件选择器拿到本地真实路径，然后调用带进度的上传
   const handleUpload = async () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.multiple = true
-    input.onchange = async () => {
-      const files = input.files
-      if (!files) return
-
-      for (const file of Array.from(files)) {
-        const reader = new FileReader()
-        reader.onload = async () => {
-          toast.info(`Upload ${file.name} - select remote destination first`)
-        }
-        reader.readAsDataURL(file)
-      }
+    if (!sessionIdRef.current) return
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({ multiple: true })
+      if (!selected) return
+      const paths = Array.isArray(selected) ? selected : [selected]
+      await uploadPaths({
+        sessionId: sessionIdRef.current,
+        remoteDir: remotePath,
+        localPaths: paths,
+      })
+      void loadRemoteDir(remotePath)
+    } catch (e) {
+      toast.error(`Upload error: ${e}`)
     }
-    input.click()
   }
 
-  // Download file
+  // Download file: 使用 Tauri save dialog 选目标路径，再调用带进度的下载
   const handleDownload = async (file: FileItem) => {
     if (!sessionIdRef.current || file.is_directory) return
     try {
+      const { save } = await import('@tauri-apps/plugin-dialog')
       const fileName = file.name.split('/').pop() || file.name
-      const localDownloadPath = `/tmp/${fileName}`
-      const result = await sshService.sftpDownload(
-        sessionIdRef.current,
-        file.path,
-        localDownloadPath,
-      )
-      if (result.success) {
-        toast.success(`Downloaded to ${localDownloadPath}`)
-      } else {
-        toast.error(result.message || 'Download failed')
-      }
+      const target = await save({ defaultPath: fileName })
+      if (!target) return
+      await downloadFile({
+        sessionId: sessionIdRef.current,
+        remotePath: file.path,
+        localPath: target,
+        displayName: fileName,
+        bytesTotal: file.size,
+      })
     } catch (error) {
       toast.error(`Download error: ${error}`)
     }
   }
+
+  // 拖放上传：覆盖整个 SFTP 视图
+  const { isDragging } = useSftpDrop({
+    sessionId: sessionIdRef.current,
+    remoteDir: remotePath,
+  })
 
   // No active session
   if (!activeHost) {
@@ -759,7 +767,19 @@ const SftpContainer: React.FC = () => {
   }
 
   return (
-    <ViewContainer className="overflow-hidden">
+    <ViewContainer className={cn('overflow-hidden relative')}>
+      {/* Drop overlay */}
+      {isDragging && (
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-primary/5 border-2 border-primary border-dashed rounded-md">
+          <div className="bg-popover px-6 py-4 rounded-lg shadow-lg border text-sm font-medium">
+            Drop files to upload to <code className="font-mono">{remotePath}</code>
+          </div>
+        </div>
+      )}
+
+      {/* Transfer panel */}
+      <TransferPanel />
+
       {/* Toolbar */}
       <ViewToolbar className="gap-2">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

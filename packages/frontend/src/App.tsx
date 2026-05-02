@@ -9,6 +9,9 @@ import locales from './locales'
 import { router } from './router'
 import { useAppStore } from './store/app'
 import { useTeamStore } from './store/team'
+import { getAppSettings } from './service/database'
+import { applyNotificationPrefs } from './service/notifications'
+import { syncCloseToTray } from './service/window-ux'
 import 'dayjs/locale/en'
 import 'dayjs/locale/fr'
 import 'dayjs/locale/zh-cn'
@@ -71,7 +74,20 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    void hydrateFromDatabase()
+    void (async () => {
+      await hydrateFromDatabase()
+      // 启动时同步桌面 UX 偏好：close-to-tray + 通知策略
+      try {
+        const s = await getAppSettings()
+        applyNotificationPrefs({
+          nativeNotifications: s.nativeNotifications ?? true,
+          notifyOnlyWhenUnfocused: s.notifyOnlyWhenUnfocused ?? true,
+        })
+        await syncCloseToTray(!!s.minimizeToTray)
+      } catch (e) {
+        console.warn('Failed to apply desktop UX prefs on startup:', e)
+      }
+    })()
   }, [hydrateFromDatabase])
 
   useEffect(() => {

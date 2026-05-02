@@ -125,6 +125,13 @@ export interface AppSettings {
   terminalThemeDark: TerminalThemePreset
   terminalThemeLight: TerminalThemePreset
   customPrompt?: string
+  // Desktop UX (Tauri)
+  /** 关闭窗口时最小化到托盘而非退出 */
+  minimizeToTray?: boolean
+  /** 启用原生 OS 通知（断连/任务完成时） */
+  nativeNotifications?: boolean
+  /** 仅在窗口失焦时弹原生通知（默认 true） */
+  notifyOnlyWhenUnfocused?: boolean
 }
 
 // Terminal theme presets

@@ -1,31 +1,60 @@
 # 构建产物与优化指南
 
-> 更新时间：2026-03-26
+> 更新时间：2026-05-02（2 轮优化）
 
 ---
 
-## 一、当前构建产物
+## 一、当前构建产物（2026-05-02 r2 基线）
 
-### 前端打包 (Vite) - 已优化
+> 通过 `pnpm build:analyze` 生成（vite build + scripts/bundle-stats.mjs）。
+> 详细文件级别报告见 `dist-stats.md` / `dist-stats.json`（gitignore）。
+>
+> **关键指标：首屏 gzip 242 KB**（用户打开应用必须下载的关键路径），
+> 其余 187 KB 均为 lazy chunk，按路由 / 按弹窗触发加载。
 
-```
-dist/                          1.4 MB
-├── js/                       1.4 MB
-│   ├── @xterm.*.js           395 KB  (xterm.js 终端模拟器)
-│   ├── react-dom.*.js        178 KB  (React DOM)
-│   ├── index.*.js            179 KB  (应用主代码)
-│   ├── @radix-ui.*.js        107 KB  (UI 组件库)
-│   ├── react-router.*.js      88 KB   (路由)
-│   ├── i18next.*.js           43 KB   (国际化)
-│   ├── @floating-ui.*.js      33 KB   (浮动 UI)
-│   ├── sonner.*.js            34 KB   (Toast 通知)
-│   ├── lucide-react.*.js      21 KB   (图标库)
-│   └── [其他组件]             ~200 KB
-├── assets/
-│   ├── index.*.css           89 KB   (Tailwind + 样式)
-│   └── @xterm.*.css           4 KB
-└── index.html                4 KB
-```
+### 总览（首屏 vs 懒加载）
+
+| | 文件数 | Raw | Gzip | Brotli |
+| --- | --- | --- | --- | --- |
+| **首屏（Initial）** | 18 | 840 KB | **242 KB** | 210 KB |
+| 路由 / 动态（Lazy） | 35 | 710 KB | 187 KB | 155 KB |
+| 全部 | 53 | 1.51 MB | 429 KB | 365 KB |
+
+### 主要 chunk（按 raw 大小）
+
+| 文件 | 加载 | Raw | Gzip | 说明 |
+| --- | --- | --- | --- | --- |
+| `js/@baicie.*.js` | **Lazy** | 348 KB | 86 KB | xterm.js fork（仅 terminal 路由） |
+| `js/react-dom.*.js` | Initial | 178 KB | 56 KB | React DOM |
+| `js/index.*.js` | Initial | **159 KB** | **43 KB** | 应用业务代码主入口（**↓ 38%**） |
+| `js/@radix-ui.*.js` | Initial | 113 KB | 33 KB | shadcn/ui 底层 |
+| `assets/index-*.css` | Initial | 94 KB | 16 KB | Tailwind v4 样式 |
+| `js/react-router.*.js` | Initial | 93 KB | 31 KB | 路由 |
+| `js/@xterm.*.js` | **Lazy** | 75 KB | 25 KB | xterm 官方 addons |
+| `js/i18next.*.js` | Initial | 42 KB | 13 KB | 国际化 |
+| `js/snippets.*.js` | Lazy | 36 KB | 9 KB | snippets 视图 |
+| `js/settings-dialog.*.js` | Lazy | 32 KB | 7 KB | 设置对话框 |
+| `js/@floating-ui.*.js` | Initial | 33 KB | 12 KB | 浮动定位 |
+| `js/container.*.js` | Lazy | 29 KB | 9 KB | TerminalContainer |
+| `js/host-dialog.*.js` | Lazy | 17 KB | 4 KB | 新增主机对话框 |
+| `js/command-palette.*.js` | Lazy | 9 KB | 3 KB | 命令面板 |
+| `js/serial-dialog.*.js` | Lazy | 6 KB | 2 KB | 串口连接对话框 |
+| `js/notification-panel.*.js` | Lazy | 3 KB | 1 KB | 通知面板 |
+
+### 优化历程
+
+| 阶段 | 首屏 gzip | 主入口 raw | 备注 |
+| --- | --- | --- | --- |
+| r0 原始 | ~290 KB | ~290 KB | manualChunks 强制 vendor、所有 dialog 静态 import |
+| r1（2026-05-02 早） | 259 KB | 256 KB | terser、drop_console、tree shaking |
+| **r2（2026-05-02 晚）** | **242 KB** | **159 KB** | xterm 真懒加载、5 个 dialog 改 React.lazy、清理死代码 |
+
+**r1 → r2 关键变化**：
+
+1. 移除 `nav-config.tsx` 死代码 case `/terminal` → 消除 `INEFFECTIVE_DYNAMIC_IMPORT` 警告
+2. `TerminalContainer` 改为 `React.lazy`，配合移除自写 `manualChunks`，让 rolldown 自动把 `@baicie/xterm`（348 KB）+ `@xterm/*`（75 KB）+ container（29 KB）=**452 KB** 全部移出首屏
+3. `SettingsDialog` / `HostDialog` / `CommandPalette` / `NotificationPanel` / `SerialDialog` 共 5 个全局对话框改为 `React.lazy + open && <Suspense>`，仅在用户主动触发时加载
+4. 删除 `service/recording.ts`、`store/terminal.ts`、`features/terminal/stores/`、`view/home/` 等 4 处死代码（共 ~12 KB 源码）
 
 ### 优化效果
 
@@ -155,21 +184,23 @@ grep -r "from 'lucide-react'" src/ | wc -l
 
 **分析依赖体积**：
 
+> ⚠️ 当前 Vite 8 使用 rolldown 后端，`rollup-plugin-visualizer` **不兼容**（hook 不会被调用，不会输出 stats.html）。
+> 已改用自研脚本 `packages/frontend/scripts/bundle-stats.mjs`：
+
 ```bash
-# 安装依赖分析工具
-pnpm add -D rollup-plugin-visualizer
+# 一键 build + 生成基线报告
+pnpm --filter @terminal/frontend build:analyze
 
-# 在 vite.config.ts 中添加
-import { visualizer } from 'rollup-plugin-visualizer'
-
-plugins: [
-  visualizer({
-    open: true,
-    gzipSize: true,
-    filename: 'stats.html'
-  })
-]
+# 仅基于已有 dist/ 重新生成报告
+pnpm --filter @terminal/frontend stats
 ```
+
+输出：
+
+- `dist-stats.md` — markdown 格式的人类可读报告
+- `dist-stats.json` — 机器可解析格式，便于 CI 跟踪基线
+
+报告字段：raw / gzip / brotli 三种压缩尺寸，按文件、按类别（Vendor / App / CSS / HTML）。
 
 **考虑替换重型依赖**：
 

@@ -4,7 +4,7 @@
  */
 
 /** 终端写入函数类型 */
-type TerminalWriteFn = (data: string) => void
+export type TerminalWriteFn = (data: string) => void
 
 /** 全局写入函数 */
 let writeFn: TerminalWriteFn | null = null

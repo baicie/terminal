@@ -320,6 +320,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onClose }) => {
               break
             }
             case 'new-host':
+              window.dispatchEvent(new CustomEvent('shortcut:new-ssh'))
               break
             case 'toggle-sidebar':
               app.toggleSidebar()
@@ -333,6 +334,9 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onClose }) => {
               if (app.activeTabId) {
                 app.splitTab(app.activeTabId, 'vertical')
               }
+              break
+            case 'shortcuts':
+              window.dispatchEvent(new CustomEvent('open-shortcuts-help'))
               break
           }
           break

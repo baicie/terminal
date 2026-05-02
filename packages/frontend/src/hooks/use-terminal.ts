@@ -10,7 +10,7 @@
  */
 
 import type { Terminal as XTerminal } from '@baicie/xterm'
-import type { UseTerminalSessionOptions } from '@/features/terminal/hooks'
+import type { TabType } from '@/features/terminal/types'
 import type { Host } from '@/types'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
@@ -22,7 +22,18 @@ export interface ShellOutput {
   is_stderr: boolean
 }
 
-export interface UseTerminalOptions extends UseTerminalSessionOptions {}
+export interface UseTerminalOptions {
+  /** Tab 类型：local | remote | serial */
+  tabType: TabType
+  /** 远程主机信息（tabType=remote 时必填） */
+  host?: Host
+  /** 串口已有 sessionId（tabType=serial 时必填） */
+  serialSessionId?: string
+  /** xterm 启动列数 */
+  cols?: number
+  /** xterm 启动行数 */
+  rows?: number
+}
 
 interface UseTerminalResult {
   sessionId: string | null
@@ -38,6 +49,67 @@ function sanitize(data: string): string {
     // eslint-disable-next-line no-control-regex
     .replace(/\x1b\[[0-9;]*m%\r?\n/g, '')
     .replace(/^%\r?\n/gm, '')
+}
+
+/**
+ * WebKit (Safari / macOS Tauri 内置 WKWebView) 在用户快速同时按键时，
+ * xterm.js 的 `onData` 只会触发第一个字符；后续字符通过底层 textarea
+ * 的 `input` 事件正常到达，但 xterm 不再 emit。
+ *
+ * 这是 Apple WebKit 的已知问题（不是 xterm.js bug）。
+ *
+ * 补偿策略：
+ * 1. 仅在 WebKit 内核启用（避免影响 Chrome / Edge）
+ * 2. 维护一个 `recentSent` 滚动 buffer，记录最近 onData 发送的尾部字符
+ * 3. 监听 textarea 的 `input` 事件，rAF 后检查 `recentSent` 是否已经
+ *    包含本次 input 数据，没有就补发——这种 race-then-check 能正确
+ *    处理 IME（onData 已发送 → 跳过）和漏发场景（onData 漏 → 补发）
+ *
+ * 返回 cleanup 函数。非 WebKit 环境返回 noop。
+ */
+function setupWebKitInputCompensation(
+  term: XTerminal,
+  send: (data: string) => void,
+): () => void {
+  if (typeof navigator === 'undefined') return () => {}
+  const ua = navigator.userAgent
+  // WebKit but not Chrome/Edg/Chromium-based engines
+  const isWebKit =
+    /AppleWebKit/i.test(ua) && !/Chrome|Chromium|Edg/i.test(ua)
+  if (!isWebKit) return () => {}
+
+  const root = term.element as HTMLElement | undefined
+  const textarea = root?.querySelector(
+    'textarea',
+  ) as HTMLTextAreaElement | null
+  if (!textarea) return () => {}
+
+  let recentSent = ''
+  const RECENT_LIMIT = 32
+
+  const recordSent = (data: string) => {
+    recentSent = (recentSent + data).slice(-RECENT_LIMIT)
+  }
+
+  const onDataDisp = term.onData(recordSent)
+
+  const onInput = (e: Event) => {
+    const inputData = (e as InputEvent).data
+    if (!inputData || inputData.length === 0) return
+    // 等 onData 在同一个事件循环里先跑完
+    requestAnimationFrame(() => {
+      if (recentSent.endsWith(inputData)) return
+      send(inputData)
+      recordSent(inputData)
+    })
+  }
+
+  textarea.addEventListener('input', onInput)
+
+  return () => {
+    textarea.removeEventListener('input', onInput)
+    onDataDisp.dispose()
+  }
 }
 
 async function startShell(
@@ -126,15 +198,20 @@ export function useTerminal(
     // 必须在 effect 第一行注册（不等 await），否则 React Strict Mode 下
     // 双重 mount 或依赖项变化导致 init() 中途 cleanup 时，onData 可能
     // 永远绑不上 → 用户输入完全没反应
-    const onDataDisp = term.onData(data => {
+    const sendInput = (data: string) => {
       const sid = sessionIdRef.current
       if (!sid) return
       const cmd = tabType === 'serial' ? 'serial_write' : 'session_write'
       void invoke(cmd, { sessionId: sid, data }).catch(err => {
         console.error('[useTerminal] write failed:', err)
       })
-    })
+    }
+
+    const onDataDisp = term.onData(sendInput)
     cleanupFns.push(() => onDataDisp.dispose())
+
+    // WebKit (macOS Tauri / Safari) onData 漏发同时按键的补偿
+    cleanupFns.push(setupWebKitInputCompensation(term, sendInput))
 
     if (tabType !== 'serial') {
       const onResizeDisp = term.onResize(({ cols, rows }) => {

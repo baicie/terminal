@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { toast } from '@/components/ui/sonner'
+import { useWindowFocus } from '@/hooks/use-window-focus'
 import { cn } from '@/lib/utils'
 
 type ConnectionStatus =
@@ -46,6 +47,7 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
 }) => {
   const { t } = useTranslation()
   const meta = STATUS_META[status]
+  const focused = useWindowFocus()
 
   const renderIcon = () => {
     if (tab.type === 'serial') return <Usb className="size-3.5 shrink-0" />
@@ -88,7 +90,13 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
   }
 
   return (
-    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border/60 bg-background/60 backdrop-blur-sm px-3 text-foreground">
+    <div
+      className={cn(
+        'flex h-7 shrink-0 items-center gap-2 border-b border-border/60 bg-background/60 backdrop-blur-sm px-3 text-foreground transition-opacity',
+        !focused && 'opacity-60',
+      )}
+      title={focused ? undefined : t('terminal.windowUnfocused')}
+    >
       {/* 目标信息 */}
       <div className="flex items-center gap-2 min-w-0 flex-1 text-muted-foreground">
         {renderIcon()}

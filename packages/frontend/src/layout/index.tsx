@@ -4,9 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Outlet, useNavigate, useSearchParams } from 'react-router-dom'
 import AppSidebar from '@/components/app-sidebar'
 import BottomNav from '@/components/bottom-nav'
-import SettingsDialog from '@/components/settings-dialog'
+import ShortcutsHelpDialog from '@/components/shortcuts-help'
 import SplitPane from '@/components/split-pane'
 import TopToolbar from '@/components/top-toolbar'
+
+// 设置对话框首屏不需要，懒加载到独立 chunk
+const SettingsDialog = React.lazy(() => import('@/components/settings-dialog'))
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 import {
@@ -14,8 +17,19 @@ import {
   useSwipeBackProgress,
 } from '@/components/swipe-back-indicator'
 import { useIsMobile } from '@/hooks/use-breakpoint'
-import TerminalContainer from '@/view/terminal/terminal-container'
+import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts'
+import { SHORTCUT_EVENT_PREFIX } from '@/hooks/use-global-shortcuts'
+import { useTrayEvents } from '@/hooks/use-tray-events'
 import { RouteTransition } from './route-transition'
+
+// 终端容器懒加载：xterm.js + 所有 addon 体积合计 ~340 KB，
+// 仅在用户真正打开第一个标签时才需要。这样首屏（hosts/keychain 等
+// 非终端视图）启动可以省去这部分 JS 解析时间。
+const TerminalContainer = React.lazy(() =>
+  import('@/features/terminal/components/terminal-container/container').then(
+    m => ({ default: m.TerminalContainer }),
+  ),
+)
 
 const SIDEBAR_WIDTH_KEY = 'terminal.sidebar.width'
 const SIDEBAR_MIN = 64 // 图标模式宽度
@@ -42,6 +56,12 @@ const TerminalContent: React.FC<{ tabId: string }> = ({ tabId }) => {
   return <TerminalContainer key={tabId} tabId={tabId} />
 }
 
+const TerminalLoadingFallback: React.FC = () => (
+  <div className="h-full flex items-center justify-center bg-[#1e1e1e]">
+    <div className="text-[#888] text-sm">Loading terminal…</div>
+  </div>
+)
+
 const TerminalByUrl: React.FC = () => {
   const [searchParams] = useSearchParams()
   const tabId = searchParams.get('tab') ?? ''
@@ -58,14 +78,21 @@ const TerminalByUrl: React.FC = () => {
     ? splitGroups.find(g => g.id === tab.splitId)
     : null
 
-  if (splitGroup && tab.splitChildren && tab.splitChildren.length > 0) {
-    const children = splitGroup.tabs.map(id => (
-      <TerminalContent key={id} tabId={id} />
-    ))
-    return <SplitPane group={splitGroup}>{children}</SplitPane>
-  }
-
-  return <TerminalContent tabId={tabId} />
+  // 单一 Suspense 边界：避免每个 split 子终端各自 fallback 闪烁，
+  // chunk 一旦下载就所有 TerminalContainer 共享。
+  return (
+    <React.Suspense fallback={<TerminalLoadingFallback />}>
+      {splitGroup && tab.splitChildren && tab.splitChildren.length > 0 ? (
+        <SplitPane group={splitGroup}>
+          {splitGroup.tabs.map(id => (
+            <TerminalContent key={id} tabId={id} />
+          ))}
+        </SplitPane>
+      ) : (
+        <TerminalContent tabId={tabId} />
+      )}
+    </React.Suspense>
+  )
 }
 
 const MainLayoutInner: React.FC<{
@@ -235,6 +262,7 @@ const MainLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false)
   const [, setTitleBarStyle] = useState<TitleBarStyle>('linux')
   const addTab = useAppStore(s => s.addTab)
   const navigate = useNavigate()
@@ -270,21 +298,69 @@ const MainLayout: React.FC = () => {
     navigate(`/terminal?tab=${newTab.id}`)
   }, [addTab, navigate])
 
+  // 单一来源：所有 keydown 都通过 shortcutsService 处理
+  useGlobalShortcuts()
+  // 系统托盘菜单点击 → 派发为相同的 shortcut:* CustomEvent
+  useTrayEvents()
+
+  // 订阅各 action：把 service 派发的事件映射到 layout 内部状态/操作
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 't') {
-        e.preventDefault()
-        handleNewLocalTerminal()
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-        e.preventDefault()
-        setSidebarOpen(prev => !prev)
-      }
+    const onNewTab = () => handleNewLocalTerminal()
+    const onNewLocal = () => handleNewLocalTerminal()
+    const onToggleSidebar = () => setSidebarOpen(prev => !prev)
+
+    window.addEventListener(`${SHORTCUT_EVENT_PREFIX}new-tab`, onNewTab)
+    window.addEventListener(`${SHORTCUT_EVENT_PREFIX}new-local`, onNewLocal)
+    window.addEventListener(
+      `${SHORTCUT_EVENT_PREFIX}toggle-sidebar`,
+      onToggleSidebar,
+    )
+
+    return () => {
+      window.removeEventListener(`${SHORTCUT_EVENT_PREFIX}new-tab`, onNewTab)
+      window.removeEventListener(
+        `${SHORTCUT_EVENT_PREFIX}new-local`,
+        onNewLocal,
+      )
+      window.removeEventListener(
+        `${SHORTCUT_EVENT_PREFIX}toggle-sidebar`,
+        onToggleSidebar,
+      )
+    }
+  }, [handleNewLocalTerminal])
+
+  // 帮助面板的快捷键不在 shortcutsService 默认表中（也无意义放进去），
+  // 单独保留 Cmd/Ctrl+/ 与 Shift+? 两个触发方式
+  useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false
+      const tag = target.tagName
+      return (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target.isContentEditable
+      )
     }
 
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const openShortcuts =
+        ((e.ctrlKey || e.metaKey) && e.key === '/') ||
+        (e.shiftKey && e.key === '?' && !isEditableTarget(e.target))
+      if (openShortcuts) {
+        e.preventDefault()
+        setShortcutsHelpOpen(prev => !prev)
+      }
+    }
+    const handleOpenHelp = () => setShortcutsHelpOpen(true)
+
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleNewLocalTerminal])
+    window.addEventListener('open-shortcuts-help', handleOpenHelp)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('open-shortcuts-help', handleOpenHelp)
+    }
+  }, [])
 
   return (
     <>
@@ -295,9 +371,18 @@ const MainLayout: React.FC = () => {
         onSidebarWidthChange={setSidebarWidth}
       />
 
-      <SettingsDialog
-        open={settingsDialogOpen}
-        onClose={() => setSettingsDialogOpen(false)}
+      {settingsDialogOpen && (
+        <React.Suspense fallback={null}>
+          <SettingsDialog
+            open={settingsDialogOpen}
+            onClose={() => setSettingsDialogOpen(false)}
+          />
+        </React.Suspense>
+      )}
+
+      <ShortcutsHelpDialog
+        open={shortcutsHelpOpen}
+        onOpenChange={setShortcutsHelpOpen}
       />
     </>
   )

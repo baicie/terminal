@@ -274,6 +274,96 @@ src-tauri/
 | `RouteTransition` 路由切换过渡动画                       | ✅ 已实现 (2026-05-02) |
 | 移除冗余文件 (`mobile-host-card.tsx`、`host-toolbar.tsx`) | ✅ 已实现 (2026-05-02) |
 
+### Phase 6 - 终端可靠性 + UX 增强 ✅ 已完成
+
+> 2026-05-02 修复关键的本地终端 bug，并清理代码 + 增强 UX
+
+| 项目 | 状态 |
+| --- | --- |
+| 本地终端连接竞态、空白、无法输入修复 | ✅ 已实现 (2026-05-02，详见 issue.md #0) |
+| WebKit (macOS / Safari) 同时按键输入丢字补偿 | ✅ 已实现 (2026-05-02) |
+| 删除 deprecated `features/terminal/hooks/`，统一为 `useTerminal` | ✅ 已实现 (2026-05-02) |
+| 终端右键菜单（复制/粘贴/全选/清屏/缩放） | ✅ 已实现 (2026-05-02) |
+| 全局快捷键速查面板（Cmd+/ / Shift+?） | ✅ 已实现 (2026-05-02) |
+| 终端无障碍属性（role / aria-label / focus-visible） | ✅ 已实现 (2026-05-02) |
+| 构建产物分析脚本 + `pnpm build:analyze`（替代不兼容 visualizer） | ✅ 已实现 (2026-05-02) |
+| i18n 三语种补齐 `terminal.*` / `shortcuts.*` | ✅ 已实现 (2026-05-02) |
+
+### Phase 6.1 - 第二轮 (P0+P1+P2) ✅ 已完成
+
+> 2026-05-02 在 Phase 6 基线上继续做 8 个细项。详见 `docs/todo.md` → "2026-05-02 第二轮"。
+> 收益：首屏 gzip **259 → 242 KB**，主入口 `index.js` raw **256 → 159 KB（↓ 38%）**。
+
+| 项目 | 状态 |
+| --- | --- |
+| 修复 `INEFFECTIVE_DYNAMIC_IMPORT` 警告 + xterm 真懒加载 | ✅ 已实现 (2026-05-02) |
+| 修复 `Invalid input options exclude` 警告（vitest 配置外移） | ✅ 已实现 (2026-05-02) |
+| 静态验证 SSH / 串口终端走同一修复路径 | ✅ 已实现 (2026-05-02) |
+| 5 个全局对话框改 `React.lazy`（Settings/Host/CommandPalette/Notification/Serial） | ✅ 已实现 (2026-05-02) |
+| Tailwind v4 production purge 验证（CSS gzip 仅 15.7 KB） | ✅ 已实现 (2026-05-02) |
+| 终端搜索浮层（Cmd/Ctrl+F + SearchAddon + 三 toggle） | ✅ 已实现 (2026-05-02) |
+| 命令面板 / 全局快捷键统一收口到 `shortcutsService` + CustomEvent 派发 | ✅ 已实现 (2026-05-02) |
+| 移动端长按上下文菜单（等价右键菜单 + Sheet） | ✅ 已实现 (2026-05-02) |
+
+#### 新增 / 修改 / 删除
+
+- 新增：`hooks/use-global-shortcuts.ts`、`features/terminal/components/terminal-container/{terminal-search-overlay,terminal-mobile-menu}.tsx`、`vitest.config.ts`
+- 修改：`vite.config.ts`（移除 manualChunks）、`layout/index.tsx`、`top-toolbar/index.tsx`、`bottom-nav/index.tsx`、`features/terminal/components/terminal-container/{container,terminal-context-menu}.tsx`、`service/shortcuts.ts`、`components/command-palette/index.tsx`、`scripts/bundle-stats.mjs`
+- 删除：`view/home/`、`service/recording.ts`、`store/terminal.ts`、`features/terminal/stores/`、`view/terminal/{terminal-container,terminal-write-context,terminal-keyboard-bar,terminal.module.scss}`
+
+### Phase 6.2 - 桌面化体验 + SFTP 队列 + Rust 可观测性 ✅ 已完成
+
+> 2026-05-02 在 6.1 基线上继续做 4 个细项 (t1–t4)。
+
+| 项目 | 状态 |
+| --- | --- |
+| **t1**：Tauri 系统托盘 + 窗口最小化到托盘 + 原生通知（仅失焦时弹） | ✅ 已实现 (2026-05-02) |
+| **t1**：终端断连/出错时按窗口焦点决策原生通知 vs in-app | ✅ 已实现 (2026-05-02) |
+| **t1**：会话状态条根据窗口焦点自动半透明 + tooltip 提示 | ✅ 已实现 (2026-05-02) |
+| **t2**：SFTP 后端按 64KiB 分片上传/下载，事件 `sftp-progress` 推流 | ✅ 已实现 (2026-05-02) |
+| **t2**：Tauri webview drag-drop → `useSftpDrop` → 自动入队 + 上传 | ✅ 已实现 (2026-05-02) |
+| **t2**：`useTransferQueue` Zustand store + 浮层 `TransferPanel`（速率/ETA/状态） | ✅ 已实现 (2026-05-02) |
+| **t3**：`shortcutsService` / `useTransferQueue` / `useWindowFocus` Vitest 单测 | ✅ 已实现 (2026-05-02) |
+| **t4**：`tracing` + `tracing-subscriber` 替换 `env_logger`，`tracing-log` 桥接 | ✅ 已实现 (2026-05-02) |
+| **t4**：移除 `state.rs` / `storage.rs` 的 blanket `#![allow(dead_code)]`，按字段精细化 | ✅ 已实现 (2026-05-02) |
+| **t4**：所有 `eprintln!` / `log::info!` 迁移为带结构化字段的 `tracing::*` | ✅ 已实现 (2026-05-02) |
+
+#### 新增
+
+- 后端 Rust：`src-tauri/src/tray.rs`（托盘菜单 + 左键 toggle 主窗口）、`src-tauri/src/window_cmd.rs`（minimize-to-tray、show/hide/focused 命令）
+- 前端：`packages/frontend/src/service/notifications.ts`、`packages/frontend/src/service/window-ux.ts`、`packages/frontend/src/service/sftp-transfer.ts`、`packages/frontend/src/store/transfer-queue.ts`
+- 前端 Hook：`packages/frontend/src/hooks/use-window-focus.ts`、`packages/frontend/src/hooks/use-tray-events.ts`、`packages/frontend/src/view/sftp/use-sftp-drop.ts`
+- 前端组件：`packages/frontend/src/view/sftp/transfer-panel.tsx`
+- 单测：`packages/frontend/src/service/shortcuts.test.ts`、`packages/frontend/src/store/transfer-queue.test.ts`、`packages/frontend/src/hooks/use-window-focus.test.ts`
+
+#### 修改
+
+- 后端 Rust：
+  - `src-tauri/Cargo.toml`：新增 `tauri-plugin-notification`、`tracing`、`tracing-subscriber`、`tracing-log`，给 `tauri` 加 `tray-icon`、`image-png` features
+  - `src-tauri/src/lib.rs`：`init_tracing` 初始化 + `LogTracer` 桥接 + 注册 `notification` 插件 + tray setup + `on_window_event` 拦截关闭 + 注册新 window 命令
+  - `src-tauri/src/sftp.rs`：`Arc<SftpSession>` 共享 + `CHUNK_SIZE` (64KiB) + `emit_progress` 节流推流 + 上传/下载结构化 tracing
+  - `src-tauri/src/state.rs`：去掉 blanket `#![allow(dead_code)]`，按字段添加 `#[cfg_attr(not(unix), allow(dead_code))]` / 字段级 allow，并写明所有权语义
+  - `src-tauri/src/storage.rs`：移除全局 `#![allow(dead_code)]` 后改为 *单条带文档* 的模块级 allow，明确该模块当前是 stub
+  - `src-tauri/src/session/channel.rs`、`src-tauri/src/window_cmd.rs`：`eprintln!` / `log::info!` → `tracing::*` 含 `session_id` / `event` 等结构化字段
+  - `src-tauri/capabilities/default.json`：补齐 `core:window:allow-{show,hide,set-focus,unminimize,is-focused,is-visible}` + `core:event:allow-{listen,unlisten}` + `notification:default`
+  - `src-tauri/tauri.conf.json`：`app.windows[0].dragDropEnabled = true`
+- 前端：
+  - `packages/frontend/src/App.tsx`：启动时把桌面 UX 偏好同步到通知服务和 Tauri
+  - `packages/frontend/src/layout/index.tsx`：挂载 `useTrayEvents()`，托盘菜单 → `shortcut:*` CustomEvent → 复用既有快捷键链路
+  - `packages/frontend/src/components/settings-dialog/{index,general-settings}.tsx`：新增 *Desktop UX* section（minimize-to-tray / native notifications / notify-only-when-unfocused）
+  - `packages/frontend/src/features/terminal/components/terminal-container/{container,session-status-bar}.tsx`：断连/出错按窗口焦点决策通知；状态条 unfocused 时半透明 + tooltip
+  - `packages/frontend/src/features/terminal/services/sftp.ts`：兼容新的 `transfer_id` 后端参数
+  - `packages/frontend/src/view/sftp/sftp-container.tsx`：拖拽覆盖层 + 队列面板 + dialog.open/save 走 `sftp-transfer`
+  - 国际化：`packages/frontend/src/locales/{cn,en,fr}/app.ts` 新增 `terminal.windowUnfocused`、`settings.{desktopSection,minimizeToTray*,nativeNotifications*,notifyOnlyWhenUnfocused*}`、`sftp.{transfersTitle,transferActive_*,transferErrors_*,transferEta,transferDone,clearFinished,dropToUpload}`
+
+#### 收益
+
+- **可观测性**：所有后端日志统一 `tracing` 输出，`RUST_LOG` 仍兼容；新增 `transfer_id` / `session_id` / `bytes_total` 等结构化字段，方便后续接 Loki/OpenTelemetry。
+- **桌面感**：从 X 关闭可隐藏到托盘；后台时 SSH 断开会跳原生 OS 通知（被聚焦时仍走 in-app toast，不打扰）。
+- **SFTP 体感**：单文件 GB 级传输也能看到实时百分比 + 速率 + ETA；多任务不再阻塞列表刷新。
+- **代码卫生**：Rust `cargo check` 警告由 14 条降至 0；`#![allow(dead_code)]` 全部带注释解释为何保留。
+- **覆盖率**：新增 3 个测试文件，覆盖 `shortcutsService` 关键路径、传输队列状态机、窗口焦点 hook 的初始/事件路径。
+
 ---
 
 ## 待办事项
@@ -578,4 +668,4 @@ const response = await teamApi.listTeams()
 
 ---
 
-_文档更新时间: 2026-03-25_
+_文档更新时间: 2026-05-02 (Phase 6.2 完成 - t1 托盘/通知 + t2 SFTP 队列 + t3 单测 + t4 tracing/dead_code 清理)_

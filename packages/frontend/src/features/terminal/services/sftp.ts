@@ -47,11 +47,14 @@ export class SftpService {
   }
 
   /**
-   * 上传文件
+   * 上传文件（legacy 一次性接口；不带进度）
+   *
+   * 推荐使用 `service/sftp-transfer.ts` 的 `uploadFile()`，可获得分块进度 + 队列管理。
    */
   async upload(sessionId: string, localPath: string, remotePath: string): Promise<SftpOperationResult> {
     try {
-      await invoke('sftp_upload', { sessionId, localPath, remotePath })
+      const transferId = `legacy-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      await invoke('sftp_upload', { transferId, sessionId, localPath, remotePath })
       return { success: true }
     } catch (error) {
       return {
@@ -62,11 +65,12 @@ export class SftpService {
   }
 
   /**
-   * 下载文件
+   * 下载文件（legacy 一次性接口；不带进度）
    */
   async download(sessionId: string, remotePath: string, localPath: string): Promise<SftpOperationResult> {
     try {
-      await invoke('sftp_download', { sessionId, remotePath, localPath })
+      const transferId = `legacy-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      await invoke('sftp_download', { transferId, sessionId, remotePath, localPath })
       return { success: true }
     } catch (error) {
       return {

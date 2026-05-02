@@ -1,7 +1,12 @@
 //! Storage service module
 //!
 //! Provides unified storage abstraction for WebDAV, S3, and custom REST API backends.
-
+//!
+//! NOTE: 该模块当前是 *骨架*：trait + 三种 backend 实现 + manager 全部就位，
+//! 但 Tauri 端尚未把它们暴露为命令（仅有 `storage_upload` 占位 stub）。
+//! 当 docs/issue.md 中“数据存储服务配置 - 后端待实现”落地时，将由
+//! `lib.rs` 把 `StorageManager` 注入 Tauri State 并启用对应命令，
+//! 在那之前这里的项是有意保留为 dead_code 的。
 #![allow(dead_code)]
 
 use anyhow::{anyhow, Result};
@@ -682,7 +687,7 @@ pub async fn storage_init(
     _bucket: Option<String>,
     _region: Option<String>,
 ) -> Result<bool, StorageError> {
-    eprintln!("storage_init called with type: {}, endpoint: {}", backend_type, endpoint);
+    tracing::info!(backend = %backend_type, endpoint = %endpoint, "storage_init called");
     Ok(true)
 }
 
@@ -692,7 +697,7 @@ pub async fn storage_health_check(
     _state: State<'_, SharedStateType>,
 ) -> Result<bool, StorageError> {
     // TODO: Implement health check using stored config
-    eprintln!("storage_health_check called");
+    tracing::debug!("storage_health_check called");
     Ok(true)
 }
 
@@ -704,7 +709,7 @@ pub async fn storage_upload(
     path: String,
     _data: String,
 ) -> Result<StorageResult, StorageError> {
-    eprintln!("storage_upload called for path: {}", path);
+    tracing::debug!(path = %path, "storage_upload called");
     // TODO: Implement actual upload using initialized backend
     Ok(StorageResult {
         success: false,
@@ -719,7 +724,7 @@ pub async fn storage_download(
     _state: State<'_, SharedStateType>,
     path: String,
 ) -> Result<String, StorageError> {
-    eprintln!("storage_download called for path: {}", path);
+    tracing::debug!(path = %path, "storage_download called");
     // TODO: Implement actual download using initialized backend
     Err(StorageError::NotConfigured)
 }
@@ -730,7 +735,7 @@ pub async fn storage_list(
     _state: State<'_, SharedStateType>,
     path: String,
 ) -> Result<Vec<StorageItem>, StorageError> {
-    eprintln!("storage_list called for path: {}", path);
+    tracing::debug!(path = %path, "storage_list called");
     // TODO: Implement actual list using initialized backend
     Ok(vec![])
 }
@@ -741,7 +746,7 @@ pub async fn storage_delete(
     _state: State<'_, SharedStateType>,
     path: String,
 ) -> Result<StorageResult, StorageError> {
-    eprintln!("storage_delete called for path: {}", path);
+    tracing::debug!(path = %path, "storage_delete called");
     // TODO: Implement actual delete using initialized backend
     Ok(StorageResult {
         success: false,

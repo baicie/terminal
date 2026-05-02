@@ -13,14 +13,18 @@ import { toast } from 'sonner'
 import { getThemeColors } from '@/utils/terminal-themes'
 import { useIsMobile } from '@/hooks/use-breakpoint'
 import { useTerminal } from '@/hooks/use-terminal'
+import { notify } from '@/service/notifications'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
 import {
   clearTerminalWriteFn,
   setTerminalWriteFn,
-} from '@/view/terminal/terminal-write-context'
+} from '@/features/terminal/contexts'
 import { TerminalKeyboardBar } from './keyboard-bar'
 import { SessionStatusBar } from './session-status-bar'
+import { TerminalContextMenu } from './terminal-context-menu'
+import { TerminalMobileMenu } from './terminal-mobile-menu'
+import { TerminalSearchOverlay } from './terminal-search-overlay'
 import '@baicie/xterm/css/xterm.css'
 
 /**
@@ -73,7 +77,10 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<TerminalComponent | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const searchAddonRef = useRef<SearchAddon | null>(null)
   const isMountedRef = useRef(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const tab = tabs.find(t => t.id === tabId)
   const isMobile = useIsMobile()
@@ -120,6 +127,32 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
     }
   }, [error])
 
+  // 断连/出错时发系统通知（窗口失焦时弹原生 OS 通知）
+  const prevStatusRef = useRef(status)
+  useEffect(() => {
+    const prev = prevStatusRef.current
+    prevStatusRef.current = status
+    if (prev !== 'connected') return
+    if (status !== 'disconnected' && status !== 'error') return
+    if (!tab) return
+
+    const target =
+      tab.type === 'serial'
+        ? `${tab.serialConfig?.port ?? tab.label}`
+        : host
+          ? `${host.username}@${host.hostname}`
+          : tab.label
+    const title =
+      status === 'error'
+        ? `Terminal error · ${target}`
+        : `Disconnected · ${target}`
+    void notify({
+      title,
+      body: error ?? undefined,
+      type: status === 'error' ? 'error' : 'warning',
+    })
+  }, [status, error, tab, host])
+
   // 初始化 xterm
   // 仅依赖 tabId：tab 对象引用可能因 store 重渲染而变化，但只要 tabId 不变
   // 就不需要销毁/重建 xterm 实例（这会顺带关闭后端 session 并丢失内容）
@@ -147,6 +180,7 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
     term.loadAddon(fitAddon)
 
     const searchAddon = new SearchAddon()
+    searchAddonRef.current = searchAddon
     term.loadAddon(searchAddon)
 
     const webLinksAddon = new WebLinksAddon()
@@ -165,6 +199,21 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
         console.warn('Failed to load ClipboardAddon:', e)
       }
     })()
+
+    // 拦截 Cmd/Ctrl + F：触发自定义搜索浮层，阻止 xterm 默认处理
+    term.attachCustomKeyEventHandler(e => {
+      if (
+        e.type === 'keydown' &&
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        (e.key === 'f' || e.key === 'F')
+      ) {
+        setSearchOpen(true)
+        return false
+      }
+      return true
+    })
 
     term.open(containerRef.current!)
 
@@ -188,6 +237,7 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
       clearTerminalWriteFn()
       term.dispose()
       termRef.current = null
+      searchAddonRef.current = null
       setTermInstance(null)
       setIsReady(false)
     }
@@ -287,6 +337,48 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
   // 仅在桌面端 + 非全屏时显示状态条
   const showStatusBar = !isMobile && !isFullscreen
 
+  // 移动端长按 ≥500ms 弹出操作菜单。短点击 / 拖动均不触发。
+  const longPressRef = useRef<{
+    timer: ReturnType<typeof setTimeout> | null
+    startX: number
+    startY: number
+    triggered: boolean
+  }>({ timer: null, startX: 0, startY: 0, triggered: false })
+
+  const startLongPress = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length !== 1) return
+    const t0 = e.touches[0]
+    longPressRef.current.startX = t0.clientX
+    longPressRef.current.startY = t0.clientY
+    longPressRef.current.triggered = false
+    longPressRef.current.timer = setTimeout(() => {
+      longPressRef.current.triggered = true
+      setMobileMenuOpen(true)
+      // 触发系统震动反馈（Android）
+      try {
+        navigator.vibrate?.(15)
+      } catch {
+        /* noop */
+      }
+    }, 500)
+  }
+
+  const cancelLongPress = () => {
+    if (longPressRef.current.timer) {
+      clearTimeout(longPressRef.current.timer)
+      longPressRef.current.timer = null
+    }
+  }
+
+  const moveLongPress = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!longPressRef.current.timer) return
+    const t0 = e.touches[0]
+    if (!t0) return
+    const dx = Math.abs(t0.clientX - longPressRef.current.startX)
+    const dy = Math.abs(t0.clientY - longPressRef.current.startY)
+    if (dx > 10 || dy > 10) cancelLongPress()
+  }
+
   // 终端主体
   const terminalBody = (
     <div className="h-full flex bg-[#1e1e1e]">
@@ -294,13 +386,56 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
         {showStatusBar && (
           <SessionStatusBar tab={tab} host={host} status={status} />
         )}
-        {/* Terminal area */}
-        <div
-          ref={containerRef}
-          className="flex-1 overflow-hidden"
-          tabIndex={0}
-          style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
-        />
+        {/* Terminal area: relative wrapper 用于挂载搜索浮层 */}
+        <div className="relative flex-1 min-h-0">
+          {isMobile ? (
+            <div
+              ref={containerRef}
+              className="absolute inset-0 overflow-hidden"
+              tabIndex={0}
+              role="application"
+              aria-label="Terminal"
+              style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
+              onTouchStart={startLongPress}
+              onTouchEnd={cancelLongPress}
+              onTouchCancel={cancelLongPress}
+              onTouchMove={moveLongPress}
+            />
+          ) : (
+            <TerminalContextMenu
+              term={termInstance}
+              onFontSizeChange={delta => handleFontSizeChange(delta)}
+              onOpenSearch={() => setSearchOpen(true)}
+            >
+              <div
+                ref={containerRef}
+                className="absolute inset-0 overflow-hidden focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
+                tabIndex={0}
+                role="application"
+                aria-label="Terminal"
+                style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
+              />
+            </TerminalContextMenu>
+          )}
+          {!isMobile && (
+            <TerminalSearchOverlay
+              open={searchOpen}
+              onClose={() => {
+                setSearchOpen(false)
+                termInstance?.focus()
+              }}
+              searchAddon={searchAddonRef.current}
+            />
+          )}
+          {isMobile && (
+            <TerminalMobileMenu
+              term={termInstance}
+              onFontSizeChange={delta => handleFontSizeChange(delta)}
+              open={mobileMenuOpen}
+              onOpenChange={setMobileMenuOpen}
+            />
+          )}
+        </div>
         {/* Mobile keyboard bar */}
         {isMobile && (
           <TerminalKeyboardBar
