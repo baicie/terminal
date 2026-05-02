@@ -76,6 +76,19 @@ export default {
   'settings.notifyOnlyWhenUnfocused': 'Only When Window Unfocused',
   'settings.notifyOnlyWhenUnfocusedDesc': 'Skip native notifications while the app window is focused',
 
+  // Shortcuts
+  'settings.shortcuts.tip': 'Click a shortcut to rebind it. Press Escape to cancel.',
+  'settings.shortcuts.recording': 'Recording...',
+  'settings.shortcuts.enabled': 'On',
+  'settings.shortcuts.disabled': 'Off',
+  'settings.shortcuts.resetToDefault': 'Reset to default',
+  'settings.shortcuts.resetAll': 'Reset All',
+  'settings.shortcuts.searchPlaceholder': 'Search shortcuts...',
+  'settings.shortcuts.noResults': 'No shortcuts found',
+  'settings.shortcuts.conflictWith': 'Conflict with',
+  'settings.shortcuts.resetSuccess': 'Shortcuts reset to defaults',
+  'settings.shortcuts.recordingHint': 'Press a key combination to bind, or Escape to cancel...',
+
   // SFTP transfer queue
   'sftp.transfersTitle': 'Transfers',
   'sftp.transferActive_one': '{{count}} active',

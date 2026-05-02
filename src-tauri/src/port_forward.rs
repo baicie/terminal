@@ -278,7 +278,7 @@ async fn forward_socket<S: AsyncRead + AsyncWrite + Send + 'static + std::marker
                                 break;
                             }
                         }
-                        Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close { .. }) => {
+                        Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) => {
                             let _ = socket.lock().await.shutdown().await;
                             break;
                         }

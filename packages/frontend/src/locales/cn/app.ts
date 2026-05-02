@@ -76,6 +76,19 @@ export default {
   'settings.notifyOnlyWhenUnfocused': '仅在窗口失焦时通知',
   'settings.notifyOnlyWhenUnfocusedDesc': '窗口聚焦时不弹原生通知，避免双重提醒',
 
+  // Shortcuts
+  'settings.shortcuts.tip': '点击快捷键可重新绑定，按 Escape 取消',
+  'settings.shortcuts.recording': '录制中...',
+  'settings.shortcuts.enabled': '开',
+  'settings.shortcuts.disabled': '关',
+  'settings.shortcuts.resetToDefault': '恢复默认',
+  'settings.shortcuts.resetAll': '重置全部',
+  'settings.shortcuts.searchPlaceholder': '搜索快捷键...',
+  'settings.shortcuts.noResults': '未找到快捷键',
+  'settings.shortcuts.conflictWith': '与以下快捷键冲突',
+  'settings.shortcuts.resetSuccess': '快捷键已恢复默认值',
+  'settings.shortcuts.recordingHint': '按下组合键进行绑定，或按 Escape 取消...',
+
   // SFTP transfer queue
   'sftp.transfersTitle': '传输',
   'sftp.transferActive_one': '{{count}} 个进行中',

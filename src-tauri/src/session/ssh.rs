@@ -77,6 +77,7 @@ impl SshSession {
     }
 
     /// 创建新的 SSH Session（密钥认证）
+    #[allow(clippy::too_many_arguments)]
     pub async fn new_with_key(
         app: AppHandle,
         host: &str,
@@ -127,6 +128,7 @@ impl SshSession {
     }
 
     /// 创建新的 SSH Session（通过 Jump Host）
+    #[allow(clippy::too_many_arguments)]
     pub async fn new_with_jump(
         app: AppHandle,
         target_host: &str,
@@ -155,6 +157,7 @@ impl SshSession {
 
     /// 内部创建方法
     #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     async fn create(
         app: AppHandle,
         host: &str,
@@ -293,7 +296,7 @@ impl SshSession {
                                 };
                                 let _ = app_clone.emit("ssh-data", output);
                             }
-                            Some(ChannelMsg::Eof) | Some(ChannelMsg::Close { .. }) => {
+                            Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) => {
                                 let _ = app_clone.emit("ssh-close", &session_id_clone);
                                 break;
                             }
@@ -370,7 +373,7 @@ impl SshSession {
                     ));
                 }
             }
-            "password" | _ => {
+            _ => {
                 // 默认使用密码认证
                 if let Some(ref pwd) = jump_host.password {
                     jump_handle.authenticate_password(&jump_host.username, pwd).await

@@ -28,6 +28,7 @@ pub fn serial_baud_rates() -> Vec<u32> {
 }
 
 /// Connect to a serial port
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn serial_connect(
     app: AppHandle,

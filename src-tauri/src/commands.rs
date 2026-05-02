@@ -91,6 +91,7 @@ pub async fn session_list() -> Result<Vec<SessionInfo>, SessionError> {
 // ============================================================================
 
 /// 创建 SSH 会话（密码认证）
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn session_create_ssh_password(
     app: AppHandle,
@@ -128,6 +129,7 @@ pub async fn session_create_ssh_password(
 }
 
 /// 创建 SSH 会话（密钥认证）
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn session_create_ssh_key(
     app: AppHandle,
@@ -166,6 +168,7 @@ pub async fn session_create_ssh_key(
 }
 
 /// 创建 SSH 会话（Agent 认证）
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn session_create_ssh_agent(
     app: AppHandle,
@@ -195,6 +198,7 @@ pub async fn session_create_ssh_agent(
 }
 
 /// 创建 SSH 会话（通过 Jump Host）
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn session_create_ssh_jump(
     app: AppHandle,

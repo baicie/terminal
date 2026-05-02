@@ -31,6 +31,7 @@ import { StorageSettingsDialog } from './storage-settings-dialog'
 import { TeamSettingsDialog } from './team-settings-dialog'
 import { ExportImportSettings } from './export-import-settings'
 import { TerminalSettings } from './terminal-settings'
+import { ShortcutsSettings } from './shortcuts-settings'
 
 interface SettingsDialogProps {
   open: boolean
@@ -156,9 +157,10 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
         </DialogHeader>
 
         <Tabs defaultValue="appearance" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="appearance">Appearance</TabsTrigger>
             <TabsTrigger value="terminal">Terminal</TabsTrigger>
+            <TabsTrigger value="shortcuts">Shortcuts</TabsTrigger>
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="storage">Storage</TabsTrigger>
             <TabsTrigger value="team">Team</TabsTrigger>
@@ -223,6 +225,10 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
               settings={settings}
               updateSetting={updateSetting}
             />
+          </TabsContent>
+
+          <TabsContent value="shortcuts" className="space-y-4 py-4">
+            <ShortcutsSettings />
           </TabsContent>
 
           <TabsContent value="general" className="space-y-4 py-4">

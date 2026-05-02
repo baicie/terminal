@@ -12,7 +12,7 @@ use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use crate::errors::VaultError;
 
 /// Vault configuration stored on disk
@@ -106,7 +106,7 @@ impl VaultState {
     }
 
     /// Check if vault exists
-    pub fn exists(config_path: &PathBuf) -> bool {
+    pub fn exists(config_path: &Path) -> bool {
         config_path.exists()
     }
 

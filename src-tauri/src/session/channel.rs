@@ -227,7 +227,7 @@ mod tests {
     #[tokio::test]
     async fn test_channel_creation() {
         let manager = ChannelManager::new();
-        let sender = manager.create_channel("test-session".to_string()).await;
+        let _sender = manager.create_channel("test-session".to_string()).await;
 
         assert!(manager.get_channel("test-session").await.is_some());
         assert_eq!(manager.len().await, 1);

@@ -674,6 +674,7 @@ use crate::errors::StorageError;
 /// 与设置页「测试连接」共用的默认后端实例名。
 const DEFAULT_STORAGE_NAME: &str = "default";
 
+#[allow(clippy::too_many_arguments)]
 fn build_storage_backend(
     backend_type: &str,
     endpoint: String,
@@ -735,6 +736,7 @@ fn build_storage_backend(
 }
 
 /// Tauri command: Initialize storage backend from config
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn storage_init(
     manager: State<'_, Arc<StorageManager>>,

@@ -76,6 +76,19 @@ export default {
   'settings.notifyOnlyWhenUnfocused': 'Uniquement si la fenêtre est inactive',
   'settings.notifyOnlyWhenUnfocusedDesc': 'Ne pas envoyer de notifications natives quand la fenêtre est au premier plan',
 
+  // Shortcuts
+  'settings.shortcuts.tip': 'Cliquez sur un raccourci pour le reconfigurer. Appuyez sur Échap pour annuler.',
+  'settings.shortcuts.recording': 'Enregistrement...',
+  'settings.shortcuts.enabled': 'Actif',
+  'settings.shortcuts.disabled': 'Inactif',
+  'settings.shortcuts.resetToDefault': 'Réinitialiser',
+  'settings.shortcuts.resetAll': 'Tout réinitialiser',
+  'settings.shortcuts.searchPlaceholder': 'Rechercher des raccourcis...',
+  'settings.shortcuts.noResults': 'Aucun raccourci trouvé',
+  'settings.shortcuts.conflictWith': 'Conflit avec',
+  'settings.shortcuts.resetSuccess': 'Raccourcis réinitialisés',
+  'settings.shortcuts.recordingHint': 'Appuyez sur une combinaison de touches pour lier, ou Échap pour annuler...',
+
   // SFTP transfer queue
   'sftp.transfersTitle': 'Transferts',
   'sftp.transferActive_one': '{{count}} en cours',
