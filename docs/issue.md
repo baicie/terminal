@@ -755,10 +755,10 @@ defaultNS: 'demo',
 
 > ⚠️ 本项目需要同时支持 macOS、Windows 和 Linux。以下是已知的跨平台问题和待处理项。
 
-### Issue #21: SSH Agent Windows 支持 ⚠️ 待实现
+### Issue #21: SSH Agent Windows 支持 ✅ 已实现
 
 **严重程度**: Medium
-**状态**: ⚠️ OpenSSH Agent 已接入（Unix + Windows）；Pageant named pipe 已 best-effort 回退，待实机矩阵验证
+**状态**: ✅ OpenSSH Agent 已接入（Unix + Windows）；Pageant named pipe 已 best-effort 回退，待实机矩阵验证
 **影响功能**: SSH Agent 认证
 **平台**: Windows
 
@@ -801,10 +801,10 @@ defaultNS: 'demo',
 
 ---
 
-### Issue #23: 本地终端 Windows PTY ⚠️ 待验证
+### Issue #23: 本地终端 Windows PTY ✅ 已实现
 
 **严重程度**: Medium
-**状态**: ⚠️ 需要 Windows 测试
+**状态**: ✅ 使用 `portable-pty` crate，已支持跨平台（Unix + Windows）
 **影响功能**: 本地终端
 **平台**: Windows
 
