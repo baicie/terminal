@@ -18,9 +18,70 @@ import {
   addConnectionLog,
   updateConnectionLog,
 } from '@/service/database'
+import type { UnlistenFn } from '@tauri-apps/api/event'
 
 // Active connection log tracking
 const activeConnectionLogs = new Map<string, { logId: string; startTime: number }>()
+
+/**
+ * 记录连接失败
+ * 注意：error_message 存未翻译的英文描述（供 UI 翻译），error_raw 存原始错误
+ */
+async function recordConnectionFailure(
+  hostInfo: { id?: string; name: string; hostname?: string; username?: string },
+  connectionType: 'ssh' | 'local' | 'serial',
+  errorMessage: string,
+): Promise<string | null> {
+  try {
+    const logId = await addConnectionLog({
+      host_id: hostInfo.id || null,
+      host_name: hostInfo.name,
+      host_address: hostInfo.hostname ?? 'unknown',
+      username: hostInfo.username || null,
+      connection_type: connectionType,
+      started_at: Date.now(),
+      ended_at: Date.now(),
+      duration_seconds: 0,
+      is_saved: 0,
+      notes: null,
+      // error_message: 英文可读描述（供 UI 翻译为 locale）
+      // error_raw: 原始错误完整信息
+      error_message: normalizeErrorMessage(errorMessage),
+      error_raw: errorMessage,
+    })
+    return logId
+  } catch (err) {
+    console.error('[Session] Failed to record connection failure:', err)
+    return null
+  }
+}
+
+/**
+ * 归一化错误消息为英文可读描述
+ * 与 readable-error.ts 逻辑保持一致，但不使用 i18n
+ */
+function normalizeErrorMessage(msg: string): string {
+  const m = msg.toLowerCase()
+  if (m.includes('no ssh agent pipe found')) {
+    return 'SSH agent socket not found'
+  }
+  if (m.includes('ssh_auth_sock points') && m.includes('pipe was not found')) {
+    return 'SSH agent socket path is invalid'
+  }
+  if (m.includes('permission denied when opening ssh agent pipe')) {
+    return 'Permission denied when opening SSH agent socket'
+  }
+  if (m.includes('ssh agent has no available identities')) {
+    return 'SSH agent has no available identities'
+  }
+  if (m.includes('all ssh agent identities rejected')) {
+    return 'All SSH agent identities were rejected'
+  }
+  if (m.includes('failed to read identities from ssh agent')) {
+    return 'Failed to read identities from SSH agent'
+  }
+  return msg
+}
 
 /** 会话服务 */
 export class SessionService {
@@ -50,16 +111,21 @@ export class SessionService {
           duration_seconds: null,
           is_saved: 0,
           notes: null,
+          error_message: null,
+          error_raw: null,
         })
         activeConnectionLogs.set(sessionId, { logId, startTime: Date.now() })
       }
 
       return { success: true, message: 'Local session created', sessionId }
     } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : String(error),
-      }
+      const msg = error instanceof Error ? error.message : String(error)
+      void recordConnectionFailure(
+        hostInfo ?? { name: 'Local', hostname: 'localhost', username: 'local' },
+        'local',
+        msg,
+      )
+      return { success: false, message: msg }
     }
   }
 
@@ -91,15 +157,20 @@ export class SessionService {
         duration_seconds: null,
         is_saved: 0,
         notes: null,
+        error_message: null,
+        error_raw: null,
       })
       activeConnectionLogs.set(sessionId, { logId, startTime: Date.now() })
 
       return { success: true, message: 'SSH session created', sessionId }
     } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : String(error),
-      }
+      const msg = error instanceof Error ? error.message : String(error)
+      void recordConnectionFailure(
+        { id: host.id, name: host.name, hostname: host.hostname, username: host.username },
+        'ssh',
+        msg,
+      )
+      return { success: false, message: msg }
     }
   }
 
@@ -132,15 +203,20 @@ export class SessionService {
         duration_seconds: null,
         is_saved: 0,
         notes: null,
+        error_message: null,
+        error_raw: null,
       })
       activeConnectionLogs.set(sessionId, { logId, startTime: Date.now() })
 
       return { success: true, message: 'SSH session created', sessionId }
     } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : String(error),
-      }
+      const msg = error instanceof Error ? error.message : String(error)
+      void recordConnectionFailure(
+        { id: host.id, name: host.name, hostname: host.hostname, username: host.username },
+        'ssh',
+        msg,
+      )
+      return { success: false, message: msg }
     }
   }
 
@@ -174,15 +250,20 @@ export class SessionService {
         duration_seconds: null,
         is_saved: 0,
         notes: null,
+        error_message: null,
+        error_raw: null,
       })
       activeConnectionLogs.set(sessionId, { logId, startTime: Date.now() })
 
       return { success: true, message: 'SSH session via jump host created', sessionId }
     } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : String(error),
-      }
+      const msg = error instanceof Error ? error.message : String(error)
+      void recordConnectionFailure(
+        { id: targetHost.id, name: targetHost.name, hostname: targetHost.hostname, username: targetHost.username },
+        'ssh',
+        msg,
+      )
+      return { success: false, message: msg }
     }
   }
 

@@ -22,15 +22,15 @@
 
 **根因分析（按定位顺序）**:
 
-| # | Bug | 影响 |
-| - | --- | --- |
-| 1 | `useTerminal` 先 `invoke('session_create_local')` 才 `listen('local-data')`，存在竞态：shell 启动后立即输出的初始 prompt 在前端注册监听器之前就 emit 完毕，事件丢失 | 屏幕看不到 prompt |
-| 2 | `term.onData(...)` 在 `init()` 异步流程末尾才注册，Strict Mode 双重 mount 或依赖项变化导致 effect 中途 cleanup 时永远绑不上 | 用户输入完全没反应 |
-| 3 | `useTerminal` effect 依赖项过宽（包含多个 `useCallback`，间接依赖 `hosts` 数组），每次 store 更新都触发 effect cleanup → `disconnect()` → 重启会话 | 连接慢、偶发断连 |
-| 4 | `TerminalContainer` 的 init effect 依赖 `[tabId, tab]`，`tab` 引用每次 store 更新都变，导致 xterm 实例频繁销毁重建（顺带关闭后端 session） | 体感卡顿、内容丢失 |
-| 5 | **致命**: `Layout` 同时存在两份终端渲染入口：始终挂载的 `<TerminalByUrl />` 和路由 `Outlet` 内的 `<TerminalRoute />`。在 `/terminal?tab=xxx` 路由下两个 `TerminalContainer` 实例并存，各自创建 PTY session、注册 listener，互相收到对方的 sid 后 mismatch 过滤，谁都写不进 xterm | 屏幕全空 |
-| 6 | `fitAddon.fit()` 50ms 后调用，触发的 `onResize` 因 sid 还未 ready 被 `if(!sid) return` 丢弃，后端 PTY 永远停留在 80x24 | 显示尺寸不对 |
-| 7 | Windows 上 PowerShell 在 PTY 中启动会同步等待版权 banner 渲染完成才进入 REPL，加上 .NET 框架首次加载，prompt 卡很久才出现 | 即使所有上面修完，仍只收到 4 字节 escape sequence 后无下文 |
+| #   | Bug                                                                                                                                                                                                                                                                              | 影响                                                       |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| 1   | `useTerminal` 先 `invoke('session_create_local')` 才 `listen('local-data')`，存在竞态：shell 启动后立即输出的初始 prompt 在前端注册监听器之前就 emit 完毕，事件丢失                                                                                                              | 屏幕看不到 prompt                                          |
+| 2   | `term.onData(...)` 在 `init()` 异步流程末尾才注册，Strict Mode 双重 mount 或依赖项变化导致 effect 中途 cleanup 时永远绑不上                                                                                                                                                      | 用户输入完全没反应                                         |
+| 3   | `useTerminal` effect 依赖项过宽（包含多个 `useCallback`，间接依赖 `hosts` 数组），每次 store 更新都触发 effect cleanup → `disconnect()` → 重启会话                                                                                                                               | 连接慢、偶发断连                                           |
+| 4   | `TerminalContainer` 的 init effect 依赖 `[tabId, tab]`，`tab` 引用每次 store 更新都变，导致 xterm 实例频繁销毁重建（顺带关闭后端 session）                                                                                                                                       | 体感卡顿、内容丢失                                         |
+| 5   | **致命**: `Layout` 同时存在两份终端渲染入口：始终挂载的 `<TerminalByUrl />` 和路由 `Outlet` 内的 `<TerminalRoute />`。在 `/terminal?tab=xxx` 路由下两个 `TerminalContainer` 实例并存，各自创建 PTY session、注册 listener，互相收到对方的 sid 后 mismatch 过滤，谁都写不进 xterm | 屏幕全空                                                   |
+| 6   | `fitAddon.fit()` 50ms 后调用，触发的 `onResize` 因 sid 还未 ready 被 `if(!sid) return` 丢弃，后端 PTY 永远停留在 80x24                                                                                                                                                           | 显示尺寸不对                                               |
+| 7   | Windows 上 PowerShell 在 PTY 中启动会同步等待版权 banner 渲染完成才进入 REPL，加上 .NET 框架首次加载，prompt 卡很久才出现                                                                                                                                                        | 即使所有上面修完，仍只收到 4 字节 escape sequence 后无下文 |
 
 **修复内容**:
 
@@ -176,41 +176,38 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 
 ---
 
-### Issue #5: Agent 认证未实现 🟡
+### Issue #5: SSH Agent **作为登录认证** ⚠️ 部分就绪
 
 **严重程度**: 中
-**状态**: 🟡 直接返回错误
-**影响功能**: SSH Agent 转发
+**状态**: ⚠️ 协议与转发相关代码存在；**用 Agent 内密钥登录 SSH 会话**尚未接入统一 `session_create_ssh_*` API
+**影响功能**: 主机 `authType: agent` 时前端 `useTerminal` 仍会抛错；Windows 见 Issue #21
 
-**问题描述**:
+**已有基础**:
 
-```117:125:src-tauri/src/terminal.rs
-#[tauri::command]
-pub async fn ssh_connect_agent(...) -> Result<String, String> {
-    Err("Agent authentication not implemented".to_string())
-}
-```
+- `src-tauri/src/agent.rs`：Unix 上连接 `$SSH_AUTH_SOCK`、`request_identities` / `sign_request`（同步 I/O）
+- `src-tauri/src/state.rs`：`ClientHandler` 在 Unix 上将服务端 agent-forward 通道数据转给本地 agent socket
+- 需在 `session/ssh.rs` 认证路径接入 russh 的 Agent / `Signer`，并新增或扩展 `session_create_ssh_agent` 等命令后，再改 `packages/frontend/src/hooks/use-terminal.ts` 去掉对 `agent` 的硬错误
 
 **建议**:
 
-- Unix: 读取 `$SSH_AUTH_SOCK`
-- Windows: 使用 Pageant 或 Windows OpenSSH Agent
-- macOS: 使用 Keychain 或 ssh-agent
+- Unix：用现有 `SshAgentClient` 完成 `authenticate_*` 与 PTY 打开
+- Windows：Pageant / OpenSSH Agent 管道，见 Issue #21
 
 ---
 
-### Issue #6: 主机链 (Jump Host) 未实现 🟡
+### Issue #6: 主机链 (Jump Host) ✅ 已实现
 
 **严重程度**: 中
-**状态**: 🔴 未实现
+**状态**: ✅ 已实现
 **影响功能**: SSH 跳板机连接
+**更新时间**: 2026-05-02（文档对齐）
 
-**设计文档**: `docs/design.md` Section 3.3
-**建议**:
+**实现**:
 
-- 实现 SSH 代理跳转 (ProxyJump)
-- 支持配置跳板机连接序列
-- 需要在连接时建立跳板机会话，再通过它连接目标主机
+- Tauri 命令 `session_create_ssh_jump`（`src-tauri/src/commands.rs`）
+- `SshSession::new_with_jump` / `connect_via_jump`（`src-tauri/src/session/ssh.rs`）：跳板认证 + `channel_open_direct_tcpip` 再打目标会话
+
+**设计文档**: `docs/design.md` Section 3.3（产品文案可对齐）
 
 ---
 
@@ -276,25 +273,19 @@ pub async fn ssh_connect_agent(...) -> Result<String, String> {
 
 ---
 
-### Issue #10: ssh_resize 函数为空 🟢
+### Issue #10: 终端 resize（原 ssh_resize 占位）✅ 已修复
 
 **严重程度**: 低
-**状态**: ⚠️ 未实现
+**状态**: ✅ 已修复
 **影响**: 终端窗口大小调整
+**更新时间**: 2026-05-02（文档对齐）
 
-```219:227:src-tauri/src/terminal.rs
-#[tauri::command]
-pub async fn ssh_resize(
-    _state: tauri::State<'_, SharedStateType>,
-    _session_id: String,
-    _cols: u16,
-    _rows: u16,
-) -> Result<(), String> {
-    Ok(())
-}
-```
+**说明**: 旧版 `src-tauri/src/terminal.rs` 中 `ssh_resize` 空实现已废弃；当前统一为 **`session_resize`**（`src-tauri/src/commands.rs`）：
 
-**问题**: SSH PTY resize 没有实际生效
+- **本地**：`LocalSession::resize` → `portable_pty` PTY `resize`
+- **SSH**：`SshSession::resize` → 向远端发送 `CSI … t` 窗口尺寸序列（`session/ssh.rs`）
+
+前端在 `sid` 就绪后及 xterm `onResize` 中调用 `session_resize` 即可。
 
 ---
 
@@ -724,33 +715,25 @@ defaultNS: 'demo',
 
 ---
 
-### 数据存储服务后端 ✅
+### 数据存储服务后端 ✅（命令已接线）
 
 **严重程度**: Medium
-**状态**: ✅ 已实现
+**状态**: ✅ 已实现（trait + 多后端 + Tauri 命令走真实 `StorageManager`）
 **影响功能**: 跨设备同步
-**更新时间**: 2026-03-26
+**更新时间**: 2026-03-26（模块）；2026-05-02（`lib.rs` 注入 `Arc<StorageManager>`，`storage_*` 使用默认名 `default`）
 
 **实现内容**:
 
-1. **新增存储服务模块** `src-tauri/src/storage.rs`:
+1. **存储服务模块** `src-tauri/src/storage.rs`:
    - 统一的 `StorageService` trait
-   - WebDAV 后端实现
-   - S3 后端实现
-   - REST API 后端实现
-   - `StorageManager` 管理多个后端
+   - WebDAV / S3 / REST API 实现
+   - `StorageManager` 管理后端实例
 
-2. **存储操作**:
-   - `upload` - 上传数据
-   - `download` - 下载数据
-   - `delete` - 删除数据
-   - `list` - 列出目录
-   - `health_check` - 健康检查
+2. **Tauri 命令**（与 `packages/frontend/src/service/storage.ts` 对齐）:
+   - `storage_init` — 按 `webdav` / `s3` / `custom` 注册 `default` 后端（S3 需 `bucket`）
+   - `storage_health_check` / `storage_upload` / `storage_download` / `storage_list` / `storage_delete` — 委托当前 `default` 后端
 
-3. **新增依赖**:
-   - `reqwest` - HTTP 客户端
-   - `async-trait` - async trait 支持
-   - `chrono` - 时间戳处理
+3. **依赖**: `reqwest`、`async-trait`、`chrono`
 
 ---
 
@@ -776,57 +759,31 @@ defaultNS: 'demo',
 ### Issue #21: SSH Agent Windows 支持 ⚠️ 待实现
 
 **严重程度**: Medium
-**状态**: ⚠️ 仅 Unix
+**状态**: ⚠️ OpenSSH Agent 已接入（Unix + Windows）；Pageant named pipe 已 best-effort 回退，待实机矩阵验证
 **影响功能**: SSH Agent 认证
 **平台**: Windows
 
-**问题描述**:
+**当前实现（2026-05-02）**:
 
-当前 SSH Agent 连接仅支持 Unix 系统 (macOS/Linux)，通过 `SSH_AUTH_SOCK` 环境变量获取 agent socket。
+1. **前端链路已打通**：
+   - `packages/frontend/src/hooks/use-terminal.ts` 在 `host.authType === 'agent'` 时调用 `session_create_ssh_agent`
+2. **后端命令已实现**：
+   - `src-tauri/src/commands.rs` 新增 `session_create_ssh_agent`
+   - `src-tauri/src/session/ssh.rs::SshSession::new_with_agent`
+3. **跨平台认证分支**（`session/ssh.rs::authenticate`）：
+   - `#[cfg(unix)]`：`AgentClient::connect_env()` + `request_identities()` + `authenticate_publickey_with(...)`
+   - `#[cfg(windows)]`：通过 named pipe `\\.\pipe\openssh-ssh-agent`（可被 `SSH_AUTH_SOCK` 覆盖）连接 `AgentClient`，同样走 `authenticate_publickey_with(...)`
 
-**当前实现** (`src-tauri/src/state.rs`):
+**仍待完善**:
 
-```rust
-pub fn get_ssh_agent_socket() -> Option<String> {
-    #[cfg(unix)]
-    {
-        std::env::var("SSH_AUTH_SOCK").ok()
-    }
-    #[cfg(not(unix))]
-    {
-        None  // Windows 不支持
-    }
-}
-```
+- [ ] Windows 上多 key / 证书 key 的实机回归（OpenSSH 与 Pageant 各版本）
+- [ ] Agent 认证失败时 UI 提示细化（区分“无身份”“管道不存在”“服务未启动”）
 
-**Windows 解决方案**:
+**最近增强（2026-05-02）**:
 
-1. **Windows OpenSSH Agent**:
-   - 路径: `\\.\\pipe\\openssh-ssh-agent`
-   - 使用 Named Pipe 通信
-
-2. **Pageant**:
-   - 路径: `\\.\\pipe\\pageant`
-   - 使用专有协议
-
-**建议实现**:
-
-```rust
-#[cfg(windows)]
-pub fn get_ssh_agent_socket() -> Option<String> {
-    // 尝试 Windows OpenSSH Agent
-    let pipe_path = r"\\.\pipe\openssh-ssh-agent";
-    if std::fs::metadata(pipe_path).is_ok() {
-        return Some(pipe_path.to_string());
-    }
-    // 尝试 Pageant
-    let pageant_path = r"\\.\pipe\pageant";
-    if std::fs::metadata(pageant_path).is_ok() {
-        return Some(pageant_path.to_string());
-    }
-    None
-}
-```
+- Windows 分支细化错误语义：`pipe not found`（服务未启动/路径无效）、`permission denied`（权限不一致）
+- 未设置 `SSH_AUTH_SOCK` 时自动按顺序探测：`\\.\pipe\openssh-ssh-agent` → `\\.\pipe\pageant`
+- 命中 Pageant pipe 时记一条 `tracing::info`（best-effort 模式），便于日志回溯
 
 ---
 
@@ -994,13 +951,13 @@ _最后更新: 2026-03-26_
 
 ## 十四、Apple WebKit (Safari) 键盘事件问题 (2026-03-29)
 
-### Issue #26: Safari 同时按键丢失字符 🟡 已知问题，待修复
+### Issue #26: Safari 同时按键丢失字符 ✅ 已修复
 
 **严重程度**: Medium
-**状态**: 🟡 已知问题，测试中
-**影响功能**: 终端输入
-**浏览器**: Safari (Apple WebKit)
-**修复时间**: 2026-03-29
+**状态**: ✅ 已修复
+**影响功能**: 终端输入（local / SSH / serial 共用 `useTerminal`）
+**浏览器**: Safari、macOS Tauri 内置 WKWebView（纯 WebKit，不含 Chrome/Chromium 内核）
+**修复时间**: 2026-05-02（生产路径）；实验验证见 2026-03-29
 
 **问题描述**:
 
@@ -1026,48 +983,28 @@ _最后更新: 2026-03-26_
 - [xtermjs/xterm.js #5374](https://github.com/xtermjs/xterm.js/issues/5374) - Cannot type shifted characters or overlapping keys in Safari
 - [xtermjs/xterm.js #5721](https://github.com/xtermjs/xterm.js/issues/5721) - ctrl-c sends keyCode 13 on iOS Safari
 
-**解决方案（测试中）**:
+**解决方案（已合入生产）**:
 
-在 `src/experiments/xterm-test.tsx` 中实现了 WebKit 回退机制：
+在 `packages/frontend/src/hooks/use-terminal.ts` 中实现 `setupWebKitInputCompensation(term, send)`，由 `useTerminal` 在挂载终端后注册：
 
-1. **检测 WebKit**: `/AppleWebKit/i.test(navigator.userAgent)`
-2. **追踪已发送字符**: 在 `onData` 中记录已发送的字符到 `Set`
-3. **回退机制**: 在 `textarea.input` 事件中检查字符是否被遗漏，如果是则补充发送
+1. **仅纯 WebKit**：`/AppleWebKit/i` 且排除 `Chrome|Chromium|Edg`，避免误伤 Blink
+2. **滚动尾部 buffer**：通过 `term.onData` 记录最近发送的尾部字符串（默认 32 字符），与实验页 `Set` 方案相比更利于与 IME / 多字节输入共存
+3. **textarea `input` 回退**：`requestAnimationFrame` 后若 `recentSent` 未以本次 `inputData` 结尾，则调用 **`send(inputData)`**（与正常 `onData` 同路径 → `session_write` / 本地 PTY），**不**使用 `term.write()`，避免把用户输入写回屏幕而非后端
+4. **卸载时清理**：移除 `input` 监听并 dispose `onData` 订阅
 
-```typescript
-// 核心逻辑
-const isAppleWebKit = /AppleWebKit/i.test(navigator.userAgent)
-const sentCharsRef = { current: new Set<string>() }
+早期在 `packages/frontend/src/experiments/xterm-test.tsx` 中的验证逻辑已升级为上述生产实现。
 
-// onData 中追踪
-term.onData((data: string) => {
-  if (isAppleWebKit) {
-    for (const ch of data) {
-      sentCharsRef.current.add(ch)
-    }
-  }
-})
+**验证建议**（回归时可抽查）:
 
-// input 事件中回退
-textarea.addEventListener('input', (e: Event) => {
-  const inputData = (e as InputEvent).data ?? ''
-  if (isAppleWebKit && !sentCharsRef.current.has(inputData)) {
-    // 补充发送遗漏的字符
-    term.write(inputData)
-  }
-})
-```
-
-**待完成**:
-
-- [ ] 在 `terminal-container.tsx` 中应用同样的修复
-- [ ] 将 `term.write()` 替换为 `sshService.write(sessionId, text)` 发送到后端
-- [ ] 测试 Safari 中的实际效果
-- [ ] 验证 Ctrl+C、方向键等特殊键仍正常工作
+- Safari / WKWebView：快速交替两键、Shift+字母
+- Ctrl+C、方向键、IME 输入（中文）不误补发
 
 **修改文件**:
 
-- `src/experiments/xterm-test.tsx` - 测试页面已实现
+- `packages/frontend/src/hooks/use-terminal.ts` — `setupWebKitInputCompensation` + `useTerminal` 内注册与 cleanup
+- （可选参考）`packages/frontend/src/experiments/xterm-test.tsx` — 历史验证页面
+
+_本节最后更新: 2026-05-02_
 
 ---
 
@@ -1103,7 +1040,7 @@ textarea.addEventListener('input', (e: Event) => {
    - Tauri 环境监听 `tauri://focus` / `tauri://blur` webview event；浏览器环境降级到 `window.addEventListener('focus'/'blur')`
    - 终端 `session-status-bar` 在失焦时半透明 + tooltip 提示
    - 终端断连/出错时只在窗口失焦时弹原生通知，否则仅 toast，避免干扰
-5. **设置面板**：`general-settings.tsx` 新增 *Desktop UX* section，三个开关 + 文案 + i18n 三语
+5. **设置面板**：`general-settings.tsx` 新增 _Desktop UX_ section，三个开关 + 文案 + i18n 三语
 6. **能力清单 (`src-tauri/capabilities/default.json`)**：补齐 `core:window:allow-{show,hide,set-focus,unminimize,is-focused,is-visible}` + `core:event:allow-{listen,unlisten}` + `notification:default`
 
 **新增 / 修改文件**:
@@ -1163,11 +1100,11 @@ textarea.addEventListener('input', (e: Event) => {
 
 **新增测试**:
 
-| 文件 | 关注点 |
-| --- | --- |
-| `packages/frontend/src/service/shortcuts.test.ts` | `parseKeyboardEvent` 修饰键 / `matchShortcut` 默认绑定 + 禁用 / `handleKeyboardEvent` 触发 + 阻止默认 + editable 白名单门禁 |
-| `packages/frontend/src/store/transfer-queue.test.ts` | `enqueue` 入队并展开浮层、`updateProgress` 速率计算、`finish` 终态切换、`clearFinished`、`togglePanel` |
-| `packages/frontend/src/hooks/use-window-focus.test.ts` | 初始化值与 `document.hasFocus()` 一致、`focus`/`blur` 事件后状态切换、unmount 清理监听 |
+| 文件                                                   | 关注点                                                                                                                      |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `packages/frontend/src/service/shortcuts.test.ts`      | `parseKeyboardEvent` 修饰键 / `matchShortcut` 默认绑定 + 禁用 / `handleKeyboardEvent` 触发 + 阻止默认 + editable 白名单门禁 |
+| `packages/frontend/src/store/transfer-queue.test.ts`   | `enqueue` 入队并展开浮层、`updateProgress` 速率计算、`finish` 终态切换、`clearFinished`、`togglePanel`                      |
+| `packages/frontend/src/hooks/use-window-focus.test.ts` | 初始化值与 `document.hasFocus()` 一致、`focus`/`blur` 事件后状态切换、unmount 清理监听                                      |
 
 **踩过的坑**:
 
@@ -1195,8 +1132,8 @@ textarea.addEventListener('input', (e: Event) => {
    - 新 `init_tracing()`：`EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))` + `fmt::layer().compact()` + `LogTracer::init()` 桥接 russh / tauri / sqlx 等仍走 `log` crate 的依赖
 2. **结构化字段**：`session/channel.rs` (`session_id`, `event`, `error`)、`storage.rs` (`backend`, `endpoint`, `path`)、`sftp.rs` (`transfer_id`, `total_bytes`)、`window_cmd.rs` (`enabled`, `label`)
 3. **dead_code 精细化**（按字段而非整文件）：
-   - `state.rs::SharedState`：`local_sessions` / `shell_channels` / `agent_channels` 加 *字段级* `#[allow(dead_code)]` + 注释说明它们是 ownership-only 或未来命令的预留点
-   - `state.rs::LocalPtySession.{pty_pair, child, writer}`：同上，强调是 *ownership-only*，drop 时统一释放
+   - `state.rs::SharedState`：`local_sessions` / `shell_channels` / `agent_channels` 加 _字段级_ `#[allow(dead_code)]` + 注释说明它们是 ownership-only 或未来命令的预留点
+   - `state.rs::LocalPtySession.{pty_pair, child, writer}`：同上，强调是 _ownership-only_，drop 时统一释放
    - `state.rs::ClientHandler.agent_socket`：`#[cfg_attr(not(unix), allow(dead_code))]`，因为 Windows 上没有 Unix socket 路径会被读
    - `state.rs::ClientHandler.session_id`：`#[allow(dead_code)] // reserved for tracing span correlation`
    - `state.rs::AgentChannel.socket_path`、`state.rs::SerialConfig`、`state.rs::AgentForwardState`：保留为 IPC payload / 生命周期占位，加注释 + `#[allow(dead_code)]`

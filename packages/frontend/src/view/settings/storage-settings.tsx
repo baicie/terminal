@@ -61,6 +61,7 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
         {
           username: settings.syncServiceUsername || undefined,
           password: settings.syncServiceToken || undefined,
+          bucket: settings.syncServiceBucket || undefined,
         },
       )
 

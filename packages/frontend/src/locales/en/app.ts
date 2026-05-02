@@ -119,7 +119,6 @@ export default {
   'common.retry': 'Retry',
   'common.goHome': 'Go Home',
   'common.errorOccurred': 'Something went wrong',
-  'common.back': 'Back',
 
   // Error boundary
   'error.title': 'Failed to load page',
@@ -165,4 +164,17 @@ export default {
   'experiments.copyEvents': 'Copy event log to clipboard',
   'experiments.copied': 'Copied!',
   'experiments.copyFailed': 'Failed to copy to clipboard',
+  // Terminal agent auth readable errors
+  'terminal.errorTitle': 'Terminal error',
+  'terminal.agentNoPipe':
+    'No SSH agent pipe found. Start Windows OpenSSH Authentication Agent service, or set SSH_AUTH_SOCK to a valid pipe.',
+  'terminal.agentSockInvalid':
+    'The pipe path in SSH_AUTH_SOCK does not exist. Please verify your configuration.',
+  'terminal.agentPermissionDenied':
+    'Permission denied when opening SSH agent pipe. Ensure the app and agent run with matching privilege level.',
+  'terminal.agentNoIdentities': 'SSH agent has no available identities.',
+  'terminal.agentRejected':
+    'All identities from SSH agent were rejected by the server.',
+  'terminal.agentReadFailed':
+    'Failed to read identities from SSH agent. Please check agent status.',
 }

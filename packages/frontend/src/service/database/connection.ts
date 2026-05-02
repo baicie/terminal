@@ -191,9 +191,27 @@ export async function initSchema() {
       duration_seconds INTEGER,
       is_saved INTEGER DEFAULT 0,
       notes TEXT,
+      error_message TEXT,
+      error_raw TEXT,
       FOREIGN KEY (host_id) REFERENCES hosts(id) ON DELETE SET NULL
     )
   `)
+
+  // Migration: add error fields if they don't exist (for existing databases)
+  try {
+    await database.execute(
+      "ALTER TABLE connection_logs ADD COLUMN error_message TEXT",
+    )
+  } catch {
+    // Column may already exist, ignore
+  }
+  try {
+    await database.execute(
+      "ALTER TABLE connection_logs ADD COLUMN error_raw TEXT",
+    )
+  } catch {
+    // Column may already exist, ignore
+  }
 
   await database.execute(`
     CREATE INDEX IF NOT EXISTS idx_connection_logs_started_at ON connection_logs(started_at DESC)

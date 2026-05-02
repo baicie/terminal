@@ -247,7 +247,7 @@ src-tauri/
 | 团队协作 - 云端模式            | 📋 待开发（需自部署服务端） |
 | SSH 证书认证                   | ✅ 已实现 (2026-03-26)      |
 | 串口连接                       | ✅ 已实现 (2026-03-20)      |
-| 数据存储服务 (WebDAV/S3/REST)  | ✅ 已实现 (2026-03-26)      |
+| 数据存储服务 (WebDAV/S3/REST)  | ⚠️ 后端已接线 (2026-05-02)，全量同步 UX 仍迭代中 |
 | SSH 密钥生成                   | ✅ 已实现 (2026-03-24)      |
 | 高级脚本                       | ✅ 已实现 (2026-03-23)      |
 | 终端工具侧栏 (Snippets + 历史) | ✅ 已实现 (2026-03-24)      |
@@ -364,6 +364,16 @@ src-tauri/
 - **代码卫生**：Rust `cargo check` 警告由 14 条降至 0；`#![allow(dead_code)]` 全部带注释解释为何保留。
 - **覆盖率**：新增 3 个测试文件，覆盖 `shortcutsService` 关键路径、传输队列状态机、窗口焦点 hook 的初始/事件路径。
 
+### Phase 6.3 - 文档对齐 + 远程存储命令接线 ✅ 已完成
+
+> 2026-05-02：与「按序做」一致——`docs/project.md` 待办与代码对齐；`StorageManager` 注入 Tauri，`storage_init` / `health` / `upload` / `download` / `list` / `delete` 走真实后端；设置页 S3 测试连接补充 `bucket` 参数。
+
+| 项目 | 状态 |
+| --- | --- |
+| P1/P2/P3 checklist 与 `issue.md` / 代码路径一致 | ✅ |
+| `lib.rs` `.manage(Arc<StorageManager>)` + `storage_*` 使用默认后端名 `default` | ✅ |
+| 前端 `storageInit` 传入 `bucket`（S3） | ✅ |
+
 ---
 
 ## 待办事项
@@ -375,22 +385,22 @@ src-tauri/
 
 ### P1 - 应该完成
 
-- [ ] 实现端口转发后端
-- [ ] 清理 Rust 编译警告
-- [ ] ssh_resize 实际生效
+- [x] ~~实现端口转发后端~~ ✅ 已有 `port_forward_*` 与 `-L/-R/SOCKS` 等实现；复杂场景与边界见 `docs/issue.md` Issue #3「待完善」
+- [x] ~~清理 Rust 编译警告~~ ✅ `cargo check` 0 警告（2026-05-02 Phase 6.2 / tracing + dead_code 精细化）
+- [x] ~~ssh_resize 实际生效~~ ✅ `session_resize`：`LocalSession` 调 `pty.resize`；`SshSession` 发 `CSI … t` 窗口尺寸序列（`session/ssh.rs`）
 
 ### P2 - 建议完成
 
-- [ ] 实现 Agent 认证
-- [ ] 实现主机链功能
-- [ ] 命令快速补全
-- [ ] Vault 加密存储
+- [ ] **SSH Agent 作为认证方式连接主机**：已贯通 `session_create_ssh_agent`（Unix + Windows OpenSSH named pipe），Pageant 与完整实机回归见 Issue #21
+- [x] ~~实现主机链功能~~ ✅ `session_create_ssh_jump` + `SshSession::new_with_jump`
+- [ ] 命令快速补全（终端内历史/片段级补全，仍 📋）
+- [x] ~~Vault 加密存储~~ ✅ `vault_*` 命令集
 
 ### P3 - 未来考虑
 
-- [ ] 命令面板完善
-- [ ] 多工作区
-- [ ] 跨设备同步
+- [x] ~~命令面板完善~~ ✅（与 Phase 3 一致；持续小优化不阻塞）
+- [x] ~~多工作区~~ ✅
+- [ ] **跨设备同步**：设置里可配 WebDAV/S3/REST；后端 `StorageManager` 已注入并由 `storage_*` 命令走真实后端（2026-05-02）；上传「整机导出文件」等上层流程仍可按产品迭代
 
 ---
 
@@ -668,4 +678,4 @@ const response = await teamApi.listTeams()
 
 ---
 
-_文档更新时间: 2026-05-02 (Phase 6.2 完成 - t1 托盘/通知 + t2 SFTP 队列 + t3 单测 + t4 tracing/dead_code 清理)_
+_文档更新时间: 2026-05-02 (Phase 6.3：project 待办对齐 + 远程存储 `storage_*` 接 `StorageManager` + S3 测试传 bucket)_

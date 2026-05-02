@@ -119,7 +119,6 @@ export default {
   'common.retry': '重试',
   'common.goHome': '返回首页',
   'common.errorOccurred': '发生错误',
-  'common.back': '返回',
 
   // Error boundary
   'error.title': '页面加载失败',
@@ -165,4 +164,14 @@ export default {
   'experiments.copyEvents': '将事件日志复制到剪贴板',
   'experiments.copied': '已复制！',
   'experiments.copyFailed': '复制到剪贴板失败',
+  // Terminal agent auth readable errors
+  'terminal.errorTitle': '终端错误',
+  'terminal.agentNoPipe':
+    '未找到 SSH Agent 管道。请启动 Windows OpenSSH Authentication Agent 服务，或设置 SSH_AUTH_SOCK 指向有效管道。',
+  'terminal.agentSockInvalid': 'SSH_AUTH_SOCK 指向的管道不存在，请检查配置。',
+  'terminal.agentPermissionDenied':
+    '打开 SSH Agent 管道被拒绝。请确认应用与 Agent 服务使用相同权限级别运行。',
+  'terminal.agentNoIdentities': 'SSH Agent 中没有可用身份（密钥）。',
+  'terminal.agentRejected': 'SSH Agent 中的身份均被服务器拒绝。',
+  'terminal.agentReadFailed': '读取 SSH Agent 身份失败，请检查 Agent 状态。',
 }

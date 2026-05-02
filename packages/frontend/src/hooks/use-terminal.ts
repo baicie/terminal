@@ -147,7 +147,13 @@ async function startShell(
       })
     }
     if (host.authType === 'agent') {
-      throw new Error('Agent authentication not yet supported')
+      return invoke<string>('session_create_ssh_agent', {
+        host: host.hostname,
+        port: host.port,
+        username: host.username,
+        cols,
+        rows,
+      })
     }
     throw new Error(`Unsupported auth type: ${host.authType}`)
   }

@@ -183,6 +183,10 @@ export interface ConnectionLogRecord {
   duration_seconds: number | null
   is_saved: number
   notes: string | null
+  /** 英文可读错误描述（供 UI 翻译） */
+  error_message?: string | null
+  /** 原始错误完整信息 */
+  error_raw?: string | null
 }
 
 // Script types

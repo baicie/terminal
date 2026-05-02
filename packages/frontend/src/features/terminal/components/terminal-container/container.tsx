@@ -9,6 +9,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal as TerminalComponent } from '@baicie/xterm'
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getThemeColors } from '@/utils/terminal-themes'
 import { useIsMobile } from '@/hooks/use-breakpoint'
@@ -20,6 +21,7 @@ import {
   clearTerminalWriteFn,
   setTerminalWriteFn,
 } from '@/features/terminal/contexts'
+import { getReadableTerminalError } from '@/features/terminal/utils/readable-error'
 import { TerminalKeyboardBar } from './keyboard-bar'
 import { SessionStatusBar } from './session-status-bar'
 import { TerminalContextMenu } from './terminal-context-menu'
@@ -70,6 +72,7 @@ export interface TerminalContainerProps {
  * 终端容器主组件，管理 xterm.js 实例和终端会话。
  */
 export function TerminalContainer({ tabId }: TerminalContainerProps) {
+  const { t } = useTranslation()
   const tabs = useAppStore(s => s.tabs)
   const hosts = useHostStore(s => s.hosts)
   const settings = useAppStore(s => s.config) as Record<string, unknown>
@@ -120,12 +123,14 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
     serialSessionId: tab?.serialSessionId,
   })
 
+  const readableError = error ? getReadableTerminalError(error, t) : null
+
   // 连接失败时提示
   useEffect(() => {
     if (error) {
-      toast.error(`Terminal error: ${error}`)
+      toast.error(`${t('terminal.errorTitle')}: ${readableError ?? error}`)
     }
-  }, [error])
+  }, [error, readableError, t])
 
   // 断连/出错时发系统通知（窗口失焦时弹原生 OS 通知）
   const prevStatusRef = useRef(status)
@@ -148,10 +153,10 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
         : `Disconnected · ${target}`
     void notify({
       title,
-      body: error ?? undefined,
+      body: readableError ?? undefined,
       type: status === 'error' ? 'error' : 'warning',
     })
-  }, [status, error, tab, host])
+  }, [status, error, tab, host, readableError, t])
 
   // 初始化 xterm
   // 仅依赖 tabId：tab 对象引用可能因 store 重渲染而变化，但只要 tabId 不变
@@ -384,7 +389,12 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
     <div className="h-full flex bg-[#1e1e1e]">
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {showStatusBar && (
-          <SessionStatusBar tab={tab} host={host} status={status} />
+          <SessionStatusBar
+            tab={tab}
+            host={host}
+            status={status}
+            errorMessage={readableError ?? undefined}
+          />
         )}
         {/* Terminal area: relative wrapper 用于挂载搜索浮层 */}
         <div className="relative flex-1 min-h-0">

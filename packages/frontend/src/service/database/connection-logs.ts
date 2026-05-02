@@ -9,8 +9,8 @@ export async function addConnectionLog(
 ): Promise<string> {
   const id = crypto.randomUUID()
   await executeQuery(
-    `INSERT INTO connection_logs (id, host_id, host_name, host_address, username, connection_type, started_at, ended_at, duration_seconds, is_saved, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO connection_logs (id, host_id, host_name, host_address, username, connection_type, started_at, ended_at, duration_seconds, is_saved, notes, error_message, error_raw)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       log.host_id,
@@ -23,6 +23,8 @@ export async function addConnectionLog(
       log.duration_seconds,
       log.is_saved,
       log.notes,
+      log.error_message,
+      log.error_raw,
     ],
   )
   return id
@@ -50,6 +52,14 @@ export async function updateConnectionLog(
   if (updates.notes !== undefined) {
     fields.push('notes = ?')
     values.push(updates.notes)
+  }
+  if (updates.error_message !== undefined) {
+    fields.push('error_message = ?')
+    values.push(updates.error_message)
+  }
+  if (updates.error_raw !== undefined) {
+    fields.push('error_raw = ?')
+    values.push(updates.error_raw)
   }
 
   if (fields.length > 0) {

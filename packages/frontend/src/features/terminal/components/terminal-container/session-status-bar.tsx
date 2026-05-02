@@ -22,6 +22,7 @@ interface SessionStatusBarProps {
   tab: Tab
   host?: Host
   status: ConnectionStatus
+  errorMessage?: string
   onReconnect?: () => void
   onDisconnect?: () => void
 }
@@ -42,6 +43,7 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
   tab,
   host,
   status,
+  errorMessage,
   onReconnect,
   onDisconnect,
 }) => {
@@ -109,6 +111,14 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
       <div className={cn('flex items-center gap-1.5 shrink-0', meta.text)}>
         <span className={cn('size-1.5 rounded-full', meta.dot)} />
         <span className="text-[11px] font-medium">{meta.label}</span>
+        {status === 'error' && errorMessage && (
+          <span
+            className="max-w-56 truncate text-[11px] text-destructive/90"
+            title={errorMessage}
+          >
+            {errorMessage}
+          </span>
+        )}
       </div>
 
       {/* 快捷操作 */}

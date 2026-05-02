@@ -24,7 +24,7 @@ pub use session::{
 };
 
 use commands::{
-    session_close, session_create_local, session_create_ssh_jump, session_create_ssh_key,
+    session_close, session_create_local, session_create_ssh_agent, session_create_ssh_jump, session_create_ssh_key,
     session_create_ssh_password, session_list, session_resize, session_write,
 };
 use port_forward::{port_forward_list, port_forward_start, port_forward_stop};
@@ -73,9 +73,11 @@ pub fn run() {
     init_tracing();
 
     let shared_state = create_shared_state();
+    let storage_manager = std::sync::Arc::new(crate::storage::StorageManager::new());
 
     tauri::Builder::default()
         .manage(shared_state)
+        .manage(storage_manager)
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
@@ -102,6 +104,7 @@ pub fn run() {
             session_create_local,
             session_create_ssh_password,
             session_create_ssh_key,
+            session_create_ssh_agent,
             session_create_ssh_jump,
             session_write,
             session_resize,

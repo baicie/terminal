@@ -2,12 +2,8 @@
 //!
 //! Provides unified storage abstraction for WebDAV, S3, and custom REST API backends.
 //!
-//! NOTE: 该模块当前是 *骨架*：trait + 三种 backend 实现 + manager 全部就位，
-//! 但 Tauri 端尚未把它们暴露为命令（仅有 `storage_upload` 占位 stub）。
-//! 当 docs/issue.md 中“数据存储服务配置 - 后端待实现”落地时，将由
-//! `lib.rs` 把 `StorageManager` 注入 Tauri State 并启用对应命令，
-//! 在那之前这里的项是有意保留为 dead_code 的。
-#![allow(dead_code)]
+//! `StorageManager` 由 `lib.rs` 以 `Arc<StorageManager>` 注入 Tauri State；所有
+//! `storage_*` 命令使用固定后端名 `default`（与设置里「测试连接」一致）。
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
@@ -15,12 +11,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
-use crate::state::SharedStateType;
 
 /// Storage backend types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[allow(dead_code)]
 pub enum StorageBackend {
     WebDAV {
         endpoint: String,
@@ -261,7 +255,9 @@ fn parse_webdav_response(body: &str, _base_path: &str) -> Vec<StorageItem> {
     items
 }
 
-/// S3 storage implementation
+/// S3 storage implementation（当前 HTTP 走无 SigV4 的 URL 形态；`access_key` /
+/// `secret_key` / `region` 由构造器保留，供后续接入 AWS 签名或兼容端点。）
+#[allow(dead_code)]
 pub struct S3Storage {
     endpoint: String,
     access_key: String,
@@ -623,6 +619,8 @@ impl StorageManager {
         backends.remove(name);
     }
 
+    /// 预留：设置 UI「已配置后端列表」或诊断命令。
+    #[allow(dead_code)]
     pub async fn list_backends(&self) -> Vec<String> {
         let backends = self.backends.read().await;
         backends.keys().cloned().collect()
@@ -673,84 +671,186 @@ impl Default for StorageManager {
 
 use crate::errors::StorageError;
 
+/// 与设置页「测试连接」共用的默认后端实例名。
+const DEFAULT_STORAGE_NAME: &str = "default";
+
+fn build_storage_backend(
+    backend_type: &str,
+    endpoint: String,
+    username: Option<String>,
+    password: Option<String>,
+    api_key: Option<String>,
+    base_path: Option<String>,
+    bucket: Option<String>,
+    region: Option<String>,
+) -> Result<StorageBackend, StorageError> {
+    let t = backend_type.to_ascii_lowercase();
+    match t.as_str() {
+        "webdav" => {
+            if endpoint.trim().is_empty() {
+                return Err(StorageError::ConnectionFailed(
+                    "WebDAV endpoint required".to_string(),
+                ));
+            }
+            Ok(StorageBackend::WebDAV {
+                endpoint,
+                username: username.unwrap_or_default(),
+                password: password.unwrap_or_default(),
+                base_path,
+            })
+        }
+        "s3" => {
+            let bucket = bucket.ok_or_else(|| {
+                StorageError::ConnectionFailed("S3 bucket name required".to_string())
+            })?;
+            if bucket.trim().is_empty() {
+                return Err(StorageError::ConnectionFailed(
+                    "S3 bucket name cannot be empty".to_string(),
+                ));
+            }
+            Ok(StorageBackend::S3 {
+                endpoint,
+                access_key: username.unwrap_or_default(),
+                secret_key: password.unwrap_or_default(),
+                bucket,
+                region,
+            })
+        }
+        "custom" => {
+            if endpoint.trim().is_empty() {
+                return Err(StorageError::ConnectionFailed(
+                    "REST API endpoint required".to_string(),
+                ));
+            }
+            Ok(StorageBackend::RestApi {
+                endpoint,
+                api_key,
+                headers: None,
+            })
+        }
+        _ => Err(StorageError::ConnectionFailed(format!(
+            "Unknown storage backend type: {backend_type}"
+        ))),
+    }
+}
+
 /// Tauri command: Initialize storage backend from config
 #[tauri::command]
-#[allow(dead_code)]
 pub async fn storage_init(
-    _state: State<'_, SharedStateType>,
+    manager: State<'_, Arc<StorageManager>>,
     backend_type: String,
     endpoint: String,
-    _username: Option<String>,
-    _password: Option<String>,
-    _api_key: Option<String>,
-    _base_path: Option<String>,
-    _bucket: Option<String>,
-    _region: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+    api_key: Option<String>,
+    base_path: Option<String>,
+    bucket: Option<String>,
+    region: Option<String>,
 ) -> Result<bool, StorageError> {
-    tracing::info!(backend = %backend_type, endpoint = %endpoint, "storage_init called");
+    tracing::info!(backend = %backend_type, endpoint = %endpoint, "storage_init");
+    let backend = build_storage_backend(
+        &backend_type,
+        endpoint,
+        username,
+        password,
+        api_key,
+        base_path,
+        bucket,
+        region,
+    )?;
+    let config = StorageConfig {
+        backend,
+        enabled: true,
+    };
+    manager
+        .remove_backend(DEFAULT_STORAGE_NAME)
+        .await;
+    manager
+        .create_from_config(DEFAULT_STORAGE_NAME, &config)
+        .await
+        .map_err(|e| StorageError::ConnectionFailed(e.to_string()))?;
     Ok(true)
 }
 
 /// Tauri command: Check storage connection health
 #[tauri::command]
 pub async fn storage_health_check(
-    _state: State<'_, SharedStateType>,
+    manager: State<'_, Arc<StorageManager>>,
 ) -> Result<bool, StorageError> {
-    // TODO: Implement health check using stored config
-    tracing::debug!("storage_health_check called");
-    Ok(true)
+    let backend = manager
+        .get_backend(DEFAULT_STORAGE_NAME)
+        .await
+        .ok_or(StorageError::NotConfigured)?;
+    backend
+        .health_check()
+        .await
+        .map_err(|e| StorageError::ConnectionFailed(e.to_string()))
 }
 
 /// Tauri command: Upload data to storage
 #[tauri::command]
-#[allow(dead_code)]
 pub async fn storage_upload(
-    _state: State<'_, SharedStateType>,
+    manager: State<'_, Arc<StorageManager>>,
     path: String,
-    _data: String,
+    data: String,
 ) -> Result<StorageResult, StorageError> {
-    tracing::debug!(path = %path, "storage_upload called");
-    // TODO: Implement actual upload using initialized backend
-    Ok(StorageResult {
-        success: false,
-        message: "Storage backend not configured".to_string(),
-        timestamp: chrono::Utc::now().timestamp(),
-    })
+    let backend = manager
+        .get_backend(DEFAULT_STORAGE_NAME)
+        .await
+        .ok_or(StorageError::NotConfigured)?;
+    backend
+        .upload(&path, data.as_bytes())
+        .await
+        .map_err(|e| StorageError::UploadFailed(e.to_string()))
 }
 
 /// Tauri command: Download data from storage
 #[tauri::command]
 pub async fn storage_download(
-    _state: State<'_, SharedStateType>,
+    manager: State<'_, Arc<StorageManager>>,
     path: String,
 ) -> Result<String, StorageError> {
-    tracing::debug!(path = %path, "storage_download called");
-    // TODO: Implement actual download using initialized backend
-    Err(StorageError::NotConfigured)
+    let backend = manager
+        .get_backend(DEFAULT_STORAGE_NAME)
+        .await
+        .ok_or(StorageError::NotConfigured)?;
+    let bytes = backend
+        .download(&path)
+        .await
+        .map_err(|e| StorageError::DownloadFailed(e.to_string()))?;
+    String::from_utf8(bytes).map_err(|e| {
+        StorageError::DownloadFailed(format!("Response is not valid UTF-8: {e}"))
+    })
 }
 
 /// Tauri command: List storage items
 #[tauri::command]
 pub async fn storage_list(
-    _state: State<'_, SharedStateType>,
+    manager: State<'_, Arc<StorageManager>>,
     path: String,
 ) -> Result<Vec<StorageItem>, StorageError> {
-    tracing::debug!(path = %path, "storage_list called");
-    // TODO: Implement actual list using initialized backend
-    Ok(vec![])
+    let backend = manager
+        .get_backend(DEFAULT_STORAGE_NAME)
+        .await
+        .ok_or(StorageError::NotConfigured)?;
+    backend
+        .list(&path)
+        .await
+        .map_err(|e| StorageError::ListFailed(e.to_string()))
 }
 
 /// Tauri command: Delete storage item
 #[tauri::command]
 pub async fn storage_delete(
-    _state: State<'_, SharedStateType>,
+    manager: State<'_, Arc<StorageManager>>,
     path: String,
 ) -> Result<StorageResult, StorageError> {
-    tracing::debug!(path = %path, "storage_delete called");
-    // TODO: Implement actual delete using initialized backend
-    Ok(StorageResult {
-        success: false,
-        message: "Storage backend not configured".to_string(),
-        timestamp: chrono::Utc::now().timestamp(),
-    })
+    let backend = manager
+        .get_backend(DEFAULT_STORAGE_NAME)
+        .await
+        .ok_or(StorageError::NotConfigured)?;
+    backend
+        .delete(&path)
+        .await
+        .map_err(|e| StorageError::DeleteFailed(e.to_string()))
 }

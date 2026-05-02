@@ -165,6 +165,35 @@ pub async fn session_create_ssh_key(
     Ok(session_id)
 }
 
+/// 创建 SSH 会话（Agent 认证）
+#[tauri::command]
+pub async fn session_create_ssh_agent(
+    app: AppHandle,
+    host: String,
+    port: u16,
+    username: String,
+    cols: u16,
+    rows: u16,
+) -> Result<String, SessionError> {
+    if host.is_empty() {
+        return Err(SessionError::InvalidInput("Host cannot be empty".to_string()));
+    }
+    if !(1..=65535).contains(&port) {
+        return Err(SessionError::InvalidInput("Port must be between 1 and 65535".to_string()));
+    }
+    if username.is_empty() {
+        return Err(SessionError::InvalidInput("Username cannot be empty".to_string()));
+    }
+
+    let session = SshSession::new_with_agent(app, &host, port, &username, cols, rows).await?;
+    let session_id = session.session_id().to_string();
+
+    let manager = get_session_manager();
+    manager.register_session(SessionState::Ssh(session)).await;
+
+    Ok(session_id)
+}
+
 /// 创建 SSH 会话（通过 Jump Host）
 #[tauri::command]
 pub async fn session_create_ssh_jump(

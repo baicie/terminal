@@ -296,6 +296,13 @@
 - 修改（Rust）：`src-tauri/Cargo.toml`、`src-tauri/src/{lib,state,storage,sftp,window_cmd}.rs`、`src-tauri/src/session/channel.rs`、`src-tauri/capabilities/default.json`、`src-tauri/tauri.conf.json`
 - 修改（前端）：`packages/frontend/src/App.tsx`、`packages/frontend/src/layout/index.tsx`、`packages/frontend/src/components/settings-dialog/{index,general-settings}.tsx`、`packages/frontend/src/features/terminal/components/terminal-container/{container,session-status-bar}.tsx`、`packages/frontend/src/features/terminal/services/sftp.ts`、`packages/frontend/src/view/sftp/sftp-container.tsx`、`packages/frontend/src/locales/{cn,en,fr}/app.ts`
 
+### 2026-05-02 第四轮 (Phase 6.3 — 文档待办对齐 + 存储命令接线) ✅
+
+1. **`docs/project.md`**：P1/P2/P3 checklist 与当前代码一致；Phase 4「数据存储」改为 ⚠️ 后端已接线；新增 Phase 6.3 小节。
+2. **`docs/issue.md`**：Issue #5 / #6 / #10、「数据存储服务后端」段落与 `session_resize` / Jump / Agent 现状对齐。
+3. **Rust**：`lib.rs` `.manage(Arc<StorageManager>)`；`storage.rs` 移除整文件 `dead_code` allow，`storage_*` 走 `default` 后端；`S3` 占位字段与 `list_backends` 带目标化 allow。
+4. **前端**：`storage-settings.tsx`、`storage-settings-dialog.tsx` 的 `storageInit` 增加 `bucket`（S3 测试连接必填）。
+
 ---
 
 ### 2026-05-02 第二轮 (P0+P1+P2 全做完) ✅
@@ -935,27 +942,9 @@ _最后更新：2026-03-26 - 功能完善批次_
 
 ---
 
-### 2026-03-29 待完成的工作 (第八批次)
+### 2026-03-29 待完成的工作 (第八批次) — 已并入生产 ✅
 
-1. **Safari WebKit 键盘事件问题修复** - `src/view/terminal/terminal-container.tsx`
+1. **Safari WebKit 键盘事件（Issue #26）** — 已在 `packages/frontend/src/hooks/use-terminal.ts` 通过 `setupWebKitInputCompensation` 修复（2026-05-02），local / SSH / serial 共用；补发走与 `onData` 相同的 `send` → 后端写入，非 `term.write()`。详见 `docs/issue.md` → Issue #26。
 
-   **问题描述**:
-   - Safari 中同时按键只收到第一个字符
-   - xterm.js 的 `onData` 事件在 WebKit 下有缺陷
-   - 这是 Apple WebKit 的已知问题，不是 xterm.js bug
-
-   **已测试方案**:
-   - 在 `src/experiments/xterm-test.tsx` 中实现了 WebKit 回退机制
-   - 检测 `/AppleWebKit/i.test(navigator.userAgent)`
-   - 在 `onData` 中追踪已发送字符
-   - 在 `textarea.input` 中补充遗漏的字符
-
-   **待完成**:
-   - [ ] 在 `terminal-container.tsx` 中应用同样修复
-   - [ ] 将 `term.write()` 替换为 `sshService.write(sessionId, text)`
-   - [ ] 验证 Ctrl+C、方向键等特殊键仍正常工作
-   - [ ] 测试 Safari 中的实际效果
-   - [ ] 更新 `docs/issue.md` 记录此问题
-
-   **测试页面**: `http://localhost:5173/experiments/xterm-test`
+   **可选回归**: Safari / WKWebView 快速双键、IME、Ctrl+C；实验页 `packages/frontend/src/experiments/xterm-test.tsx` 仍可对照。
 

@@ -61,7 +61,19 @@ impl SshSession {
         cols: u16,
         rows: u16,
     ) -> Result<Self, SessionError> {
-        Self::create(app, host, port, username, Some(password), None, None, cols, rows).await
+        Self::create(
+            app,
+            host,
+            port,
+            username,
+            Some(password),
+            None,
+            false,
+            None,
+            cols,
+            rows,
+        )
+        .await
     }
 
     /// 创建新的 SSH Session（密钥认证）
@@ -75,7 +87,43 @@ impl SshSession {
         cols: u16,
         rows: u16,
     ) -> Result<Self, SessionError> {
-        Self::create(app, host, port, username, password, Some(private_key), None, cols, rows).await
+        Self::create(
+            app,
+            host,
+            port,
+            username,
+            password,
+            Some(private_key),
+            false,
+            None,
+            cols,
+            rows,
+        )
+        .await
+    }
+
+    /// 创建新的 SSH Session（Agent 认证）
+    pub async fn new_with_agent(
+        app: AppHandle,
+        host: &str,
+        port: u16,
+        username: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<Self, SessionError> {
+        Self::create(
+            app,
+            host,
+            port,
+            username,
+            None,
+            None,
+            true,
+            None,
+            cols,
+            rows,
+        )
+        .await
     }
 
     /// 创建新的 SSH Session（通过 Jump Host）
@@ -97,6 +145,7 @@ impl SshSession {
             target_username,
             target_password,
             target_key,
+            false,
             Some(jump_host),
             cols,
             rows,
@@ -113,6 +162,7 @@ impl SshSession {
         username: &str,
         password: Option<&str>,
         private_key: Option<&str>,
+        use_agent: bool,
         jump_host: Option<JumpHostConfig>,
         cols: u16,
         rows: u16,
@@ -166,7 +216,7 @@ impl SshSession {
                 .map_err(|e| SessionError::ConnectionFailed(format!("Connection failed: {}", e)))?;
 
             // 认证
-            Self::authenticate(&mut direct_handle, username, password, private_key).await?;
+            Self::authenticate(&mut direct_handle, username, password, private_key, use_agent).await?;
             handle = direct_handle;
             target_channel = None;
         }
@@ -378,12 +428,153 @@ impl SshSession {
         username: &str,
         password: Option<&str>,
         private_key: Option<&str>,
+        use_agent: bool,
     ) -> Result<(), SessionError> {
         let rsa_hash = handle
             .best_supported_rsa_hash()
             .await
             .map_err(|e| SessionError::ConnectionFailed(format!("Failed to get RSA hash: {}", e)))?
             .flatten();
+
+        if use_agent {
+            #[cfg(unix)]
+            {
+                use russh::keys::agent::client::AgentClient;
+
+                let mut agent = AgentClient::connect_env().await.map_err(|e| {
+                    SessionError::AuthenticationFailed(format!("Failed to connect SSH agent: {}", e))
+                })?;
+                let identities = agent.request_identities().await.map_err(|e| {
+                    SessionError::AuthenticationFailed(format!(
+                        "Failed to read identities from SSH agent: {}",
+                        e
+                    ))
+                })?;
+                if identities.is_empty() {
+                    return Err(SessionError::AuthenticationFailed(
+                        "SSH agent has no available identities".to_string(),
+                    ));
+                }
+
+                for identity in identities {
+                    let public_key = identity.public_key().into_owned();
+                    let alg = match public_key.algorithm() {
+                        russh::keys::Algorithm::Dsa | russh::keys::Algorithm::Rsa { .. } => rsa_hash,
+                        _ => None,
+                    };
+                    let auth = handle
+                        .authenticate_publickey_with(username, public_key, alg, &mut agent)
+                        .await
+                        .map_err(|e| SessionError::AuthenticationFailed(format!("Agent auth failed: {}", e)))?;
+                    if auth.success() {
+                        return Ok(());
+                    }
+                }
+                return Err(SessionError::AuthenticationFailed(
+                    "Authentication failed: all SSH agent identities rejected".to_string(),
+                ));
+            }
+            #[cfg(windows)]
+            {
+                use russh::keys::agent::client::AgentClient;
+                use tokio::net::windows::named_pipe::ClientOptions;
+
+                let explicit_pipe = std::env::var("SSH_AUTH_SOCK").ok();
+                let candidates: Vec<String> = if let Some(pipe) = explicit_pipe.clone() {
+                    vec![pipe]
+                } else {
+                    vec![
+                        r"\\.\pipe\openssh-ssh-agent".to_string(),
+                        r"\\.\pipe\pageant".to_string(),
+                    ]
+                };
+
+                let mut selected_pipe: Option<String> = None;
+                let mut stream_opt = None;
+                let mut open_errors: Vec<(String, std::io::Error)> = Vec::new();
+                for pipe in candidates {
+                    match ClientOptions::new().open(&pipe) {
+                        Ok(stream) => {
+                            selected_pipe = Some(pipe);
+                            stream_opt = Some(stream);
+                            break;
+                        }
+                        Err(e) => open_errors.push((pipe, e)),
+                    }
+                }
+                let selected_pipe = selected_pipe.ok_or_else(|| {
+                    if let Some((pipe, e)) = open_errors.first() {
+                        use std::io::ErrorKind;
+                        let msg = match e.kind() {
+                            ErrorKind::NotFound => {
+                                if explicit_pipe.is_some() {
+                                    format!(
+                                        "SSH_AUTH_SOCK points to '{}', but the pipe was not found.",
+                                        pipe
+                                    )
+                                } else {
+                                    "No SSH agent pipe found. Start Windows OpenSSH Authentication Agent service or set SSH_AUTH_SOCK to a valid pipe.".to_string()
+                                }
+                            }
+                            ErrorKind::PermissionDenied => format!(
+                                "Permission denied when opening SSH agent pipe '{}'. Try running with matching user privileges.",
+                                pipe
+                            ),
+                            _ => format!("Failed to open SSH agent pipe '{}': {}", pipe, e),
+                        };
+                        SessionError::AuthenticationFailed(msg)
+                    } else {
+                        SessionError::AuthenticationFailed(
+                            "No SSH agent pipe candidate available".to_string(),
+                        )
+                    }
+                })?;
+                let stream = stream_opt.expect("stream must exist when selected_pipe exists");
+
+                if selected_pipe.to_ascii_lowercase().contains("pageant") {
+                    tracing::info!(
+                        pipe = %selected_pipe,
+                        "using Pageant named pipe for SSH agent auth (best-effort)"
+                    );
+                }
+                let mut agent = AgentClient::connect(stream);
+                let identities = agent.request_identities().await.map_err(|e| {
+                    SessionError::AuthenticationFailed(format!(
+                        "Failed to read identities from SSH agent: {}",
+                        e
+                    ))
+                })?;
+                if identities.is_empty() {
+                    return Err(SessionError::AuthenticationFailed(
+                        "SSH agent has no available identities".to_string(),
+                    ));
+                }
+
+                for identity in identities {
+                    let public_key = identity.public_key().into_owned();
+                    let alg = match public_key.algorithm() {
+                        russh::keys::Algorithm::Dsa | russh::keys::Algorithm::Rsa { .. } => rsa_hash,
+                        _ => None,
+                    };
+                    let auth = handle
+                        .authenticate_publickey_with(username, public_key, alg, &mut agent)
+                        .await
+                        .map_err(|e| SessionError::AuthenticationFailed(format!("Agent auth failed: {}", e)))?;
+                    if auth.success() {
+                        return Ok(());
+                    }
+                }
+                return Err(SessionError::AuthenticationFailed(
+                    "Authentication failed: all SSH agent identities rejected".to_string(),
+                ));
+            }
+            #[cfg(not(any(unix, windows)))]
+            {
+                return Err(SessionError::AuthenticationFailed(
+                    "SSH agent authentication is not available on this platform yet".to_string(),
+                ));
+            }
+        }
 
         let auth_result = if let Some(key_content) = private_key {
             match russh::keys::decode_openssh(key_content.as_bytes(), password) {

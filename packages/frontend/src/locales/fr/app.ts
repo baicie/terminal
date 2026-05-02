@@ -119,7 +119,6 @@ export default {
   'common.retry': 'Réessayer',
   'common.goHome': "Retour à l'accueil",
   'common.errorOccurred': 'Une erreur est survenue',
-  'common.back': 'Retour',
 
   // Error boundary
   'error.title': 'Échec du chargement de la page',
@@ -165,4 +164,18 @@ export default {
   'experiments.copyEvents': "Copier le journal d'événements",
   'experiments.copied': 'Copié !',
   'experiments.copyFailed': 'Échec de la copie',
+  // Terminal agent auth readable errors
+  'terminal.errorTitle': 'Erreur du terminal',
+  'terminal.agentNoPipe':
+    "Aucun canal SSH agent trouvé. Démarrez le service Windows OpenSSH Authentication Agent, ou définissez SSH_AUTH_SOCK vers un canal valide.",
+  'terminal.agentSockInvalid':
+    "Le chemin de canal défini dans SSH_AUTH_SOCK n'existe pas. Vérifiez la configuration.",
+  'terminal.agentPermissionDenied':
+    "Accès refusé lors de l'ouverture du canal SSH agent. Assurez-vous que l'application et l'agent utilisent le même niveau de privilèges.",
+  'terminal.agentNoIdentities':
+    "Aucune identité (clé) disponible dans l'agent SSH.",
+  'terminal.agentRejected':
+    "Toutes les identités de l'agent SSH ont été rejetées par le serveur.",
+  'terminal.agentReadFailed':
+    "Impossible de lire les identités de l'agent SSH. Vérifiez l'état de l'agent.",
 }
