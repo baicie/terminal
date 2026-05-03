@@ -24,8 +24,9 @@ pub use session::{
 };
 
 use commands::{
-    session_close, session_create_local, session_create_ssh_agent, session_create_ssh_jump, session_create_ssh_key,
-    session_create_ssh_password, session_exec, session_list, session_resize, session_write,
+    session_close, session_create_local, session_create_ssh_agent, session_create_ssh_cert,
+    session_create_ssh_jump, session_create_ssh_key, session_create_ssh_password,
+    session_exec, session_list, session_resize, session_write,
 };
 use port_forward::{port_forward_list, port_forward_start, port_forward_stop};
 use serial::{serial_baud_rates, serial_connect, serial_disconnect, serial_is_connected, serial_list, serial_write, serial_write_raw};
@@ -105,6 +106,7 @@ pub fn run() {
             session_create_ssh_password,
             session_create_ssh_key,
             session_create_ssh_agent,
+            session_create_ssh_cert,
             session_create_ssh_jump,
             session_write,
             session_resize,

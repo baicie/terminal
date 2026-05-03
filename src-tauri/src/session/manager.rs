@@ -6,11 +6,23 @@ use super::channel::{make_output, ChannelManager};
 use super::local::LocalSession;
 use super::ssh::SshSession;
 use super::{SessionError, SessionInfo, SessionType};
+use crate::state::ClientHandler;
+use russh::client;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+/// 全局 SessionManager 实例
+static SESSION_MANAGER: std::sync::OnceLock<Arc<SessionManager>> = std::sync::OnceLock::new();
+
+/// 获取全局 SessionManager
+pub fn get_session_manager() -> Arc<SessionManager> {
+    SESSION_MANAGER
+        .get_or_init(|| Arc::new(SessionManager::new()))
+        .clone()
+}
 
 /// Session 状态枚举 - 统一抽象
 #[derive(Clone)]
@@ -141,6 +153,16 @@ impl SessionManager {
     pub async fn exists(&self, session_id: &str) -> bool {
         let sessions = self.sessions.lock().await;
         sessions.contains_key(session_id)
+    }
+
+    /// 获取 SSH handle（用于 SFTP / port-forward）。
+    /// 仅 SSH session 返回 Some，其他类型返回 None。
+    pub async fn get_ssh_handle(&self, session_id: &str) -> Option<Arc<client::Handle<ClientHandler>>> {
+        let sessions = self.sessions.lock().await;
+        match sessions.get(session_id)? {
+            SessionState::Ssh(s) => s.handle(),
+            SessionState::Local(_) => None,
+        }
     }
 
     /// 获取所有 Session 信息

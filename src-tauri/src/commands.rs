@@ -3,21 +3,9 @@
 //! 提供统一的 create/write/resize/close 命令，同时保持向后兼容。
 
 use crate::session::local::LocalSession;
-use crate::session::manager::SessionManager;
 use crate::session::ssh::SshSession;
-use crate::session::{ExecResult, SessionError, SessionInfo, SessionState};
-use std::sync::Arc;
+use crate::session::{get_session_manager, ExecResult, SessionError, SessionInfo, SessionState};
 use tauri::AppHandle;
-
-/// 全局 SessionManager 实例
-static SESSION_MANAGER: std::sync::OnceLock<Arc<SessionManager>> = std::sync::OnceLock::new();
-
-/// 获取全局 SessionManager
-pub fn get_session_manager() -> Arc<SessionManager> {
-    SESSION_MANAGER
-        .get_or_init(|| Arc::new(SessionManager::new()))
-        .clone()
-}
 
 // ============================================================================
 // Local Session Commands
@@ -197,6 +185,47 @@ pub async fn session_create_ssh_agent(
     Ok(session_id)
 }
 
+/// 创建 SSH 会话（证书认证）
+#[tauri::command]
+pub async fn session_create_ssh_cert(
+    app: AppHandle,
+    host: String,
+    port: u16,
+    username: String,
+    certificate: String,
+    private_key: String,
+    password: Option<String>,
+    cols: u16,
+    rows: u16,
+) -> Result<String, SessionError> {
+    if host.is_empty() {
+        return Err(SessionError::InvalidInput("Host cannot be empty".to_string()));
+    }
+    if !(1..=65535).contains(&port) {
+        return Err(SessionError::InvalidInput("Port must be between 1 and 65535".to_string()));
+    }
+    if username.is_empty() {
+        return Err(SessionError::InvalidInput("Username cannot be empty".to_string()));
+    }
+    if certificate.is_empty() {
+        return Err(SessionError::InvalidInput("Certificate cannot be empty".to_string()));
+    }
+    if private_key.is_empty() {
+        return Err(SessionError::InvalidInput("Private key cannot be empty".to_string()));
+    }
+
+    let session = SshSession::new_with_cert(
+        app, &host, port, &username, &certificate, &private_key, password.as_deref(), cols, rows,
+    )
+    .await?;
+    let session_id = session.session_id().to_string();
+
+    let manager = get_session_manager();
+    manager.register_session(SessionState::Ssh(session)).await;
+
+    Ok(session_id)
+}
+
 /// 创建 SSH 会话（通过 Jump Host）
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -246,25 +275,25 @@ pub async fn session_exec(
     session_id: String,
     command: String,
     timeout_ms: Option<u64>,
-) -> Result<ExecResult, String> {
+) -> Result<ExecResult, SessionError> {
     let manager = get_session_manager();
     let Some(session) = manager.get_session(&session_id).await else {
-        return Err("Session not found".to_string());
+        return Err(SessionError::SessionNotFound);
     };
 
     let timeout = Duration::from_millis(timeout_ms.unwrap_or(5000));
 
     match session {
         crate::session::SessionState::Local(_) => {
-            exec_local(&command, timeout).await.map_err(|e| e.to_string())
+            exec_local(&command, timeout).await
         }
         crate::session::SessionState::Ssh(ssh) => {
-            ssh.exec(&command, timeout).await.map_err(|e| e.to_string())
+            ssh.exec(&command, timeout).await
         }
     }
 }
 
-async fn exec_local(command: &str, timeout: Duration) -> Result<ExecResult, crate::session::SessionError> {
+async fn exec_local(command: &str, timeout: Duration) -> Result<ExecResult, SessionError> {
     let shell = if let Ok(s) = std::env::var("TERMINAL_DEFAULT_SHELL") {
         s
     } else if cfg!(windows) {
@@ -288,8 +317,8 @@ async fn exec_local(command: &str, timeout: Duration) -> Result<ExecResult, crat
 
     let output = tokio::time::timeout(timeout, cmd.output())
         .await
-        .map_err(|_| crate::session::SessionError::ChannelError("exec timed out".to_string()))?
-        .map_err(|e| crate::session::SessionError::ChannelError(format!("exec failed: {}", e)))?;
+        .map_err(|_| SessionError::ExecTimeout)?
+        .map_err(|e| SessionError::ExecFailed(format!("exec failed: {}", e)))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();

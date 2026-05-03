@@ -12,3 +12,4 @@ pub use types::*;
 pub use manager::{SessionManager, SessionState};
 pub use channel::{ChannelConfig, ChannelManager, SessionChannel};
 pub use ssh::get_ssh_sessions;
+pub use manager::get_session_manager;

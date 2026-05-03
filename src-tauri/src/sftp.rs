@@ -1,5 +1,5 @@
 use crate::errors::SftpError;
-use crate::session::get_ssh_sessions;
+use crate::session::get_session_manager;
 use crate::state::{SftpFileItem, SharedStateType};
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::OpenFlags;
@@ -74,10 +74,9 @@ pub async fn sftp_connect(
         return Err(SftpError::SessionNotFound);
     }
 
-    let sessions = get_ssh_sessions();
-    let mut sessions = sessions.lock().await;
-    let handle = sessions
-        .get_mut(&session_id)
+    let handle = get_session_manager()
+        .get_ssh_handle(&session_id)
+        .await
         .ok_or(SftpError::SessionNotFound)?;
 
     let channel = handle
@@ -95,7 +94,7 @@ pub async fn sftp_connect(
         .map_err(|_e| SftpError::SessionNotFound)?;
 
     let mut sftp_sessions = state.sftp_sessions.lock().await;
-    sftp_sessions.insert(session_id.clone(), Arc::new(sftp));
+    sftp_sessions.insert(session_id, Arc::new(sftp));
 
     Ok(())
 }
