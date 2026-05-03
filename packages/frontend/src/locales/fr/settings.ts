@@ -115,7 +115,11 @@ export default {
   'settings.serviceModeEnabled': 'Mode service activé',
   'settings.serviceModeEnabledDesc':
     'Vos données se synchroniseront avec le service de stockage configuré. Cliquez d\'abord sur "Tester la connexion" pour vérifier que le service est accessible.',
-  'settings.enterEndpoint': "Veuillez entrer une URL de point de terminaison pour tester la connexion",
+  'settings.connectionServiceNotReachable': "Le service a répondu mais n'est pas en bonne santé",
+  'settings.connectionUploadFailed': "Échec de l'envoi des données au serveur",
+  'settings.connectionNoBackupFound': "Il n'y a pas de données de sauvegarde sur le serveur à restaurer",
+  'settings.enterEndpoint':
+    "Veuillez entrer une URL de point de terminaison pour tester la connexion",
 
   // Team
   'settings.teamCollaboration': "Collaboration d'équipe",

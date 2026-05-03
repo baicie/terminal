@@ -19,12 +19,13 @@ pub mod session;
 
 // Re-export session types for public API
 pub use session::{
-    ChannelConfig, ChannelManager, SessionChannel, SessionConfig, SessionError, SessionInfo,
-    SessionManager, SessionOutput, SessionState, SessionType, SshConfig, JumpHostConfig,
+    ChannelConfig, ChannelManager, ExecResult, KeyGenResult, SessionChannel, SessionConfig,
+    SessionError, SessionInfo, SessionManager, SessionOutput, SessionState, SessionType,
+    SshConfig, JumpHostConfig,
 };
 
 use commands::{
-    session_close, session_create_local, session_create_ssh_agent, session_create_ssh_cert,
+    key_generate, session_close, session_create_local, session_create_ssh_agent, session_create_ssh_cert,
     session_create_ssh_jump, session_create_ssh_key, session_create_ssh_password,
     session_exec, session_list, session_resize, session_write,
 };
@@ -114,6 +115,7 @@ pub fn run() {
             session_close,
             session_list,
             session_exec,
+            key_generate,
             // SFTP commands
             sftp_connect,
             sftp_list,

@@ -86,7 +86,7 @@ export default {
   'teams.syncInterval': 'Intervalle de synchronisation',
   'teams.seconds': 'secondes',
   'teams.joinTeam': 'Rejoindre une équipe',
-  'teams.enterInviteCode': 'Entrer le code invitación',
+  'teams.enterInviteCode': "Entrer le code d'invitation",
   'teams.joinViaLink': 'Rejoindre via lien',
   'teams.joinViaCode': 'Rejoindre via code',
   'teams.enableTeamMode': 'Activer le mode équipe',

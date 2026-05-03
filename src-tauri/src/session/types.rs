@@ -53,6 +53,8 @@ pub enum SessionError {
     ExecFailed(String),
     #[error("exec timed out")]
     ExecTimeout,
+    #[error("key generation failed: {0}")]
+    KeyGenerationFailed(String),
 }
 
 #[derive(Serialize)]
@@ -77,6 +79,7 @@ impl From<SessionError> for SessionErrorDto {
             SessionError::CertificateParseFailed(m) => Self { kind: "certificate_parse_failed", message: Some(m.clone()) },
             SessionError::ExecFailed(m) => Self { kind: "exec_failed", message: Some(m.clone()) },
             SessionError::ExecTimeout => Self { kind: "exec_timeout", message: None },
+            SessionError::KeyGenerationFailed(m) => Self { kind: "key_generation_failed", message: Some(m.clone()) },
         }
     }
 }
@@ -96,6 +99,7 @@ impl From<SessionErrorDto> for SessionError {
             ("certificate_parse_failed", Some(m)) => SessionError::CertificateParseFailed(m),
             ("exec_failed", Some(m)) => SessionError::ExecFailed(m),
             ("exec_timeout", _) => SessionError::ExecTimeout,
+            ("key_generation_failed", Some(m)) => SessionError::KeyGenerationFailed(m),
             _ => SessionError::ConnectionFailed("unknown error".to_string()),
         }
     }
@@ -118,6 +122,15 @@ pub struct ExecResult {
     pub stdout: String,
     pub stderr: String,
     pub exit_code: i32,
+}
+
+/// SSH key generation result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyGenResult {
+    pub private_key: String,
+    pub public_key: String,
+    pub key_type: String,
+    pub fingerprint: String,
 }
 
 /// Session 信息（用于列表和调试）
@@ -213,6 +226,7 @@ mod tests {
         check(SessionError::CertificateParseFailed("exp".into()), "certificate_parse_failed", Some("exp"));
         check(SessionError::ExecFailed("exit 1".into()), "exec_failed", Some("exit 1"));
         check(SessionError::ExecTimeout, "exec_timeout", None);
+        check(SessionError::KeyGenerationFailed("bad params".into()), "key_generation_failed", Some("bad params"));
     }
 
     #[test]

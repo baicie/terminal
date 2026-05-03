@@ -4,7 +4,7 @@
 
 use crate::session::local::LocalSession;
 use crate::session::ssh::SshSession;
-use crate::session::{get_session_manager, ExecResult, SessionError, SessionInfo, SessionState};
+use crate::session::{get_session_manager, ExecResult, KeyGenResult, SessionError, SessionInfo, SessionState};
 use tauri::AppHandle;
 
 // ============================================================================
@@ -325,4 +325,117 @@ async fn exec_local(command: &str, timeout: Duration) -> Result<ExecResult, Sess
     let exit_code = output.status.code().unwrap_or(-1);
 
     Ok(ExecResult { stdout, stderr, exit_code })
+}
+
+// ============================================================================
+// Key Generation Commands
+// ============================================================================
+
+/// SSH key type enumeration (matches frontend)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SshKeyType {
+    Ed25519,
+    Rsa2048,
+    Rsa4096,
+    EcdsaNistp256,
+    EcdsaNistp384,
+    EcdsaNistp521,
+}
+
+impl SshKeyType {
+    fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "ed25519" => Some(Self::Ed25519),
+            "rsa" => Some(Self::Rsa2048),
+            "rsa4096" => Some(Self::Rsa4096),
+            "ecdsa-nistp256" => Some(Self::EcdsaNistp256),
+            "ecdsa-nistp384" => Some(Self::EcdsaNistp384),
+            "ecdsa-nistp521" => Some(Self::EcdsaNistp521),
+            _ => None,
+        }
+    }
+}
+
+/// Generate an SSH key pair.
+#[tauri::command]
+pub async fn key_generate(
+    key_type: String,
+    comment: String,
+    passphrase: Option<String>,
+) -> Result<KeyGenResult, SessionError> {
+    let key_type = SshKeyType::from_str(&key_type)
+        .ok_or_else(|| SessionError::KeyGenerationFailed(format!("unsupported key type: {}", key_type)))?;
+
+    use ssh_key::rand_core::OsRng;
+
+    let private_key = match key_type {
+        SshKeyType::Ed25519 => {
+            ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519)
+                .map_err(|e| SessionError::KeyGenerationFailed(format!("ed25519 generation failed: {}", e)))?
+        }
+        SshKeyType::Rsa2048 => {
+            ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Rsa { hash: None })
+                .map_err(|e| SessionError::KeyGenerationFailed(format!("rsa2048 generation failed: {}", e)))?
+        }
+        SshKeyType::Rsa4096 => {
+            ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Rsa { hash: None })
+                .map_err(|e| SessionError::KeyGenerationFailed(format!("rsa4096 generation failed: {}", e)))?
+        }
+        SshKeyType::EcdsaNistp256 => {
+            ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ecdsa { curve: ssh_key::EcdsaCurve::NistP256 })
+                .map_err(|e| SessionError::KeyGenerationFailed(format!("ecdsa-nistp256 generation failed: {}", e)))?
+        }
+        SshKeyType::EcdsaNistp384 => {
+            ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ecdsa { curve: ssh_key::EcdsaCurve::NistP384 })
+                .map_err(|e| SessionError::KeyGenerationFailed(format!("ecdsa-nistp384 generation failed: {}", e)))?
+        }
+        SshKeyType::EcdsaNistp521 => {
+            ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ecdsa { curve: ssh_key::EcdsaCurve::NistP521 })
+                .map_err(|e| SessionError::KeyGenerationFailed(format!("ecdsa-nistp521 generation failed: {}", e)))?
+        }
+    };
+
+    // Set comment if provided
+    let private_key = if comment.is_empty() {
+        private_key
+    } else {
+        let mut pk = private_key;
+        pk.set_comment(&comment);
+        pk
+    };
+
+    // Encrypt with passphrase if provided
+    let private_key = if let Some(ref pw) = passphrase {
+        if !pw.is_empty() {
+            private_key.encrypt(&mut OsRng, pw.as_bytes())
+                .map_err(|e| SessionError::KeyGenerationFailed(format!("encryption failed: {}", e)))?
+        } else {
+            private_key
+        }
+    } else {
+        private_key
+    };
+
+    let public_key = private_key.public_key();
+    let fingerprint = public_key.fingerprint(ssh_key::HashAlg::Sha256).to_string();
+
+    let key_type_name = match key_type {
+        SshKeyType::Ed25519 => "ed25519",
+        SshKeyType::Rsa2048 | SshKeyType::Rsa4096 => "rsa",
+        SshKeyType::EcdsaNistp256 => "ecdsa-nistp256",
+        SshKeyType::EcdsaNistp384 => "ecdsa-nistp384",
+        SshKeyType::EcdsaNistp521 => "ecdsa-nistp521",
+    };
+
+    let private_pem = private_key.to_openssh(ssh_key::LineEnding::LF)
+        .map_err(|e| SessionError::KeyGenerationFailed(format!("serialize private key failed: {}", e)))?;
+    let public_openssh = public_key.to_openssh()
+        .map_err(|e| SessionError::KeyGenerationFailed(format!("serialize public key failed: {}", e)))?;
+
+    Ok(KeyGenResult {
+        private_key: (*private_pem).to_string(),
+        public_key: public_openssh.into(),
+        key_type: key_type_name.to_string(),
+        fingerprint,
+    })
 }

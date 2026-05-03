@@ -595,6 +595,52 @@ src-tauri/
 
 ---
 
+### Phase 6.9 - SSH Key 生成 + 命令执行 + i18n 补全 + 文档完善 ✅ 已完成
+
+> 2026-05-03：实现 SSH 密钥生成后端；重构命令执行可靠性；补全三语种翻译；重写用户文档。
+
+#### SSH 密钥生成
+
+| 改动 | 说明 |
+| --- | --- |
+| `commands.rs` | 新增 `key_generate` Tauri 命令，支持 Ed25519/RSA/ECDSA 全类型，使用 `ssh_key` crate 生成私钥、公钥指纹 |
+| `types.rs` | 新增 `KeyGenResult` 结构体和 `KeyGenerationFailed` 错误变体 |
+| `lib.rs` | 注册 `key_generate` 命令，导出 `KeyGenResult` |
+| `ssh.ts` (frontend) | `generateSSHKey` 改为调用 `invoke('key_generate')`，完整实现 Ed25519/RSA 2048/RSA 4096/ECDSA P-256/P-384/P-521 |
+| `generate-dialog.tsx` | UI 已存在，调用链已接通 |
+
+#### SSH 证书认证
+
+| 改动 | 说明 |
+| --- | --- |
+| `ssh.rs` | `authenticate_with_cert` 已完整实现，使用 `russh::keys::Certificate::from_openssh` + `authenticate_openssh_cert` |
+| `session_create_ssh_cert` | Tauri 命令已注册，接线完成 |
+| `Signer trait` | `authenticate_certificate_with` 委托签名为未来扩展点，已在 Issue #5 中标注 |
+
+#### 命令执行可靠性
+
+| 改动 | 说明 |
+| --- | --- |
+| `ssh.ts` (frontend) | `execute()` 重构：移除 PTY shell hack，改用 `invoke('session_exec')` 调用后端 exec channel；捕获真实 exit code；默认超时 30s（可配置）；移除竞态条件监听器设置 |
+
+#### i18n 三语种补全
+
+| 改动 | 说明 |
+| --- | --- |
+| `fr/cmdPalette.ts` | 新增 17 个缺失键（SFTP 会话、传输队列、工作区切换等） |
+| `fr/teams.ts` | 修复 `enterInviteCode` 中的西班牙语拼写错误（"invitación" → "code d'invitation"） |
+| `fr/settings.ts` | 新增 4 个缺失键（连接状态提示） |
+| `cn/snippets.ts` | 新增 4 个缺失键（执行历史时间/持续时间） |
+
+#### 用户文档
+
+| 改动 | 说明 |
+| --- | --- |
+| `README.md` | 完全重写：项目介绍、核心功能、快捷键速查、项目结构、技术栈、快速开始 |
+| `package.json` | 新增 `description` 字段 |
+
+---
+
 ## 待办事项
 
 ### P0 - 必须完成

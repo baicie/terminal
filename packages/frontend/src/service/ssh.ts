@@ -13,7 +13,8 @@ import {
   sftpService,
   portForwardService,
 } from '@/features/terminal/services'
-import type { SessionInfo, ShellOutput } from '@/features/terminal/types'
+import type { SessionInfo } from '@/features/terminal/types'
+import { invoke } from '@tauri-apps/api/core'
 
 // Re-export types from new location
 export type { SessionInfo, ShellOutput } from '@/features/terminal/types'
@@ -153,17 +154,26 @@ class SSHServiceLegacy {
 
   // Generate SSH key pair
   async generateSSHKey(
-    _keyType: 'ed25519' | 'rsa' | 'rsa4096' | 'ecdsa' | 'ecdsa-nistp256' | 'ecdsa-nistp384' | 'ecdsa-nistp521',
-    _comment: string,
-    _passphrase?: string,
+    keyType: 'ed25519' | 'rsa' | 'rsa4096' | 'ecdsa' | 'ecdsa-nistp256' | 'ecdsa-nistp384' | 'ecdsa-nistp521',
+    comment: string,
+    passphrase?: string,
   ): Promise<{ private_key: string; public_key: string; key_type: string; fingerprint: string }> {
-    // This would need Tauri backend implementation for actual key generation
-    // For now, return a placeholder that indicates this needs implementation
-    throw new Error('SSH key generation not yet implemented - requires Tauri backend')
+    const result = await invoke<{
+      private_key: string
+      public_key: string
+      key_type: string
+      fingerprint: string
+    }>('key_generate', {
+      keyType,
+      comment,
+      passphrase: passphrase || null,
+    })
+    return result
   }
 
-  // Execute a command on a host (opens a session, runs command, returns output)
-  async execute(host: Host, command: string): Promise<SSHOutput> {
+  // Execute a command on a host — uses session_exec which opens a dedicated exec channel
+  // rather than the PTY shell hack, so exit codes are captured correctly.
+  async execute(host: Host, command: string, timeoutMs = 30000): Promise<SSHOutput> {
     // Create SSH session based on auth type
     let result: SSHConnectionResult
     if (host.authType === 'key' && host.privateKey) {
@@ -178,59 +188,27 @@ class SSHServiceLegacy {
 
     const sessionId = result.sessionId
 
-    // Write the command
-    await sessionService.write(sessionId, command + '\n')
-
-    // Wait for output - simplified, real implementation would need proper buffering
-    return new Promise<SSHOutput>((resolve) => {
-      let stdout = ''
-      let stderr = ''
-      let unsub: (() => void) | undefined
-      let resolved = false
-
-      const doResolve = (out: SSHOutput) => {
-        if (!resolved) {
-          resolved = true
-          resolve(out)
-        }
+    try {
+      const execResult = await invoke<{ stdout: string; stderr: string; exit_code: number }>(
+        'session_exec',
+        {
+          sessionId,
+          command,
+          timeoutMs,
+        },
+      )
+      return {
+        stdout: execResult.stdout,
+        stderr: execResult.stderr,
+        exitCode: execResult.exit_code,
       }
-
-      const timeout = setTimeout(() => {
-        cleanup()
-        doResolve({ stdout, stderr, exitCode: 0 })
-      }, 5000) // 5 second timeout
-
-      const handleOutput = (output: ShellOutput) => {
-        if (output.session_id === sessionId) {
-          if (output.is_stderr) {
-            stderr += output.data
-          } else {
-            stdout += output.data
-          }
-          // Simple heuristic: if we get prompt back, command completed
-          if (stdout.includes('$') || stdout.includes('#')) {
-            cleanup()
-            doResolve({ stdout, stderr, exitCode: 0 })
-          }
-        }
-      }
-
-      // Set up listener
-      sessionService.onData(handleOutput)
-        .then((unlisten) => {
-          unsub = unlisten
-        })
-        .catch(() => {
-          clearTimeout(timeout)
-          doResolve({ stdout, stderr, exitCode: 0 })
-        })
-
-      const cleanup = () => {
-        clearTimeout(timeout)
-        unsub?.()
-        sessionService.close(sessionId).catch(() => {})
-      }
-    })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { stdout: '', stderr: msg, exitCode: 1 }
+    } finally {
+      // Clean up the temporary session
+      sessionService.close(sessionId).catch(() => {})
+    }
   }
 
   // Command history — forwards to the dedicated database service.
