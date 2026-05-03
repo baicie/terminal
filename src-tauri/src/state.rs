@@ -294,3 +294,45 @@ pub fn create_shared_state() -> SharedStateType {
         serial_sessions: Mutex::new(HashMap::new()),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn test_get_ssh_agent_socket_returns_env_var() {
+        // When SSH_AUTH_SOCK is set, should return Some(value)
+        std::env::set_var("SSH_AUTH_SOCK", "/tmp/ssh-agent.sock");
+        let result = get_ssh_agent_socket();
+        assert_eq!(result, Some("/tmp/ssh-agent.sock".to_string()));
+        std::env::remove_var("SSH_AUTH_SOCK");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_get_ssh_agent_socket_returns_none_when_not_set() {
+        std::env::remove_var("SSH_AUTH_SOCK");
+        let result = get_ssh_agent_socket();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    #[cfg(not(unix))]
+    fn test_get_ssh_agent_socket_always_none_on_windows() {
+        // On non-Unix platforms, always returns None
+        let result = get_ssh_agent_socket();
+        assert_eq!(result, None);
+    }
+
+    use tokio::sync::Mutex as TokioMutex;
+
+    #[tokio::test]
+    async fn test_create_shared_state_returns_arc() {
+        let state = create_shared_state();
+        // Verify Arc<SharedState> by cloning and accessing async mutex
+        let _clone = Arc::clone(&state);
+        let guard = state.local_sessions.lock().await;
+        assert!(guard.is_empty());
+    }
+}

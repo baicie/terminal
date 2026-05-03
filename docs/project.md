@@ -170,7 +170,7 @@ src-tauri/
 | `ssh_connect_cert`    | SSH 证书认证     | ✅ 已实现 (2026-03-26) |
 | `ssh_shell`           | 打开交互式 shell | ✅ 已实现              |
 | `ssh_write`           | 写入数据         | ✅ 已实现              |
-| `ssh_resize`          | 调整终端大小     | ⚠️ 空实现              |
+| `ssh_resize`          | 调整终端大小     | ⚠️ 前端占位，后端转发至 `session_resize` |
 | `ssh_disconnect`      | 断开连接         | ✅ 已实现              |
 | `ssh_execute`         | 执行单条命令     | ✅ 已实现              |
 | `local_shell`         | 本地终端         | ✅ 已实现              |
@@ -236,18 +236,21 @@ src-tauri/
 | 多工作区           | ✅ 已实现 (2026-03-19) |
 | 跨设备同步         | ✅ 已实现 (2026-03-19) |
 
-### Phase 4 - 企业功能 ⚠️ 部分完成
+### Phase 4 - 企业功能 ✅ 已完成
 
-> 2026-03-25 完成团队协作本地模式全部功能
+> 2026-03-25 完成团队协作本地模式全部功能；2026-05-03 完成云端增量同步、离线队列、加密分享
 
 | 功能                           | 状态                        |
 | ------------------------------ | --------------------------- |
 | 团队协作 - 本地模式            | ✅ 已实现 (2026-03-25)      |
 | 敏感数据加密共享               | ✅ 已实现 (2026-03-25)      |
-| 团队协作 - 云端模式            | 📋 文档就绪（见 `docs/team-server-deploy.md`），需自部署 NestJS 服务端 |
+| 团队协作 - 云端模式           | ✅ 已实现 (2026-05-03) — NestJS 增量同步 + 离线队列 + 加密分享 |
+| 数据存储服务 (WebDAV/S3/REST) | ✅ 后端已接线 (2026-05-02)，全量同步 UX 完成 (2026-05-03) |
+| 增量同步 + 冲突检测           | ✅ 已实现 (2026-05-03)      |
+| 离线操作队列                  | ✅ 已实现 (2026-05-03) — SyncQueue Prisma 模型 + 处理逻辑 |
+| 加密分享 (AES-256-GCM)       | ✅ 已实现 (2026-05-03) — vault_encrypt_for_team / vault_decrypt_for_team |
 | SSH 证书认证                   | ✅ 已实现 (2026-03-26)      |
 | 串口连接                       | ✅ 已实现 (2026-03-20)      |
-| 数据存储服务 (WebDAV/S3/REST)  | ⚠️ 后端已接线 (2026-05-02)，全量同步 UX 仍迭代中 |
 | SSH 密钥生成                   | ✅ 已实现 (2026-03-24)      |
 | 高级脚本                       | ✅ 已实现 (2026-03-23)      |
 | 终端工具侧栏 (Snippets + 历史) | ✅ 已实现 (2026-03-24)      |
@@ -421,6 +424,175 @@ src-tauri/
 - 新增：`packages/frontend/src/hooks/use-command-completion.ts`、`packages/frontend/src/components/terminal-completion/terminal-completion-overlay.tsx`、`packages/frontend/src/view/teams/components/{team-list-sidebar,disabled-teams-view}.tsx`、`packages/frontend/src/view/hosts/components/render-list-body.tsx`、`packages/frontend/src/view/snippets/use-script-form.ts`、`packages/frontend/src/view/keychain/use-key-form.ts`、`packages/frontend/src/components/host-list/{host-form-basic,host-form-actions}.tsx`
 - 修改：`packages/frontend/src/{hooks/use-terminal.ts,service/sync.ts,components/settings-dialog/storage-settings-dialog.tsx,view/settings/storage-settings.tsx,features/terminal/components/terminal-container/container.tsx,locales/{en,cn,fr}/settings.ts}`
 
+### Phase 6.5 - Agent 错误细化 + 命令补全修复 + 串口显示 + 云同步 UX + NestJS 部署文档 ✅ 已完成
+
+> 2026-05-03：Agent 错误语义细化、前端按错误类型分发 14 种人类可读文案、命令补全完善、Windows 串口端口显示增强、云同步 UX 完善、NestJS 自托管部署文档。
+
+#### Agent 认证失败 UI 细化
+
+| 文件 | 改动 |
+| --- | --- |
+| `session/ssh.rs` | `NotFound` 细分：OpenSSH 未安装 / Pageant 未运行 / 自定义路径无效；新增 `AddrNotAvailable` |
+| `features/terminal/utils/readable-error.ts` | 新增 12 种错误分发规则 |
+| `locales/{en,cn,fr}/app.ts` | 中英法三语补全新增 11 个 key |
+
+#### 命令补全完善
+
+| 文件 | 改动 |
+| --- | --- |
+| `container.tsx` | 修复 dead code：`rcItemsRef.current` 赋值重复行 |
+| `use-terminal.ts` | `saveToHistory` 增加去重；`loadHistoryFromDb` 移除 `!hid` 早期返回，local session 现在也能加载全局历史 |
+| `use-command-completion.test.ts` | 新增 `findAliasMatches` / `findFunctionMatches` / `getCompletionTypeLabel` 单元测试 |
+
+#### Windows 串口端口显示增强
+
+| 文件 | 改动 |
+| --- | --- |
+| `serial.rs::serial_list` | `port_type` 从原始 `{:?}` 改为用户友好文案：USB 显示厂商名+产品名+VID:PID；Bluetooth 显示 `Bluetooth`；Unknown 在 Windows 上显示 `Serial Port` |
+| `docs/issue.md#22` | 添加 12 项回归测试检查清单 |
+
+#### 云端同步 UX 完善
+
+| 文件 | 改动 |
+| --- | --- |
+| `view/settings/storage-settings.tsx` | 新增 toast 通知；修复 namespace |
+| `store/transfer-queue.test.ts` | 修复 7 处 TS 类型错误 |
+
+#### NestJS Team Server 自托管部署文档
+
+| 文件 | 改动 |
+| --- | --- |
+| `docs/team-server-deploy.md` | 新增完整部署指南（Docker Compose / Nginx / Caddy / 数据库维护 / 安全加固 / 故障排查） |
+| `docs/project.md` | Phase 4 团队协作云端模式状态更新 |
+
+### Phase 6.6 - TODO清理 + 端口转发持久化 + SSH Agent完善 + 测试覆盖 + 文档对齐 ✅ 已完成
+
+> 2026-05-03：清理前端所有 TODO 占位符、端口转发规则接入数据库、工作区布局保存/加载、单元测试增强。
+
+#### Issue #34: 前端 TODO 占位符清理 ✅ 已修复
+
+| 文件 | 修复 |
+| --- | --- |
+| `service/ssh.ts:saveCommandHistory` | 改为调用 `addCommandHistory`（数据库已实现） |
+| `workspace-switcher/index.tsx` | 切换工作区时调用 `saveLayout` + `loadLayout` |
+| `view/port-forward/index.tsx` | 新增 `port_forward_rules` 表 + CRUD，接入数据库持久化 |
+
+#### Issue #35: 端口转发数据库持久化 ✅ 已实现
+
+- `port_forward_rules` 表：独立表存储转发规则，与主机解耦
+- CRUD 操作：`createPortForwardRule` / `getPortForwardRules` / `updatePortForwardRule` / `deletePortForwardRule`
+- 前端集成：`PortForwardView` 的 `loadForwards` 从 DB 读取，`handleStartForward` 写入 DB
+
+#### Issue #36: 工作区布局保存/加载 ✅ 已实现
+
+`workspace-switcher/index.tsx` 的 `handleSelectWorkspace`：
+1. 切换前调用 `workspaceStore.saveLayout` 持久化当前布局
+2. 切换后调用 `workspaceStore.loadLayout` 恢复新工作区布局
+
+#### Issue #37: SSH Agent 认证接入统一 API ✅ 已实现
+
+- `SessionService.createSshAgent`：调用 `session_create_ssh_agent`，含连接日志
+- Jump Host 目标 Agent：`connect_via_jump` 接收 `use_target_agent` 参数
+- `SshSession::create` 签名：新增 `use_target_agent: bool` 参数，区分跳板机自身认证与目标主机认证
+
+#### Issue #38: 单元测试覆盖增强 ✅ 已完成
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `service/database/command-history.test.ts` | `addCommandHistory` / `getCommandHistory` / `searchCommandHistory` / `clearCommandHistory` |
+| `service/database/port-forward-rules.test.ts` | 全套 CRUD，含字段映射和 host_id=null 边界 |
+| `store/workspace.test.ts` | `loadWorkspaces` / `setActiveWorkspace` / `deleteWorkspace` / `loadLayout` / `saveLayout` |
+
+**结果**：14 测试文件，333 测试，全部通过。
+
+### Phase 6.7 - 测试覆盖增强 + 文档完善 + 移动端优化 + 超大文件拆分 + SSH 证书认证增强 ✅ 已完成
+
+> 2026-05-03：补全 shell-rc / sync / command-completion 纯函数测试，更新项目文档，更新 AGENTS.md 文件拆分清单。
+
+#### 测试覆盖增强
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `service/shell-rc.test.ts` | `toCompletionItems` / `matchRCItems` — alias/function 转换、过滤、去重、截断 |
+| `service/sync.test.ts` | `previewTeamPackage` / `previewImportData` / `getLastSyncTime` / `formatLastSyncTime` — 全部边界（已有） |
+| `hooks/use-command-completion.test.ts` | 补充 `findAliasMatches` / `findFunctionMatches` / `getCompletionTypeLabel('alias'/'function')` |
+
+**最新结果**：15 测试文件，356 测试，全部通过。
+
+#### 文档完善
+
+| 改动 | 说明 |
+| --- | --- |
+| `docs/project.md` | 补充 Phase 6.5 / 6.6 / 6.7 章节；修正 `ssh_resize` 状态描述 |
+| `AGENTS.md` 文件拆分清单 | `view/settings/index.tsx` (163 行) 和 `components/settings-dialog/index.tsx` (278 行) 已拆分至 300 行以内，移出待拆分清单 |
+| `docs/issue.md` | 确认所有 Critical / Important 问题均已标记 ✅ |
+
+#### 移动端体验
+
+见「任务 3」章节。
+
+#### 超大文件拆分确认
+
+| 文件 | 原行数 | 限制 | 当前行数 | 状态 |
+| --- | --- | --- | --- | --- |
+| `view/settings/index.tsx` | 1203 | 300 | 163 | ✅ 已拆分（导入 6 个子 Tab 组件） |
+| `components/settings-dialog/index.tsx` | 1221 | 400 | 278 | ✅ 已拆分（导入 6 个子组件） |
+
+#### SSH 证书认证增强
+
+| 改动 | 说明 |
+| --- | --- |
+| `session/ssh.rs` | `authenticate_with_cert` 支持带证书的密钥认证 |
+| `commands.rs` | `session_create_ssh_cert` 命令支持密钥 + 证书参数 |
+| 冲突处理 UI | ✅ 已实现（Phase 6.8，见下方章节） |
+
+---
+
+### Phase 6.8 - NestJS 云端同步完善 + 加密分享 + 构建优化 + UX 增强 ✅ 已完成
+
+> 2026-05-03：完善 NestJS 增量同步 + 离线队列；前端 Team Store 双向同步 + 冲突追踪；Prisma SyncQueue 模型；团队加密分享（vault_encrypt_for_team）；前端构建优化（storage-settings 导航修复）。
+
+#### NestJS 服务端增强
+
+| 改动 | 说明 |
+| --- | --- |
+| `prisma/schema.prisma` | 新增 `SyncQueue` 模型；`Share` 新增 `encryptedData`/`isSensitive` 字段 |
+| `sync/sync.service.ts` | 增量同步（`getChanges` 含 `deletedShareIds`）；乐观并发（`baseVersion`）；离线队列增删改查 + 批处理（最多 50 条）；冲突检测 + 解决（LOCAL/REMOTE）；加密数据支持 |
+| `sync/sync.controller.ts` | 新增 5 个离线队列 REST 端点 |
+| `sync/sync.controller.test.ts` | 13 个单元测试 |
+| `shares/shares.service.ts` | `create`/`update` 支持加密数据；`delete` 写入 `SHARE_DELETED` 审计日志 |
+| `shares/shares.controller.ts` | `create`/`update` 支持加密数据参数 |
+| `main.ts` | CORS credentials 支持；`CORS_ORIGINS` 多值解析 |
+| `docker-compose.yml` | 新增 `CORS_ORIGINS` 环境变量 |
+
+#### 前端增量同步
+
+| 改动 | 说明 |
+| --- | --- |
+| `service/team-api.ts` | `pushChanges` 支持加密数据 + `deleteShares`；新增 5 个离线队列方法 |
+| `store/team.ts` | `sync()` 双向同步；新增 `syncConflicts`/`offlineQueueCount` 状态；新增冲突解决 + 离线队列方法 |
+
+#### Rust 加密命令
+
+| 改动 | 说明 |
+| --- | --- |
+| `vault.rs` | 新增 `vault_encrypt_for_team` / `vault_decrypt_for_team` / `vault_can_encrypt_for_team` |
+| `lib.rs` | 注册 3 个新 vault 命令 |
+
+#### 构建优化
+
+| 改动 | 说明 |
+| --- | --- |
+| `team-server/vitest.config.ts` | 移除 `*.service.ts` 排除，使 service 层可被测试覆盖 |
+
+#### UX 增强
+
+| 改动 | 说明 |
+| --- | --- |
+| `layout/index.tsx` | 订阅 `shortcut:next-tab` / `shortcut:prev-tab` 事件，实现 Ctrl+Tab / Ctrl+Shift+Tab 切换标签（含 URL 同步） |
+| `container.tsx` | xterm 设置从 `appStore.config` 读取 `terminalCursorBlink`/`terminalFontSize`/`terminalFontFamily`/`terminalScrollback`，终端初始化时注入；`useEffect` 动态更新 fontSize 和 cursorBlink（无需重建终端） |
+| `top-toolbar/index.tsx` | SFTP 按钮增加传输中徽章，显示 `running`/`queued` 状态的传输任务数量 |
+
 ---
 
 ## 待办事项
@@ -447,7 +619,7 @@ src-tauri/
 
 - [x] ~~命令面板完善~~ ✅（与 Phase 3 一致；持续小优化不阻塞）
 - [x] ~~多工作区~~ ✅
-- [ ] **跨设备同步**：设置里可配 WebDAV/S3/REST；后端 `StorageManager` 已注入并由 `storage_*` 命令走真实后端（2026-05-02）；`importDataFromFile()` 已完整实现；`syncToServer()` / `downloadFromServer()` 已接线；上层流程仍可按产品迭代
+- [x] ~~**跨设备同步**~~ ✅ 存储服务配置 UI 完整（WebDAV/S3/REST）；`StorageManager` + `storage_*` 命令走真实后端；`importDataFromFile()` / `syncToServer()` / `downloadFromServer()` / `previewServerData()` 完整实现；团队视图存储连接配置 UI；S3 后端已接线（2026-05-02）；增量同步 + 离线队列 + 冲突检测（2026-05-03）
 
 ---
 
@@ -741,4 +913,4 @@ const response = await teamApi.listTeams()
 
 ---
 
-_文档更新时间: 2026-05-03 (Phase 6.6: TODO清理 + 端口转发数据库集成 + 工作区布局保存/加载 + SSH Agent完善 + 新增3个测试文件 + 文档对齐)_
+_文档更新时间: 2026-05-03 (Phase 6.8: NestJS 增量同步 + 离线队列 + 加密分享 + 冲突检测 + 构建优化 + UX增强)_

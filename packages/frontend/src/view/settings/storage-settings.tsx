@@ -1,16 +1,15 @@
-import type { AppSettings } from '@/service/database'
 import {
   AlertCircle,
   Check,
   Cloud,
-  CloudDownload,
   CloudUpload,
   HardDrive,
   Loader2,
   RefreshCw,
   Server,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
@@ -23,11 +22,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  downloadFromServer,
-  syncToServer,
-} from '@/service/sync'
-import { storageHealthCheck, storageInit } from '@/service/storage'
+import { RestorePreview } from '@/components/storage-restore-preview'
+import { useStorageSync, type StorageServiceConfig } from '@/hooks/use-storage-sync'
+import type { AppSettings } from '@/service/database'
 
 interface StorageSettingsProps {
   settings: AppSettings
@@ -42,136 +39,58 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
   onSettingChange,
 }) => {
   const { t } = useTranslation('settings')
-  const [testingConnection, setTestingConnection] = useState(false)
-  const [connectionStatus, setConnectionStatus] = useState<
-    'idle' | 'success' | 'error'
-  >('idle')
-  const [syncing, setSyncing] = useState(false)
-  const [restoring, setRestoring] = useState(false)
+  const navigate = useNavigate()
   const [showTokenVisible, setShowTokenVisible] = useState(false)
   const [restoreMode, setRestoreMode] = useState<'merge' | 'replace'>('merge')
-  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
 
-  // Update last sync time display periodically
-  useEffect(() => {
-    const updateSyncTime = async () => {
-      const { formatLastSyncTime: getSyncTime } = await import('@/service/sync')
-      setLastSyncTime(getSyncTime())
-    }
-    updateSyncTime()
-    const interval = setInterval(updateSyncTime, 60000) // Update every minute
-    return () => clearInterval(interval)
-  }, [])
-
-  const handleTestConnection = async () => {
-    if (!settings.syncServiceEndpoint) return
-
-    setTestingConnection(true)
-    setConnectionStatus('idle')
-
-    try {
-      await storageInit(
-        settings.syncServiceType as 'webdav' | 's3' | 'custom',
-        settings.syncServiceEndpoint,
-        {
-          username: settings.syncServiceUsername || undefined,
-          password: settings.syncServiceToken || undefined,
-          bucket: settings.syncServiceBucket || undefined,
-        },
-      )
-
-      const healthy = await storageHealthCheck()
-      if (healthy) {
-        setConnectionStatus('success')
-      } else {
-        setConnectionStatus('error')
-      }
-    } catch {
-      setConnectionStatus('error')
-    } finally {
-      setTestingConnection(false)
+  const getConfig = (): StorageServiceConfig | null => {
+    if (!settings.syncServiceEndpoint) return null
+    return {
+      type: settings.syncServiceType as 'webdav' | 's3' | 'custom',
+      endpoint: settings.syncServiceEndpoint,
+      username: settings.syncServiceUsername,
+      password: settings.syncServiceToken,
+      bucket: settings.syncServiceBucket,
+      region: settings.syncServiceRegion,
     }
   }
 
-  const handleSyncToServer = async () => {
+  const {
+    testingConnection,
+    connectionStatus,
+    syncing,
+    restoring,
+    lastSyncTime,
+    handleTestConnection,
+    handleSyncToServer,
+    handleRestoreFromServer,
+    handlePreviewServerData,
+    isSyncDisabled,
+  } = useStorageSync({ getConfig })
+
+  const handleTest = async () => {
     if (!settings.syncServiceEndpoint) return
-
-    setSyncing(true)
-
-    try {
-      // Initialize storage first
-      await storageInit(
-        settings.syncServiceType as 'webdav' | 's3' | 'custom',
-        settings.syncServiceEndpoint,
-        {
-          username: settings.syncServiceUsername || undefined,
-          password: settings.syncServiceToken || undefined,
-          bucket: settings.syncServiceBucket || undefined,
-        },
-      )
-
-      // Perform the sync
-      const result = await syncToServer()
-
-      if (result.success) {
-        toast.success(t('settings.syncSuccess'), {
-          description: `${result.stats?.hosts ?? 0} hosts, ${result.stats?.snippets ?? 0} snippets, ${result.stats?.workspaces ?? 0} workspaces`,
-        })
-        // Update last sync time display
-        const { formatLastSyncTime: getSyncTime } = await import('@/service/sync')
-        setLastSyncTime(getSyncTime())
-      } else {
-        toast.error(t('settings.syncFailed'), {
-          description: result.stats ? undefined : t('settings.noBackupFound'),
-        })
-      }
-    } catch (error) {
-      toast.error(t('settings.syncFailed'), {
-        description: String(error),
-      })
-    } finally {
-      setSyncing(false)
-    }
+    await handleTestConnection()
   }
 
-  const handleRestoreFromServer = async () => {
+  const handleSync = async () => {
     if (!settings.syncServiceEndpoint) return
+    await handleSyncToServer()
+  }
 
-    setRestoring(true)
+  const handleRestore = async () => {
+    if (!settings.syncServiceEndpoint) return
+    await handleRestoreFromServer(restoreMode)
+  }
 
-    try {
-      // Initialize storage first
-      await storageInit(
-        settings.syncServiceType as 'webdav' | 's3' | 'custom',
-        settings.syncServiceEndpoint,
-        {
-          username: settings.syncServiceUsername || undefined,
-          password: settings.syncServiceToken || undefined,
-          bucket: settings.syncServiceBucket || undefined,
-        },
-      )
-
-      // Download and import
-      const result = await downloadFromServer(restoreMode)
-
-      if (result.success && result.stats) {
-        toast.success(t('settings.restoreSuccess'), {
-          description: `${result.stats.hosts} hosts, ${result.stats.snippets} snippets, ${result.stats.workspaces} workspaces`,
-        })
-        // Update last sync time display
-        const { formatLastSyncTime: getSyncTime } = await import('@/service/sync')
-        setLastSyncTime(getSyncTime())
-      } else {
-        toast.error(t('settings.restoreFailed'), {
-          description: t('settings.noBackupFound'),
-        })
-      }
-    } catch (error) {
-      toast.error(t('settings.restoreFailed'), {
-        description: String(error),
-      })
-    } finally {
-      setRestoring(false)
+  const endpointPlaceholder = () => {
+    switch (settings.syncServiceType) {
+      case 'webdav':
+        return 'https://dav.example.com/backup/'
+      case 's3':
+        return 'https://s3.example.com/bucket/'
+      default:
+        return 'https://api.example.com/sync/'
     }
   }
 
@@ -272,13 +191,7 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
             <Label htmlFor="syncServiceEndpoint">{t('settings.endpoint')}</Label>
             <Input
               id="syncServiceEndpoint"
-              placeholder={
-                settings.syncServiceType === 'webdav'
-                  ? 'https://dav.example.com/backup/'
-                  : settings.syncServiceType === 's3'
-                    ? 'https://s3.example.com/bucket/'
-                    : 'https://api.example.com/sync/'
-              }
+              placeholder={endpointPlaceholder()}
               value={settings.syncServiceEndpoint}
               onChange={e =>
                 onSettingChange('syncServiceEndpoint', e.target.value)
@@ -328,16 +241,29 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
           </div>
 
           {settings.syncServiceType === 's3' && (
-            <div className="space-y-2">
-              <Label htmlFor="syncServiceBucket">{t('settings.bucket')}</Label>
-              <Input
-                id="syncServiceBucket"
-                value={settings.syncServiceBucket || ''}
-                onChange={e =>
-                  onSettingChange('syncServiceBucket', e.target.value)
-                }
-              />
-            </div>
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="syncServiceBucket">{t('settings.bucket')}</Label>
+                <Input
+                  id="syncServiceBucket"
+                  value={settings.syncServiceBucket || ''}
+                  onChange={e =>
+                    onSettingChange('syncServiceBucket', e.target.value)
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="syncServiceRegion">Region</Label>
+                <Input
+                  id="syncServiceRegion"
+                  placeholder="us-east-1"
+                  value={settings.syncServiceRegion || ''}
+                  onChange={e =>
+                    onSettingChange('syncServiceRegion', e.target.value)
+                  }
+                />
+              </div>
+            </>
           )}
 
           <div className="flex gap-2">
@@ -347,7 +273,7 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
               disabled={
                 !settings.syncServiceEndpoint || testingConnection
               }
-              onClick={handleTestConnection}
+              onClick={handleTest}
             >
               {testingConnection ? (
                 <>
@@ -380,7 +306,7 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
                 restoring ||
                 connectionStatus !== 'success'
               }
-              onClick={handleSyncToServer}
+              onClick={handleSync}
             >
               {syncing ? (
                 <>
@@ -431,29 +357,24 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
               </p>
             </div>
 
-            <Button
-              variant="outline"
-              className="w-full"
-              disabled={
-                !settings.syncServiceEndpoint ||
-                syncing ||
-                restoring ||
-                connectionStatus !== 'success'
-              }
-              onClick={handleRestoreFromServer}
-            >
-              {restoring ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  {t('settings.restoring')}
-                </>
-              ) : (
-                <>
-                  <CloudDownload className="h-4 w-4 mr-2" />
-                  {t('settings.restoreFromServer')}
-                </>
-              )}
-            </Button>
+            <RestorePreview
+              onPreview={handlePreviewServerData}
+              restoreMode={restoreMode}
+              connectionStatus={connectionStatus}
+              canPreview={connectionStatus === 'success' && !!settings.syncServiceEndpoint}
+              onRestore={handleRestore}
+              isRestoring={restoring}
+            />
+
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-primary transition-colors"
+                onClick={() => navigate('/teams')}
+              >
+                {t('openTeams')}
+              </button>
+            </div>
           </div>
         </div>
       )}

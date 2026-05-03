@@ -60,15 +60,17 @@ enum Role {
 }
 
 model Share {
-  id         String       @id @default(uuid())
-  teamId     String
-  team       Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  type       ShareType
-  data       Json        // Host or Snippet data
-  sharedBy   String
-  permission Permission   @default(READONLY)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  id            String       @id @default(uuid())
+  teamId        String
+  team          Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  type          ShareType
+  data          Json         // Plain text data (for non-sensitive shares)
+  encryptedData String?      // AES-256-GCM encrypted data (for sensitive shares)
+  sharedBy      String
+  permission    Permission   @default(READONLY)
+  isSensitive   Boolean      @default(false) // Whether this share contains sensitive data
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 }
 
 enum ShareType {
@@ -121,4 +123,30 @@ enum InviteType {
   LINK
   CODE
   EMAIL
+}
+
+// Offline sync queue — stores pending operations when device is offline
+model SyncQueue {
+  id        String      @id @default(uuid())
+  userId    String
+  teamId    String
+  operation String      // CREATE | UPDATE | DELETE
+  shareType ShareType
+  shareId   String
+  data      Json?       // Payload for CREATE/UPDATE
+  status    SyncStatus  @default(PENDING)
+  attempts  Int         @default(0)
+  lastError String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([userId, status])
+  @@index([userId, teamId])
+}
+
+enum SyncStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
 }

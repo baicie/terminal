@@ -19,6 +19,8 @@ interface SftpProgressPayload {
   bytesDone: number
   bytesTotal: number
   message?: string | null
+  /** "local" | "remote" | "transfer" | undefined. Distinguishes which side a checksum belongs to. */
+  side?: string | null
 }
 
 let listenerInstalled = false
@@ -51,8 +53,10 @@ async function ensureListener(): Promise<void> {
       } else if (kind === 'checksum-progress') {
         store.updateChecksumProgress(transferId, bytesDone, bytesTotal)
       } else if (kind === 'checksum-done') {
-        // message contains the hex hash for remote side
-        store.setChecksumResult(transferId, 'remote', {
+        // Use `side` field to determine whether this is local or remote checksum
+        const side = (evt.payload as SftpProgressPayload).side
+        const checksumSide = side === 'local' ? 'local' : 'remote'
+        store.setChecksumResult(transferId, checksumSide, {
           success: true,
           hash: message ?? undefined,
         })

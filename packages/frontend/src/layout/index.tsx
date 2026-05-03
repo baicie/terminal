@@ -305,24 +305,39 @@ const MainLayout: React.FC = () => {
     const onNewTab = () => handleNewLocalTerminal()
     const onNewLocal = () => handleNewLocalTerminal()
     const onToggleSidebar = () => setSidebarOpen(prev => !prev)
+    const onNextTab = () => {
+      const tabs = useAppStore.getState().tabs
+      const activeTabId = useAppStore.getState().activeTabId
+      if (tabs.length <= 1) return
+      const idx = tabs.findIndex(t => t.id === activeTabId)
+      const nextIdx = (idx + 1) % tabs.length
+      const nextId = tabs[nextIdx].id
+      useAppStore.getState().setActiveTab(nextId)
+      window.dispatchEvent(new CustomEvent('terminal:switch-tab', { detail: { tabId: nextId } }))
+    }
+    const onPrevTab = () => {
+      const tabs = useAppStore.getState().tabs
+      const activeTabId = useAppStore.getState().activeTabId
+      if (tabs.length <= 1) return
+      const idx = tabs.findIndex(t => t.id === activeTabId)
+      const prevIdx = (idx - 1 + tabs.length) % tabs.length
+      const prevId = tabs[prevIdx].id
+      useAppStore.getState().setActiveTab(prevId)
+      window.dispatchEvent(new CustomEvent('terminal:switch-tab', { detail: { tabId: prevId } }))
+    }
 
     window.addEventListener(`${SHORTCUT_EVENT_PREFIX}new-tab`, onNewTab)
     window.addEventListener(`${SHORTCUT_EVENT_PREFIX}new-local`, onNewLocal)
-    window.addEventListener(
-      `${SHORTCUT_EVENT_PREFIX}toggle-sidebar`,
-      onToggleSidebar,
-    )
+    window.addEventListener(`${SHORTCUT_EVENT_PREFIX}toggle-sidebar`, onToggleSidebar)
+    window.addEventListener(`${SHORTCUT_EVENT_PREFIX}next-tab`, onNextTab)
+    window.addEventListener(`${SHORTCUT_EVENT_PREFIX}prev-tab`, onPrevTab)
 
     return () => {
       window.removeEventListener(`${SHORTCUT_EVENT_PREFIX}new-tab`, onNewTab)
-      window.removeEventListener(
-        `${SHORTCUT_EVENT_PREFIX}new-local`,
-        onNewLocal,
-      )
-      window.removeEventListener(
-        `${SHORTCUT_EVENT_PREFIX}toggle-sidebar`,
-        onToggleSidebar,
-      )
+      window.removeEventListener(`${SHORTCUT_EVENT_PREFIX}new-local`, onNewLocal)
+      window.removeEventListener(`${SHORTCUT_EVENT_PREFIX}toggle-sidebar`, onToggleSidebar)
+      window.removeEventListener(`${SHORTCUT_EVENT_PREFIX}next-tab`, onNextTab)
+      window.removeEventListener(`${SHORTCUT_EVENT_PREFIX}prev-tab`, onPrevTab)
     }
   }, [handleNewLocalTerminal])
 

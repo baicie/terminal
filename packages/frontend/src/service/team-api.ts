@@ -212,21 +212,33 @@ class TeamApiService {
     type: 'HOST' | 'HOST_GROUP' | 'SNIPPET_PACKAGE',
     data: unknown,
     permission: 'READONLY' | 'READWRITE',
+    encryptedData?: string,
+    isSensitive?: boolean,
   ): Promise<ApiResponse<{ id: string }>> {
     return this.request('POST', `/teams/${teamId}/shares`, {
       type,
       data,
       permission,
+      ...(encryptedData !== undefined && {
+        encryptedData,
+        isSensitive: isSensitive ?? true,
+      }),
     })
   }
 
   async updateShare(
     teamId: string,
     shareId: string,
-    permission: 'READONLY' | 'READWRITE',
+    permission?: 'READONLY' | 'READWRITE',
+    data?: unknown,
+    encryptedData?: string,
+    isSensitive?: boolean,
   ): Promise<ApiResponse<void>> {
     return this.request('PUT', `/teams/${teamId}/shares/${shareId}`, {
-      permission,
+      ...(permission !== undefined && { permission }),
+      ...(data !== undefined && { data }),
+      ...(encryptedData !== undefined && { encryptedData }),
+      ...(isSensitive !== undefined && { isSensitive }),
     })
   }
 
@@ -326,12 +338,17 @@ class TeamApiService {
       members: unknown[]
       shares: Array<{
         id: string
+        teamId: string
         type: string
         data: unknown
+        encryptedData: string | null
+        isSensitive: boolean
         permission: string
         sharedBy: string
         createdAt: string
+        updatedAt: string
       }>
+      deletedShareIds: string[]
       auditLogs: unknown[]
     }>
   > {
@@ -345,16 +362,22 @@ class TeamApiService {
       teamId: string
       type: string
       data: unknown
+      encryptedData?: string
+      isSensitive?: boolean
       permission: string
+      baseVersion?: number
     }>,
+    deleteShares?: string[],
   ): Promise<
     ApiResponse<{
-      created: unknown[]
-      updated: unknown[]
+      created: string[]
+      updated: string[]
+      deleted: string[]
+      conflicts: string[]
       errors: Array<{ id: string; error: string }>
     }>
   > {
-    return this.request('POST', '/sync', { shares })
+    return this.request('POST', '/sync', { shares, deleteShares })
   }
 
   // Check for sync conflicts
@@ -380,11 +403,78 @@ class TeamApiService {
   async resolveConflict(
     shareId: string,
     resolution: 'LOCAL' | 'REMOTE',
+    clientData?: {
+      data: unknown
+      encryptedData?: string
+      isSensitive?: boolean
+      permission?: string
+    },
   ): Promise<ApiResponse<{ success: boolean; error?: string }>> {
     return this.request('POST', '/sync/conflicts/resolve', {
       shareId,
       resolution,
+      clientData,
     })
+  }
+
+  // ==================== Offline Queue ====================
+
+  /** Get all pending offline operations for the user */
+  async getPendingOperations(): Promise<
+    ApiResponse<
+      Array<{
+        id: string
+        teamId: string
+        operation: string
+        shareType: string
+        shareId: string
+        data: unknown
+        attempts: number
+        lastError: string | null
+        createdAt: string
+      }>
+    >
+  > {
+    return this.request('GET', '/sync/queue')
+  }
+
+  /** Process pending offline operations on the server */
+  async processOfflineQueue(): Promise<
+    ApiResponse<{
+      processed: number
+      succeeded: number
+      failed: number
+      errors: Array<{ id: string; error: string }>
+    }>
+  > {
+    return this.request('POST', '/sync/queue/process', {})
+  }
+
+  /** Add an operation to the offline queue */
+  async enqueueOfflineOperation(
+    teamId: string,
+    operation: 'CREATE' | 'UPDATE' | 'DELETE',
+    shareType: 'HOST' | 'HOST_GROUP' | 'SNIPPET_PACKAGE',
+    shareId: string,
+    data?: unknown,
+  ): Promise<ApiResponse<{ id: string }>> {
+    return this.request('POST', '/sync/queue/enqueue', {
+      teamId,
+      operation,
+      shareType,
+      shareId,
+      data,
+    })
+  }
+
+  /** Remove an operation from the queue */
+  async removeFromQueue(id: string): Promise<ApiResponse<{ success: boolean }>> {
+    return this.request('DELETE', `/sync/queue/${id}`)
+  }
+
+  /** Clear all operations for a team */
+  async clearTeamQueue(teamId: string): Promise<ApiResponse<{ success: boolean }>> {
+    return this.request('DELETE', `/sync/queue/team/${teamId}`)
   }
 
   // ==================== Health Check ====================

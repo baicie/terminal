@@ -212,29 +212,30 @@ const PortForwardView: React.FC = () => {
 
   return (
     <ViewContainer>
-      <ViewToolbar className="gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+      <ViewToolbar className="gap-2 sm:gap-4">
+        <div className="relative flex-1 max-w-xs sm:max-w-sm">
+          <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search forwards..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="pl-9 h-9"
+            className="pl-8 sm:pl-9 h-8 sm:h-9 text-xs sm:text-sm"
           />
         </div>
 
         <div className="flex-1" />
 
-        <Button variant="outline" size="sm" onClick={() => void loadForwards()}>
+        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => void loadForwards()}>
           <RefreshCw
-            className={`size-4 mr-1 ${loading ? 'animate-spin' : ''}`}
+            className={`size-3.5 sm:size-4 mr-1 ${loading ? 'animate-spin' : ''}`}
           />
-          Refresh
+          <span className="hidden sm:inline">Refresh</span>
         </Button>
 
-        <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-          <Plus className="size-4 mr-1" data-icon="inline-start" />
-          New Forward
+        <Button size="sm" className="h-8 text-xs gap-1" onClick={() => setAddDialogOpen(true)}>
+          <Plus className="size-3.5" data-icon="inline-start" />
+          <span className="hidden sm:inline">New Forward</span>
+          <span className="sm:hidden">Add</span>
         </Button>
       </ViewToolbar>
 

@@ -20,6 +20,8 @@ export const defaultSettings: AppSettings = {
   syncServiceEndpoint: '',
   syncServiceUsername: '',
   syncServiceToken: '',
+  syncServiceBucket: '',
+  syncServiceRegion: '',
   terminalTheme: 'one-dark',
   terminalThemeDark: 'one-dark',
   terminalThemeLight: 'solarized-light',

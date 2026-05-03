@@ -40,6 +40,7 @@ import MenuTabs from '@/layout/tabs'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 import { useNotificationStore } from '@/store/notification'
+import { useTransferQueue } from '@/store/transfer-queue'
 import { useIsMobile } from '@/hooks/use-breakpoint'
 
 const TopToolbar: React.FC<{
@@ -51,6 +52,7 @@ const TopToolbar: React.FC<{
   const addTab = useAppStore(s => s.addTab)
   const isMobile = useIsMobile()
   const unreadCount = useNotificationStore(s => s.notifications.filter(n => !n.read).length)
+  const activeTransferCount = useTransferQueue(s => s.transfers.filter(t => t.status === 'running' || t.status === 'queued').length)
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [hostDialogOpen, setHostDialogOpen] = useState(false)
@@ -249,7 +251,7 @@ const TopToolbar: React.FC<{
             size="sm"
             onClick={() => navigate('/sftp')}
             className={cn(
-              'gap-1.5 h-8 px-3 rounded-md transition-colors duration-150',
+              'gap-1.5 h-8 px-3 rounded-md transition-colors duration-150 relative',
               isSftpActive
                 ? 'bg-secondary/80 text-foreground'
                 : 'text-muted-foreground hover:text-foreground',
@@ -258,6 +260,11 @@ const TopToolbar: React.FC<{
           >
             <FolderUp className="size-4" data-icon="inline-start" />
             {t('toolbar.sftp')}
+            {activeTransferCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full bg-primary text-[9px] font-semibold text-primary-foreground flex items-center justify-center px-1 leading-none">
+                {activeTransferCount > 99 ? '99+' : activeTransferCount}
+              </span>
+            )}
           </Button>
         </div>
 

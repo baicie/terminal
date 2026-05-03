@@ -147,6 +147,20 @@ interface TeamState {
   lastSyncAt: number | null
   syncError: string | null
 
+  // Conflict tracking (for cloud mode sync)
+  syncConflicts: Array<{
+    shareId: string
+    localVersion: { updatedAt: number; data: unknown }
+    remoteVersion: { updatedAt: number; data: unknown; updatedBy: string }
+  }>
+
+  // Offline queue status
+  offlineQueueCount: number
+  isProcessingQueue: boolean
+
+  // Auto-sync interval handle
+  autoSyncInterval: ReturnType<typeof setInterval> | null
+
   // Actions
   initialize: () => Promise<void>
   ensureUserId: () => Promise<string>
@@ -154,6 +168,8 @@ interface TeamState {
   // Settings actions
   getSettings: () => Promise<TeamSettings>
   saveSettings: (settings: Partial<TeamSettings>) => Promise<void>
+  startAutoSync: () => void
+  stopAutoSync: () => void
   enableTeamMode: (config: Partial<TeamSettings>) => Promise<void>
   disableTeamMode: () => Promise<void>
 
@@ -208,6 +224,9 @@ interface TeamState {
   joinByCode: (
     code: string,
   ) => Promise<{ teamId: string; role: 'admin' | 'member' } | null>
+  joinByLink: (
+    linkToken: string,
+  ) => Promise<{ teamId: string; role: 'admin' | 'member' } | null>
 
   // Audit log actions
   loadAuditLogs: (teamId: string, limit?: number) => Promise<void>
@@ -223,6 +242,21 @@ interface TeamState {
   // Sync actions
   sync: () => Promise<void>
   setSyncing: (isSyncing: boolean) => void
+  syncWithConflictResolution: (
+    resolution: 'LOCAL' | 'REMOTE',
+    shareId: string,
+    localData?: unknown,
+  ) => Promise<void>
+  getSyncConflicts: () => Array<{
+    shareId: string
+    localVersion: { updatedAt: number; data: unknown }
+    remoteVersion: { updatedAt: number; data: unknown; updatedBy: string }
+  }>
+  clearSyncConflicts: () => void
+
+  // Offline queue actions
+  syncOfflineQueue: () => Promise<void>
+  getOfflineQueueCount: () => number
 
   // User profile actions
   updateUserProfile: (id: string, updates: { name: string }) => Promise<void>
@@ -376,12 +410,19 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   isSyncing: false,
   lastSyncAt: null,
   syncError: null,
+  syncConflicts: [],
+  offlineQueueCount: 0,
+  isProcessingQueue: false,
+  autoSyncInterval: null,
 
   // Initialize team store
   async initialize() {
     await get().ensureUserId()
-    await get().getSettings()
+    const settings = await get().getSettings()
     await get().loadTeams()
+    if (settings.enabled && settings.mode === 'cloud' && settings.autoSync) {
+      get().startAutoSync()
+    }
   },
 
   // Ensure user has a UUID
@@ -437,6 +478,11 @@ export const useTeamStore = create<TeamState>((set, get) => ({
     const merged = { ...current, ...newSettings }
     await setSetting('team_settings', merged)
     set({ settings: merged })
+    // Restart auto-sync if cloud mode settings changed
+    get().stopAutoSync()
+    if (merged.enabled && merged.mode === 'cloud' && merged.autoSync) {
+      get().startAutoSync()
+    }
   },
 
   // Enable team mode
@@ -446,6 +492,7 @@ export const useTeamStore = create<TeamState>((set, get) => ({
 
   // Disable team mode
   async disableTeamMode() {
+    get().stopAutoSync()
     await get().saveSettings({
       enabled: false,
       mode: 'local',
@@ -459,6 +506,27 @@ export const useTeamStore = create<TeamState>((set, get) => ({
       invites: [],
       auditLogs: [],
     })
+  },
+
+  // Start auto-sync timer
+  startAutoSync() {
+    const { autoSyncInterval } = get()
+    if (autoSyncInterval !== null) return // already running
+
+    const { settings } = get()
+    const interval = settings.syncInterval > 0 ? settings.syncInterval : 30_000
+    const timerId = setInterval(() => {
+      get().sync()
+    }, interval)
+    set({ autoSyncInterval: timerId })
+  },
+
+  // Stop auto-sync timer
+  stopAutoSync() {
+    const { autoSyncInterval } = get()
+    if (autoSyncInterval === null) return
+    clearInterval(autoSyncInterval)
+    set({ autoSyncInterval: null })
   },
 
   // Load all teams
@@ -779,10 +847,39 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   },
 
   // Join team by code
-  async joinByCode(_code: string) {
-    // This is for cloud mode - local mode uses JSON import
-    // For now, return null as this requires server
-    return null
+  async joinByCode(code: string) {
+    const { settings, userProfile } = get()
+    if (settings.mode !== 'cloud' || !settings.endpoint || !settings.apiToken) {
+      return null
+    }
+    teamApi.configure(settings.endpoint, settings.apiToken, userProfile?.id || '')
+    const response = await teamApi.joinByCode(code, userProfile?.name)
+    if (response.error || !response.data) {
+      console.error('joinByCode failed:', response.error)
+      return null
+    }
+    return {
+      teamId: response.data.teamId,
+      role: (response.data.role.toLowerCase() === 'admin' ? 'admin' : 'member') as 'admin' | 'member',
+    }
+  },
+
+  // Join team by link
+  async joinByLink(linkToken: string) {
+    const { settings, userProfile } = get()
+    if (settings.mode !== 'cloud' || !settings.endpoint || !settings.apiToken) {
+      return null
+    }
+    teamApi.configure(settings.endpoint, settings.apiToken, userProfile?.id || '')
+    const response = await teamApi.joinByLink(linkToken, userProfile?.name)
+    if (response.error || !response.data) {
+      console.error('joinByLink failed:', response.error)
+      return null
+    }
+    return {
+      teamId: response.data.teamId,
+      role: (response.data.role.toLowerCase() === 'admin' ? 'admin' : 'member') as 'admin' | 'member',
+    }
   },
 
   // Load audit logs
@@ -828,29 +925,17 @@ export const useTeamStore = create<TeamState>((set, get) => ({
     set(state => ({ auditLogs: [log, ...state.auditLogs] }))
   },
 
-  // Sync for cloud mode
+  // Sync for cloud mode — full bidirectional incremental sync with conflict detection
   async sync() {
-    const { settings, currentTeam, userProfile } = get()
+    const { settings, currentTeam, userProfile, sharedHosts, sharedSnippets } = get()
 
-    // Configure API if in cloud mode
-    if (
-      settings.enabled &&
-      settings.mode === 'cloud' &&
-      settings.endpoint &&
-      settings.apiToken
-    ) {
-      teamApi.configure(
-        settings.endpoint,
-        settings.apiToken,
-        userProfile?.id || '',
-      )
+    if (settings.enabled && settings.mode === 'cloud' && settings.endpoint && settings.apiToken) {
+      teamApi.configure(settings.endpoint, settings.apiToken, userProfile?.id || '')
     }
 
-    if (!settings.enabled || settings.mode !== 'cloud' || !currentTeam) {
-      return
-    }
+    if (!settings.enabled || settings.mode !== 'cloud' || !currentTeam) return
 
-    set({ isSyncing: true, syncError: null })
+    set({ isSyncing: true, syncError: null, syncConflicts: [] })
 
     try {
       // 1. Get changes from server since lastSyncAt
@@ -861,11 +946,17 @@ export const useTeamStore = create<TeamState>((set, get) => ({
         throw new Error(changesResponse.error)
       }
 
-      // 2. Update local data from server changes
+      // 2. Process server changes (incoming)
       if (changesResponse.data) {
-        const { shares } = changesResponse.data
+        const { shares, deletedShareIds } = changesResponse.data
 
-        // Update shared hosts/snippets from server
+        // Handle deletions
+        for (const shareId of deletedShareIds) {
+          await removeSharedHost(shareId)
+          await removeSharedSnippet(shareId)
+        }
+
+        // Handle creates/updates
         for (const apiShare of shares) {
           const converted = convertApiShare({
             id: apiShare.id,
@@ -875,40 +966,85 @@ export const useTeamStore = create<TeamState>((set, get) => ({
             sharedBy: apiShare.sharedBy,
             createdAt: apiShare.createdAt,
           })
+
           if ('hostData' in converted) {
-            // It's a shared host
-            if (settings.currentTeamId) {
-              await addSharedHost({
-                id: converted.id,
-                team_id: settings.currentTeamId,
-                host_data: JSON.stringify(converted.hostData),
-                shared_by: converted.sharedBy,
-                permission: converted.permission,
-                created_at: converted.createdAt,
-              })
-            }
+            await addSharedHost({
+              id: converted.id,
+              team_id: settings.currentTeamId!,
+              host_data: JSON.stringify(converted.hostData),
+              shared_by: converted.sharedBy,
+              permission: converted.permission,
+              created_at: converted.createdAt,
+            })
           } else if ('snippetData' in converted) {
-            // It's a shared snippet
-            if (settings.currentTeamId) {
-              await addSharedSnippet({
-                id: converted.id,
-                team_id: settings.currentTeamId,
-                snippet_data: JSON.stringify(converted.snippetData),
-                shared_by: converted.sharedBy,
-                permission: converted.permission,
-                created_at: converted.createdAt,
-              })
-            }
+            await addSharedSnippet({
+              id: converted.id,
+              team_id: settings.currentTeamId!,
+              snippet_data: JSON.stringify(converted.snippetData),
+              shared_by: converted.sharedBy,
+              permission: converted.permission,
+              created_at: converted.createdAt,
+            })
           }
         }
       }
 
-      // 3. Reload local data
-      if (currentTeam) {
-        await get().loadSharedHosts(currentTeam.id)
-        await get().loadSharedSnippets(currentTeam.id)
+      // 3. Push local changes (outgoing) — check conflicts first
+      const localShares = [
+        ...sharedHosts.map(h => ({ ...h, _type: 'HOST' as const })),
+        ...sharedSnippets.map(s => ({ ...s, _type: 'SNIPPET' as const })),
+      ]
+
+      if (localShares.length > 0) {
+        const conflictCheckItems = localShares
+          .filter(s => s.createdAt)
+          .map(s => ({
+            id: s.id,
+            updatedAt: s.createdAt,
+            type: s._type === 'HOST' ? 'HOST' as const : 'SNIPPET_PACKAGE' as const,
+          }))
+
+        if (conflictCheckItems.length > 0) {
+          const conflicts = await teamApi.checkConflicts(conflictCheckItems)
+          if (!conflicts.error && conflicts.data && conflicts.data.length > 0) {
+            // Store conflicts for user resolution
+            set({ syncConflicts: conflicts.data })
+          }
+        }
+
+        // Push with baseVersion for optimistic concurrency
+        const pushResult = await teamApi.pushChanges(
+          localShares.map(s => ({
+            id: s.id,
+            teamId: currentTeam.id,
+            type: s._type === 'HOST' ? 'HOST' : 'SNIPPET_PACKAGE',
+            data: s._type === 'HOST' ? (s as SharedHost).hostData : (s as SharedSnippet).snippetData,
+            permission: s.permission.toUpperCase() as 'READONLY' | 'READWRITE',
+            baseVersion: s.createdAt,
+          })),
+        )
+
+        if (pushResult.error) {
+          throw new Error(pushResult.error)
+        }
+
+        if (pushResult.data?.conflicts && pushResult.data.conflicts.length > 0) {
+          // Get conflict details for display
+          const conflictDetails = pushResult.data.conflicts.map(id => {
+            const local = localShares.find(s => s.id === id)
+            return {
+              shareId: id,
+              localVersion: { updatedAt: local?.createdAt ?? 0, data: local ?? {} },
+              remoteVersion: { updatedAt: 0, data: {}, updatedBy: '' },
+            }
+          })
+          set(state => ({ syncConflicts: [...state.syncConflicts, ...conflictDetails] }))
+        }
       }
 
+      // 4. Reload local data
+      await get().loadSharedHosts(currentTeam.id)
+      await get().loadSharedSnippets(currentTeam.id)
       set({ lastSyncAt: Date.now() })
     } catch (error) {
       console.error('Sync error:', error)
@@ -916,6 +1052,67 @@ export const useTeamStore = create<TeamState>((set, get) => ({
     } finally {
       set({ isSyncing: false })
     }
+  },
+
+  // Resolve a sync conflict
+  async syncWithConflictResolution(
+    resolution: 'LOCAL' | 'REMOTE',
+    shareId: string,
+    localData?: unknown,
+  ) {
+    const { settings, userProfile } = get()
+    if (!settings.enabled || settings.mode !== 'cloud') return
+
+    if (settings.endpoint && settings.apiToken) {
+      teamApi.configure(settings.endpoint, settings.apiToken, userProfile?.id || '')
+    }
+
+    const result = await teamApi.resolveConflict(shareId, resolution, localData ? {
+      data: localData,
+      isSensitive: false,
+      permission: 'READONLY',
+    } : undefined)
+
+    if (!result.error) {
+      set(state => ({ syncConflicts: state.syncConflicts.filter(c => c.shareId !== shareId) }))
+    }
+  },
+
+  // Get current conflicts
+  getSyncConflicts() {
+    return get().syncConflicts
+  },
+
+  // Clear all conflicts
+  clearSyncConflicts() {
+    set({ syncConflicts: [] })
+  },
+
+  // Sync offline queue
+  async syncOfflineQueue() {
+    const { settings, userProfile } = get()
+    if (!settings.enabled || settings.mode !== 'cloud') return
+
+    if (settings.endpoint && settings.apiToken) {
+      teamApi.configure(settings.endpoint, settings.apiToken, userProfile?.id || '')
+    }
+
+    set({ isProcessingQueue: true })
+
+    try {
+      const result = await teamApi.processOfflineQueue()
+      if (!result.error && result.data) {
+        const pending = await teamApi.getPendingOperations()
+        set({ offlineQueueCount: pending.data?.length ?? 0 })
+      }
+    } finally {
+      set({ isProcessingQueue: false })
+    }
+  },
+
+  // Get offline queue count
+  getOfflineQueueCount() {
+    return get().offlineQueueCount
   },
 
   // Set syncing state

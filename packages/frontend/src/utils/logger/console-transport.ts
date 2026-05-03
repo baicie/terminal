@@ -1,5 +1,4 @@
 import type { LogTransport } from './transport'
-import dayjs from 'dayjs'
 import { LogLevel } from './log-level'
 
 const LEVEL_TAGS = {
@@ -17,50 +16,36 @@ const COLORS = {
 }
 
 function getFn(level: LogLevel) {
-  if (level === LogLevel.Error) {
-    return console.error
-  }
-
-  if (level === LogLevel.Warn) {
-    return console.warn
-  }
-
-  if (level === LogLevel.Info) {
-    return console.info
-  }
-
+  if (level === LogLevel.Error) return console.error
+  if (level === LogLevel.Warn) return console.warn
+  if (level === LogLevel.Info) return console.info
   return console.debug
 }
 
-/**
- * 日志打印接口 控制台实现
- */
+function padTwo(n: number): string {
+  return n.toString().padStart(2, '0')
+}
+
+function timestamp(): string {
+  const d = new Date()
+  return `${padTwo(d.getHours())}:${padTwo(d.getMinutes())}:${padTwo(d.getSeconds())}.${padTwo(Math.floor(d.getMilliseconds() / 10))}`
+}
+
 export class ConsoleLogTransport implements LogTransport {
-  constructor(public readonly maxLevel: LogLevel) {
-    this.maxLevel = maxLevel
-  }
+  constructor(public readonly maxLevel: LogLevel) {}
 
   log(level: LogLevel, module: string, msg: string): void {
-    if (level > this.maxLevel) {
-      return
-    }
-
+    if (level > this.maxLevel) return
     this.render(level, module, msg)
   }
 
   private render(level: LogLevel, module: string, msg: string): void {
     const levelTag = LEVEL_TAGS[level]
-    const levelText = `%c${levelTag}%c`
-    const levelColorText = `color: #FFF; background:${COLORS[level]};`
-
-    const timestamp = dayjs().format('HH:mm:ss.SSS')
-
     const moduleText = module ? `[${module}]` : ''
-
     getFn(level).call(
       console,
-      `${levelText} [${timestamp}] ${moduleText} ${msg}`,
-      levelColorText,
+      `%c${levelTag}%c [${timestamp()}] ${moduleText} ${msg}`,
+      `color: #FFF; background:${COLORS[level]};`,
       '',
     )
   }

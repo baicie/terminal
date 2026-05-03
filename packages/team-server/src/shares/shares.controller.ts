@@ -27,13 +27,15 @@ export class SharesController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a new share' })
+  @ApiOperation({ summary: 'Create a new share (supports encrypted data for sensitive shares)' })
   async create(
     @Param('teamId') teamId: string,
     @Body()
     body: {
       type: 'HOST' | 'HOST_GROUP' | 'SNIPPET_PACKAGE'
-      data: any
+      data: unknown
+      encryptedData?: string
+      isSensitive?: boolean
       permission: 'READONLY' | 'READWRITE'
     },
     @ApiKeyAuth() userId: string,
@@ -52,14 +54,20 @@ export class SharesController {
   }
 
   @Put(':shareId')
-  @ApiOperation({ summary: 'Update share permission' })
+  @ApiOperation({ summary: 'Update share (including encrypted data)' })
   async update(
     @Param('teamId') teamId: string,
     @Param('shareId') shareId: string,
-    @Body() body: { permission: 'READONLY' | 'READWRITE' },
+    @Body()
+    body: {
+      permission?: 'READONLY' | 'READWRITE'
+      data?: unknown
+      encryptedData?: string
+      isSensitive?: boolean
+    },
     @ApiKeyAuth() userId: string,
   ) {
-    return this.sharesService.update(teamId, shareId, userId, body.permission)
+    return this.sharesService.update(teamId, shareId, userId, body)
   }
 
   @Delete(':shareId')

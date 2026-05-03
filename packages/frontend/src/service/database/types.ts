@@ -120,6 +120,7 @@ export interface AppSettings {
   syncServiceUsername: string
   syncServiceToken: string
   syncServiceBucket?: string
+  syncServiceRegion?: string
   // Terminal theme settings (per app theme)
   terminalTheme: TerminalThemePreset
   terminalThemeDark: TerminalThemePreset

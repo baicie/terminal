@@ -187,3 +187,71 @@ pub struct JumpHostConfig {
     /// 目标主机的认证类型（agent / password / key / cert），为空则沿用主会话默认逻辑
     pub target_auth_type: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_session_error_roundtrip() {
+        let check = |original: SessionError, expected_kind: &str, expected_msg: Option<&str>| {
+            let dto = SessionErrorDto::from(original.clone());
+            assert_eq!(dto.kind, expected_kind);
+            assert_eq!(dto.message.as_deref(), expected_msg);
+            let back: SessionError = dto.into();
+            assert_eq!(back.to_string(), original.to_string());
+        };
+        check(SessionError::SessionNotFound, "session_not_found", None);
+        check(SessionError::WriteFailed("broken".into()), "write_failed", Some("broken"));
+        check(SessionError::ResizeFailed("bad".into()), "resize_failed", Some("bad"));
+        check(SessionError::CloseFailed("closed".into()), "close_failed", Some("closed"));
+        check(SessionError::ConnectionFailed("refused".into()), "connection_failed", Some("refused"));
+        check(SessionError::AuthenticationFailed("bad".into()), "authentication_failed", Some("bad"));
+        check(SessionError::InvalidInput("null".into()), "invalid_input", Some("null"));
+        check(SessionError::ChannelError("win".into()), "channel_error", Some("win"));
+        check(SessionError::KeyParseFailed("bad".into()), "key_parse_failed", Some("bad"));
+        check(SessionError::CertificateParseFailed("exp".into()), "certificate_parse_failed", Some("exp"));
+        check(SessionError::ExecFailed("exit 1".into()), "exec_failed", Some("exit 1"));
+        check(SessionError::ExecTimeout, "exec_timeout", None);
+    }
+
+    #[test]
+    fn test_session_error_unknown_kind_falls_back_to_connection_failed() {
+        let dto = SessionErrorDto { kind: "bogus", message: Some("x".into()) };
+        let back: SessionError = dto.into();
+        assert!(matches!(back, SessionError::ConnectionFailed(_)));
+    }
+
+    #[test]
+    fn test_session_type_display() {
+        assert_eq!(SessionType::Local.to_string(), "local");
+        assert_eq!(SessionType::Ssh.to_string(), "ssh");
+    }
+
+    #[test]
+    fn test_session_type_serde() {
+        use serde_json;
+        let local = serde_json::to_string(&SessionType::Local).unwrap();
+        let ssh = serde_json::to_string(&SessionType::Ssh).unwrap();
+        assert_eq!(local, "\"local\"");
+        assert_eq!(ssh, "\"ssh\"");
+        let back_local: SessionType = serde_json::from_str(&local).unwrap();
+        let back_ssh: SessionType = serde_json::from_str(&ssh).unwrap();
+        assert_eq!(back_local, SessionType::Local);
+        assert_eq!(back_ssh, SessionType::Ssh);
+    }
+
+    #[test]
+    fn test_exec_result_serde() {
+        let result = ExecResult {
+            stdout: "hello".into(),
+            stderr: "err".into(),
+            exit_code: 0,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let back: ExecResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.stdout, "hello");
+        assert_eq!(back.stderr, "err");
+        assert_eq!(back.exit_code, 0);
+    }
+}

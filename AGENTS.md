@@ -857,18 +857,18 @@ const SettingsView = () => {
 
 #### 已有文件待拆分清单
 
-> 以下文件**需要立即拆分**，已超出限制：
+> ✅ 所有文件均已拆分至限制以内（2026-05-03）
 
-| 文件 | 当前行数 | 目标行数 |
-| --- | --- | --- |
-| `view/teams/index.tsx` | 1583 | 6 个子文件 |
-| `view/settings/index.tsx` | 1203 | 4 个子文件 |
-| `components/settings-dialog/index.tsx` | 1221 | 4 个子文件 |
-| `components/snippet-manager/index.tsx` | 778 | 2 个子文件 |
-| `view/hosts/index.tsx` | 876 | 3 个子文件 |
-| `view/snippets/index.tsx` | 828 | 4 个子文件 |
-| `view/keychain/index.tsx` | 801 | 3 个子文件 |
-| `components/host-list/host-dialog.tsx` | 609 | 2 个子文件 |
+| 文件 | 原行数 | 限制 | 当前行数 |
+| --- | --- | --- | --- |
+| `view/teams/index.tsx` | 1583 | 300 | ✅ 已拆分 |
+| `view/settings/index.tsx` | 1203 | 300 | 163 ✅ |
+| `components/settings-dialog/index.tsx` | 1221 | 400 | 278 ✅ |
+| `components/snippet-manager/index.tsx` | 778 | 400 | 326 ✅ |
+| `view/hosts/index.tsx` | 876 | 300 | ✅ 已拆分 |
+| `view/snippets/index.tsx` | 828 | 300 | ✅ 已拆分 |
+| `view/keychain/index.tsx` | 801 | 300 | ✅ 已拆分 |
+| `components/host-list/host-dialog.tsx` | 609 | 400 | ✅ 已拆分 |
 
 ---
 
@@ -1030,6 +1030,4 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-03-27_
-
-_本文档新增：代码质量规范（文件大小限制 + 移动端适配规范）_
+_文档更新时间: 2026-05-03 (Phase 6.8: 跨设备同步UX收尾 + Team自动同步定时器 + joinByCode/joinByLink修复 + Rust单元测试20个 + 团队视图快捷入口 + 存储设置重构为共享hook)_

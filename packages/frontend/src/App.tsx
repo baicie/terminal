@@ -1,5 +1,3 @@
-import { isRegistered, register } from '@tauri-apps/plugin-global-shortcut'
-import dayjs from 'dayjs'
 import { useEffect } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import { RouterProvider } from 'react-router-dom'
@@ -12,9 +10,6 @@ import { useTeamStore } from './store/team'
 import { getAppSettings } from './service/database'
 import { applyNotificationPrefs } from './service/notifications'
 import { syncCloseToTray } from './service/window-ux'
-import 'dayjs/locale/en'
-import 'dayjs/locale/fr'
-import 'dayjs/locale/zh-cn'
 
 export default function App() {
   const { i18n } = useTranslation()
@@ -24,13 +19,13 @@ export default function App() {
   const initializeTeam = useTeamStore(s => s.initialize)
 
   useEffect(() => {
-    // Initialize team store on app start
     void initializeTeam()
   }, [initializeTeam])
 
   useEffect(() => {
     const registerShortcuts = async () => {
       try {
+        const { isRegistered, register } = await import('@tauri-apps/plugin-global-shortcut')
         const { getCurrentWindow } = await import('@tauri-apps/api/window')
 
         if (!(await isRegistered('CommandOrControl+W'))) {
@@ -76,7 +71,6 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       await hydrateFromDatabase()
-      // 启动时同步桌面 UX 偏好：close-to-tray + 通知策略
       try {
         const s = await getAppSettings()
         applyNotificationPrefs({
@@ -91,17 +85,10 @@ export default function App() {
   }, [hydrateFromDatabase])
 
   useEffect(() => {
-    const handleLanguageChange = (lng: string) => {
-      dayjs.locale(lng === 'cn' ? 'zh-cn' : lng)
+    if (language && i18n.language !== language) {
+      void i18n.changeLanguage(language)
     }
-
-    handleLanguageChange(i18n.language)
-    i18n.on('languageChanged', handleLanguageChange)
-
-    return () => {
-      i18n.off('languageChanged', handleLanguageChange)
-    }
-  }, [i18n])
+  }, [language, i18n])
 
   useEffect(() => {
     const applyTheme = (mode: string) => {
@@ -122,12 +109,6 @@ export default function App() {
     mq.addEventListener('change', onSystemChange)
     return () => mq.removeEventListener('change', onSystemChange)
   }, [theme])
-
-  useEffect(() => {
-    if (language && i18n.language !== language) {
-      void i18n.changeLanguage(language)
-    }
-  }, [language, i18n])
 
   return (
     <TooltipProvider>

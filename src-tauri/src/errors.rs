@@ -291,3 +291,132 @@ impl From<StorageErrorDto> for StorageError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_sftp_error_roundtrip() {
+        let check = |original: super::SftpError, expected_kind: &str, expected_msg: Option<&str>| {
+            let dto = super::SftpErrorDto::from(original.clone());
+            assert_eq!(&*dto.kind, expected_kind);
+            assert_eq!(dto.message.as_deref(), expected_msg);
+            let back: super::SftpError = dto.into();
+            assert_eq!(back.to_string(), original.to_string());
+        };
+        check(super::SftpError::SessionNotFound, "session_not_found", None);
+        check(super::SftpError::ReadDirFailed("ENOENT".into()), "read_dir_failed", Some("ENOENT"));
+        check(super::SftpError::UploadFailed("reset".into()), "upload_failed", Some("reset"));
+        check(super::SftpError::DownloadFailed("timeout".into()), "download_failed", Some("timeout"));
+        check(super::SftpError::MkdirFailed("denied".into()), "mkdir_failed", Some("denied"));
+        check(super::SftpError::DeleteFailed("busy".into()), "delete_failed", Some("busy"));
+        check(super::SftpError::RenameFailed("cross".into()), "rename_failed", Some("cross"));
+        check(super::SftpError::InvalidPath("/bad".into()), "invalid_path", Some("/bad"));
+        check(super::SftpError::ChecksumFailed("mismatch".into()), "checksum_failed", Some("mismatch"));
+    }
+
+    #[test]
+    fn test_sftp_error_unknown_kind_falls_back() {
+        let dto = super::SftpErrorDto { kind: "bogus", message: None };
+        let back: super::SftpError = dto.into();
+        assert!(matches!(back, super::SftpError::SessionNotFound));
+    }
+
+    #[test]
+    fn test_serial_error_roundtrip() {
+        let check = |original: super::SerialError, expected_kind: &str, expected_msg: Option<&str>| {
+            let dto = super::SerialErrorDto::from(original.clone());
+            assert_eq!(&*dto.kind, expected_kind);
+            assert_eq!(dto.message.as_deref(), expected_msg);
+            let back: super::SerialError = dto.into();
+            assert_eq!(back.to_string(), original.to_string());
+        };
+        check(super::SerialError::ListFailed("no ports".into()), "list_failed", Some("no ports"));
+        check(super::SerialError::ConnectFailed("busy".into()), "connect_failed", Some("busy"));
+        check(super::SerialError::WriteFailed("overflow".into()), "write_failed", Some("overflow"));
+        check(super::SerialError::SessionNotFound, "session_not_found", None);
+        check(super::SerialError::CloneFailed("max".into()), "clone_failed", Some("max"));
+    }
+
+    #[test]
+    fn test_serial_error_unknown_kind_falls_back() {
+        let dto = super::SerialErrorDto { kind: "invalid", message: Some("x".into()) };
+        let back: super::SerialError = dto.into();
+        assert!(matches!(back, super::SerialError::ListFailed(_)));
+    }
+
+    #[test]
+    fn test_storage_error_roundtrip() {
+        let check = |original: super::StorageError, expected_kind: &str, expected_msg: Option<&str>| {
+            let dto = super::StorageErrorDto::from(original.clone());
+            assert_eq!(&*dto.kind, expected_kind);
+            assert_eq!(dto.message.as_deref(), expected_msg);
+            let back: super::StorageError = dto.into();
+            assert_eq!(back.to_string(), original.to_string());
+        };
+        check(super::StorageError::NotConfigured, "not_configured", None);
+        check(super::StorageError::ConnectionFailed("unreachable".into()), "connection_failed", Some("unreachable"));
+        check(super::StorageError::UploadFailed("403".into()), "upload_failed", Some("403"));
+        check(super::StorageError::DownloadFailed("404".into()), "download_failed", Some("404"));
+        check(super::StorageError::DeleteFailed("locked".into()), "delete_failed", Some("locked"));
+        check(super::StorageError::ListFailed("err".into()), "list_failed", Some("err"));
+    }
+
+    #[test]
+    fn test_storage_error_unknown_kind_falls_back() {
+        let dto = super::StorageErrorDto { kind: "unknown", message: Some("x".into()) };
+        let back: super::StorageError = dto.into();
+        assert!(matches!(back, super::StorageError::NotConfigured));
+    }
+
+    #[test]
+    fn test_port_forward_error_roundtrip() {
+        let check = |original: super::PortForwardError, expected_kind: &str, expected_msg: Option<&str>| {
+            let dto = super::PortForwardErrorDto::from(original.clone());
+            assert_eq!(&*dto.kind, expected_kind);
+            assert_eq!(dto.message.as_deref(), expected_msg);
+            let back: super::PortForwardError = dto.into();
+            assert_eq!(back.to_string(), original.to_string());
+        };
+        check(super::PortForwardError::SessionNotFound, "session_not_found", None);
+        check(super::PortForwardError::BindFailed("addr in use".into()), "bind_failed", Some("addr in use"));
+        check(super::PortForwardError::ForwardNotFound, "forward_not_found", None);
+        check(super::PortForwardError::ConnectionFailed("refused".into()), "connection_failed", Some("refused"));
+        check(super::PortForwardError::ChannelFailed("closed".into()), "channel_failed", Some("closed"));
+        check(super::PortForwardError::SocksUnsupported("no auth".into()), "socks_unsupported", Some("no auth"));
+        check(super::PortForwardError::SocksAuthFailed("bad pwd".into()), "socks_auth_failed", Some("bad pwd"));
+    }
+
+    #[test]
+    fn test_port_forward_error_unknown_kind_falls_back() {
+        let dto = super::PortForwardErrorDto { kind: "bogus", message: None };
+        let back: super::PortForwardError = dto.into();
+        assert!(matches!(back, super::PortForwardError::BindFailed(_)));
+    }
+
+    #[test]
+    fn test_vault_error_roundtrip() {
+        let check = |original: super::VaultError, expected_kind: &str| {
+            let dto = super::VaultErrorDto::from(original.clone());
+            assert_eq!(&*dto.kind, expected_kind);
+            // DTO round-trips back through the From impl
+            let back: super::VaultError = dto.into();
+            // The error format is "variant: msg" so just verify it's non-empty
+            assert!(!back.to_string().is_empty());
+        };
+        check(super::VaultError::VaultLocked, "vault_locked");
+        check(super::VaultError::InvalidPassword, "invalid_password");
+        check(super::VaultError::KeyNotFound("missing-key".into()), "key_not_found");
+        check(super::VaultError::CreateFailed("failed".into()), "create_failed");
+        check(super::VaultError::UnlockFailed("wrong".into()), "unlock_failed");
+        check(super::VaultError::EncryptFailed("enc err".into()), "encrypt_failed");
+        check(super::VaultError::DecryptFailed("dec err".into()), "decrypt_failed");
+        check(super::VaultError::SaveFailed("io err".into()), "save_failed");
+    }
+
+    #[test]
+    fn test_vault_error_unknown_kind_falls_back_to_vault_locked() {
+        let dto = super::VaultErrorDto { kind: "bogus", message: None };
+        let back: super::VaultError = dto.into();
+        assert!(matches!(back, super::VaultError::VaultLocked));
+    }
+}

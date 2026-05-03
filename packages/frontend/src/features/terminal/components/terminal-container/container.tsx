@@ -113,8 +113,8 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
 
   const tab = tabs.find(t => t.id === tabId)
   const isMobile = useIsMobile()
+  const [fontSize] = useState(terminalFontSize)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [fontSize, setFontSize] = useState(14)
   const [termInstance, setTermInstance] = useState<TerminalComponent | null>(
     null,
   )
@@ -139,6 +139,15 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
   })()
 
   const themeColors = getThemeColors(activeTerminalTheme as never)
+
+  // Wire xterm settings from app config (with sensible defaults)
+  const terminalCursorBlink = settings.terminalCursorBlink !== undefined
+    ? Boolean(settings.terminalCursorBlink)
+    : true
+  const terminalFontSize = Number(settings.terminalFontSize ?? 14)
+  const terminalFontFamily = (settings.terminalFontFamily as string)
+    || "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace"
+  const terminalScrollback = Number(settings.terminalScrollback ?? 10000)
 
   // Handle Tab press for command completion
   const handleTabPress = async (currentLine: string, cursorPos: number, history: string[]) => {
@@ -252,11 +261,11 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
     const restore = suppressXtermErrors()
 
     const term = new TerminalComponent({
-      cursorBlink: true,
+      cursorBlink: terminalCursorBlink,
       fontSize,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+      fontFamily: terminalFontFamily,
       theme: themeColors,
-      scrollback: 10000,
+      scrollback: terminalScrollback,
       macOptionIsMeta: !isMobile,
       allowTransparency: true,
       allowProposedApi: true,
@@ -352,6 +361,18 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
     if (!termRef.current) return
     termRef.current.options.theme = themeColors
   }, [themeColors])
+
+  // Font size changes — update without recreating terminal
+  useEffect(() => {
+    if (!termRef.current) return
+    termRef.current.options.fontSize = terminalFontSize
+  }, [terminalFontSize])
+
+  // Cursor blink changes — update without recreating terminal
+  useEffect(() => {
+    if (!termRef.current) return
+    termRef.current.options.cursorBlink = terminalCursorBlink
+  }, [terminalCursorBlink])
 
   // Resize 监听
   useEffect(() => {

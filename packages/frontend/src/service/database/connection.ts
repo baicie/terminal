@@ -2,13 +2,17 @@
  * 数据库连接和初始化
  * 包含 getDb、executeQuery、select、initSchema、configureSqlite
  */
-import Database from '@tauri-apps/plugin-sql'
 import { isTauri } from '@tauri-apps/api/core'
 
-let db: Database | null = null
-let initPromise: Promise<Database> | null = null
+let db: Awaited<ReturnType<typeof loadDb>> | null = null
+let initPromise: Promise<typeof db> | null = null
 
-export async function getDb(): Promise<Database> {
+async function loadDb() {
+  const Database = (await import('@tauri-apps/plugin-sql')).default
+  return Database.load('sqlite:terminal.db')
+}
+
+export async function getDb() {
   if (db) return db
 
   // If initialization is in progress, wait for it
@@ -20,7 +24,7 @@ export async function getDb(): Promise<Database> {
 
   // Start initialization
   initPromise = (async () => {
-    db = await Database.load('sqlite:terminal.db')
+    db = await loadDb()
     await initSchema()
     await configureSqlite()
     return db

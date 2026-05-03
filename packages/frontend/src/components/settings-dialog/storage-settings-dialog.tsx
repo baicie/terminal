@@ -10,7 +10,7 @@ import {
   Loader2,
   Server,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,8 +23,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
-import { downloadFromServer, syncToServer } from '@/service/sync'
-import { storageHealthCheck, storageInit } from '@/service/storage'
+import { RestorePreview } from '@/components/storage-restore-preview'
+import { useStorageSync, type StorageServiceConfig } from '@/hooks/use-storage-sync'
 
 interface StorageSettingsDialogProps {
   settings: {
@@ -34,8 +34,9 @@ interface StorageSettingsDialogProps {
     syncServiceUsername?: string
     syncServiceToken?: string
     syncServiceBucket?: string
+    syncServiceRegion?: string
   }
-  updateSetting: <K extends 'dataStorageMode' | 'syncServiceType' | 'syncServiceEndpoint' | 'syncServiceUsername' | 'syncServiceToken' | 'syncServiceBucket'>(
+  updateSetting: <K extends 'dataStorageMode' | 'syncServiceType' | 'syncServiceEndpoint' | 'syncServiceUsername' | 'syncServiceToken' | 'syncServiceBucket' | 'syncServiceRegion'>(
     key: K,
     value: StorageSettingsDialogProps['settings'][K],
   ) => void
@@ -48,26 +49,33 @@ export function StorageSettingsDialog({
   onSyncComplete,
 }: StorageSettingsDialogProps) {
   const { t } = useTranslation('settings')
-  const [testingConnection, setTestingConnection] = useState(false)
-  const [connectionStatus, setConnectionStatus] = useState<
-    'idle' | 'success' | 'error'
-  >('idle')
-  const [syncing, setSyncing] = useState(false)
-  const [restoring, setRestoring] = useState(false)
   const [showTokenVisible, setShowTokenVisible] = useState(false)
   const [restoreMode, setRestoreMode] = useState<'merge' | 'replace'>('merge')
-  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
 
-  // Update last sync time display periodically
-  useEffect(() => {
-    const updateSyncTime = async () => {
-      const { formatLastSyncTime: getSyncTime } = await import('@/service/sync')
-      setLastSyncTime(getSyncTime())
+  const getConfig = (): StorageServiceConfig | null => {
+    if (!settings.syncServiceEndpoint) return null
+    return {
+      type: settings.syncServiceType,
+      endpoint: settings.syncServiceEndpoint,
+      username: settings.syncServiceUsername,
+      password: settings.syncServiceToken,
+      bucket: settings.syncServiceBucket,
+      region: settings.syncServiceRegion,
     }
-    updateSyncTime()
-    const interval = setInterval(updateSyncTime, 60000)
-    return () => clearInterval(interval)
-  }, [])
+  }
+
+  const {
+    testingConnection,
+    connectionStatus,
+    syncing,
+    restoring,
+    lastSyncTime,
+    handleTestConnection,
+    handleSyncToServer,
+    handleRestoreFromServer,
+    handlePreviewServerData,
+    isSyncDisabled,
+  } = useStorageSync({ getConfig })
 
   const getEndpointPlaceholder = () => {
     switch (settings.syncServiceType) {
@@ -88,128 +96,30 @@ export function StorageSettingsDialog({
     switch (settings.syncServiceType) {
       case 's3':
         return 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
-      case 'webdav':
-        return '••••••••'
       default:
-        return '••••••••'
+        return ''
     }
   }
 
-  const handleTestConnection = async () => {
+  const onTestConnection = async () => {
     if (!settings.syncServiceEndpoint) {
       toast.error(t('settings.testConnection'), {
         description: t('settings.enterEndpoint'),
       })
       return
     }
-
-    setTestingConnection(true)
-    setConnectionStatus('idle')
-
-    try {
-      await storageInit(settings.syncServiceType, settings.syncServiceEndpoint, {
-        username: settings.syncServiceUsername || undefined,
-        password: settings.syncServiceToken || undefined,
-        bucket: settings.syncServiceBucket || undefined,
-      })
-
-      const healthy = await storageHealthCheck()
-        if (healthy) {
-        setConnectionStatus('success')
-        toast.success(t('settings.connectionSuccess'), {
-          description: `Successfully connected to ${settings.syncServiceType} service`,
-        })
-      } else {
-        setConnectionStatus('error')
-        toast.error(t('settings.connectionFailed'), {
-          description: t('settings.connectionServiceNotReachable'),
-        })
-      }
-    } catch (error) {
-      setConnectionStatus('error')
-      toast.error(t('settings.connectionFailed'), {
-        description: String(error),
-      })
-    } finally {
-      setTestingConnection(false)
-    }
+    await handleTestConnection()
   }
 
-  const handleSyncToServer = async () => {
-    if (!settings.syncServiceEndpoint) return
-
-    setSyncing(true)
-
-    try {
-      await storageInit(settings.syncServiceType, settings.syncServiceEndpoint, {
-        username: settings.syncServiceUsername || undefined,
-        password: settings.syncServiceToken || undefined,
-        bucket: settings.syncServiceBucket || undefined,
-      })
-
-      const result = await syncToServer()
-
-      if (result.success) {
-        toast.success(t('settings.syncSuccess'), {
-          description: t('settings.syncSuccess') + ` — ${result.stats?.hosts || 0} hosts, ${result.stats?.snippets || 0} snippets`,
-        })
-        const { formatLastSyncTime: getSyncTime } = await import('@/service/sync')
-        setLastSyncTime(getSyncTime())
-        onSyncComplete?.()
-      } else {
-        toast.error(t('settings.syncFailed'), {
-          description: t('settings.connectionUploadFailed'),
-        })
-      }
-    } catch (error) {
-      toast.error(t('settings.syncFailed'), {
-        description: String(error),
-      })
-    } finally {
-      setSyncing(false)
-    }
+  const onSync = async () => {
+    await handleSyncToServer()
+    onSyncComplete?.()
   }
 
-  const handleRestoreFromServer = async () => {
-    if (!settings.syncServiceEndpoint) return
-
-    setRestoring(true)
-
-    try {
-      await storageInit(settings.syncServiceType, settings.syncServiceEndpoint, {
-        username: settings.syncServiceUsername || undefined,
-        password: settings.syncServiceToken || undefined,
-        bucket: settings.syncServiceBucket || undefined,
-      })
-
-      const result = await downloadFromServer(restoreMode)
-
-      if (result.success && result.stats) {
-        toast.success(t('settings.restoreSuccess'), {
-          description: `${result.stats.hosts} hosts, ${result.stats.snippets} snippets, ${result.stats.workspaces} workspaces`,
-        })
-        const { formatLastSyncTime: getSyncTime } = await import('@/service/sync')
-        setLastSyncTime(getSyncTime())
-        onSyncComplete?.()
-      } else if (!result.success) {
-        toast.error(t('settings.noBackupFound'), {
-          description: t('settings.connectionNoBackupFound'),
-        })
-      }
-    } catch (error) {
-      toast.error(t('settings.restoreFailed'), {
-        description: String(error),
-      })
-    } finally {
-      setRestoring(false)
-    }
+  const onRestore = async () => {
+    await handleRestoreFromServer(restoreMode)
+    onSyncComplete?.()
   }
-
-  const isSyncDisabled =
-    !settings.syncServiceEndpoint ||
-    syncing ||
-    restoring ||
-    connectionStatus !== 'success'
 
   return (
     <div className="space-y-6 py-4">
@@ -351,12 +261,35 @@ export function StorageSettingsDialog({
         </div>
       </div>
 
+      {settings.syncServiceType === 's3' && (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="syncServiceBucket">{t('settings.bucket')}</Label>
+            <Input
+              id="syncServiceBucket"
+              placeholder="my-bucket"
+              value={settings.syncServiceBucket || ''}
+              onChange={e => updateSetting('syncServiceBucket', e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="syncServiceRegion">Region</Label>
+            <Input
+              id="syncServiceRegion"
+              placeholder="us-east-1"
+              value={settings.syncServiceRegion || ''}
+              onChange={e => updateSetting('syncServiceRegion', e.target.value)}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-2">
         <Button
           variant="outline"
           className="flex-1"
           disabled={!settings.syncServiceEndpoint || testingConnection}
-          onClick={handleTestConnection}
+          onClick={onTestConnection}
         >
           {testingConnection ? (
             <>
@@ -383,8 +316,8 @@ export function StorageSettingsDialog({
         <Button
           variant="outline"
           className="flex-1"
-          disabled={isSyncDisabled}
-          onClick={handleSyncToServer}
+          disabled={isSyncDisabled()}
+          onClick={onSync}
         >
           {syncing ? (
             <>
@@ -400,82 +333,49 @@ export function StorageSettingsDialog({
         </Button>
       </div>
 
-      {/* Sync Status and Restore Section */}
-      <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm">
-            <Cloud className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground">{t('settings.lastSync')}:</span>
-            <span className="font-medium">
-              {lastSyncTime || t('settings.never')}
-            </span>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Label className="text-xs shrink-0">{t('settings.restoreMode')}:</Label>
-            <Select
-              value={restoreMode}
-              onValueChange={value => setRestoreMode(value as 'merge' | 'replace')}
-            >
-              <SelectTrigger className="h-7 text-xs flex-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="merge">{t('settings.merge')}</SelectItem>
-                <SelectItem value="replace">{t('settings.replace')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {restoreMode === 'merge'
-              ? t('settings.mergeDesc')
-              : t('settings.replaceDesc')}
-          </p>
-        </div>
-
-        <Button
-          variant="outline"
-          className="w-full"
-          disabled={isSyncDisabled}
-          onClick={handleRestoreFromServer}
-        >
-          {restoring ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              {t('settings.restoring')}
-            </>
-          ) : (
-            <>
-              <CloudDownload className="h-4 w-4 mr-2" />
-              {t('settings.restoreFromServer')}
-            </>
-          )}
-        </Button>
-      </div>
-
-      {settings.syncServiceType === 's3' && (
-        <div className="space-y-2">
-          <Label htmlFor="syncServiceBucket">{t('settings.bucket')}</Label>
-          <Input
-            id="syncServiceBucket"
-            placeholder="my-bucket"
-            value={settings.syncServiceBucket || ''}
-            onChange={e => updateSetting('syncServiceBucket', e.target.value)}
-          />
-        </div>
-      )}
-
       {settings.dataStorageMode === 'service' && (
-        <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
-          <div className="flex items-center gap-2 mb-1">
-            <Check className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium">{t('settings.serviceModeEnabled')}</span>
+        <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm">
+              <Cloud className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">{t('settings.lastSync')}:</span>
+              <span className="font-medium">
+                {lastSyncTime || t('settings.never')}
+              </span>
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground ml-6">
-            {t('settings.serviceModeEnabledDesc')}
-          </p>
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Label className="text-xs shrink-0">{t('settings.restoreMode')}:</Label>
+              <Select
+                value={restoreMode}
+                onValueChange={value => setRestoreMode(value as 'merge' | 'replace')}
+              >
+                <SelectTrigger className="h-7 text-xs flex-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="merge">{t('settings.merge')}</SelectItem>
+                  <SelectItem value="replace">{t('settings.replace')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {restoreMode === 'merge'
+                ? t('settings.mergeDesc')
+                : t('settings.replaceDesc')}
+            </p>
+          </div>
+
+          <RestorePreview
+            onPreview={handlePreviewServerData}
+            restoreMode={restoreMode}
+            connectionStatus={connectionStatus}
+            canPreview={connectionStatus === 'success' && !!settings.syncServiceEndpoint}
+            onRestore={onRestore}
+            isRestoring={restoring}
+          />
         </div>
       )}
     </div>

@@ -34,7 +34,8 @@ use sftp::{sftp_local_checksum, sftp_remote_checksum, sftp_connect, sftp_delete,
 use state::create_shared_state;
 use storage::{storage_delete, storage_download, storage_health_check, storage_init, storage_list, storage_upload};
 use vault::{
-    vault_change_password, vault_create, vault_delete, vault_exists, vault_get, vault_is_unlocked,
+    vault_can_encrypt_for_team, vault_change_password, vault_create, vault_decrypt_for_team,
+    vault_delete, vault_encrypt_for_team, vault_exists, vault_get, vault_is_unlocked,
     vault_list, vault_lock, vault_set, vault_unlock,
 };
 use window_cmd::{
@@ -138,6 +139,9 @@ pub fn run() {
             vault_list,
             vault_delete,
             vault_change_password,
+            vault_encrypt_for_team,
+            vault_decrypt_for_team,
+            vault_can_encrypt_for_team,
             // Serial commands
             serial_list,
             serial_baud_rates,

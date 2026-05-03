@@ -1044,6 +1044,125 @@ export function getLastSyncTime(): number | null {
   return null
 }
 
+/**
+ * Preview what will be imported from the server (conflict check).
+ * Downloads the latest data and returns a summary of counts and any conflicts.
+ */
+export async function previewServerData(): Promise<{
+  success: boolean
+  data?: ExportData
+  localCounts?: {
+    hosts: number
+    groups: number
+    snippets: number
+    snippetPackages: number
+    sshKeys: number
+    knownHosts: number
+    workspaces: number
+  }
+  remoteCounts?: {
+    hosts: number
+    groups: number
+    snippets: number
+    snippetPackages: number
+    sshKeys: number
+    knownHosts: number
+    workspaces: number
+  }
+  conflictCounts?: {
+    hosts: number
+    groups: number
+    snippets: number
+    snippetPackages: number
+    sshKeys: number
+    knownHosts: number
+    workspaces: number
+  }
+  error?: string
+}> {
+  try {
+    // Get local counts
+    const [localHosts, localGroups, localSnippets, localSnippetPackages, localSshKeys, localKnownHosts, localWorkspaces] =
+      await Promise.all([
+        select<Record<string, unknown>>('SELECT id FROM hosts'),
+        select<Record<string, unknown>>('SELECT id FROM groups'),
+        select<Record<string, unknown>>('SELECT id FROM snippets'),
+        select<Record<string, unknown>>('SELECT id FROM snippet_packages'),
+        select<Record<string, unknown>>('SELECT id FROM ssh_keys'),
+        select<Record<string, unknown>>('SELECT id FROM known_hosts'),
+        select<Record<string, unknown>>('SELECT id FROM workspaces'),
+      ])
+
+    // Download remote data
+    const content = await storageDownload('terminal-latest.json')
+    if (!content) {
+      return { success: false, error: 'No backup found on server' }
+    }
+
+    const remoteData = previewImportData(content)
+    if (!remoteData) {
+      return { success: false, error: 'Invalid backup format' }
+    }
+
+    // Count conflicts (items in remote that have same ID as local)
+    const localHostIds = new Set(localHosts.map(h => h.id))
+    const localGroupIds = new Set(localGroups.map(g => g.id))
+    const localSnippetIds = new Set(localSnippets.map(s => s.id))
+    const localPkgIds = new Set(localSnippetPackages.map(p => p.id))
+    const localKeyIds = new Set(localSshKeys.map(k => k.id))
+    const localKnownHostKeys = new Set(
+      localKnownHosts.map(kh => `${kh.hostname}:${kh.port}`),
+    )
+    const localWorkspaceIds = new Set(localWorkspaces.map(w => w.id))
+
+    const remoteHosts = remoteData.hosts as Array<Record<string, unknown>>
+    const remoteGroups = remoteData.groups as Array<Record<string, unknown>>
+    const remoteSnippets = remoteData.snippets as Array<Record<string, unknown>>
+    const remotePackages = remoteData.snippetPackages as Array<Record<string, unknown>>
+    const remoteKeys = remoteData.sshKeys as Array<Record<string, unknown>>
+    const remoteKnownHosts = remoteData.knownHosts as Array<Record<string, unknown>>
+    const remoteWorkspaces = remoteData.workspaces as Array<Record<string, unknown>>
+
+    const conflictCounts = {
+      hosts: remoteHosts.filter(h => localHostIds.has(h.id as string)).length,
+      groups: remoteGroups.filter(g => localGroupIds.has(g.id as string)).length,
+      snippets: remoteSnippets.filter(s => localSnippetIds.has(s.id as string)).length,
+      snippetPackages: remotePackages.filter(p => localPkgIds.has(p.id as string)).length,
+      sshKeys: remoteKeys.filter(k => localKeyIds.has(k.id as string)).length,
+      knownHosts: remoteKnownHosts.filter(
+        kh => localKnownHostKeys.has(`${kh.hostname}:${kh.port}`),
+      ).length,
+      workspaces: remoteWorkspaces.filter(w => localWorkspaceIds.has(w.id as string)).length,
+    }
+
+    return {
+      success: true,
+      data: remoteData,
+      localCounts: {
+        hosts: localHosts.length,
+        groups: localGroups.length,
+        snippets: localSnippets.length,
+        snippetPackages: localSnippetPackages.length,
+        sshKeys: localSshKeys.length,
+        knownHosts: localKnownHosts.length,
+        workspaces: localWorkspaces.length,
+      },
+      remoteCounts: {
+        hosts: remoteHosts.length,
+        groups: remoteGroups.length,
+        snippets: remoteSnippets.length,
+        snippetPackages: remotePackages.length,
+        sshKeys: remoteKeys.length,
+        knownHosts: remoteKnownHosts.length,
+        workspaces: remoteWorkspaces.length,
+      },
+      conflictCounts,
+    }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+}
+
 // Format last sync time for display
 export function formatLastSyncTime(): string | null {
   const lastSync = getLastSyncTime()

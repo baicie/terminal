@@ -22,7 +22,9 @@ export class SharesService {
     userId: string,
     data: {
       type: 'HOST' | 'HOST_GROUP' | 'SNIPPET_PACKAGE'
-      data: any
+      data: unknown
+      encryptedData?: string
+      isSensitive?: boolean
       permission: 'READONLY' | 'READWRITE'
     },
   ) {
@@ -31,9 +33,12 @@ export class SharesService {
       data: {
         teamId,
         type: data.type,
-        data: data.data,
+        ...(data.isSensitive
+          ? { encryptedData: data.encryptedData, data: {}, isSensitive: true }
+          : { data: data.data as object }),
         sharedBy: userId,
         permission: data.permission,
+        isSensitive: data.isSensitive ?? false,
       },
     })
   }
@@ -51,20 +56,36 @@ export class SharesService {
     teamId: string,
     shareId: string,
     userId: string,
-    permission: 'READONLY' | 'READWRITE',
+    data: {
+      permission?: 'READONLY' | 'READWRITE'
+      data?: unknown
+      encryptedData?: string
+      isSensitive?: boolean
+    },
   ) {
     await this.checkMembership(teamId, userId)
     const share = await this.prisma.share.findFirst({
       where: { id: shareId, teamId },
     })
     if (!share) throw new NotFoundException('Share not found')
-    // Only creator can update
     if (share.sharedBy !== userId) {
       throw new ForbiddenException('Only creator can update share')
     }
+
     return this.prisma.share.update({
       where: { id: shareId },
-      data: { permission },
+      data: {
+        ...(data.permission !== undefined && { permission: data.permission }),
+        ...(data.data !== undefined && !data.isSensitive && {
+          data: data.data as object,
+          encryptedData: null,
+        }),
+        ...(data.encryptedData !== undefined && {
+          encryptedData: data.encryptedData,
+          data: {},
+        }),
+        ...(data.isSensitive !== undefined && { isSensitive: data.isSensitive }),
+      },
     })
   }
 
@@ -74,10 +95,20 @@ export class SharesService {
       where: { id: shareId, teamId },
     })
     if (!share) throw new NotFoundException('Share not found')
-    // Only creator can delete
     if (share.sharedBy !== userId) {
       throw new ForbiddenException('Only creator can delete share')
     }
+
+    // Record deletion in audit log before deleting
+    await this.prisma.auditLog.create({
+      data: {
+        teamId,
+        userId,
+        action: 'SHARE_DELETED',
+        details: { shareId, shareType: share.type },
+      },
+    })
+
     await this.prisma.share.delete({ where: { id: shareId } })
   }
 

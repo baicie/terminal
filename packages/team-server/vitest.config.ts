@@ -14,8 +14,6 @@ export default defineConfig({
         'src/**/index.ts',
         'src/main.ts',
         'src/*.module.ts',
-        'src/*.controller.ts',
-        'src/*.service.ts',
       ],
     },
   },

@@ -337,3 +337,41 @@ pub fn vault_change_password(old_password: String, new_password: String) -> Resu
 
     Ok(())
 }
+
+// ==================== Team Share Encryption ====================
+// Provides end-to-end encryption for sensitive team shares.
+// Data is encrypted with the vault's master key before being sent to the server.
+
+/// Encrypt data for team sharing. Returns base64-encoded ciphertext.
+#[tauri::command]
+pub fn vault_encrypt_for_team(data: String) -> Result<String, VaultError> {
+    let state = VAULT_STATE.lock();
+    let vault = state.as_ref().ok_or(VaultError::VaultLocked)?;
+
+    // Serialize the data to JSON, then encrypt
+    let json_bytes = serde_json::to_vec(&data)
+        .map_err(|e| VaultError::EncryptFailed(format!("Serialization failed: {}", e)))?;
+
+    // Use the existing encrypt_value function with the vault's master key
+    encrypt_value(&String::from_utf8_lossy(&json_bytes), &vault.master_key)
+}
+
+/// Decrypt team share data. Takes base64-encoded ciphertext and returns original JSON string.
+#[tauri::command]
+pub fn vault_decrypt_for_team(encrypted_data: String) -> Result<String, VaultError> {
+    let state = VAULT_STATE.lock();
+    let vault = state.as_ref().ok_or(VaultError::VaultLocked)?;
+
+    let decrypted_str = decrypt_value(&encrypted_data, &vault.master_key)?;
+
+    // The decrypted data is a JSON string, parse it back to get the original value
+    serde_json::from_str::<String>(&decrypted_str)
+        .map_err(|e| VaultError::DecryptFailed(format!("Invalid JSON in decrypted data: {}", e)))
+}
+
+/// Check if team share encryption is available (vault must be unlocked)
+#[tauri::command]
+pub fn vault_can_encrypt_for_team() -> bool {
+    let state = VAULT_STATE.lock();
+    state.is_some()
+}
