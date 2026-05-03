@@ -52,6 +52,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { toast } from '@/components/ui/sonner'
+import { useBreakpointMax } from '@/hooks/use-breakpoint'
 import {
   ViewContainer,
   ViewContent,
@@ -481,6 +482,10 @@ const SftpContainer: React.FC = () => {
   const tabs = useAppStore(s => s.tabs)
   const activeTabId = useAppStore(s => s.activeTabId)
   const hosts = useHostStore(s => s.hosts)
+  const isMobile = useBreakpointMax('md')
+
+  // On mobile: which pane is shown ('local' | 'remote')
+  const [mobilePane, setMobilePane] = useState<'local' | 'remote'>('local')
 
   // Remote state
   const [remoteFiles, setRemoteFiles] = useState<FileItem[]>([])
@@ -801,11 +806,43 @@ const SftpContainer: React.FC = () => {
 
       {/* Dual pane */}
       <ViewContent
-        className="p-3 flex gap-3 h-full overflow-hidden"
-        // style={{ paddingBottom: '8px' }}
+        className={cn(
+          'p-3 flex gap-3 h-full overflow-hidden',
+          // Mobile: only show the active pane; hide the inactive one
+          isMobile ? 'flex-col' : 'flex-row',
+        )}
       >
+        {/* Mobile: pane switcher tabs */}
+        {isMobile && (
+          <div className="flex shrink-0 gap-1 mb-2">
+            <Button
+              size="sm"
+              variant={mobilePane === 'local' ? 'default' : 'outline'}
+              className="flex-1 text-xs"
+              onClick={() => setMobilePane('local')}
+            >
+              <Computer className="size-3 mr-1" />
+              Local
+            </Button>
+            <Button
+              size="sm"
+              variant={mobilePane === 'remote' ? 'default' : 'outline'}
+              className="flex-1 text-xs"
+              onClick={() => setMobilePane('remote')}
+            >
+              <Server className="size-3 mr-1" />
+              Remote
+            </Button>
+          </div>
+        )}
+
         {/* Local pane */}
-        <div className="flex-1 min-w-0 flex flex-col gap-2">
+        <div
+          className={cn(
+            'flex-1 min-w-0 flex flex-col gap-2',
+            isMobile && mobilePane !== 'local' && 'hidden',
+          )}
+        >
           <div className="flex items-center gap-2 px-1">
             <Button
               size="sm"
@@ -857,8 +894,8 @@ const SftpContainer: React.FC = () => {
           />
         </div>
 
-        {/* Transfer indicator */}
-        <div className="flex flex-col items-center justify-center">
+        {/* Transfer indicator — hidden on mobile (pane tabs used instead) */}
+        <div className={cn('flex flex-col items-center justify-center', isMobile && 'hidden')}>
           <ArrowUp className="size-4 text-muted-foreground" />
           <ArrowUp className="size-4 text-muted-foreground -mt-1" />
           <ArrowDown className="size-4 text-muted-foreground -mt-1" />
@@ -866,7 +903,12 @@ const SftpContainer: React.FC = () => {
         </div>
 
         {/* Remote pane */}
-        <div className="flex-1 min-w-0 flex flex-col gap-2">
+        <div
+          className={cn(
+            'flex-1 min-w-0 flex flex-col gap-2',
+            isMobile && mobilePane !== 'remote' && 'hidden',
+          )}
+        >
           <div className="flex items-center gap-2 px-1">
             <span className="text-xs text-muted-foreground truncate">
               SFTP: {activeHost.hostname}

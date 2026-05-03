@@ -186,7 +186,7 @@ const KeychainView: React.FC = () => {
               </div>
             </ViewToolbar>
 
-            <ViewContent className="p-6">
+            <ViewContent className="p-4 sm:p-6">
               <KeyForm
                 selectedKey={selectedKey}
                 isNewKey={isNewKey}

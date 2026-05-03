@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import FAB from '@/components/ui/fab'
 import {
   ViewContainer,
   ViewContent,
@@ -231,6 +232,9 @@ const SnippetsView: React.FC = () => {
           </TabsContent>
         </Tabs>
       </ViewContent>
+
+      {/* Mobile FAB for creating a new script */}
+      <FAB onClick={() => setIsEditDialogOpen(true)} title={t('scripts.newScript')} />
     </ViewContainer>
   )
 }

@@ -203,7 +203,7 @@ const PortForwardView: React.FC = () => {
         </Button>
       </ViewToolbar>
 
-      <ViewContent className="p-6">
+      <ViewContent className="p-4 sm:p-6">
         <ViewHeader
           title="Port Forwarding"
           description="Manage SSH tunnels and port forwarding rules"
