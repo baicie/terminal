@@ -24,9 +24,21 @@ interface BundleResult {
 
 function getDirSize(dirPath: string): number {
   try {
-    const result = execSync(`du -sk "${dirPath}" 2>/dev/null`, { encoding: 'utf8' })
-    const size = parseInt(result.split('\t')[0], 10) * 1024
-    return size || 0
+    const { platform } = process
+    if (platform === 'win32') {
+      // Windows: 使用 PowerShell 计算目录大小
+      const result = execSync(
+        `powershell -Command "(Get-ChildItem -Path '${dirPath}' -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum"`,
+        { encoding: 'utf8', windowsHide: true }
+      )
+      const size = parseInt(result.trim(), 10)
+      return size || 0
+    } else {
+      // Unix: 使用 du 命令
+      const result = execSync(`du -sk "${dirPath}" 2>/dev/null`, { encoding: 'utf8' })
+      const size = parseInt(result.split('\t')[0], 10) * 1024
+      return size || 0
+    }
   } catch {
     return 0
   }

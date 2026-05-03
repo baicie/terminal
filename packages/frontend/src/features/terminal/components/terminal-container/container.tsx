@@ -93,6 +93,8 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
   const fitAddonRef = useRef<FitAddon | null>(null)
   const searchAddonRef = useRef<SearchAddon | null>(null)
   const isMountedRef = useRef(false)
+  // Track whether user has manually zoomed via keyboard bar (to prevent useEffect from overriding)
+  const userZoomedRef = useRef(false)
   const longPressRef = useRef<{
     timer: ReturnType<typeof setTimeout> | null
     startX: number
@@ -113,7 +115,6 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
 
   const tab = tabs.find(t => t.id === tabId)
   const isMobile = useIsMobile()
-  const [fontSize] = useState(terminalFontSize)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [termInstance, setTermInstance] = useState<TerminalComponent | null>(
     null,
@@ -148,6 +149,9 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
   const terminalFontFamily = (settings.terminalFontFamily as string)
     || "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace"
   const terminalScrollback = Number(settings.terminalScrollback ?? 10000)
+
+  // Live font size for keyboard-bar zoom — starts at config value, managed via setLiveFontSize
+  const [liveFontSize, setLiveFontSize] = useState(terminalFontSize)
 
   // Handle Tab press for command completion
   const handleTabPress = async (currentLine: string, cursorPos: number, history: string[]) => {
@@ -262,7 +266,7 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
 
     const term = new TerminalComponent({
       cursorBlink: terminalCursorBlink,
-      fontSize,
+      fontSize: liveFontSize,
       fontFamily: terminalFontFamily,
       theme: themeColors,
       scrollback: terminalScrollback,
@@ -362,9 +366,12 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
     termRef.current.options.theme = themeColors
   }, [themeColors])
 
-  // Font size changes — update without recreating terminal
+  // Font size changes — update without recreating terminal.
+  // Skip if user has manually zoomed via keyboard bar (they explicitly overrode the config).
   useEffect(() => {
     if (!termRef.current) return
+    if (userZoomedRef.current && liveFontSize !== terminalFontSize) return
+    userZoomedRef.current = false
     termRef.current.options.fontSize = terminalFontSize
   }, [terminalFontSize])
 
@@ -445,14 +452,14 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
   }
 
   const handleFontSizeChange = (delta: number) => {
-    setFontSize(prev => {
-      const next = prev + delta
-      if (next < 8 || next > 32) return prev
-      // Use type-safe approach since ITerminalOptions.set may not be in types
-      ;(termInstance?.options as unknown as { set: (key: string, value: number) => void }).set('fontSize', next)
+    const next = liveFontSize + delta
+    if (next < 8 || next > 32) return
+    userZoomedRef.current = true
+    if (termInstance) {
+      termInstance.options.fontSize = next
       fitAddonRef.current?.fit()
-      return next
-    })
+    }
+    setLiveFontSize(next)
   }
 
   const toggleFullscreen = () => {
@@ -576,7 +583,7 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
           <TerminalKeyboardBar
             onSendKey={handleSendKey}
             onFontSizeChange={handleFontSizeChange}
-            fontSize={fontSize}
+            fontSize={terminalFontSize}
             isFullscreen={isFullscreen}
             onToggleFullscreen={toggleFullscreen}
           />

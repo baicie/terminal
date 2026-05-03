@@ -1,7 +1,7 @@
 # Terminal 项目待办事项
 
 > 基于设计文档 `docs/design.md` 整理的待办事项
-> 更新时间：2026-05-03（Phase 6.6: TODO清理 + 端口转发数据库集成 + 工作区布局保存/加载 + SSH Agent完善 + 新增3个测试文件 + 文档对齐）
+> 更新时间：2026-05-03（Phase 6.9: SSH Key 生成 + 命令执行重构 + i18n 三语种补全 + 用户文档重写）
 
 ---
 
@@ -441,6 +441,37 @@
 | `index.js` raw | ~290 KB | 256 KB | **159 KB** | **↓ 45%** |
 | 首屏 raw | ~960 KB | ~919 KB | **840 KB** | ↓ 12% |
 | 警告 | 2 | 2 | **0**（exclude 仅 vite info） | — |
+
+---
+
+### 2026-05-03 Phase 6.9 - SSH Key 生成 + 命令执行 + i18n 补全 + 文档完善 ✅
+
+> 2026-05-03：实现 SSH 密钥生成后端；重构命令执行可靠性；补全三语种翻译；完善用户文档。
+
+#### SSH 密钥生成
+
+- **Rust 后端** (`commands.rs`)：新增 `key_generate` Tauri 命令，支持 Ed25519 / RSA 2048/4096 / ECDSA P-256/P-384/P-521，使用 `ssh_key` crate 生成私钥、公钥指纹（SHA-256）；新增 `KeyGenResult` 结构体和 `KeyGenerationFailed` 错误变体
+- **前端** (`ssh.ts`)：`generateSSHKey` 改为调用 `invoke('key_generate')`，接通 GenerateKeyDialog UI
+
+#### SSH 证书认证
+
+- `authenticate_with_cert` (`ssh.rs`) 已完整实现；`Signer trait` 为未来扩展点（Issue #5 已标注）
+
+#### 命令执行可靠性
+
+- 前端 `execute()` 重构：移除 PTY shell hack，改用 `invoke('session_exec')` 调用后端 exec channel；捕获真实 exit code；默认超时 30s；消除竞态条件
+
+#### i18n 三语种补全
+
+- `fr/cmdPalette.ts`：新增 17 个缺失键（SFTP 会话、传输队列、工作区切换等）
+- `fr/teams.ts`：修复 `enterInviteCode` 中的西班牙语拼写错误
+- `fr/settings.ts`：新增 4 个缺失键（连接状态提示）
+- `cn/snippets.ts`：新增 4 个缺失键（执行历史时间/持续时间）
+
+#### 用户文档
+
+- `README.md`：完全重写（项目介绍、功能、快捷键、项目结构、技术栈、快速开始）
+- `package.json`：新增 `description` 字段
 
 ---
 
