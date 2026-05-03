@@ -2,6 +2,7 @@ import type { AuthType, Host } from '@/types'
 import { Network } from 'lucide-react'
 import * as React from 'react'
 import { useEffect, useState } from 'react'
+import { toast } from '@/components/ui/sonner'
 import PortForwardDialog from '@/components/port-forward'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,6 +34,7 @@ const defaultHost: Omit<Host, 'id' | 'createdAt' | 'updatedAt'> = {
   authType: 'password',
   password: '',
   privateKey: '',
+  certificate: '',
   groupId: undefined,
   isFavorite: false,
   color: undefined,
@@ -69,6 +71,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
         authType: host.authType,
         password: host.password || '',
         privateKey: host.privateKey || '',
+        certificate: host.certificate || '',
         groupId: host.groupId,
         isFavorite: host.isFavorite,
         color: host.color,
@@ -96,7 +99,10 @@ export const HostDialog: React.FC<HostDialogProps> = ({
   }, [host, open])
 
   const handleSubmit = async () => {
-    if (!form.name || !form.hostname || !form.username) return
+    if (!form.name || !form.hostname || !form.username) {
+      toast.error('Please fill in all required fields (name, hostname, username)')
+      return
+    }
     setSaving(true)
     try {
       if (host) {
@@ -104,7 +110,11 @@ export const HostDialog: React.FC<HostDialogProps> = ({
       } else {
         await hostStore.addHost(form)
       }
+      toast.success(host ? 'Host updated' : 'Host created')
       onClose()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error('Failed to save host', { description: msg })
     } finally {
       setSaving(false)
     }
@@ -160,6 +170,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
                   <SelectItem value="password">Password</SelectItem>
                   <SelectItem value="key">SSH Key</SelectItem>
                   <SelectItem value="agent">SSH Agent</SelectItem>
+                  <SelectItem value="cert">SSH Certificate</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -168,8 +179,10 @@ export const HostDialog: React.FC<HostDialogProps> = ({
               authType={form.authType}
               password={form.password}
               privateKey={form.privateKey}
+              certificate={form.certificate}
               onPasswordChange={(v: string) => setForm({ ...form, password: v })}
               onPrivateKeyChange={(v: string) => setForm({ ...form, privateKey: v })}
+              onCertificateChange={(v: string) => setForm({ ...form, certificate: v })}
             />
 
             <div className="col-span-2">

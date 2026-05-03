@@ -161,6 +161,18 @@ async function startShell(
         rows,
       })
     }
+    if (host.authType === 'cert') {
+      return invoke<string>('session_create_ssh_cert', {
+        host: host.hostname,
+        port: host.port,
+        username: host.username,
+        certificate: host.certificate ?? '',
+        private_key: host.privateKey ?? '',
+        password: host.password ?? null,
+        cols,
+        rows,
+      })
+    }
     throw new Error(`Unsupported auth type: ${host.authType}`)
   }
 

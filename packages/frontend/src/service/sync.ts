@@ -318,7 +318,7 @@ export async function importTeamPackage(
     )
     if (existing.length === 0) {
       await importExecute(
-        `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           h.id,
           h.name,
@@ -328,6 +328,7 @@ export async function importTeamPackage(
           h.auth_type,
           h.password,
           h.private_key,
+          h.certificate ?? null,
           h.group_id,
           h.is_favorite,
           h.color,
@@ -335,6 +336,8 @@ export async function importTeamPackage(
           h.port_forwards,
           h.startup_command,
           h.environment,
+          h.jump_host_id ?? null,
+          h.jump_host_auth_type ?? null,
           h.created_at,
           h.updated_at,
         ],
@@ -342,7 +345,7 @@ export async function importTeamPackage(
       stats.hosts++
     } else if (mergeMode === 'replace') {
       await importExecute(
-        `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, updated_at = ? WHERE id = ?`,
+        `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, certificate = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, updated_at = ? WHERE id = ?`,
         [
           h.name,
           h.hostname,
@@ -351,6 +354,7 @@ export async function importTeamPackage(
           h.auth_type,
           h.password,
           h.private_key,
+          h.certificate ?? null,
           h.group_id,
           h.is_favorite,
           h.color,
@@ -358,6 +362,8 @@ export async function importTeamPackage(
           h.port_forwards,
           h.startup_command,
           h.environment,
+          h.jump_host_id ?? null,
+          h.jump_host_auth_type ?? null,
           Date.now(),
           h.id,
         ],
@@ -659,7 +665,7 @@ export async function importDataFromFile(
       )
       if (existing.length === 0) {
         await importExecute(
-          `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             h.id,
             h.name,
@@ -669,6 +675,7 @@ export async function importDataFromFile(
             h.auth_type,
             h.password,
             h.private_key,
+            h.certificate ?? null,
             h.group_id,
             h.is_favorite,
             h.color,
@@ -676,6 +683,8 @@ export async function importDataFromFile(
             h.port_forwards,
             h.startup_command,
             h.environment,
+            h.jump_host_id ?? null,
+            h.jump_host_auth_type ?? null,
             h.created_at,
             h.updated_at,
           ],
@@ -683,7 +692,7 @@ export async function importDataFromFile(
         stats.hosts++
       } else if (mergeMode === 'replace') {
         await importExecute(
-          `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, updated_at = ? WHERE id = ?`,
+          `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, certificate = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, updated_at = ? WHERE id = ?`,
           [
             h.name,
             h.hostname,
@@ -692,6 +701,7 @@ export async function importDataFromFile(
             h.auth_type,
             h.password,
             h.private_key,
+            h.certificate ?? null,
             h.group_id,
             h.is_favorite,
             h.color,
@@ -699,6 +709,8 @@ export async function importDataFromFile(
             h.port_forwards,
             h.startup_command,
             h.environment,
+            h.jump_host_id ?? null,
+            h.jump_host_auth_type ?? null,
             Date.now(),
             h.id,
           ],

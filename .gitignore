@@ -25,3 +25,4 @@ team-server/dist
 *.njsproj
 *.sln
 *.sw?
+tsconfig.node.tsbuildinfo

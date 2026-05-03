@@ -32,9 +32,7 @@ pub struct PortForwardConfig {
 }
 
 /// Jump host configuration for connecting through a bastion/jump server.
-///
-/// 当前在 `session::ssh` 内部按字段使用；保留 derive 是为后续从前端 IPC 直接接收。
-#[allow(dead_code)] // wired through session::ssh; kept Serializable for future direct IPC
+#[allow(dead_code)]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct JumpHostConfig {
     pub host: String,
@@ -45,9 +43,43 @@ pub struct JumpHostConfig {
     pub private_key: Option<String>,
 }
 
-/// Port forwarding task handle with additional info
+// Remote port-forward types (for SSH remote port forwarding -R)
+
+/// Wrapper for a forwarded Russh channel sent through an mpsc channel.
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct ForwardedChannel {
+    pub handle: Box<dyn std::any::Any + Send>,
+}
+
+/// Message sent from `server_channel_open_forwarded_tcpip` to the forwarder task.
+#[derive(Debug)]
+pub struct ForwardedChannelMsg {
+    pub channel: russh::Channel<russh::client::Msg>,
+    pub connected_address: String,
+    pub connected_port: u32,
+    pub originator_address: String,
+    pub originator_port: u32,
+}
+
+/// Remote port forward listener.
+/// Keeps the `tcpip_forward` registration alive and bridges connections.
+#[derive(Clone)]
+pub struct TcpForwardListener {
+    /// Port the SSH server bound (returned to frontend for display).
+    #[allow(dead_code)]
+    pub bound_port: u32,
+    pub sender: tokio::sync::mpsc::Sender<ForwardedChannelMsg>,
+    /// Registry key (pointer address of the SshHandle). Used for cleanup.
+    pub registry_key: usize,
+}
+
+/// Port forwarding task handle with additional info and listener for remote forwards.
 pub struct PortForwardTask {
     pub task: tokio::task::JoinHandle<Result<(), PortForwardError>>,
+    /// `Some` for remote forward (keeps `tcpip_forward` alive); `None` for local/dynamic.
+    #[allow(dead_code)]
+    pub listener: Option<TcpForwardListener>,
     pub info: PortForwardInfo,
 }
 
@@ -64,11 +96,8 @@ pub struct PortForwardInfo {
 }
 
 /// Agent channel state for managing forwarded agent connections.
-///
-/// 当前仅由 `agent_channels` map 持有以维持 socket 生命周期；后续
-/// 在 transport 替换时可读出 `socket_path`。
 pub struct AgentChannel {
-    #[allow(dead_code)] // owned for lifecycle; consumed by future agent forwarding refactor
+    #[allow(dead_code)]
     pub socket_path: PathBuf,
 }
 
@@ -84,8 +113,7 @@ pub struct SerialPortInfo {
     pub port_type: String,
 }
 
-/// Serial port connection configuration（保留为 IPC payload 类型，
-/// 当前 serial::serial_connect 接收的是逐字段参数，后续若改为单参 struct 即可启用）
+/// Serial port connection configuration
 #[allow(dead_code)]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SerialConfig {
@@ -98,15 +126,12 @@ pub struct SerialConfig {
 }
 
 /// Local PTY session state.
-///
-/// 字段并非显式读取 —— 它们在结构体中的存在本身就承担「保持 PTY、
-/// 子进程、写入端句柄存活」的所有权语义。Drop 触发时会一起释放。
 pub struct LocalPtySession {
-    #[allow(dead_code)] // ownership-only: keeps the PTY pair alive
+    #[allow(dead_code)]
     pub pty_pair: portable_pty::PtyPair,
-    #[allow(dead_code)] // ownership-only: keeps the child process alive
+    #[allow(dead_code)]
     pub child: Box<dyn portable_pty::Child + Send + Sync>,
-    #[allow(dead_code)] // ownership-only: writer handle owned for shutdown
+    #[allow(dead_code)]
     pub writer: Arc<Mutex<Box<dyn Write + Send + 'static>>>,
 }
 
@@ -121,13 +146,14 @@ pub struct SftpFileItem {
     pub permissions: String,
 }
 
-/// Agent forwarding channel state（agent 子模块的 IPC payload 占位类型，
-/// 当 agent::forward 完整接入后即可去掉 allow）。
+/// Agent forwarding channel state
 #[allow(dead_code)]
 pub struct AgentForwardState {
     pub session_id: String,
     pub socket_path: String,
 }
+
+// ClientHandler
 
 /// Get the SSH_AUTH_SOCK path from environment
 pub fn get_ssh_agent_socket() -> Option<String> {
@@ -141,16 +167,16 @@ pub fn get_ssh_agent_socket() -> Option<String> {
     }
 }
 
-/// ClientHandler with SSH Agent forwarding support
+/// ClientHandler with SSH Agent forwarding and remote port forwarding support.
 pub struct ClientHandler {
-    /// Path to local SSH agent socket (if available)。
-    /// Unix 路径上 `data()` 会读取它把字节透传给本地 agent；
-    /// Windows 上目前没有等价实现，因此在 non-unix 构建中字段未被读取。
     #[cfg_attr(not(unix), allow(dead_code))]
     agent_socket: Option<PathBuf>,
-    /// Session ID for logging/debugging。预留给后续 tracing span 使用。
-    #[allow(dead_code)] // reserved for tracing span correlation
+    #[allow(dead_code)]
     session_id: Option<String>,
+    /// Set by `setup_remote_forward` so `server_channel_open_forwarded_tcpip` can route
+    /// incoming connections to the forwarder task.
+    /// std::sync::RwLock is safe here: the guard is always dropped before any await.
+    pub(crate) forward_listener: std::sync::RwLock<Option<TcpForwardListener>>,
 }
 
 impl ClientHandler {
@@ -158,6 +184,7 @@ impl ClientHandler {
         Self {
             agent_socket: get_ssh_agent_socket().map(PathBuf::from),
             session_id: None,
+            forward_listener: std::sync::RwLock::new(None),
         }
     }
 }
@@ -181,6 +208,41 @@ impl Handler for ClientHandler {
         Ok(())
     }
 
+    /// Receive a forwarded TCP connection from the SSH server.
+    ///
+    /// Called when the SSH server receives a connection on the port bound by
+    /// `tcpip_forward` and sends a `CHANNEL_OPEN` with type `forwarded-tcpip`.
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: Channel<client::Msg>,
+        connected_address: &str,
+        connected_port: u32,
+        originator_address: &str,
+        originator_port: u32,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        // std::sync::RwLock guard is dropped before any await.
+        let sender = {
+            let guard = self.forward_listener.read().unwrap_or_else(|e| e.into_inner());
+            guard.clone()
+        };
+        if let Some(l) = sender {
+            let msg = ForwardedChannelMsg {
+                channel,
+                connected_address: connected_address.to_string(),
+                connected_port,
+                originator_address: originator_address.to_string(),
+                originator_port,
+            };
+            if l.sender.send(msg).await.is_err() {
+                tracing::debug!("forward listener receiver dropped");
+            }
+        } else {
+            tracing::debug!("received forwarded TCP channel but no listener registered");
+        }
+        Ok(())
+    }
+
     async fn data(
         &mut self,
         _channel: ChannelId,
@@ -198,33 +260,23 @@ impl Handler for ClientHandler {
         }
         #[cfg(not(unix))]
         {
-            let _ = data; // Suppress unused warning
+            let _ = data;
         }
         Ok(())
     }
 }
 
+// SharedState
+
 /// Shared application state containing all session management.
-///
-/// SSH sessions are managed directly by the `session::ssh` module to avoid
-/// circular dependencies. Each `Mutex<HashMap>` owns its respective resources.
-///
-/// 部分字段是 *ownership-only*：它们只在 insert / drop 时被访问，
-/// 用来托管子进程、socket 等资源的生命周期，不会被显式读取。
 pub struct SharedState {
-    /// Local PTY 会话（child + writer 由 `LocalPtySession` 持有以维持生命周期）。
-    #[allow(dead_code)] // ownership-only: keeps PTY child processes alive
+    #[allow(dead_code)]
     pub local_sessions: Mutex<HashMap<String, LocalPtySession>>,
-    /// SFTP sessions are wrapped in Arc so that long-running transfers
-    /// can clone a handle out of the map and release the global lock immediately,
-    /// allowing concurrent listings/uploads on the same SSH session.
     pub sftp_sessions: Mutex<HashMap<String, Arc<SftpSession>>>,
-    /// Server 通道句柄缓存，未来用于 resize/kill；目前只在打开时写入。
-    #[allow(dead_code)] // reserved for resize/kill once we wire shell control commands
+    #[allow(dead_code)]
     pub shell_channels: Mutex<HashMap<String, ChannelId>>,
     pub port_forwards: Mutex<HashMap<String, PortForwardTask>>,
-    /// Agent 转发通道集合，仅托管 socket 生命周期。
-    #[allow(dead_code)] // ownership-only: keeps agent forwarding sockets alive
+    #[allow(dead_code)]
     pub agent_channels: Mutex<HashMap<String, AgentChannel>>,
     pub serial_sessions: Mutex<HashMap<String, SerialSession>>,
 }
