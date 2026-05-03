@@ -191,4 +191,24 @@ export default {
     "Toutes les identités de l'agent SSH ont été rejetées par le serveur.",
   'terminal.agentReadFailed':
     "Impossible de lire les identités de l'agent SSH. Vérifiez l'état de l'agent.",
+  'terminal.agentNotRunning':
+    "Le service Windows OpenSSH Authentication Agent n'est pas en cours d'exécution. Démarrez-le via services.msc ou installez OpenSSH.",
+  'terminal.agentPageantNotRunning':
+    "Pageant (l'agent SSH PuTTY) ne semble pas être en cours d'exécution. Démarrez Pageant ou ajoutez des clés à l'agent Windows OpenSSH à la place.",
+  'terminal.agentAccessDenied':
+    "Accès refusé au canal de l'agent SSH. L'agent peut fonctionner sous une autre session utilisateur. Essayez d'exécuter l'application avec le même compte utilisateur.",
+  'terminal.agentNotAvailable':
+    "Le canal de l'agent SSH n'est pas disponible. Le service de l'agent peut avoir été arrêté.",
+  'terminal.agentAuthFailed':
+    "L'authentification par l'agent SSH a échoué. Consultez les journaux de l'agent pour plus de détails.",
+  'terminal.agentUnixNoSocket':
+    "Socket SSH_AUTH_SOCK introuvable sur Unix. Démarrez ssh-agent ou définissez SSH_AUTH_SOCK.",
+  'terminal.connectionFailed':
+    "Connexion échouée. Vérifiez l'adresse de l'hôte et le réseau.",
+  'terminal.authFailed':
+    "Échec de l'authentification. Vérifiez le nom d'utilisateur et les identifiants.",
+  'terminal.hostKeyFailed':
+    "Échec de la vérification de la clé hôte. Vérifiez known_hosts.",
+  'terminal.sessionTimeout':
+    "Délai d'expiration de la session. La connexion peut avoir été fermée.",
 }

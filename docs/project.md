@@ -244,7 +244,7 @@ src-tauri/
 | ------------------------------ | --------------------------- |
 | 团队协作 - 本地模式            | ✅ 已实现 (2026-03-25)      |
 | 敏感数据加密共享               | ✅ 已实现 (2026-03-25)      |
-| 团队协作 - 云端模式            | 📋 待开发（需自部署服务端） |
+| 团队协作 - 云端模式            | 📋 文档就绪（见 `docs/team-server-deploy.md`），需自部署 NestJS 服务端 |
 | SSH 证书认证                   | ✅ 已实现 (2026-03-26)      |
 | 串口连接                       | ✅ 已实现 (2026-03-20)      |
 | 数据存储服务 (WebDAV/S3/REST)  | ⚠️ 后端已接线 (2026-05-02)，全量同步 UX 仍迭代中 |
@@ -658,10 +658,21 @@ CREATE TABLE user_profile (
 | 层级     | 技术            |
 | -------- | --------------- |
 | 框架     | NestJS 10.x     |
-| ORM      | Prisma 5.x      |
+| ORM      | Prisma 7.x      |
 | 数据库   | PostgreSQL 16   |
 | API 文档 | Swagger/OpenAPI |
 | 容器     | Docker          |
+
+### 部署指南
+
+详细部署说明请参考 `docs/team-server-deploy.md`，包含：
+
+- Docker Compose 快速部署
+- 生产环境配置（资源限制、备份策略）
+- Nginx / Caddy 反向代理配置
+- 数据库维护（备份、恢复、迁移）
+- 安全加固清单（TLS、限流、网络隔离）
+- 故障排查指南
 
 ### 启动方式
 
@@ -725,4 +736,4 @@ const response = await teamApi.listTeams()
 
 ---
 
-_文档更新时间: 2026-05-02 (Phase 6.3：project 待办对齐 + 远程存储 `storage_*` 接 `StorageManager` + S3 测试传 bucket)_
+_文档更新时间: 2026-05-03 (Phase 6.5：Agent 错误细化 + 命令补全修复 + 串口显示 + 云同步 UX + NestJS 部署文档)_

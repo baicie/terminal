@@ -188,4 +188,18 @@ export default {
   'terminal.agentNoIdentities': 'SSH Agent 中没有可用身份（密钥）。',
   'terminal.agentRejected': 'SSH Agent 中的身份均被服务器拒绝。',
   'terminal.agentReadFailed': '读取 SSH Agent 身份失败，请检查 Agent 状态。',
+  'terminal.agentNotRunning':
+    'Windows OpenSSH Authentication Agent 服务未运行。请通过 services.msc 启动该服务，或安装 OpenSSH。',
+  'terminal.agentPageantNotRunning':
+    'Pageant（PuTTY SSH Agent）似乎未运行。请启动 Pageant，或改用 Windows OpenSSH Agent 添加密钥。',
+  'terminal.agentAccessDenied':
+    'SSH Agent 管道访问被拒绝。Agent 可能在其他用户会话下运行。请使用与 Agent 相同的账户运行应用。',
+  'terminal.agentNotAvailable': 'SSH Agent 管道不可用。Agent 服务可能已停止。',
+  'terminal.agentAuthFailed': 'SSH Agent 认证失败。请检查 Agent 日志了解详情。',
+  'terminal.agentUnixNoSocket':
+    'Unix 系统上未找到 SSH_AUTH_SOCK 套接字。请启动 ssh-agent 或设置 SSH_AUTH_SOCK。',
+  'terminal.connectionFailed': '连接失败。请检查主机地址和网络。',
+  'terminal.authFailed': '认证失败。请检查用户名和凭据。',
+  'terminal.hostKeyFailed': '主机密钥验证失败。请检查 known_hosts。',
+  'terminal.sessionTimeout': '会话超时。连接可能已关闭。',
 }

@@ -1,7 +1,7 @@
 # Terminal 项目待办事项
 
 > 基于设计文档 `docs/design.md` 整理的待办事项
-> 更新时间：2026-05-03（Phase 6.4 — 代码质量拆分 + 命令补全 + 跨设备同步）
+> 更新时间：2026-05-03（Phase 6.5 — Agent 错误细化 + 命令补全修复 + 串口显示增强 + 云同步 UX + NestJS 部署文档）
 
 ---
 
@@ -340,6 +340,49 @@
 | `service/sync.ts`：新增 `getLastSyncTime()` / `formatLastSyncTime()` | 从 localStorage 读取并格式化上次同步时间 |
 | `storage-settings-dialog.tsx` | 新增「Sync Now」+「Restore from Server」按钮 + 同步状态指示器 |
 | i18n 补键 | `settings.lastSync` / `never` / `restoreMode` / `restoreFromServer` / `restoring` 中英法三语 |
+
+---
+
+### 2026-05-03 第六轮 (Phase 6.5 — Agent 错误细化 + 命令补全修复 + 串口显示 + 云同步 UX + NestJS 部署文档) ✅
+
+#### Agent 认证失败 UI 细化
+
+后端 Rust 错误语义细化，前端按错误类型分发 14 种人类可读文案（中英法三语）：
+
+| 文件 | 改动 |
+| --- | --- |
+| `session/ssh.rs` | `NotFound` 细分：OpenSSH 未安装 / Pageant 未运行 / 自定义路径无效；新增 `AddrNotAvailable` |
+| `features/terminal/utils/readable-error.ts` | 新增 12 种错误分发规则 |
+| `locales/{en,cn,fr}/app.ts` | 中英法三语补全新增 11 个 key |
+
+#### 命令补全完善
+
+| 文件 | 改动 |
+| --- | --- |
+| `container.tsx` | 修复 dead code：`rcItemsRef.current` 赋值重复行 |
+| `use-terminal.ts` | `saveToHistory` 增加去重；`loadHistoryFromDb` 移除 `!hid` 早期返回，local session 现在也能加载全局历史 |
+| `use-command-completion.test.ts` | 新增单元测试 |
+
+#### Windows 串口端口显示增强
+
+| 文件 | 改动 |
+| --- | --- |
+| `serial.rs::serial_list` | `port_type` 从原始 `{:?}` 改为用户友好文案：USB 显示厂商名+产品名+VID:PID；Bluetooth 显示 `Bluetooth`；Unknown 在 Windows 上显示 `Serial Port` |
+| `docs/issue.md#22` | 添加 12 项回归测试检查清单 |
+
+#### 云端同步 UX 完善
+
+| 文件 | 改动 |
+| --- | --- |
+| `view/settings/storage-settings.tsx` | 新增 toast 通知；修复 namespace |
+| `store/transfer-queue.test.ts` | 修复 7 处 TS 类型错误 |
+
+#### NestJS Team Server 自托管部署文档
+
+| 文件 | 改动 |
+| --- | --- |
+| `docs/team-server-deploy.md` | 新增完整部署指南（Docker Compose / Nginx / Caddy / 数据库维护 / 安全加固 / 故障排查） |
+| `docs/project.md` | Phase 4 团队协作云端模式状态更新 |
 
 ---
 

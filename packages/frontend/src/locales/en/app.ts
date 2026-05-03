@@ -191,4 +191,20 @@ export default {
     'All identities from SSH agent were rejected by the server.',
   'terminal.agentReadFailed':
     'Failed to read identities from SSH agent. Please check agent status.',
+  'terminal.agentNotRunning':
+    'Windows OpenSSH Authentication Agent service is not running. Start it via services.msc, or install OpenSSH.',
+  'terminal.agentPageantNotRunning':
+    'Pageant (PuTTY SSH agent) does not appear to be running. Start Pageant or add keys to Windows OpenSSH Agent instead.',
+  'terminal.agentAccessDenied':
+    'Access denied to SSH agent pipe. The agent may be running under a different user session. Try running the app with the same user account.',
+  'terminal.agentNotAvailable':
+    'SSH agent pipe is not available. The agent service may have stopped.',
+  'terminal.agentAuthFailed':
+    'SSH agent authentication failed. Check agent logs for details.',
+  'terminal.agentUnixNoSocket':
+    'SSH_AUTH_SOCK socket not found on Unix. Start ssh-agent or set SSH_AUTH_SOCK.',
+  'terminal.connectionFailed': 'Connection failed. Check host address and network.',
+  'terminal.authFailed': 'Authentication failed. Check username and credentials.',
+  'terminal.hostKeyFailed': 'Host key verification failed. Check known_hosts.',
+  'terminal.sessionTimeout': 'Session timed out. The connection may have been closed.',
 }

@@ -20,6 +20,7 @@ type BaseRecord = {
   remotePath: string
   sessionId: string
   bytesTotal?: number
+  status?: string
 }
 
 function makeRecord(overrides: Partial<Omit<BaseRecord, 'kind'>> & { kind?: 'upload' | 'download' } = {}): BaseRecord {
@@ -377,7 +378,7 @@ describe('useTransferQueue -- checksum methods', () => {
   beforeEach(() => reset())
 
   it('initChecksum sets algorithm and computing status for upload', () => {
-    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }), status: 'running' })
+    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }) })
     useTransferQueue.getState().initChecksum(id)
     const t = useTransferQueue.getState().transfers.find(tr => tr.id === id)!
     expect(t.checksum).toBeDefined()
@@ -388,7 +389,7 @@ describe('useTransferQueue -- checksum methods', () => {
   })
 
   it('initChecksum sets computing status for download', () => {
-    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'download' }), status: 'running' })
+    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'download' }) })
     useTransferQueue.getState().initChecksum(id)
     const t = useTransferQueue.getState().transfers.find(tr => tr.id === id)!
     expect(t.checksum).toBeDefined()
@@ -399,7 +400,7 @@ describe('useTransferQueue -- checksum methods', () => {
   })
 
   it('setChecksumResult records local hash', () => {
-    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }), status: 'running' })
+    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }) })
     useTransferQueue.getState().initChecksum(id)
     useTransferQueue.getState().setChecksumResult(id, 'local', {
       success: true,
@@ -412,7 +413,7 @@ describe('useTransferQueue -- checksum methods', () => {
   })
 
   it('setChecksumResult records remote hash', () => {
-    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'download' }), status: 'running' })
+    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'download' }) })
     useTransferQueue.getState().initChecksum(id)
     useTransferQueue.getState().setChecksumResult(id, 'remote', {
       success: true,
@@ -424,7 +425,7 @@ describe('useTransferQueue -- checksum methods', () => {
   })
 
   it('setChecksumResult records error', () => {
-    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }), status: 'running' })
+    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }) })
     useTransferQueue.getState().initChecksum(id)
     useTransferQueue.getState().setChecksumResult(id, 'local', {
       success: false,
@@ -436,7 +437,7 @@ describe('useTransferQueue -- checksum methods', () => {
   })
 
   it('auto-compares when both sides are done and hashes match', () => {
-    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }), status: 'running' })
+    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }) })
     useTransferQueue.getState().initChecksum(id)
     useTransferQueue.getState().setChecksumResult(id, 'local', { success: true, hash: 'same-hash' })
     useTransferQueue.getState().setChecksumResult(id, 'remote', { success: true, hash: 'same-hash' })
@@ -445,7 +446,7 @@ describe('useTransferQueue -- checksum methods', () => {
   })
 
   it('marks mismatch when hashes differ', () => {
-    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }), status: 'running' })
+    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }) })
     useTransferQueue.getState().initChecksum(id)
     useTransferQueue.getState().setChecksumResult(id, 'local', { success: true, hash: 'hash-a' })
     useTransferQueue.getState().setChecksumResult(id, 'remote', { success: true, hash: 'hash-b' })
@@ -454,7 +455,7 @@ describe('useTransferQueue -- checksum methods', () => {
   })
 
   it('updateChecksumProgress updates bytes while computing', () => {
-    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }), status: 'running' })
+    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }) })
     useTransferQueue.getState().initChecksum(id)
     useTransferQueue.getState().updateChecksumProgress(id, 512, 1024)
     const t = useTransferQueue.getState().transfers.find(tr => tr.id === id)!
@@ -463,7 +464,7 @@ describe('useTransferQueue -- checksum methods', () => {
   })
 
   it('initChecksum is idempotent on already-initialized record', () => {
-    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }), status: 'running' })
+    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }) })
     useTransferQueue.getState().initChecksum(id)
     // Should not throw
     useTransferQueue.getState().initChecksum(id)

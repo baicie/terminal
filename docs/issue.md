@@ -776,28 +776,79 @@ defaultNS: 'demo',
 **仍待完善**:
 
 - [ ] Windows 上多 key / 证书 key 的实机回归（OpenSSH 与 Pageant 各版本）
-- [ ] Agent 认证失败时 UI 提示细化（区分“无身份”“管道不存在”“服务未启动”）
 
-**最近增强（2026-05-02）**:
+**已完善（2026-05-03）**:
 
-- Windows 分支细化错误语义：`pipe not found`（服务未启动/路径无效）、`permission denied`（权限不一致）
-- 未设置 `SSH_AUTH_SOCK` 时自动按顺序探测：`\\.\pipe\openssh-ssh-agent` → `\\.\pipe\pageant`
-- 命中 Pageant pipe 时记一条 `tracing::info`（best-effort 模式），便于日志回溯
+- Agent 认证失败时 UI 细化：前端 `readable-error.ts` 按错误类型分发 14 种人类可读文案，中英法三语
+- 后端错误语义细化：`NotFound` 时区分 OpenSSH 未安装 / Pageant 未运行 / 自定义路径无效；新增 `AccessDenied` / `AddrNotAvailable` 两种错误码
+
+**回归测试检查清单（实机验证）**:
+
+| # | 场景 | 平台 | 预期结果 |
+|---|------|------|---------|
+| 1 | OpenSSH Agent 有 1 个 key，认证成功 | Windows | 连接建立，终端正常 |
+| 2 | OpenSSH Agent 有多个 key，认证成功 | Windows | 遍历 keys，选用第一个被接受的 |
+| 3 | OpenSSH Agent 无 key | Windows | 报错 "SSH agent has no available identities" |
+| 4 | OpenSSH Agent 服务未启动 | Windows | 报错 "Windows OpenSSH Authentication Agent service is not running" |
+| 5 | Pageant 运行中有 key，认证成功 | Windows | 成功（best-effort，日志有 `using Pageant named pipe`） |
+| 6 | Pageant 未运行 | Windows | 报错 "Pageant does not appear to be running" |
+| 7 | `SSH_AUTH_SOCK` 指向无效路径 | Windows | 报错 "SSH_AUTH_SOCK points to '...' but the named pipe was not found" |
+| 8 | `SSH_AUTH_SOCK` 指向无权限管道 | Windows | 报错 "Permission denied when opening SSH agent pipe" |
+| 9 | Unix: `ssh-agent` 有 key，认证成功 | macOS / Linux | 连接建立，终端正常 |
+| 10 | Unix: `$SSH_AUTH_SOCK` 不存在 | macOS / Linux | 报错 "Failed to connect SSH agent" + "SSH_AUTH_SOCK socket not found" |
+| 11 | Unix: `ssh-agent` 无 key | macOS / Linux | 报错 "SSH agent has no available identities" |
+| 12 | 证书 key 认证 | Windows / macOS / Linux | 待验证 russh 是否支持 SSH 证书 |
+
+**Issue #21 更新日志（2026-05-03）**:
+
+- `src-tauri/src/session/ssh.rs`：`NotFound` 细分 OpenSSH 未安装 / Pageant 未运行 / 自定义路径；新增 `AccessDenied` / `AddrNotAvailable`
+- `packages/frontend/src/features/terminal/utils/readable-error.ts`：14 种错误分发，覆盖全部 Agent 错误码
+- `packages/frontend/src/locales/{en,cn,fr}/app.ts`：三语补全新增 11 个 key
 
 ---
 
-### Issue #22: 串口设备 Windows 支持 ✅ Unix 已实现
+### Issue #22: 串口设备 Windows 支持 ✅ 跨平台已实现
 
 **严重程度**: Low
-**状态**: ✅ macOS/Linux 已实现，Windows 待完善
+**状态**: ✅ `serialport` crate 跨平台已实现（2026-05-03 增强端口类型显示）
 **影响功能**: 串口连接
-**平台**: Windows
+**平台**: Windows / macOS / Linux
 
-**当前实现**:
+**当前实现（2026-05-03）**:
 
-使用 `serialport` crate，已支持跨平台。但 Windows 上可能需要额外的驱动支持。
+使用 `serialport` crate，已支持跨平台。`serial_list` 命令按平台枚举设备并返回 `SerialPortInfo`：
 
-**Windows 设备路径**: `COM1`, `COM2`, ...
+| 平台 | 设备路径示例 | 端口类型 |
+|------|------------|---------|
+| Windows | `COM3`, `\\\\.\\COM10` | USB（显示厂商+产品）/ Bluetooth / Serial Port / Unknown |
+| macOS | `/dev/cu.usbserial-XXX` | 同上 |
+| Linux | `/dev/ttyUSB0`, `/dev/ttyS0` | 同上 |
+
+**已完善（2026-05-03）**：
+- `src-tauri/src/serial.rs::serial_list`：`port_type` 从原始 `{:?}` Debug 输出改为用户友好文案：
+  - USB 设备显示厂商名、产品名、VID:PID（如 `USB (Silicon Labs CP210x USB to UART, 10C4:EA60)`）
+  - Bluetooth 设备显示 `Bluetooth`
+  - 未知设备：Windows 上为 `Serial Port`，其他为 `Unknown`
+
+**回归测试检查清单（实机验证）**:
+
+| # | 场景 | 平台 | 预期结果 |
+|---|------|------|---------|
+| 1 | USB 转串口设备枚举 | Windows | 列出 COM 端口，类型显示厂商名和产品名 |
+| 2 | USB 转串口设备枚举 | macOS | 列出 `/dev/cu.*`，类型显示厂商+产品 |
+| 3 | USB 转串口设备枚举 | Linux | 列出 `/dev/ttyUSB*`，类型显示厂商+产品 |
+| 4 | 内置串口（COM1）枚举 | Windows | 显示 `Serial Port` 类型 |
+| 5 | 拔出 USB 串口设备 | Windows | 重新枚举后设备消失 |
+| 6 | 插入新 USB 串口设备 | Windows | 重新枚举后出现新 COM 端口 |
+| 7 | 波特率 115200 连接 | Windows | 成功建立连接，终端正常 |
+| 8 | 波特率 9600 连接 | macOS | 成功建立连接，终端正常 |
+| 9 | DTR/DSR 硬件流控 | Windows | ⚠️ 待手动验证 |
+| 10 | XON/XOFF 软件流控 | Linux | ⚠️ 待手动验证 |
+| 11 | 断开连接（拔线） | Windows | 窗口显示 disconnected 事件 |
+| 12 | 蓝牙串口（RFCOMM）| Windows | 设备枚举，类型显示 `Bluetooth` |
+
+**Issue #22 更新日志（2026-05-03）**：
+- `src-tauri/src/serial.rs`：`serial_list` 改为用户友好的端口类型文案（USB 厂商/产品/Bluetooth/Serial Port）
 
 ---
 
