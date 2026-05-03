@@ -25,11 +25,11 @@ pub use session::{
 
 use commands::{
     session_close, session_create_local, session_create_ssh_agent, session_create_ssh_jump, session_create_ssh_key,
-    session_create_ssh_password, session_list, session_resize, session_write,
+    session_create_ssh_password, session_exec, session_list, session_resize, session_write,
 };
 use port_forward::{port_forward_list, port_forward_start, port_forward_stop};
 use serial::{serial_baud_rates, serial_connect, serial_disconnect, serial_is_connected, serial_list, serial_write, serial_write_raw};
-use sftp::{sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_mkdir, sftp_rename, sftp_upload};
+use sftp::{sftp_local_checksum, sftp_remote_checksum, sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_mkdir, sftp_rename, sftp_upload};
 use state::create_shared_state;
 use storage::{storage_delete, storage_download, storage_health_check, storage_init, storage_list, storage_upload};
 use vault::{
@@ -110,6 +110,7 @@ pub fn run() {
             session_resize,
             session_close,
             session_list,
+            session_exec,
             // SFTP commands
             sftp_connect,
             sftp_list,
@@ -118,6 +119,8 @@ pub fn run() {
             sftp_mkdir,
             sftp_delete,
             sftp_rename,
+            sftp_local_checksum,
+            sftp_remote_checksum,
             // Port forwarding commands
             port_forward_start,
             port_forward_stop,

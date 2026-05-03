@@ -58,9 +58,11 @@ export interface JumpHostConfig {
   host: string
   port: number
   username: string
-  authType: 'password' | 'key'
+  authType: 'password' | 'key' | 'agent'
   password?: string
   privateKey?: string
+  /** 目标主机的认证类型（agent / password / key），为空则沿用主机的 authType */
+  targetAuthType?: 'password' | 'key' | 'agent'
 }
 
 /** SSH 会话创建选项 (跳板机) */

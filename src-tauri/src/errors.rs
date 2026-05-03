@@ -22,6 +22,8 @@ pub enum SftpError {
     RenameFailed(String),
     #[serde(rename = "invalid_path")]
     InvalidPath(String),
+    #[serde(rename = "checksum_failed")]
+    ChecksumFailed(String),
 }
 
 /// Serial port errors

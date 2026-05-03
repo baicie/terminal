@@ -1,16 +1,12 @@
 import type { SSHKeyRecord } from '@/service/database'
 import {
+  createSSHKey,
+  deleteSSHKey,
   getSSHKeys,
   searchSSHKeys,
-  createSSHKey,
   updateSSHKey,
-  deleteSSHKey,
 } from '@/service/database'
-import {
-  Key,
-  KeyRound,
-  Trash2,
-} from 'lucide-react'
+import { Key, KeyRound, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ResponsiveConfirm } from '@/components/ui/responsive-dialog'
@@ -23,6 +19,7 @@ import {
 import { GenerateKeyDialog } from './generate-dialog'
 import { KeyForm } from './key-form'
 import { KeyListPanel } from './key-list-panel'
+import { useKeyForm } from './use-key-form'
 
 type KeyFilter = 'all' | 'key' | 'certificate' | 'touchid' | 'fido2'
 
@@ -37,14 +34,23 @@ const KeychainView: React.FC = () => {
   const [keyToDelete, setKeyToDelete] = useState<SSHKeyRecord | null>(null)
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false)
 
-  const [formName, setFormName] = useState('')
-  const [formKeyType, setFormKeyType] = useState<string>('key')
-  const [formPrivateKey, setFormPrivateKey] = useState('')
-  const [formPublicKey, setFormPublicKey] = useState('')
-  const [formCertificate, setFormCertificate] = useState('')
-  const [formPassphrase, setFormPassphrase] = useState('')
+  const {
+    formName,
+    formKeyType,
+    formPrivateKey,
+    formPublicKey,
+    formCertificate,
+    formPassphrase,
+    handleSelectKey: hookSelectKey,
+    handleNewKey: hookNewKey,
+    handleSave,
+    handleDelete,
+    handleImportFromFile,
+    handleUseGeneratedKey,
+    handleFormChange,
+  } = useKeyForm()
 
-  const loadKeys = async () => {
+  const loadKeys = useCallback(async () => {
     setLoading(true)
     try {
       const data = await getSSHKeys()
@@ -54,142 +60,75 @@ const KeychainView: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     loadKeys()
-  }, [])
+  }, [loadKeys])
 
-  const handleSearch = async (query: string) => {
-    setSearchQuery(query)
-    if (query.trim()) {
-      const results = await searchSSHKeys(query)
-      setKeys(results)
-    } else {
-      loadKeys()
-    }
-  }
+  const handleSearch = useCallback(
+    async (query: string) => {
+      setSearchQuery(query)
+      if (query.trim()) {
+        const results = await searchSSHKeys(query)
+        setKeys(results)
+      } else {
+        loadKeys()
+      }
+    },
+    [loadKeys],
+  )
 
-  const handleSelectKey = (key: SSHKeyRecord) => {
-    setSelectedKey(key)
-    setIsNewKey(false)
-    setFormName(key.name)
-    setFormKeyType(key.key_type || 'key')
-    setFormPrivateKey(key.private_key || '')
-    setFormPublicKey(key.public_key || '')
-    setFormCertificate(key.certificate || '')
-    setFormPassphrase(key.passphrase || '')
-  }
+  const handleSelectKey = useCallback(
+    (key: SSHKeyRecord) => {
+      setSelectedKey(key)
+      setIsNewKey(false)
+      hookSelectKey(key)
+    },
+    [hookSelectKey],
+  )
 
-  const handleNewKey = () => {
+  const handleNewKey = useCallback(() => {
     setSelectedKey(null)
     setIsNewKey(true)
-    setFormName('')
-    setFormKeyType('key')
-    setFormPrivateKey('')
-    setFormPublicKey('')
-    setFormCertificate('')
-    setFormPassphrase('')
-  }
+    hookNewKey()
+  }, [hookNewKey])
 
-  const handleSave = async () => {
-    if (!formName.trim()) return
+  const handleSaveAndReload = useCallback(async () => {
+    const data = handleSave(isNewKey, selectedKey, {
+      formName,
+      formKeyType,
+      formPrivateKey,
+      formPublicKey,
+      formCertificate,
+      formPassphrase,
+    })
+    if (!data) return
 
     if (isNewKey) {
-      const newKey: Omit<SSHKeyRecord, 'created_at' | 'updated_at'> = {
-        id: crypto.randomUUID(),
-        name: formName,
-        key_type: formKeyType,
-        private_key: formPrivateKey || null,
-        public_key: formPublicKey || null,
-        certificate: formCertificate || null,
-        passphrase: formPassphrase || null,
-        is_encrypted: formPrivateKey ? 0 : 0,
-      }
-      await createSSHKey(newKey)
-    } else if (selectedKey) {
-      await updateSSHKey(selectedKey.id, {
-        name: formName,
-        key_type: formKeyType,
-        private_key: formPrivateKey || null,
-        public_key: formPublicKey || null,
-        certificate: formCertificate || null,
-        passphrase: formPassphrase || null,
-        is_encrypted: formPrivateKey ? 1 : 0,
-      })
+      await createSSHKey(data)
+    } else {
+      await updateSSHKey(selectedKey!.id, data)
     }
 
     await loadKeys()
     setSelectedKey(null)
     setIsNewKey(false)
-  }
+  }, [handleSave, isNewKey, selectedKey, formName, formKeyType, formPrivateKey, formPublicKey, formCertificate, formPassphrase, loadKeys])
 
-  const handleDelete = async () => {
-    if (keyToDelete) {
-      await deleteSSHKey(keyToDelete.id)
-      setKeys(keys.filter(k => k.id !== keyToDelete.id))
-      if (selectedKey?.id === keyToDelete.id) {
-        setSelectedKey(null)
-        setIsNewKey(false)
-      }
-      setKeyToDelete(null)
-      setDeleteDialogOpen(false)
+  const handleDeleteAndReload = useCallback(async () => {
+    const id = handleDelete(keyToDelete)
+    if (!id) return
+
+    await deleteSSHKey(id)
+    setKeys(keys.filter(k => k.id !== id))
+    if (selectedKey?.id === id) {
+      setSelectedKey(null)
+      setIsNewKey(false)
     }
-  }
-
-  const handleImportFromFile = useCallback(
-    async (field: 'private' | 'public' | 'certificate') => {
-      try {
-        const input = document.createElement('input')
-        input.type = 'file'
-        input.accept = '.pem,.key,.pub,.crt,.cert'
-        input.onchange = async e => {
-          const file = (e.target as HTMLInputElement).files?.[0]
-          if (file) {
-            const text = await file.text()
-            if (field === 'private') {
-              setFormPrivateKey(text)
-            } else if (field === 'public') {
-              setFormPublicKey(text)
-            } else {
-              setFormCertificate(text)
-            }
-          }
-        }
-        input.click()
-      } catch (error) {
-        console.error('Failed to import file:', error)
-      }
-    },
-    [],
-  )
-
-  const handleUseGeneratedKey = (result: {
-    private_key: string
-    public_key: string
-    key_type: string
-    fingerprint: string
-  }) => {
-    setFormName(`Generated ${result.key_type} Key`)
-    setFormKeyType('key')
-    setFormPrivateKey(result.private_key)
-    setFormPublicKey(result.public_key)
-    setFormCertificate('')
-    setFormPassphrase('')
-    setIsNewKey(true)
-    setSelectedKey(null)
-  }
-
-  const handleFormChange = (field: string, value: string) => {
-    switch (field) {
-      case 'name': setFormName(value); break
-      case 'keyType': setFormKeyType(value); break
-      case 'privateKey': setFormPrivateKey(value); break
-      case 'publicKey': setFormPublicKey(value); break
-      case 'certificate': setFormCertificate(value); break
-      case 'passphrase': setFormPassphrase(value); break
-    }
-  }
+    setKeyToDelete(null)
+    setDeleteDialogOpen(false)
+  }, [handleDelete, keyToDelete, keys, selectedKey])
 
   return (
     <ViewContainer className="min-h-0 flex-row">
@@ -241,11 +180,7 @@ const KeychainView: React.FC = () => {
                     Delete
                   </Button>
                 )}
-                <Button
-                  size="sm"
-                  onClick={handleSave}
-                  disabled={!formName.trim()}
-                >
+                <Button size="sm" onClick={handleSaveAndReload} disabled={!formName.trim()}>
                   Save
                 </Button>
               </div>
@@ -263,7 +198,7 @@ const KeychainView: React.FC = () => {
                 formPassphrase={formPassphrase}
                 onFormChange={handleFormChange}
                 onImportFromFile={handleImportFromFile}
-                onSave={handleSave}
+                onSave={handleSaveAndReload}
                 onDelete={() => {
                   setKeyToDelete(selectedKey)
                   setDeleteDialogOpen(true)
@@ -286,7 +221,7 @@ const KeychainView: React.FC = () => {
         }
         confirmText="Delete"
         destructive
-        onConfirm={handleDelete}
+        onConfirm={handleDeleteAndReload}
         onCancel={() => setKeyToDelete(null)}
       />
 

@@ -68,10 +68,15 @@ export async function storageUpload(
 }
 
 /**
- * Download data from storage
+ * Download data from storage. Returns null if the file does not exist or is empty.
  */
-export async function storageDownload(path: string): Promise<string> {
-  return await invoke<string>('storage_download', { path })
+export async function storageDownload(path: string): Promise<string | null> {
+  try {
+    const result = await invoke<string>('storage_download', { path })
+    return result || null
+  } catch {
+    return null
+  }
 }
 
 /**

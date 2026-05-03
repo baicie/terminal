@@ -49,6 +49,8 @@ export default {
   'hostDialog.passwordAuth': 'Password',
   'hostDialog.sshKeyAuth': 'SSH Key',
   'hostDialog.sshAgentAuth': 'SSH Agent',
+  'hostDialog.sshAgentHint':
+    'Uses your system SSH agent (e.g., ssh-agent, Pageant, Windows OpenSSH Agent) for authentication. No password or key file required.',
   'hostDialog.browse': 'Browse',
   'hostDialog.saving': 'Saving...',
   'hostDialog.connectBastion': 'Connect through a bastion/jump server',

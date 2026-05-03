@@ -11,6 +11,7 @@ export default {
   'nav.snippets': '代码片段',
   'nav.knownHosts': '已知主机',
   'nav.logs': '日志',
+  'nav.sftp': 'SFTP',
   'nav.scripts': '脚本',
   'nav.settings': '设置',
   'nav.experiments': '实验',

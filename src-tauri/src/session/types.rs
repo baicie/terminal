@@ -88,6 +88,14 @@ pub struct SessionOutput {
     pub is_stderr: bool,
 }
 
+/// Shell exec result (used for completion / RC file parsing)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecResult {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+}
+
 /// Session 信息（用于列表和调试）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
@@ -147,4 +155,6 @@ pub struct JumpHostConfig {
     pub password: Option<String>,
     /// 私钥
     pub private_key: Option<String>,
+    /// 目标主机的认证类型（agent / password / key），为空则沿用主会话默认逻辑
+    pub target_auth_type: Option<String>,
 }

@@ -101,6 +101,21 @@ export default {
   'settings.testConnection': 'Tester la connexion',
   'settings.syncNow': 'Synchroniser maintenant',
   'settings.syncing': 'Synchronisation...',
+  'settings.lastSync': 'Dernière sync',
+  'settings.never': 'Jamais',
+  'settings.restoreMode': 'Mode de restauration',
+  'settings.restoreFromServer': 'Restaurer depuis le serveur',
+  'settings.restoring': 'Restauration...',
+  'settings.noBackupFound': 'Aucune sauvegarde trouvée',
+  'settings.noBackupFoundDesc': "Il n'y a pas de données de sauvegarde sur le serveur à restaurer",
+  'settings.syncSuccess': 'Synchronisation réussie',
+  'settings.syncFailed': 'Échec de la synchronisation',
+  'settings.restoreSuccess': 'Restauration réussie',
+  'settings.restoreFailed': 'Échec de la restauration',
+  'settings.serviceModeEnabled': 'Mode service activé',
+  'settings.serviceModeEnabledDesc':
+    'Vos données se synchroniseront avec le service de stockage configuré. Cliquez d\'abord sur "Tester la connexion" pour vérifier que le service est accessible.',
+  'settings.enterEndpoint': "Veuillez entrer une URL de point de terminaison pour tester la connexion",
 
   // Team
   'settings.teamCollaboration': "Collaboration d'équipe",
@@ -137,7 +152,7 @@ export default {
   'settings.minutes5': '5 minutes',
   'settings.minutes10': '10 minutes',
   'settings.saveConfig': 'Enregistrer la configuration',
-  'settings.enterEndpoint':
+  'settings.enterEndpointTeam':
     'Veuillez entrer le point de terminaison du serveur',
   'settings.connectionSuccess': 'Connexion réussie !',
   'settings.connectionFailed': 'Échec de la connexion',

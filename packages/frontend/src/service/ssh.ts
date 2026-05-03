@@ -66,7 +66,7 @@ class SSHServiceLegacy {
 
   async createSshSessionJump(
     targetHost: Host,
-    jumpHost: { host: string; port: number; username: string; authType: 'password' | 'key'; password?: string; privateKey?: string },
+    jumpHost: { host: string; port: number; username: string; authType: 'password' | 'key' | 'agent'; password?: string; privateKey?: string; targetAuthType?: 'password' | 'key' | 'agent' },
     cols: number = 80,
     rows: number = 24,
   ): Promise<SSHConnectionResult> {

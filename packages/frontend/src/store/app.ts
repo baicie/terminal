@@ -4,6 +4,16 @@ import { getAppSettings as getAppSettingsFromDb } from '@/service/database'
 
 type NewTab = Omit<Tab, 'id'>
 
+export interface RecentlyClosedTab {
+  id: string
+  label: string
+  type: 'local' | 'remote' | 'serial'
+  hostId?: string
+  serialSessionId?: string
+  serialConfig?: { port: string; baudRate: number }
+  closedAt: number
+}
+
 export type AppThemeMode = 'light' | 'dark' | 'system'
 
 export interface AppState {
@@ -14,6 +24,7 @@ export interface AppState {
   splitGroups: SplitGroup[]
   activeTabId: string | null
   sidebarVisible: boolean
+  recentlyClosedTabs: RecentlyClosedTab[]
   // Actions
   setTheme: (theme: AppThemeMode) => void
   setLanguage: (language: string) => void
@@ -28,6 +39,7 @@ export interface AppState {
   toggleSidebar: () => void
   setConfig: (config: Record<string, unknown>) => void
   queryConfig: () => Promise<void>
+  reopenTab: (closedTab: RecentlyClosedTab) => Tab
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -38,6 +50,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   splitGroups: [],
   activeTabId: null,
   sidebarVisible: true,
+  recentlyClosedTabs: [],
 
   setTheme(theme) {
     set({ theme })
@@ -91,7 +104,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       newActiveId = activeTabId
     }
 
-    set({ tabs: newTabs, activeTabId: newActiveId })
+    const closedTab: RecentlyClosedTab = {
+      id: tab.id,
+      label: tab.label,
+      type: tab.type,
+      hostId: tab.hostId,
+      serialSessionId: tab.serialSessionId,
+      serialConfig: tab.serialConfig,
+      closedAt: Date.now(),
+    }
+
+    set(state => ({
+      tabs: newTabs,
+      activeTabId: newActiveId,
+      recentlyClosedTabs: [closedTab, ...state.recentlyClosedTabs].slice(0, 10),
+    }))
   },
 
   splitTab(id, direction) {
@@ -225,5 +252,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch {
       // ignore
     }
+  },
+
+  reopenTab(closedTab) {
+    const newId = `${closedTab.type}-${Date.now()}`
+    const restoredTab: Tab = {
+      id: newId,
+      label: closedTab.label,
+      type: closedTab.type,
+      hostId: closedTab.hostId,
+      serialSessionId: closedTab.serialSessionId,
+      serialConfig: closedTab.serialConfig,
+    }
+    set(state => ({
+      tabs: [...state.tabs, restoredTab],
+      activeTabId: newId,
+      recentlyClosedTabs: state.recentlyClosedTabs.filter(t => t.id !== closedTab.id),
+    }))
+    return restoredTab
   },
 }))

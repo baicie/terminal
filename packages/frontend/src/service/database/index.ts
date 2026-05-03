@@ -55,6 +55,7 @@ export type {
   UserProfileRecord,
   WorkspaceLayoutRecord,
   TerminalThemePreset,
+  TerminalThemeColors,
 } from './types'
 
 // Settings

@@ -3,17 +3,6 @@ import { Network } from 'lucide-react'
 import * as React from 'react'
 import { useEffect, useState } from 'react'
 import PortForwardDialog from '@/components/port-forward'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,6 +14,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { EnvironmentVariablesDialog } from './environment-dialog'
+import { HostFormBasic } from './host-form-basic'
+import { HostFormActions } from './host-form-actions'
 import { AuthFields } from './host-dialog-auth-fields'
 import { useHostStore } from '@/store/host'
 
@@ -127,6 +118,10 @@ export const HostDialog: React.FC<HostDialogProps> = ({
     }
   }
 
+  const handleFormChange = (partial: Partial<Host>) => {
+    setForm(prev => ({ ...prev, ...partial }))
+  }
+
   if (!open) return null
 
   return (
@@ -139,138 +134,15 @@ export const HostDialog: React.FC<HostDialogProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <HostFormBasic
+            form={form}
+            groups={groups}
+            hosts={hosts}
+            currentHostId={host?.id}
+            onChange={handleFormChange}
+          />
+
           <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <Label htmlFor="name" className="text-sm font-medium mb-1 block">
-                Name
-              </Label>
-              <Input
-                id="name"
-                value={form.name}
-                onChange={e => setForm({ ...form, name: e.target.value })}
-                placeholder="My Server"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="hostname" className="text-sm font-medium mb-1 block">
-                Hostname
-              </Label>
-              <Input
-                id="hostname"
-                value={form.hostname}
-                onChange={e => setForm({ ...form, hostname: e.target.value })}
-                placeholder="192.168.1.1 or example.com"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="port" className="text-sm font-medium mb-1 block">
-                Port
-              </Label>
-              <Input
-                id="port"
-                type="number"
-                value={form.port}
-                onChange={e =>
-                  setForm({
-                    ...form,
-                    port: Number.parseInt(e.target.value) || 22,
-                  })
-                }
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="username" className="text-sm font-medium mb-1 block">
-                Username
-              </Label>
-              <Input
-                id="username"
-                value={form.username}
-                onChange={e => setForm({ ...form, username: e.target.value })}
-                placeholder="root"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="group" className="text-sm font-medium mb-1 block">
-                Group
-              </Label>
-              <Select
-                value={form.groupId || ''}
-                onValueChange={v =>
-                  setForm({ ...form, groupId: v || undefined })
-                }
-              >
-                <SelectTrigger id="group">
-                  <SelectValue placeholder="No Group" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups.map(g => (
-                    <SelectItem key={g.id} value={g.id}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="col-span-2">
-              <Label htmlFor="jumpHost" className="text-sm font-medium mb-1 flex items-center gap-1">
-                <Network className="w-3.5 h-3.5" />
-                Jump Host (Bastion)
-              </Label>
-              <Select
-                value={form.jumpHostId || ''}
-                onValueChange={v =>
-                  setForm({ ...form, jumpHostId: v || undefined })
-                }
-              >
-                <SelectTrigger id="jumpHost">
-                  <SelectValue placeholder="Direct Connection" />
-                </SelectTrigger>
-                <SelectContent>
-                  {hosts
-                    .filter(h => h.id !== host?.id)
-                    .map(h => (
-                      <SelectItem key={h.id} value={h.id}>
-                        {h.name} ({h.username}@{h.hostname})
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">
-                Connect through a bastion/jump server
-              </p>
-            </div>
-
-            {form.jumpHostId && (
-              <div className="col-span-2">
-                <Label htmlFor="jumpHostAuth" className="text-sm font-medium mb-1 block">
-                  Jump Host Auth
-                </Label>
-                <Select
-                  value={form.jumpHostAuthType || ''}
-                  onValueChange={v =>
-                    setForm({
-                      ...form,
-                      jumpHostAuthType: (v as AuthType) || undefined,
-                    })
-                  }
-                >
-                  <SelectTrigger id="jumpHostAuth">
-                    <SelectValue placeholder="Use Default Auth" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="password">Password</SelectItem>
-                    <SelectItem value="key">SSH Key</SelectItem>
-                    <SelectItem value="agent">SSH Agent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
             <div className="col-span-2">
               <Label htmlFor="authType" className="text-sm font-medium mb-1 block">
                 Authentication
@@ -296,7 +168,6 @@ export const HostDialog: React.FC<HostDialogProps> = ({
               authType={form.authType}
               password={form.password}
               privateKey={form.privateKey}
-              onAuthTypeChange={(v: AuthType) => setForm({ ...form, authType: v })}
               onPasswordChange={(v: string) => setForm({ ...form, password: v })}
               onPrivateKeyChange={(v: string) => setForm({ ...form, privateKey: v })}
             />
@@ -346,48 +217,15 @@ export const HostDialog: React.FC<HostDialogProps> = ({
           </div>
         </div>
 
-        <div className="p-4 border-t flex justify-between">
-          <div>
-            {host && (
-              <AlertDialog
-                open={deleteDialogOpen}
-                onOpenChange={setDeleteDialogOpen}
-              >
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive">Delete</Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Host</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Are you sure you want to delete "{host.name}
-                      "? This action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleDelete}>
-                      Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={
-                saving || !form.name || !form.hostname || !form.username
-              }
-            >
-              {saving ? 'Saving...' : 'Save'}
-            </Button>
-          </div>
-        </div>
+        <HostFormActions
+          host={host}
+          saving={saving}
+          deleteDialogOpen={deleteDialogOpen}
+          onClose={onClose}
+          onDelete={handleDelete}
+          onDeleteDialogOpenChange={setDeleteDialogOpen}
+          onSubmit={handleSubmit}
+        />
       </div>
 
       <PortForwardDialog

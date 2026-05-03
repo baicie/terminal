@@ -233,7 +233,10 @@ export class SessionService {
         targetUsername: targetHost.username,
         targetPassword: targetHost.password,
         targetPrivateKey: targetHost.privateKey,
-        jumpHost,
+        jumpHost: {
+          ...jumpHost,
+          targetAuthType: jumpHost.targetAuthType ?? targetHost.authType,
+        },
         cols,
         rows,
       })

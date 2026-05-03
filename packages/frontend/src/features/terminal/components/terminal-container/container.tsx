@@ -7,6 +7,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal as TerminalComponent } from '@baicie/xterm'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -27,6 +28,16 @@ import { SessionStatusBar } from './session-status-bar'
 import { TerminalContextMenu } from './terminal-context-menu'
 import { TerminalMobileMenu } from './terminal-mobile-menu'
 import { TerminalSearchOverlay } from './terminal-search-overlay'
+import { TerminalCompletionOverlay } from '@/components/terminal-completion/terminal-completion-overlay'
+import {
+  extractCurrentWord,
+  findAllMatches,
+  getCursorScreenPosition,
+  type CursorPosition,
+  type CompletionItem,
+} from '@/hooks/use-command-completion'
+import { useRCCache } from '@/store/rc-cache'
+import { parseShellRC, toCompletionItems } from '@/service/shell-rc'
 import '@baicie/xterm/css/xterm.css'
 
 /**
@@ -91,6 +102,15 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
+  // Command completion state
+  const [completionItems, setCompletionItems] = useState<CompletionItem[]>([])
+  const [showCompletion, setShowCompletion] = useState(false)
+  const [completionIndex, setCompletionIndex] = useState(0)
+  const [cursorPosition, setCursorPosition] = useState<CursorPosition>({
+    x: 0,
+    y: 0,
+  })
+
   const tab = tabs.find(t => t.id === tabId)
   const isMobile = useIsMobile()
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -120,14 +140,74 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
 
   const themeColors = getThemeColors(activeTerminalTheme as never)
 
+  // Handle Tab press for command completion
+  const handleTabPress = async (currentLine: string, cursorPos: number, history: string[]) => {
+    const currentWord = extractCurrentWord(currentLine, cursorPos)
+
+    if (!currentWord) {
+      setShowCompletion(false)
+      setCompletionItems([])
+      return
+    }
+
+    const matches = await findAllMatches(currentWord, history, rcItemsRef.current)
+
+    if (matches.length === 0) {
+      setShowCompletion(false)
+      setCompletionItems([])
+      return
+    }
+
+    setCompletionItems(matches)
+    setCompletionIndex(0)
+    setShowCompletion(true)
+    setCursorPosition(getCursorScreenPosition(termInstance) ?? { x: 0, y: 0 })
+  }
+
+  // Handle completion selection
+  const handleCompletionSelect = (item: CompletionItem) => {
+    if (!termInstance || completionItems.length === 0) return
+
+    termInstance.write(item.text)
+    setShowCompletion(false)
+  }
+
+  // Dismiss completion overlay
+  const handleDismissCompletion = () => {
+    setShowCompletion(false)
+    termInstance?.focus()
+  }
+
   // 终端数据流 hook
   // 注意：使用 termInstance state 而非 termRef.current，确保 React 能正确追踪
   // term 实例的创建/销毁，避免在第一次渲染时 termRef 还是 null 而错过 effect 触发
-  const { status, error } = useTerminal(termInstance, {
+  const { status, error, sessionId } = useTerminal(termInstance, {
     tabType: tab?.type ?? 'local',
     host,
     serialSessionId: tab?.serialSessionId,
+    onTabPress: handleTabPress,
   })
+
+  // Shell RC cache - parse RC files when session connects
+  const rcCache = useRCCache()
+  useEffect(() => {
+    if (!sessionId || status !== 'connected') return
+    if (rcCache.has(sessionId)) return
+
+    const sessionType = tab?.type === 'remote' ? 'ssh' : 'local'
+    const shell = tab?.type === 'remote' ? 'bash' : 'bash'
+
+    parseShellRC({ sessionId, sessionType, shell })
+      .then(parsed => {
+        rcCache.set(sessionId, toCompletionItems(parsed))
+      })
+      .catch(() => {})
+  }, [sessionId, status, tab?.type, rcCache])
+
+  // Get cached RC items for completion (ref to avoid stale closures in handleTabPress)
+  const rcItemsRef = useRef<import('@/service/shell-rc').RCCompletionItem[]>([])
+  rcItemsRef.current = sessionId ? rcCache.get(sessionId) : []
+  rcItemsRef.current = rcCache.get(sessionId ?? '')
 
   const readableError = error ? getReadableTerminalError(error, t) : null
 
@@ -211,18 +291,31 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
       }
     })()
 
+    // Load WebGL addon for improved rendering performance (large logs, high DPI)
+    // Uses onDidLinkCall when available on WebGLAddon
+    ;(async () => {
+      try {
+        const webglAddon = new WebglAddon()
+        webglAddon.onContextLoss(() => {
+          console.warn('[xterm] WebGL context lost, falling back to canvas renderer')
+          webglAddon.dispose()
+        })
+        term.loadAddon(webglAddon)
+      } catch (e) {
+        console.warn('[xterm] WebGL addon unavailable, using default renderer:', e)
+      }
+    })()
+
     // 拦截 Cmd/Ctrl + F：触发自定义搜索浮层，阻止 xterm 默认处理
     term.attachCustomKeyEventHandler((e: { type: string; key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }) => {
-      if (
-        e.type === 'keydown' &&
-        (e.metaKey || e.ctrlKey) &&
-        !e.shiftKey &&
-        !e.altKey &&
-        (e.key === 'f' || e.key === 'F')
-      ) {
+      if (e.type !== 'keydown') return true
+
+      // Cmd/Ctrl + F: open search
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
         setSearchOpen(true)
         return false
       }
+
       return true
     })
 
@@ -434,6 +527,19 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
                 termInstance?.focus()
               }}
               searchAddon={searchAddonRef.current}
+            />
+          )}
+          {/* Command completion overlay */}
+          {showCompletion && (
+            <TerminalCompletionOverlay
+              items={completionItems}
+              currentIndex={completionIndex}
+              position={cursorPosition}
+              onSelect={(item, index) => {
+                setCompletionIndex(index)
+                handleCompletionSelect(item)
+              }}
+              onDismiss={handleDismissCompletion}
             />
           )}
           {isMobile && (

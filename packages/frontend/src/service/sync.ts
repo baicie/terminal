@@ -4,6 +4,7 @@ import { getUserProfile, select } from '@/service/database'
 import { getWorkspaces, getWorkspaceLayout } from '@/service/database/workspaces'
 import { getSSHKeys } from '@/service/database/ssh-keys'
 import { getKnownHosts } from '@/service/database/known-hosts'
+import { storageUpload, storageDownload } from '@/service/storage'
 
 export interface ExportData {
   version: string
@@ -583,8 +584,16 @@ export async function exportDataToFile(): Promise<string | null> {
 // Import data from a JSON file
 export async function importDataFromFile(
   content: string,
-  _mergeMode: 'replace' | 'merge' = 'merge',
-): Promise<void> {
+  mergeMode: 'replace' | 'merge' = 'merge',
+): Promise<{
+  hosts: number
+  groups: number
+  snippets: number
+  snippetPackages: number
+  sshKeys: number
+  knownHosts: number
+  workspaces: number
+}> {
   try {
     const data = JSON.parse(content) as ExportData
 
@@ -593,16 +602,291 @@ export async function importDataFromFile(
       throw new Error('Invalid export file format')
     }
 
-    // TODO: Implement actual import logic
-    // For now, this is a placeholder
-    void data
+    const stats = {
+      hosts: 0,
+      groups: 0,
+      snippets: 0,
+      snippetPackages: 0,
+      sshKeys: 0,
+      knownHosts: 0,
+      workspaces: 0,
+    }
 
-    // This is a placeholder for the actual import implementation
-    // In a real implementation, we would:
-    // 1. Parse the JSON data
-    // 2. If merge mode, check for duplicates
-    // 3. Insert/update records in the database
-    // 4. Handle conflicts (e.g., same host name)
+    // Import groups first (dependencies for hosts)
+    for (const group of data.groups || []) {
+      const g = group as Record<string, unknown>
+      const existing = await select<{ id: string }>(
+        'SELECT id FROM groups WHERE id = ?',
+        [g.id as string],
+      )
+      if (existing.length === 0) {
+        await importExecute(
+          `INSERT INTO groups (id, name, parent_id, color, inherit_settings, settings, "order") VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            g.id,
+            g.name,
+            g.parent_id,
+            g.color,
+            g.inherit_settings,
+            g.settings,
+            g.order,
+          ],
+        )
+        stats.groups++
+      } else if (mergeMode === 'replace') {
+        await importExecute(
+          `UPDATE groups SET name = ?, parent_id = ?, color = ?, inherit_settings = ?, settings = ?, "order" = ? WHERE id = ?`,
+          [
+            g.name,
+            g.parent_id,
+            g.color,
+            g.inherit_settings,
+            g.settings,
+            g.order,
+            g.id,
+          ],
+        )
+        stats.groups++
+      }
+    }
+
+    // Import hosts
+    for (const host of data.hosts || []) {
+      const h = host as Record<string, unknown>
+      const existing = await select<{ id: string }>(
+        'SELECT id FROM hosts WHERE id = ?',
+        [h.id as string],
+      )
+      if (existing.length === 0) {
+        await importExecute(
+          `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            h.id,
+            h.name,
+            h.hostname,
+            h.port,
+            h.username,
+            h.auth_type,
+            h.password,
+            h.private_key,
+            h.group_id,
+            h.is_favorite,
+            h.color,
+            h.tags,
+            h.port_forwards,
+            h.startup_command,
+            h.environment,
+            h.created_at,
+            h.updated_at,
+          ],
+        )
+        stats.hosts++
+      } else if (mergeMode === 'replace') {
+        await importExecute(
+          `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, updated_at = ? WHERE id = ?`,
+          [
+            h.name,
+            h.hostname,
+            h.port,
+            h.username,
+            h.auth_type,
+            h.password,
+            h.private_key,
+            h.group_id,
+            h.is_favorite,
+            h.color,
+            h.tags,
+            h.port_forwards,
+            h.startup_command,
+            h.environment,
+            Date.now(),
+            h.id,
+          ],
+        )
+        stats.hosts++
+      }
+    }
+
+    // Import snippet packages first (dependencies for snippets)
+    for (const pkg of data.snippetPackages || []) {
+      const p = pkg as Record<string, unknown>
+      const existing = await select<{ id: string }>(
+        'SELECT id FROM snippet_packages WHERE id = ?',
+        [p.id as string],
+      )
+      if (existing.length === 0) {
+        await importExecute(
+          `INSERT INTO snippet_packages (id, name, description) VALUES (?, ?, ?)`,
+          [p.id, p.name, p.description],
+        )
+        stats.snippetPackages++
+      } else if (mergeMode === 'replace') {
+        await importExecute(
+          `UPDATE snippet_packages SET name = ?, description = ? WHERE id = ?`,
+          [p.name, p.description, p.id],
+        )
+        stats.snippetPackages++
+      }
+    }
+
+    // Import snippets
+    for (const snippet of data.snippets || []) {
+      const s = snippet as Record<string, unknown>
+      const existing = await select<{ id: string }>(
+        'SELECT id FROM snippets WHERE id = ?',
+        [s.id as string],
+      )
+      if (existing.length === 0) {
+        await importExecute(
+          `INSERT INTO snippets (id, name, description, script, package_id, tags, variables) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            s.id,
+            s.name,
+            s.description,
+            s.script,
+            s.package_id,
+            s.tags,
+            s.variables,
+          ],
+        )
+        stats.snippets++
+      } else if (mergeMode === 'replace') {
+        await importExecute(
+          `UPDATE snippets SET name = ?, description = ?, script = ?, package_id = ?, tags = ?, variables = ? WHERE id = ?`,
+          [
+            s.name,
+            s.description,
+            s.script,
+            s.package_id,
+            s.tags,
+            s.variables,
+            s.id,
+          ],
+        )
+        stats.snippets++
+      }
+    }
+
+    // Import SSH Keys
+    for (const key of data.sshKeys || []) {
+      const k = key as Record<string, unknown>
+      const existing = await select<{ id: string }>(
+        'SELECT id FROM ssh_keys WHERE id = ?',
+        [k.id as string],
+      )
+      if (existing.length === 0) {
+        await importExecute(
+          `INSERT INTO ssh_keys (id, name, key_type, private_key, public_key, certificate, passphrase, is_encrypted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            k.id,
+            k.name,
+            k.key_type,
+            k.private_key,
+            k.public_key,
+            k.certificate,
+            k.passphrase,
+            k.is_encrypted,
+            k.created_at,
+            k.updated_at,
+          ],
+        )
+        stats.sshKeys++
+      } else if (mergeMode === 'replace') {
+        await importExecute(
+          `UPDATE ssh_keys SET name = ?, key_type = ?, private_key = ?, public_key = ?, certificate = ?, passphrase = ?, is_encrypted = ?, updated_at = ? WHERE id = ?`,
+          [
+            k.name,
+            k.key_type,
+            k.private_key,
+            k.public_key,
+            k.certificate,
+            k.passphrase,
+            k.is_encrypted,
+            Date.now(),
+            k.id,
+          ],
+        )
+        stats.sshKeys++
+      }
+    }
+
+    // Import Known Hosts
+    for (const knownHost of data.knownHosts || []) {
+      const kh = knownHost as Record<string, unknown>
+      const existing = await select<{ id: string }>(
+        'SELECT id FROM known_hosts WHERE hostname = ? AND port = ?',
+        [kh.hostname as string, kh.port as number],
+      )
+      if (existing.length === 0) {
+        await importExecute(
+          `INSERT INTO known_hosts (id, hostname, port, fingerprint, key_type, added_at) VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            crypto.randomUUID(),
+            kh.hostname,
+            kh.port,
+            kh.fingerprint,
+            kh.key_type,
+            kh.added_at,
+          ],
+        )
+        stats.knownHosts++
+      }
+    }
+
+    // Import Workspaces
+    for (const workspace of data.workspaces || []) {
+      const ws = workspace as Record<string, unknown>
+      const existing = await select<{ id: string }>(
+        'SELECT id FROM workspaces WHERE id = ?',
+        [ws.id as string],
+      )
+      if (existing.length === 0) {
+        await importExecute(
+          `INSERT INTO workspaces (id, name, description, icon, color, "order", is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            ws.id,
+            ws.name,
+            ws.description,
+            ws.icon,
+            ws.color,
+            ws.order,
+            ws.is_active,
+            ws.created_at,
+            ws.updated_at,
+          ],
+        )
+        stats.workspaces++
+      } else if (mergeMode === 'replace') {
+        await importExecute(
+          `UPDATE workspaces SET name = ?, description = ?, icon = ?, color = ?, "order" = ?, is_active = ?, updated_at = ? WHERE id = ?`,
+          [
+            ws.name,
+            ws.description,
+            ws.icon,
+            ws.color,
+            ws.order,
+            ws.is_active,
+            Date.now(),
+            ws.id,
+          ],
+        )
+        stats.workspaces++
+      }
+    }
+
+    // Import Workspace Layouts
+    for (const wl of data.workspaceLayouts || []) {
+      const wld = wl as Record<string, unknown>
+      const layoutData = wld.layoutData as Record<string, unknown> | null
+      if (layoutData) {
+        await importExecute(
+          `INSERT OR REPLACE INTO workspace_layouts (workspace_id, layout_data) VALUES (?, ?)`,
+          [wld.workspaceId as string, JSON.stringify(layoutData)],
+        )
+      }
+    }
+
+    return stats
   } catch (error) {
     console.error('Import failed:', error)
     throw error
@@ -628,4 +912,150 @@ export function previewImportData(content: string): ExportData | null {
   } catch {
     return null
   }
+}
+
+// Sync all data to the remote storage server
+// Uploads to terminal-sync-{timestamp}.json and terminal-latest.json
+export async function syncToServer(): Promise<{
+  success: boolean
+  timestamp: string
+  stats?: {
+    hosts: number
+    groups: number
+    snippets: number
+    snippetPackages: number
+    sshKeys: number
+    knownHosts: number
+    workspaces: number
+  }
+}> {
+  try {
+    // Collect all export data
+    const data = await collectExportData()
+    const jsonContent = JSON.stringify(data, null, 2)
+
+    // Generate timestamp-based filename
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const timestampedPath = `terminal-sync-${timestamp}.json`
+    const latestPath = 'terminal-latest.json'
+
+    // Upload to timestamped backup file
+    const timestampResult = await storageUpload(timestampedPath, jsonContent)
+    if (!timestampResult.success) {
+      throw new Error(`Failed to upload timestamped backup: ${timestampResult.message}`)
+    }
+
+    // Also update the latest backup (overwrites previous)
+    const latestResult = await storageUpload(latestPath, jsonContent)
+    if (!latestResult.success) {
+      throw new Error(`Failed to update latest backup: ${latestResult.message}`)
+    }
+
+    // Save last sync time to localStorage for UI display
+    localStorage.setItem('terminal.lastSyncTime', String(Date.now()))
+
+    return {
+      success: true,
+      timestamp: new Date().toISOString(),
+      stats: {
+        hosts: data.hosts.length,
+        groups: data.groups.length,
+        snippets: data.snippets.length,
+        snippetPackages: data.snippetPackages.length,
+        sshKeys: data.sshKeys.length,
+        knownHosts: data.knownHosts.length,
+        workspaces: data.workspaces.length,
+      },
+    }
+  } catch (error) {
+    console.error('Sync to server failed:', error)
+    throw error
+  }
+}
+
+// Download and import data from the remote storage server
+export async function downloadFromServer(
+  mergeMode: 'replace' | 'merge' = 'merge',
+): Promise<{
+  success: boolean
+  data?: ExportData
+  stats?: {
+    hosts: number
+    groups: number
+    snippets: number
+    snippetPackages: number
+    sshKeys: number
+    knownHosts: number
+    workspaces: number
+  }
+}> {
+  try {
+    const latestPath = 'terminal-latest.json'
+
+    // Download the latest backup
+    const content = await storageDownload(latestPath)
+
+    if (!content) {
+      return { success: false }
+    }
+
+    // Parse and validate the data
+    const data = previewImportData(content)
+    if (!data) {
+      throw new Error('Invalid data format from server')
+    }
+
+    // Import the data
+    const stats = await importDataFromFile(content, mergeMode)
+
+    // Update last sync time
+    localStorage.setItem('terminal.lastSyncTime', String(Date.now()))
+
+    return {
+      success: true,
+      data,
+      stats,
+    }
+  } catch (error) {
+    console.error('Download from server failed:', error)
+    throw error
+  }
+}
+
+// Get the last sync time from localStorage
+export function getLastSyncTime(): number | null {
+  const stored = localStorage.getItem('terminal.lastSyncTime')
+  if (stored) {
+    const time = parseInt(stored, 10)
+    return isNaN(time) ? null : time
+  }
+  return null
+}
+
+// Format last sync time for display
+export function formatLastSyncTime(): string | null {
+  const lastSync = getLastSyncTime()
+  if (!lastSync) return null
+
+  const now = Date.now()
+  const diff = now - lastSync
+
+  const seconds = Math.floor(diff / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  if (days > 0) {
+    return `${days} day${days > 1 ? 's' : ''} ago`
+  }
+  if (hours > 0) {
+    return `${hours} hour${hours > 1 ? 's' : ''} ago`
+  }
+  if (minutes > 0) {
+    return `${minutes} minute${minutes > 1 ? 's' : ''} ago`
+  }
+  if (seconds > 10) {
+    return `${seconds} seconds ago`
+  }
+  return 'just now'
 }

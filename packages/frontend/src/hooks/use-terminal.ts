@@ -33,6 +33,12 @@ export interface UseTerminalOptions {
   cols?: number
   /** xterm 启动行数 */
   rows?: number
+  /** Tab 键按下时的回调，用于命令补全 */
+  onTabPress?: (
+    currentLine: string,
+    cursorPos: number,
+    history: string[],
+  ) => void
 }
 
 interface UseTerminalResult {
@@ -176,6 +182,7 @@ export function useTerminal(
     serialSessionId,
     cols: defaultCols = 80,
     rows: defaultRows = 24,
+    onTabPress,
   } = options
 
   // 用 state 触发重渲染，让 SessionStatusBar 等订阅 status 的 UI 即时更新
@@ -298,6 +305,20 @@ export function useTerminal(
         }
         sendInput(data)
         return
+      }
+
+      // Tab：触发命令补全
+      if (data === '\t') {
+        if (!historyLoaded) {
+          void loadHistoryFromDb()
+          historyLoaded = true
+        }
+        onTabPress?.(
+          currentLineRef.value,
+          cursorPosRef.value,
+          historyCacheRef.value,
+        )
+        return // 拦截，不发送到后端
       }
 
       // ArrowUp：历史导航

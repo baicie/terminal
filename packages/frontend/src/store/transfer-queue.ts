@@ -8,6 +8,16 @@ import { create } from 'zustand'
 
 export type TransferKind = 'upload' | 'download'
 export type TransferStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
+export type ChecksumAlgorithm = 'sha256'
+export type ChecksumStatus = 'pending' | 'computing' | 'done' | 'error' | 'mismatch'
+
+/** 单侧 checksum 计算结果 */
+export interface TransferChecksumResult {
+  algorithm: ChecksumAlgorithm
+  hash: string
+  status: 'computing' | 'done' | 'error'
+  error?: string
+}
 
 export interface TransferRecord {
   id: string
@@ -32,6 +42,18 @@ export interface TransferRecord {
   /** 上一次速度采样的时间戳和字节数（仅内部使用） */
   _prevSampleAt?: number
   _prevSampleBytes?: number
+  /** Checksum 状态（传输完成前为 pending，完成后触发校验） */
+  checksum?: {
+    algorithm: ChecksumAlgorithm
+    localHash?: string
+    remoteHash?: string
+    localStatus: ChecksumStatus
+    remoteStatus: ChecksumStatus
+    localError?: string
+    remoteError?: string
+    /** 两端 hash 是否一致 */
+    matches?: boolean
+  }
 }
 
 interface TransferQueueState {
@@ -49,6 +71,8 @@ interface TransferQueueState {
       | '_prevSampleAt'
       | '_prevSampleBytes'
     > & { bytesTotal?: number },
+    /** 传入 true 时以 queued 状态入队，由调用方控制何时 start */
+    startInQueue?: boolean,
   ) => string
   updateProgress: (
     id: string,
@@ -60,6 +84,16 @@ interface TransferQueueState {
   clearFinished: () => void
   setPanelOpen: (open: boolean) => void
   togglePanel: () => void
+  /** 初始化 checksum 状态（传输完成时调用） */
+  initChecksum: (id: string) => void
+  /** 更新 checksum 进度（remote checksum 进度） */
+  updateChecksumProgress: (id: string, bytesDone: number, bytesTotal: number) => void
+  /** 设置 checksum 结果（任一端计算完成时调用） */
+  setChecksumResult: (
+    id: string,
+    side: 'local' | 'remote',
+    result: { success: boolean; hash?: string; error?: string },
+  ) => void
 }
 
 function makeId() {
@@ -70,12 +104,12 @@ export const useTransferQueue = create<TransferQueueState>((set, get) => ({
   transfers: [],
   panelOpen: false,
 
-  enqueue(record) {
+  enqueue(record, startInQueue = false) {
     const id = record.id || makeId()
     const next: TransferRecord = {
       ...record,
       id,
-      status: 'running',
+      status: startInQueue ? 'queued' : 'running',
       bytesDone: 0,
       bytesTotal: record.bytesTotal ?? 0,
       speed: 0,
@@ -146,6 +180,65 @@ export const useTransferQueue = create<TransferQueueState>((set, get) => ({
 
   togglePanel() {
     set({ panelOpen: !get().panelOpen })
+  },
+
+  initChecksum(id) {
+    set(state => ({
+      transfers: state.transfers.map(t =>
+        t.id === id
+          ? {
+              ...t,
+              checksum: {
+                algorithm: 'sha256',
+                localStatus: t.kind === 'download' ? 'pending' : 'computing',
+                remoteStatus: t.kind === 'upload' ? 'pending' : 'computing',
+              },
+            }
+          : t,
+      ),
+    }))
+  },
+
+  updateChecksumProgress(id, bytesDone, bytesTotal) {
+    set(state => ({
+      transfers: state.transfers.map(t => {
+        if (t.id !== id) return t
+        if (!t.checksum) return t
+        return {
+          ...t,
+          bytesDone,
+          bytesTotal,
+        }
+      }),
+    }))
+  },
+
+  setChecksumResult(id, side, result) {
+    set(state => ({
+      transfers: state.transfers.map(t => {
+        if (t.id !== id || !t.checksum) return t
+        const newChecksum = { ...t.checksum }
+        if (side === 'local') {
+          newChecksum.localHash = result.hash
+          newChecksum.localStatus = result.success ? 'done' : 'error'
+          newChecksum.localError = result.error
+        } else {
+          newChecksum.remoteHash = result.hash
+          newChecksum.remoteStatus = result.success ? 'done' : 'error'
+          newChecksum.remoteError = result.error
+        }
+        // Auto-compare if both are done
+        if (
+          newChecksum.localStatus === 'done' &&
+          newChecksum.remoteStatus === 'done' &&
+          newChecksum.localHash &&
+          newChecksum.remoteHash
+        ) {
+          newChecksum.matches = newChecksum.localHash === newChecksum.remoteHash
+        }
+        return { ...t, checksum: newChecksum }
+      }),
+    }))
   },
 }))
 

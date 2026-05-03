@@ -1,4 +1,4 @@
-import type { TerminalThemePreset } from '@/service/database'
+import type { TerminalThemePreset, TerminalThemeColors } from '@/service/database'
 import { Check } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -49,6 +49,7 @@ type AppSettingsKey = {
   terminalTheme?: TerminalThemePreset
   terminalThemeDark?: TerminalThemePreset
   terminalThemeLight?: TerminalThemePreset
+  customTerminalTheme?: TerminalThemeColors
   copyOnSelect?: boolean
   pasteOnMiddleClick?: boolean
   allowProposedApi?: boolean

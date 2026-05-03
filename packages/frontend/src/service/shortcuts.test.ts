@@ -60,14 +60,20 @@ describe('shortcutsService.parseKeyboardEvent', () => {
 })
 
 describe('shortcutsService.matchShortcut', () => {
-  it('matches Ctrl+J → command-palette default', () => {
+  it('matches Ctrl+K → command-palette (primary binding)', () => {
+    const evt = makeKeyEvent('k', { ctrlKey: true })
+    const m = shortcutsService.matchShortcut(evt)
+    expect(m?.action).toBe('command-palette')
+  })
+
+  it('matches Ctrl+J → command-palette (secondary binding)', () => {
     const evt = makeKeyEvent('j', { ctrlKey: true })
     const m = shortcutsService.matchShortcut(evt)
     expect(m?.action).toBe('command-palette')
   })
 
-  it('does not match Ctrl+Shift+J (different modifiers)', () => {
-    const evt = makeKeyEvent('j', { ctrlKey: true, shiftKey: true })
+  it('does not match Ctrl+Shift+K (different modifiers)', () => {
+    const evt = makeKeyEvent('k', { ctrlKey: true, shiftKey: true })
     expect(shortcutsService.matchShortcut(evt)).toBeUndefined()
   })
 
@@ -112,11 +118,12 @@ describe('shortcutsService.handleKeyboardEvent', () => {
     off()
   })
 
-  it('still fires whitelisted opening actions (Ctrl+J) inside inputs', () => {
+  it('still fires whitelisted opening actions (Ctrl+J/K) inside inputs', () => {
     const handler = vi.fn()
     const off = shortcutsService.addListener(handler)
     const input = document.createElement('input')
 
+    // Ctrl+J is whitelisted so it fires even when focus is in an input
     const evt = makeKeyEvent('j', { ctrlKey: true }, input)
     shortcutsService.handleKeyboardEvent(evt)
     expect(handler).toHaveBeenCalledWith('command-palette')

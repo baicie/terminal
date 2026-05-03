@@ -220,7 +220,7 @@ const TopToolbar: React.FC<{
   // ─── Desktop layout ──────────────────────────────────────────────
   const isMac =
     typeof navigator !== 'undefined' && /mac|darwin/i.test(navigator.platform)
-  const cmdKeyLabel = isMac ? '⌘J' : 'Ctrl+J'
+  const cmdKeyLabel = isMac ? '⌘K' : 'Ctrl+K'
 
   return (
     <>

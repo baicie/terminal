@@ -1151,3 +1151,102 @@ $ cargo check
 ```
 
 ---
+
+## 十七、代码质量 — 大文件拆分 (2026-05-03)
+
+### Issue #31: 多个视图/组件文件超出行数限制 ✅ 已修复
+
+**严重程度**: Important
+**状态**: ✅ 已修复
+**修复时间**: 2026-05-03
+
+**问题描述**:
+`AGENTS.md` 规定视图最大 300 行、组件最大 400 行、工具文件最大 300 行。多个文件超出限制：
+
+| 文件 | 原行数 | 限制 | 超出 |
+| --- | --- | --- | --- |
+| `view/teams/index.tsx` | 350 | 300 | 50 |
+| `host-list/host-dialog.tsx` | 422 | 400 | 22 |
+| `view/keychain/index.tsx` | 303 | 300 | 3 |
+
+**修复方案**:
+
+按职责拆分 5 个文件：
+1. `view/teams/index.tsx` → `team-list-sidebar.tsx` (侧边栏) + `disabled-teams-view.tsx` (团队禁用视图)
+2. `host-list/host-dialog.tsx` → `host-form-basic.tsx` (基础表单) + `host-form-actions.tsx` (底部操作栏)
+3. `view/keychain/index.tsx` → `use-key-form.ts` (表单状态 hook)
+4. `view/hosts/index.tsx` → `render-list-body.tsx` (列表渲染组件)
+5. `view/snippets/index.tsx` → `use-script-form.ts` (脚本表单 hook)
+
+**新增文件**:
+- `view/teams/components/team-list-sidebar.tsx`
+- `view/teams/components/disabled-teams-view.tsx`
+- `components/host-list/host-form-basic.tsx`
+- `components/host-list/host-form-actions.tsx`
+- `view/keychain/use-key-form.ts`
+- `view/hosts/components/render-list-body.tsx`
+- `view/snippets/use-script-form.ts`
+
+**验证**: 所有主文件行数降至 300 行以下。
+
+---
+
+## 十八、命令补全 — Tab 键拦截 + 前缀匹配浮层 (2026-05-03)
+
+### Issue #32: 终端无 IDE 风格命令补全 ✅ 已实现
+
+**严重程度**: P2
+**状态**: ✅ 已实现
+**实现时间**: 2026-05-03
+
+**功能描述**:
+在 xterm `onData` 层拦截 Tab 键，提取当前输入词，前缀匹配 SQLite 命令历史，显示浮动补全浮层，支持 Tab/↑↓/Enter/Esc 导航。
+
+**新增文件**:
+- `hooks/use-command-completion.ts`：工具函数（`extractCurrentWord` / `findMatches` / `getCursorScreenPosition`）
+- `components/terminal-completion/terminal-completion-overlay.tsx`：VS Code 风格浮层组件
+
+**修改文件**:
+- `hooks/use-terminal.ts`：新增 `onTabPress` 回调选项，Tab 键拦截逻辑
+- `terminal-container/container.tsx`：补全状态管理 + 浮层渲染
+- `hooks/use-command-completion.ts`（2026-05-03 增强）：
+  - `findPathMatches()` — 通过 `plugin:fs|read_dir` 补全绝对/相对/家目录路径
+  - `findSubcommandMatches()` — 覆盖 20+ shell 命令的子命令和参数（git, npm, docker, systemctl, ssh, cargo 等）
+  - `classifyWord()` — 根据词形判断补全类型（路径 / 子命令 / 历史）
+  - `findAllMatches()` — 统一入口，按需并发获取路径并去重
+- `components/terminal-completion/terminal-completion-overlay.tsx`：
+  - `onSelect` 改为传递 `CompletionItem` 而非 `string`
+  - 每条候选项显示类型图标 + 类型标签（clock / terminal / folder）
+
+**已支持**: 历史前缀匹配 / 路径补全 / shell 子命令补全。
+
+---
+
+## 十九、跨设备同步 — 导出/导入/同步流程完善 (2026-05-03)
+
+### Issue #33: `importDataFromFile()` 为占位符，存储同步未接线 ✅ 已修复
+
+**严重程度**: Important
+**状态**: ✅ 已修复
+**修复时间**: 2026-05-03
+
+**问题描述**:
+1. `sync.ts::importDataFromFile()` 是占位符，导入功能完全不可用
+2. `syncToServer()` 未实现
+3. `downloadFromServer()` 未实现
+4. 存储设置对话框中按钮未接线
+
+**修复方案**:
+
+1. **`importDataFromFile()` 完整实现**: 按依赖顺序导入 groups → hosts → snippets → ssh_keys → known_hosts → workspaces；支持 merge/replace 两种模式
+2. **新增 `syncToServer()`**: 上传 `terminal-sync-{timestamp}.json` + `terminal-latest.json`；保存 `lastSyncTime` 到 localStorage
+3. **新增 `downloadFromServer()`**: 下载 + `importDataFromFile()` 写入本地 DB；返回导入统计
+4. **新增 `getLastSyncTime()` / `formatLastSyncTime()`**: 读取并格式化上次同步时间
+5. **存储设置对话框增强**: Sync Now 按钮 + Restore from Server 按钮 + 上次同步时间指示器 + restore mode 选择
+6. **i18n 补键**: 中英法三语
+
+**存储路径约定**:
+- `terminal-latest.json`：始终最新备份（覆盖写入）
+- `terminal-sync-{iso-timestamp}.json`：带时间戳的历史备份
+
+---

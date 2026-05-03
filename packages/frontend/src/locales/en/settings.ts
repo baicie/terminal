@@ -96,6 +96,25 @@ export default {
   'settings.testConnection': 'Test Connection',
   'settings.syncNow': 'Sync Now',
   'settings.syncing': 'Syncing...',
+  'settings.lastSync': 'Last sync',
+  'settings.never': 'Never',
+  'settings.restoreMode': 'Restore mode',
+  'settings.restoreFromServer': 'Restore from Server',
+  'settings.restoring': 'Restoring...',
+  'settings.noBackupFound': 'No backup found',
+  'settings.noBackupFoundDesc': 'There is no backup data on the server to restore from',
+  'settings.syncSuccess': 'Sync successful',
+  'settings.syncFailed': 'Sync failed',
+  'settings.restoreSuccess': 'Restore successful',
+  'settings.restoreFailed': 'Restore failed',
+  'settings.serviceModeEnabled': 'Service mode enabled',
+  'settings.serviceModeEnabledDesc':
+    'Your data will sync with the configured storage service. Click "Test Connection" first to verify the service is reachable.',
+  'settings.connectionServiceNotReachable':
+    'The service responded but is not healthy',
+  'settings.connectionUploadFailed':
+    'Failed to upload data to server',
+  'settings.connectionNoBackupFound': 'There is no backup data on the server to restore from',
 
   // Team
   'settings.teamCollaboration': 'Team Collaboration',

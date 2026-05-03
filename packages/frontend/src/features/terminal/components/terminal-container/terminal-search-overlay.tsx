@@ -8,9 +8,10 @@
  *
  * UI 与 VSCode 内置查找一致：右上角浮层、Enter 下一个、
  * Shift+Enter 上一个、支持大小写/全字/正则切换。
+ * 增强：匹配计数 (n / total)、F3/Shift+F3 导航、正则错误提示。
  */
 
-import type { SearchAddon, ISearchOptions } from '@xterm/addon-search'
+import type { SearchAddon, ISearchOptions, ISearchResultChangeEvent } from '@xterm/addon-search'
 import {
   CaseSensitive,
   ChevronDown,
@@ -38,27 +39,25 @@ export function TerminalSearchOverlay({
 }: TerminalSearchOverlayProps) {
   const { t } = useTranslation()
   const inputRef = React.useRef<HTMLInputElement>(null)
+
   const [query, setQuery] = React.useState('')
   const [caseSensitive, setCaseSensitive] = React.useState(false)
   const [wholeWord, setWholeWord] = React.useState(false)
   const [regex, setRegex] = React.useState(false)
 
-  // 打开时聚焦输入框并选中已有内容方便覆盖输入
-  React.useEffect(() => {
-    if (open) {
-      // 等下一帧确保输入框挂载
-      requestAnimationFrame(() => {
-        inputRef.current?.focus()
-        inputRef.current?.select()
-      })
-    }
-  }, [open])
+  // Match count state (from onDidChangeResults)
+  const [matchInfo, setMatchInfo] = React.useState({ index: -1, count: 0 })
 
+  // Regex error feedback
+  const [regexError, setRegexError] = React.useState<string | null>(null)
+
+  // Build search options
   const buildOpts = React.useCallback(
     (): ISearchOptions => ({
       caseSensitive,
       wholeWord,
       regex,
+      // Decorations 必须开启才能让 onDidChangeResults 正常工作
       decorations: {
         matchBackground: '#515c6a',
         matchBorder: '#888',
@@ -71,11 +70,84 @@ export function TerminalSearchOverlay({
     [caseSensitive, wholeWord, regex],
   )
 
+  const performSearch = React.useCallback(
+    (direction: 'next' | 'prev') => {
+      if (!searchAddon || !query) return
+      try {
+        if (direction === 'next') {
+          searchAddon.findNext(query, buildOpts())
+        } else {
+          searchAddon.findPrevious(query, buildOpts())
+        }
+        setRegexError(null)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (regex) setRegexError(msg)
+      }
+    },
+    [searchAddon, query, buildOpts, regex],
+  )
+
+  const handleNext = React.useCallback(() => performSearch('next'), [performSearch])
+  const handlePrev = React.useCallback(() => performSearch('prev'), [performSearch])
+
+  // Listen for result count changes from SearchAddon
+  React.useEffect(() => {
+    if (!searchAddon || !open) return
+
+    const handler = (event: ISearchResultChangeEvent) => {
+      // Guard against updates after panel has closed
+      setMatchInfo({ index: event.resultIndex, count: event.resultCount })
+    }
+    const disposable = searchAddon.onDidChangeResults(handler)
+    return () => disposable.dispose()
+  }, [searchAddon, open])
+
+  // Reset state when panel closes
+  React.useEffect(() => {
+    if (!open) {
+      setMatchInfo({ index: -1, count: 0 })
+      setRegexError(null)
+      setQuery('')
+    }
+  }, [open])
+
+  // F3 / Shift+F3 document-level handler (works even when input is focused)
+  React.useEffect(() => {
+    if (!open) return
+
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'F3') {
+        e.preventDefault()
+        e.stopPropagation()
+        if (e.shiftKey) {
+          handlePrev()
+        } else {
+          handleNext()
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handler, true)
+    return () => document.removeEventListener('keydown', handler, true)
+  }, [open, handleNext, handlePrev])
+
+  // 打开时聚焦输入框并选中已有内容方便覆盖输入
+  React.useEffect(() => {
+    if (open) {
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      })
+    }
+  }, [open])
+
   // 输入或选项变化时高亮所有匹配
   React.useEffect(() => {
     if (!searchAddon || !open) return
     if (!query) {
-      // SearchAddon 没有 clear 方法，用空字符串触发清除
+      setMatchInfo({ index: -1, count: 0 })
+      setRegexError(null)
       try {
         searchAddon.findNext('', buildOpts())
       } catch {
@@ -85,45 +157,38 @@ export function TerminalSearchOverlay({
     }
     try {
       searchAddon.findNext(query, buildOpts())
-    } catch {
-      /* invalid regex etc. */
+      setRegexError(null)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (regex) setRegexError(msg)
     }
-  }, [query, buildOpts, searchAddon, open])
+  }, [query, buildOpts, searchAddon, open, regex])
 
-  const handleNext = React.useCallback(() => {
-    if (!searchAddon || !query) return
-    try {
-      searchAddon.findNext(query, buildOpts())
-    } catch {
-      /* ignore */
-    }
-  }, [searchAddon, query, buildOpts])
-
-  const handlePrev = React.useCallback(() => {
-    if (!searchAddon || !query) return
-    try {
-      searchAddon.findPrevious(query, buildOpts())
-    } catch {
-      /* ignore */
-    }
-  }, [searchAddon, query, buildOpts])
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      e.stopPropagation()
-      onClose()
-      return
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      if (e.shiftKey) {
-        handlePrev()
-      } else {
-        handleNext()
+  const handleKeyDown = React.useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        onClose()
+        return
       }
-    }
-  }
+      // Enter: next match; Shift+Enter: previous match
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        if (e.shiftKey) {
+          handlePrev()
+        } else {
+          handleNext()
+        }
+        return
+      }
+    },
+    [onClose, handleNext, handlePrev],
+  )
+
+  const hasMatches = matchInfo.count > 0
+  const matchLabel =
+    hasMatches ? `${matchInfo.index >= 0 ? matchInfo.index + 1 : 0} / ${matchInfo.count}` : null
 
   if (!open) return null
 
@@ -145,8 +210,18 @@ export function TerminalSearchOverlay({
         onKeyDown={handleKeyDown}
         placeholder={t('terminal.searchPlaceholder')}
         aria-label={t('terminal.searchPlaceholder')}
-        className="h-7 w-56 text-sm"
+        className={cn(
+          'h-7 w-56 text-sm',
+          regexError && 'ring-1 ring-red-500/50',
+        )}
       />
+
+      {/* Match count badge */}
+      {matchLabel && (
+        <span className="min-w-[3.5rem] text-center text-xs tabular-nums text-muted-foreground">
+          {matchLabel}
+        </span>
+      )}
 
       <div className="flex items-center gap-0.5">
         <Toggle
@@ -179,7 +254,7 @@ export function TerminalSearchOverlay({
           className="size-7"
           onClick={handlePrev}
           disabled={!query}
-          title={`${t('terminal.searchPrev')} (Shift+Enter)`}
+          title={`${t('terminal.searchPrev')} (Shift+Enter / Shift+F3)`}
         >
           <ChevronUp className="size-3.5" />
         </Button>
@@ -189,7 +264,7 @@ export function TerminalSearchOverlay({
           className="size-7"
           onClick={handleNext}
           disabled={!query}
-          title={`${t('terminal.searchNext')} (Enter)`}
+          title={`${t('terminal.searchNext')} (Enter / F3)`}
         >
           <ChevronDown className="size-3.5" />
         </Button>
@@ -203,6 +278,19 @@ export function TerminalSearchOverlay({
           <X className="size-3.5" />
         </Button>
       </div>
+
+      {/* Regex error tooltip */}
+      {regexError && (
+        <div
+          className={cn(
+            'absolute top-full left-0 mt-1 z-30',
+            'w-64 rounded bg-destructive/95 text-destructive-foreground',
+            'px-2 py-1 text-xs shadow-md',
+          )}
+        >
+          {regexError}
+        </div>
+      )}
     </div>
   )
 }

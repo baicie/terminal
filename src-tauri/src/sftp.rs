@@ -4,6 +4,7 @@ use crate::state::{SftpFileItem, SharedStateType};
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::OpenFlags;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -488,4 +489,158 @@ pub async fn sftp_rename(
     sftp.rename(&old_path, &new_path)
         .await
         .map_err(|e| SftpError::RenameFailed(format!("Failed to rename: {}", e)))
+}
+
+/// Compute the SHA-256 hash of a local file by streaming it in chunks.
+/// Returns the hex-encoded digest string.
+#[tauri::command]
+pub async fn sftp_local_checksum(
+    app: AppHandle,
+    transfer_id: String,
+    local_path: String,
+) -> Result<String, SftpError> {
+    use tokio::fs::File;
+    use tokio::io::BufReader;
+
+    if local_path.is_empty() {
+        return Err(SftpError::InvalidPath("Path cannot be empty".into()));
+    }
+
+    let total_bytes = tokio::fs::metadata(&local_path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    tracing::info!(
+        transfer_id = %transfer_id,
+        local_path = %local_path,
+        total_bytes,
+        "sftp_local_checksum: starting",
+    );
+
+    emit_progress(&app, &transfer_id, "checksum-start", 0, total_bytes, None);
+
+    let file = File::open(&local_path)
+        .await
+        .map_err(|e| SftpError::ChecksumFailed(format!("Failed to open file: {}", e)))?;
+
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; CHUNK_SIZE];
+
+    loop {
+        let n = reader.read(&mut buf).await.map_err(|e| {
+            SftpError::ChecksumFailed(format!("Read failed: {}", e))
+        })?;
+        if n == 0 { break; }
+        hasher.update(&buf[..n]);
+    }
+
+    let digest = hasher.finalize();
+    let hex = hex::encode(digest);
+
+    tracing::info!(
+        transfer_id = %transfer_id,
+        hex = %hex,
+        "sftp_local_checksum: done",
+    );
+
+    emit_progress(
+        &app,
+        &transfer_id,
+        "checksum-done",
+        total_bytes,
+        total_bytes,
+        Some(hex.clone()),
+    );
+
+    Ok(hex)
+}
+
+/// Compute SHA-256 hash of a remote file via SFTP protocol.
+/// Uses a streaming read to avoid loading the whole file into memory.
+#[tauri::command]
+pub async fn sftp_remote_checksum(
+    app: AppHandle,
+    state: tauri::State<'_, SharedStateType>,
+    transfer_id: String,
+    session_id: String,
+    remote_path: String,
+) -> Result<String, SftpError> {
+    if session_id.is_empty() {
+        return Err(SftpError::SessionNotFound);
+    }
+    if remote_path.is_empty() {
+        return Err(SftpError::InvalidPath("Path cannot be empty".into()));
+    }
+
+    let sftp = get_sftp(&state, &session_id).await?;
+
+    let total_bytes = sftp
+        .metadata(&remote_path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    tracing::info!(
+        transfer_id = %transfer_id,
+        session_id = %session_id,
+        remote_path = %remote_path,
+        total_bytes,
+        "sftp_remote_checksum: starting",
+    );
+
+    emit_progress(&app, &transfer_id, "checksum-start", 0, total_bytes, None);
+
+    let mut remote = sftp
+        .open(&remote_path)
+        .await
+        .map_err(|e| SftpError::ChecksumFailed(format!("Failed to open remote file: {}", e)))?;
+
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; CHUNK_SIZE];
+    let mut bytes_read: u64 = 0;
+    let mut last_emit = std::time::Instant::now();
+
+    loop {
+        let n = remote.read(&mut buf).await.map_err(|e| {
+            SftpError::ChecksumFailed(format!("Read failed: {}", e))
+        })?;
+        if n == 0 { break; }
+        hasher.update(&buf[..n]);
+        bytes_read += n as u64;
+
+        if last_emit.elapsed().as_millis() >= PROGRESS_INTERVAL_MS {
+            emit_progress(
+                &app,
+                &transfer_id,
+                "checksum-progress",
+                bytes_read,
+                total_bytes,
+                None,
+            );
+            last_emit = std::time::Instant::now();
+        }
+    }
+
+    let digest = hasher.finalize();
+    let hex = hex::encode(digest);
+
+    tracing::info!(
+        transfer_id = %transfer_id,
+        hex = %hex,
+        bytes_read,
+        "sftp_remote_checksum: done",
+    );
+
+    emit_progress(
+        &app,
+        &transfer_id,
+        "checksum-done",
+        bytes_read,
+        total_bytes,
+        Some(hex.clone()),
+    );
+
+    Ok(hex)
 }

@@ -1,4 +1,4 @@
-import type { ScriptExecutionRecord , ScriptRecord } from '@/service/database'
+import type { ScriptExecutionRecord, ScriptRecord } from '@/service/database'
 import type { ScriptExecutionResult } from '@/service/scripts'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -13,6 +13,7 @@ import { getHosts } from '@/service/database'
 import { scriptService } from '@/service/scripts'
 import SnippetManager from '@/components/snippet-manager'
 import { ScriptTab } from './script-tab'
+import { useScriptForm } from './use-script-form'
 import type { Host } from '@/types'
 
 const SnippetsView: React.FC = () => {
@@ -30,14 +31,20 @@ const SnippetsView: React.FC = () => {
   const [hosts, setHosts] = useState<Host[]>([])
   const [, setExecutionResult] = useState<ScriptExecutionResult | null>(null)
 
-  const [formName, setFormName] = useState('')
-  const [formDescription, setFormDescription] = useState('')
-  const [formScript, setFormScript] = useState('')
-  const [formHostIds, setFormHostIds] = useState<string[]>([])
-  const [formScheduleType, setFormScheduleType] = useState<'manual' | 'once' | 'interval' | 'cron'>('manual')
-  const [formScheduleValue, setFormScheduleValue] = useState('')
-  const [formTimeout, setFormTimeout] = useState(60)
-  const [formRetryCount, setFormRetryCount] = useState(0)
+  const {
+    formName,
+    formDescription,
+    formScript,
+    formHostIds,
+    formScheduleType,
+    formScheduleValue,
+    formTimeout,
+    formRetryCount,
+    handleHostToggle,
+    handleFormChange,
+    resetForm,
+    populateForm,
+  } = useScriptForm()
 
   const loadScripts = useCallback(async () => {
     setIsLoading(true)
@@ -66,24 +73,10 @@ const SnippetsView: React.FC = () => {
   const openEditDialog = (script?: ScriptRecord) => {
     if (script) {
       setSelectedScript(script)
-      setFormName(script.name)
-      setFormDescription(script.description || '')
-      setFormScript(script.script)
-      setFormHostIds(JSON.parse(script.host_ids || '[]'))
-      setFormScheduleType(script.schedule_type as 'manual' | 'once' | 'interval' | 'cron')
-      setFormScheduleValue(script.schedule_value || '')
-      setFormTimeout(script.timeout_seconds)
-      setFormRetryCount(script.retry_count)
+      populateForm(script)
     } else {
       setSelectedScript(null)
-      setFormName('')
-      setFormDescription('')
-      setFormScript('')
-      setFormHostIds([])
-      setFormScheduleType('manual')
-      setFormScheduleValue('')
-      setFormTimeout(60)
-      setFormRetryCount(0)
+      resetForm()
     }
     setIsEditDialogOpen(true)
   }
@@ -170,26 +163,6 @@ const SnippetsView: React.FC = () => {
       toast.error(`Execution failed: ${error}`)
     } finally {
       setIsExecuting(false)
-    }
-  }
-
-  const handleHostToggle = (hostId: string) => {
-    setFormHostIds(prev =>
-      prev.includes(hostId)
-        ? prev.filter(id => id !== hostId)
-        : [...prev, hostId],
-    )
-  }
-
-  const handleFormChange = (field: string, value: string | string[] | number) => {
-    switch (field) {
-      case 'name': setFormName(value as string); break
-      case 'description': setFormDescription(value as string); break
-      case 'script': setFormScript(value as string); break
-      case 'scheduleType': setFormScheduleType(value as 'manual' | 'once' | 'interval' | 'cron'); break
-      case 'scheduleValue': setFormScheduleValue(value as string); break
-      case 'timeout': setFormTimeout(value as number); break
-      case 'retryCount': setFormRetryCount(value as number); break
     }
   }
 

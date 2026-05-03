@@ -47,6 +47,8 @@ export default {
   'hostDialog.passwordAuth': '密码',
   'hostDialog.sshKeyAuth': 'SSH 密钥',
   'hostDialog.sshAgentAuth': 'SSH Agent',
+  'hostDialog.sshAgentHint':
+    '使用系统 SSH Agent（如 ssh-agent、Pageant、Windows OpenSSH Agent）进行认证。无需密码或密钥文件。',
   'hostDialog.browse': '浏览',
   'hostDialog.saving': '保存中...',
   'hostDialog.connectBastion': '通过跳板机连接',

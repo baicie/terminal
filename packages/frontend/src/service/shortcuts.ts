@@ -153,16 +153,24 @@ export const defaultShortcuts: Shortcut[] = [
   },
   {
     id: 'ctrl-k',
-    name: 'Clear Terminal',
+    name: 'Command Palette',
     keys: ['Ctrl', 'K'],
-    action: 'clear-terminal',
+    action: 'command-palette',
     enabled: true,
+    description: 'Open the command palette',
   },
   {
     id: 'ctrl-f',
     name: 'Search in Terminal',
     keys: ['Ctrl', 'F'],
     action: 'search-terminal',
+    enabled: true,
+  },
+  {
+    id: 'ctrl-l',
+    name: 'Clear Terminal',
+    keys: ['Ctrl', 'L'],
+    action: 'clear-terminal',
     enabled: true,
   },
   {

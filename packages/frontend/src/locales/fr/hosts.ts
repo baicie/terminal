@@ -49,6 +49,8 @@ export default {
   'hostDialog.passwordAuth': 'Mot de passe',
   'hostDialog.sshKeyAuth': 'Clé SSH',
   'hostDialog.sshAgentAuth': 'Agent SSH',
+  'hostDialog.sshAgentHint':
+    "Utilise l'agent SSH de votre système (ssh-agent, Pageant, Windows OpenSSH Agent) pour l'authentification. Aucun mot de passe ou fichier de clé requis.",
   'hostDialog.browse': 'Parcourir',
   'hostDialog.saving': 'Enregistrement...',
   'hostDialog.connectBastion': 'Se connecter via un serveur de rebond',

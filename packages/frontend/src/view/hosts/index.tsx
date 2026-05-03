@@ -1,23 +1,18 @@
-import { Plus, Server } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DecryptDialog } from './decrypt-dialog'
-import { HostCard } from './host-card'
-import { HostListView } from './host-list-view'
 import { HostsMobileToolbar } from './hosts-mobile-toolbar'
 import { HostsToolbar } from './hosts-toolbar'
 import { MobileToolbarSheet } from './mobile-toolbar-sheet'
 import { TeamSharedSection } from './team-shared-section'
 import { useHostsViewHandlers } from './use-hosts-view-handlers'
+import { RenderListBody } from './components/render-list-body'
 import { HostDialog } from '@/components/host-list/host-dialog'
 import SerialDialog from '@/components/serial-dialog'
 import { ShareHostDialog } from '@/components/share-host-dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
 import FAB from '@/components/ui/fab'
-import { HostListSkeleton } from '@/components/ui/view-skeletons'
 import {
-  EmptyState,
   ViewContainer,
   ViewContent,
   ViewHeader,
@@ -84,67 +79,6 @@ const HostsView: React.FC = () => {
       host.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       host.hostname.toLowerCase().includes(searchQuery.toLowerCase()),
   )
-
-  // ── 列表区渲染（共享逻辑） ───────────────────────────
-  const renderListBody = () => {
-    if (loading && isMobile) return <HostListSkeleton count={8} />
-    if (filteredHosts.length === 0 && !loading) {
-      return (
-        <EmptyState
-          icon={<Server className="size-12" />}
-          title={t('hosts.noHosts')}
-          description={
-            searchQuery
-              ? t('hosts.tryDifferentSearch')
-              : t('hosts.addFirstHost')
-          }
-          action={
-            !searchQuery && (
-              <Button
-                size={isMobile ? 'sm' : 'default'}
-                onClick={() => setHostDialogOpen(true)}
-              >
-                <Plus className="size-4 mr-1" data-icon="inline-start" />
-                {t('hosts.addHost')}
-              </Button>
-            )
-          }
-        />
-      )
-    }
-
-    if (isMobile) {
-      return (
-        <div className="flex flex-col gap-2 px-3 pb-3">
-          {filteredHosts.map((host, index) => (
-            <HostCard
-              key={host.id}
-              host={host}
-              variant="mobile"
-              index={index}
-              isTeamEnabled={isTeamEnabled}
-              currentTeamId={currentTeam?.id}
-              onConnect={handleConnect}
-              onShare={handleShareHostClick}
-            />
-          ))}
-        </div>
-      )
-    }
-
-    return (
-      <HostListView
-        hosts={filteredHosts}
-        searchQuery={searchQuery}
-        loading={loading}
-        gridView={gridView}
-        handleConnect={handleConnect}
-        handleShareHostClick={handleShareHostClick}
-        isTeamEnabled={isTeamEnabled}
-        currentTeamId={currentTeam?.id}
-      />
-    )
-  }
 
   return (
     <ViewContainer>
@@ -213,7 +147,18 @@ const HostsView: React.FC = () => {
           />
         )}
 
-        {renderListBody()}
+        <RenderListBody
+          loading={loading}
+          filteredHosts={filteredHosts}
+          searchQuery={searchQuery}
+          isMobile={isMobile}
+          gridView={gridView}
+          isTeamEnabled={isTeamEnabled}
+          currentTeamId={currentTeam?.id}
+          onConnect={handleConnect}
+          onShareHostClick={handleShareHostClick}
+          onAddHost={() => setHostDialogOpen(true)}
+        />
       </ViewContent>
 
       {isMobile && (

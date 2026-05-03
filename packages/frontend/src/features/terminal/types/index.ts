@@ -18,7 +18,7 @@ export type {
 } from './session'
 
 // SFTP types
-export type { SftpFile, SftpListResult, SftpOperationResult, SftpProgressCallback } from './sftp'
+export type { SftpFile, SftpListResult, SftpOperationResult, SftpProgressCallback, SftpChecksumResult } from './sftp'
 
 // Serial types
 export type {
@@ -37,4 +37,6 @@ export type { PortForwardConfig, PortForwardInfo, PortForwardResult } from './po
 // Terminal settings types
 export type { CursorStyle, TerminalSettings } from './terminal-settings'
 
-export { DEFAULT_TERMINAL_SETTINGS, THEME_DISPLAY_NAMES, TERMINAL_THEME_COLORS } from './terminal-settings'
+export { DEFAULT_TERMINAL_SETTINGS } from './terminal-settings'
+export { getThemeColors, themeDisplayNames } from '@/utils/terminal-themes'
+export type { TerminalThemeColors } from '@/service/database'

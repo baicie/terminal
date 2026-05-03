@@ -3,7 +3,7 @@
  * SFTP 文件传输服务
  */
 
-import type { SftpFile, SftpListResult, SftpOperationResult } from '../types'
+import type { SftpFile, SftpListResult, SftpOperationResult, SftpChecksumResult } from '../types'
 import { invoke } from '@tauri-apps/api/core'
 
 /** SFTP 服务 */
@@ -120,6 +120,44 @@ export class SftpService {
     } catch (error) {
       return {
         success: false,
+        message: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }
+
+  // ========================================================================
+  // Checksum
+  // ========================================================================
+
+  /**
+   * 计算本地文件的 SHA-256 checksum。
+   * 通过 Rust 端流式读取本地文件计算，避免加载整个文件到内存。
+   */
+  async checksumLocal(transferId: string, localPath: string): Promise<SftpChecksumResult> {
+    try {
+      const hash = await invoke<string>('sftp_local_checksum', { transferId, localPath })
+      return { success: true, algorithm: 'sha256', hash }
+    } catch (error) {
+      return {
+        success: false,
+        algorithm: 'sha256',
+        message: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }
+
+  /**
+   * 计算远程文件的 SHA-256 checksum（SFTP 协议流式读取）。
+   * 用于传输完成后与本地文件比对，验证完整性。
+   */
+  async checksumRemote(transferId: string, sessionId: string, remotePath: string): Promise<SftpChecksumResult> {
+    try {
+      const hash = await invoke<string>('sftp_remote_checksum', { transferId, sessionId, remotePath })
+      return { success: true, algorithm: 'sha256', hash }
+    } catch (error) {
+      return {
+        success: false,
+        algorithm: 'sha256',
         message: error instanceof Error ? error.message : String(error),
       }
     }

@@ -1,7 +1,7 @@
 # Terminal 项目待办事项
 
 > 基于设计文档 `docs/design.md` 整理的待办事项
-> 更新时间：2026-05-02（Phase 6.2 — 桌面化 + SFTP 队列 + 单测 + Rust 可观测性）
+> 更新时间：2026-05-03（Phase 6.4 — 代码质量拆分 + 命令补全 + 跨设备同步）
 
 ---
 
@@ -302,6 +302,44 @@
 2. **`docs/issue.md`**：Issue #5 / #6 / #10、「数据存储服务后端」段落与 `session_resize` / Jump / Agent 现状对齐。
 3. **Rust**：`lib.rs` `.manage(Arc<StorageManager>)`；`storage.rs` 移除整文件 `dead_code` allow，`storage_*` 走 `default` 后端；`S3` 占位字段与 `list_backends` 带目标化 allow。
 4. **前端**：`storage-settings.tsx`、`storage-settings-dialog.tsx` 的 `storageInit` 增加 `bucket`（S3 测试连接必填）。
+
+### 2026-05-03 第五轮 (Phase 6.4 — 代码质量拆分 + 命令补全 + 跨设备同步) ✅
+
+#### 代码质量 — 大文件拆分
+
+严格按 `AGENTS.md` 行数限制（视图 300 / 组件 400 / 工具 300）拆分 8 个文件：
+
+| 原文件 | 拆分后 | 状态 |
+| --- | --- | --- |
+| `view/teams/index.tsx` (350 行) | `index.tsx` (253 行) + `team-list-sidebar.tsx` (85 行) + `disabled-teams-view.tsx` (46 行) | ✅ |
+| `host-list/host-dialog.tsx` (422 行) | `host-dialog.tsx` (261 行) + `host-form-basic.tsx` (160 行) + `host-form-actions.tsx` (80 行) | ✅ |
+| `view/keychain/index.tsx` (303 行) | `index.tsx` (270 行) + `use-key-form.ts` (237 行) | ✅ |
+| `view/hosts/index.tsx` (264 行) | `index.tsx` (~165 行) + `render-list-body.tsx` (~90 行) | ✅ |
+| `view/snippets/index.tsx` (266 行) | `index.tsx` (~190 行) + `use-script-form.ts` (~160 行) | ✅ |
+
+**拆分原则：** 按职责拆分——侧边栏/内联视图拆为独立组件，表单状态提取为 hook，数据渲染拆为纯展示组件。
+
+#### 命令补全 — Tab 键拦截 + 前缀匹配浮层
+
+在 xterm `onData` 层拦截 Tab → 提取当前词 → 前缀匹配 SQLite 历史 → 显示浮层 → Tab/↑↓ 循环选择 → 替换当前词。
+
+| 新文件 | 功能 |
+| --- | --- |
+| `hooks/use-command-completion.ts` | `extractCurrentWord()` / `findMatches()` / `getCursorScreenPosition()` / `applyCompletion()` |
+| `components/terminal-completion/terminal-completion-overlay.tsx` | VS Code 风格浮动浮层（↑↓/Tab/Enter/Esc 导航） |
+| 修改 `hooks/use-terminal.ts` | Tab 键拦截（`data === '\t'` 时调用 `onTabPress` 回调，不发往后端） |
+| 修改 `terminal-container/container.tsx` | Tab 补全状态 + 浮层渲染 |
+
+#### 跨设备同步 — 导出/导入/同步流程完善
+
+| 改动 | 说明 |
+| --- | --- |
+| `service/sync.ts`：`importDataFromFile()` | 占位符替换为完整实现：按依赖顺序导入 groups/hosts/snippets/ssh_keys/known_hosts/workspaces，支持 merge/replace |
+| `service/sync.ts`：新增 `syncToServer()` | 上传 `terminal-sync-{timestamp}.json` + `terminal-latest.json` 到存储服务 |
+| `service/sync.ts`：新增 `downloadFromServer()` | 从存储服务下载 + 调用 `importDataFromFile()` 写入本地 DB |
+| `service/sync.ts`：新增 `getLastSyncTime()` / `formatLastSyncTime()` | 从 localStorage 读取并格式化上次同步时间 |
+| `storage-settings-dialog.tsx` | 新增「Sync Now」+「Restore from Server」按钮 + 同步状态指示器 |
+| i18n 补键 | `settings.lastSync` / `never` / `restoreMode` / `restoreFromServer` / `restoring` 中英法三语 |
 
 ---
 

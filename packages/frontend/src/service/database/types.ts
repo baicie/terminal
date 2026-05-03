@@ -141,9 +141,17 @@ export type TerminalThemePreset =
   | 'solarized-light'
   | 'one-dark'
   | 'github-dark'
+  | 'github-light'
   | 'dracula'
   | 'nord'
   | 'catppuccin'
+  | 'gruvbox-dark'
+  | 'tokyo-night'
+  | 'night-owl'
+  | 'monokai-light'
+  | 'one-light'
+  | 'dracula-pro-light'
+  | 'papercolor-light'
   | 'custom'
 
 export interface TerminalThemeColors {

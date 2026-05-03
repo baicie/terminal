@@ -9,6 +9,7 @@ import {
   Code2,
   FileText,
   Fingerprint,
+  FolderUp,
   Key,
   Server,
   Settings,
@@ -68,6 +69,11 @@ export const navConfig: NavItemConfig[] = [
     path: '/logs',
     labelKey: 'nav.logs',
     icon: <FileText className="size-5" />,
+  },
+  {
+    path: '/sftp',
+    labelKey: 'nav.sftp',
+    icon: <FolderUp className="size-5" />,
   },
   {
     path: '/settings',
@@ -138,6 +144,8 @@ function getRouteElement(path: string) {
       return lazyRoute(() => import('@/view/known-hosts'))
     case '/logs':
       return lazyRoute(() => import('@/view/app-logs'))
+    case '/sftp':
+      return lazyRoute(() => import('@/view/sftp/sftp-container'))
     case '/settings':
       return lazyRoute(() => import('@/view/settings'))
     case '/experiments':

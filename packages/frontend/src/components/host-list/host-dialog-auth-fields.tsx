@@ -2,20 +2,12 @@ import type { AuthType } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 
 interface AuthFieldsProps {
   authType: AuthType
   password: string | undefined
   privateKey: string | undefined
-  onAuthTypeChange: (v: AuthType) => void
   onPasswordChange: (v: string) => void
   onPrivateKeyChange: (v: string) => void
 }
@@ -24,28 +16,11 @@ export function AuthFields({
   authType,
   password,
   privateKey,
-  onAuthTypeChange,
   onPasswordChange,
   onPrivateKeyChange,
 }: AuthFieldsProps) {
   return (
     <>
-      <div className="col-span-2">
-        <Label htmlFor="authType" className="text-sm font-medium mb-1 block">
-          Authentication
-        </Label>
-        <Select value={authType} onValueChange={v => onAuthTypeChange(v as AuthType)}>
-          <SelectTrigger id="authType">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="password">Password</SelectItem>
-            <SelectItem value="key">SSH Key</SelectItem>
-            <SelectItem value="agent">SSH Agent</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
       {authType === 'password' && (
         <div className="col-span-2">
           <Label htmlFor="password" className="text-sm font-medium mb-1 block">
@@ -120,6 +95,14 @@ export function AuthFields({
             />
           </div>
         </>
+      )}
+      {authType === 'agent' && (
+        <div className="col-span-2 rounded-md border border-border bg-muted/30 p-3">
+          <p className="text-sm text-muted-foreground">
+            Uses your system SSH agent (e.g., ssh-agent, Pageant, Windows OpenSSH Agent) for authentication.
+            No password or key file required.
+          </p>
+        </div>
       )}
     </>
   )

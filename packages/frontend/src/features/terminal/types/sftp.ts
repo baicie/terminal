@@ -28,3 +28,24 @@ export interface SftpOperationResult {
 
 /** SFTP 传输进度回调 */
 export type SftpProgressCallback = (transferred: number, total: number) => void
+
+/** Checksum 算法 */
+export type ChecksumAlgorithm = 'sha256'
+
+/** Checksum 计算结果 */
+export interface SftpChecksumResult {
+  success: boolean
+  algorithm: ChecksumAlgorithm
+  hash?: string
+  message?: string
+}
+
+/** 传输记录的 checksum 状态 */
+export interface TransferChecksum {
+  algorithm: ChecksumAlgorithm
+  localHash?: string
+  remoteHash?: string
+  /** 'pending' | 'computing' | 'done' | 'error' */
+  status: 'pending' | 'computing' | 'done' | 'error'
+  error?: string
+}

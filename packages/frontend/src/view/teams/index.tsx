@@ -1,7 +1,5 @@
-import { LogIn, Plus, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -15,6 +13,7 @@ import {
   useTeams,
   useTeamStore,
 } from '@/store/team'
+import { Plus, Users } from 'lucide-react'
 
 import {
   AuditLogList,
@@ -22,7 +21,9 @@ import {
   SharedHostList,
   SharedSnippetList,
 } from './team-lists'
+import { DisabledTeamsView } from './components/disabled-teams-view'
 import { TeamDetailsHeader } from './components/team-details-header'
+import { TeamListSidebar } from './components/team-list-sidebar'
 import { TeamToolbar } from './components/team-toolbar'
 import { CreateTeamDialog } from './create-team-dialog'
 import { ExportDialog } from './export-dialog'
@@ -94,37 +95,11 @@ const TeamsView: React.FC = () => {
 
   if (!isTeamEnabled) {
     return (
-      <ViewContainer>
-        <ViewContent className="p-6">
-          <div className="max-w-md mx-auto space-y-8">
-            <div className="text-center space-y-2">
-              <Users className="size-12 mx-auto text-muted-foreground/50" />
-              <h2 className="text-xl font-semibold">{t('teams.title')}</h2>
-              <p className="text-sm text-muted-foreground">
-                {t('teams.enableTeamModeDesc')}
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <Button
-                onClick={() => setCreateDialogOpen(true)}
-                className="w-full"
-              >
-                <Plus className="size-4 mr-2" />
-                {t('teams.createNewTeam')}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setJoinDialogOpen(true)}
-                className="w-full"
-              >
-                <LogIn className="size-4 mr-2" />
-                {t('teams.joinExistingTeam')}
-              </Button>
-            </div>
-          </div>
-        </ViewContent>
-
+      <>
+        <DisabledTeamsView
+          onCreateTeam={() => setCreateDialogOpen(true)}
+          onJoinTeam={() => setJoinDialogOpen(true)}
+        />
         <CreateTeamDialog
           open={createDialogOpen}
           onOpenChange={setCreateDialogOpen}
@@ -133,7 +108,7 @@ const TeamsView: React.FC = () => {
           open={joinDialogOpen}
           onOpenChange={setJoinDialogOpen}
         />
-      </ViewContainer>
+      </>
     )
   }
 
@@ -158,66 +133,15 @@ const TeamsView: React.FC = () => {
 
       <ViewContent className="p-6">
         <div className="flex gap-6">
-          {/* Team List Sidebar */}
-          <div className="w-64 shrink-0 space-y-4">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              {t('teams.myTeams')}
-            </h3>
-
-            <div className="space-y-1">
-              {filteredTeams.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">
-                  {t('teams.noTeams')}
-                </p>
-              ) : (
-                filteredTeams.map(team => (
-                  <button
-                    key={team.id}
-                    onClick={() => handleTeamSelect(team.id)}
-                    className={`w-full text-left p-3 rounded-lg transition-colors ${
-                      currentTeam?.id === team.id
-                        ? 'bg-secondary'
-                        : 'hover:bg-secondary/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Users className="size-4 text-muted-foreground shrink-0" />
-                      <span className="font-medium truncate">{team.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="outline" className="text-xs">
-                        {team.mode === 'cloud' ? '☁️' : '📁'}{' '}
-                        {team.mode === 'cloud'
-                          ? t('teams.cloud')
-                          : t('teams.local')}
-                      </Badge>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => setCreateDialogOpen(true)}
-              >
-                <Plus className="size-4 mr-2" />
-                {t('teams.newTeam')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start text-muted-foreground"
-                onClick={() => setJoinDialogOpen(true)}
-              >
-                <LogIn className="size-4 mr-2" />
-                {t('teams.joinTeam')}
-              </Button>
-            </div>
-          </div>
+          <TeamListSidebar
+            filteredTeams={filteredTeams}
+            currentTeam={currentTeam}
+            onSelectTeam={handleTeamSelect}
+            onCreateTeam={() => setCreateDialogOpen(true)}
+            onJoinTeam={() => setJoinDialogOpen(true)}
+            search={search}
+            onSearchChange={setSearch}
+          />
 
           {/* Team Details */}
           <div className="flex-1 border-l pl-6">

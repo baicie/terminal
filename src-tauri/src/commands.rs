@@ -5,7 +5,7 @@
 use crate::session::local::LocalSession;
 use crate::session::manager::SessionManager;
 use crate::session::ssh::SshSession;
-use crate::session::{SessionError, SessionInfo, SessionState};
+use crate::session::{ExecResult, SessionError, SessionInfo, SessionState};
 use std::sync::Arc;
 use tauri::AppHandle;
 
@@ -229,4 +229,71 @@ pub async fn session_create_ssh_jump(
     manager.register_session(SessionState::Ssh(session)).await;
 
     Ok(session_id)
+}
+
+// ============================================================================
+// Session Exec Command (shell completion / RC file parsing)
+// ============================================================================
+
+use std::time::Duration;
+
+/// Execute a shell command and return its output.
+/// Used for shell completion (aliases, functions) and RC file parsing.
+/// - Local sessions: runs via tokio::process with matching shell.
+/// - SSH sessions: uses exec channel.
+#[tauri::command]
+pub async fn session_exec(
+    session_id: String,
+    command: String,
+    timeout_ms: Option<u64>,
+) -> Result<ExecResult, String> {
+    let manager = get_session_manager();
+    let Some(session) = manager.get_session(&session_id).await else {
+        return Err("Session not found".to_string());
+    };
+
+    let timeout = Duration::from_millis(timeout_ms.unwrap_or(5000));
+
+    match session {
+        crate::session::SessionState::Local(_) => {
+            exec_local(&command, timeout).await.map_err(|e| e.to_string())
+        }
+        crate::session::SessionState::Ssh(ssh) => {
+            ssh.exec(&command, timeout).await.map_err(|e| e.to_string())
+        }
+    }
+}
+
+async fn exec_local(command: &str, timeout: Duration) -> Result<ExecResult, crate::session::SessionError> {
+    let shell = if let Ok(s) = std::env::var("TERMINAL_DEFAULT_SHELL") {
+        s
+    } else if cfg!(windows) {
+        std::env::var("PSModulePath")
+            .map(|_| "powershell.exe".to_string())
+            .unwrap_or_else(|_| "cmd.exe".to_string())
+    } else {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
+    };
+
+    let mut cmd = tokio::process::Command::new(&shell);
+    cmd.args(["-c", command]);
+    #[cfg(windows)]
+    {
+        use std::path::PathBuf;
+        let home = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .unwrap_or_else(|_| ".".to_string());
+        cmd.current_dir(PathBuf::from(&home));
+    }
+
+    let output = tokio::time::timeout(timeout, cmd.output())
+        .await
+        .map_err(|_| crate::session::SessionError::ChannelError("exec timed out".to_string()))?
+        .map_err(|e| crate::session::SessionError::ChannelError(format!("exec failed: {}", e)))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let exit_code = output.status.code().unwrap_or(-1);
+
+    Ok(ExecResult { stdout, stderr, exit_code })
 }

@@ -2,13 +2,15 @@ import type { AppSettings } from '@/service/database'
 import {
   AlertCircle,
   Check,
+  Cloud,
+  CloudDownload,
+  CloudUpload,
   HardDrive,
   Loader2,
   RefreshCw,
   Server,
-  Upload,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,10 +23,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  storageHealthCheck,
-  storageInit,
-} from '@/service/storage'
-import { exportDataToFile } from '@/service/sync'
+  downloadFromServer,
+  syncToServer,
+} from '@/service/sync'
+import { storageHealthCheck, storageInit } from '@/service/storage'
 
 interface StorageSettingsProps {
   settings: AppSettings
@@ -44,7 +46,21 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
     'idle' | 'success' | 'error'
   >('idle')
   const [syncing, setSyncing] = useState(false)
+  const [restoring, setRestoring] = useState(false)
   const [showTokenVisible, setShowTokenVisible] = useState(false)
+  const [restoreMode, setRestoreMode] = useState<'merge' | 'replace'>('merge')
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
+
+  // Update last sync time display periodically
+  useEffect(() => {
+    const updateSyncTime = async () => {
+      const { formatLastSyncTime: getSyncTime } = await import('@/service/sync')
+      setLastSyncTime(getSyncTime())
+    }
+    updateSyncTime()
+    const interval = setInterval(updateSyncTime, 60000) // Update every minute
+    return () => clearInterval(interval)
+  }, [])
 
   const handleTestConnection = async () => {
     if (!settings.syncServiceEndpoint) return
@@ -82,12 +98,59 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
     setSyncing(true)
 
     try {
-      await exportDataToFile()
-      // Simplified - actual implementation would upload file
+      // Initialize storage first
+      await storageInit(
+        settings.syncServiceType as 'webdav' | 's3' | 'custom',
+        settings.syncServiceEndpoint,
+        {
+          username: settings.syncServiceUsername || undefined,
+          password: settings.syncServiceToken || undefined,
+          bucket: settings.syncServiceBucket || undefined,
+        },
+      )
+
+      // Perform the sync
+      const result = await syncToServer()
+
+      if (result.success) {
+        // Update last sync time display
+        const { formatLastSyncTime: getSyncTime } = await import('@/service/sync')
+        setLastSyncTime(getSyncTime())
+      }
     } catch (error) {
       console.error('Sync failed:', error)
     } finally {
       setSyncing(false)
+    }
+  }
+
+  const handleRestoreFromServer = async () => {
+    if (!settings.syncServiceEndpoint) return
+
+    setRestoring(true)
+
+    try {
+      // Initialize storage first
+      await storageInit(
+        settings.syncServiceType as 'webdav' | 's3' | 'custom',
+        settings.syncServiceEndpoint,
+        {
+          username: settings.syncServiceUsername || undefined,
+          password: settings.syncServiceToken || undefined,
+          bucket: settings.syncServiceBucket || undefined,
+        },
+      )
+
+      // Download and import
+      await downloadFromServer(restoreMode)
+
+      // Update last sync time display
+      const { formatLastSyncTime: getSyncTime } = await import('@/service/sync')
+      setLastSyncTime(getSyncTime())
+    } catch (error) {
+      console.error('Restore failed:', error)
+    } finally {
+      setRestoring(false)
     }
   }
 
@@ -293,19 +356,80 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
               disabled={
                 !settings.syncServiceEndpoint ||
                 syncing ||
+                restoring ||
                 connectionStatus !== 'success'
               }
               onClick={handleSyncToServer}
             >
               {syncing ? (
                 <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   {t('settings.syncing')}
                 </>
               ) : (
                 <>
-                  <Upload className="h-4 w-4 mr-2" />
+                  <CloudUpload className="h-4 w-4 mr-2" />
                   {t('settings.syncNow')}
+                </>
+              )}
+            </Button>
+          </div>
+
+          {/* Sync Status and Restore Section */}
+          <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm">
+                <Cloud className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">{t('settings.lastSync')}:</span>
+                <span className="font-medium">
+                  {lastSyncTime || t('settings.never')}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs shrink-0">{t('settings.restoreMode')}:</Label>
+                <Select
+                  value={restoreMode}
+                  onValueChange={value => setRestoreMode(value as 'merge' | 'replace')}
+                >
+                  <SelectTrigger className="h-7 text-xs flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="merge">{t('settings.merge')}</SelectItem>
+                    <SelectItem value="replace">{t('settings.replace')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {restoreMode === 'merge'
+                  ? t('settings.mergeDesc')
+                  : t('settings.replaceDesc')}
+              </p>
+            </div>
+
+            <Button
+              variant="outline"
+              className="w-full"
+              disabled={
+                !settings.syncServiceEndpoint ||
+                syncing ||
+                restoring ||
+                connectionStatus !== 'success'
+              }
+              onClick={handleRestoreFromServer}
+            >
+              {restoring ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t('settings.restoring')}
+                </>
+              ) : (
+                <>
+                  <CloudDownload className="h-4 w-4 mr-2" />
+                  {t('settings.restoreFromServer')}
                 </>
               )}
             </Button>
