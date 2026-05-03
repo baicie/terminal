@@ -53,16 +53,25 @@ export interface SshKeyOptions {
   rows?: number
 }
 
+/** SSH 会话创建选项 (证书认证) */
+export interface SshCertOptions {
+  host: Host
+  cols?: number
+  rows?: number
+}
+
 /** Jump Host 配置 */
 export interface JumpHostConfig {
   host: string
   port: number
   username: string
-  authType: 'password' | 'key' | 'agent'
+  authType: 'password' | 'key' | 'agent' | 'cert'
   password?: string
   privateKey?: string
-  /** 目标主机的认证类型（agent / password / key），为空则沿用主机的 authType */
-  targetAuthType?: 'password' | 'key' | 'agent'
+  /** SSH 证书（OpenSSH 格式 base64 字符串） */
+  certificate?: string
+  /** 目标主机的认证类型（agent / password / key / cert），为空则沿用主机的 authType */
+  targetAuthType?: 'password' | 'key' | 'agent' | 'cert'
 }
 
 /** SSH 会话创建选项 (跳板机) */

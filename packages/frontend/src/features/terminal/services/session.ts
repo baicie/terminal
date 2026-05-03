@@ -8,6 +8,7 @@ import type {
   LocalSessionOptions,
   SshPasswordOptions,
   SshKeyOptions,
+  SshCertOptions,
   SshJumpOptions,
   SessionInfo,
   ShellOutput,
@@ -192,6 +193,52 @@ export class SessionService {
       })
 
       // 记录连接日志
+      const logId = await addConnectionLog({
+        host_id: host.id || null,
+        host_name: host.name,
+        host_address: host.hostname,
+        username: host.username,
+        connection_type: 'ssh',
+        started_at: Date.now(),
+        ended_at: null,
+        duration_seconds: null,
+        is_saved: 0,
+        notes: null,
+        error_message: null,
+        error_raw: null,
+      })
+      activeConnectionLogs.set(sessionId, { logId, startTime: Date.now() })
+
+      return { success: true, message: 'SSH session created', sessionId }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      void recordConnectionFailure(
+        { id: host.id, name: host.name, hostname: host.hostname, username: host.username },
+        'ssh',
+        msg,
+      )
+      return { success: false, message: msg }
+    }
+  }
+
+  /**
+   * 创建 SSH 会话 (证书认证)
+   */
+  async createSshCert(options: SshCertOptions): Promise<ConnectionResult> {
+    const { host, cols = 80, rows = 24 } = options
+
+    try {
+      const sessionId = await invoke<string>('session_create_ssh_cert', {
+        host: host.hostname,
+        port: host.port,
+        username: host.username,
+        certificate: host.certificate ?? '',
+        privateKey: host.privateKey ?? '',
+        password: host.password ?? null,
+        cols,
+        rows,
+      })
+
       const logId = await addConnectionLog({
         host_id: host.id || null,
         host_name: host.name,

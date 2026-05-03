@@ -206,8 +206,7 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
 
   // Get cached RC items for completion (ref to avoid stale closures in handleTabPress)
   const rcItemsRef = useRef<import('@/service/shell-rc').RCCompletionItem[]>([])
-  rcItemsRef.current = sessionId ? rcCache.get(sessionId) : []
-  rcItemsRef.current = rcCache.get(sessionId ?? '')
+  rcItemsRef.current = rcCache.get(sessionId ?? '') ?? []
 
   const readableError = error ? getReadableTerminalError(error, t) : null
 

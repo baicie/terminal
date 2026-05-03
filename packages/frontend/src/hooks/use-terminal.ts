@@ -239,10 +239,17 @@ export function useTerminal(
 
     // 保存命令到历史（Enter 后调用）
     const saveToHistory = async (cmd: string) => {
-      if (!cmd.trim()) return
+      const trimmed = cmd.trim()
+      if (!trimmed) return
       const cache = historyCacheRef.value
-      if (cache[0] !== cmd.trim()) {
-        cache.unshift(cmd.trim())
+      // Only prepend if it's not the same as the most recent entry
+      if (cache[0] !== trimmed) {
+        // Remove existing occurrences so the newest entry goes to the front
+        const existingIdx = cache.indexOf(trimmed)
+        if (existingIdx !== -1) {
+          cache.splice(existingIdx, 1)
+        }
+        cache.unshift(trimmed)
         if (cache.length > 100) cache.length = 100
       }
       historyIndexRef.value = -1
@@ -254,7 +261,7 @@ export function useTerminal(
         )
         void addCommandHistory({
           host_id: hid,
-          command: cmd.trim(),
+          command: trimmed,
           executed_at: Date.now(),
           session_id: sessionIdRef.current ?? undefined,
         }).catch(() => {})
@@ -262,9 +269,10 @@ export function useTerminal(
     }
 
     // 从 DB 加载历史命令到缓存
+    // Local sessions load global history (no hostId = getCommandHistory returns all).
+    // Remote sessions load per-host history.
     const loadHistoryFromDb = async () => {
       const hid = hostRef.current?.id
-      if (!hid) return
       try {
         const { getCommandHistory } = await import(
           '@/service/database'

@@ -1,6 +1,6 @@
 // Host types based on design.md
 
-export type AuthType = 'password' | 'key' | 'agent'
+export type AuthType = 'password' | 'key' | 'agent' | 'cert'
 
 export type PortForwardType = 'local' | 'remote' | 'dynamic'
 
@@ -35,6 +35,8 @@ export interface Host {
   authType: AuthType
   password?: string
   privateKey?: string
+  /** SSH 证书（OpenSSH 格式 base64 字符串） */
+  certificate?: string
   groupId?: string
   isFavorite: boolean
   color?: string

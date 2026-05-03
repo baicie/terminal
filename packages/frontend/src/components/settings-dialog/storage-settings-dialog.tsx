@@ -74,7 +74,7 @@ export function StorageSettingsDialog({
       case 'webdav':
         return 'https://dav.example.com/backup/'
       case 's3':
-        return 'https://s3.example.com/bucket/'
+        return 'https://s3.amazonaws.com'
       default:
         return 'https://api.example.com/sync/'
     }

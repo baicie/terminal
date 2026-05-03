@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -40,7 +41,7 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
   settings,
   onSettingChange,
 }) => {
-  const { t } = useTranslation()
+  const { t } = useTranslation('settings')
   const [testingConnection, setTestingConnection] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<
     'idle' | 'success' | 'error'
@@ -113,12 +114,21 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
       const result = await syncToServer()
 
       if (result.success) {
+        toast.success(t('settings.syncSuccess'), {
+          description: `${result.stats?.hosts ?? 0} hosts, ${result.stats?.snippets ?? 0} snippets, ${result.stats?.workspaces ?? 0} workspaces`,
+        })
         // Update last sync time display
         const { formatLastSyncTime: getSyncTime } = await import('@/service/sync')
         setLastSyncTime(getSyncTime())
+      } else {
+        toast.error(t('settings.syncFailed'), {
+          description: result.stats ? undefined : t('settings.noBackupFound'),
+        })
       }
     } catch (error) {
-      console.error('Sync failed:', error)
+      toast.error(t('settings.syncFailed'), {
+        description: String(error),
+      })
     } finally {
       setSyncing(false)
     }
@@ -142,13 +152,24 @@ export const StorageSettings: React.FC<StorageSettingsProps> = ({
       )
 
       // Download and import
-      await downloadFromServer(restoreMode)
+      const result = await downloadFromServer(restoreMode)
 
-      // Update last sync time display
-      const { formatLastSyncTime: getSyncTime } = await import('@/service/sync')
-      setLastSyncTime(getSyncTime())
+      if (result.success && result.stats) {
+        toast.success(t('settings.restoreSuccess'), {
+          description: `${result.stats.hosts} hosts, ${result.stats.snippets} snippets, ${result.stats.workspaces} workspaces`,
+        })
+        // Update last sync time display
+        const { formatLastSyncTime: getSyncTime } = await import('@/service/sync')
+        setLastSyncTime(getSyncTime())
+      } else {
+        toast.error(t('settings.restoreFailed'), {
+          description: t('settings.noBackupFound'),
+        })
+      }
     } catch (error) {
-      console.error('Restore failed:', error)
+      toast.error(t('settings.restoreFailed'), {
+        description: String(error),
+      })
     } finally {
       setRestoring(false)
     }
