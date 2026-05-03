@@ -392,6 +392,26 @@ export async function initSchema() {
   await database.execute(`
     CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status)
   `)
+
+  await database.execute(`
+    CREATE TABLE IF NOT EXISTS port_forward_rules (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'local',
+      local_host TEXT NOT NULL DEFAULT '127.0.0.1',
+      local_port INTEGER NOT NULL,
+      remote_host TEXT NOT NULL,
+      remote_port INTEGER NOT NULL,
+      host_id TEXT,
+      enabled INTEGER DEFAULT 1,
+      created_at INTEGER,
+      updated_at INTEGER
+    )
+  `)
+
+  await database.execute(`
+    CREATE INDEX IF NOT EXISTS idx_port_forward_rules_host_id ON port_forward_rules(host_id)
+  `)
 }
 
 export async function executeQuery(sql: string, params: unknown[] = []) {

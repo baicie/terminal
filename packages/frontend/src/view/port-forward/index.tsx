@@ -13,6 +13,11 @@ import {
   ViewHeader,
   ViewToolbar,
 } from '@/components/view-container'
+import {
+  createPortForwardRule,
+  deletePortForwardRule,
+  getPortForwardRules,
+} from '@/service/database'
 import { sshService } from '@/service/ssh'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
@@ -43,7 +48,19 @@ const PortForwardView: React.FC = () => {
   const loadForwards = useCallback(async () => {
     setLoading(true)
     try {
-      // TODO: load from database when backend is implemented
+      const rows = await getPortForwardRules()
+      const mapped: PortForwardEntry[] = rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        type: r.type as PortForwardEntry['type'],
+        localHost: r.local_host,
+        localPort: r.local_port,
+        remoteHost: r.remote_host,
+        remotePort: r.remote_port,
+        active: false,
+        hostId: r.host_id ?? undefined,
+      }))
+      setForwards(mapped)
     } catch (error) {
       console.error('Failed to load port forwards:', error)
     } finally {
@@ -112,6 +129,19 @@ const PortForwardView: React.FC = () => {
         }
       }
 
+      // Persist rule to database
+      await createPortForwardRule({
+        id: forwardId,
+        name: newForward.name,
+        type: form.type,
+        local_host: form.localHost,
+        local_port: port,
+        remote_host: form.remoteHost,
+        remote_port: Number.parseInt(form.remotePort, 10),
+        host_id: form.hostId || null,
+        enabled: 1,
+      })
+
       setForwards(prev => [...prev, newForward])
       toast.success(`Port forward started on ${form.localHost}:${port}`)
       setAddDialogOpen(false)
@@ -158,11 +188,16 @@ const PortForwardView: React.FC = () => {
     setStopDialogOpen(true)
   }
 
-  const handleDeleteForward = (forward: PortForwardEntry) => {
+  const handleDeleteForward = async (forward: PortForwardEntry) => {
     if (forward.active) {
       setForwardToStop(forward)
       setStopDialogOpen(true)
     } else {
+      try {
+        await deletePortForwardRule(forward.id)
+      } catch (err) {
+        console.warn('[PortForward] Failed to delete rule from DB:', err)
+      }
       setForwards(prev => prev.filter(f => f.id !== forward.id))
       toast.success('Port forward removed')
     }

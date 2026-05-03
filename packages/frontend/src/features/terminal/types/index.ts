@@ -11,6 +11,8 @@ export type {
   LocalSessionOptions,
   SshPasswordOptions,
   SshKeyOptions,
+  SshCertOptions,
+  SshAgentOptions,
   JumpHostConfig,
   SshJumpOptions,
   SessionStatus,

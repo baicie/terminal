@@ -233,10 +233,19 @@ class SSHServiceLegacy {
     })
   }
 
-  // Command history (placeholder - needs database service)
-  async saveCommandHistory(_hostId: string, _command: string, _sessionId?: string) {
-    // TODO: Implement with database service
-    console.log('[SSH] saveCommandHistory called (not implemented)')
+  // Command history — forwards to the dedicated database service.
+  async saveCommandHistory(hostId: string, command: string, sessionId?: string) {
+    try {
+      const { addCommandHistory } = await import('@/service/database')
+      await addCommandHistory({
+        host_id: hostId,
+        command,
+        executed_at: Date.now(),
+        session_id: sessionId ?? undefined,
+      })
+    } catch (err) {
+      console.warn('[SSH] Failed to save command history:', err)
+    }
   }
 }
 

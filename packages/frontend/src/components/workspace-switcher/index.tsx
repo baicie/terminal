@@ -29,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { useAppStore } from '@/store/app'
 import { useWorkspaceStore } from '@/store/workspace'
 
 interface WorkspaceSwitcherProps {
@@ -46,6 +47,10 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const tabs = useAppStore(s => s.tabs)
+  const splitGroups = useAppStore(s => s.splitGroups)
+  const activeTabId = useAppStore(s => s.activeTabId)
+  const sidebarVisible = useAppStore(s => s.sidebarVisible)
   const workspaceStore = useWorkspaceStore()
   const activeWorkspace = useWorkspaceStore(s => s.activeWorkspace())
   const workspaces = useWorkspaceStore(s => s.workspaces)
@@ -68,14 +73,24 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
   }
 
   const handleSelectWorkspace = async (workspace: Workspace) => {
-    // Save current layout before switching
-    if (workspaceStore.activeWorkspaceId) {
-      // Get current layout from AppStore - for now just save
+    const prevId = workspaceStore.activeWorkspaceId
+
+    // Persist current layout before switching
+    if (prevId) {
+      await workspaceStore.saveLayout(prevId, tabs, splitGroups, activeTabId, sidebarVisible)
     }
 
     await workspaceStore.setActiveWorkspace(workspace.id)
 
-    // TODO: Load layout for selected workspace
+    // Restore saved layout for the newly active workspace
+    const layout = await workspaceStore.loadLayout(workspace.id)
+    if (layout) {
+      const appStore = useAppStore.getState()
+      layout.tabs.forEach(t => appStore.addTab(t))
+      if (layout.activeTabId) {
+        useAppStore.getState().setActiveTab(layout.activeTabId)
+      }
+    }
   }
 
   const handleSaveEdit = async () => {

@@ -316,3 +316,18 @@ export interface UserProfileRecord {
   created_at: number
   updated_at: number
 }
+
+// Port Forward Rule types
+export interface PortForwardRuleRecord {
+  id: string
+  name: string
+  type: 'local' | 'remote' | 'dynamic'
+  local_host: string
+  local_port: number
+  remote_host: string
+  remote_port: number
+  host_id: string | null
+  enabled: number
+  created_at: number
+  updated_at: number
+}

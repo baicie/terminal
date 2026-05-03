@@ -150,6 +150,15 @@ export {
   clearScriptExecutions,
 } from './scripts'
 
+// Port Forward Rules
+export {
+  getPortForwardRules,
+  getPortForwardRulesByHost,
+  createPortForwardRule,
+  updatePortForwardRule,
+  deletePortForwardRule,
+} from './port-forward-rules'
+
 // Team
 export {
   getTeams,

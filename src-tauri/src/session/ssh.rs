@@ -369,8 +369,9 @@ impl SshSession {
             Some(password),
             None,
             None, // certificate
-            false,
-            None,
+            false, // use_agent
+            None, // no jump host
+            false, // use_target_agent
             cols,
             rows,
         )
@@ -397,8 +398,9 @@ impl SshSession {
             password,
             Some(private_key),
             None, // certificate
-            false,
-            None,
+            false, // use_agent
+            None, // no jump host
+            false, // use_target_agent
             cols,
             rows,
         )
@@ -427,11 +429,12 @@ impl SshSession {
             host,
             port,
             username,
-            key_password,  // password (for key encryption)
+            key_password, // password (for key encryption)
             Some(private_key), // private_key
             Some(certificate), // certificate
-            false,
-            None,
+            false, // use_agent
+            None, // no jump host
+            false, // use_target_agent
             cols,
             rows,
         )
@@ -452,11 +455,12 @@ impl SshSession {
             host,
             port,
             username,
-            None,
-            None,
+            None, // password
+            None, // private_key
             None, // certificate
-            true,
-            None,
+            true, // use_agent
+            None, // no jump host
+            false, // use_target_agent
             cols,
             rows,
         )
@@ -476,6 +480,8 @@ impl SshSession {
         cols: u16,
         rows: u16,
     ) -> Result<Self, SessionError> {
+        // 根据 jump_host.target_auth_type 决定是否对目标主机使用 SSH agent 认证
+        let use_target_agent = jump_host.target_auth_type.as_deref() == Some("agent");
         Self::create(
             app,
             target_host,
@@ -484,8 +490,9 @@ impl SshSession {
             target_password,
             target_key,
             None, // certificate
-            false,
+            false, // use_agent for jump host itself
             Some(jump_host),
+            use_target_agent,
             cols,
             rows,
         )
@@ -505,6 +512,7 @@ impl SshSession {
         certificate: Option<&str>,
         use_agent: bool,
         jump_host: Option<JumpHostConfig>,
+        use_target_agent: bool,
         cols: u16,
         rows: u16,
     ) -> Result<Self, SessionError> {
@@ -643,7 +651,7 @@ impl SshSession {
 
         if let Some(ref jh) = jump_host {
             let (jh_h, ch) = Self::connect_via_jump(
-                config.clone(), host, port, username, password, private_key, use_agent, jh,
+                config.clone(), host, port, username, password, private_key, use_target_agent, jh,
             )
             .await?;
             raw_handle = jh_h;

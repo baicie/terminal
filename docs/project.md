@@ -438,16 +438,16 @@ src-tauri/
 
 ### P2 - 建议完成
 
-- [ ] **SSH Agent 作为认证方式连接主机**：已贯通 `session_create_ssh_agent`（Unix + Windows OpenSSH named pipe），Pageant 与完整实机回归见 Issue #21
+- [x] ~~**SSH Agent 作为认证方式连接主机**~~ ✅ 已实现（2026-05-03）：`session_create_ssh_agent` + `SessionService.createSshAgent`；`jump_host.target_auth_type === 'agent'` 正确路由到 `authenticate_with_agent`；Pageant 与实机回归见 Issue #21
 - [x] ~~实现主机链功能~~ ✅ `session_create_ssh_jump` + `SshSession::new_with_jump`
-- [ ] 命令快速补全（终端内历史/片段级补全，仍 📋）
+- [x] ~~命令快速补全~~ ✅ Tab 拦截 + 历史前缀匹配 + 路径补全 + shell 子命令补全（2026-05-03）
 - [x] ~~Vault 加密存储~~ ✅ `vault_*` 命令集
 
 ### P3 - 未来考虑
 
 - [x] ~~命令面板完善~~ ✅（与 Phase 3 一致；持续小优化不阻塞）
 - [x] ~~多工作区~~ ✅
-- [ ] **跨设备同步**：设置里可配 WebDAV/S3/REST；后端 `StorageManager` 已注入并由 `storage_*` 命令走真实后端（2026-05-02）；上传「整机导出文件」等上层流程仍可按产品迭代
+- [ ] **跨设备同步**：设置里可配 WebDAV/S3/REST；后端 `StorageManager` 已注入并由 `storage_*` 命令走真实后端（2026-05-02）；`importDataFromFile()` 已完整实现；`syncToServer()` / `downloadFromServer()` 已接线；上层流程仍可按产品迭代
 
 ---
 
@@ -485,6 +485,10 @@ CREATE TABLE hosts (
   group_id TEXT,
   is_favorite INTEGER DEFAULT 0,
   color TEXT,
+  tags TEXT,
+  port_forwards TEXT,
+  startup_command TEXT,
+  environment TEXT,
   created_at INTEGER,
   updated_at INTEGER
 );
@@ -498,8 +502,9 @@ CREATE TABLE groups (
   name TEXT NOT NULL,
   parent_id TEXT,
   color TEXT,
-  sort_order INTEGER DEFAULT 0,
-  created_at INTEGER
+  inherit_settings INTEGER DEFAULT 1,
+  settings TEXT,
+  "order" INTEGER DEFAULT 0
 );
 ```
 
@@ -736,4 +741,4 @@ const response = await teamApi.listTeams()
 
 ---
 
-_文档更新时间: 2026-05-03 (Phase 6.5：Agent 错误细化 + 命令补全修复 + 串口显示 + 云同步 UX + NestJS 部署文档)_
+_文档更新时间: 2026-05-03 (Phase 6.6: TODO清理 + 端口转发数据库集成 + 工作区布局保存/加载 + SSH Agent完善 + 新增3个测试文件 + 文档对齐)_

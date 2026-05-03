@@ -60,6 +60,13 @@ export interface SshCertOptions {
   rows?: number
 }
 
+/** SSH 会话创建选项 (Agent 认证) */
+export interface SshAgentOptions {
+  host: Host
+  cols?: number
+  rows?: number
+}
+
 /** Jump Host 配置 */
 export interface JumpHostConfig {
   host: string

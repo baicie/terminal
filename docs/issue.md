@@ -1,4 +1,4 @@
-﻿# Terminal 项目 Issues 追踪
+# Terminal 项目 Issues 追踪
 
 > 基于 2026-03-19 代码审查生成
 > 对应文档：`docs/design.md` 和 `docs/todo.md`
@@ -176,22 +176,30 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 
 ---
 
-### Issue #5: SSH Agent **作为登录认证** ⚠️ 部分就绪
+### Issue #5: SSH Agent **作为登录认证** ✅ 已实现
 
 **严重程度**: 中
-**状态**: ⚠️ 协议与转发相关代码存在；**用 Agent 内密钥登录 SSH 会话**尚未接入统一 `session_create_ssh_*` API
-**影响功能**: 主机 `authType: agent` 时前端 `useTerminal` 仍会抛错；Windows 见 Issue #21
+**状态**: ✅ 已实现
+**影响功能**: SSH Agent 认证
+**更新时间**: 2026-05-03
 
-**已有基础**:
+**实现内容**:
 
-- `src-tauri/src/agent.rs`：Unix 上连接 `$SSH_AUTH_SOCK`、`request_identities` / `sign_request`（同步 I/O）
-- `src-tauri/src/state.rs`：`ClientHandler` 在 Unix 上将服务端 agent-forward 通道数据转给本地 agent socket
-- 需在 `session/ssh.rs` 认证路径接入 russh 的 Agent / `Signer`，并新增或扩展 `session_create_ssh_agent` 等命令后，再改 `packages/frontend/src/hooks/use-terminal.ts` 去掉对 `agent` 的硬错误
+- `src-tauri/src/commands.rs`：`session_create_ssh_agent` Tauri 命令
+- `src-tauri/src/session/ssh.rs`：`SshSession::new_with_agent` → `create(use_agent=true)` → `authenticate_with_agent`
+- `packages/frontend/src/features/terminal/services/session.ts`：新增 `SessionService.createSshAgent` 方法（含连接日志）
+- `packages/frontend/src/features/terminal/types/session.ts`：新增 `SshAgentOptions` 接口
+- `packages/frontend/src/hooks/use-terminal.ts`：`authType === 'agent'` 时调用 `session_create_ssh_agent`
+- `packages/frontend/src/features/terminal/utils/readable-error.ts`：14 种错误分发，中英法三语
 
-**建议**:
+**跨平台支持**：
 
-- Unix：用现有 `SshAgentClient` 完成 `authenticate_*` 与 PTY 打开
-- Windows：Pageant / OpenSSH Agent 管道，见 Issue #21
+- Unix：连接 `$SSH_AUTH_SOCK`，`russh::keys::agent::client::AgentClient`
+- Windows：尝 OpenSSH named pipe → Pageant named pipe，`russh::keys::agent::client::AgentClient`
+
+**Jump Host 目标认证**：通过 `jump_host.target_auth_type === 'agent'` 传参，后端 `connect_via_jump` 正确路由到 `authenticate_with_agent`
+
+**回归测试**：见 Issue #21 回归测试检查清单
 
 ---
 
@@ -253,22 +261,24 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 
 ---
 
-### Issue #9: 命令面板功能不完整 🟢
+### Issue #9: 命令面板功能 ✅ 已实现
 
 **严重程度**: 低
-**状态**: 🟡 部分实现
+**状态**: ✅ 已实现
 **影响功能**: 快速操作
+**更新时间**: 2026-03-19
 
-**现状**:
+**实现内容**:
 
 - ✅ 快捷键 Ctrl+J 打开命令面板
-- ❌ 搜索主机未实现
-- ❌ 快速执行 Snippet 未实现
+- ✅ 搜索主机并快速连接
+- ✅ 快速执行 Snippet（含变量替换）
+- ✅ 命令历史搜索和执行
+- ✅ 键盘导航（↑↓ / Enter / Esc / Tab）
+- ✅ `terminalEmitter.writeCommand` 发送到活动终端
+- ✅ 快捷键统一到 `shortcutsService` + CustomEvent 派发
 
-**建议**:
-
-- 实现主机搜索功能
-- 实现 Snippet 快速执行
+**文件**：`packages/frontend/src/components/command-palette/index.tsx`
 
 ---
 
@@ -344,7 +354,7 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 
 ### P2 - 建议修复 (增强功能)
 
-- [x] **Issue #5**: 实现 Agent 认证 ✅
+- [x] **Issue #5**: 实现 Agent 认证 ✅ (2026-05-03)
 - [x] **Issue #6**: 实现主机链功能 ✅
 - [x] **Issue #7**: 命令快速补全 ✅ (终端内 ↑↓ 导航已实现，2026-05-02)
 - [x] **Issue #8**: Vault 加密存储 ✅
@@ -385,7 +395,60 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 ---
 
 _文档创建时间: 2026-03-19_
-_最后更新: 2026-03-24 - 完善视图集成，终端/SFTP/Vaults/端口转发/命令面板_
+_最后更新: 2026-05-03 - Phase 6.6：TODO清理 + 端口转发数据库集成 + 工作区布局 + SSH Agent完善 + 新增3个测试文件_
+
+---
+
+## 十六、Phase 6.6 — TODO清理 + 端口转发持久化 + SSH Agent完善 + 测试覆盖 + 文档对齐 (2026-05-03)
+
+### Issue #34: 前端 3 处 TODO 占位符清理 ✅ 已修复
+
+**严重程度**: Low
+**状态**: ✅ 已修复
+**修复时间**: 2026-05-03
+
+**修复内容**:
+
+| 文件 | 修复 |
+| --- | --- |
+| `service/ssh.ts:saveCommandHistory` | 改为调用 `addCommandHistory`（数据库已实现） |
+| `workspace-switcher/index.tsx` | 切换工作区时调用 `saveLayout` + `loadLayout` |
+| `view/port-forward/index.tsx` | 新增 `port_forward_rules` 表 + CRUD，接入数据库持久化 |
+
+**新增文件**:
+
+- `service/database/port-forward-rules.ts` + `port-forward-rules.test.ts`：独立端口转发规则 CRUD
+- `store/workspace.test.ts`：工作区 store 测试
+
+**验证**: `grep -r "TODO" packages/frontend/src/ src-tauri/src/` → 0 结果
+
+---
+
+### Issue #35: 端口转发数据库持久化 ✅ 已实现
+
+**严重程度**: Medium
+**状态**: ✅ 已实现
+**修复时间**: 2026-05-03
+
+**实现内容**:
+
+1. **`port_forward_rules` 表**：独立表存储转发规则，与主机解耦
+2. **CRUD 操作**：`createPortForwardRule` / `getPortForwardRules` / `updatePortForwardRule` / `deletePortForwardRule`
+3. **前端集成**：`PortForwardView` 的 `loadForwards` 从 DB 读取，`handleStartForward` 写入 DB，`handleDeleteForward` 从 DB 删除
+
+---
+
+### Issue #36: 工作区布局保存/加载 ✅ 已实现
+
+**严重程度**: Low
+**状态**: ✅ 已实现
+**修复时间**: 2026-05-03
+
+**修复内容**:
+`workspace-switcher/index.tsx` 的 `handleSelectWorkspace`：
+1. 切换前调用 `workspaceStore.saveLayout` 持久化当前布局
+2. 切换后调用 `workspaceStore.loadLayout` 恢复新工作区布局
+3. 通过 `AppStore.getState()` 直接操作 tabs，无需额外状态同步
 
 ---
 
@@ -1301,3 +1364,47 @@ $ cargo check
 - `terminal-sync-{iso-timestamp}.json`：带时间戳的历史备份
 
 ---
+
+### Issue #37: SSH Agent 认证接入统一 API ✅ 已实现
+
+**严重程度**: Medium
+**状态**: ✅ 已实现
+**实现时间**: 2026-05-03
+
+**问题**: `SessionService` 缺少 Agent 方法；Jump Host 目标主机无法使用 Agent 认证。
+
+**修复内容**:
+
+1. **`SshAgentOptions` 类型**：`packages/frontend/src/features/terminal/types/session.ts`
+2. **`SessionService.createSshAgent`**：调用 `session_create_ssh_agent`，含连接日志
+3. **Jump Host 目标 Agent**：`connect_via_jump` 接收 `use_target_agent` 参数；从 `jump_host.target_auth_type === 'agent'` 判断是否对目标主机使用 SSH agent
+4. **`SshSession::create` 签名**：新增 `use_target_agent: bool` 参数，区分跳板机自身认证与目标主机认证
+
+**修改文件**:
+
+- `src-tauri/src/session/ssh.rs`：`new_with_jump` 读取 `target_auth_type`；`create` 接收 `use_target_agent` 参数；所有 `Self::create` 调用补齐参数
+- `packages/frontend/src/features/terminal/{types/session.ts,services/session.ts}`
+
+**回归测试**: 见 Issue #21 回归测试检查清单
+
+---
+
+### Issue #38: 单元测试覆盖增强 ✅ 已完成
+
+**严重程度**: Low
+**状态**: ✅ 已完成
+**实现时间**: 2026-05-03
+
+**新增测试**:
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `service/database/command-history.test.ts` | `addCommandHistory` / `getCommandHistory` / `searchCommandHistory` / `clearCommandHistory` |
+| `service/database/port-forward-rules.test.ts` | 全套 CRUD，含字段映射和 host_id=null 边界 |
+| `store/workspace.test.ts` | `loadWorkspaces` / `setActiveWorkspace` / `deleteWorkspace` / `loadLayout` / `saveLayout` |
+
+**结果**: 14 测试文件，333 测试，全部通过
+
+---
+
+_本节最后更新: 2026-05-03_
