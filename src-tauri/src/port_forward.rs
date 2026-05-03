@@ -1,5 +1,5 @@
 use crate::errors::PortForwardError;
-use crate::session::get_ssh_sessions;
+use crate::session::get_session_manager;
 use crate::state::{PortForwardConfig, PortForwardInfo, PortForwardTask, SharedStateType};
 use futures::channel::mpsc;
 use futures::SinkExt;
@@ -31,14 +31,11 @@ pub async fn port_forward_start(
         return Err(PortForwardError::BindFailed(String::from("Invalid local port")));
     }
 
-    // Get SSH session handle
-    let sessions = get_ssh_sessions();
-    let sessions_lock = sessions.lock().await;
-    let handle: SshHandle = sessions_lock
-        .get(&session_id)
-        .ok_or(PortForwardError::SessionNotFound)?
-        .clone();
-    drop(sessions_lock);
+    // Get SSH session handle via SessionManager (session_id is the UUID returned by session_create_ssh_*)
+    let handle = get_session_manager()
+        .get_ssh_handle(&session_id)
+        .await
+        .ok_or(PortForwardError::SessionNotFound)?;
 
     let forward_id = config.id.clone();
     let local_host = config.local_host.clone();

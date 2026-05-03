@@ -10,9 +10,40 @@ pub async fn serial_list() -> Result<Vec<SerialPortInfo>, SerialError> {
         .map(|ports| {
             ports
                 .into_iter()
-                .map(|port| SerialPortInfo {
-                    name: port.port_name,
-                    port_type: format!("{:?}", port.port_type),
+                .map(|port| {
+                    let name = port.port_name.clone();
+                    let port_type = match port.port_type {
+                        serialport::SerialPortType::UsbPort(usb_info) => {
+                            let vid = usb_info.vid;
+                            let pid = usb_info.pid;
+                            let vid_pid = if vid != 0 || pid != 0 {
+                                format!("{:04X}:{:04X}", vid, pid)
+                            } else {
+                                String::new()
+                            };
+                            let desc = if let (Some(mfg), Some(prod)) =
+                                (usb_info.manufacturer.as_deref(), usb_info.product.as_deref())
+                            {
+                                format!("USB ({mfg} {prod}, {vid_pid})")
+                            } else if !vid_pid.is_empty() {
+                                format!("USB ({vid_pid})")
+                            } else {
+                                "USB".to_string()
+                            };
+                            desc
+                        }
+                        serialport::SerialPortType::PciPort => "PCI".to_string(),
+                        serialport::SerialPortType::BluetoothPort => "Bluetooth".to_string(),
+                        serialport::SerialPortType::Unknown => {
+                            // On Windows, unknown ports are usually COM ports
+                            if name.starts_with("COM") || name.starts_with("\\\\.\\COM") {
+                                "Serial Port".to_string()
+                            } else {
+                                "Unknown".to_string()
+                            }
+                        }
+                    };
+                    SerialPortInfo { name, port_type }
                 })
                 .collect()
         })
