@@ -89,20 +89,16 @@ impl SshConnectionPool {
         }
     }
 
-    async fn creation_lock(&self, key: &str) -> Arc<Mutex<()>> {
+    async fn creation_lock(self: Arc<Self>, key: String) -> Arc<Mutex<()>> {
         let mut locks = self.creation_locks.lock().await;
-        Arc::clone(
-            locks
-                .entry(key.to_string())
-                .or_insert_with(|| Arc::new(Mutex::new(()))),
-        )
+        Arc::clone(locks.entry(key).or_insert_with(|| Arc::new(Mutex::new(()))))
     }
 
     /// Try to get an existing pooled connection.
     /// Returns the pooled Arc<Handle> if found (caller clones the Arc).
-    async fn get(&self, key: &str) -> Option<Arc<client::Handle<ClientHandler>>> {
+    async fn get(self: Arc<Self>, key: String) -> Option<Arc<client::Handle<ClientHandler>>> {
         let pool = self.inner.read().await;
-        if let Some(conn) = pool.get(key) {
+        if let Some(conn) = pool.get(&key) {
             conn.add_ref();
             return Some(Arc::clone(&conn.handle));
         }
@@ -111,7 +107,7 @@ impl SshConnectionPool {
 
     /// Insert a new connection into the pool and register it globally for SFTP/port-forward access.
     async fn insert(
-        &self,
+        self: Arc<Self>,
         key: String,
         handle: Arc<client::Handle<ClientHandler>>,
         transport_handle: Option<Arc<client::Handle<ClientHandler>>>,
@@ -127,14 +123,14 @@ impl SshConnectionPool {
 
     /// Release a reference. If ref_count reaches 0, close the connection, remove from pool,
     /// and unregister from the global sessions map (used by SFTP / port-forward).
-    async fn release(&self, key: &str) {
+    async fn release(self: Arc<Self>, key: String) {
         let handles = {
             let mut pool = self.inner.write().await;
-            if let Some(conn) = pool.get_mut(key) {
+            if let Some(conn) = pool.get_mut(&key) {
                 if conn.release() == 0 {
                     let h = conn.handle.clone();
                     let transport = conn.transport_handle.clone();
-                    pool.remove(key);
+                    pool.remove(&key);
                     Some((h, transport))
                 } else {
                     None
@@ -146,7 +142,7 @@ impl SshConnectionPool {
 
         if let Some((handle, transport_handle)) = handles {
             let sessions = get_ssh_sessions();
-            sessions.lock().await.remove(key);
+            sessions.lock().await.remove(&key);
             let _ = handle
                 .disconnect(russh::Disconnect::ByApplication, "", "en")
                 .await;
@@ -582,11 +578,12 @@ impl SshSession {
         // Try to get a pooled connection first (ControlMaster multiplexing)
         let pool = get_connection_pool();
         let pool_key = connection_key(host, port, username, jump_host.as_ref());
-        let creation_lock = pool.creation_lock(&pool_key).await;
+        let creation_lock = Arc::clone(&pool).creation_lock(pool_key.clone()).await;
         let _creation_guard = creation_lock.lock().await;
 
         // pooled_handle is an Arc we can use directly for channel ops
-        let pooled_arc: Option<Arc<client::Handle<ClientHandler>>> = pool.get(&pool_key).await;
+        let pooled_arc: Option<Arc<client::Handle<ClientHandler>>> =
+            Arc::clone(&pool).get(pool_key.clone()).await;
 
         if let Some(arc_handle) = pooled_arc {
             // Reuse pooled connection: open a new PTY channel on the shared handle
@@ -595,7 +592,7 @@ impl SshSession {
             let channel = match open_shell_channel(arc_handle.as_ref(), cols, rows).await {
                 Ok(channel) => channel,
                 Err(error) => {
-                    pool.release(&pool_key).await;
+                    Arc::clone(&pool).release(pool_key.clone()).await;
                     return Err(error);
                 }
             };
@@ -678,7 +675,7 @@ impl SshSession {
 
                 is_alive_clone.store(false, Ordering::Release);
                 if pool_ref_held_clone.swap(false, Ordering::AcqRel) {
-                    get_connection_pool().release(&pool_key_clone).await;
+                    get_connection_pool().release(pool_key_clone).await;
                 }
                 let mut handle_guard = read_handle_clone.lock().await;
                 *handle_guard = None;
@@ -827,7 +824,7 @@ impl SshSession {
 
             is_alive_clone.store(false, Ordering::Release);
             if pool_ref_held_clone.swap(false, Ordering::AcqRel) {
-                get_connection_pool().release(&pool_key_clone).await;
+                get_connection_pool().release(pool_key_clone).await;
             }
             let mut guard = read_handle_clone.lock().await;
             *guard = None;
@@ -1316,7 +1313,7 @@ impl SshSession {
             }
             // 释放连接池引用（如果是最后一个引用，底层连接会被关闭）
             if pool_ref_held.swap(false, Ordering::AcqRel) {
-                if let Some(ref key) = pool_key {
+                if let Some(key) = pool_key {
                     get_connection_pool().release(key).await;
                 }
             }
@@ -1365,6 +1362,8 @@ fn validate_jump_auth_types(jump_host: &JumpHostConfig) -> Result<(), SessionErr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_send_static<T: Send + 'static>(_: T) {}
 
     fn jump_host(host: &str) -> JumpHostConfig {
         JumpHostConfig {
@@ -1419,22 +1418,35 @@ mod tests {
 
     #[tokio::test]
     async fn same_connection_key_shares_creation_lock() {
-        let pool = SshConnectionPool::new();
+        let pool = Arc::new(SshConnectionPool::new());
 
-        let first = pool.creation_lock("same-key").await;
-        let second = pool.creation_lock("same-key").await;
+        let first = Arc::clone(&pool)
+            .creation_lock("same-key".to_string())
+            .await;
+        let second = pool.creation_lock("same-key".to_string()).await;
 
         assert!(Arc::ptr_eq(&first, &second));
     }
 
     #[tokio::test]
     async fn different_connection_keys_use_independent_creation_locks() {
-        let pool = SshConnectionPool::new();
+        let pool = Arc::new(SshConnectionPool::new());
 
-        let first = pool.creation_lock("first-key").await;
-        let second = pool.creation_lock("second-key").await;
+        let first = Arc::clone(&pool)
+            .creation_lock("first-key".to_string())
+            .await;
+        let second = pool.creation_lock("second-key".to_string()).await;
 
         assert!(!Arc::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn connection_pool_future_owns_shared_state() {
+        let pool = Arc::new(SshConnectionPool::new());
+
+        assert_send_static(Arc::clone(&pool).creation_lock("compile-creation-lock".to_string()));
+        assert_send_static(Arc::clone(&pool).get("compile-get".to_string()));
+        assert_send_static(pool.release("compile-release".to_string()));
     }
 
     #[tokio::test]

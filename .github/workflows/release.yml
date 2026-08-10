@@ -1,0 +1,240 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build and publish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  PNPM_VERSION: 10.34.3
+
+jobs:
+  prepare-release:
+    name: Validate release metadata
+    runs-on: ubuntu-24.04
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      version: ${{ steps.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+      - name: Validate tag, commit, and versions
+        id: metadata
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$REQUESTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $REQUESTED_TAG" >&2
+            exit 1
+          fi
+
+          version="${REQUESTED_TAG#v}"
+          package_version="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
+          tauri_version="$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json', 'utf8')).version")"
+          cargo_version="$(cargo metadata --no-deps --format-version 1 --manifest-path src-tauri/Cargo.toml | jq -r '.packages[] | select(.name == "terminal") | .version')"
+
+          for declared_version in "$package_version" "$tauri_version" "$cargo_version"; do
+            if [[ "$declared_version" != "$version" ]]; then
+              echo "Version mismatch: tag=$version declared=$declared_version" >&2
+              exit 1
+            fi
+          done
+
+          tag_commit="$(git rev-list -n 1 "$REQUESTED_TAG")"
+          checkout_commit="$(git rev-parse HEAD)"
+          if [[ "$tag_commit" != "$checkout_commit" ]]; then
+            echo "Tag $REQUESTED_TAG resolves to $tag_commit, checkout is $checkout_commit" >&2
+            exit 1
+          fi
+
+          echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Resolve or create prerelease
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if ! release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" 2>/dev/null)"; then
+            gh release create "$RELEASE_TAG" \
+              --verify-tag \
+              --title "$RELEASE_VERSION" \
+              --notes "Platform installers for macOS, Windows, and Linux. macOS DMGs are not notarized and Windows installers are not Authenticode-signed." \
+              --prerelease
+            release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}")"
+          fi
+
+          if [[ "$(jq -r '.draft' <<< "$release_json")" != "false" ]]; then
+            echo "Release $RELEASE_TAG must be published before uploading assets" >&2
+            exit 1
+          fi
+          if [[ "$(jq -r '.prerelease' <<< "$release_json")" != "true" ]]; then
+            echo "Release $RELEASE_TAG must remain a prerelease" >&2
+            exit 1
+          fi
+
+          echo "release_id=$(jq -r '.id' <<< "$release_json")" >> "$GITHUB_OUTPUT"
+
+  build-release:
+    name: ${{ matrix.name }}
+    needs: prepare-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS Apple Silicon
+            os: macos-15
+            target: aarch64-apple-darwin
+            bundles: dmg
+            asset_key: macos-aarch64
+          - name: macOS Intel
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: dmg
+            asset_key: macos-x86_64
+          - name: Windows ARM64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            bundles: nsis
+            asset_key: windows-aarch64
+          - name: Windows x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+            asset_key: windows-x86_64
+          - name: Linux ARM64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            bundles: deb,appimage
+            asset_key: linux-aarch64
+          - name: Linux x64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+            asset_key: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+          workspaces: src-tauri -> target
+      - name: Install Tauri Linux dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            libudev-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev
+      - run: pnpm install --frozen-lockfile
+      - name: Build and upload bundles
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          tagName: ${{ needs.prepare-release.outputs.tag }}
+          releaseDraft: false
+          prerelease: true
+          uploadUpdaterJson: false
+          uploadUpdaterSignatures: false
+          retryAttempts: 2
+          releaseAssetNamePattern: 'Terminal_[version]_${{ matrix.asset_key }}[setup][ext]'
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --ci -- --locked
+
+  verify-release:
+    name: Verify release assets
+    needs: [prepare-release, build-release]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify packages and publish checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          expected_assets=(
+            "Terminal_${VERSION}_macos-aarch64.dmg"
+            "Terminal_${VERSION}_macos-x86_64.dmg"
+            "Terminal_${VERSION}_windows-aarch64-setup.exe"
+            "Terminal_${VERSION}_windows-x86_64-setup.exe"
+            "Terminal_${VERSION}_linux-aarch64.AppImage"
+            "Terminal_${VERSION}_linux-aarch64.deb"
+            "Terminal_${VERSION}_linux-x86_64.AppImage"
+            "Terminal_${VERSION}_linux-x86_64.deb"
+          )
+
+          assets_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100")"
+          for asset_name in "${expected_assets[@]}"; do
+            asset_size="$(jq --arg name "$asset_name" -r '[.[] | select(.name == $name) | .size] | if length == 1 then .[0] else empty end' <<< "$assets_json")"
+            if [[ -z "$asset_size" || "$asset_size" -le 0 ]]; then
+              echo "Missing or empty release asset: $asset_name" >&2
+              exit 1
+            fi
+          done
+
+          mkdir release-assets
+          for asset_name in "${expected_assets[@]}"; do
+            gh release download "$RELEASE_TAG" --pattern "$asset_name" --dir release-assets
+          done
+          (
+            cd release-assets
+            sha256sum "${expected_assets[@]}" > SHA256SUMS.txt
+          )
+          gh release upload "$RELEASE_TAG" release-assets/SHA256SUMS.txt --clobber

@@ -3,7 +3,7 @@
 > 创建日期：2026-08-09
 > 最后验证日期：2026-08-10
 > 发布目标：`0.0.1-dev.0`
-> 状态：✅ 本机自动发布门禁完成；⚠️ 外部实机项目待执行
+> 状态：✅ 本机自动发布门禁完成；🔄 多平台安装包待远端工作流验收；⚠️ 外部实机项目待执行
 
 ## 目标
 
@@ -153,10 +153,27 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-fea
 | `pnpm audit --registry=https://registry.npmjs.org --prod --audit-level high` | ✅ No known vulnerabilities found |
 | 前端 | ✅ 31 个测试文件、408 项测试；lint/typecheck/build:budget 通过 |
 | Team Server | ✅ 25 个测试文件、95 项测试；Prisma validate/lint/typecheck/build 通过 |
-| Rust | ✅ 43 项测试；fmt/check/Clippy `-D warnings` 通过 |
+| Rust | ✅ 44 项测试；fmt/check/Clippy `-D warnings` 通过 |
 | Bundle | ✅ 初始 gzip 227.36 KB / 240 KB，总 gzip 510.09 KB / 550 KB，最大 JS chunk raw 390.87 KB / 500 KB |
 | 源码规模 | ✅ 447 个前端/Team Server 生产 TS/TSX 文件，0 个超限 |
 | Docker | ⚠️ 当前机器没有 `docker` 命令，未声称本地镜像或 Compose 通过 |
+
+## 安装包发布门禁
+
+`.github/workflows/release.yml` 只接受现有语义版本标签，校验标签提交以及 `package.json`、`tauri.conf.json`、`Cargo.toml` 三处版本一致后，向同一 prerelease 上传以下资产：
+
+| 系统 | 架构 | 原生 runner | 目标 | 资产 |
+| --- | --- | --- | --- | --- |
+| macOS | Apple Silicon | `macos-15` | `aarch64-apple-darwin` | DMG |
+| macOS | Intel | `macos-15-intel` | `x86_64-apple-darwin` | DMG |
+| Windows | ARM64 | `windows-11-arm` | `aarch64-pc-windows-msvc` | NSIS EXE |
+| Windows | x64 | `windows-latest` | `x86_64-pc-windows-msvc` | NSIS EXE |
+| Linux | ARM64 | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | AppImage、DEB |
+| Linux | x64 | `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | AppImage、DEB |
+
+工作流要求八个安装资产全部存在且大小大于 0，随后下载同一批资产生成 `SHA256SUMS.txt`。资产命名为 `Terminal_<version>_<platform>-<arch>`，Windows NSIS 额外带 `-setup` 后缀。`tauri-action` 的 updater JSON 和 updater signature 上传已关闭，因为项目尚未配置 updater 签名密钥。
+
+当前开发版没有 Apple Developer ID/notarization 或 Windows Authenticode 配置。DMG 与 NSIS 构建成功只能证明可打包，Release 说明必须明确“macOS 未公证、Windows 未签名”。Linux/Windows runner 通过也不能替代 Issue #39 的 Pageant、PTY、Jump Host、快捷键与串口硬件实机矩阵。
 
 ## 实机验证矩阵
 
@@ -170,6 +187,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-fea
 | 串口 | macOS / Windows / Linux + 硬件 | ⚠️ 待实机 | 精确写入、主动断开、运行中拔线均清理 session |
 | 快捷键 | Windows / Linux / 非美式键盘 | ⚠️ 待实机 | 不覆盖系统快捷键，`Ctrl+Shift+\` 可触发垂直分屏 |
 | Team Server 容器 | Docker + PostgreSQL 16 | ⚠️ 当前机器无 Docker | 镜像构建、迁移、`/api/v1/health/ready` 与关停钩子通过 |
-| Tauri 多平台构建 | macOS / Ubuntu / Windows CI | ⚠️ macOS 本机通过；Ubuntu/Windows CI 待执行 | `.github/workflows/ci.yml` 三平台 `tauri build --no-bundle --ci` 通过 |
+| Tauri 三平台编译 | macOS / Ubuntu / Windows CI | 🔄 macOS、Ubuntu 已通过；Windows `Send` 修复待重跑 | `.github/workflows/ci.yml` 三平台 `tauri build --no-bundle --ci` 通过 |
+| Release 安装包 | 六个原生 GitHub runner | 🔄 工作流已建立，资产待实际上传验收 | 八个安装资产非空且系统/架构命名正确，`SHA256SUMS.txt` 可校验 |
 | S3 服务端集成 | AWS S3 或兼容服务 | ⚠️ 待外部服务 | 固定向量之外，验证实际签名、UTF-8 key、分页列表、上传下载与删除 |
 | Agent forwarding | 全平台 | 📋 入口未实现 | 独立设置开启后显式调用 `channel.agent_forward(...)` 并完成双向请求 |

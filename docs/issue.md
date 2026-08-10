@@ -1434,7 +1434,7 @@ $ cargo check
 
 **自动验证**:
 
-- Rust：43 项测试、`cargo check --locked --all-targets --all-features`、Clippy `-D warnings`、`cargo fmt --check`
+- Rust：44 项测试、`cargo check --locked --all-targets --all-features`、Clippy `-D warnings`、`cargo fmt --check`
 - 前端：31 个测试文件共 408 项测试、typecheck、production build；快捷键额外覆盖真实 `Shift+\` 的 `|` 事件
 - 仓库：`git diff --check`
 
@@ -1488,7 +1488,7 @@ $ cargo check
 - `pnpm audit --registry=https://registry.npmjs.org --prod --audit-level high` ✅ 0 漏洞
 - 前端：31 个测试文件、408 项测试，lint/typecheck/build/bundle budget ✅
 - Team Server：25 个测试文件、95 项测试，Prisma validate/lint/typecheck/build ✅
-- Rust：43 项测试，fmt/check/Clippy `-D warnings` ✅
+- Rust：44 项测试，fmt/check/Clippy `-D warnings` ✅
 - Bundle：初始 gzip 227.36 KB / 240 KB，总 gzip 510.09 KB / 550 KB，最大 JS chunk raw 390.87 KB / 500 KB ✅
 - 源码规模：447 个生产源码文件，0 个超限 ✅
 - `git diff --check` ✅
@@ -1541,7 +1541,7 @@ $ cargo check
 **回归验证**:
 
 - Team Server 敏感共享、同步 DTO、同步服务、离线队列和控制器定向测试 43 项通过；Team Server 全量 95 项通过。
-- Rust S3 固定向量 4 项、桌面配置 2 项通过；Rust 全量 43 项通过。
+- Rust S3 固定向量 4 项、桌面配置 2 项通过；Rust 全量 44 项通过。
 - 前端脚本执行与调度、备份导入、Host 映射和认证接线纳入全量 408 项测试。
 
 **仍需外部验证**:
@@ -1551,6 +1551,43 @@ $ cargo check
 - [ ] Docker/PostgreSQL 镜像、迁移与 readiness。
 - [ ] Jump Host certificate；当前必须明确拒绝。
 - [ ] Agent forwarding 显式 `channel.agent_forward(...)` 入口。
+
+---
+
+### Issue #43: v0.0.1-dev.0 缺少多平台资产且 Windows Tauri 编译失败 🔄 待发布验收
+
+**严重程度**: High
+**状态**: 🔄 代码与发布工作流已修复；六目标构建和 Release 资产仍待远端结果证明
+**发现时间**: 2026-08-10
+
+**问题**:
+
+1. GitHub Release `v0.0.1-dev.0` 的 `assets` 为空，现有 CI 只执行 `tauri build --no-bundle`，不会生成或上传安装包。
+2. CI 仅覆盖三个默认 runner，没有区分 macOS、Windows、Linux 的 x64/ARM64。
+3. Windows x64 Tauri job 在五个 SSH 创建命令上报 `implementation of Send is not general enough`；Future 跨 `await` 借用了 `&SshConnectionPool`。
+4. 工作流权限为 `contents: read`，无法写入既有 Release，也没有资产命名、非空校验或 checksum 门禁。
+
+**修复**:
+
+- `SshConnectionPool::creation_lock/get/insert/release` 改为按值接收 `Arc<Self>` 和拥有的 key，调用方显式克隆轻量 `Arc`；连接复用、引用计数与清理行为不变。
+- 新增编译期回归测试，要求连接池 Future 满足 `Send + 'static`，防止 Tauri command 再次持有借用式 Future。
+- 新增独立 Release 工作流，使用 macOS Apple Silicon/Intel、Windows ARM64/x64、Linux ARM64/x64 六个原生 runner。
+- macOS 上传 DMG，Windows 上传 NSIS，Linux上传 AppImage 与 DEB；名称固定包含版本、系统和架构，逐项验证非空并发布 `SHA256SUMS.txt`。
+- 不生成未配置签名的 updater JSON；开发版明确保留 Apple notarization 与 Windows Authenticode 未配置状态。
+
+**当前验证**:
+
+- [x] Rust SSH 定向 7 项测试通过，包含连接池锁行为与 `Send + 'static` 编译断言。
+- [x] `.github/workflows/ci.yml` 与 `release.yml` 均通过 YAML 解析和 `actionlint`。
+- [ ] Windows x64 与 ARM64 原生 runner 编译、打包并上传非空 NSIS。
+- [ ] macOS x64/ARM64 原生 runner 打包并上传非空 DMG。
+- [ ] Linux x64/ARM64 原生 runner 打包并上传非空 AppImage/DEB。
+- [ ] Release 包含八个确定性命名安装资产与非空 `SHA256SUMS.txt`。
+
+**不在此自动化验收内**:
+
+- Windows OpenSSH Agent/Pageant、Windows/Linux Jump Host、本地 PTY、快捷键及串口硬件仍按 Issue #39 实机执行。
+- 未配置 Apple Developer ID/notarization 与 Windows Authenticode，不能将“包可构建”表述为“已签名”。
 
 ---
 

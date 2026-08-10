@@ -491,7 +491,7 @@
 - [ ] 实现 Jump Host certificate 认证；当前前后端预期为明确“不支持”错误
 - [ ] Windows OpenSSH Agent / Pageant、Windows/Linux Jump Host、本地 PTY、串口硬件实机回归
 
-自动验证：Rust 43 项测试、check、Clippy、fmt；前端 31 个测试文件、408 项测试、typecheck、production build；`git diff --check`。
+自动验证：Rust 44 项测试、check、Clippy、fmt；前端 31 个测试文件、408 项测试、typecheck、production build；`git diff --check`。
 
 ---
 
@@ -511,10 +511,26 @@
 - [x] Jump Host certificate 前后端 fail-closed，证书直连 IPC 使用 camelCase 并有双端测试
 - [x] Team 敏感共享与离线队列 fail-closed：密文不降级、UPDATE 必须带 `baseVersion`、完成项清空 payload、原子 claim 使用 processing token、陈旧 PROCESSING 任务 15 分钟后恢复、终态失败不自动重试
 - [x] S3 SigV4、脚本 timeout/retry/scheduler、Tauri dialog/fs capability 与 HTTP(S) CSP 回归测试通过
-- [x] 最终验证：前端 408、Team Server 95、Rust 43 项测试全部通过
+- [x] 最终验证：前端 408、Team Server 95、Rust 44 项测试全部通过
 - [ ] 在有 Docker 的环境执行镜像构建、Compose、迁移和真实 PostgreSQL readiness
 - [ ] 为公开互联网部署增加注册准入机制（管理员初始化密钥、OIDC 或一次性注册码）
 - [ ] 完成 Phase 6.10 的 Windows/Linux/Pageant/Jump Host/PTY/串口硬件实机矩阵
+
+---
+
+### 2026-08-10 Phase 6.12 - v0.0.1-dev.0 多平台发布 🔄 远端验收中
+
+- [x] 定位空 Release：现有 CI 使用 `--no-bundle` 且只有 `contents: read`，不会上传安装包
+- [x] 定位 Windows CI：五个 SSH 创建命令的 Future 借用 `&SshConnectionPool`，不满足 Tauri 的通用 `Send` 约束
+- [x] 连接池异步 API 改为拥有 `Arc<Self>` 与 key，并增加 `Send + 'static` 编译期回归断言
+- [x] 新增六目标 Release matrix：macOS/Windows/Linux x64 与 ARM64 原生 runner
+- [x] 固定安装包命名，逐项非空校验并生成 `SHA256SUMS.txt`
+- [x] Release YAML 解析和 `actionlint` 通过；Rust SSH 定向 7 项测试通过
+- [ ] 远端 Windows x64/ARM64 构建与 NSIS 上传通过
+- [ ] 远端 macOS x64/ARM64 构建与 DMG 上传通过
+- [ ] 远端 Linux x64/ARM64 构建与 AppImage/DEB 上传通过
+- [ ] 核对 GitHub Release 八个安装资产和 checksum，记录 workflow run 与实际大小
+- [ ] Release 说明明确 macOS 未公证、Windows 未签名；不把构建成功写成跨平台硬件实机完成
 
 ---
 
@@ -803,7 +819,7 @@
 ---
 
 _文档创建时间：2026-03-18_
-_最后更新：2026-08-10 - Phase 6.11 发布就绪终审与 Team Server 安全加固_
+_最后更新：2026-08-10 - Phase 6.12 v0.0.1-dev.0 多平台发布自动化_
 
 ---
 

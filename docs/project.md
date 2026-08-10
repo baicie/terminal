@@ -555,7 +555,7 @@ src-tauri/
 | 本地 PTY | 所有平台从用户主目录启动；PTY 初始化、shell 启动及控制 I/O 使用 blocking pool；EOF 后标记不存活 |
 | 前端 | 移除冲突的系统级快捷键；垂直分屏改为 `Ctrl+Shift+\`；结构化 IPC 错误可读化 |
 
-**验证状态**：Rust 43 项测试、格式、check、Clippy；前端 408 项测试、typecheck、production build；`git diff --check` 均通过。Windows/Linux、Pageant、Jump Host 和串口硬件场景仍需实机回归。
+**验证状态**：Rust 44 项测试、格式、check、Clippy；前端 408 项测试、typecheck、production build；`git diff --check` 均通过。Windows/Linux、Pageant、Jump Host 和串口硬件场景仍需实机回归。
 
 ---
 
@@ -579,9 +579,26 @@ src-tauri/
 
 **本机验证环境**：macOS 15.7.7、Node.js 24.16.0、pnpm 10.34.3、Rust/Cargo 1.96.0。
 
-**最终自动验证**：前端 31 个测试文件、408 项测试；Team Server 25 个测试文件、95 项测试；Rust 43 项测试；Prisma schema、lint、typecheck、前端 bundle 预算、Team Server build、Rust fmt/check/Clippy 和 447 个生产源码文件行数门禁全部通过。Bundle 初始 gzip 227.36 KB（预算 240 KB），总 gzip 510.09 KB（预算 550 KB），最大 JS chunk raw 390.87 KB（预算 500 KB）。
+**最终自动验证**：前端 31 个测试文件、408 项测试；Team Server 25 个测试文件、95 项测试；Rust 44 项测试；Prisma schema、lint、typecheck、前端 bundle 预算、Team Server build、Rust fmt/check/Clippy 和 447 个生产源码文件行数门禁全部通过。Bundle 初始 gzip 227.36 KB（预算 240 KB），总 gzip 510.09 KB（预算 550 KB），最大 JS chunk raw 390.87 KB（预算 500 KB）。
 
 **外部验证边界**：当前机器未安装 Docker，未声称本地镜像构建或真实 PostgreSQL 探针通过；Windows/Linux、Pageant、Jump Host、本地 PTY 和串口硬件仍按 Issue #39 矩阵待实机执行。Jump Host 的 certificate 认证尚未接线并在前后端明确拒绝；Agent forwarding 仍缺显式 `channel.agent_forward(...)` 入口；S3 仅有固定向量测试，未声称真实服务端集成通过。
+
+---
+
+### Phase 6.12 - v0.0.1-dev.0 多平台发布自动化 🔄 待远端验收
+
+> 2026-08-10：发现 GitHub Release `v0.0.1-dev.0` 没有资产，且现有 Windows Tauri CI 因 SSH 连接池 Future 的 `Send` 生命周期约束失败。
+
+| 领域 | 改动 |
+| --- | --- |
+| Windows 编译 | 连接池异步 API 改为拥有 `Arc<SshConnectionPool>` 与 key，避免 Tauri command Future 跨 `await` 借用连接池；新增 `Send + 'static` 编译期回归断言 |
+| 发布矩阵 | 新增 `.github/workflows/release.yml`，使用六个原生 runner 覆盖 macOS/Windows/Linux 的 x64 与 ARM64 |
+| 安装包 | macOS 生成 DMG，Windows 生成 NSIS，Linux 生成 AppImage 与 DEB；资产名固定包含版本、系统和架构 |
+| 完整性 | 上传前逐项校验资产存在且非空，随后生成并上传 `SHA256SUMS.txt`；未配置 updater JSON、Apple notarization 或 Windows Authenticode |
+
+**当前证据**：既有 CI 的前端、Team Server、源码规模、Rust、Docker、macOS Tauri 和 Linux Tauri job 已通过；Windows x64 job 的失败根因已定位。Rust 定向 7 项测试、YAML 解析与 `actionlint` 已通过。六目标 Release 运行和资产上传仍必须以 GitHub Actions/Release 实际结果验收，不能在运行前标记完成。
+
+**实机边界**：Windows/Linux 安装包构建成功不等于 OpenSSH Agent、Pageant、Jump Host、本地 PTY、快捷键或串口硬件实机通过；这些项目继续保留在 Issue #39。
 
 ---
 
@@ -630,6 +647,7 @@ src-tauri/
 | 6   | SSH 证书认证未实现     | 🟡 Important | ✅ 已实现 (2026-03-26) |
 | 39  | 跨平台 SSH/串口/PTY 可靠性 | 🟡 Important | ✅ 代码已修复，待实机矩阵 (2026-08-09) |
 | 42  | 发布终审的同步、存储、脚本与桌面配置问题 | 🟡 Important | ✅ 本机可验证问题已修复，外部项待验证 (2026-08-10) |
+| 43  | 多平台 Release 资产缺失与 Windows Tauri 编译失败 | 🟡 Important | 🔄 修复已实现，待六目标发布验收 (2026-08-10) |
 
 ---
 
@@ -912,4 +930,4 @@ const response = await teamApi.listTeams()
 
 ---
 
-_文档更新时间: 2026-08-10 (Phase 6.11: 发布就绪终审与 Team Server 安全加固)_
+_文档更新时间: 2026-08-10 (Phase 6.12: v0.0.1-dev.0 多平台发布自动化)_

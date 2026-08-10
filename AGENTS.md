@@ -525,9 +525,12 @@ pnpm add <package-name>
 ### 发布就绪门禁 ✅ 本机自动化通过
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
-- ✅ `pnpm verify`：前端 408、Team Server 95、Rust 43 项测试及 lint/typecheck/build/源码行数门禁全部通过
+- ✅ `pnpm verify`：前端 408、Team Server 95、Rust 44 项测试及 lint/typecheck/build/源码行数门禁全部通过
 - ✅ 生产依赖审计为 0 个已知漏洞
 - ✅ 447 个生产源码文件均满足行数限制
+- ✅ `.github/workflows/release.yml` 为 macOS、Windows、Linux 的 x64/ARM64 建立原生 runner 打包、确定性资产命名、非空校验和 SHA-256 清单
+- ⚠️ Release 工作流通过只能证明对应目标可编译和打包；Windows/Linux/Pageant/PTY/串口交互仍按实机矩阵验证
+- ⚠️ 未配置 Apple notarization 与 Windows Authenticode；开发版 DMG/NSIS 必须在 Release 说明中标为未签名/未公证
 - ⚠️ 当前机器未安装 Docker；容器构建与真实 PostgreSQL readiness 仍需在 CI 或有 Docker 的环境验证
 
 ---
@@ -540,6 +543,7 @@ pnpm add <package-name>
 | ----- | -------------------------------------------- | ------------ | ------ |
 | 21/39 | Windows/Linux/Pageant/Jump Host/硬件实机矩阵 | 🟡 Important | P1     |
 | 40    | Docker/PostgreSQL 容器与 readiness 实机验证  | 🟡 Important | P1     |
+| 43    | 多平台 Release 资产与 Windows Tauri 编译验收 | 🔄 In progress | P1     |
 | 6     | Jump Host certificate 认证尚未接线           | 📋 Planned   | P2     |
 | 21    | Agent forwarding 缺少显式启用入口           | 🟡 Important | P2     |
 | 40    | 公网部署仍需额外的注册准入机制               | 📋 Planned   | P2     |
@@ -991,4 +995,4 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-08-10 (Phase 6.11: 发布就绪终审、跨平台审计与 Team Server 安全加固)_
+_文档更新时间: 2026-08-10 (Phase 6.12: v0.0.1-dev.0 多平台发布自动化)_
