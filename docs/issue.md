@@ -1554,11 +1554,12 @@ $ cargo check
 
 ---
 
-### Issue #43: v0.0.1-dev.0 缺少多平台资产且 Windows Tauri 编译失败 🔄 安装包待验收
+### Issue #43: v0.0.1-dev.0 缺少多平台资产且 Windows Tauri 编译失败 ✅ 已修复
 
 **严重程度**: High
-**状态**: 🔄 Windows/macOS/Linux Tauri 编译已通过；六目标安装包和 Release 资产仍待远端结果证明
+**状态**: ✅ Windows/macOS/Linux 双架构安装包与校验清单已发布
 **发现时间**: 2026-08-10
+**修复时间**: 2026-08-11
 
 **问题**:
 
@@ -1566,6 +1567,7 @@ $ cargo check
 2. CI 仅覆盖三个默认 runner，没有区分 macOS、Windows、Linux 的 x64/ARM64。
 3. Windows x64 Tauri job 在 SSH 创建和 Agent 认证上报 `implementation of Send is not general enough`；Future 先后暴露了 `&SshConnectionPool`、IPC `String`、`&PublicKey` 与 `&AgentIdentity` 的跨 `await` 借用。
 4. 工作流权限为 `contents: read`，无法写入既有 Release，也没有资产命名、非空校验或 checksum 门禁。
+5. 首次六目标打包已上传 8 个资产，但最终 job 在无 checkout 的 runner 中调用 `gh release download`，因无法推断仓库而未生成 checksum。
 
 **修复**:
 
@@ -1575,6 +1577,7 @@ $ cargo check
 - 新增编译期回归测试，要求连接池 Future 与五个 SSH command Future 满足 `Send + 'static`，防止 Windows Tauri 宏再次接受借用式 Future。
 - 新增独立 Release 工作流，使用 macOS Apple Silicon/Intel、Windows ARM64/x64、Linux ARM64/x64 六个原生 runner。
 - macOS 上传 DMG，Windows 上传 NSIS，Linux上传 AppImage 与 DEB；名称固定包含版本、系统和架构，逐项验证非空并发布 `SHA256SUMS.txt`。
+- checksum job 的 `gh release download/upload` 显式传入 `--repo "$GITHUB_REPOSITORY"`，无需依赖本地 `.git` 目录。
 - 不生成未配置签名的 updater JSON；开发版明确保留 Apple notarization 与 Windows Authenticode 未配置状态。
 
 **当前验证**:
@@ -1583,10 +1586,11 @@ $ cargo check
 - [x] Rust 全量 45 项测试、fmt/check/Clippy `-D warnings` 通过，新增五个 SSH command Future 的 `Send + 'static` 编译回归。
 - [x] `.github/workflows/ci.yml` 与 `release.yml` 均通过 YAML 解析和 `actionlint`。
 - [x] 提交 `83cd4e8` 的 CI `31409070480` 全绿，macOS、Windows、Linux Tauri 原生编译及前端、Team Server、Rust、Docker、源码规模门禁全部通过。
-- [ ] Windows x64 与 ARM64 原生 runner 编译、打包并上传非空 NSIS。
-- [ ] macOS x64/ARM64 原生 runner 打包并上传非空 DMG。
-- [ ] Linux x64/ARM64 原生 runner 打包并上传非空 AppImage/DEB。
-- [ ] Release 包含八个确定性命名安装资产与非空 `SHA256SUMS.txt`。
+- [x] Windows x64 与 ARM64 原生 runner 编译、打包并上传非空 NSIS。
+- [x] macOS x64/ARM64 原生 runner 打包并上传非空 DMG。
+- [x] Linux x64/ARM64 原生 runner 打包并上传非空 AppImage/DEB。
+- [x] Release 工作流 `31431531040` 全绿，包含八个确定性命名安装资产与非空 `SHA256SUMS.txt`。
+- [x] GitHub Release API 返回的 8 个安装包 digest 与 `SHA256SUMS.txt` 逐项一致。
 
 **不在此自动化验收内**:
 

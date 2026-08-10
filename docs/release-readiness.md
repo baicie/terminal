@@ -1,9 +1,9 @@
 # Terminal 发布就绪规格
 
 > 创建日期：2026-08-09
-> 最后验证日期：2026-08-10
+> 最后验证日期：2026-08-11
 > 发布目标：`0.0.1-dev.0`
-> 状态：✅ 本机自动发布门禁完成；🔄 多平台安装包待远端工作流验收；⚠️ 外部实机项目待执行
+> 状态：✅ 本机自动发布门禁与多平台安装包验收完成；⚠️ 外部实机项目待执行
 
 ## 目标
 
@@ -174,6 +174,20 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-fea
 
 工作流要求八个安装资产全部存在且大小大于 0，随后下载同一批资产生成 `SHA256SUMS.txt`。资产命名为 `Terminal_<version>_<platform>-<arch>`，Windows NSIS 额外带 `-setup` 后缀。`tauri-action` 的 updater JSON 和 updater signature 上传已关闭，因为项目尚未配置 updater 签名密钥。
 
+**实际发布证据**：Release 工作流 `31431531040` 全绿，标签 `v0.0.1-dev.0` 指向提交 `6965f3a`。GitHub Release API 返回以下非空资产；8 个安装包的服务端 SHA-256 digest 与 `SHA256SUMS.txt` 逐项一致。
+
+| 资产 | 字节 | 大小 |
+| --- | ---: | ---: |
+| `Terminal_0.0.1-dev.0_macos-aarch64.dmg` | 11,292,978 | 10.77 MiB |
+| `Terminal_0.0.1-dev.0_macos-x86_64.dmg` | 11,830,964 | 11.28 MiB |
+| `Terminal_0.0.1-dev.0_windows-aarch64-setup.exe` | 6,770,726 | 6.46 MiB |
+| `Terminal_0.0.1-dev.0_windows-x86_64-setup.exe` | 7,626,056 | 7.27 MiB |
+| `Terminal_0.0.1-dev.0_linux-aarch64.AppImage` | 84,855,304 | 80.92 MiB |
+| `Terminal_0.0.1-dev.0_linux-aarch64.deb` | 13,180,004 | 12.57 MiB |
+| `Terminal_0.0.1-dev.0_linux-x86_64.AppImage` | 86,735,352 | 82.72 MiB |
+| `Terminal_0.0.1-dev.0_linux-x86_64.deb` | 13,235,590 | 12.62 MiB |
+| `SHA256SUMS.txt` | 862 | 0.84 KiB |
+
 当前开发版没有 Apple Developer ID/notarization 或 Windows Authenticode 配置。DMG 与 NSIS 构建成功只能证明可打包，Release 说明必须明确“macOS 未公证、Windows 未签名”。Linux/Windows runner 通过也不能替代 Issue #39 的 Pageant、PTY、Jump Host、快捷键与串口硬件实机矩阵。
 
 ## 实机验证矩阵
@@ -189,6 +203,6 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-fea
 | 快捷键 | Windows / Linux / 非美式键盘 | ⚠️ 待实机 | 不覆盖系统快捷键，`Ctrl+Shift+\` 可触发垂直分屏 |
 | Team Server 容器 | Docker + PostgreSQL 16 | 🟡 CI 已完成镜像构建和 PostgreSQL 迁移；本机无 Docker | Compose 启动打包镜像后，`/api/v1/health/ready` 与关停钩子通过 |
 | Tauri 三平台编译 | macOS / Ubuntu / Windows CI | ✅ CI `31409070480` 三平台通过 | `.github/workflows/ci.yml` 三平台 `tauri build --no-bundle --ci` 通过 |
-| Release 安装包 | 六个原生 GitHub runner | 🔄 工作流已建立，资产待实际上传验收 | 八个安装资产非空且系统/架构命名正确，`SHA256SUMS.txt` 可校验 |
+| Release 安装包 | 六个原生 GitHub runner | ✅ 工作流 `31431531040` 全绿；8 个安装包与 checksum 已核验 | 八个安装资产非空且系统/架构命名正确，`SHA256SUMS.txt` 可校验 |
 | S3 服务端集成 | AWS S3 或兼容服务 | ⚠️ 待外部服务 | 固定向量之外，验证实际签名、UTF-8 key、分页列表、上传下载与删除 |
 | Agent forwarding | 全平台 | 📋 入口未实现 | 独立设置开启后显式调用 `channel.agent_forward(...)` 并完成双向请求 |

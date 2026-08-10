@@ -585,7 +585,7 @@ src-tauri/
 
 ---
 
-### Phase 6.12 - v0.0.1-dev.0 多平台发布自动化 🔄 安装包待验收
+### Phase 6.12 - v0.0.1-dev.0 多平台发布自动化 ✅ 已完成
 
 > 2026-08-11：发现 GitHub Release `v0.0.1-dev.0` 没有资产，且 Windows Tauri CI 因 SSH 创建与 Agent 签名 Future 的 `Send` 生命周期约束失败；源码修复现已通过三平台 CI。
 
@@ -596,7 +596,7 @@ src-tauri/
 | 安装包 | macOS 生成 DMG，Windows 生成 NSIS，Linux 生成 AppImage 与 DEB；资产名固定包含版本、系统和架构 |
 | 完整性 | 上传前逐项校验资产存在且非空，随后生成并上传 `SHA256SUMS.txt`；未配置 updater JSON、Apple notarization 或 Windows Authenticode |
 
-**当前证据**：提交 `83cd4e8` 的 GitHub Actions CI `31409070480` 全绿，前端、Team Server、源码规模、Rust、Docker 镜像、PostgreSQL 迁移以及 macOS、Windows、Linux Tauri 原生编译全部通过。当前本机 Rust 为 45 项测试，包含五个 SSH command Future 的 `Send + 'static` 编译回归；YAML 解析与 `actionlint` 已通过。六目标 Release 运行和资产上传仍必须以 GitHub Actions/Release 实际结果验收，不能在运行前标记完成。
+**当前证据**：提交 `83cd4e8` 的 GitHub Actions CI `31409070480` 全绿，前端、Team Server、源码规模、Rust、Docker 镜像、PostgreSQL 迁移以及 macOS、Windows、Linux Tauri 原生编译全部通过。本机 Rust 为 45 项测试，包含五个 SSH command Future 的 `Send + 'static` 编译回归；YAML 解析与 `actionlint` 已通过。标签 `v0.0.1-dev.0` 指向 `6965f3a`，Release 工作流 `31431531040` 的六个原生打包任务和最终校验全部通过；8 个安装包与 `SHA256SUMS.txt` 均非空，GitHub 服务端 SHA-256 digest 与清单逐项一致。
 
 **实机边界**：Windows/Linux 安装包构建成功不等于 OpenSSH Agent、Pageant、Jump Host、本地 PTY、快捷键或串口硬件实机通过；这些项目继续保留在 Issue #39。
 
@@ -647,7 +647,7 @@ src-tauri/
 | 6   | SSH 证书认证未实现     | 🟡 Important | ✅ 已实现 (2026-03-26) |
 | 39  | 跨平台 SSH/串口/PTY 可靠性 | 🟡 Important | ✅ 代码已修复，待实机矩阵 (2026-08-09) |
 | 42  | 发布终审的同步、存储、脚本与桌面配置问题 | 🟡 Important | ✅ 本机可验证问题已修复，外部项待验证 (2026-08-10) |
-| 43  | 多平台 Release 资产缺失与 Windows Tauri 编译失败 | 🟡 Important | 🔄 三平台编译已通过，待六目标安装包验收 (2026-08-11) |
+| 43  | 多平台 Release 资产缺失与 Windows Tauri 编译失败 | 🟡 Important | ✅ 已修复并发布 8 个安装包与校验清单 (2026-08-11) |
 
 ---
 

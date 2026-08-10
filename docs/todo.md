@@ -518,7 +518,7 @@
 
 ---
 
-### 2026-08-11 Phase 6.12 - v0.0.1-dev.0 多平台发布 🔄 安装包验收中
+### 2026-08-11 Phase 6.12 - v0.0.1-dev.0 多平台发布 ✅ 已完成
 
 - [x] 定位空 Release：现有 CI 使用 `--no-bundle` 且只有 `contents: read`，不会上传安装包
 - [x] 定位 Windows CI：五个 SSH 创建命令的 Future 借用连接池共享状态和 IPC `String` 参数，不满足 Tauri 的通用 `Send` 约束
@@ -527,11 +527,11 @@
 - [x] 固定安装包命名，逐项非空校验并生成 `SHA256SUMS.txt`
 - [x] Release YAML 解析和 `actionlint` 通过；Rust SSH 定向 7 项测试通过
 - [x] 提交 `83cd4e8` 的 CI `31409070480` 全绿：macOS、Windows、Linux Tauri 编译及前端、Team Server、Rust、Docker、源码规模门禁通过
-- [ ] 远端 Windows x64/ARM64 构建与 NSIS 上传通过
-- [ ] 远端 macOS x64/ARM64 构建与 DMG 上传通过
-- [ ] 远端 Linux x64/ARM64 构建与 AppImage/DEB 上传通过
-- [ ] 核对 GitHub Release 八个安装资产和 checksum，记录 workflow run 与实际大小
-- [ ] Release 说明明确 macOS 未公证、Windows 未签名；不把构建成功写成跨平台硬件实机完成
+- [x] 远端 Windows x64/ARM64 构建与 NSIS 上传通过
+- [x] 远端 macOS x64/ARM64 构建与 DMG 上传通过
+- [x] 远端 Linux x64/ARM64 构建与 AppImage/DEB 上传通过
+- [x] Release 工作流 `31431531040` 全绿；八个安装资产与 862-byte `SHA256SUMS.txt` 均非空，服务端 digest 与清单一致
+- [x] Release 说明明确 macOS 未公证、Windows 未签名；未把构建成功写成跨平台硬件实机完成
 
 ---
 
