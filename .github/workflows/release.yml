@@ -231,10 +231,10 @@ jobs:
 
           mkdir release-assets
           for asset_name in "${expected_assets[@]}"; do
-            gh release download "$RELEASE_TAG" --pattern "$asset_name" --dir release-assets
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$asset_name" --dir release-assets
           done
           (
             cd release-assets
             sha256sum "${expected_assets[@]}" > SHA256SUMS.txt
           )
-          gh release upload "$RELEASE_TAG" release-assets/SHA256SUMS.txt --clobber
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" release-assets/SHA256SUMS.txt --clobber
