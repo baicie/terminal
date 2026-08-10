@@ -528,10 +528,11 @@ pnpm add <package-name>
 - ✅ `pnpm verify`：前端 408、Team Server 95、Rust 45 项测试及 lint/typecheck/build/源码行数门禁全部通过
 - ✅ 生产依赖审计为 0 个已知漏洞
 - ✅ 447 个生产源码文件均满足行数限制
+- ✅ GitHub Actions CI `31409070480`：macOS、Windows、Linux Tauri 编译，Team Server PostgreSQL 迁移和 Docker 镜像构建全部通过
 - ✅ `.github/workflows/release.yml` 为 macOS、Windows、Linux 的 x64/ARM64 建立原生 runner 打包、确定性资产命名、非空校验和 SHA-256 清单
 - ⚠️ Release 工作流通过只能证明对应目标可编译和打包；Windows/Linux/Pageant/PTY/串口交互仍按实机矩阵验证
 - ⚠️ 未配置 Apple notarization 与 Windows Authenticode；开发版 DMG/NSIS 必须在 Release 说明中标为未签名/未公证
-- ⚠️ 当前机器未安装 Docker；容器构建与真实 PostgreSQL readiness 仍需在 CI 或有 Docker 的环境验证
+- ⚠️ 当前机器未安装 Docker；CI 已证明镜像构建和 PostgreSQL 迁移，Compose 生命周期与打包镜像 readiness 仍需在有 Docker 的环境验证
 
 ---
 
@@ -995,4 +996,4 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-08-10 (Phase 6.12: v0.0.1-dev.0 多平台发布自动化)_
+_文档更新时间: 2026-08-11 (Phase 6.12: v0.0.1-dev.0 多平台发布验收)_
