@@ -196,6 +196,33 @@ fn into_owned_agent_public_key(
     identity.public_key().into_owned()
 }
 
+type DynamicAgentClient = russh::keys::agent::client::AgentClient<
+    Box<dyn russh::keys::agent::client::AgentStream + Send + Unpin + 'static>,
+>;
+
+/// Keeps russh's borrowed sign-request identity out of the returned future.
+struct OwnedIdentityAgentSigner(DynamicAgentClient);
+
+impl russh::Signer for OwnedIdentityAgentSigner {
+    type Error = russh::AgentAuthError;
+
+    #[allow(clippy::manual_async_fn)]
+    fn auth_sign(
+        &mut self,
+        identity: &russh::keys::agent::AgentIdentity,
+        hash_alg: Option<russh::keys::HashAlg>,
+        to_sign: Vec<u8>,
+    ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
+        let identity = identity.clone();
+        async move {
+            self.0
+                .sign_request(&identity, hash_alg, to_sign)
+                .await
+                .map_err(Into::into)
+        }
+    }
+}
+
 /// Authenticate with SSH agent, trying all available identities.
 ///
 /// Returns Ok(true) on success, Ok(false) if all identities were rejected,
@@ -221,10 +248,11 @@ async fn authenticate_with_agent_inner(
     {
         use russh::keys::agent::client::AgentClient;
 
-        let mut agent = AgentClient::connect_env().await.map_err(|e| {
+        let agent = AgentClient::connect_env().await.map_err(|e| {
             SessionError::AuthenticationFailed(format!("failed to connect SSH agent: {}", e))
         })?;
-        let identities = agent.request_identities().await.map_err(|e| {
+        let mut agent = OwnedIdentityAgentSigner(agent.dynamic());
+        let identities = agent.0.request_identities().await.map_err(|e| {
             SessionError::AuthenticationFailed(format!(
                 "failed to read identities from SSH agent: {}",
                 e
@@ -262,7 +290,7 @@ async fn authenticate_with_agent_inner(
         const OPENSSH_AGENT_PIPE: &str = r"\\.\pipe\openssh-ssh-agent";
         let explicit_pipe = std::env::var("SSH_AUTH_SOCK").ok();
 
-        let mut agent = if let Some(pipe) = explicit_pipe {
+        let agent = if let Some(pipe) = explicit_pipe {
             let pipe_for_error = pipe.clone();
             AgentClient::connect_named_pipe(pipe)
                 .await
@@ -310,7 +338,8 @@ async fn authenticate_with_agent_inner(
             }
         };
 
-        let identities = agent.request_identities().await.map_err(|e| {
+        let mut agent = OwnedIdentityAgentSigner(agent);
+        let identities = agent.0.request_identities().await.map_err(|e| {
             SessionError::AuthenticationFailed(format!(
                 "failed to read identities from SSH agent: {}",
                 e
