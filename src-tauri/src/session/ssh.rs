@@ -18,6 +18,8 @@ use crate::state::ClientHandler;
 
 /// SSH sessions storage for SFTP and port forwarding
 type SshSessions = Arc<Mutex<HashMap<String, Arc<client::Handle<ClientHandler>>>>>;
+/// Erases nested russh futures so Tauri commands stay `Send` on every target.
+type BoxedSshFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, SessionError>> + Send + 'a>>;
 
 /// Global SSH sessions storage
 static SSH_SESSIONS: std::sync::OnceLock<SshSessions> = std::sync::OnceLock::new();
@@ -192,7 +194,14 @@ fn connection_key(
 ///
 /// Returns Ok(true) on success, Ok(false) if all identities were rejected,
 /// or an error if the agent could not be contacted.
-async fn authenticate_with_agent(
+fn authenticate_with_agent<'a>(
+    handle: &'a mut client::Handle<ClientHandler>,
+    username: String,
+) -> BoxedSshFuture<'a, bool> {
+    Box::pin(authenticate_with_agent_inner(handle, username))
+}
+
+async fn authenticate_with_agent_inner(
     handle: &mut client::Handle<ClientHandler>,
     username: String,
 ) -> Result<bool, SessionError> {
@@ -371,7 +380,15 @@ struct JumpTarget {
     use_agent: bool,
 }
 
-async fn open_shell_channel(
+fn open_shell_channel(
+    handle: Arc<client::Handle<ClientHandler>>,
+    cols: u16,
+    rows: u16,
+) -> BoxedSshFuture<'static, russh::Channel<client::Msg>> {
+    Box::pin(open_shell_channel_inner(handle, cols, rows))
+}
+
+async fn open_shell_channel_inner(
     handle: Arc<client::Handle<ClientHandler>>,
     cols: u16,
     rows: u16,
@@ -396,7 +413,7 @@ async fn open_shell_channel(
 
 impl SshSession {
     /// 创建新的 SSH Session（密码认证）
-    pub async fn new_with_password(
+    pub fn new_with_password(
         app: AppHandle,
         host: String,
         port: u16,
@@ -404,8 +421,8 @@ impl SshSession {
         password: String,
         cols: u16,
         rows: u16,
-    ) -> Result<Self, SessionError> {
-        Self::create(
+    ) -> BoxedSshFuture<'static, Self> {
+        Box::pin(Self::create(
             app,
             host,
             port,
@@ -418,13 +435,12 @@ impl SshSession {
             false, // use_target_agent
             cols,
             rows,
-        )
-        .await
+        ))
     }
 
     /// 创建新的 SSH Session（密钥认证）
     #[allow(clippy::too_many_arguments)]
-    pub async fn new_with_key(
+    pub fn new_with_key(
         app: AppHandle,
         host: String,
         port: u16,
@@ -433,8 +449,8 @@ impl SshSession {
         password: Option<String>,
         cols: u16,
         rows: u16,
-    ) -> Result<Self, SessionError> {
-        Self::create(
+    ) -> BoxedSshFuture<'static, Self> {
+        Box::pin(Self::create(
             app,
             host,
             port,
@@ -447,8 +463,7 @@ impl SshSession {
             false, // use_target_agent
             cols,
             rows,
-        )
-        .await
+        ))
     }
 
     /// 创建新的 SSH Session（证书认证）
@@ -457,7 +472,7 @@ impl SshSession {
     /// 私钥格式：PEM 或 OpenSSH 格式（russh decode_openssh）
     /// 证书格式：OpenSSH 格式（ssh-ed25519-cert-v01@openssh.com AAAA...）
     #[allow(clippy::too_many_arguments)]
-    pub async fn new_with_cert(
+    pub fn new_with_cert(
         app: AppHandle,
         host: String,
         port: u16,
@@ -467,8 +482,8 @@ impl SshSession {
         key_password: Option<String>,
         cols: u16,
         rows: u16,
-    ) -> Result<Self, SessionError> {
-        Self::create(
+    ) -> BoxedSshFuture<'static, Self> {
+        Box::pin(Self::create(
             app,
             host,
             port,
@@ -481,20 +496,19 @@ impl SshSession {
             false,             // use_target_agent
             cols,
             rows,
-        )
-        .await
+        ))
     }
 
     /// 创建新的 SSH Session（Agent 认证）
-    pub async fn new_with_agent(
+    pub fn new_with_agent(
         app: AppHandle,
         host: String,
         port: u16,
         username: String,
         cols: u16,
         rows: u16,
-    ) -> Result<Self, SessionError> {
-        Self::create(
+    ) -> BoxedSshFuture<'static, Self> {
+        Box::pin(Self::create(
             app, host, port, username, None,  // password
             None,  // private_key
             None,  // certificate
@@ -502,13 +516,37 @@ impl SshSession {
             None,  // no jump host
             false, // use_target_agent
             cols, rows,
-        )
-        .await
+        ))
     }
 
     /// 创建新的 SSH Session（通过 Jump Host）
     #[allow(clippy::too_many_arguments)]
-    pub async fn new_with_jump(
+    pub fn new_with_jump(
+        app: AppHandle,
+        target_host: String,
+        target_port: u16,
+        target_username: String,
+        target_password: Option<String>,
+        target_key: Option<String>,
+        jump_host: JumpHostConfig,
+        cols: u16,
+        rows: u16,
+    ) -> BoxedSshFuture<'static, Self> {
+        Box::pin(Self::new_with_jump_inner(
+            app,
+            target_host,
+            target_port,
+            target_username,
+            target_password,
+            target_key,
+            jump_host,
+            cols,
+            rows,
+        ))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn new_with_jump_inner(
         app: AppHandle,
         target_host: String,
         target_port: u16,
@@ -848,7 +886,16 @@ impl SshSession {
     /// 通过 Jump Host 连接到目标主机
     ///
     /// 返回目标主机 handle 和负责承载隧道的跳板机 handle。
-    async fn connect_via_jump(
+    fn connect_via_jump(
+        config: Arc<client::Config>,
+        target: JumpTarget,
+        jump_host: JumpHostConfig,
+    ) -> BoxedSshFuture<'static, (client::Handle<ClientHandler>, client::Handle<ClientHandler>)>
+    {
+        Box::pin(Self::connect_via_jump_inner(config, target, jump_host))
+    }
+
+    async fn connect_via_jump_inner(
         config: Arc<client::Config>,
         target: JumpTarget,
         jump_host: JumpHostConfig,
@@ -1016,7 +1063,23 @@ impl SshSession {
     }
 
     /// 认证处理（不含 agent；agent 由调用方在需要时单独调用 `authenticate_with_agent`）
-    async fn authenticate(
+    fn authenticate<'a>(
+        handle: &'a mut client::Handle<ClientHandler>,
+        username: String,
+        password: Option<String>,
+        private_key: Option<String>,
+        certificate: Option<String>,
+    ) -> BoxedSshFuture<'a, ()> {
+        Box::pin(Self::authenticate_inner(
+            handle,
+            username,
+            password,
+            private_key,
+            certificate,
+        ))
+    }
+
+    async fn authenticate_inner(
         handle: &mut client::Handle<ClientHandler>,
         username: String,
         password: Option<String>,
@@ -1111,7 +1174,23 @@ impl SshSession {
     ///
     /// SSH 证书认证需要同时提供私钥（用于签名）和证书（包含公钥和 CA 签名）。
     /// 格式：证书为 OpenSSH 格式（user-cert.pub 内容），私钥为 PEM/OpenSSH 格式。
-    async fn authenticate_with_cert(
+    fn authenticate_with_cert<'a>(
+        handle: &'a mut client::Handle<ClientHandler>,
+        username: String,
+        cert_content: String,
+        private_key_content: String,
+        key_password: Option<String>,
+    ) -> BoxedSshFuture<'a, ()> {
+        Box::pin(Self::authenticate_with_cert_inner(
+            handle,
+            username,
+            cert_content,
+            private_key_content,
+            key_password,
+        ))
+    }
+
+    async fn authenticate_with_cert_inner(
         handle: &mut client::Handle<ClientHandler>,
         username: String,
         cert_content: String,
