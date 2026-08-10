@@ -387,23 +387,43 @@ mod tests {
 
     const ED25519_PUBLIC_KEY: &str =
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti";
+    #[cfg(unix)]
+    static SSH_AUTH_SOCK_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     #[cfg(unix)]
     fn test_get_ssh_agent_socket_returns_env_var() {
+        let _guard = SSH_AUTH_SOCK_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let original = std::env::var_os("SSH_AUTH_SOCK");
+
         // When SSH_AUTH_SOCK is set, should return Some(value)
         std::env::set_var("SSH_AUTH_SOCK", "/tmp/ssh-agent.sock");
         let result = get_ssh_agent_socket();
         assert_eq!(result, Some("/tmp/ssh-agent.sock".to_string()));
-        std::env::remove_var("SSH_AUTH_SOCK");
+
+        match original {
+            Some(value) => std::env::set_var("SSH_AUTH_SOCK", value),
+            None => std::env::remove_var("SSH_AUTH_SOCK"),
+        }
     }
 
     #[test]
     #[cfg(unix)]
     fn test_get_ssh_agent_socket_returns_none_when_not_set() {
+        let _guard = SSH_AUTH_SOCK_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let original = std::env::var_os("SSH_AUTH_SOCK");
+
         std::env::remove_var("SSH_AUTH_SOCK");
         let result = get_ssh_agent_socket();
         assert_eq!(result, None);
+
+        if let Some(value) = original {
+            std::env::set_var("SSH_AUTH_SOCK", value);
+        }
     }
 
     #[test]
