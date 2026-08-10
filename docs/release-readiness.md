@@ -153,7 +153,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-fea
 | `pnpm audit --registry=https://registry.npmjs.org --prod --audit-level high` | ✅ No known vulnerabilities found |
 | 前端 | ✅ 31 个测试文件、408 项测试；lint/typecheck/build:budget 通过 |
 | Team Server | ✅ 25 个测试文件、95 项测试；Prisma validate/lint/typecheck/build 通过 |
-| Rust | ✅ 44 项测试；fmt/check/Clippy `-D warnings` 通过 |
+| Rust | ✅ 45 项测试；fmt/check/Clippy `-D warnings` 通过 |
 | Bundle | ✅ 初始 gzip 227.36 KB / 240 KB，总 gzip 510.09 KB / 550 KB，最大 JS chunk raw 390.87 KB / 500 KB |
 | 源码规模 | ✅ 447 个前端/Team Server 生产 TS/TSX 文件，0 个超限 |
 | Docker | ⚠️ 当前机器没有 `docker` 命令，未声称本地镜像或 Compose 通过 |
@@ -187,7 +187,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-fea
 | 串口 | macOS / Windows / Linux + 硬件 | ⚠️ 待实机 | 精确写入、主动断开、运行中拔线均清理 session |
 | 快捷键 | Windows / Linux / 非美式键盘 | ⚠️ 待实机 | 不覆盖系统快捷键，`Ctrl+Shift+\` 可触发垂直分屏 |
 | Team Server 容器 | Docker + PostgreSQL 16 | ⚠️ 当前机器无 Docker | 镜像构建、迁移、`/api/v1/health/ready` 与关停钩子通过 |
-| Tauri 三平台编译 | macOS / Ubuntu / Windows CI | 🔄 macOS、Ubuntu 已通过；Windows `Send` 修复待重跑 | `.github/workflows/ci.yml` 三平台 `tauri build --no-bundle --ci` 通过 |
+| Tauri 三平台编译 | macOS / Ubuntu / Windows CI | 🔄 macOS、Ubuntu 已通过；SSH command Future 所有权修复待 Windows 重跑 | `.github/workflows/ci.yml` 三平台 `tauri build --no-bundle --ci` 通过 |
 | Release 安装包 | 六个原生 GitHub runner | 🔄 工作流已建立，资产待实际上传验收 | 八个安装资产非空且系统/架构命名正确，`SHA256SUMS.txt` 可校验 |
 | S3 服务端集成 | AWS S3 或兼容服务 | ⚠️ 待外部服务 | 固定向量之外，验证实际签名、UTF-8 key、分页列表、上传下载与删除 |
 | Agent forwarding | 全平台 | 📋 入口未实现 | 独立设置开启后显式调用 `channel.agent_forward(...)` 并完成双向请求 |

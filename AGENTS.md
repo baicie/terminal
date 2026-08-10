@@ -525,7 +525,7 @@ pnpm add <package-name>
 ### 发布就绪门禁 ✅ 本机自动化通过
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
-- ✅ `pnpm verify`：前端 408、Team Server 95、Rust 44 项测试及 lint/typecheck/build/源码行数门禁全部通过
+- ✅ `pnpm verify`：前端 408、Team Server 95、Rust 45 项测试及 lint/typecheck/build/源码行数门禁全部通过
 - ✅ 生产依赖审计为 0 个已知漏洞
 - ✅ 447 个生产源码文件均满足行数限制
 - ✅ `.github/workflows/release.yml` 为 macOS、Windows、Linux 的 x64/ARM64 建立原生 runner 打包、确定性资产命名、非空校验和 SHA-256 清单

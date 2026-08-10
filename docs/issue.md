@@ -1564,13 +1564,14 @@ $ cargo check
 
 1. GitHub Release `v0.0.1-dev.0` 的 `assets` 为空，现有 CI 只执行 `tauri build --no-bundle`，不会生成或上传安装包。
 2. CI 仅覆盖三个默认 runner，没有区分 macOS、Windows、Linux 的 x64/ARM64。
-3. Windows x64 Tauri job 在五个 SSH 创建命令上报 `implementation of Send is not general enough`；Future 跨 `await` 借用了 `&SshConnectionPool`。
+3. Windows x64 Tauri job 在五个 SSH 创建命令上报 `implementation of Send is not general enough`；Future 先后暴露了 `&SshConnectionPool` 与 IPC `String` 参数的跨 `await` 借用。
 4. 工作流权限为 `contents: read`，无法写入既有 Release，也没有资产命名、非空校验或 checksum 门禁。
 
 **修复**:
 
 - `SshConnectionPool::creation_lock/get/insert/release` 改为按值接收 `Arc<Self>` 和拥有的 key，调用方显式克隆轻量 `Arc`；连接复用、引用计数与清理行为不变。
-- 新增编译期回归测试，要求连接池 Future 满足 `Send + 'static`，防止 Tauri command 再次持有借用式 Future。
+- `SshSession::new_with_*` 及五个 SSH Tauri command 改为拥有 `String`/`Option<String>` 参数，内部仅在局部连接逻辑中借用，避免 command Future 持有 IPC 参数引用。
+- 新增编译期回归测试，要求连接池 Future 与五个 SSH command Future 满足 `Send + 'static`，防止 Windows Tauri 宏再次接受借用式 Future。
 - 新增独立 Release 工作流，使用 macOS Apple Silicon/Intel、Windows ARM64/x64、Linux ARM64/x64 六个原生 runner。
 - macOS 上传 DMG，Windows 上传 NSIS，Linux上传 AppImage 与 DEB；名称固定包含版本、系统和架构，逐项验证非空并发布 `SHA256SUMS.txt`。
 - 不生成未配置签名的 updater JSON；开发版明确保留 Apple notarization 与 Windows Authenticode 未配置状态。
@@ -1578,6 +1579,7 @@ $ cargo check
 **当前验证**:
 
 - [x] Rust SSH 定向 7 项测试通过，包含连接池锁行为与 `Send + 'static` 编译断言。
+- [x] Rust 全量 45 项测试、fmt/check/Clippy `-D warnings` 通过，新增五个 SSH command Future 的 `Send + 'static` 编译回归。
 - [x] `.github/workflows/ci.yml` 与 `release.yml` 均通过 YAML 解析和 `actionlint`。
 - [ ] Windows x64 与 ARM64 原生 runner 编译、打包并上传非空 NSIS。
 - [ ] macOS x64/ARM64 原生 runner 打包并上传非空 DMG。

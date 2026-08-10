@@ -106,7 +106,7 @@ pub async fn session_create_ssh_password(
     }
 
     let session =
-        SshSession::new_with_password(app, &host, port, &username, &password, cols, rows).await?;
+        SshSession::new_with_password(app, host, port, username, password, cols, rows).await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
@@ -150,17 +150,9 @@ pub async fn session_create_ssh_key(
         ));
     }
 
-    let session = SshSession::new_with_key(
-        app,
-        &host,
-        port,
-        &username,
-        &private_key,
-        password.as_deref(),
-        cols,
-        rows,
-    )
-    .await?;
+    let session =
+        SshSession::new_with_key(app, host, port, username, private_key, password, cols, rows)
+            .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
@@ -196,7 +188,7 @@ pub async fn session_create_ssh_agent(
         ));
     }
 
-    let session = SshSession::new_with_agent(app, &host, port, &username, cols, rows).await?;
+    let session = SshSession::new_with_agent(app, host, port, username, cols, rows).await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
@@ -250,12 +242,12 @@ pub async fn session_create_ssh_cert(
 
     let session = SshSession::new_with_cert(
         app,
-        &host,
+        host,
         port,
-        &username,
-        &certificate,
-        &private_key,
-        password.as_deref(),
+        username,
+        certificate,
+        private_key,
+        password,
         cols,
         rows,
     )
@@ -284,11 +276,11 @@ pub async fn session_create_ssh_jump(
 ) -> Result<String, SessionError> {
     let session = SshSession::new_with_jump(
         app,
-        &target_host,
+        target_host,
         target_port,
-        &target_username,
-        target_password.as_deref(),
-        target_private_key.as_deref(),
+        target_username,
+        target_password,
+        target_private_key,
         jump_host,
         cols,
         rows,
@@ -430,6 +422,86 @@ mod local_exec_tests {
         let command = local_exec_command("/bin/bash", "sleep 60", false);
 
         assert!(command.get_kill_on_drop());
+    }
+}
+
+#[cfg(test)]
+mod ssh_command_future_tests {
+    use super::{
+        session_create_ssh_agent, session_create_ssh_cert, session_create_ssh_jump,
+        session_create_ssh_key, session_create_ssh_password, AppHandle, SessionError,
+    };
+    use crate::session::JumpHostConfig;
+    use std::future::Future;
+
+    macro_rules! assert_send_command {
+        ($assertion:ident, ($($argument:ty),+)) => {
+            fn $assertion<F, Fut>(_: F)
+            where
+                F: FnOnce($($argument),+) -> Fut,
+                Fut: Future<Output = Result<String, SessionError>> + Send + 'static,
+            {
+            }
+        };
+    }
+
+    assert_send_command!(
+        password_command_future_is_send,
+        (AppHandle, String, u16, String, String, u16, u16)
+    );
+    assert_send_command!(
+        key_command_future_is_send,
+        (
+            AppHandle,
+            String,
+            u16,
+            String,
+            String,
+            Option<String>,
+            u16,
+            u16
+        )
+    );
+    assert_send_command!(
+        agent_command_future_is_send,
+        (AppHandle, String, u16, String, u16, u16)
+    );
+    assert_send_command!(
+        cert_command_future_is_send,
+        (
+            AppHandle,
+            String,
+            u16,
+            String,
+            String,
+            String,
+            Option<String>,
+            u16,
+            u16
+        )
+    );
+    assert_send_command!(
+        jump_command_future_is_send,
+        (
+            AppHandle,
+            String,
+            u16,
+            String,
+            Option<String>,
+            Option<String>,
+            JumpHostConfig,
+            u16,
+            u16
+        )
+    );
+
+    #[test]
+    fn ssh_command_futures_own_ipc_arguments() {
+        password_command_future_is_send(session_create_ssh_password);
+        key_command_future_is_send(session_create_ssh_key);
+        agent_command_future_is_send(session_create_ssh_agent);
+        cert_command_future_is_send(session_create_ssh_cert);
+        jump_command_future_is_send(session_create_ssh_jump);
     }
 }
 

@@ -591,12 +591,12 @@ src-tauri/
 
 | 领域 | 改动 |
 | --- | --- |
-| Windows 编译 | 连接池异步 API 改为拥有 `Arc<SshConnectionPool>` 与 key，避免 Tauri command Future 跨 `await` 借用连接池；新增 `Send + 'static` 编译期回归断言 |
+| Windows 编译 | 连接池异步 API 与 `SshSession::new_with_*` 改为拥有 `Arc`、`String` 和 `Option<String>`，避免 Tauri command Future 跨 `await` 借用共享状态或 IPC 参数；新增 `Send + 'static` 编译期回归断言 |
 | 发布矩阵 | 新增 `.github/workflows/release.yml`，使用六个原生 runner 覆盖 macOS/Windows/Linux 的 x64 与 ARM64 |
 | 安装包 | macOS 生成 DMG，Windows 生成 NSIS，Linux 生成 AppImage 与 DEB；资产名固定包含版本、系统和架构 |
 | 完整性 | 上传前逐项校验资产存在且非空，随后生成并上传 `SHA256SUMS.txt`；未配置 updater JSON、Apple notarization 或 Windows Authenticode |
 
-**当前证据**：既有 CI 的前端、Team Server、源码规模、Rust、Docker、macOS Tauri 和 Linux Tauri job 已通过；Windows x64 job 的失败根因已定位。Rust 定向 7 项测试、YAML 解析与 `actionlint` 已通过。六目标 Release 运行和资产上传仍必须以 GitHub Actions/Release 实际结果验收，不能在运行前标记完成。
+**当前证据**：既有 CI 的前端、Team Server、源码规模、Rust、Docker、macOS Tauri 和 Linux Tauri job 已通过；Windows x64 job 暴露的共享状态与 IPC 参数借用问题已修复，待新提交原生重跑。当前本机 Rust 为 45 项测试，包含五个 SSH command Future 的 `Send + 'static` 编译回归；YAML 解析与 `actionlint` 已通过。六目标 Release 运行和资产上传仍必须以 GitHub Actions/Release 实际结果验收，不能在运行前标记完成。
 
 **实机边界**：Windows/Linux 安装包构建成功不等于 OpenSSH Agent、Pageant、Jump Host、本地 PTY、快捷键或串口硬件实机通过；这些项目继续保留在 Issue #39。
 

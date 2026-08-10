@@ -521,8 +521,8 @@
 ### 2026-08-10 Phase 6.12 - v0.0.1-dev.0 多平台发布 🔄 远端验收中
 
 - [x] 定位空 Release：现有 CI 使用 `--no-bundle` 且只有 `contents: read`，不会上传安装包
-- [x] 定位 Windows CI：五个 SSH 创建命令的 Future 借用 `&SshConnectionPool`，不满足 Tauri 的通用 `Send` 约束
-- [x] 连接池异步 API 改为拥有 `Arc<Self>` 与 key，并增加 `Send + 'static` 编译期回归断言
+- [x] 定位 Windows CI：五个 SSH 创建命令的 Future 借用连接池共享状态和 IPC `String` 参数，不满足 Tauri 的通用 `Send` 约束
+- [x] 连接池与 SSH 会话创建异步 API 改为拥有 `Arc<Self>`、key 和 IPC `String` 参数，并增加 `Send + 'static` 编译期回归断言
 - [x] 新增六目标 Release matrix：macOS/Windows/Linux x64 与 ARM64 原生 runner
 - [x] 固定安装包命名，逐项非空校验并生成 `SHA256SUMS.txt`
 - [x] Release YAML 解析和 `actionlint` 通过；Rust SSH 定向 7 项测试通过

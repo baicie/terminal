@@ -391,10 +391,10 @@ impl SshSession {
     /// 创建新的 SSH Session（密码认证）
     pub async fn new_with_password(
         app: AppHandle,
-        host: &str,
+        host: String,
         port: u16,
-        username: &str,
-        password: &str,
+        username: String,
+        password: String,
         cols: u16,
         rows: u16,
     ) -> Result<Self, SessionError> {
@@ -419,11 +419,11 @@ impl SshSession {
     #[allow(clippy::too_many_arguments)]
     pub async fn new_with_key(
         app: AppHandle,
-        host: &str,
+        host: String,
         port: u16,
-        username: &str,
-        private_key: &str,
-        password: Option<&str>,
+        username: String,
+        private_key: String,
+        password: Option<String>,
         cols: u16,
         rows: u16,
     ) -> Result<Self, SessionError> {
@@ -452,12 +452,12 @@ impl SshSession {
     #[allow(clippy::too_many_arguments)]
     pub async fn new_with_cert(
         app: AppHandle,
-        host: &str,
+        host: String,
         port: u16,
-        username: &str,
-        certificate: &str,
-        private_key: &str,
-        key_password: Option<&str>,
+        username: String,
+        certificate: String,
+        private_key: String,
+        key_password: Option<String>,
         cols: u16,
         rows: u16,
     ) -> Result<Self, SessionError> {
@@ -481,9 +481,9 @@ impl SshSession {
     /// 创建新的 SSH Session（Agent 认证）
     pub async fn new_with_agent(
         app: AppHandle,
-        host: &str,
+        host: String,
         port: u16,
-        username: &str,
+        username: String,
         cols: u16,
         rows: u16,
     ) -> Result<Self, SessionError> {
@@ -503,11 +503,11 @@ impl SshSession {
     #[allow(clippy::too_many_arguments)]
     pub async fn new_with_jump(
         app: AppHandle,
-        target_host: &str,
+        target_host: String,
         target_port: u16,
-        target_username: &str,
-        target_password: Option<&str>,
-        target_key: Option<&str>,
+        target_username: String,
+        target_password: Option<String>,
+        target_key: Option<String>,
         jump_host: JumpHostConfig,
         cols: u16,
         rows: u16,
@@ -537,12 +537,12 @@ impl SshSession {
     #[allow(clippy::too_many_arguments)]
     async fn create(
         app: AppHandle,
-        host: &str,
+        host: String,
         port: u16,
-        username: &str,
-        password: Option<&str>,
-        private_key: Option<&str>,
-        certificate: Option<&str>,
+        username: String,
+        password: Option<String>,
+        private_key: Option<String>,
+        certificate: Option<String>,
         use_agent: bool,
         jump_host: Option<JumpHostConfig>,
         use_target_agent: bool,
@@ -577,7 +577,7 @@ impl SshSession {
         // 决定连接方式：直接连接 或 通过 Jump Host
         // Try to get a pooled connection first (ControlMaster multiplexing)
         let pool = get_connection_pool();
-        let pool_key = connection_key(host, port, username, jump_host.as_ref());
+        let pool_key = connection_key(&host, port, &username, jump_host.as_ref());
         let creation_lock = Arc::clone(&pool).creation_lock(pool_key.clone()).await;
         let _creation_guard = creation_lock.lock().await;
 
@@ -695,11 +695,11 @@ impl SshSession {
 
         if let Some(ref jh) = jump_host {
             let target = JumpTarget {
-                host,
+                host: &host,
                 port,
-                username,
-                password,
-                private_key,
+                username: &username,
+                password: password.as_deref(),
+                private_key: private_key.as_deref(),
                 use_agent: use_target_agent,
             };
             let (target_handle, jump_handle) =
@@ -708,20 +708,26 @@ impl SshSession {
             transport_handle = Some(Arc::new(jump_handle));
         } else {
             let addr = format!("{}:{}", host, port);
-            let mut direct = client::connect(config, addr, ClientHandler::for_host(host, port))
+            let mut direct = client::connect(config, addr, ClientHandler::for_host(&host, port))
                 .await
                 .map_err(|e| SessionError::ConnectionFailed(format!("connection failed: {}", e)))?;
 
             if use_agent {
-                let success = authenticate_with_agent(&mut direct, username).await?;
+                let success = authenticate_with_agent(&mut direct, &username).await?;
                 if !success {
                     return Err(SessionError::AuthenticationFailed(
                         "all SSH agent identities rejected".to_string(),
                     ));
                 }
             } else {
-                Self::authenticate(&mut direct, username, password, private_key, certificate)
-                    .await?;
+                Self::authenticate(
+                    &mut direct,
+                    &username,
+                    password.as_deref(),
+                    private_key.as_deref(),
+                    certificate.as_deref(),
+                )
+                .await?;
             }
             raw_handle = direct;
             transport_handle = None;
