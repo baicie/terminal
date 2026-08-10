@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import type { RCCompletionItem } from '@/service/shell-rc'
 import {
   extractCurrentWord,
   getWordStart,
@@ -19,7 +20,6 @@ import {
   getNextCompletionIndex,
   getCompletionTypeLabel,
   type CompletionItem,
-  type RCCompletionItem,
 } from './use-command-completion'
 
 // ---------------------------------------------------------------------------
@@ -228,7 +228,8 @@ describe('findHistoryMatches', () => {
   })
 
   it('truncates long labels to 60 chars with ...', () => {
-    const longCmd = 'git commit -m "this is a very long commit message that exceeds sixty characters"'
+    const longCmd =
+      'git commit -m "this is a very long commit message that exceeds sixty characters"'
     const matches = findHistoryMatches([longCmd], 'git')
     expect(matches).toHaveLength(1)
     // slice(0, 57) + '...' = 60 chars total
@@ -304,8 +305,16 @@ describe('findSubcommandMatches', () => {
 // ---------------------------------------------------------------------------
 
 describe('mergeCompletionItems', () => {
-  const histItem: CompletionItem = { text: 'git push', label: 'git push', type: 'history' }
-  const otherHistItem: CompletionItem = { text: 'docker run', label: 'docker run', type: 'history' }
+  const histItem: CompletionItem = {
+    text: 'git push',
+    label: 'git push',
+    type: 'history',
+  }
+  const otherHistItem: CompletionItem = {
+    text: 'docker run',
+    label: 'docker run',
+    type: 'history',
+  }
 
   it('merges items from multiple sources', () => {
     const result = mergeCompletionItems([histItem], [otherHistItem])
@@ -313,28 +322,52 @@ describe('mergeCompletionItems', () => {
   })
 
   it('deduplicates exact duplicates (same type and same text)', () => {
-    const dupItem: CompletionItem = { text: 'git push', label: 'git push', type: 'history' }
+    const dupItem: CompletionItem = {
+      text: 'git push',
+      label: 'git push',
+      type: 'history',
+    }
     const result = mergeCompletionItems([histItem], [dupItem])
     expect(result).toHaveLength(1) // exact duplicate
   })
 
   it('keeps items with same text but different type', () => {
     // Key is `${type}:${text.toLowerCase()}`, so different types = different keys
-    const subItem: CompletionItem = { text: 'git push', label: 'push', type: 'subcommand' }
+    const subItem: CompletionItem = {
+      text: 'git push',
+      label: 'push',
+      type: 'subcommand',
+    }
     const result = mergeCompletionItems([histItem], [subItem])
     expect(result).toHaveLength(2)
   })
 
   it('deduplicates case-insensitively for same type', () => {
-    const lower = { text: 'git status', label: 'git status', type: 'history' as const }
-    const upper = { text: 'Git Status', label: 'Git Status', type: 'history' as const }
+    const lower = {
+      text: 'git status',
+      label: 'git status',
+      type: 'history' as const,
+    }
+    const upper = {
+      text: 'Git Status',
+      label: 'Git Status',
+      type: 'history' as const,
+    }
     const result = mergeCompletionItems([lower], [upper])
     expect(result).toHaveLength(1)
   })
 
   it('keeps different cases when types differ', () => {
-    const lower = { text: 'git status', label: 'git status', type: 'history' as const }
-    const upper = { text: 'Git Status', label: 'Git Status', type: 'subcommand' as const }
+    const lower = {
+      text: 'git status',
+      label: 'git status',
+      type: 'history' as const,
+    }
+    const upper = {
+      text: 'Git Status',
+      label: 'Git Status',
+      type: 'subcommand' as const,
+    }
     const result = mergeCompletionItems([lower], [upper])
     expect(result).toHaveLength(2)
   })
@@ -429,7 +462,10 @@ describe('findAliasMatches', () => {
 
   it('limits to 20 results', () => {
     const manyAliases = Array.from({ length: 30 }, (_, i) => ({
-      name: `alias${i}`, label: `alias${i}`, type: 'alias' as const, detail: '',
+      name: `alias${i}`,
+      label: `alias${i}`,
+      type: 'alias' as const,
+      detail: '',
     }))
     expect(findAliasMatches(manyAliases, 'a')).toHaveLength(20)
   })
@@ -452,7 +488,12 @@ describe('findFunctionMatches', () => {
   const rcItems: RCCompletionItem[] = [
     { name: 'll', label: 'll', type: 'alias', detail: 'ls -la' },
     { name: 'greet', label: 'greet', type: 'function', detail: 'echo hi' },
-    { name: 'deployProd', label: 'deployProd', type: 'function', detail: 'deploy to prod' },
+    {
+      name: 'deployProd',
+      label: 'deployProd',
+      type: 'function',
+      detail: 'deploy to prod',
+    },
     { name: 'gs', label: 'gs', type: 'alias', detail: 'git status' },
   ]
 
@@ -477,7 +518,10 @@ describe('findFunctionMatches', () => {
 
   it('limits to 20 results', () => {
     const manyFuncs = Array.from({ length: 30 }, (_, i) => ({
-      name: `func${i}`, label: `func${i}`, type: 'function' as const, detail: '',
+      name: `func${i}`,
+      label: `func${i}`,
+      type: 'function' as const,
+      detail: '',
     }))
     expect(findFunctionMatches(manyFuncs, 'f')).toHaveLength(20)
   })

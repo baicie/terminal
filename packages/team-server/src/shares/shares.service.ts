@@ -4,6 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
+import { deleteShareWithAudit } from './share-deletion'
+import {
+  resolveCreateSensitivity,
+  resolveUpdateSecurity,
+} from './share-security'
 
 @Injectable()
 export class SharesService {
@@ -22,23 +27,27 @@ export class SharesService {
     userId: string,
     data: {
       type: 'HOST' | 'HOST_GROUP' | 'SNIPPET_PACKAGE'
-      data: unknown
+      data?: unknown
       encryptedData?: string
       isSensitive?: boolean
       permission: 'READONLY' | 'READWRITE'
     },
   ) {
     await this.checkMembership(teamId, userId)
+    const isSensitive = resolveCreateSensitivity(
+      data.isSensitive,
+      data.encryptedData,
+    )
     return this.prisma.share.create({
       data: {
         teamId,
         type: data.type,
-        ...(data.isSensitive
+        ...(isSensitive
           ? { encryptedData: data.encryptedData, data: {}, isSensitive: true }
           : { data: data.data as object }),
         sharedBy: userId,
         permission: data.permission,
-        isSensitive: data.isSensitive ?? false,
+        isSensitive,
       },
     })
   }
@@ -72,19 +81,22 @@ export class SharesService {
       throw new ForbiddenException('Only creator can update share')
     }
 
+    const security = resolveUpdateSecurity(data, share)
     return this.prisma.share.update({
       where: { id: shareId },
       data: {
         ...(data.permission !== undefined && { permission: data.permission }),
-        ...(data.data !== undefined && !data.isSensitive && {
-          data: data.data as object,
-          encryptedData: null,
-        }),
-        ...(data.encryptedData !== undefined && {
-          encryptedData: data.encryptedData,
-          data: {},
-        }),
-        ...(data.isSensitive !== undefined && { isSensitive: data.isSensitive }),
+        ...(security.isSensitive
+          ? {
+              data: {},
+              encryptedData: security.encryptedData,
+              isSensitive: true,
+            }
+          : {
+              ...(data.data !== undefined && { data: data.data as object }),
+              encryptedData: null,
+              isSensitive: false,
+            }),
       },
     })
   }
@@ -99,17 +111,12 @@ export class SharesService {
       throw new ForbiddenException('Only creator can delete share')
     }
 
-    // Record deletion in audit log before deleting
-    await this.prisma.auditLog.create({
-      data: {
-        teamId,
-        userId,
-        action: 'SHARE_DELETED',
-        details: { shareId, shareType: share.type },
-      },
+    await deleteShareWithAudit(this.prisma, {
+      teamId,
+      userId,
+      shareId,
+      shareType: share.type,
     })
-
-    await this.prisma.share.delete({ where: { id: shareId } })
   }
 
   private async checkMembership(teamId: string, userId: string) {

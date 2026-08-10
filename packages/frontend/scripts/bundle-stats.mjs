@@ -29,6 +29,12 @@ const argv = Object.fromEntries(
   }),
 )
 
+const budgets = {
+  initialGzip: 240 * 1024,
+  totalGzip: 550 * 1024,
+  maxJavaScriptRaw: 500 * 1024,
+}
+
 const DIST = path.resolve(
   process.cwd(),
   argv.dist ?? path.join('..', '..', 'dist'),
@@ -223,3 +229,50 @@ console.log(
 console.log(
   `Total:   raw=${fmtBytes(total.raw)} gzip=${fmtBytes(total.gzip)} brotli=${fmtBytes(total.brotli)}`,
 )
+
+if (argv.check) {
+  const failures = []
+  if (initialAgg.gzip > budgets.initialGzip) {
+    failures.push(
+      `initial gzip ${fmtBytes(initialAgg.gzip)} exceeds ${fmtBytes(budgets.initialGzip)}`,
+    )
+  }
+  if (total.gzip > budgets.totalGzip) {
+    failures.push(
+      `total gzip ${fmtBytes(total.gzip)} exceeds ${fmtBytes(budgets.totalGzip)}`,
+    )
+  }
+
+  const oversizedJavaScript = stats.filter(
+    item => item.file.endsWith('.js') && item.raw > budgets.maxJavaScriptRaw,
+  )
+  if (oversizedJavaScript.length > 0) {
+    failures.push(
+      ...oversizedJavaScript.map(
+        item =>
+          `${item.file} ${fmtBytes(item.raw)} exceeds ${fmtBytes(budgets.maxJavaScriptRaw)}`,
+      ),
+    )
+  }
+
+  const eagerTerminalChunks = stats.filter(
+    item =>
+      item.loadType === 'Initial' &&
+      /(?:^|\/)(?:xterm-(?:core|addons)|container)\./.test(item.file),
+  )
+  if (eagerTerminalChunks.length > 0) {
+    failures.push(
+      `terminal-only chunks entered the initial graph: ${eagerTerminalChunks.map(item => item.file).join(', ')}`,
+    )
+  }
+
+  if (failures.length > 0) {
+    console.error('\nBundle budget failed:')
+    failures.forEach(failure => console.error(`- ${failure}`))
+    process.exitCode = 1
+  } else {
+    console.log(
+      `Bundle budget passed (initial gzip <= ${fmtBytes(budgets.initialGzip)}, total gzip <= ${fmtBytes(budgets.totalGzip)}, JS chunk <= ${fmtBytes(budgets.maxJavaScriptRaw)}).`,
+    )
+  }
+}

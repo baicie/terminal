@@ -2,6 +2,7 @@ import type { SSHKeyRecord } from '@/service/database'
 import { KeyRound, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import {
   Select,
   SelectContent,
@@ -19,6 +20,7 @@ import {
 type KeyFilter = 'all' | 'key' | 'certificate' | 'touchid' | 'fido2'
 
 interface KeyListPanelProps {
+  className?: string
   keys: SSHKeyRecord[]
   loading: boolean
   selectedKey: SSHKeyRecord | null
@@ -32,6 +34,7 @@ interface KeyListPanelProps {
 }
 
 export function KeyListPanel({
+  className,
   keys,
   loading,
   selectedKey,
@@ -51,7 +54,12 @@ export function KeyListPanel({
   })
 
   return (
-    <div className="flex min-h-0 w-80 shrink-0 flex-col border-r">
+    <div
+      className={cn(
+        'flex min-h-0 w-full flex-1 flex-col border-r md:w-80 md:flex-none',
+        className,
+      )}
+    >
       <ViewToolbar className="flex-col items-stretch gap-2 p-4">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />

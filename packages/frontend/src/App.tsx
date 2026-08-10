@@ -23,52 +23,6 @@ export default function App() {
   }, [initializeTeam])
 
   useEffect(() => {
-    const registerShortcuts = async () => {
-      try {
-        const { isRegistered, register } = await import('@tauri-apps/plugin-global-shortcut')
-        const { getCurrentWindow } = await import('@tauri-apps/api/window')
-
-        if (!(await isRegistered('CommandOrControl+W'))) {
-          await register('CommandOrControl+W', async event => {
-            if (event.state === 'Pressed') {
-              await getCurrentWindow().hide()
-            }
-          })
-        }
-        if (!(await isRegistered('CommandOrControl+M'))) {
-          await register('CommandOrControl+M', async event => {
-            if (event.state === 'Pressed') {
-              await getCurrentWindow().minimize()
-            }
-          })
-        }
-        if (!(await isRegistered('CommandOrControl+H'))) {
-          await register('CommandOrControl+H', async event => {
-            if (event.state === 'Pressed') {
-              await getCurrentWindow().hide()
-            }
-          })
-        }
-        if (!(await isRegistered('CommandOrControl+,'))) {
-          await register('CommandOrControl+,', async () => {
-            window.dispatchEvent(new CustomEvent('open-settings'))
-          })
-        }
-      } catch (e) {
-        console.warn('Failed to register global shortcuts:', e)
-      }
-    }
-
-    registerShortcuts()
-
-    return () => {
-      import('@tauri-apps/plugin-global-shortcut').then(({ unregisterAll }) => {
-        unregisterAll().catch(() => {})
-      })
-    }
-  }, [])
-
-  useEffect(() => {
     void (async () => {
       await hydrateFromDatabase()
       try {

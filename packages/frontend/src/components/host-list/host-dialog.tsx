@@ -1,23 +1,15 @@
-import type { AuthType, Host } from '@/types'
-import { Network } from 'lucide-react'
+import type { Host } from '@/types'
 import * as React from 'react'
 import { useEffect, useState } from 'react'
 import { toast } from '@/components/ui/sonner'
 import PortForwardDialog from '@/components/port-forward'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { EnvironmentVariablesDialog } from './environment-dialog'
 import { HostFormBasic } from './host-form-basic'
 import { HostFormActions } from './host-form-actions'
-import { AuthFields } from './host-dialog-auth-fields'
+import {
+  HostDialogAdvancedFields,
+  type HostFormState,
+} from './host-dialog-advanced-fields'
 import { useHostStore } from '@/store/host'
 
 interface HostDialogProps {
@@ -26,7 +18,7 @@ interface HostDialogProps {
   onClose: () => void
 }
 
-const defaultHost: Omit<Host, 'id' | 'createdAt' | 'updatedAt'> = {
+const defaultHost: HostFormState = {
   name: '',
   hostname: '',
   port: 22,
@@ -59,7 +51,9 @@ export const HostDialog: React.FC<HostDialogProps> = ({
   const [portForwardDialogOpen, setPortForwardDialogOpen] = useState(false)
   const [environmentDialogOpen, setEnvironmentDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([])
+  const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>(
+    [],
+  )
 
   useEffect(() => {
     if (host) {
@@ -100,7 +94,9 @@ export const HostDialog: React.FC<HostDialogProps> = ({
 
   const handleSubmit = async () => {
     if (!form.name || !form.hostname || !form.username) {
-      toast.error('Please fill in all required fields (name, hostname, username)')
+      toast.error(
+        'Please fill in all required fields (name, hostname, username)',
+      )
       return
     }
     setSaving(true)
@@ -152,82 +148,12 @@ export const HostDialog: React.FC<HostDialogProps> = ({
             onChange={handleFormChange}
           />
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <Label htmlFor="authType" className="text-sm font-medium mb-1 block">
-                Authentication
-              </Label>
-              <Select
-                value={form.authType}
-                onValueChange={v =>
-                  setForm({ ...form, authType: v as AuthType })
-                }
-              >
-                <SelectTrigger id="authType">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="password">Password</SelectItem>
-                  <SelectItem value="key">SSH Key</SelectItem>
-                  <SelectItem value="agent">SSH Agent</SelectItem>
-                  <SelectItem value="cert">SSH Certificate</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <AuthFields
-              authType={form.authType}
-              password={form.password}
-              privateKey={form.privateKey}
-              certificate={form.certificate}
-              onPasswordChange={(v: string) => setForm({ ...form, password: v })}
-              onPrivateKeyChange={(v: string) => setForm({ ...form, privateKey: v })}
-              onCertificateChange={(v: string) => setForm({ ...form, certificate: v })}
-            />
-
-            <div className="col-span-2">
-              <Label htmlFor="startupCommand" className="text-sm font-medium mb-1 block">
-                Startup Command (optional)
-              </Label>
-              <Input
-                id="startupCommand"
-                value={form.startupCommand}
-                onChange={e =>
-                  setForm({ ...form, startupCommand: e.target.value })
-                }
-                placeholder="ls -la"
-              />
-            </div>
-
-            <div className="col-span-2">
-              <Label className="text-sm font-medium mb-1 block">
-                Environment Variables
-              </Label>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setEnvironmentDialogOpen(true)}
-              >
-                <Network className="h-4 w-4 mr-1" />
-                Configure Environment ({Object.keys(form.environment || {}).length})
-              </Button>
-            </div>
-
-            <div className="col-span-2">
-              <Label htmlFor="portForwards" className="text-sm font-medium mb-1 block">
-                Port Forwards
-              </Label>
-              <Button
-                id="portForwards"
-                variant="outline"
-                size="sm"
-                onClick={() => setPortForwardDialogOpen(true)}
-              >
-                <Network className="h-4 w-4 mr-1" />
-                Configure Port Forwards ({form.portForwards?.length || 0})
-              </Button>
-            </div>
-          </div>
+          <HostDialogAdvancedFields
+            form={form}
+            onChange={setForm}
+            onOpenEnvironment={() => setEnvironmentDialogOpen(true)}
+            onOpenPortForwards={() => setPortForwardDialogOpen(true)}
+          />
         </div>
 
         <HostFormActions

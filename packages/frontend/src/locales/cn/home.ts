@@ -2,7 +2,7 @@ export default {
   // Home
   'home.welcome': '欢迎使用终端',
   'home.selectHost': '从侧边栏选择主机以连接',
-  'home.addHost': '或按 {key} 添加新主机',
+  'home.addHost': '或按 {{key}} 添加新主机',
 
   // Toast messages
   'toast.enterHost': '输入主机名称或 ssh user@hostname',

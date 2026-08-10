@@ -11,6 +11,7 @@ export default {
   'nav.snippets': 'Extraits',
   'nav.knownHosts': 'Hôtes connus',
   'nav.logs': 'Journaux',
+  'nav.sftp': 'SFTP',
   'nav.scripts': 'Scripts',
   'nav.settings': 'Paramètres',
   'nav.experiments': 'Expériences',

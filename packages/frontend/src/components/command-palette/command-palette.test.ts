@@ -1,43 +1,10 @@
 /**
  * Tests for the fuzzy search utilities used in the command palette.
- * These are pure functions that are embedded in the CommandPalette component;
- * we test the logic directly here.
+ * These pure functions rank and filter command-palette results.
  */
 
 import { describe, expect, it } from 'vitest'
-
-// ─── Re-implement the fuzzy utilities for testing ────────────────────────
-// (Mirror the implementation in command-palette/index.tsx)
-
-function fuzzyScore(pattern: string, text: string): number {
-  if (!pattern) return 1
-  const lowerPattern = pattern.toLowerCase()
-  const lowerText = text.toLowerCase()
-
-  if (lowerText.startsWith(lowerPattern)) return 100 + pattern.length
-  if (lowerText.includes(lowerPattern)) {
-    return 50 + pattern.length / text.length
-  }
-
-  let pi = 0
-  let consecutive = 0
-  let score = 0
-  for (let i = 0; i < text.length && pi < pattern.length; i++) {
-    if (lowerText[i] === lowerPattern[pi]) {
-      pi++
-      consecutive++
-      score += consecutive * 2
-    } else {
-      consecutive = 0
-    }
-  }
-  if (pi < pattern.length) return 0
-  return score
-}
-
-function fuzzyMatch(pattern: string, text: string): boolean {
-  return fuzzyScore(pattern, text) > 0
-}
+import { fuzzyMatch, fuzzyScore } from './command-palette-utils'
 
 // ─── Tests ────────────────────────────────────────────────────────────────
 
@@ -55,7 +22,9 @@ describe('fuzzyScore', () => {
 
   it('prefix match scores higher than non-prefix substring match', () => {
     // "hel" is a prefix of "hello", "ell" is a substring but not prefix
-    expect(fuzzyScore('hel', 'hello')).toBeGreaterThan(fuzzyScore('ell', 'hello'))
+    expect(fuzzyScore('hel', 'hello')).toBeGreaterThan(
+      fuzzyScore('ell', 'hello'),
+    )
   })
 
   it('returns 0 when pattern chars are not all found', () => {
@@ -108,17 +77,36 @@ describe('fuzzyMatch', () => {
 
 describe('fuzzy search — real-world command palette scenarios', () => {
   const hosts = [
-    { name: 'Production Web', hostname: 'web.prod.example.com', username: 'admin' },
-    { name: 'Staging API', hostname: 'api.staging.example.com', username: 'deploy' },
-    { name: 'Dev Database', hostname: 'db.dev.example.com', username: 'devops' },
-    { name: 'Jump Server', hostname: 'bastion.example.com', username: 'jumper' },
+    {
+      name: 'Production Web',
+      hostname: 'web.prod.example.com',
+      username: 'admin',
+    },
+    {
+      name: 'Staging API',
+      hostname: 'api.staging.example.com',
+      username: 'deploy',
+    },
+    {
+      name: 'Dev Database',
+      hostname: 'db.dev.example.com',
+      username: 'devops',
+    },
+    {
+      name: 'Jump Server',
+      hostname: 'bastion.example.com',
+      username: 'jumper',
+    },
   ]
 
   function searchHosts(pattern: string) {
-    return hosts.filter(host => {
-      const haystack = `${host.name} ${host.hostname} ${host.username}`.toLowerCase()
-      return fuzzyMatch(pattern, haystack)
-    }).map(h => h.name)
+    return hosts
+      .filter(host => {
+        const haystack =
+          `${host.name} ${host.hostname} ${host.username}`.toLowerCase()
+        return fuzzyMatch(pattern, haystack)
+      })
+      .map(h => h.name)
   }
 
   it('finds host by name prefix', () => {

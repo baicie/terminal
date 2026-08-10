@@ -13,7 +13,8 @@ import {
   sftpService,
   portForwardService,
 } from '@/features/terminal/services'
-import type { SessionInfo } from '@/features/terminal/types'
+import type { SessionInfo, ShellOutput } from '@/features/terminal/types'
+import { createExecutionSession } from '@/service/ssh-execution-session'
 import { invoke } from '@tauri-apps/api/core'
 
 // Re-export types from new location
@@ -57,17 +58,33 @@ class SSHServiceLegacy {
     return sessionService.createLocal({ cols, rows, hostInfo })
   }
 
-  async createSshSessionPassword(host: Host, cols: number = 80, rows: number = 24): Promise<SSHConnectionResult> {
+  async createSshSessionPassword(
+    host: Host,
+    cols: number = 80,
+    rows: number = 24,
+  ): Promise<SSHConnectionResult> {
     return sessionService.createSshPassword({ host, cols, rows })
   }
 
-  async createSshSessionKey(host: Host, cols: number = 80, rows: number = 24): Promise<SSHConnectionResult> {
+  async createSshSessionKey(
+    host: Host,
+    cols: number = 80,
+    rows: number = 24,
+  ): Promise<SSHConnectionResult> {
     return sessionService.createSshKey({ host, cols, rows })
   }
 
   async createSshSessionJump(
     targetHost: Host,
-    jumpHost: { host: string; port: number; username: string; authType: 'password' | 'key' | 'agent'; password?: string; privateKey?: string; targetAuthType?: 'password' | 'key' | 'agent' },
+    jumpHost: {
+      host: string
+      port: number
+      username: string
+      authType: 'password' | 'key' | 'agent'
+      password?: string
+      privateKey?: string
+      targetAuthType?: 'password' | 'key' | 'agent'
+    },
     cols: number = 80,
     rows: number = 24,
   ): Promise<SSHConnectionResult> {
@@ -154,10 +171,22 @@ class SSHServiceLegacy {
 
   // Generate SSH key pair
   async generateSSHKey(
-    keyType: 'ed25519' | 'rsa' | 'rsa4096' | 'ecdsa' | 'ecdsa-nistp256' | 'ecdsa-nistp384' | 'ecdsa-nistp521',
+    keyType:
+      | 'ed25519'
+      | 'rsa'
+      | 'rsa4096'
+      | 'ecdsa'
+      | 'ecdsa-nistp256'
+      | 'ecdsa-nistp384'
+      | 'ecdsa-nistp521',
     comment: string,
     passphrase?: string,
-  ): Promise<{ private_key: string; public_key: string; key_type: string; fingerprint: string }> {
+  ): Promise<{
+    private_key: string
+    public_key: string
+    key_type: string
+    fingerprint: string
+  }> {
     const result = await invoke<{
       private_key: string
       public_key: string
@@ -173,14 +202,12 @@ class SSHServiceLegacy {
 
   // Execute a command on a host — uses session_exec which opens a dedicated exec channel
   // rather than the PTY shell hack, so exit codes are captured correctly.
-  async execute(host: Host, command: string, timeoutMs = 30000): Promise<SSHOutput> {
-    // Create SSH session based on auth type
-    let result: SSHConnectionResult
-    if (host.authType === 'key' && host.privateKey) {
-      result = await sessionService.createSshKey({ host, cols: 80, rows: 24 })
-    } else {
-      result = await sessionService.createSshPassword({ host, cols: 80, rows: 24 })
-    }
+  async execute(
+    host: Host,
+    command: string,
+    timeoutMs = 30000,
+  ): Promise<SSHOutput> {
+    const result = await createExecutionSession(host)
 
     if (!result.success || !result.sessionId) {
       return { stdout: '', stderr: result.message, exitCode: 1 }
@@ -189,14 +216,15 @@ class SSHServiceLegacy {
     const sessionId = result.sessionId
 
     try {
-      const execResult = await invoke<{ stdout: string; stderr: string; exit_code: number }>(
-        'session_exec',
-        {
-          sessionId,
-          command,
-          timeoutMs,
-        },
-      )
+      const execResult = await invoke<{
+        stdout: string
+        stderr: string
+        exit_code: number
+      }>('session_exec', {
+        sessionId,
+        command,
+        timeoutMs,
+      })
       return {
         stdout: execResult.stdout,
         stderr: execResult.stderr,
@@ -212,7 +240,11 @@ class SSHServiceLegacy {
   }
 
   // Command history — forwards to the dedicated database service.
-  async saveCommandHistory(hostId: string, command: string, sessionId?: string) {
+  async saveCommandHistory(
+    hostId: string,
+    command: string,
+    sessionId?: string,
+  ) {
     try {
       const { addCommandHistory } = await import('@/service/database')
       await addCommandHistory({

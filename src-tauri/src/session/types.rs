@@ -67,19 +67,58 @@ struct SessionErrorDto {
 impl From<SessionError> for SessionErrorDto {
     fn from(e: SessionError) -> Self {
         match &e {
-            SessionError::SessionNotFound => Self { kind: "session_not_found", message: None },
-            SessionError::WriteFailed(m) => Self { kind: "write_failed", message: Some(m.clone()) },
-            SessionError::ResizeFailed(m) => Self { kind: "resize_failed", message: Some(m.clone()) },
-            SessionError::CloseFailed(m) => Self { kind: "close_failed", message: Some(m.clone()) },
-            SessionError::ConnectionFailed(m) => Self { kind: "connection_failed", message: Some(m.clone()) },
-            SessionError::AuthenticationFailed(m) => Self { kind: "authentication_failed", message: Some(m.clone()) },
-            SessionError::InvalidInput(m) => Self { kind: "invalid_input", message: Some(m.clone()) },
-            SessionError::ChannelError(m) => Self { kind: "channel_error", message: Some(m.clone()) },
-            SessionError::KeyParseFailed(m) => Self { kind: "key_parse_failed", message: Some(m.clone()) },
-            SessionError::CertificateParseFailed(m) => Self { kind: "certificate_parse_failed", message: Some(m.clone()) },
-            SessionError::ExecFailed(m) => Self { kind: "exec_failed", message: Some(m.clone()) },
-            SessionError::ExecTimeout => Self { kind: "exec_timeout", message: None },
-            SessionError::KeyGenerationFailed(m) => Self { kind: "key_generation_failed", message: Some(m.clone()) },
+            SessionError::SessionNotFound => Self {
+                kind: "session_not_found",
+                message: None,
+            },
+            SessionError::WriteFailed(m) => Self {
+                kind: "write_failed",
+                message: Some(m.clone()),
+            },
+            SessionError::ResizeFailed(m) => Self {
+                kind: "resize_failed",
+                message: Some(m.clone()),
+            },
+            SessionError::CloseFailed(m) => Self {
+                kind: "close_failed",
+                message: Some(m.clone()),
+            },
+            SessionError::ConnectionFailed(m) => Self {
+                kind: "connection_failed",
+                message: Some(m.clone()),
+            },
+            SessionError::AuthenticationFailed(m) => Self {
+                kind: "authentication_failed",
+                message: Some(m.clone()),
+            },
+            SessionError::InvalidInput(m) => Self {
+                kind: "invalid_input",
+                message: Some(m.clone()),
+            },
+            SessionError::ChannelError(m) => Self {
+                kind: "channel_error",
+                message: Some(m.clone()),
+            },
+            SessionError::KeyParseFailed(m) => Self {
+                kind: "key_parse_failed",
+                message: Some(m.clone()),
+            },
+            SessionError::CertificateParseFailed(m) => Self {
+                kind: "certificate_parse_failed",
+                message: Some(m.clone()),
+            },
+            SessionError::ExecFailed(m) => Self {
+                kind: "exec_failed",
+                message: Some(m.clone()),
+            },
+            SessionError::ExecTimeout => Self {
+                kind: "exec_timeout",
+                message: None,
+            },
+            SessionError::KeyGenerationFailed(m) => Self {
+                kind: "key_generation_failed",
+                message: Some(m.clone()),
+            },
         }
     }
 }
@@ -194,10 +233,12 @@ pub struct JumpHostConfig {
     /// 密码
     pub password: Option<String>,
     /// 私钥
+    #[serde(rename = "privateKey", alias = "private_key", default)]
     pub private_key: Option<String>,
     /// SSH 证书
     pub certificate: Option<String>,
     /// 目标主机的认证类型（agent / password / key / cert），为空则沿用主会话默认逻辑
+    #[serde(rename = "targetAuthType", alias = "target_auth_type", default)]
     pub target_auth_type: Option<String>,
 }
 
@@ -215,23 +256,70 @@ mod tests {
             assert_eq!(back.to_string(), original.to_string());
         };
         check(SessionError::SessionNotFound, "session_not_found", None);
-        check(SessionError::WriteFailed("broken".into()), "write_failed", Some("broken"));
-        check(SessionError::ResizeFailed("bad".into()), "resize_failed", Some("bad"));
-        check(SessionError::CloseFailed("closed".into()), "close_failed", Some("closed"));
-        check(SessionError::ConnectionFailed("refused".into()), "connection_failed", Some("refused"));
-        check(SessionError::AuthenticationFailed("bad".into()), "authentication_failed", Some("bad"));
-        check(SessionError::InvalidInput("null".into()), "invalid_input", Some("null"));
-        check(SessionError::ChannelError("win".into()), "channel_error", Some("win"));
-        check(SessionError::KeyParseFailed("bad".into()), "key_parse_failed", Some("bad"));
-        check(SessionError::CertificateParseFailed("exp".into()), "certificate_parse_failed", Some("exp"));
-        check(SessionError::ExecFailed("exit 1".into()), "exec_failed", Some("exit 1"));
+        check(
+            SessionError::WriteFailed("broken".into()),
+            "write_failed",
+            Some("broken"),
+        );
+        check(
+            SessionError::ResizeFailed("bad".into()),
+            "resize_failed",
+            Some("bad"),
+        );
+        check(
+            SessionError::CloseFailed("closed".into()),
+            "close_failed",
+            Some("closed"),
+        );
+        check(
+            SessionError::ConnectionFailed("refused".into()),
+            "connection_failed",
+            Some("refused"),
+        );
+        check(
+            SessionError::AuthenticationFailed("bad".into()),
+            "authentication_failed",
+            Some("bad"),
+        );
+        check(
+            SessionError::InvalidInput("null".into()),
+            "invalid_input",
+            Some("null"),
+        );
+        check(
+            SessionError::ChannelError("win".into()),
+            "channel_error",
+            Some("win"),
+        );
+        check(
+            SessionError::KeyParseFailed("bad".into()),
+            "key_parse_failed",
+            Some("bad"),
+        );
+        check(
+            SessionError::CertificateParseFailed("exp".into()),
+            "certificate_parse_failed",
+            Some("exp"),
+        );
+        check(
+            SessionError::ExecFailed("exit 1".into()),
+            "exec_failed",
+            Some("exit 1"),
+        );
         check(SessionError::ExecTimeout, "exec_timeout", None);
-        check(SessionError::KeyGenerationFailed("bad params".into()), "key_generation_failed", Some("bad params"));
+        check(
+            SessionError::KeyGenerationFailed("bad params".into()),
+            "key_generation_failed",
+            Some("bad params"),
+        );
     }
 
     #[test]
     fn test_session_error_unknown_kind_falls_back_to_connection_failed() {
-        let dto = SessionErrorDto { kind: "bogus", message: Some("x".into()) };
+        let dto = SessionErrorDto {
+            kind: "bogus",
+            message: Some("x".into()),
+        };
         let back: SessionError = dto.into();
         assert!(matches!(back, SessionError::ConnectionFailed(_)));
     }
@@ -253,6 +341,23 @@ mod tests {
         let back_ssh: SessionType = serde_json::from_str(&ssh).unwrap();
         assert_eq!(back_local, SessionType::Local);
         assert_eq!(back_ssh, SessionType::Ssh);
+    }
+
+    #[test]
+    fn jump_host_config_accepts_tauri_camel_case_fields() {
+        let config: JumpHostConfig = serde_json::from_value(serde_json::json!({
+            "host": "bastion.example",
+            "port": 22,
+            "username": "jump-user",
+            "authType": "key",
+            "privateKey": "private-key",
+            "targetAuthType": "agent"
+        }))
+        .unwrap();
+
+        assert_eq!(config.auth_type, "key");
+        assert_eq!(config.private_key.as_deref(), Some("private-key"));
+        assert_eq!(config.target_auth_type.as_deref(), Some("agent"));
     }
 
     #[test]

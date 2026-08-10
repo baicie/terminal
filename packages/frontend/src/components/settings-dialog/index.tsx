@@ -1,4 +1,7 @@
-import type { TerminalThemePreset, TerminalThemeColors } from '@/service/database'
+import type {
+  TerminalThemePreset,
+  TerminalThemeColors,
+} from '@/service/database'
 import { Check } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -62,6 +65,7 @@ type AppSettingsKey = {
   syncServiceUsername?: string
   syncServiceToken?: string
   syncServiceBucket?: string
+  syncServiceRegion?: string
 }
 
 const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
@@ -216,6 +220,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
                 syncServiceUsername: settings.syncServiceUsername,
                 syncServiceToken: settings.syncServiceToken,
                 syncServiceBucket: settings.syncServiceBucket,
+                syncServiceRegion: settings.syncServiceRegion,
               }}
               updateSetting={updateSetting}
             />

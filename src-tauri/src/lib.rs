@@ -19,25 +19,34 @@ pub mod session;
 
 // Re-export session types for public API
 pub use session::{
-    ChannelConfig, ChannelManager, ExecResult, KeyGenResult, SessionChannel, SessionConfig,
-    SessionError, SessionInfo, SessionManager, SessionOutput, SessionState, SessionType,
-    SshConfig, JumpHostConfig,
+    ChannelConfig, ChannelManager, ExecResult, JumpHostConfig, KeyGenResult, SessionChannel,
+    SessionConfig, SessionError, SessionInfo, SessionManager, SessionOutput, SessionState,
+    SessionType, SshConfig,
 };
 
 use commands::{
-    key_generate, session_close, session_create_local, session_create_ssh_agent, session_create_ssh_cert,
-    session_create_ssh_jump, session_create_ssh_key, session_create_ssh_password,
-    session_exec, session_list, session_resize, session_write,
+    key_generate, session_close, session_create_local, session_create_ssh_agent,
+    session_create_ssh_cert, session_create_ssh_jump, session_create_ssh_key,
+    session_create_ssh_password, session_exec, session_list, session_resize, session_write,
 };
 use port_forward::{port_forward_list, port_forward_start, port_forward_stop};
-use serial::{serial_baud_rates, serial_connect, serial_disconnect, serial_is_connected, serial_list, serial_write, serial_write_raw};
-use sftp::{sftp_local_checksum, sftp_remote_checksum, sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_mkdir, sftp_rename, sftp_upload};
+use serial::{
+    serial_baud_rates, serial_connect, serial_disconnect, serial_is_connected, serial_list,
+    serial_write, serial_write_raw,
+};
+use sftp::{
+    sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_local_checksum, sftp_mkdir,
+    sftp_remote_checksum, sftp_rename, sftp_upload,
+};
 use state::create_shared_state;
-use storage::{storage_delete, storage_download, storage_health_check, storage_init, storage_list, storage_upload};
+use storage::{
+    storage_delete, storage_download, storage_health_check, storage_init, storage_list,
+    storage_upload,
+};
 use vault::{
     vault_can_encrypt_for_team, vault_change_password, vault_create, vault_decrypt_for_team,
-    vault_delete, vault_encrypt_for_team, vault_exists, vault_get, vault_is_unlocked,
-    vault_list, vault_lock, vault_set, vault_unlock,
+    vault_delete, vault_encrypt_for_team, vault_exists, vault_get, vault_is_unlocked, vault_list,
+    vault_lock, vault_set, vault_unlock,
 };
 use window_cmd::{
     close_to_tray_enabled, get_close_to_tray, hide_main_window, is_main_window_focused,
@@ -51,7 +60,7 @@ use window_cmd::{
 ///   被路由到 tracing subscriber，统一输出格式
 /// - 输出包含：时间戳、target（模块路径）、级别、字段（结构化）
 fn init_tracing() {
-    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
     // 兼容旧 RUST_LOG 配置；若未设置则默认 info 级别
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
@@ -82,6 +91,8 @@ pub fn run() {
         .manage(shared_state)
         .manage(storage_manager)
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())

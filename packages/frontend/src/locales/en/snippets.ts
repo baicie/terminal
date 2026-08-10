@@ -32,15 +32,16 @@ export default {
   'snippets.deleteSnippet': 'Delete Snippet',
   'snippets.deletePackage': 'Delete Package',
   'snippets.deleteSnippetConfirm':
-    'Are you sure you want to delete "{name}"? This action cannot be undone.',
+    'Are you sure you want to delete "{{name}}"? This action cannot be undone.',
   'snippets.deletePackageConfirm':
-    'Are you sure you want to delete "{name}"? All snippets in this package will be moved to uncategorized.',
-  'snippets.enterVar': 'Enter {name}',
+    'Are you sure you want to delete "{{name}}"? All snippets in this package will be moved to uncategorized.',
+  'snippets.enterVar': 'Enter {{name}}',
 
   // Scripts
   'scripts.title': 'Batch Scripts',
   'scripts.search': 'Search scripts...',
   'scripts.new': 'New Script',
+  'scripts.newScript': 'New Script',
   'scripts.list': 'Script List',
   'scripts.history': 'Execution History',
   'scripts.batch': 'Batch Execute',
@@ -64,7 +65,7 @@ export default {
   'scripts.command': 'Command',
   'scripts.enterCommand': 'Enter command to execute...',
   'scripts.selectAtLeastOne': 'Please select at least one host',
-  'scripts.executeOnHosts': 'Execute on {count} Host(s)',
+  'scripts.executeOnHosts': 'Execute on {{count}} Host(s)',
   'scripts.results': 'Execution Results',
   'scripts.succeeded': 'succeeded',
   'scripts.failed': 'failed',
@@ -92,7 +93,7 @@ export default {
   'scripts.deleted': 'Script deleted successfully',
   'scripts.deleteConfirm': 'Delete Script',
   'scripts.deleteConfirmDesc':
-    'Are you sure you want to delete "{name}"? This action cannot be undone.',
+    'Are you sure you want to delete "{{name}}"? This action cannot be undone.',
   'scripts.nameAndScriptRequired': 'Name and script are required',
   'scripts.noHosts': 'No hosts selected for this script',
 }

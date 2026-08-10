@@ -90,7 +90,12 @@ pub struct WebDAVStorage {
 }
 
 impl WebDAVStorage {
-    pub fn new(endpoint: String, username: String, password: String, base_path: Option<String>) -> Self {
+    pub fn new(
+        endpoint: String,
+        username: String,
+        password: String,
+        base_path: Option<String>,
+    ) -> Self {
         Self {
             endpoint,
             username,
@@ -118,7 +123,8 @@ impl StorageService for WebDAVStorage {
     async fn upload(&self, path: &str, data: &[u8]) -> Result<StorageResult> {
         let url = self.make_url(path);
 
-        let response = self.client
+        let response = self
+            .client
             .put(&url)
             .basic_auth(&self.username, Some(&self.password))
             .header("Content-Type", "application/octet-stream")
@@ -145,7 +151,8 @@ impl StorageService for WebDAVStorage {
     async fn download(&self, path: &str) -> Result<Vec<u8>> {
         let url = self.make_url(path);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .basic_auth(&self.username, Some(&self.password))
             .send()
@@ -153,18 +160,24 @@ impl StorageService for WebDAVStorage {
             .map_err(|e| anyhow!("WebDAV download failed: {}", e))?;
 
         if response.status().is_success() {
-            let bytes = response.bytes().await
+            let bytes = response
+                .bytes()
+                .await
                 .map_err(|e| anyhow!("Failed to read response: {}", e))?;
             Ok(bytes.to_vec())
         } else {
-            Err(anyhow!("Download failed with status: {}", response.status()))
+            Err(anyhow!(
+                "Download failed with status: {}",
+                response.status()
+            ))
         }
     }
 
     async fn delete(&self, path: &str) -> Result<StorageResult> {
         let url = self.make_url(path);
 
-        let response = self.client
+        let response = self
+            .client
             .delete(&url)
             .basic_auth(&self.username, Some(&self.password))
             .send()
@@ -191,7 +204,8 @@ impl StorageService for WebDAVStorage {
 
         let body = r#"<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:"><D:prop><D:displayname/><D:getcontentlength/><D:resourcetype/><D:getlastmodified/></D:prop></D:propfind>"#;
 
-        let response = self.client
+        let response = self
+            .client
             .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &url)
             .basic_auth(&self.username, Some(&self.password))
             .header("Depth", "1")
@@ -213,7 +227,8 @@ impl StorageService for WebDAVStorage {
     async fn health_check(&self) -> Result<bool> {
         let url = self.make_url("");
 
-        let response = self.client
+        let response = self
+            .client
             .request(reqwest::Method::from_bytes(b"OPTIONS").unwrap(), &url)
             .basic_auth(&self.username, Some(&self.password))
             .send()
@@ -242,7 +257,8 @@ fn parse_webdav_response(body: &str, _base_path: &str) -> Vec<StorageItem> {
                         items.push(StorageItem {
                             name,
                             path: href.to_string(),
-                            is_directory: line.contains("<D:collection") || line.contains("<d:collection"),
+                            is_directory: line.contains("<D:collection")
+                                || line.contains("<d:collection"),
                             size: None,
                             modified: None,
                         });
@@ -280,34 +296,70 @@ fn signed_headers() -> &'static str {
     "host;x-amz-content-sha256;x-amz-date"
 }
 
-fn credential_scope(date: &str) -> String {
-    format!("{}/s3/aws4_request", date)
+fn credential_scope(date: &str, region: &str) -> String {
+    format!("{date}/{region}/s3/aws4_request")
+}
+
+fn canonical_url_parts(url: &reqwest::Url) -> (String, String, String) {
+    let host = match url.port() {
+        Some(port) => format!("{}:{port}", url.host_str().unwrap_or_default()),
+        None => url.host_str().unwrap_or_default().to_string(),
+    };
+    let uri = match url.path() {
+        "" => "/".to_string(),
+        path => path.to_string(),
+    };
+    let mut query: Vec<_> = url
+        .query_pairs()
+        .map(|(key, value)| {
+            (
+                percent_encode_rfc3986(&key, true),
+                percent_encode_rfc3986(&value, true),
+            )
+        })
+        .collect();
+    query.sort();
+    let query = query
+        .into_iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join("&");
+    (host, uri, query)
+}
+
+fn string_to_sign(amz_date: &str, scope: &str, canonical_request_hash: &str) -> String {
+    format!("AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{canonical_request_hash}")
 }
 
 /// Add SigV4 Authorization header to a reqwest RequestBuilder.
 fn sign_request(
     req_builder: reqwest::RequestBuilder,
     method: &str,
-    url: &str,
-    _payload: Option<&[u8]>,
+    url: &reqwest::Url,
     access_key: &str,
     secret_key: &str,
     region: &str,
     payload_hash: &str,
-) -> reqwest::RequestBuilder {
+) -> Result<reqwest::RequestBuilder> {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .map_err(|error| anyhow!("System clock is before Unix epoch: {error}"))?
         .as_secs();
-    let datetime = OffsetDateTime::from_unix_timestamp(now as i64).unwrap();
-    let amz_date = datetime.format(&Rfc3339).unwrap().replace([':', '-'], "").replace("+", "Z");
-    let date_stamp = &amz_date[..8];
+    let datetime = OffsetDateTime::from_unix_timestamp(now as i64)?;
+    let amz_date = datetime
+        .format(&Rfc3339)
+        .map_err(|error| anyhow!("Failed to format S3 signing timestamp: {error}"))?
+        .replace([':', '-'], "");
+    let date_stamp = amz_date
+        .get(..8)
+        .ok_or_else(|| anyhow!("Invalid S3 signing timestamp"))?;
 
-    let host = url.split('/').nth(2).unwrap_or("");
-    let canonical_uri = format!("/{}", url.splitn(3, '/').nth(2).unwrap_or("/"));
-    let canonical_querystring = "";
+    let (host, canonical_uri, canonical_querystring) = canonical_url_parts(url);
+    if host.is_empty() {
+        return Err(anyhow!("S3 endpoint must include a host"));
+    }
 
     let canonical_headers = format!(
         "host:{}\nx-amz-content-sha256:{}\nx-amz-date:{}\n",
@@ -323,16 +375,15 @@ fn sign_request(
         signed_headers(),
         payload_hash
     );
-    let cs = credential_scope(date_stamp);
+    let cs = credential_scope(date_stamp, region);
     let canonical_request_hash = sha256_hex(canonical_request.as_bytes());
-
-    let string_to_sign = format!(
-        "AWS4-HMAC-SHA256\n{}\n{}\n{}\n{}",
-        amz_date, cs, date_stamp, canonical_request_hash
-    );
+    let string_to_sign = string_to_sign(&amz_date, &cs, &canonical_request_hash);
 
     // Build signing key
-    let k_date = hmac_sign(format!("AWS4{}", secret_key).as_bytes(), date_stamp.as_bytes());
+    let k_date = hmac_sign(
+        format!("AWS4{}", secret_key).as_bytes(),
+        date_stamp.as_bytes(),
+    );
     let k_region = hmac_sign(&k_date, region.as_bytes());
     let k_service = hmac_sign(&k_region, b"s3");
     let k_signing = hmac_sign(&k_service, b"aws4_request");
@@ -341,13 +392,16 @@ fn sign_request(
 
     let auth_header = format!(
         "AWS4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}",
-        access_key, cs, signed_headers(), signature
+        access_key,
+        cs,
+        signed_headers(),
+        signature
     );
 
-    req_builder
+    Ok(req_builder
         .header("x-amz-date", &amz_date)
         .header("x-amz-content-sha256", payload_hash)
-        .header("Authorization", &auth_header)
+        .header("Authorization", &auth_header))
 }
 
 /// S3 storage implementation with full AWS SigV4 signing
@@ -382,7 +436,7 @@ impl S3Storage {
     fn make_url(&self, key: &str) -> String {
         let endpoint = self.endpoint.trim_end_matches('/');
         let bucket = self.bucket.trim_start_matches('/');
-        let p = key.trim_start_matches('/');
+        let p = percent_encode_rfc3986(key.trim_start_matches('/'), false);
         if p.is_empty() {
             format!("{}/{}", endpoint, bucket)
         } else {
@@ -390,25 +444,62 @@ impl S3Storage {
         }
     }
 
+    fn list_url(&self, prefix: &str) -> String {
+        format!(
+            "{}?list-type=2&prefix={}",
+            self.make_url(""),
+            percent_encode_rfc3986(prefix.trim_start_matches('/'), true)
+        )
+    }
+
     /// Sign and send an S3 request with the given method and body.
-    fn signed_request(&self, method: &str, key: &str, data: Option<&[u8]>) -> reqwest::RequestBuilder {
-        let url = self.make_url(key);
+    fn signed_request(
+        &self,
+        method: &str,
+        key: &str,
+        data: Option<&[u8]>,
+    ) -> Result<reqwest::RequestBuilder> {
+        self.signed_url_request(method, &self.make_url(key), data)
+    }
+
+    fn signed_url_request(
+        &self,
+        method: &str,
+        url: &str,
+        data: Option<&[u8]>,
+    ) -> Result<reqwest::RequestBuilder> {
+        let parsed_url = reqwest::Url::parse(url)
+            .map_err(|error| anyhow!("Invalid S3 endpoint URL: {error}"))?;
         let payload_hash = sha256_hex(data.unwrap_or(&[]));
         let req = match method {
-            "PUT" => self.client.put(&url).body(data.map(|b| b.to_vec()).unwrap_or_default()),
-            "GET" => self.client.get(&url),
-            "DELETE" => self.client.delete(&url),
-            "HEAD" => self.client.head(&url),
-            _ => self.client.get(&url),
+            "PUT" => self
+                .client
+                .put(url)
+                .body(data.map(|b| b.to_vec()).unwrap_or_default()),
+            "GET" => self.client.get(url),
+            "DELETE" => self.client.delete(url),
+            "HEAD" => self.client.head(url),
+            _ => self.client.get(url),
         };
-        sign_request(req, method, &url, data, &self.access_key, &self.secret_key, &self.region, &payload_hash)
+        sign_request(
+            req,
+            method,
+            &parsed_url,
+            &self.access_key,
+            &self.secret_key,
+            &self.region,
+            &payload_hash,
+        )
     }
 }
 
 #[async_trait::async_trait]
 impl StorageService for S3Storage {
     async fn upload(&self, path: &str, data: &[u8]) -> Result<StorageResult> {
-        let response = self.signed_request("PUT", path, Some(data)).send().await
+        let response = self
+            .signed_request("PUT", path, Some(data))?
+            .send()
+            .await
             .map_err(|e| anyhow!("S3 upload failed: {}", e))?;
 
         if response.status().is_success() || response.status().as_u16() == 200 {
@@ -427,11 +518,16 @@ impl StorageService for S3Storage {
     }
 
     async fn download(&self, path: &str) -> Result<Vec<u8>> {
-        let response = self.signed_request("GET", path, None).send().await
+        let response = self
+            .signed_request("GET", path, None)?
+            .send()
+            .await
             .map_err(|e| anyhow!("S3 download failed: {}", e))?;
 
         if response.status().is_success() {
-            let bytes = response.bytes().await
+            let bytes = response
+                .bytes()
+                .await
                 .map_err(|e| anyhow!("Failed to read response: {}", e))?;
             Ok(bytes.to_vec())
         } else {
@@ -440,7 +536,10 @@ impl StorageService for S3Storage {
     }
 
     async fn delete(&self, path: &str) -> Result<StorageResult> {
-        let response = self.signed_request("DELETE", path, None).send().await
+        let response = self
+            .signed_request("DELETE", path, None)?
+            .send()
+            .await
             .map_err(|e| anyhow!("S3 delete failed: {}", e))?;
 
         if response.status().is_success() || response.status().as_u16() == 204 {
@@ -459,13 +558,11 @@ impl StorageService for S3Storage {
     }
 
     async fn list(&self, path: &str) -> Result<Vec<StorageItem>> {
-        let prefix = path.trim_start_matches('/');
-        let encoded_prefix = percent_encode_rfc3986(prefix);
-        // Build virtual-hosted-style list URL: https://{host}/{bucket}?list-type=2&prefix={prefix}
-        let host = self.endpoint.trim_start_matches("https://").trim_start_matches("http://");
-        let key = format!("{}/{}?list-type=2&prefix={}", host, self.bucket, encoded_prefix);
-
-        let response = self.signed_request("GET", &key, None).send().await
+        let url = self.list_url(path);
+        let response = self
+            .signed_url_request("GET", &url, None)?
+            .send()
+            .await
             .map_err(|e| anyhow!("S3 list failed: {}", e))?;
 
         if response.status().is_success() {
@@ -478,20 +575,26 @@ impl StorageService for S3Storage {
     }
 
     async fn health_check(&self) -> Result<bool> {
-        let response = self.signed_request("HEAD", "", None).send().await
+        let response = self
+            .signed_request("HEAD", "", None)?
+            .send()
+            .await
             .map_err(|e| anyhow!("S3 health check failed: {}", e))?;
         Ok(response.status().is_success())
     }
 }
 
 /// RFC 3986 percent encoding for S3 signing
-fn percent_encode_rfc3986(s: &str) -> String {
-    s.chars().map(|c| {
-        match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
-            _ => format!("%{:02X}", c as u8),
-        }
-    }).collect()
+fn percent_encode_rfc3986(s: &str, encode_slash: bool) -> String {
+    s.bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (byte as char).to_string()
+            }
+            b'/' if !encode_slash => "/".to_string(),
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
 }
 
 /// Parse S3 list response
@@ -544,7 +647,11 @@ pub struct RestApiStorage {
 }
 
 impl RestApiStorage {
-    pub fn new(endpoint: String, api_key: Option<String>, headers: Option<HashMap<String, String>>) -> Self {
+    pub fn new(
+        endpoint: String,
+        api_key: Option<String>,
+        headers: Option<HashMap<String, String>>,
+    ) -> Self {
         Self {
             endpoint,
             api_key,
@@ -554,7 +661,11 @@ impl RestApiStorage {
     }
 
     fn make_url(&self, path: &str) -> String {
-        format!("{}/{}", self.endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+        format!(
+            "{}/{}",
+            self.endpoint.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        )
     }
 }
 
@@ -613,7 +724,9 @@ impl StorageService for RestApiStorage {
             .map_err(|e| anyhow!("REST API download failed: {}", e))?;
 
         if response.status().is_success() {
-            let bytes = response.bytes().await
+            let bytes = response
+                .bytes()
+                .await
                 .map_err(|e| anyhow!("Failed to read response: {}", e))?;
             Ok(bytes.to_vec())
         } else {
@@ -666,8 +779,7 @@ impl StorageService for RestApiStorage {
 
         if response.status().is_success() {
             let body = response.text().await?;
-            let items: Vec<StorageItem> = serde_json::from_str(&body)
-                .unwrap_or_default();
+            let items: Vec<StorageItem> = serde_json::from_str(&body).unwrap_or_default();
             Ok(items)
         } else {
             Err(anyhow!("List failed: {}", response.status()))
@@ -677,7 +789,8 @@ impl StorageService for RestApiStorage {
     async fn health_check(&self) -> Result<bool> {
         let url = format!("{}/health", self.endpoint.trim_end_matches('/'));
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .send()
             .await
@@ -723,30 +836,39 @@ impl StorageManager {
 
     pub async fn create_from_config(&self, name: &str, config: &StorageConfig) -> Result<()> {
         let backend: Arc<dyn StorageService> = match &config.backend {
-            StorageBackend::WebDAV { endpoint, username, password, base_path } => {
-                Arc::new(WebDAVStorage::new(
-                    endpoint.clone(),
-                    username.clone(),
-                    password.clone(),
-                    base_path.clone(),
-                ))
-            }
-            StorageBackend::S3 { endpoint, access_key, secret_key, bucket, region } => {
-                Arc::new(S3Storage::new(
-                    endpoint.clone(),
-                    access_key.clone(),
-                    secret_key.clone(),
-                    bucket.clone(),
-                    region.clone(),
-                ))
-            }
-            StorageBackend::RestApi { endpoint, api_key, headers } => {
-                Arc::new(RestApiStorage::new(
-                    endpoint.clone(),
-                    api_key.clone(),
-                    headers.clone(),
-                ))
-            }
+            StorageBackend::WebDAV {
+                endpoint,
+                username,
+                password,
+                base_path,
+            } => Arc::new(WebDAVStorage::new(
+                endpoint.clone(),
+                username.clone(),
+                password.clone(),
+                base_path.clone(),
+            )),
+            StorageBackend::S3 {
+                endpoint,
+                access_key,
+                secret_key,
+                bucket,
+                region,
+            } => Arc::new(S3Storage::new(
+                endpoint.clone(),
+                access_key.clone(),
+                secret_key.clone(),
+                bucket.clone(),
+                region.clone(),
+            )),
+            StorageBackend::RestApi {
+                endpoint,
+                api_key,
+                headers,
+            } => Arc::new(RestApiStorage::new(
+                endpoint.clone(),
+                api_key.clone(),
+                headers.clone(),
+            )),
         };
 
         self.add_backend(name, backend).await;
@@ -859,9 +981,7 @@ pub async fn storage_init(
         backend,
         enabled: true,
     };
-    manager
-        .remove_backend(DEFAULT_STORAGE_NAME)
-        .await;
+    manager.remove_backend(DEFAULT_STORAGE_NAME).await;
     manager
         .create_from_config(DEFAULT_STORAGE_NAME, &config)
         .await
@@ -915,9 +1035,8 @@ pub async fn storage_download(
         .download(&path)
         .await
         .map_err(|e| StorageError::DownloadFailed(e.to_string()))?;
-    String::from_utf8(bytes).map_err(|e| {
-        StorageError::DownloadFailed(format!("Response is not valid UTF-8: {e}"))
-    })
+    String::from_utf8(bytes)
+        .map_err(|e| StorageError::DownloadFailed(format!("Response is not valid UTF-8: {e}")))
 }
 
 /// Tauri command: List storage items
@@ -950,4 +1069,62 @@ pub async fn storage_delete(
         .delete(&path)
         .await
         .map_err(|e| StorageError::DeleteFailed(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn s3_credential_scope_includes_region() {
+        assert_eq!(
+            credential_scope("20130524", "us-east-1"),
+            "20130524/us-east-1/s3/aws4_request"
+        );
+    }
+
+    #[test]
+    fn s3_canonical_url_excludes_origin_and_keeps_sorted_query() {
+        let url = reqwest::Url::parse(
+            "https://s3.example.test:9443/bucket/folder/a%20b?list-type=2&prefix=folder%2Fa%20b",
+        )
+        .unwrap();
+
+        assert_eq!(
+            canonical_url_parts(&url),
+            (
+                "s3.example.test:9443".to_string(),
+                "/bucket/folder/a%20b".to_string(),
+                "list-type=2&prefix=folder%2Fa%20b".to_string(),
+            )
+        );
+    }
+
+    #[test]
+    fn s3_string_to_sign_has_exactly_four_lines() {
+        assert_eq!(
+            string_to_sign(
+                "20130524T000000Z",
+                "20130524/us-east-1/s3/aws4_request",
+                "canonical-request-hash",
+            ),
+            "AWS4-HMAC-SHA256\n20130524T000000Z\n20130524/us-east-1/s3/aws4_request\ncanonical-request-hash"
+        );
+    }
+
+    #[test]
+    fn s3_list_url_uses_bucket_once_and_encodes_prefix() {
+        let storage = S3Storage::new(
+            "https://s3.example.test".to_string(),
+            "access".to_string(),
+            "secret".to_string(),
+            "bucket".to_string(),
+            Some("eu-west-1".to_string()),
+        );
+
+        assert_eq!(
+            storage.list_url("folder/a b"),
+            "https://s3.example.test/bucket?list-type=2&prefix=folder%2Fa%20b"
+        );
+    }
 }

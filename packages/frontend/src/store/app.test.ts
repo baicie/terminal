@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { create } from 'zustand'
-import { RecentlyClosedTab, type AppState } from './app'
+import type { AppState, RecentlyClosedTab } from './app'
 
 // Helper to reset store between tests
 function createFreshStore() {
@@ -14,25 +14,25 @@ function createFreshStore() {
     sidebarVisible: true,
     recentlyClosedTabs: [],
 
-    setTheme: (theme) => set({ theme }),
-    setLanguage: (language) => set({ language }),
+    setTheme: theme => set({ theme }),
+    setLanguage: language => set({ language }),
     hydrateFromDatabase: async () => {},
-    addTab: (tab) => {
+    addTab: tab => {
       const id = `${tab.type}-${Date.now()}`
       const newTab = { ...tab, id }
-      set((state) => ({
+      set(state => ({
         tabs: [...state.tabs, newTab],
         activeTabId: id,
       }))
       return newTab
     },
-    removeTab: (id) => {
+    removeTab: id => {
       const { tabs, activeTabId } = get()
-      const index = tabs.findIndex((t) => t.id === id)
+      const index = tabs.findIndex(t => t.id === id)
       if (index === -1) return
 
       const tab = tabs[index]
-      const newTabs = tabs.filter((t) => t.id !== id)
+      const newTabs = tabs.filter(t => t.id !== id)
       let newActiveId: string | null = null
       if (activeTabId === id) {
         if (newTabs.length > 0) {
@@ -53,24 +53,28 @@ function createFreshStore() {
         closedAt: Date.now(),
       }
 
-      set((state) => ({
+      set(state => ({
         tabs: newTabs,
         activeTabId: newActiveId,
-        recentlyClosedTabs: [closedTab, ...state.recentlyClosedTabs].slice(0, 10),
+        recentlyClosedTabs: [closedTab, ...state.recentlyClosedTabs].slice(
+          0,
+          10,
+        ),
       }))
     },
     splitTab: () => null,
     removeTabFromSplit: () => {},
     closeSplit: () => {},
-    setActiveTab: (id) => set({ activeTabId: id }),
+    setActiveTab: id => set({ activeTabId: id }),
     updateTab: (id, updates) =>
-      set((state) => ({
-        tabs: state.tabs.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+      set(state => ({
+        tabs: state.tabs.map(t => (t.id === id ? { ...t, ...updates } : t)),
       })),
-    toggleSidebar: () => set((state) => ({ sidebarVisible: !state.sidebarVisible })),
-    setConfig: (config) => set({ config }),
+    toggleSidebar: () =>
+      set(state => ({ sidebarVisible: !state.sidebarVisible })),
+    setConfig: config => set({ config }),
     queryConfig: async () => {},
-    reopenTab: (closedTab) => {
+    reopenTab: closedTab => {
       const newId = `${closedTab.type}-${Date.now()}`
       const restoredTab = {
         id: newId,
@@ -80,10 +84,12 @@ function createFreshStore() {
         serialSessionId: closedTab.serialSessionId,
         serialConfig: closedTab.serialConfig,
       }
-      set((state) => ({
+      set(state => ({
         tabs: [...state.tabs, restoredTab],
         activeTabId: newId,
-        recentlyClosedTabs: state.recentlyClosedTabs.filter((t) => t.id !== closedTab.id),
+        recentlyClosedTabs: state.recentlyClosedTabs.filter(
+          t => t.id !== closedTab.id,
+        ),
       }))
       return restoredTab
     },

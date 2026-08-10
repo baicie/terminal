@@ -20,6 +20,11 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTeams, useTeamStore } from '@/store/team'
+import {
+  InviteLinkCodeTabs,
+  type InviteResult,
+  type InviteRole,
+} from './invite-link-code-tabs'
 
 interface InviteDialogProps {
   open: boolean
@@ -35,11 +40,8 @@ export const InviteDialog: React.FC<InviteDialogProps> = ({
   const { t } = useTranslation()
   const [tab, setTab] = useState<'link' | 'code' | 'email'>('link')
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState<'admin' | 'member'>('member')
-  const [invite, setInvite] = useState<{
-    code?: string
-    linkToken?: string
-  } | null>(null)
+  const [role, setRole] = useState<InviteRole>('member')
+  const [invite, setInvite] = useState<InviteResult | null>(null)
   const [loading, setLoading] = useState(false)
 
   const createInvite = useTeamStore(state => state.createInvite)
@@ -103,96 +105,15 @@ export const InviteDialog: React.FC<InviteDialogProps> = ({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="link" className="space-y-4 pt-4">
-            <p className="text-sm text-muted-foreground">
-              {t('teams.inviteLinkDesc')}
-            </p>
-            <div className="space-y-2">
-              <Label>{t('teams.role')}</Label>
-              <Select
-                value={role}
-                onValueChange={v => setRole(v as typeof role)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admin">{t('teams.admin')}</SelectItem>
-                  <SelectItem value="member">{t('teams.member')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {invite?.linkToken ? (
-              <div className="space-y-2">
-                <Label>{t('teams.inviteLink')}</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={inviteLink}
-                    readOnly
-                    className="font-mono text-sm"
-                  />
-                  <Button size="icon" onClick={() => handleCopy(inviteLink)}>
-                    <Copy className="size-4" />
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <Button
-                onClick={handleCreate}
-                disabled={loading}
-                className="w-full"
-              >
-                {loading ? t('common.loading') : t('teams.generate')}
-              </Button>
-            )}
-          </TabsContent>
-
-          <TabsContent value="code" className="space-y-4 pt-4">
-            <p className="text-sm text-muted-foreground">
-              {t('teams.inviteCodeDesc')}
-            </p>
-            <div className="space-y-2">
-              <Label>{t('teams.role')}</Label>
-              <Select
-                value={role}
-                onValueChange={v => setRole(v as typeof role)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admin">{t('teams.admin')}</SelectItem>
-                  <SelectItem value="member">{t('teams.member')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {invite?.code ? (
-              <div className="space-y-2">
-                <Label>{t('teams.inviteCode')}</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={invite.code}
-                    readOnly
-                    className="font-mono text-lg font-bold text-center tracking-widest"
-                  />
-                  <Button
-                    size="icon"
-                    onClick={() => handleCopy(invite.code || '')}
-                  >
-                    <Copy className="size-4" />
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <Button
-                onClick={handleCreate}
-                disabled={loading}
-                className="w-full"
-              >
-                {loading ? t('common.loading') : t('teams.generate')}
-              </Button>
-            )}
-          </TabsContent>
+          <InviteLinkCodeTabs
+            invite={invite}
+            inviteLink={inviteLink}
+            role={role}
+            loading={loading}
+            onRoleChange={setRole}
+            onCreate={handleCreate}
+            onCopy={handleCopy}
+          />
 
           <TabsContent value="email" className="space-y-4 pt-4">
             <p className="text-sm text-muted-foreground">

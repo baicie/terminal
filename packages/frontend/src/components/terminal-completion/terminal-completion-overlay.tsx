@@ -7,9 +7,9 @@
  */
 
 import { useEffect, useRef } from 'react'
-import { CheckIcon, FolderIcon, TerminalIcon, ClockIcon, HashIcon, CodeIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { CompletionItem, CompletionType } from '@/hooks/use-command-completion'
+import type { CompletionItem } from '@/hooks/use-command-completion'
+import { CompletionOption } from './completion-option'
 
 export interface CursorPosition {
   x: number
@@ -31,24 +31,6 @@ export interface TerminalCompletionOverlayProps {
   maxHeight?: number
   /** Additional CSS classes */
   className?: string
-}
-
-const TYPE_ICONS: Record<CompletionType, React.ComponentType<{ className?: string }>> = {
-  history: ClockIcon,
-  subcommand: TerminalIcon,
-  path: FolderIcon,
-  snippet: TerminalIcon,
-  alias: HashIcon,
-  function: CodeIcon,
-}
-
-const TYPE_COLORS: Record<CompletionType, string> = {
-  history: 'text-blue-400',
-  subcommand: 'text-green-400',
-  path: 'text-yellow-400',
-  snippet: 'text-purple-400',
-  alias: 'text-cyan-400',
-  function: 'text-orange-400',
 }
 
 export function TerminalCompletionOverlay({
@@ -157,59 +139,30 @@ export function TerminalCompletionOverlay({
         className="overflow-y-auto py-1 scrollbar-thin scrollbar-thumb-[#444] scrollbar-track-transparent"
         style={{ maxHeight: `${maxHeight - 36}px` }}
       >
-        {items.map((item, index) => {
-          const Icon = TYPE_ICONS[item.type] ?? TerminalIcon
-          return (
-            <button
-              key={`${item.text}-${index}`}
-              ref={index === currentIndex ? selectedItemRef : undefined}
-              className={cn(
-                'w-full px-3 py-1.5 text-left text-sm font-mono transition-colors',
-                'flex items-center gap-2 truncate',
-                index === currentIndex
-                  ? 'bg-[#094771] text-white'
-                  : 'text-[#cccccc] hover:bg-[#2a2d2e]',
-              )}
-              onClick={() => onSelect(item, index)}
-              role="option"
-              aria-selected={index === currentIndex}
-            >
-              {/* Selection indicator */}
-              <span
-                className={cn(
-                  'flex-shrink-0 w-4 h-4 flex items-center justify-center',
-                  index === currentIndex ? 'text-[#4ec9b0]' : 'text-transparent',
-                )}
-              >
-                <CheckIcon className="w-3 h-3" />
-              </span>
-
-              {/* Type icon */}
-              <Icon className={cn('flex-shrink-0 w-3.5 h-3.5', index === currentIndex ? 'text-white/60' : TYPE_COLORS[item.type])} />
-
-              {/* Label */}
-              <span className="flex-1 truncate">{item.label}</span>
-
-              {/* Type badge */}
-              <span className={cn(
-                'flex-shrink-0 text-[9px] px-1.5 py-0.5 rounded',
-                index === currentIndex ? 'bg-white/10 text-white/50' : 'bg-[#333] text-[#555]',
-              )}>
-                {item.type}
-              </span>
-            </button>
-          )
-        })}
+        {items.map((item, index) => (
+          <CompletionOption
+            key={`${item.text}-${index}`}
+            item={item}
+            index={index}
+            isSelected={index === currentIndex}
+            selectedRef={index === currentIndex ? selectedItemRef : undefined}
+            onSelect={onSelect}
+          />
+        ))}
       </div>
 
       {/* Footer with hints */}
       <div className="flex items-center justify-between px-3 py-1 border-t border-[#333] bg-[#252526]">
         <span className="text-[9px] text-[#555]">
-          <kbd className="px-1 py-0.5 bg-[#333] rounded text-[#888] font-mono">Tab</kbd>{' '}
+          <kbd className="px-1 py-0.5 bg-[#333] rounded text-[#888] font-mono">
+            Tab
+          </kbd>{' '}
           next
         </span>
         <span className="text-[9px] text-[#555]">
-          <kbd className="px-1 py-0.5 bg-[#333] rounded text-[#888] font-mono">Esc</kbd>{' '}
+          <kbd className="px-1 py-0.5 bg-[#333] rounded text-[#888] font-mono">
+            Esc
+          </kbd>{' '}
           dismiss
         </span>
       </div>

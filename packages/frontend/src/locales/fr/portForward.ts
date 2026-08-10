@@ -14,9 +14,9 @@ export default {
   'portForward.myForward': 'Mon transfert',
   'portForward.stop': 'Arrêter',
   'portForward.start': 'Démarrer',
-  'portForward.configured': '{count} transfert(s) configuré(s)',
+  'portForward.configured': '{{count}} transfert(s) configuré(s)',
   'portForward.noConfigured': 'Aucun transfert configuré',
-  'portForward.socksDesc': 'Crée un proxy SOCKS sur {host}:{port}',
+  'portForward.socksDesc': 'Crée un proxy SOCKS sur {{host}}:{{port}}',
 
   // Port Forward view
   'portForwardView.title': 'Transfert de port',

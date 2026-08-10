@@ -6,6 +6,6 @@ export default {
   'workspace.rename': 'Renommer',
   'workspace.delete': 'Supprimer',
   'workspace.deleteConfirm':
-    'Êtes-vous sûr de vouloir supprimer "{name}" ? Cette action est irréversible.',
+    'Êtes-vous sûr de vouloir supprimer "{{name}}" ? Cette action est irréversible.',
   'workspace.workspaceName': "Nom de l'espace...",
 }

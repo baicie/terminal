@@ -1,49 +1,46 @@
-# Build stage
-FROM node:20-alpine AS builder
+# syntax=docker/dockerfile:1
 
-WORKDIR /app
+FROM node:24.16.0-alpine AS base
 
-# Copy package files
-COPY package*.json ./
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+WORKDIR /workspace
 
-# Install dependencies
-RUN npm ci
+# Keep the package manager aligned with the lockfile and local toolchain pin.
+RUN npm install --global pnpm@10.34.3
 
-# Copy source code
-COPY . .
+FROM base AS builder
 
-# Generate Prisma client
-RUN npx prisma generate
+# Copy manifests first so dependency installation remains cacheable.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/team-server/package.json packages/team-server/package.json
+COPY packages/team-server/prisma packages/team-server/prisma
+COPY packages/team-server/prisma.config.ts packages/team-server/prisma.config.ts
+RUN pnpm install --frozen-lockfile --filter=team-server
 
-# Build the application
-RUN npm run build
+COPY packages/team-server packages/team-server
+RUN pnpm --filter=team-server prisma:generate
+RUN pnpm --filter=team-server build
 
-# Production stage
-FROM node:20-alpine AS production
+FROM base AS production
 
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install all dependencies (prisma CLI needed for migrations)
-RUN npm ci
-
-# Copy Prisma schema for migrations
-COPY prisma ./prisma
-
-# Copy built application
-COPY --from=builder /app/dist ./dist
-
-# Generate Prisma client in production
-RUN npx prisma generate
-
-# Expose port
-EXPOSE 3000
-
-# Environment variables
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Start the application (run migrations first)
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/team-server/package.json packages/team-server/package.json
+COPY packages/team-server/prisma packages/team-server/prisma
+COPY packages/team-server/prisma.config.ts packages/team-server/prisma.config.ts
+
+# Prisma CLI is a runtime dependency because migrations run on container start.
+RUN pnpm install --frozen-lockfile --filter=team-server --prod
+RUN pnpm --filter=team-server prisma:generate
+
+COPY --from=builder /workspace/packages/team-server/dist packages/team-server/dist
+
+WORKDIR /workspace/packages/team-server
+EXPOSE 3000
+USER node
+
+# Fail fast when migrations cannot be applied; do not start a partially upgraded API.
+CMD ["sh", "-c", "pnpm exec prisma migrate deploy && exec node dist/main.js"]

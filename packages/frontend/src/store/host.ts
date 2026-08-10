@@ -1,71 +1,13 @@
-import type { AuthType, Group, Host } from '@/types'
+import type { Group, Host } from '@/types'
 import { create } from 'zustand'
 import { executeQuery, select } from '@/service/database'
 import { generateId } from '@/utils/id'
-
-interface HostRow {
-  id: string
-  name: string
-  hostname: string
-  port: number
-  username: string
-  auth_type: string
-  password: string | null
-  private_key: string | null
-  group_id: string | null
-  is_favorite: number
-  color: string | null
-  tags: string | null
-  port_forwards: string | null
-  startup_command: string | null
-  environment: string | null
-  created_at: number
-  updated_at: number
-}
-
-interface GroupRow {
-  id: string
-  name: string
-  parent_id: string | null
-  color: string | null
-  inherit_settings: number
-  settings: string | null
-  order: number
-}
-
-function rowToHost(row: HostRow): Host {
-  return {
-    id: row.id,
-    name: row.name,
-    hostname: row.hostname,
-    port: row.port,
-    username: row.username,
-    authType: row.auth_type as AuthType,
-    password: row.password ?? undefined,
-    privateKey: row.private_key ?? undefined,
-    groupId: row.group_id ?? undefined,
-    isFavorite: row.is_favorite === 1,
-    color: row.color ?? undefined,
-    tags: row.tags ? JSON.parse(row.tags) : undefined,
-    portForwards: row.port_forwards ? JSON.parse(row.port_forwards) : [],
-    startupCommand: row.startup_command ?? undefined,
-    environment: row.environment ? JSON.parse(row.environment) : undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }
-}
-
-function rowToGroup(row: GroupRow): Group {
-  return {
-    id: row.id,
-    name: row.name,
-    parentId: row.parent_id ?? undefined,
-    color: row.color ?? undefined,
-    inheritSettings: row.inherit_settings === 1,
-    settings: row.settings ? JSON.parse(row.settings) : undefined,
-    order: row.order,
-  }
-}
+import {
+  groupRowToGroup,
+  hostRowToHost,
+  type GroupRow,
+  type HostRow,
+} from './host-mappers'
 
 export interface HostState {
   hosts: Host[]
@@ -115,7 +57,7 @@ export const useHostStore = create<HostState>((set, get) => ({
     set({ loading: true })
     try {
       const rows = await select<HostRow>('SELECT * FROM hosts ORDER BY name')
-      set({ hosts: rows.map(rowToHost), dbAvailable: true })
+      set({ hosts: rows.map(hostRowToHost), dbAvailable: true })
     } catch (error) {
       // Check if it's a "not in Tauri context" error
       if (
@@ -136,7 +78,7 @@ export const useHostStore = create<HostState>((set, get) => ({
       const rows = await select<GroupRow>(
         'SELECT * FROM groups ORDER BY "order"',
       )
-      set({ groups: rows.map(rowToGroup) })
+      set({ groups: rows.map(groupRowToGroup) })
     } catch (error) {
       // Check if it's a "not in Tauri context" error - don't throw, just log
       if (
@@ -161,8 +103,8 @@ export const useHostStore = create<HostState>((set, get) => ({
     }
 
     await executeQuery(
-      `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         newHost.id,
         newHost.name,
@@ -172,6 +114,7 @@ export const useHostStore = create<HostState>((set, get) => ({
         newHost.authType,
         newHost.password ?? null,
         newHost.privateKey ?? null,
+        newHost.certificate ?? null,
         newHost.groupId ?? null,
         newHost.isFavorite ? 1 : 0,
         newHost.color ?? null,
@@ -179,6 +122,8 @@ export const useHostStore = create<HostState>((set, get) => ({
         JSON.stringify(newHost.portForwards),
         newHost.startupCommand ?? null,
         newHost.environment ? JSON.stringify(newHost.environment) : null,
+        newHost.jumpHostId ?? null,
+        newHost.jumpHostAuthType ?? null,
         newHost.createdAt,
         newHost.updatedAt,
       ],
@@ -199,7 +144,7 @@ export const useHostStore = create<HostState>((set, get) => ({
     }
 
     await executeQuery(
-      `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, certificate = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, updated_at = ? WHERE id = ?`,
       [
         updated.name,
         updated.hostname,
@@ -208,6 +153,7 @@ export const useHostStore = create<HostState>((set, get) => ({
         updated.authType,
         updated.password ?? null,
         updated.privateKey ?? null,
+        updated.certificate ?? null,
         updated.groupId ?? null,
         updated.isFavorite ? 1 : 0,
         updated.color ?? null,
@@ -215,6 +161,8 @@ export const useHostStore = create<HostState>((set, get) => ({
         JSON.stringify(updated.portForwards),
         updated.startupCommand ?? null,
         updated.environment ? JSON.stringify(updated.environment) : null,
+        updated.jumpHostId ?? null,
+        updated.jumpHostAuthType ?? null,
         updated.updatedAt,
         id,
       ],

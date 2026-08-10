@@ -1,6 +1,7 @@
 // Vault - Secure storage for sensitive data
 // Uses AES-GCM encryption with Argon2 key derivation
 
+use crate::errors::VaultError;
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
@@ -13,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::errors::VaultError;
 
 /// Vault configuration stored on disk
 #[derive(Serialize, Deserialize)]
@@ -53,7 +53,9 @@ impl VaultState {
             .map_err(|e| VaultError::CreateFailed(format!("Failed to derive key: {}", e)))?;
 
         // Extract 32 bytes for AES-256
-        let hash_output = hash.hash.ok_or_else(|| VaultError::CreateFailed("Failed to get hash output".into()))?;
+        let hash_output = hash
+            .hash
+            .ok_or_else(|| VaultError::CreateFailed("Failed to get hash output".into()))?;
         let mut master_key = [0u8; 32];
         let hash_bytes = hash_output.as_bytes();
         let len = std::cmp::min(hash_bytes.len(), 32);
@@ -92,7 +94,9 @@ impl VaultState {
             .hash_password(master_password.as_bytes(), &salt)
             .map_err(|e| VaultError::UnlockFailed(format!("Failed to derive key: {}", e)))?;
 
-        let hash_output = hash.hash.ok_or_else(|| VaultError::UnlockFailed("Failed to get hash output".into()))?;
+        let hash_output = hash
+            .hash
+            .ok_or_else(|| VaultError::UnlockFailed("Failed to get hash output".into()))?;
         let mut master_key = [0u8; 32];
         let hash_bytes = hash_output.as_bytes();
         let len = std::cmp::min(hash_bytes.len(), 32);
@@ -151,7 +155,9 @@ impl VaultState {
             .hash_password(new_password.as_bytes(), &new_salt)
             .map_err(|e| VaultError::CreateFailed(format!("Failed to derive key: {}", e)))?;
 
-        let hash_output = hash.hash.ok_or_else(|| VaultError::CreateFailed("Failed to get hash output".into()))?;
+        let hash_output = hash
+            .hash
+            .ok_or_else(|| VaultError::CreateFailed("Failed to get hash output".into()))?;
         let mut new_master_key = [0u8; 32];
         let hash_bytes = hash_output.as_bytes();
         let len = std::cmp::min(hash_bytes.len(), 32);
@@ -224,11 +230,12 @@ fn decrypt_value(encrypted: &str, key: &[u8; 32]) -> Result<String, VaultError> 
     let ciphertext = &combined[12..];
 
     // Decrypt
-    let plaintext = cipher
-        .decrypt(nonce, ciphertext)
-        .map_err(|e| VaultError::DecryptFailed(format!("Decryption failed (wrong password?): {}", e)))?;
+    let plaintext = cipher.decrypt(nonce, ciphertext).map_err(|e| {
+        VaultError::DecryptFailed(format!("Decryption failed (wrong password?): {}", e))
+    })?;
 
-    String::from_utf8(plaintext).map_err(|e| VaultError::DecryptFailed(format!("Invalid UTF-8: {}", e)))
+    String::from_utf8(plaintext)
+        .map_err(|e| VaultError::DecryptFailed(format!("Invalid UTF-8: {}", e)))
 }
 
 // Global vault state (protected by Mutex for thread safety)

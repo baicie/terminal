@@ -16,30 +16,36 @@ Terminal 应用的团队协作服务端，支持自部署。
 ### 使用 Docker
 
 ```bash
+# 创建 Compose 环境文件并替换数据库密码
+cp .env.example .env
+
 # 启动服务
-docker-compose up -d
+docker compose up -d
 
 # 查看日志
-docker-compose logs -f team-server
+docker compose logs -f team-server
 
 # 停止服务
-docker-compose down
+docker compose down
 ```
 
 ### 本地开发
 
 ```bash
 # 安装依赖
-npm install
+pnpm install --frozen-lockfile
+
+# 宿主机开发连接本机 PostgreSQL，而不是 Compose 服务名 db
+export DATABASE_URL=postgresql://terminal:<YOUR_PASSWORD>@127.0.0.1:5432/terminal
 
 # 生成 Prisma Client
-npx prisma generate
+pnpm prisma:generate
 
 # 运行数据库迁移
-npx prisma migrate dev
+pnpm prisma:migrate
 
 # 启动开发服务器
-npm run start:dev
+pnpm start:dev
 ```
 
 ### 生产部署
@@ -48,17 +54,21 @@ npm run start:dev
 # 构建镜像
 docker build -t terminal-team-server .
 
-# 使用 docker-compose 启动
-docker-compose up -d
+# 使用 Docker Compose 启动
+docker compose up -d
 ```
 
 ## 环境变量
 
 | 变量         | 描述                  | 默认值                                                |
 | ------------ | --------------------- | ----------------------------------------------------- |
-| DATABASE_URL | PostgreSQL 连接字符串 | postgresql://postgres:postgres@localhost:5432/team_db |
-| PORT         | 服务端口              | 3000                                                  |
-| NODE_ENV     | 运行环境              | development                                           |
+| 变量 | 描述 | Compose 示例 |
+| --- | --- | --- |
+| `DATABASE_URL` | PostgreSQL 连接字符串 | `postgresql://terminal:<PASSWORD>@db:5432/terminal` |
+| `POSTGRES_PASSWORD` | PostgreSQL 密码，首次启动前必须修改 | 无安全默认值 |
+| `CORS_ORIGINS` | 允许的精确客户端 Origin，逗号分隔 | Tauri 本地 Origin |
+| `PORT` | 容器内服务端口 | `3000` |
+| `NODE_ENV` | 运行环境 | `production` |
 
 ## 健康检查
 

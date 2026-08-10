@@ -55,11 +55,21 @@ export default defineConfig(() => ({
       output: {
         chunkFileNames: 'js/[name].[hash].js',
         entryFileNames: 'js/[name].[hash].js',
-        // 不手写 manualChunks——以前的实现「按 npm 包名拆 vendor」会
-        // 把所有 vendor 提到主入口 chunk graph，导致 xterm 即使只被
-        // lazy 的 TerminalContainer 引用，也会进首屏关键路径。
-        // 让 rolldown 默认策略接管：只被 lazy chunk 引用的 vendor 会
-        // 自动随 lazy chunk 加载，节省首屏体积。
+        manualChunks(id) {
+          // Keep these boundaries narrow. A catch-all vendor chunk would pull
+          // terminal-only dependencies into the initial route graph.
+          if (id.includes('/node_modules/@baicie/xterm/')) return 'xterm-core'
+          if (id.includes('/node_modules/@xterm/')) return 'xterm-addons'
+          if (
+            id.includes('/node_modules/react/') ||
+            id.includes('/node_modules/react-dom/') ||
+            id.includes('/node_modules/react-router/') ||
+            id.includes('/node_modules/react-router-dom/') ||
+            id.includes('/node_modules/scheduler/')
+          ) {
+            return 'react-runtime'
+          }
+        },
       },
     },
   },

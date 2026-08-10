@@ -38,15 +38,42 @@ struct SftpErrorDto {
 impl From<SftpError> for SftpErrorDto {
     fn from(e: SftpError) -> Self {
         match e {
-            SftpError::SessionNotFound => Self { kind: "session_not_found", message: None },
-            SftpError::ReadDirFailed(m) => Self { kind: "read_dir_failed", message: Some(m) },
-            SftpError::UploadFailed(m) => Self { kind: "upload_failed", message: Some(m) },
-            SftpError::DownloadFailed(m) => Self { kind: "download_failed", message: Some(m) },
-            SftpError::MkdirFailed(m) => Self { kind: "mkdir_failed", message: Some(m) },
-            SftpError::DeleteFailed(m) => Self { kind: "delete_failed", message: Some(m) },
-            SftpError::RenameFailed(m) => Self { kind: "rename_failed", message: Some(m) },
-            SftpError::InvalidPath(m) => Self { kind: "invalid_path", message: Some(m) },
-            SftpError::ChecksumFailed(m) => Self { kind: "checksum_failed", message: Some(m) },
+            SftpError::SessionNotFound => Self {
+                kind: "session_not_found",
+                message: None,
+            },
+            SftpError::ReadDirFailed(m) => Self {
+                kind: "read_dir_failed",
+                message: Some(m),
+            },
+            SftpError::UploadFailed(m) => Self {
+                kind: "upload_failed",
+                message: Some(m),
+            },
+            SftpError::DownloadFailed(m) => Self {
+                kind: "download_failed",
+                message: Some(m),
+            },
+            SftpError::MkdirFailed(m) => Self {
+                kind: "mkdir_failed",
+                message: Some(m),
+            },
+            SftpError::DeleteFailed(m) => Self {
+                kind: "delete_failed",
+                message: Some(m),
+            },
+            SftpError::RenameFailed(m) => Self {
+                kind: "rename_failed",
+                message: Some(m),
+            },
+            SftpError::InvalidPath(m) => Self {
+                kind: "invalid_path",
+                message: Some(m),
+            },
+            SftpError::ChecksumFailed(m) => Self {
+                kind: "checksum_failed",
+                message: Some(m),
+            },
         }
     }
 }
@@ -95,11 +122,26 @@ struct SerialErrorDto {
 impl From<SerialError> for SerialErrorDto {
     fn from(e: SerialError) -> Self {
         match e {
-            SerialError::ListFailed(m) => Self { kind: "list_failed", message: Some(m) },
-            SerialError::ConnectFailed(m) => Self { kind: "connect_failed", message: Some(m) },
-            SerialError::WriteFailed(m) => Self { kind: "write_failed", message: Some(m) },
-            SerialError::SessionNotFound => Self { kind: "session_not_found", message: None },
-            SerialError::CloneFailed(m) => Self { kind: "clone_failed", message: Some(m) },
+            SerialError::ListFailed(m) => Self {
+                kind: "list_failed",
+                message: Some(m),
+            },
+            SerialError::ConnectFailed(m) => Self {
+                kind: "connect_failed",
+                message: Some(m),
+            },
+            SerialError::WriteFailed(m) => Self {
+                kind: "write_failed",
+                message: Some(m),
+            },
+            SerialError::SessionNotFound => Self {
+                kind: "session_not_found",
+                message: None,
+            },
+            SerialError::CloneFailed(m) => Self {
+                kind: "clone_failed",
+                message: Some(m),
+            },
         }
     }
 }
@@ -148,13 +190,34 @@ struct PortForwardErrorDto {
 impl From<PortForwardError> for PortForwardErrorDto {
     fn from(e: PortForwardError) -> Self {
         match e {
-            PortForwardError::SessionNotFound => Self { kind: "session_not_found", message: None },
-            PortForwardError::BindFailed(m) => Self { kind: "bind_failed", message: Some(m) },
-            PortForwardError::ForwardNotFound => Self { kind: "forward_not_found", message: None },
-            PortForwardError::ConnectionFailed(m) => Self { kind: "connection_failed", message: Some(m) },
-            PortForwardError::ChannelFailed(m) => Self { kind: "channel_failed", message: Some(m) },
-            PortForwardError::SocksUnsupported(m) => Self { kind: "socks_unsupported", message: Some(m) },
-            PortForwardError::SocksAuthFailed(m) => Self { kind: "socks_auth_failed", message: Some(m) },
+            PortForwardError::SessionNotFound => Self {
+                kind: "session_not_found",
+                message: None,
+            },
+            PortForwardError::BindFailed(m) => Self {
+                kind: "bind_failed",
+                message: Some(m),
+            },
+            PortForwardError::ForwardNotFound => Self {
+                kind: "forward_not_found",
+                message: None,
+            },
+            PortForwardError::ConnectionFailed(m) => Self {
+                kind: "connection_failed",
+                message: Some(m),
+            },
+            PortForwardError::ChannelFailed(m) => Self {
+                kind: "channel_failed",
+                message: Some(m),
+            },
+            PortForwardError::SocksUnsupported(m) => Self {
+                kind: "socks_unsupported",
+                message: Some(m),
+            },
+            PortForwardError::SocksAuthFailed(m) => Self {
+                kind: "socks_auth_failed",
+                message: Some(m),
+            },
         }
     }
 }
@@ -207,14 +270,38 @@ struct VaultErrorDto {
 impl From<VaultError> for VaultErrorDto {
     fn from(e: VaultError) -> Self {
         match e {
-            VaultError::VaultLocked => Self { kind: "vault_locked", message: None },
-            VaultError::KeyNotFound(m) => Self { kind: "key_not_found", message: Some(m) },
-            VaultError::CreateFailed(m) => Self { kind: "create_failed", message: Some(m) },
-            VaultError::UnlockFailed(m) => Self { kind: "unlock_failed", message: Some(m) },
-            VaultError::EncryptFailed(m) => Self { kind: "encrypt_failed", message: Some(m) },
-            VaultError::DecryptFailed(m) => Self { kind: "decrypt_failed", message: Some(m) },
-            VaultError::SaveFailed(m) => Self { kind: "save_failed", message: Some(m) },
-            VaultError::InvalidPassword => Self { kind: "invalid_password", message: None },
+            VaultError::VaultLocked => Self {
+                kind: "vault_locked",
+                message: None,
+            },
+            VaultError::KeyNotFound(m) => Self {
+                kind: "key_not_found",
+                message: Some(m),
+            },
+            VaultError::CreateFailed(m) => Self {
+                kind: "create_failed",
+                message: Some(m),
+            },
+            VaultError::UnlockFailed(m) => Self {
+                kind: "unlock_failed",
+                message: Some(m),
+            },
+            VaultError::EncryptFailed(m) => Self {
+                kind: "encrypt_failed",
+                message: Some(m),
+            },
+            VaultError::DecryptFailed(m) => Self {
+                kind: "decrypt_failed",
+                message: Some(m),
+            },
+            VaultError::SaveFailed(m) => Self {
+                kind: "save_failed",
+                message: Some(m),
+            },
+            VaultError::InvalidPassword => Self {
+                kind: "invalid_password",
+                message: None,
+            },
         }
     }
 }
@@ -267,12 +354,30 @@ struct StorageErrorDto {
 impl From<StorageError> for StorageErrorDto {
     fn from(e: StorageError) -> Self {
         match e {
-            StorageError::NotConfigured => Self { kind: "not_configured", message: None },
-            StorageError::ConnectionFailed(m) => Self { kind: "connection_failed", message: Some(m) },
-            StorageError::UploadFailed(m) => Self { kind: "upload_failed", message: Some(m) },
-            StorageError::DownloadFailed(m) => Self { kind: "download_failed", message: Some(m) },
-            StorageError::DeleteFailed(m) => Self { kind: "delete_failed", message: Some(m) },
-            StorageError::ListFailed(m) => Self { kind: "list_failed", message: Some(m) },
+            StorageError::NotConfigured => Self {
+                kind: "not_configured",
+                message: None,
+            },
+            StorageError::ConnectionFailed(m) => Self {
+                kind: "connection_failed",
+                message: Some(m),
+            },
+            StorageError::UploadFailed(m) => Self {
+                kind: "upload_failed",
+                message: Some(m),
+            },
+            StorageError::DownloadFailed(m) => Self {
+                kind: "download_failed",
+                message: Some(m),
+            },
+            StorageError::DeleteFailed(m) => Self {
+                kind: "delete_failed",
+                message: Some(m),
+            },
+            StorageError::ListFailed(m) => Self {
+                kind: "list_failed",
+                message: Some(m),
+            },
         }
     }
 }
@@ -296,99 +401,215 @@ impl From<StorageErrorDto> for StorageError {
 mod tests {
     #[test]
     fn test_sftp_error_roundtrip() {
-        let check = |original: super::SftpError, expected_kind: &str, expected_msg: Option<&str>| {
-            let dto = super::SftpErrorDto::from(original.clone());
-            assert_eq!(&*dto.kind, expected_kind);
-            assert_eq!(dto.message.as_deref(), expected_msg);
-            let back: super::SftpError = dto.into();
-            assert_eq!(back.to_string(), original.to_string());
-        };
+        let check =
+            |original: super::SftpError, expected_kind: &str, expected_msg: Option<&str>| {
+                let dto = super::SftpErrorDto::from(original.clone());
+                assert_eq!(dto.kind, expected_kind);
+                assert_eq!(dto.message.as_deref(), expected_msg);
+                let back: super::SftpError = dto.into();
+                assert_eq!(back.to_string(), original.to_string());
+            };
         check(super::SftpError::SessionNotFound, "session_not_found", None);
-        check(super::SftpError::ReadDirFailed("ENOENT".into()), "read_dir_failed", Some("ENOENT"));
-        check(super::SftpError::UploadFailed("reset".into()), "upload_failed", Some("reset"));
-        check(super::SftpError::DownloadFailed("timeout".into()), "download_failed", Some("timeout"));
-        check(super::SftpError::MkdirFailed("denied".into()), "mkdir_failed", Some("denied"));
-        check(super::SftpError::DeleteFailed("busy".into()), "delete_failed", Some("busy"));
-        check(super::SftpError::RenameFailed("cross".into()), "rename_failed", Some("cross"));
-        check(super::SftpError::InvalidPath("/bad".into()), "invalid_path", Some("/bad"));
-        check(super::SftpError::ChecksumFailed("mismatch".into()), "checksum_failed", Some("mismatch"));
+        check(
+            super::SftpError::ReadDirFailed("ENOENT".into()),
+            "read_dir_failed",
+            Some("ENOENT"),
+        );
+        check(
+            super::SftpError::UploadFailed("reset".into()),
+            "upload_failed",
+            Some("reset"),
+        );
+        check(
+            super::SftpError::DownloadFailed("timeout".into()),
+            "download_failed",
+            Some("timeout"),
+        );
+        check(
+            super::SftpError::MkdirFailed("denied".into()),
+            "mkdir_failed",
+            Some("denied"),
+        );
+        check(
+            super::SftpError::DeleteFailed("busy".into()),
+            "delete_failed",
+            Some("busy"),
+        );
+        check(
+            super::SftpError::RenameFailed("cross".into()),
+            "rename_failed",
+            Some("cross"),
+        );
+        check(
+            super::SftpError::InvalidPath("/bad".into()),
+            "invalid_path",
+            Some("/bad"),
+        );
+        check(
+            super::SftpError::ChecksumFailed("mismatch".into()),
+            "checksum_failed",
+            Some("mismatch"),
+        );
     }
 
     #[test]
     fn test_sftp_error_unknown_kind_falls_back() {
-        let dto = super::SftpErrorDto { kind: "bogus", message: None };
+        let dto = super::SftpErrorDto {
+            kind: "bogus",
+            message: None,
+        };
         let back: super::SftpError = dto.into();
         assert!(matches!(back, super::SftpError::SessionNotFound));
     }
 
     #[test]
     fn test_serial_error_roundtrip() {
-        let check = |original: super::SerialError, expected_kind: &str, expected_msg: Option<&str>| {
-            let dto = super::SerialErrorDto::from(original.clone());
-            assert_eq!(&*dto.kind, expected_kind);
-            assert_eq!(dto.message.as_deref(), expected_msg);
-            let back: super::SerialError = dto.into();
-            assert_eq!(back.to_string(), original.to_string());
-        };
-        check(super::SerialError::ListFailed("no ports".into()), "list_failed", Some("no ports"));
-        check(super::SerialError::ConnectFailed("busy".into()), "connect_failed", Some("busy"));
-        check(super::SerialError::WriteFailed("overflow".into()), "write_failed", Some("overflow"));
-        check(super::SerialError::SessionNotFound, "session_not_found", None);
-        check(super::SerialError::CloneFailed("max".into()), "clone_failed", Some("max"));
+        let check =
+            |original: super::SerialError, expected_kind: &str, expected_msg: Option<&str>| {
+                let dto = super::SerialErrorDto::from(original.clone());
+                assert_eq!(dto.kind, expected_kind);
+                assert_eq!(dto.message.as_deref(), expected_msg);
+                let back: super::SerialError = dto.into();
+                assert_eq!(back.to_string(), original.to_string());
+            };
+        check(
+            super::SerialError::ListFailed("no ports".into()),
+            "list_failed",
+            Some("no ports"),
+        );
+        check(
+            super::SerialError::ConnectFailed("busy".into()),
+            "connect_failed",
+            Some("busy"),
+        );
+        check(
+            super::SerialError::WriteFailed("overflow".into()),
+            "write_failed",
+            Some("overflow"),
+        );
+        check(
+            super::SerialError::SessionNotFound,
+            "session_not_found",
+            None,
+        );
+        check(
+            super::SerialError::CloneFailed("max".into()),
+            "clone_failed",
+            Some("max"),
+        );
     }
 
     #[test]
     fn test_serial_error_unknown_kind_falls_back() {
-        let dto = super::SerialErrorDto { kind: "invalid", message: Some("x".into()) };
+        let dto = super::SerialErrorDto {
+            kind: "invalid",
+            message: Some("x".into()),
+        };
         let back: super::SerialError = dto.into();
         assert!(matches!(back, super::SerialError::ListFailed(_)));
     }
 
     #[test]
     fn test_storage_error_roundtrip() {
-        let check = |original: super::StorageError, expected_kind: &str, expected_msg: Option<&str>| {
-            let dto = super::StorageErrorDto::from(original.clone());
-            assert_eq!(&*dto.kind, expected_kind);
-            assert_eq!(dto.message.as_deref(), expected_msg);
-            let back: super::StorageError = dto.into();
-            assert_eq!(back.to_string(), original.to_string());
-        };
+        let check =
+            |original: super::StorageError, expected_kind: &str, expected_msg: Option<&str>| {
+                let dto = super::StorageErrorDto::from(original.clone());
+                assert_eq!(dto.kind, expected_kind);
+                assert_eq!(dto.message.as_deref(), expected_msg);
+                let back: super::StorageError = dto.into();
+                assert_eq!(back.to_string(), original.to_string());
+            };
         check(super::StorageError::NotConfigured, "not_configured", None);
-        check(super::StorageError::ConnectionFailed("unreachable".into()), "connection_failed", Some("unreachable"));
-        check(super::StorageError::UploadFailed("403".into()), "upload_failed", Some("403"));
-        check(super::StorageError::DownloadFailed("404".into()), "download_failed", Some("404"));
-        check(super::StorageError::DeleteFailed("locked".into()), "delete_failed", Some("locked"));
-        check(super::StorageError::ListFailed("err".into()), "list_failed", Some("err"));
+        check(
+            super::StorageError::ConnectionFailed("unreachable".into()),
+            "connection_failed",
+            Some("unreachable"),
+        );
+        check(
+            super::StorageError::UploadFailed("403".into()),
+            "upload_failed",
+            Some("403"),
+        );
+        check(
+            super::StorageError::DownloadFailed("404".into()),
+            "download_failed",
+            Some("404"),
+        );
+        check(
+            super::StorageError::DeleteFailed("locked".into()),
+            "delete_failed",
+            Some("locked"),
+        );
+        check(
+            super::StorageError::ListFailed("err".into()),
+            "list_failed",
+            Some("err"),
+        );
     }
 
     #[test]
     fn test_storage_error_unknown_kind_falls_back() {
-        let dto = super::StorageErrorDto { kind: "unknown", message: Some("x".into()) };
+        let dto = super::StorageErrorDto {
+            kind: "unknown",
+            message: Some("x".into()),
+        };
         let back: super::StorageError = dto.into();
         assert!(matches!(back, super::StorageError::NotConfigured));
     }
 
     #[test]
     fn test_port_forward_error_roundtrip() {
-        let check = |original: super::PortForwardError, expected_kind: &str, expected_msg: Option<&str>| {
-            let dto = super::PortForwardErrorDto::from(original.clone());
-            assert_eq!(&*dto.kind, expected_kind);
-            assert_eq!(dto.message.as_deref(), expected_msg);
-            let back: super::PortForwardError = dto.into();
-            assert_eq!(back.to_string(), original.to_string());
-        };
-        check(super::PortForwardError::SessionNotFound, "session_not_found", None);
-        check(super::PortForwardError::BindFailed("addr in use".into()), "bind_failed", Some("addr in use"));
-        check(super::PortForwardError::ForwardNotFound, "forward_not_found", None);
-        check(super::PortForwardError::ConnectionFailed("refused".into()), "connection_failed", Some("refused"));
-        check(super::PortForwardError::ChannelFailed("closed".into()), "channel_failed", Some("closed"));
-        check(super::PortForwardError::SocksUnsupported("no auth".into()), "socks_unsupported", Some("no auth"));
-        check(super::PortForwardError::SocksAuthFailed("bad pwd".into()), "socks_auth_failed", Some("bad pwd"));
+        let check =
+            |original: super::PortForwardError, expected_kind: &str, expected_msg: Option<&str>| {
+                let dto = super::PortForwardErrorDto::from(original.clone());
+                assert_eq!(dto.kind, expected_kind);
+                assert_eq!(dto.message.as_deref(), expected_msg);
+                let back: super::PortForwardError = dto.into();
+                assert_eq!(back.to_string(), original.to_string());
+            };
+        check(
+            super::PortForwardError::SessionNotFound,
+            "session_not_found",
+            None,
+        );
+        check(
+            super::PortForwardError::BindFailed("addr in use".into()),
+            "bind_failed",
+            Some("addr in use"),
+        );
+        check(
+            super::PortForwardError::ForwardNotFound,
+            "forward_not_found",
+            None,
+        );
+        check(
+            super::PortForwardError::ConnectionFailed("refused".into()),
+            "connection_failed",
+            Some("refused"),
+        );
+        check(
+            super::PortForwardError::ChannelFailed("closed".into()),
+            "channel_failed",
+            Some("closed"),
+        );
+        check(
+            super::PortForwardError::SocksUnsupported("no auth".into()),
+            "socks_unsupported",
+            Some("no auth"),
+        );
+        check(
+            super::PortForwardError::SocksAuthFailed("bad pwd".into()),
+            "socks_auth_failed",
+            Some("bad pwd"),
+        );
     }
 
     #[test]
     fn test_port_forward_error_unknown_kind_falls_back() {
-        let dto = super::PortForwardErrorDto { kind: "bogus", message: None };
+        let dto = super::PortForwardErrorDto {
+            kind: "bogus",
+            message: None,
+        };
         let back: super::PortForwardError = dto.into();
         assert!(matches!(back, super::PortForwardError::BindFailed(_)));
     }
@@ -397,7 +618,7 @@ mod tests {
     fn test_vault_error_roundtrip() {
         let check = |original: super::VaultError, expected_kind: &str| {
             let dto = super::VaultErrorDto::from(original.clone());
-            assert_eq!(&*dto.kind, expected_kind);
+            assert_eq!(dto.kind, expected_kind);
             // DTO round-trips back through the From impl
             let back: super::VaultError = dto.into();
             // The error format is "variant: msg" so just verify it's non-empty
@@ -405,17 +626,38 @@ mod tests {
         };
         check(super::VaultError::VaultLocked, "vault_locked");
         check(super::VaultError::InvalidPassword, "invalid_password");
-        check(super::VaultError::KeyNotFound("missing-key".into()), "key_not_found");
-        check(super::VaultError::CreateFailed("failed".into()), "create_failed");
-        check(super::VaultError::UnlockFailed("wrong".into()), "unlock_failed");
-        check(super::VaultError::EncryptFailed("enc err".into()), "encrypt_failed");
-        check(super::VaultError::DecryptFailed("dec err".into()), "decrypt_failed");
-        check(super::VaultError::SaveFailed("io err".into()), "save_failed");
+        check(
+            super::VaultError::KeyNotFound("missing-key".into()),
+            "key_not_found",
+        );
+        check(
+            super::VaultError::CreateFailed("failed".into()),
+            "create_failed",
+        );
+        check(
+            super::VaultError::UnlockFailed("wrong".into()),
+            "unlock_failed",
+        );
+        check(
+            super::VaultError::EncryptFailed("enc err".into()),
+            "encrypt_failed",
+        );
+        check(
+            super::VaultError::DecryptFailed("dec err".into()),
+            "decrypt_failed",
+        );
+        check(
+            super::VaultError::SaveFailed("io err".into()),
+            "save_failed",
+        );
     }
 
     #[test]
     fn test_vault_error_unknown_kind_falls_back_to_vault_locked() {
-        let dto = super::VaultErrorDto { kind: "bogus", message: None };
+        let dto = super::VaultErrorDto {
+            kind: "bogus",
+            message: None,
+        };
         let back: super::VaultError = dto.into();
         assert!(matches!(back, super::VaultError::VaultLocked));
     }

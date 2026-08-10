@@ -195,7 +195,7 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 **跨平台支持**：
 
 - Unix：连接 `$SSH_AUTH_SOCK`，`russh::keys::agent::client::AgentClient`
-- Windows：尝 OpenSSH named pipe → Pageant named pipe，`russh::keys::agent::client::AgentClient`
+- Windows：优先 OpenSSH named pipe，失败后使用 `AgentClient::connect_pageant()` 原生 Pageant transport
 
 **Jump Host 目标认证**：通过 `jump_host.target_auth_type === 'agent'` 传参，后端 `connect_via_jump` 正确路由到 `authenticate_with_agent`
 
@@ -208,12 +208,14 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 **严重程度**: 中
 **状态**: ✅ 已实现
 **影响功能**: SSH 跳板机连接
-**更新时间**: 2026-05-02（文档对齐）
+**更新时间**: 2026-08-09（主入口接线与认证边界复核）
 
 **实现**:
 
 - Tauri 命令 `session_create_ssh_jump`（`src-tauri/src/commands.rs`）
 - `SshSession::new_with_jump` / `connect_via_jump`（`src-tauri/src/session/ssh.rs`）：跳板认证 + `channel_open_direct_tcpip` 再打目标会话
+- 主终端入口会解析 `jumpHostId`，从 SQLite 恢复 Jump Host 配置并调用 `session_create_ssh_jump`
+- password/key/agent 目标与跳板认证已接线；certificate 尚未接线，前端和 Rust 均明确返回“不支持”，不会回退到密码认证
 
 **设计文档**: `docs/design.md` Section 3.3（产品文案可对齐）
 
@@ -287,12 +289,12 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 **严重程度**: 低
 **状态**: ✅ 已修复
 **影响**: 终端窗口大小调整
-**更新时间**: 2026-05-02（文档对齐）
+**更新时间**: 2026-08-09（RFC 4254 resize 修复）
 
 **说明**: 旧版 `src-tauri/src/terminal.rs` 中 `ssh_resize` 空实现已废弃；当前统一为 **`session_resize`**（`src-tauri/src/commands.rs`）：
 
 - **本地**：`LocalSession::resize` → `portable_pty` PTY `resize`
-- **SSH**：`SshSession::resize` → 向远端发送 `CSI … t` 窗口尺寸序列（`session/ssh.rs`）
+- **SSH**：`SshSession::resize` → 调用 channel 的 RFC 4254 `window-change(cols, rows, 0, 0)`（`session/ssh.rs`），不再把终端控制序列写进 shell stdin
 
 前端在 `sid` 就绪后及 xterm `onResize` 中调用 `session_resize` 即可。
 
@@ -323,20 +325,21 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 | Snippet       | ✅ 已实现   | 完整实现           |
 | 分屏模式      | ✅ 已实现   | 完整实现           |
 
-### Phase 3/4 - 高级功能
+### Phase 3/4 - 高级与企业功能
 
 | 功能         | 状态                   |
 | ------------ | ---------------------- |
-| Agent 转发   | ✅ 已实现 (2026-03-19) |
-| 主机链       | ✅ 已实现 (2026-03-19) |
+| Agent 登录认证 | ✅ 已实现；Windows/Pageant 待实机 |
+| Agent forwarding | ⚠️ handler/桥接完成，缺显式客户端入口 |
+| 主机链       | ⚠️ password/key/agent 主入口完成；certificate 未实现；Windows/Linux 待实机 |
 | Vault 加密   | ✅ 已实现 (2026-03-19) |
 | 命令面板     | ✅ 已实现 (2026-03-19) |
 | 多工作区     | ✅ 已实现 (2026-03-19) |
 | 跨设备同步   | ✅ 已实现 (2026-03-19) |
 | 串口连接     | ✅ 已实现 (2026-03-20) |
-| 团队协作     | 📋 待开发              |
-| SSH 证书认证 | 📋 待开发              |
-| 高级脚本     | 📋 待开发              |
+| 团队协作     | ✅ 已实现               |
+| SSH 证书直连 | ✅ 已实现               |
+| 高级脚本     | ✅ 已实现               |
 
 ---
 
@@ -395,8 +398,6 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 ---
 
 _文档创建时间: 2026-03-19_
-_最后更新: 2026-05-03 - Phase 6.6：TODO清理 + 端口转发数据库集成 + 工作区布局 + SSH Agent完善 + 新增3个测试文件_
-
 ---
 
 ## 十六、Phase 6.6 — TODO清理 + 端口转发持久化 + SSH Agent完善 + 测试覆盖 + 文档对齐 (2026-05-03)
@@ -818,14 +819,14 @@ defaultNS: 'demo',
 
 > ⚠️ 本项目需要同时支持 macOS、Windows 和 Linux。以下是已知的跨平台问题和待处理项。
 
-### Issue #21: SSH Agent Windows 支持 ✅ 已实现
+### Issue #21: SSH Agent Windows 支持 ⚠️ 代码已实现，待实机验证
 
 **严重程度**: Medium
-**状态**: ✅ OpenSSH Agent 已接入（Unix + Windows）；Pageant named pipe 已 best-effort 回退，待实机矩阵验证
+**状态**: ⚠️ OpenSSH Agent 已接入（Unix + Windows）；Pageant 使用 `russh` 原生传输，待实机矩阵验证
 **影响功能**: SSH Agent 认证
 **平台**: Windows
 
-**当前实现（2026-05-02）**:
+**当前实现（2026-08-09）**:
 
 1. **前端链路已打通**：
    - `packages/frontend/src/hooks/use-terminal.ts` 在 `host.authType === 'agent'` 时调用 `session_create_ssh_agent`
@@ -834,11 +835,12 @@ defaultNS: 'demo',
    - `src-tauri/src/session/ssh.rs::SshSession::new_with_agent`
 3. **跨平台认证分支**（`session/ssh.rs::authenticate`）：
    - `#[cfg(unix)]`：`AgentClient::connect_env()` + `request_identities()` + `authenticate_publickey_with(...)`
-   - `#[cfg(windows)]`：通过 named pipe `\\.\pipe\openssh-ssh-agent`（可被 `SSH_AUTH_SOCK` 覆盖）连接 `AgentClient`，同样走 `authenticate_publickey_with(...)`
+   - `#[cfg(windows)]`：优先通过 named pipe `\\.\pipe\openssh-ssh-agent`（可被 `SSH_AUTH_SOCK` 覆盖）连接 OpenSSH Agent，失败后调用 `AgentClient::connect_pageant()` 使用 `russh` 原生 Pageant 传输
 
 **仍待完善**:
 
 - [ ] Windows 上多 key / 证书 key 的实机回归（OpenSSH 与 Pageant 各版本）
+- [ ] Agent forwarding 增加显式 `channel.agent_forward(...)` 启用入口；当前仅完成服务端 channel handler 与本地 Agent 双向桥接
 
 **已完善（2026-05-03）**:
 
@@ -853,7 +855,7 @@ defaultNS: 'demo',
 | 2 | OpenSSH Agent 有多个 key，认证成功 | Windows | 遍历 keys，选用第一个被接受的 |
 | 3 | OpenSSH Agent 无 key | Windows | 报错 "SSH agent has no available identities" |
 | 4 | OpenSSH Agent 服务未启动 | Windows | 报错 "Windows OpenSSH Authentication Agent service is not running" |
-| 5 | Pageant 运行中有 key，认证成功 | Windows | 成功（best-effort，日志有 `using Pageant named pipe`） |
+| 5 | Pageant 运行中有 key，认证成功 | Windows | 成功（日志有 `using Pageant transport`） |
 | 6 | Pageant 未运行 | Windows | 报错 "Pageant does not appear to be running" |
 | 7 | `SSH_AUTH_SOCK` 指向无效路径 | Windows | 报错 "SSH_AUTH_SOCK points to '...' but the named pipe was not found" |
 | 8 | `SSH_AUTH_SOCK` 指向无权限管道 | Windows | 报错 "Permission denied when opening SSH agent pipe" |
@@ -868,12 +870,18 @@ defaultNS: 'demo',
 - `packages/frontend/src/features/terminal/utils/readable-error.ts`：14 种错误分发，覆盖全部 Agent 错误码
 - `packages/frontend/src/locales/{en,cn,fr}/app.ts`：三语补全新增 11 个 key
 
+**Issue #21 更新日志（2026-08-09）**:
+
+- `src-tauri/src/session/ssh.rs`：Pageant 回退改用 `russh::keys::agent::client::AgentClient::connect_pageant()`，不再假设 Pageant 暴露 `\\.\pipe\pageant`
+- `src-tauri/src/state.rs`：Agent forwarding 专用 channel 使用 `copy_bidirectional` 桥接本地 Agent；删除把普通 SSH channel 数据误写入 Agent socket 的路径
+- 静态核对 `russh 0.60.2` API 完成；本机未安装 Windows Rust target，仍需 Windows OpenSSH Agent / Pageant 实机证明
+
 ---
 
-### Issue #22: 串口设备 Windows 支持 ✅ 跨平台已实现
+### Issue #22: 串口设备 Windows 支持 ⚠️ 代码完成，硬件待实机
 
 **严重程度**: Low
-**状态**: ✅ `serialport` crate 跨平台已实现（2026-05-03 增强端口类型显示）
+**状态**: ⚠️ `serialport` 跨平台代码已实现；真实设备枚举、流控、写入和拔线仍待实机
 **影响功能**: 串口连接
 **平台**: Windows / macOS / Linux
 
@@ -913,37 +921,35 @@ defaultNS: 'demo',
 **Issue #22 更新日志（2026-05-03）**：
 - `src-tauri/src/serial.rs`：`serial_list` 改为用户友好的端口类型文案（USB 厂商/产品/Bluetooth/Serial Port）
 
+**Issue #22 更新日志（2026-08-09）**：
+
+- 打开、枚举、读取和写入移至 blocking pool，避免阻塞 Tokio worker
+- 写入统一使用 `write_all` 并保持调用方字节序列，不再自动追加 `\r`
+- 主动断开通过原子停止标志终止 reader；拔线、EOF 或读取错误后删除共享 session 并发送 `serial-close`
+- 单测覆盖短写场景；串口硬件写入和拔插仍需实机验证
+
 ---
 
-### Issue #23: 本地终端 Windows PTY ✅ 已实现
+### Issue #23: 本地终端 Windows PTY ⚠️ 代码完成，Windows/Linux 待实机
 
 **严重程度**: Medium
-**状态**: ✅ 使用 `portable-pty` crate，已支持跨平台（Unix + Windows）
+**状态**: ⚠️ 使用 `portable-pty` crate，跨平台代码已实现；Windows/Linux 待实机验证
 **影响功能**: 本地终端
 **平台**: Windows
 
-**当前实现** (`src-tauri/src/local.rs`):
+**当前实现** (`src-tauri/src/session/local.rs`):
 
-```rust
-#[cfg(unix)]
-{
-    // 使用 portable-pty 创建 PTY
-}
-
-#[cfg(windows)]
-{
-    // Windows 实现 - 需要验证
-}
-```
-
-**建议**: 使用 `portable-pty` crate 的 Windows 支持。
+- macOS、Windows 和 Linux 均从用户主目录启动交互式 shell
+- PowerShell 使用 `-NoLogo`；交互式 `cmd.exe` 不传 `/C`，避免执行后立即退出
+- PTY EOF、关闭或读取错误后会把会话标记为不存活，后续写入和 resize 返回关闭错误
+- Unix 回显配置使用条件编译，Windows 继续走 `portable-pty` 的 ConPTY 实现
 
 ---
 
-### Issue #24: 快捷键 macOS/Windows 差异 ⚠️ UI 已部分处理
+### Issue #24: 快捷键 macOS/Windows 差异 ✅ 冲突已修复
 
 **严重程度**: Low
-**状态**: ⚠️ 需要全面检查
+**状态**: ✅ 平台主修饰键与系统快捷键冲突已处理；非美式键盘布局待实机抽查
 **影响功能**: 快捷键
 **平台**: macOS / Windows
 
@@ -959,11 +965,15 @@ defaultNS: 'demo',
 **当前已处理**:
 
 - `src/components/top-toolbar/index.tsx` 已处理 macOS traffic lights 偏移
+- 移除系统级 `CommandOrControl+H/M/W/,` 注册，避免覆盖操作系统和其他应用快捷键
+- 垂直分屏从 `Ctrl+Shift+V` 调整为 `Ctrl+Shift+\`，释放 Windows/Linux 终端粘贴
+- 将浏览器对 `Shift+\` 上报的 `|` 规范化为 `\`，真实键盘事件已由单测覆盖
+- 结构化 Tauri IPC 错误通过 `formatIpcError` 提取 message/kind，不再显示 `[object Object]`
 
 **待处理**:
 
-- 全面检查所有快捷键实现
-- 添加 `use-platform` hook 统一管理
+- [ ] Windows/Linux 与非美式键盘布局实机抽查
+- [ ] 后续如新增原生菜单快捷键，统一复用平台检测与 `shortcutsService`
 
 ---
 
@@ -1057,8 +1067,6 @@ constructor() {
 - `packages/team-server/package.json` - 添加依赖
 
 ---
-
-_最后更新: 2026-03-26_
 
 ---
 
@@ -1407,4 +1415,143 @@ $ cargo check
 
 ---
 
-_本节最后更新: 2026-05-03_
+### Issue #39: SSH、串口、本地终端与快捷键跨平台可靠性 ✅ 代码已修复
+
+**严重程度**: High
+**状态**: ✅ 可自动验证的缺陷已修复；Windows/Linux、Jump Host 和串口硬件场景待实机回归
+**修复时间**: 2026-08-09
+
+**修复内容**:
+
+1. SSH 主机密钥按 host/port 严格校验系统 `known_hosts`；未知主机和密钥变化不再静默接受
+2. Jump Host 在 `direct-tcpip` 流内建立并认证第二个 SSH 会话；连接池 key 包含跳板机身份，并保持 transport 到最后一个引用释放
+3. Windows Agent 认证使用 OpenSSH named pipe 与 `russh` 原生 Pageant 传输
+4. 串口完整 I/O 移至 blocking pool，写入处理短写且不篡改字节，断开/拔线会清理 session
+5. 本地 PTY 创建、shell 启动及读写、resize、关闭控制 I/O 移至 blocking pool；统一从用户主目录启动，EOF 后正确标记会话关闭
+6. 移除冲突的系统级快捷键，释放 `Ctrl+Shift+V`，并修复结构化 IPC 错误显示
+7. SSH shell 读写 half 分离；EOF/Close/断流会关闭会话并释放连接池引用；同一连接 key 的首次创建由异步锁串行化
+8. SSH resize 改为 RFC 4254 `window-change`；主终端入口持久化并路由 Jump Host password/key/agent，certificate 在前后端 fail-closed
+
+**自动验证**:
+
+- Rust：43 项测试、`cargo check --locked --all-targets --all-features`、Clippy `-D warnings`、`cargo fmt --check`
+- 前端：31 个测试文件共 408 项测试、typecheck、production build；快捷键额外覆盖真实 `Shift+\` 的 `|` 事件
+- 仓库：`git diff --check`
+
+**行为说明**:
+
+- 首次连接未知 SSH 主机现在会被拒绝，用户需先通过可信渠道把主机密钥写入 `~/.ssh/known_hosts`
+- Agent forwarding 尚缺显式客户端启用入口，不能与“使用 Agent 登录认证”混为同一完成状态
+- Jump Host 的 certificate 认证尚未实现，调用会明确失败，不能视为 password/key/agent 路径的完成项
+
+**实机回归**:
+
+- [ ] Windows OpenSSH Agent 与 Pageant
+- [ ] Windows/Linux Jump Host（密码、密钥、Agent 目标认证）
+- [ ] Windows/Linux 本地 PTY 启动、EOF 与关闭
+- [ ] 串口硬件写入、主动断开和运行中拔线
+
+---
+
+### Issue #40: 发布门禁与 Team Server 安全缺口 ✅ 本机自动验证已修复
+
+**严重程度**: High
+**状态**: ✅ 当前环境可自动验证的问题已修复；容器与外部实机项保持待验证
+**修复时间**: 2026-08-09
+
+**问题**:
+
+1. 仓库缺少统一、可重复的前端/服务端/Rust/源码规模发布门禁
+2. Team Server 生产 CORS、Token 存储、路由授权、注册冲突、限流、Swagger 与安全头不满足公开部署基线
+3. 多个写入接口没有运行时 DTO，路径、查询、同步批次和审计分页缺少边界
+4. 跨团队成员/共享/同步/邀请操作可造成越权或资源信息泄露
+5. 数据库故障被错误映射为 401 或健康探针 200，原始 Prisma 错误可进入响应、队列或日志
+6. 删除与同步 tombstone 分步写入，任一步失败会造成同步数据不一致
+7. 生产依赖包含已公开的高危传递依赖
+
+**修复**:
+
+- 新增 `pnpm verify`、生产源码行数脚本与 CI 工作流；447 个生产文件全部满足限制
+- Token 改存 `sha256:<digest>`，旧明文/旧摘要在成功认证时迁移；数据库摘要不能直接作为 Bearer Token
+- Token 管理路由接入 `ApiKeyGuard`；重复 `userId` 注册返回 409；注册和邀请领取为 5 次/分钟，全局为 120 次/分钟
+- 生产 CORS 缺失或通配符时拒绝启动；接入 Helmet；Swagger 生产默认关闭；JSON/urlencoded body 固定限制 1MB
+- 为 auth、invite、team、member、share、sync、audit 与路径参数接入 DTO/pipe；同步批次与审计分页上限均为 500
+- 修复成员、邀请、共享、同步、冲突和离线队列的团队/成员/创建者校验；敏感共享更新不再降级为明文
+- `/health` 与 `/health/ready` 在数据库不可用时返回 503；Compose 改查 readiness；启用 shutdown hooks
+- API Key 数据库故障继续作为 5xx；同步响应、队列 `lastError` 与服务日志只使用稳定错误码/事件
+- 分享删除与审计 tombstone 使用同一 Prisma 事务
+- 覆盖 `fast-uri`、`js-yaml`、`qs` 和 `body-parser` 到修补版本；生产依赖审计为 0 个已知漏洞
+
+**验证**:
+
+- `pnpm install --frozen-lockfile` ✅
+- `pnpm audit --registry=https://registry.npmjs.org --prod --audit-level high` ✅ 0 漏洞
+- 前端：31 个测试文件、408 项测试，lint/typecheck/build/bundle budget ✅
+- Team Server：25 个测试文件、95 项测试，Prisma validate/lint/typecheck/build ✅
+- Rust：43 项测试，fmt/check/Clippy `-D warnings` ✅
+- Bundle：初始 gzip 227.36 KB / 240 KB，总 gzip 510.09 KB / 550 KB，最大 JS chunk raw 390.87 KB / 500 KB ✅
+- 源码规模：447 个生产源码文件，0 个超限 ✅
+- `git diff --check` ✅
+
+**仍需外部验证 / 产品决策**:
+
+- [ ] 当前 macOS 环境没有 Docker；镜像构建、Compose 启动、迁移和真实 PostgreSQL readiness 需在 CI 或有 Docker 的环境验证
+- [ ] Windows/Linux/Pageant/Jump Host/本地 PTY/串口硬件按 Issue #39 矩阵执行
+- [ ] `POST /auth/register` 仍是受信任设备引导接口；公网部署应先通过反向代理访问控制，后续可增加管理员初始化密钥、OIDC 或一次性注册码
+- [ ] Agent forwarding 增加独立设置与显式 `channel.agent_forward(...)` 请求
+
+---
+
+### Issue #41: 发布终审发现的凭据日志与核心 UI 回归 ✅ 已修复
+
+**严重程度**: High
+**状态**: ✅ 已修复
+**修复时间**: 2026-08-09
+
+**修复内容**:
+
+- SQLite query/select 失败日志不再输出参数数组，避免 SSH 密码、私钥、证书、passphrase 或 Token 进入控制台；保留截断 SQL 与错误消息用于诊断。
+- 新建主机时 Save 按钮不再因不存在旧 `host` 而永久禁用；按钮只在保存进行中禁用，必填字段继续由统一 `handleSubmit` 校验。
+- 证书直连的 Tauri 参数统一使用 `privateKey`；Jump Host certificate 在前端和 Rust 网络连接前均明确拒绝，防止静默降级认证。
+
+**回归测试**:
+
+- `service/database/connection.test.ts`：读写失败日志均不包含秘密参数。
+- `components/host-list/host-form-actions.test.tsx`：新建态 Save 可点击。
+- `hooks/terminal-session-helpers.test.ts`：证书 camelCase 参数及 Jump Host certificate fail-closed。
+- Rust：Jump Host 两端 certificate 拒绝和 `JumpHostConfig` camelCase serde 映射。
+
+---
+
+### Issue #42: 发布终审的同步、存储、脚本与桌面配置缺口 ✅ 本机可验证问题已修复
+
+**严重程度**: High
+**状态**: ✅ 当前环境可自动验证的问题已修复；真实服务与跨平台硬件项保持待验证
+**修复时间**: 2026-08-10
+
+**修复内容**:
+
+- Team Server 对 `encryptedData` 与 `isSensitive` 的矛盾组合 fail-closed；敏感记录降级必须提交明确明文。同步和 LOCAL 冲突不再静默保留或覆盖旧密文。
+- 离线队列使用嵌套 DTO；敏感 payload 入库前移除明文，UPDATE 强制携带 `baseVersion`，处理器通过原子 `updateMany` claim 并写入 `processingToken` 租约，完成/失败更新校验 token，15 分钟陈旧 `PROCESSING` 任务自动恢复；成功后清空 payload，第三次失败进入终态 `FAILED` 且不会被自动处理器再次占用。
+- S3 SigV4 修正 credential scope、canonical URI/query、四行 string-to-sign、列表 URL 与 UTF-8 RFC3986 编码。
+- 高级脚本正确传递 timeout，启用最多 10 次 retry；interval/once/cron 非法配置 fail-closed，同一脚本防重入，异步异常被捕获，once 触发后自动禁用。
+- Tauri 注册 dialog/fs 插件，capability 仅开放文件选择和文本文件读写；CSP 允许用户配置的 HTTP(S) Team endpoint。
+- 备份导入恢复 settings 及 certificate/jump 字段；Known Hosts 界面明确为应用备份副本，SSH 信任仍以用户目录下 OpenSSH `known_hosts` 为准。
+
+**回归验证**:
+
+- Team Server 敏感共享、同步 DTO、同步服务、离线队列和控制器定向测试 43 项通过；Team Server 全量 95 项通过。
+- Rust S3 固定向量 4 项、桌面配置 2 项通过；Rust 全量 43 项通过。
+- 前端脚本执行与调度、备份导入、Host 映射和认证接线纳入全量 408 项测试。
+
+**仍需外部验证**:
+
+- [ ] 真实 AWS S3 或兼容服务的签名、UTF-8 key、分页列表、上传下载与删除。
+- [ ] Windows/Linux OpenSSH Agent、Pageant、Jump Host、本地 PTY、快捷键和串口硬件矩阵。
+- [ ] Docker/PostgreSQL 镜像、迁移与 readiness。
+- [ ] Jump Host certificate；当前必须明确拒绝。
+- [ ] Agent forwarding 显式 `channel.agent_forward(...)` 入口。
+
+---
+
+_本节最后更新: 2026-08-10_

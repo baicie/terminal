@@ -14,7 +14,7 @@ export default {
   'sftp.tableSize': '大小',
   'sftp.tableModified': '修改时间',
   'sftp.tablePermissions': '权限',
-  'sftp.items': '{count} 个项目',
-  'sftp.connectedTo': '已连接到 {host} ({hostname})',
+  'sftp.items': '{{count}} 个项目',
+  'sftp.connectedTo': '已连接到 {{host}} ({{hostname}})',
   'sftp.loading': '加载中...',
 }

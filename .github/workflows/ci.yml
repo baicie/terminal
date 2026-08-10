@@ -1,0 +1,177 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PNPM_VERSION: 10.34.3
+
+jobs:
+  frontend:
+    name: Frontend quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter=@terminal/frontend lint
+      - run: pnpm --filter=@terminal/frontend typecheck
+      - run: pnpm --filter=@terminal/frontend test
+      - run: pnpm --filter=@terminal/frontend build:budget
+
+  team-server:
+    name: Team Server quality
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: terminal_ci
+          POSTGRES_PASSWORD: ci-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d terminal_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:ci-password@127.0.0.1:5432/terminal_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter=team-server exec prisma validate
+      - run: pnpm --filter=team-server prisma:generate
+      - run: pnpm --filter=team-server typecheck
+      - run: pnpm --filter=team-server lint
+      - run: pnpm --filter=team-server test
+      - run: pnpm --filter=team-server build
+      - name: Apply migrations
+        working-directory: packages/team-server
+        run: pnpm exec prisma migrate deploy
+      - name: Verify migrated database matches schema
+        working-directory: packages/team-server
+        run: >-
+          pnpm exec prisma migrate diff
+          --from-config-datasource
+          --to-schema prisma/schema.prisma
+          --exit-code
+
+  source-size:
+    name: Production source-size gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:source-size
+
+  rust:
+    name: Rust quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            libudev-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features
+      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+  docker:
+    name: Team Server container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose file
+        env:
+          DATABASE_URL: postgresql://terminal:ci-password@db:5432/terminal
+          POSTGRES_PASSWORD: ci-password
+          CORS_ORIGINS: https://ci.invalid
+        run: docker compose -f packages/team-server/docker-compose.yml config --quiet
+      - name: Build image
+        run: docker build --file packages/team-server/Dockerfile --tag terminal-team-server:ci .
+
+  tauri:
+    name: Tauri build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+      - name: Install Tauri Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            libudev-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tauri build --no-bundle --ci -- --locked

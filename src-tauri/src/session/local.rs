@@ -13,12 +13,14 @@ use tokio::sync::{broadcast, Mutex};
 
 /// Local Session 内部状态
 pub struct LocalPtyState {
-    /// PTY 主端
-    pty_pair: portable_pty::PtyPair,
+    /// PTY 主端；同步控制操作通过阻塞线程执行。
+    master: Arc<ParkingMutex<Box<dyn portable_pty::MasterPty + Send>>>,
     /// 子进程
-    child: Box<dyn portable_pty::Child + Send + Sync>,
+    _child: Box<dyn portable_pty::Child + Send + Sync>,
+    /// 可在线程间安全复制的终止句柄。
+    child_killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
     /// 写入器（需要 Mutex 保护因为 Write 不是 Sync）
-    writer: Arc<Mutex<Box<dyn std::io::Write + Send + 'static>>>,
+    writer: Arc<ParkingMutex<Box<dyn std::io::Write + Send + 'static>>>,
     /// 是否存活
     is_alive: bool,
     /// 关闭信号发送端
@@ -36,99 +38,106 @@ pub struct LocalSession {
     state: Arc<Mutex<LocalPtyState>>,
 }
 
+struct LocalPtyResources {
+    master: Arc<ParkingMutex<Box<dyn portable_pty::MasterPty + Send>>>,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+    child_killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
+    reader: Box<dyn std::io::Read + Send + 'static>,
+    writer: Box<dyn std::io::Write + Send + 'static>,
+}
+
+fn setup_pty(cols: u16, rows: u16) -> Result<LocalPtyResources, SessionError> {
+    let pty_pair = native_pty_system()
+        .openpty(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| SessionError::ConnectionFailed(format!("Failed to open PTY: {}", e)))?;
+
+    // 获取默认 shell：允许通过环境变量覆盖；Windows 回退 cmd.exe，Unix 回退 bash。
+    let shell = if let Ok(shell) = std::env::var("TERMINAL_DEFAULT_SHELL") {
+        shell
+    } else if cfg!(windows) {
+        std::env::var("PSModulePath")
+            .map(|_| "powershell.exe".to_string())
+            .unwrap_or_else(|_| "cmd.exe".to_string())
+    } else {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
+    };
+
+    let mut command = CommandBuilder::new(&shell);
+    command.env("TERM", "xterm-256color");
+    if shell.eq_ignore_ascii_case("powershell.exe") || shell.eq_ignore_ascii_case("pwsh.exe") {
+        command.arg("-NoLogo");
+    }
+    if let Some(home) = dirs::home_dir() {
+        command.cwd(home);
+    }
+
+    let child = pty_pair
+        .slave
+        .spawn_command(command)
+        .map_err(|e| SessionError::ConnectionFailed(format!("Failed to spawn shell: {}", e)))?;
+    let master = Arc::new(ParkingMutex::new(pty_pair.master));
+    let child_killer = child.clone_killer();
+    let reader = master.lock().try_clone_reader().map_err(|e| {
+        SessionError::ConnectionFailed(format!("Failed to clone PTY reader: {}", e))
+    })?;
+    let writer = master
+        .lock()
+        .take_writer()
+        .map_err(|e| SessionError::ConnectionFailed(format!("Failed to take writer: {}", e)))?;
+
+    // 禁用 PTY 回显，让 xterm.js 控制所有显示。
+    #[cfg(unix)]
+    {
+        use rustix::fd::BorrowedFd;
+        use rustix::termios::LocalModes;
+        use rustix::termios::{tcgetattr, tcsetattr, OptionalActions};
+
+        if let Some(raw_fd) = master.lock().as_raw_fd() {
+            let fd = unsafe { BorrowedFd::borrow_raw(raw_fd) };
+            if let Ok(mut termios) = tcgetattr(fd) {
+                termios.local_modes = termios.local_modes.difference(
+                    LocalModes::ECHO
+                        | LocalModes::ECHOE
+                        | LocalModes::ECHOK
+                        | LocalModes::ECHOCTL
+                        | LocalModes::ECHOKE,
+                );
+                let _ = tcsetattr(fd, OptionalActions::Now, &termios);
+            }
+        }
+    }
+
+    Ok(LocalPtyResources {
+        master,
+        child,
+        child_killer,
+        reader,
+        writer,
+    })
+}
+
 impl LocalSession {
     /// 创建新的 LocalSession
     pub async fn new(app: AppHandle, cols: u16, rows: u16) -> Result<Self, SessionError> {
         let session_id = format!("local-{}", uuid::Uuid::new_v4());
 
-        // 创建 PTY 对
-        let pty_system = native_pty_system();
-        let pty_pair = pty_system
-            .openpty(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|e| SessionError::ConnectionFailed(format!("Failed to open PTY: {}", e)))?;
-
-        // 获取默认 shell：
-        // - 允许通过环境变量 TERMINAL_DEFAULT_SHELL 覆盖（调试用，例如设为
-        //   "cmd.exe" 测试 PowerShell 启动慢的问题）
-        // - Windows 默认优先 powershell.exe，回退 cmd.exe
-        // - Unix 用 $SHELL，回退 /bin/bash
-        let shell = if let Ok(s) = std::env::var("TERMINAL_DEFAULT_SHELL") {
-            s
-        } else if cfg!(windows) {
-            std::env::var("PSModulePath")
-                .map(|_| "powershell.exe".to_string())
-                .unwrap_or_else(|_| "cmd.exe".to_string())
-        } else {
-            std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
-        };
-
-        // 创建命令
-        let mut cmd = CommandBuilder::new(&shell);
-
-        // 设置 TERM 环境变量
-        cmd.env("TERM", "xterm-256color");
-
-        // PowerShell 在 PTY 中启动时，加 -NoLogo 抑制版权 banner，
-        // 让 prompt 立即出现（否则会卡在等 banner 渲染）
-        if shell.eq_ignore_ascii_case("powershell.exe")
-            || shell.eq_ignore_ascii_case("pwsh.exe")
-        {
-            cmd.arg("-NoLogo");
-        }
-
-        // 设置工作目录（Windows）
-        #[cfg(windows)]
-        {
-            use std::path::PathBuf;
-            let home = std::env::var("USERPROFILE")
-                .or_else(|_| std::env::var("HOME"))
-                .unwrap_or_else(|_| ".".to_string());
-            cmd.cwd(PathBuf::from(&home));
-        }
-
-        // 启动子进程
-        let child = pty_pair
-            .slave
-            .spawn_command(cmd)
-            .map_err(|e| SessionError::ConnectionFailed(format!("Failed to spawn shell: {}", e)))?;
-
-        // 获取读写器
-        let reader = pty_pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| SessionError::ConnectionFailed(format!("Failed to clone PTY reader: {}", e)))?;
-
-        let writer = pty_pair
-            .master
-            .take_writer()
-            .map_err(|e| SessionError::ConnectionFailed(format!("Failed to take writer: {}", e)))?;
-
-        // 禁用 PTY 回显，让 xterm.js 控制所有显示
-        #[cfg(unix)]
-        {
-            use rustix::fd::BorrowedFd;
-            use rustix::termios::{tcgetattr, tcsetattr, OptionalActions};
-            use rustix::termios::LocalModes;
-
-            if let Some(raw_fd) = pty_pair.master.as_raw_fd() {
-                let fd = unsafe { BorrowedFd::borrow_raw(raw_fd) };
-                if let Ok(mut t) = tcgetattr(fd) {
-                    t.local_modes = t.local_modes.difference(
-                        LocalModes::ECHO
-                            | LocalModes::ECHOE
-                            | LocalModes::ECHOK
-                            | LocalModes::ECHOCTL
-                            | LocalModes::ECHOKE,
-                    );
-                    let _ = tcsetattr(fd, OptionalActions::Now, &t);
-                }
-            }
-        }
+        let resources = tokio::task::spawn_blocking(move || setup_pty(cols, rows))
+            .await
+            .map_err(|e| {
+                SessionError::ConnectionFailed(format!("PTY setup task failed: {}", e))
+            })??;
+        let LocalPtyResources {
+            master,
+            child,
+            child_killer,
+            reader,
+            writer,
+        } = resources;
 
         // 创建关闭信号 channel
         let (shutdown_tx, _) = broadcast::channel(1);
@@ -141,9 +150,10 @@ impl LocalSession {
         let reader = Arc::new(ParkingMutex::new(reader));
 
         let state = Arc::new(Mutex::new(LocalPtyState {
-            pty_pair,
-            child,
-            writer: Arc::new(Mutex::new(writer)),
+            master,
+            _child: child,
+            child_killer,
+            writer: Arc::new(ParkingMutex::new(writer)),
             is_alive: true,
             shutdown_tx,
             read_handle: read_handle.clone(),
@@ -154,6 +164,7 @@ impl LocalSession {
         let app_clone = app.clone();
         let read_handle_clone = read_handle.clone();
         let reader_clone = reader.clone();
+        let state_clone = Arc::clone(&state);
 
         let handle = tokio::spawn(async move {
             let mut shutdown_rx = shutdown_rx;
@@ -200,6 +211,8 @@ impl LocalSession {
                 }
             }
 
+            state_clone.lock().await.is_alive = false;
+
             // 清理 JoinHandle
             let mut handle_guard = read_handle_clone.lock().await;
             *handle_guard = None;
@@ -224,48 +237,64 @@ impl LocalSession {
     }
 
     /// 写入数据
-    pub fn write(&self, data: &str) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
+    pub fn write(
+        &self,
+        data: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
         let data = data.to_string();
         let state = self.state.clone();
         Box::pin(async move {
-            let state = state.lock().await;
-            if !state.is_alive {
-                return Err(SessionError::WriteFailed("Session is closed".to_string()));
-            }
+            let writer = {
+                let state = state.lock().await;
+                if !state.is_alive {
+                    return Err(SessionError::WriteFailed("Session is closed".to_string()));
+                }
+                state.writer.clone()
+            };
 
-            let mut writer = state.writer.lock().await;
-            writer
-                .write_all(data.as_bytes())
-                .map_err(|e| SessionError::WriteFailed(format!("Failed to write: {}", e)))?;
-            writer
-                .flush()
-                .map_err(|e| SessionError::WriteFailed(format!("Failed to flush: {}", e)))?;
-
-            Ok(())
+            tokio::task::spawn_blocking(move || {
+                let mut writer = writer.lock();
+                writer
+                    .write_all(data.as_bytes())
+                    .map_err(|e| format!("Failed to write: {}", e))?;
+                writer
+                    .flush()
+                    .map_err(|e| format!("Failed to flush: {}", e))?;
+                Ok::<(), String>(())
+            })
+            .await
+            .map_err(|e| SessionError::WriteFailed(format!("Write task failed: {}", e)))?
+            .map_err(SessionError::WriteFailed)
         })
     }
 
     /// 调整大小
-    pub fn resize(&self, cols: u16, rows: u16) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
+    pub fn resize(
+        &self,
+        cols: u16,
+        rows: u16,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
         let state = self.state.clone();
         Box::pin(async move {
-            let state = state.lock().await;
-            if !state.is_alive {
-                return Err(SessionError::ResizeFailed("Session is closed".to_string()));
-            }
+            let master = {
+                let state = state.lock().await;
+                if !state.is_alive {
+                    return Err(SessionError::ResizeFailed("Session is closed".to_string()));
+                }
+                state.master.clone()
+            };
 
-            state
-                .pty_pair
-                .master
-                .resize(PtySize {
+            tokio::task::spawn_blocking(move || {
+                master.lock().resize(PtySize {
                     rows,
                     cols,
                     pixel_width: 0,
                     pixel_height: 0,
                 })
-                .map_err(|e| SessionError::ResizeFailed(format!("Failed to resize: {}", e)))?;
-
-            Ok(())
+            })
+            .await
+            .map_err(|e| SessionError::ResizeFailed(format!("Resize task failed: {}", e)))?
+            .map_err(|e| SessionError::ResizeFailed(format!("Failed to resize: {}", e)))
         })
     }
 
@@ -273,16 +302,23 @@ impl LocalSession {
     pub fn close(self) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         let state = self.state.clone();
         Box::pin(async move {
-            let read_handle = {
+            let (child_killer, read_handle) = {
                 let mut s = state.lock().await;
-                if s.is_alive {
+                let child_killer = if s.is_alive {
                     let _ = s.shutdown_tx.send(());
-                    let _ = s.child.kill();
                     s.is_alive = false;
-                }
+                    Some(s.child_killer.clone_killer())
+                } else {
+                    None
+                };
                 let h = s.read_handle.lock().await.take();
-                h
+                (child_killer, h)
             };
+
+            if let Some(mut child_killer) = child_killer {
+                let _ = tokio::task::spawn_blocking(move || child_killer.kill()).await;
+            }
+
             // 等待读取任务完成（最多等待 2 秒）
             if let Some(h) = read_handle {
                 let _ = tokio::time::timeout(tokio::time::Duration::from_secs(2), h).await;
@@ -299,4 +335,3 @@ impl LocalSession {
         }
     }
 }
-

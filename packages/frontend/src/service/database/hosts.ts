@@ -2,12 +2,13 @@
  * Host CRUD 操作
  */
 import type { Host } from '@/types'
+import { hostRowToHost } from '@/store/host-mappers'
 import { executeQuery, select } from './connection'
 import type { HostRecord } from './types'
 
 export async function getHosts(): Promise<Host[]> {
   const rows = await select<HostRecord>('SELECT * FROM hosts ORDER BY name')
-  return rows.map(rowToHost)
+  return rows.map(hostRowToHost)
 }
 
 export async function getHostById(id: string): Promise<Host | null> {
@@ -15,7 +16,7 @@ export async function getHostById(id: string): Promise<Host | null> {
     id,
   ])
   if (rows.length === 0) return null
-  return rowToHost(rows[0])
+  return hostRowToHost(rows[0])
 }
 
 export async function createHost(
@@ -88,7 +89,7 @@ export async function searchHosts(query: string): Promise<Host[]> {
     'SELECT * FROM hosts WHERE name LIKE ? OR hostname LIKE ? ORDER BY name LIMIT 50',
     [`%${query}%`, `%${query}%`],
   )
-  return rows.map(rowToHost)
+  return rows.map(hostRowToHost)
 }
 
 export async function getHostsByGroup(groupId: string | null): Promise<Host[]> {
@@ -96,40 +97,18 @@ export async function getHostsByGroup(groupId: string | null): Promise<Host[]> {
     const rows = await select<HostRecord>(
       'SELECT * FROM hosts WHERE group_id IS NULL ORDER BY name',
     )
-    return rows.map(rowToHost)
+    return rows.map(hostRowToHost)
   }
   const rows = await select<HostRecord>(
     'SELECT * FROM hosts WHERE group_id = ? ORDER BY name',
     [groupId],
   )
-  return rows.map(rowToHost)
+  return rows.map(hostRowToHost)
 }
 
 export async function getFavoriteHosts(): Promise<Host[]> {
   const rows = await select<HostRecord>(
     'SELECT * FROM hosts WHERE is_favorite = 1 ORDER BY name',
   )
-  return rows.map(rowToHost)
-}
-
-function rowToHost(row: HostRecord): Host {
-  return {
-    id: row.id,
-    name: row.name,
-    hostname: row.hostname,
-    port: row.port,
-    username: row.username,
-    authType: row.auth_type as Host['authType'],
-    password: row.password ?? undefined,
-    privateKey: row.private_key ?? undefined,
-    groupId: row.group_id ?? undefined,
-    isFavorite: row.is_favorite === 1,
-    color: row.color ?? undefined,
-    tags: row.tags ? JSON.parse(row.tags) : undefined,
-    portForwards: row.port_forwards ? JSON.parse(row.port_forwards) : [],
-    startupCommand: row.startup_command ?? undefined,
-    environment: row.environment ? JSON.parse(row.environment) : undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }
+  return rows.map(hostRowToHost)
 }

@@ -15,168 +15,69 @@
 
 ## 项目结构
 
-### 整体目录
-
-```
+```text
 terminal/
-├── src/                          # React 前端源代码
-├── src-tauri/                    # Rust 后端源代码
-├── docs/                         # 项目文档
-│   ├── design.md                 # 设计文档
-│   ├── todo.md                   # 待办事项
-│   ├── issue.md                  # 问题追踪
-│   └── ui/                       # UI 规格（功能与界面描述，便于 AI 阅读）
-│       ├── README.md             # 索引
-│       ├── 00-design-system.md   # 设计系统
-│       ├── 01-layout-and-navigation.md # 布局与导航
-│       └── 02-views.md           # 各功能视图说明
-├── package.json                  # Node 依赖
-├── pnpm-lock.yaml               # pnpm 锁文件
-├── AGENTS.md                    # Agent 指南 (你正在阅读)
-└── README.md                    # 项目说明
+├── packages/
+│   ├── frontend/                 # React 19、Vite、Zustand、shadcn/ui
+│   └── team-server/              # NestJS、Prisma、PostgreSQL
+├── src-tauri/                    # Tauri 2、Rust、russh
+├── scripts/                      # 发布与源码规模门禁
+├── docs/                         # 项目、问题、待办、UI 与发布文档
+├── package.json                  # pnpm workspace 根脚本
+└── pnpm-lock.yaml
 ```
 
 ---
 
-## src/ 前端结构
+## `packages/frontend/src/` 前端结构
 
-```
+```text
 src/
-├── main.tsx                      # 应用入口
-├── App.tsx                       # 根组件
-├── index.css                     # 全局样式
-├── vite-env.d.ts                # Vite 类型定义
-│
-├── view/                         # 页面级组件
-│   ├── terminal/                 # 终端页面
-│   │   └── terminal-container.tsx # 终端容器 (xterm.js 集成，直接管理 Terminal 实例)
-│   ├── sftp/                     # SFTP 页面
-│   │   ├── sftp-view.tsx        # SFTP 视图
-│   │   └── sftp-container.tsx   # SFTP 容器 (文件浏览器)
-│   ├── vaults/                   # 保险库页面
-│   │   ├── vaults-view.tsx      # 保险库视图
-│   │   └── vaults-container.tsx # 保险库容器
-│   └── home/                     # 首页
-│       └── home-view.tsx
-│
-├── components/                    # 可复用组件
-│   ├── ui/                       # 基础 UI 组件
-│   │   ├── button.tsx
-│   │   ├── card.tsx
-│   │   ├── dialog.tsx
-│   │   ├── input.tsx
-│   │   ├── label.tsx
-│   │   ├── select.tsx
-│   │   ├── tabs.tsx
-│   │   └── textarea.tsx
-│   ├── host-list/                # 主机列表组件
-│   │   ├── index.ts             # 导出入口
-│   │   ├── sidebar.tsx           # 侧边栏 (主机列表)
-│   │   └── host-dialog.tsx       # 主机编辑对话框
-│   ├── command-history/          # 命令历史
-│   │   └── index.tsx
-│   ├── snippet-manager/          # Snippet 管理
-│   │   └── index.tsx
-│   ├── port-forward/             # 端口转发
-│   │   └── index.tsx
-│   ├── split-pane/               # 分屏组件
-│   │   └── index.tsx
-│   └── settings-dialog/           # 设置对话框
-│       └── index.tsx
-│
-├── store/                         # MobX 状态管理
-│   ├── app.ts                    # 应用状态 (标签页、分屏)
-│   ├── host.ts                   # 主机状态
-│   ├── terminal.ts               # 终端会话状态
-│   └── demo.ts                   # 演示/示例状态
-│
-├── service/                       # 业务服务层
-│   ├── ssh.ts                    # SSH 服务 (调用 Tauri 命令)
-│   ├── database.ts               # SQLite 数据库服务
-│   ├── config.ts                 # 配置服务
-│   └── axios.ts                  # HTTP 客户端
-│
-├── hooks/                         # 自定义 React Hooks
-│   ├── use-di.ts                 # 依赖注入
-│   └── use-logger.ts             # 日志 Hook
-│
-├── utils/                         # 工具函数
-│   ├── logger/                   # 日志模块
-│   │   ├── logger.ts            # 日志主类
-│   │   ├── log-level.ts         # 日志级别
-│   │   ├── transport.ts         # 日志传输接口
-│   │   └── console-transport.ts  # 控制台输出
-│   ├── axios.ts                 # Axios 封装
-│   └── utils.ts                 # 通用工具
-│
-├── types/                         # TypeScript 类型定义
-│   └── index.ts                 # 类型导出
-│
-├── locales/                       # 国际化
-│   ├── en/                       # 英文
-│   │   ├── index.ts
-│   │   ├── demo.ts
-│   │   └── layout.ts
-│   ├── fr/                       # 法文
-│   │   ├── index.ts
-│   │   ├── demo.ts
-│   │   └── layout.ts
-│   ├── cn/                       # 中文
-│   │   ├── index.ts
-│   │   ├── demo.ts
-│   │   └── layout.ts
-│   └── index.ts                  # 国际化初始化
-│
-├── router/                        # React Router 路由
-│   └── index.tsx
-│
-├── layout/                        # 布局组件
-│   ├── index.tsx                 # 主布局
-│   ├── tabs.tsx                  # 标签栏
-│   └── vaults/                   # 保险库布局
-│       └── index.tsx
-│
-├── lib/                           # 第三方库封装
-│   └── utils.ts
-│
-└── di.ts                          # 依赖注入容器配置
+├── components/                   # 通用与 shadcn/ui 组件
+├── features/terminal/            # xterm、终端容器、会话服务与类型
+├── hooks/                        # React hooks 与终端数据流
+├── layout/                       # 主布局与标签页
+├── locales/                      # en / fr / cn
+├── router/                       # React Router
+├── service/                      # SSH、SQLite、同步与 Team API
+├── store/                        # Zustand stores
+├── types/                        # 公共 TypeScript 类型
+└── view/                         # Hosts、SFTP、Vaults、Teams 等视图
 ```
 
 ---
 
-## src-tauri/ Rust 后端结构
+## `src-tauri/` Rust 后端结构
 
-```
+```text
 src-tauri/
 ├── src/
-│   ├── main.rs                   # 二进制入口
-│   ├── lib.rs                    # 库入口 (Tauri 命令注册)
-│   └── terminal.rs               # 终端核心逻辑
-│                                    # - SSH 连接 (russh)
-│                                    # - 本地 PTY (portable-pty)
-│                                    # - SFTP (占位符)
-├── Cargo.toml                     # Rust 依赖
-├── tauri.conf.json                # Tauri 配置
-└── capabilities/                  # Tauri 权限配置
+│   ├── main.rs                    # 二进制入口
+│   ├── lib.rs                     # 命令与插件注册
+│   ├── commands.rs                # 会话命令
+│   ├── session/                   # SSH、本地 PTY、连接池与类型
+│   ├── sftp.rs                    # SFTP
+│   ├── serial.rs                  # 串口
+│   └── port_forward.rs            # 端口转发
+├── Cargo.toml
+├── tauri.conf.json
+└── capabilities/
 ```
 
 ### Rust 核心命令
 
 | 命令                  | 功能             | 状态                   |
 | --------------------- | ---------------- | ---------------------- |
-| `ssh_connect`         | SSH 密码连接     | ✅ 已实现              |
-| `ssh_connect_key`     | SSH 密钥连接     | ✅ 已实现 (2026-03-19) |
-| `ssh_connect_agent`   | SSH Agent 连接   | ✅ 已实现              |
-| `ssh_connect_cert`    | SSH 证书认证     | ✅ 已实现 (2026-03-26) |
-| `ssh_shell`           | 打开交互式 shell | ✅ 已实现              |
-| `ssh_write`           | 写入数据         | ✅ 已实现              |
-| `ssh_resize`          | 调整终端大小     | ⚠️ 前端占位，后端转发至 `session_resize` |
-| `ssh_disconnect`      | 断开连接         | ✅ 已实现              |
-| `ssh_execute`         | 执行单条命令     | ✅ 已实现              |
-| `local_shell`         | 本地终端         | ✅ 已实现              |
-| `local_write`         | 本地终端写入     | ✅ 已实现              |
-| `local_resize`        | 本地终端调整大小 | ✅ 已实现              |
-| `local_disconnect`    | 本地终端断开     | ✅ 已实现              |
+| `session_create_ssh_password` | SSH 密码连接 | ✅ 已实现 |
+| `session_create_ssh_key` | SSH 密钥连接 | ✅ 已实现 |
+| `session_create_ssh_agent` | SSH Agent 登录 | ✅ 已实现；Windows/Pageant 待实机 |
+| `session_create_ssh_cert` | SSH 证书直连 | ✅ 已实现 |
+| `session_create_ssh_jump` | Jump Host | ⚠️ password/key/agent 已接线；certificate 明确拒绝 |
+| `session_create_local` | 本地终端 | ✅ 已实现 |
+| `session_write` | 会话写入 | ✅ 已实现 |
+| `session_resize` | 调整终端大小 | ✅ 本地 PTY resize；SSH RFC 4254 `window-change` |
+| `session_close` | 关闭会话 | ✅ 已实现 |
+| `session_exec` | 执行单条命令 | ✅ 已实现 |
 | `sftp_connect`        | 初始化 SFTP 会话 | ✅ 新增 (2026-03-19)   |
 | `sftp_list`           | SFTP 列出目录    | ✅ 已实现              |
 | `sftp_upload`         | SFTP 上传        | ✅ 已实现              |
@@ -218,19 +119,19 @@ src-tauri/
 | ------------- | ---- | ---- | -------------------------------------- |
 | SFTP 文件传输 | ✅   | ✅   | russh-sftp 实现 (2026-03-19)           |
 | 端口转发      | ✅   | ⚠️   | UI 完成，后端基础实现 (2026-03-19)     |
-| ssh_resize    | ✅   | ✅   | 使用 escape sequence 实现 (2026-03-19) |
+| ssh_resize    | ✅   | ✅   | 本地 PTY resize；SSH 使用 RFC 4254 `window-change` |
 | 命令历史      | ✅   | ✅   | SQLite 存储                            |
 | Snippet       | ✅   | ✅   | 完整实现                               |
 | 分屏模式      | ✅   | ✅   | 水平/垂直分屏                          |
 
-### Phase 3 - 高级功能 ✅ 已完成
+### Phase 3 - 高级功能 ⚠️ Agent forwarding 待启用入口
 
-> 2026-03-19 完成 Phase 3 所有高级功能
+> 主要代码路径已完成；Agent forwarding 显式入口与 Jump Host certificate 仍未实现。
 
 | 功能               | 状态                   |
 | ------------------ | ---------------------- |
-| Agent 转发         | ✅ 已实现 (2026-03-19) |
-| 主机链 (Jump Host) | ✅ 已实现 (2026-03-19) |
+| Agent 转发         | ⚠️ handler 与双向桥接已实现，缺少客户端显式启用入口 |
+| 主机链 (Jump Host) | ✅ 主终端入口与 SQLite 已接线；password/key/agent 可用，certificate 明确拒绝；待 Windows/Linux 实机验证 |
 | Vault 加密存储     | ✅ 已实现 (2026-03-19) |
 | 命令面板           | ✅ 已实现 (2026-03-19) |
 | 多工作区           | ✅ 已实现 (2026-03-19) |
@@ -247,7 +148,7 @@ src-tauri/
 | 团队协作 - 云端模式           | ✅ 已实现 (2026-05-03) — NestJS 增量同步 + 离线队列 + 加密分享 |
 | 数据存储服务 (WebDAV/S3/REST) | ✅ 后端已接线 (2026-05-02)，全量同步 UX 完成 (2026-05-03) |
 | 增量同步 + 冲突检测           | ✅ 已实现 (2026-05-03)      |
-| 离线操作队列                  | ✅ 已实现 (2026-05-03) — SyncQueue Prisma 模型 + 处理逻辑 |
+| 离线操作队列                  | ✅ 已实现 (2026-05-03) — SyncQueue Prisma 模型 + 原子 claim、processing token 租约和陈旧任务恢复 |
 | 加密分享 (AES-256-GCM)       | ✅ 已实现 (2026-05-03) — vault_encrypt_for_team / vault_decrypt_for_team |
 | SSH 证书认证                   | ✅ 已实现 (2026-03-26)      |
 | 串口连接                       | ✅ 已实现 (2026-03-20)      |
@@ -557,7 +458,7 @@ src-tauri/
 | 改动 | 说明 |
 | --- | --- |
 | `prisma/schema.prisma` | 新增 `SyncQueue` 模型；`Share` 新增 `encryptedData`/`isSensitive` 字段 |
-| `sync/sync.service.ts` | 增量同步（`getChanges` 含 `deletedShareIds`）；乐观并发（`baseVersion`）；离线队列增删改查 + 批处理（最多 50 条）；冲突检测 + 解决（LOCAL/REMOTE）；加密数据支持 |
+| `sync/sync.service.ts` | 增量同步（`getChanges` 含 `deletedShareIds`）；乐观并发（`baseVersion`）；离线队列增删改查 + 原子 claim（最多 50 条）；`processingToken` 租约校验与 15 分钟陈旧任务恢复；冲突检测 + 解决（LOCAL/REMOTE）；加密数据支持 |
 | `sync/sync.controller.ts` | 新增 5 个离线队列 REST 端点 |
 | `sync/sync.controller.test.ts` | 13 个单元测试 |
 | `shares/shares.service.ts` | `create`/`update` 支持加密数据；`delete` 写入 `SHARE_DELETED` 审计日志 |
@@ -641,6 +542,49 @@ src-tauri/
 
 ---
 
+### Phase 6.10 - 跨平台 SSH / 串口 / 本地终端可靠性 ✅ 代码已完成
+
+> 2026-08-09：修复主机密钥验证、Jump Host 目标认证、Windows Agent 传输、串口阻塞与短写、PTY 生命周期及快捷键冲突。详见 `docs/issue.md` Issue #39。
+
+| 领域 | 改动 |
+| --- | --- |
+| SSH 安全 | 按 host/port 严格校验系统 `known_hosts`；未知主机和密钥变化返回错误 |
+| Jump Host | 在 `direct-tcpip` 流内建立目标 SSH 会话；连接池区分并保留跳板 transport |
+| Windows Agent | OpenSSH named pipe + `russh` 原生 Pageant 回退；Agent channel 双向桥接 |
+| 串口 | blocking pool I/O、`write_all`、精确字节写入、断开/拔线清理 session |
+| 本地 PTY | 所有平台从用户主目录启动；PTY 初始化、shell 启动及控制 I/O 使用 blocking pool；EOF 后标记不存活 |
+| 前端 | 移除冲突的系统级快捷键；垂直分屏改为 `Ctrl+Shift+\`；结构化 IPC 错误可读化 |
+
+**验证状态**：Rust 43 项测试、格式、check、Clippy；前端 408 项测试、typecheck、production build；`git diff --check` 均通过。Windows/Linux、Pageant、Jump Host 和串口硬件场景仍需实机回归。
+
+---
+
+### Phase 6.11 - 发布就绪 + Team Server 安全加固 ✅ 本机自动门禁完成
+
+> 2026-08-09 至 2026-08-10：建立统一发布门禁，清零生产源码超限文件，并完成 Team Server 认证、授权、输入验证、敏感同步、运行时与依赖安全收尾。
+
+| 领域 | 完成内容 |
+| --- | --- |
+| 统一门禁 | 新增 `pnpm verify`，串行验证前端、Team Server、Rust 与源码行数；CI 覆盖 Linux Rust、三平台 Tauri、PostgreSQL 迁移和 Docker 构建 |
+| 代码规模 | 拆分超限组件、视图、store、hook 和服务；447 个生产源码文件全部满足 `AGENTS.md` 限制 |
+| Team Server 认证 | Token 仅存 SHA-256 摘要并兼容迁移旧记录；Token 管理路由受保护；重复注册返回冲突 |
+| Team Server 授权 | 修复成员、共享、邀请、同步、冲突与离线队列的跨团队访问；敏感共享、冲突和队列保持明确安全状态，完成项清空 payload，终态失败不自动重试 |
+| HTTP 安全 | 生产 CORS fail-closed、Helmet、全局及注册限流、Swagger 生产默认关闭、1MB body limit、DTO 与路径/查询验证 |
+| 运行可靠性 | 数据库不可用时 health/readiness 返回 503；Compose 使用 readiness；启用 shutdown hooks；删除与审计 tombstone 在同一事务中提交；离线队列并发 claim 使用 token 租约并恢复陈旧任务 |
+| 错误边界 | API Key 数据库故障保留 5xx；同步响应、离线队列和服务日志不返回或记录原始 Prisma 错误 |
+| 供应链 | 锁定已修补的传递依赖；`pnpm audit --prod --audit-level high` 报告 0 个已知漏洞 |
+| 远程存储 | 修正 S3 SigV4 scope、canonical URI/query、string-to-sign、列表 URL 与 UTF-8 编码；固定向量测试通过，真实 S3 仍待外部验证 |
+| 高级脚本 | timeout 秒值正确转换并传递，`retry_count` 生效；interval/once/cron 非法配置 fail-closed，防重入并捕获异步异常 |
+| Tauri 打包 | 注册 dialog/fs 插件，仅开放选定文本文件读写；CSP 允许用户配置的 HTTP(S) Team endpoint，并有静态配置测试 |
+
+**本机验证环境**：macOS 15.7.7、Node.js 24.16.0、pnpm 10.34.3、Rust/Cargo 1.96.0。
+
+**最终自动验证**：前端 31 个测试文件、408 项测试；Team Server 25 个测试文件、95 项测试；Rust 43 项测试；Prisma schema、lint、typecheck、前端 bundle 预算、Team Server build、Rust fmt/check/Clippy 和 447 个生产源码文件行数门禁全部通过。Bundle 初始 gzip 227.36 KB（预算 240 KB），总 gzip 510.09 KB（预算 550 KB），最大 JS chunk raw 390.87 KB（预算 500 KB）。
+
+**外部验证边界**：当前机器未安装 Docker，未声称本地镜像构建或真实 PostgreSQL 探针通过；Windows/Linux、Pageant、Jump Host、本地 PTY 和串口硬件仍按 Issue #39 矩阵待实机执行。Jump Host 的 certificate 认证尚未接线并在前后端明确拒绝；Agent forwarding 仍缺显式 `channel.agent_forward(...)` 入口；S3 仅有固定向量测试，未声称真实服务端集成通过。
+
+---
+
 ## 待办事项
 
 ### P0 - 必须完成
@@ -652,11 +596,12 @@ src-tauri/
 
 - [x] ~~实现端口转发后端~~ ✅ 已有 `port_forward_*` 与 `-L/-R/SOCKS` 等实现；复杂场景与边界见 `docs/issue.md` Issue #3「待完善」
 - [x] ~~清理 Rust 编译警告~~ ✅ `cargo check` 0 警告（2026-05-02 Phase 6.2 / tracing + dead_code 精细化）
-- [x] ~~ssh_resize 实际生效~~ ✅ `session_resize`：`LocalSession` 调 `pty.resize`；`SshSession` 发 `CSI … t` 窗口尺寸序列（`session/ssh.rs`）
+- [x] ~~ssh_resize 实际生效~~ ✅ `session_resize`：`LocalSession` 调 `pty.resize`；`SshSession` 发 RFC 4254 `window-change(cols, rows, 0, 0)`（`session/ssh.rs`）
 
 ### P2 - 建议完成
 
 - [x] ~~**SSH Agent 作为认证方式连接主机**~~ ✅ 已实现（2026-05-03）：`session_create_ssh_agent` + `SessionService.createSshAgent`；`jump_host.target_auth_type === 'agent'` 正确路由到 `authenticate_with_agent`；Pageant 与实机回归见 Issue #21
+- [ ] **SSH Agent forwarding 显式启用**：在 shell channel 建立后调用 `channel.agent_forward(...)`，并提供独立于登录认证方式的用户配置
 - [x] ~~实现主机链功能~~ ✅ `session_create_ssh_jump` + `SshSession::new_with_jump`
 - [x] ~~命令快速补全~~ ✅ Tab 拦截 + 历史前缀匹配 + 路径补全 + shell 子命令补全（2026-05-03）
 - [x] ~~Vault 加密存储~~ ✅ `vault_*` 命令集
@@ -683,6 +628,8 @@ src-tauri/
 | 4   | Rust 编译警告需清理    | 🟡 Important | ✅ 已清理 (2026-03-26) |
 | 5   | Agent 认证未实现       | 🟡 Important | ✅ 已实现 (2026-03-26) |
 | 6   | SSH 证书认证未实现     | 🟡 Important | ✅ 已实现 (2026-03-26) |
+| 39  | 跨平台 SSH/串口/PTY 可靠性 | 🟡 Important | ✅ 代码已修复，待实机矩阵 (2026-08-09) |
+| 42  | 发布终审的同步、存储、脚本与桌面配置问题 | 🟡 Important | ✅ 本机可验证问题已修复，外部项待验证 (2026-08-10) |
 
 ---
 
@@ -700,6 +647,7 @@ CREATE TABLE hosts (
   auth_type TEXT DEFAULT 'password',
   password TEXT,
   private_key TEXT,
+  certificate TEXT,
   group_id TEXT,
   is_favorite INTEGER DEFAULT 0,
   color TEXT,
@@ -707,6 +655,8 @@ CREATE TABLE hosts (
   port_forwards TEXT,
   startup_command TEXT,
   environment TEXT,
+  jump_host_id TEXT,
+  jump_host_auth_type TEXT,
   created_at INTEGER,
   updated_at INTEGER
 );
@@ -880,7 +830,7 @@ CREATE TABLE user_profile (
 
 | 层级     | 技术            |
 | -------- | --------------- |
-| 框架     | NestJS 10.x     |
+| 框架     | NestJS 11.x     |
 | ORM      | Prisma 7.x      |
 | 数据库   | PostgreSQL 16   |
 | API 文档 | Swagger/OpenAPI |
@@ -903,13 +853,13 @@ CREATE TABLE user_profile (
 cd packages/team-server
 
 # Docker 部署 (推荐)
-docker-compose up -d
+docker compose up -d
 
 # 本地开发
-npm install
-npx prisma generate
-npx prisma migrate dev
-npm run start:dev
+pnpm install --frozen-lockfile
+pnpm exec prisma generate
+pnpm exec prisma migrate dev
+pnpm start:dev
 ```
 
 ### 前端连接
@@ -929,6 +879,9 @@ const response = await teamApi.listTeams()
 在设置对话框中配置服务端地址和 API Token。配置成功后会自动同步团队数据。
 
 ### API 端点
+
+以下前缀均位于 `/api/v1` 下，例如注册接口为
+`POST /api/v1/auth/register`。
 
 | 模块 | 前缀                 | 方法   | 端点        | 说明             |
 | ---- | -------------------- | ------ | ----------- | ---------------- |
@@ -959,4 +912,4 @@ const response = await teamApi.listTeams()
 
 ---
 
-_文档更新时间: 2026-05-03 (Phase 6.8: NestJS 增量同步 + 离线队列 + 加密分享 + 冲突检测 + 构建优化 + UX增强)_
+_文档更新时间: 2026-08-10 (Phase 6.11: 发布就绪终审与 Team Server 安全加固)_

@@ -1,7 +1,7 @@
 export default {
   // Hosts
   'hosts.title': 'Hosts',
-  'hosts.count': '{count} host(s)',
+  'hosts.count': '{{count}} host(s)',
   'hosts.search': 'Find a host or ssh user@hostname...',
   'hosts.connect': 'CONNECT',
   'hosts.newHost': 'NEW HOST',
@@ -24,7 +24,7 @@ export default {
   'hosts.tags': 'Tags',
   'hosts.calendar': 'Calendar',
   'hosts.invite': 'Invite',
-  'hosts.sshAuth': 'ssh, {username}',
+  'hosts.sshAuth': 'ssh, {{username}}',
   'hosts.copySsh': 'Copy SSH command',
 
   // Host dialog
@@ -42,7 +42,7 @@ export default {
   'hostDialog.startupCommand': 'Startup Command (optional)',
   'hostDialog.portForwards': 'Port Forwards',
   'hostDialog.password': 'Password',
-  'hostDialog.configurePortForwards': 'Configure Port Forwards ({count})',
+  'hostDialog.configurePortForwards': 'Configure Port Forwards ({{count}})',
   'hostDialog.noGroup': 'No Group',
   'hostDialog.directConnection': 'Direct Connection',
   'hostDialog.useDefaultAuth': 'Use Default Auth',
@@ -56,7 +56,7 @@ export default {
   'hostDialog.connectBastion': 'Connect through a bastion/jump server',
   'hostDialog.deleteHost': 'Delete Host',
   'hostDialog.deleteConfirm':
-    'Are you sure you want to delete "{name}"? This action cannot be undone.',
+    'Are you sure you want to delete "{{name}}"? This action cannot be undone.',
   'hostDialog.placeholderName': 'My Server',
   'hostDialog.placeholderHostname': '192.168.1.1 or example.com',
   'hostDialog.placeholderUsername': 'root',

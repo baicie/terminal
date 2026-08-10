@@ -6,10 +6,11 @@ import {
   searchSSHKeys,
   updateSSHKey,
 } from '@/service/database'
-import { Key, KeyRound, Trash2 } from 'lucide-react'
+import { ArrowLeft, Key, KeyRound, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ResponsiveConfirm } from '@/components/ui/responsive-dialog'
+import { cn } from '@/lib/utils'
 import {
   EmptyState,
   ViewContainer,
@@ -94,6 +95,11 @@ const KeychainView: React.FC = () => {
     hookNewKey()
   }, [hookNewKey])
 
+  const handleBackToList = useCallback(() => {
+    setSelectedKey(null)
+    setIsNewKey(false)
+  }, [])
+
   const handleSaveAndReload = useCallback(async () => {
     const data = handleSave(isNewKey, selectedKey, {
       formName,
@@ -130,9 +136,12 @@ const KeychainView: React.FC = () => {
     setDeleteDialogOpen(false)
   }, [handleDelete, keyToDelete, keys, selectedKey])
 
+  const showingForm = selectedKey !== null || isNewKey
+
   return (
-    <ViewContainer className="min-h-0 flex-row">
+    <ViewContainer className="min-h-0 md:flex-row">
       <KeyListPanel
+        className={showingForm ? 'hidden md:flex' : undefined}
         keys={keys}
         loading={loading}
         selectedKey={selectedKey}
@@ -145,7 +154,12 @@ const KeychainView: React.FC = () => {
         onGenerate={() => setGenerateDialogOpen(true)}
       />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div
+        className={cn(
+          'min-h-0 min-w-0 flex-1 flex-col',
+          showingForm ? 'flex' : 'hidden md:flex',
+        )}
+      >
         {!selectedKey && !isNewKey ? (
           <ViewContent className="flex items-center justify-center">
             <EmptyState
@@ -158,6 +172,15 @@ const KeychainView: React.FC = () => {
           <>
             <ViewToolbar className="justify-between">
               <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 md:hidden"
+                  aria-label="Back to keys"
+                  onClick={handleBackToList}
+                >
+                  <ArrowLeft data-icon="inline-start" />
+                </Button>
                 <div className="p-2 rounded-md bg-primary/10 text-primary">
                   <KeyRound className="size-4" />
                 </div>

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Test the SyncController as a plain class, bypassing NestJS DI and guards.
 // This is cleaner for unit testing and avoids the ApiKeyGuard dependency.
@@ -6,7 +6,10 @@ describe('SyncController', () => {
   let syncController: {
     getChanges: (since: string | undefined, userId: string) => Promise<unknown>
     pushChanges: (body: unknown, userId: string) => Promise<unknown>
-    checkConflicts: (body: { items: unknown[] }, userId: string) => Promise<unknown>
+    checkConflicts: (
+      body: { items: unknown[] },
+      userId: string,
+    ) => Promise<unknown>
     resolveConflict: (body: unknown, userId: string) => Promise<unknown>
     getPendingOperations: (userId: string) => Promise<unknown>
     processOfflineQueue: (userId: string) => Promise<unknown>
@@ -31,17 +34,35 @@ describe('SyncController', () => {
     // Create a plain object that mimics the SyncController behavior
     syncController = {
       getChanges: async (since: string | undefined, userId: string) => {
-        return mockSyncService.getChanges(userId, since ? Number.parseInt(since, 10) : undefined)
+        return mockSyncService.getChanges(
+          userId,
+          since ? Number.parseInt(since, 10) : undefined,
+        )
       },
       pushChanges: async (body: unknown, userId: string) => {
-        return mockSyncService.pushChanges(userId, body as Parameters<typeof mockSyncService.pushChanges>[1])
+        return mockSyncService.pushChanges(
+          userId,
+          body as Parameters<typeof mockSyncService.pushChanges>[1],
+        )
       },
       checkConflicts: async (body: { items: unknown[] }, userId: string) => {
-        return mockSyncService.checkConflicts(userId, body.items as Parameters<typeof mockSyncService.checkConflicts>[1])
+        return mockSyncService.checkConflicts(
+          userId,
+          body.items as Parameters<typeof mockSyncService.checkConflicts>[1],
+        )
       },
       resolveConflict: async (body: unknown, userId: string) => {
-        const b = body as { shareId: string; resolution: 'LOCAL' | 'REMOTE'; clientData?: unknown }
-        return mockSyncService.resolveConflict(b.shareId, userId, b.resolution, b.clientData)
+        const b = body as {
+          shareId: string
+          resolution: 'LOCAL' | 'REMOTE'
+          clientData?: unknown
+        }
+        return mockSyncService.resolveConflict(
+          b.shareId,
+          userId,
+          b.resolution,
+          b.clientData,
+        )
       },
       getPendingOperations: async (userId: string) => {
         return mockSyncService.getPendingOperations(userId)
@@ -50,11 +71,20 @@ describe('SyncController', () => {
         return mockSyncService.processOfflineQueue(userId)
       },
       enqueueOperation: async (body: unknown, userId: string) => {
-        const b = body as { teamId: string; operation: string; shareType: string; shareId: string; data?: unknown }
+        const b = body as {
+          teamId: string
+          operation: string
+          shareType: string
+          shareId: string
+          data?: unknown
+        }
         return mockSyncService.enqueueOfflineOperation(
-          userId, b.teamId, b.operation as 'CREATE' | 'UPDATE' | 'DELETE',
+          userId,
+          b.teamId,
+          b.operation as 'CREATE' | 'UPDATE' | 'DELETE',
           b.shareType as 'HOST' | 'HOST_GROUP' | 'SNIPPET_PACKAGE',
-          b.shareId, b.data,
+          b.shareId,
+          b.data,
         )
       },
       removeFromQueue: async (id: string, userId: string) => {
@@ -76,23 +106,38 @@ describe('SyncController', () => {
     it('should call syncService.getChanges with userId and parsed since timestamp', async () => {
       const userId = 'user-123'
       const since = '1700000000000'
-      const result = { timestamp: 1700100000000, shares: [], deletedShareIds: [] }
+      const result = {
+        timestamp: 1700100000000,
+        shares: [],
+        deletedShareIds: [],
+      }
       mockSyncService.getChanges.mockResolvedValue(result)
 
       const response = await syncController.getChanges(since, userId)
 
-      expect(mockSyncService.getChanges).toHaveBeenCalledWith(userId, 1700000000000)
+      expect(mockSyncService.getChanges).toHaveBeenCalledWith(
+        userId,
+        1700000000000,
+      )
       expect(response).toEqual(result)
     })
 
     it('should call without since when undefined', async () => {
       const userId = 'user-456'
-      mockSyncService.getChanges.mockResolvedValue({ timestamp: Date.now(), shares: [], deletedShareIds: [] })
+      mockSyncService.getChanges.mockResolvedValue({
+        timestamp: Date.now(),
+        shares: [],
+        deletedShareIds: [],
+      })
 
       const response = await syncController.getChanges(undefined, userId)
 
       expect(mockSyncService.getChanges).toHaveBeenCalledWith(userId, undefined)
-      expect(response).toEqual({ timestamp: expect.any(Number), shares: [], deletedShareIds: [] })
+      expect(response).toEqual({
+        timestamp: expect.any(Number),
+        shares: [],
+        deletedShareIds: [],
+      })
     })
   })
 
@@ -102,13 +147,24 @@ describe('SyncController', () => {
       const body = {
         shares: [
           {
-            id: 'share-1', teamId: 'team-1', type: 'HOST', data: {},
-            encryptedData: 'base64_encrypted', isSensitive: true,
-            permission: 'READONLY', baseVersion: 1700000000000,
+            id: 'share-1',
+            teamId: 'team-1',
+            type: 'HOST',
+            data: {},
+            encryptedData: 'base64_encrypted',
+            isSensitive: true,
+            permission: 'READONLY',
+            baseVersion: 1700000000000,
           },
         ],
       }
-      const result = { created: [], updated: ['share-1'], deleted: [], conflicts: [], errors: [] }
+      const result = {
+        created: [],
+        updated: ['share-1'],
+        deleted: [],
+        conflicts: [],
+        errors: [],
+      }
       mockSyncService.pushChanges.mockResolvedValue(result)
 
       const response = await syncController.pushChanges(body, userId)
@@ -123,7 +179,13 @@ describe('SyncController', () => {
         shares: [],
         deleteShares: ['share-2', 'share-3'],
       }
-      const result = { created: [], updated: [], deleted: ['share-2', 'share-3'], conflicts: [], errors: [] }
+      const result = {
+        created: [],
+        updated: [],
+        deleted: ['share-2', 'share-3'],
+        conflicts: [],
+        errors: [],
+      }
       mockSyncService.pushChanges.mockResolvedValue(result)
 
       const response = await syncController.pushChanges(body, userId)
@@ -135,19 +197,28 @@ describe('SyncController', () => {
   describe('checkConflicts', () => {
     it('should detect conflicts', async () => {
       const userId = 'user-123'
-      const body = { items: [{ id: 'share-1', updatedAt: 1699000000000, type: 'HOST' }] }
+      const body = {
+        items: [{ id: 'share-1', updatedAt: 1699000000000, type: 'HOST' }],
+      }
       const conflicts = [
         {
           shareId: 'share-1',
           localVersion: { updatedAt: 1699000000000, data: {} },
-          remoteVersion: { updatedAt: 1700000000000, data: {}, updatedBy: 'other-user' },
+          remoteVersion: {
+            updatedAt: 1700000000000,
+            data: {},
+            updatedBy: 'other-user',
+          },
         },
       ]
       mockSyncService.checkConflicts.mockResolvedValue(conflicts)
 
       const response = await syncController.checkConflicts(body, userId)
 
-      expect(mockSyncService.checkConflicts).toHaveBeenCalledWith(userId, body.items)
+      expect(mockSyncService.checkConflicts).toHaveBeenCalledWith(
+        userId,
+        body.items,
+      )
       expect(response).toEqual(conflicts)
     })
   })
@@ -158,14 +229,21 @@ describe('SyncController', () => {
       const body = {
         shareId: 'share-1',
         resolution: 'LOCAL',
-        clientData: { data: { hostname: 'newhost' }, isSensitive: false, permission: 'READWRITE' },
+        clientData: {
+          data: { hostname: 'newhost' },
+          isSensitive: false,
+          permission: 'READWRITE',
+        },
       }
       mockSyncService.resolveConflict.mockResolvedValue({ success: true })
 
       const response = await syncController.resolveConflict(body, userId)
 
       expect(mockSyncService.resolveConflict).toHaveBeenCalledWith(
-        body.shareId, userId, body.resolution, body.clientData,
+        body.shareId,
+        userId,
+        body.resolution,
+        body.clientData,
       )
       expect(response).toEqual({ success: true })
     })
@@ -186,8 +264,14 @@ describe('SyncController', () => {
       const userId = 'user-123'
       const operations = [
         {
-          id: 'op-1', teamId: 'team-1', operation: 'CREATE', shareType: 'HOST',
-          shareId: 's1', data: {}, attempts: 0, lastError: null,
+          id: 'op-1',
+          teamId: 'team-1',
+          operation: 'CREATE',
+          shareType: 'HOST',
+          shareId: 's1',
+          data: {},
+          attempts: 0,
+          lastError: null,
           createdAt: new Date().toISOString(),
         },
       ]
@@ -213,15 +297,29 @@ describe('SyncController', () => {
     it('should enqueue an offline operation', async () => {
       const userId = 'user-123'
       const body = {
-        teamId: 'team-1', operation: 'CREATE', shareType: 'HOST', shareId: 'share-1',
-        data: { type: 'HOST', data: { hostname: 'test' }, permission: 'READONLY' },
+        teamId: 'team-1',
+        operation: 'CREATE',
+        shareType: 'HOST',
+        shareId: 'share-1',
+        data: {
+          type: 'HOST',
+          data: { hostname: 'test' },
+          permission: 'READONLY',
+        },
       }
-      mockSyncService.enqueueOfflineOperation.mockResolvedValue({ id: 'op-new' })
+      mockSyncService.enqueueOfflineOperation.mockResolvedValue({
+        id: 'op-new',
+      })
 
       const response = await syncController.enqueueOperation(body, userId)
 
       expect(mockSyncService.enqueueOfflineOperation).toHaveBeenCalledWith(
-        userId, body.teamId, body.operation, body.shareType, body.shareId, body.data,
+        userId,
+        body.teamId,
+        body.operation,
+        body.shareType,
+        body.shareId,
+        body.data,
       )
       expect(response).toEqual({ id: 'op-new' })
     })
@@ -244,13 +342,21 @@ describe('SyncController', () => {
 
       const response = await syncController.clearTeamQueue(teamId, userId)
 
-      expect(mockSyncService.clearTeamQueue).toHaveBeenCalledWith(userId, teamId)
+      expect(mockSyncService.clearTeamQueue).toHaveBeenCalledWith(
+        userId,
+        teamId,
+      )
       expect(response).toEqual({ success: true })
     })
 
     it('should report offline queue stats', async () => {
       const userId = 'user-123'
-      const result = { processed: 3, succeeded: 2, failed: 1, errors: [{ id: 'op-2', error: 'timeout' }] }
+      const result = {
+        processed: 3,
+        succeeded: 2,
+        failed: 1,
+        errors: [{ id: 'op-2', error: 'timeout' }],
+      }
       mockSyncService.processOfflineQueue.mockResolvedValue(result)
 
       const response = await syncController.processOfflineQueue(userId)

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { ForbiddenException, Injectable } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
 
 @Injectable()
@@ -41,7 +41,7 @@ export class AuditService {
       where: { teamId_userId: { teamId, userId } },
     })
     if (!membership || membership.role !== 'ADMIN') {
-      throw new Error('Admin access required')
+      throw new ForbiddenException('Admin access required')
     }
   }
 }

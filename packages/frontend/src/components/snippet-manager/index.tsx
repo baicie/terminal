@@ -14,14 +14,12 @@ import {
 } from '@/service/database'
 import { useCurrentTeam, useIsTeamEnabled, useTeamStore } from '@/store/team'
 import { PackageSidebar } from './package-sidebar'
-import { SnippetFormDialog } from './snippet-form-dialog'
-import {
-  SnippetExecuteDialog,
-  parseVariables,
-} from './snippet-execute-dialog'
+import { parseVariables } from './snippet-execute-dialog'
 import { SnippetList } from './snippet-list'
-import { SnippetPackageDialog } from './snippet-package-dialog'
-import { SnippetShareDialog } from './snippet-share-dialog'
+import {
+  SnippetManagerDialogs,
+  type SnippetFormData,
+} from './snippet-manager-dialogs'
 
 interface SnippetManagerProps {
   onExecute?: (script: string) => void
@@ -33,14 +31,19 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onExecute }) => {
   const [packages, setPackages] = useState<SnippetPackageRecord[]>([])
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [editingSnippet, setEditingSnippet] = useState<SnippetRecord | null>(null)
+  const [editingSnippet, setEditingSnippet] = useState<SnippetRecord | null>(
+    null,
+  )
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isPackageDialogOpen, setIsPackageDialogOpen] = useState(false)
   const [isExecuteDialogOpen, setIsExecuteDialogOpen] = useState(false)
-  const [executingSnippet, setExecutingSnippet] = useState<SnippetRecord | null>(null)
-  const [variableValues, setVariableValues] = useState<Record<string, string>>({})
+  const [executingSnippet, setExecutingSnippet] =
+    useState<SnippetRecord | null>(null)
+  const [variableValues, setVariableValues] = useState<Record<string, string>>(
+    {},
+  )
   const [newPackageName, setNewPackageName] = useState('')
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<SnippetFormData>({
     name: '',
     description: '',
     script: '',
@@ -49,8 +52,12 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onExecute }) => {
 
   // Team sharing state
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false)
-  const [sharingSnippet, setSharingSnippet] = useState<SnippetRecord | null>(null)
-  const [sharePermission, setSharePermission] = useState<'readonly' | 'readwrite'>('readonly')
+  const [sharingSnippet, setSharingSnippet] = useState<SnippetRecord | null>(
+    null,
+  )
+  const [sharePermission, setSharePermission] = useState<
+    'readonly' | 'readwrite'
+  >('readonly')
 
   // Team store
   const isTeamEnabled = useIsTeamEnabled()
@@ -170,7 +177,10 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onExecute }) => {
   }
 
   // Replace variables in script with values
-  const replaceVariables = (script: string, values: Record<string, string>): string => {
+  const replaceVariables = (
+    script: string,
+    values: Record<string, string>,
+  ): string => {
     return script.replace(/\$\{?([A-Z_]\w*)\}?/gi, (_match, varName) => {
       return values[varName] ?? _match
     })
@@ -183,7 +193,9 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onExecute }) => {
       const initialValues: Record<string, string> = {}
       variables.forEach(v => {
         try {
-          const storedVars = snippet.variables ? JSON.parse(snippet.variables) : []
+          const storedVars = snippet.variables
+            ? JSON.parse(snippet.variables)
+            : []
           const varDef = storedVars.find(
             (v2: { name: string; defaultValue?: string }) => v2.name === v,
           )
@@ -203,7 +215,10 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onExecute }) => {
 
   const handleExecuteWithVariables = () => {
     if (!executingSnippet) return
-    const finalScript = replaceVariables(executingSnippet.script, variableValues)
+    const finalScript = replaceVariables(
+      executingSnippet.script,
+      variableValues,
+    )
     handleExecute(finalScript)
     setIsExecuteDialogOpen(false)
     setExecutingSnippet(null)
@@ -252,73 +267,43 @@ const SnippetManager: React.FC<SnippetManagerProps> = ({ onExecute }) => {
         </div>
       </div>
 
-      {/* 同时挂载多个 Radix Dialog 会在 WebKit/Tauri 下叠加 RemoveScroll / 遮罩，导致无法点关闭；按需挂载 */}
-      {isCreateDialogOpen ? (
-        <SnippetFormDialog
-          open
-          onClose={() => setIsCreateDialogOpen(false)}
-          mode="create"
-          packages={packages}
-          formData={formData}
-          onFormChange={handleFormChange}
-          onSubmit={handleCreate}
-        />
-      ) : null}
-
-      {editingSnippet ? (
-        <SnippetFormDialog
-          key={editingSnippet.id}
-          open
-          onClose={() => setEditingSnippet(null)}
-          mode="edit"
-          snippet={editingSnippet}
-          packages={packages}
-          formData={formData}
-          onFormChange={() => {}}
-          onSubmit={handleUpdate}
-        />
-      ) : null}
-
-      {isExecuteDialogOpen && executingSnippet ? (
-        <SnippetExecuteDialog
-          open
-          onClose={() => {
-            setIsExecuteDialogOpen(false)
-            setExecutingSnippet(null)
-            setVariableValues({})
-          }}
-          snippet={executingSnippet}
-          variableValues={variableValues}
-          onVariableChange={setVariableValues}
-          onExecute={handleExecuteWithVariables}
-        />
-      ) : null}
-
-      {isPackageDialogOpen ? (
-        <SnippetPackageDialog
-          open
-          onClose={() => setIsPackageDialogOpen(false)}
-          packageName={newPackageName}
-          onPackageNameChange={setNewPackageName}
-          onSubmit={handleCreatePackage}
-        />
-      ) : null}
-
-      {isShareDialogOpen && sharingSnippet ? (
-        <SnippetShareDialog
-          open
-          onClose={() => {
-            setIsShareDialogOpen(false)
-            setSharingSnippet(null)
-            setSharePermission('readonly')
-          }}
-          snippet={sharingSnippet}
-          permission={sharePermission}
-          onPermissionChange={setSharePermission}
-          teamName={currentTeam?.name}
-          onShare={handleShareSnippet}
-        />
-      ) : null}
+      <SnippetManagerDialogs
+        isCreateDialogOpen={isCreateDialogOpen}
+        editingSnippet={editingSnippet}
+        isExecuteDialogOpen={isExecuteDialogOpen}
+        executingSnippet={executingSnippet}
+        variableValues={variableValues}
+        isPackageDialogOpen={isPackageDialogOpen}
+        newPackageName={newPackageName}
+        isShareDialogOpen={isShareDialogOpen}
+        sharingSnippet={sharingSnippet}
+        sharePermission={sharePermission}
+        teamName={currentTeam?.name}
+        packages={packages}
+        formData={formData}
+        onCloseCreate={() => setIsCreateDialogOpen(false)}
+        onFormChange={handleFormChange}
+        onCreate={handleCreate}
+        onCloseEdit={() => setEditingSnippet(null)}
+        onUpdate={handleUpdate}
+        onCloseExecute={() => {
+          setIsExecuteDialogOpen(false)
+          setExecutingSnippet(null)
+          setVariableValues({})
+        }}
+        onVariableChange={setVariableValues}
+        onExecute={handleExecuteWithVariables}
+        onClosePackage={() => setIsPackageDialogOpen(false)}
+        onPackageNameChange={setNewPackageName}
+        onCreatePackage={handleCreatePackage}
+        onCloseShare={() => {
+          setIsShareDialogOpen(false)
+          setSharingSnippet(null)
+          setSharePermission('readonly')
+        }}
+        onPermissionChange={setSharePermission}
+        onShare={handleShareSnippet}
+      />
     </>
   )
 }

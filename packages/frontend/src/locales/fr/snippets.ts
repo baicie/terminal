@@ -35,15 +35,16 @@ export default {
   'snippets.deleteSnippet': "Supprimer l'extrait",
   'snippets.deletePackage': 'Supprimer le paquet',
   'snippets.deleteSnippetConfirm':
-    'Êtes-vous sûr de vouloir supprimer "{name}" ? Cette action est irréversible.',
+    'Êtes-vous sûr de vouloir supprimer "{{name}}" ? Cette action est irréversible.',
   'snippets.deletePackageConfirm':
-    'Êtes-vous sûr de vouloir supprimer "{name}" ? Tous les extraits de ce paquet seront déplacés vers non classé.',
-  'snippets.enterVar': 'Entrez {name}',
+    'Êtes-vous sûr de vouloir supprimer "{{name}}" ? Tous les extraits de ce paquet seront déplacés vers non classé.',
+  'snippets.enterVar': 'Entrez {{name}}',
 
   // Scripts
   'scripts.title': 'Scripts par lot',
   'scripts.search': 'Rechercher des scripts...',
   'scripts.new': 'Nouveau script',
+  'scripts.newScript': 'Nouveau script',
   'scripts.list': 'Liste des scripts',
   'scripts.history': "Historique d'exécution",
   'scripts.batch': 'Exécution par lot',
@@ -67,7 +68,7 @@ export default {
   'scripts.command': 'Commande',
   'scripts.enterCommand': 'Entrez la commande à exécuter...',
   'scripts.selectAtLeastOne': 'Veuillez sélectionner au moins un hôte',
-  'scripts.executeOnHosts': 'Exécuter sur {count} hôte(s)',
+  'scripts.executeOnHosts': 'Exécuter sur {{count}} hôte(s)',
   'scripts.results': "Résultats d'exécution",
   'scripts.succeeded': 'réussi',
   'scripts.failed': 'échoué',
@@ -95,7 +96,7 @@ export default {
   'scripts.deleted': 'Script supprimé',
   'scripts.deleteConfirm': 'Supprimer le script',
   'scripts.deleteConfirmDesc':
-    'Êtes-vous sûr de vouloir supprimer "{name}" ? Cette action est irréversible.',
+    'Êtes-vous sûr de vouloir supprimer "{{name}}" ? Cette action est irréversible.',
   'scripts.nameAndScriptRequired': 'Le nom et le script sont requis',
   'scripts.noHosts': 'Aucun hôte sélectionné pour ce script',
 }

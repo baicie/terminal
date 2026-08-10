@@ -1,5 +1,5 @@
 import type { FileItem } from '@/service/ssh'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 
 interface UseSftpLocalResult {
   files: FileItem[]
@@ -37,7 +37,8 @@ export function useSftpLocal(): UseSftpLocalResult {
             is_directory: handle.kind === 'directory',
             size: file?.size || 0,
             modified_time: file?.lastModified || Date.now(),
-            permissions: handle.kind === 'directory' ? 'drwxr-xr-x' : '-rw-r--r--',
+            permissions:
+              handle.kind === 'directory' ? 'drwxr-xr-x' : '-rw-r--r--',
           })
         }
         setFiles(entries)

@@ -212,7 +212,15 @@ pub async fn sftp_upload(
         Ok(f) => f,
         Err(e) => {
             let msg = format!("Failed to open local file: {}", e);
-            emit_progress(&app, &transfer_id, "error", 0, total_bytes, Some(msg.clone()), None);
+            emit_progress(
+                &app,
+                &transfer_id,
+                "error",
+                0,
+                total_bytes,
+                Some(msg.clone()),
+                None,
+            );
             return Err(SftpError::UploadFailed(msg));
         }
     };
@@ -227,7 +235,15 @@ pub async fn sftp_upload(
         Ok(f) => f,
         Err(e) => {
             let msg = format!("Failed to open remote file: {}", e);
-            emit_progress(&app, &transfer_id, "error", 0, total_bytes, Some(msg.clone()), None);
+            emit_progress(
+                &app,
+                &transfer_id,
+                "error",
+                0,
+                total_bytes,
+                Some(msg.clone()),
+                None,
+            );
             return Err(SftpError::UploadFailed(msg));
         }
     };
@@ -272,7 +288,15 @@ pub async fn sftp_upload(
         sent += n as u64;
 
         if last_emit.elapsed().as_millis() >= PROGRESS_INTERVAL_MS {
-            emit_progress(&app, &transfer_id, "progress", sent, total_bytes, None, None);
+            emit_progress(
+                &app,
+                &transfer_id,
+                "progress",
+                sent,
+                total_bytes,
+                None,
+                None,
+            );
             last_emit = std::time::Instant::now();
         }
     }
@@ -331,7 +355,15 @@ pub async fn sftp_download(
         Ok(f) => f,
         Err(e) => {
             let msg = format!("Failed to open remote file: {}", e);
-            emit_progress(&app, &transfer_id, "error", 0, total_bytes, Some(msg.clone()), None);
+            emit_progress(
+                &app,
+                &transfer_id,
+                "error",
+                0,
+                total_bytes,
+                Some(msg.clone()),
+                None,
+            );
             return Err(SftpError::DownloadFailed(msg));
         }
     };
@@ -352,7 +384,15 @@ pub async fn sftp_download(
                 error = %e,
                 "sftp_download: create local file failed",
             );
-            emit_progress(&app, &transfer_id, "error", 0, total_bytes, Some(msg.clone()), None);
+            emit_progress(
+                &app,
+                &transfer_id,
+                "error",
+                0,
+                total_bytes,
+                Some(msg.clone()),
+                None,
+            );
             return Err(SftpError::DownloadFailed(msg));
         }
     };
@@ -406,7 +446,15 @@ pub async fn sftp_download(
         received += n as u64;
 
         if last_emit.elapsed().as_millis() >= PROGRESS_INTERVAL_MS {
-            emit_progress(&app, &transfer_id, "progress", received, total_bytes, None, None);
+            emit_progress(
+                &app,
+                &transfer_id,
+                "progress",
+                received,
+                total_bytes,
+                None,
+                None,
+            );
             last_emit = std::time::Instant::now();
         }
     }
@@ -431,7 +479,15 @@ pub async fn sftp_download(
         total_bytes,
         "sftp_download: completed",
     );
-    emit_progress(&app, &transfer_id, "done", received, total_bytes, None, None);
+    emit_progress(
+        &app,
+        &transfer_id,
+        "done",
+        received,
+        total_bytes,
+        None,
+        None,
+    );
     Ok(())
 }
 
@@ -528,7 +584,15 @@ pub async fn sftp_local_checksum(
         "sftp_local_checksum: starting",
     );
 
-    emit_progress(&app, &transfer_id, "checksum-start", 0, total_bytes, None, Some("local"));
+    emit_progress(
+        &app,
+        &transfer_id,
+        "checksum-start",
+        0,
+        total_bytes,
+        None,
+        Some("local"),
+    );
 
     let file = File::open(&local_path)
         .await
@@ -539,10 +603,13 @@ pub async fn sftp_local_checksum(
     let mut buf = vec![0u8; CHUNK_SIZE];
 
     loop {
-        let n = reader.read(&mut buf).await.map_err(|e| {
-            SftpError::ChecksumFailed(format!("Read failed: {}", e))
-        })?;
-        if n == 0 { break; }
+        let n = reader
+            .read(&mut buf)
+            .await
+            .map_err(|e| SftpError::ChecksumFailed(format!("Read failed: {}", e)))?;
+        if n == 0 {
+            break;
+        }
         hasher.update(&buf[..n]);
     }
 
@@ -601,7 +668,15 @@ pub async fn sftp_remote_checksum(
         "sftp_remote_checksum: starting",
     );
 
-    emit_progress(&app, &transfer_id, "checksum-start", 0, total_bytes, None, Some("remote"));
+    emit_progress(
+        &app,
+        &transfer_id,
+        "checksum-start",
+        0,
+        total_bytes,
+        None,
+        Some("remote"),
+    );
 
     let mut remote = sftp
         .open(&remote_path)
@@ -614,10 +689,13 @@ pub async fn sftp_remote_checksum(
     let mut last_emit = std::time::Instant::now();
 
     loop {
-        let n = remote.read(&mut buf).await.map_err(|e| {
-            SftpError::ChecksumFailed(format!("Read failed: {}", e))
-        })?;
-        if n == 0 { break; }
+        let n = remote
+            .read(&mut buf)
+            .await
+            .map_err(|e| SftpError::ChecksumFailed(format!("Read failed: {}", e)))?;
+        if n == 0 {
+            break;
+        }
         hasher.update(&buf[..n]);
         bytes_read += n as u64;
 

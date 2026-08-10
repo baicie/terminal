@@ -53,9 +53,7 @@ export const HostFormActions: React.FC<HostFormActionsProps> = ({
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={onDelete}>
-                  Delete
-                </AlertDialogAction>
+                <AlertDialogAction onClick={onDelete}>Delete</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -65,12 +63,7 @@ export const HostFormActions: React.FC<HostFormActionsProps> = ({
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
-        <Button
-          onClick={onSubmit}
-          disabled={
-            saving || !onSubmit || !host?.name || !host?.hostname || !host?.username
-          }
-        >
+        <Button onClick={onSubmit} disabled={saving}>
           {saving ? 'Saving...' : 'Save'}
         </Button>
       </div>

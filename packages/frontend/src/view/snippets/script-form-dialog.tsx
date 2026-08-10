@@ -27,7 +27,9 @@ interface ScriptFormDialogContentProps {
   onHostToggle: (hostId: string) => void
 }
 
-export const ScriptFormDialogContent: React.FC<ScriptFormDialogContentProps> = ({
+export const ScriptFormDialogContent: React.FC<
+  ScriptFormDialogContentProps
+> = ({
   hosts,
   formName,
   formDescription,
@@ -83,14 +85,18 @@ export const ScriptFormDialogContent: React.FC<ScriptFormDialogContentProps> = (
                 checked={formHostIds.includes(host.id)}
                 onCheckedChange={() => onHostToggle(host.id)}
               />
-              <Label htmlFor={`script-host-${host.id}`} className="text-sm font-normal cursor-pointer">
+              <Label
+                htmlFor={`script-host-${host.id}`}
+                className="text-sm font-normal cursor-pointer"
+              >
                 {host.name}
               </Label>
             </div>
           ))}
         </div>
         <p className="text-xs text-muted-foreground">
-          {formHostIds.length} {formHostIds.length !== 1 ? 'hosts selected' : 'host selected'}
+          {formHostIds.length}{' '}
+          {formHostIds.length !== 1 ? 'hosts selected' : 'host selected'}
         </p>
       </div>
 
@@ -137,8 +143,18 @@ export const ScriptFormDialogContent: React.FC<ScriptFormDialogContentProps> = (
           <Input
             id="timeout"
             type="number"
+            min={1}
+            max={86400}
             value={formTimeout}
-            onChange={e => onFormChange('timeout', Number.parseInt(e.target.value) || 60)}
+            onChange={e =>
+              onFormChange(
+                'timeout',
+                Math.min(
+                  Math.max(Number.parseInt(e.target.value, 10) || 60, 1),
+                  86400,
+                ),
+              )
+            }
           />
         </div>
 
@@ -147,8 +163,18 @@ export const ScriptFormDialogContent: React.FC<ScriptFormDialogContentProps> = (
           <Input
             id="retry-count"
             type="number"
+            min={0}
+            max={10}
             value={formRetryCount}
-            onChange={e => onFormChange('retryCount', Number.parseInt(e.target.value) || 0)}
+            onChange={e =>
+              onFormChange(
+                'retryCount',
+                Math.min(
+                  Math.max(Number.parseInt(e.target.value, 10) || 0, 0),
+                  10,
+                ),
+              )
+            }
           />
         </div>
       </div>

@@ -1,7 +1,7 @@
 # Terminal 项目待办事项
 
 > 基于设计文档 `docs/design.md` 整理的待办事项
-> 更新时间：2026-05-03（Phase 6.9: SSH Key 生成 + 命令执行重构 + i18n 三语种补全 + 用户文档重写）
+> 更新时间：2026-08-10（Phase 6.11: 发布就绪终审）
 
 ---
 
@@ -89,27 +89,31 @@
 
 ---
 
-### Phase 3 - 高级功能 ✅ 已完成
+### Phase 3 - 高级功能 ⚠️ Agent forwarding 待显式启用
 
-> 2026-03-19 完成 Phase 3 所有高级功能
+> Agent 登录认证已完成；Agent forwarding 的 handler 与双向桥接已完成，但客户端尚未显式请求转发。
 
-#### 3.1 Agent 转发 ✅ 已实现 (2026-03-19)
+#### 3.1 Agent 转发 ⚠️ 部分实现
 
 | 任务           | 描述                                   | 状态      |
 | -------------- | -------------------------------------- | --------- |
 | SSH Agent 支持 | 读取 SSH_AUTH_SOCK 连接本地 Agent      | ✅ 已实现 |
-| Agent 转发     | 通过 Channel 转发 Agent 请求           | ✅ 已实现 |
+| Agent 转发     | 通过专用 Channel 双向桥接 Agent 请求    | ⚠️ 缺少 `channel.agent_forward(...)` 启用入口 |
 | 后端 Handler   | 实现 server_channel_open_agent_forward | ✅ 已实现 |
 | 前端 UI        | Agent 认证选项 (authType: "agent")     | ✅ 已实现 |
 
-#### 3.2 主机链 (Jump Host) ✅ 已实现 (2026-03-19)
+#### 3.2 主机链 (Jump Host) ⚠️ 主入口已接线
 
 | 任务               | 描述                           | 状态      |
 | ------------------ | ------------------------------ | --------- |
 | Jump Host 配置     | 主机配置 jumpHostId 字段       | ✅ 已实现 |
 | Jump Host 选择器   | UI 下拉菜单选择跳板机          | ✅ 已实现 |
 | Jump Host 认证覆盖 | 可选 jumpHostAuthType          | ✅ 已实现 |
-| 后端连接逻辑       | channel_open_direct_tcpip 实现 | ✅ 已实现 |
+| 后端连接逻辑       | direct-tcpip 流内建立目标 SSH 会话 | ✅ 已修复 (2026-08-09) |
+| 前端连接入口       | SQLite 恢复配置并调用 `session_create_ssh_jump` | ✅ 已实现 |
+| password/key/agent | 跳板端与目标端认证             | ✅ 已实现 |
+| certificate        | 经 Jump Host 的证书认证         | 📋 未实现，前后端明确拒绝 |
+| 跨平台实机         | Windows/Linux 连接与断开矩阵    | ⚠️ 待实机 |
 
 #### 3.3 Vault 加密存储 ✅ 已实现 (2026-03-19)
 
@@ -178,19 +182,19 @@
 | Hosts 视图集成 | 共享主机导入/分享功能           | ✅ 已实现 (2026-03-25) |
 | Snippets 分享  | SnippetManager + Hosts 视图展示 | ✅ 已实现 (2026-03-25) |
 | 设置页面入口   | Team Tab 完善                   | ✅ 已实现 (2026-03-25) |
-| 增量同步功能   | 基于时间戳的增量同步            | 📋 待开发（需服务端）  |
-| 冲突处理       | 询问用户选择保留版本            | 📋 待开发（需服务端）  |
-| 离线操作队列   | 离线操作记录和恢复              | 📋 待开发（需服务端）  |
+| 增量同步功能   | 基于时间戳的增量同步            | ✅ 已实现 (2026-05-03) |
+| 冲突处理       | 询问用户选择保留版本            | ✅ 已实现 (2026-05-03) |
+| 离线操作队列   | 离线操作记录和恢复              | ✅ 已实现 (2026-05-03) |
 | 敏感数据加密   | 密码可选加密共享 (AES-256-GCM)  | ✅ 已实现 (2026-03-25) |
 | NestJS 服务端  | REST API 服务端                 | ✅ 已实现 (2026-03-25) |
 | Docker 部署    | docker-compose 配置             | ✅ 已实现 (2026-03-25) |
 | 前端云端同步   | 前端连接 NestJS 服务端          | ✅ 已实现 (2026-03-25) |
 
-#### 4.3 SSH 证书认证 📋 待开发
+#### 4.3 SSH 证书认证 ⚠️ 认证完成，证书签发待规划
 
 | 任务     | 描述             | 状态      |
 | -------- | ---------------- | --------- |
-| 证书支持 | SSH 证书认证方式 | 📋 待开发 |
+| 证书支持 | SSH 证书认证方式 | ✅ 已实现 (2026-03-26) |
 | 证书管理 | 颁发和管理证书   | 📋 待开发 |
 
 #### 4.4 高级脚本 ✅ 已实现 (2026-03-23)
@@ -205,17 +209,15 @@
 
 ## 三、技术优化待办
 
-## 三、技术优化待办
-
 ### 3.1 Rust 后端优化
 
 | 任务            | 描述                                 | 状态                         |
 | --------------- | ------------------------------------ | ---------------------------- |
 | 编译警告清理    | cargo check 产生大量 unused 代码警告 | ✅ 已修复                    |
 | 错误处理优化    | 完善错误类型和错误信息               | 📋 待优化                    |
-| 连接池          | SSH 连接池管理                       | 📋 待优化                    |
+| 连接池          | SSH 连接池管理                       | ✅ 已实现，Jump Host key 已隔离 |
 | 并发支持        | 多连接并发管理                       | ✅ 已实现 (使用 tokio Mutex) |
-| ssh_resize 实现 | PTY 大小调整 (使用 escape sequence)  | ✅ 已实现                    |
+| ssh_resize 实现 | 本地 PTY resize；SSH RFC 4254 `window-change` | ✅ 已实现                    |
 
 ### 3.2 前端优化
 
@@ -475,6 +477,47 @@
 
 ---
 
+### 2026-08-09 Phase 6.10 - 跨平台 SSH / 串口 / 本地终端可靠性 ✅ 代码完成
+
+- [x] SSH 主机密钥按 host/port 严格校验系统 `known_hosts`
+- [x] Jump Host password/key/agent 在 `direct-tcpip` 流内建立目标 SSH 会话，连接池区分并保持跳板 transport
+- [x] Windows OpenSSH Agent named pipe 与 `russh` 原生 Pageant 回退
+- [x] Agent forwarding 专用 channel 双向桥接，移除普通 SSH 数据误写 Agent socket 的路径
+- [x] 串口 blocking I/O、`write_all`、精确字节写入和断开/拔线清理
+- [x] 本地 PTY 从用户主目录启动；PTY 初始化、shell 启动及控制 I/O 使用 blocking pool；EOF 后标记会话关闭
+- [x] 移除冲突的系统级快捷键，释放 `Ctrl+Shift+V`，修复 `Shift+\` 真实事件匹配
+- [x] 结构化 Tauri IPC 错误显示可读消息
+- [ ] Agent forwarding 增加独立配置与 `channel.agent_forward(...)` 显式启用
+- [ ] 实现 Jump Host certificate 认证；当前前后端预期为明确“不支持”错误
+- [ ] Windows OpenSSH Agent / Pageant、Windows/Linux Jump Host、本地 PTY、串口硬件实机回归
+
+自动验证：Rust 43 项测试、check、Clippy、fmt；前端 31 个测试文件、408 项测试、typecheck、production build；`git diff --check`。
+
+---
+
+### 2026-08-09 Phase 6.11 - 发布就绪 + Team Server 安全加固 ✅ 本机自动门禁完成
+
+- [x] 新增统一 `pnpm verify`，覆盖前端、Team Server、Rust、构建预算和源码规模
+- [x] 447 个前端/Team Server 生产 TS/TSX 文件全部满足 `AGENTS.md` 行数限制
+- [x] 冻结锁文件安装可重复，生产依赖审计为 0 个已知漏洞
+- [x] Team Server Token 摘要存储、旧记录迁移、Token 路由授权和重复注册冲突
+- [x] CORS fail-closed、Helmet、限流、Swagger 生产默认关闭、1MB body limit 和 shutdown hooks
+- [x] auth/invite/team/member/share/sync/audit DTO、路径 pipe、同步批次与审计分页上限
+- [x] 修复跨团队成员、邀请、共享、同步、冲突和离线队列授权
+- [x] 健康与就绪探针数据库故障返回 503；Compose healthcheck 使用 readiness
+- [x] Prisma 异常不进入客户端、离线队列或日志；API Key 数据库故障不伪装成 401
+- [x] 分享删除与审计 tombstone 在同一 Prisma 事务内提交
+- [x] SQLite 失败日志不输出查询参数；新建主机 Save 恢复可用
+- [x] Jump Host certificate 前后端 fail-closed，证书直连 IPC 使用 camelCase 并有双端测试
+- [x] Team 敏感共享与离线队列 fail-closed：密文不降级、UPDATE 必须带 `baseVersion`、完成项清空 payload、原子 claim 使用 processing token、陈旧 PROCESSING 任务 15 分钟后恢复、终态失败不自动重试
+- [x] S3 SigV4、脚本 timeout/retry/scheduler、Tauri dialog/fs capability 与 HTTP(S) CSP 回归测试通过
+- [x] 最终验证：前端 408、Team Server 95、Rust 43 项测试全部通过
+- [ ] 在有 Docker 的环境执行镜像构建、Compose、迁移和真实 PostgreSQL readiness
+- [ ] 为公开互联网部署增加注册准入机制（管理员初始化密钥、OIDC 或一次性注册码）
+- [ ] 完成 Phase 6.10 的 Windows/Linux/Pageant/Jump Host/PTY/串口硬件实机矩阵
+
+---
+
 ### 2026-05-02 第一轮 (本地终端修复 + UX/构建优化)
 
 > 修复本地终端关键 bug 后，继续清理 + 增强 UX + 构建分析。
@@ -641,12 +684,12 @@
    - Enter 保存命令到历史
    - getCurrentLine/setCurrentLine 实现
 
-2. **Agent 认证** - 更新 `terminal.rs` 和 `vault.rs`
-   - SSH Agent 转发支持 (读取 SSH_AUTH_SOCK)
+2. **Agent 登录认证** - 更新 SSH session 与 Vault
+   - SSH Agent 登录支持 (读取 SSH_AUTH_SOCK)
    - ClientHandler 实现 server_channel_open_agent_forward
    - 前端 authType: "agent" 选项
 
-3. **Jump Host 主机链** - 新增 `ssh_connect_jump` 命令
+3. **Jump Host 主机链** - 新增 `session_create_ssh_jump` 命令
    - JumpHostConfig 配置结构
    - channel_open_direct_tcpip 实现跳板连接
    - 前端 jumpHostId/jumpHostAuthType 字段
@@ -743,31 +786,24 @@
 ├── 3. ✅ 主题系统
 └── 4. ✅ 端口转发 UI
 
-第三阶段：高级功能 (待开始)
-├── 1. Vault 加密
-├── 2. 主机链
-├── 3. Agent 转发
-└── 4. 多工作区
+第三阶段：高级功能 (主要代码路径已完成)
+├── 1. ✅ Vault 加密
+├── 2. ⚠️ 主机链 password/key/agent 完成，certificate 待实现
+├── 3. ⚠️ Agent 登录完成，forwarding 显式入口待实现
+└── 4. ✅ 多工作区
 ```
 
 ### 待解决的技术问题
 
-1. **Rust 后端编译** - `cargo check` 通过但有大量警告需清理
-   - ClientHandler/SharedState/LocalPtySession 等 struct 未使用
-   - 需清理 dead_code 或添加 #[allow(dead_code)]
-
-2. **russh-sftp 集成**
-   - Cargo.toml 已引入 `russh-sftp = "2.1.1"` 但未使用
-   - 需要在 SSH 连接中创建 SFTP 子系统
-
-3. **russh-keys 集成**
-   - `russh-keys = "0.49.2"` 已引入
-   - 需要实现 `authenticate_publickey` 方法
+1. **Agent forwarding**：增加独立设置与显式 `channel.agent_forward(...)` 请求。
+2. **Jump Host certificate**：实现证书认证；当前预期为明确拒绝。
+3. **外部实机矩阵**：Windows/Linux OpenSSH Agent、Pageant、Jump Host、本地 PTY、快捷键和串口硬件。
+4. **部署验证**：在 Docker/PostgreSQL 环境验证镜像、迁移和 readiness；公网部署补注册准入机制。
 
 ---
 
 _文档创建时间：2026-03-18_
-_最后更新：2026-03-26 - 功能完善批次_
+_最后更新：2026-08-10 - Phase 6.11 发布就绪终审与 Team Server 安全加固_
 
 ---
 
@@ -1059,4 +1095,3 @@ _最后更新：2026-03-26 - 功能完善批次_
 1. **Safari WebKit 键盘事件（Issue #26）** — 已在 `packages/frontend/src/hooks/use-terminal.ts` 通过 `setupWebKitInputCompensation` 修复（2026-05-02），local / SSH / serial 共用；补发走与 `onData` 相同的 `send` → 后端写入，非 `term.write()`。详见 `docs/issue.md` → Issue #26。
 
    **可选回归**: Safari / WKWebView 快速双键、IME、Ctrl+C；实验页 `packages/frontend/src/experiments/xterm-test.tsx` 仍可对照。
-

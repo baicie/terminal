@@ -1,8 +1,7 @@
 import type { PortForwardConfig } from '@/types'
-import { ArrowLeftRight, Plus, RefreshCw, Search } from 'lucide-react'
+import { ArrowLeftRight, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { ResponsiveConfirm } from '@/components/ui/responsive-dialog'
 import { toast } from '@/components/ui/sonner'
 import { PortForwardSkeleton } from '@/components/ui/view-skeletons'
@@ -11,7 +10,6 @@ import {
   ViewContainer,
   ViewContent,
   ViewHeader,
-  ViewToolbar,
 } from '@/components/view-container'
 import {
   createPortForwardRule,
@@ -23,6 +21,7 @@ import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
 import { PortForwardCard } from './components/port-forward-card'
 import { PortForwardFormDialog } from './components/port-forward-form-dialog'
+import { PortForwardToolbar } from './components/port-forward-toolbar'
 import {
   initialFormState,
   type PortForwardEntry,
@@ -212,32 +211,13 @@ const PortForwardView: React.FC = () => {
 
   return (
     <ViewContainer>
-      <ViewToolbar className="gap-2 sm:gap-4">
-        <div className="relative flex-1 max-w-xs sm:max-w-sm">
-          <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input
-            placeholder="Search forwards..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="pl-8 sm:pl-9 h-8 sm:h-9 text-xs sm:text-sm"
-          />
-        </div>
-
-        <div className="flex-1" />
-
-        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => void loadForwards()}>
-          <RefreshCw
-            className={`size-3.5 sm:size-4 mr-1 ${loading ? 'animate-spin' : ''}`}
-          />
-          <span className="hidden sm:inline">Refresh</span>
-        </Button>
-
-        <Button size="sm" className="h-8 text-xs gap-1" onClick={() => setAddDialogOpen(true)}>
-          <Plus className="size-3.5" data-icon="inline-start" />
-          <span className="hidden sm:inline">New Forward</span>
-          <span className="sm:hidden">Add</span>
-        </Button>
-      </ViewToolbar>
+      <PortForwardToolbar
+        searchQuery={searchQuery}
+        loading={loading}
+        onSearchChange={setSearchQuery}
+        onRefresh={() => void loadForwards()}
+        onAdd={() => setAddDialogOpen(true)}
+      />
 
       <ViewContent className="p-4 sm:p-6">
         <ViewHeader

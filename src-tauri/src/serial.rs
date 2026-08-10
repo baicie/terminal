@@ -1,12 +1,46 @@
 use crate::errors::SerialError;
-use crate::state::{SerialSession, SerialPortInfo, ShellOutput, SharedStateType};
+use crate::state::{SerialPortInfo, SerialSession, SharedStateType, ShellOutput};
 use serialport::{DataBits, FlowControl, Parity, StopBits};
-use std::io::Read;
+use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter};
+
+fn write_serial_data(writer: &mut dyn Write, data: &[u8]) -> std::io::Result<()> {
+    writer.write_all(data)
+}
+
+async fn write_serial_session(
+    state: &SharedStateType,
+    session_id: &str,
+    data: Vec<u8>,
+) -> Result<(), SerialError> {
+    let port = {
+        let sessions = state.serial_sessions.lock().await;
+        Arc::clone(
+            &sessions
+                .get(session_id)
+                .ok_or(SerialError::SessionNotFound)?
+                .port,
+        )
+    };
+
+    tokio::task::spawn_blocking(move || {
+        let mut port = port.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        write_serial_data(port.as_mut(), &data)
+            .map_err(|error| SerialError::WriteFailed(format!("Failed to write: {error}")))
+    })
+    .await
+    .map_err(|error| SerialError::WriteFailed(format!("Serial write task failed: {error}")))?
+}
 
 #[tauri::command]
 pub async fn serial_list() -> Result<Vec<SerialPortInfo>, SerialError> {
-    serialport::available_ports()
+    tokio::task::spawn_blocking(serialport::available_ports)
+        .await
+        .map_err(|error| {
+            SerialError::ListFailed(format!("Failed to join serial enumeration task: {error}"))
+        })?
         .map(|ports| {
             ports
                 .into_iter()
@@ -21,9 +55,10 @@ pub async fn serial_list() -> Result<Vec<SerialPortInfo>, SerialError> {
                             } else {
                                 String::new()
                             };
-                            let desc = if let (Some(mfg), Some(prod)) =
-                                (usb_info.manufacturer.as_deref(), usb_info.product.as_deref())
-                            {
+                            let desc = if let (Some(mfg), Some(prod)) = (
+                                usb_info.manufacturer.as_deref(),
+                                usb_info.product.as_deref(),
+                            ) {
                                 format!("USB ({mfg} {prod}, {vid_pid})")
                             } else if !vid_pid.is_empty() {
                                 format!("USB ({vid_pid})")
@@ -72,10 +107,14 @@ pub async fn serial_connect(
     flow_control: String,
 ) -> Result<String, SerialError> {
     if name.is_empty() {
-        return Err(SerialError::ConnectFailed(String::from("Port name cannot be empty")));
+        return Err(SerialError::ConnectFailed(String::from(
+            "Port name cannot be empty",
+        )));
     }
     if baud_rate == 0 {
-        return Err(SerialError::ConnectFailed(String::from("Invalid baud rate")));
+        return Err(SerialError::ConnectFailed(String::from(
+            "Invalid baud rate",
+        )));
     }
 
     let session_id = format!("serial-{}", uuid::Uuid::new_v4());
@@ -108,58 +147,95 @@ pub async fn serial_connect(
         _ => FlowControl::None,
     };
 
-    // Open the serial port
-    let port = serialport::new(&name, baud_rate)
-        .data_bits(data_bits)
-        .stop_bits(stop_bits)
-        .parity(parity)
-        .flow_control(flow_control)
-        .timeout(std::time::Duration::from_millis(100))
-        .open()
-        .map_err(|e| SerialError::ConnectFailed(format!("Failed to open serial port {}: {}", name, e)))?;
-
-    // Clone port for reader before storing in state
-    let port_reader: Box<dyn serialport::SerialPort> = port
-        .try_clone()
-        .map_err(|e| SerialError::CloneFailed(format!("Failed to clone port: {}", e)))?;
+    let port_name = name.clone();
+    let (port, mut port_reader) = tokio::task::spawn_blocking(move || {
+        let port = serialport::new(&port_name, baud_rate)
+            .data_bits(data_bits)
+            .stop_bits(stop_bits)
+            .parity(parity)
+            .flow_control(flow_control)
+            .timeout(std::time::Duration::from_millis(100))
+            .open()
+            .map_err(|error| {
+                SerialError::ConnectFailed(format!(
+                    "Failed to open serial port {}: {}",
+                    port_name, error
+                ))
+            })?;
+        let reader = port
+            .try_clone()
+            .map_err(|error| SerialError::CloneFailed(format!("Failed to clone port: {error}")))?;
+        Ok::<_, SerialError>((port, reader))
+    })
+    .await
+    .map_err(|error| {
+        SerialError::ConnectFailed(format!("Failed to join serial open task: {error}"))
+    })??;
 
     // Store the session
-    let session = SerialSession { port };
+    let stop = Arc::new(AtomicBool::new(false));
+    let session = SerialSession {
+        port: Arc::new(StdMutex::new(port)),
+        stop: Arc::clone(&stop),
+    };
     {
         let mut serial_sessions = state.serial_sessions.lock().await;
         serial_sessions.insert(session_id.clone(), session);
     }
 
-    // Spawn a task to read from serial port and emit events
+    // A serial port is blocking on every supported platform. Keep the complete
+    // read loop on the blocking pool and only use the async task for cleanup.
     let session_id_clone = session_id.clone();
-
-    let mut port_reader = port_reader;
+    let shared_state = Arc::clone(state.inner());
     tokio::spawn(async move {
-        let mut buf = [0u8; 4096];
-        loop {
-            match port_reader.read(&mut buf) {
-                Ok(0) => {
-                    let _ = app.emit("serial-close", &session_id_clone);
-                    break;
-                }
-                Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let output = ShellOutput {
-                        session_id: session_id_clone.clone(),
-                        data,
-                        is_stderr: false,
-                    };
-                    let _ = app.emit("serial-data", output);
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
-                    continue;
-                }
-                Err(_) => {
-                    let _ = app.emit("serial-close", &session_id_clone);
-                    break;
+        let read_session_id = session_id_clone.clone();
+        let app_for_reader = app.clone();
+        let stop_for_reader = Arc::clone(&stop);
+        let read_result = tokio::task::spawn_blocking(move || {
+            let mut buf = [0u8; 4096];
+            while !stop_for_reader.load(Ordering::Acquire) {
+                match port_reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let output = ShellOutput {
+                            session_id: read_session_id.clone(),
+                            data: String::from_utf8_lossy(&buf[..n]).to_string(),
+                            is_stderr: false,
+                        };
+                        let _ = app_for_reader.emit("serial-data", output);
+                    }
+                    Err(ref error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::TimedOut | std::io::ErrorKind::Interrupted
+                        ) => {}
+                    Err(error) => {
+                        tracing::warn!(
+                            session_id = %read_session_id,
+                            %error,
+                            "serial read loop stopped"
+                        );
+                        break;
+                    }
                 }
             }
+        })
+        .await;
+
+        if let Err(error) = read_result {
+            tracing::warn!(
+                session_id = %session_id_clone,
+                %error,
+                "serial reader task failed"
+            );
         }
+
+        shared_state
+            .serial_sessions
+            .lock()
+            .await
+            .remove(&session_id_clone);
+        let _ = app.emit("serial-close", &session_id_clone);
     });
 
     Ok(session_id)
@@ -176,25 +252,45 @@ pub async fn serial_write(
         return Err(SerialError::SessionNotFound);
     }
 
-    let mut serial_sessions = state.serial_sessions.lock().await;
-    let session = serial_sessions
-        .get_mut(&session_id)
-        .ok_or(SerialError::SessionNotFound)?;
-
-    session
-        .port
-        .write(data.as_bytes())
-        .map_err(|e| SerialError::WriteFailed(format!("Failed to write to serial port: {}", e)))?;
-
-    session
-        .port
-        .write(b"\r")
-        .map_err(|e| SerialError::WriteFailed(format!("Failed to write CR: {}", e)))?;
-
-    Ok(())
+    write_serial_session(state.inner(), &session_id, data.into_bytes()).await
 }
 
-/// Write raw data to serial port (without adding CR)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct OneByteWriter {
+        bytes: Vec<u8>,
+    }
+
+    impl Write for OneByteWriter {
+        fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+            if let Some(byte) = data.first() {
+                self.bytes.push(*byte);
+                Ok(1)
+            } else {
+                Ok(0)
+            }
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn serial_write_preserves_exact_input_even_when_writer_short_writes() {
+        let mut writer = OneByteWriter::default();
+
+        write_serial_data(&mut writer, b"hello").unwrap();
+
+        assert_eq!(writer.bytes, b"hello");
+    }
+}
+
+/// Write raw data to serial port. Kept for IPC compatibility; both write
+/// commands preserve the exact byte sequence supplied by the terminal.
 #[tauri::command]
 pub async fn serial_write_raw(
     state: tauri::State<'_, SharedStateType>,
@@ -205,17 +301,7 @@ pub async fn serial_write_raw(
         return Err(SerialError::SessionNotFound);
     }
 
-    let mut serial_sessions = state.serial_sessions.lock().await;
-    let session = serial_sessions
-        .get_mut(&session_id)
-        .ok_or(SerialError::SessionNotFound)?;
-
-    session
-        .port
-        .write(data.as_bytes())
-        .map_err(|e| SerialError::WriteFailed(format!("Failed to write to serial port: {}", e)))?;
-
-    Ok(())
+    write_serial_session(state.inner(), &session_id, data.into_bytes()).await
 }
 
 /// Check if serial port is still connected
@@ -242,9 +328,12 @@ pub async fn serial_disconnect(
         return Err(SerialError::SessionNotFound);
     }
 
-    let mut serial_sessions = state.serial_sessions.lock().await;
-    serial_sessions
+    let session = state
+        .serial_sessions
+        .lock()
+        .await
         .remove(&session_id)
         .ok_or(SerialError::SessionNotFound)?;
+    session.stop.store(true, Ordering::Release);
     Ok(())
 }

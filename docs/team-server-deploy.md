@@ -52,7 +52,7 @@
 | 邀请 | `/api/v1/teams/:id/invites/*` | 邀请链接/码 |
 | 审计 | `/api/v1/teams/:id/audit/*` | 操作日志 |
 | 同步 | `/api/v1/sync/*` | 增量数据同步 |
-| 健康检查 | `/health`, `/health/live`, `/health/ready` | K8s 就绪/存活探针 |
+| 健康检查 | `/api/v1/health`, `/api/v1/health/live`, `/api/v1/health/ready` | K8s 就绪/存活探针 |
 
 ---
 
@@ -73,21 +73,21 @@ cd terminal/packages/team-server
 
 # 2. 配置环境变量
 cp .env.example .env
-# 编辑 .env，修改 DATABASE_URL 密码
+# 编辑 .env，至少修改 POSTGRES_PASSWORD
 vim .env
 
 # 3. 启动服务
 docker compose up -d
 
-# 4. 检查健康状态
-curl http://localhost:3000/health
-# 期望输出：{"status":"ok","db":"connected"}
+# 4. 检查数据库就绪状态
+curl http://localhost:3000/api/v1/health/ready
+# 期望输出：{"status":"ready"}
 
 # 5. 查看日志
 docker compose logs -f team-server
 ```
 
-**初始账号**：首次访问 `/api/v1/auth/register` 注册第一个账号。
+**设备注册**：`POST /api/v1/auth/register` 是受信任设备引导接口，每个未注册的 `userId` 都可领取一次初始 Token，并非仅允许“第一个账号”。不要把该端点直接暴露到不受信任的公网；至少在反向代理层限制来源网络，后续可接入管理员初始化密钥、OIDC 或一次性注册码。
 
 ---
 
@@ -96,8 +96,11 @@ docker compose logs -f team-server
 ### 3.1 环境变量（`.env`）
 
 ```bash
-# 数据库连接（必须修改密码）
-DATABASE_URL="postgresql://postgres:<YOUR_PASSWORD>@localhost:5432/team_db"
+# Docker Compose 数据库（必须修改密码）
+POSTGRES_USER=terminal
+POSTGRES_PASSWORD=<YOUR_PASSWORD>
+POSTGRES_DB=terminal
+DATABASE_URL="postgresql://terminal:<YOUR_PASSWORD>@db:5432/terminal"
 
 # 服务端口（不建议修改）
 PORT=3000
@@ -105,6 +108,8 @@ PORT=3000
 # 运行环境
 NODE_ENV=production
 ```
+
+容器内必须使用 Compose 服务名 `db`。仅在宿主机直接运行 Team Server 时，才将 `DATABASE_URL` 中的主机名改为 `localhost` 或 `127.0.0.1`。
 
 ### 3.2 数据库初始化
 
@@ -149,7 +154,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     # 生产环境建议定期备份，添加定时任务：
-    # 0 3 * * * docker compose exec db pg_dump -U postgres team_db > /backup/team_db_$(date +%Y%m%d).sql
+    # 0 3 * * * docker compose exec db pg_dump -U terminal terminal > /backup/terminal_$(date +%Y%m%d).sql
 
 volumes:
   pgdata:
@@ -201,8 +206,8 @@ server {
         proxy_read_timeout 60s;
 
         # K8s 探针（健康检查不过反向代理）
-        location /health {
-            proxy_pass http://127.0.0.1:3000/health;
+        location /api/v1/health {
+            proxy_pass http://127.0.0.1:3000/api/v1/health;
             limit_req off;
         }
     }
@@ -241,7 +246,7 @@ caddy run --config Caddyfile
 
 ```bash
 # 方式 A：pg_dump（推荐）
-docker compose exec -T db pg_dump -U postgres team_db > team_db_backup_$(date +%Y%m%d_%H%M%S).sql
+docker compose exec -T db pg_dump -U terminal terminal > terminal_backup_$(date +%Y%m%d_%H%M%S).sql
 
 # 方式 B：完整 Volume 快照
 docker compose stop db
@@ -256,7 +261,7 @@ docker compose start db
 docker compose stop team-server
 
 # 恢复数据库
-cat team_db_backup.sql | docker compose exec -T db psql -U postgres team_db
+cat terminal_backup.sql | docker compose exec -T db psql -U terminal terminal
 
 # 启动服务
 docker compose start team-server
@@ -289,6 +294,8 @@ docker compose up -d team-server
 | **修改数据库密码** | 在 `.env` 中设置强密码（≥16位，随机生成） |
 | **启用 TLS** | 通过反向代理配置 HTTPS（Let's Encrypt 免费证书） |
 | **限制数据库访问** | 仅允许 `127.0.0.1` 或 Docker 网络访问，勿暴露 Port 5432 |
+| **限制设备注册** | 通过 VPN、内网或反向代理访问控制保护 `/api/v1/auth/register` |
+| **配置精确 CORS** | `CORS_ORIGINS` 仅填写实际客户端 origin；生产环境缺失或使用 `*` 会拒绝启动 |
 | **定期备份** | 设置 cron 任务或使用 pgBackRest |
 | **监控日志** | 配置日志收集（ Loki / ELK / CloudWatch） |
 
@@ -296,11 +303,11 @@ docker compose up -d team-server
 
 | 项目 | 说明 |
 |------|------|
-| **API 限流** | Nginx `limit_req` 或在 NestJS 中配置 `@nestjs/throttler` |
+| **额外 API 限流** | 服务端已内置全局及注册/邀请限流；可再用 Nginx `limit_req` 做边缘保护 |
 | **WAF** | 如 Cloudflare ModSecurity、Nginx + ModSecurity |
 | **入侵检测** | 配置 `fail2ban` 防止暴力破解注册接口 |
 | **网络隔离** | 使用 Docker 网络隔离，将数据库置于内部网络 |
-| **环境隔离** | 生产环境使用 `.env.production`，勿与开发环境混用 |
+| **环境隔离** | 生产凭据使用部署平台 Secret 或未提交的 `.env`，勿写入镜像和版本库 |
 
 ### 6.3 API Token 安全
 
@@ -327,8 +334,8 @@ docker compose ps db
 ### 健康检查失败
 
 ```bash
-curl http://localhost:3000/health/live   # 存活探针
-curl http://localhost:3000/health/ready  # 就绪探针（含 DB 检查）
+curl http://localhost:3000/api/v1/health/live   # 存活探针
+curl http://localhost:3000/api/v1/health/ready  # 就绪探针（含 DB 检查）
 ```
 
 ### 数据库连接失败
@@ -366,7 +373,7 @@ docker compose exec team-server npx prisma migrate resolve --rolled-back <migrat
 ```bash
 curl -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"your-password"}'
+  -d '{"userId":"device-uuid","name":"My Desktop"}'
 ```
 
 ### 创建 API Token
@@ -389,4 +396,4 @@ curl -X POST http://localhost:3000/api/v1/teams \
 
 ---
 
-_文档更新时间：2026-05-03_
+_文档更新时间：2026-08-09_

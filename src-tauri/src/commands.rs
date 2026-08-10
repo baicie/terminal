@@ -4,7 +4,9 @@
 
 use crate::session::local::LocalSession;
 use crate::session::ssh::SshSession;
-use crate::session::{get_session_manager, ExecResult, KeyGenResult, SessionError, SessionInfo, SessionState};
+use crate::session::{
+    get_session_manager, ExecResult, KeyGenResult, SessionError, SessionInfo, SessionState,
+};
 use tauri::AppHandle;
 
 // ============================================================================
@@ -29,10 +31,7 @@ pub async fn session_create_local(
 
 /// 写入本地会话
 #[tauri::command]
-pub async fn session_write(
-    session_id: String,
-    data: String,
-) -> Result<(), SessionError> {
+pub async fn session_write(session_id: String, data: String) -> Result<(), SessionError> {
     let manager = get_session_manager();
     if let Some(session) = manager.get_session(&session_id).await {
         session.write(&data).await?;
@@ -44,11 +43,7 @@ pub async fn session_write(
 
 /// 调整会话大小
 #[tauri::command]
-pub async fn session_resize(
-    session_id: String,
-    cols: u16,
-    rows: u16,
-) -> Result<(), SessionError> {
+pub async fn session_resize(session_id: String, cols: u16, rows: u16) -> Result<(), SessionError> {
     let manager = get_session_manager();
     if let Some(session) = manager.get_session(&session_id).await {
         session.resize(cols, rows).await?;
@@ -60,9 +55,7 @@ pub async fn session_resize(
 
 /// 关闭会话
 #[tauri::command]
-pub async fn session_close(
-    session_id: String,
-) -> Result<(), SessionError> {
+pub async fn session_close(session_id: String) -> Result<(), SessionError> {
     let manager = get_session_manager();
     manager.remove_session(&session_id).await
 }
@@ -92,22 +85,28 @@ pub async fn session_create_ssh_password(
 ) -> Result<String, SessionError> {
     // 验证输入
     if host.is_empty() {
-        return Err(SessionError::InvalidInput("Host cannot be empty".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Host cannot be empty".to_string(),
+        ));
     }
     if !(1..=65535).contains(&port) {
-        return Err(SessionError::InvalidInput("Port must be between 1 and 65535".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Port must be between 1 and 65535".to_string(),
+        ));
     }
     if username.is_empty() {
-        return Err(SessionError::InvalidInput("Username cannot be empty".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Username cannot be empty".to_string(),
+        ));
     }
     if password.is_empty() {
-        return Err(SessionError::InvalidInput("Password cannot be empty".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Password cannot be empty".to_string(),
+        ));
     }
 
-    let session = SshSession::new_with_password(
-        app, &host, port, &username, &password, cols, rows,
-    )
-    .await?;
+    let session =
+        SshSession::new_with_password(app, &host, port, &username, &password, cols, rows).await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
@@ -131,20 +130,35 @@ pub async fn session_create_ssh_key(
 ) -> Result<String, SessionError> {
     // 验证输入
     if host.is_empty() {
-        return Err(SessionError::InvalidInput("Host cannot be empty".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Host cannot be empty".to_string(),
+        ));
     }
     if !(1..=65535).contains(&port) {
-        return Err(SessionError::InvalidInput("Port must be between 1 and 65535".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Port must be between 1 and 65535".to_string(),
+        ));
     }
     if username.is_empty() {
-        return Err(SessionError::InvalidInput("Username cannot be empty".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Username cannot be empty".to_string(),
+        ));
     }
     if private_key.is_empty() {
-        return Err(SessionError::InvalidInput("Private key cannot be empty".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Private key cannot be empty".to_string(),
+        ));
     }
 
     let session = SshSession::new_with_key(
-        app, &host, port, &username, &private_key, password.as_deref(), cols, rows,
+        app,
+        &host,
+        port,
+        &username,
+        &private_key,
+        password.as_deref(),
+        cols,
+        rows,
     )
     .await?;
     let session_id = session.session_id().to_string();
@@ -167,13 +181,19 @@ pub async fn session_create_ssh_agent(
     rows: u16,
 ) -> Result<String, SessionError> {
     if host.is_empty() {
-        return Err(SessionError::InvalidInput("Host cannot be empty".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Host cannot be empty".to_string(),
+        ));
     }
     if !(1..=65535).contains(&port) {
-        return Err(SessionError::InvalidInput("Port must be between 1 and 65535".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Port must be between 1 and 65535".to_string(),
+        ));
     }
     if username.is_empty() {
-        return Err(SessionError::InvalidInput("Username cannot be empty".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Username cannot be empty".to_string(),
+        ));
     }
 
     let session = SshSession::new_with_agent(app, &host, port, &username, cols, rows).await?;
@@ -187,6 +207,10 @@ pub async fn session_create_ssh_agent(
 
 /// 创建 SSH 会话（证书认证）
 #[tauri::command]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Tauri exposes each field as a stable top-level IPC argument"
+)]
 pub async fn session_create_ssh_cert(
     app: AppHandle,
     host: String,
@@ -199,23 +223,41 @@ pub async fn session_create_ssh_cert(
     rows: u16,
 ) -> Result<String, SessionError> {
     if host.is_empty() {
-        return Err(SessionError::InvalidInput("Host cannot be empty".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Host cannot be empty".to_string(),
+        ));
     }
     if !(1..=65535).contains(&port) {
-        return Err(SessionError::InvalidInput("Port must be between 1 and 65535".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Port must be between 1 and 65535".to_string(),
+        ));
     }
     if username.is_empty() {
-        return Err(SessionError::InvalidInput("Username cannot be empty".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Username cannot be empty".to_string(),
+        ));
     }
     if certificate.is_empty() {
-        return Err(SessionError::InvalidInput("Certificate cannot be empty".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Certificate cannot be empty".to_string(),
+        ));
     }
     if private_key.is_empty() {
-        return Err(SessionError::InvalidInput("Private key cannot be empty".to_string()));
+        return Err(SessionError::InvalidInput(
+            "Private key cannot be empty".to_string(),
+        ));
     }
 
     let session = SshSession::new_with_cert(
-        app, &host, port, &username, &certificate, &private_key, password.as_deref(), cols, rows,
+        app,
+        &host,
+        port,
+        &username,
+        &certificate,
+        &private_key,
+        password.as_deref(),
+        cols,
+        rows,
     )
     .await?;
     let session_id = session.session_id().to_string();
@@ -284,12 +326,8 @@ pub async fn session_exec(
     let timeout = Duration::from_millis(timeout_ms.unwrap_or(5000));
 
     match session {
-        crate::session::SessionState::Local(_) => {
-            exec_local(&command, timeout).await
-        }
-        crate::session::SessionState::Ssh(ssh) => {
-            ssh.exec(&command, timeout).await
-        }
+        crate::session::SessionState::Local(_) => exec_local(&command, timeout).await,
+        crate::session::SessionState::Ssh(ssh) => ssh.exec(&command, timeout).await,
     }
 }
 
@@ -304,8 +342,7 @@ async fn exec_local(command: &str, timeout: Duration) -> Result<ExecResult, Sess
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
     };
 
-    let mut cmd = tokio::process::Command::new(&shell);
-    cmd.args(["-c", command]);
+    let mut cmd = local_exec_command(&shell, command, cfg!(windows));
     #[cfg(windows)]
     {
         use std::path::PathBuf;
@@ -324,7 +361,76 @@ async fn exec_local(command: &str, timeout: Duration) -> Result<ExecResult, Sess
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let exit_code = output.status.code().unwrap_or(-1);
 
-    Ok(ExecResult { stdout, stderr, exit_code })
+    Ok(ExecResult {
+        stdout,
+        stderr,
+        exit_code,
+    })
+}
+
+fn local_exec_command(shell: &str, command: &str, windows: bool) -> tokio::process::Command {
+    let mut process = tokio::process::Command::new(shell);
+    process.args(local_exec_args(shell, command, windows));
+    process.kill_on_drop(true);
+    process
+}
+
+fn local_exec_args(shell: &str, command: &str, windows: bool) -> [String; 2] {
+    let executable = shell
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(shell)
+        .to_ascii_lowercase();
+    let command_switch = if windows && matches!(executable.as_str(), "cmd" | "cmd.exe") {
+        "/C"
+    } else if windows
+        && matches!(
+            executable.as_str(),
+            "powershell" | "powershell.exe" | "pwsh" | "pwsh.exe"
+        )
+    {
+        "-Command"
+    } else {
+        "-c"
+    };
+
+    [command_switch.to_string(), command.to_string()]
+}
+
+#[cfg(test)]
+mod local_exec_tests {
+    use super::{local_exec_args, local_exec_command};
+
+    #[test]
+    fn windows_cmd_uses_slash_c() {
+        assert_eq!(
+            local_exec_args(r"C:\\Windows\\System32\\cmd.exe", "echo ok", true),
+            ["/C", "echo ok"]
+        );
+    }
+
+    #[test]
+    fn windows_powershell_uses_command_switch() {
+        assert_eq!(
+            local_exec_args("powershell.exe", "Write-Output ok", true),
+            ["-Command", "Write-Output ok"]
+        );
+    }
+
+    #[test]
+    fn unix_shell_uses_dash_c() {
+        assert_eq!(
+            local_exec_args("/bin/bash", "printf ok", false),
+            ["-c", "printf ok"]
+        );
+    }
+
+    #[test]
+    fn local_exec_kills_child_when_timeout_drops_output_future() {
+        let command = local_exec_command("/bin/bash", "sleep 60", false);
+
+        assert!(command.get_kill_on_drop());
+    }
 }
 
 // ============================================================================
@@ -363,36 +469,56 @@ pub async fn key_generate(
     comment: String,
     passphrase: Option<String>,
 ) -> Result<KeyGenResult, SessionError> {
-    let key_type = SshKeyType::from_str(&key_type)
-        .ok_or_else(|| SessionError::KeyGenerationFailed(format!("unsupported key type: {}", key_type)))?;
+    let key_type = SshKeyType::from_str(&key_type).ok_or_else(|| {
+        SessionError::KeyGenerationFailed(format!("unsupported key type: {}", key_type))
+    })?;
 
     use ssh_key::rand_core::OsRng;
 
     let private_key = match key_type {
-        SshKeyType::Ed25519 => {
-            ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519)
-                .map_err(|e| SessionError::KeyGenerationFailed(format!("ed25519 generation failed: {}", e)))?
-        }
+        SshKeyType::Ed25519 => ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519)
+            .map_err(|e| {
+                SessionError::KeyGenerationFailed(format!("ed25519 generation failed: {}", e))
+            })?,
         SshKeyType::Rsa2048 => {
             ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Rsa { hash: None })
-                .map_err(|e| SessionError::KeyGenerationFailed(format!("rsa2048 generation failed: {}", e)))?
+                .map_err(|e| {
+                    SessionError::KeyGenerationFailed(format!("rsa2048 generation failed: {}", e))
+                })?
         }
         SshKeyType::Rsa4096 => {
             ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Rsa { hash: None })
-                .map_err(|e| SessionError::KeyGenerationFailed(format!("rsa4096 generation failed: {}", e)))?
+                .map_err(|e| {
+                    SessionError::KeyGenerationFailed(format!("rsa4096 generation failed: {}", e))
+                })?
         }
-        SshKeyType::EcdsaNistp256 => {
-            ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ecdsa { curve: ssh_key::EcdsaCurve::NistP256 })
-                .map_err(|e| SessionError::KeyGenerationFailed(format!("ecdsa-nistp256 generation failed: {}", e)))?
-        }
-        SshKeyType::EcdsaNistp384 => {
-            ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ecdsa { curve: ssh_key::EcdsaCurve::NistP384 })
-                .map_err(|e| SessionError::KeyGenerationFailed(format!("ecdsa-nistp384 generation failed: {}", e)))?
-        }
-        SshKeyType::EcdsaNistp521 => {
-            ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ecdsa { curve: ssh_key::EcdsaCurve::NistP521 })
-                .map_err(|e| SessionError::KeyGenerationFailed(format!("ecdsa-nistp521 generation failed: {}", e)))?
-        }
+        SshKeyType::EcdsaNistp256 => ssh_key::PrivateKey::random(
+            &mut OsRng,
+            ssh_key::Algorithm::Ecdsa {
+                curve: ssh_key::EcdsaCurve::NistP256,
+            },
+        )
+        .map_err(|e| {
+            SessionError::KeyGenerationFailed(format!("ecdsa-nistp256 generation failed: {}", e))
+        })?,
+        SshKeyType::EcdsaNistp384 => ssh_key::PrivateKey::random(
+            &mut OsRng,
+            ssh_key::Algorithm::Ecdsa {
+                curve: ssh_key::EcdsaCurve::NistP384,
+            },
+        )
+        .map_err(|e| {
+            SessionError::KeyGenerationFailed(format!("ecdsa-nistp384 generation failed: {}", e))
+        })?,
+        SshKeyType::EcdsaNistp521 => ssh_key::PrivateKey::random(
+            &mut OsRng,
+            ssh_key::Algorithm::Ecdsa {
+                curve: ssh_key::EcdsaCurve::NistP521,
+            },
+        )
+        .map_err(|e| {
+            SessionError::KeyGenerationFailed(format!("ecdsa-nistp521 generation failed: {}", e))
+        })?,
     };
 
     // Set comment if provided
@@ -407,8 +533,11 @@ pub async fn key_generate(
     // Encrypt with passphrase if provided
     let private_key = if let Some(ref pw) = passphrase {
         if !pw.is_empty() {
-            private_key.encrypt(&mut OsRng, pw.as_bytes())
-                .map_err(|e| SessionError::KeyGenerationFailed(format!("encryption failed: {}", e)))?
+            private_key
+                .encrypt(&mut OsRng, pw.as_bytes())
+                .map_err(|e| {
+                    SessionError::KeyGenerationFailed(format!("encryption failed: {}", e))
+                })?
         } else {
             private_key
         }
@@ -427,14 +556,18 @@ pub async fn key_generate(
         SshKeyType::EcdsaNistp521 => "ecdsa-nistp521",
     };
 
-    let private_pem = private_key.to_openssh(ssh_key::LineEnding::LF)
-        .map_err(|e| SessionError::KeyGenerationFailed(format!("serialize private key failed: {}", e)))?;
-    let public_openssh = public_key.to_openssh()
-        .map_err(|e| SessionError::KeyGenerationFailed(format!("serialize public key failed: {}", e)))?;
+    let private_pem = private_key
+        .to_openssh(ssh_key::LineEnding::LF)
+        .map_err(|e| {
+            SessionError::KeyGenerationFailed(format!("serialize private key failed: {}", e))
+        })?;
+    let public_openssh = public_key.to_openssh().map_err(|e| {
+        SessionError::KeyGenerationFailed(format!("serialize public key failed: {}", e))
+    })?;
 
     Ok(KeyGenResult {
         private_key: (*private_pem).to_string(),
-        public_key: public_openssh.into(),
+        public_key: public_openssh,
         key_type: key_type_name.to_string(),
         fingerprint,
     })

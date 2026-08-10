@@ -64,13 +64,9 @@ pub async fn port_forward_start(
     // to store in PortForwardTask BEFORE spawning the task (so the task can
     // be properly cleaned up on stop).
     if ft_clone == "remote" {
-        let (listener, rx) = setup_remote_forward(
-            handle.clone(),
-            local_port,
-            remote_host_clone,
-            remote_port,
-        )
-        .await?;
+        let (listener, rx) =
+            setup_remote_forward(handle.clone(), local_port, remote_host_clone, remote_port)
+                .await?;
 
         let task: JoinHandle<Result<(), PortForwardError>> = tokio::spawn(async move {
             handle_forwarded_connections(handle, rx, remote_port).await;
@@ -87,7 +83,14 @@ pub async fn port_forward_start(
             status: "active".to_string(),
         };
 
-        port_forwards.insert(forward_id, PortForwardTask { task, listener: Some(listener), info });
+        port_forwards.insert(
+            forward_id,
+            PortForwardTask {
+                task,
+                listener: Some(listener),
+                info,
+            },
+        );
         tracing::info!(forward_type = %ft_for_tracing, "port forward started");
         return Ok(());
     }
@@ -95,11 +98,16 @@ pub async fn port_forward_start(
     let task: JoinHandle<Result<(), PortForwardError>> = tokio::spawn(async move {
         match ft_clone.as_str() {
             "local" => {
-                start_local_forward(handle, local_host_clone, local_port, remote_host_clone, remote_port).await
+                start_local_forward(
+                    handle,
+                    local_host_clone,
+                    local_port,
+                    remote_host_clone,
+                    remote_port,
+                )
+                .await
             }
-            "dynamic" => {
-                start_dynamic_forward(handle, config.local_host, local_port).await
-            }
+            "dynamic" => start_dynamic_forward(handle, config.local_host, local_port).await,
             _ => Err(PortForwardError::BindFailed(format!(
                 "Unknown forward type: {}",
                 ft_clone
@@ -145,14 +153,12 @@ async fn start_local_forward(
         .parse()
         .map_err(|e| PortForwardError::BindFailed(format!("invalid address: {}", e)))?;
 
-    let std_listener = std::net::TcpListener::bind(addr).map_err(|e| {
-        PortForwardError::BindFailed(format!("failed to bind {}: {}", addr, e))
-    })?;
+    let std_listener = std::net::TcpListener::bind(addr)
+        .map_err(|e| PortForwardError::BindFailed(format!("failed to bind {}: {}", addr, e)))?;
     std_listener.set_nonblocking(true).ok();
 
-    let listener = TcpListener::from_std(std_listener).map_err(|e| {
-        PortForwardError::BindFailed(format!("failed to bind: {}", e))
-    })?;
+    let listener = TcpListener::from_std(std_listener)
+        .map_err(|e| PortForwardError::BindFailed(format!("failed to bind: {}", e)))?;
 
     tracing::info!(
         forward_type = "local",
@@ -168,12 +174,15 @@ async fn start_local_forward(
                 let rh = remote_host.clone();
                 tokio::spawn(async move {
                     if let Err(e) = handle_direct_forward(
-                        &h, &rh, remote_port,
+                        &h,
+                        &rh,
+                        remote_port,
                         peer_addr.ip().to_string(),
                         peer_addr.port() as u32,
                         socket,
                     )
-                    .await {
+                    .await
+                    {
                         tracing::warn!(error = %e, "local forward error");
                     }
                 });
@@ -266,8 +275,7 @@ async fn setup_remote_forward(
 // - Registered in `setup_remote_forward` after `tcpip_forward` succeeds
 // - Unregistered in `port_forward_stop` by calling `unregister_forward_sender`
 // - Registry entry is removed when forward is stopped (prevents memory leaks)
-type RegistryMap =
-    std::collections::HashMap<usize, Box<(ForwardedChannelSender, SshHandle)>>;
+type RegistryMap = std::collections::HashMap<usize, Box<(ForwardedChannelSender, SshHandle)>>;
 static FORWARD_REGISTRY: std::sync::LazyLock<std::sync::RwLock<RegistryMap>> =
     std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashMap::new()));
 
@@ -290,7 +298,7 @@ async fn register_forward_sender(handle: &SshHandle, sender: ForwardedChannelSen
 }
 
 /// Unregister a remote forward entry by its stored registry key (usize).
-pub async fn unregister_forward_sender_by_key(key: usize) {
+pub fn unregister_forward_sender_by_key(key: usize) {
     if let Ok(mut reg) = FORWARD_REGISTRY.write() {
         if reg.remove(&key).is_some() {
             tracing::debug!("unregistered forward sender by key {:x}", key);
@@ -352,14 +360,12 @@ async fn start_dynamic_forward(
         .parse()
         .map_err(|e| PortForwardError::BindFailed(format!("invalid address: {}", e)))?;
 
-    let std_listener = std::net::TcpListener::bind(addr).map_err(|e| {
-        PortForwardError::BindFailed(format!("failed to bind {}: {}", addr, e))
-    })?;
+    let std_listener = std::net::TcpListener::bind(addr)
+        .map_err(|e| PortForwardError::BindFailed(format!("failed to bind {}: {}", addr, e)))?;
     std_listener.set_nonblocking(true).ok();
 
-    let listener = TcpListener::from_std(std_listener).map_err(|e| {
-        PortForwardError::BindFailed(format!("failed to bind: {}", e))
-    })?;
+    let listener = TcpListener::from_std(std_listener)
+        .map_err(|e| PortForwardError::BindFailed(format!("failed to bind: {}", e)))?;
 
     tracing::info!(
         forward_type = "dynamic",
@@ -476,9 +482,7 @@ async fn handle_direct_forward(
     let channel = handle
         .channel_open_direct_tcpip(target_host, target_port as u32, &origin_host, origin_port)
         .await
-        .map_err(|e| {
-            PortForwardError::ChannelFailed(format!("SSH channel open failed: {}", e))
-        })?;
+        .map_err(|e| PortForwardError::ChannelFailed(format!("SSH channel open failed: {}", e)))?;
 
     let cid = channel.id();
     forward_socket(handle.clone(), cid, channel, socket).await
@@ -509,7 +513,9 @@ async fn handle_socks5_client(
         .map_err(|e| PortForwardError::ConnectionFailed(format!("read error: {}", e)))?;
 
     if n < 2 {
-        return Err(PortForwardError::SocksUnsupported("greeting too short".to_string()));
+        return Err(PortForwardError::SocksUnsupported(
+            "greeting too short".to_string(),
+        ));
     }
     if buf[0] != 0x05 {
         return Err(PortForwardError::SocksUnsupported(format!(
@@ -598,12 +604,11 @@ async fn handle_socks5_client(
                     "domain name CONNECT request truncated".to_string(),
                 ));
             }
-            let domain =
-                std::str::from_utf8(&buf[base..base.saturating_add(domain_len)])
-                    .map_err(|_| {
-                        PortForwardError::SocksUnsupported("invalid domain name encoding".to_string())
-                    })?
-                    .to_string();
+            let domain = std::str::from_utf8(&buf[base..base.saturating_add(domain_len)])
+                .map_err(|_| {
+                    PortForwardError::SocksUnsupported("invalid domain name encoding".to_string())
+                })?
+                .to_string();
             let port_idx = base.saturating_add(domain_len);
             let port = u16::from_be_bytes([buf[port_idx], buf[port_idx.saturating_add(1)]]);
             (domain, port)
@@ -717,7 +722,7 @@ pub async fn port_forward_stop(
             // Drop sender to close the mpsc channel and wake rx.recv()
             drop(listener.sender);
             // Remove registry entry by key so no stale entries remain
-            let _ = unregister_forward_sender_by_key(listener.registry_key);
+            unregister_forward_sender_by_key(listener.registry_key);
             tracing::debug!(
                 forward_id = %forward_id,
                 registry_key = %listener.registry_key,
@@ -745,4 +750,14 @@ pub async fn port_forward_list(
 ) -> Result<Vec<PortForwardInfo>, PortForwardError> {
     let port_forwards = state.port_forwards.lock().await;
     Ok(port_forwards.values().map(|f| f.info.clone()).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unregister_forward_sender_by_key;
+
+    #[test]
+    fn unregister_forward_sender_by_key_is_synchronous() {
+        assert_eq!(unregister_forward_sender_by_key(usize::MAX), ());
+    }
 }

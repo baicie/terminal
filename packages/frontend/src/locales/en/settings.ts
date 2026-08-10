@@ -29,10 +29,10 @@ export default {
     'Select a previously exported JSON file to import data.',
   'settings.selectImportFile': 'Select Import File',
   'settings.importPreview': 'Import Preview:',
-  'settings.hosts': '{count} host(s)',
-  'settings.groups': '{count} group(s)',
-  'settings.snippets': '{count} snippet(s)',
-  'settings.snippetPackages': '{count} snippet package(s)',
+  'settings.hosts': '{{count}} host(s)',
+  'settings.groups': '{{count}} group(s)',
+  'settings.snippets': '{{count}} snippet(s)',
+  'settings.snippetPackages': '{{count}} snippet package(s)',
   'settings.importMode': 'Import Mode',
   'settings.merge': 'Merge',
   'settings.mergeDesc': 'New items will be added, existing items will be kept.',
@@ -100,9 +100,13 @@ export default {
   'settings.never': 'Never',
   'settings.restoreMode': 'Restore mode',
   'settings.restoreFromServer': 'Restore from Server',
+  'settings.previewChanges': 'Preview changes',
+  'settings.refreshPreview': 'Refresh preview',
+  'settings.conflictDetails': 'Conflict details',
   'settings.restoring': 'Restoring...',
   'settings.noBackupFound': 'No backup found',
-  'settings.noBackupFoundDesc': 'There is no backup data on the server to restore from',
+  'settings.noBackupFoundDesc':
+    'There is no backup data on the server to restore from',
   'settings.syncSuccess': 'Sync successful',
   'settings.syncFailed': 'Sync failed',
   'settings.restoreSuccess': 'Restore successful',
@@ -112,9 +116,9 @@ export default {
     'Your data will sync with the configured storage service. Click "Test Connection" first to verify the service is reachable.',
   'settings.connectionServiceNotReachable':
     'The service responded but is not healthy',
-  'settings.connectionUploadFailed':
-    'Failed to upload data to server',
-  'settings.connectionNoBackupFound': 'There is no backup data on the server to restore from',
+  'settings.connectionUploadFailed': 'Failed to upload data to server',
+  'settings.connectionNoBackupFound':
+    'There is no backup data on the server to restore from',
 
   // Team
   'settings.teamCollaboration': 'Team Collaboration',
@@ -139,6 +143,8 @@ export default {
   'settings.serverEndpointDesc': 'The URL of your self-hosted team server',
   'settings.apiToken': 'API Token',
   'settings.enterApiToken': 'Enter your API token',
+  'settings.showApiToken': 'Show API token',
+  'settings.hideApiToken': 'Hide API token',
   'settings.apiTokenDesc':
     'Get your API token from the server admin or create one in your account settings',
   'settings.autoSync': 'Auto Sync',
@@ -151,6 +157,7 @@ export default {
   'settings.minutes10': '10 minutes',
   'settings.saveConfig': 'Save Configuration',
   'settings.enterEndpoint': 'Please enter server endpoint',
+  'settings.enterEndpointTeam': 'Please enter the server endpoint',
   'settings.connectionSuccess': 'Connection successful!',
   'settings.connectionFailed': 'Connection failed',
   'settings.teamSettingsSaved': 'Team settings saved',

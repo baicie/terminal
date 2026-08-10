@@ -1,21 +1,11 @@
 import type { SnippetRecord } from '@/service/database'
-import { Code, Edit, Play, Search, Share2, Trash2 } from 'lucide-react'
+import { Code, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { EmptyState } from '@/components/view-container'
 import { parseVariables } from './snippet-execute-dialog'
+import { SnippetListItem } from './snippet-list-item'
 
 interface SnippetListProps {
   snippets: SnippetRecord[]
@@ -55,7 +45,9 @@ export const SnippetList: React.FC<SnippetListProps> = ({
       const initialValues: Record<string, string> = {}
       variables.forEach(v => {
         try {
-          const storedVars = snippet.variables ? JSON.parse(snippet.variables) : []
+          const storedVars = snippet.variables
+            ? JSON.parse(snippet.variables)
+            : []
           const varDef = storedVars.find(
             (v2: { name: string; defaultValue?: string }) => v2.name === v,
           )
@@ -66,7 +58,10 @@ export const SnippetList: React.FC<SnippetListProps> = ({
           /* ignore */
         }
       })
-      onExecute({ ...snippet, _tempVariables: initialValues } as unknown as SnippetRecord)
+      onExecute({
+        ...snippet,
+        _tempVariables: initialValues,
+      } as unknown as SnippetRecord)
     } else {
       onExecute(snippet)
     }
@@ -117,87 +112,15 @@ export const SnippetList: React.FC<SnippetListProps> = ({
           />
         ) : (
           filteredSnippets.map(snippet => (
-            <div
+            <SnippetListItem
               key={snippet.id}
-              className="border rounded-lg p-3 hover:bg-accent/50 transition-colors"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-medium flex items-center gap-2">
-                    <Code className="h-4 w-4" />
-                    {snippet.name}
-                  </h4>
-                  {snippet.description && (
-                    <p className="text-sm text-muted-foreground mt-1 truncate">
-                      {snippet.description}
-                    </p>
-                  )}
-                  <pre className="text-xs bg-muted p-2 rounded mt-2 overflow-x-auto max-h-20">
-                    {snippet.script.substring(0, 200)}
-                    {snippet.script.length > 200 && '...'}
-                  </pre>
-                </div>
-                <div className="flex items-center gap-1 ml-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleExecuteClick(snippet)}
-                    title={t('snippets.execute')}
-                  >
-                    <Play className="h-4 w-4" />
-                  </Button>
-                  {isTeamEnabled && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => onShare(snippet)}
-                      title={t('teams.share')}
-                    >
-                      <Share2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => onEdit(snippet)}
-                    title={t('snippets.editSnippet')}
-                  >
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title={t('snippets.deleteSnippet')}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>
-                          {t('snippets.deleteSnippet')}
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                          {t('snippets.deleteSnippetConfirm', {
-                            name: snippet.name,
-                          })}
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>
-                          {t('common.cancel')}
-                        </AlertDialogCancel>
-                        <AlertDialogAction onClick={() => onDelete(snippet.id)}>
-                          {t('common.delete')}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              </div>
-            </div>
+              snippet={snippet}
+              isTeamEnabled={isTeamEnabled}
+              onExecute={handleExecuteClick}
+              onShare={onShare}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
           ))
         )}
       </div>

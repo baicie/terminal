@@ -14,9 +14,9 @@ export default {
   'portForward.myForward': '我的转发',
   'portForward.stop': '停止',
   'portForward.start': '启动',
-  'portForward.configured': '已配置 {count} 条转发规则',
+  'portForward.configured': '已配置 {{count}} 条转发规则',
   'portForward.noConfigured': '未配置端口转发',
-  'portForward.socksDesc': '在 {host}:{port} 创建 SOCKS 代理',
+  'portForward.socksDesc': '在 {{host}}:{{port}} 创建 SOCKS 代理',
 
   // Port Forward view
   'portForwardView.title': '端口转发',

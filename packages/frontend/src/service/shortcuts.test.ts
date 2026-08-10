@@ -34,7 +34,11 @@ describe('shortcutsService.parseKeyboardEvent', () => {
 
   it('normalizes single letters to upper case', () => {
     const e = makeKeyEvent('a', { ctrlKey: true, shiftKey: true })
-    expect(shortcutsService.parseKeyboardEvent(e)).toEqual(['Ctrl', 'Shift', 'A'])
+    expect(shortcutsService.parseKeyboardEvent(e)).toEqual([
+      'Ctrl',
+      'Shift',
+      'A',
+    ])
   })
 
   it('normalizes special keys (ArrowUp → Up, " " → Space, Escape → Esc)', () => {
@@ -83,6 +87,19 @@ describe('shortcutsService.matchShortcut', () => {
     const evt = makeKeyEvent('j', { ctrlKey: true })
     expect(shortcutsService.matchShortcut(evt)).toBeUndefined()
     shortcutsService.updateShortcut(original.id, { enabled: true })
+  })
+
+  it('does not reserve the Windows and Linux paste shortcut', () => {
+    const evt = makeKeyEvent('v', { ctrlKey: true, shiftKey: true })
+
+    expect(shortcutsService.matchShortcut(evt)).toBeUndefined()
+  })
+
+  it('matches Ctrl+Shift+Backslash for vertical split', () => {
+    // On common keyboard layouts Shift+Backslash is reported as "|".
+    const evt = makeKeyEvent('|', { ctrlKey: true, shiftKey: true })
+
+    expect(shortcutsService.matchShortcut(evt)?.action).toBe('split-vertical')
   })
 })
 

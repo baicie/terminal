@@ -1,6 +1,11 @@
+/* eslint-disable no-console */
+import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
+import { Pool } from 'pg'
 
-const prisma = new PrismaClient()
+const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+const prisma = new PrismaClient({ adapter: new PrismaPg(pool) })
+const demoUserName = 'Demo User'
 
 async function main() {
   console.log('🌱 Seeding database...')
@@ -11,11 +16,10 @@ async function main() {
     update: {},
     create: {
       id: '00000000-0000-0000-0000-000000000001',
-      name: 'Demo User',
     },
   })
 
-  console.log(`✅ Created demo user: ${demoUser.name} (${demoUser.id})`)
+  console.log(`✅ Created demo user: ${demoUserName} (${demoUser.id})`)
 
   // Create a demo team
   const demoTeam = await prisma.team.upsert({
@@ -31,7 +35,7 @@ async function main() {
   console.log(`✅ Created demo team: ${demoTeam.name} (${demoTeam.id})`)
 
   // Add demo user as admin member
-  const membership = await prisma.teamMember.upsert({
+  await prisma.teamMember.upsert({
     where: {
       teamId_userId: {
         teamId: demoTeam.id,
@@ -42,12 +46,12 @@ async function main() {
     create: {
       teamId: demoTeam.id,
       userId: demoUser.id,
-      userName: demoUser.name,
+      userName: demoUserName,
       role: 'ADMIN',
     },
   })
 
-  console.log(`✅ Added ${demoUser.name} as admin to ${demoTeam.name}`)
+  console.log(`✅ Added ${demoUserName} as admin to ${demoTeam.name}`)
 
   // Create a demo invite
   const demoInvite = await prisma.invite.upsert({
@@ -79,4 +83,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect()
+    await pool.end()
   })

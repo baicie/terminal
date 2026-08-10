@@ -1,7 +1,7 @@
 export default {
   // Hosts
   'hosts.title': 'Hôtes',
-  'hosts.count': '{count} hôte(s)',
+  'hosts.count': '{{count}} hôte(s)',
   'hosts.search': 'Rechercher un hôte ou ssh user@hostname...',
   'hosts.connect': 'CONNECTER',
   'hosts.newHost': 'NOUVEL HÔTE',
@@ -24,7 +24,7 @@ export default {
   'hosts.tags': 'Étiquettes',
   'hosts.calendar': 'Calendrier',
   'hosts.invite': 'Inviter',
-  'hosts.sshAuth': 'ssh, {username}',
+  'hosts.sshAuth': 'ssh, {{username}}',
   'hosts.copySsh': 'Copier la commande SSH',
 
   // Host dialog
@@ -42,7 +42,7 @@ export default {
   'hostDialog.startupCommand': 'Commande de démarrage (optionnel)',
   'hostDialog.portForwards': 'Transferts de port',
   'hostDialog.password': 'Mot de passe',
-  'hostDialog.configurePortForwards': 'Configurer ({count})',
+  'hostDialog.configurePortForwards': 'Configurer ({{count}})',
   'hostDialog.noGroup': 'Aucun groupe',
   'hostDialog.directConnection': 'Connexion directe',
   'hostDialog.useDefaultAuth': "Utiliser l'auth. par défaut",
@@ -56,7 +56,7 @@ export default {
   'hostDialog.connectBastion': 'Se connecter via un serveur de rebond',
   'hostDialog.deleteHost': "Supprimer l'hôte",
   'hostDialog.deleteConfirm':
-    'Êtes-vous sûr de vouloir supprimer "{name}" ? Cette action est irréversible.',
+    'Êtes-vous sûr de vouloir supprimer "{{name}}" ? Cette action est irréversible.',
   'hostDialog.placeholderName': 'Mon serveur',
   'hostDialog.placeholderHostname': '192.168.1.1 ou exemple.com',
   'hostDialog.placeholderUsername': 'root',

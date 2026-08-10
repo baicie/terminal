@@ -1,17 +1,20 @@
+import type { Invite, Prisma } from '@prisma/client'
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
 import { nanoid } from 'nanoid'
 import { PrismaService } from '../prisma.service'
+import { generateInviteCode } from './invite-code'
 
 @Injectable()
 export class InvitesService {
   constructor(private prisma: PrismaService) {}
 
   async findAll(teamId: string, userId: string) {
-    await this.checkMembership(teamId, userId)
+    await this.checkAdmin(teamId, userId)
     return this.prisma.invite.findMany({
       where: { teamId },
       orderBy: { createdAt: 'desc' },
@@ -27,12 +30,12 @@ export class InvitesService {
       role?: 'ADMIN' | 'MEMBER'
     },
   ) {
-    await this.checkMembership(teamId, userId)
+    await this.checkAdmin(teamId, userId)
 
     const role = data.role || 'MEMBER'
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
 
-    const inviteData: any = {
+    const inviteData: Prisma.InviteUncheckedCreateInput = {
       teamId,
       type: data.type,
       role,
@@ -41,12 +44,7 @@ export class InvitesService {
     }
 
     if (data.type === 'CODE') {
-      // Generate invite code: TEAM-XXXX-XXXX
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-      const code = Array.from({ length: 4 })
-        .fill(chars[Math.floor(Math.random() * chars.length)])
-        .join('')
-      inviteData.code = `TEAM-${code}-${nanoid(4).toUpperCase()}`
+      inviteData.code = generateInviteCode()
     } else if (data.type === 'LINK') {
       inviteData.linkToken = nanoid(24)
     } else if (data.type === 'EMAIL') {
@@ -61,56 +59,21 @@ export class InvitesService {
   async joinByCode(code: string, userId: string, userName?: string) {
     const invite = await this.prisma.invite.findUnique({ where: { code } })
     if (!invite) throw new NotFoundException('Invalid invite code')
-    if (invite.expiresAt < new Date())
-      throw new BadRequestException('Invite expired')
-    if (invite.usedAt) throw new BadRequestException('Invite already used')
-
-    // Add user as member
-    await this.prisma.teamMember.create({
-      data: {
-        teamId: invite.teamId,
-        userId,
-        userName,
-        role: invite.role,
-      },
-    })
-
-    // Mark invite as used
-    await this.prisma.invite.update({
-      where: { id: invite.id },
-      data: { usedAt: new Date() },
-    })
-
-    return { teamId: invite.teamId, role: invite.role }
+    return this.claimInvite(invite, userId, userName)
   }
 
   async joinByLink(linkToken: string, userId: string, userName?: string) {
     const invite = await this.prisma.invite.findUnique({ where: { linkToken } })
     if (!invite) throw new NotFoundException('Invalid invite link')
-    if (invite.expiresAt < new Date())
-      throw new BadRequestException('Invite expired')
-    if (invite.usedAt) throw new BadRequestException('Invite already used')
-
-    await this.prisma.teamMember.create({
-      data: {
-        teamId: invite.teamId,
-        userId,
-        userName,
-        role: invite.role,
-      },
-    })
-
-    await this.prisma.invite.update({
-      where: { id: invite.id },
-      data: { usedAt: new Date() },
-    })
-
-    return { teamId: invite.teamId, role: invite.role }
+    return this.claimInvite(invite, userId, userName)
   }
 
   async delete(teamId: string, inviteId: string, userId: string) {
     await this.checkAdmin(teamId, userId)
-    await this.prisma.invite.delete({ where: { id: inviteId } })
+    const result = await this.prisma.invite.deleteMany({
+      where: { id: inviteId, teamId },
+    })
+    if (result.count === 0) throw new NotFoundException('Invite not found')
   }
 
   async getInviteByCode(code: string) {
@@ -122,17 +85,58 @@ export class InvitesService {
     return { invite, team }
   }
 
+  async getInviteByLink(linkToken: string) {
+    const invite = await this.prisma.invite.findUnique({ where: { linkToken } })
+    if (!invite) return null
+    const team = await this.prisma.team.findUnique({
+      where: { id: invite.teamId },
+    })
+    return { invite, team }
+  }
+
+  private async claimInvite(invite: Invite, userId: string, userName?: string) {
+    if (invite.expiresAt < new Date()) {
+      throw new BadRequestException('Invite expired')
+    }
+    if (invite.usedAt) throw new BadRequestException('Invite already used')
+
+    return this.prisma.$transaction(async transaction => {
+      const now = new Date()
+      const claim = await transaction.invite.updateMany({
+        where: {
+          id: invite.id,
+          usedAt: null,
+          expiresAt: { gt: now },
+        },
+        data: { usedAt: now },
+      })
+      if (claim.count !== 1) {
+        throw new BadRequestException('Invite already used or expired')
+      }
+
+      await transaction.teamMember.create({
+        data: {
+          teamId: invite.teamId,
+          userId,
+          userName,
+          role: invite.role,
+        },
+      })
+      return { teamId: invite.teamId, role: invite.role }
+    })
+  }
+
   private async checkMembership(teamId: string, userId: string) {
     const membership = await this.prisma.teamMember.findUnique({
       where: { teamId_userId: { teamId, userId } },
     })
-    if (!membership) throw new BadRequestException('Not a team member')
+    if (!membership) throw new ForbiddenException('Not a team member')
     return membership
   }
 
   private async checkAdmin(teamId: string, userId: string) {
     const membership = await this.checkMembership(teamId, userId)
     if (membership.role !== 'ADMIN')
-      throw new BadRequestException('Admin access required')
+      throw new ForbiddenException('Admin access required')
   }
 }

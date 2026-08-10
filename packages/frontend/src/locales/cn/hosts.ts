@@ -1,7 +1,7 @@
 export default {
   // Hosts
   'hosts.title': '主机',
-  'hosts.count': '{count} 台主机',
+  'hosts.count': '{{count}} 台主机',
   'hosts.search': '搜索主机或 ssh user@hostname...',
   'hosts.connect': '连接',
   'hosts.newHost': '新建主机',
@@ -22,7 +22,7 @@ export default {
   'hosts.tags': '标签',
   'hosts.calendar': '日历',
   'hosts.invite': '邀请',
-  'hosts.sshAuth': 'ssh, {username}',
+  'hosts.sshAuth': 'ssh, {{username}}',
   'hosts.copySsh': '复制 SSH 命令',
 
   // Host dialog
@@ -40,7 +40,7 @@ export default {
   'hostDialog.startupCommand': '启动命令（可选）',
   'hostDialog.portForwards': '端口转发',
   'hostDialog.password': '密码',
-  'hostDialog.configurePortForwards': '配置端口转发 ({count})',
+  'hostDialog.configurePortForwards': '配置端口转发 ({{count}})',
   'hostDialog.noGroup': '无分组',
   'hostDialog.directConnection': '直接连接',
   'hostDialog.useDefaultAuth': '使用默认认证',
@@ -53,7 +53,7 @@ export default {
   'hostDialog.saving': '保存中...',
   'hostDialog.connectBastion': '通过跳板机连接',
   'hostDialog.deleteHost': '删除主机',
-  'hostDialog.deleteConfirm': '确定要删除 "{name}" 吗？此操作无法撤销。',
+  'hostDialog.deleteConfirm': '确定要删除 "{{name}}" 吗？此操作无法撤销。',
   'hostDialog.placeholderName': '我的服务器',
   'hostDialog.placeholderHostname': '192.168.1.1 或 example.com',
   'hostDialog.placeholderUsername': 'root',

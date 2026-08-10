@@ -14,9 +14,9 @@ export default {
   'portForward.myForward': 'My Forward',
   'portForward.stop': 'Stop',
   'portForward.start': 'Start',
-  'portForward.configured': '{count} forward(s) configured',
+  'portForward.configured': '{{count}} forward(s) configured',
   'portForward.noConfigured': 'No port forwards configured',
-  'portForward.socksDesc': 'Creates a SOCKS proxy at {host}:{port}',
+  'portForward.socksDesc': 'Creates a SOCKS proxy at {{host}}:{{port}}',
 
   // Port Forward view
   'portForwardView.title': 'Port Forwarding',

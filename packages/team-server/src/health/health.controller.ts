@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common'
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common'
 import { ApiOperation, ApiTags } from '@nestjs/swagger'
 import { PrismaService } from '../prisma.service'
 
@@ -19,11 +19,11 @@ export class HealthController {
         database: 'connected',
       }
     } catch {
-      return {
+      throw new ServiceUnavailableException({
         status: 'error',
         timestamp: new Date().toISOString(),
         database: 'disconnected',
-      }
+      })
     }
   }
 
@@ -40,7 +40,10 @@ export class HealthController {
       await this.prisma.$queryRaw`SELECT 1`
       return { status: 'ready' }
     } catch {
-      return { status: 'not ready', reason: 'database connection failed' }
+      throw new ServiceUnavailableException({
+        status: 'not ready',
+        reason: 'database connection failed',
+      })
     }
   }
 }

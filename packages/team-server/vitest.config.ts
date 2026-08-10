@@ -6,6 +6,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    setupFiles: ['reflect-metadata'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

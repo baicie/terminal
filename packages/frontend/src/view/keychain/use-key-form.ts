@@ -25,15 +25,15 @@ export interface UseKeyFormReturn {
     formValues: KeyFormValues,
   ) => Omit<SSHKeyRecord, 'created_at' | 'updated_at'> | null
   handleDelete: (keyToDelete: SSHKeyRecord | null) => string | null
-  handleImportFromFile: (field: 'private' | 'public' | 'certificate') => Promise<void>
-  handleUseGeneratedKey: (
-    result: {
-      private_key: string
-      public_key: string
-      key_type: string
-      fingerprint: string
-    },
-  ) => void
+  handleImportFromFile: (
+    field: 'private' | 'public' | 'certificate',
+  ) => Promise<void>
+  handleUseGeneratedKey: (result: {
+    private_key: string
+    public_key: string
+    key_type: string
+    fingerprint: string
+  }) => void
   handleFormChange: (field: string, value: string) => void
 }
 
@@ -65,7 +65,7 @@ export function useKeyForm(): UseKeyFormReturn {
       setFormCertificate,
       setFormPassphrase,
     }
-  })
+  }, [])
 
   const handleSelectKey = useCallback((key: SSHKeyRecord) => {
     setFormName(key.name)

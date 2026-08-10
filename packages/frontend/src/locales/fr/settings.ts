@@ -30,10 +30,10 @@ export default {
     'Sélectionnez un fichier JSON précédemment exporté pour importer des données.',
   'settings.selectImportFile': 'Sélectionner le fichier',
   'settings.importPreview': "Aperçu de l'importation :",
-  'settings.hosts': '{count} hôte(s)',
-  'settings.groups': '{count} groupe(s)',
-  'settings.snippets': '{count} snippet(s)',
-  'settings.snippetPackages': '{count} forfait(s) snippet',
+  'settings.hosts': '{{count}} hôte(s)',
+  'settings.groups': '{{count}} groupe(s)',
+  'settings.snippets': '{{count}} snippet(s)',
+  'settings.snippetPackages': '{{count}} forfait(s) snippet',
   'settings.importMode': "Mode d'importation",
   'settings.merge': 'Fusionner',
   'settings.mergeDesc':
@@ -105,9 +105,13 @@ export default {
   'settings.never': 'Jamais',
   'settings.restoreMode': 'Mode de restauration',
   'settings.restoreFromServer': 'Restaurer depuis le serveur',
+  'settings.previewChanges': 'Aperçu des modifications',
+  'settings.refreshPreview': "Actualiser l'aperçu",
+  'settings.conflictDetails': 'Détails du conflit',
   'settings.restoring': 'Restauration...',
   'settings.noBackupFound': 'Aucune sauvegarde trouvée',
-  'settings.noBackupFoundDesc': "Il n'y a pas de données de sauvegarde sur le serveur à restaurer",
+  'settings.noBackupFoundDesc':
+    "Il n'y a pas de données de sauvegarde sur le serveur à restaurer",
   'settings.syncSuccess': 'Synchronisation réussie',
   'settings.syncFailed': 'Échec de la synchronisation',
   'settings.restoreSuccess': 'Restauration réussie',
@@ -115,11 +119,13 @@ export default {
   'settings.serviceModeEnabled': 'Mode service activé',
   'settings.serviceModeEnabledDesc':
     'Vos données se synchroniseront avec le service de stockage configuré. Cliquez d\'abord sur "Tester la connexion" pour vérifier que le service est accessible.',
-  'settings.connectionServiceNotReachable': "Le service a répondu mais n'est pas en bonne santé",
+  'settings.connectionServiceNotReachable':
+    "Le service a répondu mais n'est pas en bonne santé",
   'settings.connectionUploadFailed': "Échec de l'envoi des données au serveur",
-  'settings.connectionNoBackupFound': "Il n'y a pas de données de sauvegarde sur le serveur à restaurer",
+  'settings.connectionNoBackupFound':
+    "Il n'y a pas de données de sauvegarde sur le serveur à restaurer",
   'settings.enterEndpoint':
-    "Veuillez entrer une URL de point de terminaison pour tester la connexion",
+    'Veuillez entrer une URL de point de terminaison pour tester la connexion',
 
   // Team
   'settings.teamCollaboration': "Collaboration d'équipe",
@@ -144,6 +150,8 @@ export default {
   'settings.serverEndpointDesc': "L'URL de votre serveur d'équipe auto-hébergé",
   'settings.apiToken': 'Jeton API',
   'settings.enterApiToken': 'Entrez votre jeton API',
+  'settings.showApiToken': 'Afficher le jeton API',
+  'settings.hideApiToken': 'Masquer le jeton API',
   'settings.apiTokenDesc':
     "Obtenez votre jeton API auprès de l'administrateur du serveur ou créez-en un dans les paramètres de votre compte",
   'settings.autoSync': 'Synchronisation auto',

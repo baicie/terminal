@@ -9,19 +9,11 @@
  *
  * Checksum 校验：传输完成后可通过 `verifyChecksum()` 验证完整性。
  */
-import { sftpService } from '@/features/terminal/services/sftp'
 import { useTransferQueue } from '@/store/transfer-queue'
 import { notify } from '@/service/notifications'
+import type { SftpProgressPayload, TransferArgs } from './sftp-transfer-types'
 
-interface SftpProgressPayload {
-  transferId: string
-  kind: 'progress' | 'done' | 'error' | 'checksum-start' | 'checksum-progress' | 'checksum-done'
-  bytesDone: number
-  bytesTotal: number
-  message?: string | null
-  /** "local" | "remote" | "transfer" | undefined. Distinguishes which side a checksum belongs to. */
-  side?: string | null
-}
+export { verifyChecksum } from './sftp-transfer-checksum'
 
 let listenerInstalled = false
 
@@ -74,10 +66,6 @@ async function ensureListener(): Promise<void> {
 
 const MAX_CONCURRENT = 3
 
-type TransferArgs =
-  | { kind: 'upload'; sessionId: string; localPath: string; remotePath: string; displayName?: string; bytesTotal?: number }
-  | { kind: 'download'; sessionId: string; remotePath: string; localPath: string; displayName?: string; bytesTotal?: number }
-
 /** 追踪每个待处理传输的调用参数，用于并发出队时重新发起 */
 const pendingTransfers = new Map<string, TransferArgs>()
 
@@ -87,7 +75,9 @@ function basename(p: string): string {
 }
 
 function runningCount(): number {
-  return useTransferQueue.getState().transfers.filter(t => t.status === 'running').length
+  return useTransferQueue
+    .getState()
+    .transfers.filter(t => t.status === 'running').length
 }
 
 function dispatchNext(): void {
@@ -112,9 +102,10 @@ async function startTransfer(id: string, args: TransferArgs): Promise<void> {
   pendingTransfers.delete(id)
 
   const { invoke } = await import('@tauri-apps/api/core')
-  const notifyName = args.kind === 'upload'
-    ? args.displayName ?? basename(args.localPath)
-    : args.displayName ?? basename(args.remotePath)
+  const notifyName =
+    args.kind === 'upload'
+      ? (args.displayName ?? basename(args.localPath))
+      : (args.displayName ?? basename(args.remotePath))
 
   try {
     if (args.kind === 'upload') {
@@ -162,27 +153,44 @@ export async function uploadFile({
   const store = useTransferQueue.getState()
   const name = displayName ?? basename(localPath)
 
-  const id = store.enqueue({
-    id: '',
-    kind: 'upload',
-    name,
-    localPath,
-    remotePath,
-    sessionId,
-    bytesTotal,
-  }, true) // always start in queued; dispatchNext starts it if room available
+  const id = store.enqueue(
+    {
+      id: '',
+      kind: 'upload',
+      name,
+      localPath,
+      remotePath,
+      sessionId,
+      bytesTotal,
+    },
+    true,
+  ) // always start in queued; dispatchNext starts it if room available
 
   if (!detectTauri()) {
     store.finish(id, 'error', 'Tauri runtime not available')
     return
   }
 
-  pendingTransfers.set(id, { kind: 'upload', sessionId, localPath, remotePath, displayName, bytesTotal })
+  pendingTransfers.set(id, {
+    kind: 'upload',
+    sessionId,
+    localPath,
+    remotePath,
+    displayName,
+    bytesTotal,
+  })
 
   // If at concurrency limit, the record is already queued from the first enqueue call.
   // dispatchNext() will start it when a slot frees.
   if (runningCount() < MAX_CONCURRENT) {
-    void startTransfer(id, { kind: 'upload', sessionId, localPath, remotePath, displayName, bytesTotal })
+    void startTransfer(id, {
+      kind: 'upload',
+      sessionId,
+      localPath,
+      remotePath,
+      displayName,
+      bytesTotal,
+    })
   }
 }
 
@@ -203,25 +211,42 @@ export async function downloadFile({
   const store = useTransferQueue.getState()
   const name = displayName ?? basename(remotePath)
 
-  const id = store.enqueue({
-    id: '',
-    kind: 'download',
-    name,
-    localPath,
-    remotePath,
-    sessionId,
-    bytesTotal,
-  }, true)
+  const id = store.enqueue(
+    {
+      id: '',
+      kind: 'download',
+      name,
+      localPath,
+      remotePath,
+      sessionId,
+      bytesTotal,
+    },
+    true,
+  )
 
   if (!detectTauri()) {
     store.finish(id, 'error', 'Tauri runtime not available')
     return
   }
 
-  pendingTransfers.set(id, { kind: 'download', sessionId, remotePath, localPath, displayName, bytesTotal })
+  pendingTransfers.set(id, {
+    kind: 'download',
+    sessionId,
+    remotePath,
+    localPath,
+    displayName,
+    bytesTotal,
+  })
 
   if (runningCount() < MAX_CONCURRENT) {
-    void startTransfer(id, { kind: 'download', sessionId, remotePath, localPath, displayName, bytesTotal })
+    void startTransfer(id, {
+      kind: 'download',
+      sessionId,
+      remotePath,
+      localPath,
+      displayName,
+      bytesTotal,
+    })
   }
 }
 
@@ -248,54 +273,4 @@ export async function uploadPaths(args: {
       uploadFile({ sessionId, localPath, remotePath, displayName: name }),
     ),
   )
-}
-
-/**
- * 验证传输完整性：对本地文件和远端文件分别计算 SHA-256，
- * 然后比对两端的 hash 值。
- *
- * 调用流程：
- * 1. 本地文件：直接用 Rust 计算本地 checksum
- * 2. 远端文件：Rust SFTP 流式读取计算 checksum，事件通知前端
- * 3. 两端 hash 都在 TransferRecord.checksum 中，自动比对
- *
- * 调用方需要监听 TransferQueue 的变化来获取最终比对结果。
- */
-export async function verifyChecksum(args: {
-  transferId: string
-  sessionId: string
-  localPath: string
-  remotePath: string
-}): Promise<void> {
-  const { transferId, sessionId, localPath, remotePath } = args
-
-  // 初始化 checksum 状态
-  useTransferQueue.getState().initChecksum(transferId)
-
-  // 并行计算本地和远端 hash
-  const [localResult] = await Promise.all([
-    // 本地 checksum：直接调用 Rust
-    sftpService.checksumLocal(transferId, localPath),
-  ])
-
-  // 本地结果立即写入
-  useTransferQueue.getState().setChecksumResult(transferId, 'local', {
-    success: localResult.success,
-    hash: localResult.hash,
-    error: localResult.message,
-  })
-
-  // 远端 checksum：通过 SFTP 流式读取，进度通过事件通知
-  // 必须用原始 transferId 以便事件监听器匹配
-  const remoteResult = await sftpService.checksumRemote(
-    transferId,
-    sessionId,
-    remotePath,
-  )
-
-  useTransferQueue.getState().setChecksumResult(transferId, 'remote', {
-    success: remoteResult.success,
-    hash: remoteResult.hash,
-    error: remoteResult.message,
-  })
 }

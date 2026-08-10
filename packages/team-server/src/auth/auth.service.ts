@@ -1,112 +1,98 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common'
+import {
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common'
 import { nanoid } from 'nanoid'
 import { PrismaService } from '../prisma.service'
+import {
+  hashApiToken,
+  isEncodedApiTokenHash,
+  legacyHashApiToken,
+} from './token-hash'
 
 @Injectable()
 export class AuthService {
   constructor(private prisma: PrismaService) {}
 
-  /**
-   * Register a new user (creates if not exists)
-   * Returns an API token for immediate use
-   */
-  async register(
-    userId: string,
-    name?: string,
-  ): Promise<{ userId: string; token?: string }> {
-    let user = await this.prisma.user.findUnique({
+  async register(userId: string): Promise<{ userId: string; token: string }> {
+    const existingUser = await this.prisma.user.findUnique({
       where: { id: userId },
     })
-
-    if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          id: userId,
-          ...(name && { name }),
-        },
-      })
+    if (existingUser) {
+      throw new ConflictException(
+        'User is already registered; provide an existing API token',
+      )
     }
 
-    // Generate a token for immediate use
     const token = nanoid(32)
-    await this.prisma.apiToken.create({
-      data: {
-        userId: user.id,
-        name: 'Default Token',
-        token,
-      },
+    await this.prisma.$transaction(async transaction => {
+      const user = await transaction.user.create({
+        data: { id: userId },
+      })
+      await transaction.apiToken.create({
+        data: {
+          userId: user.id,
+          name: 'Default Token',
+          token: hashApiToken(token),
+        },
+      })
     })
 
-    return { userId: user.id, token }
+    return { userId, token }
   }
 
-  /**
-   * Create a new API token for a user
-   */
   async createToken(userId: string, name?: string): Promise<{ token: string }> {
-    // Verify user exists
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     })
+    if (!user) throw new UnauthorizedException('User not found')
 
-    if (!user) {
-      throw new UnauthorizedException('User not found')
-    }
-
-    // Generate token
     const token = nanoid(32)
-
-    // Create token record
     await this.prisma.apiToken.create({
       data: {
         userId,
         name: name || 'Default Token',
-        token,
+        token: hashApiToken(token),
       },
     })
-
     return { token }
   }
 
-  /**
-   * Validate API token and return user
-   */
   async validateToken(token: string): Promise<{ userId: string }> {
-    const tokenRecord = await this.prisma.apiToken.findUnique({
-      where: { token },
-      include: { user: true },
-    })
-
-    if (!tokenRecord) {
-      throw new UnauthorizedException('Invalid token')
-    }
-
-    // Check expiration
+    const tokenRecord = await this.findTokenRecord(token)
+    if (!tokenRecord) throw new UnauthorizedException('Invalid token')
     if (tokenRecord.expiresAt && tokenRecord.expiresAt < new Date()) {
       throw new UnauthorizedException('Token expired')
     }
-
     return { userId: tokenRecord.userId }
   }
 
-  /**
-   * Revoke an API token
-   */
-  async revokeToken(token: string): Promise<void> {
-    await this.prisma.apiToken.delete({
-      where: { token },
-    })
+  async revokeToken(token: string, userId: string): Promise<void> {
+    const tokenRecord = await this.findTokenRecord(token)
+
+    if (!tokenRecord || tokenRecord.userId !== userId) {
+      throw new UnauthorizedException('Invalid token')
+    }
+    await this.prisma.apiToken.delete({ where: { id: tokenRecord.id } })
   }
 
-  /**
-   * List all tokens for a user
-   */
-  async listTokens(
-    userId: string,
-  ): Promise<
-    { id: string; name: string; createdAt: Date; expiresAt: Date | null }[]
+  async revokeTokenById(tokenId: string, userId: string): Promise<void> {
+    const result = await this.prisma.apiToken.deleteMany({
+      where: { id: tokenId, userId },
+    })
+    if (result.count === 0) throw new UnauthorizedException('Token not found')
+  }
+
+  async listTokens(userId: string): Promise<
+    {
+      id: string
+      name: string | null
+      createdAt: Date
+      expiresAt: Date | null
+    }[]
   > {
-    const tokens = await this.prisma.apiToken.findMany({
+    return this.prisma.apiToken.findMany({
       where: { userId },
       select: {
         id: true,
@@ -115,6 +101,31 @@ export class AuthService {
         expiresAt: true,
       },
     })
-    return tokens
+  }
+
+  private async findTokenRecord(token: string) {
+    const tokenHash = hashApiToken(token)
+    const currentRecord = await this.prisma.apiToken.findUnique({
+      where: { token: tokenHash },
+    })
+    if (currentRecord) return currentRecord
+
+    // A stored digest is never a bearer credential, even during migration.
+    if (isEncodedApiTokenHash(token)) return null
+
+    const legacyDigestRecord = await this.prisma.apiToken.findUnique({
+      where: { token: legacyHashApiToken(token) },
+    })
+    const legacyPlaintextRecord = legacyDigestRecord
+      ? null
+      : await this.prisma.apiToken.findUnique({ where: { token } })
+    const legacyRecord = legacyDigestRecord ?? legacyPlaintextRecord
+    if (!legacyRecord) return null
+
+    await this.prisma.apiToken.update({
+      where: { id: legacyRecord.id },
+      data: { token: tokenHash },
+    })
+    return legacyRecord
   }
 }

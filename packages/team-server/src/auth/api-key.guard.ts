@@ -24,7 +24,8 @@ export class ApiKeyGuard implements CanActivate {
       const { userId } = await this.authService.validateToken(token)
       request.user = { userId }
       return true
-    } catch {
+    } catch (error) {
+      if (!(error instanceof UnauthorizedException)) throw error
       throw new UnauthorizedException('Invalid or expired token')
     }
   }

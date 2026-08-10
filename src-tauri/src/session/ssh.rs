@@ -6,7 +6,7 @@
 use super::types::{ExecResult, JumpHostConfig, SessionError, SessionOutput, SessionType};
 use russh::client;
 use russh::keys::PrivateKeyWithHashAlg;
-use russh::{ChannelId, ChannelMsg};
+use russh::{ChannelMsg, ChannelWriteHalf};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -24,7 +24,9 @@ static SSH_SESSIONS: std::sync::OnceLock<SshSessions> = std::sync::OnceLock::new
 
 /// Get the global SSH sessions registry
 pub fn get_ssh_sessions() -> SshSessions {
-    SSH_SESSIONS.get_or_init(|| Arc::new(Mutex::new(HashMap::new()))).clone()
+    SSH_SESSIONS
+        .get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
+        .clone()
 }
 
 // ============================================================================
@@ -34,8 +36,7 @@ pub fn get_ssh_sessions() -> SshSessions {
 /// sessions to the same host. Each session gets its own channel.
 /// When all sessions for a connection are closed, the underlying TCP connection
 /// is terminated and the handle removed from the pool.
-
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio::sync::RwLock;
 
 /// A pooled SSH connection with a reference count.
@@ -43,14 +44,20 @@ use tokio::sync::RwLock;
 struct PooledConnection {
     /// Shared SSH handle (Arc so SshSession can clone it for new channels)
     handle: Arc<client::Handle<ClientHandler>>,
+    /// Jump-host transport that owns the direct-tcpip stream, when applicable.
+    transport_handle: Option<Arc<client::Handle<ClientHandler>>>,
     /// Reference count: number of active SshSession instances using this connection
     ref_count: AtomicUsize,
 }
 
 impl PooledConnection {
-    fn new(handle: Arc<client::Handle<ClientHandler>>) -> Self {
+    fn new(
+        handle: Arc<client::Handle<ClientHandler>>,
+        transport_handle: Option<Arc<client::Handle<ClientHandler>>>,
+    ) -> Self {
         Self {
             handle,
+            transport_handle,
             ref_count: AtomicUsize::new(1),
         }
     }
@@ -60,7 +67,9 @@ impl PooledConnection {
     }
 
     fn release(&self) -> usize {
-        self.ref_count.fetch_sub(1, Ordering::SeqCst).saturating_sub(1)
+        self.ref_count
+            .fetch_sub(1, Ordering::SeqCst)
+            .saturating_sub(1)
     }
 }
 
@@ -68,11 +77,25 @@ impl PooledConnection {
 pub struct SshConnectionPool {
     /// Pool: key -> (PooledConnection, broadcast receiver for cleanup)
     inner: RwLock<HashMap<String, PooledConnection>>,
+    /// Serializes connection creation and shell setup for each pool identity.
+    creation_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
 }
 
 impl SshConnectionPool {
     fn new() -> Self {
-        Self { inner: RwLock::new(HashMap::new()) }
+        Self {
+            inner: RwLock::new(HashMap::new()),
+            creation_locks: Mutex::new(HashMap::new()),
+        }
+    }
+
+    async fn creation_lock(&self, key: &str) -> Arc<Mutex<()>> {
+        let mut locks = self.creation_locks.lock().await;
+        Arc::clone(
+            locks
+                .entry(key.to_string())
+                .or_insert_with(|| Arc::new(Mutex::new(()))),
+        )
     }
 
     /// Try to get an existing pooled connection.
@@ -87,9 +110,14 @@ impl SshConnectionPool {
     }
 
     /// Insert a new connection into the pool and register it globally for SFTP/port-forward access.
-    async fn insert(&self, key: String, handle: Arc<client::Handle<ClientHandler>>) {
+    async fn insert(
+        &self,
+        key: String,
+        handle: Arc<client::Handle<ClientHandler>>,
+        transport_handle: Option<Arc<client::Handle<ClientHandler>>>,
+    ) {
         let key_for_global = key.clone();
-        let conn = PooledConnection::new(Arc::clone(&handle));
+        let conn = PooledConnection::new(Arc::clone(&handle), transport_handle);
         self.inner.write().await.insert(key, conn);
         // Also register globally so SFTP / port-forward can find this handle by session_id
         let sessions = get_ssh_sessions();
@@ -100,20 +128,14 @@ impl SshConnectionPool {
     /// Release a reference. If ref_count reaches 0, close the connection, remove from pool,
     /// and unregister from the global sessions map (used by SFTP / port-forward).
     async fn release(&self, key: &str) {
-        // Remove from global SFTP / port-forward registry BEFORE acquiring write lock on pool
-        {
-            let sessions = get_ssh_sessions();
-            let mut sessions = sessions.lock().await;
-            sessions.remove(key);
-        }
-
-        let handle = {
+        let handles = {
             let mut pool = self.inner.write().await;
             if let Some(conn) = pool.get_mut(key) {
                 if conn.release() == 0 {
                     let h = conn.handle.clone();
+                    let transport = conn.transport_handle.clone();
                     pool.remove(key);
-                    Some(h)
+                    Some((h, transport))
                 } else {
                     None
                 }
@@ -122,13 +144,19 @@ impl SshConnectionPool {
             }
         };
 
-        if let Some(handle) = handle {
+        if let Some((handle, transport_handle)) = handles {
+            let sessions = get_ssh_sessions();
+            sessions.lock().await.remove(key);
             let _ = handle
                 .disconnect(russh::Disconnect::ByApplication, "", "en")
                 .await;
+            if let Some(transport_handle) = transport_handle {
+                let _ = transport_handle
+                    .disconnect(russh::Disconnect::ByApplication, "", "en")
+                    .await;
+            }
         }
     }
-
 }
 
 impl Default for SshConnectionPool {
@@ -138,7 +166,8 @@ impl Default for SshConnectionPool {
 }
 
 /// Global connection pool
-static SSH_CONNECTION_POOL: std::sync::OnceLock<Arc<SshConnectionPool>> = std::sync::OnceLock::new();
+static SSH_CONNECTION_POOL: std::sync::OnceLock<Arc<SshConnectionPool>> =
+    std::sync::OnceLock::new();
 
 fn get_connection_pool() -> Arc<SshConnectionPool> {
     SSH_CONNECTION_POOL
@@ -146,13 +175,20 @@ fn get_connection_pool() -> Arc<SshConnectionPool> {
         .clone()
 }
 
-/// Connection key for the pool: based on host, port, username (excludes auth method)
-/// Jump host connections are keyed separately since they involve two hosts.
-fn connection_key(host: &str, port: u16, username: &str, is_jump: bool) -> String {
-    if is_jump {
-        format!("jump:{username}@{host}:{port}")
-    } else {
-        format!("{username}@{host}:{port}")
+/// Connection key for the pool. Jump connections include the bastion identity so
+/// sessions using different tunnels can never share the wrong transport.
+fn connection_key(
+    host: &str,
+    port: u16,
+    username: &str,
+    jump_host: Option<&JumpHostConfig>,
+) -> String {
+    match jump_host {
+        Some(jump) => format!(
+            "jump:{}@{}:{}=>{}@{}:{}",
+            jump.username, jump.host, jump.port, username, host, port
+        ),
+        None => format!("{username}@{host}:{port}"),
     }
 }
 
@@ -205,86 +241,57 @@ async fn authenticate_with_agent(
                 return Ok(true);
             }
         }
-        return Ok(false);
+        Ok(false)
     }
 
     #[cfg(windows)]
     {
         use russh::keys::agent::client::AgentClient;
-        use tokio::net::windows::named_pipe::ClientOptions;
 
+        const OPENSSH_AGENT_PIPE: &str = r"\\.\pipe\openssh-ssh-agent";
         let explicit_pipe = std::env::var("SSH_AUTH_SOCK").ok();
-        let candidates: Vec<String> = if let Some(pipe) = explicit_pipe.clone() {
-            vec![pipe]
-        } else {
-            vec![
-                r"\\.\pipe\openssh-ssh-agent".to_string(),
-                r"\\.\pipe\pageant".to_string(),
-            ]
-        };
 
-        let mut selected_pipe: Option<String> = None;
-        let mut stream_opt = None;
-        let mut open_errors: Vec<(String, std::io::Error)> = Vec::new();
-        for pipe in candidates {
-            match ClientOptions::new().open(&pipe) {
-                Ok(stream) => {
-                    selected_pipe = Some(pipe);
-                    stream_opt = Some(stream);
-                    break;
-                }
-                Err(e) => open_errors.push((pipe, e)),
-            }
-        }
-        let selected_pipe = selected_pipe.ok_or_else(|| {
-            if let Some((pipe, e)) = open_errors.first() {
-                use std::io::ErrorKind;
-                let msg = match e.kind() {
-                    ErrorKind::NotFound => {
-                        if explicit_pipe.is_some() {
-                            format!(
+        let mut agent = if let Some(pipe) = explicit_pipe {
+            AgentClient::connect_named_pipe(&pipe)
+                .await
+                .map_err(|error| {
+                    let message = match &error {
+                        russh::keys::Error::IO(io_error) => match io_error.kind() {
+                            std::io::ErrorKind::NotFound => format!(
                                 "SSH_AUTH_SOCK points to '{}', but the named pipe was not found. Verify the path or unset SSH_AUTH_SOCK to use the default agent.",
                                 pipe
-                            )
-                        } else if pipe.contains("openssh") {
-                            "Windows OpenSSH Authentication Agent service is not running. Start it via 'services.msc' > 'OpenSSH Authentication Agent' > Start, or install OpenSSH.".to_string()
-                        } else if pipe.contains("pageant") {
-                            "Pageant (PuTTY SSH agent) does not appear to be running. Start Pageant or add keys to Windows OpenSSH Agent instead.".to_string()
-                        } else {
-                            format!(
-                                "SSH agent pipe '{}' was not found. Ensure the agent service is running.",
+                            ),
+                            std::io::ErrorKind::PermissionDenied => format!(
+                                "Permission denied when opening SSH agent pipe '{}'. Check that your user account has access to the pipe.",
                                 pipe
-                            )
-                        }
-                    }
-                    ErrorKind::PermissionDenied => {
-                        format!(
-                            "Permission denied when opening SSH agent pipe '{}'. Try running the application as Administrator, or check that your user account has access to the pipe.",
-                            pipe
-                        )
-                    }
-                    ErrorKind::AddrNotAvailable => format!(
-                        "SSH agent pipe '{}' is not available. The agent service may have stopped.",
-                        pipe
-                    ),
-                    _ => format!("Failed to open SSH agent pipe '{}': {}", pipe, e),
-                };
-                SessionError::AuthenticationFailed(msg)
-            } else {
-                SessionError::AuthenticationFailed(
-                    "No SSH agent pipe candidate available".to_string(),
-                )
+                            ),
+                            std::io::ErrorKind::AddrNotAvailable => format!(
+                                "SSH agent pipe '{}' is not available. The agent service may have stopped.",
+                                pipe
+                            ),
+                            _ => format!("Failed to open SSH agent pipe '{}': {}", pipe, error),
+                        },
+                        _ => format!("Failed to open SSH agent pipe '{}': {}", pipe, error),
+                    };
+                    SessionError::AuthenticationFailed(message)
+                })?
+                .dynamic()
+        } else {
+            match AgentClient::connect_named_pipe(OPENSSH_AGENT_PIPE).await {
+                Ok(agent) => agent.dynamic(),
+                Err(open_ssh_error) => {
+                    let pageant = AgentClient::connect_pageant().await.map_err(|pageant_error| {
+                        SessionError::AuthenticationFailed(format!(
+                            "Windows OpenSSH Authentication Agent is unavailable ({}), and Pageant does not appear to be running ({})",
+                            open_ssh_error, pageant_error
+                        ))
+                    })?;
+                    tracing::info!("using Pageant transport for SSH agent authentication");
+                    pageant.dynamic()
+                }
             }
-        })?;
-        let stream = stream_opt.expect("stream must exist when selected_pipe exists");
+        };
 
-        if selected_pipe.to_ascii_lowercase().contains("pageant") {
-            tracing::info!(
-                pipe = %selected_pipe,
-                "using Pageant named pipe for SSH agent auth (best-effort)"
-            );
-        }
-        let mut agent = AgentClient::connect(stream);
         let identities = agent.request_identities().await.map_err(|e| {
             SessionError::AuthenticationFailed(format!(
                 "failed to read identities from SSH agent: {}",
@@ -329,16 +336,18 @@ async fn authenticate_with_agent(
 pub struct SshSessionState {
     /// SSH 连接句柄 (Arc so exec() can clone it for a separate channel)
     handle: Arc<client::Handle<ClientHandler>>,
-    /// Channel ID
-    channel_id: ChannelId,
+    /// Shell channel write half used for terminal input and RFC 4254 requests.
+    channel_writer: Arc<ChannelWriteHalf<client::Msg>>,
     /// 是否存活
-    is_alive: bool,
+    is_alive: Arc<AtomicBool>,
     /// 关闭信号发送端
     shutdown_tx: broadcast::Sender<()>,
     /// 读取任务的 JoinHandle
     read_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     /// 连接池 key（用于复用时释放引用）
     pool_key: Option<String>,
+    /// Ensures EOF and explicit close release the pool reference exactly once.
+    pool_ref_held: Arc<AtomicBool>,
 }
 
 /// SSH Session - SSH 远程会话
@@ -348,6 +357,38 @@ pub struct SshSession {
     session_id: String,
     /// 内部状态
     state: Arc<Mutex<SshSessionState>>,
+}
+
+struct JumpTarget<'a> {
+    host: &'a str,
+    port: u16,
+    username: &'a str,
+    password: Option<&'a str>,
+    private_key: Option<&'a str>,
+    use_agent: bool,
+}
+
+async fn open_shell_channel(
+    handle: &client::Handle<ClientHandler>,
+    cols: u16,
+    rows: u16,
+) -> Result<russh::Channel<client::Msg>, SessionError> {
+    let channel = handle
+        .channel_open_session()
+        .await
+        .map_err(|e| SessionError::ChannelError(format!("failed to open channel: {}", e)))?;
+
+    channel
+        .request_pty(false, "xterm-256color", cols.into(), rows.into(), 0, 0, &[])
+        .await
+        .map_err(|e| SessionError::ChannelError(format!("failed to request PTY: {}", e)))?;
+
+    channel
+        .request_shell(false)
+        .await
+        .map_err(|e| SessionError::ChannelError(format!("failed to request shell: {}", e)))?;
+
+    Ok(channel)
 }
 
 impl SshSession {
@@ -368,9 +409,9 @@ impl SshSession {
             username,
             Some(password),
             None,
-            None, // certificate
+            None,  // certificate
             false, // use_agent
-            None, // no jump host
+            None,  // no jump host
             false, // use_target_agent
             cols,
             rows,
@@ -397,9 +438,9 @@ impl SshSession {
             username,
             password,
             Some(private_key),
-            None, // certificate
+            None,  // certificate
             false, // use_agent
-            None, // no jump host
+            None,  // no jump host
             false, // use_target_agent
             cols,
             rows,
@@ -429,12 +470,12 @@ impl SshSession {
             host,
             port,
             username,
-            key_password, // password (for key encryption)
+            key_password,      // password (for key encryption)
             Some(private_key), // private_key
             Some(certificate), // certificate
-            false, // use_agent
-            None, // no jump host
-            false, // use_target_agent
+            false,             // use_agent
+            None,              // no jump host
+            false,             // use_target_agent
             cols,
             rows,
         )
@@ -451,18 +492,13 @@ impl SshSession {
         rows: u16,
     ) -> Result<Self, SessionError> {
         Self::create(
-            app,
-            host,
-            port,
-            username,
-            None, // password
-            None, // private_key
-            None, // certificate
-            true, // use_agent
-            None, // no jump host
+            app, host, port, username, None,  // password
+            None,  // private_key
+            None,  // certificate
+            true,  // use_agent
+            None,  // no jump host
             false, // use_target_agent
-            cols,
-            rows,
+            cols, rows,
         )
         .await
     }
@@ -480,6 +516,7 @@ impl SshSession {
         cols: u16,
         rows: u16,
     ) -> Result<Self, SessionError> {
+        validate_jump_auth_types(&jump_host)?;
         // 根据 jump_host.target_auth_type 决定是否对目标主机使用 SSH agent 认证
         let use_target_agent = jump_host.target_auth_type.as_deref() == Some("agent");
         Self::create(
@@ -489,7 +526,7 @@ impl SshSession {
             target_username,
             target_password,
             target_key,
-            None, // certificate
+            None,  // certificate
             false, // use_agent for jump host itself
             Some(jump_host),
             use_target_agent,
@@ -518,7 +555,9 @@ impl SshSession {
     ) -> Result<Self, SessionError> {
         // 验证输入
         if host.is_empty() {
-            return Err(SessionError::InvalidInput("Host cannot be empty".to_string()));
+            return Err(SessionError::InvalidInput(
+                "Host cannot be empty".to_string(),
+            ));
         }
         if !(1..=65535).contains(&port) {
             return Err(SessionError::InvalidInput(
@@ -526,7 +565,9 @@ impl SshSession {
             ));
         }
         if username.is_empty() {
-            return Err(SessionError::InvalidInput("Username cannot be empty".to_string()));
+            return Err(SessionError::InvalidInput(
+                "Username cannot be empty".to_string(),
+            ));
         }
 
         // 构建 SSH 配置
@@ -540,33 +581,28 @@ impl SshSession {
         // 决定连接方式：直接连接 或 通过 Jump Host
         // Try to get a pooled connection first (ControlMaster multiplexing)
         let pool = get_connection_pool();
-        let is_jump = jump_host.is_some();
-        let pool_key = connection_key(host, port, username, is_jump);
+        let pool_key = connection_key(host, port, username, jump_host.as_ref());
+        let creation_lock = pool.creation_lock(&pool_key).await;
+        let _creation_guard = creation_lock.lock().await;
 
         // pooled_handle is an Arc we can use directly for channel ops
-        let pooled_arc: Option<Arc<client::Handle<ClientHandler>>> =
-            pool.get(&pool_key).await;
+        let pooled_arc: Option<Arc<client::Handle<ClientHandler>>> = pool.get(&pool_key).await;
 
         if let Some(arc_handle) = pooled_arc {
             // Reuse pooled connection: open a new PTY channel on the shared handle
             tracing::info!(key = %pool_key, "reusing pooled SSH connection for new tab");
 
-            let mut channel = arc_handle
-                .channel_open_session()
-                .await
-                .map_err(|e| SessionError::ChannelError(format!("failed to open channel: {}", e)))?;
-
-            channel
-                .request_pty(false, "xterm-256color", cols.into(), rows.into(), 0, 0, &[])
-                .await
-                .map_err(|e| SessionError::ChannelError(format!("failed to request PTY: {}", e)))?;
-
-            channel
-                .request_shell(false)
-                .await
-                .map_err(|e| SessionError::ChannelError(format!("failed to request shell: {}", e)))?;
-
-            let channel_id = channel.id();
+            let channel = match open_shell_channel(arc_handle.as_ref(), cols, rows).await {
+                Ok(channel) => channel,
+                Err(error) => {
+                    pool.release(&pool_key).await;
+                    return Err(error);
+                }
+            };
+            let (mut channel_reader, channel_writer) = channel.split();
+            let channel_writer = Arc::new(channel_writer);
+            let is_alive = Arc::new(AtomicBool::new(true));
+            let pool_ref_held = Arc::new(AtomicBool::new(true));
 
             // 创建关闭信号 channel
             let (shutdown_tx, _) = broadcast::channel(1);
@@ -579,17 +615,21 @@ impl SshSession {
 
             let state = Arc::new(Mutex::new(SshSessionState {
                 handle: Arc::clone(&arc_handle),
-                channel_id,
-                is_alive: true,
+                channel_writer,
+                is_alive: Arc::clone(&is_alive),
                 shutdown_tx,
                 read_handle: read_handle.clone(),
-                pool_key: Some(pool_key),
+                pool_key: Some(pool_key.clone()),
+                pool_ref_held: Arc::clone(&pool_ref_held),
             }));
 
             // 启动读取任务
             let session_id_clone = session_id.clone();
             let app_clone = app.clone();
             let read_handle_clone = read_handle.clone();
+            let is_alive_clone = Arc::clone(&is_alive);
+            let pool_ref_held_clone = Arc::clone(&pool_ref_held);
+            let pool_key_clone = pool_key.clone();
 
             let _jh = tokio::spawn(async move {
                 let mut shutdown_rx = shutdown_rx;
@@ -601,7 +641,7 @@ impl SshSession {
                             let _ = app_clone.emit("ssh-close", &session_id_clone);
                             break;
                         }
-                        msg = channel.wait() => {
+                        msg = channel_reader.wait() => {
                             match msg {
                                 Some(ChannelMsg::Data { data }) => {
                                     let output = SessionOutput {
@@ -626,13 +666,20 @@ impl SshSession {
                                 Some(ChannelMsg::ExitStatus { exit_status }) => {
                                     let _ = app_clone.emit("ssh-exit", (&session_id_clone, exit_status));
                                 }
-                                None => break,
+                                None => {
+                                    let _ = app_clone.emit("ssh-close", &session_id_clone);
+                                    break;
+                                }
                                 _ => continue,
                             }
                         }
                     }
                 }
 
+                is_alive_clone.store(false, Ordering::Release);
+                if pool_ref_held_clone.swap(false, Ordering::AcqRel) {
+                    get_connection_pool().release(&pool_key_clone).await;
+                }
                 let mut handle_guard = read_handle_clone.lock().await;
                 *handle_guard = None;
             });
@@ -647,18 +694,24 @@ impl SshSession {
 
         // ── New connection (not pooled) ──────────────────────────────────────
         let raw_handle: client::Handle<ClientHandler>;
-        let jh_ch: Option<russh::Channel<client::Msg>>;
+        let transport_handle: Option<Arc<client::Handle<ClientHandler>>>;
 
         if let Some(ref jh) = jump_host {
-            let (jh_h, ch) = Self::connect_via_jump(
-                config.clone(), host, port, username, password, private_key, use_target_agent, jh,
-            )
-            .await?;
-            raw_handle = jh_h;
-            jh_ch = Some(ch);
+            let target = JumpTarget {
+                host,
+                port,
+                username,
+                password,
+                private_key,
+                use_agent: use_target_agent,
+            };
+            let (target_handle, jump_handle) =
+                Self::connect_via_jump(config.clone(), &target, jh).await?;
+            raw_handle = target_handle;
+            transport_handle = Some(Arc::new(jump_handle));
         } else {
             let addr = format!("{}:{}", host, port);
-            let mut direct = client::connect(config, addr, ClientHandler::new())
+            let mut direct = client::connect(config, addr, ClientHandler::for_host(host, port))
                 .await
                 .map_err(|e| SessionError::ConnectionFailed(format!("connection failed: {}", e)))?;
 
@@ -670,38 +723,38 @@ impl SshSession {
                     ));
                 }
             } else {
-                Self::authenticate(&mut direct, username, password, private_key, certificate).await?;
+                Self::authenticate(&mut direct, username, password, private_key, certificate)
+                    .await?;
             }
             raw_handle = direct;
-            jh_ch = None;
+            transport_handle = None;
         }
 
-        // Add to pool for future reuse
         let arc_handle = Arc::new(raw_handle);
-        pool.insert(pool_key.clone(), Arc::clone(&arc_handle)).await;
-        tracing::info!(key = %pool_key, "new SSH connection added to pool");
-
-        // Open shell channel (raw_handle moved into arc_handle, use the cloned Arc for the channel)
-        let mut channel = if let Some(ch) = jh_ch {
-            ch
-        } else {
-            Arc::clone(&arc_handle)
-                .channel_open_session()
-                .await
-                .map_err(|e| SessionError::ChannelError(format!("failed to open channel: {}", e)))?
+        let channel = match open_shell_channel(arc_handle.as_ref(), cols, rows).await {
+            Ok(channel) => channel,
+            Err(error) => {
+                let _ = arc_handle
+                    .disconnect(russh::Disconnect::ByApplication, "", "en")
+                    .await;
+                if let Some(handle) = transport_handle.as_ref() {
+                    let _ = handle
+                        .disconnect(russh::Disconnect::ByApplication, "", "en")
+                        .await;
+                }
+                return Err(error);
+            }
         };
 
-        channel
-            .request_pty(false, "xterm-256color", cols.into(), rows.into(), 0, 0, &[])
-            .await
-            .map_err(|e| SessionError::ChannelError(format!("failed to request PTY: {}", e)))?;
+        // Only publish fully initialized connections to the pool.
+        pool.insert(pool_key.clone(), Arc::clone(&arc_handle), transport_handle)
+            .await;
+        tracing::info!(key = %pool_key, "new SSH connection added to pool");
 
-        channel
-            .request_shell(false)
-            .await
-            .map_err(|e| SessionError::ChannelError(format!("failed to request shell: {}", e)))?;
-
-        let channel_id = channel.id();
+        let (mut channel_reader, channel_writer) = channel.split();
+        let channel_writer = Arc::new(channel_writer);
+        let is_alive = Arc::new(AtomicBool::new(true));
+        let pool_ref_held = Arc::new(AtomicBool::new(true));
 
         let (shutdown_tx, _) = broadcast::channel(1);
         let shutdown_rx = shutdown_tx.subscribe();
@@ -712,16 +765,20 @@ impl SshSession {
 
         let state = Arc::new(Mutex::new(SshSessionState {
             handle: Arc::clone(&arc_handle),
-            channel_id,
-            is_alive: true,
+            channel_writer,
+            is_alive: Arc::clone(&is_alive),
             shutdown_tx,
             read_handle: read_handle.clone(),
-            pool_key: Some(pool_key),
+            pool_key: Some(pool_key.clone()),
+            pool_ref_held: Arc::clone(&pool_ref_held),
         }));
 
         let session_id_clone = session_id.clone();
         let app_clone = app.clone();
         let read_handle_clone = read_handle.clone();
+        let is_alive_clone = Arc::clone(&is_alive);
+        let pool_ref_held_clone = Arc::clone(&pool_ref_held);
+        let pool_key_clone = pool_key.clone();
 
         let _jh = tokio::spawn(async move {
             let mut shutdown_rx = shutdown_rx;
@@ -733,7 +790,7 @@ impl SshSession {
                         let _ = app_clone.emit("ssh-close", &session_id_clone);
                         break;
                     }
-                    msg = channel.wait() => {
+                    msg = channel_reader.wait() => {
                         match msg {
                             Some(ChannelMsg::Data { data }) => {
                                 let output = SessionOutput {
@@ -758,13 +815,20 @@ impl SshSession {
                             Some(ChannelMsg::ExitStatus { exit_status }) => {
                                 let _ = app_clone.emit("ssh-exit", (&session_id_clone, exit_status));
                             }
-                            None => break,
+                            None => {
+                                let _ = app_clone.emit("ssh-close", &session_id_clone);
+                                break;
+                            }
                             _ => continue,
                         }
                     }
                 }
             }
 
+            is_alive_clone.store(false, Ordering::Release);
+            if pool_ref_held_clone.swap(false, Ordering::AcqRel) {
+                get_connection_pool().release(&pool_key_clone).await;
+            }
             let mut guard = read_handle_clone.lock().await;
             *guard = None;
         });
@@ -779,28 +843,32 @@ impl SshSession {
 
     /// 通过 Jump Host 连接到目标主机
     ///
-    /// 返回跳板机的 handle 和到目标主机的 channel
+    /// 返回目标主机 handle 和负责承载隧道的跳板机 handle。
     async fn connect_via_jump(
         config: Arc<client::Config>,
-        target_host: &str,
-        target_port: u16,
-        target_username: &str,
-        target_password: Option<&str>,
-        target_key: Option<&str>,
-        use_target_agent: bool,
+        target: &JumpTarget<'_>,
         jump_host: &JumpHostConfig,
-    ) -> Result<(client::Handle<ClientHandler>, russh::Channel<client::Msg>), SessionError> {
+    ) -> Result<(client::Handle<ClientHandler>, client::Handle<ClientHandler>), SessionError> {
         // 第一步：连接到跳板机
         let jump_addr = format!("{}:{}", jump_host.host, jump_host.port);
-        let mut jump_handle = client::connect(config.clone(), jump_addr, ClientHandler::new())
-            .await
-            .map_err(|e| SessionError::ConnectionFailed(format!("Jump host connection failed: {}", e)))?;
+        let mut jump_handle = client::connect(
+            config.clone(),
+            jump_addr,
+            ClientHandler::for_host(&jump_host.host, jump_host.port),
+        )
+        .await
+        .map_err(|e| {
+            SessionError::ConnectionFailed(format!("Jump host connection failed: {}", e))
+        })?;
 
         // 跳板机认证
         let jump_auth: Result<bool, SessionError> = match jump_host.auth_type.as_str() {
             "agent" => {
-                let success = authenticate_with_agent(&mut jump_handle, &jump_host.username).await?;
-                if success { Ok(true) } else {
+                let success =
+                    authenticate_with_agent(&mut jump_handle, &jump_host.username).await?;
+                if success {
+                    Ok(true)
+                } else {
                     Err(SessionError::AuthenticationFailed(
                         "Jump host: all SSH agent identities rejected".to_string(),
                     ))
@@ -813,29 +881,52 @@ impl SshSession {
                     .map_err(|e| SessionError::ConnectionFailed(format!("RSA hash failed: {}", e)))?
                     .flatten();
                 if let Some(ref key) = jump_host.private_key {
-                    match russh::keys::decode_openssh(key.as_bytes(), jump_host.password.as_deref()) {
+                    match russh::keys::decode_openssh(key.as_bytes(), jump_host.password.as_deref())
+                    {
                         Ok(key) => {
                             let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash);
-                            jump_handle.authenticate_publickey(&jump_host.username, key_with_hash).await
+                            jump_handle
+                                .authenticate_publickey(&jump_host.username, key_with_hash)
+                                .await
                                 .map(|r| r.success())
-                                .map_err(|e| SessionError::AuthenticationFailed(format!("Jump host auth failed: {}", e)))
+                                .map_err(|e| {
+                                    SessionError::AuthenticationFailed(format!(
+                                        "Jump host auth failed: {}",
+                                        e
+                                    ))
+                                })
                         }
                         Err(_) => {
                             if let Some(ref pwd) = jump_host.password {
-                                jump_handle.authenticate_password(&jump_host.username, pwd).await
+                                jump_handle
+                                    .authenticate_password(&jump_host.username, pwd)
+                                    .await
                                     .map(|r| r.success())
-                                    .map_err(|e| SessionError::AuthenticationFailed(format!("Jump host auth failed: {}", e)))
+                                    .map_err(|e| {
+                                        SessionError::AuthenticationFailed(format!(
+                                            "Jump host auth failed: {}",
+                                            e
+                                        ))
+                                    })
                             } else {
                                 Err(SessionError::AuthenticationFailed(
-                                    "Failed to parse jump host key and no password provided".to_string(),
+                                    "Failed to parse jump host key and no password provided"
+                                        .to_string(),
                                 ))
                             }
                         }
                     }
                 } else if let Some(ref pwd) = jump_host.password {
-                    jump_handle.authenticate_password(&jump_host.username, pwd).await
+                    jump_handle
+                        .authenticate_password(&jump_host.username, pwd)
+                        .await
                         .map(|r| r.success())
-                        .map_err(|e| SessionError::AuthenticationFailed(format!("Jump host auth failed: {}", e)))
+                        .map_err(|e| {
+                            SessionError::AuthenticationFailed(format!(
+                                "Jump host auth failed: {}",
+                                e
+                            ))
+                        })
                 } else {
                     Err(SessionError::AuthenticationFailed(
                         "No authentication method provided for jump host".to_string(),
@@ -845,9 +936,16 @@ impl SshSession {
             _ => {
                 // 默认使用密码认证
                 if let Some(ref pwd) = jump_host.password {
-                    jump_handle.authenticate_password(&jump_host.username, pwd).await
+                    jump_handle
+                        .authenticate_password(&jump_host.username, pwd)
+                        .await
                         .map(|r| r.success())
-                        .map_err(|e| SessionError::AuthenticationFailed(format!("Jump host auth failed: {}", e)))
+                        .map_err(|e| {
+                            SessionError::AuthenticationFailed(format!(
+                                "Jump host auth failed: {}",
+                                e
+                            ))
+                        })
                 } else {
                     Err(SessionError::AuthenticationFailed(
                         "Jump host password required".to_string(),
@@ -864,54 +962,53 @@ impl SshSession {
 
         // 第二步：通过跳板机打开到目标主机的 direct-tcpip channel
         let peer_addr = format!("{}:{}", jump_host.host, jump_host.port);
-        let mut target_channel = jump_handle
-            .channel_open_direct_tcpip(target_host, target_port as u32, &peer_addr, jump_host.port as u32)
-            .await
-            .map_err(|e| SessionError::ChannelError(format!("Failed to open channel via jump host: {}", e)))?;
-
-        // 第三步：目标主机认证（在已建立的 channel 上进行）
-        let target_auth = if use_target_agent {
-            let success = authenticate_with_agent(&mut jump_handle, target_username).await?;
-            if success {
-                Ok(true)
-            } else {
-                Err(SessionError::AuthenticationFailed(
-                    "Target host: all SSH agent identities rejected".to_string(),
-                ))
-            }
-        } else {
-            Self::authenticate_channel_on_channel(
-                &mut target_channel,
-                target_username,
-                target_password,
-                target_key,
+        let target_channel = jump_handle
+            .channel_open_direct_tcpip(
+                target.host,
+                target.port as u32,
+                &peer_addr,
+                jump_host.port as u32,
             )
             .await
-        };
+            .map_err(|e| {
+                SessionError::ChannelError(format!("Failed to open channel via jump host: {}", e))
+            })?;
 
-        if !target_auth? {
-            return Err(SessionError::AuthenticationFailed(
-                "Target host authentication failed".to_string(),
-            ));
+        // 第三步：把 direct-tcpip channel 当成双向流，在隧道内完成目标主机
+        // 自己的 SSH 握手和认证。认证跳板 Handle 只会再次认证跳板机。
+        let target_stream = target_channel.into_stream();
+        let mut target_handle = client::connect_stream(
+            config,
+            target_stream,
+            ClientHandler::for_host(target.host, target.port),
+        )
+        .await
+        .map_err(|e| {
+            SessionError::ConnectionFailed(format!(
+                "Target host connection through jump host failed: {}",
+                e
+            ))
+        })?;
+
+        if target.use_agent {
+            let success = authenticate_with_agent(&mut target_handle, target.username).await?;
+            if !success {
+                return Err(SessionError::AuthenticationFailed(
+                    "Target host: all SSH agent identities rejected".to_string(),
+                ));
+            }
+        } else {
+            Self::authenticate(
+                &mut target_handle,
+                target.username,
+                target.password,
+                target.private_key,
+                None,
+            )
+            .await?;
         }
 
-        Ok((jump_handle, target_channel))
-    }
-
-    /// 在 channel 上进行认证（实验性）
-    ///
-    /// SSH 认证通常在 channel_open 之前完成。对于通过跳板机的连接，
-    /// 认证信息已经在跳板机层处理。这里返回 Ok(false) 表示未认证。
-    async fn authenticate_channel_on_channel(
-        channel: &mut russh::Channel<client::Msg>,
-        username: &str,
-        password: Option<&str>,
-        private_key: Option<&str>,
-    ) -> Result<bool, SessionError> {
-        // SSH 认证在 channel_open 之后通常无法完成，这里尝试发送认证请求
-        // 但实际上 SSH 认证需要在 session 层面进行，不是在 channel 层面
-        let _ = (channel, username, password, private_key);
-        Ok(false)
+        Ok((target_handle, jump_handle))
     }
 
     /// 认证处理（不含 agent；agent 由调用方在需要时单独调用 `authenticate_with_agent`）
@@ -924,7 +1021,14 @@ impl SshSession {
     ) -> Result<(), SessionError> {
         // 证书认证优先级最高（用户显式提供证书时使用）
         if let Some(cert_content) = certificate {
-            Self::authenticate_with_cert(handle, username, cert_content, private_key.unwrap_or(""), password).await?;
+            Self::authenticate_with_cert(
+                handle,
+                username,
+                cert_content,
+                private_key.unwrap_or(""),
+                password,
+            )
+            .await?;
             return Ok(());
         }
 
@@ -933,26 +1037,47 @@ impl SshSession {
             let rsa_hash = handle
                 .best_supported_rsa_hash()
                 .await
-                .map_err(|e| SessionError::ConnectionFailed(format!("failed to get RSA hash: {}", e)))?
+                .map_err(|e| {
+                    SessionError::ConnectionFailed(format!("failed to get RSA hash: {}", e))
+                })?
                 .flatten();
             match russh::keys::decode_openssh(key_content.as_bytes(), password) {
                 Ok(key) => {
                     let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash);
-                    let result = handle.authenticate_publickey(username, key_with_hash).await
-                        .map_err(|e| SessionError::AuthenticationFailed(format!("auth failed: {}", e)))?;
+                    let result = handle
+                        .authenticate_publickey(username, key_with_hash)
+                        .await
+                        .map_err(|e| {
+                            SessionError::AuthenticationFailed(format!("auth failed: {}", e))
+                        })?;
                     if !result.success() {
-                        return Err(SessionError::AuthenticationFailed("all methods rejected".to_string()));
+                        return Err(SessionError::AuthenticationFailed(
+                            "all methods rejected".to_string(),
+                        ));
                     }
                 }
                 Err(e) => {
                     if let Some(pwd) = password {
-                        let result = handle.authenticate_password(username, pwd).await
-                            .map_err(|e| SessionError::AuthenticationFailed(format!("auth failed: {}", e)))?;
+                        let result =
+                            handle
+                                .authenticate_password(username, pwd)
+                                .await
+                                .map_err(|e| {
+                                    SessionError::AuthenticationFailed(format!(
+                                        "auth failed: {}",
+                                        e
+                                    ))
+                                })?;
                         if !result.success() {
-                            return Err(SessionError::AuthenticationFailed("all methods rejected".to_string()));
+                            return Err(SessionError::AuthenticationFailed(
+                                "all methods rejected".to_string(),
+                            ));
                         }
                     } else {
-                        return Err(SessionError::KeyParseFailed(format!("failed to parse private key: {}", e)));
+                        return Err(SessionError::KeyParseFailed(format!(
+                            "failed to parse private key: {}",
+                            e
+                        )));
                     }
                 }
             }
@@ -961,15 +1086,21 @@ impl SshSession {
 
         // 密码认证
         if let Some(pwd) = password {
-            let result = handle.authenticate_password(username, pwd).await
+            let result = handle
+                .authenticate_password(username, pwd)
+                .await
                 .map_err(|e| SessionError::AuthenticationFailed(format!("auth failed: {}", e)))?;
             if !result.success() {
-                return Err(SessionError::AuthenticationFailed("all methods rejected".to_string()));
+                return Err(SessionError::AuthenticationFailed(
+                    "all methods rejected".to_string(),
+                ));
             }
             return Ok(());
         }
 
-        Err(SessionError::AuthenticationFailed("no authentication method provided".to_string()))
+        Err(SessionError::AuthenticationFailed(
+            "no authentication method provided".to_string(),
+        ))
     }
 
     /// 使用 SSH 证书认证（authenticate_openssh_cert）
@@ -996,19 +1127,23 @@ impl SshSession {
         );
 
         // 解析私钥（用于签名）
-        let private_key = russh::keys::decode_openssh(
-            private_key_content.as_bytes(),
-            key_password,
-        ).map_err(|e| SessionError::KeyParseFailed(
-            format!("failed to parse private key for certificate signing: {}", e)
-        ))?;
+        let private_key = russh::keys::decode_openssh(private_key_content.as_bytes(), key_password)
+            .map_err(|e| {
+                SessionError::KeyParseFailed(format!(
+                    "failed to parse private key for certificate signing: {}",
+                    e
+                ))
+            })?;
 
         let result = handle
             .authenticate_openssh_cert(username, std::sync::Arc::new(private_key), cert)
             .await
-            .map_err(|e| SessionError::AuthenticationFailed(
-                format!("certificate authentication failed: {}", e)
-            ))?;
+            .map_err(|e| {
+                SessionError::AuthenticationFailed(format!(
+                    "certificate authentication failed: {}",
+                    e
+                ))
+            })?;
 
         if !result.success() {
             return Err(SessionError::AuthenticationFailed(
@@ -1040,17 +1175,16 @@ impl SshSession {
         Box::pin(async move {
             let handle = {
                 let guard = state.lock().await;
-                if !guard.is_alive {
+                if !guard.is_alive.load(Ordering::Acquire) {
                     return Err(SessionError::ChannelError("session is closed".to_string()));
                 }
                 guard.handle.clone()
             };
 
             // Open exec channel
-            let mut channel = handle
-                .channel_open_session()
-                .await
-                .map_err(|e| SessionError::ChannelError(format!("failed to open exec channel: {}", e)))?;
+            let mut channel = handle.channel_open_session().await.map_err(|e| {
+                SessionError::ChannelError(format!("failed to open exec channel: {}", e))
+            })?;
 
             // Request exec
             channel
@@ -1058,64 +1192,70 @@ impl SshSession {
                 .await
                 .map_err(|e| SessionError::ExecFailed(format!("exec request failed: {}", e)))?;
 
-            // Read output
+            // Read output under one absolute deadline.
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
             let mut exit_code: Option<u32> = None;
 
-            loop {
-                tokio::select! {
-                    biased;
-                    result = channel.wait() => {
-                        match result {
-                            Some(ChannelMsg::Data { data }) => {
+            let read_result = enforce_exec_timeout(timeout, async {
+                loop {
+                    match channel.wait().await {
+                        Some(ChannelMsg::Data { data }) => {
+                            stdout.extend_from_slice(&data);
+                        }
+                        Some(ChannelMsg::ExtendedData { data, ext }) => {
+                            if ext == 1 {
+                                stderr.extend_from_slice(&data);
+                            } else {
                                 stdout.extend_from_slice(&data);
                             }
-                            Some(ChannelMsg::ExtendedData { data, ext }) => {
-                                if ext == 1 {
-                                    stderr.extend_from_slice(&data);
-                                } else {
-                                    stdout.extend_from_slice(&data);
-                                }
-                            }
-                            Some(ChannelMsg::ExitStatus { exit_status }) => {
-                                exit_code = Some(exit_status);
-                                break;
-                            }
-                            Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) => {
-                                break;
-                            }
-                            None => break,
-                            _ => continue,
                         }
-                    }
-                    _ = tokio::time::sleep(timeout) => {
-                        return Err(SessionError::ExecTimeout);
+                        Some(ChannelMsg::ExitStatus { exit_status }) => {
+                            exit_code = Some(exit_status);
+                            break;
+                        }
+                        Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) => break,
+                        None => break,
+                        _ => continue,
                     }
                 }
+            })
+            .await;
+            if read_result.is_err() {
+                let _ = channel.close().await;
             }
+            read_result?;
 
             let stdout_str = String::from_utf8_lossy(&stdout).to_string();
             let stderr_str = String::from_utf8_lossy(&stderr).to_string();
             let code = exit_code.unwrap_or(1) as i32;
 
-            Ok(ExecResult { stdout: stdout_str, stderr: stderr_str, exit_code: code })
+            Ok(ExecResult {
+                stdout: stdout_str,
+                stderr: stderr_str,
+                exit_code: code,
+            })
         })
     }
 
     /// 写入数据
-    pub fn write(&self, data: &str) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
+    pub fn write(
+        &self,
+        data: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
         let data_bytes = bytes::Bytes::copy_from_slice(data.as_bytes());
         let state = self.state.clone();
         Box::pin(async move {
-            let state = state.lock().await;
-            if !state.is_alive {
-                return Err(SessionError::WriteFailed("Session is closed".to_string()));
-            }
+            let channel_writer = {
+                let state = state.lock().await;
+                if !state.is_alive.load(Ordering::Acquire) {
+                    return Err(SessionError::WriteFailed("Session is closed".to_string()));
+                }
+                Arc::clone(&state.channel_writer)
+            };
 
-            let handle = state.handle.as_ref();
-            handle
-                .data(state.channel_id, data_bytes)
+            channel_writer
+                .data(data_bytes.as_ref())
                 .await
                 .map_err(|e| SessionError::ChannelError(format!("Failed to send data: {:?}", e)))?;
 
@@ -1124,21 +1264,27 @@ impl SshSession {
     }
 
     /// 调整大小
-    pub fn resize(&self, cols: u16, rows: u16) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
-        let resize_cmd = format!("\x1b[8;{};{}t", rows, cols);
-        let resize_bytes = bytes::Bytes::from(resize_cmd);
+    pub fn resize(
+        &self,
+        cols: u16,
+        rows: u16,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
         let state = self.state.clone();
         Box::pin(async move {
-            let state = state.lock().await;
-            if !state.is_alive {
-                return Err(SessionError::ResizeFailed("Session is closed".to_string()));
-            }
+            let channel_writer = {
+                let state = state.lock().await;
+                if !state.is_alive.load(Ordering::Acquire) {
+                    return Err(SessionError::ResizeFailed("Session is closed".to_string()));
+                }
+                Arc::clone(&state.channel_writer)
+            };
 
-            let handle = state.handle.as_ref();
-            handle
-                .data(state.channel_id, resize_bytes)
+            channel_writer
+                .window_change(cols.into(), rows.into(), 0, 0)
                 .await
-                .map_err(|e| SessionError::ChannelError(format!("Failed to send resize: {:?}", e)))?;
+                .map_err(|e| {
+                    SessionError::ChannelError(format!("Failed to send resize: {:?}", e))
+                })?;
 
             Ok(())
         })
@@ -1148,26 +1294,31 @@ impl SshSession {
     pub fn close(self) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         let state = self.state.clone();
         Box::pin(async move {
-            let pool_key = {
+            let (pool_key, pool_ref_held, shutdown_tx, is_alive, read_handle, channel_writer) = {
                 let s = state.lock().await;
-                s.pool_key.clone()
+                (
+                    s.pool_key.clone(),
+                    Arc::clone(&s.pool_ref_held),
+                    s.shutdown_tx.clone(),
+                    Arc::clone(&s.is_alive),
+                    Arc::clone(&s.read_handle),
+                    Arc::clone(&s.channel_writer),
+                )
             };
-            let read_handle = {
-                let mut s = state.lock().await;
-                if s.is_alive {
-                    let _ = s.shutdown_tx.send(());
-                    s.is_alive = false;
-                }
-                let h = s.read_handle.lock().await.take();
-                h
-            };
+            if is_alive.swap(false, Ordering::AcqRel) {
+                let _ = channel_writer.close().await;
+                let _ = shutdown_tx.send(());
+            }
+            let read_task = read_handle.lock().await.take();
             // 等待读取任务完成（最多等待 2 秒）
-            if let Some(h) = read_handle {
+            if let Some(h) = read_task {
                 let _ = tokio::time::timeout(tokio::time::Duration::from_secs(2), h).await;
             }
             // 释放连接池引用（如果是最后一个引用，底层连接会被关闭）
-            if let Some(ref key) = pool_key {
-                get_connection_pool().release(key).await;
+            if pool_ref_held.swap(false, Ordering::AcqRel) {
+                if let Some(ref key) = pool_key {
+                    get_connection_pool().release(key).await;
+                }
             }
         })
     }
@@ -1176,7 +1327,7 @@ impl SshSession {
     pub fn is_alive(&self) -> bool {
         let state = self.state.try_lock();
         match state {
-            Ok(s) => s.is_alive,
+            Ok(s) => s.is_alive.load(Ordering::Acquire),
             Err(_) => false,
         }
     }
@@ -1185,10 +1336,118 @@ impl SshSession {
     /// 返回 None 如果会话已关闭。
     pub fn handle(&self) -> Option<Arc<client::Handle<ClientHandler>>> {
         let state = self.state.try_lock().ok()?;
-        if state.is_alive {
+        if state.is_alive.load(Ordering::Acquire) {
             Some(Arc::clone(&state.handle))
         } else {
             None
         }
+    }
+}
+
+async fn enforce_exec_timeout<T>(
+    timeout: std::time::Duration,
+    future: impl Future<Output = T>,
+) -> Result<T, SessionError> {
+    tokio::time::timeout(timeout, future)
+        .await
+        .map_err(|_| SessionError::ExecTimeout)
+}
+
+fn validate_jump_auth_types(jump_host: &JumpHostConfig) -> Result<(), SessionError> {
+    if jump_host.auth_type == "cert" || jump_host.target_auth_type.as_deref() == Some("cert") {
+        return Err(SessionError::InvalidInput(
+            "Certificate authentication through a jump host is not supported yet".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn jump_host(host: &str) -> JumpHostConfig {
+        JumpHostConfig {
+            host: host.to_string(),
+            port: 22,
+            username: "jump-user".to_string(),
+            auth_type: "password".to_string(),
+            password: Some("unused".to_string()),
+            private_key: None,
+            certificate: None,
+            target_auth_type: Some("password".to_string()),
+        }
+    }
+
+    #[test]
+    fn jump_pool_key_includes_bastion_identity() {
+        let first = jump_host("bastion-a.example");
+        let second = jump_host("bastion-b.example");
+
+        let first_key = connection_key("target.example", 22, "target-user", Some(&first));
+        let second_key = connection_key("target.example", 22, "target-user", Some(&second));
+
+        assert_ne!(first_key, second_key);
+    }
+
+    #[test]
+    fn direct_and_jump_pool_keys_cannot_collide() {
+        let jump = jump_host("bastion.example");
+
+        let direct = connection_key("target.example", 22, "target-user", None);
+        let tunneled = connection_key("target.example", 22, "target-user", Some(&jump));
+
+        assert_ne!(direct, tunneled);
+    }
+
+    #[test]
+    fn jump_auth_rejects_certificate_until_it_is_supported() {
+        for configure in [
+            |jump: &mut JumpHostConfig| jump.auth_type = "cert".to_string(),
+            |jump: &mut JumpHostConfig| jump.target_auth_type = Some("cert".to_string()),
+        ] {
+            let mut jump = jump_host("bastion.example");
+            configure(&mut jump);
+
+            assert!(matches!(
+                validate_jump_auth_types(&jump),
+                Err(SessionError::InvalidInput(message))
+                    if message == "Certificate authentication through a jump host is not supported yet"
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn same_connection_key_shares_creation_lock() {
+        let pool = SshConnectionPool::new();
+
+        let first = pool.creation_lock("same-key").await;
+        let second = pool.creation_lock("same-key").await;
+
+        assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    #[tokio::test]
+    async fn different_connection_keys_use_independent_creation_locks() {
+        let pool = SshConnectionPool::new();
+
+        let first = pool.creation_lock("first-key").await;
+        let second = pool.creation_lock("second-key").await;
+
+        assert!(!Arc::ptr_eq(&first, &second));
+    }
+
+    #[tokio::test]
+    async fn sustained_output_cannot_extend_exec_deadline() {
+        let active = async {
+            for _ in 0..10 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        };
+
+        assert!(matches!(
+            enforce_exec_timeout(std::time::Duration::from_millis(25), active).await,
+            Err(SessionError::ExecTimeout)
+        ));
     }
 }

@@ -11,6 +11,7 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "incremental": true,
+    "tsBuildInfoFile": "./node_modules/.cache/team-server.tsbuildinfo",
     "skipLibCheck": true,
     "strictNullChecks": false,
     "noImplicitAny": false,

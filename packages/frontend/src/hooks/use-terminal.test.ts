@@ -10,18 +10,21 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { formatIpcError } from './use-terminal'
 
 // We import the module-level sanitize function via the module.
 // Since it's not exported, we test its behavior indirectly through
 // documented invariants. For direct testing, we re-implement the
 // regexes as a test helper to verify the expected behavior.
 function sanitize(data: string): string {
-  return data
-    // eslint-disable-next-line no-control-regex
-    .replace(/\x1b\[[0-9;]*m%\x1b\[[0-9;]*m+\r?\n/g, '')
-    // eslint-disable-next-line no-control-regex
-    .replace(/\x1b\[[0-9;]*m%\r?\n/g, '')
-    .replace(/^%\r?\n/gm, '')
+  return (
+    data
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b\[[0-9;]*m%\x1b\[[0-9;]*m+\r?\n/g, '')
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b\[[0-9;]*m%\r?\n/g, '')
+      .replace(/^%\r?\n/gm, '')
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -98,8 +101,13 @@ describe('History navigation state invariants', () => {
     const newHistoryIndex = historyIndex === -1 ? 0 : historyIndex + 1
     const clampedIndex = Math.min(newHistoryIndex, history.length - 1)
     const newLine = history[clampedIndex] ?? currentInputBeforeNav
-    const newCurrentInput = historyIndex === -1 ? currentLine : currentInputBeforeNav
-    return { historyIndex: clampedIndex, line: newLine, currentInputBeforeNav: newCurrentInput }
+    const newCurrentInput =
+      historyIndex === -1 ? currentLine : currentInputBeforeNav
+    return {
+      historyIndex: clampedIndex,
+      line: newLine,
+      currentInputBeforeNav: newCurrentInput,
+    }
   }
 
   function simulateArrowDown(
@@ -133,7 +141,12 @@ describe('History navigation state invariants', () => {
     expect(step1.historyIndex).toBe(0)
     expect(step1.line).toBe('git push')
 
-    const step2 = simulateArrowUp('ls', history, step1.historyIndex, step1.currentInputBeforeNav)
+    const step2 = simulateArrowUp(
+      'ls',
+      history,
+      step1.historyIndex,
+      step1.currentInputBeforeNav,
+    )
     expect(step2.historyIndex).toBe(1)
     expect(step2.line).toBe('git pull')
   })
@@ -203,9 +216,9 @@ describe('Input character classification', () => {
   it('control characters (0-31) are rejected', () => {
     expect(isPrintable('\x00')).toBe(false) // NUL
     expect(isPrintable('\x1b')).toBe(false) // ESC
-    expect(isPrintable('\r')).toBe(false)    // CR
-    expect(isPrintable('\n')).toBe(false)    // LF
-    expect(isPrintable('\t')).toBe(false)    // TAB
+    expect(isPrintable('\r')).toBe(false) // CR
+    expect(isPrintable('\n')).toBe(false) // LF
+    expect(isPrintable('\t')).toBe(false) // TAB
   })
 
   it('DEL (0x7f) is accepted by isPrintable but handled by backspace path in onData', () => {
@@ -259,26 +272,46 @@ describe('ShellOutput interface', () => {
 
 describe('useTerminal hook interface', () => {
   it('status enum has all expected values', () => {
-    const validStatuses: Array<'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'> = [
-      'idle',
-      'connecting',
-      'connected',
-      'disconnected',
-      'error',
-    ]
+    const validStatuses: Array<
+      'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
+    > = ['idle', 'connecting', 'connected', 'disconnected', 'error']
     validStatuses.forEach(s => expect(s).toBeTruthy())
   })
 
   it('UseTerminalOptions accepts all tabType values', () => {
-    const validTabTypes: Array<'local' | 'remote' | 'serial'> = ['local', 'remote', 'serial']
+    const validTabTypes: Array<'local' | 'remote' | 'serial'> = [
+      'local',
+      'remote',
+      'serial',
+    ]
     validTabTypes.forEach(t => expect(t).toBeTruthy())
   })
 
   it('onTabPress callback signature', () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const callback = (_currentLine: string, _cursorPos: number, _history: string[]): void => {}
+    const callback = (
+      _currentLine: string,
+      _cursorPos: number,
+      _history: string[],
+    ): void => {}
     callback('git', 3, ['git status', 'git push'])
     // No-op — just verify the signature compiles
     expect(true).toBe(true)
+  })
+})
+
+describe('formatIpcError', () => {
+  it('extracts the message from a structured Tauri command error', () => {
+    expect(
+      formatIpcError({
+        kind: 'authentication_failed',
+        message: 'all methods rejected',
+      }),
+    ).toBe('all methods rejected')
+  })
+
+  it('serializes structured errors instead of returning [object Object]', () => {
+    expect(formatIpcError({ kind: 'session_not_found' })).toBe(
+      'session_not_found',
+    )
   })
 })

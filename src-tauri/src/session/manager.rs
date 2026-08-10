@@ -46,14 +46,21 @@ impl SessionState {
         }
     }
 
-    pub fn write(&self, data: &str) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
+    pub fn write(
+        &self,
+        data: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
         match self {
             SessionState::Local(s) => s.write(data),
             SessionState::Ssh(s) => s.write(data),
         }
     }
 
-    pub fn resize(&self, cols: u16, rows: u16) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
+    pub fn resize(
+        &self,
+        cols: u16,
+        rows: u16,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
         match self {
             SessionState::Local(s) => s.resize(cols, rows),
             SessionState::Ssh(s) => s.resize(cols, rows),
@@ -157,7 +164,10 @@ impl SessionManager {
 
     /// 获取 SSH handle（用于 SFTP / port-forward）。
     /// 仅 SSH session 返回 Some，其他类型返回 None。
-    pub async fn get_ssh_handle(&self, session_id: &str) -> Option<Arc<client::Handle<ClientHandler>>> {
+    pub async fn get_ssh_handle(
+        &self,
+        session_id: &str,
+    ) -> Option<Arc<client::Handle<ClientHandler>>> {
         let sessions = self.sessions.lock().await;
         match sessions.get(session_id)? {
             SessionState::Ssh(s) => s.handle(),
@@ -243,7 +253,6 @@ impl Default for SessionManager {
 
 impl std::fmt::Debug for SessionManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SessionManager")
-            .finish()
+        f.debug_struct("SessionManager").finish()
     }
 }

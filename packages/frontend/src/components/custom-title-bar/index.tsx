@@ -1,27 +1,8 @@
-import type { Workspace } from '@/types'
-import {
-  Check,
-  Cloud,
-  Copy,
-  Minimize2,
-  Minus,
-  Plus,
-  Settings,
-  Square,
-  X,
-} from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Copy, Minimize2, Minus, Settings, Square, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { useWorkspaceStore } from '@/store/workspace'
+import { useWindowControls } from './use-window-controls'
+import { TitleBarWorkspaceSwitcher } from './workspace-switcher'
 
 export type TitleBarStyle = 'macos' | 'windows' | 'linux'
 
@@ -45,224 +26,13 @@ function detectPlatform(): TitleBarStyle {
   return 'linux'
 }
 
-// WorkspaceSwitcher component inline for simplicity
-const WorkspaceSwitcher: React.FC<{ onSettingsClick?: () => void }> = ({
-  onSettingsClick,
-}) => {
-  const [isCreating, setIsCreating] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editName, setEditName] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-  const workspaceStore = useWorkspaceStore()
-  const activeWorkspace = useWorkspaceStore(s => s.activeWorkspace())
-  const workspaces = useWorkspaceStore(s => s.workspaces)
-
-  useEffect(() => {
-    workspaceStore.loadWorkspaces()
-  }, [workspaceStore])
-
-  const handleCreateWorkspace = async () => {
-    if (!newName.trim()) return
-    await workspaceStore.addWorkspace({
-      name: newName.trim(),
-      icon: '📁',
-      color: '#3b82f6',
-    })
-    setNewName('')
-    setIsCreating(false)
-  }
-
-  const handleSelectWorkspace = async (workspace: Workspace) => {
-    await workspaceStore.setActiveWorkspace(workspace.id)
-  }
-
-  const handleSaveEdit = async () => {
-    if (editingId && editName.trim()) {
-      await workspaceStore.updateWorkspace(editingId, { name: editName.trim() })
-    }
-    setEditingId(null)
-    setEditName('')
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      if (isCreating) {
-        handleCreateWorkspace()
-      } else if (editingId) {
-        handleSaveEdit()
-      }
-    } else if (e.key === 'Escape') {
-      setIsCreating(false)
-      setEditingId(null)
-      setEditName('')
-    }
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-2 h-6 px-2 text-[#cccccc] hover:bg-[#3c3c3c] text-xs"
-        >
-          <Cloud className="size-3.5 shrink-0" />
-          <span className="max-w-[80px] truncate">
-            {activeWorkspace?.name || 'Vaults'}
-          </span>
-        </Button>
-      </DropdownMenuTrigger>
-
-      <DropdownMenuContent align="start" className="w-56">
-        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          Workspaces
-        </div>
-
-        {workspaces.map(workspace => (
-          <DropdownMenuItem
-            key={workspace.id}
-            onSelect={() => handleSelectWorkspace(workspace)}
-            className="flex items-center gap-2 cursor-pointer py-2"
-          >
-            {editingId === workspace.id ? (
-              <Input
-                ref={inputRef}
-                value={editName}
-                onChange={e => setEditName(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onBlur={handleSaveEdit}
-                className="h-6 text-sm"
-                onClick={e => e.stopPropagation()}
-              />
-            ) : (
-              <>
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: workspace.color || '#3b82f6' }}
-                />
-                <span className="flex-1 truncate">{workspace.name}</span>
-                {workspace.isActive && (
-                  <Check className="h-3.5 w-3.5 text-primary shrink-0" />
-                )}
-              </>
-            )}
-          </DropdownMenuItem>
-        ))}
-
-        {isCreating ? (
-          <div className="px-2 py-2 flex items-center gap-2">
-            <Input
-              autoFocus
-              placeholder="Workspace name..."
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onBlur={() => {
-                if (!newName.trim()) setIsCreating(false)
-              }}
-              className="h-7 text-sm"
-            />
-          </div>
-        ) : (
-          <DropdownMenuItem
-            onSelect={() => setIsCreating(true)}
-            className="flex items-center gap-2 cursor-pointer"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>New Workspace</span>
-          </DropdownMenuItem>
-        )}
-
-        <DropdownMenuSeparator />
-
-        <DropdownMenuItem
-          onSelect={onSettingsClick}
-          className="flex items-center gap-2 cursor-pointer"
-        >
-          <Settings className="h-3.5 w-3.5" />
-          <span>Settings</span>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
 export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
   className,
   style = detectPlatform(),
   title = 'Terminal',
   onSettingsClick,
 }) => {
-  const [isMaximized, setIsMaximized] = useState(false)
-
-  useEffect(() => {
-    const checkMaximized = async () => {
-      try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window')
-        const window = getCurrentWindow()
-        const maximized = await window.isMaximized()
-        setIsMaximized(maximized)
-      } catch {
-        // Not in Tauri context
-      }
-    }
-
-    checkMaximized()
-
-    const setupListener = async () => {
-      try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window')
-        const window = getCurrentWindow()
-        const unlisten = await window.onResized(async () => {
-          const maximized = await window.isMaximized()
-          setIsMaximized(maximized)
-        })
-        return unlisten
-      } catch {
-        return null
-      }
-    }
-
-    setupListener().then(unlisten => {
-      if (unlisten) {
-        return () => unlisten()
-      }
-    })
-  }, [])
-
-  const handleMinimize = async () => {
-    try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window')
-      await getCurrentWindow().minimize()
-    } catch (e) {
-      console.error('Failed to minimize:', e)
-    }
-  }
-
-  const handleMaximize = async () => {
-    try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window')
-      const window = getCurrentWindow()
-      if (isMaximized) {
-        await window.unmaximize()
-      } else {
-        await window.maximize()
-      }
-      setIsMaximized(!isMaximized)
-    } catch (e) {
-      console.error('Failed to toggle maximize:', e)
-    }
-  }
-
-  const handleClose = async () => {
-    try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window')
-      await getCurrentWindow().close()
-    } catch (e) {
-      console.error('Failed to close:', e)
-    }
-  }
+  const windowControls = useWindowControls()
 
   // macOS style - traffic lights on the left, title centered
   if (style === 'macos') {
@@ -288,7 +58,7 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
               variant="ghost"
               size="icon"
               className="size-3 rounded-full bg-[#ff5f57] hover:bg-[#ff5f57]/80 border border-[#e0443b]"
-              onClick={handleClose}
+              onClick={() => void windowControls.close()}
               aria-label="Close"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             />
@@ -296,7 +66,7 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
               variant="ghost"
               size="icon"
               className="size-3 rounded-full bg-[#febc2e] hover:bg-[#febc2e]/80 border border-[#e09a1f]"
-              onClick={handleMinimize}
+              onClick={() => void windowControls.minimize()}
               aria-label="Minimize"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             />
@@ -304,12 +74,12 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
               variant="ghost"
               size="icon"
               className="size-3 rounded-full bg-[#28c840] hover:bg-[#28c840]/80 border border-[#1aab29]"
-              onClick={handleMaximize}
-              aria-label={isMaximized ? 'Restore' : 'Maximize'}
+              onClick={() => void windowControls.toggleMaximize()}
+              aria-label={windowControls.isMaximized ? 'Restore' : 'Maximize'}
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             />
           </div>
-          <WorkspaceSwitcher onSettingsClick={onSettingsClick} />
+          <TitleBarWorkspaceSwitcher onSettingsClick={onSettingsClick} />
         </div>
 
         {/* Title */}
@@ -353,7 +123,7 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
       >
         <span className="text-xs text-[#cccccc] font-medium">{title}</span>
         <div className="h-4 w-px bg-[#333333]" />
-        <WorkspaceSwitcher onSettingsClick={onSettingsClick} />
+        <TitleBarWorkspaceSwitcher onSettingsClick={onSettingsClick} />
       </div>
 
       {/* Right: Settings + Window controls */}
@@ -380,7 +150,7 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
               variant="ghost"
               size="icon"
               className="size-8 rounded-none hover:bg-[#3c3c3c]"
-              onClick={handleMinimize}
+              onClick={() => void windowControls.minimize()}
               aria-label="Minimize"
             >
               <Minus className="size-4 text-[#cccccc]" />
@@ -389,10 +159,10 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
               variant="ghost"
               size="icon"
               className="size-8 rounded-none hover:bg-[#3c3c3c]"
-              onClick={handleMaximize}
-              aria-label={isMaximized ? 'Restore' : 'Maximize'}
+              onClick={() => void windowControls.toggleMaximize()}
+              aria-label={windowControls.isMaximized ? 'Restore' : 'Maximize'}
             >
-              {isMaximized ? (
+              {windowControls.isMaximized ? (
                 <Minimize2 className="size-4 text-[#cccccc]" />
               ) : (
                 <Copy className="size-3.5 text-[#cccccc]" />
@@ -402,7 +172,7 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
               variant="ghost"
               size="icon"
               className="size-8 rounded-none hover:bg-[#c42b1c] hover:text-white"
-              onClick={handleClose}
+              onClick={() => void windowControls.close()}
               aria-label="Close"
             >
               <X className="size-4" />
@@ -414,7 +184,7 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
               variant="ghost"
               size="icon"
               className="size-10 rounded-none hover:bg-[#3c3c3c]"
-              onClick={handleMinimize}
+              onClick={() => void windowControls.minimize()}
               aria-label="Minimize"
             >
               <Minus className="size-4 text-[#cccccc]" />
@@ -423,10 +193,10 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
               variant="ghost"
               size="icon"
               className="size-10 rounded-none hover:bg-[#3c3c3c]"
-              onClick={handleMaximize}
-              aria-label={isMaximized ? 'Restore' : 'Maximize'}
+              onClick={() => void windowControls.toggleMaximize()}
+              aria-label={windowControls.isMaximized ? 'Restore' : 'Maximize'}
             >
-              {isMaximized ? (
+              {windowControls.isMaximized ? (
                 <Minimize2 className="size-4 text-[#cccccc]" />
               ) : (
                 <Square className="size-3.5 text-[#cccccc]" />
@@ -436,7 +206,7 @@ export const CustomTitleBar: React.FC<CustomTitleBarProps> = ({
               variant="ghost"
               size="icon"
               className="size-10 rounded-none hover:bg-[#c42b1c] hover:text-white"
-              onClick={handleClose}
+              onClick={() => void windowControls.close()}
               aria-label="Close"
             >
               <X className="size-4" />

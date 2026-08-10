@@ -12,8 +12,7 @@
 | 构建工具   | Vite 8.x                  |
 | **UI 库**  | **shadcn/ui + Tailwind**  |
 | 终端模拟器 | xterm.js                  |
-| 状态管理   | MobX                      |
-| 依赖注入   | tsyringe                  |
+| 状态管理   | Zustand                   |
 | 样式       | Tailwind CSS + Sass       |
 | 国际化     | i18next (en, fr, cn)      |
 | 后端       | Tauri 2.x (Rust)          |
@@ -50,8 +49,11 @@
 
 ```
 terminal/
-├── src/                          # 前端源代码 (React + TypeScript)
+├── packages/
+│   ├── frontend/                 # React + TypeScript 前端
+│   └── team-server/              # NestJS + Prisma 团队服务端
 ├── src-tauri/                    # 后端源代码 (Rust)
+├── scripts/                      # 发布门禁脚本
 └── docs/                         # 项目文档
     ├── project.md                 # 项目文档索引 (你在这里)
     ├── issue.md                   # 问题追踪
@@ -62,21 +64,22 @@ terminal/
     └── ui/                        # UI/功能规格（便于 AI 阅读实现 UI）
 ```
 
-### 前端 `src/` 结构
+### 前端 `packages/frontend/src/` 结构
 
 ```
 src/
 ├── view/                         # 页面组件
 │   ├── hosts/                   # 主机列表视图
-│   ├── terminal/                # 终端视图
 │   ├── sftp/                    # SFTP 视图
 │   ├── vaults/                  # 保险库视图
 │   ├── keychain/                # 密钥管理视图
 │   ├── port-forward/            # 端口转发视图
 │   ├── snippets/                # 代码片段视图
 │   ├── known-hosts/             # 已知主机视图
-│   ├── logs/                    # 日志视图
-│   └── home/                    # 首页 (默认跳转至 hosts)
+│   ├── app-logs/                # 日志视图
+│   ├── settings/                # 设置视图
+│   └── teams/                   # 团队视图
+├── features/terminal/           # xterm、终端容器、会话服务与类型
 ├── components/                    # 可复用组件
 │   ├── ui/                       # 基础 UI 组件
 │   ├── app-sidebar/              # 左侧导航栏
@@ -89,7 +92,7 @@ src/
 │   ├── split-pane/              # 分屏组件
 │   ├── workspace-switcher/       # 工作区切换器
 │   └── settings-dialog/           # 设置对话框
-├── store/                        # MobX 状态管理
+├── store/                        # Zustand 状态管理
 ├── service/                      # 业务服务 (SSH, 数据库等)
 ├── hooks/                        # 自定义 React Hooks
 ├── utils/                        # 工具函数
@@ -105,7 +108,11 @@ src-tauri/
 ├── src/
 │   ├── main.rs                   # 二进制入口
 │   ├── lib.rs                    # 库入口 (命令注册)
-│   └── terminal.rs               # SSH/SFTP/PTY 核心逻辑
+│   ├── commands.rs               # Tauri 会话命令
+│   ├── session/                  # SSH / 本地 PTY / 会话管理
+│   ├── sftp.rs                   # SFTP
+│   ├── serial.rs                 # 串口
+│   └── port_forward.rs           # 端口转发
 ├── Cargo.toml                     # Rust 依赖
 ├── tauri.conf.json               # Tauri 配置
 └── capabilities/                  # 权限配置
@@ -269,27 +276,14 @@ import { Label } from '@/components/ui/label'
    import { AppStore } from '@/store/app'
    ```
 
-2. **依赖注入**: 使用 tsyringe 进行依赖注入
+2. **状态管理**: 使用 Zustand store，按 selector 订阅所需状态
 
    ```typescript
-   @injectable()
-   class MyService {
-     // ...
-   }
+   const count = useAppStore(state => state.count)
+   const increment = useAppStore(state => state.increment)
    ```
 
-3. **状态管理**: 使用 MobX 进行响应式状态管理
-
-   ```typescript
-   class AppStore {
-     @observable count = 0
-     @action increment() {
-       this.count++
-     }
-   }
-   ```
-
-4. **国际化**: 使用 `react-i18next` 进行国际化
+3. **国际化**: 使用 `react-i18next` 进行国际化
 
    ```typescript
    const { t } = useTranslation();
@@ -352,57 +346,23 @@ if (IS_MACOS) {
 
 | 功能             | macOS/Linux                      | Windows                    |
 | ---------------- | -------------------------------- | -------------------------- |
-| SSH Agent Socket | `std::env::var("SSH_AUTH_SOCK")` | 使用 Windows OpenSSH Agent |
+| SSH Agent Socket | `SSH_AUTH_SOCK` Unix socket | OpenSSH named pipe，失败后回退 Pageant |
 | 串口设备路径     | `/dev/tty.*`                     | `COM1`, `COM2`, ...        |
 | 环境变量分隔符   | `:`                              | `;`                        |
 | 路径分隔符       | `/`                              | `\`                        |
 | 行尾符           | `\n`                             | `\r\n`                     |
 
-#### 3. 示例：SSH Agent 连接
+#### 3. SSH Agent 当前实现
 
-```rust
-/// 获取 SSH Agent Socket 路径
-#[cfg(unix)]
-pub fn get_ssh_agent_socket() -> Option<String> {
-    std::env::var("SSH_AUTH_SOCK").ok()
-}
+- Unix：通过 `AgentClient::connect_env()` 连接 `SSH_AUTH_SOCK`。
+- Windows：优先连接 OpenSSH Agent named pipe，再通过 `AgentClient::connect_pageant()` 回退到 Pageant。
+- 以上代码路径已实现；Windows OpenSSH Agent 与 Pageant 仍必须按 `docs/release-readiness.md` 做实机验证。
 
-#[cfg(windows)]
-pub fn get_ssh_agent_socket() -> Option<String> {
-    // Windows: 使用 Pageant 或 Windows OpenSSH Agent
-    // 需要实现 Windows 特定的 agent 协议
-    None
-}
-```
+#### 4. 串口当前实现
 
-#### 4. 示例：串口设备路径
-
-```rust
-#[cfg(unix)]
-pub fn list_serial_ports() -> Vec<String> {
-    // 扫描 /dev/tty.* 或 /dev/cu.*
-    std::fs::read_dir("/dev")
-        .ok()
-        .map(|entries| {
-            entries
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    let name = e.file_name().to_string_lossy();
-                    name.starts_with("tty.") || name.starts_with("cu.")
-                })
-                .map(|e| e.path().to_string_lossy().to_string())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-#[cfg(windows)]
-pub fn list_serial_ports() -> Vec<String> {
-    // Windows: 使用注册表或枚举 COM 端口
-    // 需要 Windows-specific 实现
-    vec![]
-}
-```
+- 使用 `serialport` crate 统一枚举 macOS、Windows 和 Linux 设备，不手工扫描 `/dev` 或注册表。
+- 枚举、打开、读取和写入均避免阻塞 Tokio worker；写入使用 `write_all`，拔线或 EOF 会清理 session。
+- 设备命名、流控、精确写入和运行中拔线仍必须使用真实硬件验证。
 
 ### 前端跨平台
 
@@ -465,11 +425,8 @@ async function getHomeDirectory(): Promise<string> {
 
 ```toml
 [dependencies]
-serial-port = { version = "0.5", features = ["unix"] }  # Unix 特定
-windows-serial = { version = "0.4", optional = true }   # Windows 特定
-
-[target.'cfg(windows)'.dependencies]
-windows-registry = "0.2"
+portable-pty = "0.9"
+serialport = "4.9"
 ```
 
 #### 2. tauri.conf.json 配置
@@ -549,21 +506,29 @@ pnpm add <package-name>
 - ✅ 主机保存/组管理/收藏夹
 - ✅ 本地终端
 
-### Phase 2 - 核心功能 ⚠️ 部分完成
+### Phase 2 - 核心功能 ✅ 已完成
 
-- ⚠️ SSH 密钥认证 (前端完成，后端未实现)
-- 🔴 SFTP 文件传输 (后端全占位符)
-- ⚠️ 端口转发 (UI 完成，后端未实现)
+- ✅ SSH 密钥认证（前后端完整接线）
+- ✅ SFTP 文件传输（上传、下载及文件操作）
+- ✅ 端口转发基础实现（Local / Remote / SOCKS）
 - ✅ 命令历史、Snippet、分屏模式
 
-### Phase 3/4 - 高级功能 ✅ 已完成
+### Phase 3/4 - 高级与企业功能 ⚠️ 代码基本完成
 
-> 2026-03-20 完成 Phase 3 和串口连接功能
+- ✅ SSH Agent 登录认证；主机链主终端入口支持 password/key/agent，certificate 明确拒绝；Vault 加密
+- ⚠️ Agent forwarding 已有 handler 与双向桥接，缺少客户端显式启用入口
+- ✅ 多工作区、远程存储、团队云同步、冲突处理和离线队列
+- ✅ 本地 PTY 创建、shell 启动及写入、resize、关闭控制 I/O 已移入 blocking pool，避免阻塞 Tokio worker
+- ✅ 串口连接、SSH 证书认证和高级脚本
+- ⚠️ Windows/Linux、Pageant、Jump Host、本地 PTY 和串口硬件仍需实机验证
 
-- ✅ Agent 转发、主机链、Vault 加密
-- ✅ 多工作区、跨设备同步
-- ✅ 串口连接 (2026-03-20)
-- ⚠️ 数据存储服务配置 (UI 完成，后端待实现) (2026-03-24)
+### 发布就绪门禁 ✅ 本机自动化通过
+
+- ✅ `pnpm install --frozen-lockfile` 可重复安装
+- ✅ `pnpm verify`：前端 408、Team Server 95、Rust 43 项测试及 lint/typecheck/build/源码行数门禁全部通过
+- ✅ 生产依赖审计为 0 个已知漏洞
+- ✅ 447 个生产源码文件均满足行数限制
+- ⚠️ 当前机器未安装 Docker；容器构建与真实 PostgreSQL readiness 仍需在 CI 或有 Docker 的环境验证
 
 ---
 
@@ -571,13 +536,13 @@ pnpm add <package-name>
 
 > 详细问题列表请查看 `docs/issue.md`
 
-| #   | 问题                   | 严重程度     | 优先级 |
-| --- | ---------------------- | ------------ | ------ |
-| 1   | SFTP 后端未实现        | 🔴 Critical  | P0     |
-| 2   | SSH 密钥认证后端未实现 | 🔴 Critical  | P0     |
-| 3   | 端口转发后端未实现     | 🔴 Critical  | P1     |
-| 4   | Rust 编译警告需清理    | 🟡 Important | P1     |
-| 5   | Agent 认证未实现       | 🟡 Important | P2     |
+| #     | 问题                                         | 严重程度     | 优先级 |
+| ----- | -------------------------------------------- | ------------ | ------ |
+| 21/39 | Windows/Linux/Pageant/Jump Host/硬件实机矩阵 | 🟡 Important | P1     |
+| 40    | Docker/PostgreSQL 容器与 readiness 实机验证  | 🟡 Important | P1     |
+| 6     | Jump Host certificate 认证尚未接线           | 📋 Planned   | P2     |
+| 21    | Agent forwarding 缺少显式启用入口           | 🟡 Important | P2     |
+| 40    | 公网部署仍需额外的注册准入机制               | 📋 Planned   | P2     |
 
 ---
 
@@ -592,10 +557,6 @@ pnpm add <package-name>
 - [russh](https://github.com/warpdotdev/russh)
 - [russh-keys](https://docs.rs/russh-keys/)
 - [russh-sftp](https://docs.rs/russh-sftp/)
-
----
-
-_文档更新时间: 2026-03-19_
 
 ---
 
@@ -767,7 +728,7 @@ const navItems: NavItem[] = [
 ### 路由最佳实践
 
 1. **使用懒加载**: 使用 `React.lazy` 和 `Suspense` 进行代码分割
-2. **状态管理**: 标签页和会话状态使用 MobX 管理，不依赖 URL
+2. **状态管理**: 标签页和会话状态使用 Zustand 管理，不依赖 URL
 3. **布局组件**: 使用 `ViewContainer` 及其子组件保持 UI 一致性
 4. **导航链接**: 使用 `NavLink` 和 `useNavigate` 进行编程式导航
 
@@ -857,18 +818,18 @@ const SettingsView = () => {
 
 #### 已有文件待拆分清单
 
-> ✅ 所有文件均已拆分至限制以内（2026-05-03）
+> ✅ 所有文件均已拆分至限制以内（2026-08-10 自动门禁覆盖 447 个生产源码文件）
 
 | 文件 | 原行数 | 限制 | 当前行数 |
 | --- | --- | --- | --- |
-| `view/teams/index.tsx` | 1583 | 300 | ✅ 已拆分 |
+| `view/teams/index.tsx` | 1583 | 300 | 273 ✅ |
 | `view/settings/index.tsx` | 1203 | 300 | 163 ✅ |
-| `components/settings-dialog/index.tsx` | 1221 | 400 | 278 ✅ |
-| `components/snippet-manager/index.tsx` | 778 | 400 | 326 ✅ |
-| `view/hosts/index.tsx` | 876 | 300 | ✅ 已拆分 |
-| `view/snippets/index.tsx` | 828 | 300 | ✅ 已拆分 |
-| `view/keychain/index.tsx` | 801 | 300 | ✅ 已拆分 |
-| `components/host-list/host-dialog.tsx` | 609 | 400 | ✅ 已拆分 |
+| `components/settings-dialog/index.tsx` | 1221 | 400 | 283 ✅ |
+| `components/snippet-manager/index.tsx` | 778 | 400 | 311 ✅ |
+| `view/hosts/index.tsx` | 876 | 300 | 208 ✅ |
+| `view/snippets/index.tsx` | 828 | 300 | 242 ✅ |
+| `view/keychain/index.tsx` | 801 | 300 | 237 ✅ |
+| `components/host-list/host-dialog.tsx` | 609 | 200 | 198 ✅ |
 
 ---
 
@@ -1030,4 +991,4 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-05-03 (Phase 6.8: 跨设备同步UX收尾 + Team自动同步定时器 + joinByCode/joinByLink修复 + Rust单元测试20个 + 团队视图快捷入口 + 存储设置重构为共享hook)_
+_文档更新时间: 2026-08-10 (Phase 6.11: 发布就绪终审、跨平台审计与 Team Server 安全加固)_

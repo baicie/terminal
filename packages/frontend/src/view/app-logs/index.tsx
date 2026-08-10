@@ -8,7 +8,6 @@ import {
   ViewToolbar,
 } from '@/components/view-container'
 import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import {
   Table,
   TableBody,
@@ -24,11 +23,23 @@ import {
 } from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { ConnectionLogRecord } from '@/service/database/types'
-import { getConnectionLogs, clearConnectionLogs, toggleConnectionLogSaved, deleteConnectionLog } from '@/service/database'
+import {
+  getConnectionLogs,
+  clearConnectionLogs,
+  toggleConnectionLogSaved,
+  deleteConnectionLog,
+} from '@/service/database'
 import { getReadableTerminalError } from '@/features/terminal/utils/readable-error'
 import { useState, useEffect } from 'react'
 import { toast } from '@/components/ui/sonner'
 import { cn } from '@/lib/utils'
+import {
+  ConnectionTypeBadge,
+  connectionLogHasError,
+  connectionLogIsSuccess,
+  formatConnectionDuration,
+  formatConnectionLogDate,
+} from './connection-log-display'
 
 const LogsView: React.FC = () => {
   const { t } = useTranslation()
@@ -93,46 +104,10 @@ const LogsView: React.FC = () => {
     })
   }
 
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleString()
-  }
-
-  const formatDuration = (seconds: number | null) => {
-    if (seconds === null || seconds === 0) return '-'
-    if (seconds < 60) return `${seconds}s`
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
-  }
-
-  const getConnectionTypeBadge = (type: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'outline'> = {
-      ssh: 'default',
-      local: 'secondary',
-      serial: 'outline',
-    }
-    return (
-      <Badge variant={variants[type] ?? 'outline'} className="text-xs">
-        {type.toUpperCase()}
-      </Badge>
-    )
-  }
-
-  const hasError = (log: ConnectionLogRecord) => {
-    return log.error_message !== null || log.error_raw !== null
-  }
-
-  const isSuccess = (log: ConnectionLogRecord) => {
-    return !hasError(log) && log.duration_seconds !== null && log.duration_seconds > 0
-  }
-
   return (
     <ViewContainer>
       <ViewToolbar className="gap-4">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleClear}
-        >
+        <Button size="sm" variant="outline" onClick={handleClear}>
           <Trash2 className="size-4 mr-1" data-icon="inline-start" />
           {t('common.clear')}
         </Button>
@@ -178,14 +153,18 @@ const LogsView: React.FC = () => {
                       <TableRow
                         key={log.id}
                         className={cn(
-                          hasError(log) && 'bg-destructive/5',
-                          isSuccess(log) && 'bg-success/5',
+                          connectionLogHasError(log) && 'bg-destructive/5',
+                          connectionLogIsSuccess(log) && 'bg-success/5',
                         )}
                       >
-                        <TableCell>{getConnectionTypeBadge(log.connection_type)}</TableCell>
+                        <TableCell>
+                          <ConnectionTypeBadge type={log.connection_type} />
+                        </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-0.5">
-                            <span className="font-medium text-sm">{log.host_name}</span>
+                            <span className="font-medium text-sm">
+                              {log.host_name}
+                            </span>
                             <span className="text-xs text-muted-foreground font-mono">
                               {log.host_address}
                             </span>
@@ -195,13 +174,13 @@ const LogsView: React.FC = () => {
                           {log.username ?? '-'}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {formatDate(log.started_at)}
+                          {formatConnectionLogDate(log.started_at)}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {formatDuration(log.duration_seconds)}
+                          {formatConnectionDuration(log.duration_seconds)}
                         </TableCell>
                         <TableCell>
-                          {hasError(log) ? (
+                          {connectionLogHasError(log) ? (
                             <div className="flex flex-col gap-1">
                               {/* 可读错误消息 */}
                               <Tooltip>
@@ -215,7 +194,8 @@ const LogsView: React.FC = () => {
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="max-w-xs">
                                   <p className="font-medium">
-                                    {t('logs.readableError') ?? 'Readable Error'}
+                                    {t('logs.readableError') ??
+                                      'Readable Error'}
                                   </p>
                                   <p className="text-xs mt-1">
                                     {getReadableTerminalError(
@@ -227,15 +207,16 @@ const LogsView: React.FC = () => {
                               </Tooltip>
 
                               {/* 原始错误（可展开） */}
-                              {log.error_raw && log.error_raw !== log.error_message && (
-                                <button
-                                  onClick={() => toggleErrorExpand(log.id)}
-                                  className="text-xs text-muted-foreground hover:text-foreground transition-colors text-left"
-                                >
-                                  {expandedErrors.has(log.id) ? '▲' : '▼'}{' '}
-                                  {t('logs.rawError') ?? 'Raw'}
-                                </button>
-                              )}
+                              {log.error_raw &&
+                                log.error_raw !== log.error_message && (
+                                  <button
+                                    onClick={() => toggleErrorExpand(log.id)}
+                                    className="text-xs text-muted-foreground hover:text-foreground transition-colors text-left"
+                                  >
+                                    {expandedErrors.has(log.id) ? '▲' : '▼'}{' '}
+                                    {t('logs.rawError') ?? 'Raw'}
+                                  </button>
+                                )}
 
                               {expandedErrors.has(log.id) && log.error_raw && (
                                 <pre className="text-xs text-muted-foreground bg-muted p-2 rounded mt-1 whitespace-pre-wrap break-all font-mono max-h-24 overflow-auto">
@@ -260,7 +241,9 @@ const LogsView: React.FC = () => {
                                   <span
                                     className={cn(
                                       'text-lg',
-                                      log.is_saved ? 'text-warning' : 'text-muted-foreground',
+                                      log.is_saved
+                                        ? 'text-warning'
+                                        : 'text-muted-foreground',
                                     )}
                                   >
                                     ★
@@ -269,8 +252,8 @@ const LogsView: React.FC = () => {
                               </TooltipTrigger>
                               <TooltipContent>
                                 {log.is_saved
-                                  ? t('logs.unsave') ?? 'Remove from saved'
-                                  : t('logs.save') ?? 'Save log'}
+                                  ? (t('logs.unsave') ?? 'Remove from saved')
+                                  : (t('logs.save') ?? 'Save log')}
                               </TooltipContent>
                             </Tooltip>
 
@@ -285,7 +268,9 @@ const LogsView: React.FC = () => {
                                   <Trash2 className="size-4" />
                                 </Button>
                               </TooltipTrigger>
-                              <TooltipContent>{t('common.delete')}</TooltipContent>
+                              <TooltipContent>
+                                {t('common.delete')}
+                              </TooltipContent>
                             </Tooltip>
                           </div>
                         </TableCell>

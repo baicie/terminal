@@ -212,7 +212,11 @@ impl std::fmt::Debug for ChannelManager {
 }
 
 /// 便捷函数：创建 SessionOutput
-pub fn make_output(session_id: impl Into<String>, data: impl Into<String>, is_stderr: bool) -> SessionOutput {
+pub fn make_output(
+    session_id: impl Into<String>,
+    data: impl Into<String>,
+    is_stderr: bool,
+) -> SessionOutput {
     SessionOutput {
         session_id: session_id.into(),
         data: data.into(),

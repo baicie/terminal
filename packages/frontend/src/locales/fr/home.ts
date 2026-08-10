@@ -3,7 +3,7 @@ export default {
   'home.welcome': 'Bienvenue dans Terminal',
   'home.selectHost':
     'Sélectionnez un hôte dans la barre latérale pour vous connecter',
-  'home.addHost': 'Ou appuyez sur {key} pour ajouter un nouvel hôte',
+  'home.addHost': 'Ou appuyez sur {{key}} pour ajouter un nouvel hôte',
 
   // Toast messages
   'toast.enterHost': "Entrez un nom d'hôte ou ssh user@hostname",

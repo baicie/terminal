@@ -14,7 +14,7 @@ export default {
   'sftp.tableSize': 'Taille',
   'sftp.tableModified': 'Modifié',
   'sftp.tablePermissions': 'Permissions',
-  'sftp.items': '{count} élément(s)',
-  'sftp.connectedTo': 'Connecté à {host} ({hostname})',
+  'sftp.items': '{{count}} élément(s)',
+  'sftp.connectedTo': 'Connecté à {{host}} ({{hostname}})',
   'sftp.loading': 'Chargement...',
 }

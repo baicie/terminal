@@ -13,102 +13,20 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   shortcutsService,
   defaultShortcuts,
   type Shortcut,
-  type ShortcutAction,
-  builtInActions,
 } from '@/service/shortcuts'
-
-interface ConflictResult {
-  hasConflict: boolean
-  conflictingShortcut?: Shortcut
-  conflictingAction?: ShortcutAction
-}
-
-function ShortcutRow({
-  shortcut,
-  isRecording,
-  recordingId,
-  onStartRecord,
-  onStopRecord,
-  onReset,
-  t,
-}: {
-  shortcut: Shortcut
-  isRecording: boolean
-  recordingId: string | null
-  onStartRecord: (id: string) => void
-  onStopRecord: () => void
-  onReset: () => void
-  t: (key: string) => string
-}) {
-  const isThisRecording = isRecording && recordingId === shortcut.id
-
-  const handleClick = () => {
-    if (isThisRecording) {
-      onStopRecord()
-    } else {
-      onStartRecord(shortcut.id)
-    }
-  }
-
-  return (
-    <div className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-accent/50 transition-colors group">
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium truncate">{shortcut.name}</div>
-        {shortcut.description && (
-          <div className="text-xs text-muted-foreground truncate">
-            {shortcut.description}
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center gap-2 ml-4">
-        {/* Key badge */}
-        <button
-          type="button"
-          onClick={handleClick}
-          className={`
-            min-w-[80px] h-7 px-2 rounded border text-xs font-mono text-center transition-all
-            ${isThisRecording
-              ? 'border-primary bg-primary/10 text-primary animate-pulse'
-              : 'border-border bg-muted/50 text-muted-foreground hover:border-primary/50'
-            }
-          `}
-        >
-          {isThisRecording ? t('settings.shortcuts.recording') : shortcut.keys.join(' + ')}
-        </button>
-
-        {/* Enable toggle */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={() => shortcutsService.updateShortcut(shortcut.id, { enabled: !shortcut.enabled })}
-        >
-          {shortcut.enabled ? t('settings.shortcuts.enabled') : t('settings.shortcuts.disabled')}
-        </Button>
-
-        {/* Reset */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={onReset}
-          title={t('settings.shortcuts.resetToDefault')}
-        >
-          <RotateCcw className="h-3 w-3" />
-        </Button>
-      </div>
-    </div>
-  )
-}
+import { findShortcutConflict } from './shortcut-conflict'
+import { ShortcutRow } from './shortcut-row'
 
 export function ShortcutsSettings() {
   const { t } = useTranslation()
-  const [shortcuts, setShortcuts] = useState<Shortcut[]>(shortcutsService.getShortcuts())
+  const [shortcuts, setShortcuts] = useState<Shortcut[]>(
+    shortcutsService.getShortcuts(),
+  )
   const [recordingId, setRecordingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const recordingKeyRef = useRef<string[]>([])
@@ -117,24 +35,6 @@ export function ShortcutsSettings() {
   const reload = useCallback(() => {
     setShortcuts([...shortcutsService.getShortcuts()])
   }, [])
-
-  const checkConflict = useCallback(
-    (keys: string[], excludeId: string): ConflictResult => {
-      const all = shortcutsService.getShortcuts()
-      for (const s of all) {
-        if (s.id === excludeId || !s.enabled) continue
-        if (keys.length === s.keys.length && keys.every((k, i) => k === s.keys[i])) {
-          return {
-            hasConflict: true,
-            conflictingShortcut: s,
-            conflictingAction: builtInActions.find(a => a.id === s.action),
-          }
-        }
-      }
-      return { hasConflict: false }
-    },
-    [],
-  )
 
   const startRecord = useCallback(
     (id: string) => {
@@ -157,10 +57,14 @@ export function ShortcutsSettings() {
 
         recordingKeyRef.current = parsed
 
-        const result = checkConflict(parsed, id)
-        if (result.hasConflict && result.conflictingShortcut) {
+        const conflictingShortcut = findShortcutConflict(
+          shortcutsService.getShortcuts(),
+          parsed,
+          id,
+        )
+        if (conflictingShortcut) {
           toast.warning(
-            `${t('settings.shortcuts.conflictWith')} "${result.conflictingShortcut.name}"`,
+            `${t('settings.shortcuts.conflictWith')} "${conflictingShortcut.name}"`,
           )
         }
 
@@ -170,9 +74,10 @@ export function ShortcutsSettings() {
       }
 
       window.addEventListener('keydown', onKeyDown, true)
-      cleanupRef.current = () => window.removeEventListener('keydown', onKeyDown, true)
+      cleanupRef.current = () =>
+        window.removeEventListener('keydown', onKeyDown, true)
     },
-    [checkConflict, reload, t],
+    [reload, t],
   )
 
   const stopRecord = useCallback(() => {
@@ -191,9 +96,14 @@ export function ShortcutsSettings() {
 
   const handleReset = useCallback(
     (id: string) => {
-      const defaultShortcut = defaultShortcuts.find((s: Shortcut) => s.id === id)
+      const defaultShortcut = defaultShortcuts.find(
+        (s: Shortcut) => s.id === id,
+      )
       if (defaultShortcut) {
-        shortcutsService.updateShortcut(id, { keys: defaultShortcut.keys, enabled: defaultShortcut.enabled })
+        shortcutsService.updateShortcut(id, {
+          keys: defaultShortcut.keys,
+          enabled: defaultShortcut.enabled,
+        })
       }
       reload()
       toast.success(t('settings.shortcuts.resetSuccess'))
@@ -228,9 +138,7 @@ export function ShortcutsSettings() {
         </div>
       </div>
 
-      {/* Search */}
-      <input
-        type="text"
+      <Input
         placeholder={t('settings.shortcuts.searchPlaceholder')}
         value={searchQuery}
         onChange={e => setSearchQuery(e.target.value)}

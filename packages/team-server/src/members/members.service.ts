@@ -63,6 +63,9 @@ export class MembersService {
     const member = await this.prisma.teamMember.findUnique({
       where: { id: memberId },
     })
+    if (!member || member.teamId !== teamId) {
+      throw new NotFoundException('Member not found')
+    }
     if (team?.ownerId === member?.userId) {
       throw new ForbiddenException('Cannot change owner role')
     }
@@ -81,6 +84,8 @@ export class MembersService {
       where: { id: memberId },
     })
     if (!member) throw new NotFoundException('Member not found')
+    if (member.teamId !== teamId)
+      throw new NotFoundException('Member not found')
 
     // Cannot remove owner
     const team = await this.prisma.team.findUnique({ where: { id: teamId } })

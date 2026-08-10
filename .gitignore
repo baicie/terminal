@@ -13,6 +13,11 @@ dist-ssr
 dist-stats.md
 dist-stats.json
 *.local
+*.tsbuildinfo
+vite.config.d.ts
+.env
+.env.*
+!.env.example
 team-server/dist
 
 # Editor directories and files
@@ -25,4 +30,3 @@ team-server/dist
 *.njsproj
 *.sln
 *.sw?
-tsconfig.node.tsbuildinfo

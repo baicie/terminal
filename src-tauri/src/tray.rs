@@ -20,16 +20,28 @@ const QUIT_SHORTCUT: Option<&str> = Some("Ctrl+Q");
 
 /// 在 setup 阶段初始化系统托盘
 pub fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let show_window = MenuItem::with_id(
+    let show_window = MenuItem::with_id(app, "tray-show", "Show Window", true, None::<&str>)?;
+    let new_local = MenuItem::with_id(
         app,
-        "tray-show",
-        "Show Window",
+        "tray-new-local",
+        "New Local Terminal",
         true,
         None::<&str>,
     )?;
-    let new_local = MenuItem::with_id(app, "tray-new-local", "New Local Terminal", true, None::<&str>)?;
-    let new_ssh = MenuItem::with_id(app, "tray-new-ssh", "New SSH Connection…", true, None::<&str>)?;
-    let command_palette = MenuItem::with_id(app, "tray-command-palette", "Command Palette…", true, None::<&str>)?;
+    let new_ssh = MenuItem::with_id(
+        app,
+        "tray-new-ssh",
+        "New SSH Connection…",
+        true,
+        None::<&str>,
+    )?;
+    let command_palette = MenuItem::with_id(
+        app,
+        "tray-command-palette",
+        "Command Palette…",
+        true,
+        None::<&str>,
+    )?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "tray-quit", "Quit", true, QUIT_SHORTCUT)?;
 

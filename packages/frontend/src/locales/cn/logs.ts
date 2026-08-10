@@ -5,4 +5,8 @@ export default {
   'logs.export': '导出',
   'logs.noLogs': '暂无日志',
   'logs.logsDesc': '连接和操作历史记录将显示在此处',
+  'logs.readableError': '可读错误',
+  'logs.rawError': '原始错误',
+  'logs.unsave': '取消保存',
+  'logs.save': '保存日志',
 }

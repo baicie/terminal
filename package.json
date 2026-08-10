@@ -1,9 +1,14 @@
 {
   "name": "@terminal/monorepo",
-  "version": "0.1.0",
+  "version": "0.0.1-dev.0",
   "description": "Modern SSH/SFTP terminal client with team collaboration",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.34.3",
+  "engines": {
+    "node": "24.16.x",
+    "pnpm": "10.34.x"
+  },
   "scripts": {
     "dev": "pnpm --filter=@terminal/frontend dev",
     "dev:all": "pnpm -r --parallel dev",
@@ -21,11 +26,34 @@
     "test": "pnpm --filter=@terminal/frontend test",
     "test:watch": "pnpm --filter=@terminal/frontend test:watch",
     "test:coverage": "pnpm --filter=@terminal/frontend test:coverage",
+    "check:source-size": "node scripts/check-source-size.mjs",
+    "verify": "node scripts/verify.mjs all",
+    "verify:frontend": "node scripts/verify.mjs frontend",
+    "verify:team-server": "node scripts/verify.mjs team-server",
+    "verify:rust": "node scripts/verify.mjs rust",
     "analyze:bundle": "tsx scripts/analyze-bundle-size.ts"
   },
   "devDependencies": {
-    "@tauri-apps/cli": ">=2.11.0",
-    "@types/node": "^25.6.0",
+    "@tauri-apps/cli": "2.11.0",
+    "@types/node": "^24.0.0",
     "tsx": "^4.21.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "body-parser": "2.3.0",
+      "fast-uri": "3.1.5",
+      "js-yaml": "5.2.3",
+      "qs": "6.15.2"
+    },
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@parcel/watcher",
+      "@prisma/engines",
+      "esbuild",
+      "prisma"
+    ],
+    "ignoredBuiltDependencies": [
+      "@scarf/scarf"
+    ]
   }
 }

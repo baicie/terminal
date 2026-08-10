@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, ChevronDown, ChevronRight, CloudDownload, Loader2 } from 'lucide-react'
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  CloudDownload,
+  Loader2,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { SyncPreviewStats } from '@/hooks/use-storage-sync'
@@ -15,7 +21,6 @@ interface RestorePreviewProps {
     error?: string
   }>
   restoreMode: 'merge' | 'replace'
-  connectionStatus: 'idle' | 'success' | 'error'
   canPreview: boolean
   onRestore: () => void
   isRestoring: boolean
@@ -53,12 +58,11 @@ function SyncRow({
 export function RestorePreview({
   onPreview,
   restoreMode,
-  connectionStatus,
   canPreview,
   onRestore,
   isRestoring,
 }: RestorePreviewProps) {
-  const { t } = useTranslation('settings')
+  const { t } = useTranslation()
   const [preview, setPreview] = useState<{
     local?: SyncPreviewStats
     remote?: SyncPreviewStats
@@ -110,7 +114,9 @@ export function RestorePreview({
           ) : (
             <CloudDownload className="h-3 w-3 mr-1" />
           )}
-          {preview ? t('settings.refreshPreview') : t('settings.previewChanges')}
+          {preview
+            ? t('settings.refreshPreview')
+            : t('settings.previewChanges')}
         </Button>
         <Button
           variant={hasConflicts ? 'destructive' : 'outline'}
@@ -167,12 +173,42 @@ export function RestorePreview({
 
           {expanded && (
             <div className="pl-4 border-l border-border/50 space-y-0.5">
-              <SyncRow label="Hosts" local={preview.local?.hosts} remote={preview.remote?.hosts} conflicts={preview.conflicts?.hosts} />
-              <SyncRow label="Groups" local={preview.local?.groups} remote={preview.remote?.groups} conflicts={preview.conflicts?.groups} />
-              <SyncRow label="Snippets" local={preview.local?.snippets} remote={preview.remote?.snippets} conflicts={preview.conflicts?.snippets} />
-              <SyncRow label="SSH Keys" local={preview.local?.sshKeys} remote={preview.remote?.sshKeys} conflicts={preview.conflicts?.sshKeys} />
-              <SyncRow label="Known Hosts" local={preview.local?.knownHosts} remote={preview.remote?.knownHosts} conflicts={preview.conflicts?.knownHosts} />
-              <SyncRow label="Workspaces" local={preview.local?.workspaces} remote={preview.remote?.workspaces} conflicts={preview.conflicts?.workspaces} />
+              <SyncRow
+                label="Hosts"
+                local={preview.local?.hosts}
+                remote={preview.remote?.hosts}
+                conflicts={preview.conflicts?.hosts}
+              />
+              <SyncRow
+                label="Groups"
+                local={preview.local?.groups}
+                remote={preview.remote?.groups}
+                conflicts={preview.conflicts?.groups}
+              />
+              <SyncRow
+                label="Snippets"
+                local={preview.local?.snippets}
+                remote={preview.remote?.snippets}
+                conflicts={preview.conflicts?.snippets}
+              />
+              <SyncRow
+                label="SSH Keys"
+                local={preview.local?.sshKeys}
+                remote={preview.remote?.sshKeys}
+                conflicts={preview.conflicts?.sshKeys}
+              />
+              <SyncRow
+                label="Known Hosts"
+                local={preview.local?.knownHosts}
+                remote={preview.remote?.knownHosts}
+                conflicts={preview.conflicts?.knownHosts}
+              />
+              <SyncRow
+                label="Workspaces"
+                local={preview.local?.workspaces}
+                remote={preview.remote?.workspaces}
+                conflicts={preview.conflicts?.workspaces}
+              />
             </div>
           )}
         </div>

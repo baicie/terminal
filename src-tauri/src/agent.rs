@@ -112,23 +112,14 @@ impl SshAgentClient {
         let body = &response[1..];
 
         match AgentMessageType::from_u8(msg_type) {
-            Some(AgentMessageType::IdentitiesAnswer) => {
-                self.parse_identities_answer(body)
-            }
-            Some(AgentMessageType::Failure) => {
-                Err(anyhow!("Agent returned failure"))
-            }
+            Some(AgentMessageType::IdentitiesAnswer) => self.parse_identities_answer(body),
+            Some(AgentMessageType::Failure) => Err(anyhow!("Agent returned failure")),
             _ => Err(anyhow!("Unexpected message type: {}", msg_type)),
         }
     }
 
     /// Sign data using a key from the agent
-    pub fn sign_request(
-        &mut self,
-        key_blob: &[u8],
-        data: &[u8],
-        flags: u32,
-    ) -> Result<Vec<u8>> {
+    pub fn sign_request(&mut self, key_blob: &[u8], data: &[u8], flags: u32) -> Result<Vec<u8>> {
         // Build sign request
         let mut body = BytesMut::new();
 
@@ -176,9 +167,7 @@ impl SshAgentClient {
                 let signature = buf.copy_to_bytes(sig_len).to_vec();
                 Ok(signature)
             }
-            Some(AgentMessageType::Failure) => {
-                Err(anyhow!("Agent failed to sign data"))
-            }
+            Some(AgentMessageType::Failure) => Err(anyhow!("Agent failed to sign data")),
             _ => Err(anyhow!("Unexpected message type: {}", msg_type)),
         }
     }
@@ -227,10 +216,7 @@ impl SshAgentClient {
             }
             let comment = String::from_utf8_lossy(&buf.copy_to_bytes(comment_len)).to_string();
 
-            keys.push(AgentPublicKey {
-                key_blob,
-                comment,
-            });
+            keys.push(AgentPublicKey { key_blob, comment });
         }
 
         Ok(keys)
