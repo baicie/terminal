@@ -194,7 +194,7 @@ fn connection_key(
 /// or an error if the agent could not be contacted.
 async fn authenticate_with_agent(
     handle: &mut client::Handle<ClientHandler>,
-    username: &str,
+    username: String,
 ) -> Result<bool, SessionError> {
     let rsa_hash = handle
         .best_supported_rsa_hash()
@@ -228,7 +228,7 @@ async fn authenticate_with_agent(
                 _ => None,
             };
             let auth = handle
-                .authenticate_publickey_with(username, public_key, alg, &mut agent)
+                .authenticate_publickey_with(username.clone(), public_key, alg, &mut agent)
                 .await
                 .map_err(|e| {
                     SessionError::AuthenticationFailed(format!("agent auth failed: {}", e))
@@ -248,32 +248,39 @@ async fn authenticate_with_agent(
         let explicit_pipe = std::env::var("SSH_AUTH_SOCK").ok();
 
         let mut agent = if let Some(pipe) = explicit_pipe {
-            AgentClient::connect_named_pipe(&pipe)
+            let pipe_for_error = pipe.clone();
+            AgentClient::connect_named_pipe(pipe)
                 .await
                 .map_err(|error| {
                     let message = match &error {
                         russh::keys::Error::IO(io_error) => match io_error.kind() {
                             std::io::ErrorKind::NotFound => format!(
                                 "SSH_AUTH_SOCK points to '{}', but the named pipe was not found. Verify the path or unset SSH_AUTH_SOCK to use the default agent.",
-                                pipe
+                                pipe_for_error
                             ),
                             std::io::ErrorKind::PermissionDenied => format!(
                                 "Permission denied when opening SSH agent pipe '{}'. Check that your user account has access to the pipe.",
-                                pipe
+                                pipe_for_error
                             ),
                             std::io::ErrorKind::AddrNotAvailable => format!(
                                 "SSH agent pipe '{}' is not available. The agent service may have stopped.",
-                                pipe
+                                pipe_for_error
                             ),
-                            _ => format!("Failed to open SSH agent pipe '{}': {}", pipe, error),
+                            _ => format!(
+                                "Failed to open SSH agent pipe '{}': {}",
+                                pipe_for_error, error
+                            ),
                         },
-                        _ => format!("Failed to open SSH agent pipe '{}': {}", pipe, error),
+                        _ => format!(
+                            "Failed to open SSH agent pipe '{}': {}",
+                            pipe_for_error, error
+                        ),
                     };
                     SessionError::AuthenticationFailed(message)
                 })?
                 .dynamic()
         } else {
-            match AgentClient::connect_named_pipe(OPENSSH_AGENT_PIPE).await {
+            match AgentClient::connect_named_pipe(OPENSSH_AGENT_PIPE.to_string()).await {
                 Ok(agent) => agent.dynamic(),
                 Err(open_ssh_error) => {
                     let pageant = AgentClient::connect_pageant().await.map_err(|pageant_error| {
@@ -307,7 +314,7 @@ async fn authenticate_with_agent(
                 _ => None,
             };
             let auth = handle
-                .authenticate_publickey_with(username, public_key, alg, &mut agent)
+                .authenticate_publickey_with(username.clone(), public_key, alg, &mut agent)
                 .await
                 .map_err(|e| {
                     SessionError::AuthenticationFailed(format!("Agent auth failed: {}", e))
@@ -355,12 +362,12 @@ pub struct SshSession {
     state: Arc<Mutex<SshSessionState>>,
 }
 
-struct JumpTarget<'a> {
-    host: &'a str,
+struct JumpTarget {
+    host: String,
     port: u16,
-    username: &'a str,
-    password: Option<&'a str>,
-    private_key: Option<&'a str>,
+    username: String,
+    password: Option<String>,
+    private_key: Option<String>,
     use_agent: bool,
 }
 
@@ -693,41 +700,35 @@ impl SshSession {
         let raw_handle: client::Handle<ClientHandler>;
         let transport_handle: Option<Arc<client::Handle<ClientHandler>>>;
 
-        if let Some(ref jh) = jump_host {
+        if let Some(jh) = jump_host {
             let target = JumpTarget {
-                host: &host,
+                host,
                 port,
-                username: &username,
-                password: password.as_deref(),
-                private_key: private_key.as_deref(),
+                username,
+                password,
+                private_key,
                 use_agent: use_target_agent,
             };
             let (target_handle, jump_handle) =
-                Self::connect_via_jump(config.clone(), &target, jh).await?;
+                Self::connect_via_jump(config.clone(), target, jh).await?;
             raw_handle = target_handle;
             transport_handle = Some(Arc::new(jump_handle));
         } else {
             let addr = format!("{}:{}", host, port);
-            let mut direct = client::connect(config, addr, ClientHandler::for_host(&host, port))
+            let mut direct = client::connect(config, addr, ClientHandler::for_host(host, port))
                 .await
                 .map_err(|e| SessionError::ConnectionFailed(format!("connection failed: {}", e)))?;
 
             if use_agent {
-                let success = authenticate_with_agent(&mut direct, &username).await?;
+                let success = authenticate_with_agent(&mut direct, username).await?;
                 if !success {
                     return Err(SessionError::AuthenticationFailed(
                         "all SSH agent identities rejected".to_string(),
                     ));
                 }
             } else {
-                Self::authenticate(
-                    &mut direct,
-                    &username,
-                    password.as_deref(),
-                    private_key.as_deref(),
-                    certificate.as_deref(),
-                )
-                .await?;
+                Self::authenticate(&mut direct, username, password, private_key, certificate)
+                    .await?;
             }
             raw_handle = direct;
             transport_handle = None;
@@ -849,8 +850,8 @@ impl SshSession {
     /// 返回目标主机 handle 和负责承载隧道的跳板机 handle。
     async fn connect_via_jump(
         config: Arc<client::Config>,
-        target: &JumpTarget<'_>,
-        jump_host: &JumpHostConfig,
+        target: JumpTarget,
+        jump_host: JumpHostConfig,
     ) -> Result<(client::Handle<ClientHandler>, client::Handle<ClientHandler>), SessionError> {
         // 第一步：连接到跳板机
         let jump_addr = format!("{}:{}", jump_host.host, jump_host.port);
@@ -868,7 +869,7 @@ impl SshSession {
         let jump_auth: Result<bool, SessionError> = match jump_host.auth_type.as_str() {
             "agent" => {
                 let success =
-                    authenticate_with_agent(&mut jump_handle, &jump_host.username).await?;
+                    authenticate_with_agent(&mut jump_handle, jump_host.username.clone()).await?;
                 if success {
                     Ok(true)
                 } else {
@@ -889,7 +890,7 @@ impl SshSession {
                         Ok(key) => {
                             let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash);
                             jump_handle
-                                .authenticate_publickey(&jump_host.username, key_with_hash)
+                                .authenticate_publickey(jump_host.username.clone(), key_with_hash)
                                 .await
                                 .map(|r| r.success())
                                 .map_err(|e| {
@@ -902,7 +903,7 @@ impl SshSession {
                         Err(_) => {
                             if let Some(ref pwd) = jump_host.password {
                                 jump_handle
-                                    .authenticate_password(&jump_host.username, pwd)
+                                    .authenticate_password(jump_host.username.clone(), pwd.clone())
                                     .await
                                     .map(|r| r.success())
                                     .map_err(|e| {
@@ -921,7 +922,7 @@ impl SshSession {
                     }
                 } else if let Some(ref pwd) = jump_host.password {
                     jump_handle
-                        .authenticate_password(&jump_host.username, pwd)
+                        .authenticate_password(jump_host.username.clone(), pwd.clone())
                         .await
                         .map(|r| r.success())
                         .map_err(|e| {
@@ -940,7 +941,7 @@ impl SshSession {
                 // 默认使用密码认证
                 if let Some(ref pwd) = jump_host.password {
                     jump_handle
-                        .authenticate_password(&jump_host.username, pwd)
+                        .authenticate_password(jump_host.username.clone(), pwd.clone())
                         .await
                         .map(|r| r.success())
                         .map_err(|e| {
@@ -967,9 +968,9 @@ impl SshSession {
         let peer_addr = format!("{}:{}", jump_host.host, jump_host.port);
         let target_channel = jump_handle
             .channel_open_direct_tcpip(
-                target.host,
+                target.host.clone(),
                 target.port as u32,
-                &peer_addr,
+                peer_addr,
                 jump_host.port as u32,
             )
             .await
@@ -1017,10 +1018,10 @@ impl SshSession {
     /// 认证处理（不含 agent；agent 由调用方在需要时单独调用 `authenticate_with_agent`）
     async fn authenticate(
         handle: &mut client::Handle<ClientHandler>,
-        username: &str,
-        password: Option<&str>,
-        private_key: Option<&str>,
-        certificate: Option<&str>,
+        username: String,
+        password: Option<String>,
+        private_key: Option<String>,
+        certificate: Option<String>,
     ) -> Result<(), SessionError> {
         // 证书认证优先级最高（用户显式提供证书时使用）
         if let Some(cert_content) = certificate {
@@ -1028,7 +1029,7 @@ impl SshSession {
                 handle,
                 username,
                 cert_content,
-                private_key.unwrap_or(""),
+                private_key.unwrap_or_default(),
                 password,
             )
             .await?;
@@ -1044,7 +1045,7 @@ impl SshSession {
                     SessionError::ConnectionFailed(format!("failed to get RSA hash: {}", e))
                 })?
                 .flatten();
-            match russh::keys::decode_openssh(key_content.as_bytes(), password) {
+            match russh::keys::decode_openssh(key_content.as_bytes(), password.as_deref()) {
                 Ok(key) => {
                     let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash);
                     let result = handle
@@ -1112,13 +1113,13 @@ impl SshSession {
     /// 格式：证书为 OpenSSH 格式（user-cert.pub 内容），私钥为 PEM/OpenSSH 格式。
     async fn authenticate_with_cert(
         handle: &mut client::Handle<ClientHandler>,
-        username: &str,
-        cert_content: &str,
-        private_key_content: &str,
-        key_password: Option<&str>,
+        username: String,
+        cert_content: String,
+        private_key_content: String,
+        key_password: Option<String>,
     ) -> Result<(), SessionError> {
         // 解析 SSH 证书（OpenSSH 格式），使用 russh internal fork 的类型
-        let cert = russh::keys::Certificate::from_openssh(cert_content)
+        let cert = russh::keys::Certificate::from_openssh(&cert_content)
             .map_err(|e| SessionError::CertificateParseFailed(
                 format!("failed to parse certificate (expected OpenSSH format, e.g. 'ssh-ed25519-cert-v01@openssh.com AAAA...'): {}", e)
             ))?;
@@ -1130,13 +1131,14 @@ impl SshSession {
         );
 
         // 解析私钥（用于签名）
-        let private_key = russh::keys::decode_openssh(private_key_content.as_bytes(), key_password)
-            .map_err(|e| {
-                SessionError::KeyParseFailed(format!(
-                    "failed to parse private key for certificate signing: {}",
-                    e
-                ))
-            })?;
+        let private_key =
+            russh::keys::decode_openssh(private_key_content.as_bytes(), key_password.as_deref())
+                .map_err(|e| {
+                    SessionError::KeyParseFailed(format!(
+                        "failed to parse private key for certificate signing: {}",
+                        e
+                    ))
+                })?;
 
         let result = handle
             .authenticate_openssh_cert(username, std::sync::Arc::new(private_key), cert)
