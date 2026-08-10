@@ -372,7 +372,7 @@ struct JumpTarget {
 }
 
 async fn open_shell_channel(
-    handle: &client::Handle<ClientHandler>,
+    handle: Arc<client::Handle<ClientHandler>>,
     cols: u16,
     rows: u16,
 ) -> Result<russh::Channel<client::Msg>, SessionError> {
@@ -596,7 +596,7 @@ impl SshSession {
             // Reuse pooled connection: open a new PTY channel on the shared handle
             tracing::info!(key = %pool_key, "reusing pooled SSH connection for new tab");
 
-            let channel = match open_shell_channel(arc_handle.as_ref(), cols, rows).await {
+            let channel = match open_shell_channel(Arc::clone(&arc_handle), cols, rows).await {
                 Ok(channel) => channel,
                 Err(error) => {
                     Arc::clone(&pool).release(pool_key.clone()).await;
@@ -735,7 +735,7 @@ impl SshSession {
         }
 
         let arc_handle = Arc::new(raw_handle);
-        let channel = match open_shell_channel(arc_handle.as_ref(), cols, rows).await {
+        let channel = match open_shell_channel(Arc::clone(&arc_handle), cols, rows).await {
             Ok(channel) => channel,
             Err(error) => {
                 let _ = arc_handle
