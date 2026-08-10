@@ -190,6 +190,12 @@ fn connection_key(
     }
 }
 
+fn into_owned_agent_public_key(
+    identity: russh::keys::agent::AgentIdentity,
+) -> russh::keys::PublicKey {
+    identity.public_key().into_owned()
+}
+
 /// Authenticate with SSH agent, trying all available identities.
 ///
 /// Returns Ok(true) on success, Ok(false) if all identities were rejected,
@@ -231,7 +237,7 @@ async fn authenticate_with_agent_inner(
         }
 
         for identity in identities {
-            let public_key = identity.public_key().into_owned();
+            let public_key = into_owned_agent_public_key(identity);
             let alg = match public_key.algorithm() {
                 russh::keys::Algorithm::Dsa | russh::keys::Algorithm::Rsa { .. } => rsa_hash,
                 _ => None,
@@ -317,7 +323,7 @@ async fn authenticate_with_agent_inner(
         }
 
         for identity in identities {
-            let public_key = identity.public_key().into_owned();
+            let public_key = into_owned_agent_public_key(identity);
             let alg = match public_key.algorithm() {
                 russh::keys::Algorithm::Dsa | russh::keys::Algorithm::Rsa { .. } => rsa_hash,
                 _ => None,
