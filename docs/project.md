@@ -602,6 +602,21 @@ src-tauri/
 
 ---
 
+### Phase 6.13 - 终端会话架构重构 ✅ 已完成
+
+> 2026-08-12：参考 SideX 与 nyala-studio 的会话生命周期设计，完成终端数据流与工作台承载方式重构；视觉界面保持项目自绘。
+
+| 领域 | 改动 |
+| --- | --- |
+| 会话生命周期 | 新增 `TerminalSessionManager`，按 `tabId` 持有本地、SSH、串口会话；React 路由切换只隐藏终端视图，不销毁 PTY/SSH 会话 |
+| 事件流 | 新增 `TerminalSessionEvents`，按终端类型集中注册 Tauri data/close/exit 监听，并处理连接建立前的输出缓冲 |
+| React 边界 | `useTerminal` 收口为 xterm surface 的输入、输出、resize 和状态绑定；启动、断开、重连由会话服务负责 |
+| 工作台 UI | TerminalByUrl 常驻于主布局，支持多标签和分屏的隐藏/显示；新增自绘桌面工具栏、查找、清屏、字号、工具侧栏和全屏操作 |
+| 命令投递 | `terminalEmitter` 按活动 `tabId` 定向写入，避免命令面板或 Snippet 把命令发送到错误标签 |
+| 验证 | 新增会话管理器单测；前端测试、typecheck、lint、源码规模门禁通过；浏览器预览确认桌面/移动布局，浏览器环境缺少 Tauri IPC 的连接错误属于预期边界 |
+
+---
+
 ## 待办事项
 
 ### P0 - 必须完成
@@ -648,6 +663,7 @@ src-tauri/
 | 39  | 跨平台 SSH/串口/PTY 可靠性 | 🟡 Important | ✅ 代码已修复，待实机矩阵 (2026-08-09) |
 | 42  | 发布终审的同步、存储、脚本与桌面配置问题 | 🟡 Important | ✅ 本机可验证问题已修复，外部项待验证 (2026-08-10) |
 | 43  | 多平台 Release 资产缺失与 Windows Tauri 编译失败 | 🟡 Important | ✅ 已修复并发布 8 个安装包与校验清单 (2026-08-11) |
+| 44  | 终端会话生命周期与 React 视图耦合 | 🟡 Important | ✅ 已重构为按 tabId 管理，跨平台交互仍需实机验证 (2026-08-12) |
 
 ---
 
@@ -930,4 +946,4 @@ const response = await teamApi.listTeams()
 
 ---
 
-_文档更新时间: 2026-08-11 (Phase 6.12: v0.0.1-dev.0 多平台发布验收)_
+_文档更新时间: 2026-08-12 (Phase 6.13: 终端会话架构重构)_

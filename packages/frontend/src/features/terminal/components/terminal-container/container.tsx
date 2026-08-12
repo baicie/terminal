@@ -37,6 +37,7 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [toolSidebarOpen, setToolSidebarOpen] = useState(false)
 
   const darkPreset = (settings.terminalThemeDark as string) || 'one-dark'
   const lightPreset =
@@ -71,13 +72,15 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
     onOpenSearch: () => setSearchOpen(true),
   })
   const completion = useTerminalCompletion(terminal.termInstance)
-  const { status, error, sessionId } = useTerminal(terminal.termInstance, {
-    tabType: tab?.type ?? 'local',
-    host,
-    jumpHost,
-    serialSessionId: tab?.serialSessionId,
-    onTabPress: completion.handleTabPress,
-  })
+  const { status, error, sessionId, write, reconnect, disconnect } =
+    useTerminal(terminal.termInstance, {
+      tabId,
+      tabType: tab?.type ?? 'local',
+      host,
+      jumpHost,
+      serialSessionId: tab?.serialSessionId,
+      onTabPress: completion.handleTabPress,
+    })
   useShellRcCompletion(sessionId, status, tab?.type, completion.rcItemsRef)
 
   const readableError = error ? getReadableTerminalError(error, t) : null
@@ -109,7 +112,7 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
       readableError={readableError}
       isMobile={isMobile}
       isFullscreen={isFullscreen}
-      terminalFontSize={fontSize}
+      terminalFontSize={terminal.fontSize}
       term={terminal.termInstance}
       containerRef={terminal.containerRef}
       searchAddon={terminal.searchAddonRef.current}
@@ -118,7 +121,13 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
       completion={completion}
       onSearchOpenChange={setSearchOpen}
       onMobileMenuOpenChange={setMobileMenuOpen}
+      onSendKey={write}
       onFontSizeChange={terminal.changeFontSize}
+      onClear={() => terminal.termInstance?.clear()}
+      toolSidebarOpen={toolSidebarOpen}
+      onToggleToolSidebar={() => setToolSidebarOpen(current => !current)}
+      onReconnect={reconnect}
+      onDisconnect={disconnect}
       onToggleFullscreen={() => setIsFullscreen(current => !current)}
       onTouchStart={longPress.start}
       onTouchEnd={longPress.cancel}

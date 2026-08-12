@@ -34,7 +34,8 @@ export default {
 
   // Shortcuts help dialog
   'shortcuts.title': 'Keyboard Shortcuts',
-  'shortcuts.description': 'All available shortcuts. Press ? or Cmd/Ctrl + / to open this panel any time.',
+  'shortcuts.description':
+    'All available shortcuts. Press ? or Cmd/Ctrl + / to open this panel any time.',
   'shortcuts.search': 'Search shortcuts...',
   'shortcuts.empty': 'No matching shortcuts',
   'shortcuts.action': 'Action',
@@ -48,6 +49,10 @@ export default {
   'terminal.search': 'Find',
   'terminal.zoomIn': 'Zoom In',
   'terminal.zoomOut': 'Zoom Out',
+  'terminal.showTools': 'Show tools',
+  'terminal.hideTools': 'Hide tools',
+  'terminal.fullscreen': 'Fullscreen',
+  'terminal.exitFullscreen': 'Exit fullscreen',
   'terminal.resetZoom': 'Reset Zoom',
   'terminal.splitVertical': 'Split Vertical',
   'terminal.splitHorizontal': 'Split Horizontal',
@@ -60,25 +65,33 @@ export default {
   'terminal.searchCaseSensitive': 'Match case',
   'terminal.searchWholeWord': 'Match whole word',
   'terminal.searchRegex': 'Use regular expression',
-  'terminal.windowUnfocused': 'Window unfocused — input still goes to the background terminal',
+  'terminal.windowUnfocused':
+    'Window unfocused — input still goes to the background terminal',
 
   // Settings
   'settings.copyOnSelect': 'Copy on Select',
-  'settings.copyOnSelectDesc': 'Automatically copy selected text to the clipboard',
+  'settings.copyOnSelectDesc':
+    'Automatically copy selected text to the clipboard',
   'settings.pasteOnMiddleClick': 'Paste on Middle Click',
-  'settings.pasteOnMiddleClickDesc': 'Paste clipboard content with the middle mouse button',
+  'settings.pasteOnMiddleClickDesc':
+    'Paste clipboard content with the middle mouse button',
   'settings.allowProposedApi': 'Allow Proposed API',
-  'settings.allowProposedApiDesc': 'Enable xterm.js proposed APIs (required by image addon)',
+  'settings.allowProposedApiDesc':
+    'Enable xterm.js proposed APIs (required by image addon)',
   'settings.desktopSection': 'Desktop UX',
   'settings.minimizeToTray': 'Minimize to Tray on Close',
-  'settings.minimizeToTrayDesc': 'Hide the window instead of quitting; app keeps running in the tray',
+  'settings.minimizeToTrayDesc':
+    'Hide the window instead of quitting; app keeps running in the tray',
   'settings.nativeNotifications': 'Native System Notifications',
-  'settings.nativeNotificationsDesc': 'Show OS-level toasts on disconnect or long-running task completion',
+  'settings.nativeNotificationsDesc':
+    'Show OS-level toasts on disconnect or long-running task completion',
   'settings.notifyOnlyWhenUnfocused': 'Only When Window Unfocused',
-  'settings.notifyOnlyWhenUnfocusedDesc': 'Skip native notifications while the app window is focused',
+  'settings.notifyOnlyWhenUnfocusedDesc':
+    'Skip native notifications while the app window is focused',
 
   // Shortcuts
-  'settings.shortcuts.tip': 'Click a shortcut to rebind it. Press Escape to cancel.',
+  'settings.shortcuts.tip':
+    'Click a shortcut to rebind it. Press Escape to cancel.',
   'settings.shortcuts.recording': 'Recording...',
   'settings.shortcuts.enabled': 'On',
   'settings.shortcuts.disabled': 'Off',
@@ -88,7 +101,8 @@ export default {
   'settings.shortcuts.noResults': 'No shortcuts found',
   'settings.shortcuts.conflictWith': 'Conflict with',
   'settings.shortcuts.resetSuccess': 'Shortcuts reset to defaults',
-  'settings.shortcuts.recordingHint': 'Press a key combination to bind, or Escape to cancel...',
+  'settings.shortcuts.recordingHint':
+    'Press a key combination to bind, or Escape to cancel...',
 
   // SFTP transfer queue
   'sftp.transfersTitle': 'Transfers',
@@ -157,23 +171,32 @@ export default {
   'experiments.noEvents': 'No events yet...',
   'experiments.testDesc': 'Test description:',
   'experiments.eventDesc1': 'event: contains data and inputType',
-  'experiments.eventDesc2': 'event: contains key, code, which and modifier keys',
-  'experiments.eventDesc3': 'Note: Some browser combinations (like Ctrl+C) may not trigger input events',
+  'experiments.eventDesc2':
+    'event: contains key, code, which and modifier keys',
+  'experiments.eventDesc3':
+    'Note: Some browser combinations (like Ctrl+C) may not trigger input events',
   // Xterm test
   'experiments.xtermTitle': 'Xterm.js Input Test',
-  'experiments.xtermDesc': 'Monitor onData / onKey events from xterm.js Terminal instance and underlying textarea events',
+  'experiments.xtermDesc':
+    'Monitor onData / onKey events from xterm.js Terminal instance and underlying textarea events',
   'experiments.xtermTerminal': 'Xterm Terminal',
-  'experiments.xtermHint': 'Focus the terminal and type to see events. Try special keys (arrows, Ctrl+C, etc.)',
+  'experiments.xtermHint':
+    'Focus the terminal and type to see events. Try special keys (arrows, Ctrl+C, etc.)',
   'experiments.eventExplanation': 'Event explanation:',
-  'experiments.onDataDesc': 'Main data event from xterm, contains all data sent to PTY including characters, control codes (\\r, \\n, \\t, etc.) and escape sequences.',
-  'experiments.onKeyDesc': 'Triggered on each keypress, contains key, code, which and modifier key information.',
-  'experiments.textareaEventDesc': 'Native events from the underlying textarea. Note: textarea_input may not trigger on some browsers/platforms.',
+  'experiments.onDataDesc':
+    'Main data event from xterm, contains all data sent to PTY including characters, control codes (\\r, \\n, \\t, etc.) and escape sequences.',
+  'experiments.onKeyDesc':
+    'Triggered on each keypress, contains key, code, which and modifier key information.',
+  'experiments.textareaEventDesc':
+    'Native events from the underlying textarea. Note: textarea_input may not trigger on some browsers/platforms.',
   // Textarea test
   'experiments.textareaTitle': 'Textarea Input Test',
-  'experiments.textareaDesc': 'Monitor input / keydown / keyup events from textarea element',
+  'experiments.textareaDesc':
+    'Monitor input / keydown / keyup events from textarea element',
   'experiments.textarea': 'Textarea',
   'experiments.textareaPlaceholder': 'Type something here...',
-  'experiments.textareaHint': 'Focus this textarea and type to see events captured below.',
+  'experiments.textareaHint':
+    'Focus this textarea and type to see events captured below.',
   'experiments.copy': 'Copy',
   'experiments.copyEvents': 'Copy event log to clipboard',
   'experiments.copied': 'Copied!',
@@ -203,8 +226,11 @@ export default {
     'SSH agent authentication failed. Check agent logs for details.',
   'terminal.agentUnixNoSocket':
     'SSH_AUTH_SOCK socket not found on Unix. Start ssh-agent or set SSH_AUTH_SOCK.',
-  'terminal.connectionFailed': 'Connection failed. Check host address and network.',
-  'terminal.authFailed': 'Authentication failed. Check username and credentials.',
+  'terminal.connectionFailed':
+    'Connection failed. Check host address and network.',
+  'terminal.authFailed':
+    'Authentication failed. Check username and credentials.',
   'terminal.hostKeyFailed': 'Host key verification failed. Check known_hosts.',
-  'terminal.sessionTimeout': 'Session timed out. The connection may have been closed.',
+  'terminal.sessionTimeout':
+    'Session timed out. The connection may have been closed.',
 }

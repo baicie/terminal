@@ -8,6 +8,8 @@ export interface ShellOutput {
 }
 
 export interface UseTerminalOptions {
+  /** Stable AppStore tab id that owns the terminal session. */
+  tabId: string
   /** Tab type: local, remote, or serial. */
   tabType: TabType
   /** Required when tabType is remote. */
@@ -29,4 +31,7 @@ export interface UseTerminalResult {
   sessionId: string | null
   status: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
   error: string | null
+  write: (data: string) => void
+  reconnect: () => void
+  disconnect: () => void
 }

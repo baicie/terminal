@@ -78,7 +78,7 @@ export function MainLayoutContent({
 
         <main
           className={cn(
-            'flex-1 min-w-0 overflow-hidden bg-background',
+            'relative flex-1 min-w-0 overflow-hidden bg-background',
             isMobile && 'mobile-safe-bottom',
           )}
         >

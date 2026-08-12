@@ -12,6 +12,8 @@ interface RegisterTerminalInputOptions {
   sessionIdRef: { current: string | null }
   hostRef: { current: Host | undefined }
   onTabPressRef: { current: UseTerminalOptions['onTabPress'] }
+  write?: (data: string) => void
+  resize?: (cols: number, rows: number) => void
 }
 
 export function registerTerminalInput({
@@ -20,12 +22,18 @@ export function registerTerminalInput({
   sessionIdRef,
   hostRef,
   onTabPressRef,
+  write,
+  resize,
 }: RegisterTerminalInputOptions): Cleanup[] {
   const cleanupFns: Cleanup[] = []
   const sendInput = (data: string) => {
     const sessionId = sessionIdRef.current
     if (!sessionId) return
     const command = tabType === 'serial' ? 'serial_write' : 'session_write'
+    if (write) {
+      write(data)
+      return
+    }
     void invoke(command, { sessionId, data }).catch(error => {
       console.error('[useTerminal] write failed:', error)
     })
@@ -164,9 +172,15 @@ export function registerTerminalInput({
     const onResizeDisposable = term.onResize(({ cols, rows }) => {
       const sessionId = sessionIdRef.current
       if (!sessionId) return
-      void invoke('session_resize', { sessionId, cols, rows }).catch(error => {
-        console.error('[useTerminal] resize failed:', error)
-      })
+      if (resize) {
+        resize(cols, rows)
+      } else {
+        void invoke('session_resize', { sessionId, cols, rows }).catch(
+          error => {
+            console.error('[useTerminal] resize failed:', error)
+          },
+        )
+      }
     })
     cleanupFns.push(() => onResizeDisposable.dispose())
   }

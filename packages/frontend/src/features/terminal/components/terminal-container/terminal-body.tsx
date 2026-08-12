@@ -9,6 +9,8 @@ import { TerminalKeyboardBar } from './keyboard-bar'
 import { TerminalMobileMenu } from './terminal-mobile-menu'
 import { TerminalSearchOverlay } from './terminal-search-overlay'
 import { SessionStatusBar } from './session-status-bar'
+import TerminalToolSidebar from '@/components/terminal-tool-sidebar'
+import { TerminalToolbar } from './terminal-toolbar'
 import type { TerminalCompletionController } from './use-terminal-completion'
 
 interface TerminalBodyProps {
@@ -27,8 +29,14 @@ interface TerminalBodyProps {
   completion: TerminalCompletionController
   onSearchOpenChange: (open: boolean) => void
   onMobileMenuOpenChange: (open: boolean) => void
+  onSendKey: (data: string) => void
   onFontSizeChange: (delta: number) => void
+  onClear: () => void
+  toolSidebarOpen: boolean
+  onToggleToolSidebar: () => void
   onToggleFullscreen: () => void
+  onReconnect?: () => void
+  onDisconnect?: () => void
   onTouchStart: TouchEventHandler<HTMLDivElement>
   onTouchEnd: TouchEventHandler<HTMLDivElement>
   onTouchMove: TouchEventHandler<HTMLDivElement>
@@ -37,7 +45,7 @@ interface TerminalBodyProps {
 export function TerminalBody(props: TerminalBodyProps) {
   const showStatusBar = !props.isMobile && !props.isFullscreen
   const body = (
-    <div className="h-full flex bg-[#1e1e1e]">
+    <div className="flex h-full bg-[#10131a]">
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {showStatusBar && (
           <SessionStatusBar
@@ -45,6 +53,21 @@ export function TerminalBody(props: TerminalBodyProps) {
             host={props.host}
             status={props.status}
             errorMessage={props.readableError ?? undefined}
+            onReconnect={props.onReconnect}
+            onDisconnect={props.onDisconnect}
+          />
+        )}
+        {!props.isMobile && (
+          <TerminalToolbar
+            tab={props.tab}
+            fontSize={props.terminalFontSize}
+            toolsOpen={props.toolSidebarOpen}
+            fullscreen={props.isFullscreen}
+            onSearch={() => props.onSearchOpenChange(true)}
+            onClear={props.onClear}
+            onToggleTools={props.onToggleToolSidebar}
+            onFontSizeChange={props.onFontSizeChange}
+            onToggleFullscreen={props.onToggleFullscreen}
           />
         )}
         <div className="relative flex-1 min-h-0">
@@ -110,7 +133,7 @@ export function TerminalBody(props: TerminalBodyProps) {
         </div>
         {props.isMobile && (
           <TerminalKeyboardBar
-            onSendKey={key => props.term?.write(key)}
+            onSendKey={props.onSendKey}
             onFontSizeChange={props.onFontSizeChange}
             fontSize={props.terminalFontSize}
             isFullscreen={props.isFullscreen}
@@ -118,11 +141,17 @@ export function TerminalBody(props: TerminalBodyProps) {
           />
         )}
       </div>
+      {!props.isMobile && (
+        <TerminalToolSidebar
+          visible={props.toolSidebarOpen}
+          onToggle={props.onToggleToolSidebar}
+        />
+      )}
     </div>
   )
 
-  if (props.isMobile && props.isFullscreen) {
-    return <div className="fixed inset-0 z-[300] bg-[#1e1e1e]">{body}</div>
+  if (props.isFullscreen) {
+    return <div className="fixed inset-0 z-[300] bg-[#10131a]">{body}</div>
   }
   return body
 }

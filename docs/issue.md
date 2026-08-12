@@ -1599,4 +1599,32 @@ $ cargo check
 
 ---
 
-_本节最后更新: 2026-08-11_
+### Issue #44: 终端会话生命周期与 React 视图耦合 ✅ 已修复
+
+**严重程度**: Important
+**状态**: ✅ 已修复；浏览器预览与跨平台实机边界已记录
+**发现时间**: 2026-08-12
+**修复时间**: 2026-08-12
+
+**问题**:
+
+- 终端连接启动、Tauri 事件监听和 xterm 输入都由视图 hook 直接管理，路由切换会让 React 视图卸载并关闭仍可复用的会话。
+- 多标签输出和命令面板写入缺少稳定的 `tabId` 路由边界，存在初始输出丢失或命令投递到错误终端的风险。
+
+**修复**:
+
+- 新增 `features/terminal/services/terminal-session-manager.ts`，以 `tabId` 管理会话记录、连接状态、输出缓冲、写入、resize、断开和重连。
+- 新增 `terminal-session-events.ts` 与 `terminal-launcher.ts`，集中管理事件监听和 local/SSH/serial 启动分支。
+- `TerminalByUrl` 常驻主布局，路由切换只改变终端工作台的可见性；已删除的标签通过 `prune()` 关闭对应后端会话。
+- `terminalEmitter.writeCommand()` 解析当前活动标签，Snippet/History 等命令按目标标签投递。
+- 后端 close/exit 事件会清理 session 映射并清空 sessionId，断连后不再接受写入。
+
+**验证**:
+
+- `terminal-session-manager.test.ts` 3 项通过，覆盖稳定 key、连接输出路由、断连后的写入保护。
+- 前端 `typecheck`、`lint` 和源码规模门禁通过；已完成浏览器桌面/移动布局检查。
+- 浏览器直开无法提供 Tauri IPC，连接错误属于预期；Windows/Linux、Pageant、Jump Host、本地 PTY 和串口仍需按 Issue #39 做实机回归。
+
+---
+
+_本节最后更新: 2026-08-12_

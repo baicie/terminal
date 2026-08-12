@@ -198,6 +198,7 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     searchAddonRef,
     termInstance,
     isReady,
+    fontSize: liveFontSize,
     changeFontSize,
   }
 }

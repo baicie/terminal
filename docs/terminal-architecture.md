@@ -786,12 +786,39 @@ features/terminal/components/
 
 ---
 
-## 十、文档版本历史
+## 当前落地状态 (2026-08-12)
+
+本方案中“会话生命周期独立于 React 视图”的核心目标已落地，当前实现采用以下边界：
+
+```text
+TerminalByUrl (主布局常驻)
+    |
+    +-- TerminalContainer (xterm surface / UI)
+    |       |
+    |       +-- useTerminal (输入、输出、resize、状态绑定)
+    |       +-- TerminalToolbar / TerminalToolSidebar (自绘工作台)
+    |
+    +-- TerminalSessionManager (按 tabId 管理会话)
+            +-- TerminalSessionEvents (Tauri 事件监听)
+            +-- terminal-launcher (local / SSH / serial 启动)
+            +-- sessionService (后端写入、resize、close)
+```
+
+- `packages/frontend/src/features/terminal/services/terminal-session-manager.ts` 持有 session 生命周期，不随路由卸载。
+- `packages/frontend/src/features/terminal/services/terminal-session-events.ts` 按终端类型复用 data/close/exit 监听，并缓冲 session 建立前的输出。
+- `packages/frontend/src/layout/terminal-by-url.tsx` 常驻终端层；非终端路由只隐藏并禁用交互，删除标签时由 `prune()` 回收会话。
+- `packages/frontend/src/service/terminal-emitter.ts` 按活动标签定向发送命令。
+- `components/terminal-container/` 中的 UI 是项目自绘工作台，参考项目只用于会话生命周期和交互结构，不复用其视觉实现。
+
+当前自动验证覆盖管理器单元测试、typecheck、lint、源码行数门禁和浏览器布局检查。浏览器直开无法提供 Tauri IPC；Windows/Linux、Pageant、Jump Host、本地 PTY 和串口硬件仍需桌面实机验证。
+
+## 十一、文档版本历史
 
 | 版本 | 日期 | 作者 | 变更说明 |
 |------|------|------|---------|
 | v1.0 | 2026-04-15 | Claude | 初始版本 |
+| v1.1 | 2026-08-12 | Codex | 补充按 tabId 管理会话的实际落地架构 |
 
 ---
 
-_文档更新时间: 2026-04-15_
+_文档更新时间: 2026-08-12_

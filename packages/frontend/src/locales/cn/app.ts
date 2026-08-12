@@ -34,7 +34,8 @@ export default {
 
   // Shortcuts help dialog
   'shortcuts.title': '键盘快捷键',
-  'shortcuts.description': '所有可用的快捷键。按 ? 或 Cmd/Ctrl + / 随时打开此面板。',
+  'shortcuts.description':
+    '所有可用的快捷键。按 ? 或 Cmd/Ctrl + / 随时打开此面板。',
   'shortcuts.search': '搜索快捷键...',
   'shortcuts.empty': '没有匹配的快捷键',
   'shortcuts.action': '操作',
@@ -48,6 +49,10 @@ export default {
   'terminal.search': '查找',
   'terminal.zoomIn': '放大',
   'terminal.zoomOut': '缩小',
+  'terminal.showTools': '显示工具',
+  'terminal.hideTools': '隐藏工具',
+  'terminal.fullscreen': '全屏',
+  'terminal.exitFullscreen': '退出全屏',
   'terminal.resetZoom': '重置缩放',
   'terminal.splitVertical': '垂直分屏',
   'terminal.splitHorizontal': '水平分屏',
@@ -68,14 +73,17 @@ export default {
   'settings.pasteOnMiddleClick': '中键粘贴',
   'settings.pasteOnMiddleClickDesc': '点击鼠标中键粘贴剪贴板内容',
   'settings.allowProposedApi': '允许实验性 API',
-  'settings.allowProposedApiDesc': '启用 xterm.js 的 proposed API（图片插件等需要）',
+  'settings.allowProposedApiDesc':
+    '启用 xterm.js 的 proposed API（图片插件等需要）',
   'settings.desktopSection': '桌面体验',
   'settings.minimizeToTray': '关闭时最小化到托盘',
-  'settings.minimizeToTrayDesc': '点击 X 时仅隐藏窗口，应用继续在系统托盘中运行',
+  'settings.minimizeToTrayDesc':
+    '点击 X 时仅隐藏窗口，应用继续在系统托盘中运行',
   'settings.nativeNotifications': '原生系统通知',
   'settings.nativeNotificationsDesc': '断连或长任务完成时弹出操作系统通知',
   'settings.notifyOnlyWhenUnfocused': '仅在窗口失焦时通知',
-  'settings.notifyOnlyWhenUnfocusedDesc': '窗口聚焦时不弹原生通知，避免双重提醒',
+  'settings.notifyOnlyWhenUnfocusedDesc':
+    '窗口聚焦时不弹原生通知，避免双重提醒',
 
   // Shortcuts
   'settings.shortcuts.tip': '点击快捷键可重新绑定，按 Escape 取消',
@@ -161,16 +169,21 @@ export default {
   'experiments.eventDesc3': '注意：组合键（如 Ctrl+C）可能会触发 input 事件',
   // Xterm test
   'experiments.xtermTitle': 'Xterm.js 输入测试',
-  'experiments.xtermDesc': '监听 xterm.js Terminal 实例的 onData / onKey 事件，以及底层 textarea 的事件',
+  'experiments.xtermDesc':
+    '监听 xterm.js Terminal 实例的 onData / onKey 事件，以及底层 textarea 的事件',
   'experiments.xtermTerminal': 'Xterm 终端',
-  'experiments.xtermHint': '点击终端并输入以查看事件。尝试特殊按键（方向键、Ctrl+C 等）',
+  'experiments.xtermHint':
+    '点击终端并输入以查看事件。尝试特殊按键（方向键、Ctrl+C 等）',
   'experiments.eventExplanation': '事件说明：',
-  'experiments.onDataDesc': 'xterm 的主要数据事件，包含所有发送到 PTY 的数据。字符、控制码（\\r, \\n, \\t 等）、转义序列都在这里。',
+  'experiments.onDataDesc':
+    'xterm 的主要数据事件，包含所有发送到 PTY 的数据。字符、控制码（\\r, \\n, \\t 等）、转义序列都在这里。',
   'experiments.onKeyDesc': '每次按键触发，包含 key、code、which 和修饰键信息。',
-  'experiments.textareaEventDesc': 'xterm 底层 textarea 的原生事件。注意：某些浏览器/平台可能不触发 textarea_input。',
+  'experiments.textareaEventDesc':
+    'xterm 底层 textarea 的原生事件。注意：某些浏览器/平台可能不触发 textarea_input。',
   // Textarea test
   'experiments.textareaTitle': 'Textarea 输入测试',
-  'experiments.textareaDesc': '监听 textarea 元素的 input / keydown / keyup 事件',
+  'experiments.textareaDesc':
+    '监听 textarea 元素的 input / keydown / keyup 事件',
   'experiments.textarea': '文本框',
   'experiments.textareaPlaceholder': '在此输入...',
   'experiments.textareaHint': '点击此文本框并输入以在下方查看捕获的事件。',

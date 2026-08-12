@@ -1,7 +1,9 @@
 import * as React from 'react'
-import { useSearchParams } from 'react-router-dom'
-import SplitPane from '@/components/split-pane'
+import { useEffect } from 'react'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { useAppStore } from '@/store/app'
+import { terminalSessionManager } from '@/features/terminal/services/terminal-session-manager'
+import { TerminalWorkbench } from './terminal-workbench'
 
 const TerminalContainer = React.lazy(() =>
   import('@/features/terminal/components/terminal-container/container').then(
@@ -10,9 +12,7 @@ const TerminalContainer = React.lazy(() =>
 )
 
 function TerminalContent({ tabId }: { tabId: string }) {
-  const tabs = useAppStore(state => state.tabs)
-  const tab = tabs.find(item => item.id === tabId)
-  return tab ? <TerminalContainer key={tabId} tabId={tabId} /> : null
+  return <TerminalContainer key={tabId} tabId={tabId} />
 }
 
 function TerminalLoadingFallback() {
@@ -25,30 +25,42 @@ function TerminalLoadingFallback() {
 
 export function TerminalByUrl() {
   const [searchParams] = useSearchParams()
+  const location = useLocation()
   const tabId = searchParams.get('tab') ?? ''
   const tabs = useAppStore(state => state.tabs)
+  const activeTabId = useAppStore(state => state.activeTabId)
   const splitGroups = useAppStore(state => state.splitGroups)
 
-  if (!tabId) return null
+  const requestedTabId = tabId || activeTabId || ''
+  const tab = tabs.find(item => item.id === requestedTabId) ?? tabs[0]
 
-  const tab = tabs.find(item => item.id === tabId)
+  useEffect(() => {
+    terminalSessionManager.prune(new Set(tabs.map(item => item.id)))
+  }, [tabs])
+
   if (!tab) return null
+  const visibleTabId = tab.id
 
   const splitGroup = tab.splitId
     ? splitGroups.find(group => group.id === tab.splitId)
     : null
+  const activeSplitGroup =
+    splitGroup && splitGroup.tabs.length >= 2 ? splitGroup : null
+
+  const visibleIds = new Set(
+    activeSplitGroup ? activeSplitGroup.tabs.slice(0, 2) : [visibleTabId],
+  )
+  const isTerminalRoute = location.pathname === '/terminal'
 
   return (
     <React.Suspense fallback={<TerminalLoadingFallback />}>
-      {splitGroup && tab.splitChildren && tab.splitChildren.length > 0 ? (
-        <SplitPane group={splitGroup}>
-          {splitGroup.tabs.map(id => (
-            <TerminalContent key={id} tabId={id} />
-          ))}
-        </SplitPane>
-      ) : (
-        <TerminalContent tabId={tabId} />
-      )}
+      <TerminalWorkbench
+        tabs={tabs}
+        visibleTabIds={visibleIds}
+        splitGroup={activeSplitGroup}
+        isTerminalRoute={isTerminalRoute}
+        renderTerminal={tabId => <TerminalContent tabId={tabId} />}
+      />
     </React.Suspense>
   )
 }
