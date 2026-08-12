@@ -1,6 +1,6 @@
 {
   "name": "@terminal/monorepo",
-  "version": "0.0.1-dev.0",
+  "version": "0.0.1-dev.1",
   "description": "Modern SSH/SFTP terminal client with team collaboration",
   "private": true,
   "type": "module",

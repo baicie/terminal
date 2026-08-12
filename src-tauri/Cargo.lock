@@ -6896,7 +6896,7 @@ dependencies = [
 
 [[package]]
 name = "terminal"
-version = "0.0.1-dev.0"
+version = "0.0.1-dev.1"
 dependencies = [
  "aes-gcm 0.10.3",
  "anyhow",
