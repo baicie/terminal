@@ -1,7 +1,7 @@
 # Terminal 发布就绪规格
 
 > 创建日期：2026-08-09
-> 最后验证日期：2026-08-11
+> 最后验证日期：2026-08-12
 > 发布目标：`0.0.1-dev.1`
 > 状态：✅ 本机自动发布门禁与多平台安装包验收完成；⚠️ 外部实机项目待执行
 
@@ -159,6 +159,20 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-fea
 | Docker | ⚠️ 当前机器没有 `docker` 命令，未声称本地镜像或 Compose 通过 |
 | GitHub Actions | ✅ 提交 `83cd4e8` 的 CI `31409070480` 全绿：三平台 Tauri 编译、PostgreSQL 迁移和 Docker 镜像构建通过 |
 
+## 2026-08-12 v0.0.1-dev.1 验证结果
+
+**发布提交**：`412136d`，标签 `v0.0.1-dev.1` 解析到同一提交。
+
+| 门禁 | 结果 |
+| --- | --- |
+| 本机 `pnpm verify` | ✅ 前端 411 项、Team Server 95 项、Rust 45 项测试通过；lint、typecheck、build budget、Clippy 与 453 个生产源码文件行数门禁通过 |
+| Push CI | ✅ 工作流 `31553345929` 全绿：前端、Team Server、Rust、Docker 镜像、PostgreSQL 迁移及 macOS/Windows/Linux Tauri 编译通过 |
+| Pull Request CI | ✅ 工作流 `31553348495` 全绿，独立重复同一提交的完整门禁 |
+| Release | ✅ 工作流 `31554163901` attempt 2 全绿，六个原生 runner 打包任务和最终资产校验通过 |
+| Release 资产 | ✅ 8 个安装包与 `SHA256SUMS.txt` 均非空；清单 8 行与 GitHub 服务端 SHA-256 digest 逐项一致 |
+
+Release 首次执行的六个平台打包任务均成功，最终校验调用 `gh release download` 时短暂返回 `release not found`；仅重跑失败 job 后校验成功，未重新构建或替换安装包。
+
 ## 安装包发布门禁
 
 `.github/workflows/release.yml` 只接受现有语义版本标签，校验标签提交以及 `package.json`、`tauri.conf.json`、`Cargo.toml` 三处版本一致后，向同一 prerelease 上传以下资产：
@@ -174,7 +188,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-fea
 
 工作流要求八个安装资产全部存在且大小大于 0，随后下载同一批资产生成 `SHA256SUMS.txt`。资产命名为 `Terminal_<version>_<platform>-<arch>`，Windows NSIS 额外带 `-setup` 后缀。`tauri-action` 的 updater JSON 和 updater signature 上传已关闭，因为项目尚未配置 updater 签名密钥。
 
-**实际发布证据**：Release 工作流 `31431531040` 全绿，标签 `v0.0.1-dev.0` 指向提交 `6965f3a`。GitHub Release API 返回以下非空资产；8 个安装包的服务端 SHA-256 digest 与 `SHA256SUMS.txt` 逐项一致。
+**历史发布证据**：Release 工作流 `31431531040` 全绿，标签 `v0.0.1-dev.0` 指向提交 `6965f3a`。GitHub Release API 返回以下非空资产；8 个安装包的服务端 SHA-256 digest 与 `SHA256SUMS.txt` 逐项一致。
 
 | 资产 | 字节 | 大小 |
 | --- | ---: | ---: |
@@ -186,6 +200,20 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-fea
 | `Terminal_0.0.1-dev.0_linux-aarch64.deb` | 13,180,004 | 12.57 MiB |
 | `Terminal_0.0.1-dev.0_linux-x86_64.AppImage` | 86,735,352 | 82.72 MiB |
 | `Terminal_0.0.1-dev.0_linux-x86_64.deb` | 13,235,590 | 12.62 MiB |
+| `SHA256SUMS.txt` | 862 | 0.84 KiB |
+
+**当前发布证据**：Release 工作流 `31554163901` attempt 2 全绿，标签 `v0.0.1-dev.1` 指向提交 `412136d`。Release 为已发布的 prerelease、非草稿；以下 8 个安装包与校验清单均非空，清单中的 SHA-256 与 GitHub 服务端 digest 逐项一致。
+
+| 资产 | 字节 | 大小 |
+| --- | ---: | ---: |
+| `Terminal_0.0.1-dev.1_macos-aarch64.dmg` | 11,298,182 | 10.77 MiB |
+| `Terminal_0.0.1-dev.1_macos-x86_64.dmg` | 11,836,800 | 11.29 MiB |
+| `Terminal_0.0.1-dev.1_windows-aarch64-setup.exe` | 6,774,711 | 6.46 MiB |
+| `Terminal_0.0.1-dev.1_windows-x86_64-setup.exe` | 7,623,977 | 7.27 MiB |
+| `Terminal_0.0.1-dev.1_linux-aarch64.AppImage` | 84,843,016 | 80.91 MiB |
+| `Terminal_0.0.1-dev.1_linux-aarch64.deb` | 13,184,794 | 12.57 MiB |
+| `Terminal_0.0.1-dev.1_linux-x86_64.AppImage` | 86,735,352 | 82.72 MiB |
+| `Terminal_0.0.1-dev.1_linux-x86_64.deb` | 13,230,012 | 12.62 MiB |
 | `SHA256SUMS.txt` | 862 | 0.84 KiB |
 
 当前开发版没有 Apple Developer ID/notarization 或 Windows Authenticode 配置。DMG 与 NSIS 构建成功只能证明可打包，Release 说明必须明确“macOS 未公证、Windows 未签名”。Linux/Windows runner 通过也不能替代 Issue #39 的 Pageant、PTY、Jump Host、快捷键与串口硬件实机矩阵。
@@ -202,7 +230,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-fea
 | 串口 | macOS / Windows / Linux + 硬件 | ⚠️ 待实机 | 精确写入、主动断开、运行中拔线均清理 session |
 | 快捷键 | Windows / Linux / 非美式键盘 | ⚠️ 待实机 | 不覆盖系统快捷键，`Ctrl+Shift+\` 可触发垂直分屏 |
 | Team Server 容器 | Docker + PostgreSQL 16 | 🟡 CI 已完成镜像构建和 PostgreSQL 迁移；本机无 Docker | Compose 启动打包镜像后，`/api/v1/health/ready` 与关停钩子通过 |
-| Tauri 三平台编译 | macOS / Ubuntu / Windows CI | ✅ CI `31409070480` 三平台通过 | `.github/workflows/ci.yml` 三平台 `tauri build --no-bundle --ci` 通过 |
-| Release 安装包 | 六个原生 GitHub runner | ✅ 工作流 `31431531040` 全绿；8 个安装包与 checksum 已核验 | 八个安装资产非空且系统/架构命名正确，`SHA256SUMS.txt` 可校验 |
+| Tauri 三平台编译 | macOS / Ubuntu / Windows CI | ✅ CI `31553345929` 与 `31553348495` 三平台通过 | `.github/workflows/ci.yml` 三平台 `tauri build --no-bundle --ci` 通过 |
+| Release 安装包 | 六个原生 GitHub runner | ✅ `v0.0.1-dev.1` 工作流 `31554163901` 全绿；8 个安装包与 checksum 已核验 | 八个安装资产非空且系统/架构命名正确，`SHA256SUMS.txt` 可校验 |
 | S3 服务端集成 | AWS S3 或兼容服务 | ⚠️ 待外部服务 | 固定向量之外，验证实际签名、UTF-8 key、分页列表、上传下载与删除 |
 | Agent forwarding | 全平台 | 📋 入口未实现 | 独立设置开启后显式调用 `channel.agent_forward(...)` 并完成双向请求 |

@@ -617,6 +617,22 @@ src-tauri/
 
 ---
 
+### Phase 6.14 - v0.0.1-dev.1 开发版发布 ✅ 已完成
+
+> 2026-08-12：终端会话架构重构完成后统一版本元数据，通过本机与远端门禁并发布新一版跨平台 prerelease。
+
+| 领域 | 结果 |
+| --- | --- |
+| 版本 | 根包、Frontend、Team Server、Cargo 与 Tauri 配置统一为 `0.0.1-dev.1`；标签 `v0.0.1-dev.1` 指向提交 `412136d` |
+| 本机门禁 | `pnpm verify` 全绿：前端 411、Team Server 95、Rust 45 项测试及 lint/typecheck/build/Clippy/源码规模门禁通过 |
+| 远端 CI | Push CI `31553345929` 与 PR CI `31553348495` 全绿，包含三平台 Tauri 编译、Docker 镜像和 PostgreSQL 迁移 |
+| 发布 | Release 工作流 `31554163901` attempt 2 全绿；macOS/Windows/Linux 双架构共 8 个安装包均非空 |
+| 完整性 | `SHA256SUMS.txt` 为 862 bytes、包含 8 行；逐项匹配 GitHub 服务端 SHA-256 digest |
+
+**Release**：`https://github.com/baicie/terminal/releases/tag/v0.0.1-dev.1`，状态为 prerelease、非草稿。macOS DMG 仍未公证，Windows NSIS 仍未 Authenticode 签名；跨平台构建成功不替代 Issue #39 的真实设备与硬件验证。
+
+---
+
 ## 待办事项
 
 ### P0 - 必须完成
@@ -946,4 +962,4 @@ const response = await teamApi.listTeams()
 
 ---
 
-_文档更新时间: 2026-08-12 (Phase 6.13: 终端会话架构重构)_
+_文档更新时间: 2026-08-12 (Phase 6.14: v0.0.1-dev.1 开发版发布)_

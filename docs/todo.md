@@ -550,6 +550,19 @@
 
 ---
 
+### 2026-08-12 Phase 6.14 - v0.0.1-dev.1 开发版发布 ✅ 已完成
+
+- [x] 根包、Frontend、Team Server、Cargo 与 Tauri 配置版本统一为 `0.0.1-dev.1`
+- [x] 发布准备提交 `412136d` 推送到 `feat/mvp`
+- [x] 本机 `pnpm verify` 全绿：前端 411、Team Server 95、Rust 45 项测试及完整质量门禁通过
+- [x] Push CI `31553345929` 与 PR CI `31553348495` 全绿后创建发布标签
+- [x] 标签 `v0.0.1-dev.1` 指向 `412136d` 并已推送
+- [x] Release 工作流 `31554163901` attempt 2 全绿，六个原生 runner 构建成功
+- [x] 8 个安装包与 862-byte `SHA256SUMS.txt` 均非空，清单与服务端 digest 逐项一致
+- [x] Release 保持 prerelease、非草稿，并明确 macOS 未公证、Windows 未签名
+
+---
+
 ### 2026-05-02 第一轮 (本地终端修复 + UX/构建优化)
 
 > 修复本地终端关键 bug 后，继续清理 + 增强 UX + 构建分析。
