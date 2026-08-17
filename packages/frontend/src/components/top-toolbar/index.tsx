@@ -1,5 +1,5 @@
 import { BellIcon, FolderUp, PanelLeft, Plus, Search } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -9,14 +9,20 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import WorkspaceSwitcher from '@/components/workspace-switcher'
 import { useIsMobile } from '@/hooks/use-breakpoint'
 import MenuTabs from '@/layout/tabs'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 import { useNotificationStore } from '@/store/notification'
 import { useTransferQueue } from '@/store/transfer-queue'
-import { MobileToolbar } from './mobile-toolbar'
 import { ToolbarOverlays } from './toolbar-overlays'
+
+const MobileToolbar = lazy(() =>
+  import('./mobile-toolbar').then(module => ({
+    default: module.MobileToolbar,
+  })),
+)
 
 const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
   onToggleSidebar,
@@ -73,20 +79,51 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
       onNotificationPanelOpenChange={setNotificationPanelOpen}
     />
   )
+  const handleNewLocalTerminal = () => {
+    const newTab = addTab({ label: 'Local', type: 'local' })
+    navigate(`/terminal?tab=${newTab.id}`)
+  }
 
   if (isMobile) {
     return (
       <>
-        <MobileToolbar
-          currentPath={location.pathname}
-          drawerOpen={mobileDrawerOpen}
-          onDrawerOpenChange={setMobileDrawerOpen}
-          onNavigate={path => {
-            setMobileDrawerOpen(false)
-            navigate(path)
-          }}
-          onBack={() => navigate(-1)}
-        />
+        <Suspense
+          fallback={
+            <div className="h-12 shrink-0 border-b border-border/60 bg-background" />
+          }
+        >
+          <MobileToolbar
+            currentPath={location.pathname}
+            drawerOpen={mobileDrawerOpen}
+            onDrawerOpenChange={setMobileDrawerOpen}
+            onNavigate={path => {
+              setMobileDrawerOpen(false)
+              navigate(path)
+            }}
+            onBack={() => navigate(-1)}
+          />
+        </Suspense>
+        {location.pathname === '/terminal' ? (
+          <div
+            className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-1"
+            data-mobile-terminal-sessions
+          >
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <MenuTabs />
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-11 shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label={t('toolbar.newTab')}
+              title={t('toolbar.newTab')}
+              onClick={handleNewLocalTerminal}
+              data-tauri-drag-region="false"
+            >
+              <Plus />
+            </Button>
+          </div>
+        ) : null}
         {overlays}
       </>
     )
@@ -96,11 +133,6 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
     typeof navigator !== 'undefined' && /mac|darwin/i.test(navigator.platform)
   const commandKeyLabel = isMac ? '⌘K' : 'Ctrl+K'
   const isSftpActive = location.pathname === '/sftp'
-
-  const handleNewLocalTerminal = () => {
-    const newTab = addTab({ label: 'Local', type: 'local' })
-    navigate(`/terminal?tab=${newTab.id}`)
-  }
 
   return (
     <>
@@ -117,11 +149,13 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
             size="icon"
             className="size-8 text-muted-foreground hover:text-foreground"
             onClick={onToggleSidebar}
+            aria-label={t('toolbar.toggleSidebar')}
             title={t('toolbar.toggleSidebar')}
             data-tauri-drag-region="false"
           >
             <PanelLeft />
           </Button>
+          <WorkspaceSwitcher variant="vaults" />
           <Button
             variant="ghost"
             size="sm"
@@ -165,6 +199,7 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
                 variant="ghost"
                 size="sm"
                 onClick={() => setCommandPaletteOpen(true)}
+                aria-label={t('toolbar.commandPalette')}
                 className="h-8 gap-2 px-2.5 text-muted-foreground hover:text-foreground"
                 data-tauri-drag-region="false"
               >
@@ -183,6 +218,7 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
                 size="icon"
                 className="relative size-8 text-muted-foreground hover:text-foreground"
                 onClick={() => setNotificationPanelOpen(true)}
+                aria-label={t('toolbar.notifications')}
                 data-tauri-drag-region="false"
               >
                 <BellIcon />

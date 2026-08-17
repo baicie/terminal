@@ -49,6 +49,7 @@ export function useTerminal(
     const binding = terminalSessionManager.attach(
       {
         tabId: options.tabId,
+        workspaceId: options.workspaceId,
         tabType: options.tabType,
         host: hostRef.current,
         jumpHost: jumpHostRef.current,
@@ -78,7 +79,7 @@ export function useTerminal(
       resize: binding.resize,
     })
     const removeEmitter = terminalEmitter.onWrite((data, targetTabId) => {
-      if (!targetTabId || targetTabId === options.tabId) binding.write(data)
+      if (targetTabId === options.tabId) binding.write(data)
     })
 
     return () => {
@@ -97,6 +98,7 @@ export function useTerminal(
   }, [
     term,
     options.tabId,
+    options.workspaceId,
     options.tabType,
     options.host?.id,
     options.jumpHost?.id,

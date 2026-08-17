@@ -10,6 +10,8 @@ export interface ShellOutput {
 export interface UseTerminalOptions {
   /** Stable AppStore tab id that owns the terminal session. */
   tabId: string
+  /** Workspace namespace that prevents cross-workspace session reuse. */
+  workspaceId: string
   /** Tab type: local, remote, or serial. */
   tabType: TabType
   /** Required when tabType is remote. */

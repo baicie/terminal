@@ -18,6 +18,9 @@ export default {
 
   // Top toolbar
   'toolbar.toggleSidebar': 'Afficher/masquer la barre latérale',
+  'toolbar.menu': 'Ouvrir le menu de navigation',
+  'toolbar.mobileNavigationDescription':
+    'Naviguer entre les vues et les espaces de travail',
   'toolbar.sftp': 'SFTP',
   'toolbar.newTab': 'Nouvel onglet',
   'toolbar.more': 'Plus',
@@ -30,6 +33,10 @@ export default {
   'tabs.splitVertical': 'Diviser verticalement',
   'tabs.splitHorizontal': 'Diviser horizontalement',
   'tabs.closeSplit': 'Fermer la division',
+  'tabs.sessions': 'Sessions du terminal',
+  'tabs.moveLeft': 'Déplacer à gauche',
+  'tabs.moveRight': 'Déplacer à droite',
+  'tabs.closeNamed': 'Fermer {{name}}',
   'tabs.home': 'Accueil',
 
   // Shortcuts help dialog
@@ -49,6 +56,8 @@ export default {
   'terminal.search': 'Rechercher',
   'terminal.zoomIn': 'Agrandir',
   'terminal.zoomOut': 'Réduire',
+  'terminal.mobileMenuDescription':
+    'Actions de copie, collage, recherche et zoom du terminal',
   'terminal.showTools': 'Afficher les outils',
   'terminal.hideTools': 'Masquer les outils',
   'terminal.fullscreen': 'Plein écran',
@@ -67,6 +76,25 @@ export default {
   'terminal.searchRegex': 'Expression régulière',
   'terminal.windowUnfocused':
     'Fenêtre inactive — la saisie est envoyée au terminal en arrière-plan',
+  'terminal.resizeSplit': 'Redimensionner la division du terminal',
+  'terminal.disconnect': 'Déconnecter',
+  'terminal.status.idle': 'Inactif',
+  'terminal.status.connecting': 'Connexion',
+  'terminal.status.connected': 'Connecté',
+  'terminal.status.disconnected': 'Déconnecté',
+  'terminal.status.error': 'Erreur',
+  'terminal.decreaseFontSize': 'Réduire la taille de police',
+  'terminal.increaseFontSize': 'Augmenter la taille de police',
+  'terminal.clearScreen': "Effacer l'écran",
+  'terminal.keyboardHelpDescription':
+    'Touches du terminal et séquences de contrôle courantes du shell.',
+  'terminal.shortcut.cancelExit': 'Annuler ou quitter',
+  'terminal.shortcut.autocomplete': 'Compléter automatiquement',
+  'terminal.shortcut.interrupt': 'Interrompre le processus',
+  'terminal.shortcut.endOfFile': 'Fin de fichier',
+  'terminal.shortcut.suspend': 'Suspendre le processus',
+  'terminal.shortcut.commandHistory': 'Historique des commandes',
+  'terminal.shortcut.searchHistory': "Rechercher dans l'historique",
 
   // Settings
   'settings.copyOnSelect': 'Copier à la sélection',

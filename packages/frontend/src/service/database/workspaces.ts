@@ -85,8 +85,15 @@ export async function deleteWorkspace(id: string): Promise<void> {
 }
 
 export async function setActiveWorkspace(id: string): Promise<void> {
-  await executeQuery('UPDATE workspaces SET is_active = 0')
-  await executeQuery('UPDATE workspaces SET is_active = 1 WHERE id = ?', [id])
+  const result = await executeQuery(
+    `UPDATE workspaces
+     SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END
+     WHERE EXISTS (SELECT 1 FROM workspaces WHERE id = ?)`,
+    [id, id],
+  )
+  if (result.rowsAffected === 0) {
+    throw new Error(`Workspace not found: ${id}`)
+  }
 }
 
 export async function saveWorkspaceLayout(

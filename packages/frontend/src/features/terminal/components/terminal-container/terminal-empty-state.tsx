@@ -1,13 +1,13 @@
 export function TerminalEmptyState() {
   return (
-    <div className="h-full flex items-center justify-center bg-[#1e1e1e]">
-      <div className="text-center max-w-sm">
-        <p className="text-[#888] mb-2 text-sm font-medium">
+    <div className="flex h-full items-center justify-center bg-background">
+      <div className="max-w-sm text-center">
+        <p className="mb-2 text-sm font-medium text-muted-foreground">
           No active session
         </p>
-        <p className="text-[#555] text-xs">
+        <p className="text-xs text-muted-foreground">
           Select a host from the sidebar or press{' '}
-          <kbd className="px-1 py-0.5 bg-[#333] rounded text-[#aaa] font-mono text-[10px]">
+          <kbd className="rounded bg-secondary px-1 py-0.5 font-mono text-[10px] text-secondary-foreground">
             Ctrl+T
           </kbd>{' '}
           to open a local terminal.

@@ -1,8 +1,23 @@
 import type { SplitGroup, Tab } from '@/types'
 import { create } from 'zustand'
 import { getAppSettings as getAppSettingsFromDb } from '@/service/database'
+import {
+  createUniqueTerminalId,
+  leaveTerminalSplit,
+  moveTerminalTab,
+  normalizeTerminalLayout,
+  removeTerminalTab,
+  resizeTerminalSplit,
+  splitTerminalTab,
+} from './app-terminal-layout'
 
 type NewTab = Omit<Tab, 'id'>
+type RestorableLayout = {
+  tabs: Tab[]
+  splitGroups: SplitGroup[]
+  activeTabId: string | null
+  sidebarVisible: boolean
+}
 
 export interface RecentlyClosedTab {
   id: string
@@ -29,9 +44,12 @@ export interface AppState {
   setTheme: (theme: AppThemeMode) => void
   setLanguage: (language: string) => void
   hydrateFromDatabase: () => Promise<void>
+  restoreLayout: (layout: RestorableLayout) => void
   addTab: (tab: NewTab) => Tab
   removeTab: (id: string) => void
   splitTab: (id: string, direction: 'horizontal' | 'vertical') => string | null
+  resizeSplit: (splitId: string, sizes: [number, number]) => void
+  moveTab: (tabId: string, direction: 'left' | 'right') => void
   removeTabFromSplit: (tabId: string) => void
   closeSplit: (tabId: string) => void
   setActiveTab: (id: string) => void
@@ -73,8 +91,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  restoreLayout(layout) {
+    set({
+      ...normalizeTerminalLayout(layout),
+      sidebarVisible:
+        typeof layout.sidebarVisible === 'boolean'
+          ? layout.sidebarVisible
+          : true,
+    })
+  },
+
   addTab(tab) {
-    const id = `${tab.type}-${Date.now()}`
+    const state = get()
+    const id = createUniqueTerminalId(tab.type, [
+      ...state.tabs.map(item => item.id),
+      ...state.recentlyClosedTabs.map(item => item.id),
+    ])
     const newTab: Tab = { ...tab, id }
     set(state => ({
       tabs: [...state.tabs, newTab],
@@ -84,25 +116,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   removeTab(id) {
-    const { tabs, activeTabId } = get()
-    const index = tabs.findIndex(t => t.id === id)
-    if (index === -1) return
-
-    const tab = tabs[index]
-    if (tab.splitId) {
-      get().removeTabFromSplit(id)
-    }
-
-    const newTabs = tabs.filter(t => t.id !== id)
-    let newActiveId: string | null = null
-    if (activeTabId === id) {
-      if (newTabs.length > 0) {
-        const newIndex = Math.min(index, newTabs.length - 1)
-        newActiveId = newTabs[newIndex].id
-      }
-    } else {
-      newActiveId = activeTabId
-    }
+    const { tabs, splitGroups, activeTabId } = get()
+    const tab = tabs.find(item => item.id === id)
+    if (!tab) return
+    const layout = removeTerminalTab({ tabs, splitGroups, activeTabId }, id)
+    if (!layout) return
 
     const closedTab: RecentlyClosedTab = {
       id: tab.id,
@@ -115,116 +133,44 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     set(state => ({
-      tabs: newTabs,
-      activeTabId: newActiveId,
+      ...layout,
       recentlyClosedTabs: [closedTab, ...state.recentlyClosedTabs].slice(0, 10),
     }))
   },
 
   splitTab(id, direction) {
-    const { tabs } = get()
-    const tabIndex = tabs.findIndex(t => t.id === id)
-    if (tabIndex === -1) return null
-
-    const sourceTab = tabs[tabIndex]
-    const splitId = sourceTab.splitId || `split-${Date.now()}`
-
-    const newTabId = `${sourceTab.type}-split-${Date.now()}`
-    const newTab: Tab = {
-      ...sourceTab,
-      id: newTabId,
-      splitMode: direction,
-      splitId,
-      splitChildren: [],
-    }
-
-    // Build updated tabs
-    const updatedTabs = tabs.map(t => {
-      if (t.id === id) {
-        if (!sourceTab.splitId) {
-          return {
-            ...t,
-            splitMode: direction,
-            splitId,
-            splitChildren: [newTabId],
-          }
-        }
-        return { ...t, splitChildren: [...(t.splitChildren || []), newTabId] }
-      }
-      return t
-    })
-
-    const existingGroup = get().splitGroups.find(g => g.id === splitId)
-    const newGroups = existingGroup
-      ? get().splitGroups.map(g =>
-          g.id === splitId ? { ...g, tabs: [...g.tabs, newTabId] } : g,
-        )
-      : [
-          ...get().splitGroups,
-          {
-            id: splitId,
-            mode: direction,
-            tabs: [id, newTabId],
-            sizes: [50, 50],
-          },
-        ]
-
-    set({
-      tabs: [...updatedTabs, newTab],
-      splitGroups: newGroups,
-      activeTabId: newTabId,
-    })
+    const { tabs, splitGroups, activeTabId } = get()
+    const layout = splitTerminalTab(
+      { tabs, splitGroups, activeTabId },
+      id,
+      direction,
+    )
+    if (!layout) return null
+    const { newTabId, ...nextState } = layout
+    set(nextState)
     return newTabId
+  },
+
+  resizeSplit(splitId, sizes) {
+    set(state => ({
+      splitGroups: resizeTerminalSplit(state.splitGroups, splitId, sizes),
+    }))
+  },
+
+  moveTab(tabId, direction) {
+    set(state => ({ tabs: moveTerminalTab(state.tabs, tabId, direction) }))
   },
 
   removeTabFromSplit(tabId) {
     const { tabs, splitGroups } = get()
-    const tab = tabs.find(t => t.id === tabId)
-    if (!tab?.splitId) return
-
-    const group = splitGroups.find(g => g.id === tab.splitId)
-    if (!group) return
-
-    const newGroupTabs = group.tabs.filter(tid => tid !== tabId)
-    const updatedTabs = tabs.map(t => {
-      if (newGroupTabs.includes(t.id)) {
-        if (newGroupTabs.length <= 1) {
-          const { splitMode: _, splitId: __, splitChildren: ___, ...rest } = t
-          return { ...rest, splitMode: 'none' as const }
-        }
-        return { ...t, splitChildren: newGroupTabs }
-      }
-      return t
-    })
-
-    const newGroups =
-      newGroupTabs.length <= 1
-        ? splitGroups.filter(g => g.id !== tab.splitId)
-        : splitGroups.map(g =>
-            g.id === tab.splitId ? { ...g, tabs: newGroupTabs } : g,
-          )
-
-    set({ tabs: updatedTabs, splitGroups: newGroups })
+    const layout = leaveTerminalSplit(tabs, splitGroups, tabId)
+    if (layout) set(layout)
   },
 
   closeSplit(tabId) {
     const { tabs, splitGroups } = get()
-    const tab = tabs.find(t => t.id === tabId)
-    if (!tab?.splitId) return
-
-    const group = splitGroups.find(g => g.id === tab.splitId)
-    if (!group) return
-
-    const updatedTabs = tabs.map(t => {
-      if (group.tabs.includes(t.id)) {
-        const { splitMode: _, splitId: __, splitChildren: ___, ...rest } = t
-        return { ...rest, splitMode: 'none' as const }
-      }
-      return t
-    })
-
-    const newGroups = splitGroups.filter(g => g.id !== tab.splitId)
-    set({ tabs: updatedTabs, splitGroups: newGroups })
+    const layout = leaveTerminalSplit(tabs, splitGroups, tabId)
+    if (layout) set(layout)
   },
 
   setActiveTab(id) {
@@ -255,7 +201,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   reopenTab(closedTab) {
-    const newId = `${closedTab.type}-${Date.now()}`
+    const state = get()
+    const newId = createUniqueTerminalId(closedTab.type, [
+      ...state.tabs.map(item => item.id),
+      ...state.recentlyClosedTabs.map(item => item.id),
+    ])
     const restoredTab: Tab = {
       id: newId,
       label: closedTab.label,
@@ -267,7 +217,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(state => ({
       tabs: [...state.tabs, restoredTab],
       activeTabId: newId,
-      recentlyClosedTabs: state.recentlyClosedTabs.filter(t => t.id !== closedTab.id),
+      recentlyClosedTabs: state.recentlyClosedTabs.filter(
+        t => t.id !== closedTab.id,
+      ),
     }))
     return restoredTab
   },

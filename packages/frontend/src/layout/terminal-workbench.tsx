@@ -1,13 +1,17 @@
 import type { SplitGroup, Tab } from '@/types'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CSSProperties, MouseEvent, ReactNode } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { TerminalSplitSash } from './terminal-split-sash'
 
 interface TerminalWorkbenchProps {
   tabs: Tab[]
   visibleTabIds: Set<string>
   splitGroup: SplitGroup | null
+  activeTabId: string | null
   isTerminalRoute: boolean
+  onActivateTab: (tabId: string) => void
+  onResizeSplit: (splitId: string, sizes: [number, number]) => void
   renderTerminal: (tabId: string) => ReactNode
 }
 
@@ -20,7 +24,10 @@ export function TerminalWorkbench({
   tabs,
   visibleTabIds,
   splitGroup,
+  activeTabId,
   isTerminalRoute,
+  onActivateTab,
+  onResizeSplit,
   renderTerminal,
 }: TerminalWorkbenchProps) {
   const splitTabIds = splitGroup?.tabs.slice(0, 2) ?? []
@@ -29,58 +36,19 @@ export function TerminalWorkbench({
   const [sizes, setSizes] = useState<[number, number]>(() =>
     normalizeSizes(splitGroup),
   )
-  const containerRef = useRef<HTMLDivElement>(null)
-  const isDraggingRef = useRef(false)
-  const startPositionRef = useRef(0)
-  const startSizesRef = useRef<[number, number]>(sizes)
 
   useEffect(() => {
     setSizes(normalizeSizes(splitGroup))
   }, [splitGroup])
 
-  const handleDividerMouseDown = useCallback(
-    (event: MouseEvent) => {
-      if (!hasSplit || !containerRef.current) return
-      event.preventDefault()
-      isDraggingRef.current = true
-      startPositionRef.current = isHorizontalSplit
-        ? event.clientX
-        : event.clientY
-      startSizesRef.current = sizes
-      document.body.style.cursor = isHorizontalSplit
-        ? 'col-resize'
-        : 'row-resize'
-      document.body.style.userSelect = 'none'
+  const handleResize = useCallback(
+    (value: number, final: boolean) => {
+      const nextSizes: [number, number] = [value, 100 - value]
+      setSizes(nextSizes)
+      if (final && splitGroup) onResizeSplit(splitGroup.id, nextSizes)
     },
-    [hasSplit, isHorizontalSplit, sizes],
+    [onResizeSplit, splitGroup],
   )
-
-  useEffect(() => {
-    const handleMouseMove = (event: globalThis.MouseEvent) => {
-      if (!isDraggingRef.current || !containerRef.current || !hasSplit) return
-      const bounds = containerRef.current.getBoundingClientRect()
-      const total = isHorizontalSplit ? bounds.width : bounds.height
-      const current = isHorizontalSplit ? event.clientX : event.clientY
-      const delta =
-        ((current - startPositionRef.current) / Math.max(total, 1)) * 100
-      const first = Math.max(20, Math.min(80, startSizesRef.current[0] + delta))
-      setSizes([first, 100 - first])
-    }
-    const stopDragging = () => {
-      if (!isDraggingRef.current) return
-      isDraggingRef.current = false
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', stopDragging)
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', stopDragging)
-      stopDragging()
-    }
-  }, [hasSplit, isHorizontalSplit])
 
   const splitStyle: CSSProperties = isHorizontalSplit
     ? {
@@ -102,7 +70,6 @@ export function TerminalWorkbench({
       data-terminal-workbench
     >
       <div
-        ref={containerRef}
         className={cn(
           'relative h-full w-full',
           hasSplit &&
@@ -114,6 +81,7 @@ export function TerminalWorkbench({
           const splitIndex = splitTabIds.indexOf(tab.id)
           const isSplitTab = hasSplit && splitIndex >= 0
           const isVisible = visibleTabIds.has(tab.id)
+          const isActive = activeTabId === tab.id
           const paneStyle: CSSProperties = isSplitTab
             ? isHorizontalSplit
               ? { gridColumn: splitIndex * 2 + 1 }
@@ -134,28 +102,34 @@ export function TerminalWorkbench({
                         : 'invisible pointer-events-none',
                     ),
                 hasSplit && !isSplitTab && 'hidden',
+                isVisible &&
+                  isActive &&
+                  'ring-1 ring-inset ring-ring/50',
               )}
               style={paneStyle}
               aria-hidden={!isVisible}
+              aria-label={tab.label}
+              role="group"
+              data-active={isActive}
+              aria-current={isActive ? 'true' : undefined}
+              onPointerDownCapture={() => onActivateTab(tab.id)}
+              onClickCapture={() => onActivateTab(tab.id)}
+              onFocusCapture={() => onActivateTab(tab.id)}
             >
               {renderTerminal(tab.id)}
             </div>
           )
         })}
-        {hasSplit && (
-          <div
-            className={cn(
-              'z-10 bg-border transition-colors hover:bg-primary',
-              isHorizontalSplit ? 'cursor-col-resize' : 'cursor-row-resize',
-            )}
+        {hasSplit && splitGroup && (
+          <TerminalSplitSash
+            direction={splitGroup.mode}
+            value={sizes[0]}
+            onChange={handleResize}
             style={
               isHorizontalSplit
                 ? { gridColumn: 2, gridRow: 1 }
                 : { gridColumn: 1, gridRow: 2 }
             }
-            onMouseDown={handleDividerMouseDown}
-            role="separator"
-            aria-label="Resize terminal split"
           />
         )}
       </div>

@@ -86,7 +86,8 @@
 .card-interactive:hover {
   background-color: color-mix(in oklch, var(--accent) 40%, transparent);
   border-color: color-mix(in oklch, var(--primary) 30%, var(--border));
-  box-shadow: 0 4px 16px -6px color-mix(in oklch, var(--primary) 12%, transparent);
+  box-shadow: 0 4px 16px -6px
+    color-mix(in oklch, var(--primary) 12%, transparent);
   transform: translateY(-1px);
 }
 .card-interactive:active {
@@ -267,7 +268,6 @@
   }
 }
 
-
 /* ============================================================
    Responsive Mobile Styles
    ============================================================ */
@@ -306,7 +306,7 @@
     left: 0;
     right: 0;
     z-index: 100;
-    height: var(--bottom-nav-height, 56px);
+    height: calc(var(--bottom-nav-height, 56px) + var(--safe-area-bottom, 0px));
     padding-bottom: var(--safe-area-bottom, 0px);
     background: color-mix(in oklch, var(--background) 90%, transparent);
     backdrop-filter: blur(12px) saturate(180%);
@@ -336,12 +336,20 @@
    ============================================================ */
 @media (max-width: 639px) {
   .mobile-safe-bottom {
-    padding-bottom: calc(var(--bottom-nav-height, 56px) + var(--safe-area-bottom, 0px) + 8px);
+    padding-bottom: calc(
+      var(--bottom-nav-height, 56px) + var(--safe-area-bottom, 0px) + 8px
+    );
+  }
+
+  .mobile-safe-bottom > [data-terminal-workbench] {
+    bottom: calc(var(--bottom-nav-height, 56px) + var(--safe-area-bottom, 0px));
   }
 
   /* FAB position above bottom nav */
   .mobile-fab {
-    bottom: calc(var(--bottom-nav-height, 56px) + var(--safe-area-bottom, 0px) + 16px);
+    bottom: calc(
+      var(--bottom-nav-height, 56px) + var(--safe-area-bottom, 0px) + 16px
+    );
   }
 }
 

@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
 import { KEYBOARD_KEYS, type KeyboardKey } from './keyboard-bar-data'
 
 interface KeyboardKeyButtonsProps {
@@ -13,15 +14,12 @@ function KeyButton({
     <Button
       variant="outline"
       size="sm"
-      className="h-7 min-w-[36px] text-xs px-1 shrink-0 rounded-md font-mono"
+      className="h-11 min-w-11 shrink-0 px-2 font-mono text-xs"
       onClick={() => onKey(keyConfig)}
+      aria-label={keyConfig.label}
       title={keyConfig.label}
     >
-      {keyConfig.icon ? (
-        <keyConfig.icon className="size-3.5" />
-      ) : (
-        keyConfig.label
-      )}
+      {keyConfig.icon ? <keyConfig.icon /> : keyConfig.label}
     </Button>
   )
 }
@@ -36,11 +34,11 @@ export function KeyboardKeyButtons({ onKey }: KeyboardKeyButtonsProps) {
 
   return (
     <>
-      <div className="w-px h-5 bg-border/50 mx-0.5 shrink-0" />
+      <Separator orientation="vertical" className="mx-0.5 h-5" />
       {navigationKeys.map(keyConfig => (
         <KeyButton key={keyConfig.label} keyConfig={keyConfig} onKey={onKey} />
       ))}
-      <div className="w-px h-5 bg-border/50 mx-0.5 shrink-0" />
+      <Separator orientation="vertical" className="mx-0.5 h-5" />
       {functionKeys.map(keyConfig => (
         <KeyButton key={keyConfig.label} keyConfig={keyConfig} onKey={onKey} />
       ))}

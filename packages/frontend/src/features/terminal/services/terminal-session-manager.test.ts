@@ -70,6 +70,19 @@ describe('TerminalSessionManager', () => {
     expect(key).not.toContain('must-not-be-in-key')
   })
 
+  it('uses the workspace id to isolate otherwise identical sessions', () => {
+    const first = getTerminalRequestKey({
+      ...request,
+      workspaceId: 'workspace-one',
+    })
+    const second = getTerminalRequestKey({
+      ...request,
+      workspaceId: 'workspace-two',
+    })
+
+    expect(first).not.toBe(second)
+  })
+
   it('routes output after listeners are ready and closes the backend session', async () => {
     const manager = new TerminalSessionManager()
     const output: string[] = []

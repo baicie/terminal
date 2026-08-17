@@ -1,14 +1,21 @@
-import { Outlet } from 'react-router-dom'
+import { lazy, Suspense, useEffect, useRef } from 'react'
+import { Outlet, useLocation } from 'react-router-dom'
 import AppSidebar from '@/components/app-sidebar'
-import BottomNav from '@/components/bottom-nav'
 import { SwipeBackIndicator } from '@/components/swipe-back-indicator'
 import TopToolbar from '@/components/top-toolbar'
 import { useIsMobile } from '@/hooks/use-breakpoint'
 import { cn } from '@/lib/utils'
+import { useAppStore } from '@/store/app'
 import { RouteTransition } from './route-transition'
-import { TerminalByUrl } from './terminal-by-url'
 import { useSidebarResize } from './use-sidebar-resize'
 import { useSwipeBack } from './use-swipe-back'
+
+const BottomNav = lazy(() => import('@/components/bottom-nav'))
+const TerminalByUrl = lazy(() =>
+  import('./terminal-by-url').then(module => ({
+    default: module.TerminalByUrl,
+  })),
+)
 
 interface MainLayoutContentProps {
   sidebarOpen: boolean
@@ -24,12 +31,21 @@ export function MainLayoutContent({
   onSidebarWidthChange,
 }: MainLayoutContentProps) {
   const isMobile = useIsMobile()
+  const isTerminalRoute = useLocation().pathname === '/terminal'
+  const hasTerminalTabs = useAppStore(state => state.tabs.length > 0)
+  const terminalLayerMountedRef = useRef(false)
+  const shouldMountTerminal =
+    hasTerminalTabs || terminalLayerMountedRef.current
   const { resizing, onResizeStart, onToggleCollapse } = useSidebarResize(
     sidebarWidth,
     onSidebarWidthChange,
   )
   const { swipeProgress, onSwipeStart, onSwipeMove, onSwipeEnd } =
     useSwipeBack()
+
+  useEffect(() => {
+    if (hasTerminalTabs) terminalLayerMountedRef.current = true
+  }, [hasTerminalTabs])
 
   return (
     <div
@@ -82,14 +98,28 @@ export function MainLayoutContent({
             isMobile && 'mobile-safe-bottom',
           )}
         >
-          <TerminalByUrl />
-          <RouteTransition>
+          {shouldMountTerminal ? (
+            <Suspense fallback={null}>
+              <TerminalByUrl />
+            </Suspense>
+          ) : null}
+          <RouteTransition
+            className={cn(
+              isTerminalRoute
+                ? 'invisible pointer-events-none'
+                : 'relative z-10',
+            )}
+          >
             <Outlet />
           </RouteTransition>
         </main>
       </div>
 
-      {isMobile && <BottomNav />}
+      {isMobile ? (
+        <Suspense fallback={<div className="bottom-nav" aria-hidden="true" />}>
+          <BottomNav />
+        </Suspense>
+      ) : null}
     </div>
   )
 }

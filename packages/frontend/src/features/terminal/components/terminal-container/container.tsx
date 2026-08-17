@@ -1,6 +1,7 @@
 /** Main xterm container and terminal-session coordinator. */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useLocation } from 'react-router-dom'
 import { useIsMobile } from '@/hooks/use-breakpoint'
 import { useTerminal } from '@/hooks/use-terminal'
 import { useAppStore } from '@/store/app'
@@ -13,26 +14,33 @@ import { useShellRcCompletion } from './use-shell-rc-completion'
 import { useTerminalCompletion } from './use-terminal-completion'
 import { useTerminalInstance } from './use-terminal-instance'
 import { useTerminalLongPress } from './use-terminal-long-press'
+import { useTerminalShortcutEvents } from './use-terminal-shortcut-events'
 import { useTerminalStatusEffects } from './use-terminal-status-effects'
 import '@baicie/xterm/css/xterm.css'
 
 export interface TerminalContainerProps {
   tabId: string
+  workspaceId: string
 }
 
-export function TerminalContainer({ tabId }: TerminalContainerProps) {
+export function TerminalContainer({
+  tabId,
+  workspaceId,
+}: TerminalContainerProps) {
   const { t } = useTranslation()
-  const tabs = useAppStore(state => state.tabs)
-  const hosts = useHostStore(state => state.hosts)
+  const location = useLocation()
   const settings = useAppStore(state => state.config) as Record<string, unknown>
   const appTheme = useAppStore(state => state.theme)
-  const tab = tabs.find(item => item.id === tabId)
-  const host = tab?.hostId
-    ? hosts.find(item => item.id === tab.hostId)
-    : undefined
-  const jumpHost = host?.jumpHostId
-    ? hosts.find(item => item.id === host.jumpHostId)
-    : undefined
+  const tab = useAppStore(state => state.tabs.find(item => item.id === tabId))
+  const isActive = useAppStore(state => state.activeTabId === tabId)
+  const host = useHostStore(state =>
+    tab?.hostId ? state.hosts.find(item => item.id === tab.hostId) : undefined,
+  )
+  const jumpHost = useHostStore(state =>
+    host?.jumpHostId
+      ? state.hosts.find(item => item.id === host.jumpHostId)
+      : undefined,
+  )
   const isMobile = useIsMobile()
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -60,21 +68,24 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
     (settings.terminalFontFamily as string) ||
     "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace"
   const scrollback = Number(settings.terminalScrollback ?? 10000)
+  const terminalIsActive = isActive && location.pathname === '/terminal'
 
   const terminal = useTerminalInstance({
     tabId,
+    workspaceId,
     isMobile,
     cursorBlink,
     fontSize,
     fontFamily,
     theme,
     scrollback,
-    onOpenSearch: () => setSearchOpen(true),
+    active: terminalIsActive,
   })
   const completion = useTerminalCompletion(terminal.termInstance)
   const { status, error, sessionId, write, reconnect, disconnect } =
     useTerminal(terminal.termInstance, {
       tabId,
+      workspaceId,
       tabType: tab?.type ?? 'local',
       host,
       jumpHost,
@@ -101,6 +112,23 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
     return () => cancelAnimationFrame(animationFrame)
   }, [terminal.isReady, terminal.fitAddonRef, status])
 
+  useEffect(() => {
+    if (terminalIsActive) return
+    setIsFullscreen(false)
+    setSearchOpen(false)
+    setMobileMenuOpen(false)
+  }, [terminalIsActive])
+
+  useTerminalShortcutEvents({
+    active: terminalIsActive,
+    onReconnect: reconnect,
+    onClear: () => terminal.termInstance?.clear(),
+    onSearch: () => setSearchOpen(true),
+    onZoomIn: () => terminal.changeFontSize(1),
+    onZoomOut: () => terminal.changeFontSize(-1),
+    onResetZoom: terminal.resetFontSize,
+  })
+
   const longPress = useTerminalLongPress(() => setMobileMenuOpen(true))
   if (!tab) return <TerminalEmptyState />
 
@@ -111,8 +139,10 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
       status={status}
       readableError={readableError}
       isMobile={isMobile}
+      active={terminalIsActive}
       isFullscreen={isFullscreen}
       terminalFontSize={terminal.fontSize}
+      terminalBackground={theme.background}
       term={terminal.termInstance}
       containerRef={terminal.containerRef}
       searchAddon={terminal.searchAddonRef.current}
@@ -123,6 +153,7 @@ export function TerminalContainer({ tabId }: TerminalContainerProps) {
       onMobileMenuOpenChange={setMobileMenuOpen}
       onSendKey={write}
       onFontSizeChange={terminal.changeFontSize}
+      onResetFontSize={terminal.resetFontSize}
       onClear={() => terminal.termInstance?.clear()}
       toolSidebarOpen={toolSidebarOpen}
       onToggleToolSidebar={() => setToolSidebarOpen(current => !current)}

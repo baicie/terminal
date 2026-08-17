@@ -1,23 +1,22 @@
 import type { CommandHistoryRecord, SnippetRecord } from '@/service/database'
 import type { Host } from '@/types'
 import { useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from '@/components/ui/sonner'
 import { terminalEmitter } from '@/service/terminal-emitter'
+import { switchWorkspaceLayout } from '@/service/workspace-switch'
 import { useAppStore, type RecentlyClosedTab } from '@/store/app'
 import { useTransferQueue } from '@/store/transfer-queue'
-import { useWorkspaceStore } from '@/store/workspace'
 import type { SearchResult } from './command-palette-types'
 
 export function usePaletteSelection(onClose: () => void) {
+  const { t } = useTranslation()
   const app = useAppStore()
   const navigate = useNavigate()
-  const setActiveWorkspace = useWorkspaceStore(
-    state => state.setActiveWorkspace,
-  )
   const setPanelOpen = useTransferQueue(state => state.setPanelOpen)
   return useCallback(
-    (result: SearchResult) => {
+    async (result: SearchResult) => {
       switch (result.type) {
         case 'host': {
           const host = result.data as Host
@@ -74,13 +73,19 @@ export function usePaletteSelection(onClose: () => void) {
           break
         }
         case 'closed-tab': {
-          app.reopenTab(result.data as RecentlyClosedTab)
-          const reopened = app.tabs[app.tabs.length - 1]
-          if (reopened) navigate(`/terminal?tab=${reopened.id}`)
+          const reopened = app.reopenTab(result.data as RecentlyClosedTab)
+          navigate(`/terminal?tab=${reopened.id}`)
           break
         }
         case 'workspace':
-          setActiveWorkspace((result.data as { id: string }).id)
+          try {
+            await switchWorkspaceLayout((result.data as { id: string }).id)
+          } catch (error) {
+            toast.error(t('workspace.switchFailed'), {
+              description:
+                error instanceof Error ? error.message : String(error),
+            })
+          }
           break
         case 'action': {
           switch ((result.data as { action: string }).action) {
@@ -115,6 +120,6 @@ export function usePaletteSelection(onClose: () => void) {
       }
       onClose()
     },
-    [app, navigate, onClose, setActiveWorkspace, setPanelOpen],
+    [app, navigate, onClose, setPanelOpen, t],
   )
 }

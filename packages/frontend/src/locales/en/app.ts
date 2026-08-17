@@ -18,6 +18,9 @@ export default {
 
   // Top toolbar
   'toolbar.toggleSidebar': 'Toggle sidebar',
+  'toolbar.menu': 'Open navigation menu',
+  'toolbar.mobileNavigationDescription':
+    'Navigate between views and workspaces',
   'toolbar.sftp': 'SFTP',
   'toolbar.newTab': 'New tab',
   'toolbar.more': 'More',
@@ -30,6 +33,10 @@ export default {
   'tabs.splitVertical': 'Split Vertical',
   'tabs.splitHorizontal': 'Split Horizontal',
   'tabs.closeSplit': 'Close Split',
+  'tabs.sessions': 'Terminal sessions',
+  'tabs.moveLeft': 'Move Left',
+  'tabs.moveRight': 'Move Right',
+  'tabs.closeNamed': 'Close {{name}}',
   'tabs.home': 'Home',
 
   // Shortcuts help dialog
@@ -49,6 +56,8 @@ export default {
   'terminal.search': 'Find',
   'terminal.zoomIn': 'Zoom In',
   'terminal.zoomOut': 'Zoom Out',
+  'terminal.mobileMenuDescription':
+    'Terminal copy, paste, find, and zoom actions',
   'terminal.showTools': 'Show tools',
   'terminal.hideTools': 'Hide tools',
   'terminal.fullscreen': 'Fullscreen',
@@ -67,6 +76,25 @@ export default {
   'terminal.searchRegex': 'Use regular expression',
   'terminal.windowUnfocused':
     'Window unfocused — input still goes to the background terminal',
+  'terminal.resizeSplit': 'Resize terminal split',
+  'terminal.disconnect': 'Disconnect',
+  'terminal.status.idle': 'Idle',
+  'terminal.status.connecting': 'Connecting',
+  'terminal.status.connected': 'Connected',
+  'terminal.status.disconnected': 'Disconnected',
+  'terminal.status.error': 'Error',
+  'terminal.decreaseFontSize': 'Decrease font size',
+  'terminal.increaseFontSize': 'Increase font size',
+  'terminal.clearScreen': 'Clear screen',
+  'terminal.keyboardHelpDescription':
+    'Terminal keys and common shell control sequences.',
+  'terminal.shortcut.cancelExit': 'Cancel or exit',
+  'terminal.shortcut.autocomplete': 'Auto-complete',
+  'terminal.shortcut.interrupt': 'Interrupt process',
+  'terminal.shortcut.endOfFile': 'End of file',
+  'terminal.shortcut.suspend': 'Suspend process',
+  'terminal.shortcut.commandHistory': 'Command history',
+  'terminal.shortcut.searchHistory': 'Search history',
 
   // Settings
   'settings.copyOnSelect': 'Copy on Select',

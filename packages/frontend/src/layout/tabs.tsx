@@ -1,157 +1,196 @@
 import type { Tab } from '@/types'
-import { Columns, Rows, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, ArrowRight, Columns2, Rows2, X } from 'lucide-react'
+import { useEffect, useRef, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 
-/** 顶栏会话标签：仅展示已打开的终端/串口等标签 */
 const MenuTabs: React.FC = () => {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [contextMenu, setContextMenu] = useState<{
-    x: number
-    y: number
-    tabId: string
-  } | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  const tabs = useAppStore(s => s.tabs)
-  const activeTabId = useAppStore(s => s.activeTabId)
-  const removeTab = useAppStore(s => s.removeTab)
-  const setActiveTab = useAppStore(s => s.setActiveTab)
-  const splitTab = useAppStore(s => s.splitTab)
-  const closeSplit = useAppStore(s => s.closeSplit)
+  const tabs = useAppStore(state => state.tabs)
+  const activeTabId = useAppStore(state => state.activeTabId)
+  const removeTab = useAppStore(state => state.removeTab)
+  const setActiveTab = useAppStore(state => state.setActiveTab)
+  const splitTab = useAppStore(state => state.splitTab)
+  const closeSplit = useAppStore(state => state.closeSplit)
+  const moveTab = useAppStore(state => state.moveTab)
+  const activeRef = useRef<HTMLDivElement>(null)
+  const tabListRef = useRef<HTMLDivElement>(null)
+  const splitIds = tabs.map(tab => tab.splitId)
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setContextMenu(null)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+    activeRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [activeTabId])
 
-  const handleContextMenu = (e: React.MouseEvent, tabId: string) => {
-    e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY, tabId })
-  }
+  if (tabs.length === 0) return null
 
-  const handleTabClick = (tabId: string) => {
+  const activate = (tabId: string) => {
     setActiveTab(tabId)
-    navigate(`/terminal?tab=${tabId}`)
+    navigate('/terminal')
   }
 
-  const handleSplitHorizontal = () => {
-    if (contextMenu) {
-      splitTab(contextMenu.tabId, 'horizontal')
-      setContextMenu(null)
-    }
-  }
+  const onKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    const nextIndex =
+      event.key === 'ArrowRight'
+        ? (index + 1) % tabs.length
+        : event.key === 'ArrowLeft'
+          ? (index - 1 + tabs.length) % tabs.length
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? tabs.length - 1
+              : null
+    if (nextIndex === null) return
 
-  const handleSplitVertical = () => {
-    if (contextMenu) {
-      splitTab(contextMenu.tabId, 'vertical')
-      setContextMenu(null)
-    }
-  }
-
-  const handleCloseSplit = () => {
-    if (contextMenu) {
-      closeSplit(contextMenu.tabId)
-      setContextMenu(null)
-    }
-  }
-
-  const getTabStatus = (tab: Tab) => {
-    if (tab.splitMode && tab.splitMode !== 'none') {
-      return tab.splitMode === 'horizontal' ? '⬜' : '⬛'
-    }
-    return ''
-  }
-
-  if (tabs.length === 0) {
-    return null
+    event.preventDefault()
+    activate(tabs[nextIndex].id)
+    const buttons =
+      tabListRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+    buttons?.[nextIndex]?.focus()
   }
 
   return (
-    <div className="flex items-center gap-0.5 min-w-0 overflow-x-auto">
-      {tabs.map((tab: Tab) => (
-        <div
-          key={tab.id}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-1 rounded-md text-sm transition-all duration-150 cursor-pointer shrink-0 max-w-[200px]',
-            activeTabId === tab.id
-              ? 'bg-secondary/80 text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40',
-          )}
-          style={
-            activeTabId === tab.id
-              ? {
-                  animation:
-                    'fade-in 200ms ease-out both, slide-in-from-top 200ms ease-out both',
-                }
-              : undefined
-          }
-          onClick={() => handleTabClick(tab.id)}
-          onContextMenu={e => handleContextMenu(e, tab.id)}
-        >
-          <span className="truncate">
-            {tab.label} {getTabStatus(tab)}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-5 opacity-60 hover:opacity-100 shrink-0"
-            onClick={e => {
-              e.stopPropagation()
-              removeTab(tab.id)
-            }}
-          >
-            <X className="size-3" />
-          </Button>
-        </div>
-      ))}
+    <div
+      ref={tabListRef}
+      role="tablist"
+      aria-orientation="horizontal"
+      aria-label={t('tabs.sessions')}
+      className="flex min-w-0 items-center gap-0.5 overflow-x-auto overscroll-x-contain"
+    >
+      {tabs.map((tab, index) => {
+        const active = activeTabId === tab.id
+        const split = Boolean(tab.splitId)
+        const groupStart = split ? splitIds.indexOf(tab.splitId) : index
+        const groupEnd = split ? splitIds.lastIndexOf(tab.splitId) : index
+        const canMoveLeft = groupStart > 0
+        const canMoveRight = groupEnd < tabs.length - 1
+        const canSplit = !split && tab.type !== 'serial'
 
-      {contextMenu && (
-        <div
-          ref={menuRef}
-          className="fixed z-50 bg-popover border rounded-md shadow-lg py-1 min-w-[160px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          <Button
-            variant="ghost"
-            className="w-full justify-start px-3 py-1.5 h-auto text-sm gap-2"
-            onClick={handleSplitVertical}
+        return (
+          <div
+            key={tab.id}
+            ref={active ? activeRef : undefined}
+            role="presentation"
+            className="group flex h-11 max-w-52 shrink-0 items-center sm:h-8"
           >
-            <Columns className="size-4" />
-            {t('tabs.splitVertical')}
-          </Button>
-          <Button
-            variant="ghost"
-            className="w-full justify-start px-3 py-1.5 h-auto text-sm gap-2"
-            onClick={handleSplitHorizontal}
-          >
-            <Rows className="size-4" />
-            {t('tabs.splitHorizontal')}
-          </Button>
-          <Separator className="my-1" />
-          <Button
-            variant="ghost"
-            className="w-full justify-start px-3 py-1.5 h-auto text-sm gap-2"
-            onClick={handleCloseSplit}
-          >
-            <X className="size-4" />
-            {t('tabs.closeSplit')}
-          </Button>
-        </div>
-      )}
+            <ContextMenu>
+              <ContextMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  role="tab"
+                  aria-selected={active}
+                  aria-label={tab.label}
+                  tabIndex={active ? 0 : -1}
+                  className={cn(
+                    'h-11 min-w-11 flex-1 touch-manipulation justify-start gap-1 rounded-r-none px-2 font-normal sm:h-8 sm:min-w-0',
+                    active
+                      ? 'bg-secondary text-foreground'
+                      : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
+                  )}
+                  onClick={() => activate(tab.id)}
+                  onKeyDown={event => onKeyDown(event, index)}
+                  data-tauri-drag-region="false"
+                >
+                  <SplitStatus tab={tab} />
+                  <span className="min-w-0 flex-1 truncate">{tab.label}</span>
+                </Button>
+              </ContextMenuTrigger>
+              <ContextMenuContent className="w-52">
+                <ContextMenuGroup>
+                  <ContextMenuItem
+                    disabled={!canMoveLeft}
+                    onSelect={() => moveTab(tab.id, 'left')}
+                  >
+                    <ArrowLeft />
+                    {t('tabs.moveLeft')}
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    disabled={!canMoveRight}
+                    onSelect={() => moveTab(tab.id, 'right')}
+                  >
+                    <ArrowRight />
+                    {t('tabs.moveRight')}
+                  </ContextMenuItem>
+                </ContextMenuGroup>
+                <ContextMenuSeparator />
+                <ContextMenuGroup>
+                  <ContextMenuItem
+                    disabled={!canSplit}
+                    onSelect={() => {
+                      if (canSplit) splitTab(tab.id, 'horizontal')
+                    }}
+                  >
+                    <Columns2 />
+                    {t('tabs.splitHorizontal')}
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    disabled={!canSplit}
+                    onSelect={() => {
+                      if (canSplit) splitTab(tab.id, 'vertical')
+                    }}
+                  >
+                    <Rows2 />
+                    {t('tabs.splitVertical')}
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    disabled={!split}
+                    onSelect={() => closeSplit(tab.id)}
+                  >
+                    <X />
+                    {t('tabs.closeSplit')}
+                  </ContextMenuItem>
+                </ContextMenuGroup>
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  variant="destructive"
+                  onSelect={() => removeTab(tab.id)}
+                >
+                  <X />
+                  {t('terminal.closeTab')}
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={cn(
+                'size-11 shrink-0 touch-manipulation rounded-l-none text-muted-foreground opacity-100 sm:size-8 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100',
+                active && 'bg-secondary sm:opacity-100',
+              )}
+              aria-label={t('tabs.closeNamed', { name: tab.label })}
+              onClick={() => removeTab(tab.id)}
+              data-tauri-drag-region="false"
+            >
+              <X />
+            </Button>
+          </div>
+        )
+      })}
     </div>
   )
+}
+
+function SplitStatus({ tab }: { tab: Tab }) {
+  if (!tab.splitId || !tab.splitMode || tab.splitMode === 'none') return null
+  const Icon = tab.splitMode === 'horizontal' ? Columns2 : Rows2
+  return <Icon aria-hidden="true" className="shrink-0 text-muted-foreground" />
 }
 
 export default MenuTabs

@@ -17,6 +17,7 @@ function createFreshStore() {
     setTheme: theme => set({ theme }),
     setLanguage: language => set({ language }),
     hydrateFromDatabase: async () => {},
+    restoreLayout: layout => set(layout),
     addTab: tab => {
       const id = `${tab.type}-${Date.now()}`
       const newTab = { ...tab, id }
@@ -63,6 +64,8 @@ function createFreshStore() {
       }))
     },
     splitTab: () => null,
+    resizeSplit: () => {},
+    moveTab: () => {},
     removeTabFromSplit: () => {},
     closeSplit: () => {},
     setActiveTab: id => set({ activeTabId: id }),

@@ -23,13 +23,16 @@ const MAX_BUFFERED_CHUNKS = 256
 const MAX_BUFFERED_BYTES = 512 * 1024
 
 export function getTerminalRequestKey(request: TerminalSessionRequest): string {
-  return [
+  const requestKey = [
     request.tabId,
     request.tabType,
     request.host?.id ?? '',
     request.jumpHost?.id ?? '',
     request.serialSessionId ?? '',
   ].join(':')
+  return request.workspaceId
+    ? `${request.workspaceId}:${requestKey}`
+    : requestKey
 }
 
 export class TerminalSessionManager {

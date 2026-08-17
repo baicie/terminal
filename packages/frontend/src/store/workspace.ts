@@ -156,6 +156,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       console.warn('Cannot delete the last workspace')
       return
     }
+    if (get().activeWorkspaceId === id) {
+      throw new Error(
+        'Switch away from the active workspace before deleting it',
+      )
+    }
 
     await dbDeleteWorkspace(id)
 

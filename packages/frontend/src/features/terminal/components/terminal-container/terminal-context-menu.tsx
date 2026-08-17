@@ -51,6 +51,7 @@ export function TerminalContextMenu({
   children,
 }: TerminalContextMenuProps) {
   const { t } = useTranslation()
+  const restoreFocusRef = React.useRef(true)
 
   const handleCopy = React.useCallback(async () => {
     if (!term) return
@@ -88,10 +89,27 @@ export function TerminalContextMenu({
     term?.clear()
   }, [term])
 
+  const handleOpenSearch = React.useCallback(() => {
+    restoreFocusRef.current = false
+    onOpenSearch?.()
+  }, [onOpenSearch])
+
   return (
-    <ContextMenu>
+    <ContextMenu
+      onOpenChange={open => {
+        if (open) restoreFocusRef.current = true
+      }}
+    >
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="w-56">
+      <ContextMenuContent
+        className="w-56"
+        onCloseAutoFocus={event => {
+          event.preventDefault()
+          if (restoreFocusRef.current)
+            requestAnimationFrame(() => term?.focus())
+          restoreFocusRef.current = true
+        }}
+      >
         <ContextMenuItem onSelect={handleCopy}>
           <ClipboardCopy />
           {t('terminal.copy')}
@@ -118,7 +136,7 @@ export function TerminalContextMenu({
           <ContextMenuShortcut>{`${modKey}+K`}</ContextMenuShortcut>
         </ContextMenuItem>
         {onOpenSearch && (
-          <ContextMenuItem onSelect={onOpenSearch}>
+          <ContextMenuItem onSelect={handleOpenSearch}>
             <Search />
             {t('terminal.search')}
             <ContextMenuShortcut>{`${modKey}+F`}</ContextMenuShortcut>

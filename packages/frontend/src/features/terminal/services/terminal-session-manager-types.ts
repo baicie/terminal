@@ -10,6 +10,7 @@ export type TerminalSessionStatus =
 
 export interface TerminalSessionRequest {
   tabId: string
+  workspaceId?: string
   tabType: TabType
   host?: Host
   jumpHost?: Host

@@ -6,50 +6,69 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal as TerminalComponent, type ITheme } from '@baicie/xterm'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import {
-  clearTerminalWriteFn,
-  setTerminalWriteFn,
-} from '@/features/terminal/contexts'
+import { handleXtermShortcut } from './use-terminal-shortcut-events'
+
+let xtermErrorSuppressionUsers = 0
+let originalConsoleError: typeof console.error | null = null
+let suppressedParsingErrorCount = 0
+let parsingErrorWarningTimer: ReturnType<typeof setTimeout> | null = null
+
+const sharedXtermErrorHandler: typeof console.error = (...args: unknown[]) => {
+  const message = typeof args[0] === 'string' ? args[0] : ''
+  if (!message.includes('xterm.js: Parsing error')) {
+    if (originalConsoleError) {
+      Reflect.apply(originalConsoleError, console, args)
+    }
+    return
+  }
+
+  suppressedParsingErrorCount++
+  if (suppressedParsingErrorCount !== 1) return
+  parsingErrorWarningTimer = setTimeout(() => {
+    if (suppressedParsingErrorCount > 1) {
+      toast.warning(
+        `xterm.js: ${suppressedParsingErrorCount - 1} VT sequence parsing errors suppressed`,
+      )
+    }
+    suppressedParsingErrorCount = 0
+    parsingErrorWarningTimer = null
+  }, 5000)
+}
 
 function suppressXtermErrors() {
-  const originalError = console.error.bind(console)
-  let count = 0
-  let timer: ReturnType<typeof setTimeout> | null = null
-  console.error = (...args: unknown[]) => {
-    const message = typeof args[0] === 'string' ? args[0] : ''
-    if (!message.includes('xterm.js: Parsing error')) {
-      originalError(...args)
-      return
-    }
-    count++
-    if (count === 1) {
-      timer = setTimeout(() => {
-        if (count > 1) {
-          toast.warning(
-            'xterm.js: ' +
-              (count - 1) +
-              ' VT sequence parsing errors suppressed',
-          )
-        }
-        count = 0
-      }, 5000)
-    }
+  if (xtermErrorSuppressionUsers === 0) {
+    originalConsoleError = console.error
+    console.error = sharedXtermErrorHandler
   }
+
+  xtermErrorSuppressionUsers++
+  let released = false
   return () => {
-    console.error = originalError
-    if (timer) clearTimeout(timer)
+    if (released) return
+    released = true
+    xtermErrorSuppressionUsers--
+    if (xtermErrorSuppressionUsers > 0) return
+
+    if (console.error === sharedXtermErrorHandler && originalConsoleError) {
+      console.error = originalConsoleError
+    }
+    originalConsoleError = null
+    suppressedParsingErrorCount = 0
+    if (parsingErrorWarningTimer) clearTimeout(parsingErrorWarningTimer)
+    parsingErrorWarningTimer = null
   }
 }
 
 interface UseTerminalInstanceOptions {
   tabId: string
+  workspaceId: string
   isMobile: boolean
   cursorBlink: boolean
   fontSize: number
   fontFamily: string
   theme: ITheme
   scrollback: number
-  onOpenSearch: () => void
+  active: boolean
 }
 
 export function useTerminalInstance(options: UseTerminalInstanceOptions) {
@@ -58,6 +77,8 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
   const fitAddonRef = useRef<FitAddon | null>(null)
   const searchAddonRef = useRef<SearchAddon | null>(null)
   const userZoomedRef = useRef(false)
+  const activeRef = useRef(options.active)
+  activeRef.current = options.active
   const [termInstance, setTermInstance] = useState<TerminalComponent | null>(
     null,
   )
@@ -109,31 +130,20 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
       )
     }
 
-    term.attachCustomKeyEventHandler(event => {
-      if (event.type !== 'keydown') return true
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        !event.shiftKey &&
-        !event.altKey &&
-        (event.key === 'f' || event.key === 'F')
-      ) {
-        options.onOpenSearch()
-        return false
-      }
-      return true
-    })
+    term.attachCustomKeyEventHandler(event =>
+      handleXtermShortcut(event, activeRef.current),
+    )
     term.open(containerRef.current)
     setTermInstance(term)
-    setTerminalWriteFn(data => term.write(data))
-    setTimeout(() => {
+    const initialFitTimer = window.setTimeout(() => {
       fitAddon.fit()
-      term.focus()
+      if (activeRef.current) term.focus()
     }, 50)
     setIsReady(true)
 
     return () => {
+      window.clearTimeout(initialFitTimer)
       restoreErrors()
-      clearTerminalWriteFn()
       term.dispose()
       termRef.current = null
       searchAddonRef.current = null
@@ -142,7 +152,16 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     }
     // Recreating xterm for store object changes closes the backend session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options.tabId])
+  }, [options.tabId, options.workspaceId])
+
+  useEffect(() => {
+    if (!options.active || !isReady) return
+    const animationFrame = requestAnimationFrame(() => {
+      fitAddonRef.current?.fit()
+      termRef.current?.focus()
+    })
+    return () => cancelAnimationFrame(animationFrame)
+  }, [isReady, options.active])
 
   useEffect(() => {
     if (termRef.current) termRef.current.options.theme = options.theme
@@ -171,7 +190,8 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
       })
     }
     const resizeObserver = new ResizeObserver(fit)
-    if (containerRef.current) resizeObserver.observe(containerRef.current)
+    const resizeTarget = termRef.current?.element ?? containerRef.current
+    if (resizeTarget) resizeObserver.observe(resizeTarget)
     window.addEventListener('resize', fit)
     return () => {
       window.removeEventListener('resize', fit)
@@ -191,6 +211,16 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     setLiveFontSize(next)
   }
 
+  const resetFontSize = () => {
+    userZoomedRef.current = false
+    if (termInstance) {
+      termInstance.options.fontSize = options.fontSize
+      fitAddonRef.current?.fit()
+      termInstance.focus()
+    }
+    setLiveFontSize(options.fontSize)
+  }
+
   return {
     containerRef,
     termRef,
@@ -200,5 +230,6 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     isReady,
     fontSize: liveFontSize,
     changeFontSize,
+    resetFontSize,
   }
 }

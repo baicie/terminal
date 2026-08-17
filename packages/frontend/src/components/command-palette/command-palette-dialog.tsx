@@ -1,4 +1,4 @@
-import { ChevronRight, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
 import type { RefObject } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -8,7 +8,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { getTypeBadgeClass, getTypeLabel } from './command-palette-utils'
+import { cn } from '@/lib/utils'
+import { CommandPaletteResult } from './command-palette-result'
 import type {
   PaletteTab,
   PaletteTabItem,
@@ -69,6 +70,7 @@ export function CommandPaletteDialog({
             <Input
               ref={inputRef}
               placeholder={t('cmdPalette.placeholder')}
+              aria-label={t('cmdPalette.placeholder')}
               className="pl-10 text-base"
               value={query}
               onChange={event => setQuery(event.target.value)}
@@ -85,14 +87,25 @@ export function CommandPaletteDialog({
               variant="ghost"
               size="sm"
               onClick={() => setActiveTab(tab.key)}
-              className={`rounded-none px-3 py-2 h-auto gap-1.5 text-sm shrink-0 ${activeTab === tab.key ? 'bg-background border-b-2 border-primary rounded-t-md' : 'hover:bg-muted/50'}`}
+              aria-pressed={activeTab === tab.key}
+              className={cn(
+                'h-auto shrink-0 gap-1.5 rounded-none px-3 py-2 text-sm',
+                activeTab === tab.key
+                  ? 'rounded-t-md border-b-2 border-primary bg-background'
+                  : 'hover:bg-muted/50',
+              )}
             >
               {tab.icon}
               {tab.label}
             </Button>
           ))}
         </div>
-        <div ref={resultsRef} className="max-h-[400px] overflow-y-auto p-2">
+        <div
+          ref={resultsRef}
+          role="listbox"
+          aria-label={t('cmdPalette.results', { count: results.length })}
+          className="max-h-[400px] overflow-y-auto p-2"
+        >
           {loading ? (
             <div className="text-center text-muted-foreground py-8">
               {t('cmdPalette.searching')}
@@ -106,41 +119,16 @@ export function CommandPaletteDialog({
                   : t('cmdPalette.noTab', { tab: activeTab })}
             </div>
           ) : (
-            <div className="space-y-1">
+            <div className="flex flex-col gap-1">
               {results.map((result, index) => (
-                <Button
+                <CommandPaletteResult
                   key={result.id}
-                  variant="ghost"
-                  className={`w-full justify-start h-auto py-3 px-3 gap-3 ${index === selectedIndex ? 'bg-primary/10 border border-primary/20' : 'hover:bg-muted/50'}`}
-                  onClick={() => onSelect(result)}
-                  onMouseEnter={() => setSelectedIndex(index)}
-                >
-                  <span
-                    className={`shrink-0 ${index === selectedIndex ? 'text-primary' : 'text-muted-foreground'}`}
-                  >
-                    {result.icon}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div
-                      className={`font-medium truncate ${index === selectedIndex ? 'text-primary' : ''}`}
-                    >
-                      {result.title}
-                    </div>
-                    {(result.description || result.hint) && (
-                      <div className="text-xs text-muted-foreground truncate">
-                        {result.description || result.hint}
-                      </div>
-                    )}
-                  </div>
-                  <span
-                    className={`shrink-0 text-xs px-2 py-0.5 rounded ${getTypeBadgeClass(result.type)}`}
-                  >
-                    {getTypeLabel(result.type)}
-                  </span>
-                  <ChevronRight
-                    className={`size-4 shrink-0 ${index === selectedIndex ? 'text-primary' : 'text-muted-foreground'}`}
-                  />
-                </Button>
+                  result={result}
+                  index={index}
+                  selected={index === selectedIndex}
+                  onSelect={onSelect}
+                  onHover={setSelectedIndex}
+                />
               ))}
             </div>
           )}

@@ -19,7 +19,13 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { Separator } from '@/components/ui/separator'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from '@/components/ui/sheet'
 
 interface TerminalMobileMenuProps {
   /** xterm 实例，用于读取选中、写入数据、清屏等 */
@@ -99,6 +105,10 @@ export function TerminalMobileMenu({
         side="bottom"
         className="rounded-t-2xl pb-[env(safe-area-inset-bottom)]"
       >
+        <SheetTitle className="sr-only">{t('common.actions')}</SheetTitle>
+        <SheetDescription className="sr-only">
+          {t('terminal.mobileMenuDescription')}
+        </SheetDescription>
         <div className="flex flex-col gap-1 p-2">
           <MobileItem
             icon={<ClipboardCopy className="size-5" />}
@@ -127,7 +137,7 @@ export function TerminalMobileMenu({
               onClick={handleSearch}
             />
           )}
-          <div className="h-px bg-border my-1" />
+          <Separator className="my-1" />
           <MobileItem
             icon={<ZoomIn className="size-5" />}
             label={t('terminal.zoomIn')}

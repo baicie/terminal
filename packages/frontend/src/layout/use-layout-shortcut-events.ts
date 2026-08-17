@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { SHORTCUT_EVENT_PREFIX } from '@/hooks/use-global-shortcuts'
 import { useAppStore } from '@/store/app'
 
@@ -22,6 +23,16 @@ function switchTab(offset: number) {
   )
 }
 
+function splitActiveTab(direction: 'horizontal' | 'vertical') {
+  const { activeTabId, splitTab } = useAppStore.getState()
+  if (activeTabId) splitTab(activeTabId, direction)
+}
+
+function closeActiveTab() {
+  const { activeTabId, removeTab } = useAppStore.getState()
+  if (activeTabId) removeTab(activeTabId)
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   return (
@@ -38,9 +49,19 @@ export function useLayoutShortcutEvents({
   onToggleHelp,
   onOpenHelp,
 }: LayoutShortcutHandlers) {
+  const isTerminalRoute = useLocation().pathname === '/terminal'
+
   useEffect(() => {
-    const onNextTab = () => switchTab(1)
-    const onPreviousTab = () => switchTab(-1)
+    const onTerminalRoute = (action: () => void) => () => {
+      if (isTerminalRoute) action()
+    }
+    const onNextTab = onTerminalRoute(() => switchTab(1))
+    const onPreviousTab = onTerminalRoute(() => switchTab(-1))
+    const onSplitHorizontal = onTerminalRoute(() =>
+      splitActiveTab('horizontal'),
+    )
+    const onSplitVertical = onTerminalRoute(() => splitActiveTab('vertical'))
+    const onCloseTab = onTerminalRoute(closeActiveTab)
 
     window.addEventListener(
       `${SHORTCUT_EVENT_PREFIX}new-tab`,
@@ -56,6 +77,15 @@ export function useLayoutShortcutEvents({
     )
     window.addEventListener(`${SHORTCUT_EVENT_PREFIX}next-tab`, onNextTab)
     window.addEventListener(`${SHORTCUT_EVENT_PREFIX}prev-tab`, onPreviousTab)
+    window.addEventListener(
+      `${SHORTCUT_EVENT_PREFIX}split-horizontal`,
+      onSplitHorizontal,
+    )
+    window.addEventListener(
+      `${SHORTCUT_EVENT_PREFIX}split-vertical`,
+      onSplitVertical,
+    )
+    window.addEventListener(`${SHORTCUT_EVENT_PREFIX}close-tab`, onCloseTab)
 
     return () => {
       window.removeEventListener(
@@ -75,8 +105,20 @@ export function useLayoutShortcutEvents({
         `${SHORTCUT_EVENT_PREFIX}prev-tab`,
         onPreviousTab,
       )
+      window.removeEventListener(
+        `${SHORTCUT_EVENT_PREFIX}split-horizontal`,
+        onSplitHorizontal,
+      )
+      window.removeEventListener(
+        `${SHORTCUT_EVENT_PREFIX}split-vertical`,
+        onSplitVertical,
+      )
+      window.removeEventListener(
+        `${SHORTCUT_EVENT_PREFIX}close-tab`,
+        onCloseTab,
+      )
     }
-  }, [onNewLocalTerminal, onToggleSidebar])
+  }, [isTerminalRoute, onNewLocalTerminal, onToggleSidebar])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

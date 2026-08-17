@@ -59,11 +59,10 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ open, onClose }) => {
     if (isOpenRef.current) performSearch()
   }, [query, activeTab, performSearch])
   useEffect(() => {
-    const children = resultsRef.current?.children
-    if (children?.[selectedIndex])
-      (children[selectedIndex] as HTMLElement).scrollIntoView({
-        block: 'nearest',
-      })
+    const result = resultsRef.current?.querySelector<HTMLElement>(
+      `[data-palette-result-index="${selectedIndex}"]`,
+    )
+    result?.scrollIntoView({ block: 'nearest' })
   }, [selectedIndex, results.length])
 
   const handleKeyDown = useCallback(

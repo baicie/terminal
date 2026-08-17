@@ -131,6 +131,23 @@ describe('deleteWorkspace', () => {
     expect(dw).not.toHaveBeenCalled()
     expect(useWorkspaceStore.getState().workspaces).toHaveLength(1)
   })
+
+  it('rejects deleting the active workspace before it has been switched', async () => {
+    useWorkspaceStore.setState({
+      workspaces: [
+        { id: 'ws-1', name: 'Active', order: 0, isActive: true, createdAt: 0, updatedAt: 0 },
+        { id: 'ws-2', name: 'Other', order: 1, isActive: false, createdAt: 0, updatedAt: 0 },
+      ],
+      activeWorkspaceId: 'ws-1',
+    })
+
+    await expect(
+      useWorkspaceStore.getState().deleteWorkspace('ws-1'),
+    ).rejects.toThrow('Switch away from the active workspace before deleting it')
+
+    expect(dw).not.toHaveBeenCalled()
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(2)
+  })
 })
 
 describe('loadLayout', () => {

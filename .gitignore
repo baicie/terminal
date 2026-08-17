@@ -20,6 +20,10 @@ vite.config.d.ts
 !.env.example
 team-server/dist
 
+# Python generated caches
+__pycache__/
+*.py[cod]
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

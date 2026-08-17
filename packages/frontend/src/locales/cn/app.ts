@@ -18,6 +18,8 @@ export default {
 
   // Top toolbar
   'toolbar.toggleSidebar': '切换侧栏',
+  'toolbar.menu': '打开导航菜单',
+  'toolbar.mobileNavigationDescription': '在视图和工作区之间导航',
   'toolbar.sftp': 'SFTP',
   'toolbar.newTab': '新建标签',
   'toolbar.more': '更多',
@@ -30,6 +32,10 @@ export default {
   'tabs.splitVertical': '垂直分屏',
   'tabs.splitHorizontal': '水平分屏',
   'tabs.closeSplit': '关闭分屏',
+  'tabs.sessions': '终端会话',
+  'tabs.moveLeft': '向左移动',
+  'tabs.moveRight': '向右移动',
+  'tabs.closeNamed': '关闭 {{name}}',
   'tabs.home': '首页',
 
   // Shortcuts help dialog
@@ -49,6 +55,7 @@ export default {
   'terminal.search': '查找',
   'terminal.zoomIn': '放大',
   'terminal.zoomOut': '缩小',
+  'terminal.mobileMenuDescription': '终端复制、粘贴、查找和缩放操作',
   'terminal.showTools': '显示工具',
   'terminal.hideTools': '隐藏工具',
   'terminal.fullscreen': '全屏',
@@ -66,6 +73,24 @@ export default {
   'terminal.searchWholeWord': '全字匹配',
   'terminal.searchRegex': '正则表达式',
   'terminal.windowUnfocused': '窗口已失去焦点 — 输入将被发送到后台终端',
+  'terminal.resizeSplit': '调整终端分屏大小',
+  'terminal.disconnect': '断开连接',
+  'terminal.status.idle': '空闲',
+  'terminal.status.connecting': '连接中',
+  'terminal.status.connected': '已连接',
+  'terminal.status.disconnected': '已断开',
+  'terminal.status.error': '错误',
+  'terminal.decreaseFontSize': '减小字号',
+  'terminal.increaseFontSize': '增大字号',
+  'terminal.clearScreen': '清屏',
+  'terminal.keyboardHelpDescription': '终端按键与常用 Shell 控制序列。',
+  'terminal.shortcut.cancelExit': '取消或退出',
+  'terminal.shortcut.autocomplete': '自动补全',
+  'terminal.shortcut.interrupt': '中断进程',
+  'terminal.shortcut.endOfFile': '文件结束',
+  'terminal.shortcut.suspend': '挂起进程',
+  'terminal.shortcut.commandHistory': '命令历史',
+  'terminal.shortcut.searchHistory': '搜索历史',
 
   // Settings
   'settings.copyOnSelect': '选中即复制',

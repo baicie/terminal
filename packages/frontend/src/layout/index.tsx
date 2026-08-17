@@ -23,18 +23,15 @@ function detectTitleBarStyle(): TitleBarStyle {
 }
 
 const MainLayout: React.FC = () => {
-  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false)
   const [, setTitleBarStyle] = useState<TitleBarStyle>('linux')
   const addTab = useAppStore(state => state.addTab)
+  const sidebarVisible = useAppStore(state => state.sidebarVisible)
+  const toggleSidebar = useAppStore(state => state.toggleSidebar)
   const navigate = useNavigate()
   const isMobile = useIsMobile()
-
-  useEffect(() => {
-    if (isMobile) setSidebarOpen(false)
-  }, [isMobile])
 
   useEffect(() => {
     setTitleBarStyle(detectTitleBarStyle())
@@ -46,8 +43,8 @@ const MainLayout: React.FC = () => {
   }, [addTab, navigate])
 
   const handleToggleSidebar = useCallback(() => {
-    setSidebarOpen(previous => !previous)
-  }, [])
+    toggleSidebar()
+  }, [toggleSidebar])
   const handleToggleHelp = useCallback(() => {
     setShortcutsHelpOpen(previous => !previous)
   }, [])
@@ -67,7 +64,7 @@ const MainLayout: React.FC = () => {
   return (
     <>
       <MainLayoutContent
-        sidebarOpen={sidebarOpen}
+        sidebarOpen={!isMobile && sidebarVisible}
         sidebarWidth={sidebarWidth}
         onToggleSidebar={handleToggleSidebar}
         onSidebarWidthChange={setSidebarWidth}

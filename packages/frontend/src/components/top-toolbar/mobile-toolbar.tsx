@@ -2,8 +2,15 @@ import { ArrowLeft, FolderUp, Home, PanelLeft, Settings } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
+import WorkspaceSwitcher from '@/components/workspace-switcher'
 
 interface MobileToolbarProps {
   currentPath: string
@@ -41,7 +48,8 @@ export function MobileToolbar({
           size="icon"
           className="size-9 shrink-0 text-muted-foreground hover:text-foreground"
           onClick={() => onDrawerOpenChange(true)}
-          title="Menu"
+          aria-label={t('toolbar.menu')}
+          title={t('toolbar.menu')}
           data-tauri-drag-region="false"
         >
           <PanelLeft />
@@ -59,6 +67,7 @@ export function MobileToolbar({
           size="icon"
           className="size-9 shrink-0 text-muted-foreground hover:text-foreground"
           onClick={onBack}
+          aria-label={t('common.back')}
           title={t('common.back')}
           data-tauri-drag-region="false"
         >
@@ -68,10 +77,16 @@ export function MobileToolbar({
 
       <Sheet open={drawerOpen} onOpenChange={onDrawerOpenChange}>
         <SheetContent side="left" className="w-[280px]">
+          <SheetHeader className="border-b px-4 py-3">
+            <SheetTitle className="text-base">{t('app.name')}</SheetTitle>
+            <SheetDescription className="sr-only">
+              {t('toolbar.mobileNavigationDescription')}
+            </SheetDescription>
+          </SheetHeader>
           <div className="flex flex-col gap-1 pt-2">
-            <p className="px-2 pb-3 text-sm font-semibold text-muted-foreground">
-              {t('app.name')}
-            </p>
+            <div className="px-2 pb-2">
+              <WorkspaceSwitcher />
+            </div>
             {navigationItems.map(item => (
               <Button
                 key={item.path}

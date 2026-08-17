@@ -1,26 +1,30 @@
-/**
- * TerminalKeyboardBar Component
- * 移动端虚拟键盘栏
- */
-
-import { Keyboard, Maximize2, Minimize2 } from 'lucide-react'
+import {
+  AArrowDown,
+  AArrowUp,
+  Eraser,
+  Keyboard,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { KeyboardKey } from './keyboard-bar-data'
+import {
+  CLEAR_TERMINAL_SEQUENCE,
+  type KeyboardKey,
+  useKeyboardModifiers,
+} from './keyboard-bar-data'
 import { KeyboardHelpSheet } from './keyboard-help-sheet'
 import { KeyboardKeyButtons } from './keyboard-key-buttons'
 
 export interface TerminalKeyboardBarProps {
-  /** Called when a key sequence should be sent to the terminal */
   onSendKey: (key: string) => void
-  /** Called when font size should change */
   onFontSizeChange?: (delta: number) => void
-  /** Current font size */
   fontSize?: number
-  /** Whether the terminal is in fullscreen mode */
   isFullscreen?: boolean
   onToggleFullscreen?: () => void
+  onRequestFocus?: () => void
   className?: string
 }
 
@@ -30,159 +34,145 @@ export function TerminalKeyboardBar({
   fontSize = 14,
   isFullscreen,
   onToggleFullscreen,
+  onRequestFocus,
   className,
 }: TerminalKeyboardBarProps) {
-  const [ctrlActive, setCtrlActive] = useState(false)
-  const [altActive, setAltActive] = useState(false)
-  const [ctrlHeld, setCtrlHeld] = useState(false)
-  const [altHeld, setAltHeld] = useState(false)
+  const { t } = useTranslation()
   const [helpOpen, setHelpOpen] = useState(false)
-
-  const handleKey = (keyConfig: KeyboardKey) => {
-    if (keyConfig.isModifier) return
-
-    // Build the key sequence with modifiers
-    let seq = ''
-    if (ctrlHeld && !ctrlActive) seq += '\x1b' // Ctrl prefix is ESC
-    if (altHeld) seq += '\x1b' // Alt prefix is ESC
-    seq += keyConfig.key
-
-    onSendKey(seq)
-
-    // Auto-deactivate modifiers after sending
-    if (ctrlHeld) {
-      setCtrlHeld(false)
-      setCtrlActive(false)
-    }
-    if (altHeld) {
-      setAltHeld(false)
-      setAltActive(false)
-    }
+  const { modifiers, sendModifiedKey, toggleModifier } = useKeyboardModifiers(
+    onSendKey,
+    onRequestFocus,
+  )
+  const sendKey = (key: string) => {
+    onSendKey(key)
+    onRequestFocus?.()
   }
-
-  const toggleModifier = (mod: 'ctrl' | 'alt') => {
-    if (mod === 'ctrl') {
-      setCtrlHeld(p => !p)
-      setCtrlActive(p => !p)
-    } else {
-      setAltHeld(p => !p)
-      setAltActive(p => !p)
-    }
+  const handleKey = (key: KeyboardKey) => {
+    if (!key.isModifier) sendModifiedKey(key.key)
+  }
+  const handleHelpOpenChange = (open: boolean) => {
+    setHelpOpen(open)
+    if (!open) onRequestFocus?.()
   }
 
   return (
     <>
       <div
         className={cn(
-          'flex items-center gap-0.5 px-2 py-1.5 overflow-x-auto',
-          'bg-background/90 backdrop-blur-xl border-t border-border/60',
-          'shrink-0 select-none',
+          'flex shrink-0 select-none items-center gap-0.5 overflow-x-auto border-t border-border/60 bg-background/90 px-2 py-1.5 backdrop-blur-xl',
           className,
         )}
         style={{ WebkitUserSelect: 'none', userSelect: 'none' }}
       >
-        {/* Modifier keys */}
-        <Button
-          variant={ctrlActive ? 'default' : 'ghost'}
-          size="sm"
-          className={cn(
-            'h-7 min-w-[44px] text-xs px-1.5 shrink-0 rounded-md font-mono',
-            ctrlActive && 'bg-primary text-primary-foreground',
-          )}
-          onClick={() => toggleModifier('ctrl')}
-          title="Ctrl"
-        >
-          Ctrl
-        </Button>
-        <Button
-          variant={altActive ? 'default' : 'ghost'}
-          size="sm"
-          className={cn(
-            'h-7 min-w-[44px] text-xs px-1.5 shrink-0 rounded-md font-mono',
-            altActive && 'bg-primary text-primary-foreground',
-          )}
-          onClick={() => toggleModifier('alt')}
-          title="Alt / Option"
-        >
-          Alt
-        </Button>
+        {(['ctrl', 'alt'] as const).map(modifier => (
+          <Button
+            key={modifier}
+            type="button"
+            variant={modifiers[modifier] ? 'default' : 'ghost'}
+            size="sm"
+            className="h-11 min-w-11 shrink-0 px-2 font-mono text-xs"
+            aria-pressed={modifiers[modifier]}
+            onClick={() => toggleModifier(modifier)}
+            title={modifier === 'ctrl' ? 'Ctrl' : 'Alt'}
+          >
+            {modifier === 'ctrl' ? 'Ctrl' : 'Alt'}
+          </Button>
+        ))}
 
         <KeyboardKeyButtons onKey={handleKey} />
-
-        {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Font size */}
         {onFontSizeChange && (
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex shrink-0 items-center gap-1">
             <Button
+              type="button"
               variant="ghost"
               size="icon"
-              className="size-7"
-              onClick={() => onFontSizeChange(-1)}
-              title="Decrease font size"
+              className="size-11"
+              onClick={() => {
+                onFontSizeChange(-1)
+                onRequestFocus?.()
+              }}
+              aria-label={t('terminal.decreaseFontSize')}
+              title={t('terminal.decreaseFontSize')}
             >
-              <span className="text-xs font-mono">A-</span>
+              <AArrowDown data-icon="inline-start" />
             </Button>
-            <span className="text-xs text-muted-foreground font-mono w-6 text-center">
+            <span className="w-6 text-center font-mono text-xs text-muted-foreground">
               {fontSize}
             </span>
             <Button
+              type="button"
               variant="ghost"
               size="icon"
-              className="size-7"
-              onClick={() => onFontSizeChange(1)}
-              title="Increase font size"
+              className="size-11"
+              onClick={() => {
+                onFontSizeChange(1)
+                onRequestFocus?.()
+              }}
+              aria-label={t('terminal.increaseFontSize')}
+              title={t('terminal.increaseFontSize')}
             >
-              <span className="text-xs font-mono">A+</span>
+              <AArrowUp data-icon="inline-start" />
             </Button>
           </div>
         )}
 
-        {/* Clear screen */}
         <Button
+          type="button"
           variant="ghost"
           size="sm"
-          className="h-7 text-xs px-2 shrink-0 rounded-md"
-          onClick={() => onSendKey('\x1b[2J\x1b[H')}
-          title="Clear screen"
+          className="h-11 shrink-0 px-3 text-xs"
+          onClick={() => sendKey(CLEAR_TERMINAL_SEQUENCE)}
+          aria-label={t('terminal.clearScreen')}
+          title={t('terminal.clearScreen')}
         >
-          Clear
+          <Eraser data-icon="inline-start" />
+          {t('terminal.clearScreen')}
         </Button>
 
-        {/* Fullscreen */}
         {onToggleFullscreen && (
           <Button
+            type="button"
             variant="ghost"
             size="icon"
-            className="size-7 shrink-0"
-            onClick={onToggleFullscreen}
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            className="size-11 shrink-0"
+            onClick={() => {
+              onToggleFullscreen()
+              onRequestFocus?.()
+            }}
+            aria-label={t(
+              isFullscreen ? 'terminal.exitFullscreen' : 'terminal.fullscreen',
+            )}
+            title={t(
+              isFullscreen ? 'terminal.exitFullscreen' : 'terminal.fullscreen',
+            )}
           >
             {isFullscreen ? (
-              <Minimize2 className="size-3.5" />
+              <Minimize2 data-icon="inline-start" />
             ) : (
-              <Maximize2 className="size-3.5" />
+              <Maximize2 data-icon="inline-start" />
             )}
           </Button>
         )}
 
-        {/* Help */}
         <Button
+          type="button"
           variant="ghost"
           size="icon"
-          className="size-7 shrink-0"
+          className="size-11 shrink-0"
           onClick={() => setHelpOpen(true)}
-          title="Keyboard shortcuts"
+          aria-label={t('shortcuts.title')}
+          title={t('shortcuts.title')}
         >
-          <Keyboard className="size-3.5" />
+          <Keyboard data-icon="inline-start" />
         </Button>
       </div>
 
       <KeyboardHelpSheet
         open={helpOpen}
-        onOpenChange={setHelpOpen}
-        onClear={() => onSendKey('\x1b[2J\x1b[H')}
+        onOpenChange={handleHelpOpenChange}
+        onClear={() => onSendKey(CLEAR_TERMINAL_SEQUENCE)}
       />
     </>
   )
