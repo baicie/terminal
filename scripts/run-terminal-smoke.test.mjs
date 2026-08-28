@@ -11,6 +11,7 @@ import {
   parseTerminalSmokeResult,
   runTerminalSmoke,
 } from './run-terminal-smoke.mjs'
+import { selectCases } from './run-terminal-smoke-matrix.mjs'
 
 const PROJECT_ROOT = '/workspace/terminal'
 const TEMP_ROOT = '/private/tmp'
@@ -710,4 +711,28 @@ test('rejects unsupported authentication modes before spawning', async () => {
 
   assert.equal(calls.spawn.length, 0)
   assert.equal(calls.startSshd.length, 0)
+})
+
+test('selects the default matrix when no filter is given', () => {
+  assert.deepEqual(
+    selectCases(undefined).map(item => item.name),
+    ['key', 'key-reconnect', 'password', 'password-reconnect', 'agent', 'cert', 'jump'],
+  )
+  assert.deepEqual(selectCases('').length, 7)
+})
+
+test('selects comma-separated matrix cases in declaration order', () => {
+  assert.deepEqual(
+    selectCases('jump,key').map(item => item.name),
+    ['key', 'jump'],
+  )
+  assert.deepEqual(
+    selectCases(' password , password-reconnect ').map(item => item.name),
+    ['password', 'password-reconnect'],
+  )
+})
+
+test('rejects unknown matrix case filters before building', () => {
+  assert.throws(() => selectCases('ssh-keys'), /unknown terminal smoke case 'ssh-keys'/)
+  assert.throws(() => selectCases('key,passwordx'), /unknown terminal smoke case 'passwordx'/)
 })

@@ -1,4 +1,6 @@
+import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 import {
   buildFreshTauriBinary,
   cargoTargetDirectory,
@@ -36,14 +38,20 @@ function formatCaseRow({ name, ok, durationMs, firstConnectionMs, uniqueSessionC
   return { name, ok: false, error }
 }
 
-async function main() {
-  const filter = process.argv[2]
-  const cases = filter ? CASES.filter(item => item.name === filter) : CASES
-  if (filter && cases.length === 0) {
+export function selectCases(filter) {
+  if (filter === undefined || filter === '') return CASES
+  const names = filter.split(',').map(name => name.trim())
+  const unknown = names.filter(name => !CASES.some(item => item.name === name))
+  if (unknown.length > 0) {
     throw new Error(
-      `unknown terminal smoke case '${filter}'; expected one of ${CASES.map(item => item.name).join('/')}`,
+      `unknown terminal smoke case '${unknown.join("','")}'; expected one of ${CASES.map(item => item.name).join('/')}`,
     )
   }
+  return CASES.filter(item => names.includes(item.name))
+}
+
+async function main() {
+  const cases = selectCases(process.argv[2])
 
   console.log('Building a fresh Tauri debug binary once for the matrix…')
   const startedAt = Date.now()
@@ -98,7 +106,13 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error(error instanceof Error ? error.message : String(error))
-  process.exitCode = 1
-})
+const isDirectRun =
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+
+if (isDirectRun) {
+  main().catch(error => {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+  })
+}
