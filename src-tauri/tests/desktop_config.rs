@@ -7,6 +7,18 @@ fn csp_allows_configured_http_endpoints_without_wildcards() {
     let csp = config["app"]["security"]["csp"]
         .as_str()
         .expect("Tauri CSP should be a string");
+    assert!(
+        csp.split(';')
+            .find(|directive| directive.trim().starts_with("style-src "))
+            .is_some_and(|directive| directive
+                .split_whitespace()
+                .any(|source| source == "'unsafe-inline'")),
+        "xterm runtime styles require style-src 'unsafe-inline'"
+    );
+    assert!(
+        config["app"]["security"]["dangerousDisableAssetCspModification"].is_null(),
+        "Tauri CSP modification should stay enabled"
+    );
     let connect_sources: Vec<_> = csp
         .split(';')
         .map(str::trim)
@@ -33,6 +45,16 @@ fn csp_allows_configured_http_endpoints_without_wildcards() {
         !connect_sources.contains(&"*"),
         "connect-src must stay scoped"
     );
+}
+
+#[test]
+fn frontend_index_avoids_webkit_viewport_and_style_nonce_warnings() {
+    let html = include_str!("../../packages/frontend/index.html");
+
+    assert!(
+        html.contains(r#"<meta name="viewport" content="width=device-width, initial-scale=1" />"#)
+    );
+    assert!(!html.contains("<style"), "styles must stay in external CSS");
 }
 
 #[test]

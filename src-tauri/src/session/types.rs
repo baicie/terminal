@@ -4,7 +4,60 @@
 //! 以及统一的输出通道和会话管理器。
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use thiserror::Error;
+
+pub(crate) const MAX_TERMINAL_DIMENSION: u16 = 4096;
+
+/// Settings applied when an interactive shell is created.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalProfile {
+    #[serde(default)]
+    pub environment: HashMap<String, String>,
+    pub startup_command: Option<String>,
+}
+
+impl TerminalProfile {
+    pub(crate) fn validate(&self) -> Result<(), SessionError> {
+        if self.environment.len() > 128 {
+            return Err(SessionError::InvalidInput(
+                "Terminal profile has too many environment variables".to_string(),
+            ));
+        }
+        for (name, value) in &self.environment {
+            if name.is_empty() || name.contains('=') || name.chars().any(char::is_control) {
+                return Err(SessionError::InvalidInput(
+                    "Terminal environment variable name is invalid".to_string(),
+                ));
+            }
+            if value.chars().any(char::is_control) {
+                return Err(SessionError::InvalidInput(
+                    "Terminal environment variable value is invalid".to_string(),
+                ));
+            }
+        }
+        if self
+            .startup_command
+            .as_ref()
+            .is_some_and(|command| command.len() > 64 * 1024 || command.contains('\0'))
+        {
+            return Err(SessionError::InvalidInput(
+                "Terminal startup command is invalid".to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn validate_terminal_size(cols: u16, rows: u16) -> Result<(), SessionError> {
+    if cols == 0 || rows == 0 || cols > MAX_TERMINAL_DIMENSION || rows > MAX_TERMINAL_DIMENSION {
+        return Err(SessionError::InvalidInput(format!(
+            "Terminal size must be between 1 and {MAX_TERMINAL_DIMENSION} columns and rows; received {cols}x{rows}"
+        )));
+    }
+    Ok(())
+}
 
 /// Session 类型枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -153,6 +206,16 @@ pub struct SessionOutput {
     pub data: String,
     /// 是否为 stderr
     pub is_stderr: bool,
+    /// 前端完成 xterm 解析后需要确认的 UTF-8 字节数
+    pub bytes: usize,
+}
+
+/// Structured failure emitted when a live terminal's output or reader task
+/// stops unexpectedly after the session has already been created.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TerminalError {
+    pub session_id: String,
+    pub message: String,
 }
 
 /// Shell exec result (used for completion / RC file parsing)
@@ -237,6 +300,9 @@ pub struct JumpHostConfig {
     pub private_key: Option<String>,
     /// SSH 证书
     pub certificate: Option<String>,
+    /// 预检得到的跳板机公钥；仅本次信任时用于精确 pin。
+    #[serde(rename = "expectedHostKey", alias = "expected_host_key", default)]
+    pub expected_host_key: Option<String>,
     /// 目标主机的认证类型（agent / password / key / cert），为空则沿用主会话默认逻辑
     #[serde(rename = "targetAuthType", alias = "target_auth_type", default)]
     pub target_auth_type: Option<String>,
@@ -245,6 +311,40 @@ pub struct JumpHostConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn terminal_profile_accepts_camel_case_ipc_payload() {
+        let profile: TerminalProfile = serde_json::from_value(serde_json::json!({
+            "environment": {"APP_ENV": "dev"},
+            "startupCommand": "cd ~/project"
+        }))
+        .expect("profile payload should deserialize");
+
+        assert_eq!(profile.environment.get("APP_ENV"), Some(&"dev".to_string()));
+        assert_eq!(profile.startup_command.as_deref(), Some("cd ~/project"));
+        profile.validate().expect("profile should be valid");
+    }
+
+    #[test]
+    fn terminal_profile_rejects_control_characters_and_large_maps() {
+        let control = TerminalProfile {
+            environment: HashMap::from([(String::from("BAD\nNAME"), String::from("value"))]),
+            startup_command: None,
+        };
+        assert!(matches!(
+            control.validate(),
+            Err(SessionError::InvalidInput(message)) if message.contains("environment")
+        ));
+
+        let environment = (0..=128)
+            .map(|index| (format!("KEY_{index}"), String::from("value")))
+            .collect();
+        let too_large = TerminalProfile {
+            environment,
+            startup_command: None,
+        };
+        assert!(too_large.validate().is_err());
+    }
 
     #[test]
     fn test_session_error_roundtrip() {
@@ -312,6 +412,59 @@ mod tests {
             "key_generation_failed",
             Some("bad params"),
         );
+    }
+
+    #[test]
+    fn terminal_size_rejects_zero_and_oversized_dimensions() {
+        for (cols, rows) in [
+            (0, 24),
+            (80, 0),
+            (MAX_TERMINAL_DIMENSION + 1, 24),
+            (80, MAX_TERMINAL_DIMENSION + 1),
+        ] {
+            assert!(matches!(
+                validate_terminal_size(cols, rows),
+                Err(SessionError::InvalidInput(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn terminal_size_accepts_supported_boundaries() {
+        assert!(validate_terminal_size(1, 1).is_ok());
+        assert!(validate_terminal_size(MAX_TERMINAL_DIMENSION, MAX_TERMINAL_DIMENSION).is_ok());
+    }
+
+    #[test]
+    fn session_output_serializes_the_frontend_ack_byte_count() {
+        let output = SessionOutput {
+            session_id: "session-1".to_string(),
+            data: "中🙂".to_string(),
+            is_stderr: false,
+            bytes: 7,
+        };
+
+        let json = serde_json::to_value(output).expect("session output should serialize");
+
+        assert_eq!(json["bytes"], 7);
+    }
+
+    #[test]
+    fn jump_host_deserializes_the_optional_preflight_key() {
+        let jump: JumpHostConfig = serde_json::from_value(serde_json::json!({
+            "host": "jump.example",
+            "port": 22,
+            "username": "operator",
+            "authType": "agent",
+            "password": null,
+            "privateKey": null,
+            "certificate": null,
+            "expectedHostKey": "ssh-ed25519 AAAA",
+            "targetAuthType": "agent"
+        }))
+        .expect("jump host should deserialize");
+
+        assert_eq!(jump.expected_host_key.as_deref(), Some("ssh-ed25519 AAAA"));
     }
 
     #[test]

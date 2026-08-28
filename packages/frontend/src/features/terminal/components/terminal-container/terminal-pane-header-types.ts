@@ -3,6 +3,7 @@ import type { Host, Tab } from '@/types'
 export type ConnectionStatus =
   | 'idle'
   | 'connecting'
+  | 'reconnecting'
   | 'connected'
   | 'disconnected'
   | 'error'
@@ -12,6 +13,9 @@ export interface TerminalPaneHeaderProps {
   host?: Host
   status: ConnectionStatus
   errorMessage?: string
+  shellCwd?: string
+  reconnectAttempt?: number
+  reconnectReason?: string
   fontSize: number
   isMobile: boolean
   toolsOpen: boolean

@@ -110,3 +110,67 @@ it('resolves and uses the configured jump host for script execution', async () =
     rows: 24,
   })
 })
+
+it('routes certificate authentication on both sides for script execution', async () => {
+  const jump = host('cert', {
+    id: 'jump-id',
+    name: 'Certificate bastion',
+    hostname: 'jump.example',
+    username: 'jump-user',
+    password: 'jump-key-passphrase',
+    privateKey: 'jump-private-key',
+    certificate: 'jump-certificate',
+  })
+  mocks.getHostById.mockResolvedValue(jump)
+  const target = host('cert', {
+    jumpHostId: 'jump-id',
+    jumpHostAuthType: 'cert',
+    password: 'target-key-passphrase',
+    privateKey: 'target-private-key',
+    certificate: 'target-certificate',
+  })
+
+  await sshService.execute(target, 'whoami')
+
+  expect(mocks.createJump).toHaveBeenCalledWith({
+    targetHost: target,
+    jumpHost: {
+      host: 'jump.example',
+      port: 22,
+      username: 'jump-user',
+      authType: 'cert',
+      password: 'jump-key-passphrase',
+      privateKey: 'jump-private-key',
+      certificate: 'jump-certificate',
+      targetAuthType: 'cert',
+    },
+    cols: 80,
+    rows: 24,
+  })
+})
+
+it('accepts certificate credentials through the legacy jump session wrapper', async () => {
+  const target = host('cert')
+
+  await sshService.createSshSessionJump(target, {
+    host: 'jump.example',
+    port: 22,
+    username: 'jump-user',
+    authType: 'cert',
+    password: 'jump-key-passphrase',
+    privateKey: 'jump-private-key',
+    certificate: 'jump-certificate',
+    targetAuthType: 'cert',
+  })
+
+  expect(mocks.createJump).toHaveBeenCalledWith({
+    targetHost: target,
+    jumpHost: expect.objectContaining({
+      authType: 'cert',
+      certificate: 'jump-certificate',
+      targetAuthType: 'cert',
+    }),
+    cols: 80,
+    rows: 24,
+  })
+})

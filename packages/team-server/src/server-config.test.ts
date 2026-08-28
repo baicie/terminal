@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isSwaggerEnabled, resolveCorsOrigins } from './server-config'
+import {
+  isSwaggerEnabled,
+  resolveCorsOrigins,
+  resolveRegistrationMode,
+  validateServerEnvironment,
+} from './server-config'
 
 describe('resolveCorsOrigins', () => {
   it('fails closed when production origins are not configured', () => {
@@ -43,5 +48,44 @@ describe('isSwaggerEnabled', () => {
     expect(() => isSwaggerEnabled('yes', 'production')).toThrow(
       'SWAGGER_ENABLED',
     )
+  })
+})
+
+describe('registration and environment safety', () => {
+  it('defaults production registration to closed and development to open', () => {
+    expect(resolveRegistrationMode(undefined, 'production')).toBe('closed')
+    expect(resolveRegistrationMode(undefined, 'development')).toBe('open')
+  })
+
+  it('requires a strong token when token-gated registration is enabled', () => {
+    expect(() =>
+      validateServerEnvironment({
+        NODE_ENV: 'production',
+        REGISTRATION_MODE: 'token',
+      }),
+    ).toThrow('REGISTRATION_TOKEN')
+    expect(() =>
+      validateServerEnvironment({
+        NODE_ENV: 'production',
+        REGISTRATION_MODE: 'token',
+        REGISTRATION_TOKEN: 'short',
+      }),
+    ).toThrow('at least 32')
+  })
+
+  it('rejects ambiguous environment and registration mode values', () => {
+    expect(() => validateServerEnvironment({ NODE_ENV: 'prod' })).toThrow(
+      'NODE_ENV',
+    )
+    expect(() =>
+      validateServerEnvironment({ NODE_ENV: ' Production ' }),
+    ).toThrow('NODE_ENV')
+    expect(() => validateServerEnvironment({})).toThrow('NODE_ENV')
+    expect(() =>
+      validateServerEnvironment({
+        NODE_ENV: 'production',
+        REGISTRATION_MODE: 'enabled',
+      }),
+    ).toThrow('REGISTRATION_MODE')
   })
 })

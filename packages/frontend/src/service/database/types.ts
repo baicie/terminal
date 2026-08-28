@@ -23,6 +23,7 @@ export interface HostRecord {
   environment: string | null
   jump_host_id: string | null
   jump_host_auth_type: string | null
+  agent_forwarding: number | null
   created_at: number
   updated_at: number
 }

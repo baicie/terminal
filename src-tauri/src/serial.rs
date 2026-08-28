@@ -289,19 +289,18 @@ mod tests {
     }
 }
 
-/// Write raw data to serial port. Kept for IPC compatibility; both write
-/// commands preserve the exact byte sequence supplied by the terminal.
+/// Write raw data to serial port without converting it through UTF-8.
 #[tauri::command]
 pub async fn serial_write_raw(
     state: tauri::State<'_, SharedStateType>,
     session_id: String,
-    data: String,
+    data: Vec<u8>,
 ) -> Result<(), SerialError> {
     if session_id.is_empty() {
         return Err(SerialError::SessionNotFound);
     }
 
-    write_serial_session(state.inner(), &session_id, data.into_bytes()).await
+    write_serial_session(state.inner(), &session_id, data).await
 }
 
 /// Check if serial port is still connected

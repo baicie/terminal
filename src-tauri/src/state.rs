@@ -225,6 +225,8 @@ pub struct ClientHandler {
     host: String,
     port: u16,
     known_hosts_path: Option<PathBuf>,
+    expected_host_key: Option<russh::keys::PublicKey>,
+    allow_agent_forwarding: bool,
     #[cfg_attr(not(unix), allow(dead_code))]
     agent_socket: Option<PathBuf>,
     #[allow(dead_code)]
@@ -237,10 +239,45 @@ pub struct ClientHandler {
 
 impl ClientHandler {
     pub fn for_host(host: impl Into<String>, port: u16) -> Self {
+        Self::for_host_with_agent_forwarding(host, port, false)
+    }
+
+    pub fn for_host_with_agent_forwarding(
+        host: impl Into<String>,
+        port: u16,
+        allow_agent_forwarding: bool,
+    ) -> Self {
         Self {
             host: host.into(),
             port,
             known_hosts_path: None,
+            expected_host_key: None,
+            allow_agent_forwarding,
+            agent_socket: get_ssh_agent_socket().map(PathBuf::from),
+            session_id: None,
+            forward_listener: std::sync::RwLock::new(None),
+        }
+    }
+
+    /// Build a handler pinned to the exact key returned by a host-key preflight.
+    ///
+    /// This is used for one-time TOFU approval: the key is accepted only when
+    /// the subsequent SSH handshake presents the same key, even if it is not
+    /// persisted in `known_hosts`.
+    pub fn for_host_with_expected_key(
+        host: impl Into<String>,
+        port: u16,
+        expected_host_key: russh::keys::PublicKey,
+        allow_agent_forwarding: bool,
+    ) -> Self {
+        let mut expected_host_key = expected_host_key;
+        expected_host_key.set_comment("");
+        Self {
+            host: host.into(),
+            port,
+            known_hosts_path: None,
+            expected_host_key: Some(expected_host_key),
+            allow_agent_forwarding,
             agent_socket: get_ssh_agent_socket().map(PathBuf::from),
             session_id: None,
             forward_listener: std::sync::RwLock::new(None),
@@ -253,6 +290,8 @@ impl ClientHandler {
             host: host.to_string(),
             port,
             known_hosts_path: Some(known_hosts_path),
+            expected_host_key: None,
+            allow_agent_forwarding: false,
             agent_socket: get_ssh_agent_socket().map(PathBuf::from),
             session_id: None,
             forward_listener: std::sync::RwLock::new(None),
@@ -267,6 +306,22 @@ impl Handler for ClientHandler {
         &mut self,
         server_public_key: &russh::keys::PublicKey,
     ) -> Result<bool, Self::Error> {
+        let has_matching_preflight_key = match &self.expected_host_key {
+            Some(expected_host_key)
+                if expected_host_key.key_data() == server_public_key.key_data() =>
+            {
+                true
+            }
+            Some(_) => {
+                return Err(anyhow!(
+                    "host key verification failed for {}:{}: server key does not match the preflight key",
+                    self.host,
+                    self.port
+                ));
+            }
+            None => false,
+        };
+
         let verified = if let Some(path) = &self.known_hosts_path {
             russh::keys::check_known_hosts_path(&self.host, self.port, server_public_key, path)
         } else {
@@ -275,6 +330,7 @@ impl Handler for ClientHandler {
 
         match verified {
             Ok(true) => Ok(true),
+            Ok(false) if has_matching_preflight_key => Ok(true),
             Ok(false) => Err(anyhow!(
                 "host key verification failed for {}:{}: key not found in known_hosts",
                 self.host,
@@ -294,6 +350,16 @@ impl Handler for ClientHandler {
         channel: Channel<client::Msg>,
         _session: &mut client::Session,
     ) -> Result<(), Self::Error> {
+        if !self.allow_agent_forwarding {
+            tracing::warn!(
+                host = %self.host,
+                port = self.port,
+                "rejecting unauthorized SSH agent forwarding channel"
+            );
+            let _ = channel.close().await;
+            return Ok(());
+        }
+
         match connect_agent_transport(self.agent_socket.clone()).await {
             Ok(mut agent) => {
                 let mut channel_stream = channel.into_stream();
@@ -490,5 +556,90 @@ mod tests {
 
         std::fs::remove_file(path).unwrap();
         assert!(error.to_string().contains("host key verification failed"));
+    }
+
+    #[tokio::test]
+    async fn preflight_key_pins_one_time_trust_without_known_hosts_entry() {
+        let path = std::env::temp_dir().join(format!(
+            "terminal-preflight-empty-known-hosts-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&path, "").unwrap();
+        let key = russh::keys::PublicKey::from_openssh(ED25519_PUBLIC_KEY).unwrap();
+        let mut handler =
+            ClientHandler::for_host_with_expected_key("example.com", 22, key.clone(), false);
+        handler.known_hosts_path = Some(path.clone());
+
+        let accepted = handler.check_server_key(&key).await.unwrap();
+
+        std::fs::remove_file(path).unwrap();
+        assert!(accepted);
+    }
+
+    #[tokio::test]
+    async fn preflight_key_rejects_a_changed_server_key() {
+        let expected = russh::keys::PublicKey::from_openssh(ED25519_PUBLIC_KEY).unwrap();
+        let changed = russh::keys::PublicKey::from(russh::keys::ssh_key::public::Ed25519PublicKey(
+            [0x42; 32],
+        ));
+        let mut handler =
+            ClientHandler::for_host_with_expected_key("example.com", 22, expected, false);
+
+        let error = handler.check_server_key(&changed).await.unwrap_err();
+
+        assert!(error.to_string().contains("preflight key"));
+    }
+
+    #[tokio::test]
+    async fn preflight_key_does_not_override_a_changed_known_hosts_entry() {
+        let path = std::env::temp_dir().join(format!(
+            "terminal-preflight-changed-known-hosts-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&path, format!("example.com {ED25519_PUBLIC_KEY}\n")).unwrap();
+        let changed = russh::keys::PublicKey::from(russh::keys::ssh_key::public::Ed25519PublicKey(
+            [0x42; 32],
+        ));
+        let mut handler =
+            ClientHandler::for_host_with_expected_key("example.com", 22, changed.clone(), false);
+        handler.known_hosts_path = Some(path.clone());
+
+        let result = handler.check_server_key(&changed).await;
+
+        std::fs::remove_file(path).unwrap();
+        assert!(
+            result.is_err(),
+            "a preflight pin must not override a changed key"
+        );
+    }
+
+    #[tokio::test]
+    async fn preflight_key_does_not_override_a_known_hosts_parse_error() {
+        let path = std::env::temp_dir().join(format!(
+            "terminal-preflight-invalid-known-hosts-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&path, "example.com ssh-ed25519 not-base64\n").unwrap();
+        let key = russh::keys::PublicKey::from_openssh(ED25519_PUBLIC_KEY).unwrap();
+        let mut handler =
+            ClientHandler::for_host_with_expected_key("example.com", 22, key.clone(), false);
+        handler.known_hosts_path = Some(path.clone());
+
+        let result = handler.check_server_key(&key).await;
+
+        std::fs::remove_file(path).unwrap();
+        assert!(
+            result.is_err(),
+            "a preflight pin must not suppress host-key errors"
+        );
+    }
+
+    #[test]
+    fn agent_forwarding_requires_explicit_handler_authorization() {
+        let denied = ClientHandler::for_host("example.com", 22);
+        let allowed = ClientHandler::for_host_with_agent_forwarding("example.com", 22, true);
+
+        assert!(!denied.allow_agent_forwarding);
+        assert!(allowed.allow_agent_forwarding);
     }
 }

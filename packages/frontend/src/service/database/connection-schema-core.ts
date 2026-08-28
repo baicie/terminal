@@ -3,7 +3,7 @@ export interface SqliteConnection {
 }
 
 const schemaStatements = [
-  `CREATE TABLE IF NOT EXISTS hosts (id TEXT PRIMARY KEY, name TEXT NOT NULL, hostname TEXT NOT NULL, port INTEGER DEFAULT 22, username TEXT NOT NULL, auth_type TEXT DEFAULT 'password', password TEXT, private_key TEXT, certificate TEXT, group_id TEXT, is_favorite INTEGER DEFAULT 0, color TEXT, tags TEXT, port_forwards TEXT, startup_command TEXT, environment TEXT, jump_host_id TEXT, jump_host_auth_type TEXT, created_at INTEGER, updated_at INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS hosts (id TEXT PRIMARY KEY, name TEXT NOT NULL, hostname TEXT NOT NULL, port INTEGER DEFAULT 22, username TEXT NOT NULL, auth_type TEXT DEFAULT 'password', password TEXT, private_key TEXT, certificate TEXT, group_id TEXT, is_favorite INTEGER DEFAULT 0, color TEXT, tags TEXT, port_forwards TEXT, startup_command TEXT, environment TEXT, jump_host_id TEXT, jump_host_auth_type TEXT, agent_forwarding INTEGER DEFAULT 0, created_at INTEGER, updated_at INTEGER)`,
   `CREATE TABLE IF NOT EXISTS groups (id TEXT PRIMARY KEY, name TEXT NOT NULL, parent_id TEXT, color TEXT, inherit_settings INTEGER DEFAULT 1, settings TEXT, "order" INTEGER DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS snippets (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, script TEXT NOT NULL, package_id TEXT, tags TEXT, variables TEXT)`,
   `CREATE TABLE IF NOT EXISTS snippet_packages (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT)`,
@@ -36,6 +36,7 @@ export async function initializeCoreSchema(
     'ALTER TABLE hosts ADD COLUMN certificate TEXT',
     'ALTER TABLE hosts ADD COLUMN jump_host_id TEXT',
     'ALTER TABLE hosts ADD COLUMN jump_host_auth_type TEXT',
+    'ALTER TABLE hosts ADD COLUMN agent_forwarding INTEGER DEFAULT 0',
   ]) {
     try {
       await database.execute(statement)

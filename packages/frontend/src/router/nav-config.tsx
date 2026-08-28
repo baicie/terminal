@@ -18,7 +18,8 @@ import {
 import type { RouteObject } from 'react-router-dom'
 import { makeLazyRoute } from './lazy-route'
 
-declare const IS_DEV: boolean
+const SHOW_EXPERIMENTS =
+  import.meta.env.DEV || import.meta.env.VITE_TERMINAL_SMOKE_BUILD === '1'
 
 export interface NavItemConfig {
   path: string
@@ -33,7 +34,7 @@ export interface NavItemConfig {
 const lazyRoute = (importer: () => Promise<{ default: React.ComponentType<object> }>) =>
   makeLazyRoute(importer)
 
-export const navConfig: NavItemConfig[] = [
+const primaryNavConfig: NavItemConfig[] = [
   {
     path: '/hosts',
     labelKey: 'nav.hosts',
@@ -80,13 +81,18 @@ export const navConfig: NavItemConfig[] = [
     labelKey: 'nav.settings',
     icon: <Settings className="size-5" />,
   },
-  {
-    path: '/experiments',
-    labelKey: 'nav.experiments',
-    icon: <Beaker className="size-5" />,
-    condition: () => IS_DEV,
-  },
 ]
+
+export const navConfig: NavItemConfig[] = SHOW_EXPERIMENTS
+  ? [
+      ...primaryNavConfig,
+      {
+        path: '/experiments',
+        labelKey: 'nav.experiments',
+        icon: <Beaker className="size-5" />,
+      },
+    ]
+  : primaryNavConfig
 
 /**
  * 根据 condition 过滤后返回侧边栏可见的导航项
@@ -99,21 +105,24 @@ export function getVisibleNavItems(): NavItemConfig[] {
  * 导出给路由用的完整 RouteObject 列表
  */
 export function buildRoutes(): RouteObject[] {
-  const visibleItems = getVisibleNavItems()
   const routes: RouteObject[] = [
     {
       index: true,
       element: lazyRoute(() => import('@/view/hosts')),
     },
-    ...visibleItems.map(item => ({
+    ...primaryNavConfig.map(item => ({
       path: item.path.replace('/', ''),
       element: getRouteElement(item.path),
     })),
   ]
 
   // Experiments 子页面
-  if (IS_DEV) {
+  if (SHOW_EXPERIMENTS) {
     routes.push(
+      {
+        path: 'experiments',
+        element: lazyRoute(() => import('@/experiments/index')),
+      },
       {
         path: 'experiments/textarea-test',
         element: lazyRoute(() => import('@/experiments/textarea-test')),
@@ -121,6 +130,10 @@ export function buildRoutes(): RouteObject[] {
       {
         path: 'experiments/xterm-test',
         element: lazyRoute(() => import('@/experiments/xterm-test')),
+      },
+      {
+        path: 'experiments/terminal-input-probe',
+        element: lazyRoute(() => import('@/experiments/terminal-input-probe')),
       },
     )
   }
@@ -148,8 +161,6 @@ function getRouteElement(path: string) {
       return lazyRoute(() => import('@/view/sftp/sftp-container'))
     case '/settings':
       return lazyRoute(() => import('@/view/settings'))
-    case '/experiments':
-      return lazyRoute(() => import('@/experiments/index'))
     default:
       return lazyRoute(() => import('@/view/hosts'))
   }

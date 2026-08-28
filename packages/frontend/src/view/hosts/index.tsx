@@ -4,6 +4,7 @@ import { DecryptDialog } from './decrypt-dialog'
 import { HostsMobileToolbar } from './hosts-mobile-toolbar'
 import { HostsToolbar } from './hosts-toolbar'
 import { MobileToolbarSheet } from './mobile-toolbar-sheet'
+import { QuickConnectDialog } from './quick-connect-dialog'
 import { TeamSharedSection } from './team-shared-section'
 import { useHostsViewHandlers } from './use-hosts-view-handlers'
 import { RenderListBody } from './components/render-list-body'
@@ -50,6 +51,8 @@ const HostsView: React.FC = () => {
     decryptingHost,
     serialDialogOpen,
     setSerialDialogOpen,
+    quickConnectTarget,
+    setQuickConnectTarget,
     handleImportSharedSnippet,
     handleImportSharedHost,
     handleDecryptAndImport,
@@ -57,6 +60,7 @@ const HostsView: React.FC = () => {
     handleShareHost,
     handleConnect,
     handleNewLocalTerminal,
+    handleQuickConnect,
     handleConnectBarSubmit,
   } = handlers
 
@@ -178,6 +182,14 @@ const HostsView: React.FC = () => {
       )}
 
       <HostDialog open={hostDialogOpen} onClose={() => setHostDialogOpen(false)} />
+      <QuickConnectDialog
+        open={quickConnectTarget !== null}
+        target={quickConnectTarget}
+        onOpenChange={open => {
+          if (!open) setQuickConnectTarget(null)
+        }}
+        onConnect={handleQuickConnect}
+      />
       <SerialDialog
         open={serialDialogOpen}
         onClose={() => setSerialDialogOpen(false)}

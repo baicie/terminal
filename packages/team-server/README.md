@@ -60,15 +60,16 @@ docker compose up -d
 
 ## 环境变量
 
-| 变量         | 描述                  | 默认值                                                |
-| ------------ | --------------------- | ----------------------------------------------------- |
 | 变量 | 描述 | Compose 示例 |
 | --- | --- | --- |
 | `DATABASE_URL` | PostgreSQL 连接字符串 | `postgresql://terminal:<PASSWORD>@db:5432/terminal` |
 | `POSTGRES_PASSWORD` | PostgreSQL 密码，首次启动前必须修改 | 无安全默认值 |
 | `CORS_ORIGINS` | 允许的精确客户端 Origin，逗号分隔 | Tauri 本地 Origin |
 | `PORT` | 容器内服务端口 | `3000` |
-| `NODE_ENV` | 运行环境 | `production` |
+| `NODE_ENV` | 必填；只能精确设置为 `development`、`test` 或 `production` | `production` |
+| `TEAM_SERVER_BIND_ADDRESS` | 主机发布端口的绑定地址 | `127.0.0.1` |
+| `REGISTRATION_MODE` | `closed`、`token` 或 `open` | `closed` |
+| `REGISTRATION_TOKEN` | token 模式的准入令牌，至少 32 字符 | 空，仅 token 模式必填 |
 
 ## 健康检查
 
@@ -90,10 +91,11 @@ GET /api/v1/health/ready
 ### 认证
 
 ```bash
-# 注册用户（首次使用会自动创建 API Token）
-POST /api/v1/auth/register
-Body: { "userId": "your-uuid", "name": "Your Name" }
-Response: { "userId": "...", "token": "..." }
+# token 模式注册（成功后返回日常使用的 API Token）
+curl -X POST http://127.0.0.1:3000/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -H 'X-Registration-Token: <REGISTRATION_TOKEN>' \
+  -d '{"userId":"your-uuid","name":"Your Name"}'
 
 # 创建额外的 API Token（需要认证）
 POST /api/v1/auth/tokens
@@ -108,6 +110,8 @@ Headers: Authorization: Bearer <token>
 DELETE /api/v1/auth/tokens
 Headers: Authorization: Bearer <token>
 ```
+
+生产和 Compose 默认使用 `REGISTRATION_MODE=closed`，该模式拒绝所有新用户注册。`token` 适合受控设备开户：管理员通过携带注册准入令牌的请求领取初始 API Token，再将返回的 API Token 填入桌面端设置；不要把注册准入令牌当作日常 API Token 保存。`open` 会允许任意客户端注册，必须显式设置且只建议用于隔离的开发环境。
 
 ### 团队
 

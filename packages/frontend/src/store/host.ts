@@ -103,8 +103,8 @@ export const useHostStore = create<HostState>((set, get) => ({
     }
 
     await executeQuery(
-      `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         newHost.id,
         newHost.name,
@@ -124,6 +124,7 @@ export const useHostStore = create<HostState>((set, get) => ({
         newHost.environment ? JSON.stringify(newHost.environment) : null,
         newHost.jumpHostId ?? null,
         newHost.jumpHostAuthType ?? null,
+        newHost.agentForwarding ? 1 : 0,
         newHost.createdAt,
         newHost.updatedAt,
       ],
@@ -144,7 +145,7 @@ export const useHostStore = create<HostState>((set, get) => ({
     }
 
     await executeQuery(
-      `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, certificate = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, certificate = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, updated_at = ? WHERE id = ?`,
       [
         updated.name,
         updated.hostname,
@@ -163,6 +164,7 @@ export const useHostStore = create<HostState>((set, get) => ({
         updated.environment ? JSON.stringify(updated.environment) : null,
         updated.jumpHostId ?? null,
         updated.jumpHostAuthType ?? null,
+        updated.agentForwarding ? 1 : 0,
         updated.updatedAt,
         id,
       ],

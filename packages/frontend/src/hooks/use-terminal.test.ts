@@ -273,8 +273,20 @@ describe('ShellOutput interface', () => {
 describe('useTerminal hook interface', () => {
   it('status enum has all expected values', () => {
     const validStatuses: Array<
-      'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
-    > = ['idle', 'connecting', 'connected', 'disconnected', 'error']
+      | 'idle'
+      | 'connecting'
+      | 'reconnecting'
+      | 'connected'
+      | 'disconnected'
+      | 'error'
+    > = [
+      'idle',
+      'connecting',
+      'reconnecting',
+      'connected',
+      'disconnected',
+      'error',
+    ]
     validStatuses.forEach(s => expect(s).toBeTruthy())
   })
 
@@ -285,17 +297,6 @@ describe('useTerminal hook interface', () => {
       'serial',
     ]
     validTabTypes.forEach(t => expect(t).toBeTruthy())
-  })
-
-  it('onTabPress callback signature', () => {
-    const callback = (
-      _currentLine: string,
-      _cursorPos: number,
-      _history: string[],
-    ): void => {}
-    callback('git', 3, ['git status', 'git push'])
-    // No-op — just verify the signature compiles
-    expect(true).toBe(true)
   })
 })
 

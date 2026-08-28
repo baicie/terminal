@@ -80,9 +80,30 @@ export default {
   'terminal.disconnect': 'Déconnecter',
   'terminal.status.idle': 'Inactif',
   'terminal.status.connecting': 'Connexion',
+  'terminal.status.reconnecting': 'Reconnexion',
   'terminal.status.connected': 'Connecté',
   'terminal.status.disconnected': 'Déconnecté',
   'terminal.status.error': 'Erreur',
+  'terminal.hostKeyChangedTitle': "La clé d'hôte SSH a changé",
+  'terminal.hostKeyTrustTitle': 'Faire confiance à cet hôte SSH ?',
+  'terminal.hostKeyChangedDescription':
+    "L'identité du serveur ne correspond plus à la clé enregistrée. La connexion a été bloquée.",
+  'terminal.hostKeyTrustDescription':
+    "Vérifiez cette empreinte auprès de l'administrateur du serveur avant de vous connecter.",
+  'terminal.hostKeyJumpDescription':
+    "Cette identité appartient à l'hôte de rebond utilisé pour atteindre la cible.",
+  'terminal.hostKeyTargetDescription':
+    "Cette identité appartient à la cible atteinte via l'hôte de rebond vérifié.",
+  'terminal.hostKeyHost': 'Hôte',
+  'terminal.hostKeyAlgorithm': 'Algorithme',
+  'terminal.hostKeyFingerprint': 'Empreinte',
+  'terminal.hostKeyChangedWarning':
+    "Ne continuez pas avant d'avoir vérifié la clé enregistrée par un canal indépendant de cette connexion.",
+  'terminal.hostKeyTrustOnce': 'Faire confiance une fois',
+  'terminal.hostKeyTrustAndSave': 'Faire confiance et enregistrer',
+  'terminal.hostKeyCheckingAria': "Vérification de la clé d'hôte SSH",
+  'terminal.hostKeyChecking': "Vérification de la clé d'hôte SSH...",
+  'terminal.hostKeyVerifyFailed': "Impossible de vérifier la clé d'hôte SSH",
   'terminal.decreaseFontSize': 'Réduire la taille de police',
   'terminal.increaseFontSize': 'Augmenter la taille de police',
   'terminal.clearScreen': "Effacer l'écran",
@@ -175,17 +196,14 @@ export default {
   'common.retry': 'Réessayer',
   'common.goHome': "Retour à l'accueil",
   'common.errorOccurred': 'Une erreur est survenue',
-
   // Error boundary
   'error.title': 'Échec du chargement de la page',
   'error.message': '{{message}}',
-
   // Common (for experiments)
   'common.back': 'Retour',
   'common.clear': 'Effacer',
   'common.on': 'ON',
   'common.off': 'OFF',
-
   // Experiments page
   'experiments.recording': 'Enregistrement',
   'experiments.paused': 'En pause',
@@ -203,7 +221,6 @@ export default {
     'événement : contient key, code, which et touches de modification',
   'experiments.eventDesc3':
     "Note : Certaines combinaisons (comme Ctrl+C) peuvent ne pas déclencher d'événements input",
-  // Xterm test
   'experiments.xtermTitle': "Test d'entrée Xterm.js",
   'experiments.xtermDesc':
     "Surveiller les événements onData / onKey de l'instance Terminal xterm.js et les événements textarea sous-jacents",
@@ -225,6 +242,23 @@ export default {
   'experiments.textareaPlaceholder': 'Tapez quelque chose ici...',
   'experiments.textareaHint':
     'Cliquez sur cette zone de texte et tapez pour voir les événements capturés ci-dessous.',
+  'experiments.inputProbeTitle': "Sonde d'entrée physique du terminal",
+  'experiments.inputProbeDesc':
+    "Enregistrer l'entrée xterm et les octets reçus par un PTY Tauri réel.",
+  'experiments.inputProbeInstruction': "Saisissez le texte attendu puis appuyez sur Entrée",
+  'experiments.inputProbeRounds': 'Tours',
+  'experiments.inputProbeExpected': 'Texte attendu',
+  'experiments.inputProbeStart': 'Démarrer la sonde',
+  'experiments.inputProbeStop': 'Arrêter la sonde',
+  'experiments.inputProbeIdle': 'Non démarré',
+  'experiments.inputProbeConnected': 'PTY connecté',
+  'experiments.inputProbeExpectedHex': 'Hex attendu',
+  'experiments.inputProbeReceivedHex': 'Hex reçu',
+  'experiments.inputProbeResults': 'Résultats des tours',
+  'experiments.inputProbeDiagnostics': 'Diagnostic FIFO',
+  'experiments.inputProbePassed': 'Tours réussis',
+  'experiments.inputProbeEvents': "Événements d'entrée",
+  'experiments.inputProbeNoEvents': "En attente d'une saisie clavier physique...",
   'experiments.copy': 'Copier',
   'experiments.copyEvents': "Copier le journal d'événements",
   'experiments.copied': 'Copié !',

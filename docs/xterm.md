@@ -2,8 +2,8 @@
 
 > 本文档详细说明 xterm.js 的 API、插件系统和使用规范，供 AI Agent 开发时参考
 > 官方文档: https://xtermjs.org/
-> 最新版本: 6.0.0 (2025-12)
-> 文档更新时间: 2026-03-19
+> 上游 API 版本: 6.0.0 (2025-12)；项目核心包: `@baicie/xterm@0.1.7`
+> 文档更新时间: 2026-08-26
 
 ---
 
@@ -13,21 +13,32 @@
 
 项目已在 `package.json` 中配置以下 xterm.js 插件：
 
-| 插件                     | 版本    | 用途             | 状态      |
-| ------------------------ | ------- | ---------------- | --------- |
-| `@baicie/xterm`          | ^6.0.0  | 核心库           | ✅ 已使用 |
-| `@xterm/addon-fit`       | ^0.11.0 | 自动调整终端大小 | ✅ 已使用 |
-| `@xterm/addon-search`    | ^0.16.0 | 终端内搜索       | ✅ 已使用 |
-| `@xterm/addon-web-links` | ^0.12.0 | 链接检测与点击   | ✅ 已使用 |
-| `@xterm/addon-canvas`    | ^0.7.0  | Canvas 渲染器    | ✅ 已安装 |
-| `@xterm/addon-webgl`     | ^0.19.0 | WebGL 加速渲染   | ✅ 已安装 |
-| `@xterm/addon-image`     | ^0.9.0  | 图片支持         | ✅ 已安装 |
-| `@xterm/addon-unicode11` | ^0.9.0  | Unicode 11 支持  | ✅ 已安装 |
-| `@xterm/addon-ligatures` | ^0.10.0 | 连字字体支持     | ✅ 已安装 |
+| 插件                     | 版本   | 用途                                  | 状态      |
+| ------------------------ | ------ | ------------------------------------- | --------- |
+| `@baicie/xterm`          | 0.1.7  | WKWebView 重叠按键兼容核心（精确固定） | ✅ 已使用 |
+| `@xterm/addon-fit`       | 0.11.0 | 自动调整终端大小                      | ✅ 已使用 |
+| `@xterm/addon-search`    | 0.16.0 | 终端内搜索                            | ✅ 已使用 |
+| `@xterm/addon-web-links` | 0.12.0 | 链接检测与点击                        | ✅ 已使用 |
+| `@xterm/addon-clipboard` | ^0.2.0 | 剪贴板集成                            | ✅ 已使用 |
+| `@xterm/addon-webgl`     | 0.19.0 | WebGL 加速渲染                        | ✅ 已安装 |
+| `@xterm/addon-image`     | 0.9.0  | 图片支持                              | ✅ 已安装 |
+| `@xterm/addon-unicode11` | 0.9.0  | Unicode 11 支持                       | ✅ 已安装 |
+| `@xterm/addon-ligatures` | 0.10.0 | 连字字体支持                          | ✅ 已安装 |
+
+### 核心包兼容契约
+
+`@baicie/xterm@0.1.7` 是项目维护的 WebKit 键盘兼容分支，运行时版本标识为 xterm 6.0.0。它在 xterm 内部 `_keyDown`、`_keyUp` 和 `_inputEvent` 路径使用 `AppleWebKit` 检测，让 macOS Tauri WKWebView 在重叠按键时继续产生原生 `input` 数据；官方 `@xterm/xterm@6.0.0` 不包含这条修复，不能直接替换。
+
+- `packages/frontend/package.json` 必须精确固定 `"@baicie/xterm": "0.1.7"`，禁止使用 `^` 或同时直接依赖 `@xterm/xterm`。
+- 构造器和 CSS 必须都从 `@baicie/xterm` 导入；官方 `@xterm/addon-*` 继续使用。
+- 发布包 typings 错误地声明上游模块名，必须保留 `packages/frontend/src/types/xterm.d.ts` 的 ambient re-export。
+- OSC/CSI 等自定义解析器必须从 `term.parser` 注册，例如 `term.parser.registerOscHandler(...)`；`Terminal` 本身没有 `registerOscHandler`。
+- `xterm-package-contract.test.ts` 只锁定依赖契约；jsdom、合成键盘事件和 `term.input()` 都不能证明物理重叠按键。发布前仍需在 macOS WKWebView 中近同时按下 `a/s/d`、快速连续输入并验证物理 IME。
+- `0.1.7` 发布物仍含 WebKit 输入 `console.debug`，且 npm 仓库元数据不可追溯；后续应从有明确上游 commit 的源码仓库发布无诊断日志版本。
 
 ### 当前使用位置
 
-主要在 `src/view/terminal/terminal-container.tsx` 中使用：
+主要在 `packages/frontend/src/features/terminal/components/terminal-container/` 中使用：
 
 ```typescript
 import { Terminal } from '@baicie/xterm'
@@ -243,6 +254,8 @@ xterm.js 使用 `IEvent` 模式，类似 Node.js 的 EventEmitter：
 ```typescript
 // 常用事件
 term.onData(callback: (data: string) => void): IDisposable
+// 原始键盘/鼠标控制字节；每个 JS 字符代表一个 0..255 字节
+term.onBinary(callback: (data: string) => void): IDisposable
 term.onResize(callback: (data: { cols: number; rows: number }) => void): IDisposable
 term.onScroll(callback: (scrollY: number) => void): IDisposable
 term.onTitleChange(callback: (title: string) => void): IDisposable
@@ -257,10 +270,15 @@ term.onMouse(e: MouseEventType, callback: MouseCallback): IDisposable
 **项目中使用的事件示例** (`terminal-container.tsx`):
 
 ```typescript
-// 处理用户输入 - 最常用事件
+// 处理文本输入；不要在这里解释 Tab、方向键或 shell 历史
 terminal.current.onData(data => {
-  // data 是用户输入的原始数据
-  sshService.write(sessionId, data)
+  terminalSession.write(data)
+})
+
+// 处理 xterm 无法表示为文本的原始字节
+terminal.current.onBinary(data => {
+  const bytes = Uint8Array.from(data, char => char.charCodeAt(0) & 0xff)
+  terminalSession.writeRaw(bytes)
 })
 
 // 处理终端大小变化
@@ -445,21 +463,9 @@ term.loadAddon(
 )
 ```
 
-### 3.5 Canvas 渲染器
+### 3.5 Canvas 渲染器（未使用）
 
-**用途**: 使用 Canvas 而非 DOM 渲染，提升性能
-
-**安装**: 已安装 `@xterm/addon-canvas@^0.7.0`
-
-**使用**:
-
-```typescript
-import { CanvasAddon } from '@xterm/addon-canvas'
-
-const term = new Terminal()
-const canvasAddon = new CanvasAddon()
-term.loadAddon(canvasAddon)
-```
+项目未安装 `@xterm/addon-canvas`。`0.7.x` 的 peer contract 面向 xterm 5，不得为当前 core 恢复该依赖；正常渲染使用内建 renderer，活动终端可按需加载 WebGLAddon，context loss 后回退内建 renderer。
 
 ### 3.6 WebGL 加速渲染
 
@@ -565,27 +571,15 @@ export { CustomAddon }
 
 ### 4.2 项目中自定义插件示例
 
-项目中的 `terminal-container.tsx` 实现了类似插件的功能：
+项目中的终端会话服务实现了输入/输出调度，但不是 xterm 插件：
 
 ```typescript
-// 写入缓冲区管理（类似流控插件）
-const writeBufferRef = useRef<string>('')
-const writeTimerRef = useRef<number | null>(null)
+// 文本和原始字节共用每会话 FIFO；前端不维护伪 shell 行编辑器
+binding.write(text)
+binding.writeRaw(bytes)
 
-const flushWriteBuffer = () => {
-  if (writeBufferRef.current.length === 0) return
-  const data = writeBufferRef.current
-  writeBufferRef.current = ''
-  sshService.write(sessionId, data)
-}
-
-// 命令历史导航插件
-const handleHistoryNavigation = useCallback(
-  (key: 'ArrowUp' | 'ArrowDown') => {
-    // ... 历史命令导航逻辑
-  },
-  [commandHistory],
-)
+// 断开/重连时由 generation 丢弃旧连接的未完成写入
+binding.reconnect()
 ```
 
 ---
@@ -634,13 +628,11 @@ term.write('\x1b[7m') // 反转颜色
 
 ### 5.2 项目中使用示例
 
-项目中的 `terminal-container.tsx`:
+项目中的终端表面不再用 `term.write()` 伪造命令历史。方向键、Tab、Ctrl、粘贴和 IME 数据由 xterm 产生后直接进入 PTY/SSH；只有后端产生的 VT 输出才允许调用 `term.write()`：
 
 ```typescript
-// 清除当前行并设置新内容（用于命令历史导航）
-term.write('\x1b[G') // 移动光标到行首
-term.write('\x1b[2K') // 清除整行
-term.write(newLine) // 写入新内容
+// 后端输出保持 VT 字节流原样交给 xterm
+terminal.write(output, callback)
 ```
 
 ---
@@ -693,28 +685,34 @@ socket.onData(chunk => {
 
 ### 6.3 项目中的优化实践
 
-项目使用 5ms 防抖批量写入：
+当前终端链路采用明确的生产者/消费者边界：
+
+- 输入由 `TerminalSessionIo` 按 tab 建立有界 FIFO，文本和 `Uint8Array` 原始字节严格保持顺序；同一时刻只允许一个 Tauri 写入在途，resize 使用 latest-wins。
+- 输出由 `TerminalOutputScheduler` 合并，单次 `xterm.write` 最多 32 KiB；超大事件按 Unicode code point 边界切分，避免拆断多字节字符。前台优先等待 RAF；受流控事件同时安排 microtask，避免调度器自己的 RAF 与 fallback timer 一起暂停时小批次无法提交给 xterm。进入 fallback 后，首批由 microtask 提交，后续批次在 xterm callback 内直接追加，让已启动的 parse slice 继续有数据；fallback 状态跨越短暂空队列，因此随后没有后端字节计数的尾批次也不会重新依赖被节流的 RAF/timer。xterm 首次空队列写入、累计处理约 12ms 后主动让出以及异步 parser handler 仍可能使用内部 timer，因此这里降低而非消除 WebView timer 节流。任意时刻只有一个 write 在途，只有 callback 完成的完整后端事件才 ACK；未进入 parser 就被 reset/dispose 的数据绝不伪 ACK。
+- Rust local/SSH 输出泵以 1 MiB/128 KiB 高低水位暂停/恢复生产者；ACK 通过原子计数与 `Notify` 聚合，不建立无界控制队列。10 秒 watchdog 衡量的是“持续无 ACK 进展”：每次有效 ACK 都刷新 deadline，而完全无 ACK、超额 ACK、硬上限或字节计数不一致仍会 fail-closed 并触发 session 清理。
 
 ```typescript
-terminal.current.onData(data => {
-  if (data === '\r' || data === '\x03' || data === '\x7f') {
-    // 特殊键立即处理
-    flushWriteBuffer()
-    sshService.write(sessionId, data)
-  } else {
-    // 普通字符加入缓冲区
-    writeBufferRef.current += data
-
-    // 5ms 防抖
-    if (writeTimerRef.current !== null) {
-      clearTimeout(writeTimerRef.current)
-    }
-    writeTimerRef.current = window.setTimeout(() => {
-      flushWriteBuffer()
-    }, 5)
-  }
+terminalSession.onOutput((data, utf8Bytes) => {
+  outputScheduler.enqueue(data, utf8Bytes)
 })
 ```
+
+### 6.4 本地 PTY 验证边界
+
+Rust 回归测试会在 macOS 上启动真实 `portable-pty`，使用隔离 HOME/profile 的固定 `/bin/sh -c` 测试 shell，按交互时序等待 READY、写入中文/emoji，再从 PTY 主端确认：
+
+- 系统 line discipline 保留输入回显；
+- shell 内 `read` 精确收到输入；
+- shell 观察到创建时请求的列行数；
+- `exit` 后子进程可正常等待回收。
+
+测试守卫在断言失败、超时和正常退出路径都会关闭 writer/master、kill + wait child 并 join reader；另有回归覆盖 kill 已返回 `NotFound` 时仍继续 wait，避免 Unix zombie。
+
+该测试证明底层 PTY 往返，不经过 Tauri IPC 或 xterm parser。标准 Tauri/xterm smoke 则使用独立入口真实贯穿 Rust PTY、Tauri event、输出调度器与 xterm callback ACK。smoke 的阶段推进不依赖纯 RAF：`waitForTerminalSmokeFrame()` 让 `requestAnimationFrame` 与 100ms timeout 竞速，并取消未完成的 RAF/timer。此前 `defaultNextFrame()` 只等待 RAF，曾在输出调度器已修复后仍卡死，最终由 Rust watchdog 报 `stage rust-watchdog: terminal smoke timed out`。该兜底属于 smoke 控制流，不替代 `TerminalOutputScheduler` 的 fallback。2026-08-24 的普通 smoke 中，shell 精确生成 8,388,608 字节，xterm 可见 `LOAD_END` 和随后的 `AFTER_LOAD_OK`，resize 后 shell 与 xterm 均为 97 列 × 31 行，10 轮 session 全部回收，耗时 5.4 秒。
+
+重连 smoke 使用本机独立、仅公钥认证的 OpenSSH fixture。macOS 的 `sshd-session` 会进入不同于监听 daemon 的进程组，因此 fixture 必须先枚举并校验 daemon 的直接子进程，只向满足 `pid === pgid` 的隔离 session 进程组发送 `SIGTERM`，再终止 daemon 进程组；3 秒内未退出则分别升级 `SIGKILL`。PID/PGID 非法或 session 未隔离时 fail-closed，避免向不可信进程组发信号。修复后真实 TCP 断线能触发自动重连：10 轮共出现 11 个唯一 session，旧 generation 输出被拒绝，所有资源回收，耗时 6.7 秒；脚本回归 23 项通过。
+
+这些结果验证精确生成命令、尾标记、压力后的持续交互和 localhost public-key SSH 的断线重连，不声称 parser 独立逐字节统计了全部 8 MiB，也不证明物理重叠按键。password/agent/cert/Jump、Windows/Linux/Pageant、串口、vim/nano、物理 `a/s/d` 重叠按键、IME、SGR mouse、bracketed paste、非 UTF-8 原始输入和连续 resize 仍不能标为实机通过。
 
 ---
 
@@ -819,8 +817,9 @@ const term = new Terminal({
 - **API 参考**: https://xtermjs.org/docs/api/terminal/classes/terminal/
 - **插件指南**: https://xtermjs.org/docs/guides/using-addons/
 - **GitHub**: https://github.com/xtermjs/xterm.js
-- **npm 包**: https://www.npmjs.com/package/@baicie/xterm
+- **上游 npm 包**: https://www.npmjs.com/package/@xterm/xterm
+- **项目核心包**: https://www.npmjs.com/package/@baicie/xterm
 
 ---
 
-_文档更新时间: 2026-03-19_
+_文档更新时间: 2026-08-20_

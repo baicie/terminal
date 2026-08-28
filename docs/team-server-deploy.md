@@ -73,7 +73,7 @@ cd terminal/packages/team-server
 
 # 2. 配置环境变量
 cp .env.example .env
-# 编辑 .env，至少修改 POSTGRES_PASSWORD
+# 编辑 .env，至少修改 POSTGRES_PASSWORD，并确认注册准入模式
 vim .env
 
 # 3. 启动服务
@@ -87,7 +87,7 @@ curl http://localhost:3000/api/v1/health/ready
 docker compose logs -f team-server
 ```
 
-**设备注册**：`POST /api/v1/auth/register` 是受信任设备引导接口，每个未注册的 `userId` 都可领取一次初始 Token，并非仅允许“第一个账号”。不要把该端点直接暴露到不受信任的公网；至少在反向代理层限制来源网络，后续可接入管理员初始化密钥、OIDC 或一次性注册码。
+**设备注册**：`REGISTRATION_MODE` 支持 `closed`、`token` 和 `open`。生产环境未显式配置时默认为 `closed`，注册接口会拒绝所有开户请求。受控开户应使用 `token` 模式：配置至少 32 字符的 `REGISTRATION_TOKEN`，并仅在调用 `POST /api/v1/auth/register` 时通过 `X-Registration-Token` 传入。这个准入令牌只用于开户，不是日常 API Bearer Token，不应保存在桌面端配置中。`open` 允许任意客户端注册，只建议在隔离的开发环境显式启用。
 
 ---
 
@@ -100,16 +100,29 @@ docker compose logs -f team-server
 POSTGRES_USER=terminal
 POSTGRES_PASSWORD=<YOUR_PASSWORD>
 POSTGRES_DB=terminal
-DATABASE_URL="postgresql://terminal:<YOUR_PASSWORD>@db:5432/terminal"
+DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
 
-# 服务端口（不建议修改）
+# 服务与宿主机绑定
 PORT=3000
-
-# 运行环境
 NODE_ENV=production
+TEAM_SERVER_BIND_ADDRESS=127.0.0.1
+TEAM_SERVER_PORT=3000
+SWAGGER_ENABLED=false
+
+# 注册准入：closed | token | open；生产默认 closed
+REGISTRATION_MODE=closed
+# 仅 token 模式需要，至少 32 个随机字符
+# REGISTRATION_TOKEN=
+
+# 精确的客户端 Origin，逗号分隔；不允许通配符
+CORS_ORIGINS=tauri://localhost,http://tauri.localhost,http://localhost:1420,http://127.0.0.1:1420
 ```
 
 容器内必须使用 Compose 服务名 `db`。仅在宿主机直接运行 Team Server 时，才将 `DATABASE_URL` 中的主机名改为 `localhost` 或 `127.0.0.1`。
+
+`REGISTRATION_MODE=token` 时可使用 `openssl rand -hex 32` 生成准入令牌。完成受控开户后，应轮换该令牌或将模式改回 `closed`，然后重启 Team Server。
+
+`NODE_ENV` 必须显式且精确设置为 `development`、`test` 或 `production`；缺失、大小写错误或多余空白都会使服务拒绝启动，避免生产安全配置意外回退到开发模式。
 
 ### 3.2 数据库初始化
 
@@ -143,6 +156,9 @@ services:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL}
       PORT: 3000
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      REGISTRATION_MODE: ${REGISTRATION_MODE:-closed}
+      REGISTRATION_TOKEN: ${REGISTRATION_TOKEN:-}
 
   db:
     restart: unless-stopped
@@ -172,43 +188,74 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ### 4.1 Nginx
 
 ```nginx
-# /etc/nginx/sites-available/team-server
-server {
-    listen 443 ssl http2;
-    server_name team-api.example.com;
+# /etc/nginx/nginx.conf
+events {}
 
-    ssl_certificate     /etc/letsencrypt/live/team-api.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/team-api.example.com/privkey.pem;
-
-    # 安全头
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-
-    # API 限流（防止滥用）
+http {
+    # limit_req_zone 只能定义在 http 上下文。
     limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/m;
-    limit_req zone=api_limit burst=50 nodelay;
+    limit_req_zone $binary_remote_addr zone=registration_limit:10m rate=5r/m;
 
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
 
-        # 超时配置
-        proxy_connect_timeout 30s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+    upstream team_server {
+        server 127.0.0.1:3000;
+        keepalive 16;
+    }
 
-        # K8s 探针（健康检查不过反向代理）
-        location /api/v1/health {
-            proxy_pass http://127.0.0.1:3000/api/v1/health;
-            limit_req off;
+    server {
+        listen 80;
+        server_name team-api.example.com;
+        return 301 https://$host$request_uri;
+    }
+
+    server {
+        listen 443 ssl http2;
+        server_name team-api.example.com;
+
+        ssl_certificate     /etc/letsencrypt/live/team-api.example.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/team-api.example.com/privkey.pem;
+
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+        # 注册接口使用独立的边缘限流；服务端仍会执行应用级准入校验。
+        location = /api/v1/auth/register {
+            limit_req zone=registration_limit burst=2 nodelay;
+            proxy_pass http://team_server;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # 健康探针不参与 API 限流。
+        location ^~ /api/v1/health {
+            proxy_pass http://team_server;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location / {
+            limit_req zone=api_limit burst=50 nodelay;
+            proxy_pass http://team_server;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_connect_timeout 30s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
         }
     }
 }
@@ -219,10 +266,9 @@ server {
 ```caddy
 # Caddyfile
 team-api.example.com {
-    reverse_proxy localhost:3000
-
-    # 自动 HTTPS
-    tls internal
+    # 公网 DNS 指向本机且 80/443 端口可达时，Caddy 会自动
+    # 申请公开受信任的 TLS 证书并将 HTTP 重定向到 HTTPS。
+    reverse_proxy 127.0.0.1:3000
 
     # 安全头
     header {
@@ -294,7 +340,7 @@ docker compose up -d team-server
 | **修改数据库密码** | 在 `.env` 中设置强密码（≥16位，随机生成） |
 | **启用 TLS** | 通过反向代理配置 HTTPS（Let's Encrypt 免费证书） |
 | **限制数据库访问** | 仅允许 `127.0.0.1` 或 Docker 网络访问，勿暴露 Port 5432 |
-| **限制设备注册** | 通过 VPN、内网或反向代理访问控制保护 `/api/v1/auth/register` |
+| **配置注册准入** | 生产保持 `REGISTRATION_MODE=closed`；受控开户时使用至少 32 字符的 `REGISTRATION_TOKEN` 和 `token` 模式，完成后恢复 `closed` |
 | **配置精确 CORS** | `CORS_ORIGINS` 仅填写实际客户端 origin；生产环境缺失或使用 `*` 会拒绝启动 |
 | **定期备份** | 设置 cron 任务或使用 pgBackRest |
 | **监控日志** | 配置日志收集（ Loki / ELK / CloudWatch） |
@@ -304,6 +350,7 @@ docker compose up -d team-server
 | 项目 | 说明 |
 |------|------|
 | **额外 API 限流** | 服务端已内置全局及注册/邀请限流；可再用 Nginx `limit_req` 做边缘保护 |
+| **限制注册网络来源** | 在应用级准入之外，可再通过 VPN、内网或反向代理 ACL 限制 `/api/v1/auth/register` |
 | **WAF** | 如 Cloudflare ModSecurity、Nginx + ModSecurity |
 | **入侵检测** | 配置 `fail2ban` 防止暴力破解注册接口 |
 | **网络隔离** | 使用 Docker 网络隔离，将数据库置于内部网络 |
@@ -311,9 +358,10 @@ docker compose up -d team-server
 
 ### 6.3 API Token 安全
 
-- Token 仅在创建时显示一次，之后无法找回
-- 建议为每个设备/客户端生成独立 Token，便于权限管理和撤销
-- Token 设置过期时间（可在 `auth.service.ts` 中扩展）
+- 注册响应中的 API Token 仅显示一次；将它作为 `Authorization: Bearer <token>` 使用并安全保存
+- `REGISTRATION_TOKEN` 只是开户准入令牌，不能用于访问受保护 API，也不应分发给日常客户端
+- 建议为每个设备/客户端生成独立 API Token，便于轮换和撤销
+- 当前 API Token 默认无过期时间，应定期审查并撤销不再使用的 Token
 
 ---
 
@@ -370,11 +418,16 @@ docker compose exec team-server npx prisma migrate resolve --rolled-back <migrat
 
 ### 注册用户
 
+`token` 模式下，先在 Team Server 的 `.env` 中配置 `REGISTRATION_TOKEN` 并重启服务，再由管理员在受控环境执行：
+
 ```bash
-curl -X POST http://localhost:3000/api/v1/auth/register \
-  -H "Content-Type: application/json" \
+curl --fail-with-body -X POST https://team-api.example.com/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -H 'X-Registration-Token: <REGISTRATION_TOKEN>' \
   -d '{"userId":"device-uuid","name":"My Desktop"}'
 ```
+
+响应中的 `token` 是该用户的 API Bearer Token。`closed` 模式会拒绝上述请求；`open` 模式无需 `X-Registration-Token`，但不应用于公网生产环境。
 
 ### 创建 API Token
 
@@ -396,4 +449,4 @@ curl -X POST http://localhost:3000/api/v1/teams \
 
 ---
 
-_文档更新时间：2026-08-09_
+_文档更新时间：2026-08-19_

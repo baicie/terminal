@@ -36,6 +36,7 @@ const defaultHost: HostFormState = {
   environment: undefined,
   jumpHostId: undefined,
   jumpHostAuthType: undefined,
+  agentForwarding: false,
 }
 
 export const HostDialog: React.FC<HostDialogProps> = ({
@@ -75,6 +76,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
         environment: host.environment,
         jumpHostId: host.jumpHostId,
         jumpHostAuthType: host.jumpHostAuthType,
+        agentForwarding: host.agentForwarding ?? false,
       })
       if (host.environment) {
         setEnvVars(

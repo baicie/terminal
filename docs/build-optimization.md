@@ -24,13 +24,13 @@
 
 | 文件 | 加载 | Raw | Gzip | 说明 |
 | --- | --- | --- | --- | --- |
-| `js/@baicie.*.js` | **Lazy** | 348 KB | 86 KB | xterm.js fork（仅 terminal 路由） |
+| `js/xterm-core.*.js` | **Lazy** | 348 KB | 86 KB | `@baicie/xterm` 兼容 core（仅 terminal 路由） |
 | `js/react-dom.*.js` | Initial | 178 KB | 56 KB | React DOM |
 | `js/index.*.js` | Initial | **159 KB** | **43 KB** | 应用业务代码主入口（**↓ 38%**） |
 | `js/@radix-ui.*.js` | Initial | 113 KB | 33 KB | shadcn/ui 底层 |
 | `assets/index-*.css` | Initial | 94 KB | 16 KB | Tailwind v4 样式 |
 | `js/react-router.*.js` | Initial | 93 KB | 31 KB | 路由 |
-| `js/@xterm.*.js` | **Lazy** | 75 KB | 25 KB | xterm 官方 addons |
+| `js/xterm-addons.*.js` | **Lazy** | 75 KB | 25 KB | xterm 官方 addons |
 | `js/i18next.*.js` | Initial | 42 KB | 13 KB | 国际化 |
 | `js/snippets.*.js` | Lazy | 36 KB | 9 KB | snippets 视图 |
 | `js/settings-dialog.*.js` | Lazy | 32 KB | 7 KB | 设置对话框 |
@@ -52,7 +52,7 @@
 **r1 → r2 关键变化**：
 
 1. 移除 `nav-config.tsx` 死代码 case `/terminal` → 消除 `INEFFECTIVE_DYNAMIC_IMPORT` 警告
-2. `TerminalContainer` 改为 `React.lazy`，配合移除自写 `manualChunks`，让 rolldown 自动把 `@baicie/xterm`（348 KB）+ `@xterm/*`（75 KB）+ container（29 KB）=**452 KB** 全部移出首屏
+2. `TerminalContainer` 改为 `React.lazy`，配合 xterm 专用分包边界，让 rolldown 把 `@baicie/xterm`（兼容 core）+ `@xterm/*`（插件）+ container 全部移出首屏
 3. `SettingsDialog` / `HostDialog` / `CommandPalette` / `NotificationPanel` / `SerialDialog` 共 5 个全局对话框改为 `React.lazy + open && <Suspense>`，仅在用户主动触发时加载
 4. 删除 `service/recording.ts`、`store/terminal.ts`、`features/terminal/stores/`、`view/home/` 等 4 处死代码（共 ~12 KB 源码）
 
@@ -86,6 +86,19 @@ src-tauri/target/release/
         └── Terminal.app  # macOS 应用包 (~30-40 MB)
 ```
 
+### 低磁盘开发流程
+
+Rust 的 `target` 目录是可重建缓存，不包含 SQLite 数据、SSH 密钥或应用配置。当前开发 profile 已关闭增量编译并降低依赖 debuginfo；在本机实测，项目 `src-tauri/target` 约 3.3 GB，反复切换 feature/profile 后旧 hash 产物仍会累积。
+
+需要把构建缓存放到外置盘或专用缓存盘时，只对当前命令设置 `CARGO_TARGET_DIR`，不要未经确认写入全局 Cargo 配置：
+
+```bash
+CARGO_TARGET_DIR=/Volumes/DevCache/terminal-target pnpm tauri dev
+CARGO_TARGET_DIR=/Volumes/DevCache/terminal-target pnpm tauri build --debug --no-bundle
+```
+
+如果没有外置盘，先停止 `tauri dev`、`cargo` 和 `rustc` 进程，再只移走当前项目的 `src-tauri/target`；下一次构建会自动重建。不要用同样的方式删除 `~/.cargo/registry`、`~/.cargo/git` 或 `~/.rustup`，这些是多个项目共用的依赖与工具链缓存；清理工具链前应先用 `rustup toolchain list` 确认保留项目要求的 Rust 版本。
+
 ---
 
 ## 二、优化建议
@@ -103,13 +116,9 @@ import { FitAddon } from '@xterm/addon-fit'
 // 移除不用的插件 (WebGL, Image 等)
 ```
 
-**方案 B - 使用 xterm-bytemc**：
+**方案 B - 控制插件与 renderer**：
 
-```bash
-# 安装轻量级替代方案 (如果兼容)
-pnpm remove @baicie/xterm
-pnpm add xterm-bytemc
-```
+精确固定 `@baicie/xterm@0.1.7` 作为带 macOS WKWebView 重叠按键修复的核心实现；官方 addons 按设备能力加载，运行时与 CSS 不得混用上游 core。Vite 将修复版 core 和官方 addons 分成独立懒加载 chunk。
 
 **方案 C - 懒加载 xterm**：
 
@@ -264,12 +273,7 @@ export default defineConfig({
 })
 ```
 
-**CDN 加载大文件**（可选）：
-
-```html
-<!-- 在 index.html 中使用 CDN 加载 xterm -->
-<script src="https://cdn.jsdelivr.net/npm/@baicie/xterm@5.3.0/lib/xterm.min.js"></script>
-```
+**CDN 加载核心包不适用**：桌面应用必须使用 lockfile 中精确固定的 `@baicie/xterm@0.1.7`，保证 WKWebView 键盘补丁、离线启动和构建可重复；不得为了减小 bundle 改从 CDN 加载官方 core。
 
 ---
 
@@ -369,3 +373,9 @@ serve -s dist -p 3000
 - `src-tauri/tauri.conf.json` - Tauri 应用配置
 
 ---
+
+## 七、Rust 磁盘占用审计（2026-08-21）
+
+当前工作区实测占用约为：`src-tauri/target` 2.8 GiB、Cargo registry 3.3 GiB、Rust toolchains 5.2 GiB。没有证据表明本项目每次构建都会稳定新增 40 GiB；`target/debug/deps` 中主要是旧 profile/依赖变体残留。
+
+本轮已移除未使用的 `ssh-rs` 与 `russh-keys` 直接依赖，并为 `ssh-key` 显式声明实际需要的 features。`cargo check --locked --all-targets --all-features` 与 `cargo test --locked --lib` 通过；未执行 `cargo clean`，避免删除仍可复用的构建产物。后续优先把 `CARGO_BUILD_BUILD_DIR` 指向外置盘或专用缓存目录，再按工具链使用情况选择性清理，不要在未确认目标的情况下递归删除 Cargo/Rust 目录。

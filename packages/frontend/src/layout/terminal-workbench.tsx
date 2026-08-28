@@ -36,10 +36,28 @@ export function TerminalWorkbench({
   const [sizes, setSizes] = useState<[number, number]>(() =>
     normalizeSizes(splitGroup),
   )
+  const [mountedTabIds, setMountedTabIds] = useState(
+    () => new Set(visibleTabIds),
+  )
 
   useEffect(() => {
     setSizes(normalizeSizes(splitGroup))
   }, [splitGroup])
+
+  useEffect(() => {
+    setMountedTabIds(current => {
+      const validIds = new Set(tabs.map(tab => tab.id))
+      const next = new Set([...current].filter(tabId => validIds.has(tabId)))
+      for (const tabId of visibleTabIds) next.add(tabId)
+      if (
+        next.size === current.size &&
+        [...next].every(tabId => current.has(tabId))
+      ) {
+        return current
+      }
+      return next
+    })
+  }, [tabs, visibleTabIds])
 
   const handleResize = useCallback(
     (value: number, final: boolean) => {
@@ -102,9 +120,7 @@ export function TerminalWorkbench({
                         : 'invisible pointer-events-none',
                     ),
                 hasSplit && !isSplitTab && 'hidden',
-                isVisible &&
-                  isActive &&
-                  'ring-1 ring-inset ring-ring/50',
+                isVisible && isActive && 'ring-1 ring-inset ring-ring/50',
               )}
               style={paneStyle}
               aria-hidden={!isVisible}
@@ -116,7 +132,9 @@ export function TerminalWorkbench({
               onClickCapture={() => onActivateTab(tab.id)}
               onFocusCapture={() => onActivateTab(tab.id)}
             >
-              {renderTerminal(tab.id)}
+              {mountedTabIds.has(tab.id) || isVisible
+                ? renderTerminal(tab.id)
+                : null}
             </div>
           )
         })}

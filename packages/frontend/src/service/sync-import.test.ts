@@ -1,6 +1,10 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { ExportData } from './sync-types'
-import { createImportStats, importResources } from './sync-import'
+import {
+  createImportStats,
+  importResources,
+  normalizeImportedAgentForwarding,
+} from './sync-import'
 
 const database = vi.hoisted(() => ({
   execute: vi.fn(),
@@ -35,6 +39,15 @@ beforeEach(() => {
   database.execute.mockReset().mockResolvedValue(undefined)
   database.load.mockReset().mockResolvedValue({ execute: database.execute })
   database.select.mockReset()
+})
+
+it('only enables imported agent forwarding for explicit boolean values', () => {
+  expect(normalizeImportedAgentForwarding(true)).toBe(1)
+  expect(normalizeImportedAgentForwarding(1)).toBe(1)
+  expect(normalizeImportedAgentForwarding(false)).toBe(0)
+  expect(normalizeImportedAgentForwarding(0)).toBe(0)
+  expect(normalizeImportedAgentForwarding('1')).toBe(0)
+  expect(normalizeImportedAgentForwarding('false')).toBe(0)
 })
 
 it('restores settings with merge and replace semantics', async () => {
@@ -84,6 +97,7 @@ it('restores certificate and jump host columns from a full backup', async () => 
           environment: null,
           jump_host_id: 'jump-id',
           jump_host_auth_type: 'agent',
+          agent_forwarding: 1,
           created_at: 1,
           updated_at: 1,
         },
@@ -94,7 +108,7 @@ it('restores certificate and jump host columns from a full backup', async () => 
   )
 
   expect(database.execute).toHaveBeenCalledWith(
-    expect.stringContaining('certificate'),
-    expect.arrayContaining(['certificate', 'jump-id', 'agent']),
+    expect.stringContaining('agent_forwarding'),
+    expect.arrayContaining(['certificate', 'jump-id', 'agent', 1]),
   )
 })

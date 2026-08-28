@@ -1,10 +1,16 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { nanoid } from 'nanoid'
 import { PrismaService } from '../prisma.service'
+import {
+  registrationTokenMatches,
+  resolveRegistrationMode,
+} from '../server-config'
 import {
   hashApiToken,
   isEncodedApiTokenHash,
@@ -13,9 +19,16 @@ import {
 
 @Injectable()
 export class AuthService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+  ) {}
 
-  async register(userId: string): Promise<{ userId: string; token: string }> {
+  async register(
+    userId: string,
+    registrationToken?: string,
+  ): Promise<{ userId: string; token: string }> {
+    this.assertRegistrationAllowed(registrationToken)
     const existingUser = await this.prisma.user.findUnique({
       where: { id: userId },
     })
@@ -40,6 +53,22 @@ export class AuthService {
     })
 
     return { userId, token }
+  }
+
+  private assertRegistrationAllowed(providedToken: string | undefined): void {
+    const mode = resolveRegistrationMode(
+      this.config.get<string>('REGISTRATION_MODE'),
+      this.config.get<string>('NODE_ENV'),
+    )
+    const tokenAllowed =
+      mode === 'token' &&
+      registrationTokenMatches(
+        this.config.get<string>('REGISTRATION_TOKEN'),
+        providedToken,
+      )
+    if (mode !== 'open' && !tokenAllowed) {
+      throw new ForbiddenException('Registration is not available')
+    }
   }
 
   async createToken(userId: string, name?: string): Promise<{ token: string }> {

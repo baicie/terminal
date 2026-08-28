@@ -14,6 +14,8 @@ vi.mock('react-i18next', () => ({
         'terminal.showTools': 'Show tools',
         'terminal.fullscreen': 'Fullscreen',
         'terminal.status.connected': 'Connected',
+        'terminal.status.reconnecting': 'Reconnecting',
+        'terminal.disconnect': 'Disconnect',
         'toolbar.more': 'More',
       })[key] ?? key,
   }),
@@ -109,5 +111,27 @@ describe('TerminalPaneHeader', () => {
     const trigger = screen.getByRole('button', { name: 'More' })
     expect(trigger.className).toContain('size-11')
     expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull()
+  })
+
+  it('allows an in-progress reconnect to be retried now or stopped', () => {
+    const onReconnect = vi.fn()
+    const onDisconnect = vi.fn()
+    renderHeader(
+      createProps({ status: 'reconnecting', onReconnect, onDisconnect }),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }))
+
+    expect(onReconnect).toHaveBeenCalledOnce()
+    expect(onDisconnect).toHaveBeenCalledOnce()
+  })
+
+  it('exposes the shell current directory when integration reports it', () => {
+    renderHeader(createProps({ shellCwd: '/srv/app' }))
+
+    const target = screen.getByTitle('Production · deploy@prod.example.com:22 · /srv/app')
+    expect(target.getAttribute('data-shell-cwd')).toBe('/srv/app')
+    expect(target.textContent).toContain('/srv/app')
   })
 })

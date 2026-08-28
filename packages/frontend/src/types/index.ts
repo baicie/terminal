@@ -47,6 +47,8 @@ export interface Host {
   // Jump host configuration
   jumpHostId?: string // ID of the jump/bastion host to use
   jumpHostAuthType?: AuthType // Override auth type for jump host (optional)
+  /** Forward the local SSH agent to this host. Independent of login auth. */
+  agentForwarding?: boolean
   createdAt: number
   updatedAt: number
 }
@@ -92,8 +94,12 @@ export interface Variable {
 export interface Tab {
   id: string
   label: string
+  /** Process-local OSC 0/2 title; workspace recovery intentionally drops it. */
+  title?: string
   type: 'local' | 'remote' | 'serial'
   hostId?: string
+  /** Process-local profile reference. Credentials never belong in a tab. */
+  profileId?: string
   serialSessionId?: string // Serial session ID when type is 'serial'
   serialConfig?: SerialTabConfig // Serial port config for display
   connectionStatus?: 'connected' | 'disconnected' | 'connecting'

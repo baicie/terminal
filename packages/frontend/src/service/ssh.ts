@@ -13,7 +13,11 @@ import {
   sftpService,
   portForwardService,
 } from '@/features/terminal/services'
-import type { SessionInfo, ShellOutput } from '@/features/terminal/types'
+import type {
+  JumpHostConfig,
+  SessionInfo,
+  ShellOutput,
+} from '@/features/terminal/types'
 import { createExecutionSession } from '@/service/ssh-execution-session'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -76,15 +80,7 @@ class SSHServiceLegacy {
 
   async createSshSessionJump(
     targetHost: Host,
-    jumpHost: {
-      host: string
-      port: number
-      username: string
-      authType: 'password' | 'key' | 'agent'
-      password?: string
-      privateKey?: string
-      targetAuthType?: 'password' | 'key' | 'agent'
-    },
+    jumpHost: JumpHostConfig,
     cols: number = 80,
     rows: number = 24,
   ): Promise<SSHConnectionResult> {

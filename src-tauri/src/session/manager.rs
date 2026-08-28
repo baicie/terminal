@@ -3,6 +3,7 @@
 //! 管理所有类型的 Session（Local/SSH），提供统一的创建、获取、关闭接口。
 
 use super::channel::{make_output, ChannelManager};
+use super::lifecycle::SessionCompletion;
 use super::local::LocalSession;
 use super::ssh::SshSession;
 use super::{SessionError, SessionInfo, SessionType};
@@ -11,7 +12,7 @@ use russh::client;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use tokio::sync::Mutex;
 
 /// 全局 SessionManager 实例
@@ -56,6 +57,16 @@ impl SessionState {
         }
     }
 
+    pub fn write_raw(
+        &self,
+        data: Vec<u8>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
+        match self {
+            SessionState::Local(s) => s.write_raw(data),
+            SessionState::Ssh(s) => s.write_raw(data),
+        }
+    }
+
     pub fn resize(
         &self,
         cols: u16,
@@ -78,6 +89,13 @@ impl SessionState {
         match self {
             SessionState::Local(s) => s.is_alive(),
             SessionState::Ssh(s) => s.is_alive(),
+        }
+    }
+
+    fn completion(&self) -> SessionCompletion {
+        match self {
+            SessionState::Local(s) => s.completion(),
+            SessionState::Ssh(s) => s.completion(),
         }
     }
 }
@@ -125,6 +143,7 @@ impl SessionManager {
     pub async fn register_session(&self, session: SessionState) {
         let session_id = session.session_id().to_string();
         let session_type = session.session_type();
+        let completion = session.completion();
 
         // 注册到 sessions
         {
@@ -147,7 +166,17 @@ impl SessionManager {
         }
 
         // 创建对应的 channel
-        self.channel_manager.create_channel(session_id).await;
+        self.channel_manager
+            .create_channel(session_id.clone())
+            .await;
+
+        spawn_completion_cleanup(
+            session_id,
+            completion,
+            Arc::downgrade(&self.sessions),
+            Arc::downgrade(&self.channel_manager),
+            Arc::downgrade(&self.session_meta),
+        );
     }
 
     /// 获取 Session
@@ -193,25 +222,25 @@ impl SessionManager {
             .collect()
     }
 
+    pub(crate) async fn resource_keys(&self) -> (Vec<String>, Vec<String>, Vec<String>) {
+        let sessions = self.sessions.lock().await.keys().cloned().collect();
+        let metadata = self.session_meta.lock().await.keys().cloned().collect();
+        let channels = self.channel_manager.list_sessions().await;
+        (sessions, metadata, channels)
+    }
+
     /// 移除 Session
     pub async fn remove_session(&self, session_id: &str) -> Result<(), SessionError> {
-        // 获取并关闭 session
-        let session = {
-            let mut sessions = self.sessions.lock().await;
-            sessions.remove(session_id)
-        };
+        let session = remove_registry_entries(
+            Arc::clone(&self.sessions),
+            Arc::clone(&self.channel_manager),
+            Arc::clone(&self.session_meta),
+            session_id,
+        )
+        .await;
 
         if let Some(session) = session {
             session.close().await;
-        }
-
-        // 清理 channel
-        self.channel_manager.remove_channel(session_id).await;
-
-        // 清理元信息
-        {
-            let mut meta = self.session_meta.lock().await;
-            meta.remove(session_id);
         }
 
         Ok(())
@@ -245,6 +274,40 @@ impl SessionManager {
     }
 }
 
+fn spawn_completion_cleanup(
+    session_id: String,
+    completion: SessionCompletion,
+    sessions: Weak<Mutex<HashMap<String, SessionState>>>,
+    channel_manager: Weak<ChannelManager>,
+    session_meta: Weak<Mutex<HashMap<String, SessionMeta>>>,
+) {
+    tokio::spawn(async move {
+        completion.wait().await;
+
+        let (Some(sessions), Some(channel_manager), Some(session_meta)) = (
+            sessions.upgrade(),
+            channel_manager.upgrade(),
+            session_meta.upgrade(),
+        ) else {
+            return;
+        };
+
+        remove_registry_entries(sessions, channel_manager, session_meta, &session_id).await;
+    });
+}
+
+async fn remove_registry_entries(
+    sessions: Arc<Mutex<HashMap<String, SessionState>>>,
+    channel_manager: Arc<ChannelManager>,
+    session_meta: Arc<Mutex<HashMap<String, SessionMeta>>>,
+    session_id: &str,
+) -> Option<SessionState> {
+    let session = sessions.lock().await.remove(session_id);
+    channel_manager.remove_channel(session_id).await;
+    session_meta.lock().await.remove(session_id);
+    session
+}
+
 impl Default for SessionManager {
     fn default() -> Self {
         Self::new()
@@ -256,3 +319,7 @@ impl std::fmt::Debug for SessionManager {
         f.debug_struct("SessionManager").finish()
     }
 }
+
+#[cfg(test)]
+#[path = "manager_tests.rs"]
+mod tests;

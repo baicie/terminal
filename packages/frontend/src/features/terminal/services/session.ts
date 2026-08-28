@@ -56,6 +56,7 @@ export class SessionService {
         port: host.port,
         username: host.username,
         password: host.password,
+        agentForwarding: host.agentForwarding ?? false,
         cols,
         rows,
       })
@@ -78,6 +79,7 @@ export class SessionService {
         username: host.username,
         privateKey: host.privateKey,
         password: host.password,
+        agentForwarding: host.agentForwarding ?? false,
         cols,
         rows,
       })
@@ -101,6 +103,7 @@ export class SessionService {
         certificate: host.certificate ?? '',
         privateKey: host.privateKey ?? '',
         password: host.password ?? null,
+        agentForwarding: host.agentForwarding ?? false,
         cols,
         rows,
       })
@@ -121,6 +124,7 @@ export class SessionService {
         host: host.hostname,
         port: host.port,
         username: host.username,
+        agentForwarding: host.agentForwarding ?? false,
         cols,
         rows,
       })
@@ -143,6 +147,9 @@ export class SessionService {
         targetUsername: targetHost.username,
         targetPassword: targetHost.password,
         targetPrivateKey: targetHost.privateKey,
+        targetCertificate:
+          targetHost.authType === 'cert' ? targetHost.certificate : undefined,
+        agentForwarding: targetHost.agentForwarding ?? false,
         jumpHost: {
           ...jumpHost,
           targetAuthType: jumpHost.targetAuthType ?? targetHost.authType,
@@ -172,8 +179,14 @@ export class SessionService {
   async write(sessionId: string, data: string): Promise<void> {
     await invoke('session_write', { sessionId, data })
   }
+  async writeRaw(sessionId: string, data: Uint8Array): Promise<void> {
+    await invoke('session_write_raw', { sessionId, data })
+  }
   async resize(sessionId: string, cols: number, rows: number): Promise<void> {
     await invoke('session_resize', { sessionId, cols, rows })
+  }
+  async ackOutput(sessionId: string, bytes: number): Promise<void> {
+    await invoke('session_ack_output', { sessionId, bytes })
   }
   async close(sessionId: string): Promise<void> {
     await invoke('session_close', { sessionId })

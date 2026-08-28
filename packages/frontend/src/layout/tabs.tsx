@@ -14,6 +14,8 @@ import {
 } from '@/components/ui/context-menu'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
+import { getTabDisplayLabel } from '@/features/terminal/services/terminal-title'
+import { TabConnectionStatus } from './tab-connection-status'
 
 const MenuTabs: React.FC = () => {
   const { t } = useTranslation()
@@ -73,6 +75,7 @@ const MenuTabs: React.FC = () => {
     >
       {tabs.map((tab, index) => {
         const active = activeTabId === tab.id
+        const displayLabel = getTabDisplayLabel(tab)
         const split = Boolean(tab.splitId)
         const groupStart = split ? splitIds.indexOf(tab.splitId) : index
         const groupEnd = split ? splitIds.lastIndexOf(tab.splitId) : index
@@ -95,7 +98,7 @@ const MenuTabs: React.FC = () => {
                   size="sm"
                   role="tab"
                   aria-selected={active}
-                  aria-label={tab.label}
+                  aria-label={displayLabel}
                   tabIndex={active ? 0 : -1}
                   className={cn(
                     'h-11 min-w-11 flex-1 touch-manipulation justify-start gap-1 rounded-r-none px-2 font-normal sm:h-8 sm:min-w-0',
@@ -107,8 +110,9 @@ const MenuTabs: React.FC = () => {
                   onKeyDown={event => onKeyDown(event, index)}
                   data-tauri-drag-region="false"
                 >
+                  <TabConnectionStatus status={tab.connectionStatus} />
                   <SplitStatus tab={tab} />
-                  <span className="min-w-0 flex-1 truncate">{tab.label}</span>
+                  <span className="min-w-0 flex-1 truncate">{displayLabel}</span>
                 </Button>
               </ContextMenuTrigger>
               <ContextMenuContent className="w-52">
@@ -174,7 +178,7 @@ const MenuTabs: React.FC = () => {
                 'size-11 shrink-0 touch-manipulation rounded-l-none text-muted-foreground opacity-100 sm:size-8 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100',
                 active && 'bg-secondary sm:opacity-100',
               )}
-              aria-label={t('tabs.closeNamed', { name: tab.label })}
+              aria-label={t('tabs.closeNamed', { name: displayLabel })}
               onClick={() => removeTab(tab.id)}
               data-tauri-drag-region="false"
             >
@@ -192,5 +196,4 @@ function SplitStatus({ tab }: { tab: Tab }) {
   const Icon = tab.splitMode === 'horizontal' ? Columns2 : Rows2
   return <Icon aria-hidden="true" className="shrink-0 text-muted-foreground" />
 }
-
 export default MenuTabs

@@ -3,6 +3,7 @@ import { Network } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -58,6 +59,23 @@ export function HostDialogAdvancedFields({
         onPrivateKeyChange={privateKey => onChange({ ...form, privateKey })}
         onCertificateChange={certificate => onChange({ ...form, certificate })}
       />
+
+      <div className="col-span-2 flex items-start justify-between gap-4 rounded-md border p-3">
+        <div className="space-y-1">
+          <Label htmlFor="agentForwarding">Forward SSH agent</Label>
+          <p className="text-xs text-muted-foreground">
+            Allow this host to use identities from your local SSH agent.
+          </p>
+        </div>
+        <Switch
+          id="agentForwarding"
+          aria-label="Forward SSH agent"
+          checked={form.agentForwarding ?? false}
+          onCheckedChange={agentForwarding =>
+            onChange({ ...form, agentForwarding })
+          }
+        />
+      </div>
 
       <div className="col-span-2">
         <Label

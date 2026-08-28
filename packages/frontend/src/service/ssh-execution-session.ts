@@ -17,13 +17,6 @@ export async function createExecutionSession(
       }
     }
     const jumpAuthType = host.jumpHostAuthType ?? jumpHost.authType
-    if (host.authType === 'cert' || jumpAuthType === 'cert') {
-      return {
-        success: false,
-        message:
-          'Certificate authentication through a jump host is not supported yet',
-      }
-    }
     return sessionService.createSshJump({
       targetHost: host,
       jumpHost: {

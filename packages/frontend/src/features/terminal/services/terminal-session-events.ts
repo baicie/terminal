@@ -1,10 +1,11 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import type { ShellOutput, TabType } from '../types'
+import type { ShellOutput, TabType, TerminalError } from '../types'
 
 interface TerminalEventHandlers {
   onOutput: (output: ShellOutput) => void
   onClose: (sessionId: string) => void
   onExit: (sessionId: string, exitCode: number) => void
+  onError: (error: TerminalError) => void
 }
 
 const EVENT_NAMES: Record<
@@ -18,24 +19,38 @@ const EVENT_NAMES: Record<
 
 export class TerminalSessionEvents {
   private readonly channelListeners = new Map<TabType, Promise<UnlistenFn[]>>()
+  private errorListener: Promise<UnlistenFn> | null = null
 
   constructor(private readonly handlers: TerminalEventHandlers) {}
 
   async ensure(tabType: TabType): Promise<void> {
+    const errorListener = this.ensureErrorListener()
     const existing = this.channelListeners.get(tabType)
     if (existing) {
-      await existing
+      await Promise.all([existing, errorListener])
       return
     }
 
     const promise = this.create(tabType)
     this.channelListeners.set(tabType, promise)
     try {
-      await promise
+      await Promise.all([promise, errorListener])
     } catch (error) {
       this.channelListeners.delete(tabType)
       throw error
     }
+  }
+
+  private ensureErrorListener(): Promise<UnlistenFn> {
+    if (this.errorListener) return this.errorListener
+    const listener = listen<TerminalError>('terminal-error', event => {
+      this.handlers.onError(event.payload)
+    })
+    this.errorListener = listener
+    void listener.catch(() => {
+      if (this.errorListener === listener) this.errorListener = null
+    })
+    return listener
   }
 
   private async create(tabType: TabType): Promise<UnlistenFn[]> {

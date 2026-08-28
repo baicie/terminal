@@ -80,9 +80,30 @@ export default {
   'terminal.disconnect': 'Disconnect',
   'terminal.status.idle': 'Idle',
   'terminal.status.connecting': 'Connecting',
+  'terminal.status.reconnecting': 'Reconnecting',
   'terminal.status.connected': 'Connected',
   'terminal.status.disconnected': 'Disconnected',
   'terminal.status.error': 'Error',
+  'terminal.hostKeyChangedTitle': 'SSH host key changed',
+  'terminal.hostKeyTrustTitle': 'Trust this SSH host?',
+  'terminal.hostKeyChangedDescription':
+    'The server identity no longer matches the saved host key. The connection has been blocked.',
+  'terminal.hostKeyTrustDescription':
+    'Verify this fingerprint with the server administrator before connecting.',
+  'terminal.hostKeyJumpDescription':
+    'This identity belongs to the jump host used to reach the target.',
+  'terminal.hostKeyTargetDescription':
+    'This identity belongs to the target reached through the verified jump host.',
+  'terminal.hostKeyHost': 'Host',
+  'terminal.hostKeyAlgorithm': 'Algorithm',
+  'terminal.hostKeyFingerprint': 'Fingerprint',
+  'terminal.hostKeyChangedWarning':
+    'Do not continue until the saved key is reviewed outside this connection attempt.',
+  'terminal.hostKeyTrustOnce': 'Trust once',
+  'terminal.hostKeyTrustAndSave': 'Trust and save',
+  'terminal.hostKeyCheckingAria': 'Checking SSH host key',
+  'terminal.hostKeyChecking': 'Checking SSH host key...',
+  'terminal.hostKeyVerifyFailed': 'Could not verify the SSH host key',
   'terminal.decreaseFontSize': 'Decrease font size',
   'terminal.increaseFontSize': 'Increase font size',
   'terminal.clearScreen': 'Clear screen',
@@ -175,17 +196,14 @@ export default {
   'common.retry': 'Retry',
   'common.goHome': 'Go Home',
   'common.errorOccurred': 'Something went wrong',
-
   // Error boundary
   'error.title': 'Failed to load page',
   'error.message': '{{message}}',
-
   // Common (for experiments)
   'common.back': 'Back',
   'common.clear': 'Clear',
   'common.on': 'ON',
   'common.off': 'OFF',
-
   // Experiments page
   'experiments.recording': 'Recording',
   'experiments.paused': 'Paused',
@@ -225,6 +243,23 @@ export default {
   'experiments.textareaPlaceholder': 'Type something here...',
   'experiments.textareaHint':
     'Focus this textarea and type to see events captured below.',
+  'experiments.inputProbeTitle': 'Terminal physical input probe',
+  'experiments.inputProbeDesc':
+    'Record xterm input and bytes received by a real Tauri PTY.',
+  'experiments.inputProbeInstruction': 'Enter the expected text, then press Enter',
+  'experiments.inputProbeRounds': 'Rounds',
+  'experiments.inputProbeExpected': 'Expected text',
+  'experiments.inputProbeStart': 'Start probe',
+  'experiments.inputProbeStop': 'Stop probe',
+  'experiments.inputProbeIdle': 'Not started',
+  'experiments.inputProbeConnected': 'PTY connected',
+  'experiments.inputProbeExpectedHex': 'Expected hex',
+  'experiments.inputProbeReceivedHex': 'Received hex',
+  'experiments.inputProbeResults': 'Round results',
+  'experiments.inputProbeDiagnostics': 'FIFO diagnostics',
+  'experiments.inputProbePassed': 'Passed rounds',
+  'experiments.inputProbeEvents': 'Input events',
+  'experiments.inputProbeNoEvents': 'Waiting for physical keyboard input...',
   'experiments.copy': 'Copy',
   'experiments.copyEvents': 'Copy event log to clipboard',
   'experiments.copied': 'Copied!',

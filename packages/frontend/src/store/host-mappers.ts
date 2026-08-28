@@ -19,6 +19,7 @@ export interface HostRow {
   environment: string | null
   jump_host_id: string | null
   jump_host_auth_type: string | null
+  agent_forwarding?: number | null
   created_at: number
   updated_at: number
 }
@@ -55,6 +56,7 @@ export function hostRowToHost(row: HostRow): Host {
     jumpHostAuthType: row.jump_host_auth_type
       ? (row.jump_host_auth_type as AuthType)
       : undefined,
+    agentForwarding: row.agent_forwarding === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

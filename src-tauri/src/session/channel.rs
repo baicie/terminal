@@ -217,9 +217,11 @@ pub fn make_output(
     data: impl Into<String>,
     is_stderr: bool,
 ) -> SessionOutput {
+    let data = data.into();
     SessionOutput {
         session_id: session_id.into(),
-        data: data.into(),
+        bytes: data.len(),
+        data,
         is_stderr,
     }
 }

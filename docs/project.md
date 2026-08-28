@@ -16,16 +16,16 @@
 
 ## 当前进度与当前目标
 
-> 快照日期：2026-08-17；当前分支：`feat/mvp`。
+> 快照日期：2026-08-26；当前分支：`feat/mvp`。
 
 | 项目 | 状态 |
 | --- | --- |
-| 当前目标 | ✅ 已完成：参考本地 `nyala-studio` 的终端实例、分组、活动 pane 与会话生命周期逻辑，按本项目 shadcn/ui 风格完成终端工作台 UI/交互重构 |
-| 当前进度 | Phase 6.15 已完成；活动标签、URL、焦点和命令目标已统一，双 pane、布局持久化、xterm 常驻、全屏连续性、工作区回滚及移动会话栏已落地 |
-| 自动化基线 | 前端 59 个测试文件、547 项测试通过；lint、typecheck、production build、源码行数及 bundle budget 门禁通过 |
-| 下一验证目标 | 在 Tauri 桌面运行时完成真实 SSH、本地 PTY、Windows/Linux、Pageant、Jump Host 与串口硬件实机矩阵；该验证边界不影响本轮前端目标完成状态 |
+| 当前目标 | 🔄 先完成 macOS 物理输入资格门禁与真实连接矩阵，再推进 Tabby/Termius 工作流的会话元数据与记录能力 |
+| 当前进度 | Phase 6.17 的 ACK/背压、输入 FIFO、WKWebView 兼容 core、生命周期和 SSH writer 已收口；Phase 6.19 新增 Host Profile、连接状态、启动恢复、动态标题和 Shell Integration v1。Shell Integration 已改用兼容 core 的公开 parser API，入口 style nonce/hash 与 viewport 警告已消除；真实 macOS debug App 的本地 PTY 已恢复 Connected 且 Web Inspector 零错误。真实 localhost OpenSSH 重连 smoke 已验证 generation 隔离、旧输出拒绝与资源回收。 |
+| 自动化基线 | `pnpm verify` 全绿：前端 98 个测试文件/839 项、Team Server 25 个文件/103 项、Rust 153 个单测 + 3 个桌面配置集成测试，以及 lint/typecheck/build/fmt/Clippy/506 文件源码门禁；首屏/总 gzip 为 117.01/545.41 KiB。最新普通 macOS Tauri/xterm smoke 通过（8 MiB、10 次会话、97×31 resize、资源回收，5.4 秒），重连 smoke 通过（10 轮、11 个唯一 session、旧输出拒绝，6.7 秒）。 |
+| 下一验证目标 | 在真实 macOS WKWebView 完成近同时 `a/s/d`、快速连续输入、Option/dead key、中文 IME、Tab/方向键/Ctrl+C；随后完成真实 SSH password/key/agent/cert/Jump、跨平台 PTY/Pageant/串口矩阵，并为常见 shell 提供显式 Shell Integration 配置后验收命令阶段、当前目录和会话记录 |
 
-详细实施方案见 [`docs/plans/terminal-workbench-rebuild.md`](plans/terminal-workbench-rebuild.md)，完成项见 [`docs/todo.md`](todo.md) Phase 6.15，问题与验证边界见 [`docs/issue.md`](issue.md) Issue #45。
+终端工作台方案见 [`docs/plans/terminal-workbench-rebuild.md`](plans/terminal-workbench-rebuild.md)，可靠性规格见 [`docs/plans/terminal-reliability-rebuild.md`](plans/terminal-reliability-rebuild.md)；当前完成项见 [`docs/todo.md`](todo.md) Phase 6.19，安全修复与验证边界见 [`docs/issue.md`](issue.md) Issue #46/#48/#49/#50/#51/#52/#55/#56。
 
 ---
 
@@ -88,7 +88,7 @@ src-tauri/
 | `session_create_ssh_key` | SSH 密钥连接 | ✅ 已实现 |
 | `session_create_ssh_agent` | SSH Agent 登录 | ✅ 已实现；Windows/Pageant 待实机 |
 | `session_create_ssh_cert` | SSH 证书直连 | ✅ 已实现 |
-| `session_create_ssh_jump` | Jump Host | ⚠️ password/key/agent 已接线；certificate 明确拒绝 |
+| `session_create_ssh_jump` | Jump Host | ✅ password/key/agent/cert 已接线；真实服务待验证 |
 | `session_create_local` | 本地终端 | ✅ 已实现 |
 | `session_write` | 会话写入 | ✅ 已实现 |
 | `session_resize` | 调整终端大小 | ✅ 本地 PTY resize；SSH RFC 4254 `window-change` |
@@ -140,14 +140,14 @@ src-tauri/
 | Snippet       | ✅   | ✅   | 完整实现                               |
 | 分屏模式      | ✅   | ✅   | 水平/垂直分屏                          |
 
-### Phase 3 - 高级功能 ⚠️ Agent forwarding 待启用入口
+### Phase 3 - 高级功能 ✅ 代码完成，实机待验证
 
-> 主要代码路径已完成；Agent forwarding 显式入口与 Jump Host certificate 仍未实现。
+> Agent forwarding 与 Jump Host certificate 已完成自动化代码验收；真实 SSH 服务和跨平台行为仍按发布矩阵验证。
 
 | 功能               | 状态                   |
 | ------------------ | ---------------------- |
-| Agent 转发         | ⚠️ handler 与双向桥接已实现，缺少客户端显式启用入口 |
-| 主机链 (Jump Host) | ✅ 主终端入口与 SQLite 已接线；password/key/agent 可用，certificate 明确拒绝；待 Windows/Linux 实机验证 |
+| Agent 转发         | ✅ 独立 opt-in 设置、显式请求、handler 授权、连接池隔离与团队导入安全边界已实现；待实机 |
+| 主机链 (Jump Host) | ✅ 主终端入口与 SQLite 已接线；跳板端和目标端支持 password/key/agent/cert；待 Windows/Linux 实机验证 |
 | Vault 加密存储     | ✅ 已实现 (2026-03-19) |
 | 命令面板           | ✅ 已实现 (2026-03-19) |
 | 多工作区           | ✅ 已实现 (2026-03-19) |
@@ -597,7 +597,7 @@ src-tauri/
 
 **最终自动验证**：前端 31 个测试文件、408 项测试；Team Server 25 个测试文件、95 项测试；Rust 45 项测试；Prisma schema、lint、typecheck、前端 bundle 预算、Team Server build、Rust fmt/check/Clippy 和 447 个生产源码文件行数门禁全部通过。Bundle 初始 gzip 227.36 KB（预算 240 KB），总 gzip 510.09 KB（预算 550 KB），最大 JS chunk raw 390.87 KB（预算 500 KB）。
 
-**外部验证边界**：当前机器未安装 Docker，未声称本地镜像构建或真实 PostgreSQL 探针通过；Windows/Linux、Pageant、Jump Host、本地 PTY 和串口硬件仍按 Issue #39 矩阵待实机执行。Jump Host 的 certificate 认证尚未接线并在前后端明确拒绝；Agent forwarding 仍缺显式 `channel.agent_forward(...)` 入口；S3 仅有固定向量测试，未声称真实服务端集成通过。
+**后续验证边界**：2026-08-19 已补完成 Docker/PostgreSQL 容器、迁移、readiness、注册准入与关停恢复验收；macOS 本地 PTY 此后已由 Phase 6.17 的底层 round-trip 和 Tauri/xterm smoke 验证。Windows/Linux 本地 PTY、Pageant、真实 SSH/Jump Host 与串口硬件仍按 Issue #39/#46/#48 矩阵待实机执行；S3 仍只有固定向量测试。
 
 ---
 
@@ -667,6 +667,23 @@ src-tauri/
 
 ---
 
+### Phase 6.17 - 终端可靠性重建 🟡 macOS 本地核心链路完成，外部实机矩阵待验证
+
+> 2026-08-19 至 2026-08-20：参考 MIT 项目 Nyaterm（固定提交 `70306b5c83e9f58c85a4f86a00440cd2be2cd57a`）的输出 ACK、高低水位、PTY pause/resume 和前后台排空思路，在本项目架构内重建终端数据链路；不复制其产品代码。
+
+| 领域 | 当前结果 |
+| --- | --- |
+| 输入 | 恢复并精确固定 `@baicie/xterm@0.1.7`，由其 xterm 内部 `AppleWebKit` 分支处理 macOS WKWebView 重叠按键；删除前端伪历史/补全拦截，文本 `onData`、Tab、方向键、Ctrl、粘贴和 IME 原样进入单写者 FIFO；`onBinary` 原始字节复制为 `Uint8Array` 后进入同一 FIFO；不再叠加 DOM `input` fallback，避免与修复版 core 的 input handler 双发 |
+| 尺寸与设置 | 创建前使用 `proposeDimensions()`，connecting 阶段缓存 latest-wins resize；`cursorStyle`、字体、scrollback、`allowProposedApi` 实时作用于当前 xterm core |
+| 输出 | Rust 流式 UTF-8 解码、有界泵和 16ms/32 KiB 批处理；前端把单次 `xterm.write` 限制为 32 KiB，超大事件按 Unicode code point 边界拆分，单写入在途且 callback 后才 ACK；前台优先 RAF，受流控输出同时以 microtask 防止调度器 RAF/timer 双重暂停，fallback 中在 callback 内追加下一批并跨越短暂空队列，确保无字节计数尾批次仍可进入 xterm；Rust 以 1 MiB/128 KiB 水位暂停/恢复，并把 10 秒 watchdog 定义为“持续无 ACK 进展”而非总排空时长 |
+| 生命周期 | 自然 EOF、主动关闭和重复重连幂等清理 session/meta/channel；本地 child 在初始化失败、EOF 和 close 路径统一 kill/wait/reap，关闭任务设 deadline；旧 generation 不得污染新标签；localhost OpenSSH smoke 会先终止独立 session 进程组再重启 daemon，确保测试触发真实 TCP 断线 |
+| SSH | TCP、认证、Jump Host 隧道、channel/PTY/shell、exec、写入和 resize 共用阶段或绝对 deadline；writer 过期命令不再后台执行，fatal completion 会结束 reader、上报 `terminal-error` 并触发生命周期清理，自然 EOF 会先 close/join writer 再释放 transport；交互连接启用 TCP_NODELAY，连接池按 forwarding 权限隔离 |
+| renderer/依赖 | 隐藏终端不持有 WebGL context，context loss 回退默认 renderer；运行时与 CSS 统一使用精确固定的 `@baicie/xterm@0.1.7`，保留 typings shim 与官方 `@xterm/addon-*`，依赖契约测试禁止直接安装上游 core |
+
+**验证状态**：恢复修复版 core 并增加 manifest/分包契约后，历史 `pnpm verify` 全绿；本次增量前端 93 个测试文件/801 项、typecheck 通过，Rust 依赖收口后的 `cargo check --locked --all-targets --all-features` 与 `cargo test --locked --lib` 143 项通过。macOS `portable-pty` 自动化已验证默认回显、`read` Unicode、`stty size=31 97` 与退出回收。2026-08-24 普通 Tauri/xterm smoke 再次通过：8,388,608 字节、10 轮会话、97×31 resize、资源回收，耗时 5.4 秒。localhost OpenSSH 重连 smoke 通过：真实断开后建立不同 session，10 轮共 11 个唯一 session，旧 generation 输出被拒绝且资源回收，耗时 6.7 秒；脚本回归 23 项覆盖异常 PID/PGID fail-closed 与宽限期后的 `SIGKILL`。上述结果仍不能证明物理重叠按键或 IME；password/agent/cert/Jump、Windows/Linux/Pageant、串口、vim/nano、连续 resize、SGR mouse、bracketed paste 与非 UTF-8 原始输入仍按实机矩阵验收。
+
+---
+
 ## 待办事项
 
 ### P0 - 必须完成
@@ -683,8 +700,9 @@ src-tauri/
 ### P2 - 建议完成
 
 - [x] ~~**SSH Agent 作为认证方式连接主机**~~ ✅ 已实现（2026-05-03）：`session_create_ssh_agent` + `SessionService.createSshAgent`；`jump_host.target_auth_type === 'agent'` 正确路由到 `authenticate_with_agent`；Pageant 与实机回归见 Issue #21
-- [ ] **SSH Agent forwarding 显式启用**：在 shell channel 建立后调用 `channel.agent_forward(...)`，并提供独立于登录认证方式的用户配置
+- [x] ~~**SSH Agent forwarding 显式启用**~~ ✅ 独立 opt-in 设置、`channel.agent_forward(...)`、handler 授权与连接池模式隔离（2026-08-19）
 - [x] ~~实现主机链功能~~ ✅ `session_create_ssh_jump` + `SshSession::new_with_jump`
+- [x] ~~**Jump Host certificate**~~ ✅ 跳板端和目标端均复用 OpenSSH certificate 认证并验证证书/私钥输入（2026-08-19）
 - [x] ~~命令快速补全~~ ✅ Tab 拦截 + 历史前缀匹配 + 路径补全 + shell 子命令补全（2026-05-03）
 - [x] ~~Vault 加密存储~~ ✅ `vault_*` 命令集
 
@@ -715,6 +733,8 @@ src-tauri/
 | 43  | 多平台 Release 资产缺失与 Windows Tauri 编译失败 | 🟡 Important | ✅ 已修复并发布 8 个安装包与校验清单 (2026-08-11) |
 | 44  | 终端会话生命周期与 React 视图耦合 | 🟡 Important | ✅ 已重构为按 tabId 管理，跨平台交互仍需实机验证 (2026-08-12) |
 | 45  | 终端工作台状态割裂、分屏失控与焦点丢失 | 🟡 Important | ✅ 前端交互已重构，真实连接仍待实机矩阵 (2026-08-17) |
+| 48  | 终端输入失真、输出失控与生命周期泄漏 | 🔴 High | 🟡 核心链路与 macOS Tauri/xterm smoke 已通过，跨平台、协议与硬件矩阵待验收 (2026-08-20) |
+| 55  | 重连 smoke 未断开独立 SSH session 进程组 | 🔴 High | ✅ 已修复并通过真实 localhost OpenSSH 重连 (2026-08-24) |
 
 ---
 
@@ -970,7 +990,7 @@ const response = await teamApi.listTeams()
 
 | 模块 | 前缀                 | 方法   | 端点        | 说明             |
 | ---- | -------------------- | ------ | ----------- | ---------------- |
-| 认证 | /auth                | POST   | /register   | 注册用户         |
+| 认证 | /auth                | POST   | /register   | 按 closed/token/open 策略注册用户 |
 | 认证 | /auth                | POST   | /tokens     | 创建 API Token   |
 | 认证 | /auth                | GET    | /tokens     | 获取 Token 列表  |
 | 认证 | /auth                | DELETE | /tokens/:id | 撤销 Token       |
@@ -997,4 +1017,4 @@ const response = await teamApi.listTeams()
 
 ---
 
-_文档更新时间: 2026-08-17 (Phase 6.15: nyala-studio 终端工作台交互重构)_
+_文档更新时间: 2026-08-24 (Phase 6.19：真实 SSH 重连 smoke 收口，物理输入与外部矩阵待验证)_

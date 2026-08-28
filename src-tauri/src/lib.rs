@@ -8,8 +8,10 @@ mod errors;
 mod port_forward;
 mod serial;
 mod sftp;
+mod ssh_host_key;
 mod state;
 mod storage;
+mod terminal_smoke;
 mod tray;
 mod vault;
 mod window_cmd;
@@ -25,9 +27,10 @@ pub use session::{
 };
 
 use commands::{
-    key_generate, session_close, session_create_local, session_create_ssh_agent,
-    session_create_ssh_cert, session_create_ssh_jump, session_create_ssh_key,
-    session_create_ssh_password, session_exec, session_list, session_resize, session_write,
+    key_generate, session_ack_output, session_close, session_create_local,
+    session_create_ssh_agent, session_create_ssh_cert, session_create_ssh_jump,
+    session_create_ssh_key, session_create_ssh_password, session_exec, session_list,
+    session_resize, session_write, session_write_raw,
 };
 use port_forward::{port_forward_list, port_forward_start, port_forward_stop};
 use serial::{
@@ -38,10 +41,16 @@ use sftp::{
     sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_local_checksum, sftp_mkdir,
     sftp_remote_checksum, sftp_rename, sftp_upload,
 };
+use ssh_host_key::{ssh_host_key_learn, ssh_host_key_probe, ssh_host_key_probe_via_jump};
 use state::create_shared_state;
 use storage::{
     storage_delete, storage_download, storage_health_check, storage_init, storage_list,
     storage_upload,
+};
+use terminal_smoke::{
+    terminal_smoke_complete, terminal_smoke_config, terminal_smoke_connected,
+    terminal_smoke_emit_stale_output, terminal_smoke_reconnect_requested, terminal_smoke_resources,
+    TerminalSmokeState,
 };
 use vault::{
     vault_can_encrypt_for_team, vault_change_password, vault_create, vault_decrypt_for_team,
@@ -86,10 +95,12 @@ pub fn run() {
 
     let shared_state = create_shared_state();
     let storage_manager = std::sync::Arc::new(crate::storage::StorageManager::new());
+    let terminal_smoke_state = TerminalSmokeState::from_env();
 
     tauri::Builder::default()
         .manage(shared_state)
         .manage(storage_manager)
+        .manage(terminal_smoke_state)
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -99,8 +110,10 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             tracing::info!("tauri app starting up");
-            if let Err(e) = tray::build_tray(app.handle()) {
-                tracing::error!(error = %e, "failed to build tray icon");
+            if !terminal_smoke::setup(app) {
+                if let Err(e) = tray::build_tray(app.handle()) {
+                    tracing::error!(error = %e, "failed to build tray icon");
+                }
             }
             Ok(())
         })
@@ -122,11 +135,16 @@ pub fn run() {
             session_create_ssh_cert,
             session_create_ssh_jump,
             session_write,
+            session_write_raw,
             session_resize,
+            session_ack_output,
             session_close,
             session_list,
             session_exec,
             key_generate,
+            ssh_host_key_probe,
+            ssh_host_key_probe_via_jump,
+            ssh_host_key_learn,
             // SFTP commands
             sftp_connect,
             sftp_list,
@@ -176,6 +194,13 @@ pub fn run() {
             show_main_window,
             hide_main_window,
             is_main_window_focused,
+            // Explicitly gated local terminal reliability smoke
+            terminal_smoke_config,
+            terminal_smoke_connected,
+            terminal_smoke_resources,
+            terminal_smoke_reconnect_requested,
+            terminal_smoke_emit_stale_output,
+            terminal_smoke_complete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

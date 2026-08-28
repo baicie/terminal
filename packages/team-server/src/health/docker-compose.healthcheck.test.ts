@@ -28,4 +28,18 @@ describe('team-server Docker healthcheck', () => {
     expect(environment).toContain('@db:5432/')
     expect(environment).not.toContain('@localhost:5432/')
   })
+
+  it('binds to loopback and keeps registration closed by default', () => {
+    const compose = readFileSync(
+      join(__dirname, '../../docker-compose.yml'),
+      'utf8',
+    )
+
+    expect(compose).toMatch(
+      /\$\{TEAM_SERVER_BIND_ADDRESS:-127\.0\.0\.1\}:\$\{TEAM_SERVER_PORT:-3000\}:3000/,
+    )
+    expect(compose).toMatch(
+      /REGISTRATION_MODE: \$\{REGISTRATION_MODE:-closed\}/,
+    )
+  })
 })

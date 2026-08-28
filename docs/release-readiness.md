@@ -1,7 +1,7 @@
 # Terminal 发布就绪规格
 
 > 创建日期：2026-08-09
-> 最后验证日期：2026-08-12
+> 最后验证日期：2026-08-19
 > 发布目标：`0.0.1-dev.1`
 > 状态：✅ 本机自动发布门禁与多平台安装包验收完成；⚠️ 外部实机项目待执行
 
@@ -225,12 +225,28 @@ Release 首次执行的六个平台打包任务均成功，最终校验调用 `g
 | macOS 自动门禁 | macOS 15.7.7 | ✅ 通过 | `pnpm verify` 全绿 |
 | Windows OpenSSH Agent | Windows 10/11 | ⚠️ 待实机 | 单/多 key 登录、无 key、服务未启动和错误管道均符合预期 |
 | Pageant | Windows 10/11 + Pageant | ⚠️ 待实机 | `russh` Pageant transport 可登录，未运行时返回明确错误 |
-| Jump Host | Windows / Linux | ⚠️ 待实机 | 跳板端与目标端 password/key/agent 组合、断开与连接池复用正确；certificate 当前应明确报“不支持” |
+| Jump Host | Windows / Linux | ⚠️ 待实机 | 跳板端与目标端 password/key/agent/cert 组合、加密私钥、断开与连接池复用正确 |
 | 本地 PTY | Windows / Linux | ⚠️ 待实机 | 从用户主目录启动，输入/resize/EOF/关闭状态正确 |
 | 串口 | macOS / Windows / Linux + 硬件 | ⚠️ 待实机 | 精确写入、主动断开、运行中拔线均清理 session |
 | 快捷键 | Windows / Linux / 非美式键盘 | ⚠️ 待实机 | 不覆盖系统快捷键，`Ctrl+Shift+\` 可触发垂直分屏 |
-| Team Server 容器 | Docker + PostgreSQL 16 | 🟡 CI 已完成镜像构建和 PostgreSQL 迁移；本机无 Docker | Compose 启动打包镜像后，`/api/v1/health/ready` 与关停钩子通过 |
+| Team Server 容器 | Docker Desktop 29.7.2 + PostgreSQL 16.15 | ✅ 本机 Compose 生命周期通过：迁移、health/readiness、SIGTERM 与重启恢复均符合预期 | Compose 启动后 closed/token/open、迁移、`/api/v1/health/ready` 与关停钩子通过 |
 | Tauri 三平台编译 | macOS / Ubuntu / Windows CI | ✅ CI `31553345929` 与 `31553348495` 三平台通过 | `.github/workflows/ci.yml` 三平台 `tauri build --no-bundle --ci` 通过 |
 | Release 安装包 | 六个原生 GitHub runner | ✅ `v0.0.1-dev.1` 工作流 `31554163901` 全绿；8 个安装包与 checksum 已核验 | 八个安装资产非空且系统/架构命名正确，`SHA256SUMS.txt` 可校验 |
 | S3 服务端集成 | AWS S3 或兼容服务 | ⚠️ 待外部服务 | 固定向量之外，验证实际签名、UTF-8 key、分页列表、上传下载与删除 |
-| Agent forwarding | 全平台 | 📋 入口未实现 | 独立设置开启后显式调用 `channel.agent_forward(...)` 并完成双向请求 |
+| Agent forwarding | 全平台 | ⚠️ 代码完成，待实机 | 默认关闭；opt-in 时显式请求；未授权主动 channel 被拒绝；池内启用/禁用连接隔离 |
+| Team 注册准入 | Docker / PostgreSQL | ✅ 自动化与容器运行均通过 | 生产默认 closed；错误 token 不新增用户；正确 token/open 可注册；缺失/非法环境配置拒绝启动 |
+
+## 2026-08-19 feat/mvp 验证结果
+
+| 门禁 | 结果 |
+| --- | --- |
+| 本机 `pnpm verify` | ✅ 前端 63 个文件/561 项、Team Server 25 个文件/103 项、Rust 47 项单测 + 2 项集成测试全部通过 |
+| 静态质量 | ✅ Prisma validate、lint、typecheck、Nest/Vite build、Rust fmt/check/Clippy `-D warnings` 与 462 个生产源码文件规模门禁通过 |
+| Bundle | ✅ 初始 gzip 237.68 KB / 240 KB，总 gzip 524.42 KB / 550 KB，最大 JS chunk raw 401.56 KB / 500 KB |
+| 供应链 | ✅ `deepmerge-ts` 固定到修复版 8.0.1；`pnpm audit --prod --audit-level high` 为 0 个已知漏洞 |
+| Compose | ✅ 配置解析、PostgreSQL 16.15、2 个 Prisma 迁移、三类 health、closed/token/open、5 类非法环境、SIGTERM 退出码 0 与重启 readiness 全部通过 |
+| SSH 高级能力 | ✅ Agent forwarding 授权/池隔离和 Jump Host certificate 自动化通过；⚠️ 真实 Agent、CA、服务端与跨平台矩阵待执行 |
+
+本机系统代理无法完成 `auth.docker.io` TLS 握手，因此运行时验收从 AWS Public ECR 的官方 Docker Library 镜像源按 arm64 digest 导入 Node/PostgreSQL 基础镜像，并以 frozen lockfile 和完整性校验构建当前源码；原始 Dockerfile 的无替换构建继续由 CI 结果证明。验收结束后已删除容器、网络和测试数据卷。
+
+本轮未创建发布标签或安装包，也未改写 `v0.0.1-dev.1` 的既有发布证据。代码与本机容器运行时达到可合并门禁；发布前仍需按上表完成真实 SSH、跨平台与硬件验收。

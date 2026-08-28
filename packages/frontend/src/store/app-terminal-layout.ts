@@ -99,6 +99,7 @@ export function splitTerminalTab(
   const newTab: Tab = {
     ...source,
     id: newTabId,
+    title: undefined,
     splitMode: direction,
     splitId,
     splitChildren: [source.id],

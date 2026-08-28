@@ -7,6 +7,7 @@
 export type {
   SessionInfo,
   ShellOutput,
+  TerminalError,
   ConnectionResult,
   LocalSessionOptions,
   SshPasswordOptions,
@@ -20,7 +21,13 @@ export type {
 } from './session'
 
 // SFTP types
-export type { SftpFile, SftpListResult, SftpOperationResult, SftpProgressCallback, SftpChecksumResult } from './sftp'
+export type {
+  SftpFile,
+  SftpListResult,
+  SftpOperationResult,
+  SftpProgressCallback,
+  SftpChecksumResult,
+} from './sftp'
 
 // Serial types
 export type {
@@ -31,10 +38,20 @@ export type {
   SerialCloseCallback,
 } from './serial'
 
-export { COMMON_BAUD_RATES, DATA_BITS_OPTIONS, STOP_BITS_OPTIONS, PARITY_OPTIONS, FLOW_CONTROL_OPTIONS } from './serial'
+export {
+  COMMON_BAUD_RATES,
+  DATA_BITS_OPTIONS,
+  STOP_BITS_OPTIONS,
+  PARITY_OPTIONS,
+  FLOW_CONTROL_OPTIONS,
+} from './serial'
 
 // Port forward types
-export type { PortForwardConfig, PortForwardInfo, PortForwardResult } from './port-forward'
+export type {
+  PortForwardConfig,
+  PortForwardInfo,
+  PortForwardResult,
+} from './port-forward'
 
 // Terminal settings types
 export type { CursorStyle, TerminalSettings } from './terminal-settings'

@@ -83,7 +83,7 @@ export class SerialService {
   /**
    * 写入原始数据 (不添加 CR)
    */
-  async writeRaw(sessionId: string, data: string): Promise<void> {
+  async writeRaw(sessionId: string, data: Uint8Array): Promise<void> {
     await invoke('serial_write_raw', { sessionId, data })
   }
 

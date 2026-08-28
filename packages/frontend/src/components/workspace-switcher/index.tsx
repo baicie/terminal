@@ -1,6 +1,6 @@
 import type { Workspace } from '@/types'
 import { Check, Cloud, FolderOpen, Layers, Plus } from 'lucide-react'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
@@ -37,17 +37,12 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
   const [isCreating, setIsCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [managerOpen, setManagerOpen] = useState(false)
-  const loadWorkspaces = useWorkspaceStore(s => s.loadWorkspaces)
   const addWorkspace = useWorkspaceStore(s => s.addWorkspace)
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId)
   const workspaces = useWorkspaceStore(s => s.workspaces)
   const activeWorkspace = workspaces.find(
     workspace => workspace.id === activeWorkspaceId,
   )
-
-  useEffect(() => {
-    void loadWorkspaces()
-  }, [loadWorkspaces])
 
   const handleCreateWorkspace = async () => {
     if (!newName.trim()) return

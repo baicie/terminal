@@ -60,6 +60,7 @@ export default defineConfig(() => ({
           // terminal-only dependencies into the initial route graph.
           if (id.includes('/node_modules/@baicie/xterm/')) return 'xterm-core'
           if (id.includes('/node_modules/@xterm/')) return 'xterm-addons'
+          if (id.includes('/node_modules/lucide-react/')) return 'icons'
           if (
             id.includes('/node_modules/react/') ||
             id.includes('/node_modules/react-dom/') ||

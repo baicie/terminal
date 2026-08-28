@@ -199,4 +199,33 @@ describe('MenuTabs', () => {
     expect(tab.className).toContain('touch-manipulation')
     expect(close.className).toContain('touch-manipulation')
   })
+
+  it('shows connection state in the tab strip without changing tab names', () => {
+    useAppStore.setState({
+      tabs: [
+        { id: 'one', label: 'One', type: 'local', connectionStatus: 'connected' },
+        {
+          id: 'two',
+          label: 'Two',
+          type: 'remote',
+          hostId: 'host-1',
+          connectionStatus: 'connecting',
+        },
+        {
+          id: 'three',
+          label: 'Three',
+          type: 'remote',
+          hostId: 'host-2',
+          connectionStatus: 'disconnected',
+        },
+      ],
+      activeTabId: 'one',
+    })
+    renderTabs()
+
+    expect(screen.getByRole('tab', { name: 'One' })).toBeTruthy()
+    expect(screen.getByTestId('tab-status-connected')).toBeTruthy()
+    expect(screen.getByTestId('tab-status-connecting')).toBeTruthy()
+    expect(screen.getByTestId('tab-status-disconnected')).toBeTruthy()
+  })
 })

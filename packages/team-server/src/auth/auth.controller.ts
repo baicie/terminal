@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common'
 import {
   ApiBearerAuth,
+  ApiHeader,
   ApiOperation,
   ApiResponse,
   ApiTags,
@@ -32,9 +33,17 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Register or get user ID' })
+  @ApiHeader({
+    name: 'X-Registration-Token',
+    required: false,
+    description: 'Required when REGISTRATION_MODE=token',
+  })
   @ApiResponse({ status: 201, description: 'User registered' })
-  async register(@Body() body: RegisterDto) {
-    return this.authService.register(body.userId)
+  async register(
+    @Body() body: RegisterDto,
+    @Headers('x-registration-token') registrationToken?: string,
+  ) {
+    return this.authService.register(body.userId, registrationToken)
   }
 
   @Post('tokens')

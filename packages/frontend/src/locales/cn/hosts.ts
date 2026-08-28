@@ -25,6 +25,20 @@ export default {
   'hosts.sshAuth': 'ssh, {{username}}',
   'hosts.copySsh': '复制 SSH 命令',
 
+  // Quick Connect
+  'quickConnect.title': '快速连接',
+  'quickConnect.description': '连接 {{hostname}} 的 {{port}} 端口。',
+  'quickConnect.descriptionEmpty': '输入 SSH 认证信息。',
+  'quickConnect.usernameRequired': '请输入用户名。',
+  'quickConnect.passwordRequired': '请输入密码。',
+  'quickConnect.privateKeyRequired': '请输入私钥。',
+  'quickConnect.certificateRequired': '请输入 SSH 证书。',
+  'quickConnect.certificateAuth': 'SSH 证书',
+  'quickConnect.invalidTarget': '请输入有效的 SSH 主机地址。',
+  'quickConnect.invalidPort': '请输入 1 到 65535 之间的端口。',
+  'quickConnect.unsupportedArguments':
+    '仅支持 host、user@host、user@host:port 和 ssh user@host -p PORT。',
+
   // Host dialog
   'hostDialog.editHost': '编辑主机',
   'hostDialog.newHost': '新建主机',

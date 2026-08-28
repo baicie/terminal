@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { serialService } from '@/service/serial'
+import { terminalSessionManager } from '@/features/terminal/services/terminal-session-manager'
 
 interface SerialDialogProps {
   open: boolean
@@ -88,16 +89,25 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
       flowControl,
     }
 
-    const result = await serialService.connect(config)
+    try {
+      await terminalSessionManager.prepare('serial')
+      const result = await serialService.connect(config)
 
-    if (result.success && result.sessionId) {
-      onConnect(config, result.sessionId)
-      onClose()
-    } else {
-      setError(result.message || 'Connection failed')
+      if (result.success && result.sessionId) {
+        onConnect(config, result.sessionId)
+        onClose()
+      } else {
+        setError(result.message || 'Connection failed')
+      }
+    } catch (connectError) {
+      setError(
+        connectError instanceof Error
+          ? connectError.message
+          : String(connectError),
+      )
+    } finally {
+      setConnecting(false)
     }
-
-    setConnecting(false)
   }
 
   return (

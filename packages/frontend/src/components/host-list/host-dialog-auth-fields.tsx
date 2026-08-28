@@ -75,6 +75,7 @@ export function AuthFields({
                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
               />
               <Button
+                type="button"
                 variant="outline"
                 onClick={() =>
                   browseFile(['pem', 'key', 'ppk', '*'], onPrivateKeyChange)
@@ -123,6 +124,7 @@ export function AuthFields({
                 placeholder="-----BEGIN OPENSSH CERTIFICATE-----"
               />
               <Button
+                type="button"
                 variant="outline"
                 onClick={() =>
                   browseFile(['crt', 'cert', '*'], onCertificateChange)
@@ -148,6 +150,7 @@ export function AuthFields({
                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
               />
               <Button
+                type="button"
                 variant="outline"
                 onClick={() =>
                   browseFile(['pem', 'key', 'ppk', '*'], onPrivateKeyChange)

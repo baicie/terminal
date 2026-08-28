@@ -208,14 +208,14 @@ handle.authenticate_publickey(username, key_with_hash).await?;
 **严重程度**: 中
 **状态**: ✅ 已实现
 **影响功能**: SSH 跳板机连接
-**更新时间**: 2026-08-09（主入口接线与认证边界复核）
+**更新时间**: 2026-08-19（certificate 双端接线与输入校验）
 
 **实现**:
 
 - Tauri 命令 `session_create_ssh_jump`（`src-tauri/src/commands.rs`）
 - `SshSession::new_with_jump` / `connect_via_jump`（`src-tauri/src/session/ssh.rs`）：跳板认证 + `channel_open_direct_tcpip` 再打目标会话
 - 主终端入口会解析 `jumpHostId`，从 SQLite 恢复 Jump Host 配置并调用 `session_create_ssh_jump`
-- password/key/agent 目标与跳板认证已接线；certificate 尚未接线，前端和 Rust 均明确返回“不支持”，不会回退到密码认证
+- password/key/agent/cert 的目标端与跳板端认证均已接线；certificate 分别使用各自的证书、私钥与 passphrase，缺失凭据时在网络连接前拒绝
 
 **设计文档**: `docs/design.md` Section 3.3（产品文案可对齐）
 
@@ -840,7 +840,7 @@ defaultNS: 'demo',
 **仍待完善**:
 
 - [ ] Windows 上多 key / 证书 key 的实机回归（OpenSSH 与 Pageant 各版本）
-- [ ] Agent forwarding 增加显式 `channel.agent_forward(...)` 启用入口；当前仅完成服务端 channel handler 与本地 Agent 双向桥接
+- [x] Agent forwarding 已于 2026-08-19 增加显式 `channel.agent_forward(...)`、独立 Host 设置、handler 授权与连接池隔离（Issue #46）
 
 **已完善（2026-05-03）**:
 
@@ -1072,13 +1072,13 @@ constructor() {
 
 ## 十四、Apple WebKit (Safari) 键盘事件问题 (2026-03-29)
 
-### Issue #26: Safari 同时按键丢失字符 ✅ 已修复
+### Issue #26: macOS WKWebView 重叠按键丢失字符 🟡 修复版 core 已恢复，物理回归待完成
 
-**严重程度**: Medium
-**状态**: ✅ 已修复
+**严重程度**: High
+**状态**: 🟡 代码路径已恢复为 `@baicie/xterm@0.1.7`；真实 WKWebView 物理重叠按键、dead key 与 IME 仍需验收
 **影响功能**: 终端输入（local / SSH / serial 共用 `useTerminal`）
 **浏览器**: Safari、macOS Tauri 内置 WKWebView（纯 WebKit，不含 Chrome/Chromium 内核）
-**修复时间**: 2026-05-02（生产路径）；实验验证见 2026-03-29
+**修复时间**: 2026-05-02（历史 fallback）；2026-08-20（修复版 core 恢复并锁定）
 
 **问题描述**:
 
@@ -1093,7 +1093,7 @@ constructor() {
 
 **根本原因**:
 
-这是 Apple WebKit 的已知问题，不是 xterm.js 的 bug。WebKit 在处理同时按键时有事件时序问题：
+这是上游 xterm 6 键盘事件策略与 Apple WebKit 原生 textarea 事件时序的交互缺陷。官方 `@xterm/xterm@6.0.0` 在 `_keyDown` 后阻止默认事件，且 `_inputEvent` 受 `_keyDownSeen` / `_keyPressHandled` 限制；近同时按键时，后续字符可能没有进入 xterm `onData`。应用层只透明监听 `onData` 无法补回 core 从未发出的字符。
 
 1. Safari 在同一个宏任务中处理多个 `keydown` 事件
 2. xterm.js 取消第一个 `keydown` 后，Safari 不会为第二个键触发 `keypress`
@@ -1104,9 +1104,9 @@ constructor() {
 - [xtermjs/xterm.js #5374](https://github.com/xtermjs/xterm.js/issues/5374) - Cannot type shifted characters or overlapping keys in Safari
 - [xtermjs/xterm.js #5721](https://github.com/xtermjs/xterm.js/issues/5721) - ctrl-c sends keyCode 13 on iOS Safari
 
-**解决方案（已合入生产）**:
+**解决方案（历史生产实现；当前路径见下方说明）**:
 
-在 `packages/frontend/src/hooks/use-terminal.ts` 中实现 `setupWebKitInputCompensation(term, send)`，由 `useTerminal` 在挂载终端后注册：
+早期版本在 `packages/frontend/src/hooks/use-terminal.ts` 中实现 `setupWebKitInputCompensation(term, send)`，由 `useTerminal` 在挂载终端后注册：
 
 1. **仅纯 WebKit**：`/AppleWebKit/i` 且排除 `Chrome|Chromium|Edg`，避免误伤 Blink
 2. **滚动尾部 buffer**：通过 `term.onData` 记录最近发送的尾部字符串（默认 32 字符），与实验页 `Set` 方案相比更利于与 IME / 多字节输入共存
@@ -1115,7 +1115,7 @@ constructor() {
 
 早期在 `packages/frontend/src/experiments/xterm-test.tsx` 中的验证逻辑已升级为上述生产实现。
 
-**验证建议**（回归时可抽查）:
+**历史 fallback 验证建议**:
 
 - Safari / WKWebView：快速交替两键、Shift+字母
 - Ctrl+C、方向键、IME 输入（中文）不误补发
@@ -1125,7 +1125,15 @@ constructor() {
 - `packages/frontend/src/hooks/use-terminal.ts` — `setupWebKitInputCompensation` + `useTerminal` 内注册与 cleanup
 - （可选参考）`packages/frontend/src/experiments/xterm-test.tsx` — 历史验证页面
 
-_本节最后更新: 2026-05-02_
+_本节最后更新: 2026-08-20_
+
+**Phase 6.17 当前实现**：上述应用层 DOM `input` fallback 已移除，避免与 core 内部 input handler 争用或双发。运行时和 CSS 统一使用精确固定的 `@baicie/xterm@0.1.7`：该兼容分支在 xterm 内部 `_keyDown`、`_keyUp`、`_inputEvent` 路径检测 `AppleWebKit`，允许 WKWebView 继续产生原生 `input`，并将 `insertText` 送入 `triggerDataEvent`。文本 `onData` 与原始 `onBinary` 随后透明进入同一会话 FIFO。
+
+**溯源与契约**：`0.1.7` 运行时/CSS/typings 与带源码的 `0.1.6` 发布物逐字节一致；可审计的上游基线是 xterm.js commit `34e017935581b6e0081b0e2bebe53e3193b85be7`（6.0.0 发布后的开发主线），不是 npm 官方 6.0.0 源码。`package.json` 精确固定 `0.1.7`，lockfile 记录不可变 SHA-512 integrity；`xterm-package-contract.test.ts` 禁止直接依赖官方 core，并验证 Vite 将修复版 core 与官方 addons 分开打包；错误声明上游模块名的 fork typings 通过 `src/types/xterm.d.ts` 桥接。
+
+**自动验证边界**：依赖契约、输入 FIFO 不改写/不重复、前端 79 个测试文件/675 项、typecheck 与 production build 可自动验证，但 jsdom、合成 `KeyboardEvent`、`term.input()` 或普通自动键入都不能复现 WKWebView 的真实原生事件时序。发布前必须在 macOS Tauri WKWebView 中多轮近同时按下物理 `a/s/d`，精确确认 PTY 收到 `asd` 且不丢不重，并覆盖快速连续输入、key rollover、CapsLock、Option/dead key、中文 IME 与 Ctrl+C。
+
+**剩余维护风险**：`0.1.7` 每次输入仍会执行 11 处 `console.debug`，npm `repository` 还是占位地址且发布物没有源码/source map。后续应从可追溯仓库基于上述上游 commit 发布去日志版本，并保留真实 WebKit 回归；在此之前不得用官方 core 替换。
 
 ---
 
@@ -1430,7 +1438,7 @@ $ cargo check
 5. 本地 PTY 创建、shell 启动及读写、resize、关闭控制 I/O 移至 blocking pool；统一从用户主目录启动，EOF 后正确标记会话关闭
 6. 移除冲突的系统级快捷键，释放 `Ctrl+Shift+V`，并修复结构化 IPC 错误显示
 7. SSH shell 读写 half 分离；EOF/Close/断流会关闭会话并释放连接池引用；同一连接 key 的首次创建由异步锁串行化
-8. SSH resize 改为 RFC 4254 `window-change`；主终端入口持久化并路由 Jump Host password/key/agent，certificate 在前后端 fail-closed
+8. SSH resize 改为 RFC 4254 `window-change`；主终端入口持久化并路由 Jump Host password/key/agent/cert
 
 **自动验证**:
 
@@ -1441,8 +1449,8 @@ $ cargo check
 **行为说明**:
 
 - 首次连接未知 SSH 主机现在会被拒绝，用户需先通过可信渠道把主机密钥写入 `~/.ssh/known_hosts`
-- Agent forwarding 尚缺显式客户端启用入口，不能与“使用 Agent 登录认证”混为同一完成状态
-- Jump Host 的 certificate 认证尚未实现，调用会明确失败，不能视为 password/key/agent 路径的完成项
+- Agent 登录认证与 Agent forwarding 保持独立；forwarding 只有在 Host 显式 opt-in 后才请求并授权 handler
+- Jump Host certificate 已完成代码与自动化验证；真实 CA/服务端组合仍需实机验收
 
 **实机回归**:
 
@@ -1456,7 +1464,7 @@ $ cargo check
 ### Issue #40: 发布门禁与 Team Server 安全缺口 ✅ 本机自动验证已修复
 
 **严重程度**: High
-**状态**: ✅ 当前环境可自动验证的问题已修复；容器与外部实机项保持待验证
+**状态**: ✅ 当前环境可验证问题与容器运行已修复；跨平台和硬件项保持待验证
 **修复时间**: 2026-08-09
 
 **问题**:
@@ -1493,12 +1501,12 @@ $ cargo check
 - 源码规模：447 个生产源码文件，0 个超限 ✅
 - `git diff --check` ✅
 
-**仍需外部验证 / 产品决策**:
+**后续验证 / 产品决策**:
 
-- [ ] 当前 macOS 环境没有 Docker；镜像构建、Compose 启动、迁移和真实 PostgreSQL readiness 需在 CI 或有 Docker 的环境验证
+- [x] Docker Desktop + PostgreSQL 16.15 容器启动、2 个迁移、真实 health/readiness、注册准入、SIGTERM 与恢复均通过
 - [ ] Windows/Linux/Pageant/Jump Host/本地 PTY/串口硬件按 Issue #39 矩阵执行
-- [ ] `POST /auth/register` 仍是受信任设备引导接口；公网部署应先通过反向代理访问控制，后续可增加管理员初始化密钥、OIDC 或一次性注册码
-- [ ] Agent forwarding 增加独立设置与显式 `channel.agent_forward(...)` 请求
+- [x] `POST /auth/register` 生产默认 closed，支持 token/open 显式准入策略；反向代理访问控制仍可作为纵深防御
+- [x] Agent forwarding 增加独立设置、显式 `channel.agent_forward(...)`、handler 授权与连接池隔离
 
 ---
 
@@ -1512,14 +1520,14 @@ $ cargo check
 
 - SQLite query/select 失败日志不再输出参数数组，避免 SSH 密码、私钥、证书、passphrase 或 Token 进入控制台；保留截断 SQL 与错误消息用于诊断。
 - 新建主机时 Save 按钮不再因不存在旧 `host` 而永久禁用；按钮只在保存进行中禁用，必填字段继续由统一 `handleSubmit` 校验。
-- 证书直连的 Tauri 参数统一使用 `privateKey`；Jump Host certificate 在前端和 Rust 网络连接前均明确拒绝，防止静默降级认证。
+- 证书直连的 Tauri 参数统一使用 `privateKey`；当时 Jump Host certificate 先 fail-closed，后续已由 Issue #46 完成双端证书认证。
 
 **回归测试**:
 
 - `service/database/connection.test.ts`：读写失败日志均不包含秘密参数。
 - `components/host-list/host-form-actions.test.tsx`：新建态 Save 可点击。
-- `hooks/terminal-session-helpers.test.ts`：证书 camelCase 参数及 Jump Host certificate fail-closed。
-- Rust：Jump Host 两端 certificate 拒绝和 `JumpHostConfig` camelCase serde 映射。
+- `hooks/terminal-session-helpers.test.ts`：证书 camelCase 参数；Jump Host certificate 的完成回归见 Issue #46。
+- Rust：`JumpHostConfig` camelCase serde 映射；双端 certificate 认证见 Issue #46。
 
 ---
 
@@ -1549,8 +1557,8 @@ $ cargo check
 - [ ] 真实 AWS S3 或兼容服务的签名、UTF-8 key、分页列表、上传下载与删除。
 - [ ] Windows/Linux OpenSSH Agent、Pageant、Jump Host、本地 PTY、快捷键和串口硬件矩阵。
 - [ ] Docker/PostgreSQL 镜像、迁移与 readiness。
-- [ ] Jump Host certificate；当前必须明确拒绝。
-- [ ] Agent forwarding 显式 `channel.agent_forward(...)` 入口。
+- [x] Jump Host certificate 双端认证与输入校验（Issue #46）。
+- [x] Agent forwarding 显式入口、handler 授权与连接池隔离（Issue #46）。
 
 ---
 
@@ -1681,4 +1689,274 @@ $ cargo check
 
 ---
 
-_本节最后更新: 2026-08-17_
+## 二十一、SSH 高级认证与 Team Server 准入收口 (2026-08-19)
+
+### Issue #46: Agent forwarding 越权边界、Jump certificate 缺口与公开注册 ✅ 本机代码与容器验收完成
+
+**严重程度**: High
+**状态**: ✅ 自动化、静态门禁与 Team Server 容器运行通过；真实 SSH 和跨平台场景待验证
+**修复时间**: 2026-08-19
+
+**问题**:
+
+1. Agent forwarding 只有 shell 请求开关，`ClientHandler` 对服务端主动打开的 Agent channel 没有连接级授权检查；连接池也未区分 forwarding 权限。
+2. Agent forwarding 缺少独立 Host 设置、SQLite/同步持久化和所有 SSH IPC 分支的统一传播；团队共享还可能替接收者静默开启高权限设置。
+3. Jump Host 的跳板端和目标端 certificate 被前后端主动拒绝，IPC 也没有目标证书字段。
+4. Team Server `/auth/register` 仅有限流，没有应用级准入；Compose 未配置绑定地址时默认暴露到 `0.0.0.0`。
+
+**修复**:
+
+- Host 新增默认关闭的 `agentForwarding`；SQLite 新库/旧库迁移、CRUD、备份同步、共享边界及 password/key/agent/cert/jump IPC 均已接线。
+- opt-in shell channel 显式请求 `agent_forward(true)`；`ClientHandler` 保存不可变授权，未授权时关闭服务端主动 Agent channel，且绝不连接本地 Agent。
+- 连接池 key 包含 forwarding 模式；Jump Host transport 固定禁用，最终目标 handler 才按 Host 设置授权。
+- 团队共享不传播 forwarding 权限，团队导入始终关闭；个人备份只把严格的 `true`/`1` 解析为开启。
+- `session_create_ssh_jump` 增加可选 `targetCertificate`；跳板端与目标端 certificate 都复用 OpenSSH certificate 认证，缺证书或私钥时 fail-closed。
+- 交互终端、脚本/命令执行和 legacy SSH facade 均复用统一的 Jump Host certificate 类型与会话入口。
+- Team Server 增加 `REGISTRATION_MODE=closed|token|open`：生产默认 closed；token 模式要求至少 32 字符，使用 SHA-256 固定长度摘要和常量时间比较；拒绝发生在 Prisma 访问前。
+- 启动配置要求显式、精确的 `NODE_ENV` 并拒绝非法注册模式，避免校验值与 Helmet/CORS/Swagger 使用的运行环境分叉；Compose 默认绑定 `127.0.0.1`，注册模式默认 closed。
+
+**自动验证**:
+
+- `pnpm verify`：前端 63 个测试文件/561 项、Team Server 25 个文件/103 项、Rust 47 项单测 + 2 项集成测试全部通过。
+- Prisma validate、lint、typecheck、Nest/Vite production build、bundle budget、Rust fmt/check/Clippy `-D warnings` 与 462 个生产源码文件规模门禁全部通过。
+- Bundle 初始/总 gzip 为 237.68/524.42 KB，低于 240/550 KB 预算；最大 JS chunk raw 401.56 KB，低于 500 KB。
+- `docker compose --env-file .env.example config --quiet` 与 `git diff --check` 通过。
+- Docker Desktop + PostgreSQL 16.15 运行通过：2 个迁移无 pending，三类 health 均为 200；closed/错误 token 为 403 且不新增用户，正确 token/open 为 201；缺失/非法环境退出码 1；SIGTERM 退出码 0，重启后 readiness 恢复。
+
+**仍需外部验证**:
+
+- [ ] macOS/Linux OpenSSH Agent forwarding：开/关、服务端主动 channel、连接池模式切换与多标签。
+- [ ] Windows OpenSSH named pipe 与 Pageant forwarding/login。
+- [ ] Jump Host 跳板端/目标端 certificate 的真实 CA、加密私钥、拒绝和断开路径。
+
+### Issue #47: Prisma 配置链传递依赖高危漏洞 ✅ 已修复
+
+**严重程度**: High
+**状态**: ✅ 修复版依赖、Prisma 门禁与生产依赖审计通过
+**修复时间**: 2026-08-19
+
+**问题**:
+
+- `prisma@7.9.1` 通过 `@prisma/config@7.9.1` 固定引入 `deepmerge-ts@7.1.5`，命中 CVE-2026-40345 / GHSA-ggr8-5vv4-36mx；精心构造的循环对象图可触发同步栈耗尽。
+- 截至修复时最新版 Prisma 仍固定易受影响版本，直接升级 Prisma 无法消除告警。
+
+**修复与验证**:
+
+- 在根 `pnpm.overrides` 将 `deepmerge-ts` 固定到修复版 `8.0.1`，锁文件中依赖树只保留该版本。
+- `pnpm install --frozen-lockfile` 与 Prisma Client generate 通过。
+- Prisma validate、Team Server lint/typecheck、25 个文件/103 项测试及 production build 通过。
+- `pnpm audit --registry=https://registry.npmjs.org --prod --audit-level high` 返回 `No known vulnerabilities found`。
+
+### Issue #48: 终端输入失真、输出失控与会话生命周期泄漏 🟡 核心缺陷已修复，外部实机矩阵待验收
+
+**严重程度**: High
+**状态**: macOS 本地 PTY/Tauri/xterm 核心链路已修复并通过真实 smoke，WKWebView 兼容 core 已恢复；物理重叠按键、SSH、跨平台与硬件矩阵待验收
+**发现/修复时间**: 2026-08-19 至 2026-08-21
+
+**问题**:
+
+1. 前端曾吞掉 Tab/方向键并用 `term.write()` 伪造历史，导致 readline、vim、nano 等程序状态失真；WebKit/IME 输入还可能重复或丢失。
+2. local/SSH 输出按任意 IPC chunk 做 lossy UTF-8 解码，xterm 没有消费 ACK，高频输出会无限堆积或离屏静默截断。
+3. PTY 固定以 `80x24` 创建，首次 fit/resize 可能丢失；设置键名与实际 `AppSettings` 不一致，隐藏标签长期占用 WebGL context。
+4. 自然 EOF、connecting 取消和快速 reconnect 可能留下 session/meta/channel，旧 generation 输出也可能污染新会话。
+5. SSH TCP 建连、认证和 Jump Host 隧道缺少阶段 deadline，网络异常时连接操作可能无限等待；可靠性重构一度把必要的 `@baicie/xterm` WebKit 兼容分支误判为异常来源并迁回官方 core，导致重叠按键修复回退。
+6. 首版背压 watchdog 从首次到达 1 MiB 高水位后固定计时，即使前端持续完成 xterm write 并 ACK，也必须一次降到 128 KiB 才会取消 deadline；真实 8 MiB 输出因此在“缓慢但持续前进”时被误判为停滞。
+7. 前端输出调度曾把 RAF 当作唯一启动条件；同 bundle id 窗口并存或 WebView 被遮挡时，RAF 可降至约 2Hz 甚至暂停，使标准 smoke 一次在 `ready` 阶段超时、一次耗时 123.989 秒。
+8. 输出调度器修复后，smoke 自身的 `defaultNextFrame()` 仍只等待 RAF；RAF 永不回调时测试控制流无法继续并提交结果，最终由 Rust watchdog 报 `stage rust-watchdog: terminal smoke timed out`。
+9. 首版 fallback 在每个 xterm callback 后通过 microtask 提交下一批，使 xterm 内部 WriteBuffer 短暂清空并重新依赖其 `setTimeout(0)`；WKWebView 节流该定时器后，ACK 间隔可超过 10 秒。队列清空后到达的不足 32 KiB 受流控事件也只竞速 RAF/timer，同样可能在进入 xterm 前超时。
+10. fallback 排空后队列可能短暂为空；若随后到达的是没有后端字节计数的尾批次，调度器会退出 fallback 并重新等待同时被节流的 RAF/timer。
+
+**修复**:
+
+- 参考 MIT Nyaterm 固定提交 `70306b5c83e9f58c85a4f86a00440cd2be2cd57a` 的输出事件字节数、callback ACK 和高低水位协议，在本项目 `SessionManager`/Tauri event 架构内重新实现。
+- 输入改为透明 `onData`/`onBinary` 进入单写者 FIFO；恢复 `@baicie/xterm@0.1.7` 内部 `AppleWebKit` 键盘路径，DOM `input` fallback 保持移除以避免与 core 双发；connecting 阶段允许排队输入，关闭后拒绝新数据。
+- Rust 使用流式 UTF-8 decoder、有界输出泵和 16ms/32 KiB 批处理；前端单次 write 上限为 32 KiB，超大事件按 UTF-8/Unicode 边界拆分，单 `xterm.write` 在途且 callback 后才 ACK。ACK 控制面使用原子累计 + `Notify`，local/SSH 在 1 MiB/128 KiB 水位暂停/恢复；每次正向 ACK 都刷新“无进展”deadline，完全无 ACK 仍会在 10 秒后 fail-closed。
+- 输出调度前台仍优先 RAF；所有受流控输出同时安排 microtask，避免不足 32 KiB 的尾批次同时受调度器 RAF/timer 节流。进入 fallback 后，首批由 microtask 提交给 xterm，后续批次直接在 xterm callback 内追加，让已经启动的 parse slice 继续有数据，避免每个 32 KiB 批次都重新等待 xterm 内部 timer；fallback 状态跨越短暂空队列，确保随后无字节计数的尾批次也能由 microtask 进入 xterm，只有 reset、dispose 或 generation 变化时复位。xterm 首次空队列写入和约 12ms slice 主动让出仍可能使用其内部 timer，未声称完全规避 WebView timer 节流。
+- smoke 阶段切换改用 `waitForTerminalSmokeFrame()`，让 RAF 与 100ms timeout 竞速并取消未完成的一侧；回归覆盖 RAF 永不回调时仍可继续。
+- 创建前同步有效尺寸，resize latest-wins；设置真实作用于当前 xterm core；只为可见活动终端启用 WebGL，context loss 回退默认 renderer。
+- EOF/close/reconnect 使用 generation 和幂等清理；本地 child 在初始化失败、EOF 和 close 路径统一 kill/wait/reap；SSH 连接、认证、Jump 隧道、channel/PTY/shell/exec/write/resize 均增加 deadline，过期 writer 命令不会在调用方超时后继续执行，fatal writer completion 会主动结束 reader、上报错误并清理 session，自然 EOF 先关闭 writer 再释放 transport，交互 transport 启用 TCP_NODELAY。
+- 运行时与 CSS 恢复并精确固定 `@baicie/xterm@0.1.7`，保留必要 typings shim 与官方 `@xterm/addon-*`；依赖契约测试禁止直接安装官方 core，并验证 Vite 的 `xterm-core` 分包规则命中兼容分支。
+
+**自动验证**:
+
+- 前端终端定向测试覆盖输入透明、依赖/分包契约、IME/WebKit 边界、输出 ACK/字节计数、UTF-8 安全分片、RAF/timer 节流 fallback、xterm WriteBuffer 连续续写、背压、尺寸、设置、renderer、生命周期、smoke 入口隔离和重连；2026-08-21 新增 fallback 空队列尾批次回归，当前前端全量为 93 个测试文件/801 项通过。
+- macOS 真实 `portable-pty` 自动化 round-trip 使用隔离的 `/bin/sh -c` 测试 shell，覆盖 PTY 默认回显、`read` 精确接收中文/emoji、shell 内 `stty size` 读取 `31 97` 及正常退出等待；该测试直接驱动系统 PTY，不是 mock，也不加载用户 profile。
+- Rust 112 个单测 + 2 个桌面配置集成测试通过，覆盖 ACK 进展刷新 watchdog、完全无 ACK 超时、over-ACK、SSH writer fatal completion/有界关闭、PTY 生命周期与 smoke 命令边界；`cargo fmt --check` 与 Clippy `-D warnings` 通过。
+- 恢复兼容 core 后完整 `pnpm verify` 通过：前端 79 个文件/675 项、Team Server 25 个文件/103 项、Rust 112 个单测 + 2 个桌面配置集成测试，及 lint/typecheck/build/bundle/fmt/Clippy/478 文件规模门禁；首屏/总 gzip 为 108.16/545.92 KB。
+- 修复后的标准 Tauri/xterm smoke 已通过：shell 命令精确生成 8,388,608 字节，xterm 中观察到 `LOAD_END`，随后命令 `AFTER_LOAD_OK` 仍可见；resize 后 shell 的 `stty size` 返回 `31 97`，xterm 为 97 列 × 31 行。恢复 `@baicie/xterm@0.1.7` 并重新构建 Tauri 调试二进制后的最新运行耗时 562 ms，三个可见性标记均为 true。该结果不等同于独立逐字节统计 parser 消费了全部 8 MiB，也不证明物理重叠按键。
+
+**仍需外部验证**:
+
+- [x] 前端 `onBinary` → `Uint8Array` → Tauri `Vec<u8>` 及文本/raw 共用 FIFO 的代码和服务边界回归。
+- [ ] 真实 xterm/Tauri 端到端原始输入协议，覆盖 SGR mouse、bracketed paste 和非 UTF-8 字节。
+- [x] macOS 系统 PTY 自动化 smoke：登录 shell、默认回显、`read` Unicode、`stty size` 与正常退出。
+- [x] Tauri/xterm 中的 macOS 基础本地 PTY：登录 zsh、普通命令、Unicode、Ctrl+C 与 `stty size`。
+- [x] 用修复后调试包复跑 8 MiB 高频输出，确认 `LOAD_END`、后续命令和 resize 往返仍可用。
+- [ ] 在 macOS WKWebView 多轮近同时按物理 `a/s/d` 并确认 PTY 不丢不重；补快速连续输入、Option/dead key、中文 IME、vim/nano、连续 resize、SGR mouse、bracketed paste 与非 UTF-8 原始输入实测。
+- [ ] 可用 SSH 服务的 password/key/agent/cert/Jump 与断线重连。
+- [ ] Windows/Linux PTY、OpenSSH/Pageant、串口硬件和签名/公证发布矩阵。
+
+### Issue #49: Host Profile 已保存但未作用于交互会话 ✅
+
+**严重程度**: Medium
+**状态**: ✅ 已接通；跨平台 shell 与真实 Host 仍需实机验收
+**修复时间**: 2026-08-22
+
+**问题**:
+
+- Hosts UI 和 SQLite 已保存 `startupCommand` / `environment`，但终端创建命令没有携带这些字段，一键打开主机无法复现保存的工作目录、环境和启动动作。
+
+**修复**:
+
+- 新增受校验的 `TerminalProfile` IPC 契约；local PTY 在 spawn 前注入 environment，SSH/Jump Host 在 shell request 前发送 environment request。
+- startup command 在 shell/PTY 确认建立后发送，避免把用户命令拼进认证、PTY 或远程主机地址参数；reconnect 复用同一 Host profile。
+- 增加 profile payload、输入校验和 SSH request 顺序回归测试。
+
+**仍需外部验证**:
+
+- [ ] macOS/Linux/Windows shell 对环境变量和 startup command 的真实行为。
+- [ ] SSH 服务端禁用 env request、断线重连和 Jump Host 目标 shell 的行为。
+
+### Issue #50: 标签栏缺少会话级连接状态投影 ✅ 已修复
+
+**严重程度**: Medium
+**状态**: ✅ 已修复；真实连接时序仍需实机确认
+**发现/修复时间**: 2026-08-22
+
+**问题**:
+
+- 连接状态只存在于 pane 内的 `TerminalSessionManager` 绑定，标签栏无法在切换标签前判断哪个会话正在连接、已断开或可重连。
+
+**修复**:
+
+- `TerminalContainer` 将 session manager 状态投影到所属 `Tab.connectionStatus`；connecting 与 reconnecting 统一为连接中，error 与 disconnected 统一为断开，避免创建第二套生命周期状态机。
+- `MenuTabs` 渲染连接状态点，保持标签的可访问名称、键盘导航和关闭动作不变。
+
+**验证**:
+
+- 容器与标签栏定向测试共 17 项通过，覆盖 connected、connecting、disconnected 状态及原标签名称保持不变。
+- 浏览器自动化不能替代真实 PTY/SSH/serial；状态点在真实连接、断线和重连矩阵中仍需确认。
+
+### Issue #51: 启动恢复串行加载拖慢首个终端 ✅ 已修复
+
+**严重程度**: Medium
+**状态**: ✅ 已修复；真实冷启动耗时仍需 Tauri 实机测量
+**发现/修复时间**: 2026-08-22
+
+**问题**:
+
+- `startWorkspaceRecovery()` 先等待工作区加载，再等待主机加载；两条独立的 SQLite 读取路径会叠加首屏恢复延迟，影响打开应用后快速进入终端。
+
+**修复**:
+
+- 工作区与主机加载现在并行启动；workspace id 确定后立即开始布局读取，并在 hosts 加载完成后统一过滤已删除主机，保持恢复数据一致性。
+
+**验证**:
+
+- 新增并行启动与布局提前读取回归，全量前端 96 个测试文件/816 项通过；lint、typecheck、build 和源码规模门禁通过。
+- 冷启动到首个终端的 10 秒目标仍需在真实 Tauri/macOS、Windows/Linux 和真实数据库环境中测量；最新 macOS 调试 smoke 的连接与首轮终端流程约 6 秒通过。
+
+### Issue #52: 多标签无法显示 shell 当前路径/窗口标题 ✅ 已修复
+
+**严重程度**: Medium
+**状态**: ✅ 已修复；真实 shell 程序标题矩阵仍需实机确认
+**发现/修复时间**: 2026-08-22
+
+**问题**:
+
+- 多个终端标签始终显示创建时的 Host/Local 名称，无法区分 shell 当前目录、vim/tmux 窗口或远程程序标题。
+
+**修复**:
+
+- 订阅 xterm `onTitleChange`，接收 OSC 0/2 标题并规范化空白、移除空标题、限制为 160 字符。
+- 将动态标题写入进程内 `Tab.title`，标签栏和 pane header优先显示它；持久 `Tab.label` 仍作为回退名称。
+- 工作区恢复只保留 `label`/Host 配置，不把远端 shell 的动态标题写入 SQLite。
+
+**验证**:
+
+- xterm 订阅、标题规范化和标签展示回归已覆盖；全量前端 96 个测试文件/816 项通过，lint、typecheck、build 和源码规模门禁通过。
+- 仍需在真实 zsh/bash、vim、tmux、SSH 和断线重连场景确认标题事件时序。
+
+### Issue #54: Shell Integration 事件缺少统一前端协议 ✅ 已修复
+
+**严重程度**: Medium
+**状态**: ✅ xterm OSC 133/7 解析与当前目录投影已接入；常见 shell 的显式配置和真实程序矩阵待验证
+**发现/修复时间**: 2026-08-22
+
+**问题**:
+
+- Termius/Tabby 风格的命令阶段、退出码和当前目录依赖 shell integration；此前终端只处理 OSC 0/2 标题，没有统一消费 OSC 133/7 的协议边界。
+
+**修复**:
+
+- 新增 `terminal-shell-integration.ts`，严格解析 OSC 133（prompt/command/output/exit）和 OSC 7（file URI cwd），限制路径长度、控制字符和退出码范围，非法数据安全忽略。
+- xterm 实例通过公开 `term.parser.registerOscHandler` 注册监听器，卸载时释放；事件只更新当前目录/阶段状态，不拦截、重放或伪造用户输入。
+- pane header 在 shell 报告 cwd 后显示当前目录；动态状态保持进程内，不写入 workspace layout。
+
+**验证**:
+
+- Shell Integration 协议、xterm 监听生命周期、pane 目录投影定向测试通过；前端 typecheck、lint 通过。
+- 当前未把 shell 配置自动写入用户 profile；bash/zsh/fish 的显式配置、vim/tmux/SSH 时序和真实退出码仍需实机验收。
+
+### Issue #53: 标准 Tauri smoke 的 Unicode 阶段超时 ✅ 已修复
+
+**严重程度**: High
+**状态**: ✅ 已修复；物理键盘和完整认证矩阵仍需实机验收
+**发现/修复时间**: 2026-08-22
+
+**问题**:
+
+- 标准 `pnpm smoke:terminal` 在 `ready` 阶段之后输入 Unicode 命令时，隔离 SSH shell 使用 `env -i` 且没有 UTF-8 locale。macOS `/bin/sh` 的行编辑器按 C locale 重绘多字节输入，产生 `\x1b[1@` / `\x1b[1P` 等控制序列，Unicode marker 无法形成，最终由 Rust watchdog 超时。
+- 旧调试二进制还可能掩盖当前前端 smoke 源码；失败诊断因此增加了受限的原始输出尾部，不改变产品终端路径。
+
+**修复**:
+
+- smoke fixture 为隔离 shell 显式注入 `LANG=en_US.UTF-8` 与 `LC_CTYPE=en_US.UTF-8`，保持 `env -i` 的其他隔离属性。
+- smoke round 仅在失败诊断中保留最近 4 KiB 原始输出，结合输入/输出计数定位阶段，不持久化用户终端内容。
+
+**验证**:
+
+- 最新调试包的标准 macOS Tauri/xterm smoke 通过：8 MiB 输出、后续命令、97×31 resize、10 个唯一会话、资源回收，`durationMs=6006`。
+- `node --test scripts/terminal-smoke-sshd.test.mjs scripts/run-terminal-smoke.test.mjs` 14 项通过；前端 816 项测试、lint、typecheck、源码规模门禁通过。
+
+### Issue #55: 重连 smoke 未真正断开活动 SSH session ✅ 已修复
+
+**严重程度**: High
+**状态**: ✅ 已修复并通过真实 localhost OpenSSH 重连
+**发现/修复时间**: 2026-08-24
+
+**问题**:
+
+- smoke 的 `sshd.restart()` 只终止监听 daemon 的进程组；macOS `sshd-session` 会进入独立 PGID，并继续持有已建立的 TCP 连接与 daemon stderr。
+- 应用因此从未观察到 SSH EOF，也不会进入自动重连；Node 同时等待仍被 session 持有的 stderr 关闭，最终只能由 180 秒 Rust watchdog 报超时。
+
+**修复**:
+
+- 使用 `/bin/ps -axo pid=,ppid=,pgid=` 枚举 fixture daemon 的直接子进程，只接受安全整数 PID/PGID，并只向满足 `pid === pgid` 的隔离 SSH session 进程组发信号。
+- 停止顺序固定为 session groups `SIGTERM`、daemon group `SIGTERM`；3 秒宽限期后对两者分别升级 `SIGKILL`。非法元数据或非隔离子进程 fail-closed，避免误杀。
+
+**验证**:
+
+- Node smoke 脚本 23 项通过，覆盖活动 session 先于 daemon 终止、非法 PID/PGID、非隔离 PGID、宽限期升级和失败清理。
+- `pnpm smoke:terminal:reconnect` 真实通过：8 MiB 输出、10 轮完成、11 个唯一 session、97×31 resize、重连可见、旧输出拒绝、资源回收，耗时 6.7 秒。
+- 该 fixture 验证 localhost public-key OpenSSH 的真实断线，不替代 password/agent/cert/Jump、外部网络或跨平台实机矩阵。
+
+### Issue #56: Shell Integration API 与 WebKit CSP 使主终端崩溃/无样式 ✅ 已修复
+
+**严重程度**: Critical
+**状态**: ✅ 已修复并通过真实 Tauri/WKWebView 验证
+**发现/修复时间**: 2026-08-26
+
+**问题**:
+
+- Shell Integration 错把 OSC 监听注册到不存在的 `term.registerOscHandler`，类型补丁掩盖了 `@baicie/xterm@0.1.7` 的真实 API，主终端初始化时直接崩溃。
+- 入口内联 `<style>` 被 Tauri 注入 nonce/hash 后，WebKit 忽略同一 `style-src` 中的 `unsafe-inline`，导致 xterm 动态样式被大量拒绝；多行 viewport 还产生空 key 警告。
+
+**修复与验证**:
+
+- 改用运行时公开的 `term.parser.registerOscHandler`，测试 mock 与真实 API 对齐；入口样式原样移入外链 CSS，viewport 改为无首尾空白的单行声明，不关闭 Tauri CSP 自动修改。
+- 终端与 Shell Integration 定向测试 18 项通过；完整 `pnpm verify` 为前端 839、Team Server 103、Rust 153 + 3 项测试及全部构建/静态门禁通过。重建 debug App 后，真实 macOS WKWebView 的本地 PTY 显示 Connected，Safari Web Inspector 在主终端页为 0 error/0 warning。
+
+---
+
+_本节最后更新: 2026-08-26_

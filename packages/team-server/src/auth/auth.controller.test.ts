@@ -1,5 +1,5 @@
 import { GUARDS_METADATA } from '@nestjs/common/constants'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ApiKeyGuard } from './api-key.guard'
 import { AuthController } from './auth.controller'
 
@@ -17,5 +17,14 @@ describe('AuthController token routes', () => {
 
     expect(Array.isArray(guards)).toBe(true)
     expect(guards?.includes(ApiKeyGuard)).toBe(true)
+  })
+
+  it('passes the registration admission token to the service', async () => {
+    const register = vi.fn().mockResolvedValue({ userId: 'user-id', token: 'token' })
+    const controller = new AuthController({ register } as never)
+
+    await controller.register({ userId: 'user-id' }, 'registration-token')
+
+    expect(register).toHaveBeenCalledWith('user-id', 'registration-token')
   })
 })

@@ -30,6 +30,7 @@ describe('startTerminalShell jump host routing', () => {
     const target = host({
       jumpHostId: 'jump-id',
       jumpHostAuthType: 'agent',
+      agentForwarding: true,
     })
     const jump = host({
       id: 'jump-id',
@@ -48,6 +49,8 @@ describe('startTerminalShell jump host routing', () => {
       targetUsername: 'target-user',
       targetPassword: 'target-password',
       targetPrivateKey: null,
+      targetCertificate: null,
+      agentForwarding: true,
       jumpHost: {
         host: 'jump.example',
         port: 22,
@@ -69,6 +72,7 @@ describe('startTerminalShell jump host routing', () => {
       authType: 'cert',
       certificate: 'ssh-certificate',
       privateKey: 'private-key',
+      agentForwarding: true,
     })
 
     await startTerminalShell('remote', target, undefined, 120, 40)
@@ -80,20 +84,156 @@ describe('startTerminalShell jump host routing', () => {
       certificate: 'ssh-certificate',
       privateKey: 'private-key',
       password: 'target-password',
+      agentForwarding: true,
       cols: 120,
       rows: 40,
     })
   })
 
-  it('rejects certificate authentication through a jump host without invoking IPC', async () => {
-    const target = host({ authType: 'cert', jumpHostId: 'jump-id' })
+  it.each([
+    ['password', 'session_create_ssh_password'],
+    ['key', 'session_create_ssh_key'],
+    ['agent', 'session_create_ssh_agent'],
+    ['cert', 'session_create_ssh_cert'],
+  ] as const)(
+    'pins the preflight host key for %s authentication',
+    async (authType, command) => {
+      vi.mocked(invoke).mockResolvedValue('ssh-session')
+
+      await startTerminalShell(
+        'remote',
+        host({
+          authType,
+          privateKey: 'private-key',
+          certificate: 'certificate',
+        }),
+        undefined,
+        120,
+        40,
+        undefined,
+        'ssh-ed25519 AAAApinned',
+      )
+
+      expect(invoke).toHaveBeenCalledWith(
+        command,
+        expect.objectContaining({ expectedHostKey: 'ssh-ed25519 AAAApinned' }),
+      )
+    },
+  )
+
+  it('keeps agent forwarding disabled unless the host opts in', async () => {
+    vi.mocked(invoke).mockResolvedValue('ssh-session')
+
+    await startTerminalShell('remote', host(), undefined, 120, 40)
+
+    expect(invoke).toHaveBeenCalledWith(
+      'session_create_ssh_password',
+      expect.objectContaining({ agentForwarding: false }),
+    )
+  })
+
+  it('passes saved startup and environment profile to the session command', async () => {
+    vi.mocked(invoke).mockResolvedValue('ssh-session')
+
+    await startTerminalShell(
+      'remote',
+      host({
+        startupCommand: 'cd ~/project',
+        environment: { APP_ENV: 'development' },
+      }),
+      undefined,
+      120,
+      40,
+    )
+
+    expect(invoke).toHaveBeenCalledWith(
+      'session_create_ssh_password',
+      expect.objectContaining({
+        profile: {
+          startupCommand: 'cd ~/project',
+          environment: { APP_ENV: 'development' },
+        },
+      }),
+    )
+  })
+
+  it('routes target certificate authentication through a jump host', async () => {
+    vi.mocked(invoke).mockResolvedValue('ssh-session')
+    const target = host({
+      authType: 'cert',
+      jumpHostId: 'jump-id',
+      certificate: 'target-certificate',
+      privateKey: 'target-private-key',
+    })
     const jump = host({ id: 'jump-id', name: 'Bastion' })
 
-    await expect(
-      startTerminalShell('remote', target, undefined, 120, 40, jump),
-    ).rejects.toThrow(
-      'Certificate authentication through a jump host is not supported yet',
+    await startTerminalShell('remote', target, undefined, 120, 40, jump)
+
+    expect(invoke).toHaveBeenCalledWith(
+      'session_create_ssh_jump',
+      expect.objectContaining({
+        targetCertificate: 'target-certificate',
+        targetPrivateKey: 'target-private-key',
+        jumpHost: expect.objectContaining({ targetAuthType: 'cert' }),
+      }),
     )
-    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('routes jump host certificate credentials separately from the target', async () => {
+    vi.mocked(invoke).mockResolvedValue('ssh-session')
+    const target = host({
+      jumpHostId: 'jump-id',
+      jumpHostAuthType: 'cert',
+    })
+    const jump = host({
+      id: 'jump-id',
+      name: 'Bastion',
+      authType: 'cert',
+      password: 'jump-key-passphrase',
+      privateKey: 'jump-private-key',
+      certificate: 'jump-certificate',
+    })
+
+    await startTerminalShell('remote', target, undefined, 120, 40, jump)
+
+    expect(invoke).toHaveBeenCalledWith(
+      'session_create_ssh_jump',
+      expect.objectContaining({
+        targetCertificate: null,
+        jumpHost: expect.objectContaining({
+          authType: 'cert',
+          password: 'jump-key-passphrase',
+          privateKey: 'jump-private-key',
+          certificate: 'jump-certificate',
+        }),
+      }),
+    )
+  })
+
+  it('pins the jump and target handshakes independently', async () => {
+    vi.mocked(invoke).mockResolvedValue('ssh-session')
+    const target = host({ jumpHostId: 'jump-id' })
+    const jump = host({ id: 'jump-id', name: 'Bastion' })
+
+    await startTerminalShell(
+      'remote',
+      target,
+      undefined,
+      120,
+      40,
+      jump,
+      'ssh-ed25519 AAAAtarget',
+      'ssh-ed25519 AAAAjump',
+    )
+
+    expect(invoke).toHaveBeenCalledWith(
+      'session_create_ssh_jump',
+      expect.objectContaining({
+        expectedHostKey: 'ssh-ed25519 AAAAtarget',
+        jumpHost: expect.objectContaining({
+          expectedHostKey: 'ssh-ed25519 AAAAjump',
+        }),
+      }),
+    )
   })
 })

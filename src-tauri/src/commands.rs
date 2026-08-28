@@ -4,6 +4,7 @@
 
 use crate::session::local::LocalSession;
 use crate::session::ssh::SshSession;
+use crate::session::terminal_output::{ack_session_output, finish_session_output};
 use crate::session::{
     get_session_manager, ExecResult, KeyGenResult, SessionError, SessionInfo, SessionState,
 };
@@ -19,8 +20,9 @@ pub async fn session_create_local(
     app: AppHandle,
     cols: u16,
     rows: u16,
+    profile: Option<crate::session::TerminalProfile>,
 ) -> Result<String, SessionError> {
-    let session = LocalSession::new(app, cols, rows).await?;
+    let session = LocalSession::new(app, cols, rows, profile).await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
@@ -41,6 +43,18 @@ pub async fn session_write(session_id: String, data: String) -> Result<(), Sessi
     }
 }
 
+/// 写入不经过 UTF-8 转换的原始会话字节。
+#[tauri::command]
+pub async fn session_write_raw(session_id: String, data: Vec<u8>) -> Result<(), SessionError> {
+    let manager = get_session_manager();
+    if let Some(session) = manager.get_session(&session_id).await {
+        session.write_raw(data).await?;
+        Ok(())
+    } else {
+        Err(SessionError::SessionNotFound)
+    }
+}
+
 /// 调整会话大小
 #[tauri::command]
 pub async fn session_resize(session_id: String, cols: u16, rows: u16) -> Result<(), SessionError> {
@@ -53,9 +67,16 @@ pub async fn session_resize(session_id: String, cols: u16, rows: u16) -> Result<
     }
 }
 
+/// 确认前端 xterm 已完成指定字节数的输出解析。
+#[tauri::command]
+pub async fn session_ack_output(session_id: String, bytes: usize) -> Result<(), SessionError> {
+    ack_session_output(&session_id, bytes)
+}
+
 /// 关闭会话
 #[tauri::command]
 pub async fn session_close(session_id: String) -> Result<(), SessionError> {
+    finish_session_output(&session_id);
     let manager = get_session_manager();
     manager.remove_session(&session_id).await
 }
@@ -71,6 +92,10 @@ pub async fn session_list() -> Result<Vec<SessionInfo>, SessionError> {
 // SSH Session Commands
 // ============================================================================
 
+fn agent_forwarding_enabled(value: Option<bool>) -> bool {
+    value.unwrap_or(false)
+}
+
 /// 创建 SSH 会话（密码认证）
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -80,8 +105,11 @@ pub async fn session_create_ssh_password(
     port: u16,
     username: String,
     password: String,
+    expected_host_key: Option<String>,
+    agent_forwarding: Option<bool>,
     cols: u16,
     rows: u16,
+    profile: Option<crate::session::TerminalProfile>,
 ) -> Result<String, SessionError> {
     // 验证输入
     if host.is_empty() {
@@ -105,8 +133,19 @@ pub async fn session_create_ssh_password(
         ));
     }
 
-    let session =
-        SshSession::new_with_password(app, host, port, username, password, cols, rows).await?;
+    let session = SshSession::new_with_password(
+        app,
+        host,
+        port,
+        username,
+        password,
+        expected_host_key,
+        agent_forwarding_enabled(agent_forwarding),
+        cols,
+        rows,
+        profile,
+    )
+    .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
@@ -125,8 +164,11 @@ pub async fn session_create_ssh_key(
     username: String,
     private_key: String,
     password: Option<String>,
+    expected_host_key: Option<String>,
+    agent_forwarding: Option<bool>,
     cols: u16,
     rows: u16,
+    profile: Option<crate::session::TerminalProfile>,
 ) -> Result<String, SessionError> {
     // 验证输入
     if host.is_empty() {
@@ -150,9 +192,20 @@ pub async fn session_create_ssh_key(
         ));
     }
 
-    let session =
-        SshSession::new_with_key(app, host, port, username, private_key, password, cols, rows)
-            .await?;
+    let session = SshSession::new_with_key(
+        app,
+        host,
+        port,
+        username,
+        private_key,
+        password,
+        expected_host_key,
+        agent_forwarding_enabled(agent_forwarding),
+        cols,
+        rows,
+        profile,
+    )
+    .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
@@ -169,8 +222,11 @@ pub async fn session_create_ssh_agent(
     host: String,
     port: u16,
     username: String,
+    expected_host_key: Option<String>,
+    agent_forwarding: Option<bool>,
     cols: u16,
     rows: u16,
+    profile: Option<crate::session::TerminalProfile>,
 ) -> Result<String, SessionError> {
     if host.is_empty() {
         return Err(SessionError::InvalidInput(
@@ -188,7 +244,18 @@ pub async fn session_create_ssh_agent(
         ));
     }
 
-    let session = SshSession::new_with_agent(app, host, port, username, cols, rows).await?;
+    let session = SshSession::new_with_agent(
+        app,
+        host,
+        port,
+        username,
+        expected_host_key,
+        agent_forwarding_enabled(agent_forwarding),
+        cols,
+        rows,
+        profile,
+    )
+    .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
@@ -211,8 +278,11 @@ pub async fn session_create_ssh_cert(
     certificate: String,
     private_key: String,
     password: Option<String>,
+    expected_host_key: Option<String>,
+    agent_forwarding: Option<bool>,
     cols: u16,
     rows: u16,
+    profile: Option<crate::session::TerminalProfile>,
 ) -> Result<String, SessionError> {
     if host.is_empty() {
         return Err(SessionError::InvalidInput(
@@ -248,8 +318,11 @@ pub async fn session_create_ssh_cert(
         certificate,
         private_key,
         password,
+        expected_host_key,
+        agent_forwarding_enabled(agent_forwarding),
         cols,
         rows,
+        profile,
     )
     .await?;
     let session_id = session.session_id().to_string();
@@ -270,9 +343,13 @@ pub async fn session_create_ssh_jump(
     target_username: String,
     target_password: Option<String>,
     target_private_key: Option<String>,
+    target_certificate: Option<String>,
     jump_host: crate::session::JumpHostConfig,
+    expected_host_key: Option<String>,
+    agent_forwarding: Option<bool>,
     cols: u16,
     rows: u16,
+    profile: Option<crate::session::TerminalProfile>,
 ) -> Result<String, SessionError> {
     let session = SshSession::new_with_jump(
         app,
@@ -281,9 +358,13 @@ pub async fn session_create_ssh_jump(
         target_username,
         target_password,
         target_private_key,
+        target_certificate,
         jump_host,
+        expected_host_key,
+        agent_forwarding_enabled(agent_forwarding),
         cols,
         rows,
+        profile,
     )
     .await?;
     let session_id = session.session_id().to_string();
@@ -428,10 +509,11 @@ mod local_exec_tests {
 #[cfg(test)]
 mod ssh_command_future_tests {
     use super::{
-        session_create_ssh_agent, session_create_ssh_cert, session_create_ssh_jump,
-        session_create_ssh_key, session_create_ssh_password, AppHandle, SessionError,
+        agent_forwarding_enabled, session_create_ssh_agent, session_create_ssh_cert,
+        session_create_ssh_jump, session_create_ssh_key, session_create_ssh_password, AppHandle,
+        SessionError,
     };
-    use crate::session::JumpHostConfig;
+    use crate::session::{JumpHostConfig, TerminalProfile};
     use std::future::Future;
 
     macro_rules! assert_send_command {
@@ -447,7 +529,18 @@ mod ssh_command_future_tests {
 
     assert_send_command!(
         password_command_future_is_send,
-        (AppHandle, String, u16, String, String, u16, u16)
+        (
+            AppHandle,
+            String,
+            u16,
+            String,
+            String,
+            Option<String>,
+            Option<bool>,
+            u16,
+            u16,
+            Option<TerminalProfile>
+        )
     );
     assert_send_command!(
         key_command_future_is_send,
@@ -458,13 +551,26 @@ mod ssh_command_future_tests {
             String,
             String,
             Option<String>,
+            Option<String>,
+            Option<bool>,
             u16,
-            u16
+            u16,
+            Option<TerminalProfile>
         )
     );
     assert_send_command!(
         agent_command_future_is_send,
-        (AppHandle, String, u16, String, u16, u16)
+        (
+            AppHandle,
+            String,
+            u16,
+            String,
+            Option<String>,
+            Option<bool>,
+            u16,
+            u16,
+            Option<TerminalProfile>
+        )
     );
     assert_send_command!(
         cert_command_future_is_send,
@@ -476,8 +582,11 @@ mod ssh_command_future_tests {
             String,
             String,
             Option<String>,
+            Option<String>,
+            Option<bool>,
             u16,
-            u16
+            u16,
+            Option<TerminalProfile>
         )
     );
     assert_send_command!(
@@ -489,9 +598,13 @@ mod ssh_command_future_tests {
             String,
             Option<String>,
             Option<String>,
+            Option<String>,
             JumpHostConfig,
+            Option<String>,
+            Option<bool>,
             u16,
-            u16
+            u16,
+            Option<TerminalProfile>
         )
     );
 
@@ -502,6 +615,13 @@ mod ssh_command_future_tests {
         agent_command_future_is_send(session_create_ssh_agent);
         cert_command_future_is_send(session_create_ssh_cert);
         jump_command_future_is_send(session_create_ssh_jump);
+    }
+
+    #[test]
+    fn agent_forwarding_is_opt_in_for_legacy_ipc_callers() {
+        assert!(!agent_forwarding_enabled(None));
+        assert!(!agent_forwarding_enabled(Some(false)));
+        assert!(agent_forwarding_enabled(Some(true)));
     }
 }
 

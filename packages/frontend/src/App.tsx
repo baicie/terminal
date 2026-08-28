@@ -10,6 +10,10 @@ import { useTeamStore } from './store/team'
 import { getAppSettings } from './service/database'
 import { applyNotificationPrefs } from './service/notifications'
 import { syncCloseToTray } from './service/window-ux'
+import {
+  startWorkspaceRecovery,
+  type WorkspaceRecoveryHandle,
+} from './service/workspace-recovery'
 
 export default function App() {
   const { i18n } = useTranslation()
@@ -21,6 +25,24 @@ export default function App() {
   useEffect(() => {
     void initializeTeam()
   }, [initializeTeam])
+
+  useEffect(() => {
+    let disposed = false
+    let recovery: WorkspaceRecoveryHandle | null = null
+    void startWorkspaceRecovery()
+      .then(handle => {
+        if (disposed) handle.dispose()
+        else recovery = handle
+      })
+      .catch(error => {
+        console.error('Failed to restore terminal workspace:', error)
+      })
+
+    return () => {
+      disposed = true
+      recovery?.dispose()
+    }
+  }, [])
 
   useEffect(() => {
     void (async () => {

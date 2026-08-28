@@ -1,7 +1,7 @@
 import type { TitleBarStyle } from '@/components/custom-title-bar'
 import * as React from 'react'
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import ShortcutsHelpDialog from '@/components/shortcuts-help'
 import { useIsMobile } from '@/hooks/use-breakpoint'
 import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts'
@@ -31,7 +31,28 @@ const MainLayout: React.FC = () => {
   const sidebarVisible = useAppStore(state => state.sidebarVisible)
   const toggleSidebar = useAppStore(state => state.toggleSidebar)
   const navigate = useNavigate()
+  const location = useLocation()
+  const activeTabId = useAppStore(state => state.activeTabId)
+  const tabCount = useAppStore(state => state.tabs.length)
+  const initialPathRef = React.useRef(location.pathname)
+  const autoOpenedRef = React.useRef(false)
   const isMobile = useIsMobile()
+
+  useEffect(() => {
+    if (
+      autoOpenedRef.current ||
+      !activeTabId ||
+      tabCount === 0 ||
+      !['/', '/hosts'].includes(initialPathRef.current) ||
+      location.pathname !== initialPathRef.current
+    ) {
+      return
+    }
+    autoOpenedRef.current = true
+    navigate(`/terminal?tab=${encodeURIComponent(activeTabId)}`, {
+      replace: true,
+    })
+  }, [activeTabId, location.pathname, navigate, tabCount])
 
   useEffect(() => {
     setTitleBarStyle(detectTitleBarStyle())

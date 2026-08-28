@@ -26,6 +26,10 @@ export function createImportStats(): ImportStats {
   }
 }
 
+export function normalizeImportedAgentForwarding(value: unknown): 0 | 1 {
+  return value === true || value === 1 ? 1 : 0
+}
+
 async function upsert(
   key: ResourceKey,
   stats: ImportStats,
@@ -90,7 +94,7 @@ export async function importResources(
       mergeMode,
       'SELECT id FROM hosts WHERE id = ?',
       [item.id],
-      'INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         item.id,
         item.name,
@@ -110,10 +114,11 @@ export async function importResources(
         item.environment,
         item.jump_host_id ?? null,
         item.jump_host_auth_type ?? null,
+        normalizeImportedAgentForwarding(item.agent_forwarding),
         item.created_at,
         item.updated_at,
       ],
-      'UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, certificate = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, updated_at = ? WHERE id = ?',
+      'UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, certificate = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, updated_at = ? WHERE id = ?',
       [
         item.name,
         item.hostname,
@@ -132,6 +137,7 @@ export async function importResources(
         item.environment,
         item.jump_host_id ?? null,
         item.jump_host_auth_type ?? null,
+        normalizeImportedAgentForwarding(item.agent_forwarding),
         Date.now(),
         item.id,
       ],

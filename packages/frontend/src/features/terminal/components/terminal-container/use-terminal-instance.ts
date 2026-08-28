@@ -2,73 +2,30 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal as TerminalComponent, type ITheme } from '@baicie/xterm'
-import { useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { handleXtermShortcut } from './use-terminal-shortcut-events'
-
-let xtermErrorSuppressionUsers = 0
-let originalConsoleError: typeof console.error | null = null
-let suppressedParsingErrorCount = 0
-let parsingErrorWarningTimer: ReturnType<typeof setTimeout> | null = null
-
-const sharedXtermErrorHandler: typeof console.error = (...args: unknown[]) => {
-  const message = typeof args[0] === 'string' ? args[0] : ''
-  if (!message.includes('xterm.js: Parsing error')) {
-    if (originalConsoleError) {
-      Reflect.apply(originalConsoleError, console, args)
-    }
-    return
-  }
-
-  suppressedParsingErrorCount++
-  if (suppressedParsingErrorCount !== 1) return
-  parsingErrorWarningTimer = setTimeout(() => {
-    if (suppressedParsingErrorCount > 1) {
-      toast.warning(
-        `xterm.js: ${suppressedParsingErrorCount - 1} VT sequence parsing errors suppressed`,
-      )
-    }
-    suppressedParsingErrorCount = 0
-    parsingErrorWarningTimer = null
-  }, 5000)
-}
-
-function suppressXtermErrors() {
-  if (xtermErrorSuppressionUsers === 0) {
-    originalConsoleError = console.error
-    console.error = sharedXtermErrorHandler
-  }
-
-  xtermErrorSuppressionUsers++
-  let released = false
-  return () => {
-    if (released) return
-    released = true
-    xtermErrorSuppressionUsers--
-    if (xtermErrorSuppressionUsers > 0) return
-
-    if (console.error === sharedXtermErrorHandler && originalConsoleError) {
-      console.error = originalConsoleError
-    }
-    originalConsoleError = null
-    suppressedParsingErrorCount = 0
-    if (parsingErrorWarningTimer) clearTimeout(parsingErrorWarningTimer)
-    parsingErrorWarningTimer = null
-  }
-}
+import {
+  ShellIntegrationState,
+  type ShellIntegrationEvent,
+} from '@/features/terminal/services/terminal-shell-integration'
+import { TerminalViewportController } from './terminal-viewport-controller'
+import { useTerminalWebgl } from './use-terminal-webgl'
 
 interface UseTerminalInstanceOptions {
   tabId: string
   workspaceId: string
   isMobile: boolean
   cursorBlink: boolean
+  cursorStyle: 'block' | 'underline' | 'bar'
   fontSize: number
   fontFamily: string
   theme: ITheme
   scrollback: number
+  allowProposedApi: boolean
   active: boolean
+  onTitleChange?: (title: string) => void
+  onShellIntegration?: (event: ShellIntegrationEvent) => void
 }
 
 export function useTerminalInstance(options: UseTerminalInstanceOptions) {
@@ -76,29 +33,60 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
   const termRef = useRef<TerminalComponent | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const searchAddonRef = useRef<SearchAddon | null>(null)
+  const viewportControllerRef = useRef<TerminalViewportController | null>(null)
   const userZoomedRef = useRef(false)
+  const configuredFontSizeRef = useRef(options.fontSize)
+  const onTitleChangeRef = useRef(options.onTitleChange)
+  const onShellIntegrationRef = useRef(options.onShellIntegration)
   const activeRef = useRef(options.active)
   activeRef.current = options.active
+  onTitleChangeRef.current = options.onTitleChange
+  onShellIntegrationRef.current = options.onShellIntegration
   const [termInstance, setTermInstance] = useState<TerminalComponent | null>(
     null,
   )
   const [isReady, setIsReady] = useState(false)
   const [liveFontSize, setLiveFontSize] = useState(options.fontSize)
 
+  const requestFit = useCallback(() => {
+    viewportControllerRef.current?.requestFit()
+  }, [])
+  const refreshViewport = useCallback(() => {
+    viewportControllerRef.current?.refresh()
+  }, [])
+  useTerminalWebgl({
+    term: termInstance,
+    active: options.active,
+    ready: isReady,
+    refresh: refreshViewport,
+  })
+
   useEffect(() => {
     if (!containerRef.current || !options.tabId) return
-    const restoreErrors = suppressXtermErrors()
     const term = new TerminalComponent({
       cursorBlink: options.cursorBlink,
+      cursorStyle: options.cursorStyle,
       fontSize: liveFontSize,
       fontFamily: options.fontFamily,
       theme: options.theme,
       scrollback: options.scrollback,
       macOptionIsMeta: !options.isMobile,
       allowTransparency: true,
-      allowProposedApi: true,
+      allowProposedApi: options.allowProposedApi,
     })
     termRef.current = term
+    const titleDisposable = term.onTitleChange(title => {
+      onTitleChangeRef.current?.(title)
+    })
+    const shellIntegrationState = new ShellIntegrationState()
+    const shellIntegrationDisposables = [133, 7].map(identifier =>
+      term.parser.registerOscHandler(identifier, data => {
+        const event = shellIntegrationState.consume(identifier, data)
+        if (!event) return false
+        onShellIntegrationRef.current?.(event)
+        return true
+      }),
+    )
 
     const fitAddon = new FitAddon()
     fitAddonRef.current = fitAddon
@@ -114,36 +102,42 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
       .then(({ ClipboardAddon }) => term.loadAddon(new ClipboardAddon()))
       .catch(error => console.warn('Failed to load ClipboardAddon:', error))
 
-    try {
-      const webglAddon = new WebglAddon()
-      webglAddon.onContextLoss(() => {
-        console.warn(
-          '[xterm] WebGL context lost, falling back to canvas renderer',
-        )
-        webglAddon.dispose()
-      })
-      term.loadAddon(webglAddon)
-    } catch (error) {
-      console.warn(
-        '[xterm] WebGL addon unavailable, using default renderer:',
-        error,
-      )
-    }
-
     term.attachCustomKeyEventHandler(event =>
       handleXtermShortcut(event, activeRef.current),
     )
     term.open(containerRef.current)
+    const initialDimensions = fitAddon.proposeDimensions()
+    if (
+      initialDimensions &&
+      Number.isInteger(initialDimensions.cols) &&
+      Number.isInteger(initialDimensions.rows) &&
+      initialDimensions.cols > 0 &&
+      initialDimensions.rows > 0
+    ) {
+      term.resize(initialDimensions.cols, initialDimensions.rows)
+    }
+    const viewportController = new TerminalViewportController(
+      term,
+      () => fitAddon.fit(),
+      term.element ?? containerRef.current,
+    )
+    viewportController.attach()
+    viewportControllerRef.current = viewportController
     setTermInstance(term)
     const initialFitTimer = window.setTimeout(() => {
-      fitAddon.fit()
+      viewportController.fitNow()
       if (activeRef.current) term.focus()
     }, 50)
     setIsReady(true)
 
     return () => {
       window.clearTimeout(initialFitTimer)
-      restoreErrors()
+      viewportController.dispose()
+      if (viewportControllerRef.current === viewportController) {
+        viewportControllerRef.current = null
+      }
+      titleDisposable.dispose()
+      for (const disposable of shellIntegrationDisposables) disposable.dispose()
       term.dispose()
       termRef.current = null
       searchAddonRef.current = null
@@ -157,7 +151,7 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
   useEffect(() => {
     if (!options.active || !isReady) return
     const animationFrame = requestAnimationFrame(() => {
-      fitAddonRef.current?.fit()
+      viewportControllerRef.current?.reactivate()
       termRef.current?.focus()
     })
     return () => cancelAnimationFrame(animationFrame)
@@ -168,34 +162,46 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
   }, [options.theme])
 
   useEffect(() => {
-    if (!termRef.current) return
-    if (userZoomedRef.current && liveFontSize !== options.fontSize) return
-    userZoomedRef.current = false
+    const settingChanged = configuredFontSizeRef.current !== options.fontSize
+    configuredFontSizeRef.current = options.fontSize
+    if (settingChanged) {
+      userZoomedRef.current = false
+      setLiveFontSize(options.fontSize)
+    }
+    if (!termRef.current || (userZoomedRef.current && !settingChanged)) return
     termRef.current.options.fontSize = options.fontSize
-  }, [liveFontSize, options.fontSize])
+    viewportControllerRef.current?.requestFit()
+  }, [options.fontSize])
 
   useEffect(() => {
-    if (termRef.current)
-      termRef.current.options.cursorBlink = options.cursorBlink
-  }, [options.cursorBlink])
+    const term = termRef.current
+    if (!term) return
+    term.options.cursorBlink = options.cursorBlink
+    term.options.cursorStyle = options.cursorStyle
+    term.options.scrollback = options.scrollback
+    term.options.allowProposedApi = options.allowProposedApi
+  }, [
+    options.allowProposedApi,
+    options.cursorBlink,
+    options.cursorStyle,
+    options.scrollback,
+  ])
+
+  useEffect(() => {
+    if (!termRef.current) return
+    termRef.current.options.fontFamily = options.fontFamily
+    viewportControllerRef.current?.requestFit()
+  }, [options.fontFamily])
 
   useEffect(() => {
     if (!isReady) return
-    let animationFrame: number | null = null
-    const fit = () => {
-      if (animationFrame !== null) cancelAnimationFrame(animationFrame)
-      animationFrame = requestAnimationFrame(() => {
-        fitAddonRef.current?.fit()
-        animationFrame = null
-      })
-    }
-    const resizeObserver = new ResizeObserver(fit)
+    const requestFit = () => viewportControllerRef.current?.requestFit()
+    const resizeObserver = new ResizeObserver(requestFit)
     const resizeTarget = termRef.current?.element ?? containerRef.current
     if (resizeTarget) resizeObserver.observe(resizeTarget)
-    window.addEventListener('resize', fit)
+    window.addEventListener('resize', requestFit)
     return () => {
-      window.removeEventListener('resize', fit)
-      if (animationFrame !== null) cancelAnimationFrame(animationFrame)
+      window.removeEventListener('resize', requestFit)
       resizeObserver.disconnect()
     }
   }, [isReady])
@@ -206,7 +212,7 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     userZoomedRef.current = true
     if (termInstance) {
       termInstance.options.fontSize = next
-      fitAddonRef.current?.fit()
+      viewportControllerRef.current?.fitNow()
     }
     setLiveFontSize(next)
   }
@@ -215,7 +221,7 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     userZoomedRef.current = false
     if (termInstance) {
       termInstance.options.fontSize = options.fontSize
-      fitAddonRef.current?.fit()
+      viewportControllerRef.current?.fitNow()
       termInstance.focus()
     }
     setLiveFontSize(options.fontSize)
@@ -227,6 +233,8 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     fitAddonRef,
     searchAddonRef,
     termInstance,
+    outputWriter: viewportControllerRef.current ?? termInstance,
+    requestFit,
     isReady,
     fontSize: liveFontSize,
     changeFontSize,

@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
 import { Switch } from '@/components/ui/switch'
+import { createShareableTeamHostData } from '@/service/team-host-data'
 import {
   encryptWithPassword,
   validatePasswordStrength,
@@ -58,16 +59,7 @@ export function ShareHostDialog({
 
     setLoading(true)
     try {
-      const hostData: Record<string, unknown> = {
-        id: host.id,
-        name: host.name,
-        hostname: host.hostname,
-        port: host.port,
-        username: host.username,
-        auth_type: host.authType,
-        group_id: host.groupId,
-        color: host.color,
-      }
+      const hostData = createShareableTeamHostData(host)
 
       // Handle password inclusion and encryption
       if (includePassword && host.password) {

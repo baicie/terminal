@@ -94,6 +94,21 @@ describe('terminal layout state', () => {
     expect(useAppStore.getState().activeTabId).toBe('serial-1')
   })
 
+  it('does not copy a process-local shell title into a new split pane', () => {
+    useAppStore.setState({
+      tabs: [
+        { id: 'local-1', label: 'Local', title: 'user@host: /tmp', type: 'local' },
+      ],
+      splitGroups: [],
+      activeTabId: 'local-1',
+    })
+
+    const newTabId = useAppStore.getState().splitTab('local-1', 'vertical')
+
+    expect(newTabId).toBeTruthy()
+    expect(useAppStore.getState().tabs.find(tab => tab.id === newTabId)?.title).toBeUndefined()
+  })
+
   it('rejects splitting any existing group that already contains three panes', () => {
     useAppStore.setState({
       tabs: [

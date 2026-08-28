@@ -1,5 +1,10 @@
+import type { ConfigService } from '@nestjs/config'
 import type { PrismaService } from '../prisma.service'
-import { ConflictException, UnauthorizedException } from '@nestjs/common'
+import {
+  ConflictException,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthService } from './auth.service'
 import { hashApiToken } from './token-hash'
@@ -28,9 +33,23 @@ function createPrismaMock() {
 let prisma: ReturnType<typeof createPrismaMock>
 let service: AuthService
 
+function createConfigMock(values: Record<string, string | undefined> = {}) {
+  const config = {
+    NODE_ENV: 'test',
+    REGISTRATION_MODE: 'open',
+    ...values,
+  }
+  return {
+    get: vi.fn((key: string) => config[key as keyof typeof config]),
+  }
+}
+
 beforeEach(() => {
   prisma = createPrismaMock()
-  service = new AuthService(prisma as unknown as PrismaService)
+  service = new AuthService(
+    prisma as unknown as PrismaService,
+    createConfigMock() as unknown as ConfigService,
+  )
 })
 
 describe('AuthService.register', () => {
@@ -53,6 +72,57 @@ describe('AuthService.register', () => {
     expect(prisma.user.create).toHaveBeenCalledWith({
       data: { id: 'new-user' },
     })
+  })
+
+  it('rejects closed registration before reading or writing the database', async () => {
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      createConfigMock({ REGISTRATION_MODE: 'closed' }) as unknown as ConfigService,
+    )
+
+    await expect(service.register('new-user')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    )
+    expect(prisma.user.findUnique).not.toHaveBeenCalled()
+    expect(prisma.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('requires the configured registration token and accepts an exact match', async () => {
+    const registrationToken = 'r'.repeat(32)
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      createConfigMock({
+        REGISTRATION_MODE: 'token',
+        REGISTRATION_TOKEN: registrationToken,
+      }) as unknown as ConfigService,
+    )
+    prisma.user.findUnique.mockResolvedValue(null)
+    prisma.user.create.mockResolvedValue({ id: 'new-user' })
+    prisma.apiToken.create.mockResolvedValue({})
+
+    await expect(
+      service.register('new-user', 'wrong-token'),
+    ).rejects.toBeInstanceOf(ForbiddenException)
+    expect(prisma.user.findUnique).not.toHaveBeenCalled()
+
+    await expect(
+      service.register('new-user', registrationToken),
+    ).resolves.toMatchObject({ userId: 'new-user' })
+  })
+
+  it('fails closed when token mode reaches the service without a valid configured token', async () => {
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      createConfigMock({
+        REGISTRATION_MODE: 'token',
+        REGISTRATION_TOKEN: undefined,
+      }) as unknown as ConfigService,
+    )
+
+    await expect(service.register('new-user')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    )
+    expect(prisma.user.findUnique).not.toHaveBeenCalled()
   })
 })
 

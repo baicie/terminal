@@ -1,6 +1,6 @@
 import { ViewContainer, ViewToolbar, ViewContent, ViewHeader } from '@/components/view-container'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowRight, Bug, Terminal } from 'lucide-react'
+import { ArrowRight, Bug, Keyboard, Terminal } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 const experiments = [
@@ -15,6 +15,12 @@ const experiments = [
     title: 'Xterm.js Input Test',
     description: '测试 xterm.js Terminal 实例的字符输入事件',
     icon: <Terminal className="size-6" />,
+  },
+  {
+    path: '/experiments/terminal-input-probe',
+    title: 'Terminal Input Probe',
+    description: '验证物理键盘输入是否完整到达 PTY',
+    icon: <Keyboard className="size-6" />,
   },
 ]
 

@@ -5,8 +5,18 @@ import type { SharedHost, SharedSnippet } from '@/store/team'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
+import type { QuickConnectProfileDraft } from './quick-connect-dialog'
+import {
+  parseQuickConnectInput,
+  type QuickConnectTarget,
+} from './quick-connect-parser'
 import { toast } from '@/components/ui/sonner'
+import {
+  registerTemporaryTerminalProfile,
+  removeTemporaryTerminalProfile,
+} from '@/features/terminal/services/temporary-terminal-profiles'
 import { createSnippet } from '@/service/database'
+import { createImportedTeamHost } from '@/service/team-host-data'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
 import { useTeamStore } from '@/store/team'
@@ -26,25 +36,12 @@ export function useHostsViewHandlers() {
   const [decryptPassword, setDecryptPassword] = useState('')
   const [decryptingHost, setDecryptingHost] = useState<SharedHost | null>(null)
   const [serialDialogOpen, setSerialDialogOpen] = useState(false)
+  const [quickConnectTarget, setQuickConnectTarget] =
+    useState<QuickConnectTarget | null>(null)
 
   const importHostData = useCallback(
     async (hostData: Record<string, unknown>) => {
-      const newHost: Host = {
-        id: crypto.randomUUID(),
-        name: hostData.name as string,
-        hostname: hostData.hostname as string,
-        port: (hostData.port as number) || 22,
-        username: hostData.username as string,
-        authType: (hostData.auth_type as Host['authType']) || 'password',
-        password: hostData.password as string | undefined,
-        privateKey: hostData.private_key as string | undefined,
-        groupId: hostData.group_id as string | undefined,
-        isFavorite: Boolean(hostData.is_favorite),
-        color: hostData.color as string | undefined,
-        portForwards: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      }
+      const newHost = createImportedTeamHost(hostData)
       await hostStore.addHost(newHost)
       toast.success(t('teams.importSuccess'), { description: newHost.name })
     },
@@ -149,6 +146,32 @@ export function useHostsViewHandlers() {
     navigate(`/terminal?tab=${newTab.id}`)
   }, [app, navigate])
 
+  const handleQuickConnect = useCallback(
+    (draft: QuickConnectProfileDraft) => {
+      const now = Date.now()
+      const profile: Host = {
+        ...draft,
+        id: crypto.randomUUID(),
+        createdAt: now,
+        updatedAt: now,
+      }
+      const profileId = registerTemporaryTerminalProfile(profile)
+      try {
+        const newTab = app.addTab({
+          label: profile.name,
+          type: 'remote',
+          profileId,
+        })
+        setQuickConnectTarget(null)
+        navigate(`/terminal?tab=${newTab.id}`)
+      } catch (error) {
+        removeTemporaryTerminalProfile(profileId)
+        throw error
+      }
+    },
+    [app, navigate],
+  )
+
   const handleConnectBarSubmit = useCallback(
     (searchQuery: string) => {
       const q = searchQuery.trim()
@@ -157,17 +180,45 @@ export function useHostsViewHandlers() {
         return
       }
       const lower = q.toLowerCase()
-      const match = hosts.find(
-        h =>
-          h.name.toLowerCase().includes(lower) ||
-          h.hostname.toLowerCase().includes(lower) ||
-          `${h.username}@${h.hostname}`.toLowerCase().includes(lower.replace(/^ssh\s+/i, '')),
-      )
+      const parsed = parseQuickConnectInput(q)
+      const exactMatch = parsed.ok
+        ? hosts.find(
+            host =>
+              host.hostname.toLowerCase() ===
+                parsed.target.hostname.toLowerCase() &&
+              host.port === parsed.target.port &&
+              (!parsed.target.username ||
+                host.username.toLowerCase() ===
+                  parsed.target.username.toLowerCase()),
+          )
+        : undefined
+      const match =
+        exactMatch ??
+        hosts.find(
+          host =>
+            host.name.toLowerCase().includes(lower) ||
+            host.hostname.toLowerCase().includes(lower) ||
+            `${host.username}@${host.hostname}`
+              .toLowerCase()
+              .includes(lower.replace(/^ssh\s+/i, '')),
+        )
       if (match) {
         handleConnect(match)
-      } else {
-        toast.info(t('toast.noMatchedHost'), { description: t('toast.useNewHost') })
+        return
       }
+
+      if (parsed.ok) {
+        setQuickConnectTarget(parsed.target)
+        return
+      }
+
+      const errorKey =
+        parsed.error === 'invalid-port'
+          ? 'quickConnect.invalidPort'
+          : parsed.error === 'unsupported-arguments'
+            ? 'quickConnect.unsupportedArguments'
+            : 'quickConnect.invalidTarget'
+      toast.error(t(errorKey))
     },
     [hosts, handleConnect, t],
   )
@@ -198,6 +249,8 @@ export function useHostsViewHandlers() {
     decryptingHost,
     serialDialogOpen,
     setSerialDialogOpen,
+    quickConnectTarget,
+    setQuickConnectTarget,
     handleImportSharedSnippet,
     handleImportSharedHost,
     handleDecryptAndImport,
@@ -205,6 +258,7 @@ export function useHostsViewHandlers() {
     handleShareHost,
     handleConnect,
     handleNewLocalTerminal,
+    handleQuickConnect,
     handleConnectBarSubmit,
     handleConnectSerial,
   }

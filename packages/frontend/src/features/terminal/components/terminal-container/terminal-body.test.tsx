@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { Terminal as XTerminal } from '@baicie/xterm'
-import type { TerminalCompletionController } from './use-terminal-completion'
 import { TerminalBody } from './terminal-body'
 
 vi.mock('./terminal-pane-header', () => ({
@@ -35,16 +34,6 @@ vi.mock('@/components/terminal-tool-sidebar', () => ({
   default: () => null,
 }))
 
-const completion = {
-  open: false,
-  items: [],
-  index: 0,
-  position: { x: 0, y: 0 },
-  setIndex: vi.fn(),
-  select: vi.fn(),
-  dismiss: vi.fn(),
-} as unknown as TerminalCompletionController
-
 function renderBody(term: XTerminal, active = true, isFullscreen = false) {
   const onSearchOpenChange = vi.fn()
   const containerRef = { current: null as HTMLDivElement | null }
@@ -60,7 +49,6 @@ function renderBody(term: XTerminal, active = true, isFullscreen = false) {
     searchAddon: null,
     searchOpen: true,
     mobileMenuOpen: false,
-    completion,
     onSearchOpenChange,
     onMobileMenuOpenChange: () => {},
     onSendKey: () => {},

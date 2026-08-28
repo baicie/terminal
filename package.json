@@ -18,6 +18,8 @@
     "build:frontend": "pnpm --filter=@terminal/frontend build",
     "build:team-server": "pnpm --filter=team-server build",
     "tauri": "tauri",
+    "smoke:terminal": "node scripts/run-terminal-smoke.mjs",
+    "smoke:terminal:reconnect": "node scripts/run-terminal-smoke.mjs --reconnect",
     "shadcn": "pnpm --filter=@terminal/frontend shadcn",
     "format": "pnpm --filter=@terminal/frontend format",
     "lint": "pnpm --filter=@terminal/frontend lint",
@@ -41,6 +43,7 @@
   "pnpm": {
     "overrides": {
       "body-parser": "2.3.0",
+      "deepmerge-ts": "8.0.1",
       "fast-uri": "3.1.5",
       "js-yaml": "5.2.3",
       "qs": "6.15.2"

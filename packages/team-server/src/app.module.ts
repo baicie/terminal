@@ -8,6 +8,7 @@ import { HealthModule } from './health/health.module'
 import { InvitesModule } from './invites/invites.module'
 import { MembersModule } from './members/members.module'
 import { PrismaModule } from './prisma.module'
+import { validateServerEnvironment } from './server-config'
 import { SharesModule } from './shares/shares.module'
 import { SyncModule } from './sync/sync.module'
 import { TeamsModule } from './teams/teams.module'
@@ -17,6 +18,7 @@ import { TeamsModule } from './teams/teams.module'
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      validate: validateServerEnvironment,
     }),
     ThrottlerModule.forRoot([
       {

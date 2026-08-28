@@ -22,6 +22,7 @@ describe('hostRowToHost', () => {
       environment: null,
       jump_host_id: 'jump-id',
       jump_host_auth_type: 'agent',
+      agent_forwarding: 1,
       created_at: 1,
       updated_at: 2,
     }
@@ -30,6 +31,7 @@ describe('hostRowToHost', () => {
       certificate: 'certificate',
       jumpHostId: 'jump-id',
       jumpHostAuthType: 'agent',
+      agentForwarding: true,
     })
   })
 })

@@ -27,6 +27,20 @@ export default {
   'hosts.sshAuth': 'ssh, {{username}}',
   'hosts.copySsh': 'Copier la commande SSH',
 
+  // Quick Connect
+  'quickConnect.title': 'Connexion rapide',
+  'quickConnect.description': 'Connexion a {{hostname}} sur le port {{port}}.',
+  'quickConnect.descriptionEmpty': "Saisissez les informations d'authentification SSH.",
+  'quickConnect.usernameRequired': "Le nom d'utilisateur est requis.",
+  'quickConnect.passwordRequired': 'Le mot de passe est requis.',
+  'quickConnect.privateKeyRequired': 'La cle privee est requise.',
+  'quickConnect.certificateRequired': 'Le certificat SSH est requis.',
+  'quickConnect.certificateAuth': 'Certificat SSH',
+  'quickConnect.invalidTarget': 'Saisissez un hote SSH valide.',
+  'quickConnect.invalidPort': 'Saisissez un port compris entre 1 et 65535.',
+  'quickConnect.unsupportedArguments':
+    'Seuls host, user@host, user@host:port et ssh user@host -p PORT sont pris en charge.',
+
   // Host dialog
   'hostDialog.editHost': "Modifier l'hôte",
   'hostDialog.newHost': 'Nouvel hôte',

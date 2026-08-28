@@ -127,4 +127,38 @@ describe('TerminalWorkbench', () => {
 
     expect(onResizeSplit).toHaveBeenCalledWith('split-1', [50, 50])
   })
+
+  it('lazily mounts restored tabs and keeps them alive after first use', () => {
+    const props = {
+      tabs,
+      splitGroup: null,
+      activeTabId: 'one',
+      isTerminalRoute: true,
+      onActivateTab: vi.fn(),
+      onResizeSplit: vi.fn(),
+      renderTerminal: (tabId: string) => (
+        <div data-testid={`terminal-${tabId}`}>{tabId}</div>
+      ),
+    }
+    const view = render(
+      <TerminalWorkbench {...props} visibleTabIds={new Set(['one'])} />,
+    )
+
+    expect(screen.getByTestId('terminal-one')).toBeTruthy()
+    expect(screen.queryByTestId('terminal-two')).toBeNull()
+
+    view.rerender(
+      <TerminalWorkbench
+        {...props}
+        activeTabId="two"
+        visibleTabIds={new Set(['two'])}
+      />,
+    )
+    expect(screen.getByTestId('terminal-two')).toBeTruthy()
+
+    view.rerender(
+      <TerminalWorkbench {...props} visibleTabIds={new Set(['one'])} />,
+    )
+    expect(screen.getByTestId('terminal-two')).toBeTruthy()
+  })
 })

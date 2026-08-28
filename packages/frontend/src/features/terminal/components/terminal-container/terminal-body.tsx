@@ -9,31 +9,31 @@ import {
 import { createPortal } from 'react-dom'
 import type { Host, Tab } from '@/types'
 import type { UseTerminalResult } from '@/hooks/terminal-session-types'
-import { TerminalCompletionOverlay } from '@/components/terminal-completion/terminal-completion-overlay'
 import { TerminalContextMenu } from './terminal-context-menu'
 import { TerminalKeyboardBar } from './keyboard-bar'
 import { TerminalMobileMenu } from './terminal-mobile-menu'
 import { TerminalPaneHeader } from './terminal-pane-header'
 import { TerminalSearchOverlay } from './terminal-search-overlay'
 import TerminalToolSidebar from '@/components/terminal-tool-sidebar'
-import type { TerminalCompletionController } from './use-terminal-completion'
 
 interface TerminalBodyProps {
   tab: Tab
   host?: Host
   status: UseTerminalResult['status']
   readableError: string | null
+  reconnectAttempt?: number
+  reconnectReason?: string
   isMobile: boolean
   active: boolean
   isFullscreen: boolean
   terminalFontSize: number
   terminalBackground: string
+  shellCwd?: string
   term: XTerminal | null
   containerRef: RefObject<HTMLDivElement | null>
   searchAddon: SearchAddon | null
   searchOpen: boolean
   mobileMenuOpen: boolean
-  completion: TerminalCompletionController
   onSearchOpenChange: (open: boolean) => void
   onMobileMenuOpenChange: (open: boolean) => void
   onSendKey: (data: string) => void
@@ -72,11 +72,7 @@ export function TerminalBody(props: TerminalBodyProps) {
     (node: HTMLDivElement | null) => {
       props.containerRef.current = node
       const terminalElement = props.term?.element
-      if (
-        node &&
-        terminalElement &&
-        terminalElement.parentElement !== node
-      ) {
+      if (node && terminalElement && terminalElement.parentElement !== node) {
         node.appendChild(terminalElement)
       }
     },
@@ -93,6 +89,9 @@ export function TerminalBody(props: TerminalBodyProps) {
           host={props.host}
           status={props.status}
           errorMessage={props.readableError ?? undefined}
+          shellCwd={props.shellCwd}
+          reconnectAttempt={props.reconnectAttempt}
+          reconnectReason={props.reconnectReason}
           fontSize={props.terminalFontSize}
           isMobile={props.isMobile}
           toolsOpen={props.toolSidebarOpen}
@@ -142,18 +141,6 @@ export function TerminalBody(props: TerminalBodyProps) {
             onClose={closeSearch}
             searchAddon={props.searchAddon}
           />
-          {props.completion.open && (
-            <TerminalCompletionOverlay
-              items={props.completion.items}
-              currentIndex={props.completion.index}
-              position={props.completion.position}
-              onSelect={(item, index) => {
-                props.completion.setIndex(index)
-                props.completion.select(item)
-              }}
-              onDismiss={props.completion.dismiss}
-            />
-          )}
           {props.isMobile && (
             <TerminalMobileMenu
               term={props.term}

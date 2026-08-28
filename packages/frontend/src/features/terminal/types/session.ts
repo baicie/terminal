@@ -18,6 +18,13 @@ export interface ShellOutput {
   session_id: string
   data: string
   is_stderr: boolean
+  bytes?: number
+}
+
+/** Live terminal failure reported after a backend session was created. */
+export interface TerminalError {
+  session_id: string
+  message: string
 }
 
 /** 连接结果 */
@@ -90,7 +97,12 @@ export interface SshJumpOptions {
 }
 
 /** 会话状态 */
-export type SessionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
+export type SessionStatus =
+  | 'idle'
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'error'
 
 /** Tab 类型 */
 export type TabType = 'local' | 'remote' | 'serial'

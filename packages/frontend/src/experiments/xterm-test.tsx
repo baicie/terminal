@@ -20,44 +20,6 @@ import { ArrowLeft, Clipboard, Check } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import '@baicie/xterm/css/xterm.css'
 
-/**
- * Suppresses xterm.js parsing errors (code 127 / VT sequence errors) that are
- * caused by raw control sequences emitted by the local shell (e.g. DECSSE,
- * DECFRA, or UTF-8 private-use sequences that xterm.js cannot parse).
- * These errors are harmless — the terminal still works correctly.
- *
- * Returns a restore function — call it in the useEffect cleanup.
- */
-function suppressXtermErrors() {
-  const orig = console.error.bind(console)
-  let count = 0
-  let timer: ReturnType<typeof setTimeout> | null = null
-
-  console.error = (...args: unknown[]) => {
-    const msg = typeof args[0] === 'string' ? args[0] : ''
-    if (msg.includes('xterm.js: Parsing error')) {
-      count++
-      if (count === 1) {
-        timer = setTimeout(() => {
-          if (count > 1) {
-            toast.warning(
-              `xterm.js: ${count - 1} VT sequence parsing errors suppressed`,
-            )
-          }
-          count = 0
-        }, 5000)
-      }
-      return
-    }
-    orig(...args)
-  }
-
-  return () => {
-    console.error = orig
-    if (timer) clearTimeout(timer)
-  }
-}
-
 interface XtermEvent {
   id: number
   type:
@@ -152,8 +114,6 @@ const XtermTest: React.FC = () => {
   // Initialize xterm
   useEffect(() => {
     if (!containerRef.current) return
-
-    const restore = suppressXtermErrors()
 
     const term = new TerminalComponent({
       cursorBlink: true,
@@ -278,22 +238,24 @@ const XtermTest: React.FC = () => {
     })
 
     // --- xterm onKey: fired for keyboard key presses ---
-    term.onKey(({ key, domEvent }: { key: string; domEvent: KeyboardEvent }) => {
-      addEvent({
-        id: ++eventId,
-        type: 'onKey',
-        data: key,
-        key: domEvent.key,
-        code: domEvent.code,
-        keyCode: domEvent.keyCode,
-        which: domEvent.which,
-        ctrlKey: domEvent.ctrlKey,
-        shiftKey: domEvent.shiftKey,
-        altKey: domEvent.altKey,
-        metaKey: domEvent.metaKey,
-        time: new Date().toISOString().split('T')[1].replace('Z', ''),
-      })
-    })
+    term.onKey(
+      ({ key, domEvent }: { key: string; domEvent: KeyboardEvent }) => {
+        addEvent({
+          id: ++eventId,
+          type: 'onKey',
+          data: key,
+          key: domEvent.key,
+          code: domEvent.code,
+          keyCode: domEvent.keyCode,
+          which: domEvent.which,
+          ctrlKey: domEvent.ctrlKey,
+          shiftKey: domEvent.shiftKey,
+          altKey: domEvent.altKey,
+          metaKey: domEvent.metaKey,
+          time: new Date().toISOString().split('T')[1].replace('Z', ''),
+        })
+      },
+    )
 
     // --- Underlying textarea events (if accessible) ---
     if (textarea) {
@@ -348,7 +310,6 @@ const XtermTest: React.FC = () => {
     if (containerRef.current) ro.observe(containerRef.current)
 
     return () => {
-      restore()
       if (roRafId !== null) cancelAnimationFrame(roRafId)
       ro.disconnect()
       term.dispose()
