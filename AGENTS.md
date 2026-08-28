@@ -525,7 +525,7 @@ pnpm add <package-name>
 ### 发布就绪门禁 ✅ 本机自动化、容器运行时与远端发布通过
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
-- ✅ `pnpm verify`：前端 561、Team Server 103、Rust 47 项单测 + 2 项集成测试及 lint/typecheck/build/源码行数门禁全部通过
+- ✅ `pnpm verify`：前端 859、Team Server 103、Rust 164 项单测 + 3 项集成测试、Node smoke 脚本 36 项及 lint/typecheck/build/源码行数门禁全部通过
 - ✅ 生产依赖审计为 0 个已知漏洞
 - ✅ 462 个生产源码文件均满足行数限制
 - ✅ GitHub Actions CI `31409070480`：macOS、Windows、Linux Tauri 编译，Team Server PostgreSQL 迁移和 Docker 镜像构建全部通过
@@ -543,8 +543,9 @@ pnpm add <package-name>
 
 | #     | 问题                                         | 严重程度     | 优先级 |
 | ----- | -------------------------------------------- | ------------ | ------ |
-| 21/39 | Windows/Linux/Pageant/Jump Host/硬件实机矩阵 | 🟡 Important | P1     |
-| 46    | Agent forwarding 与 Jump certificate 实机验收 | 🟡 Important | P1     |
+| 57    | 真实 SSH 认证矩阵 ✅ macOS 通过；Linux 待 CI 首跑 | 🟡 Important | P1 |
+| 58    | 物理键盘 30 轮重叠 `a/s/d` 注入待 Accessibility 授权 | 🟡 Important | P1 |
+| 21/39 | Windows/Pageant/串口硬件实机矩阵（Linux 已接线 CI） | 🟡 Important | P1 |
 
 ---
 
@@ -993,4 +994,4 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-08-19 (Phase 6.16: SSH 高级认证与 Team Server 注册准入收口)_
+_文档更新时间: 2026-08-28 (Phase 6.20: 真实 SSH 认证矩阵全绿 + 物理键盘探针自动化；详见 docs/todo.md)_

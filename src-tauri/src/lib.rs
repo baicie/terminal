@@ -5,6 +5,7 @@
 mod agent;
 mod commands;
 mod errors;
+mod input_probe;
 mod port_forward;
 mod serial;
 mod sftp;
@@ -32,6 +33,7 @@ use commands::{
     session_create_ssh_key, session_create_ssh_password, session_exec, session_list,
     session_resize, session_write, session_write_raw,
 };
+use input_probe::{input_probe_config, input_probe_ready, input_probe_result, InputProbeState};
 use port_forward::{port_forward_list, port_forward_start, port_forward_stop};
 use serial::{
     serial_baud_rates, serial_connect, serial_disconnect, serial_is_connected, serial_list,
@@ -96,11 +98,13 @@ pub fn run() {
     let shared_state = create_shared_state();
     let storage_manager = std::sync::Arc::new(crate::storage::StorageManager::new());
     let terminal_smoke_state = TerminalSmokeState::from_env();
+    let input_probe_state = InputProbeState::from_env();
 
     tauri::Builder::default()
         .manage(shared_state)
         .manage(storage_manager)
         .manage(terminal_smoke_state)
+        .manage(input_probe_state)
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -201,6 +205,10 @@ pub fn run() {
             terminal_smoke_reconnect_requested,
             terminal_smoke_emit_stale_output,
             terminal_smoke_complete,
+            // Explicitly gated physical keyboard input probe
+            input_probe_config,
+            input_probe_ready,
+            input_probe_result,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

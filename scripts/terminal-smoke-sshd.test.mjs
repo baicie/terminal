@@ -104,6 +104,9 @@ function createDependencies({
     readFile: async filePath => {
       if (filePath.endsWith('host_key.pub')) return HOST_PUBLIC_KEY
       if (filePath.endsWith('user_key.pub')) return USER_PUBLIC_KEY
+      if (filePath.endsWith('user_key-cert.pub')) {
+        return 'ssh-ed25519-cert-v01@openssh.com AAAAcertificate terminal-smoke-cert\n'
+      }
       if (filePath.endsWith('user_key')) return PRIVATE_KEY
       throw new Error(`unexpected read: ${filePath}`)
     },
@@ -183,8 +186,8 @@ test('starts an isolated public-key-only sshd and proves real authentication', a
     },
   )
   assert.deepEqual(calls.mkdir, [
-    [SSH_DIRECTORY, { mode: 0o700 }],
-    [path.join(SSH_DIRECTORY, 'home'), { mode: 0o700 }],
+    [SSH_DIRECTORY, { recursive: true, mode: 0o700 }],
+    [path.join(SSH_DIRECTORY, 'home'), { recursive: true, mode: 0o700 }],
   ])
   assert.ok(
     calls.chmod.some(
@@ -224,8 +227,12 @@ test('starts an isolated public-key-only sshd and proves real authentication', a
     host: '127.0.0.1',
     port: 42_222,
     username: 'terminal-smoke',
-    privateKey: PRIVATE_KEY,
+    authMode: 'key',
     expectedHostKey: EXPECTED_HOST_KEY,
+    privateKey: PRIVATE_KEY,
+    password: null,
+    certificate: null,
+    jump: null,
   })
   const validationIndex = calls.spawn.findIndex(
     call => call.command === '/usr/sbin/sshd' && call.args[0] === '-t',
@@ -325,12 +332,12 @@ for (const [name, child] of [
   })
 }
 
-test('rejects non-macOS hosts without touching the run directory', async () => {
-  const { calls, dependencies } = createDependencies({ platform: 'linux' })
+test('rejects unsupported hosts without touching the run directory', async () => {
+  const { calls, dependencies } = createDependencies({ platform: 'win32' })
 
   await assert.rejects(
     startTerminalSmokeSshd({ runDirectory: RUN_DIRECTORY, dependencies }),
-    /only supported on macOS/,
+    /only supported on macOS and Linux/,
   )
 
   assert.equal(calls.mkdir.length, 0)
@@ -458,4 +465,94 @@ test('stop escalates a stuck SSH session process group to SIGKILL', async () => 
     [-7_001, 'SIGKILL'],
     [-4_003, 'SIGKILL'],
   ])
+})
+
+test('starts a certificate-trusted sshd and proves certificate authentication', async () => {
+  const { calls, dependencies } = createDependencies()
+
+  const fixture = await startTerminalSmokeSshd({
+    runDirectory: RUN_DIRECTORY,
+    mode: 'cert',
+    dependencies,
+  })
+
+  assert.equal(fixture.authMode, 'cert')
+  assert.match(fixture.certificate, /^ssh-ed25519-cert-v01@openssh\.com /)
+  assert.equal(fixture.privateKey, PRIVATE_KEY)
+
+  const daemonConfig = writtenText(calls, 'sshd_config')
+  assert.match(daemonConfig, /TrustedUserCAKeys .*ca_key\.pub/)
+  assert.match(daemonConfig, /DisableForwarding yes/)
+
+  const signing = calls.spawn.find(
+    call => call.command === '/usr/bin/ssh-keygen' && call.args.includes('-s'),
+  )
+  assert.ok(signing, 'certificate signing must run')
+  assert.ok(signing.args.includes(SSH_DIRECTORY + '/ca_key'))
+  assert.deepEqual(
+    signing.args.slice(0, 4),
+    ['-q', '-s', SSH_DIRECTORY + '/ca_key', '-I'],
+  )
+  assert.ok(signing.args.includes('-O'))
+  assert.ok(signing.args.includes('clear'))
+  assert.ok(signing.args.includes('permit-pty'))
+  assert.ok(signing.args.some(arg => arg.startsWith('force-command=')))
+  assert.ok(signing.args.includes('source-address=127.0.0.1'))
+
+  const probe = calls.spawn.find(call => call.command === '/usr/bin/ssh')
+  assert.ok(probe.args.includes(`CertificateFile=${SSH_DIRECTORY}/user_key-cert.pub`))
+
+  assert.deepEqual(JSON.parse(writtenText(calls, 'connection.json')), {
+    host: '127.0.0.1',
+    port: 42_222,
+    username: 'terminal-smoke',
+    authMode: 'cert',
+    expectedHostKey: EXPECTED_HOST_KEY,
+    privateKey: PRIVATE_KEY,
+    password: null,
+    certificate: 'ssh-ed25519-cert-v01@openssh.com AAAAcertificate',
+    jump: null,
+  })
+  await fixture.stop()
+})
+
+test('starts a jump-role sshd restricted to the target port', async () => {
+  const { calls, dependencies } = createDependencies()
+
+  const fixture = await startTerminalSmokeSshd({
+    runDirectory: RUN_DIRECTORY,
+    role: 'jump',
+    targetPort: 42_333,
+    dependencies,
+  })
+
+  const daemonConfig = writtenText(calls, 'sshd_config')
+  assert.match(daemonConfig, /AllowTcpForwarding yes/)
+  assert.match(daemonConfig, /PermitOpen 127\.0\.0\.1:42333/)
+  assert.match(daemonConfig, /PermitTTY no/)
+  assert.doesNotMatch(daemonConfig, /DisableForwarding yes/)
+  assert.doesNotMatch(daemonConfig, /PermitTTY yes/)
+
+  const authorizedKeys = writtenText(calls, 'authorized_keys')
+  assert.doesNotMatch(authorizedKeys, /restrict/)
+  assert.match(authorizedKeys, /no-pty/)
+  assert.match(authorizedKeys, /no-agent-forwarding/)
+
+  const probe = calls.spawn.find(call => call.command === '/usr/bin/ssh')
+  assert.ok(probe.args.includes('terminal-smoke-ready'))
+  await fixture.stop()
+})
+
+test('rejects a jump role without a numeric target port', async () => {
+  const { calls, dependencies } = createDependencies()
+
+  await assert.rejects(
+    startTerminalSmokeSshd({
+      runDirectory: RUN_DIRECTORY,
+      role: 'jump',
+      dependencies,
+    }),
+    /target port/,
+  )
+  assert.equal(calls.mkdir.length, 0)
 })

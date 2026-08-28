@@ -31,14 +31,41 @@ const ACTIVE_SESSION_RETRIES: usize = 5;
 const STALE_OUTPUT_MARKER: &str = "TERMINAL_SMOKE_STALE_OUTPUT_CANARY";
 const ACTIVE_OUTPUT_BARRIER: &str = "TERMINAL_SMOKE_ACTIVE_OUTPUT_BARRIER";
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum TerminalSmokeAuthMode {
+    Key,
+    Password,
+    Agent,
+    Cert,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct TerminalSmokeJumpConfig {
+    host: String,
+    port: u16,
+    username: String,
+    private_key: String,
+    expected_host_key: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct TerminalSmokeSshConfig {
     host: String,
     port: u16,
     username: String,
-    private_key: String,
     expected_host_key: String,
+    auth_mode: TerminalSmokeAuthMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    private_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    password: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    certificate: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    jump: Option<TerminalSmokeJumpConfig>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -73,6 +100,7 @@ pub(crate) struct TerminalSmokeResult {
     resized_size_visible: bool,
     reconnect_observed: bool,
     stale_output_rejected: bool,
+    first_connection_ms: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -267,29 +295,159 @@ fn reconnect_control_path(value: Option<OsString>) -> Result<Option<PathBuf>, St
     Ok(Some(path))
 }
 
-fn parse_ssh_config(serialized: &[u8]) -> Result<TerminalSmokeSshConfig, String> {
-    let config: TerminalSmokeSshConfig = serde_json::from_slice(serialized)
-        .map_err(|error| format!("invalid terminal smoke SSH config: {error}"))?;
-    if config.host != "127.0.0.1" {
-        return Err("terminal smoke SSH host must be 127.0.0.1".to_string());
+fn is_loopback_host(host: &str) -> bool {
+    host == "127.0.0.1"
+}
+
+fn is_open_ssh_private_key(value: &str) -> bool {
+    value.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----\n")
+        && value.ends_with("-----END OPENSSH PRIVATE KEY-----\n")
+}
+
+fn is_open_ssh_certificate(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix("ssh-") else {
+        return false;
+    };
+    let Some((kind, body)) = rest.split_once(' ') else {
+        return false;
+    };
+    kind.ends_with("-cert-v01@openssh.com")
+        && !body.is_empty()
+        && body
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
+}
+
+fn has_control_characters(value: &str) -> bool {
+    value.bytes().any(|byte| byte <= 0x1f || byte == 0x7f)
+}
+
+fn validate_smoke_target(
+    host: &str,
+    port: u16,
+    username: &str,
+    expected_host_key: &str,
+    label: &str,
+) -> Result<(), String> {
+    if !is_loopback_host(host) {
+        return Err(format!("terminal smoke {label} host must be 127.0.0.1"));
     }
-    if config.port == 0 {
-        return Err("terminal smoke SSH port must be non-zero".to_string());
+    if port == 0 {
+        return Err(format!("terminal smoke {label} port must be non-zero"));
     }
-    if config.username.is_empty()
-        || config.username.len() > 255
-        || config.username.starts_with('-')
-        || !config
-            .username
+    if username.is_empty()
+        || username.len() > 255
+        || username.starts_with('-')
+        || !username
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
     {
-        return Err("terminal smoke SSH username is invalid".to_string());
+        return Err(format!("terminal smoke {label} username is invalid"));
     }
-    russh::keys::decode_secret_key(&config.private_key, None)
-        .map_err(|error| format!("terminal smoke SSH private key is invalid: {error}"))?;
-    PublicKey::from_openssh(&config.expected_host_key)
-        .map_err(|error| format!("terminal smoke SSH host key is invalid: {error}"))?;
+    PublicKey::from_openssh(expected_host_key)
+        .map_err(|error| format!("terminal smoke {label} host key is invalid: {error}"))?;
+    Ok(())
+}
+
+fn validate_smoke_private_key(value: &str, label: &str) -> Result<(), String> {
+    if !is_open_ssh_private_key(value) {
+        return Err(format!("terminal smoke {label} private key is malformed"));
+    }
+    russh::keys::decode_secret_key(value, None)
+        .map_err(|error| format!("terminal smoke {label} private key is invalid: {error}"))?;
+    Ok(())
+}
+
+fn validate_ssh_config(config: &TerminalSmokeSshConfig) -> Result<(), String> {
+    validate_smoke_target(
+        &config.host,
+        config.port,
+        &config.username,
+        &config.expected_host_key,
+        "SSH",
+    )?;
+    match config.auth_mode {
+        TerminalSmokeAuthMode::Key => {
+            let private_key = config
+                .private_key
+                .as_deref()
+                .ok_or_else(|| "terminal smoke key mode requires a private key".to_string())?;
+            validate_smoke_private_key(private_key, "SSH")?;
+            if config.password.is_some() || config.certificate.is_some() {
+                return Err("terminal smoke key mode rejects password and certificate".to_string());
+            }
+        }
+        TerminalSmokeAuthMode::Password => {
+            let password = config
+                .password
+                .as_deref()
+                .ok_or_else(|| "terminal smoke password mode requires a password".to_string())?;
+            if password.is_empty() || password.len() > 256 || has_control_characters(password) {
+                return Err("terminal smoke password is invalid".to_string());
+            }
+            if config.private_key.is_some() || config.certificate.is_some() || config.jump.is_some()
+            {
+                return Err(
+                    "terminal smoke password mode rejects keys, certificates and jump hosts"
+                        .to_string(),
+                );
+            }
+        }
+        TerminalSmokeAuthMode::Agent => {
+            if config.private_key.is_some()
+                || config.password.is_some()
+                || config.certificate.is_some()
+                || config.jump.is_some()
+            {
+                return Err("terminal smoke agent mode rejects all local credentials".to_string());
+            }
+        }
+        TerminalSmokeAuthMode::Cert => {
+            let private_key = config
+                .private_key
+                .as_deref()
+                .ok_or_else(|| "terminal smoke cert mode requires a private key".to_string())?;
+            validate_smoke_private_key(private_key, "SSH")?;
+            let certificate = config
+                .certificate
+                .as_deref()
+                .ok_or_else(|| "terminal smoke cert mode requires a certificate".to_string())?;
+            if !is_open_ssh_certificate(certificate) {
+                return Err("terminal smoke certificate is invalid".to_string());
+            }
+            if let Some(passphrase) = config.password.as_deref() {
+                if passphrase.is_empty()
+                    || passphrase.len() > 256
+                    || has_control_characters(passphrase)
+                {
+                    return Err("terminal smoke certificate passphrase is invalid".to_string());
+                }
+            }
+            if config.jump.is_some() {
+                return Err("terminal smoke cert mode rejects jump hosts".to_string());
+            }
+        }
+    }
+    if let Some(jump) = config.jump.as_ref() {
+        if config.auth_mode != TerminalSmokeAuthMode::Key {
+            return Err("terminal smoke jump hosts require key mode".to_string());
+        }
+        validate_smoke_target(
+            &jump.host,
+            jump.port,
+            &jump.username,
+            &jump.expected_host_key,
+            "jump host",
+        )?;
+        validate_smoke_private_key(&jump.private_key, "jump host")?;
+    }
+    Ok(())
+}
+
+fn parse_ssh_config(serialized: &[u8]) -> Result<TerminalSmokeSshConfig, String> {
+    let config: TerminalSmokeSshConfig = serde_json::from_slice(serialized)
+        .map_err(|error| format!("invalid terminal smoke SSH config: {error}"))?;
+    validate_ssh_config(&config)?;
     Ok(config)
 }
 
@@ -415,6 +573,12 @@ fn validate_success(
     if result.duration_ms == 0 || result.duration_ms > timeout_ms {
         return Err(format!("duration must be within 1..={timeout_ms} ms"));
     }
+    let connection_deadline_ms = CONNECTION_DEADLINE.as_millis() as u64;
+    if result.first_connection_ms == 0 || result.first_connection_ms >= connection_deadline_ms {
+        return Err(format!(
+            "first connection must complete within the {connection_deadline_ms} ms budget"
+        ));
+    }
     if elapsed > TIMEOUT {
         return Err("Rust terminal smoke deadline elapsed".to_string());
     }
@@ -464,6 +628,7 @@ fn failure_result(stage: &str, error: String, elapsed: Duration) -> TerminalSmok
         resized_size_visible: false,
         reconnect_observed: false,
         stale_output_rejected: false,
+        first_connection_ms: 0,
     }
 }
 

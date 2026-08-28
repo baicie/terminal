@@ -53,6 +53,7 @@ export function terminalSmokeFailure(
     resizedSizeVisible: progress.result?.resizedSizeVisible ?? false,
     reconnectObserved: progress.result?.reconnectObserved ?? false,
     staleOutputRejected: progress.result?.staleOutputRejected ?? false,
+    firstConnectionMs: progress.result?.firstConnectionMs ?? 0,
   }
 }
 
@@ -91,5 +92,22 @@ export function terminalSmokeSuccess(
     resizedSizeVisible: results.every(result => result.resizedSizeVisible),
     reconnectObserved: results.some(result => result.reconnectObserved),
     staleOutputRejected: results.some(result => result.staleOutputRejected),
+    firstConnectionMs: results.reduce(
+      (first, result) => first || result.firstConnectionMs,
+      0,
+    ),
   }
+}
+export function terminalSmokeRoundFailure(
+  term: { cols: number; rows: number },
+  config: TerminalSmokeConfig,
+  error: unknown,
+): TerminalSmokeResult {
+  return terminalSmokeFailure(config, performance.now(), 'connecting', error, {
+    resourcesRecovered: false,
+    roundsCompleted: 0,
+    terminalCols: term.cols,
+    terminalRows: term.rows,
+    uniqueSessionCount: 0,
+  })
 }

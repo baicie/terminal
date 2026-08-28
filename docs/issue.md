@@ -1959,4 +1959,61 @@ $ cargo check
 
 ---
 
-_本节最后更新: 2026-08-26_
+_本节最后更新: 2026-08-28_
+
+---
+
+## 二十二、真实 SSH 认证矩阵与物理键盘探针 (2026-08-28)
+
+### Issue #57: 真实 SSH 认证矩阵与断线重连验收 ✅ macOS 本机通过
+
+**严重程度**: High
+**状态**: ✅ macOS 实机全矩阵通过；Linux 已接线待 CI 首跑；Windows 保持人工清单
+**发现/修复时间**: 2026-08-28
+
+**问题**:
+
+- 既有 smoke 只有 public-key 一种认证与单种断线重连，无法回答「password/key/agent/cert/Jump 全矩阵是否真的可用」；首次连接耗时有门禁但没有进入结果契约。
+- 第一次矩阵运行暴露 6 个真实缺陷：配置契约拒绝 Rust 省略的可选字段、agent 用例误用被覆盖为 null 的私钥、密码容器入口脚本缺少执行位、cert 探针被 macOS sshd 忽略 authorized_keys `command=` 掩盖真实失败、jump 目录未递归创建、证书文件尾随注释被严格校验拒绝。
+
+**修复**:
+
+- smoke 契约扩展 `authMode`/`password`/`certificate`/`jump`，前端与 Rust 双端严格校验；`firstConnectionMs` 进入结果并在前端、Rust、runner 三层门禁「< 10 秒」。
+- sshd fixture 支持 cert（CA 签发 + `TrustedUserCAKeys`；**macOS sshd 对证书认证不套用 authorized_keys `command=` 选项**，隔离策略改为证书内嵌 `clear/permit-pty/force-command/source-address`）与 jump（`AllowTcpForwarding yes` + `PermitOpen` + `no-pty`）。
+- 新增 Docker Debian OpenSSH 密码 fixture、隔离 `ssh-agent`、jump 双实例合成连接；`smoke:ssh-matrix` 一次构建跑 7 个用例。
+
+**真实验收（本机 macOS 15.7 arm64，真实 OpenSSH / ssh-agent / CA 证书 / Docker Debian OpenSSH）**:
+
+| 用例 | 结果 | 首次连接 | 总耗时 |
+| --- | --- | --- | --- |
+| key（10 轮 × 8 MiB） | ✅ | 2427 ms | 10531 ms |
+| key + 断线重连（11 个唯一 session、旧输出拒绝） | ✅ | 3261 ms | 7547 ms |
+| password（Docker Debian OpenSSH） | ✅ | 1764 ms | 7770 ms |
+| password + 断线重连 | ✅ | 2139 ms | 7260 ms |
+| agent（隔离 ssh-agent） | ✅ | 1776 ms | 7292 ms |
+| cert（CA 签名证书，sshd TrustedUserCAKeys） | ✅ | 1886 ms | 7158 ms |
+| jump（跳板 sshd → 目标 sshd，direct-tcpip） | ✅ | 1831 ms | 10542 ms |
+
+全部用例首次连接远低于 10 秒预算；每个用例包含 10 轮隔离会话、8 MiB 输出、97×31 resize 与前后端资源回收门禁。
+
+**仍需外部验证**:
+
+- [ ] Linux runner 首次 dispatch `.github/workflows/real-machine-matrix.yml`（Xvfb + localhost OpenSSH）。
+- [ ] Windows OpenSSH 服务 / Pageant / 本地 PTY / 串口硬件按 Issue #21/#22/#39 人工清单。
+
+### Issue #58: 物理键盘资格门禁自动化 🟡 应用侧就绪，待注入授权
+
+**严重程度**: High
+**状态**: 🟡 应用侧探针协议、Rust 门控模块、CGEvent 注入驱动与单测完成；真实注入等待宿主进程 Accessibility 授权或人工键入
+**发现/修复时间**: 2026-08-28
+
+**问题**: Issue #26/#48 要求的「macOS WKWebView 多轮近同时物理 `a/s/d` 且不丢不重」只有手动页面，无法可重复执行与记录 expected/received hex。
+
+**修复**:
+
+- Rust `input_probe` 门控模块：`TERMINAL_INPUT_PROBE=1` 显式开启，checkpoint 与结果路径必须绝对，轮数 1..=100、期望文本 ≤32 字节无控制字符；`input_probe_ready`/`input_probe_result` 原子写入并严格校验每轮 hex 与 ok 标志。
+- 前端 `automation-root`：真实本地 PTY 探针（`stty -echo` + `read` + `od` 回读字节），每轮进入 awaiting-input 即发布 checkpoint，完成后发布 `{ok, rounds, expectedHex, results[]}`。
+- `scripts/run-input-probe.mjs`：CGEvent 重叠按键注入器（a↓ s↓ d↓ → 反向释放 → Return，4 ms 间隔）、`CGPreflightPostEventAccess` 权限检查、osascript 前置激活、manual 引导模式与 `--checkpoint-only`（无权限时验证应用侧协议）。
+- Node 驱动 6 项单测覆盖 30 轮驱动、权限拒绝、manual 回退、早退与参数校验。
+
+**验证边界**: CGEvent 注入需要宿主进程被授予「系统设置 → 隐私与安全性 → 辅助功能」。授权后 `pnpm smoke:input-probe` 自动执行 30 轮重叠 `a/s/d` 并记录 expected/received hex；未授权时提供 manual 引导模式由人类物理键入，结果同样落盘校验。合成 JS 事件与 `term.input()` 不视为物理键盘证据。

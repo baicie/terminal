@@ -12,11 +12,13 @@ const LOOPBACK = '127.0.0.1'
 const SSH = '/usr/bin/ssh'
 const SSHD = '/usr/sbin/sshd'
 const SSH_KEYGEN = '/usr/bin/ssh-keygen'
-const PS = '/bin/ps'
+const PS = process.platform === 'darwin' ? '/bin/ps' : '/usr/bin/ps'
 const COMMAND_TIMEOUT_MS = 10_000
 const READY_TIMEOUT_MS = 10_000
 const READY_COMMAND = 'terminal-smoke-ready'
 const PORT_ATTEMPTS = 4
+const CERT_SERIAL = '1'
+const CERT_IDENTITY = 'terminal-smoke-cert'
 
 async function reserveLoopbackPort() {
   const server = createServer()
@@ -256,13 +258,24 @@ function parsePublicKey(serialized, label) {
   return `${kind} ${body}`
 }
 
+function parseCertificate(serialized, label) {
+  const [kind, body] = serialized.trim().split(/\s+/)
+  if (
+    !/^ssh-[^\s]+-cert-v01@openssh\.com$/.test(kind) ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(body ?? '')
+  ) {
+    throw new Error(`${label} is not an OpenSSH certificate`)
+  }
+  return `${kind} ${body}`
+}
+
 async function writeSecure(filePath, contents, mode, dependencies) {
   await dependencies.writeFile(filePath, contents, { encoding: 'utf8', mode })
   await dependencies.chmod(filePath, mode)
 }
 
-function daemonConfiguration(paths, port, username) {
-  return [
+function daemonConfiguration(paths, port, username, options) {
+  const lines = [
     `Port ${port}`,
     `ListenAddress ${LOOPBACK}`,
     `HostKey ${quoteSshdPath(paths.hostKey)}`,
@@ -271,17 +284,14 @@ function daemonConfiguration(paths, port, username) {
     `AllowUsers ${username}`,
     'PubkeyAuthentication yes',
     'AuthenticationMethods publickey',
-    'DisableForwarding yes',
     'PasswordAuthentication no',
     'KbdInteractiveAuthentication no',
     'PermitEmptyPasswords no',
     'PermitRootLogin no',
     'StrictModes yes',
     'UsePAM no',
-    'PermitTTY yes',
     'PermitUserRC no',
     'AllowAgentForwarding no',
-    'AllowTcpForwarding no',
     'X11Forwarding no',
     'PermitTunnel no',
     'GatewayPorts no',
@@ -289,11 +299,29 @@ function daemonConfiguration(paths, port, username) {
     'PrintMotd no',
     'PrintLastLog no',
     'LogLevel VERBOSE',
-    '',
-  ].join('\n')
+  ]
+  if (options.mode === 'cert') {
+    lines.push(`TrustedUserCAKeys ${quoteSshdPath(paths.caPublicKey)}`)
+  }
+  if (options.role === 'jump') {
+    lines.push(
+      'AllowTcpForwarding yes',
+      'AllowStreamLocalForwarding no',
+      `PermitOpen ${LOOPBACK}:${options.targetPort}`,
+      'PermitTTY no',
+    )
+  } else {
+    lines.push(
+      'AllowTcpForwarding no',
+      'DisableForwarding yes',
+      'PermitTTY yes',
+    )
+  }
+  lines.push('')
+  return lines.join('\n')
 }
 
-function readinessArguments(paths, port, username) {
+function readinessArguments(paths, port, username, mode) {
   const options = [
     'BatchMode=yes',
     'IdentitiesOnly=yes',
@@ -305,12 +333,15 @@ function readinessArguments(paths, port, username) {
     `UserKnownHostsFile=${paths.knownHosts}`,
     'GlobalKnownHostsFile=/dev/null',
     'ConnectTimeout=2',
-  ].flatMap(option => ['-o', option])
+  ]
+  if (mode === 'cert') {
+    options.push(`CertificateFile=${paths.userCertificate}`)
+  }
   return [
     '-F',
     '/dev/null',
     '-T',
-    ...options,
+    ...options.flatMap(option => ['-o', option]),
     '-p',
     String(port),
     '-i',
@@ -320,14 +351,14 @@ function readinessArguments(paths, port, username) {
   ]
 }
 
-async function waitUntilReady(daemon, paths, port, username, dependencies) {
+async function waitUntilReady(daemon, paths, port, username, mode, dependencies) {
   const deadline = dependencies.now() + READY_TIMEOUT_MS
   let lastFailure = 'no authentication attempt completed'
   while (dependencies.now() <= deadline) {
     if (daemon.closed) break
     const status = await runProcess(
       SSH,
-      readinessArguments(paths, port, username),
+      readinessArguments(paths, port, username, mode),
       { cwd: paths.directory, shell: false, stdio: ['ignore', 'pipe', 'pipe'] },
       dependencies,
     )
@@ -342,8 +373,9 @@ async function waitUntilReady(daemon, paths, port, username, dependencies) {
     lastFailure = status.stderr.trim() || status.stdout.trim() || 'no output'
     if (!daemon.closed) await dependencies.sleep(100)
   }
+  const daemonDetail = daemon.stderr().trim() || 'no daemon output'
   throw new Error(
-    `OpenSSH readiness probe failed: ${daemon.stderr().trim() || lastFailure}`,
+    `OpenSSH readiness probe failed: ${lastFailure} (daemon: ${daemonDetail})`,
   )
 }
 
@@ -353,20 +385,23 @@ function fixturePaths(runDirectory) {
   return {
     directory,
     authorizedKeys: inDirectory('authorized_keys'),
+    caKey: inDirectory('ca_key'),
+    caPublicKey: inDirectory('ca_key.pub'),
     config: inDirectory('sshd_config'),
     connection: inDirectory('connection.json'),
     home: inDirectory('home'),
     hostKey: inDirectory('host_key'),
     knownHosts: inDirectory('known_hosts'),
     pid: inDirectory('sshd.pid'),
+    userCertificate: inDirectory('user_key-cert.pub'),
     userKey: inDirectory('user_key'),
     wrapper: inDirectory('forced-command.sh'),
   }
 }
 
-async function prepareFixture(paths, dependencies) {
-  await dependencies.mkdir(paths.directory, { mode: 0o700 })
-  await dependencies.mkdir(paths.home, { mode: 0o700 })
+async function prepareFixture(paths, mode, dependencies) {
+  await dependencies.mkdir(paths.directory, { recursive: true, mode: 0o700 })
+  await dependencies.mkdir(paths.home, { recursive: true, mode: 0o700 })
   await dependencies.chmod(paths.directory, 0o700)
   await dependencies.chmod(paths.home, 0o700)
   const options = {
@@ -388,16 +423,89 @@ async function prepareFixture(paths, dependencies) {
     )
     await dependencies.chmod(keyPath, 0o600)
   }
+  if (mode === 'cert') {
+    await runChecked(
+      SSH_KEYGEN,
+      ['-q', '-t', 'ed25519', '-N', '', '-C', 'terminal-smoke-ca', '-f', paths.caKey],
+      options,
+      dependencies,
+      `ssh-keygen (certificate authority)`,
+    )
+    await dependencies.chmod(paths.caKey, 0o600)
+  }
   return options
+}
+
+async function signUserCertificate(
+  paths,
+  username,
+  forcedCommand,
+  dependencies,
+) {
+  const options = {
+    cwd: paths.directory,
+    shell: false,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }
+  // macOS sshd does not apply authorized_keys `command=` options to
+  // certificate authentication, so the isolation policy is embedded in the
+  // certificate itself: clear every default permission, keep PTY, force the
+  // isolated wrapper, and bind the certificate to the loopback source.
+  await runChecked(
+    SSH_KEYGEN,
+    [
+      '-q',
+      '-s',
+      paths.caKey,
+      '-I',
+      CERT_IDENTITY,
+      '-n',
+      username,
+      '-z',
+      CERT_SERIAL,
+      '-V',
+      '-1m:+15m',
+      '-O',
+      'clear',
+      '-O',
+      'permit-pty',
+      '-O',
+      `force-command="${forcedCommand}"`,
+      '-O',
+      `source-address=${LOOPBACK}`,
+      `${paths.userKey}.pub`,
+    ],
+    options,
+    dependencies,
+    'ssh-keygen (certificate signing)',
+  )
+  await dependencies.chmod(paths.userCertificate, 0o600)
 }
 
 export async function startTerminalSmokeSshd({
   runDirectory,
+  mode = 'key',
+  role = 'target',
+  targetPort,
+  connectionExtra = {},
   dependencies: overrides = {},
 }) {
   const dependencies = { ...defaultDependencies, ...overrides }
-  if (dependencies.platform !== 'darwin') {
-    throw new Error('Terminal smoke OpenSSH is only supported on macOS')
+  if (dependencies.platform !== 'darwin' && dependencies.platform !== 'linux') {
+    throw new Error('Terminal smoke OpenSSH is only supported on macOS and Linux')
+  }
+  if (mode !== 'key' && mode !== 'cert') {
+    throw new Error(`terminal smoke SSH mode must be key or cert, got ${mode}`)
+  }
+  if (role !== 'target' && role !== 'jump') {
+    throw new Error(
+      `terminal smoke SSH role must be target or jump, got ${role}`,
+    )
+  }
+  if (role === 'jump') {
+    if (!Number.isInteger(targetPort) || targetPort < 1 || targetPort > 65_535) {
+      throw new Error('terminal smoke jump hosts require a target port')
+    }
   }
   if (typeof runDirectory !== 'string' || !path.isAbsolute(runDirectory)) {
     throw new Error('terminal smoke runDirectory must be absolute')
@@ -408,7 +516,7 @@ export async function startTerminalSmokeSshd({
   }
 
   const paths = fixturePaths(runDirectory)
-  const commandOptions = await prepareFixture(paths, dependencies)
+  const commandOptions = await prepareFixture(paths, mode, dependencies)
   const privateKey = await dependencies.readFile(paths.userKey, 'utf8')
   const userPublicKey = parsePublicKey(
     await dependencies.readFile(`${paths.userKey}.pub`, 'utf8'),
@@ -424,9 +532,16 @@ export async function startTerminalSmokeSshd({
   const forcedCommand = paths.wrapper
     .replaceAll('\\', '\\\\')
     .replaceAll('"', '\\"')
+  if (mode === 'cert') {
+    await signUserCertificate(paths, username, forcedCommand, dependencies)
+  }
+  const authorizedOptions =
+    role === 'jump'
+      ? `from="${LOOPBACK}",command="${forcedCommand}",no-agent-forwarding,no-X11-forwarding,no-pty`
+      : `restrict,pty,from="${LOOPBACK}",command="${forcedCommand}"`
   await writeSecure(
     paths.authorizedKeys,
-    `restrict,pty,from="${LOOPBACK}",command="${forcedCommand}" ${userPublicKey}\n`,
+    `${authorizedOptions} ${userPublicKey}\n`,
     0o600,
     dependencies,
   )
@@ -439,7 +554,11 @@ export async function startTerminalSmokeSshd({
       if (!Number.isInteger(port) || port < 1_024 || port > 65_535) {
         throw new Error('port reservation returned an invalid high port')
       }
-      const config = daemonConfiguration(paths, port, username)
+      const config = daemonConfiguration(paths, port, username, {
+        mode,
+        role,
+        targetPort,
+      })
       await writeSecure(paths.config, config, 0o600, dependencies)
       await writeSecure(
         paths.knownHosts,
@@ -456,7 +575,7 @@ export async function startTerminalSmokeSshd({
       )
       daemon = startDaemon(paths.config, paths.directory, dependencies)
       try {
-        await waitUntilReady(daemon, paths, port, username, dependencies)
+        await waitUntilReady(daemon, paths, port, username, mode, dependencies)
         break
       } catch (error) {
         await stopDaemon(daemon, dependencies)
@@ -468,12 +587,24 @@ export async function startTerminalSmokeSshd({
       }
     }
 
+    const certificate =
+      mode === 'cert'
+        ? parseCertificate(
+            await dependencies.readFile(paths.userCertificate, 'utf8'),
+            'terminal smoke user certificate',
+          )
+        : null
     const connection = {
       host: LOOPBACK,
       port,
       username,
-      privateKey,
+      authMode: mode === 'cert' ? 'cert' : 'key',
       expectedHostKey,
+      privateKey,
+      password: null,
+      certificate,
+      jump: null,
+      ...connectionExtra,
     }
     await writeSecure(
       paths.connection,
@@ -486,13 +617,15 @@ export async function startTerminalSmokeSshd({
     return {
       ...connection,
       configPath: paths.connection,
+      /** Raw client identity, unaffected by connectionExtra overrides. */
+      identityKey: privateKey,
       restart: () => {
         if (restartPromise) return restartPromise
         restartPromise = (async () => {
           await stopDaemon(daemon, dependencies)
           daemon = startDaemon(paths.config, paths.directory, dependencies)
           try {
-            await waitUntilReady(daemon, paths, port, username, dependencies)
+            await waitUntilReady(daemon, paths, port, username, mode, dependencies)
           } catch (error) {
             await stopDaemon(daemon, dependencies)
             throw error

@@ -20,10 +20,23 @@ const validConfig = {
     host: '127.0.0.1',
     port: 42_222,
     username: 'terminal-smoke',
+    authMode: 'key',
     privateKey:
       '-----BEGIN OPENSSH PRIVATE KEY-----\nfixture\n-----END OPENSSH PRIVATE KEY-----\n',
+    password: null,
+    certificate: null,
+    jump: null,
     expectedHostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIfixture',
   },
+}
+
+const jumpConfig = {
+  host: '127.0.0.1',
+  port: 42_223,
+  username: 'terminal-smoke',
+  privateKey:
+    '-----BEGIN OPENSSH PRIVATE KEY-----\nfixture\n-----END OPENSSH PRIVATE KEY-----\n',
+  expectedHostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIfixtureJump',
 }
 
 it('recognizes the Tauri internals injected into desktop webviews', () => {
@@ -81,10 +94,59 @@ describe('parseTerminalSmokeConfig', () => {
     { ...validConfig, ssh: { ...validConfig.ssh, host: 'localhost' } },
     { ...validConfig, ssh: { ...validConfig.ssh, port: 0 } },
     { ...validConfig, resultPath: '/tmp/result.json' },
+    { ...validConfig, ssh: { ...validConfig.ssh, authMode: 'keyboard' } },
+    { ...validConfig, ssh: { ...validConfig.ssh, authMode: 'key', privateKey: null } },
+    { ...validConfig, ssh: { ...validConfig.ssh, authMode: 'key', password: 'x' } },
+    { ...validConfig, ssh: { ...validConfig.ssh, authMode: 'password' } },
+    { ...validConfig, ssh: { ...validConfig.ssh, authMode: 'agent', privateKey: 'x' } },
+    { ...validConfig, ssh: { ...validConfig.ssh, authMode: 'cert' } },
+    {
+      ...validConfig,
+      ssh: { ...validConfig.ssh, authMode: 'jump', jump: jumpConfig },
+    },
+    { ...validConfig, ssh: { ...validConfig.ssh, jump: { host: 'localhost' } } },
+    {
+      ...validConfig,
+      ssh: { ...validConfig.ssh, authMode: 'password', jump: jumpConfig },
+    },
   ])('rejects a config outside the exact public contract', raw => {
     expect(() => parseTerminalSmokeConfig(raw)).toThrow(
       'Invalid terminal smoke config',
     )
+  })
+
+  it.each([
+    {
+      ...validConfig,
+      ssh: {
+        ...validConfig.ssh,
+        authMode: 'password',
+        privateKey: null,
+        password: 'terminal-smoke-password',
+      },
+    },
+    {
+      ...validConfig,
+      ssh: {
+        ...validConfig.ssh,
+        authMode: 'agent',
+        privateKey: null,
+      },
+    },
+    {
+      ...validConfig,
+      ssh: {
+        ...validConfig.ssh,
+        authMode: 'cert',
+        certificate: 'ssh-ed25519-cert-v01@openssh.com AAAAcertificate',
+      },
+    },
+    {
+      ...validConfig,
+      ssh: { ...validConfig.ssh, jump: jumpConfig },
+    },
+  ])('accepts the extended authentication matrix configs', raw => {
+    expect(() => parseTerminalSmokeConfig(raw)).not.toThrow()
   })
 })
 

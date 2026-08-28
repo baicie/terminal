@@ -54,6 +54,17 @@ const groups = {
       ],
     ],
   ],
+  scripts: [
+    [
+      'node',
+      [
+        '--test',
+        'scripts/run-terminal-smoke.test.mjs',
+        'scripts/terminal-smoke-sshd.test.mjs',
+        'scripts/run-input-probe.test.mjs',
+      ],
+    ],
+  ],
   source: [['node', ['scripts/check-source-size.mjs']]],
 }
 

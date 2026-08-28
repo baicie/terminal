@@ -16,8 +16,12 @@ export const terminalSmokeTestConfig: TerminalSmokeConfig = {
     host: '127.0.0.1',
     port: 42_222,
     username: 'terminal-smoke',
+    authMode: 'key',
     privateKey:
       '-----BEGIN OPENSSH PRIVATE KEY-----\nfixture\n-----END OPENSSH PRIVATE KEY-----\n',
+    password: null,
+    certificate: null,
+    jump: null,
     expectedHostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIfixture',
   },
 }
@@ -38,6 +42,7 @@ export const terminalSmokeRoundResult: TerminalSmokeResult = {
   resizedSizeVisible: true,
   reconnectObserved: false,
   staleOutputRejected: false,
+  firstConnectionMs: 1_234,
 }
 
 export const frontendResourceBaseline = {

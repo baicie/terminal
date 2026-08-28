@@ -35,6 +35,7 @@ const passingResult = {
   resizedSizeVisible: true,
   reconnectObserved: false,
   staleOutputRejected: false,
+  firstConnectionMs: 1_234,
 }
 
 class FakeChild extends EventEmitter {
@@ -103,7 +104,8 @@ function createHarness({
       return RUN_DIRECTORY
     },
     platform: 'darwin',
-    access: async () => {
+    access: async filePath => {
+      if (filePath.endsWith('agent.sock')) return
       if (!reconnectCheckpointReady) throw new Error('checkpoint pending')
     },
     readFile: async (...args) => {
@@ -345,13 +347,13 @@ test('terminates the smoke app when the SSH restart fails', async () => {
   ])
 })
 
-test('rejects non-macOS hosts before spawning or creating files', async () => {
+test('rejects unsupported hosts before spawning or creating files', async () => {
   const { calls, dependencies } = createHarness()
-  dependencies.platform = 'linux'
+  dependencies.platform = 'win32'
 
   await assert.rejects(
     runTerminalSmoke({ cwd: PROJECT_ROOT, dependencies }),
-    /only supported on macOS/,
+    /only supported on macOS and Linux/,
   )
 
   assert.equal(calls.spawn.length, 0)
@@ -534,4 +536,178 @@ test('reports the structured smoke failure when the app exits unsuccessfully', a
   )
 
   assert.equal(calls.readFile.length, 1)
+})
+
+function createMatrixHarness({
+  closeBuild = true,
+  closeMetadata = true,
+  closeApp = true,
+  result = passingResult,
+} = {}) {
+  const calls = {
+    spawn: [],
+    startPasswordSshd: 0,
+    startSshd: [],
+    stopAgent: 0,
+    writeFile: [],
+  }
+  const buildChild = new FakeChild(51_001)
+  const metadataChild = new FakeChild(51_002)
+  const appChild = new FakeChild(51_003)
+  const agentChild = new FakeChild(51_004)
+  let appClosed = false
+
+  const dependencies = {
+    access: async filePath => {
+      if (filePath.endsWith('agent.sock')) return
+      throw new Error('unexpected access')
+    },
+    chmod: async () => {},
+    clearTimeout: globalThis.clearTimeout,
+    killProcess: () => {},
+    mkdtemp: async prefix => RUN_DIRECTORY,
+    platform: 'darwin',
+    readFile: async (...args) => {
+      assert.equal(appClosed, true, 'result must be read after child close')
+      return JSON.stringify(result)
+    },
+    rm: async () => {},
+    setTimeout,
+    startPasswordSshd: async options => {
+      calls.startPasswordSshd += 1
+      return {
+        configPath: SSH_CONFIG_PATH,
+        restart: async () => {},
+        stop: async () => {},
+      }
+    },
+    startSshd: async options => {
+      calls.startSshd.push(options)
+      return {
+        configPath: SSH_CONFIG_PATH,
+        restart: async () => {},
+        stop: async () => {},
+      }
+    },
+    spawn: (command, args, options) => {
+      calls.spawn.push({ command, args, options })
+      if (command === 'pnpm') {
+        if (closeBuild) finishChild(buildChild, { code: 0 })
+        return buildChild
+      }
+      if (command === 'cargo') {
+        if (closeMetadata) {
+          finishChild(metadataChild, {
+            stdout: JSON.stringify({ target_directory: TARGET_DIRECTORY }),
+          })
+        }
+        return metadataChild
+      }
+      if (command === '/usr/bin/ssh-agent') {
+        return agentChild
+      }
+      if (command === '/usr/bin/ssh-add') {
+        const child = new FakeChild(51_005)
+        finishChild(child, { code: 0 })
+        return child
+      }
+      if (closeApp) {
+        queueMicrotask(() => {
+          appClosed = true
+          appChild.emit('close', 0, null)
+        })
+      }
+      return appChild
+    },
+    tempDirectory: TEMP_ROOT,
+    writeFile: async (...args) => calls.writeFile.push(args),
+  }
+
+  return { agentChild, calls, dependencies }
+}
+
+test('routes the password case to the container fixture', async () => {
+  const { calls, dependencies } = createMatrixHarness()
+
+  const result = await runTerminalSmoke({
+    cwd: PROJECT_ROOT,
+    env: {},
+    auth: 'password',
+    skipBuild: true,
+    targetDirectory: TARGET_DIRECTORY,
+    dependencies,
+  })
+
+  assert.deepEqual(result, passingResult)
+  assert.equal(calls.startPasswordSshd, 1)
+  assert.equal(calls.startSshd.length, 0)
+})
+
+test('runs the agent case with an isolated ssh-agent holding the smoke key', async () => {
+  const { agentChild, calls, dependencies } = createMatrixHarness()
+  agentChild.onKill = signal => {
+    if (signal === 'SIGTERM') finishChild(agentChild, { signal })
+  }
+
+  const result = await runTerminalSmoke({
+    cwd: PROJECT_ROOT,
+    env: {},
+    auth: 'agent',
+    skipBuild: true,
+    targetDirectory: TARGET_DIRECTORY,
+    dependencies,
+  })
+
+  assert.deepEqual(result, passingResult)
+  assert.deepEqual(calls.startSshd, [
+    { runDirectory: RUN_DIRECTORY, connectionExtra: { authMode: 'agent', privateKey: null } },
+  ])
+  const agentCall = calls.spawn.find(call => call.command === '/usr/bin/ssh-agent')
+  assert.ok(agentCall)
+  assert.ok(agentCall.args[1].endsWith('agent.sock'))
+  const appCall = calls.spawn.find(call => call.command.endsWith('/debug/terminal'))
+  assert.match(appCall.options.env.SSH_AUTH_SOCK, /agent\.sock$/)
+  assert.deepEqual(agentChild.killSignals, ['SIGTERM'])
+})
+
+test('composes the jump connection from target and jump fixtures', async () => {
+  const { calls, dependencies } = createMatrixHarness()
+
+  const result = await runTerminalSmoke({
+    cwd: PROJECT_ROOT,
+    env: {},
+    auth: 'jump',
+    skipBuild: true,
+    targetDirectory: TARGET_DIRECTORY,
+    dependencies,
+  })
+
+  assert.deepEqual(result, passingResult)
+  assert.equal(calls.startSshd.length, 2)
+  assert.deepEqual(calls.startSshd[0], { runDirectory: RUN_DIRECTORY })
+  assert.deepEqual(calls.startSshd[1], {
+    runDirectory: path.join(RUN_DIRECTORY, 'jump'),
+    role: 'jump',
+    targetPort: undefined,
+  })
+  const configWrite = calls.writeFile.find(([filePath]) =>
+    filePath === SSH_CONFIG_PATH,
+  )
+  assert.ok(configWrite, 'the composed jump connection must be written')
+})
+
+test('rejects unsupported authentication modes before spawning', async () => {
+  const { calls, dependencies } = createMatrixHarness()
+
+  await assert.rejects(
+    runTerminalSmoke({
+      cwd: PROJECT_ROOT,
+      dependencies,
+      auth: 'keyboard-interactive',
+    }),
+    /auth mode must be one of/,
+  )
+
+  assert.equal(calls.spawn.length, 0)
+  assert.equal(calls.startSshd.length, 0)
 })

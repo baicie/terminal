@@ -33,7 +33,9 @@
     "verify:frontend": "node scripts/verify.mjs frontend",
     "verify:team-server": "node scripts/verify.mjs team-server",
     "verify:rust": "node scripts/verify.mjs rust",
-    "analyze:bundle": "tsx scripts/analyze-bundle-size.ts"
+    "analyze:bundle": "tsx scripts/analyze-bundle-size.ts",
+    "smoke:ssh-matrix": "node scripts/run-terminal-smoke-matrix.mjs",
+    "smoke:input-probe": "node scripts/run-input-probe.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.0",

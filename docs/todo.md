@@ -1,7 +1,7 @@
 # Terminal 项目待办事项
 
 > 基于设计文档 `docs/design.md` 整理的待办事项
-> 更新时间：2026-08-20（Phase 6.17: macOS 本地核心链路完成，外部实机矩阵待验证）
+> 更新时间：2026-08-28（Phase 6.20: 真实 SSH 认证矩阵与物理键盘探针自动化，macOS 实机验收完成）
 
 ---
 
@@ -657,6 +657,24 @@
 - [x] 增加 Shell Integration v1：通过 `term.parser.registerOscHandler` 监听 OSC 133/7，投影命令阶段/退出码与当前目录，非法 payload 安全忽略；不改写输入、不注入 shell 配置
 - [x] 修复主终端初始化误用 OSC API 的崩溃，以及 Tauri style nonce/hash 使 WebKit 拒绝 xterm 动态样式的问题；真实 debug App 主终端 Connected 且 Web Inspector 零错误
 - [ ] 为常见 bash/zsh/fish 提供用户显式开启的 Shell Integration 注入配置，并完成真实 shell/vim/tmux/SSH 验收
+
+---
+
+### 2026-08-28 Phase 6.20 - 真实 SSH 认证矩阵与物理键盘探针自动化 ✅ macOS 实机验收完成
+
+> 目标：把「打开应用后 10 秒内进入可靠终端」变成有门禁、有证据的验收；用真实 SSH 服务覆盖全部认证方式与断线重连；为物理键盘资格门禁建立可重复的自动化。
+
+- [x] smoke 配置扩展 `authMode`（key/password/agent/cert）与可选 `jump` 块：前端 `terminal-smoke-contract.ts`、Rust `terminal_smoke.rs` 双端严格校验（未知字段拒绝、按模式校验凭据组合、证书与私钥格式、jump 仅限 key 模式），`terminal-smoke-round-request.ts` 按模式构建 Host，前端与 Rust 定向测试覆盖
+- [x] `firstConnectionMs` 进入结果契约：前端采集 Rust `terminal_smoke_connected` 的进程时钟毫秒，Rust/runner 双端门禁「首次连接 < 10 秒」，失败结果固定为 0
+- [x] sshd fixture 支持 cert 模式（本地 CA 签发、`TrustedUserCAKeys`、证书内嵌 `clear/permit-pty/force-command/source-address` 隔离策略——macOS sshd 对证书认证不套用 authorized_keys `command=` 选项）与 jump 角色（`AllowTcpForwarding yes` + `PermitOpen` 只放行目标端口、`no-pty`）；就绪探针用真实 `ssh -o CertificateFile` 证明证书认证
+- [x] 密码认证使用全新 `terminal-smoke-password-sshd.mjs`：Debian OpenSSH 容器（真实 shadow 密码、`AuthenticationMethods password`、ForceCommand 隔离 shell、SSH banner 就绪探测、restart/stop）
+- [x] agent 认证启动隔离 `ssh-agent` 并注入 `SSH_AUTH_SOCK`；jump 用例合成 target+jump 双实例连接配置
+- [x] `smoke:ssh-matrix` 一次构建复用同一 debug 二进制跑 7 个用例；**本机真实验收全绿**（详见 issue.md Issue #57）
+- [x] 物理键盘探针自动化：Rust `input_probe` 门控模块（env 显式开启、绝对路径、checkpoint/结果原子写入与严格校验），前端 `automation-root`（本地 PTY + 探针协议 + 每轮 checkpoint + 最终结果），`smoke:input-probe` 驱动（CGEvent 重叠按键注入器、Accessibility 权限检查、osascript 激活、manual 引导模式、checkpoint-only 模式）
+- [x] Linux 可移植：sshd fixture 与 runner 放开 linux、`TERMINAL_SMOKE_TMP` 规避 /tmp StrictModes；新增 `.github/workflows/real-machine-matrix.yml`（macOS 全矩阵 + WKWebView 探针协议验证；Linux Xvfb 下 key/reconnect smoke；Windows 保持人工清单）
+- [x] 全量门禁：前端 859 项、Team Server 103 项、Rust 164 单测 + 3 集成、Node smoke 脚本 36 项测试全部通过
+- [ ] 授予宿主进程 Accessibility 后执行 30 轮真实 CGEvent 重叠 `a/s/d` 注入，或人工在探针窗口键入 30 轮，记录 expected/received hex
+- [ ] 在 Linux runner 首次 dispatch 执行 real-machine 工作流；Windows OpenSSH/Pageant/PTY 实机按 issue.md Issue #21/#22/#39 人工清单
 
 ---
 

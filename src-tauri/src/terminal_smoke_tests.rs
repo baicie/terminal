@@ -23,6 +23,7 @@ fn passing_result() -> TerminalSmokeResult {
         resized_size_visible: true,
         reconnect_observed: false,
         stale_output_rejected: false,
+        first_connection_ms: 1_234,
     }
 }
 
@@ -37,10 +38,14 @@ fn ssh_config() -> TerminalSmokeSshConfig {
         host: "127.0.0.1".to_string(),
         port: 42_222,
         username: "terminal-smoke".to_string(),
-        private_key: private_key.to_string(),
         expected_host_key:
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti"
                 .to_string(),
+        auth_mode: TerminalSmokeAuthMode::Key,
+        private_key: Some(private_key.to_string()),
+        password: None,
+        certificate: None,
+        jump: None,
     }
 }
 
@@ -85,8 +90,9 @@ fn smoke_config_has_the_exact_public_contract_without_a_path() {
                 "host": "127.0.0.1",
                 "port": 42_222,
                 "username": "terminal-smoke",
-                "privateKey": private_key,
                 "expectedHostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti",
+                "authMode": "key",
+                "privateKey": private_key,
             },
         })
     );
@@ -116,12 +122,144 @@ fn ssh_config_parser_rejects_non_loopback_hosts() {
 #[test]
 fn ssh_config_parser_rejects_unknown_fields() {
     let mut value = serde_json::to_value(ssh_config()).expect("fixture should serialize");
-    value["password"] = json!("not-allowed");
+    value["passphrase"] = json!("not-allowed");
 
     assert!(parse_ssh_config(
         &serde_json::to_vec(&value).expect("modified fixture should serialize")
     )
     .is_err());
+}
+
+#[test]
+fn ssh_config_parser_accepts_password_agent_and_cert_modes() {
+    let private_key = ssh_config().private_key.expect("fixture private key");
+
+    let password_value = json!({
+        "host": "127.0.0.1",
+        "port": 42_222,
+        "username": "terminal-smoke",
+        "expectedHostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti",
+        "authMode": "password",
+        "password": "terminal-smoke-password",
+    });
+    assert!(parse_ssh_config(
+        &serde_json::to_vec(&password_value).expect("password config should serialize")
+    )
+    .is_ok());
+
+    let agent_value = json!({
+        "host": "127.0.0.1",
+        "port": 42_222,
+        "username": "terminal-smoke",
+        "expectedHostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti",
+        "authMode": "agent",
+    });
+    assert!(parse_ssh_config(
+        &serde_json::to_vec(&agent_value).expect("agent config should serialize")
+    )
+    .is_ok());
+
+    let cert_value = json!({
+        "host": "127.0.0.1",
+        "port": 42_222,
+        "username": "terminal-smoke",
+        "expectedHostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti",
+        "authMode": "cert",
+        "privateKey": private_key,
+        "certificate": "ssh-ed25519-cert-v01@openssh.com AAAAcertificate",
+    });
+    assert!(parse_ssh_config(
+        &serde_json::to_vec(&cert_value).expect("cert config should serialize")
+    )
+    .is_ok());
+}
+
+#[test]
+fn ssh_config_parser_accepts_a_key_mode_jump_host() {
+    let private_key = ssh_config().private_key.expect("fixture private key");
+
+    let value = json!({
+        "host": "127.0.0.1",
+        "port": 42_222,
+        "username": "terminal-smoke",
+        "expectedHostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti",
+        "authMode": "key",
+        "privateKey": private_key,
+        "jump": {
+            "host": "127.0.0.1",
+            "port": 42_223,
+            "username": "terminal-smoke",
+            "privateKey": private_key,
+            "expectedHostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti",
+        },
+    });
+    let parsed =
+        parse_ssh_config(&serde_json::to_vec(&value).expect("jump config should serialize"))
+            .expect("jump config should parse");
+    assert!(parsed.jump.is_some());
+}
+
+#[test]
+fn ssh_config_parser_rejects_invalid_auth_mode_combinations() {
+    let private_key = ssh_config().private_key.expect("fixture private key");
+    let host_key =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti";
+
+    for invalid in [
+        json!({
+            "host": "127.0.0.1",
+            "port": 42_222,
+            "username": "terminal-smoke",
+            "expectedHostKey": host_key,
+            "authMode": "password",
+        }),
+        json!({
+            "host": "127.0.0.1",
+            "port": 42_222,
+            "username": "terminal-smoke",
+            "expectedHostKey": host_key,
+            "authMode": "agent",
+            "privateKey": private_key,
+        }),
+        json!({
+            "host": "127.0.0.1",
+            "port": 42_222,
+            "username": "terminal-smoke",
+            "expectedHostKey": host_key,
+            "authMode": "cert",
+            "privateKey": private_key,
+        }),
+        json!({
+            "host": "127.0.0.1",
+            "port": 42_222,
+            "username": "terminal-smoke",
+            "expectedHostKey": host_key,
+            "authMode": "key",
+        }),
+        json!({
+            "host": "127.0.0.1",
+            "port": 42_222,
+            "username": "terminal-smoke",
+            "expectedHostKey": host_key,
+            "authMode": "password",
+            "password": "terminal-smoke-password",
+            "jump": {
+                "host": "127.0.0.1",
+                "port": 42_223,
+                "username": "terminal-smoke",
+                "privateKey": private_key,
+                "expectedHostKey": host_key,
+            },
+        }),
+    ] {
+        assert!(
+            parse_ssh_config(
+                &serde_json::to_vec(&invalid).expect("invalid config should serialize")
+            )
+            .is_err(),
+            "config must be rejected: {invalid}"
+        );
+    }
 }
 
 #[test]
@@ -326,6 +464,17 @@ fn success_validation_rejects_a_frontend_duration_past_deadline() {
     let mut result = passing_result();
     result.duration_ms = TIMEOUT.as_millis() as u64 + 1;
 
+    assert!(validate_success(&result, Duration::from_secs(2), false).is_err());
+}
+
+#[test]
+fn success_validation_rejects_a_missing_or_overdue_first_connection() {
+    let mut result = passing_result();
+    result.first_connection_ms = 0;
+
+    assert!(validate_success(&result, Duration::from_secs(2), false).is_err());
+
+    result.first_connection_ms = 10_000;
     assert!(validate_success(&result, Duration::from_secs(2), false).is_err());
 }
 

@@ -9,6 +9,11 @@ import { terminalSmokeTestConfig } from './features/terminal/smoke/terminal-smok
 
 const config = terminalSmokeTestConfig
 
+const probeDependencies = () => ({
+  loadProbeConfig: vi.fn().mockResolvedValue(null),
+  loadProbeRoot: vi.fn(),
+})
+
 it('loads only the smoke root when Rust enables terminal smoke mode', async () => {
   const render = vi.fn()
   const loadApp = vi.fn()
@@ -20,6 +25,7 @@ it('loads only the smoke root when Rust enables terminal smoke mode', async () =
       loadConfig: vi.fn().mockResolvedValue(config),
       loadSmokeRoot: vi.fn().mockResolvedValue(SmokeRoot),
       loadApp,
+      ...probeDependencies(),
     },
   )
 
@@ -37,22 +43,54 @@ it('loads only the smoke root when Rust enables terminal smoke mode', async () =
   )
 })
 
-it('loads the normal application when Rust returns no smoke config', async () => {
+it('loads only the input probe root when Rust enables probe mode', async () => {
+  const render = vi.fn()
+  const loadApp = vi.fn()
+  const ProbeRoot: ComponentType<{ config: unknown }> = () => null
+  const probeConfig = {
+    readyPath: '/tmp/ready.json',
+    resultPath: '/tmp/result.json',
+    rounds: 30,
+    expectedText: 'asd',
+  }
+
+  const mode = await bootstrapTerminalApp(
+    { render },
+    {
+      loadConfig: vi.fn().mockResolvedValue(null),
+      loadSmokeRoot: vi.fn(),
+      loadProbeConfig: vi.fn().mockResolvedValue(probeConfig),
+      loadProbeRoot: vi.fn().mockResolvedValue(ProbeRoot),
+      loadApp,
+    },
+  )
+
+  expect(mode).toBe('probe')
+  expect(loadApp).not.toHaveBeenCalled()
+  expect(render.mock.calls[0][0].type).toBe(ProbeRoot)
+  expect(render.mock.calls[0][0].props.config).toEqual(probeConfig)
+})
+
+it('loads the normal application when Rust returns no smoke or probe config', async () => {
   const render = vi.fn()
   const App: ComponentType = () => null
   const loadSmokeRoot = vi.fn()
+  const loadProbeRoot = vi.fn()
 
   const mode = await bootstrapTerminalApp(
     { render },
     {
       loadConfig: vi.fn().mockResolvedValue(null),
       loadSmokeRoot,
+      loadProbeConfig: vi.fn().mockResolvedValue(null),
+      loadProbeRoot,
       loadApp: vi.fn().mockResolvedValue(App),
     },
   )
 
   expect(mode).toBe('app')
   expect(loadSmokeRoot).not.toHaveBeenCalled()
+  expect(loadProbeRoot).not.toHaveBeenCalled()
   expect(render.mock.calls[0][0].type).toBe(App)
 })
 

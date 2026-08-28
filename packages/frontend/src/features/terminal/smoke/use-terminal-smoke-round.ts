@@ -9,7 +9,7 @@ import type {
   TerminalSmokeResult,
   TerminalSmokeStaleOutputProbe,
 } from './terminal-smoke-contract'
-import { terminalSmokeFailure } from './terminal-smoke-results'
+import { terminalSmokeRoundFailure } from './terminal-smoke-results'
 import {
   terminalSmokeRequest,
   terminalSmokeTabId,
@@ -37,20 +37,6 @@ export interface UseTerminalSmokeRoundOptions {
   ) => void
 }
 
-function failureResult(
-  term: Terminal,
-  config: TerminalSmokeConfig,
-  error: unknown,
-): TerminalSmokeResult {
-  return terminalSmokeFailure(config, performance.now(), 'connecting', error, {
-    resourcesRecovered: false,
-    roundsCompleted: 0,
-    terminalCols: term.cols,
-    terminalRows: term.rows,
-    uniqueSessionCount: 0,
-  })
-}
-
 export function useTerminalSmokeRound({
   applicationStartedAt,
   config,
@@ -73,6 +59,7 @@ export function useTerminalSmokeRound({
   const runControllerRef = useRef<AbortController | null>(null)
   const initialSessionIdRef = useRef<string | null>(null)
   const runningSessionIdRef = useRef<string | null>(null)
+  const firstConnectionMsRef = useRef(0)
   const onCompleteRef = useRef(onComplete)
   const [controller] = useState(() => new AbortController())
   const [term] = useState(
@@ -112,7 +99,10 @@ export function useTerminalSmokeRound({
       if (activeSessionId && !sessionIds.includes(activeSessionId)) {
         sessionIds.push(activeSessionId)
       }
-      onCompleteRef.current(roundIndex, tabId, sessionIds, result)
+      onCompleteRef.current(roundIndex, tabId, sessionIds, {
+        ...result,
+        firstConnectionMs: firstConnectionMsRef.current,
+      })
     },
     [requiresReconnect, roundIndex, tabId],
   )
@@ -152,7 +142,7 @@ export function useTerminalSmokeRound({
     if (isReconnect && initialSessionIdRef.current === sessionId) {
       completeOnce(
         sessionId,
-        failureResult(
+        terminalSmokeRoundFailure(
           term,
           config,
           new Error('Terminal smoke reconnect reused the retired session ID'),
@@ -202,7 +192,7 @@ export function useTerminalSmokeRound({
         })
       } catch (runError) {
         if (reconnectObservedRef.current && statusRef.current !== 'error') return
-        completeOnce(activeSessionId, failureResult(term, config, runError))
+        completeOnce(activeSessionId, terminalSmokeRoundFailure(term, config, runError))
       } finally {
         controller.signal.removeEventListener('abort', abortRun)
         if (runControllerRef.current === runController) {
@@ -214,7 +204,14 @@ export function useTerminalSmokeRound({
     void (async () => {
       try {
         if (roundIndex === 0 && !isReconnect) {
-          await reportConnected()
+          const elapsedMs = await reportConnected()
+          if (
+            Number.isSafeInteger(elapsedMs) &&
+            elapsedMs > 0 &&
+            firstConnectionMsRef.current === 0
+          ) {
+            firstConnectionMsRef.current = elapsedMs
+          }
           if (requiresReconnect && !reconnectCheckpointSentRef.current) {
             reconnectCheckpointSentRef.current = true
             await reportReconnect()
@@ -225,7 +222,7 @@ export function useTerminalSmokeRound({
         runningSessionIdRef.current = sessionId
         await run(sessionId)
       } catch (runError) {
-        completeOnce(sessionId, failureResult(term, config, runError))
+        completeOnce(sessionId, terminalSmokeRoundFailure(term, config, runError))
       }
     })()
   }, [
@@ -257,7 +254,7 @@ export function useTerminalSmokeRound({
     }
     const connectionError = new Error(error ?? `Terminal smoke session ${status}`)
     if (startedRef.current) controller.abort(connectionError)
-    else completeOnce(sessionId, failureResult(term, config, connectionError))
+    else completeOnce(sessionId, terminalSmokeRoundFailure(term, config, connectionError))
   }, [completeOnce, config, controller, error, requiresReconnect, sessionId, status, term])
 
   useEffect(() => {
@@ -276,7 +273,7 @@ export function useTerminalSmokeRound({
     const timer = setTimeout(() => {
       completeOnce(
         sessionId,
-        failureResult(
+        terminalSmokeRoundFailure(
           term,
           config,
           new Error(

@@ -1,4 +1,13 @@
 import { invoke } from '@tauri-apps/api/core'
+import {
+  parseTerminalSmokeSshConfig,
+  type TerminalSmokeSshConfig,
+} from './terminal-smoke-ssh-config'
+export type {
+  TerminalSmokeAuthMode,
+  TerminalSmokeJumpConfig,
+  TerminalSmokeSshConfig,
+} from './terminal-smoke-ssh-config'
 
 export interface TerminalSmokeConfig {
   loadBytes: number
@@ -10,14 +19,6 @@ export interface TerminalSmokeConfig {
   rounds: number
   reconnectRequired: boolean
   ssh: TerminalSmokeSshConfig
-}
-
-export interface TerminalSmokeSshConfig {
-  host: string
-  port: number
-  username: string
-  privateKey: string
-  expectedHostKey: string
 }
 
 export type TerminalSmokeStage =
@@ -47,6 +48,8 @@ export interface TerminalSmokeResult {
   resizedSizeVisible: boolean
   reconnectObserved: boolean
   staleOutputRejected: boolean
+  /** Milliseconds from application start to the first connected session. */
+  firstConnectionMs: number
 }
 
 export interface TerminalSmokeStaleOutputProbe {
@@ -70,13 +73,6 @@ const FIXED_CONFIG = {
 }
 
 const CONFIG_KEYS = [...Object.keys(FIXED_CONFIG), 'reconnectRequired', 'ssh'].sort()
-const SSH_CONFIG_KEYS = [
-  'expectedHostKey',
-  'host',
-  'port',
-  'privateKey',
-  'username',
-]
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -100,38 +96,10 @@ export function parseTerminalSmokeConfig(raw: unknown): TerminalSmokeConfig {
   if (typeof raw.reconnectRequired !== 'boolean') {
     throw new Error('Invalid terminal smoke config')
   }
-  const ssh = raw.ssh
-  if (!isRecord(ssh)) throw new Error('Invalid terminal smoke config')
-  const sshKeys = Object.keys(ssh).sort()
-  if (
-    sshKeys.length !== SSH_CONFIG_KEYS.length ||
-    sshKeys.some((key, index) => key !== SSH_CONFIG_KEYS[index]) ||
-    ssh.host !== '127.0.0.1' ||
-    !Number.isSafeInteger(ssh.port) ||
-    (ssh.port as number) < 1 ||
-    (ssh.port as number) > 65_535 ||
-    typeof ssh.username !== 'string' ||
-    ssh.username.trim() !== ssh.username ||
-    ssh.username.length === 0 ||
-    hasControlCharacters(ssh.username) ||
-    typeof ssh.privateKey !== 'string' ||
-    !ssh.privateKey.startsWith('-----BEGIN OPENSSH PRIVATE KEY-----\n') ||
-    !ssh.privateKey.endsWith('-----END OPENSSH PRIVATE KEY-----\n') ||
-    typeof ssh.expectedHostKey !== 'string' ||
-    !/^ssh-[^\s]+ [A-Za-z0-9+/]+={0,2}$/.test(ssh.expectedHostKey)
-  ) {
-    throw new Error('Invalid terminal smoke config')
-  }
   return {
     ...FIXED_CONFIG,
     reconnectRequired: raw.reconnectRequired,
-    ssh: {
-      host: ssh.host,
-      port: ssh.port as number,
-      username: ssh.username,
-      privateKey: ssh.privateKey,
-      expectedHostKey: ssh.expectedHostKey,
-    },
+    ssh: parseTerminalSmokeSshConfig(raw.ssh),
   }
 }
 

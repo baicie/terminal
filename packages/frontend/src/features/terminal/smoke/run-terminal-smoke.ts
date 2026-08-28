@@ -184,6 +184,7 @@ export async function runTerminalSmoke(
       resizedSizeVisible,
       reconnectObserved: false,
       staleOutputRejected,
+      firstConnectionMs: 0,
     }
   } catch (error) {
     const loadEndVisible = hasExactLogicalLine(term, protocol.loadEndMarker)
@@ -203,6 +204,7 @@ export async function runTerminalSmoke(
       resizedSizeVisible: hasExactLogicalLine(term, protocol.resizeMarker),
       reconnectObserved: false,
       staleOutputRejected,
+      firstConnectionMs: 0,
     }
   } finally {
     if (probeTimer !== undefined) clearInterval(probeTimer)

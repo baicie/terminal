@@ -16,16 +16,16 @@
 
 ## 当前进度与当前目标
 
-> 快照日期：2026-08-26；当前分支：`feat/mvp`。
+> 快照日期：2026-08-28；当前分支：`feat/mvp`。
 
 | 项目 | 状态 |
 | --- | --- |
-| 当前目标 | 🔄 先完成 macOS 物理输入资格门禁与真实连接矩阵，再推进 Tabby/Termius 工作流的会话元数据与记录能力 |
-| 当前进度 | Phase 6.17 的 ACK/背压、输入 FIFO、WKWebView 兼容 core、生命周期和 SSH writer 已收口；Phase 6.19 新增 Host Profile、连接状态、启动恢复、动态标题和 Shell Integration v1。Shell Integration 已改用兼容 core 的公开 parser API，入口 style nonce/hash 与 viewport 警告已消除；真实 macOS debug App 的本地 PTY 已恢复 Connected 且 Web Inspector 零错误。真实 localhost OpenSSH 重连 smoke 已验证 generation 隔离、旧输出拒绝与资源回收。 |
-| 自动化基线 | `pnpm verify` 全绿：前端 98 个测试文件/839 项、Team Server 25 个文件/103 项、Rust 153 个单测 + 3 个桌面配置集成测试，以及 lint/typecheck/build/fmt/Clippy/506 文件源码门禁；首屏/总 gzip 为 117.01/545.41 KiB。最新普通 macOS Tauri/xterm smoke 通过（8 MiB、10 次会话、97×31 resize、资源回收，5.4 秒），重连 smoke 通过（10 轮、11 个唯一 session、旧输出拒绝，6.7 秒）。 |
-| 下一验证目标 | 在真实 macOS WKWebView 完成近同时 `a/s/d`、快速连续输入、Option/dead key、中文 IME、Tab/方向键/Ctrl+C；随后完成真实 SSH password/key/agent/cert/Jump、跨平台 PTY/Pageant/串口矩阵，并为常见 shell 提供显式 Shell Integration 配置后验收命令阶段、当前目录和会话记录 |
+| 当前目标 | 🔄 完成 macOS 物理键盘 30 轮重叠按键注入；在 Linux runner 首跑 real-machine 工作流；继续 Windows/Pageant/串口人工矩阵与 Shell Integration 配置 |
+| 当前进度 | Phase 6.20 已把「打开应用后 10 秒内进入可靠终端」变成三层门禁：`firstConnectionMs` 进入 smoke 结果契约并由前端、Rust、runner 同时强制 < 10 秒。真实 SSH 认证矩阵（password/key/agent/cert/jump + 断线重连）在本机 macOS 全部通过，7 个用例首次连接 1.7–3.3 秒。物理键盘资格门禁完成应用侧自动化（本地 PTY 探针协议 + CGEvent 重叠注入驱动 + Accessibility 检查），等待宿主进程授权后执行 30 轮 `a/s/d`。Linux 已接线（fixture/runner 可移植 + `TERMINAL_SMOKE_TMP`），新增 `.github/workflows/real-machine-matrix.yml` 供 macOS/Linux 原生 runner 执行。 |
+| 自动化基线 | `pnpm verify` 全绿：前端 99 个测试文件/859 项、Team Server 25 个文件/103 项、Rust 164 个单测 + 3 个桌面配置集成测试，以及 lint/typecheck/build/fmt/Clippy/源码门禁；Node smoke 脚本 36 项测试通过。`smoke:ssh-matrix` 7 用例全绿（首次连接 1764–3261 ms）。 |
+| 下一验证目标 | 授予宿主进程辅助功能权限后执行 `pnpm smoke:input-probe`（30 轮重叠 `a/s/d` + expected/received hex）；首次 dispatch real-machine 工作流完成 Linux Xvfb 实机 smoke；Windows OpenSSH/Pageant/PTY/串口按 issue.md 人工清单；为常见 shell 提供显式 Shell Integration 配置 |
 
-终端工作台方案见 [`docs/plans/terminal-workbench-rebuild.md`](plans/terminal-workbench-rebuild.md)，可靠性规格见 [`docs/plans/terminal-reliability-rebuild.md`](plans/terminal-reliability-rebuild.md)；当前完成项见 [`docs/todo.md`](todo.md) Phase 6.19，安全修复与验证边界见 [`docs/issue.md`](issue.md) Issue #46/#48/#49/#50/#51/#52/#55/#56。
+终端工作台方案见 [`docs/plans/terminal-workbench-rebuild.md`](plans/terminal-workbench-rebuild.md)，可靠性规格见 [`docs/plans/terminal-reliability-rebuild.md`](plans/terminal-reliability-rebuild.md)；当前完成项见 [`docs/todo.md`](todo.md) Phase 6.20，安全修复与验证边界见 [`docs/issue.md`](issue.md) Issue #57/#58。
 
 ---
 

@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process'
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { startTerminalSmokeSshd } from './terminal-smoke-sshd.mjs'
+import { startTerminalSmokePasswordSshd } from './terminal-smoke-password-sshd.mjs'
 
 export const APP_TIMEOUT_MS = 210_000
 export const CARGO_METADATA_TIMEOUT_MS = 30_000
@@ -15,10 +16,15 @@ const LOAD_BYTES = 8_388_608
 const TARGET_COLS = 97
 const TARGET_ROWS = 31
 const MAX_RESULT_DURATION_MS = 180_000
+const FIRST_CONNECTION_DEADLINE_MS = 10_000
+const SSH_AGENT_PATH = '/usr/bin/ssh-agent'
+const SSH_ADD_PATH = '/usr/bin/ssh-add'
+const SUPPORTED_AUTH_MODES = ['key', 'password', 'agent', 'cert', 'jump']
 const RESULT_KEYS = [
   'afterLoadVisible',
   'durationMs',
   'error',
+  'firstConnectionMs',
   'loadBytes',
   'loadEndVisible',
   'ok',
@@ -34,6 +40,7 @@ const RESULT_KEYS = [
 ]
 const PROFILE_ENVIRONMENT_KEYS = ['ENV', 'BASH_ENV', 'PROMPT_COMMAND', 'CDPATH']
 const RECONNECT_CHECKPOINT_TIMEOUT_MS = 30_000
+const AGENT_ADD_TIMEOUT_MS = 10_000
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..')
 
 const defaultDependencies = {
@@ -48,7 +55,11 @@ const defaultDependencies = {
   setTimeout: globalThis.setTimeout,
   spawn,
   startSshd: startTerminalSmokeSshd,
-  tempDirectory: os.tmpdir(),
+  startPasswordSshd: startTerminalSmokePasswordSshd,
+  tempDirectory:
+    process.env.TERMINAL_SMOKE_TMP ||
+    (process.platform === 'linux' ? os.homedir() : os.tmpdir()),
+  writeFile,
 }
 
 function invalidResult(message) {
@@ -140,6 +151,17 @@ export function parseTerminalSmokeResult(
       `duration must be within 1..=${MAX_RESULT_DURATION_MS} ms`,
     )
   }
+  if (
+    !Number.isSafeInteger(value.firstConnectionMs) ||
+    value.firstConnectionMs < 0 ||
+    (value.ok &&
+      (value.firstConnectionMs < 1 ||
+        value.firstConnectionMs >= FIRST_CONNECTION_DEADLINE_MS))
+  ) {
+    throw invalidResult(
+      `first connection must complete within 1..=${FIRST_CONNECTION_DEADLINE_MS - 1} ms`,
+    )
+  }
 
   return value
 }
@@ -165,7 +187,11 @@ function waitForClose(child) {
   })
 }
 
-async function buildFreshTauriBinary({ cwd, env, dependencies }) {
+export async function buildFreshTauriBinary({
+  cwd,
+  env,
+  dependencies = defaultDependencies,
+}) {
   let child
   try {
     child = dependencies.spawn(
@@ -206,7 +232,11 @@ async function buildFreshTauriBinary({ cwd, env, dependencies }) {
   }
 }
 
-async function cargoTargetDirectory({ cwd, env, dependencies }) {
+export async function cargoTargetDirectory({
+  cwd,
+  env,
+  dependencies = defaultDependencies,
+}) {
   const manifestPath = path.join(cwd, 'src-tauri/Cargo.toml')
   let child
   try {
@@ -418,30 +448,203 @@ async function waitForReconnectAndApplication(
   return applicationOutcome.status
 }
 
+function collectOutputPipe(command, args, options, dependencies, label) {
+  return new Promise((resolve, reject) => {
+    let child
+    try {
+      child = dependencies.spawn(command, args, options)
+    } catch (error) {
+      reject(new Error(`${label} could not start: ${error.message}`))
+      return
+    }
+    let output = ''
+    child.stdout?.setEncoding('utf8')
+    child.stderr?.setEncoding('utf8')
+    child.stdout?.on('data', chunk => (output += chunk))
+    child.stderr?.on('data', chunk => (output += chunk))
+    const timer = dependencies.setTimeout(() => {
+      try {
+        child.kill('SIGKILL')
+      } catch {
+        // The command closed between the timer and signal.
+      }
+      reject(new Error(`${label} timed out`))
+    }, AGENT_ADD_TIMEOUT_MS)
+    child.once('error', error => {
+      dependencies.clearTimeout(timer)
+      reject(new Error(`${label} could not start: ${error.message}`))
+    })
+    child.once('close', code => {
+      dependencies.clearTimeout(timer)
+      if (code !== 0) {
+        reject(new Error(`${label} exited with code ${String(code)}: ${output.trim()}`))
+        return
+      }
+      resolve(output)
+    })
+  })
+}
+
+async function startSmokeAgent({ runDirectory, privateKey, dependencies }) {
+  const socketPath = path.join(runDirectory, 'agent.sock')
+  let agent
+  try {
+    agent = dependencies.spawn(SSH_AGENT_PATH, ['-a', socketPath, '-D'], {
+      cwd: runDirectory,
+      shell: false,
+      stdio: ['ignore', 'ignore', 'ignore'],
+    })
+  } catch (error) {
+    throw new Error(`SSH agent could not start: ${error.message}`)
+  }
+  const agentClose = new Promise(resolve => {
+    agent.once('error', () => resolve())
+    agent.once('close', () => resolve())
+  })
+  const agentEnv = { SSH_AUTH_SOCK: socketPath }
+  try {
+    for (let attempt = 1; attempt <= 20; attempt += 1) {
+      try {
+        await dependencies.access(socketPath)
+        break
+      } catch {
+        if (attempt === 20) {
+          throw new Error('SSH agent socket did not appear')
+        }
+        await new Promise(resolve => dependencies.setTimeout(resolve, 100))
+      }
+    }
+    const privateKeyPath = path.join(runDirectory, 'agent-identity')
+    await dependencies.writeFile(privateKeyPath, privateKey, {
+      encoding: 'utf8',
+      mode: 0o600,
+    })
+    await collectOutputPipe(
+      SSH_ADD_PATH,
+      [privateKeyPath],
+      { cwd: runDirectory, env: { ...process.env, ...agentEnv }, shell: false, stdio: ['ignore', 'pipe', 'pipe'] },
+      dependencies,
+      'ssh-add',
+    )
+  } catch (error) {
+    try {
+      agent.kill('SIGTERM')
+    } catch {
+      // The agent may already be gone.
+    }
+    await agentClose
+    throw error
+  }
+  return {
+    env: agentEnv,
+    stop: async () => {
+      try {
+        agent.kill('SIGTERM')
+      } catch {
+        // The agent may already be gone.
+      }
+      await agentClose
+    },
+  }
+}
+
+async function startSmokeFixtures({ runDirectory, auth, dependencies }) {
+  if (auth === 'password') {
+    return { fixture: await dependencies.startPasswordSshd({ runDirectory }), agent: null }
+  }
+  if (auth === 'cert') {
+    return { fixture: await dependencies.startSshd({ runDirectory, mode: 'cert' }), agent: null }
+  }
+  if (auth === 'agent') {
+    const fixture = await dependencies.startSshd({
+      runDirectory,
+      connectionExtra: { authMode: 'agent', privateKey: null },
+    })
+    const agent = await startSmokeAgent({
+      runDirectory,
+      privateKey: fixture.identityKey,
+      dependencies,
+    })
+    return { fixture, agent }
+  }
+  if (auth === 'jump') {
+    const target = await dependencies.startSshd({ runDirectory })
+    const jump = await dependencies.startSshd({
+      runDirectory: path.join(runDirectory, 'jump'),
+      role: 'jump',
+      targetPort: target.port,
+    })
+    const composed = {
+      host: target.host,
+      port: target.port,
+      username: target.username,
+      authMode: 'key',
+      expectedHostKey: target.expectedHostKey,
+      privateKey: target.privateKey,
+      password: null,
+      certificate: null,
+      jump: {
+        host: jump.host,
+        port: jump.port,
+        username: jump.username,
+        privateKey: jump.privateKey,
+        expectedHostKey: jump.expectedHostKey,
+      },
+    }
+    await dependencies.writeFile(target.configPath, `${JSON.stringify(composed)}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+    })
+    return {
+      fixture: {
+        ...composed,
+        configPath: target.configPath,
+        restart: () => target.restart(),
+        stop: async () => {
+          await target.stop()
+          await jump.stop()
+        },
+      },
+      agent: null,
+    }
+  }
+  return { fixture: await dependencies.startSshd({ runDirectory }), agent: null }
+}
+
 export async function runTerminalSmoke({
   cwd = PROJECT_ROOT,
   env = process.env,
   reconnect = false,
+  auth = 'key',
+  skipBuild = false,
+  targetDirectory,
   dependencies: overrides = {},
 } = {}) {
   const dependencies = { ...defaultDependencies, ...overrides }
-  if (dependencies.platform !== 'darwin') {
-    throw new Error('Terminal smoke is only supported on macOS')
+  if (dependencies.platform !== 'darwin' && dependencies.platform !== 'linux') {
+    throw new Error('Terminal smoke is only supported on macOS and Linux')
+  }
+  if (!SUPPORTED_AUTH_MODES.includes(auth)) {
+    throw new Error(`terminal smoke auth mode must be one of ${SUPPORTED_AUTH_MODES.join('/')}`)
   }
 
-  await buildFreshTauriBinary({ cwd, env, dependencies })
-  const targetDirectory = await cargoTargetDirectory({
-    cwd,
-    env,
-    dependencies,
-  })
+  if (!skipBuild) {
+    await buildFreshTauriBinary({ cwd, env, dependencies })
+  }
+  const resolvedTargetDirectory =
+    targetDirectory ?? (await cargoTargetDirectory({ cwd, env, dependencies }))
   const runDirectory = await dependencies.mkdtemp(
     path.join(dependencies.tempDirectory, 'terminal-smoke-'),
   )
-  let sshd
+  let fixture
+  let agent = null
 
   try {
-    sshd = await dependencies.startSshd({ runDirectory })
+    ;({ fixture, agent } = await startSmokeFixtures({
+      runDirectory,
+      auth,
+      dependencies,
+    }))
     const resultPath = path.join(runDirectory, 'result.json')
     const reconnectControlPath = path.join(runDirectory, 'reconnect.ready')
     const smokeEnvironment = { ...env }
@@ -455,13 +658,14 @@ export async function runTerminalSmoke({
       PS2: '',
       TERMINAL_SMOKE: '1',
       TERMINAL_SMOKE_RESULT_PATH: resultPath,
-      TERMINAL_SMOKE_SSH_CONFIG_PATH: sshd.configPath,
+      TERMINAL_SMOKE_SSH_CONFIG_PATH: fixture.configPath,
       ...(reconnect
         ? { TERMINAL_SMOKE_RECONNECT_CONTROL_PATH: reconnectControlPath }
         : {}),
+      ...(agent ? agent.env : {}),
     })
 
-    const executable = path.join(targetDirectory, 'debug', 'terminal')
+    const executable = path.join(resolvedTargetDirectory, 'debug', 'terminal')
     let child
     try {
       child = dependencies.spawn(executable, [], {
@@ -478,7 +682,7 @@ export async function runTerminalSmoke({
       ? await waitForReconnectAndApplication(
           child,
           reconnectControlPath,
-          sshd,
+          fixture,
           dependencies,
         )
       : await waitForApplication(child, dependencies)
@@ -499,9 +703,13 @@ export async function runTerminalSmoke({
     return result
   } finally {
     try {
-      await sshd?.stop()
+      if (agent) await agent.stop()
     } finally {
-      await dependencies.rm(runDirectory, { recursive: true, force: true })
+      try {
+        await fixture?.stop()
+      } finally {
+        await dependencies.rm(runDirectory, { recursive: true, force: true })
+      }
     }
   }
 }
@@ -511,7 +719,9 @@ const isDirectRun =
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 
 if (isDirectRun) {
-  runTerminalSmoke({ reconnect: process.argv.includes('--reconnect') })
+  const argv = process.argv.slice(2)
+  const auth = argv.includes('--auth') ? argv[argv.indexOf('--auth') + 1] : 'key'
+  runTerminalSmoke({ reconnect: argv.includes('--reconnect'), auth })
     .then(result => {
       console.log(JSON.stringify(result, null, 2))
     })
