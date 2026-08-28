@@ -674,7 +674,22 @@
 - [x] Linux 可移植：sshd fixture 与 runner 放开 linux、`TERMINAL_SMOKE_TMP` 规避 /tmp StrictModes；新增 `.github/workflows/real-machine-matrix.yml`（macOS 全矩阵 + WKWebView 探针协议验证；Linux Xvfb 下 key/reconnect smoke；Windows 保持人工清单）
 - [x] 全量门禁：前端 859 项、Team Server 103 项、Rust 164 单测 + 3 集成、Node smoke 脚本 36 项测试全部通过
 - [ ] 授予宿主进程 Accessibility 后执行 30 轮真实 CGEvent 重叠 `a/s/d` 注入，或人工在探针窗口键入 30 轮，记录 expected/received hex
-- [ ] 在 Linux runner 首次 dispatch 执行 real-machine 工作流；Windows OpenSSH/Pageant/PTY 实机按 issue.md Issue #21/#22/#39 人工清单
+- [x] 在 Linux runner 首次 dispatch 执行 real-machine 工作流（run 33183284820 全绿；首跑 run 33181335600 暴露的两处问题已修复，详见 Phase 6.21）
+- [ ] Windows OpenSSH/Pageant/PTY 实机按 issue.md Issue #21/#22/#39 人工清单
+
+---
+
+### 2026-08-28 Phase 6.21 - 跨平台实机矩阵 CI 收口 ✅ macOS/Linux runner 全矩阵通过
+
+> 目标：让「真实 SSH 认证矩阵 + 断线重连 + WKWebView 探针协议」在 GitHub 原生 runner 上可重复执行并全绿。
+
+- [x] 基线复验：`pnpm verify` 全绿（前端 859、Team Server 103、Rust 164 单测 + 3 集成、Node smoke 脚本 36 项、507 文件规模门禁）
+- [x] 修复矩阵 runner import 副作用：`run-terminal-smoke-matrix.mjs` 底部无条件 `main()` 会在测试导入时启动整场矩阵，补 `isDirectRun` 守卫
+- [x] 矩阵 runner 支持逗号分隔用例过滤（`selectCases` 导出 + 3 项新单测），按 runner 能力拆分矩阵
+- [x] 工作流拆分：macOS runner 无 Docker，password/password-reconnect 移至 Linux job 的 Debian OpenSSH 容器执行；Linux job 补 `libudev-dev`/`pkg-config` 修复 `libudev-sys` 构建失败
+- [x] real-machine 工作流 run `33183284820` 全绿：macOS `key` 6955ms / `key-reconnect` 4211ms（11 sessions）/ `agent` 3221ms / `cert` 3481ms / `jump` 3592ms；Linux `password` 1048ms / `password-reconnect` 1047ms（11 sessions）；全部用例首次连接 < 10 秒门禁、10 轮隔离会话、8 MiB 输出与资源回收
+- [x] WKWebView 探针协议双端验证：GitHub macOS runner 与本机 debug App（checkpoint-only）均确认 `input_probe_ready` awaiting-input checkpoint 正常发布
+- [ ] 30 轮物理 `a/s/d` 重叠按键（CGEvent 注入或人工键入）仍待宿主 Accessibility 授权或人工执行；Windows 人工清单不变
 
 ---
 
@@ -963,7 +978,7 @@
 ---
 
 _文档创建时间：2026-03-18_
-_最后更新：2026-08-24 - Phase 6.19 localhost SSH 重连 smoke 已收口，物理输入与外部实机矩阵待验证_
+_最后更新：2026-08-28 - Phase 6.21 real-machine 工作流 macOS/Linux runner 全矩阵通过；物理键盘 30 轮与 Windows 人工清单待验证_
 
 ---
 

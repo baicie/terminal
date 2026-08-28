@@ -1996,9 +1996,15 @@ _本节最后更新: 2026-08-28_
 
 全部用例首次连接远低于 10 秒预算；每个用例包含 10 轮隔离会话、8 MiB 输出、97×31 resize 与前后端资源回收门禁。
 
+**2026-08-28 CI 实机矩阵收口（Phase 6.21）**:
+
+- real-machine 工作流首次 dispatch（run `33181335600`）暴露两处问题并已修复：GitHub macOS runner 无 Docker（password 用例 `spawn docker ENOENT`）；Linux runner 缺 `libudev-dev` 导致 `libudev-sys` 构建失败。
+- 修复：矩阵 runner 增加逗号分隔用例过滤并补 `isDirectRun` 守卫（原先 import 即执行 `main()`）；password/password-reconnect 移至 Linux job 的 Debian OpenSSH 容器；Linux job 补装 `libudev-dev`/`pkg-config`。
+- 修复后 run `33183284820` **全绿**：macOS runner（WKWebView）`key` 6955ms / `key-reconnect` 4211ms（11 sessions）/ `agent` 3221ms / `cert` 3481ms / `jump` 3592ms；Linux runner（Xvfb + Docker Debian OpenSSH）`password` 1048ms / `password-reconnect` 1047ms（11 sessions）。全部用例首次连接 < 10 秒门禁。
+- [x] Linux runner 首次 dispatch `.github/workflows/real-machine-matrix.yml`（Xvfb + localhost OpenSSH + 容器 password 矩阵）。
+
 **仍需外部验证**:
 
-- [ ] Linux runner 首次 dispatch `.github/workflows/real-machine-matrix.yml`（Xvfb + localhost OpenSSH）。
 - [ ] Windows OpenSSH 服务 / Pageant / 本地 PTY / 串口硬件按 Issue #21/#22/#39 人工清单。
 
 ### Issue #58: 物理键盘资格门禁自动化 🟡 应用侧就绪，待注入授权
@@ -2016,4 +2022,9 @@ _本节最后更新: 2026-08-28_
 - `scripts/run-input-probe.mjs`：CGEvent 重叠按键注入器（a↓ s↓ d↓ → 反向释放 → Return，4 ms 间隔）、`CGPreflightPostEventAccess` 权限检查、osascript 前置激活、manual 引导模式与 `--checkpoint-only`（无权限时验证应用侧协议）。
 - Node 驱动 6 项单测覆盖 30 轮驱动、权限拒绝、manual 回退、早退与参数校验。
 
-**验证边界**: CGEvent 注入需要宿主进程被授予「系统设置 → 隐私与安全性 → 辅助功能」。授权后 `pnpm smoke:input-probe` 自动执行 30 轮重叠 `a/s/d` 并记录 expected/received hex；未授权时提供 manual 引导模式由人类物理键入，结果同样落盘校验。合成 JS 事件与 `term.input()` 不视为物理键盘证据。
+**2026-08-28 探针协议实机验证（Phase 6.21）**:
+
+- 本机 debug App `pnpm smoke:input-probe -- --checkpoint-only` 通过：真实 WKWebView 中 `input_probe_ready` round=1 awaiting-input checkpoint 正常发布。
+- GitHub macOS runner 同步骤通过（real-machine 工作流 run `33183284820`），证明探针协议在干净 WKWebView 环境可重复执行。
+
+**验证边界**: CGEvent 注入需要宿主进程被授予「系统设置 → 隐私与安全性 → 辅助功能」。授权后 `pnpm smoke:input-probe` 自动执行 30 轮重叠 `a/s/d` 并记录 expected/received hex；未授权时提供 manual 引导模式由人类物理键入，结果同样落盘校验。合成 JS 事件与 `term.input()` 不视为物理键盘证据。30 轮物理键入仍待执行。

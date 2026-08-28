@@ -543,9 +543,9 @@ pnpm add <package-name>
 
 | #     | 问题                                         | 严重程度     | 优先级 |
 | ----- | -------------------------------------------- | ------------ | ------ |
-| 57    | 真实 SSH 认证矩阵 ✅ macOS 通过；Linux 待 CI 首跑 | 🟡 Important | P1 |
-| 58    | 物理键盘 30 轮重叠 `a/s/d` 注入待 Accessibility 授权 | 🟡 Important | P1 |
-| 21/39 | Windows/Pageant/串口硬件实机矩阵（Linux 已接线 CI） | 🟡 Important | P1 |
+| 57    | 真实 SSH 认证矩阵 ✅ macOS 本机 + macOS/Linux runner CI 全矩阵通过 | 🟡 Important | P1 |
+| 58    | 物理键盘 30 轮重叠 `a/s/d` 注入待 Accessibility 授权或人工键入 | 🟡 Important | P1 |
+| 21/39 | Windows/Pageant/串口硬件实机矩阵（macOS/Linux 已 CI 全绿） | 🟡 Important | P1 |
 
 ---
 
@@ -994,4 +994,4 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-08-28 (Phase 6.20: 真实 SSH 认证矩阵全绿 + 物理键盘探针自动化；详见 docs/todo.md)_
+_文档更新时间: 2026-08-28 (Phase 6.21: real-machine 工作流 macOS/Linux runner 全矩阵通过；详见 docs/todo.md)_
