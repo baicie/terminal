@@ -1,10 +1,12 @@
 name: Real-machine terminal matrix
 
 # Runs the desktop terminal against real PTYs and real SSH servers on
-# macOS and Linux native runners. The macOS job executes the full SSH
-# authentication matrix (password/key/agent/cert/jump + reconnect) that is
-# also run locally via `pnpm smoke:ssh-matrix`; the Linux job runs the
-# public-key smoke plus its disconnect/reconnect variant under Xvfb.
+# macOS and Linux native runners. The macOS job executes the Docker-free
+# SSH authentication matrix (key/agent/cert/jump + reconnect) that is also
+# run locally via `pnpm smoke:ssh-matrix`; the Linux job runs the password
+# matrix inside the real Debian OpenSSH container (Docker is unavailable on
+# GitHub macOS runners) plus the public-key smoke and its disconnect/
+# reconnect variant under Xvfb.
 #
 # Windows real-machine coverage remains a manual checklist (docs/issue.md
 # Issue #21/#22/#39): OpenSSH service, Pageant, PTY and serial hardware are
@@ -38,8 +40,8 @@ jobs:
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - run: pnpm install --frozen-lockfile
-      - name: Run the real SSH authentication matrix
-        run: pnpm smoke:ssh-matrix
+      - name: Run the Docker-free real SSH authentication matrix
+        run: node scripts/run-terminal-smoke-matrix.mjs key,key-reconnect,agent,cert,jump
       - name: Verify the physical keyboard probe protocol in a real WKWebView
         # macOS runners cannot grant Accessibility to CGEvent injection, so
         # this step only proves the app-side probe boots a local PTY and
@@ -70,6 +72,8 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
+            libudev-dev \
+            pkg-config \
             openssh-server
       - run: pnpm install --frozen-lockfile
       - name: Run public-key smoke and reconnect smoke under Xvfb
@@ -78,3 +82,10 @@ jobs:
           export TERMINAL_SMOKE_TMP="$HOME/terminal-smoke-tmp"
           xvfb-run -a pnpm smoke:terminal
           xvfb-run -a pnpm smoke:terminal:reconnect
+      - name: Run the password authentication matrix in Docker
+        # GitHub macOS runners have no Docker engine, so the real Debian
+        # OpenSSH password fixture runs here instead.
+        run: |
+          mkdir -p "$HOME/terminal-smoke-tmp"
+          export TERMINAL_SMOKE_TMP="$HOME/terminal-smoke-tmp"
+          xvfb-run -a node scripts/run-terminal-smoke-matrix.mjs password,password-reconnect
