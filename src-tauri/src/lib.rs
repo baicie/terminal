@@ -34,8 +34,8 @@ use commands::{
     session_resize, session_write, session_write_raw,
 };
 use input_probe::{
-    input_probe_config, input_probe_diag, input_probe_focus, input_probe_ready,
-    input_probe_result, InputProbeState,
+    input_probe_config, input_probe_diag, input_probe_focus, input_probe_ready, input_probe_result,
+    InputProbeState,
 };
 use port_forward::{port_forward_list, port_forward_start, port_forward_stop};
 use serial::{
