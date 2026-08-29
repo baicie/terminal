@@ -202,7 +202,10 @@ test('drives thirty overlapping key rounds and validates the exact hex contract'
     if (command === 'osascript') {
       const child = new FakeChild(41_005)
       const querying = args.some(arg => arg.includes('frontmost is true'))
-      finishChild(child, { stdout: querying ? '41100' : '' })
+      const bounds = args.some(arg => arg.includes('window 1'))
+      finishChild(child, {
+        stdout: querying ? '41100' : bounds ? '100, 200, 600, 400' : '',
+      })
       return child
     }
     if (command.endsWith('/debug/terminal')) {

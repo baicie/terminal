@@ -146,14 +146,20 @@ function TerminalInputProbeAutomationInner({
           if (next.phase === 'complete' && !finishedRef.current) {
             finishedRef.current = true
             const state = stateRef.current
+            const failedRounds = state.results
+              .filter(result => !result.ok)
+              .map(result => result.round)
+            const ok = failedRounds.length === 0
             void publishInputProbeResult({
-              ok: true,
+              ok,
               rounds: config.rounds,
               expectedText: config.expectedText,
               expectedHex: state.expectedHex,
               durationMs: Math.max(1, Math.ceil(performance.now() - startedAt)),
               results: state.results,
-              error: null,
+              error: ok
+                ? null
+                : `round(s) ${failedRounds.join(',')} received mismatched bytes`,
             }).catch(publishError => {
               console.error('Failed to publish terminal input probe result')
               void publishInputProbeDiag(

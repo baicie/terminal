@@ -48,6 +48,28 @@ if CommandLine.arguments.count >= 2 && CommandLine.arguments[1] == "access" {
     exit(0)
 }
 
+if CommandLine.arguments.count >= 5 && CommandLine.arguments[2] == "click" {
+    guard let pid = pid_t(CommandLine.arguments[1]) else { exit(4) }
+    guard let x = Double(CommandLine.arguments[3]), let y = Double(CommandLine.arguments[4]) else { exit(5) }
+    let point = CGPoint(x: x, y: y)
+    let down = CGEvent(
+        mouseEventSource: nil,
+        mouseType: .leftMouseDown,
+        mouseCursorPosition: point,
+        mouseButton: .left
+    )
+    down?.postToPid(pid)
+    usleep(50_000)
+    let up = CGEvent(
+        mouseEventSource: nil,
+        mouseType: .leftMouseUp,
+        mouseCursorPosition: point,
+        mouseButton: .left
+    )
+    up?.postToPid(pid)
+    exit(0)
+}
+
 guard CommandLine.arguments.count >= 4 else { exit(2) }
 guard let pid = pid_t(CommandLine.arguments[1]) else { exit(4) }
 let text = CommandLine.arguments[3]
@@ -412,6 +434,7 @@ export async function runInputProbe({
       const MAX_ROUND_INJECTIONS = 3
       for (let attempt = 1; ; attempt += 1) {
         if (injector === 'swift') {
+          await clickWindowCenter(child.pid, injectorBinary, dependencies)
           await runSwiftInjector(
             injectorBinary,
             [String(child.pid), 'overlap', expected],
@@ -527,6 +550,34 @@ function frontmostProcessId(dependencies) {
 
 const FRONTMOST_RETRIES = 10
 const FRONTMOST_SETTLE_MS = 1_000
+const CLICK_SETTLE_MS = 300
+
+function windowCenter(pid, dependencies) {
+  return runOsascript(
+    `tell application "System Events" to tell first process whose unix id is ${pid} to get {position, size} of window 1`,
+    dependencies,
+  ).then(output => {
+    const match = output.match(/^(-?\d+), (-?\d+), (\d+), (\d+)$/)
+    if (!match) {
+      throw new Error(`unexpected window bounds: ${output || 'empty'}`)
+    }
+    const [x, y, width, height] = match.slice(1).map(Number)
+    if (width <= 0 || height <= 0) {
+      throw new Error('input probe window has invalid bounds')
+    }
+    return { x: Math.round(x + width / 2), y: Math.round(y + height / 2) }
+  })
+}
+
+async function clickWindowCenter(pid, injectorBinary, dependencies) {
+  const center = await windowCenter(pid, dependencies)
+  await runSwiftInjector(
+    injectorBinary,
+    [String(pid), 'click', String(center.x), String(center.y)],
+    dependencies,
+  )
+  await new Promise(resolve => dependencies.setTimeout(resolve, CLICK_SETTLE_MS))
+}
 
 async function ensureFrontmost(pid, dependencies) {
   let lastFailure = 'unverified'
