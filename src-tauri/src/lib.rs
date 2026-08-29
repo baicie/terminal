@@ -33,7 +33,10 @@ use commands::{
     session_create_ssh_key, session_create_ssh_password, session_exec, session_list,
     session_resize, session_write, session_write_raw,
 };
-use input_probe::{input_probe_config, input_probe_ready, input_probe_result, InputProbeState};
+use input_probe::{
+    input_probe_config, input_probe_diag, input_probe_focus, input_probe_ready,
+    input_probe_result, InputProbeState,
+};
 use port_forward::{port_forward_list, port_forward_start, port_forward_stop};
 use serial::{
     serial_baud_rates, serial_connect, serial_disconnect, serial_is_connected, serial_list,
@@ -207,6 +210,8 @@ pub fn run() {
             terminal_smoke_complete,
             // Explicitly gated physical keyboard input probe
             input_probe_config,
+            input_probe_diag,
+            input_probe_focus,
             input_probe_ready,
             input_probe_result,
         ])

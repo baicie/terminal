@@ -21,6 +21,8 @@ import {
   createTerminalInputProbeState,
 } from './probe-state'
 import {
+  focusInputProbeWindow,
+  publishInputProbeDiag,
   publishInputProbeReady,
   publishInputProbeResult,
   type InputProbeAutomationConfig,
@@ -152,8 +154,11 @@ function TerminalInputProbeAutomationInner({
               durationMs: Math.max(1, Math.ceil(performance.now() - startedAt)),
               results: state.results,
               error: null,
-            }).catch(() => {
+            }).catch(publishError => {
               console.error('Failed to publish terminal input probe result')
+              void publishInputProbeDiag(
+                `result-publish-failed: ${String(publishError)}`,
+              ).catch(() => {})
             })
           }
           if (next.phase === 'error') {
@@ -207,6 +212,46 @@ function TerminalInputProbeAutomationInner({
       publishFailure('Terminal input probe local PTY failed')
     }
   }, [publishFailure, status])
+
+  // Diagnostics: observe keydown delivery and focus transitions.
+  useEffect(() => {
+    const diag = (message: string) => {
+      void publishInputProbeDiag(message).catch(() => {})
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      diag(`keydown key=${event.key} code=${event.code}`)
+    }
+    const onFocus = () => {
+      diag('window-focus')
+      // The window can become key long after mount; WebKit does not always
+      // route keystrokes to the xterm textarea that was focused earlier.
+      term.focus()
+    }
+    const onBlur = () => diag('window-blur')
+    window.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [term])
+
+  // Keep the probe window key while rounds await injected keystrokes,
+  // but never re-assert focus while it already has focus: re-activating
+  // mid-injection can interrupt the key event stream.
+  useEffect(() => {
+    const focusOnce = () => {
+      if (finishedRef.current || document.hasFocus()) return
+      void focusInputProbeWindow().catch(() => {
+        // The probe still works when focus cannot be forced mid-round.
+      })
+    }
+    focusOnce()
+    const timer = window.setInterval(focusOnce, 500)
+    return () => window.clearInterval(timer)
+  }, [])
 
   return <main className="h-dvh w-full overflow-hidden bg-black" ref={containerRef} />
 }

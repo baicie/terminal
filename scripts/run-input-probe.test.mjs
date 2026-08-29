@@ -167,6 +167,11 @@ function createHarness({
 test('drives thirty overlapping key rounds and validates the exact hex contract', async () => {
   const harness = createHarness()
   const { calls, dependencies } = harness
+  dependencies.setTimeout = callback => {
+    queueMicrotask(callback)
+    return {}
+  }
+  dependencies.clearTimeout = () => {}
   const rounds = 30
   const events = []
   dependencies.spawn = (command, args, options) => {
@@ -186,8 +191,8 @@ test('drives thirty overlapping key rounds and validates the exact hex contract'
       const child = new FakeChild(41_004)
       const output = args[0] === 'access' ? 'allowed' : ''
       finishChild(child, { stdout: output })
-      if (args[0] === 'overlap') {
-        events.push(args[1])
+      if (args[1] === 'overlap') {
+        events.push(args[2])
         const round = events.length
         harness.publishRound(Math.min(rounds, round + 1))
         if (round === rounds) harness.publishResult()
@@ -196,7 +201,8 @@ test('drives thirty overlapping key rounds and validates the exact hex contract'
     }
     if (command === 'osascript') {
       const child = new FakeChild(41_005)
-      finishChild(child)
+      const querying = args.some(arg => arg.includes('frontmost is true'))
+      finishChild(child, { stdout: querying ? '41100' : '' })
       return child
     }
     if (command.endsWith('/debug/terminal')) {

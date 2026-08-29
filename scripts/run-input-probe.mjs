@@ -31,10 +31,12 @@ const PROJECT_ROOT = path.resolve(import.meta.dirname, '..')
 const SWIFT_INJECTOR = `import CoreGraphics
 import Foundation
 
-func postKey(_ code: CGKeyCode, _ down: Bool) {
-    let source = CGEventSource(stateID: .hidSystemState)
-    let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down)
-    event?.post(tap: .cghidEventTap)
+// Delivers key events straight into the target app's event stream.
+// A nil event source plus postToPid is required: events built on the HID
+// system state source are dropped for cross-process injection on macOS 15.
+func postKey(_ code: CGKeyCode, _ down: Bool, _ pid: pid_t) {
+    let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
+    event?.postToPid(pid)
 }
 
 func pause(_ microseconds: useconds_t) {
@@ -46,25 +48,27 @@ if CommandLine.arguments.count >= 2 && CommandLine.arguments[1] == "access" {
     exit(0)
 }
 
-guard CommandLine.arguments.count >= 3 else { exit(2) }
-let text = CommandLine.arguments[2]
+guard CommandLine.arguments.count >= 4 else { exit(2) }
+guard let pid = pid_t(CommandLine.arguments[1]) else { exit(4) }
+let text = CommandLine.arguments[3]
 let keyCodes: [Character: CGKeyCode] = ["a": 0, "s": 1, "d": 2]
 var codes: [CGKeyCode] = []
 for character in text {
     guard let code = keyCodes[character] else { exit(3) }
     codes.append(code)
 }
+pause(100_000)
 for code in codes {
-    postKey(code, true)
-    pause(4_000)
+    postKey(code, true, pid)
+    pause(20_000)
 }
 for code in codes.reversed() {
-    postKey(code, false)
-    pause(4_000)
+    postKey(code, false, pid)
+    pause(20_000)
 }
-pause(30_000)
-postKey(36, true)
-postKey(36, false)
+pause(50_000)
+postKey(36, true, pid)
+postKey(36, false, pid)
 `
 
 const defaultDependencies = {
@@ -305,6 +309,7 @@ export async function runInputProbe({
   )
   const readyPath = path.join(runDirectory, 'ready.json')
   const resultPath = path.join(runDirectory, 'result.json')
+  const diagPath = path.join(runDirectory, 'diag.log')
   const expectedHex = Array.from(new TextEncoder().encode(expected), byte =>
     byte.toString(16).padStart(2, '0'),
   ).join('')
@@ -341,6 +346,7 @@ export async function runInputProbe({
     TERMINAL_INPUT_PROBE_RESULT_PATH: resultPath,
     TERMINAL_INPUT_PROBE_ROUNDS: String(rounds),
     TERMINAL_INPUT_PROBE_EXPECTED: expected,
+    TERMINAL_INPUT_PROBE_DIAG_PATH: diagPath,
   })
 
   const executable = path.join(resolvedTargetDirectory, 'debug', 'terminal')
@@ -401,16 +407,45 @@ export async function runInputProbe({
         }
       }
       if (injector !== 'manual') {
-        await activateApplication(child.pid, dependencies)
+        await ensureFrontmost(child.pid, dependencies)
       }
-      if (injector === 'swift') {
-        await runSwiftInjector(injectorBinary, ['overlap', expected], dependencies)
-      } else if (injector === 'osascript') {
-        await postOsascriptKeys(expected, dependencies)
-      } else {
-        console.log(
-          `[input-probe] Round ${round}/${rounds}: type '${expected}' + Enter into the focused terminal window now.`,
-        )
+      const MAX_ROUND_INJECTIONS = 3
+      for (let attempt = 1; ; attempt += 1) {
+        if (injector === 'swift') {
+          await runSwiftInjector(
+            injectorBinary,
+            [String(child.pid), 'overlap', expected],
+            dependencies,
+          )
+        } else if (injector === 'osascript') {
+          await postOsascriptKeys(expected, dependencies)
+        } else {
+          console.log(
+            `[input-probe] Round ${round}/${rounds}: type '${expected}' + Enter into the focused terminal window now.`,
+          )
+        }
+        if (round === rounds) break
+        try {
+          const advanced = await waitForRoundAdvance(
+            readyPath,
+            round + 1,
+            2_500,
+            dependencies,
+          )
+          if (advanced >= round + 1) break
+        } catch (error) {
+          if (attempt >= MAX_ROUND_INJECTIONS) throw error
+          if (injector === 'manual') {
+            console.log(
+              `[input-probe] Round ${round} not observed; please type again.`,
+            )
+          } else {
+            console.warn(
+              `[input-probe] round ${round} injection attempt ${attempt} was not observed; re-focusing and retrying`,
+            )
+            await ensureFrontmost(child.pid, dependencies)
+          }
+        }
       }
     }
 
@@ -424,6 +459,19 @@ export async function runInputProbe({
       `[input-probe] ${rounds} rounds completed via ${injector} injection: expected=${expectedHex}, all rounds match`,
     )
     return { ...result, injector }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    let diagnostics = ''
+    try {
+      diagnostics = await dependencies.readFile(diagPath, 'utf8')
+    } catch {
+      // Diagnostics are best effort.
+    }
+    throw new Error(
+      diagnostics.trim()
+        ? `${message}\n[input-probe diag]\n${diagnostics.trim()}`
+        : message,
+    )
   } finally {
     try {
       child?.kill('SIGTERM')
@@ -435,35 +483,96 @@ export async function runInputProbe({
   }
 }
 
-function activateApplication(pid, dependencies) {
+function runOsascript(script, dependencies) {
   return new Promise((resolve, reject) => {
     let child
     try {
-      child = dependencies.spawn(
-        'osascript',
-        [
-          '-e',
-          `tell application "System Events" to set frontmost of first process whose unix id is ${pid} to true`,
-        ],
-        { shell: false, stdio: ['ignore', 'ignore', 'pipe'] },
-      )
+      child = dependencies.spawn('osascript', ['-e', script], {
+        shell: false,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
     } catch (error) {
       reject(new Error(`osascript could not start: ${error.message}`))
       return
     }
+    let output = ''
+    child.stdout?.setEncoding('utf8')
+    child.stdout?.on('data', chunk => (output += chunk))
     child.once('error', error =>
       reject(new Error(`osascript failed: ${error.message}`)),
     )
     child.once('close', code =>
       code === 0
-        ? resolve()
+        ? resolve(output.trim())
         : reject(
-            new Error(
-              `could not focus the terminal input probe window (osascript exit ${String(code)}); grant Accessibility permission and retry`,
-            ),
+            new Error(`osascript exited with code ${String(code)}: ${output.trim()}`),
           ),
     )
   })
+}
+
+function activateApplication(pid, dependencies) {
+  return runOsascript(
+    `tell application "System Events" to set frontmost of first process whose unix id is ${pid} to true`,
+    dependencies,
+  )
+}
+
+function frontmostProcessId(dependencies) {
+  return runOsascript(
+    'tell application "System Events" to get unix id of first process whose frontmost is true',
+    dependencies,
+  )
+}
+
+const FRONTMOST_RETRIES = 10
+const FRONTMOST_SETTLE_MS = 1_000
+
+async function ensureFrontmost(pid, dependencies) {
+  let lastFailure = 'unverified'
+  for (let attempt = 1; attempt <= FRONTMOST_RETRIES; attempt += 1) {
+    try {
+      await activateApplication(pid, dependencies)
+      await new Promise(resolve =>
+        dependencies.setTimeout(resolve, FRONTMOST_SETTLE_MS),
+      )
+      const frontmost = await frontmostProcessId(dependencies)
+      if (frontmost === String(pid)) return
+      lastFailure = `frontmost process id is ${frontmost || 'unknown'}, expected ${pid}`
+    } catch (error) {
+      lastFailure = error instanceof Error ? error.message : String(error)
+    }
+  }
+  throw new Error(
+    `could not bring the terminal input probe window to the front: ${lastFailure}; grant Accessibility permission and retry`,
+  )
+}
+
+async function waitForRoundAdvance(
+  readyPath,
+  expectedRound,
+  timeoutMs,
+  dependencies,
+) {
+  const deadline = dependencies.now() + timeoutMs
+  for (;;) {
+    let serialized
+    try {
+      serialized = await dependencies.readFile(readyPath, 'utf8')
+    } catch {
+      // The checkpoint file may be mid-write.
+    }
+    if (serialized) {
+      const checkpoint = parseReadyCheckpoint(serialized)
+      if (checkpoint >= expectedRound) return checkpoint
+    }
+    if (dependencies.now() > deadline) {
+      throw new Error(
+        `input probe round ${expectedRound} checkpoint did not arrive within ${timeoutMs} ms`,
+      )
+    }
+    await new Promise(resolve => dependencies.setTimeout(resolve, 100))
+  }
 }
 
 function postOsascriptKeys(expected, dependencies) {

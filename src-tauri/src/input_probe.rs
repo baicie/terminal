@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use tokio::io::AsyncWriteExt;
 
 /// Explicitly gated physical keyboard input probe.
@@ -18,6 +18,7 @@ use tokio::io::AsyncWriteExt;
 const ENABLE_ENV: &str = "TERMINAL_INPUT_PROBE";
 const READY_PATH_ENV: &str = "TERMINAL_INPUT_PROBE_READY_PATH";
 const RESULT_PATH_ENV: &str = "TERMINAL_INPUT_PROBE_RESULT_PATH";
+const DIAG_PATH_ENV: &str = "TERMINAL_INPUT_PROBE_DIAG_PATH";
 const ROUNDS_ENV: &str = "TERMINAL_INPUT_PROBE_ROUNDS";
 const EXPECTED_ENV: &str = "TERMINAL_INPUT_PROBE_EXPECTED";
 const DEFAULT_ROUNDS: u32 = 30;
@@ -59,6 +60,7 @@ pub(crate) struct InputProbeResult {
 pub(crate) struct InputProbeRun {
     ready_path: PathBuf,
     result_path: PathBuf,
+    diag_path: PathBuf,
     rounds: u32,
     expected_text: String,
     started_at: Instant,
@@ -150,6 +152,18 @@ impl InputProbeState {
                         std::env::var_os(RESULT_PATH_ENV),
                         RESULT_PATH_ENV,
                     )?,
+                    diag_path: std::env::var_os(DIAG_PATH_ENV)
+                        .filter(|value| !value.is_empty())
+                        .map(|value| absolute_env_path(Some(value), DIAG_PATH_ENV))
+                        .transpose()?
+                        .unwrap_or_else(|| {
+                            PathBuf::from(
+                                std::env::var_os(RESULT_PATH_ENV)
+                                    .filter(|value| !value.is_empty())
+                                    .unwrap_or_default(),
+                            )
+                            .with_file_name("diag.log")
+                        }),
                     rounds: rounds_from_env()?,
                     expected_text: expected_from_env()?,
                     started_at: Instant::now(),
@@ -277,6 +291,42 @@ async fn write_json_atomically(path: &Path, contents: &[u8]) -> Result<(), Strin
 }
 
 #[tauri::command]
+pub(crate) async fn input_probe_diag(app: AppHandle, message: String) -> Result<(), String> {
+    let state = app
+        .try_state::<InputProbeState>()
+        .ok_or_else(|| "terminal input probe state is unavailable".to_string())?;
+    let run = state.run()?;
+    if message.len() > 256 || has_control_characters(&message) {
+        return Err("input probe diagnostic message is invalid".to_string());
+    }
+    let line = format!("{} {message}\n", chrono::Utc::now().to_rfc3339());
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&run.diag_path)
+        .await
+        .map_err(|error| format!("failed to open input probe diagnostics: {error}"))?;
+    file.write_all(line.as_bytes())
+        .await
+        .map_err(|error| format!("failed to append input probe diagnostics: {error}"))
+}
+
+#[tauri::command]
+pub(crate) async fn input_probe_focus(app: AppHandle) -> Result<(), String> {
+    let state = app
+        .try_state::<InputProbeState>()
+        .ok_or_else(|| "terminal input probe state is unavailable".to_string())?;
+    state.run()?;
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "terminal input probe main window is missing".to_string())?;
+    let _ = window.unminimize();
+    window
+        .set_focus()
+        .map_err(|error| format!("failed to focus the input probe window: {error}"))
+}
+
+#[tauri::command]
 pub(crate) fn input_probe_config(
     state: State<'_, InputProbeState>,
 ) -> Result<Option<InputProbeConfig>, String> {
@@ -316,7 +366,10 @@ pub(crate) async fn input_probe_result(
 ) -> Result<(), String> {
     let run = state.run()?;
     tracing::info!(ok = result.ok, "input_probe_result invoked");
-    validate_result(&run, &result)?;
+    if let Err(error) = validate_result(&run, &result) {
+        tracing::error!(error = %error, "input_probe_result validation failed");
+        return Err(error);
+    }
     let serialized = serde_json::to_vec(&result)
         .map_err(|error| format!("failed to serialize input probe result: {error}"))?;
     if serialized.len() > MAX_RESULT_BYTES {

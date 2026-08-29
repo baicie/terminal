@@ -89,6 +89,19 @@ export async function loadInputProbeAutomationConfig(
   return parseConfig(raw)
 }
 
+export async function publishInputProbeDiag(
+  message: string,
+  ipc: InputProbeIpc = defaultIpc,
+): Promise<void> {
+  await ipc.invoke('input_probe_diag', { message })
+}
+
+export async function focusInputProbeWindow(
+  ipc: InputProbeIpc = defaultIpc,
+): Promise<void> {
+  await ipc.invoke('input_probe_focus')
+}
+
 export async function publishInputProbeReady(
   round: number,
   ipc: InputProbeIpc = defaultIpc,
