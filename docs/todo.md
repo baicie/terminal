@@ -673,7 +673,7 @@
 - [x] 物理键盘探针自动化：Rust `input_probe` 门控模块（env 显式开启、绝对路径、checkpoint/结果原子写入与严格校验），前端 `automation-root`（本地 PTY + 探针协议 + 每轮 checkpoint + 最终结果），`smoke:input-probe` 驱动（CGEvent 重叠按键注入器、Accessibility 权限检查、osascript 激活、manual 引导模式、checkpoint-only 模式）
 - [x] Linux 可移植：sshd fixture 与 runner 放开 linux、`TERMINAL_SMOKE_TMP` 规避 /tmp StrictModes；新增 `.github/workflows/real-machine-matrix.yml`（macOS 全矩阵 + WKWebView 探针协议验证；Linux Xvfb 下 key/reconnect smoke；Windows 保持人工清单）
 - [x] 全量门禁：前端 859 项、Team Server 103 项、Rust 164 单测 + 3 集成、Node smoke 脚本 36 项测试全部通过
-- [ ] 授予宿主进程 Accessibility 后执行 30 轮真实 CGEvent 重叠 `a/s/d` 注入，或人工在探针窗口键入 30 轮，记录 expected/received hex
+- [ ] 30 轮真实 CGEvent 重叠 `a/s/d` 注入：链路已多次端到端验证（详见 issue.md Issue #58），最终无人值守跑受本机 SkyComputerUseService 的 GUI 焦点干扰阻塞，待干扰停止后执行 `pnpm smoke:input-probe` 一键复跑
 - [x] 在 Linux runner 首次 dispatch 执行 real-machine 工作流（run 33183284820 全绿；首跑 run 33181335600 暴露的两处问题已修复，详见 Phase 6.21）
 - [ ] Windows OpenSSH/Pageant/PTY 实机按 issue.md Issue #21/#22/#39 人工清单
 

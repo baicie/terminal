@@ -2027,4 +2027,11 @@ _本节最后更新: 2026-08-28_
 - 本机 debug App `pnpm smoke:input-probe -- --checkpoint-only` 通过：真实 WKWebView 中 `input_probe_ready` round=1 awaiting-input checkpoint 正常发布。
 - GitHub macOS runner 同步骤通过（real-machine 工作流 run `33183284820`），证明探针协议在干净 WKWebView 环境可重复执行。
 
-**验证边界**: CGEvent 注入需要宿主进程被授予「系统设置 → 隐私与安全性 → 辅助功能」。授权后 `pnpm smoke:input-probe` 自动执行 30 轮重叠 `a/s/d` 并记录 expected/received hex；未授权时提供 manual 引导模式由人类物理键入，结果同样落盘校验。合成 JS 事件与 `term.input()` 不视为物理键盘证据。30 轮物理键入仍待执行。
+**验证边界**: CGEvent 注入需要宿主进程被授予「系统设置 → 隐私与安全性 → 辅助功能」。授权后 `pnpm smoke:input-probe` 自动执行 30 轮重叠 `a/s/d` 并记录 expected/received hex；未授权时提供 manual 引导模式由人类物理键入，结果同样落盘校验。合成 JS 事件与 `term.input()` 不视为物理键盘证据。
+
+**2026-08-29 实机注入证据与阻塞条件**:
+
+- 宿主 Terminal.app 已授予辅助功能权限；注入链路多次端到端验证通过：真实 WKWebView 内诊断通道（`input_probe_diag`）记录到完整的 `keydown a/s/d/Enter` 序列且 PTY `read` 回读 hex 一致（如 11:37 运行：4/4 keydown + round 推进；13:08 运行：3 轮完整注入）；13:27 之前的运行中应用侧一次完成全部 30 轮并发布 `ok=true`（受 result 契约 bug 影响未落盘，已修复）。
+- 注入实现要点（全部已修复并回归）：`CGEvent` 必须使用 `nil` source + `postToPid`（`.hidSystemState` source 的跨进程事件在 macOS 15 会被丢弃）；注入前点击探针窗口中心使 WKWebView 窗口成为 key window；窗口获得焦点时重新 `term.focus()`；驱动对未推进轮次带焦点校验的安全重试；前端按每轮 hex 匹配计算 `ok` 并报告失配轮次。
+- **当前阻塞条件（外部）**: 本机运行的另一个 GUI 自动化服务（`SkyComputerUseService`）持续保持 Chrome 前台并每 ~0.5s 干扰窗口焦点，导致探针窗口 key 状态振荡、System Events 偶发失败；同条件下应用内诊断显示事件送达但 IMK 桥接报 `IMKCFRunLoopWakeUpReliable` mach port 错误，输入被丢弃。该条件自 2026-08-29 13:00 起跨 6 轮复跑持续存在。
+- **复跑路径**: 在无 GUI 自动化干扰时执行 `pnpm smoke:input-probe` 即可完成 30 轮无人值守验收；或使用 `--inject manual` 由人类键入 30 轮，驱动落盘校验每轮 expected/received hex。30 轮物理键入仍待执行。

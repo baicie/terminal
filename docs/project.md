@@ -21,7 +21,7 @@
 | 项目 | 状态 |
 | --- | --- |
 | 当前目标 | 🔄 完成 macOS 物理键盘 30 轮重叠按键注入；在 Linux runner 首跑 real-machine 工作流；继续 Windows/Pageant/串口人工矩阵与 Shell Integration 配置 |
-| 当前进度 | Phase 6.20 已把「打开应用后 10 秒内进入可靠终端」变成三层门禁：`firstConnectionMs` 进入 smoke 结果契约并由前端、Rust、runner 同时强制 < 10 秒。真实 SSH 认证矩阵（password/key/agent/cert/jump + 断线重连）在本机 macOS 全部通过，7 个用例首次连接 1.7–3.3 秒。物理键盘资格门禁完成应用侧自动化（本地 PTY 探针协议 + CGEvent 重叠注入驱动 + Accessibility 检查），等待宿主进程授权后执行 30 轮 `a/s/d`。Linux 已接线（fixture/runner 可移植 + `TERMINAL_SMOKE_TMP`），新增 `.github/workflows/real-machine-matrix.yml` 供 macOS/Linux 原生 runner 执行。 |
+| 当前进度 | Phase 6.20/6.21 已把「打开应用后 10 秒内进入可靠终端」变成三层门禁：`firstConnectionMs` 进入 smoke 结果契约并由前端、Rust、runner 同时强制 < 10 秒。真实 SSH 认证矩阵（password/key/agent/cert/jump + 断线重连）在本机 macOS 与 macOS/Linux CI 原生 runner 全部通过（首次连接 1.0–7.0 秒；real-machine 工作流 run `33183284820` 全绿）。物理键盘资格门禁完整：本地 PTY 探针协议、CGEvent 重叠注入（`postToPid` + 点击聚焦 + 焦点恢复 + 诊断通道）、Accessibility 检查与 manual 引导；注入链路已多次真实 WKWebView 端到端验证，最终无人值守 30 轮受本机 `SkyComputerUseService` 的 GUI 焦点干扰阻塞（见 issue.md Issue #58），干扰停止后 `pnpm smoke:input-probe` 一键复跑。 |
 | 自动化基线 | `pnpm verify` 全绿：前端 99 个测试文件/859 项、Team Server 25 个文件/103 项、Rust 164 个单测 + 3 个桌面配置集成测试，以及 lint/typecheck/build/fmt/Clippy/源码门禁；Node smoke 脚本 36 项测试通过。`smoke:ssh-matrix` 7 用例全绿（首次连接 1764–3261 ms）。 |
 | 下一验证目标 | 授予宿主进程辅助功能权限后执行 `pnpm smoke:input-probe`（30 轮重叠 `a/s/d` + expected/received hex）；首次 dispatch real-machine 工作流完成 Linux Xvfb 实机 smoke；Windows OpenSSH/Pageant/PTY/串口按 issue.md 人工清单；为常见 shell 提供显式 Shell Integration 配置 |
 
