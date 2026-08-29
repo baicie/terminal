@@ -1,0 +1,14 @@
+dist
+pnpm-lock.yaml
+node_modules
+tmp
+target
+.next
+.turbo
+.vscode
+.idea
+.git
+.gitignore
+.gitignore
+.agents
+team-server/dist

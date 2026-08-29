@@ -1,61 +1,64 @@
 {
-  "name": "terminal",
+  "name": "@terminal/monorepo",
+  "version": "0.0.1-dev.1",
+  "description": "Modern SSH/SFTP terminal client with team collaboration",
   "private": true,
-  "version": "0.1.0",
   "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "tauri": "tauri"
+  "packageManager": "pnpm@10.34.3",
+  "engines": {
+    "node": "24.16.x",
+    "pnpm": "10.34.x"
   },
-  "dependencies": {
-    "@ant-design/icons": "^6.1.0",
-    "@tauri-apps/api": ">=2.10.1",
-    "@tauri-apps/plugin-shell": ">=2.3.5",
-    "@tauri-apps/plugin-sql": "2.3.2",
-    "@xterm/addon-canvas": "^0.7.0",
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/addon-image": "^0.9.0",
-    "@xterm/addon-ligatures": "^0.10.0",
-    "@xterm/addon-search": "^0.16.0",
-    "@xterm/addon-unicode11": "^0.9.0",
-    "@xterm/addon-web-links": "^0.12.0",
-    "@xterm/addon-webgl": "^0.19.0",
-    "@xterm/xterm": "^6.0.0",
-    "antd": "^6.3.3",
-    "axios": "^1.13.6",
-    "dayjs": "^1.11.20",
-    "i18next": "^25.8.18",
-    "i18next-browser-languagedetector": "^8.2.1",
-    "js-cookie": "^3.0.5",
-    "mobx": "^6.15.0",
-    "mobx-react": "^9.2.1",
-    "mobx-react-lite": "^4.1.1",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "react-i18next": "^16.5.8",
-    "react-router-dom": "^7.13.1",
-    "reflect-metadata": "^0.2.2",
-    "tsyringe": "^4.10.0"
+  "scripts": {
+    "dev": "pnpm --filter=@terminal/frontend dev",
+    "dev:all": "pnpm -r --parallel dev",
+    "dev:frontend": "pnpm --filter=@terminal/frontend dev",
+    "dev:team-server": "pnpm --filter=team-server start:dev",
+    "build": "pnpm -r build",
+    "build:frontend": "pnpm --filter=@terminal/frontend build",
+    "build:team-server": "pnpm --filter=team-server build",
+    "tauri": "tauri",
+    "smoke:terminal": "node scripts/run-terminal-smoke.mjs",
+    "smoke:terminal:reconnect": "node scripts/run-terminal-smoke.mjs --reconnect",
+    "shadcn": "pnpm --filter=@terminal/frontend shadcn",
+    "format": "pnpm --filter=@terminal/frontend format",
+    "lint": "pnpm --filter=@terminal/frontend lint",
+    "lint:fix": "pnpm --filter=@terminal/frontend lint:fix",
+    "typecheck": "pnpm --filter=@terminal/frontend typecheck",
+    "test": "pnpm --filter=@terminal/frontend test",
+    "test:watch": "pnpm --filter=@terminal/frontend test:watch",
+    "test:coverage": "pnpm --filter=@terminal/frontend test:coverage",
+    "check:source-size": "node scripts/check-source-size.mjs",
+    "verify": "node scripts/verify.mjs all",
+    "verify:frontend": "node scripts/verify.mjs frontend",
+    "verify:team-server": "node scripts/verify.mjs team-server",
+    "verify:rust": "node scripts/verify.mjs rust",
+    "analyze:bundle": "tsx scripts/analyze-bundle-size.ts",
+    "smoke:ssh-matrix": "node scripts/run-terminal-smoke-matrix.mjs",
+    "smoke:input-probe": "node scripts/run-input-probe.mjs"
   },
   "devDependencies": {
-    "@tauri-apps/cli": ">=2.10.1",
-    "@types/node": "^25.5.0",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@typescript-eslint/eslint-plugin": "^8.57.1",
-    "@typescript-eslint/parser": "^8.57.1",
-    "@unocss/preset-uno": "^66.6.7",
-    "@unocss/preset-wind3": "^66.6.7",
-    "@vitejs/plugin-react": "^6.0.1",
-    "autoprefixer": "^10.4.27",
-    "eslint": "^10.0.3",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "sass": "^1.98.0",
-    "typescript": "^5.9.3",
-    "unocss": "^66.6.7",
-    "vite": "^8.0.0"
+    "@tauri-apps/cli": "2.11.0",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.21.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "body-parser": "2.3.0",
+      "deepmerge-ts": "8.0.1",
+      "fast-uri": "3.1.5",
+      "js-yaml": "5.2.3",
+      "qs": "6.15.2"
+    },
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@parcel/watcher",
+      "@prisma/engines",
+      "esbuild",
+      "prisma"
+    ],
+    "ignoredBuiltDependencies": [
+      "@scarf/scarf"
+    ]
   }
 }

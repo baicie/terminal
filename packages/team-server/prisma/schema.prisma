@@ -1,0 +1,153 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String       @id @default(uuid())
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  teams         TeamMember[]
+  apiTokens     ApiToken[]
+  auditLogs     AuditLog[]
+  sentInvites   Invite[]     @relation("InviteCreator")
+}
+
+model ApiToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String?
+  token     String    @unique
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  
+  @@unique([userId, token])
+}
+
+model Team {
+  id        String       @id @default(uuid())
+  name      String
+  ownerId   String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  members   TeamMember[]
+  shares    Share[]
+  auditLogs AuditLog[]
+  invites   Invite[]
+}
+
+model TeamMember {
+  id        String   @id @default(uuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userName  String?
+  userEmail String?
+  role      Role     @default(MEMBER)
+  joinedAt  DateTime @default(now())
+
+  @@unique([teamId, userId])
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+model Share {
+  id            String       @id @default(uuid())
+  teamId        String
+  team          Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  type          ShareType
+  data          Json         // Plain text data (for non-sensitive shares)
+  encryptedData String?      // AES-256-GCM encrypted data (for sensitive shares)
+  sharedBy      String
+  permission    Permission   @default(READONLY)
+  isSensitive   Boolean      @default(false) // Whether this share contains sensitive data
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+enum ShareType {
+  HOST
+  HOST_GROUP
+  SNIPPET_PACKAGE
+}
+
+enum Permission {
+  READONLY
+  READWRITE
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userName  String?
+  hostName  String?
+  action    String
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([teamId, createdAt])
+}
+
+model Invite {
+  id        String      @id @default(uuid())
+  teamId    String
+  team      Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  type      InviteType
+  code      String?     @unique
+  linkToken String?     @unique
+  email     String?     @map("recipient_email")
+  role      Role       @default(MEMBER)
+  createdBy String
+  creator   User       @relation("InviteCreator", fields: [createdBy], references: [id])
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime    @default(now())
+
+  @@index([teamId, createdAt])
+  @@index([code])
+  @@index([linkToken])
+}
+
+enum InviteType {
+  LINK
+  CODE
+  EMAIL
+}
+
+// Offline sync queue — stores pending operations when device is offline
+model SyncQueue {
+  id        String      @id @default(uuid())
+  userId    String
+  teamId    String
+  operation String      // CREATE | UPDATE | DELETE
+  shareType ShareType
+  shareId   String
+  data      Json?       // Payload for CREATE/UPDATE
+  status    SyncStatus  @default(PENDING)
+  attempts  Int         @default(0)
+  lastError String?
+  processingToken String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([userId, status])
+  @@index([userId, teamId])
+}
+
+enum SyncStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}

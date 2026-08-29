@@ -1,34 +1,45 @@
 {
-  "$schema": "https://schema.tauri.app/config/2.0.1",
-  "productName": "terminal",
-  "version": "0.1.0",
-  "identifier": "com.baicie.app",
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Termius",
+  "version": "0.0.1-dev.1",
+  "identifier": "com.baicie.termius",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm --filter=@terminal/frontend dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm --filter=@terminal/frontend build",
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "terminal",
-        "width": 1440,
-        "height": 880,
-        "minWidth": 720,
-        "minHeight": 440,
+        "label": "main",
+        "title": "termius",
+        "width": 1200,
+        "minWidth": 512,
+        "height": 800,
+        "minHeight": 370,
+        "resizable": true,
+        "fullscreen": false,
+        "zoomHotkeysEnabled": true,
         "center": true,
         "hiddenTitle": true,
-        "titleBarStyle": "Overlay"
+        "transparent": true,
+        "trafficLightPosition": {
+          "x": 20,
+          "y": 32
+        },
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "windowEffects": {
+          "effects": ["fullScreenUI", "blur", "acrylic"],
+          "state": "active"
+        },
+        "dragDropEnabled": true
       }
     ],
     "security": {
-      "csp": null
-    }
-  },
-  "plugins": {
-    "sql": {
-      "enabled": true
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http: https:; img-src 'self' data: https://data:"
     }
   },
   "bundle": {
@@ -40,6 +51,14 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
   }
 }

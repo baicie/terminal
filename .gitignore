@@ -10,7 +10,19 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist-stats.md
+dist-stats.json
 *.local
+*.tsbuildinfo
+vite.config.d.ts
+.env
+.env.*
+!.env.example
+team-server/dist
+
+# Python generated caches
+__pycache__/
+*.py[cod]
 
 # Editor directories and files
 .vscode/*

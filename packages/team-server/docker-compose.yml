@@ -1,0 +1,60 @@
+name: terminal-team
+
+services:
+  team-server:
+    build:
+      context: ../..
+      dockerfile: packages/team-server/Dockerfile
+    container_name: terminal-team-server
+    ports:
+      - '${TEAM_SERVER_BIND_ADDRESS:-127.0.0.1}:${TEAM_SERVER_PORT:-3000}:3000'
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      NODE_ENV: production
+      PORT: 3000
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      REGISTRATION_MODE: ${REGISTRATION_MODE:-closed}
+      REGISTRATION_TOKEN: ${REGISTRATION_TOKEN:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget -qO- http://127.0.0.1:3000/api/v1/health/ready >/dev/null || exit 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - team-network
+
+  db:
+    image: postgres:16-alpine
+    container_name: terminal-team-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-terminal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-terminal}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - team-network
+
+networks:
+  team-network:
+    driver: bridge
+
+volumes:
+  pgdata:
