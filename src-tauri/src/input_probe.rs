@@ -388,6 +388,7 @@ mod tests {
         InputProbeRun {
             ready_path: PathBuf::from("/tmp/input-probe-ready.json"),
             result_path: PathBuf::from("/tmp/input-probe-result.json"),
+            diag_path: PathBuf::from("/tmp/input-probe-diag.log"),
             rounds: 30,
             expected_text: "asd".to_string(),
             started_at: Instant::now(),

@@ -11,6 +11,11 @@ overrides:
   js-yaml: 5.2.3
   qs: 6.15.2
 
+patchedDependencies:
+  '@baicie/xterm@0.1.7':
+    hash: 832ad7c3505cda5a2b94b377f7c0c03d07b5dad4e5cacb40f058c6d8c6669959
+    path: patches/@baicie__xterm@0.1.7.patch
+
 importers:
 
   .:
@@ -21,6 +26,9 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      cross-env:
+        specifier: ^10.1.0
+        version: 10.1.0
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -29,7 +37,7 @@ importers:
     dependencies:
       '@baicie/xterm':
         specifier: 0.1.7
-        version: 0.1.7
+        version: 0.1.7(patch_hash=832ad7c3505cda5a2b94b377f7c0c03d07b5dad4e5cacb40f058c6d8c6669959)
       '@radix-ui/react-avatar':
         specifier: ^1.1.11
         version: 1.1.11(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -593,6 +601,9 @@ packages:
 
   '@emnapi/wasi-threads@1.2.1':
     resolution: {integrity: sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w==}
+
+  '@epic-web/invariant@1.0.0':
+    resolution: {integrity: sha512-lrTPqgvfFQtR/eY/qkIzp98OGdNJu0m5ji3q/nJI8v3SXkRKEnWiOxMmbvcSoAIzv/cGiuvRy57k4suKQSAdwA==}
 
   '@es-joy/jsdoccomment@0.84.0':
     resolution: {integrity: sha512-0xew1CxOam0gV5OMjh2KjFQZsKL2bByX1+q4j3E73MpYIdyUxcZb/xQct9ccUb+ve5KGUYbCUxyPnYB7RbuP+w==}
@@ -3273,6 +3284,11 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
+
+  cross-env@10.1.0:
+    resolution: {integrity: sha512-GsYosgnACZTADcmEyJctkJIoqAhHjttw7RsFrVoJNXbsWWqaq6Ym+7kZjq6mS45O0jij6vtiReppKQEtqWy6Dw==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -6255,7 +6271,7 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
 
-  '@baicie/xterm@0.1.7': {}
+  '@baicie/xterm@0.1.7(patch_hash=832ad7c3505cda5a2b94b377f7c0c03d07b5dad4e5cacb40f058c6d8c6669959)': {}
 
   '@bcoe/v8-coverage@1.0.2': {}
 
@@ -6335,6 +6351,8 @@ snapshots:
     dependencies:
       tslib: 2.8.1
     optional: true
+
+  '@epic-web/invariant@1.0.0': {}
 
   '@es-joy/jsdoccomment@0.84.0':
     dependencies:
@@ -9142,6 +9160,11 @@ snapshots:
       path-type: 4.0.0
     optionalDependencies:
       typescript: 5.9.3
+
+  cross-env@10.1.0:
+    dependencies:
+      '@epic-web/invariant': 1.0.0
+      cross-spawn: 7.0.6
 
   cross-spawn@7.0.6:
     dependencies:
