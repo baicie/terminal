@@ -15,6 +15,18 @@ const APP_BUNDLE_ID = 'com.baicie.termius'
 const SUPPORTED_FIXTURE_SHELLS = ['sh', 'bash', 'zsh']
 const SUPPORTED_SHELL_INTEGRATION = ['off', 'bash', 'zsh']
 
+export function terminalSmokeTempDirectory({
+  platform = process.platform,
+  environment = process.env,
+  homeDirectory = os.homedir(),
+  systemTempDirectory = os.tmpdir(),
+} = {}) {
+  return (
+    environment.TERMINAL_SMOKE_TMP ||
+    (platform === 'linux' ? homeDirectory : systemTempDirectory)
+  )
+}
+
 const defaultDependencies = {
   access,
   mkdir,
@@ -25,7 +37,7 @@ const defaultDependencies = {
   spawn,
   startSshd: startTerminalSmokeSshd,
   writeFile,
-  tempDirectory: os.tmpdir(),
+  tempDirectory: terminalSmokeTempDirectory(),
   platform: process.platform,
 }
 

@@ -7,7 +7,38 @@ import {
   appConfigDirectory,
   createDatabaseSql,
   runRemoteColdStartStopwatch,
+  terminalSmokeTempDirectory,
 } from './run-remote-cold-start-stopwatch.mjs'
+
+test('uses the configured smoke temp root and avoids Linux /tmp by default', () => {
+  assert.equal(
+    terminalSmokeTempDirectory({
+      platform: 'linux',
+      environment: { TERMINAL_SMOKE_TMP: '/home/runner/terminal-smoke-tmp' },
+      homeDirectory: '/home/runner',
+      systemTempDirectory: '/tmp',
+    }),
+    '/home/runner/terminal-smoke-tmp',
+  )
+  assert.equal(
+    terminalSmokeTempDirectory({
+      platform: 'linux',
+      environment: {},
+      homeDirectory: '/home/runner',
+      systemTempDirectory: '/tmp',
+    }),
+    '/home/runner',
+  )
+  assert.equal(
+    terminalSmokeTempDirectory({
+      platform: 'darwin',
+      environment: {},
+      homeDirectory: '/Users/runner',
+      systemTempDirectory: '/private/tmp',
+    }),
+    '/private/tmp',
+  )
+})
 
 test('maps the SQL plugin app config directory on macOS and Linux', () => {
   assert.equal(
