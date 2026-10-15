@@ -19,6 +19,7 @@ import {
 import { waitForClose } from './run-terminal-smoke.mjs'
 import {
   assertSmokeInstrumentedBinary,
+  buildFreshTauriBinary,
   findInstrumentedChunkNames,
   packageManagerCommand,
   terminalExecutablePath,
@@ -177,7 +178,7 @@ function createHarness({
     },
     spawn: (command, args, options) => {
       calls.spawn.push({ command, args, options })
-      if (command === 'pnpm') {
+      if (command === 'pnpm' || command === 'pnpm.cmd') {
         if (closeBuild) finishChild(buildChild, { code: buildExitCode })
         return buildChild
       }
@@ -287,6 +288,28 @@ test('runs the built macOS binary with an isolated direct shell', async () => {
   assert.deepEqual(calls.rm, [
     [RUN_DIRECTORY, { recursive: true, force: true }],
   ])
+})
+
+test('launches the Windows pnpm.cmd shim through a shell', async () => {
+  const { calls, dependencies } = createHarness()
+  dependencies.platform = 'win32'
+
+  await buildFreshTauriBinary({
+    cwd: PROJECT_ROOT,
+    env: { KEEP_ME: 'yes' },
+    dependencies,
+  })
+
+  assert.equal(calls.spawn.length, 1)
+  assert.equal(calls.spawn[0].command, 'pnpm.cmd')
+  assert.deepEqual(calls.spawn[0].args, [
+    'tauri',
+    'build',
+    '--debug',
+    '--no-bundle',
+  ])
+  assert.equal(calls.spawn[0].options.shell, true)
+  assert.equal(calls.spawn[0].options.detached, true)
 })
 
 test('does not inspect Cargo or start fixtures when the Tauri build fails', async () => {

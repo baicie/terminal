@@ -248,7 +248,11 @@ export async function buildFreshTauriBinary({
         cwd,
         env: { ...env, VITE_TERMINAL_SMOKE_BUILD: '1' },
         detached: true,
-        shell: false,
+        // Windows exposes pnpm through a .cmd shim. Node cannot launch that
+        // batch entry point with shell:false on all supported Windows hosts.
+        // Keep direct spawning on Unix so process-group handling and the
+        // existing macOS/Linux behavior remain unchanged.
+        shell: dependencies.platform === 'win32',
         stdio: 'inherit',
       },
     )
