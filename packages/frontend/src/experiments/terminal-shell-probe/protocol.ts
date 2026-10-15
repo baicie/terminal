@@ -280,10 +280,13 @@ export interface ShellProbeInputStep {
  */
 export function createShellProbeVimEditSteps(): ShellProbeInputStep[] {
   return [
-    { delayMs: 400, data: 'i' },
-    { delayMs: 560, data: VIM_PROBE_TEXT },
-    { delayMs: 760, data: '\x1b' },
-    { delayMs: 900, data: ':wq\r' },
+    // Linux hosted runners can take longer to paint Vim's alternate screen
+    // under Xvfb. Give the editor a full second before entering insert mode;
+    // the probe still completes well inside its 20-second deadline.
+    { delayMs: 1_000, data: 'i' },
+    { delayMs: 1_300, data: VIM_PROBE_TEXT },
+    { delayMs: 1_600, data: '\x1b' },
+    { delayMs: 1_900, data: ':wq\r' },
   ]
 }
 
