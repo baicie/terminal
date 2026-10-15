@@ -3,14 +3,12 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
 import { useIsMobile } from '@/hooks/use-breakpoint'
-import { useTerminal } from '@/hooks/use-terminal'
 import { defaultSettings, type AppSettings } from '@/service/database'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
 import { getThemeColors } from '@/utils/terminal-themes'
 import { getReadableTerminalError } from '@/features/terminal/utils/readable-error'
 import { getTemporaryTerminalProfile } from '@/features/terminal/services/temporary-terminal-profiles'
-import { useSshHostKeyGate } from '@/features/terminal/hooks/use-ssh-host-key-gate'
 import {
   SshHostKeyDialogSurface,
   SshHostKeyOverlaySurface,
@@ -19,11 +17,13 @@ import { TerminalBody } from './terminal-body'
 import { TerminalEmptyState } from './terminal-empty-state'
 import { useTerminalInstance } from './use-terminal-instance'
 import { useTerminalLongPress } from './use-terminal-long-press'
+import { useRemotePromptProbe } from './use-remote-prompt-probe'
+import { useTerminalActivePreset } from './use-terminal-active-preset'
+import { useTerminalSessionBinding } from './use-terminal-session-binding'
 import { useTerminalShortcutEvents } from './use-terminal-shortcut-events'
 import { useTerminalStatusEffects } from './use-terminal-status-effects'
 import { useTabConnectionStatus } from './use-tab-connection-status'
 import { useTabTitle } from './use-tab-title'
-import type { ShellIntegrationEvent } from '@/features/terminal/services/terminal-shell-integration'
 import '@baicie/xterm/css/xterm.css'
 
 export interface TerminalContainerProps {
@@ -58,23 +58,23 @@ export function TerminalContainer({
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [toolSidebarOpen, setToolSidebarOpen] = useState(false)
   const [shellCwd, setShellCwd] = useState<string | undefined>()
-
+  const [lastExitCode, setLastExitCode] = useState<number | undefined>()
+  const remotePrompt = useRemotePromptProbe({
+    tabId,
+    isRemote: tab?.type === 'remote',
+  })
   const darkPreset =
     settings.terminalThemeDark ?? defaultSettings.terminalThemeDark
   const lightPreset =
     settings.terminalThemeLight ?? defaultSettings.terminalThemeLight
-  const activeTheme =
-    appTheme === 'light'
-      ? lightPreset
-      : appTheme === 'dark'
-        ? darkPreset
-        : window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? darkPreset
-          : lightPreset
+  const activeTheme = useTerminalActivePreset({
+    appTheme,
+    dark: darkPreset,
+    light: lightPreset,
+  })
   const theme = getThemeColors(activeTheme)
   const terminalIsActive = isActive && location.pathname === '/terminal'
   const onTitleChange = useTabTitle(tabId)
-
   const terminal = useTerminalInstance({
     tabId,
     workspaceId,
@@ -89,29 +89,28 @@ export function TerminalContainer({
       settings.allowProposedApi ?? defaultSettings.allowProposedApi,
     active: terminalIsActive,
     onTitleChange,
-    onShellIntegration: (event: ShellIntegrationEvent) => {
+    onShellIntegration: event => {
       if (event.kind === 'cwd') setShellCwd(event.cwd)
+      if (event.kind === 'command-finished') setLastExitCode(event.exitCode)
+      remotePrompt.onShellIntegration(event)
     },
   })
-  const hostKeyGate = useSshHostKeyGate({
-    tabType: tab?.type ?? 'local',
+  remotePrompt.inputRef.current = terminal.termInstance
+    ? (data, wasUserInput) => terminal.termInstance?.input(data, wasUserInput)
+    : undefined
+  const session = useTerminalSessionBinding({
+    termInstance: terminal.termInstance,
+    tabId,
+    workspaceId,
+    tab,
     host,
     jumpHost,
+    outputWriter: terminal.outputWriter ?? undefined,
+    onOutput: remotePrompt.onOutput,
   })
-  const { status, error, attempt, reason, write, reconnect, disconnect } =
-    useTerminal(terminal.termInstance, {
-      tabId,
-      workspaceId,
-      tabType: tab?.type ?? 'local',
-      enabled: hostKeyGate.enabled,
-      expectedHostKey: hostKeyGate.expectedHostKey,
-      expectedJumpHostKey: hostKeyGate.expectedJumpHostKey,
-      host,
-      jumpHost,
-      serialSessionId: tab?.serialSessionId,
-      outputWriter: terminal.outputWriter ?? undefined,
-    })
-  const reconnectAction = hostKeyGate.enabled ? reconnect : hostKeyGate.retry
+  const { status, error, attempt, reason, retryable, write, disconnect } =
+    session
+  const { reconnectAction, hostKeyGate } = session
   const { isReady, requestFit } = terminal
 
   const readableError = error ? getReadableTerminalError(error, t) : null
@@ -124,11 +123,9 @@ export function TerminalContainer({
     tab,
     host,
   })
-
   useEffect(() => {
     if (isReady) requestFit()
   }, [isReady, requestFit, status])
-
   useEffect(() => {
     if (terminalIsActive) return
     setIsFullscreen(false)
@@ -159,12 +156,14 @@ export function TerminalContainer({
           readableError={readableError}
           reconnectAttempt={attempt}
           reconnectReason={reason}
+          reconnectRetryable={retryable}
           isMobile={isMobile}
           active={terminalIsActive}
           isFullscreen={isFullscreen}
           terminalFontSize={terminal.fontSize}
           terminalBackground={theme.background}
           shellCwd={shellCwd}
+          lastExitCode={lastExitCode}
           term={terminal.termInstance}
           containerRef={terminal.containerRef}
           searchAddon={terminal.searchAddonRef.current}

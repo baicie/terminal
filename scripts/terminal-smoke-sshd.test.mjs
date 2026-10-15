@@ -171,6 +171,8 @@ test('starts an isolated public-key-only sshd and proves real authentication', a
     {
       configPath: fixture.configPath,
       expectedHostKey: fixture.expectedHostKey,
+      homePath: fixture.homePath,
+      knownHostsPath: fixture.knownHostsPath,
       host: fixture.host,
       port: fixture.port,
       privateKey: fixture.privateKey,
@@ -179,6 +181,8 @@ test('starts an isolated public-key-only sshd and proves real authentication', a
     {
       configPath: path.join(SSH_DIRECTORY, 'connection.json'),
       expectedHostKey: EXPECTED_HOST_KEY,
+      homePath: path.join(SSH_DIRECTORY, 'home'),
+      knownHostsPath: path.join(SSH_DIRECTORY, 'known_hosts'),
       host: '127.0.0.1',
       port: 42_222,
       privateKey: PRIVATE_KEY,
@@ -261,6 +265,69 @@ test('starts an isolated public-key-only sshd and proves real authentication', a
   assert.deepEqual(calls.kill, [[-4_003, 'SIGTERM']])
 })
 
+test('selects an explicit POSIX login shell for remote shell integration probes', async () => {
+  for (const [shell, executable] of [
+    ['bash', '/bin/bash -i'],
+    ['zsh', '/bin/zsh -i'],
+  ]) {
+    const { calls, dependencies } = createDependencies()
+    const fixture = await startTerminalSmokeSshd({
+      runDirectory: RUN_DIRECTORY,
+      shell,
+      dependencies,
+    })
+
+    assert.equal(fixture.shell, shell)
+    const wrapper = writtenText(calls, 'forced-command.sh')
+    assert.ok(
+      wrapper.includes(`${executable}\n`),
+      `forced wrapper must launch ${executable}`,
+    )
+    await fixture.stop()
+  }
+})
+
+test('rejects a remote shell outside the guarded POSIX fixture set', async () => {
+  for (const shell of [
+    'fish',
+    '',
+    '/bin/bash',
+    'bash -i',
+    '__proto__',
+    null,
+    42,
+  ]) {
+    const { calls, dependencies } = createDependencies()
+
+    await assert.rejects(
+      startTerminalSmokeSshd({
+        runDirectory: RUN_DIRECTORY,
+        shell,
+        dependencies,
+      }),
+      /shell must be sh, bash or zsh/,
+      `shell ${String(shell)} must be rejected before fixture setup`,
+    )
+    assert.equal(calls.mkdir.length, 0)
+    assert.equal(calls.spawn.length, 0)
+  }
+})
+
+test('uses the default sh fixture without an interactive-only argument', async () => {
+  const { calls, dependencies } = createDependencies()
+  const fixture = await startTerminalSmokeSshd({
+    runDirectory: RUN_DIRECTORY,
+    dependencies,
+  })
+
+  assert.equal(fixture.shell, 'sh')
+  const wrapper = writtenText(calls, 'forced-command.sh')
+  assert.match(wrapper, /ENV='[^']+shell-rc\.sh'/)
+  assert.match(wrapper, /LC_CTYPE=en_US\.UTF-8 \/bin\/sh\n/)
+  assert.doesNotMatch(wrapper, /\/bin\/sh -i/)
+  await fixture.stop()
+})
+
 test('restarts the daemon on the same authenticated port', async () => {
   const { calls, daemons, dependencies } = createDependencies()
   const fixture = await startTerminalSmokeSshd({
@@ -286,6 +353,40 @@ test('restarts the daemon on the same authenticated port', async () => {
     [-4_003, 'SIGTERM'],
     [-4_005, 'SIGTERM'],
   ])
+})
+
+test('interrupt keeps the host unreachable across several reconnect attempts', async () => {
+  // `restart` bounces sshd and it answers again within milliseconds, so the
+  // first reconnect attempt always succeeds. Sleep, a VPN switch or a NAT
+  // timeout instead keep the host unreachable across several exponential
+  // backoff steps, which is the path the reconnect state machine has to
+  // survive and the one no existing case exercises.
+  const { calls, daemons, dependencies } = createDependencies({
+    probeResults: [
+      { code: 0, stdout: `${SSHD_READY_MARKER}\n` },
+      { code: 255, stderr: 'connect failed' },
+      { code: 255, stderr: 'connect failed' },
+      { code: 0, stdout: `${SSHD_READY_MARKER}\n` },
+    ],
+  })
+  const fixture = await startTerminalSmokeSshd({
+    runDirectory: RUN_DIRECTORY,
+    dependencies,
+  })
+
+  const outage = fixture.interrupt({ holdMs: 5_000 })
+  await outage
+
+  assert.equal(
+    calls.spawn.filter(
+      call => call.command === '/usr/sbin/sshd' && call.args[0] === '-D',
+    ).length,
+    2,
+    'the daemon must be replaced after the outage window',
+  )
+  assert.ok(daemons.length >= 2)
+
+  await fixture.stop()
 })
 
 test('restart terminates active SSH session process groups before replacing the daemon', async () => {

@@ -42,7 +42,16 @@ vi.mock('@/features/terminal/services/terminal-session-manager', () => ({
     resourceSnapshot: mocks.resourceSnapshot,
   },
 }))
-vi.mock('./run-terminal-smoke', () => ({ runTerminalSmoke: mocks.run }))
+vi.mock('./run-terminal-smoke', () => ({
+  runTerminalSmoke: mocks.run,
+  waitForTerminalSmokeInteractive: async (
+    _term: unknown,
+    _config: unknown,
+    options: { onInteractive?: () => Promise<unknown> },
+  ) => {
+    await options.onInteractive?.()
+  },
+}))
 
 import TerminalSmokeRoot from './terminal-smoke-root'
 
@@ -89,6 +98,10 @@ afterEach(async () => {
 })
 
 it('reports the first connection once and submits ten completed rounds', async () => {
+  mocks.run.mockImplementation(async (_term, _config, options) => {
+    await options?.onInteractive?.()
+    return result
+  })
   const view = render(
     <TerminalSmokeRoot
       config={config}
@@ -118,7 +131,7 @@ it('reports the first connection once and submits ten completed rounds', async (
   expect(mocks.useTerminal).toHaveBeenCalled()
   expect(mocks.reportConnected).toHaveBeenCalledTimes(1)
   expect(mocks.run).toHaveBeenCalledTimes(10)
-  expect(mocks.reportConnected.mock.invocationCallOrder[0]).toBeLessThan(
+  expect(mocks.reportConnected.mock.invocationCallOrder[0]).toBeGreaterThan(
     mocks.run.mock.invocationCallOrder[0],
   )
 })
@@ -147,6 +160,8 @@ it('runs the probe only after reconnecting with a new SSH session', async () => 
     disconnect: vi.fn(),
   }))
   mocks.run.mockImplementation(async (_term, _config, options) => {
+    await options.onInteractive?.()
+    if (options.stopAfterInteractive) return { ...result, stage: 'ready' }
     await options.staleOutputProbe?.()
     return { ...result, staleOutputRejected: true }
   })

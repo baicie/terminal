@@ -1,0 +1,54 @@
+{
+  "recordedAt": "2026-10-11T01:43:03+08:00",
+  "kind": "tauri-remote-cold-start-shell-prompt-observed",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "v24.16.0",
+    "nodeSupportNote": "本次结果在项目发布门禁要求的 Node 24.16.x 环境中取得"
+  },
+  "application": {
+    "bundle": "/Users/liuzhiwei/Desktop/workspace/git-code/terminal/src-tauri/target/debug/bundle/macos/Termius.app/Contents/MacOS/terminal",
+    "sha256": "568ca3a90610de6f7cc66591df7679ecfea17872061f37327a345921aa50bb91"
+  },
+  "fixture": {
+    "transport": "OpenSSH localhost",
+    "host": "127.0.0.1",
+    "port": 59991,
+    "username": "liuzhiwei",
+    "auth": "key",
+    "hostKey": "ephemeral fixture key (cleaned after the run)",
+    "isolatedHome": "ephemeral isolated HOME (cleaned after the run)",
+    "startupMarker": "REMOTE_COLD_MARKER",
+    "promptMarker": "REMOTE_PROMPT_MARKER"
+  },
+  "measurement": {
+    "measuredFrom": "child-spawn-event",
+    "spawnToPromptObservedMs": 3478,
+    "requestToPromptObservedMs": 3482,
+    "underTenSeconds": true,
+    "readiness": {
+      "localTab": true,
+      "connected": false,
+      "terminalInput": false,
+      "shellPrompt": false
+    },
+    "markerReady": true,
+    "markerChecks": [
+      {
+        "name": "REMOTE_PROMPT_MARKER",
+        "content": "REMOTE_PROMPT_MARKER",
+        "ready": true
+      }
+    ]
+  },
+  "evidence": [
+    "REMOTE_COLD_MARKER is written by the real remote SSH startup command.",
+    "REMOTE_PROMPT_MARKER is written only after OSC 133 prompt-start is observed and the configured command is sent through xterm input, Tauri IPC, SSH PTY, and terminal output.",
+    "AX flags are advisory in remote mode because WebKit does not reliably expose the status label or hidden xterm input element."
+  ],
+  "limitations": [
+    "This does not replace macOS physical keyboard, Chinese IME, Option/dead key, cat/history/Tab/vim/nano interaction acceptance.",
+    "Windows OpenSSH Agent/Pageant/PTY and serial hardware remain unverified because no test devices are available."
+  ]
+}

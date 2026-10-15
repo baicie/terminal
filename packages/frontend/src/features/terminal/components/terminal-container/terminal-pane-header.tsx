@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { getTabDisplayLabel } from '@/features/terminal/services/terminal-title'
 import { TerminalPaneHeaderButton as HeaderButton } from './terminal-pane-header-button'
 import { TerminalPaneMenu } from './terminal-pane-menu'
+import { TerminalPaneCommandStatus } from './terminal-pane-command-status'
 import type {
   ConnectionStatus,
   TerminalPaneHeaderProps,
@@ -39,7 +40,13 @@ export function TerminalPaneHeader(props: TerminalPaneHeaderProps) {
         : Terminal
   const target = getSessionTarget(props, t)
   const displayLabel = getTabDisplayLabel(props.tab)
-  const statusLabel = t(`terminal.status.${props.status}`)
+  // An exhausted-but-retryable error is not a dead end: the session manager
+  // resumes it on the next host wake, and the user can retry immediately.
+  const recoverableError =
+    props.status === 'error' && props.reconnectRetryable === true
+  const statusLabel = recoverableError
+    ? t('terminal.status.retryExhausted')
+    : t(`terminal.status.${props.status}`)
   const statusText =
     props.status === 'reconnecting' && props.reconnectAttempt
       ? `${statusLabel} · ${props.reconnectAttempt}`
@@ -89,12 +96,17 @@ export function TerminalPaneHeader(props: TerminalPaneHeaderProps) {
               · {props.shellCwd}
             </span>
           ) : null}
+          <TerminalPaneCommandStatus lastExitCode={props.lastExitCode} />
         </div>
       </div>
 
       <div
         className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
-        title={props.reconnectReason ?? props.errorMessage}
+        title={
+          recoverableError
+            ? t('terminal.retryExhaustedHint')
+            : (props.reconnectReason ?? props.errorMessage)
+        }
         role="status"
         aria-label={statusText}
       >

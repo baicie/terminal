@@ -31,6 +31,7 @@ export function createImportedTeamHost(
     privateKey: hostData.private_key as string | undefined,
     certificate: hostData.certificate as string | undefined,
     agentForwarding: false,
+    shellIntegration: 'off',
     groupId: hostData.group_id as string | undefined,
     isFavorite: Boolean(hostData.is_favorite),
     color: hostData.color as string | undefined,

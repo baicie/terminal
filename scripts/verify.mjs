@@ -60,12 +60,26 @@ const groups = {
       [
         '--test',
         'scripts/run-terminal-smoke.test.mjs',
+        'scripts/run-cold-start-stopwatch.test.mjs',
+        'scripts/run-remote-cold-start-stopwatch.test.mjs',
         'scripts/terminal-smoke-sshd.test.mjs',
+        'scripts/terminal-smoke-password-sshd.test.mjs',
         'scripts/run-input-probe.test.mjs',
+        'scripts/run-raw-input-probe.test.mjs',
+        'scripts/input-probe-source.test.mjs',
+        'scripts/input-probe-scenarios.test.mjs',
+        'scripts/run-terminal-shell-probe.test.mjs',
+        'scripts/run-terminal-shell-probe-matrix.test.mjs',
+        'scripts/shell-probe-dialect-contract.test.mjs',
+        'scripts/real-machine-workflow.test.mjs',
+        'scripts/check-verification-evidence.test.mjs',
       ],
     ],
   ],
-  source: [['node', ['scripts/check-source-size.mjs']]],
+  source: [
+    ['node', ['scripts/check-source-size.mjs']],
+    ['node', ['scripts/check-verification-evidence.mjs']],
+  ],
 }
 
 const requestedGroup = process.argv[2] ?? 'all'

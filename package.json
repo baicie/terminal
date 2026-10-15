@@ -20,6 +20,8 @@
     "tauri": "tauri",
     "smoke:terminal": "node scripts/run-terminal-smoke.mjs",
     "smoke:terminal:reconnect": "node scripts/run-terminal-smoke.mjs --reconnect",
+    "smoke:cold-start": "node scripts/run-cold-start-stopwatch.mjs",
+    "smoke:remote-cold-start": "node scripts/run-remote-cold-start-stopwatch.mjs",
     "shadcn": "pnpm --filter=@terminal/frontend shadcn",
     "format": "pnpm --filter=@terminal/frontend format",
     "lint": "pnpm --filter=@terminal/frontend lint",
@@ -35,7 +37,12 @@
     "verify:rust": "node scripts/verify.mjs rust",
     "analyze:bundle": "tsx scripts/analyze-bundle-size.ts",
     "smoke:ssh-matrix": "node scripts/run-terminal-smoke-matrix.mjs",
-    "smoke:input-probe": "node scripts/run-input-probe.mjs"
+    "smoke:input-probe": "node scripts/run-input-probe.mjs",
+    "smoke:raw-input": "node scripts/run-raw-input-probe.mjs",
+    "smoke:shell-probe": "node scripts/run-terminal-shell-probe.mjs",
+    "smoke:shell-probe:matrix": "node scripts/run-terminal-shell-probe-matrix.mjs",
+    "icon:source": "python3 scripts/generate-icon.py",
+    "icon": "pnpm icon:source && pnpm tauri icon src-tauri/icons/icon-source.png --output src-tauri/icons"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.0",

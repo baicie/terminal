@@ -1,0 +1,39 @@
+{
+  "recordedDate": "2026-10-10",
+  "kind": "tauri-local-raw-input-probe",
+  "platform": "macOS 15.7.7 arm64",
+  "node": "v24.16.0",
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "12ecb1101afe0129132222de65cf4ee4bcec1ec7b5f63ba94ff1c91a83eb9a9a"
+  },
+  "command": "pnpm smoke:raw-input -- --case <case>",
+  "cases": [
+    {
+      "case": "sgr-mouse",
+      "durationMs": 525,
+      "expectedHex": "1b5b3c303b333b344d",
+      "receivedHex": "1b5b3c303b333b344d",
+      "ok": true
+    },
+    {
+      "case": "bracketed-paste",
+      "durationMs": 350,
+      "expectedHex": "1b5b3230307e66697273740d7365636f6e641b5b3230317e",
+      "receivedHex": "1b5b3230307e66697273740d7365636f6e641b5b3230317e",
+      "ok": true
+    },
+    {
+      "case": "raw-x10",
+      "durationMs": 367,
+      "expectedHex": "1b5b4d20813f",
+      "receivedHex": "1b5b4d20813f",
+      "ok": true
+    }
+  ],
+  "method": "Real Tauri/WKWebView local PTY; xterm generated the protocol input, session_write/session_write_raw delivered it, and a shell dd|od probe read back the exact bytes.",
+  "limitations": [
+    "This is a protocol and PTY acceptance run, not human physical keyboard or system clipboard input.",
+    "中文 IME、Option/dead key、连续 resize、Windows/Pageant、Linux/Windows PTY and serial hardware remain unverified."
+  ]
+}

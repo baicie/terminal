@@ -23,12 +23,14 @@ interface TerminalBodyProps {
   readableError: string | null
   reconnectAttempt?: number
   reconnectReason?: string
+  reconnectRetryable?: boolean
   isMobile: boolean
   active: boolean
   isFullscreen: boolean
   terminalFontSize: number
   terminalBackground: string
   shellCwd?: string
+  lastExitCode?: number
   term: XTerminal | null
   containerRef: RefObject<HTMLDivElement | null>
   searchAddon: SearchAddon | null
@@ -90,8 +92,10 @@ export function TerminalBody(props: TerminalBodyProps) {
           status={props.status}
           errorMessage={props.readableError ?? undefined}
           shellCwd={props.shellCwd}
+          lastExitCode={props.lastExitCode}
           reconnectAttempt={props.reconnectAttempt}
           reconnectReason={props.reconnectReason}
+          reconnectRetryable={props.reconnectRetryable}
           fontSize={props.terminalFontSize}
           isMobile={props.isMobile}
           toolsOpen={props.toolSidebarOpen}

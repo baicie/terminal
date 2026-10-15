@@ -49,6 +49,25 @@ import {
   startWorkspaceRecovery,
 } from './workspace-recovery'
 
+// Recent Node releases no longer expose `localStorage` in the jsdom test
+// environment, and the recovery journal it backs is a browser API. Providing
+// an in-memory implementation keeps these tests independent of the runtime's
+// experimental storage flags.
+const memoryStorage = new Map<string, string>()
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: {
+    clear: () => memoryStorage.clear(),
+    getItem: (key: string) => memoryStorage.get(key) ?? null,
+    key: (index: number) => [...memoryStorage.keys()][index] ?? null,
+    get length() {
+      return memoryStorage.size
+    },
+    removeItem: (key: string) => void memoryStorage.delete(key),
+    setItem: (key: string, value: string) => void memoryStorage.set(key, value),
+  },
+})
+
 function emitLayoutChange() {
   mocks.appListeners.forEach(listener => listener())
 }
@@ -67,7 +86,6 @@ describe('workspace recovery', () => {
     mocks.appState.splitGroups = []
     mocks.appState.activeTabId = null
     mocks.appState.sidebarVisible = true
-    localStorage.clear()
   })
 
   afterEach(() => {
@@ -174,6 +192,114 @@ describe('workspace recovery', () => {
     recovery.dispose()
   })
 
+  it('allows saved recovery to replace only the temporary startup fallback', async () => {
+    const savedLayout: WorkspaceLayout = {
+      workspaceId: 'workspace-one',
+      tabs: [{ id: 'saved', label: 'Saved', type: 'local' }],
+      splitGroups: [],
+      activeTabId: 'saved',
+      sidebarVisible: true,
+    }
+    mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.appState.tabs = [
+      { id: 'fallback', label: 'Local', type: 'local', startupFallback: true },
+    ] as WorkspaceLayout['tabs']
+
+    const recovery = await startWorkspaceRecovery()
+
+    expect(mocks.appState.restoreLayout).toHaveBeenCalledWith(savedLayout)
+    recovery.dispose()
+  })
+
+  it('does not replace a fallback after its terminal session has started', async () => {
+    const savedLayout: WorkspaceLayout = {
+      workspaceId: 'workspace-one',
+      tabs: [{ id: 'saved', label: 'Saved', type: 'local' }],
+      splitGroups: [],
+      activeTabId: 'saved',
+      sidebarVisible: true,
+    }
+    mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.appState.tabs = [
+      {
+        id: 'fallback',
+        label: 'Local',
+        type: 'local',
+        startupFallback: true,
+        connectionStatus: 'connecting',
+      },
+    ] as WorkspaceLayout['tabs']
+
+    const recovery = await startWorkspaceRecovery()
+
+    expect(mocks.appState.restoreLayout).not.toHaveBeenCalled()
+    recovery.dispose()
+  })
+
+  it('does not replace a fallback after the shell updates its title', async () => {
+    const savedLayout: WorkspaceLayout = {
+      workspaceId: 'workspace-one',
+      tabs: [{ id: 'saved', label: 'Saved', type: 'local' }],
+      splitGroups: [],
+      activeTabId: 'saved',
+      sidebarVisible: true,
+    }
+    mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.appState.tabs = [
+      {
+        id: 'fallback',
+        label: 'Local',
+        type: 'local',
+        startupFallback: true,
+        title: 'shell - zsh',
+      },
+    ] as WorkspaceLayout['tabs']
+
+    const recovery = await startWorkspaceRecovery()
+
+    expect(mocks.appState.restoreLayout).not.toHaveBeenCalled()
+    recovery.dispose()
+  })
+
+  it('persists a startup fallback when the workspace has no saved layout', async () => {
+    mocks.appState.tabs = [
+      { id: 'fallback', label: 'Local', type: 'local', startupFallback: true },
+    ] as WorkspaceLayout['tabs']
+    mocks.appState.activeTabId = 'fallback'
+
+    const recovery = await startWorkspaceRecovery()
+
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(mocks.workspaceState.saveLayout).toHaveBeenCalledWith(
+      'workspace-one',
+      [{ id: 'fallback', label: 'Local', type: 'local' }],
+      [],
+      'fallback',
+      true,
+    )
+    recovery.dispose()
+  })
+
+  it('does not let late recovery replace a user-created tab', async () => {
+    const savedLayout: WorkspaceLayout = {
+      workspaceId: 'workspace-one',
+      tabs: [{ id: 'saved', label: 'Saved', type: 'local' }],
+      splitGroups: [],
+      activeTabId: 'saved',
+      sidebarVisible: true,
+    }
+    mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.appState.tabs = [
+      { id: 'local', label: 'Local', type: 'local' },
+    ] as WorkspaceLayout['tabs']
+
+    const recovery = await startWorkspaceRecovery()
+
+    expect(mocks.appState.restoreLayout).not.toHaveBeenCalled()
+    recovery.dispose()
+  })
+
   it('starts workspace and host loading concurrently for a faster first terminal', async () => {
     let resolveWorkspace: (() => void) | undefined
     const workspaceReady = new Promise<void>(resolve => {
@@ -190,6 +316,31 @@ describe('workspace recovery', () => {
     resolveWorkspace?.()
     const recovery = await recoveryPromise
     recovery.dispose()
+  })
+
+  it('waits for a concurrent host load before rejecting workspace failure', async () => {
+    let resolveHosts: (() => void) | undefined
+    const hostsReady = new Promise<void>(resolve => {
+      resolveHosts = resolve
+    })
+    mocks.workspaceState.loadWorkspaces.mockRejectedValue(
+      new Error('workspace database unavailable'),
+    )
+    mocks.hostState.loadHosts.mockReturnValue(hostsReady)
+
+    let settled = false
+    const recoveryPromise = startWorkspaceRecovery().catch(error => {
+      settled = true
+      throw error
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(settled).toBe(false)
+    resolveHosts?.()
+    await expect(recoveryPromise).rejects.toThrow(
+      'workspace database unavailable',
+    )
   })
 
   it('starts layout loading as soon as the active workspace is known', async () => {
@@ -213,6 +364,56 @@ describe('workspace recovery', () => {
     expect(mocks.workspaceState.loadLayout).toHaveBeenCalledWith(
       'workspace-one',
     )
+
+    resolveHosts?.()
+    const recovery = await recoveryPromise
+    recovery.dispose()
+  })
+
+  it('keeps saved remote tabs when host loading fails transiently', async () => {
+    const savedLayout: WorkspaceLayout = {
+      workspaceId: 'workspace-one',
+      tabs: [
+        {
+          id: 'remote-tab',
+          label: 'Production',
+          type: 'remote',
+          hostId: 'host-one',
+        },
+      ],
+      splitGroups: [],
+      activeTabId: 'remote-tab',
+      sidebarVisible: true,
+    }
+    mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.hostState.loadHosts.mockRejectedValue(new Error('database busy'))
+
+    const recovery = await startWorkspaceRecovery()
+
+    expect(mocks.appState.restoreLayout).toHaveBeenCalledWith(savedLayout)
+    recovery.dispose()
+  })
+
+  it('restores the saved layout before a slow host query completes', async () => {
+    const savedLayout: WorkspaceLayout = {
+      workspaceId: 'workspace-one',
+      tabs: [{ id: 'local-tab', label: 'Local', type: 'local' }],
+      splitGroups: [],
+      activeTabId: 'local-tab',
+      sidebarVisible: true,
+    }
+    let resolveHosts: (() => void) | undefined
+    mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.hostState.loadHosts.mockReturnValue(
+      new Promise<void>(resolve => {
+        resolveHosts = resolve
+      }),
+    )
+
+    const recoveryPromise = startWorkspaceRecovery()
+    await vi.waitFor(() => {
+      expect(mocks.appState.restoreLayout).toHaveBeenCalledWith(savedLayout)
+    })
 
     resolveHosts?.()
     const recovery = await recoveryPromise

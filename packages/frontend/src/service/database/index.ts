@@ -4,7 +4,7 @@
  */
 
 // 基础连接和查询
-export { getDb, executeQuery, select } from './connection'
+export { getDb, executeQuery, select, selectStrict } from './connection'
 
 // 初始化和配置
 export { initSchema, configureSqlite } from './connection'

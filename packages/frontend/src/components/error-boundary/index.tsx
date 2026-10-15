@@ -3,9 +3,12 @@ import type { ErrorInfo as ReactErrorInfo } from 'react'
 import { AlertTriangle, Home, RefreshCcw } from 'lucide-react'
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import {
+  isRouteErrorResponse,
+  useNavigate,
+  useRouteError,
+} from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { useAppStore } from '@/store/app'
 
 export interface ErrorInfo {
   componentStack?: string
@@ -49,17 +52,18 @@ class ErrorBoundary extends React.Component<
     this.state = { hasError: false, error: null, errorInfo: null }
   }
 
-  static getDerivedStateFromError(
-    error: Error,
-    errorInfo: ReactErrorInfo,
-  ): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return {
       hasError: true,
       error,
-      errorInfo: {
-        componentStack: errorInfo.componentStack ?? undefined,
-      },
+      errorInfo: null,
     }
+  }
+
+  componentDidCatch(_error: Error, errorInfo: ReactErrorInfo) {
+    this.setState({
+      errorInfo: { componentStack: errorInfo.componentStack ?? undefined },
+    })
   }
 
   componentDidMount() {
@@ -77,7 +81,7 @@ class ErrorBoundary extends React.Component<
   render() {
     if (this.state.hasError) {
       return (
-        <ErrorFallback
+        <CaughtErrorFallback
           error={this.state.error}
           errorInfo={this.state.errorInfo}
           prefix={this.props.prefix}
@@ -98,8 +102,8 @@ interface ErrorFallbackProps {
   errorInfo: ErrorInfo | null
   prefix?: string
   showStack?: boolean
-  fallbackPath?: string
-  onReset: () => void
+  onRetry: () => void
+  onGoHome: () => void
 }
 
 const ErrorFallback: React.FC<ErrorFallbackProps> = ({
@@ -107,108 +111,118 @@ const ErrorFallback: React.FC<ErrorFallbackProps> = ({
   errorInfo,
   prefix = 'error',
   showStack = true,
-  fallbackPath = '/hosts',
-  onReset,
+  onRetry,
+  onGoHome,
 }) => {
   const { t } = useTranslation()
-  const navigate = useNavigate()
-  const theme = useAppStore(s => s.theme)
   const hasStack = showStack && errorInfo?.componentStack
-
-  const handleGoHome = useCallback(() => {
-    onReset()
-    navigate(fallbackPath)
-  }, [onReset, navigate, fallbackPath])
-
-  const handleRetry = useCallback(() => {
-    onReset()
-  }, [onReset])
 
   return (
     <div
-      className="h-full flex flex-col items-center justify-center px-6 py-12 bg-background fade-in"
+      className="flex min-h-full flex-col items-center justify-center gap-4 bg-background px-4 py-8 sm:px-6 sm:py-12"
       role="alert"
       aria-live="assertive"
     >
-      {/* Icon */}
-      <div className="mb-6">
-        <div
-          className={
-            theme === 'dark'
-              ? 'bg-red-500/10 rounded-full p-4'
-              : 'bg-red-50 rounded-full p-4'
-          }
-        >
-          <AlertTriangle
-            className="size-10 text-destructive"
-            strokeWidth={1.5}
-          />
-        </div>
+      <div className="flex size-12 items-center justify-center rounded-md bg-destructive/10 text-destructive">
+        <AlertTriangle aria-hidden="true" />
       </div>
 
-      {/* Title */}
-      <h2
-        className="text-xl font-semibold text-foreground mb-2 text-center slide-in-from-bottom fade-in"
-        style={{ animationDelay: '50ms' }}
-      >
+      <h2 className="text-center text-xl font-semibold text-foreground">
         {t(`${prefix}.title`, { defaultValue: t('common.errorOccurred') })}
       </h2>
 
-      {/* Message */}
-      <p
-        className="text-sm text-muted-foreground max-w-lg text-center mb-4 slide-in-from-bottom fade-in"
-        style={{ animationDelay: '100ms' }}
-      >
+      <p className="max-w-lg break-words text-center text-sm text-muted-foreground">
         {error?.message
           ? t(`${prefix}.message`, { message: error.message })
           : t(`${prefix}.message`, { message: '' })}
       </p>
 
-      {/* Component stack trace */}
-      {hasStack && (
-        <div
-          className="w-full max-w-2xl mb-6 slide-in-from-bottom fade-in"
-          style={{ animationDelay: '150ms' }}
-        >
-          <div
-            className={
-              theme === 'dark'
-                ? 'bg-black/60 rounded-lg p-4 overflow-auto max-h-48 text-xs font-mono text-red-400'
-                : 'bg-gray-100 rounded-lg p-4 overflow-auto max-h-48 text-xs font-mono text-red-600'
-            }
-          >
-            <pre className="whitespace-pre-wrap break-all">
-              {errorInfo?.componentStack}
-            </pre>
-          </div>
-        </div>
-      )}
+      {hasStack ? (
+        <pre className="max-h-48 w-full max-w-2xl overflow-auto whitespace-pre-wrap break-all rounded-md border bg-muted p-4 font-mono text-xs text-muted-foreground">
+          {errorInfo.componentStack}
+        </pre>
+      ) : null}
 
-      {/* Actions */}
-      <div
-        className="flex items-center gap-3 slide-in-from-bottom fade-in"
-        style={{ animationDelay: '200ms' }}
-      >
+      <div className="flex w-full max-w-sm flex-col-reverse gap-2 sm:w-auto sm:max-w-none sm:flex-row">
         <Button
           variant="outline"
           size="sm"
-          onClick={handleRetry}
-          className="gap-1.5"
+          onClick={onRetry}
+          className="w-full sm:w-auto"
         >
-          <RefreshCcw className="size-3.5" data-icon="inline-start" />
+          <RefreshCcw data-icon="inline-start" />
           {t(`${prefix}.retry`, { defaultValue: t('common.retry') })}
         </Button>
-        <Button
-          variant="default"
-          size="sm"
-          onClick={handleGoHome}
-          className="gap-1.5"
-        >
-          <Home className="size-3.5" data-icon="inline-start" />
+        <Button size="sm" onClick={onGoHome} className="w-full sm:w-auto">
+          <Home data-icon="inline-start" />
           {t(`${prefix}.goHome`, { defaultValue: t('common.goHome') })}
         </Button>
       </div>
     </div>
+  )
+}
+
+interface CaughtErrorFallbackProps {
+  error: Error | null
+  errorInfo: ErrorInfo | null
+  prefix?: string
+  showStack?: boolean
+  fallbackPath?: string
+  onReset: () => void
+}
+
+function CaughtErrorFallback({
+  fallbackPath = '/hosts',
+  onReset,
+  ...props
+}: CaughtErrorFallbackProps) {
+  const navigate = useNavigate()
+  const handleGoHome = useCallback(() => {
+    onReset()
+    navigate(fallbackPath)
+  }, [fallbackPath, navigate, onReset])
+
+  return <ErrorFallback {...props} onRetry={onReset} onGoHome={handleGoHome} />
+}
+
+function normalizeRouteError(routeError: unknown): Error {
+  if (routeError instanceof Error) return routeError
+  if (isRouteErrorResponse(routeError)) {
+    const status = `${routeError.status} ${routeError.statusText}`.trim()
+    const message =
+      typeof routeError.data === 'string' && routeError.data.trim()
+        ? routeError.data
+        : status
+    return new Error(message || 'Route failed')
+  }
+  return new Error(
+    typeof routeError === 'string' ? routeError : 'Unknown route error',
+  )
+}
+
+interface RouteErrorBoundaryProps {
+  fallbackPath?: string
+  onRetry?: () => void
+}
+
+export function RouteErrorBoundary({
+  fallbackPath = '/hosts',
+  onRetry = () => window.location.reload(),
+}: RouteErrorBoundaryProps) {
+  const routeError = useRouteError()
+  const navigate = useNavigate()
+  const handleGoHome = useCallback(
+    () => navigate(fallbackPath),
+    [fallbackPath, navigate],
+  )
+
+  return (
+    <ErrorFallback
+      error={normalizeRouteError(routeError)}
+      errorInfo={null}
+      onRetry={onRetry}
+      onGoHome={handleGoHome}
+    />
   )
 }
 

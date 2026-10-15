@@ -50,6 +50,8 @@ const defaultIpc: InputProbeIpc = {
   invoke,
 }
 
+let diagnosticQueue = Promise.resolve()
+
 function parseConfig(raw: unknown): InputProbeAutomationConfig | null {
   if (raw === null || raw === undefined) return null
   if (typeof raw !== 'object' || Array.isArray(raw)) {
@@ -93,7 +95,16 @@ export async function publishInputProbeDiag(
   message: string,
   ipc: InputProbeIpc = defaultIpc,
 ): Promise<void> {
-  await ipc.invoke('input_probe_diag', { message })
+  diagnosticQueue = diagnosticQueue
+    .catch(() => {})
+    .then(async () => {
+      await ipc.invoke('input_probe_diag', { message })
+    })
+  await diagnosticQueue
+}
+
+export function flushInputProbeDiagnostics(): Promise<void> {
+  return diagnosticQueue
 }
 
 export async function focusInputProbeWindow(

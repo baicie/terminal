@@ -13,9 +13,16 @@ const validConfig = {
   initialRows: 24,
   targetCols: 97,
   targetRows: 31,
+  resizeSequence: [
+    { cols: 132, rows: 43 },
+    { cols: 90, rows: 30 },
+    { cols: 120, rows: 40 },
+    { cols: 97, rows: 31 },
+  ],
   timeoutMs: 180_000,
   rounds: 10,
   reconnectRequired: false,
+  hostWakeRequired: false,
   ssh: {
     host: '127.0.0.1',
     port: 42_222,

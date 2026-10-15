@@ -2,8 +2,14 @@ import { Terminal } from '@baicie/xterm'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { terminalSessionManager } from '@/features/terminal/services/terminal-session-manager'
 import { useTerminal } from '@/hooks/use-terminal'
-import { runTerminalSmoke } from './run-terminal-smoke'
+import {
+  runTerminalSmoke,
+  waitForTerminalSmokeInteractive,
+} from './run-terminal-smoke'
 import { collectTerminalSmokeDiagnostics } from './terminal-smoke-diagnostics'
+import { useTerminalSmokeDeadline } from './use-terminal-smoke-deadline'
+import { createInteractiveReporter } from './terminal-smoke-interactive'
+import { useTerminalSmokeRecovery } from './use-terminal-smoke-recovery'
 import type {
   TerminalSmokeConfig,
   TerminalSmokeResult,
@@ -15,9 +21,6 @@ import {
   terminalSmokeTabId,
 } from './terminal-smoke-round-request'
 
-const CONNECTION_DEADLINE_MS = 10_000
-const RECONNECT_DEADLINE_MS = 30_000
-
 export interface UseTerminalSmokeRoundOptions {
   applicationStartedAt: number
   config: TerminalSmokeConfig
@@ -25,6 +28,7 @@ export interface UseTerminalSmokeRoundOptions {
   signal: AbortSignal
   reportConnected: () => Promise<number>
   reportReconnect: () => Promise<void>
+  reportHostWake?: () => Promise<void>
   emitStaleOutput: (
     retiredSessionId: string,
     activeSessionId: string,
@@ -44,6 +48,7 @@ export function useTerminalSmokeRound({
   signal,
   reportConnected,
   reportReconnect,
+  reportHostWake,
   emitStaleOutput,
   onComplete,
 }: UseTerminalSmokeRoundOptions) {
@@ -54,6 +59,7 @@ export function useTerminalSmokeRound({
   const startedRef = useRef(false)
   const completedRef = useRef(false)
   const reconnectObservedRef = useRef(false)
+  const hostWakeSentRef = useRef(false)
   const reconnectCheckpointSentRef = useRef(false)
   const reconnectStartedAtRef = useRef<number | null>(null)
   const runControllerRef = useRef<AbortController | null>(null)
@@ -77,6 +83,7 @@ export function useTerminalSmokeRound({
     error,
     getInputDiagnostics,
     getOutputDiagnostics,
+    retryable,
   } = useTerminal(term, {
     ...terminalSmokeRequest(config, roundIndex),
     onOutput: event => {
@@ -88,7 +95,6 @@ export function useTerminalSmokeRound({
   const statusRef = useRef(status)
   statusRef.current = status
   onCompleteRef.current = onComplete
-
   const completeOnce = useCallback(
     (activeSessionId: string | null, result: TerminalSmokeResult) => {
       if (completedRef.current) return
@@ -106,7 +112,6 @@ export function useTerminalSmokeRound({
     },
     [requiresReconnect, roundIndex, tabId],
   )
-
   useLayoutEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -123,14 +128,12 @@ export function useTerminalSmokeRound({
         .then(() => term.dispose())
     }
   }, [controller, tabId, term])
-
   useEffect(() => {
     const abort = () => controller.abort(signal.reason)
     signal.addEventListener('abort', abort, { once: true })
     if (signal.aborted) abort()
     return () => signal.removeEventListener('abort', abort)
   }, [controller, signal])
-
   useEffect(() => {
     if (status !== 'connected' || !sessionId || completedRef.current) return
     const isReconnect = reconnectObservedRef.current
@@ -164,6 +167,16 @@ export function useTerminalSmokeRound({
       try {
         const result = await runTerminalSmoke(term, config, {
           signal: runController.signal,
+          onInteractive:
+            roundIndex === 0 && !isReconnect && !requiresReconnect
+              ? createInteractiveReporter(
+                  reportConnected,
+                  reportReconnect,
+                  firstConnectionMsRef,
+                  reconnectCheckpointSentRef,
+                  requiresReconnect,
+                )
+              : undefined,
           ...(isReconnect
             ? {
                 staleOutputProbe: () => {
@@ -203,23 +216,21 @@ export function useTerminalSmokeRound({
 
     void (async () => {
       try {
-        if (roundIndex === 0 && !isReconnect) {
-          const elapsedMs = await reportConnected()
-          if (
-            Number.isSafeInteger(elapsedMs) &&
-            elapsedMs > 0 &&
-            firstConnectionMsRef.current === 0
-          ) {
-            firstConnectionMsRef.current = elapsedMs
-          }
-          if (requiresReconnect && !reconnectCheckpointSentRef.current) {
-            reconnectCheckpointSentRef.current = true
-            await reportReconnect()
-            return
-          }
+        runningSessionIdRef.current = sessionId
+        if (requiresReconnect && !isReconnect) {
+          await waitForTerminalSmokeInteractive(term, config, {
+            signal: controller.signal,
+            onInteractive: createInteractiveReporter(
+              reportConnected,
+              reportReconnect,
+              firstConnectionMsRef,
+              reconnectCheckpointSentRef,
+              true,
+            ),
+          })
+          return
         }
         if (controller.signal.aborted) throw controller.signal.reason
-        runningSessionIdRef.current = sessionId
         await run(sessionId)
       } catch (runError) {
         completeOnce(sessionId, terminalSmokeRoundFailure(term, config, runError))
@@ -240,50 +251,50 @@ export function useTerminalSmokeRound({
     status,
     term,
   ])
+  useTerminalSmokeRecovery({
+    completeOnce,
+    config,
+    controller,
+    error,
+    hostWakeSentRef,
+    reportHostWake,
+    reconnectObservedRef,
+    reconnectStartedAtRef,
+    requiresReconnect,
+    retryable,
+    runControllerRef,
+    sessionId,
+    startedRef,
+    status,
+    term,
+  })
 
-  useEffect(() => {
-    if (!['error', 'disconnected', 'reconnecting'].includes(status)) return
-    if (requiresReconnect && startedRef.current && status === 'reconnecting') {
-      reconnectObservedRef.current = true
-      reconnectStartedAtRef.current ??= performance.now()
-      runControllerRef.current?.abort(new Error('SSH session reconnecting'))
-      return
-    }
-    if (requiresReconnect && reconnectObservedRef.current && status === 'disconnected') {
-      return
-    }
-    const connectionError = new Error(error ?? `Terminal smoke session ${status}`)
-    if (startedRef.current) controller.abort(connectionError)
-    else completeOnce(sessionId, terminalSmokeRoundFailure(term, config, connectionError))
-  }, [completeOnce, config, controller, error, requiresReconnect, sessionId, status, term])
-
-  useEffect(() => {
-    const reconnecting = requiresReconnect && reconnectObservedRef.current
-    const waiting = reconnecting
-      ? status === 'reconnecting' || status === 'connecting'
-      : status === 'idle' || status === 'connecting'
-    if (!waiting) return
-    const roundStartedAt = reconnecting
-      ? (reconnectStartedAtRef.current ?? performance.now())
-      : roundIndex === 0
-        ? applicationStartedAt
-        : performance.now()
-    const deadlineMs = reconnecting ? RECONNECT_DEADLINE_MS : CONNECTION_DEADLINE_MS
-    const remainingMs = Math.max(0, deadlineMs - (performance.now() - roundStartedAt))
-    const timer = setTimeout(() => {
+  const onDeadline = useCallback(
+    (deadlineMs: number, currentStatus: string) => {
       completeOnce(
         sessionId,
         terminalSmokeRoundFailure(
           term,
           config,
           new Error(
-            `Terminal smoke did not connect within ${deadlineMs} ms (status: ${status})`,
+            `Terminal smoke did not connect within ${deadlineMs} ms (status: ${currentStatus})`,
           ),
         ),
       )
-    }, remainingMs)
-    return () => clearTimeout(timer)
-  }, [applicationStartedAt, completeOnce, config, roundIndex, requiresReconnect, sessionId, status, term])
+    },
+    [completeOnce, config, sessionId, term],
+  )
+  useTerminalSmokeDeadline({
+    applicationStartedAt,
+    onTimeout: onDeadline,
+    reconnectRequired: requiresReconnect,
+    hostWakeRequired: config.hostWakeRequired,
+    reconnectObservedRef,
+    reconnectStartedAtRef,
+    roundIndex,
+    sessionId,
+    status,
+  })
 
   return containerRef
 }

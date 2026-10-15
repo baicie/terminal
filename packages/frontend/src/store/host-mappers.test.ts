@@ -23,6 +23,7 @@ describe('hostRowToHost', () => {
       jump_host_id: 'jump-id',
       jump_host_auth_type: 'agent',
       agent_forwarding: 1,
+      shell_integration: 'zsh',
       created_at: 1,
       updated_at: 2,
     }
@@ -32,6 +33,7 @@ describe('hostRowToHost', () => {
       jumpHostId: 'jump-id',
       jumpHostAuthType: 'agent',
       agentForwarding: true,
+      shellIntegration: 'zsh',
     })
   })
 })

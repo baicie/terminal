@@ -19,6 +19,11 @@ const READY_COMMAND = 'terminal-smoke-ready'
 const PORT_ATTEMPTS = 4
 const CERT_SERIAL = '1'
 const CERT_IDENTITY = 'terminal-smoke-cert'
+const LOGIN_SHELL_PATHS = {
+  sh: '/bin/sh',
+  bash: '/bin/bash',
+  zsh: '/bin/zsh',
+}
 
 async function reserveLoopbackPort() {
   const server = createServer()
@@ -393,6 +398,7 @@ function fixturePaths(runDirectory) {
     hostKey: inDirectory('host_key'),
     knownHosts: inDirectory('known_hosts'),
     pid: inDirectory('sshd.pid'),
+    shellRc: inDirectory('shell-rc.sh'),
     userCertificate: inDirectory('user_key-cert.pub'),
     userKey: inDirectory('user_key'),
     wrapper: inDirectory('forced-command.sh'),
@@ -486,6 +492,8 @@ export async function startTerminalSmokeSshd({
   runDirectory,
   mode = 'key',
   role = 'target',
+  shell = 'sh',
+  emitPromptMarker = true,
   targetPort,
   connectionExtra = {},
   dependencies: overrides = {},
@@ -500,6 +508,11 @@ export async function startTerminalSmokeSshd({
   if (role !== 'target' && role !== 'jump') {
     throw new Error(
       `terminal smoke SSH role must be target or jump, got ${role}`,
+    )
+  }
+  if (!Object.hasOwn(LOGIN_SHELL_PATHS, shell)) {
+    throw new Error(
+      `terminal smoke SSH shell must be sh, bash or zsh, got ${shell}`,
     )
   }
   if (role === 'jump') {
@@ -527,7 +540,14 @@ export async function startTerminalSmokeSshd({
     'terminal smoke host key',
   )
   const home = `'${paths.home.replaceAll("'", `'"'"'`)}'`
-  const wrapper = `#!/bin/sh\nset -eu\nif [ "\${SSH_ORIGINAL_COMMAND:-}" = "${READY_COMMAND}" ]; then\n  printf '%s\\n' '${SSHD_READY_MARKER}'\n  exit 0\nfi\nexec /usr/bin/env -i HOME=${home} PATH=/usr/bin:/bin TERM="\${TERM:-xterm-256color}" LANG=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 /bin/sh\n`
+  const shellRc = emitPromptMarker
+    ? `PS1="$(printf '\\033]133;A\\007')$ "\n`
+    : 'PS1="$ "\n'
+  await writeSecure(paths.shellRc, shellRc, 0o600, dependencies)
+  const shellRcPath = `'${paths.shellRc.replaceAll("'", `\'"\'"\'`)}'`
+  const loginShell = LOGIN_SHELL_PATHS[shell]
+  const shellArguments = shell === 'sh' ? '' : ' -i'
+  const wrapper = `#!/bin/sh\nset -eu\nif [ "\${SSH_ORIGINAL_COMMAND:-}" = "${READY_COMMAND}" ]; then\n  printf '%s\\n' '${SSHD_READY_MARKER}'\n  exit 0\nfi\nexec /usr/bin/env -i HOME=${home} ENV=${shellRcPath} PATH=/usr/bin:/bin TERM="\${TERM:-xterm-256color}" LANG=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 ${loginShell}${shellArguments}\n`
   await writeSecure(paths.wrapper, wrapper, 0o700, dependencies)
   const forcedCommand = paths.wrapper
     .replaceAll('\\', '\\\\')
@@ -614,9 +634,13 @@ export async function startTerminalSmokeSshd({
     )
     let restartPromise
     let stopPromise
+   let firstConnectOutagePromise
     return {
       ...connection,
       configPath: paths.connection,
+      homePath: paths.home,
+      knownHostsPath: paths.knownHosts,
+      shell,
       /** Raw client identity, unaffected by connectionExtra overrides. */
       identityKey: privateKey,
       restart: () => {
@@ -633,11 +657,86 @@ export async function startTerminalSmokeSshd({
         })()
         return restartPromise
       },
+      /**
+       * Simulates an outage that outlives several reconnect attempts: the
+       * host stays unreachable for `holdMs` and only then answers again.
+       *
+       * `restart` bounces the daemon and it is listening again within
+       * milliseconds, so the first reconnect attempt always succeeds and the
+       * backoff ladder is never walked. Sleep, a VPN switch or a NAT timeout
+       * all look like this instead, so this is the only way to prove the
+       * reconnect state machine keeps trying instead of settling into a
+       * terminal error after one refusal.
+       */
+      interrupt: ({ holdMs }) => {
+        const outagePromise = (async () => {
+          await stopDaemon(daemon, dependencies)
+          await new Promise(resolve => {
+            // The outage wait must hold the event loop open. Unref'ing it lets
+            // Node exit while this promise is still pending, which strands the
+            // fixture and cancels every later case in the file with a
+            // misleading "event loop has already resolved" error instead of a
+            // real failure.
+            dependencies.setTimeout(resolve, holdMs)
+          })
+          daemon = startDaemon(paths.config, paths.directory, dependencies)
+          try {
+            await waitUntilReady(daemon, paths, port, username, mode, dependencies)
+          } catch (error) {
+            await stopDaemon(daemon, dependencies)
+            throw error
+          }
+        })()
+        // `restart` and `interrupt` both replace the daemon, so they must
+        // never run concurrently against the same handle.
+        const chained = (restartPromise ?? Promise.resolve())
+          .catch(() => undefined)
+          .then(() => outagePromise)
+        restartPromise = chained
+        return chained
+      },
       stop: () =>
         (stopPromise ??= (async () => {
           if (restartPromise) await restartPromise.catch(() => {})
           await stopDaemon(daemon, dependencies)
         })()),
+      /**
+       * Keeps the daemon down for `holdMs` and only then starts it again.
+       *
+       * `interrupt` interrupts a session that already exists, which proves the
+       * reconnect ladder but says nothing about a connection that never came
+       * up: the automatic reconnect path is armed by an I/O error on a live
+       * session, and a connection that never established has no session id to
+       * fail. This is the only way to keep the host unreachable across the
+       * very first connection attempt, which is what a VPN still coming up or
+       * a packet lost during the handshake looks like from the client side.
+       */
+      outageBeforeFirstConnect: ({ holdMs }) => {
+        if (firstConnectOutagePromise) return firstConnectOutagePromise
+        const outagePromise = (async () => {
+          await stopDaemon(daemon, dependencies)
+          await new Promise(resolve => {
+            // The hold must keep the event loop open for the same reason the
+            // one in `interrupt` does: an unref'd timer lets Node exit while
+            // this is still pending and strands the fixture.
+            dependencies.setTimeout(resolve, holdMs)
+          })
+          daemon = startDaemon(paths.config, paths.directory, dependencies)
+          try {
+            await waitUntilReady(daemon, paths, port, username, mode, dependencies)
+          } catch (error) {
+            await stopDaemon(daemon, dependencies)
+            throw error
+          }
+        })()
+        // Nothing else may replace the daemon while it is down.
+        const chained = (restartPromise ?? Promise.resolve())
+          .catch(() => undefined)
+          .then(() => outagePromise)
+        restartPromise = chained
+        firstConnectOutagePromise = chained
+        return chained
+      },
     }
   } catch (error) {
     if (daemon !== undefined) await stopDaemon(daemon, dependencies)

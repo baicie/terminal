@@ -79,6 +79,37 @@ export function HostDialogAdvancedFields({
 
       <div className="col-span-2">
         <Label
+          htmlFor="shellIntegration"
+          className="text-sm font-medium mb-1 block"
+        >
+          Remote Shell Integration
+        </Label>
+        <Select
+          value={form.shellIntegration ?? 'off'}
+          onValueChange={shellIntegration =>
+            onChange({
+              ...form,
+              shellIntegration:
+                shellIntegration as HostFormState['shellIntegration'],
+            })
+          }
+        >
+          <SelectTrigger id="shellIntegration">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="off">Disabled</SelectItem>
+            <SelectItem value="bash">Bash</SelectItem>
+            <SelectItem value="zsh">Zsh</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Adds cwd and command status markers only when explicitly enabled.
+        </p>
+      </div>
+
+      <div className="col-span-2">
+        <Label
           htmlFor="startupCommand"
           className="text-sm font-medium mb-1 block"
         >

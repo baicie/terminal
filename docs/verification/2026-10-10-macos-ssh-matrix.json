@@ -1,0 +1,41 @@
+{
+  "recordedDate": "2026-10-10",
+  "kind": "tauri-real-ssh-matrix",
+  "command": "pnpm smoke:ssh-matrix",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0",
+    "docker": "29.7.2"
+  },
+  "revision": {
+    "head": "54f3fbbab39a97e1370d9880b89760dbd06a1c41",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "ad61d74d6b5e6e2bc916ce20fa791b6cf933bd9935e732d8b30df9196a5063b4"
+  },
+  "allCasesPassed": true,
+  "cases": [
+    { "name": "key", "firstConnectionMs": 2035, "durationMs": 7256, "uniqueSessionCount": 10 },
+    { "name": "key-reconnect", "firstConnectionMs": 1052, "durationMs": 8211, "uniqueSessionCount": 11 },
+    { "name": "password", "firstConnectionMs": 1714, "durationMs": 6363, "uniqueSessionCount": 10 },
+    { "name": "password-reconnect", "firstConnectionMs": 866, "durationMs": 7236, "uniqueSessionCount": 11 },
+    { "name": "agent", "firstConnectionMs": 1044, "durationMs": 7367, "uniqueSessionCount": 10 },
+    { "name": "cert", "firstConnectionMs": 1068, "durationMs": 7477, "uniqueSessionCount": 10 },
+    { "name": "jump", "firstConnectionMs": 1169, "durationMs": 7948, "uniqueSessionCount": 10 }
+  ],
+  "coverage": {
+    "firstConnectionDeadlineMs": 10000,
+    "loadBytes": 8388608,
+    "rounds": 10,
+    "resize": "97x31",
+    "reconnectStaleOutputRejected": true,
+    "resourcesRecovered": true
+  },
+  "limitations": [
+    "This is the dedicated real-SSH smoke workflow, not a stopwatch measurement of a normal user cold launch with an existing SQLite workspace.",
+    "Windows, Pageant, serial hardware, and human physical keyboard/IME acceptance remain unverified."
+  ]
+}

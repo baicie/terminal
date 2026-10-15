@@ -6,6 +6,14 @@ use crate::session::JumpHostConfig;
 const ED25519_PUBLIC_KEY: &str =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti";
 
+#[test]
+fn host_key_probe_budget_stays_within_startup_target() {
+    assert!(
+        SSH_HOST_KEY_PROBE_TIMEOUT <= std::time::Duration::from_secs(8),
+        "host-key preflight must remain within the startup budget"
+    );
+}
+
 fn public_key() -> PublicKey {
     PublicKey::from_openssh(ED25519_PUBLIC_KEY).expect("test key should parse")
 }
@@ -139,6 +147,19 @@ async fn probe_handler_captures_and_accepts_the_exact_server_key() {
         (accepted, captured.lock().unwrap().clone()),
         (true, Some(key))
     );
+}
+
+#[tokio::test]
+async fn known_host_check_fails_fast_after_shared_deadline() {
+    let deadline = tokio::time::Instant::now() - std::time::Duration::from_millis(1);
+
+    let result = check_known_host("example.com".to_string(), 22, public_key(), deadline).await;
+
+    assert!(matches!(
+        result,
+        Err(SshHostKeyError::KnownHostsFailed(message))
+            if message.contains("known_hosts check timed out")
+    ));
 }
 
 #[tokio::test]

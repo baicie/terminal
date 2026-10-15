@@ -72,7 +72,7 @@ export interface AppState {
   // Actions
   setTheme: (theme: AppThemeMode) => void
   setLanguage: (language: string) => void
-  hydrateFromDatabase: () => Promise<void>
+  hydrateFromDatabase: () => Promise<boolean>
   restoreLayout: (layout: RestorableLayout) => void
   addTab: (tab: NewTab) => Tab
   removeTab: (id: string) => void
@@ -107,7 +107,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ language })
   },
 
-  async hydrateFromDatabase() {
+  async hydrateFromDatabase(): Promise<boolean> {
     try {
       const s = await getAppSettingsFromDb()
       set({
@@ -115,8 +115,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         language: s.language,
         config: s as unknown as Record<string, unknown>,
       })
+      return true
     } catch (e) {
+      // Theme, language and every persisted preference come from this single
+      // read. Returning false lets the caller tell the user their settings were
+      // not restored, instead of leaving the app looking healthy while their
+      // preferences silently reset to defaults.
       console.error('hydrateFromDatabase failed:', e)
+      return false
     }
   },
 
@@ -172,7 +178,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set(state => ({
       ...layout,
-      recentlyClosedTabs: tab.profileId
+      recentlyClosedTabs: tab.profileId || tab.type === 'serial'
         ? state.recentlyClosedTabs
         : [closedTab, ...state.recentlyClosedTabs].slice(0, 10),
     }))

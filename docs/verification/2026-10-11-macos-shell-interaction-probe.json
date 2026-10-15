@@ -1,0 +1,61 @@
+{
+  "recordedAt": "2026-10-11T10:42:22+08:00",
+  "kind": "tauri-local-shell-interaction-probe",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0",
+    "pnpm": "10.34.3"
+  },
+  "revision": {
+    "head": "54f3fbbab39a97e1370d9880b89760dbd06a1c41",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "c69911573a824f6721ae0c00ecffa4240b872f08801606219cae8b58930cacac"
+  },
+  "command": "PATH=/Users/liuzhiwei/n/bin:$PATH pnpm smoke:shell-probe:matrix -- cat-eof,readline-history,readline-tab",
+  "method": "真实 Tauri/WKWebView + xterm term.input() 用户输入路径 + Tauri IPC + local PTY + shell 回读；结果契约要求按 case 顺序观察 ready/step/pass marker，并记录所有 text input hex。",
+  "cases": [
+    {
+      "case": "cat-eof",
+      "durationMs": 326,
+      "trace": ["ready", "pass"],
+      "inputSummary": [
+        { "bytes": 333, "dataHexPrefix": "73747479206563686f" },
+        { "bytes": 14, "dataHex": "6361742d656f662d70726f62650d" },
+        { "bytes": 1, "dataHex": "04" }
+      ],
+      "ok": true
+    },
+    {
+      "case": "readline-history",
+      "durationMs": 239,
+      "trace": ["ready", "step", "pass"],
+      "inputSummary": [
+        { "bytes": 73, "dataHexPrefix": "7072696e746620275c725c6e" },
+        { "bytes": 234, "dataHexPrefix": "6966205b2022247b5348454c4c" },
+        { "bytes": 4, "dataHex": "1b5b410d" }
+      ],
+      "ok": true
+    },
+    {
+      "case": "readline-tab",
+      "durationMs": 452,
+      "trace": ["ready", "step", "pass"],
+      "inputSummary": [
+        { "bytes": 232, "dataHexPrefix": "5348454c4c5f50524f42455f" },
+        { "bytes": 72, "dataHexPrefix": "7072696e746620275c725c6e" },
+        { "bytes": 7, "dataHex": "63617420616c70" },
+        { "bytes": 1, "dataHex": "09" },
+        { "bytes": 1, "dataHex": "0d" }
+      ],
+      "ok": true
+    }
+  ],
+  "limitations": [
+    "所有自动化输入均由 xterm term.input() 进入 onData/session FIFO/PTY，不是物理键盘、CGEvent、系统粘贴或中文 IME。",
+    "该矩阵覆盖 cat EOF、readline 历史和 Tab 补全；vim/nano、Option/dead key、中文 IME、物理键盘以及 Windows/Pageant/PTY/串口实机仍未验收。"
+  ]
+}

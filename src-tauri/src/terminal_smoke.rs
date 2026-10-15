@@ -17,6 +17,7 @@ const ENABLE_ENV: &str = "TERMINAL_SMOKE";
 const RESULT_PATH_ENV: &str = "TERMINAL_SMOKE_RESULT_PATH";
 const SSH_CONFIG_PATH_ENV: &str = "TERMINAL_SMOKE_SSH_CONFIG_PATH";
 const RECONNECT_CONTROL_PATH_ENV: &str = "TERMINAL_SMOKE_RECONNECT_CONTROL_PATH";
+const HOST_WAKE_PATH_ENV: &str = "TERMINAL_SMOKE_HOST_WAKE_PATH";
 const LOAD_BYTES: usize = 8 * 1024 * 1024;
 const ROUNDS: usize = 10;
 const MAX_SSH_CONFIG_BYTES: u64 = 64 * 1024;
@@ -24,6 +25,7 @@ const INITIAL_COLS: u16 = 80;
 const INITIAL_ROWS: u16 = 24;
 const TARGET_COLS: u16 = 97;
 const TARGET_ROWS: u16 = 31;
+const RESIZE_SEQUENCE: &[(u16, u16)] = &[(132, 43), (90, 30), (120, 40), (97, 31)];
 const CONNECTION_DEADLINE: Duration = Duration::from_secs(10);
 const TIMEOUT: Duration = Duration::from_secs(180);
 const ACTIVE_SESSION_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -40,32 +42,46 @@ pub(crate) enum TerminalSmokeAuthMode {
     Cert,
 }
 
+impl TerminalSmokeAuthMode {
+    /// Front-end tag the session manager and the host mapper both understand.
+    /// The shell probe reuses the smoke fixture config, so it needs the same
+    /// vocabulary rather than a second one that could drift.
+    pub(crate) fn host_auth_type(self) -> &'static str {
+        match self {
+            Self::Key => "key",
+            Self::Password => "password",
+            Self::Agent => "agent",
+            Self::Cert => "cert",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct TerminalSmokeJumpConfig {
-    host: String,
-    port: u16,
-    username: String,
-    private_key: String,
-    expected_host_key: String,
+    pub(crate) host: String,
+    pub(crate) port: u16,
+    pub(crate) username: String,
+    pub(crate) private_key: String,
+    pub(crate) expected_host_key: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct TerminalSmokeSshConfig {
-    host: String,
-    port: u16,
-    username: String,
-    expected_host_key: String,
-    auth_mode: TerminalSmokeAuthMode,
+    pub(crate) host: String,
+    pub(crate) port: u16,
+    pub(crate) username: String,
+    pub(crate) expected_host_key: String,
+    pub(crate) auth_mode: TerminalSmokeAuthMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    private_key: Option<String>,
+    pub(crate) private_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    password: Option<String>,
+    pub(crate) password: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    certificate: Option<String>,
+    pub(crate) certificate: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    jump: Option<TerminalSmokeJumpConfig>,
+    pub(crate) jump: Option<TerminalSmokeJumpConfig>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -76,10 +92,32 @@ pub(crate) struct TerminalSmokeConfig {
     initial_rows: u16,
     target_cols: u16,
     target_rows: u16,
+    resize_sequence: Vec<TerminalSmokeResizeStep>,
     timeout_ms: u64,
     rounds: usize,
     reconnect_required: bool,
+    // Opt-in for the long-outage case: the session must outlast the whole
+    // automatic reconnect ladder, so recovery can only arrive through the
+    // host-wake path. Kept separate from `reconnect_required` because a plain
+    // reconnect case must never synthesize a wake it did not need.
+    host_wake_required: bool,
     ssh: TerminalSmokeSshConfig,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TerminalSmokeResizeStep {
+    cols: u16,
+    rows: u16,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TerminalSmokeResizeObservation {
+    requested_cols: u16,
+    requested_rows: u16,
+    observed_cols: u16,
+    observed_rows: u16,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -98,7 +136,11 @@ pub(crate) struct TerminalSmokeResult {
     load_end_visible: bool,
     after_load_visible: bool,
     resized_size_visible: bool,
+    resize_trace: Vec<TerminalSmokeResizeObservation>,
     reconnect_observed: bool,
+    /// True only when the run actually spent a synthetic host wake, proving the
+    /// exhausted-budget recovery path ran instead of the ladder succeeding.
+    host_wake_synthesized: bool,
     stale_output_rejected: bool,
     first_connection_ms: u64,
 }
@@ -157,27 +199,48 @@ impl TerminalResourceSnapshot {
 pub(crate) struct TerminalSmokeRun {
     result_path: PathBuf,
     reconnect_control_path: Option<PathBuf>,
+    host_wake_control_path: Option<PathBuf>,
     config: TerminalSmokeConfig,
     started_at: Instant,
     claimed: AtomicBool,
     reconnect_requested: AtomicBool,
+    host_wake_requested: AtomicBool,
     stale_probe_emitted: AtomicBool,
 }
 
 impl TerminalSmokeRun {
+    #[cfg(test)]
     fn new(
         result_path: PathBuf,
         reconnect_control_path: Option<PathBuf>,
         config: TerminalSmokeConfig,
         started_at: Instant,
     ) -> Self {
+        Self::new_with_paths(
+            result_path,
+            reconnect_control_path,
+            None,
+            config,
+            started_at,
+        )
+    }
+
+    fn new_with_paths(
+        result_path: PathBuf,
+        reconnect_control_path: Option<PathBuf>,
+        host_wake_control_path: Option<PathBuf>,
+        config: TerminalSmokeConfig,
+        started_at: Instant,
+    ) -> Self {
         Self {
             result_path,
             reconnect_control_path,
+            host_wake_control_path,
             config,
             started_at,
             claimed: AtomicBool::new(false),
             reconnect_requested: AtomicBool::new(false),
+            host_wake_requested: AtomicBool::new(false),
             stale_probe_emitted: AtomicBool::new(false),
         }
     }
@@ -208,6 +271,30 @@ impl TerminalSmokeRun {
         self.reconnect_requested.store(true, Ordering::Release);
         Ok(())
     }
+
+    /// Authorises a synthetic host wake.
+    ///
+    /// Sleeping tears the socket down and suspends timers, so the automatic
+    /// reconnect ladder is spent against a dead network and the session rests
+    /// in a retryable error. Recovery then depends on the visibility-change
+    /// path, which only a real wake can fire, so a long-outage smoke has to ask
+    /// the backend whether that simulation is allowed before driving it.
+    fn request_host_wake(&self) -> Result<(), String> {
+        if !self.config.host_wake_required {
+            return Err("terminal smoke host wake is not enabled".to_string());
+        }
+        if self.host_wake_requested.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let path = self
+            .host_wake_control_path
+            .as_ref()
+            .ok_or_else(|| "terminal smoke host wake control path is missing".to_string())?;
+        std::fs::write(path, b"host-wake-requested\n")
+            .map_err(|error| format!("failed to publish host wake checkpoint: {error}"))?;
+        self.host_wake_requested.store(true, Ordering::Release);
+        Ok(())
+    }
 }
 
 enum TerminalSmokeMode {
@@ -229,11 +316,13 @@ impl TerminalSmokeState {
                 std::env::var_os(RESULT_PATH_ENV),
                 std::env::var_os(SSH_CONFIG_PATH_ENV),
                 std::env::var_os(RECONNECT_CONTROL_PATH_ENV),
+                std::env::var_os(HOST_WAKE_PATH_ENV),
             ) {
-                Ok((result_path, reconnect_control_path, config)) => {
-                    TerminalSmokeMode::Enabled(Arc::new(TerminalSmokeRun::new(
+                Ok((result_path, reconnect_control_path, host_wake_control_path, config)) => {
+                    TerminalSmokeMode::Enabled(Arc::new(TerminalSmokeRun::new_with_paths(
                         result_path,
                         reconnect_control_path,
+                        host_wake_control_path,
                         config,
                         Instant::now(),
                     )))
@@ -283,14 +372,42 @@ fn ssh_config_path(value: Option<OsString>) -> Result<PathBuf, String> {
 }
 
 fn reconnect_control_path(value: Option<OsString>) -> Result<Option<PathBuf>, String> {
+    optional_absolute_path(value, RECONNECT_CONTROL_PATH_ENV)
+}
+
+fn host_wake_control_path(value: Option<OsString>) -> Result<Option<PathBuf>, String> {
+    optional_control_file_path(value, HOST_WAKE_PATH_ENV)
+}
+
+fn optional_absolute_path(
+    value: Option<OsString>,
+    variable: &str,
+) -> Result<Option<PathBuf>, String> {
     let Some(value) = value.filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
     let path = PathBuf::from(value);
     if !path.is_absolute() {
-        return Err(format!(
-            "{RECONNECT_CONTROL_PATH_ENV} must be an absolute path"
-        ));
+        return Err(format!("{variable} must be an absolute path"));
+    }
+    Ok(Some(path))
+}
+
+/// A control channel is only accepted when it names a writable regular file.
+///
+/// The runner writes a checkpoint here and the smoke run publishes one to the
+/// same file, so a directory, a missing parent or a dangling symlink would
+/// turn an acceptance run into an unexplained timeout rather than an explicit
+/// setup failure.
+fn optional_control_file_path(
+    value: Option<OsString>,
+    variable: &str,
+) -> Result<Option<PathBuf>, String> {
+    let Some(path) = optional_absolute_path(value, variable)? else {
+        return Ok(None);
+    };
+    if !path.is_file() {
+        return Err(format!("{variable} must name an existing regular file"));
     }
     Ok(Some(path))
 }
@@ -451,7 +568,7 @@ fn parse_ssh_config(serialized: &[u8]) -> Result<TerminalSmokeSshConfig, String>
     Ok(config)
 }
 
-fn read_ssh_config(path: &Path) -> Result<TerminalSmokeSshConfig, String> {
+pub(crate) fn read_ssh_config(path: &Path) -> Result<TerminalSmokeSshConfig, String> {
     let metadata = std::fs::metadata(path)
         .map_err(|error| format!("failed to inspect terminal smoke SSH config: {error}"))?;
     if metadata.len() == 0 || metadata.len() > MAX_SSH_CONFIG_BYTES {
@@ -468,13 +585,29 @@ fn load_smoke_configuration(
     result_value: Option<OsString>,
     ssh_config_value: Option<OsString>,
     reconnect_value: Option<OsString>,
-) -> Result<(PathBuf, Option<PathBuf>, TerminalSmokeConfig), String> {
+    host_wake_value: Option<OsString>,
+) -> Result<
+    (
+        PathBuf,
+        Option<PathBuf>,
+        Option<PathBuf>,
+        TerminalSmokeConfig,
+    ),
+    String,
+> {
     let result_path = result_path(result_value)?;
     let ssh_path = ssh_config_path(ssh_config_value)?;
     let reconnect_path = reconnect_control_path(reconnect_value)?;
+    let host_wake_path = host_wake_control_path(host_wake_value)?;
+    if host_wake_path.is_some() && reconnect_path.is_none() {
+        return Err(format!(
+            "{HOST_WAKE_PATH_ENV} requires {RECONNECT_CONTROL_PATH_ENV} to enable the reconnect scenario"
+        ));
+    }
     let mut config = smoke_config(read_ssh_config(&ssh_path)?);
     config.reconnect_required = reconnect_path.is_some();
-    Ok((result_path, reconnect_path, config))
+    config.host_wake_required = host_wake_path.is_some();
+    Ok((result_path, reconnect_path, host_wake_path, config))
 }
 
 fn smoke_config(ssh: TerminalSmokeSshConfig) -> TerminalSmokeConfig {
@@ -484,11 +617,42 @@ fn smoke_config(ssh: TerminalSmokeSshConfig) -> TerminalSmokeConfig {
         initial_rows: INITIAL_ROWS,
         target_cols: TARGET_COLS,
         target_rows: TARGET_ROWS,
+        resize_sequence: RESIZE_SEQUENCE
+            .iter()
+            .map(|&(cols, rows)| TerminalSmokeResizeStep { cols, rows })
+            .collect(),
         timeout_ms: TIMEOUT.as_millis() as u64,
         rounds: ROUNDS,
         reconnect_required: false,
+        host_wake_required: false,
         ssh,
     }
+}
+
+fn validate_resize_trace(trace: &[TerminalSmokeResizeObservation]) -> Result<(), String> {
+    if trace.len() != RESIZE_SEQUENCE.len() {
+        return Err(format!(
+            "expected {} continuous resize observations",
+            RESIZE_SEQUENCE.len()
+        ));
+    }
+    for (index, (observation, &(expected_cols, expected_rows))) in
+        trace.iter().zip(RESIZE_SEQUENCE).enumerate()
+    {
+        if observation.requested_cols != expected_cols
+            || observation.requested_rows != expected_rows
+            || observation.observed_cols != expected_cols
+            || observation.observed_rows != expected_rows
+        {
+            return Err(format!(
+                "resize observation {} did not round-trip {}x{}",
+                index + 1,
+                expected_cols,
+                expected_rows
+            ));
+        }
+    }
+    Ok(())
 }
 
 async fn collect_terminal_resource_snapshot(
@@ -524,10 +688,20 @@ fn validate_connection_deadline(elapsed: Duration) -> Result<u64, String> {
         .map_err(|_| "terminal smoke connection duration overflowed".to_string())
 }
 
+#[cfg(test)]
 fn validate_success(
     result: &TerminalSmokeResult,
     elapsed: Duration,
     reconnect_required: bool,
+) -> Result<(), String> {
+    validate_success_for_mode(result, elapsed, reconnect_required, false)
+}
+
+fn validate_success_for_mode(
+    result: &TerminalSmokeResult,
+    elapsed: Duration,
+    reconnect_required: bool,
+    host_wake_required: bool,
 ) -> Result<(), String> {
     if result.stage != "complete" {
         return Err("successful smoke result must use the complete stage".to_string());
@@ -561,6 +735,13 @@ fn validate_success(
             "terminal smoke reported an unexpected stale-output probe".to_string()
         });
     }
+    if result.host_wake_synthesized != host_wake_required {
+        return Err(if host_wake_required {
+            "terminal smoke did not synthesize the required host wake".to_string()
+        } else {
+            "terminal smoke reported an unexpected host wake".to_string()
+        });
+    }
     if result.terminal_cols != TARGET_COLS || result.terminal_rows != TARGET_ROWS {
         return Err(format!(
             "expected terminal size {TARGET_COLS}x{TARGET_ROWS}"
@@ -569,6 +750,7 @@ fn validate_success(
     if !result.load_end_visible || !result.after_load_visible || !result.resized_size_visible {
         return Err("all terminal smoke markers must be visible".to_string());
     }
+    validate_resize_trace(&result.resize_trace)?;
     let timeout_ms = TIMEOUT.as_millis() as u64;
     if result.duration_ms == 0 || result.duration_ms > timeout_ms {
         return Err(format!("duration must be within 1..={timeout_ms} ms"));
@@ -590,16 +772,35 @@ fn normalize_completion(result: TerminalSmokeResult, elapsed: Duration) -> Termi
     normalize_completion_for_mode(result, elapsed, false, false)
 }
 
+#[cfg(test)]
 fn normalize_completion_for_mode(
-    mut result: TerminalSmokeResult,
+    result: TerminalSmokeResult,
     elapsed: Duration,
     reconnect_required: bool,
     stale_probe_emitted: bool,
 ) -> TerminalSmokeResult {
+    normalize_completion_for_mode_with_wake(
+        result,
+        elapsed,
+        reconnect_required,
+        stale_probe_emitted,
+        false,
+    )
+}
+
+fn normalize_completion_for_mode_with_wake(
+    mut result: TerminalSmokeResult,
+    elapsed: Duration,
+    reconnect_required: bool,
+    stale_probe_emitted: bool,
+    host_wake_required: bool,
+) -> TerminalSmokeResult {
     if !result.ok {
         return result;
     }
-    if let Err(error) = validate_success(&result, elapsed, reconnect_required) {
+    if let Err(error) =
+        validate_success_for_mode(&result, elapsed, reconnect_required, host_wake_required)
+    {
         result.ok = false;
         result.stage = "rust-validation".to_string();
         result.error = Some(error);
@@ -626,7 +827,9 @@ fn failure_result(stage: &str, error: String, elapsed: Duration) -> TerminalSmok
         load_end_visible: false,
         after_load_visible: false,
         resized_size_visible: false,
+        resize_trace: Vec::new(),
         reconnect_observed: false,
+        host_wake_synthesized: false,
         stale_output_rejected: false,
         first_connection_ms: 0,
     }
@@ -777,11 +980,14 @@ pub(crate) async fn terminal_smoke_complete(
     let run = state
         .run()
         .ok_or_else(|| "terminal smoke mode is not enabled".to_string())?;
-    let result = normalize_completion_for_mode(
+    let mut result = result;
+    result.host_wake_synthesized = run.host_wake_requested.load(Ordering::Acquire);
+    let result = normalize_completion_for_mode_with_wake(
         result,
         run.elapsed(),
         run.config.reconnect_required,
         run.stale_probe_emitted.load(Ordering::Acquire),
+        run.config.host_wake_required,
     );
     finalize(app, run, result).await;
     Ok(())
@@ -795,6 +1001,14 @@ pub(crate) fn terminal_smoke_reconnect_requested(
         .run()
         .ok_or_else(|| "terminal smoke mode is not enabled".to_string())?;
     run.request_reconnect()
+}
+
+#[tauri::command]
+pub(crate) fn terminal_smoke_host_wake(state: State<'_, TerminalSmokeState>) -> Result<(), String> {
+    let run = state
+        .run()
+        .ok_or_else(|| "terminal smoke mode is not enabled".to_string())?;
+    run.request_host_wake()
 }
 
 fn valid_smoke_ssh_session_id(session_id: &str) -> bool {

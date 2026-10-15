@@ -19,6 +19,9 @@ describe('createTerminalSmokeProtocol', () => {
     expect(protocol.loadCommand).not.toContain(protocol.loadEndMarker)
     expect(protocol.afterLoadCommand).not.toContain(protocol.afterLoadMarker)
     expect(protocol.resizeProbeCommand).not.toContain(protocol.resizeMarker)
+    expect(protocol.resizeProbeCommands).toHaveLength(
+      config.resizeSequence.length,
+    )
   })
 
   it('builds a unique Unicode round-trip marker without echoing it verbatim', () => {

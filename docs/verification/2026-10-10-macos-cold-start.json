@@ -1,0 +1,38 @@
+{
+  "recordedDate": "2026-10-11",
+  "kind": "tauri-process-cold-start-stopwatch",
+  "application": "src-tauri/target/debug/bundle/macos/Termius.app",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/bundle/macos/Termius.app/Contents/MacOS/terminal",
+    "sha256": "568ca3a90610de6f7cc66591df7679ecfea17872061f37327a345921aa50bb91"
+  },
+  "helper": {
+    "source": "scripts/macos-ax-probe.swift",
+    "sha256": "4a24a018131bd56b1cc05ecdce568d51d50ebe6abfdcf7ea3af396dce205a1f4"
+  },
+  "command": "node scripts/run-cold-start-stopwatch.mjs --app-path /absolute/path/to/src-tauri/target/debug/bundle/macos/Termius.app/Contents/MacOS/terminal --timeout-ms 10000",
+  "measurement": {
+    "probe": "native ApplicationServices AXUIElement helper",
+    "measuredFrom": "child-spawn-event",
+    "spawnToReadyMs": 4963,
+    "requestToReadyMs": 4969,
+    "readyUnder10s": true,
+    "requestToReadyIncludesNativeHelperCompilation": false
+  },
+  "readiness": {
+    "localTab": true,
+    "connected": true,
+    "terminalInput": true,
+    "shellPrompt": false
+  },
+  "limitations": [
+    "The shell prompt is rendered on xterm canvas and remains diagnostic-only; local PTY smoke proves shell interactivity separately.",
+    "This is a local startup measurement and does not measure a remote SSH host's first prompt.",
+    "Human physical keyboard, real macOS IME, Option/dead key, Windows/Pageant, and serial hardware acceptance remain unverified."
+  ]
+}

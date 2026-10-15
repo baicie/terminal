@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TerminalContainer } from './container'
 
@@ -73,7 +73,18 @@ vi.mock('./use-terminal-shortcut-events', () => ({
 vi.mock('./use-terminal-status-effects', () => ({
   useTerminalStatusEffects: vi.fn(),
 }))
-vi.mock('./terminal-body', () => ({ TerminalBody: () => <div /> }))
+vi.mock('./terminal-body', () => ({
+  // The pane header is what the exit status renders into, so the mock records
+  // the props it was handed instead of dropping them: the wiring from an OSC
+  // 133 event to a visible header is exactly what these tests exist to pin.
+  TerminalBody: (props: { lastExitCode?: number; shellCwd?: string }) => (
+    <div
+      data-testid="terminal-body"
+      data-last-exit-code={props.lastExitCode}
+      data-shell-cwd={props.shellCwd}
+    />
+  ),
+}))
 vi.mock('./terminal-empty-state', () => ({
   TerminalEmptyState: () => <div />,
 }))
@@ -150,6 +161,38 @@ describe('TerminalContainer settings', () => {
         allowProposedApi: false,
       }),
     )
+  })
+
+  it('shows the exit status a shell reported through OSC 133', async () => {
+    // A real shell integration event travels from the OSC handler through the
+    // container into the pane header. Only wiring the parse result up to a
+    // rendered header makes the exit status actually usable; a parser test
+    // alone would keep passing after the header stopped showing it.
+    render(<TerminalContainer tabId="terminal-one" workspaceId="workspace" />)
+    const body = await screen.findByTestId('terminal-body')
+    expect(body.getAttribute('data-last-exit-code')).toBeNull()
+
+    const options = mocks.useTerminalInstance.mock.calls.at(-1)?.[0]
+    act(() => {
+      options.onShellIntegration({ kind: 'command-finished', exitCode: 0 })
+    })
+    expect(body.getAttribute('data-last-exit-code')).toBe('0')
+
+    act(() => {
+      options.onShellIntegration({ kind: 'command-finished', exitCode: 130 })
+    })
+    expect(body.getAttribute('data-last-exit-code')).toBe('130')
+  })
+
+  it('keeps the reported current directory on the pane', async () => {
+    render(<TerminalContainer tabId="terminal-one" workspaceId="workspace" />)
+    const body = await screen.findByTestId('terminal-body')
+
+    const options = mocks.useTerminalInstance.mock.calls.at(-1)?.[0]
+    act(() => {
+      options.onShellIntegration({ kind: 'cwd', cwd: '/srv/app' })
+    })
+    expect(body.getAttribute('data-shell-cwd')).toBe('/srv/app')
   })
 
   it('routes session output and status fits through the viewport controller', () => {

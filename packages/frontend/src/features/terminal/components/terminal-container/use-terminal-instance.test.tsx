@@ -259,13 +259,17 @@ describe('useTerminalInstance activation', () => {
     result.current.containerRef.current = document.createElement('div')
     rerender({ tabId: 'terminal-one' })
 
+    expect(mocks.oscHandlers.get(133)?.('A')).toBe(true)
+    expect(onShellIntegration).toHaveBeenNthCalledWith(1, {
+      kind: 'prompt-start',
+    })
     expect(mocks.oscHandlers.get(133)?.('D;7')).toBe(true)
     expect(mocks.oscHandlers.get(7)?.('file:///srv/app')).toBe(true)
-    expect(onShellIntegration).toHaveBeenNthCalledWith(1, {
+    expect(onShellIntegration).toHaveBeenNthCalledWith(2, {
       kind: 'command-finished',
       exitCode: 7,
     })
-    expect(onShellIntegration).toHaveBeenNthCalledWith(2, {
+    expect(onShellIntegration).toHaveBeenNthCalledWith(3, {
       kind: 'cwd',
       cwd: '/srv/app',
     })

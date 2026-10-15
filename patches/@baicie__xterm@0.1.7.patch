@@ -1,0 +1,114 @@
+diff --git a/lib/xterm.js b/lib/xterm.js
+index 33903edcb79e1c4b8ae97826ea18c9d7ea85298e..938f8ffae9aaf77e3b9bcf9aba545fb7167e6e62 100644
+--- a/lib/xterm.js
++++ b/lib/xterm.js
+@@ -3545,6 +3545,7 @@ let CompositionHelper = class CompositionHelper {
+ 	keydown(ev) {
+ 		if (this._isComposing || this._isSendingComposition) {
++			if (ev.keyCode === 27) return false;
+ 			if (ev.keyCode === 20 || ev.keyCode === 229) return false;
+ 			if (ev.keyCode === 16 || ev.keyCode === 17 || ev.keyCode === 18) return false;
+ 			this._finalizeComposition(false);
+ 		}
+@@ -17343,6 +17343,7 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		console.debug("[WebKit] _keyDown called, userAgent:", navigator.userAgent, "isWebKitBased:", isWebKitBased, "key:", event.key);
+ 		this._keyDownHandled = false;
+ 		this._keyDownSeen = true;
++		this._keyDownSentData = null;
+ 		if (this._customKeyEventHandler && this._customKeyEventHandler(event) === false) return false;
+ 		const shouldIgnoreComposition = this.browser.isMac && this.options.macOptionIsMeta && event.altKey;
+ 		if (!shouldIgnoreComposition && !this._compositionHelper.keydown(event)) {
+@@ -17385,6 +17386,7 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		this._showCursor();
+ 		console.debug("[Input] _keyDown triggerDataEvent, key:", result.key, "wasModifierOnly:", wasModifierOnly, "isWebKitBased:", isWebKitBased);
+ 		this.coreService.triggerDataEvent(result.key, !wasModifierOnly);
++		this._keyDownSentData = result.key;
+ 		if (!this.optionsService.rawOptions.screenReaderMode && isWebKitBased) {
+ 			console.debug("[WebKit] keydown allow default, key:", event.key);
+ 			this._keyDownHandled = true;
+@@ -17404,6 +17406,7 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 	}
+ 	_keyUp(ev) {
+ 		this._keyDownSeen = false;
++		this._keyDownSentData = null;
+ 		if (this._customKeyEventHandler && this._customKeyEventHandler(ev) === false) return;
+ 		if (!wasModifierKeyOnlyEvent(ev)) this.focus();
+ 		const result = this._keyboardService.evaluateKeyUp(ev);
+@@ -17439,6 +17442,7 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		this._showCursor();
+ 		console.debug("[Input] _keyPress triggerDataEvent, key:", key, "isWebKitBased:", isWebKitBased, "_keyDownHandled:", this._keyDownHandled);
+ 		this.coreService.triggerDataEvent(key, true);
++		this._keyDownSentData = key;
+ 		this._keyPressHandled = true;
+ 		this._unprocessedDeadKey = false;
+ 		return true;
+@@ -17453,6 +17457,12 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		console.debug("[WebKit] _inputEvent called, userAgent:", navigator.userAgent, "isWebKitBased:", isWebKitBased, "data:", ev.data, "inputType:", ev.inputType);
+ 		if (ev.data && ev.inputType === "insertText" && !this.optionsService.rawOptions.screenReaderMode) {
+ 			if (isWebKitBased) {
++				if (this._keyDownSentData === ev.data) {
++					this._keyDownSentData = null;
++					console.debug("[WebKit] _inputEvent skipped duplicate (keydown already sent), data:", ev.data);
++					return true;
++				}
++				this._keyDownSentData = null;
+ 				console.debug("[WebKit] _inputEvent processing WebKit input:", ev.data, "_keyDownSeen:", this._keyDownSeen);
+ 				this._unprocessedDeadKey = false;
+ 				this.coreService.triggerDataEvent(ev.data, true);
+diff --git a/lib/xterm.mjs b/lib/xterm.mjs
+index 83a19b7de1a1597bbe32c81f9482cf29f76ba656..9d5f9e6c66c72825f6804cab2fca8d64a9c78b4b 100644
+--- a/lib/xterm.mjs
++++ b/lib/xterm.mjs
+@@ -3542,6 +3542,7 @@ let CompositionHelper = class CompositionHelper {
+ 	keydown(ev) {
+ 		if (this._isComposing || this._isSendingComposition) {
++			if (ev.keyCode === 27) return false;
+ 			if (ev.keyCode === 20 || ev.keyCode === 229) return false;
+ 			if (ev.keyCode === 16 || ev.keyCode === 17 || ev.keyCode === 18) return false;
+ 			this._finalizeComposition(false);
+ 		}
+@@ -17342,6 +17342,7 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		console.debug("[WebKit] _keyDown called, userAgent:", navigator.userAgent, "isWebKitBased:", isWebKitBased, "key:", event.key);
+ 		this._keyDownHandled = false;
+ 		this._keyDownSeen = true;
++		this._keyDownSentData = null;
+ 		if (this._customKeyEventHandler && this._customKeyEventHandler(event) === false) return false;
+ 		const shouldIgnoreComposition = this.browser.isMac && this.options.macOptionIsMeta && event.altKey;
+ 		if (!shouldIgnoreComposition && !this._compositionHelper.keydown(event)) {
+@@ -17384,6 +17385,7 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		this._showCursor();
+ 		console.debug("[Input] _keyDown triggerDataEvent, key:", result.key, "wasModifierOnly:", wasModifierOnly, "isWebKitBased:", isWebKitBased);
+ 		this.coreService.triggerDataEvent(result.key, !wasModifierOnly);
++		this._keyDownSentData = result.key;
+ 		if (!this.optionsService.rawOptions.screenReaderMode && isWebKitBased) {
+ 			console.debug("[WebKit] keydown allow default, key:", event.key);
+ 			this._keyDownHandled = true;
+@@ -17403,6 +17405,7 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 	}
+ 	_keyUp(ev) {
+ 		this._keyDownSeen = false;
++		this._keyDownSentData = null;
+ 		if (this._customKeyEventHandler && this._customKeyEventHandler(ev) === false) return;
+ 		if (!wasModifierKeyOnlyEvent(ev)) this.focus();
+ 		const result = this._keyboardService.evaluateKeyUp(ev);
+@@ -17438,6 +17441,7 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		this._showCursor();
+ 		console.debug("[Input] _keyPress triggerDataEvent, key:", key, "isWebKitBased:", isWebKitBased, "_keyDownHandled:", this._keyDownHandled);
+ 		this.coreService.triggerDataEvent(key, true);
++		this._keyDownSentData = key;
+ 		this._keyPressHandled = true;
+ 		this._unprocessedDeadKey = false;
+ 		return true;
+@@ -17452,6 +17456,12 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		console.debug("[WebKit] _inputEvent called, userAgent:", navigator.userAgent, "isWebKitBased:", isWebKitBased, "data:", ev.data, "inputType:", ev.inputType);
+ 		if (ev.data && ev.inputType === "insertText" && !this.optionsService.rawOptions.screenReaderMode) {
+ 			if (isWebKitBased) {
++				if (this._keyDownSentData === ev.data) {
++					this._keyDownSentData = null;
++					console.debug("[WebKit] _inputEvent skipped duplicate (keydown already sent), data:", ev.data);
++					return true;
++				}
++				this._keyDownSentData = null;
+ 				console.debug("[WebKit] _inputEvent processing WebKit input:", ev.data, "_keyDownSeen:", this._keyDownSeen);
+ 				this._unprocessedDeadKey = false;
+ 				this.coreService.triggerDataEvent(ev.data, true);

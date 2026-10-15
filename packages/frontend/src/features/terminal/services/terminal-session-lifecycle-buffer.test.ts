@@ -15,7 +15,7 @@ describe('TerminalSessionLifecycleBuffer', () => {
     })
   })
 
-  it('reports overflow instead of silently evicting a lifecycle', () => {
+  it('reports overflow without poisoning later sessions after affected starts settle', () => {
     const buffer = new TerminalSessionLifecycleBuffer()
 
     for (let index = 0; index < 1024; index++) {
@@ -41,6 +41,13 @@ describe('TerminalSessionLifecycleBuffer', () => {
     expect(buffer.take('session-overflow')).toEqual({
       kind: 'error',
       message: 'Terminal lifecycle buffer exceeded 1024 pending sessions',
+    })
+    expect(
+      buffer.add('session-new', { kind: 'close', message: 'new close' }),
+    ).toBe(true)
+    expect(buffer.take('session-new')).toEqual({
+      kind: 'close',
+      message: 'new close',
     })
   })
 

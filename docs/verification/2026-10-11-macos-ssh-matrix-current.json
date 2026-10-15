@@ -1,0 +1,122 @@
+{
+  "recordedAt": "2026-10-16T06:03:19+08:00",
+  "recordedDate": "2026-10-16",
+  "kind": "tauri-real-ssh-matrix-current-worktree",
+  "command": "pnpm smoke:ssh-matrix --reuse-binary",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0",
+    "docker": "29.7.2"
+  },
+  "revision": {
+    "head": "54f3fbbab39a97e1370d9880b89760dbd06a1c41",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "3dfd71f9361f4b46ca703dd06372519a54ca8d2adb96f5c62b4ed863e0b474b8"
+  },
+  "allCasesPassed": true,
+  "cases": [
+    {
+      "name": "key",
+      "firstConnectionMs": 2778,
+      "durationMs": 13424,
+      "uniqueSessionCount": 10
+    },
+    {
+      "name": "key-reconnect",
+      "firstConnectionMs": 2745,
+      "durationMs": 10063,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "key-outage-reconnect",
+      "firstConnectionMs": 1501,
+      "durationMs": 15853,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "key-outage-wake-reconnect",
+      "firstConnectionMs": 1921,
+      "durationMs": 30771,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "key-first-connect-outage",
+      "firstConnectionMs": 8783,
+      "durationMs": 14117,
+      "uniqueSessionCount": 10
+    },
+    {
+      "name": "password",
+      "firstConnectionMs": 1077,
+      "durationMs": 5558,
+      "uniqueSessionCount": 10
+    },
+    {
+      "name": "password-reconnect",
+      "firstConnectionMs": 995,
+      "durationMs": 6439,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "agent",
+      "firstConnectionMs": 1108,
+      "durationMs": 6317,
+      "uniqueSessionCount": 10
+    },
+    {
+      "name": "agent-reconnect",
+      "firstConnectionMs": 1195,
+      "durationMs": 7433,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "cert",
+      "firstConnectionMs": 909,
+      "durationMs": 6708,
+      "uniqueSessionCount": 10
+    },
+    {
+      "name": "cert-reconnect",
+      "firstConnectionMs": 1070,
+      "durationMs": 8392,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "jump",
+      "firstConnectionMs": 1776,
+      "durationMs": 9275,
+      "uniqueSessionCount": 10
+    },
+    {
+      "name": "jump-reconnect",
+      "firstConnectionMs": 2346,
+      "durationMs": 8240,
+      "uniqueSessionCount": 11
+    }
+  ],
+  "passwordFixtureNote": "The password fixture now reuses a locally cached terminal-smoke-password-sshd image instead of forcing a docker build, so password acceptance stays runnable while the Docker daemon cannot reach the registry.",
+  "limitations": [
+    "This is the dedicated real-SSH smoke workflow, not a stopwatch measurement of a normal user cold launch with an existing SQLite workspace.",
+    "Windows, Pageant, serial hardware, and human physical keyboard/IME acceptance remain unverified.",
+    "Real lid-close sleep/wake, VPN handover, and cellular network switching remain unobserved on macOS hardware; the host-wake case synthesizes the retryable wake checkpoint."
+  ],
+  "source": {
+    "fingerprint": "40e58ef991817331947900228d2c2d0de7ee1a49109a58d03459b9293460e3b4",
+    "fingerprintCovers": [
+      "packages/frontend/src",
+      "src-tauri/src",
+      "packages/frontend/package.json",
+      "package.json",
+      "pnpm-lock.yaml"
+    ],
+    "note": "Debug evidence cannot be validated against the artifact on disk, because pnpm verify relinks target/debug/terminal as a bare cargo build. This content fingerprint of the sources these scenarios exercise is what makes a stale measurement detectable."
+  },
+  "rerunNote": "Re-measured on one freshly built instrumented bundle binary after the serial platform classification and lifecycle fixes. All 13 cases completed successfully in this run.",
+  "note": "Current-source instrumented debug binary with 13 real SSH cases: key, password, agent, certificate and jump authentication, reconnects, synthesized outages and the first-connect outage. All 13 cases passed on one binary.",
+  "loadFailureNote": "The earlier high-load run is retained only in working logs; this current-source run completed all 13 cases cleanly.",
+  "priorLoadFailureNote": "A prior high-load run is retained only in the working logs; this evidence file records the clean current-source run."
+}

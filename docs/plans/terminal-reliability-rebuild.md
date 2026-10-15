@@ -341,7 +341,12 @@ Tauri `Terminal Dev` 已真实验证本地 zsh、普通命令、Unicode、Ctrl+C
 
 2026-08-24 重连门禁收口：定位到 smoke fixture 仅终止监听 daemon、没有终止独立 `sshd-session` 进程组，导致活动 TCP 连接持续存活并最终触发 180 秒 watchdog。fixture 现在校验 daemon 直接子进程的 PID/PPID/PGID，先终止隔离 session groups，再终止 daemon group，并在 3 秒后分别升级 `SIGKILL`；异常元数据 fail-closed。脚本回归 23 项通过，真实 localhost OpenSSH 重连 smoke 在 6.7 秒内完成 10 轮、产生 11 个唯一 session、拒绝旧 generation 输出并回收全部资源。普通 Tauri/xterm smoke 也在 5.4 秒内再次通过 8 MiB、97×31 resize 和 10 轮资源回收。下一切片仍是 macOS WKWebView 物理输入资格门禁，不因自动化重连通过而提前扩展 UX。
 
+2026-09-06 建链取消与门禁复验：为每次远程创建请求增加 process-local attempt registry 和 `session_cancel_connection`，前端关闭、断开、I/O 错误及 generation retirement 会主动取消尚未完成的 TCP/KEX/认证/Jump future；迟到结果由 generation 检查关闭且不发布。cancel/create 竞态通过有界 tombstone 传递，重复取消幂等并避免未知 ID 无限增长。smoke 的 `firstConnectionMs` 改为 xterm parser 实际看到 ready marker 后记录；重连前置会话只执行 interactive checkpoint。新增 Rust 竞态/上限测试和前端 interactive smoke 回归；`pnpm verify`（前端 875、Team Server 103、Rust 177+3、Node smoke 39）与 `smoke:ssh-matrix` 七用例全绿，标准 8 MiB/97×31 smoke 5966ms。物理键盘及 Windows/Pageant/PTY/串口实机仍保持待验证。
+
 2026-08-26 WKWebView 主终端恢复：Shell Integration 改用 `term.parser.registerOscHandler`，删除错误的 Terminal 类型扩展；入口内联样式移入现有外链 CSS，并把 viewport 改为单行，避免 Tauri style nonce/hash 使 WebKit 忽略 `unsafe-inline`。重建 debug App 后，本地 PTY显示 Connected，Safari Web Inspector 在主终端页为 0 error/0 warning；完整 `pnpm verify`、506 文件规模门禁与 `git diff --check` 通过。物理 `a/s/d` 30 轮资格门禁仍未完成，下一切片不变。
+
+2026-09-22 输入验收增量：真实事件诊断区分了 IME 用 Enter 提交文本与 shell 收到回车；ASCII 重叠探针新增原生输入源检查与显式临时切换/恢复。探针空白点击聚焦已修复，整轮自动重发被移除，结果顶层通过必须与每轮精确 hex 一致，应用提前退出时取消遗留 checkpoint 轮询。最终源码下严格 30 轮 CGEvent 通过（macOS 15.7.7 arm64、总测试耗时 111547ms、零重发、每轮 `617364`）；[逐轮记录与二进制摘要](../verification/2026-09-22-macos-input-probe.json) 已落盘。Node 24.16.0 下前端 880 项、Node 脚本 56 项及静态/生产构建门禁通过。用户确认目前没有 Windows 测试机或串口硬件，先完成 macOS 人工键盘/IME/日常交互验收，其他平台保留未验证。
+2026-10-09 输入增量：组合态 Escape 已修复为只交给原生 IME，不再写入 PTY；xterm 回归 8/8 通过。输入探针要求真实 composition 生命周期，Apple Pinyin 的 CGEvent 自动注入仍未触发 composition，因此中文 IME/人工物理键盘继续待验收。
 
 ## 14. 待确认问题
 

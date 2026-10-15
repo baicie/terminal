@@ -187,13 +187,19 @@ pub(crate) struct DecodedTerminalOutput {
     pub(crate) is_stderr: bool,
 }
 
+/// Decodes a byte stream that arrives in arbitrary chunks.
+///
+/// A serial port read returns whatever happens to be in the OS buffer, so a
+/// multi-byte UTF-8 character can be split across two reads. Converting each
+/// chunk on its own turns the halves into replacement characters and corrupts
+/// the text; the decoder holds the incomplete tail until the rest arrives.
 #[derive(Default)]
-struct Utf8StreamDecoder {
+pub(crate) struct Utf8StreamDecoder {
     pending: Vec<u8>,
 }
 
 impl Utf8StreamDecoder {
-    fn push(&mut self, bytes: &[u8]) -> String {
+    pub(crate) fn push(&mut self, bytes: &[u8]) -> String {
         self.pending.extend_from_slice(bytes);
         let mut output = String::new();
         let mut consumed = 0;
@@ -230,7 +236,7 @@ impl Utf8StreamDecoder {
         output
     }
 
-    fn finish(&mut self) -> String {
+    pub(crate) fn finish(&mut self) -> String {
         let output = String::from_utf8_lossy(&self.pending).into_owned();
         self.pending.clear();
         output

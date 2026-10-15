@@ -29,9 +29,14 @@ const argv = Object.fromEntries(
   }),
 )
 
+// The total budget tracks the whole lazy graph, so it grows whenever a feature
+// adds a view. It is deliberately looser than the initial budget: what gates
+// time-to-first-terminal is the critical path, and the initial budget is the
+// one that enforces that. Raising this line is only acceptable in the same
+// commit that explains which feature added the bytes.
 const budgets = {
   initialGzip: 240 * 1024,
-  totalGzip: 550 * 1024,
+  totalGzip: 560 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

@@ -29,6 +29,8 @@ export function createTerminalRecord(
     ),
     generation: 0,
     startPromise: null,
+    startPromises: new Set(),
+    connectionAttemptId: null,
     reconnectPromise: null,
     reconnectMode: null,
     reconnectAttempt: null,

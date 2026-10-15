@@ -1,9 +1,10 @@
 use async_trait::async_trait;
 use russh::ChannelMsg;
-use std::time::Duration;
 
 #[cfg(test)]
 use std::collections::VecDeque;
+#[cfg(test)]
+use std::time::Duration;
 
 use super::types::SessionError;
 
@@ -55,26 +56,27 @@ pub(crate) async fn configure_shell_channel<C: ShellChannel>(
     rows: u16,
     agent_forwarding: bool,
     environment: &std::collections::HashMap<String, String>,
-    request_timeout: Duration,
+    request_deadline: tokio::time::Instant,
 ) -> Result<(), SessionError> {
     request_with_confirmation(
         channel,
         ShellRequest::Pty { cols, rows },
         "request SSH PTY",
-        request_timeout,
+        request_deadline,
     )
     .await?;
 
     for (name, value) in environment {
-        channel
-            .send_request(ShellRequest::Env {
+        send_without_confirmation(
+            channel,
+            ShellRequest::Env {
                 name: name.clone(),
                 value: value.clone(),
-            })
-            .await
-            .map_err(|error| {
-                SessionError::ChannelError(format!("set SSH environment failed: {error}"))
-            })?;
+            },
+            "set SSH environment",
+            request_deadline,
+        )
+        .await?;
     }
 
     if agent_forwarding {
@@ -82,7 +84,7 @@ pub(crate) async fn configure_shell_channel<C: ShellChannel>(
             channel,
             ShellRequest::AgentForward,
             "request SSH agent forwarding",
-            request_timeout,
+            request_deadline,
         )
         .await?;
     }
@@ -91,18 +93,30 @@ pub(crate) async fn configure_shell_channel<C: ShellChannel>(
         channel,
         ShellRequest::Shell,
         "request SSH shell",
-        request_timeout,
+        request_deadline,
     )
     .await
+}
+
+async fn send_without_confirmation<C: ShellChannel>(
+    channel: &C,
+    request: ShellRequest,
+    operation: &'static str,
+    request_deadline: tokio::time::Instant,
+) -> Result<(), SessionError> {
+    tokio::time::timeout_at(request_deadline, channel.send_request(request))
+        .await
+        .map_err(|_| shell_request_timeout_error(operation))?
+        .map_err(|error| SessionError::ChannelError(format!("{operation} failed: {error}")))
 }
 
 async fn request_with_confirmation<C: ShellChannel>(
     channel: &mut C,
     request: ShellRequest,
     operation: &'static str,
-    request_timeout: Duration,
+    request_deadline: tokio::time::Instant,
 ) -> Result<(), SessionError> {
-    tokio::time::timeout(request_timeout.max(Duration::from_millis(1)), async {
+    tokio::time::timeout_at(request_deadline, async {
         channel
             .send_request(request)
             .await
@@ -132,12 +146,13 @@ async fn request_with_confirmation<C: ShellChannel>(
         }
     })
     .await
-    .map_err(|_| {
-        SessionError::ChannelError(format!(
-            "{operation} timed out after {} ms",
-            request_timeout.as_millis()
-        ))
-    })?
+    .map_err(|_| shell_request_timeout_error(operation))?
+}
+
+fn shell_request_timeout_error(operation: &'static str) -> SessionError {
+    SessionError::ChannelError(format!(
+        "{operation} timed out before the SSH shell setup deadline"
+    ))
 }
 
 #[cfg(test)]
@@ -145,10 +160,16 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
+    fn deadline_after(timeout: Duration) -> tokio::time::Instant {
+        tokio::time::Instant::now() + timeout
+    }
+
     struct FakeShellChannel {
         requests: Mutex<Vec<ShellRequest>>,
         replies: VecDeque<Option<ChannelMsg>>,
+        send_delay: Duration,
         stall_send: bool,
+        stall_environment: bool,
         stall_reply: bool,
     }
 
@@ -157,7 +178,9 @@ mod tests {
             Self {
                 requests: Mutex::new(Vec::new()),
                 replies: replies.into_iter().collect(),
+                send_delay: Duration::ZERO,
                 stall_send: false,
+                stall_environment: false,
                 stall_reply: false,
             }
         }
@@ -166,7 +189,9 @@ mod tests {
             Self {
                 requests: Mutex::new(Vec::new()),
                 replies: VecDeque::new(),
+                send_delay: Duration::ZERO,
                 stall_send: false,
+                stall_environment: false,
                 stall_reply: true,
             }
         }
@@ -175,7 +200,31 @@ mod tests {
             Self {
                 requests: Mutex::new(Vec::new()),
                 replies: VecDeque::new(),
+                send_delay: Duration::ZERO,
                 stall_send: true,
+                stall_environment: false,
+                stall_reply: false,
+            }
+        }
+
+        fn stalled_environment() -> Self {
+            Self {
+                requests: Mutex::new(Vec::new()),
+                replies: VecDeque::from([Some(ChannelMsg::Success)]),
+                send_delay: Duration::ZERO,
+                stall_send: false,
+                stall_environment: true,
+                stall_reply: false,
+            }
+        }
+
+        fn delayed_send(delay: Duration) -> Self {
+            Self {
+                requests: Mutex::new(Vec::new()),
+                replies: VecDeque::from([Some(ChannelMsg::Success), Some(ChannelMsg::Success)]),
+                send_delay: delay,
+                stall_send: false,
+                stall_environment: false,
                 stall_reply: false,
             }
         }
@@ -184,8 +233,11 @@ mod tests {
     #[async_trait]
     impl ShellChannel for FakeShellChannel {
         async fn send_request(&self, request: ShellRequest) -> Result<(), String> {
+            let should_stall = self.stall_send
+                || (self.stall_environment && matches!(request, ShellRequest::Env { .. }));
             self.requests.lock().expect("request mutex").push(request);
-            if self.stall_send {
+            tokio::time::sleep(self.send_delay).await;
+            if should_stall {
                 std::future::pending::<()>().await;
             }
             Ok(())
@@ -214,7 +266,7 @@ mod tests {
             40,
             true,
             &Default::default(),
-            Duration::from_secs(1),
+            deadline_after(Duration::from_secs(1)),
         )
         .await
         .expect("all shell requests should be confirmed");
@@ -245,7 +297,7 @@ mod tests {
             24,
             false,
             &environment,
-            Duration::from_secs(1),
+            deadline_after(Duration::from_secs(1)),
         )
         .await
         .expect("profile environment should be sent before shell");
@@ -273,7 +325,7 @@ mod tests {
             24,
             false,
             &Default::default(),
-            Duration::from_secs(1),
+            deadline_after(Duration::from_secs(1)),
         )
         .await
         .expect_err("a rejected PTY request must fail setup");
@@ -294,7 +346,7 @@ mod tests {
             24,
             false,
             &Default::default(),
-            Duration::from_secs(1),
+            deadline_after(Duration::from_secs(1)),
         )
         .await
         .expect_err("unexpected output before request confirmation must fail setup");
@@ -312,7 +364,7 @@ mod tests {
             24,
             false,
             &Default::default(),
-            Duration::from_millis(5),
+            deadline_after(Duration::from_millis(5)),
         )
         .await
         .expect_err("a missing request confirmation must time out");
@@ -332,7 +384,7 @@ mod tests {
                 24,
                 false,
                 &Default::default(),
-                Duration::from_millis(5),
+                deadline_after(Duration::from_millis(5)),
             ),
         )
         .await;
@@ -341,6 +393,53 @@ mod tests {
             result,
             Ok(Err(SessionError::ChannelError(message)))
                 if message.contains("request SSH PTY") && message.contains("timed out")
+        ));
+    }
+
+    #[tokio::test]
+    async fn shell_setup_deadline_includes_sending_profile_environment() {
+        let mut channel = FakeShellChannel::stalled_environment();
+        let environment =
+            std::collections::HashMap::from([(String::from("APP_ENV"), String::from("test"))]);
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(50),
+            configure_shell_channel(
+                &mut channel,
+                80,
+                24,
+                false,
+                &environment,
+                deadline_after(Duration::from_millis(5)),
+            ),
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Ok(Err(SessionError::ChannelError(message)))
+                if message.contains("set SSH environment") && message.contains("timed out")
+        ));
+    }
+
+    #[tokio::test]
+    async fn shell_setup_stages_share_one_absolute_deadline() {
+        let mut channel = FakeShellChannel::delayed_send(Duration::from_millis(30));
+
+        let result = configure_shell_channel(
+            &mut channel,
+            80,
+            24,
+            false,
+            &Default::default(),
+            deadline_after(Duration::from_millis(50)),
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(SessionError::ChannelError(message))
+                if message.contains("request SSH shell") && message.contains("timed out")
         ));
     }
 }

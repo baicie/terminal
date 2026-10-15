@@ -1,33 +1,33 @@
 import type { Tab, WorkspaceLayout } from '@/types'
 import { normalizeTerminalLayout } from '@/store/app-terminal-layout'
+import {
+  awaitWithRecoveryAbort,
+  throwIfRecoveryAborted,
+} from './workspace-recovery-abort'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
 import { useWorkspaceStore } from '@/store/workspace'
+import {
+  createRecoveryJournal,
+  getWorkspaceRecoveryJournalKey,
+  readRecoveryJournal,
+  removeRecoveryJournal,
+  writeRecoveryJournal,
+  type PendingWorkspaceSnapshot,
+} from './workspace-recovery-journal'
 
 const WORKSPACE_SAVE_DEBOUNCE_MS = 1_000
-const WORKSPACE_RECOVERY_JOURNAL_VERSION = 1
-const WORKSPACE_RECOVERY_JOURNAL_PREFIX = 'terminal.workspace.recovery.v1.'
-
-interface PendingWorkspaceSnapshot {
-  workspaceId: string
-  layout: WorkspaceLayout
-  journalValue: string
-}
-
-interface WorkspaceRecoveryJournal {
-  version: 1
-  savedAt: number
-  layout: WorkspaceLayout
-}
 
 export interface WorkspaceRecoveryHandle {
   flush: () => Promise<void>
   dispose: () => void
 }
 
-export function getWorkspaceRecoveryJournalKey(workspaceId: string): string {
-  return `${WORKSPACE_RECOVERY_JOURNAL_PREFIX}${workspaceId}`
+export interface WorkspaceRecoveryOptions {
+  signal?: AbortSignal
 }
+
+export { getWorkspaceRecoveryJournalKey }
 
 function isRestorableTab(tab: Tab, hostIds?: ReadonlySet<string>): boolean {
   if (tab.profileId || tab.type === 'serial') return false
@@ -45,6 +45,18 @@ function stripProcessLocalTabState(tab: Tab): Tab {
     type: tab.type,
     ...(tab.type === 'remote' && tab.hostId ? { hostId: tab.hostId } : {}),
   }
+}
+
+function canReplaceStartupFallback(tabs: readonly Tab[]): boolean {
+  return (
+    tabs.length > 0 &&
+    tabs.every(
+      tab =>
+        tab.startupFallback === true &&
+        tab.connectionStatus === undefined &&
+        tab.title === undefined,
+    )
+  )
 }
 
 export function sanitizeWorkspaceRecoveryLayout(
@@ -80,116 +92,94 @@ function readRecoveryLayout(workspaceId: string): WorkspaceLayout {
   })
 }
 
-function createRecoveryJournal(
-  workspaceId: string,
-  layout: WorkspaceLayout,
-): PendingWorkspaceSnapshot {
-    const sanitized = sanitizeWorkspaceRecoveryLayout(layout, workspaceId)
-  const journal: WorkspaceRecoveryJournal = {
-    version: WORKSPACE_RECOVERY_JOURNAL_VERSION,
-    savedAt: Date.now(),
-    layout: sanitized,
-  }
-  return {
-    workspaceId,
-    layout: sanitized,
-    journalValue: JSON.stringify(journal),
-  }
-}
-
-function writeRecoveryJournal(snapshot: PendingWorkspaceSnapshot): void {
-  try {
-    localStorage.setItem(
-      getWorkspaceRecoveryJournalKey(snapshot.workspaceId),
-      snapshot.journalValue,
-    )
-  } catch (error) {
-    console.warn('Failed to journal terminal workspace recovery state:', error)
-  }
-}
-
-function readRecoveryJournal(
-  workspaceId: string,
-): PendingWorkspaceSnapshot | null {
-  const key = getWorkspaceRecoveryJournalKey(workspaceId)
-  try {
-    const raw = localStorage.getItem(key)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<WorkspaceRecoveryJournal>
-    if (
-      parsed.version !== WORKSPACE_RECOVERY_JOURNAL_VERSION ||
-      !parsed.layout ||
-      typeof parsed.layout !== 'object'
-    ) {
-      localStorage.removeItem(key)
-      return null
-    }
-    const snapshot = createRecoveryJournal(workspaceId, parsed.layout)
-    writeRecoveryJournal(snapshot)
-    return snapshot
-  } catch (error) {
-    try {
-      localStorage.removeItem(key)
-    } catch {
-      // Storage may be unavailable; SQLite recovery still remains usable.
-    }
-    console.warn(
-      'Ignored an invalid terminal workspace recovery journal:',
-      error,
-    )
-    return null
-  }
-}
-
-function removeRecoveryJournal(snapshot: PendingWorkspaceSnapshot): void {
-  const key = getWorkspaceRecoveryJournalKey(snapshot.workspaceId)
-  try {
-    if (localStorage.getItem(key) === snapshot.journalValue) {
-      localStorage.removeItem(key)
-    }
-  } catch {
-    // The sanitized journal is safe to retry on the next launch.
-  }
-}
-
-export async function startWorkspaceRecovery(): Promise<WorkspaceRecoveryHandle> {
+export async function startWorkspaceRecovery(
+  options: WorkspaceRecoveryOptions = {},
+): Promise<WorkspaceRecoveryHandle> {
+  const { signal } = options
   const workspaceState = useWorkspaceStore.getState()
-  const workspaceLoad = workspaceState.loadWorkspaces()
+  const workspaceLoad = workspaceState.loadWorkspaces(signal)
   const hostLoad = useHostStore
     .getState()
-    .loadHosts()
+    .loadHosts(signal)
+    .then(() => true)
     .catch(error => {
+      if (signal?.aborted) throw error
       console.warn('Failed to load hosts before workspace recovery:', error)
+      return false
     })
-  await workspaceLoad
+  try {
+    await awaitWithRecoveryAbort(workspaceLoad, signal)
+  } catch (error) {
+    // Do not let a failed workspace load trigger a retry while the concurrent
+    // host query from this attempt is still mutating store state.
+    await awaitWithRecoveryAbort(hostLoad, signal).catch(() => undefined)
+    throw error
+  }
+  throwIfRecoveryAborted(signal)
 
   const activeWorkspaceId = useWorkspaceStore.getState().activeWorkspaceId
   const savedLayoutPromise = activeWorkspaceId
     ? workspaceState.loadLayout(activeWorkspaceId)
     : Promise.resolve(null)
-  const [savedLayout] = await Promise.all([savedLayoutPromise, hostLoad])
+  let savedLayout: WorkspaceLayout | null = null
+  try {
+    savedLayout = await awaitWithRecoveryAbort(savedLayoutPromise, signal)
+  } catch (error) {
+    throwIfRecoveryAborted(signal)
+    console.warn('Failed to load saved terminal layout:', error)
+  }
+  throwIfRecoveryAborted(signal)
   let recoveredJournal: PendingWorkspaceSnapshot | null = null
   if (activeWorkspaceId) {
-    recoveredJournal = readRecoveryJournal(activeWorkspaceId)
-    const hostIds = new Set(
-      (useHostStore.getState().hosts ?? []).map(host => host.id),
+    recoveredJournal = readRecoveryJournal(
+      activeWorkspaceId,
+      sanitizeWorkspaceRecoveryLayout,
     )
     const recoveryLayout = recoveredJournal?.layout ?? savedLayout
-    if (recoveryLayout) {
+    const currentTabs = useAppStore.getState().tabs
+    const shouldRestore =
+      Boolean(recoveryLayout?.tabs.length) &&
+      (currentTabs.length === 0 || canReplaceStartupFallback(currentTabs))
+    if (recoveryLayout && shouldRestore) {
       const sanitizedRecoveryLayout = sanitizeWorkspaceRecoveryLayout(
         recoveryLayout,
         activeWorkspaceId,
-        hostIds,
       )
       if (recoveredJournal) {
         recoveredJournal = createRecoveryJournal(
           activeWorkspaceId,
           sanitizedRecoveryLayout,
+          sanitizeWorkspaceRecoveryLayout,
         )
       }
-      useAppStore
-        .getState()
-        .restoreLayout(sanitizedRecoveryLayout)
+      useAppStore.getState().restoreLayout(sanitizedRecoveryLayout)
+    } else if (!shouldRestore) {
+      // A user may have opened a fallback/local tab while recovery was slow.
+      // Do not let a late database result overwrite that usable session.
+      recoveredJournal = null
+    }
+
+    if (
+      (await awaitWithRecoveryAbort(hostLoad, signal)) &&
+      useAppStore.getState().tabs.some(tab => tab.type === 'remote')
+    ) {
+      const currentLayout = readRecoveryLayout(activeWorkspaceId)
+      const hostIds = new Set(
+        (useHostStore.getState().hosts ?? []).map(host => host.id),
+      )
+      const sanitizedCurrentLayout = sanitizeWorkspaceRecoveryLayout(
+        currentLayout,
+        activeWorkspaceId,
+        hostIds,
+      )
+      useAppStore.getState().restoreLayout(sanitizedCurrentLayout)
+      if (recoveredJournal) {
+        recoveredJournal = createRecoveryJournal(
+          activeWorkspaceId,
+          sanitizedCurrentLayout,
+          sanitizeWorkspaceRecoveryLayout,
+        )
+      }
     }
   }
 
@@ -232,6 +222,7 @@ export async function startWorkspaceRecovery(): Promise<WorkspaceRecoveryHandle>
     pending = createRecoveryJournal(
       workspaceId,
       readRecoveryLayout(workspaceId),
+      sanitizeWorkspaceRecoveryLayout,
     )
     writeRecoveryJournal(pending)
     if (timer) clearTimeout(timer)
@@ -243,6 +234,12 @@ export async function startWorkspaceRecovery(): Promise<WorkspaceRecoveryHandle>
   }
 
   const unsubscribe = useAppStore.subscribe(schedule)
+  if (!pending && useAppStore.getState().tabs.length > 0) {
+    // Recovery subscribes after async workspace/host loads. Persist a tab
+    // created during that window (including the startup fallback) instead of
+    // losing it because no layout snapshot was loaded.
+    schedule()
+  }
   if (pending) {
     timer = setTimeout(() => {
       void flush().catch(error => {

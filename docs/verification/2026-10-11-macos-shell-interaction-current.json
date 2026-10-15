@@ -1,0 +1,274 @@
+{
+  "recordedAt": "2026-10-16T06:03:19+08:00",
+  "recordedDate": "2026-10-16",
+  "kind": "tauri-local-shell-interaction-current-worktree",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "revision": {
+    "head": "54f3fbbab39a97e1370d9880b89760dbd06a1c41",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "3dfd71f9361f4b46ca703dd06372519a54ca8d2adb96f5c62b4ed863e0b474b8"
+  },
+  "command": "node scripts/run-terminal-shell-probe-matrix.mjs --reuse-binary [--shells bash,zsh|--transport ssh]",
+  "shells": [
+    "bash",
+    "zsh"
+  ],
+  "matrixCommand": "node scripts/run-terminal-shell-probe-matrix.mjs --reuse-binary --shells bash,zsh",
+  "sshMatrixCommand": "node scripts/run-terminal-shell-probe-matrix.mjs --reuse-binary --transport ssh",
+  "matrixRunsExecuted": 14,
+  "matrixRunsPassed": 14,
+  "sshRunsExecuted": 7,
+  "sshRunsPassed": 7,
+  "shellNote": "Current-source clean re-run on one instrumented debug binary. Local bash and zsh each passed seven cases. The SSH run passed the same seven cases through a real loopback sshd using its default /bin/sh fixture; it does not claim bash/zsh remote shell coverage.",
+  "sshShell": "/bin/sh (fixture default)",
+  "sshCases": [
+    {
+      "case": "cat-eof",
+      "durationMs": 454,
+      "trace": [
+        "ready",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "case": "readline-history",
+      "durationMs": 354,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "case": "readline-tab",
+      "durationMs": 554,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "case": "vim-edit",
+      "durationMs": 2109,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "case": "nano-edit",
+      "durationMs": 4845,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "case": "pty-resize",
+      "durationMs": 1465,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "case": "ctrl-c-interrupt",
+      "durationMs": 1085,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    }
+  ],
+  "allCasesPassed": true,
+  "cases": [
+    {
+      "shell": "bash",
+      "case": "cat-eof",
+      "durationMs": 432,
+      "trace": [
+        "ready",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "shell": "bash",
+      "case": "readline-history",
+      "durationMs": 242,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "shell": "bash",
+      "case": "readline-tab",
+      "durationMs": 367,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "shell": "bash",
+      "case": "vim-edit",
+      "durationMs": 1931,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "shell": "bash",
+      "case": "nano-edit",
+      "durationMs": 4625,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "shell": "bash",
+      "case": "pty-resize",
+      "durationMs": 1317,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "shell": "bash",
+      "case": "ctrl-c-interrupt",
+      "durationMs": 1026,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "shell": "zsh",
+      "case": "cat-eof",
+      "durationMs": 446,
+      "trace": [
+        "ready",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "shell": "zsh",
+      "case": "readline-history",
+      "durationMs": 291,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "shell": "zsh",
+      "case": "readline-tab",
+      "durationMs": 493,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "shell": "zsh",
+      "case": "vim-edit",
+      "durationMs": 1978,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "shell": "zsh",
+      "case": "nano-edit",
+      "durationMs": 4690,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "shell": "zsh",
+      "case": "pty-resize",
+      "durationMs": 1817,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    },
+    {
+      "shell": "zsh",
+      "case": "ctrl-c-interrupt",
+      "durationMs": 1121,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ],
+      "ok": true
+    }
+  ],
+  "dialectNote": "The POSIX, PowerShell and cmd dialects share one case table. PowerShell claims cat-eof, pty-resize and ctrl-c-interrupt; cmd claims cat-eof and ctrl-c-interrupt. Windows dialect runtime evidence remains pending on a Windows runner.",
+  "limitations": [
+    "自动化输入由 xterm term.input() 进入 onData/session FIFO/PTY，不是物理键盘、CGEvent、系统粘贴或中文 IME。",
+    "SSH 传输的七个 case 使用 fixture 默认 /bin/sh；本文件不把它们当作 bash/zsh Shell Integration 证据。",
+    "Option/dead key、中文 IME、物理键盘以及 Windows/Pageant/PTY/串口实机仍未验收。"
+  ],
+  "source": {
+    "fingerprint": "40e58ef991817331947900228d2c2d0de7ee1a49109a58d03459b9293460e3b4",
+    "fingerprintCovers": [
+      "packages/frontend/src",
+      "src-tauri/src",
+      "packages/frontend/package.json",
+      "package.json",
+      "pnpm-lock.yaml"
+    ],
+    "note": "Debug evidence cannot be validated against the artifact on disk, because pnpm verify relinks target/debug/terminal as a bare cargo build. This content fingerprint of the sources these scenarios exercise is what makes a stale measurement detectable."
+  }
+}

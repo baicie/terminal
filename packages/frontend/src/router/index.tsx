@@ -1,6 +1,6 @@
 import type { RouteObject } from 'react-router-dom'
 import { createBrowserRouter } from 'react-router-dom'
-import ErrorBoundary from '@/components/error-boundary'
+import { RouteErrorBoundary } from '@/components/error-boundary'
 import Layout from '../layout'
 import { buildRoutes } from './nav-config.tsx'
 import { makeLazyRoute } from './lazy-route.tsx'
@@ -24,7 +24,7 @@ const TerminalRoute: React.FC = () => null
 const routes: RouteObject[] = [
   {
     element: <Layout />,
-    errorElement: <ErrorBoundary />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       // Terminal - 特殊路由，从 URL query 读取 tabId
       {

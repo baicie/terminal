@@ -75,3 +75,33 @@ export async function select<T>(
     return [] as T[]
   }
 }
+
+/**
+ * Read a startup-critical query without converting database failures into an
+ * empty result. Recovery uses this to distinguish "no rows" from "could not
+ * read the database" and preserve the user's last usable terminal layout.
+ */
+export async function selectStrict<T>(
+  sql: string,
+  params: unknown[] = [],
+): Promise<T[]> {
+  try {
+    const result = await (await getDb()).select<T>(sql, params)
+    return Array.isArray(result) ? result : [result as T]
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === 'Database only available in Tauri context'
+    ) {
+      throw error
+    }
+    console.error('[Database] Strict select error:', {
+      sql: sql.substring(0, 200),
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw new Error(
+      `Database query failed: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    )
+  }
+}

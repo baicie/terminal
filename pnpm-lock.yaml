@@ -13,7 +13,7 @@ overrides:
 
 patchedDependencies:
   '@baicie/xterm@0.1.7':
-    hash: 832ad7c3505cda5a2b94b377f7c0c03d07b5dad4e5cacb40f058c6d8c6669959
+    hash: 9caaf62b0b49abce9f42ef6c13da15cf20e443878fae686086bb696915313f36
     path: patches/@baicie__xterm@0.1.7.patch
 
 importers:
@@ -37,7 +37,7 @@ importers:
     dependencies:
       '@baicie/xterm':
         specifier: 0.1.7
-        version: 0.1.7(patch_hash=832ad7c3505cda5a2b94b377f7c0c03d07b5dad4e5cacb40f058c6d8c6669959)
+        version: 0.1.7(patch_hash=9caaf62b0b49abce9f42ef6c13da15cf20e443878fae686086bb696915313f36)
       '@radix-ui/react-avatar':
         specifier: ^1.1.11
         version: 1.1.11(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -6271,7 +6271,7 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
 
-  '@baicie/xterm@0.1.7(patch_hash=832ad7c3505cda5a2b94b377f7c0c03d07b5dad4e5cacb40f058c6d8c6669959)': {}
+  '@baicie/xterm@0.1.7(patch_hash=9caaf62b0b49abce9f42ef6c13da15cf20e443878fae686086bb696915313f36)': {}
 
   '@bcoe/v8-coverage@1.0.2': {}
 

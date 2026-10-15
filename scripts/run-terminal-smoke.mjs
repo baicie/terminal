@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -15,6 +16,12 @@ export const TAURI_BUILD_TIMEOUT_MS = 900_000
 const LOAD_BYTES = 8_388_608
 const TARGET_COLS = 97
 const TARGET_ROWS = 31
+const RESIZE_SEQUENCE = [
+  { requestedCols: 132, requestedRows: 43, observedCols: 132, observedRows: 43 },
+  { requestedCols: 90, requestedRows: 30, observedCols: 90, observedRows: 30 },
+  { requestedCols: 120, requestedRows: 40, observedCols: 120, observedRows: 40 },
+  { requestedCols: 97, requestedRows: 31, observedCols: 97, observedRows: 31 },
+]
 const MAX_RESULT_DURATION_MS = 180_000
 const FIRST_CONNECTION_DEADLINE_MS = 10_000
 const SSH_AGENT_PATH = '/usr/bin/ssh-agent'
@@ -25,10 +32,12 @@ const RESULT_KEYS = [
   'durationMs',
   'error',
   'firstConnectionMs',
+  'hostWakeSynthesized',
   'loadBytes',
   'loadEndVisible',
   'ok',
   'reconnectObserved',
+  'resizeTrace',
   'resizedSizeVisible',
   'resourcesRecovered',
   'roundsCompleted',
@@ -41,7 +50,23 @@ const RESULT_KEYS = [
 const PROFILE_ENVIRONMENT_KEYS = ['ENV', 'BASH_ENV', 'PROMPT_COMMAND', 'CDPATH']
 const RECONNECT_CHECKPOINT_TIMEOUT_MS = 30_000
 const AGENT_ADD_TIMEOUT_MS = 10_000
+const FIXTURE_CLEANUP_GRACE_MS = 5_000
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..')
+
+export function packageManagerCommand(platform = process.platform) {
+  return platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+}
+
+export function terminalExecutablePath(
+  targetDirectory,
+  { release = false, platform = process.platform } = {},
+) {
+  return path.join(
+    targetDirectory,
+    release ? 'release' : 'debug',
+    platform === 'win32' ? 'terminal.exe' : 'terminal',
+  )
+}
 
 const defaultDependencies = {
   access,
@@ -76,7 +101,7 @@ function hasExactKeys(value) {
 
 export function parseTerminalSmokeResult(
   serialized,
-  { reconnectRequired = false } = {},
+  { reconnectRequired = false, hostWakeRequired = false } = {},
 ) {
   let value
   try {
@@ -128,11 +153,21 @@ export function parseTerminalSmokeResult(
   ) {
     throw invalidResult('all terminal markers must be visible')
   }
+  if (JSON.stringify(value.resizeTrace) !== JSON.stringify(RESIZE_SEQUENCE)) {
+    throw invalidResult('continuous resize trace did not round-trip exactly')
+  }
   if (value.reconnectObserved !== reconnectRequired) {
     throw invalidResult(
       reconnectRequired
         ? 'reconnect was not observed'
         : 'unexpected reconnect observation',
+    )
+  }
+  if (value.hostWakeSynthesized !== hostWakeRequired) {
+    throw invalidResult(
+      hostWakeRequired
+        ? 'required host wake checkpoint was not observed'
+        : 'unexpected host wake checkpoint in this smoke runner',
     )
   }
   if (value.staleOutputRejected !== reconnectRequired) {
@@ -175,11 +210,18 @@ function collectOutput(stream) {
   return () => output
 }
 
-function waitForClose(child) {
+export function waitForClose(child) {
   return new Promise(resolve => {
     let spawnError = null
     child.once('error', error => {
       spawnError = error
+    })
+    // A killed process can leave a grandchild holding the stdio pipes, in
+    // which case `close` never arrives and only `exit` does. This runner
+    // escalates to SIGKILL on timeout, so waiting on `close` alone could hang
+    // the acceptance run after it had already given up on the app.
+    child.once('exit', (code, signal) => {
+      resolve({ code, signal, spawnError })
     })
     child.once('close', (code, signal) => {
       resolve({ code, signal, spawnError })
@@ -190,13 +232,18 @@ function waitForClose(child) {
 export async function buildFreshTauriBinary({
   cwd,
   env,
+  release = false,
   dependencies = defaultDependencies,
 }) {
+  const buildArgs = release
+    ? ['tauri', 'build', '--no-bundle']
+    : ['tauri', 'build', '--debug', '--no-bundle']
+  const profileLabel = release ? 'release' : 'debug'
   let child
   try {
     child = dependencies.spawn(
-      'pnpm',
-      ['tauri', 'build', '--debug', '--no-bundle'],
+      packageManagerCommand(dependencies.platform),
+      buildArgs,
       {
         cwd,
         env: { ...env, VITE_TERMINAL_SMOKE_BUILD: '1' },
@@ -206,7 +253,7 @@ export async function buildFreshTauriBinary({
       },
     )
   } catch (error) {
-    throw new Error(`Failed to start Tauri debug build: ${error.message}`)
+    throw new Error(`Failed to start Tauri ${profileLabel} build: ${error.message}`)
   }
 
   const status = await waitForTimedClose(
@@ -217,17 +264,17 @@ export async function buildFreshTauriBinary({
   )
   if (status.timedOut) {
     throw new Error(
-      `Tauri debug build timed out after ${TAURI_BUILD_TIMEOUT_MS} ms`,
+      `Tauri ${profileLabel} build timed out after ${TAURI_BUILD_TIMEOUT_MS} ms`,
     )
   }
   if (status.spawnError) {
     throw new Error(
-      `Failed to run Tauri debug build: ${status.spawnError.message}`,
+      `Failed to run Tauri ${profileLabel} build: ${status.spawnError.message}`,
     )
   }
   if (status.code !== 0) {
     throw new Error(
-      `Tauri debug build exited with code ${String(status.code)}${status.signal ? ` (${status.signal})` : ''}`,
+      `Tauri ${profileLabel} build exited with code ${String(status.code)}${status.signal ? ` (${status.signal})` : ''}`,
     )
   }
 }
@@ -328,28 +375,48 @@ async function waitForTimedClose(
   dependencies,
   timeoutMs,
   signal = signalChild,
+  abortSignal,
 ) {
   let timedOut = false
+  let aborted = false
   let forceKillTimer
-  const timeoutTimer = dependencies.setTimeout(() => {
-    timedOut = true
-    signal(child, 'SIGTERM', dependencies)
+  const statusPromise = waitForClose(child)
+  const terminate = (reason, markAborted = false) => {
+    if (markAborted) aborted = true
+    signal(child, reason, dependencies)
     forceKillTimer = dependencies.setTimeout(
       () => signal(child, 'SIGKILL', dependencies),
       FORCE_KILL_GRACE_MS,
     )
+  }
+  const timeoutTimer = dependencies.setTimeout(() => {
+    timedOut = true
+    terminate('SIGTERM')
   }, timeoutMs)
+  const onAbort = () => terminate('SIGTERM', true)
+  if (abortSignal) {
+    if (abortSignal.aborted) onAbort()
+    else abortSignal.addEventListener('abort', onAbort, { once: true })
+  }
 
-  const status = await waitForClose(child)
+  const status = await statusPromise
   dependencies.clearTimeout(timeoutTimer)
   if (forceKillTimer !== undefined) dependencies.clearTimeout(forceKillTimer)
+  abortSignal?.removeEventListener('abort', onAbort)
 
-  return { ...status, timedOut }
+  return { ...status, timedOut, aborted }
 }
 
-async function waitForApplication(child, dependencies) {
-  const status = await waitForTimedClose(child, dependencies, APP_TIMEOUT_MS)
+async function waitForApplication(child, dependencies, abortSignal) {
+  const status = await waitForTimedClose(
+    child,
+    dependencies,
+    APP_TIMEOUT_MS,
+    signalChild,
+    abortSignal,
+  )
 
+  if (status.aborted) throw abortReason(abortSignal)
   if (status.timedOut) {
     throw new Error(`Terminal smoke timed out after ${APP_TIMEOUT_MS} ms`)
   }
@@ -369,6 +436,55 @@ function abortReason(signal) {
   return signal.reason instanceof Error
     ? signal.reason
     : new Error('Terminal smoke reconnect control cancelled')
+}
+
+function startAbortable(start, signal, onLateCleanup) {
+  const operation = Promise.resolve().then(() => {
+    if (signal?.aborted) throw abortReason(signal)
+    return start()
+  })
+  if (!signal) return operation
+
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let lateCleanupRegistered = false
+    const cleanup = () => signal.removeEventListener('abort', onAbort)
+    const stopLateFixture = value => {
+      if (!value || typeof value.stop !== 'function') return Promise.resolve()
+      return Promise.resolve(value.stop()).catch(() => {})
+    }
+    const onAbort = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(abortReason(signal))
+      lateCleanupRegistered = typeof onLateCleanup === 'function'
+      onLateCleanup?.(
+        operation.then(
+          value => stopLateFixture(value),
+          () => {},
+        ),
+      )
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    operation.then(
+      value => {
+        if (settled) {
+          if (!lateCleanupRegistered) stopLateFixture(value)
+          return
+        }
+        settled = true
+        cleanup()
+        resolve(value)
+      },
+      error => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(error)
+      },
+    )
+  })
 }
 
 async function waitForReconnectCheckpoint(filePath, dependencies, signal) {
@@ -405,9 +521,14 @@ async function waitForReconnectAndApplication(
   reconnectControlPath,
   sshd,
   dependencies,
+  outageHoldMs,
+  abortSignal,
+  firstConnectOutage,
 ) {
   const controller = new AbortController()
-  const application = waitForApplication(child, dependencies).then(
+  const onAbort = () => controller.abort(abortReason(abortSignal))
+  abortSignal?.addEventListener('abort', onAbort, { once: true })
+  const application = waitForApplication(child, dependencies, abortSignal).then(
     status => ({ error: null, status }),
     error => ({ error, status: null }),
   )
@@ -416,36 +537,55 @@ async function waitForReconnectAndApplication(
     dependencies,
     controller.signal,
   )
-    .then(() => sshd.restart())
+    .then(() =>
+      // In the first-connect case the host is already down and coming back on
+      // its own schedule, so bouncing it here would end the outage before the
+      // reconnect ladder had anything to walk.
+      firstConnectOutage !== undefined
+        ? firstConnectOutage
+        : outageHoldMs === undefined
+          ? sshd.restart()
+          : sshd.interrupt({ holdMs: outageHoldMs }),
+    )
     .then(
       () => ({ error: null }),
       error => ({ error }),
     )
-  const first = await Promise.race([
-    application.then(outcome => ({ kind: 'application', outcome })),
-    reconnect.then(outcome => ({ kind: 'reconnect', outcome })),
-  ])
+  try {
+    const first = await Promise.race([
+      application.then(outcome => ({ kind: 'application', outcome })),
+      reconnect.then(outcome => ({ kind: 'reconnect', outcome })),
+    ])
 
-  if (first.kind === 'reconnect' && first.outcome.error) {
-    signalChild(child, 'SIGTERM')
-    const forceKillTimer = dependencies.setTimeout(
-      () => signalChild(child, 'SIGKILL'),
-      FORCE_KILL_GRACE_MS,
-    )
-    await application
-    dependencies.clearTimeout(forceKillTimer)
-    throw first.outcome.error
-  }
+    if (first.kind === 'reconnect' && first.outcome.error) {
+      signalChild(child, 'SIGTERM')
+      const forceKillTimer = dependencies.setTimeout(
+        () => signalChild(child, 'SIGKILL'),
+        FORCE_KILL_GRACE_MS,
+      )
+      await application
+      dependencies.clearTimeout(forceKillTimer)
+      throw first.outcome.error
+    }
 
-  const applicationOutcome =
-    first.kind === 'application' ? first.outcome : await application
-  controller.abort(new Error('Terminal smoke application closed'))
-  const reconnectOutcome = await reconnect
-  if (applicationOutcome.error) throw applicationOutcome.error
-  if (applicationOutcome.status.code === 0 && reconnectOutcome.error) {
-    throw reconnectOutcome.error
+    const applicationOutcome =
+      first.kind === 'application' ? first.outcome : await application
+    controller.abort(new Error('Terminal smoke application closed'))
+    const reconnectOutcome = await reconnect
+    if (applicationOutcome.error) throw applicationOutcome.error
+    if (reconnectOutcome.error && applicationOutcome.status.code !== 0) {
+      // The application exited on its own before publishing the checkpoint.
+      // Throwing the abort error the local controller just raised would mask
+      // that with "Terminal smoke application closed", which names no cause.
+      throw new Error(
+        `${applicationExitMessage(applicationOutcome.status)} without waiting for the reconnect checkpoint`,
+      )
+    }
+    return applicationOutcome.status
+  } finally {
+    abortSignal?.removeEventListener('abort', onAbort)
+    controller.abort(new Error('Terminal smoke application closed'))
   }
-  return applicationOutcome.status
 }
 
 function collectOutputPipe(command, args, options, dependencies, label) {
@@ -484,6 +624,72 @@ function collectOutputPipe(command, args, options, dependencies, label) {
     })
   })
 }
+
+/**
+ * Resolves the binary a runner is about to launch and returns its digest.
+ * Evidence files must record this value: every later build relinks the same
+ * path, so a measurement is only reproducible together with its hash.
+ */
+export async function resolveBuiltBinary({
+  targetDirectory,
+  release = false,
+  cwd = PROJECT_ROOT,
+  env = process.env,
+  dependencies = defaultDependencies,
+}) {
+  const resolved =
+    targetDirectory ?? (await cargoTargetDirectory({ cwd, env, dependencies }))
+  const executable = terminalExecutablePath(resolved, {
+    release,
+    platform: dependencies.platform,
+  })
+  await dependencies.access(executable)
+  const contents = await dependencies.readFile(executable)
+  return {
+    executable,
+    sha256: createHash('sha256').update(contents).digest('hex'),
+  }
+}
+
+/**
+ * The smoke and probe entry points are only compiled into the frontend when
+ * VITE_TERMINAL_SMOKE_BUILD=1, so a plain `tauri build` yields a binary that
+ * cannot run a single smoke case. That makes an instrumented binary a genuinely
+ * different artifact from a shipping one.
+ *
+ * This matters for evidence. A cold-start number measured on a shipping binary
+ * and an SSH matrix measured on an instrumented one are not measurements of the
+ * same build, and a gate that treats a shared sha256 as proof of a shared build
+ * would be trusting a coincidence. Instrumented builds reference lazily loaded
+ * smoke/probe chunks by filename; shipping builds do not, which makes the
+ * embedded asset list a reliable discriminator.
+ */
+export function findInstrumentedChunkNames(contents) {
+  const text = contents.toString('latin1')
+  const names = text.match(/[A-Za-z0-9_.-]{4,}\.(?:js|css)/g) ?? []
+  return [...new Set(names)].filter(name =>
+    /smoke|probe|automation|experiment/i.test(name),
+  )
+}
+
+export async function assertSmokeInstrumentedBinary(
+  binary,
+  dependencies = defaultDependencies,
+) {
+  const contents = await dependencies.readFile(binary.executable)
+  const instrumented = findInstrumentedChunkNames(contents)
+  if (instrumented.length === 0) {
+    throw new Error(
+      `${binary.executable} was built without VITE_TERMINAL_SMOKE_BUILD=1, so it ` +
+        'cannot run smoke cases. Build with the flag, or drop --reuse-binary to let ' +
+        'the matrix build an instrumented binary. Note that an instrumented binary ' +
+        'is a different artifact from a shipping one: cold-start numbers measured on ' +
+        'a shipping binary must not be presented as covering this matrix.',
+    )
+  }
+  return instrumented
+}
+
 
 async function startSmokeAgent({ runDirectory, privateKey, dependencies }) {
   const socketPath = path.join(runDirectory, 'agent.sock')
@@ -548,76 +754,161 @@ async function startSmokeAgent({ runDirectory, privateKey, dependencies }) {
   }
 }
 
-async function startSmokeFixtures({ runDirectory, auth, dependencies }) {
+async function startSmokeFixtures({
+  runDirectory,
+  auth,
+  dependencies,
+  signal,
+  onLateCleanup,
+}) {
   if (auth === 'password') {
-    return { fixture: await dependencies.startPasswordSshd({ runDirectory }), agent: null }
-  }
-  if (auth === 'cert') {
-    return { fixture: await dependencies.startSshd({ runDirectory, mode: 'cert' }), agent: null }
-  }
-  if (auth === 'agent') {
-    const fixture = await dependencies.startSshd({
-      runDirectory,
-      connectionExtra: { authMode: 'agent', privateKey: null },
-    })
-    const agent = await startSmokeAgent({
-      runDirectory,
-      privateKey: fixture.identityKey,
-      dependencies,
-    })
-    return { fixture, agent }
-  }
-  if (auth === 'jump') {
-    const target = await dependencies.startSshd({ runDirectory })
-    const jump = await dependencies.startSshd({
-      runDirectory: path.join(runDirectory, 'jump'),
-      role: 'jump',
-      targetPort: target.port,
-    })
-    const composed = {
-      host: target.host,
-      port: target.port,
-      username: target.username,
-      authMode: 'key',
-      expectedHostKey: target.expectedHostKey,
-      privateKey: target.privateKey,
-      password: null,
-      certificate: null,
-      jump: {
-        host: jump.host,
-        port: jump.port,
-        username: jump.username,
-        privateKey: jump.privateKey,
-        expectedHostKey: jump.expectedHostKey,
-      },
-    }
-    await dependencies.writeFile(target.configPath, `${JSON.stringify(composed)}\n`, {
-      encoding: 'utf8',
-      mode: 0o600,
-    })
     return {
-      fixture: {
-        ...composed,
-        configPath: target.configPath,
-        restart: () => target.restart(),
-        stop: async () => {
-          await target.stop()
-          await jump.stop()
-        },
-      },
+      fixture: await startAbortable(
+        () => dependencies.startPasswordSshd({ runDirectory }),
+        signal,
+        onLateCleanup,
+      ),
       agent: null,
     }
   }
-  return { fixture: await dependencies.startSshd({ runDirectory }), agent: null }
+  if (auth === 'cert') {
+    return {
+      fixture: await startAbortable(
+        () => dependencies.startSshd({ runDirectory, mode: 'cert' }),
+        signal,
+        onLateCleanup,
+      ),
+      agent: null,
+    }
+  }
+  if (auth === 'agent') {
+    const fixture = await startAbortable(
+      () =>
+        dependencies.startSshd({
+          runDirectory,
+          connectionExtra: { authMode: 'agent', privateKey: null },
+        }),
+      signal,
+      onLateCleanup,
+    )
+    try {
+      const agent = await startAbortable(
+        () =>
+          startSmokeAgent({
+            runDirectory,
+            privateKey: fixture.identityKey,
+            dependencies,
+          }),
+        signal,
+        onLateCleanup,
+      )
+      return { fixture, agent }
+    } catch (error) {
+      try {
+        await fixture.stop()
+      } catch {
+        // Preserve the agent setup failure; fixture cleanup is best effort.
+      }
+      throw error
+    }
+  }
+  if (auth === 'jump') {
+    const target = await startAbortable(
+      () => dependencies.startSshd({ runDirectory }),
+      signal,
+      onLateCleanup,
+    )
+    let jump
+    try {
+      jump = await startAbortable(
+        () =>
+          dependencies.startSshd({
+            runDirectory: path.join(runDirectory, 'jump'),
+            role: 'jump',
+            targetPort: target.port,
+          }),
+        signal,
+        onLateCleanup,
+      )
+      const composed = {
+        host: target.host,
+        port: target.port,
+        username: target.username,
+        authMode: 'key',
+        expectedHostKey: target.expectedHostKey,
+        privateKey: target.privateKey,
+        password: null,
+        certificate: null,
+        jump: {
+          host: jump.host,
+          port: jump.port,
+          username: jump.username,
+          privateKey: jump.privateKey,
+          expectedHostKey: jump.expectedHostKey,
+        },
+      }
+      await dependencies.writeFile(target.configPath, `${JSON.stringify(composed)}\n`, {
+        encoding: 'utf8',
+        mode: 0o600,
+      })
+      let restartPromise
+      return {
+        fixture: {
+          ...composed,
+          configPath: target.configPath,
+          restart: () => {
+            if (restartPromise) return restartPromise
+            restartPromise = (async () => {
+              // Rebuild the bastion transport before the target so the next
+              // direct-tcpip session cannot reuse the old forwarding path.
+              await jump.restart()
+              await target.restart()
+            })()
+            return restartPromise
+          },
+          stop: async () => {
+            await target.stop()
+            await jump.stop()
+          },
+        },
+        agent: null,
+      }
+    } catch (error) {
+      try {
+        await jump?.stop()
+      } catch {
+        // Preserve the setup failure; fixture cleanup is best effort.
+      }
+      try {
+        await target.stop()
+      } catch {
+        // Preserve the setup failure; fixture cleanup is best effort.
+      }
+      throw error
+    }
+  }
+  return {
+    fixture: await startAbortable(
+      () => dependencies.startSshd({ runDirectory }),
+      signal,
+      onLateCleanup,
+    ),
+    agent: null,
+  }
 }
 
 export async function runTerminalSmoke({
   cwd = PROJECT_ROOT,
   env = process.env,
   reconnect = false,
+  outageHoldMs,
+  firstConnectOutageHoldMs,
+  hostWakeRequired = false,
   auth = 'key',
   skipBuild = false,
+  release = false,
   targetDirectory,
+  signal = new AbortController().signal,
   dependencies: overrides = {},
 } = {}) {
   const dependencies = { ...defaultDependencies, ...overrides }
@@ -627,9 +918,10 @@ export async function runTerminalSmoke({
   if (!SUPPORTED_AUTH_MODES.includes(auth)) {
     throw new Error(`terminal smoke auth mode must be one of ${SUPPORTED_AUTH_MODES.join('/')}`)
   }
+  if (signal.aborted) throw abortReason(signal)
 
   if (!skipBuild) {
-    await buildFreshTauriBinary({ cwd, env, dependencies })
+    await buildFreshTauriBinary({ cwd, env, release, dependencies })
   }
   const resolvedTargetDirectory =
     targetDirectory ?? (await cargoTargetDirectory({ cwd, env, dependencies }))
@@ -638,15 +930,32 @@ export async function runTerminalSmoke({
   )
   let fixture
   let agent = null
+  const lateFixtureCleanups = []
 
   try {
     ;({ fixture, agent } = await startSmokeFixtures({
       runDirectory,
       auth,
       dependencies,
+      signal,
+      onLateCleanup: cleanup => lateFixtureCleanups.push(cleanup),
     }))
+    // The first-connect outage has to be *armed* before the application
+    // spawns, otherwise the very first attempt lands on a live daemon and the
+    // case silently degrades into an ordinary reconnect run. The promise is
+    // deliberately not awaited here: it resolves only after the daemon is back,
+    // and the application has to be running against the downed host for that.
+    const firstConnectOutage =
+      firstConnectOutageHoldMs === undefined
+        ? undefined
+        : fixture.outageBeforeFirstConnect({ holdMs: firstConnectOutageHoldMs })
+    if (signal.aborted) throw abortReason(signal)
     const resultPath = path.join(runDirectory, 'result.json')
     const reconnectControlPath = path.join(runDirectory, 'reconnect.ready')
+    const hostWakeControlPath = path.join(runDirectory, 'host-wake.ready')
+    if (hostWakeRequired) {
+      await dependencies.writeFile(hostWakeControlPath, '')
+    }
     const smokeEnvironment = { ...env }
     for (const key of PROFILE_ENVIRONMENT_KEYS) {
       delete smokeEnvironment[key]
@@ -662,10 +971,17 @@ export async function runTerminalSmoke({
       ...(reconnect
         ? { TERMINAL_SMOKE_RECONNECT_CONTROL_PATH: reconnectControlPath }
         : {}),
+      ...(hostWakeRequired
+        ? { TERMINAL_SMOKE_HOST_WAKE_PATH: hostWakeControlPath }
+        : {}),
       ...(agent ? agent.env : {}),
     })
 
-    const executable = path.join(resolvedTargetDirectory, 'debug', 'terminal')
+    const executable = path.join(
+      resolvedTargetDirectory,
+      release ? 'release' : 'debug',
+      'terminal',
+    )
     let child
     try {
       child = dependencies.spawn(executable, [], {
@@ -684,8 +1000,11 @@ export async function runTerminalSmoke({
           reconnectControlPath,
           fixture,
           dependencies,
+          outageHoldMs,
+          signal,
+          firstConnectOutage,
         )
-      : await waitForApplication(child, dependencies)
+      : await waitForApplication(child, dependencies, signal)
     let serialized
     try {
       serialized = await dependencies.readFile(resultPath, 'utf8')
@@ -699,9 +1018,20 @@ export async function runTerminalSmoke({
     }
     const result = parseTerminalSmokeResult(serialized, {
       reconnectRequired: reconnect,
+      hostWakeRequired,
     })
     return result
   } finally {
+    if (lateFixtureCleanups.length > 0) {
+      let timer
+      await Promise.race([
+        Promise.allSettled(lateFixtureCleanups),
+        new Promise(resolve => {
+          timer = dependencies.setTimeout(resolve, FIXTURE_CLEANUP_GRACE_MS)
+        }),
+      ])
+      if (timer !== undefined) dependencies.clearTimeout(timer)
+    }
     try {
       if (agent) await agent.stop()
     } finally {
@@ -721,7 +1051,11 @@ const isDirectRun =
 if (isDirectRun) {
   const argv = process.argv.slice(2)
   const auth = argv.includes('--auth') ? argv[argv.indexOf('--auth') + 1] : 'key'
-  runTerminalSmoke({ reconnect: argv.includes('--reconnect'), auth })
+  runTerminalSmoke({
+    reconnect: argv.includes('--reconnect'),
+    release: argv.includes('--release'),
+    auth,
+  })
     .then(result => {
       console.log(JSON.stringify(result, null, 2))
     })

@@ -8,6 +8,7 @@ import type {
 
 const MAX_BUFFERED_CHUNKS = 256
 const MAX_BUFFERED_BYTES = 512 * 1024
+const MAX_PENDING_SESSIONS = 1024
 
 function hasBackendFlowControl(output: BufferedTerminalOutput): boolean {
   return (
@@ -34,12 +35,40 @@ function trimUncontrolledOutput(items: BufferedTerminalOutput[]): void {
   }
 }
 
+function trimPendingSessions(pending: Map<string, ShellOutput[]>): void {
+  while (pending.size > MAX_PENDING_SESSIONS) {
+    const evictable = [...pending].find(([, items]) =>
+      items.every(item => !hasBackendFlowControl(item)),
+    )
+    if (!evictable) return
+    pending.delete(evictable[0])
+  }
+}
+
 interface DeliveredTerminalOutput {
   listener: TerminalSessionListener
   output: BufferedTerminalOutput
 }
 
 type BackendAcknowledger = (sessionId: string, bytes: number) => void
+
+/**
+ * Deliver a snapshot without letting one broken listener escape. Session state
+ * is published from inside the reconnect retry loop, so an exception here
+ * would reject the retry promise and abandon the whole attempt budget, leaving
+ * the pane stuck in `reconnecting` forever. Other panes must still see the
+ * state, so the failure is contained per listener.
+ */
+function notifyState(
+  listener: TerminalSessionListener,
+  snapshot: TerminalSessionSnapshot,
+): void {
+  try {
+    listener.onState(snapshot)
+  } catch (error) {
+    console.error('[terminal] terminal state listener failed:', error)
+  }
+}
 
 function normalizeOutput(
   output: ShellOutput | BufferedTerminalOutput,
@@ -69,7 +98,7 @@ export class TerminalSessionAudience {
     snapshot: TerminalSessionSnapshot,
   ): void {
     this.listeners.add(listener)
-    listener.onState(snapshot)
+    notifyState(listener, snapshot)
     if (this.owner !== listener) {
       if (this.owner) this.reclaim(this.owner)
       this.owner = listener
@@ -86,7 +115,7 @@ export class TerminalSessionAudience {
   }
 
   publishState(snapshot: TerminalSessionSnapshot): void {
-    for (const listener of this.listeners) listener.onState(snapshot)
+    for (const listener of this.listeners) notifyState(listener, snapshot)
   }
 
   enqueue(output: ShellOutput | BufferedTerminalOutput): void {
@@ -131,7 +160,15 @@ export class TerminalSessionAudience {
         },
         acknowledge: () => this.acknowledge(deliveryId, listener),
       }
-      listener.onOutput(output.data, output.bytes, receipt)
+      try {
+        listener.onOutput(output.data, output.bytes, receipt)
+      } catch (error) {
+        // A throwing render surface must not abort the drain loop: every later
+        // chunk would stop reaching the pane as well. The delivery stays
+        // registered so detaching the surface re-delivers it like any other
+        // unacknowledged chunk instead of dropping it silently.
+        console.error('[terminal] output listener failed:', error)
+      }
     }
   }
 
@@ -179,6 +216,7 @@ export class TerminalSessionOutputBuffer {
       trimUncontrolledOutput(items)
     }
     this.pending.set(output.session_id, items)
+    trimPendingSessions(this.pending)
   }
 
   take(sessionId: string): ShellOutput[] {

@@ -1,12 +1,11 @@
 use crate::errors::PortForwardError;
 use anyhow::{anyhow, Result};
 use russh::client::{self, Handler};
-use russh::{Channel, ChannelId};
+use russh::Channel;
 use russh_sftp::client::SftpSession;
 use serde::{Deserialize, Serialize};
 use serialport::SerialPort;
 use std::collections::HashMap;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -30,11 +29,17 @@ async fn connect_agent_transport(socket_path: Option<PathBuf>) -> Result<AgentTr
 }
 
 #[cfg(windows)]
-async fn connect_agent_transport(_socket_path: Option<PathBuf>) -> Result<AgentTransport> {
+async fn connect_agent_transport(socket_path: Option<PathBuf>) -> Result<AgentTransport> {
     use russh::keys::agent::client::AgentClient;
 
     const OPENSSH_AGENT_PIPE: &str = r"\\.\pipe\openssh-ssh-agent";
-    if let Ok(pipe) = std::env::var("SSH_AUTH_SOCK") {
+    // Capture the configured pipe when the handler is created. Reading the
+    // environment again here made forwarding ignore a handler's socket
+    // identity and could connect a later session to a different agent.
+    if let Some(pipe) = socket_path
+        .and_then(|path| path.into_os_string().into_string().ok())
+        .filter(|pipe| !pipe.trim().is_empty())
+    {
         return AgentClient::connect_named_pipe(&pipe)
             .await
             .map(AgentClient::into_inner)
@@ -147,16 +152,21 @@ pub struct PortForwardInfo {
     pub status: String,
 }
 
-/// Agent channel state for managing forwarded agent connections.
-pub struct AgentChannel {
-    #[allow(dead_code)]
-    pub socket_path: PathBuf,
-}
-
 /// Serial port session state
 pub struct SerialSession {
     pub port: Arc<StdMutex<Box<dyn SerialPort>>>,
     pub stop: Arc<AtomicBool>,
+    /// Released once the blocking read loop has returned and dropped the
+    /// cloned port handle, so a disconnect can wait for the device to be
+    /// genuinely released before the caller reconnects it. A semaphore rather
+    /// than a Notify, because a disconnect racing reader startup must not miss
+    /// the wakeup and hang.
+    pub closed: Arc<tokio::sync::Semaphore>,
+    /// Held for reading by every in-flight write and for writing by a
+    /// disconnect. A write clones the port out of the session map and then
+    /// writes without holding that map, so without this gate a disconnect
+    /// could report success while a write still had the device open.
+    pub write_gate: Arc<tokio::sync::RwLock<()>>,
 }
 
 /// Serial port info for frontend
@@ -176,16 +186,6 @@ pub struct SerialConfig {
     pub stop_bits: u8,
     pub parity: String,
     pub flow_control: String,
-}
-
-/// Local PTY session state.
-pub struct LocalPtySession {
-    #[allow(dead_code)]
-    pub pty_pair: portable_pty::PtyPair,
-    #[allow(dead_code)]
-    pub child: Box<dyn portable_pty::Child + Send + Sync>,
-    #[allow(dead_code)]
-    pub writer: Arc<Mutex<Box<dyn Write + Send + 'static>>>,
 }
 
 /// SFTP file item for directory listing
@@ -210,14 +210,9 @@ pub struct AgentForwardState {
 
 /// Get the SSH_AUTH_SOCK path from environment
 pub fn get_ssh_agent_socket() -> Option<String> {
-    #[cfg(unix)]
-    {
-        std::env::var("SSH_AUTH_SOCK").ok()
-    }
-    #[cfg(not(unix))]
-    {
-        None
-    }
+    std::env::var("SSH_AUTH_SOCK")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
 }
 
 /// ClientHandler with SSH Agent forwarding and remote port forwarding support.
@@ -422,14 +417,8 @@ impl Handler for ClientHandler {
 
 /// Shared application state containing all session management.
 pub struct SharedState {
-    #[allow(dead_code)]
-    pub local_sessions: Mutex<HashMap<String, LocalPtySession>>,
     pub sftp_sessions: Mutex<HashMap<String, Arc<SftpSession>>>,
-    #[allow(dead_code)]
-    pub shell_channels: Mutex<HashMap<String, ChannelId>>,
     pub port_forwards: Mutex<HashMap<String, PortForwardTask>>,
-    #[allow(dead_code)]
-    pub agent_channels: Mutex<HashMap<String, AgentChannel>>,
     pub serial_sessions: Mutex<HashMap<String, SerialSession>>,
 }
 
@@ -438,11 +427,8 @@ pub type SharedStateType = Arc<SharedState>;
 /// Create and initialize the shared state
 pub fn create_shared_state() -> SharedStateType {
     Arc::new(SharedState {
-        local_sessions: Mutex::new(HashMap::new()),
         sftp_sessions: Mutex::new(HashMap::new()),
-        shell_channels: Mutex::new(HashMap::new()),
         port_forwards: Mutex::new(HashMap::new()),
-        agent_channels: Mutex::new(HashMap::new()),
         serial_sessions: Mutex::new(HashMap::new()),
     })
 }
@@ -453,11 +439,11 @@ mod tests {
 
     const ED25519_PUBLIC_KEY: &str =
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILM+rvN+ot98qgEN796jTiQfZfG1KaT0PtFDJ/XFSqti";
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     static SSH_AUTH_SOCK_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn test_get_ssh_agent_socket_returns_env_var() {
         let _guard = SSH_AUTH_SOCK_TEST_LOCK
             .lock()
@@ -465,9 +451,14 @@ mod tests {
         let original = std::env::var_os("SSH_AUTH_SOCK");
 
         // When SSH_AUTH_SOCK is set, should return Some(value)
-        std::env::set_var("SSH_AUTH_SOCK", "/tmp/ssh-agent.sock");
+        let expected = if cfg!(windows) {
+            r"\\.\pipe\terminal-test-agent"
+        } else {
+            "/tmp/ssh-agent.sock"
+        };
+        std::env::set_var("SSH_AUTH_SOCK", expected);
         let result = get_ssh_agent_socket();
-        assert_eq!(result, Some("/tmp/ssh-agent.sock".to_string()));
+        assert_eq!(result, Some(expected.to_string()));
 
         match original {
             Some(value) => std::env::set_var("SSH_AUTH_SOCK", value),
@@ -476,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     fn test_get_ssh_agent_socket_returns_none_when_not_set() {
         let _guard = SSH_AUTH_SOCK_TEST_LOCK
             .lock()
@@ -493,11 +484,20 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(unix))]
-    fn test_get_ssh_agent_socket_always_none_on_windows() {
-        // On non-Unix platforms, always returns None
-        let result = get_ssh_agent_socket();
-        assert_eq!(result, None);
+    #[cfg(any(unix, windows))]
+    fn test_get_ssh_agent_socket_ignores_empty_value() {
+        let _guard = SSH_AUTH_SOCK_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let original = std::env::var_os("SSH_AUTH_SOCK");
+
+        std::env::set_var("SSH_AUTH_SOCK", "   ");
+        assert_eq!(get_ssh_agent_socket(), None);
+
+        match original {
+            Some(value) => std::env::set_var("SSH_AUTH_SOCK", value),
+            None => std::env::remove_var("SSH_AUTH_SOCK"),
+        }
     }
 
     #[tokio::test]
@@ -505,7 +505,7 @@ mod tests {
         let state = create_shared_state();
         // Verify Arc<SharedState> by cloning and accessing async mutex
         let _clone = Arc::clone(&state);
-        let guard = state.local_sessions.lock().await;
+        let guard = state.serial_sessions.lock().await;
         assert!(guard.is_empty());
     }
 

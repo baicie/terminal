@@ -4,7 +4,7 @@ import path from 'node:path'
 import { PassThrough } from 'node:stream'
 import test from 'node:test'
 
-import { runInputProbe } from './run-input-probe.mjs'
+import { parseProbeResult, runInputProbe } from './run-input-probe.mjs'
 
 const PROJECT_ROOT = '/workspace/terminal'
 const TEMP_ROOT = '/private/tmp'
@@ -97,7 +97,11 @@ function createHarness({
         return JSON.stringify({ round: readyRound })
       }
       if (filePath === RESULT_PATH) {
-        return JSON.stringify(failResult ? { ...result, ok: false, error: 'lost keystroke' } : result)
+        return JSON.stringify(
+          failResult
+            ? { ...result, ok: false, error: 'lost keystroke' }
+            : result,
+        )
       }
       throw new Error(`unexpected read: ${filePath}`)
     },
@@ -120,9 +124,20 @@ function createHarness({
       }
       if (command.endsWith('post-key-events')) {
         const child = new FakeChild(41_004)
-        const output = args[0] === 'access'
-          ? (accessDenied ? 'denied' : 'allowed')
-          : ''
+        const output =
+          args[0] === 'access'
+            ? accessDenied
+              ? 'denied'
+              : 'allowed'
+            : args[0] === 'input-source'
+              ? JSON.stringify({
+                  id: 'com.apple.keylayout.ABC',
+                  asciiCapable: true,
+                  type: 'TISTypeKeyboardLayout',
+                })
+            : args[0] === 'frontmost'
+              ? '41100'
+              : ''
         finishChild(child, { stdout: output })
         return child
       }
@@ -164,7 +179,7 @@ function createHarness({
   }
 }
 
-test('drives thirty overlapping key rounds and validates the exact hex contract', async () => {
+async function runAutomaticAcceptance({ stall = false } = {}) {
   const harness = createHarness()
   const { calls, dependencies } = harness
   dependencies.setTimeout = callback => {
@@ -172,6 +187,10 @@ test('drives thirty overlapping key rounds and validates the exact hex contract'
     return {}
   }
   dependencies.clearTimeout = () => {}
+  if (stall) {
+    let tick = 0
+    dependencies.now = () => tick++ * 1_000
+  }
   const rounds = 30
   const events = []
   dependencies.spawn = (command, args, options) => {
@@ -179,7 +198,9 @@ test('drives thirty overlapping key rounds and validates the exact hex contract'
     if (command === 'pnpm') return new FakeChild(41_001)
     if (command === 'cargo') {
       const child = new FakeChild(41_002)
-      finishChild(child, { stdout: JSON.stringify({ target_directory: TARGET_DIRECTORY }) })
+      finishChild(child, {
+        stdout: JSON.stringify({ target_directory: TARGET_DIRECTORY }),
+      })
       return child
     }
     if (command === 'swiftc') {
@@ -189,13 +210,25 @@ test('drives thirty overlapping key rounds and validates the exact hex contract'
     }
     if (command.endsWith('post-key-events')) {
       const child = new FakeChild(41_004)
-      const output = args[0] === 'access' ? 'allowed' : ''
+      const output =
+        args[0] === 'access'
+          ? 'allowed'
+          : args[0] === 'frontmost'
+            ? '41100'
+          : args[0] === 'input-source'
+            ? JSON.stringify({
+                id: 'com.apple.keylayout.ABC',
+                asciiCapable: true,
+              })
+            : ''
       finishChild(child, { stdout: output })
       if (args[1] === 'overlap') {
         events.push(args[2])
         const round = events.length
-        harness.publishRound(Math.min(rounds, round + 1))
-        if (round === rounds) harness.publishResult()
+        if (!stall) {
+          harness.publishRound(Math.min(rounds, round + 1))
+          if (round === rounds) harness.publishResult()
+        }
       }
       return child
     }
@@ -214,13 +247,25 @@ test('drives thirty overlapping key rounds and validates the exact hex contract'
     return harness.appChild
   }
 
-  const result = await runInputProbe({
+  const run = runInputProbe({
     cwd: PROJECT_ROOT,
     env: {},
     skipBuild: true,
     targetDirectory: TARGET_DIRECTORY,
     dependencies,
   })
+
+  if (stall) {
+    await assert.rejects(run, /checkpoint did not arrive/)
+    assert.equal(
+      events.length,
+      1,
+      'lost rounds must fail, never be silently reinjected',
+    )
+    assert.equal(harness.appChild.closed, true)
+    return
+  }
+  const result = await run
 
   assert.equal(result.ok, true)
   assert.equal(result.results.length, rounds)
@@ -229,6 +274,20 @@ test('drives thirty overlapping key rounds and validates the exact hex contract'
   assert.deepEqual(calls.rm, [
     [RUN_DIRECTORY, { recursive: true, force: true }],
   ])
+}
+
+test('drives thirty overlapping key rounds and validates the exact hex contract', () =>
+  runAutomaticAcceptance())
+test('a dropped round fails acceptance without reinjecting its keys', () =>
+  runAutomaticAcceptance({ stall: true }))
+
+test('top-level success cannot hide a failed round', () => {
+  const result = structuredClone(passingResult)
+  result.results[0] = { ...result.results[0], receivedHex: '61', ok: false }
+  assert.throws(
+    () => parseProbeResult(JSON.stringify(result), 30, '617364'),
+    /round 1/,
+  )
 })
 
 test('requires Accessibility permission for explicit swift injection', async () => {
@@ -258,7 +317,9 @@ test('falls back to guided manual typing when automatic injection is unavailable
     if (command === 'pnpm') return new FakeChild(41_001)
     if (command === 'cargo') {
       const child = new FakeChild(41_002)
-      finishChild(child, { stdout: JSON.stringify({ target_directory: TARGET_DIRECTORY }) })
+      finishChild(child, {
+        stdout: JSON.stringify({ target_directory: TARGET_DIRECTORY }),
+      })
       return child
     }
     if (command === 'swiftc') {
@@ -268,7 +329,15 @@ test('falls back to guided manual typing when automatic injection is unavailable
     }
     if (command.endsWith('post-key-events')) {
       const child = new FakeChild(41_004)
-      finishChild(child, { stdout: 'denied' })
+      const output =
+        args[0] === 'input-source'
+          ? JSON.stringify({
+              id: 'com.apple.keylayout.ABC',
+              asciiCapable: true,
+              type: 'TISTypeKeyboardLayout',
+            })
+          : 'denied'
+      finishChild(child, { stdout: output })
       return child
     }
     if (command.endsWith('/debug/terminal')) {
@@ -298,7 +367,7 @@ test('falls back to guided manual typing when automatic injection is unavailable
     throw new Error(`unexpected read: ${filePath}`)
   }
   console.log = message => {
-    if (typeof message === 'string' && message.includes('type')) {
+    if (typeof message === 'string' && message.includes('Round ')) {
       typedRounds.push(manualRound)
       harness.publishRound(Math.min(rounds, manualRound + 1))
       if (manualRound === rounds) harness.publishResult()
@@ -323,14 +392,206 @@ test('falls back to guided manual typing when automatic injection is unavailable
   }
 })
 
+test('manual ASCII overlap acceptance refuses a non-ASCII input source', async () => {
+  const harness = createHarness({ accessDenied: true })
+  const { dependencies } = harness
+  const originalSpawn = dependencies.spawn
+  dependencies.spawn = (command, args, options) => {
+    if (command.endsWith('post-key-events') && args[0] === 'input-source') {
+      const child = new FakeChild(41_004)
+      finishChild(child, {
+        stdout: JSON.stringify({
+          id: 'com.apple.inputmethod.SCIM.ITABC',
+          asciiCapable: false,
+          type: 'TISTypeKeyboardInputMethod',
+        }),
+      })
+      return child
+    }
+    if (command.endsWith('/debug/terminal')) harness.publishRound(1)
+    return originalSpawn(command, args, options)
+  }
+
+  await assert.rejects(
+    runInputProbe({
+      cwd: PROJECT_ROOT,
+      env: {},
+      inject: 'manual',
+      rounds: 1,
+      skipBuild: true,
+      targetDirectory: TARGET_DIRECTORY,
+      dependencies,
+    }),
+    /ASCII overlap probe cannot run with input source/,
+  )
+})
+
+test('manual IME acceptance refuses an ASCII input source', async () => {
+  const harness = createHarness({ accessDenied: true })
+  const { dependencies } = harness
+  dependencies.spawn = (command, args, options) => {
+    if (command === 'swiftc') {
+      const child = new FakeChild(41_003)
+      finishChild(child)
+      return child
+    }
+    if (command.endsWith('post-key-events')) {
+      const child = new FakeChild(41_004)
+      const output =
+        args[0] === 'access'
+          ? 'denied'
+          : args[0] === 'input-source'
+            ? JSON.stringify({
+                id: 'com.apple.keylayout.ABC',
+                asciiCapable: true,
+                type: 'TISTypeKeyboardLayout',
+              })
+            : ''
+      finishChild(child, { stdout: output })
+      return child
+    }
+    if (command.endsWith('/debug/terminal')) {
+      harness.publishRound(1)
+      return harness.appChild
+    }
+    return harness.appChild
+  }
+
+  await assert.rejects(
+    runInputProbe({
+      cwd: PROJECT_ROOT,
+      env: {},
+      scenario: 'ime-commit',
+      inject: 'manual',
+      rounds: 1,
+      skipBuild: true,
+      targetDirectory: TARGET_DIRECTORY,
+      dependencies,
+    }),
+    /IME acceptance requires a selected non-ASCII keyboard input method/,
+  )
+})
+
+test('manual IME acceptance records and preserves a non-ASCII input source', async () => {
+  const harness = createHarness({ accessDenied: true })
+  const { dependencies } = harness
+  const rounds = 1
+  const typedRounds = []
+  const originalConsoleLog = console.log
+  dependencies.spawn = (command, args, options) => {
+    if (command === 'swiftc') {
+      const child = new FakeChild(41_003)
+      finishChild(child)
+      return child
+    }
+    if (command.endsWith('post-key-events')) {
+      const child = new FakeChild(41_004)
+      const output =
+        args[0] === 'input-source'
+          ? JSON.stringify({
+              id: 'com.apple.inputmethod.SCIM.ITABC',
+              asciiCapable: false,
+              type: 'TISTypeKeyboardInputMethod',
+            })
+          : ''
+      finishChild(child, { stdout: output })
+      return child
+    }
+    if (command.endsWith('/debug/terminal')) {
+      harness.publishRound(1)
+      return harness.appChild
+    }
+    return harness.appChild
+  }
+  dependencies.readFile = async filePath => {
+    if (filePath === READY_PATH) return JSON.stringify({ round: 1 })
+    if (filePath === RESULT_PATH)
+      return JSON.stringify({
+        ok: true,
+        rounds,
+        expectedText: '中文',
+        expectedHex: 'e4b8ade69687',
+        durationMs: 1234,
+        results: [
+          {
+            round: 1,
+            expectedHex: 'e4b8ade69687',
+            receivedHex: 'e4b8ade69687',
+            ok: true,
+          },
+        ],
+        error: null,
+      })
+    if (filePath.endsWith('/diag.log'))
+      return [
+        'compositionstart',
+        'dom-input type=insertCompositionText',
+        'compositionend data="中文"',
+        'dom-input type=insertFromComposition',
+      ].join('\n')
+    throw new Error(`unexpected read: ${filePath}`)
+  }
+  console.log = message => {
+    if (typeof message === 'string' && message.includes('Round 1')) {
+      typedRounds.push(1)
+      harness.publishResult()
+    }
+  }
+  try {
+    const result = await runInputProbe({
+      cwd: PROJECT_ROOT,
+      env: {},
+      scenario: 'ime-commit',
+      inject: 'manual',
+      rounds,
+      skipBuild: true,
+      targetDirectory: TARGET_DIRECTORY,
+      dependencies,
+    })
+
+    assert.equal(result.inputSource, 'com.apple.inputmethod.SCIM.ITABC')
+    assert.deepEqual(result.inputSourceInfo, {
+      id: 'com.apple.inputmethod.SCIM.ITABC',
+      asciiCapable: false,
+      type: 'TISTypeKeyboardInputMethod',
+    })
+    assert.deepEqual(typedRounds, [1])
+    assert.deepEqual(result.compositionEvidence, {
+      compositionStarts: 1,
+      compositionUpdates: 1,
+      compositionEnds: 1,
+      compositionCommits: 1,
+      escapeKeyDowns: 0,
+      cancelledCompositions: 0,
+    })
+  } finally {
+    console.log = originalConsoleLog
+  }
+})
+
 test('rejects a probe application that exits without publishing a result', async () => {
   const harness = createHarness({ accessDenied: true })
   const { dependencies } = harness
+  const timers = new Set()
+  dependencies.setTimeout = (callback, delay) => {
+    const handle = setTimeout(() => {
+      timers.delete(handle)
+      callback()
+    }, delay)
+    timers.add(handle)
+    return handle
+  }
+  dependencies.clearTimeout = handle => {
+    clearTimeout(handle)
+    timers.delete(handle)
+  }
   dependencies.spawn = (command, args, options) => {
     if (command === 'pnpm') return new FakeChild(41_001)
     if (command === 'cargo') {
       const child = new FakeChild(41_002)
-      finishChild(child, { stdout: JSON.stringify({ target_directory: TARGET_DIRECTORY }) })
+      finishChild(child, {
+        stdout: JSON.stringify({ target_directory: TARGET_DIRECTORY }),
+      })
       return child
     }
     if (command === 'swiftc') {
@@ -350,18 +611,27 @@ test('rejects a probe application that exits without publishing a result', async
     return harness.appChild
   }
 
-  await assert.rejects(
-    runInputProbe({
-      cwd: PROJECT_ROOT,
-      env: {},
-      rounds: 2,
-      inject: 'manual',
-      skipBuild: true,
-      targetDirectory: TARGET_DIRECTORY,
-      dependencies,
-    }),
-    /closed early/,
-  )
+  try {
+    await assert.rejects(
+      runInputProbe({
+        cwd: PROJECT_ROOT,
+        env: {},
+        rounds: 2,
+        inject: 'manual',
+        skipBuild: true,
+        targetDirectory: TARGET_DIRECTORY,
+        dependencies,
+      }),
+      /closed early/,
+    )
+    assert.equal(
+      timers.size,
+      0,
+      'closing the probe must cancel all checkpoint polls',
+    )
+  } finally {
+    for (const handle of timers) clearTimeout(handle)
+  }
 })
 
 test('checkpoint-only mode stops after observing the first awaiting-input checkpoint', async () => {
@@ -371,7 +641,9 @@ test('checkpoint-only mode stops after observing the first awaiting-input checkp
     if (command === 'pnpm') return new FakeChild(41_001)
     if (command === 'cargo') {
       const child = new FakeChild(41_002)
-      finishChild(child, { stdout: JSON.stringify({ target_directory: TARGET_DIRECTORY }) })
+      finishChild(child, {
+        stdout: JSON.stringify({ target_directory: TARGET_DIRECTORY }),
+      })
       return child
     }
     if (command === 'swiftc') {

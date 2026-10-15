@@ -16,7 +16,7 @@ function createFreshStore() {
 
     setTheme: theme => set({ theme }),
     setLanguage: language => set({ language }),
-    hydrateFromDatabase: async () => {},
+    hydrateFromDatabase: async () => true,
     restoreLayout: layout => set(layout),
     addTab: tab => {
       const id = `${tab.type}-${Date.now()}`
@@ -57,10 +57,10 @@ function createFreshStore() {
       set(state => ({
         tabs: newTabs,
         activeTabId: newActiveId,
-        recentlyClosedTabs: [closedTab, ...state.recentlyClosedTabs].slice(
-          0,
-          10,
-        ),
+        recentlyClosedTabs:
+          tab.type === 'serial'
+            ? state.recentlyClosedTabs
+            : [closedTab, ...state.recentlyClosedTabs].slice(0, 10),
       }))
     },
     splitTab: () => null,
@@ -121,6 +121,20 @@ describe('useAppStore — recentlyClosedTabs', () => {
     store.getState().removeTab(tab.id)
     const closed = store.getState().recentlyClosedTabs[0]
     expect(closed.hostId).toBe('host-123')
+  })
+
+  it('does not offer a closed serial session for reopening', () => {
+    const store = createFreshStore()
+    const tab = store.getState().addTab({
+      label: 'Serial',
+      type: 'serial',
+      serialSessionId: 'serial-session-1',
+      serialConfig: { port: '/dev/cu.usbserial', baudRate: 115200 },
+    })
+
+    store.getState().removeTab(tab.id)
+
+    expect(store.getState().recentlyClosedTabs).toHaveLength(0)
   })
 
   it('limits recentlyClosedTabs to 10 entries', () => {

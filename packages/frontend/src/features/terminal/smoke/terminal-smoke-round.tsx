@@ -12,6 +12,7 @@ export function TerminalSmokeRound({
   signal,
   reportConnected,
   reportReconnect,
+  reportHostWake,
   emitStaleOutput,
   onComplete,
 }: TerminalSmokeRoundProps) {
@@ -22,6 +23,7 @@ export function TerminalSmokeRound({
     signal,
     reportConnected,
     reportReconnect,
+    reportHostWake,
     emitStaleOutput,
     onComplete,
   })

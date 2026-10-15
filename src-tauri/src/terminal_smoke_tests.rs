@@ -21,7 +21,17 @@ fn passing_result() -> TerminalSmokeResult {
         load_end_visible: true,
         after_load_visible: true,
         resized_size_visible: true,
+        resize_trace: RESIZE_SEQUENCE
+            .iter()
+            .map(|&(cols, rows)| TerminalSmokeResizeObservation {
+                requested_cols: cols,
+                requested_rows: rows,
+                observed_cols: cols,
+                observed_rows: rows,
+            })
+            .collect(),
         reconnect_observed: false,
+        host_wake_synthesized: false,
         stale_output_rejected: false,
         first_connection_ms: 1_234,
     }
@@ -83,9 +93,16 @@ fn smoke_config_has_the_exact_public_contract_without_a_path() {
             "initialRows": 24,
             "targetCols": 97,
             "targetRows": 31,
+            "resizeSequence": [
+                {"cols": 132, "rows": 43},
+                {"cols": 90, "rows": 30},
+                {"cols": 120, "rows": 40},
+                {"cols": 97, "rows": 31}
+            ],
             "timeoutMs": 180_000,
             "rounds": 10,
             "reconnectRequired": false,
+            "hostWakeRequired": false,
             "ssh": {
                 "host": "127.0.0.1",
                 "port": 42_222,
@@ -355,6 +372,54 @@ fn reconnect_checkpoint_write_failure_does_not_mark_the_request_as_published() {
         .expect_err("a missing checkpoint parent must fail");
 
     assert!(!run.reconnect_requested.load(Ordering::Acquire));
+}
+
+#[test]
+fn host_wake_is_refused_when_the_run_does_not_require_a_reconnect() {
+    // A synthetic wake is only meaningful for a reconnect case. Letting other
+    // runs request one would let them claim a wake recovery they never made.
+    let run = TerminalSmokeRun::new(
+        unique_result_path(),
+        None,
+        smoke_config(ssh_config()),
+        Instant::now(),
+    );
+
+    run.request_host_wake()
+        .expect_err("a run without reconnect must refuse a host wake");
+}
+
+#[test]
+fn host_wake_is_recorded_once_the_run_requires_a_reconnect() {
+    let mut config = smoke_config(ssh_config());
+    config.reconnect_required = true;
+    config.host_wake_required = true;
+    let host_wake_path =
+        std::env::temp_dir().join(format!("terminal-smoke-host-wake-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(host_wake_path.parent().expect("temp path has a parent"))
+        .expect("host wake parent should exist");
+    std::fs::write(&host_wake_path, b"").expect("host wake control file should be creatable");
+    let run = TerminalSmokeRun::new(
+        unique_result_path(),
+        Some(
+            std::env::temp_dir()
+                .join(uuid::Uuid::new_v4().to_string())
+                .join("reconnect.ready"),
+        ),
+        config,
+        Instant::now(),
+    );
+
+    let run = TerminalSmokeRun::new_with_paths(
+        run.result_path.clone(),
+        run.reconnect_control_path.clone(),
+        Some(host_wake_path.clone()),
+        run.config.clone(),
+        Instant::now(),
+    );
+    run.request_host_wake().expect("host wake should publish");
+    assert!(run.host_wake_requested.load(Ordering::Acquire));
+    assert!(host_wake_path.is_file());
 }
 
 #[test]

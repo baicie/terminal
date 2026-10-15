@@ -1,0 +1,56 @@
+{
+  "recordedAt": "2026-10-16T06:03:19+08:00",
+  "recordedDate": "2026-10-16",
+  "kind": "tauri-process-cold-start-stopwatch-current-worktree",
+  "command": "node scripts/run-cold-start-stopwatch.mjs --app-path $PWD/src-tauri/target/debug/terminal",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "3dfd71f9361f4b46ca703dd06372519a54ca8d2adb96f5c62b4ed863e0b474b8"
+  },
+  "measurement": {
+    "probe": "native ApplicationServices AXUIElement helper",
+    "measuredFrom": "child-spawn-event",
+    "repeatSpawnToReadyMs": [
+      9976
+    ],
+    "latestRerun": {
+      "capturedAt": "2026-10-15T22:00:03.744Z",
+      "spawnToReadyMs": 9976
+    },
+    "readyUnder10s": true,
+    "requestToReadyIncludesNativeHelperCompilation": false
+  },
+  "readiness": {
+    "localTab": true,
+    "connected": true,
+    "terminalInput": true,
+    "shellPrompt": false
+  },
+  "revision": {
+    "head": "54f3fbbab39a97e1370d9880b89760dbd06a1c41",
+    "dirtyWorktree": true
+  },
+  "limitations": [
+    "The shell prompt is rendered on xterm canvas and remains diagnostic-only; local PTY shell probes prove interactivity separately.",
+    "This local startup measurement does not measure a remote SSH host's first prompt.",
+    "This binary is a pnpm tauri build --debug artifact with an embedded frontend and was measured with no Vite dev server running. A binary produced by a bare cargo build instead loads build.devUrl, renders a blank window with no readiness at all, and fails closed with a diagnostic pointing at pnpm dev:frontend; the two are not interchangeable, so the measured sha256 must be checked before citing this file.",
+    "Human physical keyboard, real macOS IME, Option/dead key, Windows/Pageant, and serial hardware acceptance remain unverified."
+  ],
+  "source": {
+    "fingerprint": "40e58ef991817331947900228d2c2d0de7ee1a49109a58d03459b9293460e3b4",
+    "fingerprintCovers": [
+      "packages/frontend/src",
+      "src-tauri/src",
+      "packages/frontend/package.json",
+      "package.json",
+      "pnpm-lock.yaml"
+    ],
+    "note": "Debug evidence cannot be validated against the artifact on disk, because pnpm verify relinks target/debug/terminal as a bare cargo build. This content fingerprint of the sources these scenarios exercise is what makes a stale measurement detectable."
+  },
+  "note": "Fresh spawn-to-ready run on the current-source instrumented debug binary after the serial lifecycle and platform classification fixes. The run includes the macOS AX helper build cost."
+}

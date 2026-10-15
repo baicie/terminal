@@ -1,18 +1,24 @@
 import { formatIpcError } from '@/hooks/terminal-session-helpers'
 import { closeTerminalBackend } from './terminal-session-backend'
 import type { TerminalSessionOutputBuffer } from './terminal-session-output-buffer'
+import { resolveReconnectPolicy } from './terminal-session-reconnect-policy'
 import { updateTerminalState } from './terminal-session-state'
+import { TerminalSessionRecoveryTimer } from './terminal-session-recovery-timer'
+import { TerminalSessionWakeRecovery } from './terminal-session-wake-recovery'
 import type { TerminalRecord } from './terminal-session-manager-types'
 
 export type TerminalReconnectStartResult =
   | 'connected'
   | 'cancelled'
+  | { status: 'retry'; error: string }
   | { status: 'failed'; error: string; retryable: boolean }
 
+/** Delay before retrying after an automatic attempt budget is exhausted. */
 export interface TerminalReconnectOptions {
   baseDelayMs?: number
   maxDelayMs?: number
   maxAttempts?: number
+  recoveryDelayMs?: number
   sleep?: (delayMs: number, signal?: AbortSignal) => Promise<void>
   jitter?: (delayMs: number, attempt: number) => number
   now?: () => number
@@ -22,6 +28,7 @@ interface TerminalReconnectDependencies {
   sessionToTab: Map<string, string>
   pendingOutput: TerminalSessionOutputBuffer
   retireLifecycle: (sessionId: string) => void
+  cancelConnection: (record: TerminalRecord) => void
   start: (
     record: TerminalRecord,
     generation: number,
@@ -29,53 +36,20 @@ interface TerminalReconnectDependencies {
   isCurrent: (record: TerminalRecord) => boolean
 }
 
-const defaultSleep = (delayMs: number, signal?: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, delayMs)
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        reject(new DOMException('Reconnect cancelled', 'AbortError'))
-      },
-      { once: true },
-    )
-  })
-
-const defaultJitter = (delayMs: number) =>
-  Math.round(delayMs * (0.8 + Math.random() * 0.4))
-
-function positiveInteger(value: number | undefined, fallback: number): number {
-  return Number.isSafeInteger(value) && value !== undefined && value > 0
-    ? value
-    : fallback
-}
-
 export class TerminalSessionReconnect {
-  private readonly baseDelayMs: number
-  private readonly maxDelayMs: number
-  private readonly maxAttempts: number
-  private readonly sleep: (
-    delayMs: number,
-    signal?: AbortSignal,
-  ) => Promise<void>
-  private readonly jitter: (delayMs: number, attempt: number) => number
-  private readonly now: () => number
+  private readonly policy: ReturnType<typeof resolveReconnectPolicy>
   private readonly abortControllers = new WeakMap<
     TerminalRecord,
     AbortController
   >()
+  private readonly recoveryTimer = new TerminalSessionRecoveryTimer()
+  private readonly wake = new TerminalSessionWakeRecovery()
 
   constructor(
     private readonly dependencies: TerminalReconnectDependencies,
     options: TerminalReconnectOptions = {},
   ) {
-    this.baseDelayMs = positiveInteger(options.baseDelayMs, 500)
-    this.maxDelayMs = positiveInteger(options.maxDelayMs, 10_000)
-    this.maxAttempts = positiveInteger(options.maxAttempts, 5)
-    this.sleep = options.sleep ?? defaultSleep
-    this.jitter = options.jitter ?? defaultJitter
-    this.now = options.now ?? Date.now
+    this.policy = resolveReconnectPolicy(options)
   }
 
   async disconnect(record: TerminalRecord): Promise<void> {
@@ -103,6 +77,15 @@ export class TerminalSessionReconnect {
     this.launch(record, 'manual', 'Manual reconnect')
   }
 
+  /**
+   * Resume a session that is still retryable after the host woke from sleep.
+   */
+  resume(record: TerminalRecord, reason: string): boolean {
+    if (!this.wake.canResume(record)) return false
+    this.launch(record, 'automatic', reason)
+    return true
+  }
+
   automatic(record: TerminalRecord, reason: string): void {
     if (
       record.closed ||
@@ -114,7 +97,21 @@ export class TerminalSessionReconnect {
     this.launch(record, 'automatic', reason)
   }
 
+  armAfterWake(record: TerminalRecord): void {
+    this.wake.armAfterWake(record)
+  }
+
+  consumeWakeArming(record: TerminalRecord): boolean {
+    return this.wake.consumeWakeArming(record)
+  }
+
+  clearWakeArming(record: TerminalRecord): void {
+    this.wake.clearWakeArming(record)
+  }
+
   private cancel(record: TerminalRecord): void {
+    this.recoveryTimer.clear(record)
+    this.dependencies.cancelConnection(record)
     this.abortControllers.get(record)?.abort()
     this.abortControllers.delete(record)
     record.generation++
@@ -127,6 +124,8 @@ export class TerminalSessionReconnect {
     mode: NonNullable<TerminalRecord['reconnectMode']>,
     reason: string,
   ): void {
+    this.recoveryTimer.clear(record)
+    this.dependencies.cancelConnection(record)
     this.abortControllers.get(record)?.abort()
     const controller = new AbortController()
     this.abortControllers.set(record, controller)
@@ -151,10 +150,12 @@ export class TerminalSessionReconnect {
   ): Promise<void> {
     const generation = ++record.generation
     const sessionId = this.prepare(record, mode)
-    const attempts = mode === 'automatic' ? this.maxAttempts : 1
+    const attempts = mode === 'automatic' ? this.policy.maxAttempts : 1
     let lastError = reason
 
-    for (let attempt = 1; attempt <= attempts; attempt++) {
+    let attempt = 0
+    while (attempt < attempts) {
+      attempt += 1
       if (attempt > 1) this.prepareIo(record, mode)
       const delay = mode === 'automatic' ? this.delayFor(attempt) : 0
       updateTerminalState(record, {
@@ -163,7 +164,8 @@ export class TerminalSessionReconnect {
         error: null,
         attempt,
         reason: lastError,
-        nextRetryAt: mode === 'automatic' ? this.now() + delay : undefined,
+        nextRetryAt:
+          mode === 'automatic' ? this.policy.now() + delay : undefined,
         retryable: true,
       })
       if (attempt === 1 && sessionId) {
@@ -173,7 +175,7 @@ export class TerminalSessionReconnect {
 
       if (mode === 'automatic') {
         try {
-          await this.sleep(delay, signal)
+          await this.policy.sleep(delay, signal)
         } catch (error) {
           if (signal.aborted || !this.isActive(record, generation)) return
           if (this.isActive(record, generation)) {
@@ -182,6 +184,7 @@ export class TerminalSessionReconnect {
               error: formatIpcError(error),
               retryable: true,
             })
+            this.scheduleRecovery(record)
           }
           return
         }
@@ -190,6 +193,16 @@ export class TerminalSessionReconnect {
 
       const result = await this.dependencies.start(record, generation)
       if (result === 'connected' || result === 'cancelled') return
+      if (result.status === 'retry') {
+        // A host wake can arrive while this reconnect loop is waiting on an
+        // in-flight SSH handshake. Restart the same loop with a fresh budget;
+        // launching another reconnect here would be rejected by the Promise
+        // guard and leave the pane stuck in `reconnecting`.
+        lastError = result.error
+        attempt = 0
+        this.prepareIo(record, mode)
+        continue
+      }
       lastError = result.error
       if (!result.retryable) {
         updateTerminalState(record, {
@@ -207,6 +220,28 @@ export class TerminalSessionReconnect {
       sessionId: null,
       error: lastError,
       retryable: true,
+    })
+    this.scheduleRecovery(record)
+  }
+
+  private scheduleRecovery(record: TerminalRecord): void {
+    if (
+      record.closed ||
+      record.request.tabType !== 'remote' ||
+      record.retryable !== true
+    ) {
+      return
+    }
+    this.recoveryTimer.schedule(record, this.policy.recoveryDelayMs, () => {
+      if (
+        record.closed ||
+        record.status !== 'error' ||
+        record.retryable !== true ||
+        record.reconnectPromise
+      ) {
+        return
+      }
+      this.launch(record, 'automatic', 'Retrying after automatic backoff')
     })
   }
 
@@ -238,10 +273,10 @@ export class TerminalSessionReconnect {
 
   private delayFor(attempt: number): number {
     const exponential = Math.min(
-      this.maxDelayMs,
-      this.baseDelayMs * 2 ** (attempt - 1),
+      this.policy.maxDelayMs,
+      this.policy.baseDelayMs * 2 ** (attempt - 1),
     )
-    const jittered = this.jitter(exponential, attempt)
+    const jittered = this.policy.jitter(exponential, attempt)
     return Number.isFinite(jittered) && jittered >= 0
       ? Math.round(jittered)
       : exponential

@@ -15,10 +15,30 @@ export interface TerminalSmokeConfig {
   initialRows: number
   targetCols: number
   targetRows: number
+  resizeSequence: TerminalSmokeResizeStep[]
   timeoutMs: number
   rounds: number
   reconnectRequired: boolean
+  /**
+   * Asks the round to synthesize a host wake once the reconnect ladder is
+   * exhausted. Only the long-outage case sets this: a sleep outlasts the whole
+   * automatic budget, and recovery from there runs through the
+   * visibility-change path that no other case can reach.
+   */
+  hostWakeRequired: boolean
   ssh: TerminalSmokeSshConfig
+}
+
+export interface TerminalSmokeResizeStep {
+  cols: number
+  rows: number
+}
+
+export interface TerminalSmokeResizeObservation {
+  requestedCols: number
+  requestedRows: number
+  observedCols: number
+  observedRows: number
 }
 
 export type TerminalSmokeStage =
@@ -46,7 +66,9 @@ export interface TerminalSmokeResult {
   loadEndVisible: boolean
   afterLoadVisible: boolean
   resizedSizeVisible: boolean
+  resizeTrace: TerminalSmokeResizeObservation[]
   reconnectObserved: boolean
+  hostWakeSynthesized: boolean
   staleOutputRejected: boolean
   /** Milliseconds from application start to the first connected session. */
   firstConnectionMs: number
@@ -68,11 +90,22 @@ const FIXED_CONFIG = {
   initialRows: 24,
   targetCols: 97,
   targetRows: 31,
+  resizeSequence: [
+    { cols: 132, rows: 43 },
+    { cols: 90, rows: 30 },
+    { cols: 120, rows: 40 },
+    { cols: 97, rows: 31 },
+  ],
   timeoutMs: 180_000,
   rounds: 10,
 }
 
-const CONFIG_KEYS = [...Object.keys(FIXED_CONFIG), 'reconnectRequired', 'ssh'].sort()
+const CONFIG_KEYS = [
+  ...Object.keys(FIXED_CONFIG),
+  'reconnectRequired',
+  'hostWakeRequired',
+  'ssh',
+].sort()
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -89,6 +122,12 @@ export function parseTerminalSmokeConfig(raw: unknown): TerminalSmokeConfig {
   }
   for (const [key, expected] of Object.entries(FIXED_CONFIG)) {
     const value = raw[key]
+    if (key === 'resizeSequence') {
+      if (!Array.isArray(value) || JSON.stringify(value) !== JSON.stringify(expected)) {
+        throw new Error('Invalid terminal smoke config')
+      }
+      continue
+    }
     if (!Number.isSafeInteger(value) || value !== expected) {
       throw new Error('Invalid terminal smoke config')
     }
@@ -96,9 +135,13 @@ export function parseTerminalSmokeConfig(raw: unknown): TerminalSmokeConfig {
   if (typeof raw.reconnectRequired !== 'boolean') {
     throw new Error('Invalid terminal smoke config')
   }
+  if (typeof raw.hostWakeRequired !== 'boolean') {
+    throw new Error('Invalid terminal smoke config')
+  }
   return {
     ...FIXED_CONFIG,
     reconnectRequired: raw.reconnectRequired,
+    hostWakeRequired: raw.hostWakeRequired,
     ssh: parseTerminalSmokeSshConfig(raw.ssh),
   }
 }
@@ -181,6 +224,19 @@ export async function reportTerminalSmokeReconnect(
   ipc: Pick<TerminalSmokeIpc, 'invoke'> = defaultIpc,
 ): Promise<void> {
   await ipc.invoke('terminal_smoke_reconnect_requested')
+}
+
+/**
+ * Asks the backend to publish a host-wake checkpoint for the runner.
+ *
+ * The recovery path after the reconnect ladder is exhausted is the
+ * visibility-change handler, which only a real wake can fire. The runner
+ * drives it through this checkpoint instead of a real sleep.
+ */
+export async function reportTerminalSmokeHostWake(
+  ipc: Pick<TerminalSmokeIpc, 'invoke'> = defaultIpc,
+): Promise<void> {
+  await ipc.invoke('terminal_smoke_host_wake')
 }
 
 export async function emitTerminalSmokeStaleOutput(

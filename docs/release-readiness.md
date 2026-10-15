@@ -1,7 +1,7 @@
 # Terminal 发布就绪规格
 
 > 创建日期：2026-08-09
-> 最后验证日期：2026-08-19
+> 最后验证日期：2026-10-16
 > 发布目标：`0.0.1-dev.1`
 > 状态：✅ 本机自动发布门禁与多平台安装包验收完成；⚠️ 外部实机项目待执行
 
@@ -223,6 +223,21 @@ Release 首次执行的六个平台打包任务均成功，最终校验调用 `g
 | 场景 | 环境 | 当前状态 | 通过标准 |
 | --- | --- | --- | --- |
 | macOS 自动门禁 | macOS 15.7.7 | ✅ 通过 | `pnpm verify` 全绿 |
+| macOS 本地 Tauri/PTY 初次 smoke | macOS 15.7.7 arm64 | ✅ 通过 | 8 MiB 输出、10 轮 session、连续四步 resize（132×43→90×30→120×40→97×31）精确回读、尾部可见、资源回收；Node 24.16.0 下首次连接 1612ms，总耗时 7639ms |
+| macOS 本地 Tauri/PTY 重连 smoke | macOS 15.7.7 arm64 | ✅ 通过 | 11 个唯一 session、旧输出拒绝、连续四步 resize 精确回读、重连可见、资源回收；Node 24.16.0 下首次连接 1441ms，总耗时 8586ms |
+| macOS 应用冷启动（AX request-to-ready） | macOS 15.7.7 arm64 | ✅ 观测通过 | 既有三次 Local/Connected/Terminal input/zsh prompt readiness 为 4477–5840ms；该观测包含 UI automation 请求开销 |
+| macOS release bundle 冷启动到可用终端 | macOS 15.7.7 arm64 | ✅ 通过 | `pnpm tauri build --no-bundle` 产物内嵌前端、无需开发服务器；native AX helper 从 `spawn` 到 Local/Connected/Terminal input 重复三次为 3134–3432ms，远程 prompt round-trip 为 1511ms。全部数值测自同一 release 二进制 `ab209317…`。证据见 [`2026-10-11-macos-release-terminal-gate.json`](verification/2026-10-11-macos-release-terminal-gate.json) |
+| macOS debug binary 冷启动 stopwatch | macOS 15.7.7 arm64 | ✅ 通过 | 当前 instrumented debug binary `3dfd71f9…` 从 `spawn` 到 Local/Connected/Terminal input 为 9976ms，低于 10 秒。证据见 [`2026-10-11-macos-cold-start-current.json`](verification/2026-10-11-macos-cold-start-current.json) |
+| macOS 真实 SSH 认证与重连（release） | macOS 15.7.7 arm64 + OpenSSH/ssh-agent/Docker | ✅ 10/10 通过 | `pnpm smoke:ssh-matrix --release` 在与冷启动门禁**同一个** release 二进制 `ab209317…` 上十用例全绿（含此前长期 notRun 的 password 与 password-reconnect），首次连接 881–1791ms，五种重连用例均为 11 个唯一 session。runner 提供 `--reuse-binary`，因为相同源码的重复构建并非字节可复现，不复用就无法让矩阵证据与冷启动证据同源。证据见 [`2026-10-11-macos-release-ssh-matrix.json`](verification/2026-10-11-macos-release-ssh-matrix.json) |
+| macOS 真实 SSH 认证与重连（debug） | macOS 15.7.7 arm64 + OpenSSH/ssh-agent/Docker | ✅ 13/13 通过 | key/password/agent/cert/jump 初连与重连各覆盖，另有 5 秒 outage、20 秒 host-wake outage 和首连 outage；统一 instrumented debug binary `3dfd71f9…`；证据见 [`2026-10-11-macos-ssh-matrix-current.json`](verification/2026-10-11-macos-ssh-matrix-current.json) |
+| macOS 真实 SSH 应用冷启动到远端 shell prompt observed | macOS 15.7.7 arm64 + localhost OpenSSH | ✅ Node 24 门禁通过 | 当前 instrumented debug binary `3dfd71f9…`（bash fixture）从 `spawn` 到 startup marker + OSC 133 prompt-start 后的 prompt marker 为 5112ms；prompt marker 穿过 xterm 输入、Tauri IPC、SSH PTY 与输出链路。证据见 [`2026-10-11-macos-remote-shell-prompt-rerun.json`](verification/2026-10-11-macos-remote-shell-prompt-rerun.json) |
+| 本地 PTY 跨 CPU 挂起/恢复 | macOS 15.7.7 arm64 | ✅ 观测通过 | `/bin/zsh -i` 经 SIGSTOP 2.5s 后 SIGCONT，同一算术标记命令前后均正常返回，据此本地会话才被排除在唤醒恢复之外；真实合盖与电源管理切换仍待实机观测 |
+| 远程 SSH Shell Integration（显式 host opt-in） | macOS localhost OpenSSH | ✅ bash loopback 通过 | `off` 默认不注入；选择 `bash`/`zsh` 时发送 guarded integration script 并保留 startup command。当前 instrumented binary `3dfd71f9…` 的 bash prompt marker 为 5112ms；另有默认 `/bin/sh` 真实 SSH shell 交互 7/7，全过程不冒充 bash/zsh integration 证据；fish/zsh 远程 prompt、未知 shell、tmux/screen 和 Windows 仍待负向/跨平台矩阵 |
+| 远程 SSH 用户冷启动到可输入 prompt | macOS 远端服务 | ✅ marker round-trip 已观测 | prompt marker 已穿过 xterm 输入、Tauri IPC、SSH PTY 与输出链路；当前 fixture 自行发 OSC 133，不能代替 per-host injection 验收；人工可视/物理键盘矩阵仍待验收 |
+| macOS 真实 Tauri/PTY raw input | macOS 15.7.7 arm64 | ✅ 3/3 通过 | SGR mouse、bracketed paste、raw X10 均有严格 hex 回读结果；记录见 [`2026-10-10-macos-raw-input.json`](verification/2026-10-10-macos-raw-input.json) |
+| macOS 真实 Tauri/PTY shell 交互（release） | macOS 15.7.7 arm64 | ✅ 3/3 通过 | release bundle 上 `cat-eof`、readline history、readline Tab 补全分别 289/212/374ms，证据见 [`2026-10-11-macos-release-ssh-matrix.json`](verification/2026-10-11-macos-release-ssh-matrix.json) |
+| macOS 真实 Tauri/PTY shell 交互（debug） | macOS 15.7.7 arm64 | ✅ 14/14 通过 | 当前工作树 bash/zsh 各七 case 均通过（同一 instrumented binary `3dfd71f9…`）；结果来自 xterm `term.input()` → session FIFO → local PTY → shell 回读，当前证据见 [`2026-10-11-macos-shell-interaction-current.json`](verification/2026-10-11-macos-shell-interaction-current.json) |
+| macOS 人工物理键盘与中文 IME | macOS WKWebView + 物理键盘 | ⚠️ 待人工 | 30 轮重叠 `a/s/d`、中文 IME composition、Option/dead key；Ctrl+C、vim、nano、PTY resize 已有自动化覆盖但仍缺真人物理键盘确认 |
 | Windows OpenSSH Agent | Windows 10/11 | ⚠️ 待实机 | 单/多 key 登录、无 key、服务未启动和错误管道均符合预期 |
 | Pageant | Windows 10/11 + Pageant | ⚠️ 待实机 | `russh` Pageant transport 可登录，未运行时返回明确错误 |
 | Jump Host | Windows / Linux | ⚠️ 待实机 | 跳板端与目标端 password/key/agent/cert 组合、加密私钥、断开与连接池复用正确 |
@@ -235,6 +250,114 @@ Release 首次执行的六个平台打包任务均成功，最终校验调用 `g
 | S3 服务端集成 | AWS S3 或兼容服务 | ⚠️ 待外部服务 | 固定向量之外，验证实际签名、UTF-8 key、分页列表、上传下载与删除 |
 | Agent forwarding | 全平台 | ⚠️ 代码完成，待实机 | 默认关闭；opt-in 时显式请求；未授权主动 channel 被拒绝；池内启用/禁用连接隔离 |
 | Team 注册准入 | Docker / PostgreSQL | ✅ 自动化与容器运行均通过 | 生产默认 closed；错误 token 不新增用户；正确 token/open 可注册；缺失/非法环境配置拒绝启动 |
+
+## 2026-10-16 当前工作树复验
+
+- ✅ 当前 instrumented debug binary `3dfd71f9…`（源码指纹 `40e58ef9…`）的冷启动为 9976ms，远程 bash prompt marker 为 5112ms，均低于 10 秒。对应证据为 [`2026-10-11-macos-cold-start-current.json`](verification/2026-10-11-macos-cold-start-current.json) 与 [`2026-10-11-macos-remote-shell-prompt-rerun.json`](verification/2026-10-11-macos-remote-shell-prompt-rerun.json)。
+- ✅ 同一已审 release binary `ab209317…` 的 2026-10-13 单次复验再次通过：本地 spawn→readiness 为 4973ms，远程 SSH prompt marker 为 3627ms；记录见 [`2026-10-13-macos-release-cold-start-rerun.json`](verification/2026-10-13-macos-release-cold-start-rerun.json)。
+- ✅ `pnpm smoke:ssh-matrix` 在同一 binary 上 13/13 全绿，包含 5 秒 outage、20 秒 `key-outage-wake-reconnect` 和首连 outage；wake case 覆盖重连退避、stale output 拒绝与资源回收。完整记录见 [`2026-10-11-macos-ssh-matrix-current.json`](verification/2026-10-11-macos-ssh-matrix-current.json)。
+- ⚠️ 重新采集证据时，`jump` 在 `c35ae453…` 上因主机负载失败过一次：报错说 10 秒内未连接，而 READY 标记已在输出中、状态已是 connected；那一轮所有用例耗时约为平时两倍。单独重跑 `jump` 通过（1077ms），干净重跑完整矩阵也通过（1256ms）。判定为主机负载而非回归，两次运行都记在证据文件里，没有被静默丢弃。
+- ✅ local PTY shell 交互七个 case 在 bash 与 zsh 上 14/14 全绿，同七个 case 经真实 loopback sshd 默认 `/bin/sh` fixture 为 7/7 全绿。这些输入由 `term.input()` 自动注入，不替代真人物理键盘、中文 IME 或 Option/dead key 验收。
+- ⚠️ 该复验发生在 dirty worktree；Windows OpenSSH Agent/Pageant/ConPTY、串口硬件、真实合盖睡眠/唤醒与 VPN/蜂窝切换仍未取得实机证据。`.github/workflows/real-machine-matrix.yml` 的新增步骤也尚未在远端 runner 上重新 dispatch 验证。
+- ✅ bash Shell Integration 不再安装 `DEBUG` trap（Issue #96）：`trap ... DEBUG` 在 bash 里整体替换而非叠加，实测两种顺序都会静默顶掉用户 `.bashrc` 自带的 trap 或让 `133;B` 消失。改为只靠 `PROMPT_COMMAND` 发 `133;D;$?`/`133;A`/OSC 7，真实 bash PTY 上用户 trap、`133;D;0`、`133;D;1`、`133;A` 与 OSC 7 同时存在；zsh 的 `add-zsh-hook` 本就叠加，用户 precmd 与 `133;B` 共存。bash 下 `command-start`/`command-output` 不再产生，因为只写入无消费者的 phase 字段。
+- ✅ OSC 133 退出码接入终端面板头部（Issue #97）：`lastExitCode` 此前只写不读，`snapshot()` 在生产代码里零调用点，命令失败对用户不可见。现在成功显示绿色状态、非零显示退出码与 `text-destructive`；**没有信号时不渲染**，避免把「没观测到」误报成成功。
+- ✅ Issue #99 的远程 SSH Shell Integration 已按主机显式 opt-in 接线并完成 bash loopback 证据：默认 `off`，仅选择 `bash` 或 `zsh` 时组合 guarded script；zsh startup 等待首个 shell 输出，marker 探针处理 OSC 同 chunk。当前记录未单独采集 zsh prompt stopwatch；fish/sh/未知 shell、tmux/screen 和 Windows shell 仍未取得证据。
+- ⚠️ 曾在宿主负载 13–25 时采集到一轮失败的 SSH 矩阵；判定为宿主负载而非回归，该轮测量**未**沿用。当前证据文件记录的是随后完成的 13/13 干净一轮。
+- ✅ 首次连接失败现在与断线共用同一套自动重连预算（Issue #98）：此前自动重连只由 I/O 错误路径触发，而该路径要求已有 sessionId，从未建立起来的连接没有 sessionId，因此首次握手失败完全不进重连循环、面板永久停在 error。现在可重试的首次远程失败会消耗指数退避预算；认证/host key 等不可重试失败不消耗预算，本地 PTY 与串口不参与自动重连。除状态机注入测试外，真实 SSH smoke 让 sshd 在应用启动前不可达 6 秒，当前二进制在 9534ms 自行建立首个连接并完成 10 个 session；随机握手丢包、VPN/DNS 尚未就绪仍需 macOS 实机验证。
+- ✅ 首次连接 outage 已加入真实 SSH smoke：sshd 在应用启动前保持不可达 6 秒，当前 instrumented binary 在 9534ms 建立首个连接并完成 10 个 session，证明首次失败重试走的是实际 Tauri → russh → OpenSSH 链路；不是只靠注入依赖的状态机测试。
+
+## 2026-10-14 Windows shell dialect CI 覆盖
+
+- ✅ `.github/workflows/real-machine-matrix.yml` 新增 `windows-shell-matrix` job，在 `windows-latest` 原生 runner 上用真实 ConPTY 分别执行 PowerShell（`cat-eof,pty-resize,ctrl-c-interrupt`）与 cmd（`cat-eof,ctrl-c-interrupt`）dialect。Windows dialect 只能在这两个命令行上解析，此前的 CI 完全没有对应 job，意味着这两种命令语言会未经执行就发布。
+- ✅ shell 探针 runner 的 `--shells` 校验已接入 `SUPPORTED_WINDOWS_SHELLS`，并在 dialect 未声明某用例时 fail-fast，避免运行结果小于请求范围却被当成完整运行。未在 `dialect-cases.ts` 声明的用例仍拒绝运行。
+- ✅ workflow 契约测试比对 Windows job 的用例过滤串与前端 `DIALECT_CASES`，两侧不一致只会表现为数分钟后的 Windows CI 失败，因此前置到本地门禁。
+- ⚠️ 该 job 尚未在远端 runner 上 dispatch 成功执行；在拿到 runner 输出前，不能声称 Windows shell dialect 已验证。Windows OpenSSH 服务、Pageant 与串口硬件仍需已安装服务或外接硬件的实机环境，hosted runner 无法覆盖。
+- ✅ 本机真实 PTY 复验（instrumented debug 二进制）：默认 shell 四个 case 全绿——`cat-eof` 479ms、`readline-history` 254ms、`pty-resize` 1348ms、`ctrl-c-interrupt` 1028ms；显式 `--shells bash` 路径同样通过（438ms / 1319ms）。这证明本轮改动过的 matrix runner 在真实执行路径上可用，但不能证明 Windows dialect——本机没有 PowerShell，`--shells powershell` 按预期以「executable unavailable」拒绝而非静默换用别的 shell。
+- ✅ 参数层 fail-fast 在真实 CLI 上确认：未知 shell 报 `unknown shell probe shell 'nope'; expected one of bash/zsh/fish/powershell/cmd`，未知 case 报出七个合法 case 名。
+
+## 2026-10-09 输入与 IME 增量
+
+- `@baicie/xterm` 组合态 Escape 修复已同步到补丁脚本、patch 和 lockfile；组合态取消不再向 PTY 发送 Escape，定向 xterm 测试 8/8 通过。
+- 输入探针诊断和脚本契约现在要求真实 composition 生命周期；Apple Pinyin 的 CGEvent 自动注入复验未产生 composition 事件，故中文 IME 三个场景保持待人工物理键盘验证。不能用该自动注入结果替代 IMK 验收。
+- Node 24.16.0 下前端 104 文件/888 项、Team Server 103 项、Rust 181+3 项、Node 脚本 56 项，以及 lint/typecheck/build budget/fmt/Clippy/511 文件规模和 `git diff --check` 全部通过。
+
+## 2026-10-11 真实 SSH 矩阵复跑
+
+- ✅ `PATH=/Users/liuzhiwei/n/bin:$PATH pnpm smoke:ssh-matrix` 在 macOS 15.7.7 arm64、Node 24.16.0、Docker 29.7.2 下 10/10 全绿：key、key-reconnect、password、password-reconnect、agent、agent-reconnect、cert、cert-reconnect、jump、jump-reconnect。
+- ✅ real-machine workflow 的 macOS job 现在同时执行 `pnpm smoke:shell-probe:matrix -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt` 和 `pnpm smoke:remote-cold-start -- --app-path "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal"`，将真实 Tauri/WKWebView + local PTY 日常 shell 交互及远程 SSH prompt marker cold-start 纳入远端 runner 门禁；workflow 修复尚未推送，不能将新增步骤计为远端通过。
+- ✅ 当前工作树最新复跑首次连接 925–4410ms；key/password/agent/cert/jump 五种重连用例均产生 11 个唯一 session；每个用例包含 10 轮隔离会话、8 MiB 输出、97×31 resize、旧输出拒绝和资源回收。
+- 逐用例耗时、当前二进制 SHA-256 与限制见 [`2026-10-11-macos-ssh-matrix-current.json`](verification/2026-10-11-macos-ssh-matrix-current.json)；历史基线见 [`2026-10-10-macos-ssh-matrix.json`](verification/2026-10-10-macos-ssh-matrix.json)。该记录仍不等同于普通用户冷启动到首个可输入终端的 stopwatch，也不覆盖 Windows/Pageant/串口/真人 IME。
+- ✅ 修复 real-machine workflow 对历史 `main` 缺失 `.node-version` 的隐式依赖：macOS/Linux job 现在显式使用 Node 24.16.0；YAML 解析与本地脚本门禁通过。下一次 GitHub workflow dispatch 仍需重新取得远端 runner 结果，不能用旧 scheduled failure 代替。
+
+## 2026-10-09 macOS 本地冷启动复验
+
+- ✅ 正式 debug bundle 从无运行进程启动到 AX tree 同时出现 Local、已连接、Terminal input 和可见 zsh prompt 的三次 request-to-readiness 观测为 5408ms、4477ms、5840ms，均低于 10 秒。
+- 逐次状态证据、二进制 SHA-256 与测量边界见 [`2026-10-09-macos-cold-start.json`](verification/2026-10-09-macos-cold-start.json)。该结果包含 UI automation 请求与 AX 轮询开销，不是严格 OS process stopwatch，也不等同于真实远程 SSH 首个 prompt。
+
+## 2026-10-10 macOS 进程级冷启动 stopwatch
+
+- ✅ 新增 `pnpm smoke:cold-start -- --app-path /absolute/path/to/Termius.app/Contents/MacOS/terminal`。驱动只接受 macOS，要求绝对可执行文件路径，从 `ChildProcess` 的 `spawn` 事件开始计时，并用 Accessibility API 同时确认 Local 标签、已连接状态和 Terminal input 文本区；默认在被测进程启动前编译并使用 `scripts/macos-ax-probe.swift` 原生 `AXUIElement` helper，避免 `System Events` 对 WKWebView 子树读取不稳定。AX 探针仍记录 shell prompt 字段供诊断，但不把 canvas 中不可稳定暴露的 prompt 作为硬门槛，shell 可交互性由本地 PTY smoke 证明。缺少任一 AX-visible 条件、AX 权限错误、进程提前退出或超时都会失败，不会退化为“窗口存在”成功。
+- 该驱动默认使用隔离临时 `HOME`，结束时发送 SIGTERM 并清理临时目录；输出同时包含二进制 SHA-256、`requestToReadyMs` 与严格定义的 `spawnToReadyMs`，便于绑定构建产物并区分启动请求开销和进程已创建后的耗时。native helper 的 Swift 编译发生在 stopwatch 起点前，不计入这两个应用启动指标。
+- 若需对照旧桥接，可显式传入 `--ax-probe osascript`；该模式只用于诊断，不作为 WKWebView AX 子树可靠性的默认证据。原生 helper 编译失败、权限/API 禁用或输出格式异常均保持失败，不降级为窗口存在。
+- `node scripts/verify.mjs scripts` 当前包含 93 项 Node 脚本测试；历史 56/63/67/71/78/80/83/89/90/91 项记录保留在对应日期段落中，不作为本次计数。
+- Node 24.16.0 下原生 helper、回退模式及失败路径的 11 项 Node 回归通过；历史复跑曾取得 `spawnToReadyMs=4885`，当前四次复测为 5648/4920/4647/4595ms。此前锁屏失败边界保留在 [`2026-10-10-macos-cold-start-blocked.json`](verification/2026-10-10-macos-cold-start-blocked.json)，既有 request-to-AX 记录仍受上一节的测量边界限制。
+
+## 2026-10-10 xterm 输入协议事件级回归
+
+- ✅ 新增 3 项前端回归：真实打开兼容版 `@baicie/xterm@0.1.7`，启用 SGR mouse、DECSET 2004 bracketed paste 和 X10/default mouse 后，验证 `registerTerminalInput` 分别收到精确文本报告、bracketed paste 包装和高位 `Uint8Array` 原始字节。
+- ✅ Node 24.16.0 下该测试文件、既有 WebKit 输入、FIFO 和 session I/O 定向测试共 29 项通过；前端 typecheck 与该文件 lint 通过。
+- ⚠️ 该回归使用 jsdom synthetic DOM 事件，只证明兼容版 xterm 到前端输入桥接的编码边界；真实 Tauri IPC、PTY 回读、非 UTF-8 原始输入及物理鼠标/粘贴仍按 Issue #48 保持待实机。后续 2026-10-10 raw-input probe 已在下一节补充真实回读。
+
+## 2026-10-10 真实 Tauri/PTY raw 输入探针
+
+- ✅ 新增显式 `TERMINAL_RAW_INPUT_PROBE=1` gate 和 `pnpm smoke:raw-input` runner；仅 macOS 启动 debug Tauri binary，使用真实 local PTY 回读字节。
+- ✅ 三个固定 case 已纳入代码契约：SGR mouse 文本报告、DECSET 2004 bracketed paste、X10/default mouse 高位 raw bytes；前端 protocol/bootstrap 11 项、Node runner 4 项和 Rust state 2 项定向测试通过。
+- ✅ Node 24.16.0 下当前定向与全量门禁：前端 109 文件/925 项、Team Server 103 项、Rust 189+3 项、Node 脚本 114 项，lint/typecheck/build budget/fmt/Clippy/源码规模均通过；本轮新增启动恢复有界重试与并发加载取消保护、生命周期、远程 prompt marker、shell 交互和连续 resize 定向门禁均通过。
+- ✅ 修复探针 shell marker 顺序以及 PTY 的 CR→LF 输入转换后，2026-10-10 在当前 debug binary 上取得三个真实 Tauri/WKWebView/PTY 成功结果：Node 24.16.0 下 SGR mouse 525ms、bracketed paste 350ms、raw X10 367ms；完整回读值见 [`2026-10-10-macos-raw-input.json`](verification/2026-10-10-macos-raw-input.json)。此前锁屏超时记录 [`2026-10-10-macos-raw-input-blocked.json`](verification/2026-10-10-macos-raw-input-blocked.json) 保留为失败边界，不计入通过。
+- ⚠️ 该探针仍不替代人工物理鼠标/粘贴、中文 IME、Option/dead key、连续 resize 或 Windows/Pageant/PTY/串口实机矩阵。
+
+## 2026-10-11 本地 shell 交互探针
+
+- ✅ 新增显式 `TERMINAL_SHELL_PROBE=1` gate、固定 case/trace/input 契约和 `pnpm smoke:shell-probe[:matrix]` runner；普通产品启动不启用该模式。
+- ✅ 真实 Tauri/WKWebView + local PTY 七个 case 全绿：当前工作树 `cat-eof` 4047ms、`readline-history` 354ms、`readline-tab` 489ms、`vim-edit` 1909ms、`nano-edit` 4611ms、`pty-resize` 1328ms、`ctrl-c-interrupt` 1103ms；`cat` 使用 canonical 行提交后空读边界 EOT，精确验证 EOF payload；`pty-resize` 依次 resize 到 132x43/90x30/120x40/97x31 并用 `stty size` 逐档回读真实 PTY 几何。当前完整记录见 [`2026-10-11-macos-shell-interaction-current.json`](verification/2026-10-11-macos-shell-interaction-current.json)，旧二进制记录见 [`2026-10-11-macos-shell-interaction-probe.json`](verification/2026-10-11-macos-shell-interaction-probe.json)。
+- ✅ Node 24.16.0 下 shell protocol、Node runner/matrix、Rust state 定向测试通过；当前定向门禁计数为前端 109 文件/925 项、Team Server 103 项、Rust 189+3、Node 脚本 114 项。
+- ⚠️ 所有输入均由 `term.input(data, true)` 自动送入 xterm/PTY，不是物理键盘、系统粘贴或中文 IME；Option/dead key 及 Windows/Pageant/PTY/串口仍待实机。
+
+## 2026-10-10 会话生命周期增量
+
+- ✅ Remote attempt ID 在事件监听注册前创建；关闭/重连发生在监听注册挂起期间时会立即取消，监听迟到后不会启动已退休会话。
+- ✅ SSH 发布守卫覆盖 pool 发布到 reader task 接管的取消窗口；取消会关闭 transport 并释放 pool/registry，reader 接管后才提交守卫。
+- ✅ SSH host-key direct/jump preflight 统一 8 秒绝对 deadline；网络连接与 `known_hosts` blocking 检查共用该 deadline，超时进入既有可重试错误状态，不改变未知/变更 key 信任流程。
+- ✅ 启动恢复超过 2 秒时先提供临时本地 terminal；恢复结果只替换该临时 fallback，不覆盖用户在恢复期间创建的 tab。
+- ✅ 关闭 tab 等待所有重叠 start/reconnect promise；connection attempt cancellation、generation retirement 与 lifecycle buffer overflow 均按 session 隔离，迟到 session 不会重新发布或污染后续 tab。
+- ✅ 前端会话回归、Rust 发布守卫回归及 `git diff --check` 已通过；真人键盘、中文 IME、Windows/Pageant/PTY 和串口硬件仍待实机。
+
+## 2026-10-11 本地 Tauri/PTY 主流程 smoke
+
+- ✅ `pnpm smoke:terminal` 在 macOS 15.7.7 arm64、Node 24.16.0 下通过：8 MiB 输出、10 轮隔离会话、连续四步 resize 精确回读、尾部可见性和资源回收均通过。
+- ✅ 最新一次首次连接 `firstConnectionMs=1612`，总耗时 7639ms；二进制 SHA-256 与完整结果见 [`2026-10-10-macos-terminal-smoke.json`](verification/2026-10-10-macos-terminal-smoke.json)。
+- ✅ `pnpm smoke:terminal:reconnect` 同样通过：重连后 11 个唯一 session、`reconnectObserved=true`、`staleOutputRejected=true`，首次连接 1441ms、总耗时 8586ms；完整结果见 [`2026-10-10-macos-terminal-reconnect-smoke.json`](verification/2026-10-10-macos-terminal-reconnect-smoke.json)。主动终止 fixture 的 teardown 可能产生非致命 SSH channel-close warning，不影响资源回收结果。
+- 该结果证明本地 PTY 主流程与会话生命周期 smoke，不等同于普通用户冷启动 stopwatch、远程 SSH 首个 prompt、物理键盘/IME 或跨平台硬件实机验收。
+
+## 2026-09-22 macOS 输入验收增量
+
+- ✅ macOS 15.7.7 arm64 / WKWebView / 真实本地 PTY：`pnpm smoke:input-probe -- --inject swift --input-source ascii` 严格 30 轮通过，每轮只注入一次且精确回读 `617364`，退出码 0，总测试耗时 111547ms。原输入源恢复失败会使测试失败。
+- ✅ 前端 lint/typecheck、104 文件/880 项（`--maxWorkers=2`）、生产构建预算（首屏/总 gzip 128.15/547.15 KB）、Node 脚本 56 项、511 文件规模与 `git diff --check` 通过；本轮 Team Server 103 项与 Rust 177+3 项也已复验。
+- 逐轮原始结果、输入源与构建二进制摘要见 [macOS 输入验收记录](verification/2026-09-22-macos-input-probe.json)。CGEvent 证明原生事件路径，不等同于人类操作硬件键盘；人工输入、中文 IME、Option/dead key 和其他交互矩阵继续验收。
+- 用户确认目前无 Windows 测试机/串口设备，先完成 macOS；Windows/Pageant/串口继续保留为未验证。
+
+## 2026-09-06 feat/mvp 增量验证结果
+
+**范围**：SSH 建链主动取消、xterm parser 可见 ready marker 计时、完整启动/重连 smoke，以及行数门禁修复。
+
+| 门禁 | 结果 |
+| --- | --- |
+| `pnpm verify` | ✅ 全部通过：前端 102 文件/875 项、Team Server 25 文件/103 项、Rust 177 单测 + 3 集成、Node smoke 39 项；lint/typecheck/build budget/fmt/Clippy/源码门禁均通过 |
+| `pnpm smoke:ssh-matrix` | ✅ 7 用例全绿；本次首次连接 905–2313 ms，password/key/agent/cert/jump 与断线重连均产生预期隔离 session |
+| `pnpm smoke:terminal` | ✅ 8 MiB 输出、10 轮、97×31 resize、资源回收全绿；总耗时 5966 ms，`firstConnectionMs=2831` |
+| Rust cancel 回归 | ✅ 建链取消、cancel/create 竞态和 tombstone 上限测试通过；`session_cancel_connection` 对旧 IPC 调用保持可选 attemptId 兼容 |
+
+**未完成实机项**：macOS 物理键盘 30 轮重叠 `a/s/d`、中文 IME composition 与 Option/dead key 仍待人工（用户当前不方便敲键）；Windows OpenSSH/Pageant/PTY 与串口硬件因无可用测试机与硬件而保持待验证。
 
 ## 2026-08-19 feat/mvp 验证结果
 

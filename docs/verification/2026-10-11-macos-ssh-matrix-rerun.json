@@ -1,0 +1,47 @@
+{
+  "recordedAt": "2026-10-11T10:42:22+08:00",
+  "recordedDate": "2026-10-11",
+  "kind": "tauri-real-ssh-matrix-rerun",
+  "command": "PATH=/Users/liuzhiwei/n/bin:$PATH pnpm smoke:ssh-matrix",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0",
+    "docker": "29.7.2"
+  },
+  "revision": {
+    "head": "54f3fbbab39a97e1370d9880b89760dbd06a1c41",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "c69911573a824f6721ae0c00ecffa4240b872f08801606219cae8b58930cacac"
+  },
+  "allCasesPassed": true,
+  "cases": [
+    { "name": "key", "firstConnectionMs": 2347, "durationMs": 6761, "uniqueSessionCount": 10 },
+    { "name": "key-reconnect", "firstConnectionMs": 1062, "durationMs": 7474, "uniqueSessionCount": 11 },
+    { "name": "password", "firstConnectionMs": 2231, "durationMs": 6079, "uniqueSessionCount": 10 },
+    { "name": "password-reconnect", "firstConnectionMs": 1025, "durationMs": 7499, "uniqueSessionCount": 11 },
+    { "name": "agent", "firstConnectionMs": 1645, "durationMs": 6623, "uniqueSessionCount": 10 },
+    { "name": "agent-reconnect", "firstConnectionMs": 1056, "durationMs": 7554, "uniqueSessionCount": 11 },
+    { "name": "cert", "firstConnectionMs": 1015, "durationMs": 6956, "uniqueSessionCount": 10 },
+    { "name": "cert-reconnect", "firstConnectionMs": 974, "durationMs": 8166, "uniqueSessionCount": 11 },
+    { "name": "jump", "firstConnectionMs": 1777, "durationMs": 7488, "uniqueSessionCount": 10 },
+    { "name": "jump-reconnect", "firstConnectionMs": 1184, "durationMs": 8525, "uniqueSessionCount": 11 }
+  ],
+  "coverage": {
+    "firstConnectionDeadlineMs": 10000,
+    "loadBytes": 8388608,
+    "rounds": 10,
+    "reconnectCases": ["key-reconnect", "password-reconnect", "agent-reconnect", "cert-reconnect", "jump-reconnect"],
+    "jumpReconnect": true,
+    "resize": "97x31",
+    "reconnectStaleOutputRejected": true,
+    "resourcesRecovered": true
+  },
+  "limitations": [
+    "This is the dedicated real-SSH smoke workflow, not a stopwatch measurement of a normal user cold launch with an existing SQLite workspace.",
+    "Windows, Pageant, serial hardware, and human physical keyboard/IME acceptance remain unverified."
+  ]
+}

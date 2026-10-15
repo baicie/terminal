@@ -12,6 +12,7 @@ interface TerminalSmokeRootProps {
   submitResult: (result: TerminalSmokeResult) => Promise<void>
   reportConnected: () => Promise<number>
   reportReconnect?: () => Promise<void>
+  reportHostWake?: () => Promise<void>
   emitStaleOutput?: (
     retiredSessionId: string,
     activeSessionId: string,
@@ -23,6 +24,7 @@ export default function TerminalSmokeRoot({
   submitResult,
   reportConnected,
   reportReconnect,
+  reportHostWake,
   emitStaleOutput,
 }: TerminalSmokeRootProps) {
   const orchestrator = useTerminalSmokeOrchestrator(config, submitResult)
@@ -38,6 +40,7 @@ export default function TerminalSmokeRoot({
           signal={orchestrator.signal}
           reportConnected={reportConnected}
           reportReconnect={reportReconnect ?? (async () => {})}
+          reportHostWake={reportHostWake}
           emitStaleOutput={
             emitStaleOutput ??
             (async () => {

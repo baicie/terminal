@@ -21,12 +21,13 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use std::task::{Context, Poll};
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{broadcast, Mutex, Notify};
 
+use super::shell_integration::compose_startup_command;
 use crate::state::ClientHandler;
 
 /// SSH sessions storage for SFTP and port forwarding
@@ -39,7 +40,213 @@ const SSH_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 const SSH_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 const SSH_AUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 const SSH_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+const SSH_STARTUP_SETTLE_DELAY: std::time::Duration = std::time::Duration::from_millis(1000);
 const SSH_RESIZE_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
+const SSH_CONNECTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(9);
+const SSH_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(250);
+const MAX_CONNECTION_ATTEMPT_ENTRIES: usize = 256;
+
+/// Cancellation state shared by one in-flight SSH creation request.
+///
+/// The registry is deliberately process-local: attempt ids are opaque frontend
+/// handles and are never persisted or logged with credentials.
+#[derive(Clone)]
+pub(crate) struct ConnectionCancellation {
+    state: Arc<ConnectionCancellationState>,
+}
+
+struct ConnectionCancellationState {
+    cancelled: AtomicBool,
+    notify: Notify,
+}
+
+impl ConnectionCancellation {
+    fn new() -> Self {
+        Self {
+            state: Arc::new(ConnectionCancellationState {
+                cancelled: AtomicBool::new(false),
+                notify: Notify::new(),
+            }),
+        }
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.state.cancelled.load(Ordering::Acquire)
+    }
+
+    fn cancel(&self) {
+        self.state.cancelled.store(true, Ordering::Release);
+        self.state.notify.notify_waiters();
+    }
+
+    async fn cancelled(&self) {
+        let notified = self.state.notify.notified();
+        if self.is_cancelled() {
+            return;
+        }
+        notified.await;
+    }
+}
+
+pub(crate) struct ConnectionAttemptRegistration {
+    id: Option<String>,
+    cancellation: ConnectionCancellation,
+}
+
+struct ConnectionAttemptEntry {
+    cancellation: ConnectionCancellation,
+    placeholder: bool,
+}
+
+impl ConnectionAttemptRegistration {
+    pub(crate) fn cancellation(&self) -> ConnectionCancellation {
+        self.cancellation.clone()
+    }
+}
+
+impl Drop for ConnectionAttemptRegistration {
+    fn drop(&mut self) {
+        let Some(id) = self.id.as_deref() else {
+            return;
+        };
+        let Some(registry) = SSH_CONNECTION_ATTEMPTS.get() else {
+            return;
+        };
+        if let Ok(mut registry) = registry.lock() {
+            if registry.get(id).is_some_and(|current| {
+                Arc::ptr_eq(&current.cancellation.state, &self.cancellation.state)
+            }) {
+                registry.remove(id);
+            }
+        }
+    }
+}
+
+static SSH_CONNECTION_ATTEMPTS: OnceLock<StdMutex<HashMap<String, ConnectionAttemptEntry>>> =
+    OnceLock::new();
+
+pub(crate) fn register_connection_attempt(
+    attempt_id: Option<&str>,
+) -> ConnectionAttemptRegistration {
+    let id = attempt_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(ToOwned::to_owned);
+    let cancellation = id
+        .as_deref()
+        .and_then(|id| {
+            SSH_CONNECTION_ATTEMPTS.get().and_then(|registry| {
+                let mut registry = registry.lock().ok()?;
+                let entry = registry.get_mut(id)?;
+                if !entry.placeholder {
+                    return None;
+                }
+                entry.placeholder = false;
+                Some(entry.cancellation.clone())
+            })
+        })
+        .unwrap_or_else(ConnectionCancellation::new);
+    if let Some(id) = &id {
+        let registry = SSH_CONNECTION_ATTEMPTS.get_or_init(|| StdMutex::new(HashMap::new()));
+        if let Ok(mut registry) = registry.lock() {
+            registry.insert(
+                id.clone(),
+                ConnectionAttemptEntry {
+                    cancellation: cancellation.clone(),
+                    placeholder: false,
+                },
+            );
+        }
+    }
+    ConnectionAttemptRegistration { id, cancellation }
+}
+
+/// Cancel an in-flight SSH creation request. Returns false when the attempt
+/// already finished (or the id was unknown), which makes repeated UI cancels
+/// harmless and idempotent.
+pub(crate) fn cancel_connection_attempt(attempt_id: &str) -> bool {
+    let id = attempt_id.trim();
+    if id.is_empty() {
+        return false;
+    }
+    let registry = SSH_CONNECTION_ATTEMPTS.get_or_init(|| StdMutex::new(HashMap::new()));
+    let Ok(mut registry) = registry.lock() else {
+        return false;
+    };
+    if let Some(entry) = registry.get(id) {
+        entry.cancellation.cancel();
+        return !entry.placeholder;
+    }
+    if registry.len() >= MAX_CONNECTION_ATTEMPT_ENTRIES {
+        registry.retain(|_, entry| !entry.placeholder);
+        if registry.len() >= MAX_CONNECTION_ATTEMPT_ENTRIES {
+            return false;
+        }
+    }
+    // Keep a cancelled tombstone so a cancel request racing the create command
+    // is observed when that command registers the attempt a moment later.
+    let cancellation = ConnectionCancellation::new();
+    cancellation.cancel();
+    registry.insert(
+        id.to_owned(),
+        ConnectionAttemptEntry {
+            cancellation,
+            placeholder: true,
+        },
+    );
+    false
+}
+
+/// Cancel every SSH creation still running when the application is exiting.
+///
+/// These attempts have no session id yet, so `SessionManager::close_all` cannot
+/// discover them. Cancelling the shared state makes their outer command future
+/// settle and prevents a late session from being published during shutdown.
+pub(crate) fn cancel_all_connection_attempts() {
+    let Some(registry) = SSH_CONNECTION_ATTEMPTS.get() else {
+        return;
+    };
+    let Ok(registry) = registry.lock() else {
+        return;
+    };
+    for entry in registry.values() {
+        entry.cancellation.cancel();
+    }
+}
+
+fn connection_cancelled_error() -> SessionError {
+    SessionError::ConnectionCancelled
+}
+
+/// Run one SSH creation future until it completes or the owning frontend tab
+/// cancels its attempt. Dropping the in-flight russh future closes any socket
+/// that has not yet been published to the session manager; once a handle has
+/// been returned, the caller's generation check performs the final cleanup.
+pub(crate) async fn run_cancellable_connection<T>(
+    cancellation: ConnectionCancellation,
+    future: impl Future<Output = Result<T, SessionError>> + Send,
+) -> Result<T, SessionError> {
+    tokio::select! {
+        biased;
+        result = future => result,
+        _ = cancellation.cancelled() => Err(connection_cancelled_error()),
+    }
+}
+
+pub(crate) fn ssh_connection_deadline() -> tokio::time::Instant {
+    tokio::time::Instant::now() + SSH_CONNECTION_TIMEOUT
+}
+
+fn stage_deadline(
+    connection_deadline: tokio::time::Instant,
+    timeout: std::time::Duration,
+) -> tokio::time::Instant {
+    connection_deadline.min(tokio::time::Instant::now() + timeout)
+}
+
+fn cleanup_deadline(connection_deadline: tokio::time::Instant) -> tokio::time::Instant {
+    stage_deadline(connection_deadline, SSH_CLEANUP_TIMEOUT)
+}
 
 /// Decode a user-supplied private-key document in the format accepted by the
 /// key-management UI (OpenSSH PEM, legacy PEM/PKCS8, or PuTTY PPK).
@@ -54,37 +261,12 @@ fn decode_private_key(
     russh::keys::decode_secret_key(private_key, password)
 }
 
+#[cfg(test)]
 trait PendingSshConnection: Sized {
     fn disconnect_and_wait(self, reason: &'static str) -> impl Future<Output = ()> + Send;
 }
 
-impl PendingSshConnection for client::Handle<ClientHandler> {
-    async fn disconnect_and_wait(mut self, reason: &'static str) {
-        match tokio::time::timeout(
-            SSH_WRITE_TIMEOUT,
-            self.disconnect(russh::Disconnect::ByApplication, reason, "en"),
-        )
-        .await
-        {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                tracing::warn!(%error, %reason, "failed to request pending SSH disconnect");
-            }
-            Err(_) => tracing::warn!(%reason, "pending SSH disconnect request timed out"),
-        }
-
-        match tokio::time::timeout(SSH_WRITE_TIMEOUT, &mut self).await {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                tracing::debug!(%error, %reason, "pending SSH session stopped with an error");
-            }
-            Err(_) => {
-                tracing::warn!(%reason, "pending SSH session did not stop before deadline");
-            }
-        }
-    }
-}
-
+#[cfg(test)]
 async fn cleanup_pending_jump_connections<H: PendingSshConnection>(
     target: Option<H>,
     jump: H,
@@ -229,11 +411,88 @@ impl Drop for TcpShutdownGuard {
     }
 }
 
-fn connection_timeout_error(timeout: std::time::Duration, operation: &'static str) -> SessionError {
-    SessionError::ConnectionFailed(format!(
-        "{operation} timed out after {} ms",
-        timeout.as_millis()
-    ))
+/// Owns the resources published to the global SSH registries until the
+/// terminal reader has taken over their lifecycle.
+///
+/// Connection creation is cancellable even after `SshConnectionPool::insert`
+/// starts. Keeping this guard alive across that handoff makes cancellation
+/// roll back both the transport and the registry entry instead of leaving an
+/// unowned SSH handle behind.
+struct ConnectionPublicationGuard {
+    pool_key: Option<String>,
+    transport_shutdown: Option<TcpShutdownGuard>,
+    release: Option<Box<dyn FnOnce(String) + Send + 'static>>,
+}
+
+impl ConnectionPublicationGuard {
+    fn new(
+        pool: Arc<SshConnectionPool>,
+        pool_key: String,
+        transport_shutdown: TcpShutdownGuard,
+    ) -> Self {
+        Self::with_release_impl(pool_key, transport_shutdown, move |key| {
+            match tokio::runtime::Handle::try_current() {
+                Ok(runtime) => {
+                    runtime.spawn(pool.release(key));
+                }
+                Err(error) => {
+                    tracing::warn!(%error, %key, "cannot release SSH connection outside a Tokio runtime");
+                }
+            }
+        })
+    }
+
+    #[cfg(test)]
+    fn with_release<F>(pool_key: String, transport_shutdown: TcpShutdownGuard, release: F) -> Self
+    where
+        F: FnOnce(String) + Send + 'static,
+    {
+        Self::with_release_impl(pool_key, transport_shutdown, release)
+    }
+
+    fn with_release_impl<F>(
+        pool_key: String,
+        transport_shutdown: TcpShutdownGuard,
+        release: F,
+    ) -> Self
+    where
+        F: FnOnce(String) + Send + 'static,
+    {
+        Self {
+            pool_key: Some(pool_key),
+            transport_shutdown: Some(transport_shutdown),
+            release: Some(Box::new(release)),
+        }
+    }
+
+    fn commit(&mut self) {
+        self.pool_key.take();
+        self.release.take();
+        if let Some(transport_shutdown) = self.transport_shutdown.as_mut() {
+            transport_shutdown.disarm();
+        }
+        self.transport_shutdown.take();
+    }
+}
+
+impl Drop for ConnectionPublicationGuard {
+    fn drop(&mut self) {
+        if let Some(mut transport_shutdown) = self.transport_shutdown.take() {
+            if let Err(error) = transport_shutdown.shutdown() {
+                tracing::debug!(%error, "failed to interrupt unpublished SSH transport");
+            } else {
+                transport_shutdown.disarm();
+            }
+        }
+
+        if let (Some(pool_key), Some(release)) = (self.pool_key.take(), self.release.take()) {
+            release(pool_key);
+        }
+    }
+}
+
+fn connection_timeout_error(operation: &'static str) -> SessionError {
+    SessionError::ConnectionFailed(format!("{operation} timed out before its deadline"))
 }
 
 fn connection_failure_error(
@@ -243,29 +502,11 @@ fn connection_failure_error(
     SessionError::ConnectionFailed(format!("{operation} failed: {error}"))
 }
 
-pub(crate) async fn connect_tcp_with_timeout<H, A>(
-    config: Arc<client::Config>,
-    address: A,
-    handler: H,
-    timeout: std::time::Duration,
-    operation: &'static str,
-) -> Result<client::Handle<H>, SessionError>
-where
-    H: client::Handler + Send + 'static,
-    H::Error: std::fmt::Display,
-    A: tokio::net::ToSocketAddrs + Send,
-{
-    let (handle, mut shutdown_guard) =
-        connect_tcp_with_shutdown(config, address, handler, timeout, operation).await?;
-    shutdown_guard.disarm();
-    Ok(handle)
-}
-
 pub(crate) async fn connect_tcp_with_shutdown<H, A>(
     config: Arc<client::Config>,
     address: A,
     handler: H,
-    timeout: std::time::Duration,
+    deadline: tokio::time::Instant,
     operation: &'static str,
 ) -> Result<(client::Handle<H>, TcpShutdownGuard), SessionError>
 where
@@ -273,10 +514,9 @@ where
     H::Error: std::fmt::Display,
     A: tokio::net::ToSocketAddrs + Send,
 {
-    let deadline = tokio::time::Instant::now() + timeout;
     let socket = tokio::time::timeout_at(deadline, tokio::net::TcpStream::connect(address))
         .await
-        .map_err(|_| connection_timeout_error(timeout, operation))?
+        .map_err(|_| connection_timeout_error(operation))?
         .map_err(|error| connection_failure_error(operation, error))?;
     if config.nodelay {
         socket
@@ -304,21 +544,16 @@ where
                 tracing::warn!(%error, %operation, "failed to interrupt timed-out SSH handshake");
             }
 
-            if let Ok(mut handle) = (&mut connection).await {
-                if let Err(error) = (&mut handle).await {
-                    tracing::debug!(%error, %operation, "timed-out SSH session stopped");
-                }
-            }
-            Err(connection_timeout_error(timeout, operation))
+            Err(connection_timeout_error(operation))
         }
     }
 }
 
-pub(crate) async fn connect_stream_with_timeout<H, S>(
+pub(crate) async fn connect_stream_with_deadline<H, S>(
     config: Arc<client::Config>,
     stream: S,
     handler: H,
-    timeout: std::time::Duration,
+    deadline: tokio::time::Instant,
     operation: &'static str,
     transport: Option<&TcpShutdownGuard>,
 ) -> Result<client::Handle<H>, SessionError>
@@ -331,7 +566,7 @@ where
     let connection = client::connect_stream(config, stream, handler);
     tokio::pin!(connection);
 
-    match tokio::time::timeout(timeout, &mut connection).await {
+    match tokio::time::timeout_at(deadline, &mut connection).await {
         Ok(Ok(handle)) => Ok(handle),
         Ok(Err(error)) => Err(connection_failure_error(operation, error)),
         Err(_) => {
@@ -341,12 +576,7 @@ where
                 }
             }
             abort_handle.abort();
-            if let Ok(mut handle) = (&mut connection).await {
-                if let Err(error) = (&mut handle).await {
-                    tracing::debug!(%error, %operation, "timed-out SSH stream session stopped");
-                }
-            }
-            Err(connection_timeout_error(timeout, operation))
+            Err(connection_timeout_error(operation))
         }
     }
 }
@@ -355,12 +585,13 @@ pub(crate) async fn disconnect_and_wait_with_shutdown<H>(
     mut handle: client::Handle<H>,
     mut transport: TcpShutdownGuard,
     reason: &'static str,
+    deadline: tokio::time::Instant,
 ) where
     H: client::Handler,
     H::Error: std::fmt::Display,
 {
-    let _ = tokio::time::timeout(
-        SSH_WRITE_TIMEOUT,
+    let _ = tokio::time::timeout_at(
+        stage_deadline(deadline, SSH_WRITE_TIMEOUT),
         handle.disconnect(russh::Disconnect::ByApplication, reason, "en"),
     )
     .await;
@@ -370,7 +601,7 @@ pub(crate) async fn disconnect_and_wait_with_shutdown<H>(
         }
     };
     tokio::pin!(join);
-    if tokio::time::timeout(SSH_WRITE_TIMEOUT, &mut join)
+    if tokio::time::timeout_at(stage_deadline(deadline, SSH_WRITE_TIMEOUT), &mut join)
         .await
         .is_ok()
     {
@@ -380,7 +611,6 @@ pub(crate) async fn disconnect_and_wait_with_shutdown<H>(
     if let Err(error) = transport.shutdown() {
         tracing::warn!(%error, %reason, "failed to interrupt SSH transport during cleanup");
     }
-    join.await;
 }
 
 pub(crate) async fn disconnect_jump_connections_with_shutdown<H>(
@@ -388,17 +618,18 @@ pub(crate) async fn disconnect_jump_connections_with_shutdown<H>(
     mut jump: client::Handle<ClientHandler>,
     mut transport: TcpShutdownGuard,
     reason: &'static str,
+    deadline: tokio::time::Instant,
 ) where
     H: client::Handler,
     H::Error: std::fmt::Display,
 {
-    let _ = tokio::time::timeout(
-        SSH_WRITE_TIMEOUT,
+    let _ = tokio::time::timeout_at(
+        stage_deadline(deadline, SSH_WRITE_TIMEOUT),
         target.disconnect(russh::Disconnect::ByApplication, reason, "en"),
     )
     .await;
-    let _ = tokio::time::timeout(
-        SSH_WRITE_TIMEOUT,
+    let _ = tokio::time::timeout_at(
+        stage_deadline(deadline, SSH_WRITE_TIMEOUT),
         jump.disconnect(russh::Disconnect::ByApplication, reason, "en"),
     )
     .await;
@@ -413,7 +644,7 @@ pub(crate) async fn disconnect_jump_connections_with_shutdown<H>(
         }
     };
     tokio::pin!(join);
-    if tokio::time::timeout(SSH_WRITE_TIMEOUT, &mut join)
+    if tokio::time::timeout_at(stage_deadline(deadline, SSH_WRITE_TIMEOUT), &mut join)
         .await
         .is_ok()
     {
@@ -423,7 +654,6 @@ pub(crate) async fn disconnect_jump_connections_with_shutdown<H>(
     if let Err(error) = transport.shutdown() {
         tracing::warn!(%error, %reason, "failed to interrupt SSH jump transport during cleanup");
     }
-    join.await;
 }
 
 fn interactive_ssh_config() -> client::Config {
@@ -902,6 +1132,7 @@ fn open_shell_channel<'a>(
     rows: u16,
     agent_forwarding: bool,
     profile: &'a TerminalProfile,
+    deadline: tokio::time::Instant,
 ) -> BoxedSshFuture<'a, russh::Channel<client::Msg>> {
     Box::pin(open_shell_channel_inner(
         handle,
@@ -909,6 +1140,7 @@ fn open_shell_channel<'a>(
         rows,
         agent_forwarding,
         profile,
+        deadline,
     ))
 }
 
@@ -918,9 +1150,10 @@ async fn open_shell_channel_inner(
     rows: u16,
     agent_forwarding: bool,
     profile: &TerminalProfile,
+    deadline: tokio::time::Instant,
 ) -> Result<russh::Channel<client::Msg>, SessionError> {
-    let mut channel = enforce_ssh_operation_timeout(
-        SSH_CHANNEL_OPEN_TIMEOUT,
+    let mut channel = enforce_ssh_operation_deadline(
+        stage_deadline(deadline, SSH_CHANNEL_OPEN_TIMEOUT),
         "open SSH terminal channel",
         handle.channel_open_session(),
     )
@@ -932,13 +1165,14 @@ async fn open_shell_channel_inner(
         rows,
         agent_forwarding,
         &profile.environment,
-        SSH_REQUEST_TIMEOUT,
+        stage_deadline(deadline, SSH_REQUEST_TIMEOUT),
     )
     .await?;
 
     Ok(channel)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_terminal_output_reader(
     mut channel_reader: russh::ChannelReadHalf,
     mut shutdown_rx: broadcast::Receiver<()>,
@@ -946,7 +1180,11 @@ async fn run_terminal_output_reader(
     is_alive: Arc<AtomicBool>,
     app: AppHandle,
     session_id: String,
+    startup_output_ready: Arc<AtomicBool>,
+    startup_output_notify: Arc<Notify>,
 ) {
+    let debug_output = std::env::var_os("TERMINAL_DEBUG_SSH_OUTPUT").is_some();
+    let mut debug_chunks = 0usize;
     let (output_tx, mut output_handle) =
         spawn_session_output_pump(app.clone(), session_id.clone(), "ssh-data");
     let mut exit_status = None;
@@ -983,6 +1221,26 @@ async fn run_terminal_output_reader(
                     _ => None,
                 };
                 if let Some(output) = output {
+                    if !startup_output_ready.swap(true, Ordering::AcqRel) {
+                        startup_output_notify.notify_waiters();
+                    }
+                    let debug_text = String::from_utf8_lossy(&output.bytes);
+                    if debug_output
+                        && (std::env::var_os("TERMINAL_DEBUG_SSH_OUTPUT_ALL").is_some()
+                            || debug_chunks < 5
+                            || debug_text.contains("\u{1b}]")
+                            || debug_text.contains("REMOTE"))
+                    {
+                        tracing::info!(
+                            chunk = debug_chunks,
+                            bytes = output.bytes.len(),
+                            data = ?debug_text,
+                            "SSH terminal output chunk"
+                        );
+                    }
+                    if debug_output {
+                        debug_chunks += 1;
+                    }
                     if output_tx.send(output).await.is_err() {
                         tracing::error!(
                             session_id = %session_id,
@@ -1038,7 +1296,7 @@ fn apply_writer_completion(
 impl SshSession {
     /// 创建新的 SSH Session（密码认证）
     #[allow(clippy::too_many_arguments)]
-    pub fn new_with_password(
+    pub(crate) fn new_with_password(
         app: AppHandle,
         host: String,
         port: u16,
@@ -1049,6 +1307,7 @@ impl SshSession {
         cols: u16,
         rows: u16,
         profile: Option<TerminalProfile>,
+        deadline: tokio::time::Instant,
     ) -> BoxedSshFuture<'static, Self> {
         Box::pin(Self::create(
             app,
@@ -1066,12 +1325,13 @@ impl SshSession {
             cols,
             rows,
             profile,
+            deadline,
         ))
     }
 
     /// 创建新的 SSH Session（密钥认证）
     #[allow(clippy::too_many_arguments)]
-    pub fn new_with_key(
+    pub(crate) fn new_with_key(
         app: AppHandle,
         host: String,
         port: u16,
@@ -1083,6 +1343,7 @@ impl SshSession {
         cols: u16,
         rows: u16,
         profile: Option<TerminalProfile>,
+        deadline: tokio::time::Instant,
     ) -> BoxedSshFuture<'static, Self> {
         Box::pin(Self::create(
             app,
@@ -1100,6 +1361,7 @@ impl SshSession {
             cols,
             rows,
             profile,
+            deadline,
         ))
     }
 
@@ -1109,7 +1371,7 @@ impl SshSession {
     /// 私钥格式：PEM 或 OpenSSH 格式。
     /// 证书格式：OpenSSH 格式（ssh-ed25519-cert-v01@openssh.com AAAA...）
     #[allow(clippy::too_many_arguments)]
-    pub fn new_with_cert(
+    pub(crate) fn new_with_cert(
         app: AppHandle,
         host: String,
         port: u16,
@@ -1122,6 +1384,7 @@ impl SshSession {
         cols: u16,
         rows: u16,
         profile: Option<TerminalProfile>,
+        deadline: tokio::time::Instant,
     ) -> BoxedSshFuture<'static, Self> {
         Box::pin(Self::create(
             app,
@@ -1139,12 +1402,13 @@ impl SshSession {
             cols,
             rows,
             profile,
+            deadline,
         ))
     }
 
     /// 创建新的 SSH Session（Agent 认证）
     #[allow(clippy::too_many_arguments)]
-    pub fn new_with_agent(
+    pub(crate) fn new_with_agent(
         app: AppHandle,
         host: String,
         port: u16,
@@ -1154,6 +1418,7 @@ impl SshSession {
         cols: u16,
         rows: u16,
         profile: Option<TerminalProfile>,
+        deadline: tokio::time::Instant,
     ) -> BoxedSshFuture<'static, Self> {
         Box::pin(Self::create(
             app,
@@ -1171,12 +1436,13 @@ impl SshSession {
             cols,
             rows,
             profile,
+            deadline,
         ))
     }
 
     /// 创建新的 SSH Session（通过 Jump Host）
     #[allow(clippy::too_many_arguments)]
-    pub fn new_with_jump(
+    pub(crate) fn new_with_jump(
         app: AppHandle,
         target_host: String,
         target_port: u16,
@@ -1190,6 +1456,7 @@ impl SshSession {
         cols: u16,
         rows: u16,
         profile: Option<TerminalProfile>,
+        deadline: tokio::time::Instant,
     ) -> BoxedSshFuture<'static, Self> {
         Box::pin(Self::new_with_jump_inner(
             app,
@@ -1205,6 +1472,7 @@ impl SshSession {
             cols,
             rows,
             profile,
+            deadline,
         ))
     }
 
@@ -1223,6 +1491,7 @@ impl SshSession {
         cols: u16,
         rows: u16,
         profile: Option<TerminalProfile>,
+        deadline: tokio::time::Instant,
     ) -> Result<Self, SessionError> {
         validate_jump_auth_config(
             &jump_host,
@@ -1247,6 +1516,7 @@ impl SshSession {
             cols,
             rows,
             profile,
+            deadline,
         )
         .await
     }
@@ -1270,6 +1540,7 @@ impl SshSession {
         cols: u16,
         rows: u16,
         profile: Option<TerminalProfile>,
+        deadline: tokio::time::Instant,
     ) -> Result<Self, SessionError> {
         // 验证输入
         validate_terminal_size(cols, rows)?;
@@ -1310,6 +1581,7 @@ impl SshSession {
 
         let raw_handle: client::Handle<ClientHandler>;
         let transport_handle: Option<client::Handle<ClientHandler>>;
+        let transport_shutdown: TcpShutdownGuard;
 
         if let Some(jh) = jump_host {
             let target = JumpTarget {
@@ -1323,25 +1595,26 @@ impl SshSession {
                 use_agent: use_target_agent,
                 allow_agent_forwarding: agent_forwarding,
             };
-            let (target_handle, jump_handle) =
-                Self::connect_via_jump(config.clone(), target, jh).await?;
+            let (target_handle, jump_handle, jump_shutdown) =
+                Self::connect_via_jump(config.clone(), target, jh, deadline).await?;
             raw_handle = target_handle;
             transport_handle = Some(jump_handle);
+            transport_shutdown = jump_shutdown;
         } else {
             let addr = format!("{}:{}", host, port);
             let handler = client_handler(host, port, expected_host_key, agent_forwarding);
-            let mut direct = connect_tcp_with_timeout(
+            let (mut direct, direct_shutdown) = connect_tcp_with_shutdown(
                 config,
                 addr,
                 handler,
-                SSH_CONNECT_TIMEOUT,
+                stage_deadline(deadline, SSH_CONNECT_TIMEOUT),
                 "connect SSH server",
             )
             .await?;
 
             let authentication = if use_agent {
-                enforce_authentication_timeout(
-                    SSH_AUTH_TIMEOUT,
+                enforce_authentication_deadline(
+                    stage_deadline(deadline, SSH_AUTH_TIMEOUT),
                     "authenticate SSH agent",
                     authenticate_with_agent(&mut direct, username),
                 )
@@ -1354,45 +1627,69 @@ impl SshSession {
                     })
                 })
             } else {
-                enforce_authentication_timeout(
-                    SSH_AUTH_TIMEOUT,
+                enforce_authentication_deadline(
+                    stage_deadline(deadline, SSH_AUTH_TIMEOUT),
                     "authenticate SSH user",
                     Self::authenticate(&mut direct, username, password, private_key, certificate),
                 )
                 .await
             };
             if let Err(error) = authentication {
-                direct
-                    .disconnect_and_wait("direct SSH authentication failed")
-                    .await;
+                disconnect_and_wait_with_shutdown(
+                    direct,
+                    direct_shutdown,
+                    "direct SSH authentication failed",
+                    cleanup_deadline(deadline),
+                )
+                .await;
                 return Err(error);
             }
             raw_handle = direct;
             transport_handle = None;
+            transport_shutdown = direct_shutdown;
         }
 
-        let channel =
-            match open_shell_channel(&raw_handle, cols, rows, agent_forwarding, &profile).await {
-                Ok(channel) => channel,
-                Err(error) => {
-                    if let Some(jump_handle) = transport_handle {
-                        cleanup_pending_jump_connections(
-                            Some(raw_handle),
-                            jump_handle,
-                            "open SSH terminal shell failed",
-                        )
-                        .await;
-                    } else {
-                        raw_handle
-                            .disconnect_and_wait("open SSH terminal shell failed")
-                            .await;
-                    }
-                    return Err(error);
+        let channel = match open_shell_channel(
+            &raw_handle,
+            cols,
+            rows,
+            agent_forwarding,
+            &profile,
+            deadline,
+        )
+        .await
+        {
+            Ok(channel) => channel,
+            Err(error) => {
+                if let Some(jump_handle) = transport_handle {
+                    disconnect_jump_connections_with_shutdown(
+                        raw_handle,
+                        jump_handle,
+                        transport_shutdown,
+                        "open SSH terminal shell failed",
+                        cleanup_deadline(deadline),
+                    )
+                    .await;
+                } else {
+                    disconnect_and_wait_with_shutdown(
+                        raw_handle,
+                        transport_shutdown,
+                        "open SSH terminal shell failed",
+                        cleanup_deadline(deadline),
+                    )
+                    .await;
                 }
-            };
+                return Err(error);
+            }
+        };
 
         let arc_handle = Arc::new(raw_handle);
         let transport_handle = transport_handle.map(Arc::new);
+        let mut publication_guard = ConnectionPublicationGuard::new(
+            Arc::clone(&pool),
+            pool_key.clone(),
+            transport_shutdown,
+        );
 
         // Publish only after PTY/agent/shell were confirmed by the server.
         pool.insert(pool_key.clone(), Arc::clone(&arc_handle), transport_handle)
@@ -1401,31 +1698,13 @@ impl SshSession {
 
         let (channel_reader, channel_writer) = channel.split();
         let (writer, writer_handle) = start_ssh_writer(channel_writer);
-        if let Some(command) = profile.startup_command.as_deref() {
-            let mut data = command.as_bytes().to_vec();
-            if !data.ends_with(b"\n") {
-                data.push(b'\n');
-            }
-            if let Err(error) = writer.write(data).await {
-                tracing::warn!(%error, "SSH startup command failed");
-            }
-        }
         let is_alive = Arc::new(AtomicBool::new(true));
-
         let (shutdown_tx, _) = broadcast::channel(1);
         let shutdown_rx = shutdown_tx.subscribe();
         let read_handle = Arc::new(Mutex::new(None::<tokio::task::JoinHandle<()>>));
         let lifecycle = SessionLifecycle::new();
-
-        let state = Arc::new(Mutex::new(SshSessionState {
-            handle: Arc::clone(&arc_handle),
-            writer: writer.clone(),
-            writer_handle: Arc::clone(&writer_handle),
-            is_alive: Arc::clone(&is_alive),
-            shutdown_tx,
-            read_handle: read_handle.clone(),
-            pool_key: Some(pool_key.clone()),
-        }));
+        let startup_output_ready = Arc::new(AtomicBool::new(false));
+        let startup_output_notify = Arc::new(Notify::new());
 
         let session_id_clone = session_id.clone();
         let app_clone = app.clone();
@@ -1435,6 +1714,8 @@ impl SshSession {
         let writer_clone = writer.clone();
         let writer_completion = writer.completion();
         let writer_handle_clone = Arc::clone(&writer_handle);
+        let startup_output_ready_clone = Arc::clone(&startup_output_ready);
+        let startup_output_notify_clone = Arc::clone(&startup_output_notify);
 
         let _jh = tokio::spawn(async move {
             run_terminal_output_reader(
@@ -1444,6 +1725,8 @@ impl SshSession {
                 Arc::clone(&is_alive_clone),
                 app_clone,
                 session_id_clone,
+                startup_output_ready_clone,
+                startup_output_notify_clone,
             )
             .await;
 
@@ -1456,6 +1739,76 @@ impl SshSession {
             let mut guard = read_handle.lock().await;
             *guard = Some(_jh);
         }
+
+        let state = Arc::new(Mutex::new(SshSessionState {
+            handle: Arc::clone(&arc_handle),
+            writer: writer.clone(),
+            writer_handle: Arc::clone(&writer_handle),
+            is_alive: Arc::clone(&is_alive),
+            shutdown_tx,
+            read_handle: read_handle.clone(),
+            pool_key: Some(pool_key.clone()),
+        }));
+
+        let startup_command = compose_startup_command(
+            profile.shell_integration,
+            profile.startup_command.as_deref(),
+        );
+        if std::env::var_os("TERMINAL_DEBUG_SSH_PROFILE").is_some() {
+            tracing::info!(
+                shell_integration = ?profile.shell_integration,
+                startup_command = ?startup_command,
+                "SSH terminal profile before startup write"
+            );
+        }
+        if let Some(command) = startup_command.as_deref() {
+            // Wait for the first shell output before writing into the PTY. In
+            // particular, zsh can accept the channel before its line editor
+            // is ready and otherwise drops the first startup byte.
+            let startup_ready = tokio::time::timeout_at(deadline, async {
+                if !startup_output_ready.load(Ordering::Acquire) {
+                    startup_output_notify.notified().await;
+                }
+            })
+            .await
+            .is_ok();
+            if !startup_ready {
+                tracing::warn!(
+                    "SSH startup shell produced no initial output before the connection deadline"
+                );
+            }
+            if tokio::time::timeout_at(deadline, tokio::time::sleep(SSH_STARTUP_SETTLE_DELAY))
+                .await
+                .is_err()
+            {
+                tracing::warn!("SSH startup shell did not settle before the connection deadline");
+            }
+            let data = command.as_bytes().to_vec();
+            if std::env::var_os("TERMINAL_DEBUG_SSH_PROFILE").is_some() {
+                tracing::info!(bytes = data.len(), "SSH startup write begin");
+            }
+            let write_result = tokio::time::timeout_at(deadline, writer.write(data)).await;
+            match write_result {
+                Ok(Ok(())) => {
+                    if std::env::var_os("TERMINAL_DEBUG_SSH_PROFILE").is_some() {
+                        tracing::info!("SSH startup write complete");
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                    let enter_result =
+                        tokio::time::timeout_at(deadline, writer.write(b"\r".to_vec())).await;
+                    if std::env::var_os("TERMINAL_DEBUG_SSH_PROFILE").is_some() {
+                        tracing::info!(result = ?enter_result, "SSH startup enter write complete");
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    let _ = tokio::time::timeout_at(deadline, writer.write(b"\n".to_vec())).await;
+                }
+                Ok(Err(error)) => tracing::warn!(%error, "SSH startup command failed"),
+                Err(_) => tracing::warn!("SSH startup command skipped at connection deadline"),
+            }
+        }
+
+        // The reader task now owns shutdown and pool release for the session.
+        publication_guard.commit();
 
         Ok(Self {
             session_id,
@@ -1471,37 +1824,64 @@ impl SshSession {
         config: Arc<client::Config>,
         target: JumpTarget,
         jump_host: JumpHostConfig,
-    ) -> BoxedSshFuture<'static, (client::Handle<ClientHandler>, client::Handle<ClientHandler>)>
-    {
-        Box::pin(Self::connect_via_jump_inner(config, target, jump_host))
+        deadline: tokio::time::Instant,
+    ) -> BoxedSshFuture<
+        'static,
+        (
+            client::Handle<ClientHandler>,
+            client::Handle<ClientHandler>,
+            TcpShutdownGuard,
+        ),
+    > {
+        Box::pin(Self::connect_via_jump_inner(
+            config, target, jump_host, deadline,
+        ))
     }
 
     async fn connect_via_jump_inner(
         config: Arc<client::Config>,
         target: JumpTarget,
         jump_host: JumpHostConfig,
-    ) -> Result<(client::Handle<ClientHandler>, client::Handle<ClientHandler>), SessionError> {
+        deadline: tokio::time::Instant,
+    ) -> Result<
+        (
+            client::Handle<ClientHandler>,
+            client::Handle<ClientHandler>,
+            TcpShutdownGuard,
+        ),
+        SessionError,
+    > {
         // 第一步：验证并认证跳板机。主会话与 TOFU 隧道探测共用此路径，
         // 避免 password/key/agent/cert 语义随时间漂移。
-        let (jump_handle, mut jump_shutdown) =
-            connect_authenticated_jump_host_with_shutdown(config.clone(), &jump_host).await?;
+        let (jump_handle, jump_shutdown) = connect_authenticated_jump_host_with_shutdown(
+            config.clone(),
+            &jump_host,
+            Some(deadline),
+        )
+        .await?;
 
         // 第二步：通过跳板机打开到目标主机的 direct-tcpip channel
-        let target_channel =
-            match open_jump_host_tunnel(&jump_handle, &jump_host, target.host.clone(), target.port)
-                .await
-            {
-                Ok(channel) => channel,
-                Err(error) => {
-                    disconnect_and_wait_with_shutdown(
-                        jump_handle,
-                        jump_shutdown,
-                        "open jump host tunnel failed",
-                    )
-                    .await;
-                    return Err(error);
-                }
-            };
+        let target_channel = match open_jump_host_tunnel(
+            &jump_handle,
+            &jump_host,
+            target.host.clone(),
+            target.port,
+            stage_deadline(deadline, SSH_CHANNEL_OPEN_TIMEOUT),
+        )
+        .await
+        {
+            Ok(channel) => channel,
+            Err(error) => {
+                disconnect_and_wait_with_shutdown(
+                    jump_handle,
+                    jump_shutdown,
+                    "open jump host tunnel failed",
+                    cleanup_deadline(deadline),
+                )
+                .await;
+                return Err(error);
+            }
+        };
 
         // 第三步：把 direct-tcpip channel 当成双向流，在隧道内完成目标主机
         // 自己的 SSH 握手和认证。认证跳板 Handle 只会再次认证跳板机。
@@ -1512,11 +1892,11 @@ impl SshSession {
             target.expected_host_key,
             target.allow_agent_forwarding,
         );
-        let target_connection = connect_stream_with_timeout(
+        let target_connection = connect_stream_with_deadline(
             config,
             target_stream,
             target_handler,
-            SSH_CONNECT_TIMEOUT,
+            stage_deadline(deadline, SSH_CONNECT_TIMEOUT),
             "connect target host through jump host",
             Some(&jump_shutdown),
         )
@@ -1528,6 +1908,7 @@ impl SshSession {
                     jump_handle,
                     jump_shutdown,
                     "target SSH handshake failed",
+                    cleanup_deadline(deadline),
                 )
                 .await;
                 return Err(error);
@@ -1535,8 +1916,8 @@ impl SshSession {
         };
 
         let authentication = if target.use_agent {
-            enforce_authentication_timeout(
-                SSH_AUTH_TIMEOUT,
+            enforce_authentication_deadline(
+                stage_deadline(deadline, SSH_AUTH_TIMEOUT),
                 "authenticate target SSH agent",
                 authenticate_with_agent(&mut target_handle, target.username),
             )
@@ -1549,8 +1930,8 @@ impl SshSession {
                 })
             })
         } else {
-            enforce_authentication_timeout(
-                SSH_AUTH_TIMEOUT,
+            enforce_authentication_deadline(
+                stage_deadline(deadline, SSH_AUTH_TIMEOUT),
                 "authenticate target SSH user",
                 Self::authenticate(
                     &mut target_handle,
@@ -1568,13 +1949,13 @@ impl SshSession {
                 jump_handle,
                 jump_shutdown,
                 "target SSH authentication failed",
+                cleanup_deadline(deadline),
             )
             .await;
             return Err(error);
         }
 
-        jump_shutdown.disarm();
-        Ok((target_handle, jump_handle))
+        Ok((target_handle, jump_handle, jump_shutdown))
     }
 
     /// 认证处理（不含 agent；agent 由调用方在需要时单独调用 `authenticate_with_agent`）
@@ -1951,6 +2332,7 @@ impl SshSession {
 pub(crate) async fn connect_authenticated_jump_host_with_shutdown(
     config: Arc<client::Config>,
     jump_host: &JumpHostConfig,
+    connection_deadline: Option<tokio::time::Instant>,
 ) -> Result<(client::Handle<ClientHandler>, TcpShutdownGuard), SessionError> {
     if jump_host.host.trim().is_empty() {
         return Err(SessionError::InvalidInput(
@@ -1975,6 +2357,9 @@ pub(crate) async fn connect_authenticated_jump_host_with_shutdown(
     )?;
 
     let expected_host_key = parse_expected_host_key(jump_host.expected_host_key.clone())?;
+    let connect_deadline = connection_deadline
+        .map(|deadline| stage_deadline(deadline, SSH_CONNECT_TIMEOUT))
+        .unwrap_or_else(|| tokio::time::Instant::now() + SSH_CONNECT_TIMEOUT);
     let (mut handle, shutdown_guard) = connect_tcp_with_shutdown(
         config,
         (jump_host.host.as_str(), jump_host.port),
@@ -1984,22 +2369,29 @@ pub(crate) async fn connect_authenticated_jump_host_with_shutdown(
             expected_host_key,
             false,
         ),
-        SSH_CONNECT_TIMEOUT,
+        connect_deadline,
         "connect jump host",
     )
     .await?;
 
-    let authentication = enforce_authentication_timeout(
-        SSH_AUTH_TIMEOUT,
+    let authentication_deadline = connection_deadline
+        .map(|deadline| stage_deadline(deadline, SSH_AUTH_TIMEOUT))
+        .unwrap_or_else(|| tokio::time::Instant::now() + SSH_AUTH_TIMEOUT);
+    let authentication = enforce_authentication_deadline(
+        authentication_deadline,
         "authenticate jump host",
         authenticate_jump_host(&mut handle, jump_host),
     )
     .await;
     if let Err(error) = authentication {
+        let cleanup_at = connection_deadline
+            .map(cleanup_deadline)
+            .unwrap_or_else(|| tokio::time::Instant::now() + SSH_WRITE_TIMEOUT + SSH_WRITE_TIMEOUT);
         disconnect_and_wait_with_shutdown(
             handle,
             shutdown_guard,
             "jump host authentication failed",
+            cleanup_at,
         )
         .await;
         return Err(error);
@@ -2014,10 +2406,11 @@ pub(crate) async fn open_jump_host_tunnel(
     jump_host: &JumpHostConfig,
     target_host: String,
     target_port: u16,
+    deadline: tokio::time::Instant,
 ) -> Result<Channel<client::Msg>, SessionError> {
     let peer_addr = format!("{}:{}", jump_host.host, jump_host.port);
-    enforce_ssh_operation_timeout(
-        SSH_CHANNEL_OPEN_TIMEOUT,
+    enforce_ssh_operation_deadline(
+        deadline,
         "open jump host tunnel",
         jump_handle.channel_open_direct_tcpip(
             target_host,
@@ -2118,54 +2511,48 @@ async fn enforce_exec_deadline<T>(
 }
 
 #[cfg(test)]
-async fn enforce_connection_timeout<T, E>(
-    timeout: std::time::Duration,
+async fn enforce_connection_deadline<T, E>(
+    deadline: tokio::time::Instant,
     operation: &'static str,
     future: impl Future<Output = Result<T, E>>,
 ) -> Result<T, SessionError>
 where
     E: std::fmt::Display,
 {
-    tokio::time::timeout(timeout, future)
+    tokio::time::timeout_at(deadline, future)
         .await
-        .map_err(|_| connection_timeout_error(timeout, operation))?
+        .map_err(|_| connection_timeout_error(operation))?
         .map_err(|error| connection_failure_error(operation, error))
 }
 
-async fn enforce_authentication_timeout<T, E>(
-    timeout: std::time::Duration,
+async fn enforce_authentication_deadline<T, E>(
+    deadline: tokio::time::Instant,
     operation: &'static str,
     future: impl Future<Output = Result<T, E>>,
 ) -> Result<T, SessionError>
 where
     E: std::fmt::Display,
 {
-    tokio::time::timeout(timeout, future)
+    tokio::time::timeout_at(deadline, future)
         .await
         .map_err(|_| {
-            SessionError::AuthenticationFailed(format!(
-                "{operation} timed out after {} ms",
-                timeout.as_millis()
-            ))
+            SessionError::AuthenticationFailed(format!("{operation} timed out before its deadline"))
         })?
         .map_err(|error| SessionError::AuthenticationFailed(format!("{operation} failed: {error}")))
 }
 
-async fn enforce_ssh_operation_timeout<T, E>(
-    timeout: std::time::Duration,
+async fn enforce_ssh_operation_deadline<T, E>(
+    deadline: tokio::time::Instant,
     operation: &'static str,
     future: impl Future<Output = Result<T, E>>,
 ) -> Result<T, SessionError>
 where
     E: std::fmt::Display,
 {
-    tokio::time::timeout(timeout, future)
+    tokio::time::timeout_at(deadline, future)
         .await
         .map_err(|_| {
-            SessionError::ChannelError(format!(
-                "{operation} timed out after {} ms",
-                timeout.as_millis()
-            ))
+            SessionError::ChannelError(format!("{operation} timed out before its deadline"))
         })?
         .map_err(|error| SessionError::ChannelError(format!("{operation} failed: {error}")))
 }
@@ -2260,6 +2647,90 @@ mod tests {
     }
 
     fn assert_send_static<T: Send + 'static>(_: T) {}
+
+    #[test]
+    fn dropped_connection_publication_releases_transport_and_pool_key() {
+        use std::io::Read;
+        use std::net::{TcpListener, TcpStream};
+        use std::time::Duration;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test listener should bind");
+        let client = TcpStream::connect(listener.local_addr().expect("listener address"))
+            .expect("test client should connect");
+        let (mut peer, _) = listener.accept().expect("test peer should accept");
+        peer.set_read_timeout(Some(Duration::from_millis(500)))
+            .expect("test peer should configure a read timeout");
+
+        let released_key = Arc::new(StdMutex::new(None::<String>));
+        let released_key_capture = Arc::clone(&released_key);
+        let guard = ConnectionPublicationGuard::with_release(
+            "aborted-publication".to_string(),
+            TcpShutdownGuard::new(client),
+            move |key| {
+                *released_key_capture
+                    .lock()
+                    .expect("release probe lock should not be poisoned") = Some(key);
+            },
+        );
+
+        drop(guard);
+
+        let mut byte = [0_u8; 1];
+        match peer.read(&mut byte) {
+            Ok(0) => {}
+            Err(error) => assert!(!matches!(
+                error.kind(),
+                std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+            )),
+            Ok(read) => panic!("peer unexpectedly read {read} byte(s) after shutdown"),
+        }
+        assert_eq!(
+            *released_key
+                .lock()
+                .expect("release probe lock should not be poisoned"),
+            Some("aborted-publication".to_string())
+        );
+    }
+
+    #[test]
+    fn committed_connection_publication_keeps_transport_and_pool_key() {
+        use std::io::Read;
+        use std::net::{TcpListener, TcpStream};
+        use std::time::Duration;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test listener should bind");
+        let client = TcpStream::connect(listener.local_addr().expect("listener address"))
+            .expect("test client should connect");
+        let shutdown_socket = client
+            .try_clone()
+            .expect("test shutdown socket should clone");
+        let (mut peer, _) = listener.accept().expect("test peer should accept");
+        peer.set_read_timeout(Some(Duration::from_millis(50)))
+            .expect("test peer should configure a read timeout");
+
+        let released = Arc::new(AtomicBool::new(false));
+        let released_capture = Arc::clone(&released);
+        let mut guard = ConnectionPublicationGuard::with_release(
+            "committed-publication".to_string(),
+            TcpShutdownGuard::new(shutdown_socket),
+            move |_key| {
+                released_capture.store(true, Ordering::Release);
+            },
+        );
+        guard.commit();
+        drop(guard);
+
+        let mut byte = [0_u8; 1];
+        assert!(matches!(
+            peer.read(&mut byte),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                )
+        ));
+        assert!(!released.load(Ordering::Acquire));
+    }
 
     #[test]
     fn standard_openssh_pem_private_key_is_decoded_by_auth_parser() {
@@ -2504,6 +2975,145 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ssh_connection_stages_share_one_absolute_deadline() {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(50);
+
+        enforce_authentication_deadline(
+            stage_deadline(deadline, SSH_AUTH_TIMEOUT),
+            "authenticate SSH user",
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                Ok::<(), std::io::Error>(())
+            },
+        )
+        .await
+        .expect("authentication should finish inside the shared deadline");
+        let channel = enforce_ssh_operation_deadline(
+            stage_deadline(deadline, SSH_CHANNEL_OPEN_TIMEOUT),
+            "open SSH terminal channel",
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                Ok::<(), std::io::Error>(())
+            },
+        )
+        .await;
+
+        assert!(matches!(
+            channel,
+            Err(SessionError::ChannelError(message))
+                if message.contains("open SSH terminal channel")
+                    && message.contains("timed out")
+        ));
+    }
+
+    #[tokio::test]
+    async fn expired_connection_deadline_does_not_grant_cleanup_more_time() {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(5);
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        assert!(cleanup_deadline(deadline) <= tokio::time::Instant::now());
+    }
+
+    #[tokio::test]
+    async fn cancelling_connection_attempt_drops_the_in_flight_future() {
+        struct DropProbe(Arc<AtomicBool>);
+        impl Drop for DropProbe {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+
+        let dropped = Arc::new(AtomicBool::new(false));
+        let registration = register_connection_attempt(Some("cancel-test-attempt"));
+        let probe = DropProbe(Arc::clone(&dropped));
+        let task = tokio::spawn(run_cancellable_connection(
+            registration.cancellation(),
+            async move {
+                let _probe = probe;
+                std::future::pending::<Result<(), SessionError>>().await
+            },
+        ));
+
+        tokio::task::yield_now().await;
+        assert!(cancel_connection_attempt("cancel-test-attempt"));
+        assert!(matches!(
+            task.await.expect("cancel task should join"),
+            Err(SessionError::ConnectionCancelled)
+        ));
+        assert!(dropped.load(Ordering::Acquire));
+        drop(registration);
+        assert!(!cancel_connection_attempt("cancel-test-attempt"));
+    }
+
+    #[tokio::test]
+    async fn completed_connection_result_wins_a_same_tick_cancel() {
+        let registration = register_connection_attempt(Some("completed-cancel-attempt"));
+        registration.cancellation.cancel();
+        let result = run_cancellable_connection(registration.cancellation(), async {
+            Ok::<_, SessionError>("session-ready")
+        })
+        .await;
+        assert_eq!(
+            result.expect("completed future should win"),
+            "session-ready"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancellation_racing_registration_is_observed_by_the_create_future() {
+        let attempt_id = "racing-cancel-attempt";
+        assert!(!cancel_connection_attempt(attempt_id));
+        let registration = register_connection_attempt(Some(attempt_id));
+        let result = run_cancellable_connection(registration.cancellation(), async {
+            std::future::pending::<Result<(), SessionError>>().await
+        })
+        .await;
+        assert!(matches!(result, Err(SessionError::ConnectionCancelled)));
+        drop(registration);
+        assert!(!cancel_connection_attempt(attempt_id));
+    }
+
+    #[test]
+    fn unknown_cancellation_tombstones_are_bounded() {
+        let prefix = "bounded-cancel-attempt-";
+        for index in 0..(MAX_CONNECTION_ATTEMPT_ENTRIES + 32) {
+            assert!(!cancel_connection_attempt(&format!("{prefix}{index}")));
+        }
+        let registry = SSH_CONNECTION_ATTEMPTS
+            .get()
+            .expect("cancellation registry should exist")
+            .lock()
+            .expect("cancellation registry lock should not be poisoned");
+        let count = registry.keys().filter(|id| id.starts_with(prefix)).count();
+        assert!(count <= MAX_CONNECTION_ATTEMPT_ENTRIES);
+    }
+
+    #[test]
+    fn duplicate_connection_attempt_id_gets_fresh_cancellation_state() {
+        let attempt_id = "duplicate-cancel-attempt";
+        let first = register_connection_attempt(Some(attempt_id));
+        assert!(cancel_connection_attempt(attempt_id));
+        let second = register_connection_attempt(Some(attempt_id));
+        assert!(!second.cancellation().is_cancelled());
+        drop(first);
+        drop(second);
+        assert!(!cancel_connection_attempt(attempt_id));
+    }
+
+    #[test]
+    fn cancelling_all_connection_attempts_marks_active_handshakes() {
+        let attempt_id = "shutdown-cancel-all-attempt";
+        let registration = register_connection_attempt(Some(attempt_id));
+        assert!(!registration.cancellation().is_cancelled());
+
+        cancel_all_connection_attempts();
+
+        assert!(registration.cancellation().is_cancelled());
+        drop(registration);
+        assert!(!cancel_connection_attempt(attempt_id));
+    }
+
+    #[tokio::test]
     async fn ssh_writer_closes_when_reader_already_marked_session_dead() {
         let close_calls = Arc::new(AtomicUsize::new(0));
         let timeouts = SshWriterTimeouts {
@@ -2567,8 +3177,8 @@ mod tests {
         let stalled = std::future::pending::<Result<(), std::io::Error>>();
 
         assert!(matches!(
-            enforce_ssh_operation_timeout(
-                std::time::Duration::from_millis(5),
+            enforce_ssh_operation_deadline(
+                tokio::time::Instant::now() + std::time::Duration::from_millis(5),
                 "request PTY",
                 stalled,
             )
@@ -2585,8 +3195,8 @@ mod tests {
         )));
 
         assert!(matches!(
-            enforce_ssh_operation_timeout(
-                std::time::Duration::from_secs(1),
+            enforce_ssh_operation_deadline(
+                tokio::time::Instant::now() + std::time::Duration::from_secs(1),
                 "write terminal data",
                 failed,
             )
@@ -2602,8 +3212,8 @@ mod tests {
         let stalled = std::future::pending::<Result<(), std::io::Error>>();
 
         assert!(matches!(
-            enforce_connection_timeout(
-                std::time::Duration::from_millis(5),
+            enforce_connection_deadline(
+                tokio::time::Instant::now() + std::time::Duration::from_millis(5),
                 "connect SSH server",
                 stalled,
             )
@@ -2637,11 +3247,11 @@ mod tests {
             }
         });
 
-        let result = connect_stream_with_timeout(
+        let result = connect_stream_with_deadline(
             Arc::new(interactive_ssh_config()),
             client_stream,
             client_handler("target.example".to_string(), 22, None, false),
-            std::time::Duration::from_millis(20),
+            tokio::time::Instant::now() + std::time::Duration::from_millis(20),
             "connect stalled SSH stream",
             None,
         )
@@ -2691,11 +3301,11 @@ mod tests {
 
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(2),
-            connect_tcp_with_timeout(
+            connect_tcp_with_shutdown(
                 Arc::new(interactive_ssh_config()),
                 address.to_string(),
                 client_handler("127.0.0.1".to_string(), address.port(), None, false),
-                std::time::Duration::from_millis(20),
+                tokio::time::Instant::now() + std::time::Duration::from_millis(20),
                 "connect stalled SSH server",
             ),
         )
@@ -2719,8 +3329,8 @@ mod tests {
         let stalled = std::future::pending::<Result<(), std::io::Error>>();
 
         assert!(matches!(
-            enforce_authentication_timeout(
-                std::time::Duration::from_millis(5),
+            enforce_authentication_deadline(
+                tokio::time::Instant::now() + std::time::Duration::from_millis(5),
                 "authenticate SSH user",
                 stalled,
             )

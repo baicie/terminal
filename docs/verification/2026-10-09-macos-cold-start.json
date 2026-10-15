@@ -1,0 +1,43 @@
+{
+  "recordedDate": "2026-10-09",
+  "kind": "tauri-local-cold-start-ax-readiness",
+  "application": "src-tauri/target/debug/bundle/macos/Termius.app",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "revision": {
+    "head": "54f3fbbab39a97e1370d9880b89760dbd06a1c41",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/bundle/macos/Termius.app/Contents/MacOS/terminal",
+    "sha256": "c3f69fd2614e23e93c03c978b8704cac9ad1b38e80311e8c169dc610733b40d8"
+  },
+  "measurement": {
+    "method": "macOS UI automation launch from no running debug-bundle process, then poll the accessibility tree until the Local tab, connected state, terminal input entry area, and visible zsh prompt are all present",
+    "clock": "request-to-AX-readiness",
+    "allRunsUnder10s": true,
+    "runs": [
+      { "run": 1, "readyMs": 5408 },
+      { "run": 2, "readyMs": 4477 },
+      { "run": 3, "readyMs": 5840 }
+    ],
+    "minMs": 4477,
+    "maxMs": 5840,
+    "medianMs": 5408
+  },
+  "readinessEvidence": [
+    "Local tab restored",
+    "Local · 本地终端",
+    "已连接",
+    "Terminal input entry area",
+    "visible zsh prompt"
+  ],
+  "limitations": [
+    "The timing includes the UI automation launch request and accessibility-tree polling; it is not an OS process-start stopwatch.",
+    "This covers local shell/workspace recovery only, not a real external SSH host's first interactive prompt.",
+    "Human physical keyboard, real macOS IME, Windows/Pageant, and serial hardware acceptance remain unverified."
+  ]
+}

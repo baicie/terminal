@@ -1,6 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
 
 export const terminalSessionTransport = {
+  async cancelConnection(attemptId: string): Promise<void> {
+    await invoke('session_cancel_connection', { attemptId })
+  },
+
   async write(sessionId: string, data: string): Promise<void> {
     await invoke('session_write', { sessionId, data })
   },

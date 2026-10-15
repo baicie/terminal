@@ -1,0 +1,111 @@
+{
+  "recordedAt": "2026-10-11T22:27:00+08:00",
+  "recordedDate": "2026-10-11",
+  "kind": "tauri-release-ssh-and-shell-matrix",
+  "why": "The matrix runner used to rebuild the binary on every invocation. A rebuild of identical source is not byte-reproducible, so a matrix run could never describe the same artifact as a cold-start run measured moments earlier, and the two records silently disagreed. The runner now accepts --reuse-binary, and this record was taken on the exact artifact measured by 2026-10-11-macos-release-terminal-gate.json.",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "build": {
+    "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle",
+    "binary": "src-tauri/target/release/terminal",
+    "sha256": "ab2093171939d7fdb26bc9200bfca4d6bbafe521576bd34e96b3069cc783a6bb",
+    "devServerRequired": false,
+    "smokeInstrumented": true
+  },
+  "sshMatrix": {
+    "command": "node scripts/run-terminal-smoke-matrix.mjs --release",
+    "passed": 10,
+    "failed": 0,
+    "firstConnectionMsRange": [
+      881,
+      1791
+    ],
+    "cases": [
+      {
+        "name": "key",
+        "ok": true,
+        "firstConnectionMs": 1791,
+        "totalMs": 5563,
+        "uniqueSessionCount": 10
+      },
+      {
+        "name": "key-reconnect",
+        "ok": true,
+        "firstConnectionMs": 927,
+        "totalMs": 6640,
+        "uniqueSessionCount": 11
+      },
+      {
+        "name": "password",
+        "ok": true,
+        "firstConnectionMs": 887,
+        "totalMs": 4659,
+        "uniqueSessionCount": 10
+      },
+      {
+        "name": "password-reconnect",
+        "ok": true,
+        "firstConnectionMs": 881,
+        "totalMs": 5316,
+        "uniqueSessionCount": 11
+      },
+      {
+        "name": "agent",
+        "ok": true,
+        "firstConnectionMs": 982,
+        "totalMs": 5553,
+        "uniqueSessionCount": 10
+      },
+      {
+        "name": "agent-reconnect",
+        "ok": true,
+        "firstConnectionMs": 1008,
+        "totalMs": 6557,
+        "uniqueSessionCount": 11
+      },
+      {
+        "name": "cert",
+        "ok": true,
+        "firstConnectionMs": 1037,
+        "totalMs": 5732,
+        "uniqueSessionCount": 10
+      },
+      {
+        "name": "cert-reconnect",
+        "ok": true,
+        "firstConnectionMs": 1057,
+        "totalMs": 6462,
+        "uniqueSessionCount": 11
+      },
+      {
+        "name": "jump",
+        "ok": true,
+        "firstConnectionMs": 1058,
+        "totalMs": 6473,
+        "uniqueSessionCount": 10
+      },
+      {
+        "name": "jump-reconnect",
+        "ok": true,
+        "firstConnectionMs": 1091,
+        "totalMs": 7345,
+        "uniqueSessionCount": 11
+      }
+    ],
+    "reconnectNote": "Every reconnect case produced 11 unique session ids against 10 for the plain case, so each reconnect really tore the session down and built a new one rather than reusing the old channel.",
+    "passwordFixtureFix": "These two cases had been recorded as notRun because the fixture always ran `docker build`, which re-resolves debian:bookworm-slim and cannot complete while the Docker daemon is unable to reach the registry. The fixture now inspects for the local terminal-smoke-password-sshd image first and only builds when it is missing, and it settles on `exit` so a killed build cannot hang the runner. Both cases then passed on this same release binary.",
+    "notRun": []
+  },
+  "limitations": [
+    "Automated evidence only: no human physical keyboard, Chinese IME, Option/dead key or vim/nano coverage.",
+    "The localhost fixtures use generated keys and an ephemeral sshd; they do not stand in for the cross-platform real-machine matrix.",
+    "Windows OpenSSH Agent, Pageant, ConPTY/local Windows PTY and serial hardware remain unverified for lack of a test machine."
+  ],
+  "supersedes": [
+    "the bef9cc8f measurement in this file's earlier revision"
+  ],
+  "instrumentationCaveat": "Smoke instrumentation (VITE_TERMINAL_SMOKE_BUILD=1) is required to run these cases, so this binary is not the shipping artifact. The cold-start record cites the same hash so both describe one build."
+}

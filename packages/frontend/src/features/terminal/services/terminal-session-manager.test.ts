@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const eventHandlers = new Map<string, (event: { payload: unknown }) => void>()
+let listenBarrier: Promise<void> | null = null
 
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(
     async (name: string, handler: (event: { payload: unknown }) => void) => {
+      if (listenBarrier) await listenBarrier
       eventHandlers.set(name, handler)
       return () => eventHandlers.delete(name)
     },
@@ -29,6 +31,7 @@ vi.mock('./terminal-session-transport', () => ({
     resize: vi.fn(async () => {}),
     ackOutput: vi.fn(async () => {}),
     close: vi.fn(async () => {}),
+    cancelConnection: vi.fn(async () => {}),
   },
 }))
 
@@ -71,6 +74,7 @@ const request: TerminalSessionRequest = {
 describe('TerminalSessionManager', () => {
   beforeEach(() => {
     eventHandlers.clear()
+    listenBarrier = null
     vi.mocked(startTerminalShell).mockReset()
     vi.mocked(startTerminalShell).mockResolvedValue('session-1')
     vi.mocked(sessionService.write).mockReset()
@@ -85,6 +89,8 @@ describe('TerminalSessionManager', () => {
     )
     vi.mocked(sessionService.close).mockReset()
     vi.mocked(sessionService.close).mockResolvedValue(undefined)
+    vi.mocked(sessionService.cancelConnection).mockReset()
+    vi.mocked(sessionService.cancelConnection).mockResolvedValue(undefined)
     vi.mocked(serialService.disconnect).mockReset()
     vi.mocked(serialService.disconnect).mockResolvedValue(undefined)
   })
@@ -213,6 +219,7 @@ describe('TerminalSessionManager', () => {
       undefined,
       'e6ad',
       undefined,
+      expect.any(String),
     )
   })
 
@@ -277,7 +284,9 @@ describe('TerminalSessionManager', () => {
         onState: () => {},
       })
 
-      await vi.waitFor(() => expect(startTerminalShell).toHaveBeenCalledTimes(2))
+      await vi.waitFor(() =>
+        expect(startTerminalShell).toHaveBeenCalledTimes(2),
+      )
       expect(sessionService.close).toHaveBeenCalledWith('session-1')
     },
   )
@@ -441,6 +450,55 @@ describe('TerminalSessionManager', () => {
     expect(output).toEqual(['short lived', '\r\n[disconnected]\r\n'])
   })
 
+  it('cancels an in-flight remote creation before retiring its generation', async () => {
+    const start = deferred<string>()
+    vi.mocked(startTerminalShell).mockReturnValue(start.promise)
+    const manager = new TerminalSessionManager()
+    const binding = manager.attach(
+      { ...request, tabId: 'remote-cancel', tabType: 'remote' },
+      { onOutput: () => {}, onState: () => {} },
+    )
+    await vi.waitFor(() => expect(startTerminalShell).toHaveBeenCalled())
+    const attemptId = vi.mocked(startTerminalShell).mock.calls[0]?.[8]
+    expect(attemptId).toEqual(expect.any(String))
+
+    const closing = manager.close('remote-cancel')
+    expect(sessionService.cancelConnection).toHaveBeenCalledWith(attemptId)
+    start.resolve('late-session')
+    await closing
+
+    expect(sessionService.close).toHaveBeenCalledWith('late-session')
+    binding.write('must-not-send\r')
+    expect(sessionService.write).not.toHaveBeenCalledWith(
+      'late-session',
+      'must-not-send\r',
+    )
+  })
+
+  it('cancels before event registration finishes and never starts a retired remote session', async () => {
+    const registration = deferred<void>()
+    listenBarrier = registration.promise
+    const manager = new TerminalSessionManager()
+
+    manager.attach(
+      { ...request, tabId: 'remote-registration-cancel', tabType: 'remote' },
+      { onOutput: () => {}, onState: () => {} },
+    )
+    await Promise.resolve()
+
+    const closing = manager.close('remote-registration-cancel')
+    await vi.waitFor(() =>
+      expect(sessionService.cancelConnection).toHaveBeenCalledWith(
+        expect.any(String),
+      ),
+    )
+
+    registration.resolve()
+    await closing
+    await Promise.resolve()
+    expect(startTerminalShell).not.toHaveBeenCalled()
+  })
+
   it('keeps an early SSH exit code when close follows before creation resolves', async () => {
     const start = deferred<string>()
     vi.mocked(startTerminalShell).mockReturnValue(start.promise)
@@ -514,21 +572,54 @@ describe('TerminalSessionManager', () => {
     })
     await vi.waitFor(() => expect(startTerminalShell).toHaveBeenCalled())
 
-    for (let index = 0; index <= 1024; index++) {
+    eventHandlers.get('local-close')?.({ payload: 'real-session' })
+    for (let index = 0; index < 1024; index++) {
       eventHandlers.get('local-close')?.({ payload: `unknown-${index}` })
     }
 
+    start.resolve('real-session')
     await vi.waitFor(() => expect(snapshots.at(-1)?.status).toBe('error'))
     expect(snapshots.at(-1)?.error).toContain(
       'Terminal lifecycle buffer exceeded',
     )
-    start.resolve('real-session')
     await vi.waitFor(() =>
       expect(sessionService.close).toHaveBeenCalledWith('real-session'),
     )
     expect(snapshots.map(snapshot => snapshot.status)).not.toContain(
       'connected',
     )
+  })
+
+  it('does not fail an unrelated connecting session when lifecycle buffering overflows', async () => {
+    const firstStart = deferred<string>()
+    const secondStart = deferred<string>()
+    vi.mocked(startTerminalShell)
+      .mockReturnValueOnce(firstStart.promise)
+      .mockReturnValueOnce(secondStart.promise)
+    const manager = new TerminalSessionManager()
+    const firstStates: string[] = []
+    const secondStates: string[] = []
+    manager.attach(
+      { ...request, tabId: 'local-overflow-victim' },
+      { onOutput: () => {}, onState: snapshot => firstStates.push(snapshot.status) },
+    )
+    manager.attach(
+      { ...request, tabId: 'local-unrelated' },
+      { onOutput: () => {}, onState: snapshot => secondStates.push(snapshot.status) },
+    )
+    await vi.waitFor(() => expect(startTerminalShell).toHaveBeenCalledTimes(2))
+
+    eventHandlers.get('local-close')?.({ payload: 'session-one' })
+    for (let index = 0; index < 1024; index++) {
+      eventHandlers.get('local-close')?.({ payload: `unknown-${index}` })
+    }
+
+    firstStart.resolve('session-one')
+    secondStart.resolve('session-two')
+    await vi.waitFor(() => expect(firstStates.at(-1)).toBe('error'))
+    await vi.waitFor(() => expect(secondStates.at(-1)).toBe('connected'))
+    expect(firstStates).not.toContain('connected')
+    expect(secondStates).toContain('connected')
   })
 
   it('fails a serial session whose pre-attach close was lost to lifecycle overflow', async () => {
@@ -877,6 +968,36 @@ describe('TerminalSessionManager', () => {
     expect(states).toEqual(['idle', 'connecting'])
   })
 
+  it('waits for every overlapping start before closing a tab', async () => {
+    const first = deferred<string>()
+    const second = deferred<string>()
+    vi.mocked(startTerminalShell)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    const manager = new TerminalSessionManager()
+    const binding = manager.attach(request, {
+      onOutput: () => {},
+      onState: () => {},
+    })
+    await vi.waitFor(() => expect(startTerminalShell).toHaveBeenCalledOnce())
+
+    binding.reconnect()
+    await vi.waitFor(() => expect(startTerminalShell).toHaveBeenCalledTimes(2))
+
+    let closeResolved = false
+    const close = manager.close(request.tabId).then(() => {
+      closeResolved = true
+    })
+    first.resolve('stale-first')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(closeResolved).toBe(false)
+
+    second.resolve('stale-second')
+    await close
+    expect(sessionService.close).toHaveBeenCalledWith('stale-first')
+    expect(sessionService.close).toHaveBeenCalledWith('stale-second')
+  })
+
   it('disconnects serial sessions when their tab closes', async () => {
     vi.mocked(startTerminalShell).mockResolvedValue('serial-1')
     const manager = new TerminalSessionManager()
@@ -1160,6 +1281,41 @@ describe('TerminalSessionManager', () => {
     })
 
     expect(output).not.toContain('late output')
+  })
+
+  it('keeps draining output when one listener throws', async () => {
+    const manager = new TerminalSessionManager()
+    const healthy: string[] = []
+    const states: string[] = []
+    manager.attach(request, {
+      onOutput: data => healthy.push(data),
+      onState: snapshot => states.push(snapshot.status),
+    })
+    await vi.waitFor(() => expect(states.at(-1)).toBe('connected'))
+
+    // A re-rendered surface can throw while painting. The newest listener owns
+    // the drain loop, and the chunk is shifted out of the buffer before it is
+    // handed over, so an escaping exception used to abort the loop and discard
+    // every chunk queued behind it.
+    const throwingBinding = manager.attach(request, {
+      onOutput: () => {
+        throw new Error('pane render failed')
+      },
+      onState: () => {},
+    })
+
+    for (const data of ['first\r\n', 'second\r\n', 'third\r\n']) {
+      eventHandlers.get('local-data')?.({
+        payload: { session_id: 'session-1', data, is_stderr: false },
+      })
+    }
+
+    // Detaching the failed surface reclaims every chunk it never accepted, in
+    // order, so nothing that reached a broken pane is lost.
+    throwingBinding.dispose()
+
+    await vi.waitFor(() => expect(healthy).toHaveLength(3))
+    expect(healthy).toEqual(['first\r\n', 'second\r\n', 'third\r\n'])
   })
 
   it('closes the backend and rejects further input after an I/O failure', async () => {

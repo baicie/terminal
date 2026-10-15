@@ -14,6 +14,8 @@ export type ShellIntegrationEvent =
   | { kind: 'command-finished'; exitCode?: number }
   | { kind: 'cwd'; cwd: string }
 
+export type ShellIntegrationEventListener = (event: ShellIntegrationEvent) => void
+
 export interface ShellIntegrationSnapshot {
   phase: 'prompt' | 'command' | 'output'
   cwd?: string

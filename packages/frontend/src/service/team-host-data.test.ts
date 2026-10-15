@@ -43,5 +43,6 @@ describe('team host agent forwarding boundary', () => {
     )
 
     expect(imported.agentForwarding).toBe(false)
+    expect(imported.shellIntegration).toBe('off')
   })
 })

@@ -1,0 +1,45 @@
+{
+  "recordedDate": "2026-10-11",
+  "kind": "tauri-local-terminal-smoke",
+  "command": "pnpm smoke:terminal",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "revision": {
+    "head": "54f3fbbab39a97e1370d9880b89760dbd06a1c41",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "5f161a8accf7a979a311d997155a2df4195215eda2a56952bcd7b29ebdfc8db7"
+  },
+  "result": {
+    "ok": true,
+    "stage": "complete",
+    "loadBytes": 8388608,
+    "roundsCompleted": 10,
+    "uniqueSessionCount": 10,
+    "resourcesRecovered": true,
+    "durationMs": 7639,
+    "terminalCols": 97,
+    "terminalRows": 31,
+    "loadEndVisible": true,
+    "afterLoadVisible": true,
+    "resizedSizeVisible": true,
+    "resizeTrace": [
+      { "requestedCols": 132, "requestedRows": 43, "observedCols": 132, "observedRows": 43 },
+      { "requestedCols": 90, "requestedRows": 30, "observedCols": 90, "observedRows": 30 },
+      { "requestedCols": 120, "requestedRows": 40, "observedCols": 120, "observedRows": 40 },
+      { "requestedCols": 97, "requestedRows": 31, "observedCols": 97, "observedRows": 31 }
+    ],
+    "reconnectObserved": false,
+    "staleOutputRejected": false,
+    "firstConnectionMs": 1612
+  },
+  "limitations": [
+    "This is the local PTY smoke workflow, not a normal user cold-start stopwatch.",
+    "Physical keyboard/IME, real mouse/paste, and cross-platform hardware remain separate acceptance gates."
+  ]
+}

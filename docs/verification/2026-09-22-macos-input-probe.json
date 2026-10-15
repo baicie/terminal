@@ -1,0 +1,224 @@
+{
+  "recordedDate": "2026-09-22",
+  "kind": "native-cgevent-ascii-overlap",
+  "command": "pnpm smoke:input-probe -- --inject swift --input-source ascii",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0",
+    "keyboardInputSource": "com.apple.keylayout.ABC"
+  },
+  "revision": {
+    "head": "54f3fbbab39a97e1370d9880b89760dbd06a1c41",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "e8774be64a9c398e621913e393199c4f9cdea4dd31086ee960573e765271f19d"
+  },
+  "policy": {
+    "injectionsPerRound": 1,
+    "retryLostRound": false,
+    "inputSource": "ascii",
+    "restoreOriginalSource": true,
+    "restorationFailureFailsRun": true
+  },
+  "exitCode": 0,
+  "result": {
+    "ok": true,
+    "rounds": 30,
+    "expectedText": "asd",
+    "expectedHex": "617364",
+    "durationMs": 111547,
+    "results": [
+      {
+        "round": 1,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 2,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 3,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 4,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 5,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 6,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 7,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 8,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 9,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 10,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 11,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 12,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 13,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 14,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 15,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 16,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 17,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 18,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 19,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 20,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 21,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 22,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 23,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 24,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 25,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 26,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 27,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 28,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 29,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      },
+      {
+        "round": 30,
+        "expectedHex": "617364",
+        "receivedHex": "617364",
+        "ok": true
+      }
+    ],
+    "error": null,
+    "injector": "swift",
+    "inputSource": "com.apple.keylayout.ABC"
+  },
+  "limitations": [
+    "CGEvent native event pipeline; not a human-operated hardware keyboard test",
+    "ASCII input only; Chinese IME, Option/dead keys and other macOS interactive cases remain separate",
+    "No Windows or serial-hardware acceptance in this run"
+  ]
+}

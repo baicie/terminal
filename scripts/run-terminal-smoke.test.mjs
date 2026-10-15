@@ -11,7 +11,18 @@ import {
   parseTerminalSmokeResult,
   runTerminalSmoke,
 } from './run-terminal-smoke.mjs'
-import { selectCases } from './run-terminal-smoke-matrix.mjs'
+import {
+  parseMatrixArguments,
+  runMatrixCases,
+  selectCases,
+} from './run-terminal-smoke-matrix.mjs'
+import { waitForClose } from './run-terminal-smoke.mjs'
+import {
+  assertSmokeInstrumentedBinary,
+  findInstrumentedChunkNames,
+  packageManagerCommand,
+  terminalExecutablePath,
+} from './run-terminal-smoke.mjs'
 
 const PROJECT_ROOT = '/workspace/terminal'
 const TEMP_ROOT = '/private/tmp'
@@ -19,6 +30,27 @@ const RUN_DIRECTORY = '/private/tmp/terminal-smoke-fixture'
 const TARGET_DIRECTORY = '/workspace/terminal-target'
 const SSH_CONFIG_PATH = path.join(RUN_DIRECTORY, 'sshd', 'connection.json')
 const TAURI_BUILD_TIMEOUT_MS = 900_000
+
+test('resolves platform-specific package and Tauri executable names', () => {
+  assert.equal(packageManagerCommand('darwin'), 'pnpm')
+  assert.equal(packageManagerCommand('linux'), 'pnpm')
+  assert.equal(packageManagerCommand('win32'), 'pnpm.cmd')
+  assert.equal(
+    terminalExecutablePath(TARGET_DIRECTORY, { platform: 'darwin' }),
+    path.join(TARGET_DIRECTORY, 'debug', 'terminal'),
+  )
+  assert.equal(
+    terminalExecutablePath(TARGET_DIRECTORY, { platform: 'win32' }),
+    path.join(TARGET_DIRECTORY, 'debug', 'terminal.exe'),
+  )
+  assert.equal(
+    terminalExecutablePath(TARGET_DIRECTORY, {
+      platform: 'win32',
+      release: true,
+    }),
+    path.join(TARGET_DIRECTORY, 'release', 'terminal.exe'),
+  )
+})
 
 const passingResult = {
   ok: true,
@@ -34,9 +66,23 @@ const passingResult = {
   loadEndVisible: true,
   afterLoadVisible: true,
   resizedSizeVisible: true,
+  resizeTrace: [
+    { requestedCols: 132, requestedRows: 43, observedCols: 132, observedRows: 43 },
+    { requestedCols: 90, requestedRows: 30, observedCols: 90, observedRows: 30 },
+    { requestedCols: 120, requestedRows: 40, observedCols: 120, observedRows: 40 },
+    { requestedCols: 97, requestedRows: 31, observedCols: 97, observedRows: 31 },
+  ],
   reconnectObserved: false,
+  hostWakeSynthesized: false,
   staleOutputRejected: false,
   firstConnectionMs: 1_234,
+}
+
+const reconnectPassingResult = {
+  ...passingResult,
+  uniqueSessionCount: 11,
+  reconnectObserved: true,
+  staleOutputRejected: true,
 }
 
 class FakeChild extends EventEmitter {
@@ -257,6 +303,35 @@ test('does not inspect Cargo or start fixtures when the Tauri build fails', asyn
   assert.equal(calls.startSshd.length, 0)
 })
 
+test('builds and launches the release profile when release is requested', async () => {
+  const { calls, dependencies } = createHarness()
+
+  await runTerminalSmoke({ cwd: PROJECT_ROOT, release: true, dependencies })
+
+  const buildCall = calls.spawn[0]
+  assert.equal(buildCall.command, 'pnpm')
+  assert.deepEqual(buildCall.args, ['tauri', 'build', '--no-bundle'])
+  assert.equal(
+    buildCall.args.includes('--debug'),
+    false,
+    'the release profile must not pass --debug',
+  )
+  assert.equal(
+    calls.spawn[2].command,
+    path.join(TARGET_DIRECTORY, 'release', 'terminal'),
+    'the release binary must come from target/release',
+  )
+})
+
+test('reports the release profile in build failures', async () => {
+  const { dependencies } = createHarness({ buildExitCode: 27 })
+
+  await assert.rejects(
+    runTerminalSmoke({ cwd: PROJECT_ROOT, release: true, dependencies }),
+    /Tauri release build exited with code 27/,
+  )
+})
+
 test('terminates the Tauri build process group when its deadline expires', async () => {
   const { buildChild, calls, dependencies } = createHarness({
     closeBuild: false,
@@ -295,6 +370,7 @@ test('restarts the real SSH fixture only after the reconnect checkpoint', async 
       ...passingResult,
       uniqueSessionCount: 11,
       reconnectObserved: true,
+      hostWakeSynthesized: false,
       staleOutputRejected: true,
     },
   })
@@ -539,6 +615,61 @@ test('reports the structured smoke failure when the app exits unsuccessfully', a
   assert.equal(calls.readFile.length, 1)
 })
 
+test('aborts the smoke app and still stops its fixture when the matrix cancels a case', async () => {
+  const harness = createHarness({ closeApp: false })
+  harness.appChild.onKill = signal => {
+    if (signal !== 'SIGTERM') return
+    harness.setAppClosed(true)
+    queueMicrotask(() => harness.appChild.emit('close', null, signal))
+  }
+  const controller = new AbortController()
+  const smoke = runTerminalSmoke({
+    cwd: PROJECT_ROOT,
+    env: {},
+    skipBuild: true,
+    targetDirectory: TARGET_DIRECTORY,
+    dependencies: harness.dependencies,
+    signal: controller.signal,
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  controller.abort(new Error('matrix deadline'))
+
+  await assert.rejects(smoke, /matrix deadline/)
+  assert.deepEqual(harness.appChild.killSignals, ['SIGTERM'])
+  assert.equal(harness.calls.stopSshd, 1)
+})
+
+test('cancels fixture startup and stops a fixture that resolves after cancellation', async () => {
+  const harness = createHarness()
+  let resolveFixture
+  harness.dependencies.startSshd = async () =>
+    new Promise(resolve => {
+      resolveFixture = () =>
+        resolve({
+          configPath: SSH_CONFIG_PATH,
+          stop: async () => {
+            harness.calls.stopSshd += 1
+          },
+        })
+    })
+  const controller = new AbortController()
+  const smoke = runTerminalSmoke({
+    cwd: PROJECT_ROOT,
+    env: {},
+    skipBuild: true,
+    targetDirectory: TARGET_DIRECTORY,
+    dependencies: harness.dependencies,
+    signal: controller.signal,
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  controller.abort(new Error('matrix deadline'))
+  resolveFixture()
+  await assert.rejects(smoke, /matrix deadline/)
+
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(harness.calls.stopSshd, 1)
+})
+
 function createMatrixHarness({
   closeBuild = true,
   closeMetadata = true,
@@ -549,6 +680,8 @@ function createMatrixHarness({
     spawn: [],
     startPasswordSshd: 0,
     startSshd: [],
+    restartSshd: [],
+    stopSshd: 0,
     stopAgent: 0,
     writeFile: [],
   }
@@ -561,6 +694,7 @@ function createMatrixHarness({
   const dependencies = {
     access: async filePath => {
       if (filePath.endsWith('agent.sock')) return
+      if (filePath.endsWith('reconnect.ready')) return
       throw new Error('unexpected access')
     },
     chmod: async () => {},
@@ -579,15 +713,21 @@ function createMatrixHarness({
       return {
         configPath: SSH_CONFIG_PATH,
         restart: async () => {},
-        stop: async () => {},
+        stop: async () => {
+          calls.stopSshd += 1
+        },
       }
     },
     startSshd: async options => {
       calls.startSshd.push(options)
       return {
         configPath: SSH_CONFIG_PATH,
-        restart: async () => {},
-        stop: async () => {},
+        restart: async () => {
+          calls.restartSshd.push(options)
+        },
+        stop: async () => {
+          calls.stopSshd += 1
+        },
       }
     },
     spawn: (command, args, options) => {
@@ -671,6 +811,30 @@ test('runs the agent case with an isolated ssh-agent holding the smoke key', asy
   assert.deepEqual(agentChild.killSignals, ['SIGTERM'])
 })
 
+test('stops the SSH fixture when agent setup fails', async () => {
+  const { calls, dependencies } = createMatrixHarness()
+  const originalSpawn = dependencies.spawn
+  dependencies.spawn = (command, args, options) => {
+    if (command === '/usr/bin/ssh-agent') {
+      throw new Error('ssh-agent unavailable')
+    }
+    return originalSpawn(command, args, options)
+  }
+
+  await assert.rejects(
+    runTerminalSmoke({
+      cwd: PROJECT_ROOT,
+      env: {},
+      auth: 'agent',
+      skipBuild: true,
+      targetDirectory: TARGET_DIRECTORY,
+      dependencies,
+    }),
+    /ssh-agent unavailable/,
+  )
+  assert.equal(calls.stopSshd, 1)
+})
+
 test('composes the jump connection from target and jump fixtures', async () => {
   const { calls, dependencies } = createMatrixHarness()
 
@@ -697,6 +861,54 @@ test('composes the jump connection from target and jump fixtures', async () => {
   assert.ok(configWrite, 'the composed jump connection must be written')
 })
 
+test('stops a target fixture when jump setup fails', async () => {
+  const { calls, dependencies } = createMatrixHarness()
+  const originalStartSshd = dependencies.startSshd
+  dependencies.startSshd = async options => {
+    if (calls.startSshd.length === 1) throw new Error('jump fixture unavailable')
+    return originalStartSshd(options)
+  }
+
+  await assert.rejects(
+    runTerminalSmoke({
+      cwd: PROJECT_ROOT,
+      env: {},
+      auth: 'jump',
+      skipBuild: true,
+      targetDirectory: TARGET_DIRECTORY,
+      dependencies,
+    }),
+    /jump fixture unavailable/,
+  )
+  assert.equal(calls.stopSshd, 1)
+})
+
+test('restarts the jump transport before the target during reconnect', async () => {
+  const { calls, dependencies } = createMatrixHarness({
+    result: reconnectPassingResult,
+  })
+
+  const result = await runTerminalSmoke({
+    cwd: PROJECT_ROOT,
+    env: {},
+    auth: 'jump',
+    reconnect: true,
+    skipBuild: true,
+    targetDirectory: TARGET_DIRECTORY,
+    dependencies,
+  })
+
+  assert.deepEqual(result, reconnectPassingResult)
+  assert.deepEqual(calls.restartSshd, [
+    {
+      runDirectory: path.join(RUN_DIRECTORY, 'jump'),
+      role: 'jump',
+      targetPort: undefined,
+    },
+    { runDirectory: RUN_DIRECTORY },
+  ])
+})
+
 test('rejects unsupported authentication modes before spawning', async () => {
   const { calls, dependencies } = createMatrixHarness()
 
@@ -716,9 +928,23 @@ test('rejects unsupported authentication modes before spawning', async () => {
 test('selects the default matrix when no filter is given', () => {
   assert.deepEqual(
     selectCases(undefined).map(item => item.name),
-    ['key', 'key-reconnect', 'password', 'password-reconnect', 'agent', 'cert', 'jump'],
+    [
+      'key',
+      'key-reconnect',
+      'key-outage-reconnect',
+      'key-outage-wake-reconnect',
+      'key-first-connect-outage',
+      'password',
+      'password-reconnect',
+      'agent',
+      'agent-reconnect',
+      'cert',
+      'cert-reconnect',
+      'jump',
+      'jump-reconnect',
+    ],
   )
-  assert.deepEqual(selectCases('').length, 7)
+  assert.deepEqual(selectCases('').length, 13)
 })
 
 test('selects comma-separated matrix cases in declaration order', () => {
@@ -735,4 +961,167 @@ test('selects comma-separated matrix cases in declaration order', () => {
 test('rejects unknown matrix case filters before building', () => {
   assert.throws(() => selectCases('ssh-keys'), /unknown terminal smoke case 'ssh-keys'/)
   assert.throws(() => selectCases('key,passwordx'), /unknown terminal smoke case 'passwordx'/)
+})
+
+test('separates the release option from the positional case filter', () => {
+  // The runner must never treat an option as a case name, otherwise
+  // `--release` is rejected as an unknown case instead of selecting release.
+  const positional = ['--release', 'key,jump']
+    .filter(argument => !argument.startsWith('--'))
+  assert.deepEqual(
+    selectCases(positional[0]).map(item => item.name),
+    ['key', 'jump'],
+  )
+  assert.deepEqual(
+    selectCases(['--release'].filter(argument => !argument.startsWith('--'))[0]),
+    selectCases(undefined),
+  )
+})
+
+test('parses matrix options without treating them as case names', () => {
+  assert.deepEqual(parseMatrixArguments([]), {
+    filter: undefined,
+    release: false,
+    reuseBinary: false,
+  })
+  assert.deepEqual(parseMatrixArguments(['--release', '--reuse-binary', 'key']), {
+    filter: 'key',
+    release: true,
+    reuseBinary: true,
+  })
+})
+
+test('reusing the binary is opt-in so the default keeps measuring a fresh build', () => {
+  // The matrix used to always rebuild, which meant a matrix run could never
+  // describe the same artifact as a cold-start run measured moments earlier.
+  assert.equal(parseMatrixArguments(['--release']).reuseBinary, false)
+  assert.equal(parseMatrixArguments(['--release', '--reuse-binary']).reuseBinary, true)
+})
+
+test('detects smoke instrumentation from the embedded asset list', () => {
+  // A shipping build references only real chunks; an instrumented one also
+  // references the lazily loaded smoke/probe roots. The embedded filenames are
+  // the only reliable discriminator, because both builds contain the guard
+  // string 'Terminal smoke UI is not included in this build'.
+  const shipping = findInstrumentedChunkNames(
+    Buffer.from('index.Aa1.js hosts.Bb2.js container.Cc3.js'),
+  )
+  assert.deepEqual(shipping, [])
+
+  const instrumented = findInstrumentedChunkNames(
+    Buffer.from(
+      'index.Aa1.js terminal-smoke-root.Dd4.js automation-root.Ee5.js shell.css',
+    ),
+  )
+  assert.deepEqual(instrumented.sort(), [
+    'automation-root.Ee5.js',
+    'terminal-smoke-root.Dd4.js',
+  ])
+})
+
+test('refuses to run smoke cases against a shipping binary', async () => {
+  // Silently running ten cases that each fail with 'Terminal smoke UI is not
+  // included in this build' hides the real cause: the binary on disk was never
+  // instrumented, so it is not the artifact the matrix claims to measure.
+  await assert.rejects(
+    assertSmokeInstrumentedBinary(
+      { executable: '/build/terminal' },
+      { readFile: async () => Buffer.from('index.Aa1.js hosts.Bb2.js') },
+    ),
+    /built without VITE_TERMINAL_SMOKE_BUILD=1/,
+  )
+})
+
+test('accepts an instrumented binary and reports what proved it', async () => {
+  const chunks = await assertSmokeInstrumentedBinary(
+    { executable: '/build/terminal' },
+    {
+      readFile: async () =>
+        Buffer.from('index.Aa1.js terminal-smoke-root.Dd4.js'),
+    },
+  )
+  assert.deepEqual(chunks, ['terminal-smoke-root.Dd4.js'])
+})
+
+test('a case that never settles is reported as failed instead of hanging the matrix', async () => {
+  // A smoke case can stall on a fixture, a port, or a child process that keeps
+  // its stdio open. Awaiting it directly means one stuck case silently cancels
+  // every remaining acceptance case, so the run needs an explicit deadline.
+  const started = Date.now()
+  const results = await runMatrixCases(
+    [
+      { name: 'stuck', auth: 'key', reconnect: false },
+      { name: 'later', auth: 'agent', reconnect: false },
+    ],
+    {
+      runCase: async item =>
+        item.name === 'stuck'
+          ? new Promise(() => {})
+          : {
+              durationMs: 10,
+              firstConnectionMs: 5,
+              uniqueSessionCount: 10,
+            },
+      caseTimeoutMs: 60,
+      onProgress: () => {},
+    },
+  )
+
+  assert.equal(results[0].ok, false)
+  assert.match(results[0].error, /timed out after 60 ms/)
+  assert.equal(results[1].ok, true)
+  assert.ok(Date.now() - started < 10_000)
+})
+
+test('aborts a timed out case and waits for its cleanup before the next case', async () => {
+  const events = []
+  const results = await runMatrixCases(
+    [
+      { name: 'stuck', auth: 'key', reconnect: false },
+      { name: 'later', auth: 'agent', reconnect: false },
+    ],
+    {
+      runCase: (item, { signal }) => {
+        if (item.name === 'later') {
+          events.push('later-start')
+          return { durationMs: 10, firstConnectionMs: 5, uniqueSessionCount: 10 }
+        }
+        events.push('stuck-start')
+        return new Promise((resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              events.push('stuck-abort')
+              setTimeout(() => {
+                events.push('stuck-cleanup')
+                reject(signal.reason)
+              }, 5)
+            },
+            { once: true },
+          )
+        })
+      },
+      caseTimeoutMs: 20,
+      cleanupTimeoutMs: 100,
+      onProgress: () => {},
+    },
+  )
+
+  assert.deepEqual(events, [
+    'stuck-start',
+    'stuck-abort',
+    'stuck-cleanup',
+    'later-start',
+  ])
+  assert.equal(results[0].ok, false)
+  assert.equal(results[1].ok, true)
+})
+
+test('a smoke app killed with a grandchild holding stdio still settles', async () => {
+  // The runner escalates to SIGKILL on timeout. If only `exit` ever fires the
+  // acceptance run would wait forever on a process it already gave up on.
+  const child = new FakeChild()
+  const settled = waitForClose(child)
+  child.emit('exit', null, 'SIGKILL')
+  assert.deepEqual(await settled, { code: null, signal: 'SIGKILL', spawnError: null })
 })

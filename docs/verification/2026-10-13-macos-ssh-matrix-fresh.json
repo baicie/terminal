@@ -1,0 +1,70 @@
+{
+  "recordedAt": "2026-10-13T04:04:28+08:00",
+  "recordedDate": "2026-10-13",
+  "kind": "tauri-real-ssh-matrix-fresh-worktree",
+  "command": "PATH=/Users/liuzhiwei/n/bin:$PATH pnpm smoke:ssh-matrix",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0",
+    "docker": "29.7.2"
+  },
+  "revision": {
+    "head": "54f3fbbab39a97e1370d9880b89760dbd06a1c41",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "8f097da8b789cce9c33af475bf103e8f4dc35916b07ebd61fa6fb31a9aa70cf8",
+    "smokeInstrumented": true,
+    "builtFresh": true
+  },
+  "allCasesPassed": true,
+  "cases": [
+    { "name": "key", "firstConnectionMs": 2667, "durationMs": 6275, "uniqueSessionCount": 10 },
+    { "name": "key-reconnect", "firstConnectionMs": 1081, "durationMs": 7328, "uniqueSessionCount": 11 },
+    { "name": "key-outage-reconnect", "firstConnectionMs": 1097, "durationMs": 14478, "uniqueSessionCount": 11 },
+    { "name": "key-outage-wake-reconnect", "firstConnectionMs": 1030, "durationMs": 29484, "uniqueSessionCount": 11 },
+    { "name": "password", "firstConnectionMs": 1502, "durationMs": 5919, "uniqueSessionCount": 10 },
+    { "name": "password-reconnect", "firstConnectionMs": 1818, "durationMs": 7053, "uniqueSessionCount": 11 },
+    { "name": "agent", "firstConnectionMs": 1736, "durationMs": 6845, "uniqueSessionCount": 10 },
+    { "name": "agent-reconnect", "firstConnectionMs": 1117, "durationMs": 7320, "uniqueSessionCount": 11 },
+    { "name": "cert", "firstConnectionMs": 1203, "durationMs": 6520, "uniqueSessionCount": 10 },
+    { "name": "cert-reconnect", "firstConnectionMs": 1242, "durationMs": 9052, "uniqueSessionCount": 11 },
+    { "name": "jump", "firstConnectionMs": 2370, "durationMs": 13632, "uniqueSessionCount": 10 },
+    { "name": "jump-reconnect", "firstConnectionMs": 2267, "durationMs": 11911, "uniqueSessionCount": 11 }
+  ],
+  "coverage": {
+    "firstConnectionDeadlineMs": 10000,
+    "loadBytes": 8388608,
+    "rounds": 10,
+    "resize": "97x31",
+    "reconnectStaleOutputRejected": true,
+    "resourcesRecovered": true,
+    "outageReconnect": {
+      "case": "key-outage-reconnect",
+      "holdMs": 5000,
+      "backoffObservedByDuration": true
+    },
+    "hostWakeReconnect": {
+      "case": "key-outage-wake-reconnect",
+      "holdMs": 20000,
+      "hostWakeSynthesized": true
+    }
+  },
+  "limitations": [
+    "这是当前工作树的本机自动化 SSH 证据，不是普通用户已有 SQLite 工作区的冷启动 stopwatch。",
+    "Windows OpenSSH Agent/Pageant/PTY、串口硬件、真人物理键盘/IME、合盖睡眠唤醒和 VPN/蜂窝切换仍未验证。",
+    "fixture teardown 曾输出非致命 SSH channel-close warning；所有 case、唯一 session、stale-output 与资源回收断言均通过。"
+  ],
+  "source": {
+    "fingerprint": "9cb3125be9b05d110c3dae002e5dc0f5fe6ca3ed256447873691599ca8bdbb32",
+    "fingerprintCovers": [
+      "packages/frontend/src",
+      "src-tauri/src",
+      "packages/frontend/package.json",
+      "package.json",
+      "pnpm-lock.yaml"
+    ]
+  }
+}

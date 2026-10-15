@@ -36,6 +36,49 @@ describe('TerminalSessionIo raw input', () => {
     vi.mocked(serialService.writeRaw).mockReset().mockResolvedValue(undefined)
   })
 
+  it('rejects input typed during an automatic reconnect but holds it for a manual one', async () => {
+    // The asymmetry is deliberate and load-bearing.
+    //
+    // Automatic reconnect runs on its own, with a visible countdown. Input
+    // typed in that window was aimed at the prompt the *previous* session was
+    // showing: a sudo password, a destructive command, half a line. Replaying
+    // it into a brand new shell could execute something the user never meant to
+    // run against a different machine state, so it is dropped.
+    //
+    // A manual reconnect is the user deliberately retrying the same thing and
+    // expecting their keystrokes to land, so that path buffers them.
+    const automatic = new TerminalSessionIo(
+      'remote',
+      { cols: 80, rows: 24 },
+      () => {},
+    )
+    automatic.connect('session-1')
+    automatic.prepareForAutomaticReconnect()
+    vi.mocked(sessionService.write).mockClear()
+    automatic.write('sudo rm -rf /tmp/x\r')
+    await new Promise(resolve => setTimeout(resolve, 5))
+    automatic.connect('session-2')
+    await new Promise(resolve => setTimeout(resolve, 5))
+    expect(sessionService.write).not.toHaveBeenCalled()
+
+    const manual = new TerminalSessionIo(
+      'remote',
+      { cols: 80, rows: 24 },
+      () => {},
+    )
+    manual.connect('session-1')
+    manual.prepareForReconnect()
+    vi.mocked(sessionService.write).mockClear()
+    manual.write('pwd\r')
+    await new Promise(resolve => setTimeout(resolve, 5))
+    expect(sessionService.write).not.toHaveBeenCalled()
+
+    manual.connect('session-2')
+    await vi.waitFor(() =>
+      expect(sessionService.write).toHaveBeenCalledWith('session-2', 'pwd\r'),
+    )
+  })
+
   it('keeps text and raw bytes in one FIFO and clones raw input', async () => {
     const io = new TerminalSessionIo('local', { cols: 80, rows: 24 }, () => {})
     const raw = Uint8Array.from([0, 0x80, 0xff])
@@ -189,5 +232,65 @@ describe('TerminalSessionIo raw input', () => {
     expect(
       vi.mocked(sessionService.writeRaw).mock.invocationCallOrder[0],
     ).toBeLessThan(vi.mocked(sessionService.write).mock.invocationCallOrder[0])
+  })
+
+  it('refuses input past the 1 MiB queue ceiling and says so', async () => {
+    // A wedged or slow PTY must not let typing grow the queue without bound.
+    // The rejection has to be loud: a silent drop here looks exactly like a
+    // terminal that has stopped accepting keystrokes, and the user has no way
+    // to tell that from a dead session.
+    const pendingWrite = deferred<void>()
+    vi.mocked(sessionService.write).mockImplementation(async () => {
+      await pendingWrite.promise
+    })
+    const onError = vi.fn()
+    const io = new TerminalSessionIo('remote', { cols: 80, rows: 24 }, onError)
+    io.connect('ssh-1')
+    io.write('first')
+    await vi.waitFor(() => expect(sessionService.write).toHaveBeenCalledOnce())
+
+    // Fill the queue while the first write is still in flight, so nothing
+    // drains and the ceiling is reached deterministically.
+    const chunk = 'x'.repeat(64 * 1024)
+    // The in-flight 'first' chunk still counts toward the ceiling, so 15 of
+    // these stay under it and the 16th is the first that must be refused.
+    for (let index = 0; index < 15; index += 1) io.write(chunk)
+    expect(io.snapshot().state).toBe('connected')
+
+    io.write(chunk)
+
+    expect(onError).toHaveBeenCalledOnce()
+    expect(onError.mock.calls[0]?.[0]).toBeInstanceOf(Error)
+    expect((onError.mock.calls[0]?.[0] as Error).message).toContain(
+      'input queue exceeded',
+    )
+    // Refusing input must not leave the pane writable: the queue is already
+    // over its ceiling, so accepting more would just deepen the hole.
+    expect(io.snapshot().state).toBe('disconnected')
+    pendingWrite.resolve()
+  })
+
+  it('applies the same ceiling to raw input as to text input', async () => {
+    // Raw input is the paste and IME path. A ceiling that only guarded typed
+    // text would let a large paste through unbounded.
+    const pendingWrite = deferred<void>()
+    vi.mocked(sessionService.writeRaw).mockImplementation(async () => {
+      await pendingWrite.promise
+    })
+    const onError = vi.fn()
+    const io = new TerminalSessionIo('remote', { cols: 80, rows: 24 }, onError)
+    io.connect('ssh-1')
+    io.writeRaw(Uint8Array.from([0x61]))
+    await vi.waitFor(() => expect(sessionService.writeRaw).toHaveBeenCalledOnce())
+
+    const chunk = new Uint8Array(64 * 1024)
+    for (let index = 0; index < 16; index += 1) io.writeRaw(chunk)
+    io.writeRaw(chunk)
+
+    expect(onError).toHaveBeenCalledOnce()
+    expect((onError.mock.calls[0]?.[0] as Error).message).toContain(
+      'input queue exceeded',
+    )
+    pendingWrite.resolve()
   })
 })

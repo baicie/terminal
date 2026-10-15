@@ -42,7 +42,11 @@ const {
 })
 
 function reset() {
-  useWorkspaceStore.setState({ workspaces: [], activeWorkspaceId: null, loading: false })
+  useWorkspaceStore.setState({
+    workspaces: [],
+    activeWorkspaceId: null,
+    loading: false,
+  })
 }
 
 describe('loadWorkspaces', () => {
@@ -53,8 +57,28 @@ describe('loadWorkspaces', () => {
 
   it('loads workspaces from DB and sets first as active if none is active', async () => {
     gw.mockResolvedValue([
-      { id: 'ws-1', name: 'Work', description: null, icon: '📁', color: '#3b82f6', order: 0, is_active: 0, created_at: 1000, updated_at: 1000 },
-      { id: 'ws-2', name: 'Play', description: null, icon: '🎮', color: '#ef4444', order: 1, is_active: 0, created_at: 2000, updated_at: 2000 },
+      {
+        id: 'ws-1',
+        name: 'Work',
+        description: null,
+        icon: '📁',
+        color: '#3b82f6',
+        order: 0,
+        is_active: 0,
+        created_at: 1000,
+        updated_at: 1000,
+      },
+      {
+        id: 'ws-2',
+        name: 'Play',
+        description: null,
+        icon: '🎮',
+        color: '#ef4444',
+        order: 1,
+        is_active: 0,
+        created_at: 2000,
+        updated_at: 2000,
+      },
     ])
 
     await useWorkspaceStore.getState().loadWorkspaces()
@@ -66,8 +90,28 @@ describe('loadWorkspaces', () => {
 
   it('sets activeWorkspaceId from DB is_active flag', async () => {
     gw.mockResolvedValue([
-      { id: 'ws-1', name: 'A', description: null, icon: null, color: null, order: 0, is_active: 0, created_at: 1000, updated_at: 1000 },
-      { id: 'ws-2', name: 'B', description: null, icon: null, color: null, order: 1, is_active: 1, created_at: 2000, updated_at: 2000 },
+      {
+        id: 'ws-1',
+        name: 'A',
+        description: null,
+        icon: null,
+        color: null,
+        order: 0,
+        is_active: 0,
+        created_at: 1000,
+        updated_at: 1000,
+      },
+      {
+        id: 'ws-2',
+        name: 'B',
+        description: null,
+        icon: null,
+        color: null,
+        order: 1,
+        is_active: 1,
+        created_at: 2000,
+        updated_at: 2000,
+      },
     ])
 
     await useWorkspaceStore.getState().loadWorkspaces()
@@ -85,6 +129,48 @@ describe('loadWorkspaces', () => {
       expect.objectContaining({ name: 'Default', is_active: 1 }),
     )
   })
+
+  it('ignores a late result from an aborted workspace load', async () => {
+    let resolveRows: (
+      rows: Array<{
+        id: string
+        name: string
+        description: null
+        icon: null
+        color: null
+        order: number
+        is_active: number
+        created_at: number
+        updated_at: number
+      }>,
+    ) => void = () => undefined
+    gw.mockReturnValue(
+      new Promise(resolve => {
+        resolveRows = resolve
+      }),
+    )
+    const controller = new AbortController()
+    const load = useWorkspaceStore.getState().loadWorkspaces(controller.signal)
+    controller.abort()
+    resolveRows([
+      {
+        id: 'late',
+        name: 'Late',
+        description: null,
+        icon: null,
+        color: null,
+        order: 0,
+        is_active: 1,
+        created_at: 0,
+        updated_at: 0,
+      },
+    ])
+
+    await load
+
+    expect(useWorkspaceStore.getState().workspaces).toEqual([])
+    expect(useWorkspaceStore.getState().loading).toBe(false)
+  })
 })
 
 describe('setActiveWorkspace', () => {
@@ -93,8 +179,22 @@ describe('setActiveWorkspace', () => {
     reset()
     useWorkspaceStore.setState({
       workspaces: [
-        { id: 'ws-1', name: 'A', order: 0, isActive: true, createdAt: 0, updatedAt: 0 },
-        { id: 'ws-2', name: 'B', order: 1, isActive: false, createdAt: 0, updatedAt: 0 },
+        {
+          id: 'ws-1',
+          name: 'A',
+          order: 0,
+          isActive: true,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        {
+          id: 'ws-2',
+          name: 'B',
+          order: 1,
+          isActive: false,
+          createdAt: 0,
+          updatedAt: 0,
+        },
       ],
       activeWorkspaceId: 'ws-1',
     })
@@ -107,8 +207,14 @@ describe('setActiveWorkspace', () => {
 
     expect(sa).toHaveBeenCalledWith('ws-2')
     expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('ws-2')
-    expect(useWorkspaceStore.getState().workspaces.find(w => w.id === 'ws-2')?.isActive).toBe(true)
-    expect(useWorkspaceStore.getState().workspaces.find(w => w.id === 'ws-1')?.isActive).toBe(false)
+    expect(
+      useWorkspaceStore.getState().workspaces.find(w => w.id === 'ws-2')
+        ?.isActive,
+    ).toBe(true)
+    expect(
+      useWorkspaceStore.getState().workspaces.find(w => w.id === 'ws-1')
+        ?.isActive,
+    ).toBe(false)
   })
 })
 
@@ -121,7 +227,14 @@ describe('deleteWorkspace', () => {
   it('does nothing when deleting the last workspace', async () => {
     useWorkspaceStore.setState({
       workspaces: [
-        { id: 'ws-1', name: 'Only', order: 0, isActive: true, createdAt: 0, updatedAt: 0 },
+        {
+          id: 'ws-1',
+          name: 'Only',
+          order: 0,
+          isActive: true,
+          createdAt: 0,
+          updatedAt: 0,
+        },
       ],
       activeWorkspaceId: 'ws-1',
     })
@@ -135,15 +248,31 @@ describe('deleteWorkspace', () => {
   it('rejects deleting the active workspace before it has been switched', async () => {
     useWorkspaceStore.setState({
       workspaces: [
-        { id: 'ws-1', name: 'Active', order: 0, isActive: true, createdAt: 0, updatedAt: 0 },
-        { id: 'ws-2', name: 'Other', order: 1, isActive: false, createdAt: 0, updatedAt: 0 },
+        {
+          id: 'ws-1',
+          name: 'Active',
+          order: 0,
+          isActive: true,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        {
+          id: 'ws-2',
+          name: 'Other',
+          order: 1,
+          isActive: false,
+          createdAt: 0,
+          updatedAt: 0,
+        },
       ],
       activeWorkspaceId: 'ws-1',
     })
 
     await expect(
       useWorkspaceStore.getState().deleteWorkspace('ws-1'),
-    ).rejects.toThrow('Switch away from the active workspace before deleting it')
+    ).rejects.toThrow(
+      'Switch away from the active workspace before deleting it',
+    )
 
     expect(dw).not.toHaveBeenCalled()
     expect(useWorkspaceStore.getState().workspaces).toHaveLength(2)
@@ -189,17 +318,14 @@ describe('saveLayout', () => {
   it('serializes layout and calls DB', async () => {
     swl.mockResolvedValue({ rowsAffected: 1 } as never)
 
-    await useWorkspaceStore.getState().saveLayout(
-      'ws-1',
-      [],
-      [],
-      null,
-      true,
-    )
+    await useWorkspaceStore.getState().saveLayout('ws-1', [], [], null, true)
 
-    expect(swl).toHaveBeenCalledWith('ws-1', expect.objectContaining({
-      workspaceId: 'ws-1',
-      sidebarVisible: true,
-    }))
+    expect(swl).toHaveBeenCalledWith(
+      'ws-1',
+      expect.objectContaining({
+        workspaceId: 'ws-1',
+        sidebarVisible: true,
+      }),
+    )
   })
 })

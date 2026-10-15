@@ -16,6 +16,9 @@ pub struct TerminalProfile {
     #[serde(default)]
     pub environment: HashMap<String, String>,
     pub startup_command: Option<String>,
+    /// Explicit remote shell integration mode.  Absent means disabled.
+    #[serde(default)]
+    pub shell_integration: Option<ShellIntegrationMode>,
 }
 
 impl TerminalProfile {
@@ -48,6 +51,17 @@ impl TerminalProfile {
         }
         Ok(())
     }
+}
+
+/// Shell whose prompt hooks should be installed for a terminal profile.
+///
+/// This is intentionally not an `auto` mode: injecting shell syntax into an
+/// unknown remote shell can turn a successful connection into a visible error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ShellIntegrationMode {
+    Bash,
+    Zsh,
 }
 
 pub(crate) fn validate_terminal_size(cols: u16, rows: u16) -> Result<(), SessionError> {
@@ -92,6 +106,8 @@ pub enum SessionError {
     CloseFailed(String),
     #[error("connection failed: {0}")]
     ConnectionFailed(String),
+    #[error("connection cancelled")]
+    ConnectionCancelled,
     #[error("authentication failed: {0}")]
     AuthenticationFailed(String),
     #[error("invalid input: {0}")]
@@ -140,6 +156,10 @@ impl From<SessionError> for SessionErrorDto {
                 kind: "connection_failed",
                 message: Some(m.clone()),
             },
+            SessionError::ConnectionCancelled => Self {
+                kind: "connection_cancelled",
+                message: None,
+            },
             SessionError::AuthenticationFailed(m) => Self {
                 kind: "authentication_failed",
                 message: Some(m.clone()),
@@ -184,6 +204,7 @@ impl From<SessionErrorDto> for SessionError {
             ("resize_failed", Some(m)) => SessionError::ResizeFailed(m),
             ("close_failed", Some(m)) => SessionError::CloseFailed(m),
             ("connection_failed", Some(m)) => SessionError::ConnectionFailed(m),
+            ("connection_cancelled", _) => SessionError::ConnectionCancelled,
             ("authentication_failed", Some(m)) => SessionError::AuthenticationFailed(m),
             ("invalid_input", Some(m)) => SessionError::InvalidInput(m),
             ("channel_error", Some(m)) => SessionError::ChannelError(m),
@@ -316,12 +337,14 @@ mod tests {
     fn terminal_profile_accepts_camel_case_ipc_payload() {
         let profile: TerminalProfile = serde_json::from_value(serde_json::json!({
             "environment": {"APP_ENV": "dev"},
-            "startupCommand": "cd ~/project"
+            "startupCommand": "cd ~/project",
+            "shellIntegration": "bash"
         }))
         .expect("profile payload should deserialize");
 
         assert_eq!(profile.environment.get("APP_ENV"), Some(&"dev".to_string()));
         assert_eq!(profile.startup_command.as_deref(), Some("cd ~/project"));
+        assert_eq!(profile.shell_integration, Some(ShellIntegrationMode::Bash));
         profile.validate().expect("profile should be valid");
     }
 
@@ -330,6 +353,7 @@ mod tests {
         let control = TerminalProfile {
             environment: HashMap::from([(String::from("BAD\nNAME"), String::from("value"))]),
             startup_command: None,
+            shell_integration: None,
         };
         assert!(matches!(
             control.validate(),
@@ -342,8 +366,22 @@ mod tests {
         let too_large = TerminalProfile {
             environment,
             startup_command: None,
+            shell_integration: None,
         };
         assert!(too_large.validate().is_err());
+    }
+
+    #[test]
+    fn terminal_profile_defaults_integration_to_off_and_rejects_auto() {
+        let profile: TerminalProfile = serde_json::from_value(serde_json::json!({}))
+            .expect("minimal profile should deserialize");
+        assert_eq!(profile.shell_integration, None);
+        assert!(
+            serde_json::from_value::<TerminalProfile>(serde_json::json!({
+                "shellIntegration": "auto"
+            }))
+            .is_err()
+        );
     }
 
     #[test]
@@ -375,6 +413,11 @@ mod tests {
             SessionError::ConnectionFailed("refused".into()),
             "connection_failed",
             Some("refused"),
+        );
+        check(
+            SessionError::ConnectionCancelled,
+            "connection_cancelled",
+            None,
         );
         check(
             SessionError::AuthenticationFailed("bad".into()),

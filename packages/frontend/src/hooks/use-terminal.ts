@@ -126,6 +126,26 @@ export function useTerminal(
           sessionIdRef.current = snapshot.sessionId
           setSessionId(snapshot.sessionId)
           setStatus(snapshot.status)
+          // The remembered overflow explains why this surface was being torn
+          // down, but only for as long as nothing better explains it. Overflow
+          // trips an immediate disconnect, so any later state describes a
+          // different situation. Preferring the remembered text unconditionally
+          // made every subsequent snapshot report the stale queue-overflow
+          // message: a session that reconnected fine still showed an error, and
+          // a genuine later failure was hidden behind it.
+          if (snapshot.error !== undefined && snapshot.error !== null) {
+            outputErrorRef.current = null
+          }
+          // The scheduler latches into a failed state on overflow and only
+          // reset() revives it. Nothing but the manual reconnect button called
+          // that, so an automatic reconnect brought the SSH session back while
+          // the scheduler stayed failed — every byte the new session sent was
+          // silently dropped and the pane looked frozen on a healthy
+          // connection. A session id means a live backend, so that is where the
+          // output path becomes usable again.
+          if (snapshot.sessionId && outputScheduler.snapshot().state === 'failed') {
+            outputScheduler.reset()
+          }
           setError(outputErrorRef.current ?? snapshot.error)
           setReconnectInfo({
             attempt: snapshot.attempt,

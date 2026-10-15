@@ -11,6 +11,7 @@ export interface TerminalFailure {
 
 const NON_RETRYABLE_KINDS = new Set([
   'authentication_failed',
+  'connection_cancelled',
   'invalid_input',
   'key_parse_failed',
   'certificate_parse_failed',

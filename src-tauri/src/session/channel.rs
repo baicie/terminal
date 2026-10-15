@@ -5,7 +5,7 @@
 use super::types::{SessionError, SessionOutput};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{broadcast, mpsc, RwLock};
 
 /// Channel 配置
 #[derive(Debug, Clone)]
@@ -110,9 +110,14 @@ impl std::fmt::Debug for SessionChannel {
 /// 负责创建、存储和清理 SessionChannel 实例。
 pub struct ChannelManager {
     /// 所有活跃的 Channel
-    channels: Arc<RwLock<std::collections::HashMap<String, mpsc::Sender<SessionOutput>>>>,
+    channels: Arc<RwLock<std::collections::HashMap<String, ChannelEntry>>>,
     /// 默认配置
     config: ChannelConfig,
+}
+
+struct ChannelEntry {
+    sender: mpsc::Sender<SessionOutput>,
+    events: broadcast::Sender<SessionOutput>,
 }
 
 impl ChannelManager {
@@ -136,23 +141,92 @@ impl ChannelManager {
     pub async fn create_channel(&self, session_id: String) -> mpsc::Sender<SessionOutput> {
         let channel = SessionChannel::new(session_id.clone(), self.config.clone());
         let sender = channel.sender().clone();
+        let mut receiver = channel.receiver;
+        let (events, _) = broadcast::channel(self.config.buffer_size.max(1));
+        let events_for_pump = events.clone();
+
+        // SessionManager predates the AppHandle-based terminal output pump and
+        // cannot attach an event emitter at construction time. Always consume
+        // the compatibility mpsc queue so senders cannot stall after the
+        // configured buffer fills; event consumers can subscribe explicitly.
+        tokio::spawn(async move {
+            while let Some(output) = receiver.recv().await {
+                let _ = events_for_pump.send(output);
+            }
+        });
 
         let mut channels = self.channels.write().await;
-        channels.insert(session_id, sender.clone());
+        channels.insert(
+            session_id,
+            ChannelEntry {
+                sender: sender.clone(),
+                events,
+            },
+        );
 
         sender
+    }
+
+    /// 启动指定 Session 的事件接收器。
+    pub async fn start_receiving(
+        &self,
+        session_id: &str,
+        app: AppHandle,
+    ) -> Result<(), SessionError> {
+        let receiver = self
+            .channels
+            .read()
+            .await
+            .get(session_id)
+            .map(|entry| entry.events.subscribe())
+            .ok_or(SessionError::SessionNotFound)?;
+
+        let event_name = self.config.event_name.clone();
+        let session_id_for_task = session_id.to_string();
+        tokio::spawn(async move {
+            let mut receiver = receiver;
+            loop {
+                match receiver.recv().await {
+                    Ok(output) => {
+                        let session_id = output.session_id.clone();
+                        if let Err(error) = app.emit(&event_name, output) {
+                            tracing::warn!(
+                                session_id = %session_id,
+                                event = %event_name,
+                                %error,
+                                "failed to emit session data event",
+                            );
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(count)) => {
+                        tracing::warn!(
+                            session_id = %session_id_for_task,
+                            skipped = count,
+                            "session event receiver lagged",
+                        );
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+
+        Ok(())
     }
 
     /// 获取已有的 Channel 发送端
     pub async fn get_channel(&self, session_id: &str) -> Option<mpsc::Sender<SessionOutput>> {
         let channels = self.channels.read().await;
-        channels.get(session_id).cloned()
+        channels.get(session_id).map(|entry| entry.sender.clone())
     }
 
     /// 移除 Channel
     pub async fn remove_channel(&self, session_id: &str) {
         let mut channels = self.channels.write().await;
         channels.remove(session_id);
+    }
+
+    pub(crate) async fn clear(&self) {
+        self.channels.write().await.clear();
     }
 
     /// 获取所有活跃的 Session ID
@@ -163,21 +237,30 @@ impl ChannelManager {
 
     /// 发送数据到指定 Session
     pub async fn send(&self, session_id: &str, output: SessionOutput) -> Result<(), SessionError> {
-        let channels = self.channels.read().await;
-        if let Some(sender) = channels.get(session_id) {
-            sender
-                .send(output)
-                .await
-                .map_err(|e| SessionError::WriteFailed(format!("Channel closed: {}", e)))
-        } else {
-            Err(SessionError::SessionNotFound)
-        }
+        let sender = self
+            .channels
+            .read()
+            .await
+            .get(session_id)
+            .map(|entry| entry.sender.clone())
+            .ok_or(SessionError::SessionNotFound)?;
+
+        sender
+            .send(output)
+            .await
+            .map_err(|e| SessionError::WriteFailed(format!("Channel closed: {}", e)))
     }
 
     /// 广播数据到所有 Session
     pub async fn broadcast(&self, output: SessionOutput) {
-        let channels = self.channels.read().await;
-        for sender in channels.values() {
+        let senders = self
+            .channels
+            .read()
+            .await
+            .values()
+            .map(|entry| entry.sender.clone())
+            .collect::<Vec<_>>();
+        for sender in senders {
             let _ = sender.send(output.clone()).await;
         }
     }
@@ -252,24 +335,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_channel_send() {
-        // Use a large buffer so send doesn't fail due to back-pressure
         let config = ChannelConfig {
-            buffer_size: 1024,
+            buffer_size: 1,
             event_name: "test".to_string(),
         };
         let manager = ChannelManager::with_config(config);
 
-        // Keep the sender in scope (not dropped) while sending
-        let sender = manager.create_channel("test-session".to_string()).await;
-        let output = make_output("test-session", "hello", false);
-        let result = sender.send(output).await;
-
-        // Result may be Err if the receiver side was dropped — that's expected
-        // when no one is polling the manager's receiver. This just verifies
-        // the send method itself doesn't panic and returns a Result.
-        assert!(
-            result.is_ok() || result.is_err(),
-            "send should return Result without panic"
-        );
+        manager.create_channel("test-session".to_string()).await;
+        for index in 0..32 {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                manager.send(
+                    "test-session",
+                    make_output("test-session", format!("output-{index}"), false),
+                ),
+            )
+            .await
+            .expect("compatibility channel must continue draining after its buffer fills")
+            .expect("channel sender must remain connected after creation");
+        }
     }
 }

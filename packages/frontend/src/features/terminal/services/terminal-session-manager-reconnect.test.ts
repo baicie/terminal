@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const eventHandlers = new Map<string, (event: { payload: unknown }) => void>()
 
@@ -22,6 +22,7 @@ vi.mock('./terminal-session-transport', () => ({
     resize: vi.fn(async () => {}),
     ackOutput: vi.fn(async () => {}),
     close: vi.fn(async () => {}),
+    cancelConnection: vi.fn(async () => {}),
   },
 }))
 
@@ -40,10 +41,12 @@ import { terminalSessionTransport } from './terminal-session-transport'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>(resolvePromise => {
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise
+    reject = rejectPromise
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 const remoteRequest = {
@@ -54,6 +57,10 @@ const remoteRequest = {
 }
 
 describe('TerminalSessionManager reconnect state machine', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   beforeEach(() => {
     eventHandlers.clear()
     vi.mocked(startTerminalShell).mockReset()
@@ -64,6 +71,10 @@ describe('TerminalSessionManager reconnect state machine', () => {
     vi.mocked(terminalSessionTransport.resize).mockResolvedValue(undefined)
     vi.mocked(terminalSessionTransport.close).mockReset()
     vi.mocked(terminalSessionTransport.close).mockResolvedValue(undefined)
+    vi.mocked(terminalSessionTransport.cancelConnection).mockReset()
+    vi.mocked(terminalSessionTransport.cancelConnection).mockResolvedValue(
+      undefined,
+    )
   })
 
   it('reconnects an unexpectedly closed SSH session on the same audience', async () => {
@@ -91,7 +102,6 @@ describe('TerminalSessionManager reconnect state machine', () => {
       payload: { session_id: 'session-1', data: 'before\r\n' },
     })
     eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
-
     await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-2'))
     eventHandlers.get('ssh-data')?.({
       payload: { session_id: 'session-2', data: 'after\r\n' },
@@ -264,6 +274,216 @@ describe('TerminalSessionManager reconnect state machine', () => {
     })
   })
 
+  it('retries a first connection that fails with a retryable error', async () => {
+    vi.mocked(startTerminalShell)
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValue('session-2')
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 2,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+
+    await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-2'))
+    expect(states.at(-1)?.status).toBe('connected')
+    expect(startTerminalShell).toHaveBeenCalledTimes(2)
+    await manager.close(remoteRequest.tabId)
+  })
+
+  it('ends a first connection that keeps failing in a retryable error with a recovery timer', async () => {
+    vi.useFakeTimers()
+    vi.mocked(startTerminalShell).mockRejectedValue(
+      new Error('network unavailable'),
+    )
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 2,
+      recoveryDelayMs: 10_000,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+
+    await vi.waitFor(() =>
+      expect(states.at(-1)).toMatchObject({
+        status: 'error',
+        retryable: true,
+      }),
+    )
+    expect(vi.getTimerCount()).toBe(1)
+    await manager.close(remoteRequest.tabId)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('does not retry a first connection that fails with a non-retryable error', async () => {
+    vi.useFakeTimers()
+    vi.mocked(startTerminalShell).mockRejectedValue({
+      kind: 'authentication_failed',
+      message: 'all methods rejected',
+    })
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('error'))
+    expect(states.at(-1)).toMatchObject({
+      error: 'all methods rejected',
+      retryable: false,
+    })
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(startTerminalShell).toHaveBeenCalledTimes(1)
+    await manager.close(remoteRequest.tabId)
+  })
+
+  it('retries an exhausted network failure without a browser wake event', async () => {
+    vi.mocked(startTerminalShell)
+      .mockResolvedValueOnce('session-1')
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValueOnce('session-2')
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 1,
+      recoveryDelayMs: 10,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('connected'))
+
+    eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
+    await vi.waitFor(() =>
+      expect(
+        states.some(
+          state => state.status === 'error' && state.retryable === true,
+        ),
+      ).toBe(true),
+    )
+    await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-2'))
+    expect(states.at(-1)?.status).toBe('connected')
+    expect(startTerminalShell).toHaveBeenCalledTimes(3)
+  })
+
+  it('lets a manual retry recover immediately after the automatic budget is exhausted', async () => {
+    vi.mocked(startTerminalShell)
+      .mockResolvedValueOnce('session-1')
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValueOnce('session-2')
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 1,
+      recoveryDelayMs: 60_000,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    const binding = manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('connected'))
+
+    eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
+    await vi.waitFor(() =>
+      expect(states.at(-1)).toMatchObject({ status: 'error', retryable: true }),
+    )
+
+    binding.reconnect()
+    await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-2'))
+    expect(states.at(-1)?.status).toBe('connected')
+    expect(startTerminalShell).toHaveBeenCalledTimes(3)
+    await manager.close(remoteRequest.tabId)
+  })
+
+  it('schedules one recovery timer and cancels it for a manual retry', async () => {
+    vi.useFakeTimers()
+    vi.mocked(startTerminalShell)
+      .mockResolvedValueOnce('session-1')
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValueOnce('session-2')
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 1,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    const binding = manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('connected'))
+
+    eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
+    await vi.waitFor(() =>
+      expect(states.at(-1)).toMatchObject({ status: 'error', retryable: true }),
+    )
+    expect(vi.getTimerCount()).toBe(1)
+
+    binding.reconnect()
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-2'))
+    await manager.close(remoteRequest.tabId)
+  })
+
+  it.each(['host wake', 'disconnect', 'tab close'] as const)(
+    'cancels the recovery timer when the user or host requests %s',
+    async action => {
+      vi.useFakeTimers()
+      vi.mocked(startTerminalShell)
+        .mockResolvedValueOnce('session-1')
+        .mockRejectedValueOnce(new Error('network unavailable'))
+        .mockResolvedValueOnce('session-2')
+      const states: TerminalSessionSnapshot[] = []
+      const manager = new TerminalSessionManager({
+        maxAttempts: 1,
+        sleep: async () => {},
+        jitter: delayMs => delayMs,
+      })
+      const binding = manager.attach(remoteRequest, {
+        onOutput: () => {},
+        onState: state => states.push(state),
+      })
+      await vi.waitFor(() => expect(states.at(-1)?.status).toBe('connected'))
+
+      eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
+      await vi.waitFor(() =>
+        expect(states.at(-1)).toMatchObject({
+          status: 'error',
+          retryable: true,
+        }),
+      )
+      expect(vi.getTimerCount()).toBe(1)
+
+      if (action === 'host wake') manager.handleHostWake()
+      else if (action === 'disconnect') await binding.disconnect()
+      else await manager.close(remoteRequest.tabId)
+
+      expect(vi.getTimerCount()).toBe(0)
+      if (action === 'host wake') {
+        await vi.waitFor(() =>
+          expect(states.at(-1)?.sessionId).toBe('session-2'),
+        )
+        await manager.close(remoteRequest.tabId)
+      }
+    },
+  )
+
   it('stops automatic reconnect when authentication is rejected', async () => {
     vi.mocked(startTerminalShell)
       .mockResolvedValueOnce('session-1')
@@ -274,7 +494,7 @@ describe('TerminalSessionManager reconnect state machine', () => {
     const sleep = vi.fn(async () => {})
     const states: TerminalSessionSnapshot[] = []
     const manager = new TerminalSessionManager({
-      maxAttempts: 5,
+      maxAttempts: 1,
       sleep,
       jitter: delayMs => delayMs,
     })
@@ -319,6 +539,16 @@ describe('TerminalSessionManager reconnect state machine', () => {
   })
 
   it('drops input typed during automatic reconnect backoff', async () => {
+    // Deliberate, and the manual reconnect path deliberately differs. Input
+    // typed here was aimed at whatever prompt the *previous* session was
+    // showing — a sudo password, a destructive command, half a line. Replaying
+    // it into a brand new shell could execute something the user never meant to
+    // run against a different machine state. Dropping it is the safe choice.
+    //
+    // A manual reconnect is different: the user is deliberately retrying the
+    // same thing and expects their keystrokes to land, so that path buffers
+    // (TerminalSessionIo.prepareForReconnect -> 'connecting'). This test exists
+    // to keep the automatic path from drifting into the manual behaviour.
     const wait = deferred<void>()
     vi.mocked(startTerminalShell)
       .mockResolvedValueOnce('session-1')
@@ -380,6 +610,45 @@ describe('TerminalSessionManager reconnect state machine', () => {
     })
   })
 
+  it('keeps the retry loop alive when one pane listener throws', async () => {
+    vi.mocked(startTerminalShell)
+      .mockResolvedValueOnce('session-1')
+      .mockResolvedValueOnce('session-2')
+    const healthy: TerminalSessionSnapshot[] = []
+    const throwing: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 3,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: snapshot => healthy.push(snapshot),
+    })
+    await vi.waitFor(() => expect(healthy.at(-1)?.sessionId).toBe('session-1'))
+
+    // A second surface (for example a re-rendered pane) throws while the state
+    // is being published. The retry loop publishes from inside its own promise
+    // chain, so an escaping exception used to abandon the attempt budget and
+    // leave the pane stuck on `reconnecting` with no retry and no error.
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: snapshot => {
+        throwing.push(snapshot)
+        if (snapshot.status === 'reconnecting') {
+          throw new Error('reconnecting pane render failed')
+        }
+      },
+    })
+
+    const healthyBefore = healthy.length
+    eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
+
+    await vi.waitFor(() => expect(healthy.at(-1)?.sessionId).toBe('session-2'))
+    expect(healthy.length).toBeGreaterThan(healthyBefore)
+    expect(throwing.at(-1)?.status).toBe('connected')
+  })
+
   it('cancels the active retry delay when its tab is closed', async () => {
     let retrySignal: AbortSignal | undefined
     const states: TerminalSessionSnapshot[] = []
@@ -402,5 +671,191 @@ describe('TerminalSessionManager reconnect state machine', () => {
     await manager.close('remote-1')
 
     expect(retrySignal?.aborted).toBe(true)
+  })
+
+  it('resumes an exhausted-but-retryable session after the host wakes', async () => {
+    vi.mocked(startTerminalShell)
+      .mockResolvedValueOnce('session-1')
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValueOnce('session-2')
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 2,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('connected'))
+
+    // Sleep suspends timers and the socket, so every retry is spent while the
+    // machine is asleep and the record settles in a retryable error state.
+    eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
+    await vi.waitFor(() =>
+      expect(states.at(-1)).toMatchObject({
+        status: 'error',
+        retryable: true,
+      }),
+    )
+
+    manager.handleHostWake()
+
+    await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-2'))
+    expect(states.at(-1)?.status).toBe('connected')
+  })
+
+  it('does not disturb connected, idle or permanently failed sessions on wake', async () => {
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 1,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('connected'))
+
+    manager.handleHostWake()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(startTerminalShell).toHaveBeenCalledTimes(1)
+    expect(states.at(-1)?.status).toBe('connected')
+  })
+
+  it('does not let a wake over a connected session arm a later unrelated failure', async () => {
+    // A healthy session has no attempt in flight, so nothing would ever clear
+    // an arming left behind by the wake sweep. If it were armed anyway, the next
+    // ordinary disconnect would look like a post-wake failure and spend an extra
+    // budget the user never asked for.
+    vi.mocked(startTerminalShell)
+      .mockResolvedValueOnce('session-1')
+      .mockRejectedValueOnce(new Error('network unavailable'))
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 1,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('connected'))
+
+    manager.handleHostWake()
+    eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
+
+    await vi.waitFor(() =>
+      expect(states.at(-1)).toMatchObject({
+        status: 'error',
+        retryable: true,
+      }),
+    )
+    expect(startTerminalShell).toHaveBeenCalledTimes(2)
+  })
+
+  it('recovers a session whose attempt was still connecting when the host woke', async () => {
+    // Waking resumes timers and the socket at the same time, so the backend
+    // deadline for an in-flight attempt can land right after the wake event.
+    // That failure carries no sessionId, so the ordinary I/O-error path cannot
+    // re-arm it and the pane would otherwise stay stuck on "connecting".
+    const pending = deferred<string>()
+    vi.mocked(startTerminalShell).mockReturnValueOnce(pending.promise)
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('connecting'))
+
+    // A single wake, exactly as the OS delivers it after sleep.
+    manager.handleHostWake()
+    expect(states.at(-1)?.status).toBe('connecting')
+
+    // Only afterwards does the suspended attempt fail with a retryable error.
+    pending.reject(new Error('network unavailable'))
+
+    // No second wake ever arrives, so this single wake must have armed the
+    // recovery rather than leaving the session stuck for the rest of the day.
+    vi.mocked(startTerminalShell).mockResolvedValueOnce('session-2')
+
+    await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-2'))
+    expect(states.at(-1)?.status).toBe('connected')
+  })
+
+  it('restarts an in-flight automatic reconnect after a host wake', async () => {
+    const pending = deferred<string>()
+    vi.mocked(startTerminalShell)
+      .mockResolvedValueOnce('session-1')
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValueOnce('session-3')
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 1,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+    await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-1'))
+
+    eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
+    await vi.waitFor(() => expect(startTerminalShell).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('reconnecting'))
+
+    manager.handleHostWake()
+    pending.reject(new Error('network unavailable'))
+
+    await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-3'))
+    expect(states.at(-1)?.status).toBe('connected')
+    expect(startTerminalShell).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not let a wake arming from a successful attempt trigger a later unrelated recovery', async () => {
+    // An arming belongs to the attempt that was in flight when the host woke.
+    // If that attempt connects, the arming must be gone, otherwise a much later
+    // failure would spend an extra retry budget the user never asked for.
+    const pending = deferred<string>()
+    vi.mocked(startTerminalShell)
+      .mockReturnValueOnce(pending.promise)
+      .mockRejectedValueOnce(new Error('network unavailable'))
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 1,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('connecting'))
+
+    manager.handleHostWake()
+    pending.resolve('session-1')
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('connected'))
+    expect(states.at(-1)?.sessionId).toBe('session-1')
+
+    // A plain disconnect later on is not a wake, so it gets only its own budget
+    // and no extra wake-driven attempt.
+    eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
+    await vi.waitFor(() =>
+      expect(states.at(-1)).toMatchObject({
+        status: 'error',
+        retryable: true,
+      }),
+    )
+    expect(startTerminalShell).toHaveBeenCalledTimes(2)
   })
 })

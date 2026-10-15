@@ -100,6 +100,8 @@ export interface TerminalRecord {
   io: TerminalSessionIo
   generation: number
   startPromise: Promise<unknown> | null
+  startPromises: Set<Promise<unknown>>
+  connectionAttemptId: string | null
   reconnectPromise: Promise<void> | null
   reconnectMode: 'automatic' | 'manual' | null
   reconnectAttempt: number | null

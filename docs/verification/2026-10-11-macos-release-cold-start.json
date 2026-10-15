@@ -1,0 +1,60 @@
+{
+  "recordedAt": "2026-10-11T17:39:52+08:00",
+  "recordedDate": "2026-10-11",
+  "kind": "tauri-release-bundle-cold-start-stopwatch",
+  "why": "A release bundle embeds its frontend, needs no development server, and is the path an actual user takes, so this is the representative measurement for the ten-second first-terminal goal. Note that not every debug build behaves this way: pnpm tauri build --debug also embeds the frontend, while a bare cargo build loads build.devUrl and would render a blank window here.",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "build": {
+    "command": "pnpm tauri build --no-bundle",
+    "binary": "src-tauri/target/release/terminal",
+    "sha256": "7a7fc91edff93b3640b44a0c258bfdf32dc7c0215c70679e5657b9575df4e7c3",
+    "sizeBytes": 30369616,
+    "devServerRequired": false
+  },
+  "local": {
+    "command": "pnpm smoke:cold-start -- --app-path /Users/liuzhiwei/Desktop/workspace/git-code/terminal/src-tauri/target/release/terminal",
+    "probe": "native ApplicationServices AXUIElement helper",
+    "measuredFrom": "child-spawn-event",
+    "spawnToReadyMs": 4570,
+    "requestToReadyMs": 4573,
+    "readyUnder10s": true,
+    "readiness": {
+      "localTab": true,
+      "connected": true,
+      "terminalInput": true,
+      "shellPrompt": false
+    }
+  },
+  "remote": {
+    "command": "pnpm smoke:remote-cold-start -- --app-path /Users/liuzhiwei/Desktop/workspace/git-code/terminal/src-tauri/target/release/terminal",
+    "fixture": "ephemeral isolated HOME + localhost OpenSSH sshd, key authentication",
+    "measuredFrom": "child-spawn-event",
+    "spawnToPromptObservedMs": 1551,
+    "requestToPromptObservedMs": 1553,
+    "underTenSeconds": true,
+    "markerReady": true,
+    "promptMarker": "REMOTE_PROMPT_MARKER",
+    "readiness": {
+      "localTab": false,
+      "connected": true,
+      "terminalInput": true,
+      "shellPrompt": false
+    }
+  },
+  "limitations": [
+    "The remote round-trip uses a preseeded localhost key-authenticated workspace; it does not prove first-user host selection, password/agent/jump authentication, or WAN latency.",
+    "The shell prompt is rendered on the xterm canvas and stays diagnostic-only through AX; local PTY and shell-interaction probes prove interactivity separately.",
+    "The bundle is unsigned and unnotarized, so Gatekeeper launch behaviour on a clean machine is not covered here.",
+    "Human physical keyboard, real macOS IME, Option/dead key, Windows OpenSSH Agent/Pageant/ConPTY, and serial hardware acceptance remain unverified."
+  ],
+  "superseded": {
+    "reason": "An earlier run of this scenario measured a previous release binary (3ef36d97…) at 3219ms local and 1646ms remote. Because the runners relink target/release/terminal on every build, that binary no longer exists on disk and its numbers cannot be reproduced or compared against the current release SSH matrix.",
+    "currentBinary": "7a7fc91edff93b3640b44a0c258bfdf32dc7c0215c70679e5657b9575df4e7c3",
+    "matchesReleaseSshMatrix": true,
+    "earlierBinary": "3ef36d97ce655a3e5afd61b2ec1202e255884924fe0ae4ed0cc73aa501c5b3db"
+  }
+}

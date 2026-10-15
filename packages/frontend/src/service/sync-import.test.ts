@@ -4,6 +4,7 @@ import {
   createImportStats,
   importResources,
   normalizeImportedAgentForwarding,
+  normalizeImportedShellIntegration,
 } from './sync-import'
 
 const database = vi.hoisted(() => ({
@@ -48,6 +49,14 @@ it('only enables imported agent forwarding for explicit boolean values', () => {
   expect(normalizeImportedAgentForwarding(0)).toBe(0)
   expect(normalizeImportedAgentForwarding('1')).toBe(0)
   expect(normalizeImportedAgentForwarding('false')).toBe(0)
+})
+
+it('only enables imported shell integration for explicit bash or zsh values', () => {
+  expect(normalizeImportedShellIntegration('bash')).toBe('bash')
+  expect(normalizeImportedShellIntegration('zsh')).toBe('zsh')
+  expect(normalizeImportedShellIntegration('off')).toBe('off')
+  expect(normalizeImportedShellIntegration(true)).toBe('off')
+  expect(normalizeImportedShellIntegration(undefined)).toBe('off')
 })
 
 it('restores settings with merge and replace semantics', async () => {
@@ -98,6 +107,7 @@ it('restores certificate and jump host columns from a full backup', async () => 
           jump_host_id: 'jump-id',
           jump_host_auth_type: 'agent',
           agent_forwarding: 1,
+          shell_integration: 'bash',
           created_at: 1,
           updated_at: 1,
         },
@@ -108,7 +118,7 @@ it('restores certificate and jump host columns from a full backup', async () => 
   )
 
   expect(database.execute).toHaveBeenCalledWith(
-    expect.stringContaining('agent_forwarding'),
-    expect.arrayContaining(['certificate', 'jump-id', 'agent', 1]),
+    expect.stringContaining('shell_integration'),
+    expect.arrayContaining(['certificate', 'jump-id', 'agent', 1, 'bash']),
   )
 })

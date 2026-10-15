@@ -1,4 +1,4 @@
-import type { AuthType, Group, Host } from '@/types'
+import type { AuthType, Group, Host, ShellIntegrationMode } from '@/types'
 
 export interface HostRow {
   id: string
@@ -20,6 +20,7 @@ export interface HostRow {
   jump_host_id: string | null
   jump_host_auth_type: string | null
   agent_forwarding?: number | null
+  shell_integration?: string | null
   created_at: number
   updated_at: number
 }
@@ -57,9 +58,14 @@ export function hostRowToHost(row: HostRow): Host {
       ? (row.jump_host_auth_type as AuthType)
       : undefined,
     agentForwarding: row.agent_forwarding === 1,
+    shellIntegration: normalizeShellIntegration(row.shell_integration),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+function normalizeShellIntegration(value: unknown): ShellIntegrationMode {
+  return value === 'bash' || value === 'zsh' ? value : 'off'
 }
 
 export function groupRowToGroup(row: GroupRow): Group {

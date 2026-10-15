@@ -3,6 +3,7 @@ import type { TerminalSessionOutputBuffer } from './terminal-session-output-buff
 import { markTerminalTerminated } from './terminal-session-state'
 
 const MAX_PENDING_LIFECYCLES = 1024
+const MAX_OVERFLOWED_LIFECYCLES = MAX_PENDING_LIFECYCLES * 2
 const LIFECYCLE_OVERFLOW_MESSAGE =
   'Terminal lifecycle buffer exceeded 1024 pending sessions'
 
@@ -21,18 +22,21 @@ function lifecyclePriority(lifecycle: PendingTerminalLifecycle): number {
 export class TerminalSessionLifecycleBuffer {
   private readonly pending = new Map<string, PendingTerminalLifecycle>()
   private readonly retired = new Set<string>()
-  private overflowed = false
+  private readonly overflowedSessionIds = new Set<string>()
 
   add(sessionId: string, lifecycle: PendingTerminalLifecycle): boolean {
     if (this.retired.has(sessionId)) return true
-    if (this.overflowed) return false
+    if (this.overflowedSessionIds.has(sessionId)) return true
     const existing = this.pending.get(sessionId)
     if (existing && lifecyclePriority(existing) > lifecyclePriority(lifecycle)) {
       return true
     }
     if (!existing && this.pending.size >= MAX_PENDING_LIFECYCLES) {
+      for (const pendingSessionId of this.pending.keys())
+        this.overflowedSessionIds.add(pendingSessionId)
       this.pending.clear()
-      this.overflowed = true
+      this.overflowedSessionIds.add(sessionId)
+      this.trim(this.overflowedSessionIds, MAX_OVERFLOWED_LIFECYCLES)
       return false
     }
     this.pending.delete(sessionId)
@@ -41,7 +45,7 @@ export class TerminalSessionLifecycleBuffer {
   }
 
   take(sessionId: string): PendingTerminalLifecycle | undefined {
-    if (this.overflowed) {
+    if (this.overflowedSessionIds.delete(sessionId)) {
       return { kind: 'error', message: LIFECYCLE_OVERFLOW_MESSAGE }
     }
     const lifecycle = this.pending.get(sessionId)
@@ -55,13 +59,17 @@ export class TerminalSessionLifecycleBuffer {
 
   retire(sessionId: string): void {
     this.pending.delete(sessionId)
+    this.overflowedSessionIds.delete(sessionId)
     this.retired.delete(sessionId)
     this.retired.add(sessionId)
     this.trim(this.retired)
   }
 
-  private trim(collection: Map<string, unknown> | Set<string>): void {
-    while (collection.size > MAX_PENDING_LIFECYCLES) {
+  private trim(
+    collection: Map<string, unknown> | Set<string>,
+    maxSize = MAX_PENDING_LIFECYCLES,
+  ): void {
+    while (collection.size > maxSize) {
       const oldest = collection.keys().next().value
       if (oldest === undefined) return
       collection.delete(oldest)
@@ -71,7 +79,7 @@ export class TerminalSessionLifecycleBuffer {
 
 type RecordLookup = (tabId: string) => TerminalRecord | undefined
 type ErrorHandler = (tabId: string, error: Error) => void
-type OverflowHandler = () => void
+type OverflowHandler = (sessionId: string) => void
 
 export class TerminalSessionLifecycle {
   private readonly buffer = new TerminalSessionLifecycleBuffer()
@@ -118,7 +126,7 @@ export class TerminalSessionLifecycle {
     const tabId = this.sessionToTab.get(sessionId)
     const record = tabId ? this.findRecord(tabId) : undefined
     if (!record || !tabId) {
-      if (!this.buffer.add(sessionId, lifecycle)) this.handleOverflow()
+      if (!this.buffer.add(sessionId, lifecycle)) this.handleOverflow(sessionId)
       return
     }
     this.buffer.retire(sessionId)

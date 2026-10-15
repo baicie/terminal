@@ -103,13 +103,18 @@ function waitForClose(child) {
       settled = true
     }
     child.once('error', spawnError => finish({ spawnError }))
+    // A killed `docker build` can leave BuildKit grandchildren holding the
+    // stdio pipes open, in which case `close` never arrives and only `exit`
+    // does. Waiting on `close` alone made the whole matrix hang forever after
+    // a build timeout, so `exit` is treated as terminal as well.
+    child.once('exit', (code, signal) => finish({ code, signal, spawnError: null }))
     child.once('close', (code, signal) =>
       finish({ code, signal, spawnError: null }),
     )
   })
 }
 
-async function runDocker(args, options, dependencies, timeoutMs, label) {
+export async function runDockerCommand(args, options, dependencies, timeoutMs, label) {
   let child
   try {
     child = dependencies.spawn(DOCKER, args, options)
@@ -141,6 +146,38 @@ async function runDocker(args, options, dependencies, timeoutMs, label) {
     )
   }
   return result
+}
+
+const runDocker = runDockerCommand
+
+/**
+ * Ensures the isolated password OpenSSH image exists locally.
+ *
+ * `docker build` always re-resolves `FROM debian:bookworm-slim`, so on a host
+ * that cannot reach the registry the build fails even though a perfectly good
+ * image is already sitting in the local cache. Inspecting first keeps password
+ * acceptance runnable offline, which is exactly when it is most useful.
+ */
+export async function ensurePasswordSshdImage(contextDirectory, dependencies) {
+  try {
+    await runDocker(
+      ['image', 'inspect', IMAGE_NAME],
+      { shell: false, stdio: ['ignore', 'pipe', 'pipe'] },
+      dependencies,
+      20_000,
+      'password OpenSSH image lookup',
+    )
+    return IMAGE_NAME
+  } catch {
+    await runDocker(
+      ['build', '--quiet', '-t', IMAGE_NAME, contextDirectory],
+      { shell: false, stdio: ['ignore', 'pipe', 'pipe'] },
+      dependencies,
+      PASSWORD_SSHD_BUILD_TIMEOUT_MS,
+      'password OpenSSH image build',
+    )
+    return IMAGE_NAME
+  }
 }
 
 function probeSshBanner(port, dependencies) {
@@ -256,13 +293,7 @@ export async function startTerminalSmokePasswordSshd({
     { encoding: 'utf8' },
   )
 
-  await runDocker(
-    ['build', '--quiet', '-t', IMAGE_NAME, directory],
-    { shell: false, stdio: ['ignore', 'pipe', 'pipe'] },
-    dependencies,
-    PASSWORD_SSHD_BUILD_TIMEOUT_MS,
-    'password OpenSSH image build',
-  )
+  await ensurePasswordSshdImage(directory, dependencies)
 
   const name = containerName(runDirectory)
   let port

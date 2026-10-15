@@ -166,6 +166,25 @@ describe('useSshHostKeyGate', () => {
     expect(mocks.probe).toHaveBeenCalledTimes(2)
   })
 
+  it('routes a probe timeout into the retryable error state', async () => {
+    mocks.probe
+      .mockRejectedValueOnce(
+        new Error('connect host-key probe timed out before its deadline'),
+      )
+      .mockResolvedValueOnce({ ...unknownKey, status: 'trusted' })
+    const { result } = renderHook(() =>
+      useSshHostKeyGate({ tabType: 'remote', host }),
+    )
+
+    await waitFor(() => expect(result.current.status).toBe('error'))
+    expect(result.current.error).toContain('timed out')
+
+    act(() => result.current.retry())
+    await waitFor(() => expect(result.current.status).toBe('ready'))
+    expect(result.current.enabled).toBe(true)
+    expect(mocks.probe).toHaveBeenCalledTimes(2)
+  })
+
   it('does not let a stale learn result approve another host with the same key', async () => {
     const save = deferred<SshHostKeyProbeResult>()
     const otherHost = {

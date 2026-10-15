@@ -31,12 +31,29 @@ export class TerminalSessionEvents {
       return
     }
 
+    // The channel listeners have to be torn down when anything in this call
+    // fails, not just when create() itself fails. `create` already undoes its
+    // own partial registrations, but the error listener is awaited alongside it
+    // and its rejection would otherwise drop the cached entry while leaving
+    // those listeners registered. The next ensure() would then register a
+    // second set, and every output event would be delivered twice, so a
+    // terminal would render each chunk duplicated with no error anywhere.
     const promise = this.create(tabType)
     this.channelListeners.set(tabType, promise)
     try {
       await Promise.all([promise, errorListener])
     } catch (error) {
       this.channelListeners.delete(tabType)
+      // Promise.all rejects as soon as either promise rejects, which can be
+      // before the channel listeners finished registering. Wait for them here
+      // so the undo is not a no-op against an empty list; a create() failure
+      // already cleaned up after itself.
+      await promise.then(
+        unlisteners => {
+          for (const unlisten of unlisteners) unlisten()
+        },
+        () => undefined,
+      )
       throw error
     }
   }

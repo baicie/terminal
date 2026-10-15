@@ -51,7 +51,9 @@ export function terminalSmokeFailure(
     loadEndVisible: progress.result?.loadEndVisible ?? false,
     afterLoadVisible: progress.result?.afterLoadVisible ?? false,
     resizedSizeVisible: progress.result?.resizedSizeVisible ?? false,
+    resizeTrace: progress.result?.resizeTrace ?? [],
     reconnectObserved: progress.result?.reconnectObserved ?? false,
+    hostWakeSynthesized: progress.result?.hostWakeSynthesized ?? false,
     staleOutputRejected: progress.result?.staleOutputRejected ?? false,
     firstConnectionMs: progress.result?.firstConnectionMs ?? 0,
   }
@@ -90,7 +92,9 @@ export function terminalSmokeSuccess(
     loadEndVisible: results.every(result => result.loadEndVisible),
     afterLoadVisible: results.every(result => result.afterLoadVisible),
     resizedSizeVisible: results.every(result => result.resizedSizeVisible),
+    resizeTrace: last.resizeTrace,
     reconnectObserved: results.some(result => result.reconnectObserved),
+    hostWakeSynthesized: results.some(result => result.hostWakeSynthesized),
     staleOutputRejected: results.some(result => result.staleOutputRejected),
     firstConnectionMs: results.reduce(
       (first, result) => first || result.firstConnectionMs,

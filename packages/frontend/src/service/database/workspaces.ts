@@ -1,7 +1,7 @@
 /**
  * Workspaces CRUD 操作
  */
-import { executeQuery, select } from './connection'
+import { executeQuery, selectStrict as select } from './connection'
 import type { WorkspaceRecord, WorkspaceLayoutRecord } from './types'
 import type { WorkspaceLayout } from '@/types'
 

@@ -297,6 +297,54 @@ describe('TerminalOutputScheduler', () => {
     expect(terminal.write).not.toHaveBeenCalled()
   })
 
+  it('recovers output after an overflow that happened while a write was in flight', () => {
+    // The realistic sequence: a build log floods the pane, one batch is already
+    // inside xterm, the queue crosses the ceiling and fails, and a later
+    // reconnect calls reset(). The stale write must still gate the fresh one:
+    // two concurrent xterm.write() calls interleave in its internal buffer and
+    // corrupt the stream. The stale callback is what clears writeInFlight, so
+    // if the fresh output drained before that callback landed, the pane would
+    // show corrupted bytes rather than the recovered session's output.
+    const terminal = createTerminalStub()
+    const scheduler = new TerminalOutputScheduler(terminal.term, {
+      maxBatchBytes: 4,
+      maxPendingBytes: 12,
+      onOverflow: vi.fn(),
+    })
+
+    scheduler.enqueue('aaaa')
+    runAnimationFrame()
+    expect(terminal.write).toHaveBeenCalledOnce()
+    expect(scheduler.snapshot().writeInFlight).toBe(true)
+
+    // Fill the headroom the in-flight batch leaves, then cross the ceiling.
+    scheduler.enqueue('bbbb')
+    scheduler.enqueue('cccc')
+    scheduler.enqueue('dddd')
+    expect(scheduler.snapshot().state).toBe('failed')
+
+    scheduler.reset()
+    scheduler.enqueue('fresh')
+    runAnimationFrame()
+
+    // The fresh output must wait for the stale write to finish.
+    expect(terminal.write).toHaveBeenCalledOnce()
+    expect(scheduler.snapshot().writeInFlight).toBe(true)
+
+    terminal.completeNextWrite()
+    for (let round = 0; round < 4; round += 1) {
+      runAnimationFrame()
+      if (scheduler.snapshot().writeInFlight) {
+        terminal.completeNextWrite()
+      }
+    }
+
+    expect(terminal.write.mock.calls.map(call => call[0]).join('')).toBe(
+      'aaaafresh',
+    )
+    expect(scheduler.snapshot().state).toBe('active')
+  })
+
   it('cancels a pending frame and ignores later output when disposed', () => {
     const terminal = createTerminalStub()
     const scheduler = new TerminalOutputScheduler(terminal.term, {

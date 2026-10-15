@@ -3,16 +3,29 @@ import type { Host } from '@/types'
 import type { TabType } from '../types'
 import { buildSshJumpHostIpcConfig } from './ssh-jump-config'
 
-function profileForHost(host: Host):
-  | { startupCommand?: string; environment?: Record<string, string> }
+export type TerminalShellIntegration = 'bash' | 'zsh'
+
+export type TerminalProfilePayload = {
+  startupCommand?: string
+  environment?: Record<string, string>
+  shellIntegration?: TerminalShellIntegration
+}
+
+export function profileForHost(host: Host):
+  | TerminalProfilePayload
   | undefined {
   const environment = host.environment
   const hasEnvironment = Boolean(environment && Object.keys(environment).length)
   const startupCommand = host.startupCommand?.trim()
-  if (!hasEnvironment && !startupCommand) return undefined
+  const shellIntegration =
+    host.shellIntegration === 'bash' || host.shellIntegration === 'zsh'
+      ? host.shellIntegration
+      : undefined
+  if (!hasEnvironment && !startupCommand && !shellIntegration) return undefined
   return {
     ...(startupCommand ? { startupCommand } : {}),
     ...(hasEnvironment ? { environment } : {}),
+    ...(shellIntegration ? { shellIntegration } : {}),
   }
 }
 
@@ -25,6 +38,7 @@ export async function startTerminalShell(
   jumpHost?: Host,
   expectedHostKey?: string,
   expectedJumpHostKey?: string,
+  attemptId?: string,
 ): Promise<string> {
   if (tabType === 'local') {
     return invoke<string>('session_create_local', { cols, rows })
@@ -54,6 +68,7 @@ export async function startTerminalShell(
         ),
         cols,
         rows,
+        ...(attemptId ? { attemptId } : {}),
       })
     }
 
@@ -66,6 +81,7 @@ export async function startTerminalShell(
       cols,
       rows,
       ...(profile ? { profile } : {}),
+      ...(attemptId ? { attemptId } : {}),
     }
     if (host.authType === 'password') {
       return invoke<string>('session_create_ssh_password', {

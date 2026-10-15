@@ -56,3 +56,11 @@ it('closes the terminal through the session IPC command', async () => {
     sessionId: 'session-1',
   })
 })
+
+it('cancels an in-flight connection through the session IPC command', async () => {
+  await terminalSessionTransport.cancelConnection('attempt-1')
+
+  expect(invoke).toHaveBeenCalledWith('session_cancel_connection', {
+    attemptId: 'attempt-1',
+  })
+})

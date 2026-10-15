@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest'
-import { executeQuery, select } from './connection'
+import { executeQuery, select, selectStrict } from './connection'
 
 const database = vi.hoisted(() => ({
   execute: vi.fn(),
@@ -32,4 +32,10 @@ it('never logs database query parameters when an operation fails', async () => {
   expect(logOutput).not.toContain('private-write-secret')
   expect(logOutput).not.toContain('private-read-secret')
   consoleError.mockRestore()
+})
+
+it('keeps strict startup reads distinguishable from an empty result', async () => {
+  await expect(selectStrict('SELECT * FROM workspaces')).rejects.toThrow(
+    'Database query failed',
+  )
 })

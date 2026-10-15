@@ -3,7 +3,7 @@
 > 本文档详细说明 xterm.js 的 API、插件系统和使用规范，供 AI Agent 开发时参考
 > 官方文档: https://xtermjs.org/
 > 上游 API 版本: 6.0.0 (2025-12)；项目核心包: `@baicie/xterm@0.1.7`
-> 文档更新时间: 2026-08-26
+> 文档更新时间: 2026-10-09
 
 ---
 
@@ -699,6 +699,12 @@ terminalSession.onOutput((data, utf8Bytes) => {
 
 ### 6.4 本地 PTY 验证边界
 
+#### macOS 原生输入探针前置条件（2026-09-22）
+
+`pnpm smoke:input-probe -- --inject swift --input-source ascii` 使用 CGEvent 向真实 WKWebView 注入 `a↓ s↓ d↓`、反向释放与 Return，每个按键相隔 20ms，每轮只注入一次。输入源通过系统 TIS API 查询；显式 `ascii` 模式临时选择已启用的 ASCII 键盘布局，逐轮检查输入源，结束后恢复并校验原输入源。默认 `current` 不改变输入源，在非 ASCII 输入源下提前拒绝该重叠用例。
+
+输入法组合态的 Enter 可能只提交候选文本：实测 `keyCode=229`、`insertFromComposition` 和 `onData=617364`，没有 shell 回车 `0d`，不能把等待 `read` 超时直接判为 xterm 丢键。中文 IME 仍需单独验证候选、提交、取消与后续命令执行。诊断仅在显式 probe 构建/运行模式记录，包含 composition 生命周期、`InputEvent.isComposing`、DOM 焦点与 xterm 输入字节；不改变产品输入路径。组合态 Escape 由兼容 core 留给原生 IME，组合结束后的普通 Escape 才写入 PTY。探针空白区域点击会重新聚焦 xterm；IME 场景在选择输入源后不再逐轮点击，避免 WKWebView 重置输入上下文。禁止自动重发整轮掩盖丢键；任何单轮 hex 不匹配必须失败。
+
 Rust 回归测试会在 macOS 上启动真实 `portable-pty`，使用隔离 HOME/profile 的固定 `/bin/sh -c` 测试 shell，按交互时序等待 READY、写入中文/emoji，再从 PTY 主端确认：
 
 - 系统 line discipline 保留输入回显；
@@ -712,7 +718,7 @@ Rust 回归测试会在 macOS 上启动真实 `portable-pty`，使用隔离 HOME
 
 重连 smoke 使用本机独立、仅公钥认证的 OpenSSH fixture。macOS 的 `sshd-session` 会进入不同于监听 daemon 的进程组，因此 fixture 必须先枚举并校验 daemon 的直接子进程，只向满足 `pid === pgid` 的隔离 session 进程组发送 `SIGTERM`，再终止 daemon 进程组；3 秒内未退出则分别升级 `SIGKILL`。PID/PGID 非法或 session 未隔离时 fail-closed，避免向不可信进程组发信号。修复后真实 TCP 断线能触发自动重连：10 轮共出现 11 个唯一 session，旧 generation 输出被拒绝，所有资源回收，耗时 6.7 秒；脚本回归 23 项通过。
 
-这些结果验证精确生成命令、尾标记、压力后的持续交互和 localhost public-key SSH 的断线重连，不声称 parser 独立逐字节统计了全部 8 MiB，也不证明物理重叠按键。password/agent/cert/Jump、Windows/Linux/Pageant、串口、vim/nano、物理 `a/s/d` 重叠按键、IME、SGR mouse、bracketed paste、非 UTF-8 原始输入和连续 resize 仍不能标为实机通过。
+这些结果验证精确生成命令、尾标记、压力后的持续交互和 localhost public-key SSH 的断线重连，不声称 parser 独立逐字节统计了全部 8 MiB，也不证明物理重叠按键。兼容版 xterm 另有事件级回归验证 SGR mouse、bracketed paste 和高位 X10/default mouse raw bytes 经输入桥接保持协议字节；该回归使用 jsdom synthetic DOM 事件，不替代真实 Tauri/PTY 流量。显式 gated 的 `pnpm smoke:raw-input` 现已在 macOS Tauri/WKWebView + local PTY 中完成三项真实回读（SGR mouse、bracketed paste、raw X10），证据见 `docs/verification/2026-10-10-macos-raw-input.json`；这三项结果仍不等同于人工鼠标或系统粘贴。password/agent/cert/Jump、Windows/Linux/Pageant、串口、vim/nano、物理 `a/s/d` 重叠按键、IME、Option/dead key、连续 resize 和非 UTF-8 原始输入仍不能标为实机通过。
 
 ---
 

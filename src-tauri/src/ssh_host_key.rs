@@ -11,15 +11,18 @@ use russh::client::{self, Handler};
 use russh::keys::{HashAlg, PublicKey};
 use serde::Serialize;
 use thiserror::Error;
+use tokio::time::Instant;
 
 use crate::session::ssh::{
-    connect_authenticated_jump_host_with_shutdown, connect_stream_with_timeout,
+    connect_authenticated_jump_host_with_shutdown, connect_stream_with_deadline,
     connect_tcp_with_shutdown, disconnect_and_wait_with_shutdown,
     disconnect_jump_connections_with_shutdown, open_jump_host_tunnel,
 };
 use crate::session::{JumpHostConfig, SessionError};
 
-const SSH_HOST_KEY_PROBE_TIMEOUT: Duration = Duration::from_secs(15);
+// Keep preflight below the app's ten-second startup target while leaving
+// enough room for the frontend to render the retryable error state.
+const SSH_HOST_KEY_PROBE_TIMEOUT: Duration = Duration::from_secs(8);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -217,12 +220,25 @@ async fn check_known_host(
     host: String,
     port: u16,
     public_key: PublicKey,
+    deadline: Instant,
 ) -> Result<SshHostKeyStatus, SshHostKeyError> {
-    tokio::task::spawn_blocking(move || {
+    if Instant::now() >= deadline {
+        return Err(SshHostKeyError::KnownHostsFailed(
+            "SSH known_hosts check timed out before its deadline".to_string(),
+        ));
+    }
+
+    let check = tokio::task::spawn_blocking(move || {
         classify_known_host(russh::keys::check_known_hosts(&host, port, &public_key))
-    })
-    .await
-    .map_err(|error| SshHostKeyError::KnownHostsFailed(error.to_string()))?
+    });
+    tokio::time::timeout_at(deadline, check)
+        .await
+        .map_err(|_| {
+            SshHostKeyError::KnownHostsFailed(
+                "SSH known_hosts check timed out before its deadline".to_string(),
+            )
+        })?
+        .map_err(|error| SshHostKeyError::KnownHostsFailed(error.to_string()))?
 }
 
 #[tauri::command]
@@ -238,12 +254,13 @@ pub async fn ssh_host_key_probe(
         nodelay: true,
         ..Default::default()
     });
+    let deadline = Instant::now() + SSH_HOST_KEY_PROBE_TIMEOUT;
 
     let (handle, shutdown_guard) = connect_tcp_with_shutdown(
         config,
         (host.as_str(), port),
         handler,
-        SSH_HOST_KEY_PROBE_TIMEOUT,
+        deadline,
         "connect host-key probe",
     )
     .await
@@ -261,10 +278,11 @@ pub async fn ssh_host_key_probe(
             ))
         });
 
-    disconnect_and_wait_with_shutdown(handle, shutdown_guard, "host-key probe complete").await;
+    disconnect_and_wait_with_shutdown(handle, shutdown_guard, "host-key probe complete", deadline)
+        .await;
 
     let public_key = public_key?;
-    let status = check_known_host(host.clone(), port, public_key.clone()).await?;
+    let status = check_known_host(host.clone(), port, public_key.clone(), deadline).await?;
     probe_result(&host, port, status, &public_key)
 }
 
@@ -283,36 +301,43 @@ pub async fn ssh_host_key_probe_via_jump(
         nodelay: true,
         ..Default::default()
     });
+    let deadline = Instant::now() + SSH_HOST_KEY_PROBE_TIMEOUT;
 
     // The jump handshake verifies known_hosts (or its exact trust-once pin)
     // before credentials are sent. Only then may the tunnel reveal the target.
     let (jump_handle, jump_shutdown) =
-        connect_authenticated_jump_host_with_shutdown(config.clone(), &jump_host)
+        connect_authenticated_jump_host_with_shutdown(config.clone(), &jump_host, Some(deadline))
             .await
             .map_err(map_session_error)?;
-    let target_channel =
-        match open_jump_host_tunnel(&jump_handle, &jump_host, target_host.clone(), target_port)
-            .await
-        {
-            Ok(channel) => channel,
-            Err(error) => {
-                disconnect_and_wait_with_shutdown(
-                    jump_handle,
-                    jump_shutdown,
-                    "open host-key probe tunnel failed",
-                )
-                .await;
-                return Err(SshHostKeyError::ConnectionFailed(format!(
-                    "could not open a tunnel to {target_host}:{target_port}: {error}"
-                )));
-            }
-        };
+    let target_channel = match open_jump_host_tunnel(
+        &jump_handle,
+        &jump_host,
+        target_host.clone(),
+        target_port,
+        deadline,
+    )
+    .await
+    {
+        Ok(channel) => channel,
+        Err(error) => {
+            disconnect_and_wait_with_shutdown(
+                jump_handle,
+                jump_shutdown,
+                "open host-key probe tunnel failed",
+                deadline,
+            )
+            .await;
+            return Err(SshHostKeyError::ConnectionFailed(format!(
+                "could not open a tunnel to {target_host}:{target_port}: {error}"
+            )));
+        }
+    };
 
-    let target_handle = match connect_stream_with_timeout(
+    let target_handle = match connect_stream_with_deadline(
         config,
         target_channel.into_stream(),
         handler,
-        SSH_HOST_KEY_PROBE_TIMEOUT,
+        deadline,
         "inspect host key through jump host",
         Some(&jump_shutdown),
     )
@@ -324,6 +349,7 @@ pub async fn ssh_host_key_probe_via_jump(
                 jump_handle,
                 jump_shutdown,
                 "host-key probe target handshake failed",
+                deadline,
             )
             .await;
             return Err(SshHostKeyError::ConnectionFailed(format!(
@@ -349,10 +375,17 @@ pub async fn ssh_host_key_probe_via_jump(
         jump_handle,
         jump_shutdown,
         "host-key probe complete",
+        deadline,
     )
     .await;
     let public_key = public_key?;
-    let status = check_known_host(target_host.clone(), target_port, public_key.clone()).await?;
+    let status = check_known_host(
+        target_host.clone(),
+        target_port,
+        public_key.clone(),
+        deadline,
+    )
+    .await?;
     probe_result(&target_host, target_port, status, &public_key)
 }
 

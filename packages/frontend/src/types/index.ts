@@ -2,6 +2,9 @@
 
 export type AuthType = 'password' | 'key' | 'agent' | 'cert'
 
+/** Explicit remote shell integration mode. Disabled unless the host opts in. */
+export type ShellIntegrationMode = 'off' | 'bash' | 'zsh'
+
 export type PortForwardType = 'local' | 'remote' | 'dynamic'
 
 export interface PortForward {
@@ -49,6 +52,8 @@ export interface Host {
   jumpHostAuthType?: AuthType // Override auth type for jump host (optional)
   /** Forward the local SSH agent to this host. Independent of login auth. */
   agentForwarding?: boolean
+  /** Inject shell integration markers for the selected remote shell. */
+  shellIntegration?: ShellIntegrationMode
   createdAt: number
   updatedAt: number
 }
@@ -94,6 +99,8 @@ export interface Variable {
 export interface Tab {
   id: string
   label: string
+  /** Temporary empty-workspace startup fallback; never persisted by recovery. */
+  startupFallback?: boolean
   /** Process-local OSC 0/2 title; workspace recovery intentionally drops it. */
   title?: string
   type: 'local' | 'remote' | 'serial'

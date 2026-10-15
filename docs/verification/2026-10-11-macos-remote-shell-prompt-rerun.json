@@ -1,0 +1,74 @@
+{
+  "recordedAt": "2026-10-16T06:03:19+08:00",
+  "kind": "tauri-remote-cold-start-shell-prompt-observed-rerun",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "v24.16.0",
+    "pnpm": "10.34.3"
+  },
+  "revision": {
+      "head": "54f3fbbab39a97e1370d9880b89760dbd06a1c41",
+    "dirtyWorktree": true
+  },
+  "application": {
+    "path": "src-tauri/target/debug/terminal",
+      "sha256": "3dfd71f9361f4b46ca703dd06372519a54ca8d2adb96f5c62b4ed863e0b474b8"
+  },
+  "command": "node scripts/run-remote-cold-start-stopwatch.mjs --app-path /Users/liuzhiwei/Desktop/workspace/git-code/terminal/src-tauri/target/debug/terminal",
+  "fixture": {
+    "transport": "OpenSSH localhost",
+    "host": "127.0.0.1",
+    "username": "liuzhiwei",
+    "auth": "key",
+    "hostKey": "ephemeral fixture key (cleaned after the run)",
+    "isolatedHome": "ephemeral isolated HOME (cleaned after the run)"
+  },
+  "measurement": {
+    "measuredFrom": "child-spawn-event",
+      "requestToPromptObservedMs": 5119,
+      "spawnToPromptObservedMs": 5112,
+    "latestRerun": {
+      "capturedAt": "2026-10-15T22:00:21.002Z",
+      "requestToPromptObservedMs": 5119,
+      "spawnToPromptObservedMs": 5112
+    },
+    "underTenSeconds": true,
+    "readiness": {
+      "localTab": false,
+      "connected": true,
+      "terminalInput": true,
+      "shellPrompt": false
+    },
+    "markerReady": true,
+    "promptMarker": "REMOTE_PROMPT_MARKER"
+  },
+  "evidence": [
+    "REMOTE_COLD_MARKER was written by the real remote SSH startup command.",
+    "REMOTE_PROMPT_MARKER was written only after OSC 133 prompt-start was observed and the configured command travelled through xterm input, Tauri IPC, SSH PTY, and terminal output.",
+    "The native AX flags are advisory in remote mode because WebKit does not reliably expose the status label or hidden xterm input element."
+  ],
+  "limitations": [
+    "The fixture uses a preseeded localhost key-authenticated workspace; it does not prove first-user host selection, password/agent/jump authentication, or WAN latency.",
+    "This does not replace macOS physical keyboard, Chinese IME, Option/dead key, cat/history/Tab/vim/nano interaction acceptance.",
+    "Windows OpenSSH Agent/Pageant/PTY and serial hardware remain unverified because no test devices are available."
+  ],
+  "source": {
+    "fingerprint": "40e58ef991817331947900228d2c2d0de7ee1a49109a58d03459b9293460e3b4",
+    "fingerprintCovers": [
+      "packages/frontend/src",
+      "src-tauri/src",
+      "packages/frontend/package.json",
+      "package.json",
+      "pnpm-lock.yaml"
+    ],
+    "note": "Debug evidence cannot be validated against the artifact on disk, because pnpm verify relinks target/debug/terminal as a bare cargo build. This content fingerprint of the sources these scenarios exercise is what makes a stale measurement detectable."
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "3dfd71f9361f4b46ca703dd06372519a54ca8d2adb96f5c62b4ed863e0b474b8"
+  },
+  "shell": "bash",
+  "shellIntegration": "bash",
+  "note": "Current-source bash remote prompt rerun after waiting for the first SSH shell output before startup injection. The marker, expected CWD, non-zero exit code and OSC 133/7 events all completed through the real loopback sshd on the current instrumented binary."
+}

@@ -24,8 +24,8 @@ export async function createHost(
 ): Promise<void> {
   const now = Date.now()
   await executeQuery(
-    `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, shell_integration, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       host.id,
       host.name,
@@ -46,6 +46,7 @@ export async function createHost(
       host.jumpHostId ?? null,
       host.jumpHostAuthType ?? null,
       host.agentForwarding ? 1 : 0,
+      host.shellIntegration ?? 'off',
       now,
       now,
     ],
@@ -58,7 +59,7 @@ export async function updateHost(
 ): Promise<void> {
   const now = Date.now()
   await executeQuery(
-    `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, certificate = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, updated_at = ? WHERE id = ?`,
+    `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, certificate = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?`,
     [
       updates.name,
       updates.hostname,
@@ -82,6 +83,7 @@ export async function updateHost(
       updates.jumpHostId ?? null,
       updates.jumpHostAuthType ?? null,
       updates.agentForwarding ? 1 : 0,
+      updates.shellIntegration ?? 'off',
       now,
       id,
     ],

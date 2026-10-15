@@ -16,8 +16,7 @@ import {
   type TerminalReconnectStartResult,
 } from './terminal-session-manager-reconnect'
 import { TerminalSessionOutputBuffer } from './terminal-session-output-buffer'
-import { startTerminalShell } from './terminal-launcher'
-import { updateTerminalState } from './terminal-session-state'
+import { startTerminalSession } from './terminal-session-manager-start'
 import { terminalSessionTransport } from './terminal-session-transport'
 import type { ShellOutput } from '../types'
 import {
@@ -28,6 +27,7 @@ import {
   type TerminalSessionListener,
   type TerminalSessionRequest,
 } from './terminal-session-manager-types'
+
 export {
   getTerminalRequestKey,
   type TerminalSessionBinding,
@@ -46,7 +46,7 @@ export class TerminalSessionManager {
     this.pendingOutput,
     tabId => this.records.get(tabId),
     (tabId, error) => this.handleIoError(tabId, error, true),
-    () => this.handleLifecycleOverflow(),
+    sessionId => this.handleLifecycleOverflow(sessionId),
   )
   private readonly reconnects: TerminalSessionReconnect
   private readonly events = new TerminalSessionEvents({
@@ -61,6 +61,7 @@ export class TerminalSessionManager {
         sessionToTab: this.sessionToTab,
         pendingOutput: this.pendingOutput,
         retireLifecycle: sessionId => this.lifecycle.retire(sessionId),
+        cancelConnection: record => this.cancelConnection(record),
         start: (record, generation) => this.beginStart(record, generation),
         isCurrent: record => this.records.get(record.request.tabId) === record,
       },
@@ -120,7 +121,7 @@ export class TerminalSessionManager {
     const record = this.records.get(tabId)
     if (!record) return
     const pending = new Set<Promise<unknown>>()
-    if (record.startPromise) pending.add(record.startPromise)
+    for (const promise of record.startPromises) pending.add(promise)
     if (record.reconnectPromise) pending.add(record.reconnectPromise)
     record.closed = true
     this.reconnects.retire(record)
@@ -141,82 +142,65 @@ export class TerminalSessionManager {
       if (!tabIds.has(tabId)) void this.close(tabId)
     }
   }
+  /**
+   * Re-arm automatic reconnect for every remote session left in a retryable
+   * error state. Called when the window becomes visible again after sleep,
+   * because a suspended host spends the whole retry budget without the backend
+   * emitting another event to trigger recovery.
+   */
+  handleHostWake(): void {
+    for (const record of this.records.values()) {
+      if (this.reconnects.resume(record, 'Resumed after host wake')) continue
+      // Waking resumes timers and the socket at the same time, so an in-flight
+      // attempt is often still connecting when the wake arrives and only fails
+      // a moment later. That failure carries no sessionId, so the ordinary
+      // I/O-error path cannot re-arm it and the pane would stay stuck. Arm the
+      // recovery now so the post-wake failure restarts a fresh attempt budget.
+      this.reconnects.armAfterWake(record)
+    }
+  }
   private beginStart(
     record: TerminalRecord,
     generation = ++record.generation,
   ): Promise<TerminalReconnectStartResult> {
     const promise = this.start(record, generation)
     record.startPromise = promise
+    record.startPromises.add(promise)
     void promise.finally(() => {
+      record.startPromises.delete(promise)
       if (record.startPromise === promise) record.startPromise = null
     })
     return promise
   }
-  private async start(
+  private start(
     record: TerminalRecord,
     generation: number,
   ): Promise<TerminalReconnectStartResult> {
-    if (record.status !== 'reconnecting') {
-      updateTerminalState(record, { status: 'connecting', error: null })
-    }
-    try {
-      await this.events.ensure(record.request.tabType)
-      const { cols, rows } = record.io.size
-      const sessionId = await startTerminalShell(
-        record.request.tabType,
-        record.request.host,
-        record.request.serialSessionId,
-        cols,
-        rows,
-        record.request.jumpHost,
-        record.request.expectedHostKey,
-        record.request.expectedJumpHostKey,
-      )
-      if (
-        record.closed ||
-        record.generation !== generation ||
-        this.records.get(record.request.tabId) !== record
-      ) {
-        this.pendingOutput.retire(sessionId)
-        this.lifecycle.retire(sessionId)
-        await closeTerminalBackend(record.request.tabType, sessionId)
-        return 'cancelled'
-      }
-      record.sessionId = sessionId
-      this.pendingOutput.activate(sessionId)
-      this.lifecycle.activate(sessionId)
-      this.sessionToTab.set(sessionId, record.request.tabId)
-      const pendingLifecycle = this.lifecycle.take(sessionId)
-      if (pendingLifecycle) {
-        this.flushPendingOutput(record, sessionId)
-        this.lifecycle.apply(sessionId, pendingLifecycle)
-        if (pendingLifecycle.kind === 'close') {
-          this.reconnects.automatic(
-            record,
-            'SSH connection closed unexpectedly',
-          )
-        }
-        if (pendingLifecycle.kind === 'exit') return 'cancelled'
-        const failure = classifyTerminalFailure(pendingLifecycle.message)
-        return { status: 'failed', ...failure }
-      }
-      record.io.connect(sessionId)
-      updateTerminalState(record, { status: 'connected', sessionId })
-      this.flushPendingOutput(record, sessionId)
-      return 'connected'
-    } catch (error) {
-      if (record.closed || record.generation !== generation) return 'cancelled'
-      record.io.disconnect()
-      const failure = classifyTerminalFailure(error)
-      if (!record.reconnectMode) {
-        updateTerminalState(record, {
-          status: 'error',
-          sessionId: null,
-          ...failure,
-        })
-      }
-      return { status: 'failed', ...failure }
-    }
+    return startTerminalSession(
+      {
+        events: this.events,
+        records: this.records,
+        sessionToTab: this.sessionToTab,
+        pendingOutput: this.pendingOutput,
+        lifecycle: this.lifecycle,
+        reconnects: this.reconnects,
+        flushPendingOutput: (startRecord, sessionId) =>
+          this.flushPendingOutput(startRecord, sessionId),
+      },
+      record,
+      generation,
+    )
+  }
+
+  private cancelConnection(record: TerminalRecord): void {
+    const attemptId = record.connectionAttemptId
+    if (!attemptId) return
+    record.connectionAttemptId = null
+    void terminalSessionTransport.cancelConnection(attemptId).catch(error => {
+      // Cancellation is best effort: generation retirement still prevents a
+      // late session from being published if the backend has already finished.
+      console.debug('SSH connection cancellation request failed', error)
+    })
   }
   private handleOutput(output: ShellOutput): void {
     const tabId = this.sessionToTab.get(output.session_id)
@@ -268,6 +252,7 @@ export class TerminalSessionManager {
       record?.request.tabType === 'remote' &&
       Boolean(record.sessionId) &&
       failure.retryable
+    if (record) this.cancelConnection(record)
     if (record?.sessionId) this.lifecycle.retire(record.sessionId)
     handleTerminalIoError(
       record,
@@ -289,11 +274,10 @@ export class TerminalSessionManager {
       this.reconnects.automatic(record, 'SSH connection closed unexpectedly')
     }
   }
-  private handleLifecycleOverflow(): void {
+  private handleLifecycleOverflow(sessionId: string): void {
     const error = new Error('Terminal lifecycle buffer exceeded 1024 pending sessions')
-    for (const [tabId, record] of this.records) {
-      if (record.status === 'connecting') this.handleIoError(tabId, error)
-    }
+    const tabId = this.sessionToTab.get(sessionId)
+    if (tabId) this.handleIoError(tabId, error)
   }
 }
 export const terminalSessionManager = new TerminalSessionManager()

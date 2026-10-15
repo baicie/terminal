@@ -8,6 +8,7 @@ use super::local::LocalSession;
 use super::ssh::SshSession;
 use super::{SessionError, SessionInfo, SessionType};
 use crate::state::ClientHandler;
+use futures::future::join_all;
 use russh::client;
 use std::collections::HashMap;
 use std::future::Future;
@@ -122,6 +123,11 @@ pub struct SessionManager {
     channel_manager: Arc<ChannelManager>,
     /// Session 元信息
     session_meta: Arc<Mutex<HashMap<String, SessionMeta>>>,
+    lifecycle: Arc<Mutex<SessionManagerLifecycle>>,
+}
+
+struct SessionManagerLifecycle {
+    closing: bool,
 }
 
 impl SessionManager {
@@ -131,6 +137,7 @@ impl SessionManager {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             channel_manager: Arc::new(ChannelManager::new()),
             session_meta: Arc::new(Mutex::new(HashMap::new())),
+            lifecycle: Arc::new(Mutex::new(SessionManagerLifecycle { closing: false })),
         }
     }
 
@@ -140,10 +147,20 @@ impl SessionManager {
     }
 
     /// 注册 Session
-    pub async fn register_session(&self, session: SessionState) {
+    pub async fn register_session(&self, session: SessionState) -> bool {
         let session_id = session.session_id().to_string();
         let session_type = session.session_type();
         let completion = session.completion();
+
+        // Serialize publication with shutdown. Once cleanup starts, a late
+        // connection must be closed instead of reviving the manager after its
+        // registries have been drained.
+        let lifecycle = self.lifecycle.lock().await;
+        if lifecycle.closing {
+            drop(lifecycle);
+            session.close().await;
+            return false;
+        }
 
         // 注册到 sessions
         {
@@ -177,6 +194,7 @@ impl SessionManager {
             Arc::downgrade(&self.channel_manager),
             Arc::downgrade(&self.session_meta),
         );
+        true
     }
 
     /// 获取 Session
@@ -231,6 +249,9 @@ impl SessionManager {
 
     /// 移除 Session
     pub async fn remove_session(&self, session_id: &str) -> Result<(), SessionError> {
+        // Serialize explicit close with shutdown so a session that has left
+        // the registry but is still releasing its transport remains covered.
+        let _lifecycle = self.lifecycle.lock().await;
         let session = remove_registry_entries(
             Arc::clone(&self.sessions),
             Arc::clone(&self.channel_manager),
@@ -244,6 +265,35 @@ impl SessionManager {
         }
 
         Ok(())
+    }
+
+    /// Remove every registry entry and close all sessions concurrently.
+    pub async fn close_all(&self) {
+        let _lifecycle = self.lifecycle.lock().await;
+        self.close_registered_sessions().await;
+    }
+
+    /// Permanently stop accepting sessions and close every registered session.
+    pub async fn shutdown(&self) {
+        {
+            let mut lifecycle = self.lifecycle.lock().await;
+            lifecycle.closing = true;
+        }
+        self.close_all().await;
+    }
+
+    async fn close_registered_sessions(&self) {
+        let sessions = self
+            .sessions
+            .lock()
+            .await
+            .drain()
+            .map(|(_, session)| session)
+            .collect::<Vec<_>>();
+
+        self.session_meta.lock().await.clear();
+        self.channel_manager.clear().await;
+        join_all(sessions.into_iter().map(SessionState::close)).await;
     }
 
     /// 发送输出数据

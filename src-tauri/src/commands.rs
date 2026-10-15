@@ -3,7 +3,9 @@
 //! 提供统一的 create/write/resize/close 命令，同时保持向后兼容。
 
 use crate::session::local::LocalSession;
-use crate::session::ssh::SshSession;
+use crate::session::ssh::{
+    register_connection_attempt, run_cancellable_connection, ssh_connection_deadline, SshSession,
+};
 use crate::session::terminal_output::{ack_session_output, finish_session_output};
 use crate::session::{
     get_session_manager, ExecResult, KeyGenResult, SessionError, SessionInfo, SessionState,
@@ -26,7 +28,9 @@ pub async fn session_create_local(
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
-    manager.register_session(SessionState::Local(session)).await;
+    if !manager.register_session(SessionState::Local(session)).await {
+        return Err(SessionError::ConnectionCancelled);
+    }
 
     Ok(session_id)
 }
@@ -96,6 +100,12 @@ fn agent_forwarding_enabled(value: Option<bool>) -> bool {
     value.unwrap_or(false)
 }
 
+/// Cancel an SSH connection that is still in its creation handshake.
+#[tauri::command]
+pub fn session_cancel_connection(attempt_id: String) -> bool {
+    crate::session::ssh::cancel_connection_attempt(&attempt_id)
+}
+
 /// 创建 SSH 会话（密码认证）
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -110,7 +120,10 @@ pub async fn session_create_ssh_password(
     cols: u16,
     rows: u16,
     profile: Option<crate::session::TerminalProfile>,
+    attempt_id: Option<String>,
 ) -> Result<String, SessionError> {
+    let attempt = register_connection_attempt(attempt_id.as_deref());
+    let connection_deadline = ssh_connection_deadline();
     // 验证输入
     if host.is_empty() {
         return Err(SessionError::InvalidInput(
@@ -133,23 +146,29 @@ pub async fn session_create_ssh_password(
         ));
     }
 
-    let session = SshSession::new_with_password(
-        app,
-        host,
-        port,
-        username,
-        password,
-        expected_host_key,
-        agent_forwarding_enabled(agent_forwarding),
-        cols,
-        rows,
-        profile,
+    let session = run_cancellable_connection(
+        attempt.cancellation(),
+        SshSession::new_with_password(
+            app,
+            host,
+            port,
+            username,
+            password,
+            expected_host_key,
+            agent_forwarding_enabled(agent_forwarding),
+            cols,
+            rows,
+            profile,
+            connection_deadline,
+        ),
     )
     .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
-    manager.register_session(SessionState::Ssh(session)).await;
+    if !manager.register_session(SessionState::Ssh(session)).await {
+        return Err(SessionError::ConnectionCancelled);
+    }
 
     Ok(session_id)
 }
@@ -169,7 +188,10 @@ pub async fn session_create_ssh_key(
     cols: u16,
     rows: u16,
     profile: Option<crate::session::TerminalProfile>,
+    attempt_id: Option<String>,
 ) -> Result<String, SessionError> {
+    let attempt = register_connection_attempt(attempt_id.as_deref());
+    let connection_deadline = ssh_connection_deadline();
     // 验证输入
     if host.is_empty() {
         return Err(SessionError::InvalidInput(
@@ -192,24 +214,30 @@ pub async fn session_create_ssh_key(
         ));
     }
 
-    let session = SshSession::new_with_key(
-        app,
-        host,
-        port,
-        username,
-        private_key,
-        password,
-        expected_host_key,
-        agent_forwarding_enabled(agent_forwarding),
-        cols,
-        rows,
-        profile,
+    let session = run_cancellable_connection(
+        attempt.cancellation(),
+        SshSession::new_with_key(
+            app,
+            host,
+            port,
+            username,
+            private_key,
+            password,
+            expected_host_key,
+            agent_forwarding_enabled(agent_forwarding),
+            cols,
+            rows,
+            profile,
+            connection_deadline,
+        ),
     )
     .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
-    manager.register_session(SessionState::Ssh(session)).await;
+    if !manager.register_session(SessionState::Ssh(session)).await {
+        return Err(SessionError::ConnectionCancelled);
+    }
 
     Ok(session_id)
 }
@@ -227,7 +255,10 @@ pub async fn session_create_ssh_agent(
     cols: u16,
     rows: u16,
     profile: Option<crate::session::TerminalProfile>,
+    attempt_id: Option<String>,
 ) -> Result<String, SessionError> {
+    let attempt = register_connection_attempt(attempt_id.as_deref());
+    let connection_deadline = ssh_connection_deadline();
     if host.is_empty() {
         return Err(SessionError::InvalidInput(
             "Host cannot be empty".to_string(),
@@ -244,22 +275,28 @@ pub async fn session_create_ssh_agent(
         ));
     }
 
-    let session = SshSession::new_with_agent(
-        app,
-        host,
-        port,
-        username,
-        expected_host_key,
-        agent_forwarding_enabled(agent_forwarding),
-        cols,
-        rows,
-        profile,
+    let session = run_cancellable_connection(
+        attempt.cancellation(),
+        SshSession::new_with_agent(
+            app,
+            host,
+            port,
+            username,
+            expected_host_key,
+            agent_forwarding_enabled(agent_forwarding),
+            cols,
+            rows,
+            profile,
+            connection_deadline,
+        ),
     )
     .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
-    manager.register_session(SessionState::Ssh(session)).await;
+    if !manager.register_session(SessionState::Ssh(session)).await {
+        return Err(SessionError::ConnectionCancelled);
+    }
 
     Ok(session_id)
 }
@@ -283,7 +320,10 @@ pub async fn session_create_ssh_cert(
     cols: u16,
     rows: u16,
     profile: Option<crate::session::TerminalProfile>,
+    attempt_id: Option<String>,
 ) -> Result<String, SessionError> {
+    let attempt = register_connection_attempt(attempt_id.as_deref());
+    let connection_deadline = ssh_connection_deadline();
     if host.is_empty() {
         return Err(SessionError::InvalidInput(
             "Host cannot be empty".to_string(),
@@ -310,25 +350,31 @@ pub async fn session_create_ssh_cert(
         ));
     }
 
-    let session = SshSession::new_with_cert(
-        app,
-        host,
-        port,
-        username,
-        certificate,
-        private_key,
-        password,
-        expected_host_key,
-        agent_forwarding_enabled(agent_forwarding),
-        cols,
-        rows,
-        profile,
+    let session = run_cancellable_connection(
+        attempt.cancellation(),
+        SshSession::new_with_cert(
+            app,
+            host,
+            port,
+            username,
+            certificate,
+            private_key,
+            password,
+            expected_host_key,
+            agent_forwarding_enabled(agent_forwarding),
+            cols,
+            rows,
+            profile,
+            connection_deadline,
+        ),
     )
     .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
-    manager.register_session(SessionState::Ssh(session)).await;
+    if !manager.register_session(SessionState::Ssh(session)).await {
+        return Err(SessionError::ConnectionCancelled);
+    }
 
     Ok(session_id)
 }
@@ -350,27 +396,36 @@ pub async fn session_create_ssh_jump(
     cols: u16,
     rows: u16,
     profile: Option<crate::session::TerminalProfile>,
+    attempt_id: Option<String>,
 ) -> Result<String, SessionError> {
-    let session = SshSession::new_with_jump(
-        app,
-        target_host,
-        target_port,
-        target_username,
-        target_password,
-        target_private_key,
-        target_certificate,
-        jump_host,
-        expected_host_key,
-        agent_forwarding_enabled(agent_forwarding),
-        cols,
-        rows,
-        profile,
+    let attempt = register_connection_attempt(attempt_id.as_deref());
+    let connection_deadline = ssh_connection_deadline();
+    let session = run_cancellable_connection(
+        attempt.cancellation(),
+        SshSession::new_with_jump(
+            app,
+            target_host,
+            target_port,
+            target_username,
+            target_password,
+            target_private_key,
+            target_certificate,
+            jump_host,
+            expected_host_key,
+            agent_forwarding_enabled(agent_forwarding),
+            cols,
+            rows,
+            profile,
+            connection_deadline,
+        ),
     )
     .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
-    manager.register_session(SessionState::Ssh(session)).await;
+    if !manager.register_session(SessionState::Ssh(session)).await {
+        return Err(SessionError::ConnectionCancelled);
+    }
 
     Ok(session_id)
 }
@@ -539,7 +594,8 @@ mod ssh_command_future_tests {
             Option<bool>,
             u16,
             u16,
-            Option<TerminalProfile>
+            Option<TerminalProfile>,
+            Option<String>
         )
     );
     assert_send_command!(
@@ -555,7 +611,8 @@ mod ssh_command_future_tests {
             Option<bool>,
             u16,
             u16,
-            Option<TerminalProfile>
+            Option<TerminalProfile>,
+            Option<String>
         )
     );
     assert_send_command!(
@@ -569,7 +626,8 @@ mod ssh_command_future_tests {
             Option<bool>,
             u16,
             u16,
-            Option<TerminalProfile>
+            Option<TerminalProfile>,
+            Option<String>
         )
     );
     assert_send_command!(
@@ -586,7 +644,8 @@ mod ssh_command_future_tests {
             Option<bool>,
             u16,
             u16,
-            Option<TerminalProfile>
+            Option<TerminalProfile>,
+            Option<String>
         )
     );
     assert_send_command!(
@@ -604,7 +663,8 @@ mod ssh_command_future_tests {
             Option<bool>,
             u16,
             u16,
-            Option<TerminalProfile>
+            Option<TerminalProfile>,
+            Option<String>
         )
     );
 
@@ -622,6 +682,13 @@ mod ssh_command_future_tests {
         assert!(!agent_forwarding_enabled(None));
         assert!(!agent_forwarding_enabled(Some(false)));
         assert!(agent_forwarding_enabled(Some(true)));
+    }
+
+    #[tokio::test]
+    async fn cancelling_an_unknown_connection_attempt_is_idempotent() {
+        assert!(!crate::session::ssh::cancel_connection_attempt(
+            "missing-attempt"
+        ));
     }
 }
 

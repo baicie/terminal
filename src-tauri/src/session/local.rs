@@ -16,6 +16,8 @@ use tokio::sync::{broadcast, Mutex};
 
 const LOCAL_CLOSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
+type LocalReadTask = tokio::task::JoinHandle<Result<(usize, [u8; 4096]), std::io::Error>>;
+
 /// Local Session 内部状态
 pub struct LocalPtyState {
     /// PTY 主端；同步控制操作通过阻塞线程执行。
@@ -52,6 +54,38 @@ struct LocalPtyResources {
     reader: Box<dyn std::io::Read + Send + 'static>,
     writer: Box<dyn std::io::Write + Send + 'static>,
     startup_command: Option<String>,
+}
+
+fn spawn_local_read(
+    reader: Arc<ParkingMutex<Box<dyn std::io::Read + Send + 'static>>>,
+) -> LocalReadTask {
+    tokio::task::spawn_blocking(move || {
+        let mut buf = [0u8; 4096];
+        let mut reader = reader.lock();
+        let n = reader.read(&mut buf)?;
+        Ok((n, buf))
+    })
+}
+
+async fn await_local_read_task(task: LocalReadTask, session_id: &str) {
+    await_local_read_task_with_timeout(task, session_id, LOCAL_CLOSE_TIMEOUT).await;
+}
+
+async fn await_local_read_task_with_timeout(
+    mut task: LocalReadTask,
+    session_id: &str,
+    timeout: std::time::Duration,
+) {
+    if tokio::time::timeout(timeout, &mut task).await.is_err() {
+        tracing::warn!(
+            session_id,
+            "local terminal blocking reader exceeded the close deadline"
+        );
+        // Tokio cannot cancel a blocking closure after it has started. Drop the
+        // handle after aborting instead of awaiting it, otherwise close hangs
+        // forever until the underlying PTY read happens to return.
+        task.abort();
+    }
 }
 
 fn setup_pty(
@@ -96,7 +130,95 @@ fn setup_pty(
         }
     }
     let startup_command = profile.and_then(|profile| profile.startup_command);
+    // The frontend already parses OSC 133/7 in every terminal, but nothing
+    // emitted those sequences, so prompt, command and cwd tracking were inert.
+    // The decision is made from the shell actually being launched rather than
+    // from `CommandBuilder::get_shell`, which answers with the user's login
+    // shell and would hand bash the snippet when zsh is the one being started.
+    let startup_command = match shell_integration_enabled()
+        .then(|| shell_integration_script(&shell))
+        .flatten()
+    {
+        Some(script) => {
+            command.env("TERMINAL_SHELL_INTEGRATION", "1");
+            Some(match startup_command {
+                Some(existing) => format!("{script}\n{existing}"),
+                None => script,
+            })
+        }
+        None => startup_command,
+    };
     setup_pty_with_command(cols, rows, command, startup_command)
+}
+
+/// Shell integration is on by default and switched off by setting
+/// `TERMINAL_SHELL_INTEGRATION=0` in the environment.
+///
+/// The snippet is injected into the user's interactive shell, so a user whose
+/// setup conflicts with it needs a way out that does not require rebuilding.
+/// Any other value, including an unset one, leaves it enabled.
+fn shell_integration_enabled() -> bool {
+    !matches!(
+        std::env::var("TERMINAL_SHELL_INTEGRATION").as_deref(),
+        Ok("0")
+    )
+}
+
+/// Returns the shell-integration snippet for the shell `command` launches, or
+/// `None` when that shell has no supported hook and must be left alone.
+///
+/// The emitted sequences are the ones the frontend already parses: OSC 133
+/// A/B/C/D for the prompt and command phases, and OSC 7 with a `file://` URL
+/// for the working directory. The frontend's `parseCwd` rejects anything that
+/// is not a `file:` URL, which is why the path is percent-encoded as a URI
+/// rather than written raw.
+///
+/// The snippet is emitted as a single line because it is written into a live
+/// PTY; a multi-line string would leave a continuation prompt on screen and
+/// change what the user sees at startup.
+fn shell_integration_script(shell: &str) -> Option<String> {
+    match std::path::Path::new(shell)
+        .file_name()
+        .and_then(|name| name.to_str())
+    {
+        Some("bash") => Some(bash_shell_integration()),
+        Some("zsh") => Some(zsh_shell_integration()),
+        _ => None,
+    }
+}
+
+/// Wraps the existing `PROMPT_COMMAND` list instead of overwriting it, so
+/// shell integration composes with whatever the user's own rc files already
+/// hook instead of silently disabling it.
+fn bash_shell_integration() -> String {
+    // Verified against a real interactive bash on a PTY: the DEBUG trap fires
+    // `133;D;<status>` at prompt time, then `133;A`, then the OSC 7 cwd.
+    // PROMPT_COMMAND is prepended to rather than replaced so an existing hook
+    // keeps running, and PS1 is left untouched so the prompt survives.
+    //
+    // A `trap ... DEBUG` would be the only way to emit `133;B`, and it is
+    // deliberately not used: bash has no additive trap, so setting one
+    // silently replaces whatever the user's own rc already installed. A real
+    // bashrc with a DEBUG trap was verified to lose it -- and with it every
+    // `133;B` -- while `133;A`, `133;D` and the cwd kept working without the
+    // trap. Since `command-start` only feeds an internal phase field with no
+    // consumer, trading a user's own tooling for it is the wrong deal.
+    "__TI_A(){ printf '\\033]133;D;%s\\007' \"$?\"; printf '\\033]133;A\\007'; printf '\\033]7;file://%s\\007' \"$PWD\"; }; \
+     PROMPT_COMMAND=\"__TI_A${PROMPT_COMMAND:+;$PROMPT_COMMAND}\""
+        .to_string()
+}
+
+fn zsh_shell_integration() -> String {
+    // Verified against a real interactive zsh on a PTY. `add-zsh-hook` appends,
+    // so the user's own precmd/preexec hooks keep running. Passing the hook a
+    // quoted string instead of a function name fails with "function definition
+    // file not found", so both hooks are named functions.
+    "__TI_A(){ printf '\\033]133;D;%s\\007' \"$?\"; printf '\\033]133;A\\007'; printf '\\033]7;file://%s\\007' \"$PWD\"; }; \
+     __TI_B(){ printf '\\033]133;B\\007'; }; \
+     autoload -Uz add-zsh-hook; \
+     add-zsh-hook precmd __TI_A; \
+     add-zsh-hook preexec __TI_B"
+        .to_string()
 }
 
 fn setup_pty_with_command(
@@ -232,6 +354,10 @@ impl LocalSession {
         let handle = tokio::spawn(async move {
             let mut shutdown_rx = shutdown_rx;
             let mut output_result = None;
+            // Keep the blocking read handle alive across select! cancellation.
+            // Normal exits await it; a stuck PTY read is detached after the
+            // bounded close timeout so shutdown cannot hang indefinitely.
+            let mut read_task = Some(spawn_local_read(reader_clone.clone()));
 
             loop {
                 tokio::select! {
@@ -245,17 +371,8 @@ impl LocalSession {
                         output_result = Some(result);
                         break;
                     }
-                    // 读取 PTY 数据：buffer 必须放在 spawn_blocking 内，
-                    // 否则跨 await 会被 borrow-checker 拒绝。
-                    result = tokio::task::spawn_blocking({
-                        let reader = reader_clone.clone();
-                        move || {
-                            let mut buf = [0u8; 4096];
-                            let mut r = reader.lock();
-                            let n = r.read(&mut buf)?;
-                            Ok::<(usize, [u8; 4096]), std::io::Error>((n, buf))
-                        }
-                    }) => {
+                    result = read_task.as_mut().expect("local reader task must exist") => {
+                        read_task = None;
                         match result {
                             Ok(Ok((0, _))) => {
                                 break;
@@ -290,8 +407,13 @@ impl LocalSession {
                                 break;
                             }
                         }
+                        read_task = Some(spawn_local_read(reader_clone.clone()));
                     }
                 }
+            }
+
+            if let Some(read_task) = read_task.take() {
+                await_local_read_task(read_task, &session_id_clone).await;
             }
 
             drop(output_tx);
@@ -471,7 +593,6 @@ impl LocalSession {
                         "local terminal reader task exceeded the close deadline"
                     );
                     task.abort();
-                    let _ = task.await;
                 }
             }
 
@@ -522,15 +643,53 @@ fn terminate_and_reap_child(child: &mut dyn portable_pty::Child) -> Result<(), S
     }
 }
 
+fn force_kill_local_process_group(
+    master: &Arc<ParkingMutex<Box<dyn portable_pty::MasterPty + Send>>>,
+    session_id: &str,
+) {
+    #[cfg(unix)]
+    {
+        let process_group = master.lock().process_group_leader();
+        let Some(process_group) = process_group.filter(|group| *group > 1) else {
+            tracing::debug!(
+                session_id,
+                "local PTY did not expose a process group to kill"
+            );
+            return;
+        };
+
+        // `ChildKiller::kill` only sends SIGHUP on Unix. A shell or one of its
+        // descendants may ignore it, so kill the whole PTY foreground group on
+        // the bounded reaper timeout to guarantee that wait can finish.
+        let result = unsafe { libc::kill(-process_group, libc::SIGKILL) };
+        if result != 0 {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() != Some(libc::ESRCH) {
+                tracing::warn!(
+                    session_id,
+                    process_group,
+                    %error,
+                    "failed to force-kill local PTY process group"
+                );
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = (master, session_id);
+    }
+}
+
 async fn finish_local_session(
     state: &Arc<Mutex<LocalPtyState>>,
     lifecycle: &SessionLifecycle,
     session_id: &str,
 ) {
-    let child = {
+    let (child, master) = {
         let mut state = state.lock().await;
         state.is_alive = false;
-        state.child.take()
+        (state.child.take(), state.master.clone())
     };
 
     if let Some(mut child) = child {
@@ -553,6 +712,7 @@ async fn finish_local_session(
                     "local terminal child reaper exceeded the close deadline"
                 );
                 reaper.abort();
+                force_kill_local_process_group(&master, session_id);
             }
         }
     }
@@ -570,6 +730,57 @@ pub(in crate::session) mod tests {
     use rustix::fd::BorrowedFd;
     #[cfg(unix)]
     use rustix::termios::{tcgetattr, LocalModes};
+
+    #[test]
+    fn shell_integration_snippets_stay_on_one_line_and_emit_the_parsed_sequences() {
+        // The snippet is written into a live PTY, so a newline would leave the
+        // user at a continuation prompt instead of a shell. Every sequence the
+        // frontend parses has to appear literally, because that parser is the
+        // only consumer and it does not tolerate a variant spelling.
+        for script in [bash_shell_integration(), zsh_shell_integration()] {
+            assert!(!script.contains('\n'), "script must stay on one line");
+            assert!(script.contains("133;D;%s"));
+            assert!(script.contains("133;A"));
+            assert!(script.contains("7;file://%s"));
+            // bash has no additive DEBUG trap, so installing one would replace
+            // whatever the user's rc already set. Losing a user's own trap to
+            // gain a `133;B` that nothing consumes is a bad trade.
+            assert!(!script.contains("trap "));
+            // PS1 must never be reassigned: overwriting it would replace the
+            // user's prompt instead of hooking alongside it.
+            assert!(!script.contains("PS1="));
+        }
+    }
+
+    #[test]
+    fn print_shell_integration_snippets_for_manual_pty_verification() {
+        // Not an assertion: this exists so the exact strings the app injects can
+        // be dumped and replayed against a real interactive shell on a PTY,
+        // which is the only way to prove the quoting survives a live shell.
+        if std::env::var_os("TERMINAL_DUMP_SHELL_INTEGRATION").is_none() {
+            return;
+        }
+        for (name, script) in [
+            ("bash", bash_shell_integration()),
+            ("zsh", zsh_shell_integration()),
+        ] {
+            println!("SNIPPET_{name}={script}");
+        }
+    }
+
+    #[test]
+    fn shell_integration_is_offered_only_for_shells_with_a_supported_hook() {
+        // A shell that cannot parse the snippet has to be launched untouched
+        // rather than be handed a script it would report as a syntax error.
+        assert!(shell_integration_script("/bin/bash").is_some());
+        assert!(shell_integration_script("/usr/local/bin/zsh").is_some());
+        // `-l` is appended for these shells, so the snippet has to be found
+        // from a bare name as well as an absolute path.
+        assert!(shell_integration_script("bash").is_some());
+        assert!(shell_integration_script("/bin/fish").is_none());
+        assert!(shell_integration_script("/bin/sh").is_none());
+        assert!(shell_integration_script("C:\\Windows\\System32\\cmd.exe").is_none());
+    }
 
     #[derive(Clone, Debug, Default)]
     pub(in crate::session) struct ChildProbe {
@@ -876,6 +1087,40 @@ pub(in crate::session) mod tests {
         )
     }
 
+    pub(in crate::session) fn fake_local_session_with_blocking_reader(
+        session_id: impl Into<String>,
+    ) -> (LocalSession, ChildProbe, tokio::sync::oneshot::Sender<()>) {
+        let probe = ChildProbe::default();
+        let (shutdown_tx, _) = broadcast::channel(1);
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let read_handle = tokio::spawn(async move {
+            let _ = release_rx.await;
+        });
+        let child: Box<dyn Child + Send + Sync> = Box::new(TrackingChild {
+            probe: probe.clone(),
+        });
+        let child_killer = child.clone_killer();
+        let state = LocalPtyState {
+            master: Arc::new(ParkingMutex::new(Box::new(FakeMasterPty))),
+            child: Some(child),
+            child_killer,
+            writer: Arc::new(ParkingMutex::new(Box::new(std::io::sink()))),
+            is_alive: true,
+            shutdown_tx,
+            read_handle: Arc::new(Mutex::new(Some(read_handle))),
+        };
+
+        (
+            LocalSession {
+                session_id: session_id.into(),
+                state: Arc::new(Mutex::new(state)),
+                lifecycle: SessionLifecycle::new(),
+            },
+            probe,
+            release_tx,
+        )
+    }
+
     pub(in crate::session) async fn simulate_natural_eof(session: &LocalSession) {
         finish_local_session(&session.state, &session.lifecycle, session.session_id()).await;
     }
@@ -984,6 +1229,39 @@ pub(in crate::session) mod tests {
     }
 
     #[cfg(unix)]
+    #[test]
+    fn force_kill_local_process_group_stops_a_shell_ignoring_sighup() {
+        let resources = setup_pty_with_command(
+            80,
+            24,
+            deterministic_test_command("trap '' HUP; while :; do sleep 1; done"),
+            None,
+        )
+        .expect("PTY should start for the process-group kill test");
+        let LocalPtyResources {
+            master,
+            mut child,
+            reader,
+            writer,
+            child_killer: _,
+            startup_command: _,
+        } = resources;
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        assert!(
+            master.lock().process_group_leader().is_some(),
+            "the PTY should expose the shell process group"
+        );
+        force_kill_local_process_group(&master, "local-process-group-kill-test");
+        let status = child.wait().expect("SIGKILL should let the child reap");
+        assert!(!status.success(), "the ignored-SIGHUP shell must be killed");
+
+        drop(reader);
+        drop(writer);
+        drop(master);
+    }
+
+    #[cfg(unix)]
     fn receive_pty_output_until(
         receiver: &std::sync::mpsc::Receiver<Option<Vec<u8>>>,
         output: &mut Vec<u8>,
@@ -1034,5 +1312,76 @@ pub(in crate::session) mod tests {
             (1, 1),
             "duplicate close must terminate and reap the child exactly once"
         );
+    }
+
+    #[tokio::test]
+    async fn local_reader_shutdown_waits_for_active_blocking_read() {
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let completed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let completed_clone = completed.clone();
+        let task = tokio::task::spawn_blocking(move || {
+            started_tx
+                .send(())
+                .expect("the test reader should report that it started");
+            release_rx
+                .recv()
+                .expect("the test reader should be released during shutdown");
+            completed_clone.store(true, Ordering::Release);
+            Ok::<(usize, [u8; 4096]), std::io::Error>((0, [0; 4096]))
+        });
+
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("the blocking read should start");
+
+        let mut waiter = Box::pin(await_local_read_task(task, "local-reader-test"));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), &mut waiter)
+                .await
+                .is_err(),
+            "shutdown must keep waiting while the active blocking read is pending"
+        );
+
+        release_tx
+            .send(())
+            .expect("the test reader should accept the shutdown release");
+        waiter.await;
+        assert!(
+            completed.load(Ordering::Acquire),
+            "shutdown must await the blocking read before completing"
+        );
+    }
+
+    #[tokio::test]
+    async fn local_reader_shutdown_does_not_await_aborted_blocking_read() {
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let task = tokio::task::spawn_blocking(move || {
+            started_tx
+                .send(())
+                .expect("the test reader should report that it started");
+            release_rx
+                .recv()
+                .expect("the test reader should be released after shutdown returns");
+            Ok::<(usize, [u8; 4096]), std::io::Error>((0, [0; 4096]))
+        });
+
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("the blocking read should start");
+
+        let waiter = await_local_read_task_with_timeout(
+            task,
+            "local-reader-timeout-test",
+            std::time::Duration::from_millis(20),
+        );
+        tokio::time::timeout(std::time::Duration::from_millis(250), waiter)
+            .await
+            .expect("shutdown must return after aborting an active blocking read");
+
+        release_tx
+            .send(())
+            .expect("the blocking read should be released after its handle is detached");
     }
 }

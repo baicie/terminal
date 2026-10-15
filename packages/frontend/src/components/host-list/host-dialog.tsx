@@ -37,6 +37,7 @@ const defaultHost: HostFormState = {
   jumpHostId: undefined,
   jumpHostAuthType: undefined,
   agentForwarding: false,
+  shellIntegration: 'off',
 }
 
 export const HostDialog: React.FC<HostDialogProps> = ({
@@ -52,9 +53,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
   const [portForwardDialogOpen, setPortForwardDialogOpen] = useState(false)
   const [environmentDialogOpen, setEnvironmentDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>(
-    [],
-  )
+  const [envVars, setEnvVars] = useState<{ key: string; value: string }[]>([])
 
   useEffect(() => {
     if (host) {
@@ -77,6 +76,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
         jumpHostId: host.jumpHostId,
         jumpHostAuthType: host.jumpHostAuthType,
         agentForwarding: host.agentForwarding ?? false,
+        shellIntegration: host.shellIntegration ?? 'off',
       })
       if (host.environment) {
         setEnvVars(

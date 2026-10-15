@@ -53,9 +53,8 @@ class FakeTerminal {
     } else if (data.includes("'RESIZED_SIZE_'")) {
       this.resizeProbeCount += 1
       const marker =
-        this.resizeProbeCount === 1
-          ? `RESIZED_SIZE_${nonce} 24 80`
-          : this.protocol.resizeMarker
+        this.protocol.resizeMarkers[this.resizeProbeCount - 1] ??
+        this.protocol.resizeMarker
       this.append(marker)
     }
   }
@@ -113,6 +112,7 @@ describe('runTerminalSmoke', () => {
       nonce,
       probeIntervalMs: 1,
       nextFrame: async () => {},
+      onInteractive: () => 1234.2,
     })
 
     expect(result).toMatchObject({
@@ -124,6 +124,13 @@ describe('runTerminalSmoke', () => {
       loadEndVisible: true,
       afterLoadVisible: true,
       resizedSizeVisible: true,
+      resizeTrace: config.resizeSequence.map(step => ({
+        requestedCols: step.cols,
+        requestedRows: step.rows,
+        observedCols: step.cols,
+        observedRows: step.rows,
+      })),
+      firstConnectionMs: 1235,
     })
     expect(term.inputs.some(value => value.includes("'READY_'"))).toBe(true)
     expect(term.inputs.some(value => value.includes('中文🙂'))).toBe(true)
@@ -136,9 +143,33 @@ describe('runTerminalSmoke', () => {
     expect(term.inputs.some(value => value.includes("'RESIZED_SIZE_'"))).toBe(
       true,
     )
-    expect(term.resizeProbeCount).toBeGreaterThanOrEqual(2)
-    expect(term.resizes).toEqual([{ cols: 97, rows: 31 }])
+    expect(term.resizeProbeCount).toBeGreaterThanOrEqual(
+      config.resizeSequence.length,
+    )
+    expect(term.resizes).toEqual(config.resizeSequence)
     expect(term.listeners.size).toBe(0)
+  })
+
+  it('can stop after the parser-visible ready marker before requesting reconnect', async () => {
+    const term = new FakeTerminal()
+    terminalForBuffer = term
+    const onInteractive = vi.fn(() => 456)
+
+    const result = await runTerminalSmoke(term, config, {
+      nonce,
+      onInteractive,
+      stopAfterInteractive: true,
+      nextFrame: async () => {},
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      stage: 'ready',
+      firstConnectionMs: 456,
+      loadBytes: 0,
+    })
+    expect(onInteractive).toHaveBeenCalledOnce()
+    expect(term.inputs).toHaveLength(1)
   })
 
   it('continues only after the active-session barrier proves stale output was rejected', async () => {
