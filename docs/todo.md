@@ -861,6 +861,7 @@
 - [x] `TerminalSessionOutputBuffer` 对未激活 session 增加 1024 个 session 的全局上限；无后端 ACK 流控的最旧 pending session 会被驱逐，带 ACK 的输出不静默丢弃，仍交由生命周期回收。
 - [x] `run-remote-cold-start-stopwatch.mjs` 导出跨平台 `appConfigDirectory()`，支持 macOS Application Support、Linux XDG_CONFIG_HOME 和 Windows APPDATA；Linux marker-only readiness 明确报告 `axProbe: none`。
 - [x] real-machine workflow 增加 Linux shell interaction matrix 与远程 SSH prompt cold-start 步骤；Node 24 下新增/修复契约测试全部通过。
+- [x] 2026-10-16 real-machine run `38819241300`：macOS SSH/shell/remote prompt/WKWebView checkpoint 全绿，Windows PowerShell/cmd ConPTY 全绿；Linux SSH/password 与 bash/zsh shell 通过。fish 因暂无独立 dialect 保持待验收。
 - [x] 历史构建 `9cb3125b…` 的完整门禁通过：前端 963、Team Server 103、Rust 193+3、Node 140；macOS SSH 12/12、shell 333/246/406ms、冷启动 3676–4503ms、远程 prompt 1493–5647ms 均来自同一 instrumented debug binary `8f097da8…`。当前证据以本节顶部列出的 `3dfd71f9…` / `40e58ef9…` 为准。
 - [ ] 真人物理键盘 30 轮、中文 IME/Option/dead key/vim/nano、合盖睡眠/VPN/蜂窝切换和 Windows/Pageant/PTY/串口仍待实机；当前没有对应设备。
 

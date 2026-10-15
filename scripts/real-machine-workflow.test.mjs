@@ -67,12 +67,12 @@ test('Linux real-machine job runs the daily shell matrix and remote prompt probe
   const workflow = await readWorkflow()
   assert.match(
     workflow,
-    /apt-get install -y --no-install-recommends[\s\S]*openssh-server[\s\\]*\\\n\s+bash[\s\\]*\\\n\s+zsh[\s\\]*\\\n\s+fish[\s\\]*\\\n\s+vim[\s\\]*\\\n\s+nano/,
+    /apt-get install -y --no-install-recommends[\s\S]*openssh-server[\s\\]*\\\n\s+bash[\s\\]*\\\n\s+zsh[\s\\]*\\\n\s+vim[\s\\]*\\\n\s+nano/,
     'every shell and interactive editor used by the Linux matrix must be installed first',
   )
   assert.match(
     workflow,
-    /xvfb-run -a pnpm smoke:shell-probe:matrix -- --shells bash,zsh,fish cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt/,
+    /xvfb-run -a pnpm smoke:shell-probe:matrix -- --shells bash,zsh cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt/,
   )
   assert.match(workflow, /name: Measure Linux remote SSH cold-start to prompt marker/)
   assert.match(

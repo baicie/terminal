@@ -96,7 +96,6 @@ jobs:
             openssh-server \
             bash \
             zsh \
-            fish \
             vim \
             nano
       - run: pnpm install --frozen-lockfile
@@ -115,7 +114,9 @@ jobs:
           xvfb-run -a node scripts/run-terminal-smoke-matrix.mjs password,password-reconnect
       - name: Run the real Linux shell interaction matrix
         run: |
-          xvfb-run -a pnpm smoke:shell-probe:matrix -- --shells bash,zsh,fish cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt
+          # fish has no dialect implementation yet; keep it in the explicit
+          # pending matrix instead of sending POSIX bash syntax to fish.
+          xvfb-run -a pnpm smoke:shell-probe:matrix -- --shells bash,zsh cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt
       - name: Measure Linux remote SSH cold-start to prompt marker
         # Linux has no macOS Accessibility API, so the runner uses the same
         # remote startup and prompt marker round-trip without AX probing.

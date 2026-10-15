@@ -2594,10 +2594,10 @@ _本节最后更新: 2026-10-11_
 
 **关于 total 预算**：`totalGzip` 由 550KB 放宽到 560KB。放宽的不是首屏预算（仍是 240KB，实际 118.98KB），而是整个 lazy 图的总量；超出部分来自本轮之前累积的未提交功能，且首屏修复已经把其中 63KB 移出关键路径。这一条改动必须与“哪个功能增加了体积”的说明一起提交，否则就只是悄悄挪动红线。
 
-### Issue #85: Windows shell dialect 没有任何 CI 执行路径 🔄 CI 已接入，待 runner 复验
+### Issue #85: Windows shell dialect 没有任何 CI 执行路径 ✅ Windows runner 已通过，Linux shell 矩阵收敛至已实现 dialect
 
 **严重程度**：Important（跨平台正确性）
-**状态**：🔄 已修复代码与 CI 配置，待远端 runner 证据
+**状态**：✅ 代码与 CI 配置已修复；Windows hosted runner 已通过，bash/zsh Linux hosted runner 已通过。fish dialect、Windows OpenSSH/Pageant/串口仍待单独验收（2026-10-16）
 
 **问题**：`real-machine-matrix.yml` 只有 macOS 与 Linux 两个 job，而 Windows 的 PowerShell / cmd dialect 是按 Windows 命令语法单独写的，无法在 POSIX runner 上执行。也就是说这两种命令语言会完全未经执行就发布。此外 `run-terminal-shell-probe-matrix.mjs` 的 `--shells` 只校验 POSIX 的 `SUPPORTED_SHELLS`，任何 Windows job 传 `--shells powershell` 都会在第一个用例之前直接失败。
 
@@ -2608,13 +2608,15 @@ _本节最后更新: 2026-10-11_
 - dialect 未声明的用例 fail-fast，避免实际运行范围小于请求范围却被当成完整运行。
 - 单用例 `run-terminal-shell-probe.mjs` 现在沿用同一张 Windows dialect 用例表，在构建或启动 Tauri 前拒绝不支持的组合，避免把配置拒绝误报成探针超时。
 - workflow 契约测试比对 job 里的用例过滤串与前端 `DIALECT_CASES`，不一致前置到本地门禁而不是数分钟后的 CI 失败。
+- Windows runner 首次真实执行暴露 `pnpm.cmd` 在 Node `spawn(..., { shell: false })` 下返回 `EINVAL`；`buildFreshTauriBinary` 对 Windows 使用 `shell: true`，并以单测锁定 Windows/Unix 启动差异。
+- Linux runner 首次真实执行暴露 workflow 把尚未实现独立 dialect 的 fish 套入 POSIX case 全集；workflow 现在只请求已实现且已验证的 bash/zsh，fish 保持待验收，不再把错误语法当作 shell 回归。
 
 **同时修掉的两个真实缺陷**：
 
 - `selectShellProbeCases` 有一段残留分支引用了作用域中不存在的 `shells`，一旦触发就是 `ReferenceError` 而非可读的报错。
 - `terminal-smoke-sshd.mjs` 的 `interrupt()` 把等待 outage 的定时器 `unref()` 了，导致 Node 事件循环可以先退出、promise 悬空，同文件后续 13 个用例被连带取消，并让 `pnpm verify` 以 13 个 `cancelledByParent` 失败。取消原因与真实缺陷无关，容易被误判成 flaky。
 
-**未完成**：该 job 尚未在远端 runner 上 dispatch 成功执行。Windows OpenSSH 服务、Pageant 与串口硬件仍需要已安装服务或外接硬件的实机环境，hosted runner 无法覆盖，见 Issue #21/#22/#39。
+**远端验证**：workflow run `38819241300` 的 macOS job 全绿（SSH 认证/重连、shell 与 remote prompt、WKWebView checkpoint），Windows job 全绿（PowerShell/cmd ConPTY）；Linux 的基础 SSH/password smoke 与 bash/zsh shell 已通过，整 job 因 fish 未实现 dialect 而失败，修正过滤后待下一次 run 复验。Windows OpenSSH 服务、Pageant 与串口硬件仍需要已安装服务或外接硬件的实机环境，hosted runner 无法覆盖，见 Issue #21/#22/#39。
 
 ### Issue #86: 输入队列 1 MiB 上限对文本与原始输入都无测试覆盖 ✅ 已补测
 
