@@ -18,6 +18,7 @@ class FakeTerminal {
   readonly listeners = new Set<() => void>()
   resizeProbeCount = 0
   emitMarkers = true
+  deferFinalResizeDimensions = false
   private readonly protocol = createTerminalSmokeProtocol(config, nonce)
 
   readonly buffer = {
@@ -62,6 +63,10 @@ class FakeTerminal {
   resize(cols: number, rows: number) {
     this.cols = cols
     this.rows = rows
+    if (this.deferFinalResizeDimensions && cols === config.targetCols) {
+      this.cols -= 1
+      this.rows -= 1
+    }
     this.resizes.push({ cols, rows })
   }
 
@@ -148,6 +153,32 @@ describe('runTerminalSmoke', () => {
     )
     expect(term.resizes).toEqual(config.resizeSequence)
     expect(term.listeners.size).toBe(0)
+  })
+
+  it('waits for the final render frame before checking terminal dimensions', async () => {
+    const term = new FakeTerminal()
+    terminalForBuffer = term
+    term.deferFinalResizeDimensions = true
+    let frameCount = 0
+
+    const result = await runTerminalSmoke(term, config, {
+      nonce,
+      probeIntervalMs: 1,
+      nextFrame: async () => {
+        frameCount += 1
+        if (frameCount === 2) {
+          term.cols = config.targetCols
+          term.rows = config.targetRows
+        }
+      },
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      terminalCols: config.targetCols,
+      terminalRows: config.targetRows,
+    })
+    expect(frameCount).toBe(2)
   })
 
   it('can stop after the parser-visible ready marker before requesting reconnect', async () => {

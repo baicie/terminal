@@ -234,6 +234,10 @@ export async function runTerminalSmoke(
       })
     }
 
+    // xterm can finish parsing the final marker before its renderer and resize
+    // callbacks have settled. Yield once so the postconditions observe the
+    // same dimensions that the user-facing terminal surface exposes.
+    await nextFrame()
     const loadEndVisible = hasExactLogicalLine(term, protocol.loadEndMarker)
     const afterLoadVisible = hasExactLogicalLine(term, protocol.afterLoadMarker)
     const resizedSizeVisible = hasExactLogicalLine(term, protocol.resizeMarker)
@@ -245,7 +249,17 @@ export async function runTerminalSmoke(
       term.cols !== config.targetCols ||
       term.rows !== config.targetRows
     ) {
-      throw new Error('Terminal smoke postconditions are not visible')
+      throw new Error(
+        `Terminal smoke postconditions are not visible: ${JSON.stringify({
+          terminalCols: term.cols,
+          terminalRows: term.rows,
+          loadEndVisible,
+          afterLoadVisible,
+          resizedSizeVisible,
+          resizeTraceLength: resizeTrace.length,
+          expectedResizeTraceLength: config.resizeSequence.length,
+        })}`,
+      )
     }
 
     stage = 'complete'
