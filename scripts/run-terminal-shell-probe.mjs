@@ -13,6 +13,16 @@ import { startTerminalSmokeSshd } from './terminal-smoke-sshd.mjs'
 export const RESULT_TIMEOUT_MS = 60_000
 export const CLEANUP_GRACE_MS = 5_000
 export const FORCE_KILL_GRACE_MS = 2_000
+// WebKitGTK can leave a Mesa shader-cache writer alive for a short period
+// after the Tauri process closes.  Let fs.rm retry the temporary directory
+// while that child finishes instead of turning a successful probe into an
+// ENOTEMPTY failure.
+const RUN_DIRECTORY_CLEANUP_OPTIONS = {
+  recursive: true,
+  force: true,
+  maxRetries: 20,
+  retryDelay: 100,
+}
 export const SUPPORTED_SHELLS = ['bash', 'zsh', 'fish']
 // Windows shells get their own dialect instead of the POSIX case scripts:
 // every existing case is written in shell syntax neither of them parses.
@@ -340,7 +350,7 @@ export async function runShellProbe({
     // The fixture outlives a failed spawn, so it has to be torn down here too;
     // otherwise a single bad launch leaks an sshd into the next run.
     if (fixture) await stopFixture(fixture)
-    await dependencies.rm(runDirectory, { recursive: true, force: true })
+    await dependencies.rm(runDirectory, RUN_DIRECTORY_CLEANUP_OPTIONS)
     throw new Error(`Failed to start shell probe binary: ${error.message}`)
   }
   const application = waitForClose(child)
@@ -391,7 +401,7 @@ export async function runShellProbe({
       if (status?.error) throw status.error
     } finally {
       if (fixture) await stopFixture(fixture)
-      await dependencies.rm(runDirectory, { recursive: true, force: true })
+      await dependencies.rm(runDirectory, RUN_DIRECTORY_CLEANUP_OPTIONS)
     }
   }
 }

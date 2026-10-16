@@ -184,7 +184,7 @@ test('runner passes a dedicated case and result path to the gated binary', async
   assert.deepEqual(calls.at(-1), [
     'rm',
     '/tmp/shell-probe-test',
-    { recursive: true, force: true },
+    { recursive: true, force: true, maxRetries: 20, retryDelay: 100 },
   ])
 })
 
@@ -280,7 +280,7 @@ test('the ssh transport starts the real sshd fixture and hands the app its confi
   assert.deepEqual(calls.at(-1), [
     'rm',
     '/tmp/shell-probe-ssh-test',
-    { recursive: true, force: true },
+    { recursive: true, force: true, maxRetries: 20, retryDelay: 100 },
   ])
 })
 
@@ -330,6 +330,9 @@ test('runner cleans the temporary directory when the app emits an error', async 
     /fixture process failed/,
   )
   assert.deepEqual(calls, [
-    ['/tmp/shell-probe-error', { recursive: true, force: true }],
+    [
+      '/tmp/shell-probe-error',
+      { recursive: true, force: true, maxRetries: 20, retryDelay: 100 },
+    ],
   ])
 })

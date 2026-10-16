@@ -1790,3 +1790,9 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] 远程 marker readiness 不再编译或轮询 macOS AX helper；`axProbe: 'none'` 仅允许 remote 模式，避免 hosted runner 将无关的 Swift 编译超时报告成 SSH prompt 失败。
 - [x] Linux real-machine remote prompt 步骤使用 30 秒观测窗口，保留实际 `spawnToReadyMs`，而本地 10 秒可靠终端预算仍由独立 cold-start 证据验证。
 - [x] 定向 stopwatch/workflow 测试 36/36、完整 `pnpm verify` 通过；新的 real-machine run 仍待复验。
+
+### 2026-10-16 Phase 6.68 - Linux shell probe 退出清理竞态 ✅ 已修复，待矩阵复验
+
+- [x] `run-terminal-shell-probe` 的临时目录递归删除增加 20 次、每次 100ms 的有界重试，覆盖 WebKitGTK/Mesa shader-cache 子进程退出后的短暂 `ENOTEMPTY`。
+- [x] shell probe Node 回归测试与矩阵契约测试通过；原始业务错误仍优先保留，清理失败不会覆盖探针诊断。
+- [ ] 提交后的 macOS/Linux/Windows real-machine workflow 需重新确认 Linux shell 矩阵与 remote prompt 均执行并通过。

@@ -2925,3 +2925,15 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 **修复**：编辑输入改为在 1/2/3/4 秒依次发送，shell 侧验证命令延后到 5 秒；新增回归断言，要求验证命令时间点晚于最后一个编辑按键。`waitForTerminalSmokeFrame` 同时拆到 `terminal-smoke-frame.ts`，让 `run-terminal-smoke.ts` 保持在 300 行限制内。
 
 **验证**：Node 与前端协议门禁、`pnpm verify` 全部通过；macOS 当前 instrumented debug binary `9c3948b0…` 上本地 shell 14/14、真实 SSH shell 7/7、SSH 认证/重连 13/13、本地冷启动 5140ms、远程 prompt 3617ms 全部通过。Linux runner 曾有的 `local/bash/vim-edit` 超时需要新的 real-machine workflow run 复验。
+
+### Issue #102: Linux WebKitGTK shell probe 退出后的 Mesa 缓存迟写导致清理误报失败 ✅ 已修复
+
+**严重程度**：Important（验收基础设施不稳定）
+**状态**：✅ 已修复；新的 real-machine run 待复验
+**修复时间**：2026-10-16
+
+**问题**：Linux hosted runner 的 shell probe 用例已经完成并写出成功结果，但 Tauri/WebKitGTK 的子进程可能在退出事件之后继续向隔离 `HOME/.cache/mesa_shader_cache` 写入。临时目录立即递归删除会收到 `ENOTEMPTY`，runner 将清理异常当成用例失败，后续 Linux remote prompt 步骤也会被跳过。
+
+**修复**：shell probe 的临时目录清理使用 `fs.rm` 的递归有界重试（20 次、每次 100ms），给迟退出的缓存写入者留下完成时间；清理仍保持强制删除，且不改变应用结果解析和原始进程错误。
+
+**验证**：新增清理选项回归断言，shell probe 与矩阵契约定向测试 26/26 通过；提交后的 real-machine workflow 需要确认 Linux shell 与 remote prompt 两个步骤均能继续执行。
