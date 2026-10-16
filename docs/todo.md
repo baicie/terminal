@@ -1777,3 +1777,10 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] reader 自然 EOF/错误、显式断连和应用退出统一在摘除 session 后排空在途写入，再发布 `serial-close` 或完成 cleanup；reader 等待有 2 秒有界诊断。
 - [x] Rust 串口定向测试 10/10、shutdown 定向测试 2/2、完整 `pnpm verify` 通过。
 - [ ] Windows/Linux 串口驱动在阻塞读/写异常时的硬件拔线与重连仍需真实设备矩阵。
+
+### 2026-10-16 Phase 6.66 - Vim shell probe 时序与 smoke 源码规模修复 ✅ 自动化通过
+
+- [x] Vim 用例把编辑按键安排为 1/2/3/4 秒，并将 shell 侧验证命令延后到 5 秒；回归断言锁定验证命令必须晚于最后一个编辑按键，避免 Linux runner 上编辑器尚未退出就被验证命令抢占导致超时。
+- [x] 将 `waitForTerminalSmokeFrame` 拆到 `terminal-smoke-frame.ts`，`run-terminal-smoke.ts` 降至 297 行并通过源码规模门禁。
+- [x] 同一 instrumented debug binary `9c3948b0…`（source fingerprint `6e597e22…`）上的本地冷启动 5140ms、远程 bash prompt marker 3617ms、真实 SSH 13/13、本地 shell 14/14 和真实 SSH shell 7/7 全部通过。
+- [ ] 新提交的 macOS/Linux/Windows real-machine workflow 仍需完成一次全矩阵复验；人工物理键盘、中文 IME、Option/dead key、Windows OpenSSH Agent/Pageant 与串口硬件继续按实机清单验收。

@@ -2901,3 +2901,15 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 为实机矩阵准备的 loopback OpenSSH fixture 现在支持显式选择 `/bin/sh`、`/bin/bash` 或 `/bin/zsh`，默认仍为 `/bin/sh`，并对其他值 fail-closed。当前源码 instrumented binary `3dfd71f9…` 上，bash 远程 prompt marker 在 5112ms 完成；默认 `/bin/sh` 真实 SSH shell 交互 7/7 通过。zsh 远程 prompt stopwatch 尚未单独采集。
 
 **待验收**：fish、sh 或未知登录 shell 的 off/mismatch 负向行为、tmux/screen、Windows shell 与真实用户主机仍需单独矩阵。
+
+### Issue #100: Vim shell probe 在编辑器完成前发送验证命令导致 runner 超时 ✅ 已修复
+
+**严重程度**：Important（跨平台验收不稳定）
+**状态**：✅ 已修复；待新的 macOS/Linux/Windows real-machine run 复验
+**修复时间**：2026-10-16
+
+**问题**：shell probe 的 Vim 用例在固定延迟下发送编辑按键后，很快就向 shell 发送验证命令。Linux runner 上 Vim 的启动和退出时序更慢时，验证命令会在编辑器仍占用 PTY 时到达，导致编辑结果没有写入目标文件，后续 marker 一直等不到而被报告为 `local/bash/vim-edit` 超时。该问题是探针时序竞态，不是终端会话本身的 Vim 交互错误。
+
+**修复**：编辑输入改为在 1/2/3/4 秒依次发送，shell 侧验证命令延后到 5 秒；新增回归断言，要求验证命令时间点晚于最后一个编辑按键。`waitForTerminalSmokeFrame` 同时拆到 `terminal-smoke-frame.ts`，让 `run-terminal-smoke.ts` 保持在 300 行限制内。
+
+**验证**：Node 与前端协议门禁、`pnpm verify` 全部通过；macOS 当前 instrumented debug binary `9c3948b0…` 上本地 shell 14/14、真实 SSH shell 7/7、SSH 认证/重连 13/13、本地冷启动 5140ms、远程 prompt 3617ms 全部通过。Linux runner 曾有的 `local/bash/vim-edit` 超时需要新的 real-machine workflow run 复验。

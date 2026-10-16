@@ -58,10 +58,12 @@ const PROFILE_REVIEWED_HASH = new Map([
   // #98 over the actual SSH transport rather than only injected dependencies.
   // The current-source rerun also covers the 13-case SSH matrix, the local
   // cold-start stopwatch, the remote prompt stopwatch, and local/real-SSH
-  // shell probes.
+  // shell probes. Vim probes now wait for the editor to finish before sending
+  // the shell-side verification command, and the terminal smoke frame helper
+  // is split into its own source file to keep the source-size gate satisfied.
   [
     'debug',
-    '3dfd71f9361f4b46ca703dd06372519a54ca8d2adb96f5c62b4ed863e0b474b8',
+    '9c3948b0419e5e7588e9871311ed5aeed08ef1879451cf65a3d49cd8359a2a7c',
   ],
 ])
 

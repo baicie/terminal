@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-16T06:03:19+08:00",
+  "recordedAt": "2026-10-16T08:08:15+08:00",
   "recordedDate": "2026-10-16",
   "kind": "tauri-local-shell-interaction-current-worktree",
   "environment": {
@@ -8,12 +8,12 @@
     "node": "24.16.0"
   },
   "revision": {
-    "head": "54f3fbbab39a97e1370d9880b89760dbd06a1c41",
+    "head": "b3cd1dfc627aa15a8e11c345bd7b603dee2be5a1",
     "dirtyWorktree": true
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "3dfd71f9361f4b46ca703dd06372519a54ca8d2adb96f5c62b4ed863e0b474b8"
+    "sha256": "9c3948b0419e5e7588e9871311ed5aeed08ef1879451cf65a3d49cd8359a2a7c"
   },
   "command": "node scripts/run-terminal-shell-probe-matrix.mjs --reuse-binary [--shells bash,zsh|--transport ssh]",
   "shells": [
@@ -31,7 +31,7 @@
   "sshCases": [
     {
       "case": "cat-eof",
-      "durationMs": 454,
+      "durationMs": 585,
       "trace": [
         "ready",
         "pass"
@@ -40,7 +40,7 @@
     },
     {
       "case": "readline-history",
-      "durationMs": 354,
+      "durationMs": 338,
       "trace": [
         "ready",
         "step",
@@ -50,7 +50,7 @@
     },
     {
       "case": "readline-tab",
-      "durationMs": 554,
+      "durationMs": 459,
       "trace": [
         "ready",
         "step",
@@ -60,7 +60,7 @@
     },
     {
       "case": "vim-edit",
-      "durationMs": 2109,
+      "durationMs": 5269,
       "trace": [
         "ready",
         "step",
@@ -70,7 +70,7 @@
     },
     {
       "case": "nano-edit",
-      "durationMs": 4845,
+      "durationMs": 4807,
       "trace": [
         "ready",
         "step",
@@ -80,7 +80,7 @@
     },
     {
       "case": "pty-resize",
-      "durationMs": 1465,
+      "durationMs": 1512,
       "trace": [
         "ready",
         "step",
@@ -90,7 +90,7 @@
     },
     {
       "case": "ctrl-c-interrupt",
-      "durationMs": 1085,
+      "durationMs": 1151,
       "trace": [
         "ready",
         "step",
@@ -104,7 +104,7 @@
     {
       "shell": "bash",
       "case": "cat-eof",
-      "durationMs": 432,
+      "durationMs": 482,
       "trace": [
         "ready",
         "pass"
@@ -114,7 +114,7 @@
     {
       "shell": "bash",
       "case": "readline-history",
-      "durationMs": 242,
+      "durationMs": 246,
       "trace": [
         "ready",
         "step",
@@ -136,7 +136,7 @@
     {
       "shell": "bash",
       "case": "vim-edit",
-      "durationMs": 1931,
+      "durationMs": 5122,
       "trace": [
         "ready",
         "step",
@@ -147,7 +147,7 @@
     {
       "shell": "bash",
       "case": "nano-edit",
-      "durationMs": 4625,
+      "durationMs": 4634,
       "trace": [
         "ready",
         "step",
@@ -158,7 +158,7 @@
     {
       "shell": "bash",
       "case": "pty-resize",
-      "durationMs": 1317,
+      "durationMs": 1337,
       "trace": [
         "ready",
         "step",
@@ -169,7 +169,7 @@
     {
       "shell": "bash",
       "case": "ctrl-c-interrupt",
-      "durationMs": 1026,
+      "durationMs": 1036,
       "trace": [
         "ready",
         "step",
@@ -180,7 +180,7 @@
     {
       "shell": "zsh",
       "case": "cat-eof",
-      "durationMs": 446,
+      "durationMs": 381,
       "trace": [
         "ready",
         "pass"
@@ -190,7 +190,7 @@
     {
       "shell": "zsh",
       "case": "readline-history",
-      "durationMs": 291,
+      "durationMs": 278,
       "trace": [
         "ready",
         "step",
@@ -201,7 +201,7 @@
     {
       "shell": "zsh",
       "case": "readline-tab",
-      "durationMs": 493,
+      "durationMs": 450,
       "trace": [
         "ready",
         "step",
@@ -212,7 +212,7 @@
     {
       "shell": "zsh",
       "case": "vim-edit",
-      "durationMs": 1978,
+      "durationMs": 5165,
       "trace": [
         "ready",
         "step",
@@ -223,7 +223,7 @@
     {
       "shell": "zsh",
       "case": "nano-edit",
-      "durationMs": 4690,
+      "durationMs": 4671,
       "trace": [
         "ready",
         "step",
@@ -234,7 +234,7 @@
     {
       "shell": "zsh",
       "case": "pty-resize",
-      "durationMs": 1817,
+      "durationMs": 1359,
       "trace": [
         "ready",
         "step",
@@ -245,7 +245,7 @@
     {
       "shell": "zsh",
       "case": "ctrl-c-interrupt",
-      "durationMs": 1121,
+      "durationMs": 1036,
       "trace": [
         "ready",
         "step",
@@ -261,7 +261,7 @@
     "Option/dead key、中文 IME、物理键盘以及 Windows/Pageant/PTY/串口实机仍未验收。"
   ],
   "source": {
-    "fingerprint": "40e58ef991817331947900228d2c2d0de7ee1a49109a58d03459b9293460e3b4",
+    "fingerprint": "6e597e22caeea5f413246617a1dece8f8e4c7458579b8267ac66ec2d702015d9",
     "fingerprintCovers": [
       "packages/frontend/src",
       "src-tauri/src",
