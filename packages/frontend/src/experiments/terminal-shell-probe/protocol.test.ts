@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { casesForDialect, CAT_EOF_DELAY_MS, readySteps } from './dialect'
+import {
+  casesForDialect,
+  CAT_EOF_DELAY_MS,
+  readySteps,
+  verifyDelayMs,
+} from './dialect'
 import {
   createShellProbeInterruptCommand,
   createShellProbeInterruptPassCommand,
@@ -117,6 +122,7 @@ describe('terminal shell probe protocol', () => {
     expect([...delays].sort((a, b) => a - b)).toEqual(delays)
     // The verification command carries both step and pass, so the case still
     // has to run after the last keystroke.
+    expect(verifyDelayMs('vim-edit')).toBeGreaterThan(delays.at(-1) ?? 0)
     expect(createShellProbeVimVerifyCommand('probe_1')).toContain('grep -q')
   })
 

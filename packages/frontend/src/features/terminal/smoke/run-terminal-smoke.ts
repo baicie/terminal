@@ -14,11 +14,13 @@ import {
   createTerminalSmokeNonce,
   createTerminalSmokeProtocol,
 } from './terminal-smoke-protocol'
+import { waitForTerminalSmokeFrame } from './terminal-smoke-frame'
+
+export { waitForTerminalSmokeFrame } from './terminal-smoke-frame'
 
 const RUST_DEADLINE_RESERVE_MS = 15_000
 const DEFAULT_FRONTEND_TIMEOUT_MS = 165_000
 const DEFAULT_PROBE_INTERVAL_MS = 250
-const NEXT_FRAME_FALLBACK_MS = 100
 
 export interface TerminalSmokeTerminal extends ParsedTerminalBuffer {
   readonly rows: number
@@ -48,23 +50,6 @@ export interface WaitForTerminalSmokeInteractiveOptions {
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
   return String(error)
-}
-
-export function waitForTerminalSmokeFrame(): Promise<void> {
-  return new Promise(resolve => {
-    let settled = false
-    let frameId: number | null = null
-    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
-    const finish = () => {
-      if (settled) return
-      settled = true
-      if (frameId !== null) cancelAnimationFrame(frameId)
-      if (fallbackTimer !== null) clearTimeout(fallbackTimer)
-      resolve()
-    }
-    frameId = requestAnimationFrame(finish)
-    fallbackTimer = setTimeout(finish, NEXT_FRAME_FALLBACK_MS)
-  })
 }
 
 /**

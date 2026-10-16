@@ -325,6 +325,6 @@ export function stepSteps(
  * because the editor, not the shell, owns the TTY until it exits.
  */
 export function verifyDelayMs(caseName: ShellProbeCase): number {
-  return caseName === 'nano-edit' ? 4_500 : 1_800
+  return caseName === 'nano-edit' ? 4_500 : caseName === 'vim-edit' ? 5_000 : 1_800
 }
 
