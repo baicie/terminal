@@ -123,6 +123,8 @@ jobs:
         # hosted WebKitGTK runner can spend more than the product's 10-second
         # local readiness budget starting its first process, so this step uses
         # a wider observation window and records the actual elapsed value.
+        env:
+          TERMINAL_DEBUG_SSH_PROFILE: '1'
         run: |
           xvfb-run -a pnpm smoke:remote-cold-start -- \
             --app-path "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal" \
