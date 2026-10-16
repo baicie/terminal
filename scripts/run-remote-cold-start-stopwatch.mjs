@@ -200,6 +200,7 @@ export async function runRemoteColdStartStopwatch({
     const result = await dependencies.runStopwatch({
       appPath: executable,
       timeoutMs,
+      axProbe: 'none',
       readinessMode: 'remote',
       homeDirectory: home,
       markerPath,

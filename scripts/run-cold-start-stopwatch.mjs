@@ -359,8 +359,13 @@ export async function runColdStartStopwatch({
   if (!Number.isSafeInteger(cleanupGraceMs) || cleanupGraceMs < 1) {
     throw new Error('cold-start stopwatch cleanup grace must be a positive integer')
   }
-  if (axProbe !== 'native' && axProbe !== 'osascript') {
-    throw new Error('cold-start stopwatch AX probe must be native or osascript')
+  if (axProbe !== 'native' && axProbe !== 'osascript' && axProbe !== 'none') {
+    throw new Error(
+      'cold-start stopwatch AX probe must be native or osascript; none is only valid for remote readiness',
+    )
+  }
+  if (axProbe === 'none' && readinessMode !== 'remote') {
+    throw new Error('AX probe none is only supported for remote readiness')
   }
   if (!READINESS_MODES.includes(readinessMode)) {
     throw new Error(
@@ -474,18 +479,19 @@ export async function runColdStartStopwatch({
         while (!settled && !closed) {
           if (spawnStartedAt === null) return
           try {
-            if (macOs) {
+            if (macOs && axProbe !== 'none') {
               lastReadiness = await runAccessibilityProbe(child.pid, dependencies, {
                 mode: axProbe,
                 nativeProbePath,
               })
               lastProbeError = null
             } else {
-              // Linux runners do not expose macOS Accessibility APIs. The
-              // remote marker is still an end-to-end signal: startup writes
-              // the first marker, then the prompt command travels through
-              // the Tauri WebView, SSH PTY and terminal output before the
-              // second marker is written.
+              // Linux runners do not expose macOS Accessibility APIs, and a
+              // remote marker run does not need AX at all. In both cases the
+              // marker is the end-to-end signal: startup writes the first
+              // marker, then the prompt command travels through the Tauri
+              // WebView, SSH PTY and terminal output before the second marker
+              // is written.
               lastReadiness = null
               lastProbeError = null
             }

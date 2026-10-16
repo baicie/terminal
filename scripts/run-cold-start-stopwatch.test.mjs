@@ -254,6 +254,7 @@ test('supports remote readiness with an isolated home and shell marker', async (
   })
   assert.equal(result.ok, true)
   assert.equal(result.readinessMode, 'remote')
+  assert.equal(result.axProbe, 'native')
   assert.equal(result.markerReady, true)
   assert.deepEqual(result.readiness, {
     localTab: false,
@@ -271,6 +272,31 @@ test('supports remote readiness with an isolated home and shell marker', async (
         filePath === markerPath && encoding === 'utf8',
     ),
   )
+})
+
+test('allows remote readiness to skip AX probing entirely', async () => {
+  const harness = createHarness({ readiness: ['0,0,0,0'] })
+  const markerPath = '/private/tmp/remote-cold-home/REMOTE_COLD_MARKER'
+  const readFile = harness.dependencies.readFile
+  harness.dependencies.readFile = async (filePath, encoding) => {
+    if (filePath === markerPath) return 'REMOTE_COLD_MARKER'
+    return readFile(filePath, encoding)
+  }
+
+  const result = await runColdStartStopwatch({
+    appPath: '/Applications/Termius.app/Contents/MacOS/terminal',
+    timeoutMs: 1_000,
+    axProbe: 'none',
+    readinessMode: 'remote',
+    markerPath,
+    markerContent: 'REMOTE_COLD_MARKER',
+    dependencies: harness.dependencies,
+  })
+
+  assert.equal(result.axProbe, 'none')
+  assert.equal(result.readiness, null)
+  assert.equal(harness.calls.swiftc.length, 0)
+  assert.equal(harness.calls.native.length, 0)
 })
 
 test('uses remote markers when WebKit hides the connected status and input', async () => {

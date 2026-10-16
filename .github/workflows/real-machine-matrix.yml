@@ -119,10 +119,14 @@ jobs:
           xvfb-run -a pnpm smoke:shell-probe:matrix -- --shells bash,zsh cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt
       - name: Measure Linux remote SSH cold-start to prompt marker
         # Linux has no macOS Accessibility API, so the runner uses the same
-        # remote startup and prompt marker round-trip without AX probing.
+        # remote startup and prompt marker round-trip without AX probing. The
+        # hosted WebKitGTK runner can spend more than the product's 10-second
+        # local readiness budget starting its first process, so this step uses
+        # a wider observation window and records the actual elapsed value.
         run: |
           xvfb-run -a pnpm smoke:remote-cold-start -- \
-            --app-path "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal"
+            --app-path "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal" \
+            --timeout-ms 30000
 
   windows-shell-matrix:
     name: Windows PowerShell and cmd shell matrix

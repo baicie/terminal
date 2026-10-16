@@ -1784,3 +1784,9 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] 将 `waitForTerminalSmokeFrame` 拆到 `terminal-smoke-frame.ts`，`run-terminal-smoke.ts` 降至 297 行并通过源码规模门禁。
 - [x] 同一 instrumented debug binary `9c3948b0…`（source fingerprint `6e597e22…`）上的本地冷启动 5140ms、远程 bash prompt marker 3617ms、真实 SSH 13/13、本地 shell 14/14 和真实 SSH shell 7/7 全部通过。
 - [ ] 新提交的 macOS/Linux/Windows real-machine workflow 仍需完成一次全矩阵复验；人工物理键盘、中文 IME、Option/dead key、Windows OpenSSH Agent/Pageant 与串口硬件继续按实机清单验收。
+
+### 2026-10-16 Phase 6.67 - 远程 prompt cold-start 跨平台测量适配 ✅ 自动化通过
+
+- [x] 远程 marker readiness 不再编译或轮询 macOS AX helper；`axProbe: 'none'` 仅允许 remote 模式，避免 hosted runner 将无关的 Swift 编译超时报告成 SSH prompt 失败。
+- [x] Linux real-machine remote prompt 步骤使用 30 秒观测窗口，保留实际 `spawnToReadyMs`，而本地 10 秒可靠终端预算仍由独立 cold-start 证据验证。
+- [x] 定向 stopwatch/workflow 测试 36/36、完整 `pnpm verify` 通过；新的 real-machine run 仍待复验。

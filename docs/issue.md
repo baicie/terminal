@@ -2902,6 +2902,18 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 
 **待验收**：fish、sh 或未知登录 shell 的 off/mismatch 负向行为、tmux/screen、Windows shell 与真实用户主机仍需单独矩阵。
 
+### Issue #101: Hosted runner 的远程 prompt cold-start 被 AX 编译和 Linux 启动抖动误报为失败 ✅ 已修复
+
+**严重程度**：Important（验收基础设施不稳定）
+**状态**：✅ 已修复；新的 real-machine run 待复验
+**修复时间**：2026-10-16
+
+**问题**：远程 prompt cold-start 的完成条件是远端 startup marker 和 prompt marker 文件都已回读，但 macOS runner 仍在每次运行前编译并轮询 AX helper。AX 与 remote marker 无关，Swift helper 在 hosted runner 上偶发超过 15 秒，导致 SSH 测量尚未开始就失败。Linux 没有 AX，却仍使用 10 秒默认观察窗口，WebKitGTK 首次启动超过窗口时只报告 `markerReady=false`，无法区分平台启动抖动和终端协议失败。
+
+**修复**：stopwatch 增加仅供 remote readiness 使用的 `axProbe: 'none'`，远程 runner 显式关闭 AX 编译和轮询；Linux workflow 将观察窗口设为 30 秒并继续记录真实 elapsed 值。local readiness 仍禁止 `none`，保持 AX 条件和本地 10 秒门禁不变。
+
+**验证**：stopwatch、remote stopwatch 与 workflow 契约定向测试 36/36，完整 `pnpm verify` 通过。新的跨平台 real-machine run 需要确认 Linux marker 可以在扩大窗口内完成，且 macOS remote prompt 不再受 helper 编译影响。
+
 ### Issue #100: Vim shell probe 在编辑器完成前发送验证命令导致 runner 超时 ✅ 已修复
 
 **严重程度**：Important（跨平台验收不稳定）

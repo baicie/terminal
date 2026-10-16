@@ -173,6 +173,7 @@ test('passes the exact marker content to the cold-start stopwatch', async () => 
   })
 
   assert.equal(calls.stopwatch.length, 1)
+  assert.equal(calls.stopwatch[0].axProbe, 'none')
   assert.equal(calls.stopwatch[0].markerContent, 'REMOTE_COLD_MARKER')
   assert.deepEqual(calls.stopwatch[0].markerChecks, [
     {
