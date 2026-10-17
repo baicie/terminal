@@ -32,6 +32,23 @@ const NON_RETRYABLE_MESSAGES = [
   'terminal input queue exceeded',
 ]
 
+// russh reports a transport failure that happens during authentication as
+// `authentication_failed`, even when the credentials were never evaluated.
+// Keep credential and host-key failures terminal, but let a transient network
+// boundary (VPN/cellular switch, route black hole, or a sleeping host) retry.
+const TRANSIENT_AUTHENTICATION_MESSAGES = [
+  'timed out',
+  'timeout',
+  'connection reset',
+  'connection refused',
+  'connection aborted',
+  'connection closed',
+  'network is unreachable',
+  'no route to host',
+  'broken pipe',
+  'transport closed',
+]
+
 export function classifyTerminalFailure(error: unknown): TerminalFailure {
   const formatted = formatIpcError(error)
   const record =
@@ -40,11 +57,17 @@ export function classifyTerminalFailure(error: unknown): TerminalFailure {
       : undefined
   const kind = record?.type ?? record?.kind
   const normalized = formatted.toLowerCase()
+  const transientAuthenticationFailure =
+    kind === 'authentication_failed' &&
+    TRANSIENT_AUTHENTICATION_MESSAGES.some(message =>
+      normalized.includes(message),
+    )
   return {
     error: formatted,
     retryable:
-      !(typeof kind === 'string' && NON_RETRYABLE_KINDS.has(kind)) &&
-      !NON_RETRYABLE_MESSAGES.some(message => normalized.includes(message)),
+      transientAuthenticationFailure ||
+      (!(typeof kind === 'string' && NON_RETRYABLE_KINDS.has(kind)) &&
+        !NON_RETRYABLE_MESSAGES.some(message => normalized.includes(message))),
   }
 }
 

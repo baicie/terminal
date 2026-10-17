@@ -2985,3 +2985,27 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 **修复**：手动模式现在复用原生 TIS 输入源 helper，在探针开始前切换到 ASCII 键盘，完成手动轮次后恢复原输入源；切换或恢复失败都会保留明确错误，不会把未执行的轮次标记为通过。
 
 **测试**：新增手动 ASCII overlap 的临时切换与恢复回归；输入探针定向测试 21/21 通过。当前桌面控制只能验证窗口聚焦，不能产生探针要求的真人 `keydown` 证据，因此 30 轮物理键盘、中文 IME composition 和 Option/dead key 仍保持人工待验收。
+
+### Issue #107: shell probe 将 fish/sh 误当作 POSIX dialect ✅ 已修复
+
+**严重程度**：Important（验收结果可能误报）
+**状态**：✅ 已修复；fish/sh 独立 dialect 与实机矩阵仍待实现
+**修复时间**：2026-10-17
+
+**问题**：shell probe runner 将 `fish` 列在 POSIX shell 清单中，随后发送 `captured=$(cat)`、`if [ ... ]`、`VAR=$(...)` 等 bash/zsh 命令。fish 的赋值和条件语法不同，`sh` 也不保证 readline、编辑器和其它 POSIX 探针前置条件；失败会表现为超时或错误结果，无法证明对应 shell 的交互行为。
+
+**修复**：`bash`/`zsh` 保留 POSIX dialect；显式请求 `fish` 或 `sh` 会在构建或启动前 fail-fast，并给出缺少 dialect 的明确错误。现有 real-machine workflow 本来只请求 bash/zsh，因此与实际执行范围一致。
+
+**测试**：新增 runner 与 matrix 的 fish/sh fail-fast 回归；shell probe、matrix 和 dialect 合约定向测试 31/31 通过。产品终端仍可启动 fish/sh，但独立 dialect、tmux/screen 与真实 shell 矩阵仍需后续实现。
+
+### Issue #108: 认证阶段的瞬时网络错误被当作永久认证失败 ✅ 已修复
+
+**严重程度**：High（网络恢复后会话无法自行恢复）
+**状态**：✅ 已修复；VPN/蜂窝切换和真实路由黑洞仍需 macOS 实机观察
+**修复时间**：2026-10-17
+
+**问题**：SSH 建链在认证阶段遇到网络超时或传输重置时，Rust 将错误统一序列化为 `authentication_failed`。前端按错误类型把所有认证失败视为永久错误，于是远端主机在 VPN 尚未就绪、路由暂时黑洞或睡眠唤醒后恢复时，首次连接会停在 error，必须手动点击重试。
+
+**修复**：错误类型仍保持稳定的 `authentication_failed` 合约，但前端只在消息同时表明瞬时网络边界（timeout、connection reset/closed/refused、network unreachable、no route、broken pipe 或 transport closed）时覆盖该类型的不可重试默认；凭据被拒绝、host key、密钥/证书解析和用户取消继续立即终止。
+
+**测试**：新增首次连接认证 timeout 与 transport reset 回归，断言自动进入 reconnecting 并在下一次连接成功；原有永久认证失败测试继续断言不创建重试计时器。前端重连定向测试 29 项、Rust SSH 定向测试 50 项通过。

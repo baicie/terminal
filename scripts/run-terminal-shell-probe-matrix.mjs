@@ -10,6 +10,7 @@ import {
 } from './run-terminal-smoke.mjs'
 import { runShellProbe } from './run-terminal-shell-probe.mjs'
 import {
+  SHELLS_WITHOUT_DIALECT,
   SUPPORTED_SHELLS,
   SUPPORTED_WINDOWS_SHELLS,
   SUPPORTED_TRANSPORTS,
@@ -94,6 +95,15 @@ export function shellProbeShellsFromArguments(argumentsList) {
     .split(',')
     .map(shell => shell.trim())
     .filter(Boolean)
+  const noDialect = shells.filter(shell =>
+    SHELLS_WITHOUT_DIALECT.includes(shell),
+  )
+  if (noDialect.length > 0) {
+    throw new Error(
+      `shell probe shell '${noDialect.join("','")}' has no dialect; ` +
+        `expected one of ${SUPPORTED_SHELLS.concat(SUPPORTED_WINDOWS_SHELLS).join('/')}`,
+    )
+  }
   // Windows shells are accepted here as well: `--shells powershell` is the
   // only way to ask for the Windows dialect, and rejecting it would make the
   // dialect unreachable no matter what the Windows job asked for. Which shells

@@ -16,13 +16,13 @@
 
 ## 当前进度与当前目标
 
-> 快照日期：2026-10-16；当前分支：`codex/terminal-reliability-matrix`。
+> 快照日期：2026-10-17；当前分支：`codex/terminal-reliability-matrix`。
 
 | 项目 | 状态 |
 | --- | --- |
 | 当前目标 | 🔄 先完成 macOS 人工物理键盘、中文 IME、Option/dead key 与日常交互验收；Windows/Pageant/串口因暂无设备保留待验证 |
-| 当前进度 | Phase 6.20/6.21 建立首次可靠终端 < 10 秒门禁；Phase 6.57-6.69 完成会话生命周期、自动重连、Shell Integration、串口清理与 Linux 验收 runner 加固；Phase 6.70 修复慢速 workspace 恢复与启动兜底竞争（Issue #104）；Phase 6.71 统一 xterm、移动端快捷键栏和命令总线的主动输入接管（Issue #105）；Phase 6.72 让手动输入探针可临时切换 ASCII 输入源并在验收后恢复原输入源（Issue #106）。当前 instrumented debug binary `2cbe9ab2…`（源码指纹 `fbf0048c…`）上本地冷启动 3387ms、远程 bash prompt marker 2579ms、真实 SSH 13/13、本地 shell 14/14、真实 SSH shell 7/7 全绿；real-machine run `38997341490` 的 macOS、Windows、Linux job 全绿，Linux remote marker 已通过。AX 在远程模式仅作诊断，人工键盘/IME、Windows Agent/Pageant/PTY 与串口硬件仍未验收。 |
-| 自动化基线 | 2026-10-17 当前证据：同一 instrumented debug binary（`2cbe9ab2…`）上本地冷启动 3387ms、远程 bash prompt marker 2579ms，均低于 10 秒；真实 SSH 矩阵 13/13 全绿（含首连 outage、5 秒 outage 与 20 秒 host-wake）；shell 交互本地 bash/zsh 14/14、真实 loopback sshd `/bin/sh` fixture 7/7 全绿；real-machine run `38997341490` 的 macOS、Windows、Linux job 全绿，Linux remote startup/prompt marker 已通过。人工键盘/IME 与跨平台硬件验收仍待完成。证据见 [`当前工作树 shell 交互`](verification/2026-10-11-macos-shell-interaction-current.json)、[`当前工作树 SSH 矩阵`](verification/2026-10-11-macos-ssh-matrix-current.json) 与 [`远程 prompt`](verification/2026-10-11-macos-remote-shell-prompt-rerun.json)。 |
+| 当前进度 | Phase 6.20/6.21 建立首次可靠终端 < 10 秒门禁；Phase 6.57-6.69 完成会话生命周期、自动重连、Shell Integration、串口清理与 Linux 验收 runner 加固；Phase 6.70 修复慢速 workspace 恢复与启动兜底竞争（Issue #104）；Phase 6.71 统一 xterm、移动端快捷键栏和命令总线的主动输入接管（Issue #105）；Phase 6.72 让手动输入探针可临时切换 ASCII 输入源并在验收后恢复原输入源（Issue #106）；Phase 6.73 收紧 shell probe 的 dialect 声明，fish/sh 在有独立 dialect 前 fail-fast（Issue #107）；Phase 6.74 让认证阶段的瞬时网络错误继续自动重连，同时保留凭据错误的终止语义（Issue #108）。当前 instrumented debug binary `cd22a67c…`（源码指纹 `6a4c8a80…`）上本地冷启动 3940ms、远程 bash prompt marker 3376ms、真实 SSH 13/13、本地 shell 14/14、真实 SSH shell 7/7 全绿；real-machine run `38997341490` 的 macOS、Windows、Linux job 全绿，Linux remote marker 已通过。AX 在远程模式仅作诊断，人工键盘/IME、Windows Agent/Pageant/PTY 与串口硬件仍未验收。 |
+| 自动化基线 | 2026-10-17 当前证据：同一 instrumented debug binary（`cd22a67c…`）上本地冷启动 3940ms、远程 bash prompt marker 3376ms，均低于 10 秒；真实 SSH 矩阵 13/13 全绿（含首连 outage、5 秒 outage 与 20 秒 host-wake）；shell 交互本地 bash/zsh 14/14、真实 loopback sshd `/bin/sh` fixture 7/7 全绿；real-machine run `38997341490` 的 macOS、Windows、Linux job 全绿，Linux remote startup/prompt marker 已通过。人工键盘/IME 与跨平台硬件验收仍待完成。证据见 [`当前工作树 shell 交互`](verification/2026-10-11-macos-shell-interaction-current.json)、[`当前工作树 SSH 矩阵`](verification/2026-10-11-macos-ssh-matrix-current.json) 与 [`远程 prompt`](verification/2026-10-11-macos-remote-shell-prompt-rerun.json)。 |
 | 输入验收增量 | Phase 6.24 最终源码构建下严格 30 轮 CGEvent 通过，全部回读 `617364`、零重发且原输入源恢复；这不是人工键盘验收。Phase 6.25 修复组合态 Escape 不写入 PTY并增加 composition 证据校验；Phase 6.26 证明 xterm 到前端输入 FIFO 的协议编码；Phase 6.27 于 2026-10-10 完成真实 Tauri/WKWebView + local PTY 的 SGR mouse、bracketed paste、raw X10 三 case 精确回读；Phase 6.31 当前工作树完成 bash/zsh 各七 case、14/14 全绿，另有默认 `/bin/sh` loopback SSH 7/7；Phase 6.52 为手动 IME 增加 TIS 非 ASCII 输入源资格门禁并记录 id/type，但没有把人工输入结果标记为通过。中文 IME 自动注入未触发真实 composition。逐轮 CGEvent 结果见 [`验收记录`](verification/2026-09-22-macos-input-probe.json)，raw probe 结果见 [`2026-10-10-macos-raw-input.json`](verification/2026-10-10-macos-raw-input.json)，当前 shell 交互结果见 [`2026-10-11-macos-shell-interaction-current.json`](verification/2026-10-11-macos-shell-interaction-current.json)，旧二进制历史记录见 [`2026-10-11-macos-shell-interaction-probe.json`](verification/2026-10-11-macos-shell-interaction-probe.json)，此前失败边界见 [`阻塞记录`](verification/2026-10-10-macos-raw-input-blocked.json)。 |
 | 下一验证目标 | 完成 macOS 人工物理键盘 30 轮、中文 IME、Option/dead key、vim/nano 交互，以及真实合盖休眠/唤醒、VPN/蜂窝切换；Windows OpenSSH Agent/Pageant/PTY 与串口硬件因暂无设备保持未验证。host-wake 自动化只证明应用内恢复协议，不替代上述实机验收。 |
 
@@ -31,6 +31,10 @@
 > 2026-10-16：real-machine run `38819241300` 在 Windows hosted runner 上通过 PowerShell/cmd ConPTY shell 矩阵，在 macOS hosted runner 上通过 SSH、shell、remote prompt 与 WKWebView checkpoint；Linux 的 bash/zsh shell 及 SSH/password smoke 已通过。Linux workflow 已移除尚无独立 dialect 的 fish 全集请求，fish、Windows OpenSSH/Pageant 与串口硬件仍按实机清单验收。
 
 > 2026-10-16：Vim shell probe 现在按 1/2/3/4 秒发送编辑输入，并在 5 秒后才发送 shell 侧验证命令，回归断言确保验证命令晚于最后一个编辑按键；`waitForTerminalSmokeFrame` 已拆为独立模块，debug 证据更新为 binary `9c3948b0…` / source `6e597e22…`。
+
+> 2026-10-17：shell probe 不再把 fish/sh 的 POSIX 命令误标为可执行 dialect；显式请求会在构建或启动前报告缺少 dialect，避免超时结果被误读为 shell 交互失败。fish/sh 的产品终端仍可启动，独立探针 dialect 与实机矩阵继续待实现。
+
+> 2026-10-17：认证阶段的网络超时、连接重置和路由不可达会沿用远程会话的自动重连预算；凭据拒绝、host key 和密钥解析失败仍立即停在错误状态，不会反复尝试。
 
 > 2026-10-16：远程 prompt cold-start 只依赖 SSH/终端 marker 时不再编译 macOS AX helper；Linux hosted runner 的 WebKitGTK 首次进程启动使用 30 秒观测窗口并记录真实耗时，避免把测量工具的 AX 编译或平台启动抖动误报为终端协议失败。
 
@@ -1052,4 +1056,4 @@ const response = await teamApi.listTeams()
 
 ---
 
-_文档更新时间: 2026-10-17 (Phase 6.72 手动输入探针输入源切换已补齐；real-machine run 38997341490 全绿，macOS 人工/IME 与 Windows Agent/Pageant/串口硬件仍待验证)_
+_文档更新时间: 2026-10-17 (Phase 6.74 认证阶段瞬时网络错误纳入自动重连；real-machine run 38997341490 全绿，macOS 人工/IME 与 Windows Agent/Pageant/串口硬件仍待验证)_

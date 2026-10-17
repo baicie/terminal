@@ -350,6 +350,46 @@ describe('TerminalSessionManager reconnect state machine', () => {
     await manager.close(remoteRequest.tabId)
   })
 
+  it.each([
+    [
+      'authentication timeout',
+      'authenticate SSH user timed out before its deadline',
+    ],
+    ['authentication transport reset', 'auth failed: connection reset by peer'],
+  ])(
+    'retries %s caused by a transient network failure',
+    async (_label, message) => {
+      vi.mocked(startTerminalShell)
+        .mockRejectedValueOnce({
+          type: 'authentication_failed',
+          message,
+        })
+        .mockResolvedValueOnce('session-2')
+      const states: TerminalSessionSnapshot[] = []
+      const manager = new TerminalSessionManager({
+        maxAttempts: 2,
+        sleep: async () => {},
+        jitter: delayMs => delayMs,
+      })
+      manager.attach(remoteRequest, {
+        onOutput: () => {},
+        onState: state => states.push(state),
+      })
+
+      await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-2'))
+
+      expect(states.at(-1)?.status).toBe('connected')
+      expect(startTerminalShell).toHaveBeenCalledTimes(2)
+      expect(states).toContainEqual(
+        expect.objectContaining({
+          status: 'reconnecting',
+          reason: message,
+        }),
+      )
+      await manager.close(remoteRequest.tabId)
+    },
+  )
+
   it('retries an exhausted network failure without a browser wake event', async () => {
     vi.mocked(startTerminalShell)
       .mockResolvedValueOnce('session-1')

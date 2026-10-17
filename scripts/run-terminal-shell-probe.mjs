@@ -23,7 +23,13 @@ const RUN_DIRECTORY_CLEANUP_OPTIONS = {
   maxRetries: 20,
   retryDelay: 100,
 }
-export const SUPPORTED_SHELLS = ['bash', 'zsh', 'fish']
+// The POSIX probe commands exercise bash/zsh line-editing semantics.  They
+// are not a generic POSIX script: fish has different assignment/conditional
+// syntax and /bin/sh may be dash without readline history.  Keep shells that
+// have no matching frontend dialect explicit so an operator gets a clear
+// rejection instead of a probe timeout or a misleading result.
+export const SUPPORTED_SHELLS = ['bash', 'zsh']
+export const SHELLS_WITHOUT_DIALECT = ['fish', 'sh']
 // Windows shells get their own dialect instead of the POSIX case scripts:
 // every existing case is written in shell syntax neither of them parses.
 export const SUPPORTED_WINDOWS_SHELLS = ['powershell', 'cmd']
@@ -230,6 +236,12 @@ export async function runShellProbe({
   const dependencies = { ...defaultDependencies, ...overrides }
   const windowsShell = SUPPORTED_WINDOWS_SHELLS.includes(shell)
   const unixShell = shell === undefined || SUPPORTED_SHELLS.includes(shell)
+  if (SHELLS_WITHOUT_DIALECT.includes(shell)) {
+    throw new Error(
+      `Terminal shell probe shell ${shell} has no dialect; ` +
+        `expected one of ${SUPPORTED_SHELLS.concat(SUPPORTED_WINDOWS_SHELLS).join('/')}`,
+    )
+  }
   if (dependencies.platform === 'win32' && !windowsShell) {
     throw new Error(
       `Terminal shell probe on Windows requires --shells ${SUPPORTED_WINDOWS_SHELLS.join('/')}`,

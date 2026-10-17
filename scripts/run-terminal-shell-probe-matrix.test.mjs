@@ -87,10 +87,10 @@ test('selects explicitly requested shells independently from probe cases', () =>
   assert.deepEqual(
     shellProbeShellsFromArguments([
       '--shells',
-      'bash,zsh,fish',
+      'bash,zsh',
       'cat-eof,readline-history,readline-tab',
     ]),
-    ['bash', 'zsh', 'fish'],
+    ['bash', 'zsh'],
   )
   assert.deepEqual(shellProbeShellsFromArguments(['--release']), [undefined])
 })
@@ -118,10 +118,10 @@ test('reuses an existing instrumented binary only when requested', () => {
 test('fails closed when an explicitly requested shell is unavailable', () => {
   assert.throws(
     () =>
-      assertShellsAvailable(['bash', 'zsh', 'fish'], {
-      isAvailable: shell => shell !== 'fish',
+      assertShellsAvailable(['bash', 'zsh'], {
+      isAvailable: shell => shell !== 'zsh',
       }),
-    /requested shell executable\(s\) unavailable: fish/,
+    /requested shell executable\(s\) unavailable: zsh/,
   )
   assert.doesNotThrow(
     () => assertShellsAvailable([undefined], { isAvailable: () => false }),
@@ -130,6 +130,15 @@ test('fails closed when an explicitly requested shell is unavailable', () => {
   assert.doesNotThrow(() =>
     assertShellsAvailable(['bash', 'zsh'], { isAvailable: () => true }),
   )
+})
+
+test('rejects shells that have no matching probe dialect', () => {
+  for (const shell of ['fish', 'sh']) {
+    assert.throws(
+      () => shellProbeShellsFromArguments(['--shells', shell]),
+      new RegExp(`shell probe shell '${shell}' has no dialect`),
+    )
+  }
 })
 
 test('defaults to the local transport and parses an explicit one', () => {

@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-17T10:53:52+08:00",
+  "recordedAt": "2026-10-17T04:36:59.232Z",
   "recordedDate": "2026-10-16",
   "kind": "tauri-real-ssh-matrix-current-worktree",
   "command": "pnpm smoke:ssh-matrix --reuse-binary",
@@ -10,91 +10,91 @@
     "docker": "29.7.2"
   },
   "revision": {
-    "head": "b3cd1dfc627aa15a8e11c345bd7b603dee2be5a1",
+    "head": "codex/terminal-reliability-matrix",
     "dirtyWorktree": true
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "2cbe9ab21e3f10057fb810ce35816bda3a5d154f80fc59080fbcc0e9388f47b1"
+    "sha256": "cd22a67c98742c94f40fb51466a172ed8bce556e72f75d433de326fbf89e7df0"
   },
   "allCasesPassed": true,
   "cases": [
     {
       "name": "key",
-      "firstConnectionMs": 2156,
-      "durationMs": 7296,
+      "firstConnectionMs": 1183,
+      "durationMs": 8011,
       "uniqueSessionCount": 10
     },
     {
       "name": "key-reconnect",
-      "firstConnectionMs": 1658,
-      "durationMs": 7753,
+      "firstConnectionMs": 1091,
+      "durationMs": 8411,
       "uniqueSessionCount": 11
     },
     {
       "name": "key-outage-reconnect",
-      "firstConnectionMs": 965,
-      "durationMs": 15417,
+      "firstConnectionMs": 1080,
+      "durationMs": 15278,
       "uniqueSessionCount": 11
     },
     {
       "name": "key-outage-wake-reconnect",
-      "firstConnectionMs": 1800,
-      "durationMs": 32987,
+      "firstConnectionMs": 1186,
+      "durationMs": 28222,
       "uniqueSessionCount": 11
     },
     {
       "name": "key-first-connect-outage",
-      "firstConnectionMs": 9886,
-      "durationMs": 14875,
+      "firstConnectionMs": 9090,
+      "durationMs": 15249,
       "uniqueSessionCount": 10
     },
     {
       "name": "password",
-      "firstConnectionMs": 1519,
-      "durationMs": 7047,
+      "firstConnectionMs": 1333,
+      "durationMs": 6981,
       "uniqueSessionCount": 10
     },
     {
       "name": "password-reconnect",
-      "firstConnectionMs": 1780,
-      "durationMs": 7517,
+      "firstConnectionMs": 920,
+      "durationMs": 7574,
       "uniqueSessionCount": 11
     },
     {
       "name": "agent",
-      "firstConnectionMs": 1040,
-      "durationMs": 6607,
+      "firstConnectionMs": 966,
+      "durationMs": 6695,
       "uniqueSessionCount": 10
     },
     {
       "name": "agent-reconnect",
-      "firstConnectionMs": 969,
-      "durationMs": 7255,
+      "firstConnectionMs": 991,
+      "durationMs": 7536,
       "uniqueSessionCount": 11
     },
     {
       "name": "cert",
-      "firstConnectionMs": 736,
-      "durationMs": 6716,
+      "firstConnectionMs": 1129,
+      "durationMs": 8350,
       "uniqueSessionCount": 10
     },
     {
       "name": "cert-reconnect",
-      "firstConnectionMs": 931,
-      "durationMs": 7900,
+      "firstConnectionMs": 2187,
+      "durationMs": 9603,
       "uniqueSessionCount": 11
     },
     {
       "name": "jump",
-      "firstConnectionMs": 863,
-      "durationMs": 8552,
+      "firstConnectionMs": 1957,
+      "durationMs": 9880,
       "uniqueSessionCount": 10
     },
     {
       "name": "jump-reconnect",
-      "firstConnectionMs": 1152,
-      "durationMs": 10313,
+      "firstConnectionMs": 1304,
+      "durationMs": 10004,
       "uniqueSessionCount": 11
     }
   ],
@@ -105,7 +105,7 @@
     "Real lid-close sleep/wake, VPN handover, and cellular network switching remain unobserved on macOS hardware; the host-wake case synthesizes the retryable wake checkpoint."
   ],
   "source": {
-    "fingerprint": "fbf0048cf98087397d4be538cc8e9ab46ff5d43ea3226ed6dffd7fbfa7942ce0",
+    "fingerprint": "6a4c8a80f51be8d7df5a8a48c8d4e15bdc8d56c83e7fbdb5c1abac8691bc880b",
     "fingerprintCovers": [
       "packages/frontend/src",
       "src-tauri/src",
@@ -115,7 +115,7 @@
     ],
     "note": "Debug evidence cannot be validated against the artifact on disk, because pnpm verify relinks target/debug/terminal as a bare cargo build. This content fingerprint of the sources these scenarios exercise is what makes a stale measurement detectable."
   },
-  "rerunNote": "Re-measured on one freshly built instrumented bundle binary after the serial platform classification and lifecycle fixes. All 13 cases completed successfully in this run.",
+  "rerunNote": "Fresh current-source 13-case real SSH run on the same instrumented debug binary as the cold-start and shell evidence.",
   "note": "Current-source instrumented debug binary with 13 real SSH cases: key, password, agent, certificate and jump authentication, reconnects, synthesized outages and the first-connect outage. All 13 cases passed on one binary.",
   "loadFailureNote": "The earlier high-load run is retained only in working logs; this current-source run completed all 13 cases cleanly.",
   "priorLoadFailureNote": "A prior high-load run is retained only in the working logs; this evidence file records the clean current-source run."

@@ -95,6 +95,19 @@ test('a Windows shell is rejected on a Unix host', async () => {
   )
 })
 
+test('shells without a probe dialect are rejected before building', async () => {
+  for (const shell of ['fish', 'sh']) {
+    await assert.rejects(
+      runShellProbe({
+        skipBuild: true,
+        shell,
+        dependencies: { platform: 'darwin' },
+      }),
+      new RegExp(`shell ${shell} has no dialect`),
+    )
+  }
+})
+
 test('a Windows shell rejects a case outside its dialect before spawning', async () => {
   await assert.rejects(
     runShellProbe({

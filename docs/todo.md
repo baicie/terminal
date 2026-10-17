@@ -1,9 +1,9 @@
 # Terminal 项目待办事项
 
 > 基于设计文档 `docs/design.md` 整理的待办事项
-> 更新时间：2026-10-16（Phase 6.63：远程 shell startup 与 prompt marker 已复验；macOS 实机与人工键盘/IME 仍待验收）
+> 更新时间：2026-10-17（Phase 6.74：认证阶段瞬时网络错误纳入自动重连；macOS 实机与人工键盘/IME 仍待验收）
 
-> 最新验证：当前证据统一来自 debug binary `3dfd71f9…`，源码指纹为 `40e58ef9…`；证据门禁已通过。
+> 最新验证：当前证据统一来自 debug binary `cd22a67c…`，源码指纹为 `6a4c8a80…`；证据门禁已通过。
 
 ---
 
@@ -1822,3 +1822,15 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] `run-input-probe.mjs --inject manual --input-source ascii` 在当前输入源为中文输入法时临时选择 ASCII 键盘，并在验收结束后恢复原输入源。
 - [x] 新增切换与恢复回归，输入探针定向测试 21/21 通过；恢复失败仍会使验收失败，不会伪造通过结果。
 - [ ] 真人物理键盘 30 轮、中文 IME composition、Option/dead key、合盖睡眠/VPN/蜂窝切换，以及 Windows Agent/Pageant/PTY/串口硬件仍待实机验收。
+
+### 2026-10-17 Phase 6.73 - shell probe dialect 声明收紧 ✅ 自动化通过
+
+- [x] `run-terminal-shell-probe` 与 matrix runner 不再把 fish/sh 复用 POSIX 命令表；显式请求会在构建或启动前报告缺少 dialect。
+- [x] 新增 fish/sh fail-fast 契约回归；shell probe、matrix 与 dialect 合约定向测试 31/31 通过。
+- [ ] fish/sh 独立交互 dialect、tmux/screen 及对应真实 shell 矩阵仍待实现和实机验收。
+
+### 2026-10-17 Phase 6.74 - 认证阶段瞬时网络错误自动重连 ✅ 自动化通过
+
+- [x] 认证阶段的超时、连接重置/关闭、拒绝连接、路由不可达和传输关闭错误会继续进入远程自动重连状态。
+- [x] 凭据拒绝、host key 校验、密钥/证书解析和取消错误保持不可重试；新增首次连接认证 timeout/transport reset 回归。
+- [x] 前端重连定向测试 29 项、Rust SSH 定向测试 50 项通过；真实 VPN/蜂窝切换和路由黑洞仍需 macOS 实机观察。
