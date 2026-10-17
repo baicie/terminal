@@ -2938,34 +2938,34 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 
 **验证**：新增清理选项回归断言，shell probe 与矩阵契约定向测试 26/26 通过；提交后的 real-machine workflow 需要确认 Linux shell 与 remote prompt 两个步骤均能继续执行。
 
-### Issue #103: Linux remote cold-start runner 的 fixture 数据库可能写入宿主配置目录 ✅ 已修复，待矩阵复验
+### Issue #103: Linux remote cold-start runner 的 fixture 数据库可能写入宿主配置目录 ✅ 已修复，Linux 矩阵通过
 
 **严重程度**：Important（验收基础设施错误地报告远程终端未启动）
-**状态**：✅ runner 环境已统一；Linux hosted runner 复验待完成
+**状态**：✅ runner 环境已统一；real-machine run `38997341490` 的 Linux remote marker 通过
 **修复时间**：2026-10-17
 
 **问题**：remote cold-start runner 为隔离应用设置临时 `HOME` 与 `XDG_CONFIG_HOME=<tempHome>/.config`，但预建 SQLite fixture 时曾单独读取 runner 进程环境中的 `XDG_CONFIG_HOME`。当宿主环境预设该变量时，数据库会写到宿主配置根目录，而 Tauri SQL plugin 仍从临时配置目录加载空数据库；远程 workspace/tab 因而不会恢复，30 秒测量只看到 `markerReady=false`。
 
 **修复**：先构建唯一的应用环境对象，并把它同时传给 fixture 数据库路径解析和 Tauri stopwatch。Linux 的 `XDG_CONFIG_HOME` 明确固定为临时 home 下 `.config`，不再继承宿主覆盖值。
 
-**验证**：remote stopwatch 回归测试模拟宿主配置目录为 `/host/config`，断言 sqlite3 创建的路径是临时 home 下 `com.baicie.termius/terminal.db`，同时应用得到相同的 `XDG_CONFIG_HOME`；定向 stopwatch 与 workflow 契约测试共 14/14 通过。该修复后的 Linux remote cold-start CI 仍待复跑确认。
+**验证**：remote stopwatch 回归测试模拟宿主配置目录为 `/host/config`，断言 sqlite3 创建的路径是临时 home 下 `com.baicie.termius/terminal.db`，同时应用得到相同的 `XDG_CONFIG_HOME`；定向 stopwatch 与 workflow 契约测试共 14/14 通过。real-machine run `38997341490` 的 Linux password、shell interaction 与 remote SSH cold-start marker 全部通过。
 
-### Issue #104: 慢速 workspace 恢复时启动兜底标签阻止远程布局恢复 ✅ 已修复，待矩阵复验
+### Issue #104: 慢速 workspace 恢复时启动兜底标签阻止远程布局恢复 ✅ 已修复，Linux 矩阵通过
 
 **严重程度**：Important（启动后可能只进入本地兜底终端）
-**状态**：✅ 已修复；Linux hosted runner 复验待完成
+**状态**：✅ 已修复；real-machine run `38997341490` 通过
 **修复时间**：2026-10-17
 
 **问题**：App 在 workspace/SQLite 恢复完成前等待 2 秒后创建本地 `startupFallback`。Linux WebKitGTK 首次启动较慢时，兜底终端可能已经进入 `connecting` 或已建立本地 session；恢复逻辑原先要求兜底标签的 `connectionStatus` 和 `title` 都为空，因此拒绝替换已保存的远程布局。应用没有恢复远程标签时，自然不会出现 SSH profile 或 remote marker 日志。
 
 **修复**：`startupFallback` 现在是兜底所有权的唯一标记，恢复可以替换仍由应用创建的兜底标签，不再被自动连接状态或 shell 标题阻止。xterm 输入、移动端快捷键栏，以及 snippet/history 等命令总线写入都经过同一主动输入通知路径，收到真实用户输入时清除该标记；用户已经接管的本地会话不会被迟到的 workspace 恢复覆盖。被替换标签由 `TerminalByUrl` 的 tab prune 路径关闭其后台 session。
 
-**测试**：workspace recovery 新增 connecting fallback 的 delayed remote layout 回归，并覆盖 connected fallback 在用户输入前仍可替换；use-terminal routing 回归覆盖直接写入和命令总线路径，terminal input registration 与相关前端定向测试通过。Linux remote cold-start 仍需在修复后的 workflow 中确认 startup/prompt marker 完成。
+**测试**：workspace recovery 新增 connecting fallback 的 delayed remote layout 回归，并覆盖 connected fallback 在用户输入前仍可替换；use-terminal routing 回归覆盖直接写入和命令总线路径，terminal input registration 与相关前端定向测试通过。real-machine run `38997341490` 的 Linux remote SSH cold-start 已完成 startup/prompt marker 往返。
 
 ### Issue #105: 启动兜底的非 xterm 输入未标记为用户接管 ✅ 已修复
 
 **严重程度**：Important（延迟恢复可能覆盖用户正在使用的终端）
-**状态**：✅ 已修复；跨平台矩阵待复验
+**状态**：✅ 已修复；real-machine run `38997341490` 的 Linux/macOS/Windows 矩阵通过
 **修复时间**：2026-10-17
 
 **问题**：workspace 恢复延迟期间，移动端快捷键栏和 snippet/history 命令通过 session `write` 或 `terminalWriteBus` 直接发送，不经过 xterm `onData`。兜底标签仍保持 `startupFallback`，迟到的 workspace 布局恢复会把用户刚刚使用的本地 shell 替换掉。

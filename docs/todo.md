@@ -779,9 +779,9 @@
 - [x] 2026-10-16 当前工作树 macOS 15.7.7 arm64 / Node 24.16.0 / Docker 29.7.2 下 `smoke:ssh-matrix` 13/13 全绿：首次连接 1000–8233ms，覆盖 key/password/agent/cert/Jump、重连、5 秒与 20 秒 outage、首连 outage；证据见 `docs/verification/2026-10-11-macos-ssh-matrix-current.json`。
 - [x] 每个 case 覆盖 10 轮隔离会话、8 MiB 输出、97×31 resize、旧输出拒绝和资源回收；失败时会清理目标及跳板 fixture。
 - [x] 逐用例耗时、二进制 SHA-256、覆盖范围和限制见 [`2026-10-11-macos-ssh-matrix-current.json`](verification/2026-10-11-macos-ssh-matrix-current.json)。
-- [x] 修复 `.github/workflows/real-machine-matrix.yml` 对历史 `main` 缺失 `.node-version` 的依赖，macOS/Linux runner 显式固定 Node 24.16.0；下一次远端 dispatch 仍待复验。
-- [x] 将 `cat-eof`、readline history、readline Tab 的真实 Tauri/WKWebView + local PTY shell 矩阵接入 macOS real-machine job；本地 workflow 契约测试通过，远端 runner 结果仍待新的提交触发。
-- [x] 将最终 debug binary 的远程 SSH startup marker + OSC 133 prompt marker cold-start 接入 macOS real-machine job；本地 workflow 契约测试通过，远端 runner 结果仍待新的提交触发。
+- [x] 修复 `.github/workflows/real-machine-matrix.yml` 对历史 `main` 缺失 `.node-version` 的依赖，macOS/Linux runner 显式固定 Node 24.16.0；real-machine run `38997341490` 已复验。
+- [x] 将 `cat-eof`、readline history、readline Tab 的真实 Tauri/WKWebView + local PTY shell 矩阵接入 macOS real-machine job；real-machine run `38997341490` 已通过。
+- [x] 将最终 debug binary 的远程 SSH startup marker + OSC 133 prompt marker cold-start 接入 macOS real-machine job；real-machine run `38997341490` 已通过。
 - [ ] Windows OpenSSH Agent/Pageant、Windows/Linux 本地 PTY、串口硬件以及 macOS 物理键盘、中文 IME、Option/dead key、vim/nano 仍待实机验收；当前没有对应设备，不能由 CI 或自动输入替代。
 
 - [x] 2026-10-13 当前门禁复验：前端 961、Team Server 103、Rust 193+3、Node 133，`pnpm verify` 全绿；release binary 本地冷启动 4973ms、远程 prompt marker 3627ms，证据见 `docs/verification/2026-10-13-macos-release-cold-start-rerun.json`。
@@ -1783,36 +1783,36 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] Vim 用例把编辑按键安排为 1/2/3/4 秒，并将 shell 侧验证命令延后到 5 秒；回归断言锁定验证命令必须晚于最后一个编辑按键，避免 Linux runner 上编辑器尚未退出就被验证命令抢占导致超时。
 - [x] 将 `waitForTerminalSmokeFrame` 拆到 `terminal-smoke-frame.ts`，`run-terminal-smoke.ts` 降至 297 行并通过源码规模门禁。
 - [x] 同一 instrumented debug binary `9c3948b0…`（source fingerprint `6e597e22…`）上的本地冷启动 5140ms、远程 bash prompt marker 3617ms、真实 SSH 13/13、本地 shell 14/14 和真实 SSH shell 7/7 全部通过。
-- [ ] 新提交的 macOS/Linux/Windows real-machine workflow 仍需完成一次全矩阵复验；人工物理键盘、中文 IME、Option/dead key、Windows OpenSSH Agent/Pageant 与串口硬件继续按实机清单验收。
+- [x] 新提交的 macOS/Linux/Windows real-machine workflow 由 run `38997341490` 完成全矩阵复验；人工物理键盘、中文 IME、Option/dead key、Windows OpenSSH Agent/Pageant 与串口硬件继续按实机清单验收。
 
 ### 2026-10-16 Phase 6.67 - 远程 prompt cold-start 跨平台测量适配 ✅ 自动化通过
 
 - [x] 远程 marker readiness 不再编译或轮询 macOS AX helper；`axProbe: 'none'` 仅允许 remote 模式，避免 hosted runner 将无关的 Swift 编译超时报告成 SSH prompt 失败。
 - [x] Linux real-machine remote prompt 步骤使用 30 秒观测窗口，保留实际 `spawnToReadyMs`，而本地 10 秒可靠终端预算仍由独立 cold-start 证据验证。
-- [x] 定向 stopwatch/workflow 测试 36/36、完整 `pnpm verify` 通过；新的 real-machine run 仍待复验。
+- [x] 定向 stopwatch/workflow 测试 36/36、完整 `pnpm verify` 通过；real-machine run `38997341490` 已复验。
 
-### 2026-10-16 Phase 6.68 - Linux shell probe 退出清理竞态 ✅ 已修复，待矩阵复验
+### 2026-10-16 Phase 6.68 - Linux shell probe 退出清理竞态 ✅ 已修复，跨平台矩阵通过
 
 - [x] `run-terminal-shell-probe` 的临时目录递归删除增加 20 次、每次 100ms 的有界重试，覆盖 WebKitGTK/Mesa shader-cache 子进程退出后的短暂 `ENOTEMPTY`。
 - [x] shell probe Node 回归测试与矩阵契约测试通过；原始业务错误仍优先保留，清理失败不会覆盖探针诊断。
-- [ ] 提交后的 macOS/Linux/Windows real-machine workflow 需重新确认 Linux shell 矩阵与 remote prompt 均执行并通过。
+- [x] real-machine run `38997341490` 确认 macOS/Linux/Windows shell 矩阵与 Linux remote prompt 均执行并通过。
 
-### 2026-10-17 Phase 6.69 - Linux remote cold-start fixture 数据库目录隔离 ✅ 已修复，待矩阵复验
+### 2026-10-17 Phase 6.69 - Linux remote cold-start fixture 数据库目录隔离 ✅ 已修复，跨平台矩阵通过
 
 - [x] Linux remote cold-start runner 建库与启动应用共用同一 `XDG_CONFIG_HOME`，固定为临时 HOME 下的 `.config`，不会受宿主进程预设目录影响。
 - [x] 回归测试模拟宿主 `XDG_CONFIG_HOME=/host/config`，并断言 sqlite3 写入路径与应用读取目录一致。
 - [x] remote stopwatch 定向测试 7/7、real-machine workflow 契约测试 7/7 通过。
-- [ ] 提交后的 Linux real-machine run 仍需证明远程 marker 往返；实际 CI 根因继续由 Phase 6.70 验证。
+- [x] real-machine run `38997341490` 的 Linux password、shell interaction 与 remote marker 往返通过；Issue #103 根因已复验。
 
-### 2026-10-17 Phase 6.70 - 慢速 workspace 恢复与启动兜底竞争 ✅ 已修复，待矩阵复验
+### 2026-10-17 Phase 6.70 - 慢速 workspace 恢复与启动兜底竞争 ✅ 已修复，跨平台矩阵通过
 
 - [x] 启动兜底标签由 `startupFallback` 所有权标记控制；数据库恢复较慢、兜底已自动连接时，已保存的远程布局仍可替换兜底标签。
 - [x] xterm、移动端快捷键栏和 snippet/history 命令总线的主动写入统一清除 `startupFallback`，保留用户已经接管的本地会话，避免恢复结果覆盖交互中的终端。
 - [x] 新增恢复回归覆盖 delayed remote layout + connecting fallback，恢复与输入协议定向测试通过。
-- [ ] 提交后的 Linux real-machine run 仍需确认 remote cold-start marker 往返；本地 fallback session 的清理由 TerminalByUrl 的 tab prune 路径负责。
+- [x] real-machine run `38997341490` 确认 Linux remote startup/prompt marker 往返；本地 fallback session 的清理由 TerminalByUrl 的 tab prune 路径负责。
 
 ### 2026-10-17 Phase 6.71 - 启动兜底主动输入接管路径 ✅ 自动化通过
 
 - [x] `useTerminal` 的直接 `write` 与 `terminalWriteBus` 写入复用主动输入通知，覆盖移动端快捷键栏和 snippet/history 命令；xterm text/raw 输入保留原诊断路径。
 - [x] use-terminal routing 回归断言直接写入和目标 tab 命令总线写入都会在 session FIFO 前通知接管逻辑。
-- [ ] 新 real-machine workflow 仍需复验慢速 workspace 恢复及 remote startup/prompt marker。
+- [x] real-machine run `38997341490` 完成 macOS、Windows、Linux 启动恢复与 remote startup/prompt marker 验收。
