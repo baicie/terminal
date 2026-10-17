@@ -426,6 +426,108 @@ test('manual ASCII overlap acceptance refuses a non-ASCII input source', async (
   )
 })
 
+test('manual ASCII overlap can switch to ASCII and restore the original input source', async () => {
+  const harness = createHarness({ accessDenied: true })
+  const { dependencies } = harness
+  const rounds = 1
+  const selections = []
+  const originalConsoleLog = console.log
+  let selected = {
+    id: 'com.apple.inputmethod.SCIM.ITABC',
+    asciiCapable: false,
+    type: 'TISTypeKeyboardInputMethod',
+  }
+  dependencies.spawn = (command, args, options) => {
+    if (command === 'swiftc') {
+      const child = new FakeChild(41_003)
+      finishChild(child)
+      return child
+    }
+    if (command.endsWith('post-key-events')) {
+      const child = new FakeChild(41_004)
+      let output = 'denied'
+      if (args[0] === 'input-source') output = JSON.stringify(selected)
+      if (args[0] === 'ascii-source') {
+        output = JSON.stringify({
+          id: 'com.apple.keylayout.ABC',
+          asciiCapable: true,
+          type: 'TISTypeKeyboardLayout',
+        })
+      }
+      if (args[0] === 'select-source') {
+        selections.push(args[1])
+        selected =
+          args[1] === 'com.apple.keylayout.ABC'
+            ? {
+                id: 'com.apple.keylayout.ABC',
+                asciiCapable: true,
+                type: 'TISTypeKeyboardLayout',
+              }
+            : {
+                id: 'com.apple.inputmethod.SCIM.ITABC',
+                asciiCapable: false,
+                type: 'TISTypeKeyboardInputMethod',
+              }
+        output = JSON.stringify(selected)
+      }
+      finishChild(child, { stdout: output })
+      return child
+    }
+    if (command.endsWith('/debug/terminal')) {
+      harness.publishRound(1)
+      return harness.appChild
+    }
+    return harness.appChild
+  }
+  dependencies.readFile = async filePath => {
+    if (filePath === READY_PATH) return JSON.stringify({ round: 1 })
+    if (filePath === RESULT_PATH)
+      return JSON.stringify({
+        ok: true,
+        rounds,
+        expectedText: 'asd',
+        expectedHex: '617364',
+        durationMs: 1234,
+        results: [
+          {
+            round: 1,
+            expectedHex: '617364',
+            receivedHex: '617364',
+            ok: true,
+          },
+        ],
+        error: null,
+      })
+    throw new Error(`unexpected read: ${filePath}`)
+  }
+  console.log = message => {
+    if (typeof message === 'string' && message.includes('Round 1'))
+      harness.publishResult()
+  }
+  try {
+    const result = await runInputProbe({
+      cwd: PROJECT_ROOT,
+      env: {},
+      scenario: 'overlap',
+      inject: 'manual',
+      inputSource: 'ascii',
+      rounds,
+      skipBuild: true,
+      targetDirectory: TARGET_DIRECTORY,
+      dependencies,
+    })
+
+    assert.equal(result.injector, 'manual')
+    assert.equal(result.inputSource, 'com.apple.keylayout.ABC')
+    assert.deepEqual(selections, [
+      'com.apple.keylayout.ABC',
+      'com.apple.inputmethod.SCIM.ITABC',
+    ])
+  } finally {
+    console.log = originalConsoleLog
+  }
+})
+
 test('manual IME acceptance refuses an ASCII input source', async () => {
   const harness = createHarness({ accessDenied: true })
   const { dependencies } = harness

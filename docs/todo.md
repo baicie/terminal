@@ -1816,3 +1816,9 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] `useTerminal` 的直接 `write` 与 `terminalWriteBus` 写入复用主动输入通知，覆盖移动端快捷键栏和 snippet/history 命令；xterm text/raw 输入保留原诊断路径。
 - [x] use-terminal routing 回归断言直接写入和目标 tab 命令总线写入都会在 session FIFO 前通知接管逻辑。
 - [x] real-machine run `38997341490` 完成 macOS、Windows、Linux 启动恢复与 remote startup/prompt marker 验收。
+
+### 2026-10-17 Phase 6.72 - 手动输入探针输入源切换 ✅ 自动化通过
+
+- [x] `run-input-probe.mjs --inject manual --input-source ascii` 在当前输入源为中文输入法时临时选择 ASCII 键盘，并在验收结束后恢复原输入源。
+- [x] 新增切换与恢复回归，输入探针定向测试 21/21 通过；恢复失败仍会使验收失败，不会伪造通过结果。
+- [ ] 真人物理键盘 30 轮、中文 IME composition、Option/dead key、合盖睡眠/VPN/蜂窝切换，以及 Windows Agent/Pageant/PTY/串口硬件仍待实机验收。

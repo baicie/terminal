@@ -452,8 +452,10 @@ export async function runInputProbe({
   }
   if (inputSourceId && !['auto', 'swift'].includes(inject))
     throw new Error('input-source-id requires the swift injector')
-  if (inputSource === 'ascii' && !['auto', 'swift'].includes(inject)) {
-    throw new Error('--input-source ascii requires the swift injector')
+  if (inputSource === 'ascii' && !['auto', 'swift', 'manual'].includes(inject)) {
+    throw new Error(
+      '--input-source ascii requires the native input-source helper',
+    )
   }
   if (
     probeScenario.source === 'ime' &&
@@ -744,7 +746,7 @@ export async function runInputProbe({
     }
     if (probeScenario.source === 'ascii') {
       return await withInputProbeSource(
-        'current',
+        inputSource,
         args => runSwiftInjector(injectorBinary, args, dependencies),
         runRounds,
         'ascii',

@@ -2973,3 +2973,15 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 **修复**：`useTerminal` 为直接写入和命令总线写入统一触发 `onInput`，再进入 session FIFO；xterm text/raw 输入继续沿用原有诊断回调。TerminalContainer 收到任一主动输入后清除 `startupFallback`。
 
 **测试**：use-terminal routing 新增直接写入与命令总线写入回归，容器测试覆盖 `onInput` 到 `updateTab` 的接线；完整 `pnpm verify` 通过。
+
+### Issue #106: 手动输入探针提示切换 ASCII 却拒绝手动模式 ✅ 已修复
+
+**严重程度**：Minor（实机验收工具阻塞）
+**状态**：✅ 已修复；真人物理键盘验收仍待执行
+**修复时间**：2026-10-17
+
+**问题**：macOS 当前输入源为中文输入法时，ASCII 重叠按键探针会提示使用 `--input-source ascii` 临时切换；但参数校验同时拒绝 `--inject manual`，手动验收无法从当前输入法安全开始。
+
+**修复**：手动模式现在复用原生 TIS 输入源 helper，在探针开始前切换到 ASCII 键盘，完成手动轮次后恢复原输入源；切换或恢复失败都会保留明确错误，不会把未执行的轮次标记为通过。
+
+**测试**：新增手动 ASCII overlap 的临时切换与恢复回归；输入探针定向测试 21/21 通过。当前桌面控制只能验证窗口聚焦，不能产生探针要求的真人 `keydown` 证据，因此 30 轮物理键盘、中文 IME composition 和 Option/dead key 仍保持人工待验收。
