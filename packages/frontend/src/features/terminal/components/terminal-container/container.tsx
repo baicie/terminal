@@ -40,6 +40,7 @@ export function TerminalContainer({
   const settings = useAppStore(state => state.config) as Partial<AppSettings>
   const appTheme = useAppStore(state => state.theme)
   const tab = useAppStore(state => state.tabs.find(item => item.id === tabId))
+  const updateTab = useAppStore(state => state.updateTab)
   const isActive = useAppStore(state => state.activeTabId === tabId)
   const savedHost = useHostStore(state =>
     tab?.hostId ? state.hosts.find(item => item.id === tab.hostId) : undefined,
@@ -107,6 +108,11 @@ export function TerminalContainer({
     jumpHost,
     outputWriter: terminal.outputWriter ?? undefined,
     onOutput: remotePrompt.onOutput,
+    onInput: () => {
+      if (tab?.startupFallback) {
+        updateTab(tabId, { startupFallback: false })
+      }
+    },
   })
   const { status, error, attempt, reason, retryable, write, disconnect } =
     session

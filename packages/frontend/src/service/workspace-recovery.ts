@@ -50,12 +50,7 @@ function stripProcessLocalTabState(tab: Tab): Tab {
 function canReplaceStartupFallback(tabs: readonly Tab[]): boolean {
   return (
     tabs.length > 0 &&
-    tabs.every(
-      tab =>
-        tab.startupFallback === true &&
-        tab.connectionStatus === undefined &&
-        tab.title === undefined,
-    )
+    tabs.every(tab => tab.startupFallback === true)
   )
 }
 

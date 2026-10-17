@@ -129,6 +129,41 @@ describe('useTerminal emitter routing', () => {
     second.unmount()
   })
 
+  it('reports direct writes as user input before sending them to the session', () => {
+    const onInput = vi.fn()
+    const terminal = {} as XTerminal
+    const instance = renderHook(() =>
+      useTerminal(terminal, {
+        tabId: 'tab-direct-write',
+        workspaceId: 'workspace-one',
+        tabType: 'local',
+        onInput,
+      }),
+    )
+
+    act(() => {
+      instance.result.current.write('clear\r')
+      mocks.listeners.forEach(listener => listener('history\r', 'tab-direct-write'))
+    })
+
+    expect(onInput.mock.calls.map(([event]) => event)).toEqual([
+      { kind: 'text', data: 'clear\r', bytes: 6 },
+      { kind: 'text', data: 'history\r', bytes: 8 },
+    ])
+    const sessionWrites = mocks.bindings.get('tab-direct-write')?.write
+    expect(sessionWrites?.mock.calls).toEqual([
+      ['clear\r'],
+      ['history\r'],
+    ])
+    expect(onInput.mock.invocationCallOrder[0]).toBeLessThan(
+      sessionWrites?.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    )
+    expect(onInput.mock.invocationCallOrder[1]).toBeLessThan(
+      sessionWrites?.mock.invocationCallOrder[1] ?? Number.POSITIVE_INFINITY,
+    )
+    instance.unmount()
+  })
+
   it('attaches with the xterm dimensions measured after open', () => {
     const terminal = {
       cols: 80,

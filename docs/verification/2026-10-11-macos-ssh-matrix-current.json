@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-16T08:08:15+08:00",
+  "recordedAt": "2026-10-17T10:53:52+08:00",
   "recordedDate": "2026-10-16",
   "kind": "tauri-real-ssh-matrix-current-worktree",
   "command": "pnpm smoke:ssh-matrix --reuse-binary",
@@ -15,86 +15,86 @@
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "9c3948b0419e5e7588e9871311ed5aeed08ef1879451cf65a3d49cd8359a2a7c"
+    "sha256": "2cbe9ab21e3f10057fb810ce35816bda3a5d154f80fc59080fbcc0e9388f47b1"
   },
   "allCasesPassed": true,
   "cases": [
     {
       "name": "key",
-      "firstConnectionMs": 2232,
-      "durationMs": 6799,
+      "firstConnectionMs": 2156,
+      "durationMs": 7296,
       "uniqueSessionCount": 10
     },
     {
       "name": "key-reconnect",
-      "firstConnectionMs": 915,
-      "durationMs": 7893,
+      "firstConnectionMs": 1658,
+      "durationMs": 7753,
       "uniqueSessionCount": 11
     },
     {
       "name": "key-outage-reconnect",
-      "firstConnectionMs": 1694,
-      "durationMs": 14729,
+      "firstConnectionMs": 965,
+      "durationMs": 15417,
       "uniqueSessionCount": 11
     },
     {
       "name": "key-outage-wake-reconnect",
-      "firstConnectionMs": 1669,
-      "durationMs": 29320,
+      "firstConnectionMs": 1800,
+      "durationMs": 32987,
       "uniqueSessionCount": 11
     },
     {
       "name": "key-first-connect-outage",
-      "firstConnectionMs": 9361,
-      "durationMs": 14087,
+      "firstConnectionMs": 9886,
+      "durationMs": 14875,
       "uniqueSessionCount": 10
     },
     {
       "name": "password",
-      "firstConnectionMs": 2728,
-      "durationMs": 6686,
+      "firstConnectionMs": 1519,
+      "durationMs": 7047,
       "uniqueSessionCount": 10
     },
     {
       "name": "password-reconnect",
-      "firstConnectionMs": 2116,
-      "durationMs": 7505,
+      "firstConnectionMs": 1780,
+      "durationMs": 7517,
       "uniqueSessionCount": 11
     },
     {
       "name": "agent",
-      "firstConnectionMs": 1923,
-      "durationMs": 7120,
+      "firstConnectionMs": 1040,
+      "durationMs": 6607,
       "uniqueSessionCount": 10
     },
     {
       "name": "agent-reconnect",
-      "firstConnectionMs": 1937,
-      "durationMs": 7699,
+      "firstConnectionMs": 969,
+      "durationMs": 7255,
       "uniqueSessionCount": 11
     },
     {
       "name": "cert",
-      "firstConnectionMs": 1954,
-      "durationMs": 7229,
+      "firstConnectionMs": 736,
+      "durationMs": 6716,
       "uniqueSessionCount": 10
     },
     {
       "name": "cert-reconnect",
-      "firstConnectionMs": 1129,
-      "durationMs": 8129,
+      "firstConnectionMs": 931,
+      "durationMs": 7900,
       "uniqueSessionCount": 11
     },
     {
       "name": "jump",
-      "firstConnectionMs": 1137,
-      "durationMs": 8000,
+      "firstConnectionMs": 863,
+      "durationMs": 8552,
       "uniqueSessionCount": 10
     },
     {
       "name": "jump-reconnect",
-      "firstConnectionMs": 1179,
-      "durationMs": 9077,
+      "firstConnectionMs": 1152,
+      "durationMs": 10313,
       "uniqueSessionCount": 11
     }
   ],
@@ -105,7 +105,7 @@
     "Real lid-close sleep/wake, VPN handover, and cellular network switching remain unobserved on macOS hardware; the host-wake case synthesizes the retryable wake checkpoint."
   ],
   "source": {
-    "fingerprint": "6e597e22caeea5f413246617a1dece8f8e4c7458579b8267ac66ec2d702015d9",
+    "fingerprint": "fbf0048cf98087397d4be538cc8e9ab46ff5d43ea3226ed6dffd7fbfa7942ce0",
     "fingerprintCovers": [
       "packages/frontend/src",
       "src-tauri/src",

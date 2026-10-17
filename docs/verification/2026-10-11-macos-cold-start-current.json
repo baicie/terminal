@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-16T08:08:15+08:00",
+  "recordedAt": "2026-10-17T10:47:53+08:00",
   "recordedDate": "2026-10-16",
   "kind": "tauri-process-cold-start-stopwatch-current-worktree",
   "command": "node scripts/run-cold-start-stopwatch.mjs --app-path $PWD/src-tauri/target/debug/terminal",
@@ -10,22 +10,22 @@
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "9c3948b0419e5e7588e9871311ed5aeed08ef1879451cf65a3d49cd8359a2a7c"
+    "sha256": "2cbe9ab21e3f10057fb810ce35816bda3a5d154f80fc59080fbcc0e9388f47b1"
   },
   "measurement": {
     "probe": "native ApplicationServices AXUIElement helper",
     "measuredFrom": "child-spawn-event",
     "repeatSpawnToReadyMs": [
-      5140
+      3387
     ],
     "latestRerun": {
-      "capturedAt": "2026-10-16T00:07:56.029Z",
-      "spawnToReadyMs": 5140
+      "capturedAt": "2026-10-17T02:47:53.185Z",
+      "spawnToReadyMs": 3387
     },
     "readyUnder10s": true,
     "requestToReadyIncludesNativeHelperCompilation": false,
-    "requestToReadyMs": 5145,
-    "spawnToReadyMs": 5140
+    "requestToReadyMs": 3390,
+    "spawnToReadyMs": 3387
   },
   "readiness": {
     "localTab": true,
@@ -34,7 +34,7 @@
     "shellPrompt": false
   },
   "revision": {
-    "head": "b3cd1dfc627aa15a8e11c345bd7b603dee2be5a1",
+    "head": "codex/terminal-reliability-matrix",
     "dirtyWorktree": true
   },
   "limitations": [
@@ -44,7 +44,7 @@
     "Human physical keyboard, real macOS IME, Option/dead key, Windows/Pageant, and serial hardware acceptance remain unverified."
   ],
   "source": {
-    "fingerprint": "6e597e22caeea5f413246617a1dece8f8e4c7458579b8267ac66ec2d702015d9",
+    "fingerprint": "fbf0048cf98087397d4be538cc8e9ab46ff5d43ea3226ed6dffd7fbfa7942ce0",
     "fingerprintCovers": [
       "packages/frontend/src",
       "src-tauri/src",

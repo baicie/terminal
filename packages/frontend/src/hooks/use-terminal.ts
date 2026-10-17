@@ -66,6 +66,18 @@ export function useTerminal(
   onInputRef.current = options.onInput
   onOutputRef.current = options.onOutput
 
+  const notifyProgrammaticInput = (data: string) => {
+    try {
+      onInputRef.current?.({
+        kind: 'text',
+        data,
+        bytes: new TextEncoder().encode(data).byteLength,
+      })
+    } catch (error) {
+      console.error('[useTerminal] input diagnostic observer failed:', error)
+    }
+  }
+
   useEffect(() => {
     if (!term || options.enabled === false) return
     outputErrorRef.current = null
@@ -169,8 +181,12 @@ export function useTerminal(
       onInput: (event: TerminalInputDiagnosticEvent) =>
         onInputRef.current?.(event),
     })
+    const writeProgrammaticInput = (data: string) => {
+      notifyProgrammaticInput(data)
+      binding?.write(data)
+    }
     const removeEmitter = terminalWriteBus.onWrite((data, targetTabId) => {
-      if (targetTabId === options.tabId) binding.write(data)
+      if (targetTabId === options.tabId) writeProgrammaticInput(data)
     })
 
     return () => {
@@ -216,7 +232,10 @@ export function useTerminal(
       bindingRef.current?.getIoDiagnostics() ?? null,
     getOutputDiagnostics: (): TerminalOutputSchedulerSnapshot | null =>
       outputSchedulerRef.current?.snapshot() ?? null,
-    write: data => bindingRef.current?.write(data),
+    write: data => {
+      notifyProgrammaticInput(data)
+      bindingRef.current?.write(data)
+    },
     reconnect: () => {
       outputErrorRef.current = null
       outputSchedulerRef.current?.reset()

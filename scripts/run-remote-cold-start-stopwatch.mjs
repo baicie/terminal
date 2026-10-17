@@ -185,6 +185,12 @@ export async function runRemoteColdStartStopwatch({
       await dependencies.readFile(fixture.knownHostsPath, 'utf8'),
       { encoding: 'utf8', mode: 0o600 },
     )
+    const appEnvironment = {
+      ...(dependencies.environment ?? {}),
+      ...(dependencies.platform === 'linux'
+        ? { XDG_CONFIG_HOME: path.join(home, '.config') }
+        : {}),
+    }
     await createSqliteDatabase(
       home,
       {
@@ -195,7 +201,7 @@ export async function runRemoteColdStartStopwatch({
         markerCommand,
         shellIntegration,
       },
-      dependencies,
+      { ...dependencies, environment: appEnvironment },
     )
     const result = await dependencies.runStopwatch({
       appPath: executable,
@@ -207,10 +213,8 @@ export async function runRemoteColdStartStopwatch({
       markerContent: DEFAULT_MARKER,
       markerChecks: [{ path: promptMarkerPath, content: DEFAULT_PROMPT_MARKER }],
       environment: {
+        ...appEnvironment,
         SSH_AUTH_SOCK: '',
-        ...(dependencies.platform === 'linux'
-          ? { XDG_CONFIG_HOME: path.join(home, '.config') }
-          : {}),
         TERMINAL_REMOTE_PROMPT_PROBE_PATH: promptMarkerPath,
         TERMINAL_REMOTE_PROMPT_PROBE_MARKER: DEFAULT_PROMPT_MARKER,
         TERMINAL_REMOTE_PROMPT_PROBE_COMMAND: promptCommand,

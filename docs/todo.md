@@ -1796,3 +1796,23 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] `run-terminal-shell-probe` 的临时目录递归删除增加 20 次、每次 100ms 的有界重试，覆盖 WebKitGTK/Mesa shader-cache 子进程退出后的短暂 `ENOTEMPTY`。
 - [x] shell probe Node 回归测试与矩阵契约测试通过；原始业务错误仍优先保留，清理失败不会覆盖探针诊断。
 - [ ] 提交后的 macOS/Linux/Windows real-machine workflow 需重新确认 Linux shell 矩阵与 remote prompt 均执行并通过。
+
+### 2026-10-17 Phase 6.69 - Linux remote cold-start fixture 数据库目录隔离 ✅ 已修复，待矩阵复验
+
+- [x] Linux remote cold-start runner 建库与启动应用共用同一 `XDG_CONFIG_HOME`，固定为临时 HOME 下的 `.config`，不会受宿主进程预设目录影响。
+- [x] 回归测试模拟宿主 `XDG_CONFIG_HOME=/host/config`，并断言 sqlite3 写入路径与应用读取目录一致。
+- [x] remote stopwatch 定向测试 7/7、real-machine workflow 契约测试 7/7 通过。
+- [ ] 提交后的 Linux real-machine run 仍需证明远程 marker 往返；实际 CI 根因继续由 Phase 6.70 验证。
+
+### 2026-10-17 Phase 6.70 - 慢速 workspace 恢复与启动兜底竞争 ✅ 已修复，待矩阵复验
+
+- [x] 启动兜底标签由 `startupFallback` 所有权标记控制；数据库恢复较慢、兜底已自动连接时，已保存的远程布局仍可替换兜底标签。
+- [x] xterm、移动端快捷键栏和 snippet/history 命令总线的主动写入统一清除 `startupFallback`，保留用户已经接管的本地会话，避免恢复结果覆盖交互中的终端。
+- [x] 新增恢复回归覆盖 delayed remote layout + connecting fallback，恢复与输入协议定向测试通过。
+- [ ] 提交后的 Linux real-machine run 仍需确认 remote cold-start marker 往返；本地 fallback session 的清理由 TerminalByUrl 的 tab prune 路径负责。
+
+### 2026-10-17 Phase 6.71 - 启动兜底主动输入接管路径 ✅ 自动化通过
+
+- [x] `useTerminal` 的直接 `write` 与 `terminalWriteBus` 写入复用主动输入通知，覆盖移动端快捷键栏和 snippet/history 命令；xterm text/raw 输入保留原诊断路径。
+- [x] use-terminal routing 回归断言直接写入和目标 tab 命令总线写入都会在 session FIFO 前通知接管逻辑。
+- [ ] 新 real-machine workflow 仍需复验慢速 workspace 恢复及 remote startup/prompt marker。

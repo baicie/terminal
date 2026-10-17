@@ -16,7 +16,10 @@ const mocks = vi.hoisted(() => {
     loadLayout: vi.fn(),
     saveLayout: vi.fn(),
   }
-  const hostState = { loadHosts: vi.fn() }
+  const hostState = {
+    hosts: [] as Array<{ id: string }>,
+    loadHosts: vi.fn(),
+  }
 
   return { appState, appListeners, workspaceState, hostState }
 })
@@ -86,6 +89,7 @@ describe('workspace recovery', () => {
     mocks.appState.splitGroups = []
     mocks.appState.activeTabId = null
     mocks.appState.sidebarVisible = true
+    mocks.hostState.hosts = []
   })
 
   afterEach(() => {
@@ -211,7 +215,7 @@ describe('workspace recovery', () => {
     recovery.dispose()
   })
 
-  it('does not replace a fallback after its terminal session has started', async () => {
+  it('replaces a connected fallback before the user enters input', async () => {
     const savedLayout: WorkspaceLayout = {
       workspaceId: 'workspace-one',
       tabs: [{ id: 'saved', label: 'Saved', type: 'local' }],
@@ -226,7 +230,32 @@ describe('workspace recovery', () => {
         label: 'Local',
         type: 'local',
         startupFallback: true,
-        connectionStatus: 'connecting',
+        connectionStatus: 'connected',
+      },
+    ] as WorkspaceLayout['tabs']
+
+    const recovery = await startWorkspaceRecovery()
+
+    expect(mocks.appState.restoreLayout).toHaveBeenCalledWith(savedLayout)
+    recovery.dispose()
+  })
+
+  it('does not replace a fallback after the user has entered input', async () => {
+    const savedLayout: WorkspaceLayout = {
+      workspaceId: 'workspace-one',
+      tabs: [{ id: 'saved', label: 'Saved', type: 'local' }],
+      splitGroups: [],
+      activeTabId: 'saved',
+      sidebarVisible: true,
+    }
+    mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.appState.tabs = [
+      {
+        id: 'fallback',
+        label: 'Local',
+        type: 'local',
+        startupFallback: false,
+        connectionStatus: 'connected',
       },
     ] as WorkspaceLayout['tabs']
 
@@ -236,28 +265,58 @@ describe('workspace recovery', () => {
     recovery.dispose()
   })
 
-  it('does not replace a fallback after the shell updates its title', async () => {
+  it('restores a delayed remote layout after the fallback begins connecting', async () => {
     const savedLayout: WorkspaceLayout = {
       workspaceId: 'workspace-one',
-      tabs: [{ id: 'saved', label: 'Saved', type: 'local' }],
+      tabs: [
+        {
+          id: 'saved-remote',
+          label: 'Production',
+          type: 'remote',
+          hostId: 'host-one',
+        },
+      ],
       splitGroups: [],
-      activeTabId: 'saved',
+      activeTabId: 'saved-remote',
       sidebarVisible: true,
     }
+    let resolveWorkspace: (() => void) | undefined
+    mocks.hostState.hosts = [{ id: 'host-one' }]
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.workspaceState.loadWorkspaces.mockReturnValue(
+      new Promise<void>(resolve => {
+        resolveWorkspace = resolve
+      }),
+    )
+    mocks.appState.restoreLayout.mockImplementation(layout => {
+      mocks.appState.tabs = layout.tabs
+      mocks.appState.splitGroups = layout.splitGroups
+      mocks.appState.activeTabId = layout.activeTabId
+    })
+
+    const recoveryPromise = startWorkspaceRecovery()
     mocks.appState.tabs = [
       {
         id: 'fallback',
         label: 'Local',
         type: 'local',
         startupFallback: true,
-        title: 'shell - zsh',
+        connectionStatus: 'connecting',
       },
-    ] as WorkspaceLayout['tabs']
+    ]
+    mocks.appState.activeTabId = 'fallback'
+    resolveWorkspace?.()
+    const recovery = await recoveryPromise
+    await vi.advanceTimersByTimeAsync(1_000)
 
-    const recovery = await startWorkspaceRecovery()
-
-    expect(mocks.appState.restoreLayout).not.toHaveBeenCalled()
+    expect(mocks.appState.tabs).toEqual(savedLayout.tabs)
+    expect(mocks.workspaceState.saveLayout).toHaveBeenCalledWith(
+      'workspace-one',
+      savedLayout.tabs,
+      [],
+      'saved-remote',
+      true,
+    )
     recovery.dispose()
   })
 

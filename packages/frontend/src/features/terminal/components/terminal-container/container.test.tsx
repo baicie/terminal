@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
       label: string
       type: 'local' | 'remote'
       hostId?: string
+      startupFallback?: boolean
       connectionStatus?: 'connected' | 'disconnected' | 'connecting'
     }>,
     activeTabId: 'terminal-one',
@@ -231,6 +232,26 @@ describe('TerminalContainer settings', () => {
 
     expect(mocks.appState.updateTab).toHaveBeenCalledWith('terminal-one', {
       connectionStatus: 'connected',
+    })
+  })
+
+  it('releases a startup fallback when the session reports user input', () => {
+    mocks.appState.tabs = [
+      {
+        id: 'terminal-one',
+        label: 'Local',
+        type: 'local',
+        startupFallback: true,
+      },
+    ]
+
+    render(<TerminalContainer tabId="terminal-one" workspaceId="workspace" />)
+
+    const options = mocks.useTerminal.mock.calls.at(-1)?.[1]
+    act(() => options.onInput({ kind: 'text', data: 'ls\r', bytes: 3 }))
+
+    expect(mocks.appState.updateTab).toHaveBeenCalledWith('terminal-one', {
+      startupFallback: false,
     })
   })
 

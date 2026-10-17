@@ -17,6 +17,7 @@ interface Options {
   jumpHost: Host | undefined
   outputWriter: Pick<TerminalComponent, 'write'> | undefined
   onOutput: (event: TerminalOutputDiagnosticEvent) => void
+  onInput?: () => void
 }
 
 const tabTypeOf = (tab: Tab | undefined): TabType => tab?.type ?? 'local'
@@ -49,6 +50,7 @@ export function useTerminalSessionBinding(
     serialSessionId: options.tab?.serialSessionId,
     outputWriter: options.outputWriter,
     onOutput: options.onOutput,
+    onInput: options.onInput,
   })
 
   return {

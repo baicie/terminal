@@ -252,7 +252,7 @@ test('never passes a dev server preflight flag to the stopwatch', async () => {
 })
 
 test('supports Linux remote prompt fixtures with an isolated XDG config root', async () => {
-  const calls = { stopwatch: [], stop: 0 }
+  const calls = { stopwatch: [], stop: 0, sqlitePaths: [] }
   const fixture = {
     host: '127.0.0.1',
     port: 65_341,
@@ -270,13 +270,15 @@ test('supports Linux remote prompt fixtures with an isolated XDG config root', a
     mkdir: async () => {},
     mkdtemp: async prefix => `${prefix}${tempDirectoryIndex++}`,
     platform: 'linux',
+    environment: { XDG_CONFIG_HOME: '/host/config' },
     readFile: async () => 'known-host fixture\n',
     rm: async () => {},
     runStopwatch: async options => {
       calls.stopwatch.push(options)
       return { markerPath: options.markerPath, markerReady: true, ok: true }
     },
-    spawn: () => {
+    spawn: (command, args) => {
+      if (command === '/usr/bin/sqlite3') calls.sqlitePaths.push(args[0])
       const child = new EventEmitter()
       child.stdin = new PassThrough()
       child.stderr = new PassThrough()
@@ -298,5 +300,8 @@ test('supports Linux remote prompt fixtures with an isolated XDG config root', a
     calls.stopwatch[0].environment.XDG_CONFIG_HOME,
     '/tmp/terminal-remote-cold-home-0/.config',
   )
+  assert.deepEqual(calls.sqlitePaths, [
+    '/tmp/terminal-remote-cold-home-0/.config/com.baicie.termius/terminal.db',
+  ])
   assert.equal(calls.stop, 1)
 })

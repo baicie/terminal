@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-16T08:08:15+08:00",
+  "recordedAt": "2026-10-17T10:46:20+08:00",
   "recordedDate": "2026-10-16",
   "kind": "tauri-local-shell-interaction-current-worktree",
   "environment": {
@@ -13,7 +13,7 @@
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "9c3948b0419e5e7588e9871311ed5aeed08ef1879451cf65a3d49cd8359a2a7c"
+    "sha256": "2cbe9ab21e3f10057fb810ce35816bda3a5d154f80fc59080fbcc0e9388f47b1"
   },
   "command": "node scripts/run-terminal-shell-probe-matrix.mjs --reuse-binary [--shells bash,zsh|--transport ssh]",
   "shells": [
@@ -261,7 +261,7 @@
     "Option/dead key、中文 IME、物理键盘以及 Windows/Pageant/PTY/串口实机仍未验收。"
   ],
   "source": {
-    "fingerprint": "6e597e22caeea5f413246617a1dece8f8e4c7458579b8267ac66ec2d702015d9",
+    "fingerprint": "fbf0048cf98087397d4be538cc8e9ab46ff5d43ea3226ed6dffd7fbfa7942ce0",
     "fingerprintCovers": [
       "packages/frontend/src",
       "src-tauri/src",

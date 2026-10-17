@@ -37,7 +37,13 @@ const PROFILE_BINARY = new Map([
 ])
 
 const PROFILE_REVIEWED_HASH = new Map([
-  // Reviewed on 2026-10-16. This build includes the serial port platform
+  // Reviewed on 2026-10-17. This build includes the startup fallback ownership
+  // fix, the direct command-write input handoff, and the Linux remote fixture
+  // environment isolation. The 13-case SSH matrix, local/real-SSH shell
+  // probes, local cold-start and remote prompt marker were re-run on this same
+  // instrumented debug binary before the hash moved here.
+  //
+  // The earlier build included the serial port platform
   // classification fix and waits for the first SSH shell output
   // before injecting startup commands, and accepts a remote prompt marker
   // adjacent to an OSC sequence in the same output chunk. It also gives the
@@ -63,7 +69,7 @@ const PROFILE_REVIEWED_HASH = new Map([
   // is split into its own source file to keep the source-size gate satisfied.
   [
     'debug',
-    '9c3948b0419e5e7588e9871311ed5aeed08ef1879451cf65a3d49cd8359a2a7c',
+    '2cbe9ab21e3f10057fb810ce35816bda3a5d154f80fc59080fbcc0e9388f47b1',
   ],
 ])
 
