@@ -295,7 +295,9 @@ Release 首次执行的六个平台打包任务均成功，最终校验调用 `g
 | bash/zsh shell 交互矩阵 | ✅ 14/14 | 单例 218–1071 ms |
 | 真实 SSH shell 矩阵 | ✅ 7/7 | 单例 501–1071 ms |
 | release 本地冷启动（三次） | ✅ 通过 | 1827 / 1319 / 1421 ms，均 `readyAt: terminal` |
-| release 真实 SSH 10-case 矩阵 | ⏳ 未采集 | 需要解锁桌面：锁屏时前台固定为 `loginwindow`，runner 的 `expected process <app> to be frontmost` 必然失败 |
+| release 远程 prompt 冷启动 | ✅ 通过 | 3069 ms，锁屏状态下也可测量（该 runner 不需要窗口激活） |
+| release shell 矩阵 | ✅ 14/14 + 7/7 | 本地 bash/zsh 14 例与真实 SSH 7 例，同样在锁屏下完成 |
+| release 真实 SSH 10-case 认证矩阵 | ⏳ 未采集 | 唯一必须解锁的项：锁屏时前台固定为 `loginwindow`，runner 的 `expected process <app> to be frontmost` 必然失败，且该断言没有旁路开关 |
 
 `2026-10-11-macos-release-ssh-matrix.json` 因此仍是旧构建（`ab209317…`）的历史记录，`pnpm verify` 的 source 分组会继续以这两条报错退出。补齐方式：
 
