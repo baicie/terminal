@@ -1,8 +1,12 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SshHostKeyProbeResult } from '@/features/terminal/services/ssh-host-key'
 import type { Host } from '@/types'
-import { useSshHostKeyGate } from './use-ssh-host-key-gate'
+import {
+  isRetryableSshHostKeyProbeError,
+  SSH_HOST_KEY_PROBE_RETRY_DELAYS_MS,
+  useSshHostKeyGate,
+} from './use-ssh-host-key-gate'
 
 const mocks = vi.hoisted(() => ({
   probe: vi.fn(),
@@ -78,10 +82,12 @@ describe('useSshHostKeyGate', () => {
     mocks.learn.mockReset()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('does not gate local terminals', () => {
-    const { result } = renderHook(() =>
-      useSshHostKeyGate({ tabType: 'local' }),
-    )
+    const { result } = renderHook(() => useSshHostKeyGate({ tabType: 'local' }))
 
     expect(result.current.enabled).toBe(true)
     expect(result.current.status).toBe('ready')
@@ -99,7 +105,57 @@ describe('useSshHostKeyGate', () => {
 
     expect(result.current.enabled).toBe(true)
     expect(result.current.expectedHostKey).toBeUndefined()
-    expect(mocks.probe).toHaveBeenCalledWith(host.hostname, host.port)
+    expect(mocks.probe).toHaveBeenCalledWith(
+      host.hostname,
+      host.port,
+      expect.objectContaining({ timeoutMs: expect.any(Number) }),
+    )
+  })
+
+  it('does not release a trusted result that arrives after the shared deadline', async () => {
+    vi.useFakeTimers()
+    const pending = deferred<SshHostKeyProbeResult>()
+    mocks.probe.mockReturnValue(pending.promise)
+    const { result } = renderHook(() =>
+      useSshHostKeyGate({ tabType: 'remote', host }),
+    )
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_001)
+      pending.resolve({ ...unknownKey, status: 'trusted' })
+      await pending.promise
+      await Promise.resolve()
+    })
+
+    expect(result.current.enabled).toBe(false)
+    expect(result.current.status).toBe('error')
+    expect(result.current.error).toContain('startup deadline expired')
+  })
+
+  it('starts a fresh shared budget after the user resolves a trust prompt', async () => {
+    vi.useFakeTimers()
+    mocks.probe.mockResolvedValue(unknownKey)
+    const { result } = renderHook(() =>
+      useSshHostKeyGate({ tabType: 'remote', host }),
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.status).toBe('prompt')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000)
+      result.current.trustOnce()
+    })
+
+    expect(result.current.enabled).toBe(true)
+    expect(result.current.connectionDeadlineAt).toBeGreaterThan(
+      performance.now() + 9_900,
+    )
   })
 
   it('pins the exact preflight key when trusted for this session only', async () => {
@@ -152,7 +208,10 @@ describe('useSshHostKeyGate', () => {
 
   it('retries the preflight after a recoverable probe error', async () => {
     mocks.probe
-      .mockRejectedValueOnce(new Error('network offline'))
+      .mockRejectedValueOnce({
+        type: 'known_hosts_failed',
+        message: 'known_hosts file is not valid',
+      })
       .mockResolvedValueOnce({ ...unknownKey, status: 'trusted' })
     const { result } = renderHook(() =>
       useSshHostKeyGate({ tabType: 'remote', host }),
@@ -166,23 +225,203 @@ describe('useSshHostKeyGate', () => {
     expect(mocks.probe).toHaveBeenCalledTimes(2)
   })
 
-  it('routes a probe timeout into the retryable error state', async () => {
+  it('routes a non-transient probe failure into the error state', async () => {
     mocks.probe
-      .mockRejectedValueOnce(
-        new Error('connect host-key probe timed out before its deadline'),
-      )
+      .mockRejectedValueOnce({
+        type: 'known_hosts_failed',
+        message: 'known_hosts file is not valid',
+      })
       .mockResolvedValueOnce({ ...unknownKey, status: 'trusted' })
     const { result } = renderHook(() =>
       useSshHostKeyGate({ tabType: 'remote', host }),
     )
 
     await waitFor(() => expect(result.current.status).toBe('error'))
-    expect(result.current.error).toContain('timed out')
+    expect(result.current.error).toContain('known_hosts')
 
     act(() => result.current.retry())
     await waitFor(() => expect(result.current.status).toBe('ready'))
     expect(result.current.enabled).toBe(true)
     expect(mocks.probe).toHaveBeenCalledTimes(2)
+  })
+
+  it('automatically retries a transient outage and enables the gate', async () => {
+    mocks.probe
+      .mockRejectedValueOnce({
+        type: 'connection_failed',
+        message: 'SSH host-key connection failed: connection refused',
+      })
+      .mockResolvedValueOnce({ ...unknownKey, status: 'trusted' })
+    const { result } = renderHook(() =>
+      useSshHostKeyGate({ tabType: 'remote', host }),
+    )
+
+    await waitFor(() => expect(result.current.status).toBe('ready'), {
+      timeout: SSH_HOST_KEY_PROBE_RETRY_DELAYS_MS[0] + 1_000,
+    })
+
+    expect(result.current.enabled).toBe(true)
+    expect(mocks.probe).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops after the bounded automatic retry budget is exhausted', async () => {
+    vi.useFakeTimers()
+    mocks.probe.mockRejectedValue({
+      type: 'connection_failed',
+      message: 'SSH host-key connection failed: connection timed out',
+    })
+    const { result } = renderHook(() =>
+      useSshHostKeyGate({ tabType: 'remote', host }),
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(mocks.probe).toHaveBeenCalledTimes(1)
+
+    for (const delay of SSH_HOST_KEY_PROBE_RETRY_DELAYS_MS) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(delay)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+    }
+
+    expect(mocks.probe).toHaveBeenCalledTimes(
+      SSH_HOST_KEY_PROBE_RETRY_DELAYS_MS.length + 1,
+    )
+    expect(result.current.status).toBe('error')
+    expect(result.current.enabled).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it.each([
+    [
+      'WSAECONNRESET',
+      'SSH host-key connection failed: An existing connection was forcibly closed by the remote host. (os error 10054)',
+    ],
+    [
+      'WSAETIMEDOUT',
+      'connect host-key probe failed: The semaphore timeout period has expired. (os error 121)',
+    ],
+    [
+      'WSAECONNREFUSED',
+      'connect host-key probe failed: No connection could be made because the target machine actively refused it. (os error 10061)',
+    ],
+    [
+      'WSAHOST_NOT_FOUND',
+      'connect host-key probe failed: No such host is known. (os error 11001)',
+    ],
+  ])('classifies Windows %s as retryable', (_name, message) => {
+    expect(
+      isRetryableSshHostKeyProbeError({
+        type: 'connection_failed',
+        message,
+      }),
+    ).toBe(true)
+  })
+
+  it('does not retry Windows authentication rejection text just because it contains a network code', () => {
+    expect(
+      isRetryableSshHostKeyProbeError({
+        type: 'authentication_failed',
+        message: 'credentials rejected by server (os error 10061)',
+      }),
+    ).toBe(false)
+  })
+
+  it('does not classify a host address containing a timeout code as transient', () => {
+    expect(
+      isRetryableSshHostKeyProbeError({
+        type: 'connection_failed',
+        message: 'server 192.0.2.121 did not present a host key',
+      }),
+    ).toBe(false)
+  })
+
+  it('retries authentication transport timeouts but not rejected credentials', () => {
+    expect(
+      isRetryableSshHostKeyProbeError({
+        type: 'authentication_failed',
+        message: 'SSH authentication timed out before its deadline',
+      }),
+    ).toBe(true)
+    expect(
+      isRetryableSshHostKeyProbeError({
+        type: 'authentication_failed',
+        message: 'credentials rejected: permission denied',
+      }),
+    ).toBe(false)
+  })
+
+  it('classifies a Windows known_hosts timeout as retryable', () => {
+    expect(
+      isRetryableSshHostKeyProbeError({
+        type: 'known_hosts_failed',
+        message: 'known_hosts operation failed (os error 121)',
+      }),
+    ).toBe(true)
+  })
+
+  it('disables the gate immediately while a changed host revision is rechecked', async () => {
+    const pending = deferred<SshHostKeyProbeResult>()
+    mocks.probe
+      .mockResolvedValueOnce({ ...unknownKey, status: 'trusted' })
+      .mockReturnValueOnce(pending.promise)
+    const { result, rerender } = renderHook(
+      ({ currentHost }) =>
+        useSshHostKeyGate({ tabType: 'remote', host: currentHost }),
+      { initialProps: { currentHost: host } },
+    )
+    await waitFor(() => expect(result.current.enabled).toBe(true))
+
+    rerender({ currentHost: { ...host, updatedAt: 2 } })
+
+    expect(result.current.enabled).toBe(false)
+
+    await act(async () => {
+      pending.resolve({ ...unknownKey, status: 'trusted' })
+      await pending.promise
+    })
+    await waitFor(() => expect(result.current.enabled).toBe(true))
+  })
+
+  it('keeps host-key and known_hosts data errors as hard failures', async () => {
+    vi.useFakeTimers()
+    mocks.probe.mockRejectedValueOnce({
+      type: 'known_hosts_failed',
+      message: 'known_hosts file is not valid',
+    })
+    const { result } = renderHook(() =>
+      useSshHostKeyGate({ tabType: 'remote', host }),
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.status).toBe('error')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(
+        SSH_HOST_KEY_PROBE_RETRY_DELAYS_MS.at(-1) ?? 0,
+      )
+    })
+
+    expect(mocks.probe).toHaveBeenCalledTimes(1)
+    expect(result.current.enabled).toBe(false)
+    expect(
+      isRetryableSshHostKeyProbeError({
+        type: 'host_key_changed',
+        message: 'refusing to replace the existing key',
+      }),
+    ).toBe(false)
+    expect(
+      isRetryableSshHostKeyProbeError({
+        type: 'known_hosts_failed',
+        message: 'known_hosts file is not valid',
+      }),
+    ).toBe(false)
   })
 
   it('does not let a stale learn result approve another host with the same key', async () => {
@@ -267,19 +506,55 @@ describe('useSshHostKeyGate', () => {
 
     await waitFor(() => expect(result.current.status).toBe('ready'))
 
-    expect(mocks.probe).toHaveBeenCalledWith(jumpHost.hostname, jumpHost.port)
+    expect(mocks.probe).toHaveBeenCalledWith(
+      jumpHost.hostname,
+      jumpHost.port,
+      expect.objectContaining({ timeoutMs: expect.any(Number) }),
+    )
     expect(mocks.probeViaJump).toHaveBeenCalledWith(
       host.hostname,
       host.port,
       expect.objectContaining({
         host: jumpHost.hostname,
       }),
+      expect.objectContaining({ timeoutMs: expect.any(Number) }),
     )
     expect(mocks.probeViaJump.mock.calls[0]?.[2]).not.toHaveProperty(
       'expectedHostKey',
     )
     expect(result.current.expectedHostKey).toBeUndefined()
     expect(result.current.expectedJumpHostKey).toBeUndefined()
+  })
+
+  it('charges the jump preflight and target tunnel probe to one startup budget', async () => {
+    vi.useFakeTimers()
+    const pendingJump = deferred<SshHostKeyProbeResult>()
+    mocks.probe.mockReturnValue(pendingJump.promise)
+    mocks.probeViaJump.mockResolvedValue({ ...unknownKey, status: 'trusted' })
+    const { result } = renderHook(() =>
+      useSshHostKeyGate({
+        tabType: 'remote',
+        host: targetViaJump,
+        jumpHost,
+      }),
+    )
+    await act(async () => {
+      await Promise.resolve()
+    })
+    const jumpBudget = mocks.probe.mock.calls[0]?.[2]?.timeoutMs as number
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000)
+      pendingJump.resolve({ ...unknownJumpKey, status: 'trusted' })
+      await pendingJump.promise
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const targetBudget = mocks.probeViaJump.mock.calls[0]?.[3]
+      ?.timeoutMs as number
+    expect(targetBudget).toBeLessThan(jumpBudget - 1_900)
+    expect(result.current.status).toBe('ready')
   })
 
   it('pins both trust-once keys across jump and target preflights', async () => {
@@ -303,6 +578,7 @@ describe('useSshHostKeyGate', () => {
       host.hostname,
       host.port,
       expect.objectContaining({ expectedHostKey: unknownJumpKey.publicKey }),
+      expect.objectContaining({ timeoutMs: expect.any(Number) }),
     )
     act(() => result.current.trustOnce())
 

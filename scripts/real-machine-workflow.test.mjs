@@ -44,7 +44,7 @@ test('macOS real-machine job runs the shell interaction matrix', async () => {
   const workflow = await readWorkflow()
   assert.match(
     workflow,
-    /run: pnpm smoke:shell-probe:matrix -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt/,
+    /run: pnpm smoke:shell-probe:matrix -- --shells bash,zsh cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt/,
   )
   // The same cases over a real sshd: a PTY-only matrix would leave PTY
   // request, window-size propagation and signal delivery unproven.
@@ -60,6 +60,15 @@ test('macOS real-machine job measures remote prompt cold-start', async () => {
   assert.match(
     workflow,
     /pnpm smoke:remote-cold-start -- \\\s+--app-path "\$GITHUB_WORKSPACE\/src-tauri\/target\/debug\/terminal"/,
+  )
+})
+
+test('macOS real-machine job measures local PTY terminal cold-start', async () => {
+  const workflow = await readWorkflow()
+  assert.match(workflow, /name: Measure local PTY cold-start to terminal marker/)
+  assert.match(
+    workflow,
+    /pnpm smoke:local-cold-start -- \\\s+--app-path "\$GITHUB_WORKSPACE\/src-tauri\/target\/debug\/terminal"/,
   )
 })
 

@@ -15,6 +15,7 @@ const SSH_KEYGEN = '/usr/bin/ssh-keygen'
 const PS = process.platform === 'darwin' ? '/bin/ps' : '/usr/bin/ps'
 const COMMAND_TIMEOUT_MS = 10_000
 const READY_TIMEOUT_MS = 10_000
+const CONTROL_POLL_INTERVAL_MS = 100
 const READY_COMMAND = 'terminal-smoke-ready'
 const PORT_ATTEMPTS = 4
 const CERT_SERIAL = '1'
@@ -79,6 +80,51 @@ function waitForClose(child) {
       finish({ code, signal, spawnError: null }),
     )
   })
+}
+
+function abortReason(signal) {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new Error('Terminal smoke control wait aborted')
+}
+
+function waitForControlPoll(dependencies, signal) {
+  if (signal?.aborted) return Promise.reject(abortReason(signal))
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const finish = error => {
+      if (settled) return
+      settled = true
+      dependencies.clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      if (error) reject(error)
+      else resolve()
+    }
+    const onAbort = () => finish(abortReason(signal))
+    const timer = dependencies.setTimeout(
+      () => finish(),
+      CONTROL_POLL_INTERVAL_MS,
+    )
+    signal?.addEventListener('abort', onAbort, { once: true })
+    if (signal?.aborted) onAbort()
+  })
+}
+
+async function waitForControlFile(controlPath, dependencies, signal) {
+  const deadline = dependencies.now() + READY_TIMEOUT_MS * 12
+  while (dependencies.now() <= deadline) {
+    if (signal?.aborted) throw abortReason(signal)
+    try {
+      const content = await dependencies.readFile(controlPath, 'utf8')
+      if (content === 'host-wake-requested\n') return
+    } catch {
+      // The producer may not have written the checkpoint yet.
+    }
+    await waitForControlPoll(dependencies, signal)
+  }
+  throw new Error(
+    `host wake control was not published within ${READY_TIMEOUT_MS * 12} ms`,
+  )
 }
 
 async function runProcess(command, args, options, dependencies) {
@@ -634,7 +680,7 @@ export async function startTerminalSmokeSshd({
     )
     let restartPromise
     let stopPromise
-   let firstConnectOutagePromise
+    let firstConnectOutagePromise
     return {
       ...connection,
       configPath: paths.connection,
@@ -695,6 +741,25 @@ export async function startTerminalSmokeSshd({
         restartPromise = chained
         return chained
       },
+      interruptUntilControl: ({ controlPath, signal }) => {
+        const outagePromise = (async () => {
+          if (signal?.aborted) throw abortReason(signal)
+          await stopDaemon(daemon, dependencies)
+          await waitForControlFile(controlPath, dependencies, signal)
+          daemon = startDaemon(paths.config, paths.directory, dependencies)
+          try {
+            await waitUntilReady(daemon, paths, port, username, mode, dependencies)
+          } catch (error) {
+            await stopDaemon(daemon, dependencies)
+            throw error
+          }
+        })()
+        const chained = (restartPromise ?? Promise.resolve())
+          .catch(() => undefined)
+          .then(() => outagePromise)
+        restartPromise = chained
+        return chained
+      },
       stop: () =>
         (stopPromise ??= (async () => {
           if (restartPromise) await restartPromise.catch(() => {})
@@ -713,8 +778,10 @@ export async function startTerminalSmokeSshd({
        */
       outageBeforeFirstConnect: ({ holdMs }) => {
         if (firstConnectOutagePromise) return firstConnectOutagePromise
-        const outagePromise = (async () => {
-          await stopDaemon(daemon, dependencies)
+        const outageDownPromise = (restartPromise ?? Promise.resolve())
+          .catch(() => undefined)
+          .then(() => stopDaemon(daemon, dependencies))
+        const outagePromise = outageDownPromise.then(async () => {
           await new Promise(resolve => {
             // The hold must keep the event loop open for the same reason the
             // one in `interrupt` does: an unref'd timer lets Node exit while
@@ -728,14 +795,16 @@ export async function startTerminalSmokeSshd({
             await stopDaemon(daemon, dependencies)
             throw error
           }
-        })()
-        // Nothing else may replace the daemon while it is down.
-        const chained = (restartPromise ?? Promise.resolve())
-          .catch(() => undefined)
-          .then(() => outagePromise)
-        restartPromise = chained
-        firstConnectOutagePromise = chained
-        return chained
+        })
+        // Nothing else may replace the daemon while it is down. Expose the
+        // down checkpoint separately so callers can start their first
+        // connection only after the old sshd process group has exited; the
+        // full promise still resolves after the outage window and readiness
+        // probe complete.
+        outagePromise.ready = outageDownPromise
+        restartPromise = outagePromise
+        firstConnectOutagePromise = outagePromise
+        return outagePromise
       },
     }
   } catch (error) {

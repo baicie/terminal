@@ -2,6 +2,15 @@ import { useEffect } from 'react'
 import { terminalSessionManager } from '@/features/terminal/services/terminal-session-manager'
 
 /**
+ * A sleeping host can leave a WKWebView visible and focused, so no browser
+ * visibility event is guaranteed on resume. Keep this poll deliberately low
+ * frequency and use wall-clock drift to detect a suspended timer.
+ */
+export const TERMINAL_HOST_WAKE_POLL_INTERVAL_MS = 15_000
+export const TERMINAL_HOST_WAKE_DRIFT_THRESHOLD_MS =
+  TERMINAL_HOST_WAKE_POLL_INTERVAL_MS + 1_000
+
+/**
  * Resume terminal sessions after the host wakes from sleep.
  *
  * Sleeping suspends timers and tears down the socket, so an automatic
@@ -20,6 +29,7 @@ import { terminalSessionManager } from '@/features/terminal/services/terminal-se
  */
 export function useTerminalHostWake(): void {
   useEffect(() => {
+    let lastPollAt = Date.now()
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         terminalSessionManager.handleHostWake()
@@ -28,13 +38,29 @@ export function useTerminalHostWake(): void {
     const onNetworkReturn = () => {
       terminalSessionManager.handleHostWake()
     }
+    const onPageResume = () => {
+      terminalSessionManager.handleHostWake()
+    }
+    const pollTimer = window.setInterval(() => {
+      const now = Date.now()
+      const elapsed = now - lastPollAt
+      lastPollAt = now
+      if (elapsed >= TERMINAL_HOST_WAKE_DRIFT_THRESHOLD_MS) {
+        terminalSessionManager.handleHostWake()
+      }
+    }, TERMINAL_HOST_WAKE_POLL_INTERVAL_MS)
     document.addEventListener('visibilitychange', onVisibilityChange)
+    document.addEventListener('resume', onPageResume)
     window.addEventListener('focus', onVisibilityChange)
     window.addEventListener('online', onNetworkReturn)
+    window.addEventListener('pageshow', onPageResume)
     return () => {
+      window.clearInterval(pollTimer)
       document.removeEventListener('visibilitychange', onVisibilityChange)
+      document.removeEventListener('resume', onPageResume)
       window.removeEventListener('focus', onVisibilityChange)
       window.removeEventListener('online', onNetworkReturn)
+      window.removeEventListener('pageshow', onPageResume)
     }
   }, [])
 }

@@ -389,6 +389,85 @@ test('interrupt keeps the host unreachable across several reconnect attempts', a
   await fixture.stop()
 })
 
+test('interruptUntilControl waits for the host-wake checkpoint before restarting sshd', async () => {
+  const { daemons, dependencies } = createDependencies()
+  const readFixtureFile = dependencies.readFile
+  let controlPublished = false
+  dependencies.readFile = async (filePath, encoding) => {
+    if (filePath === '/tmp/host-wake.ready') {
+      return controlPublished ? 'host-wake-requested\n' : ''
+    }
+    return readFixtureFile(filePath, encoding)
+  }
+  const fixture = await startTerminalSmokeSshd({
+    runDirectory: RUN_DIRECTORY,
+    dependencies,
+  })
+
+  const recovery = fixture.interruptUntilControl({
+    controlPath: '/tmp/host-wake.ready',
+  })
+  await new Promise(resolve => setTimeout(resolve, 0))
+
+  assert.equal(daemons[0].closed, true)
+  assert.equal(daemons.length, 1)
+
+  controlPublished = true
+  await recovery
+
+  assert.equal(daemons.length, 2)
+  await fixture.stop()
+})
+
+test('interruptUntilControl stops polling and lets the fixture clean up on abort', async () => {
+  const { calls, daemons, dependencies } = createDependencies()
+  const readFixtureFile = dependencies.readFile
+  dependencies.readFile = async (filePath, encoding) => {
+    if (filePath === '/tmp/host-wake.ready') return ''
+    return readFixtureFile(filePath, encoding)
+  }
+  const fixture = await startTerminalSmokeSshd({
+    runDirectory: RUN_DIRECTORY,
+    dependencies,
+  })
+  const controller = new AbortController()
+  const recovery = fixture.interruptUntilControl({
+    controlPath: '/tmp/host-wake.ready',
+    signal: controller.signal,
+  })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  controller.abort(new Error('matrix case cancelled'))
+
+  await assert.rejects(recovery, /matrix case cancelled/)
+  await fixture.stop()
+  assert.equal(daemons[0].closed, true)
+  assert.equal(daemons.length, 1)
+  assert.equal(
+    calls.spawn.filter(
+      call => call.command === '/usr/sbin/sshd' && call.args[0] === '-D',
+    ).length,
+    1,
+    'an aborted wake checkpoint must not leave a replacement daemon running',
+  )
+})
+
+test('first-connect outage exposes a down checkpoint before the daemon returns', async () => {
+  const { daemons, dependencies } = createDependencies()
+  const fixture = await startTerminalSmokeSshd({
+    runDirectory: RUN_DIRECTORY,
+    dependencies,
+  })
+
+  const outage = fixture.outageBeforeFirstConnect({ holdMs: 1 })
+  assert.ok(outage.ready instanceof Promise)
+  await outage.ready
+  assert.equal(daemons[0].closed, true)
+  assert.equal(daemons.length, 1)
+  await outage
+  assert.equal(daemons.length, 2)
+  await fixture.stop()
+})
+
 test('restart terminates active SSH session process groups before replacing the daemon', async () => {
   const { calls, dependencies } = createDependencies({
     daemonChildren: [

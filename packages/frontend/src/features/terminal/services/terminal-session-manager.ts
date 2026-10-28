@@ -16,6 +16,7 @@ import {
   type TerminalReconnectStartResult,
 } from './terminal-session-manager-reconnect'
 import { TerminalSessionOutputBuffer } from './terminal-session-output-buffer'
+import { TerminalSessionStartCancellation } from './terminal-session-start-cancellation'
 import { startTerminalSession } from './terminal-session-manager-start'
 import { terminalSessionTransport } from './terminal-session-transport'
 import type { ShellOutput } from '../types'
@@ -39,6 +40,7 @@ export type { TerminalReconnectOptions } from './terminal-session-manager-reconn
 export type { TerminalSessionResourceSnapshot } from './terminal-session-manager-resources'
 export class TerminalSessionManager {
   private readonly records = new Map<string, TerminalRecord>()
+  private readonly startCancellation = new TerminalSessionStartCancellation()
   private readonly sessionToTab = new Map<string, string>()
   private readonly pendingOutput = new TerminalSessionOutputBuffer()
   private readonly lifecycle = new TerminalSessionLifecycle(
@@ -62,7 +64,8 @@ export class TerminalSessionManager {
         pendingOutput: this.pendingOutput,
         retireLifecycle: sessionId => this.lifecycle.retire(sessionId),
         cancelConnection: record => this.cancelConnection(record),
-        start: (record, generation) => this.beginStart(record, generation),
+        start: (record, generation, signal) =>
+          this.beginStart(record, generation, signal),
         isCurrent: record => this.records.get(record.request.tabId) === record,
       },
       options,
@@ -124,6 +127,7 @@ export class TerminalSessionManager {
     for (const promise of record.startPromises) pending.add(promise)
     if (record.reconnectPromise) pending.add(record.reconnectPromise)
     record.closed = true
+    this.startCancellation.abort(record)
     this.reconnects.retire(record)
     record.io.close()
     this.records.delete(tabId)
@@ -162,19 +166,25 @@ export class TerminalSessionManager {
   private beginStart(
     record: TerminalRecord,
     generation = ++record.generation,
+    signal?: AbortSignal,
   ): Promise<TerminalReconnectStartResult> {
-    const promise = this.start(record, generation)
+    const cancellation = this.startCancellation.create(record, signal)
+    const promise = this.start(record, generation, cancellation.signal)
     record.startPromise = promise
     record.startPromises.add(promise)
-    void promise.finally(() => {
+    const cleanup = () => {
+      cancellation.cleanup()
       record.startPromises.delete(promise)
       if (record.startPromise === promise) record.startPromise = null
-    })
+    }
+    void promise.then(cleanup, cleanup)
     return promise
   }
+
   private start(
     record: TerminalRecord,
     generation: number,
+    signal?: AbortSignal,
   ): Promise<TerminalReconnectStartResult> {
     return startTerminalSession(
       {
@@ -189,6 +199,7 @@ export class TerminalSessionManager {
       },
       record,
       generation,
+      signal,
     )
   }
 
@@ -275,7 +286,9 @@ export class TerminalSessionManager {
     }
   }
   private handleLifecycleOverflow(sessionId: string): void {
-    const error = new Error('Terminal lifecycle buffer exceeded 1024 pending sessions')
+    const error = new Error(
+      'Terminal lifecycle buffer exceeded 1024 pending sessions',
+    )
     const tabId = this.sessionToTab.get(sessionId)
     if (tabId) this.handleIoError(tabId, error)
   }

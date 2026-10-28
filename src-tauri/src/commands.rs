@@ -4,7 +4,8 @@
 
 use crate::session::local::LocalSession;
 use crate::session::ssh::{
-    register_connection_attempt, run_cancellable_connection, ssh_connection_deadline, SshSession,
+    register_connection_attempt, run_cancellable_connection, ssh_connection_deadline_with_timeout,
+    SshSession,
 };
 use crate::session::terminal_output::{ack_session_output, finish_session_output};
 use crate::session::{
@@ -121,9 +122,10 @@ pub async fn session_create_ssh_password(
     rows: u16,
     profile: Option<crate::session::TerminalProfile>,
     attempt_id: Option<String>,
+    connection_timeout_ms: Option<u64>,
 ) -> Result<String, SessionError> {
     let attempt = register_connection_attempt(attempt_id.as_deref());
-    let connection_deadline = ssh_connection_deadline();
+    let connection_deadline = ssh_connection_deadline_with_timeout(connection_timeout_ms);
     // 验证输入
     if host.is_empty() {
         return Err(SessionError::InvalidInput(
@@ -189,9 +191,10 @@ pub async fn session_create_ssh_key(
     rows: u16,
     profile: Option<crate::session::TerminalProfile>,
     attempt_id: Option<String>,
+    connection_timeout_ms: Option<u64>,
 ) -> Result<String, SessionError> {
     let attempt = register_connection_attempt(attempt_id.as_deref());
-    let connection_deadline = ssh_connection_deadline();
+    let connection_deadline = ssh_connection_deadline_with_timeout(connection_timeout_ms);
     // 验证输入
     if host.is_empty() {
         return Err(SessionError::InvalidInput(
@@ -256,9 +259,10 @@ pub async fn session_create_ssh_agent(
     rows: u16,
     profile: Option<crate::session::TerminalProfile>,
     attempt_id: Option<String>,
+    connection_timeout_ms: Option<u64>,
 ) -> Result<String, SessionError> {
     let attempt = register_connection_attempt(attempt_id.as_deref());
-    let connection_deadline = ssh_connection_deadline();
+    let connection_deadline = ssh_connection_deadline_with_timeout(connection_timeout_ms);
     if host.is_empty() {
         return Err(SessionError::InvalidInput(
             "Host cannot be empty".to_string(),
@@ -321,9 +325,10 @@ pub async fn session_create_ssh_cert(
     rows: u16,
     profile: Option<crate::session::TerminalProfile>,
     attempt_id: Option<String>,
+    connection_timeout_ms: Option<u64>,
 ) -> Result<String, SessionError> {
     let attempt = register_connection_attempt(attempt_id.as_deref());
-    let connection_deadline = ssh_connection_deadline();
+    let connection_deadline = ssh_connection_deadline_with_timeout(connection_timeout_ms);
     if host.is_empty() {
         return Err(SessionError::InvalidInput(
             "Host cannot be empty".to_string(),
@@ -397,9 +402,10 @@ pub async fn session_create_ssh_jump(
     rows: u16,
     profile: Option<crate::session::TerminalProfile>,
     attempt_id: Option<String>,
+    connection_timeout_ms: Option<u64>,
 ) -> Result<String, SessionError> {
     let attempt = register_connection_attempt(attempt_id.as_deref());
-    let connection_deadline = ssh_connection_deadline();
+    let connection_deadline = ssh_connection_deadline_with_timeout(connection_timeout_ms);
     let session = run_cancellable_connection(
         attempt.cancellation(),
         SshSession::new_with_jump(
@@ -595,7 +601,8 @@ mod ssh_command_future_tests {
             u16,
             u16,
             Option<TerminalProfile>,
-            Option<String>
+            Option<String>,
+            Option<u64>
         )
     );
     assert_send_command!(
@@ -612,7 +619,8 @@ mod ssh_command_future_tests {
             u16,
             u16,
             Option<TerminalProfile>,
-            Option<String>
+            Option<String>,
+            Option<u64>
         )
     );
     assert_send_command!(
@@ -627,7 +635,8 @@ mod ssh_command_future_tests {
             u16,
             u16,
             Option<TerminalProfile>,
-            Option<String>
+            Option<String>,
+            Option<u64>
         )
     );
     assert_send_command!(
@@ -645,7 +654,8 @@ mod ssh_command_future_tests {
             u16,
             u16,
             Option<TerminalProfile>,
-            Option<String>
+            Option<String>,
+            Option<u64>
         )
     );
     assert_send_command!(
@@ -664,7 +674,8 @@ mod ssh_command_future_tests {
             u16,
             u16,
             Option<TerminalProfile>,
-            Option<String>
+            Option<String>,
+            Option<u64>
         )
     );
 

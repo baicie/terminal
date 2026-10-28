@@ -2,6 +2,7 @@ import type { Tab, WorkspaceLayout } from '@/types'
 import { normalizeTerminalLayout } from '@/store/app-terminal-layout'
 import {
   awaitWithRecoveryAbort,
+  awaitWithRecoveryTimeout,
   throwIfRecoveryAborted,
 } from './workspace-recovery-abort'
 import { useAppStore } from '@/store/app'
@@ -17,6 +18,7 @@ import {
 } from './workspace-recovery-journal'
 
 const WORKSPACE_SAVE_DEBOUNCE_MS = 1_000
+export const WORKSPACE_HOST_LOAD_TIMEOUT_MS = 1_500
 
 export interface WorkspaceRecoveryHandle {
   flush: () => Promise<void>
@@ -48,10 +50,7 @@ function stripProcessLocalTabState(tab: Tab): Tab {
 }
 
 function canReplaceStartupFallback(tabs: readonly Tab[]): boolean {
-  return (
-    tabs.length > 0 &&
-    tabs.every(tab => tab.startupFallback === true)
-  )
+  return tabs.length > 0 && tabs.every(tab => tab.startupFallback === true)
 }
 
 export function sanitizeWorkspaceRecoveryLayout(
@@ -93,21 +92,48 @@ export async function startWorkspaceRecovery(
   const { signal } = options
   const workspaceState = useWorkspaceStore.getState()
   const workspaceLoad = workspaceState.loadWorkspaces(signal)
+  const hostLoadController = new AbortController()
+  const abortHostLoad = () => hostLoadController.abort()
+  const releaseHostLoad = () => {
+    hostLoadController.abort()
+    signal?.removeEventListener('abort', abortHostLoad)
+  }
+  if (signal?.aborted) abortHostLoad()
+  else signal?.addEventListener('abort', abortHostLoad, { once: true })
   const hostLoad = useHostStore
     .getState()
-    .loadHosts(signal)
+    .loadHosts(hostLoadController.signal)
     .then(() => true)
     .catch(error => {
       if (signal?.aborted) throw error
       console.warn('Failed to load hosts before workspace recovery:', error)
       return false
     })
+  void hostLoad.then(
+    () => signal?.removeEventListener('abort', abortHostLoad),
+    () => signal?.removeEventListener('abort', abortHostLoad),
+  )
+  const awaitHostLoad = async () => {
+    try {
+      return await awaitWithRecoveryTimeout(
+        hostLoad,
+        signal,
+        WORKSPACE_HOST_LOAD_TIMEOUT_MS,
+      )
+    } catch (error) {
+      throwIfRecoveryAborted(signal)
+      console.warn('Failed to load hosts before workspace recovery:', error)
+      return false
+    } finally {
+      releaseHostLoad()
+    }
+  }
   try {
     await awaitWithRecoveryAbort(workspaceLoad, signal)
   } catch (error) {
-    // Do not let a failed workspace load trigger a retry while the concurrent
-    // host query from this attempt is still mutating store state.
-    await awaitWithRecoveryAbort(hostLoad, signal).catch(() => undefined)
+    // Keep the concurrent host query from mutating the store after this
+    // attempt; workspace failure is already terminal for this retry.
+    releaseHostLoad()
     throw error
   }
   throwIfRecoveryAborted(signal)
@@ -131,51 +157,47 @@ export async function startWorkspaceRecovery(
       sanitizeWorkspaceRecoveryLayout,
     )
     const recoveryLayout = recoveredJournal?.layout ?? savedLayout
-    const currentTabs = useAppStore.getState().tabs
-    const shouldRestore =
-      Boolean(recoveryLayout?.tabs.length) &&
-      (currentTabs.length === 0 || canReplaceStartupFallback(currentTabs))
-    if (recoveryLayout && shouldRestore) {
-      const sanitizedRecoveryLayout = sanitizeWorkspaceRecoveryLayout(
-        recoveryLayout,
-        activeWorkspaceId,
-      )
-      if (recoveredJournal) {
-        recoveredJournal = createRecoveryJournal(
+    const layoutNeedsHosts = recoveryLayout?.tabs.some(
+      tab => tab.type === 'remote',
+    )
+    const hostsLoaded = layoutNeedsHosts ? await awaitHostLoad() : false
+    const hostIds = new Set(
+      (useHostStore.getState().hosts ?? []).map(host => host.id),
+    )
+    const sanitizedRecoveryLayout = recoveryLayout
+      ? sanitizeWorkspaceRecoveryLayout(
+          recoveryLayout,
           activeWorkspaceId,
-          sanitizedRecoveryLayout,
-          sanitizeWorkspaceRecoveryLayout,
+          hostsLoaded ? hostIds : undefined,
         )
-      }
-      useAppStore.getState().restoreLayout(sanitizedRecoveryLayout)
-    } else if (!shouldRestore) {
-      // A user may have opened a fallback/local tab while recovery was slow.
-      // Do not let a late database result overwrite that usable session.
+      : null
+    const workspaceStillActive =
+      useWorkspaceStore.getState().activeWorkspaceId === activeWorkspaceId
+    if (!workspaceStillActive) {
+      // Workspace switching is independent of this startup read. A late
+      // layout from the previous workspace must never enter the new one.
       recoveredJournal = null
-    }
-
-    if (
-      (await awaitWithRecoveryAbort(hostLoad, signal)) &&
-      useAppStore.getState().tabs.some(tab => tab.type === 'remote')
-    ) {
-      const currentLayout = readRecoveryLayout(activeWorkspaceId)
-      const hostIds = new Set(
-        (useHostStore.getState().hosts ?? []).map(host => host.id),
-      )
-      const sanitizedCurrentLayout = sanitizeWorkspaceRecoveryLayout(
-        currentLayout,
-        activeWorkspaceId,
-        hostIds,
-      )
-      useAppStore.getState().restoreLayout(sanitizedCurrentLayout)
-      if (recoveredJournal) {
-        recoveredJournal = createRecoveryJournal(
-          activeWorkspaceId,
-          sanitizedCurrentLayout,
-          sanitizeWorkspaceRecoveryLayout,
-        )
+    } else {
+      const currentTabs = useAppStore.getState().tabs
+      const shouldRestore =
+        Boolean(sanitizedRecoveryLayout?.tabs.length) &&
+        (currentTabs.length === 0 || canReplaceStartupFallback(currentTabs))
+      if (sanitizedRecoveryLayout && shouldRestore) {
+        if (recoveredJournal) {
+          recoveredJournal = createRecoveryJournal(
+            activeWorkspaceId,
+            sanitizedRecoveryLayout,
+            sanitizeWorkspaceRecoveryLayout,
+          )
+        }
+        useAppStore.getState().restoreLayout(sanitizedRecoveryLayout)
+      } else if (!shouldRestore) {
+        // A user may have opened a fallback/local tab while recovery was slow.
+        // Do not let a late database result overwrite that usable session.
+        recoveredJournal = null
       }
     }
+    if (layoutNeedsHosts && !hostsLoaded) recoveredJournal = null
   }
 
   let pending: PendingWorkspaceSnapshot | null = recoveredJournal
@@ -209,6 +231,9 @@ export async function startWorkspaceRecovery(
     } else {
       await saveQueue
     }
+  }
+  if (!activeWorkspaceId) {
+    releaseHostLoad()
   }
 
   const schedule = () => {
@@ -252,6 +277,7 @@ export async function startWorkspaceRecovery(
   return {
     flush,
     dispose: () => {
+      releaseHostLoad()
       unsubscribe()
       window.removeEventListener('pagehide', handlePageHide)
       void flush().catch(error => {

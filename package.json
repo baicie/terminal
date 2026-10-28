@@ -21,6 +21,7 @@
     "smoke:terminal": "node scripts/run-terminal-smoke.mjs",
     "smoke:terminal:reconnect": "node scripts/run-terminal-smoke.mjs --reconnect",
     "smoke:cold-start": "node scripts/run-cold-start-stopwatch.mjs",
+    "smoke:local-cold-start": "node scripts/run-local-cold-start-stopwatch.mjs",
     "smoke:remote-cold-start": "node scripts/run-remote-cold-start-stopwatch.mjs",
     "shadcn": "pnpm --filter=@terminal/frontend shadcn",
     "format": "pnpm --filter=@terminal/frontend format",

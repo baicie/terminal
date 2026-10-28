@@ -220,6 +220,7 @@ describe('TerminalSessionManager', () => {
       'e6ad',
       undefined,
       expect.any(String),
+      undefined,
     )
   })
 
@@ -475,7 +476,7 @@ describe('TerminalSessionManager', () => {
     )
   })
 
-  it('cancels before event registration finishes and never starts a retired remote session', async () => {
+  it('does not cancel an SSH attempt before event registration or start it after retirement', async () => {
     const registration = deferred<void>()
     listenBarrier = registration.promise
     const manager = new TerminalSessionManager()
@@ -487,15 +488,36 @@ describe('TerminalSessionManager', () => {
     await Promise.resolve()
 
     const closing = manager.close('remote-registration-cancel')
-    await vi.waitFor(() =>
-      expect(sessionService.cancelConnection).toHaveBeenCalledWith(
-        expect.any(String),
-      ),
-    )
+    await expect(closing).resolves.toBeUndefined()
+    expect(sessionService.cancelConnection).not.toHaveBeenCalled()
 
     registration.resolve()
-    await closing
     await Promise.resolve()
+    expect(startTerminalShell).not.toHaveBeenCalled()
+  })
+
+  it('settles close when event registration never completes', async () => {
+    const registration = deferred<void>()
+    listenBarrier = registration.promise
+    const manager = new TerminalSessionManager()
+
+    manager.attach(request, { onOutput: () => {}, onState: () => {} })
+    await Promise.resolve()
+
+    const close = manager.close(request.tabId)
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const closed = await Promise.race([
+      close.then(() => true),
+      new Promise<boolean>(resolve => {
+        timeout = setTimeout(() => resolve(false), 250)
+      }),
+    ])
+    if (timeout) clearTimeout(timeout)
+    expect(closed).toBe(true)
+    expect(startTerminalShell).not.toHaveBeenCalled()
+
+    registration.resolve()
+    await vi.waitFor(() => expect(eventHandlers.size).toBe(3))
     expect(startTerminalShell).not.toHaveBeenCalled()
   })
 
@@ -601,11 +623,17 @@ describe('TerminalSessionManager', () => {
     const secondStates: string[] = []
     manager.attach(
       { ...request, tabId: 'local-overflow-victim' },
-      { onOutput: () => {}, onState: snapshot => firstStates.push(snapshot.status) },
+      {
+        onOutput: () => {},
+        onState: snapshot => firstStates.push(snapshot.status),
+      },
     )
     manager.attach(
       { ...request, tabId: 'local-unrelated' },
-      { onOutput: () => {}, onState: snapshot => secondStates.push(snapshot.status) },
+      {
+        onOutput: () => {},
+        onState: snapshot => secondStates.push(snapshot.status),
+      },
     )
     await vi.waitFor(() => expect(startTerminalShell).toHaveBeenCalledTimes(2))
 
@@ -714,8 +742,132 @@ describe('TerminalSessionManager', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
+      undefined,
     )
     expect(sessionService.resize).toHaveBeenLastCalledWith('session-1', 132, 47)
+  })
+
+  it('passes only the remaining startup budget to the first SSH create call', async () => {
+    const start = deferred<string>()
+    vi.mocked(startTerminalShell).mockReturnValue(start.promise)
+    const remoteHost = {
+      id: 'host-1',
+      name: 'remote',
+      hostname: 'example.test',
+      port: 22,
+      username: 'user',
+      authType: 'agent' as const,
+      isFavorite: false,
+      portForwards: [],
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const manager = new TerminalSessionManager()
+    const requestStartedAt = performance.now()
+    manager.attach(
+      {
+        ...request,
+        tabType: 'remote',
+        host: remoteHost,
+        connectionDeadlineAt: requestStartedAt + 5_000,
+      },
+      { onOutput: () => {}, onState: () => {} },
+    )
+
+    await vi.waitFor(() => expect(startTerminalShell).toHaveBeenCalledOnce())
+    const timeoutMs = vi.mocked(startTerminalShell).mock.calls[0]?.[9]
+    expect(timeoutMs).toBeGreaterThan(4_700)
+    expect(timeoutMs).toBeLessThanOrEqual(4_900)
+    start.resolve('session-1')
+  })
+
+  it('retires a session that resolves after the initial startup budget', async () => {
+    const start = deferred<string>()
+    const now = vi.spyOn(performance, 'now')
+    now.mockReturnValueOnce(1_000).mockReturnValue(1_400)
+    vi.mocked(startTerminalShell).mockReturnValue(start.promise)
+    const manager = new TerminalSessionManager()
+    const states: string[] = []
+    manager.attach(
+      {
+        ...request,
+        tabId: 'late-deadline',
+        tabType: 'local',
+        connectionDeadlineAt: 1_500,
+      },
+      { onOutput: () => {}, onState: snapshot => states.push(snapshot.status) },
+    )
+
+    await vi.waitFor(() => expect(startTerminalShell).toHaveBeenCalledOnce())
+    start.resolve('late-session')
+    await vi.waitFor(() =>
+      expect(sessionService.close).toHaveBeenCalledWith('late-session'),
+    )
+
+    expect(states).not.toContain('connected')
+    now.mockRestore()
+  })
+
+  it('automatically retries a remote session that resolves after the startup budget', async () => {
+    const firstStart = deferred<string>()
+    const now = vi.spyOn(performance, 'now')
+    now.mockReturnValueOnce(1_000).mockReturnValue(1_400)
+    vi.mocked(startTerminalShell)
+      .mockReturnValueOnce(firstStart.promise)
+      .mockResolvedValueOnce('reconnected-session')
+    const states: Array<{ status: string; sessionId: string | null }> = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 1,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+
+    manager.attach(
+      {
+        ...request,
+        tabId: 'late-remote-deadline',
+        tabType: 'remote',
+        connectionDeadlineAt: 1_500,
+      },
+      {
+        onOutput: () => {},
+        onState: snapshot => states.push(snapshot),
+      },
+    )
+
+    await vi.waitFor(() => expect(startTerminalShell).toHaveBeenCalledOnce())
+    firstStart.resolve('late-remote-session')
+    await vi.waitFor(() =>
+      expect(states.at(-1)).toMatchObject({
+        status: 'connected',
+        sessionId: 'reconnected-session',
+      }),
+    )
+
+    expect(sessionService.close).toHaveBeenCalledWith('late-remote-session')
+    expect(states).not.toContainEqual(
+      expect.objectContaining({
+        status: 'connected',
+        sessionId: 'late-remote-session',
+      }),
+    )
+    expect(startTerminalShell).toHaveBeenCalledTimes(2)
+    expect(startTerminalShell).toHaveBeenLastCalledWith(
+      'remote',
+      undefined,
+      undefined,
+      80,
+      24,
+      undefined,
+      undefined,
+      undefined,
+      expect.any(String),
+      undefined,
+    )
+
+    await manager.close('late-remote-deadline')
+    now.mockRestore()
   })
 
   it('coalesces resize pressure to the latest dimensions', async () => {

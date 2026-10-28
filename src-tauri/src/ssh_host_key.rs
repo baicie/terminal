@@ -24,6 +24,13 @@ use crate::session::{JumpHostConfig, SessionError};
 // enough room for the frontend to render the retryable error state.
 const SSH_HOST_KEY_PROBE_TIMEOUT: Duration = Duration::from_secs(8);
 
+fn bounded_probe_timeout(timeout_ms: Option<u64>) -> Duration {
+    timeout_ms
+        .map(Duration::from_millis)
+        .unwrap_or(SSH_HOST_KEY_PROBE_TIMEOUT)
+        .min(SSH_HOST_KEY_PROBE_TIMEOUT)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SshHostKeyStatus {
@@ -245,16 +252,17 @@ async fn check_known_host(
 pub async fn ssh_host_key_probe(
     host: String,
     port: u16,
+    timeout_ms: Option<u64>,
 ) -> Result<SshHostKeyProbeResult, SshHostKeyError> {
     let host = validate_host(&host, port)?;
     let captured_key = Arc::new(StdMutex::new(None));
     let handler = HostKeyProbeHandler::new(Arc::clone(&captured_key));
     let config = Arc::new(client::Config {
-        inactivity_timeout: Some(SSH_HOST_KEY_PROBE_TIMEOUT),
+        inactivity_timeout: Some(bounded_probe_timeout(timeout_ms)),
         nodelay: true,
         ..Default::default()
     });
-    let deadline = Instant::now() + SSH_HOST_KEY_PROBE_TIMEOUT;
+    let deadline = Instant::now() + bounded_probe_timeout(timeout_ms);
 
     let (handle, shutdown_guard) = connect_tcp_with_shutdown(
         config,
@@ -291,17 +299,18 @@ pub async fn ssh_host_key_probe_via_jump(
     target_host: String,
     target_port: u16,
     mut jump_host: JumpHostConfig,
+    timeout_ms: Option<u64>,
 ) -> Result<SshHostKeyProbeResult, SshHostKeyError> {
     let target_host = validate_host(&target_host, target_port)?;
     jump_host.host = validate_host(&jump_host.host, jump_host.port)?;
     let captured_key = Arc::new(StdMutex::new(None));
     let handler = HostKeyProbeHandler::new(Arc::clone(&captured_key));
     let config = Arc::new(client::Config {
-        inactivity_timeout: Some(SSH_HOST_KEY_PROBE_TIMEOUT),
+        inactivity_timeout: Some(bounded_probe_timeout(timeout_ms)),
         nodelay: true,
         ..Default::default()
     });
-    let deadline = Instant::now() + SSH_HOST_KEY_PROBE_TIMEOUT;
+    let deadline = Instant::now() + bounded_probe_timeout(timeout_ms);
 
     // The jump handshake verifies known_hosts (or its exact trust-once pin)
     // before credentials are sent. Only then may the tunnel reveal the target.

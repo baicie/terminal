@@ -42,7 +42,6 @@ const CASES = [
     name: 'key-outage-wake-reconnect',
     auth: 'key',
     reconnect: true,
-    outageHoldMs: 20_000,
     hostWakeRequired: true,
   },
   // Holds the host unreachable across the *first* connection attempt rather

@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-17T04:36:59.232Z",
+  "recordedAt": "2026-10-17T06:48:00.000Z",
   "kind": "tauri-remote-cold-start-shell-prompt-observed-rerun",
   "environment": {
     "os": "macOS 15.7.7",
@@ -13,7 +13,7 @@
   },
   "application": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "cd22a67c98742c94f40fb51466a172ed8bce556e72f75d433de326fbf89e7df0"
+    "sha256": "4368d6c8301e5c8870a17fbdaebf8b6ad35b4efe96293b69858412af95d7970b"
   },
   "command": "node scripts/run-remote-cold-start-stopwatch.mjs --app-path /Users/liuzhiwei/Desktop/workspace/git-code/terminal/src-tauri/target/debug/terminal",
   "fixture": {
@@ -26,12 +26,12 @@
   },
   "measurement": {
     "measuredFrom": "child-spawn-event",
-    "requestToPromptObservedMs": 3385,
-    "spawnToPromptObservedMs": 3376,
+    "requestToPromptObservedMs": 2750,
+    "spawnToPromptObservedMs": 2742,
     "latestRerun": {
-      "capturedAt": "2026-10-17T04:31:31.458Z",
-      "requestToPromptObservedMs": 3385,
-      "spawnToPromptObservedMs": 3376
+      "capturedAt": "2026-10-17T06:42:15.130Z",
+      "requestToPromptObservedMs": 2750,
+      "spawnToPromptObservedMs": 2742
     },
     "underTenSeconds": true,
     "readiness": {
@@ -54,7 +54,7 @@
     "Windows OpenSSH Agent/Pageant/PTY and serial hardware remain unverified because no test devices are available."
   ],
   "source": {
-    "fingerprint": "6a4c8a80f51be8d7df5a8a48c8d4e15bdc8d56c83e7fbdb5c1abac8691bc880b",
+    "fingerprint": "de8e49cbb451cac456de95044732fa9f16be53e2aacf3a84cbdb2685c4c99fda",
     "fingerprintCovers": [
       "packages/frontend/src",
       "src-tauri/src",
@@ -66,7 +66,7 @@
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "cd22a67c98742c94f40fb51466a172ed8bce556e72f75d433de326fbf89e7df0"
+    "sha256": "4368d6c8301e5c8870a17fbdaebf8b6ad35b4efe96293b69858412af95d7970b"
   },
   "shell": "bash",
   "shellIntegration": "bash",

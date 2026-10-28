@@ -10,6 +10,7 @@ import type {
 import { startTerminalShell } from './terminal-launcher'
 import { updateTerminalState } from './terminal-session-state'
 import type { TerminalRecord } from './terminal-session-manager-types'
+import { remainingTerminalConnectionMs } from './terminal-connection-deadline'
 
 interface StartDependencies {
   events: TerminalSessionEvents
@@ -25,15 +26,17 @@ export async function startTerminalSession(
   dependencies: StartDependencies,
   record: TerminalRecord,
   generation: number,
+  signal?: AbortSignal,
 ): Promise<TerminalReconnectStartResult> {
   if (record.status !== 'reconnecting') {
     updateTerminalState(record, { status: 'connecting', error: null })
   }
-  const connectionAttemptId =
-    record.request.tabType === 'remote' ? createConnectionAttemptId() : null
-  record.connectionAttemptId = connectionAttemptId
+  let connectionAttemptId: string | null = null
   try {
-    await dependencies.events.ensure(record.request.tabType)
+    await awaitWithAbort(
+      dependencies.events.ensure(record.request.tabType),
+      signal,
+    )
     if (
       record.closed ||
       record.generation !== generation ||
@@ -41,6 +44,20 @@ export async function startTerminalSession(
     ) {
       return 'cancelled'
     }
+    const initialConnection = !record.reconnectMode
+    const connectionTimeoutMs = initialConnection
+      ? remainingTerminalConnectionMs(record.request.connectionDeadlineAt)
+      : undefined
+    if (
+      initialConnection &&
+      connectionTimeoutMs !== undefined &&
+      connectionTimeoutMs <= 0
+    ) {
+      throw new Error('SSH startup deadline expired before session creation')
+    }
+    connectionAttemptId =
+      record.request.tabType === 'remote' ? createConnectionAttemptId() : null
+    record.connectionAttemptId = connectionAttemptId
     const { cols, rows } = record.io.size
     const sessionId = connectionAttemptId
       ? await startTerminalShell(
@@ -53,6 +70,7 @@ export async function startTerminalSession(
           record.request.expectedHostKey,
           record.request.expectedJumpHostKey,
           connectionAttemptId,
+          connectionTimeoutMs,
         )
       : await startTerminalShell(
           record.request.tabType,
@@ -63,6 +81,8 @@ export async function startTerminalSession(
           record.request.jumpHost,
           record.request.expectedHostKey,
           record.request.expectedJumpHostKey,
+          undefined,
+          connectionTimeoutMs,
         )
     if (
       record.closed ||
@@ -73,6 +93,17 @@ export async function startTerminalSession(
       dependencies.lifecycle.retire(sessionId)
       await closeTerminalBackend(record.request.tabType, sessionId)
       return 'cancelled'
+    }
+    if (
+      !record.reconnectMode &&
+      record.request.connectionDeadlineAt !== undefined &&
+      (remainingTerminalConnectionMs(record.request.connectionDeadlineAt) ??
+        0) <= 0
+    ) {
+      dependencies.pendingOutput.retire(sessionId)
+      dependencies.lifecycle.retire(sessionId)
+      await closeTerminalBackend(record.request.tabType, sessionId)
+      throw new Error('SSH startup deadline expired after session creation')
     }
     record.sessionId = sessionId
     dependencies.pendingOutput.activate(sessionId)
@@ -97,7 +128,9 @@ export async function startTerminalSession(
     dependencies.flushPendingOutput(record, sessionId)
     return 'connected'
   } catch (error) {
-    if (record.closed || record.generation !== generation) return 'cancelled'
+    if (signal?.aborted || record.closed || record.generation !== generation) {
+      return 'cancelled'
+    }
     record.io.disconnect()
     const failure = classifyTerminalFailure(error)
     // An attempt that was suspended by host sleep fails without a sessionId, so
@@ -140,6 +173,41 @@ export async function startTerminalSession(
       record.connectionAttemptId = null
     }
   }
+}
+
+function awaitWithAbort<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (!signal) return promise
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    const cleanup = () => signal.removeEventListener('abort', onAbort)
+    const onAbort = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      const error = new Error('Terminal session start cancelled')
+      error.name = 'AbortError'
+      reject(error)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    if (signal.aborted) onAbort()
+    promise.then(
+      value => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(value)
+      },
+      error => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(error)
+      },
+    )
+  })
 }
 
 let connectionAttemptSequence = 0

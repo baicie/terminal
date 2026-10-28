@@ -3,8 +3,10 @@ import {
   emitTerminalSmokeStaleOutput,
   isTerminalSmokeTauriRuntime,
   loadTerminalSmokeConfig,
+  loadTerminalSmokeRendererHeartbeat,
   parseTerminalSmokeConfig,
   reportTerminalSmokeConnected,
+  reportTerminalSmokeHostWake,
 } from './terminal-smoke-contract'
 
 const validConfig = {
@@ -47,10 +49,60 @@ const jumpConfig = {
 }
 
 it('recognizes the Tauri internals injected into desktop webviews', () => {
-  expect(
-    isTerminalSmokeTauriRuntime({ __TAURI_INTERNALS__: {} }),
-  ).toBe(true)
+  expect(isTerminalSmokeTauriRuntime({ __TAURI_INTERNALS__: {} })).toBe(true)
   expect(isTerminalSmokeTauriRuntime({})).toBe(false)
+})
+
+describe('loadTerminalSmokeRendererHeartbeat', () => {
+  const validHeartbeat = {
+    endpoint: 'http://127.0.0.1:4321/heartbeat',
+    token: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+  }
+
+  it('does not invoke Tauri outside a Tauri webview', async () => {
+    const invoke = vi.fn()
+
+    await expect(
+      loadTerminalSmokeRendererHeartbeat({ isTauri: () => false, invoke }),
+    ).resolves.toBeNull()
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('returns null when renderer heartbeat capture is disabled', async () => {
+    await expect(
+      loadTerminalSmokeRendererHeartbeat({
+        isTauri: () => true,
+        invoke: vi.fn().mockResolvedValue(null),
+      }),
+    ).resolves.toBeNull()
+  })
+
+  it('parses the exact renderer heartbeat endpoint contract', async () => {
+    const invoke = vi.fn().mockResolvedValue(validHeartbeat)
+
+    await expect(
+      loadTerminalSmokeRendererHeartbeat({ isTauri: () => true, invoke }),
+    ).resolves.toEqual(validHeartbeat)
+    expect(invoke).toHaveBeenCalledWith('terminal_smoke_renderer_heartbeat_config')
+  })
+
+  it.each([
+    {},
+    { ...validHeartbeat, token: '' },
+    { ...validHeartbeat, endpoint: '' },
+    { ...validHeartbeat, endpoint: 'ftp://127.0.0.1:4321/heartbeat' },
+    { ...validHeartbeat, endpoint: 'http://localhost:4321/heartbeat' },
+    { ...validHeartbeat, endpoint: 'http://127.0.0.1:4321/renderer-heartbeat' },
+    { ...validHeartbeat, token: 'renderer-heartbeat-token' },
+    { ...validHeartbeat, extra: true },
+  ])('rejects an invalid renderer heartbeat contract: %j', async raw => {
+    await expect(
+      loadTerminalSmokeRendererHeartbeat({
+        isTauri: () => true,
+        invoke: vi.fn().mockResolvedValue(raw),
+      }),
+    ).rejects.toThrow('Invalid terminal smoke renderer heartbeat config')
+  })
 })
 
 it('recognizes the macOS production Tauri protocol', () => {
@@ -102,16 +154,28 @@ describe('parseTerminalSmokeConfig', () => {
     { ...validConfig, ssh: { ...validConfig.ssh, port: 0 } },
     { ...validConfig, resultPath: '/tmp/result.json' },
     { ...validConfig, ssh: { ...validConfig.ssh, authMode: 'keyboard' } },
-    { ...validConfig, ssh: { ...validConfig.ssh, authMode: 'key', privateKey: null } },
-    { ...validConfig, ssh: { ...validConfig.ssh, authMode: 'key', password: 'x' } },
+    {
+      ...validConfig,
+      ssh: { ...validConfig.ssh, authMode: 'key', privateKey: null },
+    },
+    {
+      ...validConfig,
+      ssh: { ...validConfig.ssh, authMode: 'key', password: 'x' },
+    },
     { ...validConfig, ssh: { ...validConfig.ssh, authMode: 'password' } },
-    { ...validConfig, ssh: { ...validConfig.ssh, authMode: 'agent', privateKey: 'x' } },
+    {
+      ...validConfig,
+      ssh: { ...validConfig.ssh, authMode: 'agent', privateKey: 'x' },
+    },
     { ...validConfig, ssh: { ...validConfig.ssh, authMode: 'cert' } },
     {
       ...validConfig,
       ssh: { ...validConfig.ssh, authMode: 'jump', jump: jumpConfig },
     },
-    { ...validConfig, ssh: { ...validConfig.ssh, jump: { host: 'localhost' } } },
+    {
+      ...validConfig,
+      ssh: { ...validConfig.ssh, jump: { host: 'localhost' } },
+    },
     {
       ...validConfig,
       ssh: { ...validConfig.ssh, authMode: 'password', jump: jumpConfig },
@@ -175,6 +239,44 @@ describe('reportTerminalSmokeConnected', () => {
       ).rejects.toThrow('Invalid terminal smoke connection checkpoint')
     },
   )
+})
+
+describe('reportTerminalSmokeHostWake', () => {
+  it('publishes the host wake checkpoint through the Rust command', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined)
+
+    await expect(
+      reportTerminalSmokeHostWake({ invoke }),
+    ).resolves.toBeUndefined()
+    expect(invoke).toHaveBeenCalledWith('terminal_smoke_host_wake', {
+      event: 'checkpoint',
+      source: 'retryable-error',
+    })
+  })
+
+  it('records a named host wake stage and source through the Rust command', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined)
+
+    await expect(
+      reportTerminalSmokeHostWake('fallback-timer-fired', 'reconnect-checkpoint-fallback', {
+        invoke,
+      }),
+    ).resolves.toBeUndefined()
+    expect(invoke).toHaveBeenCalledWith('terminal_smoke_host_wake', {
+      event: 'fallback-timer-fired',
+      source: 'reconnect-checkpoint-fallback',
+    })
+  })
+
+  it('preserves a Rust checkpoint failure for the recovery hook', async () => {
+    const checkpointError = new Error('control path is unavailable')
+
+    await expect(
+      reportTerminalSmokeHostWake({
+        invoke: vi.fn().mockRejectedValue(checkpointError),
+      }),
+    ).rejects.toBe(checkpointError)
+  })
 })
 
 describe('emitTerminalSmokeStaleOutput', () => {

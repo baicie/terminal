@@ -1,40 +1,20 @@
 import { formatIpcError } from '@/hooks/terminal-session-helpers'
 import { closeTerminalBackend } from './terminal-session-backend'
-import type { TerminalSessionOutputBuffer } from './terminal-session-output-buffer'
 import { resolveReconnectPolicy } from './terminal-session-reconnect-policy'
+import type {
+  TerminalReconnectDependencies,
+  TerminalReconnectOptions,
+} from './terminal-session-reconnect-types'
 import { updateTerminalState } from './terminal-session-state'
 import { TerminalSessionRecoveryTimer } from './terminal-session-recovery-timer'
 import { TerminalSessionWakeRecovery } from './terminal-session-wake-recovery'
 import type { TerminalRecord } from './terminal-session-manager-types'
 
-export type TerminalReconnectStartResult =
-  | 'connected'
-  | 'cancelled'
-  | { status: 'retry'; error: string }
-  | { status: 'failed'; error: string; retryable: boolean }
-
-/** Delay before retrying after an automatic attempt budget is exhausted. */
-export interface TerminalReconnectOptions {
-  baseDelayMs?: number
-  maxDelayMs?: number
-  maxAttempts?: number
-  recoveryDelayMs?: number
-  sleep?: (delayMs: number, signal?: AbortSignal) => Promise<void>
-  jitter?: (delayMs: number, attempt: number) => number
-  now?: () => number
-}
-
-interface TerminalReconnectDependencies {
-  sessionToTab: Map<string, string>
-  pendingOutput: TerminalSessionOutputBuffer
-  retireLifecycle: (sessionId: string) => void
-  cancelConnection: (record: TerminalRecord) => void
-  start: (
-    record: TerminalRecord,
-    generation: number,
-  ) => Promise<TerminalReconnectStartResult>
-  isCurrent: (record: TerminalRecord) => boolean
-}
+export type {
+  TerminalReconnectDependencies,
+  TerminalReconnectOptions,
+  TerminalReconnectStartResult,
+} from './terminal-session-reconnect-types'
 
 export class TerminalSessionReconnect {
   private readonly policy: ReturnType<typeof resolveReconnectPolicy>
@@ -81,9 +61,9 @@ export class TerminalSessionReconnect {
    * Resume a session that is still retryable after the host woke from sleep.
    */
   resume(record: TerminalRecord, reason: string): boolean {
-    if (!this.wake.canResume(record)) return false
-    this.launch(record, 'automatic', reason)
-    return true
+    return this.wake.resume(record, () =>
+      this.launch(record, 'automatic', reason),
+    )
   }
 
   automatic(record: TerminalRecord, reason: string): void {
@@ -129,11 +109,17 @@ export class TerminalSessionReconnect {
     this.abortControllers.get(record)?.abort()
     const controller = new AbortController()
     this.abortControllers.set(record, controller)
-    const promise = this.run(record, mode, reason, controller.signal)
+    // Publish ownership before run() can synchronously notify reconnect listeners.
+    let settleOwnership!: () => void
+    const ownership = new Promise<void>(resolve => {
+      settleOwnership = resolve
+    })
     record.reconnectMode = mode
-    record.reconnectPromise = promise
-    void promise.finally(() => {
-      if (record.reconnectPromise !== promise) return
+    record.reconnectPromise = ownership
+    const runPromise = this.run(record, mode, reason, controller.signal)
+    void runPromise.then(settleOwnership, settleOwnership)
+    void ownership.finally(() => {
+      if (record.reconnectPromise !== ownership) return
       record.reconnectPromise = null
       record.reconnectMode = null
       if (this.abortControllers.get(record) === controller) {
@@ -191,7 +177,7 @@ export class TerminalSessionReconnect {
       }
       if (!this.isActive(record, generation)) return
 
-      const result = await this.dependencies.start(record, generation)
+      const result = await this.dependencies.start(record, generation, signal)
       if (result === 'connected' || result === 'cancelled') return
       if (result.status === 'retry') {
         // A host wake can arrive while this reconnect loop is waiting on an

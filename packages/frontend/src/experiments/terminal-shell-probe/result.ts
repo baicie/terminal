@@ -31,6 +31,7 @@ const CASES: ShellProbeCase[] = DIALECT_CASES.posix
 export const SHELL_PROBE_CASES: readonly ShellProbeCase[] = CASES
 
 const HEX_PATTERN = /^[0-9a-f]+$/
+const NONCE_PATTERN = /^[A-Za-z0-9_-]{1,48}$/
 const MIN_TIMEOUT_MS = 1_000
 const MAX_TIMEOUT_MS = 120_000
 /**
@@ -57,7 +58,10 @@ function isTrace(value: unknown): value is ShellProbeTraceEvent[] {
     Array.isArray(value) &&
     value.every(
       item =>
-        item === 'ready' || item === 'step' || item === 'pass' || item === 'fail',
+        item === 'ready' ||
+        item === 'step' ||
+        item === 'pass' ||
+        item === 'fail',
     )
   )
 }
@@ -87,11 +91,13 @@ export function parseShellProbeConfig(raw: unknown): ShellProbeConfig {
   const value = raw as Record<string, unknown>
   const keys = Object.keys(value).sort()
   if (
-    keys.join(',') !== 'caseName,dialect,resultPath,ssh,timeoutMs' ||
+    keys.join(',') !== 'caseName,dialect,nonce,resultPath,ssh,timeoutMs' ||
     typeof value.resultPath !== 'string' ||
     value.resultPath.length === 0 ||
     !isCaseName(value.caseName) ||
     !isDialect(value.dialect) ||
+    typeof value.nonce !== 'string' ||
+    !NONCE_PATTERN.test(value.nonce) ||
     !dialectSupportsCase(value.dialect, value.caseName) ||
     !Number.isSafeInteger(value.timeoutMs) ||
     (value.timeoutMs as number) < MIN_TIMEOUT_MS ||
@@ -105,6 +111,7 @@ export function parseShellProbeConfig(raw: unknown): ShellProbeConfig {
   return {
     resultPath: value.resultPath as string,
     caseName: value.caseName as ShellProbeCase,
+    nonce: value.nonce as string,
     dialect: value.dialect as ShellProbeDialect,
     timeoutMs: value.timeoutMs as number,
     ssh:
@@ -142,7 +149,8 @@ function parseInputEvents(
   }
   const events: ShellProbeInputEvent[] = []
   for (const raw of value) {
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
+      return null
     const event = raw as Record<string, unknown>
     if (
       Object.keys(event).sort().join(',') !== 'bytes,dataHex,kind' ||

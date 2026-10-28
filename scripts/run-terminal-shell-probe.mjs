@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
@@ -34,6 +35,10 @@ export const SHELLS_WITHOUT_DIALECT = ['fish', 'sh']
 // every existing case is written in shell syntax neither of them parses.
 export const SUPPORTED_WINDOWS_SHELLS = ['powershell', 'cmd']
 export const SUPPORTED_TRANSPORTS = ['local', 'ssh']
+
+export function createShellProbeNonce(prefix = 'shell') {
+  return `${prefix}_${randomBytes(12).toString('hex')}`
+}
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..')
 const CASE_TRACE = {
@@ -287,6 +292,7 @@ export async function runShellProbe({
     path.join(dependencies.tempDirectory, 'terminal-shell-probe-'),
   )
   const resultPath = path.join(runDirectory, 'result.json')
+  const nonce = createShellProbeNonce()
   // The SSH transport reuses the smoke matrix's loopback sshd fixture rather
   // than a bespoke one, so the interaction cases run against exactly the same
   // daemon, host-key checking and key material the matrix already trusts. That
@@ -306,6 +312,7 @@ export async function runShellProbe({
     TERMINAL_SHELL_PROBE: '1',
     TERMINAL_SHELL_PROBE_CASE: caseName,
     TERMINAL_SHELL_PROBE_RESULT_PATH: resultPath,
+    TERMINAL_SHELL_PROBE_NONCE: nonce,
   })
   if (fixture) {
     const sshConfigPath = path.join(runDirectory, 'ssh-config.json')

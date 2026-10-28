@@ -60,7 +60,9 @@ const groups = {
       [
         '--test',
         'scripts/run-terminal-smoke.test.mjs',
+        'scripts/terminal-smoke-renderer-heartbeat.test.mjs',
         'scripts/run-cold-start-stopwatch.test.mjs',
+        'scripts/run-local-cold-start-stopwatch.test.mjs',
         'scripts/run-remote-cold-start-stopwatch.test.mjs',
         'scripts/terminal-smoke-sshd.test.mjs',
         'scripts/terminal-smoke-password-sshd.test.mjs',

@@ -47,7 +47,7 @@ jobs:
       - name: Run the Docker-free real SSH authentication matrix
         run: node scripts/run-terminal-smoke-matrix.mjs key,key-reconnect,key-outage-reconnect,key-outage-wake-reconnect,agent,agent-reconnect,cert,cert-reconnect,jump,jump-reconnect
       - name: Run the real Tauri shell interaction matrix
-        run: pnpm smoke:shell-probe:matrix -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt
+        run: pnpm smoke:shell-probe:matrix -- --shells bash,zsh cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt
       - name: Run the shell interaction matrix over real SSH
         # The same seven cases, but driven through a real loopback sshd rather
         # than a local PTY. Line editing, PTY geometry and interrupt delivery
@@ -60,6 +60,13 @@ jobs:
         # PTY. It does not claim WAN or first-user workspace coverage.
         run: |
           pnpm smoke:remote-cold-start -- \
+            --app-path "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal"
+      - name: Measure local PTY cold-start to terminal marker
+        # The marker is produced only after the nonce command traverses the
+        # real WKWebView/xterm input path, Tauri session_write and the local
+        # PTY shell, so this is stricter than AX window readiness alone.
+        run: |
+          pnpm smoke:local-cold-start -- \
             --app-path "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal"
       - name: Verify the physical keyboard probe protocol in a real WKWebView
         # macOS runners cannot grant Accessibility to CGEvent injection, so

@@ -106,6 +106,9 @@ export function useTerminal(
         jumpHost: jumpHostRef.current,
         expectedHostKey: options.expectedHostKey,
         expectedJumpHostKey: options.expectedJumpHostKey,
+        ...(options.connectionDeadlineAt === undefined
+          ? {}
+          : { connectionDeadlineAt: options.connectionDeadlineAt }),
         serialSessionId: options.serialSessionId,
         cols: options.cols ?? term.cols,
         rows: options.rows ?? term.rows,
@@ -214,6 +217,7 @@ export function useTerminal(
     options.enabled,
     options.expectedHostKey,
     options.expectedJumpHostKey,
+    options.connectionDeadlineAt,
     options.host?.id,
     options.host?.updatedAt,
     options.jumpHost?.id,

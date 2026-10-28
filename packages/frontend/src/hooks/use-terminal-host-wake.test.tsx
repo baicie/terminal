@@ -27,6 +27,7 @@ describe('useTerminalHostWake', () => {
   afterEach(() => {
     handleHostWake.mockReset()
     setVisibility('visible')
+    vi.useRealTimers()
   })
 
   it('resumes sessions when the window becomes visible again', () => {
@@ -63,13 +64,41 @@ describe('useTerminalHostWake', () => {
     expect(handleHostWake).toHaveBeenCalledTimes(1)
   })
 
+  it('resumes sessions from Page Lifecycle wake events', () => {
+    render(<Probe />)
+
+    window.dispatchEvent(new Event('pageshow'))
+    document.dispatchEvent(new Event('resume'))
+
+    expect(handleHostWake).toHaveBeenCalledTimes(2)
+  })
+
+  it('detects a suspended timer by wall-clock drift after host sleep', async () => {
+    vi.useFakeTimers()
+    const view = render(<Probe />)
+
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(handleHostWake).not.toHaveBeenCalled()
+
+    vi.setSystemTime(Date.now() + 20_000)
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    expect(handleHostWake).toHaveBeenCalledTimes(1)
+    view.unmount()
+  })
+
   it('stops listening after unmount so a stale hook cannot resume sessions', () => {
+    vi.useFakeTimers()
     const view = render(<Probe />)
     view.unmount()
 
     document.dispatchEvent(new Event('visibilitychange'))
+    document.dispatchEvent(new Event('resume'))
     window.dispatchEvent(new Event('focus'))
     window.dispatchEvent(new Event('online'))
+    window.dispatchEvent(new Event('pageshow'))
+    vi.setSystemTime(Date.now() + 20_000)
+    vi.advanceTimersByTime(15_000)
 
     expect(handleHostWake).not.toHaveBeenCalled()
   })

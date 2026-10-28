@@ -10,6 +10,8 @@ export type ShellProbeTraceEvent = 'ready' | 'step' | 'pass' | 'fail'
 export interface ShellProbeConfig {
   resultPath: string
   caseName: ShellProbeCase
+  /** Per-run nonce supplied by the acceptance runner and used in PTY markers. */
+  nonce: string
   timeoutMs: number
   /**
    * The command language the runner asked the probe to speak. The acceptance
@@ -103,10 +105,9 @@ function markerPrefix(nonce: string): string {
   return `__TERMINAL_SHELL_PROBE_${nonce}_`
 }
 
-export function shellProbeMarkers(nonce: string): Record<
-  ShellProbeTraceEvent,
-  string
-> {
+export function shellProbeMarkers(
+  nonce: string,
+): Record<ShellProbeTraceEvent, string> {
   const prefix = markerPrefix(nonce)
   return {
     ready: `${prefix}READY__`,
@@ -172,7 +173,7 @@ function shellProbeBody(
     return ready
   }
   return [
-    "SHELL_PROBE_DIR=$(mktemp -d)",
+    'SHELL_PROBE_DIR=$(mktemp -d)',
     `printf '\\r\\n%s%s\\r\\n' '${splitMarker(markers.pass)[0]}' '${splitMarker(markers.pass)[1]}' > "$SHELL_PROBE_DIR/alpha_probe"`,
     'cd "$SHELL_PROBE_DIR"',
     ready,
@@ -226,9 +227,10 @@ export function createShellProbeTabStepCommand(nonce: string): string {
  */
 export function createShellProbeInterruptCommand(nonce: string): string {
   const markers = shellProbeMarkers(nonce)
-  return [markerPrintf(markers.step), `sleep ${INTERRUPT_PROBE_SLEEP_SECONDS}`].join(
-    '; ',
-  )
+  return [
+    markerPrintf(markers.step),
+    `sleep ${INTERRUPT_PROBE_SLEEP_SECONDS}`,
+  ].join('; ')
 }
 
 /**
@@ -326,9 +328,7 @@ export function createShellProbeNanoEditSteps(): ShellProbeInputStep[] {
  */
 export function createShellProbeResizeProbeCommand(nonce: string): string {
   const [head, tail] = splitMarker(resizeObservationMarker(nonce))
-  return (
-    `set -- $(stty size); printf '\\r\\n%s%s:%s_%s\\r\\n' '${head}' '${tail}' "$1" "$2"`
-  )
+  return `set -- $(stty size); printf '\\r\\n%s%s:%s_%s\\r\\n' '${head}' '${tail}' "$1" "$2"`
 }
 
 /**

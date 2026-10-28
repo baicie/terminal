@@ -11,6 +11,16 @@ vi.mock('./use-terminal-smoke-round', () => ({
 }))
 
 import { TerminalSmokeRound } from './terminal-smoke-round'
+import { terminalSmokeSessionIsReconnect } from './terminal-smoke-session-reconnect'
+
+it('recognizes a replacement session even when reconnecting states were coalesced', () => {
+  expect(
+    terminalSmokeSessionIsReconnect(true, false, true, 'ssh-old', 'ssh-new'),
+  ).toBe(true)
+  expect(
+    terminalSmokeSessionIsReconnect(true, false, true, 'ssh-old', 'ssh-old'),
+  ).toBe(false)
+})
 
 it('forwards the host-wake reporter to the smoke round hook', () => {
   const reportHostWake = vi.fn(async () => {})

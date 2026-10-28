@@ -1,4 +1,5 @@
 use std::ffi::OsString;
+use std::io::Write as StdWrite;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -18,6 +19,8 @@ const RESULT_PATH_ENV: &str = "TERMINAL_SMOKE_RESULT_PATH";
 const SSH_CONFIG_PATH_ENV: &str = "TERMINAL_SMOKE_SSH_CONFIG_PATH";
 const RECONNECT_CONTROL_PATH_ENV: &str = "TERMINAL_SMOKE_RECONNECT_CONTROL_PATH";
 const HOST_WAKE_PATH_ENV: &str = "TERMINAL_SMOKE_HOST_WAKE_PATH";
+const RENDERER_HEARTBEAT_ENDPOINT_ENV: &str = "TERMINAL_SMOKE_RENDERER_HEARTBEAT_ENDPOINT";
+const RENDERER_HEARTBEAT_TOKEN_ENV: &str = "TERMINAL_SMOKE_RENDERER_HEARTBEAT_TOKEN";
 const LOAD_BYTES: usize = 8 * 1024 * 1024;
 const ROUNDS: usize = 10;
 const MAX_SSH_CONFIG_BYTES: u64 = 64 * 1024;
@@ -102,6 +105,13 @@ pub(crate) struct TerminalSmokeConfig {
     // reconnect case must never synthesize a wake it did not need.
     host_wake_required: bool,
     ssh: TerminalSmokeSshConfig,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TerminalSmokeRendererHeartbeatConfig {
+    endpoint: String,
+    token: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -200,6 +210,8 @@ pub(crate) struct TerminalSmokeRun {
     result_path: PathBuf,
     reconnect_control_path: Option<PathBuf>,
     host_wake_control_path: Option<PathBuf>,
+    host_wake_event_path: Option<PathBuf>,
+    renderer_heartbeat: Option<TerminalSmokeRendererHeartbeatConfig>,
     config: TerminalSmokeConfig,
     started_at: Instant,
     claimed: AtomicBool,
@@ -220,6 +232,7 @@ impl TerminalSmokeRun {
             result_path,
             reconnect_control_path,
             None,
+            None,
             config,
             started_at,
         )
@@ -229,13 +242,18 @@ impl TerminalSmokeRun {
         result_path: PathBuf,
         reconnect_control_path: Option<PathBuf>,
         host_wake_control_path: Option<PathBuf>,
+        renderer_heartbeat: Option<TerminalSmokeRendererHeartbeatConfig>,
         config: TerminalSmokeConfig,
         started_at: Instant,
     ) -> Self {
         Self {
             result_path,
             reconnect_control_path,
+            host_wake_event_path: host_wake_control_path
+                .as_ref()
+                .map(|path| path.with_file_name("host-wake.events.ndjson")),
             host_wake_control_path,
+            renderer_heartbeat,
             config,
             started_at,
             claimed: AtomicBool::new(false),
@@ -295,6 +313,25 @@ impl TerminalSmokeRun {
         self.host_wake_requested.store(true, Ordering::Release);
         Ok(())
     }
+
+    fn record_host_wake_event(&self, event: &str, source: &str) -> Result<(), String> {
+        let Some(path) = &self.host_wake_event_path else {
+            return Err("terminal smoke host wake event path is missing".to_string());
+        };
+        let payload = serde_json::json!({
+            "elapsedMs": self.elapsed().as_millis(),
+            "event": event,
+            "source": source,
+        });
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .map_err(|error| format!("failed to open terminal smoke host wake events: {error}"))?;
+        file.write_all(format!("{payload}\n").as_bytes())
+            .map_err(|error| format!("failed to append terminal smoke host wake event: {error}"))?;
+        file.flush()
+            .map_err(|error| format!("failed to flush terminal smoke host wake event: {error}"))
+    }
 }
 
 enum TerminalSmokeMode {
@@ -319,13 +356,19 @@ impl TerminalSmokeState {
                 std::env::var_os(HOST_WAKE_PATH_ENV),
             ) {
                 Ok((result_path, reconnect_control_path, host_wake_control_path, config)) => {
-                    TerminalSmokeMode::Enabled(Arc::new(TerminalSmokeRun::new_with_paths(
-                        result_path,
-                        reconnect_control_path,
-                        host_wake_control_path,
-                        config,
-                        Instant::now(),
-                    )))
+                    match renderer_heartbeat_from_env() {
+                        Ok(renderer_heartbeat) => {
+                            TerminalSmokeMode::Enabled(Arc::new(TerminalSmokeRun::new_with_paths(
+                                result_path,
+                                reconnect_control_path,
+                                host_wake_control_path,
+                                renderer_heartbeat,
+                                config,
+                                Instant::now(),
+                            )))
+                        }
+                        Err(error) => TerminalSmokeMode::Invalid(error),
+                    }
                 }
                 Err(error) => TerminalSmokeMode::Invalid(error),
             }
@@ -347,6 +390,40 @@ fn enabled_value(value: Option<&str>) -> bool {
 
 fn is_enabled() -> bool {
     enabled_value(std::env::var(ENABLE_ENV).ok().as_deref())
+}
+
+fn renderer_heartbeat_from_env() -> Result<Option<TerminalSmokeRendererHeartbeatConfig>, String> {
+    let endpoint = std::env::var(RENDERER_HEARTBEAT_ENDPOINT_ENV).ok();
+    let token = std::env::var(RENDERER_HEARTBEAT_TOKEN_ENV).ok();
+    match (endpoint, token) {
+        (None, None) => Ok(None),
+        (Some(endpoint), Some(token)) => parse_renderer_heartbeat_config(endpoint, token).map(Some),
+        _ => Err(format!(
+            "{RENDERER_HEARTBEAT_ENDPOINT_ENV} and {RENDERER_HEARTBEAT_TOKEN_ENV} must be a valid loopback heartbeat pair"
+        )),
+    }
+}
+
+fn parse_renderer_heartbeat_config(
+    endpoint: String,
+    token: String,
+) -> Result<TerminalSmokeRendererHeartbeatConfig, String> {
+    let parsed = reqwest::Url::parse(&endpoint)
+        .map_err(|_| "terminal smoke renderer heartbeat endpoint is invalid".to_string())?;
+    if parsed.scheme() != "http"
+        || parsed.host_str() != Some("127.0.0.1")
+        || parsed.port().is_none()
+        || parsed.path() != "/heartbeat"
+        || parsed.username() != ""
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || token.len() != 64
+        || !token.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err("terminal smoke renderer heartbeat endpoint or token is invalid".to_string());
+    }
+    Ok(TerminalSmokeRendererHeartbeatConfig { endpoint, token })
 }
 
 fn result_path(value: Option<OsString>) -> Result<PathBuf, String> {
@@ -955,6 +1032,19 @@ pub(crate) fn terminal_smoke_config(
 }
 
 #[tauri::command]
+pub(crate) fn terminal_smoke_renderer_heartbeat_config(
+    state: State<'_, TerminalSmokeState>,
+) -> Result<Option<TerminalSmokeRendererHeartbeatConfig>, String> {
+    let run = state
+        .run()
+        .ok_or_else(|| "terminal smoke mode is not enabled".to_string())?;
+    if !run.config.host_wake_required {
+        return Ok(None);
+    }
+    Ok(run.renderer_heartbeat.clone())
+}
+
+#[tauri::command]
 pub(crate) fn terminal_smoke_connected(
     state: State<'_, TerminalSmokeState>,
 ) -> Result<u64, String> {
@@ -1004,11 +1094,47 @@ pub(crate) fn terminal_smoke_reconnect_requested(
 }
 
 #[tauri::command]
-pub(crate) fn terminal_smoke_host_wake(state: State<'_, TerminalSmokeState>) -> Result<(), String> {
+pub(crate) fn terminal_smoke_host_wake(
+    state: State<'_, TerminalSmokeState>,
+    event: Option<String>,
+    source: Option<String>,
+) -> Result<(), String> {
     let run = state
         .run()
         .ok_or_else(|| "terminal smoke mode is not enabled".to_string())?;
-    run.request_host_wake()
+    if !run.config.host_wake_required {
+        return Err("terminal smoke host wake is not enabled".to_string());
+    }
+    let source = source.unwrap_or_else(|| "unknown".to_string());
+    if !matches!(
+        source.as_str(),
+        "reconnect-checkpoint-fallback"
+            | "reconnect-state-recovery"
+            | "retryable-error"
+            | "unknown"
+    ) {
+        return Err("terminal smoke host wake source is invalid".to_string());
+    }
+    match event.as_deref().unwrap_or("checkpoint") {
+        "fallback-armed"
+        | "fallback-poll"
+        | "fallback-poll-in-flight"
+        | "fallback-timer-fired"
+        | "fallback-timer-cleared"
+        | "reconnect-state-timer-armed"
+        | "reconnect-state-timer-cleared"
+        | "reconnect-state-timer-fired"
+        | "round-controller-aborted" => run.record_host_wake_event(
+            event.as_deref().expect("event was matched as present"),
+            &source,
+        ),
+        "checkpoint" => {
+            run.record_host_wake_event("host-wake-command-entered", &source)?;
+            run.request_host_wake()?;
+            run.record_host_wake_event("host-wake-checkpoint-published", &source)
+        }
+        _ => Err("terminal smoke host wake event is invalid".to_string()),
+    }
 }
 
 fn valid_smoke_ssh_session_id(session_id: &str) -> bool {

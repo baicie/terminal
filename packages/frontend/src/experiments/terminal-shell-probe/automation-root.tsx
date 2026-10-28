@@ -1,5 +1,11 @@
 import { Terminal as TerminalComponent } from '@baicie/xterm'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { useTerminal } from '@/hooks/use-terminal'
 import type { UseTerminalOptions } from '@/hooks/use-terminal'
 import { terminalSessionManager } from '@/features/terminal/services/terminal-session-manager'
@@ -40,7 +46,9 @@ const RESIZE_STEP_DELAY_MS = 300
  * The host object is built here rather than seeded into SQLite: the probe is a
  * single-purpose automation surface and must not depend on stored state.
  */
-function shellProbeSessionRequest(config: ShellProbeConfig): UseTerminalOptions {
+function shellProbeSessionRequest(
+  config: ShellProbeConfig,
+): UseTerminalOptions {
   const ssh = config.ssh
   if (!ssh) {
     return { tabId: TAB_ID, workspaceId: WORKSPACE_ID, tabType: 'local' }
@@ -82,15 +90,21 @@ function toInputEvent(event: {
   return {
     kind: event.kind,
     bytes: event.bytes,
-    dataHex: Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join(''),
+    dataHex: Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join(
+      '',
+    ),
   }
 }
 
-export default function ShellProbeRoot({ config }: { config: ShellProbeConfig }) {
+export default function ShellProbeRoot({
+  config,
+}: {
+  config: ShellProbeConfig
+}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const parserRef = useRef<ShellProbeParser | null>(null)
   const dialect: ShellProbeDialect = config.dialect
-  const nonceRef = useRef(`shell_${Date.now().toString(36)}`)
+  const nonceRef = useRef(config.nonce)
   const inputEventsRef = useRef<ShellProbeInputEvent[]>([])
   const sentSetupRef = useRef(false)
   const finishedRef = useRef(false)
@@ -138,17 +152,20 @@ export default function ShellProbeRoot({ config }: { config: ShellProbeConfig })
     // so a mismatch is reported against the size that was requested, which is
     // what a user would notice. The final probe also prints the verdict.
     PTY_RESIZE_SEQUENCE.forEach((size, index) => {
-      window.setTimeout(() => {
-        term.resize(size.cols, size.rows)
-        const isLast = index === PTY_RESIZE_SEQUENCE.length - 1
-        sendUserInput(
-          `${
-            isLast
-              ? createResizeVerdictCommand(dialect, nonceRef.current, size)
-              : createResizeProbeCommand(dialect, nonceRef.current)
-          }\r`,
-        )
-      }, RESIZE_STEP_DELAY_MS * (index + 1))
+      window.setTimeout(
+        () => {
+          term.resize(size.cols, size.rows)
+          const isLast = index === PTY_RESIZE_SEQUENCE.length - 1
+          sendUserInput(
+            `${
+              isLast
+                ? createResizeVerdictCommand(dialect, nonceRef.current, size)
+                : createResizeProbeCommand(dialect, nonceRef.current)
+            }\r`,
+          )
+        },
+        RESIZE_STEP_DELAY_MS * (index + 1),
+      )
     })
   }, [dialect, sendUserInput, term])
 
@@ -163,7 +180,11 @@ export default function ShellProbeRoot({ config }: { config: ShellProbeConfig })
       // from `ready` keeps the shell from deadlocking: waiting for `step`
       // before sending any keys would mean the editor never receives them and
       // the probe can only time out.
-      for (const step of readySteps(dialect, config.caseName, nonceRef.current)) {
+      for (const step of readySteps(
+        dialect,
+        config.caseName,
+        nonceRef.current,
+      )) {
         window.setTimeout(() => sendUserInput(step.data), step.delayMs)
       }
       window.setTimeout(
@@ -232,7 +253,8 @@ export default function ShellProbeRoot({ config }: { config: ShellProbeConfig })
   }, [config.caseName, config.timeoutMs, publish, term])
 
   useEffect(() => {
-    if (status !== 'connected' || sentSetupRef.current || finishedRef.current) return
+    if (status !== 'connected' || sentSetupRef.current || finishedRef.current)
+      return
     sentSetupRef.current = true
     sendUserInput(
       `${createSetupCommand(dialect, nonceRef.current, config.caseName)}\r`,

@@ -34,7 +34,7 @@
 - 发布包 typings 错误地声明上游模块名，必须保留 `packages/frontend/src/types/xterm.d.ts` 的 ambient re-export。
 - OSC/CSI 等自定义解析器必须从 `term.parser` 注册，例如 `term.parser.registerOscHandler(...)`；`Terminal` 本身没有 `registerOscHandler`。
 - `xterm-package-contract.test.ts` 只锁定依赖契约；jsdom、合成键盘事件和 `term.input()` 都不能证明物理重叠按键。发布前仍需在 macOS WKWebView 中近同时按下 `a/s/d`、快速连续输入并验证物理 IME。
-- `0.1.7` 发布物仍含 WebKit 输入 `console.debug`，且 npm 仓库元数据不可追溯；后续应从有明确上游 commit 的源码仓库发布无诊断日志版本。
+- 当前 lockfile 绑定的 patched `0.1.7` 安装产物已移除 WebKit 输入路径中的敏感 `console.debug`；活动 patch hash 为 `63e246a9944c8f4c202660ee4be6c3d6d60e2e38e112d8deb5f134691ff2abdb`。npm 仓库元数据仍不可追溯，后续应从有明确上游 commit 的源码仓库发布正式去日志版本；真实 WKWebView 物理输入仍需验收。
 
 ### 当前使用位置
 
@@ -698,6 +698,12 @@ terminalSession.onOutput((data, utf8Bytes) => {
 ```
 
 ### 6.4 本地 PTY 验证边界
+
+#### WKWebView Option-as-Meta 与输入法路径（2026-10-21）
+
+桌面端 xterm 实例启用 `macOptionIsMeta`。在 macOS WebKit 中，普通 Option-as-Meta 字符由 xterm keydown 路径发送为 `ESC` 前缀序列；为避免 WKWebView 随后的默认文本输入再把键盘布局字符（例如 `ƒ`）写入终端，兼容 core 会对已识别的普通 Option-as-Meta 按键调用 `preventDefault()` 和 `stopPropagation()`。此规则只在生成了 xterm 按键数据且不处于输入法组合时生效。
+
+Option 产生的 `Dead` 键、`Process` 键、keyCode 229 和活动中的 composition 不走上述默认输入拦截，保留 WKWebView 原生 dead-key/IME 路径；组合期间的 Escape 用于取消或操作输入法，不写入 PTY，组合结束后的普通 Escape 才作为终端输入发送。没有对应 keydown 数据的 IME 提交仍由原生 input/composition 事件进入 xterm，提交文本只发送一次。Option-as-Meta 普通字符、dead key、IME commit/cancel、粘贴和延迟 input 去重均有 xterm 事件级回归覆盖，但这些合成事件测试不能证明真实键盘布局、中文 IME 或 macOS WKWebView 的物理输入；相关实机验收仍需单独执行。
 
 #### macOS 原生输入探针前置条件（2026-09-22）
 

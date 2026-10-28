@@ -1,7 +1,8 @@
 import { BellIcon, FolderUp, PanelLeft, Plus, Search } from 'lucide-react'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { isTauri } from '@tauri-apps/api/core'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -17,12 +18,17 @@ import { useAppStore } from '@/store/app'
 import { useNotificationStore } from '@/store/notification'
 import { useTransferQueue } from '@/store/transfer-queue'
 import { ToolbarOverlays } from './toolbar-overlays'
+import { MobileToolbar } from './mobile-toolbar'
 
-const MobileToolbar = lazy(() =>
-  import('./mobile-toolbar').then(module => ({
-    default: module.MobileToolbar,
-  })),
-)
+function isMacPlatform(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return false
+  }
+  if (!isTauri()) return false
+  return /mac|darwin/i.test(
+    `${navigator.platform ?? ''} ${navigator.userAgent ?? ''}`,
+  )
+}
 
 const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
   onToggleSidebar,
@@ -45,18 +51,8 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
   )
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [hostDialogOpen, setHostDialogOpen] = useState(false)
-  const [padForMacTrafficLights, setPadForMacTrafficLights] = useState(false)
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !('__TAURI__' in window)) return
-    const platform = navigator.platform?.toLowerCase() ?? ''
-    const userAgent = navigator.userAgent?.toLowerCase() ?? ''
-    setPadForMacTrafficLights(
-      platform.includes('mac') || userAgent.includes('mac'),
-    )
-  }, [])
 
   useEffect(() => {
     const openCommandPalette = () => setCommandPaletteOpen(true)
@@ -83,26 +79,22 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
     const newTab = addTab({ label: 'Local', type: 'local' })
     navigate(`/terminal?tab=${newTab.id}`)
   }
+  const padForMacTrafficLights = isMacPlatform()
 
   if (isMobile) {
     return (
       <>
-        <Suspense
-          fallback={
-            <div className="h-12 shrink-0 border-b border-border/60 bg-background" />
-          }
-        >
-          <MobileToolbar
-            currentPath={location.pathname}
-            drawerOpen={mobileDrawerOpen}
-            onDrawerOpenChange={setMobileDrawerOpen}
-            onNavigate={path => {
-              setMobileDrawerOpen(false)
-              navigate(path)
-            }}
-            onBack={() => navigate(-1)}
-          />
-        </Suspense>
+        <MobileToolbar
+          currentPath={location.pathname}
+          drawerOpen={mobileDrawerOpen}
+          padForMacTrafficLights={padForMacTrafficLights}
+          onDrawerOpenChange={setMobileDrawerOpen}
+          onNavigate={path => {
+            setMobileDrawerOpen(false)
+            navigate(path)
+          }}
+          onBack={() => navigate(-1)}
+        />
         {location.pathname === '/terminal' ? (
           <div
             className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-1"
@@ -139,9 +131,9 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
       <header
         className={cn(
           'flex h-11 shrink-0 items-center gap-2 border-b border-border/60 bg-background',
-          padForMacTrafficLights ? 'pl-[76px] pr-3' : 'px-3',
+          padForMacTrafficLights ? 'pl-20 pr-3' : 'px-3',
         )}
-        data-tauri-drag-region
+        data-tauri-drag-region="deep"
       >
         <div className="flex shrink-0 items-center gap-1">
           <Button

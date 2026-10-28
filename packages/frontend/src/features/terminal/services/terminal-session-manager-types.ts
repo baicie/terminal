@@ -22,6 +22,7 @@ export interface TerminalSessionRequest {
   jumpHost?: Host
   expectedHostKey?: string
   expectedJumpHostKey?: string
+  connectionDeadlineAt?: number
   serialSessionId?: string
   cols: number
   rows: number

@@ -50,6 +50,7 @@ import {
   getWorkspaceRecoveryJournalKey,
   sanitizeWorkspaceRecoveryLayout,
   startWorkspaceRecovery,
+  WORKSPACE_HOST_LOAD_TIMEOUT_MS,
 } from './workspace-recovery'
 
 // Recent Node releases no longer expose `localStorage` in the jsdom test
@@ -377,7 +378,7 @@ describe('workspace recovery', () => {
     recovery.dispose()
   })
 
-  it('waits for a concurrent host load before rejecting workspace failure', async () => {
+  it('aborts the concurrent host load when workspace recovery fails', async () => {
     let resolveHosts: (() => void) | undefined
     const hostsReady = new Promise<void>(resolve => {
       resolveHosts = resolve
@@ -385,21 +386,18 @@ describe('workspace recovery', () => {
     mocks.workspaceState.loadWorkspaces.mockRejectedValue(
       new Error('workspace database unavailable'),
     )
-    mocks.hostState.loadHosts.mockReturnValue(hostsReady)
-
-    let settled = false
-    const recoveryPromise = startWorkspaceRecovery().catch(error => {
-      settled = true
-      throw error
+    let hostSignal: AbortSignal | undefined
+    mocks.hostState.loadHosts.mockImplementation(signal => {
+      hostSignal = signal
+      return hostsReady
     })
-    await Promise.resolve()
-    await Promise.resolve()
 
-    expect(settled).toBe(false)
-    resolveHosts?.()
+    const recoveryPromise = startWorkspaceRecovery()
     await expect(recoveryPromise).rejects.toThrow(
       'workspace database unavailable',
     )
+    expect(hostSignal?.aborted).toBe(true)
+    resolveHosts?.()
   })
 
   it('starts layout loading as soon as the active workspace is known', async () => {
@@ -453,6 +451,38 @@ describe('workspace recovery', () => {
     recovery.dispose()
   })
 
+  it('bounds a never-settling host load while preserving the saved remote layout', async () => {
+    const savedLayout: WorkspaceLayout = {
+      workspaceId: 'workspace-one',
+      tabs: [
+        {
+          id: 'remote-tab',
+          label: 'Production',
+          type: 'remote',
+          hostId: 'host-one',
+        },
+      ],
+      splitGroups: [],
+      activeTabId: 'remote-tab',
+      sidebarVisible: true,
+    }
+    let hostSignal: AbortSignal | undefined
+    mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.hostState.loadHosts.mockImplementation(signal => {
+      hostSignal = signal
+      return new Promise<void>(() => undefined)
+    })
+
+    const recoveryPromise = startWorkspaceRecovery()
+    await vi.advanceTimersByTimeAsync(WORKSPACE_HOST_LOAD_TIMEOUT_MS)
+    const recovery = await recoveryPromise
+
+    expect(hostSignal?.aborted).toBe(true)
+    expect(mocks.appState.restoreLayout).toHaveBeenCalledWith(savedLayout)
+    expect(mocks.appListeners).toHaveLength(1)
+    recovery.dispose()
+  })
+
   it('restores the saved layout before a slow host query completes', async () => {
     const savedLayout: WorkspaceLayout = {
       workspaceId: 'workspace-one',
@@ -474,9 +504,82 @@ describe('workspace recovery', () => {
       expect(mocks.appState.restoreLayout).toHaveBeenCalledWith(savedLayout)
     })
 
+    const recovery = await recoveryPromise
+    resolveHosts?.()
+    recovery.dispose()
+  })
+
+  it('drops a late layout when the active workspace changed during host loading', async () => {
+    const savedLayout: WorkspaceLayout = {
+      workspaceId: 'workspace-one',
+      tabs: [
+        {
+          id: 'remote-tab',
+          label: 'Production',
+          type: 'remote',
+          hostId: 'host-one',
+        },
+      ],
+      splitGroups: [],
+      activeTabId: 'remote-tab',
+      sidebarVisible: true,
+    }
+    let resolveHosts: (() => void) | undefined
+    mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.hostState.hosts = [{ id: 'host-one' }]
+    mocks.hostState.loadHosts.mockReturnValue(
+      new Promise<void>(resolve => {
+        resolveHosts = resolve
+      }),
+    )
+
+    const recoveryPromise = startWorkspaceRecovery()
+    await vi.waitFor(() => {
+      expect(mocks.workspaceState.loadLayout).toHaveBeenCalledWith(
+        'workspace-one',
+      )
+    })
+
+    mocks.workspaceState.activeWorkspaceId = 'workspace-two'
+    mocks.appState.tabs = [
+      { id: 'fallback', label: 'Local', type: 'local', startupFallback: true },
+    ] as WorkspaceLayout['tabs']
     resolveHosts?.()
     const recovery = await recoveryPromise
+
+    expect(mocks.appState.restoreLayout).not.toHaveBeenCalled()
+    await recovery.flush()
+    expect(mocks.workspaceState.saveLayout).toHaveBeenCalledOnce()
+    expect(mocks.workspaceState.saveLayout.mock.calls[0][0]).toBe(
+      'workspace-two',
+    )
+    expect(mocks.workspaceState.saveLayout.mock.calls[0][1]).toEqual([
+      { id: 'fallback', label: 'Local', type: 'local' },
+    ])
     recovery.dispose()
+  })
+
+  it('cancels a pending host load when the recovery handle is disposed', async () => {
+    const savedLayout: WorkspaceLayout = {
+      workspaceId: 'workspace-one',
+      tabs: [{ id: 'local-tab', label: 'Local', type: 'local' }],
+      splitGroups: [],
+      activeTabId: 'local-tab',
+      sidebarVisible: true,
+    }
+    let hostSignal: AbortSignal | undefined
+    mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.hostState.loadHosts.mockImplementation(signal => {
+      hostSignal = signal
+      return new Promise<void>(() => undefined)
+    })
+
+    const recovery = await startWorkspaceRecovery()
+    expect(hostSignal?.aborted).toBe(false)
+
+    recovery.dispose()
+
+    expect(hostSignal?.aborted).toBe(true)
   })
 
   it('debounces layout snapshots and saves the latest state to SQLite', async () => {

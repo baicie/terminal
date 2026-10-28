@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import test from 'node:test'
 import {
+  createShellProbeNonce,
   parseShellProbeResult,
   runShellProbe,
 } from './run-terminal-shell-probe.mjs'
@@ -17,6 +18,14 @@ const RESULT = {
   ok: true,
   trace: ['ready', 'pass'],
 }
+
+test('shell probe nonces are per-run safe values', () => {
+  const first = createShellProbeNonce()
+  const second = createShellProbeNonce()
+  assert.match(first, /^shell_[A-Za-z0-9_-]{24}$/)
+  assert.match(second, /^shell_[A-Za-z0-9_-]{24}$/)
+  assert.notEqual(first, second)
+})
 
 test('parses the strict shell probe result contract', () => {
   assert.deepEqual(parseShellProbeResult(JSON.stringify(RESULT), 'cat-eof'), RESULT)
@@ -190,6 +199,7 @@ test('runner passes a dedicated case and result path to the gated binary', async
   assert.equal(spawnCall?.[3].env.PROMPT_COMMAND, undefined)
   assert.equal(spawnCall?.[3].env.TERMINAL_SHELL_PROBE, '1')
   assert.equal(spawnCall?.[3].env.TERMINAL_SHELL_PROBE_CASE, 'cat-eof')
+  assert.match(spawnCall?.[3].env.TERMINAL_SHELL_PROBE_NONCE, /^shell_[A-Za-z0-9_-]{24}$/)
   assert.equal(
     spawnCall?.[3].env.TERMINAL_SHELL_PROBE_RESULT_PATH,
     '/tmp/shell-probe-test/result.json',

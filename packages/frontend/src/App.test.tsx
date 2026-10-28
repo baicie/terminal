@@ -13,9 +13,15 @@ const mocks = vi.hoisted(() => ({
   appState: {
     theme: 'dark',
     language: 'en',
-    tabs: [] as Array<{ id: string; label: string; type: 'local' }>,
+    tabs: [] as Array<{
+      id: string
+      label: string
+      type: 'local' | 'remote'
+      hostId?: string
+    }>,
     addTab: vi.fn(),
   },
+  hostState: { hosts: [] as Array<{ id: string }> },
 }))
 
 vi.mock('react-i18next', () => ({
@@ -52,6 +58,9 @@ vi.mock('./store/team', () => ({
     selector: (state: { initialize: () => Promise<void> }) => unknown,
   ) => selector({ initialize: mocks.initializeTeam }),
 }))
+vi.mock('./store/host', () => ({
+  useHostStore: { getState: () => mocks.hostState },
+}))
 vi.mock('./service/database', () => ({
   getAppSettings: vi.fn().mockResolvedValue({}),
 }))
@@ -64,6 +73,7 @@ vi.mock('./service/workspace-recovery', () => ({
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.appState.tabs = []
+  mocks.hostState.hosts = []
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     value: vi.fn(() => ({
@@ -102,6 +112,21 @@ describe('startup terminal fallback', () => {
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(STARTUP_TERMINAL_FALLBACK_MS)
+    })
+
+    expect(mocks.appState.addTab).toHaveBeenCalledWith({
+      label: 'Local',
+      type: 'local',
+      startupFallback: true,
+    })
+  })
+
+  it('opens the local fallback immediately when App mounts after its absolute deadline', async () => {
+    vi.useFakeTimers()
+    render(<App startupTerminalFallbackAt={performance.now() - 1} />)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
     })
 
     expect(mocks.appState.addTab).toHaveBeenCalledWith({
@@ -189,6 +214,73 @@ describe('startup terminal fallback', () => {
     })
 
     expect(mocks.appState.addTab).not.toHaveBeenCalled()
+  })
+
+  it('opens a local fallback when recovery restored a remote tab without its host', async () => {
+    vi.useFakeTimers()
+    render(<App />)
+    mocks.appState.tabs = [
+      { id: 'remote', label: 'Saved', type: 'remote', hostId: 'host-one' },
+    ]
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STARTUP_TERMINAL_FALLBACK_MS)
+    })
+
+    expect(mocks.appState.addTab).toHaveBeenCalledWith({
+      label: 'Local',
+      type: 'local',
+      startupFallback: true,
+    })
+  })
+
+  it('does not add a local fallback when a restored remote host is loaded', async () => {
+    vi.useFakeTimers()
+    mocks.appState.tabs = [
+      { id: 'remote', label: 'Saved', type: 'remote', hostId: 'host-one' },
+    ]
+    mocks.hostState.hosts = [{ id: 'host-one' }]
+    render(<App />)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STARTUP_TERMINAL_FALLBACK_MS)
+    })
+
+    expect(mocks.appState.addTab).not.toHaveBeenCalled()
+  })
+
+  it('restores a local fallback when delayed recovery leaves only an unavailable remote tab', async () => {
+    vi.useFakeTimers()
+    let resolveRecovery: (value: {
+      dispose: () => void
+      flush: () => Promise<void>
+    }) => void = () => undefined
+    mocks.startWorkspaceRecovery.mockReturnValue(
+      new Promise(resolve => {
+        resolveRecovery = resolve
+      }),
+    )
+    render(<App />)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STARTUP_TERMINAL_FALLBACK_MS)
+    })
+    expect(mocks.appState.addTab).toHaveBeenCalledOnce()
+
+    mocks.appState.tabs = [
+      { id: 'remote', label: 'Saved', type: 'remote', hostId: 'host-one' },
+    ]
+    await act(async () => {
+      resolveRecovery({ dispose: vi.fn(), flush: vi.fn() })
+      await Promise.resolve()
+    })
+
+    expect(mocks.appState.addTab).toHaveBeenCalledTimes(2)
+    expect(mocks.appState.addTab).toHaveBeenLastCalledWith({
+      label: 'Local',
+      type: 'local',
+      startupFallback: true,
+    })
   })
 
   it('cancels the fallback when a slow recovery restores a tab', async () => {

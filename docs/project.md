@@ -16,15 +16,21 @@
 
 ## 当前进度与当前目标
 
-> 快照日期：2026-10-17；当前分支：`codex/terminal-reliability-matrix`。
+> 快照日期：2026-10-28；当前分支：`codex/terminal-reliability-matrix`。
 
 | 项目 | 状态 |
 | --- | --- |
 | 当前目标 | 🔄 先完成 macOS 人工物理键盘、中文 IME、Option/dead key 与日常交互验收；Windows/Pageant/串口因暂无设备保留待验证 |
-| 当前进度 | Phase 6.20/6.21 建立首次可靠终端 < 10 秒门禁；Phase 6.57-6.69 完成会话生命周期、自动重连、Shell Integration、串口清理与 Linux 验收 runner 加固；Phase 6.70 修复慢速 workspace 恢复与启动兜底竞争（Issue #104）；Phase 6.71 统一 xterm、移动端快捷键栏和命令总线的主动输入接管（Issue #105）；Phase 6.72 让手动输入探针可临时切换 ASCII 输入源并在验收后恢复原输入源（Issue #106）；Phase 6.73 收紧 shell probe 的 dialect 声明，fish/sh 在有独立 dialect 前 fail-fast（Issue #107）；Phase 6.74 让认证阶段的瞬时网络错误继续自动重连，同时保留凭据错误的终止语义（Issue #108）。当前 instrumented debug binary `cd22a67c…`（源码指纹 `6a4c8a80…`）上本地冷启动 3940ms、远程 bash prompt marker 3376ms、真实 SSH 13/13、本地 shell 14/14、真实 SSH shell 7/7 全绿；real-machine run `38997341490` 的 macOS、Windows、Linux job 全绿，Linux remote marker 已通过。AX 在远程模式仅作诊断，人工键盘/IME、Windows Agent/Pageant/PTY 与串口硬件仍未验收。 |
-| 自动化基线 | 2026-10-17 当前证据：同一 instrumented debug binary（`cd22a67c…`）上本地冷启动 3940ms、远程 bash prompt marker 3376ms，均低于 10 秒；真实 SSH 矩阵 13/13 全绿（含首连 outage、5 秒 outage 与 20 秒 host-wake）；shell 交互本地 bash/zsh 14/14、真实 loopback sshd `/bin/sh` fixture 7/7 全绿；real-machine run `38997341490` 的 macOS、Windows、Linux job 全绿，Linux remote startup/prompt marker 已通过。人工键盘/IME 与跨平台硬件验收仍待完成。证据见 [`当前工作树 shell 交互`](verification/2026-10-11-macos-shell-interaction-current.json)、[`当前工作树 SSH 矩阵`](verification/2026-10-11-macos-ssh-matrix-current.json) 与 [`远程 prompt`](verification/2026-10-11-macos-remote-shell-prompt-rerun.json)。 |
+| 当前进度 | Phase 6.20/6.21 建立首次可靠终端 < 10 秒门禁；Phase 6.57-6.69 完成会话生命周期、自动重连、Shell Integration、串口清理与 Linux 验收 runner 加固；Phase 6.70 修复慢速 workspace 恢复与启动兜底竞争（Issue #104）；Phase 6.71 统一 xterm、移动端快捷键栏和命令总线的主动输入接管（Issue #105）；Phase 6.72 让手动输入探针可临时切换 ASCII 输入源并在验收后恢复原输入源（Issue #106）；Phase 6.73 收紧 shell probe 的 dialect 声明，fish/sh 在有独立 dialect 前 fail-fast（Issue #107）；Phase 6.74 让认证阶段的瞬时网络错误继续自动重连，同时保留凭据错误的终止语义（Issue #108）；Phase 6.77 修复同步状态监听器重入时覆盖新手动重连 promise 的会话生命周期竞态（Issue #111）；Phase 6.78 修复 WebKit 延迟 input 重叠去重并增加 composition/paste 标记清理（Issue #26）；Phase 6.79 修复首连 outage smoke 在 sshd 尚未完全停止时启动应用的 fixture 竞态（Issue #112）；Phase 6.80 增加 host-wake fallback timer 心跳与并发诊断（Issue #113）；Phase 6.81 增加独立 loopback renderer heartbeat 与严格契约（Issue #113）；Phase 6.82 增加产品 host-wake 的 timer 漂移与 Page Lifecycle 兜底；Phase 6.83 收紧 host-wake reporter 的超时/取消串行化并让 renderer heartbeat 可重试（Issue #113）；Phase 6.84 将冷启动报告拆分为 `windowReady`/`terminalReady`，严格终端模式必须提供端到端 marker（Issue #115）；Phase 6.85 增加本地 per-run PTY marker runner（Issue #116）；Phase 6.86 修复 host-wake 延迟恢复 continuation 的 generation 竞态（Issue #117）；Phase 6.87 隔离 local cold-start 环境并为 app/AX 探针增加 SIGKILL 回收（Issue #115/#116）；Phase 6.88 让挂起的事件注册等待可随会话关闭取消，保护前端启动取消代际（Issue #118）；Phase 6.89 修复 host-key 预检错误分类与 route 失效（Issue #119）；Phase 6.90 补齐证据源码指纹的构建配置覆盖（Issue #120）；Phase 6.91 修复延迟 workspace 恢复兜底（Issue #121）；Phase 6.92 收紧 cold-start 异步 deadline（Issue #122）；Phase 6.93 修复 WKWebView Option-as-Meta 输入双发（Issue #123）；Phase 6.94 修复取消 host 查询后的 loading 状态（Issue #124）；Phase 6.95 让 host-wake fixture 可取消（Issue #113）；Phase 6.96-6.97 收口首次 SSH 共享预算、IPC 毫秒边界和迟到 session 回收（Issue #119/#126/#127）；Phase 6.98-6.100 完成启动 loader deadline、probe loader deadline 和移动端首屏入口（Issue #128-#130）；Phase 6.101 修复 SSH cancellation Notify 丢唤醒竞态（Issue #118 补充）；Phase 6.103 固定前端测试并发上限（Vitest `maxWorkers: 4`），消除全量并行下 1 秒查询窗口的偶发超时（Issue #131）。Node 24 前端 126 文件/1142 项与 Rust 221 单测 + 3 集成测试、Clippy、205 项脚本测试通过。当前源码与自动化测试已验证，但 macOS 锁屏期间不能采集本轮 outage/wake 实机证据；人工键盘/IME、真实合盖唤醒、Windows Agent/Pageant/PTY 与串口硬件仍未验收。 |
+| 自动化基线 | 历史 instrumented debug binary（`4368d6c8…`，源码指纹 `de8e49cb…`）上的本地冷启动数字只证明 `readyAt: window`（AX 窗口/控件就绪），不能单独证明 shell 可用；远程 bash prompt marker 为 `readyAt: terminal`。当前工作树源码指纹为 `534405ec…`，证据门禁拒绝旧 debug 指纹、缺少 terminal marker 的 cold-start/release 记录、不完整 SSH case contract 以及当前 release binary 与历史记录的哈希不一致；不能把历史证据当作当前改动的证明。前一版 instrumented debug binary `3f42bbcd…` 曾完成本地 terminal marker 3/3 与远端 bash prompt marker 3/3，但其后的源码变更尚未用新 binary 复验；SSH GUI 矩阵在锁屏后因 frontmost helper 无法取得目标窗口而中止，未写入 current evidence。最近 real-machine run `38997341490` 也未覆盖当前工作树。 |
 | 输入验收增量 | Phase 6.24 最终源码构建下严格 30 轮 CGEvent 通过，全部回读 `617364`、零重发且原输入源恢复；这不是人工键盘验收。Phase 6.25 修复组合态 Escape 不写入 PTY并增加 composition 证据校验；Phase 6.26 证明 xterm 到前端输入 FIFO 的协议编码；Phase 6.27 于 2026-10-10 完成真实 Tauri/WKWebView + local PTY 的 SGR mouse、bracketed paste、raw X10 三 case 精确回读；Phase 6.31 当前工作树完成 bash/zsh 各七 case、14/14 全绿，另有默认 `/bin/sh` loopback SSH 7/7；Phase 6.52 为手动 IME 增加 TIS 非 ASCII 输入源资格门禁并记录 id/type，但没有把人工输入结果标记为通过。中文 IME 自动注入未触发真实 composition。逐轮 CGEvent 结果见 [`验收记录`](verification/2026-09-22-macos-input-probe.json)，raw probe 结果见 [`2026-10-10-macos-raw-input.json`](verification/2026-10-10-macos-raw-input.json)，当前 shell 交互结果见 [`2026-10-11-macos-shell-interaction-current.json`](verification/2026-10-11-macos-shell-interaction-current.json)，旧二进制历史记录见 [`2026-10-11-macos-shell-interaction-probe.json`](verification/2026-10-11-macos-shell-interaction-probe.json)，此前失败边界见 [`阻塞记录`](verification/2026-10-10-macos-raw-input-blocked.json)。 |
 | 下一验证目标 | 完成 macOS 人工物理键盘 30 轮、中文 IME、Option/dead key、vim/nano 交互，以及真实合盖休眠/唤醒、VPN/蜂窝切换；Windows OpenSSH Agent/Pageant/PTY 与串口硬件因暂无设备保持未验证。host-wake 自动化只证明应用内恢复协议，不替代上述实机验收。 |
+
+> 2026-10-28：Phase 6.103 把前端 Vitest 并行度固定为 4 个 worker（Issue #131），避免 jsdom worker 抢占 CPU 让 1 秒异步查询窗口在并行全量运行时偶发超时，不改用例超时与断言。本轮 `pnpm verify` 自动化分组全绿：前端 126 文件/1142 项（90.63s）、Team Server 25 文件/103 项、Rust 221 单测 + 3 集成测试、Node 脚本 205 项、550 个生产文件行数门禁与 bundle budget（initial gzip 129.55 KB、total gzip 553.15 KB）。只剩 evidence gate 的 8 项失败：4 份 debug 证据仍记历史源码指纹 `de8e49cb…`（当前工作树 `534405ec…`）、cold-start/release 缺 3 次 terminal marker、SSH 矩阵 case 集合不完整、release binary 未构建；解锁 macOS 后按当前源码重采。
+
+> 2026-10-22：Phase 6.99/6.100 为 normal App 与显式 smoke/probe root loader 增加可取消 deadline，超时先显示带 Retry 的同步兜底，旧 attempt 的迟到模块不会覆盖重试结果；重复点击旧 Retry 不会使正在运行的 attempt 失效。移动端核心工具栏改为同步加载，避免懒加载占位遮蔽菜单。Node 24 bootstrap/移动工具栏定向测试 17/17、前端全量 126 文件/1139 项、typecheck、lint、生产 bundle budget 通过；当时源码指纹为 `0a0010a5…`，实机证据仍待解锁 macOS 后重采。
+
+> 2026-10-24：Phase 6.102 将 macOS 原生红绿灯放在 `x: 16, y: 16`，桌面和窄屏工具栏首帧同步预留 80px 安全区；顶栏改用 Tauri `data-tauri-drag-region="deep"`，让内部空白区可拖动，同时保留按钮点击隔离，并通过 Tauri 官方运行时检测避免浏览器预览留白。TopToolbar 测试 6/6、typecheck、ESLint、Prettier、Tauri 配置解析通过。macOS 仍锁屏，原生按钮与拖拽区目视确认待完成。
 
 > 2026-10-16：shell probe 的单用例入口现在会在构建 Tauri 前拒绝 Windows dialect 不支持的 case，避免参数错误被延迟成探针超时；Node 回归与前端协议门禁通过。
 
@@ -36,6 +42,34 @@
 
 > 2026-10-17：认证阶段的网络超时、连接重置和路由不可达会沿用远程会话的自动重连预算；凭据拒绝、host key 和密钥解析失败仍立即停在错误状态，不会反复尝试。
 
+> 2026-10-17：Windows Agent 登录将空白 `SSH_AUTH_SOCK` 视为未配置，继续回退到默认 OpenSSH named pipe 与 Pageant；真实 Agent 服务和权限仍需 Windows 实机验收。
+
+> 2026-10-17：本地 PTY 按跨平台 basename 识别 Windows 绝对路径的 PowerShell/pwsh，并继续追加 `-NoLogo`；真实 Windows ConPTY 的 prompt 时序仍需验收。
+
+> 2026-10-17：WKWebView 输入去重 marker 改为带 1 秒单调时钟 TTL 的 bounded FIFO，并在 composition/paste/non-text input 边界清理；重叠、过期、IME commit、paste 路径增加自动化覆盖，物理键盘验收仍待完成。
+
+> 2026-10-21：cold-start stopwatch 在 AX/marker 异步探针完成后重新检查单调 deadline，并复用同一时间点生成耗时；新增跨越 timeout 但 timeout timer 尚未调度的回归，避免 `ok: true` 与超预算耗时同时出现。
+
+> 2026-10-21：`@baicie/xterm@0.1.7` patch 现在只对已识别的 macOS Option-as-Meta 普通字符阻止 WKWebView 默认文本输入，避免 `ESC+f` 后混入布局字符；Dead key、Process、229 和 active composition 继续走原生路径。patch 已重新生成并通过 pnpm 重放，真实 Option/dead key 与中文 IME 仍需解锁 macOS 后人工验收。
+
+> 2026-10-21：workspace 恢复超时会取消 host 查询；host store 现在在取消时立即清除当前请求的 `loading` 状态，并用 generation 守卫保护更新中的新查询。全自动门禁通过，旧 macOS 实机证据仍需按当前源码重采。
+>
+> 2026-10-21：host-wake SSH smoke 用例超时/取消时会把 `AbortSignal` 传给控制文件等待，取消后及时清理 fixture，避免后台 sshd 和后续矩阵用例重叠；新增 runner 回归通过。
+
+> 2026-10-22：host-key direct/jump 预检和首次 SSH session create 现在共享一条前端单调 10 秒预算；每次 probe、瞬时重试和 Jump Host 串行阶段都重新计算剩余毫秒数，Rust 端继续受 8 秒预检与 9 秒建连上限约束。用户处理 TOFU 或手动 Retry 后开启新的尝试预算，自动重连不复用首连预算。跨进程传递使用相对毫秒并预留 100ms IPC/render margin，因此这是有界启动预算，不宣称跨进程时钟的硬实时 SLA；macOS 网络切换和完整 SSH 矩阵仍需解锁后按当前源码重采。
+
+> 2026-10-22：首次 SSH session create 若在共享 10 秒启动预算耗尽后才返回，前端会退休输出/lifecycle 缓冲并关闭迟到 session，不发布 `connected`；remote 迟到结果会转入独立预算的自动重连并可建立新 session。剩余毫秒在 IPC 前向下取整以满足 Rust `u64` 契约。定向回归、会话管理/重连/唤醒恢复测试通过。launcher 已增加五种 SSH IPC timeout 传递回归。源码指纹更新为 `c82d4c4b…`，实机证据仍待解锁 macOS 后重采。
+
+> 2026-10-22：启动失败界面先同步显示错误和 Retry，再异步加载完整错误组件；bootstrap 每次 attempt 通过 guarded root 检查 dispose/代际，专用 probe root 也受同一 deadline/AbortSignal 约束；SSH cancellation waiter 先注册 Tokio `Notified` 再读取取消标志，避免丢失并发 `notify_waiters()`。loader 拒绝、重复 Retry、永久 pending smoke root 和取消竞态回归通过；前端全量 126 文件/1139 项、脚本 205 项、Rust 221 单测 + 3 集成、Clippy 和生产构建通过。Phase 6.101 时源码指纹为 `0a0010a5…`，macOS 当前仍锁屏，严格 terminal/SSH/host-wake 与人工输入证据待重采。
+
+> 2026-10-17：首连 outage SSH fixture 新增 sshd 完全停止的 ready checkpoint，runner 在启动应用前等待该点，避免 outage case 偶尔没有真正覆盖首连不可达状态。
+
+> 2026-10-18 Phase 6.81：同一 `08ba7338…` binary 三项 outage 复跑均超时，wake IPC 事件只到 6673ms。为隔离 Issue #113，smoke 新增独立 loopback renderer heartbeat，每秒及 visibility/focus 变化上报 renderer 时钟、焦点与可见性；fallback 自清和 reporter 失败也保留诊断。最终源码 binary `0b994b72…` 的 wake 复验在 macOS 前台状态不稳定时失败，heartbeat 只能证明 renderer 曾上报 hidden 状态，尚待目标窗口真正可见且获得焦点后的 WKWebView 复验；AppKit frontmost helper 已增加目标进程登记竞态重试，但既有 13-case、启动与 shell 证据仍不代表当前 dirty worktree。
+
+> 2026-10-19 Phase 6.82：产品 `useTerminalHostWake` 增加 15 秒 wall-clock 漂移检测，并监听 `pageshow`/`document.resume`，覆盖合盖后 WKWebView 不产生 visibility/focus/online 事件的恢复路径；hook 定向测试 6/6 通过。真实睡眠、网络切换与当前源码完整证据仍待解锁后的 macOS 实机复验。
+
+> 2026-10-17：host-wake smoke fallback 每 5 秒记录一次 timer heartbeat，并标记共享 checkpoint 请求仍在途的状态；触发后立即停止 interval，避免重复上报。当前 instrumented binary `08ba7338…` 的 wake case 有一次约 57 秒无 timer 事件、64 秒恢复发布 checkpoint，随后同 binary 重跑约 21.5 秒通过。renderer heartbeat 的周期上报走独立 loopback `fetch`，只有初始配置 `invoke` 与 host-wake 共享 Tauri IPC；因此 heartbeat 与 checkpoint 的时间差可区分 renderer/timer 停顿和后续 IPC/命令路径停顿，但仍需在解锁的 WKWebView 上复验；完整 13-case 与启动证据仍需按当前源码重采。
+
 > 2026-10-16：远程 prompt cold-start 只依赖 SSH/终端 marker 时不再编译 macOS AX helper；Linux hosted runner 的 WebKitGTK 首次进程启动使用 30 秒观测窗口并记录真实耗时，避免把测量工具的 AX 编译或平台启动抖动误报为终端协议失败。
 
 > 2026-10-16：Linux hosted runner 的 shell probe 在用例通过后可能仍有 WebKitGTK/Mesa shader-cache 子进程迟写临时 `HOME`；清理现在使用有界递归重试，避免 `ENOTEMPTY` 把成功的 PTY 用例标成失败。
@@ -43,7 +77,7 @@
 > 2026-10-14：跨平台 CI 不再遗漏 Windows 命令语言。`real-machine-matrix.yml` 新增 `windows-shell-matrix` job，在 `windows-latest` 原生 runner 上用真实 ConPTY 执行 PowerShell 与 cmd 的 shell 交互 dialect——这两种 dialect 按 Windows 命令语法单独编写，在 macOS/Linux runner 上无法解析，此前完全没有执行路径。shell 探针的 `--shells` 同时接入 `SUPPORTED_WINDOWS_SHELLS`，dialect 未声明的用例 fail-fast。Windows OpenSSH 服务、Pageant 与串口硬件依旧属于 Issue #21/#22/#39 的实机项，hosted runner 无法覆盖。
 
 > 2026-10-13 验证补充（历史构建）：instrumented debug binary `8f097da8…` 的冷启动三次范围为 3676–4503ms，最新重跑为 3676ms；远程 prompt round-trip 三次范围为 1493–5647ms，最新重跑为 1493ms；真实 SSH 矩阵 12/12 全绿，包含 20 秒 host-wake outage（`hostWakeSynthesized=true`）；shell `cat-eof`、readline history、Tab 三 case 为 333/246/406ms。矩阵 runner 的 case 超时会传播 AbortSignal，停止 smoke app、取消重连轮询并等待 fixture 有界清理后再进入下一 case。该构建对应 source fingerprint `9cb3125b…`，不作为当前证据；当前证据见下一条。人工键盘/IME 与跨平台实机仍待验收。
-> 2026-10-13 最终生命周期复验（历史构建）：instrumented debug binary `8b360d3d…` 的本地冷启动三次为 6054/5824/5570ms，远程 prompt marker 为 4152ms，对应 source fingerprint `03c6fc6d…`；该记录仅保留历史上下文，当前证据以顶部 `3dfd71f9…` / `40e58ef9…` 为准。人工键盘/IME、睡眠/网络切换与 Windows/串口实机仍待验收。
+> 2026-10-13 最终生命周期复验（历史构建）：instrumented debug binary `8b360d3d…` 的本地冷启动三次为 6054/5824/5570ms，远程 prompt marker 为 4152ms，对应 source fingerprint `03c6fc6d…`；该记录仅保留历史上下文，当前证据以顶部 `4368d6c8…` / `de8e49cb…` 为准。人工键盘/IME、睡眠/网络切换与 Windows/串口实机仍待验收。
 
 终端工作台方案见 [`docs/plans/terminal-workbench-rebuild.md`](plans/terminal-workbench-rebuild.md)，可靠性规格见 [`docs/plans/terminal-reliability-rebuild.md`](plans/terminal-reliability-rebuild.md)；当前完成项见 [`docs/todo.md`](todo.md) Phase 6.27/6.28/6.29/6.30/6.31/6.32/6.33/6.52/6.53，安全修复与验证边界见 [`docs/issue.md`](issue.md) Issue #48/#51/#57/#58/#59/#60/#61/#62/#63/#76。当前工作树 SSH 矩阵记录见 [`2026-10-11-macos-ssh-matrix-current.json`](verification/2026-10-11-macos-ssh-matrix-current.json)，历史复跑见 [`2026-10-11-macos-ssh-matrix-rerun.json`](verification/2026-10-11-macos-ssh-matrix-rerun.json)，历史基线见 [`2026-10-10-macos-ssh-matrix.json`](verification/2026-10-10-macos-ssh-matrix.json)，本地初次/重连 smoke 记录见 [`2026-10-10-macos-terminal-smoke.json`](verification/2026-10-10-macos-terminal-smoke.json) 与 [`2026-10-10-macos-terminal-reconnect-smoke.json`](verification/2026-10-10-macos-terminal-reconnect-smoke.json)；最新远程 prompt marker 记录见 [`2026-10-11-macos-remote-shell-prompt-rerun.json`](verification/2026-10-11-macos-remote-shell-prompt-rerun.json)，当前 shell 交互记录见 [`2026-10-11-macos-shell-interaction-current.json`](verification/2026-10-11-macos-shell-interaction-current.json)，release 冷启动复验见 [`2026-10-13-macos-release-cold-start-rerun.json`](verification/2026-10-13-macos-release-cold-start-rerun.json)，旧 shell 二进制历史记录见 [`2026-10-11-macos-shell-interaction-probe.json`](verification/2026-10-11-macos-shell-interaction-probe.json)，cold-start 旧 AX 观测、严格 stopwatch 锁屏阻塞记录、远程 command-ready、raw-input 通过记录及早期阻塞记录分别见 [`2026-10-09-macos-cold-start.json`](verification/2026-10-09-macos-cold-start.json)、[`2026-10-10-macos-cold-start-blocked.json`](verification/2026-10-10-macos-cold-start-blocked.json)、[`2026-10-10-macos-remote-cold-start.json`](verification/2026-10-10-macos-remote-cold-start.json)、[`2026-10-10-macos-raw-input.json`](verification/2026-10-10-macos-raw-input.json) 和 [`2026-10-10-macos-raw-input-blocked.json`](verification/2026-10-10-macos-raw-input-blocked.json)。
 
@@ -359,6 +393,7 @@ src-tauri/
 **存储路径约定：** `terminal-latest.json`（始终最新） + `terminal-sync-{iso-timestamp}.json`（时间戳备份）。
 
 **新增/修改文件：**
+
 - 新增：`packages/frontend/src/hooks/use-command-completion.ts`、`packages/frontend/src/components/terminal-completion/terminal-completion-overlay.tsx`、`packages/frontend/src/view/teams/components/{team-list-sidebar,disabled-teams-view}.tsx`、`packages/frontend/src/view/hosts/components/render-list-body.tsx`、`packages/frontend/src/view/snippets/use-script-form.ts`、`packages/frontend/src/view/keychain/use-key-form.ts`、`packages/frontend/src/components/host-list/{host-form-basic,host-form-actions}.tsx`
 - 修改：`packages/frontend/src/{hooks/use-terminal.ts,service/sync.ts,components/settings-dialog/storage-settings-dialog.tsx,view/settings/storage-settings.tsx,features/terminal/components/terminal-container/container.tsx,locales/{en,cn,fr}/settings.ts}`
 
@@ -424,6 +459,7 @@ src-tauri/
 #### Issue #36: 工作区布局保存/加载 ✅ 已实现
 
 `workspace-switcher/index.tsx` 的 `handleSelectWorkspace`：
+
 1. 切换前调用 `workspaceStore.saveLayout` 持久化当前布局
 2. 切换后调用 `workspaceStore.loadLayout` 恢复新工作区布局
 
@@ -618,7 +654,7 @@ src-tauri/
 
 **最终自动验证**：前端 31 个测试文件、408 项测试；Team Server 25 个测试文件、95 项测试；Rust 45 项测试；Prisma schema、lint、typecheck、前端 bundle 预算、Team Server build、Rust fmt/check/Clippy 和 447 个生产源码文件行数门禁全部通过。Bundle 初始 gzip 227.36 KB（预算 240 KB），总 gzip 510.09 KB（预算 550 KB），最大 JS chunk raw 390.87 KB（预算 500 KB）。
 
-**后续验证边界**：2026-08-19 已补完成 Docker/PostgreSQL 容器、迁移、readiness、注册准入与关停恢复验收；macOS 本地 PTY 此后已由 Phase 6.17 的底层 round-trip 和 Tauri/xterm smoke 验证。Windows/Linux 本地 PTY、Pageant、真实 SSH/Jump Host 与串口硬件仍按 Issue #39/#46/#48 矩阵待实机执行；S3 仍只有固定向量测试。
+**后续验证边界**：2026-08-19 已补完成 Docker/PostgreSQL 容器、迁移、readiness、注册准入与关停恢复验收；macOS 本地 PTY 此后已由 Phase 6.17 的底层 round-trip 和 Tauri/xterm smoke 验证。Windows/Linux 本地 PTY、Pageant、真实 SSH/Jump Host 与串口硬件仍按 Issue #39/#46/#48 矩阵待实机执行；S3 仍只有固定向量测试。2026-10-22 修复共享启动预算传入 Rust `u64` IPC 时的 fractional timeout 边界（Issue #127）。
 
 ---
 
@@ -1056,4 +1092,4 @@ const response = await teamApi.listTeams()
 
 ---
 
-_文档更新时间: 2026-10-17 (Phase 6.74 认证阶段瞬时网络错误纳入自动重连；real-machine run 38997341490 全绿，macOS 人工/IME 与 Windows Agent/Pageant/串口硬件仍待验证)_
+_文档更新时间: 2026-10-28 (Phase 6.103 固定前端测试并发上限并收口自动化门禁；evidence gate 仍拒绝 8 项旧实机记录，需解锁 macOS 后按当前源码重采，人工/IME 与 Windows Agent/Pageant/串口硬件仍待验证)_

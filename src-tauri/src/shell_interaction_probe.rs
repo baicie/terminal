@@ -12,16 +12,21 @@ const RESULT_PATH_ENV: &str = "TERMINAL_SHELL_PROBE_RESULT_PATH";
 const CASE_ENV: &str = "TERMINAL_SHELL_PROBE_CASE";
 const SSH_CONFIG_PATH_ENV: &str = "TERMINAL_SHELL_PROBE_SSH_CONFIG_PATH";
 const DIALECT_ENV: &str = "TERMINAL_SHELL_PROBE_DIALECT";
+const NONCE_ENV: &str = "TERMINAL_SHELL_PROBE_NONCE";
+const MARKER_PATH_ENV: &str = "TERMINAL_SHELL_PROBE_MARKER_PATH";
+const MARKER_CONTENT_ENV: &str = "TERMINAL_SHELL_PROBE_MARKER_CONTENT";
 const DEFAULT_CASE: &str = "cat-eof";
 const TIMEOUT_MS: u64 = 20_000;
 const MAX_RESULT_BYTES: usize = 64 * 1024;
 const MAX_INPUT_EVENTS: usize = 512;
+const MAX_MARKER_CONTENT_BYTES: usize = 512;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ShellProbeConfig {
     result_path: String,
     case_name: String,
+    nonce: String,
     timeout_ms: u64,
     /// The command language the probe must speak. The acceptance runner sets
     /// this from the shell it launched; the probe never infers it, because a
@@ -81,9 +86,16 @@ pub(crate) enum ShellProbeDialect {
 struct ShellProbeRun {
     result_path: PathBuf,
     case_name: String,
+    nonce: String,
     dialect: ShellProbeDialect,
     started_at: Instant,
     ssh: Option<crate::terminal_smoke::TerminalSmokeSshConfig>,
+    marker: Option<ShellProbeMarker>,
+}
+
+struct ShellProbeMarker {
+    path: PathBuf,
+    content: String,
 }
 
 enum ShellProbeMode {
@@ -156,6 +168,50 @@ fn configured_case() -> Result<String, String> {
     Ok(case_name)
 }
 
+fn valid_nonce(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 48
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+fn configured_nonce() -> Result<String, String> {
+    let nonce = std::env::var(NONCE_ENV)
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| format!("shell_{}", uuid::Uuid::new_v4().simple()));
+    if !valid_nonce(&nonce) {
+        return Err(format!("{NONCE_ENV} has an invalid value"));
+    }
+    Ok(nonce)
+}
+
+fn configured_marker() -> Result<Option<ShellProbeMarker>, String> {
+    match (
+        std::env::var_os(MARKER_PATH_ENV),
+        std::env::var(MARKER_CONTENT_ENV).ok(),
+    ) {
+        (None, None) => Ok(None),
+        (Some(path), Some(content)) => {
+            let path = PathBuf::from(path);
+            if !path.is_absolute() {
+                return Err(format!("{MARKER_PATH_ENV} must be an absolute path"));
+            }
+            if content.is_empty()
+                || content.len() > MAX_MARKER_CONTENT_BYTES
+                || content.bytes().any(|byte| byte.is_ascii_control())
+            {
+                return Err(format!("{MARKER_CONTENT_ENV} is invalid"));
+            }
+            Ok(Some(ShellProbeMarker { path, content }))
+        }
+        _ => Err(format!(
+            "{MARKER_PATH_ENV} and {MARKER_CONTENT_ENV} must be provided together"
+        )),
+    }
+}
+
 impl ShellProbeState {
     pub(crate) fn from_env() -> Self {
         let mode = if !is_enabled() {
@@ -165,10 +221,12 @@ impl ShellProbeState {
                 let case_name = configured_case()?;
                 Ok(ShellProbeRun {
                     result_path: absolute_path(std::env::var_os(RESULT_PATH_ENV))?,
+                    nonce: configured_nonce()?,
                     dialect: configured_dialect()?,
                     case_name,
                     started_at: Instant::now(),
                     ssh: ssh_target()?,
+                    marker: configured_marker()?,
                 })
             })() {
                 Ok(run) => ShellProbeMode::Enabled(Arc::new(run)),
@@ -293,6 +351,7 @@ pub(crate) fn shell_probe_config(
     Ok(Some(ShellProbeConfig {
         result_path: run.result_path.to_string_lossy().into_owned(),
         case_name: run.case_name.clone(),
+        nonce: run.nonce.clone(),
         timeout_ms: TIMEOUT_MS,
         dialect: run.dialect,
         ssh: run.ssh.as_ref().map(|ssh| ShellProbeSshTarget {
@@ -322,7 +381,28 @@ pub(crate) async fn shell_probe_result(
             "shell probe result exceeds {MAX_RESULT_BYTES} bytes"
         ));
     }
-    write_json(&run.result_path, &serialized).await
+    write_json(&run.result_path, &serialized).await?;
+    if result.ok {
+        if let Some(marker) = &run.marker {
+            write_marker(marker).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn write_marker(marker: &ShellProbeMarker) -> Result<(), String> {
+    let mut file = tokio::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&marker.path)
+        .await
+        .map_err(|error| format!("failed to create shell probe marker: {error}"))?;
+    file.write_all(marker.content.as_bytes())
+        .await
+        .map_err(|error| format!("failed to write shell probe marker: {error}"))?;
+    file.sync_all()
+        .await
+        .map_err(|error| format!("failed to sync shell probe marker: {error}"))
 }
 
 #[cfg(test)]
@@ -333,9 +413,11 @@ mod tests {
         ShellProbeRun {
             result_path: PathBuf::from("/tmp/shell-probe-result.json"),
             case_name: "cat-eof".to_string(),
+            nonce: "test_nonce".to_string(),
             dialect: ShellProbeDialect::Posix,
             started_at: Instant::now(),
             ssh: None,
+            marker: None,
         }
     }
 

@@ -14,6 +14,23 @@ fn host_key_probe_budget_stays_within_startup_target() {
     );
 }
 
+#[test]
+fn host_key_probe_uses_the_remaining_budget_and_keeps_its_backend_cap() {
+    assert_eq!(
+        bounded_probe_timeout(None),
+        std::time::Duration::from_secs(8)
+    );
+    assert_eq!(
+        bounded_probe_timeout(Some(500)),
+        std::time::Duration::from_millis(500)
+    );
+    assert_eq!(
+        bounded_probe_timeout(Some(10_000)),
+        std::time::Duration::from_secs(8)
+    );
+    assert_eq!(bounded_probe_timeout(Some(0)), std::time::Duration::ZERO);
+}
+
 fn public_key() -> PublicKey {
     PublicKey::from_openssh(ED25519_PUBLIC_KEY).expect("test key should parse")
 }
@@ -195,7 +212,7 @@ async fn direct_probe_kex_timeout_closes_transport_before_returning() {
         }
     });
 
-    let result = ssh_host_key_probe("127.0.0.1".to_string(), address.port()).await;
+    let result = ssh_host_key_probe("127.0.0.1".to_string(), address.port(), None).await;
 
     tokio::time::timeout(std::time::Duration::from_secs(1), &mut eof_rx)
         .await
@@ -248,7 +265,7 @@ fn host_key_command_futures_own_their_ipc_arguments() {
     {
     }
 
-    assert_send_static(ssh_host_key_probe("example.com".to_string(), 22));
+    assert_send_static(ssh_host_key_probe("example.com".to_string(), 22, None));
     assert_send_static(ssh_host_key_learn(
         "example.com".to_string(),
         22,
@@ -268,5 +285,6 @@ fn host_key_command_futures_own_their_ipc_arguments() {
             expected_host_key: Some(ED25519_PUBLIC_KEY.to_string()),
             target_auth_type: Some("password".to_string()),
         },
+        None,
     ));
 }

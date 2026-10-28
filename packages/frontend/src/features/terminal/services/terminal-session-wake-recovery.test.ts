@@ -50,15 +50,24 @@ describe('TerminalSessionWakeRecovery', () => {
   it('never arms sessions that cannot use automatic reconnect', () => {
     const wake = new TerminalSessionWakeRecovery()
 
-    wake.armAfterWake(record({ request: { tabId: 'l', tabType: 'local', cols: 80, rows: 24 } }))
-    wake.armAfterWake(record({ request: { tabId: 's', tabType: 'serial', cols: 80, rows: 24 }, status: 'connecting' }))
+    wake.armAfterWake(
+      record({ request: { tabId: 'l', tabType: 'local', cols: 80, rows: 24 } }),
+    )
+    wake.armAfterWake(
+      record({
+        request: { tabId: 's', tabType: 'serial', cols: 80, rows: 24 },
+        status: 'connecting',
+      }),
+    )
     wake.armAfterWake(record({ closed: true }))
     wake.armAfterWake(record({ reconnectMode: 'manual' }))
 
     expect(wake.consumeWakeArming(record())).toBe(false)
     expect(
       wake.canResume(
-        record({ request: { tabId: 'l', tabType: 'local', cols: 80, rows: 24 } }),
+        record({
+          request: { tabId: 'l', tabType: 'local', cols: 80, rows: 24 },
+        }),
       ),
     ).toBe(false)
     // A serial session has no reconnect budget to spend: it must be reopened
@@ -107,19 +116,54 @@ describe('TerminalSessionWakeRecovery', () => {
   it('resumes only retryable remote sessions that are not already reconnecting', () => {
     const wake = new TerminalSessionWakeRecovery()
 
-    expect(
-      wake.canResume(record({ status: 'error', retryable: true })),
-    ).toBe(true)
+    expect(wake.canResume(record({ status: 'error', retryable: true }))).toBe(
+      true,
+    )
     expect(wake.canResume(record({ status: 'error', retryable: false }))).toBe(
       false,
     )
-    expect(wake.canResume(record({ status: 'connected', retryable: true }))).toBe(
-      false,
-    )
+    expect(
+      wake.canResume(record({ status: 'connected', retryable: true })),
+    ).toBe(false)
     expect(
       wake.canResume(
-        record({ status: 'error', retryable: true, reconnectPromise: Promise.resolve() }),
+        record({
+          status: 'error',
+          retryable: true,
+          reconnectPromise: Promise.resolve(),
+        }),
       ),
     ).toBe(false)
+  })
+
+  it('does not resume an old wake after a newer reconnect generation takes over', async () => {
+    let resolveOwnership!: () => void
+    const ownership = new Promise<void>(resolve => {
+      resolveOwnership = resolve
+    })
+    const wake = new TerminalSessionWakeRecovery()
+    const target = record({
+      generation: 7,
+      status: 'error',
+      reconnectMode: 'automatic',
+      reconnectPromise: ownership,
+      retryable: true,
+    })
+    let resumed = 0
+
+    expect(wake.resume(target, () => resumed++)).toBe(true)
+
+    // The original automatic run settles, then a new run reaches the same
+    // retryable error state before the delayed wake continuation executes.
+    target.reconnectPromise = null
+    target.reconnectMode = null
+    target.status = 'error'
+    target.retryable = true
+    target.generation = 8
+    resolveOwnership()
+    await ownership
+    await Promise.resolve()
+
+    expect(resumed).toBe(0)
   })
 })

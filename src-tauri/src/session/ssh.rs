@@ -81,6 +81,11 @@ impl ConnectionCancellation {
 
     async fn cancelled(&self) {
         let notified = self.state.notify.notified();
+        tokio::pin!(notified);
+        // Register the waiter before checking the flag. Without `enable`, a
+        // cancellation between the flag check and the first poll can lose the
+        // `notify_waiters` wakeup and leave the connection future pending.
+        notified.as_mut().enable();
         if self.is_cancelled() {
             return;
         }
@@ -233,8 +238,17 @@ pub(crate) async fn run_cancellable_connection<T>(
     }
 }
 
-pub(crate) fn ssh_connection_deadline() -> tokio::time::Instant {
-    tokio::time::Instant::now() + SSH_CONNECTION_TIMEOUT
+pub(crate) fn ssh_connection_deadline_with_timeout(
+    timeout_ms: Option<u64>,
+) -> tokio::time::Instant {
+    tokio::time::Instant::now() + bounded_ssh_connection_timeout(timeout_ms)
+}
+
+fn bounded_ssh_connection_timeout(timeout_ms: Option<u64>) -> std::time::Duration {
+    timeout_ms
+        .map(std::time::Duration::from_millis)
+        .unwrap_or(SSH_CONNECTION_TIMEOUT)
+        .min(SSH_CONNECTION_TIMEOUT)
 }
 
 fn stage_deadline(
@@ -865,6 +879,19 @@ type DynamicAgentClient = russh::keys::agent::client::AgentClient<
     Box<dyn russh::keys::agent::client::AgentStream + Send + Unpin + 'static>,
 >;
 
+/// Return an explicitly configured agent pipe only when it contains a path.
+///
+/// Windows desktop launchers can inherit `SSH_AUTH_SOCK` as an empty or
+/// whitespace-only value even when the OpenSSH Agent service is available.
+/// Treating that value as an explicit pipe makes `connect_named_pipe` fail on
+/// an invalid path and prevents the normal OpenSSH/Pageant fallback chain.
+/// Keep non-empty paths byte-for-byte intact because named-pipe paths are
+/// opaque platform values.
+#[cfg(any(windows, test))]
+fn non_empty_agent_pipe(value: Option<String>) -> Option<String> {
+    value.filter(|pipe| !pipe.trim().is_empty())
+}
+
 /// Keeps russh's borrowed sign-request identity out of the returned future.
 struct OwnedIdentityAgentSigner(DynamicAgentClient);
 
@@ -953,7 +980,7 @@ async fn authenticate_with_agent_inner(
         use russh::keys::agent::client::AgentClient;
 
         const OPENSSH_AGENT_PIPE: &str = r"\\.\pipe\openssh-ssh-agent";
-        let explicit_pipe = std::env::var("SSH_AUTH_SOCK").ok();
+        let explicit_pipe = non_empty_agent_pipe(std::env::var("SSH_AUTH_SOCK").ok());
 
         let agent = if let Some(pipe) = explicit_pipe {
             let pipe_for_error = pipe.clone();
@@ -2649,6 +2676,23 @@ mod tests {
     fn assert_send_static<T: Send + 'static>(_: T) {}
 
     #[test]
+    fn ssh_connection_timeout_respects_shared_budget_and_backend_cap() {
+        assert_eq!(bounded_ssh_connection_timeout(None), SSH_CONNECTION_TIMEOUT);
+        assert_eq!(
+            bounded_ssh_connection_timeout(Some(500)),
+            std::time::Duration::from_millis(500)
+        );
+        assert_eq!(
+            bounded_ssh_connection_timeout(Some(20_000)),
+            SSH_CONNECTION_TIMEOUT
+        );
+        assert_eq!(
+            bounded_ssh_connection_timeout(Some(0)),
+            std::time::Duration::ZERO
+        );
+    }
+
+    #[test]
     fn dropped_connection_publication_releases_transport_and_pool_key() {
         use std::io::Read;
         use std::net::{TcpListener, TcpStream};
@@ -2747,6 +2791,18 @@ mod tests {
         assert_eq!(
             decoded.algorithm(),
             russh::keys::ssh_key::Algorithm::Ed25519
+        );
+    }
+
+    #[test]
+    fn empty_agent_pipe_values_allow_platform_fallback() {
+        assert_eq!(non_empty_agent_pipe(None), None);
+        assert_eq!(non_empty_agent_pipe(Some(String::new())), None);
+        assert_eq!(non_empty_agent_pipe(Some(" \t\n".to_string())), None);
+        let configured = r"\\.\pipe\openssh-ssh-agent".to_string();
+        assert_eq!(
+            non_empty_agent_pipe(Some(configured.clone())),
+            Some(configured)
         );
     }
 

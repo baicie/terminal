@@ -15,6 +15,7 @@ import WorkspaceSwitcher from '@/components/workspace-switcher'
 interface MobileToolbarProps {
   currentPath: string
   drawerOpen: boolean
+  padForMacTrafficLights: boolean
   onDrawerOpenChange: (open: boolean) => void
   onNavigate: (path: string) => void
   onBack: () => void
@@ -23,6 +24,7 @@ interface MobileToolbarProps {
 export function MobileToolbar({
   currentPath,
   drawerOpen,
+  padForMacTrafficLights,
   onDrawerOpenChange,
   onNavigate,
   onBack,
@@ -40,8 +42,11 @@ export function MobileToolbar({
   return (
     <>
       <header
-        className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-background px-3"
-        data-tauri-drag-region
+        className={cn(
+          'flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-background',
+          padForMacTrafficLights ? 'pl-20 pr-3' : 'px-3',
+        )}
+        data-tauri-drag-region="deep"
       >
         <Button
           variant="ghost"
@@ -54,10 +59,7 @@ export function MobileToolbar({
         >
           <PanelLeft />
         </Button>
-        <div
-          className="min-w-0 flex-1 text-center"
-          data-tauri-drag-region="false"
-        >
+        <div className="min-w-0 flex-1 text-center">
           <span className="block truncate text-sm font-medium text-foreground">
             {pageTitle}
           </span>

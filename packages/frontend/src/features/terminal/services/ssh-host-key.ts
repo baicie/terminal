@@ -12,6 +12,10 @@ export interface SshHostKeyProbeResult {
   publicKey: string
 }
 
+export interface SshHostKeyProbeOptions {
+  timeoutMs?: number
+}
+
 interface SshHostKeyWireResult {
   status: SshHostKeyStatus
   host: string
@@ -35,10 +39,14 @@ function fromWireResult(result: SshHostKeyWireResult): SshHostKeyProbeResult {
 export async function probeSshHostKey(
   host: string,
   port: number,
+  options?: SshHostKeyProbeOptions,
 ): Promise<SshHostKeyProbeResult> {
   const result = await invoke<SshHostKeyWireResult>('ssh_host_key_probe', {
     host,
     port,
+    ...(options?.timeoutMs === undefined
+      ? {}
+      : { timeoutMs: options.timeoutMs }),
   })
   return fromWireResult(result)
 }
@@ -47,10 +55,18 @@ export async function probeSshHostKeyViaJump(
   targetHost: string,
   targetPort: number,
   jumpHost: SshJumpHostIpcConfig,
+  options?: SshHostKeyProbeOptions,
 ): Promise<SshHostKeyProbeResult> {
   const result = await invoke<SshHostKeyWireResult>(
     'ssh_host_key_probe_via_jump',
-    { targetHost, targetPort, jumpHost },
+    {
+      targetHost,
+      targetPort,
+      jumpHost,
+      ...(options?.timeoutMs === undefined
+        ? {}
+        : { timeoutMs: options.timeoutMs }),
+    },
   )
   return fromWireResult(result)
 }

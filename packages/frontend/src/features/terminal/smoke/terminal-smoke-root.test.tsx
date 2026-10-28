@@ -20,6 +20,10 @@ const mocks = vi.hoisted(() => ({
   useTerminal: vi.fn(),
 }))
 
+vi.mock('./use-terminal-smoke-renderer-heartbeat', () => ({
+  useTerminalSmokeRendererHeartbeat: vi.fn(),
+}))
+
 vi.mock('@baicie/xterm', () => ({
   Terminal: class {
     cols = 80
@@ -54,6 +58,7 @@ vi.mock('./run-terminal-smoke', () => ({
 }))
 
 import TerminalSmokeRoot from './terminal-smoke-root'
+import { useTerminalSmokeRendererHeartbeat } from './use-terminal-smoke-renderer-heartbeat'
 
 const config = terminalSmokeTestConfig
 const result = terminalSmokeRoundResult
@@ -134,6 +139,27 @@ it('reports the first connection once and submits ten completed rounds', async (
   expect(mocks.reportConnected.mock.invocationCallOrder[0]).toBeGreaterThan(
     mocks.run.mock.invocationCallOrder[0],
   )
+})
+
+it('enables the independent renderer heartbeat only for host-wake smoke', () => {
+  render(
+    <TerminalSmokeRoot
+      config={config}
+      submitResult={mocks.submit}
+      reportConnected={mocks.reportConnected}
+    />,
+  )
+  expect(useTerminalSmokeRendererHeartbeat).toHaveBeenCalledWith(false)
+
+  cleanup()
+  render(
+    <TerminalSmokeRoot
+      config={{ ...config, hostWakeRequired: true }}
+      submitResult={mocks.submit}
+      reportConnected={mocks.reportConnected}
+    />,
+  )
+  expect(useTerminalSmokeRendererHeartbeat).toHaveBeenLastCalledWith(true)
 })
 
 it('runs the probe only after reconnecting with a new SSH session', async () => {

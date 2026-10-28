@@ -35,6 +35,8 @@ export interface UseTerminalOptions {
   expectedHostKey?: string
   /** Exact jump-host public key accepted without persisting it. */
   expectedJumpHostKey?: string
+  /** Absolute deadline for the first session create after host-key preflight. */
+  connectionDeadlineAt?: number
   /** Required when tabType is remote. */
   host?: Host
   /** Resolved host referenced by host.jumpHostId. */

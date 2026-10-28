@@ -132,6 +132,7 @@ function createHarness({
     startSshd: [],
     stopSshd: 0,
     restartSshd: 0,
+    frontmost: [],
     writeFile: [],
   }
   const appChild = new FakeChild(41_003)
@@ -175,6 +176,9 @@ function createHarness({
           calls.stopSshd += 1
         },
       }
+    },
+    ensureFrontmost: async (pid, runDirectory) => {
+      calls.frontmost.push({ pid, runDirectory })
     },
     spawn: (command, args, options) => {
       calls.spawn.push({ command, args, options })
@@ -409,6 +413,9 @@ test('restarts the real SSH fixture only after the reconnect checkpoint', async 
   assert.equal(result.staleOutputRejected, true)
   assert.equal(result.uniqueSessionCount, 11)
   assert.equal(calls.restartSshd, 1)
+  assert.deepEqual(calls.frontmost, [
+    { pid: appChild.pid, runDirectory: RUN_DIRECTORY },
+  ])
   const appCall = calls.spawn.at(-1)
   assert.equal(
     appCall.options.env.TERMINAL_SMOKE_RECONNECT_CONTROL_PATH,
@@ -706,6 +713,7 @@ function createMatrixHarness({
     restartSshd: [],
     stopSshd: 0,
     stopAgent: 0,
+    frontmost: [],
     writeFile: [],
   }
   const buildChild = new FakeChild(51_001)
@@ -752,6 +760,9 @@ function createMatrixHarness({
           calls.stopSshd += 1
         },
       }
+    },
+    ensureFrontmost: async (pid, runDirectory) => {
+      calls.frontmost.push({ pid, runDirectory })
     },
     spawn: (command, args, options) => {
       calls.spawn.push({ command, args, options })
@@ -930,6 +941,9 @@ test('restarts the jump transport before the target during reconnect', async () 
     },
     { runDirectory: RUN_DIRECTORY },
   ])
+  assert.deepEqual(calls.frontmost, [
+    { pid: 51_003, runDirectory: RUN_DIRECTORY },
+  ])
 })
 
 test('rejects unsupported authentication modes before spawning', async () => {
@@ -968,6 +982,76 @@ test('selects the default matrix when no filter is given', () => {
     ],
   )
   assert.deepEqual(selectCases('').length, 13)
+})
+
+test('uses a host-wake control checkpoint instead of a fixed outage duration', () => {
+  const [hostWakeCase] = selectCases('key-outage-wake-reconnect')
+
+  assert.equal(hostWakeCase.outageHoldMs, undefined)
+  assert.equal(hostWakeCase.hostWakeRequired, true)
+})
+
+test('preserves independent renderer heartbeats with host-wake failure diagnostics', async () => {
+  const harness = createMatrixHarness({
+    result: {
+      ...passingResult,
+      ok: false,
+      stage: 'reconnect',
+      error: 'host wake failed',
+    },
+  })
+  const pulse = JSON.stringify({
+    seq: 1,
+    performanceNow: 234.5,
+    visibilityState: 'visible',
+    hasFocus: true,
+    online: true,
+  })
+  let closeCount = 0
+  harness.dependencies.startRendererHeartbeat = async () => ({
+    endpoint: 'http://127.0.0.1:43127/heartbeat',
+    token: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    close: async () => {
+      closeCount += 1
+    },
+  })
+  const readFile = harness.dependencies.readFile
+  harness.dependencies.readFile = async (filePath, ...args) => {
+    if (filePath.endsWith('host-wake.events.ndjson')) {
+      return '{"elapsedMs":1000,"event":"fallback-armed"}\n'
+    }
+    if (filePath.endsWith('renderer-heartbeat.ndjson')) return `${pulse}\n`
+    return readFile(filePath, ...args)
+  }
+
+  await assert.rejects(
+    runTerminalSmoke({
+      cwd: PROJECT_ROOT,
+      env: {},
+      hostWakeRequired: true,
+      skipBuild: true,
+      targetDirectory: TARGET_DIRECTORY,
+      dependencies: harness.dependencies,
+    }),
+    error => {
+      assert.match(error.message, /hostWakeEvents=.*fallback-armed/)
+      assert.match(error.message, /rendererHeartbeats=.*\"seq\":1/)
+      return true
+    },
+  )
+
+  const smokeInvocation = harness.calls.spawn.find(call =>
+    call.command.endsWith('terminal'),
+  )
+  assert.equal(
+    smokeInvocation.options.env.TERMINAL_SMOKE_RENDERER_HEARTBEAT_ENDPOINT,
+    'http://127.0.0.1:43127/heartbeat',
+  )
+  assert.equal(
+    smokeInvocation.options.env.TERMINAL_SMOKE_RENDERER_HEARTBEAT_TOKEN.length,
+    64,
+  )
+  assert.equal(closeCount, 1)
 })
 
 test('selects comma-separated matrix cases in declaration order', () => {

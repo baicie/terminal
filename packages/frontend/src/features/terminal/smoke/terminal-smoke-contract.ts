@@ -1,4 +1,13 @@
-import { invoke } from '@tauri-apps/api/core'
+import {
+  terminalSmokeIpc as defaultIpc,
+  type TerminalSmokeIpc,
+} from './terminal-smoke-renderer-heartbeat-contract'
+export {
+  isTerminalSmokeTauriRuntime,
+  loadTerminalSmokeRendererHeartbeat,
+  parseTerminalSmokeRendererHeartbeatConfig,
+  type TerminalSmokeRendererHeartbeatConfig,
+} from './terminal-smoke-renderer-heartbeat-contract'
 import {
   parseTerminalSmokeSshConfig,
   type TerminalSmokeSshConfig,
@@ -79,10 +88,27 @@ export interface TerminalSmokeStaleOutputProbe {
   barrierMarker: string
 }
 
-interface TerminalSmokeIpc {
-  isTauri: () => boolean
-  invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>
-}
+export type TerminalSmokeHostWakeSource =
+  | 'reconnect-checkpoint-fallback'
+  | 'reconnect-state-recovery'
+  | 'retryable-error'
+
+export type TerminalSmokeHostWakeEvent =
+  | 'fallback-armed'
+  | 'fallback-poll'
+  | 'fallback-poll-in-flight'
+  | 'fallback-timer-fired'
+  | 'fallback-timer-cleared'
+  | 'reconnect-state-timer-armed'
+  | 'reconnect-state-timer-fired'
+  | 'reconnect-state-timer-cleared'
+  | 'round-controller-aborted'
+  | 'checkpoint'
+
+export type TerminalSmokeHostWakeReporter = (
+  event?: TerminalSmokeHostWakeEvent,
+  source?: TerminalSmokeHostWakeSource,
+) => Promise<void>
 
 const FIXED_CONFIG = {
   loadBytes: 8_388_608,
@@ -181,27 +207,6 @@ function parseStaleOutputProbe(
   }
 }
 
-export function isTerminalSmokeTauriRuntime(
-  runtime: Record<string, unknown> = globalThis as Record<string, unknown>,
-): boolean {
-  const location = runtime.location
-  const protocol =
-    typeof location === 'object' && location !== null && 'protocol' in location
-      ? (location as { protocol?: unknown }).protocol
-      : undefined
-  return (
-    runtime.isTauri === true ||
-    '__TAURI_INTERNALS__' in runtime ||
-    '__TAURI_INVOKE__' in runtime ||
-    protocol === 'tauri:'
-  )
-}
-
-const defaultIpc: TerminalSmokeIpc = {
-  isTauri: isTerminalSmokeTauriRuntime,
-  invoke,
-}
-
 export async function loadTerminalSmokeConfig(
   ipc: TerminalSmokeIpc = defaultIpc,
 ): Promise<TerminalSmokeConfig | null> {
@@ -234,9 +239,17 @@ export async function reportTerminalSmokeReconnect(
  * drives it through this checkpoint instead of a real sleep.
  */
 export async function reportTerminalSmokeHostWake(
-  ipc: Pick<TerminalSmokeIpc, 'invoke'> = defaultIpc,
+  eventOrIpc: TerminalSmokeHostWakeEvent | Pick<TerminalSmokeIpc, 'invoke'> =
+    'checkpoint',
+  source: TerminalSmokeHostWakeSource = 'retryable-error',
+  passedIpc: Pick<TerminalSmokeIpc, 'invoke'> = defaultIpc,
 ): Promise<void> {
-  await ipc.invoke('terminal_smoke_host_wake')
+  const event = typeof eventOrIpc === 'string' ? eventOrIpc : 'checkpoint'
+  const ipc =
+    typeof eventOrIpc === 'string'
+      ? passedIpc
+      : eventOrIpc
+  await ipc.invoke('terminal_smoke_host_wake', { event, source })
 }
 
 export async function emitTerminalSmokeStaleOutput(

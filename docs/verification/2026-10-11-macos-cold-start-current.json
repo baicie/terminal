@@ -1,6 +1,6 @@
 {
-  "recordedAt": "2026-10-17T04:36:59.232Z",
-  "recordedDate": "2026-10-16",
+  "recordedAt": "2026-10-17T06:48:00.000Z",
+  "recordedDate": "2026-10-17",
   "kind": "tauri-process-cold-start-stopwatch-current-worktree",
   "command": "node scripts/run-cold-start-stopwatch.mjs --app-path $PWD/src-tauri/target/debug/terminal",
   "environment": {
@@ -10,25 +10,25 @@
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "cd22a67c98742c94f40fb51466a172ed8bce556e72f75d433de326fbf89e7df0"
+    "sha256": "4368d6c8301e5c8870a17fbdaebf8b6ad35b4efe96293b69858412af95d7970b"
   },
   "measurement": {
     "probe": "native ApplicationServices AXUIElement helper",
     "measuredFrom": "child-spawn-event",
     "repeatSpawnToReadyMs": [
-      4856,
-      4065,
-      3940
+      4768,
+      4146,
+      4464
     ],
     "latestRerun": {
-      "capturedAt": "2026-10-17T04:31:10.303Z",
-      "requestToReadyMs": 3947,
-      "spawnToReadyMs": 3940
+      "capturedAt": "2026-10-17T06:41:58.339Z",
+      "requestToReadyMs": 4470,
+      "spawnToReadyMs": 4464
     },
     "readyUnder10s": true,
     "requestToReadyIncludesNativeHelperCompilation": false,
-    "requestToReadyMs": 3947,
-    "spawnToReadyMs": 3940
+    "requestToReadyMs": 4470,
+    "spawnToReadyMs": 4464
   },
   "readiness": {
     "localTab": true,
@@ -47,7 +47,7 @@
     "Human physical keyboard, real macOS IME, Option/dead key, Windows/Pageant, and serial hardware acceptance remain unverified."
   ],
   "source": {
-    "fingerprint": "6a4c8a80f51be8d7df5a8a48c8d4e15bdc8d56c83e7fbdb5c1abac8691bc880b",
+    "fingerprint": "de8e49cbb451cac456de95044732fa9f16be53e2aacf3a84cbdb2685c4c99fda",
     "fingerprintCovers": [
       "packages/frontend/src",
       "src-tauri/src",
@@ -57,5 +57,5 @@
     ],
     "note": "Debug evidence cannot be validated against the artifact on disk, because pnpm verify relinks target/debug/terminal as a bare cargo build. This content fingerprint of the sources these scenarios exercise is what makes a stale measurement detectable."
   },
-  "note": "Fresh current-source run on one instrumented debug binary after shell probe dialect and authentication retry fixes."
+  "note": "Fresh current-source serial rerun on one instrumented debug binary after the first-connect outage runner fix."
 }

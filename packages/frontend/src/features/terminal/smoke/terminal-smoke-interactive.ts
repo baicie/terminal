@@ -4,6 +4,7 @@ export function createInteractiveReporter(
   firstConnectionMs: { current: number },
   checkpointSent: { current: boolean },
   notifyReconnect: boolean,
+  onReconnectCheckpoint?: () => void,
 ): () => Promise<void> {
   return async () => {
     const elapsedMs = await reportConnected()
@@ -16,6 +17,7 @@ export function createInteractiveReporter(
     }
     if (notifyReconnect && !checkpointSent.current) {
       checkpointSent.current = true
+      onReconnectCheckpoint?.()
       await reportReconnect()
     }
   }

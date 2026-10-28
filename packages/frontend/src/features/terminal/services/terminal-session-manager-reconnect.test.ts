@@ -689,6 +689,52 @@ describe('TerminalSessionManager reconnect state machine', () => {
     expect(throwing.at(-1)?.status).toBe('connected')
   })
 
+  it('does not let a synchronous state listener overwrite a manual reconnect', async () => {
+    const manualAttempt = deferred<string>()
+    const sleep = vi.fn(async () => {})
+    vi.mocked(startTerminalShell)
+      .mockResolvedValueOnce('session-1')
+      .mockReturnValueOnce(manualAttempt.promise)
+      .mockRejectedValue(new Error('network unavailable'))
+
+    const states: TerminalSessionSnapshot[] = []
+    let binding: { reconnect: () => void } | undefined
+    let reentered = false
+    const manager = new TerminalSessionManager({
+      maxAttempts: 1,
+      sleep,
+      jitter: delayMs => delayMs,
+    })
+    binding = manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => {
+        states.push(state)
+        if (state.status === 'reconnecting' && !reentered) {
+          reentered = true
+          binding?.reconnect()
+        }
+      },
+    })
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('connected'))
+
+    eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
+    await vi.waitFor(() => expect(startTerminalShell).toHaveBeenCalledTimes(2))
+
+    // The automatic run was cancelled by the listener's manual reconnect
+    // before its delay. Its bookkeeping must not erase the manual mode while
+    // that replacement handshake is still in flight.
+    expect(sleep).not.toHaveBeenCalled()
+    manualAttempt.reject(new Error('network unavailable'))
+    await vi.waitFor(() =>
+      expect(states.at(-1)).toMatchObject({
+        status: 'error',
+        retryable: true,
+      }),
+    )
+    expect(startTerminalShell).toHaveBeenCalledTimes(2)
+    await manager.close(remoteRequest.tabId)
+  })
+
   it('cancels the active retry delay when its tab is closed', async () => {
     let retrySignal: AbortSignal | undefined
     const states: TerminalSessionSnapshot[] = []
@@ -745,6 +791,44 @@ describe('TerminalSessionManager reconnect state machine', () => {
 
     await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-2'))
     expect(states.at(-1)?.status).toBe('connected')
+  })
+
+  it('resumes when a host wake arrives synchronously as retry exhaustion is published', async () => {
+    vi.mocked(startTerminalShell)
+      .mockResolvedValueOnce('session-1')
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValueOnce('session-2')
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 1,
+      recoveryDelayMs: 60_000,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    let wakeReported = false
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => {
+        states.push(state)
+        if (state.status === 'error' && state.retryable && !wakeReported) {
+          wakeReported = true
+          manager.handleHostWake()
+        }
+      },
+    })
+    await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-1'))
+
+    eventHandlers.get('ssh-close')?.({ payload: 'session-1' })
+
+    try {
+      await vi.waitFor(
+        () => expect(states.at(-1)?.sessionId).toBe('session-2'),
+        { timeout: 500 },
+      )
+      expect(states.at(-1)?.status).toBe('connected')
+    } finally {
+      await manager.close(remoteRequest.tabId)
+    }
   })
 
   it('does not disturb connected, idle or permanently failed sessions on wake', async () => {

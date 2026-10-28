@@ -33,6 +33,39 @@ export class TerminalSessionWakeRecovery {
     )
   }
 
+  resume(record: TerminalRecord, onResume: () => void): boolean {
+    if (!this.canResume(record)) {
+      // State listeners run synchronously. A host-wake notification can
+      // arrive while a reconnect run is publishing its final retryable error,
+      // before the ownership promise has been cleared.
+      const ownership = record.reconnectPromise
+      if (
+        !ownership ||
+        record.status !== 'error' ||
+        record.retryable !== true ||
+        record.reconnectMode !== 'automatic'
+      ) {
+        return false
+      }
+      const generation = record.generation
+      void ownership.then(() => {
+        if (
+          record.closed ||
+          record.generation !== generation ||
+          record.reconnectPromise ||
+          record.status !== 'error' ||
+          record.retryable !== true
+        ) {
+          return
+        }
+        onResume()
+      })
+      return true
+    }
+    onResume()
+    return true
+  }
+
   armAfterWake(record: TerminalRecord): void {
     if (
       record.closed ||

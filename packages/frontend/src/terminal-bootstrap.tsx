@@ -1,55 +1,57 @@
 import { createElement, type ComponentType } from 'react'
-import { renderStartupFailure } from './terminal-bootstrap-failure-ui'
 import type { RenderRoot } from './terminal-bootstrap-types'
-import { reportTerminalSmokeBootstrapFailure } from './terminal-bootstrap-failure'
-import {
-  loadInputProbeAutomationConfig,
-  type InputProbeAutomationConfig,
-} from './experiments/terminal-input-probe/probe-automation'
-import {
-  loadRawInputProbeConfig,
-  type RawInputProbeConfig,
-} from './experiments/terminal-raw-input-probe/protocol'
-import {
-  loadShellProbeConfig,
-  type ShellProbeConfig,
-} from './experiments/terminal-shell-probe/protocol'
+import { type InputProbeAutomationConfig } from './experiments/terminal-input-probe/probe-automation'
+import { type RawInputProbeConfig } from './experiments/terminal-raw-input-probe/protocol'
+import { type ShellProbeConfig } from './experiments/terminal-shell-probe/protocol'
 import {
   emitTerminalSmokeStaleOutput,
-  loadTerminalSmokeConfig,
   reportTerminalSmokeConnected,
   reportTerminalSmokeReconnect,
   reportTerminalSmokeHostWake,
   submitTerminalSmokeResult,
   type TerminalSmokeConfig,
+  type TerminalSmokeHostWakeReporter,
   type TerminalSmokeResult,
 } from './features/terminal/smoke/terminal-smoke-contract'
 import {
   configureRemotePromptProbe,
-  loadRemotePromptProbeConfig,
   type RemotePromptProbeConfig,
 } from './features/terminal/services/remote-prompt-probe'
+import { defaultBootstrapDependencies } from './terminal-bootstrap-default-dependencies'
+import {
+  BOOTSTRAP_CONFIG_DEADLINE_MS,
+  BOOTSTRAP_APP_DEADLINE_MS,
+  bootstrapNow,
+  loadBootstrapConfig,
+  loadOptionalBootstrapConfigs,
+} from './terminal-bootstrap-deadline'
 
 export { reportTerminalSmokeBootstrapFailure } from './terminal-bootstrap-failure'
+export { BOOTSTRAP_CONFIG_DEADLINE_MS } from './terminal-bootstrap-deadline'
+export { BOOTSTRAP_APP_DEADLINE_MS } from './terminal-bootstrap-deadline'
 
 type BootstrapMode = 'app' | 'smoke' | 'probe' | 'raw-probe' | 'shell-probe'
 
 type SubmitTerminalSmokeResult = (result: TerminalSmokeResult) => Promise<void>
 
-interface BootstrapDependencies {
+export interface BootstrapDependencies {
   loadConfig: () => Promise<TerminalSmokeConfig | null>
   loadProbeConfig: () => Promise<InputProbeAutomationConfig | null>
   loadRawProbeConfig?: () => Promise<RawInputProbeConfig | null>
   loadShellProbeConfig?: () => Promise<ShellProbeConfig | null>
   loadRemotePromptProbeConfig?: () => Promise<RemotePromptProbeConfig | null>
-  loadApp: () => Promise<ComponentType>
+  loadApp: () => Promise<ComponentType<{ startupTerminalFallbackAt?: number }>>
+  /** Override the normal App chunk deadline in bootstrap tests. */
+  appLoadTimeoutMs?: number
+  /** Override probe/smoke root deadlines in bootstrap tests. */
+  rootLoadTimeoutMs?: number
   loadSmokeRoot: () => Promise<
     ComponentType<{
       config: TerminalSmokeConfig
       emitStaleOutput: typeof emitTerminalSmokeStaleOutput
       reportConnected: () => Promise<number>
       reportReconnect: () => Promise<void>
-      reportHostWake: () => Promise<void>
+      reportHostWake: TerminalSmokeHostWakeReporter
       submitResult: SubmitTerminalSmokeResult
     }>
   >
@@ -64,52 +66,48 @@ interface BootstrapDependencies {
   >
 }
 
-type BootstrapFailureReporter = (error: unknown) => Promise<void>
-
-const defaultDependencies: BootstrapDependencies = {
-  loadConfig: loadTerminalSmokeConfig,
-  loadProbeConfig: loadInputProbeAutomationConfig,
-  loadApp: async () => (await import('./App.tsx')).default,
-  loadSmokeRoot: async () => {
-    if (import.meta.env.VITE_TERMINAL_SMOKE_BUILD !== '1') {
-      throw new Error('Terminal smoke UI is not included in this build')
-    }
-    return (await import('./features/terminal/smoke/terminal-smoke-root'))
-      .default
-  },
-  loadProbeRoot: async () => {
-    if (import.meta.env.VITE_TERMINAL_SMOKE_BUILD !== '1') {
-      throw new Error('Terminal input probe UI is not included in this build')
-    }
-    return (await import('./experiments/terminal-input-probe/automation-root'))
-      .default
-  },
-  loadRawProbeConfig: loadRawInputProbeConfig,
-  loadRemotePromptProbeConfig,
-  loadRawProbeRoot: async () => {
-    if (import.meta.env.VITE_TERMINAL_SMOKE_BUILD !== '1') {
-      throw new Error('Raw input probe UI is not included in this build')
-    }
-    return (await import('./experiments/terminal-raw-input-probe/automation-root'))
-      .default
-  },
-  loadShellProbeConfig,
-  loadShellProbeRoot: async () => {
-    if (import.meta.env.VITE_TERMINAL_SMOKE_BUILD !== '1') {
-      throw new Error('Terminal shell probe UI is not included in this build')
-    }
-    return (await import('./experiments/terminal-shell-probe/automation-root'))
-      .default
-  },
+async function loadBootstrapRoot<T>(
+  loader: (() => Promise<T>) | undefined,
+  label: string,
+  deadlineAt: number,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (!loader) throw new Error(`${label} loader is unavailable`)
+  const root = await loadBootstrapConfig(loader, deadlineAt, signal)
+  if (root === null) {
+    throw new Error(`${label} did not load before its bootstrap deadline`)
+  }
+  return root
 }
 
 export async function bootstrapTerminalApp(
   root: RenderRoot,
-  dependencies: BootstrapDependencies = defaultDependencies,
+  dependencies: BootstrapDependencies = defaultBootstrapDependencies,
+  signal?: AbortSignal,
+  startupDeadlineAt = bootstrapNow() + BOOTSTRAP_APP_DEADLINE_MS,
 ): Promise<BootstrapMode> {
-  const config = await dependencies.loadConfig()
+  const attemptStartedAt = startupDeadlineAt - BOOTSTRAP_APP_DEADLINE_MS
+  const configDeadlineAt = Math.min(
+    startupDeadlineAt,
+    attemptStartedAt + BOOTSTRAP_CONFIG_DEADLINE_MS,
+  )
+  const rootDeadlineAt = Math.min(
+    startupDeadlineAt,
+    attemptStartedAt +
+      (dependencies.rootLoadTimeoutMs ?? BOOTSTRAP_APP_DEADLINE_MS),
+  )
+  const config = await loadBootstrapConfig(
+    dependencies.loadConfig,
+    configDeadlineAt,
+    signal,
+  )
   if (config !== null) {
-    const SmokeRoot = await dependencies.loadSmokeRoot()
+    const SmokeRoot = await loadBootstrapRoot(
+      dependencies.loadSmokeRoot,
+      'terminal smoke UI module',
+      rootDeadlineAt,
+      signal,
+    )
     root.render(
       createElement(SmokeRoot, {
         config,
@@ -123,64 +121,70 @@ export async function bootstrapTerminalApp(
     return 'smoke'
   }
 
-  configureRemotePromptProbe(
-    (await dependencies.loadRemotePromptProbeConfig?.()) ?? null,
+  const configs = await loadOptionalBootstrapConfigs(
+    {
+      remotePrompt: dependencies.loadRemotePromptProbeConfig,
+      inputProbe: dependencies.loadProbeConfig,
+      rawProbe: dependencies.loadRawProbeConfig,
+      shellProbe: dependencies.loadShellProbeConfig,
+    },
+    configDeadlineAt,
+    signal,
   )
+  configureRemotePromptProbe(configs.remotePrompt)
 
-  const probeConfig = await dependencies.loadProbeConfig()
+  const probeConfig = configs.inputProbe
   if (probeConfig !== null) {
-    const ProbeRoot = await dependencies.loadProbeRoot()
+    const ProbeRoot = await loadBootstrapRoot(
+      dependencies.loadProbeRoot,
+      'terminal input probe UI module',
+      rootDeadlineAt,
+      signal,
+    )
     root.render(createElement(ProbeRoot, { config: probeConfig }))
     return 'probe'
   }
 
-  const rawProbeConfig = await dependencies.loadRawProbeConfig?.()
+  const rawProbeConfig = configs.rawProbe
   if (rawProbeConfig !== null && rawProbeConfig !== undefined) {
-    const RawProbeRoot = await dependencies.loadRawProbeRoot?.()
-    if (!RawProbeRoot) throw new Error('Raw input probe UI loader is unavailable')
+    const RawProbeRoot = await loadBootstrapRoot(
+      dependencies.loadRawProbeRoot,
+      'raw input probe UI module',
+      rootDeadlineAt,
+      signal,
+    )
     root.render(createElement(RawProbeRoot, { config: rawProbeConfig }))
     return 'raw-probe'
   }
 
-  const shellProbeConfig = await dependencies.loadShellProbeConfig?.()
+  const shellProbeConfig = configs.shellProbe
   if (shellProbeConfig !== null && shellProbeConfig !== undefined) {
-    const ShellProbeRoot = await dependencies.loadShellProbeRoot?.()
-    if (!ShellProbeRoot) throw new Error('Terminal shell probe UI loader is unavailable')
+    const ShellProbeRoot = await loadBootstrapRoot(
+      dependencies.loadShellProbeRoot,
+      'terminal shell probe UI module',
+      rootDeadlineAt,
+      signal,
+    )
     root.render(createElement(ShellProbeRoot, { config: shellProbeConfig }))
     return 'shell-probe'
   }
 
-  const App = await dependencies.loadApp()
-  root.render(createElement(App))
+  const appLoadTimeoutMs =
+    dependencies.appLoadTimeoutMs ?? BOOTSTRAP_APP_DEADLINE_MS
+  const appDeadlineAt = Math.min(
+    startupDeadlineAt,
+    attemptStartedAt + appLoadTimeoutMs,
+  )
+  const App = await loadBootstrapRoot(
+    dependencies.loadApp,
+    'normal application module',
+    appDeadlineAt,
+    signal,
+  )
+  root.render(
+    createElement(App, {
+      startupTerminalFallbackAt: startupDeadlineAt,
+    }),
+  )
   return 'app'
-}
-
-export function startTerminalApp(
-  root: RenderRoot,
-  dependencies: BootstrapDependencies = defaultDependencies,
-  reportFailure: BootstrapFailureReporter = reportTerminalSmokeBootstrapFailure,
-): void {
-  let starting = false
-  let disposed = false
-
-  const start = async (): Promise<void> => {
-    if (starting || disposed) return
-    starting = true
-    try {
-      await bootstrapTerminalApp(root, dependencies)
-    } catch (error) {
-      console.error('Failed to bootstrap terminal application:', error)
-      renderStartupFailure(root, error, () => void start(), () => disposed)
-      void reportFailure(error).catch(reportError => {
-        console.error(
-          'Failed to report terminal smoke bootstrap error:',
-          reportError,
-        )
-      })
-    } finally {
-      starting = false
-    }
-  }
-
-  void start()
 }

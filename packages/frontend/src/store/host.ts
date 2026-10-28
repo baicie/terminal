@@ -59,7 +59,16 @@ export const useHostStore = create<HostState>((set, get) => {
     async loadHosts(signal) {
       if (signal?.aborted) return
       const generation = ++loadGeneration
+      const clearLoadingOnAbort = () => {
+        if (generation === loadGeneration) set({ loading: false })
+      }
       set({ loading: true })
+      signal?.addEventListener('abort', clearLoadingOnAbort, { once: true })
+      if (signal?.aborted) {
+        clearLoadingOnAbort()
+        signal.removeEventListener('abort', clearLoadingOnAbort)
+        return
+      }
       try {
         const rows = await select<HostRow>('SELECT * FROM hosts ORDER BY name')
         if (signal?.aborted || generation !== loadGeneration) return
@@ -77,6 +86,7 @@ export const useHostStore = create<HostState>((set, get) => {
         }
         throw error
       } finally {
+        signal?.removeEventListener('abort', clearLoadingOnAbort)
         if (generation === loadGeneration) set({ loading: false })
       }
     },

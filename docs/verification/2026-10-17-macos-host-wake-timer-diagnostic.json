@@ -1,0 +1,65 @@
+{
+  "recordedAt": "2026-10-17T15:02:00.000Z",
+  "recordedDate": "2026-10-17",
+  "kind": "tauri-real-ssh-host-wake-timer-diagnostic",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "revision": {
+    "head": "codex/terminal-reliability-matrix",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "08ba73384672cf39eb0f3cdc97de622ba6fa370aca69cd6f498f3dd8fb22cff4"
+  },
+  "source": {
+    "fingerprint": "941f7253cff716c624338d1a2b956c91773c8a2c020c22650fa5984d6caf5ed6"
+  },
+  "command": "pnpm smoke:ssh-matrix -- --reuse-binary key-outage-reconnect,key-outage-wake-reconnect,key-first-connect-outage",
+  "cases": [
+    {
+      "name": "key-outage-reconnect",
+      "ok": true,
+      "firstConnectionMs": 952,
+      "durationMs": 14651,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "key-outage-wake-reconnect",
+      "ok": true,
+      "firstConnectionMs": 839,
+      "durationMs": 21492,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "key-first-connect-outage",
+      "ok": true,
+      "firstConnectionMs": 8668,
+      "durationMs": 14149,
+      "uniqueSessionCount": 10
+    }
+  ],
+  "wakeTimerObservation": {
+    "ok": true,
+    "durationMs": 100250,
+    "uniqueSessionCount": 11,
+    "events": [
+      { "elapsedMs": 1669, "event": "fallback-armed" },
+      { "elapsedMs": 1704, "event": "reconnect-state-timer-armed" },
+      { "elapsedMs": 1922, "event": "fallback-poll" },
+      { "elapsedMs": 7056, "event": "fallback-poll" },
+      { "elapsedMs": 64249, "event": "fallback-poll" },
+      { "elapsedMs": 64258, "event": "fallback-timer-fired" },
+      { "elapsedMs": 64263, "event": "reconnect-state-timer-fired" },
+      { "elapsedMs": 64280, "event": "host-wake-command-entered" },
+      { "elapsedMs": 64286, "event": "host-wake-checkpoint-published" }
+    ],
+    "interpretation": "Elapsed time is recorded when the Rust Tauri command handles each event. The gap is evidence of a delayed callback/report path, but heartbeat and checkpoint share Tauri IPC, so this does not isolate WebView timer scheduling, renderer blockage, or IPC delay."
+  },
+  "fullMatrixRecollected": false,
+  "coldStartRecollected": false,
+  "shellInteractionRecollected": false
+}

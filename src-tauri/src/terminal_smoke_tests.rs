@@ -116,6 +116,35 @@ fn smoke_config_has_the_exact_public_contract_without_a_path() {
 }
 
 #[test]
+fn renderer_heartbeat_config_accepts_only_loopback_endpoint_and_hex_token() {
+    let config = parse_renderer_heartbeat_config(
+        "http://127.0.0.1:43127/heartbeat".to_string(),
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+    )
+    .expect("valid renderer heartbeat config should parse");
+    assert_eq!(config.endpoint, "http://127.0.0.1:43127/heartbeat");
+    assert_eq!(config.token.len(), 64);
+
+    for (endpoint, token) in [
+        (
+            "http://localhost:43127/heartbeat",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        ),
+        (
+            "https://127.0.0.1:43127/heartbeat",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        ),
+        (
+            "http://127.0.0.1:43127/other",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        ),
+        ("http://127.0.0.1:43127/heartbeat", "not-a-token"),
+    ] {
+        assert!(parse_renderer_heartbeat_config(endpoint.to_string(), token.to_string()).is_err());
+    }
+}
+
+#[test]
 fn ssh_config_parser_accepts_the_isolated_loopback_fixture() {
     let serialized = serde_json::to_vec(&ssh_config()).expect("fixture should serialize");
 
@@ -396,6 +425,7 @@ fn host_wake_is_recorded_once_the_run_requires_a_reconnect() {
     config.host_wake_required = true;
     let host_wake_path =
         std::env::temp_dir().join(format!("terminal-smoke-host-wake-{}", uuid::Uuid::new_v4()));
+    let event_path = host_wake_path.with_file_name("host-wake.events.ndjson");
     std::fs::create_dir_all(host_wake_path.parent().expect("temp path has a parent"))
         .expect("host wake parent should exist");
     std::fs::write(&host_wake_path, b"").expect("host wake control file should be creatable");
@@ -414,12 +444,29 @@ fn host_wake_is_recorded_once_the_run_requires_a_reconnect() {
         run.result_path.clone(),
         run.reconnect_control_path.clone(),
         Some(host_wake_path.clone()),
+        None,
         run.config.clone(),
         Instant::now(),
     );
+    std::fs::write(&event_path, b"").expect("host wake event log should be creatable");
+    run.record_host_wake_event("fallback-poll", "retryable-error")
+        .expect("fallback poll event should be recorded");
+    run.record_host_wake_event("fallback-timer-fired", "retryable-error")
+        .expect("host wake event should append");
+    run.record_host_wake_event("host-wake-command-entered", "retryable-error")
+        .expect("command entry should append");
     run.request_host_wake().expect("host wake should publish");
+    run.record_host_wake_event("host-wake-checkpoint-published", "retryable-error")
+        .expect("checkpoint event should append");
     assert!(run.host_wake_requested.load(Ordering::Acquire));
     assert!(host_wake_path.is_file());
+    let events = std::fs::read_to_string(&event_path).expect("events should be readable");
+    assert_eq!(events.lines().count(), 4);
+    assert!(events.contains("\"event\":\"fallback-timer-fired\""));
+    assert!(events.contains("\"event\":\"fallback-poll\""));
+    assert!(events.contains("\"source\":\"retryable-error\""));
+    let _ = std::fs::remove_file(host_wake_path);
+    let _ = std::fs::remove_file(event_path);
 }
 
 #[test]

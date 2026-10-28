@@ -27,6 +27,54 @@ const EVIDENCE_PROFILE = new Map([
   ['2026-10-11-macos-release-ssh-matrix.json', 'release'],
 ])
 
+const EVIDENCE_KIND = new Map([
+  ['2026-10-11-macos-cold-start-current.json', 'tauri-process-cold-start-stopwatch-current-worktree'],
+  ['2026-10-11-macos-remote-shell-prompt-rerun.json', 'tauri-remote-cold-start-shell-prompt-observed-rerun'],
+  ['2026-10-11-macos-ssh-matrix-current.json', 'tauri-real-ssh-matrix-current-worktree'],
+  ['2026-10-11-macos-shell-interaction-current.json', 'tauri-local-shell-interaction-current-worktree'],
+  ['2026-10-11-macos-release-terminal-gate.json', 'tauri-release-ten-second-terminal-gate'],
+  ['2026-10-11-macos-release-ssh-matrix.json', 'tauri-release-ssh-and-shell-matrix'],
+])
+
+const DEBUG_SSH_CASES = [
+  'key',
+  'key-reconnect',
+  'key-outage-reconnect',
+  'key-outage-wake-reconnect',
+  'key-first-connect-outage',
+  'password',
+  'password-reconnect',
+  'agent',
+  'agent-reconnect',
+  'cert',
+  'cert-reconnect',
+  'jump',
+  'jump-reconnect',
+]
+
+const RELEASE_SSH_CASES = [
+  'key',
+  'key-reconnect',
+  'password',
+  'password-reconnect',
+  'agent',
+  'agent-reconnect',
+  'cert',
+  'cert-reconnect',
+  'jump',
+  'jump-reconnect',
+]
+
+const SHELL_PROBE_CASES = [
+  'cat-eof',
+  'readline-history',
+  'readline-tab',
+  'vim-edit',
+  'nano-edit',
+  'pty-resize',
+  'ctrl-c-interrupt',
+]
+
 // Only the release profile is pinned to a binary on disk. `pnpm verify` runs
 // cargo, which relinks target/debug/terminal as a bare cargo build whose
 // frontend is not embedded, so a debug artifact on disk can never be expected
@@ -68,10 +116,7 @@ const PROFILE_REVIEWED_HASH = new Map([
   // shell probes. Vim probes now wait for the editor to finish before sending
   // the shell-side verification command, and the terminal smoke frame helper
   // is split into its own source file to keep the source-size gate satisfied.
-  [
-    'debug',
-    'cd22a67c98742c94f40fb51466a172ed8bce556e72f75d433de326fbf89e7df0',
-  ],
+  ['debug', '4368d6c8301e5c8870a17fbdaebf8b6ad35b4efe96293b69858412af95d7970b'],
 ])
 
 // Exported so the gate's own tests assert against the hash the gate actually
@@ -111,24 +156,165 @@ export function findSourceFingerprint(evidence) {
   return typeof fingerprint === 'string' ? fingerprint : undefined
 }
 
-// Sources the acceptance scenarios actually exercise. Docs, evidence records
-// and unrelated tooling are excluded on purpose: a fingerprint that moved for
-// a typo in a markdown file would train people to ignore this gate instead of
-// re-running the measurements.
-const FINGERPRINT_ROOTS = [
+function validateColdStartRuns(file, evidence) {
+  const runs =
+    file === '2026-10-11-macos-release-terminal-gate.json'
+      ? evidence.local?.terminalRuns
+      : evidence.measurement?.terminalRuns
+  const problems = []
+  if (!Array.isArray(runs) || runs.length < 3) {
+    problems.push(`${file} requires at least 3 terminal marker runs`)
+  }
+  for (const [index, run] of (Array.isArray(runs) ? runs : []).entries()) {
+    if (run?.readyAt !== 'terminal' || run?.terminalReady !== true) {
+      problems.push(`${file} run ${index + 1} is not terminal-ready marker evidence`)
+    }
+    if (
+      !Number.isFinite(run?.spawnToReadyMs) ||
+      run.spawnToReadyMs < 0 ||
+      run.spawnToReadyMs > 10_000
+    ) {
+      problems.push(`${file} run ${index + 1} exceeds 10000 ms or has no valid timing`)
+    }
+  }
+  return problems
+}
+
+function validateMatrixCases(file, evidence) {
+  const problems = []
+  if (file === '2026-10-11-macos-ssh-matrix-current.json') {
+    const cases = Array.isArray(evidence.cases) ? evidence.cases : []
+    const names = cases.map(item => item?.name)
+    if (
+      evidence.allCasesPassed !== true ||
+      JSON.stringify(names) !== JSON.stringify(DEBUG_SSH_CASES) ||
+      cases.some(item => item?.ok !== true)
+    ) {
+      problems.push(`${file} SSH matrix case set must contain all 13 expected successful cases`)
+    }
+  }
+  if (file === '2026-10-11-macos-shell-interaction-current.json') {
+    const shellCases = Array.isArray(evidence.cases) ? evidence.cases : []
+    const sshCases = Array.isArray(evidence.sshCases) ? evidence.sshCases : []
+    const localShellsComplete = ['bash', 'zsh'].every(shell => {
+      const cases = shellCases
+        .filter(item => item?.shell === shell)
+        .map(item => item?.case)
+      return (
+        JSON.stringify(cases) === JSON.stringify(SHELL_PROBE_CASES) &&
+        shellCases
+          .filter(item => item?.shell === shell)
+          .every(item => item?.ok === true)
+      )
+    })
+    if (
+      evidence.allCasesPassed !== true ||
+      evidence.matrixRunsExecuted !== 14 ||
+      evidence.matrixRunsPassed !== 14 ||
+      shellCases.length !== 14 ||
+      !localShellsComplete
+    ) {
+      problems.push(`${file} local shell matrix must report all 14 bash/zsh runs successful`)
+    }
+    if (
+      evidence.sshRunsExecuted !== 7 ||
+      evidence.sshRunsPassed !== 7 ||
+      JSON.stringify(sshCases.map(item => item?.case)) !==
+        JSON.stringify(SHELL_PROBE_CASES) ||
+      sshCases.some(item => item?.ok !== true)
+    ) {
+      problems.push(`${file} real SSH shell matrix must report all 7 expected cases successful`)
+    }
+  }
+  if (file === '2026-10-11-macos-release-ssh-matrix.json') {
+    const matrix = evidence.sshMatrix
+    const cases = Array.isArray(matrix?.cases) ? matrix.cases : []
+    if (
+      matrix?.passed !== RELEASE_SSH_CASES.length ||
+      matrix?.failed !== 0 ||
+      JSON.stringify(cases.map(item => item?.name)) !==
+        JSON.stringify(RELEASE_SSH_CASES) ||
+      cases.some(item => item?.ok !== true)
+    ) {
+      problems.push(`${file} release SSH matrix must report all 10 expected successful cases`)
+    }
+  }
+  return problems
+}
+
+export function validateEvidenceContract(file, evidence) {
+  const problems = []
+  const expectedKind = EVIDENCE_KIND.get(file)
+  if (evidence?.kind !== expectedKind) {
+    problems.push(`${file} has kind ${JSON.stringify(evidence?.kind)}; expected kind ${JSON.stringify(expectedKind)}`)
+  }
+  if (EVIDENCE_PROFILE.get(file) === 'debug') {
+    const fingerprint = findSourceFingerprint(evidence)
+    if (!fingerprint) {
+      problems.push(`debug evidence ${file} is missing source fingerprint`)
+    }
+  }
+  if (
+    file === '2026-10-11-macos-cold-start-current.json' ||
+    file === '2026-10-11-macos-release-terminal-gate.json'
+  ) {
+    problems.push(...validateColdStartRuns(file, evidence ?? {}))
+  }
+  if (file === '2026-10-11-macos-remote-shell-prompt-rerun.json') {
+    const measurement = evidence?.measurement
+    if (
+      measurement?.markerReady !== true ||
+      !Number.isFinite(measurement?.spawnToPromptObservedMs) ||
+      measurement.spawnToPromptObservedMs < 0 ||
+      measurement.spawnToPromptObservedMs > 10_000
+    ) {
+      problems.push(`${file} requires a successful terminal marker within 10000 ms`)
+    }
+  }
+  problems.push(...validateMatrixCases(file, evidence ?? {}))
+  return problems
+}
+
+// Product sources and the executable acceptance path are both part of the
+// evidence contract. Documentation, evidence records and test files are
+// excluded so unrelated edits do not invalidate measurements.
+export const FINGERPRINT_PATHS = [
   'packages/frontend/src',
+  'packages/frontend/index.html',
+  'packages/frontend/vite.config.ts',
+  'packages/frontend/tsconfig.json',
+  'packages/frontend/tsconfig.node.json',
   'src-tauri/src',
+  'src-tauri/capabilities',
+  'src-tauri/Cargo.toml',
+  'src-tauri/Cargo.lock',
+  'src-tauri/tauri.conf.json',
+  'src-tauri/build.rs',
   'packages/frontend/package.json',
   'package.json',
+  'pnpm-workspace.yaml',
   'pnpm-lock.yaml',
+  'rust-toolchain.toml',
+  '.github/workflows/real-machine-matrix.yml',
+  'scripts/macos-ax-probe.swift',
+  'scripts/macos-frontmost.mjs',
+  'scripts/input-probe-scenarios.mjs',
+  'scripts/input-probe-source.mjs',
+  'scripts/run-cold-start-stopwatch.mjs',
+  'scripts/run-local-cold-start-stopwatch.mjs',
+  'scripts/run-input-probe.mjs',
+  'scripts/run-remote-cold-start-stopwatch.mjs',
+  'scripts/run-terminal-shell-probe-matrix.mjs',
+  'scripts/run-terminal-shell-probe.mjs',
+  'scripts/run-terminal-smoke-matrix.mjs',
+  'scripts/run-terminal-smoke.mjs',
+  'scripts/terminal-smoke-password-sshd.mjs',
+  'scripts/terminal-smoke-renderer-heartbeat.mjs',
+  'scripts/terminal-smoke-sshd.mjs',
+  'scripts/check-verification-evidence.mjs',
 ]
 
-const FINGERPRINT_IGNORED = new Set([
-  'node_modules',
-  'dist',
-  'target',
-  '.git',
-])
+const FINGERPRINT_IGNORED = new Set(['node_modules', 'dist', 'target', '.git'])
 
 async function collectFingerprintFiles(relativePath, out) {
   let stats
@@ -150,7 +336,8 @@ async function collectFingerprintFiles(relativePath, out) {
 }
 
 /**
- * Fingerprints the sources the macOS acceptance evidence describes.
+ * Fingerprints the product sources and the runner/workflow contract the macOS
+ * acceptance evidence describes.
  *
  * Debug evidence cannot be validated against its artifact because `pnpm
  * verify` relinks target/debug as a bare cargo build, so the only way to notice
@@ -158,9 +345,11 @@ async function collectFingerprintFiles(relativePath, out) {
  * itself. Content hashing keeps this independent of mtimes, checkouts and
  * line endings.
  */
-export async function computeSourceFingerprint(dependencies = { readdir, readFile, stat }) {
+export async function computeSourceFingerprint(
+  dependencies = { readdir, readFile, stat },
+) {
   const files = []
-  for (const root of FINGERPRINT_ROOTS) {
+  for (const root of FINGERPRINT_PATHS) {
     await collectFingerprintFiles(root, files)
   }
   files.sort()
@@ -221,7 +410,8 @@ export async function checkVerificationEvidence({
   // because there is nothing on disk to compare.
   const entries = registered.filter(([file]) => present.includes(file))
   const hashesByFile = new Map()
- const fingerprintsByFile = new Map()
+  const fingerprintsByFile = new Map()
+  const evidenceByFile = new Map()
   const unparsable = []
 
   for (const [file] of entries) {
@@ -231,12 +421,14 @@ export async function checkVerificationEvidence({
     )
     try {
       const parsed = JSON.parse(raw)
+      evidenceByFile.set(file, parsed)
       hashesByFile.set(file, findRecordedHashes(parsed))
       fingerprintsByFile.set(file, findSourceFingerprint(parsed))
     } catch {
       unparsable.push(file)
       hashesByFile.set(file, [])
       fingerprintsByFile.set(file, undefined)
+      evidenceByFile.set(file, undefined)
     }
   }
 
@@ -252,11 +444,17 @@ export async function checkVerificationEvidence({
     problems.push(`evidence files are not valid JSON: ${unparsable.join(', ')}`)
   }
 
+  for (const [file] of entries) {
+    problems.push(...validateEvidenceContract(file, evidenceByFile.get(file)))
+  }
+
   const missing = entries
     .filter(([file]) => hashesByFile.get(file).length === 0)
     .map(([file]) => file)
   if (missing.length > 0) {
-    problems.push(`evidence files record no binary sha256: ${missing.join(', ')}`)
+    problems.push(
+      `evidence files record no binary sha256: ${missing.join(', ')}`,
+    )
   }
 
   const conflicts = findProfileHashConflicts(
@@ -276,7 +474,9 @@ export async function checkVerificationEvidence({
   // "current" file keeps passing after the working tree has moved on, which is
   // exactly how outdated debug evidence survived several rounds unnoticed.
   for (const [profile, binaryPath] of PROFILE_BINARY) {
-    const files = entries.filter(([file]) => EVIDENCE_PROFILE.get(file) === profile)
+    const files = entries.filter(
+      ([file]) => EVIDENCE_PROFILE.get(file) === profile,
+    )
     if (files.length === 0) continue
     let onDisk
     try {
@@ -302,7 +502,9 @@ export async function checkVerificationEvidence({
   }
 
   for (const [profile, reviewed] of PROFILE_REVIEWED_HASH) {
-    const files = entries.filter(([file]) => EVIDENCE_PROFILE.get(file) === profile)
+    const files = entries.filter(
+      ([file]) => EVIDENCE_PROFILE.get(file) === profile,
+    )
     if (files.length === 0) continue
     for (const [file] of files) {
       const hashes = hashesByFile.get(file) ?? []
@@ -326,7 +528,6 @@ export async function checkVerificationEvidence({
     for (const [file] of entries) {
       if (EVIDENCE_PROFILE.get(file) !== 'debug') continue
       const recorded = fingerprintsByFile.get(file)
-      if (recorded === undefined || recorded === null) continue
       if (recorded !== sourceFingerprint) {
         problems.push(
           `debug evidence ${file} was recorded against source fingerprint ` +

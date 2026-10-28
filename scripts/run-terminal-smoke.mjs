@@ -7,6 +7,11 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { startTerminalSmokeSshd } from './terminal-smoke-sshd.mjs'
 import { startTerminalSmokePasswordSshd } from './terminal-smoke-password-sshd.mjs'
+import {
+  compileMacFrontmostHelper,
+  ensureMacProcessFrontmost,
+} from './macos-frontmost.mjs'
+import { startTerminalSmokeRendererHeartbeat } from './terminal-smoke-renderer-heartbeat.mjs'
 
 export const APP_TIMEOUT_MS = 210_000
 export const CARGO_METADATA_TIMEOUT_MS = 30_000
@@ -81,6 +86,12 @@ const defaultDependencies = {
   spawn,
   startSshd: startTerminalSmokeSshd,
   startPasswordSshd: startTerminalSmokePasswordSshd,
+  ensureFrontmost: async (pid, runDirectory, dependencies = defaultDependencies) => {
+    if (dependencies.platform !== 'darwin') return
+    const helper = await compileMacFrontmostHelper(runDirectory, dependencies)
+    await ensureMacProcessFrontmost(pid, helper, dependencies)
+  },
+  startRendererHeartbeat: startTerminalSmokeRendererHeartbeat,
   tempDirectory:
     process.env.TERMINAL_SMOKE_TMP ||
     (process.platform === 'linux' ? os.homedir() : os.tmpdir()),
@@ -380,11 +391,12 @@ async function waitForTimedClose(
   timeoutMs,
   signal = signalChild,
   abortSignal,
+  closePromise,
 ) {
   let timedOut = false
   let aborted = false
   let forceKillTimer
-  const statusPromise = waitForClose(child)
+  const statusPromise = closePromise ?? waitForClose(child)
   const terminate = (reason, markAborted = false) => {
     if (markAborted) aborted = true
     signal(child, reason, dependencies)
@@ -411,13 +423,19 @@ async function waitForTimedClose(
   return { ...status, timedOut, aborted }
 }
 
-async function waitForApplication(child, dependencies, abortSignal) {
+async function waitForApplication(
+  child,
+  dependencies,
+  abortSignal,
+  closePromise,
+) {
   const status = await waitForTimedClose(
     child,
     dependencies,
     APP_TIMEOUT_MS,
     signalChild,
     abortSignal,
+    closePromise,
   )
 
   if (status.aborted) throw abortReason(abortSignal)
@@ -526,13 +544,20 @@ async function waitForReconnectAndApplication(
   sshd,
   dependencies,
   outageHoldMs,
+  hostWakeControlPath,
   abortSignal,
   firstConnectOutage,
+  closePromise,
 ) {
   const controller = new AbortController()
   const onAbort = () => controller.abort(abortReason(abortSignal))
   abortSignal?.addEventListener('abort', onAbort, { once: true })
-  const application = waitForApplication(child, dependencies, abortSignal).then(
+  const application = waitForApplication(
+    child,
+    dependencies,
+    abortSignal,
+    closePromise,
+  ).then(
     status => ({ error: null, status }),
     error => ({ error, status: null }),
   )
@@ -547,6 +572,11 @@ async function waitForReconnectAndApplication(
       // reconnect ladder had anything to walk.
       firstConnectOutage !== undefined
         ? firstConnectOutage
+        : hostWakeControlPath !== undefined
+          ? sshd.interruptUntilControl({
+              controlPath: hostWakeControlPath,
+              signal: controller.signal,
+            })
         : outageHoldMs === undefined
           ? sshd.restart()
           : sshd.interrupt({ holdMs: outageHoldMs }),
@@ -935,6 +965,7 @@ export async function runTerminalSmoke({
   let fixture
   let agent = null
   const lateFixtureCleanups = []
+  let rendererHeartbeat = null
 
   try {
     ;({ fixture, agent } = await startSmokeFixtures({
@@ -944,21 +975,27 @@ export async function runTerminalSmoke({
       signal,
       onLateCleanup: cleanup => lateFixtureCleanups.push(cleanup),
     }))
-    // The first-connect outage has to be *armed* before the application
-    // spawns, otherwise the very first attempt lands on a live daemon and the
-    // case silently degrades into an ordinary reconnect run. The promise is
-    // deliberately not awaited here: it resolves only after the daemon is back,
-    // and the application has to be running against the downed host for that.
+    // The first-connect outage has to be armed before the application spawns,
+    // and the old daemon must have exited before the first SSH attempt starts.
+    // Waiting only for the final promise would wait until the host is back and
+    // skip the outage; waiting for its optional `ready` checkpoint preserves
+    // the down window while eliminating the old-daemon race.
     const firstConnectOutage =
       firstConnectOutageHoldMs === undefined
         ? undefined
         : fixture.outageBeforeFirstConnect({ holdMs: firstConnectOutageHoldMs })
+    if (firstConnectOutage?.ready) await firstConnectOutage.ready
     if (signal.aborted) throw abortReason(signal)
     const resultPath = path.join(runDirectory, 'result.json')
     const reconnectControlPath = path.join(runDirectory, 'reconnect.ready')
     const hostWakeControlPath = path.join(runDirectory, 'host-wake.ready')
+    const hostWakeEventPath = path.join(runDirectory, 'host-wake.events.ndjson')
     if (hostWakeRequired) {
       await dependencies.writeFile(hostWakeControlPath, '')
+      await dependencies.writeFile(hostWakeEventPath, '')
+      rendererHeartbeat = await dependencies.startRendererHeartbeat({
+        directory: runDirectory,
+      })
     }
     const smokeEnvironment = { ...env }
     for (const key of PROFILE_ENVIRONMENT_KEYS) {
@@ -977,6 +1014,13 @@ export async function runTerminalSmoke({
         : {}),
       ...(hostWakeRequired
         ? { TERMINAL_SMOKE_HOST_WAKE_PATH: hostWakeControlPath }
+        : {}),
+      ...(rendererHeartbeat
+        ? {
+            TERMINAL_SMOKE_RENDERER_HEARTBEAT_ENDPOINT:
+              rendererHeartbeat.endpoint,
+            TERMINAL_SMOKE_RENDERER_HEARTBEAT_TOKEN: rendererHeartbeat.token,
+          }
         : {}),
       ...(agent ? agent.env : {}),
     })
@@ -998,17 +1042,45 @@ export async function runTerminalSmoke({
       throw new Error(`Failed to start terminal smoke binary: ${error.message}`)
     }
 
-    const status = reconnect
-      ? await waitForReconnectAndApplication(
+    const closePromise = waitForClose(child)
+    const application = reconnect
+      ? waitForReconnectAndApplication(
           child,
           reconnectControlPath,
           fixture,
           dependencies,
           outageHoldMs,
+          hostWakeRequired ? hostWakeControlPath : undefined,
           signal,
           firstConnectOutage,
+          closePromise,
         )
-      : await waitForApplication(child, dependencies, signal)
+      : waitForApplication(child, dependencies, signal, closePromise)
+    const applicationOutcome = application.then(
+      status => ({ status, error: null }),
+      error => ({ status: null, error }),
+    )
+    if (reconnect) {
+      try {
+        await dependencies.ensureFrontmost?.(
+          child.pid,
+          runDirectory,
+          dependencies,
+        )
+      } catch (error) {
+        signalChild(child, 'SIGTERM')
+        const killTimer = dependencies.setTimeout(
+          () => signalChild(child, 'SIGKILL'),
+          FORCE_KILL_GRACE_MS,
+        )
+        await applicationOutcome
+        dependencies.clearTimeout(killTimer)
+        throw error
+      }
+    }
+    const outcome = await applicationOutcome
+    if (outcome.error) throw outcome.error
+    const status = outcome.status
     let serialized
     try {
       serialized = await dependencies.readFile(resultPath, 'utf8')
@@ -1025,6 +1097,46 @@ export async function runTerminalSmoke({
       hostWakeRequired,
     })
     return result
+  } catch (error) {
+    if (hostWakeRequired) {
+      let events = ''
+      let heartbeats = ''
+      try {
+        events = await dependencies.readFile(
+          path.join(runDirectory, 'host-wake.events.ndjson'),
+          'utf8',
+        )
+      } catch {
+        // Preserve the original smoke error when diagnostics are unavailable.
+      }
+      try {
+        heartbeats = await dependencies.readFile(
+          path.join(runDirectory, 'renderer-heartbeat.ndjson'),
+          'utf8',
+        )
+      } catch {
+        // Preserve the original smoke error when the independent signal is unavailable.
+      }
+      const diagnostics = []
+      if (events.trim()) {
+        diagnostics.push(
+          `hostWakeEvents=${events.trim().split('\n').slice(-12).join('|')}`,
+        )
+      }
+      if (heartbeats.trim()) {
+        diagnostics.push(
+          `rendererHeartbeats=${heartbeats.trim().split('\n').slice(-12).join('|')}`,
+        )
+      }
+      if (diagnostics.length > 0) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(
+          `${message}; ${diagnostics.join('; ')}`,
+          { cause: error },
+        )
+      }
+    }
+    throw error
   } finally {
     if (lateFixtureCleanups.length > 0) {
       let timer
@@ -1042,6 +1154,7 @@ export async function runTerminalSmoke({
       try {
         await fixture?.stop()
       } finally {
+        await rendererHeartbeat?.close()
         await dependencies.rm(runDirectory, { recursive: true, force: true })
       }
     }

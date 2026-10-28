@@ -12,6 +12,7 @@ export const AX_PROBE_TIMEOUT_MS = 3_000
 export const NATIVE_AX_PROBE_COMPILE_TIMEOUT_MS = 15_000
 export const CLEANUP_GRACE_MS = 3_000
 export const READINESS_MODES = ['local', 'remote']
+export const READINESS_TARGETS = ['window', 'terminal']
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..')
 export const NATIVE_AX_PROBE_SOURCE = path.join(
   PROJECT_ROOT,
@@ -105,19 +106,74 @@ export function parseAccessibilityReadiness(serialized) {
   }
 }
 
-function isReady(readiness, readinessMode, markerReady, hasRemoteEvidence) {
-  // xterm renders the shell prompt on a canvas, which WebKit does not expose
-  // consistently through AX.  The local PTY smoke separately proves that the
-  // connected terminal has a live shell and accepts input.
-  if (readinessMode === 'remote') {
-    // Remote cold-start has an independent end-to-end marker: the first marker
-    // is written by the remote startup command and the prompt marker is only
-    // written after the command has travelled through xterm input, IPC, PTY,
-    // and back through terminal output. WebKit may expose neither the status
-    // label nor the hidden xterm input, so AX is advisory in this mode.
-    return hasRemoteEvidence && markerReady
+export function parseColdStartArguments(argv) {
+  const option = name =>
+    argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined
+  const markerChecks = []
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] !== '--marker-check') continue
+    const markerPath = argv[index + 1]
+    const content = argv[index + 2]
+    if (markerPath === undefined || content === undefined) {
+      throw new Error('--marker-check requires a path and expected content')
+    }
+    markerChecks.push({ path: markerPath, content })
+    index += 2
   }
-  return readiness.localTab && readiness.connected && readiness.terminalInput
+  const axProbe = option('--ax-probe')
+  const readinessMode = option('--readiness-mode')
+  const readinessTarget = option('--readiness-target')
+  const markerPath = option('--marker-path')
+  const markerContent = option('--marker-content')
+  const timeout = option('--timeout-ms')
+  return {
+    appPath: option('--app-path'),
+    ...(axProbe === undefined ? {} : { axProbe }),
+    ...(readinessMode === undefined ? {} : { readinessMode }),
+    ...(readinessTarget === undefined ? {} : { readinessTarget }),
+    ...(markerPath === undefined ? {} : { markerPath }),
+    ...(markerContent === undefined ? {} : { markerContent }),
+    ...(markerChecks.length === 0 ? {} : { markerChecks }),
+    ...(timeout === undefined ? {} : { timeoutMs: Number(timeout) }),
+  }
+}
+
+export function evaluateReadiness({
+  readiness,
+  markerReady,
+  hasTerminalEvidence,
+}) {
+  // AX can prove that the application window and its terminal controls are
+  // rendered. It cannot prove that a shell is alive: xterm paints the prompt
+  // on a canvas and WebKit does not expose that canvas consistently.
+  const windowReady = Boolean(
+    readiness?.localTab && readiness?.connected && readiness?.terminalInput,
+  )
+  // A marker is only terminal evidence when the caller supplied it explicitly.
+  // The default marker state is true when no marker was requested and must not
+  // turn a window observation into a shell-ready claim.
+  const terminalReady = Boolean(hasTerminalEvidence && markerReady)
+  return { windowReady, terminalReady }
+}
+
+function isReady(
+  readiness,
+  readinessMode,
+  readinessTarget,
+  markerReady,
+  hasTerminalEvidence,
+) {
+  const state = evaluateReadiness({
+    readiness,
+    markerReady,
+    hasTerminalEvidence,
+  })
+  // Remote cold-start always uses an independent end-to-end marker. In local
+  // strict mode the same marker contract is opt-in via readinessTarget.
+  if (readinessMode === 'remote' || readinessTarget === 'terminal') {
+    return state.terminalReady
+  }
+  return state.windowReady
 }
 
 async function isMarkerReady(markerPath, markerContent, dependencies) {
@@ -143,19 +199,28 @@ async function areMarkersReady(markerChecks, dependencies) {
   return true
 }
 
+async function terminateAndReap(child, closePromise, dependencies, graceMs) {
+  terminate(child, 'SIGTERM')
+  try {
+    await waitForChildClose(closePromise, dependencies, graceMs)
+    return
+  } catch {
+    terminate(child, 'SIGKILL')
+    await waitForChildClose(closePromise, dependencies, graceMs).catch(() => {})
+  }
+}
+
 function runAccessibilityProbe(
   pid,
   dependencies,
-  {
-    mode = 'native',
-    nativeProbePath,
-  } = {},
+  { mode = 'native', nativeProbePath } = {},
   timeoutMs = AX_PROBE_TIMEOUT_MS,
 ) {
   return new Promise((resolve, reject) => {
     let child
     const command = mode === 'native' ? nativeProbePath : 'osascript'
-    const args = mode === 'native' ? [String(pid)] : ['-e', ACCESSIBILITY_PROBE(pid)]
+    const args =
+      mode === 'native' ? [String(pid)] : ['-e', ACCESSIBILITY_PROBE(pid)]
     if (typeof command !== 'string' || command.length === 0) {
       reject(new Error('native AX probe path is required'))
       return
@@ -172,6 +237,11 @@ function runAccessibilityProbe(
     let output = ''
     let errorOutput = ''
     let timeout
+    let timedOut = false
+    let resolveClosed
+    const closePromise = new Promise(resolveClose => {
+      resolveClosed = resolveClose
+    })
     const clearProbeTimeout = () => {
       if (timeout !== undefined) dependencies.clearTimeout(timeout)
     }
@@ -181,10 +251,13 @@ function runAccessibilityProbe(
     child.stderr?.on('data', chunk => (errorOutput += chunk))
     child.once('error', error => {
       clearProbeTimeout()
+      if (timedOut) return
       reject(new Error(`AX probe failed: ${error.message}`))
     })
     child.once('close', code => {
       clearProbeTimeout()
+      resolveClosed()
+      if (timedOut) return
       if (code !== 0) {
         reject(
           new Error(
@@ -200,12 +273,16 @@ function runAccessibilityProbe(
       }
     })
     timeout = dependencies.setTimeout(() => {
-      try {
-        child.kill('SIGTERM')
-      } catch {
-        // The probe may have exited between the timer and signal.
-      }
-      reject(new Error(`AX probe timed out after ${timeoutMs} ms`))
+      timedOut = true
+      void (async () => {
+        await terminateAndReap(
+          child,
+          closePromise,
+          dependencies,
+          dependencies.probeCleanupGraceMs ?? CLEANUP_GRACE_MS,
+        )
+        reject(new Error(`AX probe timed out after ${timeoutMs} ms`))
+      })()
     }, timeoutMs)
   })
 }
@@ -235,11 +312,18 @@ function compileNativeAccessibilityProbe(
         },
       )
     } catch (error) {
-      reject(new Error(`native AX probe compiler could not start: ${error.message}`))
+      reject(
+        new Error(`native AX probe compiler could not start: ${error.message}`),
+      )
       return
     }
     let errorOutput = ''
     let timeout
+    let timedOut = false
+    let resolveClosed
+    const closePromise = new Promise(resolveClose => {
+      resolveClosed = resolveClose
+    })
     const clearCompileTimeout = () => {
       if (timeout !== undefined) dependencies.clearTimeout(timeout)
     }
@@ -247,10 +331,13 @@ function compileNativeAccessibilityProbe(
     child.stderr?.on('data', chunk => (errorOutput += chunk))
     child.once('error', error => {
       clearCompileTimeout()
+      if (timedOut) return
       reject(new Error(`native AX probe compiler failed: ${error.message}`))
     })
     child.once('close', (code, signal) => {
       clearCompileTimeout()
+      resolveClosed()
+      if (timedOut) return
       if (code !== 0) {
         reject(
           new Error(
@@ -262,19 +349,25 @@ function compileNativeAccessibilityProbe(
       resolve()
     })
     timeout = dependencies.setTimeout(() => {
-      try {
-        child.kill('SIGTERM')
-      } catch {
-        // The compiler may have exited between the timer and signal.
-      }
-      reject(new Error(`native AX probe compiler timed out after ${timeoutMs} ms`))
+      timedOut = true
+      void (async () => {
+        await terminateAndReap(
+          child,
+          closePromise,
+          dependencies,
+          dependencies.probeCleanupGraceMs ?? CLEANUP_GRACE_MS,
+        )
+        reject(
+          new Error(`native AX probe compiler timed out after ${timeoutMs} ms`),
+        )
+      })()
     }, timeoutMs)
   })
 }
 
-function terminate(child) {
+function terminate(child, signal = 'SIGTERM') {
   try {
-    child.kill('SIGTERM')
+    child.kill(signal)
   } catch {
     // The child may have exited between readiness and cleanup.
   }
@@ -291,8 +384,9 @@ function wait(dependencies, delayMs) {
  * the Vite dev server. The two binaries are otherwise indistinguishable, so
  * this explains the failure instead of guessing the build mode beforehand.
  */
-function describeStalledReadiness(readiness) {
+function describeStalledReadiness(readiness, readinessTarget) {
   if (!readiness) return ''
+  if (readinessTarget === 'terminal') return ''
   if (Object.values(readiness).some(Boolean)) return ''
   return (
     '. The window exposed no terminal readiness at all, which means the UI ' +
@@ -305,7 +399,11 @@ function describeStalledReadiness(readiness) {
 function waitForChildClose(closePromise, dependencies, timeoutMs) {
   return new Promise((resolve, reject) => {
     const timer = dependencies.setTimeout(() => {
-      reject(new Error(`application did not exit within ${timeoutMs} ms after SIGTERM`))
+      reject(
+        new Error(
+          `application did not exit within ${timeoutMs} ms after SIGTERM`,
+        ),
+      )
     }, timeoutMs)
     closePromise.then(
       () => {
@@ -331,11 +429,13 @@ export async function runColdStartStopwatch({
   cleanupGraceMs = CLEANUP_GRACE_MS,
   axProbe = 'native',
   readinessMode = 'local',
+  readinessTarget,
   homeDirectory,
   markerPath,
   markerContent,
   markerChecks,
   environment = {},
+  unsetEnvironmentKeys = [],
   dependencies: overrides = {},
 } = {}) {
   const dependencies = { ...defaultDependencies, ...overrides }
@@ -343,9 +443,7 @@ export async function runColdStartStopwatch({
   const linux = dependencies.platform === 'linux'
   const effectiveAxProbe = macOs ? axProbe : 'none'
   if (!macOs && !linux) {
-    throw new Error(
-      'cold-start stopwatch is supported on macOS and Linux only',
-    )
+    throw new Error('cold-start stopwatch is supported on macOS and Linux only')
   }
   if (linux && readinessMode !== 'remote') {
     throw new Error(
@@ -357,21 +455,44 @@ export async function runColdStartStopwatch({
     throw new Error('cold-start stopwatch timeout must be a positive integer')
   }
   if (!Number.isSafeInteger(cleanupGraceMs) || cleanupGraceMs < 1) {
-    throw new Error('cold-start stopwatch cleanup grace must be a positive integer')
+    throw new Error(
+      'cold-start stopwatch cleanup grace must be a positive integer',
+    )
   }
   if (axProbe !== 'native' && axProbe !== 'osascript' && axProbe !== 'none') {
     throw new Error(
-      'cold-start stopwatch AX probe must be native or osascript; none is only valid for remote readiness',
+      'cold-start stopwatch AX probe must be native or osascript; none is only valid for remote or strict terminal readiness',
     )
   }
-  if (axProbe === 'none' && readinessMode !== 'remote') {
-    throw new Error('AX probe none is only supported for remote readiness')
+  if (
+    axProbe === 'none' &&
+    readinessMode !== 'remote' &&
+    readinessTarget !== 'terminal'
+  ) {
+    throw new Error(
+      'AX probe none requires remote or strict terminal readiness',
+    )
   }
   if (!READINESS_MODES.includes(readinessMode)) {
     throw new Error(
       `cold-start stopwatch readiness mode must be local or remote`,
     )
   }
+  const effectiveReadinessTarget =
+    readinessTarget ?? (readinessMode === 'remote' ? 'terminal' : 'window')
+  if (!READINESS_TARGETS.includes(effectiveReadinessTarget)) {
+    throw new Error(
+      'cold-start stopwatch readiness target must be window or terminal',
+    )
+  }
+  if (readinessMode === 'remote' && effectiveReadinessTarget !== 'terminal') {
+    throw new Error('remote cold-start stopwatch requires terminal readiness')
+  }
+  const shouldProbeAx =
+    macOs &&
+    effectiveAxProbe !== 'none' &&
+    !(readinessMode === 'local' && effectiveReadinessTarget === 'terminal')
+  const reportedAxProbe = shouldProbeAx ? effectiveAxProbe : 'none'
   await dependencies.access(executable)
   const suppliedHome =
     homeDirectory === undefined
@@ -399,17 +520,45 @@ export async function runColdStartStopwatch({
     throw new Error('cold-start stopwatch marker checks must be valid')
   }
   const requiredMarkerChecks = (markerChecks ?? []).map(check => ({
-    path: ensureAbsolutePath(check.path, 'cold-start stopwatch marker check path'),
+    path: ensureAbsolutePath(
+      check.path,
+      'cold-start stopwatch marker check path',
+    ),
     content: check.content,
   }))
-  const hasRemoteEvidence =
+  const hasTerminalEvidence =
     requiredMarker !== undefined || requiredMarkerChecks.length > 0
+  if (
+    readinessMode === 'local' &&
+    effectiveReadinessTarget === 'terminal' &&
+    !hasTerminalEvidence
+  ) {
+    throw new Error(
+      'local terminal readiness requires marker or marker-check evidence',
+    )
+  }
   if (
     markerContent !== undefined &&
     (typeof markerContent !== 'string' || markerContent.length === 0)
   ) {
     throw new Error(
       'cold-start stopwatch marker content must be a non-empty string',
+    )
+  }
+  if (
+    effectiveReadinessTarget === 'terminal' &&
+    ((requiredMarker !== undefined &&
+      (await isMarkerReady(requiredMarker, markerContent, dependencies))) ||
+      (
+        await Promise.all(
+          requiredMarkerChecks.map(check =>
+            isMarkerReady(check.path, check.content, dependencies),
+          ),
+        )
+      ).some(Boolean))
+  ) {
+    throw new Error(
+      'cold-start stopwatch terminal marker already exists with expected content; remove the stale marker before starting',
     )
   }
   const binarySha256 = await sha256(executable, dependencies)
@@ -426,6 +575,8 @@ export async function runColdStartStopwatch({
   let lastReadiness = null
   let lastProbeError = null
   let lastMarkerReady = requiredMarker === undefined
+  let lastWindowReady = false
+  let lastTerminalReady = false
   let settled = false
   let timeoutTimer
   let childClosed = false
@@ -444,7 +595,25 @@ export async function runColdStartStopwatch({
     if (timeoutTimer !== undefined) dependencies.clearTimeout(timeoutTimer)
     if (child && !childClosed) {
       stopChild()
-      await waitForChildClose(childClosePromise, dependencies, cleanupGraceMs)
+      try {
+        await waitForChildClose(childClosePromise, dependencies, cleanupGraceMs)
+      } catch (error) {
+        // A Tauri process can ignore or outlive SIGTERM while WebKit is still
+        // tearing down. Escalate once so a failed probe cannot leak a desktop
+        // process into the next run, but preserve the original cleanup error
+        // when the child still refuses to report close.
+        if (!childClosed) terminate(child, 'SIGKILL')
+        try {
+          await waitForChildClose(
+            childClosePromise,
+            dependencies,
+            cleanupGraceMs,
+          )
+        } catch {
+          // The caller still receives the first, more useful timeout error.
+        }
+        throw error
+      }
     }
     if (ownsHome) {
       await dependencies.rm(home, { recursive: true, force: true })
@@ -452,14 +621,23 @@ export async function runColdStartStopwatch({
   }
 
   try {
-    if (macOs && axProbe === 'native') {
-      await compileNativeAccessibilityProbe(nativeProbePath, dependencies)
+    if (shouldProbeAx && axProbe === 'native') {
+      await compileNativeAccessibilityProbe(
+        nativeProbePath,
+        dependencies,
+        dependencies.nativeAxProbeCompileTimeoutMs ??
+          NATIVE_AX_PROBE_COMPILE_TIMEOUT_MS,
+      )
       await dependencies.access(nativeProbePath)
     }
     requestStartedAt = dependencies.now()
     child = dependencies.spawn(executable, [], {
       cwd: PROJECT_ROOT,
-      env: { ...process.env, ...environment, HOME: home },
+      env: (() => {
+        const childEnvironment = { ...process.env, ...environment, HOME: home }
+        for (const key of unsetEnvironmentKeys) delete childEnvironment[key]
+        return childEnvironment
+      })(),
       shell: false,
       stdio: process.env.TERMINAL_DEBUG_SSH_PROFILE ? 'inherit' : 'ignore',
     })
@@ -475,15 +653,51 @@ export async function runColdStartStopwatch({
         reject(error)
       }
 
+      const failReadinessTimeout = () => {
+        if (spawnStartedAt === null) {
+          fail(
+            new Error(
+              `application did not emit a spawn event within ${timeoutMs} ms`,
+            ),
+          )
+          return
+        }
+        const details =
+          lastProbeError ??
+          JSON.stringify({
+            readiness: lastReadiness,
+            readinessTarget: effectiveReadinessTarget,
+            windowReady: lastWindowReady,
+            terminalReady: lastTerminalReady,
+            markerReady: lastMarkerReady,
+          })
+        const readinessLabel =
+          effectiveReadinessTarget === 'terminal' ? 'terminal' : 'window'
+        fail(
+          new Error(
+            `${readinessLabel} readiness did not complete within ${timeoutMs} ms${details ? ` (last probe: ${details})` : ''}` +
+              describeStalledReadiness(
+                lastReadiness,
+                effectiveReadinessTarget,
+              ),
+          ),
+        )
+      }
+
       const poll = async () => {
         while (!settled && !closed) {
           if (spawnStartedAt === null) return
           try {
-            if (macOs && axProbe !== 'none') {
-              lastReadiness = await runAccessibilityProbe(child.pid, dependencies, {
-                mode: axProbe,
-                nativeProbePath,
-              })
+            if (shouldProbeAx) {
+              lastReadiness = await runAccessibilityProbe(
+                child.pid,
+                dependencies,
+                {
+                  mode: axProbe,
+                  nativeProbePath,
+                },
+                dependencies.axProbeTimeoutMs ?? AX_PROBE_TIMEOUT_MS,
+              )
               lastProbeError = null
             } else {
               // Linux runners do not expose macOS Accessibility APIs, and a
@@ -495,47 +709,78 @@ export async function runColdStartStopwatch({
               lastReadiness = null
               lastProbeError = null
             }
+          } catch (error) {
+            // Window readiness may use AX, but strict terminal readiness is
+            // established by an end-to-end marker. Keep probe failures for
+            // timeout reporting and continue polling the marker.
+            lastProbeError =
+              error instanceof Error ? error.message : String(error)
+          }
+          try {
             lastMarkerReady =
               (await isMarkerReady(
                 requiredMarker,
                 markerContent,
                 dependencies,
-              )) &&
-              (await areMarkersReady(requiredMarkerChecks, dependencies))
-            if (
-              isReady(
-                lastReadiness,
-                readinessMode,
-                lastMarkerReady,
-                hasRemoteEvidence,
-              )
-            ) {
-              settled = true
-              resolve({
-                ok: true,
-                appPath: executable,
-                binarySha256,
-                capturedAt: new Date().toISOString(),
-                pid: child.pid,
-                measuredFrom: 'child-spawn-event',
-                axProbe: effectiveAxProbe,
-                readinessMode,
-                markerPath: requiredMarker ?? null,
-                markerReady: lastMarkerReady,
-                markerChecks: requiredMarkerChecks.map(check => ({
-                  path: check.path,
-                  content: check.content,
-                  ready: true,
-                })),
-                requestToReadyMs: dependencies.now() - requestStartedAt,
-                spawnToReadyMs: dependencies.now() - spawnStartedAt,
-                readiness: lastReadiness,
-              })
-              stopChild()
-              return
-            }
+              )) && (await areMarkersReady(requiredMarkerChecks, dependencies))
           } catch (error) {
-            lastProbeError = error instanceof Error ? error.message : String(error)
+            lastMarkerReady = false
+            lastProbeError =
+              error instanceof Error ? error.message : String(error)
+          }
+          if (settled) return
+          const readyNow = dependencies.now()
+          if (readyNow - spawnStartedAt >= timeoutMs) {
+            failReadinessTimeout()
+            return
+          }
+          const readinessState = evaluateReadiness({
+            readiness: lastReadiness,
+            markerReady: lastMarkerReady,
+            hasTerminalEvidence,
+          })
+          lastWindowReady = readinessState.windowReady
+          lastTerminalReady = readinessState.terminalReady
+          if (
+            isReady(
+              lastReadiness,
+              readinessMode,
+              effectiveReadinessTarget,
+              lastMarkerReady,
+              hasTerminalEvidence,
+            )
+          ) {
+            settled = true
+            resolve({
+              ok: true,
+              appPath: executable,
+              binarySha256,
+              capturedAt: new Date().toISOString(),
+              pid: child.pid,
+              measuredFrom: 'child-spawn-event',
+              axProbe: reportedAxProbe,
+              readinessMode,
+              readinessTarget: effectiveReadinessTarget,
+              readyAt:
+                readinessMode === 'remote' ||
+                effectiveReadinessTarget === 'terminal'
+                  ? 'terminal'
+                  : 'window',
+              markerPath: requiredMarker ?? null,
+              markerReady: lastMarkerReady,
+              markerChecks: requiredMarkerChecks.map(check => ({
+                path: check.path,
+                content: check.content,
+                ready: true,
+              })),
+              requestToReadyMs: readyNow - requestStartedAt,
+              spawnToReadyMs: readyNow - spawnStartedAt,
+              windowReady: lastWindowReady,
+              terminalReady: lastTerminalReady,
+              readiness: lastReadiness,
+            })
+            stopChild()
+            return
           }
           await wait(dependencies, AX_POLL_INTERVAL_MS)
         }
@@ -545,7 +790,9 @@ export async function runColdStartStopwatch({
         spawnStartedAt = dependencies.now()
         void poll()
       })
-      child.once('error', error => fail(new Error(`application failed to start: ${error.message}`)))
+      child.once('error', error =>
+        fail(new Error(`application failed to start: ${error.message}`)),
+      )
       child.once('close', (code, signal) => {
         closed = true
         childClosed = true
@@ -558,26 +805,14 @@ export async function runColdStartStopwatch({
           } else {
             fail(
               new Error(
-                `application exited with code ${String(closeCode)}${closeSignal ? ` (${closeSignal})` : ''} before AX readiness`,
+                `application exited with code ${String(closeCode)}${closeSignal ? ` (${closeSignal})` : ''} before ${effectiveReadinessTarget} readiness`,
               ),
             )
           }
         }
       })
       timeoutTimer = dependencies.setTimeout(() => {
-        if (spawnStartedAt === null) {
-          fail(new Error(`application did not emit a spawn event within ${timeoutMs} ms`))
-        } else {
-          const details =
-            lastProbeError ??
-            JSON.stringify({ readiness: lastReadiness, markerReady: lastMarkerReady })
-          fail(
-            new Error(
-              `AX readiness did not complete within ${timeoutMs} ms${details ? ` (last probe: ${details})` : ''}` +
-                describeStalledReadiness(lastReadiness),
-            ),
-          )
-        }
+        failReadinessTimeout()
       }, timeoutMs)
     })
     return result
@@ -592,21 +827,21 @@ const isDirectRun =
 
 if (isDirectRun) {
   const argv = process.argv.slice(2)
-  const option = name =>
-    argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined
-  const appPath = option('--app-path')
-  const timeout = option('--timeout-ms')
-  const axProbe = option('--ax-probe')
-  runColdStartStopwatch({
-    appPath,
-    ...(axProbe === undefined ? {} : { axProbe }),
-    ...(timeout === undefined ? {} : { timeoutMs: Number(timeout) }),
-  })
-    .then(result => {
-      console.log(JSON.stringify(result, null, 2))
-    })
-    .catch(error => {
-      console.error(error instanceof Error ? error.message : String(error))
-      process.exitCode = 1
-    })
+  let options
+  try {
+    options = parseColdStartArguments(argv)
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+    options = null
+  }
+  if (options)
+    runColdStartStopwatch(options)
+      .then(result => {
+        console.log(JSON.stringify(result, null, 2))
+      })
+      .catch(error => {
+        console.error(error instanceof Error ? error.message : String(error))
+        process.exitCode = 1
+      })
 }

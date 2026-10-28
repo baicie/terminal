@@ -45,6 +45,7 @@ export function useTerminalSessionBinding(
     enabled: hostKeyGate.enabled,
     expectedHostKey: hostKeyGate.expectedHostKey,
     expectedJumpHostKey: hostKeyGate.expectedJumpHostKey,
+    connectionDeadlineAt: hostKeyGate.connectionDeadlineAt,
     host: options.host,
     jumpHost: options.jumpHost,
     serialSessionId: options.tab?.serialSessionId,

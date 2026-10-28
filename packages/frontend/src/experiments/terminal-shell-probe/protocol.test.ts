@@ -44,6 +44,7 @@ const OPENSSH_KEY =
 const CONFIG: ShellProbeConfig = {
   resultPath: '/tmp/shell-probe-result.json',
   caseName: 'cat-eof',
+  nonce: 'shell_test_nonce',
   dialect: 'posix',
   timeoutMs: 20_000,
   ssh: null,
@@ -60,9 +61,7 @@ describe('terminal shell probe protocol', () => {
     expect(createShellProbeHistoryCommand('probe_1')).toContain(
       'SHELL_PROBE_HISTORY_SEEN',
     )
-    expect(createShellProbeTabStepCommand('probe_1')).toContain(
-      'printf',
-    )
+    expect(createShellProbeTabStepCommand('probe_1')).toContain('printf')
     expect(createShellProbeSetupCommand('probe_1', 'readline-tab')).toContain(
       'alpha_probe',
     )
@@ -171,17 +170,23 @@ describe('terminal shell probe protocol', () => {
     expect(command).not.toContain(markers.fail)
   })
 
-  it.each(SHELL_PROBE_CASES)('accepts the %s case in the result parser', name => {
-    // A case the result parser rejects never reaches the PTY, so the probe can
-    // only time out. These two lists have to stay in step.
-    expect(parseShellProbeConfig({
-      caseName: name,
-      resultPath: '/tmp/shell-probe-result.json',
-      timeoutMs: 30_000,
-      dialect: 'posix',
-      ssh: null,
-    }).caseName).toBe(name)
-  })
+  it.each(SHELL_PROBE_CASES)(
+    'accepts the %s case in the result parser',
+    name => {
+      // A case the result parser rejects never reaches the PTY, so the probe can
+      // only time out. These two lists have to stay in step.
+      expect(
+        parseShellProbeConfig({
+          caseName: name,
+          resultPath: '/tmp/shell-probe-result.json',
+          nonce: 'shell_test_nonce',
+          timeoutMs: 30_000,
+          dialect: 'posix',
+          ssh: null,
+        }).caseName,
+      ).toBe(name)
+    },
+  )
 
   it.each([
     ['powershell', 'vim-edit'],
@@ -196,6 +201,7 @@ describe('terminal shell probe protocol', () => {
         parseShellProbeConfig({
           caseName,
           resultPath: '/tmp/shell-probe-result.json',
+          nonce: 'shell_test_nonce',
           timeoutMs: 30_000,
           dialect,
           ssh: null,
@@ -212,6 +218,7 @@ describe('terminal shell probe protocol', () => {
           parseShellProbeConfig({
             caseName,
             resultPath: '/tmp/shell-probe-result.json',
+            nonce: 'shell_test_nonce',
             timeoutMs: 30_000,
             dialect,
             ssh: null,
@@ -238,9 +245,9 @@ describe('terminal shell probe protocol', () => {
     dialect => {
       // These read exactly one line, so a Ctrl+D would be swallowed as an
       // empty extra line instead of closing the capture.
-      expect(readySteps(dialect, 'cat-eof', 'probe_1').map(step => step.data)).toEqual([
-        'cat-eof-probe' + String.fromCharCode(13),
-      ])
+      expect(
+        readySteps(dialect, 'cat-eof', 'probe_1').map(step => step.data),
+      ).toEqual(['cat-eof-probe' + String.fromCharCode(13)])
     },
   )
 
@@ -270,12 +277,15 @@ describe('terminal shell probe protocol', () => {
 
   it('parses and rejects the strict config contract', () => {
     expect(parseShellProbeConfig(CONFIG)).toEqual(CONFIG)
+    expect(() =>
+      parseShellProbeConfig({ ...CONFIG, nonce: "bad'nonce" }),
+    ).toThrow('Invalid shell probe config')
     expect(() => parseShellProbeConfig({ ...CONFIG, timeoutMs: 0 })).toThrow(
       'Invalid shell probe config',
     )
-    expect(() =>
-      parseShellProbeConfig({ ...CONFIG, extra: true }),
-    ).toThrow('Invalid shell probe config')
+    expect(() => parseShellProbeConfig({ ...CONFIG, extra: true })).toThrow(
+      'Invalid shell probe config',
+    )
   })
 
   it('accepts an SSH transport target and keeps the local transport null', () => {
@@ -290,7 +300,10 @@ describe('terminal shell probe protocol', () => {
       certificate: null,
       jump: null,
     }
-    expect(parseShellProbeConfig({ ...CONFIG, ssh })).toEqual({ ...CONFIG, ssh })
+    expect(parseShellProbeConfig({ ...CONFIG, ssh })).toEqual({
+      ...CONFIG,
+      ssh,
+    })
     expect(parseShellProbeConfig(CONFIG).ssh).toBeNull()
   })
 

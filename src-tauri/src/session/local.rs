@@ -117,7 +117,7 @@ fn setup_pty(
     ) {
         command.arg("-l");
     }
-    if shell.eq_ignore_ascii_case("powershell.exe") || shell.eq_ignore_ascii_case("pwsh.exe") {
+    if is_powershell_executable(&shell) {
         command.arg("-NoLogo");
     }
     if let Some(home) = dirs::home_dir() {
@@ -149,6 +149,12 @@ fn setup_pty(
         None => startup_command,
     };
     setup_pty_with_command(cols, rows, command, startup_command)
+}
+
+fn is_powershell_executable(shell: &str) -> bool {
+    shell.rsplit(['/', '\\']).next().is_some_and(|name| {
+        name.eq_ignore_ascii_case("powershell.exe") || name.eq_ignore_ascii_case("pwsh.exe")
+    })
 }
 
 /// Shell integration is on by default and switched off by setting
@@ -780,6 +786,20 @@ pub(in crate::session) mod tests {
         assert!(shell_integration_script("/bin/fish").is_none());
         assert!(shell_integration_script("/bin/sh").is_none());
         assert!(shell_integration_script("C:\\Windows\\System32\\cmd.exe").is_none());
+    }
+
+    #[test]
+    fn powershell_detection_handles_absolute_windows_paths() {
+        assert!(is_powershell_executable("powershell.exe"));
+        assert!(is_powershell_executable("pwsh.exe"));
+        assert!(is_powershell_executable(
+            r"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\PowerShell.EXE"
+        ));
+        assert!(is_powershell_executable(
+            r"C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+        ));
+        assert!(!is_powershell_executable(r"C:\\Windows\\System32\\cmd.exe"));
+        assert!(!is_powershell_executable("bash"));
     }
 
     #[derive(Clone, Debug, Default)]

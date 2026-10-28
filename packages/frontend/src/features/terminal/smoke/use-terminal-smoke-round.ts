@@ -1,45 +1,25 @@
 import { Terminal } from '@baicie/xterm'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { terminalSessionManager } from '@/features/terminal/services/terminal-session-manager'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTerminal } from '@/hooks/use-terminal'
 import {
   runTerminalSmoke,
   waitForTerminalSmokeInteractive,
 } from './run-terminal-smoke'
 import { collectTerminalSmokeDiagnostics } from './terminal-smoke-diagnostics'
-import { useTerminalSmokeDeadline } from './use-terminal-smoke-deadline'
 import { createInteractiveReporter } from './terminal-smoke-interactive'
-import { useTerminalSmokeRecovery } from './use-terminal-smoke-recovery'
-import type {
-  TerminalSmokeConfig,
-  TerminalSmokeResult,
-  TerminalSmokeStaleOutputProbe,
-} from './terminal-smoke-contract'
+import { useTerminalSmokeHostWakeFallback } from './use-terminal-smoke-host-wake-fallback'
+import { useTerminalSmokeRoundLifecycle } from './use-terminal-smoke-round-lifecycle'
+import { useTerminalSmokeRoundRecovery } from './use-terminal-smoke-round-recovery'
+import type { TerminalSmokeResult } from './terminal-smoke-contract'
 import { terminalSmokeRoundFailure } from './terminal-smoke-results'
+import { terminalSmokeSessionIsReconnect } from './terminal-smoke-session-reconnect'
 import {
   terminalSmokeRequest,
   terminalSmokeTabId,
 } from './terminal-smoke-round-request'
+import type { UseTerminalSmokeRoundOptions } from './use-terminal-smoke-round-types'
 
-export interface UseTerminalSmokeRoundOptions {
-  applicationStartedAt: number
-  config: TerminalSmokeConfig
-  roundIndex: number
-  signal: AbortSignal
-  reportConnected: () => Promise<number>
-  reportReconnect: () => Promise<void>
-  reportHostWake?: () => Promise<void>
-  emitStaleOutput: (
-    retiredSessionId: string,
-    activeSessionId: string,
-  ) => Promise<TerminalSmokeStaleOutputProbe>
-  onComplete: (
-    roundIndex: number,
-    tabId: string,
-    sessionIds: string[],
-    result: TerminalSmokeResult,
-  ) => void
-}
+export type { UseTerminalSmokeRoundOptions } from './use-terminal-smoke-round-types'
 
 export function useTerminalSmokeRound({
   applicationStartedAt,
@@ -60,6 +40,7 @@ export function useTerminalSmokeRound({
   const completedRef = useRef(false)
   const reconnectObservedRef = useRef(false)
   const hostWakeSentRef = useRef(false)
+  const hostWakeInFlightRef = useRef<Promise<void> | null>(null)
   const reconnectCheckpointSentRef = useRef(false)
   const reconnectStartedAtRef = useRef<number | null>(null)
   const runControllerRef = useRef<AbortController | null>(null)
@@ -87,9 +68,8 @@ export function useTerminalSmokeRound({
   } = useTerminal(term, {
     ...terminalSmokeRequest(config, roundIndex),
     onOutput: event => {
-      rawOutputTailRef.current = `${rawOutputTailRef.current}${event.data}`.slice(
-        -4096,
-      )
+      rawOutputTailRef.current =
+        `${rawOutputTailRef.current}${event.data}`.slice(-4096)
     },
   })
   const statusRef = useRef(status)
@@ -101,7 +81,8 @@ export function useTerminalSmokeRound({
       completedRef.current = true
       const sessionIds: string[] = []
       const initialSessionId = initialSessionIdRef.current
-      if (requiresReconnect && initialSessionId) sessionIds.push(initialSessionId)
+      if (requiresReconnect && initialSessionId)
+        sessionIds.push(initialSessionId)
       if (activeSessionId && !sessionIds.includes(activeSessionId)) {
         sessionIds.push(activeSessionId)
       }
@@ -112,22 +93,24 @@ export function useTerminalSmokeRound({
     },
     [requiresReconnect, roundIndex, tabId],
   )
-  useLayoutEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    term.open(container)
-    term.focus()
-    return () => {
-      controller.abort(new Error('Terminal smoke round unmounted'))
-      runControllerRef.current?.abort(new Error('Terminal smoke round unmounted'))
-      void terminalSessionManager
-        .close(tabId)
-        .catch(closeError => {
-          console.error('Failed to close terminal smoke session:', closeError)
-        })
-        .then(() => term.dispose())
-    }
-  }, [controller, tabId, term])
+  const onReconnectCheckpoint = useTerminalSmokeHostWakeFallback({
+    completeOnce,
+    config,
+    controller,
+    hostWakeSentRef,
+    hostWakeInFlightRef,
+    reportHostWake,
+    runControllerRef,
+    runningSessionIdRef,
+    term,
+  })
+  useTerminalSmokeRoundLifecycle({
+    containerRef,
+    controller,
+    runControllerRef,
+    tabId,
+    term,
+  })
   useEffect(() => {
     const abort = () => controller.abort(signal.reason)
     signal.addEventListener('abort', abort, { once: true })
@@ -136,12 +119,23 @@ export function useTerminalSmokeRound({
   }, [controller, signal])
   useEffect(() => {
     if (status !== 'connected' || !sessionId || completedRef.current) return
-    const isReconnect = reconnectObservedRef.current
+    const isReconnect = terminalSmokeSessionIsReconnect(
+      requiresReconnect,
+      reconnectObservedRef.current,
+      reconnectCheckpointSentRef.current,
+      initialSessionIdRef.current,
+      sessionId,
+    )
     if (runningSessionIdRef.current === sessionId) return
-    if (requiresReconnect && !isReconnect && reconnectCheckpointSentRef.current) {
+    if (
+      requiresReconnect &&
+      !isReconnect &&
+      reconnectCheckpointSentRef.current
+    ) {
       return
     }
-    if (initialSessionIdRef.current === null) initialSessionIdRef.current = sessionId
+    if (initialSessionIdRef.current === null)
+      initialSessionIdRef.current = sessionId
     if (isReconnect && initialSessionIdRef.current === sessionId) {
       completeOnce(
         sessionId,
@@ -175,6 +169,7 @@ export function useTerminalSmokeRound({
                   firstConnectionMsRef,
                   reconnectCheckpointSentRef,
                   requiresReconnect,
+                  onReconnectCheckpoint,
                 )
               : undefined,
           ...(isReconnect
@@ -204,8 +199,12 @@ export function useTerminalSmokeRound({
           reconnectObserved: reconnectObservedRef.current,
         })
       } catch (runError) {
-        if (reconnectObservedRef.current && statusRef.current !== 'error') return
-        completeOnce(activeSessionId, terminalSmokeRoundFailure(term, config, runError))
+        if (reconnectObservedRef.current && statusRef.current !== 'error')
+          return
+        completeOnce(
+          activeSessionId,
+          terminalSmokeRoundFailure(term, config, runError),
+        )
       } finally {
         controller.signal.removeEventListener('abort', abortRun)
         if (runControllerRef.current === runController) {
@@ -226,6 +225,7 @@ export function useTerminalSmokeRound({
               firstConnectionMsRef,
               reconnectCheckpointSentRef,
               true,
+              onReconnectCheckpoint,
             ),
           })
           return
@@ -233,7 +233,10 @@ export function useTerminalSmokeRound({
         if (controller.signal.aborted) throw controller.signal.reason
         await run(sessionId)
       } catch (runError) {
-        completeOnce(sessionId, terminalSmokeRoundFailure(term, config, runError))
+        completeOnce(
+          sessionId,
+          terminalSmokeRoundFailure(term, config, runError),
+        )
       }
     })()
   }, [
@@ -243,6 +246,7 @@ export function useTerminalSmokeRound({
     emitStaleOutput,
     getInputDiagnostics,
     getOutputDiagnostics,
+    onReconnectCheckpoint,
     reportConnected,
     reportReconnect,
     requiresReconnect,
@@ -251,49 +255,26 @@ export function useTerminalSmokeRound({
     status,
     term,
   ])
-  useTerminalSmokeRecovery({
+  useTerminalSmokeRoundRecovery({
+    applicationStartedAt,
     completeOnce,
     config,
     controller,
     error,
     hostWakeSentRef,
+    hostWakeInFlightRef,
     reportHostWake,
+    reconnectCheckpointSentRef,
     reconnectObservedRef,
     reconnectStartedAtRef,
     requiresReconnect,
     retryable,
+    roundIndex,
     runControllerRef,
     sessionId,
     startedRef,
     status,
     term,
-  })
-
-  const onDeadline = useCallback(
-    (deadlineMs: number, currentStatus: string) => {
-      completeOnce(
-        sessionId,
-        terminalSmokeRoundFailure(
-          term,
-          config,
-          new Error(
-            `Terminal smoke did not connect within ${deadlineMs} ms (status: ${currentStatus})`,
-          ),
-        ),
-      )
-    },
-    [completeOnce, config, sessionId, term],
-  )
-  useTerminalSmokeDeadline({
-    applicationStartedAt,
-    onTimeout: onDeadline,
-    reconnectRequired: requiresReconnect,
-    hostWakeRequired: config.hostWakeRequired,
-    reconnectObservedRef,
-    reconnectStartedAtRef,
-    roundIndex,
-    sessionId,
-    status,
   })
 
   return containerRef

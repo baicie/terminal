@@ -76,13 +76,21 @@ function overrideNavigator(userAgent: string, platform = 'MacIntel'): void {
   })
 }
 
-async function openTerminal(userAgent: string): Promise<XTerminal> {
+async function openTerminal(
+  userAgent: string,
+  options: { macOptionIsMeta?: boolean } = {},
+): Promise<XTerminal> {
   vi.resetModules()
   stubMatchMedia()
   stubCanvasContext()
   overrideNavigator(userAgent)
   const { Terminal } = await import('@baicie/xterm')
-  const term = new Terminal({ cols: 80, rows: 24, allowProposedApi: true })
+  const term = new Terminal({
+    cols: 80,
+    rows: 24,
+    allowProposedApi: true,
+    ...options,
+  })
   const container = document.createElement('div')
   document.body.append(container)
   term.open(container)
@@ -103,6 +111,26 @@ function dispatchKeyDown(textarea: HTMLTextAreaElement, key: string): void {
   textarea.dispatchEvent(event)
 }
 
+function dispatchOptionKeyDown(
+  textarea: HTMLTextAreaElement,
+  key: string,
+  keyCode: number,
+): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', {
+    key,
+    code: 'KeyF',
+    altKey: true,
+    bubbles: true,
+    cancelable: true,
+  })
+  Object.defineProperty(event, 'keyCode', {
+    value: keyCode,
+    configurable: true,
+  })
+  textarea.dispatchEvent(event)
+  return event
+}
+
 function dispatchInsertText(textarea: HTMLTextAreaElement, data: string): void {
   textarea.value = data
   textarea.dispatchEvent(
@@ -112,6 +140,25 @@ function dispatchInsertText(textarea: HTMLTextAreaElement, data: string): void {
       bubbles: true,
     }),
   )
+}
+
+function dispatchInput(
+  textarea: HTMLTextAreaElement,
+  data: string,
+  inputType: string,
+): void {
+  textarea.value = data
+  textarea.dispatchEvent(
+    new InputEvent('input', { data, inputType, bubbles: true }),
+  )
+}
+
+function dispatchPaste(textarea: HTMLTextAreaElement, text: string): void {
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clipboardData', {
+    value: { getData: () => text },
+  })
+  textarea.dispatchEvent(event)
 }
 
 function dispatchKeyUp(textarea: HTMLTextAreaElement, key: string): void {
@@ -203,6 +250,122 @@ describe('xterm WebKit input handling', () => {
     expect(received).toEqual(['c', 'c'])
   })
 
+  it('prevents WebKit text insertion for an Option-as-Meta key', async () => {
+    const term = await openTerminal(WKWEBVIEW_UA, { macOptionIsMeta: true })
+    const received = collectData(term)
+    const textarea = term.textarea
+    if (!textarea) throw new Error('xterm did not create its helper textarea')
+
+    const event = dispatchOptionKeyDown(textarea, 'ƒ', 70)
+
+    expect(received).toEqual(['\x1bf'])
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('keeps an Option dead key on the native composition path', async () => {
+    const term = await openTerminal(WKWEBVIEW_UA, { macOptionIsMeta: true })
+    const received = collectData(term)
+    const textarea = term.textarea
+    if (!textarea) throw new Error('xterm did not create its helper textarea')
+
+    const deadKey = new KeyboardEvent('keydown', {
+      key: 'Dead',
+      code: 'KeyE',
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    Object.defineProperty(deadKey, 'keyCode', { value: 69, configurable: true })
+    textarea.dispatchEvent(deadKey)
+    dispatchInsertText(textarea, 'é')
+
+    expect(deadKey.defaultPrevented).toBe(false)
+    expect(received).toEqual(['é'])
+  })
+
+  it('deduplicates delayed WebKit input events for overlapping keydowns', async () => {
+    const term = await openTerminal(WKWEBVIEW_UA)
+    const received = collectData(term)
+    const textarea = term.textarea
+    if (!textarea) throw new Error('xterm did not create its helper textarea')
+
+    // WebKit can deliver the native input events after more than one keydown.
+    // Keep the two keydowns in flight before replaying their default-action
+    // input events to ensure the compatibility marker is not single-valued.
+    dispatchKeyDown(textarea, 'a')
+    dispatchKeyDown(textarea, 's')
+    dispatchInsertText(textarea, 'a')
+    dispatchInsertText(textarea, 's')
+    dispatchKeyUp(textarea, 'a')
+    dispatchKeyUp(textarea, 's')
+
+    expect(received).toEqual(['a', 's'])
+  })
+
+  it('consumes matching markers one at a time for repeated overlapping keys', async () => {
+    const term = await openTerminal(WKWEBVIEW_UA)
+    const received = collectData(term)
+    const textarea = term.textarea
+    if (!textarea) throw new Error('xterm did not create its helper textarea')
+
+    dispatchKeyDown(textarea, 'a')
+    dispatchKeyDown(textarea, 'a')
+    dispatchInsertText(textarea, 'a')
+    dispatchInsertText(textarea, 'a')
+    dispatchKeyUp(textarea, 'a')
+
+    expect(received).toEqual(['a', 'a'])
+  })
+
+  it('does not write terminal input payloads to the WebView console', async () => {
+    const term = await openTerminal(WKWEBVIEW_UA)
+    const received = collectData(term)
+    const textarea = term.textarea
+    if (!textarea) throw new Error('xterm did not create its helper textarea')
+    const debug = vi.spyOn(console, 'debug')
+
+    try {
+      dispatchKeyDown(textarea, 'x')
+      dispatchInsertText(textarea, 'x')
+      dispatchInput(textarea, 'sensitive-command', 'insertText')
+
+      const loggedArguments = JSON.stringify(debug.mock.calls)
+      expect(received).toEqual(['x', 'sensitive-command'])
+      expect(loggedArguments).not.toContain('x')
+      expect(loggedArguments).not.toContain('sensitive-command')
+    } finally {
+      debug.mockRestore()
+    }
+  })
+
+  it('bounds delayed keydown markers to the newest 32 payloads', async () => {
+    const term = await openTerminal(WKWEBVIEW_UA)
+    const received = collectData(term)
+    const textarea = term.textarea
+    if (!textarea) throw new Error('xterm did not create its helper textarea')
+    const keys = [...'abcdefghijklmnopqrstuvwxyz0123456']
+
+    for (const key of keys) dispatchKeyDown(textarea, key)
+    for (const key of keys) dispatchInsertText(textarea, key)
+
+    // The oldest marker is evicted at the cap; the retained 32 still dedupe.
+    expect(received).toEqual([...keys, keys[0]])
+  })
+
+  it('expires unmatched keydown markers before later text input', async () => {
+    const term = await openTerminal(WKWEBVIEW_UA)
+    const received = collectData(term)
+    const textarea = term.textarea
+    if (!textarea) throw new Error('xterm did not create its helper textarea')
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0)
+
+    dispatchKeyDown(textarea, 'a')
+    now.mockReturnValue(1001)
+    dispatchInsertText(textarea, 'a')
+
+    expect(received).toEqual(['a', 'a'])
+  })
+
   it('still emits IME commits that never produced a keydown payload', async () => {
     const term = await openTerminal(WKWEBVIEW_UA)
     const received = collectData(term)
@@ -227,7 +390,38 @@ describe('xterm WebKit input handling', () => {
     expect(received).toEqual(['中'])
   })
 
-  it('still emits pasted text that bypasses the keyboard', async () => {
+  it('sends a composition commit once and clears stale keydown markers', async () => {
+    const term = await openTerminal(WKWEBVIEW_UA)
+    const received = collectData(term)
+    const textarea = term.textarea
+    if (!textarea) throw new Error('xterm did not create its helper textarea')
+
+    dispatchKeyDown(textarea, 'a')
+    textarea.dispatchEvent(
+      new CompositionEvent('compositionstart', { bubbles: true }),
+    )
+    textarea.value = 'a'
+    textarea.dispatchEvent(
+      new CompositionEvent('compositionupdate', { data: 'a', bubbles: true }),
+    )
+    textarea.dispatchEvent(
+      new InputEvent('input', {
+        data: 'a',
+        inputType: 'insertFromComposition',
+        bubbles: true,
+      }),
+    )
+    textarea.dispatchEvent(
+      new CompositionEvent('compositionend', { bubbles: true }),
+    )
+    await new Promise(resolve => setTimeout(resolve, 0))
+    dispatchKeyDown(textarea, 'a')
+    dispatchInsertText(textarea, 'a')
+
+    expect(received).toEqual(['a', 'a', 'a'])
+  })
+
+  it('still emits text from native insertText input events', async () => {
     const term = await openTerminal(WKWEBVIEW_UA)
     const received = collectData(term)
     const textarea = term.textarea
@@ -236,6 +430,21 @@ describe('xterm WebKit input handling', () => {
     dispatchInsertText(textarea, 'pasted')
 
     expect(received).toEqual(['pasted'])
+  })
+
+  it('keeps native paste and insertFromPaste outside the keydown FIFO', async () => {
+    const term = await openTerminal(WKWEBVIEW_UA)
+    const received = collectData(term)
+    const textarea = term.textarea
+    if (!textarea) throw new Error('xterm did not create its helper textarea')
+
+    dispatchKeyDown(textarea, 'a')
+    dispatchPaste(textarea, 'pasted')
+    dispatchInput(textarea, 'pasted', 'insertFromPaste')
+    dispatchKeyDown(textarea, 'a')
+    dispatchInsertText(textarea, 'a')
+
+    expect(received).toEqual(['a', 'pasted', 'a'])
   })
 
   it('cancels an active IME composition without sending Escape, then sends a later Escape', async () => {

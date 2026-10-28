@@ -11,9 +11,7 @@ export type TerminalProfilePayload = {
   shellIntegration?: TerminalShellIntegration
 }
 
-export function profileForHost(host: Host):
-  | TerminalProfilePayload
-  | undefined {
+export function profileForHost(host: Host): TerminalProfilePayload | undefined {
   const environment = host.environment
   const hasEnvironment = Boolean(environment && Object.keys(environment).length)
   const startupCommand = host.startupCommand?.trim()
@@ -39,6 +37,7 @@ export async function startTerminalShell(
   expectedHostKey?: string,
   expectedJumpHostKey?: string,
   attemptId?: string,
+  connectionTimeoutMs?: number,
 ): Promise<string> {
   if (tabType === 'local') {
     return invoke<string>('session_create_local', { cols, rows })
@@ -57,7 +56,8 @@ export async function startTerminalShell(
         targetUsername: host.username,
         targetPassword: host.password ?? null,
         targetPrivateKey: host.privateKey ?? null,
-        targetCertificate: host.authType === 'cert' ? (host.certificate ?? null) : null,
+        targetCertificate:
+          host.authType === 'cert' ? (host.certificate ?? null) : null,
         agentForwarding: host.agentForwarding ?? false,
         ...(expectedHostKey === undefined ? {} : { expectedHostKey }),
         ...(profile ? { profile } : {}),
@@ -69,6 +69,7 @@ export async function startTerminalShell(
         cols,
         rows,
         ...(attemptId ? { attemptId } : {}),
+        ...(connectionTimeoutMs === undefined ? {} : { connectionTimeoutMs }),
       })
     }
 
@@ -82,6 +83,7 @@ export async function startTerminalShell(
       rows,
       ...(profile ? { profile } : {}),
       ...(attemptId ? { attemptId } : {}),
+      ...(connectionTimeoutMs === undefined ? {} : { connectionTimeoutMs }),
     }
     if (host.authType === 'password') {
       return invoke<string>('session_create_ssh_password', {

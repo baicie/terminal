@@ -41,6 +41,18 @@ describe('SSH host-key IPC service', () => {
     })
   })
 
+  it('passes the remaining startup timeout to the backend probe', async () => {
+    vi.mocked(invoke).mockResolvedValue(rawProbeResult)
+
+    await probeSshHostKey('server.example.com', 2222, { timeoutMs: 1250 })
+
+    expect(invoke).toHaveBeenCalledWith('ssh_host_key_probe', {
+      host: 'server.example.com',
+      port: 2222,
+      timeoutMs: 1250,
+    })
+  })
+
   it('learns the selected key using Tauri camelCase arguments', async () => {
     vi.mocked(invoke).mockResolvedValue({
       ...rawProbeResult,
@@ -98,5 +110,31 @@ describe('SSH host-key IPC service', () => {
         targetAuthType: 'password',
       },
     })
+  })
+
+  it('passes the shared remaining timeout through the jump probe', async () => {
+    vi.mocked(invoke).mockResolvedValue(rawProbeResult)
+
+    await probeSshHostKeyViaJump(
+      'server.example.com',
+      2222,
+      {
+        host: 'jump.example.com',
+        port: 22,
+        username: 'operator',
+        authType: 'key',
+        password: null,
+        privateKey: 'private-key',
+        certificate: null,
+        expectedHostKey: 'ssh-ed25519 AAAAjump',
+        targetAuthType: 'password',
+      },
+      { timeoutMs: 640 },
+    )
+
+    expect(invoke).toHaveBeenCalledWith(
+      'ssh_host_key_probe_via_jump',
+      expect.objectContaining({ timeoutMs: 640 }),
+    )
   })
 })
