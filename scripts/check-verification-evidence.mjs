@@ -116,11 +116,13 @@ const PROFILE_REVIEWED_HASH = new Map([
   // shell probes. Vim probes now wait for the editor to finish before sending
   // the shell-side verification command, and the terminal smoke frame helper
   // is split into its own source file to keep the source-size gate satisfied.
-  // Reviewed on 2026-10-28: `pnpm tauri build --debug --no-bundle` from commit
-  // 52c8cf8 of codex/terminal-reliability-matrix. The evidence re-run for this
-  // source records both the fingerprint and this binary hash; the notes above
-  // describe the earlier build whose hash this replaced.
-  ['debug', '62b1bddb9812387a88385f7f65b1db0f3b0c88946e2d18d218e6b2b0fe803a8e'],
+  // Reviewed on 2026-10-28: `VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug
+  // --no-bundle` from commit 52c8cf8 of codex/terminal-reliability-matrix. The
+  // smoke build flag is mandatory here: the plain build has no smoke/probe
+  // entry points, so the runners refuse it. The evidence re-run for this source
+  // records both the fingerprint and this binary hash; the notes below describe
+  // the earlier build whose hash this replaced.
+  ['debug', 'd7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa'],
 ])
 
 // Exported so the gate's own tests assert against the hash the gate actually
