@@ -81,7 +81,6 @@
   },
   "limitations": [
     "This is automated evidence. It does not cover a human on a physical keyboard, Chinese IME composition, Option/dead keys, or vim/nano editing.",
-    "The remote SSH prompt gate for the release profile was not re-measured in this round; only the local terminal marker is recorded here.",
     "Real lid-close sleep/wake, VPN and cellular handover recovery remain unobserved on hardware.",
     "The binary is unsigned and unnotarised; first-launch Gatekeeper behaviour on a clean machine is still unverified.",
     "Windows OpenSSH Agent, Pageant, ConPTY/local Windows PTY and serial hardware have no test machine available and are not covered here."
@@ -89,5 +88,23 @@
   "supersedes": [
     "the ab209317… release measurement recorded in the previous revision of this file"
   ],
-  "instrumentationCaveat": "This binary is built with VITE_TERMINAL_SMOKE_BUILD=1, which compiles the smoke and input-probe entry points and the experiments nav item into the frontend. A shipping build omits all of them, so these numbers describe a slightly larger bundle than a user receives and are a conservative upper bound."
+  "instrumentationCaveat": "This binary is built with VITE_TERMINAL_SMOKE_BUILD=1, which compiles the smoke and input-probe entry points and the experiments nav item into the frontend. A shipping build omits all of them, so these numbers describe a slightly larger bundle than a user receives and are a conservative upper bound.",
+  "remote": {
+    "command": "pnpm smoke:remote-cold-start -- --app-path $PWD/src-tauri/target/release/terminal",
+    "fixture": {
+      "host": "127.0.0.1",
+      "port": 55086,
+      "username": "liuzhiwei"
+    },
+    "measuredFrom": "child-spawn-event",
+    "spawnToReadyMs": 3069,
+    "requestToReadyMs": 3075,
+    "markerReady": true,
+    "terminalReady": true,
+    "promptMarker": "REMOTE_PROMPT_MARKER",
+    "shell": "bash",
+    "readyUnder10s": true,
+    "capturedAt": "2026-10-28T16:19:12.805Z",
+    "note": "Measured while the macOS session was locked. This runner depends on the local PTY/remote marker round-trip and an AX-free readiness target, so it does not need window activation; the per-case SSH matrix does, which is why that matrix still requires an unlocked desktop."
+  }
 }
