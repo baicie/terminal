@@ -299,7 +299,7 @@ Release 首次执行的六个平台打包任务均成功，最终校验调用 `g
 | release 本地冷启动（三次） | ✅ 通过 | 1827 / 1319 / 1421 ms，均 `readyAt: terminal` |
 | release 远程 prompt 冷启动 | ✅ 通过 | 3069 ms，锁屏状态下也可测量（该 runner 不需要窗口激活） |
 | release shell 矩阵 | ✅ 14/14 + 7/7 | 本地 bash/zsh 14 例与真实 SSH 7 例，同样在锁屏下完成 |
-| release 真实 SSH 10-case 认证矩阵 | ⏳ 未采集 | 唯一必须解锁的项：锁屏时前台固定为 `loginwindow`，runner 的 `expected process <app> to be frontmost` 必然失败，且该断言没有旁路开关 |
+| release 真实 SSH 10-case 认证矩阵 | ✅ 10/10 | 解锁后一次整跑全绿：首连 775–4214 ms，每 case 10–11 个唯一 session；binary `1e68ba73…`。命令为 `pnpm smoke:ssh-matrix --reuse-binary --release key,key-reconnect,password,password-reconnect,agent,agent-reconnect,cert,cert-reconnect,jump,jump-reconnect` |
 
 `2026-10-11-macos-release-ssh-matrix.json` 因此仍是旧构建（`ab209317…`）的历史记录，`pnpm verify` 的 source 分组会继续以这两条报错退出。补齐方式：
 
@@ -309,7 +309,7 @@ pnpm smoke:ssh-matrix --reuse-binary --release key,key-reconnect,password,passwo
 
 注意 `--release` 默认跑的是 13-case 全集，而证据契约要求的是上面这 10 个且顺序一致，所以必须带位置过滤。采集时显示器必须处于解锁状态且没有其它 GUI 自动化在跑，否则会出现 `expected process X to be frontmost, got <loginwindow pid>`。
 
-2026-10-28 23:25–00:16 曾挂过一个「解锁即跑」的无人值守作业，逐 30 秒检查 `IOConsoleLocked`，99 次检查全部为 `Yes` 后按上限退出（日志 `/tmp/release-matrix-unlock2.log`），因此这一项仍未采集。
+2026-10-28 23:25–00:16 挂过一个「解锁即跑」的无人值守作业，99 次检查全部为锁屏后按上限退出；02:16–05:37 的 v2 作业再检查 200 次仍锁屏后退出。最终在 07:24 解锁窗口内一次整跑 10/10 全绿，证据落盘后 `check-verification-evidence.mjs` 从「2 项失败」变为 **passed for 6 current evidence file(s)**。
 
 **仍需人在场的验收**（自动化不能替代）：macOS 物理键盘 30 轮重叠输入、中文 IME 组合输入、Option/dead key；真实合盖休眠与唤醒、VPN/蜂窝切换；Windows OpenSSH Agent/Pageant/ConPTY、Linux 桌面 PTY 与串口硬件。
 

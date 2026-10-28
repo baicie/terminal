@@ -2048,6 +2048,6 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] 13-case SSH 矩阵 13/13 全绿：首连 985–9125 ms（含首连 outage 9125 ms）、outage/wake 重连 14.3–23.9 s、每种认证路径 10–11 个唯一 session。
 - [x] shell 交互矩阵：bash/zsh 各 7 case 共 14/14，真实 SSH 7/7，单例 218–1071 ms。
 - [x] release 产物本地冷启动三次：1827 / 1319 / 1421 ms，全部 terminal-ready。
-- [ ] release SSH 矩阵 10 case 未拿到干净一轮：两次运行分别出现 `expected process X to be frontmost` 与 stale-output 超时，失败用例 heartbeat 显示窗口 `hidden`，属桌面焦点争用；已改为自动重试，待一轮 10/10。
+- [x] release SSH 矩阵 10 case：解锁窗口内一次整跑 **10/10** 全绿（首连 775–4214 ms，每 case 10–11 个唯一 session，binary `1e68ba73…`）；此前两次失败确认是锁屏导致（`frontmost` 期望本应用、实际为 `loginwindow`）。
 - [ ] 人工物理键盘、IME、Option/dead key 与真实合盖唤醒仍未验收；Windows Agent/Pageant/PTY 与串口硬件仍无实机。
 
