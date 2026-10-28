@@ -525,9 +525,9 @@ pnpm add <package-name>
 ### 发布就绪门禁 ✅ 本机自动化、容器运行时与远端发布通过
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
-- ✅ `pnpm verify`：前端 977、Team Server 103、Rust 194 项单测 + 3 项集成测试、Node 脚本 146 项及 lint/typecheck/build/源码行数/证据一致性门禁全部通过
+- ⚠️ `pnpm verify`：所有自动化分组通过（前端 1144 项、Team Server 103 项、Rust 221 单测 + 3 集成测试、Node 脚本 205 项、lint/typecheck/build/bundle budget/源码行数），但 evidence gate 仍未全绿——release 产物的 10-case SSH 认证矩阵需要解锁桌面才能采集（锁屏时 runner 的前台断言必败），`docs/release-readiness.md` 有完整状态表与补齐命令
 - ✅ 生产依赖审计为 0 个已知漏洞
-- ✅ 527 个生产源码文件均满足行数限制
+- ✅ 550 个生产源码文件均满足行数限制
 - ✅ GitHub Actions CI `31409070480`：macOS、Windows、Linux Tauri 编译，Team Server PostgreSQL 迁移和 Docker 镜像构建全部通过
 - ✅ `.github/workflows/release.yml` 为 macOS、Windows、Linux 的 x64/ARM64 建立原生 runner 打包、确定性资产命名、非空校验和 SHA-256 清单
 - ✅ Release `v0.0.1-dev.1`：工作流 `31554163901` attempt 2 全绿，8 个安装包与 `SHA256SUMS.txt` 均非空，GitHub 服务端 digest 与清单一致
@@ -543,7 +543,7 @@ pnpm add <package-name>
 
 | #     | 问题                                         | 严重程度     | 优先级 |
 | ----- | -------------------------------------------- | ------------ | ------ |
-| 57    | 真实 SSH 认证矩阵 ✅ macOS 本机 12/12 + macOS/Linux runner CI 全矩阵通过 | 🟡 Important | P1 |
+| 57    | 真实 SSH 认证矩阵 ✅ macOS 当前源码 13/13（debug `d7a4dd4c…`，fingerprint `04bb5973…`）+ macOS/Linux runner CI 全矩阵通过；release 产物的 10-case 认证矩阵待解锁桌面后补采 | 🟡 Important | P1 |
 | 58    | 物理键盘 30 轮重叠 `a/s/d`、中文 IME、Option/dead key 待人工键入（Ctrl+C、vim、nano、PTY resize、行编辑已在本地 PTY **与真实 SSH** 上自动化覆盖） | 🟡 Important | P1 |
 | 21/39 | Windows/Pageant/串口硬件实机矩阵（macOS/Linux 已 CI 全绿） | 🟡 Important | P1 |
 
@@ -994,4 +994,4 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-08-29 (Phase 6.22: 应用图标改为 scripts/generate-icon.py 程序化生成并产出全平台资产，配色待定稿；详见 docs/todo.md)_
+_文档更新时间: 2026-10-28 (Phase 6.104/6.105: 审计修复会话恢复两处生命周期缺陷；按 runbook 在锁定前窗口重采 debug 全部实机证据与 release 冷启动/远程 prompt/shell 矩阵，release 10-case 认证矩阵待解锁；人工验收清单见 docs/manual-acceptance-checklist.md)_
