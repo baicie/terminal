@@ -107,5 +107,137 @@
   "supersedes": [
     "the bef9cc8f measurement in this file's earlier revision"
   ],
-  "instrumentationCaveat": "Smoke instrumentation (VITE_TERMINAL_SMOKE_BUILD=1) is required to run these cases, so this binary is not the shipping artifact. The cold-start record cites the same hash so both describe one build."
+  "instrumentationCaveat": "Smoke instrumentation (VITE_TERMINAL_SMOKE_BUILD=1) is required to run these cases, so this binary is not the shipping artifact. The cold-start record cites the same hash so both describe one build.",
+  "shellMatrix": {
+    "command": "pnpm smoke:shell-probe:matrix --reuse-binary --shells bash,zsh --release -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt ; pnpm smoke:shell-probe:matrix --reuse-binary --transport ssh --release -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt",
+    "localRunsExecuted": 14,
+    "localRunsPassed": 14,
+    "sshRunsExecuted": 7,
+    "sshRunsPassed": 7,
+    "cases": [
+      {
+        "shell": "bash",
+        "case": "cat-eof",
+        "ok": true,
+        "durationMs": 334
+      },
+      {
+        "shell": "bash",
+        "case": "readline-history",
+        "ok": true,
+        "durationMs": 214
+      },
+      {
+        "shell": "bash",
+        "case": "readline-tab",
+        "ok": true,
+        "durationMs": 348
+      },
+      {
+        "shell": "bash",
+        "case": "vim-edit",
+        "ok": true,
+        "durationMs": 5088
+      },
+      {
+        "shell": "bash",
+        "case": "nano-edit",
+        "ok": true,
+        "durationMs": 4796
+      },
+      {
+        "shell": "bash",
+        "case": "pty-resize",
+        "ok": true,
+        "durationMs": 1282
+      },
+      {
+        "shell": "bash",
+        "case": "ctrl-c-interrupt",
+        "ok": true,
+        "durationMs": 989
+      },
+      {
+        "shell": "zsh",
+        "case": "cat-eof",
+        "ok": true,
+        "durationMs": 365
+      },
+      {
+        "shell": "zsh",
+        "case": "readline-history",
+        "ok": true,
+        "durationMs": 206
+      },
+      {
+        "shell": "zsh",
+        "case": "readline-tab",
+        "ok": true,
+        "durationMs": 365
+      },
+      {
+        "shell": "zsh",
+        "case": "vim-edit",
+        "ok": true,
+        "durationMs": 5119
+      },
+      {
+        "shell": "zsh",
+        "case": "nano-edit",
+        "ok": true,
+        "durationMs": 4801
+      },
+      {
+        "shell": "zsh",
+        "case": "pty-resize",
+        "ok": true,
+        "durationMs": 1308
+      },
+      {
+        "shell": "zsh",
+        "case": "ctrl-c-interrupt",
+        "ok": true,
+        "durationMs": 1005
+      }
+    ],
+    "sshCases": [
+      {
+        "case": "cat-eof",
+        "ok": true,
+        "durationMs": 518
+      },
+      {
+        "case": "readline-history",
+        "ok": true,
+        "durationMs": 270
+      },
+      {
+        "case": "readline-tab",
+        "ok": true,
+        "durationMs": 429
+      },
+      {
+        "case": "vim-edit",
+        "ok": true,
+        "durationMs": 5184
+      },
+      {
+        "case": "nano-edit",
+        "ok": true,
+        "durationMs": 4892
+      },
+      {
+        "case": "pty-resize",
+        "ok": true,
+        "durationMs": 1455
+      },
+      {
+        "case": "ctrl-c-interrupt",
+        "ok": true,
+        "durationMs": 1093
+      }
+    ],
+    "measuredWhileLocked": true,
+    "note": "The shell probe runners drive the app over IPC and never need window activation, so these 21 cases were measured while the macOS session was locked. The 10-case authentication matrix in sshMatrix does need activation and therefore requires an unlocked desktop."
+  }
 }
