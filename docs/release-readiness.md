@@ -253,6 +253,23 @@ Release 首次执行的六个平台打包任务均成功，最终校验调用 `g
 | Agent forwarding | 全平台 | ⚠️ 代码完成，待实机 | 默认关闭；opt-in 时显式请求；未授权主动 channel 被拒绝；池内启用/禁用连接隔离 |
 | Team 注册准入 | Docker / PostgreSQL | ✅ 自动化与容器运行均通过 | 生产默认 closed；错误 token 不新增用户；正确 token/open 可注册；缺失/非法环境配置拒绝启动 |
 
+## 当前源码实机证据重采顺序（runbook）
+
+证据门禁把 `scripts/check-verification-evidence.mjs` 与全部产品源码纳入源码指纹（见 `FINGERPRINT_PATHS`），所以顺序不能颠倒：先采集、后改代码，会让刚采的证据被自己的编辑作废。
+
+1. **冻结源码**：所有 fingerprinted 路径的改动先落完（`packages/frontend/src`、`src-tauri/src`、`scripts/run-*.mjs`、门禁脚本本身等）。
+2. **重建 debug 产物**：`pnpm tauri build --debug`，必须是内嵌前端的产物；裸 `cargo build` 的二进制会读 `build.devUrl`，渲染空白窗口并 fail-closed。记录 `sha256 src-tauri/target/debug/terminal`。
+3. **先改门禁再采集**：把上一步的哈希写进 `scripts/check-verification-evidence.mjs` 的 `PROFILE_REVIEWED_HASH['debug']`。这一步本身会改变源码指纹，因此必须排在采集之前。
+4. **采集 debug 证据**（同一个 binary，中途不得重链接或重构建）：
+   - `pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal` ×3 → `2026-10-11-macos-cold-start-current.json` 的 `measurement.terminalRuns` 需要 3 条 `readyAt: terminal`、`terminalReady: true`、`spawnToReadyMs ≤ 10000`。
+   - `pnpm smoke:ssh-matrix --reuse-binary` → 13 个 case 且名称顺序与门禁的 `DEBUG_SSH_CASES` 完全一致。
+   - `pnpm smoke:shell-probe:matrix -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt` → bash/zsh 各 7 共 14/14；再按同一 case 列表跑真实 SSH 7/7。
+   - `pnpm smoke:remote-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal` → `measurement.markerReady: true`。
+5. **采集 release 证据**：`pnpm tauri build` 后记录 release 产物哈希，再用 `pnpm smoke:cold-start`（3 次 terminal marker）与 release SSH 矩阵（10 个 case）产出两份 release 证据。门禁会把 release 证据与磁盘上的 `src-tauri/target/release/terminal` 哈希逐一对齐。
+6. **最后跑 `pnpm verify`**：`source` 分组必须全绿。若仍报 fingerprint 不一致，说明第 1 步被破坏（采集期间又改了源码），必须回到第 2 步重来。
+
+证据 JSON 里的 `source.fingerprint`、`binary.sha256`、`measurement.*` 必须来自 runner 的真实输出，禁止手改或用历史数值填充。
+
 ## 2026-10-17 当前工作树复验
 
 - ✅ 产品 host-wake hook 已增加 timer 漂移与 Page Lifecycle 兜底；定向 Vitest 6/6 通过。该修复尚未在解锁的 WKWebView、真实合盖或网络切换上复验。

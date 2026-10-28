@@ -3318,3 +3318,72 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 **修复**：`packages/frontend/vitest.config.ts` 固定 `maxWorkers: 4`，并在配置里注释说明原因；不改任何用例的超时值、断言或重试策略。
 
 **验证**：Node 24.16.0 下前端全量 126 文件/1142 项通过（90.63s），`pnpm verify` 的 frontend 分组（ESLint、typecheck、test、build:budget）全部通过；单独运行与 4 worker 全量运行结果一致。
+
+### Issue #132: workspace 恢复在兜底路径武装两个 debounce timer ✅ 已修复
+
+**严重程度**：Minor（dispose 后仍可能写一次盘）
+
+**状态**：✅ 已修复并通过前端门禁
+
+**修复时间**：2026-10-28
+
+**问题**：`startWorkspaceRecovery` 结束时若走「后端日志为空但已有标签」的路径，`schedule()` 已经武装了 debounce timer，紧随其后的 `if (pending)` 又武装一个并覆盖 `timer` 句柄，前一个成为孤儿——`flush()` 与 `dispose()` 都清不掉它，释放之后仍可能执行一次 `saveLayout`。
+
+**修复**：第二次武装改为 `if (pending && timer === null)`，走 schedule 路径时复用同一个 timer。
+
+**验证**：新增回归用 `setTimeout`/`clearTimeout` spy 统计「已武装未清除」句柄，断言恢复结束只有 1 个、dispose 后为 0、之后不再额外写盘；把守卫还原成 `if (pending)` 时该用例变红（`expected 2 to be 1`）。定向测试 21/21、前端全量门禁通过。
+
+### Issue #133: 隐藏窗口的后台轮询被误判为主机唤醒 ✅ 已修复
+
+**严重程度**：Minor（后台重复触发会话恢复）
+
+**状态**：✅ 已修复并通过前端门禁
+
+**修复时间**：2026-10-28
+
+**问题**：host-wake 用 15 秒轮询加 16 秒漂移阈值检测「定时器被挂起」；但窗口隐藏时浏览器与 WKWebView 会把后台定时器节流到 ≥16 秒，于是每次后台轮询都被判成睡眠漂移，持续触发 `handleHostWake()`。
+
+**修复**：漂移判定只在 `document.visibilityState === 'visible'` 时执行（隐藏期间的恢复由重新可见时的 `visibilitychange` 覆盖），`lastPollAt` 仍无条件更新；elapsed 改用 `Math.abs`，避免墙钟回拨把差值变负导致漏判。
+
+**验证**：新增用例断言隐藏态两轮 40 秒漂移不触发、切回可见的 `visibilitychange` 恰好触发 1 次；还原实现时该用例变红。定向测试 7/7、前端全量门禁通过。
+
+### Issue #134: 唤醒触发的重连没有冷却与频率上限 📋 待评估
+
+**严重程度**：Minor（设计权衡，未改代码）
+
+**现状**：每次 focus / online / pageshow / resume / visibilitychange / 漂移都会调用 `handleHostWake()`，被命中的记录重开完整重试预算（自动重连的 `attempts = maxAttempts`），全链路没有冷却窗口或单位时间上限。
+
+**评估结论**：单次用户动作重置一次预算属当前设计意图（唤醒意味着网络刚恢复，值得再试）；Issue #133 修复后后台风暴路径已消除。暂不引入冷却，避免与既有唤醒语义冲突。若后续出现「反复切窗导致死网络持续重连」的实测，再按记录级 `lastWakeAt` 加 ≥10 秒冷却。
+
+### Issue #135: host-key 预检探测不接受 AbortSignal 📋 待评估
+
+**严重程度**：Minor（资源占用有界）
+
+**现状**：`runSshHostKeyGateProbe` 与 `probeSshHostKey*` 只接受 `timeoutMs`；组件卸载、routeKey 切换或 cancel 之后，只用 operation 计数丢弃结果，后端 TCP/SSH 握手仍跑到自身超时（受连接预算约束，最多约 10 秒）。
+
+**评估结论**：当前实现保证旧结果不会写回，不会产生错误状态，后端最坏占用也被 10 秒预算兜住。真正的取消需要把 signal 串到 Rust 命令侧（复用连接取消的墓碑机制），属独立改动，本轮不做。
+
+### Issue #136: workspace journal 在每次 store 变更时同步写 📋 待评估
+
+**严重程度**：Minor（性能）
+
+**现状**：`useAppStore.subscribe(schedule)` 没有选择器，任意 store 变更都会 `JSON.stringify` 整个布局并写入 localStorage，同时重置 debounce，连续变更会把数据库落盘推迟到空闲。
+
+**评估结论**：journal 的价值在于进程崩溃或被杀时仍有兜底，写入必须保持同步；把它挪进 debounce 会削弱崩溃恢复。若要优化，应按序列化结果去重，而不是延迟写入。本轮不改。
+
+### Issue #137: 「创建成功但已 exit」分支返回 cancelled 经核对非缺陷 ✅ 结论记录
+
+**来源**：2026-10-28 只读审计提出（认为 sessionId 残留、UI 无终态、后端会话未关闭）。
+
+**核对结论**：`lifecycle.apply()` 在 `sessionToTab` 已登记时会走 `markTerminalTerminated()`，它会清空 `record.sessionId`、断开 io、把 `[process exited with code N]` 写入面板并把状态置为 `disconnected`。该分支返回 `'cancelled'` 只是拒绝自动重连——进程已经退出，重连只会再次退出。全仓 `'cancelled'` 只有 `terminal-session-manager-reconnect.ts:181` 一处消费，不产生悬挂 promise。
+
+**处置**：不修改代码，仅记录结论，避免后续审计重复提出。
+
+### Issue #138: 启动兜底在 hosts 未加载时注入本地标签经核对是设计行为 ✅ 结论记录
+
+**来源**：同一轮只读审计（认为「已恢复的远端标签被判不可用，凭空多一个 Local 标签」）。
+
+**核对结论**：`App.test.tsx` 的 `opens a local fallback when recovery restored a remote tab without its host` 与 `restores a local fallback when delayed recovery leaves only an unavailable remote tab` 两例明确锁定该行为——远端标签引用不到 host 时保留标签、同时补一个可用本地终端，而不是留给用户一个打不开的面板。按 hostId 移除判据的改动会让这两例变红，属于改变产品语义。
+
+**处置**：该改动已回退，本轮不保留。若未来要区分「host 被删除」与「host 查询失败」，应在恢复路径显式传递 host 加载状态，而不是删掉兜底判据。
+

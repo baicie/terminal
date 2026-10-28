@@ -1,7 +1,7 @@
 # Terminal 项目待办事项
 
 > 基于设计文档 `docs/design.md` 整理的待办事项
-> 更新时间：2026-10-24（Phase 6.102：macOS 原生红绿灯位置、首帧安全区和拖拽命中区收口；当前源码指纹以 evidence checker 输出为准，严格终端/人工输入复验待解锁 macOS 后采集）
+> 更新时间：2026-10-28（Phase 6.103：前端测试并发上限与自动化门禁收口；当前源码指纹以 evidence checker 输出为准，严格终端/人工输入复验待解锁 macOS 后采集）
 
 > 最新完整证据仍来自 debug binary `4368d6c8…`，源码指纹为 `de8e49cb…`；当前工作树源码指纹为 `534405ec…`，证据门禁仍拒绝旧 binary/旧指纹，需解锁 macOS 后按当前源码重采。
 
@@ -2028,4 +2028,14 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 
 - [x] `packages/frontend/vitest.config.ts` 固定 `maxWorkers: 4`：jsdom worker 数不设上限时，启动与终端类用例里 1 秒的 `findByText` 异步查询窗口会被其它 worker 抢占 CPU 拖慢，同一用例单独运行稳定通过而全量并行偶发超时；该上限只约束并行度，不改任何用例的超时或断言。
 - [x] `pnpm verify` 的自动化分组全绿：前端 126 文件/1142 项（90.63s）、Team Server 25 文件/103 项、Rust 221 单测 + 3 集成测试、Node 脚本 205 项、550 个生产文件行数门禁，以及 ESLint、typecheck、生产构建与 bundle budget（initial gzip 129.55 KB、total gzip 553.15 KB）通过。
-- [ ] 完整 `pnpm verify` 仍以 evidence gate 的 8 项失败退出：cold-start 与 release 记录缺少 3 次 terminal marker、SSH 矩阵 case 集合不完整、release binary 未构建，以及 4 份 debug 证据记录的源码指纹仍是历史 `de8e49cb…`（当前工作树 `534405ec…`）。解锁 macOS 后按当前源码重采，不手改证据 JSON。
+- [ ] 完整 `pnpm verify` 仍以 evidence gate 的 9 项失败退出：cold-start 与 release 记录缺少 3 次 terminal marker、SSH 矩阵 case 集合不完整、release 证据 hash 与当前已构建 binary 不一致，以及 4 份 debug 证据记录的源码指纹仍是历史 `de8e49cb…`（当前工作树 `534405ec…`）。解锁 macOS 后按当前源码重采，不手改证据 JSON。
+
+### 2026-10-28 Phase 6.104 - 会话恢复两处生命周期缺陷修复 ✅ 自动化通过
+
+- [x] 只读审计覆盖「连接主流程」与「启动/恢复/唤醒」两条链路，逐条复核后确认 2 个真实缺陷、3 条暂不修改的设计项、2 条「疑似缺陷但经核对属既有设计行为」。
+- [x] Issue #132：workspace 恢复的兜底路径不再武装第二个 debounce timer（孤儿 timer 会在 dispose 之后仍写一次盘）。
+- [x] Issue #133：host-wake 的漂移判定只在可见窗口执行，隐藏窗口被节流到 ≥16 秒的后台轮询不再被误判为主机唤醒。
+- [x] Issue #137/#138：`exit` 分支返回 `cancelled`、启动兜底在有远端标签时补一个 Local 标签，两者核对为既有设计行为，未改代码；审计提出的「按 hostId 删除兜底判据」改动已回退。
+- [ ] Issue #134/#135/#136（唤醒冷却、host-key 探测不可取消、journal 每次 store 变更同步写）保持待评估，不在本轮范围。
+- [ ] 实机证据仍未重采：本轮没有可用的解锁桌面窗口，`pnpm verify` 的 source 分组会继续以 evidence gate 的 9 项失败退出。
+

@@ -87,6 +87,30 @@ describe('useTerminalHostWake', () => {
     view.unmount()
   })
 
+  it('ignores the throttled background poll while the window is hidden', async () => {
+    // A hidden window throttles its timers to >= 16s intervals, which on its own
+    // exceeds the drift threshold. Treating that as a wake would resume every
+    // session on each background poll; only a now-visible window may judge drift,
+    // and the visibilitychange itself already resumes sessions on the way back.
+    vi.useFakeTimers()
+    const view = render(<Probe />)
+    setVisibility('hidden')
+
+    vi.setSystemTime(Date.now() + 40_000)
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(handleHostWake).not.toHaveBeenCalled()
+
+    vi.setSystemTime(Date.now() + 40_000)
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(handleHostWake).not.toHaveBeenCalled()
+
+    setVisibility('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(handleHostWake).toHaveBeenCalledTimes(1)
+
+    view.unmount()
+  })
+
   it('stops listening after unmount so a stale hook cannot resume sessions', () => {
     vi.useFakeTimers()
     const view = render(<Probe />)

@@ -341,6 +341,52 @@ describe('workspace recovery', () => {
     recovery.dispose()
   })
 
+  it('keeps a single debounce timer on the fallback schedule path so dispose leaves none armed', async () => {
+    localStorage.clear()
+    mocks.appState.tabs = [
+      { id: 'fallback', label: 'Local', type: 'local', startupFallback: true },
+    ] as WorkspaceLayout['tabs']
+    mocks.appState.activeTabId = 'fallback'
+
+    const nativeSetTimeout = globalThis.setTimeout
+    const nativeClearTimeout = globalThis.clearTimeout
+    const armedTimers = new Set<ReturnType<typeof setTimeout>>()
+    const setTimeoutSpy = vi
+      .spyOn(globalThis, 'setTimeout')
+      .mockImplementation(((handler: () => void, timeout?: number) => {
+        const handle = nativeSetTimeout(handler, timeout)
+        armedTimers.add(handle)
+        return handle
+      }) as unknown as typeof setTimeout)
+    const clearTimeoutSpy = vi
+      .spyOn(globalThis, 'clearTimeout')
+      .mockImplementation(((handle: ReturnType<typeof setTimeout>) => {
+        armedTimers.delete(handle)
+        nativeClearTimeout(handle)
+      }) as unknown as typeof clearTimeout)
+
+    try {
+      const recovery = await startWorkspaceRecovery()
+
+      // Recovery ended on the "empty backend log but tabs exist" path, where
+      // schedule() already armed the debounce timer.
+      expect(armedTimers.size).toBe(1)
+
+      recovery.dispose()
+
+      // A second, orphaned timer would survive the handle's own flush().
+      expect(armedTimers.size).toBe(0)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(mocks.workspaceState.saveLayout).toHaveBeenCalledOnce()
+
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(mocks.workspaceState.saveLayout).toHaveBeenCalledOnce()
+    } finally {
+      setTimeoutSpy.mockRestore()
+      clearTimeoutSpy.mockRestore()
+    }
+  })
+
   it('does not let late recovery replace a user-created tab', async () => {
     const savedLayout: WorkspaceLayout = {
       workspaceId: 'workspace-one',

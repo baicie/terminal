@@ -43,8 +43,18 @@ export function useTerminalHostWake(): void {
     }
     const pollTimer = window.setInterval(() => {
       const now = Date.now()
-      const elapsed = now - lastPollAt
+      // A backward wall-clock step (NTP correction, manual clock change) would
+      // otherwise make the window negative and silence the drift check.
+      const elapsed = Math.abs(now - lastPollAt)
       lastPollAt = now
+      // A hidden window is throttled to >= 16s timer intervals by WKWebView and
+      // the other browsers, which is indistinguishable from a suspended timer,
+      // so judging drift here would fire on every single background poll. The
+      // hidden case needs no drift check anyway: becoming visible again already
+      // resumes sessions through the visibilitychange listener below.
+      if (document.visibilityState !== 'visible') {
+        return
+      }
       if (elapsed >= TERMINAL_HOST_WAKE_DRIFT_THRESHOLD_MS) {
         terminalSessionManager.handleHostWake()
       }

@@ -26,7 +26,9 @@
 | 输入验收增量 | Phase 6.24 最终源码构建下严格 30 轮 CGEvent 通过，全部回读 `617364`、零重发且原输入源恢复；这不是人工键盘验收。Phase 6.25 修复组合态 Escape 不写入 PTY并增加 composition 证据校验；Phase 6.26 证明 xterm 到前端输入 FIFO 的协议编码；Phase 6.27 于 2026-10-10 完成真实 Tauri/WKWebView + local PTY 的 SGR mouse、bracketed paste、raw X10 三 case 精确回读；Phase 6.31 当前工作树完成 bash/zsh 各七 case、14/14 全绿，另有默认 `/bin/sh` loopback SSH 7/7；Phase 6.52 为手动 IME 增加 TIS 非 ASCII 输入源资格门禁并记录 id/type，但没有把人工输入结果标记为通过。中文 IME 自动注入未触发真实 composition。逐轮 CGEvent 结果见 [`验收记录`](verification/2026-09-22-macos-input-probe.json)，raw probe 结果见 [`2026-10-10-macos-raw-input.json`](verification/2026-10-10-macos-raw-input.json)，当前 shell 交互结果见 [`2026-10-11-macos-shell-interaction-current.json`](verification/2026-10-11-macos-shell-interaction-current.json)，旧二进制历史记录见 [`2026-10-11-macos-shell-interaction-probe.json`](verification/2026-10-11-macos-shell-interaction-probe.json)，此前失败边界见 [`阻塞记录`](verification/2026-10-10-macos-raw-input-blocked.json)。 |
 | 下一验证目标 | 完成 macOS 人工物理键盘 30 轮、中文 IME、Option/dead key、vim/nano 交互，以及真实合盖休眠/唤醒、VPN/蜂窝切换；Windows OpenSSH Agent/Pageant/PTY 与串口硬件因暂无设备保持未验证。host-wake 自动化只证明应用内恢复协议，不替代上述实机验收。 |
 
-> 2026-10-28：Phase 6.103 把前端 Vitest 并行度固定为 4 个 worker（Issue #131），避免 jsdom worker 抢占 CPU 让 1 秒异步查询窗口在并行全量运行时偶发超时，不改用例超时与断言。本轮 `pnpm verify` 自动化分组全绿：前端 126 文件/1142 项（90.63s）、Team Server 25 文件/103 项、Rust 221 单测 + 3 集成测试、Node 脚本 205 项、550 个生产文件行数门禁与 bundle budget（initial gzip 129.55 KB、total gzip 553.15 KB）。只剩 evidence gate 的 8 项失败：4 份 debug 证据仍记历史源码指纹 `de8e49cb…`（当前工作树 `534405ec…`）、cold-start/release 缺 3 次 terminal marker、SSH 矩阵 case 集合不完整、release binary 未构建；解锁 macOS 后按当前源码重采。
+> 2026-10-28：Phase 6.103 把前端 Vitest 并行度固定为 4 个 worker（Issue #131），避免 jsdom worker 抢占 CPU 让 1 秒异步查询窗口在并行全量运行时偶发超时，不改用例超时与断言。本轮 `pnpm verify` 自动化分组全绿：前端 126 文件/1142 项、Team Server 25 文件/103 项、Rust 221 单测 + 3 集成测试、Node 脚本 205 项、550 个生产文件行数门禁与 bundle budget（initial gzip 129.55 KB、total gzip 553.15 KB）。当前 release binary 已按源码构建，但 evidence gate 仍有 9 项失败：4 份 debug 证据仍记历史源码指纹 `de8e49cb…`（当前工作树 `534405ec…`）、cold-start/release 缺 3 次 terminal marker、SSH 矩阵 case 集合不完整，以及 release 证据记录的旧 hash 与当前 binary 不一致；解锁 macOS 后按当前源码重采。
+
+> 2026-10-28（审计修复）：Phase 6.104 依据两条只读审计链路复核出 2 个真实缺陷并修复——workspace 恢复兜底路径不再武装第二个 debounce timer（Issue #132），host-wake 漂移判定只在可见窗口执行、隐藏窗口被节流的后台轮询不再误判为唤醒（Issue #133）。另有 3 条设计项（唤醒无冷却、host-key 探测不可取消、journal 每次变更同步写）与 2 条经核对属既有设计行为的疑似缺陷（Issue #137/#138）已记录并说明处置，未改产品语义。桌面未解锁，实机证据仍待重采。
 
 > 2026-10-22：Phase 6.99/6.100 为 normal App 与显式 smoke/probe root loader 增加可取消 deadline，超时先显示带 Retry 的同步兜底，旧 attempt 的迟到模块不会覆盖重试结果；重复点击旧 Retry 不会使正在运行的 attempt 失效。移动端核心工具栏改为同步加载，避免懒加载占位遮蔽菜单。Node 24 bootstrap/移动工具栏定向测试 17/17、前端全量 126 文件/1139 项、typecheck、lint、生产 bundle budget 通过；当时源码指纹为 `0a0010a5…`，实机证据仍待解锁 macOS 后重采。
 
@@ -1092,4 +1094,4 @@ const response = await teamApi.listTeams()
 
 ---
 
-_文档更新时间: 2026-10-28 (Phase 6.103 固定前端测试并发上限并收口自动化门禁；evidence gate 仍拒绝 8 项旧实机记录，需解锁 macOS 后按当前源码重采，人工/IME 与 Windows Agent/Pageant/串口硬件仍待验证)_
+_文档更新时间: 2026-10-28 (Phase 6.103 固定前端测试并发上限；Phase 6.104 依据只读审计修复 workspace 恢复双 timer 与后台轮询误判唤醒，并记录 3 条待评估设计项与 2 条核对结论；evidence gate 仍有 9 项历史/实机记录不匹配，需解锁 macOS 后按当前源码重采)_

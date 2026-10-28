@@ -260,7 +260,9 @@ export async function startWorkspaceRecovery(
     // losing it because no layout snapshot was loaded.
     schedule()
   }
-  if (pending) {
+  // schedule() above already armed the debounce; arming a second timer here
+  // would orphan the first one, which flush()/dispose() could never cancel.
+  if (pending && timer === null) {
     timer = setTimeout(() => {
       void flush().catch(error => {
         console.warn('Failed to persist recovered terminal workspace:', error)
