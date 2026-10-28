@@ -283,6 +283,30 @@ Release 首次执行的六个平台打包任务均成功，最终校验调用 `g
 
 `SHELL_PROBE_CASES` 顺序为：cat-eof、readline-history、readline-tab、vim-edit、nano-edit、pty-resize、ctrl-c-interrupt。
 
+## 2026-10-28 当前源码实机证据状态
+
+源码 fingerprint `04bb5973…`（Phase 6.104 修复提交 `52c8cf8` 与门禁复核哈希固定提交 `94ed89c` 之后的工作树），插桩产物 debug `d7a4dd4c…`、release `1e68ba73…`。
+
+| 场景 | 结果 | 实测 |
+| --- | --- | --- |
+| debug 本地冷启动（三次） | ✅ 通过 | 6654 / 2127 / 1225 ms，均 `readyAt: terminal` |
+| 远程 bash prompt 冷启动 | ✅ 通过 | 4575 ms（loopback sshd 的 OSC 133 marker 往返） |
+| debug 真实 SSH 13-case 矩阵 | ✅ 13/13 | 首连 985–9125 ms；outage/wake 重连 14.3–23.9 s；每 case 10–11 个唯一 session |
+| bash/zsh shell 交互矩阵 | ✅ 14/14 | 单例 218–1071 ms |
+| 真实 SSH shell 矩阵 | ✅ 7/7 | 单例 501–1071 ms |
+| release 本地冷启动（三次） | ✅ 通过 | 1827 / 1319 / 1421 ms，均 `readyAt: terminal` |
+| release 真实 SSH 10-case 矩阵 | ⏳ 未采集 | 需要解锁桌面：锁屏时前台固定为 `loginwindow`，runner 的 `expected process <app> to be frontmost` 必然失败 |
+
+`2026-10-11-macos-release-ssh-matrix.json` 因此仍是旧构建（`ab209317…`）的历史记录，`pnpm verify` 的 source 分组会继续以这两条报错退出。补齐方式：
+
+```bash
+pnpm smoke:ssh-matrix --reuse-binary --release key,key-reconnect,password,password-reconnect,agent,agent-reconnect,cert,cert-reconnect,jump,jump-reconnect
+```
+
+注意 `--release` 默认跑的是 13-case 全集，而证据契约要求的是上面这 10 个且顺序一致，所以必须带位置过滤。采集时显示器必须处于解锁状态且没有其它 GUI 自动化在跑，否则会出现 `expected process X to be frontmost, got <loginwindow pid>`。
+
+**仍需人在场的验收**（自动化不能替代）：macOS 物理键盘 30 轮重叠输入、中文 IME 组合输入、Option/dead key；真实合盖休眠与唤醒、VPN/蜂窝切换；Windows OpenSSH Agent/Pageant/ConPTY、Linux 桌面 PTY 与串口硬件。
+
 ## 2026-10-17 当前工作树复验
 
 - ✅ 产品 host-wake hook 已增加 timer 漂移与 Page Lifecycle 兜底；定向 Vitest 6/6 通过。该修复尚未在解锁的 WKWebView、真实合盖或网络切换上复验。
