@@ -1,8 +1,8 @@
 {
-  "recordedAt": "2026-10-17T06:48:00.000Z",
-  "recordedDate": "2026-10-17",
+  "recordedAt": "2026-10-28T14:09:59.000Z",
+  "recordedDate": "2026-10-28",
   "kind": "tauri-real-ssh-matrix-current-worktree",
-  "command": "pnpm smoke:ssh-matrix --reuse-binary",
+  "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:ssh-matrix --reuse-binary",
   "environment": {
     "os": "macOS 15.7.7",
     "architecture": "arm64",
@@ -11,112 +11,128 @@
   },
   "revision": {
     "head": "codex/terminal-reliability-matrix",
+    "commit": "94ed89c",
     "dirtyWorktree": true
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "4368d6c8301e5c8870a17fbdaebf8b6ad35b4efe96293b69858412af95d7970b"
+    "sha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa"
   },
   "allCasesPassed": true,
   "cases": [
     {
       "name": "key",
-      "firstConnectionMs": 1343,
-      "durationMs": 10598,
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 2208,
+      "durationMs": 7437,
       "uniqueSessionCount": 10
     },
     {
       "name": "key-reconnect",
-      "firstConnectionMs": 2572,
-      "durationMs": 13917,
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1683,
+      "durationMs": 8737,
       "uniqueSessionCount": 11
     },
     {
       "name": "key-outage-reconnect",
-      "firstConnectionMs": 2388,
-      "durationMs": 18121,
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 2347,
+      "durationMs": 14284,
       "uniqueSessionCount": 11
     },
     {
       "name": "key-outage-wake-reconnect",
-      "firstConnectionMs": 1389,
-      "durationMs": 32458,
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1676,
+      "durationMs": 23868,
       "uniqueSessionCount": 11
     },
     {
       "name": "key-first-connect-outage",
-      "firstConnectionMs": 9629,
-      "durationMs": 16233,
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 9125,
+      "durationMs": 14720,
       "uniqueSessionCount": 10
     },
     {
       "name": "password",
-      "firstConnectionMs": 2428,
-      "durationMs": 8378,
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1868,
+      "durationMs": 7744,
       "uniqueSessionCount": 10
     },
     {
       "name": "password-reconnect",
-      "firstConnectionMs": 1756,
-      "durationMs": 8727,
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1738,
+      "durationMs": 8019,
       "uniqueSessionCount": 11
     },
     {
       "name": "agent",
-      "firstConnectionMs": 1910,
-      "durationMs": 9309,
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1688,
+      "durationMs": 7153,
       "uniqueSessionCount": 10
     },
     {
       "name": "agent-reconnect",
-      "firstConnectionMs": 1509,
-      "durationMs": 11208,
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 985,
+      "durationMs": 9572,
       "uniqueSessionCount": 11
     },
     {
       "name": "cert",
-      "firstConnectionMs": 2481,
-      "durationMs": 10132,
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1751,
+      "durationMs": 8115,
       "uniqueSessionCount": 10
     },
     {
       "name": "cert-reconnect",
-      "firstConnectionMs": 1532,
-      "durationMs": 10063,
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1605,
+      "durationMs": 8696,
       "uniqueSessionCount": 11
     },
     {
       "name": "jump",
-      "firstConnectionMs": 1048,
-      "durationMs": 9358,
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1688,
+      "durationMs": 8483,
       "uniqueSessionCount": 10
     },
     {
       "name": "jump-reconnect",
-      "firstConnectionMs": 1113,
-      "durationMs": 11026,
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1882,
+      "durationMs": 9731,
       "uniqueSessionCount": 11
     }
   ],
-  "passwordFixtureNote": "The password fixture now reuses a locally cached terminal-smoke-password-sshd image instead of forcing a docker build, so password acceptance stays runnable while the Docker daemon cannot reach the registry.",
-  "limitations": [
-    "This is the dedicated real-SSH smoke workflow, not a stopwatch measurement of a normal user cold launch with an existing SQLite workspace.",
-    "Windows, Pageant, serial hardware, and human physical keyboard/IME acceptance remain unverified.",
-    "Real lid-close sleep/wake, VPN handover, and cellular network switching remain unobserved on macOS hardware; the host-wake case synthesizes the retryable wake checkpoint."
-  ],
+  "passwordFixtureNote": "The password cases run against the terminal-smoke-password-sshd Docker image so a real password prompt is exercised, not a stub.",
   "source": {
-    "fingerprint": "de8e49cbb451cac456de95044732fa9f16be53e2aacf3a84cbdb2685c4c99fda",
-    "fingerprintCovers": [
-      "packages/frontend/src",
-      "src-tauri/src",
-      "packages/frontend/package.json",
-      "package.json",
-      "pnpm-lock.yaml"
-    ],
-    "note": "Debug evidence cannot be validated against the artifact on disk, because pnpm verify relinks target/debug/terminal as a bare cargo build. This content fingerprint of the sources these scenarios exercise is what makes a stale measurement detectable."
+    "fingerprint": "04bb5973242948fdbcdc506d01efefeaf9a4f91a4e1f352e6356cd72fb36b6f6",
+    "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs."
   },
-  "rerunNote": "Fresh current-source 13-case real SSH run on one instrumented debug binary after the first-connect outage runner fix.",
-  "note": "Current-source instrumented debug binary with 13 real SSH cases: key, password, agent, certificate and jump authentication, reconnects, synthesized outages and the first-connect outage. All 13 cases passed on one binary.",
-  "loadFailureNote": "The earlier high-load run is retained only in working logs; this current-source run completed all 13 cases cleanly.",
-  "priorLoadFailureNote": "A prior high-load run is retained only in the working logs; this evidence file records the clean current-source run."
+  "limitations": [
+    "Every fixture is a loopback sshd on this machine: no real network hop, VPN switch or corporate jump chain is exercised.",
+    "The instrumented debug binary is a VITE_TERMINAL_SMOKE_BUILD=1 artifact, not the shipping bundle.",
+    "Human physical keyboard typing and IME composition are still unverified."
+  ]
 }

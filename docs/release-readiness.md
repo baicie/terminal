@@ -258,7 +258,7 @@ Release 首次执行的六个平台打包任务均成功，最终校验调用 `g
 证据门禁把 `scripts/check-verification-evidence.mjs` 与全部产品源码纳入源码指纹（见 `FINGERPRINT_PATHS`），所以顺序不能颠倒：先采集、后改代码，会让刚采的证据被自己的编辑作废。
 
 1. **冻结源码**：所有 fingerprinted 路径的改动先落完（`packages/frontend/src`、`src-tauri/src`、`scripts/run-*.mjs`、门禁脚本本身等）。
-2. **重建 debug 产物**：`pnpm tauri build --debug`，必须是内嵌前端的产物；裸 `cargo build` 的二进制会读 `build.devUrl`，渲染空白窗口并 fail-closed。记录 `sha256 src-tauri/target/debug/terminal`。
+2. **重建 debug 产物**：`VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle`。两个前提缺一不可：必须是内嵌前端的产物（裸 `cargo build` 的二进制会读 `build.devUrl`，渲染空白窗口并 fail-closed），并且必须带 `VITE_TERMINAL_SMOKE_BUILD=1`——smoke/probe 入口与 experiments 导航项只有 smoke 构建才编进前端，普通构建的二进制会被 `scripts/run-terminal-smoke.mjs` 显式拒绝。release 侧同理用 `VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle`。记录两个产物的 `sha256`。
 3. **先改门禁再采集**：把上一步的哈希写进 `scripts/check-verification-evidence.mjs` 的 `PROFILE_REVIEWED_HASH['debug']`。这一步本身会改变源码指纹，因此必须排在采集之前。
 4. **采集 debug 证据**（同一个 binary，中途不得重链接或重构建）：
    - `pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal` ×3 → `2026-10-11-macos-cold-start-current.json` 的 `measurement.terminalRuns` 需要 3 条 `readyAt: terminal`、`terminalReady: true`、`spawnToReadyMs ≤ 10000`。
@@ -269,6 +269,19 @@ Release 首次执行的六个平台打包任务均成功，最终校验调用 `g
 6. **最后跑 `pnpm verify`**：`source` 分组必须全绿。若仍报 fingerprint 不一致，说明第 1 步被破坏（采集期间又改了源码），必须回到第 2 步重来。
 
 证据 JSON 里的 `source.fingerprint`、`binary.sha256`、`measurement.*` 必须来自 runner 的真实输出，禁止手改或用历史数值填充。
+
+### 六份证据的必填字段（门禁实际校验的部分）
+
+| 证据文件 | 必须成立 |
+| --- | --- |
+| `2026-10-11-macos-cold-start-current.json` | `kind = tauri-process-cold-start-stopwatch-current-worktree`；`measurement.terminalRuns` ≥3 且每条 `readyAt: 'terminal'`、`terminalReady: true`、`0 ≤ spawnToReadyMs ≤ 10000`；`source.fingerprint` = 当前指纹 |
+| `2026-10-11-macos-remote-shell-prompt-rerun.json` | `kind = tauri-remote-cold-start-shell-prompt-observed-rerun`；`measurement.markerReady: true` 且 `0 ≤ spawnToPromptObservedMs ≤ 10000`；`source.fingerprint` = 当前指纹 |
+| `2026-10-11-macos-ssh-matrix-current.json` | `allCasesPassed: true`，`cases` 名称顺序与门禁 `DEBUG_SSH_CASES`（key、key-reconnect、key-outage-reconnect、key-outage-wake-reconnect、key-first-connect-outage、password、password-reconnect、agent、agent-reconnect、cert、cert-reconnect、jump、jump-reconnect）完全一致且每条 `ok: true` |
+| `2026-10-11-macos-shell-interaction-current.json` | `matrixRunsExecuted = matrixRunsPassed = 14`、`cases` 中 bash 与 zsh 各自的 case 序列等于 `SHELL_PROBE_CASES` 且全部 `ok: true`；`sshRunsExecuted = sshRunsPassed = 7`、`sshCases` 序列等于 `SHELL_PROBE_CASES` 且全部 `ok: true`；`allCasesPassed: true` |
+| `2026-10-11-macos-release-terminal-gate.json` | `kind = tauri-release-ten-second-terminal-gate`；`local.terminalRuns` ≥3 且每条 terminal-ready、`spawnToReadyMs ≤ 10000`；记录里的二进制哈希必须等于磁盘 `src-tauri/target/release/terminal` |
+| `2026-10-11-macos-release-ssh-matrix.json` | `kind = tauri-release-ssh-and-shell-matrix`；`sshMatrix.passed = 10`、`failed = 0`，`cases` 名称顺序等于门禁 `RELEASE_SSH_CASES` 且全部 `ok: true`；二进制哈希同上 |
+
+`SHELL_PROBE_CASES` 顺序为：cat-eof、readline-history、readline-tab、vim-edit、nano-edit、pty-resize、ctrl-c-interrupt。
 
 ## 2026-10-17 当前工作树复验
 

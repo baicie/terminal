@@ -2039,3 +2039,15 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [ ] Issue #134/#135/#136（唤醒冷却、host-key 探测不可取消、journal 每次 store 变更同步写）保持待评估，不在本轮范围。
 - [ ] 实机证据仍未重采：本轮没有可用的解锁桌面窗口，`pnpm verify` 的 source 分组会继续以 evidence gate 的 9 项失败退出。
 
+
+### 2026-10-28 Phase 6.105 - 当前源码实机证据重采（debug 全绿） ✅ 实机通过
+
+- [x] 源码冻结后按 runbook 重建插桩产物：debug `d7a4dd4c…`、release `1e68ba73…`，源码指纹 `04bb5973…`，并把 debug 复核哈希固定进门禁（commit `94ed89c`）。
+- [x] debug 本地冷启动三次：6654 / 2127 / 1225 ms，全部 `readyAt: terminal`，marker 由 `term.input → session_write → local PTY` 回读后才写出。
+- [x] 远程 prompt 冷启动：4575 ms，loopback sshd 的 OSC 133 prompt marker 往返完成。
+- [x] 13-case SSH 矩阵 13/13 全绿：首连 985–9125 ms（含首连 outage 9125 ms）、outage/wake 重连 14.3–23.9 s、每种认证路径 10–11 个唯一 session。
+- [x] shell 交互矩阵：bash/zsh 各 7 case 共 14/14，真实 SSH 7/7，单例 218–1071 ms。
+- [x] release 产物本地冷启动三次：1827 / 1319 / 1421 ms，全部 terminal-ready。
+- [ ] release SSH 矩阵 10 case 未拿到干净一轮：两次运行分别出现 `expected process X to be frontmost` 与 stale-output 超时，失败用例 heartbeat 显示窗口 `hidden`，属桌面焦点争用；已改为自动重试，待一轮 10/10。
+- [ ] 人工物理键盘、IME、Option/dead key 与真实合盖唤醒仍未验收；Windows Agent/Pageant/PTY 与串口硬件仍无实机。
+

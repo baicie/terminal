@@ -1,74 +1,71 @@
 {
-  "recordedAt": "2026-10-17T06:48:00.000Z",
+  "recordedAt": "2026-10-28T14:07:06.819Z",
+  "recordedDate": "2026-10-28",
   "kind": "tauri-remote-cold-start-shell-prompt-observed-rerun",
+  "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:remote-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal",
   "environment": {
     "os": "macOS 15.7.7",
     "architecture": "arm64",
-    "node": "v24.16.0",
-    "pnpm": "10.34.3"
+    "node": "24.16.0"
   },
   "revision": {
     "head": "codex/terminal-reliability-matrix",
+    "commit": "94ed89c",
     "dirtyWorktree": true
-  },
-  "application": {
-    "path": "src-tauri/target/debug/terminal",
-    "sha256": "4368d6c8301e5c8870a17fbdaebf8b6ad35b4efe96293b69858412af95d7970b"
-  },
-  "command": "node scripts/run-remote-cold-start-stopwatch.mjs --app-path /Users/liuzhiwei/Desktop/workspace/git-code/terminal/src-tauri/target/debug/terminal",
-  "fixture": {
-    "transport": "OpenSSH localhost",
-    "host": "127.0.0.1",
-    "username": "liuzhiwei",
-    "auth": "key",
-    "hostKey": "ephemeral fixture key (cleaned after the run)",
-    "isolatedHome": "ephemeral isolated HOME (cleaned after the run)"
-  },
-  "measurement": {
-    "measuredFrom": "child-spawn-event",
-    "requestToPromptObservedMs": 2750,
-    "spawnToPromptObservedMs": 2742,
-    "latestRerun": {
-      "capturedAt": "2026-10-17T06:42:15.130Z",
-      "requestToPromptObservedMs": 2750,
-      "spawnToPromptObservedMs": 2742
-    },
-    "underTenSeconds": true,
-    "readiness": {
-      "localTab": false,
-      "connected": true,
-      "terminalInput": true,
-      "shellPrompt": false
-    },
-    "markerReady": true,
-    "promptMarker": "REMOTE_PROMPT_MARKER"
-  },
-  "evidence": [
-    "REMOTE_COLD_MARKER was written by the real remote SSH startup command.",
-    "REMOTE_PROMPT_MARKER was written only after OSC 133 prompt-start was observed and the configured command travelled through xterm input, Tauri IPC, SSH PTY, and terminal output.",
-    "The native AX flags are advisory in remote mode because WebKit does not reliably expose the status label or hidden xterm input element."
-  ],
-  "limitations": [
-    "The fixture uses a preseeded localhost key-authenticated workspace; it does not prove first-user host selection, password/agent/jump authentication, or WAN latency.",
-    "This does not replace macOS physical keyboard, Chinese IME, Option/dead key, cat/history/Tab/vim/nano interaction acceptance.",
-    "Windows OpenSSH Agent/Pageant/PTY and serial hardware remain unverified because no test devices are available."
-  ],
-  "source": {
-    "fingerprint": "de8e49cbb451cac456de95044732fa9f16be53e2aacf3a84cbdb2685c4c99fda",
-    "fingerprintCovers": [
-      "packages/frontend/src",
-      "src-tauri/src",
-      "packages/frontend/package.json",
-      "package.json",
-      "pnpm-lock.yaml"
-    ],
-    "note": "Debug evidence cannot be validated against the artifact on disk, because pnpm verify relinks target/debug/terminal as a bare cargo build. This content fingerprint of the sources these scenarios exercise is what makes a stale measurement detectable."
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "4368d6c8301e5c8870a17fbdaebf8b6ad35b4efe96293b69858412af95d7970b"
+    "sha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa"
+  },
+  "application": {
+    "path": "/Users/liuzhiwei/Desktop/workspace/git-code/terminal/src-tauri/target/debug/terminal",
+    "pid": 17781
+  },
+  "fixture": {
+    "host": "127.0.0.1",
+    "port": 53126,
+    "username": "liuzhiwei"
   },
   "shell": "bash",
   "shellIntegration": "bash",
-  "note": "Fresh current-source bash remote prompt marker run on the same instrumented debug binary as the SSH and shell matrices."
+  "measurement": {
+    "probe": "loopback sshd fixture prints an OSC 133 prompt; the app reports ready only after the remote prompt marker round-trip",
+    "measuredFrom": "child-spawn-event",
+    "readinessTarget": "terminal",
+    "spawnToPromptObservedMs": 4575,
+    "requestToPromptObservedMs": 4582,
+    "markerReady": true,
+    "terminalReady": true,
+    "windowReady": false,
+    "promptMarker": "REMOTE_PROMPT_MARKER",
+    "underTenSeconds": true,
+    "latestRerun": {
+      "capturedAt": "2026-10-28T14:07:06.819Z",
+      "pid": 17781,
+      "spawnToReadyMs": 4575,
+      "requestToReadyMs": 4582,
+      "expectedCwd": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-aHyvGJ/sshd/home",
+      "expectedExitCode": 1
+    }
+  },
+  "evidence": {
+    "markerPath": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-aHyvGJ/sshd/home/REMOTE_COLD_MARKER",
+    "promptMarkerPath": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-aHyvGJ/sshd/home/REMOTE_PROMPT_MARKER",
+    "markerChecks": [
+      {
+        "path": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-aHyvGJ/sshd/home/REMOTE_PROMPT_MARKER",
+        "content": "REMOTE_PROMPT_MARKER",
+        "ready": true
+      }
+    ]
+  },
+  "source": {
+    "fingerprint": "04bb5973242948fdbcdc506d01efefeaf9a4f91a4e1f352e6356cd72fb36b6f6",
+    "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs."
+  },
+  "limitations": [
+    "The fixture is a loopback sshd on this machine; it proves the remote prompt path, not a real network hop, VPN switch or jump host chain.",
+    "AX window readiness reports false in remote mode by design, so this record says nothing about window readiness timing.",
+    "Human physical keyboard typing, IME composition and real sleep/resume remain unverified."
+  ]
 }
