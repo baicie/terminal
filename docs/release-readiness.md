@@ -305,6 +305,8 @@ pnpm smoke:ssh-matrix --reuse-binary --release key,key-reconnect,password,passwo
 
 注意 `--release` 默认跑的是 13-case 全集，而证据契约要求的是上面这 10 个且顺序一致，所以必须带位置过滤。采集时显示器必须处于解锁状态且没有其它 GUI 自动化在跑，否则会出现 `expected process X to be frontmost, got <loginwindow pid>`。
 
+2026-10-28 23:25–00:16 曾挂过一个「解锁即跑」的无人值守作业，逐 30 秒检查 `IOConsoleLocked`，99 次检查全部为 `Yes` 后按上限退出（日志 `/tmp/release-matrix-unlock2.log`），因此这一项仍未采集。
+
 **仍需人在场的验收**（自动化不能替代）：macOS 物理键盘 30 轮重叠输入、中文 IME 组合输入、Option/dead key；真实合盖休眠与唤醒、VPN/蜂窝切换；Windows OpenSSH Agent/Pageant/ConPTY、Linux 桌面 PTY 与串口硬件。
 
 ## 2026-10-17 当前工作树复验
