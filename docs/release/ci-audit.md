@@ -58,17 +58,18 @@ ENOENT ENOENT: no such file or directory, open '/private/tmp/docker-ctx/patches/
 ```
 
   补上 `patches/` 后同一条命令 **exit 0**（`Done in 1m 0.8s using pnpm v10.34.3`）。
-- 修复：Dockerfile 的 `builder` 与 `production` 两个阶段都加上 `COPY patches patches`。已在本次提交中修改。
+- 修复：Dockerfile 的 `builder` 与 `production` 两个阶段都加上 `COPY patches patches`。
+- 验证：提交 `18012ab` 推送后，CI run `40808864624` 的 `Team Server container` job 结论由 `failure` 变为 **`success`**（其余 7 个 job 此前已绿）。
 
 ## 7. 风险清单（按严重程度）
 
 | # | 风险 | 影响 | 处置 |
 | --- | --- | --- | --- |
-| R1 | `Team Server container` job 因缺 `patches/` 一直失败 | 主分支/分支 CI 永远红，任何「门禁通过」的说法都不成立 | ✅ 本次修 Dockerfile |
-| R2 | 没有 Nightly 通道 | 无法验证「只有新提交才发」的预发布流程，也无独立更新源 | 新增 `nightly.yml` |
+| R1 | `Team Server container` job 因缺 `patches/` 一直失败 | 主分支/分支 CI 永远红，任何「门禁通过」的说法都不成立 | ✅ **已修复**：Dockerfile 两个阶段补 `COPY patches patches`；CI run `40808864624` 里该 job 已 `success` |
+| R2 | 没有 Nightly 通道 | 无法验证「只有新提交才发」的预发布流程，也无独立更新源 | ✅ 新增 `nightly.yml`（定时 + 手动、按新提交判定、prerelease、独立命名与校验和） |
 | R3 | 没有 updater（插件/密钥/latest.json 全无） | 无法自动更新；也不能宣称已支持 | 提供 updater-signed 模式与密钥指南，默认关闭 |
 | R4 | 无商业签名证书 | macOS Gatekeeper / Windows SmartScreen 会警告 | 只预留 Mode C，不购买证书；文档明确声明 |
-| R5 | release 只有 tag 触发、无模式区分 | 一旦打 tag 就会走完整发布，无法先出 unsigned QA 包 | 增加 `release_mode` 输入与 `unsigned-qa` 默认路径 |
-| R6 | CI 无 concurrency 取消、无 path filter | 连续 push 会排队跑满 6 个 job，浪费配额 | `ci.yml` 增加 concurrency + paths 过滤 |
+| R5 | release 只有 tag 触发、无模式区分 | 一旦打 tag 就会走完整发布，无法先出 unsigned QA 包 | ✅ 增加 `release_mode`（unsigned-qa / updater-signed / fully-signed），tag push 固定 unsigned-qa，且 Release 改为先 draft 后 undraft |
+| R6 | CI 无 concurrency 取消、无 path filter | 连续 push 会排队跑满 6 个 job，浪费配额 | ✅ `ci.yml` 增加 concurrency（PR 取消旧跑）与 paths-ignore（纯文档改动不跑） |
 | R7 | 版本号已含 prerelease（`0.0.1-dev.1`）且与既有 GitHub Release 同名 | 新包若沿用同号会造成「同号不同物」 | 发布新包前必须升版本号；workflow 已强制 tag==三处版本 |
 | R8 | 没有安装/升级 smoke 测试 | 编译成功不等于装得上、起得来 | P6 做本地实测（DMG 挂载 + 启动 + 版本号） |

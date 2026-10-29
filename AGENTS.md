@@ -41,6 +41,7 @@
 | **docs/ui/**                   | UI/功能规格与界面描述（便于 AI 阅读） | 实现或还原 UI 时   |
 | **docs/shadcn-components.md**  | shadcn/ui 全部组件索引与用法说明      | 查阅组件选型与用法 |
 | **docs/build-optimization.md** | 构建体积分析与优化指南                | 优化打包时查阅     |
+| **docs/release/**             | CI 审计、发布模式（unsigned-qa/updater-signed/fully-signed）、签名密钥与 Release/Nightly 操作指南 | 改动发布链路时必读 |
 | **AGENTS.md**                  | 本文件 - Agent 使用指南               | 初次接手项目时阅读 |
 
 ---
