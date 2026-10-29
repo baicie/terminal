@@ -81,17 +81,23 @@ jobs:
         include:
           - name: macOS universal
             os: macos-15
+            # universal-apple-darwin is a Tauri bundle target, not a rustup
+            # target: rustup only knows the two architecture triples. Tauri
+            # builds both and lipos them itself.
             target: universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
             bundles: dmg
             asset_key: macos-universal
           - name: Windows x64
             os: windows-latest
             target: x86_64-pc-windows-msvc
+            rust_targets: x86_64-pc-windows-msvc
             bundles: nsis
             asset_key: windows-x86_64
           - name: Linux x64
             os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
+            rust_targets: x86_64-unknown-linux-gnu
             bundles: deb,appimage
             asset_key: linux-x86_64
     runs-on: ${{ matrix.os }}
@@ -110,7 +116,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96.0
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.rust_targets }}
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: nightly-${{ matrix.target }}
@@ -142,6 +148,16 @@ jobs:
           fs.writeFileSync(
             'src-tauri/Cargo.toml',
             cargo.replace(/^version = ".*"$/m, 'version = "' + version + '"'),
+          )
+          // --locked builds fail when the lockfile still names the old version,
+          // so the local package entry is rewritten in the same pass.
+          const lock = fs.readFileSync('src-tauri/Cargo.lock', 'utf8')
+          fs.writeFileSync(
+            'src-tauri/Cargo.lock',
+            lock.replace(
+              /(name = "terminal"\nversion = )"[^"]*"/,
+              '$1"' + version + '"',
+            ),
           )
           NODE
           node "$RUNNER_TEMP/bump-version.cjs"
