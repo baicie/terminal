@@ -138,7 +138,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          if ! release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" 2>/dev/null)"; then
+          # Draft releases are not reachable through /releases/tags/{tag} (that
+          # endpoint answers 404 for drafts), so resolve the release — draft or
+          # published — from the release list instead.
+          resolve_release() {
+            gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              | jq -c --arg tag "$RELEASE_TAG" '[.[] | select(.tag_name == $tag)][0] // empty'
+          }
+
+          release_json="$(resolve_release)"
+          if [[ -z "$release_json" ]]; then
             # Always start as a draft: nothing becomes visible until every gate ran.
             gh release create "$RELEASE_TAG" \
               --verify-tag \
@@ -146,7 +155,11 @@ jobs:
               --notes "Release mode: ${RELEASE_MODE}. Platform installers for macOS (universal), Windows and Linux. macOS is not notarized and Windows installers are not Authenticode-signed unless the release notes say otherwise." \
               --draft \
               --prerelease
-            release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}")"
+            release_json="$(resolve_release)"
+          fi
+          if [[ -z "$release_json" ]]; then
+            echo "Could not resolve the release for $RELEASE_TAG after creating it" >&2
+            exit 1
           fi
 
           if [[ "$(jq -r '.draft' <<< "$release_json")" != "true" ]]; then
