@@ -13,6 +13,10 @@ FROM base AS builder
 
 # Copy manifests first so dependency installation remains cacheable.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# The root manifest declares pnpm.patchedDependencies, so the frozen install
+# reads patches/*.patch before it can resolve the workspace. Without this copy
+# pnpm exits with ENOENT on the patch file and the image build fails.
+COPY patches patches
 COPY packages/team-server/package.json packages/team-server/package.json
 COPY packages/team-server/prisma packages/team-server/prisma
 COPY packages/team-server/prisma.config.ts packages/team-server/prisma.config.ts
@@ -28,6 +32,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches patches
 COPY packages/team-server/package.json packages/team-server/package.json
 COPY packages/team-server/prisma packages/team-server/prisma
 COPY packages/team-server/prisma.config.ts packages/team-server/prisma.config.ts
