@@ -1,6 +1,6 @@
 {
-  "recordedAt": "2026-10-28T14:07:06.819Z",
-  "recordedDate": "2026-10-28",
+  "recordedAt": "2026-10-29T13:14:38.302Z",
+  "recordedDate": "2026-10-29",
   "kind": "tauri-remote-cold-start-shell-prompt-observed-rerun",
   "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:remote-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal",
   "environment": {
@@ -9,21 +9,21 @@
     "node": "24.16.0"
   },
   "revision": {
-    "head": "codex/terminal-reliability-matrix",
-    "commit": "94ed89c",
+    "head": "feat/runtime-updater",
+    "commit": "1a2b498",
     "dirtyWorktree": true
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa"
+    "sha256": "827b7e01a3e7210c744eafa6e4378309bc024f40b4d79b1117db71590efd2efc"
   },
   "application": {
     "path": "/Users/liuzhiwei/Desktop/workspace/git-code/terminal/src-tauri/target/debug/terminal",
-    "pid": 17781
+    "pid": 67645
   },
   "fixture": {
     "host": "127.0.0.1",
-    "port": 53126,
+    "port": 62386,
     "username": "liuzhiwei"
   },
   "shell": "bash",
@@ -32,35 +32,35 @@
     "probe": "loopback sshd fixture prints an OSC 133 prompt; the app reports ready only after the remote prompt marker round-trip",
     "measuredFrom": "child-spawn-event",
     "readinessTarget": "terminal",
-    "spawnToPromptObservedMs": 4575,
-    "requestToPromptObservedMs": 4582,
+    "spawnToPromptObservedMs": 3279,
+    "requestToPromptObservedMs": 3286,
     "markerReady": true,
     "terminalReady": true,
     "windowReady": false,
     "promptMarker": "REMOTE_PROMPT_MARKER",
     "underTenSeconds": true,
     "latestRerun": {
-      "capturedAt": "2026-10-28T14:07:06.819Z",
-      "pid": 17781,
-      "spawnToReadyMs": 4575,
-      "requestToReadyMs": 4582,
-      "expectedCwd": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-aHyvGJ/sshd/home",
+      "capturedAt": "2026-10-29T13:14:38.302Z",
+      "pid": 67645,
+      "spawnToReadyMs": 3279,
+      "requestToReadyMs": 3286,
+      "expectedCwd": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-YkSXGa/sshd/home",
       "expectedExitCode": 1
     }
   },
   "evidence": {
-    "markerPath": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-aHyvGJ/sshd/home/REMOTE_COLD_MARKER",
-    "promptMarkerPath": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-aHyvGJ/sshd/home/REMOTE_PROMPT_MARKER",
+    "markerPath": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-YkSXGa/sshd/home/REMOTE_COLD_MARKER",
+    "promptMarkerPath": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-YkSXGa/sshd/home/REMOTE_PROMPT_MARKER",
     "markerChecks": [
       {
-        "path": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-aHyvGJ/sshd/home/REMOTE_PROMPT_MARKER",
+        "path": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-YkSXGa/sshd/home/REMOTE_PROMPT_MARKER",
         "content": "REMOTE_PROMPT_MARKER",
         "ready": true
       }
     ]
   },
   "source": {
-    "fingerprint": "04bb5973242948fdbcdc506d01efefeaf9a4f91a4e1f352e6356cd72fb36b6f6",
+    "fingerprint": "07d420c0ddd7356fdcf5f4bdb9b78ffbc7314918313b0d7c6633d1c4f307926b",
     "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs."
   },
   "limitations": [

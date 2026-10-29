@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-28T23:26:00.000Z",
+  "recordedAt": "2026-10-29T13:26:09.000Z",
   "recordedDate": "2026-10-29",
   "kind": "tauri-release-ssh-and-shell-matrix",
   "why": "The previous record described release binary ab209317…; the artifact on disk is 1e68ba73…, built from this worktree. This records the same matrix on the binary that exists.",
@@ -11,14 +11,14 @@
     "docker": "29.7.2"
   },
   "revision": {
-    "head": "codex/terminal-reliability-matrix",
-    "commit": "d604faa",
+    "head": "feat/runtime-updater",
+    "commit": "1a2b498",
     "dirtyWorktree": true
   },
   "build": {
     "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle",
     "binary": "src-tauri/target/release/terminal",
-    "sha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
+    "sha256": "5c008f04c41448a79d3a13775c12e3806b5b72a44009aae21b0814e675ff059b",
     "devServerRequired": false,
     "smokeInstrumented": true
   },
@@ -27,88 +27,88 @@
     "passed": 10,
     "failed": 0,
     "firstConnectionMsRange": [
-      775,
-      4214
+      990,
+      4901
     ],
     "cases": [
       {
         "name": "key",
         "ok": true,
-        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
-        "firstConnectionMs": 1837,
-        "durationMs": 6893,
+        "binarySha256": "5c008f04c41448a79d3a13775c12e3806b5b72a44009aae21b0814e675ff059b",
+        "firstConnectionMs": 2539,
+        "durationMs": 6465,
         "uniqueSessionCount": 10
       },
       {
         "name": "key-reconnect",
         "ok": true,
-        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
-        "firstConnectionMs": 4214,
-        "durationMs": 11805,
+        "binarySha256": "5c008f04c41448a79d3a13775c12e3806b5b72a44009aae21b0814e675ff059b",
+        "firstConnectionMs": 2400,
+        "durationMs": 7327,
         "uniqueSessionCount": 11
       },
       {
         "name": "password",
         "ok": true,
-        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
-        "firstConnectionMs": 1104,
-        "durationMs": 5125,
+        "binarySha256": "5c008f04c41448a79d3a13775c12e3806b5b72a44009aae21b0814e675ff059b",
+        "firstConnectionMs": 4901,
+        "durationMs": 10741,
         "uniqueSessionCount": 10
       },
       {
         "name": "password-reconnect",
         "ok": true,
-        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
-        "firstConnectionMs": 808,
-        "durationMs": 6143,
+        "binarySha256": "5c008f04c41448a79d3a13775c12e3806b5b72a44009aae21b0814e675ff059b",
+        "firstConnectionMs": 3614,
+        "durationMs": 8133,
         "uniqueSessionCount": 11
       },
       {
         "name": "agent",
         "ok": true,
-        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
-        "firstConnectionMs": 848,
-        "durationMs": 6665,
+        "binarySha256": "5c008f04c41448a79d3a13775c12e3806b5b72a44009aae21b0814e675ff059b",
+        "firstConnectionMs": 3202,
+        "durationMs": 7290,
         "uniqueSessionCount": 10
       },
       {
         "name": "agent-reconnect",
         "ok": true,
-        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
-        "firstConnectionMs": 2820,
-        "durationMs": 8124,
+        "binarySha256": "5c008f04c41448a79d3a13775c12e3806b5b72a44009aae21b0814e675ff059b",
+        "firstConnectionMs": 2674,
+        "durationMs": 7253,
         "uniqueSessionCount": 11
       },
       {
         "name": "cert",
         "ok": true,
-        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
-        "firstConnectionMs": 1020,
-        "durationMs": 5808,
+        "binarySha256": "5c008f04c41448a79d3a13775c12e3806b5b72a44009aae21b0814e675ff059b",
+        "firstConnectionMs": 2374,
+        "durationMs": 10126,
         "uniqueSessionCount": 10
       },
       {
         "name": "cert-reconnect",
         "ok": true,
-        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
-        "firstConnectionMs": 775,
-        "durationMs": 6461,
+        "binarySha256": "5c008f04c41448a79d3a13775c12e3806b5b72a44009aae21b0814e675ff059b",
+        "firstConnectionMs": 3794,
+        "durationMs": 10879,
         "uniqueSessionCount": 11
       },
       {
         "name": "jump",
         "ok": true,
-        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
-        "firstConnectionMs": 1060,
-        "durationMs": 6597,
+        "binarySha256": "5c008f04c41448a79d3a13775c12e3806b5b72a44009aae21b0814e675ff059b",
+        "firstConnectionMs": 1578,
+        "durationMs": 6889,
         "uniqueSessionCount": 10
       },
       {
         "name": "jump-reconnect",
         "ok": true,
-        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
-        "firstConnectionMs": 796,
-        "durationMs": 7343,
+        "binarySha256": "5c008f04c41448a79d3a13775c12e3806b5b72a44009aae21b0814e675ff059b",
+        "firstConnectionMs": 990,
+        "durationMs": 8235,
         "uniqueSessionCount": 11
       }
     ]

@@ -39,25 +39,20 @@ pnpm tauri signer sign -f ~/.tauri/terminal-updater.key -p "<password>" <file>
 
 在 updater 尚未接入运行时之前，轮换没有兼容负担，但仍应遵守「私钥不落库」的规则。
 
-## 4. 接入运行时（尚未做，属于产品改动）
+## 4. 运行时接入状态
 
-要真正启用自动更新，还需要：
+插件侧已经接好（本次改动）：
 
 1. `src-tauri/Cargo.toml` 增加 `tauri-plugin-updater = "2"`，前端增加 `@tauri-apps/plugin-updater`；
-2. `src-tauri/src/lib.rs` 注册插件；`capabilities/default.json` 增加 `updater:default`；
-3. `tauri.conf.json` 增加：
+2. `src-tauri/src/lib.rs` 注册 `tauri_plugin_updater`，`capabilities/default.json` 增加 `updater:default`；
+3. `src-tauri/tauri.conf.json` 增加 `plugins.updater`：`endpoints` 指向 `https://github.com/baicie/terminal/releases/download/updater-latest/latest.json`，`pubkey` **仍是占位符** `REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY`；
+4. 前端有 `packages/frontend/src/service/updates.ts`（只检查、不下载）与设置对话框里「检查更新」按钮。
 
-```json
-{
-  "plugins": {
-    "updater": {
-      "pubkey": "<上一步的公钥>",
-      "endpoints": ["https://github.com/baicie/terminal/releases/download/{{tag}}/latest.json"]
-    }
-  }
-}
-```
+**还差你一步**：把 `tauri signer generate` 输出的**公钥**替换 `tauri.conf.json` 里的占位符。在替换之前：
 
-4. 前端实现「检查更新 → 下载 → 校验签名 → 重启」的 UI 流程。
+- 运行时：`check()` 会因公钥无效而失败，UI 显示「Updater is not configured in this build」，不会静默通过；
+- CI：`updater-signed` 模式的 `Validate the release mode` 步骤检测到占位符会**直接失败**，避免发布一个所有客户端都会拒绝的 manifest。
 
-在这四步完成之前，`updater-signed` 模式只保证**产物与签名可审查**，不代表用户会被自动更新。
+替换后，`updater-signed` 运行会把 `latest.json` 同时上传到该次 release 与固定的 `updater-latest` 通道 tag，应用端只轮询后者。
+
+**仍未做**：「下载并安装」按钮。当前只实现「检查 → 展示可用版本」，安装动作留给用户从 release 页面手动下载，避免在未签名的构建上自动替换二进制。

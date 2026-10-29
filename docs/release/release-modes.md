@@ -26,7 +26,7 @@
   3. 用真实的 `.sig` 内容生成唯一 `latest.json`（`darwin-aarch64`、`darwin-x86_64` 指向同一份 universal 载荷；`windows-x86_64`；`linux-x86_64`）；
   4. 只有以上都通过，draft 才会被 undraft。
 - 仍然没有 OS 代码签名：Gatekeeper / SmartScreen 警告照旧，文档和 Release 说明必须如实写。
-- **运行时消费**：仓库当前**没有** `tauri-plugin-updater`，所以这些产物目前不会被应用读取。要让自动更新真正生效，还需要产品侧改动（插件依赖、capabilities 权限、`plugins.updater.pubkey` 与 endpoints），见 `docs/release/signing-keys.md` 的「接入运行时」一节。不要把「已经产出 `.sig`」说成「已经能自动更新」。
+- **运行时消费**：`tauri-plugin-updater` 已注册，前端有只读的「检查更新」（不自动下载安装）。**但 `plugins.updater.pubkey` 还是占位符**，在维护者填入真实公钥之前，检查会 fail-closed 并在 UI 明确提示未配置；CI 在 `updater-signed` 模式下也会拒绝带占位符的发布。细节见 `docs/release/signing-keys.md` 第 4 节。
 
 ## fully-signed（预留，不在本阶段启用）
 

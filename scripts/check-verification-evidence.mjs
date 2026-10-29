@@ -122,7 +122,8 @@ const PROFILE_REVIEWED_HASH = new Map([
   // entry points, so the runners refuse it. The evidence re-run for this source
   // records both the fingerprint and this binary hash; the notes below describe
   // the earlier build whose hash this replaced.
-  ['debug', 'd7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa'],
+  // Re-pinned for the build that adds tauri-plugin-updater to the runtime.
+  ['debug', '827b7e01a3e7210c744eafa6e4378309bc024f40b4d79b1117db71590efd2efc'],
 ])
 
 // Exported so the gate's own tests assert against the hash the gate actually
