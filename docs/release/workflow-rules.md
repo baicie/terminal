@@ -13,6 +13,8 @@
 | 证据数值只能来自 runner 输出；写入器要 fail-closed | 2026-10-29 首次采集时写入器拒绝写入 `attempt is not clean: password,password-reconnect` | 假证据进仓库 |
 | debug 证据比对「已复核哈希」，release 证据比对**磁盘上的** `src-tauri/target/release/terminal` | 同一次 `pnpm verify` 会重链接 debug 产物，磁盘 debug 二进制永远对不上插桩证据 | release 证据与二进制不一致即红 |
 | 想换二进制又不破坏证据：用独立的 `CARGO_TARGET_DIR` 打包，或打包后把锚定二进制还原 | 本次打 DMG 时用 `CARGO_TARGET_DIR=/tmp/terminal-ship` 保住了证据 | 打包一次就得重采一轮 |
+| **不要把 updater 公钥写进 `tauri.conf.json`**：用 CI 的 `--config` 从 `TAURI_UPDATER_PUBKEY` 注入 | `tauri.conf.json` 在指纹路径内，改它就要重采六份证据 | 白跑一轮采集 |
+| `$` + 双大括号写法（Actions 表达式）读不到 `$GITHUB_ENV` 写入的值；跨步骤传值要用 job 级 `env` 表达式 | tauri-action 的 `args:` 是表达式求值，不是 shell | 公钥注入悄悄失效，产出未签名的包 |
 
 ## 2. 采集环境
 

@@ -18,7 +18,7 @@
 
 ## updater-signed
 
-- 前置条件：secrets 里存在 `TAURI_SIGNING_PRIVATE_KEY`。缺失时 `Validate the release mode` 步骤直接失败——**不会自动降级成 unsigned 产物**，因为那会让「已签名」的声明变成假话。
+- 前置条件：secrets 里同时存在 `TAURI_SIGNING_PRIVATE_KEY`（私钥）与 `TAURI_UPDATER_PUBKEY`（公钥，且不能是占位符值）。任一缺失时 `Validate the release mode` 步骤直接失败——**不会自动降级成 unsigned 产物**，因为那会让「已签名」的声明变成假话。
 - 通过 `--config {"bundle":{"createUpdaterArtifacts":true}}` **内联**开启 updater 产物，仓库里的 `tauri.conf.json` 不变，所以普通发布仍是干净产物。
 - `verify-release` 的门禁：
   1. 每个平台必须有一个更新载荷（`*.app.tar.gz` / `*.nsis.zip` / `*.AppImage.tar.gz`）；
@@ -26,7 +26,7 @@
   3. 用真实的 `.sig` 内容生成唯一 `latest.json`（`darwin-aarch64`、`darwin-x86_64` 指向同一份 universal 载荷；`windows-x86_64`；`linux-x86_64`）；
   4. 只有以上都通过，draft 才会被 undraft。
 - 仍然没有 OS 代码签名：Gatekeeper / SmartScreen 警告照旧，文档和 Release 说明必须如实写。
-- **运行时消费**：`tauri-plugin-updater` 已注册，前端有只读的「检查更新」（不自动下载安装）。**但 `plugins.updater.pubkey` 还是占位符**，在维护者填入真实公钥之前，检查会 fail-closed 并在 UI 明确提示未配置；CI 在 `updater-signed` 模式下也会拒绝带占位符的发布。细节见 `docs/release/signing-keys.md` 第 4 节。
+- **运行时消费**：`tauri-plugin-updater` 已注册，前端有只读的「检查更新」（不自动下载安装）。仓库里 `plugins.updater.pubkey` 仍是占位符（因此 unsigned QA 构建的检查会 fail-closed 并在 UI 提示未配置）；`updater-signed` 构建通过 CI 的 `--config` 注入真实公钥，只有签名构建才具备可用的更新校验。细节见 `docs/release/signing-keys.md` 第 4 节。
 
 ## fully-signed（预留，不在本阶段启用）
 

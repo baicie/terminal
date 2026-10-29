@@ -24,6 +24,7 @@ pnpm tauri signer sign -f ~/.tauri/terminal-updater.key -p "<password>" <file>
 | --- | --- | --- | --- |
 | `TAURI_SIGNING_PRIVATE_KEY` | updater-signed | 必需 | `tauri signer generate` 产出的私钥全文 |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | updater-signed | 可选 | 生成私钥时设置的密码；未设置则不传 |
+| `TAURI_UPDATER_PUBKEY` | updater-signed | 必需 | 同一次 `tauri signer generate` 输出的公钥；CI 通过 `--config` 注入构建，**不写进仓库** |
 | `APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` / `APPLE_SIGNING_IDENTITY` | fully-signed | 预留 | Developer ID Application，本阶段不使用 |
 | `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` | fully-signed | 预留 | 公证用，本阶段不使用 |
 | `WINDOWS_CERTIFICATE` / `WINDOWS_CERTIFICATE_PASSWORD` | fully-signed | 预留 | Authenticode，本阶段不使用 |
@@ -48,7 +49,7 @@ pnpm tauri signer sign -f ~/.tauri/terminal-updater.key -p "<password>" <file>
 3. `src-tauri/tauri.conf.json` 增加 `plugins.updater`：`endpoints` 指向 `https://github.com/baicie/terminal/releases/download/updater-latest/latest.json`，`pubkey` **仍是占位符** `REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY`；
 4. 前端有 `packages/frontend/src/service/updates.ts`（只检查、不下载）与设置对话框里「检查更新」按钮。
 
-**还差你一步**：把 `tauri signer generate` 输出的**公钥**替换 `tauri.conf.json` 里的占位符。在替换之前：
+**还差你一步**：把 `tauri signer generate` 输出的**公钥**填进 GitHub Secret `TAURI_UPDATER_PUBKEY`（不是写进仓库）。`release.yml` 在 `updater-signed` 模式下用 `--config` 把这个公钥与 `createUpdaterArtifacts: true` 一起注入构建，因此 `tauri.conf.json` 里的 `REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY` 占位符**故意保留**：仓库源码不变，六份实机证据的指纹就不会被这次改动作废。在填 secret 之前：
 
 - 运行时：`check()` 会因公钥无效而失败，UI 显示「Updater is not configured in this build」，不会静默通过；
 - CI：`updater-signed` 模式的 `Validate the release mode` 步骤检测到占位符会**直接失败**，避免发布一个所有客户端都会拒绝的 manifest。

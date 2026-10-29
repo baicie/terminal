@@ -36,10 +36,10 @@ env:
   # Tag pushes always run the unsigned QA path: a pushed tag is not a licence to
   # publish a signed release. Modes that need secrets are opt-in dispatches.
   RELEASE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_mode || 'unsigned-qa' }}
-  # Inline Tauri config used only by updater-signed mode, so the repository's
-  # tauri.conf.json keeps shipping builds without updater artifacts. Empty in
-  # every other mode, which keeps unsigned QA builds byte-for-byte plain.
-  UPDATER_ARGS: ${{ (github.event_name == 'workflow_dispatch' && inputs.release_mode == 'updater-signed') && '--config {"bundle":{"createUpdaterArtifacts":true}}' || '' }}
+  # updater-signed builds get their updater config (createUpdaterArtifacts + the
+  # real public key) injected through --config by a per-job step, so the
+  # repository keeps the placeholder pubkey and its evidence fingerprint stays
+  # valid. Unsigned QA builds pass no override at all.
 
 jobs:
   prepare-release:
@@ -99,6 +99,7 @@ jobs:
         env:
           MODE: ${{ env.RELEASE_MODE }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
         run: |
           set -euo pipefail
 
@@ -113,11 +114,15 @@ jobs:
                 echo "Refusing to silently fall back to unsigned artifacts." >&2
                 exit 1
               fi
-              pubkey="$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).plugins.updater.pubkey")"
-              if [[ "$pubkey" == REPLACE_WITH_* ]]; then
-                echo "plugins.updater.pubkey is still the placeholder in tauri.conf.json." >&2
-                echo "Fill it with the public key that matches TAURI_SIGNING_PRIVATE_KEY," >&2
-                echo "otherwise every client would reject the manifest at verification time." >&2
+              if [ -z "${TAURI_UPDATER_PUBKEY:-}" ]; then
+                echo "Mode updater-signed requires the TAURI_UPDATER_PUBKEY secret." >&2
+                echo "That is the public key printed by tauri signer generate; it is injected" >&2
+                echo "into the build through --config instead of being committed, so the" >&2
+                echo "repository keeps its placeholder and its evidence stays valid." >&2
+                exit 1
+              fi
+              if [[ ! "$TAURI_UPDATER_PUBKEY" =~ ^[A-Za-z0-9+/=]{40,}$ ]]; then
+                echo "TAURI_UPDATER_PUBKEY does not look like a base64 Tauri updater public key." >&2
                 exit 1
               fi
               echo "Mode updater-signed: updater artifacts and signatures will be produced."
@@ -193,6 +198,11 @@ jobs:
           - os: macos-15-intel
             target: x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
+    env:
+      # Only updater-signed builds get an updater config: createUpdaterArtifacts plus the
+      # public key injected from the TAURI_UPDATER_PUBKEY secret. The repository keeps its
+      # placeholder pubkey, so the evidence fingerprint stays valid for unsigned QA builds.
+      UPDATER_ARGS: ${{ (github.event_name == 'workflow_dispatch' && inputs.release_mode == 'updater-signed') && format('--config {{"bundle":{{"createUpdaterArtifacts":true}},"plugins":{{"updater":{{"pubkey":"{0}"}}}}}}', secrets.TAURI_UPDATER_PUBKEY) || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -216,7 +226,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build macOS binary
         shell: bash
-        run: pnpm tauri build --no-bundle --ci --target ${{ matrix.target }} ${{ env.UPDATER_ARGS }} -- --locked
+        run: |
+          set -euo pipefail
+          extra=()
+          if [ -n "${UPDATER_ARGS:-}" ]; then read -r -a extra <<< "$UPDATER_ARGS"; fi
+          pnpm tauri build --no-bundle --ci --target ${{ matrix.target }} ${extra[@]+"${extra[@]}"} -- --locked
       - name: Upload macOS binary
         uses: actions/upload-artifact@v4
         with:
@@ -229,6 +243,11 @@ jobs:
     name: Bundle universal macOS DMG
     needs: [prepare-release, build-macos-binary]
     runs-on: macos-15
+    env:
+      # Only updater-signed builds get an updater config: createUpdaterArtifacts plus the
+      # public key injected from the TAURI_UPDATER_PUBKEY secret. The repository keeps its
+      # placeholder pubkey, so the evidence fingerprint stays valid for unsigned QA builds.
+      UPDATER_ARGS: ${{ (github.event_name == 'workflow_dispatch' && inputs.release_mode == 'updater-signed') && format('--config {{"bundle":{{"createUpdaterArtifacts":true}},"plugins":{{"updater":{{"pubkey":"{0}"}}}}}}', secrets.TAURI_UPDATER_PUBKEY) || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -273,7 +292,9 @@ jobs:
           for attempt in $(seq 1 "$max_attempts"); do
             echo "=== macOS bundle attempt ${attempt}/${max_attempts} ==="
             bundle_log="$RUNNER_TEMP/tauri-bundle-macos-${attempt}.log"
-            if pnpm tauri bundle --target universal-apple-darwin --bundles app ${{ env.UPDATER_ARGS }} 2>&1 | tee "$bundle_log"; then
+            extra=()
+            if [ -n "${UPDATER_ARGS:-}" ]; then read -r -a extra <<< "$UPDATER_ARGS"; fi
+            if pnpm tauri bundle --target universal-apple-darwin --bundles app ${extra[@]+"${extra[@]}"} 2>&1 | tee "$bundle_log"; then
               echo "macOS .app bundled"
               exit 0
             fi
@@ -390,6 +411,11 @@ jobs:
             bundles: deb,appimage
             asset_key: linux-x86_64
     runs-on: ${{ matrix.os }}
+    env:
+      # Only updater-signed builds get an updater config: createUpdaterArtifacts plus the
+      # public key injected from the TAURI_UPDATER_PUBKEY secret. The repository keeps its
+      # placeholder pubkey, so the evidence fingerprint stays valid for unsigned QA builds.
+      UPDATER_ARGS: ${{ (github.event_name == 'workflow_dispatch' && inputs.release_mode == 'updater-signed') && format('--config {{"bundle":{{"createUpdaterArtifacts":true}},"plugins":{{"updater":{{"pubkey":"{0}"}}}}}}', secrets.TAURI_UPDATER_PUBKEY) || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
