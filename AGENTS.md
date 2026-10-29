@@ -526,9 +526,9 @@ pnpm add <package-name>
 ### 发布就绪门禁 ✅ 本机自动化、容器运行时与远端发布通过
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
-- ✅ `pnpm verify` 全绿（2026-10-29 解锁窗口内完成）：前端 1144 项、Team Server 103 项、Rust 221 单测 + 3 集成测试、Node 脚本 205 项、550 个生产文件行数门禁、bundle budget，以及 6 份实机证据的 evidence gate（debug 冷启动 6654/2127/1225 ms、远程 prompt 4575 ms、SSH 13/13、shell 14+7；release 冷启动 1827/1319/1421 ms、远程 prompt 3069 ms、shell 14+7、10-case 认证矩阵 10/10）
+- ✅ `pnpm verify` 全绿（2026-10-29 接入 updater 运行时后重跑）：前端 1149 项、Team Server 103 项、Rust 221 单测 + 3 集成测试、Node 脚本 205 项、552 个生产文件行数门禁、bundle budget，以及 6 份实机证据的 evidence gate（源码指纹 `07d420c0…`；debug `827b7e01…` 冷启动 3685/2345/2432 ms、远程 prompt 3279 ms、SSH 13/13、shell 14+7；release `5c008f04…` 冷启动 1640/1736/1357 ms、10-case 认证矩阵 10/10）
 - ✅ 生产依赖审计为 0 个已知漏洞
-- ✅ 550 个生产源码文件均满足行数限制
+- ✅ 552 个生产源码文件均满足行数限制
 - ✅ GitHub Actions CI `31409070480`：macOS、Windows、Linux Tauri 编译，Team Server PostgreSQL 迁移和 Docker 镜像构建全部通过
 - ✅ `.github/workflows/release.yml` 为 Windows/Linux 的 x64/ARM64 建立原生 runner 打包；macOS 改为「分架构出二进制 → `lipo` 合成 universal → 只打 `.app` → `create-dmg` 出单个 `macos-universal.dmg`」，共 7 个资产，带确定性命名、非空校验和 SHA-256 清单
 - ✅ Release `v0.0.1-dev.1`：工作流 `31554163901` attempt 2 全绿，8 个安装包与 `SHA256SUMS.txt` 均非空，GitHub 服务端 digest 与清单一致
@@ -544,7 +544,7 @@ pnpm add <package-name>
 
 | #     | 问题                                         | 严重程度     | 优先级 |
 | ----- | -------------------------------------------- | ------------ | ------ |
-| 57    | 真实 SSH 认证矩阵 ✅ macOS 当前源码 debug 13/13（`d7a4dd4c…`，fingerprint `04bb5973…`）+ release 10/10（`1e68ba73…`）+ macOS/Linux runner CI 全矩阵通过 | 🟡 Important | P1 |
+| 57    | 真实 SSH 认证矩阵 ✅ macOS 当前源码 debug 13/13（`827b7e01…`，fingerprint `07d420c0…`）+ release 10/10（`5c008f04…`）+ macOS/Linux runner CI 全矩阵通过 | 🟡 Important | P1 |
 | 58    | 物理键盘 30 轮重叠 `a/s/d`、中文 IME、Option/dead key 待人工键入（Ctrl+C、vim、nano、PTY resize、行编辑已在本地 PTY **与真实 SSH** 上自动化覆盖） | 🟡 Important | P1 |
 | 21/39 | Windows/Pageant/串口硬件实机矩阵（macOS/Linux 已 CI 全绿） | 🟡 Important | P1 |
 
