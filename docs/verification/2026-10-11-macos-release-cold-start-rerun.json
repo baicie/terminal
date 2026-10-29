@@ -1,0 +1,65 @@
+{
+  "recordedAt": "2026-10-11T19:20:00+08:00",
+  "recordedDate": "2026-10-11",
+  "kind": "tauri-release-bundle-cold-start-stopwatch-rerun",
+  "why": "Re-measures the ten-second first-terminal gate on a release binary that actually contains the recent startup, wake-recovery and terminal-pane changes. The previously cited release binary predates them and no longer exists on disk.",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "build": {
+    "command": "pnpm tauri build --no-bundle",
+    "binary": "src-tauri/target/release/terminal",
+    "sha256": "9d16bf81ae5cb5c9156e70cb9e23378d48fa45432cac61cbb7b07b8082c78989",
+    "devServerRequired": false
+  },
+  "local": {
+    "command": "node scripts/run-cold-start-stopwatch.mjs --app-path <absolute>/src-tauri/target/release/terminal",
+    "probe": "native ApplicationServices AXUIElement helper",
+    "measuredFrom": "child-spawn-event",
+    "warmupRunSpawnToReadyMs": 9158,
+    "warmupNote": "A first run straight after a fresh link and cold OS caches measured 9158ms on an earlier link of this same source tree. That warmup figure is not representative of a normal launch; the repeated runs below are.",
+    "repeatSpawnToReadyMs": [3448, 3204, 3346],
+    "readyUnder10s": true,
+    "readiness": {
+      "localTab": true,
+      "connected": true,
+      "terminalInput": true,
+      "shellPrompt": false
+    }
+  },
+  "remote": {
+    "command": "node scripts/run-remote-cold-start-stopwatch.mjs --app-path <absolute>/src-tauri/target/release/terminal",
+    "fixture": "ephemeral isolated HOME + localhost OpenSSH sshd, key authentication",
+    "measuredFrom": "child-spawn-event",
+    "repeatSpawnToPromptObservedMs": [1647, 1518],
+    "markerReady": true,
+    "promptMarker": "REMOTE_PROMPT_MARKER",
+    "readiness": {
+      "localTab": false,
+      "connected": true,
+      "terminalInput": true,
+      "shellPrompt": false
+    }
+  },
+  "localPtySurvivesSuspendedCpu": {
+    "why": "Local sessions are deliberately excluded from host-wake recovery, which is only correct if a local shell keeps working after the CPU is suspended and resumed.",
+    "method": "Spawn /bin/zsh -i over a pipe, SIGSTOP the process for 2.5s, SIGCONT, then run the same arithmetic marker command again.",
+    "before": true,
+    "after": true,
+    "limitation": "SIGSTOP/SIGCONT reproduces the suspended-CPU half of sleep but not the real power-management transition, lid close, or network renegotiation. A real lid-close observation on hardware is still outstanding."
+  },
+  "limitations": [
+    "The remote round-trip uses a preseeded localhost key-authenticated workspace; it does not prove first-user host selection, password/agent/jump authentication, or WAN latency.",
+    "The shell prompt is rendered on the xterm canvas and stays diagnostic-only through AX; local PTY and shell-interaction probes prove interactivity separately.",
+    "Host sleep/wake recovery is covered by frontend regression tests only; the real lid-close path is not exercised here.",
+    "The bundle is unsigned and unnotarized, so Gatekeeper launch behaviour on a clean machine is not covered.",
+    "Human physical keyboard, real macOS IME, Option/dead key, Windows OpenSSH Agent/Pageant/ConPTY, and serial hardware acceptance remain unverified."
+  ],
+  "supersedes": {
+    "file": "2026-10-11-macos-release-cold-start.json",
+    "reason": "That file measured release binary 7a7fc91e…, which the runners relink away on every build and which predates the startup, wake-recovery and terminal-pane changes.",
+    "earlierBinary": "7a7fc91edff93b3640b44a0c258bfdf32dc7c0215c70679e5657b9575df4e7c3"
+  }
+}

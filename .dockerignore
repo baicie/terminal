@@ -1,0 +1,27 @@
+.git
+.github
+.idea
+.vscode
+
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/target
+**/*.log
+**/*.tsbuildinfo
+
+# Never include runtime credentials in the image build context.
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+
+# The server image has no frontend build-time dependency.
+packages/frontend
+
+AGENTS.md
+README.md
+docs
+scripts
+src-tauri

@@ -1,0 +1,21 @@
+export default {
+  // Serial dialog
+  'serial.connectSerialPort': 'Connexion au port série',
+  'serial.serialPort': 'Port série',
+  'serial.baudRate': 'Débit en bauds',
+  'serial.dataBits': 'Bits de données',
+  'serial.stopBits': "Bits d'arrêt",
+  'serial.parity': 'Parité',
+  'serial.flowControl': 'Contrôle de flux',
+  'serial.selectPort': 'Sélectionner un port',
+  'serial.noPortsAvailable': 'Aucun port disponible',
+  'serial.none': 'Aucun',
+  'serial.odd': 'Impaire',
+  'serial.even': 'Paire',
+  'serial.hardwareFlow': 'Matériel (RTS/CTS)',
+  'serial.softwareFlow': 'Logiciel (XON/XOFF)',
+  'serial.connect': 'Connecter',
+  'serial.connecting': 'Connexion...',
+  'serial.failedLoadPorts': 'Échec du chargement des ports série',
+  'serial.connectionFailed': 'Échec de la connexion',
+}

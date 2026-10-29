@@ -1,0 +1,545 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build and publish
+        required: true
+        type: string
+      release_mode:
+        description: >-
+          unsigned-qa publishes QA installers without any signature;
+          updater-signed additionally requires TAURI_SIGNING_PRIVATE_KEY and
+          produces updater artifacts + latest.json; fully-signed is reserved.
+        type: choice
+        options:
+          - unsigned-qa
+          - updater-signed
+          - fully-signed
+        default: unsigned-qa
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  PNPM_VERSION: 10.34.3
+  APP_BINARY_NAME: terminal
+  RELEASE_ASSET_PREFIX: Terminal
+  # Tag pushes always run the unsigned QA path: a pushed tag is not a licence to
+  # publish a signed release. Modes that need secrets are opt-in dispatches.
+  RELEASE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_mode || 'unsigned-qa' }}
+  # Inline Tauri config used only by updater-signed mode, so the repository's
+  # tauri.conf.json keeps shipping builds without updater artifacts. Empty in
+  # every other mode, which keeps unsigned QA builds byte-for-byte plain.
+  UPDATER_ARGS: ${{ (github.event_name == 'workflow_dispatch' && inputs.release_mode == 'updater-signed') && '--config {"bundle":{"createUpdaterArtifacts":true}}' || '' }}
+
+jobs:
+  prepare-release:
+    name: Validate release metadata
+    runs-on: ubuntu-24.04
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      version: ${{ steps.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+      - name: Validate tag, commit, and versions
+        id: metadata
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$REQUESTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $REQUESTED_TAG" >&2
+            exit 1
+          fi
+
+          version="${REQUESTED_TAG#v}"
+          package_version="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
+          tauri_version="$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json', 'utf8')).version")"
+          cargo_version="$(cargo metadata --no-deps --format-version 1 --manifest-path src-tauri/Cargo.toml | jq -r '.packages[] | select(.name == "terminal") | .version')"
+
+          for declared_version in "$package_version" "$tauri_version" "$cargo_version"; do
+            if [[ "$declared_version" != "$version" ]]; then
+              echo "Version mismatch: tag=$version declared=$declared_version" >&2
+              exit 1
+            fi
+          done
+
+          tag_commit="$(git rev-list -n 1 "$REQUESTED_TAG")"
+          checkout_commit="$(git rev-parse HEAD)"
+          if [[ "$tag_commit" != "$checkout_commit" ]]; then
+            echo "Tag $REQUESTED_TAG resolves to $tag_commit, checkout is $checkout_commit" >&2
+            exit 1
+          fi
+
+          echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Validate the release mode
+        shell: bash
+        env:
+          MODE: ${{ env.RELEASE_MODE }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          case "$MODE" in
+            unsigned-qa)
+              echo "Mode unsigned-qa: no Apple/Windows certificate and no updater key required."
+              echo "These installers are unsigned QA artifacts; the release notes say so."
+              ;;
+            updater-signed)
+              if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+                echo "Mode updater-signed requires the TAURI_SIGNING_PRIVATE_KEY secret." >&2
+                echo "Refusing to silently fall back to unsigned artifacts." >&2
+                exit 1
+              fi
+              echo "Mode updater-signed: updater artifacts and signatures will be produced."
+              echo "OS code signing is still absent, so Gatekeeper/SmartScreen warnings remain."
+              ;;
+            fully-signed)
+              echo "Mode fully-signed is reserved for a later phase." >&2
+              echo "It needs a Developer ID certificate, notarization credentials and" >&2
+              echo "a Windows signing identity; none of those exist in this repository yet." >&2
+              exit 1
+              ;;
+            *)
+              echo "Unknown release mode: $MODE" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Resolve or create draft release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Draft releases are not reachable through /releases/tags/{tag} (that
+          # endpoint answers 404 for drafts), so resolve the release — draft or
+          # published — from the release list instead.
+          resolve_release() {
+            gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              | jq -c --arg tag "$RELEASE_TAG" '[.[] | select(.tag_name == $tag)][0] // empty'
+          }
+
+          release_json="$(resolve_release)"
+          if [[ -z "$release_json" ]]; then
+            # Always start as a draft: nothing becomes visible until every gate ran.
+            gh release create "$RELEASE_TAG" \
+              --verify-tag \
+              --title "$RELEASE_VERSION" \
+              --notes "Release mode: ${RELEASE_MODE}. Platform installers for macOS (universal), Windows and Linux. macOS is not notarized and Windows installers are not Authenticode-signed unless the release notes say otherwise." \
+              --draft \
+              --prerelease
+            release_json="$(resolve_release)"
+          fi
+          if [[ -z "$release_json" ]]; then
+            echo "Could not resolve the release for $RELEASE_TAG after creating it" >&2
+            exit 1
+          fi
+
+          if [[ "$(jq -r '.draft' <<< "$release_json")" != "true" ]]; then
+            echo "Release $RELEASE_TAG already exists as a published release." >&2
+            echo "Refusing to overwrite a published release; bump the version instead." >&2
+            exit 1
+          fi
+          if [[ "$(jq -r '.prerelease' <<< "$release_json")" != "true" ]]; then
+            echo "Release $RELEASE_TAG must be a prerelease draft for these dev builds" >&2
+            exit 1
+          fi
+
+          echo "release_id=$(jq -r '.id' <<< "$release_json")" >> "$GITHUB_OUTPUT"
+
+  build-macos-binary:
+    name: Build macOS binary (${{ matrix.target }})
+    needs: prepare-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+          workspaces: src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+      - name: Build macOS binary
+        shell: bash
+        run: pnpm tauri build --no-bundle --ci --target ${{ matrix.target }} ${{ env.UPDATER_ARGS }} -- --locked
+      - name: Upload macOS binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-binary-${{ matrix.target }}
+          path: src-tauri/target/${{ matrix.target }}/release/${{ env.APP_BINARY_NAME }}
+          if-no-files-found: error
+          retention-days: 3
+
+  bundle-macos:
+    name: Bundle universal macOS DMG
+    needs: [prepare-release, build-macos-binary]
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-universal-apple-darwin
+          workspaces: src-tauri -> target
+      - name: Download per-architecture binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: macos-binary-*
+          path: macos-binaries
+      - name: Merge universal binary with lipo
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="src-tauri/target/universal-apple-darwin/release"
+          mkdir -p "$out"
+          lipo -create -output "$out/${APP_BINARY_NAME}" \
+            "macos-binaries/macos-binary-aarch64-apple-darwin/${APP_BINARY_NAME}" \
+            "macos-binaries/macos-binary-x86_64-apple-darwin/${APP_BINARY_NAME}"
+          chmod +x "$out/${APP_BINARY_NAME}"
+          lipo -info "$out/${APP_BINARY_NAME}"
+      - run: pnpm install --frozen-lockfile
+      - name: Bundle universal .app (retry with backoff)
+        shell: bash
+        run: |
+          set -euo pipefail
+          max_attempts=3
+          for attempt in $(seq 1 "$max_attempts"); do
+            echo "=== macOS bundle attempt ${attempt}/${max_attempts} ==="
+            bundle_log="$RUNNER_TEMP/tauri-bundle-macos-${attempt}.log"
+            if pnpm tauri bundle --target universal-apple-darwin --bundles app ${{ env.UPDATER_ARGS }} 2>&1 | tee "$bundle_log"; then
+              echo "macOS .app bundled"
+              exit 0
+            fi
+            if grep -qE 'HTTP status code: 40[13]' "$bundle_log"; then
+              echo "Apple rejected the request (HTTP 401/403); retrying cannot fix this." >&2
+              exit 1
+            fi
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "macOS bundling failed after ${max_attempts} attempts" >&2
+              exit 1
+            fi
+            sleep_seconds=$((attempt * 30))
+            echo "macOS bundling failed, retrying in ${sleep_seconds}s"
+            sleep "$sleep_seconds"
+          done
+      - name: Create universal DMG
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          app_path="$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -type d | head -1 || true)"
+          if [ -z "$app_path" ]; then
+            echo "No .app was produced by the bundle step" >&2
+            exit 1
+          fi
+          app_name="$(basename "$app_path")"
+          dmg="release-assets/${RELEASE_ASSET_PREFIX}_${VERSION}_macos-universal.dmg"
+          staged=0
+          if HOMEBREW_NO_AUTO_UPDATE=1 brew install create-dmg; then
+            stage="$RUNNER_TEMP/dmg-stage"
+            rm -rf "$stage"
+            mkdir -p "$stage"
+            ditto "$app_path" "$stage/$app_name"
+            if create-dmg \
+              --volname "Termius" \
+              --window-size 660 400 \
+              --window-pos 200 120 \
+              --icon-size 80 \
+              --icon "$app_name" 180 220 \
+              --hide-extension "$app_name" \
+              --app-drop-link 480 220 \
+              --no-internet-enable \
+              "$dmg" "$stage"; then
+              staged=1
+            fi
+            rm -rf "$stage"
+          fi
+          if [ "$staged" -ne 1 ]; then
+            echo "create-dmg unavailable or failed; falling back to Tauri's DMG bundler" >&2
+            pnpm tauri bundle --target universal-apple-darwin --bundles dmg
+            built="$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -type f | head -1 || true)"
+            if [ -z "$built" ]; then
+              echo "Tauri's DMG bundler produced nothing" >&2
+              exit 1
+            fi
+            cp "$built" "$dmg"
+          fi
+          if [ ! -s "$dmg" ]; then
+            echo "Universal DMG is missing or empty: $dmg" >&2
+            exit 1
+          fi
+          ls -l "$dmg"
+      - name: Upload universal DMG to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          MODE: ${{ env.RELEASE_MODE }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" release-assets/*.dmg --repo "$GITHUB_REPOSITORY" --clobber
+
+          if [ "$MODE" = "updater-signed" ]; then
+            unsigned_dir="src-tauri/target/universal-apple-darwin/release/bundle/macos"
+            shopt -s nullglob
+            payloads=("$unsigned_dir"/*.tar.gz)
+            signatures=("$unsigned_dir"/*.sig)
+            if [ "${#payloads[@]}" -eq 0 ] || [ "${#signatures[@]}" -eq 0 ]; then
+              echo "updater-signed mode produced no macOS updater payload/signature" >&2
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" "${payloads[@]}" "${signatures[@]}" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            echo "Uploaded ${#payloads[@]} macOS updater payload(s) and ${#signatures[@]} signature(s)"
+          fi
+
+  build-release:
+    name: ${{ matrix.name }}
+    needs: prepare-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows ARM64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            bundles: nsis
+            asset_key: windows-aarch64
+          - name: Windows x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+            asset_key: windows-x86_64
+          - name: Linux ARM64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            bundles: deb,appimage
+            asset_key: linux-aarch64
+          - name: Linux x64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+            asset_key: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+          workspaces: src-tauri -> target
+      - name: Install Tauri Linux dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            libudev-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev
+      - run: pnpm install --frozen-lockfile
+      - name: Build and upload bundles
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          tagName: ${{ needs.prepare-release.outputs.tag }}
+          releaseDraft: false
+          prerelease: true
+          uploadUpdaterJson: false
+          # Only updater-signed mode produces and uploads .sig files. The single
+          # latest.json is generated by verify-release after every platform
+          # passed, so tauri-action must never publish one on its own.
+          uploadUpdaterSignatures: ${{ env.RELEASE_MODE == 'updater-signed' }}
+          retryAttempts: 2
+          releaseAssetNamePattern: 'Terminal_[version]_${{ matrix.asset_key }}[setup][ext]'
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --ci ${{ env.UPDATER_ARGS }} -- --locked
+
+  verify-release:
+    name: Verify release assets
+    needs: [prepare-release, build-macos-binary, bundle-macos, build-release]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify packages and publish checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+          MODE: ${{ env.RELEASE_MODE }}
+        run: |
+          set -euo pipefail
+
+          expected_assets=(
+            "Terminal_${VERSION}_macos-universal.dmg"
+            "Terminal_${VERSION}_windows-aarch64-setup.exe"
+            "Terminal_${VERSION}_windows-x86_64-setup.exe"
+            "Terminal_${VERSION}_linux-aarch64.AppImage"
+            "Terminal_${VERSION}_linux-aarch64.deb"
+            "Terminal_${VERSION}_linux-x86_64.AppImage"
+            "Terminal_${VERSION}_linux-x86_64.deb"
+          )
+
+          assets_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100")"
+          for asset_name in "${expected_assets[@]}"; do
+            asset_size="$(jq --arg name "$asset_name" -r '[.[] | select(.name == $name) | .size] | if length == 1 then .[0] else empty end' <<< "$assets_json")"
+            if [[ -z "$asset_size" || "$asset_size" -le 0 ]]; then
+              echo "Missing or empty release asset: $asset_name" >&2
+              exit 1
+            fi
+          done
+
+          mkdir release-assets
+          for asset_name in "${expected_assets[@]}"; do
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$asset_name" --dir release-assets
+          done
+          (
+            cd release-assets
+            sha256sum "${expected_assets[@]}" > SHA256SUMS.txt
+          )
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" release-assets/SHA256SUMS.txt --clobber
+
+          if [ "$MODE" = "updater-signed" ]; then
+            # Fail closed: one signed updater payload per platform is required
+            # before any updater index is written or the draft is published.
+            assets_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100")"
+            mkdir -p updater
+            for pattern in '\.app\.tar\.gz\.sig$' '\.nsis\.zip\.sig$' '\.AppImage\.tar\.gz\.sig$'; do
+              name="$(jq -r --arg p "$pattern" '[.[] | select(.name | test($p)) | .name] | first // ""' <<< "$assets_json")"
+              if [[ -z "$name" ]]; then
+                echo "updater-signed mode is missing a signature matching: $pattern" >&2
+                exit 1
+              fi
+              gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir updater
+            done
+            darwin_sig="$(cat updater/*.app.tar.gz.sig)"
+            windows_sig="$(cat updater/*.nsis.zip.sig)"
+            linux_sig="$(cat updater/*.AppImage.tar.gz.sig)"
+            base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/"
+            darwin_payload="$(jq -r '[.[] | select(.name | test("\\.app\\.tar\\.gz$")) | .name] | first // ""' <<< "$assets_json")"
+            windows_payload="$(jq -r '[.[] | select(.name | test("\\.nsis\\.zip$")) | .name] | first // ""' <<< "$assets_json")"
+            linux_payload="$(jq -r '[.[] | select(.name | test("\\.AppImage\\.tar\\.gz$")) | .name] | first // ""' <<< "$assets_json")"
+            if [[ -z "$darwin_payload" || -z "$windows_payload" || -z "$linux_payload" ]]; then
+              echo "updater-signed mode is missing an updater payload for a platform" >&2
+              exit 1
+            fi
+            jq -n \
+              --arg version "$VERSION" \
+              --arg notes "Release ${VERSION}" \
+              --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --arg darwin_sig "$darwin_sig" --arg darwin_url "${base}${darwin_payload}" \
+              --arg windows_sig "$windows_sig" --arg windows_url "${base}${windows_payload}" \
+              --arg linux_sig "$linux_sig" --arg linux_url "${base}${linux_payload}" \
+              "{version:$version, notes:$notes, pub_date:$pub_date, platforms: {\"darwin-aarch64\": {signature:$darwin_sig, url:$darwin_url}, \"darwin-x86_64\": {signature:$darwin_sig, url:$darwin_url}, \"windows-x86_64\": {signature:$windows_sig, url:$windows_url}, \"linux-x86_64\": {signature:$linux_sig, url:$linux_url}}}" > latest.json
+            gh release upload "$RELEASE_TAG" latest.json --repo "$GITHUB_REPOSITORY" --clobber
+            echo "updater manifest uploaded with 4 platform entries"
+          fi
+      - name: Upload QA assets to Actions artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-${{ needs.prepare-release.outputs.version }}-${{ env.RELEASE_MODE }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 7
+      - name: Publish the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          MODE: ${{ env.RELEASE_MODE }}
+        run: |
+          set -euo pipefail
+
+          # Reaching this step means every asset check, the SHA256SUMS upload and
+          # (in updater-signed mode) the signature/manifest gate passed. A single
+          # earlier failure leaves the release as a draft, which is the point.
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          if [ "$MODE" = "unsigned-qa" ]; then
+            echo "Published $RELEASE_TAG as an unsigned QA prerelease (no OS code signing, no notarization, no updater signatures)."
+          else
+            echo "Published $RELEASE_TAG with updater artifacts and signatures; OS code signing is still absent."
+          fi

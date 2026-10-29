@@ -1,0 +1,56 @@
+{
+  "recordedAt": "2026-10-10T22:40:32+08:00",
+  "kind": "tauri-remote-cold-start-shell-command-ready",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "v24.16.0"
+  },
+  "application": {
+    "bundle": "/Users/liuzhiwei/Desktop/workspace/git-code/terminal/src-tauri/target/debug/bundle/macos/Termius.app/Contents/MacOS/terminal",
+    "sha256": "8de813c1b837e5298365b4d20f919d318b14a1d04c1bfbba5d6a730e2738f3d9"
+  },
+  "nativeAxHelper": {
+    "source": "scripts/macos-ax-probe.swift",
+    "sha256": "4a24a018131bd56b1cc05ecdce568d51d50ebe6abfdcf7ea3af396dce205a1f4"
+  },
+  "fixture": {
+    "transport": "OpenSSH localhost",
+    "host": "127.0.0.1",
+    "port": 61577,
+    "username": "liuzhiwei",
+    "auth": "key",
+    "hostKey": "ephemeral fixture key (cleaned after the run)",
+    "isolatedHome": "ephemeral isolated HOME (cleaned after the run)",
+    "startupMarker": "REMOTE_COLD_MARKER"
+  },
+  "measurement": {
+    "measuredFrom": "child-spawn-event",
+    "spawnToConnectedAndTerminalInputMs": 2260,
+    "spawnToRemoteStartupCommandMarkerMs": 2260,
+    "axFlags": "0,1,1,0",
+    "underTenSeconds": true
+  },
+  "reproducibleRunner": {
+    "command": "pnpm smoke:remote-cold-start -- --app-path /absolute/path/to/src-tauri/target/debug/bundle/macos/Termius.app/Contents/MacOS/terminal --timeout-ms 10000",
+    "capturedAt": "2026-10-10T22:40:32+08:00",
+    "spawnToReadyMs": 3392,
+    "requestToReadyMs": 3407,
+    "readinessMode": "remote",
+    "readiness": {
+      "localTab": false,
+      "connected": true,
+      "terminalInput": true,
+      "shellPrompt": false
+    },
+    "markerReady": true,
+    "markerExpected": "REMOTE_COLD_MARKER",
+    "axFlags": "0,1,1,0",
+    "fixturePort": 61577
+  },
+  "limitations": [
+    "The marker proves that the real SSH PTY accepted and executed the configured startup command; it is not a visual shell prompt.",
+    "The remote xterm prompt is rendered on a canvas and was not treated as an AX-visible readiness condition.",
+    "This does not replace human physical keyboard/IME, Windows/Pageant, or serial hardware acceptance."
+  ]
+}

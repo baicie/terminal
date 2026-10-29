@@ -1,0 +1,41 @@
+export default {
+  // Vaults
+  'vaults.title': 'Coffres',
+  'vaults.createVault': 'Créer votre coffre',
+  'vaults.masterPassword': 'Mot de passe principal',
+  'vaults.confirmPassword': 'Confirmer le mot de passe',
+  'vaults.creating': 'Création...',
+  'vaults.warning':
+    'Attention : si vous oubliez votre mot de passe principal, vos données seront irrécupérables.',
+  'vaults.vaultLocked': 'Coffre verrouillé',
+  'vaults.unlockDesc':
+    'Entrez votre mot de passe principal pour déverrouiller le coffre et accéder à vos données sécurisées.',
+  'vaults.unlock': 'Déverrouiller',
+  'vaults.vault': 'Coffre',
+  'vaults.addNewEntry': 'Ajouter une entrée',
+  'vaults.lock': 'Verrouiller',
+  'vaults.key': 'Clé (ex: serveur-motdepasse)',
+  'vaults.value': 'Valeur',
+  'vaults.entryDetails': "Détails de l'entrée",
+  'vaults.noEntries': 'Aucune entrée',
+  'vaults.addFirstEntry': 'Ajoutez votre première entrée sécurisée ci-dessus',
+  'vaults.selectEntry': 'Sélectionnez une entrée pour voir les détails',
+  'vaults.enterStrongPassword': 'Entrez un mot de passe fort',
+  'vaults.confirmYourPassword': 'Confirmez votre mot de passe',
+  'vaults.enterMasterPassword': 'Entrez votre mot de passe principal',
+  'vaults.vaultCreated': 'Coffre créé avec succès',
+  'vaults.vaultUnlocked': 'Coffre déverrouillé avec succès',
+  'vaults.entryAdded': 'Entrée ajoutée avec succès',
+  'vaults.entryDeleted': 'Entrée supprimée',
+  'vaults.copiedToClipboard': 'Copié dans le presse-papiers',
+  'vaults.failedCopy': 'Échec de la copie',
+  'vaults.keyValueRequired': 'La clé et la valeur sont requises',
+  'vaults.invalidPassword': 'Mot de passe invalide',
+  'vaults.passwordRequired': 'Mot de passe requis',
+  'vaults.passwordMinLength':
+    'Le mot de passe doit contenir au moins 8 caractères',
+  'vaults.passwordsDoNotMatch': 'Les mots de passe ne correspondent pas',
+  'vaults.loading': 'Chargement du coffre...',
+  'vaults.secureVault':
+    'Stockez en toute sécurité les mots de passe, clés SSH et jetons API grâce au chiffrement AES-256.',
+}

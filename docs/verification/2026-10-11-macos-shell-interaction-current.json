@@ -1,0 +1,267 @@
+{
+  "recordedAt": "2026-10-28T14:11:19.000Z",
+  "recordedDate": "2026-10-28",
+  "kind": "tauri-local-shell-interaction-current-worktree",
+  "command": "pnpm smoke:shell-probe:matrix --reuse-binary --shells bash,zsh -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt",
+  "matrixCommand": "pnpm smoke:shell-probe:matrix --reuse-binary --shells bash,zsh -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt",
+  "sshMatrixCommand": "pnpm smoke:shell-probe:matrix --reuse-binary --transport ssh -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "revision": {
+    "head": "codex/terminal-reliability-matrix",
+    "commit": "94ed89c",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa"
+  },
+  "shells": [
+    "bash",
+    "zsh"
+  ],
+  "matrixRunsExecuted": 14,
+  "matrixRunsPassed": 14,
+  "sshRunsExecuted": 7,
+  "sshRunsPassed": 7,
+  "cases": [
+    {
+      "shell": "bash",
+      "case": "cat-eof",
+      "ok": true,
+      "durationMs": 396,
+      "trace": [
+        "ready",
+        "pass"
+      ]
+    },
+    {
+      "shell": "bash",
+      "case": "readline-history",
+      "ok": true,
+      "durationMs": 218,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "shell": "bash",
+      "case": "readline-tab",
+      "ok": true,
+      "durationMs": 367,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "shell": "bash",
+      "case": "vim-edit",
+      "ok": true,
+      "durationMs": 5149,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "shell": "bash",
+      "case": "nano-edit",
+      "ok": true,
+      "durationMs": 4708,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "shell": "bash",
+      "case": "pty-resize",
+      "ok": true,
+      "durationMs": 1322,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "shell": "bash",
+      "case": "ctrl-c-interrupt",
+      "ok": true,
+      "durationMs": 1010,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "shell": "zsh",
+      "case": "cat-eof",
+      "ok": true,
+      "durationMs": 420,
+      "trace": [
+        "ready",
+        "pass"
+      ]
+    },
+    {
+      "shell": "zsh",
+      "case": "readline-history",
+      "ok": true,
+      "durationMs": 239,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "shell": "zsh",
+      "case": "readline-tab",
+      "ok": true,
+      "durationMs": 432,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "shell": "zsh",
+      "case": "vim-edit",
+      "ok": true,
+      "durationMs": 5245,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "shell": "zsh",
+      "case": "nano-edit",
+      "ok": true,
+      "durationMs": 4777,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "shell": "zsh",
+      "case": "pty-resize",
+      "ok": true,
+      "durationMs": 1499,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "shell": "zsh",
+      "case": "ctrl-c-interrupt",
+      "ok": true,
+      "durationMs": 1071,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    }
+  ],
+  "sshCases": [
+    {
+      "case": "cat-eof",
+      "ok": true,
+      "durationMs": 551,
+      "trace": [
+        "ready",
+        "pass"
+      ]
+    },
+    {
+      "case": "readline-history",
+      "ok": true,
+      "durationMs": 501,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "case": "readline-tab",
+      "ok": true,
+      "durationMs": 570,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "case": "vim-edit",
+      "ok": true,
+      "durationMs": 5373,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "case": "nano-edit",
+      "ok": true,
+      "durationMs": 4883,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "case": "pty-resize",
+      "ok": true,
+      "durationMs": 1855,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    },
+    {
+      "case": "ctrl-c-interrupt",
+      "ok": true,
+      "durationMs": 2040,
+      "trace": [
+        "ready",
+        "step",
+        "pass"
+      ]
+    }
+  ],
+  "allCasesPassed": true,
+  "sshShell": "default login shell of the loopback sshd fixture",
+  "shellNote": "Each case drives the real Tauri/WKWebView xterm surface into a local PTY or a loopback SSH channel and checks the exact readback.",
+  "dialectNote": "bash and zsh have dedicated dialects; fish/sh are rejected before any build until they do.",
+  "source": {
+    "fingerprint": "04bb5973242948fdbcdc506d01efefeaf9a4f91a4e1f352e6356cd72fb36b6f6",
+    "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs."
+  },
+  "limitations": [
+    "The probes type through the same xterm input path a user does, but they are not human keystrokes: physical keyboard hardware, dead keys and IME composition remain unverified.",
+    "Virtual terminal sessions run on this machine; no Windows/Linux PTY or serial hardware is covered."
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-10",
+  "platform": "macOS",
+  "status": "blocked",
+  "command": "pnpm smoke:raw-input -- --skip-build --case sgr-mouse",
+  "case": "sgr-mouse",
+  "result": null,
+  "failure": {
+    "kind": "result-timeout",
+    "timeoutMs": 60000,
+    "message": "raw input probe result timed out after 60000 ms"
+  },
+  "environment": {
+    "accessibilityAndGui": "unavailable",
+    "screen": "locked",
+    "cuaObservation": "The Mac is locked and automatic unlock is paused because physical input was detected."
+  },
+  "interpretation": "No Tauri/WKWebView/PTY success evidence was produced. This record is an external-environment blocker, not a passing or failing protocol result."
+}

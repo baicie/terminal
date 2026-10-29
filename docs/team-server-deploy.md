@@ -1,0 +1,452 @@
+# Team Server — 自托管部署指南
+
+> **本文档**：适用于希望在自己的服务器上运行团队协作服务的用户。
+> 前端 Terminal 应用通过 WebDAV / S3 / 自定义 REST API 与此服务通信，实现跨设备数据同步和团队协作。
+
+---
+
+## 目录
+
+1. [架构概述](#1-架构概述)
+2. [快速部署（Docker Compose）](#2-快速部署docker-compose)
+3. [生产环境配置](#3-生产环境配置)
+4. [反向代理配置](#4-反向代理配置)
+5. [数据库维护](#5-数据库维护)
+6. [安全加固](#6-安全加固)
+7. [故障排查](#7-故障排查)
+
+---
+
+## 1. 架构概述
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    用户浏览器                         │
+│              (Terminal Desktop App)                  │
+└──────────────┬────────────────────────────────────┘
+               │ HTTPS (REST API / WebDAV)
+               ▼
+┌─────────────────────────────────────────────────────┐
+│               反向代理（Nginx / Caddy）              │
+│         TLS 终止 + 证书管理 + 限流                  │
+└──────────────┬────────────────────────────────────┘
+               │
+    ┌──────────┴──────────┐
+    │                     │
+    ▼                     ▼
+┌──────────────┐   ┌──────────────────────────┐
+│  Team Server  │   │    PostgreSQL 16         │
+│  (NestJS)    │   │    (持久化数据)          │
+│  Port 3000   │   │    Port 5432            │
+└──────────────┘   └──────────────────────────┘
+```
+
+**核心模块**：
+
+| 模块 | 路径 | 功能 |
+|------|------|------|
+| 认证 | `/api/v1/auth/*` | 注册、API Token 管理 |
+| 团队 | `/api/v1/teams/*` | 创建/管理团队 |
+| 成员 | `/api/v1/teams/:id/members/*` | 添加/移除成员 |
+| 分享 | `/api/v1/teams/:id/shares/*` | 分享主机/代码片段 |
+| 邀请 | `/api/v1/teams/:id/invites/*` | 邀请链接/码 |
+| 审计 | `/api/v1/teams/:id/audit/*` | 操作日志 |
+| 同步 | `/api/v1/sync/*` | 增量数据同步 |
+| 健康检查 | `/api/v1/health`, `/api/v1/health/live`, `/api/v1/health/ready` | K8s 就绪/存活探针 |
+
+---
+
+## 2. 快速部署（Docker Compose）
+
+### 前置条件
+
+- Docker 24.0+
+- Docker Compose v2.20+
+- 域名（可选，用于 HTTPS）
+
+### 步骤
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/your-org/terminal.git
+cd terminal/packages/team-server
+
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env，至少修改 POSTGRES_PASSWORD，并确认注册准入模式
+vim .env
+
+# 3. 启动服务
+docker compose up -d
+
+# 4. 检查数据库就绪状态
+curl http://localhost:3000/api/v1/health/ready
+# 期望输出：{"status":"ready"}
+
+# 5. 查看日志
+docker compose logs -f team-server
+```
+
+**设备注册**：`REGISTRATION_MODE` 支持 `closed`、`token` 和 `open`。生产环境未显式配置时默认为 `closed`，注册接口会拒绝所有开户请求。受控开户应使用 `token` 模式：配置至少 32 字符的 `REGISTRATION_TOKEN`，并仅在调用 `POST /api/v1/auth/register` 时通过 `X-Registration-Token` 传入。这个准入令牌只用于开户，不是日常 API Bearer Token，不应保存在桌面端配置中。`open` 允许任意客户端注册，只建议在隔离的开发环境显式启用。
+
+---
+
+## 3. 生产环境配置
+
+### 3.1 环境变量（`.env`）
+
+```bash
+# Docker Compose 数据库（必须修改密码）
+POSTGRES_USER=terminal
+POSTGRES_PASSWORD=<YOUR_PASSWORD>
+POSTGRES_DB=terminal
+DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+
+# 服务与宿主机绑定
+PORT=3000
+NODE_ENV=production
+TEAM_SERVER_BIND_ADDRESS=127.0.0.1
+TEAM_SERVER_PORT=3000
+SWAGGER_ENABLED=false
+
+# 注册准入：closed | token | open；生产默认 closed
+REGISTRATION_MODE=closed
+# 仅 token 模式需要，至少 32 个随机字符
+# REGISTRATION_TOKEN=
+
+# 精确的客户端 Origin，逗号分隔；不允许通配符
+CORS_ORIGINS=tauri://localhost,http://tauri.localhost,http://localhost:1420,http://127.0.0.1:1420
+```
+
+容器内必须使用 Compose 服务名 `db`。仅在宿主机直接运行 Team Server 时，才将 `DATABASE_URL` 中的主机名改为 `localhost` 或 `127.0.0.1`。
+
+`REGISTRATION_MODE=token` 时可使用 `openssl rand -hex 32` 生成准入令牌。完成受控开户后，应轮换该令牌或将模式改回 `closed`，然后重启 Team Server。
+
+`NODE_ENV` 必须显式且精确设置为 `development`、`test` 或 `production`；缺失、大小写错误或多余空白都会使服务拒绝启动，避免生产安全配置意外回退到开发模式。
+
+### 3.2 数据库初始化
+
+```bash
+# 运行数据库迁移
+docker compose exec team-server npx prisma migrate deploy
+
+# （可选）填充种子数据
+docker compose exec team-server npx prisma db seed
+```
+
+### 3.3 Docker Compose 生产配置
+
+建议在 `docker-compose.override.yml` 或独立的 `docker-compose.prod.yml` 中添加资源限制和重启策略：
+
+```yaml
+# docker-compose.prod.yml
+version: '3.9'
+
+services:
+  team-server:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      PORT: 3000
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      REGISTRATION_MODE: ${REGISTRATION_MODE:-closed}
+      REGISTRATION_TOKEN: ${REGISTRATION_TOKEN:-}
+
+  db:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # 生产环境建议定期备份，添加定时任务：
+    # 0 3 * * * docker compose exec db pg_dump -U terminal terminal > /backup/terminal_$(date +%Y%m%d).sql
+
+volumes:
+  pgdata:
+```
+
+```bash
+# 启动生产配置
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+---
+
+## 4. 反向代理配置
+
+### 4.1 Nginx
+
+```nginx
+# /etc/nginx/nginx.conf
+events {}
+
+http {
+    # limit_req_zone 只能定义在 http 上下文。
+    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/m;
+    limit_req_zone $binary_remote_addr zone=registration_limit:10m rate=5r/m;
+
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+    upstream team_server {
+        server 127.0.0.1:3000;
+        keepalive 16;
+    }
+
+    server {
+        listen 80;
+        server_name team-api.example.com;
+        return 301 https://$host$request_uri;
+    }
+
+    server {
+        listen 443 ssl http2;
+        server_name team-api.example.com;
+
+        ssl_certificate     /etc/letsencrypt/live/team-api.example.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/team-api.example.com/privkey.pem;
+
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+        # 注册接口使用独立的边缘限流；服务端仍会执行应用级准入校验。
+        location = /api/v1/auth/register {
+            limit_req zone=registration_limit burst=2 nodelay;
+            proxy_pass http://team_server;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # 健康探针不参与 API 限流。
+        location ^~ /api/v1/health {
+            proxy_pass http://team_server;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location / {
+            limit_req zone=api_limit burst=50 nodelay;
+            proxy_pass http://team_server;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_connect_timeout 30s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+        }
+    }
+}
+```
+
+### 4.2 Caddy（推荐，更简单）
+
+```caddy
+# Caddyfile
+team-api.example.com {
+    # 公网 DNS 指向本机且 80/443 端口可达时，Caddy 会自动
+    # 申请公开受信任的 TLS 证书并将 HTTP 重定向到 HTTPS。
+    reverse_proxy 127.0.0.1:3000
+
+    # 安全头
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        Strict-Transport-Security "max-age=31536000"
+    }
+}
+```
+
+```bash
+# 启动 Caddy
+caddy run --config Caddyfile
+```
+
+---
+
+## 5. 数据库维护
+
+### 5.1 备份
+
+```bash
+# 方式 A：pg_dump（推荐）
+docker compose exec -T db pg_dump -U terminal terminal > terminal_backup_$(date +%Y%m%d_%H%M%S).sql
+
+# 方式 B：完整 Volume 快照
+docker compose stop db
+docker run --rm -v $(docker compose ps -q db):/data -v $(pwd):/backup alpine tar czf /backup/pgdata_snapshot.tar.gz -C /data .
+docker compose start db
+```
+
+### 5.2 恢复
+
+```bash
+# 停止服务
+docker compose stop team-server
+
+# 恢复数据库
+cat terminal_backup.sql | docker compose exec -T db psql -U terminal terminal
+
+# 启动服务
+docker compose start team-server
+```
+
+### 5.3 迁移升级
+
+```bash
+# 拉取最新代码
+git pull
+
+# 重新构建镜像
+docker compose build team-server
+
+# 运行新迁移
+docker compose run --rm team-server npx prisma migrate deploy
+
+# 重启服务
+docker compose up -d team-server
+```
+
+---
+
+## 6. 安全加固
+
+### 6.1 必做项
+
+| 项目 | 操作 |
+|------|------|
+| **修改数据库密码** | 在 `.env` 中设置强密码（≥16位，随机生成） |
+| **启用 TLS** | 通过反向代理配置 HTTPS（Let's Encrypt 免费证书） |
+| **限制数据库访问** | 仅允许 `127.0.0.1` 或 Docker 网络访问，勿暴露 Port 5432 |
+| **配置注册准入** | 生产保持 `REGISTRATION_MODE=closed`；受控开户时使用至少 32 字符的 `REGISTRATION_TOKEN` 和 `token` 模式，完成后恢复 `closed` |
+| **配置精确 CORS** | `CORS_ORIGINS` 仅填写实际客户端 origin；生产环境缺失或使用 `*` 会拒绝启动 |
+| **定期备份** | 设置 cron 任务或使用 pgBackRest |
+| **监控日志** | 配置日志收集（ Loki / ELK / CloudWatch） |
+
+### 6.2 可选加固
+
+| 项目 | 说明 |
+|------|------|
+| **额外 API 限流** | 服务端已内置全局及注册/邀请限流；可再用 Nginx `limit_req` 做边缘保护 |
+| **限制注册网络来源** | 在应用级准入之外，可再通过 VPN、内网或反向代理 ACL 限制 `/api/v1/auth/register` |
+| **WAF** | 如 Cloudflare ModSecurity、Nginx + ModSecurity |
+| **入侵检测** | 配置 `fail2ban` 防止暴力破解注册接口 |
+| **网络隔离** | 使用 Docker 网络隔离，将数据库置于内部网络 |
+| **环境隔离** | 生产凭据使用部署平台 Secret 或未提交的 `.env`，勿写入镜像和版本库 |
+
+### 6.3 API Token 安全
+
+- 注册响应中的 API Token 仅显示一次；将它作为 `Authorization: Bearer <token>` 使用并安全保存
+- `REGISTRATION_TOKEN` 只是开户准入令牌，不能用于访问受保护 API，也不应分发给日常客户端
+- 建议为每个设备/客户端生成独立 API Token，便于轮换和撤销
+- 当前 API Token 默认无过期时间，应定期审查并撤销不再使用的 Token
+
+---
+
+## 7. 故障排查
+
+### 服务无法启动
+
+```bash
+# 查看详细日志
+docker compose logs team-server
+
+# 常见原因：数据库未就绪
+# → 确认 db 容器状态
+docker compose ps db
+# → 检查 DATABASE_URL 是否正确
+```
+
+### 健康检查失败
+
+```bash
+curl http://localhost:3000/api/v1/health/live   # 存活探针
+curl http://localhost:3000/api/v1/health/ready  # 就绪探针（含 DB 检查）
+```
+
+### 数据库连接失败
+
+```bash
+# 进入容器测试连接
+docker compose exec team-server sh
+nc -zv db 5432   # 检查网络连通性
+```
+
+### 502 Bad Gateway
+
+```bash
+# team-server 未运行或崩溃
+docker compose logs team-server
+docker compose restart team-server
+```
+
+### 迁移失败
+
+```bash
+# 查看当前迁移状态
+docker compose exec team-server npx prisma migrate status
+
+# 回滚（谨慎操作）
+docker compose exec team-server npx prisma migrate resolve --rolled-back <migration_name>
+```
+
+---
+
+## 附录：API 快速参考
+
+### 注册用户
+
+`token` 模式下，先在 Team Server 的 `.env` 中配置 `REGISTRATION_TOKEN` 并重启服务，再由管理员在受控环境执行：
+
+```bash
+curl --fail-with-body -X POST https://team-api.example.com/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -H 'X-Registration-Token: <REGISTRATION_TOKEN>' \
+  -d '{"userId":"device-uuid","name":"My Desktop"}'
+```
+
+响应中的 `token` 是该用户的 API Bearer Token。`closed` 模式会拒绝上述请求；`open` 模式无需 `X-Registration-Token`，但不应用于公网生产环境。
+
+### 创建 API Token
+
+```bash
+curl -X POST http://localhost:3000/api/v1/auth/tokens \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <YOUR_TOKEN>" \
+  -d '{"name":"My Desktop"}'
+```
+
+### 创建团队
+
+```bash
+curl -X POST http://localhost:3000/api/v1/teams \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <YOUR_TOKEN>" \
+  -d '{"name":"My Team"}'
+```
+
+---
+
+_文档更新时间：2026-08-19_

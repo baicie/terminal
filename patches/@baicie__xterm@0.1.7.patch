@@ -1,0 +1,300 @@
+diff --git a/lib/xterm.js b/lib/xterm.js
+index 33903edcb79e1c4b8ae97826ea18c9d7ea85298e..f25f429abd020e621057c0ec1acd0d7a333cffac 100644
+--- a/lib/xterm.js
++++ b/lib/xterm.js
+@@ -3546,6 +3546,7 @@ let CompositionHelper = class CompositionHelper {
+ 	*/
+ 	keydown(ev) {
+ 		if (this._isComposing || this._isSendingComposition) {
++			if (ev.keyCode === 27) return false;
+ 			if (ev.keyCode === 20 || ev.keyCode === 229) return false;
+ 			if (ev.keyCode === 16 || ev.keyCode === 17 || ev.keyCode === 18) return false;
+ 			this._finalizeComposition(false);
+@@ -16863,6 +16864,7 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		this._keyDownHandled = false;
+ 		this._keyDownSeen = false;
+ 		this._keyPressHandled = false;
++		this._keyDownSentData = [];
+ 		this._unprocessedDeadKey = false;
+ 		this._accessibilityManager = this._register(new MutableDisposable());
+ 		this._onCursorMove = this._register(new Emitter());
+@@ -17036,7 +17038,10 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 			if (!this.hasSelection()) return;
+ 			copyHandler(event, this._selectionService);
+ 		}));
+-		const pasteHandlerWrapper = (event) => handlePasteEvent(event, this.textarea, this.coreService, this.optionsService);
++		const pasteHandlerWrapper = (event) => {
++			this._keyDownSentData.length = 0;
++			handlePasteEvent(event, this.textarea, this.coreService, this.optionsService);
++		};
+ 		this._register(addDisposableListener(this.textarea, "paste", pasteHandlerWrapper));
+ 		this._register(addDisposableListener(this.element, "paste", pasteHandlerWrapper));
+ 		if (isFirefox) this._register(addDisposableListener(this.element, "mousedown", (event) => {
+@@ -17057,6 +17062,7 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		this._register(addDisposableListener(this.textarea, "keydown", (ev) => this._keyDown(ev), true));
+ 		this._register(addDisposableListener(this.textarea, "keypress", (ev) => this._keyPress(ev), true));
+ 		this._register(addDisposableListener(this.textarea, "compositionstart", () => {
++			this._keyDownSentData.length = 0;
+ 			this._syncTextArea();
+ 			this._compositionHelper.compositionstart();
+ 			this._compositionHelper.updateCompositionElements();
+@@ -17340,11 +17346,16 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 	* [KeyboardEvent]: https://developer.mozilla.org/en-US/docs/DOM/KeyboardEvent
+ 	*/
+ 	_keyDown(event) {
+-		console.debug("[WebKit] _keyDown called, userAgent:", navigator.userAgent, "isWebKitBased:", isWebKitBased, "key:", event.key);
+ 		this._keyDownHandled = false;
+ 		this._keyDownSeen = true;
+ 		if (this._customKeyEventHandler && this._customKeyEventHandler(event) === false) return false;
+-		const shouldIgnoreComposition = this.browser.isMac && this.options.macOptionIsMeta && event.altKey;
++		const isOptionDeadKey = this.browser.isMac && this.options.macOptionIsMeta && event.altKey && event.key === "Dead";
++		if (isOptionDeadKey) {
++			this._keyDownHandled = true;
++			return true;
++		}
++		const wasComposing = event.isComposing || this._compositionHelper.isComposing;
++		const shouldIgnoreComposition = this.browser.isMac && this.options.macOptionIsMeta && event.altKey && event.key !== "Process" && event.keyCode !== 229 && !wasComposing;
+ 		if (!shouldIgnoreComposition && !this._compositionHelper.keydown(event)) {
+ 			if (this.options.scrollOnUserInput && this.buffer.ybase !== this.buffer.ydisp) this.scrollToBottom(true);
+ 			return false;
+@@ -17361,6 +17372,11 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		}
+ 		if (result.type === KeyboardResultType.SELECT_ALL) this.selectAll();
+ 		if (this._isThirdLevelShift(this.browser, event)) return true;
++		const shouldPreventWebKitOptionText = isWebKitBased && this.browser.isMac && this.options.macOptionIsMeta && event.altKey && event.key !== "Dead" && event.key !== "Process" && event.keyCode !== 229 && !event.isComposing && !wasComposing && Boolean(result.key);
++		if (shouldPreventWebKitOptionText) {
++			event.preventDefault();
++			event.stopPropagation();
++		}
+ 		if (result.cancel) {
+ 			event.preventDefault();
+ 			event.stopPropagation();
+@@ -17368,7 +17384,6 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		if (!result.key) return true;
+ 		if (!isWebKitBased && !this._keyboardService.useKitty && !this._keyboardService.useWin32InputMode && event.key && !event.ctrlKey && !event.altKey && !event.metaKey && event.key.length === 1) {
+ 			if (event.key.charCodeAt(0) >= 65 && event.key.charCodeAt(0) <= 90) {
+-				console.debug("[WebKit] A-Z HACK skipped for non-WebKit, key:", event.key);
+ 				return true;
+ 			}
+ 		}
+@@ -17383,10 +17398,12 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 			domEvent: event
+ 		});
+ 		this._showCursor();
+-		console.debug("[Input] _keyDown triggerDataEvent, key:", result.key, "wasModifierOnly:", wasModifierOnly, "isWebKitBased:", isWebKitBased);
+ 		this.coreService.triggerDataEvent(result.key, !wasModifierOnly);
++		if (result.key && !/[\x00-\x1f\x7f]/.test(result.key)) {
++			this._keyDownSentData.push({ data: result.key, at: performance.now() });
++			if (this._keyDownSentData.length > 32) this._keyDownSentData.shift();
++		}
+ 		if (!this.optionsService.rawOptions.screenReaderMode && isWebKitBased) {
+-			console.debug("[WebKit] keydown allow default, key:", event.key);
+ 			this._keyDownHandled = true;
+ 			return true;
+ 		}
+@@ -17409,7 +17426,6 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		const result = this._keyboardService.evaluateKeyUp(ev);
+ 		if (result?.key) {
+ 			const wasModifierOnly = this._keyboardService.useWin32InputMode && wasModifierKeyOnlyEvent(ev);
+-			console.debug("[Input] _keyUp triggerDataEvent, key:", result.key, "wasModifierOnly:", wasModifierOnly);
+ 			this.coreService.triggerDataEvent(result.key, !wasModifierOnly);
+ 		}
+ 		this.updateCursorStyle(ev);
+@@ -17437,8 +17453,11 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 			domEvent: ev
+ 		});
+ 		this._showCursor();
+-		console.debug("[Input] _keyPress triggerDataEvent, key:", key, "isWebKitBased:", isWebKitBased, "_keyDownHandled:", this._keyDownHandled);
+ 		this.coreService.triggerDataEvent(key, true);
++		if (!/[\x00-\x1f\x7f]/.test(key)) {
++			this._keyDownSentData.push({ data: key, at: performance.now() });
++			if (this._keyDownSentData.length > 32) this._keyDownSentData.shift();
++		}
+ 		this._keyPressHandled = true;
+ 		this._unprocessedDeadKey = false;
+ 		return true;
+@@ -17450,24 +17469,29 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 	* @param ev The input event to be handled.
+ 	*/
+ 	_inputEvent(ev) {
+-		console.debug("[WebKit] _inputEvent called, userAgent:", navigator.userAgent, "isWebKitBased:", isWebKitBased, "data:", ev.data, "inputType:", ev.inputType);
++		if (isWebKitBased && ev.inputType !== "insertText") this._keyDownSentData.length = 0;
++		if (isWebKitBased && ev.inputType === "insertText") {
++			const now = performance.now();
++			this._keyDownSentData = this._keyDownSentData.filter((entry) => now - entry.at < 1000);
++		}
+ 		if (ev.data && ev.inputType === "insertText" && !this.optionsService.rawOptions.screenReaderMode) {
+ 			if (isWebKitBased) {
+-				console.debug("[WebKit] _inputEvent processing WebKit input:", ev.data, "_keyDownSeen:", this._keyDownSeen);
++				const duplicateIndex = this._keyDownSentData.findIndex((entry) => entry.data === ev.data);
++				if (duplicateIndex !== -1) {
++					this._keyDownSentData.splice(duplicateIndex, 1);
++					return true;
++				}
+ 				this._unprocessedDeadKey = false;
+ 				this.coreService.triggerDataEvent(ev.data, true);
+ 				return true;
+ 			}
+ 			if (ev.composed && this._keyDownSeen) {
+-				console.debug("[Input] _inputEvent skip (composed + keyDown seen), data:", ev.data, "composed:", ev.composed, "_keyDownSeen:", this._keyDownSeen);
+ 				return false;
+ 			}
+ 			this._unprocessedDeadKey = false;
+-			console.debug("[Input] _inputEvent non-WebKit triggerDataEvent, data:", ev.data, "composed:", ev.composed, "_keyDownSeen:", this._keyDownSeen);
+ 			this.coreService.triggerDataEvent(ev.data, true);
+ 			return true;
+ 		}
+-		console.debug("[Input] _inputEvent returning false, data:", ev.data, "inputType:", ev.inputType, "screenReaderMode:", this.optionsService.rawOptions.screenReaderMode);
+ 		return false;
+ 	}
+ 	/**
+diff --git a/lib/xterm.mjs b/lib/xterm.mjs
+index 83a19b7de1a1597bbe32c81f9482cf29f76ba656..a6fca059dcc4f5e3e69e0727b1fabf9af3e4453e 100644
+--- a/lib/xterm.mjs
++++ b/lib/xterm.mjs
+@@ -3545,6 +3545,7 @@ let CompositionHelper = class CompositionHelper {
+ 	*/
+ 	keydown(ev) {
+ 		if (this._isComposing || this._isSendingComposition) {
++			if (ev.keyCode === 27) return false;
+ 			if (ev.keyCode === 20 || ev.keyCode === 229) return false;
+ 			if (ev.keyCode === 16 || ev.keyCode === 17 || ev.keyCode === 18) return false;
+ 			this._finalizeComposition(false);
+@@ -16862,6 +16863,7 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		this._keyDownHandled = false;
+ 		this._keyDownSeen = false;
+ 		this._keyPressHandled = false;
++		this._keyDownSentData = [];
+ 		this._unprocessedDeadKey = false;
+ 		this._accessibilityManager = this._register(new MutableDisposable());
+ 		this._onCursorMove = this._register(new Emitter());
+@@ -17035,7 +17037,10 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 			if (!this.hasSelection()) return;
+ 			copyHandler(event, this._selectionService);
+ 		}));
+-		const pasteHandlerWrapper = (event) => handlePasteEvent(event, this.textarea, this.coreService, this.optionsService);
++		const pasteHandlerWrapper = (event) => {
++			this._keyDownSentData.length = 0;
++			handlePasteEvent(event, this.textarea, this.coreService, this.optionsService);
++		};
+ 		this._register(addDisposableListener(this.textarea, "paste", pasteHandlerWrapper));
+ 		this._register(addDisposableListener(this.element, "paste", pasteHandlerWrapper));
+ 		if (isFirefox) this._register(addDisposableListener(this.element, "mousedown", (event) => {
+@@ -17056,6 +17061,7 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		this._register(addDisposableListener(this.textarea, "keydown", (ev) => this._keyDown(ev), true));
+ 		this._register(addDisposableListener(this.textarea, "keypress", (ev) => this._keyPress(ev), true));
+ 		this._register(addDisposableListener(this.textarea, "compositionstart", () => {
++			this._keyDownSentData.length = 0;
+ 			this._syncTextArea();
+ 			this._compositionHelper.compositionstart();
+ 			this._compositionHelper.updateCompositionElements();
+@@ -17339,11 +17345,16 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 	* [KeyboardEvent]: https://developer.mozilla.org/en-US/docs/DOM/KeyboardEvent
+ 	*/
+ 	_keyDown(event) {
+-		console.debug("[WebKit] _keyDown called, userAgent:", navigator.userAgent, "isWebKitBased:", isWebKitBased, "key:", event.key);
+ 		this._keyDownHandled = false;
+ 		this._keyDownSeen = true;
+ 		if (this._customKeyEventHandler && this._customKeyEventHandler(event) === false) return false;
+-		const shouldIgnoreComposition = this.browser.isMac && this.options.macOptionIsMeta && event.altKey;
++		const isOptionDeadKey = this.browser.isMac && this.options.macOptionIsMeta && event.altKey && event.key === "Dead";
++		if (isOptionDeadKey) {
++			this._keyDownHandled = true;
++			return true;
++		}
++		const wasComposing = event.isComposing || this._compositionHelper.isComposing;
++		const shouldIgnoreComposition = this.browser.isMac && this.options.macOptionIsMeta && event.altKey && event.key !== "Process" && event.keyCode !== 229 && !wasComposing;
+ 		if (!shouldIgnoreComposition && !this._compositionHelper.keydown(event)) {
+ 			if (this.options.scrollOnUserInput && this.buffer.ybase !== this.buffer.ydisp) this.scrollToBottom(true);
+ 			return false;
+@@ -17360,6 +17371,11 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		}
+ 		if (result.type === KeyboardResultType.SELECT_ALL) this.selectAll();
+ 		if (this._isThirdLevelShift(this.browser, event)) return true;
++		const shouldPreventWebKitOptionText = isWebKitBased && this.browser.isMac && this.options.macOptionIsMeta && event.altKey && event.key !== "Dead" && event.key !== "Process" && event.keyCode !== 229 && !event.isComposing && !wasComposing && Boolean(result.key);
++		if (shouldPreventWebKitOptionText) {
++			event.preventDefault();
++			event.stopPropagation();
++		}
+ 		if (result.cancel) {
+ 			event.preventDefault();
+ 			event.stopPropagation();
+@@ -17367,7 +17383,6 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		if (!result.key) return true;
+ 		if (!isWebKitBased && !this._keyboardService.useKitty && !this._keyboardService.useWin32InputMode && event.key && !event.ctrlKey && !event.altKey && !event.metaKey && event.key.length === 1) {
+ 			if (event.key.charCodeAt(0) >= 65 && event.key.charCodeAt(0) <= 90) {
+-				console.debug("[WebKit] A-Z HACK skipped for non-WebKit, key:", event.key);
+ 				return true;
+ 			}
+ 		}
+@@ -17382,10 +17397,12 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 			domEvent: event
+ 		});
+ 		this._showCursor();
+-		console.debug("[Input] _keyDown triggerDataEvent, key:", result.key, "wasModifierOnly:", wasModifierOnly, "isWebKitBased:", isWebKitBased);
+ 		this.coreService.triggerDataEvent(result.key, !wasModifierOnly);
++		if (result.key && !/[\x00-\x1f\x7f]/.test(result.key)) {
++			this._keyDownSentData.push({ data: result.key, at: performance.now() });
++			if (this._keyDownSentData.length > 32) this._keyDownSentData.shift();
++		}
+ 		if (!this.optionsService.rawOptions.screenReaderMode && isWebKitBased) {
+-			console.debug("[WebKit] keydown allow default, key:", event.key);
+ 			this._keyDownHandled = true;
+ 			return true;
+ 		}
+@@ -17408,7 +17425,6 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 		const result = this._keyboardService.evaluateKeyUp(ev);
+ 		if (result?.key) {
+ 			const wasModifierOnly = this._keyboardService.useWin32InputMode && wasModifierKeyOnlyEvent(ev);
+-			console.debug("[Input] _keyUp triggerDataEvent, key:", result.key, "wasModifierOnly:", wasModifierOnly);
+ 			this.coreService.triggerDataEvent(result.key, !wasModifierOnly);
+ 		}
+ 		this.updateCursorStyle(ev);
+@@ -17436,8 +17452,11 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 			domEvent: ev
+ 		});
+ 		this._showCursor();
+-		console.debug("[Input] _keyPress triggerDataEvent, key:", key, "isWebKitBased:", isWebKitBased, "_keyDownHandled:", this._keyDownHandled);
+ 		this.coreService.triggerDataEvent(key, true);
++		if (!/[\x00-\x1f\x7f]/.test(key)) {
++			this._keyDownSentData.push({ data: key, at: performance.now() });
++			if (this._keyDownSentData.length > 32) this._keyDownSentData.shift();
++		}
+ 		this._keyPressHandled = true;
+ 		this._unprocessedDeadKey = false;
+ 		return true;
+@@ -17449,24 +17468,29 @@ var CoreBrowserTerminal = class extends CoreTerminal {
+ 	* @param ev The input event to be handled.
+ 	*/
+ 	_inputEvent(ev) {
+-		console.debug("[WebKit] _inputEvent called, userAgent:", navigator.userAgent, "isWebKitBased:", isWebKitBased, "data:", ev.data, "inputType:", ev.inputType);
++		if (isWebKitBased && ev.inputType !== "insertText") this._keyDownSentData.length = 0;
++		if (isWebKitBased && ev.inputType === "insertText") {
++			const now = performance.now();
++			this._keyDownSentData = this._keyDownSentData.filter((entry) => now - entry.at < 1000);
++		}
+ 		if (ev.data && ev.inputType === "insertText" && !this.optionsService.rawOptions.screenReaderMode) {
+ 			if (isWebKitBased) {
+-				console.debug("[WebKit] _inputEvent processing WebKit input:", ev.data, "_keyDownSeen:", this._keyDownSeen);
++				const duplicateIndex = this._keyDownSentData.findIndex((entry) => entry.data === ev.data);
++				if (duplicateIndex !== -1) {
++					this._keyDownSentData.splice(duplicateIndex, 1);
++					return true;
++				}
+ 				this._unprocessedDeadKey = false;
+ 				this.coreService.triggerDataEvent(ev.data, true);
+ 				return true;
+ 			}
+ 			if (ev.composed && this._keyDownSeen) {
+-				console.debug("[Input] _inputEvent skip (composed + keyDown seen), data:", ev.data, "composed:", ev.composed, "_keyDownSeen:", this._keyDownSeen);
+ 				return false;
+ 			}
+ 			this._unprocessedDeadKey = false;
+-			console.debug("[Input] _inputEvent non-WebKit triggerDataEvent, data:", ev.data, "composed:", ev.composed, "_keyDownSeen:", this._keyDownSeen);
+ 			this.coreService.triggerDataEvent(ev.data, true);
+ 			return true;
+ 		}
+-		console.debug("[Input] _inputEvent returning false, data:", ev.data, "inputType:", ev.inputType, "screenReaderMode:", this.optionsService.rawOptions.screenReaderMode);
+ 		return false;
+ 	}
+ 	/**

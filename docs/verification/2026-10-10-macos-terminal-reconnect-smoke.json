@@ -1,0 +1,46 @@
+{
+  "recordedDate": "2026-10-11",
+  "kind": "tauri-local-terminal-reconnect-smoke",
+  "command": "pnpm smoke:terminal:reconnect",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "revision": {
+    "head": "54f3fbbab39a97e1370d9880b89760dbd06a1c41",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "c69911573a824f6721ae0c00ecffa4240b872f08801606219cae8b58930cacac"
+  },
+  "result": {
+    "ok": true,
+    "stage": "complete",
+    "loadBytes": 8388608,
+    "roundsCompleted": 10,
+    "uniqueSessionCount": 11,
+    "resourcesRecovered": true,
+    "durationMs": 8586,
+    "terminalCols": 97,
+    "terminalRows": 31,
+    "loadEndVisible": true,
+    "afterLoadVisible": true,
+    "resizedSizeVisible": true,
+    "resizeTrace": [
+      { "requestedCols": 132, "requestedRows": 43, "observedCols": 132, "observedRows": 43 },
+      { "requestedCols": 90, "requestedRows": 30, "observedCols": 90, "observedRows": 30 },
+      { "requestedCols": 120, "requestedRows": 40, "observedCols": 120, "observedRows": 40 },
+      { "requestedCols": 97, "requestedRows": 31, "observedCols": 97, "observedRows": 31 }
+    ],
+    "reconnectObserved": true,
+    "staleOutputRejected": true,
+    "firstConnectionMs": 1441
+  },
+  "limitations": [
+    "This is the local PTY reconnect workflow, not a normal user cold-start stopwatch or remote SSH reconnect.",
+    "Physical keyboard/IME, real mouse/paste, and cross-platform hardware remain separate acceptance gates.",
+    "The fixture was actively terminated after the successful reconnect checkpoint; a non-fatal SSH channel-close warning may be emitted during teardown."
+  ]
+}

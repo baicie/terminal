@@ -1,0 +1,110 @@
+{
+  "recordedAt": "2026-10-28T14:11:31.500Z",
+  "recordedDate": "2026-10-28",
+  "kind": "tauri-release-ten-second-terminal-gate",
+  "why": "The previous release record described a binary (ab209317…) built from older sources; the release artifact on disk is now 1e68ba73…, built from this worktree. This record re-measures the same gate on the artifact that actually exists.",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "revision": {
+    "head": "codex/terminal-reliability-matrix",
+    "commit": "94ed89c",
+    "dirtyWorktree": true
+  },
+  "build": {
+    "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle",
+    "binary": "src-tauri/target/release/terminal",
+    "sha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
+    "devServerRequired": false,
+    "smokeInstrumented": true,
+    "smokeInstrumentedChunks": [
+      "probe-state.B40Nu7kX.js",
+      "experiments.D2_sYAuG.js",
+      "automation-root.BkSHYhRY.js",
+      "automation-root.XRAc9Che.js",
+      "terminal-input-probe.BfXDHUxk.js",
+      "automation-root.BUY-to1o.js",
+      "terminal-smoke-root.yL4TDlu.js"
+    ]
+  },
+  "local": {
+    "command": "pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/release/terminal (three consecutive runs)",
+    "probe": "Rust TERMINAL_SHELL_PROBE marker written only after the frontend sent its nonce through xterm -> session_write -> local PTY and read the marker back",
+    "measuredFrom": "child-spawn-event",
+    "readinessTarget": "terminal",
+    "repeatSpawnToReadyMs": [
+      1827,
+      1319,
+      1421
+    ],
+    "readyUnder10s": true,
+    "terminalRuns": [
+      {
+        "run": 1,
+        "capturedAt": "2026-10-28T14:11:21.756Z",
+        "pid": 21278,
+        "readyAt": "terminal",
+        "terminalReady": true,
+        "markerReady": true,
+        "spawnToReadyMs": 1827,
+        "requestToReadyMs": 1836,
+        "probeCaseName": "cat-eof",
+        "ok": true
+      },
+      {
+        "run": 2,
+        "capturedAt": "2026-10-28T14:11:26.581Z",
+        "pid": 21391,
+        "readyAt": "terminal",
+        "terminalReady": true,
+        "markerReady": true,
+        "spawnToReadyMs": 1319,
+        "requestToReadyMs": 1324,
+        "probeCaseName": "cat-eof",
+        "ok": true
+      },
+      {
+        "run": 3,
+        "capturedAt": "2026-10-28T14:11:31.500Z",
+        "pid": 21431,
+        "readyAt": "terminal",
+        "terminalReady": true,
+        "markerReady": true,
+        "spawnToReadyMs": 1421,
+        "requestToReadyMs": 1427,
+        "probeCaseName": "cat-eof",
+        "ok": true
+      }
+    ]
+  },
+  "limitations": [
+    "This is automated evidence. It does not cover a human on a physical keyboard, Chinese IME composition, Option/dead keys, or vim/nano editing.",
+    "Real lid-close sleep/wake, VPN and cellular handover recovery remain unobserved on hardware.",
+    "The binary is unsigned and unnotarised; first-launch Gatekeeper behaviour on a clean machine is still unverified.",
+    "Windows OpenSSH Agent, Pageant, ConPTY/local Windows PTY and serial hardware have no test machine available and are not covered here."
+  ],
+  "supersedes": [
+    "the ab209317… release measurement recorded in the previous revision of this file"
+  ],
+  "instrumentationCaveat": "This binary is built with VITE_TERMINAL_SMOKE_BUILD=1, which compiles the smoke and input-probe entry points and the experiments nav item into the frontend. A shipping build omits all of them, so these numbers describe a slightly larger bundle than a user receives and are a conservative upper bound.",
+  "remote": {
+    "command": "pnpm smoke:remote-cold-start -- --app-path $PWD/src-tauri/target/release/terminal",
+    "fixture": {
+      "host": "127.0.0.1",
+      "port": 55086,
+      "username": "liuzhiwei"
+    },
+    "measuredFrom": "child-spawn-event",
+    "spawnToReadyMs": 3069,
+    "requestToReadyMs": 3075,
+    "markerReady": true,
+    "terminalReady": true,
+    "promptMarker": "REMOTE_PROMPT_MARKER",
+    "shell": "bash",
+    "readyUnder10s": true,
+    "capturedAt": "2026-10-28T16:19:12.805Z",
+    "note": "Measured while the macOS session was locked. This runner depends on the local PTY/remote marker round-trip and an AX-free readiness target, so it does not need window activation; the per-case SSH matrix does, which is why that matrix still requires an unlocked desktop."
+  }
+}

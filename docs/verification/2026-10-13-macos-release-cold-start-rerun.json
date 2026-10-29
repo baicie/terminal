@@ -1,0 +1,50 @@
+{
+  "recordedAt": "2026-10-13T03:20:05+08:00",
+  "recordedDate": "2026-10-13",
+  "kind": "tauri-release-ten-second-terminal-gate-rerun",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "build": {
+    "binary": "src-tauri/target/release/terminal",
+    "sha256": "ab2093171939d7fdb26bc9200bfca4d6bbafe521576bd34e96b3069cc783a6bb",
+    "devServerRequired": false,
+    "smokeInstrumented": true,
+    "note": "This rerun reuses the release binary already reviewed by the three-run release gate; it does not rebuild or change the artifact."
+  },
+  "local": {
+    "command": "node scripts/run-cold-start-stopwatch.mjs --app-path /absolute/path/src-tauri/target/release/terminal",
+    "measuredFrom": "child-spawn-event",
+    "spawnToReadyMs": 4973,
+    "requestToReadyMs": 4979,
+    "readyUnder10s": true,
+    "readiness": {
+      "localTab": true,
+      "connected": true,
+      "terminalInput": true,
+      "shellPrompt": false
+    }
+  },
+  "remote": {
+    "command": "node scripts/run-remote-cold-start-stopwatch.mjs --app-path /absolute/path/src-tauri/target/release/terminal",
+    "fixture": "ephemeral isolated HOME + localhost OpenSSH sshd, key authentication",
+    "measuredFrom": "child-spawn-event",
+    "spawnToReadyMs": 3627,
+    "requestToReadyMs": 3634,
+    "markerReady": true,
+    "promptMarker": "REMOTE_PROMPT_MARKER",
+    "readyUnder10s": true,
+    "readiness": {
+      "localTab": false,
+      "connected": true,
+      "terminalInput": true,
+      "shellPrompt": false
+    }
+  },
+  "limitations": [
+    "This is automated evidence and does not cover a human physical keyboard, Chinese IME composition, Option/dead keys, or vim/nano editing.",
+    "Real lid-close sleep/wake, VPN or cellular handover, Windows OpenSSH Agent/Pageant/PTY, and serial hardware remain unverified."
+  ]
+}

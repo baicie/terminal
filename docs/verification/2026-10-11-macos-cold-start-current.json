@@ -1,0 +1,88 @@
+{
+  "recordedAt": "2026-10-28T14:06:57.346Z",
+  "recordedDate": "2026-10-28",
+  "kind": "tauri-process-cold-start-stopwatch-current-worktree",
+  "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal (three consecutive runs)",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0"
+  },
+  "revision": {
+    "head": "codex/terminal-reliability-matrix",
+    "commit": "94ed89c",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa"
+  },
+  "measurement": {
+    "probe": "Rust TERMINAL_SHELL_PROBE marker written only after the frontend sent its nonce through xterm -> session_write -> local PTY and read the marker back",
+    "measuredFrom": "child-spawn-event",
+    "readinessTarget": "terminal",
+    "caseName": "cat-eof",
+    "repeatSpawnToReadyMs": [
+      6654,
+      2127,
+      1225
+    ],
+    "readyUnder10s": true,
+    "terminalRuns": [
+      {
+        "run": 1,
+        "capturedAt": "2026-10-28T14:06:46.688Z",
+        "pid": 17579,
+        "nonce": "local_f4d3594e0e966949439d433f",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_f4d3594e0e966949439d433f",
+        "readyAt": "terminal",
+        "terminalReady": true,
+        "markerReady": true,
+        "spawnToReadyMs": 6654,
+        "requestToReadyMs": 6660,
+        "probeCaseName": "cat-eof",
+        "probeDurationMs": 4072,
+        "ok": true
+      },
+      {
+        "run": 2,
+        "capturedAt": "2026-10-28T14:06:52.597Z",
+        "pid": 17659,
+        "nonce": "local_73c38cad7b9c8f1a968540d2",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_73c38cad7b9c8f1a968540d2",
+        "readyAt": "terminal",
+        "terminalReady": true,
+        "markerReady": true,
+        "spawnToReadyMs": 2127,
+        "requestToReadyMs": 2133,
+        "probeCaseName": "cat-eof",
+        "probeDurationMs": 497,
+        "ok": true
+      },
+      {
+        "run": 3,
+        "capturedAt": "2026-10-28T14:06:57.346Z",
+        "pid": 17703,
+        "nonce": "local_a68eb38de0bf41525892c5ce",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_a68eb38de0bf41525892c5ce",
+        "readyAt": "terminal",
+        "terminalReady": true,
+        "markerReady": true,
+        "spawnToReadyMs": 1225,
+        "requestToReadyMs": 1231,
+        "probeCaseName": "cat-eof",
+        "probeDurationMs": 405,
+        "ok": true
+      }
+    ]
+  },
+  "source": {
+    "fingerprint": "04bb5973242948fdbcdc506d01efefeaf9a4f91a4e1f352e6356cd72fb36b6f6",
+    "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs. The worktree was clean except this runbook edit, so the fingerprint and the debug binary describe the same sources."
+  },
+  "limitations": [
+    "This binary is a VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle artifact with an embedded frontend; a plain build has no smoke/probe entry points and the runners refuse it, and a bare cargo build instead loads build.devUrl and renders nothing measurable.",
+    "The marker proves the local PTY round-trip is usable, not that a remote host answers: remote readiness is measured separately in 2026-10-11-macos-remote-shell-prompt-rerun.json.",
+    "Human physical keyboard typing, IME composition, sleep/resume on a real lid close and Windows/Pageant/serial hardware are still not covered by this file."
+  ]
+}

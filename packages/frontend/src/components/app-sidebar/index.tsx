@@ -1,0 +1,165 @@
+import { PanelLeft, PanelLeftClose } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { NavLink, useLocation } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
+import { useIsTeamEnabled } from '@/store/team'
+import { getVisibleNavItems, type NavItemConfig } from '@/router/nav-config.tsx'
+
+interface NavItemProps {
+  item: NavItemConfig
+  iconOnly?: boolean
+  className?: string
+  style?: React.CSSProperties
+}
+
+const NavItem: React.FC<NavItemProps> = ({
+  item,
+  iconOnly,
+  className,
+  style,
+}) => {
+  const { t } = useTranslation()
+  const location = useLocation()
+  const hostsPaths = ['/', '/hosts']
+  const pathActive =
+    item.path === '/hosts'
+      ? hostsPaths.includes(location.pathname)
+      : location.pathname === item.path ||
+        location.pathname.startsWith(`${item.path}/`)
+
+  const linkContent = (
+    <NavLink
+      to={item.path === '/hosts' ? '/hosts' : item.path}
+      className={cn(
+        'group/nav relative flex items-center gap-3 px-3 py-2 rounded-md transition-colors duration-150',
+        'text-muted-foreground hover:text-foreground hover:bg-secondary/60',
+        // 激活态：背景 + 文字加深 + 左侧 3px 实心竖条
+        pathActive && [
+          'bg-secondary/70 text-foreground',
+          'before:absolute before:left-0 before:top-1.5 before:bottom-1.5',
+          'before:w-[3px] before:rounded-r-full before:bg-primary',
+        ],
+        iconOnly && 'justify-center px-2',
+        className,
+      )}
+      style={style}
+    >
+      <span className={cn('shrink-0', pathActive && 'text-primary')}>
+        {item.icon}
+      </span>
+      {!iconOnly && (
+        <span className="text-sm font-medium truncate">{t(item.labelKey)}</span>
+      )}
+    </NavLink>
+  )
+
+  if (iconOnly) {
+    return (
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
+        <TooltipContent side="right">
+          <p>{t(item.labelKey)}</p>
+        </TooltipContent>
+      </Tooltip>
+    )
+  }
+
+  return linkContent
+}
+
+interface AppSidebarProps {
+  onToggleCollapse?: () => void
+  /** 由父级传入像素宽度 */
+  width?: number
+  /** 拖拽中禁用过渡 */
+  resizing?: boolean
+}
+
+/** 宽度低于此值显示图标模式 */
+const ICON_ONLY_THRESHOLD = 90
+
+const AppSidebar: React.FC<AppSidebarProps> = ({
+  onToggleCollapse,
+  width,
+  resizing,
+}) => {
+  const { t } = useTranslation()
+  const iconOnly = width != null && width < ICON_ONLY_THRESHOLD
+  const isTeamEnabled = useIsTeamEnabled()
+
+  // 从共享配置获取可见导航项
+  // - IS_DEV 控制 dev-test 等开发模式项
+  // - isTeamEnabled 控制 teams 项
+  const navItems = getVisibleNavItems().filter(item => {
+    if (item.path === '/teams' && !isTeamEnabled) return false
+    return true
+  })
+
+  return (
+    <div
+      className={cn(
+        'h-full bg-secondary/40 border-r border-border/60 flex flex-col shrink-0 min-h-0',
+        !resizing && 'transition-all duration-200',
+      )}
+      style={width != null ? { width } : undefined}
+    >
+      {/* Header with collapse button */}
+      <div className="px-3 py-3 border-b border-border/60 flex items-center justify-between">
+        <span
+          className={cn(
+            'text-sm font-semibold text-foreground truncate transition-opacity duration-200',
+            iconOnly && 'opacity-0 pointer-events-none',
+          )}
+        >
+          {t('app.name')}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn('size-7 shrink-0', iconOnly && 'mx-auto')}
+          onClick={onToggleCollapse}
+          title={iconOnly ? t('sidebar.expand') : t('sidebar.collapse')}
+        >
+          {iconOnly ? (
+            <PanelLeft className="size-4" />
+          ) : (
+            <PanelLeftClose className="size-4" />
+          )}
+        </Button>
+      </div>
+
+      {/* Navigation Items */}
+      <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
+        {navItems.map((item, index) => (
+          <NavItem
+            key={item.path}
+            item={item}
+            iconOnly={iconOnly}
+            className="slide-in-from-left fade-in"
+            style={{ animationDelay: `${index * 40}ms` }}
+          />
+        ))}
+      </nav>
+
+      {/* Footer */}
+      <div className="px-3 py-4 border-t border-border/60">
+        <p
+          className={cn(
+            'text-[11px] text-muted-foreground/70 px-3 transition-opacity duration-200',
+            iconOnly && 'opacity-0',
+          )}
+        >
+          {t('app.version')}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+export default AppSidebar

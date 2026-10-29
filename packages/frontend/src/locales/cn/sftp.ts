@@ -1,0 +1,20 @@
+export default {
+  // SFTP
+  'sftp.title': 'SFTP',
+  'sftp.newFolder': '新建文件夹',
+  'sftp.newFolderSoon': '新建文件夹（即将支持）',
+  'sftp.upload': '上传',
+  'sftp.download': '下载',
+  'sftp.goUp': '上级目录',
+  'sftp.goHome': '主目录',
+  'sftp.refresh': '刷新',
+  'sftp.uploadFile': '上传文件',
+  'sftp.downloadFile': '下载文件',
+  'sftp.tableName': '名称',
+  'sftp.tableSize': '大小',
+  'sftp.tableModified': '修改时间',
+  'sftp.tablePermissions': '权限',
+  'sftp.items': '{{count}} 个项目',
+  'sftp.connectedTo': '已连接到 {{host}} ({{hostname}})',
+  'sftp.loading': '加载中...',
+}

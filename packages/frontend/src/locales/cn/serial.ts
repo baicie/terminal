@@ -1,0 +1,21 @@
+export default {
+  // Serial dialog
+  'serial.connectSerialPort': '连接串口',
+  'serial.serialPort': '串口',
+  'serial.baudRate': '波特率',
+  'serial.dataBits': '数据位',
+  'serial.stopBits': '停止位',
+  'serial.parity': '校验',
+  'serial.flowControl': '流控',
+  'serial.selectPort': '选择端口',
+  'serial.noPortsAvailable': '未检测到可用端口',
+  'serial.none': '无',
+  'serial.odd': '奇校验',
+  'serial.even': '偶校验',
+  'serial.hardwareFlow': '硬件 (RTS/CTS)',
+  'serial.softwareFlow': '软件 (XON/XOFF)',
+  'serial.connect': '连接',
+  'serial.connecting': '连接中...',
+  'serial.failedLoadPorts': '加载串口列表失败',
+  'serial.connectionFailed': '连接失败',
+}

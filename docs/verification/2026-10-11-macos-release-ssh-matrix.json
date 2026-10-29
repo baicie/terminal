@@ -1,0 +1,122 @@
+{
+  "recordedAt": "2026-10-28T23:26:00.000Z",
+  "recordedDate": "2026-10-29",
+  "kind": "tauri-release-ssh-and-shell-matrix",
+  "why": "The previous record described release binary ab209317…; the artifact on disk is 1e68ba73…, built from this worktree. This records the same matrix on the binary that exists.",
+  "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle && pnpm smoke:ssh-matrix --reuse-binary --release",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0",
+    "docker": "29.7.2"
+  },
+  "revision": {
+    "head": "codex/terminal-reliability-matrix",
+    "commit": "d604faa",
+    "dirtyWorktree": true
+  },
+  "build": {
+    "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle",
+    "binary": "src-tauri/target/release/terminal",
+    "sha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
+    "devServerRequired": false,
+    "smokeInstrumented": true
+  },
+  "sshMatrix": {
+    "command": "pnpm smoke:ssh-matrix --reuse-binary --release",
+    "passed": 10,
+    "failed": 0,
+    "firstConnectionMsRange": [
+      775,
+      4214
+    ],
+    "cases": [
+      {
+        "name": "key",
+        "ok": true,
+        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
+        "firstConnectionMs": 1837,
+        "durationMs": 6893,
+        "uniqueSessionCount": 10
+      },
+      {
+        "name": "key-reconnect",
+        "ok": true,
+        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
+        "firstConnectionMs": 4214,
+        "durationMs": 11805,
+        "uniqueSessionCount": 11
+      },
+      {
+        "name": "password",
+        "ok": true,
+        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
+        "firstConnectionMs": 1104,
+        "durationMs": 5125,
+        "uniqueSessionCount": 10
+      },
+      {
+        "name": "password-reconnect",
+        "ok": true,
+        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
+        "firstConnectionMs": 808,
+        "durationMs": 6143,
+        "uniqueSessionCount": 11
+      },
+      {
+        "name": "agent",
+        "ok": true,
+        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
+        "firstConnectionMs": 848,
+        "durationMs": 6665,
+        "uniqueSessionCount": 10
+      },
+      {
+        "name": "agent-reconnect",
+        "ok": true,
+        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
+        "firstConnectionMs": 2820,
+        "durationMs": 8124,
+        "uniqueSessionCount": 11
+      },
+      {
+        "name": "cert",
+        "ok": true,
+        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
+        "firstConnectionMs": 1020,
+        "durationMs": 5808,
+        "uniqueSessionCount": 10
+      },
+      {
+        "name": "cert-reconnect",
+        "ok": true,
+        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
+        "firstConnectionMs": 775,
+        "durationMs": 6461,
+        "uniqueSessionCount": 11
+      },
+      {
+        "name": "jump",
+        "ok": true,
+        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
+        "firstConnectionMs": 1060,
+        "durationMs": 6597,
+        "uniqueSessionCount": 10
+      },
+      {
+        "name": "jump-reconnect",
+        "ok": true,
+        "binarySha256": "1e68ba73620e440f4269b90b8fab7589576323873ea1c82e2d90bbb569088841",
+        "firstConnectionMs": 796,
+        "durationMs": 7343,
+        "uniqueSessionCount": 11
+      }
+    ]
+  },
+  "limitations": [
+    "Every fixture is a loopback sshd on this machine; no real network hop, VPN switch or corporate jump chain is exercised.",
+    "The binary is built with VITE_TERMINAL_SMOKE_BUILD=1, so it is a slightly larger artifact than a shipping build.",
+    "Each case needs the app to be frontmost; an unattended or locked display aborts cases with a frontmost assertion, which is an environment limit rather than a product failure.",
+    "Human physical keyboard, IME composition and Windows/Pageant/serial hardware remain unverified."
+  ]
+}

@@ -1,0 +1,138 @@
+{
+  "recordedAt": "2026-10-28T14:09:59.000Z",
+  "recordedDate": "2026-10-28",
+  "kind": "tauri-real-ssh-matrix-current-worktree",
+  "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:ssh-matrix --reuse-binary",
+  "environment": {
+    "os": "macOS 15.7.7",
+    "architecture": "arm64",
+    "node": "24.16.0",
+    "docker": "29.7.2"
+  },
+  "revision": {
+    "head": "codex/terminal-reliability-matrix",
+    "commit": "94ed89c",
+    "dirtyWorktree": true
+  },
+  "binary": {
+    "path": "src-tauri/target/debug/terminal",
+    "sha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa"
+  },
+  "allCasesPassed": true,
+  "cases": [
+    {
+      "name": "key",
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 2208,
+      "durationMs": 7437,
+      "uniqueSessionCount": 10
+    },
+    {
+      "name": "key-reconnect",
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1683,
+      "durationMs": 8737,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "key-outage-reconnect",
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 2347,
+      "durationMs": 14284,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "key-outage-wake-reconnect",
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1676,
+      "durationMs": 23868,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "key-first-connect-outage",
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 9125,
+      "durationMs": 14720,
+      "uniqueSessionCount": 10
+    },
+    {
+      "name": "password",
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1868,
+      "durationMs": 7744,
+      "uniqueSessionCount": 10
+    },
+    {
+      "name": "password-reconnect",
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1738,
+      "durationMs": 8019,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "agent",
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1688,
+      "durationMs": 7153,
+      "uniqueSessionCount": 10
+    },
+    {
+      "name": "agent-reconnect",
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 985,
+      "durationMs": 9572,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "cert",
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1751,
+      "durationMs": 8115,
+      "uniqueSessionCount": 10
+    },
+    {
+      "name": "cert-reconnect",
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1605,
+      "durationMs": 8696,
+      "uniqueSessionCount": 11
+    },
+    {
+      "name": "jump",
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1688,
+      "durationMs": 8483,
+      "uniqueSessionCount": 10
+    },
+    {
+      "name": "jump-reconnect",
+      "ok": true,
+      "binarySha256": "d7a4dd4ccff08a3b0ffd2afe3e5fdfcc9fb72cd1586a67244c1ebd09bf6c67fa",
+      "firstConnectionMs": 1882,
+      "durationMs": 9731,
+      "uniqueSessionCount": 11
+    }
+  ],
+  "passwordFixtureNote": "The password cases run against the terminal-smoke-password-sshd Docker image so a real password prompt is exercised, not a stub.",
+  "source": {
+    "fingerprint": "04bb5973242948fdbcdc506d01efefeaf9a4f91a4e1f352e6356cd72fb36b6f6",
+    "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs."
+  },
+  "limitations": [
+    "Every fixture is a loopback sshd on this machine: no real network hop, VPN switch or corporate jump chain is exercised.",
+    "The instrumented debug binary is a VITE_TERMINAL_SMOKE_BUILD=1 artifact, not the shipping bundle.",
+    "Human physical keyboard typing and IME composition are still unverified."
+  ]
+}
