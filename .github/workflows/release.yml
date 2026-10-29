@@ -144,7 +144,8 @@ jobs:
               --verify-tag \
               --title "$RELEASE_VERSION" \
               --notes "Release mode: ${RELEASE_MODE}. Platform installers for macOS (universal), Windows and Linux. macOS is not notarized and Windows installers are not Authenticode-signed unless the release notes say otherwise." \
-              --draft
+              --draft \
+              --prerelease
             release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}")"
           fi
 
