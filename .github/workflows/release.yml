@@ -539,29 +539,39 @@ jobs:
           gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" release-assets/SHA256SUMS.txt --clobber
 
           if [ "$MODE" = "updater-signed" ]; then
-            # Fail closed: one signed updater payload per platform is required
-            # before any updater index is written or the draft is published.
+            # Tauri v2 signs the artifacts it can update from: the macOS .app.tar.gz,
+            # the NSIS installer for Windows and the AppImage for Linux. Verify the
+            # signature of each and build one manifest only after that.
             assets_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100")"
             mkdir -p updater
-            for pattern in '\.app\.tar\.gz\.sig$' '\.nsis\.zip\.sig$' '\.AppImage\.tar\.gz\.sig$'; do
-              name="$(jq -r --arg p "$pattern" '[.[] | select(.name | test($p)) | .name] | first // ""' <<< "$assets_json")"
-              if [[ -z "$name" ]]; then
-                echo "updater-signed mode is missing a signature matching: $pattern" >&2
+
+            pick_payload() {
+              jq -r --arg p "$1" '[.[] | select(.name | test($p)) | .name] | first // ""' <<< "$assets_json"
+            }
+            fetch_signature() {
+              local name="$1"
+              if ! gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "${name}.sig" --dir updater >/dev/null 2>&1; then
+                echo "Missing updater signature for $name" >&2
+                return 1
+              fi
+              cat "updater/${name}.sig"
+            }
+
+            darwin_payload="$(pick_payload '\.app\.tar\.gz$')"
+            windows_payload="$(pick_payload 'x86_64-setup\.exe$')"
+            linux_payload="$(pick_payload 'x86_64\.AppImage$')"
+            for payload in "$darwin_payload" "$windows_payload" "$linux_payload"; do
+              if [[ -z "$payload" ]]; then
+                echo "updater-signed mode is missing an updater payload for a platform" >&2
                 exit 1
               fi
-              gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir updater
             done
-            darwin_sig="$(cat updater/*.app.tar.gz.sig)"
-            windows_sig="$(cat updater/*.nsis.zip.sig)"
-            linux_sig="$(cat updater/*.AppImage.tar.gz.sig)"
+
+            darwin_sig="$(fetch_signature "$darwin_payload")"
+            windows_sig="$(fetch_signature "$windows_payload")"
+            linux_sig="$(fetch_signature "$linux_payload")"
             base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/"
-            darwin_payload="$(jq -r '[.[] | select(.name | test("\\.app\\.tar\\.gz$")) | .name] | first // ""' <<< "$assets_json")"
-            windows_payload="$(jq -r '[.[] | select(.name | test("\\.nsis\\.zip$")) | .name] | first // ""' <<< "$assets_json")"
-            linux_payload="$(jq -r '[.[] | select(.name | test("\\.AppImage\\.tar\\.gz$")) | .name] | first // ""' <<< "$assets_json")"
-            if [[ -z "$darwin_payload" || -z "$windows_payload" || -z "$linux_payload" ]]; then
-              echo "updater-signed mode is missing an updater payload for a platform" >&2
-              exit 1
-            fi
+
             jq -n \
               --arg version "$VERSION" \
               --arg notes "Release ${VERSION}" \
@@ -569,10 +579,9 @@ jobs:
               --arg darwin_sig "$darwin_sig" --arg darwin_url "${base}${darwin_payload}" \
               --arg windows_sig "$windows_sig" --arg windows_url "${base}${windows_payload}" \
               --arg linux_sig "$linux_sig" --arg linux_url "${base}${linux_payload}" \
-              "{version:$version, notes:$notes, pub_date:$pub_date, platforms: {\"darwin-aarch64\": {signature:$darwin_sig, url:$darwin_url}, \"darwin-x86_64\": {signature:$darwin_sig, url:$darwin_url}, \"windows-x86_64\": {signature:$windows_sig, url:$windows_url}, \"linux-x86_64\": {signature:$linux_sig, url:$linux_url}}}" > latest.json
+              '{version:$version, notes:$notes, pub_date:$pub_date, platforms: {"darwin-aarch64": {signature:$darwin_sig, url:$darwin_url}, "darwin-x86_64": {signature:$darwin_sig, url:$darwin_url}, "windows-x86_64": {signature:$windows_sig, url:$windows_url}, "linux-x86_64": {signature:$linux_sig, url:$linux_url}}}' > latest.json
             gh release upload "$RELEASE_TAG" latest.json --repo "$GITHUB_REPOSITORY" --clobber
-            # The app polls one stable endpoint, so the manifest also moves to a
-            # fixed channel tag. Stable and nightly never share this tag.
+
             if gh release view updater-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               gh release upload updater-latest latest.json --repo "$GITHUB_REPOSITORY" --clobber
             else
