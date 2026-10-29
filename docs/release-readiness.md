@@ -177,16 +177,18 @@ Release 首次执行的六个平台打包任务均成功，最终校验调用 `g
 
 `.github/workflows/release.yml` 只接受现有语义版本标签，校验标签提交以及 `package.json`、`tauri.conf.json`、`Cargo.toml` 三处版本一致后，向同一 prerelease 上传以下资产：
 
-| 系统 | 架构 | 原生 runner | 目标 | 资产 |
+| 系统 | 架构 | 原生 runner | 目标 | 产出 |
 | --- | --- | --- | --- | --- |
-| macOS | Apple Silicon | `macos-15` | `aarch64-apple-darwin` | DMG |
-| macOS | Intel | `macos-15-intel` | `x86_64-apple-darwin` | DMG |
+| macOS | Apple Silicon | `macos-15` | `aarch64-apple-darwin` | 二进制（artifact） |
+| macOS | Intel | `macos-15-intel` | `x86_64-apple-darwin` | 二进制（artifact） |
 | Windows | ARM64 | `windows-11-arm` | `aarch64-pc-windows-msvc` | NSIS EXE |
 | Windows | x64 | `windows-latest` | `x86_64-pc-windows-msvc` | NSIS EXE |
 | Linux | ARM64 | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | AppImage、DEB |
 | Linux | x64 | `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | AppImage、DEB |
 
-工作流要求八个安装资产全部存在且大小大于 0，随后下载同一批资产生成 `SHA256SUMS.txt`。资产命名为 `Terminal_<version>_<platform>-<arch>`，Windows NSIS 额外带 `-setup` 后缀。`tauri-action` 的 updater JSON 和 updater signature 上传已关闭，因为项目尚未配置 updater 签名密钥。
+macOS 走「先分架构编二进制、再用 `lipo` 合成 universal」的两段式：`build-macos-binary` 用 `pnpm tauri build --no-bundle --ci --target <arch>` 只出二进制并通过 `upload-artifact` 传递；`bundle-macos` 用 `lipo -create` 生成 `src-tauri/target/universal-apple-darwin/release/terminal`，再 `pnpm tauri bundle --target universal-apple-darwin --bundles app` 只打 `.app`。打包失败按 3 次退避重试，遇到 Apple 凭据类错误（HTTP 401/403）立即失败而不再重试。DMG 由 `create-dmg` 自绘（拖拽到 Applications 的布局），`create-dmg` 不可用或失败时回落到 Tauri 自带的 DMG bundler——这一步在本地用真实 `.app` 验证过：生成 12,038,232 字节的 DMG，挂载后含 `Termius.app` 与 `Applications` 软链。
+
+工作流要求七个安装资产全部存在且大小大于 0，随后下载同一批资产生成 `SHA256SUMS.txt`。资产命名为 `Terminal_<version>_<platform>-<arch>`，其中 macOS 只有一个 `macos-universal`（arm64 + x86_64 通用），Windows NSIS 额外带 `-setup` 后缀。`tauri-action` 的 updater JSON 和 updater signature 上传已关闭，因为项目尚未配置 updater 签名密钥；这套流程**不含**自动更新，也没有 Apple 签名/公证。
 
 **历史发布证据**：Release 工作流 `31431531040` 全绿，标签 `v0.0.1-dev.0` 指向提交 `6965f3a`。GitHub Release API 返回以下非空资产；8 个安装包的服务端 SHA-256 digest 与 `SHA256SUMS.txt` 逐项一致。
 

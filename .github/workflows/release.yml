@@ -20,6 +20,8 @@ concurrency:
 
 env:
   PNPM_VERSION: 10.34.3
+  APP_BINARY_NAME: terminal
+  RELEASE_ASSET_PREFIX: Terminal
 
 jobs:
   prepare-release:
@@ -88,7 +90,7 @@ jobs:
             gh release create "$RELEASE_TAG" \
               --verify-tag \
               --title "$RELEASE_VERSION" \
-              --notes "Platform installers for macOS, Windows, and Linux. macOS DMGs are not notarized and Windows installers are not Authenticode-signed." \
+              --notes "Platform installers for macOS, Windows, and Linux. The macOS DMG is a universal (arm64 + x86_64) build that is not notarized, and the Windows installers are not Authenticode-signed." \
               --prerelease
             release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}")"
           fi
@@ -104,6 +106,172 @@ jobs:
 
           echo "release_id=$(jq -r '.id' <<< "$release_json")" >> "$GITHUB_OUTPUT"
 
+  build-macos-binary:
+    name: Build macOS binary (${{ matrix.target }})
+    needs: prepare-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+          workspaces: src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+      - name: Build macOS binary
+        shell: bash
+        run: pnpm tauri build --no-bundle --ci --target ${{ matrix.target }} -- --locked
+      - name: Upload macOS binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-binary-${{ matrix.target }}
+          path: src-tauri/target/${{ matrix.target }}/release/${{ env.APP_BINARY_NAME }}
+          if-no-files-found: error
+          retention-days: 3
+
+  bundle-macos:
+    name: Bundle universal macOS DMG
+    needs: [prepare-release, build-macos-binary]
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-universal-apple-darwin
+          workspaces: src-tauri -> target
+      - name: Download per-architecture binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: macos-binary-*
+          path: macos-binaries
+      - name: Merge universal binary with lipo
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="src-tauri/target/universal-apple-darwin/release"
+          mkdir -p "$out"
+          lipo -create -output "$out/${APP_BINARY_NAME}" \
+            "macos-binaries/macos-binary-aarch64-apple-darwin/${APP_BINARY_NAME}" \
+            "macos-binaries/macos-binary-x86_64-apple-darwin/${APP_BINARY_NAME}"
+          chmod +x "$out/${APP_BINARY_NAME}"
+          lipo -info "$out/${APP_BINARY_NAME}"
+      - run: pnpm install --frozen-lockfile
+      - name: Bundle universal .app (retry with backoff)
+        shell: bash
+        run: |
+          set -euo pipefail
+          max_attempts=3
+          for attempt in $(seq 1 "$max_attempts"); do
+            echo "=== macOS bundle attempt ${attempt}/${max_attempts} ==="
+            bundle_log="$RUNNER_TEMP/tauri-bundle-macos-${attempt}.log"
+            if pnpm tauri bundle --target universal-apple-darwin --bundles app 2>&1 | tee "$bundle_log"; then
+              echo "macOS .app bundled"
+              exit 0
+            fi
+            if grep -qE 'HTTP status code: 40[13]' "$bundle_log"; then
+              echo "Apple rejected the request (HTTP 401/403); retrying cannot fix this." >&2
+              exit 1
+            fi
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "macOS bundling failed after ${max_attempts} attempts" >&2
+              exit 1
+            fi
+            sleep_seconds=$((attempt * 30))
+            echo "macOS bundling failed, retrying in ${sleep_seconds}s"
+            sleep "$sleep_seconds"
+          done
+      - name: Create universal DMG
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          app_path="$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -type d | head -1 || true)"
+          if [ -z "$app_path" ]; then
+            echo "No .app was produced by the bundle step" >&2
+            exit 1
+          fi
+          app_name="$(basename "$app_path")"
+          dmg="release-assets/${RELEASE_ASSET_PREFIX}_${VERSION}_macos-universal.dmg"
+          staged=0
+          if HOMEBREW_NO_AUTO_UPDATE=1 brew install create-dmg; then
+            stage="$RUNNER_TEMP/dmg-stage"
+            rm -rf "$stage"
+            mkdir -p "$stage"
+            ditto "$app_path" "$stage/$app_name"
+            if create-dmg \
+              --volname "Termius" \
+              --window-size 660 400 \
+              --window-pos 200 120 \
+              --icon-size 80 \
+              --icon "$app_name" 180 220 \
+              --hide-extension "$app_name" \
+              --app-drop-link 480 220 \
+              --no-internet-enable \
+              "$dmg" "$stage"; then
+              staged=1
+            fi
+            rm -rf "$stage"
+          fi
+          if [ "$staged" -ne 1 ]; then
+            echo "create-dmg unavailable or failed; falling back to Tauri's DMG bundler" >&2
+            pnpm tauri bundle --target universal-apple-darwin --bundles dmg
+            built="$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -type f | head -1 || true)"
+            if [ -z "$built" ]; then
+              echo "Tauri's DMG bundler produced nothing" >&2
+              exit 1
+            fi
+            cp "$built" "$dmg"
+          fi
+          if [ ! -s "$dmg" ]; then
+            echo "Universal DMG is missing or empty: $dmg" >&2
+            exit 1
+          fi
+          ls -l "$dmg"
+      - name: Upload universal DMG to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" release-assets/*.dmg --repo "$GITHUB_REPOSITORY" --clobber
+
   build-release:
     name: ${{ matrix.name }}
     needs: prepare-release
@@ -111,16 +279,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macOS Apple Silicon
-            os: macos-15
-            target: aarch64-apple-darwin
-            bundles: dmg
-            asset_key: macos-aarch64
-          - name: macOS Intel
-            os: macos-15-intel
-            target: x86_64-apple-darwin
-            bundles: dmg
-            asset_key: macos-x86_64
           - name: Windows ARM64
             os: windows-11-arm
             target: aarch64-pc-windows-msvc
@@ -196,7 +354,7 @@ jobs:
 
   verify-release:
     name: Verify release assets
-    needs: [prepare-release, build-release]
+    needs: [prepare-release, build-macos-binary, bundle-macos, build-release]
     runs-on: ubuntu-24.04
     steps:
       - name: Verify packages and publish checksums
@@ -210,8 +368,7 @@ jobs:
           set -euo pipefail
 
           expected_assets=(
-            "Terminal_${VERSION}_macos-aarch64.dmg"
-            "Terminal_${VERSION}_macos-x86_64.dmg"
+            "Terminal_${VERSION}_macos-universal.dmg"
             "Terminal_${VERSION}_windows-aarch64-setup.exe"
             "Terminal_${VERSION}_windows-x86_64-setup.exe"
             "Terminal_${VERSION}_linux-aarch64.AppImage"
