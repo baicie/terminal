@@ -238,6 +238,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build macOS binary
         shell: bash
+        env:
+          # tauri refuses to create updater artifacts when the injected config has a
+          # public key but the private key is missing from the environment.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           extra=()
@@ -298,6 +303,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Bundle universal .app (retry with backoff)
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           max_attempts=3
@@ -469,6 +477,8 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.prepare-release.outputs.release_id }}
           tagName: ${{ needs.prepare-release.outputs.tag }}
