@@ -139,29 +139,42 @@ jobs:
           cat > "$RUNNER_TEMP/bump-version.cjs" <<'NODE'
           const fs = require('node:fs')
           const version = process.env.NIGHTLY_VERSION
+
           for (const file of ['package.json', 'src-tauri/tauri.conf.json']) {
             const json = JSON.parse(fs.readFileSync(file, 'utf8'))
             json.version = version
             fs.writeFileSync(file, JSON.stringify(json, null, 2) + '\n')
           }
-          const cargo = fs.readFileSync('src-tauri/Cargo.toml', 'utf8')
-          fs.writeFileSync(
+
+          // Windows checkouts can carry CRLF line endings, where a `$`-anchored
+          // pattern and `.` never match the way they do on LF. Both patterns
+          // below are line-ending agnostic and fail loudly when they do not
+          // match, instead of silently leaving a stale version behind.
+          const mustReplace = (file, pattern, replacement) => {
+            const text = fs.readFileSync(file, 'utf8')
+            if (!pattern.test(text)) {
+              throw new Error('nightly version bump did not match in ' + file)
+            }
+            fs.writeFileSync(file, text.replace(pattern, replacement))
+          }
+
+          mustReplace(
             'src-tauri/Cargo.toml',
-            cargo.replace(/^version = ".*"$/m, 'version = "' + version + '"'),
+            /^version = "[^"]*"/m,
+            'version = "' + version + '"',
           )
-          // --locked builds fail when the lockfile still names the old version,
-          // so the local package entry is rewritten in the same pass.
-          const lock = fs.readFileSync('src-tauri/Cargo.lock', 'utf8')
-          fs.writeFileSync(
+          mustReplace(
             'src-tauri/Cargo.lock',
-            lock.replace(
-              /(name = "terminal"\nversion = )"[^"]*"/,
-              '$1"' + version + '"',
-            ),
+            /(name = "terminal"\r?\nversion = )"[^"]*"/,
+            '$1"' + version + '"',
           )
           NODE
           node "$RUNNER_TEMP/bump-version.cjs"
-          node -p "require('./src-tauri/tauri.conf.json').version"
+          echo "tauri.conf version: $(node -p "require('./src-tauri/tauri.conf.json').version")"
+          grep -q "$NIGHTLY_VERSION" src-tauri/Cargo.toml
+          grep -q "$NIGHTLY_VERSION" src-tauri/Cargo.lock
+          cargo metadata --locked --no-deps --format-version 1 --manifest-path src-tauri/Cargo.toml > /dev/null
+          echo "Cargo.lock accepts --locked after the version bump"
       - name: Build nightly bundles
         shell: bash
         run: pnpm tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --ci -- --locked
