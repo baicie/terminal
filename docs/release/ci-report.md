@@ -1,58 +1,90 @@
 # CI 测试报告（P6/P7）
 
-> 生成时间：2026-10-29
-> 分支 `codex/terminal-reliability-matrix`，提交 `18012ab`（CI 改造所在提交）
+> 更新时间：2026-10-29
+> 分支 `codex/terminal-reliability-matrix`；相关提交：`18012ab`（CI 改造）、`835fae8`（版本 0.0.1-dev.2）、`bf3f34d`（draft 需带 prerelease）、`d4b9054`（draft 解析修正）
 > 原则：跑过的写 PASS，没跑过的写 NOT_RUN，不把编译成功当成安装验证。
 
-## 1. 真实 CI 运行（GitHub hosted runners）
+## 1. CI（质量门禁）
 
-**Run `40808864624`（CI）→ `completed / success`，8 个 job 全绿。**
+**Run `40808864624`（`ci.yml`）→ `completed / success`，8/8 job 绿**，其中 `Team Server container` 是本次修复的那一项（修复前一直 failure）。
+
+| Job | 结果 |
+| --- | --- |
+| Frontend quality / Team Server quality / Rust quality / Production source-size gate | ✅ success |
+| **Team Server container** | ✅ **success**（修复前 failure） |
+| Tauri build (macos-latest / ubuntu-latest / windows-latest) | ✅ success |
+
+## 2. Release（unsigned-qa 通道，端到端）
+
+**Run `40811158213`（`release.yml`，`workflow_dispatch` tag=v0.0.1-dev.2 mode=unsigned-qa）→ `completed / success`，9/9 job 绿。**
 
 | Job | 结果 | 说明 |
 | --- | --- | --- |
-| Frontend quality | ✅ success | lint / typecheck / vitest / build:budget |
-| Team Server quality | ✅ success | prisma validate+generate / typecheck / lint / test / build + PostgreSQL 迁移 |
-| Production source-size gate | ✅ success | 550 个生产文件行数门禁 |
-| Rust quality | ✅ success | fmt --check / check / clippy -D warnings / test |
-| **Team Server container** | ✅ **success** | **修复前一直 failure**；本次 `COPY patches patches` 后通过（真实 Docker Build） |
-| Tauri build (macos-latest) | ✅ success | `tauri build --no-bundle --ci` |
-| Tauri build (ubuntu-latest) | ✅ success | 同上 |
-| Tauri build (windows-latest) | ✅ success | 同上 |
+| Validate release metadata | ✅ | tag/commit/三处版本一致；创建 draft+prerelease |
+| Build macOS binary (aarch64-apple-darwin) | ✅ | 只出二进制并 upload-artifact |
+| Build macOS binary (x86_64-apple-darwin) | ✅ | 同上 |
+| Linux ARM64 / Linux x64 | ✅ | AppImage + DEB |
+| Windows ARM64 / Windows x64 | ✅ | NSIS |
+| **Bundle universal macOS DMG** | ✅ | `lipo` 合成 + `.app` + `create-dmg` |
+| Verify release assets | ✅ | 7 个资产非空 → 生成并上传 `SHA256SUMS.txt` → undraft |
 
-上一次运行（`40798218743`）为 failure，唯一失败 job 就是 `Team Server container`；本次已消除。
+**发布结果**：<https://github.com/baicie/terminal/releases/tag/v0.0.1-dev.2>（prerelease，非 draft）
 
-## 2. 本地可执行的验证
+| 资产 | 字节 |
+| --- | ---: |
+| `Terminal_0.0.1-dev.2_macos-universal.dmg` | 24,477,423 |
+| `Terminal_0.0.1-dev.2_windows-x86_64-setup.exe` | 8,194,751 |
+| `Terminal_0.0.1-dev.2_windows-aarch64-setup.exe` | 7,354,375 |
+| `Terminal_0.0.1-dev.2_linux-x86_64.AppImage` | 88,631,800 |
+| `Terminal_0.0.1-dev.2_linux-x86_64.deb` | 14,120,784 |
+| `Terminal_0.0.1-dev.2_linux-aarch64.AppImage` | 86,772,232 |
+| `Terminal_0.0.1-dev.2_linux-aarch64.deb` | 14,055,838 |
+| `SHA256SUMS.txt` | 760 |
 
-| 检查 | 方法 | 结果 |
-| --- | --- | --- |
-| workflow 语法 + 表达式 + shellcheck | `actionlint 1.7.12`（含 `shellcheck 0.11.0` 集成）对 4 个 workflow 全量扫描 | ✅ PASS，0 problems |
-| workflow 结构 | `yaml.safe_load` 解析 release.yml：5 个 job、`release_mode`/`tag` 两个输入、verify 三步 | ✅ PASS |
-| 全量质量门禁 | `pnpm verify`（本机 Node 24.16.0） | ✅ PASS，退出码 0（前端 1144 / Team Server 103 / Rust 221+3 / 脚本 205 / 550 文件 / bundle budget / evidence gate） |
-| nightly 版本派生逻辑 | 在临时副本上执行 nightly 的版本改写脚本 | ✅ PASS：`package.json`、`tauri.conf.json`、`Cargo.toml` 三处同时变为 `0.0.1-nightly.20261029.abc123def456` |
-| nightly `plan` 判定逻辑 | 本地执行同一段 bash（真实 `gh release list`） | ✅ PASS：无既有 nightly 时 `needed=true`，版本 `0.0.1-nightly.20261029.18012ab5c497`，tag 与 SHA 一致 |
-| macOS DMG 生成 | `create-dmg` 用真实 `Termius.app` 运行 workflow 里的同一条命令 | ✅ PASS：产出 12,038,232 字节 DMG，挂载后含 `Termius.app` 与 `Applications` 软链 |
-| macOS `.app` 打包 | `VITE_TERMINAL_SMOKE_BUILD=` 未设置时 `tauri build --no-bundle` | ✅ PASS：`Termius.app`（29 MB）内嵌前端，runner 判别 `chunks=0`（确认非插桩包） |
-| 本地 Docker 复现 | `docker build -f packages/team-server/Dockerfile .` | ⚠️ **本地未通过**：`pnpm install` 阶段出现 `ECONNRESET`（registry.npmjs.org 大流量拉取在本机网络下被重置）。**注意这已不是 patches 问题**——修复前该步骤在解析依赖前就 `ENOENT` 立刻退出；现在能进到下载阶段。该镜像构建的正确性由 CI run `40808864624` 的 success 证明 |
+## 3. 安装包实测（本机 macOS）
 
-## 3. 未运行（NOT_RUN）及原因
+下载发布产物后在本机验证：
 
-| 项目 | 状态 | 原因 |
-| --- | --- | --- |
-| `release.yml` 端到端 | **NOT_RUN** | 需要打 tag 或 `workflow_dispatch`，会创建公开 Release；任务明确要求「未经授权不创建正式公开 Release」，未执行 |
-| `nightly.yml` 端到端 | **NOT_RUN** | 定时任务针对 `main`；手动触发会真的创建一个 nightly prerelease，同样属于未经授权的公开产物 |
-| `updater-signed` 模式 | **NOT_RUN** | 仓库没有 `TAURI_SIGNING_PRIVATE_KEY`；按规则「缺少私钥立即失败，不得临时生成并假装已配置」，未伪造密钥 |
-| `fully-signed` 模式 | **NOT_RUN** | 本阶段不购买 Apple/Windows 证书，该模式设计为命中即失败 |
-| Windows 安装/启动、Linux AppImage 启动、卸载重装 | **NOT_RUN** | 本机是 macOS，且这些需要真实安装动作；CI 里只有编译产物，不代表安装通过 |
-| SQLite 首次初始化/旧数据兼容/用户数据目录不被覆盖 | **NOT_RUN** | 需要在真机安装后运行应用并操作数据库；本轮未做（不虚构结论） |
+| 检查 | 结果 |
+| --- | --- |
+| 下载 DMG | ✅ 24,477,423 字节 |
+| 本地 SHA-256 与发布 `SHA256SUMS.txt` 一致 | ✅ `819e2abe560508f1c31a7ca516bc516eb0b3048b1e82b8be420d765374c93b83` 两侧相同 |
+| 挂载 DMG | ✅ `/Volumes/Termius`，含 `Termius.app` 与 `Applications` 软链（拖拽安装布局） |
+| **是否真正 universal** | ✅ `lipo -archs` → **`x86_64 arm64`** |
+| 版本与标识 | ✅ `CFBundleShortVersionString = 0.0.1-dev.2`，`CFBundleIdentifier = com.baicie.termius` |
+| 签名 | ⚠️ `adhoc, linker-signed`、`TeamIdentifier=not set` —— 未用 Developer ID、未公证，符合 unsigned-qa 声明 |
+| 启动 smoke | ✅ `open Termius.app` 后 8 秒进程仍在（PID 50550），退出命令可正常关闭，无残留进程 |
 
-## 4. 结论
+## 4. 本地静态/逻辑验证
 
-- **可自动化的门禁已真实变绿**：8/8 job success，其中包含此前长期失败的镜像构建。
-- **发布链路已具备结构、模式与门禁**，但 `Release` / `Nightly` 两条链路尚未真正跑过一次，属于「实现完成、执行未验证」。
-- **Updater 只有产物侧**：仓库还没有 `tauri-plugin-updater`，所以即使产出 `.sig` 与 `latest.json`，应用也不会自动更新；这一点在 `docs/release/release-modes.md` 与 `signing-keys.md` 中已写明。
+| 检查 | 结果 |
+| --- | --- |
+| `actionlint`（含 shellcheck）扫描 4 个 workflow | ✅ 0 problems |
+| workflow 结构解析（`yaml.safe_load`） | ✅ 5 job / 2 输入 / verify 三步 |
+| nightly 版本改写脚本 | ✅ 三处文件同时变为 `0.0.1-nightly.20261029.abc123def456` |
+| nightly `plan` 判定 | ✅ `needed=true`，版本 `0.0.1-nightly.20261029.18012ab5c497` |
+| `pnpm verify` | ✅ 退出码 0 |
+| 本地 `docker build`（team-server 镜像） | ⚠️ 本机网络 `ECONNRESET` 未完成；镜像构建正确性由 CI 的 `Team Server container` success 证明 |
 
-**最终状态：`PARTIAL`**
+## 5. NOT_RUN 及原因
 
-- unsigned-qa 通道：代码与门禁齐备，CI 全绿 → 只差一次授权触发的 tag 运行即可升为 `READY_FOR_RELEASE`；
-- updater-signed 通道：实现完成但缺密钥，未验证；
-- fully-signed：按设计不启用。
+| 项目 | 原因 |
+| --- | --- |
+| `nightly.yml` 端到端 | 会创建 nightly prerelease；且其 `NIGHTLY_BRANCH=main`，需合并到 main 才有意义。未执行 |
+| `updater-signed` 模式 | 仓库无 `TAURI_SIGNING_PRIVATE_KEY`；按规则不伪造密钥 |
+| `fully-signed` | 本阶段不购买证书，命中即失败（设计如此） |
+| Windows 安装/启动/SmartScreen、Linux AppImage 启动 | 本机是 macOS，无对应环境 |
+| 卸载重装、SQLite 首次初始化、旧数据兼容、用户数据目录不被覆盖 | 需要真机安装并运行应用；本轮只做了「启动即可运行」的 smoke，未做数据层验证 —— **不虚构结论** |
+
+## 6. 最终状态：`RELEASE_QA_ONLY`
+
+- **unsigned-qa 通道已端到端验证属实**：9/9 job 绿、发布 8 个资产、校验和一致、DMG 真 universal、应用可启动。
+- 但产物**没有任何 OS 代码签名/公证**（ad-hoc），因此只能称 QA 版本，不能称正式签名发布 → 停在 `RELEASE_QA_ONLY`，而不是 `RELEASE_VERIFIED`。
+- updater-signed 与 fully-signed 仍未验证；运行时自动更新插件仍未接入。
+
+### 剩余问题（按优先级）
+
+1. **P1**：`nightly.yml` 从未真实运行，需要先合入 `main` 再观察一次定时/手动触发。
+2. **P1**：若要让 `updater-signed` 可用，需配置 `TAURI_SIGNING_PRIVATE_KEY` 并跑一次；同时最早那次会验证 `latest.json` 生成与 `.sig` 校验逻辑（该逻辑尚未被真实执行过）。
+3. **P2**：运行时自动更新（`tauri-plugin-updater` + `plugins.updater.pubkey` + UI 流程）尚未实现，产物目前无人消费。
+4. **P2**：安装/升级/卸载与 SQLite 兼容性验证仍是 NOT_RUN。
