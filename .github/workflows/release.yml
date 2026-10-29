@@ -153,9 +153,21 @@ jobs:
           # Draft releases are not reachable through /releases/tags/{tag} (that
           # endpoint answers 404 for drafts), so resolve the release — draft or
           # published — from the release list instead.
+          # The release list is eventually consistent right after a create, so
+          # poll it briefly instead of failing on the first empty answer.
           resolve_release() {
-            gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-              | jq -c --arg tag "$RELEASE_TAG" '[.[] | select(.tag_name == $tag)][0] // empty'
+            local attempt payload
+            for attempt in 1 2 3 4 5; do
+              payload="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+                | jq -c --arg tag "$RELEASE_TAG" '[.[] | select(.tag_name == $tag)][0] // empty')"
+              if [[ -n "$payload" ]]; then
+                printf '%s\n' "$payload"
+                return 0
+              fi
+              echo "release $RELEASE_TAG not visible yet (attempt $attempt), retrying" >&2
+              sleep 3
+            done
+            return 1
           }
 
           release_json="$(resolve_release)"
