@@ -46,6 +46,14 @@
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http: https:; img-src 'self' data: https://data:"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY",
+      "endpoints": [
+        "https://github.com/baicie/terminal/releases/download/updater-latest/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

@@ -35,6 +35,7 @@
     "global-shortcut:allow-register-all",
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-unregister-all",
-    "notification:default"
+    "notification:default",
+    "updater:default"
   ]
 }

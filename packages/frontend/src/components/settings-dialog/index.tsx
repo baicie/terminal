@@ -35,6 +35,7 @@ import { TeamSettingsDialog } from './team-settings-dialog'
 import { ExportImportSettings } from './export-import-settings'
 import { TerminalSettings } from './terminal-settings'
 import { ShortcutsSettings } from './shortcuts-settings'
+import { UpdateCheck } from './update-check'
 
 interface SettingsDialogProps {
   open: boolean
@@ -250,6 +251,8 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
               }}
               updateSetting={updateSetting}
             />
+
+            <UpdateCheck />
           </TabsContent>
 
           <TabsContent value="team" className="space-y-6 py-4">

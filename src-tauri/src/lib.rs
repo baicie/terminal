@@ -155,6 +155,11 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        // Updater plugin: only checks and downloads when tauri.conf.json carries a
+        // real plugins.updater.pubkey. The placeholder that ships in this
+        // repository makes every check fail closed instead of trusting an
+        // unsigned manifest.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             tracing::info!("tauri app starting up");
             if !terminal_smoke::setup(app) {

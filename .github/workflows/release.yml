@@ -113,6 +113,13 @@ jobs:
                 echo "Refusing to silently fall back to unsigned artifacts." >&2
                 exit 1
               fi
+              pubkey="$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).plugins.updater.pubkey")"
+              if [[ "$pubkey" == REPLACE_WITH_* ]]; then
+                echo "plugins.updater.pubkey is still the placeholder in tauri.conf.json." >&2
+                echo "Fill it with the public key that matches TAURI_SIGNING_PRIVATE_KEY," >&2
+                echo "otherwise every client would reject the manifest at verification time." >&2
+                exit 1
+              fi
               echo "Mode updater-signed: updater artifacts and signatures will be produced."
               echo "OS code signing is still absent, so Gatekeeper/SmartScreen warnings remain."
               ;;
@@ -516,7 +523,18 @@ jobs:
               --arg linux_sig "$linux_sig" --arg linux_url "${base}${linux_payload}" \
               "{version:$version, notes:$notes, pub_date:$pub_date, platforms: {\"darwin-aarch64\": {signature:$darwin_sig, url:$darwin_url}, \"darwin-x86_64\": {signature:$darwin_sig, url:$darwin_url}, \"windows-x86_64\": {signature:$windows_sig, url:$windows_url}, \"linux-x86_64\": {signature:$linux_sig, url:$linux_url}}}" > latest.json
             gh release upload "$RELEASE_TAG" latest.json --repo "$GITHUB_REPOSITORY" --clobber
-            echo "updater manifest uploaded with 4 platform entries"
+            # The app polls one stable endpoint, so the manifest also moves to a
+            # fixed channel tag. Stable and nightly never share this tag.
+            if gh release view updater-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release upload updater-latest latest.json --repo "$GITHUB_REPOSITORY" --clobber
+            else
+              gh release create updater-latest --repo "$GITHUB_REPOSITORY" \
+                --title "Updater channel: stable" \
+                --notes "Holds the latest updater manifest for the stable channel. Do not download installers from this tag." \
+                --prerelease
+              gh release upload updater-latest latest.json --repo "$GITHUB_REPOSITORY" --clobber
+            fi
+            echo "updater manifest uploaded with 4 platform entries and mirrored to updater-latest"
           fi
       - name: Upload QA assets to Actions artifacts
         uses: actions/upload-artifact@v4
