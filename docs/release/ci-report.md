@@ -66,25 +66,61 @@
 | `pnpm verify` | ✅ 退出码 0 |
 | 本地 `docker build`（team-server 镜像） | ⚠️ 本机网络 `ECONNRESET` 未完成；镜像构建正确性由 CI 的 `Team Server container` success 证明 |
 
-## 5. NOT_RUN 及原因
+## 5. Nightly 通道（P5）— 已验证 ✅
+
+**run `40875289443`（`nightly.yml` 在 main 上 `workflow_dispatch`）→ `completed / success`，5/5 job 绿**：
+
+| Job | 结果 |
+| --- | --- |
+| Decide whether a nightly is needed | ✅（版本 `0.0.1-nightly.<日期>.<短SHA>`，没有新提交时直接跳过） |
+| Build nightly (macOS universal) | ✅ |
+| Build nightly (Windows x64) | ✅ |
+| Build nightly (Linux x64) | ✅ |
+| Publish nightly prerelease | ✅ |
+
+前三次失败暴露并修掉了三个真实缺陷，均已落到 main：rustup 不认 `universal-apple-darwin`（改为矩阵里的 `rust_targets`）、版本改写没同步 `Cargo.lock`（`--locked` 拒绝）、Windows CRLF 让正则静默不匹配（改为行尾无关 + 失败即抛错 + `cargo metadata --locked` 自检）。
+
+## 6. Updater 运行时（PR #3）— 已合并 ✅，公钥待填
+
+**PR #3 → `main` 已合并**（merge commit `48b75c0`），8 个 PR 检查全绿。
+
+- Rust：`tauri-plugin-updater` 依赖 + `lib.rs` 注册 + `updater:default` 权限；
+- 配置：`plugins.updater` 的 endpoint 指向固定通道 `updater-latest/latest.json`；**`pubkey` 仍是占位符** `REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY`；
+- 前端：只读的「检查更新」（`service/updates.ts` + 设置对话框按钮 + 5 个单测），不自动下载安装；
+- CI：`updater-signed` 模式检测到占位公钥直接失败；发布时把 `latest.json` 镜像到 `updater-latest`。
+
+因为改动触及 `src-tauri/**` 与 `packages/frontend/src/**`，源码指纹变为 `07d420c0…`，六份证据已按 runbook 重采：
+
+| 场景 | 新产物上的实测 |
+| --- | --- |
+| debug 冷启动 ×3 | 3685 / 2345 / 2432 ms |
+| debug 远程 prompt | 3279 ms |
+| debug 真实 SSH 13-case | **13/13** |
+| debug shell 矩阵 | **14/14** + 真实 SSH **7/7** |
+| release 冷启动 ×3 | 1640 / 1736 / 1357 ms |
+| release 10-case 认证矩阵 | **10/10**（首连 990–4901 ms） |
+
+插桩产物：debug `827b7e01…`、release `5c008f04…`；`pnpm verify` 在本分支 **EXIT=0**（前端 1149、Team Server 103、Rust、脚本、源码规模、evidence gate 全绿）。
+
+> 首次采集时两个 password case 失败，根因是 Docker 守护进程未运行；启动 Docker 后两个矩阵重跑全绿。证据写入器拒绝写入不干净的矩阵（`attempt is not clean: password,password-reconnect`），fail-closed 生效。
+
+## 7. NOT_RUN 及原因
 
 | 项目 | 原因 |
 | --- | --- |
-| `nightly.yml` 端到端 | 会创建 nightly prerelease；且其 `NIGHTLY_BRANCH=main`，需合并到 main 才有意义。未执行 |
-| `updater-signed` 模式 | 仓库无 `TAURI_SIGNING_PRIVATE_KEY`；按规则不伪造密钥 |
-| `fully-signed` | 本阶段不购买证书，命中即失败（设计如此） |
+| `updater-signed` 模式 | 仓库仍无 `TAURI_SIGNING_PRIVATE_KEY`，且 `pubkey` 是占位符；按规则不伪造密钥 |
+| `fully-signed` | 本阶段不购买 Apple/Windows 证书，命中即失败（设计如此） |
 | Windows 安装/启动/SmartScreen、Linux AppImage 启动 | 本机是 macOS，无对应环境 |
-| 卸载重装、SQLite 首次初始化、旧数据兼容、用户数据目录不被覆盖 | 需要真机安装并运行应用；本轮只做了「启动即可运行」的 smoke，未做数据层验证 —— **不虚构结论** |
+| 卸载重装、SQLite 首次初始化、旧数据兼容、用户数据目录不被覆盖 | 需要真机安装并运行应用；本轮只做了「启动即可运行」的 smoke，未做数据层验证 |
+| 「下载并安装更新」 | 有意不做：未签名构建不应自动替换用户二进制；当前只提供检查与提示 |
 
-## 6. 最终状态：`RELEASE_QA_ONLY`
+## 8. 最终状态：`RELEASE_QA_ONLY`
 
-- **unsigned-qa 通道已端到端验证属实**：9/9 job 绿、发布 8 个资产、校验和一致、DMG 真 universal、应用可启动。
-- 但产物**没有任何 OS 代码签名/公证**（ad-hoc），因此只能称 QA 版本，不能称正式签名发布 → 停在 `RELEASE_QA_ONLY`，而不是 `RELEASE_VERIFIED`。
-- updater-signed 与 fully-signed 仍未验证；运行时自动更新插件仍未接入。
+- **unsigned-qa 通道端到端验证属实**：Release run `40811158213` 9/9 绿、`v0.0.1-dev.2` 发布 8 个资产、SHA-256 与清单一致、DMG `lipo -archs` = `x86_64 arm64`、应用可启动。
+- **Nightly 通道端到端验证属实**：run `40875289443` 5/5 绿。
+- 但产物**没有 Apple/Windows 代码签名与公证**（ad-hoc），所以只能称 QA 版本 → 停在 `RELEASE_QA_ONLY`。
 
-### 剩余问题（按优先级）
+### 要往前推还差两步
 
-1. **P1**：`nightly.yml` 从未真实运行，需要先合入 `main` 再观察一次定时/手动触发。
-2. **P1**：若要让 `updater-signed` 可用，需配置 `TAURI_SIGNING_PRIVATE_KEY` 并跑一次；同时最早那次会验证 `latest.json` 生成与 `.sig` 校验逻辑（该逻辑尚未被真实执行过）。
-3. **P2**：运行时自动更新（`tauri-plugin-updater` + `plugins.updater.pubkey` + UI 流程）尚未实现，产物目前无人消费。
-4. **P2**：安装/升级/卸载与 SQLite 兼容性验证仍是 NOT_RUN。
+1. 配置 `TAURI_SIGNING_PRIVATE_KEY`（私钥）并把 `tauri.conf.json` 的 `plugins.updater.pubkey` 换成对应公钥 → 之后派发一次 `updater-signed` 运行，第一次真跑 `.sig` 与 `latest.json` 校验；
+2. 购买并配置 Developer ID / Authenticode（本阶段明确不做，仅记录）。
