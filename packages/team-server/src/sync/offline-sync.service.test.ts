@@ -393,7 +393,7 @@ describe('OfflineSyncService authorization', () => {
           updatedAt: new Date(1),
           permission: 'READONLY',
         }),
-        update: vi.fn().mockResolvedValue({ id: 'share-a' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     }
     const service = new TestOfflineSyncService(prisma as never)
@@ -401,8 +401,13 @@ describe('OfflineSyncService authorization', () => {
     const result = await service.processOfflineQueue('user-a')
 
     expect(result).toMatchObject({ processed: 1, succeeded: 1, failed: 0 })
-    expect(prisma.share.update).toHaveBeenCalledWith({
-      where: { id: 'share-a' },
+    expect(prisma.share.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'share-a',
+        teamId: 'team-a',
+        sharedBy: 'user-a',
+        updatedAt: new Date(1),
+      },
       data: {
         data: {},
         encryptedData: 'ciphertext',
@@ -680,5 +685,184 @@ describe('OfflineSyncService authorization', () => {
 
     expect(result).toEqual({ processed: 0, succeeded: 0, failed: 0, errors: [] })
     expect(prisma.share.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('rejects a queued CREATE whose share id already exists instead of overwriting it', async () => {
+    const loggerError = vi
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined)
+    const prisma = {
+      syncQueue: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'queue-a',
+            teamId: 'team-a',
+            operation: 'CREATE',
+            shareType: 'HOST',
+            shareId: 'share-a',
+            data: {
+              id: 'share-a',
+              teamId: 'team-a',
+              type: 'HOST',
+              data: { hostname: 'stale-create' },
+              permission: 'READONLY',
+            },
+            attempts: 0,
+          },
+        ]),
+        update: vi.fn(),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      teamMember: {
+        findUnique: vi.fn().mockResolvedValue({ id: 'member-a' }),
+      },
+      share: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'share-a',
+          teamId: 'team-a',
+          sharedBy: 'user-a',
+          data: { hostname: 'newer-remote' },
+          encryptedData: null,
+          isSensitive: false,
+          permission: 'READWRITE',
+          updatedAt: new Date(5),
+        }),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+        create: vi.fn(),
+      },
+    }
+    const service = new TestOfflineSyncService(prisma as never)
+
+    const result = await service.processOfflineQueue('user-a')
+
+    expect(result).toMatchObject({ processed: 1, succeeded: 0, failed: 1 })
+    expect(prisma.share.updateMany).not.toHaveBeenCalled()
+    expect(prisma.share.update).not.toHaveBeenCalled()
+    expect(prisma.share.create).not.toHaveBeenCalled()
+    expect(JSON.stringify(loggerError.mock.calls)).toContain('code=HTTP_400')
+  })
+
+  it('applies a queued update from a READWRITE member and keeps the share permission', async () => {
+    const prisma = {
+      syncQueue: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'queue-a',
+            teamId: 'team-a',
+            operation: 'UPDATE',
+            shareType: 'HOST',
+            shareId: 'share-a',
+            data: {
+              id: 'share-a',
+              teamId: 'team-a',
+              type: 'HOST',
+              data: { hostname: 'member-write' },
+              baseVersion: 1,
+              permission: 'READONLY',
+            },
+            attempts: 0,
+          },
+        ]),
+        update: vi.fn(),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      teamMember: {
+        findUnique: vi.fn().mockResolvedValue({ id: 'member-a' }),
+      },
+      share: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'share-a',
+          teamId: 'team-a',
+          sharedBy: 'owner-a',
+          data: {},
+          encryptedData: null,
+          isSensitive: false,
+          permission: 'READWRITE',
+          updatedAt: new Date(1),
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    }
+    const service = new TestOfflineSyncService(prisma as never)
+
+    const result = await service.processOfflineQueue('user-a')
+
+    expect(result).toMatchObject({ processed: 1, succeeded: 1, failed: 0 })
+    expect(prisma.share.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'share-a',
+        teamId: 'team-a',
+        sharedBy: 'owner-a',
+        updatedAt: new Date(1),
+      },
+      data: {
+        data: { hostname: 'member-write' },
+        encryptedData: null,
+        isSensitive: false,
+        permission: 'READWRITE',
+      },
+    })
+  })
+
+  it('does not overwrite a queued update when the share changed after it was read', async () => {
+    const prisma = {
+      syncQueue: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'queue-a',
+            teamId: 'team-a',
+            operation: 'UPDATE',
+            shareType: 'HOST',
+            shareId: 'share-a',
+            data: {
+              id: 'share-a',
+              teamId: 'team-a',
+              type: 'HOST',
+              data: { hostname: 'raced' },
+              baseVersion: 1,
+              permission: 'READONLY',
+            },
+            attempts: 0,
+          },
+        ]),
+        update: vi.fn(),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      teamMember: {
+        findUnique: vi.fn().mockResolvedValue({ id: 'member-a' }),
+      },
+      share: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'share-a',
+          teamId: 'team-a',
+          sharedBy: 'user-a',
+          data: {},
+          encryptedData: null,
+          isSensitive: false,
+          permission: 'READONLY',
+          updatedAt: new Date(1),
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+    }
+    const service = new TestOfflineSyncService(prisma as never)
+
+    const result = await service.processOfflineQueue('user-a')
+
+    expect(result).toMatchObject({ processed: 1, succeeded: 0, failed: 1 })
+    expect(prisma.syncQueue.updateMany).toHaveBeenLastCalledWith({
+      where: {
+        id: 'queue-a',
+        userId: 'user-a',
+        status: 'PROCESSING',
+        processingToken: expect.any(String),
+      },
+      data: {
+        status: 'PENDING',
+        lastError: 'SYNC_OPERATION_FAILED',
+        processingToken: null,
+      },
+    })
   })
 })

@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common'
+import { ConflictException, NotFoundException } from '@nestjs/common'
 import { describe, expect, it, vi } from 'vitest'
 import { MembersService } from './members.service'
 
@@ -59,5 +59,31 @@ describe('MembersService team scoping', () => {
     ).rejects.toBeInstanceOf(NotFoundException)
 
     expect(prisma.teamMember.delete).not.toHaveBeenCalled()
+  })
+
+  it('reports a duplicate member insert as a conflict instead of a server error', async () => {
+    const prisma = {
+      teamMember: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce({
+            teamId: 'team-a',
+            userId: 'admin-a',
+            role: 'ADMIN',
+          })
+          .mockResolvedValueOnce(null),
+        create: vi.fn().mockRejectedValue(
+          Object.assign(new Error('Unique constraint failed on the fields'), {
+            code: 'P2002',
+          }),
+        ),
+      },
+    }
+    const service = new MembersService(prisma as never)
+
+    await expect(
+      service.addMember('team-a', 'admin-a', 'user-b'),
+    ).rejects.toBeInstanceOf(ConflictException)
+    expect(prisma.teamMember.create).toHaveBeenCalledTimes(1)
   })
 })

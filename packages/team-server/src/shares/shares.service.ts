@@ -1,14 +1,13 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
+import { buildShareUpdateData } from '../sync/share-write-data'
 import { deleteShareWithAudit } from './share-deletion'
-import {
-  resolveCreateSensitivity,
-  resolveUpdateSecurity,
-} from './share-security'
+import { resolveCreateSensitivity } from './share-security'
 
 @Injectable()
 export class SharesService {
@@ -77,28 +76,26 @@ export class SharesService {
       where: { id: shareId, teamId },
     })
     if (!share) throw new NotFoundException('Share not found')
-    if (share.sharedBy !== userId) {
+    const isCreator = share.sharedBy === userId
+    if (!isCreator && share.permission !== 'READWRITE') {
       throw new ForbiddenException('Only creator can update share')
     }
 
-    const security = resolveUpdateSecurity(data, share)
-    return this.prisma.share.update({
-      where: { id: shareId },
-      data: {
-        ...(data.permission !== undefined && { permission: data.permission }),
-        ...(security.isSensitive
-          ? {
-              data: {},
-              encryptedData: security.encryptedData,
-              isSensitive: true,
-            }
-          : {
-              ...(data.data !== undefined && { data: data.data as object }),
-              encryptedData: null,
-              isSensitive: false,
-            }),
+    const written = await this.prisma.share.updateMany({
+      where: {
+        id: shareId,
+        teamId,
+        sharedBy: share.sharedBy,
+        updatedAt: share.updatedAt,
       },
+      data: isCreator
+        ? buildShareUpdateData(data, share)
+        : buildShareUpdateData(data, share, true, true),
     })
+    if (written.count !== 1) {
+      throw new ConflictException('Share was modified concurrently')
+    }
+    return this.prisma.share.findFirst({ where: { id: shareId, teamId } })
   }
 
   async delete(teamId: string, shareId: string, userId: string) {

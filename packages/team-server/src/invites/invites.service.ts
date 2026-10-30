@@ -5,9 +5,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { nanoid } from 'nanoid'
 import { PrismaService } from '../prisma.service'
-import { generateInviteCode } from './invite-code'
+import { generateInviteCode, generateLinkToken } from './invite-code'
 
 @Injectable()
 export class InvitesService {
@@ -46,7 +45,7 @@ export class InvitesService {
     if (data.type === 'CODE') {
       inviteData.code = generateInviteCode()
     } else if (data.type === 'LINK') {
-      inviteData.linkToken = nanoid(24)
+      inviteData.linkToken = generateLinkToken()
     } else if (data.type === 'EMAIL') {
       if (!data.email)
         throw new BadRequestException('Email required for email invite')

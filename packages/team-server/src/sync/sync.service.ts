@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma.service'
 import { deleteShareWithAudit } from '../shares/share-deletion'
 import { OfflineSyncService } from './offline-sync.service'
 import { buildShareCreateData, buildShareUpdateData } from './share-write-data'
-import { SYNC_OPERATION_FAILED } from './sync-error'
+import { describeSyncError, SYNC_OPERATION_FAILED } from './sync-error'
 
 export type { ConflictInfo, IncrementalSyncResult } from './sync-results'
 
@@ -20,30 +20,35 @@ export class SyncService extends OfflineSyncService {
     userId: string,
     since?: number,
   ): Promise<IncrementalSyncResult> {
+    const timestamp = Date.now()
     const sinceDate = since ? new Date(since) : new Date(0)
+    const untilDate = new Date(timestamp)
     const memberships = await this.prisma.teamMember.findMany({
       where: { userId },
       select: { teamId: true },
     })
     const teamIds = memberships.map(membership => membership.teamId)
     if (teamIds.length === 0) {
-      return { timestamp: Date.now(), shares: [], deletedShareIds: [] }
+      return { timestamp, shares: [], deletedShareIds: [] }
     }
 
     const shares = await this.prisma.share.findMany({
-      where: { teamId: { in: teamIds }, updatedAt: { gte: sinceDate } },
+      where: {
+        teamId: { in: teamIds },
+        updatedAt: { gte: sinceDate, lte: untilDate },
+      },
       orderBy: { updatedAt: 'asc' },
     })
     const deleteLogs = await this.prisma.auditLog.findMany({
       where: {
         teamId: { in: teamIds },
         action: 'SHARE_DELETED',
-        createdAt: { gte: sinceDate },
+        createdAt: { gte: sinceDate, lte: untilDate },
       },
     })
 
     return {
-      timestamp: Date.now(),
+      timestamp,
       shares: shares.map(share => ({
         id: share.id,
         teamId: share.teamId,
@@ -112,7 +117,8 @@ export class SyncService extends OfflineSyncService {
             result.errors.push({ id: share.id, error: 'Not a team member' })
             continue
           }
-          if (existing.sharedBy !== userId) {
+          const isCreator = existing.sharedBy === userId
+          if (!isCreator && existing.permission !== 'READWRITE') {
             result.errors.push({
               id: share.id,
               error: 'Only creator can update share',
@@ -126,12 +132,20 @@ export class SyncService extends OfflineSyncService {
             result.conflicts.push(share.id)
             continue
           }
-          const updateData = buildShareUpdateData(share, existing)
-          const updated = await this.prisma.share.update({
-            where: { id: share.id },
-            data: updateData,
+          const written = await this.prisma.share.updateMany({
+            where: {
+              id: share.id,
+              teamId: share.teamId,
+              sharedBy: existing.sharedBy,
+              updatedAt: existing.updatedAt,
+            },
+            data: buildShareUpdateData(share, existing, !isCreator, !isCreator),
           })
-          result.updated.push(updated.id)
+          if (written.count !== 1) {
+            result.conflicts.push(share.id)
+            continue
+          }
+          result.updated.push(share.id)
         } else {
           const membership = await this.prisma.teamMember.findUnique({
             where: { teamId_userId: { teamId: share.teamId, userId } },
@@ -145,8 +159,10 @@ export class SyncService extends OfflineSyncService {
           })
           result.created.push(created.id)
         }
-      } catch {
-        this.syncLogger.error('Failed to process pushed share operation')
+      } catch (error) {
+        this.syncLogger.error(
+          `Failed to process pushed share operation (code=${describeSyncError(error)})`,
+        )
         result.errors.push({ id: share.id, error: SYNC_OPERATION_FAILED })
       }
     }
@@ -182,8 +198,10 @@ export class SyncService extends OfflineSyncService {
           shareType: existing.type,
         })
         result.deleted.push(shareId)
-      } catch {
-        this.syncLogger.error('Failed to process pushed share deletion')
+      } catch (error) {
+        this.syncLogger.error(
+          `Failed to process pushed share deletion (code=${describeSyncError(error)})`,
+        )
         result.errors.push({ id: shareId, error: SYNC_OPERATION_FAILED })
       }
     }
