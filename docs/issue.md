@@ -3424,5 +3424,24 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 **现状**：Issue #140 只修本地终端。远程 SSH 会话仍由 `compose_startup_command` 把片段写进远端 PTY（`src-tauri/src/session/ssh.rs`），开关打开时同样会回显。
 
 **为什么本轮不做**：静默方案要在远端落包装文件（远端 `ZDOTDIR` / `--rcfile` 需要用 SFTP 写入并在断开时清理），涉及远端文件系统权限与清理失败的处理，属于独立立项范围。
+### Issue #142: 设置面板的主题名是 id 推导出来的，没用 curated 名称 📋 待评估
+
+**严重程度**：Minor（观感）
+
+**现状**：`utils/terminal-themes.ts` 里有一份 `themeDisplayNames`（`Record<TerminalThemePreset, string>`，类型强制覆盖全部预设），但设置面板的网格用的是 `terminal-theme-grid.tsx:20` 的 `getThemeName(id)`——把 id 按 `-` 拆开首字母大写，**完全不读那张表**。结果：
+
+| id | curated | 面板实际显示 |
+| --- | --- | --- |
+| `rose-pine` | Rosé Pine | Rose Pine |
+| `rose-pine-dawn` | Rosé Pine Dawn | Rose Pine Dawn |
+| `kanagawa` | Kanagawa Wave | Kanagawa |
+| `github-dark` | GitHub Dark | Github Dark |
+
+注意 `github-dark` 这条在本次改动前就是这样，**不是新引入的回归**；本次新增的 10 个主题只是继承了同一套推导规则。
+
+**为什么这一轮不改**：`packages/frontend/src` 在 `FINGERPRINT_PATHS` 内，改它会让刚重采的调试证据与 release 产物哈希一起作废，必须重构建 debug/release 再重采 6 份证据（约 30–40 分钟）。为了两个显示名不值得插在证据收口中间。
+
+**建议的改法**（下一轮与其它前端改动合并，一次性重采）：`getThemeName` 先查 `themeDisplayNames[id]`，查不到再回退到当前的推导逻辑；补一条测试断言 `getThemeName('rose-pine') === 'Rosé Pine'`。
+
 
 

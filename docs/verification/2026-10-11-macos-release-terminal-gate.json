@@ -1,22 +1,22 @@
 {
-  "recordedAt": "2026-10-29T13:18:38.409Z",
-  "recordedDate": "2026-10-29",
+  "recordedAt": "2026-10-30T13:20:00.000Z",
+  "recordedDate": "2026-10-30",
   "kind": "tauri-release-ten-second-terminal-gate",
-  "why": "The previous release record described a binary (ab209317…) built from older sources; the release artifact on disk is now 1e68ba73…, built from this worktree. This record re-measures the same gate on the artifact that actually exists.",
+  "why": "The previous release record described a binary (5c008f04…) built before the shell-integration injection change and the terminal theme work; the release artifact on disk is now e02c6d9a…, built from this worktree. This record re-measures the same ten-second terminal gate on the artifact that actually exists.",
   "environment": {
     "os": "macOS 15.7.7",
     "architecture": "arm64",
-    "node": "24.16.0"
+    "node": "22.12.0"
   },
   "revision": {
-    "head": "feat/runtime-updater",
-    "commit": "1a2b498",
+    "head": "main",
+    "commit": "cd26696",
     "dirtyWorktree": true
   },
   "build": {
     "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle",
     "binary": "src-tauri/target/release/terminal",
-    "sha256": "5c008f04c41448a79d3a13775c12e3806b5b72a44009aae21b0814e675ff059b",
+    "sha256": "e02c6d9af4f1b50d6fd36daa0185f874174961613b57a66e6e810a4ea70c5d50",
     "devServerRequired": false,
     "smokeInstrumented": true,
     "smokeInstrumentedChunks": [
@@ -30,50 +30,50 @@
     ]
   },
   "local": {
-    "command": "pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/release/terminal (three consecutive runs)",
+    "command": "pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/release/terminal (invoked three times, one measured run per invocation)",
     "probe": "Rust TERMINAL_SHELL_PROBE marker written only after the frontend sent its nonce through xterm -> session_write -> local PTY and read the marker back",
     "measuredFrom": "child-spawn-event",
     "readinessTarget": "terminal",
     "repeatSpawnToReadyMs": [
-      1640,
-      1736,
-      1357
+      3248,
+      1435,
+      1321
     ],
     "readyUnder10s": true,
     "terminalRuns": [
       {
         "run": 1,
-        "capturedAt": "2026-10-29T13:18:30.289Z",
-        "pid": 73653,
+        "capturedAt": "2026-10-30T12:03:32.050Z",
+        "pid": 37736,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 1640,
-        "requestToReadyMs": 1648,
+        "spawnToReadyMs": 3248,
+        "requestToReadyMs": 3255,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 2,
-        "capturedAt": "2026-10-29T13:18:34.520Z",
-        "pid": 73775,
+        "capturedAt": "2026-10-30T12:03:45.450Z",
+        "pid": 37949,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 1736,
-        "requestToReadyMs": 1743,
+        "spawnToReadyMs": 1435,
+        "requestToReadyMs": 1441,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 3,
-        "capturedAt": "2026-10-29T13:18:38.409Z",
-        "pid": 73853,
+        "capturedAt": "2026-10-30T12:03:54.883Z",
+        "pid": 38100,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 1357,
-        "requestToReadyMs": 1364,
+        "spawnToReadyMs": 1321,
+        "requestToReadyMs": 1327,
         "probeCaseName": "cat-eof",
         "ok": true
       }
@@ -87,7 +87,10 @@
     "Windows OpenSSH Agent, Pageant, ConPTY/local Windows PTY and serial hardware have no test machine available and are not covered here."
   ],
   "supersedes": [
-    "the ab209317… release measurement recorded in the previous revision of this file"
+    "the 5c008f04… release measurement recorded in the previous revision of this file"
   ],
-  "instrumentationCaveat": "This binary is built with VITE_TERMINAL_SMOKE_BUILD=1, which compiles the smoke and input-probe entry points and the experiments nav item into the frontend. A shipping build omits all of them, so these numbers describe a slightly larger bundle than a user receives and are a conservative upper bound."
+  "instrumentationCaveat": "This binary is built with VITE_TERMINAL_SMOKE_BUILD=1, which compiles the smoke and input-probe entry points and the experiments nav item into the frontend. A shipping build omits all of them, so these numbers describe a slightly larger bundle than a user receives and are a conservative upper bound.",
+  "source": {
+    "fingerprint": "f9186713fe83e3e9320b94c82d50eeaca477fe7b28975e77ec27c528573ea8e5"
+  }
 }
