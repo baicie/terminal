@@ -3578,3 +3578,23 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 
 **修复需要**：`vault_create` 在目标存在时返回明确错误，或增加显式 overwrite 参数；需同步前端契约与 UI。
 
+
+### Issue #155: P7.0 的跨平台导入缺陷已验证修复；Linux 剩余失败定性为 #145（同步骤同错误）✅ 已定性（2026-11-01）
+
+**背景**：run `41077965521`（sha `76c424d`）macOS success、Linux 与 Windows failure。根因是 `terminal-smoke-password-sshd.mjs` 在模块顶层执行 `resolveNativeTool('dscl', …)`，Linux/Windows 上没有该工具即 throw，导入链在测试执行前就崩溃；`NATIVE_CHOWN`/`NATIVE_CHMOD` 还是导出符号，连 import 它们的测试文件也会连带崩。
+
+**修复**（commit `7c83029`）：改为候选表 + 记忆化惰性解析，仅在真正启动 native backend 时 `accessSync`；导出改惰性零参函数；新增 4 条 cross-platform 用例（模拟无 dscl 主机时 import 不再抛错）。
+
+**验证证据（run `41104738885`，sha `1eeebb7`）**：
+- `Windows PowerShell and cmd shell matrix` => **success**（改前为 failure）
+- Linux job 中 `Run public-key smoke and reconnect smoke under Xvfb` => **success** —— 该步骤正是导入 `terminal-smoke-password-sshd.mjs` 的路径，证明 import-time 崩溃已消除
+- ubuntu-latest 的 `Production source-size gate`（现执行 `node --test scripts/*.test.mjs` 全 241 项，含 4 条 cross-platform 用例）=> **success**
+
+**结论**：P7.0 的目标缺陷已在真实 Linux/Windows runner 上验证修复。Windows job 由 failure 转 success 是直接对照。
+
+**剩余问题不是 P7.0**：同一 run 的 Linux job 仍失败，但失败步骤是 `Run the real Linux shell interaction matrix`，错误为 `"Invalid shell probe result: contract mismatch"`（4 条用例），并伴随 `AT-SPI: Error retrieving accessibility bus address` 与 `libEGL warning: DRI3 error`。这与 **Issue #145** 记录的步骤与错误文案完全一致，属既有的托管 runner 图形/无障碍栈环境问题，与本次导入修复无关。
+
+**注意**：`gh api .../jobs/{id}` 返回的步骤状态与最终日志不一致（API 把失败标在 "password authentication matrix in Docker" 且状态为 in_progress，而日志里的 `##[error]` 出自 shell interaction matrix）。**排查时以日志为准，不要以步骤级 API 为准。**
+
+**未闭合**：run `41104738885` 的 macOS job 未产出结论（Linux 失败后整轮 overall=failure），因此**本轮没有产出 6 份证据**。
+
