@@ -70,6 +70,23 @@ async fn get_sftp(
         .ok_or(SftpError::SessionNotFound)
 }
 
+/// Stage of `sftp_connect` that failed. Each stage maps to its own error kind so
+/// callers can tell "no such session" apart from "the server refused the channel".
+#[derive(Clone, Copy)]
+enum SftpConnectStage {
+    ChannelOpen,
+    Subsystem,
+    Handshake,
+}
+
+fn connect_error(stage: SftpConnectStage, error: &dyn std::fmt::Display) -> SftpError {
+    match stage {
+        SftpConnectStage::ChannelOpen => SftpError::ChannelOpenFailed(error.to_string()),
+        SftpConnectStage::Subsystem => SftpError::SubsystemUnavailable(error.to_string()),
+        SftpConnectStage::Handshake => SftpError::HandshakeFailed(error.to_string()),
+    }
+}
+
 #[tauri::command]
 pub async fn sftp_connect(
     state: tauri::State<'_, SharedStateType>,
@@ -87,16 +104,16 @@ pub async fn sftp_connect(
     let channel = handle
         .channel_open_session()
         .await
-        .map_err(|_e| SftpError::SessionNotFound)?;
+        .map_err(|error| connect_error(SftpConnectStage::ChannelOpen, &error))?;
 
     channel
         .request_subsystem(false, "sftp")
         .await
-        .map_err(|_e| SftpError::SessionNotFound)?;
+        .map_err(|error| connect_error(SftpConnectStage::Subsystem, &error))?;
 
     let sftp = SftpSession::new(channel.into_stream())
         .await
-        .map_err(|_e| SftpError::SessionNotFound)?;
+        .map_err(|error| connect_error(SftpConnectStage::Handshake, &error))?;
 
     let mut sftp_sessions = state.sftp_sessions.lock().await;
     sftp_sessions.insert(session_id, Arc::new(sftp));
@@ -370,7 +387,29 @@ pub async fn sftp_download(
 
     if let Some(parent) = std::path::Path::new(&local_path).parent() {
         if !parent.as_os_str().is_empty() {
-            let _ = tokio::fs::create_dir_all(parent).await;
+            if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                let msg = format!(
+                    "Failed to create local directory {}: {}",
+                    parent.display(),
+                    e
+                );
+                tracing::warn!(
+                    transfer_id = %transfer_id,
+                    local_path = %local_path,
+                    error = %e,
+                    "sftp_download: create local directory failed",
+                );
+                emit_progress(
+                    &app,
+                    &transfer_id,
+                    "error",
+                    0,
+                    total_bytes,
+                    Some(msg.clone()),
+                    None,
+                );
+                return Err(SftpError::DownloadFailed(msg));
+            }
         }
     }
 
@@ -734,4 +773,38 @@ pub async fn sftp_remote_checksum(
     );
 
     Ok(hex)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{connect_error, SftpConnectStage};
+    use crate::errors::SftpError;
+
+    struct StageFailure(&'static str);
+
+    impl std::fmt::Display for StageFailure {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str(self.0)
+        }
+    }
+
+    #[test]
+    fn sftp_connect_stages_report_distinct_errors() {
+        let channel = connect_error(SftpConnectStage::ChannelOpen, &StageFailure("prohibited"));
+        let subsystem = connect_error(SftpConnectStage::Subsystem, &StageFailure("refused"));
+        let handshake = connect_error(SftpConnectStage::Handshake, &StageFailure("mismatch"));
+
+        assert!(
+            matches!(channel, SftpError::ChannelOpenFailed(message) if message == "prohibited"),
+            "a refused channel must not be reported as a missing session"
+        );
+        assert!(
+            matches!(subsystem, SftpError::SubsystemUnavailable(message) if message == "refused"),
+            "a refused subsystem must not be reported as a missing session"
+        );
+        assert!(
+            matches!(handshake, SftpError::HandshakeFailed(message) if message == "mismatch"),
+            "a failed SFTP handshake must not be reported as a missing session"
+        );
+    }
 }

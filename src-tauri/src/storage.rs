@@ -9,8 +9,27 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::State;
 use tokio::sync::RwLock;
+
+/// Connect budget for one storage backend request.
+const STORAGE_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Whole-request budget for one storage backend request, so a hung endpoint cannot
+/// pin a caller (and the UI) forever.
+const STORAGE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+
+fn build_storage_client(request_timeout: Duration, connect_timeout: Duration) -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(connect_timeout)
+        .timeout(request_timeout)
+        .build()
+        .unwrap_or_default()
+}
+
+fn storage_client() -> reqwest::Client {
+    build_storage_client(STORAGE_REQUEST_TIMEOUT, STORAGE_CONNECT_TIMEOUT)
+}
 
 /// Storage backend types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,7 +120,7 @@ impl WebDAVStorage {
             username,
             password,
             base_path: base_path.unwrap_or_default(),
-            client: reqwest::Client::new(),
+            client: storage_client(),
         }
     }
 
@@ -428,7 +447,7 @@ impl S3Storage {
             secret_key,
             bucket,
             region: region.unwrap_or_else(|| "us-east-1".to_string()),
-            client: reqwest::Client::new(),
+            client: storage_client(),
         }
     }
 
@@ -656,7 +675,7 @@ impl RestApiStorage {
             endpoint,
             api_key,
             headers: headers.unwrap_or_default(),
-            client: reqwest::Client::new(),
+            client: storage_client(),
         }
     }
 
@@ -1126,5 +1145,33 @@ mod tests {
             storage.list_url("folder/a b"),
             "https://s3.example.test/bucket?list-type=2&prefix=folder%2Fa%20b"
         );
+    }
+
+    #[tokio::test]
+    async fn storage_client_times_out_a_request_that_never_answers() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("loopback listener should bind");
+        let addr = listener
+            .local_addr()
+            .expect("listener should report its address");
+        let hanging_server = tokio::spawn(async move {
+            // Accept the connection and never answer, so only the client timeout can end it.
+            let (socket, _) = listener.accept().await.expect("server should accept");
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            drop(socket);
+        });
+
+        let client = build_storage_client(Duration::from_millis(100), Duration::from_millis(100));
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(3),
+            client.get(format!("http://{addr}/hang")).send(),
+        )
+        .await
+        .expect("a client without a request timeout would hang forever");
+        let error = outcome.expect_err("a server that never answers must time out");
+
+        assert!(error.is_timeout(), "expected a timeout error, got {error}");
+        hanging_server.abort();
     }
 }
