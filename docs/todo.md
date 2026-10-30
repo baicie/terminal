@@ -1,7 +1,7 @@
 # Terminal 项目待办事项
 
 > 基于设计文档 `docs/design.md` 整理的待办事项
-> 更新时间：2026-11-01（Phase 7：可靠性收口，7 个提交修掉静默失败；本轮只做文档对齐，未重跑测试、未重采证据。当前源码指纹必须由 evidence checker 重新输出，文中所有历史指纹均已失效）
+> 更新时间：2026-11-01（Phase 7：可靠性收口，`aba82ed..484f00a` 共 16 个提交，覆盖 P7.0–P7.4 五个阶段；本地门禁全绿，**未重采实机证据**。当前源码指纹为 `81ffa0bf…`，文中所有历史指纹均已失效）
 
 > 最新一次落盘的 6 份证据来自 CI run `41077965521`（源码指纹 `99b0879d…`，debug 冷启动 7207/4105/3740 ms、release gate 3691/3309/3548 ms、debug 认证矩阵 11/11、release 8/8、shell 交互 14+7）。此后 `aba82ed..3c147e4` 的 7 个提交再次改动了 fingerprinted 路径（`packages/frontend/src`、`src-tauri/src`、`scripts/*`、工作流），**当前工作树指纹需要重新计算，证据需要按 Phase 6.107 的 runbook 重采**；在重采完成前不得声称证据有效。
 
@@ -2103,9 +2103,13 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 | Linux 桌面 PTY | ⚠️ 待实机 | 只有 runner 编译与容器矩阵，没有桌面交互 |
 | 串口 | ⚠️ 待实机 | 需要真实硬件 |
 | Issue #144：`password`/`password-reconnect` 恢复进 11/8 契约 | 📋 未解决 | macOS runner 无 Docker，native 后端认证通过但 channel 打不开 |
-| Issue #145：real-machine 矩阵在 Linux/Windows job 的环境性失败 | 📋 待观察 | 需要下一次 dispatch 的 runner 输出 |
+| Issue #145/#156：Linux job 的三条 zsh shell probe 用例 | ⚠️ BLOCKED_EXTERNAL | **判定层缺陷已修**（`f74a33e`）：原来 `contract mismatch` 是唯一失败出口，把「协议形状违规」与「用例没通过」压成同一句，导致 30 秒超时 / shell 侧 FAIL / PTY 失败三种根因无法区分。现已拆分并输出 expected vs actual、耗时、键入字节。剩余是「这三条 zsh 用例从未完成」的底层触发原因——失败集合在相隔 30 分钟的两次 run 中完全一致，且同一 runner 在 2026-10-17 上是绿的，因此**不是环境抖动**；需带完整图形栈（at-spi2-core + dbus + mesa）的 Xvfb 环境复现 |
 | `updater-signed` 出包 | ⚠️ NOT_RUN | 需要 `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_UPDATER_PUBKEY`，一次都没跑过 |
 | macOS/Windows/Linux 安装与升级（拖入 Applications、NSIS 安装+卸载、AppImage 启动、`dpkg -i`、旧 SQLite 库兼容） | ⚠️ NOT_RUN | 需要三平台真机；目前只验证过「资产存在、非空、命名正确、SHA-256 一致」 |
 | 真实 S3 集成 | ⚠️ 待外部服务 | 只有固定向量测试 |
 | 发布包版本 | ⚠️ 未出包 | 三处版本已到 `0.0.1-dev.2`，但没有对应的 tag / Release；现有证据属于 `v0.0.1-dev.1` |
+| **6 份实机证据** | 🔴 待重采 | Phase 7 的 16 个提交改动了 fingerprinted 路径，当前指纹 `81ffa0bf…`，evidence gate 为红。需在冻结提交上跑 macOS 证据 job，再用 `fetch-verification-evidence.mjs --run-id <id>` 回填；**禁止手工编辑测量值** |
+| Vault `vault_unlock` 不校验密码（Issue #152） | 📋 待修 | 格式无 verifier，空 Vault 任意密码都能「解锁成功」，错误密码要到第一次 `vault_get` 才暴露。实现规格已写入 `docs/issue.md`：verifier 设为 `Option` 字段 + 常量时间比较 + 旧格式首次成功解锁时原子补写 |
+| Vault `vault_create` 覆盖已存在文件（Issue #153） | 📋 待修 | 后端无存在性保护，任何绕过前端的调用都会原子地毁掉旧 Vault。需加 `AlreadyExists` 与 `overwrite` 参数，属跨栈契约变更，Rust 与前端须一起提交并各补测试 |
+| 导入事务的原子性 | ⚠️ 未严格保证 | `tauri-plugin-sql` 底层是 sqlx 连接池，`BEGIN IMMEDIATE` 与后续语句可能落在不同连接；最坏形态是 COMMIT 报错、整批回滚（属可见失败而非静默脏数据），需在运行中的应用里验证 |
 
