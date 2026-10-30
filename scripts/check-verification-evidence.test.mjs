@@ -3,12 +3,14 @@ import test from 'node:test'
 
 import {
   checkVerificationEvidence,
+  DEBUG_SSH_CASES,
   EVIDENCE_MANIFEST_FILE,
   FINGERPRINT_PATHS,
   findProfileHashConflicts,
   findRecordedHashes,
   groupEvidenceByProfile,
   MISSING_MANIFEST_MESSAGE,
+  RELEASE_SSH_CASES,
 } from './check-verification-evidence.mjs'
 
 const RELEASE_COLD_START = '2026-10-11-macos-release-terminal-gate.json'
@@ -57,34 +59,8 @@ const KIND_BY_FILE = new Map([
   [RELEASE_SSH_MATRIX, 'tauri-release-ssh-and-shell-matrix'],
 ])
 
-const DEBUG_SSH_CASES = [
-  'key',
-  'key-reconnect',
-  'key-outage-reconnect',
-  'key-outage-wake-reconnect',
-  'key-first-connect-outage',
-  'password',
-  'password-reconnect',
-  'agent',
-  'agent-reconnect',
-  'cert',
-  'cert-reconnect',
-  'jump',
-  'jump-reconnect',
-]
-
-const RELEASE_SSH_CASES = [
-  'key',
-  'key-reconnect',
-  'password',
-  'password-reconnect',
-  'agent',
-  'agent-reconnect',
-  'cert',
-  'cert-reconnect',
-  'jump',
-  'jump-reconnect',
-]
+// The case lists are imported, not restated: a copied contract drifts the
+// moment either side changes, and the failure then looks like a broken gate.
 
 const SHELL_PROBE_CASES = [
   'cat-eof',
@@ -259,7 +235,7 @@ function validEvidence(file, sha256, sourceFingerprint = CURRENT_SOURCE) {
   }
   if (file === RELEASE_SSH_MATRIX) {
     value.sshMatrix = {
-      passed: 10,
+      passed: RELEASE_SSH_CASES.length,
       failed: 0,
       cases: RELEASE_SSH_CASES.map(name => ({ name, ok: true })),
     }

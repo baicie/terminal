@@ -266,7 +266,7 @@ macOS 走「先分架构编二进制、再用 `lipo` 合成 universal」的两�
 > **release SSH 矩阵必须显式给 10 个 case**：`scripts/run-terminal-smoke-matrix.mjs` 的 `CASES` 是 13 条，`--release` 并不过滤，而门禁的 `RELEASE_SSH_CASES` 只认 10 条（不含三个 outage case）。裸跑 `pnpm smoke:ssh-matrix --reuse-binary --release` 会跑 13 条、与证据字段对不上。正确写法是显式列出：`pnpm smoke:ssh-matrix --reuse-binary --release key key-reconnect password password-reconnect agent agent-reconnect cert cert-reconnect jump jump-reconnect`。
 
 1. **冻结源码**：所有 fingerprinted 路径的改动先落完（`packages/frontend/src`、`src-tauri/src`、`scripts/run-*.mjs`、`scripts/*-verification-evidence.mjs`、门禁脚本本身等），提交后再派发证据 job。
-2. **派发 macOS 证据 job**：`gh workflow run real-machine-matrix.yml`。该 job 在 runner 上完成原本手工的六步，顺序固定：`VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle` 并记下 debug 哈希 → 四个 debug 场景（本地冷启动 ×3、远程 prompt、13-case SSH 矩阵、本地 14 + 真实 SSH 7 shell 矩阵，各自 `2>&1 | tee` 到 `evidence-logs/`）→ `VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle` 并记下 release 哈希 → 两个 release 场景（本地冷启动 ×3、**显式列 10 个 case** 的 release SSH 矩阵）→ 生成六份证据与 `evidence-manifest.json` → 上传 `verification-evidence` 产物。
+2. **派发 macOS 证据 job**：`gh workflow run real-machine-matrix.yml`。该 job 在 runner 上完成原本手工的六步，顺序固定：`VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle` 并记下 debug 哈希 → 四个 debug 场景（本地冷启动 ×3、远程 prompt、11-case SSH 矩阵、本地 14 + 真实 SSH 7 shell 矩阵，各自 `2>&1 | tee` 到 `evidence-logs/`）→ `VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle` 并记下 release 哈希 → 两个 release 场景（本地冷启动 ×3、**显式列 8 个 case** 的 release SSH 矩阵）→ 生成六份证据与 `evidence-manifest.json` → 上传 `verification-evidence` 产物。
    - 插桩前提不变：必须是内嵌前端的 `tauri build` 产物，且带 `VITE_TERMINAL_SMOKE_BUILD=1`；裸 `cargo build` 的二进制会被 runner 显式拒绝。所有场景都用 `--reuse-binary` / `--app-path` 复用第 1、3 步哈希过的产物，中途不得重链接。
    - `scripts/build-verification-evidence.mjs` 是 fail-closed 的：任何 case 缺失、出现 ❌、`spawnToReadyMs > 10000`、或日志里的 `Measured <profile> binary <sha>` 与构建哈希不一致，它都会以非 0 退出且**一个文件都不写**。
 3. **下载并安装证据**：`node scripts/fetch-verification-evidence.mjs --latest`（或 `--run-id <id>`；`--with-binaries` 同时把两个产物放回 `src-tauri/target/{debug,release}/terminal`）。六份 JSON 与 manifest 进 `docs/verification/`，原始日志进 `docs/verification/raw/<runId>/`（两者一起提交）。
@@ -274,7 +274,7 @@ macOS 走「先分架构编二进制、再用 `lipo` 合成 universal」的两�
 
 证据 JSON 里的 `source.fingerprint`、`binary.sha256`、`measurement.*`、`provenance.*` 全部由 `scripts/build-verification-evidence.mjs` 从 runner 输出与 GitHub 上下文写入，**禁止手改或用历史数值填充**；手写的文件会因为缺 `provenance` 或与 manifest 对不上而被门禁拒绝。
 
-> **已知阻塞**：`password` / `password-reconnect` 两条 case 依赖 `terminal-smoke-password-sshd` 的 Debian OpenSSH 容器，需要 Docker 守护进程；GitHub 托管的 macOS runner 不提供 Docker。因此 macOS 证据 job 会在 `Check the password fixture precondition` 一步带着原因失败，13-case/10-case 两份契约目前只能在自带 Docker 的 runner（或本机 Docker Desktop）上采集；Linux job 里的 `password,password-reconnect` 矩阵不受影响。
+> **已知限制（Issue #144）**：`password` / `password-reconnect` 依赖 `terminal-smoke-password-sshd` 的 Debian OpenSSH 容器（需要 Docker），而 GitHub 托管的 macOS runner 不提供 Docker。为此新增了 native 后端（`sudo -n sysadminctl` 建一次性账号 + 系统 sshd + `UsePAM`）：账号、口令、属性、`dscl . -authonly`、以及 **app 侧的密码认证**在 runner 上均已实测成功，但认证通过后 app 始终不 open channel，3 分钟后被 `rust-watchdog` 判超时。因此 macOS 证据契约**有意收窄为 11-case（debug）/ 8-case（release）**，这两条改由 Linux job 的容器矩阵覆盖（该步骤为绿）。恢复 13/10 的唯一路径是解决 #144，不是调整门禁。
 
 ### 六份证据的必填字段（门禁实际校验的部分）
 

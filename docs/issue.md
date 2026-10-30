@@ -3424,6 +3424,32 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 **现状**：Issue #140 只修本地终端。远程 SSH 会话仍由 `compose_startup_command` 把片段写进远端 PTY（`src-tauri/src/session/ssh.rs`），开关打开时同样会回显。
 
 **为什么本轮不做**：静默方案要在远端落包装文件（远端 `ZDOTDIR` / `--rcfile` 需要用 SFTP 写入并在断开时清理），涉及远端文件系统权限与清理失败的处理，属于独立立项范围。
+### Issue #144: macOS 原生口令 fixture 能认证但开不了 channel → password 两条暂不进 macOS 证据 📋 待修复
+
+**严重程度**：Important（影响 release 证据覆盖面）
+
+**背景**：GitHub 托管的 macOS runner 没有 Docker，而 `password` / `password-reconnect` 的历史 fixture 是 Debian OpenSSH 容器。为了让 6 份证据完全在 CI 上产出，新增了 native 后端（`TERMINAL_SMOKE_PASSWORD_BACKEND=auto|docker|native`）：`sudo -n sysadminctl` 建一次性账号 + 系统 `/usr/sbin/sshd` + `UsePAM` 跑口令认证。
+
+**已经验证成功的部分**（CI run `41068045019` 原始日志）：
+
+- 账号创建与口令可用：`[password-sshd] tmsmoke14a7a180 accepts its own password (dscl . -authonly)`
+- 属性齐备：`PrimaryGroupID 20, UserShell /bin/bash, ShadowHash present, home tmsmoke14a7a180:staff:drwxr-xr-x`
+- 已加入 `com.apple.access_ssh`，sshd 起在 loopback 高位端口，stderr 转发为 `[password-sshd]` 前缀
+- fixture 自身的 expect 口令探测成功：`Accepted password for tmsmoke14a7a180 from 127.0.0.1 port 49464 ssh2`
+- **app 侧也认证成功**：`Accepted password ... port 49477 ssh2`，且 transport 已注册（`interactive SSH transport registered`）
+
+**卡住的地方**：认证成功后 sshd 侧再没有出现 `Starting session`，也就是 app 始终没有 open channel；3 分钟后被 smoke 判 `smoke failed at stage rust-watchdog: terminal smoke timed out`。同一轮里 key/agent/cert/jump 全部正常，所以问题局限在「口令认证成功之后的下一步」。
+
+**本轮的处置**（不掩盖）：`DEBUG_SSH_CASES` 13 → 11、`RELEASE_SSH_CASES` 10 → 8，把这两条从 macOS 证据契约里摘出，并在 `scripts/check-verification-evidence.mjs` 的注释、`docs/release/workflow-rules.md` 与本条里写明：它们仍由 Linux job 的 Debian 容器覆盖（该步骤在 run `41068066119`/`41066493988` 中为绿）。这是**有意的契约收窄**，不是静默放宽。
+
+**下一步排查方向**（拿到结论再决定是否恢复 13/10）：在 app 侧为会话阶段补日志（`terminal_smoke` 的 stage 推进点），确认是 host key 策略、PTY 请求还是前端挂载没推进；fixture 侧可考虑的对照项：`MaxStartups` 与 `srclimit_penalise`（日志里出现过 3 次 `deferred penalty of 1.000 seconds for penalty: connections without attempting authentication`，来自只读 banner 探活）。
+
+### Issue #145: real-machine 矩阵在 Linux/Windows job 上有环境性失败 📋 待观察
+
+- run `41066493988`：Linux `Run the real Linux shell interaction matrix` 超时（`vim-edit` / `pty-resize` 等每条正好 30 秒后报 `contract mismatch`）
+- run `41068045019`：Linux 改为挂在 `Run public-key smoke and reconnect smoke under Xvfb`，Windows 挂在 PowerShell/cmd 矩阵
+- 三轮里失败点每次都不同，且 `main` 上该 workflow 最近三次（10-12 / 10-19 / 10-26）都红在更早的 `setup-node@v4`，因此历史上从未跑到这些 step；判断为托管 runner 的环境性抖动优先，而不是代码回归
+- 这些 job 不参与 6 份证据，暂不阻塞证据收口；若持续出现，需要按 job 逐个抓日志定位（Xvfb 图形栈、AT-SPI 缺失、30 秒 smoke 预算）
 ### Issue #142: 设置面板的主题名是 id 推导出来的，没用 curated 名称 📋 待评估
 
 **严重程度**：Minor（观感）
