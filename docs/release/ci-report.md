@@ -32,7 +32,7 @@
 
 | 资产 | 字节 |
 | --- | ---: |
-| `Terminal_0.0.1-dev.2_macos-universal.dmg` | 24,477,423 |
+| `Terminal_0.0.1-dev.2_macos-universal.dmg`（该次为 universal；现改为分架构） | 24,477,423 |
 | `Terminal_0.0.1-dev.2_windows-x86_64-setup.exe` | 8,194,751 |
 | `Terminal_0.0.1-dev.2_windows-aarch64-setup.exe` | 7,354,375 |
 | `Terminal_0.0.1-dev.2_linux-x86_64.AppImage` | 88,631,800 |
@@ -66,7 +66,9 @@
 | `pnpm verify` | ✅ 退出码 0 |
 | 本地 `docker build`（team-server 镜像） | ⚠️ 本机网络 `ECONNRESET` 未完成；镜像构建正确性由 CI 的 `Team Server container` success 证明 |
 
-## 5. Nightly 通道（P5）— 已验证 ✅
+## 5. Nightly 通道（曾验证通过，**后按项目决定移除**）
+
+> 2026-10-29 更新：`nightly.yml` 已删除。下面是移除前的验证记录，保留作为历史；现在仓库只有 `ci.yml`、`release.yml`、`real-machine-matrix.yml`。
 
 **run `40875289443`（`nightly.yml` 在 main 上 `workflow_dispatch`）→ `completed / success`，5/5 job 绿**：
 
@@ -117,7 +119,7 @@
 ## 8. 最终状态：`RELEASE_QA_ONLY`
 
 - **unsigned-qa 通道端到端验证属实**：Release run `40811158213` 9/9 绿、`v0.0.1-dev.2` 发布 8 个资产、SHA-256 与清单一致、DMG `lipo -archs` = `x86_64 arm64`、应用可启动。
-- **Nightly 通道端到端验证属实**：run `40875289443` 5/5 绿。
+- **打包改为 macOS 分芯片架构**：`aarch64` 与 `x86_64` 各出一份 DMG，`updater-signed` 下也各有一份 `.app.tar.gz` + `.sig`，不再用 `lipo` 合成 universal。
 - 但产物**没有 Apple/Windows 代码签名与公证**（ad-hoc），所以只能称 QA 版本 → 停在 `RELEASE_QA_ONLY`。
 
 ### 要往前推还差两步

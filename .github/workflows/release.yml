@@ -257,9 +257,19 @@ jobs:
           retention-days: 3
 
   bundle-macos:
-    name: Bundle universal macOS DMG
+    name: Bundle macOS DMG (${{ matrix.arch }})
     needs: [prepare-release, build-macos-binary]
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            target: aarch64-apple-darwin
+            os: macos-15
+          - arch: x86_64
+            target: x86_64-apple-darwin
+            os: macos-15-intel
+    runs-on: ${{ matrix.os }}
     env:
       # Only updater-signed builds get an updater config: createUpdaterArtifacts plus the
       # public key injected from the TAURI_UPDATER_PUBKEY secret. The repository keeps its
@@ -280,41 +290,40 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96.0
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: release-universal-apple-darwin
+          shared-key: release-${{ matrix.target }}
           workspaces: src-tauri -> target
-      - name: Download per-architecture binaries
+      - name: Download this architecture binary
         uses: actions/download-artifact@v4
         with:
-          pattern: macos-binary-*
-          path: macos-binaries
-      - name: Merge universal binary with lipo
+          name: macos-binary-${{ matrix.target }}
+          path: macos-binary
+      - name: Place the binary where the bundler expects it
         shell: bash
         run: |
           set -euo pipefail
-          out="src-tauri/target/universal-apple-darwin/release"
+          out="src-tauri/target/${{ matrix.target }}/release"
           mkdir -p "$out"
-          lipo -create -output "$out/${APP_BINARY_NAME}" \
-            "macos-binaries/macos-binary-aarch64-apple-darwin/${APP_BINARY_NAME}" \
-            "macos-binaries/macos-binary-x86_64-apple-darwin/${APP_BINARY_NAME}"
+          cp "macos-binary/${APP_BINARY_NAME}" "$out/${APP_BINARY_NAME}"
           chmod +x "$out/${APP_BINARY_NAME}"
-          lipo -info "$out/${APP_BINARY_NAME}"
+          file "$out/${APP_BINARY_NAME}"
       - run: pnpm install --frozen-lockfile
-      - name: Bundle universal .app (retry with backoff)
+      - name: Bundle .app for this architecture (retry with backoff)
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          extra=()
+          if [ -n "${UPDATER_ARGS:-}" ]; then read -r -a extra <<< "$UPDATER_ARGS"; fi
           max_attempts=3
           for attempt in $(seq 1 "$max_attempts"); do
             echo "=== macOS bundle attempt ${attempt}/${max_attempts} ==="
-            bundle_log="$RUNNER_TEMP/tauri-bundle-macos-${attempt}.log"
-            extra=()
-            if [ -n "${UPDATER_ARGS:-}" ]; then read -r -a extra <<< "$UPDATER_ARGS"; fi
-            if pnpm tauri bundle --target universal-apple-darwin --bundles app ${extra[@]+"${extra[@]}"} 2>&1 | tee "$bundle_log"; then
+            bundle_log="$RUNNER_TEMP/tauri-bundle-${{ matrix.arch }}-${attempt}.log"
+            if pnpm tauri bundle --target ${{ matrix.target }} --bundles app ${extra[@]+"${extra[@]}"} 2>&1 | tee "$bundle_log"; then
               echo "macOS .app bundled"
               exit 0
             fi
@@ -330,23 +339,23 @@ jobs:
             echo "macOS bundling failed, retrying in ${sleep_seconds}s"
             sleep "$sleep_seconds"
           done
-      - name: Create universal DMG
+      - name: Create DMG for this architecture
         shell: bash
         env:
           VERSION: ${{ needs.prepare-release.outputs.version }}
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          app_path="$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -type d | head -1 || true)"
+          app_path="$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -maxdepth 1 -name '*.app' -type d | head -1 || true)"
           if [ -z "$app_path" ]; then
-            echo "No .app was produced by the bundle step" >&2
+            echo "No .app was produced for ${{ matrix.target }}" >&2
             exit 1
           fi
           app_name="$(basename "$app_path")"
-          dmg="release-assets/${RELEASE_ASSET_PREFIX}_${VERSION}_macos-universal.dmg"
+          dmg="release-assets/${RELEASE_ASSET_PREFIX}_${VERSION}_macos-${{ matrix.arch }}.dmg"
           staged=0
           if HOMEBREW_NO_AUTO_UPDATE=1 brew install create-dmg; then
-            stage="$RUNNER_TEMP/dmg-stage"
+            stage="$RUNNER_TEMP/dmg-stage-${{ matrix.arch }}"
             rm -rf "$stage"
             mkdir -p "$stage"
             ditto "$app_path" "$stage/$app_name"
@@ -366,8 +375,8 @@ jobs:
           fi
           if [ "$staged" -ne 1 ]; then
             echo "create-dmg unavailable or failed; falling back to Tauri's DMG bundler" >&2
-            pnpm tauri bundle --target universal-apple-darwin --bundles dmg
-            built="$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -type f | head -1 || true)"
+            pnpm tauri bundle --target ${{ matrix.target }} --bundles dmg
+            built="$(find src-tauri/target/${{ matrix.target }}/release/bundle/dmg -maxdepth 1 -name '*.dmg' -type f | head -1 || true)"
             if [ -z "$built" ]; then
               echo "Tauri's DMG bundler produced nothing" >&2
               exit 1
@@ -375,34 +384,39 @@ jobs:
             cp "$built" "$dmg"
           fi
           if [ ! -s "$dmg" ]; then
-            echo "Universal DMG is missing or empty: $dmg" >&2
+            echo "DMG is missing or empty: $dmg" >&2
             exit 1
           fi
           ls -l "$dmg"
-      - name: Upload universal DMG to the release
+      - name: Stage the updater payload for this architecture
+        if: ${{ env.RELEASE_MODE == 'updater-signed' }}
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          payload="$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -maxdepth 1 -name '*.app.tar.gz' -type f | head -1 || true)"
+          if [ -z "$payload" ]; then
+            echo "updater-signed mode produced no .app.tar.gz for ${{ matrix.target }}" >&2
+            exit 1
+          fi
+          if [ ! -s "${payload}.sig" ]; then
+            echo "updater payload has no signature: ${payload}.sig" >&2
+            exit 1
+          fi
+          # tauri names the payload after the product, so the two architectures
+          # would collide; rename per architecture before uploading.
+          cp "$payload" "release-assets/Terminal_${VERSION}_macos-${{ matrix.arch }}.app.tar.gz"
+          cp "${payload}.sig" "release-assets/Terminal_${VERSION}_macos-${{ matrix.arch }}.app.tar.gz.sig"
+          ls -l release-assets
+      - name: Upload this architecture to the release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
-          MODE: ${{ env.RELEASE_MODE }}
         run: |
           set -euo pipefail
-          gh release upload "$RELEASE_TAG" release-assets/*.dmg --repo "$GITHUB_REPOSITORY" --clobber
-
-          if [ "$MODE" = "updater-signed" ]; then
-            unsigned_dir="src-tauri/target/universal-apple-darwin/release/bundle/macos"
-            shopt -s nullglob
-            payloads=("$unsigned_dir"/*.tar.gz)
-            signatures=("$unsigned_dir"/*.sig)
-            if [ "${#payloads[@]}" -eq 0 ] || [ "${#signatures[@]}" -eq 0 ]; then
-              echo "updater-signed mode produced no macOS updater payload/signature" >&2
-              exit 1
-            fi
-            gh release upload "$RELEASE_TAG" "${payloads[@]}" "${signatures[@]}" \
-              --repo "$GITHUB_REPOSITORY" --clobber
-            echo "Uploaded ${#payloads[@]} macOS updater payload(s) and ${#signatures[@]} signature(s)"
-          fi
-
+          gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
   build-release:
     name: ${{ matrix.name }}
     needs: prepare-release
@@ -510,7 +524,8 @@ jobs:
           set -euo pipefail
 
           expected_assets=(
-            "Terminal_${VERSION}_macos-universal.dmg"
+            "Terminal_${VERSION}_macos-aarch64.dmg"
+            "Terminal_${VERSION}_macos-x86_64.dmg"
             "Terminal_${VERSION}_windows-aarch64-setup.exe"
             "Terminal_${VERSION}_windows-x86_64-setup.exe"
             "Terminal_${VERSION}_linux-aarch64.AppImage"
@@ -539,9 +554,8 @@ jobs:
           gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" release-assets/SHA256SUMS.txt --clobber
 
           if [ "$MODE" = "updater-signed" ]; then
-            # Tauri v2 signs the artifacts it can update from: the macOS .app.tar.gz,
-            # the NSIS installer for Windows and the AppImage for Linux. Verify the
-            # signature of each and build one manifest only after that.
+            # Each architecture ships its own updater payload and signature, so the
+            # manifest carries distinct darwin entries instead of one universal blob.
             assets_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100")"
             mkdir -p updater
 
@@ -557,17 +571,19 @@ jobs:
               cat "updater/${name}.sig"
             }
 
-            darwin_payload="$(pick_payload '\.app\.tar\.gz$')"
-            windows_payload="$(pick_payload 'x86_64-setup\.exe$')"
-            linux_payload="$(pick_payload 'x86_64\.AppImage$')"
-            for payload in "$darwin_payload" "$windows_payload" "$linux_payload"; do
+            darwin_arm_payload="$(pick_payload 'macos-aarch64\.app\.tar\.gz$')"
+            darwin_intel_payload="$(pick_payload 'macos-x86_64\.app\.tar\.gz$')"
+            windows_payload="$(pick_payload 'windows-x86_64-setup\.exe$')"
+            linux_payload="$(pick_payload 'linux-x86_64\.AppImage$')"
+            for payload in "$darwin_arm_payload" "$darwin_intel_payload" "$windows_payload" "$linux_payload"; do
               if [[ -z "$payload" ]]; then
                 echo "updater-signed mode is missing an updater payload for a platform" >&2
                 exit 1
               fi
             done
 
-            darwin_sig="$(fetch_signature "$darwin_payload")"
+            darwin_arm_sig="$(fetch_signature "$darwin_arm_payload")"
+            darwin_intel_sig="$(fetch_signature "$darwin_intel_payload")"
             windows_sig="$(fetch_signature "$windows_payload")"
             linux_sig="$(fetch_signature "$linux_payload")"
             base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/"
@@ -576,10 +592,11 @@ jobs:
               --arg version "$VERSION" \
               --arg notes "Release ${VERSION}" \
               --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              --arg darwin_sig "$darwin_sig" --arg darwin_url "${base}${darwin_payload}" \
+              --arg darwin_arm_sig "$darwin_arm_sig" --arg darwin_arm_url "${base}${darwin_arm_payload}" \
+              --arg darwin_intel_sig "$darwin_intel_sig" --arg darwin_intel_url "${base}${darwin_intel_payload}" \
               --arg windows_sig "$windows_sig" --arg windows_url "${base}${windows_payload}" \
               --arg linux_sig "$linux_sig" --arg linux_url "${base}${linux_payload}" \
-              '{version:$version, notes:$notes, pub_date:$pub_date, platforms: {"darwin-aarch64": {signature:$darwin_sig, url:$darwin_url}, "darwin-x86_64": {signature:$darwin_sig, url:$darwin_url}, "windows-x86_64": {signature:$windows_sig, url:$windows_url}, "linux-x86_64": {signature:$linux_sig, url:$linux_url}}}' > latest.json
+              '{version:$version, notes:$notes, pub_date:$pub_date, platforms: {"darwin-aarch64": {signature:$darwin_arm_sig, url:$darwin_arm_url}, "darwin-x86_64": {signature:$darwin_intel_sig, url:$darwin_intel_url}, "windows-x86_64": {signature:$windows_sig, url:$windows_url}, "linux-x86_64": {signature:$linux_sig, url:$linux_url}}}' > latest.json
             gh release upload "$RELEASE_TAG" latest.json --repo "$GITHUB_REPOSITORY" --clobber
 
             if gh release view updater-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then

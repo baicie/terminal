@@ -66,7 +66,7 @@ ENOENT ENOENT: no such file or directory, open '/private/tmp/docker-ctx/patches/
 | # | 风险 | 影响 | 处置 |
 | --- | --- | --- | --- |
 | R1 | `Team Server container` job 因缺 `patches/` 一直失败 | 主分支/分支 CI 永远红，任何「门禁通过」的说法都不成立 | ✅ **已修复**：Dockerfile 两个阶段补 `COPY patches patches`；CI run `40808864624` 里该 job 已 `success` |
-| R2 | 没有 Nightly 通道 | 无法验证「只有新提交才发」的预发布流程，也无独立更新源 | ✅ 新增 `nightly.yml`（定时 + 手动、按新提交判定、prerelease、独立命名与校验和） |
+| R2 | 没有 Nightly 通道 | 无法验证「只有新提交才发」的预发布流程，也无独立更新源 | 曾新增 `nightly.yml` 并跑通（run `40875289443`），**后按项目决定移除**；仓库现在只有 `ci.yml`、`release.yml`、`real-machine-matrix.yml`，历史 nightly prerelease 与 tag 保留 |
 | R3 | 没有 updater（插件/密钥/latest.json 全无） | 无法自动更新；也不能宣称已支持 | 提供 updater-signed 模式与密钥指南，默认关闭 |
 | R4 | 无商业签名证书 | macOS Gatekeeper / Windows SmartScreen 会警告 | 只预留 Mode C，不购买证书；文档明确声明 |
 | R5 | release 只有 tag 触发、无模式区分 | 一旦打 tag 就会走完整发布，无法先出 unsigned QA 包 | ✅ 增加 `release_mode`（unsigned-qa / updater-signed / fully-signed），tag push 固定 unsigned-qa，且 Release 改为先 draft 后 undraft |

@@ -41,7 +41,7 @@
 | **docs/ui/**                   | UI/功能规格与界面描述（便于 AI 阅读） | 实现或还原 UI 时   |
 | **docs/shadcn-components.md**  | shadcn/ui 全部组件索引与用法说明      | 查阅组件选型与用法 |
 | **docs/build-optimization.md** | 构建体积分析与优化指南                | 优化打包时查阅     |
-| **docs/release/**             | 发布与证据规则（`workflow-rules.md`，必读）、CI 审计、三级发布模式、签名密钥、Release/Nightly 操作指南、最近一次 CI 报告 | 改动发布链路或源码指纹路径时必读 |
+| **docs/release/**             | 发布与证据规则（`workflow-rules.md`，必读）、CI 审计、三级发布模式、签名密钥、Release 操作指南（Nightly 通道已移除）、最近一次 CI 报告 | 改动发布链路或源码指纹路径时必读 |
 | **AGENTS.md**                  | 本文件 - Agent 使用指南               | 初次接手项目时阅读 |
 
 ---
@@ -530,7 +530,7 @@ pnpm add <package-name>
 - ✅ 生产依赖审计为 0 个已知漏洞
 - ✅ 552 个生产源码文件均满足行数限制
 - ✅ GitHub Actions CI `31409070480`：macOS、Windows、Linux Tauri 编译，Team Server PostgreSQL 迁移和 Docker 镜像构建全部通过
-- ✅ `.github/workflows/release.yml` 为 Windows/Linux 的 x64/ARM64 建立原生 runner 打包；macOS 改为「分架构出二进制 → `lipo` 合成 universal → 只打 `.app` → `create-dmg` 出单个 `macos-universal.dmg`」，共 7 个资产，带确定性命名、非空校验和 SHA-256 清单
+- ✅ `.github/workflows/release.yml` 为 macOS（aarch64 / x86_64 各出一个 DMG）、Windows、Linux 的 x64/ARM64 建立原生 runner 分架构打包，共 8 个安装资产 + `SHA256SUMS.txt`，带确定性命名与非空校验；`updater-signed` 模式额外产出逐架构 `.sig` 与唯一 `latest.json`
 - ✅ Release `v0.0.1-dev.1`：工作流 `31554163901` attempt 2 全绿，8 个安装包与 `SHA256SUMS.txt` 均非空，GitHub 服务端 digest 与清单一致
 - ⚠️ Release 工作流通过只能证明对应目标可编译和打包；Windows/Linux/Pageant/PTY/串口交互仍按实机矩阵验证
 - ⚠️ 未配置 Apple notarization 与 Windows Authenticode；开发版 DMG/NSIS 必须在 Release 说明中标为未签名/未公证
@@ -995,4 +995,4 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-10-29 (Phase 6.105 收口：六份实机证据全部按当前源码重采、pnpm verify 全绿；release 打包改为 macOS universal DMG（lipo + create-dmg）；人工验收清单见 docs/manual-acceptance-checklist.md)_
+_文档更新时间: 2026-10-29 (六份实机证据按当前源码重采、pnpm verify 全绿；release 改为 macOS 分架构 DMG（aarch64 / x86_64 各一份）并移除 Nightly 通道；updater-signed 已端到端验证；人工验收清单见 docs/manual-acceptance-checklist.md)_

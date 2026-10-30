@@ -16,6 +16,8 @@
 | **不要把 updater 公钥写进 `tauri.conf.json`**：用 CI 的 `--config` 从 `TAURI_UPDATER_PUBKEY` 注入 | `tauri.conf.json` 在指纹路径内，改它就要重采六份证据 | 白跑一轮采集 |
 | `$` + 双大括号写法（Actions 表达式）读不到 `$GITHUB_ENV` 写入的值；跨步骤传值要用 job 级 `env` 表达式 | tauri-action 的 `args:` 是表达式求值，不是 shell | 公钥注入悄悄失效，产出未签名的包 |
 
+> 说明：`nightly.yml` 已于 2026-10-29 按项目决定移除，下面几条用 nightly 真跑作为证据的规则仍然有效（它们来自真实失败，与是否保留该 workflow 无关）。
+
 ## 2. 采集环境
 
 | 规则 | 依据 |
@@ -47,7 +49,8 @@
 | Windows 检出可能是 **CRLF**：不要用 `/^x = ".*"$/m` 或含 `\n` 的正则，用 `[^"]*` / `\r?\n`，并在脚本里**匹配失败即抛错**、再加 `cargo metadata --locked` 自检 | nightly 第二次真跑：Windows `cannot update the lock file` |
 | rustup 只认架构三元组；`universal-apple-darwin` 是 **Tauri 的 bundle 目标**，不能传给 `rustup target add` | nightly 首次真跑：`component 'rust-std' for target 'universal-apple-darwin' is unavailable` |
 | 根 `package.json` 有 `pnpm.patchedDependencies` 时，任何只 COPY 清单的 Docker 构建都必须同时 `COPY patches patches` | CI 长期红点：镜像构建 `ENOENT patches/@baicie__xterm@0.1.7.patch` |
-| macOS 打 universal：分架构出二进制 → `lipo` 合成 → 只打 `.app` → `create-dmg`；`create-dmg` 失败要能回落 | 已在 release run `40811158213` 验证，产物 `lipo -archs` = `x86_64 arm64` |
+| macOS **分芯片架构打包**：矩阵按 `aarch64` / `x86_64` 各出一份二进制 → 各自只打 `.app` → `create-dmg` 出 `macos-aarch64.dmg` / `macos-x86_64.dmg`；`create-dmg` 失败要能回落 | 曾用 lipo 合成 universal（run `40811158213` 验证 `lipo -archs` = `x86_64 arm64`），后按项目决定改为分架构；更新载荷也必须逐架构命名，否则两个架构的 `Termius.app.tar.gz` 会互相覆盖 |
+| 更新载荷重命名：tauri 以产品名命名 `*.app.tar.gz`，分架构时必须改成 `Terminal_<version>_macos-<arch>.app.tar.gz` 并连带 `.sig` | 否则后上传的架构会 `--clobber` 掉前一个 |
 
 ## 5. 分支与标签卫生
 
