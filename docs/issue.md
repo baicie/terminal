@@ -3596,5 +3596,22 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 
 **注意**：`gh api .../jobs/{id}` 返回的步骤状态与最终日志不一致（API 把失败标在 "password authentication matrix in Docker" 且状态为 in_progress，而日志里的 `##[error]` 出自 shell interaction matrix）。**排查时以日志为准，不要以步骤级 API 为准。**
 
-**未闭合**：run `41104738885` 的 macOS job 未产出结论（Linux 失败后整轮 overall=failure），因此**本轮没有产出 6 份证据**。
+**更正一处早期误判（2026-11-01）**：最初读到 run `41104738885` 的 macOS job 结论为空，曾据此写下「macOS 未产出结论、本轮没有证据」。这是**错的**——那次查询时 run 仍在 `in_progress`，`.conclusion` 尚未写入。
+
+`gh api repos/baicie/terminal/actions/runs/41104738885/jobs` 直查确认：
+
+| job | 结论 | 起止（UTC） |
+| --- | --- | --- |
+| macOS real SSH matrix | **success** | 18:11:42 → 18:39:13 |
+| Linux real SSH smoke | failure | 18:11:36 → 18:20:59 |
+| Windows PowerShell and cmd shell matrix | success | 18:11:36 → 18:20:08 |
+
+该 run 产出 artifact `verification-evidence`（37,555,207 字节）。因为三个 job 互相独立（工作流无 `needs:`），**Linux 失败并不阻止 macOS 证据产出**。
+
+**结论修正**：`1eeebb7` 上证据是可产出的，只是绑定该提交的指纹；最终提交需要它自己那一轮矩阵的证据。回填方式：`node scripts/fetch-verification-evidence.mjs --run-id <run> --with-binalies>`（正确参数见脚本 `--help`）。
+
+**三条排查口径必须分开**（本次混淆的根源）：
+1. `gh run view --json jobs` —— 进行中的 run 会返回空 conclusion，**不可用于判断未完成的 job**；
+2. `gh api .../runs/{id}/jobs` —— job 级结论的权威来源，但也要等 run `completed` 后再读；
+3. `gh api .../jobs/{job_id}` 的 steps —— 步骤状态可能与最终日志不一致（本例把失败标在 Docker 密码矩阵且状态 in_progress，而日志的 `##[error]` 出自 shell interaction matrix），**步骤级结论一律以日志为准**。
 
