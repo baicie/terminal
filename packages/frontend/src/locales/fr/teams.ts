@@ -59,6 +59,14 @@ export default {
   'teams.shareToTeam': 'Partager avec {{team}}',
   'teams.includePassword': 'Inclure le mot de passe (chiffré)',
   'teams.encryptPassword': 'Chiffrer le mot de passe',
+  'teams.includePasswordDesc':
+    'Partager le mot de passe pour la connexion automatique',
+  'teams.encryptPasswordDesc':
+    'Chiffrer les données sensibles avec un mot de passe',
+  'teams.encryptionHint':
+    "Les membres de l'équipe doivent saisir le mot de passe pour consulter et utiliser ces identifiants",
+  'teams.plaintextPasswordWarning':
+    'Le mot de passe sera partagé en clair. Activez le chiffrement pour protéger les informations sensibles.',
   'teams.passwordProtection': 'Protection par mot de passe',
   'teams.sharePassword': 'Mot de passe de partage',
   'teams.enterSharePassword': 'Entrer le mot de passe',

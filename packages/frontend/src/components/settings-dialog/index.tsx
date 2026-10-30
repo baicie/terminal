@@ -4,6 +4,7 @@ import type {
 } from '@/service/database'
 import { Check } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -70,6 +71,7 @@ type AppSettingsKey = {
 }
 
 const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
+  const { t } = useTranslation()
   const app = useAppStore()
   const [settings, setSettings] = useState<AppSettingsKey | null>(null)
   const [loading, setLoading] = useState(true)
@@ -142,9 +144,9 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Settings</DialogTitle>
+            <DialogTitle>{t('settings.title')}</DialogTitle>
           </DialogHeader>
-          <div className="py-8 text-center">Loading...</div>
+          <div className="py-8 text-center">{t('common.loading')}</div>
         </DialogContent>
       </Dialog>
     )
@@ -159,22 +161,22 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
     >
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
+          <DialogTitle>{t('settings.title')}</DialogTitle>
         </DialogHeader>
 
         <Tabs defaultValue="appearance" className="w-full">
           <TabsList className="grid w-full grid-cols-6">
-            <TabsTrigger value="appearance">Appearance</TabsTrigger>
-            <TabsTrigger value="terminal">Terminal</TabsTrigger>
-            <TabsTrigger value="shortcuts">Shortcuts</TabsTrigger>
-            <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="storage">Storage</TabsTrigger>
-            <TabsTrigger value="team">Team</TabsTrigger>
+            <TabsTrigger value="appearance">{t('settings.appearance')}</TabsTrigger>
+            <TabsTrigger value="terminal">{t('settings.terminal')}</TabsTrigger>
+            <TabsTrigger value="shortcuts">{t('settings.shortcutsTab')}</TabsTrigger>
+            <TabsTrigger value="general">{t('settings.general')}</TabsTrigger>
+            <TabsTrigger value="storage">{t('settings.storage')}</TabsTrigger>
+            <TabsTrigger value="team">{t('settings.team')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="appearance" className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="theme">Theme</Label>
+              <Label htmlFor="theme">{t('settings.theme')}</Label>
               <Select
                 value={settings.theme}
                 onValueChange={value =>
@@ -185,15 +187,15 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="light">Light</SelectItem>
-                  <SelectItem value="dark">Dark</SelectItem>
-                  <SelectItem value="system">System</SelectItem>
+                  <SelectItem value="light">{t('settings.light')}</SelectItem>
+                  <SelectItem value="dark">{t('settings.dark')}</SelectItem>
+                  <SelectItem value="system">{t('settings.system')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="language">Language</Label>
+              <Label htmlFor="language">{t('settings.language')}</Label>
               <Select
                 value={settings.language}
                 onValueChange={(value: string) =>
@@ -204,9 +206,9 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="cn">中文</SelectItem>
-                  <SelectItem value="fr">Français</SelectItem>
+                  <SelectItem value="en">{t('settings.english')}</SelectItem>
+                  <SelectItem value="cn">{t('settings.chinese')}</SelectItem>
+                  <SelectItem value="fr">{t('settings.french')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -263,10 +265,9 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
             <ExportImportSettings onClose={onClose} />
 
             <div className="p-3 bg-muted/50 rounded-lg flex items-start gap-2">
-              <Check className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+              <Check className="size-4 text-muted-foreground shrink-0 mt-0.5" />
               <p className="text-xs text-muted-foreground">
-                Data is exported as plain JSON. Sensitive information like
-                passwords may be included. Keep your export files secure.
+                {t('settings.securityWarning')}
               </p>
             </div>
           </TabsContent>
@@ -274,9 +275,9 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
 
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
-          <Button onClick={handleSave}>Save</Button>
+          <Button onClick={handleSave}>{t('common.save')}</Button>
         </div>
       </DialogContent>
     </Dialog>

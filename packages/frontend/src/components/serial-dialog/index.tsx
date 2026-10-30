@@ -120,7 +120,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Plug className="h-5 w-5" />
+            <Plug className="size-5" />
             Connect Serial Port
           </DialogTitle>
         </DialogHeader>
@@ -143,7 +143,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
                     ports.map(port => (
                       <SelectItem key={port.name} value={port.name}>
                         <div className="flex items-center gap-2">
-                          <Usb className="h-4 w-4" />
+                          <Usb className="size-4" />
                           <span>{port.name}</span>
                           <span className="text-muted-foreground text-xs">
                             ({port.port_type})
@@ -161,7 +161,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
                 disabled={loading}
               >
                 <RefreshCw
-                  className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
+                  className={`size-4 ${loading ? 'animate-spin' : ''}`}
                 />
               </Button>
             </div>
@@ -271,12 +271,12 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
           >
             {connecting ? (
               <>
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                <RefreshCw className="size-4 mr-2 animate-spin" />
                 Connecting...
               </>
             ) : (
               <>
-                <Plug className="h-4 w-4 mr-2" />
+                <Plug className="size-4 mr-2" />
                 Connect
               </>
             )}

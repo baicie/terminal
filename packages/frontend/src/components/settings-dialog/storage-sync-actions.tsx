@@ -70,22 +70,22 @@ export function StorageSyncActions({
         >
           {testingConnection ? (
             <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="size-4 mr-2 animate-spin" />
               {t('settings.testing')}
             </>
           ) : connectionStatus === 'success' ? (
             <>
-              <Check className="h-4 w-4 mr-2 text-green-500" />
+              <Check className="size-4 mr-2 text-green-500" />
               {t('settings.connected')}
             </>
           ) : connectionStatus === 'error' ? (
             <>
-              <AlertCircle className="h-4 w-4 mr-2 text-red-500" />
+              <AlertCircle className="size-4 mr-2 text-red-500" />
               {t('settings.failed')}
             </>
           ) : (
             <>
-              <Server className="h-4 w-4 mr-2" />
+              <Server className="size-4 mr-2" />
               {t('settings.testConnection')}
             </>
           )}
@@ -98,12 +98,12 @@ export function StorageSyncActions({
         >
           {syncing ? (
             <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="size-4 mr-2 animate-spin" />
               {t('settings.syncing')}
             </>
           ) : (
             <>
-              <CloudUpload className="h-4 w-4 mr-2" />
+              <CloudUpload className="size-4 mr-2" />
               {t('settings.syncNow')}
             </>
           )}
@@ -112,7 +112,7 @@ export function StorageSyncActions({
       {showRestore && (
         <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
           <div className="flex items-center gap-2 text-sm">
-            <Cloud className="h-4 w-4 text-muted-foreground" />
+            <Cloud className="size-4 text-muted-foreground" />
             <span className="text-muted-foreground">
               {t('settings.lastSync')}:
             </span>

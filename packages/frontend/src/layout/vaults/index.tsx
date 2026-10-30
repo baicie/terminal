@@ -18,7 +18,7 @@ const VaultsLayout: React.FC = () => {
             className="justify-start gap-2"
             onClick={() => navigate('/')}
           >
-            <UserIcon className="h-4 w-4" />
+            <UserIcon className="size-4" />
             {!collapsed && 'nav 1'}
           </Button>
           <Button
@@ -26,11 +26,11 @@ const VaultsLayout: React.FC = () => {
             className="justify-start gap-2"
             onClick={() => navigate('/demo')}
           >
-            <VideoIcon className="h-4 w-4" />
+            <VideoIcon className="size-4" />
             {!collapsed && 'nav 2'}
           </Button>
           <Button variant="ghost" className="justify-start gap-2">
-            <UploadIcon className="h-4 w-4" />
+            <UploadIcon className="size-4" />
             {!collapsed && 'nav 3'}
           </Button>
           <Button

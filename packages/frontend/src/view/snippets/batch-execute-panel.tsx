@@ -27,7 +27,7 @@ export const BatchExecutePanel: React.FC<BatchExecutePanelProps> = ({
   const { t } = useTranslation()
   const [selectedHostIds, setSelectedHostIds] = useState<string[]>([])
   const [command, setCommand] = useState('')
-  const [timeout, setTimeout] = useState(60)
+  const [timeoutSeconds, setTimeoutSeconds] = useState(60)
   const [isExecuting, setIsExecuting] = useState(false)
   const [result, setResult] = useState<ScriptExecutionResult | null>(null)
 
@@ -53,7 +53,7 @@ export const BatchExecutePanel: React.FC<BatchExecutePanelProps> = ({
     setResult(null)
 
     try {
-      const execResult = await scriptService.executeOnHosts(command, selectedHostIds, timeout)
+      const execResult = await scriptService.executeOnHosts(command, selectedHostIds, timeoutSeconds)
       setResult(execResult)
       onResult(execResult)
       onRefresh()
@@ -67,15 +67,15 @@ export const BatchExecutePanel: React.FC<BatchExecutePanelProps> = ({
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'success':
-        return <CheckCircle className="h-4 w-4 text-green-500" />
+        return <CheckCircle className="size-4 text-green-500" />
       case 'failed':
-        return <XCircle className="h-4 w-4 text-red-500" />
+        return <XCircle className="size-4 text-red-500" />
       case 'running':
-        return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+        return <Loader2 className="size-4 animate-spin text-blue-500" />
       case 'timeout':
-        return <AlertCircle className="h-4 w-4 text-yellow-500" />
+        return <AlertCircle className="size-4 text-yellow-500" />
       default:
-        return <Server className="h-4 w-4 text-gray-500" />
+        return <Server className="size-4 text-gray-500" />
     }
   }
 
@@ -123,8 +123,8 @@ export const BatchExecutePanel: React.FC<BatchExecutePanelProps> = ({
           <Input
             id="batch-timeout"
             type="number"
-            value={timeout}
-            onChange={e => setTimeout(Number.parseInt(e.target.value) || 60)}
+            value={timeoutSeconds}
+            onChange={e => setTimeoutSeconds(Number.parseInt(e.target.value) || 60)}
             className="w-32"
           />
         </div>
@@ -133,7 +133,7 @@ export const BatchExecutePanel: React.FC<BatchExecutePanelProps> = ({
           onClick={handleExecute}
           disabled={selectedHostIds.length === 0 || !command.trim() || isExecuting}
         >
-          <Play className="h-4 w-4 mr-1" data-icon="inline-start" />
+          <Play className="size-4 mr-1" data-icon="inline-start" />
           {t('scripts.executeOnHosts', { count: selectedHostIds.length })}
         </Button>
 

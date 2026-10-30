@@ -68,12 +68,17 @@ export class TerminalOutputScheduler {
     backendBytes?: number,
     receipt?: TerminalOutputReceipt,
   ): boolean {
-    if (!data || this.state !== 'active') return false
+    if (!data || this.state !== 'active') {
+      // Never rendered: void it so reclaim cannot deliver it a second time.
+      receipt?.invalidate?.()
+      return false
+    }
     const bytes = terminalOutputByteLength(data)
     if (backendBytes !== undefined && backendBytes !== bytes) {
       this.fail(
         new Error('Terminal output byte count does not match its UTF-8 data'),
       )
+      receipt?.invalidate?.()
       return false
     }
     if (this.queuedBytes + this.inFlightBytes + bytes > this.maxPendingBytes) {
@@ -82,6 +87,7 @@ export class TerminalOutputScheduler {
           `Terminal output queue exceeded ${this.maxPendingBytes} bytes`,
         ),
       )
+      receipt?.invalidate?.()
       return false
     }
     this.queue.push({ data, bytes, receipt, completesReceipt: true })
@@ -107,6 +113,7 @@ export class TerminalOutputScheduler {
     if (this.state === 'disposed') return
     this.generation++
     this.state = 'active'
+    for (const output of this.queue) output.receipt?.invalidate?.()
     this.clearPending()
   }
 
@@ -264,6 +271,7 @@ export class TerminalOutputScheduler {
     if (this.state !== 'active') return
     this.generation++
     this.state = 'failed'
+    for (const output of this.queue) output.receipt?.invalidate?.()
     this.clearPending()
     this.options.onOverflow(error)
   }

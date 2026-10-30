@@ -103,14 +103,14 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5" />
+            <Clock className="size-5" />
             Command History
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex items-center gap-2 mb-4">
           <div className="relative flex-1">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-2 top-2.5 size-4 text-muted-foreground" />
             <Input
               placeholder="Search commands..."
               className="pl-8"
@@ -131,7 +131,7 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="outline" size="icon" title="Clear history">
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="size-4" />
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
@@ -169,7 +169,7 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
                   className="flex items-start gap-3 p-2 rounded hover:bg-accent/50 cursor-pointer group"
                   onClick={() => handleSelectCommand(record.command)}
                 >
-                  <Terminal className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                  <Terminal className="size-4 text-muted-foreground mt-0.5 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="font-mono text-sm truncate">
                       {record.command}

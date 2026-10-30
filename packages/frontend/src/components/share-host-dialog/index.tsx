@@ -172,7 +172,7 @@ export function ShareHostDialog({
                 {t('teams.includePassword')}
               </Label>
               <p className="text-xs text-muted-foreground">
-                共享密码用于自动连接
+                {t('teams.includePasswordDesc')}
               </p>
             </div>
             <Switch
@@ -195,7 +195,7 @@ export function ShareHostDialog({
                     {t('teams.encryptPassword')}
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    使用密码加密敏感数据
+                    {t('teams.encryptPasswordDesc')}
                   </p>
                 </div>
                 <Switch
@@ -210,7 +210,7 @@ export function ShareHostDialog({
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="size-4 text-amber-500 shrink-0 mt-0.5" />
                     <div className="text-xs text-amber-500/80">
-                      团队成员需要输入密码才能查看和使用这些凭证
+                      {t('teams.encryptionHint')}
                     </div>
                   </div>
 
@@ -259,7 +259,7 @@ export function ShareHostDialog({
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="size-4 text-destructive shrink-0 mt-0.5" />
                     <div className="text-xs text-destructive/80">
-                      密码将以明文形式共享。建议启用加密以保护敏感信息。
+                      {t('teams.plaintextPasswordWarning')}
                     </div>
                   </div>
                 </div>

@@ -1,22 +1,26 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { ExportData } from './sync-types'
+import { createImportStats, importResources } from './sync-import'
 import {
-  createImportStats,
-  importResources,
   normalizeImportedAgentForwarding,
   normalizeImportedShellIntegration,
-} from './sync-import'
+} from './sync-import-support'
 
 const database = vi.hoisted(() => ({
-  execute: vi.fn(),
+  executeQuery: vi.fn(),
   load: vi.fn(),
-  select: vi.fn(),
+  selectStrict: vi.fn(),
 }))
 
-vi.mock('@/service/database', () => ({ select: database.select }))
+vi.mock('@/service/database', () => ({
+  executeQuery: database.executeQuery,
+  selectStrict: database.selectStrict,
+}))
 vi.mock('@tauri-apps/plugin-sql', () => ({
   default: { load: database.load },
 }))
+
+const SETTINGS_INSERT = 'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'
 
 function exportData(overrides: Partial<ExportData> = {}): ExportData {
   return {
@@ -37,9 +41,9 @@ function exportData(overrides: Partial<ExportData> = {}): ExportData {
 }
 
 beforeEach(() => {
-  database.execute.mockReset().mockResolvedValue(undefined)
-  database.load.mockReset().mockResolvedValue({ execute: database.execute })
-  database.select.mockReset()
+  database.executeQuery.mockReset().mockResolvedValue(undefined)
+  database.load.mockReset().mockResolvedValue({ execute: database.executeQuery })
+  database.selectStrict.mockReset().mockResolvedValue([])
 })
 
 it('only enables imported agent forwarding for explicit boolean values', () => {
@@ -62,28 +66,31 @@ it('only enables imported shell integration for explicit bash or zsh values', ()
 it('restores settings with merge and replace semantics', async () => {
   const data = exportData({ settings: { app_settings: '{"theme":"dark"}' } })
 
-  database.select.mockResolvedValueOnce([])
   await importResources(data, 'merge', createImportStats())
-  expect(database.execute).toHaveBeenLastCalledWith(
-    'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-    ['app_settings', '{"theme":"dark"}'],
+  expect(database.executeQuery).toHaveBeenCalledWith(SETTINGS_INSERT, [
+    'app_settings',
+    '{"theme":"dark"}',
+  ])
+  expect(database.executeQuery).toHaveBeenLastCalledWith('COMMIT')
+
+  database.executeQuery.mockClear()
+  database.selectStrict.mockResolvedValueOnce([{ id: 'app_settings' }])
+  await importResources(data, 'merge', createImportStats())
+  expect(database.executeQuery).not.toHaveBeenCalledWith(
+    expect.stringContaining('INSERT OR REPLACE INTO settings'),
+    expect.anything(),
   )
 
-  database.execute.mockClear()
-  database.select.mockResolvedValueOnce([{ id: 'app_settings' }])
-  await importResources(data, 'merge', createImportStats())
-  expect(database.execute).not.toHaveBeenCalled()
-
-  database.select.mockResolvedValueOnce([{ id: 'app_settings' }])
+  database.selectStrict.mockResolvedValueOnce([{ id: 'app_settings' }])
   await importResources(data, 'replace', createImportStats())
-  expect(database.execute).toHaveBeenLastCalledWith(
-    'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-    ['app_settings', '{"theme":"dark"}'],
-  )
+  expect(database.executeQuery).toHaveBeenCalledWith(SETTINGS_INSERT, [
+    'app_settings',
+    '{"theme":"dark"}',
+  ])
+  expect(database.executeQuery).toHaveBeenLastCalledWith('COMMIT')
 })
 
 it('restores certificate and jump host columns from a full backup', async () => {
-  database.select.mockResolvedValue([])
   await importResources(
     exportData({
       hosts: [
@@ -117,8 +124,71 @@ it('restores certificate and jump host columns from a full backup', async () => 
     createImportStats(),
   )
 
-  expect(database.execute).toHaveBeenCalledWith(
+  expect(database.executeQuery).toHaveBeenCalledWith(
     expect.stringContaining('shell_integration'),
     expect.arrayContaining(['certificate', 'jump-id', 'agent', 1, 'bash']),
+  )
+})
+
+it('runs the whole restore on the shared connection inside one transaction', async () => {
+  await importResources(
+    exportData({ settings: { app_settings: '{}' } }),
+    'merge',
+    createImportStats(),
+  )
+
+  // Importing used to open a second connection per statement.
+  expect(database.load).not.toHaveBeenCalled()
+  const statements = database.executeQuery.mock.calls.map(call => call[0])
+  expect(statements[0]).toBe('BEGIN IMMEDIATE')
+  expect(statements.at(-1)).toBe('COMMIT')
+})
+
+it('rolls the whole restore back when a statement fails halfway through', async () => {
+  database.executeQuery.mockImplementation((sql: string) =>
+    sql.startsWith('INSERT INTO snippet_packages')
+      ? Promise.reject(new Error('disk full'))
+      : Promise.resolve(undefined),
+  )
+
+  await expect(
+    importResources(
+      exportData({
+        snippetPackages: [{ id: 'pkg-1', name: 'Package' }],
+        snippets: [{ id: 'snippet-1', name: 'Snippet', script: '' }],
+      }),
+      'merge',
+      createImportStats(),
+    ),
+  ).rejects.toThrow('disk full')
+
+  const statements = database.executeQuery.mock.calls.map(call => call[0])
+  expect(statements).toContain('BEGIN IMMEDIATE')
+  expect(statements.at(-1)).toBe('ROLLBACK')
+  expect(statements).not.toContain('COMMIT')
+})
+
+it('updates the fingerprint of an existing known host in replace mode', async () => {
+  database.selectStrict.mockResolvedValue([{ id: 'known-host-1' }])
+
+  await importResources(
+    exportData({
+      knownHosts: [
+        {
+          hostname: 'target.example',
+          port: 22,
+          fingerprint: 'SHA256:newfingerprint',
+          key_type: 'ssh-ed25519',
+          added_at: 7,
+        },
+      ],
+    }),
+    'replace',
+    createImportStats(),
+  )
+
+  expect(database.executeQuery).toHaveBeenCalledWith(
+    expect.stringContaining('UPDATE known_hosts SET fingerprint'),
+    ['SHA256:newfingerprint', 'ssh-ed25519', 7, 'target.example', 22],
   )
 })

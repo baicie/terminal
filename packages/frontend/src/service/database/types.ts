@@ -238,7 +238,7 @@ export interface ScriptExecutionRecord {
   host_id: string | null
   host_name: string | null
   host_address: string | null
-  status: 'running' | 'success' | 'failed' | 'timeout'
+  status: 'running' | 'success' | 'failed' | 'partial' | 'timeout'
   output: string | null
   error: string | null
   started_at: number

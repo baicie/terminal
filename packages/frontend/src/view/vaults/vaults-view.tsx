@@ -10,7 +10,7 @@ const VaultsView: React.FC = () => {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
-          <Shield className="h-12 w-12 mx-auto text-muted-foreground animate-pulse" />
+          <Shield className="size-12 mx-auto text-muted-foreground animate-pulse" />
           <p className="mt-2 text-muted-foreground">Loading vault...</p>
         </div>
       </div>

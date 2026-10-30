@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import type { ScriptRecord } from '@/service/database'
+import { parseHostIds } from '@/utils/parse-host-ids'
 
 export type ScheduleType = 'manual' | 'once' | 'interval' | 'cron'
 
@@ -99,7 +100,7 @@ export function useScriptForm(): UseScriptFormReturn {
     setFormName(script.name)
     setFormDescription(script.description || '')
     setFormScript(script.script)
-    setFormHostIds(JSON.parse(script.host_ids || '[]'))
+    setFormHostIds(parseHostIds(script.host_ids))
     setFormScheduleType(script.schedule_type as ScheduleType)
     setFormScheduleValue(script.schedule_value || '')
     setFormTimeout(script.timeout_seconds)

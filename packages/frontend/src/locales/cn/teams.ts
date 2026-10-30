@@ -55,6 +55,11 @@ export default {
   'teams.shareToTeam': '分享到 {{team}}',
   'teams.includePassword': '包含密码（加密）',
   'teams.encryptPassword': '加密密码',
+  'teams.includePasswordDesc': '共享密码用于自动连接',
+  'teams.encryptPasswordDesc': '使用密码加密敏感数据',
+  'teams.encryptionHint': '团队成员需要输入密码才能查看和使用这些凭证',
+  'teams.plaintextPasswordWarning':
+    '密码将以明文形式共享。建议启用加密以保护敏感信息。',
   'teams.passwordProtection': '密码保护',
   'teams.sharePassword': '分享密码',
   'teams.enterSharePassword': '输入分享密码',

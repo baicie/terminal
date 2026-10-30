@@ -45,7 +45,7 @@ export function StorageServiceSection({
   return (
     <div className="space-y-3">
       <h4 className="text-sm font-medium flex items-center gap-2">
-        <Server className="h-4 w-4" />
+        <Server className="size-4" />
         {t('settings.syncService')}
       </h4>
       <p className="text-sm text-muted-foreground">

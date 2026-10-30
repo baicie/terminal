@@ -98,8 +98,12 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     term.loadAddon(new Unicode11Addon())
     term.unicode.activeVersion = '11'
 
+    let disposed = false
     void import('@xterm/addon-clipboard')
-      .then(({ ClipboardAddon }) => term.loadAddon(new ClipboardAddon()))
+      .then(({ ClipboardAddon }) => {
+        if (disposed) return
+        term.loadAddon(new ClipboardAddon())
+      })
       .catch(error => console.warn('Failed to load ClipboardAddon:', error))
 
     term.attachCustomKeyEventHandler(event =>
@@ -131,6 +135,7 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     setIsReady(true)
 
     return () => {
+      disposed = true
       window.clearTimeout(initialFitTimer)
       viewportController.dispose()
       if (viewportControllerRef.current === viewportController) {

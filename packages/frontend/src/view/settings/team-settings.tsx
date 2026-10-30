@@ -13,7 +13,7 @@ export function TeamSettings() {
   return (
     <div className="bg-card rounded-lg border p-4 space-y-4">
       <h3 className="text-sm font-medium flex items-center gap-2">
-        <Users className="h-4 w-4" />
+        <Users className="size-4" />
         {t('settings.teamCollaboration')}
       </h3>
       <p className="text-sm text-muted-foreground">
@@ -23,7 +23,7 @@ export function TeamSettings() {
       {isTeamEnabled ? (
         <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
           <div className="flex items-center gap-2 mb-1">
-            <Check className="h-4 w-4 text-primary" />
+            <Check className="size-4 text-primary" />
             <span className="text-sm font-medium">
               {t('settings.teamEnabled')}
             </span>
@@ -37,14 +37,14 @@ export function TeamSettings() {
             className="mt-3 ml-6"
             onClick={() => navigate('/teams')}
           >
-            <Users className="h-3 w-3 mr-1" />
+            <Users className="size-3 mr-1" />
             {t('settings.openTeams')}
           </Button>
         </div>
       ) : (
         <div className="p-3 bg-muted rounded-lg">
           <div className="flex items-center gap-2 mb-1">
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <Users className="size-4 text-muted-foreground" />
             <span className="text-sm font-medium">
               {t('settings.teamDisabled')}
             </span>
@@ -57,7 +57,7 @@ export function TeamSettings() {
             className="mt-3 ml-6"
             onClick={() => navigate('/teams')}
           >
-            <Users className="h-3 w-3 mr-1" />
+            <Users className="size-3 mr-1" />
             {t('settings.enableTeam')}
           </Button>
         </div>

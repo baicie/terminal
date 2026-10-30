@@ -33,13 +33,18 @@ function schedulerOptions(maxBatchBytes = 1024) {
 function createReceipt(active = true) {
   let isActive = active
   const acknowledge = vi.fn()
+  const invalidate = vi.fn(() => {
+    isActive = false
+  })
   const receipt: TerminalOutputReceipt = {
     isActive: () => isActive,
     acknowledge,
+    invalidate,
   }
   return {
     receipt,
     acknowledge,
+    invalidate,
     deactivate: () => {
       isActive = false
     },
@@ -230,10 +235,7 @@ describe('TerminalOutputScheduler', () => {
     scheduler.enqueue('partial', 7, output.receipt)
     await Promise.resolve()
 
-    expect(terminal.write).toHaveBeenCalledWith(
-      'partial',
-      expect.any(Function),
-    )
+    expect(terminal.write).toHaveBeenCalledWith('partial', expect.any(Function))
     expect(output.acknowledge).not.toHaveBeenCalled()
     terminal.completeNextWrite()
     expect(output.acknowledge).toHaveBeenCalledOnce()
@@ -583,5 +585,65 @@ describe('TerminalOutputScheduler', () => {
     terminal.completeNextWrite()
 
     expect(output.acknowledge).not.toHaveBeenCalled()
+  })
+
+  it('voids the receipt of output it refuses to queue', () => {
+    const terminal = createTerminalStub()
+    const scheduler = new TerminalOutputScheduler(
+      terminal.term,
+      schedulerOptions(),
+    )
+    const queued = createReceipt()
+
+    scheduler.enqueue('kept', 4, queued.receipt)
+    scheduler.reset()
+
+    expect(queued.invalidate).toHaveBeenCalledOnce()
+    expect(queued.acknowledge).not.toHaveBeenCalled()
+
+    const rejected = createReceipt()
+    scheduler.dispose()
+
+    expect(scheduler.enqueue('late', 4, rejected.receipt)).toBe(false)
+    expect(rejected.invalidate).toHaveBeenCalledOnce()
+    expect(rejected.acknowledge).not.toHaveBeenCalled()
+  })
+
+  it('leaves queued receipts reclaimable when a surface is disposed', () => {
+    const terminal = createTerminalStub()
+    const scheduler = new TerminalOutputScheduler(
+      terminal.term,
+      schedulerOptions(),
+    )
+    const reclaimable = createReceipt()
+
+    scheduler.enqueue('kept', 4, reclaimable.receipt)
+    scheduler.dispose()
+
+    // A disposed surface must not void its delivery: the audience reclaims it so
+    // the next surface prints output this one never wrote.
+    expect(reclaimable.invalidate).not.toHaveBeenCalled()
+    expect(reclaimable.receipt.isActive()).toBe(true)
+  })
+
+  it('voids and reports every queued receipt it drops on overflow', () => {
+    const terminal = createTerminalStub()
+    const onOverflow = vi.fn()
+    const scheduler = new TerminalOutputScheduler(terminal.term, {
+      maxBatchBytes: 4,
+      maxPendingBytes: 8,
+      onOverflow,
+    })
+    const queued = createReceipt()
+    const rejected = createReceipt()
+
+    scheduler.enqueue('aaaa', 4, queued.receipt)
+    expect(scheduler.enqueue('bbbbb', 5, rejected.receipt)).toBe(false)
+
+    expect(onOverflow).toHaveBeenCalledOnce()
+    expect(queued.invalidate).toHaveBeenCalledOnce()
+    expect(queued.acknowledge).not.toHaveBeenCalled()
+    expect(rejected.invalidate).toHaveBeenCalledOnce()
+    expect(terminal.write).not.toHaveBeenCalled()
   })
 })

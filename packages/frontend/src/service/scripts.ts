@@ -19,6 +19,7 @@ import { SSHService } from '@/service/ssh'
 import { executeOnHosts } from './script-executor'
 import { ScriptScheduler } from './script-scheduler'
 import type { ScriptExecutionResult } from './scripts-types'
+import { parseHostIds } from '@/utils/parse-host-ids'
 
 export type {
   BatchExecutionResult,
@@ -120,7 +121,7 @@ export class ScriptService {
       this.scheduler.stop(script.id)
       await toggleScriptEnabled(script.id)
     }
-    const hostIds: string[] = JSON.parse(script.host_ids || '[]')
+    const hostIds = parseHostIds(script.host_ids)
     if (hostIds.length === 0)
       return {
         success: false,

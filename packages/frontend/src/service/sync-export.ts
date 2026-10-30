@@ -1,6 +1,6 @@
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
-import { getUserProfile, select } from '@/service/database'
+import { getUserProfile, selectStrict } from '@/service/database'
 import { getKnownHosts } from '@/service/database/known-hosts'
 import { getSSHKeys } from '@/service/database/ssh-keys'
 import {
@@ -9,9 +9,26 @@ import {
 } from '@/service/database/workspaces'
 import type { ExportData } from './sync-types'
 
+/**
+ * The `getSSHKeys` / `getKnownHosts` helpers still turn a failed read into an
+ * empty list. Probe those tables strictly before exporting: a failed read must
+ * abort the export instead of producing a backup that claims the data is gone —
+ * that backup would then overwrite a real one on the server.
+ */
+export async function assertExportTablesReadable(tables: {
+  sshKeys: boolean
+  knownHosts: boolean
+}): Promise<void> {
+  if (tables.sshKeys)
+    await selectStrict<{ id: string }>('SELECT id FROM ssh_keys')
+  if (tables.knownHosts)
+    await selectStrict<{ id: string }>('SELECT id FROM known_hosts')
+}
+
 export async function collectExportData(
   includeTeam = false,
 ): Promise<ExportData> {
+  await assertExportTablesReadable({ sshKeys: true, knownHosts: true })
   const [
     hosts,
     groups,
@@ -22,11 +39,11 @@ export async function collectExportData(
     sshKeys,
     knownHosts,
   ] = await Promise.all([
-    select<Record<string, unknown>>('SELECT * FROM hosts'),
-    select<Record<string, unknown>>('SELECT * FROM groups'),
-    select<Record<string, unknown>>('SELECT * FROM snippets'),
-    select<Record<string, unknown>>('SELECT * FROM snippet_packages'),
-    select<{ key: string; value: string }>('SELECT * FROM settings'),
+    selectStrict<Record<string, unknown>>('SELECT * FROM hosts'),
+    selectStrict<Record<string, unknown>>('SELECT * FROM groups'),
+    selectStrict<Record<string, unknown>>('SELECT * FROM snippets'),
+    selectStrict<Record<string, unknown>>('SELECT * FROM snippet_packages'),
+    selectStrict<{ key: string; value: string }>('SELECT * FROM settings'),
     getWorkspaces(),
     getSSHKeys(),
     getKnownHosts(),

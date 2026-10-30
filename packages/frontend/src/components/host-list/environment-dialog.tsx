@@ -11,6 +11,19 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 
+interface EnvVarRow {
+  id: string
+  key: string
+  value: string
+}
+
+let envVarRowSeq = 0
+
+function toEnvVarRow(variable: { key: string; value: string }): EnvVarRow {
+  envVarRowSeq += 1
+  return { ...variable, id: `env-var-${envVarRowSeq}` }
+}
+
 interface EnvironmentVariablesDialogProps {
   open: boolean
   onClose: () => void
@@ -21,16 +34,18 @@ interface EnvironmentVariablesDialogProps {
 export const EnvironmentVariablesDialog: React.FC<
   EnvironmentVariablesDialogProps
 > = ({ open, onClose, envVars, onSave }) => {
-  const [localEnvVars, setLocalEnvVars] = useState(envVars)
+  const [localEnvVars, setLocalEnvVars] = useState<EnvVarRow[]>(() =>
+    envVars.map(toEnvVarRow),
+  )
 
   React.useEffect(() => {
     if (open) {
-      setLocalEnvVars(envVars)
+      setLocalEnvVars(envVars.map(toEnvVarRow))
     }
   }, [open, envVars])
 
   const handleAddVariable = () => {
-    setLocalEnvVars([...localEnvVars, { key: '', value: '' }])
+    setLocalEnvVars([...localEnvVars, toEnvVarRow({ key: '', value: '' })])
   }
 
   const handleRemoveVariable = (index: number) => {
@@ -60,7 +75,9 @@ export const EnvironmentVariablesDialog: React.FC<
     }
     onSave(
       Object.keys(envRecord).length > 0
-        ? localEnvVars.filter(v => v.key.trim())
+        ? localEnvVars
+            .filter(v => v.key.trim())
+            .map(({ key, value }) => ({ key, value }))
         : [],
     )
     onClose()
@@ -89,7 +106,7 @@ export const EnvironmentVariablesDialog: React.FC<
             </p>
           ) : (
             localEnvVars.map((env, index) => (
-              <div key={index} className="flex gap-2 items-center">
+              <div key={env.id} className="flex gap-2 items-center">
                 <Input
                   placeholder="KEY"
                   value={env.key}

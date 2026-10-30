@@ -175,11 +175,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
       set(state => {
         const workspaces = state.workspaces.filter(w => w.id !== id)
-        const activeWorkspaceId =
-          state.activeWorkspaceId === id
-            ? (workspaces[0]?.id ?? null)
-            : state.activeWorkspaceId
-        return { workspaces, activeWorkspaceId }
+        return { workspaces, activeWorkspaceId: state.activeWorkspaceId }
       })
     },
 
@@ -214,12 +210,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     async loadLayout(workspaceId) {
       const record = await getWorkspaceLayout(workspaceId)
       if (!record) return null
-      try {
-        // record is already the parsed WorkspaceLayout from getWorkspaceLayout
-        return record as WorkspaceLayout
-      } catch {
-        return null
-      }
+      // record is already the parsed WorkspaceLayout from getWorkspaceLayout
+      return record as WorkspaceLayout
     },
   }
 })

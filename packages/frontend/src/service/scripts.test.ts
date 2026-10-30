@@ -62,3 +62,35 @@ it('uses the saved retry count and disables a once schedule before execution', a
     2,
   )
 })
+
+it('treats a malformed host_ids column as an empty host list instead of throwing', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  mocks.executeOnHosts.mockReset()
+  mocks.getScriptById.mockResolvedValue({
+    id: 'script-2',
+    name: 'Broken',
+    description: null,
+    script: 'whoami',
+    host_ids: '["host-1"',
+    schedule_type: 'manual',
+    schedule_value: null,
+    enabled: 1,
+    timeout_seconds: 7,
+    retry_count: 0,
+    created_at: 1,
+    updated_at: 1,
+  } satisfies ScriptRecord)
+
+  const result = await new ScriptService().executeScript('script-2')
+
+  expect(result).toEqual({
+    success: false,
+    results: [],
+    totalHosts: 0,
+    successCount: 0,
+    failedCount: 0,
+  })
+  expect(mocks.executeOnHosts).not.toHaveBeenCalled()
+  expect(warn).toHaveBeenCalled()
+  warn.mockRestore()
+})

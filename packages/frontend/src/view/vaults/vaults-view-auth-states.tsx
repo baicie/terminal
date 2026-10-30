@@ -41,7 +41,7 @@ function PasswordVisibilityButton({
       className="absolute right-0 top-0 h-full px-3"
       onClick={() => onChange(!visible)}
     >
-      {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
     </Button>
   )
 }
@@ -50,7 +50,7 @@ function VaultError({ error }: { error: string | null }) {
   if (!error) return null
   return (
     <div className="flex items-center gap-2 text-destructive text-sm">
-      <AlertCircle className="h-4 w-4" />
+      <AlertCircle className="size-4" />
       {error}
     </div>
   )
@@ -61,7 +61,7 @@ export function CreateVaultState(props: CreateVaultStateProps) {
     <div className="flex items-center justify-center h-full p-8">
       <div className="max-w-md w-full space-y-6">
         <div className="text-center space-y-2">
-          <Shield className="h-16 w-16 mx-auto text-primary" />
+          <Shield className="size-16 mx-auto text-primary" />
           <h2 className="text-2xl font-semibold">Create Your Vault</h2>
           <p className="text-muted-foreground">
             Securely store sensitive data like passwords, SSH keys, and API
@@ -105,12 +105,12 @@ export function CreateVaultState(props: CreateVaultStateProps) {
           >
             {props.creating ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="size-4 mr-2 animate-spin" />
                 Creating...
               </>
             ) : (
               <>
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-4 mr-2" />
                 Create Vault
               </>
             )}
@@ -134,7 +134,7 @@ export function LockedVaultState(props: LockedVaultStateProps) {
     <div className="flex items-center justify-center h-full p-8">
       <div className="max-w-md w-full space-y-6">
         <div className="text-center space-y-2">
-          <Lock className="h-16 w-16 mx-auto text-primary" />
+          <Lock className="size-16 mx-auto text-primary" />
           <h2 className="text-2xl font-semibold">Vault Locked</h2>
           <p className="text-muted-foreground">
             Enter your master password to unlock the vault and access your
@@ -163,7 +163,7 @@ export function LockedVaultState(props: LockedVaultStateProps) {
           </div>
           <VaultError error={props.error} />
           <Button className="w-full" onClick={props.onUnlock}>
-            <Unlock className="h-4 w-4 mr-2" />
+            <Unlock className="size-4 mr-2" />
             Unlock Vault
           </Button>
         </div>

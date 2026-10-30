@@ -38,7 +38,7 @@ export const SnippetListItem: React.FC<SnippetListItemProps> = ({
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <h4 className="font-medium flex items-center gap-2">
-            <Code className="h-4 w-4" />
+            <Code className="size-4" />
             {snippet.name}
           </h4>
           {snippet.description && (
@@ -58,7 +58,7 @@ export const SnippetListItem: React.FC<SnippetListItemProps> = ({
             onClick={() => onExecute(snippet)}
             title={t('snippets.execute')}
           >
-            <Play className="h-4 w-4" />
+            <Play className="size-4" />
           </Button>
           {isTeamEnabled && (
             <Button
@@ -67,7 +67,7 @@ export const SnippetListItem: React.FC<SnippetListItemProps> = ({
               onClick={() => onShare(snippet)}
               title={t('teams.share')}
             >
-              <Share2 className="h-4 w-4" />
+              <Share2 className="size-4" />
             </Button>
           )}
           <Button
@@ -76,7 +76,7 @@ export const SnippetListItem: React.FC<SnippetListItemProps> = ({
             onClick={() => onEdit(snippet)}
             title={t('snippets.editSnippet')}
           >
-            <Edit className="h-4 w-4" />
+            <Edit className="size-4" />
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -85,7 +85,7 @@ export const SnippetListItem: React.FC<SnippetListItemProps> = ({
                 size="icon"
                 title={t('snippets.deleteSnippet')}
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="size-4" />
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>

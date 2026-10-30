@@ -12,6 +12,9 @@ export interface Notification {
   persistent: boolean
 }
 
+/** Hard cap so a noisy session cannot grow the notification list forever. */
+export const MAX_NOTIFICATIONS = 100
+
 interface NotificationState {
   notifications: Notification[]
   addNotification: (n: Omit<Notification, 'id' | 'timestamp' | 'read'>) => string
@@ -33,7 +36,10 @@ export const useNotificationStore = create<NotificationState>((set) => ({
       read: false,
     }
     set(state => ({
-      notifications: [notification, ...state.notifications],
+      notifications: [notification, ...state.notifications].slice(
+        0,
+        MAX_NOTIFICATIONS,
+      ),
     }))
     return id
   },

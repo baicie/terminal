@@ -106,7 +106,7 @@ export const HostFormBasic: React.FC<HostFormBasicProps> = ({
           htmlFor="jumpHost"
           className="text-sm font-medium mb-1 flex items-center gap-1"
         >
-          <Network className="w-3.5 h-3.5" />
+          <Network className="size-3.5" />
           Jump Host (Bastion)
         </Label>
         <Select
