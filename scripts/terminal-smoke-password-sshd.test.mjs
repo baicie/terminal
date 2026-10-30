@@ -315,13 +315,21 @@ test('native backend resolves helpers to paths this host really ships', () => {
   // /usr/bin/chown does not exist on macOS. An absolute path that is wrong
   // only fails once the runner has already spent its build minutes, so the
   // resolution is asserted here for every helper the fixture invokes.
-  for (const toolPath of [NATIVE_CHOWN, NATIVE_CHMOD]) {
+  if (process.platform === 'win32') {
+    // The native backend is refused off macOS, so on Windows the lazy helpers
+    // must still report the missing tool instead of resolving to a path no
+    // Windows host can ship.
+    assert.throws(() => NATIVE_CHOWN(), /none of the expected chown paths/)
+    assert.throws(() => NATIVE_CHMOD(), /none of the expected chmod paths/)
+    return
+  }
+  for (const toolPath of [NATIVE_CHOWN(), NATIVE_CHMOD()]) {
     assert.ok(existsSync(toolPath), `${toolPath} must exist on this host`)
     assert.doesNotThrow(
       () => accessSync(toolPath, constants.X_OK),
       `${toolPath} must be executable`,
     )
   }
-  assert.equal(path.basename(NATIVE_CHOWN), 'chown')
-  assert.equal(path.basename(NATIVE_CHMOD), 'chmod')
+  assert.equal(path.basename(NATIVE_CHOWN()), 'chown')
+  assert.equal(path.basename(NATIVE_CHMOD()), 'chmod')
 })

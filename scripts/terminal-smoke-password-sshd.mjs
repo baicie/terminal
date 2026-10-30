@@ -330,18 +330,48 @@ function resolveNativeTool(name, candidates) {
   )
 }
 
-const NATIVE_DSCL = resolveNativeTool('dscl', ['/usr/bin/dscl'])
-const NATIVE_DSEDITGROUP = resolveNativeTool('dseditgroup', [
-  '/usr/sbin/dseditgroup',
-])
-export const NATIVE_CHOWN = resolveNativeTool('chown', [
-  '/usr/sbin/chown',
-  '/usr/bin/chown',
-])
-export const NATIVE_CHMOD = resolveNativeTool('chmod', [
-  '/bin/chmod',
-  '/usr/bin/chmod',
-])
+// Resolution is deferred and memoised. run-terminal-smoke.mjs imports this
+// module on Linux and Windows too, where a top-level probe for /usr/bin/dscl
+// killed the whole import chain before a single test ran, so only a run that
+// actually starts the native backend may look for these helpers.
+const NATIVE_TOOL_CANDIDATES = {
+  chmod: ['/bin/chmod', '/usr/bin/chmod'],
+  chown: ['/usr/sbin/chown', '/usr/bin/chown'],
+  dscl: ['/usr/bin/dscl'],
+  dseditgroup: ['/usr/sbin/dseditgroup'],
+}
+
+const resolvedNativeHelperPaths = new Map()
+
+function nativeTool(name) {
+  const cached = resolvedNativeHelperPaths.get(name)
+  if (cached !== undefined) return cached
+  const resolved = resolveNativeTool(name, NATIVE_TOOL_CANDIDATES[name])
+  resolvedNativeHelperPaths.set(name, resolved)
+  return resolved
+}
+
+/**
+ * Plan rendering is documentation that runs on every host: `--print-plan` and
+ * its unit tests are not macOS-only, so a plan names the path macOS ships
+ * instead of probing for one. Execution always goes through `nativeTool`.
+ */
+function declaredNativeTool(name) {
+  const [declared] = NATIVE_TOOL_CANDIDATES[name]
+  return declared
+}
+
+/**
+ * The native helpers resolved so far. Deferred resolution is only correct while
+ * a Linux or Windows run reaches neither entry, so the cross-platform tests read
+ * this snapshot instead of trusting the import chain to stay clean.
+ */
+export function resolvedNativeHelpers() {
+  return [...resolvedNativeHelperPaths.keys()].sort()
+}
+
+export const NATIVE_CHOWN = () => nativeTool('chown')
+export const NATIVE_CHMOD = () => nativeTool('chmod')
 const NATIVE_STAT = '/usr/bin/stat'
 const NATIVE_ID = '/usr/bin/id'
 const NATIVE_SSH_CLIENT = '/usr/bin/ssh'
@@ -412,15 +442,15 @@ function nativeSshdArguments(configPath) {
   return ['-D', '-e', '-f', configPath]
 }
 
-function nativeAuthOnlyArguments(username, password) {
-  return sudoArguments([NATIVE_DSCL, '.', '-authonly', username, password])
+function nativeAuthOnlyArguments(username, password, tool = nativeTool) {
+  return sudoArguments([tool('dscl'), '.', '-authonly', username, password])
 }
 
-function nativeHomeOwnershipCommands(username, homePath) {
+function nativeHomeOwnershipCommands(username, homePath, tool = nativeTool) {
   return [
     {
       args: sudoArguments([
-        NATIVE_CHOWN,
+        tool('chown'),
         '-R',
         `${username}:${NATIVE_STAFF_GROUP}`,
         homePath,
@@ -429,16 +459,16 @@ function nativeHomeOwnershipCommands(username, homePath) {
       label: 'hand the fixture home directory to the throwaway account',
     },
     {
-      args: sudoArguments([NATIVE_CHMOD, '755', homePath]),
+      args: sudoArguments([tool('chmod'), '755', homePath]),
       command: SUDO,
       label: 'make the fixture home directory reachable',
     },
   ]
 }
 
-function nativeAttributeReadCommand(username, attribute) {
+function nativeAttributeReadCommand(username, attribute, tool = nativeTool) {
   return {
-    args: sudoArguments([NATIVE_DSCL, '.', '-read', `/Users/${username}`, attribute]),
+    args: sudoArguments([tool('dscl'), '.', '-read', `/Users/${username}`, attribute]),
     command: SUDO,
     label: `read ${attribute}`,
   }
@@ -452,18 +482,18 @@ function nativeHomeStatCommand(homePath) {
   }
 }
 
-function nativeAccessGroupCheckCommand() {
+function nativeAccessGroupCheckCommand(tool = nativeTool) {
   return {
-    args: sudoArguments([NATIVE_DSCL, '.', '-read', `/Groups/${NATIVE_SSH_ACCESS_GROUP}`]),
+    args: sudoArguments([tool('dscl'), '.', '-read', `/Groups/${NATIVE_SSH_ACCESS_GROUP}`]),
     command: SUDO,
     label: `check whether ${NATIVE_SSH_ACCESS_GROUP} restricts sshd logins`,
   }
 }
 
-function nativeAccessGroupAddCommand(username) {
+function nativeAccessGroupAddCommand(username, tool = nativeTool) {
   return {
     args: sudoArguments([
-      NATIVE_DSEDITGROUP,
+      tool('dseditgroup'),
       '-o',
       'edit',
       '-a',
@@ -490,20 +520,21 @@ export function buildNativeAccountSteps({
   username,
   homePath,
   password = NATIVE_PLAN_PASSWORD,
+  tool = nativeTool,
 }) {
   return [
     {
-      args: nativeAuthOnlyArguments(username, password),
+      args: nativeAuthOnlyArguments(username, password, tool),
       command: SUDO,
       label: 'verify the account password without SSH (dscl . -authonly)',
     },
-    ...nativeHomeOwnershipCommands(username, homePath),
+    ...nativeHomeOwnershipCommands(username, homePath, tool),
     ...NATIVE_ACCOUNT_ATTRIBUTES.map(attribute =>
-      nativeAttributeReadCommand(username, attribute),
+      nativeAttributeReadCommand(username, attribute, tool),
     ),
     nativeHomeStatCommand(homePath),
-    nativeAccessGroupCheckCommand(),
-    nativeAccessGroupAddCommand(username),
+    nativeAccessGroupCheckCommand(tool),
+    nativeAccessGroupAddCommand(username, tool),
     {
       label:
         `probe one real SSH password login as ${username}@${LOOPBACK}:<port> ` +
@@ -607,6 +638,7 @@ export function buildNativePasswordSshdPlan({
     accountSteps: buildNativeAccountSteps({
       homePath: paths.homePath,
       password,
+      tool: declaredNativeTool,
       username,
     }),
     cleanupSteps: [
