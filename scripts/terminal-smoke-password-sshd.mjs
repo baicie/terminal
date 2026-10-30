@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
+import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 
@@ -8,10 +10,19 @@ import process from 'node:process'
  * Isolated password-authentication OpenSSH fixture.
  *
  * Password verification without PAM needs a real system account, so this
- * fixture runs stock Debian OpenSSH inside an ephemeral Docker container.
- * The container image is built once per host and reused through the layer
- * cache; every run uses a fresh, disposable container with a loopback-only
- * port mapping.
+ * fixture ships two interchangeable backends selected by
+ * `TERMINAL_SMOKE_PASSWORD_BACKEND` (`auto` | `docker` | `native`):
+ *
+ * - `docker` runs stock Debian OpenSSH inside an ephemeral container. The
+ *   image is built once per host and reused through the layer cache; every run
+ *   uses a fresh, disposable container with a loopback-only port mapping.
+ * - `native` (macOS only, no Docker) creates a throwaway system account with
+ *   `sysadminctl`, generates a fixture host key and starts the stock
+ *   `/usr/sbin/sshd` against a generated config, every privileged step under
+ *   `sudo -n`.
+ *
+ * `auto` keeps Docker wherever a daemon answers, and falls back to `native`
+ * on a Docker-less macOS host — exactly the GitHub-hosted macOS runner.
  */
 
 export const PASSWORD_SSHD_READY_TIMEOUT_MS = 30_000
@@ -77,9 +88,13 @@ exec /usr/sbin/sshd -D -e -f /etc/ssh/sshd_config
 `
 
 const defaultDependencies = {
+  env: process.env,
   mkdir,
   now: Date.now,
   platform: process.platform,
+  processKill: process.kill.bind(process),
+  readFile,
+  rm,
   setTimeout: globalThis.setTimeout,
   clearTimeout: globalThis.clearTimeout,
   sleep: milliseconds =>
@@ -263,6 +278,568 @@ function containerName(runDirectory) {
   return `terminal-smoke-password-${suffix}`
 }
 
+// ---------------------------------------------------------------------------
+// Native backend: one throwaway system account plus the stock macOS sshd.
+//
+// Everything privileged goes through `sudo -n`, so a host whose sudo policy
+// would prompt fails with sudo's own stderr instead of hanging on a password
+// prompt no CI job can answer.
+// ---------------------------------------------------------------------------
+
+export const PASSWORD_SSHD_BACKEND_ENV = 'TERMINAL_SMOKE_PASSWORD_BACKEND'
+export const PASSWORD_SSHD_BACKENDS = ['auto', 'docker', 'native']
+
+const SUDO = '/usr/bin/sudo'
+const SYSADMINCTL = '/usr/sbin/sysadminctl'
+const NATIVE_SSHD = '/usr/sbin/sshd'
+const NATIVE_SSH_KEYGEN = '/usr/bin/ssh-keygen'
+const NATIVE_LOGIN_SHELL = '/bin/bash'
+const NATIVE_ACCOUNT_PREFIX = 'tmsmoke'
+const NATIVE_COMMAND_TIMEOUT_MS = 120_000
+const NATIVE_KEYGEN_TIMEOUT_MS = 30_000
+const NATIVE_STOP_GRACE_MS = 3_000
+const NATIVE_PORT_ATTEMPTS = 4
+const NATIVE_PLAN_PORT = '<reserved-loopback-port>'
+const NATIVE_PLAN_PASSWORD = '<generated-per-run>'
+
+function sudoArguments(args) {
+  return ['-n', ...args]
+}
+
+function nativeAccountName() {
+  // Random suffix so a run cannot collide with a leftover account, and
+  // lower-case hex so sysadminctl never has to parse anything exotic.
+  return `${NATIVE_ACCOUNT_PREFIX}${randomBytes(4).toString('hex')}`
+}
+
+function nativeAccountPassword() {
+  // Generated per run instead of pinned in the repository: a teardown that
+  // fails can leave the account behind, and it must not then be unlockable
+  // with a password published in this file.
+  return randomBytes(16).toString('hex')
+}
+
+function nativePasswordPaths(directory) {
+  return {
+    configPath: path.join(directory, 'sshd_config'),
+    connectionPath: path.join(directory, 'connection.json'),
+    homePath: path.join(directory, 'home'),
+    hostKeyPath: path.join(directory, 'ssh_host_ed25519_key'),
+    pidFile: path.join(directory, 'sshd.pid'),
+  }
+}
+
+function nativeAddUserArguments(username, password, homePath) {
+  return [
+    '-addUser',
+    username,
+    '-password',
+    password,
+    '-shell',
+    NATIVE_LOGIN_SHELL,
+    '-home',
+    homePath,
+  ]
+}
+
+function nativeHostKeyArguments(hostKeyPath) {
+  // -q -N '': silent and passphrase-free; ed25519 matches the key type the
+  // Docker fixture pins in expectedHostKey.
+  return ['-q', '-t', 'ed25519', '-N', '', '-f', hostKeyPath]
+}
+
+function nativeSshdArguments(configPath) {
+  return ['-D', '-e', '-f', configPath]
+}
+
+/**
+ * Renders the fixture sshd_config.
+ *
+ * Pure on purpose: `--print-plan` prints this exact text without executing
+ * anything, so what a reviewer reads there is what a run writes.
+ */
+export function renderNativeSshdConfig({ port, username, hostKeyPath, pidFile }) {
+  return `Port ${port}
+ListenAddress ${LOOPBACK}
+HostKey ${hostKeyPath}
+PidFile ${pidFile}
+# One throwaway account, one password, loopback only. The dedicated PidFile
+# keeps this daemon away from the system sshd's pid file, and StrictModes off
+# lets sshd accept a home directory it did not create.
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+PubkeyAuthentication no
+PermitEmptyPasswords no
+UsePAM yes
+PermitRootLogin no
+AllowUsers ${username}
+StrictModes no
+PermitTTY yes
+UseDNS no
+PrintMotd no
+PrintLastLog no
+LogLevel VERBOSE
+`
+}
+
+function requestedPasswordSshdBackend(env) {
+  const raw = env?.[PASSWORD_SSHD_BACKEND_ENV]
+  if (raw === undefined || raw === '') return 'auto'
+  if (!PASSWORD_SSHD_BACKENDS.includes(raw)) {
+    throw new Error(
+      `${PASSWORD_SSHD_BACKEND_ENV} must be one of ${PASSWORD_SSHD_BACKENDS.join(', ')}, got ${JSON.stringify(raw)}`,
+    )
+  }
+  return raw
+}
+
+async function dockerDaemonAnswers(dependencies) {
+  try {
+    await runDocker(
+      ['version', '--format', '{{.Server.Version}}'],
+      { shell: false, stdio: ['ignore', 'pipe', 'pipe'] },
+      dependencies,
+      20_000,
+      'password OpenSSH Docker daemon probe',
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Decides which backend this run uses.
+ *
+ * `docker` is never probed for an explicit request, so the existing Docker
+ * call path keeps its exact command sequence.
+ */
+export async function resolvePasswordSshdBackend({ dependencies }) {
+  const requested = requestedPasswordSshdBackend(dependencies.env)
+  if (requested === 'docker') return 'docker'
+  if (requested === 'native') {
+    if (dependencies.platform !== 'darwin') {
+      throw new Error(
+        `${PASSWORD_SSHD_BACKEND_ENV}=native needs sysadminctl and a sudo-owned sshd, which only exist on macOS; this host is ${dependencies.platform}`,
+      )
+    }
+    return 'native'
+  }
+  if (await dockerDaemonAnswers(dependencies)) return 'docker'
+  if (dependencies.platform === 'darwin') return 'native'
+  throw new Error(
+    `${PASSWORD_SSHD_BACKEND_ENV}=auto found no reachable Docker daemon, and the native backend only exists on macOS; this host is ${dependencies.platform}`,
+  )
+}
+
+export function buildNativePasswordSshdPlan({
+  directory,
+  username,
+  platform = process.platform,
+  port = NATIVE_PLAN_PORT,
+  password = NATIVE_PLAN_PASSWORD,
+}) {
+  if (typeof directory !== 'string' || !path.isAbsolute(directory)) {
+    throw new Error('password fixture plan requires an absolute directory')
+  }
+  const paths = nativePasswordPaths(directory)
+  return {
+    cleanupSteps: [
+      { label: `SIGTERM the sshd process group, SIGKILL after ${NATIVE_STOP_GRACE_MS} ms` },
+      {
+        args: sudoArguments([SYSADMINCTL, '-deleteUser', username]),
+        command: SUDO,
+        label: 'delete the throwaway account',
+      },
+      { label: `remove ${directory} recursively (host key, config, home, pid file)` },
+    ],
+    config: renderNativeSshdConfig({
+      hostKeyPath: paths.hostKeyPath,
+      pidFile: paths.pidFile,
+      port,
+      username,
+    }),
+    directory,
+    paths,
+    platform,
+    port,
+    steps: [
+      {
+        args: sudoArguments([
+          SYSADMINCTL,
+          ...nativeAddUserArguments(username, password, paths.homePath),
+        ]),
+        command: SUDO,
+        label: 'create the throwaway account',
+      },
+      {
+        args: nativeHostKeyArguments(paths.hostKeyPath),
+        command: NATIVE_SSH_KEYGEN,
+        label: 'generate the fixture host key',
+      },
+      {
+        args: sudoArguments([NATIVE_SSHD, ...nativeSshdArguments(paths.configPath)]),
+        command: SUDO,
+        label: 'start the loopback password daemon',
+      },
+    ],
+    username,
+  }
+}
+
+function shellQuote(text) {
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(text)) return text
+  return `'${text.replaceAll("'", "'\\''")}'`
+}
+
+function formatPlanStep(step) {
+  if (step.command === undefined) return step.label
+  return `${step.label}\n     $ ${[step.command, ...step.args].map(shellQuote).join(' ')}`
+}
+
+export function formatNativePasswordSshdPlan(plan) {
+  const steps = plan.steps.map(
+    (step, index) => `${index + 1}. ${formatPlanStep(step)}`,
+  )
+  const cleanup = plan.cleanupSteps.map(
+    (step, index) => `${index + 1}. ${formatPlanStep(step)}`,
+  )
+  return [
+    '# terminal-smoke-password-sshd native backend plan (dry run)',
+    '# Nothing below was executed: no sudo call, no account created, no daemon.',
+    '',
+    `platform: ${plan.platform}`,
+    `fixture directory: ${plan.directory}`,
+    `account: ${plan.username}`,
+    'account password: 16 random bytes per run, never printed by a real run',
+    `listen: ${LOOPBACK}:${plan.port}`,
+    'port: 127.0.0.1:0 is bound, the kernel-assigned high port is read back and',
+    '      that socket is closed; sshd then binds the same port. The window in',
+    '      between is covered by a readiness probe on a real TCP connection, and',
+    `      the whole reservation is retried up to ${NATIVE_PORT_ATTEMPTS} times when sshd reports EADDRINUSE.`,
+    'sudo: every privileged step is `sudo -n`, so a host without passwordless sudo',
+    '      fails with sudo stderr instead of waiting on a prompt.',
+    '',
+    '## commands, in order',
+    ...steps,
+    '',
+    `## file written before the daemon starts: ${plan.paths.configPath}`,
+    plan.config.trimEnd(),
+    '',
+    `## file written once the daemon answers: ${plan.paths.connectionPath} (mode 0600)`,
+    '',
+    '## stop() cleanup, in order',
+    ...cleanup,
+  ].join('\n')
+}
+
+/**
+ * runDockerCommand's contract for the non-Docker binaries the native backend
+ * needs. Deliberately a sibling rather than a shared helper: the Docker path
+ * is frozen, so generalising it would mean editing it.
+ */
+async function runFixtureCommand(command, args, options, dependencies, timeoutMs, label) {
+  let child
+  try {
+    child = dependencies.spawn(command, args, options)
+  } catch (spawnError) {
+    throw new Error(`${label} could not start: ${spawnError.message}`)
+  }
+  const stdout = collectOutput(child.stdout)
+  const stderr = collectOutput(child.stderr)
+  let timedOut = false
+  const timeout = dependencies.setTimeout(() => {
+    timedOut = true
+    try {
+      child.kill('SIGKILL')
+    } catch {
+      // The command closed between the timer and the signal.
+    }
+  }, timeoutMs)
+  const status = await waitForClose(child)
+  dependencies.clearTimeout(timeout)
+  if (status.spawnError) {
+    throw new Error(`${label} could not start: ${status.spawnError.message}`)
+  }
+  if (timedOut) {
+    throw new Error(`${label} timed out after ${timeoutMs} ms: ${stderr().trim()}`)
+  }
+  if (status.code !== 0) {
+    const detail = stderr().trim() || stdout().trim()
+    throw new Error(
+      `${label} exited with code ${String(status.code)}${detail ? `: ${detail}` : ''}`,
+    )
+  }
+  return { stderr: stderr(), stdout: stdout() }
+}
+
+function startNativeSshd(configPath, directory, dependencies) {
+  let child
+  try {
+    child = dependencies.spawn(
+      SUDO,
+      sudoArguments([NATIVE_SSHD, ...nativeSshdArguments(configPath)]),
+      {
+        cwd: directory,
+        detached: true,
+        shell: false,
+        stdio: ['ignore', 'ignore', 'pipe'],
+      },
+    )
+  } catch (error) {
+    throw new Error(`password OpenSSH daemon could not start: ${error.message}`)
+  }
+  if (!Number.isSafeInteger(child.pid) || child.pid <= 0) {
+    throw new Error('password OpenSSH daemon did not expose a valid process id')
+  }
+  const daemon = { child, closed: false, stderr: collectOutput(child.stderr) }
+  daemon.closePromise = waitForClose(child).then(status => {
+    daemon.closed = true
+    return status
+  })
+  return daemon
+}
+
+function signalNativeDaemon(daemon, signal, dependencies) {
+  if (daemon.closed) return
+  try {
+    // detached: the sudo child leads its own process group, so a negative pid
+    // reaches the sshd that sudo exec'd as well.
+    dependencies.processKill(-daemon.child.pid, signal)
+  } catch (error) {
+    if (error?.code !== 'ESRCH') throw error
+  }
+}
+
+function nativeDaemonClosesWithin(daemon, timeoutMs, dependencies) {
+  if (daemon.closed) return Promise.resolve(true)
+  return new Promise(resolve => {
+    let settled = false
+    const finish = result => {
+      if (settled) return
+      settled = true
+      dependencies.clearTimeout(timer)
+      resolve(result)
+    }
+    const timer = dependencies.setTimeout(() => finish(false), timeoutMs)
+    daemon.closePromise.then(
+      () => finish(true),
+      () => finish(true),
+    )
+  })
+}
+
+async function stopNativeDaemon(daemon, dependencies) {
+  if (daemon === null || daemon === undefined || daemon.closed) return
+  signalNativeDaemon(daemon, 'SIGTERM', dependencies)
+  if (await nativeDaemonClosesWithin(daemon, NATIVE_STOP_GRACE_MS, dependencies)) return
+  signalNativeDaemon(daemon, 'SIGKILL', dependencies)
+  if (!(await nativeDaemonClosesWithin(daemon, NATIVE_STOP_GRACE_MS, dependencies))) {
+    throw new Error(`password OpenSSH daemon did not exit: ${daemon.stderr().trim()}`)
+  }
+}
+
+async function waitUntilNativeReady(daemon, port, dependencies) {
+  const deadline = dependencies.now() + PASSWORD_SSHD_READY_TIMEOUT_MS
+  let lastFailure = 'no banner probe completed'
+  while (dependencies.now() <= deadline) {
+    if (daemon.closed) {
+      const status = await daemon.closePromise
+      throw new Error(
+        `password OpenSSH daemon exited before serving ${LOOPBACK}:${port} (code ${String(status.code)}): ${daemon.stderr().trim()}`,
+      )
+    }
+    try {
+      if (await probeSshBanner(port, dependencies)) return
+    } catch (error) {
+      lastFailure = error.message
+    }
+    await dependencies.sleep(100)
+  }
+  throw new Error(
+    `password OpenSSH readiness probe failed: ${lastFailure}: ${daemon.stderr().trim()}`,
+  )
+}
+
+async function startNativePasswordSshd({ runDirectory, dependencies }) {
+  const directory = path.join(runDirectory, 'password-sshd-native')
+  const paths = nativePasswordPaths(directory)
+  const username = nativeAccountName()
+  const password = nativeAccountPassword()
+  const commandOptions = { shell: false, stdio: ['ignore', 'pipe', 'pipe'] }
+  const state = { accountCreated: false, daemon: null }
+  let port
+
+  const cleanup = async () => {
+    const failures = []
+    try {
+      await stopNativeDaemon(state.daemon, dependencies)
+    } catch (error) {
+      failures.push(`daemon stop failed: ${error.message}`)
+    }
+    state.daemon = null
+    if (state.accountCreated) {
+      try {
+        await runFixtureCommand(
+          SUDO,
+          sudoArguments([SYSADMINCTL, '-deleteUser', username]),
+          commandOptions,
+          dependencies,
+          NATIVE_COMMAND_TIMEOUT_MS,
+          'password fixture account deletion',
+        )
+        state.accountCreated = false
+      } catch (error) {
+        // A repeated stop() deletes an account that is already gone; only a
+        // real failure is worth reporting.
+        if (/not found|does not exist|no such user|unknown user/i.test(error.message)) {
+          state.accountCreated = false
+        } else {
+          failures.push(error.message)
+        }
+      }
+    }
+    try {
+      await dependencies.rm(directory, { force: true, recursive: true })
+    } catch (error) {
+      failures.push(`fixture directory removal failed: ${error.message}`)
+    }
+    return failures
+  }
+
+  try {
+    await dependencies.mkdir(paths.homePath, { mode: 0o755, recursive: true })
+    await runFixtureCommand(
+      NATIVE_SSH_KEYGEN,
+      nativeHostKeyArguments(paths.hostKeyPath),
+      commandOptions,
+      dependencies,
+      NATIVE_KEYGEN_TIMEOUT_MS,
+      'password fixture host key generation',
+    )
+    const publicKey = await dependencies.readFile(`${paths.hostKeyPath}.pub`, 'utf8')
+    const expectedHostKey = publicKey.trim().split(/\s+/).slice(0, 2).join(' ')
+    if (!/^ssh-ed25519 [A-Za-z0-9+/]+={0,2}$/.test(expectedHostKey)) {
+      throw new Error('password fixture host key is invalid')
+    }
+    await runFixtureCommand(
+      SUDO,
+      sudoArguments([
+        SYSADMINCTL,
+        ...nativeAddUserArguments(username, password, paths.homePath),
+      ]),
+      commandOptions,
+      dependencies,
+      NATIVE_COMMAND_TIMEOUT_MS,
+      'password fixture account creation',
+    )
+    state.accountCreated = true
+
+    let ready = false
+    for (let attempt = 1; attempt <= NATIVE_PORT_ATTEMPTS; attempt += 1) {
+      port = await reserveLoopbackPort(dependencies)
+      if (!Number.isInteger(port) || port < 1_024 || port > 65_535) {
+        throw new Error('port reservation returned an invalid high port')
+      }
+      await dependencies.writeFile(
+        paths.configPath,
+        renderNativeSshdConfig({
+          hostKeyPath: paths.hostKeyPath,
+          pidFile: paths.pidFile,
+          port,
+          username,
+        }),
+        { encoding: 'utf8', mode: 0o600 },
+      )
+      state.daemon = startNativeSshd(paths.configPath, directory, dependencies)
+      try {
+        await waitUntilNativeReady(state.daemon, port, dependencies)
+        ready = true
+        break
+      } catch (error) {
+        const conflict = /address already in use/i.test(
+          `${error.message}\n${state.daemon.stderr()}`,
+        )
+        try {
+          await stopNativeDaemon(state.daemon, dependencies)
+        } catch {
+          // The readiness failure is the more useful error.
+        }
+        state.daemon = null
+        if (attempt < NATIVE_PORT_ATTEMPTS && conflict) continue
+        throw error
+      }
+    }
+    if (!ready || state.daemon === null) {
+      throw new Error('password OpenSSH daemon never became ready')
+    }
+
+    const connection = {
+      host: LOOPBACK,
+      port,
+      username,
+      authMode: 'password',
+      expectedHostKey,
+      privateKey: null,
+      password,
+      certificate: null,
+      jump: null,
+    }
+    await dependencies.writeFile(
+      paths.connectionPath,
+      `${JSON.stringify(connection)}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    )
+
+    let restartPromise
+    let stopPromise = null
+    return {
+      ...connection,
+      configPath: paths.connectionPath,
+      restart: () => {
+        if (restartPromise) return restartPromise
+        restartPromise = (async () => {
+          await stopNativeDaemon(state.daemon, dependencies)
+          state.daemon = startNativeSshd(paths.configPath, directory, dependencies)
+          try {
+            await waitUntilNativeReady(state.daemon, port, dependencies)
+          } catch (error) {
+            try {
+              await stopNativeDaemon(state.daemon, dependencies)
+            } catch {
+              // The readiness failure is the more useful error.
+            }
+            state.daemon = null
+            throw error
+          }
+        })()
+        return restartPromise
+      },
+      stop: () => {
+        if (stopPromise !== null) {
+          // A repeated stop() is a no-op: whatever cleanup failure the first
+          // call reported has already been surfaced once.
+          return stopPromise.then(
+            () => undefined,
+            () => undefined,
+          )
+        }
+        stopPromise = (async () => {
+          const failures = await cleanup()
+          if (failures.length > 0) {
+            throw new Error(`password fixture cleanup failed: ${failures.join('; ')}`)
+          }
+        })()
+        return stopPromise
+      },
+    }
+  } catch (error) {
+    // The original failure is more useful than a cleanup failure.
+    await cleanup()
+    throw error
+  }
+}
+
 export async function startTerminalSmokePasswordSshd({
   runDirectory,
   dependencies: overrides = {},
@@ -274,6 +851,11 @@ export async function startTerminalSmokePasswordSshd({
   if (typeof runDirectory !== 'string' || !path.isAbsolute(runDirectory)) {
     throw new Error('terminal smoke runDirectory must be absolute')
   }
+  const backend = await resolvePasswordSshdBackend({ dependencies })
+  if (backend === 'native') {
+    return startNativePasswordSshd({ runDirectory, dependencies })
+  }
+
   const directory = path.join(runDirectory, 'password-sshd')
   await dependencies.mkdir(directory, { recursive: true })
   await dependencies.writeFile(path.join(directory, 'Dockerfile'), DOCKERFILE, {
@@ -402,4 +984,24 @@ export async function startTerminalSmokePasswordSshd({
     }
     throw error
   }
+}
+
+async function main(argv) {
+  if (!argv.includes('--print-plan')) {
+    process.stderr.write(
+      'usage: node scripts/terminal-smoke-password-sshd.mjs --print-plan\n' +
+        '\nPrints the native (sudo) backend plan without executing anything.\n',
+    )
+    return 2
+  }
+  const plan = buildNativePasswordSshdPlan({
+    directory: path.join(os.tmpdir(), 'terminal-smoke-print-plan', 'password-sshd-native'),
+    username: nativeAccountName(),
+  })
+  process.stdout.write(`${formatNativePasswordSshdPlan(plan)}\n`)
+  return 0
+}
+
+if (import.meta.filename === path.resolve(process.argv[1] ?? '')) {
+  process.exitCode = await main(process.argv.slice(2))
 }

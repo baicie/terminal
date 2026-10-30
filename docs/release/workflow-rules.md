@@ -8,10 +8,13 @@
 | 规则 | 依据 | 违反后果 |
 | --- | --- | --- |
 | 改任何 `FINGERPRINT_PATHS` 内的文件（`src-tauri/**`、`packages/frontend/src/**`、`scripts/run-*.mjs`、`check-verification-evidence.mjs` 等）都会让六份 `docs/verification` 失效 | evidence gate 直接报 “was recorded against source fingerprint X, but sources now fingerprint as Y” | `pnpm verify` 红，任何「证据有效」的说法都不成立 |
-| 顺序固定：**冻结源码 → 重建插桩产物 → 重新固定 `PROFILE_REVIEWED_HASH` → 再采集 → 写证据 → 过门禁** | 门禁脚本本身在指纹路径内，先采集后改它会让刚采的证据立刻作废 | 白跑一轮采集 |
+| 顺序固定：**冻结源码 → 派发 macOS 证据 job → 下载产物 → 过门禁** | 门禁脚本、runner 与 workflow 本身都在指纹路径内，采集期间再改任何一处都会让刚采的证据立刻作废 | 白跑一轮 CI |
 | 插桩产物必须带 `VITE_TERMINAL_SMOKE_BUILD=1` | 普通 `tauri build` 没有 smoke/probe 入口，runner 会显式拒绝（`findInstrumentedChunkNames` 返回 0） | 采集全红 |
 | 证据数值只能来自 runner 输出；写入器要 fail-closed | 2026-10-29 首次采集时写入器拒绝写入 `attempt is not clean: password,password-reconnect` | 假证据进仓库 |
-| debug 证据比对「已复核哈希」，release 证据比对**磁盘上的** `src-tauri/target/release/terminal` | 同一次 `pnpm verify` 会重链接 debug 产物，磁盘 debug 二进制永远对不上插桩证据 | release 证据与二进制不一致即红 |
+| 证据与二进制的绑定对象是**同一次 CI 运行的 manifest**（`docs/verification/evidence-manifest.json`），不再是本机磁盘文件：`fingerprint` = 当前源码指纹、`debugSha` = 4 份 debug 证据的 `binarySha256`、`releaseSha` = 2 份 release 证据的 `binarySha256`、每份证据 `provenance.runId` = manifest 的 `runId` | CI 构建与本机构建不保证位级一致（换工具链或 feature 集就会得到不同字节），「磁盘文件必须等于 CI 文件」只对跑了采集的那台机器成立 | 证据与产物脱钩，门禁直接红 |
+| 六份证据由 `.github/workflows/real-machine-matrix.yml` 的 macOS job 产出，本机只下载：`node scripts/fetch-verification-evidence.mjs --latest`（`--with-binaries` 同时把两个产物放回 `src-tauri/target`） | 写入器 `scripts/build-verification-evidence.mjs` 只从 `evidence-logs/*.log` 取数：缺 case、出现 ❌、`spawnToReadyMs > 10000`、或日志里的 `Measured <profile> binary <sha>` 与本次构建哈希不一致，都拒绝写文件 | 手填/补数的证据过不了 manifest 与 `provenance` 检查 |
+| 证据与 manifest 必须来自**同一次 run**；`docs/verification/raw/<runId>/` 保存该次 run 的原始日志并一起提交 | 没有原始日志时，证据里的每个数字都无法复算 | 审计断链 |
+| `password` / `password-reconnect` 走 Debian OpenSSH 容器，需要 Docker；GitHub 托管 macOS runner **没有 Docker** | 13-case（debug）与 10-case（release）两份契约都包含这两条 | macOS job 会在 `Check the password fixture precondition` 一步带着原因失败，必须换自带 Docker 的 runner 或改 fixture |
 | 想换二进制又不破坏证据：用独立的 `CARGO_TARGET_DIR` 打包，或打包后把锚定二进制还原 | 本次打 DMG 时用 `CARGO_TARGET_DIR=/tmp/terminal-ship` 保住了证据 | 打包一次就得重采一轮 |
 | **不要把 updater 公钥写进 `tauri.conf.json`**：用 CI 的 `--config` 从 `TAURI_UPDATER_PUBKEY` 注入 | `tauri.conf.json` 在指纹路径内，改它就要重采六份证据 | 白跑一轮采集 |
 | `$` + 双大括号写法（Actions 表达式）读不到 `$GITHUB_ENV` 写入的值；跨步骤传值要用 job 级 `env` 表达式 | tauri-action 的 `args:` 是表达式求值，不是 shell | 公钥注入悄悄失效，产出未签名的包 |
@@ -25,6 +28,7 @@
 | `run-terminal-smoke`（SSH 矩阵）要求每个 case 前应用在前台；**锁屏时前台恒为 `loginwindow`**，断言必败 | 报错原文 `expected process X to be frontmost, got 162`，PID 162 = loginwindow |
 | `cold-start` 与 `shell-probe` 两个 runner **不需要窗口激活**，锁屏也能跑 | 锁屏期间成功采到 debug 冷启动、远程 prompt、shell 14+7、release 冷启动与 shell 矩阵 |
 | password 类 case 需要 **Docker 守护进程**在跑 | 首次采集报 `failed to connect to the docker API … docker.sock`，启动 Docker 后两个矩阵重跑全绿 |
+| 因此在 CI 上，password 两条只能在 Linux job 的容器里跑；macOS 证据 job 会先检查 Docker 再跑矩阵 | macOS 证据契约含 password，但没有 Docker 的 runner 无法测量 |
 | 采集必须在「无人操作」窗口执行：键盘注入与 AX 探针会抢前台 | 自动化流程一律用 `IOConsoleLocked` + `HIDIdleTime ≥ 120s` + 无其它自动化 三重门控 |
 
 ## 3. 发布模式与 tag

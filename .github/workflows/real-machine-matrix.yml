@@ -1,20 +1,35 @@
 name: Real-machine terminal matrix
 
 # Runs the desktop terminal against real PTYs and real SSH servers on
-# macOS and Linux native runners. The macOS job executes the Docker-free
-# SSH authentication matrix (key/agent/cert/jump + outage/wake reconnect) and the local
-# shell interaction matrix that are also run locally via
-# `pnpm smoke:ssh-matrix` / `pnpm smoke:shell-probe:matrix`; the Linux job
-# runs the password matrix inside the real Debian OpenSSH container (Docker
-# is unavailable on GitHub macOS runners) plus the public-key smoke and its
-# disconnect/reconnect variant under Xvfb.
+# macOS and Linux native runners, and produces the six current evidence files
+# on the macOS runner instead of on a developer machine.
 #
-# The Windows job drives the PowerShell and cmd shell interaction dialects
-# against a real ConPTY. Those dialects cannot be exercised on macOS or Linux,
-# so without this job the Windows command language would ship unexecuted.
-# Windows OpenSSH service, Pageant and serial hardware remain a manual
-# checklist (docs/issue.md Issue #21/#22/#39): they need an installed service or
-# attached hardware that a hosted runner does not provide.
+# The macOS job is one evidence production chain, in this order and no
+# other: build the instrumented debug binary and hash it, measure its four
+# scenarios (local cold start three times, remote prompt cold start, the 13-case
+# authenticated SSH matrix, the local 14 + real SSH 7 shell matrix), build the
+# instrumented release binary and hash it, measure its two scenarios (local cold
+# start three times, the 10-case authenticated SSH matrix), then turn the seven
+# `2>&1 | tee` logs into docs/verification plus evidence-manifest.json and
+# upload the bundle. `scripts/build-verification-evidence.mjs` refuses to write
+# anything unless every scenario is complete and green, and refuses when a log
+# measured a different binary than the one this job hashed.
+#
+# `scripts/check-verification-evidence.mjs` binds the six files to that
+# manifest (fingerprint, both artifact hashes, run id) rather than to a binary
+# on a developer machine, because a local build and a CI build of the same
+# sources are not guaranteed to be bit-identical. Download a run with
+# `node scripts/fetch-verification-evidence.mjs --latest`.
+#
+# The Linux job runs the password matrix inside the real Debian OpenSSH
+# container (Docker is unavailable on GitHub macOS runners) plus the public-key
+# smoke and its disconnect/reconnect variant under Xvfb. The Windows job drives
+# the PowerShell and cmd shell interaction dialects against a real ConPTY.
+# Those dialects cannot be exercised on macOS or Linux, so without this job the
+# Windows command language would ship unexecuted. Windows OpenSSH service,
+# Pageant and serial hardware remain a manual checklist (docs/issue.md Issue
+# #21/#22/#39): they need an installed service or attached hardware that a
+# hosted runner does not provide.
 
 on:
   workflow_dispatch:
@@ -31,7 +46,10 @@ jobs:
   macos-ssh-matrix:
     name: macOS real SSH matrix
     runs-on: macos-latest
-    timeout-minutes: 45
+    # Seven measured scenarios plus two instrumented Rust builds have to fit in
+    # one job: the evidence is only valid when every measurement describes the
+    # artifacts this same job built and hashed.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -44,36 +62,142 @@ jobs:
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - run: pnpm install --frozen-lockfile
-      - name: Run the Docker-free real SSH authentication matrix
-        run: node scripts/run-terminal-smoke-matrix.mjs key,key-reconnect,key-outage-reconnect,key-outage-wake-reconnect,agent,agent-reconnect,cert,cert-reconnect,jump,jump-reconnect
-      - name: Run the real Tauri shell interaction matrix
-        run: pnpm smoke:shell-probe:matrix -- --shells bash,zsh cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt
-      - name: Run the shell interaction matrix over real SSH
-        # The same seven cases, but driven through a real loopback sshd rather
-        # than a local PTY. Line editing, PTY geometry and interrupt delivery
-        # break exactly where a PTY and an sshd channel differ, so running the
-        # cases on only one transport would leave that gap open.
-        run: pnpm smoke:shell-probe:matrix -- --transport ssh cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt
+
+      - name: Create the evidence log directory
+        # Every scenario below appends to this directory; the evidence builder
+        # reads nothing else, so a missing log means a scenario never ran.
+        run: mkdir -p evidence-logs
+
+      - name: Build the instrumented debug binary and record its sha256
+        # The plain build has no smoke/probe entry points and the runners refuse
+        # it, so VITE_TERMINAL_SMOKE_BUILD=1 is mandatory. The hash is taken
+        # here, once: every debug scenario below reuses this file with
+        # --reuse-binary instead of rebuilding it.
+        run: |
+          VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle
+          shasum -a 256 src-tauri/target/debug/terminal > evidence-logs/debug.sha256
+          echo "DEBUG_SHA=$(cut -d' ' -f1 evidence-logs/debug.sha256)" >> "$GITHUB_ENV"
+
+      - name: Measure local PTY cold-start to terminal marker
+        # The marker is produced only after the nonce command traverses the
+        # real WKWebView/xterm input path, Tauri session_write and the local
+        # PTY shell, so this is stricter than AX window readiness alone. Three
+        # separate invocations provide the contract's three independent
+        # samples; tee -a keeps all three JSON documents in one log.
+        run: |
+          for measurement in 1 2 3; do
+            pnpm smoke:local-cold-start -- \
+              --app-path "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal" 2>&1 | tee -a evidence-logs/debug-local-cold-start.log
+          done
+
       - name: Measure remote SSH cold-start to prompt marker
         # This uses the same freshly built debug binary as the shell matrix and
         # proves startup marker + OSC 133 prompt round-trip through a real SSH
         # PTY. It does not claim WAN or first-user workspace coverage.
         run: |
           pnpm smoke:remote-cold-start -- \
-            --app-path "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal"
-      - name: Measure local PTY cold-start to terminal marker
-        # The marker is produced only after the nonce command traverses the
-        # real WKWebView/xterm input path, Tauri session_write and the local
-        # PTY shell, so this is stricter than AX window readiness alone.
+            --app-path "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal" 2>&1 | tee evidence-logs/debug-remote-cold-start.log
+
+      - name: Check the password fixture backend
+        # The password cases come from scripts/terminal-smoke-password-sshd.mjs.
+        # In its default `auto` mode a reachable Docker daemon wins, and macOS
+        # falls back to a throwaway loopback sshd account created with sudo -n,
+        # which is the only option on a hosted runner: those have no Docker at
+        # all. Print the plan this job would execute, so an unresolvable backend
+        # fails here with its reason instead of killing the matrix fifteen
+        # minutes later on a docker socket error.
         run: |
-          pnpm smoke:local-cold-start -- \
-            --app-path "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal"
+          echo "platform: $(uname -sm)"
+          node scripts/terminal-smoke-password-sshd.mjs --print-plan
+
+      - name: Run the Docker-free real SSH authentication matrix
+        # --reuse-binary is appended after the case list on purpose: the log has
+        # to describe the binary hashed above, and a second build here would
+        # relink it.
+        run: node scripts/run-terminal-smoke-matrix.mjs key,key-reconnect,key-outage-reconnect,key-outage-wake-reconnect,agent,agent-reconnect,cert,cert-reconnect,jump,jump-reconnect --reuse-binary 2>&1 | tee evidence-logs/debug-ssh-matrix.log
+
+      - name: Run the remaining authenticated matrix cases
+        # The 13-case contract also needs key-first-connect-outage and both
+        # password cases; they run as a second invocation appending to the same
+        # log, so the step above stays exactly the command the workflow contract
+        # test pins.
+        run: node scripts/run-terminal-smoke-matrix.mjs --reuse-binary key-first-connect-outage,password,password-reconnect 2>&1 | tee -a evidence-logs/debug-ssh-matrix.log
+
+      - name: Run the real Tauri shell interaction matrix
+        run: pnpm smoke:shell-probe:matrix -- --shells bash,zsh cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt --reuse-binary 2>&1 | tee evidence-logs/debug-shell-probe-local.log
+
+      - name: Run the shell interaction matrix over real SSH
+        # The same seven cases, but driven through a real loopback sshd rather
+        # than a local PTY. Line editing, PTY geometry and interrupt delivery
+        # break exactly where a PTY and an sshd channel differ, so running the
+        # cases on only one transport would leave that gap open.
+        run: pnpm smoke:shell-probe:matrix -- --transport ssh cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt --reuse-binary 2>&1 | tee evidence-logs/debug-shell-probe-ssh.log
+
       - name: Verify the physical keyboard probe protocol in a real WKWebView
         # macOS runners cannot grant Accessibility to CGEvent injection, so
         # this step only proves the app-side probe boots a local PTY and
         # publishes the awaiting-input checkpoint; overlapping-key injection
-        # runs on developer machines via `pnpm smoke:input-probe`.
+        # runs on developer machines via node scripts/run-input-probe.mjs.
         run: node scripts/run-input-probe.mjs --checkpoint-only
+
+      - name: Build the instrumented release binary and record its sha256
+        run: |
+          VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle
+          shasum -a 256 src-tauri/target/release/terminal > evidence-logs/release.sha256
+          echo "RELEASE_SHA=$(cut -d' ' -f1 evidence-logs/release.sha256)" >> "$GITHUB_ENV"
+
+      - name: Measure the release terminal marker three times
+        run: |
+          for measurement in 1 2 3; do
+            pnpm smoke:local-cold-start -- \
+              --app-path "$GITHUB_WORKSPACE/src-tauri/target/release/terminal" 2>&1 | tee -a evidence-logs/release-local-cold-start.log
+          done
+
+      - name: Run the release authentication matrix with the ten contract cases
+        # A bare --release run executes all 13 cases, which the gate's
+        # RELEASE_SSH_CASES (10, without the three outage cases) would reject.
+        run: node scripts/run-terminal-smoke-matrix.mjs key,key-reconnect,password,password-reconnect,agent,agent-reconnect,cert,cert-reconnect,jump,jump-reconnect --release --reuse-binary 2>&1 | tee evidence-logs/release-ssh-matrix.log
+
+      - name: Generate the six evidence files and the CI manifest
+        # Fail-closed: nothing is written unless all seven logs are complete,
+        # green, and describe the two binaries hashed above. DEBUG_SHA,
+        # RELEASE_SHA and the GITHUB_* provenance variables arrive through the
+        # environment.
+        run: |
+          node scripts/build-verification-evidence.mjs \
+            --logs evidence-logs \
+            --out docs/verification \
+            --os-name "$(sw_vers -productName) $(sw_vers -productVersion)"
+
+      - name: Assemble the verification evidence bundle
+        # Staged under one directory so the download layout is explicit:
+        # docs/verification/*.json, evidence-logs/*.log and binaries/.
+        if: always()
+        run: |
+          mkdir -p evidence-artifact/docs/verification evidence-artifact/evidence-logs evidence-artifact/binaries/debug evidence-artifact/binaries/release
+          cp evidence-logs/*.log evidence-artifact/evidence-logs/ || true
+          for file in \
+            2026-10-11-macos-cold-start-current.json \
+            2026-10-11-macos-remote-shell-prompt-rerun.json \
+            2026-10-11-macos-ssh-matrix-current.json \
+            2026-10-11-macos-shell-interaction-current.json \
+            2026-10-11-macos-release-terminal-gate.json \
+            2026-10-11-macos-release-ssh-matrix.json \
+            evidence-manifest.json; do
+            cp "docs/verification/$file" evidence-artifact/docs/verification/ || true
+          done
+          cp src-tauri/target/debug/terminal evidence-artifact/binaries/debug/terminal || true
+          cp src-tauri/target/release/terminal evidence-artifact/binaries/release/terminal || true
+
+      - uses: actions/upload-artifact@v4
+        # Uploaded even when a step above failed: the logs are the only way to
+        # see why a scenario refused to produce evidence.
+        if: always()
+        with:
+          name: verification-evidence
+          path: evidence-artifact
+          if-no-files-found: warn
+          retention-days: 30
 
   linux-ssh-smoke:
     name: Linux real SSH smoke

@@ -6,19 +6,32 @@ import { fileURLToPath } from 'node:url'
 
 /**
  * Guards the recorded acceptance evidence against a failure mode that is
- * invisible when reading a single evidence file: every smoke runner relinks
- * target/debug or target/release, so two current evidence files can end up
- * describing different binaries while both read as authoritative.
+ * invisible when reading a single evidence file: two current evidence files can
+ * describe different binaries while both read as authoritative.
  *
- * Historical records are deliberately exempt from a disk check. They document
- * the binary that existed at the time, which is the reason they are kept, so
- * requiring them to match what is on disk today would be wrong.
+ * The six current files are produced by one GitHub Actions macOS run (see
+ * .github/workflows/real-machine-matrix.yml and
+ * scripts/build-verification-evidence.mjs). They are therefore bound to
+ * docs/verification/evidence-manifest.json - the fingerprint, the two artifact
+ * hashes and the run id of that run - instead of to a binary on this machine.
+ *
+ * That binding replaced a comparison against the binary on disk because a CI
+ * build and a local build of the same sources are not guaranteed to be
+ * bit-identical: relinking target/debug with a different toolchain or feature
+ * set already produced different bytes for identical sources, so "the file on
+ * my disk must equal the file in CI" could only ever be true for the one
+ * machine that happened to run the capture. Binding to the artifacts of the
+ * same run keeps the guarantee that matters (evidence and binary belong
+ * together) without pretending the bytes are reproducible.
+ *
+ * Historical records are deliberately exempt from that binding: they document
+ * the binary that existed at the time, which is the reason they are kept.
  */
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 const verificationRoot = path.join(projectRoot, 'docs', 'verification')
 
-const EVIDENCE_PROFILE = new Map([
+export const EVIDENCE_PROFILE = new Map([
   ['2026-10-11-macos-cold-start-current.json', 'debug'],
   ['2026-10-11-macos-remote-shell-prompt-rerun.json', 'debug'],
   ['2026-10-11-macos-ssh-matrix-current.json', 'debug'],
@@ -27,7 +40,7 @@ const EVIDENCE_PROFILE = new Map([
   ['2026-10-11-macos-release-ssh-matrix.json', 'release'],
 ])
 
-const EVIDENCE_KIND = new Map([
+export const EVIDENCE_KIND = new Map([
   ['2026-10-11-macos-cold-start-current.json', 'tauri-process-cold-start-stopwatch-current-worktree'],
   ['2026-10-11-macos-remote-shell-prompt-rerun.json', 'tauri-remote-cold-start-shell-prompt-observed-rerun'],
   ['2026-10-11-macos-ssh-matrix-current.json', 'tauri-real-ssh-matrix-current-worktree'],
@@ -36,7 +49,7 @@ const EVIDENCE_KIND = new Map([
   ['2026-10-11-macos-release-ssh-matrix.json', 'tauri-release-ssh-and-shell-matrix'],
 ])
 
-const DEBUG_SSH_CASES = [
+export const DEBUG_SSH_CASES = [
   'key',
   'key-reconnect',
   'key-outage-reconnect',
@@ -52,7 +65,7 @@ const DEBUG_SSH_CASES = [
   'jump-reconnect',
 ]
 
-const RELEASE_SSH_CASES = [
+export const RELEASE_SSH_CASES = [
   'key',
   'key-reconnect',
   'password',
@@ -65,7 +78,7 @@ const RELEASE_SSH_CASES = [
   'jump-reconnect',
 ]
 
-const SHELL_PROBE_CASES = [
+export const SHELL_PROBE_CASES = [
   'cat-eof',
   'readline-history',
   'readline-tab',
@@ -75,78 +88,15 @@ const SHELL_PROBE_CASES = [
   'ctrl-c-interrupt',
 ]
 
-// Only the release profile is pinned to a binary on disk. `pnpm verify` runs
-// cargo, which relinks target/debug/terminal as a bare cargo build whose
-// frontend is not embedded, so a debug artifact on disk can never be expected
-// to match evidence taken from a `tauri build --debug` run inside this same
-// gate. Debug evidence is therefore pinned to a reviewed hash instead.
-const PROFILE_BINARY = new Map([
-  ['release', 'src-tauri/target/release/terminal'],
+const MANIFEST_FILE = 'evidence-manifest.json'
+
+export const EVIDENCE_MANIFEST_FILE = MANIFEST_FILE
+
+// Which manifest field binds which build profile to the artifact of the run.
+const PROFILE_MANIFEST_FIELD = new Map([
+  ['debug', 'debugSha'],
+  ['release', 'releaseSha'],
 ])
-
-const PROFILE_REVIEWED_HASH = new Map([
-  // Reviewed on 2026-10-17. This build includes the startup fallback ownership
-  // fix, the direct command-write input handoff, Linux remote fixture
-  // isolation, shell probe dialect fail-fast, and transient authentication
-  // retry classification. The 13-case SSH matrix, local/real-SSH shell
-  // probes, local cold-start and remote prompt marker were re-run on this same
-  // instrumented debug binary before the hash moved here.
-  //
-  // The earlier build included the serial port platform
-  // classification fix and waits for the first SSH shell output
-  // before injecting startup commands, and accepts a remote prompt marker
-  // adjacent to an OSC sequence in the same output chunk. It also gives the
-  // OSC 133 exit code a real
-  // consumer: `command-finished` reached the frontend and was written into
-  // `ShellIntegrationState.lastExitCode`, but `snapshot()` had no caller in
-  // production, so a failed command was invisible until the user scrolled back
-  // through the scrollback. The pane header now renders that status. The build
-  // also drops the bash `trap ... DEBUG` line from the shell-integration
-  // injection, because bash has no additive trap and the line silently
-  // replaced whatever DEBUG trap the user's own rc had already installed. See
-  // docs/issue.md Issue #96 and #97. Against this build the 13-case SSH matrix,
-  // the shell interaction matrix (bash and zsh, seven cases each), the same
-  // seven cases over real SSH, a local cold-start run and the remote SSH
-  // prompt cold start were all re-run green before the hash moved here. The
-  // matrix also includes a real first-connect outage: sshd stays down before
-  // the app starts and the app must connect after it returns, proving Issue
-  // #98 over the actual SSH transport rather than only injected dependencies.
-  // The current-source rerun also covers the 13-case SSH matrix, the local
-  // cold-start stopwatch, the remote prompt stopwatch, and local/real-SSH
-  // shell probes. Vim probes now wait for the editor to finish before sending
-  // the shell-side verification command, and the terminal smoke frame helper
-  // is split into its own source file to keep the source-size gate satisfied.
-  // Reviewed on 2026-10-28: `VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug
-  // --no-bundle` from commit 52c8cf8 of codex/terminal-reliability-matrix. The
-  // smoke build flag is mandatory here: the plain build has no smoke/probe
-  // entry points, so the runners refuse it. The evidence re-run for this source
-  // records both the fingerprint and this binary hash; the notes below describe
-  // the earlier build whose hash this replaced.
-  // Re-pinned for the build that adds tauri-plugin-updater to the runtime.
-  //
-  // Re-pinned on 2026-10-30 for the build that stops typing the shell
-  // integration snippet into the PTY: zsh is injected through a ZDOTDIR
-  // wrapper that sources the user's real rc files, bash through a --rcfile
-  // wrapper that replays the login sequence because a login shell ignores
-  // --rcfile. The same source adds ten terminal theme presets and moves the
-  // default light theme off the cream solarized-light background. The
-  // six evidence files are re-run against this binary before the hash lands
-  // here; see docs/issue.md #139, #140 and #141.
-  ['debug', '1d6b470b5267e7ce2cc65983db0e7568aafec2a34d23082fe4f62785d9b658a0'],
-])
-
-// Exported so the gate's own tests assert against the hash the gate actually
-// enforces. A test that carried its own copy of the hash would keep passing
-// after a deliberate review update, and would start failing when the reviewed
-// build legitimately moves.
-export function reviewedHashForProfile(profile) {
-  return PROFILE_REVIEWED_HASH.get(profile)
-}
-
-async function hashFile(filePath, dependencies) {
-  const contents = await dependencies.readFile(filePath)
-  return createHash('sha256').update(contents).digest('hex')
-}
 
 function collectHashes(value, found = []) {
   if (Array.isArray(value)) {
@@ -328,6 +278,11 @@ export const FINGERPRINT_PATHS = [
   'scripts/terminal-smoke-renderer-heartbeat.mjs',
   'scripts/terminal-smoke-sshd.mjs',
   'scripts/check-verification-evidence.mjs',
+  // The generator decides which numbers land in the evidence and the fetch
+  // script decides which files land on disk, so both belong in the fingerprint
+  // for the same reason the gate itself does.
+  'scripts/build-verification-evidence.mjs',
+  'scripts/fetch-verification-evidence.mjs',
 ]
 
 const FINGERPRINT_IGNORED = new Set(['node_modules', 'dist', 'target', '.git'])
@@ -407,6 +362,101 @@ export function findProfileHashConflicts(groups, hashesByFile) {
   return conflicts
 }
 
+export const MISSING_MANIFEST_MESSAGE =
+  `docs/verification/${MANIFEST_FILE} is missing. The six current evidence files are ` +
+  'only valid together with the manifest of the CI run that produced them; nothing ' +
+  'on this machine can replace it, because a local build and the CI build of the same ' +
+  'sources are not guaranteed to be bit-identical. Fetch both with ' +
+  '`node scripts/fetch-verification-evidence.mjs --latest` (or `--run-id <id>`) instead ' +
+  'of writing an evidence file by hand.'
+
+/**
+ * Binds the six evidence files to the manifest of one CI run.
+ *
+ * Each check answers a failure that reading the evidence alone cannot see: a
+ * manifest from another checkout, a field pinned by hand while the artifact
+ * moved, or a file left over from a different run than the one the manifest
+ * describes.
+ */
+export function validateEvidenceManifest(
+  manifest,
+  { entries, evidenceByFile, hashesByFile, sourceFingerprint },
+) {
+  const problems = []
+  const runId = typeof manifest.runId === 'string' ? manifest.runId : undefined
+
+  if (typeof manifest.fingerprint !== 'string' || manifest.fingerprint === '') {
+    problems.push(
+      `${MANIFEST_FILE} records no source fingerprint, so it cannot show which sources ` +
+        'the run measured.',
+    )
+  } else if (
+    sourceFingerprint !== undefined &&
+    manifest.fingerprint !== sourceFingerprint
+  ) {
+    problems.push(
+      `${MANIFEST_FILE} was produced from source fingerprint ${manifest.fingerprint}, but ` +
+        `these sources fingerprint as ${sourceFingerprint}. The evidence describes a ` +
+        'different checkout: dispatch the macOS evidence job on this commit instead of ' +
+        'citing measurements taken before these sources existed.',
+    )
+  }
+
+  if (runId === undefined || runId === '') {
+    problems.push(
+      `${MANIFEST_FILE} records no run id, so the evidence cannot be tied to the CI run ` +
+        'that measured it.',
+    )
+  }
+
+  for (const [profile, field] of PROFILE_MANIFEST_FIELD) {
+    const files = entries.filter(
+      ([file]) => EVIDENCE_PROFILE.get(file) === profile,
+    )
+    if (files.length === 0) continue
+    const expected = manifest[field]
+    if (typeof expected !== 'string' || expected === '') {
+      problems.push(
+        `${MANIFEST_FILE} records no ${field}, so the ${profile} evidence is not bound to ` +
+          'the artifact the run built.',
+      )
+      continue
+    }
+    for (const [file] of files) {
+      const hashes = hashesByFile.get(file) ?? []
+      if (hashes.length > 0 && !hashes.includes(expected)) {
+        problems.push(
+          `${profile} evidence ${file} records ${hashes.join(', ')}, but ${MANIFEST_FILE} ` +
+            `binds the ${profile} artifact of run ${runId ?? '<none>'} to ${expected}. ` +
+            'Re-run the scenario on the binary that run produced instead of citing ' +
+            'numbers measured on a different build.',
+        )
+      }
+    }
+  }
+
+  for (const [file] of entries) {
+    const provenance = evidenceByFile.get(file)?.provenance
+    if (provenance === null || typeof provenance !== 'object') {
+      problems.push(
+        `${file} carries no provenance block, so it is not a CI-produced record: ` +
+          'scripts/build-verification-evidence.mjs writes that block from the run that ' +
+          'measured the scenario.',
+      )
+      continue
+    }
+    if (runId !== undefined && provenance.runId !== runId) {
+      problems.push(
+        `${file} was produced by run ${JSON.stringify(provenance.runId)}, but ` +
+          `${MANIFEST_FILE} describes run ${runId}: the evidence file and the manifest ` +
+          'come from different runs. Fetch both from one run.',
+      )
+    }
+  }
+
+  return problems
+}
+
 export async function checkVerificationEvidence({
   dependencies = { readdir, readFile },
   availableFiles,
@@ -449,6 +499,26 @@ export async function checkVerificationEvidence({
   }
 
   const problems = []
+  const manifestIssues = []
+  let manifest
+  if (!present.includes(MANIFEST_FILE)) {
+    manifestIssues.push(MISSING_MANIFEST_MESSAGE)
+  } else {
+    try {
+      manifest = JSON.parse(
+        await dependencies.readFile(
+          path.join(verificationRoot, MANIFEST_FILE),
+          'utf8',
+        ),
+      )
+    } catch {
+      manifestIssues.push(
+        `docs/verification/${MANIFEST_FILE} is not valid JSON, so nothing ties the ` +
+          'evidence files to the CI run and the artifacts they describe. Fetch the ' +
+          'manifest with scripts/fetch-verification-evidence.mjs instead of editing it.',
+      )
+    }
+  }
   if (absent.length > 0) {
     problems.push(
       `evidence files are registered as current evidence but are missing: ` +
@@ -485,61 +555,27 @@ export async function checkVerificationEvidence({
     )
   }
 
-  // Internal consistency is not enough: every profile's evidence must also
-  // describe the binary that is actually on disk. Without this, a stale
-  // "current" file keeps passing after the working tree has moved on, which is
-  // exactly how outdated debug evidence survived several rounds unnoticed.
-  for (const [profile, binaryPath] of PROFILE_BINARY) {
-    const files = entries.filter(
-      ([file]) => EVIDENCE_PROFILE.get(file) === profile,
+  // Internal consistency is not enough: the evidence must also be the evidence
+  // of one specific CI run. That is what the manifest binds - fingerprint, both
+  // artifact hashes and the run id - and it replaced a comparison against the
+  // binary on disk, which could only ever hold for the single machine that ran
+  // the capture (see the header comment).
+  problems.push(...manifestIssues)
+  if (manifest !== undefined) {
+    problems.push(
+      ...validateEvidenceManifest(manifest, {
+        entries,
+        evidenceByFile,
+        hashesByFile,
+        sourceFingerprint,
+      }),
     )
-    if (files.length === 0) continue
-    let onDisk
-    try {
-      onDisk = await hashFile(path.join(projectRoot, binaryPath), dependencies)
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error
-      problems.push(
-        `${profile} evidence cannot be checked against ${binaryPath}: the binary is not built. ` +
-          'Build it before citing cold-start or matrix numbers for this profile.',
-      )
-      continue
-    }
-    for (const [file] of files) {
-      const hashes = hashesByFile.get(file) ?? []
-      if (hashes.length > 0 && !hashes.includes(onDisk)) {
-        problems.push(
-          `${profile} evidence ${file} does not describe the binary on disk ` +
-            `(${onDisk}): it records ${hashes.join(', ')}. ` +
-            'Re-run the scenario, or stop presenting the file as current evidence.',
-        )
-      }
-    }
   }
 
-  for (const [profile, reviewed] of PROFILE_REVIEWED_HASH) {
-    const files = entries.filter(
-      ([file]) => EVIDENCE_PROFILE.get(file) === profile,
-    )
-    if (files.length === 0) continue
-    for (const [file] of files) {
-      const hashes = hashesByFile.get(file) ?? []
-      if (hashes.length > 0 && !hashes.includes(reviewed)) {
-        problems.push(
-          `${profile} evidence ${file} does not describe the reviewed binary ` +
-            `(${reviewed}): it records ${hashes.join(', ')}. ` +
-            'Re-run the scenario on that build, or update the reviewed hash deliberately.',
-        )
-      }
-    }
-  }
-
-  // Debug evidence cannot be compared against the artifact on disk (see
-  // PROFILE_REVIEWED_HASH), which left a blind spot: editing the terminal
-  // frontend after the evidence was recorded changed no evidence field and no
-  // reviewed hash, so the stale numbers kept reading as current. Comparing a
-  // fingerprint of the sources those scenarios exercise closes that gap
-  // without pretending the debug binary is reproducible.
+  // A fingerprint recorded inside the evidence and the fingerprint recorded in
+  // the manifest are two independent statements about the same checkout. The
+  // manifest is checked above; this checks the per-file statement, so a file
+  // that kept an older fingerprint cannot ride along on a fresh manifest.
   if (sourceFingerprint !== undefined) {
     for (const [file] of entries) {
       if (EVIDENCE_PROFILE.get(file) !== 'debug') continue
