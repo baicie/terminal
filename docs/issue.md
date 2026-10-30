@@ -3708,3 +3708,30 @@ verifier = `base64(HMAC-SHA256(master_key, "terminal-vault-verifier-v1" || salt)
 - 错误密码必须在 unlock 阶段就被拒绝，而不是延迟到第一次 `vault_get`。
 - verifier 比较必须是常量时间（禁止 `==` 直接比字符串）。
 
+
+### Issue #157: macOS runner 的 debug 远程冷启动偶发超出 10 秒产品门禁 📋 待观察（非代码回归）
+
+**现象**：run `41110383290`（sha `f74a33e`）的 macOS job 在第 3 步 `pnpm smoke:remote-cold-start` 失败：
+
+```
+terminal readiness did not complete within 10000 ms
+(last probe: {"readiness":null,"readinessTarget":"terminal","windowReady":false,"terminalReady":false,"markerReady":false})
+ELIFECYCLE Command failed with exit code 1.
+```
+
+**判定为非代码回归的证据**：
+- `git diff --name-only c454f0f f74a33e` 只列出 `docs/issue.md`、`scripts/run-terminal-shell-probe.mjs`、`scripts/run-terminal-shell-probe.test.mjs`；
+  其中**没有任何** `packages/frontend/src` 或 `src-tauri/src` 变更 —— 被测量的应用二进制与上一轮完全相同
+- 同一场景在 run `41109246774`（sha `c454f0f`，应用代码相同）上**成功**，整轮 macOS job 耗时 27.5 分钟
+- 本次 macOS job 仅 6.5 分钟即失败（18:51:13 → 18:57:47），失败在第 1 个证据场景
+
+**为什么不能靠调大超时"修复"**：10 秒是产品门禁（`docs/project.md` 记录 Phase 6.20/6.21「建立首次可靠终端 < 10 秒门禁」），
+不是随手设的安全值。而历史 debug 冷启动实测为 7207 / 4105 / 3740 ms —— **7.2 秒对 10 秒门禁只有 1.39 倍余量**。
+把门禁调大等于修改产品 SLO 来迁就共享 runner 的抖动，属于掩盖。
+
+**处置**：重新 dispatch 同一 workflow；若连续多轮仍是同一场景失败，再按 runner 镜像（`macos-26-arm64`，本次版本 `20261026.0455.2`）与
+冷启动耗时的分布单独分析，而不是放宽门禁。
+
+**注意**：失败后 workflow 仍会用 `|| true` 上传 `evidence-artifact`（本次 24,036,767 字节，明显小于成功轮的 ~37.5 MB）。
+**这种来自失败 run 的产物不能用于证据回填**——manifest 未重新生成，且场景不完整。
+
