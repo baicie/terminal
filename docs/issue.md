@@ -3536,3 +3536,45 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 
 
 
+
+### Issue #154: Vault 用 `fs::write` 直接落盘，change_password 失败会让旧密码失效 ✅ 已修复（2026-10-31）
+
+**严重程度**：Critical（数据丢失）
+
+**改前**：三条写路径（create / set+delete / change_password）都直接 `fs::write` 截断写。`change_password` 先覆盖内存里的 salt / entries / master_key 再写盘，一旦写盘失败，内存是新密钥、磁盘是旧盐旧密钥——旧密码解不开内存、新密码解不开磁盘，等同永久丢失。中途失败还会遗留半写入的正式 Vault 文件。
+
+**改后**：新增唯一下沉提交点 `vault.rs:183 commit()` → `vault.rs:235 write_atomic()`（全文仅此 1 个调用点）：
+- 同目录 `NamedTempFile` → `write_all` → `flush` →（Unix 收紧权限）→ `sync_all` → `persist`
+- Unix：`rename` 原子替换；Windows：`MoveFileExW(MOVEFILE_REPLACE_EXISTING)` 一次调用替换，不做 remove-then-rename（那会制造「没有 vault 文件」的窗口）
+- `change_password`：`self.commit(candidate)?` 成功后才 `self.master_key = *new_master_key`，持久化失败时旧密码仍可解锁原有数据
+- 临时文件权限 0600；已有文件更严（如 0400）则沿用，绝不放宽
+- 明文与密钥进 `Zeroizing`，`VaultState` 新增 `Drop` 擦 master_key；错误信息只拼「阶段 + 路径 + io::Error」
+
+**新增 11 个用例**（`src-tauri/src/vault_tests.rs`），故障注入含线程局部写入 budget、只读目录、目标占成目录、进程被杀留下的截断临时文件。存储格式未变，无迁移。
+
+**未闭合**：Windows 上的 `MoveFileExW` 语义由 vendored 源码确认，但**未在真实 Windows 上实机验证**；目标被其它进程独占时保存会失败（失败是安全的，原文件完好）。
+
+### Issue #152: Vault 解锁不校验密码，空 Vault 用任意密码都能「解锁成功」 📋 待修复
+
+**严重程度**：Important（安全 / 正确性）
+
+**现状**：存储格式为 `{salt, entries{key: base64(nonce||ciphertext)}}`，没有 verifier。`vault_unlock` 对错误密码返回 Ok，直到第一次 `vault_get` 才报 DecryptFailed；当 Vault 为空（无 entries）时，**任意密码都能解锁成功**。
+
+**影响**：空 Vault 上设错密码不会暴露；密码错误反馈延迟到首次读取，排障方向被误导。
+
+**修复需要**：在格式中引入 verifier（如按 master key 计算的校验块），并先实现向后兼容读取——旧格式（无 verifier）首次成功解锁时补写，否则现有用户 Vault 无法解锁。
+
+**未修复原因**：改动存储格式违反本轮「不得为重构破坏现有 Vault」的约束，需单独决策。
+
+### Issue #153: `vault_create` 会覆盖已存在的 vault.json 📋 待修复
+
+**严重程度**：Important（数据丢失）
+
+**现状**：后端 `vault_create` 没有存在性保护，直接写入；前端仅在 `vaultExists === false` 时调用，契约完全依赖调用方自律。
+
+**影响**：任何绕过前端的调用（脚本、未来 UI 变更、竞态）都会**成功地原子覆盖**旧 Vault，旧数据不可恢复。
+
+**现状缓解**：Phase 7.2 之后覆盖本身是原子的，失败不会留下半写文件——但成功的覆盖仍然是毁灭性的。
+
+**修复需要**：`vault_create` 在目标存在时返回明确错误，或增加显式 overwrite 参数；需同步前端契约与 UI。
+
