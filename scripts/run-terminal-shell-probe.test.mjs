@@ -359,3 +359,103 @@ test('runner cleans the temporary directory when the app emits an error', async 
     ],
   ])
 })
+
+// A result the app publishes after its own deadline is not a protocol
+// violation, and reporting it as one is what made every Linux zsh timeout in
+// run 41104738885 indistinguishable from a malformed payload.
+const TIMED_OUT = {
+  caseName: 'readline-history',
+  durationMs: 30_112,
+  error: 'terminal shell probe timed out',
+  inputEvents: [{ kind: 'text', bytes: 4, dataHex: '1b5b410d' }],
+  ok: false,
+  trace: ['ready', 'step', 'pass'],
+}
+
+test('a probe that reports its own timeout is not called a contract mismatch', () => {
+  assert.throws(
+    () => parseShellProbeResult(JSON.stringify(TIMED_OUT), 'readline-history'),
+    error => {
+      assert.match(
+        error.message,
+        /^Shell probe case failed: readline-history after 30112 ms/,
+      )
+      assert.match(
+        error.message,
+        /expected: ok=true, error=null, trace ready>step>pass/,
+      )
+      assert.match(
+        error.message,
+        /actual: ok=false, error="terminal shell probe timed out"/,
+      )
+      assert.match(
+        error.message,
+        /30112 ms is at or past the app's 30000 ms per-case deadline/,
+      )
+      assert.ok(error.message.includes('typed: 1 event(s): "\\u001b[A\\r"'))
+      assert.match(error.message, /not a contract mismatch$/)
+      return true
+    },
+  )
+})
+
+test('a fast failure is reported as an early verdict, not a deadline miss', () => {
+  const failed = {
+    ...TIMED_OUT,
+    caseName: 'readline-tab',
+    durationMs: 240,
+    error: 'shell-side probe reported failure',
+  }
+  assert.throws(
+    () => parseShellProbeResult(JSON.stringify(failed), 'readline-tab'),
+    /240 ms, well inside the app's 30000 ms per-case deadline/,
+  )
+})
+
+test('contract mismatch names the field that broke it', () => {
+  assert.throws(
+    () =>
+      parseShellProbeResult(JSON.stringify({ ...RESULT, durationMs: 0 }), 'cat-eof'),
+    /Invalid shell probe result: contract mismatch: durationMs is 0/,
+  )
+  assert.throws(
+    () =>
+      parseShellProbeResult(
+        JSON.stringify({ ...RESULT, caseName: 'readline-tab' }),
+        'cat-eof',
+      ),
+    error =>
+      error.message.includes(
+        'caseName is "readline-tab" but this run asked for',
+      ),
+  )
+})
+
+test('a failing result with no typed input still explains the failure', () => {
+  const failed = {
+    ...RESULT,
+    durationMs: 900,
+    error: 'local PTY failed',
+    inputEvents: [],
+    ok: false,
+  }
+  assert.throws(
+    () => parseShellProbeResult(JSON.stringify(failed), 'cat-eof'),
+    error =>
+      error.message.startsWith('Shell probe case failed: cat-eof after 900 ms') &&
+      error.message.includes('typed: 0 events (nothing reached the PTY)'),
+  )
+})
+
+test('a pass verdict without the interrupt byte names the byte it needed', () => {
+  const result = {
+    ...RESULT,
+    caseName: 'ctrl-c-interrupt',
+    trace: ['ready', 'step', 'pass'],
+  }
+  assert.throws(
+    () => parseShellProbeResult(JSON.stringify(result), 'ctrl-c-interrupt'),
+    error =>
+      error.message.includes('never carried the required "\\u0003" byte(s)'),
+  )
+})

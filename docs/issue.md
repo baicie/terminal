@@ -3592,7 +3592,9 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 
 **结论**：P7.0 的目标缺陷已在真实 Linux/Windows runner 上验证修复。Windows job 由 failure 转 success 是直接对照。
 
-**剩余问题不是 P7.0**：同一 run 的 Linux job 仍失败，但失败步骤是 `Run the real Linux shell interaction matrix`，错误为 `"Invalid shell probe result: contract mismatch"`（4 条用例），并伴随 `AT-SPI: Error retrieving accessibility bus address` 与 `libEGL warning: DRI3 error`。这与 **Issue #145** 记录的步骤与错误文案完全一致，属既有的托管 runner 图形/无障碍栈环境问题，与本次导入修复无关。
+**剩余问题不是 P7.0**：同一 run 的 Linux job 仍失败，但失败步骤是 `Run the real Linux shell interaction matrix`，错误为 `"Invalid shell probe result: contract mismatch"`（4 条用例），并伴随 `AT-SPI: Error retrieving accessibility bus address` 与 `libEGL warning: DRI3 error`。这与 **Issue #145** 记录的步骤与错误文案完全一致，但与本次导入修复无关。
+
+> **「环境性」定性已被 Issue #156 推翻（2026-11-01）**：失败集合在相隔 30 分钟的两次 run 中完全稳定——永远是同样三条 zsh 用例（readline-history / readline-tab / pty-resize）触到 30 秒 deadline；而 2026-10-17（`363e38f`）同一 workflow 同一 runner 上这三条是绿的（246 / 410 / 1341 ms）。绿基线距 30 秒预算有 20–120 倍余量，故**不是预算不足、也不是环境抖动**，而是这几条用例从未完成。定性应从「环境性」降级为「触发原因待定位」，详见 Issue #156。
 
 **注意**：`gh api .../jobs/{id}` 返回的步骤状态与最终日志不一致（API 把失败标在 "password authentication matrix in Docker" 且状态为 in_progress，而日志里的 `##[error]` 出自 shell interaction matrix）。**排查时以日志为准，不要以步骤级 API 为准。**
 
@@ -3615,3 +3617,52 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 2. `gh api .../runs/{id}/jobs` —— job 级结论的权威来源，但也要等 run `completed` 后再读；
 3. `gh api .../jobs/{job_id}` 的 steps —— 步骤状态可能与最终日志不一致（本例把失败标在 Docker 密码矩阵且状态 in_progress，而日志的 `##[error]` 出自 shell interaction matrix），**步骤级结论一律以日志为准**。
 
+
+---
+
+### Issue #156: shell probe 把「用例失败」报成「contract mismatch」，证据被丢弃；Linux zsh 三条用例确定性超时 🔄 部分修复（2026-11-01）
+
+**判定点**：`scripts/run-terminal-shell-probe.mjs` 的 `parseShellProbeResult`（改前 179–207 行）用一条 `if` 同时校验协议形状与判词：形状错误与 `value.ok !== true || value.error !== null` 共用同一个 `throw invalidResult('contract mismatch')`（原第 204 行）。前端 `experiments/terminal-shell-probe/automation-root.tsx:242-245` 在 30 s deadline 上 `publish(false, 'terminal shell probe timed out')`，`publish`（121–139 行）把 `ok:false` 与该 error 写入 `result.json`，于是**任何一次用例失败都会显示成 `Invalid shell probe result: contract mismatch`**，前端自己的错误文案、`durationMs`、实际键入字节全部被丢弃。这是 #145 三轮都没能定性的直接原因。
+
+**契约到底校验什么（改前）**：`caseName` 属于 7 条白名单、`durationMs` 正整数、`ok` 布尔、`error` 为 null 或字符串、`trace` 逐项等于 `CASE_TRACE` 表、`inputEvents` 为 1–512 条 `{bytes,dataHex,kind:'text'}` 且 `dataHex` 长度恰为 `bytes*2`、`ctrl-c-interrupt` 必须含原始 `0x03` 字节，最后 `ok` 必须为 true。其中 `trace` 一项是**空转**：`publish` 写的是 `expectedShellProbeTrace(config.caseName)`，即期望表原样回填，永远不可能与期望不符。
+
+**证据（run `41104738885` / Linux job `124231227267`，从日志时间戳与 `ok (n ms)` 实测）**：
+
+| case | 结果 | 耗时 |
+| --- | --- | --- |
+| `local/bash/readline-history` / `readline-tab` / `pty-resize` | ok | 269 / 509 / 1357 ms |
+| `local/zsh/readline-history` | contract mismatch | ~31.2 s（与下一条起始时间差） |
+| `local/zsh/readline-tab` | contract mismatch | ~31.1 s |
+| `local/zsh/pty-resize` | contract mismatch | ~31.0 s |
+| 其余 8 条（bash 4 条 + zsh `cat-eof`/`vim-edit`/`nano-edit`/`ctrl-c-interrupt`） | ok | 406–5151 ms |
+
+- 同一 run：`Run public-key smoke and reconnect smoke under Xvfb`、Linux Docker 密码矩阵、Windows PowerShell/cmd 矩阵、macOS job 全部 success。
+- run `41066493988`（sha `eac23fd`）**同三条、同文案**，同样各 ~31 s；bash 与 zsh 其余用例全绿。
+- run `39004204423`（2026-10-17，sha `363e38f`）同一 workflow 同一 job 这 14 条**全部通过**，其中三条 zsh 用例为 246 / 410 / 1341 ms。
+
+**归类**：
+- (b) 预算不足 —— **排除**。绿基线 246–1341 ms，30 s 有 20–120 倍余量；失败样本恰好卡在 deadline，说明用例**从未完成**（marker 要么立即出现要么永不出现），不是「慢一点」，调大 30 s 不可能把这三条变成 pass。
+- (c) 环境抖动 —— **基本排除**。同一 job 内 11/14 条正常、bash 同用例正常；失败集合在相隔 30 分钟的两次 run 里完全一致（永远是 zsh 这三条），而 10-17 的同一 runner 上它们是绿的；AT-SPI / DRI3 告警在绿 run 里同样出现。
+- (a) 真缺陷 —— **成立，但落在判定层而非 shell 期望层**。可证的是判定层把三种不同失败（应用自报超时 / shell 侧 FAIL 标记 / 形状错误）压成同一句 `contract mismatch`；zsh 这三条「为什么不完成」仍缺证据，恰恰因为旧输出丢掉了唯一能回答它的字段。故本次记 (a)，底层触发标 **BLOCKED_EXTERNAL（证据缺口）**，#145/#155 的「环境性抖动」结论应降级为待验证。
+
+**修复**（`scripts/run-terminal-shell-probe.mjs`）：
+1. 拆成 `protocolViolations()` 与 `caseFailure()`：只有真正的形状/标签违规才报 `Invalid shell probe result: contract mismatch: <字段级原因>`，逐条列出 keys / caseName / durationMs / ok / error / trace / inputEvents / 必需字节。
+2. 形状合法但 `ok!==true` 或 `error!==null` 的结果改报 `Shell probe case failed: <case> after <ms>`，附 expected vs actual、timing（是否触到 30 s deadline）、probe error、实际键入字节摘要（`JSON.stringify` 转义），并明确「协议合规，这是用例失败不是契约不匹配」。
+3. 结果文件根本没出现时的等待超时改为 `<case> shell probe result timed out after 60000 ms: the app never wrote result.json…`，带上 case 名。
+4. 失败结果允许 `inputEvents` 为空（原本会先撞形状错误盖掉真正原因）；`pass` 结果仍强制非空，且 `ctrl-c-interrupt` 仍强制含 `0x03`。
+
+**验证**：`node --test scripts/*.test.mjs` **246/246**（原 241，+5 条回归：应用自报超时、早失败、字段级 mismatch、空键入、缺 `0x03`）；`node scripts/check-source-size.mjs` **passed（558 files）**。**未在真实 Linux runner 上验证**（本机 macOS），下次 Linux job 的 `FAILED:` 行会直接给出上表原因。
+
+**仍缺的证据**：`automation-root.tsx` 的 `publish` 应记录**实际观察到的 marker 序列**而不是回填期望表。改该文件会动 fingerprints 路径、需重采 6 份证据，本轮不动，仅在此记录。
+
+**如何在完整图形栈环境复现（BLOCKED_EXTERNAL）**：
+
+```bash
+pnpm install --frozen-lockfile
+sudo apt-get install -y at-spi2-core dbus mesa-utils   # 补齐 AT-SPI 与软件 GL
+Xvfb :99 -screen 0 1280x1024x24 +extension GLX & export DISPLAY=:99
+dbus-run-session -- bash -lc 'gsettings set org.gnome.desktop.interface toolkit-accessibility true'
+pnpm smoke:shell-probe:matrix -- --shells zsh readline-history,readline-tab,pty-resize
+```
+
+对照实验：A) 上述完整栈；B) 追加 `LIBGL_ALWAYS_SOFTWARE=1`；C) 沿用 `xvfb-run -a`（无 GLX 扩展）。若三条在 A 下仍 ~30 s 不完成，则触发点不在图形/无障碍栈，而在 zsh 行编辑与 SIGWINCH 路径，按新输出的 `typed:` / `timing:` 字段继续定位。
