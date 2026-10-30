@@ -18,6 +18,8 @@ export default {
   'sftp.connectedTo': '已连接到 {{host}} ({{hostname}})',
   'sftp.loading': '加载中...',
   'sftp.transferQueued': '排队中',
+  'sftp.transferRunning': '传输中',
+  'sftp.transferCancelBlocked': '运行中无法取消',
   'sftp.transferCancelled': '已取消',
   'sftp.transferCancelQueued': '取消排队中的传输',
   'sftp.transferCancelUnsupported': '运行中的传输暂不支持取消：后端没有取消命令',

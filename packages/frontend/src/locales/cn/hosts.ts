@@ -11,6 +11,7 @@ export default {
   'hosts.sshHost': 'SSH 主机',
   'hosts.importFromFile': '从文件导入...',
   'hosts.noHosts': '未找到主机',
+  'hosts.noHostsYet': '还没有主机',
   'hosts.tryDifferentSearch': '尝试其他搜索词',
   'hosts.addFirstHost': '添加您的第一台主机开始使用',
   'hosts.inviteMembers': '邀请成员',

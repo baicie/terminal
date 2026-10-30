@@ -95,7 +95,9 @@ const TransferRow: React.FC<{ record: TransferRecord }> = ({ record }) => {
             size="icon"
             className="size-5 opacity-0 group-hover:opacity-100"
             onClick={() => cancelTransfer(record.id)}
+            aria-label={t('sftp.transferCancelQueued')}
             title={t('sftp.transferCancelQueued')}
+            data-testid="transfer-cancel-queued"
           >
             <Ban className="size-3" />
           </Button>
@@ -106,7 +108,9 @@ const TransferRow: React.FC<{ record: TransferRecord }> = ({ record }) => {
             size="icon"
             className="size-5"
             disabled
+            aria-label={t('sftp.transferCancelUnsupported')}
             title={t('sftp.transferCancelUnsupported')}
+            data-testid="transfer-cancel-blocked"
           >
             <Ban className="size-3" />
           </Button>
@@ -117,7 +121,9 @@ const TransferRow: React.FC<{ record: TransferRecord }> = ({ record }) => {
             size="icon"
             className="size-5 opacity-0 group-hover:opacity-100"
             onClick={() => removeTransfer(record.id)}
+            aria-label={t('common.delete')}
             title={t('common.delete')}
+            data-testid="transfer-remove"
           >
             <X className="size-3" />
           </Button>
@@ -127,12 +133,20 @@ const TransferRow: React.FC<{ record: TransferRecord }> = ({ record }) => {
         <>
           <Progress value={pct} className="h-1" />
           <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-            <span>{pct}%</span>
+            <span data-testid="transfer-status-running">
+              {t('sftp.transferRunning')} · {pct}%
+            </span>
             <span className="tabular-nums">
               {speed}
               {speed && eta && ' · '}
               {eta && t('sftp.transferEta', { eta })}
             </span>
+          </div>
+          <div
+            className="text-[10px] text-muted-foreground"
+            data-testid="transfer-cancel-hint"
+          >
+            {t('sftp.transferCancelBlocked')}
           </div>
         </>
       )}

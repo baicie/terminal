@@ -18,6 +18,8 @@ export default {
   'sftp.connectedTo': 'Connecté à {{host}} ({{hostname}})',
   'sftp.loading': 'Chargement...',
   'sftp.transferQueued': 'En file',
+  'sftp.transferRunning': 'Transfert en cours',
+  'sftp.transferCancelBlocked': 'Annulation impossible pendant le transfert',
   'sftp.transferCancelled': 'Annulé',
   'sftp.transferCancelQueued': 'Annuler le transfert en file',
   'sftp.transferCancelUnsupported':
