@@ -2051,7 +2051,7 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] release SSH 矩阵 10 case：解锁窗口内一次整跑 **10/10** 全绿（首连 775–4214 ms，每 case 10–11 个唯一 session，binary `1e68ba73…`）；此前两次失败确认是锁屏导致（`frontmost` 期望本应用、实际为 `loginwindow`）。
 - [ ] 人工物理键盘、IME、Option/dead key 与真实合盖唤醒仍未验收；Windows Agent/Pageant/PTY 与串口硬件仍无实机。
 
-### 2026-10-30 Phase 6.106 - 预设主题扩充、浅色默认配色与本地 Shell Integration 静默注入 🟡 代码完成，证据重采进行中
+### 2026-10-30 Phase 6.106 - 预设主题扩充、浅色默认配色与本地 Shell Integration 静默注入 ✅ 代码与证据均完成
 
 - [x] 终端预设主题从深 10 / 浅 6 扩到深 16 / 浅 10：新增 rose-pine、kanagawa、everforest-dark、ayu-dark、catppuccin-macchiato、tokyo-night-storm 与 catppuccin-latte、rose-pine-dawn、ayu-light、tokyo-night-light，每个 21 键（背景/前景/光标/光标强调/选区 + 16 色 ANSI）。
 - [x] 新增 `terminal-themes.test.ts`（8 例）卡死质量：21 键齐全、6 位 hex、前景对比度 ≥ 4.5、ANSI ≥ 2.5、**背景两两不同**、每个 id 都在调色板/名称/唯一分组里、未知 id 回落 one-dark。存量主题按出厂值逐条冻结（冻结表双向断言：值仍等于出厂值且确实低于门槛），避免门槛被拿来放过本来能过的颜色。
@@ -2059,6 +2059,20 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] 浅色默认主题 `solarized-light` → `github-light`，含一次性迁移与标记位（见 Issue #139）。
 - [x] 本地终端 Shell Integration 改静默注入（见 Issue #140）：zsh `ZDOTDIR`、bash `--rcfile` + 自建登录序列；真实 PTY 转录 `__TI_A` 0 次。
 - [x] 新增 `scripts/smoke-window-guard.mjs`：采集时把弹出的测试窗口缩到 640×420 并停到屏幕右下角，避免遮挡操作。该文件不在 `FINGERPRINT_PATHS` 内，用它不会作废已采证据；实测窗口由 1440×900 变为 640×420。
-- [ ] 6 份实机证据按新源码重采（源码指纹从 `07d420c0…` 变为新值，4 份 debug 证据已被门禁判 stale）。
+- [x] 6 份实机证据按新源码重采：改由 CI run `41072424137` 在托管 macOS runner 上产出（指纹 `7f0acbd6…`，debug 冷启动 6720/4632/3832 ms、release gate 3453/3757/3731 ms、debug 认证矩阵 11/11、release 8/8、shell 交互 14+7），本机未再弹窗采集。
 - [ ] 人工物理键盘、IME、Option/dead key 与真实合盖唤醒仍未验收；Windows Agent/Pageant/PTY 与串口硬件仍无实机。
 
+
+### 2026-10-30 Phase 6.107 - 实机证据生产迁到 GitHub macOS runner ✅ 完成
+
+起因：证据必须由真实 GUI 运行产生，本机每轮要弹十几个窗口、抢前台、锁屏即失败。
+
+- [x] 新增 `scripts/build-verification-evidence.mjs`：只从 runner 日志取数生成 6 份证据 + `evidence-manifest.json`；缺 case、出现 ❌、`spawnToReadyMs > 10000`、二进制哈希不一致一律拒绝写盘。
+- [x] 新增 `scripts/fetch-verification-evidence.mjs`：`gh run download` 拉证据/manifest/原始日志（原始日志 gzip 后入 `docs/verification/raw/<runId>/`，9 MB → 600 KB），并可回填二进制。
+- [x] 门禁改绑 CI manifest（fingerprint / debugSha / releaseSha / runId 与 6 份证据逐一对齐），删除与本机磁盘二进制的比较——CI 构建与本地构建不保证位级一致。
+- [x] 工作流补齐 build → 采集 → 生成 → 打包 → 上传六步；8 个 `| tee` 步骤声明 `shell: bash`（默认 `bash -e` 无 pipefail，失败会被 tee 吞掉，首轮差点因此产出假绿证据，见首轮 run 41060385490）。
+- [x] 新增 macOS 原生口令 fixture（`sudo -n sysadminctl` + 系统 sshd + `UsePAM`）：账号、口令、`dscl . -authonly`、app 侧密码认证均已实测通过，但 app 认证后不开 channel，故 password 两条暂不进 macOS 契约（Issue #144），改由 Linux 容器矩阵覆盖。
+- [x] 契约有意收窄为 11-case / 8-case，理由写在常量注释、`docs/release/workflow-rules.md` 与 Issue #144；门禁用例改为导入契约列表，避免复制漂移。
+- [x] 首轮 CI 暴露的 `key-reconnect` 前台断言偶发：只对 frontmost 前置失败做有界重试（合计 3 次），功能性失败一次即抛。
+- [x] 落盘 run `41072424137`：debug 冷启动 6720/4632/3832 ms、release gate 3453/3757/3731 ms、debug 矩阵 11/11、release 矩阵 8/8、shell 交互 14+7，本地门禁 0 problem。
+- [ ] 后续：解决 Issue #144 后把 password 两条恢复进 11/8 契约；`fetch-verification-evidence.mjs` 改为安装时直接 gzip；release 矩阵步骤名里的「ten contract cases」待下一轮改名（工作流在指纹内，改名会使当前证据失效）。

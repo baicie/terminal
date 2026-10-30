@@ -1,6 +1,9 @@
 # Logs
 logs
 *.log
+# The evidence bundle keeps the raw runner output so a reviewer can audit the
+# numbers in docs/verification/*.json; do not let the blanket *.log rule hide it.
+!docs/verification/raw/**
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

@@ -1,30 +1,30 @@
 {
-  "recordedAt": "2026-10-30T12:06:00.000Z",
+  "recordedAt": "2026-10-30T14:56:17.490Z",
   "recordedDate": "2026-10-30",
   "kind": "tauri-remote-cold-start-shell-prompt-observed-rerun",
   "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:remote-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal",
   "environment": {
-    "os": "macOS 15.7.7",
+    "os": "macOS 26.6.2",
     "architecture": "arm64",
-    "node": "22.12.0"
+    "node": "24.16.0"
   },
   "revision": {
-    "head": "main",
-    "commit": "cd30142",
-    "dirtyWorktree": true
+    "head": "",
+    "commit": "30f3722",
+    "dirtyWorktree": false
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "1d6b470b5267e7ce2cc65983db0e7568aafec2a34d23082fe4f62785d9b658a0"
+    "sha256": "ef6d7453ffc11cb76d6bac35da29c9a53aec915c1a524a177f4c6ed34b319f4d"
   },
   "application": {
-    "path": "/Users/liuzhiwei/Desktop/workspace/git-code/terminal/src-tauri/target/debug/terminal",
-    "pid": 30383
+    "path": "/Users/runner/work/terminal/terminal/src-tauri/target/debug/terminal",
+    "pid": 18591
   },
   "fixture": {
     "host": "127.0.0.1",
-    "port": 57739,
-    "username": "liuzhiwei"
+    "port": 49209,
+    "username": "runner"
   },
   "shell": "bash",
   "shellIntegration": "bash",
@@ -32,8 +32,8 @@
     "probe": "loopback sshd fixture prints an OSC 133 prompt; the app reports ready only after the remote prompt marker round-trip",
     "measuredFrom": "child-spawn-event",
     "readinessTarget": "terminal",
-    "spawnToPromptObservedMs": 4103,
-    "requestToPromptObservedMs": 4110,
+    "spawnToPromptObservedMs": 6332,
+    "requestToPromptObservedMs": 6337,
     "markerReady": true,
     "terminalReady": true,
     "windowReady": false,
@@ -41,23 +41,37 @@
     "underTenSeconds": true
   },
   "evidence": {
-    "markerPath": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-Ou8Hgs/sshd/home/REMOTE_COLD_MARKER",
-    "promptMarkerPath": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-Ou8Hgs/sshd/home/REMOTE_PROMPT_MARKER",
+    "markerPath": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/terminal-remote-cold-fixture-qyZdM6/sshd/home/REMOTE_COLD_MARKER",
+    "promptMarkerPath": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/terminal-remote-cold-fixture-qyZdM6/sshd/home/REMOTE_PROMPT_MARKER",
     "markerChecks": [
       {
-        "path": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-remote-cold-fixture-Ou8Hgs/sshd/home/REMOTE_PROMPT_MARKER",
+        "path": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/terminal-remote-cold-fixture-qyZdM6/sshd/home/REMOTE_PROMPT_MARKER",
         "content": "REMOTE_PROMPT_MARKER",
         "ready": true
       }
     ]
   },
   "source": {
-    "fingerprint": "f9186713fe83e3e9320b94c82d50eeaca477fe7b28975e77ec27c528573ea8e5",
-    "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs."
+    "fingerprint": "7f0acbd61d3991a67b4e3242a32e6a7efbc8837cba8a417574d802a7dbf82681",
+    "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs on the checked-out CI sources at evidence build time."
   },
   "limitations": [
-    "The fixture is a loopback sshd on this machine; it proves the remote prompt path, not a real network hop, VPN switch or jump host chain.",
+    "The fixture is a loopback sshd inside the runner; it proves the remote prompt path, not a real network hop, VPN switch or jump host chain.",
     "AX window readiness reports false in remote mode by design, so this record says nothing about window readiness timing.",
+    "Measured on a GitHub-hosted macOS virtual machine, not on developer hardware.",
     "Human physical keyboard typing, IME composition and real sleep/resume remain unverified."
-  ]
+  ],
+  "provenance": {
+    "source": "github-actions",
+    "runId": "41072424137",
+    "runAttempt": "1",
+    "workflow": "Real-machine terminal matrix",
+    "job": "macos-ssh-matrix",
+    "commit": "30f3722b1bcdb640dc469200f904019e1d3f5277",
+    "fingerprint": "7f0acbd61d3991a67b4e3242a32e6a7efbc8837cba8a417574d802a7dbf82681",
+    "runner": {
+      "os": "macOS",
+      "arch": "ARM64"
+    }
+  }
 }

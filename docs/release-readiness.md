@@ -259,24 +259,22 @@ macOS 走「先分架构编二进制、再用 `lipo` 合成 universal」的两�
 
 ## 当前源码实机证据重采顺序（runbook）
 
-证据门禁把 `scripts/check-verification-evidence.mjs` 与全部产品源码纳入源码指纹（见 `FINGERPRINT_PATHS`），所以顺序不能颠倒：先采集、后改代码，会让刚采的证据被自己的编辑作废。
+证据由 CI 产出，本机只负责下载与门禁。证据门禁把 `scripts/check-verification-evidence.mjs`、全部产品源码与 `FINGERPRINT_PATHS` 里的 runner/workflow 纳入源码指纹，所以顺序同样不能颠倒：**先改完代码 → 再派发 macOS 证据 job → 再下载**，采集之后再改任何 fingerprinted 文件都会让证据作废。
 
 > **采集时窗口会挡住操作**：运行器会主动把应用切到前台（`scripts/macos-frontmost.mjs` 的 frontmost 断言是「窗口真的在屏幕上」的判据，不能省），窗口本身是 `tauri.conf.json` 里的 1200×800 居中。若这套弹窗干扰手头工作，另开一个终端跑 `node scripts/smoke-window-guard.mjs`：它把测试窗口缩到 640×420 并挪到屏幕右下角（`--width/--height/--corner/--margin/--once` 可调）。该脚本**特意不在 `FINGERPRINT_PATHS` 内**，用它不会改变源码指纹、不会作废已采证据；它需要辅助功能权限，缺失时会直接告诉你该给哪个 app 授权。
 
 > **release SSH 矩阵必须显式给 10 个 case**：`scripts/run-terminal-smoke-matrix.mjs` 的 `CASES` 是 13 条，`--release` 并不过滤，而门禁的 `RELEASE_SSH_CASES` 只认 10 条（不含三个 outage case）。裸跑 `pnpm smoke:ssh-matrix --reuse-binary --release` 会跑 13 条、与证据字段对不上。正确写法是显式列出：`pnpm smoke:ssh-matrix --reuse-binary --release key key-reconnect password password-reconnect agent agent-reconnect cert cert-reconnect jump jump-reconnect`。
 
-1. **冻结源码**：所有 fingerprinted 路径的改动先落完（`packages/frontend/src`、`src-tauri/src`、`scripts/run-*.mjs`、门禁脚本本身等）。
-2. **重建 debug 产物**：`VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle`。两个前提缺一不可：必须是内嵌前端的产物（裸 `cargo build` 的二进制会读 `build.devUrl`，渲染空白窗口并 fail-closed），并且必须带 `VITE_TERMINAL_SMOKE_BUILD=1`——smoke/probe 入口与 experiments 导航项只有 smoke 构建才编进前端，普通构建的二进制会被 `scripts/run-terminal-smoke.mjs` 显式拒绝。release 侧同理用 `VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle`。记录两个产物的 `sha256`。
-3. **先改门禁再采集**：把上一步的哈希写进 `scripts/check-verification-evidence.mjs` 的 `PROFILE_REVIEWED_HASH['debug']`。这一步本身会改变源码指纹，因此必须排在采集之前。
-4. **采集 debug 证据**（同一个 binary，中途不得重链接或重构建）：
-   - `pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal` ×3 → `2026-10-11-macos-cold-start-current.json` 的 `measurement.terminalRuns` 需要 3 条 `readyAt: terminal`、`terminalReady: true`、`spawnToReadyMs ≤ 10000`。
-   - `pnpm smoke:ssh-matrix --reuse-binary` → 13 个 case 且名称顺序与门禁的 `DEBUG_SSH_CASES` 完全一致。
-   - `pnpm smoke:shell-probe:matrix -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt` → bash/zsh 各 7 共 14/14；再按同一 case 列表跑真实 SSH 7/7。
-   - `pnpm smoke:remote-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal` → `measurement.markerReady: true`。
-5. **采集 release 证据**：`pnpm tauri build` 后记录 release 产物哈希，再用 `pnpm smoke:cold-start`（3 次 terminal marker）与 release SSH 矩阵（**显式列 10 个 case**，见上）产出两份 release 证据。门禁会把 release 证据与磁盘上的 `src-tauri/target/release/terminal` 哈希逐一对齐。
-6. **最后跑 `pnpm verify`**：`source` 分组必须全绿。若仍报 fingerprint 不一致，说明第 1 步被破坏（采集期间又改了源码），必须回到第 2 步重来。
+1. **冻结源码**：所有 fingerprinted 路径的改动先落完（`packages/frontend/src`、`src-tauri/src`、`scripts/run-*.mjs`、`scripts/*-verification-evidence.mjs`、门禁脚本本身等），提交后再派发证据 job。
+2. **派发 macOS 证据 job**：`gh workflow run real-machine-matrix.yml`。该 job 在 runner 上完成原本手工的六步，顺序固定：`VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle` 并记下 debug 哈希 → 四个 debug 场景（本地冷启动 ×3、远程 prompt、11-case SSH 矩阵、本地 14 + 真实 SSH 7 shell 矩阵，各自 `2>&1 | tee` 到 `evidence-logs/`）→ `VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle` 并记下 release 哈希 → 两个 release 场景（本地冷启动 ×3、**显式列 8 个 case** 的 release SSH 矩阵）→ 生成六份证据与 `evidence-manifest.json` → 上传 `verification-evidence` 产物。
+   - 插桩前提不变：必须是内嵌前端的 `tauri build` 产物，且带 `VITE_TERMINAL_SMOKE_BUILD=1`；裸 `cargo build` 的二进制会被 runner 显式拒绝。所有场景都用 `--reuse-binary` / `--app-path` 复用第 1、3 步哈希过的产物，中途不得重链接。
+   - `scripts/build-verification-evidence.mjs` 是 fail-closed 的：任何 case 缺失、出现 ❌、`spawnToReadyMs > 10000`、或日志里的 `Measured <profile> binary <sha>` 与构建哈希不一致，它都会以非 0 退出且**一个文件都不写**。
+3. **下载并安装证据**：`node scripts/fetch-verification-evidence.mjs --latest`（或 `--run-id <id>`；`--with-binaries` 同时把两个产物放回 `src-tauri/target/{debug,release}/terminal`）。六份 JSON 与 manifest 进 `docs/verification/`，原始日志进 `docs/verification/raw/<runId>/`（两者一起提交）。
+4. **在本地跑门禁**：`node scripts/check-verification-evidence.mjs` 必须通过，然后 `pnpm verify` 的 `source` 分组全绿。若报 fingerprint 不一致，说明本地工作树不是证据对应的那次提交，先 `git checkout` 到该提交或重派发 job。
 
-证据 JSON 里的 `source.fingerprint`、`binary.sha256`、`measurement.*` 必须来自 runner 的真实输出，禁止手改或用历史数值填充。
+证据 JSON 里的 `source.fingerprint`、`binary.sha256`、`measurement.*`、`provenance.*` 全部由 `scripts/build-verification-evidence.mjs` 从 runner 输出与 GitHub 上下文写入，**禁止手改或用历史数值填充**；手写的文件会因为缺 `provenance` 或与 manifest 对不上而被门禁拒绝。
+
+> **已知限制（Issue #144）**：`password` / `password-reconnect` 依赖 `terminal-smoke-password-sshd` 的 Debian OpenSSH 容器（需要 Docker），而 GitHub 托管的 macOS runner 不提供 Docker。为此新增了 native 后端（`sudo -n sysadminctl` 建一次性账号 + 系统 sshd + `UsePAM`）：账号、口令、属性、`dscl . -authonly`、以及 **app 侧的密码认证**在 runner 上均已实测成功，但认证通过后 app 始终不 open channel，3 分钟后被 `rust-watchdog` 判超时。因此 macOS 证据契约**有意收窄为 11-case（debug）/ 8-case（release）**，这两条改由 Linux job 的容器矩阵覆盖（该步骤为绿）。恢复 13/10 的唯一路径是解决 #144，不是调整门禁。
 
 ### 六份证据的必填字段（门禁实际校验的部分）
 
@@ -286,8 +284,9 @@ macOS 走「先分架构编二进制、再用 `lipo` 合成 universal」的两�
 | `2026-10-11-macos-remote-shell-prompt-rerun.json` | `kind = tauri-remote-cold-start-shell-prompt-observed-rerun`；`measurement.markerReady: true` 且 `0 ≤ spawnToPromptObservedMs ≤ 10000`；`source.fingerprint` = 当前指纹 |
 | `2026-10-11-macos-ssh-matrix-current.json` | `allCasesPassed: true`，`cases` 名称顺序与门禁 `DEBUG_SSH_CASES`（key、key-reconnect、key-outage-reconnect、key-outage-wake-reconnect、key-first-connect-outage、password、password-reconnect、agent、agent-reconnect、cert、cert-reconnect、jump、jump-reconnect）完全一致且每条 `ok: true` |
 | `2026-10-11-macos-shell-interaction-current.json` | `matrixRunsExecuted = matrixRunsPassed = 14`、`cases` 中 bash 与 zsh 各自的 case 序列等于 `SHELL_PROBE_CASES` 且全部 `ok: true`；`sshRunsExecuted = sshRunsPassed = 7`、`sshCases` 序列等于 `SHELL_PROBE_CASES` 且全部 `ok: true`；`allCasesPassed: true` |
-| `2026-10-11-macos-release-terminal-gate.json` | `kind = tauri-release-ten-second-terminal-gate`；`local.terminalRuns` ≥3 且每条 terminal-ready、`spawnToReadyMs ≤ 10000`；记录里的二进制哈希必须等于磁盘 `src-tauri/target/release/terminal` |
+| `2026-10-11-macos-release-terminal-gate.json` | `kind = tauri-release-ten-second-terminal-gate`；`local.terminalRuns` ≥3 且每条 terminal-ready、`spawnToReadyMs ≤ 10000`；记录里的二进制哈希必须等于 manifest 的 `releaseSha` |
 | `2026-10-11-macos-release-ssh-matrix.json` | `kind = tauri-release-ssh-and-shell-matrix`；`sshMatrix.passed = 10`、`failed = 0`，`cases` 名称顺序等于门禁 `RELEASE_SSH_CASES` 且全部 `ok: true`；二进制哈希同上 |
+| 全部六份 | 每份都要有 `provenance: { source, runId, runAttempt, workflow, job, commit, fingerprint, runner }`，其 `runId` 等于 `evidence-manifest.json` 的 `runId`；manifest 的 `fingerprint` 等于当前源码指纹，`debugSha` / `releaseSha` 分别等于 4 份 debug、2 份 release 证据里的 `binarySha256` |
 
 `SHELL_PROBE_CASES` 顺序为：cat-eof、readline-history、readline-tab、vim-edit、nano-edit、pty-resize、ctrl-c-interrupt。
 

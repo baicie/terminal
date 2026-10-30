@@ -931,7 +931,7 @@ async function startSmokeFixtures({
   }
 }
 
-export async function runTerminalSmoke({
+async function runTerminalSmokeAttempt({
   cwd = PROJECT_ROOT,
   env = process.env,
   reconnect = false,
@@ -1157,6 +1157,79 @@ export async function runTerminalSmoke({
         await rendererHeartbeat?.close()
         await dependencies.rm(runDirectory, { recursive: true, force: true })
       }
+    }
+  }
+}
+
+export const FRONTMOST_RETRY_LIMIT = 2
+const FRONTMOST_PRECONDITION_FAILURE = /to be frontmost/
+
+/**
+ * True only for the frontmost precondition assertion.
+ *
+ * Retrying is licensed by that one failure and by nothing else: an
+ * authentication rejection, a timeout or a content mismatch is a result, and
+ * running the case again would turn "this is broken" into "eventually green".
+ */
+export function isFrontmostPreconditionFailure(error) {
+  const message = error instanceof Error ? error.message : String(error)
+  return FRONTMOST_PRECONDITION_FAILURE.test(message)
+}
+
+/**
+ * The label a retry line is prefixed with: the matrix case name when the caller
+ * passes one, otherwise the same name derived from the case's own options, so a
+ * log line never claims to be a case that did not run.
+ */
+export function smokeCaseLabel({
+  auth = 'key',
+  firstConnectOutageHoldMs,
+  hostWakeRequired = false,
+  label,
+  outageHoldMs,
+  reconnect = false,
+} = {}) {
+  if (typeof label === 'string' && label !== '') return label
+  if (firstConnectOutageHoldMs !== undefined) {
+    return `${auth}-first-connect-outage`
+  }
+  if (!reconnect) return auth
+  if (hostWakeRequired) return `${auth}-outage-wake-reconnect`
+  if (outageHoldMs !== undefined) return `${auth}-outage-reconnect`
+  return `${auth}-reconnect`
+}
+
+/**
+ * Runs one smoke case, retrying it a bounded number of times when — and only
+ * when — the window it just spawned never became frontmost.
+ *
+ * Nothing about the terminal is being tolerated here: on a hosted macOS runner
+ * another application sometimes keeps focus across all eight accessibility
+ * attempts, and that precondition is re-established by a fresh attempt, not by
+ * weakening the assertion. Every attempt is announced, and the attempt that
+ * finally passed is recorded on the result, so the evidence says how much of it
+ * was a retry.
+ */
+export async function runTerminalSmoke(options = {}) {
+  const attempts = FRONTMOST_RETRY_LIMIT + 1
+  const label = smokeCaseLabel(options)
+  let attempt = 1
+  for (;;) {
+    try {
+      const result = await runTerminalSmokeAttempt(options)
+      if (attempt === 1) return result
+      console.log(
+        `[${label}] attempt ${attempt}/${attempts} passed after a frontmost ` +
+          'precondition failure',
+      )
+      return { ...result, attempt, frontmostRetries: attempt - 1 }
+    } catch (error) {
+      if (!isFrontmostPreconditionFailure(error) || attempt >= attempts) throw error
+      console.log(
+        `[${label}] attempt ${attempt + 1}/${attempts} after a frontmost ` +
+          `precondition failure: ${error.message}`,
+      )
+      attempt += 1
     }
   }
 }
