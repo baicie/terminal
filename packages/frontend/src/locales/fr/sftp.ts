@@ -17,4 +17,9 @@ export default {
   'sftp.items': '{{count}} élément(s)',
   'sftp.connectedTo': 'Connecté à {{host}} ({{hostname}})',
   'sftp.loading': 'Chargement...',
+  'sftp.transferQueued': 'En file',
+  'sftp.transferCancelled': 'Annulé',
+  'sftp.transferCancelQueued': 'Annuler le transfert en file',
+  'sftp.transferCancelUnsupported':
+    "Les transferts en cours ne peuvent pas être annulés : le backend n'a pas de commande d'annulation",
 }

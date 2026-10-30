@@ -1,139 +1,194 @@
 /**
  * SFTP 传输服务
  *
- * 把 backend 的 `sftp_upload` / `sftp_download` 命令封装为带进度的高层 API。
- * 自动维护单一全局 `sftp-progress` 监听器，把事件分发到对应的 transfer 记录。
+ * 分层职责：
+ * - 本文件：后端执行端（Tauri IPC）、sftp-progress 监听器的单例初始化、上传/下载 API；
+ * - sftp-transfer-queue.ts：状态机、并发槽位预占、取消与移除策略。
  *
- * 并发控制：最多 `MAX_CONCURRENT` (3) 个传输同时运行。
- * 超出上限的传输进入排队状态，running 完成后自动出队并启动。
- *
- * Checksum 校验：传输完成后可通过 `verifyChecksum()` 验证完整性。
+ * 并发上限与状态转换由队列管理器统一裁决，本文件不重复判断并发。
  */
 import { useTransferQueue } from '@/store/transfer-queue'
 import { notify } from '@/service/notifications'
+import {
+  applyProgress,
+  completeTransfer,
+  configureTransferRunner,
+  failTransfer,
+  scheduleTransfer,
+  transferDisplayName,
+} from './sftp-transfer-queue'
 import type { SftpProgressPayload, TransferArgs } from './sftp-transfer-types'
 
+export {
+  MAX_CONCURRENT,
+  RUNNING_CANCEL_SUPPORTED,
+  cancelTransfer,
+  removeTransfer,
+  canTransition,
+  isTerminalStatus,
+  getTransferQueueDiagnostics,
+  __resetTransferQueueForTests,
+} from './sftp-transfer-queue'
+export type {
+  TransferCancelResult,
+  TransferRemoveResult,
+  TransferQueueDiagnostics,
+} from './sftp-transfer-queue'
 export { verifyChecksum } from './sftp-transfer-checksum'
-
-let listenerInstalled = false
 
 function detectTauri(): boolean {
   if (typeof window === 'undefined') return false
   return '__TAURI_INTERNALS__' in window || '__TAURI_INVOKE__' in window
 }
 
-async function ensureListener(): Promise<void> {
-  if (listenerInstalled || !detectTauri()) return
-  listenerInstalled = true
-  try {
+/** 后端执行端：默认实现走 Tauri IPC，测试注入假实现 */
+export interface TransferRuntime {
+  /** 是否存在需要监听 sftp-progress 的后端事件源 */
+  available: boolean
+  /** 安装进度监听器；失败必须抛出，不得静默 */
+  installProgressListener(
+    handler: (payload: SftpProgressPayload) => void,
+  ): Promise<void>
+  /** 发起后端传输；resolve 表示后端成功完成 */
+  run(id: string, args: TransferArgs): Promise<void>
+}
+
+const defaultRuntime: TransferRuntime = {
+  get available() {
+    return detectTauri()
+  },
+  async installProgressListener(handler) {
     const { listen } = await import('@tauri-apps/api/event')
-    await listen<SftpProgressPayload>('sftp-progress', evt => {
-      const { transferId, kind, bytesDone, bytesTotal, message } = evt.payload
-      const store = useTransferQueue.getState()
-      if (kind === 'progress') {
-        store.updateProgress(transferId, bytesDone, bytesTotal)
-      } else if (kind === 'done') {
-        store.updateProgress(transferId, bytesDone, bytesTotal)
-        store.finish(transferId, 'done')
-        // Concurrent: check if a queued transfer can start now
-        queueMicrotask(() => dispatchNext())
-      } else if (kind === 'error') {
-        store.finish(transferId, 'error', message ?? 'Transfer failed')
-        queueMicrotask(() => dispatchNext())
-      } else if (kind === 'checksum-start') {
-        store.initChecksum(transferId)
-      } else if (kind === 'checksum-progress') {
-        store.updateChecksumProgress(transferId, bytesDone, bytesTotal)
-      } else if (kind === 'checksum-done') {
-        // Use `side` field to determine whether this is local or remote checksum
-        const side = (evt.payload as SftpProgressPayload).side
-        const checksumSide = side === 'local' ? 'local' : 'remote'
-        store.setChecksumResult(transferId, checksumSide, {
-          success: true,
-          hash: message ?? undefined,
-        })
-      }
-    })
-  } catch (e) {
-    console.warn('[sftp-transfer] failed to install listener', e)
-    listenerInstalled = false
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Concurrent transfer queue
-// ---------------------------------------------------------------------------
-
-const MAX_CONCURRENT = 3
-
-/** 追踪每个待处理传输的调用参数，用于并发出队时重新发起 */
-const pendingTransfers = new Map<string, TransferArgs>()
-
-function basename(p: string): string {
-  const parts = p.split(/[\\/]+/)
-  return parts[parts.length - 1] || p
-}
-
-function runningCount(): number {
-  return useTransferQueue
-    .getState()
-    .transfers.filter(t => t.status === 'running').length
-}
-
-function dispatchNext(): void {
-  if (!detectTauri()) return
-  if (runningCount() >= MAX_CONCURRENT) return
-
-  const store = useTransferQueue.getState()
-  const queued = store.transfers.find(t => t.status === 'queued')
-  if (!queued) return
-
-  const args = pendingTransfers.get(queued.id)
-  if (!args) {
-    // No args stored — mark as running and skip (shouldn't happen)
-    store.updateProgress(queued.id, 0, queued.bytesTotal)
-    return
-  }
-
-  void startTransfer(queued.id, args)
-}
-
-async function startTransfer(id: string, args: TransferArgs): Promise<void> {
-  pendingTransfers.delete(id)
-
-  const { invoke } = await import('@tauri-apps/api/core')
-  const notifyName =
-    args.kind === 'upload'
-      ? (args.displayName ?? basename(args.localPath))
-      : (args.displayName ?? basename(args.remotePath))
-
-  try {
+    await listen<SftpProgressPayload>('sftp-progress', event =>
+      handler(event.payload),
+    )
+  },
+  async run(id, args) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const target = { transferId: id, sessionId: args.sessionId }
     if (args.kind === 'upload') {
       await invoke('sftp_upload', {
-        transferId: id,
-        sessionId: args.sessionId,
+        ...target,
         localPath: args.localPath,
         remotePath: args.remotePath,
       })
     } else {
       await invoke('sftp_download', {
-        transferId: id,
-        sessionId: args.sessionId,
+        ...target,
         remotePath: args.remotePath,
         localPath: args.localPath,
       })
     }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    useTransferQueue.getState().finish(id, 'error', msg)
-    void notify({
-      title: `${args.kind === 'upload' ? 'Upload' : 'Download'} failed · ${notifyName}`,
-      body: msg,
-      type: 'error',
-    })
-  }
+  },
+}
 
-  queueMicrotask(() => dispatchNext())
+let runtime: TransferRuntime = defaultRuntime
+
+export function configureTransferRuntime(next: TransferRuntime | null): void {
+  runtime = next ?? defaultRuntime
+}
+
+// ---------------------------------------------------------------------------
+// sftp-progress 监听器：单个 Promise 做并发初始化
+// ---------------------------------------------------------------------------
+
+let listenerPromise: Promise<boolean> | null = null
+let listenerError: string | null = null
+
+export function getProgressListenerError(): string | null {
+  return listenerError
+}
+
+async function installProgressListener(): Promise<boolean> {
+  try {
+    await runtime.installProgressListener(handleProgressEvent)
+    listenerError = null
+    return true
+  } catch (error) {
+    listenerError = error instanceof Error ? error.message : String(error)
+    listenerPromise = null // 允许下次重试，但绝不静默
+    console.warn('[sftp-transfer] failed to install progress listener', error)
+    return false
+  }
+}
+
+/** 幂等初始化：并发调用共享同一个 Promise，不会重复建监听器 */
+export function ensureProgressListener(): Promise<boolean> {
+  if (!runtime.available) return Promise.resolve(true)
+  if (!listenerPromise) listenerPromise = installProgressListener()
+  return listenerPromise
+}
+
+export function __resetProgressListenerForTests(): void {
+  listenerPromise = null
+  listenerError = null
+}
+
+/** 后端事件入口：重复/乱序/迟到事件由队列管理器的状态机过滤 */
+export function handleProgressEvent(payload: SftpProgressPayload): void {
+  const store = useTransferQueue.getState()
+  switch (payload.kind) {
+    case 'progress':
+      applyProgress(payload.transferId, payload.bytesDone, payload.bytesTotal)
+      return
+    case 'done':
+      completeTransfer(payload.transferId, payload.bytesDone, payload.bytesTotal)
+      return
+    case 'error':
+      failTransfer(payload.transferId, payload.message ?? 'Transfer failed')
+      return
+    case 'checksum-start':
+      store.initChecksum(payload.transferId)
+      return
+    case 'checksum-progress':
+      store.updateChecksumProgress(
+        payload.transferId,
+        payload.bytesDone,
+        payload.bytesTotal,
+      )
+      return
+    case 'checksum-done':
+      store.setChecksumResult(
+        payload.transferId,
+        payload.side === 'local' ? 'local' : 'remote',
+        { success: true, hash: payload.message ?? undefined },
+      )
+      return
+    default:
+      return
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 对外 API
+// ---------------------------------------------------------------------------
+
+/** 监听器装不上时把传输记为明确失败，绝不让它静默地失去事件反馈 */
+async function prepareChannel(args: TransferArgs): Promise<boolean> {
+  if (runtime.available && (await ensureProgressListener())) return true
+  const reason = runtime.available
+    ? `Transfer event listener unavailable: ${listenerError ?? 'unknown error'}`
+    : 'Tauri runtime not available'
+  const store = useTransferQueue.getState()
+  const id = store.enqueue(
+    {
+      id: '',
+      kind: args.kind,
+      name: transferDisplayName(args),
+      localPath: args.localPath,
+      remotePath: args.remotePath,
+      sessionId: args.sessionId,
+      bytesTotal: args.bytesTotal,
+    },
+    true,
+  )
+  failTransfer(id, reason)
+  void notify({
+    title: `Transfer blocked · ${transferDisplayName(args)}`,
+    body: reason,
+    type: 'error',
+  })
+  return false
 }
 
 export async function uploadFile({
@@ -149,49 +204,16 @@ export async function uploadFile({
   displayName?: string
   bytesTotal?: number
 }): Promise<void> {
-  await ensureListener()
-  const store = useTransferQueue.getState()
-  const name = displayName ?? basename(localPath)
-
-  const id = store.enqueue(
-    {
-      id: '',
-      kind: 'upload',
-      name,
-      localPath,
-      remotePath,
-      sessionId,
-      bytesTotal,
-    },
-    true,
-  ) // always start in queued; dispatchNext starts it if room available
-
-  if (!detectTauri()) {
-    store.finish(id, 'error', 'Tauri runtime not available')
-    return
-  }
-
-  pendingTransfers.set(id, {
+  const args: TransferArgs = {
     kind: 'upload',
     sessionId,
     localPath,
     remotePath,
     displayName,
     bytesTotal,
-  })
-
-  // If at concurrency limit, the record is already queued from the first enqueue call.
-  // dispatchNext() will start it when a slot frees.
-  if (runningCount() < MAX_CONCURRENT) {
-    void startTransfer(id, {
-      kind: 'upload',
-      sessionId,
-      localPath,
-      remotePath,
-      displayName,
-      bytesTotal,
-    })
   }
+  if (!(await prepareChannel(args))) return
+  scheduleTransfer(args)
 }
 
 export async function downloadFile({
@@ -207,70 +229,36 @@ export async function downloadFile({
   displayName?: string
   bytesTotal?: number
 }): Promise<void> {
-  await ensureListener()
-  const store = useTransferQueue.getState()
-  const name = displayName ?? basename(remotePath)
-
-  const id = store.enqueue(
-    {
-      id: '',
-      kind: 'download',
-      name,
-      localPath,
-      remotePath,
-      sessionId,
-      bytesTotal,
-    },
-    true,
-  )
-
-  if (!detectTauri()) {
-    store.finish(id, 'error', 'Tauri runtime not available')
-    return
-  }
-
-  pendingTransfers.set(id, {
+  const args: TransferArgs = {
     kind: 'download',
     sessionId,
     remotePath,
     localPath,
     displayName,
     bytesTotal,
-  })
-
-  if (runningCount() < MAX_CONCURRENT) {
-    void startTransfer(id, {
-      kind: 'download',
-      sessionId,
-      remotePath,
-      localPath,
-      displayName,
-      bytesTotal,
-    })
   }
+  if (!(await prepareChannel(args))) return
+  scheduleTransfer(args)
 }
 
-/**
- * 批量上传（并发最多 MAX_CONCURRENT 个）。
- * 超出并发上限的文件自动进入排队状态，running 完成后自动启动。
- */
+/** 批量上传：并发上限由队列管理器强制，超出的任务停留在 queued */
 export async function uploadPaths(args: {
   sessionId: string
   remoteDir: string
   localPaths: string[]
 }): Promise<void> {
   const { sessionId, remoteDir, localPaths } = args
-
   const uploads = localPaths.map(localPath => {
-    const name = basename(localPath)
+    const parts = localPath.split(/[\\/]+/)
+    const name = parts[parts.length - 1] || localPath
     const remotePath = `${remoteDir.replace(/\/+$/, '')}/${name}`
     return { localPath, remotePath, name }
   })
-
-  // 同时发起所有上传，并发控制由 uploadFile 内部处理
   await Promise.allSettled(
     uploads.map(({ localPath, remotePath, name }) =>
       uploadFile({ sessionId, localPath, remotePath, displayName: name }),
     ),
   )
 }
+
+configureTransferRunner((id, args) => runtime.run(id, args))
