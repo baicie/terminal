@@ -3666,3 +3666,45 @@ pnpm smoke:shell-probe:matrix -- --shells zsh readline-history,readline-tab,pty-
 ```
 
 对照实验：A) 上述完整栈；B) 追加 `LIBGL_ALWAYS_SOFTWARE=1`；C) 沿用 `xvfb-run -a`（无 GLX 扩展）。若三条在 A 下仍 ~30 s 不完成，则触发点不在图形/无障碍栈，而在 zsh 行编辑与 SIGWINCH 路径，按新输出的 `typed:` / `timing:` 字段继续定位。
+
+#### Issue #152 / #153 实现规格（待落地，2026-11-01 设计）
+
+**约束**：现有用户的 Vault 必须仍能解锁。因此 verifier 是**可选字段**，读取路径必须先兼容旧格式。
+
+**1. 格式扩展（向后兼容）**
+
+```rust
+struct VaultConfig {
+    salt: String,
+    entries: HashMap<String, String>,
+    /// 缺失 = 旧格式（无 verifier）。新增文件一定写入。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    verifier: Option<String>,
+}
+```
+
+verifier = `base64(HMAC-SHA256(master_key, "terminal-vault-verifier-v1" || salt))`。
+复用仓库已有的 HMAC/SHA-256 依赖（`storage.rs` 已在用 HmacSha256），不引入新密码学。
+
+**2. 解锁路径**
+
+| 情形 | 行为 |
+| --- | --- |
+| 有 verifier | 由 salt 派生 key → 计算 verifier → **常量时间比较**。不符即 `InvalidPassword`。这一条消除「空 Vault 任意密码都能解锁」 |
+| 无 verifier、entries 非空 | 由 salt 派生 key → 解密任意一条 entry 验证。成功即密码正确，**立即原子重写成带 verifier 的格式**（迁移发生在首次成功解锁，无需单独迁移步骤） |
+| 无 verifier、entries 为空 | 旧格式的空 Vault 没有任何可用校验材料，**无法验证**。保持兼容：接受本次输入并在写入时补上 verifier；此后每次解锁都走校验。此窗口必须写进文档，标为已接受的兼容代价 |
+
+**3. change_password**：先用上述规则验证旧密码（有 verifier 走 verifier，无则走条目解密），再走现有 `commit(candidate)?` 提交边界。
+
+**4. Issue #153（create 覆盖）**
+
+- `vault_create` 在目标存在时返回 `VaultError::AlreadyExists`，不写盘；新增 `overwrite: bool`（默认 false）供显式覆盖。
+- 前端当前只在 `vaultExists === false` 时调用，故正常路径不需要改；但契约变了，必须补一条前端测试证明「已存在时不调用 create」，以及一条 Rust 测试证明「存在时拒绝且旧文件字节不变」。
+- 这条会同时改动 Rust 命令签名与前端 service 契约，属跨栈变更，落地时需一起提交。
+
+**5. 落地后的验证要求**
+
+- 旧格式文件（无 verifier）必须仍能解锁：用 `vault_tests.rs` 里现有的历史 schema 反序列化用例扩展，断言解锁成功且文件被重写为带 verifier 的格式。
+- 错误密码必须在 unlock 阶段就被拒绝，而不是延迟到第一次 `vault_get`。
+- verifier 比较必须是常量时间（禁止 `==` 直接比字符串）。
+
