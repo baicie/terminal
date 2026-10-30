@@ -10,7 +10,7 @@ import type {
   UpdateDialogTerminalSetting,
 } from './terminal-settings-types'
 
-const darkThemes = [
+export const darkThemes = [
   'one-dark',
   'monokai',
   'dracula',
@@ -21,14 +21,24 @@ const darkThemes = [
   'gruvbox-dark',
   'tokyo-night',
   'night-owl',
+  'rose-pine',
+  'kanagawa',
+  'everforest-dark',
+  'ayu-dark',
+  'catppuccin-macchiato',
+  'tokyo-night-storm',
 ] as const
-const lightThemes = [
+export const lightThemes = [
   'solarized-light',
   'github-light',
   'monokai-light',
   'one-light',
   'dracula-pro-light',
   'papercolor-light',
+  'catppuccin-latte',
+  'rose-pine-dawn',
+  'ayu-light',
+  'tokyo-night-light',
 ] as const
 export function TerminalThemePanel({
   settings,
@@ -41,7 +51,7 @@ export function TerminalThemePanel({
   const activeTheme =
     activeTab === 'dark'
       ? (settings.terminalThemeDark ?? 'one-dark')
-      : (settings.terminalThemeLight ?? 'solarized-light')
+      : (settings.terminalThemeLight ?? 'github-light')
   const colors = useMemo(
     () =>
       activeTheme === 'custom' && settings.customTerminalTheme
@@ -170,7 +180,7 @@ export function TerminalThemePanel({
         />
         <TerminalThemeGrid
           themes={lightThemes}
-          selected={settings.terminalThemeLight ?? 'solarized-light'}
+          selected={settings.terminalThemeLight ?? 'github-light'}
           title="Light Mode Themes"
           icon={Sun}
           onSelect={selectTheme}

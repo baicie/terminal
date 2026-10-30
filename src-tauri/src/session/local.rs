@@ -3,6 +3,7 @@
 //! 使用 portable-pty 实现本地 PTY 会话。
 
 use super::lifecycle::{SessionCompletion, SessionLifecycle};
+use super::shell_startup::{ShellFlavor, ShellStartup};
 use super::terminal_output::{emit_terminal_error, spawn_session_output_pump, TerminalOutputChunk};
 use super::types::{validate_terminal_size, SessionError, SessionType, TerminalProfile};
 use parking_lot::Mutex as ParkingMutex;
@@ -26,6 +27,8 @@ pub struct LocalPtyState {
     child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
     /// 可在线程间安全复制的终止句柄。
     child_killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
+    /// 本次会话的 shell 启动文件；Drop 时删除临时目录。
+    startup: Option<ShellStartup>,
     /// 写入器（需要 Mutex 保护因为 Write 不是 Sync）
     writer: Arc<ParkingMutex<Box<dyn std::io::Write + Send + 'static>>>,
     /// 是否存活
@@ -54,6 +57,7 @@ struct LocalPtyResources {
     reader: Box<dyn std::io::Read + Send + 'static>,
     writer: Box<dyn std::io::Write + Send + 'static>,
     startup_command: Option<String>,
+    startup: Option<ShellStartup>,
 }
 
 fn spawn_local_read(
@@ -107,14 +111,38 @@ fn setup_pty(
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
     };
 
+    // The frontend already parses OSC 133/7 in every terminal, but nothing
+    // emitted those sequences, so prompt, command and cwd tracking were inert.
+    // The hook arrives through the files the shell reads at startup instead of
+    // being typed into the PTY, which echoed the whole script on screen. The
+    // shell is identified from the executable actually being launched rather
+    // than from `CommandBuilder::get_shell`, which answers with the user's login
+    // shell and would hand bash the hook when zsh is the one being started.
+    let flavor = shell_integration_enabled()
+        .then(|| ShellFlavor::of(&shell))
+        .flatten();
+    // The wrapper takes over ZDOTDIR, so it needs the value it replaces: the
+    // user's rc files may live there instead of in $HOME.
+    let previous_zdotdir = profile
+        .as_ref()
+        .and_then(|profile| profile.environment.get("ZDOTDIR").cloned())
+        .or_else(|| std::env::var("ZDOTDIR").ok());
+    let startup =
+        flavor.and_then(|flavor| prepare_shell_startup(flavor, previous_zdotdir.as_deref()));
+
     let mut command = CommandBuilder::new(&shell);
+    if let Some(startup) = &startup {
+        // bash rejects long options that follow short ones, so `--rcfile` has
+        // to be queued before any short flag could be appended.
+        for arg in startup.args() {
+            command.arg(arg);
+        }
+    }
+    // bash never reads `--rcfile` as a login shell, so the wrapper is only
+    // reachable once `-l` is dropped for it; zsh resolves the wrapper through
+    // ZDOTDIR in every mode and keeps the flag its login files need.
     #[cfg(unix)]
-    if matches!(
-        std::path::Path::new(&shell)
-            .file_name()
-            .and_then(|name| name.to_str()),
-        Some("zsh" | "bash" | "sh" | "fish")
-    ) {
+    if supports_login_flag(&shell) && !(flavor == Some(ShellFlavor::Bash) && startup.is_some()) {
         command.arg("-l");
     }
     if is_powershell_executable(&shell) {
@@ -129,26 +157,24 @@ fn setup_pty(
             command.env(name, value);
         }
     }
-    let startup_command = profile.and_then(|profile| profile.startup_command);
-    // The frontend already parses OSC 133/7 in every terminal, but nothing
-    // emitted those sequences, so prompt, command and cwd tracking were inert.
-    // The decision is made from the shell actually being launched rather than
-    // from `CommandBuilder::get_shell`, which answers with the user's login
-    // shell and would hand bash the snippet when zsh is the one being started.
-    let startup_command = match shell_integration_enabled()
-        .then(|| shell_integration_script(&shell))
-        .flatten()
-    {
-        Some(script) => {
-            command.env("TERMINAL_SHELL_INTEGRATION", "1");
-            Some(match startup_command {
-                Some(existing) => format!("{script}\n{existing}"),
-                None => script,
-            })
+    if let Some(startup) = &startup {
+        // Applied after the profile environment so a profile-level ZDOTDIR
+        // cannot point the shell away from the wrapper.
+        for (name, value) in startup.env() {
+            command.env(name, value);
         }
-        None => startup_command,
-    };
-    setup_pty_with_command(cols, rows, command, startup_command)
+        command.env("TERMINAL_SHELL_INTEGRATION", "1");
+        tracing::debug!(
+            shell = %shell,
+            wrapper = %startup.directory().display(),
+            "shell integration injected through startup files"
+        );
+    }
+
+    // A user startup command is a command to run once the shell is up, not
+    // shell configuration, so it keeps travelling through the PTY.
+    let startup_command = profile.and_then(|profile| profile.startup_command);
+    setup_pty_with_command(cols, rows, command, startup_command, startup)
 }
 
 fn is_powershell_executable(shell: &str) -> bool {
@@ -160,7 +186,7 @@ fn is_powershell_executable(shell: &str) -> bool {
 /// Shell integration is on by default and switched off by setting
 /// `TERMINAL_SHELL_INTEGRATION=0` in the environment.
 ///
-/// The snippet is injected into the user's interactive shell, so a user whose
+/// The hook is injected into the user's interactive shell, so a user whose
 /// setup conflicts with it needs a way out that does not require rebuilding.
 /// Any other value, including an unset one, leaves it enabled.
 fn shell_integration_enabled() -> bool {
@@ -170,61 +196,31 @@ fn shell_integration_enabled() -> bool {
     )
 }
 
-/// Returns the shell-integration snippet for the shell `command` launches, or
-/// `None` when that shell has no supported hook and must be left alone.
-///
-/// The emitted sequences are the ones the frontend already parses: OSC 133
-/// A/B/C/D for the prompt and command phases, and OSC 7 with a `file://` URL
-/// for the working directory. The frontend's `parseCwd` rejects anything that
-/// is not a `file:` URL, which is why the path is percent-encoded as a URI
-/// rather than written raw.
-///
-/// The snippet is emitted as a single line because it is written into a live
-/// PTY; a multi-line string would leave a continuation prompt on screen and
-/// change what the user sees at startup.
-fn shell_integration_script(shell: &str) -> Option<String> {
-    match std::path::Path::new(shell)
-        .file_name()
-        .and_then(|name| name.to_str())
-    {
-        Some("bash") => Some(bash_shell_integration()),
-        Some("zsh") => Some(zsh_shell_integration()),
-        _ => None,
+/// Returns the startup wrapper for `flavor`, or `None` when it cannot be
+/// written. A terminal without prompt markers still works, so losing them is a
+/// lesser failure than refusing to start the session.
+fn prepare_shell_startup(
+    flavor: ShellFlavor,
+    previous_zdotdir: Option<&str>,
+) -> Option<ShellStartup> {
+    match ShellStartup::prepare(flavor, previous_zdotdir) {
+        Ok(startup) => Some(startup),
+        Err(error) => {
+            tracing::warn!(?flavor, %error, "failed to prepare silent shell integration");
+            None
+        }
     }
 }
 
-/// Wraps the existing `PROMPT_COMMAND` list instead of overwriting it, so
-/// shell integration composes with whatever the user's own rc files already
-/// hook instead of silently disabling it.
-fn bash_shell_integration() -> String {
-    // Verified against a real interactive bash on a PTY: the DEBUG trap fires
-    // `133;D;<status>` at prompt time, then `133;A`, then the OSC 7 cwd.
-    // PROMPT_COMMAND is prepended to rather than replaced so an existing hook
-    // keeps running, and PS1 is left untouched so the prompt survives.
-    //
-    // A `trap ... DEBUG` would be the only way to emit `133;B`, and it is
-    // deliberately not used: bash has no additive trap, so setting one
-    // silently replaces whatever the user's own rc already installed. A real
-    // bashrc with a DEBUG trap was verified to lose it -- and with it every
-    // `133;B` -- while `133;A`, `133;D` and the cwd kept working without the
-    // trap. Since `command-start` only feeds an internal phase field with no
-    // consumer, trading a user's own tooling for it is the wrong deal.
-    "__TI_A(){ printf '\\033]133;D;%s\\007' \"$?\"; printf '\\033]133;A\\007'; printf '\\033]7;file://%s\\007' \"$PWD\"; }; \
-     PROMPT_COMMAND=\"__TI_A${PROMPT_COMMAND:+;$PROMPT_COMMAND}\""
-        .to_string()
-}
-
-fn zsh_shell_integration() -> String {
-    // Verified against a real interactive zsh on a PTY. `add-zsh-hook` appends,
-    // so the user's own precmd/preexec hooks keep running. Passing the hook a
-    // quoted string instead of a function name fails with "function definition
-    // file not found", so both hooks are named functions.
-    "__TI_A(){ printf '\\033]133;D;%s\\007' \"$?\"; printf '\\033]133;A\\007'; printf '\\033]7;file://%s\\007' \"$PWD\"; }; \
-     __TI_B(){ printf '\\033]133;B\\007'; }; \
-     autoload -Uz add-zsh-hook; \
-     add-zsh-hook precmd __TI_A; \
-     add-zsh-hook preexec __TI_B"
-        .to_string()
+/// Shells that were handed `-l` before the hooks were injected.
+#[cfg(unix)]
+fn supports_login_flag(shell: &str) -> bool {
+    matches!(
+        std::path::Path::new(shell)
+            .file_name()
+            .and_then(|name| name.to_str()),
+        Some("zsh" | "bash" | "sh" | "fish")
+    )
 }
 
 fn setup_pty_with_command(
@@ -232,6 +228,7 @@ fn setup_pty_with_command(
     rows: u16,
     mut command: CommandBuilder,
     startup_command: Option<String>,
+    startup: Option<ShellStartup>,
 ) -> Result<LocalPtyResources, SessionError> {
     validate_terminal_size(cols, rows)?;
     command.env("TERM", "xterm-256color");
@@ -274,6 +271,7 @@ fn setup_pty_with_command(
         reader,
         writer,
         startup_command,
+        startup,
     })
 }
 
@@ -325,6 +323,7 @@ impl LocalSession {
             reader,
             writer,
             startup_command,
+            startup,
         } = resources;
 
         // 创建关闭信号 channel
@@ -344,6 +343,7 @@ impl LocalSession {
             child_killer,
             writer: Arc::new(ParkingMutex::new(writer)),
             is_alive: true,
+            startup,
             shutdown_tx,
             read_handle: read_handle.clone(),
         }));
@@ -723,6 +723,11 @@ async fn finish_local_session(
         }
     }
 
+    // The wrapper only has to outlive shell startup, and the session that owns
+    // it ends here, so the temporary directory goes with it.
+    let startup = state.lock().await.startup.take();
+    drop(startup);
+
     lifecycle.complete();
 }
 
@@ -737,55 +742,151 @@ pub(in crate::session) mod tests {
     #[cfg(unix)]
     use rustix::termios::{tcgetattr, LocalModes};
 
+    #[cfg(unix)]
     #[test]
-    fn shell_integration_snippets_stay_on_one_line_and_emit_the_parsed_sequences() {
-        // The snippet is written into a live PTY, so a newline would leave the
-        // user at a continuation prompt instead of a shell. Every sequence the
-        // frontend parses has to appear literally, because that parser is the
-        // only consumer and it does not tolerate a variant spelling.
-        for script in [bash_shell_integration(), zsh_shell_integration()] {
-            assert!(!script.contains('\n'), "script must stay on one line");
-            assert!(script.contains("133;D;%s"));
-            assert!(script.contains("133;A"));
-            assert!(script.contains("7;file://%s"));
-            // bash has no additive DEBUG trap, so installing one would replace
-            // whatever the user's rc already set. Losing a user's own trap to
-            // gain a `133;B` that nothing consumes is a bad trade.
-            assert!(!script.contains("trap "));
-            // PS1 must never be reassigned: overwriting it would replace the
-            // user's prompt instead of hooking alongside it.
-            assert!(!script.contains("PS1="));
-        }
-    }
-
-    #[test]
-    fn print_shell_integration_snippets_for_manual_pty_verification() {
-        // Not an assertion: this exists so the exact strings the app injects can
-        // be dumped and replayed against a real interactive shell on a PTY,
-        // which is the only way to prove the quoting survives a live shell.
-        if std::env::var_os("TERMINAL_DUMP_SHELL_INTEGRATION").is_none() {
+    fn zsh_shell_integration_is_silent_and_still_emits_the_parsed_sequences() {
+        let Some(shell) = usable_shell("/bin/zsh") else {
+            eprintln!("zsh is not installed; skipping the PTY check");
             return;
-        }
-        for (name, script) in [
-            ("bash", bash_shell_integration()),
-            ("zsh", zsh_shell_integration()),
-        ] {
-            println!("SNIPPET_{name}={script}");
-        }
+        };
+        let (transcript, wrapper) = shell_integration_transcript(
+            &shell,
+            ShellFlavor::Zsh,
+            "export TI_RC_MARKER=rc-sourced\nalias ti_alias_marker='echo ALIAS_OK'\n",
+        );
+        assert_silent_shell_integration(&transcript);
+        assert!(
+            !wrapper.exists(),
+            "the wrapper must be gone once the shell has exited"
+        );
     }
 
+    #[cfg(unix)]
     #[test]
-    fn shell_integration_is_offered_only_for_shells_with_a_supported_hook() {
-        // A shell that cannot parse the snippet has to be launched untouched
-        // rather than be handed a script it would report as a syntax error.
-        assert!(shell_integration_script("/bin/bash").is_some());
-        assert!(shell_integration_script("/usr/local/bin/zsh").is_some());
-        // `-l` is appended for these shells, so the snippet has to be found
-        // from a bare name as well as an absolute path.
-        assert!(shell_integration_script("bash").is_some());
-        assert!(shell_integration_script("/bin/fish").is_none());
-        assert!(shell_integration_script("/bin/sh").is_none());
-        assert!(shell_integration_script("C:\\Windows\\System32\\cmd.exe").is_none());
+    fn bash_shell_integration_is_silent_and_still_emits_the_parsed_sequences() {
+        let Some(shell) = usable_shell("/bin/bash") else {
+            eprintln!("bash is not installed; skipping the PTY check");
+            return;
+        };
+        let (transcript, wrapper) = shell_integration_transcript(
+            &shell,
+            ShellFlavor::Bash,
+            "export TI_RC_MARKER=rc-sourced\nalias ti_alias_marker='echo ALIAS_OK'\n",
+        );
+        assert_silent_shell_integration(&transcript);
+        assert!(
+            !wrapper.exists(),
+            "the wrapper must be gone once the shell has exited"
+        );
+    }
+
+    #[cfg(unix)]
+    fn usable_shell(path: &str) -> Option<String> {
+        std::path::Path::new(path)
+            .is_file()
+            .then(|| path.to_string())
+    }
+
+    /// Launches the shell the app would launch, with the wrapper the app would
+    /// write, under a real PTY and returns everything the terminal received.
+    #[cfg(unix)]
+    fn shell_integration_transcript(
+        shell: &str,
+        flavor: ShellFlavor,
+        user_rc: &str,
+    ) -> (String, std::path::PathBuf) {
+        let home =
+            std::env::temp_dir().join(format!("terminal-shell-home-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&home).expect("fixture home directory");
+        let rc_name = match flavor {
+            ShellFlavor::Zsh => ".zshrc",
+            ShellFlavor::Bash => ".bashrc",
+        };
+        std::fs::write(home.join(rc_name), user_rc).expect("fixture rc");
+
+        let startup = ShellStartup::prepare(flavor, None).expect("startup wrapper");
+        let wrapper = startup.directory().to_path_buf();
+
+        let mut command = CommandBuilder::new(shell);
+        command.env("HOME", &home);
+        for arg in startup.args() {
+            command.arg(arg);
+        }
+        for (name, value) in startup.env() {
+            command.env(name, value);
+        }
+        if flavor == ShellFlavor::Zsh {
+            // `setup_pty` keeps `-l` for zsh, so the wrapper has to survive a
+            // login shell rather than only an interactive one.
+            command.arg("-l");
+        }
+
+        let resources = setup_pty_with_command(100, 30, command, None, Some(startup))
+            .expect("PTY should start for the shell integration check");
+        let (mut guard, output_rx) = RealPtyTestGuard::new(resources);
+        let mut output = Vec::new();
+
+        receive_pty_output_until(&output_rx, &mut output, b"\x1b]133;A\x07")
+            .expect("the injected prompt hook should emit 133;A");
+        guard
+            .write(b"echo \"TI_RC=$TI_RC_MARKER\"\n")
+            .expect("the PTY should accept the marker command");
+        receive_pty_output_until(&output_rx, &mut output, b"TI_RC=rc-sourced")
+            .expect("the user's own rc must still be sourced");
+        guard
+            .write(b"ti_alias_marker\n")
+            .expect("the PTY should accept the alias command");
+        receive_pty_output_until(&output_rx, &mut output, b"ALIAS_OK")
+            .expect("an alias from the user's own rc must still expand");
+        guard.write(b"exit\n").expect("the PTY should accept exit");
+        let _ = guard.wait_for_exit(std::time::Duration::from_secs(10));
+        while let Ok(Some(chunk)) = output_rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            output.extend_from_slice(&chunk);
+        }
+
+        drop(guard);
+        let _ = std::fs::remove_dir_all(&home);
+        let transcript = String::from_utf8_lossy(&output).into_owned();
+        if std::env::var_os("TERMINAL_DUMP_SHELL_INTEGRATION").is_some() {
+            println!("PTY_TRANSCRIPT_{flavor:?}={}", transcript.escape_debug());
+        }
+        (transcript, wrapper)
+    }
+
+    #[cfg(unix)]
+    fn assert_silent_shell_integration(transcript: &str) {
+        // The whole point of the change: the hook may never reach the screen.
+        assert!(
+            !transcript.contains("__TI_A"),
+            "the hook must not be typed into the PTY: {transcript}"
+        );
+        assert!(
+            transcript.contains("\u{1b}]133;A\u{7}"),
+            "the prompt-start sequence is missing: {transcript}"
+        );
+        assert!(
+            transcript.contains("\u{1b}]133;D;"),
+            "the previous-command-status sequence is missing: {transcript}"
+        );
+        assert!(
+            transcript.contains("\u{1b}]7;file://"),
+            "the working-directory sequence is missing: {transcript}"
+        );
+    }
+
+    #[tokio::test]
+    async fn finishing_a_local_session_removes_the_shell_startup_files() {
+        let startup = ShellStartup::prepare(ShellFlavor::Zsh, None).expect("startup wrapper");
+        let wrapper = startup.directory().to_path_buf();
+        let (session, _probe) = fake_local_session("local-startup-cleanup", true);
+        session.state.lock().await.startup = Some(startup);
+
+        simulate_natural_eof(&session).await;
+
+        assert!(
+            !wrapper.exists(),
+            "ending the session must remove its wrapper directory"
+        );
     }
 
     #[test]
@@ -966,6 +1067,8 @@ pub(in crate::session) mod tests {
         child: Option<Box<dyn Child + Send + Sync>>,
         writer: Option<Box<dyn std::io::Write + Send + 'static>>,
         reader_handle: Option<std::thread::JoinHandle<()>>,
+        /// Held so the wrapper survives startup and is removed on drop.
+        _startup: Option<ShellStartup>,
     }
 
     #[cfg(unix)]
@@ -978,6 +1081,7 @@ pub(in crate::session) mod tests {
                 mut reader,
                 writer,
                 startup_command: _,
+                startup,
             } = resources;
             let (output_tx, output_rx) = std::sync::mpsc::channel();
             let reader_handle = std::thread::spawn(move || loop {
@@ -1001,6 +1105,7 @@ pub(in crate::session) mod tests {
                     child: Some(child),
                     writer: Some(writer),
                     reader_handle: Some(reader_handle),
+                    _startup: startup,
                 },
                 output_rx,
             )
@@ -1093,6 +1198,7 @@ pub(in crate::session) mod tests {
             child_killer,
             writer: Arc::new(ParkingMutex::new(writer)),
             is_alive,
+            startup: None,
             shutdown_tx,
             read_handle: Arc::new(Mutex::new(None)),
         };
@@ -1126,6 +1232,7 @@ pub(in crate::session) mod tests {
             child_killer,
             writer: Arc::new(ParkingMutex::new(Box::new(std::io::sink()))),
             is_alive: true,
+            startup: None,
             shutdown_tx,
             read_handle: Arc::new(Mutex::new(Some(read_handle))),
         };
@@ -1152,6 +1259,7 @@ pub(in crate::session) mod tests {
             97,
             31,
             deterministic_test_command("printf '\\036PTY_READY\\037\\n'; read value"),
+            None,
             None,
         )
         .expect("PTY should start for the test");
@@ -1188,8 +1296,9 @@ pub(in crate::session) mod tests {
     fn setup_pty_runs_a_real_shell_round_trip_at_the_requested_size() {
         let input = "terminal-input-中文🙂";
         let script = "printf '\\036PTY_BEGIN\\037\\n'; stty size; printf '\\036PTY_READY\\037\\n'; IFS= read -r value; printf '\\036PTY_VALUE:%s\\037\\n' \"$value\"; exit 0";
-        let resources = setup_pty_with_command(97, 31, deterministic_test_command(script), None)
-            .expect("PTY should start for the test");
+        let resources =
+            setup_pty_with_command(97, 31, deterministic_test_command(script), None, None)
+                .expect("PTY should start for the test");
         let (mut guard, output_rx) = RealPtyTestGuard::new(resources);
         let mut output = Vec::new();
 
@@ -1256,6 +1365,7 @@ pub(in crate::session) mod tests {
             24,
             deterministic_test_command("trap '' HUP; while :; do sleep 1; done"),
             None,
+            None,
         )
         .expect("PTY should start for the process-group kill test");
         let LocalPtyResources {
@@ -1265,6 +1375,7 @@ pub(in crate::session) mod tests {
             writer,
             child_killer: _,
             startup_command: _,
+            startup: _,
         } = resources;
 
         std::thread::sleep(std::time::Duration::from_millis(20));

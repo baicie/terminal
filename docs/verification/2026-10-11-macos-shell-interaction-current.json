@@ -1,6 +1,6 @@
 {
-  "recordedAt": "2026-10-28T14:11:19.000Z",
-  "recordedDate": "2026-10-28",
+  "recordedAt": "2026-10-30T12:06:00.000Z",
+  "recordedDate": "2026-10-30",
   "kind": "tauri-local-shell-interaction-current-worktree",
   "command": "pnpm smoke:shell-probe:matrix --reuse-binary --shells bash,zsh -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt",
   "matrixCommand": "pnpm smoke:shell-probe:matrix --reuse-binary --shells bash,zsh -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt",
@@ -8,16 +8,16 @@
   "environment": {
     "os": "macOS 15.7.7",
     "architecture": "arm64",
-    "node": "24.16.0"
+    "node": "22.12.0"
   },
   "revision": {
-    "head": "feat/runtime-updater",
-    "commit": "1a2b498",
+    "head": "main",
+    "commit": "cd30142",
     "dirtyWorktree": true
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "827b7e01a3e7210c744eafa6e4378309bc024f40b4d79b1117db71590efd2efc"
+    "sha256": "1d6b470b5267e7ce2cc65983db0e7568aafec2a34d23082fe4f62785d9b658a0"
   },
   "shells": [
     "bash",
@@ -32,224 +32,122 @@
       "shell": "bash",
       "case": "cat-eof",
       "ok": true,
-      "durationMs": 432,
-      "trace": [
-        "ready",
-        "pass"
-      ]
+      "durationMs": 552
     },
     {
       "shell": "bash",
       "case": "readline-history",
       "ok": true,
-      "durationMs": 264,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 301
     },
     {
       "shell": "bash",
       "case": "readline-tab",
       "ok": true,
-      "durationMs": 392,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 430
     },
     {
       "shell": "bash",
       "case": "vim-edit",
       "ok": true,
-      "durationMs": 5172,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 5217
     },
     {
       "shell": "bash",
       "case": "nano-edit",
       "ok": true,
-      "durationMs": 4637,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 4710
     },
     {
       "shell": "bash",
       "case": "pty-resize",
       "ok": true,
-      "durationMs": 1400,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 1419
     },
     {
       "shell": "bash",
       "case": "ctrl-c-interrupt",
       "ok": true,
-      "durationMs": 1044,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 1137
     },
     {
       "shell": "zsh",
       "case": "cat-eof",
       "ok": true,
-      "durationMs": 453,
-      "trace": [
-        "ready",
-        "pass"
-      ]
+      "durationMs": 465
     },
     {
       "shell": "zsh",
       "case": "readline-history",
       "ok": true,
-      "durationMs": 286,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 304
     },
     {
       "shell": "zsh",
       "case": "readline-tab",
       "ok": true,
-      "durationMs": 446,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 462
     },
     {
       "shell": "zsh",
       "case": "vim-edit",
       "ok": true,
-      "durationMs": 5295,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 5173
     },
     {
       "shell": "zsh",
       "case": "nano-edit",
       "ok": true,
-      "durationMs": 4686,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 4982
     },
     {
       "shell": "zsh",
       "case": "pty-resize",
       "ok": true,
-      "durationMs": 1433,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 1504
     },
     {
       "shell": "zsh",
       "case": "ctrl-c-interrupt",
       "ok": true,
-      "durationMs": 1103,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 1099
     }
   ],
   "sshCases": [
     {
       "case": "cat-eof",
       "ok": true,
-      "durationMs": 590,
-      "trace": [
-        "ready",
-        "pass"
-      ]
+      "durationMs": 596
     },
     {
       "case": "readline-history",
       "ok": true,
-      "durationMs": 423,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 449
     },
     {
       "case": "readline-tab",
       "ok": true,
-      "durationMs": 567,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 550
     },
     {
       "case": "vim-edit",
       "ok": true,
-      "durationMs": 5325,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 5280
     },
     {
       "case": "nano-edit",
       "ok": true,
-      "durationMs": 4794,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 4874
     },
     {
       "case": "pty-resize",
       "ok": true,
-      "durationMs": 1508,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 1484
     },
     {
       "case": "ctrl-c-interrupt",
       "ok": true,
-      "durationMs": 1203,
-      "trace": [
-        "ready",
-        "step",
-        "pass"
-      ]
+      "durationMs": 1118
     }
   ],
   "allCasesPassed": true,
@@ -257,7 +155,7 @@
   "shellNote": "Each case drives the real Tauri/WKWebView xterm surface into a local PTY or a loopback SSH channel and checks the exact readback.",
   "dialectNote": "bash and zsh have dedicated dialects; fish/sh are rejected before any build until they do.",
   "source": {
-    "fingerprint": "07d420c0ddd7356fdcf5f4bdb9b78ffbc7314918313b0d7c6633d1c4f307926b",
+    "fingerprint": "f9186713fe83e3e9320b94c82d50eeaca477fe7b28975e77ec27c528573ea8e5",
     "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs."
   },
   "limitations": [

@@ -261,6 +261,10 @@ macOS 走「先分架构编二进制、再用 `lipo` 合成 universal」的两�
 
 证据门禁把 `scripts/check-verification-evidence.mjs` 与全部产品源码纳入源码指纹（见 `FINGERPRINT_PATHS`），所以顺序不能颠倒：先采集、后改代码，会让刚采的证据被自己的编辑作废。
 
+> **采集时窗口会挡住操作**：运行器会主动把应用切到前台（`scripts/macos-frontmost.mjs` 的 frontmost 断言是「窗口真的在屏幕上」的判据，不能省），窗口本身是 `tauri.conf.json` 里的 1200×800 居中。若这套弹窗干扰手头工作，另开一个终端跑 `node scripts/smoke-window-guard.mjs`：它把测试窗口缩到 640×420 并挪到屏幕右下角（`--width/--height/--corner/--margin/--once` 可调）。该脚本**特意不在 `FINGERPRINT_PATHS` 内**，用它不会改变源码指纹、不会作废已采证据；它需要辅助功能权限，缺失时会直接告诉你该给哪个 app 授权。
+
+> **release SSH 矩阵必须显式给 10 个 case**：`scripts/run-terminal-smoke-matrix.mjs` 的 `CASES` 是 13 条，`--release` 并不过滤，而门禁的 `RELEASE_SSH_CASES` 只认 10 条（不含三个 outage case）。裸跑 `pnpm smoke:ssh-matrix --reuse-binary --release` 会跑 13 条、与证据字段对不上。正确写法是显式列出：`pnpm smoke:ssh-matrix --reuse-binary --release key key-reconnect password password-reconnect agent agent-reconnect cert cert-reconnect jump jump-reconnect`。
+
 1. **冻结源码**：所有 fingerprinted 路径的改动先落完（`packages/frontend/src`、`src-tauri/src`、`scripts/run-*.mjs`、门禁脚本本身等）。
 2. **重建 debug 产物**：`VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle`。两个前提缺一不可：必须是内嵌前端的产物（裸 `cargo build` 的二进制会读 `build.devUrl`，渲染空白窗口并 fail-closed），并且必须带 `VITE_TERMINAL_SMOKE_BUILD=1`——smoke/probe 入口与 experiments 导航项只有 smoke 构建才编进前端，普通构建的二进制会被 `scripts/run-terminal-smoke.mjs` 显式拒绝。release 侧同理用 `VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle`。记录两个产物的 `sha256`。
 3. **先改门禁再采集**：把上一步的哈希写进 `scripts/check-verification-evidence.mjs` 的 `PROFILE_REVIEWED_HASH['debug']`。这一步本身会改变源码指纹，因此必须排在采集之前。
@@ -269,7 +273,7 @@ macOS 走「先分架构编二进制、再用 `lipo` 合成 universal」的两�
    - `pnpm smoke:ssh-matrix --reuse-binary` → 13 个 case 且名称顺序与门禁的 `DEBUG_SSH_CASES` 完全一致。
    - `pnpm smoke:shell-probe:matrix -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt` → bash/zsh 各 7 共 14/14；再按同一 case 列表跑真实 SSH 7/7。
    - `pnpm smoke:remote-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal` → `measurement.markerReady: true`。
-5. **采集 release 证据**：`pnpm tauri build` 后记录 release 产物哈希，再用 `pnpm smoke:cold-start`（3 次 terminal marker）与 release SSH 矩阵（10 个 case）产出两份 release 证据。门禁会把 release 证据与磁盘上的 `src-tauri/target/release/terminal` 哈希逐一对齐。
+5. **采集 release 证据**：`pnpm tauri build` 后记录 release 产物哈希，再用 `pnpm smoke:cold-start`（3 次 terminal marker）与 release SSH 矩阵（**显式列 10 个 case**，见上）产出两份 release 证据。门禁会把 release 证据与磁盘上的 `src-tauri/target/release/terminal` 哈希逐一对齐。
 6. **最后跑 `pnpm verify`**：`source` 分组必须全绿。若仍报 fingerprint 不一致，说明第 1 步被破坏（采集期间又改了源码），必须回到第 2 步重来。
 
 证据 JSON 里的 `source.fingerprint`、`binary.sha256`、`measurement.*` 必须来自 runner 的真实输出，禁止手改或用历史数值填充。

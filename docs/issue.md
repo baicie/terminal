@@ -3387,3 +3387,42 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 
 **处置**：该改动已回退，本轮不保留。若未来要区分「host 被删除」与「host 查询失败」，应在恢复路径显式传递 host 加载状态，而不是删掉兜底判据。
 
+### Issue #139: 浅色模式终端默认主题是米黄背景的 solarized-light ✅ 已修复
+
+**严重程度**：Minor（观感）
+
+**现状**：`defaultSettings.terminalThemeLight` 是 `solarized-light`，背景 `#fdf6e3` 是米黄/奶油色，启动第一印象像「终端默认颜色发黄」。顺带查清解析路径：`theme='dark'` 取 `terminalThemeDark`（`terminal-container/container.tsx:67-68` → `use-terminal-active-preset.ts:15-19`），历史字段 `terminalTheme` 在解析路径上从不被读取，所以它的默认值未动。
+
+**修复**：默认改 `github-light`（背景 `#ffffff`）。存量做一次性迁移：新增 `terminalThemeLightMigrated` 标记，仅当存量值仍等于旧默认 `solarized-light` 且未迁移时改写并写回；之后用户主动选回 `solarized-light` 不会被再次改写；全新安装不写库、只在内存标记完成，避免首次保存前的选择被覆盖。设置面板的展示回退值同步改为 `github-light`。
+
+**已知代价**：升级瞬间值恰好是 `solarized-light` 的用户会被改一次（即使那是他主动选的）；用本版本之前的备份/同步数据恢复会再迁移一次。标记位落地后不再发生。
+
+**验证**：`service/database/settings.test.ts` 5 例（新装默认、旧数据迁移并写回、迁移后用户回归保持、新装保存路径、旧装非旧默认只补标记）；前端全量 1162 项通过。
+
+### Issue #140: 本地终端启动把 Shell Integration 脚本回显成一行可见命令 ✅ 已修复
+
+**严重程度**：Important（观感 + 误解成本）
+
+**现状**：本地 PTY 启动后把 `__TI_A`/`__TI_B` 片段当作键盘输入写进 PTY，shell 回显整行，用户看到 `__TI_A(){ printf '\033]133;D;%s\007' ... }; autoload -Uz add-zsh-hook; ...` 这样一串看不懂的命令。功能本身正常（发 OSC 133;A/B/D 与 OSC 7，前端据此显示「上一条命令失败 (exit N)」与当前目录）。
+
+**修复**：不再往 PTY 打字，改从 shell 启动路径注入（`src-tauri/src/session/shell_startup.rs`）：
+- zsh：`ZDOTDIR` 包装目录，`.zshenv/.zprofile/.zshrc/.zlogin` 各自先 source 用户真实同名文件（存在才 source），`.zshrc` 再装 `add-zsh-hook` 钩子；保留 `-l` 登录语义。
+- bash：`--rcfile` 包装文件；因为登录 bash 会忽略 `--rcfile`，去掉 `-l` 后在同文件内按真登录 shell 顺序重放 `/etc/profile` → `~/.bash_profile`/`~/.bash_login`/`~/.profile`（**三选一**）→ `~/.bashrc`，最后装钩子。
+- 包装文件由纯函数生成，临时目录 0700，会话结束（EOF 与 close 两条路径）删除，另有 `Drop` 兜底。
+- 仍然不使用 `trap ... DEBUG`（Issue #96 的结论不变）。
+
+**两个必须记住的实现细节**：
+1. 包装 `.zshrc` 会先恢复真实 `ZDOTDIR` 再 source 用户 rc。否则 `compinit` 会把 `.zcompdump` 写进待删的临时目录（实测复现），既丢缓存又污染目录；顺带让自定义 `ZDOTDIR` 的用户也能被正确 source。
+2. 去掉 `-l` 后必须自建登录序列：macOS 的 `/etc/profile` 承载 `path_helper`，不重放就会让 bash 用户丢掉登录 PATH。实测包装 rcfile 与真实 `bash -l -i` 的 PATH **逐字节一致**（11 项、重复 0）。
+
+**验证**：真实 PTY 转录中 `__TI_A` 字面量 0 次，`]133;A`/`]133;D;`/`]7;file://` 正常；用户 `.zshrc`/`.bashrc` 与 alias 仍生效；`cargo test --lib session::` 112 项通过。
+
+### Issue #141: SSH 远端 Shell Integration 仍把片段打进远端 PTY 📋 待立项
+
+**严重程度**：Minor（观感，且 host 级开关默认 `off`）
+
+**现状**：Issue #140 只修本地终端。远程 SSH 会话仍由 `compose_startup_command` 把片段写进远端 PTY（`src-tauri/src/session/ssh.rs`），开关打开时同样会回显。
+
+**为什么本轮不做**：静默方案要在远端落包装文件（远端 `ZDOTDIR` / `--rcfile` 需要用 SFTP 写入并在断开时清理），涉及远端文件系统权限与清理失败的处理，属于独立立项范围。
+
+

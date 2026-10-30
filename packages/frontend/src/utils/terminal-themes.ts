@@ -5,6 +5,7 @@ import type {
   TerminalThemePreset,
 } from '@/service/database/types'
 import { extraTerminalThemes } from './terminal-theme-extra-presets'
+import { extraTerminalThemes2 } from './terminal-theme-extra-presets-2'
 
 // Predefined terminal color themes
 export const terminalThemes: Record<TerminalThemePreset, TerminalThemeColors> =
@@ -217,6 +218,7 @@ export const terminalThemes: Record<TerminalThemePreset, TerminalThemeColors> =
       brightWhite: '#ffffff',
     },
     ...extraTerminalThemes,
+    ...extraTerminalThemes2,
   }
 
 // Theme display names
@@ -233,10 +235,20 @@ export const themeDisplayNames: Record<TerminalThemePreset, string> = {
   'gruvbox-dark': 'Gruvbox Dark',
   'tokyo-night': 'Tokyo Night',
   'night-owl': 'Night Owl',
+  'rose-pine': 'Rosé Pine',
+  kanagawa: 'Kanagawa Wave',
+  'everforest-dark': 'Everforest Dark',
+  'ayu-dark': 'Ayu Dark',
+  'catppuccin-macchiato': 'Catppuccin Macchiato',
+  'tokyo-night-storm': 'Tokyo Night Storm',
   'monokai-light': 'Monokai Light',
   'one-light': 'One Light',
   'dracula-pro-light': 'Dracula Light',
   'papercolor-light': 'PaperColor Light',
+  'catppuccin-latte': 'Catppuccin Latte',
+  'rose-pine-dawn': 'Rosé Pine Dawn',
+  'ayu-light': 'Ayu Light',
+  'tokyo-night-light': 'Tokyo Night Light',
   custom: 'Custom',
 }
 

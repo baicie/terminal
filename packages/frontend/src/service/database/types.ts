@@ -130,6 +130,8 @@ export interface AppSettings {
   terminalTheme: TerminalThemePreset
   terminalThemeDark: TerminalThemePreset
   terminalThemeLight: TerminalThemePreset
+  /** 浅色终端主题默认值（solarized-light → github-light）一次性迁移已完成；缺省视为未迁移 */
+  terminalThemeLightMigrated: boolean
   customPrompt?: string
   // Desktop UX (Tauri)
   /** 关闭窗口时最小化到托盘而非退出 */
@@ -154,10 +156,20 @@ export type TerminalThemePreset =
   | 'gruvbox-dark'
   | 'tokyo-night'
   | 'night-owl'
+  | 'rose-pine'
+  | 'kanagawa'
+  | 'everforest-dark'
+  | 'ayu-dark'
+  | 'catppuccin-macchiato'
+  | 'tokyo-night-storm'
   | 'monokai-light'
   | 'one-light'
   | 'dracula-pro-light'
   | 'papercolor-light'
+  | 'catppuccin-latte'
+  | 'rose-pine-dawn'
+  | 'ayu-light'
+  | 'tokyo-night-light'
   | 'custom'
 
 export interface TerminalThemeColors {

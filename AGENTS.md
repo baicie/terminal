@@ -995,4 +995,4 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-10-29 (六份实机证据按当前源码重采、pnpm verify 全绿；release 改为 macOS 分架构 DMG（aarch64 / x86_64 各一份）并移除 Nightly 通道；updater-signed 已端到端验证；人工验收清单见 docs/manual-acceptance-checklist.md)_
+_文档更新时间: 2026-10-30 (终端配色预设扩到深 16 / 浅 10 并加对比度门禁；浅色默认主题 solarized-light → github-light；本地终端 Shell Integration 改 ZDOTDIR / --rcfile 静默注入，不再回显脚本；release 为 macOS 分架构 DMG（aarch64 / x86_64 各一份），Nightly 通道已移除；人工验收清单见 docs/manual-acceptance-checklist.md)_

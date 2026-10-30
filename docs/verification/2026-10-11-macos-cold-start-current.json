@@ -1,21 +1,21 @@
 {
-  "recordedAt": "2026-10-29T13:14:31.660Z",
-  "recordedDate": "2026-10-29",
+  "recordedAt": "2026-10-30T12:06:00.000Z",
+  "recordedDate": "2026-10-30",
   "kind": "tauri-process-cold-start-stopwatch-current-worktree",
-  "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal (three consecutive runs)",
+  "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal (invoked three times, one measured run per invocation)",
   "environment": {
     "os": "macOS 15.7.7",
     "architecture": "arm64",
-    "node": "24.16.0"
+    "node": "22.12.0"
   },
   "revision": {
-    "head": "feat/runtime-updater",
-    "commit": "1a2b498",
+    "head": "main",
+    "commit": "cd30142",
     "dirtyWorktree": true
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "827b7e01a3e7210c744eafa6e4378309bc024f40b4d79b1117db71590efd2efc"
+    "sha256": "1d6b470b5267e7ce2cc65983db0e7568aafec2a34d23082fe4f62785d9b658a0"
   },
   "measurement": {
     "probe": "Rust TERMINAL_SHELL_PROBE marker written only after the frontend sent its nonce through xterm -> session_write -> local PTY and read the marker back",
@@ -31,53 +31,50 @@
     "terminalRuns": [
       {
         "run": 1,
-        "capturedAt": "2026-10-29T13:14:21.417Z",
-        "pid": 67239,
-        "nonce": "local_3eae78c5ae6b558337708c14",
-        "marker": "TERMINAL_LOCAL_COLD_START_local_3eae78c5ae6b558337708c14",
+        "capturedAt": "2026-10-30T11:55:17.312Z",
+        "pid": 29530,
+        "nonce": "local_d489e703997b485ee255d100",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_d489e703997b485ee255d100",
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 3685,
-        "requestToReadyMs": 3690,
+        "spawnToReadyMs": 3243,
+        "requestToReadyMs": 3251,
         "probeCaseName": "cat-eof",
-        "probeDurationMs": 556,
         "ok": true
       },
       {
         "run": 2,
-        "capturedAt": "2026-10-29T13:14:26.551Z",
-        "pid": 67397,
-        "nonce": "local_7de25132a8c93c8b5306a378",
-        "marker": "TERMINAL_LOCAL_COLD_START_local_7de25132a8c93c8b5306a378",
+        "capturedAt": "2026-10-30T11:55:49.018Z",
+        "pid": 30081,
+        "nonce": "local_2233fffffe8437b8a58691c6",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_2233fffffe8437b8a58691c6",
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 2345,
-        "requestToReadyMs": 2349,
+        "spawnToReadyMs": 2586,
+        "requestToReadyMs": 2593,
         "probeCaseName": "cat-eof",
-        "probeDurationMs": 582,
         "ok": true
       },
       {
         "run": 3,
-        "capturedAt": "2026-10-29T13:14:31.660Z",
-        "pid": 67516,
-        "nonce": "local_ccd25f876db94b25dca76ce8",
-        "marker": "TERMINAL_LOCAL_COLD_START_local_ccd25f876db94b25dca76ce8",
+        "capturedAt": "2026-10-30T11:55:53.850Z",
+        "pid": 30181,
+        "nonce": "local_9d0cd8acdc8683d1c56931a8",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_9d0cd8acdc8683d1c56931a8",
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 2432,
-        "requestToReadyMs": 2439,
+        "spawnToReadyMs": 3404,
+        "requestToReadyMs": 3414,
         "probeCaseName": "cat-eof",
-        "probeDurationMs": 574,
         "ok": true
       }
     ]
   },
   "source": {
-    "fingerprint": "07d420c0ddd7356fdcf5f4bdb9b78ffbc7314918313b0d7c6633d1c4f307926b",
+    "fingerprint": "f9186713fe83e3e9320b94c82d50eeaca477fe7b28975e77ec27c528573ea8e5",
     "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs. The worktree was clean except this runbook edit, so the fingerprint and the debug binary describe the same sources."
   },
   "limitations": [

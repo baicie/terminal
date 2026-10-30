@@ -123,7 +123,16 @@ const PROFILE_REVIEWED_HASH = new Map([
   // records both the fingerprint and this binary hash; the notes below describe
   // the earlier build whose hash this replaced.
   // Re-pinned for the build that adds tauri-plugin-updater to the runtime.
-  ['debug', '827b7e01a3e7210c744eafa6e4378309bc024f40b4d79b1117db71590efd2efc'],
+  //
+  // Re-pinned on 2026-10-30 for the build that stops typing the shell
+  // integration snippet into the PTY: zsh is injected through a ZDOTDIR
+  // wrapper that sources the user's real rc files, bash through a --rcfile
+  // wrapper that replays the login sequence because a login shell ignores
+  // --rcfile. The same source adds ten terminal theme presets and moves the
+  // default light theme off the cream solarized-light background. The
+  // six evidence files are re-run against this binary before the hash lands
+  // here; see docs/issue.md #139, #140 and #141.
+  ['debug', '1d6b470b5267e7ce2cc65983db0e7568aafec2a34d23082fe4f62785d9b658a0'],
 ])
 
 // Exported so the gate's own tests assert against the hash the gate actually

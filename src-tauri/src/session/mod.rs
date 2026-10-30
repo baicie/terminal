@@ -7,6 +7,7 @@ pub(crate) mod lifecycle;
 pub mod local;
 pub mod manager;
 pub(crate) mod shell_integration;
+pub(crate) mod shell_startup;
 pub mod ssh;
 pub(crate) mod ssh_channel;
 pub(crate) mod ssh_writer;

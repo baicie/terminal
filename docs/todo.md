@@ -2051,3 +2051,14 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] release SSH 矩阵 10 case：解锁窗口内一次整跑 **10/10** 全绿（首连 775–4214 ms，每 case 10–11 个唯一 session，binary `1e68ba73…`）；此前两次失败确认是锁屏导致（`frontmost` 期望本应用、实际为 `loginwindow`）。
 - [ ] 人工物理键盘、IME、Option/dead key 与真实合盖唤醒仍未验收；Windows Agent/Pageant/PTY 与串口硬件仍无实机。
 
+### 2026-10-30 Phase 6.106 - 预设主题扩充、浅色默认配色与本地 Shell Integration 静默注入 🟡 代码完成，证据重采进行中
+
+- [x] 终端预设主题从深 10 / 浅 6 扩到深 16 / 浅 10：新增 rose-pine、kanagawa、everforest-dark、ayu-dark、catppuccin-macchiato、tokyo-night-storm 与 catppuccin-latte、rose-pine-dawn、ayu-light、tokyo-night-light，每个 21 键（背景/前景/光标/光标强调/选区 + 16 色 ANSI）。
+- [x] 新增 `terminal-themes.test.ts`（8 例）卡死质量：21 键齐全、6 位 hex、前景对比度 ≥ 4.5、ANSI ≥ 2.5、**背景两两不同**、每个 id 都在调色板/名称/唯一分组里、未知 id 回落 one-dark。存量主题按出厂值逐条冻结（冻结表双向断言：值仍等于出厂值且确实低于门槛），避免门槛被拿来放过本来能过的颜色。
+- [x] 浅色禁米黄：rose-pine-dawn 官方奶白 `#faf4ed` → `#f8f7f9`，ayu-light `#fafafa` 与 one-light 撞色 → `#f3f4f5`；4 个新浅色背景全为中性白/冷白。
+- [x] 浅色默认主题 `solarized-light` → `github-light`，含一次性迁移与标记位（见 Issue #139）。
+- [x] 本地终端 Shell Integration 改静默注入（见 Issue #140）：zsh `ZDOTDIR`、bash `--rcfile` + 自建登录序列；真实 PTY 转录 `__TI_A` 0 次。
+- [x] 新增 `scripts/smoke-window-guard.mjs`：采集时把弹出的测试窗口缩到 640×420 并停到屏幕右下角，避免遮挡操作。该文件不在 `FINGERPRINT_PATHS` 内，用它不会作废已采证据；实测窗口由 1440×900 变为 640×420。
+- [ ] 6 份实机证据按新源码重采（源码指纹从 `07d420c0…` 变为新值，4 份 debug 证据已被门禁判 stale）。
+- [ ] 人工物理键盘、IME、Option/dead key 与真实合盖唤醒仍未验收；Windows Agent/Pageant/PTY 与串口硬件仍无实机。
+
