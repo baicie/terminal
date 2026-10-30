@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import { constants } from 'node:fs'
+import { accessSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
 import os from 'node:os'
@@ -312,10 +314,34 @@ const NATIVE_PLAN_PASSWORD = '<generated-per-run>'
 // opaque sentence "authentication failed: all methods rejected" and nothing in
 // the log says which one it was, so the fixture checks each of them itself and
 // fails with the attribute that is wrong.
-const NATIVE_DSCL = '/usr/bin/dscl'
-const NATIVE_DSEDITGROUP = '/usr/sbin/dseditgroup'
-const NATIVE_CHOWN = '/usr/bin/chown'
-const NATIVE_CHMOD = '/usr/bin/chmod'
+// /usr/bin/chown and /usr/bin/chmod do not exist on macOS (they live in
+// /usr/sbin and /bin), and a wrong absolute path only surfaces as
+// "sudo: <path>: command not found" fifteen minutes into a runner job, so every
+// helper below is resolved by probing the paths that actually shipped.
+function resolveNativeTool(name, candidates) {
+  for (const candidate of candidates) {
+    try {
+      accessSync(candidate, constants.X_OK)
+      return candidate
+    } catch {}
+  }
+  throw new Error(
+    `none of the expected ${name} paths exists on this host: ${candidates.join(', ')}`,
+  )
+}
+
+const NATIVE_DSCL = resolveNativeTool('dscl', ['/usr/bin/dscl'])
+const NATIVE_DSEDITGROUP = resolveNativeTool('dseditgroup', [
+  '/usr/sbin/dseditgroup',
+])
+export const NATIVE_CHOWN = resolveNativeTool('chown', [
+  '/usr/sbin/chown',
+  '/usr/bin/chown',
+])
+export const NATIVE_CHMOD = resolveNativeTool('chmod', [
+  '/bin/chmod',
+  '/usr/bin/chmod',
+])
 const NATIVE_STAT = '/usr/bin/stat'
 const NATIVE_ID = '/usr/bin/id'
 const NATIVE_SSH_CLIENT = '/usr/bin/ssh'

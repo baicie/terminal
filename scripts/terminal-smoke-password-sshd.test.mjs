@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { existsSync } from 'node:fs'
+import { accessSync, constants, existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -10,6 +10,8 @@ import test from 'node:test'
 import { promisify } from 'node:util'
 
 import {
+  NATIVE_CHMOD,
+  NATIVE_CHOWN,
   buildNativePasswordSshdPlan,
   ensurePasswordSshdImage,
   formatNativePasswordSshdPlan,
@@ -307,4 +309,19 @@ test('the fixture script refuses to run without --print-plan', async () => {
     () => promisify(execFile)(process.execPath, [SCRIPT_PATH]),
     /print-plan/,
   )
+})
+
+test('native backend resolves helpers to paths this host really ships', () => {
+  // /usr/bin/chown does not exist on macOS. An absolute path that is wrong
+  // only fails once the runner has already spent its build minutes, so the
+  // resolution is asserted here for every helper the fixture invokes.
+  for (const toolPath of [NATIVE_CHOWN, NATIVE_CHMOD]) {
+    assert.ok(existsSync(toolPath), `${toolPath} must exist on this host`)
+    assert.doesNotThrow(
+      () => accessSync(toolPath, constants.X_OK),
+      `${toolPath} must be executable`,
+    )
+  }
+  assert.equal(path.basename(NATIVE_CHOWN), 'chown')
+  assert.equal(path.basename(NATIVE_CHMOD), 'chmod')
 })
