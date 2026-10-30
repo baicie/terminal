@@ -2059,7 +2059,7 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] 浅色默认主题 `solarized-light` → `github-light`，含一次性迁移与标记位（见 Issue #139）。
 - [x] 本地终端 Shell Integration 改静默注入（见 Issue #140）：zsh `ZDOTDIR`、bash `--rcfile` + 自建登录序列；真实 PTY 转录 `__TI_A` 0 次。
 - [x] 新增 `scripts/smoke-window-guard.mjs`：采集时把弹出的测试窗口缩到 640×420 并停到屏幕右下角，避免遮挡操作。该文件不在 `FINGERPRINT_PATHS` 内，用它不会作废已采证据；实测窗口由 1440×900 变为 640×420。
-- [x] 6 份实机证据按新源码重采：改由 CI run `41072424137` 在托管 macOS runner 上产出（指纹 `7f0acbd6…`，debug 冷启动 6720/4632/3832 ms、release gate 3453/3757/3731 ms、debug 认证矩阵 11/11、release 8/8、shell 交互 14+7），本机未再弹窗采集。
+- [x] 6 份实机证据按新源码重采：改由 CI run `41077965521` 在托管 macOS runner 上产出（指纹 `99b0879d…`，debug 冷启动 7207/4105/3740 ms、release gate 3691/3309/3548 ms、debug 认证矩阵 11/11、release 8/8、shell 交互 14+7），本机未再弹窗采集。
 - [ ] 人工物理键盘、IME、Option/dead key 与真实合盖唤醒仍未验收；Windows Agent/Pageant/PTY 与串口硬件仍无实机。
 
 
@@ -2074,5 +2074,6 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] 新增 macOS 原生口令 fixture（`sudo -n sysadminctl` + 系统 sshd + `UsePAM`）：账号、口令、`dscl . -authonly`、app 侧密码认证均已实测通过，但 app 认证后不开 channel，故 password 两条暂不进 macOS 契约（Issue #144），改由 Linux 容器矩阵覆盖。
 - [x] 契约有意收窄为 11-case / 8-case，理由写在常量注释、`docs/release/workflow-rules.md` 与 Issue #144；门禁用例改为导入契约列表，避免复制漂移。
 - [x] 首轮 CI 暴露的 `key-reconnect` 前台断言偶发：只对 frontmost 前置失败做有界重试（合计 3 次），功能性失败一次即抛。
-- [x] 落盘 run `41072424137`：debug 冷启动 6720/4632/3832 ms、release gate 3453/3757/3731 ms、debug 矩阵 11/11、release 矩阵 8/8、shell 交互 14+7，本地门禁 0 problem。
+- [x] 落盘 run `41077965521`：debug 冷启动 7207/4105/3740 ms、release gate 3691/3309/3548 ms、debug 矩阵 11/11、release 矩阵 8/8、shell 交互 14+7，本地门禁 0 problem。
+- [x] 顺手修掉 Issue #142：主题名改由 `getThemeDisplayName()` 统一出口（curated 名称优先，未知名才回落首字母大写），网格与「Theme:」标签共用，去掉会抹平重音的 `capitalize`；回归测试钉住 Rosé Pine / GitHub Dark / PaperColor Light / Kanagawa Wave。因为改了 `packages/frontend/src`，证据随之重采（run `41077965521`）。
 - [ ] 后续：解决 Issue #144 后把 password 两条恢复进 11/8 契约；`fetch-verification-evidence.mjs` 改为安装时直接 gzip；release 矩阵步骤名里的「ten contract cases」待下一轮改名（工作流在指纹内，改名会使当前证据失效）。
