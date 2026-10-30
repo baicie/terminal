@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process'
+import { readdirSync } from 'node:fs'
 import process from 'node:process'
+
+// Collected from disk instead of a hand-written list: a new scripts test must be
+// picked up by the gate without editing this file.
+const scriptsTestFiles = readdirSync(import.meta.dirname)
+  .filter(name => name.endsWith('.test.mjs'))
+  .sort()
+  .map(name => `scripts/${name}`)
 
 const groups = {
   frontend: [
@@ -54,30 +62,7 @@ const groups = {
       ],
     ],
   ],
-  scripts: [
-    [
-      'node',
-      [
-        '--test',
-        'scripts/run-terminal-smoke.test.mjs',
-        'scripts/terminal-smoke-renderer-heartbeat.test.mjs',
-        'scripts/run-cold-start-stopwatch.test.mjs',
-        'scripts/run-local-cold-start-stopwatch.test.mjs',
-        'scripts/run-remote-cold-start-stopwatch.test.mjs',
-        'scripts/terminal-smoke-sshd.test.mjs',
-        'scripts/terminal-smoke-password-sshd.test.mjs',
-        'scripts/run-input-probe.test.mjs',
-        'scripts/run-raw-input-probe.test.mjs',
-        'scripts/input-probe-source.test.mjs',
-        'scripts/input-probe-scenarios.test.mjs',
-        'scripts/run-terminal-shell-probe.test.mjs',
-        'scripts/run-terminal-shell-probe-matrix.test.mjs',
-        'scripts/shell-probe-dialect-contract.test.mjs',
-        'scripts/real-machine-workflow.test.mjs',
-        'scripts/check-verification-evidence.test.mjs',
-      ],
-    ],
-  ],
+  scripts: [['node', ['--test', ...scriptsTestFiles]]],
   source: [
     ['node', ['scripts/check-source-size.mjs']],
     ['node', ['scripts/check-verification-evidence.mjs']],
