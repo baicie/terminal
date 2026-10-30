@@ -15,6 +15,13 @@ name: Real-machine terminal matrix
 # anything unless every scenario is complete and green, and refuses when a log
 # measured a different binary than the one this job hashed.
 #
+# Every `2>&1 | tee` step declares `shell: bash` on purpose. The default shell
+# of a macOS or Linux job is `bash -e {0}`, which has no `pipefail`: a failing
+# matrix exits 1 into `tee`, `tee` exits 0, and the step stays green while its
+# log records the failure. GitHub's `bash` keyword expands to
+# `bash --noprofile --norc -eo pipefail {0}`, so the pipe hands the runner's
+# own exit code back to the step.
+#
 # `scripts/check-verification-evidence.mjs` binds the six files to that
 # manifest (fingerprint, both artifact hashes, run id) rather than to a binary
 # on a developer machine, because a local build and a CI build of the same
@@ -89,6 +96,7 @@ jobs:
             pnpm smoke:local-cold-start -- \
               --app-path "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal" 2>&1 | tee -a evidence-logs/debug-local-cold-start.log
           done
+        shell: bash
 
       - name: Measure remote SSH cold-start to prompt marker
         # This uses the same freshly built debug binary as the shell matrix and
@@ -97,6 +105,7 @@ jobs:
         run: |
           pnpm smoke:remote-cold-start -- \
             --app-path "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal" 2>&1 | tee evidence-logs/debug-remote-cold-start.log
+        shell: bash
 
       - name: Check the password fixture backend
         # The password cases come from scripts/terminal-smoke-password-sshd.mjs.
@@ -115,6 +124,7 @@ jobs:
         # to describe the binary hashed above, and a second build here would
         # relink it.
         run: node scripts/run-terminal-smoke-matrix.mjs key,key-reconnect,key-outage-reconnect,key-outage-wake-reconnect,agent,agent-reconnect,cert,cert-reconnect,jump,jump-reconnect --reuse-binary 2>&1 | tee evidence-logs/debug-ssh-matrix.log
+        shell: bash
 
       - name: Run the remaining authenticated matrix cases
         # The 13-case contract also needs key-first-connect-outage and both
@@ -122,9 +132,11 @@ jobs:
         # log, so the step above stays exactly the command the workflow contract
         # test pins.
         run: node scripts/run-terminal-smoke-matrix.mjs --reuse-binary key-first-connect-outage,password,password-reconnect 2>&1 | tee -a evidence-logs/debug-ssh-matrix.log
+        shell: bash
 
       - name: Run the real Tauri shell interaction matrix
         run: pnpm smoke:shell-probe:matrix -- --shells bash,zsh cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt --reuse-binary 2>&1 | tee evidence-logs/debug-shell-probe-local.log
+        shell: bash
 
       - name: Run the shell interaction matrix over real SSH
         # The same seven cases, but driven through a real loopback sshd rather
@@ -132,6 +144,7 @@ jobs:
         # break exactly where a PTY and an sshd channel differ, so running the
         # cases on only one transport would leave that gap open.
         run: pnpm smoke:shell-probe:matrix -- --transport ssh cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt --reuse-binary 2>&1 | tee evidence-logs/debug-shell-probe-ssh.log
+        shell: bash
 
       - name: Verify the physical keyboard probe protocol in a real WKWebView
         # macOS runners cannot grant Accessibility to CGEvent injection, so
@@ -152,11 +165,13 @@ jobs:
             pnpm smoke:local-cold-start -- \
               --app-path "$GITHUB_WORKSPACE/src-tauri/target/release/terminal" 2>&1 | tee -a evidence-logs/release-local-cold-start.log
           done
+        shell: bash
 
       - name: Run the release authentication matrix with the ten contract cases
         # A bare --release run executes all 13 cases, which the gate's
         # RELEASE_SSH_CASES (10, without the three outage cases) would reject.
         run: node scripts/run-terminal-smoke-matrix.mjs key,key-reconnect,password,password-reconnect,agent,agent-reconnect,cert,cert-reconnect,jump,jump-reconnect --release --reuse-binary 2>&1 | tee evidence-logs/release-ssh-matrix.log
+        shell: bash
 
       - name: Generate the six evidence files and the CI manifest
         # Fail-closed: nothing is written unless all seven logs are complete,

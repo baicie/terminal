@@ -89,6 +89,10 @@ exec /usr/sbin/sshd -D -e -f /etc/ssh/sshd_config
 
 const defaultDependencies = {
   env: process.env,
+  // Fixture diagnostics go to stdout, which the workflow captures with
+  // `2>&1 | tee`: an sshd that refuses a login has to explain itself in the
+  // evidence log, not only in an exception the runner consumes.
+  log: line => process.stdout.write(line + '\n'),
   mkdir,
   now: Date.now,
   platform: process.platform,
@@ -302,6 +306,31 @@ const NATIVE_PORT_ATTEMPTS = 4
 const NATIVE_PLAN_PORT = '<reserved-loopback-port>'
 const NATIVE_PLAN_PASSWORD = '<generated-per-run>'
 
+// macOS accounts do not authenticate over sshd unless these three things hold:
+// the primary group is staff, the login shell exists, and the directory node
+// carries a ShadowHash credential. When any is missing sshd reports the single
+// opaque sentence "authentication failed: all methods rejected" and nothing in
+// the log says which one it was, so the fixture checks each of them itself and
+// fails with the attribute that is wrong.
+const NATIVE_DSCL = '/usr/bin/dscl'
+const NATIVE_DSEDITGROUP = '/usr/sbin/dseditgroup'
+const NATIVE_CHOWN = '/usr/bin/chown'
+const NATIVE_CHMOD = '/usr/bin/chmod'
+const NATIVE_STAT = '/usr/bin/stat'
+const NATIVE_ID = '/usr/bin/id'
+const NATIVE_SSH_CLIENT = '/usr/bin/ssh'
+const NATIVE_EXPECT = '/usr/bin/expect'
+const NATIVE_SSH_ACCESS_GROUP = 'com.apple.access_ssh'
+const NATIVE_STAFF_GROUP = 'staff'
+const NATIVE_STAFF_GID = '20'
+const NATIVE_PROBE_TIMEOUT_MS = 30_000
+const NATIVE_ACCOUNT_ATTRIBUTES = [
+  'PrimaryGroupID',
+  'UserShell',
+  'NFSHomeDirectory',
+  'AuthenticationAuthority',
+]
+
 function sudoArguments(args) {
   return ['-n', ...args]
 }
@@ -335,6 +364,11 @@ function nativeAddUserArguments(username, password, homePath) {
     username,
     '-password',
     password,
+    // -GID pins the primary group: without it sysadminctl lets the directory
+    // service choose, and an account whose primary group is not staff cannot
+    // authenticate through sshd's PAM path.
+    '-GID',
+    NATIVE_STAFF_GID,
     '-shell',
     NATIVE_LOGIN_SHELL,
     '-home',
@@ -350,6 +384,106 @@ function nativeHostKeyArguments(hostKeyPath) {
 
 function nativeSshdArguments(configPath) {
   return ['-D', '-e', '-f', configPath]
+}
+
+function nativeAuthOnlyArguments(username, password) {
+  return sudoArguments([NATIVE_DSCL, '.', '-authonly', username, password])
+}
+
+function nativeHomeOwnershipCommands(username, homePath) {
+  return [
+    {
+      args: sudoArguments([
+        NATIVE_CHOWN,
+        '-R',
+        `${username}:${NATIVE_STAFF_GROUP}`,
+        homePath,
+      ]),
+      command: SUDO,
+      label: 'hand the fixture home directory to the throwaway account',
+    },
+    {
+      args: sudoArguments([NATIVE_CHMOD, '755', homePath]),
+      command: SUDO,
+      label: 'make the fixture home directory reachable',
+    },
+  ]
+}
+
+function nativeAttributeReadCommand(username, attribute) {
+  return {
+    args: sudoArguments([NATIVE_DSCL, '.', '-read', `/Users/${username}`, attribute]),
+    command: SUDO,
+    label: `read ${attribute}`,
+  }
+}
+
+function nativeHomeStatCommand(homePath) {
+  return {
+    args: sudoArguments([NATIVE_STAT, '-f', '%Su:%Sg:%Sp', homePath]),
+    command: SUDO,
+    label: `check the owner and mode of ${homePath}`,
+  }
+}
+
+function nativeAccessGroupCheckCommand() {
+  return {
+    args: sudoArguments([NATIVE_DSCL, '.', '-read', `/Groups/${NATIVE_SSH_ACCESS_GROUP}`]),
+    command: SUDO,
+    label: `check whether ${NATIVE_SSH_ACCESS_GROUP} restricts sshd logins`,
+  }
+}
+
+function nativeAccessGroupAddCommand(username) {
+  return {
+    args: sudoArguments([
+      NATIVE_DSEDITGROUP,
+      '-o',
+      'edit',
+      '-a',
+      username,
+      '-t',
+      'user',
+      NATIVE_SSH_ACCESS_GROUP,
+    ]),
+    command: SUDO,
+    label: `add ${username} to ${NATIVE_SSH_ACCESS_GROUP} when that group exists`,
+  }
+}
+
+/**
+ * The privileged commands a native run issues once the account exists, in the
+ * order it issues them.
+ *
+ * `--print-plan` renders this list and the run issues the same commands through
+ * the named helpers below, so a reviewer reading the plan sees what will really
+ * run. The two conditional steps say so: the group edit happens only when the
+ * group exists, and the login probe only once the daemon answers.
+ */
+export function buildNativeAccountSteps({
+  username,
+  homePath,
+  password = NATIVE_PLAN_PASSWORD,
+}) {
+  return [
+    {
+      args: nativeAuthOnlyArguments(username, password),
+      command: SUDO,
+      label: 'verify the account password without SSH (dscl . -authonly)',
+    },
+    ...nativeHomeOwnershipCommands(username, homePath),
+    ...NATIVE_ACCOUNT_ATTRIBUTES.map(attribute =>
+      nativeAttributeReadCommand(username, attribute),
+    ),
+    nativeHomeStatCommand(homePath),
+    nativeAccessGroupCheckCommand(),
+    nativeAccessGroupAddCommand(username),
+    {
+      label:
+        `probe one real SSH password login as ${username}@${LOOPBACK}:<port> ` +
+        'with expect(1), and fail the fixture when sshd rejects it',
+    },
+  ]
 }
 
 /**
@@ -444,6 +578,11 @@ export function buildNativePasswordSshdPlan({
   }
   const paths = nativePasswordPaths(directory)
   return {
+    accountSteps: buildNativeAccountSteps({
+      homePath: paths.homePath,
+      password,
+      username,
+    }),
     cleanupSteps: [
       { label: `SIGTERM the sshd process group, SIGKILL after ${NATIVE_STOP_GRACE_MS} ms` },
       {
@@ -523,6 +662,14 @@ export function formatNativePasswordSshdPlan(plan) {
     '## commands, in order',
     ...steps,
     '',
+    `## commands once the account exists, in order (home ${plan.paths.homePath})`,
+    ...plan.accountSteps.map(
+      (step, index) => `${index + 1}. ${formatPlanStep(step)}`,
+    ),
+    '',
+    'The group edit and the login probe are conditional: the edit runs only',
+    'when the group exists, and the probe only once the daemon answers.',
+    '',
     `## file written before the daemon starts: ${plan.paths.configPath}`,
     plan.config.trimEnd(),
     '',
@@ -573,6 +720,376 @@ async function runFixtureCommand(command, args, options, dependencies, timeoutMs
   return { stderr: stderr(), stdout: stdout() }
 }
 
+/**
+ * runFixtureCommand for commands whose failure is an answer rather than an
+ * error: `dscl -read` exits non-zero for an attribute that is simply absent,
+ * and a missing `com.apple.access_ssh` group is a legitimate host shape.
+ */
+async function tryRunFixtureCommand(
+  command,
+  args,
+  options,
+  dependencies,
+  timeoutMs,
+  label,
+) {
+  try {
+    const result = await runFixtureCommand(
+      command,
+      args,
+      options,
+      dependencies,
+      timeoutMs,
+      label,
+    )
+    return { detail: result.stderr.trim(), ok: true, value: result.stdout.trim() }
+  } catch (error) {
+    return { detail: error.message, ok: false, value: '' }
+  }
+}
+
+async function readNativeAccountAttribute(
+  username,
+  attribute,
+  commandOptions,
+  dependencies,
+) {
+  const command = nativeAttributeReadCommand(username, attribute)
+  const result = await tryRunFixtureCommand(
+    command.command,
+    command.args,
+    commandOptions,
+    dependencies,
+    NATIVE_COMMAND_TIMEOUT_MS,
+    `password fixture ${attribute} read`,
+  )
+  if (!result.ok) return ''
+  // `dscl . -read /Users/<user> <attribute>` answers "<attribute>: <value>".
+  const prefix = attribute + ':'
+  return result.value.startsWith(prefix)
+    ? result.value.slice(prefix.length).trim()
+    : result.value
+}
+
+function formatNativeAccountDiagnostics({
+  attributes,
+  home,
+  homePath,
+  identity,
+  username,
+}) {
+  return [
+    `id ${username}: ${identity.ok ? identity.value : identity.detail}`,
+    ...NATIVE_ACCOUNT_ATTRIBUTES.map(
+      attribute =>
+        `dscl . -read /Users/${username} ${attribute}: ` +
+        (attributes[attribute] === '' ? '<missing>' : attributes[attribute]),
+    ),
+    `${homePath}: ${home.ok ? home.value : home.detail}`,
+  ].join('\n')
+}
+
+/**
+ * Proves the account can verify its own password without sshd in the way.
+ *
+ * `dscl . -authonly` exercises the same directory-node credential sshd's PAM
+ * stack reads, so a failure here is the root cause of "all methods rejected"
+ * and can be reported with the attributes that explain it.
+ */
+async function verifyNativeAccountPassword({
+  commandOptions,
+  dependencies,
+  homePath,
+  password,
+  username,
+}) {
+  const authOnly = await tryRunFixtureCommand(
+    SUDO,
+    nativeAuthOnlyArguments(username, password),
+    commandOptions,
+    dependencies,
+    NATIVE_COMMAND_TIMEOUT_MS,
+    'password fixture password verification',
+  )
+  if (authOnly.ok) {
+    dependencies.log(
+      `[password-sshd] ${username} accepts its own password (dscl . -authonly)`,
+    )
+    return
+  }
+  const attributes = {}
+  for (const attribute of NATIVE_ACCOUNT_ATTRIBUTES) {
+    attributes[attribute] = await readNativeAccountAttribute(
+      username,
+      attribute,
+      commandOptions,
+      dependencies,
+    )
+  }
+  const identity = await tryRunFixtureCommand(
+    NATIVE_ID,
+    [username],
+    commandOptions,
+    dependencies,
+    NATIVE_COMMAND_TIMEOUT_MS,
+    'password fixture account lookup',
+  )
+  const home = await tryRunFixtureCommand(
+    SUDO,
+    nativeHomeStatCommand(homePath).args,
+    commandOptions,
+    dependencies,
+    NATIVE_COMMAND_TIMEOUT_MS,
+    'password fixture home directory check',
+  )
+  throw new Error(
+    `password fixture account ${username} rejects its own password, which is ` +
+      `why every password case fails with "all methods rejected": ` +
+      `${authOnly.detail}\n` +
+      formatNativeAccountDiagnostics({
+        attributes,
+        home,
+        homePath,
+        identity,
+        username,
+      }),
+  )
+}
+
+async function fixNativeHomeOwnership({
+  commandOptions,
+  dependencies,
+  homePath,
+  username,
+}) {
+  for (const step of nativeHomeOwnershipCommands(username, homePath)) {
+    await runFixtureCommand(
+      step.command,
+      step.args,
+      commandOptions,
+      dependencies,
+      NATIVE_COMMAND_TIMEOUT_MS,
+      `password fixture ${step.label}`,
+    )
+  }
+}
+
+/**
+ * Checks the attributes sysadminctl is supposed to have set.
+ *
+ * sshd answers a wrong primary group, a missing shell or an account without a
+ * ShadowHash credential with the same opaque rejection, so each of them is
+ * asserted here where the answer names the attribute.
+ */
+async function verifyNativeAccountAttributes({
+  commandOptions,
+  dependencies,
+  homePath,
+  username,
+}) {
+  const attributes = {}
+  for (const attribute of NATIVE_ACCOUNT_ATTRIBUTES) {
+    attributes[attribute] = await readNativeAccountAttribute(
+      username,
+      attribute,
+      commandOptions,
+      dependencies,
+    )
+  }
+  const home = await tryRunFixtureCommand(
+    SUDO,
+    nativeHomeStatCommand(homePath).args,
+    commandOptions,
+    dependencies,
+    NATIVE_COMMAND_TIMEOUT_MS,
+    'password fixture home directory check',
+  )
+  const identity = await tryRunFixtureCommand(
+    NATIVE_ID,
+    [username],
+    commandOptions,
+    dependencies,
+    NATIVE_COMMAND_TIMEOUT_MS,
+    'password fixture account lookup',
+  )
+
+  const problems = []
+  if (attributes.PrimaryGroupID !== NATIVE_STAFF_GID) {
+    problems.push(
+      `PrimaryGroupID is ${attributes.PrimaryGroupID || '<missing>'}; expected ` +
+        `${NATIVE_STAFF_GID} (${NATIVE_STAFF_GROUP})`,
+    )
+  }
+  if (attributes.UserShell !== NATIVE_LOGIN_SHELL) {
+    problems.push(
+      `UserShell is ${attributes.UserShell || '<missing>'}; expected ${NATIVE_LOGIN_SHELL}`,
+    )
+  }
+  if (!attributes.AuthenticationAuthority.includes('ShadowHash')) {
+    problems.push(
+      'AuthenticationAuthority carries no ShadowHash entry, so the account has ' +
+        'no password sshd could verify',
+    )
+  }
+  const expectedOwner = `${username}:${NATIVE_STAFF_GROUP}`
+  if (!home.ok || !home.value.startsWith(expectedOwner)) {
+    problems.push(
+      `${homePath} is ${home.ok ? home.value : home.detail}; expected it owned by ` +
+        `${expectedOwner}`,
+    )
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `password fixture account ${username} would be rejected by sshd:\n- ` +
+        problems.join('\n- ') +
+        '\n' +
+        formatNativeAccountDiagnostics({
+          attributes,
+          home,
+          homePath,
+          identity,
+          username,
+        }),
+    )
+  }
+  dependencies.log(
+    `[password-sshd] ${username} attributes verified: PrimaryGroupID ` +
+      `${attributes.PrimaryGroupID}, UserShell ${attributes.UserShell}, ` +
+      `ShadowHash present, home ${home.value}`,
+  )
+}
+
+/**
+ * Adds the account to `com.apple.access_ssh` when that group exists.
+ *
+ * Apple's sshd refuses every authentication method for an account outside that
+ * group and reports only "all methods rejected", which is exactly the failure
+ * this fixture used to hit on a hosted runner.
+ */
+async function ensureNativeSshAccessGroup({
+  commandOptions,
+  dependencies,
+  username,
+}) {
+  const group = nativeAccessGroupCheckCommand()
+  const existing = await tryRunFixtureCommand(
+    group.command,
+    group.args,
+    commandOptions,
+    dependencies,
+    NATIVE_COMMAND_TIMEOUT_MS,
+    'password fixture ssh access group read',
+  )
+  if (!existing.ok) {
+    dependencies.log(
+      `[password-sshd] ${NATIVE_SSH_ACCESS_GROUP} is absent on this host, so sshd ` +
+        'does not restrict logins by group',
+    )
+    return false
+  }
+  const add = nativeAccessGroupAddCommand(username)
+  await runFixtureCommand(
+    add.command,
+    add.args,
+    commandOptions,
+    dependencies,
+    NATIVE_COMMAND_TIMEOUT_MS,
+    'password fixture ssh access group membership',
+  )
+  dependencies.log(
+    `[password-sshd] added ${username} to ${NATIVE_SSH_ACCESS_GROUP}`,
+  )
+  return true
+}
+
+function formatSshdDiagnostics(daemon) {
+  const stderr = (daemon?.stderr?.() ?? '').trim()
+  if (stderr === '') return 'the daemon printed no diagnostics of its own'
+  return (
+    'daemon diagnostics:\n' +
+    stderr
+      .split('\n')
+      .map(line => '  [password-sshd] ' + line)
+      .join('\n')
+  )
+}
+
+export function renderNativePasswordProbeScript({ password, port, username }) {
+  if (!/^[0-9a-f]{32}$/.test(password)) {
+    throw new Error('the SSH login probe needs the generated hex account password')
+  }
+  return [
+    `set timeout ${Math.round(NATIVE_PROBE_TIMEOUT_MS / 1000)}`,
+    // -F /dev/null keeps the runner's own ssh config out of the probe, and
+    // NumberOfPasswordPrompts=1 makes a rejected password fail the probe
+    // instead of looping on the prompt.
+    `spawn ${NATIVE_SSH_CLIENT} -F /dev/null -o BatchMode=no ` +
+      '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ' +
+      '-o PreferredAuthentications=password -o PubkeyAuthentication=no ' +
+      `-o NumberOfPasswordPrompts=1 -p ${port} ${username}@${LOOPBACK} ` +
+      'echo terminal-smoke-probe-ok',
+    'expect {',
+    // The prompt, not the word: ssh's own "Permission denied (password)." line
+    // also contains it, and answering that would hide the rejection behind a
+    // timeout.
+    '  -re {[Pp]assword: ?$} {',
+    `    send -- "${password}\\r"`,
+    '    exp_continue',
+    '  }',
+    '  "terminal-smoke-probe-ok" { exit 0 }',
+    '  timeout { puts "no password prompt or marker from sshd"; exit 2 }',
+    '  eof { exit 1 }',
+    '}',
+    'exit 1',
+    '',
+  ].join('\n')
+}
+
+/**
+ * Types the generated password into a real ssh handshake.
+ *
+ * A banner probe only proves sshd is listening; the account, the password and
+ * the group membership are what the matrix actually depends on. `expect` ships
+ * with macOS, so this needs nothing installed.
+ */
+async function probeNativePasswordLogin({
+  daemon,
+  dependencies,
+  directory,
+  password,
+  port,
+  username,
+}) {
+  const scriptPath = path.join(directory, 'password-probe.exp')
+  await dependencies.writeFile(
+    scriptPath,
+    renderNativePasswordProbeScript({ password, port, username }),
+    { encoding: 'utf8', mode: 0o600 },
+  )
+  try {
+    await runFixtureCommand(
+      NATIVE_EXPECT,
+      ['-f', scriptPath],
+      { cwd: directory, shell: false, stdio: ['ignore', 'pipe', 'pipe'] },
+      dependencies,
+      NATIVE_PROBE_TIMEOUT_MS + 15_000,
+      'password SSH login probe',
+    )
+    dependencies.log(
+      `[password-sshd] a real SSH password login as ${username} succeeded before ` +
+        'the fixture was handed to a runner',
+    )
+  } catch (error) {
+    throw new Error(
+      `password fixture cannot log in as ${username} over SSH, so every password ` +
+        `case would fail with "all methods rejected": ${error.message}\n` +
+        formatSshdDiagnostics(daemon),
+    )
+  } finally {
+    await dependencies.rm(scriptPath, { force: true })
+  }
+}
+
 function startNativeSshd(configPath, directory, dependencies) {
   let child
   try {
@@ -593,11 +1110,33 @@ function startNativeSshd(configPath, directory, dependencies) {
     throw new Error('password OpenSSH daemon did not expose a valid process id')
   }
   const daemon = { child, closed: false, stderr: collectOutput(child.stderr) }
+  forwardSshdDiagnostics(child, dependencies)
   daemon.closePromise = waitForClose(child).then(status => {
     daemon.closed = true
     return status
   })
   return daemon
+}
+
+/**
+ * Streams sshd's own stderr into the evidence log with a recognisable prefix.
+ *
+ * `sshd -D -e` writes its diagnostics to stderr and nowhere else, so without
+ * this the reason a password login was refused existed only inside a string
+ * that a passing run never printed.
+ */
+function forwardSshdDiagnostics(child, dependencies) {
+  if (typeof dependencies.log !== 'function') return
+  child.stderr?.setEncoding('utf8')
+  let pending = ''
+  child.stderr?.on('data', chunk => {
+    pending += chunk
+    const lines = pending.split('\n')
+    pending = lines.pop() ?? ''
+    for (const line of lines) {
+      if (line.trim() !== '') dependencies.log('[password-sshd] ' + line)
+    }
+  })
 }
 
 function signalNativeDaemon(daemon, signal, dependencies) {
@@ -735,6 +1274,29 @@ async function startNativePasswordSshd({ runDirectory, dependencies }) {
     )
     state.accountCreated = true
 
+    // Fail here, with the attribute that is wrong, instead of fifteen minutes
+    // later inside the matrix where sshd only says "all methods rejected".
+    await verifyNativeAccountPassword({
+      commandOptions,
+      dependencies,
+      homePath: paths.homePath,
+      password,
+      username,
+    })
+    await fixNativeHomeOwnership({
+      commandOptions,
+      dependencies,
+      homePath: paths.homePath,
+      username,
+    })
+    await verifyNativeAccountAttributes({
+      commandOptions,
+      dependencies,
+      homePath: paths.homePath,
+      username,
+    })
+    await ensureNativeSshAccessGroup({ commandOptions, dependencies, username })
+
     let ready = false
     for (let attempt = 1; attempt <= NATIVE_PORT_ATTEMPTS; attempt += 1) {
       port = await reserveLoopbackPort(dependencies)
@@ -773,6 +1335,14 @@ async function startNativePasswordSshd({ runDirectory, dependencies }) {
     if (!ready || state.daemon === null) {
       throw new Error('password OpenSSH daemon never became ready')
     }
+    await probeNativePasswordLogin({
+      daemon: state.daemon,
+      dependencies,
+      directory,
+      password,
+      port,
+      username,
+    })
 
     const connection = {
       host: LOOPBACK,

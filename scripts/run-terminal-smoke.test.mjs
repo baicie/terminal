@@ -8,8 +8,11 @@ import {
   APP_TIMEOUT_MS,
   CARGO_METADATA_TIMEOUT_MS,
   FORCE_KILL_GRACE_MS,
+  FRONTMOST_RETRY_LIMIT,
+  isFrontmostPreconditionFailure,
   parseTerminalSmokeResult,
   runTerminalSmoke,
+  smokeCaseLabel,
 } from './run-terminal-smoke.mjs'
 import {
   parseMatrixArguments,
@@ -1232,3 +1235,169 @@ test('a smoke app killed with a grandchild holding stdio still settles', async (
   child.emit('exit', null, 'SIGKILL')
   assert.deepEqual(await settled, { code: null, signal: 'SIGKILL', spawnError: null })
 })
+
+// ---------------------------------------------------------------------------
+// Frontmost precondition retries
+//
+// On a hosted macOS runner another application occasionally keeps focus across
+// all eight accessibility attempts. That is a precondition, not a result, so a
+// case may be re-run — but an authentication rejection, a timeout or a content
+// mismatch must fail on the first attempt, otherwise the evidence would say
+// "eventually green" instead of naming the defect.
+// ---------------------------------------------------------------------------
+
+const FRONTMOST_FAILURE =
+  'expected process 41003 to be frontmost, got 351 after 8 attempts'
+
+/**
+ * createHarness whose application child is fresh per spawn.
+ *
+ * An attempt that is re-run spawns a second application, and a fake that hands
+ * out the same already-ended streams twice would fail on the harness instead of
+ * on the behaviour under test.
+ */
+function createRetryHarness(options) {
+  const harness = createHarness(options)
+  const appChildren = []
+  const spawnChild = harness.dependencies.spawn
+  harness.dependencies.spawn = (command, args, spawnOptions) => {
+    if (command === 'pnpm' || command === 'cargo') {
+      return spawnChild(command, args, spawnOptions)
+    }
+    const child = new FakeChild(43_000 + appChildren.length)
+    appChildren.push(child)
+    harness.calls.spawn.push({ command, args, options: spawnOptions })
+    queueMicrotask(() => {
+      harness.setAppClosed(true)
+      child.emit('close', 0, null)
+    })
+    return child
+  }
+  return { ...harness, appChildren }
+}
+
+test('only the frontmost assertion is classified as retryable', () => {
+  assert.equal(isFrontmostPreconditionFailure(new Error(FRONTMOST_FAILURE)), true)
+  assert.equal(
+    isFrontmostPreconditionFailure(
+      new Error('smoke failed at stage connecting: authenticate SSH user failed'),
+    ),
+    false,
+  )
+  assert.equal(
+    isFrontmostPreconditionFailure(new Error('smoke timed out after 210000 ms')),
+    false,
+  )
+  assert.equal(isFrontmostPreconditionFailure('not an error object'), false)
+  assert.equal(FRONTMOST_RETRY_LIMIT, 2)
+})
+
+test('a retry line names the same case the matrix selected', () => {
+  for (const item of selectCases(undefined)) {
+    if (!item.reconnect) continue
+    assert.equal(smokeCaseLabel(item), item.name)
+  }
+})
+
+test('retries a case that only lost the frontmost precondition and records the attempt', async t => {
+  const log = t.mock.method(console, 'log', () => {})
+  const { appChildren, calls, dependencies } = createRetryHarness({
+    reconnectReady: true,
+    result: reconnectPassingResult,
+  })
+  let attempts = 0
+  dependencies.ensureFrontmost = async (pid, runDirectory) => {
+    attempts += 1
+    calls.frontmost.push({ pid, runDirectory })
+    if (attempts === 1) throw new Error(FRONTMOST_FAILURE)
+  }
+
+  const result = await runTerminalSmoke({
+    cwd: PROJECT_ROOT,
+    reconnect: true,
+    // Each attempt re-spawns only the application: the case under test is the
+    // retry policy, not the build.
+    skipBuild: true,
+    targetDirectory: TARGET_DIRECTORY,
+    dependencies,
+  })
+
+  assert.equal(attempts, 2)
+  assert.equal(calls.mkdtemp.length, 2)
+  assert.equal(appChildren.length, 2)
+  assert.deepEqual(appChildren[0].killSignals, ['SIGTERM'])
+  assert.equal(result.attempt, 2)
+  assert.equal(result.frontmostRetries, 1)
+  assert.equal(result.reconnectObserved, true)
+  assert.equal(result.uniqueSessionCount, 11)
+  const retryLine = log.mock.calls
+    .map(call => call.arguments.join(' '))
+    .find(line => line.includes('attempt 2/3 after a frontmost precondition failure'))
+  assert.equal(
+    retryLine,
+    `[key-reconnect] attempt 2/3 after a frontmost precondition failure: ${FRONTMOST_FAILURE}`,
+  )
+  assert.ok(
+    log.mock.calls
+      .map(call => call.arguments.join(' '))
+      .includes('[key-reconnect] attempt 2/3 passed after a frontmost precondition failure'),
+  )
+})
+
+test('does not retry a functional failure', async () => {
+  const { calls, dependencies } = createHarness({
+    result: {
+      ...passingResult,
+      ok: false,
+      stage: 'connecting',
+      error:
+        'smoke failed at stage connecting: authenticate SSH user failed: authentication failed: all methods rejected',
+    },
+  })
+
+  await assert.rejects(
+    runTerminalSmoke({
+      cwd: PROJECT_ROOT,
+      skipBuild: true,
+      targetDirectory: TARGET_DIRECTORY,
+      dependencies,
+    }),
+    /all methods rejected/,
+  )
+
+  assert.equal(calls.mkdtemp.length, 1)
+  // One application spawn for the whole case: a functional failure is a result,
+  // not a precondition to re-establish.
+  assert.equal(calls.spawn.length, 1)
+})
+
+test('stops after three attempts when the frontmost precondition never holds', async () => {
+  const { appChildren, calls, dependencies } = createRetryHarness({
+    reconnectReady: true,
+    result: reconnectPassingResult,
+  })
+  dependencies.ensureFrontmost = async (pid, runDirectory) => {
+    calls.frontmost.push({ pid, runDirectory })
+    throw new Error(FRONTMOST_FAILURE)
+  }
+
+  await assert.rejects(
+    runTerminalSmoke({
+      cwd: PROJECT_ROOT,
+      reconnect: true,
+      skipBuild: true,
+      targetDirectory: TARGET_DIRECTORY,
+      dependencies,
+    }),
+    new RegExp(`expected process 41003 to be frontmost`),
+  )
+
+  assert.equal(calls.mkdtemp.length, 3)
+  assert.equal(calls.frontmost.length, 3)
+  assert.equal(appChildren.length, 3)
+  assert.deepEqual(
+    appChildren.map(child => child.killSignals),
+    [['SIGTERM'], ['SIGTERM'], ['SIGTERM']],
+  )
+})
+

@@ -191,8 +191,87 @@ function coldStartRuns(text) {
   )
 }
 
-function shellProbeResults(text) {
-  const arrays = extractJsonDocuments(text).filter(
+// ---------------------------------------------------------------------------
+// Log noise
+//
+// One console line carries three layers the parsing below must not see: the
+// ANSI colouring the Tauri app, pnpm and ssh emit, the literal `^[` form a
+// downloaded Actions log renders those same escapes as, and the workflow's
+// `##[group]` / `##[endgroup]` markers. Colour is not cosmetic here: an escape
+// sequence contains a `[`, so a bracket-counting JSON extractor that reads the
+// raw text never returns to depth zero and reports every later document as
+// absent. That is exactly how a log holding all fourteen cases parsed as zero.
+// ---------------------------------------------------------------------------
+const ANSI_ESCAPE = /\u001b\[[0-9;?]*[ -/]*[@-~]/g
+const CARET_ESCAPE = /\^\[\[[0-9;?]*[ -/]*[@-~]/g
+const WORKFLOW_MARKER = /^##\[(?:group|endgroup)\].*$/gm
+const BYTE_ORDER_MARK = /\ufeff/g
+
+export function stripLogNoise(text) {
+  return text
+    .replace(BYTE_ORDER_MARK, '')
+    .replace(CARET_ESCAPE, '')
+    .replace(ANSI_ESCAPE, '')
+    .replace(WORKFLOW_MARKER, '')
+}
+
+const SHELL_PROBE_HEADER =
+  /^\[(local|ssh)\/([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)\] running\.\.\./
+const SHELL_PROBE_OK = /\bok \((\d+) ms\)/
+const SHELL_PROBE_FAILED = /\bFAILED\b/
+
+/**
+ * Recovers the case list from the progress lines the matrix runner prints
+ * between the cases themselves.
+ *
+ * The header and its `ok (N ms)` are never on the same line on a real runner:
+ * the application logs a startup banner in between, so the outcome is found by
+ * scanning forward from each header and stopping at the next header. This
+ * fallback earns its place because the JSON summary is written once, at the
+ * end: a run killed by a failure never writes one.
+ */
+function shellProbeProgressResults(text) {
+  const results = []
+  let current = null
+  for (const line of text.split(/\r?\n/)) {
+    const header = SHELL_PROBE_HEADER.exec(line)
+    if (header !== null) {
+      current = {
+        caseName: header[3],
+        durationMs: undefined,
+        ok: null,
+        shell: header[2],
+        transport: header[1],
+      }
+      results.push(current)
+      continue
+    }
+    if (current === null || current.ok !== null) continue
+    const ok = SHELL_PROBE_OK.exec(line)
+    if (ok !== null) {
+      current.ok = true
+      current.durationMs = Number(ok[1])
+      continue
+    }
+    if (SHELL_PROBE_FAILED.test(line)) current.ok = false
+  }
+  for (const entry of results) {
+    if (entry.ok === null) entry.ok = false
+  }
+  return results
+}
+
+/**
+ * Parses one shell-probe log into its cases.
+ *
+ * The JSON summary the runner prints last is the richer source (`transport`,
+ * `shell`, `binarySha256`), so it wins whenever it parses; the progress scan
+ * takes over when it does not. `source` is reported by `--check` so a reviewer
+ * can see which of the two produced the numbers.
+ */
+export function parseShellProbeLog(text) {
+  const noiseFree = stripLogNoise(text)
+  const arrays = extractJsonDocuments(noiseFree).filter(
     document =>
       Array.isArray(document) &&
       document.length > 0 &&
@@ -203,7 +282,13 @@ function shellProbeResults(text) {
           typeof entry.caseName === 'string',
       ),
   )
-  return arrays.length === 0 ? [] : arrays[arrays.length - 1]
+  const jsonCases = arrays.length === 0 ? [] : arrays[arrays.length - 1]
+  if (jsonCases.length > 0) return { cases: jsonCases, source: 'json-summary' }
+  const progressCases = shellProbeProgressResults(noiseFree)
+  return {
+    cases: progressCases,
+    source: progressCases.length === 0 ? 'none' : 'progress-lines',
+  }
 }
 
 function sshMatrixCases(text) {
@@ -395,6 +480,9 @@ function terminalRun(recordedRun, index, { withNonce }) {
 async function main() {
   const options = parseArguments(process.argv.slice(2))
   const problems = []
+  // Only filled in --check mode: it prints the raw case counts the fixtures
+  // below are parsed into, so the parser can be proven offline.
+  const checkNotes = []
   const logsDirectory = path.resolve(PROJECT_ROOT, options.logs)
 
   for (const [key, file] of Object.entries(EVIDENCE_FILES)) {
@@ -655,10 +743,34 @@ async function main() {
 
   // ---- debug: local 14 + real SSH 7 shell probes -------------------------
   if (logs.debugShellLocal !== undefined || logs.debugShellSsh !== undefined) {
-    const localResults =
-      logs.debugShellLocal === undefined ? [] : shellProbeResults(logs.debugShellLocal)
-    const sshResults =
-      logs.debugShellSsh === undefined ? [] : shellProbeResults(logs.debugShellSsh)
+    const localParse =
+      logs.debugShellLocal === undefined
+        ? undefined
+        : parseShellProbeLog(logs.debugShellLocal)
+    const sshParse =
+      logs.debugShellSsh === undefined
+        ? undefined
+        : parseShellProbeLog(logs.debugShellSsh)
+    const localResults = localParse?.cases ?? []
+    const sshResults = sshParse?.cases ?? []
+    for (const [file, parse] of [
+      [LOG_FILES.debugShellLocal, localParse],
+      [LOG_FILES.debugShellSsh, sshParse],
+    ]) {
+      if (parse === undefined) continue
+      checkNotes.push(
+        file +
+          ': parsed ' +
+          parse.cases.length +
+          ' case(s) from ' +
+          parse.source +
+          ' [' +
+          parse.cases
+            .map(entry => entry.transport + '/' + entry.shell + '/' + entry.caseName)
+            .join(', ') +
+          ']',
+      )
+    }
 
     if (logs.debugShellLocal !== undefined) {
       const label = LOG_FILES.debugShellLocal
@@ -974,6 +1086,10 @@ async function main() {
       sha256: document.binary?.sha256 ?? document.build?.sha256 ?? null,
     })),
     rawLogs: { directory: options.logs, files: Object.values(LOG_FILES) },
+  }
+
+  if (options.check) {
+    for (const note of checkNotes) console.log('shell probe parse: ' + note)
   }
 
   if (problems.length > 0) {
