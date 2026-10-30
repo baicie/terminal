@@ -252,6 +252,20 @@ export const themeDisplayNames: Record<TerminalThemePreset, string> = {
   custom: 'Custom',
 }
 
+/**
+ * Single source for the label a user reads. Ids that are not presets (a
+ * vendor theme imported as custom, or a preset added without a name) fall
+ * back to title-casing the id so nothing renders as a raw slug.
+ */
+export function getThemeDisplayName(preset: string): string {
+  const named = themeDisplayNames[preset as TerminalThemePreset]
+  if (named) return named
+  return preset
+    .split('-')
+    .map(word => (word ? word[0].toUpperCase() + word.slice(1) : word))
+    .join(' ')
+}
+
 // Get theme colors by preset
 export function getThemeColors(
   preset: TerminalThemePreset,

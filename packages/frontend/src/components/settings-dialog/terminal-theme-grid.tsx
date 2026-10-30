@@ -7,6 +7,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { getThemeDisplayName } from '@/utils/terminal-themes'
 import { TerminalThemePreview } from './terminal-theme-preview'
 
 interface TerminalThemeGridProps {
@@ -17,12 +18,6 @@ interface TerminalThemeGridProps {
   onSelect: (theme: TerminalThemePreset) => void
 }
 
-function getThemeName(id: string) {
-  return id
-    .split('-')
-    .map(word => word[0].toUpperCase() + word.slice(1))
-    .join(' ')
-}
 
 export function TerminalThemeGrid({
   themes,
@@ -55,12 +50,12 @@ export function TerminalThemeGrid({
               >
                 <TerminalThemePreview themeId={theme} />
                 <span className="text-[10px] leading-tight font-medium">
-                  {getThemeName(theme)}
+                  {getThemeDisplayName(theme)}
                 </span>
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top">
-              <p className="font-medium">{getThemeName(theme)}</p>
+              <p className="font-medium">{getThemeDisplayName(theme)}</p>
               <p className="text-xs text-muted-foreground/80">Click to apply</p>
             </TooltipContent>
           </Tooltip>

@@ -3389,6 +3389,8 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 
 ### Issue #139: 浅色模式终端默认主题是米黄背景的 solarized-light ✅ 已修复
 
+
+**修复（2026-10-30）**：`themeDisplayNames` 改成唯一出口 `getThemeDisplayName(preset)` —— 表里有名字就用表里的，表里没有（第三方导入的自定义主题等）才回落到 id 首字母大写，保证任何情况下不会把原始 slug 渲染到界面上。`terminal-theme-grid.tsx` 删掉本地 `getThemeName`，网格选项与「Theme:」标签两处都改用它，并去掉 `capitalize`（它会把 `Rosé Pine` 的重音和大小写一起抹平）。回归测试钉住 `Rosé Pine` / `Rosé Pine Dawn` / `GitHub Dark` / `PaperColor Light` / `Kanagawa Wave`，并断言至少有 4 个预设的 curated 名称与朴素首字母大写不同 —— 否则这个 bug 会悄悄回来。
 **严重程度**：Minor（观感）
 
 **现状**：`defaultSettings.terminalThemeLight` 是 `solarized-light`，背景 `#fdf6e3` 是米黄/奶油色，启动第一印象像「终端默认颜色发黄」。顺带查清解析路径：`theme='dark'` 取 `terminalThemeDark`（`terminal-container/container.tsx:67-68` → `use-terminal-active-preset.ts:15-19`），历史字段 `terminalTheme` 在解析路径上从不被读取，所以它的默认值未动。
@@ -3450,7 +3452,7 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 - run `41068045019`：Linux 改为挂在 `Run public-key smoke and reconnect smoke under Xvfb`，Windows 挂在 PowerShell/cmd 矩阵
 - 三轮里失败点每次都不同，且 `main` 上该 workflow 最近三次（10-12 / 10-19 / 10-26）都红在更早的 `setup-node@v4`，因此历史上从未跑到这些 step；判断为托管 runner 的环境性抖动优先，而不是代码回归
 - 这些 job 不参与 6 份证据，暂不阻塞证据收口；若持续出现，需要按 job 逐个抓日志定位（Xvfb 图形栈、AT-SPI 缺失、30 秒 smoke 预算）
-### Issue #142: 设置面板的主题名是 id 推导出来的，没用 curated 名称 📋 待评估
+### Issue #142: 设置面板的主题名是 id 推导出来的，没用 curated 名称 ✅ 已修复（2026-10-30）
 
 **严重程度**：Minor（观感）
 

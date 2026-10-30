@@ -9,6 +9,7 @@ import type {
 } from '@/service/database/types'
 import {
   getThemeColors,
+  getThemeDisplayName,
   terminalThemes,
   themeDisplayNames,
 } from './terminal-themes'
@@ -230,6 +231,30 @@ describe('terminal theme palettes', () => {
       expect(presetIds).toContain(preset)
       expect(themeDisplayNames[preset]).toBeTruthy()
     }
+  })
+
+  // Issue #142: the settings grid used to title-case the id, so a curated
+  // name never reached the screen. Pin the accented and cased ones.
+  it('labels presets with the curated name rather than a title-cased id', () => {
+    expect(getThemeDisplayName('rose-pine')).toBe('Rosé Pine')
+    expect(getThemeDisplayName('rose-pine-dawn')).toBe('Rosé Pine Dawn')
+    expect(getThemeDisplayName('github-dark')).toBe('GitHub Dark')
+    expect(getThemeDisplayName('papercolor-light')).toBe('PaperColor Light')
+    expect(getThemeDisplayName('kanagawa')).toBe('Kanagawa Wave')
+    const naive = (id: string) =>
+      id
+        .split('-')
+        .map(word => word[0].toUpperCase() + word.slice(1))
+        .join(' ')
+    const curated = [...darkThemes, ...lightThemes].filter(
+      id => getThemeDisplayName(id) !== naive(id),
+    )
+    expect(curated.length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('title-cases an id that is not a preset instead of showing a raw slug', () => {
+    expect(getThemeDisplayName('vendor-theme-x')).toBe('Vendor Theme X')
+    expect(getThemeDisplayName('')).toBe('')
   })
 
   it('falls back to one-dark for an unknown preset', () => {

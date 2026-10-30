@@ -3,7 +3,7 @@ import { Download, Eye, Moon, Sun, Upload } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { getThemeColors } from '@/utils/terminal-themes'
+import { getThemeColors, getThemeDisplayName } from '@/utils/terminal-themes'
 import { TerminalThemeGrid } from './terminal-theme-grid'
 import type {
   DialogTerminalSettings,
@@ -155,8 +155,8 @@ export function TerminalThemePanel({
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>
               Theme:{' '}
-              <span className="font-medium text-foreground capitalize">
-                {activeTheme}
+              <span className="font-medium text-foreground">
+                {getThemeDisplayName(activeTheme)}
               </span>
             </span>
             <div className="flex items-center gap-3">
