@@ -4,8 +4,8 @@
 
 | 模式 | OS 代码签名 | Updater 签名 | 需要 Secrets | 产物 | 可见性 |
 | --- | --- | --- | --- | --- | --- |
-| `unsigned-qa`（默认） | 无 | 无 | 无 | 7 个安装包（macOS universal DMG、Windows ARM64/x64 NSIS、Linux ARM64/x64 AppImage+DEB） | draft → 校验通过后转 prerelease |
-| `updater-signed` | 无 | 有（`.sig` + `latest.json`） | `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`） | 上述 7 个安装包 + 各平台更新载荷 + `.sig` + 唯一 `latest.json` | draft → 全部门禁通过后转 prerelease |
+| `unsigned-qa`（默认） | 无 | 无 | 无 | **8 个安装包**：macOS `aarch64` / `x86_64` 各一个 DMG、Windows ARM64/x64 NSIS、Linux ARM64/x64 各 AppImage + DEB | draft → 校验通过后转 prerelease |
+| `updater-signed` | 无 | 有（`.sig` + `latest.json`） | `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）+ `TAURI_UPDATER_PUBKEY` | 上述 8 个安装包 + macOS 逐架构 `.app.tar.gz` 与 `.sig`、`windows-x86_64-setup.exe.sig`、`linux-x86_64.AppImage.sig` + 唯一 `latest.json` | draft → 全部门禁通过后转 prerelease |
 | `fully-signed`（预留） | Developer ID + 公证 / Authenticode | 有 | Apple 与 Windows 证书 | — | **本阶段启用即失败**，等待付费证书 |
 
 ## unsigned-qa
@@ -21,10 +21,13 @@
 - 前置条件：secrets 里同时存在 `TAURI_SIGNING_PRIVATE_KEY`（私钥）与 `TAURI_UPDATER_PUBKEY`（公钥，且不能是占位符值）。任一缺失时 `Validate the release mode` 步骤直接失败——**不会自动降级成 unsigned 产物**，因为那会让「已签名」的声明变成假话。
 - 通过 `--config {"bundle":{"createUpdaterArtifacts":true}}` **内联**开启 updater 产物，仓库里的 `tauri.conf.json` 不变，所以普通发布仍是干净产物。
 - `verify-release` 的门禁：
-  1. 每个平台必须有一个更新载荷（`*.app.tar.gz` / `*.nsis.zip` / `*.AppImage.tar.gz`）；
-  2. 每个载荷必须有同名 `.sig`，缺一个就失败；
-  3. 用真实的 `.sig` 内容生成唯一 `latest.json`（`darwin-aarch64`、`darwin-x86_64` 指向同一份 universal 载荷；`windows-x86_64`；`linux-x86_64`）；
-  4. 只有以上都通过，draft 才会被 undraft。
+  1. `bundle-macos` 必须为本架构产出 `*.app.tar.gz`，并已带上 `.sig`（缺 payload 或 `.sig` 都失败）；
+  2. Windows 与 Linux 的更新载荷就是各自的安装包本身（`Terminal_<ver>_windows-x86_64-setup.exe`、`Terminal_<ver>_linux-x86_64.AppImage`），各自必须有同名 `.sig`；
+  3. 用真实的 `.sig` 内容生成唯一 `latest.json`，**只有 4 个平台条目**：`darwin-aarch64` 与 `darwin-x86_64` 各指向本架构的 `.app.tar.gz`，加 `windows-x86_64` 与 `linux-x86_64`；
+  4. `tauri-action` 被设为 `uploadUpdaterJson: false`，`latest.json` 只能由 `verify-release` 生成，避免各平台各发一份；
+  5. 只有以上都通过，draft 才会被 undraft。
+- **覆盖范围是有限的**：`windows-aarch64` 与 `linux-aarch64` 没有更新条目，这两个架构的安装包只能手动下载安装。
+- **本阶段状态**：该模式从未在真实密钥下执行过，只能标为「代码完成、未验证」。
 - 仍然没有 OS 代码签名：Gatekeeper / SmartScreen 警告照旧，文档和 Release 说明必须如实写。
 - **运行时消费**：`tauri-plugin-updater` 已注册，前端有只读的「检查更新」（不自动下载安装）。仓库里 `plugins.updater.pubkey` 仍是占位符（因此 unsigned QA 构建的检查会 fail-closed 并在 UI 提示未配置）；`updater-signed` 构建通过 CI 的 `--config` 注入真实公钥，只有签名构建才具备可用的更新校验。细节见 `docs/release/signing-keys.md` 第 4 节。
 

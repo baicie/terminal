@@ -3471,5 +3471,68 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 
 **建议的改法**（下一轮与其它前端改动合并，一次性重采）：`getThemeName` 先查 `themeDisplayNames[id]`，查不到再回退到当前的推导逻辑；补一条测试断言 `getThemeName('rose-pine') === 'Rosé Pine'`。
 
+---
+
+## 二十七、Phase 7 — 可靠性收口修复记录 (2026-10-31 ~ 2026-11-01)
+
+> 本节记录 `aba82ed..3c147e4` 的 7 个提交修复的问题。每条的「修复前行为」都来自代码审查与提交说明；本节写作时**没有重跑测试**，测试计数引自提交说明。
+
+### Issue #146: SFTP 传输队列没有并发上限，取消语义是假的 ✅ 已修复（2026-10-31，`3c147e4`）
+
+**严重程度**：Important
+
+**修复前**：调度顺序是 LIFO，并发提交可以把同时运行的传输推到任意数量；同一条记录能被重复启动；`cancelled` 只是状态字段的字面值，队列里的任务并没有真正被摘除，取消运行中的传输也没有对应语义。
+
+**修复后**：新增 `service/sftp-transfer-queue.ts`。并发上限在**同一同步段内**完成「检查槽位 → 占用槽位 → 转 running」，之后才出现第一个 `await`，所以并发提交只能串行落入该段（实测 10/50/100 入队时 running 恒为 3）；`startedIds` 守卫保证同一 `transferId` 最多启动一次；终态不可再转换，重复/乱序/迟到事件被忽略且槽位只释放一次；`queued → cancelled` 是真取消，`running` 返回 `unsupported-running`（Rust 侧没有 `sftp_cancel*` 命令），UI 对运行中记录禁用取消并给出说明；listener 安装失败由静默继续改为阻断并报错；调度改为 FIFO（行为变化，已记入提交说明）。
+
+**证据**：新增 25 个用例（含 10/50/100 并发、幽灵任务、槽位泄漏、断线重连）；提交说明记录前端测试 1209 → 1234、行数门禁 556 → 558。
+
+### Issue #147: 同步导入不是事务，导出失败还会拿空数组覆盖服务器真实备份 ✅ 已修复（2026-10-31，`bff6b9e`）
+
+**严重程度**：Critical（可能丢数据）
+
+**修复前**：`sync-import` 每条语句重开一次数据库连接，中途失败会留下半写状态；`sync-export` 与 `sync-team` 共 5 处在读失败时静默返回 `[]`——空备份会覆盖服务器上的真实备份；`storageDownload` 混淆「不存在」与「失败」；`script-executor` 失败即放弃且无并发上限。
+
+**修复后**：导入整包 `BEGIN IMMEDIATE … COMMIT`、失败 `ROLLBACK`、并发导入串行化并复用 `getDb()` 单例；`connection` 只在 schema + PRAGMA 全部成功后才发布；5 处静默 `[]` 改为 `selectStrict`，读失败中止导出/上传；`storageDownload` 改三态 `ok/notFound/error`；脚本执行加指数退避+抖动与 5 路信号量，部分失败记 `partial`；通知数组上限 100。
+
+### Issue #148: 离线队列无版本守卫全量覆盖、Team Server 多处先查后写竞争 ✅ 已修复（2026-10-31，`f9d93ac`）
+
+**严重程度**：Important
+
+**修复前**：离线队列的 `CREATE` 命中已存在 id 时直接全量覆盖，等于用旧数据覆盖新数据；同步增量游标在查询后才捕获，存在漏同步窗口；三处「先查后写」在并发下会丢更新；`addMember` 把唯一约束冲突报成 500；非 creator 能修改他人共享的 `permission`/`isSensitive`，可把敏感分享降级为明文；LINK 邀请 token 首字符可能被 `IdentifierPipe` 拒成 400（约 1/64 概率）。
+
+**修复后**：`CREATE` 冲突判定不再覆盖；游标改为查询前捕获并加 `lte` 上界；三处改为条件 `updateMany` + count 校验（REST 409 / push conflicts / 队列重试）；P2002 转 409；catch 只回稳定安全码；READWRITE 成员可写，非 creator 强制冻结 `permission` 与 `isSensitive`；LINK token 首字符限定字母数字；新增 `Share(teamId, updatedAt)` 索引及迁移 `20261031015529_share_team_updated_index`（迁移总数 2 → 3）。
+
+**证据**：测试 103 → 116；`typecheck` / `lint` / `test` / `prisma validate` 全绿。
+
+### Issue #149: 端口转发 bind 失败仍报 active、ssh writer 超时永久注销 ✅ 已修复（2026-10-31，`6ad2d8c`）
+
+**严重程度**：Critical（虚假成功）
+
+**修复前**：`port_forward` 在 `tokio::spawn` 内 bind，却立即写入 `status:"active"` 并返回 `Ok`——端口被占用时界面显示「已启动」，实际无人监听；remote 转发的 `tcpip_forward` 网络等待占着全局锁；accept 出错无退避；SFTP 的通道/子系统/握手三类失败被统一映射成 `SessionNotFound`，掩盖真实原因；下载前建目录失败被 `let _` 丢弃；`ssh_writer` 一次队列/响应超时就永久注销 writer，之后所有写入静默失效；三处 `reqwest` 客户端没有超时。
+
+**修复后**：bind 提前到命令内执行，失败返回 `Err` 且不插入任务表；`tcpip_forward` 移出锁临界区；accept 改 10ms→2s 指数退避、连续 10 次或不可恢复即停；SFTP 三类失败分别映射；建目录失败不再丢弃；writer 区分 Fatal 与 TimedOut，超时不再永久注销；三处客户端补 connect/整体 timeout。
+
+**证据**：新增 8 条单测；`cargo fmt --check` / `clippy -D warnings` / `test` 全绿（236 单元 + 3 集成）。
+
+### Issue #150: 证据门禁在含软链的路径下静默不执行，且两个脚本测试长期漏跑 ✅ 已修复（2026-10-31，`5ec331c`）
+
+**严重程度**：Important（门禁失真）
+
+**修复前**：`check-verification-evidence.mjs` 用字符串比较判断「是否直接运行」，路径里含符号链接时门禁直接跳过——退出码 0、零输出，看起来通过；`verify.mjs` 的 scripts 组写死了 16 项，`build-verification-evidence.test.mjs` 与 `macos-frontmost.test.mjs` **从未被执行**；`ci.yml` 的 source-size job 不跑脚本测试。
+
+**修复后**：直跑守卫改为两侧 `realpath` 比较；scripts 组改 `readdir` 通配收集；`ci.yml` 增加 `node --test scripts/*.test.mjs`。修复后 241 项脚本测试全部纳入门禁。
+
+### Issue #151: macOS 专属工具在 import-time 解析，Linux/Windows CI 整条导入链崩溃 ✅ 已修复（2026-10-31，`7c83029`）
+
+**严重程度**：Critical（CI 全红）
+
+**修复前**：GitHub Actions run `41077965521` 中 macOS success、Linux 与 Windows failure。根因是 `terminal-smoke-password-sshd.mjs` 在模块顶层执行 `resolveNativeTool('dscl', …)`，候选路径不存在即 throw，整个导入链在任何测试真正执行前就崩了；`NATIVE_CHOWN`/`NATIVE_CHMOD` 还是导出符号，连 import 它们的测试文件也连带崩。
+
+**修复后**：四个 helper 全部改为惰性记忆化解析，只在真正启动 native backend 时才 `accessSync`；导出改为惰性零参函数；新增 `declaredNativeTool`（计划期输出，不探测）与 `resolvedNativeHelpers`（测试取证）；新增 4 例 cross-platform 测试（全新子进程导入不探测任何 macOS helper、linux/win32 选择 backend 不解析 helper、win32 在依赖调用前即被拒、计划输出不触发解析）。门禁脚本测试 237 → 241。
+
+**未闭合**：该修复只在本地「把候选路径指向不存在位置」模拟过非 macOS 主机，**真实 Linux/Windows runner 验证仍待下一次 CI**。
+
+
 
 
