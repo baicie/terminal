@@ -1,21 +1,21 @@
 {
-  "recordedAt": "2026-10-30T12:06:00.000Z",
+  "recordedAt": "2026-10-30T14:56:17.490Z",
   "recordedDate": "2026-10-30",
   "kind": "tauri-process-cold-start-stopwatch-current-worktree",
-  "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal (invoked three times, one measured run per invocation)",
+  "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal (invoked 3 times, one measured run per invocation)",
   "environment": {
-    "os": "macOS 15.7.7",
+    "os": "macOS 26.6.2",
     "architecture": "arm64",
-    "node": "22.12.0"
+    "node": "24.16.0"
   },
   "revision": {
-    "head": "main",
-    "commit": "cd30142",
-    "dirtyWorktree": true
+    "head": "",
+    "commit": "30f3722",
+    "dirtyWorktree": false
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "1d6b470b5267e7ce2cc65983db0e7568aafec2a34d23082fe4f62785d9b658a0"
+    "sha256": "ef6d7453ffc11cb76d6bac35da29c9a53aec915c1a524a177f4c6ed34b319f4d"
   },
   "measurement": {
     "probe": "Rust TERMINAL_SHELL_PROBE marker written only after the frontend sent its nonce through xterm -> session_write -> local PTY and read the marker back",
@@ -23,63 +23,77 @@
     "readinessTarget": "terminal",
     "caseName": "cat-eof",
     "repeatSpawnToReadyMs": [
-      3685,
-      2345,
-      2432
+      6720,
+      4632,
+      3832
     ],
     "readyUnder10s": true,
     "terminalRuns": [
       {
         "run": 1,
-        "capturedAt": "2026-10-30T11:55:17.312Z",
-        "pid": 29530,
-        "nonce": "local_d489e703997b485ee255d100",
-        "marker": "TERMINAL_LOCAL_COLD_START_local_d489e703997b485ee255d100",
+        "capturedAt": "2026-10-30T14:37:47.237Z",
+        "pid": 18021,
+        "nonce": "local_afeab80ffb241be2059bbbc0",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_afeab80ffb241be2059bbbc0",
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 3243,
-        "requestToReadyMs": 3251,
+        "spawnToReadyMs": 6720,
+        "requestToReadyMs": 6726,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 2,
-        "capturedAt": "2026-10-30T11:55:49.018Z",
-        "pid": 30081,
-        "nonce": "local_2233fffffe8437b8a58691c6",
-        "marker": "TERMINAL_LOCAL_COLD_START_local_2233fffffe8437b8a58691c6",
+        "capturedAt": "2026-10-30T14:37:52.766Z",
+        "pid": 18262,
+        "nonce": "local_d654ca88aa58d7578222172b",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_d654ca88aa58d7578222172b",
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 2586,
-        "requestToReadyMs": 2593,
+        "spawnToReadyMs": 4632,
+        "requestToReadyMs": 4637,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 3,
-        "capturedAt": "2026-10-30T11:55:53.850Z",
-        "pid": 30181,
-        "nonce": "local_9d0cd8acdc8683d1c56931a8",
-        "marker": "TERMINAL_LOCAL_COLD_START_local_9d0cd8acdc8683d1c56931a8",
+        "capturedAt": "2026-10-30T14:37:57.628Z",
+        "pid": 18331,
+        "nonce": "local_7f6aee3dbdcd379214c9dea6",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_7f6aee3dbdcd379214c9dea6",
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 3404,
-        "requestToReadyMs": 3414,
+        "spawnToReadyMs": 3832,
+        "requestToReadyMs": 3838,
         "probeCaseName": "cat-eof",
         "ok": true
       }
     ]
   },
   "source": {
-    "fingerprint": "f9186713fe83e3e9320b94c82d50eeaca477fe7b28975e77ec27c528573ea8e5",
-    "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs. The worktree was clean except this runbook edit, so the fingerprint and the debug binary describe the same sources."
+    "fingerprint": "7f0acbd61d3991a67b4e3242a32e6a7efbc8837cba8a417574d802a7dbf82681",
+    "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs on the checked-out CI sources at evidence build time."
   },
   "limitations": [
-    "This binary is a VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle artifact with an embedded frontend; a plain build has no smoke/probe entry points and the runners refuse it, and a bare cargo build instead loads build.devUrl and renders nothing measurable.",
+    "This binary is a VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle artifact with an embedded frontend; a plain build has no smoke/probe entry points and the runners refuse it.",
     "The marker proves the local PTY round-trip is usable, not that a remote host answers: remote readiness is measured separately in 2026-10-11-macos-remote-shell-prompt-rerun.json.",
+    "Measured on a GitHub-hosted macOS virtual machine, not on a developer laptop or shipping hardware.",
     "Human physical keyboard typing, IME composition, sleep/resume on a real lid close and Windows/Pageant/serial hardware are still not covered by this file."
-  ]
+  ],
+  "provenance": {
+    "source": "github-actions",
+    "runId": "41072424137",
+    "runAttempt": "1",
+    "workflow": "Real-machine terminal matrix",
+    "job": "macos-ssh-matrix",
+    "commit": "30f3722b1bcdb640dc469200f904019e1d3f5277",
+    "fingerprint": "7f0acbd61d3991a67b4e3242a32e6a7efbc8837cba8a417574d802a7dbf82681",
+    "runner": {
+      "os": "macOS",
+      "arch": "ARM64"
+    }
+  }
 }

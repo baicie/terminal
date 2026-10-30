@@ -1,96 +1,98 @@
 {
-  "recordedAt": "2026-10-30T13:20:00.000Z",
+  "recordedAt": "2026-10-30T14:56:17.490Z",
   "recordedDate": "2026-10-30",
   "kind": "tauri-release-ten-second-terminal-gate",
-  "why": "The previous release record described a binary (5c008f04…) built before the shell-integration injection change and the terminal theme work; the release artifact on disk is now e02c6d9a…, built from this worktree. This record re-measures the same ten-second terminal gate on the artifact that actually exists.",
+  "why": "Release artifact cfbb422db1d3281753602570691170577fe2812c89d09f6bce25c135884558cc was built and measured by GitHub Actions run 41072424137 attempt 1 at commit 30f3722b1bcdb640dc469200f904019e1d3f5277; this record re-measures the ten-second terminal gate the earlier local captures described, on the artifact that run produced.",
   "environment": {
-    "os": "macOS 15.7.7",
+    "os": "macOS 26.6.2",
     "architecture": "arm64",
-    "node": "22.12.0"
+    "node": "24.16.0"
   },
   "revision": {
-    "head": "main",
-    "commit": "cd26696",
-    "dirtyWorktree": true
+    "head": "",
+    "commit": "30f3722",
+    "dirtyWorktree": false
   },
   "build": {
     "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle",
     "binary": "src-tauri/target/release/terminal",
-    "sha256": "e02c6d9af4f1b50d6fd36daa0185f874174961613b57a66e6e810a4ea70c5d50",
+    "sha256": "cfbb422db1d3281753602570691170577fe2812c89d09f6bce25c135884558cc",
     "devServerRequired": false,
-    "smokeInstrumented": true,
-    "smokeInstrumentedChunks": [
-      "probe-state.B40Nu7kX.js",
-      "experiments.D2_sYAuG.js",
-      "automation-root.BkSHYhRY.js",
-      "automation-root.XRAc9Che.js",
-      "terminal-input-probe.BfXDHUxk.js",
-      "automation-root.BUY-to1o.js",
-      "terminal-smoke-root.yL4TDlu.js"
-    ]
+    "smokeInstrumented": true
   },
   "local": {
-    "command": "pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/release/terminal (invoked three times, one measured run per invocation)",
+    "command": "pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/release/terminal (invoked 3 times, one measured run per invocation)",
     "probe": "Rust TERMINAL_SHELL_PROBE marker written only after the frontend sent its nonce through xterm -> session_write -> local PTY and read the marker back",
     "measuredFrom": "child-spawn-event",
     "readinessTarget": "terminal",
     "repeatSpawnToReadyMs": [
-      3248,
-      1435,
-      1321
+      3453,
+      3757,
+      3731
     ],
     "readyUnder10s": true,
     "terminalRuns": [
       {
         "run": 1,
-        "capturedAt": "2026-10-30T12:03:32.050Z",
-        "pid": 37736,
+        "capturedAt": "2026-10-30T14:54:11.134Z",
+        "pid": 56401,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 3248,
-        "requestToReadyMs": 3255,
+        "spawnToReadyMs": 3453,
+        "requestToReadyMs": 3458,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 2,
-        "capturedAt": "2026-10-30T12:03:45.450Z",
-        "pid": 37949,
+        "capturedAt": "2026-10-30T14:54:15.897Z",
+        "pid": 56452,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 1435,
-        "requestToReadyMs": 1441,
+        "spawnToReadyMs": 3757,
+        "requestToReadyMs": 3764,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 3,
-        "capturedAt": "2026-10-30T12:03:54.883Z",
-        "pid": 38100,
+        "capturedAt": "2026-10-30T14:54:20.301Z",
+        "pid": 56733,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 1321,
-        "requestToReadyMs": 1327,
+        "spawnToReadyMs": 3731,
+        "requestToReadyMs": 3736,
         "probeCaseName": "cat-eof",
         "ok": true
       }
     ]
   },
+  "source": {
+    "fingerprint": "7f0acbd61d3991a67b4e3242a32e6a7efbc8837cba8a417574d802a7dbf82681",
+    "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs on the checked-out CI sources at evidence build time."
+  },
   "limitations": [
     "This is automated evidence. It does not cover a human on a physical keyboard, Chinese IME composition, Option/dead keys, or vim/nano editing.",
-    "The remote SSH prompt gate for the release profile was not re-measured in this round; only the local terminal marker is recorded here.",
-    "Real lid-close sleep/wake, VPN and cellular handover recovery remain unobserved on hardware.",
+    "The remote SSH prompt gate for the release profile is measured in 2026-10-11-macos-release-ssh-matrix.json, not in this file.",
+    "Measured on a GitHub-hosted macOS virtual machine; real lid-close sleep/wake, VPN and cellular handover recovery remain unobserved on hardware.",
     "The binary is unsigned and unnotarised; first-launch Gatekeeper behaviour on a clean machine is still unverified.",
     "Windows OpenSSH Agent, Pageant, ConPTY/local Windows PTY and serial hardware have no test machine available and are not covered here."
   ],
-  "supersedes": [
-    "the 5c008f04… release measurement recorded in the previous revision of this file"
-  ],
   "instrumentationCaveat": "This binary is built with VITE_TERMINAL_SMOKE_BUILD=1, which compiles the smoke and input-probe entry points and the experiments nav item into the frontend. A shipping build omits all of them, so these numbers describe a slightly larger bundle than a user receives and are a conservative upper bound.",
-  "source": {
-    "fingerprint": "f9186713fe83e3e9320b94c82d50eeaca477fe7b28975e77ec27c528573ea8e5"
+  "provenance": {
+    "source": "github-actions",
+    "runId": "41072424137",
+    "runAttempt": "1",
+    "workflow": "Real-machine terminal matrix",
+    "job": "macos-ssh-matrix",
+    "commit": "30f3722b1bcdb640dc469200f904019e1d3f5277",
+    "fingerprint": "7f0acbd61d3991a67b4e3242a32e6a7efbc8837cba8a417574d802a7dbf82681",
+    "runner": {
+      "os": "macOS",
+      "arch": "ARM64"
+    }
   }
 }
