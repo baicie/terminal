@@ -3735,3 +3735,29 @@ ELIFECYCLE Command failed with exit code 1.
 **注意**：失败后 workflow 仍会用 `|| true` 上传 `evidence-artifact`（本次 24,036,767 字节，明显小于成功轮的 ~37.5 MB）。
 **这种来自失败 run 的产物不能用于证据回填**——manifest 未重新生成，且场景不完整。
 
+
+#### #152 / #153 修复记录（2026-11-01，Phase 8 P8.1）
+
+**状态：已修复并合并进 `feat/phase8-rc-hardening`（提交 `08dc637`）**
+
+**#152 vault_unlock 不校验密码**
+
+- 引入可选字段 `verifier` = `base64(HMAC-SHA256(master_key, "terminal-vault-verifier-v1" || salt))`；域分离串为编译期常量且**不落盘**（有测试断言文件中不含该串）
+- 比较用 `Hmac::verify_slice`（常量时间），非法 base64 直接 false；失配返回 `InvalidPassword`（无 message，不回显内容）
+- 三条旧格式路径：非空则解密任意真实条目定密码并原子迁移；为空则明确 `log::warn` 声明不可验证；迁移写失败只 warn、unlock 仍 Ok、旧文件字节不变
+
+**已接受的信息论限制（必须记住）**：历史格式的**空** Vault 不含任何可用于校验密码的材料。首次解锁时接受本次输入并立即封存 verifier，因此**空 Vault 的首个输入密码即成为其主密码**。这不是实现缺陷，是旧格式没有校验材料的必然结果；有数据的旧 Vault 永远走上一条（解密真实条目）。
+
+**#153 vault_create 覆盖已存在文件**
+
+- 改为 `OpenOptions::create_new(true)`（Unix `O_CREAT|O_EXCL` + mode `0o600`；Windows `CREATE_NEW`），存在性判断与创建是同一内核操作，无 TOCTOU 窗口
+- 已存在 → `AlreadyExists`（DTO kind `already_exists`）；目标被目录占据 → `SaveFailed`
+- 填充失败先 drop 句柄再删占位文件，不留残骸
+- **未提供 `overwrite` 参数**：那等于为普通 create 开一条新的破坏性入口。重置能力留给将来独立的显式破坏性命令，本轮不实现
+
+**一处顺带修正的前端认知错误**：`use-vaults-container.ts` 里那条 create 调用链**整条从未被挂载**（`VaultsContainer*` 只在 view/vaults 内部互相引用）。真正生效的是 `vaults-view.tsx → useVaultsView`。此前若按文档去改 container，等于改了一段死代码。
+
+**测试**：新增 13 例覆盖正确/错误密码、空 Vault、历史非空、历史空、迁移失败、change_password 轮换与失败回滚、跨 salt verifier 拒绝、verifier 不落盘、已存在拒绝且字节全保留、并发创建、只读路径字节完整、跨平台持久化。`cargo test` 260 passed（原 247，既有 11 例一字未改）。
+
+**残留**：`#[cfg(not(unix))]` 分支（Windows `CREATE_NEW` 语义）只编译未在真实 Windows 运行；`use-vaults-container.ts` 死链未同步（若将来挂载需一并处理）。
+
