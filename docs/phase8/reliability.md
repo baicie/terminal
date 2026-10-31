@@ -74,3 +74,45 @@ warn 未含 sessionId（scheduler 层无会话身份）。
 
 **仍然待验证**：本次修复只证明判据正确，**没有在真实 Linux runner 上重跑过**。
 需要下一次 matrix 的 Linux job 来确认 stale-output 阶段通过、且 shell 矩阵能真正执行。
+
+## D. 真实 runner 复验结果（run 41176128211，Linux job 124463955121）
+
+**这是 P8.3-A 的最终验证。**
+
+    修复前：terminal smoke finalized ok=false stage=stale-output（超时）
+    修复后：terminal smoke finalized ok=true  stage=complete      （日志第 8559 行）
+            terminal smoke finalized ok=true  stage=complete      （日志第 10428 行）
+
+stale-output 阶段通过，Linux job 已经走到之前被跳过的 shell 矩阵 —— 判据缺陷的修复在真实 Linux runner 上生效。
+
+同时 f74a33e 的可诊断性修复也生效了，第一次能看到实际键入的字节：
+
+    FAILED: Shell probe case failed: readline-history after 30037 ms
+    expected: ok=true, error=null, trace ready>step>pass
+    actual:   ok=false, error="terminal shell probe timed out"
+    timing:   30037 ms is at or past the app's 30000 ms per-case deadline
+    typed:    1 event(s): "printf '\r\n%s%s\r\n' '__TERMINAL_SHELL_PROBE_shell_48' '434b..._READY__'\r"
+    verdict:  the protocol was honoured; this is a case failure, not a contract mismatch
+
+### 从新诊断得到的新事实
+
+- 失败的三条恰好都是依赖 zsh 行编辑语义的：readline-history / readline-tab / pty-resize；
+  zsh 其余四条（cat-eof / vim-edit / nano-edit / ctrl-c-interrupt）与 bash 全部七条均通过。
+- readline-history 与 pty-resize 各只键入了 **1 个事件**，且是带 \r 结尾的 READY 命令；
+  30 秒内连 READY marker 都没回显 → 该命令从未被执行。
+- readline-tab 键入了 5 个事件，说明它执行到更后面才卡住。
+- 命令文本本身正确。
+
+### 当前假设（**未验证**，需要 Linux 环境）
+
+zsh 由 session/shell_startup.rs 注入自定义 ZDOTDIR + 生成的 .zshrc（local.rs:802），
+所以不是 newuser 向导问题。更可能落在生成 rc 与 ZLE 的交互上（键位模式、bindkey、或 rc 提前 return 使 ZLE 未就绪）。
+
+**这一条无法在本地验证** —— 本机是 macOS，需要一台真实 Linux（含完整图形栈）做二分实验
+（禁用 rc / 只加最小 rc / 检查 bindkey -v）。不得凭猜测改动 shell_startup.rs，
+那可能修好 Linux 却破坏 macOS。
+
+### 状态
+
+- P8.3-A（stale-output）：**VERIFIED on real runner**
+- P8.3-B（zsh 三条）：**BLOCKED_EXTERNAL** —— 根因候选已收窄，需要 Linux 环境二分
