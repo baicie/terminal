@@ -4028,3 +4028,42 @@ Phase 8.9 的 version CAS 杜绝了**并发**丢失更新。但旧客户端若�
 2. 找一个不依赖「窗口可见」的触发点，或显式在 webview 加载完成时初始化数据库
 3. 这不只是 CI 问题：真实用户若在窗口最小化/后台启动应用，同样可能不初始化数据库。
    若是这样，这是一条**产品缺陷**，不是测试环境问题。
+
+---
+
+### Phase 8.9 第 13 轮：两个新事实（改变前一轮的判断）
+
+**1. #59 不是 macOS 特有。** Linux 的 Tauri 作业同样失败：
+
+    [FAIL] the app created table "workspaces"
+    [FAIL] the app created table "workspace_layouts"
+    [FAIL] the app created table "ssh_keys"
+    [FAIL] deb: the app never finished creating its schema inside
+           /tmp/.../cycle-deb/config/com.baicie.termius/terminal.db
+
+这推翻了我第 12 轮写下的「疑似水合条件依赖窗口可见」——那个推断基于 macOS 单平台现象。
+两平台同时出现同类失败，更支持「`initializeCoreSchema` 在运行时抛错」而不是「路径没走到」。
+
+而真正开始触发这条路径的，很可能是 **Task 3 给共享表新增的 version/updated_at/dirty 三列迁移**：
+数据库一旦确实缺列，`pendingColumnMigrations` 就非空 -> 调 `ensurePreMigrationSnapshot` ->
+该命令失败 -> `initializeCoreSchema` 抛出 -> 表建不出来。
+
+**也就是说，我第 9 轮撤销的那个「快照是元凶」的方向，很可能是对的；
+我撤销的理由（「未证明能修好」）在当时成立，但现在有跨平台证据重新指向它。**
+真正的修法不是重排，而是让 `backup_database_before_migration` 成功。
+
+**2. Windows 的验证脚本有 PowerShell 语法错误，根本解析不了。**
+
+    ParserError: scripts/verify-install-windows.ps1:276
+    Missing closing '}' in statement block or type definition.
+
+已用忽略字符串/注释的括号配平分析：**整体 { } 是平衡的（FINAL depth=0）**，
+说明不是简单的花括号失配，而是 PowerShell 特有语法（here-string、反引号续行、
+`$()` 嵌套）导致解析失败。
+
+**本机没有 pwsh**（`command -v pwsh` 为空），Task 5 的代理当时也没有——
+它自述「只做了括号/引号配平与逐行人工复核」。这就是纯靠人工复核的代价：
+一个解析器一眼能看出的错误，两轮 CI 都没能绕过。
+
+**要修必须先有 PowerShell 环境。** 在没有解析器的前提下继续改这个文件，
+只是把猜测从一处挪到另一处。
