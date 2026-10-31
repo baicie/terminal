@@ -27,6 +27,12 @@ export interface TeamSharedHostRecord {
   shared_by: string
   permission: string
   created_at: number
+  /** Server-issued monotonic share version; NULL means the server never saw it. */
+  version?: number | null
+  /** Server-side change time, kept for display and conflict reporting. */
+  updated_at?: number | null
+  /** 1 while a local edit has not been accepted by the server yet. */
+  dirty?: number | null
 }
 
 export interface TeamSharedSnippetRecord {
@@ -36,6 +42,12 @@ export interface TeamSharedSnippetRecord {
   shared_by: string
   permission: string
   created_at: number
+  /** Server-issued monotonic share version; NULL means the server never saw it. */
+  version?: number | null
+  /** Server-side change time, kept for display and conflict reporting. */
+  updated_at?: number | null
+  /** 1 while a local edit has not been accepted by the server yet. */
+  dirty?: number | null
 }
 
 export interface TeamInviteRecord {

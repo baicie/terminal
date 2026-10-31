@@ -37,4 +37,29 @@ export default {
   'vaults.loading': 'Loading vault...',
   'vaults.secureVault':
     'Securely store sensitive data like passwords, SSH keys, and API tokens using AES-256 encryption.',
+  'vaults.vaultAlreadyExists':
+    'A vault already exists and will not be overwritten. Unlock it with its master password.',
+  'vaults.vaultCreateFailed': 'Failed to create the vault',
+  'vaults.vaultUnlockFailed': 'Failed to unlock the vault',
+  'vaults.loadFailed': 'Failed to load the vault entries',
+  'vaults.saveFailed': 'Failed to save the entry',
+  'vaults.deleteFailed': 'Failed to delete the entry',
+  'vaults.lockFailed': 'Failed to lock the vault',
+  'vaults.uninitialized':
+    'The last vault creation did not finish. Create the vault again to continue.',
+  'vaults.corrupt':
+    'The vault file is corrupt and was preserved byte for byte. Restore it manually.',
+  'vaults.corruptHint':
+    'This screen offers no delete or overwrite action, so nothing is destroyed here.',
+  'vaults.dismiss': 'Dismiss',
+  'vaults.entryCountOne': '{{total}} entry',
+  'vaults.entryCountMany': '{{total}} entries',
+  'vaults.keyLabel': 'Key',
+  'vaults.deleteEntry': 'Delete entry',
+  'vaults.valueLabel': 'Value',
+  'vaults.descriptionLabel': 'Description',
+  'vaults.showValue': 'Show value',
+  'vaults.hideValue': 'Hide value',
+  'vaults.copyValue': 'Copy value',
+  'vaults.togglePasswordVisibility': 'Toggle password visibility',
 }

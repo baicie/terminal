@@ -87,6 +87,55 @@ jobs:
           --from-config-datasource
           --to-schema prisma/schema.prisma
           --exit-code
+      # Real-PostgreSQL concurrency suite: two independent connection pools act as
+      # two clients, one external lock holder proves writers really block. It is
+      # kept out of the default 'test' script because it needs a live server, so
+      # it runs here where the postgres service is already up.
+      - name: Team Server concurrency suite (real PostgreSQL)
+        working-directory: packages/team-server
+        env:
+          TEAM_SERVER_TEST_DATABASE_URL: postgresql://postgres:ci-password@127.0.0.1:5432/team_server_concurrency_test
+        run: pnpm exec vitest run --config vitest.pg.config.ts
+
+  zsh-probe-diagnostic:
+    # Evidence for the Linux zsh timeouts. The standalone workflow file could not
+    # be dispatched because GitHub only registers workflows present on the default
+    # branch, so it lives here where it also runs on every push. It is cheap: it
+    # starts shells, it does not build the app.
+    name: zsh probe diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # This job collects evidence; it does not validate the product. Its script
+    # exits 1 whenever any variant fails, and "zsh plain + readline-history" is
+    # a standing finding on Ubuntu runners rather than a regression. Gating the
+    # build on it would keep CI red for a known result and teach people to
+    # ignore the job. The product gate is the shell-probe step inside
+    # real-machine-matrix.yml; this job only has to produce the transcript.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shells
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsh bash
+      - name: Record shell versions
+        run: |
+          echo "zsh: $(zsh --version)"
+          echo "bash: $(bash --version | head -1)"
+      - name: Run the rc matrix and capture transcripts
+        run: |
+          mkdir -p diagnostic-out
+          python3 scripts/diagnose-zsh-rc.py --shells zsh,bash --out diagnostic-out/zsh-diag.log
+      - name: Show the transcript
+        if: always()
+        run: cat diagnostic-out/zsh-diag.log || true
+      - name: Upload transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zsh-probe-diagnostic
+          path: diagnostic-out/
+          if-no-files-found: warn
 
   source-size:
     name: Production source-size gate
@@ -157,6 +206,10 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # Where every verification script writes its evidence snapshots; the upload
+      # step below collects them even when a step fails.
+      VERIFY_INSTALL_EVIDENCE: ${{ github.workspace }}/verify-install-evidence
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -187,3 +240,76 @@ jobs:
             libxdo-dev
       - run: pnpm install --frozen-lockfile
       - run: pnpm tauri build --no-bundle --ci -- --locked
+      # Phase 8.8 Task E1: produce the installers that the install-chain steps
+      # below consume. `tauri bundle` reuses the release binary from the build
+      # step, so this does not compile twice. Bundling stays a separate step from
+      # the --no-bundle compile gate so a packaging regression and a compile
+      # regression stay distinguishable in the job log.
+      - name: Bundle installer (macOS DMG + .app)
+        if: runner.os == 'macOS'
+        run: |
+          pnpm tauri bundle --bundles app
+          if ! pnpm tauri bundle --bundles dmg; then
+            echo "::warning::DMG bundling failed once; retrying (create-dmg on runners is known to be flaky)"
+            pnpm tauri bundle --bundles dmg
+          fi
+      - name: Bundle installer (Windows NSIS)
+        if: runner.os == 'Windows'
+        run: pnpm tauri bundle --bundles nsis
+      - name: Bundle installer (Linux deb + AppImage)
+        if: runner.os == 'Linux'
+        run: pnpm tauri bundle --bundles deb,appimage
+      - name: Install Xvfb and the desktop-file validator (Linux)
+        if: runner.os == 'Linux'
+        # x11-utils provides xdpyinfo, which the verification script uses to
+        # prove the headless X server is really up before it launches the app.
+        run: sudo apt-get install -y --no-install-recommends xvfb x11-utils desktop-file-utils
+      # Every step below exits non-zero on a failed assertion; none of them is
+      # allowed to swallow a failure with `|| true`. A check the runner genuinely
+      # cannot perform is printed as [SKIPPED]/[NOT_RUN] with its reason in the
+      # job log, never as a pass - see docs/release/phase8-task-e-rc-acceptance.md.
+      #
+      # Phase 8.9 Task 5: these scripts no longer settle for "the directory
+      # exists". Each one launches the installed app against an isolated user
+      # data root, writes controlled rows (a host without any credential, the
+      # app_settings row, a workspace with its layout, a test vault file), then
+      # overwrite-installs and relaunches the app and reads every asserted field
+      # back. The evidence JSON is the snapshot each run compares against, and
+      # the app's own boot-time write-back into the seeded settings row is what
+      # proves the data was read, not merely left on disk.
+      - name: Verify install chain + data retention (macOS DMG)
+        if: runner.os == 'macOS'
+        run: bash scripts/verify-install-macos.sh
+      - name: Parse the PowerShell verification script
+        # This machine cannot parse PowerShell, so the only way to catch a
+        # syntax error before it fails the real step is to ask the runner that
+        # has a parser. Without this, a missing brace surfaces as a generic
+        # exit 1 with no useful line number.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $path = Join-Path $env:GITHUB_WORKSPACE 'scripts/verify-install-windows.ps1'
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) {
+            $errors | ForEach-Object { Write-Host ($_.Extent.StartLineNumber.ToString() + ': ' + $_.Message) }
+            throw ('scripts/verify-install-windows.ps1 does not parse: ' + $errors.Count + ' error(s)')
+          }
+          Write-Host 'scripts/verify-install-windows.ps1 parses cleanly'
+
+      - name: Verify install chain + data retention (Windows NSIS)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/verify-install-windows.ps1
+      - name: Verify install chain + data retention (Linux deb + AppImage)
+        if: runner.os == 'Linux'
+        run: bash scripts/verify-install-linux.sh
+      # The uploaded snapshots are the pre-install baseline each run asserts
+      # against; they are evidence, not a gate input.
+      - name: Upload the data-retention evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-data-retention-${{ matrix.os }}
+          path: verify-install-evidence/
+          if-no-files-found: warn

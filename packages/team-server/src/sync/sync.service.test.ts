@@ -1,6 +1,11 @@
 import { Logger } from '@nestjs/common'
 import { describe, expect, it, vi } from 'vitest'
+import { LEGACY_FULL_DELIVERY_LIMIT } from './sync-delivery'
 import { SyncService } from './sync.service'
+
+/** Finished-run cursor at watermark 4242: bound 0, then the reached txid. */
+const COMPLETE_CURSOR
+  = '2.00000000000000000000.00000000000000004242.00000000000000000000'
 
 const existingShare = {
   id: 'share-b',
@@ -11,6 +16,8 @@ const existingShare = {
   isSensitive: false,
   sharedBy: 'owner-b',
   permission: 'READONLY',
+  /** Server-issued version: the only value the write condition may compare. */
+  version: 1n,
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 }
 
@@ -160,6 +167,9 @@ describe('SyncService authorization', () => {
           type: 'HOST',
           data: { hostname: 'plaintext' },
           permission: 'READONLY',
+          // 版本证明由服务端发放的 version 提供（Phase 9.0：无证明不写）
+          operation: 'UPDATE',
+          baseVersion: Number(sensitiveShare.version),
         },
       ],
     })
@@ -169,7 +179,7 @@ describe('SyncService authorization', () => {
         id: 'share-a',
         teamId: 'team-a',
         sharedBy: 'user-a',
-        updatedAt: sensitiveShare.updatedAt,
+        version: sensitiveShare.version,
       },
       data: {
         data: {},
@@ -221,6 +231,8 @@ describe('SyncService authorization', () => {
         findUnique: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockImplementation(({ data }) => ({ id: data.id })),
       },
+      // 每个 create 都要先查墓碑日志（旧写入不得静默复活已删除的共享）
+      syncChange: { findFirst: vi.fn().mockResolvedValue(null) },
       teamMember: {
         findUnique: vi.fn().mockResolvedValue({
           teamId: 'team-a',
@@ -366,44 +378,112 @@ describe('SyncService authorization', () => {
     )
   })
 
-  it('anchors the incremental sync watermark before reading so rows written during the read are not lost', async () => {
-    const before = 1_760_000_000_000
-    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(before)
+  it('anchors the incremental cursor on the database safe watermark instead of any clock', async () => {
+    const safe = 4_242n
+    const prisma = {
+      teamMember: {
+        findMany: vi.fn().mockResolvedValue([{ teamId: 'team-a' }]),
+      },
+      $queryRaw: vi.fn().mockResolvedValue([{ safe: safe.toString() }]),
+      syncChange: { findMany: vi.fn().mockResolvedValue([]) },
+      share: { findMany: vi.fn() },
+      auditLog: { findMany: vi.fn() },
+    }
+    const service = new SyncService(prisma as never)
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_760_000_000_000)
+    let result
     try {
-      const prisma = {
-        teamMember: {
-          findMany: vi.fn().mockResolvedValue([{ teamId: 'team-a' }]),
-        },
-        share: {
-          findMany: vi.fn().mockImplementation(async () => {
-            nowSpy.mockReturnValue(before + 5_000)
-            return []
-          }),
-        },
-        auditLog: { findMany: vi.fn().mockResolvedValue([]) },
-      }
-      const service = new SyncService(prisma as never)
-
-      const result = await service.getChanges('user-a', 1_000)
-
-      expect(result.timestamp).toBe(before)
-      expect(prisma.share.findMany).toHaveBeenCalledWith({
-        where: {
-          teamId: { in: ['team-a'] },
-          updatedAt: { gte: new Date(1_000), lte: new Date(before) },
-        },
-        orderBy: { updatedAt: 'asc' },
-      })
-      expect(prisma.auditLog.findMany).toHaveBeenCalledWith({
-        where: {
-          teamId: { in: ['team-a'] },
-          action: 'SHARE_DELETED',
-          createdAt: { gte: new Date(1_000), lte: new Date(before) },
-        },
-      })
+      result = await service.getChanges('user-a', 1_000)
     } finally {
       nowSpy.mockRestore()
     }
+
+    // The cursor is the frozen pg_snapshot_xmin watermark plus the composite
+    // position of the last delivered row, never a wall clock.
+    expect(result.cursor).toBe(COMPLETE_CURSOR)
+    expect(result.timestamp).toBe(4_242)
+    expect(result.hasMore).toBe(false)
+    expect(result.resync).toBe(false)
+    expect(result.upgradeRequired).toBe(false)
+    expect(result.requiredCursorVersion).toBe(2)
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1)
+    expect(prisma.syncChange.findMany).toHaveBeenCalledWith({
+      where: {
+        teamId: { in: ['team-a'] },
+        txid: { lt: safe },
+        // Legacy numeric cursor 1000 resumes at "every row of txid >= 1000".
+        OR: [{ txid: { gt: 1_000n } }, { txid: 1_000n, seq: { gt: -1n } }],
+      },
+      orderBy: [{ txid: 'asc' }, { seq: 'asc' }],
+      // 协议 1 无法翻页：读满「上限 + 1」一次判定能否完整交付
+      take: LEGACY_FULL_DELIVERY_LIMIT + 1,
+    })
+    // No incremental read may window Share or AuditLog by time.
+    expect(prisma.share.findMany).not.toHaveBeenCalled()
+    expect(prisma.auditLog.findMany).not.toHaveBeenCalled()
+    // A legacy epoch cursor is above the watermark, so it degrades to a full resnapshot.
+    const resync = await service.getChanges('user-a', 1_760_000_000_000)
+    expect(resync.resync).toBe(true)
+    expect(resync.cursor).toBe(COMPLETE_CURSOR)
+    expect(prisma.syncChange.findMany).toHaveBeenLastCalledWith({
+      where: { teamId: { in: ['team-a'] }, txid: { lt: safe } },
+      orderBy: [{ txid: 'asc' }, { seq: 'asc' }],
+      take: LEGACY_FULL_DELIVERY_LIMIT + 1,
+    })
+    // 超过完整交付上限：不交付部分数据，水位不前进，明确要求升级协议
+    prisma.syncChange.findMany.mockResolvedValue(
+      Array.from(
+        { length: LEGACY_FULL_DELIVERY_LIMIT + 1 },
+        (_, index) => ({ shareId: `over-${index}`, seq: BigInt(index) }),
+      ),
+    )
+    const refused = await service.getChanges('user-a', 1_000)
+    expect(refused.upgradeRequired).toBe(true)
+    expect(refused.shares).toEqual([])
+    expect(refused.deletedShareIds).toEqual([])
+    expect(refused.hasMore).toBe(false)
+    // 水位回显旧游标（不前进），忽略提示的客户端只会原地重试，不会跳过数据
+    expect(refused.timestamp).toBe(1_000)
+  })
+
+  it('refuses an undeclared legacy update instead of degrading to a blind write', async () => {
+    const prisma = {
+      teamMember: {
+        findUnique: vi.fn().mockResolvedValue({
+          teamId: 'team-a',
+          userId: 'user-a',
+          role: 'MEMBER',
+        }),
+      },
+      share: {
+        findUnique: vi.fn().mockResolvedValue({
+          ...existingShare,
+          id: 'share-a',
+          teamId: 'team-a',
+          sharedBy: 'user-a',
+        }),
+        updateMany: vi.fn(),
+      },
+    }
+    const service = new SyncService(prisma as never)
+
+    const result = await service.pushChanges('user-a', {
+      shares: [
+        {
+          id: 'share-a',
+          teamId: 'team-a',
+          type: 'HOST',
+          data: { hostname: 'stale-copy' },
+          permission: 'READONLY',
+        },
+      ],
+    })
+
+    // 没有 operation、没有 baseVersion：不能读一次版本就当成版本证明
+    expect(prisma.share.updateMany).not.toHaveBeenCalled()
+    expect(result.updated).toEqual([])
+    expect(result.conflicts).toEqual(['share-a'])
+    expect(result.upgradeRequired).toBe(true)
   })
 
   it('lets a READWRITE member update another creator share without changing its permission', async () => {
@@ -437,6 +517,8 @@ describe('SyncService authorization', () => {
           type: 'HOST',
           data: { hostname: 'member-write' },
           permission: 'READONLY',
+          operation: 'UPDATE',
+          baseVersion: Number(writableShare.version),
         },
       ],
     })
@@ -448,7 +530,7 @@ describe('SyncService authorization', () => {
         id: 'share-a',
         teamId: 'team-a',
         sharedBy: 'owner-a',
-        updatedAt: writableShare.updatedAt,
+        version: writableShare.version,
       },
       data: {
         data: { hostname: 'member-write' },

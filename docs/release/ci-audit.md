@@ -17,7 +17,8 @@
 
 ## 2. 关键配置
 
-- `src-tauri/tauri.conf.json`：`productName = Termius`，`version = 0.0.1-dev.1`，`identifier = com.baicie.termius`，`bundle.targets = all`，**无 `createUpdaterArtifacts`**，**无 `plugins` 段**。
+- `src-tauri/tauri.conf.json`：`productName = Termius`，`identifier = com.baicie.termius`，`bundle.targets = all`，**无 `createUpdaterArtifacts`**。
+  > **2026-11-01 更正（Phase 8 P8.7）**：原文写 `version = 0.0.1-dev.1` 且「无 `plugins` 段」，现已不符——当前 `version = 0.0.1-dev.2`，且 `:49-56` 存在 `plugins.updater`（pubkey 为占位符）。
 - `src-tauri/Cargo.toml`：package `terminal` v0.0.1-dev.1，`rust-version = 1.96`，edition 2021；插件：shell、notification、dialog、fs、sql(sqlite)、window-state（capabilities 里还有 global-shortcut 权限）。
 - `package.json`：monorepo `@terminal/monorepo` v0.0.1-dev.1，`packageManager = pnpm@10.34.3`，devDependencies 含 `@tauri-apps/cli@2.11.0`；`pnpm.patchedDependencies` 指向 `patches/@baicie__xterm@0.1.7.patch`。
 - 版本工具链固定：`.node-version = 24.16.0`，`rust-toolchain.toml = 1.96.0`（含 clippy、rustfmt），`pnpm-lock.yaml` 冻结安装。
@@ -32,7 +33,8 @@
 
 ## 4. 签名现状
 
-- 仓库与 workflow 中**不存在**任何 `APPLE_*`、`CSC_*`、`TAURI_SIGNING_*`、Azure/Windows 签名变量。
+- ~~仓库与 workflow 中**不存在**任何 `APPLE_*`、`CSC_*`、`TAURI_SIGNING_*`、Azure/Windows 签名变量。~~
+  > **2026-11-01 更正（Phase 8 P8.7）**：该判断已过时。`release.yml:101-102/250-251/322-323/500-501` 均在读取 `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`、`TAURI_UPDATER_PUBKEY`。仍不存在的是 `APPLE_*` / `CSC_*` / Azure 签名变量。
 - 本地构建产物的签名状态：`adhoc, linker-signed`（`codesign -dv` 实测），即未用 Developer ID 签名、未公证。
 - 现有 Release 说明已声明「macOS 未公证、Windows 未 Authenticode 签名」。
 

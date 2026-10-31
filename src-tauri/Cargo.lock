@@ -6862,6 +6862,7 @@ dependencies = [
  "serde_json",
  "serialport",
  "sha2 0.10.9",
+ "sqlx",
  "ssh-key",
  "tauri",
  "tauri-build",

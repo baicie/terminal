@@ -8,9 +8,11 @@ use aes_gcm::{
 };
 use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use hmac::{Hmac, Mac};
 use parking_lot::Mutex;
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
@@ -20,15 +22,23 @@ use zeroize::{Zeroize, Zeroizing};
 
 /// Vault configuration stored on disk.
 ///
-/// The persisted shape is deliberately unchanged: one Argon2 salt plus base64
-/// `nonce || ciphertext` entries per key. `Clone` exists so a save can build the
-/// next state, persist it atomically, and only then adopt it in memory.
+/// Shape: one Argon2 salt, base64 `nonce || ciphertext` entries per key, and an
+/// optional password verifier. Vaults written before the verifier existed have
+/// no `verifier` field at all and still parse (`#[serde(default)]`); every write
+/// from this build on sets it. `Clone` exists so a save can build the next state,
+/// persist it atomically, and only then adopt it in memory.
 #[derive(Clone, Serialize, Deserialize)]
 struct VaultConfig {
     /// Salt for key derivation
     salt: String,
     /// Encrypted entries
     entries: HashMap<String, String>, // key -> encrypted base64 value
+    /// base64(HMAC-SHA256(master_key, VERIFIER_DOMAIN || salt)).
+    ///
+    /// `None` means "written before the verifier existed". It is never set on a
+    /// write again: create, change_password and the legacy migration all fill it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    verifier: Option<String>,
 }
 
 /// Vault entry structure
@@ -50,36 +60,75 @@ pub struct VaultState {
 impl VaultState {
     /// Create a new vault with a master password.
     ///
-    /// The empty vault is persisted through the same atomic replace used by
-    /// every later write, so a failed create cannot leave a partially written
-    /// `vault.json` behind.
+    /// Creation never overwrites: the target path is claimed with exclusive
+    /// create semantics first, so an existing `vault.json` makes this fail with
+    /// `AlreadyExists` and keeps every byte of it. A caller that really wants to
+    /// replace an existing vault needs a separate, explicit destructive
+    /// operation; this API deliberately has none.
     pub fn create(master_password: &str, config_path: PathBuf) -> Result<Self, VaultError> {
         let salt = SaltString::generate(&mut OsRng);
         let master_key =
             derive_master_key(master_password, &salt).map_err(VaultError::CreateFailed)?;
+        let salt = salt.to_string();
+
+        let config = VaultConfig {
+            verifier: Some(encode_verifier(&master_key, &salt)),
+            salt,
+            entries: HashMap::new(),
+        };
 
         let mut vault = Self {
-            config: VaultConfig {
-                salt: salt.to_string(),
-                entries: HashMap::new(),
-            },
+            config,
             master_key,
             config_path,
         };
 
         let initial = vault.config.clone();
-        vault.commit(initial)?;
+        vault.create_exclusive(initial)?;
 
         Ok(vault)
     }
 
-    /// Unlock an existing vault with master password
+    /// Unlock an existing vault with master password.
+    ///
+    /// The password is decided here, before the caller ever holds a `VaultState`,
+    /// and only by evidence that exists in the file:
+    ///
+    /// 1. `verifier` present (every vault written by this build): an HMAC check,
+    ///    so a wrong password fails at unlock instead of at the first `get`, and
+    ///    an empty vault is no longer openable with any string at all.
+    /// 2. `verifier` absent, `entries` non-empty (legacy vault): a real entry is
+    ///    decrypted; AES-GCM authentication makes that a sufficient proof. A
+    ///    success seals the vault with a verifier through the normal commit
+    ///    boundary, which is the only migration step this format needs.
+    /// 3. `verifier` absent, `entries` empty (legacy vault): **the password is not
+    ///    verifiable and this build does not pretend otherwise.** There is no
+    ///    ciphertext and no verifier, i.e. no material that any password could be
+    ///    checked against, so the only compatible choice is to accept the
+    ///    supplied password and seal it with a verifier. Accepted cost: whoever
+    ///    presents the first password after the upgrade fixes the password of
+    ///    that empty legacy vault. Nothing can be lost, because the vault is
+    ///    empty; a legacy vault that holds data always takes path 2.
+    ///
+    /// A migration write never fails an unlock: on error the legacy file and the
+    /// legacy password keep working exactly as before, and the next successful
+    /// save finishes the migration.
+    ///
+    /// A path that holds no vault is refused with a state-specific error and is
+    /// never rewritten: `Uninitialized` for the zero-length placeholder of an
+    /// interrupted create (recoverable by creating again) and `Corrupt` for
+    /// anything this format cannot parse (kept byte for byte for manual
+    /// recovery). See `read_vault_file`.
     pub fn unlock(master_password: &str, config_path: PathBuf) -> Result<Self, VaultError> {
-        let content = fs::read_to_string(&config_path)
-            .map_err(|e| VaultError::UnlockFailed(format!("Failed to read vault config: {}", e)))?;
+        let content = read_vault_file(&config_path)?;
 
-        let config: VaultConfig = serde_json::from_str(&content)
-            .map_err(|e| VaultError::UnlockFailed(format!("Invalid vault config: {}", e)))?;
+        let config: VaultConfig = serde_json::from_str(&content).map_err(|e| {
+            VaultError::Corrupt(format!(
+                "vault file {} cannot be parsed ({}); it was left untouched for manual recovery",
+                config_path.display(),
+                e
+            ))
+        })?;
 
         // Re-derive key using stored salt
         let salt = SaltString::from_b64(&config.salt)
@@ -87,16 +136,87 @@ impl VaultState {
         let master_key =
             derive_master_key(master_password, &salt).map_err(VaultError::UnlockFailed)?;
 
-        Ok(Self {
+        if let Some(stored) = config.verifier.as_deref() {
+            if !verifier_matches(stored, &master_key, &config.salt) {
+                // No message detail here: a verifier mismatch must not hint at
+                // how much of the password was right.
+                return Err(VaultError::InvalidPassword);
+            }
+            return Ok(Self {
+                config,
+                master_key,
+                config_path,
+            });
+        }
+
+        if !config.entries.is_empty() {
+            let decrypts = config
+                .entries
+                .values()
+                .any(|encrypted| decrypt_value(encrypted, &master_key).is_ok());
+            if !decrypts {
+                return Err(VaultError::InvalidPassword);
+            }
+            return Ok(Self::seal_legacy(config, master_key, config_path));
+        }
+
+        log::warn!(
+            "vault: legacy vault at {} carries neither a verifier nor entries, so the master password cannot be verified; the supplied password is adopted and sealed",
+            config_path.display()
+        );
+        Ok(Self::seal_legacy(config, master_key, config_path))
+    }
+
+    /// Adopt a verifier-less legacy vault for the key that just unlocked it.
+    fn seal_legacy(config: VaultConfig, master_key: [u8; 32], config_path: PathBuf) -> Self {
+        let mut vault = Self {
             config,
             master_key,
             config_path,
-        })
+        };
+        vault.migrate_verifier();
+        vault
     }
 
-    /// Check if vault exists
+    /// Write a verifier for the current key, best effort.
+    ///
+    /// Failure is logged and swallowed on purpose: the legacy file is untouched,
+    /// so the old password keeps working, and the verifier stays in memory so the
+    /// next successful commit persists it. Nothing here is allowed to turn a
+    /// working unlock into a failed one.
+    fn migrate_verifier(&mut self) {
+        if self.config.verifier.is_some() {
+            return;
+        }
+
+        let verifier = encode_verifier(&self.master_key, &self.config.salt);
+        let mut candidate = self.config.clone();
+        candidate.verifier = Some(verifier.clone());
+
+        match self.commit(candidate) {
+            Ok(()) => {}
+            Err(error) => {
+                log::warn!(
+                    "vault: verifier migration could not be persisted, keeping the legacy file: {}",
+                    error
+                );
+                self.config.verifier = Some(verifier);
+            }
+        }
+    }
+
+    /// Check if vault exists.
+    ///
+    /// A zero-length file does not count: it is the exclusive-claim placeholder of
+    /// a create that never finished (see `is_unfilled_placeholder`), so reporting
+    /// it as "no vault yet" is what lets the create flow complete that
+    /// initialization instead of offering an unlock that cannot succeed. A
+    /// damaged vault does count: it exists, and it must not be created over.
     pub fn exists(config_path: &Path) -> bool {
-        config_path.exists()
+        match fs::symlink_metadata(config_path) {
+            Ok(metadata) => !(metadata.file_type().is_file() && metadata.len() == 0),
+            Err(_) => false,
+        }
     }
 
     /// Encrypt and store a value.
@@ -140,10 +260,12 @@ impl VaultState {
 
     /// Change master password.
     ///
-    /// Commit boundary: the re-encrypted config with the new salt is written
-    /// atomically first; the salt, entries and master key are swapped in memory
-    /// only after that replace succeeded. If persistence fails, the old password
-    /// still decrypts the untouched vault file and still works in memory.
+    /// Commit boundary: the re-encrypted config with the new salt and the new
+    /// verifier is written atomically first; the salt, entries and master key are
+    /// swapped in memory only after that replace succeeded. If persistence fails,
+    /// the old password still decrypts the untouched vault file and still works
+    /// in memory. The verifier always moves with the salt: a rotation that shipped
+    /// a stale verifier would reject the new password on the next unlock.
     pub fn change_password(&mut self, new_password: &str) -> Result<(), VaultError> {
         let new_salt = SaltString::generate(&mut OsRng);
         // Wrapped so a failed save wipes the derived key instead of leaking it.
@@ -162,8 +284,10 @@ impl VaultState {
             );
         }
 
+        let new_salt = new_salt.to_string();
         let candidate = VaultConfig {
-            salt: new_salt.to_string(),
+            verifier: Some(encode_verifier(&new_master_key, &new_salt)),
+            salt: new_salt,
             entries,
         };
 
@@ -177,13 +301,113 @@ impl VaultState {
 
     /// Atomically replace the vault file with `config`, then adopt it in memory.
     ///
-    /// This is the only function that writes the vault, so create, set, delete
-    /// and change_password share one commit point: durable replace first,
-    /// in-memory state second.
+    /// This is the only function that writes an existing vault, so set, delete,
+    /// change_password and the verifier migration share one commit point: durable
+    /// replace first, in-memory state second.
     fn commit(&mut self, config: VaultConfig) -> Result<(), VaultError> {
-        let content = serde_json::to_vec_pretty(&config)
-            .map_err(|e| VaultError::SaveFailed(format!("Failed to serialize config: {}", e)))?;
-        write_atomic(&self.config_path, &content)?;
+        write_atomic(&self.config_path, &serialize_config(&config)?)?;
+        self.config = config;
+        Ok(())
+    }
+
+    /// First write of a brand new vault: claim the path, then fill it atomically.
+    ///
+    /// The claim is `O_CREAT | O_EXCL` on Unix and `CREATE_NEW` on Windows, i.e.
+    /// one kernel operation that fails when anything already occupies the path.
+    /// Nothing here asks "does the vault exist?" and then writes, so no racing
+    /// create, script or hand edit can slip in between the answer and the write.
+    ///
+    /// The claim is an empty placeholder that the normal atomic replace then
+    /// overwrites, which keeps the first write on the same durability path as
+    /// every later one. If that replace fails the placeholder is ours alone, so
+    /// it is removed again and a failed create leaves no vault file behind.
+    ///
+    /// The one thing a claim cannot survive is the process dying between the two
+    /// steps: the placeholder stays behind as a zero-length `vault.json`. The
+    /// next create recognises it with `is_unfilled_placeholder` and fills it
+    /// through the same atomic replace, so recovery never unlinks a path that
+    /// could hold a vault. Any file with content at all is refused as
+    /// `AlreadyExists`, whatever it parses to.
+    ///
+    /// Reclaiming is a check followed by a replace, and both steps run inside
+    /// `lock_for_create`, so no other instance of this build can be between its
+    /// own check and its own replace at the same time. That removes the window the
+    /// pair used to leave open: a second creator landing its vault in that gap is
+    /// now either serialised behind the first one (and then refused by the
+    /// re-check it performs *after* it takes the lock) or blocked by the lock.
+    ///
+    /// Residual window, quantified: the lock is advisory, so a writer that does
+    /// not take it -- a hand edit, a script, a build older than this one -- can
+    /// still produce content between the re-check and the replace. What remains is
+    /// one metadata read immediately followed by one `rename` (both
+    /// sub-microsecond), and that writer has to land a complete `vault.json`
+    /// inside an interval nothing signals to it. Two instances of this build, or
+    /// two windows of it, cannot reach the window at all: they serialise on the
+    /// lock, and the loser's re-check (which runs after it holds the lock) sees
+    /// the winner's content and returns `AlreadyExists`.
+    fn create_exclusive(&mut self, config: VaultConfig) -> Result<(), VaultError> {
+        let content = serialize_config(&config)?;
+        let claim = claim_new_vault_file(&self.config_path)?;
+
+        #[cfg(test)]
+        if fault_injection::take_claim_crash() {
+            // Simulated process death between the claim and the fill: the
+            // placeholder stays on disk, exactly like an interrupted create.
+            return Err(VaultError::SaveFailed(
+                "injected crash after the exclusive claim".to_string(),
+            ));
+        }
+
+        match claim {
+            Claim::Fresh(handle) => {
+                // The claim decided that this process may create a vault; the lock
+                // keeps a *reclaiming* creator out of the window between its own
+                // re-check and its replace while this one fills the file.
+                lock_for_create(&self.config_path, &handle)?;
+                if let Err(error) = write_atomic(&self.config_path, &content) {
+                    // Release the handle before unlinking so Windows can delete it too.
+                    drop(handle);
+                    let _ = fs::remove_file(&self.config_path);
+                    return Err(error);
+                }
+                drop(handle);
+            }
+            Claim::Reclaimed => {
+                // Recovery is only ever allowed to overwrite a zero-length regular
+                // file, and the verdict has to stay true until the replace lands.
+                // The lock is what makes those two steps one critical section: a
+                // creator that is also in this branch cannot re-check the file
+                // while this one is replacing it, and any content another creator
+                // wrote before this point is refused instead of overwritten.
+                let guard = fs::File::open(&self.config_path).map_err(|error| {
+                    save_failed(
+                        "Failed to open the vault placeholder",
+                        &self.config_path,
+                        &error,
+                    )
+                })?;
+                lock_for_create(&self.config_path, &guard)?;
+
+                // Re-check the proof immediately before the replace.
+                if !is_unfilled_placeholder(&self.config_path)? {
+                    return Err(VaultError::AlreadyExists);
+                }
+
+                #[cfg(test)]
+                if let Some(millis) = fault_injection::take_reclaim_delay() {
+                    // Fault injection: hold the critical section open so a second
+                    // creator has every chance to slip in between the re-check and
+                    // the replace. Without the lock this is where two creates both
+                    // observe an empty placeholder and both overwrite the path.
+                    std::thread::sleep(std::time::Duration::from_millis(millis));
+                }
+
+                // A failed replace leaves the placeholder exactly where it was, so
+                // the next attempt starts from the same recoverable state.
+                write_atomic(&self.config_path, &content)?;
+            }
+        }
+
         self.config = config;
         Ok(())
     }
@@ -214,6 +438,55 @@ fn derive_master_key(master_password: &str, salt: &SaltString) -> Result<[u8; 32
     let len = std::cmp::min(hash_bytes.len(), 32);
     master_key[..len].copy_from_slice(&hash_bytes[..len]);
     Ok(master_key)
+}
+
+// ==================== Password verifier ====================
+
+/// Domain separation for the password verifier.
+///
+/// The verifier is an HMAC over this label plus the stored salt under the
+/// derived master key, never the key itself and never anything derived from the
+/// password alone: holding the vault file yields no offline test faster than
+/// Argon2, and a value minted for this purpose cannot be replayed as an AES key
+/// or as an authenticator for anything else. The label is a compile-time
+/// constant that is never stored, so the file leaks neither.
+const VERIFIER_DOMAIN: &[u8] = b"terminal-vault-verifier-v1";
+
+type HmacSha256 = Hmac<Sha256>;
+
+/// Raw 32-byte verifier for the salt under the given master key.
+fn verifier_mac(master_key: &[u8; 32], salt: &str) -> [u8; 32] {
+    let mut mac = <HmacSha256 as Mac>::new_from_slice(master_key)
+        .expect("HMAC-SHA256 accepts any key length");
+    mac.update(VERIFIER_DOMAIN);
+    mac.update(salt.as_bytes());
+
+    let tag = mac.finalize().into_bytes();
+    let mut verifier = [0u8; 32];
+    verifier.copy_from_slice(&tag);
+    verifier
+}
+
+/// The stored form of the verifier: base64 of the HMAC.
+fn encode_verifier(master_key: &[u8; 32], salt: &str) -> String {
+    BASE64.encode(verifier_mac(master_key, salt))
+}
+
+/// Constant-time verifier check.
+///
+/// HMAC verify compares through a constant-time equality, so a mismatch cannot
+/// be turned into a byte-by-byte oracle, and a stored value that is not valid
+/// base64 is rejected without comparing anything.
+fn verifier_matches(stored: &str, master_key: &[u8; 32], salt: &str) -> bool {
+    let Ok(expected) = BASE64.decode(stored) else {
+        return false;
+    };
+
+    let mut mac = <HmacSha256 as Mac>::new_from_slice(master_key)
+        .expect("HMAC-SHA256 accepts any key length");
+    mac.update(VERIFIER_DOMAIN);
+    mac.update(salt.as_bytes());
+    mac.verify_slice(&expected).is_ok()
 }
 
 // ==================== Atomic persistence ====================
@@ -261,6 +534,172 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), VaultError> {
 
     sync_parent_dir(dir);
     Ok(())
+}
+
+/// Serialize a config for the write path.
+fn serialize_config(config: &VaultConfig) -> Result<Vec<u8>, VaultError> {
+    serde_json::to_vec_pretty(config)
+        .map_err(|e| VaultError::SaveFailed(format!("Failed to serialize config: {}", e)))
+}
+
+/// `OpenOptions` that create the vault file only while the path is still free.
+#[cfg(unix)]
+fn exclusive_create_options() -> fs::OpenOptions {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let mut options = fs::OpenOptions::new();
+    // mode 0600: the placeholder is owner-only from the first byte, and
+    // `restrict_temp_permissions` carries that mode onto the replaced file.
+    options.write(true).create_new(true).mode(0o600);
+    options
+}
+
+/// Windows has no POSIX mode bits; `create_new` maps to `CREATE_NEW`, which is
+/// the exclusive half that matters here, and the placeholder inherits the vault
+/// directory ACL exactly like the vault file that replaces it.
+#[cfg(not(unix))]
+fn exclusive_create_options() -> fs::OpenOptions {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    options
+}
+
+/// Claim a path for a brand new vault, or explain why it cannot be claimed.
+///
+/// `create_new(true)` is the exclusive-create flag: `O_CREAT | O_EXCL` on Unix,
+/// `CREATE_NEW` on Windows. Both fail atomically when the path is taken, which
+/// is what removes the check-then-write window instead of shrinking it.
+fn claim_new_vault_file(path: &Path) -> Result<Claim, VaultError> {
+    match exclusive_create_options().open(path) {
+        Ok(file) => Ok(Claim::Fresh(file)),
+        Err(error) => {
+            // Something that cannot hold a vault (a directory, a device) is not
+            // "a vault already exists": reporting AlreadyExists there would tell
+            // the caller it is safe to unlock a path that is not a vault.
+            if path.is_dir() {
+                return Err(save_failed("Failed to create the vault file", path, &error));
+            }
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                if is_unfilled_placeholder(path)? {
+                    return Ok(Claim::Reclaimed);
+                }
+                return Err(VaultError::AlreadyExists);
+            }
+            Err(save_failed("Failed to create the vault file", path, &error))
+        }
+    }
+}
+
+/// What claiming the vault path found.
+enum Claim {
+    /// The path was free and this process now holds the empty placeholder.
+    Fresh(fs::File),
+    /// The path held a zero-length placeholder from an interrupted create. The
+    /// caller fills it with one atomic replace; nothing is unlinked.
+    Reclaimed,
+}
+
+/// How long a creator waits for another process to leave its create critical
+/// section: 200 attempts of 10 ms, i.e. two seconds in total.
+///
+/// The critical section it waits on is a re-check plus one rename, so in practice
+/// the wait is one scheduler tick. The bound exists so a peer that is wedged or
+/// swapped out surfaces as an error instead of hanging the create command.
+const CREATE_LOCK_ATTEMPTS: u32 = 200;
+const CREATE_LOCK_RETRY: std::time::Duration = std::time::Duration::from_millis(10);
+
+/// Take the exclusive advisory lock that serialises vault creation.
+///
+/// The exclusive claim decides *who may create* a vault, but it cannot serialise
+/// the recovery path: a reclaim has to prove the placeholder is still empty and
+/// then replace it, and a second creator could fill the path between those two
+/// steps. This lock turns the pair into one critical section:
+///
+/// * taken on the vault file itself, so nothing new appears in the vault
+///   directory and no sidecar file can go stale;
+/// * the kernel's lock (`flock(2)` on Unix, `LockFileEx` on Windows), released when
+///   the handle drops, so a killed or crashed process cannot leave a lock behind
+///   that blocks the next start -- a lock *file* could;
+/// * taken before the re-check and released only after the replace, so a creator
+///   that re-checks while a replace is in flight cannot see a stale "empty"
+///   verdict and overwrite the file that replace just wrote.
+///
+/// Participation is by convention: only this build takes it. Residual window and
+/// its quantification are described on `create_exclusive`.
+fn lock_for_create(path: &Path, handle: &fs::File) -> Result<(), VaultError> {
+    let mut waited = 0;
+    loop {
+        match handle.try_lock() {
+            Ok(()) => return Ok(()),
+            Err(fs::TryLockError::WouldBlock) if waited + 1 < CREATE_LOCK_ATTEMPTS => {
+                waited += 1;
+                std::thread::sleep(CREATE_LOCK_RETRY);
+            }
+            Err(fs::TryLockError::WouldBlock) => {
+                return Err(VaultError::SaveFailed(format!(
+                    "another process is still initializing the vault at {}, so this create did not start",
+                    path.display()
+                )));
+            }
+            Err(fs::TryLockError::Error(error)) => {
+                return Err(save_failed("Failed to lock the vault file", path, &error));
+            }
+        }
+    }
+}
+
+/// True only when `path` is provably a claim placeholder that was never filled.
+///
+/// The proof rests on the write path: every write to this file (create, set,
+/// delete, change_password, the verifier migration) goes through `write_atomic`,
+/// which renames a complete `serialize_config` buffer over the target. A
+/// serialized config always carries its salt, so no code path in this module can
+/// leave a zero-length file behind as a *vault*: a zero-length regular file can
+/// only be the empty placeholder `claim_new_vault_file` opened and the
+/// interrupted create never replaced. It holds no bytes, so reclaiming it cannot
+/// destroy anything.
+///
+/// Everything else returns `false`: a vault with content, a truncated or
+/// hand-edited file, a symlink, a device, a directory. Recovery therefore has no
+/// path that overwrites or unlinks content.
+fn is_unfilled_placeholder(path: &Path) -> Result<bool, VaultError> {
+    let entry = fs::symlink_metadata(path)
+        .map_err(|e| save_failed("Failed to inspect the existing vault path", path, &e))?;
+    // symlink_metadata does not follow links, so a symlink or a device node is
+    // never mistaken for the placeholder this module created.
+    if !entry.file_type().is_file() || entry.len() != 0 {
+        return Ok(false);
+    }
+
+    // Re-read through a handle: the length that decides is the one on the object
+    // this call opened, not the one a stale path lookup reported.
+    let opened = fs::File::open(path)
+        .map_err(|e| save_failed("Failed to open the existing vault file", path, &e))?;
+    let metadata = opened
+        .metadata()
+        .map_err(|e| save_failed("Failed to inspect the existing vault file", path, &e))?;
+    Ok(metadata.is_file() && metadata.len() == 0)
+}
+
+/// Read the vault file, naming an unfilled placeholder separately from damage.
+///
+/// Three states reach this function and only one of them is a vault:
+///
+/// * zero bytes is the placeholder of an interrupted create, reported as
+///   `Uninitialized` so the caller can start the create flow again;
+/// * content the format cannot parse is `Corrupt` and is never removed,
+///   truncated or rewritten here: the bytes stay for manual recovery;
+/// * a parseable config goes on to password verification as a real vault.
+fn read_vault_file(path: &Path) -> Result<String, VaultError> {
+    let content = fs::read_to_string(path)
+        .map_err(|e| VaultError::UnlockFailed(format!("Failed to read vault config: {}", e)))?;
+    if content.is_empty() {
+        return Err(VaultError::Uninitialized(format!(
+            "vault file {} is an empty placeholder left by an interrupted create; create the vault again",
+            path.display()
+        )));
+    }
+    Ok(content)
 }
 
 /// Build a `SaveFailed` error from a stage, a path and the underlying IO error.
@@ -376,6 +815,18 @@ mod fault_injection {
 
     thread_local! {
         static WRITE_BUDGET: Cell<Option<usize>> = const { Cell::new(None) };
+        static CLAIM_CRASH: Cell<bool> = const { Cell::new(false) };
+        static RECLAIM_DELAY_MS: Cell<Option<u64>> = const { Cell::new(None) };
+    }
+
+    /// Arm the next reclaim to hold its critical section open for `millis`.
+    pub(super) fn delay_after_reclaim_check(millis: u64) {
+        RECLAIM_DELAY_MS.with(|delay| delay.set(Some(millis)));
+    }
+
+    /// Consume the armed reclaim delay, if any.
+    pub(super) fn take_reclaim_delay() -> Option<u64> {
+        RECLAIM_DELAY_MS.with(|delay| delay.take())
     }
 
     /// Arm the next save to fail after `bytes` bytes reach the temporary file.
@@ -383,9 +834,23 @@ mod fault_injection {
         WRITE_BUDGET.with(|budget| budget.set(Some(bytes)));
     }
 
+    /// Arm the next create to die right after the exclusive claim, i.e. between
+    /// the two persistence steps, leaving the placeholder on disk the way a
+    /// killed process would.
+    pub(super) fn fail_after_claim() {
+        CLAIM_CRASH.with(|flag| flag.set(true));
+    }
+
+    /// Consume the armed claim crash, if any.
+    pub(super) fn take_claim_crash() -> bool {
+        CLAIM_CRASH.with(|flag| flag.replace(false))
+    }
+
     /// Disarm the injection.
     pub(super) fn clear() {
         WRITE_BUDGET.with(|budget| budget.set(None));
+        CLAIM_CRASH.with(|flag| flag.set(false));
+        RECLAIM_DELAY_MS.with(|delay| delay.set(None));
     }
 
     /// Consume the armed budget, if any.

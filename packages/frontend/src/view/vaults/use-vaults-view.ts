@@ -1,17 +1,37 @@
+import i18n from '@/locales'
 import type { VaultEntry } from '@/service/vault'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from '@/components/ui/sonner'
-import { vaultService } from '@/service/vault'
+import { toVaultCommandError, vaultService } from '@/service/vault'
 
-export type VaultState = 'loading' | 'unlocked' | 'locked' | 'not_created'
+/**
+ * `uninitialized` and `corrupt` are file states, not session states: the first
+ * is the zero-length placeholder of an interrupted create (creating again
+ * reclaims it), the second is content the format cannot parse (kept byte for
+ * byte). Both are reachable only from a command rejection, because
+ * `vault_exists` already reports a placeholder as "no vault".
+ */
+export type VaultState =
+  | 'loading'
+  | 'unlocked'
+  | 'locked'
+  | 'not_created'
+  | 'uninitialized'
+  | 'corrupt'
 
+/**
+ * State holds translation keys, never translated text, so switching language
+ * re-renders the message without re-running any vault command.
+ */
 export function useVaultsView() {
   const [vaultState, setVaultState] = useState<VaultState>('loading')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [entries, setEntries] = useState<VaultEntry[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const [errorKey, setErrorKey] = useState<string | null>(null)
+  const [noticeKey, setNoticeKey] = useState<string | null>(null)
+  const [bannerKey, setBannerKey] = useState<string | null>(null)
   const [newEntryKey, setNewEntryKey] = useState('')
   const [newEntryValue, setNewEntryValue] = useState('')
   const [selectedEntry, setSelectedEntry] = useState<VaultEntry | null>(null)
@@ -21,18 +41,19 @@ export function useVaultsView() {
   const loadEntries = useCallback(async () => {
     try {
       const keys = await vaultService.list()
-      const loadedEntries: VaultEntry[] = []
+      const loaded: VaultEntry[] = []
       for (const key of keys) {
         try {
           const value = await vaultService.get(key)
-          loadedEntries.push({ key, value, description: undefined })
+          loaded.push({ key, value, description: undefined })
         } catch {
-          // Skip entries that cannot be read.
+          // One unreadable entry must not hide the rest of the vault.
         }
       }
-      setEntries(loadedEntries)
+      setEntries(loaded)
     } catch (loadError) {
-      console.error('Failed to load entries:', loadError)
+      console.error('Failed to load vault entries:', toVaultCommandError(loadError).kind)
+      setBannerKey('vaults.loadFailed')
     }
   }, [])
 
@@ -48,7 +69,10 @@ export function useVaultsView() {
       setVaultState(unlocked ? 'unlocked' : 'locked')
       if (unlocked) void loadEntries()
     } catch (statusError) {
-      console.error('Failed to check vault status:', statusError)
+      console.error('Failed to check vault status:', toVaultCommandError(statusError).kind)
+      setBannerKey('vaults.loadFailed')
+      // A guessed "create" screen is safe: creating never overwrites, so a wrong
+      // guess surfaces as already_exists instead of destroying anything.
       setVaultState('not_created')
     }
   }, [loadEntries])
@@ -57,42 +81,74 @@ export function useVaultsView() {
     void checkVaultStatus()
   }, [checkVaultStatus])
 
-  const handleCreate = async () => {
-    if (!password) return setError('Password is required')
-    if (password.length < 8) {
-      return setError('Password must be at least 8 characters')
+  /** Route a file-state rejection to its own screen; returns true when handled. */
+  const applyFileStateError = useCallback((kind: string): boolean => {
+    if (kind === 'uninitialized') {
+      setNoticeKey('vaults.uninitialized')
+      setErrorKey(null)
+      setVaultState('uninitialized')
+      return true
     }
-    if (password !== confirmPassword) return setError('Passwords do not match')
+    if (kind === 'corrupt') {
+      setErrorKey(null)
+      setNoticeKey(null)
+      setVaultState('corrupt')
+      return true
+    }
+    return false
+  }, [])
 
-    setError(null)
+  const handleCreate = async () => {
+    if (!password) return setErrorKey('vaults.passwordRequired')
+    if (password.length < 8) return setErrorKey('vaults.passwordMinLength')
+    if (password !== confirmPassword) return setErrorKey('vaults.passwordsDoNotMatch')
+
+    setErrorKey(null)
     setCreating(true)
     try {
       await vaultService.create(password)
       setVaultState('unlocked')
+      setNoticeKey(null)
       setPassword('')
       setConfirmPassword('')
-      toast.success('Vault created successfully')
+      toast.success(i18n.t('vaults.vaultCreated'))
+      void loadEntries()
     } catch (createError) {
-      console.error('Failed to create vault:', createError)
-      setError('Failed to create vault: ' + String(createError))
-      setVaultState('not_created')
+      const vaultError = toVaultCommandError(createError)
+      console.error('Failed to create vault:', vaultError.kind)
+      if (applyFileStateError(vaultError.kind)) return
+      if (vaultError.kind === 'already_exists') {
+        // Creating never overwrites: show the vault that exists instead of a
+        // create form that cannot succeed.
+        setErrorKey('vaults.vaultAlreadyExists')
+        setVaultState('locked')
+      } else {
+        setErrorKey('vaults.vaultCreateFailed')
+        setVaultState('not_created')
+      }
     } finally {
       setCreating(false)
     }
   }
 
   const handleUnlock = async () => {
-    if (!password) return setError('Password is required')
-    setError(null)
+    if (!password) return setErrorKey('vaults.passwordRequired')
+    setErrorKey(null)
     try {
       await vaultService.unlock(password)
       setVaultState('unlocked')
       setPassword('')
       void loadEntries()
-      toast.success('Vault unlocked successfully')
+      toast.success(i18n.t('vaults.vaultUnlocked'))
     } catch (unlockError) {
-      console.error('Failed to unlock vault:', unlockError)
-      setError('Invalid password')
+      const vaultError = toVaultCommandError(unlockError)
+      console.error('Failed to unlock vault:', vaultError.kind)
+      if (applyFileStateError(vaultError.kind)) return
+      setErrorKey(
+        vaultError.kind === 'invalid_password'
+          ? 'vaults.invalidPassword'
+          : 'vaults.vaultUnlockFailed',
+      )
     }
   }
 
@@ -102,15 +158,16 @@ export function useVaultsView() {
       setVaultState('locked')
       setEntries([])
       setSelectedEntry(null)
-      toast.info('Vault locked')
+      toast.info(i18n.t('vaults.vaultLocked'))
     } catch (lockError) {
-      console.error('Failed to lock vault:', lockError)
+      console.error('Failed to lock vault:', toVaultCommandError(lockError).kind)
+      setBannerKey('vaults.lockFailed')
     }
   }
 
   const handleAddEntry = async () => {
     if (!newEntryKey || !newEntryValue) {
-      toast.error('Key and value are required')
+      setBannerKey('vaults.keyValueRequired')
       return
     }
     try {
@@ -118,10 +175,10 @@ export function useVaultsView() {
       setNewEntryKey('')
       setNewEntryValue('')
       void loadEntries()
-      toast.success('Entry added successfully')
+      toast.success(i18n.t('vaults.entryAdded'))
     } catch (addError) {
-      console.error('Failed to add entry:', addError)
-      toast.error('Failed to add entry: ' + String(addError))
+      console.error('Failed to add entry:', toVaultCommandError(addError).kind)
+      setBannerKey('vaults.saveFailed')
     }
   }
 
@@ -130,21 +187,49 @@ export function useVaultsView() {
       await vaultService.delete(key)
       void loadEntries()
       if (selectedEntry?.key === key) setSelectedEntry(null)
-      toast.success('Entry deleted')
+      toast.success(i18n.t('vaults.entryDeleted'))
     } catch (deleteError) {
-      console.error('Failed to delete entry:', deleteError)
-      toast.error('Failed to delete entry: ' + String(deleteError))
+      console.error('Failed to delete entry:', toVaultCommandError(deleteError).kind)
+      setBannerKey('vaults.deleteFailed')
     }
   }
 
   const handleCopyValue = async (value: string) => {
     try {
       await navigator.clipboard.writeText(value)
-      toast.success('Copied to clipboard')
+      toast.success(i18n.t('vaults.copiedToClipboard'))
     } catch {
-      toast.error('Failed to copy')
+      setBannerKey('vaults.failedCopy')
     }
   }
+
+  const dismissBanner = useCallback(() => setBannerKey(null), [])
+
+  /**
+   * Escape closes the transient layer only: the alert first, then the entry
+   * detail pane. Returns whether anything was closed so an unrelated Escape
+   * keeps travelling to the rest of the app.
+   */
+  const handleEscape = useCallback((): boolean => {
+    if (bannerKey) {
+      setBannerKey(null)
+      return true
+    }
+    if (selectedEntry) {
+      setSelectedEntry(null)
+      return true
+    }
+    return false
+  }, [bannerKey, selectedEntry])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (handleEscape()) event.preventDefault()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [handleEscape])
 
   return {
     vaultState,
@@ -152,7 +237,9 @@ export function useVaultsView() {
     confirmPassword,
     showPassword,
     entries,
-    error,
+    errorKey,
+    noticeKey,
+    bannerKey,
     newEntryKey,
     newEntryValue,
     selectedEntry,
@@ -171,5 +258,6 @@ export function useVaultsView() {
     handleAddEntry,
     handleDeleteEntry,
     handleCopyValue,
+    dismissBanner,
   }
 }

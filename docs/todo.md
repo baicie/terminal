@@ -1,7 +1,7 @@
 # Terminal 项目待办事项
 
 > 基于设计文档 `docs/design.md` 整理的待办事项
-> 更新时间：2026-11-01（Phase 7：可靠性收口，`aba82ed..484f00a` 共 16 个提交，覆盖 P7.0–P7.4 五个阶段；本地门禁全绿，**未重采实机证据**。当前源码指纹为 `81ffa0bf…`，文中所有历史指纹均已失效）
+> 更新时间：2026-11-01（Phase 7 已合并进 main，`aba82ed..301cf04` 共 21 个提交，覆盖 P7.0–P7.4；6 份实机证据已由 run `41112206442` 重采并通过 evidence gate，manifest 指纹 `81ffa0bf…`。文中更早的历史指纹均已失效）
 
 > 最新一次落盘的 6 份证据来自 CI run `41077965521`（源码指纹 `99b0879d…`，debug 冷启动 7207/4105/3740 ms、release gate 3691/3309/3548 ms、debug 认证矩阵 11/11、release 8/8、shell 交互 14+7）。此后 `aba82ed..3c147e4` 的 7 个提交再次改动了 fingerprinted 路径（`packages/frontend/src`、`src-tauri/src`、`scripts/*`、工作流），**当前工作树指纹需要重新计算，证据需要按 Phase 6.107 的 runbook 重采**；在重采完成前不得声称证据有效。
 
@@ -2108,7 +2108,7 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 | macOS/Windows/Linux 安装与升级（拖入 Applications、NSIS 安装+卸载、AppImage 启动、`dpkg -i`、旧 SQLite 库兼容） | ⚠️ NOT_RUN | 需要三平台真机；目前只验证过「资产存在、非空、命名正确、SHA-256 一致」 |
 | 真实 S3 集成 | ⚠️ 待外部服务 | 只有固定向量测试 |
 | 发布包版本 | ⚠️ 未出包 | 三处版本已到 `0.0.1-dev.2`，但没有对应的 tag / Release；现有证据属于 `v0.0.1-dev.1` |
-| **6 份实机证据** | 🔴 待重采 | Phase 7 的 16 个提交改动了 fingerprinted 路径，当前指纹 `81ffa0bf…`，evidence gate 为红。需在冻结提交上跑 macOS 证据 job，再用 `fetch-verification-evidence.mjs --run-id <id>` 回填；**禁止手工编辑测量值** |
+| **6 份实机证据** | ✅ 已重采 | run `41112206442`（sha `d530aac`）macOS job 产出，`fetch-verification-evidence.mjs` 安装；指纹 `81ffa0bf…`，evidence gate passed。后续任何改动 fingerprinted 路径的提交都会使其再次失效，须按同一流程重采，**禁止手工编辑测量值** |
 | Vault `vault_unlock` 不校验密码（Issue #152） | 📋 待修 | 格式无 verifier，空 Vault 任意密码都能「解锁成功」，错误密码要到第一次 `vault_get` 才暴露。实现规格已写入 `docs/issue.md`：verifier 设为 `Option` 字段 + 常量时间比较 + 旧格式首次成功解锁时原子补写 |
 | Vault `vault_create` 覆盖已存在文件（Issue #153） | 📋 待修 | 后端无存在性保护，任何绕过前端的调用都会原子地毁掉旧 Vault。需加 `AlreadyExists` 与 `overwrite` 参数，属跨栈契约变更，Rust 与前端须一起提交并各补测试 |
 | 导入事务的原子性 | ⚠️ 未严格保证 | `tauri-plugin-sql` 底层是 sqlx 连接池，`BEGIN IMMEDIATE` 与后续语句可能落在不同连接；最坏形态是 COMMIT 报错、整批回滚（属可见失败而非静默脏数据），需在运行中的应用里验证 |

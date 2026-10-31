@@ -1,27 +1,24 @@
 import type { Terminal as XTerminal } from '@baicie/xterm'
+import { terminalOutputByteLength } from './terminal-output-chunks'
 import {
-  splitTerminalOutput,
-  terminalOutputByteLength,
-  type PendingTerminalOutput,
-} from './terminal-output-chunks'
+  TerminalOutputDropLedger,
+  TerminalOutputQueue,
+  type TerminalOutputDropReason,
+} from './terminal-output-queue'
 import type { TerminalOutputReceipt } from './terminal-session-manager-types'
 
 const DEFAULT_MAX_BATCH_BYTES = 32 * 1024
 const DEFAULT_MAX_PENDING_BYTES = 16 * 1024 * 1024
 const DEFAULT_FRAME_FALLBACK_MS = 100
 
-interface OutputBatch {
-  data: string
-  bytes: number
-  receipts: TerminalOutputReceipt[]
-}
-
 export interface TerminalOutputSchedulerSnapshot {
   state: 'active' | 'failed' | 'disposed'
   acceptedBytes: number
   parsedBytes: number
+  droppedBytes: number
   queuedBytes: number
   queuedChunks: number
+  droppedChunks: number
   inFlightBytes: number
   writeInFlight: boolean
 }
@@ -33,10 +30,10 @@ interface TerminalOutputSchedulerOptions {
 }
 
 export class TerminalOutputScheduler {
-  private readonly queue: PendingTerminalOutput[] = []
+  private readonly drops = new TerminalOutputDropLedger()
+  private readonly pending = new TerminalOutputQueue(this.drops)
   private readonly maxBatchBytes: number
   private readonly maxPendingBytes: number
-  private queuedBytes = 0
   private inFlightBytes = 0
   private acceptedBytes = 0
   private parsedBytes = 0
@@ -81,7 +78,10 @@ export class TerminalOutputScheduler {
       receipt?.invalidate?.()
       return false
     }
-    if (this.queuedBytes + this.inFlightBytes + bytes > this.maxPendingBytes) {
+    if (
+      this.pending.queuedBytes + this.inFlightBytes + bytes >
+      this.maxPendingBytes
+    ) {
       this.fail(
         new Error(
           `Terminal output queue exceeded ${this.maxPendingBytes} bytes`,
@@ -90,8 +90,7 @@ export class TerminalOutputScheduler {
       receipt?.invalidate?.()
       return false
     }
-    this.queue.push({ data, bytes, receipt, completesReceipt: true })
-    this.queuedBytes += bytes
+    this.pending.push({ data, bytes, receipt, completesReceipt: true })
     this.acceptedBytes += bytes
     this.schedule(backendBytes !== undefined)
     return true
@@ -102,8 +101,10 @@ export class TerminalOutputScheduler {
       state: this.state,
       acceptedBytes: this.acceptedBytes,
       parsedBytes: this.parsedBytes,
-      queuedBytes: this.queuedBytes,
-      queuedChunks: this.queue.length,
+      droppedBytes: this.drops.droppedBytes,
+      queuedBytes: this.pending.queuedBytes,
+      queuedChunks: this.pending.queuedChunks,
+      droppedChunks: this.drops.droppedChunks,
       inFlightBytes: this.inFlightBytes,
       writeInFlight: this.writeInFlight,
     }
@@ -113,19 +114,23 @@ export class TerminalOutputScheduler {
     if (this.state === 'disposed') return
     this.generation++
     this.state = 'active'
-    for (const output of this.queue) output.receipt?.invalidate?.()
-    this.clearPending()
+    this.pending.invalidateReceipts()
+    this.clearPending('reset')
+    // reset() abandons the queue only. The in-flight batch stays accounted as
+    // in flight on purpose: clearing writeInFlight would let the next write
+    // overlap the stale one inside xterm's own buffer, and the stale callback
+    // still adds those bytes to parsedBytes, so acceptedBytes stays explained.
   }
 
   dispose(): void {
     if (this.state === 'disposed') return
     this.generation++
     this.state = 'disposed'
-    this.clearPending()
+    this.clearPending('dispose')
   }
 
   private schedule(flowControlled = false): void {
-    if (this.queue.length === 0) {
+    if (this.pending.queuedChunks === 0) {
       this.fallbackDrain = false
       return
     }
@@ -161,7 +166,7 @@ export class TerminalOutputScheduler {
       this.fallbackDrain = true
       this.flushFrame()
     }, DEFAULT_FRAME_FALLBACK_MS)
-    if (flowControlled || this.queuedBytes >= this.maxBatchBytes) {
+    if (flowControlled || this.pending.queuedBytes >= this.maxBatchBytes) {
       this.scheduleMicrotask(generation, true)
     }
   }
@@ -187,7 +192,7 @@ export class TerminalOutputScheduler {
   private flushFrame(): void {
     this.frameId = null
     if (this.writeInFlight || this.state !== 'active') return
-    const batch = this.takeBatch()
+    const batch = this.pending.takeBatch(this.maxBatchBytes)
     if (!batch) {
       // Keep fallback mode across an empty queue. WKWebView can pause RAF and
       // timers between two backend events; clearing this flag here would make
@@ -225,65 +230,22 @@ export class TerminalOutputScheduler {
     }
   }
 
-  private takeBatch(): OutputBatch | null {
-    const first = this.takeHead(this.maxBatchBytes, true)
-    if (!first) return null
-    let data = first.data
-    let bytes = first.bytes
-    const receipts =
-      first.receipt && first.completesReceipt ? [first.receipt] : []
-    while (this.queue.length > 0) {
-      const remaining = this.maxBatchBytes - bytes
-      if (remaining <= 0) break
-      const next = this.takeHead(remaining, false)
-      if (!next) break
-      data += next.data
-      bytes += next.bytes
-      if (next.receipt && next.completesReceipt) receipts.push(next.receipt)
-    }
-    return { data, bytes, receipts }
-  }
-
-  private takeHead(
-    maxBytes: number,
-    allowOversizedCodePoint: boolean,
-  ): PendingTerminalOutput | null {
-    let output = this.queue[0]
-    while (output?.receipt && !output.receipt.isActive()) {
-      this.queue.shift()
-      this.queuedBytes -= output.bytes
-      output = this.queue[0]
-    }
-    if (!output) return null
-    const [head, tail] = splitTerminalOutput(output, maxBytes)
-    if (head.bytes > maxBytes && !allowOversizedCodePoint) return null
-
-    if (tail) {
-      this.queue[0] = tail
-    } else {
-      this.queue.shift()
-    }
-    this.queuedBytes -= head.bytes
-    return head
-  }
-
   private fail(error: Error): void {
     if (this.state !== 'active') return
     this.generation++
     this.state = 'failed'
-    for (const output of this.queue) output.receipt?.invalidate?.()
-    this.clearPending()
+    this.pending.invalidateReceipts()
+    this.clearPending('fail')
     this.options.onOverflow(error)
   }
 
-  private clearPending(): void {
+  private clearPending(reason: TerminalOutputDropReason): void {
     if (this.frameId !== null) cancelAnimationFrame(this.frameId)
     this.frameId = null
     this.clearFrameFallback()
     this.clearScheduledMicrotask()
     this.fallbackDrain = false
-    this.queue.length = 0
-    this.queuedBytes = 0
+    this.pending.clear(reason)
   }
 
   private clearFrameFallback(): void {

@@ -102,6 +102,58 @@ const PROFILE_MANIFEST_FIELD = new Map([
   ['release', 'releaseSha'],
 ])
 
+/**
+ * Where each profile states which executable it measured. These are the only
+ * fields the artifact binding reads, and every one of them is asserted against
+ * the manifest and against a fixed artifact path.
+ *
+ * A sha256 found anywhere else in the document binds nothing: the gate used to
+ * collect every field named sha256 from the whole tree and accept a match
+ * anywhere, which a digest pasted into a note, a description or a fixture block
+ * satisfied just as well as a real measurement - while the field that names the
+ * measured binary could say something else entirely.
+ */
+export const BINARY_BINDING = new Map([
+  [
+    'debug',
+    {
+      shaPath: ['binary', 'sha256'],
+      pathPath: ['binary', 'path'],
+      artifactPath: 'src-tauri/target/debug/terminal',
+    },
+  ],
+  [
+    'release',
+    {
+      shaPath: ['build', 'sha256'],
+      pathPath: ['build', 'binary'],
+      artifactPath: 'src-tauri/target/release/terminal',
+    },
+  ],
+])
+
+const SHA256_PATTERN = /^[0-9a-f]{64}$/
+const RAW_LOG_NAME_PATTERN = /^[A-Za-z0-9._-]+\.log$/
+
+function readStringAt(record, keys) {
+  let current = record
+  for (const key of keys) {
+    if (current === null || typeof current !== 'object') return undefined
+    current = current[key]
+  }
+  return typeof current === 'string' ? current : undefined
+}
+
+function findManifestEntry(manifest, file) {
+  const listed = Array.isArray(manifest?.evidenceFiles) ? manifest.evidenceFiles : []
+  return listed.find(entry => entry?.file === file)
+}
+
+/**
+ * Every sha256 anywhere in the document. It is kept for one narrow purpose -
+ * noticing that a single file names two different binaries - and it is
+ * deliberately not the artifact binding (see BINARY_BINDING).
+ */
 function collectHashes(value, found = []) {
   if (Array.isArray(value)) {
     for (const item of value) collectHashes(item, found)
@@ -386,9 +438,120 @@ export const MISSING_MANIFEST_MESSAGE =
  * moved, or a file left over from a different run than the one the manifest
  * describes.
  */
+/**
+ * Asserts one evidence file against the artifact of the CI run, at the fixed
+ * paths that name that artifact. Everything is reported as one problem for the
+ * file, because a reviewer needs the sentence about this file rather than four
+ * fragments about the same broken binding.
+ */
+function validateArtifactBinding(file, evidence, manifest) {
+  const profile = EVIDENCE_PROFILE.get(file)
+  const binding = BINARY_BINDING.get(profile)
+  const field = PROFILE_MANIFEST_FIELD.get(profile)
+  const expected =
+    typeof manifest?.[field] === 'string' ? manifest[field] : undefined
+  const recorded = readStringAt(evidence, binding.shaPath)
+  const recordedPath = readStringAt(evidence, binding.pathPath)
+  const listed = findManifestEntry(manifest, file)
+  const detail = []
+
+  if (recorded === undefined || !SHA256_PATTERN.test(recorded)) {
+    detail.push(
+      `${binding.shaPath.join('.')} is ${JSON.stringify(recorded ?? null)} ` +
+        'instead of a sha256 digest',
+    )
+  }
+  if (recorded !== expected) {
+    detail.push(
+      `it records ${JSON.stringify(recorded ?? null)} where ${MANIFEST_FILE} ` +
+        `binds the ${profile} artifact of run ${manifest?.runId ?? '<none>'} to ` +
+        `${JSON.stringify(expected ?? null)}`,
+    )
+  }
+  if (recordedPath !== binding.artifactPath) {
+    detail.push(
+      `${binding.pathPath.join('.')} is ${JSON.stringify(recordedPath ?? null)} ` +
+        `instead of ${binding.artifactPath}, so the file does not name the ` +
+        'executable it measured',
+    )
+  }
+  if (listed === undefined) {
+    detail.push(`${MANIFEST_FILE} records no evidenceFiles entry for this file`)
+  } else if (listed.sha256 !== recorded) {
+    detail.push(
+      `the ${MANIFEST_FILE} evidenceFiles entry for this file records ` +
+        JSON.stringify(listed.sha256 ?? null),
+    )
+  }
+  if (detail.length === 0) return []
+  return [
+    `${profile} evidence ${file}: ${detail.join('; ')}. Re-run the scenario on ` +
+      'the artifact that run produced instead of citing numbers measured on a ' +
+      'different build or written by hand.',
+  ]
+}
+
+const RAW_LOG_DIRECTORY = 'docs/verification/raw'
+
+/**
+ * The raw log of a scenario is the audit trail behind its JSON numbers: the
+ * summary states what was measured, the log is what shows it was measured at
+ * all. A manifest naming logs nobody can open is not an audit trail.
+ */
+async function validateRawLogArchive(manifest, readDirectory) {
+  const problems = []
+  const listed = Array.isArray(manifest?.rawLogs?.files)
+    ? manifest.rawLogs.files
+    : []
+  if (listed.length === 0) {
+    problems.push(
+      `${MANIFEST_FILE} records no rawLogs.files, so the logs behind these ` +
+        'measurements cannot be opened. Install the manifest with ' +
+        'scripts/fetch-verification-evidence.mjs instead of writing it by hand.',
+    )
+    return problems
+  }
+  const unusable = listed.filter(
+    name => typeof name !== 'string' || !RAW_LOG_NAME_PATTERN.test(name),
+  )
+  if (unusable.length > 0) {
+    problems.push(
+      `${MANIFEST_FILE} lists raw log names that are not plain .log names: ` +
+        `${unusable.map(name => JSON.stringify(name ?? null)).join(', ')}.`,
+    )
+  }
+  const runId =
+    typeof manifest.runId === 'string' && manifest.runId !== ''
+      ? manifest.runId
+      : undefined
+  if (runId === undefined) return problems
+  const usable = listed.filter(
+    name => typeof name === 'string' && RAW_LOG_NAME_PATTERN.test(name),
+  )
+  let installed = []
+  try {
+    installed = await readDirectory(path.join(verificationRoot, 'raw', runId))
+  } catch {
+    installed = []
+  }
+  const present = new Set(installed.map(name => String(name)))
+  const missing = usable.filter(
+    name => !present.has(name) && !present.has(`${name}.gz`),
+  )
+  if (missing.length > 0) {
+    problems.push(
+      `the raw log(s) of run ${runId} are missing from ${RAW_LOG_DIRECTORY}/` +
+        `${runId}/: ${missing.join(', ')}. The JSON numbers are a summary; the ` +
+        'raw log is what shows they were measured rather than written. Restore ' +
+        'them with scripts/fetch-verification-evidence.mjs (or store them as ' +
+        '<name>.gz) instead of deleting the tail of the audit trail.',
+    )
+  }
+  return problems
+}
 export function validateEvidenceManifest(
   manifest,
-  { entries, evidenceByFile, hashesByFile, sourceFingerprint },
+  { entries, evidenceByFile, sourceFingerprint },
 ) {
   const problems = []
   const runId = typeof manifest.runId === 'string' ? manifest.runId : undefined
@@ -418,29 +581,25 @@ export function validateEvidenceManifest(
   }
 
   for (const [profile, field] of PROFILE_MANIFEST_FIELD) {
-    const files = entries.filter(
-      ([file]) => EVIDENCE_PROFILE.get(file) === profile,
-    )
-    if (files.length === 0) continue
+    if (!entries.some(([file]) => EVIDENCE_PROFILE.get(file) === profile)) continue
     const expected = manifest[field]
     if (typeof expected !== 'string' || expected === '') {
       problems.push(
         `${MANIFEST_FILE} records no ${field}, so the ${profile} evidence is not bound to ` +
           'the artifact the run built.',
       )
-      continue
     }
-    for (const [file] of files) {
-      const hashes = hashesByFile.get(file) ?? []
-      if (hashes.length > 0 && !hashes.includes(expected)) {
-        problems.push(
-          `${profile} evidence ${file} records ${hashes.join(', ')}, but ${MANIFEST_FILE} ` +
-            `binds the ${profile} artifact of run ${runId ?? '<none>'} to ${expected}. ` +
-            'Re-run the scenario on the binary that run produced instead of citing ' +
-            'numbers measured on a different build.',
-        )
-      }
-    }
+  }
+
+  // One problem per file, read from the fixed paths in BINARY_BINDING. Accepting
+  // a matching digest found anywhere in the document let a value pasted into an
+  // unrelated field stand in for the binding, so each file is now asserted
+  // against the manifest field of its profile, the manifest's own entry for it
+  // and the path of the executable it claims to have measured.
+  for (const [file] of entries) {
+    problems.push(
+      ...validateArtifactBinding(file, evidenceByFile.get(file), manifest),
+    )
   }
 
   for (const [file] of entries) {
@@ -574,28 +733,56 @@ export async function checkVerificationEvidence({
       ...validateEvidenceManifest(manifest, {
         entries,
         evidenceByFile,
-        hashesByFile,
         sourceFingerprint,
       }),
+    )
+  }
+  if (manifest !== undefined) {
+    problems.push(
+      ...(await validateRawLogArchive(
+        manifest,
+        dependencies.readdir ?? readdir,
+      )),
     )
   }
 
   // A fingerprint recorded inside the evidence and the fingerprint recorded in
   // the manifest are two independent statements about the same checkout. The
-  // manifest is checked above; this checks the per-file statement, so a file
-  // that kept an older fingerprint cannot ride along on a fresh manifest.
+  // manifest is checked above; this checks every per-file statement, so a file
+  // that kept an older fingerprint cannot ride along on a fresh manifest. Both
+  // profiles are covered: release evidence states it in provenance.fingerprint,
+  // debug evidence in provenance.fingerprint and source.fingerprint.
   if (sourceFingerprint !== undefined) {
     for (const [file] of entries) {
-      if (EVIDENCE_PROFILE.get(file) !== 'debug') continue
-      const recorded = fingerprintsByFile.get(file)
-      if (recorded !== sourceFingerprint) {
-        problems.push(
-          `debug evidence ${file} was recorded against source fingerprint ` +
-            `${recorded}, but the terminal sources now fingerprint as ` +
-            `${sourceFingerprint}. Re-run the scenario on the current sources ` +
-            'instead of citing measurements taken before this change.',
-        )
+      const evidence = evidenceByFile.get(file)
+      const statements = []
+      const sourceStatement = fingerprintsByFile.get(file)
+      if (
+        EVIDENCE_PROFILE.get(file) === 'debug' &&
+        sourceStatement !== undefined
+      ) {
+        statements.push(['source.fingerprint', sourceStatement])
       }
+      const provenanceStatement = readStringAt(evidence, [
+        'provenance',
+        'fingerprint',
+      ])
+      if (provenanceStatement !== undefined) {
+        statements.push(['provenance.fingerprint', provenanceStatement])
+      }
+      const stale = statements.filter(
+        statement => statement[1] !== sourceFingerprint,
+      )
+      if (stale.length === 0) continue
+      problems.push(
+        `${file} was recorded against source fingerprint ` +
+          `${stale
+            .map(([where, value]) => `${value} (${where})`)
+            .join(' and ')}, but the terminal sources now fingerprint as ` +
+          `${sourceFingerprint}. This file describes an older checkout. ` +
+          'Re-run the scenario on the current sources instead of citing ' +
+          'measurements taken before this change.',
+      )
     }
   }
 

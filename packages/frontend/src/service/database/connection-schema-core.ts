@@ -1,5 +1,30 @@
+/**
+ * Core schema and its additive migrations.
+ *
+ * Two rules this module has to keep:
+ *
+ * 1. An `ALTER TABLE ... ADD COLUMN` fails on a database that already has the column,
+ *    and that one failure is expected. Every *other* failure - a full disk, a locked
+ *    database, a permission problem, a bad statement - is a real problem and must
+ *    reach the caller instead of being swallowed with the expected one.
+ * 2. The migration list cannot be rolled back, so it only ever runs after a verified
+ *    snapshot of the database exists. If that snapshot cannot be produced, no schema
+ *    statement runs at all and the caller sees the snapshot error.
+ */
+
+import { traceStage } from './startup-trace'
+
 export interface SqliteConnection {
   execute: (sql: string, params?: unknown[]) => Promise<unknown>
+  /** Row-returning queries. Absent on connections that only apply statements. */
+  select?: (sql: string, params?: unknown[]) => Promise<unknown[]>
+}
+
+/** One column an upgrade adds to a table an older release already created. */
+interface ColumnMigration {
+  table: string
+  column: string
+  sql: string
 }
 
 const schemaStatements = [
@@ -25,26 +50,199 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS idx_script_executions_started_at ON script_executions(started_at DESC)`,
 ]
 
+/**
+ * The additive part of the schema, as one list so the statements and the "is this
+ * upgrade still pending?" check can never disagree about what an upgrade is.
+ */
+const columnMigrations: ColumnMigration[] = [
+  {
+    table: 'connection_logs',
+    column: 'error_message',
+    sql: 'ALTER TABLE connection_logs ADD COLUMN error_message TEXT',
+  },
+  {
+    table: 'connection_logs',
+    column: 'error_raw',
+    sql: 'ALTER TABLE connection_logs ADD COLUMN error_raw TEXT',
+  },
+  {
+    table: 'hosts',
+    column: 'certificate',
+    sql: 'ALTER TABLE hosts ADD COLUMN certificate TEXT',
+  },
+  {
+    table: 'hosts',
+    column: 'jump_host_id',
+    sql: 'ALTER TABLE hosts ADD COLUMN jump_host_id TEXT',
+  },
+  {
+    table: 'hosts',
+    column: 'jump_host_auth_type',
+    sql: 'ALTER TABLE hosts ADD COLUMN jump_host_auth_type TEXT',
+  },
+  {
+    table: 'hosts',
+    column: 'agent_forwarding',
+    sql: 'ALTER TABLE hosts ADD COLUMN agent_forwarding INTEGER DEFAULT 0',
+  },
+  {
+    table: 'hosts',
+    column: 'shell_integration',
+    sql: "ALTER TABLE hosts ADD COLUMN shell_integration TEXT DEFAULT 'off'",
+  },
+]
+
+/** What the backend reports about the snapshot it wrote. */
+export interface MigrationSnapshot {
+  /** Absolute path of the snapshot file. */
+  path: string
+  /** Tables the backend verified against the database. */
+  tables: number
+  /** Rows the snapshot carries. */
+  rows: number
+}
+
+/**
+ * Does this error mean "the column is already there"?
+ *
+ * SQLite reports it as `duplicate column name: <column>` (SQLITE_ERROR, so the code
+ * alone cannot tell it apart from any other generic failure), and the plugin forwards
+ * the message verbatim. Only that text is treated as expected: the error code is
+ * shared with "disk I/O error", "database is locked", "attempt to write a readonly
+ * database" and every syntax error, so matching on it would swallow the failures this
+ * check exists to surface.
+ */
+export function isDuplicateColumnError(error: unknown): boolean {
+  return /duplicate column name|duplicate column definition|column\b[^,;]{0,80}\balready exists/i.test(
+    errorMessage(error),
+  )
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
+/**
+ * Which column migrations the database still needs.
+ *
+ * Returns nothing when the connection cannot answer the question (a statement-only
+ * connection, for instance the real-SQLite upgrade harness), and nothing for a table
+ * that does not exist yet: `CREATE TABLE` writes the current column set, so those
+ * columns are not pending, they are being created.
+ */
+/**
+ * Quote a SQL identifier for inlining.
+ *
+ * Only code-defined table names reach this, but the guard exists so a future
+ * caller cannot turn a data-driven name into statement injection.
+ */
+function quoteSqlIdentifier(name: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error('refusing to inline an unsafe SQL identifier: ' + name)
+  }
+  return '"' + name + '"'
+}
+
+export async function pendingColumnMigrations(
+  database: SqliteConnection,
+): Promise<ColumnMigration[]> {
+  if (!database.select) return []
+  // Bind, do not copy. The plugin's select is a class method that reads
+  // this.path; detaching it from the instance loses the receiver and the call
+  // fails with "undefined is not an object (evaluating 'this.path')" - which
+  // is what actually blocked database initialisation on every runner (#59),
+  // and what the unit tests never saw because their mock is a plain function.
+  const select = database.select.bind(database)
+
+  const pending: ColumnMigration[] = []
+  for (const table of new Set(columnMigrations.map(migration => migration.table))) {
+    const existing = await select(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [table],
+    )
+    if (!Array.isArray(existing) || existing.length === 0) continue
+
+    // pragma table-valued functions resolve their argument while the statement
+    // is prepared, so a bound parameter does not reliably reach them: the real
+    // plugin rejected this call (with a non-Error value, which surfaced as
+    // "error=undefined") on both macOS and Linux runners, while every unit test
+    // passed because the mock connection accepts any parameters. The table names
+    // are code constants, so validate and inline them instead of binding.
+    const columns = await select(
+      'SELECT name FROM pragma_table_info(' + quoteSqlIdentifier(table) + ')',
+    )
+    const present = new Set(
+      (Array.isArray(columns) ? (columns as { name: string }[]) : []).map(
+        column => column.name,
+      ),
+    )
+    pending.push(
+      ...columnMigrations.filter(
+        migration => migration.table === table && !present.has(migration.column),
+      ),
+    )
+  }
+  return pending
+}
+
+/**
+ * Snapshot the database before it is rewritten, and stop when that fails.
+ *
+ * The snapshot is taken by the backend (`VACUUM INTO` plus a read-back verification of
+ * integrity, column lists and row counts), because only the backend can reach the
+ * pooled connection SQLite owns. A rejection here is the abort signal: the caller must
+ * not run a single schema statement, since the migration it is about to perform cannot
+ * be undone.
+ */
+export async function ensurePreMigrationSnapshot(
+  pending: ColumnMigration[],
+): Promise<MigrationSnapshot> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  try {
+    const snapshot = await invoke<MigrationSnapshot>(
+      'backup_database_before_migration',
+    )
+    if (!snapshot || typeof snapshot.path !== 'string' || snapshot.path === '') {
+      throw new Error('the backend did not report a snapshot path')
+    }
+    console.info(
+      `[Database] pre-migration snapshot ${snapshot.path} verified (${snapshot.tables} tables, ${snapshot.rows} rows) before migrating ${pending.length} column(s)`,
+    )
+    return snapshot
+  } catch (error) {
+    throw new Error(
+      `pre-migration snapshot failed, so the schema was not migrated: ${errorMessage(error)}`,
+      { cause: error },
+    )
+  }
+}
+
 export async function initializeCoreSchema(
   database: SqliteConnection,
 ): Promise<void> {
+  const pending = await pendingColumnMigrations(database)
+  traceStage(
+    'pending-migrations-detected',
+    pending.length + ' column migration(s): ' + pending.map(entry => entry.column).join(','),
+  )
+  if (pending.length > 0) {
+    traceStage('snapshot-started', pending.length + ' migration(s) pending')
+    await ensurePreMigrationSnapshot(pending)
+    traceStage('snapshot-finished', 'the pre-migration snapshot was verified')
+  }
+
   for (const statement of schemaStatements.slice(0, 15))
     await database.execute(statement)
-  for (const statement of [
-    'ALTER TABLE connection_logs ADD COLUMN error_message TEXT',
-    'ALTER TABLE connection_logs ADD COLUMN error_raw TEXT',
-    'ALTER TABLE hosts ADD COLUMN certificate TEXT',
-    'ALTER TABLE hosts ADD COLUMN jump_host_id TEXT',
-    'ALTER TABLE hosts ADD COLUMN jump_host_auth_type TEXT',
-    'ALTER TABLE hosts ADD COLUMN agent_forwarding INTEGER DEFAULT 0',
-    "ALTER TABLE hosts ADD COLUMN shell_integration TEXT DEFAULT 'off'",
-  ]) {
+  for (const migration of columnMigrations) {
     try {
-      await database.execute(statement)
-    } catch {
-      /* Existing databases already have the column. */
+      await database.execute(migration.sql)
+    } catch (error) {
+      if (isDuplicateColumnError(error)) continue
+      throw error
     }
   }
   for (const statement of schemaStatements.slice(15))
     await database.execute(statement)
+  traceStage('core-schema-finished', schemaStatements.length + ' statement(s) applied')
 }

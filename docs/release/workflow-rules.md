@@ -36,7 +36,9 @@
 | 规则 | 依据 |
 | --- | --- |
 | **推送 tag 永远只走 `unsigned-qa`**；需要密钥的模式必须显式 `workflow_dispatch` 选择 | 一个 tag 不该意外产生签名产物 |
-| `updater-signed` 缺 `TAURI_SIGNING_PRIVATE_KEY`，或 `plugins.updater.pubkey` 仍是占位符 → **直接失败，不降级** | 否则「已签名」变成假话 |
+| `updater-signed` 缺 `TAURI_SIGNING_PRIVATE_KEY`，或 secret `TAURI_UPDATER_PUBKEY` 为空/非 base64 → **直接失败，不降级** | 否则「已签名」变成假话 |
+
+> **2026-11-01 更正（Phase 8 P8.7）**：原文把触发条件写成「`plugins.updater.pubkey` 仍是占位符」，这不准确——仓库里的占位符**不会**让流程失败。实际校验的是 secret `TAURI_UPDATER_PUBKEY` 非空且形如 base64（`release.yml:117-127`）；真实公钥只在 `workflow_dispatch + release_mode=updater-signed` 时经 `--config` 内联。
 | `fully-signed` 本阶段命中即失败 | 没有 Apple/Windows 证书 |
 | Release **先建 draft + prerelease**，资产校验 + `SHA256SUMS.txt` +（updater 模式下）`.sig` 与 `latest.json` 全部通过后才 undraft | 任一步失败就让它留在草稿，不进更新源 |
 | **draft 不能用 `/releases/tags/{tag}` 查**（该端点对草稿返回 404），必须从 `/releases?per_page=100` 按 `tag_name` 选 | run `40810787564` 就是栽在这里 |

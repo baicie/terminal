@@ -27,6 +27,11 @@ export default {
   'hosts.invite': 'Inviter',
   'hosts.sshAuth': 'ssh, {{username}}',
   'hosts.copySsh': 'Copier la commande SSH',
+  'hosts.moreActions': "Plus d'actions pour {{name}}",
+  'hosts.deleteConfirm':
+    "Supprimer « {{name}} » ? Ses identifiants enregistrés, son groupe et son statut de favori seront définitivement supprimés. Cette action est irréversible.",
+  'hosts.deleted': 'Hôte « {{name}} » supprimé',
+  'hosts.deleteFailed': "Échec de la suppression de l'hôte : {{message}}",
 
   // Quick Connect
   'quickConnect.title': 'Connexion rapide',

@@ -3735,3 +3735,478 @@ ELIFECYCLE Command failed with exit code 1.
 **注意**：失败后 workflow 仍会用 `|| true` 上传 `evidence-artifact`（本次 24,036,767 字节，明显小于成功轮的 ~37.5 MB）。
 **这种来自失败 run 的产物不能用于证据回填**——manifest 未重新生成，且场景不完整。
 
+
+#### #152 / #153 修复记录（2026-11-01，Phase 8 P8.1）
+
+**状态：已修复并合并进 `feat/phase8-rc-hardening`（提交 `08dc637`）**
+
+**#152 vault_unlock 不校验密码**
+
+- 引入可选字段 `verifier` = `base64(HMAC-SHA256(master_key, "terminal-vault-verifier-v1" || salt))`；域分离串为编译期常量且**不落盘**（有测试断言文件中不含该串）
+- 比较用 `Hmac::verify_slice`（常量时间），非法 base64 直接 false；失配返回 `InvalidPassword`（无 message，不回显内容）
+- 三条旧格式路径：非空则解密任意真实条目定密码并原子迁移；为空则明确 `log::warn` 声明不可验证；迁移写失败只 warn、unlock 仍 Ok、旧文件字节不变
+
+**已接受的信息论限制（必须记住）**：历史格式的**空** Vault 不含任何可用于校验密码的材料。首次解锁时接受本次输入并立即封存 verifier，因此**空 Vault 的首个输入密码即成为其主密码**。这不是实现缺陷，是旧格式没有校验材料的必然结果；有数据的旧 Vault 永远走上一条（解密真实条目）。
+
+**#153 vault_create 覆盖已存在文件**
+
+- 改为 `OpenOptions::create_new(true)`（Unix `O_CREAT|O_EXCL` + mode `0o600`；Windows `CREATE_NEW`），存在性判断与创建是同一内核操作，无 TOCTOU 窗口
+- 已存在 → `AlreadyExists`（DTO kind `already_exists`）；目标被目录占据 → `SaveFailed`
+- 填充失败先 drop 句柄再删占位文件，不留残骸
+- **未提供 `overwrite` 参数**：那等于为普通 create 开一条新的破坏性入口。重置能力留给将来独立的显式破坏性命令，本轮不实现
+
+**一处顺带修正的前端认知错误**：`use-vaults-container.ts` 里那条 create 调用链**整条从未被挂载**（`VaultsContainer*` 只在 view/vaults 内部互相引用）。真正生效的是 `vaults-view.tsx → useVaultsView`。此前若按文档去改 container，等于改了一段死代码。
+
+**测试**：新增 13 例覆盖正确/错误密码、空 Vault、历史非空、历史空、迁移失败、change_password 轮换与失败回滚、跨 salt verifier 拒绝、verifier 不落盘、已存在拒绝且字节全保留、并发创建、只读路径字节完整、跨平台持久化。`cargo test` 260 passed（原 247，既有 11 例一字未改）。
+
+**残留**：`#[cfg(not(unix))]` 分支（Windows `CREATE_NEW` 语义）只编译未在真实 Windows 运行；`use-vaults-container.ts` 死链未同步（若将来挂载需一并处理）。
+
+**#154 Team Sync 并发与故障恢复：真实 PostgreSQL 验证（P8.5，2026-11-01）**
+
+**做法**：新增 `packages/team-server/src/__tests__/pg/`（`pg-harness.ts` + 两个 `*.pg-spec.ts`）与 `vitest.pg.config.ts`。用真实 PostgreSQL 17.10 直连生产 `PrismaService`，两个独立连接池代表两个客户端，**全程不 mock Prisma**；`globalSetup` 自动建库并执行 `prisma migrate deploy`，顺带证明 3 个迁移能在真库上完整应用。默认 `pnpm --filter team-server test`（`src/**/*.test.ts`）不受影响，新增入口 `pnpm --filter team-server test:pg`。
+
+**13 例：12 通过 + 1 例 `it.fails`（已知缺口，作为活体标记）**，实测输出（逐条 console 取证）：
+- `[A1] 首次 created=["share-concurrency-1"] 重放 updated=["share-concurrency-1"] 重放 errors=[] 行数=1`
+- `[A1b] created 合计=1 另一方 updated=[] errors=[{"id":"share-concurrency-race","error":"SYNC_OPERATION_FAILED"}] 行数=1`
+- `[A2] 同时阻塞的写者=2 成功=1 冲突=1 最终 data={"host":"v3"}`（第三方连接先持行锁，两个写者都读到同一 `updatedAt` 后才进入条件写）
+- `[A3] baseVersion=… conflicts=["share-stale-version"] updated=[] 最终 data={"host":"server-newer"}`
+- `[A3b] 重放 conflicts=["share-update-replay"] 最终 data={"host":"first-write"}`
+- `[B1] processed=1 succeeded=1 status=COMPLETED attempts=1 token=null share=true`
+- `[B1b] processed=0 status=PROCESSING token=live-lease share=false`
+- `[B2] processed 合计=4 succeeded 合计=4 failed 合计=0 共享行=4 全部 attempts=1 且 COMPLETED=true`
+- `[B3] processed=1 取消项共享=false 取消项队列行=null 保留项共享=true`
+- `[B4] 三次 failed=[1,1,1] status=FAILED attempts=3 lastError=SYNC_OPERATION_FAILED 再跑 processed=0`
+- `[B5] READWRITE 成员写入后 permission=READWRITE isSensitive=false encryptedData=null data={"host":"member-write"}；READONLY 推送 errors=[…"Only creator can update share"]`
+- `[B6] 跨团队成员读取=404 非成员读取=403 跨 team 推送 errors=[…"Share does not belong to the requested team"] 资源 teamId 未变=true`
+- `[A4] 第一轮可见=false 第二轮可见=false 游标=…`
+
+**VERIFIED_EXISTING（Issue #148 的修复实测生效，未改写任何实现）**：离线队列条件写 + `processingToken` 租约（过期回收 / 未过期不被抢占 / 并发处理器同一任务只被认领一次且 `attempts` 恒为 1）；移出队列与终态 `FAILED` 的条目不再被自动处理器占用；push 条件 `updateMany` + count 校验（落败写者得到 `Share was modified concurrently`）；`baseVersion` 过期被拒为 conflict 且不覆盖较新数据；非 creator 的 `permission`/`isSensitive` 被冻结、READONLY 共享直接拒绝；跨 team 读取按 `(id, teamId)` 查不到 → 404 而非 403。读码复核（非实测）：`IdentifierPipe` 的 `^\w` 首字符约束与 `generateLinkToken` 首字符字母数字表一致。
+
+**两条「失败但不丢数据」的既定语义（本轮未改）**：
+1. 两个客户端**同时**创建同一 id 时，落败方得到 `SYNC_OPERATION_FAILED`（P2002 被 catch 成稳定码）而非幂等成功；数据层只留一行，顺序重放才是幂等更新。
+2. 离线队列里 CREATE 命中已存在同 id 时按设计报冲突（`offline-sync.service.test.ts:690` 明确锁定），因此「写入成功但队列未标 COMPLETED 就崩溃 → 租约回收重试」会以 3 次失败进入终态。
+两者都不会覆盖较新数据；若改为幂等成功，等于翻转 Issue #148 的既定语义，需要单独决策。
+
+**A4 记录的缺口（`it.fails`）**：游标在查询前捕获，解决的是「查询期间被更新」；但「本轮 SELECT 之后才提交、`updatedAt` 落在本轮窗口内」的写入，下一轮 `since = 上一轮 timestamp` 会把它排除 → 永久漏同步。修复需设计决策（DB 侧单调版本列或重叠窗口），不在 P8.5 范围内。
+
+**未覆盖（不得据此宣称已验证）**：真实网络分区/丢包与 HTTP 层重试语义；多进程/多实例部署下的真实争用（本套用同进程两个连接池 + 一个外部持锁连接）；前端 SyncQueue 端到端行为；数据库主从/故障切换。
+
+**门禁**：`prisma validate` / `lint`（0 error；13 条 `no-console` warning 全部来自新 pg 用例的取证输出）/ `typecheck` / `test`（25 文件 116 例，数量不变）/ `build` 全绿；`check-source-size.mjs` 559 个生产文件通过（559 = 基线 558 + 会话既存未跟踪的 `terminal-output-queue.ts`，与本次改动无关；`src/__tests__/` 属门禁排除目录）。
+
+
+
+---
+
+## 十三、Phase 8.9 发现的新问题（2026-11-01）
+
+### Issue #59: macOS 托管 runner 上应用未建完 SQLite schema ✅ 已修复（Phase 9.0）
+
+**严重程度**: 🟡 Important
+**状态**: ⚠️ 未修复
+**影响**: macOS 的内容级数据保留验证无法完成；RC 判定受阻
+
+**症状**（CI 实测，macOS Tauri 作业）：
+
+    [FAIL] the app created table "settings"
+    [FAIL] the app created table "workspaces"
+    [FAIL] the app created table "workspace_layouts"
+    [FAIL] the app created table "ssh_keys"
+    [FAIL] the app never finished creating its schema inside .../terminal.db
+
+**已排除**: 不是「观察窗口太短」——脚本轮询 180 秒仍在等；数据库文件本身已创建，只是表没建全。
+
+**候选方向**（未验证）: 未签名开发版从临时目录启动时，前端 boot 是否被 Gatekeeper / WebKit
+限制在 schema 初始化之前；或 `tauri-plugin-sql` 的 create_database 与 initSchema 之间有时序缺口。
+
+**注意**: 这条断言**没有为了让 CI 变绿而被放松**。它抓到的现象是真的。
+
+**Phase 9.0 已修复。根因有两层，都是同一类别的 bug，出现在两个模块里：**
+
+1. pendingColumnMigrations / pendingTeamColumnMigrations 用**绑定参数**调用 pragma 表值函数
+   （SELECT name FROM pragma_table_info(?)）。pragma 的参数在语句预处理阶段求值，绑定参数不可达。
+   改为校验后的字面量标识符（quoteSqlIdentifier）。
+2. 同一个函数把 database.select **取出后脱离实例调用**。插件的 select 是类方法、内部读 this.path，
+   脱离后抛 `undefined is not an object (evaluating this.path)`。改为 .bind(database)。
+
+两次都是单测全绿而真机全红，原因相同：**mock 比真实实现宽松**——
+mock 接受任意参数，且是普通函数不依赖 this。
+
+定位手段是 Phase 9.0 新增的启动阶段插桩（startup_stage / startup_stage_failed），
+它把「猜哪一层」变成「读哪一行」。此前靠读代码猜过四次（快照顺序、DB_KEY、水合条件、建表顺序）都错。
+
+**验证**：macOS 与 Windows 的安装链与数据保留验证首次通过；Linux 的全部断言（74 passed / 0 failed）也通过。
+
+---
+
+### Issue #60: Linux 上 plain 环境的 zsh 三条用例超时 ⚠️ 未修复
+
+**严重程度**: 🟡 Important
+**状态**: 🟡 诊断缺陷已修复（Phase 9.0 P9.0-6）；Linux runner 复跑仍未闭合
+
+**实测矩阵**（真实 Linux runner）:
+
+    zsh | app   | readline-history | PASS
+    zsh | app   | readline-tab     | PASS
+    zsh | app   | pty-resize       | PASS
+    zsh | app   | ctrl-c-interrupt | PASS
+    zsh | plain | readline-history | TIMEOUT  ready marker never printed
+    zsh | plain | readline-tab     | TIMEOUT  no verdict before the deadline
+    zsh | plain | pty-resize       | TIMEOUT  ready marker never printed
+    zsh | plain | ctrl-c-interrupt | PASS
+    bash | 全部 8 条                | PASS
+
+**关键结论**: 应用环境下 zsh 四条全过，**plain 环境**三条超时。应用生成的 `.zshrc` / ZDOTDIR wrapper
+不是问题所在——方向与 Phase 8.8 的假设相反。
+
+**根因（Phase 9.0 P9.0-6）：plain 变体一个启动文件都没给，这是诊断缺陷。**
+
+旧脚本的 plain 分支是 `zsh -i` + 全新空 HOME，什么都没写。Debian/Ubuntu 上缺 `.zshenv`
+就等于缺 `skip_global_compinit=1`，系统级 `/etc/zsh/zshrc` 于是跑 `compinit`，遇到
+insecure directories 会停下来提问，把之后注入的字节全吞掉——正好是三条必须由 ZLE 解释字节的
+用例（`ESC[A`、`TAB`、resize 后重绘），而 `ctrl-c-interrupt` 只需要 `stty echo`，所以它过。
+**脚本自己的注释就写着这条规则**（「生成 `.zshenv` 必须带 `skip_global_compinit=1`」），
+plain 变体没有遵守。它测的不是「没有集成 wrapper 的 zsh」，而是「没有任何启动文件的 zsh」。
+
+**三个启动模型**（`--launch app,plain,bare`）:
+
+| 模型 | 启动文件 | 期望 |
+| --- | --- | --- |
+| `app` | `shell_startup.rs` 生成的 ZDOTDIR wrapper（`.zshenv` 带 `skip_global_compinit=1`） | pass（产品门禁测的就是这个） |
+| `plain` | HOME 内最小 `.zshenv`（带 `skip_global_compinit=1`）+ `.zshrc` | pass（与 app 的差异只剩 wrapper） |
+| `bare` | 无（旧 plain 行为，保留为负面对照） | fail，且必须失败于系统 rc 阻塞 |
+
+**三类失败的区分**（表格新增 `expected | observed | class` 三列）:
+
+| class | 含义 | 判定 |
+| --- | --- | --- |
+| `EXPECTED_FAILURE` | 负面对照按设计失败 | 仅当 `bare` **确有**阻塞证据（newuser 向导 / compinit 提问文本） |
+| `DIAGNOSTIC_FAILURE` | 诊断自己坏了 | 启动/写入/子进程异常，或负面对照失败但无阻塞证据 |
+| `PRODUCT_FAILURE` | 产品真实失败 | `app` / `plain` 未通过 |
+
+`bare` 超时但没有阻塞证据时归 `DIAGNOSTIC_FAILURE`——这是「不把产品失败写成预期失败」的闸。
+退出码只对 `PRODUCT_FAILURE` / `DIAGNOSTIC_FAILURE` 非零；**产品门禁 `smoke:shell-probe:matrix` 一行未改**。
+
+**本机实测（macOS，zsh 5.9，四条用例 × 三个模型）**:
+
+    app   4/4 PASS    plain 4/4 PASS    bare 4/4 PASS(本机未阻塞)    classes: PASS=12
+
+`bare` 在 macOS 上也过 → 阻塞只发生在 Debian 系（macOS 的 `/etc/zshrc` 不跑那套 compinit）。
+脚本会显式写 `negative control did not block on this host`，不当证据用。
+
+**回归**: 新增 `scripts/diagnose-zsh-rc.test.mjs`（`verify.mjs` 自动收集 `scripts/*.test.mjs`），
+跑 `--self-test` 的 11 条分类断言；没有 `python3` 时 skip 而非记 PASS。
+
+**未闭合（BLOCKED_EXTERNAL）**: 本机没有 Linux runner，「plain 在 Debian 上补启动文件后转 PASS」
+无法在此证实。最小复现：`python3 scripts/diagnose-zsh-rc.py --shells zsh --launch plain`
+（Linux 上应 4/4 PASS，`bare` 应 3 条 EXPECTED_FAILURE + 1 条 PASS）。下一次
+`zsh-probe-diagnostic` 作业（ci.yml:128，本身 `continue-on-error`）会直接给出新的 class 列。
+
+**踩过的坑（务必不要再犯）**:
+- `[[ -o zle ]]` 不是可用判据（命令执行期间恒为 OFF）
+- DECCKM `ESC[?1h/?1l` 不是可用判据（部分环境不出现）
+- 可靠判据是 bracketed paste `ESC[?2004h/l`，且必须在**通过的用例**上先验证一次
+- 生成 `.zshenv` 必须带 `skip_global_compinit=1`，否则系统级 compinit 会阻塞 shell 吞掉输入
+
+---
+
+### Issue #61: 前端 3 条用例在全量并发下超时（既有 flaky）⚠️ 未修复
+
+**严重程度**: 🟢 Low（不影响产品，影响门禁可信度）
+**状态**: ⚠️ 未修复
+
+`pnpm verify all` 偶发 exit 1，失败的是这三条（**均与 Phase 8.9 改动无关**）：
+
+- `src/terminal-bootstrap.test.tsx > renders a retryable failure when the normal application chunk never settles`（1922ms）
+- `src/components/workspace-switcher/index.test.tsx > replaces the current layout while preserving persisted tab IDs`（6077ms）
+- `src/view/keychain/index.test.tsx > returns from the new-key form to the key list`（5169ms）
+
+三条**单独跑全部通过**，同样的三条在 CI 的 `Frontend quality` 里也通过。
+
+**为什么没有直接调大 timeout**: 尚未证明它们是因真实异步工作在 CPU 争抢下变慢，还是掩盖了别的问题。
+在没有诊断的情况下调大 timeout 等于拿掉门禁。
+
+---
+
+### Issue #62: 迁移前快照没有保留策略 ⚠️ 未修复
+
+**严重程度**: 🟢 Low
+**状态**: ⚠️ 未修复
+
+每次「确有迁移待执行」的启动会在 `<app_config_dir>/backups/` 写一份整库副本。
+迁移持续失败时每次启动新增一份，理论上可占满磁盘。
+加「只留最近 N 份」属删除操作，需要在有测试的前提下做（守卫：只删本目录下的 `pre-migration-*.db`）。
+
+---
+
+### Issue #63: 未声明 operation 的旧写入仍可覆盖串行较新的数据 ✅ 已修复（Phase 9.0）
+
+**严重程度**: 🟡 Important
+**状态**: ✅ 已修复（Phase 9.0）
+
+无 baseVersion 的写入改为 fail-closed：返回 conflict + upgradeRequired，不写库。
+ResolveConflict LOCAL 从无条件 update 改为 where{id,version} 条件写，失败返回 CONFLICT_STALE_VERSION。
+所有 create 都查墓碑，不再有「未声明意图即可复活已删除项」的路径。
+兼容影响见 docs/phase8/sync-protocol.md §6.1/§6.4（破坏性变更，无降级路径，回退旧二进制必须停写）。
+残留：RESOLVE LOCAL 未携带 baseVersion 时只能做同请求版本条件写，串行窗口需前端回传
+remoteVersion.version 才能关闭——属前端任务，已记入 §6.3。
+
+Phase 8.9 的 version CAS 杜绝了**并发**丢失更新。但旧客户端若不声明 `operation`/`baseVersion`，
+仍可能覆盖**串行**更新的较新数据。彻底禁止需要客户端一律声明 operation + baseVersion，
+这是协议破坏性变更，未擅自收紧。
+
+---
+
+### Issue #64: 客户端同步 E2E 规格有 1 行 ts-nocheck ⚠️ 已知豁免
+
+**严重程度**: 🟢 Low
+**状态**: ⚠️ 已知豁免
+
+`packages/team-server/src/__tests__/pg/client-sync-e2e.pg-spec.ts` 顶部有 `// @ts-nocheck`。
+原因：前端源码只经 vitest alias 可达，server 的 tsconfig 不认识 `@/`。
+这是该文件唯一的类型豁免——**类型检查在这一个文件上是失效的**，如实记录。
+
+### Issue #65: macOS 矩阵的远程冷启动测量连续失败，阻断证据采集 (Critical, 未修复)
+
+连续两次 matrix 运行（41210924239、41211466016）在 macOS 作业第 10 步失败：
+
+    terminal readiness did not complete within 10000 ms
+    (last probe: {"readiness":null,"readinessTarget":"terminal","windowReady":false,"terminalReady":false})
+
+同一次运行里本地冷启动是成功的：ok=true, requestToReadyMs=3965, terminalReady=true。
+所以不是二进制坏、也不是应用完全起不来——问题只在远程 SSH 冷启动路径上。
+
+候选原因（未验证）：Phase 8.9 对 session/local.rs 的插桩增加启动开销，把远程路径挤出 10 秒预算
+（时间点吻合：本轮之前 macOS 矩阵一直通过）；或 runner 变慢；或远程 SSH 服务端启动有问题。
+
+为什么没有直接调大超时：调大可能掩盖真实性能回归。Linux 侧调大到 30 秒时有「记录实际耗时」
+作为配套证据，macOS 侧目前没有，先调大等于放弃观察。
+
+影响：证据 artifact 不完整（24 MB vs 37 MB）→ 证据门禁无法回填 → RC/Release 无法判定。
+
+---
+
+#### Phase 9.0 P9.0-6 实测结论（分段耗时 + 重复测量）
+
+**分段插桩**：`src-tauri/src/startup_trace.rs` 增加单调时钟阶段记录（`TERMINAL_STARTUP_STAGES_PATH`
+指定的 JSONL，未设置时只多一次 `OnceLock` 读），`ssh.rs` 在握手/认证/PTY/首字节/startup 写入
+逐点打点，前端在 `main.tsx`（`frontend-boot`）与 `terminal-launcher.ts`
+（`session-create-requested` / `session-created`）打点。所有时间戳同一 `Instant` 原点。
+
+**本机重复测量**（macOS，静默机器，debug smoke 二进制，5 次远程 + 3 次本地）:
+
+| 运行 | requestToReadyMs | spawnToReadyMs | firstStageSeenMs |
+| --- | --- | --- | --- |
+| remote-1（首跑，冷 webview） | 4544 | 4537 | 2555 |
+| remote-2 | 2601 | 2594 | 615 |
+| remote-3 | 2485 | 2478 | 610 |
+| remote-4 | 2497 | 2492 | 716 |
+| remote-5 | 2495 | 2488 | 715 |
+| local-1 | 1137 | 1131 | 613 |
+| local-2 | 1145 | 1140 | 721 |
+| local-3 | 1140 | 1134 | 713 |
+
+远程中位数 **2497 ms**（首跑冷 4544 ms），本地中位数 **1140 ms**，同轮差值 **1358 ms**。
+
+**远程分段耗时（remote-1，`at_ms` 相对前端第一段）**:
+
+| 阶段 | at_ms | 段耗时 |
+| --- | --- | --- |
+| `frontend-boot` | 0 | — |
+| `db-load-started` | 113 | 113 |
+| `db-pool-registered` | 151 | 38 |
+| `core-schema-finished` | 184 | 33 |
+| `ready`（DB 就绪） | 199 | 15 |
+| `session-create-requested` | 722 | **523**（React 挂载 + 恢复标签） |
+| `ssh-connect-start` | 723 | 1 |
+| `ssh-tcp-handshake-done` | 755 | **32**（TCP + 版本交换 + kex + 主机密钥） |
+| `ssh-auth-done` | 775 | **20**（公钥认证） |
+| `ssh-pty-ready` | 793 | **18**（channel + pty-req + shell 请求确认） |
+| `ssh-shell-first-output` | 934 | 141（等 shell 首字节） |
+| `ssh-startup-settle` | 936 | 2 |
+| `ssh-startup-write-begin` | 1939 | **1003**（固定 `SSH_STARTUP_SETTLE_DELAY` = 1000 ms） |
+| `ssh-startup-write-done` | 1943 | 4 |
+| `session-created` | 1993 | 50 |
+
+**结论**:
+
+1. SSH 三个协议段合计 **70 ms**（握手 32 + 认证 20 + PTY 18），占远程总耗时 **2.8%**。远程没有
+   「握手慢」的问题；远程比本地多出的 1358 ms 里，**1003 ms 是产品自己写死的等 1 秒**
+   （`SSH_STARTUP_SETTLE_DELAY`，为防止 zsh 丢掉 startup 首字节），其余是等 shell 首字节
+   141 ms、协议三段 70 ms、marker 往返。
+2. **Phase 8.9 的 PTY 插桩不是原因**：`pty_diagnostics` 只被 `session/local.rs` 调用，
+   `ssh.rs` 完全不经过它；且它整体 gated 于 `TERMINAL_PTY_DIAGNOSTICS_PATH`，
+   未设置时每 chunk 只是一次 `OnceLock` 读。远程路径上的 16 段实测里没有任何一段异常放大。
+3. **旧失败信息是误导的**（已修）：远程模式固定 `axProbe: 'none'`，所以 `readiness` 恒为 null、
+   `windowReady` 恒为 false——那两个字段在远程运行里从来不是证据。现在失败信息自动附
+   `last probe` 的 `axProbe` 与 `stages: ...; first stage at N ms`，无需改 workflow。
+   实测举例：用 `cargo build` 出来的（非 smoke）二进制在本机复现过一次同样的失败，
+   实际根因是 WebView 主框架加载失败（Unified Log `didFailProvisionalLoadForFrame ... code=-1004`，
+   即 `devUrl` localhost:1420 无人监听），旧消息把它报成 `terminalReady:false`。
+4. **本机 10 次远程测量中 8 次 PASS、2 次失败，且两次失败的 stages 都是 `none recorded; no stage ever arrived`。**
+   「一段都没有」把失败定死在**前端一行业务代码都没跑**这件事上：不是 SSH 慢，也不是握手慢，
+   而是 WebView 根本没有把页面跑起来（同样的失败在非 smoke 二进制上抓到了
+   `didFailProvisionalLoadForFrame code=-1004`，那就是「主框架加载失败」的同一个类别）。
+   两次失败都发生在一段 CPU 密集作业之后，符合「WebKit 内容进程起不来 / 被平台节流」这一类，
+   与 #59 记录过的「托管 runner 上窗口从不真正显示」是同一类现象。
+   这也正是旧消息最误导的地方：它把「前端没起来」和「SSH 慢」都报成 `terminalReady:false`。
+5. **本机无法复现「慢到 >10 s」**：通过的那 8 次最慢 4544 ms（首跑冷 webview）。所以 runner 上
+   是否还有第三种形态（真慢），仍要下一次 matrix 的 stages 输出（现在自动带出）才能定论；
+   本机可以排除「协议层慢」与「Phase 8.9 插桩」两种解释，并新增「WebView 未加载」这一已证实形态。
+
+**预算：不调整 10 s**。改为设置**分段回归阈值**（`STAGE_BUDGETS`，违反只记录不致命，
+门禁仍是 readiness 期限）：`frontend-boot→db-load-started` 2000 ms、
+`db-load-started→ready` 2000 ms、`session-create-requested→ssh-connect-start` 250 ms、
+`ssh-connect-start→ssh-tcp-handshake-done` 1500 ms、`ssh-tcp-handshake-done→ssh-auth-done` 1500 ms、
+`ssh-auth-done→ssh-pty-ready` 1500 ms、`ssh-pty-ready→ssh-shell-first-output` 2000 ms、
+`ssh-startup-settle→ssh-startup-write-begin` 1500 ms、`ssh-startup-write-done→session-created` 500 ms。
+每一条都取实测值的 1.5–10 倍余量：`ssh-startup-settle` 那条专门盯「有人再把 settle 秒数加大」。
+
+**仍未闭合**：runner 上 >10 s 的具体段位（需要在 CI 复跑，本机不具备该环境）。
+
+---
+
+### Issue #59/#65 的首要嫌疑（Phase 8.9 自引入，未验证但证据很强）
+
+`initializeCoreSchema` 现在的顺序是：
+
+    const pending = await pendingColumnMigrations(database)          // 先检查
+    if (pending.length > 0) await ensurePreMigrationSnapshot(pending) // 失败即抛
+    for (...) await database.execute(statement)                      // 建表在后
+
+**快照检查发生在建表之前。** 于是：
+
+- **首次启动**（空库）：没有表 -> `pending` 为空 -> 不取快照 -> 正常建表。
+  这解释了本地冷启动为何成功（`ok: true`，3965ms）。
+- **第二次启动**（库已存在但缺列）：`pending` 非空 -> 调用
+  `invoke(backup_database_before_migration)` -> 该命令一旦失败或阻塞，
+  `initializeCoreSchema` 抛出 -> **建表中断**，应用永远到不了就绪。
+  这同时解释了：#59「创了 terminal.db 但没建完表」与 #65「第二次启动 10 秒不就绪」。
+
+**为什么两条可能是同一个根因**: matrix 的 macOS 作业先跑本地冷启动（首次启动、空库、通过），
+紧接着跑远程冷启动（第二次启动、库已存在、失败）。时间顺序完全吻合。
+
+**已核实**:
+- `backup_database_before_migration` 已在 `src-tauri/src/lib.rs:243` 注册，不是漏注册
+- Tauri v2 自定义命令不需要 capabilities 条目，排除权限声明缺失
+- 失败点在运行期：`VACUUM INTO`、目标路径或目录权限
+
+**下一步（按顺序）**:
+1. 在 macOS 上手动跑一次「首次启动 -> 关闭 -> 再启动」，抓 `backup_database_before_migration` 的实际错误
+2. 若 `VACUUM INTO` 在 Tauri 的应用数据目录下失败，检查目标目录是否存在、是否可写
+3. 若确认是该路径的问题，修它——**不要**回退「快照失败必须中止迁移」这条语义，
+   那是 Phase 8.9 Task 4 有意引入的正确行为；要修的是快照本身为什么失败
+
+**注意**: 这条是我的推断，尚未用运行时错误证实。写在这里是因为它能被一条命令验证，
+而不是留成「macOS 启动有问题」这种无法行动的描述。
+
+**重要限定（自我修正）**: 快照只在 `pendingColumnMigrations` 返回非空、即**确实缺列**时才触发。
+应用自己用 `CREATE TABLE IF NOT EXISTS` 建的库列是全的，不会触发快照。因此：
+
+- 对 **#59** 解释力很强：Task 5 的 data-retention harness 用**旧 schema** 播种，
+  应用再启动时确实缺列 -> 触发快照 -> 若失败则中断初始化。
+- 对 **#65** 的解释**不成立**：matrix 的本地冷启动建的是全列的库，远程冷启动再启动时
+  不应触发快照。所以 #65 另有原因，不能与 #59 合并归因。
+
+先前我把两者写成「时间顺序完全吻合」，那是过度推断。**#65 需要独立排查。**
+
+---
+
+### 关于 #59 的一次尝试与撤销（记录判断过程）
+
+曾尝试把 `CREATE TABLE IF NOT EXISTS` 移到 `pendingColumnMigrations` 之前，理由是：
+「这一列缺不缺」在表存在之前无法回答，且建表是幂等的非破坏性操作。
+
+**该改动已撤销。** 原因：
+
+- 它打破了 Task 4 明确记录的既有不变式——**快照失败时一条语句都不发**。
+  三条测试（`snapshots the database before it runs a single schema statement`、
+  `aborts without a single statement when the snapshot cannot be taken`、
+  `refuses to migrate when the backend reports no snapshot path`）正是在守这条。
+- 更重要的是：**我没有证据表明重排能让快照成功**。它只改变失败后的现场
+  （半成品 schema 变成完整 schema），不改变失败本身。
+
+用一个有文档记录的不变式，去换一个未经证实的修复，不划算。
+改测试让它通过更不行——那正是本阶段反复强调要避免的事。
+
+**#59 的正确修法**：让 `backup_database_before_migration` 本身在真实 Tauri 数据库上成功，
+而不是绕开失败。首要候选仍是 `sqlite_pool` 在 `DbInstances` 中查不到 `DB_KEY`。
+需要运行期错误才能定论。
+
+---
+
+### #59 根因定位（Phase 8.9，拿到应用输出后）
+
+补上 `fail()` 里打印应用输出后，macOS CI 给出了决定性事实。应用日志全文：
+
+    INFO terminal_lib: tauri app starting up                     (15:38:00)
+    INFO terminal_lib::input_probe: input_probe_config invoked    (15:38:03)
+    INFO terminal_lib::window_cmd: close-to-tray flag updated enabled=false  (15:38:04, 两次)
+
+**没有别的了。没有数据库相关日志，也没有任何错误。**
+
+配合脚本的另一条输出：
+
+    [PASS] database appeared ... after 10 probe(s)
+    [FAIL] the app created table "hosts" ...（一张表都没有）
+
+得出的结论：
+
+- `tauri-plugin-sql` 的 `Database.load()` **跑过了**（否则不会创建 terminal.db 文件）
+- 前端也在执行（能调用 `input_probe_config`、`window_cmd`）
+- 但 `initializeCoreSchema` **没有被调用**——否则至少会建出第一批表，或抛出可见错误
+- 日志里**没有任何异常**，说明不是「抛错被吞」，而是**那条代码路径根本没走到**
+
+**因此 #59 不是数据库层的问题，是启动编排的问题**：前端的数据库初始化挂在某个
+「窗口可见 / 水合完成」之后的条件上，而托管 runner 上窗口从不真正显示，
+于是初始化永不发生。
+
+**这条同时解释了 #65**：`terminalReady` 要求应用进入可交互状态，而水合不发生，
+就绪事件自然不会来。两者是同一个根因的两种表现——我此前说「#65 不能用 #59 的假设
+解释」，那是针对**快照**假设说的；现在换成了**水合**假设，两者可以统一。
+
+**下一步（可执行）**:
+1. 在 `packages/frontend/src` 里找到调用 `initializeCoreSchema` / `hydrateFromDatabase` 的入口，
+   确认它挂在哪个生命周期条件上（例如 `useEffect` 依赖窗口尺寸、`requestAnimationFrame`、
+   `document.visibilityState`、或 webview 的 ready 事件）
+2. 找一个不依赖「窗口可见」的触发点，或显式在 webview 加载完成时初始化数据库
+3. 这不只是 CI 问题：真实用户若在窗口最小化/后台启动应用，同样可能不初始化数据库。
+   若是这样，这是一条**产品缺陷**，不是测试环境问题。
+
+---
+
+### Phase 8.9 第 13 轮：两个新事实（改变前一轮的判断）
+
+**1. #59 不是 macOS 特有。** Linux 的 Tauri 作业同样失败：
+
+    [FAIL] the app created table "workspaces"
+    [FAIL] the app created table "workspace_layouts"
+    [FAIL] the app created table "ssh_keys"
+    [FAIL] deb: the app never finished creating its schema inside
+           /tmp/.../cycle-deb/config/com.baicie.termius/terminal.db
+
+这推翻了我第 12 轮写下的「疑似水合条件依赖窗口可见」——那个推断基于 macOS 单平台现象。
+两平台同时出现同类失败，更支持「`initializeCoreSchema` 在运行时抛错」而不是「路径没走到」。
+
+而真正开始触发这条路径的，很可能是 **Task 3 给共享表新增的 version/updated_at/dirty 三列迁移**：
+数据库一旦确实缺列，`pendingColumnMigrations` 就非空 -> 调 `ensurePreMigrationSnapshot` ->
+该命令失败 -> `initializeCoreSchema` 抛出 -> 表建不出来。
+
+**也就是说，我第 9 轮撤销的那个「快照是元凶」的方向，很可能是对的；
+我撤销的理由（「未证明能修好」）在当时成立，但现在有跨平台证据重新指向它。**
+真正的修法不是重排，而是让 `backup_database_before_migration` 成功。
+
+**2. Windows 的验证脚本有 PowerShell 语法错误，根本解析不了。**
+
+    ParserError: scripts/verify-install-windows.ps1:276
+    Missing closing '}' in statement block or type definition.
+
+已用忽略字符串/注释的括号配平分析：**整体 { } 是平衡的（FINAL depth=0）**，
+说明不是简单的花括号失配，而是 PowerShell 特有语法（here-string、反引号续行、
+`$()` 嵌套）导致解析失败。
+
+**本机没有 pwsh**（`command -v pwsh` 为空），Task 5 的代理当时也没有——
+它自述「只做了括号/引号配平与逐行人工复核」。这就是纯靠人工复核的代价：
+一个解析器一眼能看出的错误，两轮 CI 都没能绕过。
+
+**要修必须先有 PowerShell 环境。** 在没有解析器的前提下继续改这个文件，
+只是把猜测从一处挪到另一处。
