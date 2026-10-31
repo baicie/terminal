@@ -87,6 +87,15 @@ jobs:
           --from-config-datasource
           --to-schema prisma/schema.prisma
           --exit-code
+      # Real-PostgreSQL concurrency suite: two independent connection pools act as
+      # two clients, one external lock holder proves writers really block. It is
+      # kept out of the default 'test' script because it needs a live server, so
+      # it runs here where the postgres service is already up.
+      - name: Team Server concurrency suite (real PostgreSQL)
+        working-directory: packages/team-server
+        env:
+          TEAM_SERVER_TEST_DATABASE_URL: postgresql://postgres:ci-password@127.0.0.1:5432/team_server_concurrency_test
+        run: pnpm exec vitest run --config vitest.pg.config.ts
 
   source-size:
     name: Production source-size gate
