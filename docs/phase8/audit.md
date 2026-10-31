@@ -60,5 +60,5 @@
 ## 6. 状态
 
 - 审计：**COMPLETE**
-- 修复：**待实施**（等工作树无并发写者后执行方案 A）
+- 修复：**已实施（方案 A）**：新增 Tauri command `import_backup_data`，复用插件同一个 pool，在单条连接的单个 `BEGIN IMMEDIATE` 事务内完成整批导入；实现见 `src-tauri/src/db_import/`，真实临时 SQLite 故障注入测试 12 例（`cargo test --lib db_import`）
 - 文档更正：**已完成**（`docs/project.md` 的错误论断已作废并注明原因）

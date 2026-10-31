@@ -4,6 +4,7 @@
 
 mod agent;
 mod commands;
+mod db_import;
 mod errors;
 mod input_probe;
 mod port_forward;
@@ -37,6 +38,7 @@ use commands::{
     session_create_ssh_jump, session_create_ssh_key, session_create_ssh_password, session_exec,
     session_list, session_resize, session_write, session_write_raw,
 };
+use db_import::import_backup_data;
 use input_probe::{
     input_probe_config, input_probe_diag, input_probe_focus, input_probe_ready, input_probe_result,
     InputProbeState,
@@ -234,6 +236,8 @@ pub fn run() {
             serial_write_raw,
             serial_is_connected,
             serial_disconnect,
+            // Backup import (single transaction on the plugin pool)
+            import_backup_data,
             // Storage commands
             storage_init,
             storage_health_check,
