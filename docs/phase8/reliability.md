@@ -116,3 +116,55 @@ zsh 由 session/shell_startup.rs 注入自定义 ZDOTDIR + 生成的 .zshrc（lo
 
 - P8.3-A（stale-output）：**VERIFIED on real runner**
 - P8.3-B（zsh 三条）：**BLOCKED_EXTERNAL** —— 根因候选已收窄，需要 Linux 环境二分
+
+## E. Task C 诊断结果（Phase 8.8，CI run 41189424959）
+
+### 已确证：两个系统级交互提示会吞掉输入（与 rc 无关）
+
+在 Ubuntu runner 上用真实 PTY 跑五种 rc 变体，第一轮 zsh 全部未执行键入命令，
+查 transcript 发现它们卡在两个与 rc 无关的系统级提示上：
+
+- **没有启动文件时**：zsh 进入 `zsh-newuser-install` 向导并一直等待
+- **有启动文件时**：Debian/Ubuntu 的系统级 `/etc/zsh/zshrc` 调用 `compinit`，
+  在全新 PTY 里停在 `zsh compinit: insecure directories ... continue [y] or abort compinit [n]?`
+
+bash 五个变体全部正常，因为 bash 没有这套机制。
+
+**因此第一轮的「zsh 全 False」是两个系统级阻塞的产物，不能作为关于 rc 的证据。**
+
+### 已确证：排除这两个阻塞后，zsh + 应用生成的 rc 在 Linux 上完全正常
+
+给每个变体写入 `.zshenv` 并设 `skip_global_compinit=1` 后重跑：
+
+    zsh | no-user-rc | True | True
+    zsh | minimal-rc | True | True
+    zsh | app-rc     | True | True
+    bash| (三个)     | True | True
+    阻塞提示出现次数：0
+
+`app-rc` 的 transcript 显示一个健康的工作会话：prompt、`\x1b]133;A\x07`（precmd）、
+键入的命令、`\x1b]133;B\x07`（preexec）、marker 输出，并且出现 `\x1b[?1h\x1b=` /
+`\x1b[?1l\x1b>` 这对 DECCKM 键盘模式切换 —— 正是 ZLE 在工作。
+
+### 由此得出的结论（以及不能得出的结论）
+
+**可以得出的**：应用生成的 `.zshrc` 本身不会破坏 ZLE，也不会阻止命令执行。
+「rc 内容导致 zsh 三条超时」这一假设被排除。
+
+**不能得出的**：这还没有解释应用里那三条用例为何失败。若真是 compinit 阻塞，
+七条 zsh 用例应当全挂，而实际只挂依赖 ZLE 的三条。所以应用侧的失败另有原因，
+候选方向是应用 PTY 环境（HOME 权限、ZDOTDIR 注入时序）与 shell 就绪检测的交互，
+需要带应用内插桩的下一次 matrix 才能定论。
+
+### 本阶段产出的两个独立价值
+
+1. 任何在这类 runner 上驱动交互式 zsh 的自动化，都会被 newuser 向导或 compinit 阻塞，
+   必须显式设 `skip_global_compinit=1` 并提供至少一个启动文件。
+2. 诊断脚本的指标取舍过程本身值得记录：`[[ -o zle ]]`、PTY 内发送 `ESC [ A` 两个指标
+   在**能通过的 macOS 上同样报 false**，属于坏指标，已删除而不是发布。
+
+### 状态
+
+- Task C：**PARTIAL** —— 诊断能力已入库并产出真实证据；根因候选收窄但未确认。
+- 下一步需要带应用内插桩的 Linux matrix（记录 HOME 权限、ZDOTDIR 注入时序、
+  以及 shell 就绪判定与首条命令发送的时间差）。
