@@ -1,30 +1,51 @@
-# Phase 8 · P8.3 可靠性调查（进行中）
+# Phase 8 · P8.3 可靠性调查
 
-## A. Linux SSH reconnect stale-output 失败 —— 真实日志证据
+## A. Linux SSH reconnect stale-output —— 根因已确诊
 
-**来源**：run 41112206442，Linux job 124256995007，日志行 4926-4927。原始日志，非文档转述。
+**来源**：run 41112206442，Linux job 124256995007，日志行 4926-4927。
 
-事实（已确证）：
+### 结论：测试观察判据缺陷（类别 b），不是环境问题，也不是输出丢失
 
-1. barrier marker 已到达 Rust 侧原始输出——rawOutputTail 含 TERMINAL_SMOKE_ACTIVE_OUTPUT_BARRIER
-2. 队列与在途全部为空：queuedBytes=0, queuedChunks=0, inFlightBytes=0, writeInFlight=false
-3. output.state = active（非 paused/closed）
-4. 18 字节被接受但未计入 parsed：acceptedBytes 303 - parsedBytes 285 = 18
-5. 观察到的终端最后 8 行全是空字符串：tail = ["","","","","","","",""]
-6. 18 字节缺口不是任何 marker：STALE_OUTPUT_MARKER 与 ACTIVE_OUTPUT_BARRIER 均为 36 字节
+决定性证据（三段代码 + 一行真实日志）：
 
-被证伪的假设（记录以避免重复）：
+1. 判定用**整行精确相等**：`hasExactLogicalLine(term, expected)` = `readLogicalTail(term).some(line => line === expected)`（`terminal-smoke-buffer.ts:41-46`）。
+2. barrier 发射时**没有前导换行**：`data: format!("{ACTIVE_OUTPUT_BARRIER}\r\n")`（`terminal_smoke.rs:1196`）。
+3. 真实日志里 prompt 与 marker **在同一行**：
+   `rawOutputTail: "\u001b]133;A\u0007$ TERMINAL_SMOKE_ACTIVE_OUTPUT_BARRIER\r\n"`
 
-- 18 字节是那条被正确拒绝的陈旧金丝雀 —— 算术不成立，两个 marker 都是 36 字节。已排除。
-- 环境性抖动（旧文档口径）—— 无法解释 tail 为空与 parsedBytes 计数之间的矛盾。
+于是逻辑行是 `$ TERMINAL_SMOKE_ACTIVE_OUTPUT_BARRIER`，永远不等于 `TERMINAL_SMOKE_ACTIVE_OUTPUT_BARRIER`。
+`waitForExactLogicalLine` 只能等到 frontendTimeout 中止，`stage` 停在 `stale-output`。
 
-根因候选（未确证，按优先级）：
+这也解释了 Linux 特异性：Linux 冒烟 shell 会打印 prompt，marker 被粘在其行尾；非交互场景不打 prompt 时判定才会通过。
 
-1. 代际/实例错配：reconnect 后 barrier 被写入已退役的那一代终端，而 smoke 观察的是替换后的新实例（新实例缓冲为空）。这同时解释事实 4、5、6。
-2. 观察者读取时机早于 xterm 提交：parsedBytes 在 write 回调里累加，但回调触发时 xterm 内部缓冲可能尚未对读取可见。
-3. 18 字节属于被分片丢弃的残留：takeHead 在 receipt 失活时 queue.shift() 并 queuedBytes -= bytes，不报错不记录。
+### 本文件此前的两处错误结论（已作废，保留以免重复）
 
-下一步：定位 tail 的采集点；在 write 回调与读取处打印 sessionId / generation / parsedBytes / terminal identity；设计最小用例；明确是代码缺陷还是观察判据缺陷。
+| 错误结论 | 为何错 |
+| --- | --- |
+| 「tail 全空 ⇒ 观察者看到空终端」 | `readLogicalTail(term, 32).slice(-8)` 取「最后 32 条的后 8 条」，而 xterm 清屏后缓冲区恒为 rows=24 条空行；内容在上部时后 8 条**必然全空**。这是诊断字段造成的假象，不证明终端为空。 |
+| 「marker 已到达 Rust 侧原始输出」 | `rawOutputTail` 是**前端**字符串 ref，在 `onOutput` 里、`enqueue()` **之前**累加（`use-terminal.ts:117-131`）。它只能证明事件到达前端，与 Rust 无关。 |
+| 「代际/实例错配」 | 结构上不可达：整轮只有 1 个 xterm 与 1 个 scheduler（`use-terminal-smoke-round.ts:52-60`），reconnect 不重建（effect 依赖全稳定）。 |
+
+### 18 字节缺口：另一条独立的真实缺陷
+
+`acceptedBytes 303 - parsedBytes 285 = 18` 与失败无因果，但**它本身是一个必须修的缺陷**：
+
+`takeHead()`（`terminal-output-scheduler.ts:251-256`）在 receipt 失效时整块丢弃已入队数据：
+
+```ts
+while (output?.receipt && !output.receipt.isActive()) {
+  this.queue.shift()
+  this.queuedBytes -= output.bytes   // acceptedBytes 不减、无错误、无日志、不 ack
+  output = this.queue[0]
+}
+```
+
+reconnect 起手会 `audience.retireAll()`（`terminal-session-manager-reconnect.ts:241`），使当时仍在队列里的会话数据 receipt 全部失效，
+于是下一次 `flushFrame` 把它们静默删除。被丢的**完全可能是当时处于 active 的会话数据**。
+
+第二处：`clearPending()`（:279-287）在 reset/dispose/fail 时清空队列，且**不清 `inFlightBytes/writeInFlight`**。
+
+两者共同违背 P8.4 的「丢弃输出必须触发明确错误，不能静默当作已展示」。
 
 ## B. Linux zsh 三条 shell probe 用例（Issue #156）
 
@@ -32,9 +53,14 @@
 
 判定层缺陷已修（f74a33e）：原本 contract mismatch 是唯一失败出口。
 
-未解决：这三条为何从未完成。本轮尚未取得拆分后的新日志——修复提交之后的 Linux run 仍在更早的 A 问题处失败，未走到 shell 矩阵。
+**未解决**：这三条为何从未完成。本轮仍未取得拆分后的新日志——修复提交之后的 Linux run 在更早的 A 问题处失败，未走到 shell 矩阵。A 修复后应能拿到新日志。
 
-## C. 关键结构事实
+## C. 待实施的修复（本阶段）
 
-- parsedBytes 由前端 terminal-output-scheduler.ts 在 terminal.write 回调中累加（第 202-205 行），不是 Rust 侧计数。
-- takeHead() 在 receipt 失活时静默丢弃已入队数据（queue.shift(); queuedBytes -= bytes），acceptedBytes 不减、无错误、无日志。这条路径与 P8.4「丢弃输出必须触发明确错误」直接冲突，无论是否为本次 Linux 失败的成因都必须改造。
+| # | 修复 | 位置 |
+| --- | --- | --- |
+| 1 | barrier 与 canary 增加前导 `\r\n`，确保独占一行 | `terminal_smoke.rs:1188,1196` |
+| 2 | 判定改为「逻辑行包含 marker」，prompt 前缀不再破坏匹配；canary 用同一语义（更严） | `terminal-smoke-buffer.ts` + `run-terminal-smoke.ts:134,137` |
+| 3 | 诊断 `tail` 改为「最近非空行」，并补 buffer 几何字段以区分「真空」与「视口底部空行」 | `terminal-smoke-diagnostics.ts:10-12` |
+| 4 | 两处丢弃点计数 + warn，并把 `droppedBytes` 放进 snapshot，维持不变量 accepted = parsed + dropped | `terminal-output-scheduler.ts:251-256,279-287,100-110` |
+| 5 | `reset()` 明确归零 inFlight 状态并记因 | 同上 |
