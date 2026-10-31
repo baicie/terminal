@@ -202,3 +202,79 @@ ok 1 - Phase 8.8 E2 - database upgrade compatibility (real SQLite files)
 | `docs/release/phase8-task-e-rc-acceptance.md` | 新增（本文件） |
 
 未触碰：`release.yml`、`main`、`docs/verification/` 下任何既有文件、任何 `|| true` 式吞失败。
+
+## 7. Phase 8.9 Task 5 - 三平台真实数据保留验收（2026-10-31 追加）
+
+Phase 8.8 的三个脚本只验证"目录存在 / 部分 sha256 不变"。这一节记录把它们升级为**内容级断言**之后的状态。
+
+### 7.1 共同机制：一个跨平台断言器
+
+新增 `scripts/verify-install/data-retention.mjs`（Node 内建 `node:sqlite`，因此三个平台都不依赖 sqlite3 CLI；
+Node 24 免 flag，Node 22.5+ 自动改用 `--experimental-sqlite`，两者都不可用时脚本直接 fail，不允许在无数据证据的情况下报 pass）。
+子命令：`integrity` / `schema` / `seed` / `snapshot` / `verify` / `wait` / `digest` / `test-break`（后者需
+`VERIFY_INSTALL_TEST_MUTATION=1`，仅供反向验证）。
+
+写入的受控数据（全部无真实凭证）：
+
+| 对象 | 内容 | 断言方式 |
+| --- | --- | --- |
+| 主机记录 | `hosts` 一行：`phase89.invalid:2222`、`auth_type=agent`、`password`/`private_key` 为 NULL、固定时间戳 | 22 个字段逐字段比较 + 两个凭证列必须仍为 NULL |
+| 应用设置 | `settings.key='app_settings'` 的 JSON：theme/language/fontSize/terminalTheme/scrollback + 每次运行唯一的 `phase89Marker` | 7 个字段逐字段比较 + marker 保留 |
+| 工作区配置 | `workspaces` 一行（`"order"=7`、`is_active=1`）+ `workspace_layouts.layout_data` JSON | 7 个字段 + layout 仍为合法 JSON 且 marker / `sidebarVisible` 保留 |
+| 测试 Vault | `dirs::config_dir()/terminal/vault.json`，格式合法的空库（salt + `entries:{}`） | 文件仍在、仍可解析、salt 逐字节相同、条目数仍为 0；文件哈希仅作记录 |
+
+**为什么不是"看哈希没变"**：`app_settings` 里预置 `terminalThemeLightMigrated=false` 与旧默认
+`terminalThemeLight=solarized-light`。应用启动时 `store/app.ts hydrateFromDatabase` → `getAppSettings`
+会读这一行并把 `terminalThemeLightMigrated` 写回 `true`（实测同时把 `solarized-light` 改写为
+`github-light`）。因此"应用真的读过我们写的数据"是一个**内容相关副作用**，被 `verify --expect-app-write`
+硬断言；应用没启动或没读到这一行时该断言必然失败（已用反向实验证明）。同时 `workspaces` 条数必须不变——
+应用在 `workspaces` 为空时会自建 Default 工作区，条数不变说明它读到了我们那一行而不是重建。
+
+### 7.2 数据目录隔离（测出来的，不是假设的）
+
+| 平台 | 隔离手段 | 实测结论 |
+| --- | --- | --- |
+| macOS | `HOME` 指向临时目录（应用用 `tauri app_config_dir` → `dirs::config_dir()`） | **有效**：数据库出现在 `$HOME/Library/Application Support/com.baicie.termius/terminal.db`，且 runner 真实 HOME 下同名文件 sha256 保持不变（脚本把"泄漏到真实 HOME"做成硬断言） |
+| Linux | `XDG_CONFIG_HOME/XDG_DATA_HOME/XDG_CACHE_HOME/HOME` 全部指向临时目录 | 依据 `dirs-sys` 源码（`XDG_CONFIG_HOME` 绝对路径优先）+ 脚本断言：数据库必须落在 `$XDG_CONFIG_HOME/com.baicie.termius/terminal.db`，并且 `$HOME/.config`、`$HOME/.local/share` 下不得出现副本 |
+| Windows | 先重定向 `APPDATA`/`LOCALAPPDATA` 到临时目录，再**测量**是否被采纳 | 预期不被采纳：Tauri 用 `dirs::config_dir()` → `SHGetKnownFolderPath(FOLDERID_RoamingAppData)`，**不读** `%APPDATA%`。脚本据此分两支：采纳了就 PASS；没采纳就打印 `[LIMITATION]` 说明原因，并在"干净起步"前提下改用真实每用户目录继续验证——限制被记录，不会伪装成隔离成功 |
+
+另外发现并记录的一个事实：Vault 并**不在** identifier 目录下，而是
+`dirs::config_dir()/terminal/vault.json`（`src-tauri/src/vault.rs` 的 `get_vault_path`）。三个脚本都按两个路径分别断言。
+
+### 7.3 本机能跑的部分（真实执行）
+
+macOS 用本机打包出的真实 DMG 全流程跑通（`pnpm tauri bundle --bundles dmg` → `bash scripts/verify-install-macos.sh`）：
+
+- 正向：**102 PASS / 0 FAIL / 4 NOT_RUN**，exit 0。关键行包括
+  `first launch initialised the database 5s after launch`、
+  `the app read the seeded row and persisted terminalThemeLightMigrated=true (content-dependent read proof)`、
+  `nothing was written to the runner's own HOME`、`overwrite install kept ... a byte-identical executable`。
+- 反向（`VERIFY_INSTALL_FAULT_INJECT=delete-host`，故意在快照之后删掉主机行）：exit **1**，输出
+  `[FAIL] hosts: the row is gone after the install/relaunch cycle`。
+- 断言器反向（直接篡改 SQLite）：改 `port`/`username` 与删 layout 行 → exit 1，报出
+  `[FAIL] hosts.port == 1 (expected 2222)` / `[FAIL] hosts.username == "x"` / `[FAIL] workspace_layouts: the layout row is gone`；
+  未篡改时同一份数据 exit 0。
+- 静态门禁：`bash -n`、`shellcheck -x`、`node --check`、`actionlint` 全部 exit 0。
+
+Linux / Windows 脚本本机**未执行**（本机为 macOS，无 dpkg/Xvfb、无 pwsh）：Linux 只过 `bash -n` + `shellcheck`，
+Windows 只做了括号/引用结构与人工复核，本机 **NOT_RUN**（不要在报告里当成通过）。
+
+### 7.4 仍然 NOT_RUN 的项（逐条原因）
+
+- Gatekeeper / SmartScreen / Authenticode / 公证：需要人工点击的 GUI 安全决策与签名身份，CI 无法触发或观察。
+- 真实 UI 读回（打开主机列表看到那条记录）：需要 GUI 自动化栈；可自动化的替代证据是"应用启动写回 + 逐字段 SQL 读回"。
+- Vault 加密往返（建库/解锁/读条目）：需要交互式主密码，且会写入凭证；加密正确性由 `src-tauri vault_tests` 在 rust 作业覆盖，这里只断言文件持久性。
+- Linux 桌面会话里的菜单集成：runner 无桌面环境与会话总线；`.desktop` 只能做结构断言（Type/Name/Icon/Exec 指向包内二进制，`desktop-file-validate` 可用时再校验一次）。
+- Windows 跨版本升级（vN→vN+1）：CI 只构建一个版本；同版本覆盖安装的 NSIS 路径已验证，跨版本需要两个 release 安装包。
+
+### 7.5 本节改动的文件
+
+| 文件 | 性质 |
+| --- | --- |
+| `scripts/verify-install/data-retention.mjs` | 新增（跨平台断言器） |
+| `scripts/verify-install-macos.sh` | 重写为"隔离 HOME + 写入 + 覆盖安装 + 逐字段读回" |
+| `scripts/verify-install-linux.sh` | 重写：新增真实 `dpkg` 安装、`.desktop` 断言、包移除后数据保留、AppImage 独立数据周期 |
+| `scripts/verify-install-windows.ps1` | 重写：新增数据目录测量、覆盖安装后逐字段读回、卸载后的用户数据策略断言（对照 `deleteAppDataOnUninstall` 配置） |
+| `.github/workflows/ci.yml` | 修改：步骤改名、新增 `x11-utils`/`desktop-file-utils`、新增证据 artifact 上传（`if: always()`） |
+| `.gitignore` | 修改：忽略 `verify-install-evidence/` |
+

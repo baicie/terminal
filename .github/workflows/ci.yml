@@ -199,6 +199,10 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # Where every verification script writes its evidence snapshots; the upload
+      # step below collects them even when a step fails.
+      VERIFY_INSTALL_EVIDENCE: ${{ github.workspace }}/verify-install-evidence
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -248,20 +252,40 @@ jobs:
       - name: Bundle installer (Linux deb + AppImage)
         if: runner.os == 'Linux'
         run: pnpm tauri bundle --bundles deb,appimage
-      - name: Install Xvfb for the Linux launch check
+      - name: Install Xvfb and the desktop-file validator (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y --no-install-recommends xvfb
+        # x11-utils provides xdpyinfo, which the verification script uses to
+        # prove the headless X server is really up before it launches the app.
+        run: sudo apt-get install -y --no-install-recommends xvfb x11-utils desktop-file-utils
       # Every step below exits non-zero on a failed assertion; none of them is
       # allowed to swallow a failure with `|| true`. A check the runner genuinely
       # cannot perform is printed as [SKIPPED]/[NOT_RUN] with its reason in the
       # job log, never as a pass - see docs/release/phase8-task-e-rc-acceptance.md.
-      - name: Verify install chain (macOS DMG)
+      #
+      # Phase 8.9 Task 5: these scripts no longer settle for "the directory
+      # exists". Each one launches the installed app against an isolated user
+      # data root, writes controlled rows (a host without any credential, the
+      # app_settings row, a workspace with its layout, a test vault file), then
+      # overwrite-installs and relaunches the app and reads every asserted field
+      # back. The evidence JSON is the snapshot each run compares against, and
+      # the app's own boot-time write-back into the seeded settings row is what
+      # proves the data was read, not merely left on disk.
+      - name: Verify install chain + data retention (macOS DMG)
         if: runner.os == 'macOS'
         run: bash scripts/verify-install-macos.sh
-      - name: Verify install chain (Windows NSIS)
+      - name: Verify install chain + data retention (Windows NSIS)
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/verify-install-windows.ps1
-      - name: Verify install chain (Linux deb + AppImage)
+      - name: Verify install chain + data retention (Linux deb + AppImage)
         if: runner.os == 'Linux'
         run: bash scripts/verify-install-linux.sh
+      # The uploaded snapshots are the pre-install baseline each run asserts
+      # against; they are evidence, not a gate input.
+      - name: Upload the data-retention evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-data-retention-${{ matrix.os }}
+          path: verify-install-evidence/
+          if-no-files-found: warn
