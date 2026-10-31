@@ -53,6 +53,8 @@ verifier = base64( HMAC-SHA256( master_key, "terminal-vault-verifier-v1" || salt
 
 **若按文档去改 container，等于改了一段死代码。** UI 修复落在 `use-vaults-view.ts`，处理 `already_exists` 与错误密码两个状态，文案走 en/fr/cn 三语。
 
+> **Phase 8.8 Task D 后续**：该死链已被确认不可达（依赖图 BFS）并删除，保留的 `use-vaults-view.ts` 已接入真实路由（`/vaults`）。详见 `ui-review.md` 第 5 节。
+
 ## 6. 测试
 
 新增 13 例（既有 11 例一字未改）：

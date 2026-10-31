@@ -64,11 +64,13 @@
 | `file-pane-table.tsx:58`、`file-pane-navigation.tsx:79` | `animate-spin` 无 `motion-safe:` |
 | `view/teams`、`view/settings`（除 update-check）、SFTP 双栏文件列表 | 只做 grep 级或抽样审查，**未逐文件深审** |
 
-## 5. 一个需要决策的结构问题：`view/vaults/**` 是死代码
+## 5. 结构问题：`view/vaults/**` 曾是死代码 —— **已在 Phase 8.8 Task D 解决**
 
 **已独立核实**：该目录下所有文件在 `router/index.tsx` 与 `app-sidebar/nav-config.tsx` 中**没有路由**，也没有任何来自目录外部的 import。
 
 这与 P8.1 发现的 `use-vaults-container.ts` 死链是**同一类问题**——项目里有一整块看起来像活的、实际不可达的 Vault UI，且全部是英文硬编码。
+
+> **Phase 8.8 Task D 已处理**：用程序化依赖图 BFS 复核（入口 `main.tsx` + `router/index.tsx`，解析 `@/`、相对路径、`import`/`export-from`/动态 `import()`/`require()`）——可达 484 个文件，`view/vaults` 下 **0 个**。据此删除 9 个旧容器文件，保留 5 个现代表（唯一带 i18n 骨架且 `useVaultsView` 承载真实 create/unlock 语义），并通过 `router/nav-config.tsx` 把 `/vaults` 接入路由与侧栏（该文件是路由与侧栏的共用数据源，`buildRoutes()` 由它自动生成）。配套补齐 18×3 三语 key、键盘导航与错误态——包括对齐 Task B 新增的 `uninitialized`/`corrupt` 两个 Rust 错误变体（corrupt 态下不提供任何破坏性按钮）。
 
 改它零用户收益。**需要决策**：删除，还是重新接线到路由？这不属于 UI 打磨，不能在 UI 阶段顺手决定。
 
