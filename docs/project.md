@@ -790,7 +790,7 @@ src-tauri/
 
 **证据与环境**：源码指纹 `81ffa0bf…`，6 份实机证据已由 run `41112206442` 重采并通过 evidence gate。Linux job 的剩余失败已定性为 `Run the real Linux shell interaction matrix` 的三条 zsh 用例（触到 30 秒 deadline），判定层缺陷已在 `f74a33e` 修复；底层触发原因标为 BLOCKED_EXTERNAL（见 Issue #156）。
 
-**已知残余风险**：导入事务在 `tauri-plugin-sql` 的 sqlx 连接池下不是严格原子（最坏为 COMMIT 报错、整批回滚，属可见失败）；Vault 的 `vault_unlock` 不校验密码与 `vault_create` 会覆盖已存在文件（Issue #152/#153，需格式与契约变更）；Windows 上的 `MoveFileExW` 语义仅由 vendored 源码确认，未实机验证。
+**已知残余风险**：导入事务在 `tauri-plugin-sql` 的 sqlx 连接池下**不构成原子事务**（Phase 8 P8.2 已确证：插件无事务 API，每次 execute 都是独立的 `pool.acquire()`）。**此前的「最坏为 COMMIT 报错、整批回滚，属可见失败」是错误论断，已作废**——实际最坏形态是：(a) 某条语句拆到另一连接后立即自动提交，导入随后失败也回滚不掉，导致**半导入落盘且不报错**；(b) 持有 BEGIN 的连接归还空闲队列后，其他模块的写请求被并入该事务，导入 ROLLBACK 时**他人的写静默丢失**。详见 `docs/phase8/audit.md`；Vault 的 `vault_unlock` 不校验密码与 `vault_create` 会覆盖已存在文件（Issue #152/#153，需格式与契约变更）；Windows 上的 `MoveFileExW` 语义仅由 vendored 源码确认，未实机验证。
 
 ---
 
