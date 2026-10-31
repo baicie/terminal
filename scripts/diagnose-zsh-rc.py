@@ -49,12 +49,23 @@ APP_ZSHRC = "\n".join([
     "",
 ])
 
+# Every variant carries .zshenv so that two unrelated blockers never mask the
+# real difference between rc files. Both were observed on the Ubuntu runner and
+# both swallow typed input:
+#
+#   * with no startup file at all zsh runs zsh-newuser-install and waits forever
+#   * Debian/Ubuntu ship a system-wide /etc/zsh/zshrc that calls compinit, which
+#     stops at "insecure directories ... [y/n]?" in a fresh PTY
+#
+# skip_global_compinit is zsh's documented switch for the second one.
+BASE_ZSHENV = "skip_global_compinit=1\n"
+
 VARIANTS = {
-    "no-rc": {},
-    "minimal-rc": {".zshrc": 'PS1="%% "\n'},
-    "app-rc": {".zshrc": APP_ZSHRC},
-    "app-rc-vi-keymap": {".zshrc": APP_ZSHRC + "bindkey -v\n"},
-    "app-rc-emacs-keymap": {".zshrc": APP_ZSHRC + "bindkey -e\n"},
+    "no-user-rc": {".zshenv": BASE_ZSHENV},
+    "minimal-rc": {".zshenv": BASE_ZSHENV, ".zshrc": 'PS1="%% "\n'},
+    "app-rc": {".zshenv": BASE_ZSHENV, ".zshrc": APP_ZSHRC},
+    "app-rc-vi-keymap": {".zshenv": BASE_ZSHENV, ".zshrc": APP_ZSHRC + "bindkey -v\n"},
+    "app-rc-emacs-keymap": {".zshenv": BASE_ZSHENV, ".zshrc": APP_ZSHRC + "bindkey -e\n"},
 }
 
 
