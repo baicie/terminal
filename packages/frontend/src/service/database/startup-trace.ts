@@ -31,7 +31,18 @@ export function traceStage(stage: string, detail = ''): void {
 /** Report a bootstrap failure together with the stage it happened in. */
 export function traceStageFailed(stage: string, error: unknown): void {
   if (!enabled()) return
-  const message = error instanceof Error ? error.message : String(error)
+  // A non-Error rejection used to arrive as the literal string "undefined",
+  // which cost a whole CI round to interpret. Describe the value instead.
+  const message =
+    error instanceof Error
+      ? error.message
+      : (() => {
+          try {
+            return JSON.stringify(error) ?? String(error)
+          } catch {
+            return String(error)
+          }
+        })()
   void import('@tauri-apps/api/core')
     .then(({ invoke }) => invoke('startup_stage_failed', { stage, error: message }))
     .catch(() => undefined)

@@ -131,6 +131,19 @@ function errorMessage(error: unknown): string {
  * that does not exist yet: `CREATE TABLE` writes the current column set, so those
  * columns are not pending, they are being created.
  */
+/**
+ * Quote a SQL identifier for inlining.
+ *
+ * Only code-defined table names reach this, but the guard exists so a future
+ * caller cannot turn a data-driven name into statement injection.
+ */
+function quoteSqlIdentifier(name: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error('refusing to inline an unsafe SQL identifier: ' + name)
+  }
+  return '"' + name + '"'
+}
+
 export async function pendingColumnMigrations(
   database: SqliteConnection,
 ): Promise<ColumnMigration[]> {
@@ -145,7 +158,15 @@ export async function pendingColumnMigrations(
     )
     if (!Array.isArray(existing) || existing.length === 0) continue
 
-    const columns = await select('SELECT name FROM pragma_table_info(?)', [table])
+    // pragma table-valued functions resolve their argument while the statement
+    // is prepared, so a bound parameter does not reliably reach them: the real
+    // plugin rejected this call (with a non-Error value, which surfaced as
+    // "error=undefined") on both macOS and Linux runners, while every unit test
+    // passed because the mock connection accepts any parameters. The table names
+    // are code constants, so validate and inline them instead of binding.
+    const columns = await select(
+      'SELECT name FROM pragma_table_info(' + quoteSqlIdentifier(table) + ')',
+    )
     const present = new Set(
       (Array.isArray(columns) ? (columns as { name: string }[]) : []).map(
         column => column.name,

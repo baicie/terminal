@@ -26,6 +26,26 @@ export {
   updateUserProfile,
 } from './teams-core'
 
+/**
+ * Deletes the local shares of every team the server no longer authorizes for this
+ * identity. The authorized set is the server's answer (docs/phase8/sync-protocol.md
+ * §3.8) and an empty one authorizes nothing: deleting everything is the
+ * fail-closed direction, because a revoked team's rows must stop being readable
+ * offline while a wrongly deleted row simply returns on the next full window.
+ */
+export async function removeUnauthorizedTeamShares(
+  authorizedTeamIds: string[],
+): Promise<void> {
+  const where = authorizedTeamIds.length === 0
+    ? ''
+    : ` WHERE team_id NOT IN (${authorizedTeamIds.map(() => '?').join(', ')})`
+  await executeQuery(`DELETE FROM team_shared_hosts${where}`, authorizedTeamIds)
+  await executeQuery(
+    `DELETE FROM team_shared_snippets${where}`,
+    authorizedTeamIds,
+  )
+}
+
 export async function getTeamInvites(
   teamId: string,
 ): Promise<TeamInviteRecord[]> {

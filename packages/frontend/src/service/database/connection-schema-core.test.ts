@@ -41,7 +41,11 @@ const LOG_COLUMNS = ['id', 'error_message', 'error_raw']
 /** A connection whose schema is described by `tables`, i.e. by what already exists. */
 function connectionWith(tables: Record<string, string[]>) {
   const select = vi.fn(async (sql: string, params: unknown[] = []) => {
-    const table = String(params[0])
+    // The production code inlines the table name into pragma_table_info
+    // (a bound parameter never reaches a pragma table-valued function), so the
+    // mock has to read it from either the parameters or the statement.
+    const inlined = /pragma_table_info\("([^"]+)"\)/.exec(sql)?.[1]
+    const table = params && params.length > 0 ? String(params[0]) : (inlined ?? '')
     if (sql.includes('sqlite_master'))
       return table in tables ? [{ name: table }] : []
     if (sql.includes('pragma_table_info'))
