@@ -145,3 +145,41 @@
 | **READY_FOR_RELEASE** | **否** | 在 RC 基础上还需：真实签名链路（Apple 公证 / Windows Authenticode）从未配置、产品身份商标问题未决策、Linux zsh 三条未闭合、无人工物理键盘/IME 验收。 |
 
 **三者不能互相代替**：PR 可审查只代表代码可读可评，不代表能装能用，更不代表可发布。
+---
+
+# Phase 8.8 追加（Sync Correctness & RC Closure）
+
+> 基线 `ffde477`，本节记录 8.8 各任务结果。
+
+## A. Team Sync 协议正确性 — COMPLETE
+
+| 原问题 | 结论 |
+| --- | --- |
+| 客户端用本地 `Date.now()` 做游标 | 已确认为真；改为服务器发放的游标，原样回传并持久化 |
+| `baseVersion: item.createdAt` 与服务端 `updatedAt` 比较 | 已确认为真；旧客户端 epoch-ms 版本一律判 stale 并拒绝 |
+| A4 游标缺口 | 已修复；`it.fails` 改为正向 `it()`，且断言更强（新增游标单调） |
+| CREATE 无版本条件可覆盖较新数据 | 归因更正：离线队列路径本就安全，真正无版本条件的是**推送路径**；已修 |
+| CREATE/UPDATE 语义混淆 | 已区分：CREATE 命中已存在行按内容指纹幂等 ack 或 conflict；UPDATE 必带 baseVersion，命中缺失行 conflict 不复活 |
+
+**游标设计的正确性**：`safe = pg_snapshot_xmin(pg_current_snapshot())`，窗口 `txid ∈ [since, safe)`。
+证明只依赖事务身份与 xmin——不依赖 sequence 分配顺序，也不依赖任何时钟。
+新增的 `Share.version` 由触发器分配但**只用于批内展示排序，不作为游标**。
+
+**代价已披露**：safe 被最老在途写事务钉住，长事务会阻塞增量拉取（正确性优先）；
+截断时游标只推进到已投递的最大 txid，宁可重投绝不跳过。
+
+## B. Vault 创建崩溃恢复与连接归池 — COMPLETE
+
+- 改前 0 字节 `vault.json` 与「损坏 Vault」产生**同一个** `UnlockFailed`，且旧 `exists()` 对占位返回 true、`create` 又 `AlreadyExists` → 崩溃后用户**永久卡死**。现区分 `Uninitialized` / `Corrupt` / 正常三态，**没有任何无条件删除**。
+- 改前 `rollback` 失败只 `warn!` 后忽略，连接随之归还池 → **带未关闭事务的连接回到池**。现改为关闭该连接，绝不归还。
+- 负向对照证明测试非空转：把修复改回旧行为后测试失败（`left: 11 right: 10`）。
+
+## C. Linux zsh 诊断 — PARTIAL
+
+**已排除的假设**：应用生成的 `.zshrc` 破坏 ZLE。去混杂后 zsh 全部变体正常执行命令，`app-rc` 的 transcript 显示健康的 ZLE（含 DECCKM 切换）。
+
+**已确证的事实**：Debian/Ubuntu 上驱动交互式 zsh 会被两个系统级提示吞掉输入——无启动文件时的 `zsh-newuser-install` 向导，以及系统 `/etc/zsh/zshrc` 里 `compinit` 的 `insecure directories ... [y/n]?`。必须设 `skip_global_compinit=1` 并提供至少一个启动文件。
+
+**未解决的**：应用里恰好三条依赖 ZLE 的用例为何超时。若真是 compinit 阻塞，七条都该挂；只挂三条说明另有原因，候选方向是应用 PTY 环境的 HOME 权限、ZDOTDIR 注入时序与 shell 就绪检测的交互。需要带应用内插桩的下一次 matrix。
+
+**我写坏并删除的两版指标**（拒绝用坏指标冒充结论）：`[[ -o zle ]]`（命令执行期间恒为 OFF）、PTY 内发送 `ESC [ A` 测 history（在能通过的 macOS 上同样报 false）。
