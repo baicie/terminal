@@ -237,7 +237,16 @@ grep -q '^Icon=' "$DESKTOP" || fail ".desktop entry has no Icon="
 EXEC_LINE="$(grep -m1 '^Exec=' "$DESKTOP" || true)"
 [ -n "$EXEC_LINE" ] || fail ".desktop entry has no Exec="
 EXEC_BIN="$(printf '%s' "$EXEC_LINE" | sed 's/^Exec=//' | awk '{print $1}')"
-[ -x "$WORK/root$EXEC_BIN" ] || fail ".desktop Exec=$EXEC_BIN does not point at a binary the package installs"
+# Exec=terminal is the normal form for a packaged app: a bare command name that
+# the desktop resolves through PATH, landing on the package's /usr/bin/terminal.
+# Concatenating it onto the payload root produced ".../rootterminal" and failed
+# a correct .desktop on the runner, so resolve both forms explicitly.
+if [ "${EXEC_BIN#/}" != "$EXEC_BIN" ]; then
+  EXEC_PATH="$WORK/root$EXEC_BIN"
+else
+  EXEC_PATH="$WORK/root/usr/bin/$EXEC_BIN"
+fi
+[ -x "$EXEC_PATH" ] || fail ".desktop Exec=$EXEC_BIN does not point at a binary the package installs (looked for $EXEC_PATH)"
 pass ".desktop $(basename "$DESKTOP") Exec=$EXEC_BIN resolves inside the payload"
 if command -v desktop-file-validate >/dev/null 2>&1; then
   desktop-file-validate "$DESKTOP" || fail "desktop-file-validate rejected $(basename "$DESKTOP")"

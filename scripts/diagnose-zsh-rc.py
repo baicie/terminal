@@ -113,7 +113,13 @@ def wrapper_files():
         'add-zsh-hook preexec __TI_B' + NL,
     ])
     return {
-        '.zshenv': forward('.zshenv'),
+        # skip_global_compinit is zsh's documented switch for the system-wide
+        # /etc/zsh/zshrc, which calls compinit and then blocks on
+        # "insecure directories ... continue [y] or abort compinit [n]?" in a
+        # fresh PTY, swallowing the injected bytes. Phase 8.8 removed that
+        # confounder; the Task 6 rewrite dropped it and the prompt came back,
+        # so every variant was measured against a blocked shell again.
+        '.zshenv': 'skip_global_compinit=1' + NL + forward('.zshenv'),
         '.zprofile': forward('.zprofile'),
         '.zshrc': zshrc,
         '.zlogin': forward('.zlogin'),
