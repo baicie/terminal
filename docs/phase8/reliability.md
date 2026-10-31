@@ -55,12 +55,22 @@ reconnect 起手会 `audience.retireAll()`（`terminal-session-manager-reconnect
 
 **未解决**：这三条为何从未完成。本轮仍未取得拆分后的新日志——修复提交之后的 Linux run 在更早的 A 问题处失败，未走到 shell 矩阵。A 修复后应能拿到新日志。
 
-## C. 待实施的修复（本阶段）
+## C. 修复完成情况（提交 3e40823）
 
-| # | 修复 | 位置 |
-| --- | --- | --- |
-| 1 | barrier 与 canary 增加前导 `\r\n`，确保独占一行 | `terminal_smoke.rs:1188,1196` |
-| 2 | 判定改为「逻辑行包含 marker」，prompt 前缀不再破坏匹配；canary 用同一语义（更严） | `terminal-smoke-buffer.ts` + `run-terminal-smoke.ts:134,137` |
-| 3 | 诊断 `tail` 改为「最近非空行」，并补 buffer 几何字段以区分「真空」与「视口底部空行」 | `terminal-smoke-diagnostics.ts:10-12` |
-| 4 | 两处丢弃点计数 + warn，并把 `droppedBytes` 放进 snapshot，维持不变量 accepted = parsed + dropped | `terminal-output-scheduler.ts:251-256,279-287,100-110` |
-| 5 | `reset()` 明确归零 inFlight 状态并记因 | 同上 |
+| # | 修复 | 位置 | 状态 |
+| --- | --- | --- | --- |
+| 1 | barrier 与 canary 增加前导 \r\n，各自独占一行 | terminal_smoke.rs | ✅ |
+| 2 | 新增 hasLogicalLineContaining / waitForLogicalLineContaining；barrier 改包含语义；canary 由「整行相等即失败」改为「任意行包含即失败」（更严） | terminal-smoke-buffer.ts / run-terminal-smoke.ts | ✅ |
+| 3 | 诊断 tail 改「最近非空行 ×8」并补 bufferLength/cursorY/viewportY/baseY | terminal-smoke-diagnostics.ts | ✅ |
+| 4 | 新增 TerminalOutputDropLedger，丢弃计数 + 一次 warn；snapshot 暴露 droppedBytes/droppedChunks | terminal-output-queue.ts（新） | ✅ |
+| 5 | reset() 的 in-flight 选择「明确记因」而非归零 | terminal-output-scheduler.ts | ✅ |
+
+**测试**：新增 8 条（失效 receipt 丢弃被计数 / reset 清队列记账 / accepted=parsed+dropped /
+reset 后陈旧在途写仍被记账 / barrier 与 prompt 同行时通过 / canary 嵌行中仍失败 /
+tail 报最近非空行 / tail 为空时仍带 bufferLength=24）。既有 1293 用例未减少。
+
+**未做（各需再动 1 个文件）**：Rust 侧缺「marker 必须带前导 CRLF」的发射端回归断言；
+warn 未含 sessionId（scheduler 层无会话身份）。
+
+**仍然待验证**：本次修复只证明判据正确，**没有在真实 Linux runner 上重跑过**。
+需要下一次 matrix 的 Linux job 来确认 stale-output 阶段通过、且 shell 矩阵能真正执行。
