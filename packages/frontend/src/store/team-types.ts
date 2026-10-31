@@ -1,13 +1,3 @@
-import type {
-  TeamAuditLogRecord,
-  TeamInviteRecord,
-  TeamMemberRecord,
-  TeamRecord,
-  TeamSharedHostRecord,
-  TeamSharedSnippetRecord,
-  UserProfileRecord,
-} from '@/service/database'
-
 export interface TeamSettings {
   enabled: boolean
   mode: 'local' | 'cloud'
@@ -47,6 +37,10 @@ export interface SharedHost {
   sharedBy: string
   permission: 'readonly' | 'readwrite'
   createdAt: number
+  /** Server-issued version this copy is based on; null when the server has never seen it. */
+  version?: number | null
+  /** Last server-side change, used to display and to report conflicts. */
+  updatedAt?: number
 }
 
 export interface SharedSnippet {
@@ -56,6 +50,10 @@ export interface SharedSnippet {
   sharedBy: string
   permission: 'readonly' | 'readwrite'
   createdAt: number
+  /** Server-issued version this copy is based on; null when the server has never seen it. */
+  version?: number | null
+  /** Last server-side change, used to display and to report conflicts. */
+  updatedAt?: number
 }
 
 export interface TeamInvite {
@@ -93,7 +91,13 @@ export interface UserProfile {
 export interface SyncConflict {
   shareId: string
   localVersion: { updatedAt: number; data: unknown }
-  remoteVersion: { updatedAt: number; data: unknown; updatedBy: string }
+  remoteVersion: {
+    updatedAt: number
+    data: unknown
+    updatedBy: string
+    /** Server version of the snapshot a pull had to skip; absent on a push-only report. */
+    version?: number | null
+  }
 }
 
 export interface TeamState {
@@ -144,6 +148,16 @@ export interface TeamState {
     teamId: string,
     hostData: Record<string, unknown>,
     permission: 'readonly' | 'readwrite',
+  ) => Promise<void>
+  /**
+   * Local edit of an already shared host. It keeps the server version this copy
+   * is based on and flags the row dirty, so the next sync submits it as an
+   * UPDATE with that baseVersion and a concurrent remote write becomes a
+   * conflict instead of a silent overwrite.
+   */
+  updateSharedHost: (
+    shareId: string,
+    hostData: Record<string, unknown>,
   ) => Promise<void>
   unshareHost: (shareId: string) => Promise<void>
   loadSharedSnippets: (teamId: string) => Promise<void>
@@ -215,85 +229,12 @@ export interface TeamState {
   ) => Promise<{ teamId: string; role: 'admin' | 'member' } | null>
   cloudLoadAuditLogs: (teamId: string, limit?: number) => Promise<void>
 }
-
-export function toTeam(record: TeamRecord): Team {
-  return {
-    id: record.id,
-    name: record.name,
-    ownerId: record.owner_id,
-    mode: record.mode as 'local' | 'cloud',
-    endpoint: record.endpoint,
-    apiToken: record.api_token,
-    autoSync: record.auto_sync === 1,
-    createdAt: record.created_at,
-    updatedAt: record.updated_at,
-  }
-}
-export function toTeamMember(record: TeamMemberRecord): TeamMember {
-  return {
-    id: record.id,
-    teamId: record.team_id,
-    userId: record.user_id,
-    userName: record.user_name,
-    userEmail: record.user_email,
-    role: record.role as 'admin' | 'member',
-    joinedAt: record.joined_at,
-  }
-}
-export function toSharedHost(record: TeamSharedHostRecord): SharedHost {
-  return {
-    id: record.id,
-    teamId: record.team_id,
-    hostData: JSON.parse(record.host_data),
-    sharedBy: record.shared_by,
-    permission: record.permission as 'readonly' | 'readwrite',
-    createdAt: record.created_at,
-  }
-}
-export function toSharedSnippet(
-  record: TeamSharedSnippetRecord,
-): SharedSnippet {
-  return {
-    id: record.id,
-    teamId: record.team_id,
-    snippetData: JSON.parse(record.snippet_data),
-    sharedBy: record.shared_by,
-    permission: record.permission as 'readonly' | 'readwrite',
-    createdAt: record.created_at,
-  }
-}
-export function toTeamInvite(record: TeamInviteRecord): TeamInvite {
-  return {
-    id: record.id,
-    teamId: record.team_id,
-    type: record.type as 'link' | 'code' | 'email',
-    code: record.code,
-    linkToken: record.link_token,
-    email: record.email,
-    role: record.role as 'admin' | 'member',
-    createdBy: record.created_by,
-    expiresAt: record.expires_at,
-    usedAt: record.used_at,
-    createdAt: record.created_at,
-  }
-}
-export function toAuditLog(record: TeamAuditLogRecord): AuditLog {
-  return {
-    id: record.id,
-    teamId: record.team_id,
-    userId: record.user_id,
-    userName: record.user_name,
-    hostName: record.host_name,
-    action: record.action,
-    details: record.details ? JSON.parse(record.details) : undefined,
-    createdAt: record.created_at,
-  }
-}
-export function toUserProfile(record: UserProfileRecord): UserProfile {
-  return {
-    id: record.id,
-    name: record.name,
-    createdAt: record.created_at,
-    updatedAt: record.updated_at,
-  }
-}
+export {
+  toAuditLog,
+  toSharedHost,
+  toSharedSnippet,
+  toTeam,
+  toTeamInvite,
+  toTeamMember,
+  toUserProfile,
+} from './team-types-mappers'

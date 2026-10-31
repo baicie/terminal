@@ -1,46 +1,60 @@
-import {
-  addSharedHost,
-  addSharedSnippet,
-  removeSharedHost,
-  removeSharedSnippet,
-} from '@/service/database'
-import { convertApiShare, teamApi } from '@/service/team-api'
-import type { SharedHost, SharedSnippet, TeamState } from './team-types'
+import { addSharedHost, addSharedSnippet } from '@/service/database'
+import { teamApi } from '@/service/team-api'
+import type { TeamState } from './team-types'
 import type { TeamStoreGet, TeamStoreSet } from './team-store-context'
-
-const SYNC_CURSOR_STORAGE_KEY = 'terminal.team.syncCursor'
+import type { SyncCursorScope } from './team-sync-engine'
+import {
+  hasData,
+  mergeConflicts,
+  pullChanges,
+  pushLocalShares,
+} from './team-sync-engine'
 
 /**
- * The sync cursor is opaque and server issued: it is stored verbatim and sent
- * back unchanged. It is never derived from the local clock, and it is only
- * advanced once every change of the round has been applied, so a crash can only
- * cause a re-delivery, never a gap (docs/phase8/sync-protocol.md §5).
+ * Adopts a server snapshot the pull had to skip because the row carried a local
+ * edit: the user chose the server's copy and the cursor already moved past it, so
+ * the snapshot recorded with the conflict is the only way back to convergence.
  */
-const CURSOR_PATTERN = /^\d{1,20}(?:\.\d{1,20})*$/
-
-function readStoredCursor(): string | null {
-  try {
-    const raw = globalThis.localStorage?.getItem(SYNC_CURSOR_STORAGE_KEY)
-    if (!raw) return null
-    // The cursor is opaque: a composite position (`2.<bound>.<txid>.<seq>`)
-    // or the older single watermark. Anything else is dropped so the server
-    // answers with a full resnapshot instead of a guess.
-    return CURSOR_PATTERN.test(raw) ? raw : null
-  } catch {
-    return null
+async function adoptRemoteShare(
+  get: TeamStoreGet,
+  shareId: string,
+  remote: { version: number, updatedAt: number, data: unknown },
+): Promise<void> {
+  if (!hasData(remote.data)) return
+  const host = get().sharedHosts.find(item => item.id === shareId)
+  if (host !== undefined) {
+    await addSharedHost(
+      {
+        id: host.id,
+        team_id: host.teamId,
+        host_data: JSON.stringify(remote.data),
+        shared_by: host.sharedBy,
+        permission: host.permission,
+        created_at: host.createdAt,
+        version: remote.version,
+        updated_at: remote.updatedAt,
+      },
+      'override',
+    )
+    await get().loadSharedHosts(host.teamId)
+    return
   }
-}
-
-function storeCursor(cursor: string | null): void {
-  try {
-    if (cursor === null) {
-      globalThis.localStorage?.removeItem(SYNC_CURSOR_STORAGE_KEY)
-      return
-    }
-    globalThis.localStorage?.setItem(SYNC_CURSOR_STORAGE_KEY, String(cursor))
-  } catch {
-    // Storage unavailable: the next round simply starts from a full resnapshot.
-  }
+  const snippet = get().sharedSnippets.find(item => item.id === shareId)
+  if (snippet === undefined) return
+  await addSharedSnippet(
+    {
+      id: snippet.id,
+      team_id: snippet.teamId,
+      snippet_data: JSON.stringify(remote.data),
+      shared_by: snippet.sharedBy,
+      permission: snippet.permission,
+      created_at: snippet.createdAt,
+      version: remote.version,
+      updated_at: remote.updatedAt,
+    },
+    'override',
+  )
+  await get().loadSharedSnippets(snippet.teamId)
 }
 
 export function createSyncActions(
@@ -58,14 +72,7 @@ export function createSyncActions(
 > {
   return {
     async sync() {
-      const {
-        settings,
-        currentTeam,
-        userProfile,
-        sharedHosts,
-        sharedSnippets,
-        isSyncing,
-      } = get()
+      const { settings, currentTeam, userProfile, isSyncing } = get()
       if (
         settings.enabled
         && settings.mode === 'cloud'
@@ -82,104 +89,33 @@ export function createSyncActions(
       // A second run while one is in flight would push the same shares twice
       // and let the two runs overwrite each other's state.
       if (isSyncing) return
+      // The cursor belongs to a server/user/team namespace: without all three
+      // identities it cannot be attributed, so this round simply has none and
+      // the server answers with a full resnapshot.
+      const scope: SyncCursorScope | null
+        = settings.endpoint && userProfile?.id
+          ? {
+              endpoint: settings.endpoint,
+              userId: userProfile.id,
+              teamId: currentTeam.id,
+            }
+          : null
       // Conflicts from an earlier run stay visible until they are resolved;
       // clearing them here hid unreviewed conflicts behind a fresh sync.
       set({ isSyncing: true, syncError: null })
       try {
-        const changesResponse = await teamApi.getChanges(
-          readStoredCursor() ?? undefined,
-        )
-        if (changesResponse.error) throw new Error(changesResponse.error)
-        if (changesResponse.data) {
-          const { shares, deletedShareIds } = changesResponse.data
-          for (const shareId of deletedShareIds) {
-            await removeSharedHost(shareId)
-            await removeSharedSnippet(shareId)
-          }
-          for (const apiShare of shares) {
-            const converted = convertApiShare({
-              id: apiShare.id,
-              type: apiShare.type,
-              data: apiShare.data,
-              permission: apiShare.permission,
-              sharedBy: apiShare.sharedBy,
-              createdAt: apiShare.createdAt,
-            })
-            if ('hostData' in converted) {
-              await addSharedHost({
-                id: converted.id,
-                team_id: settings.currentTeamId!,
-                host_data: JSON.stringify(converted.hostData),
-                shared_by: converted.sharedBy,
-                permission: converted.permission,
-                created_at: converted.createdAt,
-              })
-            } else if ('snippetData' in converted) {
-              await addSharedSnippet({
-                id: converted.id,
-                team_id: settings.currentTeamId!,
-                snippet_data: JSON.stringify(converted.snippetData),
-                shared_by: converted.sharedBy,
-                permission: converted.permission,
-                created_at: converted.createdAt,
-              })
-            }
-          }
-        }
-        const localShares = [
-          ...sharedHosts.map(item => ({ ...item, _type: 'HOST' as const })),
-          ...sharedSnippets.map(item => ({
-            ...item,
-            _type: 'SNIPPET' as const,
-          })),
-        ]
-        if (localShares.length > 0) {
-          // Declared CREATE: the server answers a replay of an already applied
-          // create with an idempotent acknowledgement, and refuses to overwrite
-          // a newer version instead of silently losing the remote change.
-          const pushResult = await teamApi.pushChanges(
-            localShares.map(item => ({
-              id: item.id,
-              teamId: currentTeam.id,
-              type:
-                item._type === 'HOST'
-                  ? ('HOST' as const)
-                  : ('SNIPPET_PACKAGE' as const),
-              data:
-                item._type === 'HOST'
-                  ? (item as SharedHost).hostData
-                  : (item as SharedSnippet).snippetData,
-              permission: item.permission.toUpperCase() as
-                | 'READONLY'
-                | 'READWRITE',
-              operation: 'CREATE' as const,
-            })),
-          )
-          if (pushResult.error) throw new Error(pushResult.error)
-          if (
-            pushResult.data?.conflicts
-            && pushResult.data.conflicts.length > 0
-          ) {
-            const conflictDetails = pushResult.data.conflicts.map(id => {
-              const local = localShares.find(item => item.id === id)
-              return {
-                shareId: id,
-                localVersion: {
-                  updatedAt: local?.createdAt ?? 0,
-                  data: local ?? {},
-                },
-                remoteVersion: { updatedAt: 0, data: {}, updatedBy: '' },
-              }
-            })
-            set(state => ({
-              syncConflicts: [...state.syncConflicts, ...conflictDetails],
-            }))
-          }
-        }
+        const pullConflicts = await pullChanges(get, scope, currentTeam.id)
+        // Reload before pushing, so the push starts from the versions that just
+        // landed instead of a snapshot taken before the pull advanced them.
         await get().loadSharedHosts(currentTeam.id)
         await get().loadSharedSnippets(currentTeam.id)
-        // The cursor advances only after every change landed locally.
-        storeCursor(changesResponse.data?.cursor ?? null)
+        const pushConflicts = await pushLocalShares(get, currentTeam.id)
+        set(state => ({
+          syncConflicts: mergeConflicts(state.syncConflicts, [
+            ...pullConflicts,
+            ...pushConflicts,
+          ]),
+        }))
         // Display only: this local timestamp is never used as a cursor.
         set({ lastSyncAt: Date.now() })
       } catch (error) {
@@ -206,20 +142,39 @@ export function createSyncActions(
           userProfile?.id || '',
         )
       }
+      const conflict = get().syncConflicts.find(
+        item => item.shareId === shareId,
+      )
       const result = await teamApi.resolveConflict(
         shareId,
         resolution,
-        localData
-          ? { data: localData, isSensitive: false, permission: 'READONLY' }
+        resolution === 'LOCAL'
+          ? {
+              data: localData ?? conflict?.localVersion.data ?? {},
+              isSensitive: false,
+              permission: 'READONLY',
+            }
           : undefined,
       )
-      if (!result.error) {
-        set(state => ({
-          syncConflicts: state.syncConflicts.filter(
-            conflict => conflict.shareId !== shareId,
-          ),
-        }))
+      if (result.error) {
+        set({ syncError: result.error })
+        return
       }
+      if (resolution === 'REMOTE' && conflict !== undefined) {
+        const remote = conflict.remoteVersion
+        if (typeof remote.version === 'number') {
+          await adoptRemoteShare(get, shareId, {
+            version: remote.version,
+            updatedAt: remote.updatedAt,
+            data: remote.data,
+          })
+        }
+      }
+      set(state => ({
+        syncConflicts: state.syncConflicts.filter(
+          item => item.shareId !== shareId,
+        ),
+      }))
     },
     getSyncConflicts() {
       return get().syncConflicts
