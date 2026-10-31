@@ -272,6 +272,10 @@ pub enum VaultError {
     CreateFailed(String),
     #[error("unlock failed: {0}")]
     UnlockFailed(String),
+    #[error("vault is not initialized: {0}")]
+    Uninitialized(String),
+    #[error("vault file is damaged: {0}")]
+    Corrupt(String),
     #[error("encrypt failed: {0}")]
     EncryptFailed(String),
     #[error("decrypt failed: {0}")]
@@ -310,6 +314,14 @@ impl From<VaultError> for VaultErrorDto {
                 kind: "unlock_failed",
                 message: Some(m),
             },
+            VaultError::Uninitialized(m) => Self {
+                kind: "uninitialized",
+                message: Some(m),
+            },
+            VaultError::Corrupt(m) => Self {
+                kind: "corrupt",
+                message: Some(m),
+            },
             VaultError::EncryptFailed(m) => Self {
                 kind: "encrypt_failed",
                 message: Some(m),
@@ -341,6 +353,8 @@ impl From<VaultErrorDto> for VaultError {
             ("key_not_found", Some(m)) => VaultError::KeyNotFound(m),
             ("create_failed", Some(m)) => VaultError::CreateFailed(m),
             ("unlock_failed", Some(m)) => VaultError::UnlockFailed(m),
+            ("uninitialized", Some(m)) => VaultError::Uninitialized(m),
+            ("corrupt", Some(m)) => VaultError::Corrupt(m),
             ("encrypt_failed", Some(m)) => VaultError::EncryptFailed(m),
             ("decrypt_failed", Some(m)) => VaultError::DecryptFailed(m),
             ("save_failed", Some(m)) => VaultError::SaveFailed(m),

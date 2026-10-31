@@ -113,12 +113,22 @@ impl VaultState {
     /// A migration write never fails an unlock: on error the legacy file and the
     /// legacy password keep working exactly as before, and the next successful
     /// save finishes the migration.
+    ///
+    /// A path that holds no vault is refused with a state-specific error and is
+    /// never rewritten: `Uninitialized` for the zero-length placeholder of an
+    /// interrupted create (recoverable by creating again) and `Corrupt` for
+    /// anything this format cannot parse (kept byte for byte for manual
+    /// recovery). See `read_vault_file`.
     pub fn unlock(master_password: &str, config_path: PathBuf) -> Result<Self, VaultError> {
-        let content = fs::read_to_string(&config_path)
-            .map_err(|e| VaultError::UnlockFailed(format!("Failed to read vault config: {}", e)))?;
+        let content = read_vault_file(&config_path)?;
 
-        let config: VaultConfig = serde_json::from_str(&content)
-            .map_err(|e| VaultError::UnlockFailed(format!("Invalid vault config: {}", e)))?;
+        let config: VaultConfig = serde_json::from_str(&content).map_err(|e| {
+            VaultError::Corrupt(format!(
+                "vault file {} cannot be parsed ({}); it was left untouched for manual recovery",
+                config_path.display(),
+                e
+            ))
+        })?;
 
         // Re-derive key using stored salt
         let salt = SaltString::from_b64(&config.salt)
@@ -195,9 +205,18 @@ impl VaultState {
         }
     }
 
-    /// Check if vault exists
+    /// Check if vault exists.
+    ///
+    /// A zero-length file does not count: it is the exclusive-claim placeholder of
+    /// a create that never finished (see `is_unfilled_placeholder`), so reporting
+    /// it as "no vault yet" is what lets the create flow complete that
+    /// initialization instead of offering an unlock that cannot succeed. A
+    /// damaged vault does count: it exists, and it must not be created over.
     pub fn exists(config_path: &Path) -> bool {
-        config_path.exists()
+        match fs::symlink_metadata(config_path) {
+            Ok(metadata) => !(metadata.file_type().is_file() && metadata.len() == 0),
+            Err(_) => false,
+        }
     }
 
     /// Encrypt and store a value.
@@ -302,18 +321,48 @@ impl VaultState {
     /// overwrites, which keeps the first write on the same durability path as
     /// every later one. If that replace fails the placeholder is ours alone, so
     /// it is removed again and a failed create leaves no vault file behind.
+    ///
+    /// The one thing a claim cannot survive is the process dying between the two
+    /// steps: the placeholder stays behind as a zero-length `vault.json`. The
+    /// next create recognises it with `is_unfilled_placeholder` and fills it
+    /// through the same atomic replace, so recovery never unlinks a path that
+    /// could hold a vault. Any file with content at all is refused as
+    /// `AlreadyExists`, whatever it parses to.
     fn create_exclusive(&mut self, config: VaultConfig) -> Result<(), VaultError> {
         let content = serialize_config(&config)?;
         let claim = claim_new_vault_file(&self.config_path)?;
 
-        if let Err(error) = write_atomic(&self.config_path, &content) {
-            // Release the handle before unlinking so Windows can delete it too.
-            drop(claim);
-            let _ = fs::remove_file(&self.config_path);
-            return Err(error);
+        #[cfg(test)]
+        if fault_injection::take_claim_crash() {
+            // Simulated process death between the claim and the fill: the
+            // placeholder stays on disk, exactly like an interrupted create.
+            return Err(VaultError::SaveFailed(
+                "injected crash after the exclusive claim".to_string(),
+            ));
         }
 
-        drop(claim);
+        match claim {
+            Claim::Fresh(handle) => {
+                if let Err(error) = write_atomic(&self.config_path, &content) {
+                    // Release the handle before unlinking so Windows can delete it too.
+                    drop(handle);
+                    let _ = fs::remove_file(&self.config_path);
+                    return Err(error);
+                }
+                drop(handle);
+            }
+            Claim::Reclaimed => {
+                // Re-check the proof immediately before the replace: recovery is
+                // only ever allowed to overwrite a zero-length regular file.
+                if !is_unfilled_placeholder(&self.config_path)? {
+                    return Err(VaultError::AlreadyExists);
+                }
+                // A failed replace leaves the placeholder exactly where it was, so
+                // the next attempt starts from the same recoverable state.
+                write_atomic(&self.config_path, &content)?;
+            }
+        }
+
         self.config = config;
         Ok(())
     }
@@ -475,9 +524,9 @@ fn exclusive_create_options() -> fs::OpenOptions {
 /// `create_new(true)` is the exclusive-create flag: `O_CREAT | O_EXCL` on Unix,
 /// `CREATE_NEW` on Windows. Both fail atomically when the path is taken, which
 /// is what removes the check-then-write window instead of shrinking it.
-fn claim_new_vault_file(path: &Path) -> Result<fs::File, VaultError> {
+fn claim_new_vault_file(path: &Path) -> Result<Claim, VaultError> {
     match exclusive_create_options().open(path) {
-        Ok(file) => Ok(file),
+        Ok(file) => Ok(Claim::Fresh(file)),
         Err(error) => {
             // Something that cannot hold a vault (a directory, a device) is not
             // "a vault already exists": reporting AlreadyExists there would tell
@@ -486,11 +535,77 @@ fn claim_new_vault_file(path: &Path) -> Result<fs::File, VaultError> {
                 return Err(save_failed("Failed to create the vault file", path, &error));
             }
             if error.kind() == std::io::ErrorKind::AlreadyExists {
+                if is_unfilled_placeholder(path)? {
+                    return Ok(Claim::Reclaimed);
+                }
                 return Err(VaultError::AlreadyExists);
             }
             Err(save_failed("Failed to create the vault file", path, &error))
         }
     }
+}
+
+/// What claiming the vault path found.
+enum Claim {
+    /// The path was free and this process now holds the empty placeholder.
+    Fresh(fs::File),
+    /// The path held a zero-length placeholder from an interrupted create. The
+    /// caller fills it with one atomic replace; nothing is unlinked.
+    Reclaimed,
+}
+
+/// True only when `path` is provably a claim placeholder that was never filled.
+///
+/// The proof rests on the write path: every write to this file (create, set,
+/// delete, change_password, the verifier migration) goes through `write_atomic`,
+/// which renames a complete `serialize_config` buffer over the target. A
+/// serialized config always carries its salt, so no code path in this module can
+/// leave a zero-length file behind as a *vault*: a zero-length regular file can
+/// only be the empty placeholder `claim_new_vault_file` opened and the
+/// interrupted create never replaced. It holds no bytes, so reclaiming it cannot
+/// destroy anything.
+///
+/// Everything else returns `false`: a vault with content, a truncated or
+/// hand-edited file, a symlink, a device, a directory. Recovery therefore has no
+/// path that overwrites or unlinks content.
+fn is_unfilled_placeholder(path: &Path) -> Result<bool, VaultError> {
+    let entry = fs::symlink_metadata(path)
+        .map_err(|e| save_failed("Failed to inspect the existing vault path", path, &e))?;
+    // symlink_metadata does not follow links, so a symlink or a device node is
+    // never mistaken for the placeholder this module created.
+    if !entry.file_type().is_file() || entry.len() != 0 {
+        return Ok(false);
+    }
+
+    // Re-read through a handle: the length that decides is the one on the object
+    // this call opened, not the one a stale path lookup reported.
+    let opened = fs::File::open(path)
+        .map_err(|e| save_failed("Failed to open the existing vault file", path, &e))?;
+    let metadata = opened
+        .metadata()
+        .map_err(|e| save_failed("Failed to inspect the existing vault file", path, &e))?;
+    Ok(metadata.is_file() && metadata.len() == 0)
+}
+
+/// Read the vault file, naming an unfilled placeholder separately from damage.
+///
+/// Three states reach this function and only one of them is a vault:
+///
+/// * zero bytes is the placeholder of an interrupted create, reported as
+///   `Uninitialized` so the caller can start the create flow again;
+/// * content the format cannot parse is `Corrupt` and is never removed,
+///   truncated or rewritten here: the bytes stay for manual recovery;
+/// * a parseable config goes on to password verification as a real vault.
+fn read_vault_file(path: &Path) -> Result<String, VaultError> {
+    let content = fs::read_to_string(path)
+        .map_err(|e| VaultError::UnlockFailed(format!("Failed to read vault config: {}", e)))?;
+    if content.is_empty() {
+        return Err(VaultError::Uninitialized(format!(
+            "vault file {} is an empty placeholder left by an interrupted create; create the vault again",
+            path.display()
+        )));
+    }
+    Ok(content)
 }
 
 /// Build a `SaveFailed` error from a stage, a path and the underlying IO error.
@@ -606,6 +721,7 @@ mod fault_injection {
 
     thread_local! {
         static WRITE_BUDGET: Cell<Option<usize>> = const { Cell::new(None) };
+        static CLAIM_CRASH: Cell<bool> = const { Cell::new(false) };
     }
 
     /// Arm the next save to fail after `bytes` bytes reach the temporary file.
@@ -613,9 +729,22 @@ mod fault_injection {
         WRITE_BUDGET.with(|budget| budget.set(Some(bytes)));
     }
 
+    /// Arm the next create to die right after the exclusive claim, i.e. between
+    /// the two persistence steps, leaving the placeholder on disk the way a
+    /// killed process would.
+    pub(super) fn fail_after_claim() {
+        CLAIM_CRASH.with(|flag| flag.set(true));
+    }
+
+    /// Consume the armed claim crash, if any.
+    pub(super) fn take_claim_crash() -> bool {
+        CLAIM_CRASH.with(|flag| flag.replace(false))
+    }
+
     /// Disarm the injection.
     pub(super) fn clear() {
         WRITE_BUDGET.with(|budget| budget.set(None));
+        CLAIM_CRASH.with(|flag| flag.set(false));
     }
 
     /// Consume the armed budget, if any.

@@ -3,6 +3,8 @@
 //! Every test runs against a real temporary SQLite database file: no statement
 //! order is mocked, because the defect this code fixes was invisible to mocks.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::json;
@@ -10,7 +12,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePo
 use sqlx::Row;
 
 use super::payload::{ImportPayload, PayloadError, MAX_RECORDS};
-use super::writer::{run_import, ImportError};
+use super::writer::{fault_injection, run_import, ImportError};
 
 /// Columns of every imported table, in schema order.
 const TABLES: &[(&str, &[&str])] = &[
@@ -146,6 +148,48 @@ async fn test_pool(busy_timeout: Duration) -> (tempfile::TempDir, SqlitePool) {
             .expect("create the test schema");
     }
     (dir, pool)
+}
+
+/// One-connection pool that counts every connection handed back to it.
+///
+/// `after_release` is the pool's own release seam, so "the connection was
+/// returned" is observed directly instead of inferred from internal counters.
+async fn probed_pool() -> (tempfile::TempDir, SqlitePool, Arc<AtomicUsize>) {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let path = dir.path().join("import-probe.db");
+    let released = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&released);
+    let options = SqliteConnectOptions::new()
+        .filename(&path)
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .busy_timeout(Duration::from_secs(5));
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .after_release(move |_conn, _meta| {
+            let counter = Arc::clone(&counter);
+            Box::pin(async move {
+                counter.fetch_add(1, Ordering::SeqCst);
+                Ok::<bool, sqlx::Error>(true)
+            })
+        })
+        .connect_with(options)
+        .await
+        .expect("open the probed test database");
+    for statement in SCHEMA {
+        sqlx::query(statement)
+            .execute(&pool)
+            .await
+            .expect("create the test schema");
+    }
+    (dir, pool, released)
+}
+
+/// Give the pool's release task the chance to run on a current-thread runtime.
+async fn settle() {
+    for _ in 0..100 {
+        tokio::task::yield_now().await;
+    }
 }
 
 fn projection(columns: &[&str]) -> String {
@@ -684,4 +728,94 @@ async fn an_expired_budget_rolls_back() {
         "unexpected error: {error}"
     );
     assert_eq!(count(&pool, "hosts").await, 0);
+}
+
+// (d) A ROLLBACK that fails must close the connection, never release it.
+//
+// A released connection keeps the open transaction and every later statement of
+// an unrelated caller would run inside it. The failure is injected at the
+// rollback seam and the release is observed on the pool's own hook, so the
+// assertion is about the connection actually going back, not about intent.
+#[tokio::test(flavor = "current_thread")]
+async fn a_failed_rollback_closes_the_connection_instead_of_returning_it() {
+    let (_dir, pool, released) = probed_pool().await;
+    // Drain the releases left over from schema setup before counting.
+    settle().await;
+    let failing = payload(json!({
+        "mergeMode": "merge",
+        "hosts": [
+            { "id": "h1", "name": "First", "hostname": "a.example", "username": "root" },
+            // hosts.name is NOT NULL: binding a missing name fails this statement.
+            { "id": "h2", "hostname": "b.example", "username": "root" }
+        ]
+    }));
+
+    // Control: the same failure with a working rollback returns the connection,
+    // which is what makes the negative assertion below meaningful.
+    let before = released.load(Ordering::SeqCst);
+    let rolled_back = run_import(&pool, &failing, BUDGET)
+        .await
+        .expect_err("a NOT NULL violation must fail the import");
+    settle().await;
+    assert!(
+        matches!(rolled_back, ImportError::RolledBack(_)),
+        "unexpected error: {rolled_back}"
+    );
+    assert_eq!(
+        released.load(Ordering::SeqCst),
+        before + 1,
+        "a clean rollback must hand the connection back to the pool"
+    );
+    assert_eq!(
+        pool.num_idle(),
+        1,
+        "the connection is reusable after a rollback"
+    );
+
+    // The defect: the rollback cannot run, so the transaction stays open.
+    fault_injection::fail_next_rollback();
+    let before = released.load(Ordering::SeqCst);
+    let poisoned = run_import(&pool, &failing, BUDGET)
+        .await
+        .expect_err("the import still fails");
+    settle().await;
+    fault_injection::clear();
+
+    assert!(
+        matches!(poisoned, ImportError::RolledBack(_)),
+        "unexpected error: {poisoned}"
+    );
+    assert_eq!(
+        released.load(Ordering::SeqCst),
+        before,
+        "a connection whose rollback failed must not be released to the pool"
+    );
+    assert_eq!(
+        pool.num_idle(),
+        0,
+        "no idle connection may survive an import that could not roll back"
+    );
+    assert_eq!(
+        pool.size(),
+        0,
+        "the dirty connection must be closed, not parked in the pool"
+    );
+
+    // The pool still works, and nothing inherited the open transaction: a fresh
+    // connection can open its own explicit transaction.
+    let mut fresh = pool.acquire().await.expect("the pool opens a replacement");
+    sqlx::query("BEGIN IMMEDIATE")
+        .execute(&mut *fresh)
+        .await
+        .expect("a replacement connection is not inside a stale transaction");
+    sqlx::query("ROLLBACK")
+        .execute(&mut *fresh)
+        .await
+        .expect("rollback on the replacement");
+    drop(fresh);
+    assert_eq!(
+        count(&pool, "hosts").await,
+        0,
+        "the failed import left no rows behind"
+    );
 }

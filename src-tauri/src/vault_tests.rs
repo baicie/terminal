@@ -830,3 +830,178 @@ fn exclusive_create_holds_on_unix_and_windows_persistence() {
         assert!(VaultState::unlock(OLD_PASSWORD, path.clone()).is_ok());
     }
 }
+
+// ==================== Crash recovery between claim and fill ====================
+
+/// The crash window this section covers: the placeholder exists, the fill never
+/// ran. The next start must recognise it, must not mistake it for damage, and
+/// must not lose a real or a damaged vault while recovering.
+#[test]
+fn a_crash_between_the_claim_and_the_fill_is_recovered_by_the_next_create() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let path = vault_path(dir.path());
+
+    fault_injection::fail_after_claim();
+    let crashed = VaultState::create(OLD_PASSWORD, path.clone());
+    fault_injection::clear();
+
+    let error = crashed.err().expect("the interrupted create must fail");
+    assert!(matches!(error, VaultError::SaveFailed(_)), "{error}");
+    let placeholder = fs::metadata(&path).expect("the placeholder must survive the crash");
+    assert_eq!(
+        placeholder.len(),
+        0,
+        "a crash between the steps leaves it empty"
+    );
+
+    assert!(
+        !VaultState::exists(&path),
+        "an unfilled placeholder is not a vault, so create must be offered again"
+    );
+    let refused = VaultState::unlock(OLD_PASSWORD, path.clone())
+        .err()
+        .expect("an empty file cannot unlock");
+    assert!(
+        matches!(refused, VaultError::Uninitialized(_)),
+        "an interrupted create must not be reported as damage: {refused}"
+    );
+    assert_eq!(
+        fs::metadata(&path).expect("placeholder").len(),
+        0,
+        "a refused unlock must leave the placeholder alone"
+    );
+
+    let mut vault =
+        VaultState::create(OLD_PASSWORD, path.clone()).expect("the next create reclaims it");
+    vault.set("host", SECRET_VALUE).expect("store entry");
+    drop(vault);
+
+    assert!(opens_vault(&path, OLD_PASSWORD, "host"));
+    assert!(!opens_vault(&path, NEW_PASSWORD, "host"));
+    assert_eq!(dir_entries(dir.path()), vec!["vault.json".to_string()]);
+
+    // The recovered file is a real vault again, not a placeholder: it is now
+    // refused rather than reclaimed.
+    let before = fs::read(&path).expect("read the recovered vault");
+    assert!(matches!(
+        VaultState::create(NEW_PASSWORD, path.clone()).err(),
+        Some(VaultError::AlreadyExists)
+    ));
+    assert_eq!(fs::read(&path).expect("read the recovered vault"), before);
+}
+
+#[test]
+fn an_empty_vault_file_is_never_reported_as_damage_and_is_reclaimable() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let path = vault_path(dir.path());
+    fs::write(&path, b"").expect("write an empty vault.json");
+
+    let error = VaultState::unlock(OLD_PASSWORD, path.clone())
+        .err()
+        .expect("an empty file is not a vault");
+    assert!(
+        matches!(error, VaultError::Uninitialized(_)),
+        "empty and damaged must not share an error: {error}"
+    );
+    assert!(!VaultState::exists(&path));
+    assert_eq!(fs::metadata(&path).expect("empty file").len(), 0);
+
+    let vault = VaultState::create(OLD_PASSWORD, path.clone()).expect("create over empty");
+    drop(vault);
+    assert!(VaultState::unlock(OLD_PASSWORD, path).is_ok());
+}
+
+/// A file with content is either a vault or damage, never a placeholder. Neither
+/// branch may rewrite it, so hand-edited or truncated files stay recoverable.
+#[test]
+fn content_the_format_cannot_read_is_damage_and_is_kept_byte_for_byte() {
+    let damaged: [&[u8]; 3] = [
+        b"{\"salt\":\"c29tZXNhbHQ\",\"entries\":{",
+        b"{\"salt\":\"c29tZXNhbHQ\"}",
+        b"this is not a vault at all",
+    ];
+
+    for bytes in damaged {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let path = vault_path(dir.path());
+        fs::write(&path, bytes).expect("write a damaged vault");
+
+        let error = VaultState::unlock(OLD_PASSWORD, path.clone())
+            .err()
+            .expect("a damaged file is not a vault");
+        assert!(
+            matches!(error, VaultError::Corrupt(_)),
+            "a file with content must never be classified as a placeholder: {error}"
+        );
+        assert!(
+            VaultState::exists(&path),
+            "a damaged vault still exists and must not be created over"
+        );
+        assert_eq!(
+            fs::read(&path).expect("read the damaged bytes"),
+            bytes.to_vec(),
+            "unlock must not rewrite a damaged vault"
+        );
+
+        assert!(matches!(
+            VaultState::create(NEW_PASSWORD, path.clone()).err(),
+            Some(VaultError::AlreadyExists)
+        ));
+        assert_eq!(
+            fs::read(&path).expect("read the damaged bytes"),
+            bytes.to_vec(),
+            "create must not overwrite a damaged vault"
+        );
+        assert_eq!(dir_entries(dir.path()), vec!["vault.json".to_string()]);
+    }
+}
+
+/// The claim is ours alone, so a failed first fill must clean up after itself and
+/// must not leave the path in a state that blocks the next create.
+#[test]
+fn a_failed_first_fill_leaves_no_vault_file_behind() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let path = vault_path(dir.path());
+
+    fault_injection::fail_write_after(4);
+    let failed = VaultState::create(OLD_PASSWORD, path.clone());
+    fault_injection::clear();
+
+    assert!(matches!(failed.err(), Some(VaultError::SaveFailed(_))));
+    assert!(
+        dir_entries(dir.path()).is_empty(),
+        "a failed first fill must leave neither a vault nor a temporary file: {:?}",
+        dir_entries(dir.path())
+    );
+    assert!(!VaultState::exists(&path));
+
+    let vault = VaultState::create(OLD_PASSWORD, path.clone()).expect("retry after a failure");
+    drop(vault);
+    assert!(VaultState::unlock(OLD_PASSWORD, path).is_ok());
+}
+
+/// Windows persistence: `CREATE_NEW` claims the path and the replace is
+/// `MoveFileExW(MOVEFILE_REPLACE_EXISTING)`, so the recovery path must replace
+/// the zero-length placeholder in one move and leave exactly one file.
+#[cfg(windows)]
+#[test]
+fn windows_reclaims_an_empty_placeholder_in_one_replace() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let path = vault_path(dir.path());
+
+    fault_injection::fail_after_claim();
+    let crashed = VaultState::create(OLD_PASSWORD, path.clone());
+    fault_injection::clear();
+    assert!(
+        crashed.is_err(),
+        "the injected crash must surface as an error"
+    );
+    assert_eq!(fs::metadata(&path).expect("placeholder").len(), 0);
+
+    let mut vault = VaultState::create(OLD_PASSWORD, path.clone()).expect("reclaim on windows");
+    vault.set("host", SECRET_VALUE).expect("store entry");
+    drop(vault);
+
+    assert!(opens_vault(&path, OLD_PASSWORD, "host"));
+    assert_eq!(dir_entries(dir.path()), vec!["vault.json".to_string()]);
+}

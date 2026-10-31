@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serde_json::Value;
+use sqlx::pool::PoolConnection;
 use sqlx::sqlite::{SqliteArguments, SqliteConnection};
 use sqlx::{query::Query, Pool, Sqlite};
 use tokio::sync::Mutex;
@@ -475,10 +476,45 @@ fn layout_arg(value: Option<&Value>) -> Option<SqlArg> {
     }
 }
 
-async fn rollback(conn: &mut SqliteConnection) {
-    if let Err(error) = sqlx::query(ROLLBACK).execute(&mut *conn).await {
-        tracing::warn!(error = %error, "import rollback reported a failure");
+/// Roll the transaction back, reporting whether the connection is clean again.
+async fn rollback(conn: &mut SqliteConnection) -> bool {
+    #[cfg(test)]
+    if fault_injection::take_rollback_failure() {
+        // Simulated broken connection: the transaction is left open on purpose,
+        // which is exactly the state a failed ROLLBACK leaves behind.
+        tracing::warn!("import rollback injected a failure");
+        return false;
     }
+
+    match sqlx::query(ROLLBACK).execute(&mut *conn).await {
+        Ok(_) => true,
+        Err(error) => {
+            tracing::warn!(error = %error, "import rollback reported a failure");
+            false
+        }
+    }
+}
+
+/// End a failed import without handing a dirty connection to the next borrower.
+///
+/// A `ROLLBACK` that fails can leave the transaction open. Releasing that
+/// connection to the pool would put every later statement of an unrelated
+/// caller inside a transaction belonging to a finished import, so the connection
+/// is closed instead: closing is the only release that cannot carry the
+/// transaction along, and the pool opens a fresh connection for whoever asks
+/// next.
+async fn finish_failed(mut conn: PoolConnection<Sqlite>, error: ImportError) -> ImportError {
+    if rollback(&mut conn).await {
+        return error;
+    }
+
+    if let Err(close_error) = conn.close().await {
+        tracing::warn!(
+            error = %close_error,
+            "import could not close the connection whose rollback failed"
+        );
+    }
+    error
 }
 
 /// Runs the whole import on one connection inside one transaction.
@@ -486,7 +522,8 @@ async fn rollback(conn: &mut SqliteConnection) {
 /// `budget` covers `BEGIN` through `COMMIT`; waiting for the process-wide
 /// import lock is not part of it, so a queued import cannot time out before it
 /// starts writing. A timeout or any statement error rolls back on the same
-/// connection that opened the transaction.
+/// connection that opened the transaction, and a rollback that itself fails
+/// closes that connection rather than returning it to the pool.
 pub async fn run_import(
     pool: &Pool<Sqlite>,
     payload: &ImportPayload,
@@ -529,13 +566,36 @@ pub async fn run_import(
             );
             Ok(report)
         }
-        Ok(Err(error)) => {
-            rollback(&mut conn).await;
-            Err(error)
-        }
-        Err(_elapsed) => {
-            rollback(&mut conn).await;
-            Err(ImportError::Timeout(budget))
-        }
+        Ok(Err(error)) => Err(finish_failed(conn, error).await),
+        Err(_elapsed) => Err(finish_failed(conn, ImportError::Timeout(budget)).await),
+    }
+}
+
+/// Test-only fault injection for the rollback seam.
+///
+/// The flag is thread-local and the test that arms it pins itself to a
+/// current-thread runtime, so an injected failure cannot reach a test running in
+/// parallel.
+#[cfg(test)]
+pub(super) mod fault_injection {
+    use std::cell::Cell;
+
+    thread_local! {
+        static ROLLBACK_FAILS: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// Arm the next failed import to be unable to roll back.
+    pub(in crate::db_import) fn fail_next_rollback() {
+        ROLLBACK_FAILS.with(|flag| flag.set(true));
+    }
+
+    /// Disarm the injection.
+    pub(in crate::db_import) fn clear() {
+        ROLLBACK_FAILS.with(|flag| flag.set(false));
+    }
+
+    /// Consume an armed failure, if any.
+    pub(super) fn take_rollback_failure() -> bool {
+        ROLLBACK_FAILS.with(|flag| flag.replace(false))
     }
 }
