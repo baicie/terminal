@@ -60,11 +60,24 @@ const teamColumnMigrations: TeamColumnMigration[] = [
   ...sharedColumns('team_shared_snippets'),
 ]
 
+/** Quote a SQL identifier for inlining; see the core schema module. */
+function quoteSqlIdentifier(name: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error('refusing to inline an unsafe SQL identifier: ' + name)
+  }
+  return '"' + name + '"'
+}
+
 async function pendingTeamColumnMigrations(
   database: SqliteConnection,
 ): Promise<TeamColumnMigration[]> {
-  const select = database.select
-  if (!select) return []
+  if (!database.select) return []
+  // Same two traps the core schema had (#59): the plugin's select is a class
+  // method that reads this.path, so it must stay bound to its instance, and a
+  // pragma table-valued function resolves its argument at prepare time so the
+  // table name has to be inlined rather than bound. Fixing only the core module
+  // left initialisation failing here, one stage later.
+  const select = database.select.bind(database)
   const pending: TeamColumnMigration[] = []
   for (const table of new Set(teamColumnMigrations.map(item => item.table))) {
     const existing = await select(
@@ -72,7 +85,9 @@ async function pendingTeamColumnMigrations(
       [table],
     )
     if (!Array.isArray(existing) || existing.length === 0) continue
-    const columns = await select('SELECT name FROM pragma_table_info(?)', [table])
+    const columns = await select(
+      'SELECT name FROM pragma_table_info(' + quoteSqlIdentifier(table) + ')',
+    )
     const present = new Set(
       (Array.isArray(columns) ? (columns as { name: string }[]) : []).map(
         column => column.name,
