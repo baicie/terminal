@@ -2,6 +2,7 @@
 import { isTauri } from '@tauri-apps/api/core'
 import { initializeCoreSchema } from './connection-schema-core'
 import { initializeTeamSchema } from './connection-schema-team'
+import { traceStage, traceStageFailed } from './startup-trace'
 
 async function loadDb() {
   const Database = (await import('@tauri-apps/plugin-sql')).default
@@ -23,13 +24,20 @@ function requireDb(): Database {
  * usable connection: the next getDb() call retries from scratch.
  */
 async function establishConnection(): Promise<Database> {
+  let stage = 'db-load-started'
   try {
+    traceStage(stage, 'sqlite:terminal.db')
     const database = await loadDb()
+    traceStage('db-pool-registered', 'the sql plugin returned a handle')
+    stage = 'schema-init'
     await initSchema(database)
+    stage = 'pragmas'
     await configureSqlite(database)
     db = database
+    traceStage('ready', 'connection cached')
     return database
   } catch (error) {
+    traceStageFailed(stage, error)
     // The app has no log plugin and no error bridge to Rust, so a failure here
     // is invisible to anything reading the process output. Console output does
     // reach the webview log, which the macOS install-verification harness now

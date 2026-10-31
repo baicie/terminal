@@ -85,9 +85,22 @@ pub async fn snapshot_before_migration(
 ) -> Result<BackupReport, BackupError> {
     prepare_destination(destination)?;
 
+    // Stage lines, not just a final error: when a bootstrap stalls, "the
+    // snapshot never finished" and "the snapshot was never attempted" are
+    // different problems and used to look identical from the outside (#59).
+    tracing::info!(target: "startup", stage = "vacuum-into-started", path = %destination.display(), "db bootstrap");
     let written = tokio::time::timeout(BACKUP_BUDGET, async {
         vacuum_into(pool, destination).await?;
-        verify_snapshot(pool, destination).await
+        tracing::info!(target: "startup", stage = "vacuum-into-finished", "db bootstrap");
+        let report = verify_snapshot(pool, destination).await?;
+        tracing::info!(
+            target: "startup",
+            stage = "snapshot-verification-finished",
+            tables = report.tables,
+            rows = report.rows,
+            "db bootstrap"
+        );
+        Ok::<_, BackupError>(report)
     })
     .await;
 

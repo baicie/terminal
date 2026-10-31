@@ -12,6 +12,8 @@
  *    statement runs at all and the caller sees the snapshot error.
  */
 
+import { traceStage } from './startup-trace'
+
 export interface SqliteConnection {
   execute: (sql: string, params?: unknown[]) => Promise<unknown>
   /** Row-returning queries. Absent on connections that only apply statements. */
@@ -194,7 +196,15 @@ export async function initializeCoreSchema(
   database: SqliteConnection,
 ): Promise<void> {
   const pending = await pendingColumnMigrations(database)
-  if (pending.length > 0) await ensurePreMigrationSnapshot(pending)
+  traceStage(
+    'pending-migrations-detected',
+    pending.length + ' column migration(s): ' + pending.map(entry => entry.column).join(','),
+  )
+  if (pending.length > 0) {
+    traceStage('snapshot-started', pending.length + ' migration(s) pending')
+    await ensurePreMigrationSnapshot(pending)
+    traceStage('snapshot-finished', 'the pre-migration snapshot was verified')
+  }
 
   for (const statement of schemaStatements.slice(0, 15))
     await database.execute(statement)
@@ -208,4 +218,5 @@ export async function initializeCoreSchema(
   }
   for (const statement of schemaStatements.slice(15))
     await database.execute(statement)
+  traceStage('core-schema-finished', schemaStatements.length + ' statement(s) applied')
 }

@@ -15,6 +15,7 @@ mod sftp;
 mod shell_interaction_probe;
 mod shutdown;
 mod ssh_host_key;
+mod startup_trace;
 mod state;
 mod storage;
 mod terminal_smoke;
@@ -240,6 +241,8 @@ pub fn run() {
             import_backup_data,
             // Pre-migration snapshot of the same database, verified before the
             // frontend is allowed to rewrite the schema
+            startup_trace::startup_stage,
+            startup_trace::startup_stage_failed,
             backup_database_before_migration,
             // Storage commands
             storage_init,
