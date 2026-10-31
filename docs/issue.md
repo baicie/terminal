@@ -3799,7 +3799,7 @@ ELIFECYCLE Command failed with exit code 1.
 
 ## 十三、Phase 8.9 发现的新问题（2026-11-01）
 
-### Issue #59: macOS 托管 runner 上应用未建完 SQLite schema ⚠️ 未修复
+### Issue #59: macOS 托管 runner 上应用未建完 SQLite schema ✅ 已修复（Phase 9.0）
 
 **严重程度**: 🟡 Important
 **状态**: ⚠️ 未修复
@@ -3819,6 +3819,22 @@ ELIFECYCLE Command failed with exit code 1.
 限制在 schema 初始化之前；或 `tauri-plugin-sql` 的 create_database 与 initSchema 之间有时序缺口。
 
 **注意**: 这条断言**没有为了让 CI 变绿而被放松**。它抓到的现象是真的。
+
+**Phase 9.0 已修复。根因有两层，都是同一类别的 bug，出现在两个模块里：**
+
+1. pendingColumnMigrations / pendingTeamColumnMigrations 用**绑定参数**调用 pragma 表值函数
+   （SELECT name FROM pragma_table_info(?)）。pragma 的参数在语句预处理阶段求值，绑定参数不可达。
+   改为校验后的字面量标识符（quoteSqlIdentifier）。
+2. 同一个函数把 database.select **取出后脱离实例调用**。插件的 select 是类方法、内部读 this.path，
+   脱离后抛 `undefined is not an object (evaluating this.path)`。改为 .bind(database)。
+
+两次都是单测全绿而真机全红，原因相同：**mock 比真实实现宽松**——
+mock 接受任意参数，且是普通函数不依赖 this。
+
+定位手段是 Phase 9.0 新增的启动阶段插桩（startup_stage / startup_stage_failed），
+它把「猜哪一层」变成「读哪一行」。此前靠读代码猜过四次（快照顺序、DB_KEY、水合条件、建表顺序）都错。
+
+**验证**：macOS 与 Windows 的安装链与数据保留验证首次通过；Linux 的全部断言（74 passed / 0 failed）也通过。
 
 ---
 
