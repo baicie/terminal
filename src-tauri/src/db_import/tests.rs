@@ -192,6 +192,21 @@ async fn settle() {
     }
 }
 
+/// `after_release` fires before the connection becomes visible as idle, so a
+/// single `num_idle()` read races the pool's release task: it passed locally
+/// and failed on CI once the scheduler differed. Polling closes that window
+/// without weakening the assertion - it still fails if the connection never
+/// comes back.
+async fn wait_for_idle(pool: &SqlitePool, expected: usize) -> usize {
+    for _ in 0..400 {
+        if pool.num_idle() == expected {
+            return expected;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    pool.num_idle()
+}
+
 fn projection(columns: &[&str]) -> String {
     columns
         .iter()
@@ -767,7 +782,7 @@ async fn a_failed_rollback_closes_the_connection_instead_of_returning_it() {
         "a clean rollback must hand the connection back to the pool"
     );
     assert_eq!(
-        pool.num_idle(),
+        wait_for_idle(&pool, 1).await,
         1,
         "the connection is reusable after a rollback"
     );
@@ -790,6 +805,10 @@ async fn a_failed_rollback_closes_the_connection_instead_of_returning_it() {
         before,
         "a connection whose rollback failed must not be released to the pool"
     );
+    // Give a (wrongly) returning connection time to show up before asserting
+    // that none did; polling for zero would pass instantly and prove nothing.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    settle().await;
     assert_eq!(
         pool.num_idle(),
         0,
