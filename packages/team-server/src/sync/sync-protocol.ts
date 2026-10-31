@@ -37,6 +37,15 @@ export interface ChangeWindowAnchor {
    * answered with the whole window or with an explicit upgrade demand.
    */
   legacy?: boolean
+  /**
+   * The frozen watermark of the window this position was issued under - for a
+   * bare number, the number itself. The membership scope of the window is
+   * reconstructed from it, because a position is only meaningful inside the
+   * scope it was cut for. `bound` cannot stand in: a finished run carries 0 there
+   * and only the reached txid, so the two fields are not interchangeable.
+   * See docs/phase8/sync-protocol.md §3.8.
+   */
+  issuedBound: bigint
 }
 
 /**
@@ -74,7 +83,13 @@ export function formatSyncCursor(
 
 function legacyAnchor(cursor: bigint, safeNow: bigint): ChangeWindowAnchor {
   if (cursor > safeNow) {
-    return { bound: safeNow, after: null, resync: true, legacy: true }
+    return {
+      bound: safeNow,
+      after: null,
+      resync: true,
+      legacy: true,
+      issuedBound: cursor,
+    }
   }
   // A single number only names a transaction boundary, so it resumes at "every
   // row of txid >= cursor": the same superset the legacy implementation read.
@@ -85,6 +100,7 @@ function legacyAnchor(cursor: bigint, safeNow: bigint): ChangeWindowAnchor {
     after: { txid: cursor, seq: -1n },
     resync: false,
     legacy: true,
+    issuedBound: cursor,
   }
 }
 
@@ -97,7 +113,12 @@ export function resolveChangeWindowAnchor(
   raw: string | number | undefined | null,
   safeNow: bigint,
 ): ChangeWindowAnchor {
-  const full: ChangeWindowAnchor = { bound: safeNow, after: null, resync: true }
+  const full: ChangeWindowAnchor = {
+    bound: safeNow,
+    after: null,
+    resync: true,
+    issuedBound: safeNow,
+  }
   if (raw === undefined || raw === null) return full
   const text = String(raw).trim()
   if (text === '') return full
@@ -114,10 +135,15 @@ export function resolveChangeWindowAnchor(
   if (bound === 0n) {
     // Finished run: everything below txid is delivered, so resume at txid itself.
     if (seq !== 0n || txid > safeNow) return full
-    return { bound: safeNow, after: { txid, seq: -1n }, resync: false }
+    return {
+      bound: safeNow,
+      after: { txid, seq: -1n },
+      resync: false,
+      issuedBound: txid,
+    }
   }
   if (bound > safeNow || txid > bound) return full
-  return { bound, after: { txid, seq }, resync: false }
+  return { bound, after: { txid, seq }, resync: false, issuedBound: bound }
 }
 
 export function parseVersion(value: bigint | number | string): number {

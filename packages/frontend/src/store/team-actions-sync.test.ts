@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   pushChanges: vi.fn(),
   removeSharedHost: vi.fn(),
   removeSharedSnippet: vi.fn(),
+  removeUnauthorizedTeamShares: vi.fn(),
 }))
 
 vi.mock('@/service/database', () => ({
@@ -21,6 +22,7 @@ vi.mock('@/service/database', () => ({
   addSharedSnippet: mocks.addSharedSnippet,
   removeSharedHost: mocks.removeSharedHost,
   removeSharedSnippet: mocks.removeSharedSnippet,
+  removeUnauthorizedTeamShares: mocks.removeUnauthorizedTeamShares,
 }))
 vi.mock('@/service/team-api', () => ({
   convertApiShare: mocks.convertApiShare,
@@ -76,7 +78,6 @@ function createHarness(overrides: Partial<TeamState> = {}): Harness {
 const SCOPE = {
   endpoint: 'https://team.example.test',
   userId: 'user-1',
-  teamId: 'team-1',
 }
 const LEGACY_KEY = 'terminal.team.syncCursor'
 const PAGE_ONE = '2.00000000000000000042.00000000000000000007.00000000000000000003'
@@ -147,36 +148,75 @@ it('keeps conflicts from an earlier run instead of clearing them', async () => {
   expect(harness.state().syncError).toBeNull()
 })
 
-it('keeps one cursor per server, user, team and protocol generation', () => {
+it('keeps one cursor per server, identity and protocol generation', () => {
   const keys = new Set([
     syncCursorStorageKey(SCOPE),
     syncCursorStorageKey({ ...SCOPE, endpoint: 'https://other.example.test' }),
     syncCursorStorageKey({ ...SCOPE, userId: 'user-2' }),
-    syncCursorStorageKey({ ...SCOPE, teamId: 'team-2' }),
   ])
 
-  expect(keys.size).toBe(4)
+  expect(keys.size).toBe(3)
   for (const key of keys) {
     expect(key).toContain('terminal.team.syncCursor:v2:')
+    // prefix + generation + endpoint + identity: the scope is one server and one
+    // identity. A team segment would claim an isolation the window does not have
+    // (docs/phase8/sync-protocol.md §3.8).
+    expect(key.split(':')).toHaveLength(4)
   }
 })
 
-it('adopts the legacy global cursor once and then replays it verbatim', async () => {
+it('resumes the same window after switching the current team', async () => {
   mocks.getChanges.mockResolvedValue({
-    data: { shares: [], deletedShareIds: [], cursor: PAGE_ONE, hasMore: false },
+    data: {
+      shares: [],
+      deletedShareIds: [],
+      cursor: PAGE_ONE,
+      hasMore: false,
+      userId: 'user-1',
+      teams: ['team-1', 'team-2'],
+    },
+  })
+  const harness = createHarness()
+
+  await harness.actions.sync()
+  expect(mocks.getChanges.mock.calls[0][0]).toBeUndefined()
+
+  const switched = harness.state().currentTeam
+  expect(switched).not.toBeNull()
+  switched!.id = 'team-2'
+  switched!.name = 'Other'
+  harness.state().settings.currentTeamId = 'team-2'
+  await harness.actions.sync()
+
+  // One identity, one position: the window covers both teams, so switching the
+  // selected team must not restart from nothing nor keep a second position.
+  expect(mocks.getChanges.mock.calls[1][0]).toBe(PAGE_ONE)
+})
+
+it('discards the legacy global cursor instead of porting it into a scope', async () => {
+  mocks.getChanges.mockResolvedValue({
+    data: {
+      shares: [],
+      deletedShareIds: [],
+      cursor: PAGE_ONE,
+      hasMore: false,
+      userId: 'user-1',
+      teams: ['team-1'],
+    },
   })
   globalThis.localStorage.setItem(LEGACY_KEY, PAGE_ONE)
   const harness = createHarness()
 
   await harness.actions.sync()
 
-  expect(mocks.getChanges.mock.calls[0][0]).toBe(PAGE_ONE)
+  // A global cursor names no server and no identity, so it cannot be proven to
+  // belong here: the round asks for the whole window instead of resuming.
+  expect(mocks.getChanges.mock.calls[0][0]).toBeUndefined()
   expect(globalThis.localStorage.getItem(LEGACY_KEY)).toBeNull()
-  const namespaced = syncCursorStorageKey(SCOPE)
-  expect(globalThis.localStorage.getItem(namespaced)).toBe(PAGE_ONE)
-
-  await harness.actions.sync()
-  expect(mocks.getChanges.mock.calls[1][0]).toBe(PAGE_ONE)
+  // The cursor the server issued for this scope is stored as usual.
+  expect(globalThis.localStorage.getItem(syncCursorStorageKey(SCOPE))).toBe(
+    PAGE_ONE,
+  )
 })
 
 it('drops a legacy value that is not a cursor instead of replaying it', async () => {
@@ -290,4 +330,85 @@ it('declares UPDATE with the stored version and CREATE for an unsynced share', a
   })
   expect(pushed[1]).toMatchObject({ id: 'shared-local', operation: 'CREATE' })
   expect('baseVersion' in pushed[1]).toBe(false)
+})
+
+it('drops the local rows of teams the server no longer authorizes', async () => {
+  mocks.getChanges.mockResolvedValue({
+    data: {
+      shares: [],
+      deletedShareIds: [],
+      cursor: PAGE_ONE,
+      hasMore: false,
+      userId: 'user-1',
+      teams: ['team-1'],
+    },
+  })
+  const harness = createHarness()
+
+  await harness.actions.sync()
+
+  expect(mocks.removeUnauthorizedTeamShares).toHaveBeenCalledWith(['team-1'])
+  expect(harness.state().syncError).toBeNull()
+})
+
+it('refuses a snapshot that names no team instead of filing it under the current team', async () => {
+  mocks.getChanges.mockResolvedValue({
+    data: {
+      shares: [share({ id: 'share-unowned', teamId: '' })],
+      deletedShareIds: [],
+      cursor: PAGE_ONE,
+      hasMore: false,
+      userId: 'user-1',
+      teams: ['team-1'],
+    },
+  })
+  const harness = createHarness()
+
+  await harness.actions.sync()
+
+  expect(mocks.addSharedHost).not.toHaveBeenCalled()
+  expect(harness.state().syncError).toContain('carries no teamId')
+  // A refused page must not advance the position, or the row would be gone.
+  expect(globalThis.localStorage.getItem(syncCursorStorageKey(SCOPE))).toBeNull()
+})
+
+it('refuses a snapshot from a team outside the scope the server reported', async () => {
+  mocks.getChanges.mockResolvedValue({
+    data: {
+      shares: [share({ id: 'share-foreign', teamId: 'team-foreign' })],
+      deletedShareIds: [],
+      cursor: PAGE_ONE,
+      hasMore: false,
+      userId: 'user-1',
+      teams: ['team-1'],
+    },
+  })
+  const harness = createHarness()
+
+  await harness.actions.sync()
+
+  expect(mocks.addSharedHost).not.toHaveBeenCalled()
+  expect(harness.state().syncError).toContain('may not read')
+})
+
+it('never files another identity\'s answer under this scope', async () => {
+  mocks.getChanges.mockResolvedValue({
+    data: {
+      shares: [share({ id: 'share-other-identity' })],
+      deletedShareIds: [],
+      cursor: PAGE_ONE,
+      hasMore: false,
+      userId: 'user-2',
+      teams: ['team-1'],
+    },
+  })
+  globalThis.localStorage.setItem(syncCursorStorageKey(SCOPE), PAGE_TWO)
+  const harness = createHarness()
+
+  await harness.actions.sync()
+
+  expect(mocks.addSharedHost).not.toHaveBeenCalled()
+  expect(harness.state().syncError).toContain('Sync identity mismatch')
+  // The position cannot be proven to belong to this identity: drop it.
+  expect(globalThis.localStorage.getItem(syncCursorStorageKey(SCOPE))).toBeNull()
 })

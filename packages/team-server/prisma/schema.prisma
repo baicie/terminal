@@ -51,6 +51,10 @@ model TeamMember {
   userEmail String?
   role      Role     @default(MEMBER)
   joinedAt  DateTime @default(now())
+  // Server-side transaction id of the join, never an application clock: a sync
+  // cursor is only resumed while no membership was created at or after it
+  // (docs/phase8/sync-protocol.md §3.8).
+  joinedTxid BigInt  @default(dbgenerated("pg_current_xact_id()::text::bigint"))
 
   @@unique([teamId, userId])
 }

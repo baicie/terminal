@@ -27,22 +27,24 @@ export class SyncService extends OfflineSyncService {
   }
 
   /**
-   * Incremental pull driven by a composite server cursor, never by a clock: a
-   * transaction that commits after the read is delivered by the next round.
+   * Incremental pull driven by a composite server cursor, never by a clock. The
+   * scope is the caller's complete membership set - decided here, on every
+   * request, never a team the client names - and it is echoed back together with
+   * the identity that answered, so the client can attribute each row, detect a
+   * switched credential and drop what it may no longer read.
    */
   async getChanges(
     userId: string,
     cursor?: number | string,
-  ): Promise<IncrementalSyncResult> {
+  ): Promise<IncrementalSyncResult & { userId: string, teams: string[] }> {
     const memberships = await this.prisma.teamMember.findMany(
-      { where: { userId }, select: { teamId: true } },
+      { where: { userId }, select: { teamId: true, joinedTxid: true } },
     )
-    const { watermark, upgradeRequired, ...page } = await readChangeWindow(
-      this.prisma,
-      memberships.map(membership => membership.teamId),
-      cursor,
-    )
+    const { watermark, upgradeRequired, ...page }
+      = await readChangeWindow(this.prisma, memberships, cursor)
     return {
+      userId,
+      teams: memberships.map(membership => membership.teamId),
       timestamp: watermark,
       upgradeRequired: upgradeRequired === true,
       requiredCursorVersion: SYNC_CURSOR_VERSION,

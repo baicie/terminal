@@ -1,4 +1,8 @@
-import { addSharedHost, addSharedSnippet } from '@/service/database'
+import {
+  addSharedHost,
+  addSharedSnippet,
+  removeUnauthorizedTeamShares,
+} from '@/service/database'
 import { teamApi } from '@/service/team-api'
 import type { TeamState } from './team-types'
 import type { TeamStoreGet, TeamStoreSet } from './team-store-context'
@@ -89,22 +93,27 @@ export function createSyncActions(
       // A second run while one is in flight would push the same shares twice
       // and let the two runs overwrite each other's state.
       if (isSyncing) return
-      // The cursor belongs to a server/user/team namespace: without all three
-      // identities it cannot be attributed, so this round simply has none and
-      // the server answers with a full resnapshot.
+      // The cursor belongs to one server and one identity, never to one team:
+      // the window covers every team this identity may read, and the server
+      // redecides that scope on each request (docs/phase8/sync-protocol.md §3.8).
+      // Without both identities it cannot be attributed, so this round has none
+      // and the server answers with a full resnapshot.
       const scope: SyncCursorScope | null
         = settings.endpoint && userProfile?.id
-          ? {
-              endpoint: settings.endpoint,
-              userId: userProfile.id,
-              teamId: currentTeam.id,
-            }
+          ? { endpoint: settings.endpoint, userId: userProfile.id }
           : null
       // Conflicts from an earlier run stay visible until they are resolved;
       // clearing them here hid unreviewed conflicts behind a fresh sync.
       set({ isSyncing: true, syncError: null })
       try {
-        const pullConflicts = await pullChanges(get, scope, currentTeam.id)
+        const pull = await pullChanges(get, scope)
+        // Teams this identity may no longer read lose their local rows before
+        // anything is reloaded or pushed: keeping them would leave revoked data
+        // readable offline, and pushing them would aim writes at a team the
+        // server has already refused.
+        if (pull.authorizedTeams !== null) {
+          await removeUnauthorizedTeamShares(pull.authorizedTeams)
+        }
         // Reload before pushing, so the push starts from the versions that just
         // landed instead of a snapshot taken before the pull advanced them.
         await get().loadSharedHosts(currentTeam.id)
@@ -112,7 +121,7 @@ export function createSyncActions(
         const pushConflicts = await pushLocalShares(get, currentTeam.id)
         set(state => ({
           syncConflicts: mergeConflicts(state.syncConflicts, [
-            ...pullConflicts,
+            ...pull.conflicts,
             ...pushConflicts,
           ]),
         }))

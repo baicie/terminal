@@ -7,89 +7,25 @@ import {
 import { convertApiShare, teamApi } from '@/service/team-api'
 import type { SharedHost, SharedSnippet, SyncConflict } from './team-types'
 import type { TeamStoreGet } from './team-store-context'
+import type { SyncCursorScope } from './team-sync-cursor'
+import {
+  CURSOR_PATTERN,
+  dropStoredCursor,
+  readStoredCursor,
+  storeCursor,
+} from './team-sync-cursor'
 
-const SYNC_CURSOR_KEY_PREFIX = 'terminal.team.syncCursor'
-/** Cursor generation of this client; another generation never collides. */
-const SYNC_CURSOR_PROTOCOL_VERSION = '2'
-/** The single global key of the previous release; adopted once, then removed. */
-const LEGACY_SYNC_CURSOR_KEY = SYNC_CURSOR_KEY_PREFIX
-/**
- * The cursor is opaque and server issued: stored verbatim, replayed verbatim,
- * never parsed into numbers (docs/phase8/sync-protocol.md §5).
- */
-export const CURSOR_PATTERN = /^\d{1,20}(?:\.\d{1,20})*$/
+// Cursor storage lives in its own module; re-exported so callers keep one import.
+export type { SyncCursorScope } from './team-sync-cursor'
+export {
+  CURSOR_PATTERN,
+  readStoredCursor,
+  storeCursor,
+  syncCursorStorageKey,
+} from './team-sync-cursor'
+
 /** Bound on pages per round so a broken `hasMore` cannot loop forever. */
 const MAX_SYNC_PAGES = 25
-
-/** Process-local fallback for hosts without localStorage (node, memory only). */
-const memoryCursors = new Map<string, string>()
-
-export interface SyncCursorScope {
-  endpoint: string
-  userId: string
-  teamId: string
-}
-
-/**
- * One cursor per server, user, team and protocol generation: a single global key
- * let one namespace resume with another's position after switching server, user
- * or team, which silently skips changes or rescans everything.
- */
-export function syncCursorStorageKey(scope: SyncCursorScope): string {
-  const endpoint = scope.endpoint.trim().replace(/\/+$/, '')
-  return [
-    SYNC_CURSOR_KEY_PREFIX,
-    `v${SYNC_CURSOR_PROTOCOL_VERSION}`,
-    encodeURIComponent(endpoint),
-    encodeURIComponent(scope.userId),
-    encodeURIComponent(scope.teamId),
-  ].join(':')
-}
-
-function storage(): Storage | null {
-  try {
-    return globalThis.localStorage ?? null
-  } catch {
-    return null
-  }
-}
-
-/**
- * A global cursor cannot be attributed to a namespace, so it is handed to the one
- * being synced now - the only one it can belong to - and deleted in the same step
- * so it is never adopted twice. A wrong adoption is harmless: the server validates
- * the cursor against its own watermark and answers with a full resnapshot.
- */
-function adoptLegacyCursor(store: Storage, key: string): void {
-  const legacy = store.getItem(LEGACY_SYNC_CURSOR_KEY)
-  if (legacy === null) return
-  store.removeItem(LEGACY_SYNC_CURSOR_KEY)
-  if (store.getItem(key) !== null) return
-  if (CURSOR_PATTERN.test(legacy)) store.setItem(key, legacy)
-}
-
-export function readStoredCursor(scope: SyncCursorScope): string | null {
-  const key = syncCursorStorageKey(scope)
-  const store = storage()
-  if (!store) return memoryCursors.get(key) ?? null
-  adoptLegacyCursor(store, key)
-  const raw = store.getItem(key)
-  if (raw === null) return null
-  if (CURSOR_PATTERN.test(raw)) return raw
-  // Unusable: drop it so the server answers with a resnapshot, never a guess.
-  store.removeItem(key)
-  return null
-}
-
-export function storeCursor(scope: SyncCursorScope, cursor: string): void {
-  const key = syncCursorStorageKey(scope)
-  const store = storage()
-  if (!store) {
-    memoryCursors.set(key, cursor)
-    return
-  }
-  store.setItem(key, cursor)
-}
 
 export type LocalShare =
   | (SharedHost & { _type: 'HOST' })
@@ -146,6 +82,41 @@ export interface ChangeWindowPayload {
   deletedShareIds?: string[]
   cursor?: string
   hasMore?: boolean
+  /** Identity that answered, as the server sees it; compared with the scope. */
+  userId?: string
+  /** Teams the caller may read right now - the scope the window actually used. */
+  teams?: string[]
+}
+
+/** What one pull produced: its conflicts, and the scope the server reported. */
+export interface PullOutcome {
+  conflicts: SyncConflict[]
+  /**
+   * Authorized team ids, or null when the response carried no scope (an older
+   * server). Only this list may decide which local teams survive.
+   */
+  authorizedTeams: string[] | null
+}
+
+/**
+ * The record's own team id is the only attribution a snapshot may use. The
+ * current team and any default are guesses, and a guessed team files another
+ * team's row under an owner the user never authorized, where it is then read as
+ * if it belonged there. A row that names no team, or names a team outside the
+ * scope the server reported for this same round, is refused instead
+ * (docs/phase8/sync-protocol.md §4).
+ */
+function attributedTeam(apiShare: SharePayload, authorizedTeams: string[] | null): string {
+  const teamId = typeof apiShare.teamId === 'string' ? apiShare.teamId.trim() : ''
+  if (teamId === '') {
+    throw new Error(`Sync record ${apiShare.id} carries no teamId`)
+  }
+  if (authorizedTeams !== null && !authorizedTeams.includes(teamId)) {
+    throw new Error(
+      `Sync record ${apiShare.id} belongs to team ${teamId}, which this identity may not read`,
+    )
+  }
+  return teamId
 }
 
 /**
@@ -158,7 +129,7 @@ export interface ChangeWindowPayload {
 export async function applyWindow(
   get: TeamStoreGet,
   window: ChangeWindowPayload,
-  currentTeamId: string,
+  authorizedTeams: string[] | null,
 ): Promise<SyncConflict[]> {
   for (const shareId of window.deletedShareIds ?? []) {
     await removeSharedHost(shareId)
@@ -166,16 +137,13 @@ export async function applyWindow(
   }
   const conflicts: SyncConflict[] = []
   for (const apiShare of window.shares ?? []) {
-    // The team comes from the record itself: one window may span teams.
-    const converted = convertApiShare({
-      ...apiShare,
-      teamId: apiShare.teamId || currentTeamId,
-    })
+    const teamId = attributedTeam(apiShare, authorizedTeams)
+    const converted = convertApiShare({ ...apiShare, teamId })
     const isHost = 'hostData' in converted
     const data = shareData(converted)
     const record = {
       id: converted.id,
-      team_id: converted.teamId || currentTeamId,
+      team_id: teamId,
       shared_by: converted.sharedBy,
       permission: converted.permission,
       created_at: converted.createdAt,
@@ -207,29 +175,51 @@ export async function applyWindow(
  * Pulls pages until the window is exhausted. A page's cursor is committed only
  * after every change of that page landed, so an interruption re-delivers a page
  * instead of skipping one, and the idempotent upsert makes that replay converge.
+ *
+ * The window spans every team this identity is a member of, decided by the
+ * server on each request (docs/phase8/sync-protocol.md §3.8), so nothing here may
+ * assume the current team.
  */
 export async function pullChanges(
   get: TeamStoreGet,
   scope: SyncCursorScope | null,
-  currentTeamId: string,
-): Promise<SyncConflict[]> {
+): Promise<PullOutcome> {
   const conflicts: SyncConflict[] = []
   let cursor = scope === null ? null : readStoredCursor(scope)
+  let authorizedTeams: string[] | null = null
   for (let page = 0; page < MAX_SYNC_PAGES; page += 1) {
     const response = await teamApi.getChanges(cursor ?? undefined)
     if (response.error) throw new Error(response.error)
-    const window = response.data
-    if (!window) return conflicts
-    conflicts.push(...(await applyWindow(get, window, currentTeamId)))
+    // The wire payload is read through the scope fields this module declares: the
+    // API type is generated from an older shape and must not be the contract here.
+    const window = response.data as ChangeWindowPayload | null | undefined
+    if (!window) break
+    // A token can name another identity than the profile this cursor was stored
+    // under. Its rows and its cursor both belong to that other identity, so the
+    // round stops before a single change is written or persisted.
+    if (
+      scope !== null
+      && typeof window.userId === 'string'
+      && window.userId !== scope.userId
+    ) {
+      dropStoredCursor(scope)
+      throw new Error(
+        `Sync identity mismatch: server answered as ${window.userId}, stored cursor belongs to ${scope.userId}`,
+      )
+    }
+    if (authorizedTeams === null && Array.isArray(window.teams)) {
+      authorizedTeams = window.teams
+    }
+    conflicts.push(...(await applyWindow(get, window, authorizedTeams)))
     const next = typeof window.cursor === 'string'
       && CURSOR_PATTERN.test(window.cursor)
       ? window.cursor
       : null
     if (next !== null && scope !== null) storeCursor(scope, next)
-    if (!window.hasMore || next === null || next === cursor) return conflicts
+    if (!window.hasMore || next === null || next === cursor) break
     cursor = next
   }
-  return conflicts
+  return { conflicts, authorizedTeams }
 }
 
 /**

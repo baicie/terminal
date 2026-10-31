@@ -185,7 +185,9 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
     const get = () => state
     const data = createDataActions(set as never, get)
     const sync = createSyncActions(set as never, get)
-    const key = () => syncCursorStorageKey({ endpoint, userId, teamId })
+    // The cursor scope is one server and one identity: teams are decided by the
+    // server on every request, so no team takes part in the storage key.
+    const key = () => syncCursorStorageKey({ endpoint, userId })
 
     return {
       name,
@@ -516,5 +518,203 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
     await clientB.sync()
     expect(requests[0].since).toMatch(CURSOR_PATTERN)
     snapshot('server switch isolated the cursor', secondId)
+  })
+
+  // ---- Phase 9.0 P9.0-2：同步作用域与成员关系变化（真实 PostgreSQL + 真实客户端 store）----
+  // 作用域由服务端在每次请求时决定：该用户当前的**完整成员集合**。游标只是这个集合
+  // 内部的位置，因此「加入 / 退出 / 换身份」都必须体现为作用域变化，而不是沿用旧位置。
+  describe('同步作用域与成员关系变化（P9.0-2）', () => {
+    const LEGACY_GLOBAL_KEY = 'terminal.team.syncCursor'
+    let scopeClient: ClientHandle
+    let historyTeamId = ''
+
+    function localRows(client: ClientHandle, team?: string): number {
+      const row = (team === undefined
+        ? client.db.prepare('SELECT count(*) AS n FROM team_shared_hosts').get()
+        : client.db
+            .prepare(
+              'SELECT count(*) AS n FROM team_shared_hosts WHERE team_id = ?',
+            )
+            .get(team)) as { n: number } | undefined
+      return Number(row?.n ?? 0)
+    }
+
+    /** 客户端本地也要有 teams 行，才和真实流程一致（团队列表先落库）。 */
+    function addLocalTeam(client: ClientHandle, id: string, name: string): void {
+      client.db
+        .prepare(
+          `INSERT OR IGNORE INTO teams (id, name, owner_id, mode, auto_sync, created_at, updated_at)
+           VALUES (?, ?, ?, 'cloud', 0, ?, ?)`,
+        )
+        .run(id, name, client.userId, Date.now(), Date.now())
+    }
+
+    /** 该用户当前全部团队都先落到本地，模拟「团队列表同步后拉共享」。 */
+    async function seedLocalTeams(client: ClientHandle): Promise<void> {
+      const memberships = await prisma.teamMember.findMany({
+        where: { userId: client.userId },
+        select: { teamId: true },
+      })
+      for (const membership of memberships) {
+        addLocalTeam(client, membership.teamId, membership.teamId)
+      }
+    }
+
+    /** 一个团队 + count 条历史共享，全部在同一个事务里提交。 */
+    async function createHistoryTeam(prefix: string, count: number): Promise<string> {
+      const team = await prisma.team.create({
+        data: { name: `${prefix} Team`, ownerId: USER_B },
+      })
+      await prisma.teamMember.create({
+        data: { teamId: team.id, userId: USER_B, role: 'ADMIN' },
+      })
+      await raw.query('BEGIN')
+      try {
+        await raw.query(
+          `INSERT INTO "Share" (id, "teamId", type, data, "sharedBy", permission, "isSensitive", "createdAt", "updatedAt")
+           SELECT $1 || g, $2, 'HOST', jsonb_build_object('host', $1 || g), $3, 'READONLY', false, NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC'
+             FROM generate_series(1, $4::int) AS g`,
+          [prefix, team.id, USER_B, count],
+        )
+        await raw.query('COMMIT')
+      } catch (error) {
+        await raw.query('ROLLBACK')
+        throw error
+      }
+      return team.id
+    }
+
+    /** 游标是服务端位置 (bound, txid, seq)：这里只取续拉会用到的 txid。 */
+    function cursorPosition(cursor: string | null): bigint {
+      const parts = String(cursor).split('.')
+      expect(parts).toHaveLength(4)
+      return BigInt(parts[2])
+    }
+
+    it('A 加入拥有 500 条历史记录的团队后必须拿到该团队的全部历史', async () => {
+      globalThis.localStorage.clear()
+      // 500 条历史先提交，客户端随后才第一次同步：于是它们的 txid 全部早于游标。
+      historyTeamId = await createHistoryTeam('scope-history-', 500)
+      scopeClient = await createClient('scope-A', USER_A, TOKEN_A)
+      await scopeClient.sync()
+      expect(scopeClient.state().syncError).toBeNull()
+      const stored = scopeClient.cursor()
+      expect(stored).toMatch(CURSOR_PATTERN)
+      const position = cursorPosition(stored)
+      // 改前行为的证据：这 500 条变更全部早于游标位置，因此「沿用游标续拉」的窗口
+      // (txid > position) 里一条都没有 —— 旧实现就是这样把新团队的历史永久跳过的。
+      const below = await raw.query(
+        'SELECT count(*)::int AS n FROM "SyncChange" WHERE "teamId" = $1 AND "txid" < $2',
+        [historyTeamId, position.toString()],
+      )
+      const beforeJoin = localRows(scopeClient, historyTeamId)
+      console.log(
+        `[A] 游标位置=${position} 早于游标的该团队变更=${below.rows[0].n} 加入前本地行数=${beforeJoin}`,
+      )
+      expect(below.rows[0].n).toBe(500)
+      expect(beforeJoin).toBe(0)
+      expect(scopeClient.state().currentTeam.id).toBe(teamId)
+
+      // 加入：成员行的事务号晚于游标位置，服务端据此判定位置不可信。
+      const membership = await prisma.teamMember.create({
+        data: { teamId: historyTeamId, userId: USER_A, role: 'MEMBER' },
+      })
+      // 加入事务号不早于游标位置：xid 分配可能正好等于冻结的水位（游标 bound 就是
+      // 下次分配的第一个 xid），所以判定必须是 >=，相等同样不可信。
+      expect(membership.joinedTxid).toBeGreaterThanOrEqual(position)
+      addLocalTeam(scopeClient, historyTeamId, 'History Team')
+
+      await scopeClient.sync()
+      expect(scopeClient.state().syncError).toBeNull()
+      const afterJoin = localRows(scopeClient, historyTeamId)
+      console.log(
+        `[A] 加入后本地该团队行数=${afterJoin} 总行数=${localRows(scopeClient)}`,
+      )
+      expect(afterJoin).toBe(500)
+    })
+
+    it('E 落库以服务端 teamId 与授权作用域为准，不归入 currentTeam', async () => {
+      expect(scopeClient.state().currentTeam.id).toBe(teamId)
+      const distinct = (
+        scopeClient.db
+          .prepare('SELECT DISTINCT team_id AS id FROM team_shared_hosts')
+          .all() as Array<{ id: string }>
+      ).map(row => row.id)
+      const authorized = (await service.getChanges(USER_A)).teams
+      console.log(
+        `[E] currentTeam=${scopeClient.state().currentTeam.id} 本地团队=${distinct.join(',')} 服务端授权=${authorized.join(',')}`,
+      )
+      // 新团队的数据只能落在它自己的 team_id 下，不能被 currentTeam 吸收。
+      expect(distinct).toContain(historyTeamId)
+      expect(distinct).toContain(teamId)
+      expect(new Set(distinct).size).toBe(2)
+      for (const id of distinct) expect(authorized).toContain(id)
+    })
+
+    it('B 退出或被移出团队后不得继续保留或读取该团队的数据', async () => {
+      const position = cursorPosition(scopeClient.cursor())
+      await prisma.teamMember.delete({
+        where: {
+          teamId_userId: { teamId: historyTeamId, userId: USER_A },
+        },
+      })
+
+      // 服务端侧：即便拿着同一个游标，也不再返回该团队的授权数据。
+      const direct = await service.getChanges(USER_A, scopeClient.cursor() ?? undefined)
+      const leaked = direct.shares.filter(share => share.teamId === historyTeamId)
+      console.log(
+        `[B] 授权团队=${direct.teams.join(',')} 越权返回条数=${leaked.length} 游标位置=${position}`,
+      )
+      expect(direct.teams).not.toContain(historyTeamId)
+      expect(leaked).toHaveLength(0)
+
+      // 客户端侧：授权集合缩小后，本地该团队的数据必须被清除。
+      await scopeClient.sync()
+      expect(scopeClient.state().syncError).toBeNull()
+      const remaining = localRows(scopeClient, historyTeamId)
+      console.log(`[B] 退出后本地该团队行数=${remaining}`)
+      expect(remaining).toBe(0)
+      const stillAuthorized = localRows(scopeClient, teamId)
+      expect(stillAuthorized).toBeGreaterThan(0)
+    })
+
+    it('C 切换账户 / API Token 后不得继承另一身份的游标或数据', async () => {
+      globalThis.localStorage.clear()
+      // 同一个 endpoint、同一个本地 profile id，但 token 属于另一个账户。
+      const switched = await createClient('scope-C-switch', USER_A, TOKEN_B)
+      await switched.sync()
+      console.log(
+        `[C] 串号后 syncError=${String(switched.state().syncError)} 已落库行数=${localRows(switched)} 游标=${String(switched.cursor())}`,
+      )
+      expect(String(switched.state().syncError)).toContain('Sync identity mismatch')
+      expect(localRows(switched)).toBe(0)
+      expect(switched.cursor()).toBeNull()
+
+      // 正常的账户切换：另一个 profile 有另一个键，不会继承 user A 的游标。
+      const other = await createClient('scope-C-other', USER_B, TOKEN_B)
+      await seedLocalTeams(other)
+      requests.length = 0
+      await other.sync()
+      expect(requests[0]).toMatchObject({ path: '/sync', since: null })
+      expect(other.state().syncError).toBeNull()
+    })
+
+    it('D 旧全局游标来源不可证明，只能重新完整同步', async () => {
+      globalThis.localStorage.clear()
+      // 形状合法、但没有任何服务器或身份归属的旧全局键。
+      const legacyCursor
+        = '2.00000000000000000000.00000000000000000001.00000000000000000000'
+      globalThis.localStorage.setItem(LEGACY_GLOBAL_KEY, legacyCursor)
+      const fresh = await createClient('scope-D', USER_A, TOKEN_A)
+      requests.length = 0
+      await fresh.sync()
+      console.log(
+        `[D] 首次请求 since=${String(requests[0]?.since)} 旧键=${String(globalThis.localStorage.getItem(LEGACY_GLOBAL_KEY))} 新键游标=${String(fresh.cursor())}`,
+      )
+      expect(requests[0]).toMatchObject({ path: '/sync', since: null })
+      expect(globalThis.localStorage.getItem(LEGACY_GLOBAL_KEY)).toBeNull()
+      expect(fresh.cursor()).toMatch(CURSOR_PATTERN)
+      expect(fresh.state().syncError).toBeNull()
+    })
   })
 })

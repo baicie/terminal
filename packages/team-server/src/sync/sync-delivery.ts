@@ -19,6 +19,65 @@ import {
  */
 export const LEGACY_FULL_DELIVERY_LIMIT = 5000
 
+/** One membership as the scope resolver sees it: which team, and when it joined. */
+export interface SyncScopeMember {
+  teamId: string
+  /**
+   * Transaction id of the membership row's creation (TeamMember.joinedTxid).
+   * Absent means "no evidence either way" and never invalidates a cursor, which
+   * is what a migration backfill or a test double without the column looks like.
+   */
+  joinedTxid?: bigint | number | string | null
+}
+
+function membershipTxid(member: SyncScopeMember): bigint | null {
+  const raw = member.joinedTxid
+  if (raw === null || raw === undefined) return null
+  return typeof raw === 'bigint' ? raw : BigInt(raw)
+}
+
+/**
+ * The pull scope is the caller's complete membership set, decided by the server
+ * on every request. A cursor position is only a position *inside the scope it was
+ * cut for*, and that scope is exactly the memberships that already existed when
+ * the window was frozen. Reconstructing it from `issuedBound` keeps every page of
+ * one run on the same scope (a join that lands mid-run cannot splice half a
+ * team's history into the middle of a window), and a team joined at or after that
+ * bound never had its history inside the window, so resuming there would start
+ * past it and skip it forever - silently. Such a position is discarded and the
+ * whole window is delivered instead, never a guess (docs/phase8/sync-protocol.md
+ * §3.8). Protocol-1 numeric cursors go through the same rule.
+ */
+function scopeAnchor(
+  anchor: ChangeWindowAnchor,
+  members: SyncScopeMember[],
+): ChangeWindowAnchor {
+  if (anchor.after === null) return anchor
+  const joinedLater = members.some((member) => {
+    const joined = membershipTxid(member)
+    return joined !== null && joined >= anchor.issuedBound
+  })
+  return joinedLater ? { ...anchor, after: null, resync: true } : anchor
+}
+
+/**
+ * Teams this window may contain: the memberships that existed at the bound the
+ * window was frozen at. A fresh window starts at zero, so its scope is the set as
+ * of the current bound; a continued one keeps the scope of the run it belongs to.
+ */
+function scopeTeamIds(
+  anchor: ChangeWindowAnchor,
+  members: SyncScopeMember[],
+): string[] {
+  const asOf = anchor.after === null ? anchor.bound : anchor.issuedBound
+  return members
+    .filter((member) => {
+      const joined = membershipTxid(member)
+      return joined === null || joined < asOf
+    })
+    .map(member => member.teamId)
+}
+
 function toShareSnapshot(row: SyncChange): ShareSnapshot {
   return {
     id: row.shareId,
@@ -111,11 +170,12 @@ async function readLegacyWindow(
  */
 export async function readChangeWindow(
   prisma: PrismaService,
-  teamIds: string[],
+  members: SyncScopeMember[],
   cursor: string | number | undefined,
 ): Promise<ChangeWindow> {
   const safe = await readSafeWatermark(prisma)
-  const anchor = resolveChangeWindowAnchor(cursor, safe)
+  const anchor = scopeAnchor(resolveChangeWindowAnchor(cursor, safe), members)
+  const teamIds = scopeTeamIds(anchor, members)
   if (teamIds.length === 0) return emptyWindow(safe, anchor.resync)
   if (anchor.legacy === true && cursor !== undefined) {
     return readLegacyWindow(prisma, teamIds, anchor, safe, cursor)
