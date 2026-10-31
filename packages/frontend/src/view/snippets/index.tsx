@@ -16,6 +16,7 @@ import SnippetManager from '@/components/snippet-manager'
 import { ScriptTab } from './script-tab'
 import { useScriptForm } from './use-script-form'
 import type { Host } from '@/types'
+import { parseHostIds } from '@/utils/parse-host-ids'
 
 const SnippetsView: React.FC = () => {
   const { t } = useTranslation()
@@ -145,7 +146,7 @@ const SnippetsView: React.FC = () => {
   }
 
   const handleExecuteScript = async (script: ScriptRecord) => {
-    const hostIds: string[] = JSON.parse(script.host_ids || '[]')
+    const hostIds = parseHostIds(script.host_ids)
     if (hostIds.length === 0) {
       toast.error(t('scripts.noHosts'))
       return

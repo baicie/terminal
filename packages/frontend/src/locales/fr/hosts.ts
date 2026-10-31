@@ -11,6 +11,7 @@ export default {
   'hosts.sshHost': 'Hôte SSH',
   'hosts.importFromFile': 'Importer depuis un fichier...',
   'hosts.noHosts': 'Aucun hôte trouvé',
+  'hosts.noHostsYet': 'Aucun hôte pour le moment',
   'hosts.tryDifferentSearch': 'Essayez un autre terme de recherche',
   'hosts.addFirstHost': 'Ajoutez votre premier hôte pour commencer',
   'hosts.inviteMembers': 'Inviter des membres',

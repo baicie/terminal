@@ -67,15 +67,15 @@ export function CompletionOption({
     >
       <span
         className={cn(
-          'flex-shrink-0 w-4 h-4 flex items-center justify-center',
+          'flex-shrink-0 size-4 flex items-center justify-center',
           isSelected ? 'text-[#4ec9b0]' : 'text-transparent',
         )}
       >
-        <CheckIcon className="w-3 h-3" />
+        <CheckIcon className="size-3" />
       </span>
       <Icon
         className={cn(
-          'flex-shrink-0 w-3.5 h-3.5',
+          'flex-shrink-0 size-3.5',
           isSelected ? 'text-white/60' : TYPE_COLORS[item.type],
         )}
       />

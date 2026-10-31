@@ -12,14 +12,10 @@ export function useTabConnectionStatus(
 
   useEffect(() => {
     if (!tab) return
-    const connectionStatus =
-      status === 'connected'
-        ? 'connected'
-        : status === 'connecting' || status === 'reconnecting'
-          ? 'connecting'
-          : status === 'disconnected' || status === 'error'
-            ? 'disconnected'
-            : undefined
+    // Every manager state but `idle` has a tab equivalent, so a reconnect and
+    // a failure stay distinguishable in the strip instead of collapsing into
+    // connecting/disconnected.
+    const connectionStatus = status === 'idle' ? undefined : status
     if (tab.connectionStatus === connectionStatus) return
     updateTab(tabId, { connectionStatus })
   }, [status, tab, tabId, updateTab])

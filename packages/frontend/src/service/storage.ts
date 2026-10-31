@@ -67,15 +67,40 @@ export async function storageUpload(
   return await invoke<StorageResult>('storage_upload', { path, data })
 }
 
+export type StorageDownloadResult =
+  | { status: 'ok'; data: string }
+  | { status: 'notFound' }
+  | { status: 'error'; error: string }
+
+function describeStorageError(error: unknown): string {
+  if (typeof error === 'string') return error
+  if (error && typeof error === 'object') {
+    const { type, message } = error as { type?: unknown; message?: unknown }
+    if (typeof message === 'string' && message)
+      return typeof type === 'string' ? `${type}: ${message}` : message
+    if (typeof type === 'string') return type
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
 /**
- * Download data from storage. Returns null if the file does not exist or is empty.
+ * Download data from storage. Three states instead of a bare `null`: a missing
+ * backup and a failed read (network, auth, unconfigured backend) are reported
+ * separately so a broken read is never shown as "no backup on the server".
+ * The backend reports a missing object as a download failure carrying the HTTP
+ * status, so only a 404 there counts as "not found".
  */
-export async function storageDownload(path: string): Promise<string | null> {
+export async function storageDownload(
+  path: string,
+): Promise<StorageDownloadResult> {
   try {
     const result = await invoke<string>('storage_download', { path })
-    return result || null
-  } catch {
-    return null
+    if (!result) return { status: 'notFound' }
+    return { status: 'ok', data: result }
+  } catch (error) {
+    const message = describeStorageError(error)
+    if (/\b404\b/.test(message)) return { status: 'notFound' }
+    return { status: 'error', error: message }
   }
 }
 

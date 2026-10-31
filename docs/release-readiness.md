@@ -1,9 +1,9 @@
 # Terminal 发布就绪规格
 
 > 创建日期：2026-08-09
-> 最后验证日期：2026-10-16
-> 发布目标：`0.0.1-dev.1`
-> 状态：✅ 本机自动发布门禁与多平台安装包验收完成；⚠️ 外部实机项目待执行
+> 最后验证日期：2026-11-01（本轮只把文档与 `release.yml` / `tauri.conf.json` 的事实对齐，未重跑测试、未重采实机证据）
+> 发布目标：`0.0.1-dev.2`（`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 三处当前都是 `0.0.1-dev.2`；`0.0.1-dev.1` 是上一版已发布证据）
+> 状态：✅ 本机自动发布门禁与多平台安装包验收完成；⚠️ 外部实机项目待执行；⚠️ 无 OS 代码签名/公证，发布状态 `RELEASE_QA_ONLY`
 
 ## 目标
 
@@ -168,27 +168,55 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked --all-targets --all-fea
 | 本机 `pnpm verify` | ✅ 前端 411 项、Team Server 95 项、Rust 45 项测试通过；lint、typecheck、build budget、Clippy 与 453 个生产源码文件行数门禁通过 |
 | Push CI | ✅ 工作流 `31553345929` 全绿：前端、Team Server、Rust、Docker 镜像、PostgreSQL 迁移及 macOS/Windows/Linux Tauri 编译通过 |
 | Pull Request CI | ✅ 工作流 `31553348495` 全绿，独立重复同一提交的完整门禁 |
-| Release | ✅ 工作流 `31554163901` attempt 2 全绿，六个原生 runner 打包任务和最终资产校验通过 |
+| Release | ✅ 工作流 `31554163901` attempt 2 全绿，8 个原生 runner 打包 job（macOS 二进制 ×2、macOS DMG ×2、Windows/Linux 安装包 ×4）与最终资产校验通过 |
 | Release 资产 | ✅ 8 个安装包与 `SHA256SUMS.txt` 均非空；清单 8 行与 GitHub 服务端 SHA-256 digest 逐项一致 |
 
-Release 首次执行的六个平台打包任务均成功，最终校验调用 `gh release download` 时短暂返回 `release not found`；仅重跑失败 job 后校验成功，未重新构建或替换安装包。
+Release 首次执行的八个打包 job 均成功，最终校验调用 `gh release download` 时短暂返回 `release not found`；仅重跑失败 job 后校验成功，未重新构建或替换安装包。
 
 ## 安装包发布门禁
 
 `.github/workflows/release.yml` 只接受现有语义版本标签，校验标签提交以及 `package.json`、`tauri.conf.json`、`Cargo.toml` 三处版本一致后，向同一 prerelease 上传以下资产：
 
-| 系统 | 架构 | 原生 runner | 目标 | 产出 |
-| --- | --- | --- | --- | --- |
-| macOS | Apple Silicon | `macos-15` | `aarch64-apple-darwin` | 二进制（artifact） |
-| macOS | Intel | `macos-15-intel` | `x86_64-apple-darwin` | 二进制（artifact） |
-| Windows | ARM64 | `windows-11-arm` | `aarch64-pc-windows-msvc` | NSIS EXE |
-| Windows | x64 | `windows-latest` | `x86_64-pc-windows-msvc` | NSIS EXE |
-| Linux | ARM64 | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | AppImage、DEB |
-| Linux | x64 | `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | AppImage、DEB |
+| 系统 | 架构 | 原生 runner | 目标 | job | 安装包 |
+| --- | --- | --- | --- | --- | --- |
+| macOS | Apple Silicon | `macos-15` | `aarch64-apple-darwin` | `build-macos-binary` + `bundle-macos` | `Terminal_<ver>_macos-aarch64.dmg` |
+| macOS | Intel | `macos-15-intel` | `x86_64-apple-darwin` | `build-macos-binary` + `bundle-macos` | `Terminal_<ver>_macos-x86_64.dmg` |
+| Windows | ARM64 | `windows-11-arm` | `aarch64-pc-windows-msvc` | `build-release` | `Terminal_<ver>_windows-aarch64-setup.exe`（NSIS） |
+| Windows | x64 | `windows-latest` | `x86_64-pc-windows-msvc` | `build-release` | `Terminal_<ver>_windows-x86_64-setup.exe`（NSIS） |
+| Linux | ARM64 | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | `build-release` | `Terminal_<ver>_linux-aarch64.AppImage`、`.deb` |
+| Linux | x64 | `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | `build-release` | `Terminal_<ver>_linux-x86_64.AppImage`、`.deb` |
 
-macOS 走「先分架构编二进制、再用 `lipo` 合成 universal」的两段式：`build-macos-binary` 用 `pnpm tauri build --no-bundle --ci --target <arch>` 只出二进制并通过 `upload-artifact` 传递；`bundle-macos` 用 `lipo -create` 生成 `src-tauri/target/universal-apple-darwin/release/terminal`，再 `pnpm tauri bundle --target universal-apple-darwin --bundles app` 只打 `.app`。打包失败按 3 次退避重试，遇到 Apple 凭据类错误（HTTP 401/403）立即失败而不再重试。DMG 由 `create-dmg` 自绘（拖拽到 Applications 的布局），`create-dmg` 不可用或失败时回落到 Tauri 自带的 DMG bundler——这一步在本地用真实 `.app` 验证过：生成 12,038,232 字节的 DMG，挂载后含 `Termius.app` 与 `Applications` 软链。
+合计 **8 个安装包 + `SHA256SUMS.txt`**；`--bundles` 显式覆盖了 `tauri.conf.json` 里的 `targets: "all"`，所以 Windows 不会出 MSI、macOS 不会出 `.pkg`。
 
-工作流要求八个安装资产全部存在且大小大于 0，随后下载同一批资产生成 `SHA256SUMS.txt`。资产命名为 `Terminal_<version>_<platform>-<arch>`，macOS 分 `macos-aarch64` 与 `macos-x86_64` 两个 DMG（不再合成 universal），Windows NSIS 额外带 `-setup` 后缀。`updater-signed` 模式下每个平台各有 `.sig`，并生成唯一 `latest.json` 镜像到 `updater-latest` 通道；这套流程仍**不含** Apple 签名/公证。
+macOS 走「先分架构编二进制、再按架构各自打包」两段式：`build-macos-binary` 用 `pnpm tauri build --no-bundle --ci --target <arch>` 只出二进制并通过 `upload-artifact` 传递；`bundle-macos` 在**同一架构的 runner** 上把二进制放回 `src-tauri/target/<target>/release/`，再 `pnpm tauri bundle --target <target> --bundles app` 只打本架构 `.app`，最后由 `create-dmg` 自绘 DMG（拖拽到 Applications 的布局），`create-dmg` 不可用或失败时回落到 Tauri 自带 DMG bundler（`--bundles dmg`），并校验 DMG 非空。`.app` 打包按 3 次退避重试（每次 sleep `attempt × 30s`），遇到 Apple 凭据类错误（HTTP 401/403）立即失败而不再重试。
+
+**工作流不使用 `lipo`，也不产出 universal 包**：两个架构各自出 DMG、各自出更新载荷（`Terminal_<ver>_macos-<arch>.app.tar.gz`），否则 tauri 以产品名命名的 `Termius.app.tar.gz` 会被后上传的架构 `--clobber` 覆盖。DMG 回落路径的本地验证是历史记录（真实 `.app` 生成 12,038,232 字节 DMG，挂载后含 `Termius.app` 与 `Applications` 软链），CI 侧以 `bundle-macos` 的真实运行结果为准。
+
+工作流要求八个安装资产全部存在且大小大于 0，随后下载同一批资产生成 `SHA256SUMS.txt`。资产命名为 `Terminal_<version>_<platform>-<arch>`，macOS 分 `macos-aarch64` 与 `macos-x86_64` 两个 DMG（不合成 universal），Windows NSIS 额外带 `-setup` 后缀。只有 `verify-release` 的全部门禁通过后，draft 才会被 undraft；任一步失败就留在草稿，不会进入更新源。
+
+## updater 三种模式的真实能力边界
+
+| 模式 | OS 代码签名 | updater 签名 | 需要的 secrets | 安装包 | 额外产物 | 当前可用性 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `unsigned-qa`（默认，**推送 tag 强制走这里**） | 无 | 无 | 无 | 8 个 | 仅 `SHA256SUMS.txt` | ✅ 可发布，产物未签名/未公证 |
+| `updater-signed` | 无 | 有 | `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）+ `TAURI_UPDATER_PUBKEY` | 8 个 | macOS 逐架构 `.app.tar.gz` + `.sig`、`Terminal_<ver>_windows-x86_64-setup.exe.sig`、`Terminal_<ver>_linux-x86_64.AppImage.sig`，以及唯一 `latest.json`（同时镜像到 `updater-latest` 通道） | ⚠️ 代码路径完整但**尚未在真实密钥下跑过一次**，见下 |
+| `fully-signed`（预留） | Developer ID + 公证 / Authenticode | 有 | Apple 与 Windows 证书 | — | — | ❌ 当前命中即失败：仓库没有这些证书 |
+
+逐条约束（都来自 `release.yml` 的实际代码，不是约定）：
+
+- 缺失 `TAURI_SIGNING_PRIVATE_KEY` 或 `TAURI_UPDATER_PUBKEY` 时 `Validate the release mode` 直接失败，**不会降级**成 unsigned 产物；公钥还会校验是否符合 base64 形状。
+- updater 产物通过 `--config` 内联开启（`createUpdaterArtifacts: true` + 注入公钥），仓库里的 `tauri.conf.json` 保持 `plugins.updater.pubkey = "REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY"`，所以 unsigned QA 构建的「检查更新」会 fail-closed 并在 UI 提示未配置。
+- `latest.json` **只有 4 个平台条目**：`darwin-aarch64`、`darwin-x86_64`、`windows-x86_64`、`linux-x86_64`。`windows-aarch64` 与 `linux-aarch64` **没有**更新条目——`verify-release` 只挑选这 4 个载荷，缺任何一个就失败。
+- 每个载荷必须有同名 `.sig`，缺一个就失败；`tauri-action` 被显式设为 `uploadUpdaterJson: false`，`latest.json` 只能由 `verify-release` 生成，避免各平台各发一份。
+- `fully-signed` 的失败是**有意**的：宁可让流程红，也不产出「看起来签过、其实没签」的发布。
+
+## 人工验收与证书限制（必须保持待验证）
+
+- **没有 Apple Developer ID / notarization**：`tauri.conf.json` 里没有签名身份配置，DMG 最多是 Tauri 默认的 ad-hoc 签名（`adhoc, linker-signed`）。ad-hoc 不等于 Developer ID，也不构成公证，Gatekeeper 仍会拦截首次打开。Release 说明已由工作流写入「macOS is not notarized」。
+- **没有 Windows Authenticode**：NSIS 安装包未签名，SmartScreen 会告警。
+- **没有 updater 私钥**：`updater-signed` 一次都没在真实密钥下执行过；本轮**没有** CI run 可引用，因此该模式只能标为「代码完成、未验证」，不能写成「已验证」。
+- **没有实机安装/升级验收**：`unsigned-qa` 的 8 个包只被验证过「存在、非空、命名正确、SHA-256 与清单一致」。DMG 拖入 Applications、NSIS 安装与卸载重装、AppImage 启动、deb `dpkg -i`、SQLite 旧库兼容、签名后自动升级链路，全部为 NOT_RUN。
+- **Windows/Linux/Pageant/PTY/串口**仍按下方实机矩阵逐项验证；runner 编译通过或安装包构建成功都不能替代它们。
 
 **历史发布证据**：Release 工作流 `31431531040` 全绿，标签 `v0.0.1-dev.0` 指向提交 `6965f3a`。GitHub Release API 返回以下非空资产；8 个安装包的服务端 SHA-256 digest 与 `SHA256SUMS.txt` 逐项一致。
 
@@ -252,7 +280,9 @@ macOS 走「先分架构编二进制、再用 `lipo` 合成 universal」的两�
 | 快捷键 | Windows / Linux / 非美式键盘 | ⚠️ 待实机 | 不覆盖系统快捷键，`Ctrl+Shift+\` 可触发垂直分屏 |
 | Team Server 容器 | Docker Desktop 29.7.2 + PostgreSQL 16.15 | ✅ 本机 Compose 生命周期通过：迁移、health/readiness、SIGTERM 与重启恢复均符合预期 | Compose 启动后 closed/token/open、迁移、`/api/v1/health/ready` 与关停钩子通过 |
 | Tauri 三平台编译 | macOS / Ubuntu / Windows CI | ✅ CI `31553345929` 与 `31553348495` 三平台通过 | `.github/workflows/ci.yml` 三平台 `tauri build --no-bundle --ci` 通过 |
-| Release 安装包 | 六个原生 GitHub runner | ✅ `v0.0.1-dev.1` 工作流 `31554163901` 全绿；8 个安装包与 checksum 已核验 | 八个安装资产非空且系统/架构命名正确，`SHA256SUMS.txt` 可校验 |
+| Release 安装包 | 8 个原生 GitHub runner 打包 job | 🟡 `v0.0.1-dev.1` 工作流 `31554163901` 全绿；8 个安装包与 checksum 已核验（版本目标已推进到 `0.0.1-dev.2`，该版本未重新出包） | 八个安装资产非空且系统/架构命名正确，`SHA256SUMS.txt` 可校验 |
+| Release 安装/升级（人工） | macOS / Windows / Linux 实机 | ⚠️ NOT_RUN | DMG 拖入 Applications、NSIS 安装+卸载重装、AppImage 启动、`dpkg -i`、旧 SQLite 库兼容，全部需要真实机器 |
+| `updater-signed` 出包 | GitHub runner + 真实密钥 | ⚠️ NOT_RUN | 需要 `TAURI_SIGNING_PRIVATE_KEY` 与 `TAURI_UPDATER_PUBKEY`；一次都没跑过，不能写成已验证 |
 | S3 服务端集成 | AWS S3 或兼容服务 | ⚠️ 待外部服务 | 固定向量之外，验证实际签名、UTF-8 key、分页列表、上传下载与删除 |
 | Agent forwarding | 全平台 | ⚠️ 代码完成，待实机 | 默认关闭；opt-in 时显式请求；未授权主动 channel 被拒绝；池内启用/禁用连接隔离 |
 | Team 注册准入 | Docker / PostgreSQL | ✅ 自动化与容器运行均通过 | 生产默认 closed；错误 token 不新增用户；正确 token/open 可注册；缺失/非法环境配置拒绝启动 |

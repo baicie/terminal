@@ -107,7 +107,7 @@ export function TerminalThemePanel({
         <div className="bg-card rounded-lg border p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-medium flex items-center gap-2">
-              <Eye className="h-4 w-4" />
+              <Eye className="size-4" />
               Live Preview
             </h4>
             <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">

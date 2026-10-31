@@ -6,6 +6,7 @@ export default {
     'Configurez les préférences de votre application terminal',
   'settings.appearance': 'Apparence',
   'settings.terminal': 'Terminal',
+  'settings.shortcutsTab': 'Raccourcis',
   'settings.general': 'Général',
   'settings.connection': 'Connexion',
   'settings.storage': 'Stockage',

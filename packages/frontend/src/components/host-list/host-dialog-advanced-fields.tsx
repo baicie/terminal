@@ -128,7 +128,7 @@ export function HostDialogAdvancedFields({
           Environment Variables
         </Label>
         <Button variant="outline" size="sm" onClick={onOpenEnvironment}>
-          <Network className="h-4 w-4 mr-1" />
+          <Network className="size-4 mr-1" />
           Configure Environment ({Object.keys(form.environment || {}).length})
         </Button>
       </div>
@@ -146,7 +146,7 @@ export function HostDialogAdvancedFields({
           size="sm"
           onClick={onOpenPortForwards}
         >
-          <Network className="h-4 w-4 mr-1" />
+          <Network className="size-4 mr-1" />
           Configure Port Forwards ({form.portForwards?.length || 0})
         </Button>
       </div>

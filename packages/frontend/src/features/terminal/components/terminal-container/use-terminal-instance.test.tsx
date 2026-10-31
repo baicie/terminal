@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   dispose: vi.fn(),
   webglConstruct: vi.fn(),
   webglDispose: vi.fn(),
+  clipboardConstruct: vi.fn(),
   webglContextLossHandlers: [] as Array<() => void>,
   titleChangeHandlers: [] as Array<(title: string) => void>,
   oscHandlers: new Map<number, (data: string) => boolean>(),
@@ -42,7 +43,13 @@ vi.mock('@xterm/addon-webgl', () => ({
     dispose = mocks.webglDispose
   },
 }))
-vi.mock('@xterm/addon-clipboard', () => ({ ClipboardAddon: class {} }))
+vi.mock('@xterm/addon-clipboard', () => ({
+  ClipboardAddon: class {
+    constructor() {
+      mocks.clipboardConstruct()
+    }
+  },
+}))
 vi.mock('@baicie/xterm', () => ({
   Terminal: class {
     cols = 80
@@ -473,5 +480,40 @@ describe('useTerminalInstance activation', () => {
     } finally {
       console.error = previousConsoleError
     }
+  })
+
+  it('loads the clipboard addon once while the terminal stays mounted', async () => {
+    const { result, rerender } = renderHook(
+      ({ tabId }) => useTerminalInstance({ ...baseOptions, tabId }),
+      { initialProps: { tabId: '' } },
+    )
+    result.current.containerRef.current = document.createElement('div')
+    rerender({ tabId: 'terminal-one' })
+
+    expect(mocks.clipboardConstruct).not.toHaveBeenCalled()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+      for (let index = 0; index < 6; index += 1) await Promise.resolve()
+    })
+
+    expect(mocks.clipboardConstruct).toHaveBeenCalledOnce()
+  })
+
+  it('never loads the clipboard addon into a disposed terminal', async () => {
+    const { result, rerender, unmount } = renderHook(
+      ({ tabId }) => useTerminalInstance({ ...baseOptions, tabId }),
+      { initialProps: { tabId: '' } },
+    )
+    result.current.containerRef.current = document.createElement('div')
+    rerender({ tabId: 'terminal-one' })
+
+    expect(mocks.clipboardConstruct).not.toHaveBeenCalled()
+    unmount()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+      for (let index = 0; index < 6; index += 1) await Promise.resolve()
+    })
+
+    expect(mocks.clipboardConstruct).not.toHaveBeenCalled()
   })
 })

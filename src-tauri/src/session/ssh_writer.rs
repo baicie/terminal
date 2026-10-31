@@ -96,6 +96,7 @@ impl SshWriterHandle {
             response,
             deadline,
             SessionError::WriteFailed("SSH writer queue is unavailable".to_string()),
+            false,
         )
         .await
     }
@@ -113,6 +114,7 @@ impl SshWriterHandle {
             response,
             deadline,
             SessionError::ResizeFailed("SSH writer queue is unavailable".to_string()),
+            false,
         )
         .await
     }
@@ -125,6 +127,7 @@ impl SshWriterHandle {
             response,
             deadline,
             SessionError::CloseFailed("SSH writer queue is unavailable".to_string()),
+            true,
         )
         .await
     }
@@ -145,6 +148,7 @@ impl SshWriterHandle {
         response: oneshot::Receiver<Result<(), SessionError>>,
         deadline: Instant,
         queue_error: SessionError,
+        timeout_is_fatal: bool,
     ) -> Result<(), SessionError> {
         if !self.is_running() {
             return Err(queue_error);
@@ -152,9 +156,11 @@ impl SshWriterHandle {
 
         match tokio::time::timeout_at(deadline, self.sender.send(command)).await {
             Err(_) => {
-                let error = queue_timeout_error(&queue_error);
-                complete_writer(&self.running, &self.completion_tx, Err(error.clone()));
-                return Err(error);
+                // The command never entered the queue, so the channel is untouched and
+                // the writer stays usable. Only a terminal command may retire it here.
+                return Err(
+                    self.retire_on_timeout(queue_timeout_error(&queue_error), timeout_is_fatal)
+                );
             }
             Ok(Err(_)) => {
                 complete_writer(&self.running, &self.completion_tx, Err(queue_error.clone()));
@@ -165,9 +171,10 @@ impl SshWriterHandle {
 
         match tokio::time::timeout_at(deadline, response).await {
             Err(_) => {
+                // The worker skips commands whose deadline already expired, so a single
+                // timed-out write or resize must not end the whole write channel.
                 let error = command_timeout_error(&queue_error);
-                complete_writer(&self.running, &self.completion_tx, Err(error.clone()));
-                Err(error)
+                Err(self.retire_on_timeout(error, timeout_is_fatal))
             }
             Ok(Err(_)) => {
                 let error = SessionError::ChannelError(
@@ -178,6 +185,14 @@ impl SshWriterHandle {
             }
             Ok(Ok(result)) => result,
         }
+    }
+
+    /// Retire the writer on a timeout only when the timed-out command makes it unusable.
+    fn retire_on_timeout(&self, error: SessionError, timeout_is_fatal: bool) -> SessionError {
+        if timeout_is_fatal {
+            complete_writer(&self.running, &self.completion_tx, Err(error.clone()));
+        }
+        error
     }
 }
 
@@ -272,14 +287,17 @@ where
                     if deadline <= Instant::now() || reply.is_closed() {
                         continue;
                     }
-                    let result =
+                    let outcome =
                         run_until_deadline(deadline, writer.write_data(data), "write").await;
-                    let failed = result.is_err();
-                    if let Err(error) = &result {
-                        complete_writer(&running, &completion_tx, Err(error.clone()));
+                    let fatal = outcome.as_ref().err().is_some_and(CommandFailure::is_fatal);
+                    let result = outcome.map_err(CommandFailure::into_error);
+                    if fatal {
+                        if let Err(error) = &result {
+                            complete_writer(&running, &completion_tx, Err(error.clone()));
+                        }
                     }
                     let _ = reply.send(result);
-                    if failed {
+                    if fatal {
                         break;
                     }
                 }
@@ -292,14 +310,17 @@ where
                     if deadline <= Instant::now() || reply.is_closed() {
                         continue;
                     }
-                    let result =
+                    let outcome =
                         run_until_deadline(deadline, writer.resize(cols, rows), "resize").await;
-                    let failed = result.is_err();
-                    if let Err(error) = &result {
-                        complete_writer(&running, &completion_tx, Err(error.clone()));
+                    let fatal = outcome.as_ref().err().is_some_and(CommandFailure::is_fatal);
+                    let result = outcome.map_err(CommandFailure::into_error);
+                    if fatal {
+                        if let Err(error) = &result {
+                            complete_writer(&running, &completion_tx, Err(error.clone()));
+                        }
                     }
                     let _ = reply.send(result);
-                    if failed {
+                    if fatal {
                         break;
                     }
                 }
@@ -308,7 +329,9 @@ where
                         break;
                     }
                     close_attempted = true;
-                    let result = run_until_deadline(deadline, writer.close(), "close").await;
+                    let result = run_until_deadline(deadline, writer.close(), "close")
+                        .await
+                        .map_err(CommandFailure::into_error);
                     complete_writer(&running, &completion_tx, result.clone());
                     let _ = reply.send(result);
                     break;
@@ -318,7 +341,9 @@ where
 
         if !close_attempted {
             let deadline = command_deadline(timeouts.close);
-            let result = run_until_deadline(deadline, writer.close(), "close").await;
+            let result = run_until_deadline(deadline, writer.close(), "close")
+                .await
+                .map_err(CommandFailure::into_error);
             complete_writer(&running, &completion_tx, result);
         }
     });
@@ -329,17 +354,40 @@ fn command_deadline(timeout: Duration) -> Instant {
     Instant::now() + timeout.max(Duration::from_millis(1))
 }
 
+/// Outcome of one channel operation run under its deadline.
+enum CommandFailure {
+    /// The channel itself failed, so the writer can no longer be trusted.
+    Fatal(SessionError),
+    /// The operation outlived its deadline; the writer itself is still usable.
+    TimedOut(SessionError),
+}
+
+impl CommandFailure {
+    fn is_fatal(&self) -> bool {
+        matches!(self, Self::Fatal(_))
+    }
+
+    fn into_error(self) -> SessionError {
+        match self {
+            Self::Fatal(error) | Self::TimedOut(error) => error,
+        }
+    }
+}
+
 async fn run_until_deadline<F>(
     deadline: Instant,
     operation: F,
     name: &'static str,
-) -> Result<(), SessionError>
+) -> Result<(), CommandFailure>
 where
     F: std::future::Future<Output = Result<(), SessionError>>,
 {
-    tokio::time::timeout_at(deadline, operation)
-        .await
-        .map_err(|_| SessionError::ChannelError(format!("SSH terminal {name} timed out")))?
+    match tokio::time::timeout_at(deadline, operation).await {
+        Ok(result) => result.map_err(CommandFailure::Fatal),
+        Err(_) => Err(CommandFailure::TimedOut(SessionError::ChannelError(
+            format!("SSH terminal {name} timed out"),
+        ))),
+    }
 }
 
 #[cfg(test)]
@@ -707,5 +755,133 @@ mod tests {
         worker.await.expect("writer worker should join");
 
         assert_eq!(*operations.lock().await, vec!["write:slow", "close"]);
+    }
+
+    struct StallingWriter {
+        operations: Arc<Mutex<Vec<String>>>,
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl SshChannelWriter for StallingWriter {
+        async fn write_data(&mut self, data: Vec<u8>) -> Result<(), SessionError> {
+            let call = self.calls.fetch_add(1, Ordering::AcqRel);
+            self.operations
+                .lock()
+                .await
+                .push(format!("write:{}", String::from_utf8_lossy(&data)));
+            if call == 0 {
+                // Only the writer deadline can end this operation.
+                std::future::pending::<()>().await;
+            }
+            Ok(())
+        }
+
+        async fn resize(&mut self, _cols: u16, _rows: u16) -> Result<(), SessionError> {
+            Ok(())
+        }
+
+        async fn close(&mut self) -> Result<(), SessionError> {
+            self.operations.lock().await.push("close".to_string());
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn write_timeout_keeps_writer_alive_for_later_commands() {
+        let operations = Arc::new(Mutex::new(Vec::new()));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let fake = StallingWriter {
+            operations: Arc::clone(&operations),
+            calls,
+        };
+        let timeouts = SshWriterTimeouts {
+            write: Duration::from_millis(60),
+            resize: Duration::from_secs(1),
+            close: Duration::from_secs(1),
+        };
+        let (writer, worker) = spawn_ssh_writer(fake, 8, timeouts);
+
+        writer
+            .write(b"slow".to_vec())
+            .await
+            .expect_err("a write that never completes must time out");
+        assert!(
+            writer.is_running(),
+            "a single write timeout must not retire the SSH write channel"
+        );
+
+        writer
+            .write(b"fast".to_vec())
+            .await
+            .expect("the writer must keep serving writes after one timeout");
+
+        drop(writer);
+        worker.await.expect("writer worker should join");
+
+        assert_eq!(
+            *operations.lock().await,
+            vec!["write:slow", "write:fast", "close"]
+        );
+    }
+
+    #[tokio::test]
+    async fn queue_timeout_keeps_writer_alive_for_later_commands() {
+        let operations = Arc::new(Mutex::new(Vec::new()));
+        let operation_started = Arc::new(Notify::new());
+        let release_operation = Arc::new(Notify::new());
+        let fake = BlockingWriter {
+            operations: Arc::clone(&operations),
+            blocked_operation: BlockedOperation::Resize,
+            operation_started: Arc::clone(&operation_started),
+            release_operation: Arc::clone(&release_operation),
+        };
+        let timeouts = SshWriterTimeouts {
+            write: Duration::from_millis(30),
+            resize: Duration::from_secs(5),
+            close: Duration::from_secs(1),
+        };
+        let (writer, worker) = spawn_ssh_writer(fake, 1, timeouts);
+        let resize = tokio::spawn({
+            let writer = writer.clone();
+            async move { writer.resize(120, 40).await }
+        });
+        operation_started.notified().await;
+
+        // The queue holds a single command, so these two writes contend for its only slot.
+        let queued = tokio::spawn({
+            let writer = writer.clone();
+            async move { writer.write(b"queued".to_vec()).await }
+        });
+        tokio::task::yield_now().await;
+        let overflow = writer.write(b"overflow".to_vec()).await;
+        let queued = queued.await.expect("the queued write task should join");
+
+        let mut queue_timeouts = 0;
+        for outcome in [&overflow, &queued] {
+            if let Err(SessionError::WriteFailed(message)) = outcome {
+                if message.contains("queue timeout") {
+                    queue_timeouts += 1;
+                }
+            }
+        }
+        assert_eq!(
+            queue_timeouts, 1,
+            "exactly one write must fail waiting for the full queue"
+        );
+        assert!(
+            writer.is_running(),
+            "a queue timeout must not retire the SSH write channel"
+        );
+
+        release_operation.notify_one();
+        resize
+            .await
+            .expect("resize task should join")
+            .expect("blocking resize should complete");
+        drop(writer);
+        worker.await.expect("writer worker should join");
+
+        assert_eq!(*operations.lock().await, vec!["resize:120x40", "close"]);
     }
 }

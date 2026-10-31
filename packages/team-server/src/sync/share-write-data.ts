@@ -6,7 +6,7 @@ import {
 
 export interface ShareWritePayload {
   baseVersion?: number
-  data: unknown
+  data?: unknown
   encryptedData?: string
   isSensitive?: boolean
   permission?: string
@@ -32,27 +32,43 @@ export function buildShareUpdateData(
   payload: ShareWritePayload,
   existing: ExistingShareSecurity,
   preservePermission = false,
+  preserveSensitivity = false,
 ): Prisma.ShareUpdateInput {
-  const security = resolveUpdateSecurity(payload, existing)
   const permission = preservePermission
     ? existing.permission
-    : (payload.permission as 'READONLY' | 'READWRITE')
+    : (payload.permission as 'READONLY' | 'READWRITE' | undefined)
+  const permissionData = permission === undefined ? {} : { permission }
 
-  if (security.isSensitive) {
-    return {
-      data: {},
-      encryptedData: security.encryptedData,
-      isSensitive: true,
-      permission,
-    }
+  if (preserveSensitivity) {
+    return existing.isSensitive
+      ? {
+          data: {},
+          encryptedData: payload.encryptedData ?? existing.encryptedData,
+          isSensitive: true,
+          ...permissionData,
+        }
+      : {
+          data: payload.data as Prisma.InputJsonValue,
+          encryptedData: null,
+          isSensitive: false,
+          ...permissionData,
+        }
   }
 
-  return {
-    data: payload.data as Prisma.InputJsonValue,
-    encryptedData: null,
-    isSensitive: false,
-    permission,
-  }
+  const security = resolveUpdateSecurity(payload, existing)
+  return security.isSensitive
+    ? {
+        data: {},
+        encryptedData: security.encryptedData,
+        isSensitive: true,
+        ...permissionData,
+      }
+    : {
+        data: payload.data as Prisma.InputJsonValue,
+        encryptedData: null,
+        isSensitive: false,
+        ...permissionData,
+      }
 }
 
 export function buildShareCreateData(

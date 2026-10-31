@@ -5,6 +5,7 @@ export default {
   'settings.description': '配置您的终端应用程序偏好设置',
   'settings.appearance': '外观',
   'settings.terminal': '终端',
+  'settings.shortcutsTab': '快捷键',
   'settings.general': '通用',
   'settings.connection': '连接',
   'settings.storage': '存储',

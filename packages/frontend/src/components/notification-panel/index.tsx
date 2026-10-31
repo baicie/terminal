@@ -130,7 +130,7 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({
                       </p>
                     </div>
                     {!notif.read && (
-                      <div className="absolute right-3 top-3.5 h-1.5 w-1.5 rounded-full bg-primary" />
+                      <div className="absolute right-3 top-3.5 size-1.5 rounded-full bg-primary" />
                     )}
                   </div>
                 )

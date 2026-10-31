@@ -30,7 +30,7 @@ export const RouteTransition: React.FC<RouteTransitionProps> = ({
   return (
     <div
       key={animKey}
-      className={cn('route-transition-enter h-full w-full', className)}
+      className={cn('route-transition-enter size-full', className)}
     >
       {children}
     </div>

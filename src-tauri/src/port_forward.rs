@@ -6,6 +6,7 @@ use crate::state::{
 };
 use russh::ChannelId;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
@@ -14,6 +15,13 @@ use tokio::task::JoinHandle;
 
 /// Type alias for SSH session handle wrapped in Arc
 type SshHandle = Arc<russh::client::Handle<crate::state::ClientHandler>>;
+
+/// First retry delay after a recoverable accept error.
+const ACCEPT_BACKOFF_START: Duration = Duration::from_millis(10);
+/// Upper bound for the exponential accept backoff.
+const ACCEPT_BACKOFF_CAP: Duration = Duration::from_secs(2);
+/// Consecutive recoverable accept errors tolerated before the listener stops.
+const ACCEPT_MAX_CONSECUTIVE_ERRORS: u32 = 10;
 
 // ============================================================================
 // Command: start port forward (local, remote, or dynamic)
@@ -58,62 +66,12 @@ pub async fn port_forward_start(
     let remote_host_clone = config.remote_host.clone();
     let ft_clone = config.forward_type.clone();
 
-    let mut port_forwards = state.port_forwards.lock().await;
-
-    // Remote forward requires special handling: we need the TcpForwardListener
-    // to store in PortForwardTask BEFORE spawning the task (so the task can
-    // be properly cleaned up on stop).
-    if ft_clone == "remote" {
-        let (listener, rx) =
-            setup_remote_forward(handle.clone(), local_port, remote_host_clone, remote_port)
-                .await?;
-
-        let task: JoinHandle<Result<(), PortForwardError>> = tokio::spawn(async move {
-            handle_forwarded_connections(handle, rx, remote_port).await;
-            Ok(())
-        });
-
-        let info = PortForwardInfo {
-            name,
-            forward_type: ft_for_info,
-            local_host: local_host_for_info,
-            local_port,
-            remote_host: remote_host_for_info,
-            remote_port,
-            status: "active".to_string(),
-        };
-
-        port_forwards.insert(
-            forward_id,
-            PortForwardTask {
-                task,
-                listener: Some(listener),
-                info,
-            },
-        );
-        tracing::info!(forward_type = %ft_for_tracing, "port forward started");
-        return Ok(());
+    if !matches!(ft_clone.as_str(), "local" | "dynamic" | "remote") {
+        return Err(PortForwardError::BindFailed(format!(
+            "Unknown forward type: {}",
+            ft_clone
+        )));
     }
-
-    let task: JoinHandle<Result<(), PortForwardError>> = tokio::spawn(async move {
-        match ft_clone.as_str() {
-            "local" => {
-                start_local_forward(
-                    handle,
-                    local_host_clone,
-                    local_port,
-                    remote_host_clone,
-                    remote_port,
-                )
-                .await
-            }
-            "dynamic" => start_dynamic_forward(handle, config.local_host, local_port).await,
-            _ => Err(PortForwardError::BindFailed(format!(
-                "Unknown forward type: {}",
-                ft_clone
-            ))),
-        }
-    });
 
     let info = PortForwardInfo {
         name,
@@ -125,14 +83,58 @@ pub async fn port_forward_start(
         status: "active".to_string(),
     };
 
-    port_forwards.insert(
-        forward_id,
-        PortForwardTask {
-            task,
-            listener: None,
-            info,
-        },
-    );
+    // Remote forward requires special handling: we need the TcpForwardListener
+    // to store in PortForwardTask BEFORE spawning the task (so the task can
+    // be properly cleaned up on stop). The tcpip_forward round trip runs before
+    // the map lock is taken, so list/stop/shutdown stay responsive meanwhile.
+    if ft_clone == "remote" {
+        let (listener, rx) =
+            setup_remote_forward(handle.clone(), local_port, remote_host_clone, remote_port)
+                .await?;
+
+        let task: JoinHandle<Result<(), PortForwardError>> = tokio::spawn(async move {
+            handle_forwarded_connections(handle, rx, remote_port).await;
+            Ok(())
+        });
+
+        {
+            let mut port_forwards = state.port_forwards.lock().await;
+            port_forwards.insert(
+                forward_id,
+                PortForwardTask {
+                    task,
+                    listener: Some(listener),
+                    info,
+                },
+            );
+        }
+        tracing::info!(forward_type = %ft_for_tracing, "port forward started");
+        return Ok(());
+    }
+
+    // Bind the local listener here so a failed bind reaches the caller instead of
+    // being swallowed by the spawned accept loop.
+    let (listener, bind_addr) = bind_tcp_listener(&local_host_clone, local_port)?;
+
+    let task: JoinHandle<Result<(), PortForwardError>> = if ft_clone == "local" {
+        tokio::spawn(async move {
+            run_local_forward(handle, listener, bind_addr, remote_host_clone, remote_port).await
+        })
+    } else {
+        tokio::spawn(async move { run_dynamic_forward(handle, listener, bind_addr).await })
+    };
+
+    {
+        let mut port_forwards = state.port_forwards.lock().await;
+        port_forwards.insert(
+            forward_id,
+            PortForwardTask {
+                task,
+                listener: None,
+                info,
+            },
+        );
+    }
 
     tracing::info!(forward_type = %ft_for_tracing, "port forward started");
     Ok(())
@@ -142,56 +144,133 @@ pub async fn port_forward_start(
 // Local port forwarding: listen locally, forward through SSH to remote
 // ============================================================================
 
-async fn start_local_forward(
-    handle: SshHandle,
-    local_host: String,
-    local_port: u16,
-    remote_host: String,
-    remote_port: u16,
-) -> Result<(), PortForwardError> {
-    let addr: std::net::SocketAddr = format!("{}:{}", local_host, local_port)
+/// Bind the listener for a local/dynamic forward. Binding before the accept loop is
+/// spawned is what makes a bind failure reach the command caller.
+fn bind_tcp_listener(
+    bind_host: &str,
+    bind_port: u16,
+) -> Result<(TcpListener, std::net::SocketAddr), PortForwardError> {
+    let addr: std::net::SocketAddr = format!("{}:{}", bind_host, bind_port)
         .parse()
         .map_err(|e| PortForwardError::BindFailed(format!("invalid address: {}", e)))?;
 
     let std_listener = std::net::TcpListener::bind(addr)
         .map_err(|e| PortForwardError::BindFailed(format!("failed to bind {}: {}", addr, e)))?;
-    std_listener.set_nonblocking(true).ok();
+    std_listener.set_nonblocking(true).map_err(|e| {
+        PortForwardError::BindFailed(format!("failed to configure {}: {}", addr, e))
+    })?;
 
     let listener = TcpListener::from_std(std_listener)
         .map_err(|e| PortForwardError::BindFailed(format!("failed to bind: {}", e)))?;
+    let bound_addr = listener.local_addr().map_err(|e| {
+        PortForwardError::BindFailed(format!("failed to read bound address: {}", e))
+    })?;
 
+    Ok((listener, bound_addr))
+}
+
+/// Wait for the next inbound connection, backing off exponentially on recoverable
+/// accept errors so a persistent EMFILE/ENFILE cannot spin at 100% CPU.
+/// Returns None when the listener has to stop for good.
+async fn accept_with_backoff(
+    listener: &TcpListener,
+    consecutive_errors: &mut u32,
+    forward_type: &'static str,
+) -> Option<(TcpStream, std::net::SocketAddr)> {
+    loop {
+        match listener.accept().await {
+            Ok(connection) => {
+                *consecutive_errors = 0;
+                return Some(connection);
+            }
+            Err(error) if is_fatal_accept_error(&error) => {
+                tracing::error!(
+                    forward_type = forward_type,
+                    error = %error,
+                    "accept failed unrecoverably, stopping listener"
+                );
+                return None;
+            }
+            Err(error) => {
+                *consecutive_errors = consecutive_errors.saturating_add(1);
+                if *consecutive_errors > ACCEPT_MAX_CONSECUTIVE_ERRORS {
+                    tracing::error!(
+                        forward_type = forward_type,
+                        error = %error,
+                        attempts = *consecutive_errors,
+                        "accept failed repeatedly, stopping listener"
+                    );
+                    return None;
+                }
+                let backoff = accept_backoff(*consecutive_errors);
+                tracing::warn!(
+                    forward_type = forward_type,
+                    error = %error,
+                    attempts = *consecutive_errors,
+                    backoff_ms = backoff.as_millis(),
+                    "accept error, backing off before retrying"
+                );
+                tokio::time::sleep(backoff).await;
+            }
+        }
+    }
+}
+
+/// Delay before retrying accept after the given number of consecutive failures.
+fn accept_backoff(consecutive_errors: u32) -> Duration {
+    let exponent = consecutive_errors.saturating_sub(1).min(8);
+    (ACCEPT_BACKOFF_START * (1u32 << exponent)).min(ACCEPT_BACKOFF_CAP)
+}
+
+/// True when an accept error means the listening socket itself is unusable.
+fn is_fatal_accept_error(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::InvalidInput
+            | std::io::ErrorKind::NotConnected
+            | std::io::ErrorKind::BrokenPipe
+    )
+}
+
+async fn run_local_forward(
+    handle: SshHandle,
+    listener: TcpListener,
+    bind_addr: std::net::SocketAddr,
+    remote_host: String,
+    remote_port: u16,
+) -> Result<(), PortForwardError> {
     tracing::info!(
         forward_type = "local",
-        bind = %addr,
+        bind = %bind_addr,
         remote = format!("{}:{}", remote_host, remote_port),
         "local port forward listening"
     );
 
-    loop {
-        match listener.accept().await {
-            Ok((socket, peer_addr)) => {
-                let h = handle.clone();
-                let rh = remote_host.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = handle_direct_forward(
-                        &h,
-                        &rh,
-                        remote_port,
-                        peer_addr.ip().to_string(),
-                        peer_addr.port() as u32,
-                        socket,
-                    )
-                    .await
-                    {
-                        tracing::warn!(error = %e, "local forward error");
-                    }
-                });
+    let mut consecutive_errors = 0u32;
+    while let Some((socket, peer_addr)) =
+        accept_with_backoff(&listener, &mut consecutive_errors, "local").await
+    {
+        let h = handle.clone();
+        let rh = remote_host.clone();
+        tokio::spawn(async move {
+            if let Err(e) = handle_direct_forward(
+                &h,
+                &rh,
+                remote_port,
+                peer_addr.ip().to_string(),
+                peer_addr.port() as u32,
+                socket,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, "local forward error");
             }
-            Err(e) => {
-                tracing::warn!(error = %e, "accept error");
-            }
-        }
+        });
     }
+
+    Err(PortForwardError::ConnectionFailed(
+        "local forward listener stopped after repeated accept errors".to_string(),
+    ))
 }
 
 // ============================================================================
@@ -351,43 +430,32 @@ async fn handle_forwarded_connections(
 // Dynamic port forwarding: SOCKS5 proxy over SSH
 // ============================================================================
 
-async fn start_dynamic_forward(
+async fn run_dynamic_forward(
     handle: SshHandle,
-    local_host: String,
-    local_port: u16,
+    listener: TcpListener,
+    bind_addr: std::net::SocketAddr,
 ) -> Result<(), PortForwardError> {
-    let addr: std::net::SocketAddr = format!("{}:{}", local_host, local_port)
-        .parse()
-        .map_err(|e| PortForwardError::BindFailed(format!("invalid address: {}", e)))?;
-
-    let std_listener = std::net::TcpListener::bind(addr)
-        .map_err(|e| PortForwardError::BindFailed(format!("failed to bind {}: {}", addr, e)))?;
-    std_listener.set_nonblocking(true).ok();
-
-    let listener = TcpListener::from_std(std_listener)
-        .map_err(|e| PortForwardError::BindFailed(format!("failed to bind: {}", e)))?;
-
     tracing::info!(
         forward_type = "dynamic",
-        bind = %addr,
+        bind = %bind_addr,
         "SOCKS5 proxy listening"
     );
 
-    loop {
-        match listener.accept().await {
-            Ok((socket, peer_addr)) => {
-                let h = handle.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = handle_socks5_client(&h, socket, peer_addr).await {
-                        tracing::warn!(error = %e, "SOCKS5 client error");
-                    }
-                });
+    let mut consecutive_errors = 0u32;
+    while let Some((socket, peer_addr)) =
+        accept_with_backoff(&listener, &mut consecutive_errors, "dynamic").await
+    {
+        let h = handle.clone();
+        tokio::spawn(async move {
+            if let Err(e) = handle_socks5_client(&h, socket, peer_addr).await {
+                tracing::warn!(error = %e, "SOCKS5 client error");
             }
-            Err(e) => {
-                tracing::warn!(error = %e, "SOCKS5 accept error");
-            }
-        }
+        });
     }
+
+    Err(PortForwardError::ConnectionFailed(
+        "SOCKS5 listener stopped after repeated accept errors".to_string(),
+    ))
 }
 
 // ============================================================================
@@ -754,10 +822,52 @@ pub async fn port_forward_list(
 
 #[cfg(test)]
 mod tests {
-    use super::unregister_forward_sender_by_key;
+    use super::{
+        accept_backoff, bind_tcp_listener, is_fatal_accept_error, unregister_forward_sender_by_key,
+        ACCEPT_BACKOFF_CAP, ACCEPT_BACKOFF_START,
+    };
+    use crate::errors::PortForwardError;
 
     #[test]
     fn unregister_forward_sender_by_key_is_synchronous() {
         assert_eq!(unregister_forward_sender_by_key(usize::MAX), ());
+    }
+
+    #[tokio::test]
+    async fn bind_tcp_listener_reports_a_port_that_is_already_bound() {
+        let (_listener, addr) =
+            bind_tcp_listener("127.0.0.1", 0).expect("an unused local port should bind");
+
+        let error = bind_tcp_listener("127.0.0.1", addr.port())
+            .expect_err("binding an occupied port must be reported to the caller");
+
+        assert!(
+            matches!(&error, PortForwardError::BindFailed(message) if message.contains("failed to bind")),
+            "an occupied port must surface as BindFailed, got {error}"
+        );
+    }
+
+    #[test]
+    fn accept_backoff_grows_exponentially_and_stops_at_the_cap() {
+        assert_eq!(accept_backoff(1), ACCEPT_BACKOFF_START);
+        assert_eq!(accept_backoff(2), ACCEPT_BACKOFF_START * 2);
+        assert_eq!(accept_backoff(3), ACCEPT_BACKOFF_START * 4);
+        assert_eq!(accept_backoff(9), ACCEPT_BACKOFF_CAP);
+        assert_eq!(accept_backoff(u32::MAX), ACCEPT_BACKOFF_CAP);
+    }
+
+    #[test]
+    fn fatal_accept_errors_are_told_apart_from_retryable_ones() {
+        assert!(is_fatal_accept_error(&std::io::Error::from(
+            std::io::ErrorKind::InvalidInput
+        )));
+        assert!(!is_fatal_accept_error(&std::io::Error::from(
+            std::io::ErrorKind::ConnectionAborted
+        )));
+        // EMFILE/ENFILE surface as an uncategorized OS error on stable Rust: they must
+        // be retried with backoff instead of destroying the forward.
+        assert!(!is_fatal_accept_error(&std::io::Error::from_raw_os_error(
+            24
+        )));
     }
 }

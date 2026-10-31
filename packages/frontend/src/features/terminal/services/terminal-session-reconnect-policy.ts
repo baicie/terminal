@@ -1,14 +1,14 @@
 export const defaultReconnectSleep = (delayMs: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, delayMs)
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        reject(new DOMException('Reconnect cancelled', 'AbortError'))
-      },
-      { once: true },
-    )
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new DOMException('Reconnect cancelled', 'AbortError'))
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, delayMs)
+    signal?.addEventListener('abort', onAbort, { once: true })
   })
 
 export const defaultReconnectJitter = (delayMs: number) =>

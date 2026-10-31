@@ -3471,5 +3471,267 @@ zsh 第一版把 `preexec` 写成引号字符串而不是函数名，实机直�
 
 **建议的改法**（下一轮与其它前端改动合并，一次性重采）：`getThemeName` 先查 `themeDisplayNames[id]`，查不到再回退到当前的推导逻辑；补一条测试断言 `getThemeName('rose-pine') === 'Rosé Pine'`。
 
+---
 
+## 二十七、Phase 7 — 可靠性收口修复记录 (2026-10-31 ~ 2026-11-01)
+
+> 本节记录 `aba82ed..3c147e4` 的 7 个提交修复的问题。每条的「修复前行为」都来自代码审查与提交说明；本节写作时**没有重跑测试**，测试计数引自提交说明。
+
+### Issue #146: SFTP 传输队列没有并发上限，取消语义是假的 ✅ 已修复（2026-10-31，`3c147e4`）
+
+**严重程度**：Important
+
+**修复前**：调度顺序是 LIFO，并发提交可以把同时运行的传输推到任意数量；同一条记录能被重复启动；`cancelled` 只是状态字段的字面值，队列里的任务并没有真正被摘除，取消运行中的传输也没有对应语义。
+
+**修复后**：新增 `service/sftp-transfer-queue.ts`。并发上限在**同一同步段内**完成「检查槽位 → 占用槽位 → 转 running」，之后才出现第一个 `await`，所以并发提交只能串行落入该段（实测 10/50/100 入队时 running 恒为 3）；`startedIds` 守卫保证同一 `transferId` 最多启动一次；终态不可再转换，重复/乱序/迟到事件被忽略且槽位只释放一次；`queued → cancelled` 是真取消，`running` 返回 `unsupported-running`（Rust 侧没有 `sftp_cancel*` 命令），UI 对运行中记录禁用取消并给出说明；listener 安装失败由静默继续改为阻断并报错；调度改为 FIFO（行为变化，已记入提交说明）。
+
+**证据**：新增 25 个用例（含 10/50/100 并发、幽灵任务、槽位泄漏、断线重连）；提交说明记录前端测试 1209 → 1234、行数门禁 556 → 558。
+
+### Issue #147: 同步导入不是事务，导出失败还会拿空数组覆盖服务器真实备份 ✅ 已修复（2026-10-31，`bff6b9e`）
+
+**严重程度**：Critical（可能丢数据）
+
+**修复前**：`sync-import` 每条语句重开一次数据库连接，中途失败会留下半写状态；`sync-export` 与 `sync-team` 共 5 处在读失败时静默返回 `[]`——空备份会覆盖服务器上的真实备份；`storageDownload` 混淆「不存在」与「失败」；`script-executor` 失败即放弃且无并发上限。
+
+**修复后**：导入整包 `BEGIN IMMEDIATE … COMMIT`、失败 `ROLLBACK`、并发导入串行化并复用 `getDb()` 单例；`connection` 只在 schema + PRAGMA 全部成功后才发布；5 处静默 `[]` 改为 `selectStrict`，读失败中止导出/上传；`storageDownload` 改三态 `ok/notFound/error`；脚本执行加指数退避+抖动与 5 路信号量，部分失败记 `partial`；通知数组上限 100。
+
+### Issue #148: 离线队列无版本守卫全量覆盖、Team Server 多处先查后写竞争 ✅ 已修复（2026-10-31，`f9d93ac`）
+
+**严重程度**：Important
+
+**修复前**：离线队列的 `CREATE` 命中已存在 id 时直接全量覆盖，等于用旧数据覆盖新数据；同步增量游标在查询后才捕获，存在漏同步窗口；三处「先查后写」在并发下会丢更新；`addMember` 把唯一约束冲突报成 500；非 creator 能修改他人共享的 `permission`/`isSensitive`，可把敏感分享降级为明文；LINK 邀请 token 首字符可能被 `IdentifierPipe` 拒成 400（约 1/64 概率）。
+
+**修复后**：`CREATE` 冲突判定不再覆盖；游标改为查询前捕获并加 `lte` 上界；三处改为条件 `updateMany` + count 校验（REST 409 / push conflicts / 队列重试）；P2002 转 409；catch 只回稳定安全码；READWRITE 成员可写，非 creator 强制冻结 `permission` 与 `isSensitive`；LINK token 首字符限定字母数字；新增 `Share(teamId, updatedAt)` 索引及迁移 `20261031015529_share_team_updated_index`（迁移总数 2 → 3）。
+
+**证据**：测试 103 → 116；`typecheck` / `lint` / `test` / `prisma validate` 全绿。
+
+### Issue #149: 端口转发 bind 失败仍报 active、ssh writer 超时永久注销 ✅ 已修复（2026-10-31，`6ad2d8c`）
+
+**严重程度**：Critical（虚假成功）
+
+**修复前**：`port_forward` 在 `tokio::spawn` 内 bind，却立即写入 `status:"active"` 并返回 `Ok`——端口被占用时界面显示「已启动」，实际无人监听；remote 转发的 `tcpip_forward` 网络等待占着全局锁；accept 出错无退避；SFTP 的通道/子系统/握手三类失败被统一映射成 `SessionNotFound`，掩盖真实原因；下载前建目录失败被 `let _` 丢弃；`ssh_writer` 一次队列/响应超时就永久注销 writer，之后所有写入静默失效；三处 `reqwest` 客户端没有超时。
+
+**修复后**：bind 提前到命令内执行，失败返回 `Err` 且不插入任务表；`tcpip_forward` 移出锁临界区；accept 改 10ms→2s 指数退避、连续 10 次或不可恢复即停；SFTP 三类失败分别映射；建目录失败不再丢弃；writer 区分 Fatal 与 TimedOut，超时不再永久注销；三处客户端补 connect/整体 timeout。
+
+**证据**：新增 8 条单测；`cargo fmt --check` / `clippy -D warnings` / `test` 全绿（236 单元 + 3 集成）。
+
+### Issue #150: 证据门禁在含软链的路径下静默不执行，且两个脚本测试长期漏跑 ✅ 已修复（2026-10-31，`5ec331c`）
+
+**严重程度**：Important（门禁失真）
+
+**修复前**：`check-verification-evidence.mjs` 用字符串比较判断「是否直接运行」，路径里含符号链接时门禁直接跳过——退出码 0、零输出，看起来通过；`verify.mjs` 的 scripts 组写死了 16 项，`build-verification-evidence.test.mjs` 与 `macos-frontmost.test.mjs` **从未被执行**；`ci.yml` 的 source-size job 不跑脚本测试。
+
+**修复后**：直跑守卫改为两侧 `realpath` 比较；scripts 组改 `readdir` 通配收集；`ci.yml` 增加 `node --test scripts/*.test.mjs`。修复后 241 项脚本测试全部纳入门禁。
+
+### Issue #151: macOS 专属工具在 import-time 解析，Linux/Windows CI 整条导入链崩溃 ✅ 已修复（2026-10-31，`7c83029`）
+
+**严重程度**：Critical（CI 全红）
+
+**修复前**：GitHub Actions run `41077965521` 中 macOS success、Linux 与 Windows failure。根因是 `terminal-smoke-password-sshd.mjs` 在模块顶层执行 `resolveNativeTool('dscl', …)`，候选路径不存在即 throw，整个导入链在任何测试真正执行前就崩了；`NATIVE_CHOWN`/`NATIVE_CHMOD` 还是导出符号，连 import 它们的测试文件也连带崩。
+
+**修复后**：四个 helper 全部改为惰性记忆化解析，只在真正启动 native backend 时才 `accessSync`；导出改为惰性零参函数；新增 `declaredNativeTool`（计划期输出，不探测）与 `resolvedNativeHelpers`（测试取证）；新增 4 例 cross-platform 测试（全新子进程导入不探测任何 macOS helper、linux/win32 选择 backend 不解析 helper、win32 在依赖调用前即被拒、计划输出不触发解析）。门禁脚本测试 237 → 241。
+
+**未闭合**：该修复只在本地「把候选路径指向不存在位置」模拟过非 macOS 主机，**真实 Linux/Windows runner 验证仍待下一次 CI**。
+
+
+
+
+
+### Issue #154: Vault 用 `fs::write` 直接落盘，change_password 失败会让旧密码失效 ✅ 已修复（2026-10-31）
+
+**严重程度**：Critical（数据丢失）
+
+**改前**：三条写路径（create / set+delete / change_password）都直接 `fs::write` 截断写。`change_password` 先覆盖内存里的 salt / entries / master_key 再写盘，一旦写盘失败，内存是新密钥、磁盘是旧盐旧密钥——旧密码解不开内存、新密码解不开磁盘，等同永久丢失。中途失败还会遗留半写入的正式 Vault 文件。
+
+**改后**：新增唯一下沉提交点 `vault.rs:183 commit()` → `vault.rs:235 write_atomic()`（全文仅此 1 个调用点）：
+- 同目录 `NamedTempFile` → `write_all` → `flush` →（Unix 收紧权限）→ `sync_all` → `persist`
+- Unix：`rename` 原子替换；Windows：`MoveFileExW(MOVEFILE_REPLACE_EXISTING)` 一次调用替换，不做 remove-then-rename（那会制造「没有 vault 文件」的窗口）
+- `change_password`：`self.commit(candidate)?` 成功后才 `self.master_key = *new_master_key`，持久化失败时旧密码仍可解锁原有数据
+- 临时文件权限 0600；已有文件更严（如 0400）则沿用，绝不放宽
+- 明文与密钥进 `Zeroizing`，`VaultState` 新增 `Drop` 擦 master_key；错误信息只拼「阶段 + 路径 + io::Error」
+
+**新增 11 个用例**（`src-tauri/src/vault_tests.rs`），故障注入含线程局部写入 budget、只读目录、目标占成目录、进程被杀留下的截断临时文件。存储格式未变，无迁移。
+
+**未闭合**：Windows 上的 `MoveFileExW` 语义由 vendored 源码确认，但**未在真实 Windows 上实机验证**；目标被其它进程独占时保存会失败（失败是安全的，原文件完好）。
+
+### Issue #152: Vault 解锁不校验密码，空 Vault 用任意密码都能「解锁成功」 📋 待修复
+
+**严重程度**：Important（安全 / 正确性）
+
+**现状**：存储格式为 `{salt, entries{key: base64(nonce||ciphertext)}}`，没有 verifier。`vault_unlock` 对错误密码返回 Ok，直到第一次 `vault_get` 才报 DecryptFailed；当 Vault 为空（无 entries）时，**任意密码都能解锁成功**。
+
+**影响**：空 Vault 上设错密码不会暴露；密码错误反馈延迟到首次读取，排障方向被误导。
+
+**修复需要**：在格式中引入 verifier（如按 master key 计算的校验块），并先实现向后兼容读取——旧格式（无 verifier）首次成功解锁时补写，否则现有用户 Vault 无法解锁。
+
+**未修复原因**：改动存储格式违反本轮「不得为重构破坏现有 Vault」的约束，需单独决策。
+
+### Issue #153: `vault_create` 会覆盖已存在的 vault.json 📋 待修复
+
+**严重程度**：Important（数据丢失）
+
+**现状**：后端 `vault_create` 没有存在性保护，直接写入；前端仅在 `vaultExists === false` 时调用，契约完全依赖调用方自律。
+
+**影响**：任何绕过前端的调用（脚本、未来 UI 变更、竞态）都会**成功地原子覆盖**旧 Vault，旧数据不可恢复。
+
+**现状缓解**：Phase 7.2 之后覆盖本身是原子的，失败不会留下半写文件——但成功的覆盖仍然是毁灭性的。
+
+**修复需要**：`vault_create` 在目标存在时返回明确错误，或增加显式 overwrite 参数；需同步前端契约与 UI。
+
+
+### Issue #155: P7.0 的跨平台导入缺陷已验证修复；Linux 剩余失败定性为 #145（同步骤同错误）✅ 已定性（2026-11-01）
+
+**背景**：run `41077965521`（sha `76c424d`）macOS success、Linux 与 Windows failure。根因是 `terminal-smoke-password-sshd.mjs` 在模块顶层执行 `resolveNativeTool('dscl', …)`，Linux/Windows 上没有该工具即 throw，导入链在测试执行前就崩溃；`NATIVE_CHOWN`/`NATIVE_CHMOD` 还是导出符号，连 import 它们的测试文件也会连带崩。
+
+**修复**（commit `7c83029`）：改为候选表 + 记忆化惰性解析，仅在真正启动 native backend 时 `accessSync`；导出改惰性零参函数；新增 4 条 cross-platform 用例（模拟无 dscl 主机时 import 不再抛错）。
+
+**验证证据（run `41104738885`，sha `1eeebb7`）**：
+- `Windows PowerShell and cmd shell matrix` => **success**（改前为 failure）
+- Linux job 中 `Run public-key smoke and reconnect smoke under Xvfb` => **success** —— 该步骤正是导入 `terminal-smoke-password-sshd.mjs` 的路径，证明 import-time 崩溃已消除
+- ubuntu-latest 的 `Production source-size gate`（现执行 `node --test scripts/*.test.mjs` 全 241 项，含 4 条 cross-platform 用例）=> **success**
+
+**结论**：P7.0 的目标缺陷已在真实 Linux/Windows runner 上验证修复。Windows job 由 failure 转 success 是直接对照。
+
+**剩余问题不是 P7.0**：同一 run 的 Linux job 仍失败，但失败步骤是 `Run the real Linux shell interaction matrix`，错误为 `"Invalid shell probe result: contract mismatch"`（4 条用例），并伴随 `AT-SPI: Error retrieving accessibility bus address` 与 `libEGL warning: DRI3 error`。这与 **Issue #145** 记录的步骤与错误文案完全一致，但与本次导入修复无关。
+
+> **「环境性」定性已被 Issue #156 推翻（2026-11-01）**：失败集合在相隔 30 分钟的两次 run 中完全稳定——永远是同样三条 zsh 用例（readline-history / readline-tab / pty-resize）触到 30 秒 deadline；而 2026-10-17（`363e38f`）同一 workflow 同一 runner 上这三条是绿的（246 / 410 / 1341 ms）。绿基线距 30 秒预算有 20–120 倍余量，故**不是预算不足、也不是环境抖动**，而是这几条用例从未完成。定性应从「环境性」降级为「触发原因待定位」，详见 Issue #156。
+
+**注意**：`gh api .../jobs/{id}` 返回的步骤状态与最终日志不一致（API 把失败标在 "password authentication matrix in Docker" 且状态为 in_progress，而日志里的 `##[error]` 出自 shell interaction matrix）。**排查时以日志为准，不要以步骤级 API 为准。**
+
+**更正一处早期误判（2026-11-01）**：最初读到 run `41104738885` 的 macOS job 结论为空，曾据此写下「macOS 未产出结论、本轮没有证据」。这是**错的**——那次查询时 run 仍在 `in_progress`，`.conclusion` 尚未写入。
+
+`gh api repos/baicie/terminal/actions/runs/41104738885/jobs` 直查确认：
+
+| job | 结论 | 起止（UTC） |
+| --- | --- | --- |
+| macOS real SSH matrix | **success** | 18:11:42 → 18:39:13 |
+| Linux real SSH smoke | failure | 18:11:36 → 18:20:59 |
+| Windows PowerShell and cmd shell matrix | success | 18:11:36 → 18:20:08 |
+
+该 run 产出 artifact `verification-evidence`（37,555,207 字节）。因为三个 job 互相独立（工作流无 `needs:`），**Linux 失败并不阻止 macOS 证据产出**。
+
+**结论修正**：`1eeebb7` 上证据是可产出的，只是绑定该提交的指纹；最终提交需要它自己那一轮矩阵的证据。回填方式：`node scripts/fetch-verification-evidence.mjs --run-id <run> --with-binalies>`（正确参数见脚本 `--help`）。
+
+**三条排查口径必须分开**（本次混淆的根源）：
+1. `gh run view --json jobs` —— 进行中的 run 会返回空 conclusion，**不可用于判断未完成的 job**；
+2. `gh api .../runs/{id}/jobs` —— job 级结论的权威来源，但也要等 run `completed` 后再读；
+3. `gh api .../jobs/{job_id}` 的 steps —— 步骤状态可能与最终日志不一致（本例把失败标在 Docker 密码矩阵且状态 in_progress，而日志的 `##[error]` 出自 shell interaction matrix），**步骤级结论一律以日志为准**。
+
+
+---
+
+### Issue #156: shell probe 把「用例失败」报成「contract mismatch」，证据被丢弃；Linux zsh 三条用例确定性超时 🔄 部分修复（2026-11-01）
+
+**判定点**：`scripts/run-terminal-shell-probe.mjs` 的 `parseShellProbeResult`（改前 179–207 行）用一条 `if` 同时校验协议形状与判词：形状错误与 `value.ok !== true || value.error !== null` 共用同一个 `throw invalidResult('contract mismatch')`（原第 204 行）。前端 `experiments/terminal-shell-probe/automation-root.tsx:242-245` 在 30 s deadline 上 `publish(false, 'terminal shell probe timed out')`，`publish`（121–139 行）把 `ok:false` 与该 error 写入 `result.json`，于是**任何一次用例失败都会显示成 `Invalid shell probe result: contract mismatch`**，前端自己的错误文案、`durationMs`、实际键入字节全部被丢弃。这是 #145 三轮都没能定性的直接原因。
+
+**契约到底校验什么（改前）**：`caseName` 属于 7 条白名单、`durationMs` 正整数、`ok` 布尔、`error` 为 null 或字符串、`trace` 逐项等于 `CASE_TRACE` 表、`inputEvents` 为 1–512 条 `{bytes,dataHex,kind:'text'}` 且 `dataHex` 长度恰为 `bytes*2`、`ctrl-c-interrupt` 必须含原始 `0x03` 字节，最后 `ok` 必须为 true。其中 `trace` 一项是**空转**：`publish` 写的是 `expectedShellProbeTrace(config.caseName)`，即期望表原样回填，永远不可能与期望不符。
+
+**证据（run `41104738885` / Linux job `124231227267`，从日志时间戳与 `ok (n ms)` 实测）**：
+
+| case | 结果 | 耗时 |
+| --- | --- | --- |
+| `local/bash/readline-history` / `readline-tab` / `pty-resize` | ok | 269 / 509 / 1357 ms |
+| `local/zsh/readline-history` | contract mismatch | ~31.2 s（与下一条起始时间差） |
+| `local/zsh/readline-tab` | contract mismatch | ~31.1 s |
+| `local/zsh/pty-resize` | contract mismatch | ~31.0 s |
+| 其余 8 条（bash 4 条 + zsh `cat-eof`/`vim-edit`/`nano-edit`/`ctrl-c-interrupt`） | ok | 406–5151 ms |
+
+- 同一 run：`Run public-key smoke and reconnect smoke under Xvfb`、Linux Docker 密码矩阵、Windows PowerShell/cmd 矩阵、macOS job 全部 success。
+- run `41066493988`（sha `eac23fd`）**同三条、同文案**，同样各 ~31 s；bash 与 zsh 其余用例全绿。
+- run `39004204423`（2026-10-17，sha `363e38f`）同一 workflow 同一 job 这 14 条**全部通过**，其中三条 zsh 用例为 246 / 410 / 1341 ms。
+
+**归类**：
+- (b) 预算不足 —— **排除**。绿基线 246–1341 ms，30 s 有 20–120 倍余量；失败样本恰好卡在 deadline，说明用例**从未完成**（marker 要么立即出现要么永不出现），不是「慢一点」，调大 30 s 不可能把这三条变成 pass。
+- (c) 环境抖动 —— **基本排除**。同一 job 内 11/14 条正常、bash 同用例正常；失败集合在相隔 30 分钟的两次 run 里完全一致（永远是 zsh 这三条），而 10-17 的同一 runner 上它们是绿的；AT-SPI / DRI3 告警在绿 run 里同样出现。
+- (a) 真缺陷 —— **成立，但落在判定层而非 shell 期望层**。可证的是判定层把三种不同失败（应用自报超时 / shell 侧 FAIL 标记 / 形状错误）压成同一句 `contract mismatch`；zsh 这三条「为什么不完成」仍缺证据，恰恰因为旧输出丢掉了唯一能回答它的字段。故本次记 (a)，底层触发标 **BLOCKED_EXTERNAL（证据缺口）**，#145/#155 的「环境性抖动」结论应降级为待验证。
+
+**修复**（`scripts/run-terminal-shell-probe.mjs`）：
+1. 拆成 `protocolViolations()` 与 `caseFailure()`：只有真正的形状/标签违规才报 `Invalid shell probe result: contract mismatch: <字段级原因>`，逐条列出 keys / caseName / durationMs / ok / error / trace / inputEvents / 必需字节。
+2. 形状合法但 `ok!==true` 或 `error!==null` 的结果改报 `Shell probe case failed: <case> after <ms>`，附 expected vs actual、timing（是否触到 30 s deadline）、probe error、实际键入字节摘要（`JSON.stringify` 转义），并明确「协议合规，这是用例失败不是契约不匹配」。
+3. 结果文件根本没出现时的等待超时改为 `<case> shell probe result timed out after 60000 ms: the app never wrote result.json…`，带上 case 名。
+4. 失败结果允许 `inputEvents` 为空（原本会先撞形状错误盖掉真正原因）；`pass` 结果仍强制非空，且 `ctrl-c-interrupt` 仍强制含 `0x03`。
+
+**验证**：`node --test scripts/*.test.mjs` **246/246**（原 241，+5 条回归：应用自报超时、早失败、字段级 mismatch、空键入、缺 `0x03`）；`node scripts/check-source-size.mjs` **passed（558 files）**。**未在真实 Linux runner 上验证**（本机 macOS），下次 Linux job 的 `FAILED:` 行会直接给出上表原因。
+
+**仍缺的证据**：`automation-root.tsx` 的 `publish` 应记录**实际观察到的 marker 序列**而不是回填期望表。改该文件会动 fingerprints 路径、需重采 6 份证据，本轮不动，仅在此记录。
+
+**如何在完整图形栈环境复现（BLOCKED_EXTERNAL）**：
+
+```bash
+pnpm install --frozen-lockfile
+sudo apt-get install -y at-spi2-core dbus mesa-utils   # 补齐 AT-SPI 与软件 GL
+Xvfb :99 -screen 0 1280x1024x24 +extension GLX & export DISPLAY=:99
+dbus-run-session -- bash -lc 'gsettings set org.gnome.desktop.interface toolkit-accessibility true'
+pnpm smoke:shell-probe:matrix -- --shells zsh readline-history,readline-tab,pty-resize
+```
+
+对照实验：A) 上述完整栈；B) 追加 `LIBGL_ALWAYS_SOFTWARE=1`；C) 沿用 `xvfb-run -a`（无 GLX 扩展）。若三条在 A 下仍 ~30 s 不完成，则触发点不在图形/无障碍栈，而在 zsh 行编辑与 SIGWINCH 路径，按新输出的 `typed:` / `timing:` 字段继续定位。
+
+#### Issue #152 / #153 实现规格（待落地，2026-11-01 设计）
+
+**约束**：现有用户的 Vault 必须仍能解锁。因此 verifier 是**可选字段**，读取路径必须先兼容旧格式。
+
+**1. 格式扩展（向后兼容）**
+
+```rust
+struct VaultConfig {
+    salt: String,
+    entries: HashMap<String, String>,
+    /// 缺失 = 旧格式（无 verifier）。新增文件一定写入。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    verifier: Option<String>,
+}
+```
+
+verifier = `base64(HMAC-SHA256(master_key, "terminal-vault-verifier-v1" || salt))`。
+复用仓库已有的 HMAC/SHA-256 依赖（`storage.rs` 已在用 HmacSha256），不引入新密码学。
+
+**2. 解锁路径**
+
+| 情形 | 行为 |
+| --- | --- |
+| 有 verifier | 由 salt 派生 key → 计算 verifier → **常量时间比较**。不符即 `InvalidPassword`。这一条消除「空 Vault 任意密码都能解锁」 |
+| 无 verifier、entries 非空 | 由 salt 派生 key → 解密任意一条 entry 验证。成功即密码正确，**立即原子重写成带 verifier 的格式**（迁移发生在首次成功解锁，无需单独迁移步骤） |
+| 无 verifier、entries 为空 | 旧格式的空 Vault 没有任何可用校验材料，**无法验证**。保持兼容：接受本次输入并在写入时补上 verifier；此后每次解锁都走校验。此窗口必须写进文档，标为已接受的兼容代价 |
+
+**3. change_password**：先用上述规则验证旧密码（有 verifier 走 verifier，无则走条目解密），再走现有 `commit(candidate)?` 提交边界。
+
+**4. Issue #153（create 覆盖）**
+
+- `vault_create` 在目标存在时返回 `VaultError::AlreadyExists`，不写盘；新增 `overwrite: bool`（默认 false）供显式覆盖。
+- 前端当前只在 `vaultExists === false` 时调用，故正常路径不需要改；但契约变了，必须补一条前端测试证明「已存在时不调用 create」，以及一条 Rust 测试证明「存在时拒绝且旧文件字节不变」。
+- 这条会同时改动 Rust 命令签名与前端 service 契约，属跨栈变更，落地时需一起提交。
+
+**5. 落地后的验证要求**
+
+- 旧格式文件（无 verifier）必须仍能解锁：用 `vault_tests.rs` 里现有的历史 schema 反序列化用例扩展，断言解锁成功且文件被重写为带 verifier 的格式。
+- 错误密码必须在 unlock 阶段就被拒绝，而不是延迟到第一次 `vault_get`。
+- verifier 比较必须是常量时间（禁止 `==` 直接比字符串）。
+
+
+### Issue #157: macOS runner 的 debug 远程冷启动偶发超出 10 秒产品门禁 📋 待观察（非代码回归）
+
+**现象**：run `41110383290`（sha `f74a33e`）的 macOS job 在第 3 步 `pnpm smoke:remote-cold-start` 失败：
+
+```
+terminal readiness did not complete within 10000 ms
+(last probe: {"readiness":null,"readinessTarget":"terminal","windowReady":false,"terminalReady":false,"markerReady":false})
+ELIFECYCLE Command failed with exit code 1.
+```
+
+**判定为非代码回归的证据**：
+- `git diff --name-only c454f0f f74a33e` 只列出 `docs/issue.md`、`scripts/run-terminal-shell-probe.mjs`、`scripts/run-terminal-shell-probe.test.mjs`；
+  其中**没有任何** `packages/frontend/src` 或 `src-tauri/src` 变更 —— 被测量的应用二进制与上一轮完全相同
+- 同一场景在 run `41109246774`（sha `c454f0f`，应用代码相同）上**成功**，整轮 macOS job 耗时 27.5 分钟
+- 本次 macOS job 仅 6.5 分钟即失败（18:51:13 → 18:57:47），失败在第 1 个证据场景
+
+**为什么不能靠调大超时"修复"**：10 秒是产品门禁（`docs/project.md` 记录 Phase 6.20/6.21「建立首次可靠终端 < 10 秒门禁」），
+不是随手设的安全值。而历史 debug 冷启动实测为 7207 / 4105 / 3740 ms —— **7.2 秒对 10 秒门禁只有 1.39 倍余量**。
+把门禁调大等于修改产品 SLO 来迁就共享 runner 的抖动，属于掩盖。
+
+**处置**：重新 dispatch 同一 workflow；若连续多轮仍是同一场景失败，再按 runner 镜像（`macos-26-arm64`，本次版本 `20261026.0455.2`）与
+冷启动耗时的分布单独分析，而不是放宽门禁。
+
+**注意**：失败后 workflow 仍会用 `|| true` 上传 `evidence-artifact`（本次 24,036,767 字节，明显小于成功轮的 ~37.5 MB）。
+**这种来自失败 run 的产物不能用于证据回填**——manifest 未重新生成，且场景不完整。
 

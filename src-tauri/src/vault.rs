@@ -13,10 +13,17 @@ use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use tempfile::NamedTempFile;
+use zeroize::{Zeroize, Zeroizing};
 
-/// Vault configuration stored on disk
-#[derive(Serialize, Deserialize)]
+/// Vault configuration stored on disk.
+///
+/// The persisted shape is deliberately unchanged: one Argon2 salt plus base64
+/// `nonce || ciphertext` entries per key. `Clone` exists so a save can build the
+/// next state, persist it atomically, and only then adopt it in memory.
+#[derive(Clone, Serialize, Deserialize)]
 struct VaultConfig {
     /// Salt for key derivation
     salt: String,
@@ -41,38 +48,27 @@ pub struct VaultState {
 }
 
 impl VaultState {
-    /// Create a new vault with a master password
+    /// Create a new vault with a master password.
+    ///
+    /// The empty vault is persisted through the same atomic replace used by
+    /// every later write, so a failed create cannot leave a partially written
+    /// `vault.json` behind.
     pub fn create(master_password: &str, config_path: PathBuf) -> Result<Self, VaultError> {
-        // Generate a random salt
         let salt = SaltString::generate(&mut OsRng);
+        let master_key =
+            derive_master_key(master_password, &salt).map_err(VaultError::CreateFailed)?;
 
-        // Derive key using Argon2
-        let argon2 = Argon2::default();
-        let hash = argon2
-            .hash_password(master_password.as_bytes(), &salt)
-            .map_err(|e| VaultError::CreateFailed(format!("Failed to derive key: {}", e)))?;
-
-        // Extract 32 bytes for AES-256
-        let hash_output = hash
-            .hash
-            .ok_or_else(|| VaultError::CreateFailed("Failed to get hash output".into()))?;
-        let mut master_key = [0u8; 32];
-        let hash_bytes = hash_output.as_bytes();
-        let len = std::cmp::min(hash_bytes.len(), 32);
-        master_key[..len].copy_from_slice(&hash_bytes[..len]);
-
-        let config = VaultConfig {
-            salt: salt.to_string(),
-            entries: HashMap::new(),
-        };
-
-        // Save initial config
-        let vault = Self {
-            config,
+        let mut vault = Self {
+            config: VaultConfig {
+                salt: salt.to_string(),
+                entries: HashMap::new(),
+            },
             master_key,
-            config_path: config_path.clone(),
+            config_path,
         };
-        vault.save_config()?;
+
+        let initial = vault.config.clone();
+        vault.commit(initial)?;
 
         Ok(vault)
     }
@@ -88,19 +84,8 @@ impl VaultState {
         // Re-derive key using stored salt
         let salt = SaltString::from_b64(&config.salt)
             .map_err(|e| VaultError::UnlockFailed(format!("Invalid salt: {}", e)))?;
-
-        let argon2 = Argon2::default();
-        let hash = argon2
-            .hash_password(master_password.as_bytes(), &salt)
-            .map_err(|e| VaultError::UnlockFailed(format!("Failed to derive key: {}", e)))?;
-
-        let hash_output = hash
-            .hash
-            .ok_or_else(|| VaultError::UnlockFailed("Failed to get hash output".into()))?;
-        let mut master_key = [0u8; 32];
-        let hash_bytes = hash_output.as_bytes();
-        let len = std::cmp::min(hash_bytes.len(), 32);
-        master_key[..len].copy_from_slice(&hash_bytes[..len]);
+        let master_key =
+            derive_master_key(master_password, &salt).map_err(VaultError::UnlockFailed)?;
 
         Ok(Self {
             config,
@@ -114,11 +99,16 @@ impl VaultState {
         config_path.exists()
     }
 
-    /// Encrypt and store a value
+    /// Encrypt and store a value.
+    ///
+    /// The entry goes into a candidate config that is persisted first; the
+    /// in-memory map only changes once the vault file was durably replaced, so a
+    /// failed save never leaves memory ahead of the file on disk.
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), VaultError> {
         let encrypted = encrypt_value(value, &self.master_key)?;
-        self.config.entries.insert(key.to_string(), encrypted);
-        self.save_config()
+        let mut config = self.config.clone();
+        config.entries.insert(key.to_string(), encrypted);
+        self.commit(config)
     }
 
     /// Decrypt and retrieve a value
@@ -136,56 +126,271 @@ impl VaultState {
         self.config.entries.keys().cloned().collect()
     }
 
-    /// Delete a vault entry
+    /// Delete a vault entry.
+    ///
+    /// Same commit boundary as set: the removal reaches the disk before it
+    /// reaches memory.
     pub fn delete(&mut self, key: &str) -> Result<(), VaultError> {
-        if self.config.entries.remove(key).is_none() {
+        let mut config = self.config.clone();
+        if config.entries.remove(key).is_none() {
             return Err(VaultError::KeyNotFound(key.to_string()));
         }
-        self.save_config()
+        self.commit(config)
     }
 
-    /// Change master password
+    /// Change master password.
+    ///
+    /// Commit boundary: the re-encrypted config with the new salt is written
+    /// atomically first; the salt, entries and master key are swapped in memory
+    /// only after that replace succeeded. If persistence fails, the old password
+    /// still decrypts the untouched vault file and still works in memory.
     pub fn change_password(&mut self, new_password: &str) -> Result<(), VaultError> {
-        // Generate new salt
         let new_salt = SaltString::generate(&mut OsRng);
+        // Wrapped so a failed save wipes the derived key instead of leaking it.
+        let new_master_key = Zeroizing::new(
+            derive_master_key(new_password, &new_salt).map_err(VaultError::CreateFailed)?,
+        );
 
-        // Derive new key
-        let argon2 = Argon2::default();
-        let hash = argon2
-            .hash_password(new_password.as_bytes(), &new_salt)
-            .map_err(|e| VaultError::CreateFailed(format!("Failed to derive key: {}", e)))?;
-
-        let hash_output = hash
-            .hash
-            .ok_or_else(|| VaultError::CreateFailed("Failed to get hash output".into()))?;
-        let mut new_master_key = [0u8; 32];
-        let hash_bytes = hash_output.as_bytes();
-        let len = std::cmp::min(hash_bytes.len(), 32);
-        new_master_key[..len].copy_from_slice(&hash_bytes[..len]);
-
-        // Re-encrypt all entries with new key
-        let mut new_entries = HashMap::new();
+        // Re-encrypt every entry with the new key; the plaintext of one entry
+        // lives for a single iteration and is wiped when `plaintext` drops.
+        let mut entries = HashMap::with_capacity(self.config.entries.len());
         for (key, encrypted) in &self.config.entries {
-            // Decrypt with old key
-            let value = decrypt_value(encrypted, &self.master_key)?;
-            // Encrypt with new key
-            let new_encrypted = encrypt_value(&value, &new_master_key)?;
-            new_entries.insert(key.clone(), new_encrypted);
+            let plaintext = Zeroizing::new(decrypt_value(encrypted, &self.master_key)?);
+            entries.insert(
+                key.clone(),
+                encrypt_value(plaintext.as_str(), &new_master_key)?,
+            );
         }
 
-        // Update config
-        self.config.salt = new_salt.to_string();
-        self.config.entries = new_entries;
-        self.master_key = new_master_key;
+        let candidate = VaultConfig {
+            salt: new_salt.to_string(),
+            entries,
+        };
 
-        self.save_config()
+        // Commit point: nothing below this line runs unless the durable replace
+        // succeeded, so a failed save leaves the old password fully usable.
+        self.commit(candidate)?;
+        self.master_key = *new_master_key;
+
+        Ok(())
     }
 
-    fn save_config(&self) -> Result<(), VaultError> {
-        let content = serde_json::to_string_pretty(&self.config)
+    /// Atomically replace the vault file with `config`, then adopt it in memory.
+    ///
+    /// This is the only function that writes the vault, so create, set, delete
+    /// and change_password share one commit point: durable replace first,
+    /// in-memory state second.
+    fn commit(&mut self, config: VaultConfig) -> Result<(), VaultError> {
+        let content = serde_json::to_vec_pretty(&config)
             .map_err(|e| VaultError::SaveFailed(format!("Failed to serialize config: {}", e)))?;
-        fs::write(&self.config_path, content)
-            .map_err(|e| VaultError::SaveFailed(format!("Failed to write config: {}", e)))
+        write_atomic(&self.config_path, &content)?;
+        self.config = config;
+        Ok(())
+    }
+}
+
+impl Drop for VaultState {
+    fn drop(&mut self) {
+        // Wipe the derived AES key when the vault is locked or replaced.
+        self.master_key.zeroize();
+    }
+}
+
+/// Derive the 32-byte AES key from the master password and salt.
+///
+/// Returns a plain message so create, unlock and change_password keep their own
+/// error variants. The message never contains the password.
+fn derive_master_key(master_password: &str, salt: &SaltString) -> Result<[u8; 32], String> {
+    let hash = Argon2::default()
+        .hash_password(master_password.as_bytes(), salt)
+        .map_err(|e| format!("Failed to derive key: {}", e))?;
+
+    let hash_output = hash
+        .hash
+        .ok_or_else(|| "Failed to get hash output".to_string())?;
+
+    let mut master_key = [0u8; 32];
+    let hash_bytes = hash_output.as_bytes();
+    let len = std::cmp::min(hash_bytes.len(), 32);
+    master_key[..len].copy_from_slice(&hash_bytes[..len]);
+    Ok(master_key)
+}
+
+// ==================== Atomic persistence ====================
+
+/// Write `bytes` to `path` through a same-directory temporary file.
+///
+/// Strategy: `NamedTempFile::new_in(dir)` keeps the temporary file on the same
+/// filesystem as the target (a rename across filesystems is not atomic), then
+/// write -> flush -> `sync_all` -> `persist`. `persist` is `rename(2)` on Unix
+/// and `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING)` on Windows, so both
+/// platforms replace an existing `vault.json` in one step: Windows needs no
+/// remove-then-rename dance, and neither platform can expose a truncated vault
+/// because the old file stays readable until the new one is fully written and
+/// synced.
+///
+/// Cleanup: `temp` owns the temporary file, so every error return below and any
+/// panic during unwinding drop it and unlink it. A failed save therefore never
+/// leaves a half-written vault file, nor a stray temporary file.
+fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), VaultError> {
+    let dir = path.parent().ok_or_else(|| {
+        VaultError::SaveFailed(format!(
+            "Vault path has no parent directory: {}",
+            path.display()
+        ))
+    })?;
+
+    let mut temp = NamedTempFile::new_in(dir)
+        .map_err(|e| save_failed("Failed to create temporary vault file", dir, &e))?;
+    let temp_path = temp.path().to_path_buf();
+
+    write_payload(&mut temp, bytes, &temp_path)?;
+    restrict_temp_permissions(&temp, path, &temp_path)?;
+    temp.as_file()
+        .sync_all()
+        .map_err(|e| save_failed("Failed to sync temporary vault file", &temp_path, &e))?;
+
+    if let Err(error) = temp.persist(path) {
+        // `error.file` still owns the temporary file, so dropping it removes it.
+        return Err(save_failed(
+            "Failed to replace vault file",
+            path,
+            &error.error,
+        ));
+    }
+
+    sync_parent_dir(dir);
+    Ok(())
+}
+
+/// Build a `SaveFailed` error from a stage, a path and the underlying IO error.
+///
+/// Only paths and `io::Error` text are formatted here: no key, password or
+/// plaintext ever reaches a vault error message or a log line.
+fn save_failed(stage: &str, path: &Path, error: &std::io::Error) -> VaultError {
+    VaultError::SaveFailed(format!("{} ({}): {}", stage, path.display(), error))
+}
+
+/// Write the payload into the temporary file and flush it to the OS.
+fn write_payload(
+    temp: &mut NamedTempFile,
+    bytes: &[u8],
+    temp_path: &Path,
+) -> Result<(), VaultError> {
+    #[cfg(test)]
+    if let Some(limit) = fault_injection::take_write_budget() {
+        // Fault injection: leave a truncated payload behind and fail the way a
+        // full disk or an interrupted write would. The target file is never
+        // touched and the temporary file is removed by the caller drop.
+        let truncated = &bytes[..bytes.len().min(limit)];
+        temp.write_all(truncated)
+            .map_err(|e| save_failed("Failed to write temporary vault file", temp_path, &e))?;
+        temp.flush()
+            .map_err(|e| save_failed("Failed to flush temporary vault file", temp_path, &e))?;
+        return Err(VaultError::SaveFailed(format!(
+            "injected write failure after {} bytes",
+            truncated.len()
+        )));
+    }
+
+    temp.write_all(bytes)
+        .map_err(|e| save_failed("Failed to write temporary vault file", temp_path, &e))?;
+    temp.flush()
+        .map_err(|e| save_failed("Failed to flush temporary vault file", temp_path, &e))
+}
+
+/// Keep the temporary file at least as strict as the vault file it replaces.
+///
+/// `NamedTempFile` creates the temporary file with mode 0600 on Unix, so the
+/// write phase never exposes the ciphertext to group or other. When the existing
+/// `vault.json` is stricter still (for example 0400), that mode is carried over
+/// instead of being widened.
+#[cfg(unix)]
+fn restrict_temp_permissions(
+    temp: &NamedTempFile,
+    target: &Path,
+    temp_path: &Path,
+) -> Result<(), VaultError> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    let existing = fs::metadata(target).ok().map(|meta| meta.mode() & 0o777);
+    let mode = match existing {
+        Some(mode) if mode & 0o077 == 0 && mode & 0o400 != 0 => mode,
+        _ => 0o600,
+    };
+
+    temp.as_file()
+        .set_permissions(fs::Permissions::from_mode(mode))
+        .map_err(|e| {
+            save_failed(
+                "Failed to restrict temporary vault file permissions",
+                temp_path,
+                &e,
+            )
+        })
+}
+
+/// Windows has no POSIX mode bits: the temporary file inherits the vault
+/// directory ACL, exactly like the `vault.json` it replaces, so it is never wider
+/// than the final file. `persist` also clears the temporary attribute it set.
+#[cfg(not(unix))]
+fn restrict_temp_permissions(
+    _temp: &NamedTempFile,
+    _target: &Path,
+    _temp_path: &Path,
+) -> Result<(), VaultError> {
+    Ok(())
+}
+
+/// Flush the directory entry the rename just changed, so the replacement
+/// survives a crash immediately after the save returns.
+///
+/// Only Unix can open a directory and fsync it; on Windows `MoveFileExW` exposes
+/// no portable directory handle, so there the fresh content is guaranteed by the
+/// `sync_all` of the temporary file before the rename. A directory fsync failure
+/// is logged and not propagated: the vault file is already replaced at that
+/// point, so failing the save would be a lie.
+fn sync_parent_dir(dir: &Path) {
+    #[cfg(unix)]
+    if let Ok(handle) = fs::File::open(dir) {
+        if let Err(error) = handle.sync_all() {
+            log::warn!(
+                "vault: failed to fsync directory {}: {}",
+                dir.display(),
+                error
+            );
+        }
+    }
+
+    #[cfg(not(unix))]
+    let _ = dir;
+}
+
+/// Test-only fault injection for the atomic write path.
+///
+/// The budget is thread-local, so parallel tests cannot leak an injected failure
+/// into each other.
+#[cfg(test)]
+mod fault_injection {
+    use std::cell::Cell;
+
+    thread_local! {
+        static WRITE_BUDGET: Cell<Option<usize>> = const { Cell::new(None) };
+    }
+
+    /// Arm the next save to fail after `bytes` bytes reach the temporary file.
+    pub(super) fn fail_write_after(bytes: usize) {
+        WRITE_BUDGET.with(|budget| budget.set(Some(bytes)));
+    }
+
+    /// Disarm the injection.
+    pub(super) fn clear() {
+        WRITE_BUDGET.with(|budget| budget.set(None));
+    }
+
+    /// Consume the armed budget, if any.
+    pub(super) fn take_write_budget() -> Option<usize> {
+        WRITE_BUDGET.with(|budget| budget.take())
     }
 }
 
@@ -382,3 +587,7 @@ pub fn vault_can_encrypt_for_team() -> bool {
     let state = VAULT_STATE.lock();
     state.is_some()
 }
+
+#[cfg(test)]
+#[path = "vault_tests.rs"]
+mod tests;

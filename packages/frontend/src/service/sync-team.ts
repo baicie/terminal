@@ -1,6 +1,6 @@
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
-import { getUserProfile, select } from '@/service/database'
+import { getUserProfile, selectStrict } from '@/service/database'
 import { getKnownHosts } from '@/service/database/known-hosts'
 import { getSSHKeys } from '@/service/database/ssh-keys'
 import {
@@ -8,6 +8,7 @@ import {
   getWorkspaces,
 } from '@/service/database/workspaces'
 import { createImportStats, importResources } from './sync-import'
+import { assertExportTablesReadable } from './sync-export'
 import type {
   MergeMode,
   TeamImportStats,
@@ -29,6 +30,10 @@ export async function exportTeamPackage(
   options?: TeamPackageExportOptions,
 ): Promise<string | null> {
   try {
+    await assertExportTablesReadable({
+      sshKeys: Boolean(options?.includeSSHKeys),
+      knownHosts: Boolean(options?.includeKnownHosts),
+    })
     const userProfile = await getUserProfile()
     const [
       hosts,
@@ -41,19 +46,19 @@ export async function exportTeamPackage(
       workspaces,
     ] = await Promise.all([
       options?.includeHosts
-        ? select<Record<string, unknown>>('SELECT * FROM hosts')
+        ? selectStrict<Record<string, unknown>>('SELECT * FROM hosts')
         : [],
       options?.includeHosts
-        ? select<Record<string, unknown>>('SELECT * FROM groups')
+        ? selectStrict<Record<string, unknown>>('SELECT * FROM groups')
         : [],
       options?.includeSnippets
-        ? select<Record<string, unknown>>('SELECT * FROM snippets')
+        ? selectStrict<Record<string, unknown>>('SELECT * FROM snippets')
         : [],
       options?.includeSnippets
-        ? select<Record<string, unknown>>('SELECT * FROM snippet_packages')
+        ? selectStrict<Record<string, unknown>>('SELECT * FROM snippet_packages')
         : [],
       options?.includeMembers
-        ? select<Record<string, unknown>>(
+        ? selectStrict<Record<string, unknown>>(
             'SELECT user_id, user_name, user_email, role, joined_at FROM team_members WHERE team_id = ?',
             [options.teamId || ''],
           )

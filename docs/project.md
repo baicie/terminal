@@ -16,13 +16,13 @@
 
 ## 当前进度与当前目标
 
-> 快照日期：2026-10-28；当前分支：`codex/terminal-reliability-matrix`。
+> 快照日期：2026-11-01；当前分支：`feat/phase7-reliability-productization`（`origin` = `https://github.com/baicie/terminal.git`）。
 
 | 项目 | 状态 |
 | --- | --- |
 | 当前目标 | 🔄 先完成 macOS 人工物理键盘、中文 IME、Option/dead key 与日常交互验收；Windows/Pageant/串口因暂无设备保留待验证 |
 | 当前进度 | Phase 6.20/6.21 建立首次可靠终端 < 10 秒门禁；Phase 6.57-6.69 完成会话生命周期、自动重连、Shell Integration、串口清理与 Linux 验收 runner 加固；Phase 6.70 修复慢速 workspace 恢复与启动兜底竞争（Issue #104）；Phase 6.71 统一 xterm、移动端快捷键栏和命令总线的主动输入接管（Issue #105）；Phase 6.72 让手动输入探针可临时切换 ASCII 输入源并在验收后恢复原输入源（Issue #106）；Phase 6.73 收紧 shell probe 的 dialect 声明，fish/sh 在有独立 dialect 前 fail-fast（Issue #107）；Phase 6.74 让认证阶段的瞬时网络错误继续自动重连，同时保留凭据错误的终止语义（Issue #108）；Phase 6.77 修复同步状态监听器重入时覆盖新手动重连 promise 的会话生命周期竞态（Issue #111）；Phase 6.78 修复 WebKit 延迟 input 重叠去重并增加 composition/paste 标记清理（Issue #26）；Phase 6.79 修复首连 outage smoke 在 sshd 尚未完全停止时启动应用的 fixture 竞态（Issue #112）；Phase 6.80 增加 host-wake fallback timer 心跳与并发诊断（Issue #113）；Phase 6.81 增加独立 loopback renderer heartbeat 与严格契约（Issue #113）；Phase 6.82 增加产品 host-wake 的 timer 漂移与 Page Lifecycle 兜底；Phase 6.83 收紧 host-wake reporter 的超时/取消串行化并让 renderer heartbeat 可重试（Issue #113）；Phase 6.84 将冷启动报告拆分为 `windowReady`/`terminalReady`，严格终端模式必须提供端到端 marker（Issue #115）；Phase 6.85 增加本地 per-run PTY marker runner（Issue #116）；Phase 6.86 修复 host-wake 延迟恢复 continuation 的 generation 竞态（Issue #117）；Phase 6.87 隔离 local cold-start 环境并为 app/AX 探针增加 SIGKILL 回收（Issue #115/#116）；Phase 6.88 让挂起的事件注册等待可随会话关闭取消，保护前端启动取消代际（Issue #118）；Phase 6.89 修复 host-key 预检错误分类与 route 失效（Issue #119）；Phase 6.90 补齐证据源码指纹的构建配置覆盖（Issue #120）；Phase 6.91 修复延迟 workspace 恢复兜底（Issue #121）；Phase 6.92 收紧 cold-start 异步 deadline（Issue #122）；Phase 6.93 修复 WKWebView Option-as-Meta 输入双发（Issue #123）；Phase 6.94 修复取消 host 查询后的 loading 状态（Issue #124）；Phase 6.95 让 host-wake fixture 可取消（Issue #113）；Phase 6.96-6.97 收口首次 SSH 共享预算、IPC 毫秒边界和迟到 session 回收（Issue #119/#126/#127）；Phase 6.98-6.100 完成启动 loader deadline、probe loader deadline 和移动端首屏入口（Issue #128-#130）；Phase 6.101 修复 SSH cancellation Notify 丢唤醒竞态（Issue #118 补充）；Phase 6.103 固定前端测试并发上限（Vitest `maxWorkers: 4`），消除全量并行下 1 秒查询窗口的偶发超时（Issue #131）。Node 24 前端 126 文件/1142 项与 Rust 221 单测 + 3 集成测试、Clippy、205 项脚本测试通过。当前源码与自动化测试已验证，但 macOS 锁屏期间不能采集本轮 outage/wake 实机证据；人工键盘/IME、真实合盖唤醒、Windows Agent/Pageant/PTY 与串口硬件仍未验收。 |
-| 自动化基线 | 当前源码（fingerprint `04bb5973…`）上 6 份实机证据全部重采完成，`pnpm verify` 全绿。debug `d7a4dd4c…`：本地冷启动 6654/2127/1225 ms、远程 bash prompt 4575 ms（均 `readyAt: terminal`）、13-case SSH 13/13（首连 985–9125 ms）、bash/zsh shell 14/14 + 真实 SSH 7/7。release `1e68ba73…`：本地冷启动 1827/1319/1421 ms、远程 prompt 3069 ms、shell 14/14 + 真实 SSH 7/7、10-case 认证矩阵 10/10（首连 775–4214 ms）。旧 `4368d6c8…`/`de8e49cb…`/`ab209317…` 记录均为历史。人工物理键盘/IME、真实合盖唤醒与 Windows Agent/Pageant/PTY/串口硬件仍待验收。 |
+| 最新进展（Phase 7） | 2026-10-31 至 2026-11-01 的 7 个提交把「静默失败」逐处改成「可见失败」：SFTP 传输队列状态机化（并发上限 3 不可突破、终态不可再转换、取消语义如实区分）、同步导入事务化与失败可见、Team Server 离线队列条件写与并发竞争修复（含 `Share(teamId, updatedAt)` 索引迁移）、Rust 端口转发 bind 失败不再假报 active 且 writer 超时不再永久注销、脚本层去掉 macOS 专属工具的 import-time 解析修好 Linux/Windows CI、`pnpm verify` 的 scripts 组改为通配收集。详见下方 Phase 7。 | ⚠️ **该证据状态已过期**：Phase 7 的 16 个提交改动了 fingerprinted 路径，当前源码指纹为 `81ffa0bf…`，6 份实机证据**尚未重采**，`pnpm verify` 的 evidence gate 当前为红。下列数字均属历史记录。debug `d7a4dd4c…`：本地冷启动 6654/2127/1225 ms、远程 bash prompt 4575 ms（均 `readyAt: terminal`）、13-case SSH 13/13（首连 985–9125 ms）、bash/zsh shell 14/14 + 真实 SSH 7/7。release `1e68ba73…`：本地冷启动 1827/1319/1421 ms、远程 prompt 3069 ms、shell 14/14 + 真实 SSH 7/7、10-case 认证矩阵 10/10（首连 775–4214 ms）。旧 `4368d6c8…`/`de8e49cb…`/`ab209317…` 记录均为历史。人工物理键盘/IME、真实合盖唤醒与 Windows Agent/Pageant/PTY/串口硬件仍待验收。 |
 | 输入验收增量 | Phase 6.24 最终源码构建下严格 30 轮 CGEvent 通过，全部回读 `617364`、零重发且原输入源恢复；这不是人工键盘验收。Phase 6.25 修复组合态 Escape 不写入 PTY并增加 composition 证据校验；Phase 6.26 证明 xterm 到前端输入 FIFO 的协议编码；Phase 6.27 于 2026-10-10 完成真实 Tauri/WKWebView + local PTY 的 SGR mouse、bracketed paste、raw X10 三 case 精确回读；Phase 6.31 当前工作树完成 bash/zsh 各七 case、14/14 全绿，另有默认 `/bin/sh` loopback SSH 7/7；Phase 6.52 为手动 IME 增加 TIS 非 ASCII 输入源资格门禁并记录 id/type，但没有把人工输入结果标记为通过。中文 IME 自动注入未触发真实 composition。逐轮 CGEvent 结果见 [`验收记录`](verification/2026-09-22-macos-input-probe.json)，raw probe 结果见 [`2026-10-10-macos-raw-input.json`](verification/2026-10-10-macos-raw-input.json)，当前 shell 交互结果见 [`2026-10-11-macos-shell-interaction-current.json`](verification/2026-10-11-macos-shell-interaction-current.json)，旧二进制历史记录见 [`2026-10-11-macos-shell-interaction-probe.json`](verification/2026-10-11-macos-shell-interaction-probe.json)，此前失败边界见 [`阻塞记录`](verification/2026-10-10-macos-raw-input-blocked.json)。 |
 | 下一验证目标 | 完成 macOS 人工物理键盘 30 轮、中文 IME、Option/dead key、vim/nano 交互，以及真实合盖休眠/唤醒、VPN/蜂窝切换；Windows OpenSSH Agent/Pageant/PTY 与串口硬件因暂无设备保持未验证。host-wake 自动化只证明应用内恢复协议，不替代上述实机验收。 |
 
@@ -674,11 +674,11 @@ src-tauri/
 | 领域 | 改动 |
 | --- | --- |
 | Windows 编译 | 连接池异步 API 与 `SshSession::new_with_*` 改为拥有 `Arc`、`String` 和 `Option<String>`；Agent public key 与 identity 在 `await` 前转为拥有值，`OwnedIdentityAgentSigner` 隔离上游借用式签名 Future；新增 `Send + 'static` 编译期回归断言 |
-| 发布矩阵 | 新增 `.github/workflows/release.yml`，使用六个原生 runner 覆盖 macOS/Windows/Linux 的 x64 与 ARM64 |
+| 发布矩阵 | 新增 `.github/workflows/release.yml`，使用 8 个原生 runner 打包 job 覆盖 macOS（`aarch64` / `x86_64` 分架构各出一个 DMG）与 Windows/Linux 的 x64 + ARM64 |
 | 安装包 | macOS 生成 DMG，Windows 生成 NSIS，Linux 生成 AppImage 与 DEB；资产名固定包含版本、系统和架构 |
 | 完整性 | 上传前逐项校验资产存在且非空，随后生成并上传 `SHA256SUMS.txt`；未配置 updater JSON、Apple notarization 或 Windows Authenticode |
 
-**当前证据**：提交 `83cd4e8` 的 GitHub Actions CI `31409070480` 全绿，前端、Team Server、源码规模、Rust、Docker 镜像、PostgreSQL 迁移以及 macOS、Windows、Linux Tauri 原生编译全部通过。本机 Rust 为 45 项测试，包含五个 SSH command Future 的 `Send + 'static` 编译回归；YAML 解析与 `actionlint` 已通过。标签 `v0.0.1-dev.0` 指向 `6965f3a`，Release 工作流 `31431531040` 的六个原生打包任务和最终校验全部通过；8 个安装包与 `SHA256SUMS.txt` 均非空，GitHub 服务端 SHA-256 digest 与清单逐项一致。
+**当前证据**：提交 `83cd4e8` 的 GitHub Actions CI `31409070480` 全绿，前端、Team Server、源码规模、Rust、Docker 镜像、PostgreSQL 迁移以及 macOS、Windows、Linux Tauri 原生编译全部通过。本机 Rust 为 45 项测试，包含五个 SSH command Future 的 `Send + 'static` 编译回归；YAML 解析与 `actionlint` 已通过。标签 `v0.0.1-dev.0` 指向 `6965f3a`，Release 工作流 `31431531040` 的八个原生打包 job 和最终校验全部通过；8 个安装包与 `SHA256SUMS.txt` 均非空，GitHub 服务端 SHA-256 digest 与清单逐项一致。
 
 **实机边界**：Windows/Linux 安装包构建成功不等于 OpenSSH Agent、Pageant、Jump Host、本地 PTY、快捷键或串口硬件实机通过；这些项目继续保留在 Issue #39。
 
@@ -764,6 +764,33 @@ src-tauri/
 | 辅助命令 | `--previews DIR` 输出 512px 三配色对比；`--gallery DIR` 输出三配色 × 512/256/128/64/32 画廊 **并写出 `index.html` 对比页**（含浅色/深色底座模拟），一条命令即可复现整个预览 |
 
 **验证边界**：已通过像素级校验（四角透明、中心不透明、方块跨度 100–924、提示符强调色 `(95,242,200)`），但图标观感需人工目视确认；画廊页位于 `dist/icon-preview/index.html`（`dist/` 已被 git 忽略，本地执行 `python3 scripts/generate-icon.py --gallery dist/icon-preview` 可重新生成）。换配色后必须重跑 `pnpm tauri icon` 才能更新打包资产。
+
+---
+
+### Phase 7 - 可靠性收口：把静默失败改成可见失败 ✅ 代码与自动化测试完成，发布验收仍待实机
+
+> 2026-10-31 至 2026-11-01（`aba82ed..b587ac0`，16 个提交）：先做 6 模块审查，再按「失败必须可见」逐处修复，随后完成 Phase 7.0–7.4 五个阶段。下表测试数字引自提交说明与本地复跑记录；本轮**没有重采实机证据**。
+
+| 领域 | 改动 | 提交 |
+| --- | --- | --- |
+| SFTP 传输队列 | 新增 `service/sftp-transfer-queue.ts`：状态机 `queued → running → done/error` 与 `queued → cancelled` 真取消；并发上限在同一次同步段内写入运行槽位（实测 10/50/100 入队时 running 恒为 3）；同一 `transferId` 最多启动一次；终态不可再转换，重复/乱序/迟到事件被忽略且槽位只释放一次；调度顺序由 LIFO 改为 FIFO。`running` 的取消返回 `unsupported-running`（Rust 侧无 `sftp_cancel*` 命令），UI 对运行中记录禁用取消并给出说明。`transfer-panel` 拆出 `transfer-row` | `3c147e4` |
+| 同步与存储 | `sync-import` 每条语句重开连接改为复用 `getDb()` 单例，整包 `BEGIN IMMEDIATE … COMMIT`，失败 `ROLLBACK`，并发导入串行化；`connection` 只在 schema + PRAGMA 全部成功后才发布；`sync-export` / `sync-team` 的 5 处静默 `[]` 改为 `selectStrict`，读失败中止导出/上传（空备份不再可能覆盖服务器真实备份）；`storageDownload` 改为 `ok/notFound/error` 三态；`script-executor` 增加退避+抖动与 5 路并发信号量，部分失败记 `partial`；通知数组上限 100 | `bff6b9e` |
+| 终端输出管线 | `output-buffer` 的 delivered 回执表加上限（4096 条 / 8 MiB），触顶回压而非静默增长；`output-scheduler` 拒绝入队时作废回执，溢出时逐条作废并归还流控额度，消除旧输出二次打印 | `bff6b9e` |
+| Team Server | 离线队列 `CREATE` 命中已存在 id 判为冲突（不再无版本守卫全量覆盖）；同步增量游标改为查询前捕获并加 `lte` 上界；三处「先查后写」改为条件 `updateMany` + count 校验（REST 409 / push conflicts / 队列重试）；`addMember` 的 P2002 转 409；非 creator 强制冻结 `permission` 与 `isSensitive`（防止把他人敏感分享降级为明文）；LINK 邀请 token 首字符限定字母数字（修复约 1/64 邀请链接被 `IdentifierPipe` 拒成 400） | `f9d93ac` |
+| Rust 后端 | `port_forward` 的 bind 提前到命令内执行，失败返回 `Err` 且不插入任务表（原先在 `tokio::spawn` 内 bind 却立即写 `status:"active"` 并返回 Ok，端口被占用时界面显示已启动、实际无人监听）；remote 转发的 `tcpip_forward` 网络等待移出全局锁；accept 出错改 10ms→2s 指数退避、连续 10 次或不可恢复即停止；`sftp` 通道/子系统/握手三类失败不再统一映射为 `SessionNotFound`；下载前建目录失败不再被 `let _` 丢弃；`ssh_writer` 单次队列/响应超时不再永久注销 writer（worker 区分 Fatal 与 TimedOut）；三处 `reqwest` 客户端补 connect/整体 timeout | `6ad2d8c` |
+| 脚本与门禁 | macOS 专属工具（`dscl` / `dseditgroup` / `chown` / `chmod`）由 import-time 解析改为惰性记忆化，修好 Linux/Windows CI（根因是 `terminal-smoke-password-sshd.mjs` 顶层 `resolveNativeTool` 在非 macOS 主机直接 throw）；`verify.mjs` 的 scripts 组由手写 16 项改为 `readdir` 通配收集，补回长期漏跑的 `build-verification-evidence.test.mjs` 与 `macos-frontmost.test.mjs`；`ci.yml` 的 source-size job 增加 `node --test scripts/*.test.mjs`；证据门禁的直跑守卫改两侧 `realpath` 比较，修复路径含软链时门禁静默不执行（退出码 0、零输出） | `7c83029` `5ec331c` |
+| Vault 持久化（P7.2） | 三条写路径由 `fs::write` 截断写改为唯一下沉提交点 `commit()` → `write_atomic()`（同目录 NamedTempFile → write → flush → sync_all → persist）；Unix 用 rename，Windows 用 `MoveFileExW(MOVEFILE_REPLACE_EXISTING)` 一次替换，不做 remove-then-rename（那会制造「没有 vault 文件」的窗口）；`change_password` 在 `commit(candidate)?` 成功后才切换内存 master_key；临时文件 0600，已有文件更严则沿用；明文与密钥进 `Zeroizing`。新增 11 个用例，故障注入含线程局部写入 budget、只读目录、目标占成目录、进程被杀残留临时文件 | `9900c50` |
+| UI 打磨（P7.3） | 标签栏连接状态由三态外观扩到六态并**打通数据口径**：`Tab.connectionStatus` 增加 `reconnecting`/`error`，投影层不再折叠（原为「六态外观配三态数据」）；非健康态在 ≥sm 显示本地化状态词，动效走 `motion-safe`；SFTP 传输行新增「传输中 · N%」与「运行中无法取消」可见说明，运行中取消按钮 disabled 且 aria-label 承载完整原因；Skeleton 改 `motion-safe`；主机空态改走 i18n。`stripProcessLocalTabState` 落盘丢弃该字段，重启不会残留「重连中」 | `dbda6a7` |
+| Updater 收口（P7.4） | 失败分五类（offline / timeout / unreachable / unconfigured / signature），signature 优先匹配，避免验签失败被「未配置」的温和文案掩盖；offline 仅在 `navigator.onLine === false` 时报，不把服务端故障甩给用户网络；版本号改用 `getVersion()` 真实值并常驻显示，版本读失败不再把「检查成功」变成失败；安装入口不渲染按钮并写明阻塞原因（当前公钥为占位符，必然验签失败） | `1c1d107` |
+| 文档 | 新增 `docs/coding-rules.md`（8 节可执行编码规则，每条配反面实例与 enforcement 级别）与 `docs/code-quality-review-2026-10.md`（6 模块、143 条分级审查发现）；发布文档对齐 22 处事实错误（MobX→Zustand、7→8 个安装包、删除不存在的 lipo/universal 描述、updater 三模式真实边界）；`AGENTS.md` 门禁数字更正；补充 Issue #152/#153 实现规格 | `1eeebb7` `08ff6ce` `b924f89` `b587ac0` |
+
+**本轮后仍然待验证（不得标成已完成）**：`updater-signed` 从未在真实密钥下执行过；Windows/Linux 实机安装与升级为 NOT_RUN；真实 S3 仍只有固定向量；macOS 物理键盘、中文 IME、Option/dead key 与真实合盖唤醒仍需人工；串口需真实硬件。
+
+**本地门禁（2026-11-01 实测）**：前端 1283 用例、Team Server 116 用例、Rust 247 单测 + 3 集成测试、Node 脚本 246 项、558 个生产文件行数门禁，全部通过。
+
+**证据与环境**：源码指纹为 `81ffa0bf…`，6 份实机证据尚未重采，evidence gate 为红。Linux job 的剩余失败已定性为 `Run the real Linux shell interaction matrix` 的三条 zsh 用例（触到 30 秒 deadline），判定层缺陷已在 `f74a33e` 修复；底层触发原因标为 BLOCKED_EXTERNAL（见 Issue #156）。
+
+**已知残余风险**：导入事务在 `tauri-plugin-sql` 的 sqlx 连接池下不是严格原子（最坏为 COMMIT 报错、整批回滚，属可见失败）；Vault 的 `vault_unlock` 不校验密码与 `vault_create` 会覆盖已存在文件（Issue #152/#153，需格式与契约变更）；Windows 上的 `MoveFileExW` 语义仅由 vendored 源码确认，未实机验证。
 
 ---
 
@@ -1024,6 +1051,8 @@ CREATE TABLE user_profile (
 | 数据库   | PostgreSQL 16   |
 | API 文档 | Swagger/OpenAPI |
 | 容器     | Docker          |
+
+**数据模型与迁移**：Prisma schema 共 8 个 model（`User`、`ApiToken`、`Team`、`TeamMember`、`Share`、`AuditLog`、`Invite`、`SyncQueue`）；`packages/team-server/prisma/migrations/` 下现有 **3 个迁移**——`init`、`sync_queue_processing_token`、`share_team_updated_index`。最后一个是 Phase 7 新增的 `CREATE INDEX "Share_teamId_updatedAt_idx" ON "Share"("teamId","updatedAt")`，用于团队共享列表按 `updatedAt` 排序时的扫描收敛。前端 SQLite 的表结构见下方「数据库表结构」，两套 schema 相互独立
 
 ### 部署指南
 

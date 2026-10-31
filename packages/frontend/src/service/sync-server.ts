@@ -1,4 +1,4 @@
-import { select } from '@/service/database'
+import { selectStrict } from '@/service/database'
 import { storageDownload, storageUpload } from '@/service/storage'
 import { collectExportData } from './sync-export'
 import { importDataFromFile, previewImportData } from './sync-file'
@@ -56,11 +56,13 @@ export async function downloadFromServer(
   mergeMode: MergeMode = 'merge',
 ): Promise<DownloadResult> {
   try {
-    const content = await storageDownload('terminal-latest.json')
-    if (!content) return { success: false }
-    const data = previewImportData(content)
+    const download = await storageDownload('terminal-latest.json')
+    if (download.status === 'notFound') return { success: false }
+    if (download.status === 'error')
+      throw new Error(`Failed to download backup: ${download.error}`)
+    const data = previewImportData(download.data)
     if (!data) throw new Error('Invalid data format from server')
-    const stats = await importDataFromFile(content, mergeMode)
+    const stats = await importDataFromFile(download.data, mergeMode)
     localStorage.setItem('terminal.lastSyncTime', String(Date.now()))
     return { success: true, data, stats }
   } catch (error) {
@@ -87,17 +89,23 @@ export async function previewServerData(): Promise<ServerPreview> {
       knownHosts,
       workspaces,
     ] = await Promise.all([
-      select<Record<string, unknown>>('SELECT id FROM hosts'),
-      select<Record<string, unknown>>('SELECT id FROM groups'),
-      select<Record<string, unknown>>('SELECT id FROM snippets'),
-      select<Record<string, unknown>>('SELECT id FROM snippet_packages'),
-      select<Record<string, unknown>>('SELECT id FROM ssh_keys'),
-      select<Record<string, unknown>>('SELECT id FROM known_hosts'),
-      select<Record<string, unknown>>('SELECT id FROM workspaces'),
+      selectStrict<Record<string, unknown>>('SELECT id FROM hosts'),
+      selectStrict<Record<string, unknown>>('SELECT id FROM groups'),
+      selectStrict<Record<string, unknown>>('SELECT id FROM snippets'),
+      selectStrict<Record<string, unknown>>('SELECT id FROM snippet_packages'),
+      selectStrict<Record<string, unknown>>('SELECT id FROM ssh_keys'),
+      selectStrict<Record<string, unknown>>('SELECT id FROM known_hosts'),
+      selectStrict<Record<string, unknown>>('SELECT id FROM workspaces'),
     ])
-    const content = await storageDownload('terminal-latest.json')
-    if (!content) return { success: false, error: 'No backup found on server' }
-    const data = previewImportData(content)
+    const download = await storageDownload('terminal-latest.json')
+    if (download.status === 'notFound')
+      return { success: false, error: 'No backup found on server' }
+    if (download.status === 'error')
+      return {
+        success: false,
+        error: `Failed to read backup: ${download.error}`,
+      }
+    const data = previewImportData(download.data)
     if (!data) return { success: false, error: 'Invalid backup format' }
     const remote = resourceRecords(data)
     const localIds = {

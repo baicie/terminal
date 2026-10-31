@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { generateInviteCode } from './invite-code'
+import { IDENTIFIER_PATTERN } from '../http-validation'
+import {
+  generateInviteCode,
+  generateLinkToken,
+  LINK_TOKEN_HEAD_ALPHABET,
+  LINK_TOKEN_LENGTH,
+} from './invite-code'
 
 describe('generateInviteCode', () => {
   it('draws every character independently from the secure random source', () => {
@@ -12,5 +18,18 @@ describe('generateInviteCode', () => {
     expect(randomIndex.mock.calls.every(([maximum]) => maximum === 32)).toBe(
       true,
     )
+  })
+})
+
+describe('generateLinkToken', () => {
+  it('never starts with a character that identifier validation rejects', () => {
+    expect(LINK_TOKEN_HEAD_ALPHABET).toMatch(/^\w+$/)
+    expect(LINK_TOKEN_HEAD_ALPHABET).not.toContain('-')
+
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const token = generateLinkToken()
+      expect(token).toHaveLength(LINK_TOKEN_LENGTH)
+      expect(IDENTIFIER_PATTERN.test(token)).toBe(true)
+    }
   })
 })

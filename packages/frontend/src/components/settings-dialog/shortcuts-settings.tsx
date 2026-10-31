@@ -127,12 +127,12 @@ export function ShortcutsSettings() {
     <div className="space-y-4 py-4">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Keyboard className="h-4 w-4" />
+          <Keyboard className="size-4" />
           <span>{t('settings.shortcuts.tip')}</span>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleResetAll}>
-            <RotateCcw className="h-3 w-3 mr-1" />
+            <RotateCcw className="size-3 mr-1" />
             {t('settings.shortcuts.resetAll')}
           </Button>
         </div>

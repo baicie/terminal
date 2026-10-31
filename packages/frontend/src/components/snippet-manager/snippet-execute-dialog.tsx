@@ -90,7 +90,7 @@ export const SnippetExecuteDialog: React.FC<SnippetExecuteDialogProps> = ({
             </Button>
           </DialogClose>
           <Button type="button" onClick={onExecute}>
-            <Play className="h-4 w-4 mr-1" />
+            <Play className="size-4 mr-1" />
             Execute
           </Button>
         </DialogFooter>

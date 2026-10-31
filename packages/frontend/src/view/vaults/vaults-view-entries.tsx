@@ -25,7 +25,7 @@ function AddEntryForm(props: VaultsViewEntriesProps) {
   return (
     <div className="p-4 border-b space-y-3">
       <h4 className="text-sm font-medium flex items-center gap-2">
-        <Plus className="h-4 w-4" />
+        <Plus className="size-4" />
         Add New Entry
       </h4>
       <Input
@@ -41,7 +41,7 @@ function AddEntryForm(props: VaultsViewEntriesProps) {
           onChange={event => props.onNewEntryValueChange(event.target.value)}
         />
         <Button size="icon" onClick={props.onAddEntry}>
-          <Plus className="h-4 w-4" />
+          <Plus className="size-4" />
         </Button>
       </div>
     </div>
@@ -52,7 +52,7 @@ function EntryList(props: VaultsViewEntriesProps) {
   if (props.entries.length === 0) {
     return (
       <div className="p-8 text-center text-muted-foreground">
-        <KeyRound className="h-10 w-10 mx-auto mb-2 opacity-50" />
+        <KeyRound className="size-10 mx-auto mb-2 opacity-50" />
         <p>No entries yet</p>
         <p className="text-sm">Add your first secure entry above</p>
       </div>
@@ -70,7 +70,7 @@ function EntryList(props: VaultsViewEntriesProps) {
           onClick={() => props.onSelectEntry(entry)}
         >
           <div className="flex items-center gap-3 min-w-0">
-            <KeyRound className="h-4 w-4 text-muted-foreground shrink-0" />
+            <KeyRound className="size-4 text-muted-foreground shrink-0" />
             <div className="min-w-0">
               <p className="font-medium truncate">{entry.key}</p>
               {entry.description && (
@@ -89,7 +89,7 @@ function EntryList(props: VaultsViewEntriesProps) {
               props.onDeleteEntry(entry.key)
             }}
           >
-            <Trash2 className="h-4 w-4 text-destructive" />
+            <Trash2 className="size-4 text-destructive" />
           </Button>
         </div>
       ))}
@@ -102,8 +102,8 @@ export function VaultsViewEntries(props: VaultsViewEntriesProps) {
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between p-4 border-b">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-            <Unlock className="h-5 w-5 text-primary" />
+          <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center">
+            <Unlock className="size-5 text-primary" />
           </div>
           <div>
             <h2 className="font-semibold">Vault</h2>
@@ -114,7 +114,7 @@ export function VaultsViewEntries(props: VaultsViewEntriesProps) {
           </div>
         </div>
         <Button variant="outline" onClick={props.onLock}>
-          <Lock className="h-4 w-4 mr-2" />
+          <Lock className="size-4 mr-2" />
           Lock
         </Button>
       </div>

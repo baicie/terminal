@@ -12,30 +12,46 @@ type Database = Awaited<ReturnType<typeof loadDb>>
 let db: Database | null = null
 let initPromise: Promise<Database> | null = null
 
+function requireDb(): Database {
+  if (!db) throw new Error('Database not initialized')
+  return db
+}
+
+/**
+ * Open the connection and apply schema + pragmas. The handle is published to
+ * `db` only after both steps succeeded, so a failed setup is never cached as a
+ * usable connection: the next getDb() call retries from scratch.
+ */
+async function establishConnection(): Promise<Database> {
+  try {
+    const database = await loadDb()
+    await initSchema(database)
+    await configureSqlite(database)
+    db = database
+    return database
+  } catch (error) {
+    db = null
+    initPromise = null
+    throw error
+  }
+}
+
 export async function getDb() {
   if (db) return db
   if (initPromise) return initPromise
   if (!isTauri()) throw new Error('Database only available in Tauri context')
-  initPromise = (async () => {
-    const database = await loadDb()
-    db = database
-    await initSchema()
-    await configureSqlite()
-    return database
-  })()
+  initPromise = establishConnection()
   return initPromise
 }
 
-export async function configureSqlite() {
-  const database = db!
+export async function configureSqlite(database: Database = requireDb()) {
   await database.execute('PRAGMA journal_mode=WAL')
   await database.execute('PRAGMA busy_timeout=30000')
   await database.execute('PRAGMA synchronous=NORMAL')
   await database.execute('PRAGMA cache_size=10000')
 }
 
-export async function initSchema() {
-  const database = db!
+export async function initSchema(database: Database = requireDb()) {
   await initializeCoreSchema(database)
   await initializeTeamSchema(database)
 }

@@ -26,6 +26,12 @@ pub enum SftpError {
     InvalidPath(String),
     #[error("checksum failed: {0}")]
     ChecksumFailed(String),
+    #[error("channel open failed: {0}")]
+    ChannelOpenFailed(String),
+    #[error("SFTP subsystem unavailable: {0}")]
+    SubsystemUnavailable(String),
+    #[error("SFTP handshake failed: {0}")]
+    HandshakeFailed(String),
 }
 
 #[derive(Serialize)]
@@ -74,6 +80,18 @@ impl From<SftpError> for SftpErrorDto {
                 kind: "checksum_failed",
                 message: Some(m),
             },
+            SftpError::ChannelOpenFailed(m) => Self {
+                kind: "channel_open_failed",
+                message: Some(m),
+            },
+            SftpError::SubsystemUnavailable(m) => Self {
+                kind: "subsystem_unavailable",
+                message: Some(m),
+            },
+            SftpError::HandshakeFailed(m) => Self {
+                kind: "handshake_failed",
+                message: Some(m),
+            },
         }
     }
 }
@@ -90,6 +108,10 @@ impl From<SftpErrorDto> for SftpError {
             ("rename_failed", Some(m)) => SftpError::RenameFailed(m),
             ("invalid_path", Some(m)) => SftpError::InvalidPath(m),
             ("checksum_failed", Some(m)) => SftpError::ChecksumFailed(m),
+            ("channel_open_failed", Some(m)) => SftpError::ChannelOpenFailed(m),
+            ("subsystem_unavailable", Some(m)) => SftpError::SubsystemUnavailable(m),
+            ("handshake_failed", Some(m)) => SftpError::HandshakeFailed(m),
+
             _ => SftpError::SessionNotFound,
         }
     }
@@ -460,6 +482,32 @@ mod tests {
         };
         let back: super::SftpError = dto.into();
         assert!(matches!(back, super::SftpError::SessionNotFound));
+    }
+
+    #[test]
+    fn test_sftp_connect_failures_map_to_distinct_kinds() {
+        let check = |original: super::SftpError, expected_kind: &str| {
+            let dto = super::SftpErrorDto::from(original.clone());
+            assert_eq!(dto.kind, expected_kind);
+            let back: super::SftpError = dto.into();
+            assert_eq!(back.to_string(), original.to_string());
+        };
+        check(
+            super::SftpError::ChannelOpenFailed("channel limit reached".into()),
+            "channel_open_failed",
+        );
+        check(
+            super::SftpError::SubsystemUnavailable("server refused the sftp subsystem".into()),
+            "subsystem_unavailable",
+        );
+        check(
+            super::SftpError::HandshakeFailed("protocol version mismatch".into()),
+            "handshake_failed",
+        );
+
+        // A missing session must stay distinguishable from a failed SFTP connect.
+        let missing = super::SftpErrorDto::from(super::SftpError::SessionNotFound);
+        assert_eq!(missing.kind, "session_not_found");
     }
 
     #[test]

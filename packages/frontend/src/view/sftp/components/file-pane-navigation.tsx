@@ -88,7 +88,10 @@ export function FilePaneNavigation({
           <Home className="size-3.5" />
         </button>
         {pathParts.map((part, index) => (
-          <span key={index} className="flex items-center gap-1 shrink-0">
+          <span
+            key={`/${pathParts.slice(0, index + 1).join('/')}`}
+            className="flex items-center gap-1 shrink-0"
+          >
             <ChevronRight className="size-3 text-muted-foreground" />
             <button
               className="hover:text-primary"

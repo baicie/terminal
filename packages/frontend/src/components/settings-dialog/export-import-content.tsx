@@ -50,7 +50,7 @@ export function ExportImportContent({
   return (
     <div className="space-y-3">
       <h4 className="text-sm font-medium flex items-center gap-2">
-        <Shield className="h-4 w-4" />
+        <Shield className="size-4" />
         Local Export / Import
       </h4>
       <p className="text-sm text-muted-foreground">
@@ -70,12 +70,12 @@ export function ExportImportContent({
         >
           {exporting ? (
             <>
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              <RefreshCw className="size-4 mr-2 animate-spin" />
               Exporting...
             </>
           ) : (
             <>
-              <Download className="h-4 w-4 mr-2" />
+              <Download className="size-4 mr-2" />
               Export to JSON File
             </>
           )}
@@ -89,7 +89,7 @@ export function ExportImportContent({
         </p>
         {step === 'idle' && (
           <Button variant="outline" onClick={onSelect} className="w-full">
-            <Upload className="h-4 w-4 mr-2" />
+            <Upload className="size-4 mr-2" />
             Select Import File
           </Button>
         )}
@@ -101,7 +101,7 @@ export function ExportImportContent({
                 ([key, label], index) =>
                   (index < 3 || preview[key] > 0) && (
                     <li key={key}>
-                      <Check className="h-3 w-3 inline mr-1 text-green-500" />
+                      <Check className="size-3 inline mr-1 text-green-500" />
                       {preview[key]} {label}
                     </li>
                   ),
@@ -116,7 +116,7 @@ export function ExportImportContent({
                   onClick={() => onModeChange('merge')}
                   className="flex-1"
                 >
-                  <Merge className="h-3 w-3 mr-1" />
+                  <Merge className="size-3 mr-1" />
                   Merge
                 </Button>
                 <Button
@@ -125,7 +125,7 @@ export function ExportImportContent({
                   onClick={() => onModeChange('replace')}
                   className="flex-1"
                 >
-                  <Replace className="h-3 w-3 mr-1" />
+                  <Replace className="size-3 mr-1" />
                   Replace
                 </Button>
               </div>
@@ -150,7 +150,7 @@ export function ExportImportContent({
                 disabled={!content}
                 className="flex-1"
               >
-                <Upload className="h-3 w-3 mr-1" />
+                <Upload className="size-3 mr-1" />
                 Import
               </Button>
             </div>
@@ -158,14 +158,14 @@ export function ExportImportContent({
         )}
         {step === 'importing' && (
           <div className="text-center py-4">
-            <RefreshCw className="h-6 w-6 mx-auto animate-spin text-primary" />
+            <RefreshCw className="size-6 mx-auto animate-spin text-primary" />
             <p className="mt-2 text-sm">Importing data...</p>
           </div>
         )}
         {step === 'success' && (
           <div className="text-center py-4">
-            <div className="h-8 w-8 mx-auto rounded-full bg-green-100 flex items-center justify-center">
-              <Check className="h-5 w-5 text-green-600" />
+            <div className="size-8 mx-auto rounded-full bg-green-100 flex items-center justify-center">
+              <Check className="size-5 text-green-600" />
             </div>
             <p className="mt-2 text-sm">Import successful!</p>
           </div>
@@ -173,7 +173,7 @@ export function ExportImportContent({
         {step === 'error' && (
           <div className="space-y-2">
             <div className="p-3 bg-destructive/10 rounded-lg flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+              <AlertCircle className="size-4 text-destructive shrink-0 mt-0.5" />
               <p className="text-sm text-destructive">{errorMessage}</p>
             </div>
             <Button variant="outline" onClick={onReset} className="w-full">
@@ -183,7 +183,7 @@ export function ExportImportContent({
         )}
       </div>
       <div className="p-3 bg-muted/50 rounded-lg flex items-start gap-2">
-        <Shield className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+        <Shield className="size-4 text-muted-foreground shrink-0 mt-0.5" />
         <p className="text-xs text-muted-foreground">
           Data is exported as plain JSON. Sensitive information like passwords
           may be included. Keep your export files secure.

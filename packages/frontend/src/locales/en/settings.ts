@@ -5,6 +5,7 @@ export default {
   'settings.description': 'Configure your terminal application preferences',
   'settings.appearance': 'Appearance',
   'settings.terminal': 'Terminal',
+  'settings.shortcutsTab': 'Shortcuts',
   'settings.general': 'General',
   'settings.connection': 'Connection',
   'settings.storage': 'Storage',

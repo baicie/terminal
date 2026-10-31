@@ -1,4 +1,5 @@
 import { Plus, Server } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { Host } from '@/types'
 import { Button } from '@/components/ui/button'
 import { HostListSkeleton } from '@/components/ui/view-skeletons'
@@ -31,6 +32,8 @@ export const RenderListBody: React.FC<RenderListBodyProps> = ({
   onShareHostClick,
   onAddHost,
 }) => {
+  const { t } = useTranslation()
+
   if (loading && isMobile) {
     return <HostListSkeleton count={8} />
   }
@@ -40,23 +43,18 @@ export const RenderListBody: React.FC<RenderListBodyProps> = ({
       <EmptyState
         icon={<Server className="size-12" />}
         title={
-          searchQuery
-            ? 'No hosts found'
-            : 'No hosts yet'
+          searchQuery ? t('hosts.noHosts') : t('hosts.noHostsYet')
         }
         description={
           searchQuery
-            ? 'Try a different search term'
-            : 'Add your first host to get started'
+            ? t('hosts.tryDifferentSearch')
+            : t('hosts.addFirstHost')
         }
         action={
           !searchQuery && (
-            <Button
-              size={isMobile ? 'sm' : 'default'}
-              onClick={onAddHost}
-            >
+            <Button size={isMobile ? 'sm' : 'default'} onClick={onAddHost}>
               <Plus className="size-4 mr-1" data-icon="inline-start" />
-              Add Host
+              {t('hosts.addHost')}
             </Button>
           )
         }

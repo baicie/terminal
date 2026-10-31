@@ -89,7 +89,7 @@ export function TerminalWorkbench({
     >
       <div
         className={cn(
-          'relative h-full w-full',
+          'relative size-full',
           hasSplit &&
             (isHorizontalSplit ? 'grid grid-rows-1' : 'grid grid-cols-1'),
         )}

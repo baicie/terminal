@@ -49,6 +49,13 @@ export default {
   'teams.shareToTeam': 'Share to {{team}}',
   'teams.includePassword': 'Include password (encrypted)',
   'teams.encryptPassword': 'Encrypt password',
+  'teams.includePasswordDesc':
+    'Share the host password for automatic connection',
+  'teams.encryptPasswordDesc': 'Encrypt sensitive data with a password',
+  'teams.encryptionHint':
+    'Team members must enter the password to view and use these credentials',
+  'teams.plaintextPasswordWarning':
+    'The password is shared in plaintext. Enable encryption to protect sensitive information.',
   'teams.passwordProtection': 'Password protection',
   'teams.sharePassword': 'Share password',
   'teams.enterSharePassword': 'Enter share password',

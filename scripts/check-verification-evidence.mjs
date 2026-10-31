@@ -1,4 +1,5 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import process from 'node:process'
@@ -601,9 +602,24 @@ export async function checkVerificationEvidence({
   return { checked: entries.length, problems }
 }
 
-const isDirectRun =
-  process.argv[1] !== undefined &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+// Compared on real paths: the runtime resolves the entry module through symlinks
+// while argv[1] keeps the path as typed, so a checkout reached through a symlink
+// would compare unequal and the gate would silently do nothing (exit 0, no output).
+function realpathOrNull(target) {
+  try {
+    return realpathSync(target)
+  } catch {
+    return null
+  }
+}
+
+const modulePath = realpathOrNull(fileURLToPath(import.meta.url))
+const invokedPath =
+  process.argv[1] === undefined
+    ? null
+    : realpathOrNull(path.resolve(process.argv[1]))
+
+const isDirectRun = modulePath !== null && modulePath === invokedPath
 
 if (isDirectRun) {
   const fingerprint = await computeSourceFingerprint()

@@ -29,6 +29,7 @@ export function createSyncActions(
         userProfile,
         sharedHosts,
         sharedSnippets,
+        isSyncing,
       } = get()
       if (
         settings.enabled &&
@@ -42,7 +43,12 @@ export function createSyncActions(
           userProfile?.id || '',
         )
       if (!settings.enabled || settings.mode !== 'cloud' || !currentTeam) return
-      set({ isSyncing: true, syncError: null, syncConflicts: [] })
+      // A second run while one is in flight would push the same shares twice
+      // and let the two runs overwrite each other's state.
+      if (isSyncing) return
+      // Conflicts from an earlier run stay visible until they are resolved;
+      // clearing them here hid unreviewed conflicts behind a fresh sync.
+      set({ isSyncing: true, syncError: null })
       try {
         const changesResponse = await teamApi.getChanges(
           get().lastSyncAt ?? undefined,

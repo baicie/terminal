@@ -84,7 +84,7 @@ export function ScriptTab({
     <div className="space-y-4">
       <ViewToolbar className="px-0 gap-4">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder={t('scripts.search')}
             value={searchQuery}

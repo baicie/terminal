@@ -79,7 +79,7 @@ const SettingsView: React.FC = () => {
     return (
       <ViewContainer>
         <ViewContent className="flex items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </ViewContent>
       </ViewContainer>
     )

@@ -74,6 +74,11 @@ export interface TerminalSessionSnapshot {
 export interface TerminalOutputReceipt {
   isActive: () => boolean
   acknowledge: () => void
+  /**
+   * Drop output the consumer accepted but will never render. The delivery stops
+   * being reclaimable and its flow-control credit returns to the backend.
+   */
+  invalidate?: () => void
 }
 
 export interface TerminalSessionListener {

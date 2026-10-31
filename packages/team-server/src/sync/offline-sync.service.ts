@@ -3,12 +3,13 @@ import { BadRequestException, ForbiddenException, Logger } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
 import { PrismaService } from '../prisma.service'
 import { deleteShareWithAudit } from '../shares/share-deletion'
-import {
-  resolveCreateSensitivity,
-} from '../shares/share-security'
 import { canonicalizeQueuedData, isRecord } from './offline-sync-data'
+import {
+  buildQueuedShareCreateData,
+  requireQueuedShareScope,
+} from './queued-share-write-data'
 import { buildShareUpdateData } from './share-write-data'
-import { SYNC_OPERATION_FAILED } from './sync-error'
+import { describeSyncError, SYNC_OPERATION_FAILED } from './sync-error'
 
 const PROCESSING_TIMEOUT_MS = 15 * 60 * 1000
 
@@ -162,8 +163,10 @@ export abstract class OfflineSyncService {
           throw new Error('Queue processing lease expired')
         }
         succeeded++
-      } catch {
-        this.offlineSyncLogger.error('Failed to process offline sync operation')
+      } catch (error) {
+        this.offlineSyncLogger.error(
+          `Failed to process offline sync operation (code=${describeSyncError(error)})`,
+        )
         await this.prisma.syncQueue.updateMany({
           where: { id: item.id, userId, status: 'PROCESSING', processingToken },
           data: {
@@ -190,27 +193,15 @@ export abstract class OfflineSyncService {
 
   private async upsertQueuedShare(
     userId: string,
-    item: { teamId: string; shareId: string; data: unknown },
+    item: {
+      operation: string
+      teamId: string
+      shareId: string
+      data: unknown
+    },
   ) {
     await this.checkMembership(item.teamId, userId)
-    const rawData = item.data
-    const shareData = rawData as {
-      id: string
-      teamId: string
-      type: string
-      data: unknown
-      encryptedData?: string
-      isSensitive?: boolean
-      permission: string
-      baseVersion?: number
-    }
-    if (
-      !shareData ||
-      shareData.teamId !== item.teamId ||
-      shareData.id !== item.shareId
-    ) {
-      throw new ForbiddenException('Queued share is outside team scope')
-    }
+    const shareData = requireQueuedShareScope(item.data, item)
     const existing = await this.prisma.share.findUnique({
       where: { id: shareData.id },
     })
@@ -218,7 +209,13 @@ export abstract class OfflineSyncService {
       if (existing.teamId !== item.teamId) {
         throw new ForbiddenException('Share does not belong to the queued team')
       }
-      if (existing.sharedBy !== userId) {
+      if (item.operation === 'CREATE') {
+        throw new BadRequestException(
+          'Queued share create conflicts with an existing share',
+        )
+      }
+      const isCreator = existing.sharedBy === userId
+      if (!isCreator && existing.permission !== 'READWRITE') {
         throw new ForbiddenException('Only creator can update share')
       }
       if (
@@ -227,30 +224,24 @@ export abstract class OfflineSyncService {
       ) {
         throw new BadRequestException('Queued share update is stale')
       }
-      await this.prisma.share.update({
-        where: { id: shareData.id },
-        data: buildShareUpdateData(shareData, existing),
+      const written = await this.prisma.share.updateMany({
+        where: {
+          id: shareData.id,
+          teamId: item.teamId,
+          sharedBy: existing.sharedBy,
+          updatedAt: existing.updatedAt,
+        },
+        data: buildShareUpdateData(shareData, existing, !isCreator, !isCreator),
       })
+      if (written.count !== 1) {
+        throw new BadRequestException('Queued share update is stale')
+      }
       return
     }
 
-    const isSensitive = resolveCreateSensitivity(
-      shareData.isSensitive,
-      shareData.encryptedData,
-    )
-    const createData: Prisma.ShareCreateInput = {
-      id: shareData.id,
-      team: { connect: { id: item.teamId } },
-      type: shareData.type as 'HOST' | 'HOST_GROUP' | 'SNIPPET_PACKAGE',
-      isSensitive,
-      sharedBy: userId,
-      permission: shareData.permission as 'READONLY' | 'READWRITE',
-      data: (isSensitive ? {} : shareData.data) as Prisma.InputJsonValue,
-      ...(isSensitive && {
-        encryptedData: shareData.encryptedData,
-      }),
-    }
-    await this.prisma.share.create({ data: createData })
+    await this.prisma.share.create({
+      data: buildQueuedShareCreateData(shareData, item.teamId, userId),
+    })
   }
 
   private async deleteQueuedShare(

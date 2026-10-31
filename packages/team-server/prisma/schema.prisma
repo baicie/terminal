@@ -71,6 +71,8 @@ model Share {
   isSensitive   Boolean      @default(false) // Whether this share contains sensitive data
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
+
+  @@index([teamId, updatedAt])
 }
 
 enum ShareType {

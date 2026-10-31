@@ -1,9 +1,9 @@
 # Terminal 项目待办事项
 
 > 基于设计文档 `docs/design.md` 整理的待办事项
-> 更新时间：2026-10-28（Phase 6.103：前端测试并发上限与自动化门禁收口；当前源码指纹以 evidence checker 输出为准，严格终端/人工输入复验待解锁 macOS 后采集）
+> 更新时间：2026-11-01（Phase 7：可靠性收口，`aba82ed..484f00a` 共 16 个提交，覆盖 P7.0–P7.4 五个阶段；本地门禁全绿，**未重采实机证据**。当前源码指纹为 `81ffa0bf…`，文中所有历史指纹均已失效）
 
-> 最新完整证据仍来自 debug binary `4368d6c8…`，源码指纹为 `de8e49cb…`；当前工作树源码指纹为 `534405ec…`，证据门禁仍拒绝旧 binary/旧指纹，需解锁 macOS 后按当前源码重采。
+> 最新一次落盘的 6 份证据来自 CI run `41077965521`（源码指纹 `99b0879d…`，debug 冷启动 7207/4105/3740 ms、release gate 3691/3309/3548 ms、debug 认证矩阵 11/11、release 8/8、shell 交互 14+7）。此后 `aba82ed..3c147e4` 的 7 个提交再次改动了 fingerprinted 路径（`packages/frontend/src`、`src-tauri/src`、`scripts/*`、工作流），**当前工作树指纹需要重新计算，证据需要按 Phase 6.107 的 runbook 重采**；在重采完成前不得声称证据有效。
 
 ---
 
@@ -563,7 +563,7 @@
 - [x] 本机 `pnpm verify` 全绿：前端 411、Team Server 95、Rust 45 项测试及完整质量门禁通过
 - [x] Push CI `31553345929` 与 PR CI `31553348495` 全绿后创建发布标签
 - [x] 标签 `v0.0.1-dev.1` 指向 `412136d` 并已推送
-- [x] Release 工作流 `31554163901` attempt 2 全绿，六个原生 runner 构建成功
+- [x] Release 工作流 `31554163901` attempt 2 全绿，8 个原生 runner 打包 job 构建成功
 - [x] 8 个安装包与 862-byte `SHA256SUMS.txt` 均非空，清单与服务端 digest 逐项一致
 - [x] Release 保持 prerelease、非草稿，并明确 macOS 未公证、Windows 未签名
 
@@ -2077,3 +2077,39 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] 落盘 run `41077965521`：debug 冷启动 7207/4105/3740 ms、release gate 3691/3309/3548 ms、debug 矩阵 11/11、release 矩阵 8/8、shell 交互 14+7，本地门禁 0 problem。
 - [x] 顺手修掉 Issue #142：主题名改由 `getThemeDisplayName()` 统一出口（curated 名称优先，未知名才回落首字母大写），网格与「Theme:」标签共用，去掉会抹平重音的 `capitalize`；回归测试钉住 Rosé Pine / GitHub Dark / PaperColor Light / Kanagawa Wave。因为改了 `packages/frontend/src`，证据随之重采（run `41077965521`）。
 - [ ] 后续：解决 Issue #144 后把 password 两条恢复进 11/8 契约；`fetch-verification-evidence.mjs` 改为安装时直接 gzip；release 矩阵步骤名里的「ten contract cases」待下一轮改名（工作流在指纹内，改名会使当前证据失效）。
+
+### 2026-11-01 Phase 7 - 可靠性收口：静默失败改成可见失败 ✅ 代码与自动化测试完成
+
+> 覆盖 `aba82ed..3c147e4` 的 7 个提交。测试数字均引自提交说明，本轮没有重跑。
+
+- [x] SFTP 传输队列状态机化（`3c147e4`）：`queued → running → done/error` 与 `queued → cancelled`；并发上限 3 落在同一同步段里（实测 10/50/100 入队 running 恒为 3）；同一 `transferId` 只启动一次；终态不可再转换；调度 LIFO → FIFO；`running` 取消返回 `unsupported-running` 并禁用 UI 取消。
+- [x] 同步导入事务化与失败可见（`bff6b9e`）：`BEGIN IMMEDIATE … COMMIT`/失败 `ROLLBACK`、`selectStrict` 取代 5 处静默 `[]`、`storageDownload` 三态、脚本执行退避+5 路信号量+`partial`、通知上限 100。
+- [x] 终端输出管线资源上限（`bff6b9e`）：delivered 回执 4096 条 / 8 MiB 触顶回压；拒绝入队时作废回执，消除旧输出二次打印。
+- [x] Team Server 并发与越权修复（`f9d93ac`）：离线队列 CREATE 冲突判定、游标 `lte` 上界、三处条件 `updateMany` + count（409）、P2002 → 409、非 creator 冻结 `permission`/`isSensitive`、LINK 邀请 token 首字符；新增 `Share(teamId, updatedAt)` 索引迁移；测试 103 → 116。
+- [x] Rust 假成功与资源泄漏（`6ad2d8c`）：端口转发 bind 失败不再写 `status:"active"`、remote `tcpip_forward` 移出全局锁、accept 指数退避、SFTP 三类失败不再统一 `SessionNotFound`、`ssh_writer` 超时不再永久注销；新增 8 条单测，`cargo fmt/clippy -D warnings/test` 全绿（236 单元 + 3 集成）。
+- [x] 脚本层修好 Linux/Windows CI（`7c83029`）：macOS 专属 helper 改惰性解析，新增 4 例 cross-platform 测试；脚本测试 237 → 241。
+- [x] 门禁补漏（`5ec331c`）：`verify.mjs` 的 scripts 组改通配收集，补回 2 个从未执行的测试；`ci.yml` source-size job 增加 `node --test scripts/*.test.mjs`；证据门禁直跑守卫改 `realpath` 比较，修复软链下静默不执行。
+- [x] 新增 `docs/coding-rules.md` 与 `docs/code-quality-review-2026-10.md`（`1eeebb7`）。
+- [ ] `7c83029` 的修复只在本地模拟非 macOS 主机验证过，**真实 Linux/Windows runner 验证仍待下一次 CI**。
+- [ ] 证据重采：7 个提交改动了 fingerprinted 路径，6 份证据必须重采后才能再声称 `pnpm verify` 的 source 分组全绿。
+
+### 当前未完成清单（2026-11-01 现状）
+
+| 项 | 状态 | 缺什么 |
+| --- | --- | --- |
+| macOS 物理键盘 30 轮重叠 `a/s/d`、中文 IME、Option/dead key | ⚠️ 待人工 | 需要真人在真机键入；CGEvent 注入不能替代 |
+| 真实合盖休眠/唤醒、VPN/蜂窝切换 | ⚠️ 待实机 | 需要电源管理切换与真实网络变更 |
+| Windows OpenSSH Agent / Pageant / ConPTY | ⚠️ 待实机 | 无 Windows 测试机 |
+| Linux 桌面 PTY | ⚠️ 待实机 | 只有 runner 编译与容器矩阵，没有桌面交互 |
+| 串口 | ⚠️ 待实机 | 需要真实硬件 |
+| Issue #144：`password`/`password-reconnect` 恢复进 11/8 契约 | 📋 未解决 | macOS runner 无 Docker，native 后端认证通过但 channel 打不开 |
+| Issue #145/#156：Linux job 的三条 zsh shell probe 用例 | ⚠️ BLOCKED_EXTERNAL | **判定层缺陷已修**（`f74a33e`）：原来 `contract mismatch` 是唯一失败出口，把「协议形状违规」与「用例没通过」压成同一句，导致 30 秒超时 / shell 侧 FAIL / PTY 失败三种根因无法区分。现已拆分并输出 expected vs actual、耗时、键入字节。剩余是「这三条 zsh 用例从未完成」的底层触发原因——失败集合在相隔 30 分钟的两次 run 中完全一致，且同一 runner 在 2026-10-17 上是绿的，因此**不是环境抖动**；需带完整图形栈（at-spi2-core + dbus + mesa）的 Xvfb 环境复现 |
+| `updater-signed` 出包 | ⚠️ NOT_RUN | 需要 `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_UPDATER_PUBKEY`，一次都没跑过 |
+| macOS/Windows/Linux 安装与升级（拖入 Applications、NSIS 安装+卸载、AppImage 启动、`dpkg -i`、旧 SQLite 库兼容） | ⚠️ NOT_RUN | 需要三平台真机；目前只验证过「资产存在、非空、命名正确、SHA-256 一致」 |
+| 真实 S3 集成 | ⚠️ 待外部服务 | 只有固定向量测试 |
+| 发布包版本 | ⚠️ 未出包 | 三处版本已到 `0.0.1-dev.2`，但没有对应的 tag / Release；现有证据属于 `v0.0.1-dev.1` |
+| **6 份实机证据** | 🔴 待重采 | Phase 7 的 16 个提交改动了 fingerprinted 路径，当前指纹 `81ffa0bf…`，evidence gate 为红。需在冻结提交上跑 macOS 证据 job，再用 `fetch-verification-evidence.mjs --run-id <id>` 回填；**禁止手工编辑测量值** |
+| Vault `vault_unlock` 不校验密码（Issue #152） | 📋 待修 | 格式无 verifier，空 Vault 任意密码都能「解锁成功」，错误密码要到第一次 `vault_get` 才暴露。实现规格已写入 `docs/issue.md`：verifier 设为 `Option` 字段 + 常量时间比较 + 旧格式首次成功解锁时原子补写 |
+| Vault `vault_create` 覆盖已存在文件（Issue #153） | 📋 待修 | 后端无存在性保护，任何绕过前端的调用都会原子地毁掉旧 Vault。需加 `AlreadyExists` 与 `overwrite` 参数，属跨栈契约变更，Rust 与前端须一起提交并各补测试 |
+| 导入事务的原子性 | ⚠️ 未严格保证 | `tauri-plugin-sql` 底层是 sqlx 连接池，`BEGIN IMMEDIATE` 与后续语句可能落在不同连接；最坏形态是 COMMIT 报错、整批回滚（属可见失败而非静默脏数据），需在运行中的应用里验证 |
+

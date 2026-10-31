@@ -103,6 +103,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check:source-size
+      - run: node --test scripts/*.test.mjs
 
   rust:
     name: Rust quality

@@ -69,7 +69,7 @@ const SplitPane: React.FC<SplitPaneProps> = ({ group, children }) => {
   return (
     <div
       ref={containerRef}
-      className={`flex ${isHorizontal ? 'flex-row' : 'flex-col'} h-full w-full`}
+      className={`flex ${isHorizontal ? 'flex-row' : 'flex-col'} size-full`}
     >
       <div
         style={{

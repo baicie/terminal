@@ -75,6 +75,35 @@ function invalidResult(message) {
   return new Error(`Invalid shell probe result: ${message}`)
 }
 
+/**
+ * Per-case deadline the app enforces before it publishes a failed result
+ * (TIMEOUT_MS in experiments/terminal-shell-probe/automation-root.tsx). A
+ * result that used at least this long never reached its pass marker, while a
+ * faster one gave up early; a diagnosis that cannot tell those apart is what
+ * kept "contract mismatch" undiagnosable.
+ */
+const APP_CASE_DEADLINE_MS = 30_000
+
+const RESULT_KEYS = 'caseName,durationMs,error,inputEvents,ok,trace'
+
+function markerPath(trace) {
+  return Array.isArray(trace) ? trace.join('>') : JSON.stringify(trace)
+}
+
+/** Escapes typed bytes so a log line shows CR/ESC instead of eating them. */
+function quoteBytes(text) {
+  return JSON.stringify(text)
+}
+
+function summarizeTypedInput(events) {
+  if (events.length === 0) return '0 events (nothing reached the PTY)'
+  const shown = events
+    .slice(0, 3)
+    .map(event => quoteBytes(bytesToString(event.dataHex)))
+  const rest = events.length - shown.length
+  return `${events.length} event(s): ${shown.join(' ')}${rest > 0 ? ` … +${rest}` : ''}`
+}
+
 function waitForClose(child) {
   return new Promise(resolve => {
     let settled = false
@@ -88,7 +117,7 @@ function waitForClose(child) {
   })
 }
 
-function waitForFile(filePath, timeoutMs, dependencies, signal) {
+function waitForFile(filePath, timeoutMs, dependencies, signal, caseName) {
   const deadline = dependencies.now() + timeoutMs
   return new Promise((resolve, reject) => {
     let timer
@@ -116,7 +145,13 @@ function waitForFile(filePath, timeoutMs, dependencies, signal) {
         return
       } catch {
         if (dependencies.now() > deadline) {
-          finish(new Error(`shell probe result timed out after ${timeoutMs} ms`))
+          finish(
+            new Error(
+              `${caseName} shell probe result timed out after ${timeoutMs} ms: ` +
+                `the app never wrote ${path.basename(filePath)}, so the case ` +
+                'neither passed nor reported its own failure',
+            ),
+          )
           return
         }
       }
@@ -126,8 +161,12 @@ function waitForFile(filePath, timeoutMs, dependencies, signal) {
   })
 }
 
-function parseInputEvents(value) {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 512) {
+function parseInputEvents(value, allowEmpty = false) {
+  if (
+    !Array.isArray(value) ||
+    (!allowEmpty && value.length === 0) ||
+    value.length > 512
+  ) {
     return false
   }
   return value.every(
@@ -176,6 +215,91 @@ function assertCaseSupportedByShell(shell, caseName) {
   )
 }
 
+/**
+ * Everything the *protocol* can violate, in the order a reader needs it. A
+ * well-formed result that merely reports a failed case is deliberately not in
+ * here: conflating the two turned every probe timeout into "contract
+ * mismatch" and threw away the app's own error, its duration and the bytes the
+ * probe actually typed.
+ */
+function protocolViolations(value, caseName) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    const kind = Array.isArray(value) ? 'an array' : typeof value
+    return [`the app wrote ${kind}, not one result object`]
+  }
+  const violations = []
+  const keys = Object.keys(value).sort().join(',')
+  if (keys !== RESULT_KEYS) {
+    violations.push(`keys are [${keys}] but the contract needs [${RESULT_KEYS}]`)
+  }
+  if (value.caseName !== caseName) {
+    violations.push(
+      `caseName is ${JSON.stringify(value.caseName)} but this run asked for '${caseName}'`,
+    )
+  }
+  if (!Number.isSafeInteger(value.durationMs) || value.durationMs < 1) {
+    violations.push(
+      `durationMs is ${JSON.stringify(value.durationMs)} (needs a positive integer)`,
+    )
+  }
+  if (typeof value.ok !== 'boolean') {
+    violations.push(`ok is ${JSON.stringify(value.ok)} (needs a boolean)`)
+  }
+  if (value.error !== null && typeof value.error !== 'string') {
+    violations.push(`error is ${JSON.stringify(value.error)} (needs null or a string)`)
+  }
+  const expectedTrace = CASE_TRACE[caseName]
+  if (JSON.stringify(value.trace) !== JSON.stringify(expectedTrace)) {
+    violations.push(
+      `trace is ${markerPath(value.trace)} but '${caseName}' must report ${markerPath(expectedTrace)}`,
+    )
+  }
+  const expectPass = value.ok === true && value.error === null
+  if (!parseInputEvents(value.inputEvents, !expectPass)) {
+    violations.push(
+      Array.isArray(value.inputEvents)
+        ? `inputEvents still holds ${value.inputEvents.length} entr(y/ies) of the wrong shape (needs 1-512 {kind:'text',bytes,dataHex} entries with exactly 2 hex digits per byte)`
+        : `inputEvents is ${typeof value.inputEvents} (needs an array of typed input entries)`,
+    )
+  } else if (expectPass && !hasRequiredInput(value.inputEvents, caseName)) {
+    const required = CASE_REQUIRED_INPUT_HEX[caseName]
+      .map(byte => quoteBytes(byte))
+      .join('/')
+    violations.push(
+      `inputEvents never carried the required ${required} byte(s), so the verdict is not measuring what the case claims`,
+    )
+  }
+  return violations
+}
+
+/**
+ * A well-formed result the app published as a failure: the case ran and did
+ * not reach its pass marker. The message therefore has to carry the expected
+ * shape next to what actually arrived, the app's own error, the observed
+ * timing against its deadline and the bytes the probe really typed -- those
+ * are the only observations a result contains.
+ */
+function caseFailure(value, caseName) {
+  const timing =
+    value.durationMs >= APP_CASE_DEADLINE_MS
+      ? `${value.durationMs} ms is at or past the app's ${APP_CASE_DEADLINE_MS} ms per-case deadline, so the case never reached 'pass' instead of drifting out of the contract`
+      : `${value.durationMs} ms, well inside the app's ${APP_CASE_DEADLINE_MS} ms per-case deadline, so the case gave up early instead of timing out`
+  return new Error(
+    [
+      `Shell probe case failed: ${caseName} after ${value.durationMs} ms`,
+      `expected: ok=true, error=null, trace ${markerPath(CASE_TRACE[caseName])}`,
+      `actual: ok=${value.ok}, error=${JSON.stringify(value.error)}, trace ${markerPath(value.trace)}`,
+      `timing: ${timing}`,
+      `typed: ${summarizeTypedInput(value.inputEvents)}`,
+      // The app echoes the expected trace table back rather than its observed
+      // one (automation-root.tsx publish), so the trace proves nothing either
+      // way; the typed bytes and the timing are the real evidence.
+      'note: trace is the expected table echoed back by the app, so the typed bytes and the timing above are the actual evidence',
+      'verdict: the protocol was honoured; this is a case failure, not a contract mismatch',
+    ].join('\n'),
+  )
+}
+
 export function parseShellProbeResult(serialized, caseName) {
   if (!CASES.includes(caseName)) throw invalidResult('unsupported case')
   let value
@@ -184,24 +308,12 @@ export function parseShellProbeResult(serialized, caseName) {
   } catch {
     throw invalidResult('result is not valid JSON')
   }
-  if (
-    typeof value !== 'object' ||
-    value === null ||
-    Array.isArray(value) ||
-    Object.keys(value).sort().join(',') !==
-      'caseName,durationMs,error,inputEvents,ok,trace' ||
-    value.caseName !== caseName ||
-    !Number.isSafeInteger(value.durationMs) ||
-    value.durationMs < 1 ||
-    typeof value.ok !== 'boolean' ||
-    value.error !== null && typeof value.error !== 'string' ||
-    JSON.stringify(value.trace) !== JSON.stringify(CASE_TRACE[caseName]) ||
-    !parseInputEvents(value.inputEvents) ||
-    !hasRequiredInput(value.inputEvents, caseName) ||
-    value.ok !== true ||
-    value.error !== null
-  ) {
-    throw invalidResult('contract mismatch')
+  const violations = protocolViolations(value, caseName)
+  if (violations.length > 0) {
+    throw invalidResult(`contract mismatch: ${violations.join('; ')}`)
+  }
+  if (value.ok !== true || value.error !== null) {
+    throw caseFailure(value, caseName)
   }
   return value
 }
@@ -392,6 +504,7 @@ export async function runShellProbe({
         RESULT_TIMEOUT_MS,
         dependencies,
         resultWaitController.signal,
+        caseName,
       ),
       earlyClose,
     ])

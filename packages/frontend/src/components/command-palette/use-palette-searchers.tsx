@@ -20,7 +20,7 @@ export function usePaletteSearchers() {
           title: host.name,
           description: `${host.username}@${host.hostname}:${host.port}`,
           hint: t('cmdPalette.openSftpHint'),
-          icon: <Server className="h-4 w-4" />,
+          icon: <Server className="size-4" />,
           data: host,
           score: 0,
         }))
@@ -37,7 +37,7 @@ export function usePaletteSearchers() {
           title: host.name,
           description: `${host.username}@${host.hostname}:${host.port}`,
           hint: t('cmdPalette.openSftpHint'),
-          icon: <Server className="h-4 w-4" />,
+          icon: <Server className="size-4" />,
           data: host,
           score: fuzzyScore(
             query,
@@ -66,7 +66,7 @@ export function usePaletteSearchers() {
           title: t('cmdPalette.openSftpSession', { host: host.name }),
           description: `${host.username}@${host.hostname}:${host.port}`,
           hint: t('cmdPalette.openSftpHint'),
-          icon: <FileUp className="h-4 w-4" />,
+          icon: <FileUp className="size-4" />,
           data: { host },
           score: query ? fuzzyScore(query, host.name) : 0,
         }))
@@ -86,7 +86,7 @@ export function usePaletteSearchers() {
             type: 'snippet',
             title: snippet.name,
             description: snippet.description || snippet.script.slice(0, 50),
-            icon: <Code className="h-4 w-4" />,
+            icon: <Code className="size-4" />,
             data: snippet,
             score: fuzzyScore(query, snippet.name),
           }))
@@ -108,7 +108,7 @@ export function usePaletteSearchers() {
             type: 'history',
             title: record.command,
             description: `Executed ${new Date(record.executed_at).toLocaleDateString()}`,
-            icon: <Clock className="h-4 w-4" />,
+            icon: <Clock className="size-4" />,
             data: record,
             score: fuzzyScore(query, record.command),
           }))

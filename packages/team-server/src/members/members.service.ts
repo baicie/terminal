@@ -1,9 +1,18 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
+
+function isUniqueConstraintViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object'
+    && error !== null
+    && (error as { code?: unknown }).code === 'P2002'
+  )
+}
 
 @Injectable()
 export class MembersService {
@@ -38,15 +47,22 @@ export class MembersService {
       throw new ForbiddenException('User is already a member')
     }
 
-    return this.prisma.teamMember.create({
-      data: {
-        teamId,
-        userId: newUserId,
-        userName,
-        userEmail,
-        role,
-      },
-    })
+    try {
+      return await this.prisma.teamMember.create({
+        data: {
+          teamId,
+          userId: newUserId,
+          userName,
+          userEmail,
+          role,
+        },
+      })
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        throw new ConflictException('User is already a member')
+      }
+      throw error
+    }
   }
 
   async updateRole(

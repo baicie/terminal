@@ -1,125 +1,14 @@
-import {
-  AlertCircle,
-  ArrowDown,
-  ArrowUp,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  X,
-} from 'lucide-react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { cn } from '@/lib/utils'
-import {
-  type TransferRecord,
-  useTransferQueue,
-} from '@/store/transfer-queue'
+import { useTransferQueue } from '@/store/transfer-queue'
+import TransferRow from './transfer-row'
 
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
-}
-
-function formatSpeed(bytesPerSec: number): string {
-  if (!bytesPerSec || bytesPerSec < 1) return ''
-  return `${formatBytes(bytesPerSec)}/s`
-}
-
-function formatEta(remainingBytes: number, bytesPerSec: number): string {
-  if (!bytesPerSec || bytesPerSec < 1 || remainingBytes <= 0) return ''
-  const sec = Math.round(remainingBytes / bytesPerSec)
-  if (sec < 60) return `${sec}s`
-  if (sec < 3600) return `${Math.round(sec / 60)}m`
-  return `${Math.round(sec / 3600)}h`
-}
-
-interface RowProps {
-  record: TransferRecord
-}
-
-const TransferRow: React.FC<RowProps> = ({ record }) => {
-  const { t } = useTranslation()
-  const remove = useTransferQueue(s => s.remove)
-  const pct =
-    record.bytesTotal > 0
-      ? Math.min(100, Math.round((record.bytesDone / record.bytesTotal) * 100))
-      : record.status === 'done'
-        ? 100
-        : 0
-
-  const statusIcon =
-    record.status === 'error' ? (
-      <AlertCircle className="size-3.5 text-destructive" />
-    ) : record.status === 'done' ? (
-      <CheckCircle2 className="size-3.5 text-success" />
-    ) : record.kind === 'upload' ? (
-      <ArrowUp className="size-3.5 text-primary" />
-    ) : (
-      <ArrowDown className="size-3.5 text-primary" />
-    )
-
-  const remaining = Math.max(0, record.bytesTotal - record.bytesDone)
-  const eta = formatEta(remaining, record.speed)
-  const speed = formatSpeed(record.speed)
-
-  return (
-    <div
-      className={cn(
-        'group flex flex-col gap-1 px-3 py-2 border-b border-border/40 last:border-b-0',
-        record.status === 'error' && 'bg-destructive/5',
-      )}
-    >
-      <div className="flex items-center gap-2 min-w-0">
-        {statusIcon}
-        <span className="text-xs font-medium truncate flex-1" title={record.remotePath}>
-          {record.name}
-        </span>
-        <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
-          {record.bytesTotal > 0
-            ? `${formatBytes(record.bytesDone)} / ${formatBytes(record.bytesTotal)}`
-            : formatBytes(record.bytesDone)}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-5 opacity-0 group-hover:opacity-100"
-          onClick={() => remove(record.id)}
-          title={t('common.delete')}
-        >
-          <X className="size-3" />
-        </Button>
-      </div>
-      {record.status === 'running' && (
-        <>
-          <Progress value={pct} className="h-1" />
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-            <span>{pct}%</span>
-            <span className="tabular-nums">
-              {speed}
-              {speed && eta && ' · '}
-              {eta && t('sftp.transferEta', { eta })}
-            </span>
-          </div>
-        </>
-      )}
-      {record.status === 'error' && (
-        <div className="text-[10px] text-destructive truncate" title={record.message}>
-          {record.message}
-        </div>
-      )}
-      {record.status === 'done' && (
-        <div className="text-[10px] text-success">
-          {t('sftp.transferDone')}
-        </div>
-      )}
-    </div>
-  )
-}
-
+/**
+ * 传输面板容器：只负责列表与汇总，单条记录的状态与操作在 transfer-row.tsx。
+ * 并发与状态机由 service/sftp-transfer-queue.ts 裁决，这里不做任何状态写入。
+ */
 const TransferPanel: React.FC = () => {
   const { t } = useTranslation()
   const transfers = useTransferQueue(s => s.transfers)
@@ -137,7 +26,6 @@ const TransferPanel: React.FC = () => {
 
   return (
     <div className="absolute bottom-4 right-4 w-80 max-w-[calc(100vw-2rem)] z-30 rounded-lg border bg-popover shadow-lg overflow-hidden">
-      {/* Header */}
       <button
         type="button"
         className="w-full flex items-center gap-2 px-3 py-2 bg-secondary/40 border-b border-border hover:bg-secondary/60 transition-colors"
@@ -159,7 +47,6 @@ const TransferPanel: React.FC = () => {
         )}
       </button>
 
-      {/* Body */}
       {panelOpen && (
         <>
           <ScrollArea className="max-h-72">

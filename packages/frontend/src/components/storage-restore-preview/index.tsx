@@ -110,9 +110,9 @@ export function RestorePreview({
           onClick={loadPreview}
         >
           {loading ? (
-            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            <Loader2 className="size-3 mr-1 animate-spin" />
           ) : (
-            <CloudDownload className="h-3 w-3 mr-1" />
+            <CloudDownload className="size-3 mr-1" />
           )}
           {preview
             ? t('settings.refreshPreview')
@@ -126,9 +126,9 @@ export function RestorePreview({
           onClick={onRestore}
         >
           {isRestoring ? (
-            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            <Loader2 className="size-3 mr-1 animate-spin" />
           ) : (
-            <CloudDownload className="h-3 w-3 mr-1" />
+            <CloudDownload className="size-3 mr-1" />
           )}
           {t('settings.restoreFromServer')}
         </Button>
@@ -149,7 +149,7 @@ export function RestorePreview({
                   : 'bg-warning/10 text-warning',
               )}
             >
-              <AlertTriangle className="h-3 w-3 shrink-0" />
+              <AlertTriangle className="size-3 shrink-0" />
               <span>
                 {restoreMode === 'replace'
                   ? `All local data will be replaced. ${totalConflicts} item${totalConflicts > 1 ? 's' : ''} with the same ID will be overwritten.`
@@ -164,9 +164,9 @@ export function RestorePreview({
             onClick={() => setExpanded(e => !e)}
           >
             {expanded ? (
-              <ChevronDown className="h-3 w-3" />
+              <ChevronDown className="size-3" />
             ) : (
-              <ChevronRight className="h-3 w-3" />
+              <ChevronRight className="size-3" />
             )}
             <span>{t('settings.conflictDetails') || 'View details'}</span>
           </button>

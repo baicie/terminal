@@ -526,9 +526,10 @@ pnpm add <package-name>
 ### 发布就绪门禁 ✅ 本机自动化、容器运行时与远端发布通过
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
-- ✅ `pnpm verify` 全绿（2026-10-29 接入 updater 运行时后重跑）：前端 1149 项、Team Server 103 项、Rust 221 单测 + 3 集成测试、Node 脚本 205 项、552 个生产文件行数门禁、bundle budget，以及 6 份实机证据的 evidence gate（源码指纹 `07d420c0…`；debug `827b7e01…` 冷启动 3685/2345/2432 ms、远程 prompt 3279 ms、SSH 13/13、shell 14+7；release `5c008f04…` 冷启动 1640/1736/1357 ms、10-case 认证矩阵 10/10）
+- ✅ 各栈门禁本机全绿（2026-11-01，Phase 7 分支）：前端 **1234** 项、Team Server **116** 项、Rust **236** 单测 + 3 集成测试、Node 脚本 **241** 项、**558** 个生产文件行数门禁、bundle budget
+- ⚠️ 6 份实机证据需重新采集：Phase 7 的提交改动了 fingerprinted 路径，源码指纹已变化。按 `docs/release/workflow-rules.md` 在冻结提交上重跑 macOS 证据 job 之前，不得声称 evidence gate 全绿
 - ✅ 生产依赖审计为 0 个已知漏洞
-- ✅ 552 个生产源码文件均满足行数限制
+- ✅ 558 个生产源码文件均满足行数限制
 - ✅ GitHub Actions CI `31409070480`：macOS、Windows、Linux Tauri 编译，Team Server PostgreSQL 迁移和 Docker 镜像构建全部通过
 - ✅ `.github/workflows/release.yml` 为 macOS（aarch64 / x86_64 各出一个 DMG）、Windows、Linux 的 x64/ARM64 建立原生 runner 分架构打包，共 8 个安装资产 + `SHA256SUMS.txt`，带确定性命名与非空校验；`updater-signed` 模式额外产出逐架构 `.sig` 与唯一 `latest.json`
 - ✅ Release `v0.0.1-dev.1`：工作流 `31554163901` attempt 2 全绿，8 个安装包与 `SHA256SUMS.txt` 均非空，GitHub 服务端 digest 与清单一致

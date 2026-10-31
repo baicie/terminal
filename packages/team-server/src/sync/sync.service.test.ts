@@ -147,7 +147,7 @@ describe('SyncService authorization', () => {
       },
       share: {
         findUnique: vi.fn().mockResolvedValue(sensitiveShare),
-        update: vi.fn().mockResolvedValue({ id: 'share-a' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     }
     const service = new SyncService(prisma as never)
@@ -164,8 +164,13 @@ describe('SyncService authorization', () => {
       ],
     })
 
-    expect(prisma.share.update).toHaveBeenCalledWith({
-      where: { id: 'share-a' },
+    expect(prisma.share.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'share-a',
+        teamId: 'team-a',
+        sharedBy: 'user-a',
+        updatedAt: sensitiveShare.updatedAt,
+      },
       data: {
         data: {},
         encryptedData: 'ciphertext',
@@ -359,5 +364,161 @@ describe('SyncService authorization', () => {
     expect(JSON.stringify(loggerError.mock.calls)).not.toContain(
       'database-secret',
     )
+  })
+
+  it('anchors the incremental sync watermark before reading so rows written during the read are not lost', async () => {
+    const before = 1_760_000_000_000
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(before)
+    try {
+      const prisma = {
+        teamMember: {
+          findMany: vi.fn().mockResolvedValue([{ teamId: 'team-a' }]),
+        },
+        share: {
+          findMany: vi.fn().mockImplementation(async () => {
+            nowSpy.mockReturnValue(before + 5_000)
+            return []
+          }),
+        },
+        auditLog: { findMany: vi.fn().mockResolvedValue([]) },
+      }
+      const service = new SyncService(prisma as never)
+
+      const result = await service.getChanges('user-a', 1_000)
+
+      expect(result.timestamp).toBe(before)
+      expect(prisma.share.findMany).toHaveBeenCalledWith({
+        where: {
+          teamId: { in: ['team-a'] },
+          updatedAt: { gte: new Date(1_000), lte: new Date(before) },
+        },
+        orderBy: { updatedAt: 'asc' },
+      })
+      expect(prisma.auditLog.findMany).toHaveBeenCalledWith({
+        where: {
+          teamId: { in: ['team-a'] },
+          action: 'SHARE_DELETED',
+          createdAt: { gte: new Date(1_000), lte: new Date(before) },
+        },
+      })
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+
+  it('lets a READWRITE member update another creator share without changing its permission', async () => {
+    const writableShare = {
+      ...existingShare,
+      id: 'share-a',
+      teamId: 'team-a',
+      sharedBy: 'owner-a',
+      permission: 'READWRITE',
+    }
+    const prisma = {
+      teamMember: {
+        findUnique: vi.fn().mockResolvedValue({
+          teamId: 'team-a',
+          userId: 'user-a',
+          role: 'MEMBER',
+        }),
+      },
+      share: {
+        findUnique: vi.fn().mockResolvedValue(writableShare),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    }
+    const service = new SyncService(prisma as never)
+
+    const result = await service.pushChanges('user-a', {
+      shares: [
+        {
+          id: 'share-a',
+          teamId: 'team-a',
+          type: 'HOST',
+          data: { hostname: 'member-write' },
+          permission: 'READONLY',
+        },
+      ],
+    })
+
+    expect(result.updated).toEqual(['share-a'])
+    expect(result.errors).toEqual([])
+    expect(prisma.share.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'share-a',
+        teamId: 'team-a',
+        sharedBy: 'owner-a',
+        updatedAt: writableShare.updatedAt,
+      },
+      data: {
+        data: { hostname: 'member-write' },
+        encryptedData: null,
+        isSensitive: false,
+        permission: 'READWRITE',
+      },
+    })
+  })
+
+  it('reports a conflict instead of overwriting when a pushed update loses the write race', async () => {
+    const share = {
+      ...existingShare,
+      id: 'share-a',
+      teamId: 'team-a',
+      sharedBy: 'user-a',
+    }
+    const prisma = {
+      teamMember: {
+        findUnique: vi.fn().mockResolvedValue({
+          teamId: 'team-a',
+          userId: 'user-a',
+          role: 'MEMBER',
+        }),
+      },
+      share: {
+        findUnique: vi.fn().mockResolvedValue(share),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+    }
+    const service = new SyncService(prisma as never)
+
+    const result = await service.pushChanges('user-a', {
+      shares: [
+        {
+          id: 'share-a',
+          teamId: 'team-a',
+          type: 'HOST',
+          data: { hostname: 'raced' },
+          permission: 'READONLY',
+        },
+      ],
+    })
+
+    expect(result.updated).toEqual([])
+    expect(result.conflicts).toEqual(['share-a'])
+  })
+
+  it('logs only an enumerable error code when a pushed operation fails', async () => {
+    const loggerError = vi
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined)
+    const prisma = {
+      share: {
+        findUnique: vi
+          .fn()
+          .mockRejectedValue(new Error('Prisma failed: password=database-secret')),
+      },
+    }
+    const service = new SyncService(prisma as never)
+
+    const result = await service.pushChanges('user-a', {
+      deleteShares: ['share-a'],
+    })
+
+    expect(result.errors).toEqual([
+      { id: 'share-a', error: 'SYNC_OPERATION_FAILED' },
+    ])
+    const logged = JSON.stringify(loggerError.mock.calls)
+    expect(logged).toContain('code=Error')
+    expect(logged).not.toContain('database-secret')
   })
 })

@@ -9,6 +9,11 @@ import type {
 const MAX_BUFFERED_CHUNKS = 256
 const MAX_BUFFERED_BYTES = 512 * 1024
 const MAX_PENDING_SESSIONS = 1024
+// A re-attaching surface replays its whole backlog in one burst, so the delivery
+// ceiling sits an order of magnitude above the buffer ceiling: far above any
+// legitimate burst, still bounded once an owner stops acknowledging.
+const MAX_DELIVERED_CHUNKS = 16 * MAX_BUFFERED_CHUNKS
+const MAX_DELIVERED_BYTES = 16 * MAX_BUFFERED_BYTES
 
 function hasBackendFlowControl(output: BufferedTerminalOutput): boolean {
   return (
@@ -51,6 +56,7 @@ interface DeliveredTerminalOutput {
 }
 
 type BackendAcknowledger = (sessionId: string, bytes: number) => void
+type OutputOverflowReporter = (error: Error) => void
 
 /**
  * Deliver a snapshot without letting one broken listener escape. Session state
@@ -90,8 +96,14 @@ export class TerminalSessionAudience {
   private readonly delivered = new Map<number, DeliveredTerminalOutput>()
   private owner: TerminalSessionListener | null = null
   private nextDeliveryId = 1
+  private deliveredBytes = 0
+  private overflowReported = false
 
-  constructor(private readonly acknowledgeBackend: BackendAcknowledger) {}
+  constructor(
+    private readonly acknowledgeBackend: BackendAcknowledger,
+    private readonly onOverflow: OutputOverflowReporter = error =>
+      console.error('[terminal] terminal output delivery overflow:', error),
+  ) {}
 
   attach(
     listener: TerminalSessionListener,
@@ -128,7 +140,7 @@ export class TerminalSessionAudience {
     this.buffered = this.buffered.filter(item => item.sessionId !== sessionId)
     for (const [deliveryId, delivery] of this.delivered) {
       if (delivery.output.sessionId === sessionId) {
-        this.delivered.delete(deliveryId)
+        this.dropDelivery(deliveryId)
       }
     }
   }
@@ -136,6 +148,8 @@ export class TerminalSessionAudience {
   retireAll(): void {
     this.buffered.length = 0
     this.delivered.clear()
+    this.deliveredBytes = 0
+    this.overflowReported = false
   }
 
   clear(): void {
@@ -143,22 +157,30 @@ export class TerminalSessionAudience {
     this.owner = null
     this.buffered.length = 0
     this.delivered.clear()
+    this.deliveredBytes = 0
+    this.overflowReported = false
   }
 
   private drain(): void {
     const listener = this.owner
     if (!listener) return
     while (this.owner === listener && this.buffered.length > 0) {
-      const output = this.buffered.shift()
+      const output = this.buffered[0]
       if (!output) return
+      // Backpressure: an owner that stops acknowledging must stall delivery
+      // instead of growing the delivery table without bound.
+      if (!this.canDeliver(output)) {
+        this.reportOverflow()
+        return
+      }
+      this.buffered.shift()
       const deliveryId = this.nextDeliveryId++
       this.delivered.set(deliveryId, { listener, output })
+      this.deliveredBytes += output.data.length
       const receipt: TerminalOutputReceipt = {
-        isActive: () => {
-          const delivery = this.delivered.get(deliveryId)
-          return delivery?.listener === listener
-        },
+        isActive: () => this.delivered.get(deliveryId)?.listener === listener,
         acknowledge: () => this.acknowledge(deliveryId, listener),
+        invalidate: () => this.invalidateDelivery(deliveryId),
       }
       try {
         listener.onOutput(output.data, output.bytes, receipt)
@@ -178,8 +200,17 @@ export class TerminalSessionAudience {
   ): void {
     const delivery = this.delivered.get(deliveryId)
     if (!delivery || delivery.listener !== listener) return
-    this.delivered.delete(deliveryId)
-    const { sessionId, bytes } = delivery.output
+    this.dropDelivery(deliveryId)
+    this.acknowledgeOutput(delivery.output)
+  }
+
+  private invalidateDelivery(deliveryId: number): void {
+    const delivery = this.dropDelivery(deliveryId)
+    if (delivery) this.acknowledgeOutput(delivery.output)
+  }
+
+  private acknowledgeOutput(output: BufferedTerminalOutput): void {
+    const { sessionId, bytes } = output
     if (
       sessionId &&
       Number.isSafeInteger(bytes) &&
@@ -190,11 +221,38 @@ export class TerminalSessionAudience {
     }
   }
 
+  private canDeliver(output: BufferedTerminalOutput): boolean {
+    if (this.delivered.size === 0) return true
+    if (this.delivered.size >= MAX_DELIVERED_CHUNKS) return false
+    return this.deliveredBytes + output.data.length <= MAX_DELIVERED_BYTES
+  }
+
+  private reportOverflow(): void {
+    if (this.overflowReported) return
+    this.overflowReported = true
+    this.onOverflow(
+      new Error(
+        `Terminal output delivery stalled: ${MAX_DELIVERED_CHUNKS} chunks / ${MAX_DELIVERED_BYTES} bytes unacknowledged`,
+      ),
+    )
+  }
+
+  private dropDelivery(
+    deliveryId: number,
+  ): DeliveredTerminalOutput | undefined {
+    const delivery = this.delivered.get(deliveryId)
+    if (!delivery) return undefined
+    this.delivered.delete(deliveryId)
+    this.deliveredBytes -= delivery.output.data.length
+    this.overflowReported = false
+    return delivery
+  }
+
   private reclaim(listener: TerminalSessionListener): void {
     const reclaimed: BufferedTerminalOutput[] = []
     for (const [deliveryId, delivery] of this.delivered) {
       if (delivery.listener !== listener) continue
-      this.delivered.delete(deliveryId)
+      this.dropDelivery(deliveryId)
       reclaimed.push(delivery.output)
     }
     if (reclaimed.length > 0) {

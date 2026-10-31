@@ -6873,6 +6873,7 @@ dependencies = [
  "tauri-plugin-sql",
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
+ "tempfile",
  "thiserror 2.0.18",
  "time",
  "tokio",
@@ -6880,6 +6881,7 @@ dependencies = [
  "tracing-log",
  "tracing-subscriber",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

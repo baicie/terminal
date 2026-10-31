@@ -72,8 +72,9 @@ it('retries a failed host up to the configured count', async () => {
 })
 
 it.each([
-  [[0, 1], 'success'],
-  [[0, 1, 1], 'success'],
+  [[0], 'success'],
+  [[0, 1], 'partial'],
+  [[0, 1, 1], 'partial'],
   [[1, 1], 'failed'],
 ] as const)('records aggregate status for exit codes %j', async (exitCodes, status) => {
   const execute = vi.fn()
@@ -91,4 +92,56 @@ it.each([
     'aggregate',
     expect.objectContaining({ status }),
   )
+})
+
+it('spaces retries out instead of retrying at full speed', async () => {
+  vi.useFakeTimers()
+  try {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: '', stderr: 'busy', exitCode: 1 })
+      .mockResolvedValueOnce({ stdout: 'ok', stderr: '', exitCode: 0 })
+
+    const pending = executeOnHosts(
+      { execute } as unknown as SSHService,
+      'whoami',
+      ['host-1'],
+      7,
+      1,
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    expect(execute).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    await expect(pending).resolves.toMatchObject({ success: true })
+    expect(execute).toHaveBeenCalledTimes(2)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('keeps at most five host sessions in flight for a large batch', async () => {
+  const hostIds = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+  mocks.getHosts.mockResolvedValue(
+    hostIds.map(id => ({ ...hosts[0], id, name: id })),
+  )
+  let inFlight = 0
+  let peak = 0
+  const execute = vi.fn(async () => {
+    inFlight += 1
+    peak = Math.max(peak, inFlight)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    inFlight -= 1
+    return { stdout: 'ok', stderr: '', exitCode: 0 }
+  })
+
+  const result = await executeOnHosts(
+    { execute } as unknown as SSHService,
+    'whoami',
+    hostIds,
+  )
+
+  expect(result.totalHosts).toBe(hostIds.length)
+  expect(result.successCount).toBe(hostIds.length)
+  expect(peak).toBe(5)
 })

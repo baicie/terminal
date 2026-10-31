@@ -36,7 +36,14 @@ const argv = Object.fromEntries(
 // commit that explains which feature added the bytes.
 const budgets = {
   initialGzip: 240 * 1024,
-  totalGzip: 560 * 1024,
+  // 565 KB (was 560 KB): Phase 7 added the SFTP transfer queue state machine
+  // (service/sftp-transfer-queue.ts + view/sftp/transfer-row.tsx), the
+  // six-state tab indicator with its localized labels, the updater failure
+  // classification, and the accompanying i18n keys in three locales. Together
+  // they took the lazy graph from 553.15 KB to 560.93 KB gzip. The initial
+  // budget above is untouched, because time-to-first-terminal still rides on
+  // the critical path, not on this line.
+  totalGzip: 565 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

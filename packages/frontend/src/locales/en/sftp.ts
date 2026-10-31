@@ -17,4 +17,11 @@ export default {
   'sftp.items': '{{count}} items',
   'sftp.connectedTo': 'Connected to {{host}} ({{hostname}})',
   'sftp.loading': 'Loading...',
+  'sftp.transferQueued': 'Queued',
+  'sftp.transferRunning': 'Transferring',
+  'sftp.transferCancelBlocked': 'Cannot cancel while it is transferring',
+  'sftp.transferCancelled': 'Cancelled',
+  'sftp.transferCancelQueued': 'Cancel queued transfer',
+  'sftp.transferCancelUnsupported':
+    'Running transfers cannot be cancelled yet: the backend has no cancel command',
 }

@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import { parseHostIds } from '@/utils/parse-host-ids'
 
 interface ScriptListProps {
   scripts: ScriptRecord[]
@@ -48,7 +49,7 @@ export const ScriptList: React.FC<ScriptListProps> = ({
   return (
     <div className="grid gap-4">
       {scripts.map(script => {
-        const hostIds: string[] = JSON.parse(script.host_ids || '[]')
+        const hostIds = parseHostIds(script.host_ids)
         const hostCount = hostIds.length
         return (
           <Card key={script.id} className="hover:border-primary/50 transition-colors">
@@ -71,14 +72,14 @@ export const ScriptList: React.FC<ScriptListProps> = ({
                     onClick={() => onExecute(script)}
                     disabled={isExecuting || hostCount === 0}
                   >
-                    <Play className="h-4 w-4 mr-1" data-icon="inline-start" />
+                    <Play className="size-4 mr-1" data-icon="inline-start" />
                     {tr('scripts.run')}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => onEdit(script)}>
-                    <Edit className="h-4 w-4" />
+                    <Edit className="size-4" />
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => onDelete(script)}>
-                    <Trash2 className="h-4 w-4 text-destructive" />
+                    <Trash2 className="size-4 text-destructive" />
                   </Button>
                 </div>
               </div>
@@ -86,13 +87,13 @@ export const ScriptList: React.FC<ScriptListProps> = ({
             <CardContent>
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
                 <div className="flex items-center gap-1">
-                  <Server className="h-4 w-4" />
+                  <Server className="size-4" />
                   <span>
                     {hostCount} {hostCount !== 1 ? tr('scripts.hosts') : tr('scripts.host')}
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <Clock className="h-4 w-4" />
+                  <Clock className="size-4" />
                   <span className="capitalize">{script.schedule_type}</span>
                 </div>
                 {script.timeout_seconds && (

@@ -18,7 +18,7 @@ export function StorageModeSection({
   return (
     <div className="space-y-3">
       <h4 className="text-sm font-medium flex items-center gap-2">
-        <HardDrive className="h-4 w-4" />
+        <HardDrive className="size-4" />
         {t('settings.storageMode')}
       </h4>
       <p className="text-sm text-muted-foreground">
@@ -37,7 +37,7 @@ export function StorageModeSection({
               onClick={() => updateSetting('dataStorageMode', mode)}
             >
               <Icon
-                className={`h-6 w-6 ${active ? 'text-primary' : 'text-muted-foreground'}`}
+                className={`size-6 ${active ? 'text-primary' : 'text-muted-foreground'}`}
               />
               <span className="text-sm font-medium">
                 {t(`settings.${mode}`)}

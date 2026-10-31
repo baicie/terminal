@@ -109,7 +109,12 @@ export interface Tab {
   profileId?: string
   serialSessionId?: string // Serial session ID when type is 'serial'
   serialConfig?: SerialTabConfig // Serial port config for display
-  connectionStatus?: 'connected' | 'disconnected' | 'connecting'
+  connectionStatus?:
+    | 'connected'
+    | 'disconnected'
+    | 'connecting'
+    | 'reconnecting'
+    | 'error'
   // Split screen support
   splitMode?: 'none' | 'horizontal' | 'vertical'
   splitId?: string // ID of the split group this tab belongs to
