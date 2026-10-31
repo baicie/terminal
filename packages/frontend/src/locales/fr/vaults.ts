@@ -38,4 +38,8 @@ export default {
   'vaults.loading': 'Chargement du coffre...',
   'vaults.secureVault':
     'Stockez en toute sécurité les mots de passe, clés SSH et jetons API grâce au chiffrement AES-256.',
+  'vaults.vaultAlreadyExists':
+    "Un coffre existe déjà et ne sera pas écrasé. Déverrouillez-le avec son mot de passe principal.",
+  'vaults.vaultCreateFailed': 'Échec de la création du coffre',
+  "vaults.vaultUnlockFailed": "Échec du déverrouillage du coffre",
 }

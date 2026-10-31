@@ -6,6 +6,64 @@ export interface VaultEntry {
   description?: string
 }
 
+/**
+ * Error kinds the backend vault commands report.
+ *
+ * `invalid_password` is decided at unlock time (the vault carries a verifier),
+ * and `already_exists` comes from the exclusive create: creating never
+ * overwrites, so a second create has to be surfaced, not retried.
+ */
+export type VaultErrorKind =
+  | 'invalid_password'
+  | 'already_exists'
+  | 'vault_locked'
+  | 'unknown'
+
+const KNOWN_VAULT_ERROR_KINDS = new Set<string>([
+  'invalid_password',
+  'already_exists',
+  'vault_locked',
+])
+
+/** A vault command rejection with the backend error kind preserved. */
+export class VaultCommandError extends Error {
+  readonly kind: VaultErrorKind
+
+  constructor(kind: VaultErrorKind, message: string) {
+    super(message)
+    this.name = 'VaultCommandError'
+    this.kind = kind
+  }
+}
+
+/**
+ * Keep the backend `{ type, message }` shape instead of flattening it.
+ *
+ * Tauri rejects with the serialized `VaultError`, so the kind survives the IPC
+ * hop and callers can distinguish "wrong password" from "a vault already
+ * exists" instead of matching on message text.
+ */
+export function toVaultCommandError(error: unknown): VaultCommandError {
+  if (error instanceof VaultCommandError) return error
+
+  const payload =
+    typeof error === 'object' && error !== null
+      ? (error as { type?: unknown; message?: unknown })
+      : undefined
+  const type = typeof payload?.type === 'string' ? payload.type : ''
+  const kind: VaultErrorKind = KNOWN_VAULT_ERROR_KINDS.has(type)
+    ? (type as VaultErrorKind)
+    : 'unknown'
+  const detail =
+    typeof payload?.message === 'string' && payload.message.length > 0
+      ? payload.message
+      : type.length > 0
+        ? type
+        : String(error)
+
+  return new VaultCommandError(kind, detail)
+}
+
 export class VaultService {
   /**
    * Check if vault exists
@@ -15,17 +73,32 @@ export class VaultService {
   }
 
   /**
-   * Create a new vault with master password
+   * Create a new vault with master password.
+   *
+   * Never overwrites: an existing vault makes this reject with
+   * `already_exists`. Replacing one is a separate, explicit destructive
+   * operation that this service deliberately does not expose.
    */
   async create(masterPassword: string): Promise<void> {
-    await invoke('vault_create', { masterPassword })
+    try {
+      await invoke('vault_create', { masterPassword })
+    } catch (error) {
+      throw toVaultCommandError(error)
+    }
   }
 
   /**
-   * Unlock vault with master password
+   * Unlock vault with master password.
+   *
+   * The password is checked by the backend before the vault is unlocked, so a
+   * wrong password rejects here with `invalid_password` and never later.
    */
   async unlock(masterPassword: string): Promise<void> {
-    await invoke('vault_unlock', { masterPassword })
+    try {
+      await invoke('vault_unlock', { masterPassword })
+    } catch (error) {
+      throw toVaultCommandError(error)
+    }
   }
 
   /**

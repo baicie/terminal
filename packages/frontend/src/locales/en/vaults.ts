@@ -37,4 +37,8 @@ export default {
   'vaults.loading': 'Loading vault...',
   'vaults.secureVault':
     'Securely store sensitive data like passwords, SSH keys, and API tokens using AES-256 encryption.',
+  'vaults.vaultAlreadyExists':
+    'A vault already exists and will not be overwritten. Unlock it with its master password.',
+  'vaults.vaultCreateFailed': 'Failed to create the vault',
+  'vaults.vaultUnlockFailed': 'Failed to unlock the vault',
 }

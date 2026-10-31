@@ -35,4 +35,8 @@ export default {
   'vaults.loading': '正在加载保险库...',
   'vaults.secureVault':
     '使用 AES-256 加密安全存储密码、SSH 密钥和 API 令牌等敏感数据。',
+  'vaults.vaultAlreadyExists':
+    '保险库已存在，不会被覆盖。请用原主密码解锁。',
+  'vaults.vaultCreateFailed': '创建保险库失败',
+  'vaults.vaultUnlockFailed': '解锁保险库失败',
 }

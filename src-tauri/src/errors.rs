@@ -280,6 +280,8 @@ pub enum VaultError {
     SaveFailed(String),
     #[error("invalid password")]
     InvalidPassword,
+    #[error("a vault already exists at that path")]
+    AlreadyExists,
 }
 
 #[derive(Serialize)]
@@ -324,6 +326,10 @@ impl From<VaultError> for VaultErrorDto {
                 kind: "invalid_password",
                 message: None,
             },
+            VaultError::AlreadyExists => Self {
+                kind: "already_exists",
+                message: None,
+            },
         }
     }
 }
@@ -339,6 +345,7 @@ impl From<VaultErrorDto> for VaultError {
             ("decrypt_failed", Some(m)) => VaultError::DecryptFailed(m),
             ("save_failed", Some(m)) => VaultError::SaveFailed(m),
             ("invalid_password", _) => VaultError::InvalidPassword,
+            ("already_exists", _) => VaultError::AlreadyExists,
             _ => VaultError::VaultLocked,
         }
     }

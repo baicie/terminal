@@ -1,11 +1,13 @@
 import type { VaultEntry } from '@/service/vault'
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from '@/components/ui/sonner'
-import { vaultService } from '@/service/vault'
+import { toVaultCommandError, vaultService } from '@/service/vault'
 
 export type VaultState = 'loading' | 'unlocked' | 'locked' | 'not_created'
 
 export function useVaultsView() {
+  const { t } = useTranslation()
   const [vaultState, setVaultState] = useState<VaultState>('loading')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -73,9 +75,17 @@ export function useVaultsView() {
       setConfirmPassword('')
       toast.success('Vault created successfully')
     } catch (createError) {
-      console.error('Failed to create vault:', createError)
-      setError('Failed to create vault: ' + String(createError))
-      setVaultState('not_created')
+      const vaultError = toVaultCommandError(createError)
+      console.error('Failed to create vault:', vaultError.kind)
+      if (vaultError.kind === 'already_exists') {
+        // A vault is already there and create never overwrites it: show the vault
+        // that exists instead of offering a create form that cannot succeed.
+        setError(t('vaults.vaultAlreadyExists'))
+        setVaultState('locked')
+      } else {
+        setError(t('vaults.vaultCreateFailed'))
+        setVaultState('not_created')
+      }
     } finally {
       setCreating(false)
     }
@@ -91,8 +101,13 @@ export function useVaultsView() {
       void loadEntries()
       toast.success('Vault unlocked successfully')
     } catch (unlockError) {
-      console.error('Failed to unlock vault:', unlockError)
-      setError('Invalid password')
+      const vaultError = toVaultCommandError(unlockError)
+      console.error('Failed to unlock vault:', vaultError.kind)
+      setError(
+        vaultError.kind === 'invalid_password'
+          ? t('vaults.invalidPassword')
+          : t('vaults.vaultUnlockFailed'),
+      )
     }
   }
 
