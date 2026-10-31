@@ -229,3 +229,39 @@ jobs:
             libxdo-dev
       - run: pnpm install --frozen-lockfile
       - run: pnpm tauri build --no-bundle --ci -- --locked
+      # Phase 8.8 Task E1: produce the installers that the install-chain steps
+      # below consume. `tauri bundle` reuses the release binary from the build
+      # step, so this does not compile twice. Bundling stays a separate step from
+      # the --no-bundle compile gate so a packaging regression and a compile
+      # regression stay distinguishable in the job log.
+      - name: Bundle installer (macOS DMG + .app)
+        if: runner.os == 'macOS'
+        run: |
+          pnpm tauri bundle --bundles app
+          if ! pnpm tauri bundle --bundles dmg; then
+            echo "::warning::DMG bundling failed once; retrying (create-dmg on runners is known to be flaky)"
+            pnpm tauri bundle --bundles dmg
+          fi
+      - name: Bundle installer (Windows NSIS)
+        if: runner.os == 'Windows'
+        run: pnpm tauri bundle --bundles nsis
+      - name: Bundle installer (Linux deb + AppImage)
+        if: runner.os == 'Linux'
+        run: pnpm tauri bundle --bundles deb,appimage
+      - name: Install Xvfb for the Linux launch check
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y --no-install-recommends xvfb
+      # Every step below exits non-zero on a failed assertion; none of them is
+      # allowed to swallow a failure with `|| true`. A check the runner genuinely
+      # cannot perform is printed as [SKIPPED]/[NOT_RUN] with its reason in the
+      # job log, never as a pass - see docs/release/phase8-task-e-rc-acceptance.md.
+      - name: Verify install chain (macOS DMG)
+        if: runner.os == 'macOS'
+        run: bash scripts/verify-install-macos.sh
+      - name: Verify install chain (Windows NSIS)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/verify-install-windows.ps1
+      - name: Verify install chain (Linux deb + AppImage)
+        if: runner.os == 'Linux'
+        run: bash scripts/verify-install-linux.sh
