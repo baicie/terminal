@@ -49,7 +49,18 @@ TOKEN="p89mac-$(date +%Y%m%d%H%M%S)-$$"
 MOUNTED=0
 
 pass() { echo "[PASS] $*"; }
-fail() { echo "[FAIL] $*"; exit 1; }
+fail() {
+  echo "[FAIL] $*"
+  # The assertions that matter most here ("the app created table X") live in the
+  # node harness, which cannot see the app's own output. Dumping it here means
+  # every failure explains itself - the reason a schema never finished is in the
+  # app's stderr, not in the list of missing tables.
+  echo "--- app output from the first launch ---"
+  tail -80 "$WORK/launch-first.log" 2>/dev/null || echo "(no launch log)"
+  echo "--- app output from the second launch ---"
+  tail -80 "$WORK/launch-second.log" 2>/dev/null || echo "(no launch log)"
+  exit 1
+}
 notrun() { echo "[NOT_RUN] $*"; }
 step() { echo; echo "=== $* ==="; }
 
