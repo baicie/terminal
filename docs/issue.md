@@ -3919,3 +3919,39 @@ Phase 8.9 的 version CAS 杜绝了**并发**丢失更新。但旧客户端若�
 作为配套证据，macOS 侧目前没有，先调大等于放弃观察。
 
 影响：证据 artifact 不完整（24 MB vs 37 MB）→ 证据门禁无法回填 → RC/Release 无法判定。
+
+---
+
+### Issue #59/#65 的首要嫌疑（Phase 8.9 自引入，未验证但证据很强）
+
+`initializeCoreSchema` 现在的顺序是：
+
+    const pending = await pendingColumnMigrations(database)          // 先检查
+    if (pending.length > 0) await ensurePreMigrationSnapshot(pending) // 失败即抛
+    for (...) await database.execute(statement)                      // 建表在后
+
+**快照检查发生在建表之前。** 于是：
+
+- **首次启动**（空库）：没有表 -> `pending` 为空 -> 不取快照 -> 正常建表。
+  这解释了本地冷启动为何成功（`ok: true`，3965ms）。
+- **第二次启动**（库已存在但缺列）：`pending` 非空 -> 调用
+  `invoke(backup_database_before_migration)` -> 该命令一旦失败或阻塞，
+  `initializeCoreSchema` 抛出 -> **建表中断**，应用永远到不了就绪。
+  这同时解释了：#59「创了 terminal.db 但没建完表」与 #65「第二次启动 10 秒不就绪」。
+
+**为什么两条可能是同一个根因**: matrix 的 macOS 作业先跑本地冷启动（首次启动、空库、通过），
+紧接着跑远程冷启动（第二次启动、库已存在、失败）。时间顺序完全吻合。
+
+**已核实**:
+- `backup_database_before_migration` 已在 `src-tauri/src/lib.rs:243` 注册，不是漏注册
+- Tauri v2 自定义命令不需要 capabilities 条目，排除权限声明缺失
+- 失败点在运行期：`VACUUM INTO`、目标路径或目录权限
+
+**下一步（按顺序）**:
+1. 在 macOS 上手动跑一次「首次启动 -> 关闭 -> 再启动」，抓 `backup_database_before_migration` 的实际错误
+2. 若 `VACUUM INTO` 在 Tauri 的应用数据目录下失败，检查目标目录是否存在、是否可写
+3. 若确认是该路径的问题，修它——**不要**回退「快照失败必须中止迁移」这条语义，
+   那是 Phase 8.9 Task 4 有意引入的正确行为；要修的是快照本身为什么失败
+
+**注意**: 这条是我的推断，尚未用运行时错误证实。写在这里是因为它能被一条命令验证，
+而不是留成「macOS 启动有问题」这种无法行动的描述。
