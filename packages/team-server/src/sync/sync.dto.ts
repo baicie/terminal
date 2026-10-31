@@ -177,10 +177,16 @@ export class EnqueueOperationDto {
 }
 
 export class SyncQueryDto {
+  /**
+   * Opaque sync cursor. The composite form is `2.<bound>.<txid>.<seq>`; a bare
+   * decimal number is the legacy single-watermark cursor and is still accepted,
+   * so an old client resyncs safely instead of being rejected
+   * (docs/phase8/sync-protocol.md §3.7).
+   */
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(Number.MAX_SAFE_INTEGER)
-  since?: number
+  @Type(() => String)
+  @IsString()
+  @MaxLength(80)
+  @Matches(/^\d{1,20}(?:\.\d{1,20})*$/)
+  since?: string
 }

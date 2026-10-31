@@ -2,11 +2,14 @@ import { TeamApiResources } from './team-api-resources'
 import type { ApiResponse } from './team-api-types'
 
 export class TeamApiSync extends TeamApiResources {
-  async getChanges(since?: number): Promise<
+  async getChanges(since?: string): Promise<
     ApiResponse<{
-      /** Opaque server cursor to send back unchanged on the next pull. */
-      cursor: number
+      /** Opaque server cursor (`2.<bound>.<txid>.<seq>`) to replay unchanged. */
+      cursor: string
+      /** Numeric safe watermark of the window. Display only, never a cursor. */
       timestamp: number
+      /** True when the bounded window still holds undelivered rows. */
+      hasMore: boolean
       resync: boolean
       teams: unknown[]
       members: unknown[]
@@ -28,7 +31,8 @@ export class TeamApiSync extends TeamApiResources {
       auditLogs: unknown[]
     }>
   > {
-    return this.request('GET', `/sync${since ? `?since=${since}` : ''}`)
+    const query = since ? `?since=${encodeURIComponent(since)}` : ''
+    return this.request('GET', `/sync${query}`)
   }
 
   async pushChanges(

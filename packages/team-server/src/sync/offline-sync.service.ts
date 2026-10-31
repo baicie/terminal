@@ -10,7 +10,7 @@ import {
 } from './queued-share-write-data'
 import { buildShareUpdateData } from './share-write-data'
 import { describeSyncError, SYNC_OPERATION_FAILED } from './sync-error'
-import { isStaleWrite } from './sync-protocol'
+import { classifyBaseVersion } from './sync-protocol'
 
 const PROCESSING_TIMEOUT_MS = 15 * 60 * 1000
 
@@ -47,9 +47,7 @@ export abstract class OfflineSyncService {
         if (existing.sharedBy !== userId) {
           throw new ForbiddenException('Only creator can update share')
         }
-        if (isStaleWrite(existing, data.baseVersion as number)) {
-          throw new BadRequestException('Queued share update is stale')
-        }
+        this.assertQueuedVersion(existing, data.baseVersion as number)
         canonicalData = canonicalizeQueuedData(
           operation,
           teamId,
@@ -219,15 +217,13 @@ export abstract class OfflineSyncService {
       if (!isCreator && existing.permission !== 'READWRITE') {
         throw new ForbiddenException('Only creator can update share')
       }
-      if (isStaleWrite(existing, shareData.baseVersion)) {
-        throw new BadRequestException('Queued share update is stale')
-      }
+      this.assertQueuedVersion(existing, shareData.baseVersion)
       const written = await this.prisma.share.updateMany({
         where: {
           id: shareData.id,
           teamId: item.teamId,
           sharedBy: existing.sharedBy,
-          updatedAt: existing.updatedAt,
+          version: existing.version,
         },
         data: buildShareUpdateData(shareData, existing, !isCreator, !isCreator),
       })
@@ -267,6 +263,19 @@ export abstract class OfflineSyncService {
       shareId: item.shareId,
       shareType: item.shareType,
     })
+  }
+
+  /**
+   * A queued write either proves the exact current version or is a legacy write
+   * with no proof at all; the version CAS in the caller is the final authority.
+   */
+  private assertQueuedVersion(
+    existing: { version: bigint },
+    baseVersion: number | undefined,
+  ): void {
+    const verdict = classifyBaseVersion(existing.version, baseVersion)
+    if (verdict === 'match' || verdict === 'unproven') return
+    throw new BadRequestException('Queued share update is stale')
   }
 
   private async checkMembership(teamId: string, userId: string) {

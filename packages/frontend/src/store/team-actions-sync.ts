@@ -16,18 +16,22 @@ const SYNC_CURSOR_STORAGE_KEY = 'terminal.team.syncCursor'
  * advanced once every change of the round has been applied, so a crash can only
  * cause a re-delivery, never a gap (docs/phase8/sync-protocol.md §5).
  */
-function readStoredCursor(): number | null {
+const CURSOR_PATTERN = /^\d{1,20}(?:\.\d{1,20})*$/
+
+function readStoredCursor(): string | null {
   try {
     const raw = globalThis.localStorage?.getItem(SYNC_CURSOR_STORAGE_KEY)
     if (!raw) return null
-    const parsed = Number(raw)
-    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null
+    // The cursor is opaque: a composite position (`2.<bound>.<txid>.<seq>`)
+    // or the older single watermark. Anything else is dropped so the server
+    // answers with a full resnapshot instead of a guess.
+    return CURSOR_PATTERN.test(raw) ? raw : null
   } catch {
     return null
   }
 }
 
-function storeCursor(cursor: number | null): void {
+function storeCursor(cursor: string | null): void {
   try {
     if (cursor === null) {
       globalThis.localStorage?.removeItem(SYNC_CURSOR_STORAGE_KEY)

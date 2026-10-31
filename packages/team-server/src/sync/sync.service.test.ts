@@ -2,6 +2,10 @@ import { Logger } from '@nestjs/common'
 import { describe, expect, it, vi } from 'vitest'
 import { SyncService } from './sync.service'
 
+/** Finished-run cursor at watermark 4242: bound 0, then the reached txid. */
+const COMPLETE_CURSOR
+  = '2.00000000000000000000.00000000000000004242.00000000000000000000'
+
 const existingShare = {
   id: 'share-b',
   teamId: 'team-b',
@@ -11,6 +15,8 @@ const existingShare = {
   isSensitive: false,
   sharedBy: 'owner-b',
   permission: 'READONLY',
+  /** Server-issued version: the only value the write condition may compare. */
+  version: 1n,
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 }
 
@@ -169,7 +175,7 @@ describe('SyncService authorization', () => {
         id: 'share-a',
         teamId: 'team-a',
         sharedBy: 'user-a',
-        updatedAt: sensitiveShare.updatedAt,
+        version: sensitiveShare.version,
       },
       data: {
         data: {},
@@ -386,14 +392,21 @@ describe('SyncService authorization', () => {
       nowSpy.mockRestore()
     }
 
-    // The cursor is the pg_snapshot_xmin watermark, never a wall clock.
-    expect(result.cursor).toBe(4_242)
+    // The cursor is the frozen pg_snapshot_xmin watermark plus the composite
+    // position of the last delivered row, never a wall clock.
+    expect(result.cursor).toBe(COMPLETE_CURSOR)
     expect(result.timestamp).toBe(4_242)
+    expect(result.hasMore).toBe(false)
     expect(result.resync).toBe(false)
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1)
     expect(prisma.syncChange.findMany).toHaveBeenCalledWith({
-      where: { teamId: { in: ['team-a'] }, txid: { gte: 1_000n, lt: safe } },
-      orderBy: { seq: 'asc' },
+      where: {
+        teamId: { in: ['team-a'] },
+        txid: { lt: safe },
+        // Legacy numeric cursor 1000 resumes at "every row of txid >= 1000".
+        OR: [{ txid: { gt: 1_000n } }, { txid: 1_000n, seq: { gt: -1n } }],
+      },
+      orderBy: [{ txid: 'asc' }, { seq: 'asc' }],
       take: 200,
     })
     // No incremental read may window Share or AuditLog by time.
@@ -402,7 +415,12 @@ describe('SyncService authorization', () => {
     // A legacy epoch cursor is above the watermark, so it degrades to a full resnapshot.
     const resync = await service.getChanges('user-a', 1_760_000_000_000)
     expect(resync.resync).toBe(true)
-    expect(resync.cursor).toBe(4_242)
+    expect(resync.cursor).toBe(COMPLETE_CURSOR)
+    expect(prisma.syncChange.findMany).toHaveBeenLastCalledWith({
+      where: { teamId: { in: ['team-a'] }, txid: { lt: safe } },
+      orderBy: [{ txid: 'asc' }, { seq: 'asc' }],
+      take: 200,
+    })
   })
 
   it('lets a READWRITE member update another creator share without changing its permission', async () => {
@@ -447,7 +465,7 @@ describe('SyncService authorization', () => {
         id: 'share-a',
         teamId: 'team-a',
         sharedBy: 'owner-a',
-        updatedAt: writableShare.updatedAt,
+        version: writableShare.version,
       },
       data: {
         data: { hostname: 'member-write' },

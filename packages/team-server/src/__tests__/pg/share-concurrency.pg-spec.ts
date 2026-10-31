@@ -13,6 +13,15 @@ import {
   waitForBlockedWriters,
 } from './pg-harness'
 
+/**
+ * 游标是不透明复合串：`V2.<bound>.<txid>.<seq>@，字段定宽补零，因此取 txid 字段
+ * 即可得到单调的投递位置；旧式单一数字游标也接受。
+ */
+function cursorPosition(cursor: string | number): number {
+  const parts = String(cursor).split('.')
+  return parts.length === 4 ? Number(parts[2]) : Number(cursor)
+}
+
 // 真实 PostgreSQL 并发验证：不 mock Prisma，直接用生产 PrismaService + 两个独立连接池。
 describe('team sync 并发语义（真实 PostgreSQL）', () => {
   let prismaA: PrismaService
@@ -216,7 +225,9 @@ describe('team sync 并发语义（真实 PostgreSQL）', () => {
     )
     expect(round1.shares.map(share => share.id)).not.toContain(lateId)
     expect(round2.shares.map(share => share.id)).toContain(lateId)
-    expect(round2.cursor).toBeGreaterThanOrEqual(round1.cursor)
+    expect(cursorPosition(round2.cursor)).toBeGreaterThanOrEqual(
+      cursorPosition(round1.cursor),
+    )
   })
 })
 
@@ -344,7 +355,9 @@ describe('team sync 协议故障注入（真实 PostgreSQL）', () => {
     // 第二轮：两个事务都已结束，谁也不许被跳过
     expect(round2.shares.map(share => share.id)).toContain(earlyId)
     expect(round2.shares.map(share => share.id)).toContain(lateId)
-    expect(round2.cursor).toBeGreaterThan(round1.cursor)
+    expect(cursorPosition(round2.cursor)).toBeGreaterThan(
+      cursorPosition(round1.cursor),
+    )
   })
 
   it('S3 删除与更新交错：不复活、不丢删除', async () => {
@@ -437,7 +450,9 @@ describe('team sync 协议故障注入（真实 PostgreSQL）', () => {
       .toEqual(probe.shares.map(share => share.id))
     expect(behindPull.shares.map(share => share.id))
       .toEqual(probe.shares.map(share => share.id))
-    expect(aheadPull.cursor).toBeGreaterThanOrEqual(probe.cursor)
+    expect(cursorPosition(aheadPull.cursor)).toBeGreaterThanOrEqual(
+      cursorPosition(probe.cursor),
+    )
   })
 
   it('S5 网络中断后的多次重试：幂等，不产生重复行', async () => {
@@ -531,7 +546,7 @@ describe('team sync 协议故障注入（真实 PostgreSQL）', () => {
     const ids = Array.from({ length: total }, (_, index) => `share-fanout-${  index}`)
     const readers = [0, 1, 2].map(async () => {
       const seen = new Set<string>()
-      let cursor = 0
+      let cursor: number | string = 0
       for (let round = 0; round < 10; round++) {
         const result = await syncA.getChanges(ctx.creatorId, cursor)
         for (const share of result.shares) seen.add(share.id)

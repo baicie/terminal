@@ -100,7 +100,7 @@ model SyncChange {
   shareCreatedAt DateTime?
   changedAt      DateTime   @default(now())
 
-  @@index([teamId, txid])
+  @@index([teamId, txid, seq])
   @@index([shareId, seq])
 }
 

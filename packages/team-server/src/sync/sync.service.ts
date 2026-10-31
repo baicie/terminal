@@ -1,7 +1,7 @@
-import type { PushedShare } from './sync-protocol'
 import type {
   ConflictInfo,
   IncrementalSyncResult,
+  PushedShare,
   PushResult,
 } from './sync-results'
 import { Injectable, Logger } from '@nestjs/common'
@@ -11,17 +11,11 @@ import { OfflineSyncService } from './offline-sync.service'
 import { buildShareCreateData, buildShareUpdateData } from './share-write-data'
 import { describeSyncError, SYNC_OPERATION_FAILED } from './sync-error'
 import {
-  isStaleWrite,
+  classifyBaseVersion,
   parseVersion,
   readChangeWindow,
   shareContentDigest,
 } from './sync-protocol'
-
-export type {
-  ConflictInfo,
-  IncrementalSyncResult,
-  PushResult,
-} from './sync-results'
 
 @Injectable()
 export class SyncService extends OfflineSyncService {
@@ -32,14 +26,12 @@ export class SyncService extends OfflineSyncService {
   }
 
   /**
-   * Incremental pull driven by a server cursor, never by a clock.
-   * The window is [since, safe) over transaction ids, so a transaction that
-   * allocated its id before the read but committed after it is delivered by the
-   * next round instead of being skipped forever (docs/phase8/sync-protocol.md §3).
+   * Incremental pull driven by a composite server cursor, never by a clock: a
+   * transaction that commits after the read is delivered by the next round.
    */
   async getChanges(
     userId: string,
-    since?: number,
+    cursor?: number | string,
   ): Promise<IncrementalSyncResult> {
     const memberships = await this.prisma.teamMember.findMany({
       where: { userId },
@@ -48,10 +40,11 @@ export class SyncService extends OfflineSyncService {
     const window = await readChangeWindow(
       this.prisma,
       memberships.map(membership => membership.teamId),
-      since,
+      cursor,
     )
     return {
-      cursor: window.cursor, timestamp: window.cursor, resync: window.resync,
+      cursor: window.cursor, timestamp: window.watermark,
+      hasMore: window.hasMore, resync: window.resync,
       shares: window.shares, deletedShareIds: window.deletedShareIds,
     }
   }
@@ -112,9 +105,8 @@ export class SyncService extends OfflineSyncService {
   }
 
   /**
-   * Writes one pushed share honouring the declared operation. Every branch
-   * either writes exactly one versioned change or reports a conflict, so a
-   * replay can never overwrite newer data (docs/phase8/sync-protocol.md §1).
+   * Writes one pushed share honouring the declared operation: every branch either
+   * writes exactly one versioned change or reports a conflict.
    */
   private async applyPushedShare(
     userId: string,
@@ -149,19 +141,27 @@ export class SyncService extends OfflineSyncService {
         })
         return
       }
-      if (isStaleWrite(existing, share.baseVersion)) {
+      const replay = shareContentDigest(existing) === shareContentDigest(share)
+      // CREATE never overwrites: the same content is an idempotent ack, any
+      // other payload is a conflict.
+      if (share.operation === 'CREATE') {
+        const ack = replay ? result.updated : result.conflicts
+        ack.push(share.id)
+        return
+      }
+      const verdict = classifyBaseVersion(existing.version, share.baseVersion)
+      // Declared UPDATE demands proof of the exact current version: a stale, a
+      // future and an unpresentable baseVersion are all conflicts. Only an
+      // undeclared legacy write may carry no proof at all, and then the version
+      // condition below is what keeps two writers from both winning.
+      const divergent = verdict !== 'match' && verdict !== 'unproven'
+      if (divergent || (verdict === 'unproven' && share.operation !== undefined)) {
         result.conflicts.push(share.id)
         return
       }
-      if (shareContentDigest(existing) === shareContentDigest(share)) {
+      if (replay) {
         // Replay of a request that already landed: acknowledge without writing.
         result.updated.push(share.id)
-        return
-      }
-      const declared = share.operation !== undefined
-        || share.baseVersion !== undefined
-      if (declared && share.baseVersion === undefined) {
-        result.conflicts.push(share.id)
         return
       }
       const written = await this.prisma.share.updateMany({
@@ -169,7 +169,7 @@ export class SyncService extends OfflineSyncService {
           id: share.id,
           teamId: share.teamId,
           sharedBy: existing.sharedBy,
-          updatedAt: existing.updatedAt,
+          version: existing.version,
         },
         data: buildShareUpdateData(share, existing, !isCreator, !isCreator),
       })
