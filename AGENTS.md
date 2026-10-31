@@ -527,7 +527,7 @@ pnpm add <package-name>
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
 - ✅ 各栈门禁本机全绿（2026-11-01，Phase 7 分支）：前端 **1234** 项、Team Server **116** 项、Rust **236** 单测 + 3 集成测试、Node 脚本 **241** 项、**558** 个生产文件行数门禁、bundle budget
-- ⚠️ 6 份实机证据需重新采集：Phase 7 的提交改动了 fingerprinted 路径，源码指纹已变化。按 `docs/release/workflow-rules.md` 在冻结提交上重跑 macOS 证据 job 之前，不得声称 evidence gate 全绿
+- ✅ 6 份实机证据已重采：由 real-machine-matrix run `41112206442`（sha `d530aac`）的 macOS job 产出，经 `fetch-verification-evidence.mjs` 安装。manifest 指纹 `81ffa0bf…`、debugSha `530a9ef0…`、releaseSha `73311f67…`，原始日志在 `docs/verification/raw/41112206442/`。`check-verification-evidence.mjs` => passed for 6 current evidence file(s)
 - ✅ 生产依赖审计为 0 个已知漏洞
 - ✅ 558 个生产源码文件均满足行数限制
 - ✅ GitHub Actions CI `31409070480`：macOS、Windows、Linux Tauri 编译，Team Server PostgreSQL 迁移和 Docker 镜像构建全部通过
