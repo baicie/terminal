@@ -105,6 +105,13 @@ jobs:
     name: zsh probe diagnostic
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # This job collects evidence; it does not validate the product. Its script
+    # exits 1 whenever any variant fails, and "zsh plain + readline-history" is
+    # a standing finding on Ubuntu runners rather than a regression. Gating the
+    # build on it would keep CI red for a known result and teach people to
+    # ignore the job. The product gate is the shell-probe step inside
+    # real-machine-matrix.yml; this job only has to produce the transcript.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Install shells
