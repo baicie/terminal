@@ -1,8 +1,9 @@
 [package]
 name = "terminal"
 version = "0.0.1-dev.2"
-description = "A Tauri App"
-authors = ["you"]
+description = "Modern SSH/SFTP terminal client with team collaboration"
+authors = ["baicie"]
+license = "MIT"
 edition = "2021"
 rust-version = "1.96"
 
