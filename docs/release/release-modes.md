@@ -5,7 +5,7 @@
 | 模式 | OS 代码签名 | Updater 签名 | 需要 Secrets | 产物 | 可见性 |
 | --- | --- | --- | --- | --- | --- |
 | `unsigned-qa`（默认） | 无 | 无 | 无 | **8 个安装包**：macOS `aarch64` / `x86_64` 各一个 DMG、Windows ARM64/x64 NSIS、Linux ARM64/x64 各 AppImage + DEB | draft → 校验通过后转 prerelease |
-| `updater-signed` | 无 | 有（`.sig` + `latest.json`） | `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）+ `TAURI_UPDATER_PUBKEY` | 上述 8 个安装包 + macOS 逐架构 `.app.tar.gz` 与 `.sig`、`windows-x86_64-setup.exe.sig`、`linux-x86_64.AppImage.sig` + 唯一 `latest.json` | draft → 全部门禁通过后转 prerelease |
+| `updater-signed` | 无 | 有（`.sig` + `latest.json`） | `TAURI_SIGNING_PRIVATE_KEY`（可选 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）+ `TAURI_UPDATER_PUBKEY` | 上述 8 个安装包 + macOS 逐架构 `.app.tar.gz` 与 `.sig` + **全部 8 个 bundle 各自的 `.sig`（含 aarch64 与 deb，不只 x64）** + 唯一 `latest.json` | draft → 全部门禁通过后转 prerelease |
 | `fully-signed`（预留） | Developer ID + 公证 / Authenticode | 有 | Apple 与 Windows 证书 | — | **本阶段启用即失败**，等待付费证书 |
 
 ## unsigned-qa
