@@ -280,6 +280,23 @@ jobs:
       - name: Verify install chain + data retention (macOS DMG)
         if: runner.os == 'macOS'
         run: bash scripts/verify-install-macos.sh
+      - name: Parse the PowerShell verification script
+        # This machine cannot parse PowerShell, so the only way to catch a
+        # syntax error before it fails the real step is to ask the runner that
+        # has a parser. Without this, a missing brace surfaces as a generic
+        # exit 1 with no useful line number.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $path = Join-Path $env:GITHUB_WORKSPACE 'scripts/verify-install-windows.ps1'
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) {
+            $errors | ForEach-Object { Write-Host ($_.Extent.StartLineNumber.ToString() + ': ' + $_.Message) }
+            throw ('scripts/verify-install-windows.ps1 does not parse: ' + $errors.Count + ' error(s)')
+          }
+          Write-Host 'scripts/verify-install-windows.ps1 parses cleanly'
+
       - name: Verify install chain + data retention (Windows NSIS)
         if: runner.os == 'Windows'
         shell: pwsh
