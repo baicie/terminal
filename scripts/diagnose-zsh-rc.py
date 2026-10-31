@@ -186,7 +186,11 @@ class Session:
             try:
                 chunk = os.read(self.fd, 65536)
             except OSError as error:
-                if error.errno == errno.EIO:
+                # EIO: the pty slave is gone. EBADF: the main thread closed the
+                # descriptor while this reader was still blocked. That is normal
+                # teardown, not a diagnosis failure, and re-raising it crashed a
+                # thread per variant on the Linux runner.
+                if error.errno in (errno.EIO, errno.EBADF):
                     return
                 raise
             if not chunk:
@@ -470,11 +474,16 @@ def startup_facts(shell, launch, home, wrapper):
     chosen = [line.strip() for line in done.stdout.splitlines()
               if line.strip().startswith(INTERESTING_OPTIONS + ('ZDOTDIR=', 'HOME='))]
     modes = []
-    for path in [home, wrapper, os.path.join(wrapper or '', '.zshrc')]:
+    # bash variants carry no wrapper, so this list can hold None. os.stat(None)
+    # raises TypeError, which the OSError guard below does not catch - that is
+    # what turned a missing wrapper into a hard process failure on Linux.
+    for path in [home, wrapper, os.path.join(wrapper, '.zshrc') if wrapper else None]:
+        if not path:
+            continue
         try:
             mode = stat.S_IMODE(os.stat(path).st_mode)
             modes.append('{0}=0o{1:o}'.format(os.path.basename(path) or path, mode))
-        except OSError:
+        except (OSError, TypeError):
             pass
     return ' | '.join(chosen) + ' | modes: ' + ', '.join(modes)
 
