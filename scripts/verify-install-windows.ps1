@@ -32,11 +32,22 @@ Pass "installer=$($installer.Name) bytes=$($installer.Length) productName=$produ
 if ($installer.Length -lt 1MB) { Fail "installer is suspiciously small: $($installer.Length) bytes" }
 
 $installDir = Join-Path $env:LOCALAPPDATA $productName
-$appExe = Join-Path $installDir ($productName + '.exe')
 
 Step 'silent install (/S)'
 Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait
-if (-not (Wait-Until { Test-Path $appExe } 120)) { Fail "install directory missing after silent install: $installDir" }
+# The installed binary is named after the Cargo package, not after productName:
+# mainBinaryName is unset, so the exe is terminal.exe while productName is
+# Termius. Guessing "$productName.exe" failed on the Windows runner while the
+# install itself had succeeded, and the message blamed the install directory.
+if (-not (Wait-Until { Test-Path $installDir } 120)) { Fail "install directory missing after silent install: $installDir" }
+$appExe = $null
+for ($i = 0; $i -lt 120 -and -not $appExe; $i++) {
+  $appExe = Get-ChildItem -Path $installDir -Filter '*.exe' -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne 'uninstall.exe' } |
+    Select-Object -First 1 -ExpandProperty FullName
+  if (-not $appExe) { Start-Sleep -Seconds 1 }
+}
+if (-not $appExe) { Fail "no application binary (other than uninstall.exe) appeared inside $installDir" }
 Pass "installed=$installDir"
 Pass "app binary=$appExe"
 
