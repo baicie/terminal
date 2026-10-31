@@ -97,6 +97,39 @@ jobs:
           TEAM_SERVER_TEST_DATABASE_URL: postgresql://postgres:ci-password@127.0.0.1:5432/team_server_concurrency_test
         run: pnpm exec vitest run --config vitest.pg.config.ts
 
+  zsh-probe-diagnostic:
+    # Evidence for the Linux zsh timeouts. The standalone workflow file could not
+    # be dispatched because GitHub only registers workflows present on the default
+    # branch, so it lives here where it also runs on every push. It is cheap: it
+    # starts shells, it does not build the app.
+    name: zsh probe diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shells
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsh bash
+      - name: Record shell versions
+        run: |
+          echo "zsh: $(zsh --version)"
+          echo "bash: $(bash --version | head -1)"
+      - name: Run the rc matrix and capture transcripts
+        run: |
+          mkdir -p diagnostic-out
+          python3 scripts/diagnose-zsh-rc.py --shells zsh,bash --out diagnostic-out/zsh-diag.log
+      - name: Show the transcript
+        if: always()
+        run: cat diagnostic-out/zsh-diag.log || true
+      - name: Upload transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zsh-probe-diagnostic
+          path: diagnostic-out/
+          if-no-files-found: warn
+
   source-size:
     name: Production source-size gate
     runs-on: ubuntu-latest
