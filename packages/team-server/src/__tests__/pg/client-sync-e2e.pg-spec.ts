@@ -1,11 +1,19 @@
-/* eslint-disable ts/ban-ts-comment -- the client sources resolve through the vitest alias declared in vitest.pg.config.ts */
-// @ts-nocheck
-// The client under test lives in the front-end package and reaches its own
-// sources through that alias, which the server tsconfig does not know about.
+/* eslint-disable ts/ban-ts-comment -- the client sources reachable only through the alias below */
+
+// The client under test lives in the front-end package and reaches its own sources
+// through the '@/' alias that vitest.pg.config.ts resolves to ../frontend/src.
+// TypeScript cannot do the same here: that tree sits outside this project's rootDir
+// (TS6059) and does not compile under this tsconfig at all, and declaring the alias
+// as an opaque module would need a second shim file. Each client import is therefore
+// suppressed on its own line, which keeps the rest of this file — assertions, harness
+// usage, SyncService calls — type checked, and turns "the alias stopped resolving"
+// into a visible unused-suppression error instead of the silence of a file-wide
+// "@ts-nocheck" (#64).
 
 import type { DatabaseSync } from 'node:sqlite'
 import type { Client } from 'pg'
 import type { PrismaService } from '../../prisma.service'
+// @ts-expect-error -- alias owned by vitest.pg.config.ts; see the note above
 import type { SharedHost, TeamState } from '@/store/team-types'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { SyncService } from '../../sync/sync.service'
@@ -126,10 +134,15 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
     endpoint = ENDPOINT_A,
   ): Promise<ClientHandle> {
     vi.resetModules()
+    // @ts-expect-error -- alias owned by vitest.pg.config.ts
     const { createSyncActions } = await import('@/store/team-actions-sync')
+    // @ts-expect-error -- alias owned by vitest.pg.config.ts
     const { createDataActions } = await import('@/store/team-actions-data')
+    // @ts-expect-error -- alias owned by vitest.pg.config.ts
     const { createTeam, getDb, getSharedHosts, getSharedSnippets } = await import('@/service/database')
+    // @ts-expect-error -- alias owned by vitest.pg.config.ts
     const { toSharedHost, toSharedSnippet } = await import('@/store/team-types')
+    // @ts-expect-error -- alias owned by vitest.pg.config.ts
     const { syncCursorStorageKey } = await import('@/store/team-sync-engine')
     // Forces this client's own connection: one SQLite database per module instance.
     await getDb()
@@ -207,7 +220,10 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
         .prepare(
           'SELECT id, team_id, host_data, version, dirty FROM team_shared_hosts WHERE id = ?',
         )
-        .get(shareId) as LocalRow | undefined,
+        // node:sqlite types a row as Record<string, SQLOutputValue>, which does not
+        // overlap the interface it is read into; the assertion goes through unknown
+        // rather than being disabled, so the shape stays checked at the use site.
+        .get(shareId) as unknown as LocalRow | undefined,
       hosts: () => get().sharedHosts,
     }
   }

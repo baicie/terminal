@@ -176,6 +176,7 @@ export {
   getSharedSnippets,
   addSharedSnippet,
   removeSharedSnippet,
+  removeSharesAbsentFromSnapshot,
   removeUnauthorizedTeamShares,
   getTeamInvites,
   createTeamInvite,

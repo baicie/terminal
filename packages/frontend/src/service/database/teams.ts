@@ -46,6 +46,52 @@ export async function removeUnauthorizedTeamShares(
   )
 }
 
+/**
+ * Delete the local shares a complete resynchronization proved the server no longer
+ * has.
+ *
+ * A cursor the server cannot prove it issued is answered with a full resnapshot
+ * (`resync: true`) instead of a guess, and such a snapshot can only say which rows
+ * exist — it can never name the rows deleted before the watermark it was cut at,
+ * because their change-log entries belong to a window this client is no longer
+ * positioned to read. Left alone those rows stay readable forever, and the next push
+ * offers them back to the server: the ghost row of docs/phase8/sync-protocol.md §5.
+ *
+ * Deletion is narrowed to what the snapshot proves:
+ *
+ * - only rows of a team this round was authorized to read — absence from a snapshot
+ *   of another scope proves nothing;
+ * - only rows carrying a server version — `version IS NULL` means the server has
+ *   never accepted the row, so it is a local share that has not been pushed yet and
+ *   a snapshot says nothing about it;
+ * - never a row flagged `dirty` — that local edit has not reached the server, so
+ *   deleting it would destroy unsent work on the strength of an absence.
+ *
+ * A dirty row the server has deleted is therefore kept and offered back as an
+ * UPDATE, which the server answers with a visible conflict instead of silence.
+ */
+export async function removeSharesAbsentFromSnapshot(
+  authorizedTeamIds: string[],
+  keptShareIds: string[],
+): Promise<number> {
+  // No authorized team means nothing was proven: removeUnauthorizedTeamShares owns
+  // that case, and it deletes far more than this function ever should.
+  if (authorizedTeamIds.length === 0) return 0
+  const teams = authorizedTeamIds.map(() => '?').join(', ')
+  const kept = keptShareIds.length === 0
+    ? ''
+    : ` AND id NOT IN (${keptShareIds.map(() => '?').join(', ')})`
+  const where = ` WHERE team_id IN (${teams}) AND version IS NOT NULL AND COALESCE(dirty, 0) = 0${kept}`
+  const params = [...authorizedTeamIds, ...keptShareIds]
+  let removed = 0
+  for (const table of ['team_shared_hosts', 'team_shared_snippets']) {
+    const result = await executeQuery(`DELETE FROM ${table}${where}`, params)
+    removed += (result as { rowsAffected?: number } | null | undefined)
+      ?.rowsAffected ?? 0
+  }
+  return removed
+}
+
 export async function getTeamInvites(
   teamId: string,
 ): Promise<TeamInviteRecord[]> {

@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { createSyncActions } from './team-actions-sync'
-import { syncCursorStorageKey } from './team-sync-engine'
+import { MAX_SYNC_PAGES, syncCursorStorageKey } from './team-sync-engine'
 import { convertApiShare as realConvertApiShare } from '@/service/team-api-converters'
 import type { TeamState } from './team-types'
 
@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   getChanges: vi.fn(),
   pushChanges: vi.fn(),
   removeSharedHost: vi.fn(),
+  removeSharesAbsentFromSnapshot: vi.fn(),
   removeSharedSnippet: vi.fn(),
   removeUnauthorizedTeamShares: vi.fn(),
 }))
@@ -21,6 +22,7 @@ vi.mock('@/service/database', () => ({
   addSharedHost: mocks.addSharedHost,
   addSharedSnippet: mocks.addSharedSnippet,
   removeSharedHost: mocks.removeSharedHost,
+  removeSharesAbsentFromSnapshot: mocks.removeSharesAbsentFromSnapshot,
   removeSharedSnippet: mocks.removeSharedSnippet,
   removeUnauthorizedTeamShares: mocks.removeUnauthorizedTeamShares,
 }))
@@ -411,4 +413,122 @@ it('never files another identity\'s answer under this scope', async () => {
   expect(harness.state().syncError).toContain('Sync identity mismatch')
   // The position cannot be proven to belong to this identity: drop it.
   expect(globalThis.localStorage.getItem(syncCursorStorageKey(SCOPE))).toBeNull()
+})
+it('reports the page limit instead of claiming the round finished', async () => {
+  mocks.pushChanges.mockResolvedValue({
+    data: { created: [], updated: [], deleted: [], conflicts: [], errors: [] },
+  })
+  let page = 0
+  mocks.getChanges.mockImplementation(async () => {
+    page += 1
+    return {
+      data: {
+        shares: [],
+        deletedShareIds: [],
+        cursor: `2.00000000000000000042.${String(page).padStart(20, '0')}.00000000000000000001`,
+        hasMore: true,
+        resync: false,
+        userId: 'user-1',
+        teams: ['team-1'],
+      },
+    }
+  })
+  const harness = createHarness({
+    sharedHosts: [
+      {
+        id: 'pending',
+        teamId: 'team-1',
+        hostData: { name: 'web' },
+        sharedBy: 'user-1',
+        permission: 'readonly',
+        createdAt: 1,
+        version: 1,
+        updatedAt: 1,
+      },
+    ],
+  })
+
+  await harness.actions.sync()
+
+  expect(mocks.getChanges).toHaveBeenCalledTimes(MAX_SYNC_PAGES)
+  // A stopped round has not seen the window. Pushing from it would submit changes
+  // against versions this round never reconciled, and "last synced" would be a
+  // claim the round cannot back.
+  expect(mocks.pushChanges).not.toHaveBeenCalled()
+  expect(harness.state().lastSyncAt).toBeNull()
+})
+
+it('removes the ghost rows a complete resync snapshot no longer carries', async () => {
+  mocks.removeSharesAbsentFromSnapshot.mockResolvedValue(1)
+  mocks.getChanges.mockResolvedValue({
+    data: {
+      shares: [share({ id: 'still-there' })],
+      deletedShareIds: [],
+      cursor: PAGE_TWO,
+      hasMore: false,
+      resync: true,
+      userId: 'user-1',
+      teams: ['team-1'],
+    },
+  })
+  const harness = createHarness()
+
+  await harness.actions.sync()
+
+  expect(mocks.removeSharesAbsentFromSnapshot).toHaveBeenCalledWith(
+    ['team-1'],
+    ['still-there'],
+  )
+})
+
+it('never prunes local rows on a round that proves nothing about absence', async () => {
+  mocks.pushChanges.mockResolvedValue({
+    data: { created: [], updated: [], deleted: [], conflicts: [], errors: [] },
+  })
+  // 1. An incremental round: it can only name the ids it delivered, never the
+  //    rows deleted outside its window.
+  mocks.getChanges.mockResolvedValue({
+    data: {
+      shares: [],
+      deletedShareIds: [],
+      cursor: PAGE_ONE,
+      hasMore: false,
+      resync: false,
+      userId: 'user-1',
+      teams: ['team-1'],
+    },
+  })
+  await createHarness().actions.sync()
+  // 2. A resnapshot the client could not finish reading.
+  let page = 0
+  mocks.getChanges.mockImplementation(async () => {
+    page += 1
+    return {
+      data: {
+        shares: [],
+        deletedShareIds: [],
+        cursor: `2.00000000000000000043.${String(page).padStart(20, '0')}.00000000000000000002`,
+        hasMore: true,
+        resync: true,
+        userId: 'user-1',
+        teams: ['team-1'],
+      },
+    }
+  })
+  await createHarness().actions.sync()
+  // 3. A resnapshot that reported no authorizing scope at all.
+  mocks.getChanges.mockReset()
+  mocks.getChanges.mockResolvedValue({
+    data: {
+      shares: [],
+      deletedShareIds: [],
+      cursor: PAGE_TWO,
+      hasMore: false,
+      resync: true,
+      userId: 'user-1',
+    },
+  })
+  await createHarness().actions.sync()
+
+  expect(mocks.removeSharesAbsentFromSnapshot).not.toHaveBeenCalled()
 })

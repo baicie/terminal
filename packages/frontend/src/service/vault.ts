@@ -24,14 +24,26 @@ export type VaultErrorKind =
   | 'vault_locked'
   | 'uninitialized'
   | 'corrupt'
+  | 'key_not_found'
   | 'unknown'
 
+/**
+ * Every kind the backend actually reports, copied from `VaultErrorDto`
+ * (`src-tauri/src/errors.rs`).
+ *
+ * `key_not_found` was missing here, so a vault that simply does not hold a key and a
+ * vault whose file cannot be decrypted both arrived as `unknown`. That is what makes
+ * a catch unable to name the one benign case it means to swallow — the same
+ * misclassification the duplicate-column guard had in Phase 8.9 — and it is why the
+ * credential helpers below could only be written as "ignore every failure".
+ */
 const KNOWN_VAULT_ERROR_KINDS = new Set<string>([
   'invalid_password',
   'already_exists',
   'vault_locked',
   'uninitialized',
   'corrupt',
+  'key_not_found',
 ])
 
 /** A vault command rejection with the backend error kind preserved. */
@@ -186,35 +198,46 @@ export class VaultService {
     privateKey?: string
   }> {
     const result: { password?: string; privateKey?: string } = {}
-
-    try {
-      result.password = await this.get(`host:${hostId}:password`)
-    } catch {
-      // Key not found, ignore
-    }
-
-    try {
-      result.privateKey = await this.get(`host:${hostId}:privateKey`)
-    } catch {
-      // Key not found, ignore
-    }
-
+    const password = await this.credentialHalf(`host:${hostId}:password`)
+    if (password !== undefined) result.password = password
+    const privateKey = await this.credentialHalf(`host:${hostId}:privateKey`)
+    if (privateKey !== undefined) result.privateKey = privateKey
     return result
+  }
+
+  /**
+   * One half of a stored credential, or undefined when the vault holds no such key.
+   *
+   * Only `key_not_found` is absence. A locked vault, a damaged file and a failed
+   * decrypt are all a failure to read a credential the user did store, and answering
+   * "there is no credential" for them turns an authentication failure into one with
+   * no explanation anywhere.
+   */
+  private async credentialHalf(key: string): Promise<string | undefined> {
+    try {
+      return await this.get(key)
+    } catch (error) {
+      const commandError = toVaultCommandError(error)
+      if (commandError.kind === 'key_not_found') return undefined
+      throw commandError
+    }
   }
 
   /**
    * Delete host credentials from vault
    */
   async deleteHostCredential(hostId: string): Promise<void> {
-    try {
-      await this.delete(`host:${hostId}:password`)
-    } catch {
-      // Ignore if not found
-    }
-    try {
-      await this.delete(`host:${hostId}:privateKey`)
-    } catch {
-      // Ignore if not found
+    for (const key of [`host:${hostId}:password`, `host:${hostId}:privateKey`]) {
+      try {
+        await this.delete(key)
+      } catch (error) {
+        const commandError = toVaultCommandError(error)
+        // Deleting a key that is gone already reaches the requested end state. A
+        // failed delete of a key that is still there leaves a secret on disk while
+        // the caller believes it is gone, which a delete must never report as done.
+        if (commandError.kind === 'key_not_found') continue
+        throw commandError
+      }
     }
   }
 }

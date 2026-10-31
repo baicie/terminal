@@ -2,11 +2,13 @@ import {
   addSharedHost,
   addSharedSnippet,
   removeSharedHost,
+  removeSharesAbsentFromSnapshot,
   removeSharedSnippet,
 } from '@/service/database'
 import { convertApiShare, teamApi } from '@/service/team-api'
-import type { SharedHost, SharedSnippet, SyncConflict } from './team-types'
+import type { SyncConflict } from './team-types'
 import type { TeamStoreGet } from './team-store-context'
+import { localConflict, shareData } from './team-sync-shares'
 import type { SyncCursorScope } from './team-sync-cursor'
 import {
   CURSOR_PATTERN,
@@ -24,56 +26,25 @@ export {
   syncCursorStorageKey,
 } from './team-sync-cursor'
 
-/** Bound on pages per round so a broken `hasMore` cannot loop forever. */
-const MAX_SYNC_PAGES = 25
+/**
+ * Bound on pages per round so a broken `hasMore` cannot loop forever.
+ *
+ * Exported because a caller has to be able to tell "the window ended" from "this
+ * round ran out of pages" — the two look identical from the return value otherwise,
+ * and a truncated round used to report itself as a finished sync (#P9.0-7.3).
+ */
+export const MAX_SYNC_PAGES = 25
 
-export type LocalShare =
-  | (SharedHost & { _type: 'HOST' })
-  | (SharedSnippet & { _type: 'SNIPPET_PACKAGE' })
-
-export function shareData(share: SharedHost | SharedSnippet): unknown {
-  return 'hostData' in share ? share.hostData : share.snippetData
-}
-
-export function hasData(value: unknown): boolean {
-  return typeof value === 'object' && value !== null
-    && Object.keys(value).length > 0
-}
-
-/** The richer of two reports of one conflict wins: only a pull knows the remote side. */
-export function mergeConflicts(
-  existing: SyncConflict[],
-  incoming: SyncConflict[],
-): SyncConflict[] {
-  if (incoming.length === 0) return existing
-  const byId = new Map(existing.map(item => [item.shareId, item]))
-  for (const conflict of incoming) {
-    const previous = byId.get(conflict.shareId)
-    const keepRemote = previous !== undefined
-      && hasData(previous.remoteVersion.data)
-      && !hasData(conflict.remoteVersion.data)
-    byId.set(
-      conflict.shareId,
-      keepRemote
-        ? { ...conflict, remoteVersion: previous.remoteVersion }
-        : conflict,
-    )
-  }
-  return [...byId.values()]
-}
-
-export function localConflict(
-  share: SharedHost | SharedSnippet | undefined,
-): SyncConflict {
-  return {
-    shareId: share?.id ?? '',
-    localVersion: {
-      updatedAt: share?.updatedAt ?? share?.createdAt ?? 0,
-      data: share === undefined ? {} : shareData(share),
-    },
-    remoteVersion: { updatedAt: 0, data: {}, updatedBy: '' },
-  }
-}
+// The share shape, its conflict record and the push live in team-sync-shares.ts;
+// re-exported here so callers keep one import.
+export {
+  hasData,
+  localConflict,
+  mergeConflicts,
+  pushLocalShares,
+  shareData,
+} from './team-sync-shares'
+export type { LocalShare } from './team-sync-shares'
 
 type SharePayload = Parameters<typeof convertApiShare>[0]
 
@@ -82,6 +53,12 @@ export interface ChangeWindowPayload {
   deletedShareIds?: string[]
   cursor?: string
   hasMore?: boolean
+  /**
+   * The server could not prove it issued this client's cursor and answered with the
+   * whole window instead. Only such a window can prove a row is absent, so only a
+   * round carrying this flag may delete local rows (§5).
+   */
+  resync?: boolean
   /** Identity that answered, as the server sees it; compared with the scope. */
   userId?: string
   /** Teams the caller may read right now - the scope the window actually used. */
@@ -96,6 +73,13 @@ export interface PullOutcome {
    * server). Only this list may decide which local teams survive.
    */
   authorizedTeams: string[] | null
+  /**
+   * True when the round stopped at `MAX_SYNC_PAGES` while the server still reported
+   * `hasMore`. The window is genuinely larger than one round, so the round is
+   * incomplete — not failed, and not finished. The cursor is persisted page by page,
+   * so the next round resumes where this one stopped.
+   */
+  hasMore: boolean
 }
 
 /**
@@ -187,13 +171,24 @@ export async function pullChanges(
   const conflicts: SyncConflict[] = []
   let cursor = scope === null ? null : readStoredCursor(scope)
   let authorizedTeams: string[] | null = null
+  // A resnapshot is the only answer that can prove a row is gone: it is the whole
+  // window cut at one position, so "not delivered" means "not on the server". An
+  // incremental window proves nothing, because the deletions it does not name belong
+  // to positions this client already passed.
+  let resnapshot = false
+  const delivered: string[] = []
+  // The loop is assumed to run out of pages; every real end of the window clears it.
+  let truncated = true
   for (let page = 0; page < MAX_SYNC_PAGES; page += 1) {
     const response = await teamApi.getChanges(cursor ?? undefined)
     if (response.error) throw new Error(response.error)
     // The wire payload is read through the scope fields this module declares: the
     // API type is generated from an older shape and must not be the contract here.
     const window = response.data as ChangeWindowPayload | null | undefined
-    if (!window) break
+    if (!window) {
+      truncated = false
+      break
+    }
     // A token can name another identity than the profile this cursor was stored
     // under. Its rows and its cursor both belong to that other identity, so the
     // round stops before a single change is written or persisted.
@@ -210,81 +205,35 @@ export async function pullChanges(
     if (authorizedTeams === null && Array.isArray(window.teams)) {
       authorizedTeams = window.teams
     }
+    if (window.resync === true) resnapshot = true
+    for (const apiShare of window.shares ?? []) delivered.push(apiShare.id)
     conflicts.push(...(await applyWindow(get, window, authorizedTeams)))
     const next = typeof window.cursor === 'string'
       && CURSOR_PATTERN.test(window.cursor)
       ? window.cursor
       : null
     if (next !== null && scope !== null) storeCursor(scope, next)
-    if (!window.hasMore || next === null || next === cursor) break
+    if (!window.hasMore || next === null || next === cursor) {
+      truncated = false
+      break
+    }
     cursor = next
   }
-  return { conflicts, authorizedTeams }
-}
-
-/**
- * Submits the shares this device holds. No server version means the server has
- * never seen the id: CREATE, which a replay answers with an idempotent ack. A
- * version means UPDATE, and it is sent as the proof, so a concurrent write is
- * reported as a conflict instead of being overwritten.
- */
-export async function pushLocalShares(
-  get: TeamStoreGet,
-  currentTeamId: string,
-): Promise<SyncConflict[]> {
-  const local: LocalShare[] = [
-    ...get().sharedHosts.map(item => ({ ...item, _type: 'HOST' as const })),
-    ...get().sharedSnippets.map(item => ({
-      ...item,
-      _type: 'SNIPPET_PACKAGE' as const,
-    })),
-  ]
-  if (local.length === 0) return []
-  const pushed = local.map(item => {
-    const baseVersion = typeof item.version === 'number' ? item.version : null
-    return {
-      id: item.id,
-      teamId: item.teamId || currentTeamId,
-      type: item._type,
-      data: shareData(item),
-      permission: item.permission.toUpperCase() as 'READONLY' | 'READWRITE',
-      operation: baseVersion === null ? ('CREATE' as const) : ('UPDATE' as const),
-      ...(baseVersion === null ? {} : { baseVersion }),
-    }
-  })
-  const response = await teamApi.pushChanges(pushed)
-  if (response.error) throw new Error(response.error)
-  const accepted = new Set([
-    ...(response.data?.created ?? []),
-    ...(response.data?.updated ?? []),
-  ])
-  // The server holds this content now, so the row stops being a local edit. The
-  // version stays as it was: the next pull is what advances it, and until then a
-  // newer remote write still wins over this copy.
-  for (const item of local) {
-    if (!accepted.has(item.id)) continue
-    const record = {
-      id: item.id,
-      team_id: item.teamId || currentTeamId,
-      shared_by: item.sharedBy,
-      permission: item.permission,
-      created_at: item.createdAt,
-      version: typeof item.version === 'number' ? item.version : null,
-      updated_at: item.updatedAt ?? item.createdAt,
-    }
-    if (item._type === 'HOST') {
-      await addSharedHost(
-        { ...record, host_data: JSON.stringify(item.hostData) },
-        'override',
-      )
-    } else {
-      await addSharedSnippet(
-        { ...record, snippet_data: JSON.stringify(item.snippetData) },
-        'override',
+  // Only a complete resnapshot may delete anything: a truncated one has not seen the
+  // whole window, and an incremental one never could. `authorizedTeams === null` means
+  // the server named no scope, so no absence was proven either.
+  if (resnapshot && !truncated && authorizedTeams !== null) {
+    const removed = await removeSharesAbsentFromSnapshot(
+      authorizedTeams,
+      delivered,
+    )
+    if (removed > 0) {
+      console.info(
+        `[Sync] removed ${removed} local share(s) a complete resnapshot proved the server no longer has`,
       )
     }
   }
-  return (response.data?.conflicts ?? []).map(shareId =>
-    localConflict(local.find(item => item.id === shareId)),
-  )
+  return { conflicts, authorizedTeams, hasMore: truncated }
 }
+
+

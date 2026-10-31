@@ -28,6 +28,18 @@ pub const BACKUP_BUDGET: Duration = Duration::from_secs(60);
 /// How many name collisions a destination may resolve before the caller is told.
 const MAX_DESTINATION_ATTEMPTS: u32 = 50;
 
+/// How many pre-migration snapshots the backups directory keeps (#62).
+///
+/// A migration that keeps failing writes one full copy of the database per launch
+/// and nothing ever removed the previous ones, so the directory grew without
+/// bound. The copy that matters when recovering is the newest one — it was taken
+/// immediately before the migration that broke — and the four behind it cover a
+/// second and third broken attempt, a restart in between, and one older version to
+/// compare against. Anything older is redundant with the database file itself plus
+/// the user's own export, and each entry costs a whole database, so this cap is what
+/// bounds the directory's disk cost at N × database size.
+pub const MAX_SNAPSHOT_COPIES: usize = 5;
+
 #[derive(Debug, thiserror::Error)]
 pub enum BackupError {
     #[error("the pre-migration snapshot could not be prepared in {path}: {reason}")]
@@ -68,9 +80,13 @@ pub async fn backup_database_before_migration<R: Runtime>(
     let pool = super::sqlite_pool(&app).await?;
     let directory = backup_directory(&app)?;
     let destination = unique_destination(&directory)?;
-    snapshot_before_migration(&pool, &destination)
+    let report = snapshot_before_migration(&pool, &destination)
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    // After the new snapshot is verified, never before: pruning first would drop a
+    // good older copy before this call proved it has a replacement.
+    prune_old_snapshots(&directory, MAX_SNAPSHOT_COPIES);
+    Ok(report)
 }
 
 /// Write a verified snapshot of `pool` to `destination`, which must not exist.
@@ -255,6 +271,85 @@ fn discard(destination: &Path) {
             );
         }
     }
+}
+
+/// The epoch-millisecond stamp a snapshot file name carries, if it is one of ours.
+///
+/// `pre-migration-<epoch-ms>.db`, plus `pre-migration-<epoch-ms>-<attempt>.db` when two
+/// launches collide inside one millisecond. Anything else in the directory — another
+/// tool's file, a hand-renamed copy, a subdirectory — returns `None` and is never a deletion
+/// candidate.
+fn snapshot_stamp(name: &str) -> Option<u128> {
+    let stem = name.strip_prefix("pre-migration-")?.strip_suffix(".db")?;
+    let digits = stem.split('-').next()?;
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let rest = &stem[digits.len()..];
+    if !rest.is_empty() && !rest.starts_with('-') {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+/// Delete all but the `keep` newest snapshots in `directory`, and report how many files
+/// were removed.
+///
+/// Deliberately infallible: a snapshot that could not be deleted is a warning in the
+/// log, never an error the caller sees, because the only caller runs right after a
+/// verified snapshot and the migration it guards must not be blocked by a leftover
+/// file. The scan does not recurse, and only regular files whose name
+/// `snapshot_stamp` recognises are candidates, so nothing else in the directory can be
+/// touched.
+fn prune_old_snapshots(directory: &Path, keep: usize) -> usize {
+    let entries = match std::fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) => {
+            tracing::warn!(
+                path = %directory.display(),
+                error = %error,
+                "could not list the pre-migration snapshots for pruning"
+            );
+            return 0;
+        }
+    };
+
+    let mut snapshots: Vec<(u128, String)> = Vec::new();
+    for entry in entries.flatten() {
+        // `file_type` describes the entry itself: a symlink or a directory that
+        // happens to carry a snapshot name is not one of our snapshots.
+        let is_file = entry
+            .file_type()
+            .map(|kind| kind.is_file())
+            .unwrap_or(false);
+        if !is_file {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if let Some(stamp) = snapshot_stamp(&name) {
+            snapshots.push((stamp, name));
+        }
+    }
+    if snapshots.len() <= keep {
+        return 0;
+    }
+
+    snapshots.sort();
+    let mut removed = 0;
+    for (_, name) in snapshots.iter().take(snapshots.len() - keep) {
+        match std::fs::remove_file(directory.join(name)) {
+            Ok(()) => {
+                removed += 1;
+                tracing::info!(name = %name, "removed an old pre-migration snapshot");
+            }
+            Err(error) => tracing::warn!(
+                name = %name,
+                error = %error,
+                "could not remove an old pre-migration snapshot"
+            ),
+        }
+    }
+    removed
 }
 
 /// Every user table, in a stable order, so source and snapshot are compared pairwise.
@@ -603,5 +698,138 @@ mod tests {
         );
 
         pool.close().await;
+    }
+    /// #62: a migration that keeps failing adds one full copy per launch. The
+    /// directory must stay bounded even though every launch is allowed to write a new
+    /// copy — the oldest ones are the ones nothing needs any more.
+    #[test]
+    fn pruning_keeps_the_newest_snapshots_and_removes_the_oldest() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let mut written = Vec::new();
+        for stamp in 1..=7u128 {
+            let name = format!("pre-migration-{stamp}.db");
+            std::fs::write(dir.path().join(&name), b"a snapshot").expect("write a snapshot");
+            written.push(name);
+        }
+        // The collision variant of the newest millisecond: newer than its own base
+        // name only by the stamp, and therefore inside the kept set.
+        let collision = "pre-migration-7-2.db".to_string();
+        std::fs::write(dir.path().join(&collision), b"a snapshot").expect("write a snapshot");
+        written.push(collision);
+
+        let removed = prune_old_snapshots(dir.path(), MAX_SNAPSHOT_COPIES);
+
+        assert_eq!(
+            removed, 3,
+            "eight snapshots under a cap of five must remove exactly three"
+        );
+        for stamp in 1..=3u128 {
+            assert!(
+                !dir.path()
+                    .join(format!("pre-migration-{stamp}.db"))
+                    .exists(),
+                "the oldest snapshot (stamp {stamp}) must be the one removed"
+            );
+        }
+        for stamp in 4..=7u128 {
+            assert!(
+                dir.path()
+                    .join(format!("pre-migration-{stamp}.db"))
+                    .exists(),
+                "snapshot stamp {stamp} is inside the cap and must survive"
+            );
+        }
+        assert!(dir.path().join("pre-migration-7-2.db").exists());
+    }
+
+    /// The guard that makes the deletion safe: only this directory's own regular
+    /// files whose name is exactly a snapshot are candidates. Everything else — the
+    /// database itself, a subdirectory, a hand-renamed copy, a sibling's file — stays.
+    #[test]
+    fn pruning_never_deletes_anything_that_is_not_a_snapshot_of_ours() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        for stamp in 1..=9u128 {
+            std::fs::write(
+                dir.path().join(format!("pre-migration-{stamp}.db")),
+                b"a snapshot",
+            )
+            .expect("write a snapshot");
+        }
+        let strangers = [
+            "terminal.db",
+            "terminal.db-wal",
+            "notes.txt",
+            "pre-migration-.db",
+            "pre-migration-abc.db",
+            "pre-migration-1.db.bak",
+            "pre-migration-1.database",
+            "xpre-migration-1.db",
+        ];
+        for name in strangers {
+            std::fs::write(dir.path().join(name), b"not a snapshot of ours")
+                .expect("write a stranger");
+        }
+        let nested = dir
+            .path()
+            .join("pre-migration-1.db.d")
+            .join("pre-migration-2.db");
+        std::fs::create_dir_all(nested.parent().expect("parent")).expect("create a subdirectory");
+        std::fs::write(&nested, b"nested").expect("write a nested file");
+        let directory_named_like_a_snapshot = dir.path().join("pre-migration-99.db");
+        std::fs::create_dir(&directory_named_like_a_snapshot).expect("create a directory");
+
+        let removed = prune_old_snapshots(dir.path(), 1);
+
+        assert_eq!(removed, 8, "only the eight real snapshots above the cap go");
+        assert!(
+            dir.path().join("pre-migration-9.db").exists(),
+            "the newest stays"
+        );
+        for name in strangers {
+            assert!(
+                dir.path().join(name).exists(),
+                "{name} is not a snapshot of ours and must survive"
+            );
+        }
+        assert!(nested.exists(), "the scan must not recurse");
+        assert!(
+            directory_named_like_a_snapshot.is_dir(),
+            "a directory whose name looks like a snapshot is not a snapshot"
+        );
+    }
+
+    /// Retention is a convenience, the snapshot is the safety net: a deletion that
+    /// fails must be logged and skipped, never propagated into the migration gate.
+    #[cfg(unix)]
+    #[test]
+    fn a_snapshot_that_cannot_be_deleted_does_not_fail_the_prune() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("temporary directory");
+        for stamp in 1..=3u128 {
+            std::fs::write(
+                dir.path().join(format!("pre-migration-{stamp}.db")),
+                b"a snapshot",
+            )
+            .expect("write a snapshot");
+        }
+        // A read-only directory makes every remove fail with a real filesystem error.
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555))
+            .expect("make the directory read-only");
+
+        let removed = prune_old_snapshots(dir.path(), 1);
+
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755))
+            .expect("restore the directory");
+        assert_eq!(
+            removed, 0,
+            "nothing could be removed, and that is not an error"
+        );
+        for stamp in 1..=3u128 {
+            assert!(dir
+                .path()
+                .join(format!("pre-migration-{stamp}.db"))
+                .exists());
+        }
     }
 }

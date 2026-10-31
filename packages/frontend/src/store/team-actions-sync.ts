@@ -8,6 +8,7 @@ import type { TeamState } from './team-types'
 import type { TeamStoreGet, TeamStoreSet } from './team-store-context'
 import type { SyncCursorScope } from './team-sync-engine'
 import {
+  MAX_SYNC_PAGES as SYNC_ROUND_PAGES,
   hasData,
   mergeConflicts,
   pullChanges,
@@ -118,6 +119,20 @@ export function createSyncActions(
         // landed instead of a snapshot taken before the pull advanced them.
         await get().loadSharedHosts(currentTeam.id)
         await get().loadSharedSnippets(currentTeam.id)
+        // A round that ran out of pages has not seen the whole window. The cursor it
+        // persisted page by page resumes it on the next call, so nothing is lost by
+        // stopping here — but pushing from a half-built picture would submit changes
+        // against versions this round never reconciled, and "last synced" would claim
+        // a completion the round cannot back.
+        if (pull.hasMore) {
+          set(state => ({
+            syncConflicts: mergeConflicts(state.syncConflicts, pull.conflicts),
+          }))
+          console.warn(
+            `[Sync] the change window is larger than one round of ${SYNC_ROUND_PAGES} pages; resuming on the next sync`,
+          )
+          return
+        }
         const pushConflicts = await pushLocalShares(get, currentTeam.id)
         set(state => ({
           syncConflicts: mergeConflicts(state.syncConflicts, [
