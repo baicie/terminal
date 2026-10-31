@@ -257,3 +257,31 @@
 | 4 | Tauri build (windows) | 脚本猜 `Termius.exe`，实际二进制是 `terminal.exe`，且错误信息指向了错误的检查对象 |
 
 **没有一个是功能逻辑错误，全部是「本地绿 ≠ CI 绿」的盲区。** 这也是本轮最实在的收获。
+
+### E1-更正（重要）
+
+我在第一版报告里写「Linux 安装链 NOT_RUN」，**这是错的**。核实 `aaa8efe` 的 ubuntu job 日志后：
+
+    [PASS] deb=Termius_0.0.1-dev.2_amd64.deb bytes=15109748
+    [PASS] deb payload binary=terminal
+    [PASS] all shared libraries of the deb payload resolve (ldd)
+    [PASS] deb install chain: unpack + launch
+    [PASS] app data dir created by the first launch: ~/.local/share/com.baicie.termius
+    [PASS] overwrite install kept the binary in place
+    [PASS] data retention: app data dir survived the overwrite install
+    [PASS] appimage=Termius_0.0.1-dev.2_amd64.AppImage bytes=93547000 executable=yes
+    [PASS] AppImage launch (mode=direct, FUSE mount)
+    [NOT_RUN] distribution-level install via a desktop environment (menu entry, .desktop association)
+
+**因此三平台的数据保留验证状态是：**
+
+| 平台 | 安装 | 启动 | 覆盖安装 | **数据保留** |
+| --- | --- | --- | --- | --- |
+| Linux | ✅ deb 解包 + AppImage | ✅ | ✅ | **✅ PASS** |
+| Windows | ✅ NSIS 静默 | ✅ | ✅ | **✅ PASS** |
+| macOS | ✅ DMG 挂载 + 身份校验 | ✅ | ✅ | ⚠️ **SKIPPED**（应用 5 秒内未创建数据目录） |
+
+**RC 的硬阻塞因此缩小为：仅 macOS 的数据保留未验证**，加上 Linux 桌面环境级安装（无桌面会话，NOT_RUN）。
+
+这个更正本身值得记下来：我写「NOT_RUN」时并没有去看那台 job 的日志，只是凭「该 job 之前失败过」的推断，
+而那轮它其实是绿的。**推断被写进报告，就成了看起来像事实的错误。**
