@@ -10,6 +10,7 @@ import {
 } from './queued-share-write-data'
 import { buildShareUpdateData } from './share-write-data'
 import { describeSyncError, SYNC_OPERATION_FAILED } from './sync-error'
+import { isStaleWrite } from './sync-protocol'
 
 const PROCESSING_TIMEOUT_MS = 15 * 60 * 1000
 
@@ -46,7 +47,7 @@ export abstract class OfflineSyncService {
         if (existing.sharedBy !== userId) {
           throw new ForbiddenException('Only creator can update share')
         }
-        if (existing.updatedAt.getTime() > (data.baseVersion as number)) {
+        if (isStaleWrite(existing, data.baseVersion as number)) {
           throw new BadRequestException('Queued share update is stale')
         }
         canonicalData = canonicalizeQueuedData(
@@ -218,10 +219,7 @@ export abstract class OfflineSyncService {
       if (!isCreator && existing.permission !== 'READWRITE') {
         throw new ForbiddenException('Only creator can update share')
       }
-      if (
-        shareData.baseVersion !== undefined &&
-        existing.updatedAt.getTime() > shareData.baseVersion
-      ) {
+      if (isStaleWrite(existing, shareData.baseVersion)) {
         throw new BadRequestException('Queued share update is stale')
       }
       const written = await this.prisma.share.updateMany({
@@ -239,6 +237,10 @@ export abstract class OfflineSyncService {
       return
     }
 
+    if (item.operation === 'UPDATE') {
+      // A queued update must never resurrect a share that was deleted meanwhile.
+      throw new BadRequestException('Queued share update targets a missing share')
+    }
     await this.prisma.share.create({
       data: buildQueuedShareCreateData(shareData, item.teamId, userId),
     })

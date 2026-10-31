@@ -159,10 +159,15 @@ export async function getSharedHosts(
   )
 }
 
+// Idempotent on purpose: the sync protocol may re-deliver a change (page
+// boundary or a round that crashed before the cursor advanced), and a replay
+// must converge instead of failing the whole round on a primary key clash.
 export async function addSharedHost(host: TeamSharedHostRecord): Promise<void> {
   await executeQuery(
     `INSERT INTO team_shared_hosts (id, team_id, host_data, shared_by, permission, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET team_id = excluded.team_id, host_data = excluded.host_data,
+       shared_by = excluded.shared_by, permission = excluded.permission, created_at = excluded.created_at`,
     [
       host.id,
       host.team_id,
@@ -192,7 +197,9 @@ export async function addSharedSnippet(
 ): Promise<void> {
   await executeQuery(
     `INSERT INTO team_shared_snippets (id, team_id, snippet_data, shared_by, permission, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET team_id = excluded.team_id, snippet_data = excluded.snippet_data,
+       shared_by = excluded.shared_by, permission = excluded.permission, created_at = excluded.created_at`,
     [
       snippet.id,
       snippet.team_id,

@@ -4,7 +4,10 @@ import type { ApiResponse } from './team-api-types'
 export class TeamApiSync extends TeamApiResources {
   async getChanges(since?: number): Promise<
     ApiResponse<{
+      /** Opaque server cursor to send back unchanged on the next pull. */
+      cursor: number
       timestamp: number
+      resync: boolean
       teams: unknown[]
       members: unknown[]
       shares: Array<{
@@ -18,6 +21,8 @@ export class TeamApiSync extends TeamApiResources {
         sharedBy: string
         createdAt: string
         updatedAt: string
+        /** Server-issued monotonic version, echoed back as baseVersion. */
+        version: number
       }>
       deletedShareIds: string[]
       auditLogs: unknown[]
@@ -36,6 +41,7 @@ export class TeamApiSync extends TeamApiResources {
       isSensitive?: boolean
       permission: string
       baseVersion?: number
+      operation?: 'CREATE' | 'UPDATE' | 'DELETE'
     }>,
     deleteShares?: string[],
   ): Promise<

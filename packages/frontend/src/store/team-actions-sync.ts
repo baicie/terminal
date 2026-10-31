@@ -8,6 +8,37 @@ import { convertApiShare, teamApi } from '@/service/team-api'
 import type { SharedHost, SharedSnippet, TeamState } from './team-types'
 import type { TeamStoreGet, TeamStoreSet } from './team-store-context'
 
+const SYNC_CURSOR_STORAGE_KEY = 'terminal.team.syncCursor'
+
+/**
+ * The sync cursor is opaque and server issued: it is stored verbatim and sent
+ * back unchanged. It is never derived from the local clock, and it is only
+ * advanced once every change of the round has been applied, so a crash can only
+ * cause a re-delivery, never a gap (docs/phase8/sync-protocol.md §5).
+ */
+function readStoredCursor(): number | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(SYNC_CURSOR_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = Number(raw)
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function storeCursor(cursor: number | null): void {
+  try {
+    if (cursor === null) {
+      globalThis.localStorage?.removeItem(SYNC_CURSOR_STORAGE_KEY)
+      return
+    }
+    globalThis.localStorage?.setItem(SYNC_CURSOR_STORAGE_KEY, String(cursor))
+  } catch {
+    // Storage unavailable: the next round simply starts from a full resnapshot.
+  }
+}
+
 export function createSyncActions(
   set: TeamStoreSet,
   get: TeamStoreGet,
@@ -32,16 +63,17 @@ export function createSyncActions(
         isSyncing,
       } = get()
       if (
-        settings.enabled &&
-        settings.mode === 'cloud' &&
-        settings.endpoint &&
-        settings.apiToken
-      )
+        settings.enabled
+        && settings.mode === 'cloud'
+        && settings.endpoint
+        && settings.apiToken
+      ) {
         teamApi.configure(
           settings.endpoint,
           settings.apiToken,
           userProfile?.id || '',
         )
+      }
       if (!settings.enabled || settings.mode !== 'cloud' || !currentTeam) return
       // A second run while one is in flight would push the same shares twice
       // and let the two runs overwrite each other's state.
@@ -51,7 +83,7 @@ export function createSyncActions(
       set({ isSyncing: true, syncError: null })
       try {
         const changesResponse = await teamApi.getChanges(
-          get().lastSyncAt ?? undefined,
+          readStoredCursor() ?? undefined,
         )
         if (changesResponse.error) throw new Error(changesResponse.error)
         if (changesResponse.data) {
@@ -69,7 +101,7 @@ export function createSyncActions(
               sharedBy: apiShare.sharedBy,
               createdAt: apiShare.createdAt,
             })
-            if ('hostData' in converted)
+            if ('hostData' in converted) {
               await addSharedHost({
                 id: converted.id,
                 team_id: settings.currentTeamId!,
@@ -78,7 +110,7 @@ export function createSyncActions(
                 permission: converted.permission,
                 created_at: converted.createdAt,
               })
-            else if ('snippetData' in converted)
+            } else if ('snippetData' in converted) {
               await addSharedSnippet({
                 id: converted.id,
                 team_id: settings.currentTeamId!,
@@ -87,6 +119,7 @@ export function createSyncActions(
                 permission: converted.permission,
                 created_at: converted.createdAt,
               })
+            }
           }
         }
         const localShares = [
@@ -97,26 +130,17 @@ export function createSyncActions(
           })),
         ]
         if (localShares.length > 0) {
-          const conflictCheckItems = localShares
-            .filter(item => item.createdAt)
-            .map(item => ({
-              id: item.id,
-              updatedAt: item.createdAt,
-              type:
-                item._type === 'HOST'
-                  ? ('HOST' as const)
-                  : ('SNIPPET_PACKAGE' as const),
-            }))
-          if (conflictCheckItems.length > 0) {
-            const conflicts = await teamApi.checkConflicts(conflictCheckItems)
-            if (!conflicts.error && conflicts.data && conflicts.data.length > 0)
-              set({ syncConflicts: conflicts.data })
-          }
+          // Declared CREATE: the server answers a replay of an already applied
+          // create with an idempotent acknowledgement, and refuses to overwrite
+          // a newer version instead of silently losing the remote change.
           const pushResult = await teamApi.pushChanges(
             localShares.map(item => ({
               id: item.id,
               teamId: currentTeam.id,
-              type: item._type === 'HOST' ? 'HOST' : 'SNIPPET_PACKAGE',
+              type:
+                item._type === 'HOST'
+                  ? ('HOST' as const)
+                  : ('SNIPPET_PACKAGE' as const),
               data:
                 item._type === 'HOST'
                   ? (item as SharedHost).hostData
@@ -124,13 +148,13 @@ export function createSyncActions(
               permission: item.permission.toUpperCase() as
                 | 'READONLY'
                 | 'READWRITE',
-              baseVersion: item.createdAt,
+              operation: 'CREATE' as const,
             })),
           )
           if (pushResult.error) throw new Error(pushResult.error)
           if (
-            pushResult.data?.conflicts &&
-            pushResult.data.conflicts.length > 0
+            pushResult.data?.conflicts
+            && pushResult.data.conflicts.length > 0
           ) {
             const conflictDetails = pushResult.data.conflicts.map(id => {
               const local = localShares.find(item => item.id === id)
@@ -150,6 +174,9 @@ export function createSyncActions(
         }
         await get().loadSharedHosts(currentTeam.id)
         await get().loadSharedSnippets(currentTeam.id)
+        // The cursor advances only after every change landed locally.
+        storeCursor(changesResponse.data?.cursor ?? null)
+        // Display only: this local timestamp is never used as a cursor.
         set({ lastSyncAt: Date.now() })
       } catch (error) {
         console.error('Sync error:', error)
@@ -168,12 +195,13 @@ export function createSyncActions(
     ) {
       const { settings, userProfile } = get()
       if (!settings.enabled || settings.mode !== 'cloud') return
-      if (settings.endpoint && settings.apiToken)
+      if (settings.endpoint && settings.apiToken) {
         teamApi.configure(
           settings.endpoint,
           settings.apiToken,
           userProfile?.id || '',
         )
+      }
       const result = await teamApi.resolveConflict(
         shareId,
         resolution,
@@ -181,12 +209,13 @@ export function createSyncActions(
           ? { data: localData, isSensitive: false, permission: 'READONLY' }
           : undefined,
       )
-      if (!result.error)
+      if (!result.error) {
         set(state => ({
           syncConflicts: state.syncConflicts.filter(
             conflict => conflict.shareId !== shareId,
           ),
         }))
+      }
     },
     getSyncConflicts() {
       return get().syncConflicts
@@ -198,12 +227,13 @@ export function createSyncActions(
     async syncOfflineQueue() {
       const { settings, userProfile } = get()
       if (!settings.enabled || settings.mode !== 'cloud') return
-      if (settings.endpoint && settings.apiToken)
+      if (settings.endpoint && settings.apiToken) {
         teamApi.configure(
           settings.endpoint,
           settings.apiToken,
           userProfile?.id || '',
         )
+      }
       set({ isProcessingQueue: true })
       try {
         const result = await teamApi.processOfflineQueue()

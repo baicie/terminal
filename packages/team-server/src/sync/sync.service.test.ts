@@ -366,44 +366,43 @@ describe('SyncService authorization', () => {
     )
   })
 
-  it('anchors the incremental sync watermark before reading so rows written during the read are not lost', async () => {
-    const before = 1_760_000_000_000
-    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(before)
+  it('anchors the incremental cursor on the database safe watermark instead of any clock', async () => {
+    const safe = 4_242n
+    const prisma = {
+      teamMember: {
+        findMany: vi.fn().mockResolvedValue([{ teamId: 'team-a' }]),
+      },
+      $queryRaw: vi.fn().mockResolvedValue([{ safe: safe.toString() }]),
+      syncChange: { findMany: vi.fn().mockResolvedValue([]) },
+      share: { findMany: vi.fn() },
+      auditLog: { findMany: vi.fn() },
+    }
+    const service = new SyncService(prisma as never)
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_760_000_000_000)
+    let result
     try {
-      const prisma = {
-        teamMember: {
-          findMany: vi.fn().mockResolvedValue([{ teamId: 'team-a' }]),
-        },
-        share: {
-          findMany: vi.fn().mockImplementation(async () => {
-            nowSpy.mockReturnValue(before + 5_000)
-            return []
-          }),
-        },
-        auditLog: { findMany: vi.fn().mockResolvedValue([]) },
-      }
-      const service = new SyncService(prisma as never)
-
-      const result = await service.getChanges('user-a', 1_000)
-
-      expect(result.timestamp).toBe(before)
-      expect(prisma.share.findMany).toHaveBeenCalledWith({
-        where: {
-          teamId: { in: ['team-a'] },
-          updatedAt: { gte: new Date(1_000), lte: new Date(before) },
-        },
-        orderBy: { updatedAt: 'asc' },
-      })
-      expect(prisma.auditLog.findMany).toHaveBeenCalledWith({
-        where: {
-          teamId: { in: ['team-a'] },
-          action: 'SHARE_DELETED',
-          createdAt: { gte: new Date(1_000), lte: new Date(before) },
-        },
-      })
+      result = await service.getChanges('user-a', 1_000)
     } finally {
       nowSpy.mockRestore()
     }
+
+    // The cursor is the pg_snapshot_xmin watermark, never a wall clock.
+    expect(result.cursor).toBe(4_242)
+    expect(result.timestamp).toBe(4_242)
+    expect(result.resync).toBe(false)
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1)
+    expect(prisma.syncChange.findMany).toHaveBeenCalledWith({
+      where: { teamId: { in: ['team-a'] }, txid: { gte: 1_000n, lt: safe } },
+      orderBy: { seq: 'asc' },
+      take: 200,
+    })
+    // No incremental read may window Share or AuditLog by time.
+    expect(prisma.share.findMany).not.toHaveBeenCalled()
+    expect(prisma.auditLog.findMany).not.toHaveBeenCalled()
+    // A legacy epoch cursor is above the watermark, so it degrades to a full resnapshot.
+    const resync = await service.getChanges('user-a', 1_760_000_000_000)
+    expect(resync.resync).toBe(true)
+    expect(resync.cursor).toBe(4_242)
   })
 
   it('lets a READWRITE member update another creator share without changing its permission', async () => {

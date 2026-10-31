@@ -59,6 +59,15 @@ export class SyncShareDto {
   @Min(0)
   @Max(Number.MAX_SAFE_INTEGER)
   baseVersion?: number
+
+  /**
+   * Declared intent. CREATE must not collide with an existing share, UPDATE
+   * must target an existing share and carry a server baseVersion; omitting it
+   * is the legacy "undeclared write" path (docs/phase8/sync-protocol.md §1).
+   */
+  @IsOptional()
+  @IsIn(['CREATE', 'UPDATE', 'DELETE'])
+  operation?: 'CREATE' | 'UPDATE' | 'DELETE'
 }
 
 export class PushChangesDto {
