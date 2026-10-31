@@ -73,15 +73,34 @@ version 比 baseVersion 大，则这条重放是旧的，返回 conflict。
 
 - Share.version BIGINT NOT NULL DEFAULT 0，由触发器在每一次 INSERT/UPDATE 时
   nextval('ShareVersion_seq') 分配。应用代码永远不写这一列。
-- baseVersion = 客户端最后一次见到的该行 version。判定：stale ⟺ existing.version > baseVersion。
+- baseVersion = 客户端最后一次见到的该行 version。
 - 版本域：[1, 2^53)。旧客户端时间戳阈值 LEGACY_TIMESTAMP_VERSION = 1e12。
-- 为什么不用 updatedAt：updatedAt 由应用时钟驱动（Prisma @updatedAt），精度只有毫秒；
-  同一毫秒的两次写入不可区分，客户端时钟偏差也会直接进入版本比较。
-- 每行版本单调递增的论证：一次 UPDATE 的提交必须通过条件写
-  updateMany where { updatedAt: 读到的值 }；两个并发 UPDATE 都读到同一 updatedAt 时，
-  后提交者在 READ COMMITTED 下重算谓词会被拒绝（count = 0，即 conflict）。
+
+- **唯一 CAS 条件是 `updateMany where { id, teamId, sharedBy, version }`**。
+  **updatedAt 不参与任何最终判定。** （Phase 8.9 Task 2 前的实现在这里用
+  `where { updatedAt: 读到的值 }`，那是错的，已移除。）
+
+- 为什么不用 updatedAt：它由应用时钟驱动（Prisma @updatedAt），精度只有毫秒。
+  同一毫秒的两次写入**不可区分**——实测同一毫秒内两次并发 UPDATE 会**都成功**
+  （两个 winner），直接丢失更新。Phase 8.9 的 V8 用例进一步证明：同一毫秒内连续
+  4 次 UPDATE，版本严格递增 10601→10604，而 updatedAt 完全相同。毫秒时间戳
+  根本无法充当次序判据，version 才可以。
+
+- 判定分类（Phase 8.9 Task 2）：
+
+  | baseVersion | 结果 |
+  | --- | --- |
+  | == version，内容摘要相同 | 幂等 ack（不写库、不 bump 版本） |
+  | == version，内容不同 | 条件写；count=1 → 成功，count=0 → conflict |
+  | < version | conflict（stale） |
+  | > version | conflict（**future**，Phase 8.9 新增；旧实现会放行写入） |
+  | 缺失 / 负数 / 非安全整数 | conflict（unproven，fail-closed） |
+  | >= 1e12 | conflict（legacy-timestamp，旧客户端不能用时间戳冒充版本） |
+
+- 每行版本单调递增的论证：条件写的谓词是 `version = 读到的值`。两个并发 UPDATE 读到
+  同一 version 时，后提交者在 READ COMMITTED 下重算谓词得到 count = 0（conflict），
   因此同一行上两次成功写入不可能交换顺序，version 在行内严格递增。
-  这一点不依赖 nextval 的分配顺序 —— 分配顺序只用于给号，不用于判序。
+  这一点**不依赖 nextval 的分配顺序** —— 分配顺序只用于给号，不用于判序。
 
 ---
 
@@ -117,17 +136,38 @@ version 比 baseVersion 大，则这条重放是旧的，返回 conflict。
 safe = xmin 正是那个位置：所有比它小的 txid 都不在途。因此无需额外维护「在途登记表」，
 也不需要等待或心跳。
 
-### 3.4 LIMIT 截断时的推进规则（仍然不丢）
+### 3.4 LIMIT 截断时的推进规则 —— **Phase 8.9 已改为复合分页位置**
 
-若本轮命中 LIMIT，游标推进到已投递的最大 txid（而不是 safe），下一轮窗口 txid >= cursor
-会重投同一 txid 的行。重复投递由客户端幂等 upsert 吸收（INV-3）。即：宁可重投，绝不跳过。
+> 旧表述「游标推进到已投递的最大 txid，下一轮 txid >= cursor 重投」是**错的**，已废弃。
+> 旧实现 where 按 txid 过滤、orderBy 按 seq 排序、游标取最后一行 txid，排序与游标不同源，
+> 有两个可复现的反例（Phase 8.9 Task 1 已在真实 PostgreSQL 上复现）：
+>
+> - **txid 与 seq 逆序**：某行 txid 更小但 seq 更大（排在页边界之后），下一页的
+>   `txid >= X` 会把它**永久排除**。实测只交付 201/400，199 条永久漏同步。
+> - **单事务超过一页**：一个事务 250 条同一 txid，首页 200 条后游标推进到 T，
+>   下一页 `txid >= T` 又返回同样 200 条——**无限重复，永不前进**。
+
+现在的规则：
+
+- 分页位置是**复合值** `(txid, seq)`，排序 `orderBy [(txid asc),(seq asc)]`，
+  边界 `(txid > t) OR (txid = t AND seq > s)`——**排序与过滤同源**，边界不可能横跨。
+- 每轮的 `bound`（安全水位）**冻结**，整轮分页不重取，避免分页中途 xmin 前进造成窗口漂移。
+- 同 share 的多次变更按**最大 seq** 折叠（不是迭代顺序），避免 (txid,seq) 序与写序不一致时取错行。
+- 满页却未前进时有一个 `advanced` 守卫：降级为「到达终点」（hasMore=false），
+  把假想回归变成终止而不是死循环。
+- 恰好满页时会多出一次空页请求，这是键集分页的固有代价，用 hasMore=false 明确收尾。
 
 ### 3.5 游标失效检测
 
-safe 单调不减。若客户端回传的游标大于 safe，只可能来自：旧客户端的 epoch-ms 时间戳（约 1.7e12）、
-pg_resetwal、数据库从备份还原、集群重建。此时服务端不做猜测：判定游标无效，
-since = 0 全量重同步，响应带 resync: true。旧客户端的 since（epoch-ms）天然落在这里，
-安全降级为全量重同步。
+游标带**协议版本号**（当前为 2）。以下情形一律判定游标无效、`since = 0` 全量重同步并返回
+`resync: true`：
+
+- 游标格式非法，或协议版本号与当前实现不符
+- 游标里的 `bound` 大于当前 safe —— 只可能来自旧客户端的 epoch-ms 时间戳（约 1.7e12）、
+  pg_resetwal、数据库从备份还原、集群重建
+- 游标里的 txid 大于当前 safe（同上）
+
+旧客户端的 since（单一数字、epoch-ms）天然落在这些分支里，安全降级为全量重同步。
 
 ### 3.6 成立所依赖的假设，以及假设被违反时的行为
 
@@ -168,10 +208,16 @@ conflicts 只含 id，语义是「没写」。
 
 ## 5. 客户端游标持久化
 
-- 服务器在 GET /sync 响应里返回 cursor（十进制字符串）。客户端原样回传
-  GET /sync?sinceCursor=<cursor>。
+- 服务器在 GET /sync 响应里返回 `cursor`，是一个**不透明字符串**：
+  `2.<bound>.<txid>.<seq>`，三个字段各自零填充到 20 位十进制。
+  因此**游标字符串的字典序 == 位置数值序**，可以安全排序与比较，但客户端**不得**解析它——
+  原样保存、原样回传。
+- 客户端**不得**对游标做数值化（`Number(cursor)`、`parseInt`、时间戳互转）。协议版本升级时
+  旧的数值化代码会静默产生错误游标。前端只允许用正则
+  `/^\d{1,20}(?:\.\d{1,20})*$/` 做格式校验，不做语义解析。
 - 客户端本地时钟只用于 UI 展示（lastSyncAt 显示「最后同步时间」），不再作为任何游标。
-- 持久化键：localStorage['terminal.team.syncCursor']（Tauri webview 的存储随应用重启保留）。
+- 持久化键必须按 **服务器 / 用户 / 团队 / 协议版本** 隔离；单一全局 key 会在切服务器、
+  换用户或换团队时串游标，把 A 的进度当成 B 的起点，直接造成漏同步或全量重扫。
   没有 localStorage 的环境（node 测试、纯内存宿主）退化为进程内变量。
 - 写入时机：全部变更应用成功之后才持久化新游标。先存游标再应用会丢数据（崩溃窗口）。
 - 离线重启：读到持久化游标则增量；读不到/被清空则无游标，服务端全量重同步
