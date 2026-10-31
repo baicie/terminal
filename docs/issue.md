@@ -3761,3 +3761,36 @@ ELIFECYCLE Command failed with exit code 1.
 
 **残留**：`#[cfg(not(unix))]` 分支（Windows `CREATE_NEW` 语义）只编译未在真实 Windows 运行；`use-vaults-container.ts` 死链未同步（若将来挂载需一并处理）。
 
+**#154 Team Sync 并发与故障恢复：真实 PostgreSQL 验证（P8.5，2026-11-01）**
+
+**做法**：新增 `packages/team-server/src/__tests__/pg/`（`pg-harness.ts` + 两个 `*.pg-spec.ts`）与 `vitest.pg.config.ts`。用真实 PostgreSQL 17.10 直连生产 `PrismaService`，两个独立连接池代表两个客户端，**全程不 mock Prisma**；`globalSetup` 自动建库并执行 `prisma migrate deploy`，顺带证明 3 个迁移能在真库上完整应用。默认 `pnpm --filter team-server test`（`src/**/*.test.ts`）不受影响，新增入口 `pnpm --filter team-server test:pg`。
+
+**13 例：12 通过 + 1 例 `it.fails`（已知缺口，作为活体标记）**，实测输出（逐条 console 取证）：
+- `[A1] 首次 created=["share-concurrency-1"] 重放 updated=["share-concurrency-1"] 重放 errors=[] 行数=1`
+- `[A1b] created 合计=1 另一方 updated=[] errors=[{"id":"share-concurrency-race","error":"SYNC_OPERATION_FAILED"}] 行数=1`
+- `[A2] 同时阻塞的写者=2 成功=1 冲突=1 最终 data={"host":"v3"}`（第三方连接先持行锁，两个写者都读到同一 `updatedAt` 后才进入条件写）
+- `[A3] baseVersion=… conflicts=["share-stale-version"] updated=[] 最终 data={"host":"server-newer"}`
+- `[A3b] 重放 conflicts=["share-update-replay"] 最终 data={"host":"first-write"}`
+- `[B1] processed=1 succeeded=1 status=COMPLETED attempts=1 token=null share=true`
+- `[B1b] processed=0 status=PROCESSING token=live-lease share=false`
+- `[B2] processed 合计=4 succeeded 合计=4 failed 合计=0 共享行=4 全部 attempts=1 且 COMPLETED=true`
+- `[B3] processed=1 取消项共享=false 取消项队列行=null 保留项共享=true`
+- `[B4] 三次 failed=[1,1,1] status=FAILED attempts=3 lastError=SYNC_OPERATION_FAILED 再跑 processed=0`
+- `[B5] READWRITE 成员写入后 permission=READWRITE isSensitive=false encryptedData=null data={"host":"member-write"}；READONLY 推送 errors=[…"Only creator can update share"]`
+- `[B6] 跨团队成员读取=404 非成员读取=403 跨 team 推送 errors=[…"Share does not belong to the requested team"] 资源 teamId 未变=true`
+- `[A4] 第一轮可见=false 第二轮可见=false 游标=…`
+
+**VERIFIED_EXISTING（Issue #148 的修复实测生效，未改写任何实现）**：离线队列条件写 + `processingToken` 租约（过期回收 / 未过期不被抢占 / 并发处理器同一任务只被认领一次且 `attempts` 恒为 1）；移出队列与终态 `FAILED` 的条目不再被自动处理器占用；push 条件 `updateMany` + count 校验（落败写者得到 `Share was modified concurrently`）；`baseVersion` 过期被拒为 conflict 且不覆盖较新数据；非 creator 的 `permission`/`isSensitive` 被冻结、READONLY 共享直接拒绝；跨 team 读取按 `(id, teamId)` 查不到 → 404 而非 403。读码复核（非实测）：`IdentifierPipe` 的 `^\w` 首字符约束与 `generateLinkToken` 首字符字母数字表一致。
+
+**两条「失败但不丢数据」的既定语义（本轮未改）**：
+1. 两个客户端**同时**创建同一 id 时，落败方得到 `SYNC_OPERATION_FAILED`（P2002 被 catch 成稳定码）而非幂等成功；数据层只留一行，顺序重放才是幂等更新。
+2. 离线队列里 CREATE 命中已存在同 id 时按设计报冲突（`offline-sync.service.test.ts:690` 明确锁定），因此「写入成功但队列未标 COMPLETED 就崩溃 → 租约回收重试」会以 3 次失败进入终态。
+两者都不会覆盖较新数据；若改为幂等成功，等于翻转 Issue #148 的既定语义，需要单独决策。
+
+**A4 记录的缺口（`it.fails`）**：游标在查询前捕获，解决的是「查询期间被更新」；但「本轮 SELECT 之后才提交、`updatedAt` 落在本轮窗口内」的写入，下一轮 `since = 上一轮 timestamp` 会把它排除 → 永久漏同步。修复需设计决策（DB 侧单调版本列或重叠窗口），不在 P8.5 范围内。
+
+**未覆盖（不得据此宣称已验证）**：真实网络分区/丢包与 HTTP 层重试语义；多进程/多实例部署下的真实争用（本套用同进程两个连接池 + 一个外部持锁连接）；前端 SyncQueue 端到端行为；数据库主从/故障切换。
+
+**门禁**：`prisma validate` / `lint`（0 error；13 条 `no-console` warning 全部来自新 pg 用例的取证输出）/ `typecheck` / `test`（25 文件 116 例，数量不变）/ `build` 全绿；`check-source-size.mjs` 559 个生产文件通过（559 = 基线 558 + 会话既存未跟踪的 `terminal-output-queue.ts`，与本次改动无关；`src/__tests__/` 属门禁排除目录）。
+
+
