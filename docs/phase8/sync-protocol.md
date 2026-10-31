@@ -41,6 +41,9 @@ PushShareDto.operation 显式声明意图；未声明时按「无版本写入」
 - 该 id 存在墓碑（SyncChange.op='DELETE'）：
   - 客户端 baseVersion 缺失或小于墓碑 version → conflict（修复「先删后建丢失删除」，用例 S3）。
   - baseVersion >= 墓碑 version → 允许复活（客户端已证明自己看到了删除，那是用户的显式再创建）。
+- 未声明 operation、也未携带 baseVersion 的写入命中「内容完全一致」的已存在行 → 幂等 ack
+  （不写库、不 bump version、不报错）。它在服务端与一次 CREATE 重放无法区分，而且**什么都不写**，
+  因此不需要版本证明；内容不一致则一律 conflict，并标记 `upgradeRequired`（见 §6.2）。
 - 幂等键：(shareId, contentDigest)；contentDigest = 规范化 JSON（键排序、剔除 baseVersion）的 sha256。
 
 ### 1.2 UPDATE — 目标是「把该 id 从 baseVersion 推进到新内容」
@@ -49,7 +52,9 @@ PushShareDto.operation 显式声明意图；未声明时按「无版本写入」
 - 行不存在 → conflict（不重建，修复「删除后被 update 复活」，用例 S3）。
 - existing.version > baseVersion → conflict（有过更新的提交）。
 - baseVersion 落在旧客户端时间戳域（>= 1e12，即 2001-09-09 之后的 ms 时间戳）→ conflict（见 §6）。
-- baseVersion 缺失 → 退化为「无版本写入」：内容指纹相同 → 幂等 ack；不同 → conflict。
+- baseVersion 缺失 → **不再降级为任何写入**：conflict + `upgradeRequired=true`（Phase 9.0，issue #63）。
+  旧实现会「先读一次 version，再以它为条件写」，那在本请求内是安全的，但**串行**上不安全：
+  旧客户端读到的就是最新版本，于是总能覆盖它之前刚提交的那次更新。
 - 幂等键：(shareId, baseVersion, contentDigest)。重放时服务端把 version 与 baseVersion 比较：
   - 若客户端在收到响应后把新 version 写回本地，重放等价于一次普通 CAS（成功或 conflict，都不覆盖）；
   - 若响应丢失、客户端保留旧 baseVersion，重放拿到 conflict —— 这是期望行为（绝不静默二次写入）。
@@ -181,6 +186,36 @@ safe = xmin 正是那个位置：所有比它小的 txid 都不在途。因此�
 不再依赖的假设（旧实现依赖它们，新实现不依赖）：客户端时钟、服务端时钟、
 「查询期间被更新」的先后关系、sequence 分配顺序等于提交顺序。
 
+### 3.7 协议 1（裸数字游标）的完整交付与升级要求 —— Phase 9.0
+
+协议 1 的 `since` 只有**一个数字**，客户端把响应里的 `timestamp` 原样作为下一轮 `since`。
+它没有 `cursor` 字段可用，因此**根本无法翻页**：一旦响应被 200 条截断，水位却已推进到本轮
+`bound`，剩下那部分就永远落在下一轮窗口之外。改前实测（见 §9 的 P7）：
+
+    [P7] 旧游标完整交付=200 hasMore=true 水位游标=1136345 续拉条数=0 resync=false
+
+即 210 条里 10 条静默丢失，而 `hasMore`/`resync` 让客户端以为同步已经完成。
+**这不是兼容成功，是静默丢数据。**
+
+Phase 9.0 起协议 1 的数字游标走**完整交付**路径（`LEGACY_FULL_DELIVERY_LIMIT = 5000`）：
+
+| 条件 | 返回 |
+| --- | --- |
+| 窗口行数 ≤ 5000 | 一次性交付全部行：`hasMore=false`、`upgradeRequired=false`、`timestamp=safe` |
+| 窗口行数 > 5000 | **不交付任何数据**：`shares=[]`、`deletedShareIds=[]`、`hasMore=false`、`upgradeRequired=true`、`requiredCursorVersion=2`，`timestamp` 回显请求里的旧游标（全量重同步时为 0） |
+
+两条原则：
+
+1. **能完整交付就完整交付。** 5000 条以内一次给全，此时把 `timestamp` 推进到 `safe` 是安全的，
+   因为窗口已经空了。
+2. **不能完整交付就明确拒绝。** 绝不返回「部分数据 + 完成信号」。`timestamp` 不前进意味着
+   忽略 `upgradeRequired` 的旧客户端只会原地重试同一请求（停滞），不会静默跳过数据。
+   停滞是可见的，丢失不是。
+
+协议 2 的分页路径不受影响：`(txid, seq)` 键集分页仍是 `CHANGES_PAGE_SIZE = 200`，
+`hasMore` 语义不变。P1–P6 的断言全部保留，只把起始游标改成真实协议 2 客户端的输入
+（无游标 → 全量重同步）；裸数字是协议 1 的输入，不再用于验证协议 2 的翻页。
+
 ---
 
 ## 4. 冲突返回与客户端处理
@@ -195,9 +230,12 @@ safe = xmin 正是那个位置：所有比它小的 txid 都不在途。因此�
 | c4 | CREATE 命中墓碑且 baseVersion 小于墓碑 version | 拒绝复活已删除项 |
 | c5 | UPDATE 命中不存在行 | 拒绝复活已删除项 |
 | c6 | 条件写 count = 0（读之后被并发提交） | 拒绝丢失更新 |
+| c7 | 写入未携带 baseVersion（旧客户端） | 无法证明新鲜度，拒绝；响应 `upgradeRequired=true` |
+| c8 | CREATE 撞上墓碑且无法证明看到了删除 | 拒绝静默复活（旧写入同样适用） |
 
-响应：{ created, updated, deleted, conflicts: string[], errors }。
-conflicts 只含 id，语义是「没写」。
+响应：{ created, updated, deleted, conflicts: string[], errors, upgradeRequired: boolean }。
+conflicts 只含 id，语义是「没写」；`upgradeRequired=true` 表示至少一条拒绝的原因是
+「客户端给不出服务端版本证明」——整批重试也不会通过，必须升级客户端。
 
 客户端处理（team-actions-sync.ts）：把冲突留在 syncConflicts（不清空、下一轮不清），
 由用户通过 conflicts/resolve 显式选择 LOCAL（服务端写新 version）或 REMOTE（丢弃本地）。
@@ -230,17 +268,64 @@ conflicts 只含 id，语义是「没写」。
 ## 6. 旧客户端兼容策略（拒绝而不覆盖）
 
 旧客户端的两个标志：baseVersion = createdAt（epoch-ms >= 1e12）、since = Date.now()（epoch-ms）。
+Phase 9.0 起协议 1 的**写入**不再有任何「降级为无条件写」的出口：给不出服务端 version 就是拒绝。
+
+### 6.1 旧客户端还能安全执行哪些操作
 
 | 能力 | 旧客户端行为 | 结论 |
 | --- | --- | --- |
-| 拉取 | since 是 epoch-ms，大于 safe，游标无效，全量重同步 | 降级但安全（多花带宽，不丢数据） |
-| 创建全新 id | 走 CREATE，行不存在，正常创建 | 完全可用 |
-| 更新已存在行 | baseVersion >= 1e12 判定为旧时间戳，返回 conflict | 拒绝（不覆盖；旧代码本来也推不上去，问题 2） |
-| CREATE 重放已存在行 | 内容指纹相同则幂等 ack；不同则 conflict | 从「覆盖」改为「拒绝」 |
+| 拉取（数字 / epoch-ms 游标） | 完整交付路径：≤5000 条一次给全；>5000 条返回 `upgradeRequired` | 可用；不再有「部分交付 + 完成信号」 |
+| 创建全新 id | 行不存在、无墓碑 → 正常创建 | 完全可用 |
+| 创建全新 id（该 id 有墓碑） | 证明不了「看到了删除」→ conflict + `upgradeRequired` | 拒绝（不复活） |
+| CREATE 重放已存在行、内容一致 | 幂等 ack，不写库、不 bump version | 完全可用 |
+| CREATE 重放已存在行、内容不同 | conflict + `upgradeRequired` | 拒绝（不覆盖） |
+| 更新已存在行（无 baseVersion） | conflict + `upgradeRequired` | **协议破坏点**：以前会成功 |
+| 更新已存在行（baseVersion ≥ 1e12） | conflict（legacy-timestamp） | 拒绝（不覆盖） |
+| 删除（deleteShares） | 幂等，墓碑由触发器写入 | 完全可用 |
 | conflicts/check | 语义未改动 | 完全可用 |
+| 离线队列 UPDATE 项（无 baseVersion） | 处理时拒绝（FAILED），不入库 | **协议破坏点**：以前会成功 |
+| 离线队列 CREATE 重放（内容一致） | 幂等确认，不写库 | 可用 |
+| 离线队列 CREATE 撞墓碑 | 拒绝（FAILED） | 拒绝（不复活） |
 
-迁移会把既有 Share 全部回填 version 与一条基线变更行，并把历史删除回填为墓碑，
-因此旧客户端切换过来后首次全量重同步能看到全部既有数据与历史删除。
+### 6.2 「不能完整交付 / 不能证明版本」的具体返回形态
+
+拉取的拒绝（HTTP 200，正常响应体 —— 客户端必须读字段，不能只看状态码）：
+
+    {
+      "cursor": "<原样回显请求里的旧游标>",
+      "timestamp": 0,           // 全量重同步请求；带数字游标时回显该数字
+      "hasMore": false,
+      "resync": true,           // 仅当游标本身无效（epoch-ms / 越界）时
+      "upgradeRequired": true,
+      "requiredCursorVersion": 2,
+      "shares": [],
+      "deletedShareIds": []
+    }
+
+写入的拒绝：该 id 出现在 `conflicts` 里，同时 `upgradeRequired: true`。
+两类拒绝都不写库、都不推进游标状态，所以重试同一请求只会得到同一份拒绝 —— 停滞可见，丢失不可见。
+
+### 6.3 冲突解决 RESOLVE LOCAL 的版本证明
+
+`POST /sync/conflicts/resolve`（resolution=LOCAL）是唯一由用户显式发起的覆盖动作，但它也
+**不再是无条件 UPDATE**：
+
+| clientData.baseVersion | 行为 |
+| --- | --- |
+| 携带 | `where { id, version = baseVersion }` 条件写；count=0 → `{ success:false, error:'CONFLICT_STALE_VERSION' }`，不写库 |
+| 未携带（当前前端） | `where { id, version = 本请求读到的 version }` 条件写；count=0 → 同上，同样不写库 |
+
+未携带 baseVersion 时的保护只覆盖「读之后被并发改动」的窗口，覆盖不了「用户看到 A 版本、
+期间别人写了 B 版本、用户仍然点 LOCAL」的串行场景；那需要前端把 `remoteVersion.version`
+作为 baseVersion 回传（前端任务收尾项）。
+
+### 6.4 兼容影响（协议破坏性变更，fail-closed）
+
+- 旧客户端**不能再**用「不带版本的 UPDATE」覆盖服务端数据：它收到冲突 + 升级要求，
+  没有其它降级路径。这是有意的 —— 静默覆盖比一次显式失败昂贵得多。
+- 迁移会把既有 Share 全部回填 version 与一条基线变更行，并把历史删除回填为墓碑，
+  因此旧客户端切换过来后首次全量重同步能看到全部既有数据与历史删除。
+- 回退到 Phase 8.9 之前的二进制会重新放开这些旧写入，回退必须同时停写。
 
 ---
 
@@ -311,6 +396,14 @@ conflicts 只含 id，语义是「没写」。
 | e 网络中断后多次重试幂等 | S5（5 次重放 + 队列重试） | 串行 5 次 |
 | f 多客户端并发拉取与推送，最终一致 | S6（4 写者 x 5 轮 + 3 读者并发） | 4 并发写 / 3 并发读 |
 | 隐藏缺口：数据库一致性 | F0 | 1 |
+| g 协议 1 数字游标必须完整交付（210 条不得变 200+0） | P7（Phase 9.0 改写） | 1 客户端 / 1 事务 210 行 |
+| h 协议 1 边界 199/200/201/210/5000 与超限升级 | L1、L2 | 1 客户端 / generate_series 单事务 |
+| i epoch-ms 游标、备份恢复后的越界游标 | L3、L4 | 1 客户端 |
+| j 协议 1 → 协议 2 升级不重投、不漏投 | L5 | 1 客户端 |
+| k 旧客户端串行覆盖新版客户端数据必须被拒绝（#63） | W1 | 2 客户端串行 |
+| l CREATE 重放只允许内容一致的幂等确认 | W2、A1 | 2 客户端 |
+| m 旧写入不得复活已删除共享 | W3 | 1 客户端 |
+| n RESOLVE LOCAL 的过期版本证明必须拒绝 | W4 | 1 客户端 |
 
 ---
 
@@ -327,7 +420,9 @@ conflicts 只含 id，语义是「没写」。
    400 显式失败，不会静默错序。
 3. **isStaleWrite 的 updatedAt 回退分支**只在「读路径完全没有 version 列」时生效
    （降级读/迁移瞬间）；生产库中该列 NOT NULL 且有默认值，正常路径永远走版本比较。
-4. **未声明 operation 且未携带 baseVersion 的推送**按「旧客户端强制写」处理（保持既有的
-   幂等 ack 与 READWRITE 成员更新语义）；它可能覆盖较新的远端数据，因此新客户端必须声明
-   operation 或携带 baseVersion。墓碑检查（拒绝复活已删除项）同样只对「声明了意图」的
-   请求生效；未声明的旧写入不在其适用范围。
+4. **未声明 operation 且未携带 baseVersion 的推送**不再按「旧客户端强制写」处理（那是
+   issue #63 的根因）：命中已存在行且内容不同 → conflict + `upgradeRequired`；命中墓碑 →
+   同样拒绝。唯一保留的宽容是「内容完全一致的重放」→ 幂等 ack，因为它什么都不写。
+   墓碑检查现在对**所有**创建生效，不再区分是否声明了意图。
+5. **旧客户端的大窗口拉取**受 `LEGACY_FULL_DELIVERY_LIMIT = 5000` 限制：超过上限只能升级到
+   协议 2。上限是常量而不是分页阈值，就是为了让「兼容」与「部分交付」不可能同时成立。

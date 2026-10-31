@@ -10,6 +10,12 @@ export interface PushResult {
   deleted: string[]
   conflicts: string[]
   errors: Array<{ id: string, error: string }>
+  /**
+   * True when at least one write was refused because the client could not prove
+   * the version it wrote from. The ids are in `conflicts`; this flag is the
+   * machine-readable upgrade demand (docs/phase8/sync-protocol.md §6).
+   */
+  upgradeRequired: boolean
 }
 
 /** One pushed share as it crosses the wire; `operation` is the declared intent. */
@@ -34,6 +40,8 @@ export interface ChangeWindow {
   /** True when the bounded window still holds undelivered rows. */
   hasMore: boolean
   resync: boolean
+  /** True when a protocol-1 window exceeds the complete-delivery cap. */
+  upgradeRequired?: boolean
   shares: ShareSnapshot[]
   deletedShareIds: string[]
 }
@@ -66,6 +74,14 @@ export interface IncrementalSyncResult {
   hasMore: boolean
   /** True when the cursor was unusable and this response is a full snapshot. */
   resync: boolean
+  /**
+   * True when this request carried a protocol-1 numeric cursor whose window is
+   * too large to deliver completely. No data is delivered and the cursor does
+   * not advance: the client must speak `requiredCursorVersion` and retry.
+   */
+  upgradeRequired: boolean
+  /** Cursor protocol version the client has to send to make progress. */
+  requiredCursorVersion: number
   shares: ShareSnapshot[]
   deletedShareIds: string[]
 }

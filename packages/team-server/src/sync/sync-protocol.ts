@@ -1,6 +1,5 @@
-import type { Prisma, SyncChange } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
 import type { PrismaService } from '../prisma.service'
-import type { ChangeWindow, ShareSnapshot } from './sync-results'
 import { createHash } from 'node:crypto'
 
 /**
@@ -32,6 +31,12 @@ export interface ChangeWindowAnchor {
   bound: bigint
   after: SyncCursorPosition | null
   resync: boolean
+  /**
+   * True when the cursor came from protocol 1 (a bare decimal watermark). Such a
+   * client loops on the numeric timestamp it was given, so it cannot page: it is
+   * answered with the whole window or with an explicit upgrade demand.
+   */
+  legacy?: boolean
 }
 
 /**
@@ -68,12 +73,19 @@ export function formatSyncCursor(
 }
 
 function legacyAnchor(cursor: bigint, safeNow: bigint): ChangeWindowAnchor {
-  if (cursor > safeNow) return { bound: safeNow, after: null, resync: true }
+  if (cursor > safeNow) {
+    return { bound: safeNow, after: null, resync: true, legacy: true }
+  }
   // A single number only names a transaction boundary, so it resumes at "every
   // row of txid >= cursor": the same superset the legacy implementation read.
   // seq = -1 sits just before the first row of that transaction, which is what
   // makes the boundary inclusive of txid = cursor.
-  return { bound: safeNow, after: { txid: cursor, seq: -1n }, resync: false }
+  return {
+    bound: safeNow,
+    after: { txid: cursor, seq: -1n },
+    resync: false,
+    legacy: true,
+  }
 }
 
 /**
@@ -192,28 +204,12 @@ export function shareContentDigest(content: {
   return createHash('sha256').update(canonicalize(normalized)).digest('hex')
 }
 
-function toShareSnapshot(row: SyncChange): ShareSnapshot {
-  return {
-    id: row.shareId,
-    teamId: row.teamId,
-    type: row.type ?? 'HOST',
-    data: row.data,
-    encryptedData: row.encryptedData,
-    isSensitive: row.isSensitive ?? false,
-    sharedBy: row.sharedBy ?? '',
-    permission: row.permission ?? 'READONLY',
-    createdAt: (row.shareCreatedAt ?? row.changedAt).toISOString(),
-    updatedAt: row.changedAt.toISOString(),
-    version: parseVersion(row.version),
-  }
-}
-
 /**
  * Ordering and the resume boundary are the same key, (txid, seq), so the rows of
  * one transaction form one contiguous run and a boundary inside a transaction
  * resumes exactly where it stopped.
  */
-function buildChangeWhere(
+export function buildChangeWhere(
   teamIds: string[],
   anchor: ChangeWindowAnchor,
 ): Prisma.SyncChangeWhereInput {
@@ -225,69 +221,4 @@ function buildChangeWhere(
   const { txid, seq } = anchor.after
   where.OR = [{ txid: { gt: txid } }, { txid, seq: { gt: seq } }]
   return where
-}
-
-/**
- * Reads one page of the frozen window and collapses it to the last change per
- * share, so a create-then-delete pair is never applied out of order. Because the
- * boundary is the position of the last delivered row, one transaction larger
- * than a page still progresses and a row with a smaller txid but a larger seq is
- * never left behind a page boundary.
- */
-export async function readChangeWindow(
-  prisma: PrismaService,
-  teamIds: string[],
-  cursor: string | number | undefined,
-): Promise<ChangeWindow> {
-  const safe = await readSafeWatermark(prisma)
-  const anchor = resolveChangeWindowAnchor(cursor, safe)
-  if (teamIds.length === 0) {
-    return {
-      cursor: formatSyncCursor(0n, safe, 0n),
-      watermark: Number(safe),
-      hasMore: false,
-      resync: anchor.resync,
-      shares: [],
-      deletedShareIds: [],
-    }
-  }
-  const rows = await prisma.syncChange.findMany({
-    where: buildChangeWhere(teamIds, anchor),
-    orderBy: [{ txid: 'asc' }, { seq: 'asc' }],
-    take: CHANGES_PAGE_SIZE,
-  })
-  const lastRow = rows.length === 0 ? undefined : rows[rows.length - 1]
-  const truncated = rows.length === CHANGES_PAGE_SIZE
-  // The last row of a full page always sits strictly past the anchor unless the
-  // query is broken. Demanding a strict advance turns a regression into "end of
-  // window", never into endless redelivery of the same page.
-  const advanced = lastRow !== undefined
-    && (anchor.after === null
-      || lastRow.txid > anchor.after.txid
-      || (lastRow.txid === anchor.after.txid && lastRow.seq > anchor.after.seq))
-  const hasMore = truncated && advanced
-  const latest = new Map<string, SyncChange>()
-  for (const row of rows) {
-    const current = latest.get(row.shareId)
-    if (current === undefined || row.seq > current.seq) latest.set(row.shareId, row)
-  }
-  const ordered = [...latest.values()].sort((left, right) =>
-    left.seq < right.seq ? -1 : left.seq > right.seq ? 1 : 0,
-  )
-  const shares: ShareSnapshot[] = []
-  const deletedShareIds: string[] = []
-  for (const row of ordered) {
-    if (row.op === 'DELETE') deletedShareIds.push(row.shareId)
-    else shares.push(toShareSnapshot(row))
-  }
-  return {
-    cursor: hasMore && lastRow !== undefined
-      ? formatSyncCursor(anchor.bound, lastRow.txid, lastRow.seq)
-      : formatSyncCursor(0n, anchor.bound, 0n),
-    watermark: Number(safe),
-    hasMore,
-    resync: anchor.resync,
-    shares,
-    deletedShareIds,
-  }
 }

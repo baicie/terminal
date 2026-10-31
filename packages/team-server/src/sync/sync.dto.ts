@@ -131,6 +131,17 @@ class ConflictClientDataDto {
   @IsOptional()
   @IsIn(['READONLY', 'READWRITE'])
   permission?: 'READONLY' | 'READWRITE'
+
+  /**
+   * Server version the user decided against. Supplied by a protocol-2 client so
+   * the LOCAL write is a conditional write; a client that omits it is bounded by
+   * the version read in the same request (docs/phase8/sync-protocol.md §6.3).
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(Number.MAX_SAFE_INTEGER)
+  baseVersion?: number
 }
 
 export class ResolveConflictDto {

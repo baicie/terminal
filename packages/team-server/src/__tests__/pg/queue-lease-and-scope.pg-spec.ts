@@ -221,6 +221,14 @@ describe('SyncQueue 租约与写入边界（真实 PostgreSQL）', () => {
         isSensitive: false,
       },
     })
+    // Phase 9.0：写入必须携带版本证明，否则会被 fail-closed 拒绝（#63）。
+    // 这里要验证的是「成员改不了 permission / isSensitive」，因此按协议 2 声明意图。
+    const frozenVersion = Number(
+      (await prismaA.share.findUnique({
+        where: { id: 'share-frozen' },
+        select: { version: true },
+      }))?.version,
+    )
     const frozenResult = await syncA.pushChanges(ctx.memberId, {
       shares: [
         {
@@ -231,6 +239,8 @@ describe('SyncQueue 租约与写入边界（真实 PostgreSQL）', () => {
           permission: 'READONLY',
           isSensitive: true,
           encryptedData: 'cipher-from-member',
+          operation: 'UPDATE',
+          baseVersion: frozenVersion,
         },
       ],
     })
