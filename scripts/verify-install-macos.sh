@@ -228,7 +228,16 @@ wait_for_exit "$APP_PID"
 pass "second launch stopped (pid $APP_PID gone)"
 
 step "verify every asserted field survived the install cycle"
-dr verify --db "$DB" --token "$TOKEN" --vault "$VAULT" --before "$SNAPSHOT" --expect-app-write
+# When the schema assertions fail the harness only says which tables are
+# missing; the reason lives in the app's own output. Dump it on failure so the
+# next run explains itself instead of needing a second run to diagnose.
+if ! dr verify --db "$DB" --token "$TOKEN" --vault "$VAULT" --before "$SNAPSHOT" --expect-app-write; then
+  echo "--- app output from the first launch ---"
+  tail -60 "$WORK/launch-first.log" 2>/dev/null || echo "(no launch log)"
+  echo "--- app output from the second launch ---"
+  tail -60 "$WORK/launch-second.log" 2>/dev/null || echo "(no launch log)"
+  fail "data-retention verification failed; the app output above explains why the schema was not completed"
+fi
 dr digest --db "$DB" --file "$VAULT"
 pass "every seeded field was read back unchanged; the digest above is reported for the record only"
 
