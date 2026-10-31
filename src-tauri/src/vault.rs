@@ -328,6 +328,23 @@ impl VaultState {
     /// through the same atomic replace, so recovery never unlinks a path that
     /// could hold a vault. Any file with content at all is refused as
     /// `AlreadyExists`, whatever it parses to.
+    ///
+    /// Reclaiming is a check followed by a replace, and both steps run inside
+    /// `lock_for_create`, so no other instance of this build can be between its
+    /// own check and its own replace at the same time. That removes the window the
+    /// pair used to leave open: a second creator landing its vault in that gap is
+    /// now either serialised behind the first one (and then refused by the
+    /// re-check it performs *after* it takes the lock) or blocked by the lock.
+    ///
+    /// Residual window, quantified: the lock is advisory, so a writer that does
+    /// not take it -- a hand edit, a script, a build older than this one -- can
+    /// still produce content between the re-check and the replace. What remains is
+    /// one metadata read immediately followed by one `rename` (both
+    /// sub-microsecond), and that writer has to land a complete `vault.json`
+    /// inside an interval nothing signals to it. Two instances of this build, or
+    /// two windows of it, cannot reach the window at all: they serialise on the
+    /// lock, and the loser's re-check (which runs after it holds the lock) sees
+    /// the winner's content and returns `AlreadyExists`.
     fn create_exclusive(&mut self, config: VaultConfig) -> Result<(), VaultError> {
         let content = serialize_config(&config)?;
         let claim = claim_new_vault_file(&self.config_path)?;
@@ -343,6 +360,10 @@ impl VaultState {
 
         match claim {
             Claim::Fresh(handle) => {
+                // The claim decided that this process may create a vault; the lock
+                // keeps a *reclaiming* creator out of the window between its own
+                // re-check and its replace while this one fills the file.
+                lock_for_create(&self.config_path, &handle)?;
                 if let Err(error) = write_atomic(&self.config_path, &content) {
                     // Release the handle before unlinking so Windows can delete it too.
                     drop(handle);
@@ -352,11 +373,35 @@ impl VaultState {
                 drop(handle);
             }
             Claim::Reclaimed => {
-                // Re-check the proof immediately before the replace: recovery is
-                // only ever allowed to overwrite a zero-length regular file.
+                // Recovery is only ever allowed to overwrite a zero-length regular
+                // file, and the verdict has to stay true until the replace lands.
+                // The lock is what makes those two steps one critical section: a
+                // creator that is also in this branch cannot re-check the file
+                // while this one is replacing it, and any content another creator
+                // wrote before this point is refused instead of overwritten.
+                let guard = fs::File::open(&self.config_path).map_err(|error| {
+                    save_failed(
+                        "Failed to open the vault placeholder",
+                        &self.config_path,
+                        &error,
+                    )
+                })?;
+                lock_for_create(&self.config_path, &guard)?;
+
+                // Re-check the proof immediately before the replace.
                 if !is_unfilled_placeholder(&self.config_path)? {
                     return Err(VaultError::AlreadyExists);
                 }
+
+                #[cfg(test)]
+                if let Some(millis) = fault_injection::take_reclaim_delay() {
+                    // Fault injection: hold the critical section open so a second
+                    // creator has every chance to slip in between the re-check and
+                    // the replace. Without the lock this is where two creates both
+                    // observe an empty placeholder and both overwrite the path.
+                    std::thread::sleep(std::time::Duration::from_millis(millis));
+                }
+
                 // A failed replace leaves the placeholder exactly where it was, so
                 // the next attempt starts from the same recoverable state.
                 write_atomic(&self.config_path, &content)?;
@@ -554,6 +599,55 @@ enum Claim {
     Reclaimed,
 }
 
+/// How long a creator waits for another process to leave its create critical
+/// section: 200 attempts of 10 ms, i.e. two seconds in total.
+///
+/// The critical section it waits on is a re-check plus one rename, so in practice
+/// the wait is one scheduler tick. The bound exists so a peer that is wedged or
+/// swapped out surfaces as an error instead of hanging the create command.
+const CREATE_LOCK_ATTEMPTS: u32 = 200;
+const CREATE_LOCK_RETRY: std::time::Duration = std::time::Duration::from_millis(10);
+
+/// Take the exclusive advisory lock that serialises vault creation.
+///
+/// The exclusive claim decides *who may create* a vault, but it cannot serialise
+/// the recovery path: a reclaim has to prove the placeholder is still empty and
+/// then replace it, and a second creator could fill the path between those two
+/// steps. This lock turns the pair into one critical section:
+///
+/// * taken on the vault file itself, so nothing new appears in the vault
+///   directory and no sidecar file can go stale;
+/// * the kernel's lock (`flock(2)` on Unix, `LockFileEx` on Windows), released when
+///   the handle drops, so a killed or crashed process cannot leave a lock behind
+///   that blocks the next start -- a lock *file* could;
+/// * taken before the re-check and released only after the replace, so a creator
+///   that re-checks while a replace is in flight cannot see a stale "empty"
+///   verdict and overwrite the file that replace just wrote.
+///
+/// Participation is by convention: only this build takes it. Residual window and
+/// its quantification are described on `create_exclusive`.
+fn lock_for_create(path: &Path, handle: &fs::File) -> Result<(), VaultError> {
+    let mut waited = 0;
+    loop {
+        match handle.try_lock() {
+            Ok(()) => return Ok(()),
+            Err(fs::TryLockError::WouldBlock) if waited + 1 < CREATE_LOCK_ATTEMPTS => {
+                waited += 1;
+                std::thread::sleep(CREATE_LOCK_RETRY);
+            }
+            Err(fs::TryLockError::WouldBlock) => {
+                return Err(VaultError::SaveFailed(format!(
+                    "another process is still initializing the vault at {}, so this create did not start",
+                    path.display()
+                )));
+            }
+            Err(fs::TryLockError::Error(error)) => {
+                return Err(save_failed("Failed to lock the vault file", path, &error));
+            }
+        }
+    }
+}
+
 /// True only when `path` is provably a claim placeholder that was never filled.
 ///
 /// The proof rests on the write path: every write to this file (create, set,
@@ -722,6 +816,17 @@ mod fault_injection {
     thread_local! {
         static WRITE_BUDGET: Cell<Option<usize>> = const { Cell::new(None) };
         static CLAIM_CRASH: Cell<bool> = const { Cell::new(false) };
+        static RECLAIM_DELAY_MS: Cell<Option<u64>> = const { Cell::new(None) };
+    }
+
+    /// Arm the next reclaim to hold its critical section open for `millis`.
+    pub(super) fn delay_after_reclaim_check(millis: u64) {
+        RECLAIM_DELAY_MS.with(|delay| delay.set(Some(millis)));
+    }
+
+    /// Consume the armed reclaim delay, if any.
+    pub(super) fn take_reclaim_delay() -> Option<u64> {
+        RECLAIM_DELAY_MS.with(|delay| delay.take())
     }
 
     /// Arm the next save to fail after `bytes` bytes reach the temporary file.
@@ -745,6 +850,7 @@ mod fault_injection {
     pub(super) fn clear() {
         WRITE_BUDGET.with(|budget| budget.set(None));
         CLAIM_CRASH.with(|flag| flag.set(false));
+        RECLAIM_DELAY_MS.with(|delay| delay.set(None));
     }
 
     /// Consume the armed budget, if any.

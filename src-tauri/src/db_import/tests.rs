@@ -838,3 +838,69 @@ async fn a_failed_rollback_closes_the_connection_instead_of_returning_it() {
         "the failed import left no rows behind"
     );
 }
+
+// (e) A panic inside the transaction must not hand a dirty connection back.
+//
+// A panic unwinds out of the transaction body; without a catch the pooled connection
+// is dropped while its transaction is still open, and the pool then hands it to the
+// next caller with an unrelated transaction on it. The import catches the unwind and
+// cleans up on the same path a failed statement takes, so this assertion is again
+// about the connection actually going back, not about intent.
+#[tokio::test(flavor = "current_thread")]
+async fn a_panic_inside_the_transaction_does_not_return_a_dirty_connection() {
+    let (_dir, pool, released) = probed_pool().await;
+    settle().await;
+    let before = released.load(Ordering::SeqCst);
+
+    let single = merge_hosts(json!([
+        { "id": "h1", "name": "First", "hostname": "a.example", "username": "root" }
+    ]));
+
+    fault_injection::fail_next_apply();
+    let panicked = run_import(&pool, &single, BUDGET).await;
+    fault_injection::clear();
+    settle().await;
+
+    let error = panicked.expect_err("an injected panic must fail the import");
+    assert!(
+        matches!(error, ImportError::Panicked(_)),
+        "unexpected error: {error}"
+    );
+    assert_eq!(
+        released.load(Ordering::SeqCst),
+        before + 1,
+        "the connection must go back to the pool after the transaction was rolled back"
+    );
+    assert_eq!(
+        wait_for_idle(&pool, 1).await,
+        1,
+        "the connection is reusable after a caught panic"
+    );
+
+    // Nothing inherited the open transaction, and nothing was committed.
+    let mut fresh = pool
+        .acquire()
+        .await
+        .expect("the pool hands out its connection");
+    sqlx::query("BEGIN IMMEDIATE")
+        .execute(&mut *fresh)
+        .await
+        .expect("a returned connection is not inside a stale transaction");
+    sqlx::query("ROLLBACK")
+        .execute(&mut *fresh)
+        .await
+        .expect("rollback on the returned connection");
+    drop(fresh);
+    assert_eq!(
+        count(&pool, "hosts").await,
+        0,
+        "a panicked import must not commit a row"
+    );
+
+    // The same connection still completes an import after the caught panic.
+    let report = run_import(&pool, &single, BUDGET)
+        .await
+        .expect("a later import must succeed");
+    assert_eq!(report.hosts, 1);
+    assert_eq!(count(&pool, "hosts").await, 1);
+}

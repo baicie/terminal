@@ -5,8 +5,10 @@
 //! statements never travel over IPC: the SQL below is the whole surface, values
 //! are bound as parameters, and the frontend cannot name a table or a column.
 
+use std::panic::AssertUnwindSafe;
 use std::time::{Duration, Instant};
 
+use futures::FutureExt;
 use serde::Serialize;
 use serde_json::Value;
 use sqlx::pool::PoolConnection;
@@ -46,6 +48,19 @@ pub enum ImportError {
     Commit(String),
     #[error("import exceeded the {0:?} budget and was rolled back")]
     Timeout(Duration),
+    #[error("import panicked inside its transaction and was rolled back: {0}")]
+    Panicked(String),
+}
+
+/// The message of a caught unwind, for the error the import reports.
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(text) = payload.downcast_ref::<&str>() {
+        return (*text).to_string();
+    }
+    if let Some(text) = payload.downcast_ref::<String>() {
+        return text.clone();
+    }
+    "a panic without a message".to_string()
 }
 
 // Statement text. Table and column names live here and nowhere else.
@@ -408,6 +423,9 @@ async fn apply(
     conn: &mut SqliteConnection,
     payload: &ImportPayload,
 ) -> Result<ImportReport, ImportError> {
+    #[cfg(test)]
+    fault_injection::maybe_panic_inside_transaction();
+
     let replace = payload.is_replace();
     let now = payload.now_ms();
     let mut report = ImportReport::default();
@@ -477,6 +495,13 @@ fn layout_arg(value: Option<&Value>) -> Option<SqlArg> {
 }
 
 /// Roll the transaction back, reporting whether the connection is clean again.
+///
+/// Every failed branch of `run_import` goes through this, including a statement
+/// failure, `COMMIT` failure, the budget expiring and a panic inside the body. A
+/// `BEGIN` that failed also takes this path, where `ROLLBACK` reports "no transaction
+/// is active" and the connection is closed even though it was clean: after a cancelled
+/// `BEGIN` nothing here can prove the transaction was never opened, and closing is the
+/// only answer that cannot put a dirty connection back into the pool.
 async fn rollback(conn: &mut SqliteConnection) -> bool {
     #[cfg(test)]
     if fault_injection::take_rollback_failure() {
@@ -521,8 +546,8 @@ async fn finish_failed(mut conn: PoolConnection<Sqlite>, error: ImportError) -> 
 ///
 /// `budget` covers `BEGIN` through `COMMIT`; waiting for the process-wide
 /// import lock is not part of it, so a queued import cannot time out before it
-/// starts writing. A timeout or any statement error rolls back on the same
-/// connection that opened the transaction, and a rollback that itself fails
+/// starts writing. A timeout, a statement error or a panic rolls back on the
+/// same connection that opened the transaction, and a rollback that itself fails
 /// closes that connection rather than returning it to the pool.
 pub async fn run_import(
     pool: &Pool<Sqlite>,
@@ -549,11 +574,17 @@ pub async fn run_import(
                 .map_err(|error| ImportError::Commit(error.to_string()))?;
             Ok::<ImportReport, ImportError>(report)
         };
-        tokio::time::timeout(budget, work).await
+        // A panic in the body would otherwise unwind out of this function and drop the
+        // pooled connection with its transaction still open -- the pool would then hand
+        // the next caller a connection inside a transaction belonging to a finished
+        // import, which is exactly the state a failed ROLLBACK leaves behind. Catching
+        // the unwind keeps that case on the same cleanup path as every other failure.
+        let guarded = AssertUnwindSafe(work).catch_unwind();
+        tokio::time::timeout(budget, guarded).await
     };
 
     match outcome {
-        Ok(Ok(report)) => {
+        Ok(Ok(Ok(report))) => {
             tracing::info!(
                 groups = report.groups,
                 hosts = report.hosts,
@@ -566,7 +597,12 @@ pub async fn run_import(
             );
             Ok(report)
         }
-        Ok(Err(error)) => Err(finish_failed(conn, error).await),
+        Ok(Ok(Err(error))) => Err(finish_failed(conn, error).await),
+        Ok(Err(payload)) => {
+            let message = panic_message(payload);
+            tracing::warn!(panic = %message, "import panicked inside its transaction");
+            Err(finish_failed(conn, ImportError::Panicked(message)).await)
+        }
         Err(_elapsed) => Err(finish_failed(conn, ImportError::Timeout(budget)).await),
     }
 }
@@ -582,6 +618,19 @@ pub(super) mod fault_injection {
 
     thread_local! {
         static ROLLBACK_FAILS: Cell<bool> = const { Cell::new(false) };
+        static APPLY_PANICS: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// Arm the next import to panic after its transaction is open.
+    pub(in crate::db_import) fn fail_next_apply() {
+        APPLY_PANICS.with(|flag| flag.set(true));
+    }
+
+    /// Panic once if armed. Called inside the transaction body, i.e. after `BEGIN`.
+    pub(super) fn maybe_panic_inside_transaction() {
+        if APPLY_PANICS.with(|flag| flag.replace(false)) {
+            panic!("injected panic inside the import transaction");
+        }
     }
 
     /// Arm the next failed import to be unable to roll back.
@@ -592,6 +641,7 @@ pub(super) mod fault_injection {
     /// Disarm the injection.
     pub(in crate::db_import) fn clear() {
         ROLLBACK_FAILS.with(|flag| flag.set(false));
+        APPLY_PANICS.with(|flag| flag.set(false));
     }
 
     /// Consume an armed failure, if any.

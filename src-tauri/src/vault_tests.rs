@@ -1005,3 +1005,241 @@ fn windows_reclaims_an_empty_placeholder_in_one_replace() {
     assert!(opens_vault(&path, OLD_PASSWORD, "host"));
     assert_eq!(dir_entries(dir.path()), vec!["vault.json".to_string()]);
 }
+
+// ==================== Create lock (concurrent reclaim) ====================
+//
+// The window this section covers: create's recovery path proves the placeholder is
+// empty and then replaces it. Another creator landing its own vault in between used
+// to be overwritten. Every test here drives real threads over a real file; none of
+// them asserts on "the function returned Ok".
+
+/// Leave the zero-length placeholder an interrupted create leaves behind.
+fn interrupted_claim(dir: &Path) -> PathBuf {
+    let path = vault_path(dir);
+    fault_injection::fail_after_claim();
+    let crashed = VaultState::create(OLD_PASSWORD, path.clone());
+    fault_injection::clear();
+    assert!(
+        crashed.is_err(),
+        "the injected crash must surface as an error"
+    );
+    assert_eq!(
+        fs::metadata(&path).expect("placeholder").len(),
+        0,
+        "an interrupted claim leaves an empty placeholder"
+    );
+    path
+}
+
+/// Four creators race over one placeholder, each of them held inside the reclaim
+/// critical section long enough for the others to reach theirs.
+///
+/// Exactly one may win. Without the create lock every thread passes the "still
+/// empty?" re-check while the first one is held, and each of them replaces the
+/// file the previous one wrote - the last writer silently destroys the winner.
+#[test]
+fn concurrent_reclaims_of_one_placeholder_never_overwrite_each_other() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let path = interrupted_claim(dir.path());
+    let attempts = 4;
+
+    let outcomes: Vec<(usize, Result<VaultState, VaultError>)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..attempts)
+            .map(|index| {
+                let path = path.clone();
+                scope.spawn(move || {
+                    // Armed per thread: each creator holds its own critical section
+                    // open, which is what makes the race reproducible instead of
+                    // probabilistic.
+                    fault_injection::delay_after_reclaim_check(25);
+                    let password = format!("{OLD_PASSWORD}-{index}");
+                    let result = VaultState::create(&password, path);
+                    fault_injection::clear();
+                    (index, result)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("create thread"))
+            .collect()
+    });
+
+    let winners: Vec<&(usize, Result<VaultState, VaultError>)> = outcomes
+        .iter()
+        .filter(|(_, result)| result.is_ok())
+        .collect();
+    let refused = outcomes
+        .iter()
+        .filter(|(_, result)| matches!(result, Err(VaultError::AlreadyExists)))
+        .count();
+
+    assert_eq!(
+        winners.len(),
+        1,
+        "exactly one create may fill the placeholder: {:?}",
+        outcomes
+            .iter()
+            .map(|(index, result)| (*index, result.is_ok()))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        refused,
+        attempts - 1,
+        "every losing create must be refused with AlreadyExists, not with a write of its own"
+    );
+
+    // The file on disk is the winner's vault: same salt, and only the winner's
+    // password opens it (an empty vault still rejects every other password through
+    // the verifier).
+    let (winner, winner_vault) = winners[0];
+    let winner_vault = winner_vault.as_ref().expect("the winner kept its vault");
+    let on_disk = read_vault_json(&path);
+    assert_eq!(
+        on_disk["salt"].as_str(),
+        Some(winner_vault.config.salt.as_str()),
+        "the file must hold the winning create's salt"
+    );
+    assert_eq!(
+        dir_entries(dir.path()),
+        vec!["vault.json".to_string()],
+        "a lost race must not leave a temporary file behind"
+    );
+
+    for index in 0..attempts {
+        let password = format!("{OLD_PASSWORD}-{index}");
+        let unlocked = VaultState::unlock(&password, path.clone());
+        if index == *winner {
+            let reopened = unlocked.expect("the winner's password must open the file");
+            assert_eq!(
+                reopened.config.salt, winner_vault.config.salt,
+                "the winner's vault is the one on disk"
+            );
+        } else {
+            assert!(
+                matches!(unlocked, Err(VaultError::InvalidPassword)),
+                "a losing creator's password must not open the file that won"
+            );
+        }
+    }
+}
+
+/// The lock itself: exclusive across two handles, and acquirable again once the
+/// holder releases it. No key derivation is involved, so this is a timing-stable
+/// assertion about the primitive the critical section rests on.
+#[test]
+fn the_create_lock_is_exclusive_across_handles_and_binds_one_critical_section() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let path = interrupted_claim(dir.path());
+
+    let holder = fs::File::open(&path).expect("open the placeholder");
+    holder.lock().expect("the holder takes the create lock");
+
+    // A second handle in this very process must not be able to take it: the whole
+    // point is that two creators cannot be inside the critical section together.
+    let contender = fs::File::open(&path).expect("open the placeholder again");
+    let started = std::time::Instant::now();
+    let refused = lock_for_create(&path, &contender).expect_err("a held lock must not be taken");
+    assert!(
+        matches!(refused, VaultError::SaveFailed(_)),
+        "a busy create lock must surface as a save failure: {refused}"
+    );
+    assert!(
+        !refused.to_string().contains(OLD_PASSWORD),
+        "a lock error must not carry the master password"
+    );
+    assert!(
+        started.elapsed() >= CREATE_LOCK_RETRY * (CREATE_LOCK_ATTEMPTS - 1),
+        "the wait must be the bounded one, not an instant refusal: {:?}",
+        started.elapsed()
+    );
+
+    // Releasing the holder hands the lock to the next creator.
+    holder.unlock().expect("release the create lock");
+    lock_for_create(&path, &contender).expect("a released lock must be acquirable");
+    // The reclaim path renames over the very file it locked, so the lock must not
+    // block its own replace. Give it back first: the create below takes it again, and
+    // two holders are exactly what this test refuses.
+    contender.unlock().expect("release the contender's lock");
+    let vault = VaultState::create(OLD_PASSWORD, path.clone()).expect("fill the placeholder");
+    drop(vault);
+    assert!(VaultState::unlock(OLD_PASSWORD, path).is_ok());
+}
+
+/// A create that fails after it took the lock must give it back: locking handles are
+/// released when they drop, so the next attempt starts clean instead of waiting out
+/// the bounded retry and failing.
+#[test]
+fn a_failed_reclaim_releases_the_create_lock_for_the_next_attempt() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let path = interrupted_claim(dir.path());
+
+    // The placeholder is free to lock before any create runs.
+    fs::File::open(&path)
+        .expect("open the placeholder")
+        .try_lock()
+        .expect("nothing may hold the create lock before a create runs");
+
+    fault_injection::fail_write_after(4);
+    let failed = VaultState::create(OLD_PASSWORD, path.clone());
+    fault_injection::clear();
+    assert!(matches!(failed.err(), Some(VaultError::SaveFailed(_))));
+    assert_eq!(
+        fs::metadata(&path).expect("placeholder").len(),
+        0,
+        "a failed reclaim must leave the empty placeholder in place"
+    );
+
+    // The lock is probed directly instead of through another create: a create would
+    // add its key derivation to the timing and hide whether the lock came back.
+    let probe = fs::File::open(&path).expect("open the placeholder again");
+    let started = std::time::Instant::now();
+    probe
+        .try_lock()
+        .expect("a failed create must not keep the create lock");
+    assert!(
+        started.elapsed() < CREATE_LOCK_RETRY,
+        "the lock must be free immediately, not after a retry: {:?}",
+        started.elapsed()
+    );
+    probe.unlock().expect("release the probe's lock");
+
+    // The recovery still completes on the next attempt.
+    let mut vault =
+        VaultState::create(OLD_PASSWORD, path.clone()).expect("the next create reclaims it");
+    vault.set("host", SECRET_VALUE).expect("store entry");
+    drop(vault);
+    assert!(opens_vault(&path, OLD_PASSWORD, "host"));
+}
+
+/// Windows takes the create lock through `LockFileEx`, whose unit is a byte range
+/// rather than a whole file, and the placeholder that has to be locked is zero bytes
+/// long - the one case where "there is nothing to lock" is a plausible
+/// platform-specific reading. This test states that reading instead of inheriting
+/// whatever Unix does.
+#[cfg(windows)]
+#[test]
+fn windows_locks_a_zero_length_placeholder_and_serialises_reclaims() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let path = interrupted_claim(dir.path());
+
+    let holder = fs::File::open(&path).expect("open the placeholder");
+    holder
+        .lock()
+        .expect("LockFileEx must lock a zero-length file");
+    let contender = fs::File::open(&path).expect("open the placeholder again");
+    assert!(
+        lock_for_create(&path, &contender).is_err(),
+        "a second creator must not enter the critical section on Windows either"
+    );
+    holder.unlock().expect("release the create lock");
+    // The contender never acquired the lock, so it is dropped rather than unlocked.
+    drop(contender);
+
+    let mut vault = VaultState::create(OLD_PASSWORD, path.clone()).expect("reclaim on windows");
+    vault.set("host", SECRET_VALUE).expect("store entry");
+    drop(vault);
+
+    assert!(opens_vault(&path, OLD_PASSWORD, "host"));
+    assert_eq!(dir_entries(dir.path()), vec!["vault.json".to_string()]);
+}

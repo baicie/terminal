@@ -5,12 +5,18 @@
 //! `BEGIN` sent from JavaScript never brackets the statements that follow it.
 //! This command reuses the very pool the plugin registered and runs the whole
 //! import on one acquired connection inside one `BEGIN IMMEDIATE` transaction.
+//!
+//! It also owns the pre-migration snapshot (`backup.rs`): the frontend asks for a
+//! verified `VACUUM INTO` copy through this module before it rewrites the schema, and
+//! stops when that copy cannot be produced.
 
+mod backup;
 mod payload;
 #[cfg(test)]
 mod tests;
 mod writer;
 
+pub use backup::backup_database_before_migration;
 pub use payload::ImportPayload;
 pub use writer::ImportReport;
 
