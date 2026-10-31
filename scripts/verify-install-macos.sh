@@ -59,6 +59,15 @@ fail() {
   tail -80 "$WORK/launch-first.log" 2>/dev/null || echo "(no launch log)"
   echo "--- app output from the second launch ---"
   tail -80 "$WORK/launch-second.log" 2>/dev/null || echo "(no launch log)"
+  # The app's stdout only carries Rust logs. A frontend exception - which is
+  # exactly what stops initializeCoreSchema - never reaches it, because this
+  # build has no log plugin and no error-reporting bridge. The unified log does
+  # carry WebKit console output, so it is the only place the real reason can
+  # appear on a runner.
+  echo "--- unified log (webview console) ---"
+  log show --last 10m --info --debug \
+    --predicate 'process CONTAINS "terminal"' 2>/dev/null | grep -iE "error|exception|sqlite|database|schema|invoke" | tail -60 \
+    || echo "(no matching unified log entries)"
   exit 1
 }
 notrun() { echo "[NOT_RUN] $*"; }
