@@ -58,11 +58,25 @@ step() { echo; echo "=== $* ==="; }
 
 XVFB_PID=""
 cleanup() {
-  # Cleanup is best effort and never asserts.
+  # Cleanup is best effort and never asserts. Runs from an EXIT trap, so a
+  # non-zero return here would rewrite the script's real exit status - which is
+  # exactly what happened on the runner: every assertion passed (74 passed,
+  # 0 failed), then "rm: cannot remove ... Directory not empty" turned the whole
+  # job red. The directory is not empty because the AppImage process can still
+  # be writing into it while rm walks the tree.
   if [ -n "$XVFB_PID" ]; then
     kill "$XVFB_PID" >/dev/null 2>&1 || echo "[WARN] Xvfb did not stop (cleanup only)"
   fi
-  rm -rf "$WORK"
+  local attempt=0
+  while [ "$attempt" -lt 5 ] && [ -e "$WORK" ]; do
+    attempt=$((attempt + 1))
+    rm -rf "$WORK" 2>/dev/null || true
+    [ -e "$WORK" ] && sleep 1
+  done
+  if [ -e "$WORK" ]; then
+    echo "[WARN] $WORK survived cleanup (left behind on purpose, never an assertion)"
+  fi
+  return 0
 }
 trap cleanup EXIT
 
