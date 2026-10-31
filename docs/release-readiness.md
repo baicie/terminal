@@ -214,7 +214,7 @@ macOS 走「先分架构编二进制、再按架构各自打包」两段式：`b
 
 - **没有 Apple Developer ID / notarization**：`tauri.conf.json` 里没有签名身份配置，DMG 最多是 Tauri 默认的 ad-hoc 签名（`adhoc, linker-signed`）。ad-hoc 不等于 Developer ID，也不构成公证，Gatekeeper 仍会拦截首次打开。Release 说明已由工作流写入「macOS is not notarized」。
 - **没有 Windows Authenticode**：NSIS 安装包未签名，SmartScreen 会告警。
-- **没有 updater 私钥**：`updater-signed` 一次都没在真实密钥下执行过；本轮**没有** CI run 可引用，因此该模式只能标为「代码完成、未验证」，不能写成「已验证」。
+- ~~**没有 updater 私钥**：`updater-signed` 一次都没在真实密钥下执行过~~ **该判断已被 Phase 8 P8.7 推翻**：Release `v0.0.1-dev.2`（published 2026-10-30T09:54:11Z，draft=false）实际产出 **20 个资产**，含 8 个安装包 + **8 个真实 minisign `.sig`**（解码首行 `untrusted comment: signature from tauri secret key`）+ `SHA256SUMS.txt` + `latest.json`。即 updater-signed 路径**已在真实密钥下跑通**。但仍在仓库里的 `tauri.conf.json` pubkey 是占位符，只有 workflow_dispatch + release_mode=updater-signed 时才内联真实公钥——因此「推 tag 的 unsigned-qa 产物无法自动更新」这一落差依然成立。
 - **没有实机安装/升级验收**：`unsigned-qa` 的 8 个包只被验证过「存在、非空、命名正确、SHA-256 与清单一致」。DMG 拖入 Applications、NSIS 安装与卸载重装、AppImage 启动、deb `dpkg -i`、SQLite 旧库兼容、签名后自动升级链路，全部为 NOT_RUN。
 - **Windows/Linux/Pageant/PTY/串口**仍按下方实机矩阵逐项验证；runner 编译通过或安装包构建成功都不能替代它们。
 
@@ -282,7 +282,7 @@ macOS 走「先分架构编二进制、再按架构各自打包」两段式：`b
 | Tauri 三平台编译 | macOS / Ubuntu / Windows CI | ✅ CI `31553345929` 与 `31553348495` 三平台通过 | `.github/workflows/ci.yml` 三平台 `tauri build --no-bundle --ci` 通过 |
 | Release 安装包 | 8 个原生 GitHub runner 打包 job | 🟡 `v0.0.1-dev.1` 工作流 `31554163901` 全绿；8 个安装包与 checksum 已核验（版本目标已推进到 `0.0.1-dev.2`，该版本未重新出包） | 八个安装资产非空且系统/架构命名正确，`SHA256SUMS.txt` 可校验 |
 | Release 安装/升级（人工） | macOS / Windows / Linux 实机 | ⚠️ NOT_RUN | DMG 拖入 Applications、NSIS 安装+卸载重装、AppImage 启动、`dpkg -i`、旧 SQLite 库兼容，全部需要真实机器 |
-| `updater-signed` 出包 | GitHub runner + 真实密钥 | ⚠️ NOT_RUN | 需要 `TAURI_SIGNING_PRIVATE_KEY` 与 `TAURI_UPDATER_PUBKEY`；一次都没跑过，不能写成已验证 |
+| `updater-signed` 出包 | GitHub runner + 真实密钥 | ✅ 已在 dev.2 跑通 | 2026-10-30 的 `v0.0.1-dev.2` 产出 8 个真实 `.sig` 与 `latest.json`。**但**：仅 4 个平台进了 `latest.json`（缺 windows-aarch64 / linux-aarch64，这两个架构能装不能更新）；且升级链只从 dev.2 起有效，dev.1 → dev.2 不存在 |
 | S3 服务端集成 | AWS S3 或兼容服务 | ⚠️ 待外部服务 | 固定向量之外，验证实际签名、UTF-8 key、分页列表、上传下载与删除 |
 | Agent forwarding | 全平台 | ⚠️ 代码完成，待实机 | 默认关闭；opt-in 时显式请求；未授权主动 channel 被拒绝；池内启用/禁用连接隔离 |
 | Team 注册准入 | Docker / PostgreSQL | ✅ 自动化与容器运行均通过 | 生产默认 closed；错误 token 不新增用户；正确 token/open 可注册；缺失/非法环境配置拒绝启动 |

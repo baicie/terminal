@@ -533,6 +533,7 @@ pnpm add <package-name>
 - ✅ GitHub Actions CI `31409070480`：macOS、Windows、Linux Tauri 编译，Team Server PostgreSQL 迁移和 Docker 镜像构建全部通过
 - ✅ `.github/workflows/release.yml` 为 macOS（aarch64 / x86_64 各出一个 DMG）、Windows、Linux 的 x64/ARM64 建立原生 runner 分架构打包，共 8 个安装资产 + `SHA256SUMS.txt`，带确定性命名与非空校验；`updater-signed` 模式额外产出逐架构 `.sig` 与唯一 `latest.json`
 - ✅ Release `v0.0.1-dev.1`：工作流 `31554163901` attempt 2 全绿，8 个安装包与 `SHA256SUMS.txt` 均非空，GitHub 服务端 digest 与清单一致
+- ✅ Release `v0.0.1-dev.2`（2026-10-30T09:54:11Z，draft=false）：**updater-signed 模式**，20 个资产 = 8 个安装包 + 8 个真实 minisign `.sig` + `SHA256SUMS.txt` + `latest.json`。这是目前唯一能自动更新的版本；`latest.json` 只含 4 个平台（darwin-aarch64 / darwin-x86_64 / windows-x86_64 / linux-x86_64），windows-aarch64 与 linux-aarch64 能装不能更新
 - ⚠️ Release 工作流通过只能证明对应目标可编译和打包；Windows/Linux/Pageant/PTY/串口交互仍按实机矩阵验证
 - ⚠️ 未配置 Apple notarization 与 Windows Authenticode；开发版 DMG/NSIS 必须在 Release 说明中标为未签名/未公证
 - ✅ Docker Desktop 29.7.2 + PostgreSQL 16.15 容器生命周期通过：2 个迁移、health/readiness、closed/token/open、非法环境 fail-closed、SIGTERM 退出码 0 与健康恢复均已验证
