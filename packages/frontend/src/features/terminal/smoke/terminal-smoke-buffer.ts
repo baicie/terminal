@@ -45,18 +45,31 @@ export function hasExactLogicalLine(
   return readLogicalTail(term).some(line => line === expected)
 }
 
+/**
+ * A marker emitted without a leading line break lands on the shell prompt's
+ * line, so an exact-line reader never sees it. This reader matches any logical
+ * line that contains the marker.
+ */
+export function hasLogicalLineContaining(
+  term: TerminalBufferReader,
+  expected: string,
+): boolean {
+  return readLogicalTail(term).some(line => line.includes(expected))
+}
+
 function abortError(signal: AbortSignal): Error {
   return signal.reason instanceof Error
     ? signal.reason
     : new Error('Terminal smoke aborted')
 }
 
-export function waitForExactLogicalLine(
+function waitForLogicalLine(
   term: ParsedTerminalBuffer,
+  matches: (term: ParsedTerminalBuffer) => boolean,
   expected: string,
   options: { signal: AbortSignal; timeoutMs?: number },
 ): Promise<void> {
-  if (hasExactLogicalLine(term, expected)) return Promise.resolve()
+  if (matches(term)) return Promise.resolve()
   if (options.signal.aborted) return Promise.reject(abortError(options.signal))
 
   return new Promise((resolve, reject) => {
@@ -75,7 +88,7 @@ export function waitForExactLogicalLine(
     }
 
     function check() {
-      if (hasExactLogicalLine(term, expected)) finish()
+      if (matches(term)) finish()
     }
 
     function onAbort() {
@@ -91,4 +104,30 @@ export function waitForExactLogicalLine(
     }
     check()
   })
+}
+
+export function waitForExactLogicalLine(
+  term: ParsedTerminalBuffer,
+  expected: string,
+  options: { signal: AbortSignal; timeoutMs?: number },
+): Promise<void> {
+  return waitForLogicalLine(
+    term,
+    candidate => hasExactLogicalLine(candidate, expected),
+    expected,
+    options,
+  )
+}
+
+export function waitForLogicalLineContaining(
+  term: ParsedTerminalBuffer,
+  expected: string,
+  options: { signal: AbortSignal; timeoutMs?: number },
+): Promise<void> {
+  return waitForLogicalLine(
+    term,
+    candidate => hasLogicalLineContaining(candidate, expected),
+    expected,
+    options,
+  )
 }
