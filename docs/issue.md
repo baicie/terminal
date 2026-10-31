@@ -3882,10 +3882,17 @@ ELIFECYCLE Command failed with exit code 1.
 
 ---
 
-### Issue #63: 未声明 operation 的旧写入仍可覆盖串行较新的数据 ⚠️ 设计取舍
+### Issue #63: 未声明 operation 的旧写入仍可覆盖串行较新的数据 ✅ 已修复（Phase 9.0）
 
 **严重程度**: 🟡 Important
-**状态**: ⚠️ 需产品决策
+**状态**: ✅ 已修复（Phase 9.0）
+
+无 baseVersion 的写入改为 fail-closed：返回 conflict + upgradeRequired，不写库。
+ResolveConflict LOCAL 从无条件 update 改为 where{id,version} 条件写，失败返回 CONFLICT_STALE_VERSION。
+所有 create 都查墓碑，不再有「未声明意图即可复活已删除项」的路径。
+兼容影响见 docs/phase8/sync-protocol.md §6.1/§6.4（破坏性变更，无降级路径，回退旧二进制必须停写）。
+残留：RESOLVE LOCAL 未携带 baseVersion 时只能做同请求版本条件写，串行窗口需前端回传
+remoteVersion.version 才能关闭——属前端任务，已记入 §6.3。
 
 Phase 8.9 的 version CAS 杜绝了**并发**丢失更新。但旧客户端若不声明 `operation`/`baseVersion`，
 仍可能覆盖**串行**更新的较新数据。彻底禁止需要客户端一律声明 operation + baseVersion，

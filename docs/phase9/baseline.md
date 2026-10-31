@@ -55,7 +55,7 @@
 
 | 套件 | 结果 |
 | --- | --- |
-| `pnpm --filter team-server test:pg` | **5 文件 / 37 用例通过**（含 16 条分页/版本契约、1 条客户端 E2E） |
+| `pnpm --filter team-server test:pg` | **5 文件 / 46 用例通过**（P9.0-1/-3 后由 37 增至 46） |
 
 ### 3.3 runner 证明（Runner）
 
