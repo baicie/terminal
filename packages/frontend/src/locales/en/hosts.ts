@@ -27,6 +27,11 @@ export default {
   'hosts.invite': 'Invite',
   'hosts.sshAuth': 'ssh, {{username}}',
   'hosts.copySsh': 'Copy SSH command',
+  'hosts.moreActions': 'More actions for {{name}}',
+  'hosts.deleteConfirm':
+    'Delete "{{name}}"? Its saved credentials, group membership and favourite flag are removed permanently. This cannot be undone.',
+  'hosts.deleted': 'Host "{{name}}" deleted',
+  'hosts.deleteFailed': 'Failed to delete host: {{message}}',
 
   // Quick Connect
   'quickConnect.title': 'Quick Connect',
