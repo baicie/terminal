@@ -3794,3 +3794,110 @@ ELIFECYCLE Command failed with exit code 1.
 **门禁**：`prisma validate` / `lint`（0 error；13 条 `no-console` warning 全部来自新 pg 用例的取证输出）/ `typecheck` / `test`（25 文件 116 例，数量不变）/ `build` 全绿；`check-source-size.mjs` 559 个生产文件通过（559 = 基线 558 + 会话既存未跟踪的 `terminal-output-queue.ts`，与本次改动无关；`src/__tests__/` 属门禁排除目录）。
 
 
+
+---
+
+## 十三、Phase 8.9 发现的新问题（2026-11-01）
+
+### Issue #59: macOS 托管 runner 上应用未建完 SQLite schema ⚠️ 未修复
+
+**严重程度**: 🟡 Important
+**状态**: ⚠️ 未修复
+**影响**: macOS 的内容级数据保留验证无法完成；RC 判定受阻
+
+**症状**（CI 实测，macOS Tauri 作业）：
+
+    [FAIL] the app created table "settings"
+    [FAIL] the app created table "workspaces"
+    [FAIL] the app created table "workspace_layouts"
+    [FAIL] the app created table "ssh_keys"
+    [FAIL] the app never finished creating its schema inside .../terminal.db
+
+**已排除**: 不是「观察窗口太短」——脚本轮询 180 秒仍在等；数据库文件本身已创建，只是表没建全。
+
+**候选方向**（未验证）: 未签名开发版从临时目录启动时，前端 boot 是否被 Gatekeeper / WebKit
+限制在 schema 初始化之前；或 `tauri-plugin-sql` 的 create_database 与 initSchema 之间有时序缺口。
+
+**注意**: 这条断言**没有为了让 CI 变绿而被放松**。它抓到的现象是真的。
+
+---
+
+### Issue #60: Linux 上 plain 环境的 zsh 三条用例超时 ⚠️ 未修复
+
+**严重程度**: 🟡 Important
+**状态**: ⚠️ 未修复（根因方向已反转）
+
+**实测矩阵**（真实 Linux runner）:
+
+    zsh | app   | readline-history | PASS
+    zsh | app   | readline-tab     | PASS
+    zsh | app   | pty-resize       | PASS
+    zsh | app   | ctrl-c-interrupt | PASS
+    zsh | plain | readline-history | TIMEOUT  ready marker never printed
+    zsh | plain | readline-tab     | TIMEOUT  no verdict before the deadline
+    zsh | plain | pty-resize       | TIMEOUT  ready marker never printed
+    zsh | plain | ctrl-c-interrupt | PASS
+    bash | 全部 8 条                | PASS
+
+**关键结论**: 应用环境下 zsh 四条全过，**plain 环境**三条超时。应用生成的 `.zshrc` / ZDOTDIR wrapper
+不是问题所在——方向与 Phase 8.8 的假设相反。
+
+**下一步**: 回答「为什么 plain zsh 的 ready marker 从不打印」。已知它只影响三条必须由行编辑器
+解释注入字节的用例（`ESC[A`、`TAB`、resize 后的重绘），而同机 bash 全过、`ctrl-c-interrupt` 也过。
+
+**踩过的坑（务必不要再犯）**:
+- `[[ -o zle ]]` 不是可用判据（命令执行期间恒为 OFF）
+- DECCKM `ESC[?1h/?1l` 不是可用判据（部分环境不出现）
+- 可靠判据是 bracketed paste `ESC[?2004h/l`，且必须在**通过的用例**上先验证一次
+- 生成 `.zshenv` 必须带 `skip_global_compinit=1`，否则系统级 compinit 会阻塞 shell 吞掉输入
+
+---
+
+### Issue #61: 前端 3 条用例在全量并发下超时（既有 flaky）⚠️ 未修复
+
+**严重程度**: 🟢 Low（不影响产品，影响门禁可信度）
+**状态**: ⚠️ 未修复
+
+`pnpm verify all` 偶发 exit 1，失败的是这三条（**均与 Phase 8.9 改动无关**）：
+
+- `src/terminal-bootstrap.test.tsx > renders a retryable failure when the normal application chunk never settles`（1922ms）
+- `src/components/workspace-switcher/index.test.tsx > replaces the current layout while preserving persisted tab IDs`（6077ms）
+- `src/view/keychain/index.test.tsx > returns from the new-key form to the key list`（5169ms）
+
+三条**单独跑全部通过**，同样的三条在 CI 的 `Frontend quality` 里也通过。
+
+**为什么没有直接调大 timeout**: 尚未证明它们是因真实异步工作在 CPU 争抢下变慢，还是掩盖了别的问题。
+在没有诊断的情况下调大 timeout 等于拿掉门禁。
+
+---
+
+### Issue #62: 迁移前快照没有保留策略 ⚠️ 未修复
+
+**严重程度**: 🟢 Low
+**状态**: ⚠️ 未修复
+
+每次「确有迁移待执行」的启动会在 `<app_config_dir>/backups/` 写一份整库副本。
+迁移持续失败时每次启动新增一份，理论上可占满磁盘。
+加「只留最近 N 份」属删除操作，需要在有测试的前提下做（守卫：只删本目录下的 `pre-migration-*.db`）。
+
+---
+
+### Issue #63: 未声明 operation 的旧写入仍可覆盖串行较新的数据 ⚠️ 设计取舍
+
+**严重程度**: 🟡 Important
+**状态**: ⚠️ 需产品决策
+
+Phase 8.9 的 version CAS 杜绝了**并发**丢失更新。但旧客户端若不声明 `operation`/`baseVersion`，
+仍可能覆盖**串行**更新的较新数据。彻底禁止需要客户端一律声明 operation + baseVersion，
+这是协议破坏性变更，未擅自收紧。
+
+---
+
+### Issue #64: 客户端同步 E2E 规格有 1 行 ts-nocheck ⚠️ 已知豁免
+
+**严重程度**: 🟢 Low
+**状态**: ⚠️ 已知豁免
+
+`packages/team-server/src/__tests__/pg/client-sync-e2e.pg-spec.ts` 顶部有 `// @ts-nocheck`。
+原因：前端源码只经 vitest alias 可达，server 的 tsconfig 不认识 `@/`。
+这是该文件唯一的类型豁免——**类型检查在这一个文件上是失效的**，如实记录。
