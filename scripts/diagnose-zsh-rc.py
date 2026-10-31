@@ -66,6 +66,63 @@ SLEEP_SECONDS = 20
 CASE_TIMEOUT_S = 30.0
 RAW_DUMP_LIMIT = 12000
 ALL_CASES = ['readline-history', 'readline-tab', 'pty-resize', 'ctrl-c-interrupt']
+
+# Three launch models, and the reason each exists. Mixing them is what made the
+# previous matrix unreadable: a timeout under one model says nothing about the
+# others.
+#
+#   app    the product with shell integration: zsh reads the ZDOTDIR wrapper
+#          src-tauri/src/session/shell_startup.rs writes, then the user's own
+#          files. This is the only model the product gate measures.
+#   plain  the product without shell integration: a real account whose rc files
+#          exist but carry no integration hooks. Expected to PASS; a failure
+#          here is a line-editor or PTY problem, which is a product problem.
+#   bare   the negative control: interactive zsh with HOME empty and no rc file
+#          at all. Expected to FAIL, and to fail for one documented reason - the
+#          shell blocks in the system-wide rc (newuser wizard or compinit) and
+#          never reaches ZLE. It proves the harness can see a blocked shell.
+LAUNCH_MODELS = {
+    'app': {
+        'purpose': 'product with shell integration (the gate)',
+        'startup_files': 'ZDOTDIR wrapper written by shell_startup.rs',
+        'login': True,
+        'expectation': 'pass',
+        'product': True,
+    },
+    'plain': {
+        'purpose': 'product without shell integration, rc files present',
+        'startup_files': 'minimal .zshenv + .zshrc in HOME',
+        'login': False,
+        'expectation': 'pass',
+        'product': True,
+    },
+    'bare': {
+        'purpose': 'negative control: no startup file at all',
+        'startup_files': 'none',
+        'login': False,
+        'expectation': 'fail',
+        'product': False,
+    },
+}
+DEFAULT_LAUNCHES = 'app,plain,bare'
+
+# The shell is blocked when it is waiting for an answer to a question printed by
+# the system-wide rc: Debian's /etc/zsh/zshrc runs compinit, and compinit stops
+# on insecure directories. These are the strings those prompts actually contain.
+BLOCKAGE_SIGNATURES = (
+    'zsh-newuser-install',
+    'insecure directories',
+    'abort compinit',
+    'continue [y] or abort',
+    'Do you want to',
+    'compinit:',
+)
+
+CLASS_PASS = 'PASS'
+CLASS_EXPECTED = 'EXPECTED_FAILURE'
+CLASS_DIAGNOSTIC = 'DIAGNOSTIC_FAILURE'
+CLASS_PRODUCT = 'PRODUCT_FAILURE'
+FAILING_CLASSES = (CLASS_PRODUCT, CLASS_DIAGNOSTIC)
 INTERESTING_OPTIONS = (
     'interactive', 'login', 'zle', 'promptsubst', 'shinstdin', 'monitor',
     'histappend', 'incappendhistory', 'sharehistory', 'autolist',
@@ -123,6 +180,21 @@ def wrapper_files():
         '.zprofile': forward('.zprofile'),
         '.zshrc': zshrc,
         '.zlogin': forward('.zlogin'),
+    }
+
+
+def plain_startup_files():
+    """Startup files for a real account that has no shell integration.
+
+    skip_global_compinit is the documented switch for the system-wide rc, and it
+    is required here for the same reason the app wrapper sets it: without it
+    Debian's /etc/zsh/zshrc runs compinit, which stops on insecure directories
+    and swallows everything typed at the shell. A "plain" variant without this
+    line does not measure a plain shell, it measures a blocked one.
+    """
+    return {
+        '.zshenv': 'skip_global_compinit=1' + NL + forward('.zshenv'),
+        '.zshrc': 'PS1=' + QUOTE + '%# ' + QUOTE + NL + forward('.zshrc'),
     }
 
 
@@ -369,7 +441,9 @@ def run_case(shell, case, launch):
         env.update({'HOME': home, 'TERM': 'xterm-256color', 'COLORTERM': 'truecolor'})
         env.pop('ZDOTDIR', None)
         env.pop('TERMINAL_REAL_ZDOTDIR', None)
+        model = LAUNCH_MODELS[launch]
         argv = [shell]
+        written = []
         if launch == 'app':
             wrapper = tempfile.mkdtemp(prefix='terminal-shell-')
             os.chmod(wrapper, 0o700)
@@ -381,14 +455,25 @@ def run_case(shell, case, launch):
             env['ZDOTDIR'] = wrapper
             env['TERM_PROGRAM'] = 'Terminal'
             env['TERMINAL_SHELL_INTEGRATION'] = '1'
-            argv.append('-l')
-        else:
-            argv.append('-i')
+            written = sorted(wrapper_files())
+        elif launch == 'plain':
+            # The whole point of this model: the files exist, and the only thing
+            # missing compared with "app" is the integration wrapper.
+            for name, body in plain_startup_files().items():
+                path = os.path.join(home, name)
+                with open(path, 'w', encoding='utf-8') as handle:
+                    handle.write(body)
+                os.chmod(path, 0o600)
+                written = written + [name]
+        elif launch != 'bare':
+            raise SystemExit('unsupported launch model: ' + launch)
+        argv.append('-l' if model['login'] else '-i')
         session = Session(argv, env, cwd=home)
         deadline = time.monotonic() + CASE_TIMEOUT_S
         result = {'case': case, 'launch': launch, 'shell': shell, 'session': session,
                   'markers': markers, 'home': home, 'wrapper': wrapper,
-                  'reason': None, 'resize': None}
+                  'reason': None, 'resize': None, 'startup_files': written,
+                  'argv': argv, 'zdotdir': env.get('ZDOTDIR'), 'diagnostic_error': None}
         if case == 'pty-resize':
             session.write(markers.printf(markers.ready) + CR, 'setup')
             if wait_for(session, markers.ready, deadline) is None:
@@ -417,6 +502,115 @@ def run_case(shell, case, launch):
     finally:
         if session is not None:
             session.close()
+
+
+class _StubSession:
+    """A session stand-in for rows that never produced a wire timeline."""
+
+    def __init__(self, text=''):
+        self._text = text
+
+    def text(self):
+        return self._text
+
+
+def blockage_evidence(session):
+    """The first documented blocking prompt visible on the wire, or None."""
+    text = session.text()
+    for signature in BLOCKAGE_SIGNATURES:
+        if signature in text:
+            return signature
+    return None
+
+
+def expected_summary(launch):
+    model = LAUNCH_MODELS[launch]
+    if model['expectation'] == 'pass':
+        return 'pass (' + model['purpose'] + ')'
+    return 'fail, blocked in the system rc (' + model['purpose'] + ')'
+
+
+def observed_summary(result):
+    if result.get('diagnostic_error'):
+        return 'diagnostic error: ' + result['diagnostic_error']
+    if result['verdict'] == 'pass':
+        return 'pass marker printed'
+    evidence = blockage_evidence(result['session'])
+    if evidence:
+        return 'blocked in the system rc: ' + evidence
+    return result.get('reason') or result['verdict']
+
+
+def classify(result):
+    """One of three classes, never merged.
+
+    A negative control that fails is not a pass, and it is not a product
+    failure either: it is an expected failure, and it only counts as expected
+    when the observation matches the documented blocking mechanism. Anything
+    else is a diagnostic failure, because a test whose premise broke proves
+    nothing about the product.
+    """
+    model = LAUNCH_MODELS[result['launch']]
+    if result.get('diagnostic_error'):
+        return CLASS_DIAGNOSTIC
+    if result['verdict'] == 'pass':
+        return CLASS_PASS
+    if model['expectation'] == 'fail':
+        if blockage_evidence(result['session']):
+            return CLASS_EXPECTED
+        return CLASS_DIAGNOSTIC
+    return CLASS_PRODUCT if model['product'] else CLASS_DIAGNOSTIC
+
+
+def self_test():
+    """Classification-only checks, so the rules can be pinned without a runner."""
+    blocked = _StubSession('This is the Z Shell configuration function ... '
+                           'zsh-newuser-install')
+    quiet = _StubSession('probe> ')
+
+    def row(launch, verdict, session, error=None, reason='no verdict before the deadline'):
+        return {'launch': launch, 'verdict': verdict, 'session': session,
+                'diagnostic_error': error, 'reason': reason}
+
+    checks = [
+        ('bare blocked in the wizard is an expected failure',
+         classify(row('bare', 'timeout', blocked)), CLASS_EXPECTED),
+        ('bare failing without the documented prompt is a diagnostic failure',
+         classify(row('bare', 'timeout', quiet)), CLASS_DIAGNOSTIC),
+        ('plain timing out is a product failure',
+         classify(row('plain', 'timeout', quiet)), CLASS_PRODUCT),
+        ('app timing out is a product failure',
+         classify(row('app', 'timeout', quiet)), CLASS_PRODUCT),
+        ('plain passing is a pass',
+         classify(row('plain', 'pass', quiet)), CLASS_PASS),
+        ('app passing is a pass',
+         classify(row('app', 'pass', quiet)), CLASS_PASS),
+        ('a setup crash is a diagnostic failure',
+         classify(row('app', 'timeout', quiet, 'Session start failed')), CLASS_DIAGNOSTIC),
+        ('a setup crash is a diagnostic failure even on the control',
+         classify(row('bare', 'error', blocked, 'pty.fork failed')), CLASS_DIAGNOSTIC),
+    ]
+    failures = []
+    for name, observed, expected in checks:
+        if observed != expected:
+            failures.append((name, observed, expected))
+    observed_text = observed_summary(row('bare', 'timeout', blocked))
+    if 'blocked in the system rc' not in observed_text:
+        failures.append(('the observation names the blocking prompt',
+                         observed_text, 'blocked in the system rc: ...'))
+    expected_text = expected_summary('bare')
+    if 'blocked in the system rc' not in expected_text:
+        failures.append(('the expectation names the blocking mechanism',
+                         expected_text, 'fail, blocked in the system rc (...'))
+    if expected_summary('app').startswith('pass') is not True:
+        failures.append(('the app model is expected to pass',
+                         expected_summary('app'), 'pass (...)'))
+    for name, got, want in failures:
+        print('SELF-TEST FAIL: ' + name + ' => ' + str(got) + ', expected ' + str(want))
+    if failures:
+        return 1
+    print('SELF-TEST PASS: ' + str(len(checks) + 3) + ' classification checks')
+    return 0
 
 
 def describe(result):
@@ -467,9 +661,8 @@ def startup_facts(shell, launch, home, wrapper):
     if launch == 'app':
         env['ZDOTDIR'] = wrapper
         env['TERMINAL_SHELL_INTEGRATION'] = '1'
-        argv.append('-l')
-    else:
-        argv.append('-i')
+    model = LAUNCH_MODELS.get(launch, LAUNCH_MODELS['bare'])
+    argv.append('-l' if model['login'] else '-i')
     argv += ['-c', 'echo "ZDOTDIR=["' + DOLLAR + 'ZDOTDIR]"; echo "HOME=["'
              + DOLLAR + 'HOME]"; setopt; bindkey -l']
     try:
@@ -494,34 +687,83 @@ def startup_facts(shell, launch, home, wrapper):
     return ' | '.join(chosen) + ' | modes: ' + ', '.join(modes)
 
 
+def model_preamble(launches):
+    """What the run expects, stated before any measurement."""
+    lines = ['launch models (expected behaviour, not a result):']
+    for launch in launches:
+        model = LAUNCH_MODELS[launch]
+        lines.append(
+            '  {0:<6} expect {1:<4} startup files: {2}'.format(
+                launch,
+                'pass' if model['expectation'] == 'pass' else 'fail',
+                model['startup_files']))
+        lines.append('         ' + model['purpose'])
+    lines.append('false negatives are failures: a bare-variant timeout only '
+                 'counts as expected when the shell is demonstrably blocked '
+                 'in the system-wide rc.')
+    return lines
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--shells', default='zsh')
     parser.add_argument('--cases', default=','.join(ALL_CASES))
-    parser.add_argument('--launch', default='app,plain')
+    parser.add_argument('--launch', default=DEFAULT_LAUNCHES)
     parser.add_argument('--out', default='zsh-diag.log')
+    parser.add_argument('--self-test', action='store_true',
+                        help='check the classification rules and exit')
     args = parser.parse_args()
 
+    if args.self_test:
+        return self_test()
+
+    launches = args.launch.split(',')
+    for launch in launches:
+        if launch not in LAUNCH_MODELS:
+            raise SystemExit('unsupported launch model: ' + launch)
     cases = ALL_CASES if args.cases == 'all' else args.cases.split(',')
     table, details = [], []
     for shell in args.shells.split(','):
         if shutil.which(shell) is None:
             print('SKIP ' + shell + ': not installed', file=sys.stderr)
             continue
-        for launch in args.launch.split(','):
+        for launch in launches:
             facts = None
             for case in cases:
-                result = run_case(shell, case, launch)
-                if facts is None:
+                try:
+                    result = run_case(shell, case, launch)
+                except (OSError, subprocess.SubprocessError, ValueError) as error:
+                    # The diagnostic itself broke. Reporting that as a timeout
+                    # would attribute a harness bug to the product.
+                    result = {'case': case, 'launch': launch, 'shell': shell,
+                              'session': _StubSession(), 'markers': Markers('diag'),
+                              'home': None, 'wrapper': None, 'verdict': 'error',
+                              'reason': 'the diagnostic could not start the shell',
+                              'resize': None, 'startup_files': [], 'argv': [shell],
+                              'zdotdir': None, 'diagnostic_error': str(error)}
+                if facts is None and result.get('home'):
                     facts = startup_facts(shell, launch, result['home'], result['wrapper'])
+                verdict_class = classify(result)
                 rows = describe(result)
-                table.append((shell, launch, case, result['verdict'],
-                              result['reason'] or ''))
+                reason = result.get('reason') or ''
+                if (LAUNCH_MODELS[launch]['expectation'] == 'fail'
+                        and result['verdict'] == 'pass'):
+                    # Stated, not hidden: the control proved nothing on this
+                    # host, so the blockage is still unmeasured here.
+                    reason = 'negative control did not block on this host'
+                table.append((shell, launch, case, expected_summary(launch),
+                              observed_summary(result), verdict_class, reason))
                 extra = ''
                 if result['resize']:
                     extra = NL + 'resize: ' + repr(result['resize'])
                 details.append(
                     NL + '===== ' + shell + ' / ' + launch + ' / ' + case + ' =====' + NL
+                    + 'expected: ' + expected_summary(launch) + NL
+                    + 'observed: ' + observed_summary(result) + NL
+                    + 'class: ' + verdict_class + NL
+                    + 'argv: ' + repr(result.get('argv')) + ' ZDOTDIR='
+                    + repr(result.get('zdotdir')) + ' startup files: '
+                    + repr(result.get('startup_files')) + NL
                     + 'verdict: ' + result['verdict'] + ' ('
                     + (result['reason'] or 'ok') + ')' + NL
                     + NL.join(rows) + extra + NL + 'startup: ' + (facts or 'n/a')
@@ -530,16 +772,24 @@ def main():
                     if path:
                         shutil.rmtree(path, ignore_errors=True)
 
-    lines = ['shell | launch | case | verdict | reason', '--- | --- | --- | --- | ---']
+    header = ['shell | launch | case | expected | observed | class | reason',
+              '--- | --- | --- | --- | --- | --- | ---']
+    lines = model_preamble(launches) + [''] + header
     for row in table:
-        lines.append('{0} | {1} | {2} | {3} | {4}'.format(*row))
+        lines.append('{0} | {1} | {2} | {3} | {4} | {5} | {6}'.format(*row))
+    counts = {}
+    for row in table:
+        counts[row[5]] = counts.get(row[5], 0) + 1
+    lines.append('')
+    lines.append('classes: ' + ', '.join(
+        '{0}={1}'.format(name, counts[name]) for name in sorted(counts)))
     print(NL.join(lines))
     with open(args.out, 'w', encoding='utf-8') as handle:
         handle.write(NL.join(lines) + NL)
         handle.write(NL.join(details) + NL)
     print()
     print('timelines written to ' + args.out)
-    return 0 if all(row[3] == 'pass' for row in table) else 1
+    return 1 if any(row[5] in FAILING_CLASSES for row in table) else 0
 
 
 if __name__ == '__main__':

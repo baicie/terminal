@@ -3841,7 +3841,7 @@ mock 接受任意参数，且是普通函数不依赖 this。
 ### Issue #60: Linux 上 plain 环境的 zsh 三条用例超时 ⚠️ 未修复
 
 **严重程度**: 🟡 Important
-**状态**: ⚠️ 未修复（根因方向已反转）
+**状态**: 🟡 诊断缺陷已修复（Phase 9.0 P9.0-6）；Linux runner 复跑仍未闭合
 
 **实测矩阵**（真实 Linux runner）:
 
@@ -3858,8 +3858,48 @@ mock 接受任意参数，且是普通函数不依赖 this。
 **关键结论**: 应用环境下 zsh 四条全过，**plain 环境**三条超时。应用生成的 `.zshrc` / ZDOTDIR wrapper
 不是问题所在——方向与 Phase 8.8 的假设相反。
 
-**下一步**: 回答「为什么 plain zsh 的 ready marker 从不打印」。已知它只影响三条必须由行编辑器
-解释注入字节的用例（`ESC[A`、`TAB`、resize 后的重绘），而同机 bash 全过、`ctrl-c-interrupt` 也过。
+**根因（Phase 9.0 P9.0-6）：plain 变体一个启动文件都没给，这是诊断缺陷。**
+
+旧脚本的 plain 分支是 `zsh -i` + 全新空 HOME，什么都没写。Debian/Ubuntu 上缺 `.zshenv`
+就等于缺 `skip_global_compinit=1`，系统级 `/etc/zsh/zshrc` 于是跑 `compinit`，遇到
+insecure directories 会停下来提问，把之后注入的字节全吞掉——正好是三条必须由 ZLE 解释字节的
+用例（`ESC[A`、`TAB`、resize 后重绘），而 `ctrl-c-interrupt` 只需要 `stty echo`，所以它过。
+**脚本自己的注释就写着这条规则**（「生成 `.zshenv` 必须带 `skip_global_compinit=1`」），
+plain 变体没有遵守。它测的不是「没有集成 wrapper 的 zsh」，而是「没有任何启动文件的 zsh」。
+
+**三个启动模型**（`--launch app,plain,bare`）:
+
+| 模型 | 启动文件 | 期望 |
+| --- | --- | --- |
+| `app` | `shell_startup.rs` 生成的 ZDOTDIR wrapper（`.zshenv` 带 `skip_global_compinit=1`） | pass（产品门禁测的就是这个） |
+| `plain` | HOME 内最小 `.zshenv`（带 `skip_global_compinit=1`）+ `.zshrc` | pass（与 app 的差异只剩 wrapper） |
+| `bare` | 无（旧 plain 行为，保留为负面对照） | fail，且必须失败于系统 rc 阻塞 |
+
+**三类失败的区分**（表格新增 `expected | observed | class` 三列）:
+
+| class | 含义 | 判定 |
+| --- | --- | --- |
+| `EXPECTED_FAILURE` | 负面对照按设计失败 | 仅当 `bare` **确有**阻塞证据（newuser 向导 / compinit 提问文本） |
+| `DIAGNOSTIC_FAILURE` | 诊断自己坏了 | 启动/写入/子进程异常，或负面对照失败但无阻塞证据 |
+| `PRODUCT_FAILURE` | 产品真实失败 | `app` / `plain` 未通过 |
+
+`bare` 超时但没有阻塞证据时归 `DIAGNOSTIC_FAILURE`——这是「不把产品失败写成预期失败」的闸。
+退出码只对 `PRODUCT_FAILURE` / `DIAGNOSTIC_FAILURE` 非零；**产品门禁 `smoke:shell-probe:matrix` 一行未改**。
+
+**本机实测（macOS，zsh 5.9，四条用例 × 三个模型）**:
+
+    app   4/4 PASS    plain 4/4 PASS    bare 4/4 PASS(本机未阻塞)    classes: PASS=12
+
+`bare` 在 macOS 上也过 → 阻塞只发生在 Debian 系（macOS 的 `/etc/zshrc` 不跑那套 compinit）。
+脚本会显式写 `negative control did not block on this host`，不当证据用。
+
+**回归**: 新增 `scripts/diagnose-zsh-rc.test.mjs`（`verify.mjs` 自动收集 `scripts/*.test.mjs`），
+跑 `--self-test` 的 11 条分类断言；没有 `python3` 时 skip 而非记 PASS。
+
+**未闭合（BLOCKED_EXTERNAL）**: 本机没有 Linux runner，「plain 在 Debian 上补启动文件后转 PASS」
+无法在此证实。最小复现：`python3 scripts/diagnose-zsh-rc.py --shells zsh --launch plain`
+（Linux 上应 4/4 PASS，`bare` 应 3 条 EXPECTED_FAILURE + 1 条 PASS）。下一次
+`zsh-probe-diagnostic` 作业（ci.yml:128，本身 `continue-on-error`）会直接给出新的 class 列。
 
 **踩过的坑（务必不要再犯）**:
 - `[[ -o zle ]]` 不是可用判据（命令执行期间恒为 OFF）
@@ -3942,6 +3982,86 @@ Phase 8.9 的 version CAS 杜绝了**并发**丢失更新。但旧客户端若�
 作为配套证据，macOS 侧目前没有，先调大等于放弃观察。
 
 影响：证据 artifact 不完整（24 MB vs 37 MB）→ 证据门禁无法回填 → RC/Release 无法判定。
+
+---
+
+#### Phase 9.0 P9.0-6 实测结论（分段耗时 + 重复测量）
+
+**分段插桩**：`src-tauri/src/startup_trace.rs` 增加单调时钟阶段记录（`TERMINAL_STARTUP_STAGES_PATH`
+指定的 JSONL，未设置时只多一次 `OnceLock` 读），`ssh.rs` 在握手/认证/PTY/首字节/startup 写入
+逐点打点，前端在 `main.tsx`（`frontend-boot`）与 `terminal-launcher.ts`
+（`session-create-requested` / `session-created`）打点。所有时间戳同一 `Instant` 原点。
+
+**本机重复测量**（macOS，静默机器，debug smoke 二进制，5 次远程 + 3 次本地）:
+
+| 运行 | requestToReadyMs | spawnToReadyMs | firstStageSeenMs |
+| --- | --- | --- | --- |
+| remote-1（首跑，冷 webview） | 4544 | 4537 | 2555 |
+| remote-2 | 2601 | 2594 | 615 |
+| remote-3 | 2485 | 2478 | 610 |
+| remote-4 | 2497 | 2492 | 716 |
+| remote-5 | 2495 | 2488 | 715 |
+| local-1 | 1137 | 1131 | 613 |
+| local-2 | 1145 | 1140 | 721 |
+| local-3 | 1140 | 1134 | 713 |
+
+远程中位数 **2497 ms**（首跑冷 4544 ms），本地中位数 **1140 ms**，同轮差值 **1358 ms**。
+
+**远程分段耗时（remote-1，`at_ms` 相对前端第一段）**:
+
+| 阶段 | at_ms | 段耗时 |
+| --- | --- | --- |
+| `frontend-boot` | 0 | — |
+| `db-load-started` | 113 | 113 |
+| `db-pool-registered` | 151 | 38 |
+| `core-schema-finished` | 184 | 33 |
+| `ready`（DB 就绪） | 199 | 15 |
+| `session-create-requested` | 722 | **523**（React 挂载 + 恢复标签） |
+| `ssh-connect-start` | 723 | 1 |
+| `ssh-tcp-handshake-done` | 755 | **32**（TCP + 版本交换 + kex + 主机密钥） |
+| `ssh-auth-done` | 775 | **20**（公钥认证） |
+| `ssh-pty-ready` | 793 | **18**（channel + pty-req + shell 请求确认） |
+| `ssh-shell-first-output` | 934 | 141（等 shell 首字节） |
+| `ssh-startup-settle` | 936 | 2 |
+| `ssh-startup-write-begin` | 1939 | **1003**（固定 `SSH_STARTUP_SETTLE_DELAY` = 1000 ms） |
+| `ssh-startup-write-done` | 1943 | 4 |
+| `session-created` | 1993 | 50 |
+
+**结论**:
+
+1. SSH 三个协议段合计 **70 ms**（握手 32 + 认证 20 + PTY 18），占远程总耗时 **2.8%**。远程没有
+   「握手慢」的问题；远程比本地多出的 1358 ms 里，**1003 ms 是产品自己写死的等 1 秒**
+   （`SSH_STARTUP_SETTLE_DELAY`，为防止 zsh 丢掉 startup 首字节），其余是等 shell 首字节
+   141 ms、协议三段 70 ms、marker 往返。
+2. **Phase 8.9 的 PTY 插桩不是原因**：`pty_diagnostics` 只被 `session/local.rs` 调用，
+   `ssh.rs` 完全不经过它；且它整体 gated 于 `TERMINAL_PTY_DIAGNOSTICS_PATH`，
+   未设置时每 chunk 只是一次 `OnceLock` 读。远程路径上的 16 段实测里没有任何一段异常放大。
+3. **旧失败信息是误导的**（已修）：远程模式固定 `axProbe: 'none'`，所以 `readiness` 恒为 null、
+   `windowReady` 恒为 false——那两个字段在远程运行里从来不是证据。现在失败信息自动附
+   `last probe` 的 `axProbe` 与 `stages: ...; first stage at N ms`，无需改 workflow。
+   实测举例：用 `cargo build` 出来的（非 smoke）二进制在本机复现过一次同样的失败，
+   实际根因是 WebView 主框架加载失败（Unified Log `didFailProvisionalLoadForFrame ... code=-1004`，
+   即 `devUrl` localhost:1420 无人监听），旧消息把它报成 `terminalReady:false`。
+4. **本机 10 次远程测量中 8 次 PASS、2 次失败，且两次失败的 stages 都是 `none recorded; no stage ever arrived`。**
+   「一段都没有」把失败定死在**前端一行业务代码都没跑**这件事上：不是 SSH 慢，也不是握手慢，
+   而是 WebView 根本没有把页面跑起来（同样的失败在非 smoke 二进制上抓到了
+   `didFailProvisionalLoadForFrame code=-1004`，那就是「主框架加载失败」的同一个类别）。
+   两次失败都发生在一段 CPU 密集作业之后，符合「WebKit 内容进程起不来 / 被平台节流」这一类，
+   与 #59 记录过的「托管 runner 上窗口从不真正显示」是同一类现象。
+   这也正是旧消息最误导的地方：它把「前端没起来」和「SSH 慢」都报成 `terminalReady:false`。
+5. **本机无法复现「慢到 >10 s」**：通过的那 8 次最慢 4544 ms（首跑冷 webview）。所以 runner 上
+   是否还有第三种形态（真慢），仍要下一次 matrix 的 stages 输出（现在自动带出）才能定论；
+   本机可以排除「协议层慢」与「Phase 8.9 插桩」两种解释，并新增「WebView 未加载」这一已证实形态。
+
+**预算：不调整 10 s**。改为设置**分段回归阈值**（`STAGE_BUDGETS`，违反只记录不致命，
+门禁仍是 readiness 期限）：`frontend-boot→db-load-started` 2000 ms、
+`db-load-started→ready` 2000 ms、`session-create-requested→ssh-connect-start` 250 ms、
+`ssh-connect-start→ssh-tcp-handshake-done` 1500 ms、`ssh-tcp-handshake-done→ssh-auth-done` 1500 ms、
+`ssh-auth-done→ssh-pty-ready` 1500 ms、`ssh-pty-ready→ssh-shell-first-output` 2000 ms、
+`ssh-startup-settle→ssh-startup-write-begin` 1500 ms、`ssh-startup-write-done→session-created` 500 ms。
+每一条都取实测值的 1.5–10 倍余量：`ssh-startup-settle` 那条专门盯「有人再把 settle 秒数加大」。
+
+**仍未闭合**：runner 上 >10 s 的具体段位（需要在 CI 复跑，本机不具备该环境）。
 
 ---
 

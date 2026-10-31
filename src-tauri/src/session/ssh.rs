@@ -1249,6 +1249,10 @@ async fn run_terminal_output_reader(
                 };
                 if let Some(output) = output {
                     if !startup_output_ready.swap(true, Ordering::AcqRel) {
+                        crate::startup_trace::stage(
+                            "ssh-shell-first-output",
+                            "the remote shell produced its first bytes",
+                        );
                         startup_output_notify.notify_waiters();
                     }
                     let debug_text = String::from_utf8_lossy(&output.bytes);
@@ -1624,11 +1628,16 @@ impl SshSession {
             };
             let (target_handle, jump_handle, jump_shutdown) =
                 Self::connect_via_jump(config.clone(), target, jh, deadline).await?;
+            crate::startup_trace::stage("ssh-jump-auth-done", "target and jump host authenticated");
             raw_handle = target_handle;
             transport_handle = Some(jump_handle);
             transport_shutdown = jump_shutdown;
         } else {
-            let addr = format!("{}:{}", host, port);
+            // The staged timeline starts before the socket exists: a readiness
+            // deadline can only be attributed to a stage that was recorded.
+            let stage_target = format!("{}:{}", host, port);
+            crate::startup_trace::stage("ssh-connect-start", &stage_target);
+            let addr = stage_target.clone();
             let handler = client_handler(host, port, expected_host_key, agent_forwarding);
             let (mut direct, direct_shutdown) = connect_tcp_with_shutdown(
                 config,
@@ -1638,6 +1647,7 @@ impl SshSession {
                 "connect SSH server",
             )
             .await?;
+            crate::startup_trace::stage("ssh-tcp-handshake-done", &stage_target);
 
             let authentication = if use_agent {
                 enforce_authentication_deadline(
@@ -1671,6 +1681,7 @@ impl SshSession {
                 .await;
                 return Err(error);
             }
+            crate::startup_trace::stage("ssh-auth-done", &stage_target);
             raw_handle = direct;
             transport_handle = None;
             transport_shutdown = direct_shutdown;
@@ -1710,6 +1721,10 @@ impl SshSession {
             }
         };
 
+        // open_shell_channel returned, so the server confirmed the channel, the
+        // PTY request and the shell request: this is "PTY ready", the moment
+        // the remote shell can accept bytes.
+        crate::startup_trace::stage("ssh-pty-ready", "channel, pty-req and shell confirmed");
         let arc_handle = Arc::new(raw_handle);
         let transport_handle = transport_handle.map(Arc::new);
         let mut publication_guard = ConnectionPublicationGuard::new(
@@ -1804,6 +1819,18 @@ impl SshSession {
                     "SSH startup shell produced no initial output before the connection deadline"
                 );
             }
+            // This is the whole point of the stage: startup bytes are deferred
+            // until the shell has spoken, and a deferral to the connection
+            // deadline is indistinguishable from a slow handshake in a
+            // readiness timeout without this line.
+            crate::startup_trace::stage(
+                "ssh-startup-settle",
+                if startup_ready {
+                    "the remote shell produced output before the settle delay"
+                } else {
+                    "the remote shell produced no output; the write is deferred to the connection deadline"
+                },
+            );
             if tokio::time::timeout_at(deadline, tokio::time::sleep(SSH_STARTUP_SETTLE_DELAY))
                 .await
                 .is_err()
@@ -1811,12 +1838,24 @@ impl SshSession {
                 tracing::warn!("SSH startup shell did not settle before the connection deadline");
             }
             let data = command.as_bytes().to_vec();
+            crate::startup_trace::stage(
+                "ssh-startup-write-begin",
+                &format!("{} bytes", data.len()),
+            );
             if std::env::var_os("TERMINAL_DEBUG_SSH_PROFILE").is_some() {
                 tracing::info!(bytes = data.len(), "SSH startup write begin");
             }
             let write_result = tokio::time::timeout_at(deadline, writer.write(data)).await;
             match write_result {
                 Ok(Ok(())) => {
+                    // The startup command is what writes the readiness marker in
+                    // the cold-start harness, so its completion is the last
+                    // stage the product owns: everything after it belongs to
+                    // the shell that runs the command.
+                    crate::startup_trace::stage(
+                        "ssh-startup-write-done",
+                        "the startup command reached the pty",
+                    );
                     if std::env::var_os("TERMINAL_DEBUG_SSH_PROFILE").is_some() {
                         tracing::info!("SSH startup write complete");
                     }
@@ -1829,8 +1868,20 @@ impl SshSession {
                     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                     let _ = tokio::time::timeout_at(deadline, writer.write(b"\n".to_vec())).await;
                 }
-                Ok(Err(error)) => tracing::warn!(%error, "SSH startup command failed"),
-                Err(_) => tracing::warn!("SSH startup command skipped at connection deadline"),
+                Ok(Err(error)) => {
+                    crate::startup_trace::stage(
+                        "ssh-startup-write-failed",
+                        &format!("the startup write failed: {error}"),
+                    );
+                    tracing::warn!(%error, "SSH startup command failed");
+                }
+                Err(_) => {
+                    crate::startup_trace::stage(
+                        "ssh-startup-write-skipped",
+                        "the connection deadline expired before the startup write",
+                    );
+                    tracing::warn!("SSH startup command skipped at connection deadline");
+                }
             }
         }
 
