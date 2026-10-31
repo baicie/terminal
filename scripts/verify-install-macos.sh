@@ -91,14 +91,37 @@ DATA_DIR="$HOME/Library/Application Support/$EXPECTED_ID"
 DATA_BEFORE=0
 if [[ -d "$DATA_DIR" ]]; then DATA_BEFORE=1; fi
 launch_and_check "first launch"
-HAVE_DATA=0
-if [[ -d "$DATA_DIR" ]]; then HAVE_DATA=1; fi
+
+# The database file is the evidence, not the directory: a directory can exist
+# and hold nothing, and an earlier version of this script accepted exactly that.
+# The app writes the database when the frontend boots, which took longer than
+# the 5s liveness window on the runner, so poll while a second instance runs.
+# Sleeping first and then asserting would be a sleep dressed up as a check.
+DB="$DATA_DIR/terminal.db"
+DB_SHA=""
+DB_BYTES=""
+"$BIN" >"$WORK/db-launch.log" 2>&1 &
+DB_PID=$!
+for _ in $(seq 1 60); do
+  if [[ -f "$DB" ]]; then
+    header="$(head -c 15 "$DB" || true)"
+    [[ "$header" == "SQLite format 3" ]] || fail "terminal.db does not start with a SQLite header"
+    DB_SHA="$(shasum -a 256 "$DB" | awk '{print $1}')"
+    DB_BYTES="$(wc -c <"$DB" | tr -d ' ')"
+    break
+  fi
+  sleep 1
+done
+kill "$DB_PID" 2>/dev/null || true
+wait "$DB_PID" 2>/dev/null || true
+DB_SHORT=""
+if [[ -n "$DB_SHA" ]]; then DB_SHORT="$(printf %s "$DB_SHA" | cut -c1-16)"; fi
 if [[ "$DATA_BEFORE" == 1 ]]; then
   skip "app data dir creation - ~/Library/Application Support/$EXPECTED_ID already existed before this run, so its creation was not observed"
-elif [[ "$HAVE_DATA" == 1 ]]; then
-  pass "app data dir created by the first launch: ~/Library/Application Support/$EXPECTED_ID"
+elif [[ -n "$DB_SHA" ]]; then
+  pass "first launch initialised the database: terminal.db $DB_BYTES bytes sha256 $DB_SHORT..."
 else
-  skip "app data dir creation - no ~/Library/Application Support/$EXPECTED_ID within 5s of the first launch"
+  skip "database initialisation - no terminal.db inside $DATA_DIR after 60s of a live launch, so there is no content to verify"
 fi
 
 step "overwrite install (reinstall over the existing bundle)"
@@ -109,11 +132,13 @@ DITTO_ID="$("$PLIST_BUDDY" -c 'Print :CFBundleIdentifier' "$INSTALLED/Contents/I
 pass "overwrite install kept the bundle and its identity"
 launch_and_check "launch after overwrite install"
 
-if [[ "$HAVE_DATA" == 1 ]]; then
-  [[ -d "$DATA_DIR" ]] || fail "app data dir vanished after the overwrite install"
-  pass "data retention: app data dir survived the overwrite install"
+if [[ -n "$DB_SHA" ]]; then
+  [[ -f "$DB" ]] || fail "terminal.db vanished after the overwrite install"
+  DB_AFTER="$(shasum -a 256 "$DB" | awk '{print $1}')"
+  [[ "$DB_AFTER" == "$DB_SHA" ]] || fail "terminal.db changed across the overwrite install: $DB_SHA -> $DB_AFTER"
+  pass "data retention: terminal.db is byte-identical across the overwrite install (sha256 $DB_SHORT...)"
 else
-  skip "overwrite-install data retention - the app created no ~/Library/Application Support/$EXPECTED_ID within 5s, so there was nothing to preserve"
+  skip "overwrite-install data retention - no database existed before the overwrite, so there was nothing to preserve"
 fi
 
 step "unmount"
