@@ -30,6 +30,12 @@ async function establishConnection(): Promise<Database> {
     db = database
     return database
   } catch (error) {
+    // The app has no log plugin and no error bridge to Rust, so a failure here
+    // is invisible to anything reading the process output. Console output does
+    // reach the webview log, which the macOS install-verification harness now
+    // collects - that is what turns "the tables were never created" into an
+    // actual reason.
+    console.error('[db] schema setup failed, the connection was not cached', error)
     db = null
     initPromise = null
     throw error
