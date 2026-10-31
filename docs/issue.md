@@ -3901,3 +3901,21 @@ Phase 8.9 的 version CAS 杜绝了**并发**丢失更新。但旧客户端若�
 `packages/team-server/src/__tests__/pg/client-sync-e2e.pg-spec.ts` 顶部有 `// @ts-nocheck`。
 原因：前端源码只经 vitest alias 可达，server 的 tsconfig 不认识 `@/`。
 这是该文件唯一的类型豁免——**类型检查在这一个文件上是失效的**，如实记录。
+
+### Issue #65: macOS 矩阵的远程冷启动测量连续失败，阻断证据采集 (Critical, 未修复)
+
+连续两次 matrix 运行（41210924239、41211466016）在 macOS 作业第 10 步失败：
+
+    terminal readiness did not complete within 10000 ms
+    (last probe: {"readiness":null,"readinessTarget":"terminal","windowReady":false,"terminalReady":false})
+
+同一次运行里本地冷启动是成功的：ok=true, requestToReadyMs=3965, terminalReady=true。
+所以不是二进制坏、也不是应用完全起不来——问题只在远程 SSH 冷启动路径上。
+
+候选原因（未验证）：Phase 8.9 对 session/local.rs 的插桩增加启动开销，把远程路径挤出 10 秒预算
+（时间点吻合：本轮之前 macOS 矩阵一直通过）；或 runner 变慢；或远程 SSH 服务端启动有问题。
+
+为什么没有直接调大超时：调大可能掩盖真实性能回归。Linux 侧调大到 30 秒时有「记录实际耗时」
+作为配套证据，macOS 侧目前没有，先调大等于放弃观察。
+
+影响：证据 artifact 不完整（24 MB vs 37 MB）→ 证据门禁无法回填 → RC/Release 无法判定。
