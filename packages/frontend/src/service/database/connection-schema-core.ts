@@ -193,11 +193,17 @@ export async function ensurePreMigrationSnapshot(
 export async function initializeCoreSchema(
   database: SqliteConnection,
 ): Promise<void> {
-  const pending = await pendingColumnMigrations(database)
-  if (pending.length > 0) await ensurePreMigrationSnapshot(pending)
-
+  // Create the tables before asking which migrations are pending: the question
+  // "is this column missing" cannot be answered before the tables it asks about
+  // exist, and CREATE TABLE IF NOT EXISTS is idempotent and non-destructive.
+  // Asking first meant an existing database could reach the snapshot step with
+  // half its tables missing, so a snapshot failure left a partially built
+  // schema instead of a complete one.
   for (const statement of schemaStatements.slice(0, 15))
     await database.execute(statement)
+
+  const pending = await pendingColumnMigrations(database)
+  if (pending.length > 0) await ensurePreMigrationSnapshot(pending)
   for (const migration of columnMigrations) {
     try {
       await database.execute(migration.sql)

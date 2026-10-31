@@ -3965,3 +3965,26 @@ Phase 8.9 的 version CAS 杜绝了**并发**丢失更新。但旧客户端若�
   不应触发快照。所以 #65 另有原因，不能与 #59 合并归因。
 
 先前我把两者写成「时间顺序完全吻合」，那是过度推断。**#65 需要独立排查。**
+
+---
+
+### 关于 #59 的一次尝试与撤销（记录判断过程）
+
+曾尝试把 `CREATE TABLE IF NOT EXISTS` 移到 `pendingColumnMigrations` 之前，理由是：
+「这一列缺不缺」在表存在之前无法回答，且建表是幂等的非破坏性操作。
+
+**该改动已撤销。** 原因：
+
+- 它打破了 Task 4 明确记录的既有不变式——**快照失败时一条语句都不发**。
+  三条测试（`snapshots the database before it runs a single schema statement`、
+  `aborts without a single statement when the snapshot cannot be taken`、
+  `refuses to migrate when the backend reports no snapshot path`）正是在守这条。
+- 更重要的是：**我没有证据表明重排能让快照成功**。它只改变失败后的现场
+  （半成品 schema 变成完整 schema），不改变失败本身。
+
+用一个有文档记录的不变式，去换一个未经证实的修复，不划算。
+改测试让它通过更不行——那正是本阶段反复强调要避免的事。
+
+**#59 的正确修法**：让 `backup_database_before_migration` 本身在真实 Tauri 数据库上成功，
+而不是绕开失败。首要候选仍是 `sqlite_pool` 在 `DbInstances` 中查不到 `DB_KEY`。
+需要运行期错误才能定论。
