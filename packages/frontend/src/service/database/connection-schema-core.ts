@@ -147,8 +147,13 @@ function quoteSqlIdentifier(name: string): string {
 export async function pendingColumnMigrations(
   database: SqliteConnection,
 ): Promise<ColumnMigration[]> {
-  const select = database.select
-  if (!select) return []
+  if (!database.select) return []
+  // Bind, do not copy. The plugin's select is a class method that reads
+  // this.path; detaching it from the instance loses the receiver and the call
+  // fails with "undefined is not an object (evaluating 'this.path')" - which
+  // is what actually blocked database initialisation on every runner (#59),
+  // and what the unit tests never saw because their mock is a plain function.
+  const select = database.select.bind(database)
 
   const pending: ColumnMigration[] = []
   for (const table of new Set(columnMigrations.map(migration => migration.table))) {
