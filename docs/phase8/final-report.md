@@ -285,3 +285,101 @@
 
 这个更正本身值得记下来：我写「NOT_RUN」时并没有去看那台 job 的日志，只是凭「该 job 之前失败过」的推断，
 而那轮它其实是绿的。**推断被写进报告，就成了看起来像事实的错误。**
+
+---
+
+# Phase 8.9 追加（Final Consistency & RC Gate）
+
+基线 `b4c463d`。任务 T1–T7。**未合并、未打 tag、未发 Release。**
+
+## T1 同步分页正确性 — COMPLETE
+
+两个反例**先在旧代码上复现**，再证明修复后通过：
+
+| 反例 | 旧代码实测 | 后果 |
+| --- | --- | --- |
+| txid 与 seq 逆序 | 只交付 **201/400** | **199 条永久漏同步** |
+| 单事务 250 条 | 去重后 **200/250** | 原样重投，永不前进 |
+
+修复：复合游标 `2.<bound>.<txid>.<seq>`（定宽补零使字典序==数值序），冻结水位 + 键集分页，
+排序与边界同源。旧单数字游标映射为 `txid >= n`（旧窗口超集，只重投不跳过）。**未调大 PAGE_SIZE。**
+
+## T2 严格版本契约 — COMPLETE
+
+改前：允许 `baseVersion > version`；最终 CAS 用毫秒 `updatedAt` → 同一毫秒两次 UPDATE **都成功**（实测 2 个 winner，丢失更新）。
+改后：唯一 CAS 为 `where { version }`，`updatedAt` 不参与任何最终判定。future / stale / 负数 / 缺失 / ≥1e12 旧时间戳一律 conflict。
+`V8` 实测同毫秒内 4 次 UPDATE 版本严格递增 10601→10604，证明毫秒时间戳无法充当次序判据。
+
+## T3 客户端同步 E2E — COMPLETE
+
+七处缺口闭合，其中三处是实质性的：
+- 推送恒发 `CREATE` → 真实 UPDATE 永远上不去；现无 version 发 CREATE、有 version 发 UPDATE + baseVersion
+- 游标在整轮末尾才写 → 现逐页循环，**每页落库后才推进**
+- 无条件 `ON CONFLICT DO UPDATE` → 现带版本/脏标记守卫，本地编辑不被拉取覆盖，改由 push 变成可见冲突
+
+真实 PostgreSQL 端到端：创建→A推→B拉→B改→A改→冲突→REMOTE解决→收敛；删游标全量重同步后行集合/内容/version 完全一致。
+
+## T4 SQLite 与 Vault 失效路径 — COMPLETE
+
+- `catch {}` 按**错误消息**分类（不看共用的 SQLITE_ERROR 码）
+- 升级前 `VACUUM INTO` 快照 + integrity/列清单/行数校验；失败则一条语句都不发
+- **发现未被要求的真实泄漏**：`run_import` 的 panic 分支会 unwind 丢掉 `PoolConnection`，连接带着未关闭事务回池 → 已用 `catch_unwind` + `ImportError::Panicked` 修复
+- Vault 创建在文件自身取内核建议锁，检查与替换成为同一临界区（A/B 反证：去锁后 4 个创建全部互相覆盖）
+
+## T5 三平台数据保留 — PARTIAL
+
+改为**内容级**验证（改前只验证目录存在与文件哈希）：写入 hosts/settings/workspaces/vault，覆盖安装后逐字段读回。
+关键设计：预置 `terminalThemeLightMigrated=false`，应用启动会把它写回 `true`——**应用没读到数据库就必然失败**。
+
+- **Windows**：完整通过（静默安装/卸载项/首启存活/数据目录创建/覆盖安装/**数据保留**/静默卸载）
+- **Linux**：deb 解包与 AppImage 均通过，数据保留通过；桌面级安装 NOT_RUN（runner 无桌面会话）
+- **macOS**：**未通过** —— 见下
+
+### macOS 的开放问题（本轮 CI 实测）
+
+    [FAIL] the app created table "settings" / "workspaces" / "workspace_layouts" / "ssh_keys"
+    [FAIL] the app never finished creating its schema inside .../terminal.db
+
+在 macOS 托管 runner 上，应用创建了 `terminal.db` 但**没有建完整个 schema**。
+因此 macOS 的**内容级数据保留仍未被验证**，且这不再是「观察窗口太短」，而是 schema 初始化本身没完成。
+
+**我没有为了让 CI 变绿而放松这条断言。** 它抓到的现象是真的；需要单独排查
+（候选方向：未签名开发版从临时目录启动时，前端 boot 是否被 Gatekeeper/WebKit 限制在初始化 schema 之前）。
+
+## T6 Linux zsh — 未修复，但根因方向已反转
+
+诊断矩阵（真实 Linux runner）：
+
+    zsh | app   | readline-history | PASS
+    zsh | app   | readline-tab     | PASS
+    zsh | app   | pty-resize       | PASS
+    zsh | app   | ctrl-c-interrupt | PASS
+    zsh | plain | readline-history | TIMEOUT  ready marker never printed
+    zsh | plain | readline-tab     | TIMEOUT  no verdict before the deadline
+    zsh | plain | pty-resize       | TIMEOUT  ready marker never printed
+    zsh | plain | ctrl-c-interrupt | PASS
+    bash | 全部 8 条                | PASS
+
+**方向与此前假设相反**：应用环境下 zsh 四条全过，纯 shell 环境下三条超时。
+说明应用的 ZDOTDIR wrapper 不是问题所在。失败只出现在非应用环境的 zsh + 三条必须由行编辑器
+解释注入字节的用例上，而同机 bash 全过。
+
+### 本轮修掉的两个诊断脚本缺陷（都只在 Linux 上暴露）
+
+1. `_read_loop` 的 `EBADF` 未放行 → 每条变体炸一个线程（正常 teardown 被当成失败）
+2. `os.stat(None)` 抛 `TypeError` 而非 `OSError`，原有守卫拦不住 → 进程直接退出
+3. 重写时丢掉 `skip_global_compinit=1` → 系统级 compinit 又阻塞 shell，**混杂因素回归**
+
+第 3 条尤其值得记：Phase 8.8 修过一次，重写时又丢了，矩阵因此一度无效。
+
+### 诊断作业的定位
+
+它连续三轮 exit 1，查明后是**如实报告矩阵结果**而非崩溃。已改为 `continue-on-error: true`：
+它是证据采集器，产品门禁在 `real-machine-matrix.yml` 的 shell-probe 步骤。
+把证据采集器当门禁会让 CI 长期红在一个已知结论上，反而训练大家忽略它。
+
+## 待补
+
+- `docs/issue.md` 与 `docs/project.md` 的实现状态更新
+- 证据重采（源码冻结后）
+- 四个 READY 的最终判定
