@@ -6,7 +6,7 @@
 | --- | --- |
 | 分支 | feat/phase8-rc-hardening |
 | 基线 | main 301cf04e7ef8b0ed6bf70e623384ce1fbf8c8e6c |
-| 最终 HEAD | 见本节末尾（推送后回填） |
+| 最终 HEAD | b8d85f7227b6d4472a840884cdeb5c52e32854e1 |
 | 工作树 | 干净（仅会话既存的未跟踪 .workbuddy/） |
 | Draft PR | https://github.com/baicie/terminal/pull/5 |
 | 合并 / tag / Release | **全部未做** |
@@ -76,7 +76,7 @@
 | --- | --- |
 | Linux stale-output 修复 | ✅ **VERIFIED on real runner**（ok=true stage=complete 两次） |
 | Linux zsh 三条 shell probe | ❌ BLOCKED_EXTERNAL（需 Linux 环境二分：禁用 rc / 最小 rc / bindkey -v） |
-| 6 份实机证据 | 见第 6.1 节 |
+| 6 份实机证据 | ✅ **已用当前源码重采**：run 41176128211，manifest 指纹 a6cd9881…，debugSha 41cfa67d…，releaseSha 08ea8801…，7 份原始日志入库 docs/verification/raw/41176128211/ |
 | macOS Gatekeeper 下载拦截与拖入 Applications | **NOT_RUN** |
 | Windows SmartScreen / MOTW / 安装卸载 | **NOT_RUN** |
 | Linux AppImage 沙箱 / dpkg 依赖 / glibc 下限 | **NOT_RUN** |
@@ -90,7 +90,9 @@
 **P0（必须在 RC 前解决）**
 
 1. **三平台安装/升级/数据保留全部未验证**。这是 RC 的硬阻塞项，CI 全绿不能替代。
-2. **6 份实机证据需用当前源码重采**。源码在 Phase 8 多次变更导致指纹漂移，evidence gate 当前为红。
+
+> 原本列在此的「6 份实机证据需重采」**已闭合**：run 41176128211 产出后经 fetch-verification-evidence 安装，
+> check-verification-evidence => passed for 6 current evidence file(s)，且 pnpm verify all exit 0。
 
 **P1**
 
@@ -139,7 +141,7 @@
 | 判定 | 结果 | 理由 |
 | --- | --- | --- |
 | **READY_FOR_REVIEW** | **是** | Draft PR 已创建，CI 8/8 通过，改动均可审查，文档齐备。 |
-| **READY_FOR_RC** | **否** | 硬阻塞：6 份实机证据未用当前源码重采（evidence gate 红）；三平台安装/升级/数据保留全部 NOT_RUN。RC 需要至少能证明「装得上、升得动、数据不丢」。 |
+| **READY_FOR_RC** | **否** | 唯一硬阻塞变为**三平台安装/升级/数据保留全部 NOT_RUN**——RC 需要至少能证明「装得上、升得动、数据不丢」，而 CI 全绿不能替代这一点。证据门禁已转绿，不再是阻塞项。 |
 | **READY_FOR_RELEASE** | **否** | 在 RC 基础上还需：真实签名链路（Apple 公证 / Windows Authenticode）从未配置、产品身份商标问题未决策、Linux zsh 三条未闭合、无人工物理键盘/IME 验收。 |
 
 **三者不能互相代替**：PR 可审查只代表代码可读可评，不代表能装能用，更不代表可发布。
