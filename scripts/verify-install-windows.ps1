@@ -276,7 +276,7 @@ $proc = Start-AppLogged 'launch-second'
 if ((Invoke-HarnessCode 'wait' '--db' $dbPath '--mode' 'app-write' '--token' $token '--timeout' '180') -ne 0) {
   Stop-AppLogged $proc
   Show-AppLog 'launch-second'
-  Fail 'the app never persisted terminalThemeLightMigrated=true into the seeded settings row (the seeded data was not read back through the app's own path)'
+  Fail 'the app never persisted terminalThemeLightMigrated=true into the seeded settings row (the seeded data was not read back through the application own path)'
 }
 Stop-AppLogged $proc
 $proc = $null
