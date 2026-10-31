@@ -183,3 +183,77 @@
 **未解决的**：应用里恰好三条依赖 ZLE 的用例为何超时。若真是 compinit 阻塞，七条都该挂；只挂三条说明另有原因，候选方向是应用 PTY 环境的 HOME 权限、ZDOTDIR 注入时序与 shell 就绪检测的交互。需要带应用内插桩的下一次 matrix。
 
 **我写坏并删除的两版指标**（拒绝用坏指标冒充结论）：`[[ -o zle ]]`（命令执行期间恒为 OFF）、PTY 内发送 `ESC [ A` 测 history（在能通过的 macOS 上同样报 false）。
+
+## D. Vault UI 清理与身份迁移设计 — COMPLETE
+
+不可达性用**程序化依赖图 BFS** 复核（入口 `main.tsx` + `router/index.tsx`，解析 `@/`、相对路径、
+`import`/`export-from`/动态 `import()`/`require()`）：可达 484 个文件，`view/vaults` 下 **0 个**。
+
+- 删除 9 个旧容器文件（闭环互引、全英文硬编码、与现代表零交叉）
+- 保留 5 个现代表，这是唯一带 i18n 骨架且 `useVaultsView` 承载真实 create/unlock 语义的实现
+- 通过 `router/nav-config.tsx` 接入 `/vaults`（该文件是路由与侧栏的**共用数据源**，`buildRoutes()` 由它自动生成，改一处两边生效）
+- 新增 18×3 三语 key；键盘（Tab/Enter/Esc）；错误态**对齐 Task B 新增的两个 Rust 变体**：
+  `uninitialized` 提示「上次创建未完成」并允许重新创建；`corrupt` 提示「已原样保留供人工恢复」且 **不提供任何破坏性按钮**
+
+`docs/phase8/identity-migration.md` 180 行（未实施）：旧配置发现、DB 与 Vault 备份/校验/迁移/失败回滚、
+重复启动幂等、跨平台安装身份后果。**明确声明本阶段不做商标清查、不得宣称新品牌已完成合规审查。**
+关键事实：`vault.json` 在 `dirs::config_dir()/terminal/vault.json`，**不随 identifier 走**，必须单列处理。
+
+## E. RC 自动化验收 — PARTIAL（安装链已真机验证，签名与交互项 NOT_RUN）
+
+### E0. 一个被纠正的前提
+
+三个 Tauri 作业原本最后一步是 `tauri build --no-bundle`，**根本不产出安装包**。
+补了打包步骤（`tauri bundle` 复用已编译二进制）后才谈得上安装验证。
+
+### E1. 三平台安装链（真实 runner 结果，`aaa8efe` 的 CI 9/9）
+
+**Windows —— 完整通过**：
+
+    [PASS] NSIS 静默安装
+    [PASS] 注册表卸载项找到（HKCU\...\Uninstall\Termius）
+    [PASS] 首次启动 5 秒存活
+    [PASS] 数据目录被首次启动创建
+    [PASS] 覆盖安装保留了安装目录与二进制
+    [PASS] 覆盖安装后再启动 5 秒存活
+    [PASS] 数据保留：数据目录在覆盖安装后仍在
+    [PASS] 静默卸载删除了安装目录
+    [NOT_RUN] SmartScreen / MOTW（需人工判断）
+    [NOT_RUN] Authenticode 签名（CI 无证书）
+
+**macOS —— 安装与身份通过，数据保留未验证**：
+
+    [PASS] dmg 存在、挂载成功
+    [PASS] CFBundleIdentifier = com.baicie.termius（身份未被意外改变）
+    [PASS] 二进制启动 5 秒存活、覆盖安装保留 bundle、再启动存活、dmg 卸载
+    [SKIPPED] app data dir creation —— 5 秒内未创建数据目录
+    [SKIPPED] overwrite-install data retention —— 没有可保留的内容
+    [NOT_RUN] Gatekeeper 弹窗（阻塞式 GUI 安全对话框，需人工点击）
+    [NOT_RUN] Developer ID 签名与公证（CI 无签名身份）
+
+> **必须区分**：Windows 的数据保留**被真实验证**；macOS 的数据保留**是 SKIPPED，不是 PASS**。
+
+**Linux —— 未取到本轮日志**（该 job 在更早的 zsh 处失败），标记 NOT_RUN。
+
+### E2. 数据库升级兼容（真实 SQLite 文件，零 mock）
+
+4 条：`VACUUM INTO` 快照可重开且行数一致 / 旧库升级保留全部行并回填默认值（迁移连跑两次幂等）/
+**旧客户端读新库不报错不写坏** / 迁移中断后原库可读可重跑。
+
+其中「旧客户端读新库」正是 Phase 8 P8.7 审计里标记为「只是代码推论、从未验证」的那一项，现已用真实文件验证。
+
+### E3. 证据日志敏感性审查（21 个文件，.gz 已解压扫描）
+
+无 token / 私钥 / 密码 / 真实用户名 / hostname；IP 全是 `127.0.0.1`；只有 `/Users/runner`（CI 临时账户）
+与夹具标记 `/home/REMOTE_COLD_MARKER`。**结论：无需脱敏，不删除任何证据。**
+
+### E4. 本轮 CI 红-绿过程暴露的四个缺陷（全部由真机自动化发现）
+
+| # | 失败 job | 真因 |
+| --- | --- | --- |
+| 1 | Frontend quality | bundle budget 超限——Vault UI 从死代码变成实际打包 |
+| 2 | Tauri build (macos) | 我在 P8.7 加的 `licenseFile` 让 DMG 带 EULA，`hdiutil attach` 非交互必取消 |
+| 3 | Rust quality | Task B 的 `num_idle()` 断言与 sqlx 的 `after_release` 时序竞态，本地稳定、CI 偶发 |
+| 4 | Tauri build (windows) | 脚本猜 `Termius.exe`，实际二进制是 `terminal.exe`，且错误信息指向了错误的检查对象 |
+
+**没有一个是功能逻辑错误，全部是「本地绿 ≠ CI 绿」的盲区。** 这也是本轮最实在的收获。
