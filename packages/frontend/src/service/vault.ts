@@ -12,17 +12,26 @@ export interface VaultEntry {
  * `invalid_password` is decided at unlock time (the vault carries a verifier),
  * and `already_exists` comes from the exclusive create: creating never
  * overwrites, so a second create has to be surfaced, not retried.
+ *
+ * `uninitialized` and `corrupt` describe the file itself, decided by
+ * `read_vault_file` before any password is checked: a zero-length placeholder
+ * left by an interrupted create (recoverable by creating again) and content the
+ * format cannot parse (kept byte for byte for manual recovery).
  */
 export type VaultErrorKind =
   | 'invalid_password'
   | 'already_exists'
   | 'vault_locked'
+  | 'uninitialized'
+  | 'corrupt'
   | 'unknown'
 
 const KNOWN_VAULT_ERROR_KINDS = new Set<string>([
   'invalid_password',
   'already_exists',
   'vault_locked',
+  'uninitialized',
+  'corrupt',
 ])
 
 /** A vault command rejection with the backend error kind preserved. */

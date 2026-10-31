@@ -42,4 +42,25 @@ export default {
     "Un coffre existe déjà et ne sera pas écrasé. Déverrouillez-le avec son mot de passe principal.",
   'vaults.vaultCreateFailed': 'Échec de la création du coffre',
   "vaults.vaultUnlockFailed": "Échec du déverrouillage du coffre",
+  'vaults.loadFailed': 'Échec du chargement des entrées du coffre',
+  'vaults.saveFailed': "Échec de l'enregistrement de l'entrée",
+  'vaults.deleteFailed': "Échec de la suppression de l'entrée",
+  'vaults.lockFailed': 'Échec du verrouillage du coffre',
+  'vaults.uninitialized':
+    "La dernière création du coffre ne s'est pas terminée. Recréez le coffre pour continuer.",
+  'vaults.corrupt':
+    "Le fichier du coffre est corrompu et a été conservé octet par octet. Restaurez-le manuellement.",
+  'vaults.corruptHint':
+    "Cet écran ne propose aucune action de suppression ou d'écrasement, rien n'est détruit ici.",
+  'vaults.dismiss': 'Fermer',
+  'vaults.entryCountOne': '{{total}} entrée',
+  'vaults.entryCountMany': '{{total}} entrées',
+  'vaults.keyLabel': 'Clé',
+  'vaults.deleteEntry': "Supprimer l'entrée",
+  'vaults.valueLabel': 'Valeur',
+  'vaults.descriptionLabel': 'Description',
+  'vaults.showValue': 'Afficher la valeur',
+  'vaults.hideValue': 'Masquer la valeur',
+  'vaults.copyValue': 'Copier la valeur',
+  'vaults.togglePasswordVisibility': 'Afficher ou masquer le mot de passe',
 }
