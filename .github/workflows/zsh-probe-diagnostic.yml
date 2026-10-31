@@ -1,0 +1,54 @@
+name: zsh probe diagnostic
+
+# Manual only. Reproduces the shell side of the Linux first-terminal matrix so
+# the zsh timeouts can be diagnosed from real evidence instead of a guess.
+# See docs/phase8/reliability.md section D for what is already known.
+on:
+  workflow_dispatch:
+    inputs:
+      shells:
+        description: Comma separated shells to probe
+        required: false
+        default: zsh,bash
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: zsh rc matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shells
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsh bash
+
+      - name: Record shell versions
+        run: |
+          echo "zsh: $(zsh --version)"
+          echo "bash: $(bash --version | head -1)"
+          uname -a
+          echo "TERM=${TERM:-unset}"
+
+      - name: Run the rc matrix and capture transcripts
+        run: |
+          mkdir -p diagnostic-out
+          python3 scripts/diagnose-zsh-rc.py \
+            --shells "${{ inputs.shells }}" \
+            --out diagnostic-out/zsh-diag.log
+
+      - name: Show the transcript
+        if: always()
+        run: cat diagnostic-out/zsh-diag.log || true
+
+      - name: Upload transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zsh-probe-diagnostic
+          path: diagnostic-out/
+          if-no-files-found: warn
