@@ -3988,3 +3988,43 @@ Phase 8.9 的 version CAS 杜绝了**并发**丢失更新。但旧客户端若�
 **#59 的正确修法**：让 `backup_database_before_migration` 本身在真实 Tauri 数据库上成功，
 而不是绕开失败。首要候选仍是 `sqlite_pool` 在 `DbInstances` 中查不到 `DB_KEY`。
 需要运行期错误才能定论。
+
+---
+
+### #59 根因定位（Phase 8.9，拿到应用输出后）
+
+补上 `fail()` 里打印应用输出后，macOS CI 给出了决定性事实。应用日志全文：
+
+    INFO terminal_lib: tauri app starting up                     (15:38:00)
+    INFO terminal_lib::input_probe: input_probe_config invoked    (15:38:03)
+    INFO terminal_lib::window_cmd: close-to-tray flag updated enabled=false  (15:38:04, 两次)
+
+**没有别的了。没有数据库相关日志，也没有任何错误。**
+
+配合脚本的另一条输出：
+
+    [PASS] database appeared ... after 10 probe(s)
+    [FAIL] the app created table "hosts" ...（一张表都没有）
+
+得出的结论：
+
+- `tauri-plugin-sql` 的 `Database.load()` **跑过了**（否则不会创建 terminal.db 文件）
+- 前端也在执行（能调用 `input_probe_config`、`window_cmd`）
+- 但 `initializeCoreSchema` **没有被调用**——否则至少会建出第一批表，或抛出可见错误
+- 日志里**没有任何异常**，说明不是「抛错被吞」，而是**那条代码路径根本没走到**
+
+**因此 #59 不是数据库层的问题，是启动编排的问题**：前端的数据库初始化挂在某个
+「窗口可见 / 水合完成」之后的条件上，而托管 runner 上窗口从不真正显示，
+于是初始化永不发生。
+
+**这条同时解释了 #65**：`terminalReady` 要求应用进入可交互状态，而水合不发生，
+就绪事件自然不会来。两者是同一个根因的两种表现——我此前说「#65 不能用 #59 的假设
+解释」，那是针对**快照**假设说的；现在换成了**水合**假设，两者可以统一。
+
+**下一步（可执行）**:
+1. 在 `packages/frontend/src` 里找到调用 `initializeCoreSchema` / `hydrateFromDatabase` 的入口，
+   确认它挂在哪个生命周期条件上（例如 `useEffect` 依赖窗口尺寸、`requestAnimationFrame`、
+   `document.visibilityState`、或 webview 的 ready 事件）
+2. 找一个不依赖「窗口可见」的触发点，或显式在 webview 加载完成时初始化数据库
+3. 这不只是 CI 问题：真实用户若在窗口最小化/后台启动应用，同样可能不初始化数据库。
+   若是这样，这是一条**产品缺陷**，不是测试环境问题。
