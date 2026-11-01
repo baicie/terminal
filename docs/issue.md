@@ -3871,9 +3871,22 @@ plain 变体没有遵守。它测的不是「没有集成 wrapper 的 zsh」，�
 
 | 模型 | 启动文件 | 期望 |
 | --- | --- | --- |
-| `app` | `shell_startup.rs` 生成的 ZDOTDIR wrapper（`.zshenv` 带 `skip_global_compinit=1`） | pass（产品门禁测的就是这个） |
+| `app` | 诊断脚本自己写的 ZDOTDIR wrapper（`.zshenv` 带 `skip_global_compinit=1`） | pass |
 | `plain` | HOME 内最小 `.zshenv`（带 `skip_global_compinit=1`）+ `.zshrc` | pass（与 app 的差异只剩 wrapper） |
 | `bare` | 无（旧 plain 行为，保留为负面对照） | fail，且必须失败于系统 rc 阻塞 |
+
+> ⚠️ **上表 `app` 行原先的描述是错的，2026-11-01 更正。**
+> 原文写的是「`shell_startup.rs` 生成的 ZDOTDIR wrapper（`.zshenv` 带
+> `skip_global_compinit=1`）」，并据此声称「产品门禁测的就是这个」。
+> **产品代码从来没有写过 `skip_global_compinit`**——`zsh_wrapper_files()`
+> （`src-tauri/src/session/shell_startup.rs:63-78`）的 `.zshenv` 只有一行
+> forward 到用户自己的 `.zshenv`；全仓库 `src-tauri/` 下 `skip_global_compinit`
+> 的出现次数为 0。那一行只存在于诊断脚本 `diagnose-zsh-rc.py:179`。
+>
+> 所以 `app` 变体**不是**产品路径的忠实复制，它比产品多了一行防护。这正好解释了
+> 为什么 `app` 在真实 Linux runner 上 4/4 PASS，而产品门禁
+> `smoke:shell-probe:matrix` 的同样三条仍然超时——两者测的不是同一个东西。
+> 完整机制与取证方案见 `docs/phase9/linux-zsh-probe-diagnosis.md`。
 
 **三类失败的区分**（表格新增 `expected | observed | class` 三列）:
 
@@ -3905,7 +3918,57 @@ plain 变体没有遵守。它测的不是「没有集成 wrapper 的 zsh」，�
 - `[[ -o zle ]]` 不是可用判据（命令执行期间恒为 OFF）
 - DECCKM `ESC[?1h/?1l` 不是可用判据（部分环境不出现）
 - 可靠判据是 bracketed paste `ESC[?2004h/l`，且必须在**通过的用例**上先验证一次
-- 生成 `.zshenv` 必须带 `skip_global_compinit=1`，否则系统级 compinit 会阻塞 shell 吞掉输入
+- **诊断脚本**生成 `.zshenv` 必须带 `skip_global_compinit=1`。注意这句话过去被误读成
+  「产品 wrapper 也带」——产品 wrapper 从来没带（见上文 `app` 行的更正）
+
+---
+
+### Issue #60 续（Phase 9.1）：机制定位到「compinit 的 `read -q` 只吃一个字符」
+
+**状态**: 🟡 机制已有代码证明 + 本机实验证明；**修复仍需 Linux runner 验证**
+**详细报告**: `docs/phase9/linux-zsh-probe-diagnosis.md`
+
+**产品门禁失败的三条**（`real-machine-matrix.yml:252`、`pty_diagnostics.rs:4`
+两处独立记录）就是 `readline-history`、`readline-tab`、`pty-resize`。
+
+**机制**（代码证明 + 实验证明，两段独立）:
+
+1. 门禁夹具把 `HOME` 指向一个全新空 `mkdtemp`（`run-terminal-shell-probe.mjs:403`），
+   里面一个启动文件都没有；产品 wrapper 的 `.zshenv` 只是 `source $HOME/.zshenv`，
+   **产品侧从未写过 `skip_global_compinit`**（全仓库 `src-tauri` 零命中）。
+   于是 Debian 的 `/etc/zsh/zshrc` 照常跑 `compinit`。
+2. `compinit` 用 **`read -q`** 问那个 insecure directories 问题
+   （`/usr/share/zsh/*/functions/compinit:460`）。`read -q` 的语义是
+   **只读一个字符**（`man zshbuiltins`）。所以 shell 不会死，它吃掉探针紧接着键入的
+   **第一个字节**，然后继续正常工作。
+3. 探针是**盲打**的：`connect()` 一拿到 PTY 就把 state 置为 `connected`
+   （`terminal-session-io.ts:123-127`），`automation-root.tsx:255-262` 立刻发 setup 命令，
+   不等任何 prompt。所以那个字节必然来自 setup 命令的开头。
+
+**为什么恰好是这三条**（本机实验，`scripts/experiments/zsh-swallowed-byte-experiment.sh`）:
+
+| 用例 | setup 首 token | 丢首字符后 |
+| --- | --- | --- |
+| `readline-history` / `pty-resize` | `printf` | → `rintf` not found，**ready 永不打印** |
+| `readline-tab` | `SHELL_PROBE_DIR=` | → 变量名变了，`$SHELL_PROBE_DIR` 为空，fixture 不落地，**ready 打印了但判不出** |
+| `cat-eof` / `ctrl-c-interrupt` | `stty echo` | → `tty echo` 报个错，其余照跑，**PASS** |
+| `vim-edit` / `nano-edit` | `SHELL_PROBE_DIR=` | → 编辑器自己会建文件，**PASS** |
+
+集合 3/3 对上产品门禁记录；逐条错误文本 4/4 对上 `diagnose-zsh-rc.py` 的 `plain` 四行，
+**包括 `readline-tab` 的文本与另外两条不同**这一点——此前没有解释能说明这个差异。
+
+**归因：门禁夹具缺陷，不是产品缺陷**（代码证明）。`compaudit` 审计 `$fpath` 和
+`.zcompdump` 属主，**不审计 `ZDOTDIR` 目录本身**（`compaudit:117-126`），所以产品把
+wrapper 放在 `/tmp` 下 0700 目录不是 insecure 判定来源；产品 wrapper 写满四个启动文件，
+newuser 向导也不会触发。触发条件是「HOME 完全为空」，那是夹具造的。
+
+**改动**（3 个文件，未 commit）: 夹具向 HOME 播种 `.zshenv`（带 `skip_global_compinit=1`）
++ `.zshrc`，走产品 wrapper 真实的 forwarding 链；`pty_diagnostics.rs` 新增
+`zsh-compinit-prompt` / `zsh-newuser-prompt` 两个 marker，让下次失败自己说出原因。
+
+**仍未闭合**: 本机 macOS 无法复现 Linux（`/etc/zshrc` 不跑 compinit），
+且沙箱禁 PTY（`/dev/ptmx` EPERM）与 Docker，**无法在此证明修复生效**。
+取证命令见诊断报告第 6 节。
 
 ---
 

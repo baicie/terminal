@@ -40,6 +40,52 @@ export function createShellProbeNonce(prefix = 'shell') {
   return `${prefix}_${randomBytes(12).toString('hex')}`
 }
 
+/**
+ * Startup files seeded into the probe's synthetic `HOME` before the app runs.
+ *
+ * The probe points `HOME` at a fresh `mkdtemp` directory, which on a Debian
+ * runner is the one thing a real account never is: empty. Two system-level
+ * prompts key off exactly that, and either one parks zsh waiting for an answer
+ * while the probe is already typing.
+ *
+ * `skip_global_compinit` is zsh's documented switch for the system-wide rc.
+ * Debian's `/etc/zsh/zshrc` calls `compinit`, which stops on
+ * "insecure directories ... continue [y] or abort compinit [n]?" and answers it
+ * with `read -q` -- a single character. That one character is taken off the
+ * front of whatever the probe typed next, so the shell survives but the first
+ * token of the setup command does not.
+ *
+ * The flag has to be set before `/etc/zsh/zshrc` runs, and `.zshenv` is the
+ * only startup file that gets there first. The product's own ZDOTDIR wrapper
+ * forwards `.zshenv` to `$HOME/.zshenv`, so seeding it here reaches the shell
+ * through the product's real injection path rather than around it. macOS is
+ * unaffected either way: its `/etc/zshrc` never calls `compinit`, which is why
+ * the same gate has always been green there.
+ *
+ * `.zshrc` is seeded alongside it because `zsh-newuser-install` triggers when
+ * *no* startup file exists in `$ZDOTDIR` / `$HOME`; the wrapper already writes
+ * all four names, so this only matters for a non-wrapper launch.
+ */
+export const PROBE_HOME_STARTUP_FILES = {
+  '.zshenv': 'skip_global_compinit=1\n',
+  '.zshrc': "PS1='probe$ '\n",
+}
+
+/**
+ * Writes the startup files the probe's synthetic HOME needs.
+ *
+ * Seeding this is not cosmetic: without it the measured subject is a zsh
+ * blocked in the system rc, not the product's shell integration.
+ */
+export async function seedProbeHome(runDirectory, dependencies) {
+  for (const [name, contents] of Object.entries(PROBE_HOME_STARTUP_FILES)) {
+    await dependencies.writeFile(path.join(runDirectory, name), contents, {
+      encoding: 'utf8',
+      mode: 0o600,
+    })
+  }
+}
+
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..')
 const CASE_TRACE = {
   'cat-eof': ['ready', 'pass'],
@@ -404,6 +450,9 @@ export async function runShellProbe({
     path.join(dependencies.tempDirectory, 'terminal-shell-probe-'),
   )
   const resultPath = path.join(runDirectory, 'result.json')
+  // The synthetic HOME is empty until this runs, and an empty HOME is what
+  // lets Debian's system rc park zsh on a question mid-probe.
+  await seedProbeHome(runDirectory, dependencies)
   const nonce = createShellProbeNonce()
   // The SSH transport reuses the smoke matrix's loopback sshd fixture rather
   // than a bespoke one, so the interaction cases run against exactly the same

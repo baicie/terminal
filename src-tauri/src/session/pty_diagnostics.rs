@@ -44,7 +44,16 @@ const KEYS_OFF: &[u8] = b"\x1b[?1l";
 /// Probe trace markers the frontend waits for, plus the prompt sequences the
 /// shell integration installs. Their arrival on the PTY is the only evidence
 /// that separates production from delivery.
-const MARKERS: [(&str, &[u8]); 9] = [
+///
+/// The last two are not probe markers but system-level questions that park the
+/// shell waiting for an answer. They are matched because a shell stopped on one
+/// of them looks exactly like a slow shell from the outside: the deadline is
+/// all the gate reports, and the timeline is the only place the real cause can
+/// be read. Debian's `/etc/zsh/zshrc` runs `compinit`, which stops on
+/// "insecure directories" and consumes the answer with `read -q` -- one
+/// character, taken off the front of whatever was typed next. `zsh-newuser-install`
+/// is the same failure for an account with no startup file at all.
+const MARKERS: [(&str, &[u8]); 11] = [
     ("READY", b"READY__"),
     ("STEP", b"STEP__"),
     ("PASS", b"PASS__"),
@@ -54,6 +63,8 @@ const MARKERS: [(&str, &[u8]); 9] = [
     ("osc133-B", b"\x1b]133;B"),
     ("osc133-D", b"\x1b]133;D"),
     ("osc7-cwd", b"\x1b]7;"),
+    ("zsh-compinit-prompt", b"abort compinit"),
+    ("zsh-newuser-prompt", b"zsh-newuser-install"),
 ];
 
 fn preview(data: &[u8]) -> String {
@@ -613,6 +624,32 @@ mod tests {
             vec!["PASS"]
         );
         assert!(markers_in(b"plain output").is_empty());
+    }
+
+    /// A shell parked on the system rc's question looks exactly like a slow
+    /// shell from the outside: the probe only sees a deadline. These two
+    /// prompts are the documented reasons a Debian zsh stops before ZLE, so
+    /// the trace has to name them rather than leaving the next reader to
+    /// guess at a timeout.
+    #[test]
+    fn the_system_rc_prompts_that_swallow_input_are_named_in_the_trace() {
+        assert_eq!(
+            markers_in(
+                b"zsh compinit: insecure directories, run compaudit for list.\r\n\
+                  Ignore insecure directories and continue [y] or abort compinit [n]? "
+            ),
+            vec!["zsh-compinit-prompt"],
+            "compinit answers this with `read -q`, which eats one typed byte"
+        );
+        assert_eq!(
+            markers_in(b"This is the Z Shell configuration function for new users,\r\nzsh-newuser-install."),
+            vec!["zsh-newuser-prompt"],
+            "an empty HOME sends zsh into the wizard instead of to a prompt"
+        );
+        // The ordinary completion banner is not a block, so it must not be
+        // reported as one: a false positive here would send the next
+        // diagnosis after a prompt that never appeared.
+        assert!(markers_in(b"compinit: initialization complete").is_empty());
     }
 
     #[test]
