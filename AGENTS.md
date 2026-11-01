@@ -527,8 +527,9 @@ pnpm add <package-name>
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
 - ✅ 各栈门禁全绿（数字出处：`docs/phase9/final-report.md` 第 3 节「测试基数」，2026-11-01）：前端 **150 个测试文件 / 1347 项**、Rust **301 单测 + 3 集成测试**、Team Server 单测 **117 项**、真实 PostgreSQL **51 项**、门禁脚本 **264 项**、**558** 个生产文件行数门禁、bundle budget。以上「项」数为测试框架实跑用例数，若需复核请实跑对应套件
-- ✅ 6 份实机证据已重采：由 real-machine-matrix run `41231265959`（sha `030fda4`）的 macOS job 产出，经 `fetch-verification-evidence.mjs` 安装。manifest 指纹 `2f62fabd…`、debugSha `12d908e6…`、releaseSha `f6e323be…`，原始日志在 `docs/verification/raw/41231265959/`。`check-verification-evidence.mjs` => passed for 6 current evidence file(s)
-- 🔴 **依赖安全未闭合**：`src-tauri/` 下 `cargo audit --json` 实测 **27 条** RustSec 已知漏洞。按 `cargo tree` 可达性划分，**21 条在正常构建图内（normal dependency）**，6 条不在构建图（quinn-proto ×5、rkyv ×1，仅 Cargo.lock 残留，未被标记为豁免）。构建图内有 **6 条 CVSS 基准分 7.5**：quick-xml ×4、russh、russh-cryptovec（后两者位于核心 SSH 链路）。逐条台账见 `docs/phase9-1/security-advisories.md`。
+- 🔴 **6 份实机证据已失效，必须重采**：`src-tauri/Cargo.lock` 与 `src-tauri/src/session/pty_diagnostics.rs` 都在 `FINGERPRINT_PATHS` 内，改动后证据指纹 `2f62fabd…` 与当前源码指纹 `b9904fcb…` 不匹配，`check-verification-evidence.mjs` 报 7 个问题。证据须由 real-machine-matrix 在真实 runner 上重采。**不得修改证据文件让门禁变绿。** 上一轮记录（run `41231265959`，sha `030fda4`，原始日志在 `docs/verification/raw/41231265959/`）描述的是旧源码
+- 🔴 **依赖安全未闭合**：`src-tauri/` 下 `cargo audit` 实测 **27 条** RustSec 已知漏洞（原始快照见 `docs/phase9-1/security-advisories.json`）。按 `cargo tree` 可达性划分，**21 条在正常构建图内**，6 条不在（quinn-proto ×5、rkyv ×1，仅 Cargo.lock 残留）。构建图内 **6 条 CVSS 基准分 7.5**：quick-xml ×4、russh、russh-cryptovec（后两者位于核心 SSH 链路）。
+  **已修 2 条**（quick-xml 0.39.2 → 0.42.0，经 plist 1.10.1）；**未修 25 条**，卡点为离线缓存缺归档、父 crate semver 钉死、上游无修复版本等，逐条见 `docs/phase9-1/dependency-upgrade-result.md`。台账 `docs/phase9-1/security-advisories.md`，ignore 理由 `src-tauri/deny.toml`
   **不得在任何交付材料中声称「生产依赖审计为 0 个已知漏洞」**（此前本文件的该条声明已作废，详见 `docs/phase9/dependency-audit.md`）
 - ✅ 558 个生产源码文件均满足行数限制
 - ✅ GitHub Actions CI `41233703193`（sha `3fb006c`）：**9/9 success**；上一轮 `41230214611`（sha `030fda4`）同为 9/9 success。覆盖前端、Team Server、Team Server 容器、Rust、源码规模门禁与 macOS/Windows/Linux 三平台 Tauri 编译（含安装链与数据保留）。其中 `zsh probe diagnostic` 配置了 `continue-on-error: true`，它的 success **不构成产品门禁**
@@ -1002,6 +1003,6 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-11-01 (撤回「生产依赖审计为 0 个已知漏洞」的错误声明——`cargo audit` 实测 27 条，详见 `docs/phase9-1/security-advisories.md`；测试基数对齐 `docs/phase9/final-report.md`；CI 与证据 run id 对齐 `docs/phase9-1/baseline.md`；补记实机矩阵 Linux 产品门禁仍失败)_
+_文档更新时间: 2026-11-01 (依赖升级修掉 2/27 条并记录其余 25 条的卡点；Linux zsh P0 定位到 compinit/read -q 机制但闭合为 NOT_RUN；许可证清单已取得，135 个生产依赖零 copyleft；前端漏洞审计仍 NOT_RUN 且更正了归因——是沙箱 403 而非镜像不支持；6 份实机证据因源码指纹变化失效需重采；撤回「生产依赖审计为 0 个已知漏洞」的错误声明；测试基数对齐 `docs/phase9/final-report.md`；补记实机矩阵 Linux 产品门禁仍失败)_
 
 _历史更新 2026-10-30: (六份实机证据改由 GitHub macOS runner 产出，本机不再弹窗采集，门禁绑定 CI manifest；终端配色预设扩到深 16 / 浅 10 并加对比度门禁；浅色默认主题 solarized-light → github-light；本地终端 Shell Integration 改 ZDOTDIR / --rcfile 静默注入，不再回显脚本；release 为 macOS 分架构 DMG（aarch64 / x86_64 各一份），Nightly 通道已移除；人工验收清单见 docs/manual-acceptance-checklist.md)_

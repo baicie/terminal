@@ -80,13 +80,24 @@ frontend stages 为空）。本轮需要重复测量取得失败率，不能因�
 | 阶段 | 优先级 | 状态 |
 | --- | --- | --- |
 | B1 漏洞台账 | 高（其他安全工作的前提） | **完成**（scripts/build-security-ledger.mjs + security-advisories.md/json） |
-| A1 Linux zsh 产品门禁 | P0 | 待真实 Linux runner 取证 |
+| A1 Linux zsh 产品门禁 | P0 | **机制已定位，闭合 NOT_RUN**：根因见 `docs/phase9/linux-zsh-probe-diagnosis.md`（compinit 停在 insecure directories，`read -q` 只吃一个字符）。本机无 Linux runner，需重跑矩阵确认 |
 | A2 macOS 冷启动 | 高 | 待多次重复测量 |
 | B0 堆叠安全分支 | 高 | 待建 |
-| B2 russh/TLS 升级 | 高 | 待评估 |
-| B4 前端供应链 | 中 | 待接入可用审计端点 |
-| B5 安全 CI 门禁 | 中 | 待 B1/B4 产出可靠输出后接入 |
+| B2 russh/TLS 升级 | 高 | **部分完成**：quick-xml 0.39.2 → 0.42.0（经 plist 1.10.1）修掉 2 条；russh / russh-cryptovec 未修，见 `docs/phase9-1/dependency-upgrade-result.md` |
+| B4 前端供应链 | 中 | **许可证已取得**（135 个生产依赖零 copyleft）；**漏洞审计仍 NOT_RUN**（沙箱拒绝全部 9 个外部域名）。见 `docs/phase9-1/frontend-dependency-audit.md` |
+| B5 安全 CI 门禁 | 中 | **已接入**：ci.yml `cargo-audit-diagnostic`（continue-on-error，被 `needs` 依赖：无）。未在真实 runner 上运行过 |
 | C1 身份迁移准备 | 中 | 待盘点 |
+
+### 5.1 本轮新增的阻塞事实
+
+**6 份实机证据已失效，且这是门禁的正确行为。** `src-tauri/Cargo.lock` 与
+`src-tauri/src/session/pty_diagnostics.rs` 都在 `FINGERPRINT_PATHS` 内，
+本轮改动后 `check-verification-evidence.mjs` 报 7 个问题：
+manifest 与 6 份证据记录的指纹 `2f62fabd…` 与当前源码指纹
+`b9904fcb…` 不再匹配。
+
+证据必须由 real-machine-matrix 在真实 runner 上重采（本机 `gh` 网络被拒）。
+**不得修改证据文件来让门禁变绿**——那会把「测量于旧源码」伪装成「测量于当前源码」。
 
 ## 6. 证据分类约定（沿用 Phase 9.0）
 
