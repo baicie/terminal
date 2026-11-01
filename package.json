@@ -43,6 +43,7 @@
     "smoke:raw-input": "node scripts/run-raw-input-probe.mjs",
     "smoke:shell-probe": "node scripts/run-terminal-shell-probe.mjs",
     "smoke:shell-probe:matrix": "node scripts/run-terminal-shell-probe-matrix.mjs",
+    "security:ledger": "node scripts/build-security-ledger.mjs",
     "icon:source": "python3 scripts/generate-icon.py",
     "icon": "pnpm icon:source && pnpm tauri icon src-tauri/icons/icon-source.png --output src-tauri/icons"
   },

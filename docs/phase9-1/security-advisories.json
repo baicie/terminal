@@ -1,6 +1,55 @@
 {
   "generatedFrom": "cargo audit --json",
+  "inputSnapshot": "/tmp/audit91.json",
+  "scoring": "CVSS v3.1 base score, recomputed from the published vector by scripts/cvss.mjs",
   "count": 27,
+  "summary": {
+    "total": 27,
+    "inBuildGraph": {
+      "total": 21,
+      "unscored": 7,
+      "bySeverity": {
+        "Critical": 1,
+        "High": 7,
+        "Medium": 4,
+        "Low": 2,
+        "None": 0
+      },
+      "crates": {
+        "crypto-bigint": 2,
+        "ctutils": 1,
+        "h2": 1,
+        "quick-xml": 4,
+        "rsa": 2,
+        "russh": 1,
+        "russh-cryptovec": 1,
+        "rustls": 4,
+        "rustls-webpki": 1,
+        "webpki-root-certs": 1,
+        "zip": 3
+      }
+    },
+    "absent": {
+      "total": 6,
+      "unscored": 4,
+      "bySeverity": {
+        "Critical": 0,
+        "High": 2,
+        "Medium": 0,
+        "Low": 0,
+        "None": 0
+      },
+      "crates": {
+        "quinn-proto": 5,
+        "rkyv": 1
+      }
+    },
+    "unscored": 11,
+    "byReach": {
+      "normal dependency": 21,
+      "absent-from-build-graph": 6
+    }
+  },
   "rows": [
     {
       "id": "RUSTSEC-2026-0387",
@@ -8,7 +57,8 @@
       "crate": "crypto-bigint",
       "version": "0.5.5",
       "cvss": "(not published)",
-      "severity": "(not published)",
+      "score": null,
+      "severity": null,
       "reach": "normal dependency"
     },
     {
@@ -17,7 +67,8 @@
       "crate": "crypto-bigint",
       "version": "0.7.0-rc.28",
       "cvss": "(not published)",
-      "severity": "(not published)",
+      "score": null,
+      "severity": null,
       "reach": "normal dependency"
     },
     {
@@ -26,7 +77,8 @@
       "crate": "ctutils",
       "version": "0.4.2",
       "cvss": "(not published)",
-      "severity": "(not published)",
+      "score": null,
+      "severity": null,
       "reach": "normal dependency"
     },
     {
@@ -35,7 +87,8 @@
       "crate": "h2",
       "version": "0.4.13",
       "cvss": "(not published)",
-      "severity": "(not published)",
+      "score": null,
+      "severity": null,
       "reach": "normal dependency"
     },
     {
@@ -44,7 +97,8 @@
       "crate": "quick-xml",
       "version": "0.37.5",
       "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
-      "severity": "(not published)",
+      "score": 7.5,
+      "severity": "High",
       "reach": "normal dependency"
     },
     {
@@ -53,7 +107,8 @@
       "crate": "quick-xml",
       "version": "0.37.5",
       "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
-      "severity": "(not published)",
+      "score": 7.5,
+      "severity": "High",
       "reach": "normal dependency"
     },
     {
@@ -62,7 +117,8 @@
       "crate": "quick-xml",
       "version": "0.39.2",
       "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
-      "severity": "(not published)",
+      "score": 7.5,
+      "severity": "High",
       "reach": "normal dependency"
     },
     {
@@ -71,7 +127,8 @@
       "crate": "quick-xml",
       "version": "0.39.2",
       "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
-      "severity": "(not published)",
+      "score": 7.5,
+      "severity": "High",
       "reach": "normal dependency"
     },
     {
@@ -80,7 +137,8 @@
       "crate": "quinn-proto",
       "version": "0.11.14",
       "cvss": "(not published)",
-      "severity": "(not published)",
+      "score": null,
+      "severity": null,
       "reach": "absent-from-build-graph"
     },
     {
@@ -89,7 +147,8 @@
       "crate": "quinn-proto",
       "version": "0.11.14",
       "cvss": "(not published)",
-      "severity": "(not published)",
+      "score": null,
+      "severity": null,
       "reach": "absent-from-build-graph"
     },
     {
@@ -98,7 +157,8 @@
       "crate": "quinn-proto",
       "version": "0.11.14",
       "cvss": "(not published)",
-      "severity": "(not published)",
+      "score": null,
+      "severity": null,
       "reach": "absent-from-build-graph"
     },
     {
@@ -107,7 +167,8 @@
       "crate": "quinn-proto",
       "version": "0.11.14",
       "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
-      "severity": "(not published)",
+      "score": 7.5,
+      "severity": "High",
       "reach": "absent-from-build-graph"
     },
     {
@@ -116,7 +177,8 @@
       "crate": "quinn-proto",
       "version": "0.11.14",
       "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
-      "severity": "(not published)",
+      "score": 7.5,
+      "severity": "High",
       "reach": "absent-from-build-graph"
     },
     {
@@ -125,7 +187,8 @@
       "crate": "rkyv",
       "version": "0.7.46",
       "cvss": "(not published)",
-      "severity": "(not published)",
+      "score": null,
+      "severity": null,
       "reach": "absent-from-build-graph"
     },
     {
@@ -134,7 +197,8 @@
       "crate": "rsa",
       "version": "0.10.0-rc.16",
       "cvss": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N",
-      "severity": "(not published)",
+      "score": 5.9,
+      "severity": "Medium",
       "reach": "normal dependency"
     },
     {
@@ -143,7 +207,8 @@
       "crate": "rsa",
       "version": "0.9.10",
       "cvss": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N",
-      "severity": "(not published)",
+      "score": 5.9,
+      "severity": "Medium",
       "reach": "normal dependency"
     },
     {
@@ -152,7 +217,8 @@
       "crate": "russh",
       "version": "0.60.2",
       "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
-      "severity": "(not published)",
+      "score": 7.5,
+      "severity": "High",
       "reach": "normal dependency"
     },
     {
@@ -161,7 +227,8 @@
       "crate": "russh-cryptovec",
       "version": "0.59.0",
       "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
-      "severity": "(not published)",
+      "score": 7.5,
+      "severity": "High",
       "reach": "normal dependency"
     },
     {
@@ -170,7 +237,8 @@
       "crate": "rustls",
       "version": "0.23.40",
       "cvss": "CVSS:3.1/AV:L/AC:H/PR:H/UI:R/S:U/C:H/I:N/A:N",
-      "severity": "(not published)",
+      "score": 4,
+      "severity": "Medium",
       "reach": "normal dependency"
     },
     {
@@ -179,7 +247,8 @@
       "crate": "rustls",
       "version": "0.23.40",
       "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
-      "severity": "(not published)",
+      "score": 5.3,
+      "severity": "Medium",
       "reach": "normal dependency"
     },
     {
@@ -188,7 +257,8 @@
       "crate": "rustls",
       "version": "0.23.40",
       "cvss": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:L",
-      "severity": "(not published)",
+      "score": 3.7,
+      "severity": "Low",
       "reach": "normal dependency"
     },
     {
@@ -197,7 +267,8 @@
       "crate": "rustls",
       "version": "0.23.40",
       "cvss": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
-      "severity": "(not published)",
+      "score": 3.7,
+      "severity": "Low",
       "reach": "normal dependency"
     },
     {
@@ -206,7 +277,8 @@
       "crate": "rustls-webpki",
       "version": "0.103.13",
       "cvss": "(not published)",
-      "severity": "(not published)",
+      "score": null,
+      "severity": null,
       "reach": "normal dependency"
     },
     {
@@ -215,7 +287,8 @@
       "crate": "webpki-root-certs",
       "version": "1.0.7",
       "cvss": "(not published)",
-      "severity": "(not published)",
+      "score": null,
+      "severity": null,
       "reach": "normal dependency"
     },
     {
@@ -224,7 +297,8 @@
       "crate": "zip",
       "version": "4.6.1",
       "cvss": "CVSS:3.1/AV:L/AC:L/PR:L/UI:R/S:U/C:H/I:H/A:H",
-      "severity": "(not published)",
+      "score": 7.3,
+      "severity": "High",
       "reach": "normal dependency"
     },
     {
@@ -233,7 +307,8 @@
       "crate": "zip",
       "version": "4.6.1",
       "cvss": "(not published)",
-      "severity": "(not published)",
+      "score": null,
+      "severity": null,
       "reach": "normal dependency"
     },
     {
@@ -242,7 +317,8 @@
       "crate": "zip",
       "version": "4.6.1",
       "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:H",
-      "severity": "(not published)",
+      "score": 9.1,
+      "severity": "Critical",
       "reach": "normal dependency"
     }
   ]

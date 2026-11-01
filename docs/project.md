@@ -654,7 +654,7 @@ src-tauri/
 | HTTP 安全 | 生产 CORS fail-closed、Helmet、全局及注册限流、Swagger 生产默认关闭、1MB body limit、DTO 与路径/查询验证 |
 | 运行可靠性 | 数据库不可用时 health/readiness 返回 503；Compose 使用 readiness；启用 shutdown hooks；删除与审计 tombstone 在同一事务中提交；离线队列并发 claim 使用 token 租约并恢复陈旧任务 |
 | 错误边界 | API Key 数据库故障保留 5xx；同步响应、离线队列和服务日志不返回或记录原始 Prisma 错误 |
-| 供应链 | 锁定已修补的传递依赖；`pnpm audit --prod --audit-level high` 报告 0 个已知漏洞 |
+| 供应链 | 锁定已修补的传递依赖；⚠️ `pnpm audit --prod --audit-level high` **未测量（NOT_RUN）**：镜像源 `registry.npmmirror.com` 不实现 audit 端点（`ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS`），取不到结果，不得记为 0 漏洞（见 `docs/phase9/dependency-audit.md`）。🔴 Rust 侧 `cargo audit` 实测 27 条已知漏洞（21 条在构建图内，含 6 条基准分 7.5），台账见 `docs/phase9-1/security-advisories.md` |
 | 远程存储 | 修正 S3 SigV4 scope、canonical URI/query、string-to-sign、列表 URL 与 UTF-8 编码；固定向量测试通过，真实 S3 仍待外部验证 |
 | 高级脚本 | timeout 秒值正确转换并传递，`retry_count` 生效；interval/once/cron 非法配置 fail-closed，防重入并捕获异步异常 |
 | Tauri 打包 | 注册 dialog/fs 插件，仅开放选定文本文件读写；CSP 允许用户配置的 HTTP(S) Team endpoint，并有静态配置测试 |

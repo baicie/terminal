@@ -1,0 +1,89 @@
+# cargo-deny configuration for the Tauri backend.
+#
+# Scope: only the `advisories` check is wired into CI (as a *diagnostic* job,
+# see .github/workflows/ci.yml -> cargo-audit-diagnostic). `bans`, `licenses`
+# and `sources` are deliberately left at their defaults and are NOT gates; do
+# not assume this file has vetted them.
+#
+# What the ignore list below is for
+# ---------------------------------
+# `cargo audit` reports 27 advisories against Cargo.lock. 21 of those are on
+# crates that are really in the build graph: those are defects to fix, and NONE
+# of them is ignored here. The remaining 6 are on crates that appear in
+# Cargo.lock but are not in the build graph at all -- they are lock-file residue
+# from optional dependencies that no enabled feature turns on.
+#
+# Before this file existed those 6 sat silently in the same count as the 21,
+# which made the number look worse than it is and gave no record of *why* they
+# were being skipped. Each ignore below carries the command another person can
+# re-run to disprove it.
+#
+# These are NOT permanent exemptions. cargo-deny 0.20.2 accepts only `id` and
+# `reason` in an ignore entry (`expiration` is rejected by the deserializer), so
+# the re-review trigger lives inside each `reason` string. Honour it: an ignore
+# whose trigger has fired is a finding, not a decision.
+#
+# Reachability method (identical for every entry below):
+#
+#   cd src-tauri
+#   cargo tree --invert <crate> --target all --offline
+#   cargo tree --invert <crate> --target all --all-features --offline
+#
+# Both must print `warning: nothing to print.` for the ignore to stand. The
+# `--target all` flag matters: a Windows-only dependency is invisible from a
+# macOS host without it, and an ignore justified on a single host is worthless.
+# `--all-features` matters because CI builds with `--all-features`, so a crate
+# that is unreachable by default but reachable under all-features would be a
+# real exposure.
+
+[advisories]
+version = 2
+
+ignore = [
+  # --- quinn-proto: 5 advisories, not in the build graph -------------------
+  #
+  # Residual chain: quinn-proto <- quinn <- reqwest. `reqwest 0.13.3` declares
+  # quinn as an optional dependency behind its `http3` feature
+  # (`http3 = ["rustls", "dep:h3", "dep:h3-quinn", "dep:quinn", ...]`). We never
+  # enable `http3`, so Cargo records quinn/quinn-proto in Cargo.lock but never
+  # builds them. We reach reqwest only through tauri and
+  # tauri-plugin-updater, neither of which asks for HTTP/3.
+  #
+  # Verified unreachable: `cargo tree --invert quinn-proto --target all` and the
+  # same command with `--all-features` both return `nothing to print`. The
+  # intermediate `cargo tree --invert quinn --target all` also returns
+  # `nothing to print`, so the whole QUIC subtree is absent, not just the leaf.
+  # Control: `cargo tree --invert russh --target all` under the same flags does
+  # print a chain, which shows the flags are not simply suppressing output.
+  #
+  # Re-review trigger: whenever reqwest's feature set changes, whenever
+  # tauri-plugin-updater or tauri bumps its reqwest requirement, or if anything
+  # in this workspace ever enables an HTTP/3 or QUIC feature. Enabling `http3`
+  # anywhere makes all five of these live exposures immediately.
+  { id = "RUSTSEC-2026-0185", reason = "quinn-proto 0.11.14 is lock-file residue, not in the build graph: quinn is an optional reqwest dep behind the unused `http3` feature. Verified by `cargo tree --invert quinn-proto --target all` and `--target all --all-features`, both `nothing to print`. Re-review when reqwest features change, when tauri/tauri-plugin-updater bumps reqwest, or if any crate here enables http3/QUIC." },
+  { id = "RUSTSEC-2026-0338", reason = "quinn-proto 0.11.14 is lock-file residue, not in the build graph: quinn is an optional reqwest dep behind the unused `http3` feature. Verified by `cargo tree --invert quinn-proto --target all` and `--target all --all-features`, both `nothing to print`. Re-review when reqwest features change, when tauri/tauri-plugin-updater bumps reqwest, or if any crate here enables http3/QUIC." },
+  { id = "RUSTSEC-2026-0339", reason = "quinn-proto 0.11.14 is lock-file residue, not in the build graph: quinn is an optional reqwest dep behind the unused `http3` feature. Verified by `cargo tree --invert quinn-proto --target all` and `--target all --all-features`, both `nothing to print`. Re-review when reqwest features change, when tauri/tauri-plugin-updater bumps reqwest, or if any crate here enables http3/QUIC." },
+  { id = "RUSTSEC-2026-0340", reason = "quinn-proto 0.11.14 is lock-file residue, not in the build graph: quinn is an optional reqwest dep behind the unused `http3` feature. Verified by `cargo tree --invert quinn-proto --target all` and `--target all --all-features`, both `nothing to print`. Re-review when reqwest features change, when tauri/tauri-plugin-updater bumps reqwest, or if any crate here enables http3/QUIC." },
+  { id = "RUSTSEC-2026-0342", reason = "quinn-proto 0.11.14 is lock-file residue, not in the build graph: quinn is an optional reqwest dep behind the unused `http3` feature. Verified by `cargo tree --invert quinn-proto --target all` and `--target all --all-features`, both `nothing to print`. Re-review when reqwest features change, when tauri/tauri-plugin-updater bumps reqwest, or if any crate here enables http3/QUIC." },
+
+  # --- rkyv: 1 advisory, not in the build graph ---------------------------
+  #
+  # Residual chain: rkyv <- rust_decimal <- sqlx-core <- sqlx / tauri-plugin-sql.
+  # `rust_decimal 1.41.0` declares rkyv as an optional dependency behind its
+  # own `rkyv` feature (`rkyv = ["dep:rkyv"]`). Note the distinction from
+  # quinn-proto: rust_decimal itself IS in the build graph (reachable via
+  # sqlx-core), so the ignore does not rest on rust_decimal being absent -- it
+  # rests on rust_decimal's `rkyv` feature being off. src-tauri/Cargo.toml:36
+  # pins sqlx with `default-features = false, features = ["sqlite",
+  # "runtime-tokio"]`, and none of that turns the feature on.
+  #
+  # Verified unreachable: `cargo tree --invert rkyv --target all` and the same
+  # with `--all-features` both return `nothing to print`, while
+  # `cargo tree --invert rust_decimal` does print the sqlx chain. That contrast
+  # is the evidence: the parent is present, the advisory crate is not.
+  #
+  # Re-review trigger: whenever sqlx's features in src-tauri/Cargo.toml change,
+  # whenever sqlx or tauri-plugin-sql is bumped, or if any dependency starts
+  # enabling rust_decimal's `rkyv` / `rkyv-safe` feature.
+  { id = "RUSTSEC-2026-0235", reason = "rkyv 0.7.46 is lock-file residue, not in the build graph: rkyv is an optional rust_decimal dep behind rust_decimal's unused `rkyv` feature. rust_decimal itself IS reachable via sqlx-core, so this rests on the feature being off, not the parent being absent. Verified by `cargo tree --invert rkyv --target all` and `--target all --all-features`, both `nothing to print`, while `--invert rust_decimal` prints the sqlx chain. Re-review when sqlx features in src-tauri/Cargo.toml change, when sqlx/tauri-plugin-sql is bumped, or if anything enables rust_decimal's rkyv feature." },
+]

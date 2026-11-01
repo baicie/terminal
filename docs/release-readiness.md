@@ -4,6 +4,7 @@
 > 最后验证日期：2026-11-01（本轮只把文档与 `release.yml` / `tauri.conf.json` 的事实对齐，未重跑测试、未重采实机证据）
 > 发布目标：`0.0.1-dev.2`（`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 三处当前都是 `0.0.1-dev.2`；`0.0.1-dev.1` 是上一版已发布证据）
 > 状态：✅ 本机自动发布门禁与多平台安装包验收完成；⚠️ 外部实机项目待执行；⚠️ 无 OS 代码签名/公证，发布状态 `RELEASE_QA_ONLY`
+> 🔴 **发布阻塞项（未闭合）**：① `cargo audit` 实测 27 条 RustSec 漏洞，21 条在构建图内、其中 6 条基准分 7.5（quick-xml ×4、russh、russh-cryptovec），台账 `docs/phase9-1/security-advisories.md`；② 实机矩阵 Linux 产品门禁 `smoke:shell-probe:matrix` zsh 三条仍失败（run `41231265959`）。本文件下方各历史小节的「✅ 通过」只代表该日期该范围的测量，不覆盖这两项。
 
 ## 目标
 
@@ -470,7 +471,7 @@ pnpm smoke:ssh-matrix --reuse-binary --release key,key-reconnect,password,passwo
 | 本机 `pnpm verify` | ✅ 前端 63 个文件/561 项、Team Server 25 个文件/103 项、Rust 47 项单测 + 2 项集成测试全部通过 |
 | 静态质量 | ✅ Prisma validate、lint、typecheck、Nest/Vite build、Rust fmt/check/Clippy `-D warnings` 与 462 个生产源码文件规模门禁通过 |
 | Bundle | ✅ 初始 gzip 237.68 KB / 240 KB，总 gzip 524.42 KB / 550 KB，最大 JS chunk raw 401.56 KB / 500 KB |
-| 供应链 | ✅ `deepmerge-ts` 固定到修复版 8.0.1；`pnpm audit --prod --audit-level high` 为 0 个已知漏洞 |
+| 供应链 | ✅ `deepmerge-ts` 固定到修复版 8.0.1；⚠️ `pnpm audit --prod --audit-level high` **未测量（NOT_RUN）**：当前镜像源 `registry.npmmirror.com` 不实现 audit 端点（`ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS`），该项取不到结果。「未测量」不等于「无漏洞」，不得按 0 漏洞记账；依据见 `docs/phase9/dependency-audit.md`。Rust 侧 `cargo audit` 实测有 27 条已知漏洞，台账见 `docs/phase9-1/security-advisories.md` |
 | Compose | ✅ 配置解析、PostgreSQL 16.15、2 个 Prisma 迁移、三类 health、closed/token/open、5 类非法环境、SIGTERM 退出码 0 与重启 readiness 全部通过 |
 | SSH 高级能力 | ✅ Agent forwarding 授权/池隔离和 Jump Host certificate 自动化通过；⚠️ 真实 Agent、CA、服务端与跨平台矩阵待执行 |
 

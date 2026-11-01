@@ -185,6 +185,113 @@ jobs:
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
+  cargo-audit-diagnostic:
+    # RustSec advisory sweep over src-tauri/Cargo.lock. Phase 9.1 found 27
+    # advisories by running this by hand; nothing in CI was looking, so the next
+    # batch would have been found the same accidental way.
+    name: cargo audit diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # DIAGNOSTIC, NOT A PRODUCT GATE. Same contract as zsh-probe-diagnostic
+    # above: this job reports, it does not block. 21 of the 27 known advisories
+    # are on crates really in the build graph and are not fixable by a patch
+    # bump (quick-xml needs >=0.41 behind parents pinned to ^0.37/^0.39.2;
+    # russh needs a minor bump with real SSH regression risk -- see
+    # docs/phase9-1/dependency-upgrade-plan.md). Gating merges on a red result
+    # nobody can clear in one commit would keep CI red for a known state and
+    # teach people to ignore the job. The product gate stays the `rust` job.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+      # Pinned, prebuilt binaries: `cargo install cargo-audit` from source adds
+      # minutes to a job whose whole point is to be cheap enough to always run.
+      - name: Install cargo-audit and cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit@0.22.2,cargo-deny@0.20.2
+      - name: Record tool and advisory-db versions
+        run: |
+          cargo audit --version
+          cargo deny --version
+      # The runner has no advisory-db yet, so this clone is the fetch. It is
+      # kept as its own step so an advisory-db outage reads as "could not fetch
+      # the database" instead of being misreported as "no vulnerabilities".
+      - name: Fetch the RustSec advisory database
+        id: fetch-db
+        run: |
+          git clone --depth 1 https://github.com/RustSec/advisory-db.git "$RUNNER_TEMP/advisory-db"
+          echo "db-commit=$(git -C "$RUNNER_TEMP/advisory-db" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git -C "$RUNNER_TEMP/advisory-db" log -1 --format='advisory-db %H %ad' --date=iso
+      # --no-fetch: the clone above is the only fetch, so the audit cannot
+      # silently run against a different database than the one recorded.
+      # `|| true` keeps a non-zero audit exit (it exits non-zero whenever any
+      # advisory is found) from ending the job before the artifact is uploaded;
+      # continue-on-error alone would skip the remaining steps.
+      - name: cargo audit (JSON)
+        working-directory: src-tauri
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/security-diagnostic"
+          cargo audit \
+            --db "$RUNNER_TEMP/advisory-db" \
+            --no-fetch \
+            --json \
+            > "$GITHUB_WORKSPACE/security-diagnostic/cargo-audit.json" \
+            || true
+          test -s "$GITHUB_WORKSPACE/security-diagnostic/cargo-audit.json"
+          node -e 'const r=require(process.argv[1]);const v=r.vulnerabilities?.list??[];console.log("advisories:",v.length);for(const x of v)console.log(" -",x.advisory.id,x.package.name,x.package.version)' \
+            "$GITHUB_WORKSPACE/security-diagnostic/cargo-audit.json"
+      # cargo audit has no notion of deny.toml: it carries its own --ignore list
+      # and audit.toml. So the 6 lock-file-residue advisories ARE still counted
+      # in cargo-audit.json above; src-tauri/deny.toml is what applies the
+      # reasoned ignores, and this step is where those ignores take effect.
+      - name: cargo deny advisories (honours src-tauri/deny.toml ignores)
+        working-directory: src-tauri
+        run: |
+          cargo deny \
+            --format json \
+            check advisories \
+            > "$GITHUB_WORKSPACE/security-diagnostic/cargo-deny-advisories.json" 2>&1 \
+            || true
+          test -s "$GITHUB_WORKSPACE/security-diagnostic/cargo-deny-advisories.json"
+      # Interface assumed here: `--input <path to cargo audit --json output>`,
+      # which another session is adding to build-security-ledger.mjs. Until that
+      # lands the step is a no-op rather than a failure, so wiring it now cannot
+      # break the job; it is `if: always()` guarded by a grep for the flag.
+      - name: Rebuild the ledger from this run's audit JSON (if the script takes --input)
+        if: always()
+        run: |
+          if grep -q -- '--input' scripts/build-security-ledger.mjs 2>/dev/null; then
+            node scripts/build-security-ledger.mjs \
+              --input security-diagnostic/cargo-audit.json \
+              || echo "::warning::build-security-ledger.mjs --input failed; see the log"
+            # The script writes into docs/phase9-1/ (its output path is not
+            # configurable). Copy the result into the artifact so the archived
+            # evidence carries both this run's raw audit JSON and the ledger
+            # derived from it; the diff stat below shows whether the committed
+            # ledger has drifted from what this run's advisories imply.
+            for f in security-advisories.md security-advisories.json; do
+              if [ -f "docs/phase9-1/$f" ]; then
+                cp "docs/phase9-1/$f" "security-diagnostic/regenerated-$f"
+              fi
+            done
+            git --no-pager diff --stat -- docs/phase9-1/ || true
+            git --no-pager diff -- docs/phase9-1/ \
+              > security-diagnostic/ledger-drift.diff || true
+          else
+            echo "::notice::build-security-ledger.mjs does not accept --input yet; skipping the ledger diff"
+          fi
+      - name: Upload the security diagnostic evidence
+        # always(): a failed step above is exactly when the JSON is needed.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-audit-diagnostic
+          path: security-diagnostic/
+          if-no-files-found: warn
+
   docker:
     name: Team Server container
     runs-on: ubuntu-latest

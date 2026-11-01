@@ -1,0 +1,5 @@
+{
+  "comment": "Valid JSON, but not a cargo audit snapshot: no vulnerabilities.list array. Building a ledger from this would produce zero rows, which reads as 'no known vulnerabilities'.",
+  "database": { "advisory-count": 0 },
+  "warnings": {}
+}

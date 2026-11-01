@@ -1,0 +1,15 @@
+terminal v0.0.1-dev.2 (/repo/src-tauri)
+russh v0.60.2
+russh-cryptovec v0.59.0
+tokio v1.49.0
+h2 v0.4.13 (*)
+hyper v1.8.1
+zip v4.6.1
+flate2 v1.1.5
+rsa v0.9.1
+rsa v0.9.10 (*)
+proc-macro2 v1.0.106 (proc-macro)
+quote v1.0.45 (proc-macro) (*)
+buildonly v1.2.3
+tokio feature "default"
+tokio feature "rt-multi-thread" (*)
