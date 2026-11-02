@@ -2118,5 +2118,8 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 
 - [x] Issue #166：`loadOptionalBootstrapConfigs` 由串行改 `Promise.all`，`terminal_smoke_config` 与四个探测配置同时启动，消除「一个慢 IPC 饿死其余」的队列饥饿。这是 real-machine run `41437956656` 上 `nano-edit` 「从未写 result.json」的根因。
 - [x] 回归 2 项（先红后绿，串行实现下均失败）；既有断言 `not.toHaveBeenCalled()` 断言的正是缺陷行为，已改为 `toHaveBeenCalledOnce()`。
-- [ ] 真实 runner 验收：重跑 real-machine 矩阵确认 `nano-edit` 稳定通过。
-- [ ] **6 份实机证据因本次改动失效，必须重采**（改动了 `packages/frontend/src`）。
+- [x] 真实 runner 验收：run `41478709578`（sha `3102093`）macOS job 25 步全 success，`nano-edit` 输出 `ok (4770 ms)` 且 `input_probe_config invoked` 正常出现；全矩阵 **40 个 probe 用例 ok、0 FAILED**（macOS 本地 14 + 真实 SSH 7 + Linux 14 + Windows 5）。
+- [x] **6 份实机证据已重采**：run `41478709578`，sha `3102093`，指纹 **`c4faedfb…`**，`check-verification-evidence.mjs` 0 problem。debug 本地冷启动 1944/1330/1323 ms、release 2283/2074/1959 ms、远程提示符 3158 ms。**数字变小来自 runner 差异，不是产品优化。**
+- [x] Issue #167：冷启动测量收尾的 `ENOTEMPTY` 假红（Mesa 着色器缓存子进程），三处清理统一改用 `maxRetries: 20 / retryDelay: 100`；同一 run 的 Linux job 曾因此把已成功的测量判红。
+- [x] 最终 CI：run `41485572963`（sha `2a29430`）**10/10 全绿**，证据门禁作为阻塞步骤通过。
+- [ ] macOS 远程冷启动稳定性仍**未证明**：同一天 run `41475640293` 该步骤失败（本地冷启动三次全正常、历史 4 次全绿、同提交下一次 run 通过），定性为 Issue #65/#157 的既有 WebKit flake；约 20% 历史失败率未被排除。
