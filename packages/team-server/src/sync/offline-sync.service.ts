@@ -10,6 +10,7 @@ import {
 } from './queued-share-write-data'
 import { buildShareUpdateData } from './share-write-data'
 import { describeSyncError, SYNC_OPERATION_FAILED } from './sync-error'
+import { classifyBaseVersion, parseVersion, shareContentDigest } from './sync-protocol'
 
 const PROCESSING_TIMEOUT_MS = 15 * 60 * 1000
 
@@ -34,9 +35,7 @@ export abstract class OfflineSyncService {
       data,
     )
     if (operation === 'UPDATE' && isRecord(data)) {
-      const existing = await this.prisma.share.findUnique({
-        where: { id: shareId },
-      })
+      const existing = await this.prisma.share.findUnique({ where: { id: shareId } })
       if (existing) {
         if (existing.teamId !== teamId) {
           throw new ForbiddenException(
@@ -46,9 +45,7 @@ export abstract class OfflineSyncService {
         if (existing.sharedBy !== userId) {
           throw new ForbiddenException('Only creator can update share')
         }
-        if (existing.updatedAt.getTime() > (data.baseVersion as number)) {
-          throw new BadRequestException('Queued share update is stale')
-        }
+        this.assertQueuedVersion(existing, data.baseVersion as number)
         canonicalData = canonicalizeQueuedData(
           operation,
           teamId,
@@ -202,14 +199,15 @@ export abstract class OfflineSyncService {
   ) {
     await this.checkMembership(item.teamId, userId)
     const shareData = requireQueuedShareScope(item.data, item)
-    const existing = await this.prisma.share.findUnique({
-      where: { id: shareData.id },
-    })
+    const existing = await this.prisma.share.findUnique({ where: { id: shareData.id } })
     if (existing) {
       if (existing.teamId !== item.teamId) {
         throw new ForbiddenException('Share does not belong to the queued team')
       }
       if (item.operation === 'CREATE') {
+        // A replayed create is an idempotent ack only while the content still
+        // matches; anything else must not overwrite what is already stored.
+        if (shareContentDigest(existing) === shareContentDigest(shareData)) return
         throw new BadRequestException(
           'Queued share create conflicts with an existing share',
         )
@@ -218,18 +216,13 @@ export abstract class OfflineSyncService {
       if (!isCreator && existing.permission !== 'READWRITE') {
         throw new ForbiddenException('Only creator can update share')
       }
-      if (
-        shareData.baseVersion !== undefined &&
-        existing.updatedAt.getTime() > shareData.baseVersion
-      ) {
-        throw new BadRequestException('Queued share update is stale')
-      }
+      this.assertQueuedVersion(existing, shareData.baseVersion)
       const written = await this.prisma.share.updateMany({
         where: {
           id: shareData.id,
           teamId: item.teamId,
           sharedBy: existing.sharedBy,
-          updatedAt: existing.updatedAt,
+          version: existing.version,
         },
         data: buildShareUpdateData(shareData, existing, !isCreator, !isCreator),
       })
@@ -239,6 +232,21 @@ export abstract class OfflineSyncService {
       return
     }
 
+    if (item.operation === 'UPDATE') {
+      // A queued update must never resurrect a share that was deleted meanwhile.
+      throw new BadRequestException('Queued share update targets a missing share')
+    }
+    const tombstone = await this.prisma.syncChange.findFirst(
+      { where: { shareId: shareData.id, op: 'DELETE' }, orderBy: { seq: 'desc' }, select: { version: true } },
+    )
+    // Same rule as a pushed create: only proof of the deletion may resurrect.
+    if (
+      tombstone !== null
+      && (shareData.baseVersion === undefined
+        || parseVersion(tombstone.version) > shareData.baseVersion)
+    ) {
+      throw new BadRequestException('Queued share write targets a deleted share')
+    }
     await this.prisma.share.create({
       data: buildQueuedShareCreateData(shareData, item.teamId, userId),
     })
@@ -249,9 +257,7 @@ export abstract class OfflineSyncService {
     item: { shareId: string; shareType: string; teamId: string },
   ) {
     await this.checkMembership(item.teamId, userId)
-    const existing = await this.prisma.share.findUnique({
-      where: { id: item.shareId },
-    })
+    const existing = await this.prisma.share.findUnique({ where: { id: item.shareId } })
     if (!existing) return
     if (existing.teamId !== item.teamId) {
       throw new ForbiddenException('Share does not belong to the queued team')
@@ -265,6 +271,21 @@ export abstract class OfflineSyncService {
       shareId: item.shareId,
       shareType: item.shareType,
     })
+  }
+
+  /**
+   * A queued write either proves the exact current version or is a legacy write
+   * with no proof at all; the version CAS in the caller is the final authority.
+   */
+  private assertQueuedVersion(
+    existing: { version: bigint },
+    baseVersion: number | undefined,
+  ): void {
+    // No proof means no write: an item queued by an older server carries no
+    // baseVersion and would otherwise overwrite serially newer data.
+    if (classifyBaseVersion(existing.version, baseVersion) !== 'match') {
+      throw new BadRequestException('Queued share update is stale')
+    }
   }
 
   private async checkMembership(teamId: string, userId: string) {

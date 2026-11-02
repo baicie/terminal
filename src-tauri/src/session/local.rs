@@ -3,6 +3,7 @@
 //! 使用 portable-pty 实现本地 PTY 会话。
 
 use super::lifecycle::{SessionCompletion, SessionLifecycle};
+use super::pty_diagnostics;
 use super::shell_startup::{ShellFlavor, ShellStartup};
 use super::terminal_output::{emit_terminal_error, spawn_session_output_pump, TerminalOutputChunk};
 use super::types::{validate_terminal_size, SessionError, SessionType, TerminalProfile};
@@ -96,6 +97,7 @@ fn setup_pty(
     cols: u16,
     rows: u16,
     profile: Option<TerminalProfile>,
+    session_id: String,
 ) -> Result<LocalPtyResources, SessionError> {
     if let Some(profile) = &profile {
         profile.validate()?;
@@ -174,7 +176,15 @@ fn setup_pty(
     // A user startup command is a command to run once the shell is up, not
     // shell configuration, so it keeps travelling through the PTY.
     let startup_command = profile.and_then(|profile| profile.startup_command);
-    setup_pty_with_command(cols, rows, command, startup_command, startup)
+    setup_pty_with_command(
+        cols,
+        rows,
+        command,
+        startup_command,
+        startup,
+        &session_id,
+        &shell,
+    )
 }
 
 fn is_powershell_executable(shell: &str) -> bool {
@@ -223,12 +233,47 @@ fn supports_login_flag(shell: &str) -> bool {
     )
 }
 
+/// Records everything the shell was handed at spawn: argv, the environment
+/// that decides which startup files it reads, and the modes those files have.
+fn record_spawn_facts(
+    session_id: &str,
+    shell: &str,
+    command: &CommandBuilder,
+    cols: u16,
+    rows: u16,
+    startup: Option<&ShellStartup>,
+) {
+    let mut env = vec![
+        ("TERM", "xterm-256color".to_string()),
+        ("COLORTERM", "truecolor".to_string()),
+        ("TERM_PROGRAM", "Terminal".to_string()),
+        ("PTY_SIZE", format!("{cols}x{rows}")),
+    ];
+    if let Some(startup) = startup {
+        for (name, value) in startup.env() {
+            env.push((*name, value.to_string_lossy().into_owned()));
+        }
+        env.push((
+            "shell_wrapper",
+            startup.directory().to_string_lossy().into_owned(),
+        ));
+    }
+    let args: Vec<String> = command
+        .get_argv()
+        .iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    pty_diagnostics::session_started(session_id, shell, &args, &env);
+}
+
 fn setup_pty_with_command(
     cols: u16,
     rows: u16,
     mut command: CommandBuilder,
     startup_command: Option<String>,
     startup: Option<ShellStartup>,
+    session_id: &str,
+    shell: &str,
 ) -> Result<LocalPtyResources, SessionError> {
     validate_terminal_size(cols, rows)?;
     command.env("TERM", "xterm-256color");
@@ -243,6 +288,11 @@ fn setup_pty_with_command(
         })
         .map_err(|e| SessionError::ConnectionFailed(format!("Failed to open PTY: {}", e)))?;
 
+    // Recorded before the spawn so a shell that never prints a prompt still
+    // leaves the exact argv, environment and file modes it was given.
+    if pty_diagnostics::enabled() {
+        record_spawn_facts(session_id, shell, &command, cols, rows, startup.as_ref());
+    }
     let child = pty_pair
         .slave
         .spawn_command(command)
@@ -310,12 +360,14 @@ impl LocalSession {
         profile: Option<TerminalProfile>,
     ) -> Result<Self, SessionError> {
         let session_id = format!("local-{}", uuid::Uuid::new_v4());
+        let session_id_clone = session_id.clone();
 
-        let resources = tokio::task::spawn_blocking(move || setup_pty(cols, rows, profile))
-            .await
-            .map_err(|e| {
-                SessionError::ConnectionFailed(format!("PTY setup task failed: {}", e))
-            })??;
+        let resources =
+            tokio::task::spawn_blocking(move || setup_pty(cols, rows, profile, session_id_clone))
+                .await
+                .map_err(|e| {
+                    SessionError::ConnectionFailed(format!("PTY setup task failed: {}", e))
+                })??;
         let LocalPtyResources {
             master,
             child,
@@ -384,6 +436,7 @@ impl LocalSession {
                                 break;
                             }
                             Ok(Ok((n, buf))) => {
+                                pty_diagnostics::read_chunk(&session_id_clone, &buf[..n]);
                                 if output_tx
                                     .send(TerminalOutputChunk::new(&buf[..n], false))
                                     .await
@@ -395,6 +448,7 @@ impl LocalSession {
                                     );
                                     break;
                                 }
+                                pty_diagnostics::emitted(&session_id_clone, n);
                             }
                             Ok(Err(error)) => {
                                 emit_terminal_error(
@@ -460,6 +514,11 @@ impl LocalSession {
             if !data.ends_with(b"\n") {
                 data.push(b'\n');
             }
+            pty_diagnostics::note(
+                &session_id,
+                "startup-command",
+                format!("{} bytes queued after spawn", data.len()),
+            );
             match tokio::task::spawn_blocking(move || write_local_data(&mut *writer.lock(), &data))
                 .await
             {
@@ -504,6 +563,7 @@ impl LocalSession {
         data: Vec<u8>,
     ) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
         let state = self.state.clone();
+        let session_id = self.session_id.clone();
         Box::pin(async move {
             let writer = {
                 let state = state.lock().await;
@@ -512,15 +572,22 @@ impl LocalSession {
                 }
                 state.writer.clone()
             };
+            let traced = data.clone();
 
-            tokio::task::spawn_blocking(move || {
+            let written = tokio::task::spawn_blocking(move || {
                 let mut writer = writer.lock();
                 write_local_data(&mut *writer, &data)?;
                 Ok::<(), String>(())
             })
             .await
             .map_err(|e| SessionError::WriteFailed(format!("Write task failed: {}", e)))?
-            .map_err(SessionError::WriteFailed)
+            .map_err(SessionError::WriteFailed);
+            // Recorded after the blocking write returned, so the timestamp means
+            // "the bytes are in the PTY", not "the app asked for them".
+            if written.is_ok() {
+                pty_diagnostics::wrote(&session_id, &traced);
+            }
+            written
         })
     }
 
@@ -531,6 +598,7 @@ impl LocalSession {
         rows: u16,
     ) -> Pin<Box<dyn Future<Output = Result<(), SessionError>> + Send>> {
         let state = self.state.clone();
+        let session_id = self.session_id.clone();
         Box::pin(async move {
             validate_terminal_size(cols, rows)?;
             let master = {
@@ -541,17 +609,28 @@ impl LocalSession {
                 state.master.clone()
             };
 
-            tokio::task::spawn_blocking(move || {
-                master.lock().resize(PtySize {
+            let (result, actual) = tokio::task::spawn_blocking(move || {
+                let master = master.lock();
+                let result = master.resize(PtySize {
                     rows,
                     cols,
                     pixel_width: 0,
                     pixel_height: 0,
-                })
+                });
+                // Read the size back from the kernel: a resize the PTY accepted
+                // and one the shell then ignored are different failures.
+                let actual = master.get_size().ok().map(|size| (size.cols, size.rows));
+                (result, actual)
             })
             .await
-            .map_err(|e| SessionError::ResizeFailed(format!("Resize task failed: {}", e)))?
-            .map_err(|e| SessionError::ResizeFailed(format!("Failed to resize: {}", e)))
+            .map_err(|e| SessionError::ResizeFailed(format!("Resize task failed: {}", e)))?;
+            pty_diagnostics::resized(
+                &session_id,
+                (cols, rows),
+                actual,
+                result.as_ref().err().map(|error| error.to_string()),
+            );
+            result.map_err(|e| SessionError::ResizeFailed(format!("Failed to resize: {}", e)))
         })
     }
 
@@ -728,6 +807,7 @@ async fn finish_local_session(
     let startup = state.lock().await.startup.take();
     drop(startup);
 
+    pty_diagnostics::session_finished(session_id);
     lifecycle.complete();
 }
 
@@ -821,8 +901,16 @@ pub(in crate::session) mod tests {
             command.arg("-l");
         }
 
-        let resources = setup_pty_with_command(100, 30, command, None, Some(startup))
-            .expect("PTY should start for the shell integration check");
+        let resources = setup_pty_with_command(
+            100,
+            30,
+            command,
+            None,
+            Some(startup),
+            "local-test",
+            "test-shell",
+        )
+        .expect("PTY should start for the shell integration check");
         let (mut guard, output_rx) = RealPtyTestGuard::new(resources);
         let mut output = Vec::new();
 
@@ -1261,6 +1349,8 @@ pub(in crate::session) mod tests {
             deterministic_test_command("printf '\\036PTY_READY\\037\\n'; read value"),
             None,
             None,
+            "local-test",
+            "test-shell",
         )
         .expect("PTY should start for the test");
         let (guard, output_rx) = RealPtyTestGuard::new(resources);
@@ -1296,9 +1386,16 @@ pub(in crate::session) mod tests {
     fn setup_pty_runs_a_real_shell_round_trip_at_the_requested_size() {
         let input = "terminal-input-中文🙂";
         let script = "printf '\\036PTY_BEGIN\\037\\n'; stty size; printf '\\036PTY_READY\\037\\n'; IFS= read -r value; printf '\\036PTY_VALUE:%s\\037\\n' \"$value\"; exit 0";
-        let resources =
-            setup_pty_with_command(97, 31, deterministic_test_command(script), None, None)
-                .expect("PTY should start for the test");
+        let resources = setup_pty_with_command(
+            97,
+            31,
+            deterministic_test_command(script),
+            None,
+            None,
+            "local-test",
+            "test-shell",
+        )
+        .expect("PTY should start for the test");
         let (mut guard, output_rx) = RealPtyTestGuard::new(resources);
         let mut output = Vec::new();
 
@@ -1366,6 +1463,8 @@ pub(in crate::session) mod tests {
             deterministic_test_command("trap '' HUP; while :; do sleep 1; done"),
             None,
             None,
+            "local-test",
+            "test-shell",
         )
         .expect("PTY should start for the process-group kill test");
         let LocalPtyResources {

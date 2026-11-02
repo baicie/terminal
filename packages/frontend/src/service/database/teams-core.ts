@@ -159,10 +159,55 @@ export async function getSharedHosts(
   )
 }
 
-export async function addSharedHost(host: TeamSharedHostRecord): Promise<void> {
-  await executeQuery(
-    `INSERT INTO team_shared_hosts (id, team_id, host_data, shared_by, permission, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+/**
+ * A pulled snapshot never overwrites a newer local row, and it never overwrites a
+ * row the user edited locally but the server has not accepted yet: that edit is
+ * the only copy of the user's intent, so the pull reports the row as skipped and
+ * the push turns it into a conflict instead of dropping it silently. Re-delivery
+ * at or below the stored version converges because the incoming snapshot wins only
+ * when it is newer, or when it is identical.
+ */
+function remoteGuard(table: string, dataColumn: string): string {
+  return `
+       WHERE (COALESCE(${table}.dirty, 0) = 0 OR ${table}.${dataColumn} = excluded.${dataColumn})
+         AND (
+           ${table}.version IS NULL
+           OR excluded.version IS NULL
+           OR excluded.version > ${table}.version
+           OR (excluded.version = ${table}.version
+               AND ${table}.${dataColumn} = excluded.${dataColumn})
+         )`
+}
+
+function changedRows(result: unknown): number {
+  const rows = (result as { rowsAffected?: number } | null | undefined)
+    ?.rowsAffected
+  return typeof rows === 'number' ? rows : 1
+}
+
+/**
+ * Who is writing. 'local' is a user edit (always wins here, flagged dirty until
+ * the server accepts it), 'override' is a resolved conflict adopting a known
+ * server snapshot, and 'remote' is a pulled change, which is guarded.
+ */
+export type SharedWriteMode = 'remote' | 'local' | 'override'
+
+// Idempotent on purpose: the sync protocol may re-deliver a change (page
+// boundary or a round that crashed before the cursor advanced), and a replay
+// must converge instead of failing the whole round on a primary key clash.
+// Returns true when the row was written; a pulled snapshot that loses against a
+// newer or a locally edited row returns false so the caller can report it.
+export async function addSharedHost(
+  host: TeamSharedHostRecord,
+  source: SharedWriteMode = 'remote',
+): Promise<boolean> {
+  const local = source === 'local'
+  const result = await executeQuery(
+    `INSERT INTO team_shared_hosts (id, team_id, host_data, shared_by, permission, created_at, version, updated_at, dirty)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET team_id = excluded.team_id, host_data = excluded.host_data,
+       shared_by = excluded.shared_by, permission = excluded.permission, created_at = excluded.created_at,
+       version = excluded.version, updated_at = excluded.updated_at, dirty = excluded.dirty${source === 'remote' ? remoteGuard('team_shared_hosts', 'host_data') : ''}`,
     [
       host.id,
       host.team_id,
@@ -170,8 +215,12 @@ export async function addSharedHost(host: TeamSharedHostRecord): Promise<void> {
       host.shared_by,
       host.permission,
       host.created_at,
+      host.version ?? null,
+      host.updated_at ?? null,
+      local ? 1 : 0,
     ],
   )
+  return source !== 'remote' || changedRows(result) > 0
 }
 
 export async function removeSharedHost(id: string): Promise<void> {
@@ -189,10 +238,15 @@ export async function getSharedSnippets(
 
 export async function addSharedSnippet(
   snippet: TeamSharedSnippetRecord,
-): Promise<void> {
-  await executeQuery(
-    `INSERT INTO team_shared_snippets (id, team_id, snippet_data, shared_by, permission, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+  source: SharedWriteMode = 'remote',
+): Promise<boolean> {
+  const local = source === 'local'
+  const result = await executeQuery(
+    `INSERT INTO team_shared_snippets (id, team_id, snippet_data, shared_by, permission, created_at, version, updated_at, dirty)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET team_id = excluded.team_id, snippet_data = excluded.snippet_data,
+       shared_by = excluded.shared_by, permission = excluded.permission, created_at = excluded.created_at,
+       version = excluded.version, updated_at = excluded.updated_at, dirty = excluded.dirty${source === 'remote' ? remoteGuard('team_shared_snippets', 'snippet_data') : ''}`,
     [
       snippet.id,
       snippet.team_id,
@@ -200,8 +254,12 @@ export async function addSharedSnippet(
       snippet.shared_by,
       snippet.permission,
       snippet.created_at,
+      snippet.version ?? null,
+      snippet.updated_at ?? null,
+      local ? 1 : 0,
     ],
   )
+  return source !== 'remote' || changedRows(result) > 0
 }
 
 export async function removeSharedSnippet(id: string): Promise<void> {

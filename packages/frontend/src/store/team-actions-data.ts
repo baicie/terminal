@@ -41,6 +41,7 @@ export function createDataActions(
   | 'updateMemberRole'
   | 'loadSharedHosts'
   | 'shareHost'
+  | 'updateSharedHost'
   | 'unshareHost'
   | 'loadSharedSnippets'
   | 'shareSnippet'
@@ -110,14 +111,19 @@ export function createDataActions(
       const id = crypto.randomUUID()
       const userId = get().userProfile?.id || ''
       const now = Date.now()
-      await addSharedHost({
-        id,
-        team_id: teamId,
-        host_data: JSON.stringify(hostData),
-        shared_by: userId,
-        permission,
-        created_at: now,
-      })
+      await addSharedHost(
+        {
+          id,
+          team_id: teamId,
+          host_data: JSON.stringify(hostData),
+          shared_by: userId,
+          permission,
+          created_at: now,
+          version: null,
+          updated_at: now,
+        },
+        'local',
+      )
       const sharedHost: SharedHost = {
         id,
         teamId,
@@ -125,8 +131,33 @@ export function createDataActions(
         sharedBy: userId,
         permission,
         createdAt: now,
+        version: null,
+        updatedAt: now,
       }
       set(state => ({ sharedHosts: [...state.sharedHosts, sharedHost] }))
+    },
+    async updateSharedHost(shareId: string, hostData: Record<string, unknown>) {
+      const existing = get().sharedHosts.find(item => item.id === shareId)
+      if (!existing) return
+      // The base version is kept: the next sync submits UPDATE <baseVersion>.
+      await addSharedHost(
+        {
+          id: existing.id,
+          team_id: existing.teamId,
+          host_data: JSON.stringify(hostData),
+          shared_by: existing.sharedBy,
+          permission: existing.permission,
+          created_at: existing.createdAt,
+          version: existing.version ?? null,
+          updated_at: existing.updatedAt ?? existing.createdAt,
+        },
+        'local',
+      )
+      set(state => ({
+        sharedHosts: state.sharedHosts.map(item =>
+          item.id === shareId ? { ...item, hostData } : item,
+        ),
+      }))
     },
     async unshareHost(shareId: string) {
       await removeSharedHost(shareId)

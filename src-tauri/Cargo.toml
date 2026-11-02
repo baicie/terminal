@@ -1,8 +1,9 @@
 [package]
 name = "terminal"
 version = "0.0.1-dev.2"
-description = "A Tauri App"
-authors = ["you"]
+description = "Modern SSH/SFTP terminal client with team collaboration"
+authors = ["baicie"]
+license = "MIT"
 edition = "2021"
 rust-version = "1.96"
 
@@ -29,6 +30,10 @@ russh-sftp = "2.1"
 ssh-key = { version = "0.6", features = ["ed25519", "rsa", "p256", "p384", "p521", "encryption"] }
 tokio = { version = "1.52", features = ["full"] }
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+# P8.2: the import command names the plugin's own Pool<Sqlite>, so this version
+# has to stay unified with the one Cargo.lock pins (0.8.6); a second sqlx major
+# or minor would make the pool type unnameable.
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio"] }
 tauri-plugin-window-state = "2"
 anyhow = "1.0"
 futures = "0.3"

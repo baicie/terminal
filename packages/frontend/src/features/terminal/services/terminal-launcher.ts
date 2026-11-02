@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { Host } from '@/types'
 import type { TabType } from '../types'
+import { traceStage } from '@/service/database/startup-trace'
 import { buildSshJumpHostIpcConfig } from './ssh-jump-config'
 
 export type TerminalShellIntegration = 'bash' | 'zsh'
@@ -27,7 +28,43 @@ export function profileForHost(host: Host): TerminalProfilePayload | undefined {
   }
 }
 
+/**
+ * The frontend half of the staged startup timeline (#65).
+ *
+ * A readiness deadline cannot tell "the UI never asked for a session" apart
+ * from "the backend is slow" unless the request itself is timestamped, and the
+ * two need opposite fixes.
+ */
 export async function startTerminalShell(
+  tabType: TabType,
+  host: Host | undefined,
+  serialSessionId: string | undefined,
+  cols: number,
+  rows: number,
+  jumpHost?: Host,
+  expectedHostKey?: string,
+  expectedJumpHostKey?: string,
+  attemptId?: string,
+  connectionTimeoutMs?: number,
+): Promise<string> {
+  traceStage('session-create-requested', tabType)
+  const sessionId = await createTerminalShell(
+    tabType,
+    host,
+    serialSessionId,
+    cols,
+    rows,
+    jumpHost,
+    expectedHostKey,
+    expectedJumpHostKey,
+    attemptId,
+    connectionTimeoutMs,
+  )
+  traceStage('session-created', sessionId)
+  return sessionId
+}
+
+async function createTerminalShell(
   tabType: TabType,
   host: Host | undefined,
   serialSessionId: string | undefined,

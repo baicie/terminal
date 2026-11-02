@@ -5,9 +5,13 @@ import test from 'node:test'
 
 import {
   ACCESSIBILITY_PROBE,
+  STAGES_FILE_NAME,
+  describeStages,
   evaluateReadiness,
+  evaluateStageBudgets,
   parseColdStartArguments,
   parseAccessibilityReadiness,
+  readStages,
   runColdStartStopwatch,
 } from './run-cold-start-stopwatch.mjs'
 
@@ -865,4 +869,173 @@ test('fails if SIGTERM does not produce a close event before cleanup grace', asy
     /did not exit within 1 ms/,
   )
   assert.deepEqual(harness.calls.kill, ['SIGTERM', 'SIGKILL'])
+})
+
+test('parses the staged timeline and ignores a torn final line', async () => {
+  const stages = await readStages('/private/tmp/stages.jsonl', {
+    readFile: async () => [
+      '{"at_ms":10,"stage":"frontend-boot","detail":"main.tsx evaluated"}',
+      '{"at_ms":900,"stage":"ssh-tcp-handshake-done","detail":"127.0.0.1:22"}',
+      '{"at_ms":950,"stage":"trunc',
+      'not json at all',
+    ].join('\n'),
+  })
+  assert.deepEqual(stages, [
+    { atMs: 10, stage: 'frontend-boot', detail: 'main.tsx evaluated' },
+    { atMs: 900, stage: 'ssh-tcp-handshake-done', detail: '127.0.0.1:22' },
+  ])
+})
+
+test('reports no stages when the app never wrote one', async () => {
+  assert.deepEqual(
+    await readStages('/private/tmp/stages.jsonl', {
+      readFile: async () => {
+        throw new Error('ENOENT')
+      },
+    }),
+    [],
+  )
+  assert.equal(describeStages([]), 'none recorded')
+})
+
+test('compacts a long stage list without dropping the count', () => {
+  assert.equal(
+    describeStages([
+      { atMs: 1, stage: 'a', detail: '' },
+      { atMs: 2, stage: 'b', detail: '' },
+    ]),
+    'a@1ms -> b@2ms',
+  )
+  const many = Array.from({ length: 25 }, (_value, index) => ({
+    atMs: index,
+    stage: 's' + index,
+    detail: '',
+  }))
+  assert.match(describeStages(many), /s24@24ms/)
+  assert.match(describeStages(many), /\(\+5 earlier\)/)
+})
+
+test('always points the app at a stages file inside its own home', async () => {
+  const harness = createHarness()
+  const markerPath = '/private/tmp/local-terminal-ready'
+  const readFile = harness.dependencies.readFile
+  harness.dependencies.readFile = async (filePath, encoding) => {
+    if (filePath === markerPath && harness.calls.applicationSpawned) {
+      return 'LOCAL_TERMINAL_READY'
+    }
+    return readFile(filePath, encoding)
+  }
+  await runColdStartStopwatch({
+    appPath: '/Applications/Termius.app/Contents/MacOS/terminal',
+    timeoutMs: 1_000,
+    readinessTarget: 'terminal',
+    axProbe: 'none',
+    markerPath,
+    markerContent: 'LOCAL_TERMINAL_READY',
+    environment: { TERMINAL_STARTUP_STAGES_PATH: '/tmp/forged-stages' },
+    dependencies: harness.dependencies,
+  })
+  const application = harness.calls.spawn.find(
+    call =>
+      call.command === '/Applications/Termius.app/Contents/MacOS/terminal',
+  )
+  const stagesPath = application.options.env.TERMINAL_STARTUP_STAGES_PATH
+  assert.equal(stagesPath.endsWith(STAGES_FILE_NAME), true)
+  assert.equal(stagesPath.includes('forged-stages'), false)
+})
+
+test('attributes a readiness timeout to the last stage the app reached', async () => {
+  const harness = createHarness({ readiness: ['0,0,0,0'] })
+  const stagesPath = '/private/tmp/terminal-cold-start-fixture/terminal-startup-stages.jsonl'
+  const readFile = harness.dependencies.readFile
+  let clock = 0
+  harness.dependencies.now = () => clock
+  harness.dependencies.readFile = async (filePath, encoding) => {
+    if (filePath === stagesPath && harness.calls.applicationSpawned) {
+      clock = 900
+      return [
+        '{"at_ms":120,"stage":"frontend-boot","detail":"main.tsx evaluated"}',
+        '{"at_ms":880,"stage":"ssh-connect-start","detail":"127.0.0.1:22"}',
+      ].join('\n')
+    }
+    return readFile(filePath, encoding)
+  }
+  await assert.rejects(
+    runColdStartStopwatch({
+      appPath: '/Applications/Termius.app/Contents/MacOS/terminal',
+      timeoutMs: 10,
+      readinessMode: 'remote',
+      homeDirectory: '/private/tmp/terminal-cold-start-fixture',
+      markerPath: '/private/tmp/remote-marker',
+      markerContent: 'REMOTE_COLD_MARKER',
+      dependencies: harness.dependencies,
+    }),
+    error => {
+      assert.match(error.message, /terminal readiness did not complete/)
+      assert.match(
+        error.message,
+        /stages: frontend-boot@120ms -> ssh-connect-start@880ms/,
+      )
+      return true
+    },
+  )
+})
+
+test('records first stage arrival and the timeline on success', async () => {
+  const harness = createHarness({ readiness: ['0,0,0,0'] })
+  const stagesPath = '/private/tmp/terminal-cold-start-fixture/terminal-startup-stages.jsonl'
+  const markerPath = '/private/tmp/local-terminal-ready'
+  const readFile = harness.dependencies.readFile
+  let clock = 0
+  harness.dependencies.now = () => clock
+  harness.dependencies.readFile = async (filePath, encoding) => {
+    if (filePath === markerPath && harness.calls.applicationSpawned) {
+      clock = 700
+      return 'LOCAL_TERMINAL_READY'
+    }
+    if (filePath === stagesPath && harness.calls.applicationSpawned) {
+      return '{"at_ms":250,"stage":"frontend-boot","detail":"main.tsx evaluated"}'
+    }
+    return readFile(filePath, encoding)
+  }
+  const result = await runColdStartStopwatch({
+    appPath: '/Applications/Termius.app/Contents/MacOS/terminal',
+    timeoutMs: 5_000,
+    readinessMode: 'remote',
+    homeDirectory: '/private/tmp/terminal-cold-start-fixture',
+    markerPath,
+    markerContent: 'LOCAL_TERMINAL_READY',
+    dependencies: harness.dependencies,
+  })
+  assert.equal(result.stages.length, 1)
+  assert.equal(result.stages[0].stage, 'frontend-boot')
+  // The marker was satisfied at 700 ms and the stages file is read in the same
+  // poll iteration, so the first stage is observed at that offset.
+  assert.equal(result.firstStageSeenMs, 700)
+})
+
+test('names the stage that exceeded its measured budget', () => {
+  const { checked, violations } = evaluateStageBudgets([
+    { atMs: 0, stage: 'ssh-connect-start', detail: '' },
+    { atMs: 4_000, stage: 'ssh-tcp-handshake-done', detail: '' },
+    { atMs: 4_100, stage: 'ssh-auth-done', detail: '' },
+    { atMs: 4_200, stage: 'ssh-pty-ready', detail: '' },
+  ])
+  assert.equal(checked.length, 3)
+  assert.deepEqual(violations, [
+    {
+      from: 'ssh-connect-start',
+      to: 'ssh-tcp-handshake-done',
+      elapsedMs: 4_000,
+      budgetMs: 1_500,
+    },
+  ])
+})
+
+test('a stage that never arrived is not a latency violation', () => {
+  const { checked, violations } = evaluateStageBudgets([
+    { atMs: 5, stage: 'frontend-boot', detail: '' },
+  ])
+  assert.deepEqual(checked, [])
+  assert.deepEqual(violations, [])
 })

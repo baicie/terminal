@@ -17,6 +17,10 @@ export default {
   'portForward.configured': '已配置 {{count}} 条转发规则',
   'portForward.noConfigured': '未配置端口转发',
   'portForward.socksDesc': '在 {{host}}:{{port}} 创建 SOCKS 代理',
+  'portForward.active': '运行中',
+  'portForward.stopped': '已停止',
+  'portForward.dynamic': '动态',
+  'portForward.via': '经由 {{host}}',
 
   // Port Forward view
   'portForwardView.title': '端口转发',
@@ -26,4 +30,24 @@ export default {
   'portForwardView.noForwards': '未配置端口转发',
   'portForwardView.forwardsDesc':
     '设置端口转发以访问数据库、Web 应用和其他服务',
+  'portForwardView.remoteRequired': '必须填写远程主机和端口',
+  'portForwardView.invalidLocalPort': '本地端口无效',
+  'portForwardView.started': '端口转发已启动：{{address}}',
+  'portForwardView.stopSuccess': '端口转发已停止',
+  'portForwardView.startFailed': '启动端口转发失败：{{message}}',
+  'portForwardView.stopFailed': '停止端口转发失败：{{message}}',
+  'portForwardView.removed': '端口转发规则已删除',
+  'portForwardView.loadFailed': '加载端口转发失败：{{message}}',
+  'portForwardView.stopTitle': '停止端口转发',
+  'portForwardView.stopConfirm':
+    '确定停止 "{{name}}" 吗？正在使用该隧道的连接会立即断开。',
+  'portForwardView.savedNotStarted':
+    '规则已保存，但当前没有已连接的 SSH 会话，因此隧道并未启动。',
+  'portForwardView.noSession': '当前没有已连接的 SSH 会话，无法启动隧道。',
+  'portForwardView.startAction': '启动 {{name}}',
+  'portForwardView.stopAction': '停止 {{name}}',
+  'portForwardView.deleteAction': '删除 {{name}}',
+  'portForwardView.deleteTitle': '删除端口转发',
+  'portForwardView.deleteConfirm':
+    '确定删除 "{{name}}" 吗？该转发规则将被永久移除。运行中的隧道不会被停止，请先停止。',
 }

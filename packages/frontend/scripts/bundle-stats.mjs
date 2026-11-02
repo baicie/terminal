@@ -36,14 +36,19 @@ const argv = Object.fromEntries(
 // commit that explains which feature added the bytes.
 const budgets = {
   initialGzip: 240 * 1024,
-  // 565 KB (was 560 KB): Phase 7 added the SFTP transfer queue state machine
-  // (service/sftp-transfer-queue.ts + view/sftp/transfer-row.tsx), the
-  // six-state tab indicator with its localized labels, the updater failure
-  // classification, and the accompanying i18n keys in three locales. Together
-  // they took the lazy graph from 553.15 KB to 560.93 KB gzip. The initial
-  // budget above is untouched, because time-to-first-terminal still rides on
-  // the critical path, not on this line.
-  totalGzip: 565 * 1024,
+  // 575 KB (was 565 KB): Phase 8.8 Task D made the Vault UI reachable. It had
+  // been dead code - no route, no imports - so none of it was bundled before;
+  // wiring /vaults into router/nav-config.tsx now ships vaults-view, its auth
+  // states, entry list, entry details and their three-locale strings, taking
+  // the lazy graph from 560.93 KB to 567.91 KB gzip on CI.
+  //
+  // The cap sits at 575 rather than just above 567.91 because the local build
+  // reports 561.96 KB for the same sources - roughly 6 KB lower than CI, which
+  // is enough to make a tight cap pass locally and fail in CI. Budget headroom
+  // has to cover that delta or it is not a gate, it is a coin flip.
+  // The initial budget above is untouched: time-to-first-terminal rides on the
+  // critical path, not on this line.
+  totalGzip: 575 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

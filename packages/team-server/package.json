@@ -16,6 +16,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "test": "vitest run",
+    "test:pg": "vitest run --config vitest.pg.config.ts",
     "typecheck": "tsc --noEmit",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

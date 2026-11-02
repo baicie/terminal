@@ -8,6 +8,7 @@ import {
   Shield,
   Unlock,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,6 +24,8 @@ interface SharedAuthProps {
 interface CreateVaultStateProps extends SharedAuthProps {
   confirmPassword: string
   creating: boolean
+  /** File-state notice, e.g. an interrupted create reported by the backend. */
+  notice?: string | null
   onConfirmPasswordChange: (value: string) => void
   onCreate: () => void
 }
@@ -34,11 +37,14 @@ function PasswordVisibilityButton({
   visible: boolean
   onChange: (value: boolean) => void
 }) {
+  const { t } = useTranslation()
   return (
     <Button
+      type="button"
       variant="ghost"
       size="icon"
       className="absolute right-0 top-0 h-full px-3"
+      aria-label={t('vaults.togglePasswordVisibility')}
       onClick={() => onChange(!visible)}
     >
       {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -49,35 +55,54 @@ function PasswordVisibilityButton({
 function VaultError({ error }: { error: string | null }) {
   if (!error) return null
   return (
-    <div className="flex items-center gap-2 text-destructive text-sm">
+    <div role="alert" className="flex items-center gap-2 text-destructive text-sm">
       <AlertCircle className="size-4" />
       {error}
     </div>
   )
 }
 
-export function CreateVaultState(props: CreateVaultStateProps) {
+function VaultNotice({ notice }: { notice?: string | null }) {
+  if (!notice) return null
   return (
-    <div className="flex items-center justify-center h-full p-8">
+    <div
+      role="status"
+      className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+    >
+      <AlertCircle className="mt-0.5 size-4 shrink-0" />
+      <span>{notice}</span>
+    </div>
+  )
+}
+
+export function CreateVaultState(props: CreateVaultStateProps) {
+  const { t } = useTranslation()
+  return (
+    <div
+      className="flex items-center justify-center h-full p-4 sm:p-8"
+      onKeyDown={event => {
+        if (event.key === 'Enter') props.onCreate()
+      }}
+    >
       <div className="max-w-md w-full space-y-6">
         <div className="text-center space-y-2">
-          <Shield className="size-16 mx-auto text-primary" />
-          <h2 className="text-2xl font-semibold">Create Your Vault</h2>
-          <p className="text-muted-foreground">
-            Securely store sensitive data like passwords, SSH keys, and API
-            tokens using AES-256 encryption.
-          </p>
+          <Shield className="size-12 sm:size-16 mx-auto text-primary" />
+          <h2 className="text-xl sm:text-2xl font-semibold">
+            {t('vaults.createVault')}
+          </h2>
+          <p className="text-muted-foreground">{t('vaults.secureVault')}</p>
         </div>
         <div className="space-y-4">
+          <VaultNotice notice={props.notice} />
           <div className="space-y-2">
-            <Label htmlFor="create-password">Master Password</Label>
+            <Label htmlFor="create-password">{t('vaults.masterPassword')}</Label>
             <div className="relative">
               <Input
                 id="create-password"
                 type={props.showPassword ? 'text' : 'password'}
                 value={props.password}
                 onChange={event => props.onPasswordChange(event.target.value)}
-                placeholder="Enter a strong password"
+                placeholder={t('vaults.enterStrongPassword')}
               />
               <PasswordVisibilityButton
                 visible={props.showPassword}
@@ -86,7 +111,7 @@ export function CreateVaultState(props: CreateVaultStateProps) {
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="confirm-password">Confirm Password</Label>
+            <Label htmlFor="confirm-password">{t('vaults.confirmPassword')}</Label>
             <Input
               id="confirm-password"
               type={props.showPassword ? 'text' : 'password'}
@@ -94,7 +119,7 @@ export function CreateVaultState(props: CreateVaultStateProps) {
               onChange={event =>
                 props.onConfirmPasswordChange(event.target.value)
               }
-              placeholder="Confirm your password"
+              placeholder={t('vaults.confirmYourPassword')}
             />
           </div>
           <VaultError error={props.error} />
@@ -106,18 +131,17 @@ export function CreateVaultState(props: CreateVaultStateProps) {
             {props.creating ? (
               <>
                 <Loader2 className="size-4 mr-2 animate-spin" />
-                Creating...
+                {t('vaults.creating')}
               </>
             ) : (
               <>
                 <Plus className="size-4 mr-2" />
-                Create Vault
+                {t('vaults.createVault')}
               </>
             )}
           </Button>
           <p className="text-xs text-muted-foreground text-center">
-            Warning: If you forget your master password, your data cannot be
-            recovered.
+            {t('vaults.warning')}
           </p>
         </div>
       </div>
@@ -130,20 +154,20 @@ interface LockedVaultStateProps extends SharedAuthProps {
 }
 
 export function LockedVaultState(props: LockedVaultStateProps) {
+  const { t } = useTranslation()
   return (
-    <div className="flex items-center justify-center h-full p-8">
+    <div className="flex items-center justify-center h-full p-4 sm:p-8">
       <div className="max-w-md w-full space-y-6">
         <div className="text-center space-y-2">
-          <Lock className="size-16 mx-auto text-primary" />
-          <h2 className="text-2xl font-semibold">Vault Locked</h2>
-          <p className="text-muted-foreground">
-            Enter your master password to unlock the vault and access your
-            secure data.
-          </p>
+          <Lock className="size-12 sm:size-16 mx-auto text-primary" />
+          <h2 className="text-xl sm:text-2xl font-semibold">
+            {t('vaults.vaultLocked')}
+          </h2>
+          <p className="text-muted-foreground">{t('vaults.unlockDesc')}</p>
         </div>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="unlock-password">Master Password</Label>
+            <Label htmlFor="unlock-password">{t('vaults.masterPassword')}</Label>
             <div className="relative">
               <Input
                 id="unlock-password"
@@ -153,7 +177,7 @@ export function LockedVaultState(props: LockedVaultStateProps) {
                 onKeyDown={event => {
                   if (event.key === 'Enter') props.onUnlock()
                 }}
-                placeholder="Enter your master password"
+                placeholder={t('vaults.enterMasterPassword')}
               />
               <PasswordVisibilityButton
                 visible={props.showPassword}
@@ -164,7 +188,7 @@ export function LockedVaultState(props: LockedVaultStateProps) {
           <VaultError error={props.error} />
           <Button className="w-full" onClick={props.onUnlock}>
             <Unlock className="size-4 mr-2" />
-            Unlock Vault
+            {t('vaults.unlock')}
           </Button>
         </div>
       </div>

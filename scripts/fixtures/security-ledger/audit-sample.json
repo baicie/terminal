@@ -1,0 +1,132 @@
+{
+  "database": {
+    "advisory-count": 831,
+    "last-commit": "fixture",
+    "last-updated": "2026-11-01T00:00:00Z"
+  },
+  "lockfile": {
+    "dependency-count": 706
+  },
+  "settings": {},
+  "vulnerabilities": {
+    "found": true,
+    "count": 6,
+    "list": [
+      {
+        "advisory": {
+          "id": "RUSTSEC-2026-0154",
+          "package": "russh",
+          "title": "russh denial of service via malformed packet",
+          "description": "fixture description",
+          "date": "2026-10-01",
+          "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+          "informational": null,
+          "url": "https://rustsec.org/advisories/RUSTSEC-2026-0154"
+        },
+        "versions": { "patched": [">=0.60.3"], "unaffected": [] },
+        "affected": null,
+        "package": {
+          "name": "russh",
+          "version": "0.60.2",
+          "source": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      },
+      {
+        "advisory": {
+          "id": "RUSTSEC-2026-0153",
+          "package": "russh-cryptovec",
+          "title": "russh-cryptovec out-of-bounds write",
+          "description": "fixture description",
+          "date": "2026-10-01",
+          "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+          "informational": null,
+          "url": "https://rustsec.org/advisories/RUSTSEC-2026-0153"
+        },
+        "versions": { "patched": [">=0.59.1"], "unaffected": [] },
+        "affected": null,
+        "package": {
+          "name": "russh-cryptovec",
+          "version": "0.59.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      },
+      {
+        "advisory": {
+          "id": "RUSTSEC-2026-0258",
+          "package": "h2",
+          "title": "h2 has an unbounded queue | with a pipe in the title",
+          "description": "fixture description",
+          "date": "2026-09-01",
+          "cvss": null,
+          "informational": null,
+          "url": "https://rustsec.org/advisories/RUSTSEC-2026-0258"
+        },
+        "versions": { "patched": [], "unaffected": [] },
+        "affected": null,
+        "package": {
+          "name": "h2",
+          "version": "0.4.13",
+          "source": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      },
+      {
+        "advisory": {
+          "id": "RUSTSEC-2026-0342",
+          "package": "quinn-proto",
+          "title": "quinn-proto denial of service",
+          "description": "fixture description",
+          "date": "2026-10-15",
+          "cvss": null,
+          "informational": null,
+          "url": "https://rustsec.org/advisories/RUSTSEC-2026-0342"
+        },
+        "versions": { "patched": [">=0.11.15"], "unaffected": [] },
+        "affected": null,
+        "package": {
+          "name": "quinn-proto",
+          "version": "0.11.14",
+          "source": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      },
+      {
+        "advisory": {
+          "id": "RUSTSEC-2026-0367",
+          "package": "zip",
+          "title": "zip path traversal on extract",
+          "description": "fixture description",
+          "date": "2026-10-20",
+          "cvss": "CVSS:3.1/AV:L/AC:L/PR:L/UI:R/S:U/C:H/I:H/A:H",
+          "informational": null,
+          "url": "https://rustsec.org/advisories/RUSTSEC-2026-0367"
+        },
+        "versions": { "patched": [">=5.0.0"], "unaffected": [] },
+        "affected": null,
+        "package": {
+          "name": "zip",
+          "version": "4.6.1",
+          "source": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      },
+      {
+        "advisory": {
+          "id": "RUSTSEC-2026-0999",
+          "package": "buildonly",
+          "title": "build-script-only crate advisory",
+          "description": "fixture description",
+          "date": "2026-10-22",
+          "cvss": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+          "informational": null,
+          "url": "https://rustsec.org/advisories/RUSTSEC-2026-0999"
+        },
+        "versions": { "patched": [], "unaffected": [] },
+        "affected": null,
+        "package": {
+          "name": "buildonly",
+          "version": "1.2.3",
+          "source": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      }
+    ]
+  },
+  "warnings": {}
+}

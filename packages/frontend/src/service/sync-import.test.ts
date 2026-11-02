@@ -1,26 +1,20 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { ExportData } from './sync-types'
-import { createImportStats, importResources } from './sync-import'
+import {
+  createImportStats,
+  importResources,
+  type ImportPayload,
+} from './sync-import'
 import {
   normalizeImportedAgentForwarding,
   normalizeImportedShellIntegration,
 } from './sync-import-support'
 
-const database = vi.hoisted(() => ({
-  executeQuery: vi.fn(),
-  load: vi.fn(),
-  selectStrict: vi.fn(),
-}))
+const core = vi.hoisted(() => ({ invoke: vi.fn() }))
 
-vi.mock('@/service/database', () => ({
-  executeQuery: database.executeQuery,
-  selectStrict: database.selectStrict,
-}))
-vi.mock('@tauri-apps/plugin-sql', () => ({
-  default: { load: database.load },
-}))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: core.invoke }))
 
-const SETTINGS_INSERT = 'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 function exportData(overrides: Partial<ExportData> = {}): ExportData {
   return {
@@ -40,10 +34,19 @@ function exportData(overrides: Partial<ExportData> = {}): ExportData {
   }
 }
 
+/** The one command call the restore is allowed to make. */
+function commandPayload(): ImportPayload {
+  expect(core.invoke).toHaveBeenCalledTimes(1)
+  const [command, args] = core.invoke.mock.calls[0] as [
+    string,
+    { payload: ImportPayload },
+  ]
+  expect(command).toBe('import_backup_data')
+  return args.payload
+}
+
 beforeEach(() => {
-  database.executeQuery.mockReset().mockResolvedValue(undefined)
-  database.load.mockReset().mockResolvedValue({ execute: database.executeQuery })
-  database.selectStrict.mockReset().mockResolvedValue([])
+  core.invoke.mockReset().mockResolvedValue(createImportStats())
 })
 
 it('only enables imported agent forwarding for explicit boolean values', () => {
@@ -67,27 +70,17 @@ it('restores settings with merge and replace semantics', async () => {
   const data = exportData({ settings: { app_settings: '{"theme":"dark"}' } })
 
   await importResources(data, 'merge', createImportStats())
-  expect(database.executeQuery).toHaveBeenCalledWith(SETTINGS_INSERT, [
-    'app_settings',
-    '{"theme":"dark"}',
-  ])
-  expect(database.executeQuery).toHaveBeenLastCalledWith('COMMIT')
+  expect(commandPayload()).toMatchObject({
+    mergeMode: 'merge',
+    settings: { app_settings: '{"theme":"dark"}' },
+  })
 
-  database.executeQuery.mockClear()
-  database.selectStrict.mockResolvedValueOnce([{ id: 'app_settings' }])
-  await importResources(data, 'merge', createImportStats())
-  expect(database.executeQuery).not.toHaveBeenCalledWith(
-    expect.stringContaining('INSERT OR REPLACE INTO settings'),
-    expect.anything(),
-  )
-
-  database.selectStrict.mockResolvedValueOnce([{ id: 'app_settings' }])
+  core.invoke.mockClear()
   await importResources(data, 'replace', createImportStats())
-  expect(database.executeQuery).toHaveBeenCalledWith(SETTINGS_INSERT, [
-    'app_settings',
-    '{"theme":"dark"}',
-  ])
-  expect(database.executeQuery).toHaveBeenLastCalledWith('COMMIT')
+  expect(commandPayload()).toMatchObject({
+    mergeMode: 'replace',
+    settings: { app_settings: '{"theme":"dark"}' },
+  })
 })
 
 it('restores certificate and jump host columns from a full backup', async () => {
@@ -124,71 +117,140 @@ it('restores certificate and jump host columns from a full backup', async () => 
     createImportStats(),
   )
 
-  expect(database.executeQuery).toHaveBeenCalledWith(
-    expect.stringContaining('shell_integration'),
-    expect.arrayContaining(['certificate', 'jump-id', 'agent', 1, 'bash']),
+  expect(commandPayload().hosts).toContainEqual(
+    expect.objectContaining({
+      certificate: 'certificate',
+      jump_host_id: 'jump-id',
+      jump_host_auth_type: 'agent',
+      agent_forwarding: 1,
+      shell_integration: 'bash',
+    }),
   )
 })
 
-it('runs the whole restore on the shared connection inside one transaction', async () => {
+it('normalizes lossy switches before they leave the frontend', async () => {
   await importResources(
-    exportData({ settings: { app_settings: '{}' } }),
+    exportData({
+      hosts: [
+        { id: 'host-id', agent_forwarding: '1', shell_integration: true },
+        { id: 'other-id', agent_forwarding: false, shell_integration: 'zsh' },
+      ],
+    }),
     'merge',
     createImportStats(),
   )
 
-  // Importing used to open a second connection per statement.
-  expect(database.load).not.toHaveBeenCalled()
-  const statements = database.executeQuery.mock.calls.map(call => call[0])
-  expect(statements[0]).toBe('BEGIN IMMEDIATE')
-  expect(statements.at(-1)).toBe('COMMIT')
+  const hosts = commandPayload().hosts as Record<string, unknown>[]
+  expect(hosts[0]).toMatchObject({ agent_forwarding: 0, shell_integration: 'off' })
+  expect(hosts[1]).toMatchObject({ agent_forwarding: 0, shell_integration: 'zsh' })
 })
 
-it('rolls the whole restore back when a statement fails halfway through', async () => {
-  database.executeQuery.mockImplementation((sql: string) =>
-    sql.startsWith('INSERT INTO snippet_packages')
-      ? Promise.reject(new Error('disk full'))
-      : Promise.resolve(undefined),
+it('runs the whole restore through one command call', async () => {
+  await importResources(
+    exportData({
+      groups: [{ id: 'g1', name: 'Group' }],
+      hosts: [{ id: 'h1', name: 'Host' }],
+      snippetPackages: [{ id: 'p1', name: 'Package' }],
+      snippets: [{ id: 's1', name: 'Snippet', script: '' }],
+      sshKeys: [{ id: 'k1', name: 'Key' }],
+      knownHosts: [{ hostname: 'target.example', port: 22 }],
+      workspaces: [{ id: 'w1', name: 'Workspace' }],
+      workspaceLayouts: [{ workspaceId: 'w1', layoutData: { tabs: [] } }],
+      settings: { app_settings: '{}' },
+    }),
+    'merge',
+    createImportStats(),
   )
+
+  // The batch used to be 40+ separate statements bracketed by a BEGIN that a
+  // pooled connection was free to ignore.
+  const payload = commandPayload()
+  expect(payload.groups).toHaveLength(1)
+  expect(payload.hosts).toHaveLength(1)
+  expect(payload.snippetPackages).toHaveLength(1)
+  expect(payload.snippets).toHaveLength(1)
+  expect(payload.sshKeys).toHaveLength(1)
+  expect(payload.knownHosts).toHaveLength(1)
+  expect(payload.workspaces).toHaveLength(1)
+  expect(payload.workspaceLayouts).toHaveLength(1)
+  expect(payload.settings).toEqual({ app_settings: '{}' })
+  expect(typeof payload.now).toBe('number')
+})
+
+it('surfaces a rolled back restore and leaves the counters untouched', async () => {
+  core.invoke.mockRejectedValueOnce(
+    'import was rolled back after NOT NULL constraint failed: hosts.name',
+  )
+  const stats = createImportStats()
 
   await expect(
     importResources(
-      exportData({
-        snippetPackages: [{ id: 'pkg-1', name: 'Package' }],
-        snippets: [{ id: 'snippet-1', name: 'Snippet', script: '' }],
-      }),
+      exportData({ hosts: [{ id: 'h1', name: 'Host' }] }),
       'merge',
-      createImportStats(),
+      stats,
     ),
-  ).rejects.toThrow('disk full')
+  ).rejects.toThrow('NOT NULL constraint failed')
 
-  const statements = database.executeQuery.mock.calls.map(call => call[0])
-  expect(statements).toContain('BEGIN IMMEDIATE')
-  expect(statements.at(-1)).toBe('ROLLBACK')
-  expect(statements).not.toContain('COMMIT')
+  expect(core.invoke).toHaveBeenCalledTimes(1)
+  expect(stats).toEqual(createImportStats())
 })
 
-it('updates the fingerprint of an existing known host in replace mode', async () => {
-  database.selectStrict.mockResolvedValue([{ id: 'known-host-1' }])
-
+it('mints a fresh id for every imported known host', async () => {
   await importResources(
     exportData({
       knownHosts: [
         {
+          id: 'stale-id',
           hostname: 'target.example',
           port: 22,
           fingerprint: 'SHA256:newfingerprint',
           key_type: 'ssh-ed25519',
           added_at: 7,
         },
+        { hostname: 'other.example', port: 2222, fingerprint: 'SHA256:other' },
       ],
     }),
     'replace',
     createImportStats(),
   )
 
-  expect(database.executeQuery).toHaveBeenCalledWith(
-    expect.stringContaining('UPDATE known_hosts SET fingerprint'),
-    ['SHA256:newfingerprint', 'ssh-ed25519', 7, 'target.example', 22],
-  )
+  const knownHosts = commandPayload().knownHosts as Record<string, unknown>[]
+  expect(knownHosts).toHaveLength(2)
+  expect(knownHosts[0]).toMatchObject({
+    hostname: 'target.example',
+    port: 22,
+    fingerprint: 'SHA256:newfingerprint',
+    key_type: 'ssh-ed25519',
+    added_at: 7,
+  })
+  expect(knownHosts[0]?.id).toMatch(UUID)
+  expect(knownHosts[1]?.id).toMatch(UUID)
+  expect(knownHosts[0]?.id).not.toBe(knownHosts[1]?.id)
+  expect(knownHosts[0]?.id).not.toBe('stale-id')
+})
+
+it('writes the reported counters back into the caller stats object', async () => {
+  core.invoke.mockResolvedValueOnce({
+    hosts: 2,
+    groups: 1,
+    snippets: 3,
+    snippetPackages: 4,
+    sshKeys: 5,
+    knownHosts: 6,
+    workspaces: 7,
+  })
+  const stats = { ...createImportStats(), members: 9 }
+
+  await importResources(exportData(), 'merge', stats)
+
+  expect(stats).toEqual({
+    hosts: 2,
+    groups: 1,
+    snippets: 3,
+    snippetPackages: 4,
+    sshKeys: 5,
+    knownHosts: 6,
+    workspaces: 7,
+    members: 9,
+  })
 })

@@ -1,4 +1,5 @@
-import { executeQuery, selectStrict } from '@/service/database'
+/** Restore a backup through one transactional Rust command. */
+import { invoke } from '@tauri-apps/api/core'
 import {
   normalizeImportedAgentForwarding,
   normalizeImportedShellIntegration,
@@ -9,282 +10,84 @@ import type { ExportData, ImportStats, MergeMode } from './sync-types'
 export { createImportStats } from './sync-import-support'
 
 type Resource = Record<string, unknown>
-type ResourceKey = keyof ImportStats
 
-async function upsert(
-  key: ResourceKey,
-  stats: ImportStats,
-  mergeMode: MergeMode,
-  existsSql: string,
-  existsParams: unknown[],
-  insertSql: string,
-  insertParams: unknown[],
-  updateSql?: string,
-  updateParams?: unknown[],
-): Promise<void> {
-  const existing = await selectStrict<{ id: string }>(existsSql, existsParams)
-  if (existing.length === 0) {
-    await executeQuery(insertSql, insertParams)
-    stats[key]++
-  } else if (mergeMode === 'replace' && updateSql && updateParams) {
-    await executeQuery(updateSql, updateParams)
-    stats[key]++
+/** Rust command that executes the whole restore in one transaction. */
+const IMPORT_COMMAND = 'import_backup_data'
+
+/**
+ * One object per table plus the two decisions Rust must not invent: the merge
+ * mode and the timestamp used for `updated_at` rewrites. Table and column names
+ * never cross the boundary; the command holds them as constants.
+ */
+export interface ImportPayload {
+  mergeMode: MergeMode
+  now: number
+  groups: unknown[]
+  hosts: unknown[]
+  snippetPackages: unknown[]
+  snippets: unknown[]
+  sshKeys: unknown[]
+  knownHosts: unknown[]
+  workspaces: unknown[]
+  workspaceLayouts: unknown[]
+  settings: Record<string, unknown>
+}
+
+/** The two lossy column rules stay in TypeScript; Rust writes what it is given. */
+function importedHostRow(row: unknown): Resource {
+  const item = row as Resource
+  return {
+    ...item,
+    agent_forwarding: normalizeImportedAgentForwarding(item.agent_forwarding),
+    shell_integration: normalizeImportedShellIntegration(item.shell_integration),
   }
 }
 
+/** Known host ids were always minted during the import, never read from a file. */
+function importedKnownHostRow(row: unknown): Resource {
+  const item = row as Resource
+  return { ...item, id: crypto.randomUUID() }
+}
+
+function buildImportPayload(
+  data: ExportData,
+  mergeMode: MergeMode,
+): ImportPayload {
+  return {
+    mergeMode,
+    now: Date.now(),
+    groups: data.groups || [],
+    hosts: (data.hosts || []).map(importedHostRow),
+    snippetPackages: data.snippetPackages || [],
+    snippets: data.snippets || [],
+    sshKeys: data.sshKeys || [],
+    knownHosts: (data.knownHosts || []).map(importedKnownHostRow),
+    workspaces: data.workspaces || [],
+    workspaceLayouts: data.workspaceLayouts || [],
+    settings: data.settings || {},
+  }
+}
+
+/**
+ * Restores a backup file or team package. The signature is unchanged for
+ * callers: the reported counters are written back into the caller's object, so
+ * every reader of `stats` keeps working without knowing where it came from.
+ */
 export async function importResources(
   data: ExportData,
   mergeMode: MergeMode,
   stats: ImportStats,
 ): Promise<void> {
-  await runImportTransaction(async () => {
-    for (const group of data.groups || []) {
-      const item = group as Resource
-      await upsert(
-        'groups',
-        stats,
-        mergeMode,
-        'SELECT id FROM groups WHERE id = ?',
-        [item.id],
-        'INSERT INTO groups (id, name, parent_id, color, inherit_settings, settings, "order") VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [
-          item.id,
-          item.name,
-          item.parent_id,
-          item.color,
-          item.inherit_settings,
-          item.settings,
-          item.order,
-        ],
-        'UPDATE groups SET name = ?, parent_id = ?, color = ?, inherit_settings = ?, settings = ?, "order" = ? WHERE id = ?',
-        [
-          item.name,
-          item.parent_id,
-          item.color,
-          item.inherit_settings,
-          item.settings,
-          item.order,
-          item.id,
-        ],
-      )
-    }
-    for (const host of data.hosts || []) {
-      const item = host as Resource
-      await upsert(
-        'hosts',
-        stats,
-        mergeMode,
-        'SELECT id FROM hosts WHERE id = ?',
-        [item.id],
-        'INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, shell_integration, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [
-          item.id,
-          item.name,
-          item.hostname,
-          item.port,
-          item.username,
-          item.auth_type,
-          item.password,
-          item.private_key,
-          item.certificate ?? null,
-          item.group_id,
-          item.is_favorite,
-          item.color,
-          item.tags,
-          item.port_forwards,
-          item.startup_command,
-          item.environment,
-          item.jump_host_id ?? null,
-          item.jump_host_auth_type ?? null,
-          normalizeImportedAgentForwarding(item.agent_forwarding),
-          normalizeImportedShellIntegration(item.shell_integration),
-          item.created_at,
-          item.updated_at,
-        ],
-        'UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, certificate = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?',
-        [
-          item.name,
-          item.hostname,
-          item.port,
-          item.username,
-          item.auth_type,
-          item.password,
-          item.private_key,
-          item.certificate ?? null,
-          item.group_id,
-          item.is_favorite,
-          item.color,
-          item.tags,
-          item.port_forwards,
-          item.startup_command,
-          item.environment,
-          item.jump_host_id ?? null,
-          item.jump_host_auth_type ?? null,
-          normalizeImportedAgentForwarding(item.agent_forwarding),
-          normalizeImportedShellIntegration(item.shell_integration),
-          Date.now(),
-          item.id,
-        ],
-      )
-    }
-    for (const pkg of data.snippetPackages || []) {
-      const item = pkg as Resource
-      await upsert(
-        'snippetPackages',
-        stats,
-        mergeMode,
-        'SELECT id FROM snippet_packages WHERE id = ?',
-        [item.id],
-        'INSERT INTO snippet_packages (id, name, description) VALUES (?, ?, ?)',
-        [item.id, item.name, item.description],
-        'UPDATE snippet_packages SET name = ?, description = ? WHERE id = ?',
-        [item.name, item.description, item.id],
-      )
-    }
-    for (const snippet of data.snippets || []) {
-      const item = snippet as Resource
-      await upsert(
-        'snippets',
-        stats,
-        mergeMode,
-        'SELECT id FROM snippets WHERE id = ?',
-        [item.id],
-        'INSERT INTO snippets (id, name, description, script, package_id, tags, variables) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [
-          item.id,
-          item.name,
-          item.description,
-          item.script,
-          item.package_id,
-          item.tags,
-          item.variables,
-        ],
-        'UPDATE snippets SET name = ?, description = ?, script = ?, package_id = ?, tags = ?, variables = ? WHERE id = ?',
-        [
-          item.name,
-          item.description,
-          item.script,
-          item.package_id,
-          item.tags,
-          item.variables,
-          item.id,
-        ],
-      )
-    }
-    for (const key of data.sshKeys || []) {
-      const item = key as Resource
-      await upsert(
-        'sshKeys',
-        stats,
-        mergeMode,
-        'SELECT id FROM ssh_keys WHERE id = ?',
-        [item.id],
-        'INSERT INTO ssh_keys (id, name, key_type, private_key, public_key, certificate, passphrase, is_encrypted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [
-          item.id,
-          item.name,
-          item.key_type,
-          item.private_key,
-          item.public_key,
-          item.certificate,
-          item.passphrase,
-          item.is_encrypted,
-          item.created_at,
-          item.updated_at,
-        ],
-        'UPDATE ssh_keys SET name = ?, key_type = ?, private_key = ?, public_key = ?, certificate = ?, passphrase = ?, is_encrypted = ?, updated_at = ? WHERE id = ?',
-        [
-          item.name,
-          item.key_type,
-          item.private_key,
-          item.public_key,
-          item.certificate,
-          item.passphrase,
-          item.is_encrypted,
-          Date.now(),
-          item.id,
-        ],
-      )
-    }
-    for (const knownHost of data.knownHosts || []) {
-      const item = knownHost as Resource
-      await upsert(
-        'knownHosts',
-        stats,
-        mergeMode,
-        'SELECT id FROM known_hosts WHERE hostname = ? AND port = ?',
-        [item.hostname as string, item.port as number],
-        'INSERT INTO known_hosts (id, hostname, port, fingerprint, key_type, added_at) VALUES (?, ?, ?, ?, ?, ?)',
-        [
-          crypto.randomUUID(),
-          item.hostname,
-          item.port,
-          item.fingerprint,
-          item.key_type,
-          item.added_at,
-        ],
-        'UPDATE known_hosts SET fingerprint = ?, key_type = ?, added_at = ? WHERE hostname = ? AND port = ?',
-        [
-          item.fingerprint,
-          item.key_type,
-          item.added_at,
-          item.hostname as string,
-          item.port as number,
-        ],
-      )
-    }
-    for (const workspace of data.workspaces || []) {
-      const item = workspace as Resource
-      await upsert(
-        'workspaces',
-        stats,
-        mergeMode,
-        'SELECT id FROM workspaces WHERE id = ?',
-        [item.id],
-        'INSERT INTO workspaces (id, name, description, icon, color, "order", is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [
-          item.id,
-          item.name,
-          item.description,
-          item.icon,
-          item.color,
-          item.order,
-          item.is_active,
-          item.created_at,
-          item.updated_at,
-        ],
-        'UPDATE workspaces SET name = ?, description = ?, icon = ?, color = ?, "order" = ?, is_active = ?, updated_at = ? WHERE id = ?',
-        [
-          item.name,
-          item.description,
-          item.icon,
-          item.color,
-          item.order,
-          item.is_active,
-          Date.now(),
-          item.id,
-        ],
-      )
-    }
-    for (const workspaceLayout of data.workspaceLayouts || []) {
-      const item = workspaceLayout as Resource
-      const layoutData = item.layoutData as Record<string, unknown> | null
-      if (layoutData)
-        await executeQuery(
-          'INSERT OR REPLACE INTO workspace_layouts (workspace_id, layout_data) VALUES (?, ?)',
-          [item.workspaceId as string, JSON.stringify(layoutData)],
-        )
-    }
-    for (const [key, value] of Object.entries(data.settings || {})) {
-      const existing = await selectStrict<{ id: string }>(
-        'SELECT key AS id FROM settings WHERE key = ?',
-        [key],
-      )
-      if (existing.length === 0 || mergeMode === 'replace')
-        await executeQuery(
-          'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-          [key, typeof value === 'string' ? value : JSON.stringify(value)],
-        )
-    }
-  })
+  const report = await runImportTransaction(() =>
+    invoke<ImportStats>(IMPORT_COMMAND, {
+      payload: buildImportPayload(data, mergeMode),
+    }),
+  )
+  stats.groups = report.groups
+  stats.hosts = report.hosts
+  stats.snippetPackages = report.snippetPackages
+  stats.snippets = report.snippets
+  stats.sshKeys = report.sshKeys
+  stats.knownHosts = report.knownHosts
+  stats.workspaces = report.workspaces
 }

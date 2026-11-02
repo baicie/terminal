@@ -59,6 +59,15 @@ export class SyncShareDto {
   @Min(0)
   @Max(Number.MAX_SAFE_INTEGER)
   baseVersion?: number
+
+  /**
+   * Declared intent. CREATE must not collide with an existing share, UPDATE
+   * must target an existing share and carry a server baseVersion; omitting it
+   * is the legacy "undeclared write" path (docs/phase8/sync-protocol.md §1).
+   */
+  @IsOptional()
+  @IsIn(['CREATE', 'UPDATE', 'DELETE'])
+  operation?: 'CREATE' | 'UPDATE' | 'DELETE'
 }
 
 export class PushChangesDto {
@@ -122,6 +131,17 @@ class ConflictClientDataDto {
   @IsOptional()
   @IsIn(['READONLY', 'READWRITE'])
   permission?: 'READONLY' | 'READWRITE'
+
+  /**
+   * Server version the user decided against. Supplied by a protocol-2 client so
+   * the LOCAL write is a conditional write; a client that omits it is bounded by
+   * the version read in the same request (docs/phase8/sync-protocol.md §6.3).
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(Number.MAX_SAFE_INTEGER)
+  baseVersion?: number
 }
 
 export class ResolveConflictDto {
@@ -168,10 +188,16 @@ export class EnqueueOperationDto {
 }
 
 export class SyncQueryDto {
+  /**
+   * Opaque sync cursor. The composite form is `2.<bound>.<txid>.<seq>`; a bare
+   * decimal number is the legacy single-watermark cursor and is still accepted,
+   * so an old client resyncs safely instead of being rejected
+   * (docs/phase8/sync-protocol.md §3.7).
+   */
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(Number.MAX_SAFE_INTEGER)
-  since?: number
+  @Type(() => String)
+  @IsString()
+  @MaxLength(80)
+  @Matches(/^\d{1,20}(?:\.\d{1,20})*$/)
+  since?: string
 }

@@ -43,6 +43,13 @@ export function convertApiMember(apiMember: {
   }
 }
 
+/**
+ * Carries the server-issued version through to the caller. Dropping it here is
+ * what made every later push an unversioned CREATE: without the version there is
+ * no baseVersion to prove freshness with, so an UPDATE can never be submitted.
+ * The team id comes from the wire, never from the currently selected team, so a
+ * window spanning several teams keeps every share in its own team.
+ */
 export function convertApiShare(apiShare: {
   id: string
   type: string
@@ -50,13 +57,21 @@ export function convertApiShare(apiShare: {
   permission: string
   sharedBy: string
   createdAt: string
+  teamId?: string
+  version?: number
+  updatedAt?: string
 }): SharedHost | SharedSnippet {
+  const createdAt = new Date(apiShare.createdAt).getTime()
   const base = {
     id: apiShare.id,
-    teamId: '',
+    teamId: apiShare.teamId ?? '',
     sharedBy: apiShare.sharedBy,
     permission: apiShare.permission.toLowerCase() as 'readonly' | 'readwrite',
-    createdAt: new Date(apiShare.createdAt).getTime(),
+    createdAt,
+    version: apiShare.version ?? null,
+    updatedAt: apiShare.updatedAt
+      ? new Date(apiShare.updatedAt).getTime()
+      : createdAt,
   }
   return apiShare.type === 'SNIPPET_PACKAGE'
     ? ({

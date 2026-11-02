@@ -1,31 +1,20 @@
 /** Restore plumbing shared by the backup import path. */
-import { executeQuery } from '@/service/database'
 import type { ImportStats } from './sync-types'
 
 let importQueue: Promise<unknown> = Promise.resolve()
 
 /**
- * Run a whole restore on the singleton connection inside one IMMEDIATE
- * transaction: a failure halfway through rolls the batch back instead of
- * leaving half-restored tables behind. Restores are serialized because a
- * second BEGIN on the same connection while one is open would fail rather
- * than wait.
+ * Serializes restores so two entry points (backup file, team package) cannot
+ * run at the same time. Atomicity itself lives in the Rust command, which runs
+ * the whole batch on one connection inside one transaction; this queue is only
+ * the frontend half of the two-layer protection and touches no database.
  */
-export async function runImportTransaction(
-  fn: () => Promise<void>,
-): Promise<void> {
-  const run = importQueue.then(async () => {
-    await executeQuery('BEGIN IMMEDIATE')
-    try {
-      await fn()
-      await executeQuery('COMMIT')
-    } catch (error) {
-      await executeQuery('ROLLBACK').catch(() => undefined)
-      throw error
-    }
-  })
+export async function runImportTransaction<T>(
+  task: () => Promise<T>,
+): Promise<T> {
+  const run = importQueue.then(task)
   importQueue = run.catch(() => undefined)
-  await run
+  return run
 }
 
 export function createImportStats(): ImportStats {

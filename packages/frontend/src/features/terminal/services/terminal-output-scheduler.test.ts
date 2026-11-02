@@ -646,4 +646,131 @@ describe('TerminalOutputScheduler', () => {
     expect(rejected.invalidate).toHaveBeenCalledOnce()
     expect(terminal.write).not.toHaveBeenCalled()
   })
+
+  // P8.4: a silent drop is a lost byte. These tests pin the accounting that
+  // turns every discarded chunk into a counted, reported drop.
+  describe('dropped output accounting', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('counts bytes dropped when a queued receipt is invalidated instead of losing them silently', () => {
+      const terminal = createTerminalStub()
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const scheduler = new TerminalOutputScheduler(
+        terminal.term,
+        schedulerOptions(),
+      )
+      const output = createReceipt()
+      const data = 'stale-output-that-will-never-be-rendered-0123456789'
+
+      scheduler.enqueue(data, data.length, output.receipt)
+      output.deactivate()
+      runAnimationFrame()
+
+      expect(terminal.write).not.toHaveBeenCalled()
+      expect(scheduler.snapshot()).toMatchObject({
+        acceptedBytes: data.length,
+        parsedBytes: 0,
+        droppedBytes: data.length,
+        droppedChunks: 1,
+        queuedBytes: 0,
+        queuedChunks: 0,
+      })
+      expect(warn).toHaveBeenCalledOnce()
+      const report = String(warn.mock.calls[0]?.[0])
+      expect(report).toContain(`dropped ${data.length} bytes`)
+      expect(report).toContain('inactive-receipt')
+      expect(report).toContain(data.slice(0, 32))
+      expect(report).not.toContain(data.slice(0, 33))
+    })
+
+    it('reports dropped pending bytes when reset discards the queue', () => {
+      const terminal = createTerminalStub()
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const scheduler = new TerminalOutputScheduler(
+        terminal.term,
+        schedulerOptions(),
+      )
+      const output = createReceipt()
+
+      scheduler.enqueue('queued-once', 11, output.receipt)
+      scheduler.reset()
+
+      expect(scheduler.snapshot()).toMatchObject({
+        acceptedBytes: 11,
+        parsedBytes: 0,
+        droppedBytes: 11,
+        droppedChunks: 1,
+        queuedBytes: 0,
+        queuedChunks: 0,
+      })
+      expect(warn).toHaveBeenCalledOnce()
+      expect(String(warn.mock.calls[0]?.[0])).toContain('(reset)')
+    })
+
+    it('keeps acceptedBytes equal to parsedBytes plus reported droppedBytes', () => {
+      const terminal = createTerminalStub()
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const scheduler = new TerminalOutputScheduler(
+        terminal.term,
+        schedulerOptions(),
+      )
+      const rendered = createReceipt()
+      const dropped = createReceipt()
+
+      scheduler.enqueue('rendered', 8, rendered.receipt)
+      runAnimationFrame()
+      terminal.completeNextWrite()
+      expect(rendered.acknowledge).toHaveBeenCalledOnce()
+
+      scheduler.enqueue('dropped', 7, dropped.receipt)
+      dropped.deactivate()
+      runAnimationFrame()
+
+      const snapshot = scheduler.snapshot()
+      expect(snapshot.droppedBytes).toBe(7)
+      expect(snapshot.droppedChunks).toBe(1)
+      expect(snapshot.acceptedBytes).toBe(15)
+      expect(snapshot.queuedBytes).toBe(0)
+      expect(snapshot.inFlightBytes).toBe(0)
+      expect(snapshot.acceptedBytes).toBe(
+        snapshot.parsedBytes + snapshot.droppedBytes,
+      )
+    })
+
+    it('keeps an abandoned in-flight write accounted after reset', () => {
+      // reset() drops the queue, never the xterm write already in flight: the
+      // stale callback still counts those bytes as parsed, and clearing
+      // writeInFlight would let the next write overlap it inside xterm.
+      const terminal = createTerminalStub()
+      const scheduler = new TerminalOutputScheduler(
+        terminal.term,
+        schedulerOptions(4),
+      )
+
+      scheduler.enqueue('aaaa')
+      runAnimationFrame()
+      scheduler.reset()
+
+      expect(scheduler.snapshot()).toMatchObject({
+        acceptedBytes: 4,
+        parsedBytes: 0,
+        droppedBytes: 0,
+        inFlightBytes: 4,
+        writeInFlight: true,
+      })
+
+      terminal.completeNextWrite()
+      const snapshot = scheduler.snapshot()
+      expect(snapshot).toMatchObject({
+        parsedBytes: 4,
+        inFlightBytes: 0,
+        writeInFlight: false,
+      })
+      expect(snapshot.acceptedBytes).toBe(
+        snapshot.parsedBytes + snapshot.droppedBytes,
+      )
+    })
+  })
 })

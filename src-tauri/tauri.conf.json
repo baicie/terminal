@@ -71,6 +71,9 @@
       "appimage": {
         "bundleMediaFramework": false
       }
-    }
+    },
+    "resources": [
+      "../LICENSE"
+    ]
   }
 }

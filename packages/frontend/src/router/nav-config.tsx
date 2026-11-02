@@ -13,6 +13,7 @@ import {
   Key,
   Server,
   Settings,
+  Shield,
   Users,
 } from 'lucide-react'
 import type { RouteObject } from 'react-router-dom'
@@ -50,6 +51,11 @@ const primaryNavConfig: NavItemConfig[] = [
     path: '/keychain',
     labelKey: 'nav.keychain',
     icon: <Key className="size-5" />,
+  },
+  {
+    path: '/vaults',
+    labelKey: 'vaults.title',
+    icon: <Shield className="size-5" />,
   },
   {
     path: '/port-forward',
@@ -149,6 +155,8 @@ function getRouteElement(path: string) {
       return lazyRoute(() => import('@/view/teams'))
     case '/keychain':
       return lazyRoute(() => import('@/view/keychain'))
+    case '/vaults':
+      return lazyRoute(() => import('@/view/vaults/vaults-view'))
     case '/port-forward':
       return lazyRoute(() => import('@/view/port-forward'))
     case '/snippets':

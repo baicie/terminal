@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
+import path from 'node:path'
 import test from 'node:test'
 
 import {
+  BINARY_BINDING,
   checkVerificationEvidence,
   DEBUG_SSH_CASES,
   EVIDENCE_MANIFEST_FILE,
@@ -28,6 +30,20 @@ const RUN_ID = '4242424242'
 const CURRENT_SOURCE = 'fingerprint-of-current-source'
 const DEBUG_SHA = 'd'.repeat(64)
 const RELEASE_SHA = 'e'.repeat(64)
+
+// The two executables the evidence must name, at the fixed paths the gate reads.
+const DEBUG_ARTIFACT = 'src-tauri/target/debug/terminal'
+const RELEASE_ARTIFACT = 'src-tauri/target/release/terminal'
+
+const RAW_LOGS = [
+  'debug-local-cold-start.log',
+  'debug-remote-cold-start.log',
+  'debug-ssh-matrix.log',
+  'debug-shell-probe-local.log',
+  'debug-shell-probe-ssh.log',
+  'release-local-cold-start.log',
+  'release-ssh-matrix.log',
+]
 
 // Every file the gate registers as current. Tests that are not about a missing
 // file supply all of them so an unrelated absence cannot leak into their
@@ -113,7 +129,7 @@ test('fingerprints the acceptance runner closure and real-machine workflow', () 
 })
 
 function manifestFor(overrides = {}) {
-  return {
+  const base = {
     source: 'github-actions',
     runId: RUN_ID,
     runAttempt: '1',
@@ -126,6 +142,24 @@ function manifestFor(overrides = {}) {
     runner: { os: 'macOS', arch: 'ARM64' },
     ...overrides,
   }
+  // The generator writes one evidenceFiles entry per file from the two profile
+  // pins. Deriving them the same way keeps a test that re-pins one profile from
+  // disagreeing with the list and hiding which check actually fired.
+  if (overrides.evidenceFiles === undefined) {
+    base.evidenceFiles = ALL_CURRENT.map(file => {
+      const profile = PROFILE_BY_FILE.get(file)
+      return {
+        file,
+        profile,
+        kind: KIND_BY_FILE.get(file),
+        sha256: profile === 'debug' ? base.debugSha : base.releaseSha,
+      }
+    })
+  }
+  if (overrides.rawLogs === undefined) {
+    base.rawLogs = { directory: 'evidence-logs', files: [...RAW_LOGS] }
+  }
+  return base
 }
 
 function createHarness({
@@ -135,6 +169,7 @@ function createHarness({
   omitManifest = false,
   evidenceFingerprint = CURRENT_SOURCE,
   shas = { debug: DEBUG_SHA, release: RELEASE_SHA },
+  rawLogs = RAW_LOGS,
 } = {}) {
   const present = new Set(ALL_CURRENT)
   for (const file of omit) present.delete(file)
@@ -160,7 +195,10 @@ function createHarness({
   return {
     availableFiles: [...present],
     dependencies: {
-      readdir: async () => [...present],
+      readdir: async directory =>
+        String(directory).split(path.sep).includes('raw')
+          ? [...rawLogs]
+          : [...present],
       readFile: async filePath => {
         if (filePath.endsWith(EVIDENCE_MANIFEST_FILE)) return manifestText
         const name = [...contents.keys()].find(file => filePath.endsWith(file))
@@ -176,7 +214,6 @@ function createHarness({
 function validEvidence(file, sha256, sourceFingerprint = CURRENT_SOURCE) {
   const value = {
     kind: KIND_BY_FILE.get(file),
-    binary: { sha256 },
     provenance: {
       source: 'github-actions',
       runId: RUN_ID,
@@ -188,8 +225,17 @@ function validEvidence(file, sha256, sourceFingerprint = CURRENT_SOURCE) {
       runner: { os: 'macOS', arch: 'ARM64' },
     },
   }
+  // The measured executable is named at the fixed path the gate reads: debug
+  // evidence under binary.*, release evidence under build.*.
   if (PROFILE_BY_FILE.get(file) === 'debug') {
+    value.binary = { path: DEBUG_ARTIFACT, sha256 }
     value.source = { fingerprint: sourceFingerprint }
+  } else {
+    value.build = {
+      command: 'VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle',
+      binary: RELEASE_ARTIFACT,
+      sha256,
+    }
   }
   if (file === DEBUG_COLD_START) {
     value.measurement = {
@@ -520,4 +566,154 @@ test('rejects current evidence with an unexpected kind', async () => {
     sourceFingerprint: CURRENT_SOURCE,
   })
   assert.ok(problems.some(problem => /expected kind/.test(problem)))
+})
+test('reads the artifact binding from one fixed path per profile', () => {
+  // The binding is a fixed path, not a search: these are the only fields that
+  // can state which executable a file measured.
+  assert.deepEqual([...BINARY_BINDING], [
+    [
+      'debug',
+      {
+        shaPath: ['binary', 'sha256'],
+        pathPath: ['binary', 'path'],
+        artifactPath: DEBUG_ARTIFACT,
+      },
+    ],
+    [
+      'release',
+      {
+        shaPath: ['build', 'sha256'],
+        pathPath: ['build', 'binary'],
+        artifactPath: RELEASE_ARTIFACT,
+      },
+    ],
+  ])
+})
+
+test('rejects a debug evidence file whose binary hash was edited', async () => {
+  const tampered = JSON.parse(validEvidence(DEBUG_COLD_START, DEBUG_SHA))
+  tampered.binary.sha256 = 'a'.repeat(64)
+  const { problems } = await checkVerificationEvidence({
+    ...createHarness({
+      files: { [DEBUG_COLD_START]: JSON.stringify(tampered) },
+    }),
+    sourceFingerprint: CURRENT_SOURCE,
+  })
+  const binding = problems.find(problem =>
+    problem.startsWith(`debug evidence ${DEBUG_COLD_START}:`),
+  )
+  assert.ok(binding, JSON.stringify(problems))
+  assert.match(binding, /binds the debug artifact of run 4242424242/)
+  assert.ok(binding.includes('a'.repeat(64)))
+  assert.ok(problems.some(problem =>
+    /disagrees on the measured binary/.test(problem),
+  ))
+})
+
+test('rejects a correct sha256 planted in an unrelated field', async () => {
+  // This is the tampering the old anywhere-in-the-document rule accepted: the
+  // field that names the measured binary says one thing, an unrelated note
+  // carries the digest the manifest expects, so the binding passed.
+  const planted = JSON.parse(validEvidence(DEBUG_SSH_MATRIX, DEBUG_SHA))
+  planted.binary.sha256 = 'b'.repeat(64)
+  planted.note = {
+    sha256: DEBUG_SHA,
+    description: 'superseded reference kept for the audit trail',
+  }
+  assert.ok(findRecordedHashes(planted).includes(DEBUG_SHA))
+
+  const { problems } = await checkVerificationEvidence({
+    ...createHarness({
+      files: { [DEBUG_SSH_MATRIX]: JSON.stringify(planted) },
+    }),
+    sourceFingerprint: CURRENT_SOURCE,
+  })
+  const binding = problems.find(problem =>
+    problem.startsWith(`debug evidence ${DEBUG_SSH_MATRIX}:`),
+  )
+  assert.ok(binding, JSON.stringify(problems))
+  assert.match(binding, /binds the debug artifact of run 4242424242/)
+
+  // Deleting the binding field and keeping the planted digest is the same
+  // attack without the awkward mismatch: an absent binding is a failure, not a
+  // fallback to what the rest of the document happens to say.
+  const withoutBinding = JSON.parse(validEvidence(DEBUG_SSH_MATRIX, DEBUG_SHA))
+  delete withoutBinding.binary
+  withoutBinding.note = { sha256: DEBUG_SHA }
+  const second = await checkVerificationEvidence({
+    ...createHarness({
+      files: { [DEBUG_SSH_MATRIX]: JSON.stringify(withoutBinding) },
+    }),
+    sourceFingerprint: CURRENT_SOURCE,
+  })
+  assert.equal(second.problems.length, 1, JSON.stringify(second.problems))
+  assert.match(
+    second.problems[0],
+    /binary\.sha256 is null instead of a sha256 digest/,
+  )
+})
+
+test('rejects an evidence file whose runId differs from the manifest', async () => {
+  const tampered = JSON.parse(validEvidence(DEBUG_SHELL, DEBUG_SHA))
+  tampered.provenance.runId = '4242424243'
+  const { problems } = await checkVerificationEvidence(
+    createHarness({ files: { [DEBUG_SHELL]: JSON.stringify(tampered) } }),
+  )
+  assert.equal(problems.length, 1, JSON.stringify(problems))
+  assert.match(problems[0], /come from different runs/)
+  assert.ok(problems[0].includes(DEBUG_SHELL))
+})
+
+test('rejects release evidence recorded against an older source fingerprint', async () => {
+  // Release evidence states its fingerprint only in provenance.fingerprint, so
+  // without that statement being checked on its own a release record of an
+  // older checkout rides along on a fresh manifest.
+  const stale = JSON.parse(validEvidence(RELEASE_SSH_MATRIX, RELEASE_SHA))
+  stale.provenance.fingerprint = 'fingerprint-of-old-source'
+  const { problems } = await checkVerificationEvidence({
+    ...createHarness({
+      files: { [RELEASE_SSH_MATRIX]: JSON.stringify(stale) },
+    }),
+    sourceFingerprint: CURRENT_SOURCE,
+  })
+  assert.equal(problems.length, 1, JSON.stringify(problems))
+  assert.match(
+    problems[0],
+    /recorded against source fingerprint fingerprint-of-old-source \(provenance\.fingerprint\)/,
+  )
+  assert.match(problems[0], /Re-run the scenario/)
+})
+
+test('rejects a manifest whose raw log is missing from the archive', async () => {
+  const absent = 'debug-ssh-matrix.log'
+  const { problems, checked } = await checkVerificationEvidence(
+    createHarness({ rawLogs: RAW_LOGS.filter(name => name !== absent) }),
+  )
+  assert.equal(problems.length, 1, JSON.stringify(problems))
+  assert.match(problems[0], /raw log\(s\) of run 4242424242 are missing/)
+  assert.match(problems[0], /docs\/verification\/raw\/4242424242\//)
+  assert.ok(problems[0].includes(absent))
+  assert.equal(checked, ALL_CURRENT.length)
+})
+
+test('rejects a manifest that lists no raw log at all', async () => {
+  const withoutLogs = manifestFor()
+  delete withoutLogs.rawLogs
+  const { problems } = await checkVerificationEvidence(
+    createHarness({ manifest: JSON.stringify(withoutLogs) }),
+  )
+  assert.equal(problems.length, 1, JSON.stringify(problems))
+  assert.match(problems[0], /records no rawLogs\.files/)
+})
+
+test('rejects a manifest that lists no per-file evidence entry', async () => {
+  const withoutEntries = manifestFor()
+  delete withoutEntries.evidenceFiles
+  const { problems } = await checkVerificationEvidence(
+    createHarness({ manifest: JSON.stringify(withoutEntries) }),
+  )
+  assert.equal(problems.length, ALL_CURRENT.length, JSON.stringify(problems))
+  for (const problem of problems) {
+    assert.match(problem, /records no evidenceFiles entry for this file/)
+  }
 })

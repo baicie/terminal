@@ -1,12 +1,22 @@
-import type { ConflictInfo, IncrementalSyncResult } from './sync-results'
+import type {
+  ConflictInfo,
+  IncrementalSyncResult,
+  PushedShare,
+  PushResult,
+} from './sync-results'
 import { Injectable, Logger } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
 import { deleteShareWithAudit } from '../shares/share-deletion'
 import { OfflineSyncService } from './offline-sync.service'
 import { buildShareCreateData, buildShareUpdateData } from './share-write-data'
+import { readChangeWindow } from './sync-delivery'
 import { describeSyncError, SYNC_OPERATION_FAILED } from './sync-error'
-
-export type { ConflictInfo, IncrementalSyncResult } from './sync-results'
+import {
+  classifyBaseVersion,
+  parseVersion,
+  shareContentDigest,
+  SYNC_CURSOR_VERSION,
+} from './sync-protocol'
 
 @Injectable()
 export class SyncService extends OfflineSyncService {
@@ -16,149 +26,42 @@ export class SyncService extends OfflineSyncService {
     super(prisma)
   }
 
+  /**
+   * Incremental pull driven by a composite server cursor, never by a clock. The
+   * scope is the caller's complete membership set - decided here, on every
+   * request, never a team the client names - and it is echoed back together with
+   * the identity that answered, so the client can attribute each row, detect a
+   * switched credential and drop what it may no longer read.
+   */
   async getChanges(
     userId: string,
-    since?: number,
-  ): Promise<IncrementalSyncResult> {
-    const timestamp = Date.now()
-    const sinceDate = since ? new Date(since) : new Date(0)
-    const untilDate = new Date(timestamp)
-    const memberships = await this.prisma.teamMember.findMany({
-      where: { userId },
-      select: { teamId: true },
-    })
-    const teamIds = memberships.map(membership => membership.teamId)
-    if (teamIds.length === 0) {
-      return { timestamp, shares: [], deletedShareIds: [] }
-    }
-
-    const shares = await this.prisma.share.findMany({
-      where: {
-        teamId: { in: teamIds },
-        updatedAt: { gte: sinceDate, lte: untilDate },
-      },
-      orderBy: { updatedAt: 'asc' },
-    })
-    const deleteLogs = await this.prisma.auditLog.findMany({
-      where: {
-        teamId: { in: teamIds },
-        action: 'SHARE_DELETED',
-        createdAt: { gte: sinceDate, lte: untilDate },
-      },
-    })
-
+    cursor?: number | string,
+  ): Promise<IncrementalSyncResult & { userId: string, teams: string[] }> {
+    const memberships = await this.prisma.teamMember.findMany(
+      { where: { userId }, select: { teamId: true, joinedTxid: true } },
+    )
+    const { watermark, upgradeRequired, ...page }
+      = await readChangeWindow(this.prisma, memberships, cursor)
     return {
-      timestamp,
-      shares: shares.map(share => ({
-        id: share.id,
-        teamId: share.teamId,
-        type: share.type,
-        data: share.data,
-        encryptedData: share.encryptedData,
-        isSensitive: share.isSensitive,
-        sharedBy: share.sharedBy,
-        permission: share.permission,
-        createdAt: share.createdAt.toISOString(),
-        updatedAt: share.updatedAt.toISOString(),
-      })),
-      deletedShareIds: deleteLogs
-        .map(log => (log.details as { shareId?: string })?.shareId)
-        .filter(Boolean) as string[],
+      userId,
+      teams: memberships.map(membership => membership.teamId),
+      timestamp: watermark,
+      upgradeRequired: upgradeRequired === true,
+      requiredCursorVersion: SYNC_CURSOR_VERSION,
+      ...page,
     }
   }
 
   async pushChanges(
     userId: string,
-    changes: {
-      shares?: Array<{
-        id: string
-        teamId: string
-        type: string
-        data: unknown
-        encryptedData?: string
-        isSensitive?: boolean
-        permission: string
-        baseVersion?: number
-      }>
-      deleteShares?: string[]
-    },
-  ): Promise<{
-    created: string[]
-    updated: string[]
-    deleted: string[]
-    conflicts: string[]
-    errors: Array<{ id: string; error: string }>
-  }> {
-    const result = {
-      created: [] as string[],
-      updated: [] as string[],
-      deleted: [] as string[],
-      conflicts: [] as string[],
-      errors: [] as Array<{ id: string; error: string }>,
+    changes: { shares?: PushedShare[], deleteShares?: string[] },
+  ): Promise<PushResult> {
+    const result: PushResult = {
+      created: [], updated: [], deleted: [], conflicts: [], errors: [], upgradeRequired: false,
     }
-
     for (const share of changes.shares ?? []) {
       try {
-        const existing = await this.prisma.share.findUnique({
-          where: { id: share.id },
-        })
-        if (existing) {
-          if (existing.teamId !== share.teamId) {
-            result.errors.push({
-              id: share.id,
-              error: 'Share does not belong to the requested team',
-            })
-            continue
-          }
-          const membership = await this.prisma.teamMember.findUnique({
-            where: { teamId_userId: { teamId: existing.teamId, userId } },
-          })
-          if (!membership) {
-            result.errors.push({ id: share.id, error: 'Not a team member' })
-            continue
-          }
-          const isCreator = existing.sharedBy === userId
-          if (!isCreator && existing.permission !== 'READWRITE') {
-            result.errors.push({
-              id: share.id,
-              error: 'Only creator can update share',
-            })
-            continue
-          }
-          if (
-            share.baseVersion !== undefined &&
-            existing.updatedAt.getTime() > share.baseVersion
-          ) {
-            result.conflicts.push(share.id)
-            continue
-          }
-          const written = await this.prisma.share.updateMany({
-            where: {
-              id: share.id,
-              teamId: share.teamId,
-              sharedBy: existing.sharedBy,
-              updatedAt: existing.updatedAt,
-            },
-            data: buildShareUpdateData(share, existing, !isCreator, !isCreator),
-          })
-          if (written.count !== 1) {
-            result.conflicts.push(share.id)
-            continue
-          }
-          result.updated.push(share.id)
-        } else {
-          const membership = await this.prisma.teamMember.findUnique({
-            where: { teamId_userId: { teamId: share.teamId, userId } },
-          })
-          if (!membership) {
-            result.errors.push({ id: share.id, error: 'Not a team member' })
-            continue
-          }
-          const created = await this.prisma.share.create({
-            data: buildShareCreateData(share, userId),
-          })
-          result.created.push(created.id)
-        }
+        await this.applyPushedShare(userId, share, result)
       } catch (error) {
         this.syncLogger.error(
           `Failed to process pushed share operation (code=${describeSyncError(error)})`,
@@ -166,13 +69,11 @@ export class SyncService extends OfflineSyncService {
         result.errors.push({ id: share.id, error: SYNC_OPERATION_FAILED })
       }
     }
-
     for (const shareId of changes.deleteShares ?? []) {
       try {
-        const existing = await this.prisma.share.findUnique({
-          where: { id: shareId },
-          include: { team: true },
-        })
+        const existing = await this.prisma.share.findUnique(
+          { where: { id: shareId }, include: { team: true } },
+        )
         if (!existing) {
           result.deleted.push(shareId)
           continue
@@ -185,10 +86,7 @@ export class SyncService extends OfflineSyncService {
           continue
         }
         if (existing.sharedBy !== userId) {
-          result.errors.push({
-            id: shareId,
-            error: 'Only creator can delete share',
-          })
+          result.errors.push({ id: shareId, error: 'Only creator can delete share' })
           continue
         }
         await deleteShareWithAudit(this.prisma, {
@@ -208,6 +106,118 @@ export class SyncService extends OfflineSyncService {
     return result
   }
 
+  /**
+   * Writes one pushed share honouring the declared operation: every branch either
+   * writes exactly one versioned change or reports a conflict.
+   */
+  private async applyPushedShare(
+    userId: string,
+    share: PushedShare,
+    result: PushResult,
+  ): Promise<void> {
+    const existing = await this.prisma.share.findUnique({ where: { id: share.id } })
+    if (existing) {
+      // Team scope is checked before membership so a cross-team push never
+      // reveals whether the caller is a member.
+      if (existing.teamId !== share.teamId) {
+        result.errors.push({
+          id: share.id,
+          error: 'Share does not belong to the requested team',
+        })
+        return
+      }
+      const membership = await this.prisma.teamMember.findUnique({ where: { teamId_userId: { teamId: existing.teamId, userId } } })
+      if (!membership) {
+        result.errors.push({ id: share.id, error: 'Not a team member' })
+        return
+      }
+      const isCreator = existing.sharedBy === userId
+      if (!isCreator && existing.permission !== 'READWRITE') {
+        result.errors.push({
+          id: share.id,
+          error: 'Only creator can update share',
+        })
+        return
+      }
+      const replay = shareContentDigest(existing) === shareContentDigest(share)
+      // CREATE never overwrites: the same content is an idempotent ack, any
+      // other payload is a conflict.
+      if (share.operation === 'CREATE') {
+        const ack = replay ? result.updated : result.conflicts
+        ack.push(share.id)
+        return
+      }
+      // Undeclared and unversioned, with content already stored: that is
+      // indistinguishable from a create replay, and it writes nothing anyway.
+      if (share.operation === undefined && share.baseVersion === undefined && replay) {
+        result.updated.push(share.id)
+        return
+      }
+      // Every non-CREATE write must prove the exact current version. A client
+      // that sends no baseVersion cannot prove anything, and reading the version
+      // in this request would let it overwrite serially newer data: it gets a
+      // conflict plus an upgrade demand instead (docs/issue.md #63).
+      if (classifyBaseVersion(existing.version, share.baseVersion) !== 'match') {
+        if (share.baseVersion === undefined) result.upgradeRequired = true
+        result.conflicts.push(share.id)
+        return
+      }
+      if (replay) {
+        // Replay of a request that already landed: acknowledge without writing.
+        result.updated.push(share.id)
+        return
+      }
+      const written = await this.prisma.share.updateMany({
+        where: {
+          id: share.id,
+          teamId: share.teamId,
+          sharedBy: existing.sharedBy,
+          version: existing.version,
+        },
+        data: buildShareUpdateData(share, existing, !isCreator, !isCreator),
+      })
+      if (written.count !== 1) {
+        result.conflicts.push(share.id)
+        return
+      }
+      result.updated.push(share.id)
+      return
+    }
+
+    const membership = await this.prisma.teamMember.findUnique({
+      where: { teamId_userId: { teamId: share.teamId, userId } },
+    })
+    if (!membership) {
+      result.errors.push({ id: share.id, error: 'Not a team member' })
+      return
+    }
+    if (share.operation === 'UPDATE') {
+      // The row was deleted after the client read it: never resurrect silently.
+      result.conflicts.push(share.id)
+      return
+    }
+    // Every create is checked against the tombstone log, undeclared ones too: a
+    // write that cannot prove it saw the deletion may not resurrect the share.
+    const tombstone = await this.prisma.syncChange.findFirst({
+      where: { shareId: share.id, op: 'DELETE' },
+      orderBy: { seq: 'desc' },
+      select: { version: true },
+    })
+    if (
+      tombstone !== null
+      && (share.baseVersion === undefined
+        || parseVersion(tombstone.version) > share.baseVersion)
+    ) {
+      if (share.baseVersion === undefined) result.upgradeRequired = true
+      result.conflicts.push(share.id)
+      return
+    }
+    const created = await this.prisma.share.create({
+      data: buildShareCreateData(share, userId),
+    })
+    result.created.push(created.id)
+  }
+
   async checkConflicts(
     userId: string,
     items: Array<{
@@ -218,13 +228,11 @@ export class SyncService extends OfflineSyncService {
   ): Promise<ConflictInfo[]> {
     const conflicts: ConflictInfo[] = []
     for (const item of items) {
-      const share = await this.prisma.share.findUnique({
-        where: { id: item.id },
-      })
+      const share = await this.prisma.share.findUnique({ where: { id: item.id } })
       if (!share) continue
-      const membership = await this.prisma.teamMember.findUnique({
-        where: { teamId_userId: { teamId: share.teamId, userId } },
-      })
+      const membership = await this.prisma.teamMember.findUnique(
+        { where: { teamId_userId: { teamId: share.teamId, userId } } },
+      )
       if (membership && share.updatedAt.getTime() > item.updatedAt) {
         conflicts.push({
           shareId: item.id,
@@ -249,31 +257,24 @@ export class SyncService extends OfflineSyncService {
       encryptedData?: string
       isSensitive?: boolean
       permission?: string
+      baseVersion?: number
     },
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean, error?: string }> {
     const share = await this.prisma.share.findUnique({ where: { id: shareId } })
     if (!share) return { success: false, error: 'Share not found' }
-    const membership = await this.prisma.teamMember.findUnique({
-      where: { teamId_userId: { teamId: share.teamId, userId } },
-    })
+    const membership = await this.prisma.teamMember.findUnique({ where: { teamId_userId: { teamId: share.teamId, userId } } })
     if (!membership) return { success: false, error: 'Not a team member' }
     if (share.sharedBy !== userId) {
-      return {
-        success: false,
-        error: 'Only creator can resolve share conflicts',
-      }
+      return { success: false, error: 'Only creator can resolve share conflicts' }
     }
 
     if (resolution === 'LOCAL' && clientData?.isSensitive === undefined) {
-      return {
-        success: false,
-        error: 'Local conflict data must include an explicit sensitive state',
-      }
+      return { success: false, error: 'Local conflict data must include an explicit sensitive state' }
     }
     if (
-      resolution === 'LOCAL' &&
-      clientData?.isSensitive === true &&
-      !clientData.encryptedData
+      resolution === 'LOCAL'
+      && clientData?.isSensitive === true
+      && !clientData.encryptedData
     ) {
       return {
         success: false,
@@ -281,10 +282,17 @@ export class SyncService extends OfflineSyncService {
       }
     }
     if (resolution === 'LOCAL' && clientData) {
-      await this.prisma.share.update({
-        where: { id: shareId },
+      // A LOCAL resolution is an explicit overwrite, never an unconditional one:
+      // the row still has to carry the version this write is based on. A client
+      // that cannot prove one is bounded by the version read in this request
+      // (docs/phase8/sync-protocol.md §6.3).
+      const written = await this.prisma.share.updateMany({
+        where: { id: shareId, version: clientData.baseVersion ?? share.version },
         data: buildShareUpdateData(clientData, share, true),
       })
+      if (written.count !== 1) {
+        return { success: false, error: 'CONFLICT_STALE_VERSION' }
+      }
     }
     return { success: true }
   }

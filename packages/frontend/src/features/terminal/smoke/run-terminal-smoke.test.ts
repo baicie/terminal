@@ -1,8 +1,10 @@
+import type { Terminal } from '@baicie/xterm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   runTerminalSmoke,
   waitForTerminalSmokeFrame,
 } from './run-terminal-smoke'
+import { collectTerminalSmokeDiagnostics } from './terminal-smoke-diagnostics'
 import { createTerminalSmokeProtocol } from './terminal-smoke-protocol'
 import { terminalSmokeTestConfig } from './terminal-smoke-test-fixtures'
 
@@ -252,6 +254,58 @@ describe('runTerminalSmoke', () => {
     expect(term.inputs).toEqual([])
   })
 
+  it('accepts a barrier marker that shares its line with the shell prompt', async () => {
+    // The Linux smoke shell prints its prompt without a trailing newline, so
+    // the barrier arrives glued to it; an exact-line reader never matches it.
+    const term = new FakeTerminal()
+    terminalForBuffer = term
+    const staleMarker = 'TERMINAL_SMOKE_STALE_OUTPUT_CANARY'
+    const barrierMarker = 'TERMINAL_SMOKE_ACTIVE_OUTPUT_BARRIER'
+
+    const result = await runTerminalSmoke(term, config, {
+      nonce,
+      probeIntervalMs: 1,
+      frontendTimeoutMs: 2_000,
+      nextFrame: async () => {},
+      staleOutputProbe: async () => {
+        term.emitOutput(`\u001b]133;A\u0007$ ${barrierMarker}\r\n`)
+        return { staleMarker, barrierMarker }
+      },
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      stage: 'complete',
+      staleOutputRejected: true,
+    })
+    expect(term.inputs[0]).toContain("'READY_")
+  })
+
+  it('still fails when the stale canary appears anywhere on screen', async () => {
+    const term = new FakeTerminal()
+    terminalForBuffer = term
+    const staleMarker = 'TERMINAL_SMOKE_STALE_OUTPUT_CANARY'
+    const barrierMarker = 'TERMINAL_SMOKE_ACTIVE_OUTPUT_BARRIER'
+
+    const result = await runTerminalSmoke(term, config, {
+      nonce,
+      nextFrame: async () => {},
+      staleOutputProbe: async () => {
+        term.emitOutput(`retired session output reached ${staleMarker} here`)
+        term.emitOutput(barrierMarker)
+        return { staleMarker, barrierMarker }
+      },
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      stage: 'stale-output',
+      staleOutputRejected: false,
+      error: expect.stringContaining('retired SSH session'),
+    })
+    expect(term.inputs).toEqual([])
+  })
+
   it('returns a failure and releases parser listeners after timeout', async () => {
     const term = new FakeTerminal()
     terminalForBuffer = term
@@ -285,5 +339,68 @@ describe('runTerminalSmoke', () => {
     expect(result.error).toContain(
       'output=accepted=1048576,parsed=0,queued=1015808',
     )
+  })
+})
+
+function terminalWithViewport(
+  lines: string[],
+  geometry: { cursorY: number; viewportY: number; baseY: number },
+) {
+  return {
+    buffer: {
+      active: {
+        length: lines.length,
+        cursorY: geometry.cursorY,
+        viewportY: geometry.viewportY,
+        baseY: geometry.baseY,
+        getLine(index: number) {
+          const text = lines[index]
+          if (text === undefined) return undefined
+          return {
+            isWrapped: false,
+            length: text.length,
+            translateToString: () => text,
+          }
+        },
+      },
+    },
+  } as unknown as Terminal
+}
+
+describe('collectTerminalSmokeDiagnostics', () => {
+  it('reports recent non-empty lines instead of the blank bottom of a 24-row viewport', () => {
+    const lines = [
+      'AFTER_LOAD_OK_a1b2c3d4',
+      ...Array.from({ length: 23 }, () => ''),
+    ]
+    const diagnostics = JSON.parse(
+      collectTerminalSmokeDiagnostics(
+        terminalWithViewport(lines, { cursorY: 0, viewportY: 0, baseY: 0 }),
+        () => 'input',
+        () => 'output',
+      ),
+    )
+
+    expect(diagnostics.tail).toEqual(['AFTER_LOAD_OK_a1b2c3d4'])
+    expect(diagnostics.bufferLength).toBe(24)
+  })
+
+  it('includes buffer geometry so an empty tail is distinguishable from an empty terminal', () => {
+    const lines = Array.from({ length: 24 }, () => '')
+    const diagnostics = JSON.parse(
+      collectTerminalSmokeDiagnostics(
+        terminalWithViewport(lines, { cursorY: 20, viewportY: 18, baseY: 18 }),
+        () => 'input',
+        () => 'output',
+      ),
+    )
+
+    expect(diagnostics.tail).toEqual([])
+    expect(diagnostics).toMatchObject({
+      bufferLength: 24,
+      cursorY: 20,
+      viewportY: 18,
+      baseY: 18,
+    })
   })
 })

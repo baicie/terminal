@@ -25,6 +25,11 @@ export default {
   'hosts.invite': '邀请',
   'hosts.sshAuth': 'ssh, {{username}}',
   'hosts.copySsh': '复制 SSH 命令',
+  'hosts.moreActions': '{{name}} 的更多操作',
+  'hosts.deleteConfirm':
+    '确定删除 "{{name}}" 吗？该主机保存的凭据、分组归属与收藏标记将一并永久移除，且无法撤销。',
+  'hosts.deleted': '已删除主机 "{{name}}"',
+  'hosts.deleteFailed': '删除主机失败：{{message}}',
 
   // Quick Connect
   'quickConnect.title': '快速连接',

@@ -6,6 +6,7 @@ pub mod channel;
 pub(crate) mod lifecycle;
 pub mod local;
 pub mod manager;
+pub(crate) mod pty_diagnostics;
 pub(crate) mod shell_integration;
 pub(crate) mod shell_startup;
 pub mod ssh;

@@ -1,5 +1,6 @@
 import type { VaultEntry } from '@/service/vault'
 import { Copy, Eye, EyeOff, KeyRound, Server } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 
@@ -16,12 +17,14 @@ export function VaultsViewEntryDetails({
   onShowValueChange,
   onCopyValue,
 }: VaultsViewEntryDetailsProps) {
+  const { t } = useTranslation()
+
   if (!entry) {
     return (
       <div className="flex flex-1 items-center justify-center text-muted-foreground">
         <div className="text-center">
           <KeyRound className="mx-auto mb-2 size-10 opacity-50" />
-          <p>Select an entry to view details</p>
+          <p>{t('vaults.selectEntry')}</p>
         </div>
       </div>
     )
@@ -32,18 +35,18 @@ export function VaultsViewEntryDetails({
       <div className="border-b p-4">
         <h4 className="flex items-center gap-2 font-medium">
           <Server />
-          Entry Details
+          {t('vaults.entryDetails')}
         </h4>
       </div>
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
         <div className="flex flex-col gap-2">
-          <Label>Key</Label>
+          <Label>{t('vaults.keyLabel')}</Label>
           <div className="break-all rounded-lg bg-muted p-3 font-mono text-sm">
             {entry.key}
           </div>
         </div>
         <div className="flex flex-col gap-2">
-          <Label>Value</Label>
+          <Label>{t('vaults.valueLabel')}</Label>
           <div className="flex gap-2">
             <div className="flex-1 break-all rounded-lg bg-muted p-3 font-mono text-sm">
               {showValue ? entry.value : '••••••••••••'}
@@ -51,7 +54,7 @@ export function VaultsViewEntryDetails({
             <Button
               variant="outline"
               size="icon"
-              aria-label={showValue ? 'Hide value' : 'Show value'}
+              aria-label={showValue ? t('vaults.hideValue') : t('vaults.showValue')}
               onClick={() => onShowValueChange(!showValue)}
             >
               {showValue ? <EyeOff /> : <Eye />}
@@ -59,7 +62,7 @@ export function VaultsViewEntryDetails({
             <Button
               variant="outline"
               size="icon"
-              aria-label="Copy value"
+              aria-label={t('vaults.copyValue')}
               onClick={() => onCopyValue(entry.value)}
             >
               <Copy />
@@ -68,7 +71,7 @@ export function VaultsViewEntryDetails({
         </div>
         {entry.description && (
           <div className="flex flex-col gap-2">
-            <Label>Description</Label>
+            <Label>{t('vaults.descriptionLabel')}</Label>
             <p className="text-sm text-muted-foreground">{entry.description}</p>
           </div>
         )}

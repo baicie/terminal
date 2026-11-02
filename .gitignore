@@ -37,3 +37,12 @@ __pycache__/
 *.njsproj
 *.sln
 *.sw?
+
+# Phase 8.9 Task 5: pre-install data snapshots the install-chain scripts write and
+# the CI job uploads as an artifact. They are run output, not sources.
+verify-install-evidence/
+
+# Local scratch directory: one-off probe JSON and throwaway scripts kept while
+# chasing a specific failure. Never an input to a gate, so a stray `git add -A`
+# must not sweep it into a commit.
+.workbuddy/

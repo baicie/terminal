@@ -4,6 +4,7 @@
 > 最后验证日期：2026-11-01（本轮只把文档与 `release.yml` / `tauri.conf.json` 的事实对齐，未重跑测试、未重采实机证据）
 > 发布目标：`0.0.1-dev.2`（`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 三处当前都是 `0.0.1-dev.2`；`0.0.1-dev.1` 是上一版已发布证据）
 > 状态：✅ 本机自动发布门禁与多平台安装包验收完成；⚠️ 外部实机项目待执行；⚠️ 无 OS 代码签名/公证，发布状态 `RELEASE_QA_ONLY`
+> 🔴 **发布阻塞项（未闭合）**：① `cargo audit` 实测 27 条 RustSec 漏洞，21 条在构建图内、其中 6 条基准分 7.5（quick-xml ×4、russh、russh-cryptovec），台账 `docs/phase9-1/security-advisories.md`；② 实机矩阵 Linux 产品门禁 `smoke:shell-probe:matrix` zsh 三条仍失败（run `41231265959`）。本文件下方各历史小节的「✅ 通过」只代表该日期该范围的测量，不覆盖这两项。
 
 ## 目标
 
@@ -214,7 +215,7 @@ macOS 走「先分架构编二进制、再按架构各自打包」两段式：`b
 
 - **没有 Apple Developer ID / notarization**：`tauri.conf.json` 里没有签名身份配置，DMG 最多是 Tauri 默认的 ad-hoc 签名（`adhoc, linker-signed`）。ad-hoc 不等于 Developer ID，也不构成公证，Gatekeeper 仍会拦截首次打开。Release 说明已由工作流写入「macOS is not notarized」。
 - **没有 Windows Authenticode**：NSIS 安装包未签名，SmartScreen 会告警。
-- **没有 updater 私钥**：`updater-signed` 一次都没在真实密钥下执行过；本轮**没有** CI run 可引用，因此该模式只能标为「代码完成、未验证」，不能写成「已验证」。
+- ~~**没有 updater 私钥**：`updater-signed` 一次都没在真实密钥下执行过~~ **该判断已被 Phase 8 P8.7 推翻**：Release `v0.0.1-dev.2`（published 2026-10-30T09:54:11Z，draft=false）实际产出 **20 个资产**，含 8 个安装包 + **8 个真实 minisign `.sig`**（解码首行 `untrusted comment: signature from tauri secret key`）+ `SHA256SUMS.txt` + `latest.json`。即 updater-signed 路径**已在真实密钥下跑通**。但仍在仓库里的 `tauri.conf.json` pubkey 是占位符，只有 workflow_dispatch + release_mode=updater-signed 时才内联真实公钥——因此「推 tag 的 unsigned-qa 产物无法自动更新」这一落差依然成立。
 - **没有实机安装/升级验收**：`unsigned-qa` 的 8 个包只被验证过「存在、非空、命名正确、SHA-256 与清单一致」。DMG 拖入 Applications、NSIS 安装与卸载重装、AppImage 启动、deb `dpkg -i`、SQLite 旧库兼容、签名后自动升级链路，全部为 NOT_RUN。
 - **Windows/Linux/Pageant/PTY/串口**仍按下方实机矩阵逐项验证；runner 编译通过或安装包构建成功都不能替代它们。
 
@@ -282,7 +283,7 @@ macOS 走「先分架构编二进制、再按架构各自打包」两段式：`b
 | Tauri 三平台编译 | macOS / Ubuntu / Windows CI | ✅ CI `31553345929` 与 `31553348495` 三平台通过 | `.github/workflows/ci.yml` 三平台 `tauri build --no-bundle --ci` 通过 |
 | Release 安装包 | 8 个原生 GitHub runner 打包 job | 🟡 `v0.0.1-dev.1` 工作流 `31554163901` 全绿；8 个安装包与 checksum 已核验（版本目标已推进到 `0.0.1-dev.2`，该版本未重新出包） | 八个安装资产非空且系统/架构命名正确，`SHA256SUMS.txt` 可校验 |
 | Release 安装/升级（人工） | macOS / Windows / Linux 实机 | ⚠️ NOT_RUN | DMG 拖入 Applications、NSIS 安装+卸载重装、AppImage 启动、`dpkg -i`、旧 SQLite 库兼容，全部需要真实机器 |
-| `updater-signed` 出包 | GitHub runner + 真实密钥 | ⚠️ NOT_RUN | 需要 `TAURI_SIGNING_PRIVATE_KEY` 与 `TAURI_UPDATER_PUBKEY`；一次都没跑过，不能写成已验证 |
+| `updater-signed` 出包 | GitHub runner + 真实密钥 | ✅ 已在 dev.2 跑通 | 2026-10-30 的 `v0.0.1-dev.2` 产出 8 个真实 `.sig` 与 `latest.json`。**但**：仅 4 个平台进了 `latest.json`（缺 windows-aarch64 / linux-aarch64，这两个架构能装不能更新）；且升级链只从 dev.2 起有效，dev.1 → dev.2 不存在 |
 | S3 服务端集成 | AWS S3 或兼容服务 | ⚠️ 待外部服务 | 固定向量之外，验证实际签名、UTF-8 key、分页列表、上传下载与删除 |
 | Agent forwarding | 全平台 | ⚠️ 代码完成，待实机 | 默认关闭；opt-in 时显式请求；未授权主动 channel 被拒绝；池内启用/禁用连接隔离 |
 | Team 注册准入 | Docker / PostgreSQL | ✅ 自动化与容器运行均通过 | 生产默认 closed；错误 token 不新增用户；正确 token/open 可注册；缺失/非法环境配置拒绝启动 |
@@ -470,7 +471,7 @@ pnpm smoke:ssh-matrix --reuse-binary --release key,key-reconnect,password,passwo
 | 本机 `pnpm verify` | ✅ 前端 63 个文件/561 项、Team Server 25 个文件/103 项、Rust 47 项单测 + 2 项集成测试全部通过 |
 | 静态质量 | ✅ Prisma validate、lint、typecheck、Nest/Vite build、Rust fmt/check/Clippy `-D warnings` 与 462 个生产源码文件规模门禁通过 |
 | Bundle | ✅ 初始 gzip 237.68 KB / 240 KB，总 gzip 524.42 KB / 550 KB，最大 JS chunk raw 401.56 KB / 500 KB |
-| 供应链 | ✅ `deepmerge-ts` 固定到修复版 8.0.1；`pnpm audit --prod --audit-level high` 为 0 个已知漏洞 |
+| 供应链 | ✅ `deepmerge-ts` 固定到修复版 8.0.1；⚠️ `pnpm audit --prod --audit-level high` **未测量（NOT_RUN）**：当前镜像源 `registry.npmmirror.com` 不实现 audit 端点（`ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS`），该项取不到结果。「未测量」不等于「无漏洞」，不得按 0 漏洞记账；依据见 `docs/phase9/dependency-audit.md`。Rust 侧 `cargo audit` 实测有 27 条已知漏洞，台账见 `docs/phase9-1/security-advisories.md` |
 | Compose | ✅ 配置解析、PostgreSQL 16.15、2 个 Prisma 迁移、三类 health、closed/token/open、5 类非法环境、SIGTERM 退出码 0 与重启 readiness 全部通过 |
 | SSH 高级能力 | ✅ Agent forwarding 授权/池隔离和 Jump Host certificate 自动化通过；⚠️ 真实 Agent、CA、服务端与跨平台矩阵待执行 |
 

@@ -156,6 +156,7 @@ test('each Windows shell is launched by the executable the backend expects', asy
           return child
         },
         tempDirectory: '/tmp',
+        writeFile: async () => {},
       },
     })
     assert.equal(result.caseName, RESULT.caseName)
@@ -184,6 +185,7 @@ test('runner passes a dedicated case and result path to the gated binary', async
       return child
     },
     tempDirectory: '/tmp',
+    writeFile: async (...args) => calls.push(['writeFile', ...args]),
   }
   const result = await runShellProbe({
     cwd: '/workspace/terminal',
@@ -229,6 +231,7 @@ test('Linux shell probes select the requested shell through the isolated environ
       return child
     },
     tempDirectory: '/tmp',
+    writeFile: async (...args) => calls.push(['writeFile', ...args]),
   }
   await runShellProbe({
     cwd: '/workspace/terminal',
@@ -272,8 +275,11 @@ test('the ssh transport starts the real sshd fixture and hands the app its confi
       stop: async () => calls.push(['stop']),
     }),
     tempDirectory: '/tmp',
+    // The probe also seeds zsh startup files into its synthetic HOME, so the
+    // SSH config has to be picked out by path rather than by "last write
+    // wins" -- otherwise this assertion silently measures a .zshrc.
     writeFile: async (path_, contents) => {
-      written = contents
+      if (path_.endsWith('ssh-config.json')) written = contents
     },
   }
   await runShellProbe({
@@ -341,6 +347,7 @@ test('runner cleans the temporary directory when the app emits an error', async 
       return child
     },
     tempDirectory: '/tmp',
+    writeFile: async () => {},
   }
 
   await assert.rejects(
@@ -457,5 +464,82 @@ test('a pass verdict without the interrupt byte names the byte it needed', () =>
     () => parseShellProbeResult(JSON.stringify(result), 'ctrl-c-interrupt'),
     error =>
       error.message.includes('never carried the required "\\u0003" byte(s)'),
+  )
+})
+
+test('the synthetic HOME is seeded before the app is spawned', async () => {
+  // The probe points HOME at a fresh mkdtemp directory, and an empty HOME is
+  // what lets Debian's system-wide /etc/zsh/zshrc run compinit and stop on
+  // "insecure directories ... [y/n]?". compinit answers that with `read -q`,
+  // which takes a single character off the front of whatever is typed next --
+  // the probe's setup command. `printf ...` arrives as `rintf ...`, the ready
+  // marker is never printed, and the case can only die on its deadline.
+  //
+  // So the ordering is the assertion: the files have to exist before the app
+  // starts, not merely at some point during the run.
+  const child = new EventEmitter()
+  child.kill = signal => queueMicrotask(() => child.emit('close', 0, signal))
+  const order = []
+  const dependencies = {
+    access: async () => {},
+    clearTimeout,
+    mkdtemp: async () => '/tmp/shell-probe-seed',
+    now: Date.now,
+    platform: 'linux',
+    readFile: async () => JSON.stringify(RESULT),
+    rm: async () => {},
+    setTimeout,
+    spawn: () => {
+      order.push('spawn')
+      return child
+    },
+    tempDirectory: '/tmp',
+    writeFile: async path_ => order.push(path_),
+  }
+  await runShellProbe({
+    cwd: '/workspace/terminal',
+    skipBuild: true,
+    shell: 'zsh',
+    targetDirectory: '/workspace/target',
+    dependencies,
+  })
+  assert.deepEqual(order, [
+    '/tmp/shell-probe-seed/.zshenv',
+    '/tmp/shell-probe-seed/.zshrc',
+    'spawn',
+  ])
+})
+
+test('the seeded .zshenv carries the switch that keeps the system rc quiet', async () => {
+  // skip_global_compinit has to be in .zshenv specifically: zsh reads
+  // /etc/zshenv, then $ZDOTDIR/.zshenv, and only then the global rc that runs
+  // compinit, so .zshrc would be too late to stop it. The product's own ZDOTDIR
+  // wrapper forwards .zshenv to $HOME/.zshenv, which is why seeding HOME
+  // reaches the shell through the product's real injection path.
+  const child = new EventEmitter()
+  child.kill = signal => queueMicrotask(() => child.emit('close', 0, signal))
+  const seeded = new Map()
+  await runShellProbe({
+    cwd: '/workspace/terminal',
+    skipBuild: true,
+    shell: 'zsh',
+    targetDirectory: '/workspace/target',
+    dependencies: {
+      access: async () => {},
+      clearTimeout,
+      mkdtemp: async () => '/tmp/shell-probe-seed-body',
+      now: Date.now,
+      platform: 'linux',
+      readFile: async () => JSON.stringify(RESULT),
+      rm: async () => {},
+      setTimeout,
+      spawn: () => child,
+      tempDirectory: '/tmp',
+      writeFile: async (path_, contents) => seeded.set(path_, contents),
+    },
+  })
+  assert.match(
+    seeded.get('/tmp/shell-probe-seed-body/.zshenv'),
+    /^skip_global_compinit=1$/m,
   )
 })

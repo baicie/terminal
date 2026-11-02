@@ -12,6 +12,65 @@ export const AX_PROBE_TIMEOUT_MS = 3_000
 export const NATIVE_AX_PROBE_COMPILE_TIMEOUT_MS = 15_000
 export const CLEANUP_GRACE_MS = 3_000
 export const READINESS_MODES = ['local', 'remote']
+/**
+ * File the app appends its staged startup timeline to. Every run gets its own
+ * path inside the throwaway HOME, so two concurrent measurements cannot mix.
+ */
+export const STAGES_FILE_NAME = 'terminal-startup-stages.jsonl'
+/** Stages quoted in a failure message. The whole timeline stays in the result. */
+export const REPORTED_STAGE_LIMIT = 20
+const STAGES_ENV_KEY = 'TERMINAL_STARTUP_STAGES_PATH'
+
+/**
+ * Per-stage latency budgets, in milliseconds.
+ *
+ * These are regression thresholds, not a readiness deadline: every number is
+ * measured on a quiet machine (see docs/issue.md #65 for the distribution) and
+ * then given headroom, so a stage that regresses shows up as a named violation
+ * instead of disappearing into one 10-second number. A violation is reported,
+ * never fatal - the readiness deadline stays the only pass/fail gate.
+ *
+ * "ssh-startup-settle" -> "ssh-startup-write-begin" is the deliberate 1000 ms
+ * SSH_STARTUP_SETTLE_DELAY in src-tauri/src/session/ssh.rs; its budget is what
+ * fails if someone grows that constant again.
+ */
+export const STAGE_BUDGETS = [
+  ['frontend-boot', 'db-load-started', 2_000],
+  ['db-load-started', 'ready', 2_000],
+  ['session-create-requested', 'ssh-connect-start', 250],
+  ['ssh-connect-start', 'ssh-tcp-handshake-done', 1_500],
+  ['ssh-tcp-handshake-done', 'ssh-auth-done', 1_500],
+  ['ssh-auth-done', 'ssh-pty-ready', 1_500],
+  ['ssh-pty-ready', 'ssh-shell-first-output', 2_000],
+  ['ssh-startup-settle', 'ssh-startup-write-begin', 1_500],
+  ['ssh-startup-write-done', 'session-created', 500],
+]
+
+function stageTimeline(stages, name) {
+  const found = stages.find(stage => stage.stage === name)
+  return found === undefined ? null : found.atMs
+}
+
+/**
+ * Compare the measured timeline with the per-stage budgets.
+ *
+ * A stage that never arrived is skipped rather than reported as a violation:
+ * "this platform has no SSH stage" is not a latency regression, and turning it
+ * into one would make every local run fail.
+ */
+export function evaluateStageBudgets(stages) {
+  const violations = []
+  const checked = []
+  for (const [from, to, budgetMs] of STAGE_BUDGETS) {
+    const start = stageTimeline(stages, from)
+    const end = stageTimeline(stages, to)
+    if (start === null || end === null) continue
+    const elapsedMs = end - start
+    checked.push({ from, to, elapsedMs, budgetMs })
+    if (elapsedMs > budgetMs) violations.push({ from, to, elapsedMs, budgetMs })
+  }
+  return { checked, violations }
+}
 export const READINESS_TARGETS = ['window', 'terminal']
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..')
 export const NATIVE_AX_PROBE_SOURCE = path.join(
@@ -188,6 +247,48 @@ async function isMarkerReady(markerPath, markerContent, dependencies) {
   } catch {
     return false
   }
+}
+
+export function describeStages(stages, limit = REPORTED_STAGE_LIMIT) {
+  if (!Array.isArray(stages) || stages.length === 0) return 'none recorded'
+  const reported = stages.slice(-limit)
+  const suffix =
+    stages.length > reported.length ? ` (+${stages.length - reported.length} earlier)` : ''
+  return (
+    reported.map(stage => `${stage.stage}@${stage.atMs}ms`).join(' -> ') + suffix
+  )
+}
+
+/**
+ * Read the staged timeline the app wrote. A missing file means the app never
+ * reached its first stage, and a torn last line means the process was killed
+ * mid-write: neither is a harness failure, so both are reported as such instead
+ * of throwing away the stages that did land.
+ */
+export async function readStages(stagesPath, dependencies) {
+  let text
+  try {
+    text = await dependencies.readFile(stagesPath, 'utf8')
+  } catch {
+    return []
+  }
+  const stages = []
+  for (const line of String(text).split('\n')) {
+    if (line.trim() === '') continue
+    let parsed
+    try {
+      parsed = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (typeof parsed?.at_ms !== 'number' || typeof parsed?.stage !== 'string') continue
+    stages.push({
+      atMs: parsed.at_ms,
+      stage: parsed.stage,
+      detail: typeof parsed.detail === 'string' ? parsed.detail : '',
+    })
+  }
+  return stages
 }
 
 async function areMarkersReady(markerChecks, dependencies) {
@@ -567,6 +668,7 @@ export async function runColdStartStopwatch({
     (await dependencies.mkdtemp(
       path.join(dependencies.tempDirectory, 'terminal-cold-start-'),
     ))
+  const stagesPath = path.join(home, STAGES_FILE_NAME)
   const ownsHome = suppliedHome === undefined
   const nativeProbePath = path.join(home, 'terminal-macos-ax-probe')
   let requestStartedAt = null
@@ -574,6 +676,8 @@ export async function runColdStartStopwatch({
   let spawnStartedAt = null
   let lastReadiness = null
   let lastProbeError = null
+  let lastStages = []
+  let firstStageSeenMs = null
   let lastMarkerReady = requiredMarker === undefined
   let lastWindowReady = false
   let lastTerminalReady = false
@@ -634,7 +738,14 @@ export async function runColdStartStopwatch({
     child = dependencies.spawn(executable, [], {
       cwd: PROJECT_ROOT,
       env: (() => {
-        const childEnvironment = { ...process.env, ...environment, HOME: home }
+        const childEnvironment = {
+          ...process.env,
+          ...environment,
+          HOME: home,
+          // Always ours: the timeline is what attributes a readiness timeout to
+          // a stage, so it cannot be skipped by a caller's environment.
+          [STAGES_ENV_KEY]: stagesPath,
+        }
         for (const key of unsetEnvironmentKeys) delete childEnvironment[key]
         return childEnvironment
       })(),
@@ -667,15 +778,26 @@ export async function runColdStartStopwatch({
           JSON.stringify({
             readiness: lastReadiness,
             readinessTarget: effectiveReadinessTarget,
+            // Without this the report reads as "the window was not ready" even
+            // when no window probe ever ran, which is what a remote run does.
+            axProbe: reportedAxProbe,
             windowReady: lastWindowReady,
             terminalReady: lastTerminalReady,
             markerReady: lastMarkerReady,
           })
         const readinessLabel =
           effectiveReadinessTarget === 'terminal' ? 'terminal' : 'window'
+        // The stage list is the evidence the probe state cannot carry: a
+        // stalled WebView, a slow handshake and a shell that never spoke all
+        // look identical in the readiness flags.
+        const stageSummary =
+          `stages: ${describeStages(lastStages)}` +
+          (firstStageSeenMs === null
+            ? '; no stage ever arrived'
+            : `; first stage at ${firstStageSeenMs} ms`)
         fail(
           new Error(
-            `${readinessLabel} readiness did not complete within ${timeoutMs} ms${details ? ` (last probe: ${details})` : ''}` +
+            `${readinessLabel} readiness did not complete within ${timeoutMs} ms${details ? ` (last probe: ${details})` : ''} (${stageSummary})` +
               describeStalledReadiness(
                 lastReadiness,
                 effectiveReadinessTarget,
@@ -729,7 +851,11 @@ export async function runColdStartStopwatch({
               error instanceof Error ? error.message : String(error)
           }
           if (settled) return
+          lastStages = await readStages(stagesPath, dependencies)
           const readyNow = dependencies.now()
+          if (firstStageSeenMs === null && lastStages.length > 0) {
+            firstStageSeenMs = readyNow - spawnStartedAt
+          }
           if (readyNow - spawnStartedAt >= timeoutMs) {
             failReadinessTimeout()
             return
@@ -775,6 +901,10 @@ export async function runColdStartStopwatch({
               })),
               requestToReadyMs: readyNow - requestStartedAt,
               spawnToReadyMs: readyNow - spawnStartedAt,
+              firstStageSeenMs,
+              stages: lastStages,
+              // Recorded, not enforced: the readiness deadline remains the gate.
+              stageBudgets: evaluateStageBudgets(lastStages),
               windowReady: lastWindowReady,
               terminalReady: lastTerminalReady,
               readiness: lastReadiness,

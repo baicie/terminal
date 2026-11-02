@@ -7,8 +7,10 @@ import type {
 } from './terminal-smoke-contract'
 import {
   hasExactLogicalLine,
+  hasLogicalLineContaining,
   type ParsedTerminalBuffer,
   waitForExactLogicalLine,
+  waitForLogicalLineContaining,
 } from './terminal-smoke-buffer'
 import {
   createTerminalSmokeNonce,
@@ -46,10 +48,6 @@ export interface WaitForTerminalSmokeInteractiveOptions {
   signal?: AbortSignal
   nonce?: string
   onInteractive?: () => Promise<number | void> | number | void
-}
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message
-  return String(error)
 }
 
 /**
@@ -91,7 +89,7 @@ function describeFailure(
   error: unknown,
   diagnostics?: () => string | undefined,
 ): string {
-  const message = errorMessage(error)
+  const message = error instanceof Error ? error.message : String(error)
   const detail = diagnostics?.()
   return detail ? `${message}; output=${detail}` : message
 }
@@ -131,10 +129,12 @@ export async function runTerminalSmoke(
     if (options.staleOutputProbe) {
       stage = 'stale-output'
       const probe = await options.staleOutputProbe()
-      await waitForExactLogicalLine(term, probe.barrierMarker, {
+      // The smoke shell prints its prompt without a newline, so the barrier
+      // can share a line with it; the canary check is the stricter of the two.
+      await waitForLogicalLineContaining(term, probe.barrierMarker, {
         signal: controller.signal,
       })
-      if (hasExactLogicalLine(term, probe.staleMarker)) {
+      if (hasLogicalLineContaining(term, probe.staleMarker)) {
         throw new Error('Output from the retired SSH session reached xterm')
       }
       staleOutputRejected = true

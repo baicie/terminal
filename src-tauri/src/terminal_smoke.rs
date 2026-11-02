@@ -1185,7 +1185,10 @@ where
 {
     let stale_output = TerminalSmokeOutput {
         session_id: retired_session_id.to_string(),
-        data: format!("{STALE_OUTPUT_MARKER}\r\n"),
+        // The smoke shell prints its prompt without a trailing newline, so a
+        // marker that does not start a fresh line sticks to the prompt and only
+        // ever matches a "line contains marker" reader.
+        data: format!("\r\n{STALE_OUTPUT_MARKER}\r\n"),
         is_stderr: false,
     };
     emit("ssh-data", &stale_output)
@@ -1193,7 +1196,7 @@ where
 
     let active_output = TerminalSmokeOutput {
         session_id: active_session_id.to_string(),
-        data: format!("{ACTIVE_OUTPUT_BARRIER}\r\n"),
+        data: format!("\r\n{ACTIVE_OUTPUT_BARRIER}\r\n"),
         is_stderr: false,
     };
     emit("ssh-data", &active_output)
