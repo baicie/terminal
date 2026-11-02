@@ -4481,7 +4481,83 @@ smoke 结果先判定，非 smoke 时再 `await` 那四个已完成/在途的 Pr
 `node scripts/check-source-size.mjs` **560 个生产文件**通过；
 `pnpm --filter=@terminal/frontend typecheck` exit 0；改动文件 `eslint` exit 0。
 
-**仍未验证**：这条修复**没有**在真实 runner 上重跑矩阵。下一次 real-machine run
-的 `nano-edit` 是否稳定通过才是它的验收；在此之前只能记「代码修复 + 单测回归通过」。
-另外，本修复改动了 `packages/frontend/src`（`FINGERPRINT_PATHS` 内），
-**6 份实机证据随之失效，必须重采**（见 Issue #162 / `docs/phase9-2/verification-evidence.md`）。
+**真实 runner 验收（2026-11-02，run `41478709578`，sha `3102093`）**：
+macOS job 25 步全 success，`Run the shell interaction matrix over real SSH` 里
+`nano-edit` 输出 `ok (4770 ms)`，且 `input_probe_config invoked` 正常出现——
+与失败 run 里整段没有该 IPC 的情形相反。全矩阵 **40 个 probe 用例 `ok`，0 个 FAILED**
+（macOS 本地 14 + 真实 SSH 7 + Linux 14 + Windows 5）。
+
+**同轮还暴露并修掉了第二个缺陷**（同一个 run，见 Issue #167）：Linux 远程冷启动
+在测量成功后被清理阶段判红。修掉后下一次 run `41478709578` 三平台 3/3 success。
+
+本修复改动了 `packages/frontend/src`（`FINGERPRINT_PATHS` 内），6 份实机证据已随
+run `41478709578` 重采（见 `docs/phase9-2/verification-evidence.md`）。
+
+### Issue #167: 冷启动测量在收尾清理阶段被 ENOTEMPTY 判红，测量本身已成功 ✅ 已修复（2026-11-02）
+
+**严重程度**：🟡 Important（假红——把成功的测量报成失败，会诱导人去修不存在的产品问题）
+
+**症状**：run `41475640293`（sha `d3368ab`）Linux job 的
+`Measure Linux remote SSH cold-start to prompt marker` 失败：
+
+```
+ENOTEMPTY: directory not empty, rmdir '/home/runner/terminal-remote-cold-home-f91pr0/.cache/mesa_shader_cache'
+ELIFECYCLE Command failed with exit code 1.
+```
+
+但同一步的日志显示应用把**全部** SSH 启动阶段走完了：
+`ssh-tcp-handshake-done` → `ssh-auth-done` → `ssh-pty-ready` →
+`ssh-shell-first-output` → `ssh-startup-write-done` → `session-created`。
+失败发生在 `finally` 的目录清理，**测量结果已经被算出来了**。
+
+**根因**：WebKitGTK 关闭后仍会有一小段时间在写 Mesa 着色器缓存，
+裸 `rm(recursive, force)` 与那个子进程竞争。`scripts/run-terminal-shell-probe.mjs`
+早在 Issue #156 的修复里就为同一原因用过 `maxRetries: 20 / retryDelay: 100`，
+但冷启动那三个脚本从未同步这个策略。
+
+**修复**：把该策略提为 `run-cold-start-stopwatch.mjs` 导出的
+`MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS`，三处清理统一使用：
+- `run-cold-start-stopwatch.mjs`（stopwatch 自建的 `home`）
+- `run-local-cold-start-stopwatch.mjs`（本地 `runDirectory`）
+- `run-remote-cold-start-stopwatch.mjs`（远程 `runDirectory` 与 `home`）
+
+**回归（先红后绿）**：`run-local-cold-start-stopwatch.test.mjs` 增加断言钉住
+`rm` 的 `maxRetries = 20` / `retryDelay = 100`。把清理改回裸 `rm` 后该用例变红
+（`not ok 2 - drives strict readiness with a PTY marker carrying the run nonce`）；
+恢复后 3 个冷启动测试文件 **55 项全过**。
+
+**验证**：run `41478709578`（sha `3102093`）Linux job **success**，同一场景通过。
+
+**一处必须记住的教训**：这条红的报文（`ENOTEMPTY`）与产品完全无关，
+但它在 CI 上出现的位置（证据采集链）会直接让 6 份证据生成不出来。
+以后看到采集链的红，先确认**测量本身**是否已经完成，再判断是不是产品回归。
+
+### Issue #168: 6 份验收证据在 Issue #166 之后失效，已随 run `41478709578` 重采 ✅ 已闭合（2026-11-02）
+
+**触发**：Issue #166 改了 `packages/frontend/src/terminal-bootstrap*.ts(x)`，
+这些文件在 `FINGERPRINT_PATHS` 内，所以旧证据（run `41434165000`，指纹 `365bdee7…`）
+在提交瞬间失效。`check-verification-evidence.mjs` 当场报 **7 problem / exit 1**——这是门禁在正确工作。
+
+**重采**：run `41478709578`（sha `3102093`，workflow_dispatch），三平台 3/3 success，
+macOS job **25 步全 success**（含 `Generate the six evidence files and the CI manifest`）。
+
+| 指标 | 旧证据（`a093fc7`） | 新证据（`3102093`） |
+| --- | --- | --- |
+| 源码指纹 | `365bdee7…` | **`c4faedfb…`** |
+| debug 本地冷启动 | 7679 / 4042 / 3301 ms | **1944 / 1330 / 1323 ms** |
+| release 本地冷启动 | 4692 / 3621 / 3128 ms | **2283 / 2074 / 1959 ms** |
+| debug 远程冷启动（提示符） | 5061 ms | **3158 ms** |
+| debug SSH 矩阵 | 11/11 | **11/11** |
+| release SSH 矩阵 | 8/8 | **8/8** |
+| shell 交互用例 | 14/14 | **14/14**（`nano-edit` bash 4678 ms、zsh 4675 ms 均 ok） |
+
+**注意**：冷启动数字整体变小，主要因为 runner 实例不同（不是本轮的产品优化）。
+本阶段**没有**任何冷启动路径的性能改动；不得把这次数字下降解读成「冷启动变快了」。
+
+**安装过程中遇到的一个工具问题（记录备查）**：`fetch-verification-evidence.mjs` 的
+`gh run download` 在解压 120 MB artifact 时挂住不退出（进程存活但长时间无进展）。
+已解压内容完整，改用脚本自身的 `--from <bundle>` 路径完成安装，门禁随即 0 problem。
+下次遇到同样卡顿，可直接复用下载目录而不是杀掉重下。
+
+**证据门禁**：安装后 `node scripts/check-verification-evidence.mjs` →
+**passed for 6 current evidence file(s)，exit 0**。

@@ -1,6 +1,12 @@
 # 验收证据：从 7 个问题到 0 个（P9.2-11）
 
-> **最终状态**（2026-11-02，commit `a093fc7`，run `41434165000`）：
+> **后续状态（2026-11-03）**：本文描述的指纹是 `365bdee7…`（run `41434165000`，sha `a093fc7`）。
+> Phase 9.3 改动了 `FINGERPRINT_PATHS` 内的源码后，证据已随 run `41478709578`
+> （sha `3102093`）重采为指纹 **`c4faedfb…`**，门禁同样 0 problem。
+> 本文记录的流程与门禁语义仍然有效，只有具体指纹与数字被取代；
+> 见 `docs/phase9-3/bootstrap-probe-starvation.md`。
+
+> **当时的最终状态**（2026-11-02，commit `a093fc7`，run `41434165000`）：
 >
 > ```
 > $ node scripts/check-verification-evidence.mjs

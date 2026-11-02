@@ -1,5 +1,12 @@
 # Phase 9.2 最终报告
 
+> **后续状态（2026-11-03）**：本文描述的是 `a093fc7` 的证据（指纹 `365bdee7…`）。
+> Phase 9.3 修掉了 bootstrap 配置探测的队列饥饿（Issue #166）与测量收尾的
+> ENOTEMPTY 竞态（Issue #167），改动了 `FINGERPRINT_PATHS` 内的源码，
+> 证据已随 run `41478709578`（sha `3102093`，指纹 **`c4faedfb…`**）重采。
+> **本文第 5 节与第 6 节的冷启动数字已被取代**，最新数字见
+> `docs/phase9-3/bootstrap-probe-starvation.md` 第 4 节。本文其余结论仍然成立。
+
 > 分支 `feat/phase9-2-sync-security-hardening`，阶段起点 `2f1d68f`（= main）。
 > 采集时间 2026-11-02。所有数字均为本次本机实跑，命令在每节里，可复现。
 >
