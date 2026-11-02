@@ -17,7 +17,14 @@ import type { PrismaService } from '../../prisma.service'
 import type { SharedHost, TeamState } from '@/store/team-types'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { SyncService } from '../../sync/sync.service'
+import { SharesService } from '../../shares/shares.service'
 import { connectRaw, createPrisma, resetDatabase } from './pg-harness'
+
+/** `/teams/<teamId>/shares/<shareId>` — the single-share read a REMOTE resolution uses. */
+function shareRead(path: string): { teamId: string, shareId: string } | null {
+  const match = /^\/teams\/([^/]+)\/shares\/([^/]+)$/.exec(path)
+  return match === null ? null : { teamId: match[1], shareId: match[2] }
+}
 
 // Phase 8.9 Task 3：客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 store）。
 // 唯一的接缝是网络：fetch 被换成把请求直接投给真实 SyncService 的桥，客户端
@@ -120,6 +127,7 @@ interface ClientHandle {
 describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 store）', () => {
   let prisma: PrismaService
   let service: SyncService
+  let sharesService: SharesService
   let raw: Client
   let teamId: string
   let clientA: ClientHandle
@@ -262,6 +270,7 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
     vi.stubGlobal('localStorage', new MemoryStorage())
     prisma = createPrisma()
     service = new SyncService(prisma)
+    sharesService = new SharesService(prisma)
     raw = await connectRaw()
     await resetDatabase(prisma)
     await prisma.user.createMany({ data: [{ id: USER_A }, { id: USER_B }] })
@@ -307,6 +316,11 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
           body.resolution,
           body.clientData,
         )
+      } else if (shareRead(path) !== null) {
+        // A REMOTE resolution reads the authoritative snapshot instead of trusting
+        // the (possibly placeholder) copy the conflict carried.
+        const { teamId: readTeamId, shareId } = shareRead(path)!
+        result = await sharesService.findOne(readTeamId, shareId, userId)
       } else {
         return new Response(JSON.stringify({ message: `Unhandled ${  path}` }), {
           status: 404,

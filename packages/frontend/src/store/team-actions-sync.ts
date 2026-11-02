@@ -1,6 +1,6 @@
 import {
-  addSharedHost,
-  addSharedSnippet,
+  removeSharedHost,
+  removeSharedSnippet,
   removeUnauthorizedTeamShares,
 } from '@/service/database'
 import { teamApi } from '@/service/team-api'
@@ -9,58 +9,17 @@ import type { TeamStoreGet, TeamStoreSet } from './team-store-context'
 import type { SyncCursorScope } from './team-sync-engine'
 import {
   MAX_SYNC_PAGES as SYNC_ROUND_PAGES,
-  hasData,
   mergeConflicts,
   pullChanges,
   pushLocalShares,
 } from './team-sync-engine'
-
-/**
- * Adopts a server snapshot the pull had to skip because the row carried a local
- * edit: the user chose the server's copy and the cursor already moved past it, so
- * the snapshot recorded with the conflict is the only way back to convergence.
- */
-async function adoptRemoteShare(
-  get: TeamStoreGet,
-  shareId: string,
-  remote: { version: number, updatedAt: number, data: unknown },
-): Promise<void> {
-  if (!hasData(remote.data)) return
-  const host = get().sharedHosts.find(item => item.id === shareId)
-  if (host !== undefined) {
-    await addSharedHost(
-      {
-        id: host.id,
-        team_id: host.teamId,
-        host_data: JSON.stringify(remote.data),
-        shared_by: host.sharedBy,
-        permission: host.permission,
-        created_at: host.createdAt,
-        version: remote.version,
-        updated_at: remote.updatedAt,
-      },
-      'override',
-    )
-    await get().loadSharedHosts(host.teamId)
-    return
-  }
-  const snippet = get().sharedSnippets.find(item => item.id === shareId)
-  if (snippet === undefined) return
-  await addSharedSnippet(
-    {
-      id: snippet.id,
-      team_id: snippet.teamId,
-      snippet_data: JSON.stringify(remote.data),
-      shared_by: snippet.sharedBy,
-      permission: snippet.permission,
-      created_at: snippet.createdAt,
-      version: remote.version,
-      updated_at: remote.updatedAt,
-    },
-    'override',
-  )
-  await get().loadSharedSnippets(snippet.teamId)
-}
+import {
+  adoptRemoteShare,
+  buildLocalResolution,
+  fetchRemoteSnapshot,
+  findLocalShare,
+} from './team-actions-sync-conflict'
+import type { RemoteSnapshotValue } from './team-actions-sync-conflict'
 
 export function createSyncActions(
   set: TeamStoreSet,
@@ -169,29 +128,86 @@ export function createSyncActions(
       const conflict = get().syncConflicts.find(
         item => item.shareId === shareId,
       )
-      const result = await teamApi.resolveConflict(
-        shareId,
-        resolution,
-        resolution === 'LOCAL'
-          ? {
-              data: localData ?? conflict?.localVersion.data ?? {},
-              isSensitive: false,
-              permission: 'READONLY',
-            }
-          : undefined,
-      )
-      if (result.error) {
-        set({ syncError: result.error })
+      const local = findLocalShare(get, shareId)
+      // The version the user was shown when they chose. A push-only conflict
+      // carries no remote snapshot, and inventing one here is what made the write
+      // unconditional, so it stays absent and the server refuses by name.
+      const seenRemoteVersion
+        = conflict !== undefined && typeof conflict.remoteVersion.version === 'number'
+          ? conflict.remoteVersion.version
+          : null
+      const payload
+        = resolution === 'LOCAL'
+          ? buildLocalResolution(
+              local,
+              localData ?? conflict?.localVersion.data,
+              seenRemoteVersion,
+            )
+          : undefined
+      if (resolution === 'LOCAL' && payload === null) {
+        // Without the stored row there is no honest security state to send, and
+        // guessing one is the downgrade this path was rewritten to stop.
+        set({ syncError: 'Cannot resolve this conflict: the share is no longer stored locally' })
         return
       }
-      if (resolution === 'REMOTE' && conflict !== undefined) {
-        const remote = conflict.remoteVersion
-        if (typeof remote.version === 'number') {
-          await adoptRemoteShare(get, shareId, {
-            version: remote.version,
-            updatedAt: remote.updatedAt,
-            data: remote.data,
-          })
+      const outcome = await teamApi.resolveConflict(
+        shareId,
+        resolution,
+        payload ?? undefined,
+      )
+      if (!outcome.ok) {
+        // The conflict stays: nothing has converged, and dropping it here is how
+        // a refused write became invisible (P9.2-3).
+        set({ syncError: outcome.message })
+        return
+      }
+      if (resolution === 'REMOTE') {
+        // A conflict reported by a pull already carries the exact snapshot the
+        // user was shown, so that copy is adopted as-is: re-reading the server
+        // here would adopt a version newer than the one they agreed to. A
+        // push-only conflict carries none, and only the server can supply it.
+        const resolved
+          = conflict !== undefined
+            && typeof conflict.remoteVersion.version === 'number'
+            ? {
+                ok: true as const,
+                snapshot: {
+                  version: conflict.remoteVersion.version,
+                  updatedAt: conflict.remoteVersion.updatedAt,
+                  data: conflict.remoteVersion.data,
+                  isSensitive: conflict.remoteVersion.isSensitive === true,
+                  encryptedData: local.host?.encryptedData
+                    ?? local.snippet?.encryptedData
+                    ?? null,
+                } satisfies RemoteSnapshotValue,
+              }
+            : await fetchRemoteSnapshot(local.teamId, shareId)
+        if (!resolved.ok) {
+          // The server has already accepted the resolution, but this device
+          // cannot adopt the copy it was resolved to. Removing the conflict here
+          // would hide the user's edit behind a row nobody can reconstruct, so it
+          // stays and says which of the four situations it is (P9.2-4).
+          if (resolved.reason === 'deleted') {
+            // Nothing is left to adopt: the row the conflict was about is gone
+            // from the server. Dropping the local copy and the conflict together
+            // is the only honest convergence.
+            await removeSharedHost(shareId)
+            await removeSharedSnippet(shareId)
+            await get().loadSharedHosts(local.teamId)
+            await get().loadSharedSnippets(local.teamId)
+          } else {
+            set({ syncError: resolved.message })
+            return
+          }
+        } else {
+          const adopted = await adoptRemoteShare(get, shareId, resolved.snapshot)
+          if (!adopted) {
+            set({
+              syncError:
+                'The server accepted the resolution but the snapshot could not be stored; the conflict stays until it can be',
+            })
+            return
+          }
         }
       }
       set(state => ({

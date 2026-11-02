@@ -133,6 +133,10 @@ export async function applyWindow(
       created_at: converted.createdAt,
       version: converted.version ?? null,
       updated_at: converted.updatedAt ?? converted.createdAt,
+      // The security state is part of the snapshot: a row stored without it
+      // cannot prove, later, whether a resolution would downgrade it (P9.2-2).
+      is_sensitive: converted.isSensitive === true ? 1 : 0,
+      encrypted_data: converted.encryptedData ?? null,
     }
     const applied = isHost
       ? await addSharedHost({ ...record, host_data: JSON.stringify(data) })
@@ -144,11 +148,13 @@ export async function applyWindow(
     conflicts.push({
       ...localConflict(local),
       shareId: converted.id,
+      shareType: isHost ? 'HOST' : 'SNIPPET_PACKAGE',
       remoteVersion: {
         updatedAt: record.updated_at,
         data,
         updatedBy: converted.sharedBy,
         version: record.version,
+        isSensitive: converted.isSensitive === true,
       },
     })
   }

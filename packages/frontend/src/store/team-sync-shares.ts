@@ -81,11 +81,19 @@ export async function pushLocalShares(
   if (local.length === 0) return []
   const pushed = local.map(item => {
     const baseVersion = typeof item.version === 'number' ? item.version : null
+    const isSensitive = item.isSensitive === true
     return {
       id: item.id,
       teamId: item.teamId || currentTeamId,
       type: item._type,
-      data: shareData(item),
+      // A sensitive share's payload *is* its ciphertext: sending the local
+      // plaintext alongside `isSensitive` would either be refused or stored as
+      // plaintext, and both break the secrecy the flag promises (P9.2-2).
+      data: isSensitive ? {} : shareData(item),
+      ...(isSensitive && typeof item.encryptedData === 'string'
+        ? { encryptedData: item.encryptedData }
+        : {}),
+      isSensitive,
       permission: item.permission.toUpperCase() as 'READONLY' | 'READWRITE',
       operation: baseVersion === null ? ('CREATE' as const) : ('UPDATE' as const),
       ...(baseVersion === null ? {} : { baseVersion }),
@@ -110,6 +118,8 @@ export async function pushLocalShares(
       created_at: item.createdAt,
       version: typeof item.version === 'number' ? item.version : null,
       updated_at: item.updatedAt ?? item.createdAt,
+      is_sensitive: item.isSensitive === true ? 1 : 0,
+      encrypted_data: item.encryptedData ?? null,
     }
     if (item._type === 'HOST') {
       await addSharedHost(
@@ -123,7 +133,11 @@ export async function pushLocalShares(
       )
     }
   }
-  return (response.data?.conflicts ?? []).map(shareId =>
-    localConflict(local.find(item => item.id === shareId)),
-  )
+  return (response.data?.conflicts ?? []).map((shareId) => {
+    const item = local.find(entry => entry.id === shareId)
+    return {
+      ...localConflict(item),
+      shareType: item?._type === 'SNIPPET_PACKAGE' ? 'SNIPPET_PACKAGE' : 'HOST',
+    }
+  })
 }

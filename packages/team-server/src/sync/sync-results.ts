@@ -1,7 +1,20 @@
 export interface ConflictInfo {
   shareId: string
+  /**
+   * Server version of the copy the client reported. Present so a resolution can
+   * name the version the user decided against; `updatedAt` cannot do that job.
+   */
+  version?: number | null
+  /** True when the remote row is sensitive, so `data` carries no plaintext. */
+  isSensitive?: boolean
   localVersion: { updatedAt: number; data: unknown }
-  remoteVersion: { updatedAt: number; data: unknown; updatedBy: string }
+  remoteVersion: {
+    updatedAt: number
+    data: unknown
+    updatedBy: string
+    version?: number | null
+    isSensitive?: boolean
+  }
 }
 
 export interface PushResult {

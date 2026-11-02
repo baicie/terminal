@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
 import {
   resolveCreateSensitivity,
@@ -28,12 +29,30 @@ interface ExistingShareSecurity {
   permission: 'READONLY' | 'READWRITE'
 }
 
+/**
+ * A payload that carries ciphertext while declaring itself plaintext is not a
+ * downgrade the server may honour: the two fields contradict each other, and
+ * silently preferring either one leaves the row in a state neither side asked
+ * for (P9.2-2). Every path that writes a share goes through here, so the check
+ * lives here rather than in each caller.
+ */
+function assertPlaintextPayloadHasNoCiphertext(
+  payload: ShareWritePayload,
+): void {
+  if (payload.isSensitive === false && payload.encryptedData !== undefined) {
+    throw new BadRequestException(
+      'encryptedData cannot be used when isSensitive is false',
+    )
+  }
+}
+
 export function buildShareUpdateData(
   payload: ShareWritePayload,
   existing: ExistingShareSecurity,
   preservePermission = false,
   preserveSensitivity = false,
 ): Prisma.ShareUpdateInput {
+  assertPlaintextPayloadHasNoCiphertext(payload)
   const permission = preservePermission
     ? existing.permission
     : (payload.permission as 'READONLY' | 'READWRITE' | undefined)

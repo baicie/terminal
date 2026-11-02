@@ -1,5 +1,9 @@
 import { TeamApiResources } from './team-api-resources'
-import type { ApiResponse } from './team-api-types'
+import type {
+  ApiOperationResult,
+  ApiOutcome,
+  ApiResponse,
+} from './team-api-types'
 
 export class TeamApiSync extends TeamApiResources {
   async getChanges(since?: string): Promise<
@@ -64,14 +68,24 @@ export class TeamApiSync extends TeamApiResources {
     items: Array<{
       id: string
       updatedAt: number
+      /** Server version this copy is based on; the only input the verdict uses. */
+      version?: number
       type: 'HOST' | 'SNIPPET_PACKAGE'
     }>,
   ): Promise<
     ApiResponse<
       Array<{
         shareId: string
+        version?: number | null
+        isSensitive?: boolean
         localVersion: { updatedAt: number; data: unknown }
-        remoteVersion: { updatedAt: number; data: unknown; updatedBy: string }
+        remoteVersion: {
+          updatedAt: number
+          data: unknown
+          updatedBy: string
+          version?: number | null
+          isSensitive?: boolean
+        }
       }>
     >
   > {
@@ -86,13 +100,52 @@ export class TeamApiSync extends TeamApiResources {
       encryptedData?: string
       isSensitive?: boolean
       permission?: string
+      baseVersion?: number
     },
-  ): Promise<ApiResponse<{ success: boolean; error?: string }>> {
-    return this.request('POST', '/sync/conflicts/resolve', {
+  ): Promise<ApiOutcome<ApiOperationResult>> {
+    // Judged by the server's verdict, not by the HTTP status: a 200 carrying
+    // `success: false` is a refusal, and treating it as done dropped the
+    // conflict while nothing had converged (P9.2-3).
+    return this.operationResult('POST', '/sync/conflicts/resolve', {
       shareId,
       resolution,
       clientData,
     })
+  }
+
+  /**
+   * Reads one share as the server holds it right now. A REMOTE resolution needs
+   * the authoritative snapshot: a push-only conflict carries no remote data, and
+   * adopting a placeholder would be adopting nothing (P9.2-4). The caller must
+   * pass the team the record belongs to; the server scopes the read to it, so a
+   * share id from another team stays invisible.
+   *
+   * The outcome keeps the HTTP status, because the three ways this can fail need
+   * three different answers: 404 means the share is gone (nothing to adopt), 403
+   * means this identity may no longer read it, and anything else is a transient
+   * failure that must leave the conflict in place to be retried.
+   */
+  async getShare(
+    teamId: string,
+    shareId: string,
+  ): Promise<
+    ApiOutcome<{
+      id: string
+      teamId: string
+      type: string
+      data: unknown
+      encryptedData: string | null
+      isSensitive: boolean
+      permission: string
+      sharedBy: string
+      createdAt: string
+      updatedAt: string
+      version: number
+    }>
+  > {
+    return this.readOperation(
+      `/teams/${encodeURIComponent(teamId)}/shares/${encodeURIComponent(shareId)}`,
+    )
   }
 
   async getPendingOperations(): Promise<

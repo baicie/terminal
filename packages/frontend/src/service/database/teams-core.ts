@@ -166,16 +166,26 @@ export async function getSharedHosts(
  * the push turns it into a conflict instead of dropping it silently. Re-delivery
  * at or below the stored version converges because the incoming snapshot wins only
  * when it is newer, or when it is identical.
+ *
+ * "Identical" has to cover the payload a sensitive row actually carries. Its
+ * `data` column is always `{}`, so comparing only that column made every pull of
+ * a sensitive row look identical to a local edit and overwrote the new
+ * ciphertext with the old one — the local edit vanished without a conflict
+ * (P9.2-2). The ciphertext column is therefore part of the comparison, and a
+ * dirty row can only be overwritten by a snapshot that is byte-for-byte the same.
  */
 function remoteGuard(table: string, dataColumn: string): string {
   return `
-       WHERE (COALESCE(${table}.dirty, 0) = 0 OR ${table}.${dataColumn} = excluded.${dataColumn})
+       WHERE (COALESCE(${table}.dirty, 0) = 0
+              OR (${table}.${dataColumn} = excluded.${dataColumn}
+                  AND COALESCE(${table}.encrypted_data, '') = COALESCE(excluded.encrypted_data, '')))
          AND (
            ${table}.version IS NULL
            OR excluded.version IS NULL
            OR excluded.version > ${table}.version
            OR (excluded.version = ${table}.version
-               AND ${table}.${dataColumn} = excluded.${dataColumn})
+               AND ${table}.${dataColumn} = excluded.${dataColumn}
+               AND COALESCE(${table}.encrypted_data, '') = COALESCE(excluded.encrypted_data, ''))
          )`
 }
 
@@ -203,11 +213,12 @@ export async function addSharedHost(
 ): Promise<boolean> {
   const local = source === 'local'
   const result = await executeQuery(
-    `INSERT INTO team_shared_hosts (id, team_id, host_data, shared_by, permission, created_at, version, updated_at, dirty)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO team_shared_hosts (id, team_id, host_data, shared_by, permission, created_at, version, updated_at, dirty, is_sensitive, encrypted_data)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET team_id = excluded.team_id, host_data = excluded.host_data,
        shared_by = excluded.shared_by, permission = excluded.permission, created_at = excluded.created_at,
-       version = excluded.version, updated_at = excluded.updated_at, dirty = excluded.dirty${source === 'remote' ? remoteGuard('team_shared_hosts', 'host_data') : ''}`,
+       version = excluded.version, updated_at = excluded.updated_at, dirty = excluded.dirty,
+       is_sensitive = excluded.is_sensitive, encrypted_data = excluded.encrypted_data${source === 'remote' ? remoteGuard('team_shared_hosts', 'host_data') : ''}`,
     [
       host.id,
       host.team_id,
@@ -218,6 +229,8 @@ export async function addSharedHost(
       host.version ?? null,
       host.updated_at ?? null,
       local ? 1 : 0,
+      host.is_sensitive ?? 0,
+      host.encrypted_data ?? null,
     ],
   )
   return source !== 'remote' || changedRows(result) > 0
@@ -242,11 +255,12 @@ export async function addSharedSnippet(
 ): Promise<boolean> {
   const local = source === 'local'
   const result = await executeQuery(
-    `INSERT INTO team_shared_snippets (id, team_id, snippet_data, shared_by, permission, created_at, version, updated_at, dirty)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO team_shared_snippets (id, team_id, snippet_data, shared_by, permission, created_at, version, updated_at, dirty, is_sensitive, encrypted_data)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET team_id = excluded.team_id, snippet_data = excluded.snippet_data,
        shared_by = excluded.shared_by, permission = excluded.permission, created_at = excluded.created_at,
-       version = excluded.version, updated_at = excluded.updated_at, dirty = excluded.dirty${source === 'remote' ? remoteGuard('team_shared_snippets', 'snippet_data') : ''}`,
+       version = excluded.version, updated_at = excluded.updated_at, dirty = excluded.dirty,
+       is_sensitive = excluded.is_sensitive, encrypted_data = excluded.encrypted_data${source === 'remote' ? remoteGuard('team_shared_snippets', 'snippet_data') : ''}`,
     [
       snippet.id,
       snippet.team_id,
@@ -257,6 +271,8 @@ export async function addSharedSnippet(
       snippet.version ?? null,
       snippet.updated_at ?? null,
       local ? 1 : 0,
+      snippet.is_sensitive ?? 0,
+      snippet.encrypted_data ?? null,
     ],
   )
   return source !== 'remote' || changedRows(result) > 0

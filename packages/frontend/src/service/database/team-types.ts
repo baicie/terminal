@@ -33,6 +33,14 @@ export interface TeamSharedHostRecord {
   updated_at?: number | null
   /** 1 while a local edit has not been accepted by the server yet. */
   dirty?: number | null
+  /**
+   * Server security state of a shared row. Losing it is what let a conflict
+   * resolution submit `isSensitive: false` for a sensitive share and turn its
+   * ciphertext into plaintext on the server (P9.2-2).
+   */
+  is_sensitive?: number | null
+  /** AES-256-GCM payload for a sensitive share; the server never stores it as data. */
+  encrypted_data?: string | null
 }
 
 export interface TeamSharedSnippetRecord {
@@ -48,6 +56,10 @@ export interface TeamSharedSnippetRecord {
   updated_at?: number | null
   /** 1 while a local edit has not been accepted by the server yet. */
   dirty?: number | null
+  /** Server security state of a shared row; see TeamSharedHostRecord. */
+  is_sensitive?: number | null
+  /** AES-256-GCM payload for a sensitive share; see TeamSharedHostRecord. */
+  encrypted_data?: string | null
 }
 
 export interface TeamInviteRecord {

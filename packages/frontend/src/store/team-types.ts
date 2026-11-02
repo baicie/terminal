@@ -41,6 +41,13 @@ export interface SharedHost {
   version?: number | null
   /** Last server-side change, used to display and to report conflicts. */
   updatedAt?: number
+  /**
+   * Server security state. A conflict resolution must send these back unchanged:
+   * a client that guesses them is how a sensitive share became plaintext (P9.2-2).
+   */
+  isSensitive?: boolean
+  /** Ciphertext of a sensitive share; never the plaintext payload. */
+  encryptedData?: string | null
 }
 
 export interface SharedSnippet {
@@ -54,6 +61,10 @@ export interface SharedSnippet {
   version?: number | null
   /** Last server-side change, used to display and to report conflicts. */
   updatedAt?: number
+  /** Server security state; see SharedHost. */
+  isSensitive?: boolean
+  /** Ciphertext of a sensitive share; see SharedHost. */
+  encryptedData?: string | null
 }
 
 export interface TeamInvite {
@@ -90,6 +101,8 @@ export interface UserProfile {
 
 export interface SyncConflict {
   shareId: string
+  /** Share kind, so a resolution can fetch or adopt the right resource. */
+  shareType?: 'HOST' | 'SNIPPET_PACKAGE'
   localVersion: { updatedAt: number; data: unknown }
   remoteVersion: {
     updatedAt: number
@@ -97,6 +110,8 @@ export interface SyncConflict {
     updatedBy: string
     /** Server version of the snapshot a pull had to skip; absent on a push-only report. */
     version?: number | null
+    /** True when the remote copy is sensitive and `data` is only a placeholder. */
+    isSensitive?: boolean
   }
 }
 
