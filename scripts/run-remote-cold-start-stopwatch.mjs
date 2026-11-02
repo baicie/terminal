@@ -4,7 +4,10 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
-import { runColdStartStopwatch } from './run-cold-start-stopwatch.mjs'
+import {
+  MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS,
+  runColdStartStopwatch,
+} from './run-cold-start-stopwatch.mjs'
 import { startTerminalSmokeSshd } from './terminal-smoke-sshd.mjs'
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..')
@@ -243,8 +246,8 @@ export async function runRemoteColdStartStopwatch({
     }
   } finally {
     await fixture?.stop().catch(() => {})
-    await dependencies.rm(runDirectory, { recursive: true, force: true })
-    await dependencies.rm(home, { recursive: true, force: true })
+    await dependencies.rm(runDirectory, MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS)
+    await dependencies.rm(home, MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS)
   }
 }
 

@@ -88,6 +88,11 @@ test('drives strict readiness with a PTY marker carrying the run nonce', async (
   assert.equal(result.probeResult.ok, true)
   assert.equal(result.nonce, calls[0].environment.TERMINAL_SHELL_PROBE_NONCE)
   assert.equal(calls.at(-1)[0], 'rm')
+  // WebKitGTK can still be flushing its Mesa shader cache after the app
+  // closes, so the cleanup must retry instead of failing the run ENOTEMPTY
+  // on a measurement that already succeeded (run 41475640293).
+  assert.equal(calls.at(-1)[2].maxRetries, 20)
+  assert.equal(calls.at(-1)[2].retryDelay, 100)
 })
 
 test('leaves stale marker rejection to the strict stopwatch', async () => {

@@ -11,6 +11,21 @@ export const AX_POLL_INTERVAL_MS = 100
 export const AX_PROBE_TIMEOUT_MS = 3_000
 export const NATIVE_AX_PROBE_COMPILE_TIMEOUT_MS = 15_000
 export const CLEANUP_GRACE_MS = 3_000
+/**
+ * Options for removing the throwaway HOME a measurement ran in.
+ *
+ * WebKitGTK can leave a Mesa shader-cache writer alive for a short while after
+ * the app closes, so a plain `rm` races that child and fails ENOTEMPTY *after*
+ * the measurement itself succeeded (run 41475640293, Linux remote cold start).
+ * Retrying lets the writer drain instead of turning a green measurement red.
+ * The same policy is used by the shell-probe runner for the same reason.
+ */
+export const MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS = {
+  recursive: true,
+  force: true,
+  maxRetries: 20,
+  retryDelay: 100,
+}
 export const READINESS_MODES = ['local', 'remote']
 /**
  * File the app appends its staged startup timeline to. Every run gets its own
@@ -720,7 +735,7 @@ export async function runColdStartStopwatch({
       }
     }
     if (ownsHome) {
-      await dependencies.rm(home, { recursive: true, force: true })
+      await dependencies.rm(home, MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS)
     }
   }
 
