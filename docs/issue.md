@@ -4326,7 +4326,7 @@ unsound / unmaintained / yanked 从来没进过视野。**27 → 21 → 27 → 2
 **严重程度**：🔴 High
 **症状**：`check-verification-evidence.mjs` 只能通过 `pnpm verify` 抵达，而 CI 里没有任何 job
 调用 `pnpm verify`。后果是一个 commit 可以改产品源码、留下六份描述旧 checkout 的证据文件，
-九个 job 全绿。
+十个 job 全绿。
 
 **修复**：`.github/workflows/ci.yml` 的 `source-size` job 改名
 `Repository gates (source size, evidence, script tests)`，加入证据门禁作为**阻塞步骤**
