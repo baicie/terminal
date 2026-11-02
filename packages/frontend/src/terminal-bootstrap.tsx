@@ -96,11 +96,30 @@ export async function bootstrapTerminalApp(
     attemptStartedAt +
       (dependencies.rootLoadTimeoutMs ?? BOOTSTRAP_APP_DEADLINE_MS),
   )
-  const config = await loadBootstrapConfig(
+  // Every gate reads in-process backend state independently, so all five start
+  // together against one absolute budget instead of queueing behind each
+  // other. Queued, a cold WebView's first round-trip could take the whole
+  // second and every loader behind it returned null without ever being
+  // invoked: the normal app mounted and the runner only found no result.json.
+  const configPromise = loadBootstrapConfig(
     dependencies.loadConfig,
     configDeadlineAt,
     signal,
   )
+  const optionalConfigsPromise = loadOptionalBootstrapConfigs(
+    {
+      remotePrompt: dependencies.loadRemotePromptProbeConfig,
+      inputProbe: dependencies.loadProbeConfig,
+      rawProbe: dependencies.loadRawProbeConfig,
+      shellProbe: dependencies.loadShellProbeConfig,
+    },
+    configDeadlineAt,
+    signal,
+  )
+  // Smoke mode discards these; a rejection must not surface as unhandled.
+  void optionalConfigsPromise.catch(() => undefined)
+
+  const config = await configPromise
   if (config !== null) {
     const SmokeRoot = await loadBootstrapRoot(
       dependencies.loadSmokeRoot,
@@ -121,16 +140,7 @@ export async function bootstrapTerminalApp(
     return 'smoke'
   }
 
-  const configs = await loadOptionalBootstrapConfigs(
-    {
-      remotePrompt: dependencies.loadRemotePromptProbeConfig,
-      inputProbe: dependencies.loadProbeConfig,
-      rawProbe: dependencies.loadRawProbeConfig,
-      shellProbe: dependencies.loadShellProbeConfig,
-    },
-    configDeadlineAt,
-    signal,
-  )
+  const configs = await optionalConfigsPromise
   configureRemotePromptProbe(configs.remotePrompt)
 
   const probeConfig = configs.inputProbe

@@ -4425,3 +4425,63 @@ debug 第一次的 `7679` 与旧值相同，但 `capturedAt` / `pid` / `nonce` �
 **为什么本地一开始没发现**：`@antfu/eslint-config` 在检测到编辑器环境时会关掉部分规则，
 本地输出带有 `Detected running in editor, some rules are disabled.`；
 用 `CI=1` 复跑才与 CI 一致。**这是本仓库本地 lint 与 CI lint 可能不一致的地方，值得记住。**
+
+### Issue #166: bootstrap 的五个配置探测串行共享 1 秒预算，一个慢 IPC 就能饿死其余 ✅ 已修复（2026-11-02）
+
+**严重程度**：🔴 Blocker（验收证据）——它让 shell probe 偶发「从未写 result.json」，
+症状与真实用例失败无法区分，且**没有任何日志**说明配置加载被跳过。
+
+**症状**：real-machine 定时矩阵 run `41437956656`（sha `2f1d68f`，main）
+macOS job 的 `nano-edit` 用例：
+
+```
+[ssh/default/nano-edit] running...  tauri app starting up
+  startup: db bootstrap stage=frontend-boot detail=main.tsx evaluated
+  startup: db bootstrap stage=db-load-started / ... / stage=ready
+  terminal_lib::window_cmd: close-to-tray flag updated
+  ...（8.6 秒静默）...
+  startup: db bootstrap stage=session-create-requested detail=local
+ FAILED: nano-edit shell probe result timed out after 60000 ms: the app never wrote result.json
+```
+
+注意 `detail=local`：探针请求的是 **remote**，出现 `local` 说明**普通 App** 挂载了，
+不是 shell probe 根组件。同一 run 的其余 6 条用例都正常打印
+`input_probe_config invoked` 并 `ok`；只有这一条整段**没有任何 probe 配置 IPC 到达 Rust**。
+
+**根因**：`bootstrapTerminalApp` 把五个配置读取（`terminal_smoke_config`、
+`remote_prompt_probe_config`、`input_probe_config`、`raw_input_probe_config`、
+`shell_probe_config`）**串行**跑在同一个绝对截止时间
+`attemptStartedAt + BOOTSTRAP_CONFIG_DEADLINE_MS`（1000 ms）上。
+`loadBootstrapConfig` 一旦发现 `deadlineAt - now() <= 0`，会**不调用加载器**直接返回 `null`。
+于是冷 WebView 的第一次 IPC（`terminal_smoke_config`）只要慢一点，排在后面的
+`remote_prompt_probe_config` / `input_probe_config` / … 就**根本没有被调用**，
+全部得到 `null`，bootstrap 判定「没有任何探测被启用」，静默挂载普通 App。
+
+这是**队列饥饿**，不是超时预算是「不够大」：把 1 秒调成 8 秒只能降低概率，
+排队结构本身仍然会让第一个慢调用吃掉后来者的全部机会。
+
+**修复**：`packages/frontend/src/terminal-bootstrap-deadline.ts`
+的 `loadOptionalBootstrapConfigs` 改为 `Promise.all` 并发启动四个可选加载器
+（`remotePrompt` / `inputProbe` / `rawProbe` / `shellProbe`）；
+`terminal-bootstrap.tsx` 让 `loadConfig`（smoke 门）与这四个**同时**开始，
+smoke 结果先判定，非 smoke 时再 `await` 那四个已完成/在途的 Promise。
+每个加载器仍各自在同一个绝对截止时间放弃，语义不变：
+**慢的不会拖死快的，也不会拖过全局预算**。
+
+**回归（先红后绿）**：
+- `terminal-bootstrap-deadline.test.ts` 新增 2 项：
+  「所有加载器在任何 one settle 之前都已启动」（串行实现在一个宏任务后仍停在第一个
+  unresolved promise 上）、「前面的加载器悬挂时，后面的仍能拿到自己的配置」。
+- `terminal-bootstrap.test.tsx` 那条既有断言 `expect(loadRawProbeConfig).not.toHaveBeenCalled()`
+  **断言的正是缺陷行为**，已改为 `toHaveBeenCalledOnce()` 并写明理由。
+- 区分力实测：把 `loadOptionalBootstrapConfigs` 临时改回串行，新增两项**均变红**
+  （`shellProbe` 得到 `null`）；恢复后 4/4 通过。
+
+**验证**：前端全量 **150 文件 / 1349 项**通过（原 1347 + 新增 2）；
+`node scripts/check-source-size.mjs` **560 个生产文件**通过；
+`pnpm --filter=@terminal/frontend typecheck` exit 0；改动文件 `eslint` exit 0。
+
+**仍未验证**：这条修复**没有**在真实 runner 上重跑矩阵。下一次 real-machine run
+的 `nano-edit` 是否稳定通过才是它的验收；在此之前只能记「代码修复 + 单测回归通过」。
+另外，本修复改动了 `packages/frontend/src`（`FINGERPRINT_PATHS` 内），
+**6 份实机证据随之失效，必须重采**（见 Issue #162 / `docs/phase9-2/verification-evidence.md`）。

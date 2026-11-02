@@ -2113,3 +2113,10 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 | Vault `vault_create` 覆盖已存在文件（Issue #153） | 📋 待修 | 后端无存在性保护，任何绕过前端的调用都会原子地毁掉旧 Vault。需加 `AlreadyExists` 与 `overwrite` 参数，属跨栈契约变更，Rust 与前端须一起提交并各补测试 |
 | 导入事务的原子性 | ⚠️ 未严格保证 | `tauri-plugin-sql` 底层是 sqlx 连接池，`BEGIN IMMEDIATE` 与后续语句可能落在不同连接；最坏形态是 COMMIT 报错、整批回滚（属可见失败而非静默脏数据），需在运行中的应用里验证 |
 
+
+### 2026-11-02 Phase 9.3 - bootstrap 配置加载并发化
+
+- [x] Issue #166：`loadOptionalBootstrapConfigs` 由串行改 `Promise.all`，`terminal_smoke_config` 与四个探测配置同时启动，消除「一个慢 IPC 饿死其余」的队列饥饿。这是 real-machine run `41437956656` 上 `nano-edit` 「从未写 result.json」的根因。
+- [x] 回归 2 项（先红后绿，串行实现下均失败）；既有断言 `not.toHaveBeenCalled()` 断言的正是缺陷行为，已改为 `toHaveBeenCalledOnce()`。
+- [ ] 真实 runner 验收：重跑 real-machine 矩阵确认 `nano-edit` 稳定通过。
+- [ ] **6 份实机证据因本次改动失效，必须重采**（改动了 `packages/frontend/src`）。

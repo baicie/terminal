@@ -90,6 +90,21 @@ export async function loadBootstrapConfig<T>(
   }
 }
 
+/**
+ * Loads every optional probe configuration within the same absolute budget.
+ *
+ * The loaders are five independent IPC round-trips, and they used to run one
+ * after another against a single absolute deadline. That made the budget a
+ * queue: when the first round-trip took most of the second (a cold WebView's
+ * first calls are the slowest ones), the loaders behind it were never invoked
+ * at all -- `loadBootstrapConfig` returns null without calling the loader once
+ * the deadline has passed. Nothing was logged, the normal application mounted,
+ * and the acceptance runner could only report that result.json never appeared
+ * 60 seconds later (run 41437956656, macOS `nano-edit`).
+ *
+ * Starting them together keeps a slow loader from starving the rest while each
+ * one still gives up at the same absolute deadline.
+ */
 export async function loadOptionalBootstrapConfigs<
   TRemote,
   TProbe,
@@ -105,22 +120,11 @@ export async function loadOptionalBootstrapConfigs<
   deadlineAt: number,
   signal?: AbortSignal,
 ) {
-  return {
-    remotePrompt: await loadBootstrapConfig(
-      loaders.remotePrompt,
-      deadlineAt,
-      signal,
-    ),
-    inputProbe: await loadBootstrapConfig(
-      loaders.inputProbe,
-      deadlineAt,
-      signal,
-    ),
-    rawProbe: await loadBootstrapConfig(loaders.rawProbe, deadlineAt, signal),
-    shellProbe: await loadBootstrapConfig(
-      loaders.shellProbe,
-      deadlineAt,
-      signal,
-    ),
-  }
+  const [remotePrompt, inputProbe, rawProbe, shellProbe] = await Promise.all([
+    loadBootstrapConfig(loaders.remotePrompt, deadlineAt, signal),
+    loadBootstrapConfig(loaders.inputProbe, deadlineAt, signal),
+    loadBootstrapConfig(loaders.rawProbe, deadlineAt, signal),
+    loadBootstrapConfig(loaders.shellProbe, deadlineAt, signal),
+  ])
+  return { remotePrompt, inputProbe, rawProbe, shellProbe }
 }
