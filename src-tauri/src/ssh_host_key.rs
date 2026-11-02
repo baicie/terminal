@@ -8,6 +8,7 @@ use std::path::Path;
 
 use anyhow::anyhow;
 use russh::client::{self, Handler};
+use russh::keys::PublicKeyOrCertificate;
 use russh::keys::{HashAlg, PublicKey};
 use serde::Serialize;
 use thiserror::Error;
@@ -183,6 +184,19 @@ fn learn_host_key_at_path(
     Ok(())
 }
 
+/// The public key a `check_server_key` callback should record for known_hosts,
+/// or `None` when the server presented a certificate.
+///
+/// Split out of the handler so the decision is testable without a live server:
+/// with a certificate there is no key to learn (see the handler's comment), and
+/// silently learning the embedded key would corrupt the host's entry.
+fn probe_key_to_record(presented: &PublicKeyOrCertificate) -> Option<PublicKey> {
+    match presented {
+        PublicKeyOrCertificate::PublicKey { key, .. } => Some(key.clone()),
+        PublicKeyOrCertificate::Certificate(_) => None,
+    }
+}
+
 #[derive(Clone)]
 struct HostKeyProbeHandler {
     public_key: Arc<StdMutex<Option<PublicKey>>>,
@@ -197,15 +211,31 @@ impl HostKeyProbeHandler {
 impl Handler for HostKeyProbeHandler {
     type Error = anyhow::Error;
 
+    /// Records the key the server presented, so the caller can learn it after
+    /// the probe succeeds.
+    ///
+    /// russh 0.65 hands a host *certificate* to this callback separately instead
+    /// of presenting it as a public key (client/mod.rs: "A certificate replaces
+    /// the key check"). A certificate carries a key the client was never told to
+    /// trust, so there is nothing meaningful to record in known_hosts here:
+    /// storing the certificate's embedded key under the host name would make a
+    /// later plain-key connection to the same host look "changed". Returning
+    /// false would instead disable the certificate-authenticated probe path.
+    /// The surrounding preflight still refuses to learn anything when it has no
+    /// key, and a certificate host's trust decision is made by the certificate
+    /// authority the connection was configured with.
     async fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
+        let Some(key_value) = probe_key_to_record(server_public_key) else {
+            return Ok(true);
+        };
         let mut key = self
             .public_key
             .lock()
             .map_err(|_| anyhow!("SSH host-key probe state is unavailable"))?;
-        *key = Some(server_public_key.clone());
+        *key = Some(key_value);
         Ok(true)
     }
 }

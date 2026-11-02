@@ -38,12 +38,17 @@ fn passing_result() -> TerminalSmokeResult {
 }
 
 fn ssh_config() -> TerminalSmokeSshConfig {
-    use ssh_key::rand_core::OsRng;
+    // ssh-key 0.7 dropped `rand_core::OsRng`; rand_core 0.10 exposes the OS
+    // generator as the fallible `getrandom::SysRng`, and `UnwrapErr` is the
+    // adapter the crate documents for the infallible `CryptoRng` this takes.
+    use ssh_key::getrandom::SysRng;
+    use ssh_key::rand_core::UnwrapErr;
 
-    let private_key = ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519)
-        .expect("fixture private key should generate")
-        .to_openssh(ssh_key::LineEnding::LF)
-        .expect("fixture private key should serialize");
+    let private_key =
+        ssh_key::PrivateKey::random(&mut UnwrapErr(SysRng), ssh_key::Algorithm::Ed25519)
+            .expect("fixture private key should generate")
+            .to_openssh(ssh_key::LineEnding::LF)
+            .expect("fixture private key should serialize");
     TerminalSmokeSshConfig {
         host: "127.0.0.1".to_string(),
         port: 42_222,

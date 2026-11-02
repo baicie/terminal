@@ -17,6 +17,34 @@ const REACH_LABEL = {
   'absent-from-build-graph': '不在构建图（Cargo.lock 残留）',
 }
 
+/**
+ * Which shipped targets pull the crate in, as a short cell.
+ *
+ * A crate present in the merged `--target all` tree but only on Linux is a
+ * different release decision from one present everywhere, and the old single
+ * "in build graph" column could not say which it was.
+ */
+function platformCell(row) {
+  if (row.reach === 'absent-from-build-graph') return '—'
+  const platforms = row.platforms ?? []
+  if (platforms.length === 0) return '（未探测）'
+  const families = new Set(
+    platforms.map(target =>
+      target.includes('linux')
+        ? 'Linux'
+        : target.includes('darwin')
+          ? 'macOS'
+          : target.includes('windows')
+            ? 'Windows'
+            : target,
+    ),
+  )
+  const all = ['Linux', 'macOS', 'Windows']
+  return all.every(name => families.has(name))
+    ? '全部'
+    : [...families].sort().join(' / ')
+}
+
 /** `7.5 High`, or the not-published marker when RustSec published no vector. */
 function scoreCell(row) {
   if (row.severity === null || row.score === null) return NOT_PUBLISHED
@@ -115,11 +143,11 @@ export function renderLedgerMarkdown(rows, summary) {
   pushSummary(lines, rows, summary)
   lines.push('## 全部条目')
   lines.push('')
-  lines.push('| # | advisory | crate | 锁定版本 | 基准分 / 等级 | CVSS 向量 | 可达性 |')
-  lines.push('| --- | --- | --- | --- | --- | --- | --- |')
+  lines.push('| # | 类别 | advisory | crate | 锁定版本 | 基准分 / 等级 | CVSS 向量 | 可达性 | 受影响平台 |')
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- |')
   rows.forEach((row, index) => {
     lines.push(
-      `| ${index + 1} | ${row.id} | ${row.crate} | ${row.version} | ${scoreCell(row)} | ${row.cvss} | ${REACH_LABEL[row.reach] ?? row.reach} |`,
+      `| ${index + 1} | ${row.kind ?? 'vulnerability'} | ${row.id} | ${row.crate} | ${row.version} | ${scoreCell(row)} | ${row.cvss} | ${REACH_LABEL[row.reach] ?? row.reach} | ${platformCell(row)} |`,
     )
   })
   lines.push('')

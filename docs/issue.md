@@ -4273,3 +4273,123 @@ Phase 8.9 的 version CAS 杜绝了**并发**丢失更新。但旧客户端若�
 
 **要修必须先有 PowerShell 环境。** 在没有解析器的前提下继续改这个文件，
 只是把猜测从一处挪到另一处。
+
+---
+
+## 十四、Phase 9.2（2026-11-02）
+
+### Issue #158: 同步冲突解决的三处数据安全缺陷 ✅ 已修复（2026-11-02，`84f73b0`）
+
+**严重程度**：🔴 Critical
+**状态**：✅ 已修复，回归 80 项真实 PostgreSQL 全绿
+**详细**：`docs/phase9-2/sync-conflict-root-causes.md`
+
+| 缺陷 | 症状 | 根因 |
+| --- | --- | --- |
+| 条件写被降级为无条件写 | 第二个人解决冲突时覆盖第一个人的结果 | 已在 `84f73b0` 用 CAS + `baseVersion` 必填修复 |
+| 非创建者可用明文覆盖敏感共享 | `data` 被写成明文，`encryptedData` 被清空 | 解决路径未复用 `remoteGuard` 的敏感判定 |
+| 失败被报成成功 | HTTP 200 + `{success:false}` 但客户端清空了冲突 | 只检查状态码，未检查响应体 |
+
+### Issue #159: 失败被伪装成成功、REMOTE 未落盘即删冲突 ✅ 已修复（2026-11-02，`84f73b0`）
+
+**严重程度**：🔴 Critical
+**症状**：REMOTE 解决时先删冲突再写库；写库失败后本地编辑丢失且无错误提示。
+**修复**：先落盘（内容、版本、`dirty=0` 三项都断言）再删冲突；5xx、空 body、非法 JSON、
+`200 {success:false}` 四种响应都保留冲突并明确报错。回归见 `dual-client-sync.pg-spec.ts` 的 C3–C7。
+
+### Issue #160: 毫秒墙钟与版本协议混用 ✅ 已修复（2026-11-02，`84f73b0`）
+
+**严重程度**：🔴 High
+**症状**：「同毫秒内的两次写」既可能被判为冲突也可能被静默接受，取决于时序。
+**修复**：`classifyBaseVersion` 统一返回 `match / stale / future / unproven / legacy-timestamp / unverifiable`，
+不再用时间戳比较替代版本比较。回归 `conflict-version-protocol.pg-spec.ts` 5 项。
+
+### Issue #161: 安全 CI 是诊断 job，只覆盖 vulnerabilities 🔴 → ✅ 已修复（2026-11-02）
+
+**严重程度**：🔴 High（它让下面这件事发生了：）本轮起点实测 25 条 vulnerabilities + 17 条告警，
+而 CI 的 `cargo-audit-diagnostic` 挂着 `continue-on-error: true` 且只读 `vulnerabilities.list`——
+unsound / unmaintained / yanked 从来没进过视野。**27 → 21 → 27 → 25 这个漂移没人发现。**
+
+**修复**：
+- `.github/workflows/ci.yml` 的 job 改名 `cargo audit (blocking)`，删除 `continue-on-error`
+- 新增 `scripts/security-gate.mjs`：三态退出码（0 全在基线 / 1 新 advisory 或版本变化 / 2 扫描失败），
+  覆盖四类告警，基线 `src-tauri/security-baseline.json` 以 `kind|id|crate` + 版本为键
+- 不用 cargo-deny 的原因：它的 ignore 只能按 advisory id，忽略 `RUSTSEC-2023-0071` 会同时
+  压掉 rsa 0.9.10（不在图内）与 rsa 0.10.0-rc.18（在图内）——正是被禁止的"批量 ignore"
+- 自测 27 项（`scripts/security-gate.test.mjs`）
+
+**残留**：13 条已记录，其中 `RUSTSEC-2023-0071`（rsa 0.10.0-rc.18）在三个平台都真实生效且上游无修复。
+**绿色在这里表示「没有未记录的 advisory」，不是「没有已知漏洞」。**
+
+### Issue #162: 验收证据门禁从未进入 CI 🔴 → ✅ 已修复（2026-11-02）
+
+**严重程度**：🔴 High
+**症状**：`check-verification-evidence.mjs` 只能通过 `pnpm verify` 抵达，而 CI 里没有任何 job
+调用 `pnpm verify`。后果是一个 commit 可以改产品源码、留下六份描述旧 checkout 的证据文件，
+九个 job 全绿。
+
+**修复**：`.github/workflows/ci.yml` 的 `source-size` job 改名
+`Repository gates (source size, evidence, script tests)`，加入证据门禁作为**阻塞步骤**
+（无 `continue-on-error`），并把 `node --test scripts/*.test.mjs`（359 项）放在同一 job。
+
+**当前状态：** `node scripts/check-verification-evidence.mjs` 报 **7 个问题，exit 1**——
+六份证据加上 manifest 记录的是指纹 `2f62fabd…`，当前源码指纹 `41b45f31…`。
+**这是正确结果**，因为本阶段确实改了 `FINGERPRINT_PATHS` 内的七处源码（russh 0.65 迁移 + 15 个依赖升级）。
+证据必须在真实 macOS runner 上重采，**不得手工改指纹让它变绿**。详见 `docs/phase9-2/verification-evidence.md`。
+
+### Issue #163: Linux zsh 三条用例的当前状态是 NOT_RUN，不是 FAIL 🔄 更正（2026-11-02）
+
+**严重程度**：🟡 Important（状态记录口径）
+**更正内容**：本阶段初稿把 Issue #156 的结论沿用为「修好之后仍然失败」。核对后不成立：
+
+```bash
+git merge-base --is-ancestor 030fda4 3d71988 && echo YES      # 030fda4 是祖先
+git show 030fda4:scripts/run-terminal-shell-probe.mjs | grep -c skip_global_compinit   # 0
+gh run list --workflow real-machine-matrix.yml --limit 30 --json createdAt,headSha
+# 最新仍是 2026-10-31T18:49:26Z / 030fda4；没有任何 run 在 3d71988 或之后
+```
+
+唯一一次 Linux shell-probe 测量跑的是**修复前**的脚本：探针夹具
+`PROBE_HOME_STARTUP_FILES` / `seedProbeHome()` 是 `3d71988` 才加的。
+所以「修复后仍然失败」**从未被测量过**。把过时测量写成当前 FAIL，会让下一个人
+去修一个可能已经不存在的问题。
+
+**判定口径**：没有在包含修复的代码上跑过 = **NOT_RUN**。
+**闭合方式**：`gh workflow run real-machine-matrix.yml --ref <含修复的分支>`。
+**机制**（已定位，见 `docs/phase9/linux-zsh-probe-diagnosis.md`）：Debian `/etc/zsh/zshrc`
+调用 `compinit`，它在 insecure directories 上用 `read -q` 提问，而 `read -q` 只吃一个字符；
+探针盲打，被吃掉的正是 setup 命令首字符。受影响用例恰好是
+`readline-history` / `readline-tab` / `pty-resize` 三条，与门禁记录的失败集合 3/3 吻合。
+
+### Issue #164: macOS 冷启动在当前源码上无有效测量 🔴 NOT_RUN（2026-11-02）
+
+**严重程度**：🔴 Blocker（RC）
+**原因**：冷启动证据随源码指纹一起失效（见 Issue #162）。
+最后一次有效测量（`030fda4`）：debug 7679 / 4462 / 4109 ms、release 4666 / 4759 / 4291 ms、
+远程提示符 7025 ms。**这组数字描述的是旧代码。**
+
+**本阶段没有针对冷启动的产品改动**，相关改动只有依赖升级与 russh API 迁移
+（后者不在启动路径上，但同样是 `src-tauri/src` 的改动）。所以闭合只能靠重采，不能靠推理。
+
+**另一条未修的事实**：Phase 9.0 实测 10 次远程冷启动里 2 次失败，
+`stages: none recorded` + `didFailProvisionalLoadForFrame code=-1004`（WebKit 主框架加载失败）。
+**即便重采通过，冷启动仍是概率性通过**，得看三次的分布而不是只看"三次都过了"。
+
+### Issue #165: Team Server lint 在 `84f73b0` 的 CI 上失败 ✅ 已修复（2026-11-02）
+
+**严重程度**：🟡 Important
+**症状**：CI run `41401379387`（sha `84f73b0`）`Team Server quality` 失败：
+
+```
+20:1  error  Expected "../../shares/shares.service" to come before "../../sync/sync.service"
+             perfectionist/sort-imports
+```
+
+**修复**：`client-sync-e2e.pg-spec.ts` 调整两个 import 顺序；顺带删除
+`dual-client-sync.pg-spec.ts` 首行多余的 `/* eslint-disable ts/ban-ts-comment */`
+（该抑制已无处可用，eslint 报 `Unused eslint-disable directive`）。
+修复后 `CI=1 pnpm exec eslint src` → **0 error / 87 warning**（原 88 warning，删除的那条正是它）。
+
+**为什么本地一开始没发现**：`@antfu/eslint-config` 在检测到编辑器环境时会关掉部分规则，
+本地输出带有 `Detected running in editor, some rules are disabled.`；
+用 `CI=1` 复跑才与 CI 一致。**这是本仓库本地 lint 与 CI lint 可能不一致的地方，值得记住。**

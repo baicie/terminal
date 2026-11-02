@@ -1,5 +1,3 @@
-/* eslint-disable ts/ban-ts-comment -- the client sources reachable only through the alias below */
-
 // Phase 9.2 P9.2-6：两客户端同步完整性的真机级端到端验证。
 //
 // 唯一的接缝是网络：`fetch` 被换成一个把请求投给真实 SyncService 的桥，客户端

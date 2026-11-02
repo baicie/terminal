@@ -1,5 +1,3 @@
-/* eslint-disable ts/ban-ts-comment -- the client sources reachable only through the alias below */
-
 // The client under test lives in the front-end package and reaches its own sources
 // through the '@/' alias that vitest.pg.config.ts resolves to ../frontend/src.
 // TypeScript cannot do the same here: that tree sits outside this project's rootDir
@@ -16,8 +14,8 @@ import type { PrismaService } from '../../prisma.service'
 // @ts-expect-error -- alias owned by vitest.pg.config.ts; see the note above
 import type { SharedHost, TeamState } from '@/store/team-types'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { SyncService } from '../../sync/sync.service'
 import { SharesService } from '../../shares/shares.service'
+import { SyncService } from '../../sync/sync.service'
 import { connectRaw, createPrisma, resetDatabase } from './pg-harness'
 
 /** `/teams/<teamId>/shares/<shareId>` — the single-share read a REMOTE resolution uses. */

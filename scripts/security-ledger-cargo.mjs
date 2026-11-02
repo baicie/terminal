@@ -62,12 +62,61 @@ export function collectTrees(cwd, exec = runCargo) {
     ),
     verifyAbsent: (name, version) =>
       verifyAbsent(name, version, cwd, exec),
+    findPlatforms: (name, version) =>
+      findPlatforms(name, version, cwd, exec),
   }
 }
 
 /** collectTrees against this repo's crate directory - what the CLI uses. */
 export function collectCargoTrees() {
   return collectTrees(CRATE_DIR)
+}
+
+/**
+ * The targets this project ships for, used to scope a "reachable" verdict.
+ *
+ * `--target all` merges every platform into one tree, which is right for
+ * deciding whether a crate is in the build at all but wrong for a release
+ * decision: a crate that only exists in the Linux graph is present in the
+ * merged tree and absent from the macOS and Windows ones, and those are
+ * different exposures. These triples are the ones release.yml actually builds.
+ */
+export const SHIPPED_TARGETS = [
+  'aarch64-apple-darwin',
+  'x86_64-apple-darwin',
+  'x86_64-pc-windows-msvc',
+  'aarch64-pc-windows-msvc',
+  'x86_64-unknown-linux-gnu',
+  'aarch64-unknown-linux-gnu',
+]
+
+/**
+ * Which shipped targets actually pull `name@version` in.
+ *
+ * Returns the matching triples, or an empty array when none do (in which case
+ * the merged-tree verdict should already have been absent). Runs one cargo
+ * tree per target per crate, so it is only invoked for crates the merged tree
+ * says are reachable - the absent ones have nothing to scope.
+ */
+export function findPlatforms(name, version, cwd, exec = runCargo) {
+  const present = []
+  for (const target of SHIPPED_TARGETS) {
+    const out = exec(
+      [
+        'tree',
+        '--invert',
+        `${name}@${version}`,
+        '--target',
+        target,
+        '--all-features',
+        '--prefix',
+        'none',
+      ],
+      cwd,
+    )
+    if (out.trim() !== '') present.push(target)
+  }
+  return present
 }
 
 /**

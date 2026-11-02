@@ -131,9 +131,22 @@ export function buildRow(entry, trees) {
   const advisory = entry.advisory ?? {}
   const vector = advisory.cvss ?? ''
   const scored = cvssBaseScore(vector)
+  const kind = entry.kind ?? 'vulnerability'
+  const reach = classifyReach(trees, name, version)
+  // Only a reachable crate has platforms worth naming: an absent one is absent
+  // everywhere, and asking per target would triple the cargo invocations to
+  // learn nothing.
+  const platforms
+    = reach === 'absent-from-build-graph' || !trees.findPlatforms
+      ? []
+      : trees.findPlatforms(name, version)
   return {
-    id: advisory.id ?? '',
-    title: (advisory.title ?? '').replace(/\|/g, '\\|'),
+    // A yanked entry carries no advisory object; without a synthesized id it
+    // would key as an empty string and collide with the next withdrawal.
+    id: advisory.id ?? `YANKED-${name}`,
+    kind,
+    title: (advisory.title ?? (kind === 'yanked' ? 'withdrawn release' : ''))
+      .replace(/\|/g, '\\|'),
     crate: name,
     version,
     cvss: vector || NOT_PUBLISHED,
@@ -141,7 +154,8 @@ export function buildRow(entry, trees) {
     // snapshot: cargo audit --json publishes no score and no severity field.
     score: scored ? scored.score : null,
     severity: scored ? scored.severity : null,
-    reach: classifyReach(trees, name, version),
+    reach,
+    platforms,
   }
 }
 
@@ -165,7 +179,20 @@ export function readAudit(input) {
       `${input} has no vulnerabilities.list array; this is not a cargo audit --json snapshot.`,
     )
   }
-  return list
+  // The ledger covered only `vulnerabilities.list` until Phase 9.2, which left
+  // out everything cargo audit reports under `warnings`: unsound crates, crates
+  // nobody maintains, and withdrawn releases. Those are findings a release
+  // decision has to see, so they are rows too, tagged with their class so the
+  // two kinds of decision stay distinguishable in the table.
+  const out = list.map(entry => ({ ...entry, kind: 'vulnerability' }))
+  const warnings = audit.warnings
+  if (warnings !== null && typeof warnings === 'object') {
+    for (const kind of ['unmaintained', 'unsound', 'yanked']) {
+      if (!Array.isArray(warnings[kind])) continue
+      for (const entry of warnings[kind]) out.push({ ...entry, kind })
+    }
+  }
+  return out
 }
 
 /** Build every row, sorted the way the previous ledger sorted them. */

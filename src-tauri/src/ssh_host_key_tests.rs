@@ -155,8 +155,10 @@ async fn probe_handler_captures_and_accepts_the_exact_server_key() {
     let mut handler = HostKeyProbeHandler::new(Arc::clone(&captured));
     let key = public_key();
 
+    // The probe callback receives russh 0.65's key-or-certificate; wrapping the
+    // fixture key reproduces exactly what the transport hands it for a plain key.
     let accepted = handler
-        .check_server_key(&key)
+        .check_server_key(&russh::keys::PublicKeyOrCertificate::from(key.clone()))
         .await
         .expect("probe handler should accept the key for inspection");
 
