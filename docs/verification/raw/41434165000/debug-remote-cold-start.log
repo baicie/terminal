@@ -1,0 +1,184 @@
+
+> @terminal/monorepo@0.0.1-dev.2 smoke:remote-cold-start /Users/runner/work/terminal/terminal
+> node scripts/run-remote-cold-start-stopwatch.mjs -- --app-path /Users/runner/work/terminal/terminal/src-tauri/target/debug/terminal
+
+{
+  "ok": true,
+  "appPath": "/Users/runner/work/terminal/terminal/src-tauri/target/debug/terminal",
+  "binarySha256": "ab620842e9c9adc14a90ed58da529766260a237df53dddd57fa4fec150a69532",
+  "capturedAt": "2026-11-02T11:12:16.195Z",
+  "pid": 20672,
+  "measuredFrom": "child-spawn-event",
+  "axProbe": "none",
+  "readinessMode": "remote",
+  "readinessTarget": "terminal",
+  "readyAt": "terminal",
+  "markerPath": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/terminal-remote-cold-fixture-oYoo7N/sshd/home/REMOTE_COLD_MARKER",
+  "markerReady": true,
+  "markerChecks": [
+    {
+      "path": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/terminal-remote-cold-fixture-oYoo7N/sshd/home/REMOTE_PROMPT_MARKER",
+      "content": "REMOTE_PROMPT_MARKER",
+      "ready": true
+    }
+  ],
+  "requestToReadyMs": 5063,
+  "spawnToReadyMs": 5061,
+  "firstStageSeenMs": 1755,
+  "stages": [
+    {
+      "atMs": 0,
+      "stage": "frontend-boot",
+      "detail": "main.tsx evaluated"
+    },
+    {
+      "atMs": 235,
+      "stage": "db-load-started",
+      "detail": "sqlite:terminal.db"
+    },
+    {
+      "atMs": 347,
+      "stage": "db-pool-registered",
+      "detail": "the sql plugin returned a handle"
+    },
+    {
+      "atMs": 396,
+      "stage": "pending-migrations-detected",
+      "detail": "0 column migration(s): "
+    },
+    {
+      "atMs": 475,
+      "stage": "core-schema-finished",
+      "detail": "20 statement(s) applied"
+    },
+    {
+      "atMs": 807,
+      "stage": "ready",
+      "detail": "connection cached"
+    },
+    {
+      "atMs": 1998,
+      "stage": "session-create-requested",
+      "detail": "remote"
+    },
+    {
+      "atMs": 1998,
+      "stage": "ssh-connect-start",
+      "detail": "127.0.0.1:49204"
+    },
+    {
+      "atMs": 2063,
+      "stage": "ssh-tcp-handshake-done",
+      "detail": "127.0.0.1:49204"
+    },
+    {
+      "atMs": 2108,
+      "stage": "ssh-auth-done",
+      "detail": "127.0.0.1:49204"
+    },
+    {
+      "atMs": 2118,
+      "stage": "ssh-pty-ready",
+      "detail": "channel, pty-req and shell confirmed"
+    },
+    {
+      "atMs": 2173,
+      "stage": "ssh-shell-first-output",
+      "detail": "the remote shell produced its first bytes"
+    },
+    {
+      "atMs": 2173,
+      "stage": "ssh-startup-settle",
+      "detail": "the remote shell produced output before the settle delay"
+    },
+    {
+      "atMs": 3175,
+      "stage": "ssh-startup-write-begin",
+      "detail": "467 bytes"
+    },
+    {
+      "atMs": 3175,
+      "stage": "ssh-startup-write-done",
+      "detail": "the startup command reached the pty"
+    },
+    {
+      "atMs": 3220,
+      "stage": "session-created",
+      "detail": "ssh-d4677406-7173-4f9b-9410-ba58f5c34f57"
+    }
+  ],
+  "stageBudgets": {
+    "checked": [
+      {
+        "from": "frontend-boot",
+        "to": "db-load-started",
+        "elapsedMs": 235,
+        "budgetMs": 2000
+      },
+      {
+        "from": "db-load-started",
+        "to": "ready",
+        "elapsedMs": 572,
+        "budgetMs": 2000
+      },
+      {
+        "from": "session-create-requested",
+        "to": "ssh-connect-start",
+        "elapsedMs": 0,
+        "budgetMs": 250
+      },
+      {
+        "from": "ssh-connect-start",
+        "to": "ssh-tcp-handshake-done",
+        "elapsedMs": 65,
+        "budgetMs": 1500
+      },
+      {
+        "from": "ssh-tcp-handshake-done",
+        "to": "ssh-auth-done",
+        "elapsedMs": 45,
+        "budgetMs": 1500
+      },
+      {
+        "from": "ssh-auth-done",
+        "to": "ssh-pty-ready",
+        "elapsedMs": 10,
+        "budgetMs": 1500
+      },
+      {
+        "from": "ssh-pty-ready",
+        "to": "ssh-shell-first-output",
+        "elapsedMs": 55,
+        "budgetMs": 2000
+      },
+      {
+        "from": "ssh-startup-settle",
+        "to": "ssh-startup-write-begin",
+        "elapsedMs": 1002,
+        "budgetMs": 1500
+      },
+      {
+        "from": "ssh-startup-write-done",
+        "to": "session-created",
+        "elapsedMs": 45,
+        "budgetMs": 500
+      }
+    ],
+    "violations": []
+  },
+  "windowReady": false,
+  "terminalReady": true,
+  "readiness": null,
+  "fixture": {
+    "host": "127.0.0.1",
+    "port": 49204,
+    "username": "runner"
+  },
+  "marker": "REMOTE_COLD_MARKER",
+  "promptMarker": "REMOTE_PROMPT_MARKER",
+  "promptMarkerPath": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/terminal-remote-cold-fixture-oYoo7N/sshd/home/REMOTE_PROMPT_MARKER",
+  "shell": "bash",
+  "shellIntegration": "bash",
+  "expectedCwd": "/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/terminal-remote-cold-fixture-oYoo7N/sshd/home",
+  "expectedExitCode": 1
+}

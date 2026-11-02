@@ -19,9 +19,9 @@
 | P9.2-6 | 双客户端真实 PG 端到端 | ✅ **PASS** | 9 文件 **80/80**，25.56 s 与 31.98 s 两次实跑均全绿 |
 | P9.2-7 | 依赖漏洞整改 | 🟡 **部分 PASS** | Rust：42 → 13 条，29 条已修，1 条真实不可修；**前端审计 NOT_RUN** |
 | P9.2-8 | 可信安全 CI | ✅ **PASS** | `scripts/security-gate.mjs` 阻塞门禁 + 27 项自测 |
-| P9.2-9 | Linux zsh 探测 | 🔴 **NOT_RUN** | 夹具已修（`3d71988`），但修复后**从未在 Linux runner 上跑过** |
-| P9.2-10 | macOS 冷启动 | 🔴 **NOT_RUN** | 6 份证据全部指纹失配；当前源码无有效测量 |
-| P9.2-11 | 证据门禁成为真 CI 门禁 | ✅ **PASS**（门禁本身） | 已接入 `source-size` job，无 `continue-on-error` |
+| P9.2-9 | Linux zsh 探测 | ✅ **PASS** | run `41432020659` / `41434165000` 的 Linux job 均 success，14 用例（bash 7 + zsh 7）全绿，含此前超时的三条 |
+| P9.2-10 | macOS 冷启动 | ✅ **PASS**（本轮实测） | run `41434165000`（sha `a093fc7`）重采 6 份证据，指纹 `365bdee7…`，门禁 0 problem；**不等于已证明稳定**，见 2.4 |
+| P9.2-11 | 证据门禁成为真 CI 门禁 | ✅ **PASS**（门禁 + 证据） | 已接入 `source-size` job，无 `continue-on-error`；6 份证据已在真实 runner 重采 |
 | P9.2-12 | 身份迁移方案 | ✅ **PASS**（方案） | `identity-migration-plan.md`；**迁移未执行，也不应执行** |
 | P9.2-13 | 全量回归 + 八份文档 | ✅ **PASS** | 本文 + 7 份同级文档 |
 
@@ -47,7 +47,8 @@ Rust 侧 29/42 已真实升级修补，剩下 13 条每条都有「为什么修�
 | 源码规模 | `node scripts/check-source-size.mjs` | **560 个生产文件** | ✅ PASS |
 | 门禁脚本测试 | `node --test scripts/*.test.mjs` | **359 项** | ✅ PASS |
 | 安全门禁 | `node scripts/security-gate.mjs --audit /tmp/audit-v4.json` | 13 条全部在基线内，exit 0 | ✅ PASS |
-| **证据门禁** | `node scripts/check-verification-evidence.mjs` | **7 个问题，exit 1** | 🔴 **FAIL（正确）** |
+| **证据门禁（重采前）** | `node scripts/check-verification-evidence.mjs` | **7 个问题，exit 1** | 🔴 **FAIL（正确，见第 5 节）** |
+| **证据门禁（重采后）** | 同上 | **0 problem，exit 0** | ✅ **PASS** |
 
 ### 2.1 前端测试的一次 flake（不计入 PASS 的干净程度）
 
@@ -104,34 +105,59 @@ time out even though the same test passes in isolation」，并已用 `maxWorker
 前端依赖审计：**NOT_RUN / BLOCKED_EXTERNAL**。归因已在本轮更正——
 是镜像源（registry.npmmirror.com）不提供 audit 端点，与沙箱无关。
 
-## 5. 验收证据：当前是红的，而且应该红
+## 5. 验收证据：曾正确变红，已重采闭合
 
 ```
+（重采前，commit e367e3d / a093fc7 的 CI）
 $ node scripts/check-verification-evidence.mjs ; echo $?
 Verification evidence gate failed: 7 problem(s).
 1
+
+（重采后，run 41434165000 安装证据完毕）
+$ node scripts/check-verification-evidence.mjs ; echo $?
+Verification evidence gate passed for 6 current evidence file(s).
+0
 ```
 
-`2f62fabd…` → `41b45f31…`。原因是本阶段真实改了七处 `FINGERPRINT_PATHS` 内的源码
-（russh 0.65 迁移 + 15 个依赖升级）。详见 `verification-evidence.md`。
+`2f62fabd…` → `41b45f31…` → `365bdee7…`。中间那次不匹配不是故障：本阶段真实改了七处
+`FINGERPRINT_PATHS` 内的源码（russh 0.65 迁移 + 15 个依赖升级），随后又改了一次
+`.github/workflows/real-machine-matrix.yml`（它同样在 `FINGERPRINT_PATHS` 里）。
+详见 `verification-evidence.md`。
 
 **本阶段最重要的结构性改动**：这条门禁此前只能通过 `pnpm verify` 抵达，
 而 CI 里没有任何 job 调用它——等于一个自愿遵守的约定。现在它是 `source-size` job 里的阻塞步骤。
-代价是接下来每一次 CI 都会红，直到证据在真实 runner 上重采。这是有意的取舍：
-把「证据描述旧代码」从没人看的本地警告变成必须处理的红色 job。
+它在重采前的那几次 CI 上确实是红的（9 个 job 里 8 绿 1 红），**红得正确**：
+它证明门禁真的会拦人，而不是又一个被忽略的绿灯。
+这条红是靠重采消除的，不是靠关掉门禁或修改指纹。
 
-**不得**改证据文件里的指纹让它变绿。
+注意：`e367e3d` 那次 run（`41432020659`）的三平台都是绿的、证据也生成了，但因为随后
+又提交了矩阵工作流注释，那份证据在提交瞬间就失效了——**证据绑定的是代码身份，不是"最近一次成功"**。
+所以最终采用的是 run `41434165000`（sha `a093fc7` = HEAD）。
 
-## 6. 三个仍然是 NOT_RUN 的实机项
+## 6. 仍然 NOT_RUN 的项：只剩一个
 
 | 项 | 为什么是 NOT_RUN | 怎么闭合 |
 | --- | --- | --- |
-| P9.2-9 Linux zsh 三条 | 唯一一次测量（run `41231265959`，sha `030fda4`）跑的是**修复前**的脚本；`3d71988` 之后没有任何矩阵 run | `gh workflow run real-machine-matrix.yml --ref <本分支>` |
-| P9.2-10 macOS 冷启动 | 证据随源码指纹一起失效 | 同上，然后 `fetch-verification-evidence.mjs --latest` |
-| 前端依赖漏洞审计 | 镜像源无 audit 端点 | 可访问 npm 官方 audit 端点的网络环境 |
+| 前端依赖漏洞审计 | 镜像源 registry.npmmirror.com 不提供 audit 端点（`ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS`），与沙箱无关 | 可访问 npm 官方 audit 端点的网络环境 |
 
-第 1 项尤其重要：把一次**修复前**的失败记成当前 FAIL，会让下一个人去修一个可能
-已经不存在的问题；而把它记成 PASS 更糟。NOT_RUN 是唯一诚实的写法。
+**P9.2-9 与 P9.2-10 已在本轮由真实 runner 闭合**，与上面这一项区别开：
+
+| 项 | run | 依据 |
+| --- | --- | --- |
+| P9.2-9 Linux zsh | `41432020659`（`e367e3d`）、`41434165000`（`a093fc7`） | Linux job success，14 用例全绿（`zsh/readline-history` 360 ms、`zsh/readline-tab` 449 ms、`zsh/pty-resize` 1425 ms） |
+| P9.2-10 macOS 冷启动 | `41434165000`（`a093fc7`） | debug 7679 / 4042 / 3301 ms，release 4692 / 3621 / 3128 ms，远程提示符 5061 ms；门禁 0 problem |
+
+上一版本报告把这两项记作 NOT_RUN 是对的——那时确实没有任何测量跑在修复后的代码上。
+状态改变的唯一依据是新的测量，不是时间流逝。
+
+两条仍然成立的保留：
+
+- P9.2-9 的绿灯测的是**产品的 shell 注入链**，不是「一个 `$HOME` 为空的真实 Debian 新账户
+  也不会遇到 compinit 提问」。探针夹具正是为了绕开那个提问而把 `HOME` 造得像个正常账户
+  （`seedProbeHome` 写入 `skip_global_compinit=1`）。这条遗留风险仍未测。
+- P9.2-10 的三次观测**不足以排除** Phase 9.0 记录的约 20% WebKit 加载失败率
+  （三次全过的概率在 20% 单次失败率下约为 51%）。PASS 的意思是「本轮在真实 runner 上测到了」，
+  不是「已证明稳定」。
 
 ## 7. 本轮遗留的风险（不是待办，是已知且未被消除的事实）
 
@@ -141,7 +167,8 @@ Verification evidence gate failed: 7 problem(s).
 | rsa Marvin 攻击 | 真实、全平台、上游无修复。只能等 russh 换后端 |
 | 冲突解决的前端 UI 路径无 E2E | `team-actions-sync` 状态机有覆盖，React 冲突对话框只有单测 |
 | 双客户端测试是同一进程两个模块实例 | 证明协议与存储的并发正确性，不证明两台物理设备的网络时序 |
-| 证据门禁会一直红 | 直到重采。任何"先把这条关掉"的提议都等于撤销 P9.2-11 |
+| 证据绑定代码身份，改一次源码就要重采 | 任何 `FINGERPRINT_PATHS` 内的改动都会让 6 份证据失效。这是设计，不是故障；后续每个改 `src-tauri/src` 或 `packages/frontend/src` 的提交都要记得重采 |
+| 空 `$HOME` 的真实 Debian 账户未测 | 探针夹具绕开了系统 `compinit` 提问，真实新账户是否也遇到仍未验证 |
 
 ## 8. 交付物
 
@@ -163,8 +190,8 @@ Verification evidence gate failed: 7 problem(s).
 | `security-remediation.md` | 42 → 13 的逐条记录、复核命令、为什么不用 cargo-deny |
 | `sync-conflict-root-causes.md` | 五处 P0 缺陷的根因、改前改后对比、逐条回归 |
 | `sync-integrity-e2e.md` | 双客户端真实 PG 测试台、C1–C12 场景、未覆盖的部分 |
-| `shell-and-webview-stability.md` | Linux zsh 机制与 NOT_RUN 更正、macOS 冷启动历史数字 |
-| `verification-evidence.md` | 证据门禁的五类绑定、为什么 7 个问题是对的 |
+| `shell-and-webview-stability.md` | Linux zsh 机制与 run 实测、macOS 冷启动两轮数字与不稳定边界 |
+| `verification-evidence.md` | 证据门禁的五类绑定、两次 run 的有效范围、从 7 个问题到 0 个 |
 | `identity-migration-plan.md` | 身份面清点、测试前置 T1–T12、为什么现在不能做 |
 | `final-report.md` | 本文 |
 
@@ -173,23 +200,25 @@ Verification evidence gate failed: 7 problem(s).
 **READY_FOR_REVIEW = 是。** 代码、门禁、测试、八份文档齐备；每个 P0 都有先红后绿的证据；
 每处「未做」都有名字与原因。
 
-**READY_FOR_MERGE = 附条件。** 条件：
-1. CI 的 `Repository gates` job 会因证据失配变红——这是**预期的、已解释的**红，
-   不是新缺陷。合并决议必须在知情下做出，不能把它当噪声忽略。
-2. Team Server lint 的导入顺序错误已在工作树修复（`84f73b0` 的 CI 正是红在这里），
-   需随本次提交一起落地。
-3. P9.2-9 / P9.2-10 的实机项在合并前仍为 NOT_RUN。
+**READY_FOR_MERGE = 是**，附三条知情条件：
+1. 证据绑定 HEAD `a093fc7`。合并后若还改 `FINGERPRINT_PATHS` 内的任何文件，证据立刻失效，
+   必须重采——这是设计，不是缺陷。
+2. Team Server lint 的导入顺序错误已在 `84f73b0` 后修复并落地。
+3. P9.2-9 / P9.2-10 已在真实 runner 通过，但 P9.2-10 的 PASS 不等于「冷启动已稳定」
+   （见第 7 节第一行）。
 
 **READY_FOR_RC = 否。** 阻塞项：
-1. 6 份验收证据全部失效，未重采 → NOT_RUN；
-2. Linux zsh 产品门禁自修复后从未跑过 → NOT_RUN；
-3. `RUSTSEC-2023-0071`（rsa）真实暴露，上游无修复；
-4. macOS 远程冷启动存在约 20% 的 WebKit 加载失败率，未修。
+1. `RUSTSEC-2023-0071`（rsa 0.10.0-rc.18）真实暴露，三平台，上游 `patched = []`；
+2. macOS 远程冷启动存在约 20% 的 WebKit `-1004` 加载失败率，本阶段未修，
+   三次新观测不足以排除它；
+3. Windows / Pageant / 串口硬件的实机矩阵仍未采集（不在本阶段范围内）。
+（6 份证据失效与 Linux zsh 两条已闭合，不再是 RC 阻塞项。）
 
 **READY_FOR_RELEASE = 否。** 同 RC，另加前端依赖审计 NOT_RUN。
 
 ## 10. 一句话
 
 这一轮把「同步会静默覆盖数据」「安全 CI 显示绿但没人看」「证据描述的是旧代码」三件事
-各自变成了一个**会在 CI 上变红的门禁**，并留下了三项需要真实 runner 才能闭合的实机验证。
-红的部分是这轮的成果，不是失败。
+各自变成了一个**会在 CI 上变红的门禁**，并让 Linux zsh 与 macOS 冷启动在真实 runner 上
+拿到了绑定当前代码身份的测量。证据门禁先红了 7 个问题，再由重采归零——
+这条先红后绿的轨迹本身就是它可信的理由。

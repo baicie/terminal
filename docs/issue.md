@@ -4332,12 +4332,20 @@ unsound / unmaintained / yanked 从来没进过视野。**27 → 21 → 27 → 2
 `Repository gates (source size, evidence, script tests)`，加入证据门禁作为**阻塞步骤**
 （无 `continue-on-error`），并把 `node --test scripts/*.test.mjs`（359 项）放在同一 job。
 
-**当前状态：** `node scripts/check-verification-evidence.mjs` 报 **7 个问题，exit 1**——
-六份证据加上 manifest 记录的是指纹 `2f62fabd…`，当前源码指纹 `41b45f31…`。
+**重采前状态：** `node scripts/check-verification-evidence.mjs` 报 **7 个问题，exit 1**——
+六份证据加上 manifest 记录的是指纹 `2f62fabd…`，当时源码指纹 `41b45f31…`。
 **这是正确结果**，因为本阶段确实改了 `FINGERPRINT_PATHS` 内的七处源码（russh 0.65 迁移 + 15 个依赖升级）。
-证据必须在真实 macOS runner 上重采，**不得手工改指纹让它变绿**。详见 `docs/phase9-2/verification-evidence.md`。
 
-### Issue #163: Linux zsh 三条用例的当前状态是 NOT_RUN，不是 FAIL 🔄 更正（2026-11-02）
+**✅ 已闭合（2026-11-02）**：由 real-machine-matrix 在真实 runner 上重采
+（run `41434165000`，sha `a093fc7`，指纹 `365bdee7…`），
+`node scripts/check-verification-evidence.mjs` → **0 problem，exit 0**。
+证据文件由脚本整份覆盖写入，**没有手工改过任何指纹**。
+两次 run 的有效范围：run `41432020659`（sha `e367e3d`）三平台全绿且已生成证据，但随后又提交了
+`.github/workflows/real-machine-matrix.yml` 的注释更正，该文件在 `FINGERPRINT_PATHS` 内，
+证据当场失效——**证据绑定的是代码身份，不是"最近一次成功"**，所以最终采用的是 run `41434165000`。
+详见 `docs/phase9-2/verification-evidence.md`。
+
+### Issue #163: Linux zsh 三条用例的当前状态是 NOT_RUN，不是 FAIL ✅ 已闭合（2026-11-02）
 
 **严重程度**：🟡 Important（状态记录口径）
 **更正内容**：本阶段初稿把 Issue #156 的结论沿用为「修好之后仍然失败」。核对后不成立：
@@ -4361,9 +4369,20 @@ gh run list --workflow real-machine-matrix.yml --limit 30 --json createdAt,headS
 探针盲打，被吃掉的正是 setup 命令首字符。受影响用例恰好是
 `readline-history` / `readline-tab` / `pty-resize` 三条，与门禁记录的失败集合 3/3 吻合。
 
-### Issue #164: macOS 冷启动在当前源码上无有效测量 🔴 NOT_RUN（2026-11-02）
+**✅ 已闭合（2026-11-02）**：run `41432020659`（sha `e367e3d`）与 run `41434165000`
+（sha `a093fc7`，= 当前 HEAD）的 `Linux real SSH smoke` job 均 **success**，
+`Run the real Linux shell interaction matrix` 步骤输出 14 个用例（bash 7 + zsh 7）全部
+`ok: true`，含此前超时的三条：`zsh/readline-history` 360 ms、`zsh/readline-tab` 449 ms、
+`zsh/pty-resize` 1425 ms。
 
-**严重程度**：🔴 Blocker（RC）
+**仍然保留的遗留风险（未测）**：这条绿测的是**产品的 shell 注入链**。探针夹具
+（`seedProbeHome` 写入 `.zshenv` = `skip_global_compinit=1`）正是为了绕开系统 `compinit`
+提问而把 `HOME` 造得像正常账户，所以它**不能**证明「一个 `$HOME` 为空的真实 Debian
+新账户也不会遇到提问」。后者需要 Linux 实机新账户验证，本轮没有做。
+
+### Issue #164: macOS 冷启动在当前源码上无有效测量 ✅ 已重采（2026-11-02）
+
+**严重程度**：🔴 Blocker（RC）→ ✅ 当前源码已有有效测量
 **原因**：冷启动证据随源码指纹一起失效（见 Issue #162）。
 最后一次有效测量（`030fda4`）：debug 7679 / 4462 / 4109 ms、release 4666 / 4759 / 4291 ms、
 远程提示符 7025 ms。**这组数字描述的是旧代码。**
@@ -4371,9 +4390,22 @@ gh run list --workflow real-machine-matrix.yml --limit 30 --json createdAt,headS
 **本阶段没有针对冷启动的产品改动**，相关改动只有依赖升级与 russh API 迁移
 （后者不在启动路径上，但同样是 `src-tauri/src` 的改动）。所以闭合只能靠重采，不能靠推理。
 
+**✅ 已重采（2026-11-02）**：run `41434165000`（sha `a093fc7`，指纹 `365bdee7…`）：
+
+| 场景 | spawn→ready（三次） |
+| --- | --- |
+| debug 本地冷启动 | 7679 / 4042 / 3301 ms |
+| release 本地冷启动 | 4692 / 3621 / 3128 ms |
+| debug 远程冷启动（提示符观测） | 5061 ms（单次） |
+
+debug 第一次的 `7679` 与旧值相同，但 `capturedAt` / `pid` / `nonce` 全部是新的，后两次也与旧值不同——
+是巧合，不是复制旧值。
+
 **另一条未修的事实**：Phase 9.0 实测 10 次远程冷启动里 2 次失败，
 `stages: none recorded` + `didFailProvisionalLoadForFrame code=-1004`（WebKit 主框架加载失败）。
-**即便重采通过，冷启动仍是概率性通过**，得看三次的分布而不是只看"三次都过了"。
+**本轮三次观测没有出现 `-1004`，但三次不足以排除约 20% 的失败率**
+（三次全过的概率在 20% 单次失败率下约为 51%）。所以这里的 PASS 意思是
+「本轮在真实 runner 上测到了」，不是「冷启动已证明稳定」。这条风险仍然开着。
 
 ### Issue #165: Team Server lint 在 `84f73b0` 的 CI 上失败 ✅ 已修复（2026-11-02）
 

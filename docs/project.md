@@ -810,7 +810,9 @@ src-tauri/
 
 **门禁状态（2026-11-02 本机实跑）**：前端 150 文件 / 1347 项、Team Server 25 / 117、真实 PostgreSQL 9 / 80、Rust 302 + 3、脚本 359、560 个生产文件行数门禁，全部通过；`cargo fmt --check`、`cargo clippy -D warnings`、前端 lint/typecheck 全绿。
 
-**🔴 未闭合**：6 份验收证据因源码指纹 `2f62fabd…` → `41b45f31…` 全部失效（证据门禁报 7 个问题），须在真实 runner 重采；Linux zsh 探针与 macOS 冷启动均为 **NOT_RUN**（修复后从未测量）；前端依赖漏洞审计 **NOT_RUN**（镜像源无 audit 端点）；rsa 那条上游无修复版本。
+**✅ 已闭合**：6 份验收证据已由 real-machine-matrix 在真实 runner 上重采（run `41434165000`，sha `a093fc7`，指纹 `365bdee7…`），`check-verification-evidence.mjs` 报 **0 problem**；Linux zsh 探针 14 用例（bash 7 + zsh 7）全绿；macOS 冷启动当前源码实测 debug 7679 / 4042 / 3301 ms、release 4692 / 3621 / 3128 ms。
+
+**⚠️ 仍未闭合**：前端依赖漏洞审计 **NOT_RUN**（镜像源无 audit 端点，「未测量」≠「无漏洞」）；`RUSTSEC-2023-0071`（rsa 0.10.0-rc.18）上游无修复版本；macOS 远程冷启动的约 20% WebKit `-1004` 失败率**未被本阶段修复**，三次观测不足以排除它；空 `$HOME` 的真实 Debian 新账户是否会撞上 `compinit` 提问仍未测。证据绑定代码身份——**任何 `FINGERPRINT_PATHS` 内的改动都要重采**。
 
 ---
 

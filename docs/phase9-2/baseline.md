@@ -10,7 +10,8 @@
 | 工作分支 | `feat/phase9-2-sync-security-hardening` |
 | 阶段起点 HEAD | `2f1d68f`（= main） |
 | P9.2-1..6 提交 | `84f73b0` |
-| 本次工作树 | 依赖升级 + 安全门禁 + 文档，未提交时见 `git status` |
+| 后半程提交 | `e367e3d`（门禁与文档）、`a093fc7`（矩阵注释更正，= 证据所指提交） |
+| 本次工作树 | 证据重采结果（6 份证据 + manifest + `raw/41434165000/`），见 `git status` |
 
 ## 2. 测试基数（本机实跑）
 
@@ -40,14 +41,16 @@
 | Rust `clippy -D warnings` | ✅ | — |
 | Rust `test` | ✅ 302 + 3 | — |
 | 源码规模 | ✅ 560 文件 | — |
-| **验收证据指纹** | 🔴 **7 个问题** | 见第 4 节，**这是本轮的真实状态，不是待办** |
+| **验收证据指纹** | ✅ **0 problem** | run `41434165000` 重采后指纹 `365bdee7…`，见第 4 节 |
 | 安全门禁 | ✅ 13 条全部在基线内 | 其中 1 条是真实且不可修复的暴露，见第 5 节 |
 
-## 4. 验收证据全部失效（本轮最重要的状态变化）
+## 4. 验收证据：曾失配，已重采闭合
 
-`node scripts/check-verification-evidence.mjs` 现在报 **7 个问题**：6 份证据文件加 manifest，全部因为源码指纹不匹配。
+`node scripts/check-verification-evidence.mjs` 最终报 **0 problem（exit 0）**。
+中间经历了一次完整、正确的红：
 
 ```
+（重采前）
 evidence-manifest.json           2f62fabd… → 41b45f31…
 2026-10-11-macos-cold-start-current.json
 2026-10-11-macos-remote-shell-prompt-rerun.json
@@ -55,13 +58,21 @@ evidence-manifest.json           2f62fabd… → 41b45f31…
 2026-10-11-macos-shell-interaction-current.json
 2026-10-11-macos-release-terminal-gate.json
 2026-10-11-macos-release-ssh-matrix.json
+→ Verification evidence gate failed: 7 problem(s).
 ```
 
 **原因**：`scripts/check-verification-evidence.mjs` 的 `FINGERPRINT_PATHS` 包含 `src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/src`。本阶段做了 russh 0.60 → 0.65 迁移和 15 个依赖升级，这些路径必然改变。
 
 **这是门禁在正确工作的表现，不是故障。** 旧的 6 份证据测的是 `2f62fabd…` 那次 checkout 的代码；改完依赖后代码不同了，把旧测量当作新代码的证据就是伪造。
 
-**处理方式**：由 `.github/workflows/real-machine-matrix.yml` 在真实 GitHub runner 上重采。本机 macOS 不是合格的采集环境（无法代表 CI runner 的窗口/输入行为）。
+**闭合方式**：`.github/workflows/real-machine-matrix.yml` 在真实 GitHub runner 上重采（run `41434165000`，sha `a093fc7`），本机只负责下载与安装。本机 macOS 不是合格的采集环境（无法代表 CI runner 的窗口/输入行为，且 `provenance.source` 必须为 `github-actions`）。
+
+**两次 run 的有效范围**：
+
+| run | sha | 结果 | 证据 |
+| --- | --- | --- | --- |
+| `41432020659` | `e367e3d` | 三平台全绿 | ❌ 于是我又改了矩阵工作流注释，指纹随即改变 |
+| `41434165000` | `a093fc7`（= HEAD） | 三平台全绿 | ✅ 已安装，0 problem |
 
 **明确不做的事**：不改证据文件里的指纹让它变绿。那一行数字存在的意义就是防止这件事。
 
@@ -91,14 +102,18 @@ evidence-manifest.json           2f62fabd… → 41b45f31…
 | P9.2-6 双客户端真实 PG E2E | ✅ 9 文件 / 80 项通过 | `packages/team-server/src/__tests__/pg/` |
 | P9.2-7 依赖漏洞 | 🟡 29/42 已修，1 条真实不可修 | 第 5 节 |
 | P9.2-8 可信安全 CI | ✅ 阻塞门禁 + 四类覆盖 | `scripts/security-gate.mjs` |
-| P9.2-11 证据门禁进 CI | ✅ 已接入 `source-size` job | 但证据本身待重采，见第 4 节 |
+| P9.2-11 证据门禁进 CI | ✅ 已接入 `source-size` job | 证据已在 run `41434165000` 重采，见第 4 节 |
 
 ## 7. 仍未闭合的项
 
 | 项 | 状态 | 阻塞原因 |
 | --- | --- | --- |
-| 6 份验收证据 | 🔴 **失效待重采** | 需要真实 CI runner，本机不是合格采集环境 |
-| P9.2-9 Linux zsh 探测 | 🔴 **NOT_RUN** | 唯一一次 Linux shell-probe 测量（矩阵 run `41231265959`，sha `030fda4`）跑的是**修复前**的脚本：`git show 030fda4:scripts/run-terminal-shell-probe.mjs \| grep -c skip_global_compinit` = `0`，探针夹具 `PROBE_HOME_STARTUP_FILES`/`seedProbeHome` 是本轮 `3d71988` 才加的。`gh run list --workflow real-machine-matrix.yml --limit 30` 里没有任何 run 覆盖 `3d71988` 或更晚的提交，所以「修好之后仍然失败」这件事**从未被测量过**。改成 FAIL 会把一次过时的测量当成当前结论，故记 NOT_RUN |
-| P9.2-10 macOS 冷启动 | 🔴 **NOT_RUN** | 冷启动证据随第 4 节一起失效，重测需要真实 runner |
+| 6 份验收证据 | ✅ **已重采** | run `41434165000`（sha `a093fc7`），0 problem |
+| P9.2-9 Linux zsh 探测 | ✅ **PASS** | 两个 run 的 Linux job 均 success，14 用例（bash 7 + zsh 7）全绿，含此前三条 |
+| P9.2-10 macOS 冷启动 | ✅ **本轮实测通过** | 三次 7679 / 4042 / 3301 ms，均 < 10 s；**不等于已证明稳定**，见下 |
 | 前端依赖漏洞审计 | 🔴 **NOT_RUN** | 镜像源无 audit 端点，见 security-remediation 第 6 节 |
 | P9.2-12 身份迁移方案 | 📋 计划已写，迁移未做 | 按约束「没有完整迁移测试前不改 identifier」 |
+
+一条必须与上面三个 ✅ 区分开的事实：Phase 9.0 记录的 **macOS 远程冷启动约 20% WebKit
+加载失败率（`code=-1004`）没有被本阶段修复**。三次观测在 20% 单次失败率的假设下仍有约 51% 的
+全过概率，所以「本轮测到的三次都过」不能读成「已稳定」。
