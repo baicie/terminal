@@ -4807,3 +4807,25 @@ actual   7639d533…
 **进展**：run `41596246878`（commit `aa6e19f`，指纹 `cf27517c…`）三平台全绿并
 通过证据门禁；随后发现并修复 trace 顺序缺陷，源码再次变化，因此这份证据只作为
 中间诊断，不作为最终合并证据。最终证据必须绑定修复后的 HEAD。
+
+### Issue #180: probe 配置预算短于冷 WebView 首次 IPC ✅ 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（验收假阴性）
+
+**复现**：
+
+- run `41600744475`：`local/bash/nano-edit` 的五个 gate 全部
+  `timed-out(1006ms)`，bootstrap 回落到 app，probe 从未写 `result.json`。
+- run `41602816075`：physical keyboard probe 同样五个 gate 全部
+  `timed-out(1000ms)`，round 1 checkpoint 60s 超时。
+
+**根因**：冷 WebView 的首次 Tauri IPC（`startup_stage`）在两次 run 中约
+1.8s；`input_probe_config invoked` 虽已到 Rust，1s 的配置预算只剩几十毫秒。
+这不是 probe 未启用，也不是 SSH/PTY 慢。
+
+**修复**：`bootstrapConfigDeadlineMs(smokeBuild)`：instrumented 构建
+（`VITE_TERMINAL_SMOKE_BUILD=1`）使用 3s，普通产品构建保持 1s。这样只放宽测试
+入口的配置读取窗口，不改变用户冷启动的配置回落预算。新增回归断言两种预算。
+
+**验证**：定向 31 项、前端全量 **151 文件 / 1365 项**、typecheck、ESLint 通过。
+修复后仍需在真实矩阵重采证据。

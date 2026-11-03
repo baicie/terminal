@@ -1,6 +1,18 @@
 // Probe configuration only selects explicitly enabled test entry points. It
 // must not hold the normal application hostage while backend IPC is starting.
-export const BOOTSTRAP_CONFIG_DEADLINE_MS = 1_000
+//
+// The first IPC round-trip on a cold WKWebView can take ~1.8 s (runs
+// 41600744475 and 41602816075). A 1 s budget therefore expires before the
+// config command has even returned, all gates time out, and probe builds fall
+// back to the normal app. Instrumented builds get a larger budget so the test
+// entry point is not lost to that cold-start cost; the product's non-probe
+// path keeps the original 1 s budget.
+export function bootstrapConfigDeadlineMs(smokeBuild: boolean): number {
+  return smokeBuild ? 3_000 : 1_000
+}
+export const BOOTSTRAP_CONFIG_DEADLINE_MS = bootstrapConfigDeadlineMs(
+  import.meta.env.VITE_TERMINAL_SMOKE_BUILD === '1',
+)
 // The normal application chunk is bundled locally, but a bounded deadline is
 // still required so a stalled WebView import cannot leave a blank window.
 export const BOOTSTRAP_APP_DEADLINE_MS = 8_000

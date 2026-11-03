@@ -1,9 +1,15 @@
 import { expect, it, vi } from 'vitest'
 import {
+  bootstrapConfigDeadlineMs,
   loadBootstrapConfig,
   loadOptionalBootstrapConfigs,
   type BootstrapConfigReport,
 } from './terminal-bootstrap-deadline'
+
+it('gives instrumented probe builds a budget above cold first-IPC latency', () => {
+  expect(bootstrapConfigDeadlineMs(true)).toBe(3_000)
+  expect(bootstrapConfigDeadlineMs(false)).toBe(1_000)
+})
 
 it('rejects a loader result that settles after its deadline before the timer runs', async () => {
   let now = 0
