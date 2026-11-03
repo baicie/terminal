@@ -23,8 +23,8 @@ import {
   BOOTSTRAP_APP_DEADLINE_MS,
   bootstrapNow,
   loadBootstrapConfig,
-  loadOptionalBootstrapConfigs,
 } from './terminal-bootstrap-deadline'
+import { loadBootstrapGates } from './terminal-bootstrap-gate-loader'
 
 export { reportTerminalSmokeBootstrapFailure } from './terminal-bootstrap-failure'
 export { BOOTSTRAP_CONFIG_DEADLINE_MS } from './terminal-bootstrap-deadline'
@@ -96,18 +96,9 @@ export async function bootstrapTerminalApp(
     attemptStartedAt +
       (dependencies.rootLoadTimeoutMs ?? BOOTSTRAP_APP_DEADLINE_MS),
   )
-  // Every gate reads in-process backend state independently, so all five start
-  // together against one absolute budget instead of queueing behind each
-  // other. Queued, a cold WebView's first round-trip could take the whole
-  // second and every loader behind it returned null without ever being
-  // invoked: the normal app mounted and the runner only found no result.json.
-  const configPromise = loadBootstrapConfig(
-    dependencies.loadConfig,
-    configDeadlineAt,
-    signal,
-  )
-  const optionalConfigsPromise = loadOptionalBootstrapConfigs(
+  const gates = await loadBootstrapGates(
     {
+      smoke: dependencies.loadConfig,
       remotePrompt: dependencies.loadRemotePromptProbeConfig,
       inputProbe: dependencies.loadProbeConfig,
       rawProbe: dependencies.loadRawProbeConfig,
@@ -116,10 +107,8 @@ export async function bootstrapTerminalApp(
     configDeadlineAt,
     signal,
   )
-  // Smoke mode discards these; a rejection must not surface as unhandled.
-  void optionalConfigsPromise.catch(() => undefined)
-
-  const config = await configPromise
+  const reportMode = gates.reportMode
+  const config = gates.smoke
   if (config !== null) {
     const SmokeRoot = await loadBootstrapRoot(
       dependencies.loadSmokeRoot,
@@ -137,10 +126,11 @@ export async function bootstrapTerminalApp(
         submitResult: submitTerminalSmokeResult,
       }),
     )
+    reportMode('smoke')
     return 'smoke'
   }
 
-  const configs = await optionalConfigsPromise
+  const configs = gates.optional
   configureRemotePromptProbe(configs.remotePrompt)
 
   const probeConfig = configs.inputProbe
@@ -152,6 +142,7 @@ export async function bootstrapTerminalApp(
       signal,
     )
     root.render(createElement(ProbeRoot, { config: probeConfig }))
+    reportMode('probe')
     return 'probe'
   }
 
@@ -164,6 +155,7 @@ export async function bootstrapTerminalApp(
       signal,
     )
     root.render(createElement(RawProbeRoot, { config: rawProbeConfig }))
+    reportMode('raw-probe')
     return 'raw-probe'
   }
 
@@ -176,6 +168,7 @@ export async function bootstrapTerminalApp(
       signal,
     )
     root.render(createElement(ShellProbeRoot, { config: shellProbeConfig }))
+    reportMode('shell-probe')
     return 'shell-probe'
   }
 
@@ -196,5 +189,6 @@ export async function bootstrapTerminalApp(
       startupTerminalFallbackAt: startupDeadlineAt,
     }),
   )
+  reportMode('app')
   return 'app'
 }

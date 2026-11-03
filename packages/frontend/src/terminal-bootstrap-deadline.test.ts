@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest'
 import {
   loadBootstrapConfig,
   loadOptionalBootstrapConfigs,
+  type BootstrapConfigReport,
 } from './terminal-bootstrap-deadline'
 
 it('rejects a loader result that settles after its deadline before the timer runs', async () => {
@@ -105,4 +106,126 @@ it('still resolves a later optional loader when an earlier one hangs', async () 
   })
   expect(shellProbe).toHaveBeenCalledOnce()
   vi.useRealTimers()
+})
+
+// ---------------------------------------------------------------------------
+// P9.3.1 P1-2：每一次 gate 读取都要留下结果记录，否则「探针没启用」与「探针
+// 的 IPC 输给了预算」都是同一个 null，静默回落和正常启动无法区分。
+// ---------------------------------------------------------------------------
+
+it('records deadline-passed when the budget is gone before a gate is asked', async () => {
+  const reports: BootstrapConfigReport[] = []
+  const loader = vi.fn(async () => 'config')
+  const now = () => 100
+  const result = await loadBootstrapConfig(
+    loader,
+    100,
+    undefined,
+    now,
+    report => reports.push(report),
+    'shellProbe',
+  )
+
+  expect(result).toBeNull()
+  // Never invoked: the gate did not run at all, which is not "not enabled".
+  expect(loader).not.toHaveBeenCalled()
+  expect(reports).toEqual([
+    { gate: 'shellProbe', outcome: 'deadline-passed', elapsedMs: 0 },
+  ])
+})
+
+it('records not-configured for a gate this build does not include', async () => {
+  const reports: BootstrapConfigReport[] = []
+  const result = await loadBootstrapConfig(
+    undefined,
+    1_000,
+    undefined,
+    () => 0,
+    report => reports.push(report),
+    'rawProbe',
+  )
+
+  expect(result).toBeNull()
+  expect(reports[0]).toMatchObject({ gate: 'rawProbe', outcome: 'not-configured' })
+})
+
+it('records loaded and not-configured for gates that answered in time', async () => {
+  const reports: BootstrapConfigReport[] = []
+  const now = () => 0
+  await loadBootstrapConfig(async () => ({ a: 1 }), 1_000, undefined, now, r => reports.push(r), 'inputProbe')
+  await loadBootstrapConfig(async () => null, 1_000, undefined, now, r => reports.push(r), 'shellProbe')
+
+  expect(reports.map(r => [r.gate, r.outcome])).toEqual([
+    ['inputProbe', 'loaded'],
+    ['shellProbe', 'not-configured'],
+  ])
+})
+
+it('records timed-out for one hanging gate while the rest still load', async () => {
+  vi.useFakeTimers()
+  const reports: BootstrapConfigReport[] = []
+  const loaded = vi.fn(async () => 'shell config')
+  const pending = loadOptionalBootstrapConfigs(
+    {
+      // One gate never answers; the others must still be reported.
+      remotePrompt: () => new Promise<null>(() => undefined),
+      inputProbe: async () => null,
+      rawProbe: async () => null,
+      shellProbe: loaded,
+    },
+    performance.now() + 30,
+    undefined,
+    report => reports.push(report),
+  )
+
+  await vi.advanceTimersByTimeAsync(30)
+  const result = await pending
+
+  expect(result.shellProbe).toBe('shell config')
+  expect(loaded).toHaveBeenCalledOnce()
+  expect(reports.find(r => r.gate === 'remotePrompt')?.outcome).toBe('timed-out')
+  expect(reports.find(r => r.gate === 'shellProbe')?.outcome).toBe('loaded')
+  expect(reports.find(r => r.gate === 'inputProbe')?.outcome).toBe('not-configured')
+  vi.useRealTimers()
+})
+
+it('records no secret when a gate rejects, only the message', async () => {
+  const reports: BootstrapConfigReport[] = []
+  const error = new Error('IPC unavailable for https://team.example.test token-opaque')
+  await expect(
+    loadBootstrapConfig(
+      async () => {
+        throw error
+      },
+      1_000,
+      undefined,
+      () => 0,
+      report => reports.push(report),
+      'remotePrompt',
+    ),
+  ).rejects.toThrow('IPC unavailable')
+
+  expect(reports).toHaveLength(1)
+  expect(reports[0].outcome).toBe('errored')
+  // The message travels; the configuration that produced it never does.
+  expect(reports[0].error).toContain('IPC unavailable')
+})
+
+it('records an abort as errored rather than leaving the gate unexplained', async () => {
+  const reports: BootstrapConfigReport[] = []
+  const controller = new AbortController()
+  controller.abort(new Error('bootstrap disposed'))
+
+  await expect(
+    loadBootstrapConfig(
+      async () => 'config',
+      1_000,
+      controller.signal,
+      () => 0,
+      report => reports.push(report),
+      'smoke',
+    ),
+  ).rejects.toThrow('bootstrap disposed')
+
+  expect(reports[0]).toMatchObject({ gate: 'smoke', outcome: 'errored' })
 })
