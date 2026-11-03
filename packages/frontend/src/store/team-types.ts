@@ -112,6 +112,19 @@ export interface SyncConflict {
     version?: number | null
     /** True when the remote copy is sensitive and `data` is only a placeholder. */
     isSensitive?: boolean
+    /**
+     * The server's ciphertext for a sensitive snapshot.
+     *
+     * It belongs to the snapshot, not to the local row: adopting a REMOTE
+     * resolution with the local ciphertext would write the server's version
+     * number over the user's own ciphertext, i.e. claim convergence while the
+     * content is still the discarded one (P9.3.1 P0-1). Absent when the snapshot
+     * was recorded before this field existed or when the row is not sensitive.
+     */
+    encryptedData?: string | null
+    /** Owner and permission as the server reported them for the same snapshot. */
+    sharedBy?: string
+    permission?: string
   }
 }
 

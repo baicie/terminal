@@ -162,26 +162,36 @@ export function createSyncActions(
         return
       }
       if (resolution === 'REMOTE') {
-        // A conflict reported by a pull already carries the exact snapshot the
-        // user was shown, so that copy is adopted as-is: re-reading the server
-        // here would adopt a version newer than the one they agreed to. A
-        // push-only conflict carries none, and only the server can supply it.
-        const resolved
-          = conflict !== undefined
-            && typeof conflict.remoteVersion.version === 'number'
-            ? {
-                ok: true as const,
-                snapshot: {
-                  version: conflict.remoteVersion.version,
-                  updatedAt: conflict.remoteVersion.updatedAt,
-                  data: conflict.remoteVersion.data,
-                  isSensitive: conflict.remoteVersion.isSensitive === true,
-                  encryptedData: local.host?.encryptedData
-                    ?? local.snippet?.encryptedData
-                    ?? null,
-                } satisfies RemoteSnapshotValue,
-              }
-            : await fetchRemoteSnapshot(local.teamId, shareId)
+        // A pull conflict carries the snapshot the user was shown, so that copy
+        // is adopted as-is: re-reading the server here would adopt a version
+        // newer than the one they agreed to. A push-only conflict carries none,
+        // and only the server can supply it.
+        const stored = conflict?.remoteVersion
+        // A snapshot recorded before the ciphertext and the security metadata
+        // joined it cannot stand in for the server's copy: filling the gaps from
+        // the local row would write the server's version over the user's own
+        // ciphertext and permission, and call that convergence (P9.3.1 P0-1).
+        // Such a snapshot is treated as absent and read back instead.
+        const usableStored
+          = typeof stored?.version === 'number'
+            && typeof stored.permission === 'string'
+            && typeof stored.sharedBy === 'string'
+            && (stored.isSensitive !== true
+              || typeof stored.encryptedData === 'string')
+        const resolved = usableStored
+          ? {
+              ok: true as const,
+              snapshot: {
+                version: stored!.version as number,
+                updatedAt: stored!.updatedAt,
+                data: stored!.data,
+                isSensitive: stored!.isSensitive === true,
+                encryptedData: stored!.encryptedData ?? null,
+                sharedBy: stored!.sharedBy,
+                permission: stored!.permission,
+              } satisfies RemoteSnapshotValue,
+            }
+          : await fetchRemoteSnapshot(local.teamId, shareId)
         if (!resolved.ok) {
           // The server has already accepted the resolution, but this device
           // cannot adopt the copy it was resolved to. Removing the conflict here

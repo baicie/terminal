@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma.service'
 import { buildShareUpdateData } from '../sync/share-write-data'
 import { deleteShareWithAudit } from './share-deletion'
 import { resolveCreateSensitivity } from './share-security'
+import { toShareSnapshot, toShareSnapshots } from './share-serializer'
 
 @Injectable()
 export class SharesService {
@@ -15,10 +16,14 @@ export class SharesService {
 
   async findAll(teamId: string, userId: string) {
     await this.checkMembership(teamId, userId)
-    return this.prisma.share.findMany({
+    const rows = await this.prisma.share.findMany({
       where: { teamId },
       orderBy: { createdAt: 'desc' },
     })
+    // Every response goes through the same mapping as the sync endpoints: a
+    // Prisma row carries a BigInt version, which JSON.stringify refuses to
+    // serialise (P9.3.1 P0-2).
+    return toShareSnapshots(rows)
   }
 
   async create(
@@ -37,7 +42,7 @@ export class SharesService {
       data.isSensitive,
       data.encryptedData,
     )
-    return this.prisma.share.create({
+    const created = await this.prisma.share.create({
       data: {
         teamId,
         type: data.type,
@@ -49,6 +54,7 @@ export class SharesService {
         isSensitive,
       },
     })
+    return toShareSnapshot(created)
   }
 
   async findOne(teamId: string, shareId: string, userId: string) {
@@ -57,7 +63,7 @@ export class SharesService {
       where: { id: shareId, teamId },
     })
     if (!share) throw new NotFoundException('Share not found')
-    return share
+    return toShareSnapshot(share)
   }
 
   async update(
@@ -95,7 +101,11 @@ export class SharesService {
     if (written.count !== 1) {
       throw new ConflictException('Share was modified concurrently')
     }
-    return this.prisma.share.findFirst({ where: { id: shareId, teamId } })
+    const updated = await this.prisma.share.findFirst({
+      where: { id: shareId, teamId },
+    })
+    if (!updated) throw new NotFoundException('Share not found')
+    return toShareSnapshot(updated)
   }
 
   async delete(teamId: string, shareId: string, userId: string) {

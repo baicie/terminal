@@ -155,6 +155,13 @@ export async function applyWindow(
         updatedBy: converted.sharedBy,
         version: record.version,
         isSensitive: converted.isSensitive === true,
+        // The snapshot has to carry everything a REMOTE resolution adopts.
+        // Recording only the version made the resolver fill the gaps from the
+        // local row, which wrote the server's version over the user's own
+        // ciphertext and reported that as convergence (P9.3.1 P0-1).
+        encryptedData: record.encrypted_data,
+        sharedBy: converted.sharedBy,
+        permission: converted.permission,
       },
     })
   }

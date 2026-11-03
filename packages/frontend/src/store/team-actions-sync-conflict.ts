@@ -18,21 +18,32 @@ export async function adoptRemoteShare(
     data: unknown
     isSensitive: boolean
     encryptedData: string | null
+    /** Owner and permission as the *server* reported them for this snapshot. */
+    sharedBy?: string
+    permission?: string
+    teamId?: string
   },
 ): Promise<boolean> {
   // A sensitive share's authoritative payload is its ciphertext, not `data`
   // (which the server leaves empty). Refusing an empty plaintext object for a
   // plaintext share is what keeps a placeholder from being written as content.
   if (!remote.isSensitive && !hasData(remote.data)) return false
+  // A sensitive snapshot with no ciphertext is not a snapshot. Adopting it would
+  // store an empty sensitive row at the server's version, which reads as
+  // "already converged" while the payload is gone (P9.3.1 P0-1).
+  if (remote.isSensitive && typeof remote.encryptedData !== 'string') return false
   const host = get().sharedHosts.find(item => item.id === shareId)
   if (host !== undefined) {
     await addSharedHost(
       {
         id: host.id,
-        team_id: host.teamId,
+        // Scope and ownership come from the server snapshot when it carried them:
+        // the local row is the copy the user just discarded, so its permission or
+        // owner may be exactly what changed.
+        team_id: remote.teamId ?? host.teamId,
         host_data: JSON.stringify(remote.isSensitive ? {} : remote.data),
-        shared_by: host.sharedBy,
-        permission: host.permission,
+        shared_by: remote.sharedBy ?? host.sharedBy,
+        permission: remote.permission ?? host.permission,
         created_at: host.createdAt,
         version: remote.version,
         updated_at: remote.updatedAt,
@@ -49,10 +60,10 @@ export async function adoptRemoteShare(
   await addSharedSnippet(
     {
       id: snippet.id,
-      team_id: snippet.teamId,
+      team_id: remote.teamId ?? snippet.teamId,
       snippet_data: JSON.stringify(remote.isSensitive ? {} : remote.data),
-      shared_by: snippet.sharedBy,
-      permission: snippet.permission,
+      shared_by: remote.sharedBy ?? snippet.sharedBy,
+      permission: remote.permission ?? snippet.permission,
       created_at: snippet.createdAt,
       version: remote.version,
       updated_at: remote.updatedAt,
@@ -151,6 +162,10 @@ export interface RemoteSnapshotValue {
   data: unknown
   isSensitive: boolean
   encryptedData: string | null
+  /** Owner, permission and scope as the server reported them. */
+  sharedBy?: string
+  permission?: string
+  teamId?: string
 }
 
 /**
@@ -214,6 +229,24 @@ export async function fetchRemoteSnapshot(
       message: 'The server returned a share without content',
     }
   }
+  // Same rule for ciphertext: a sensitive snapshot without it would be stored as
+  // an empty sensitive row at the server's version (P9.3.1 P0-1).
+  if (isSensitive && typeof share.encryptedData !== 'string') {
+    return {
+      ok: false,
+      reason: 'incomplete',
+      message: 'The server returned a sensitive share without its ciphertext',
+    }
+  }
+  // The server already scoped this read to `teamId`, but a record that names a
+  // different team must not be filed under the one that was asked for.
+  if (typeof share.teamId === 'string' && share.teamId !== teamId) {
+    return {
+      ok: false,
+      reason: 'incomplete',
+      message: 'The server returned a share belonging to another team',
+    }
+  }
   return {
     ok: true,
     snapshot: {
@@ -222,6 +255,15 @@ export async function fetchRemoteSnapshot(
       data: share.data,
       isSensitive,
       encryptedData: share.encryptedData ?? null,
+      sharedBy: typeof share.sharedBy === 'string' ? share.sharedBy : undefined,
+      // Stored rows keep the lowercase form (`convertApiShare` normalises the
+      // pull the same way); writing the server's uppercase enum back would make
+      // the adopted row disagree with every row the pull wrote.
+      permission:
+        typeof share.permission === 'string'
+          ? share.permission.toLowerCase()
+          : undefined,
+      teamId,
     },
   }
 }

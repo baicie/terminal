@@ -150,9 +150,17 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
     const { toSharedHost, toSharedSnippet } = await import('@/store/team-types')
     // @ts-expect-error -- alias owned by vitest.pg.config.ts
     const { syncCursorStorageKey } = await import('@/store/team-sync-engine')
-    // Forces this client's own connection: one SQLite database per module instance.
+    // Forces this client's own connection: one SQLite database per module
+    // instance. Take the handle this call opened rather than whatever is last
+    // in the shared registry -- another spec file in the same worker may have
+    // left its own databases behind, and reading its store would make the
+    // whole suite fail while each file passes alone (P9.3.1 flake).
+    const openedBefore = sqlite.databases.length
     await getDb()
-    const db = sqlite.databases[sqlite.databases.length - 1] as DatabaseSync
+    const db = sqlite.databases[openedBefore] as DatabaseSync
+    if (db === undefined) {
+      throw new Error('the client store did not open a SQLite database')
+    }
     // The local team row is what the share foreign key points at.
     await createTeam({
       id: teamId,

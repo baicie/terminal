@@ -93,6 +93,7 @@ interface LocalRow {
   is_sensitive: number
   encrypted_data: string | null
   permission: string
+  shared_by: string
 }
 
 interface ClientHandle {
@@ -146,9 +147,17 @@ describe('P9.2-6 两客户端同步完整性（真实 PostgreSQL + 真实客户�
     const { createTeam, getDb, getSharedHosts, getSharedSnippets } = await import('@/service/database')
     // @ts-expect-error -- alias owned by vitest.pg.config.ts
     const { toSharedHost, toSharedSnippet } = await import('@/store/team-types')
-    // Forces this client's own connection: one SQLite database per module instance.
+    // Forces this client's own connection: one SQLite database per module
+    // instance. Take the handle this call opened rather than whatever is last
+    // in the shared registry -- another spec file in the same worker may have
+    // left its own databases behind, and reading its store would make the
+    // whole suite fail while each file passes alone (P9.3.1 flake).
+    const openedBefore = sqlite.databases.length
     await getDb()
-    const db = sqlite.databases[sqlite.databases.length - 1] as DatabaseSync
+    const db = sqlite.databases[openedBefore] as DatabaseSync
+    if (db === undefined) {
+      throw new Error('the client store did not open a SQLite database')
+    }
     await createTeam({
       id: teamId,
       name: 'Dual Team',
@@ -223,7 +232,7 @@ describe('P9.2-6 两客户端同步完整性（真实 PostgreSQL + 真实客户�
         sync.syncWithConflictResolution(resolution, shareId, localData),
       row: shareId => db
         .prepare(
-          `SELECT id, team_id, host_data, version, dirty, is_sensitive, encrypted_data, permission
+          `SELECT id, team_id, host_data, version, dirty, is_sensitive, encrypted_data, permission, shared_by
              FROM team_shared_hosts WHERE id = ?`,
         )
         // node:sqlite types a row as Record<string, SQLOutputValue>, which does not
@@ -260,6 +269,20 @@ describe('P9.2-6 两客户端同步完整性（真实 PostgreSQL + 真实客户�
     // previous test's rows and cursor can never be read here.
     clientA = undefined as never
     clientB = undefined as never
+    // `createClient` takes `databases.at(-1)` as the database the module just
+    // opened, so the list has to start empty. `vi.resetModules()` re-runs the
+    // hoisted mock but does not clear the array it closes over; when another
+    // spec file already ran in this worker, the last entry belongs to *its*
+    // database and the client would read the wrong store (P9.3.1 flake: the
+    // whole suite failed while each file passed alone).
+    for (const previous of sqlite.databases) {
+      try {
+        ;(previous as DatabaseSync).close()
+      } catch {
+        // An already-closed handle is fine; this is cleanup, not a check.
+      }
+    }
+    sqlite.databases.length = 0
     await resetDatabase(prisma)
     ctx = await seedTeams(prisma)
     teamId = ctx.teamId
@@ -542,6 +565,65 @@ describe('P9.2-6 两客户端同步完整性（真实 PostgreSQL + 真实客户�
     expect(local?.dirty).toBe(0)
     expect(remote?.data).toEqual({ name: 'by-a' })
     // 只有在这之后冲突才消失。
+    expect(clientB.state().syncConflicts).toEqual([])
+  })
+
+  it('C3b 敏感共享 REMOTE 解决必须落盘服务端密文，不得用本地旧密文冒充', async () => {
+    // P9.3.1 P0-1 的端到端复现：pull 产生的冲突快照必须自带服务端密文。
+    // 旧实现用本地行的 encryptedData 补齐快照缺口，于是服务端是 version 6 /
+    // ciphertext-B，本地写回 version 6 / ciphertext-A 且 dirty=0 ——版本与内容
+    // 不一致，却被当成"已收敛"。
+    const id = 'dual-sensitive-remote'
+    await seedShared(id, {}, { encryptedData: CIPHER_V1 })
+    await bothClientsSee(id)
+    expect(clientB.row(id)).toMatchObject({
+      is_sensitive: 1,
+      encrypted_data: CIPHER_V1,
+    })
+
+    // A（创建者）写入新密文。
+    await clientA.state().loadSharedHosts(teamId)
+    await clientA.db
+      .prepare('UPDATE team_shared_hosts SET encrypted_data = ?, dirty = 1 WHERE id = ?')
+      .run(CIPHER_V2, id)
+    await clientA.state().loadSharedHosts(teamId)
+    await clientA.sync()
+    const afterA = await serverRow(id)
+    expect(afterA?.encryptedData).toBe(CIPHER_V2)
+
+    // B 持有旧密文却读到新版本，于是推送变成冲突。
+    await clientB.state().loadSharedHosts(teamId)
+    await clientB.db
+      .prepare('UPDATE team_shared_hosts SET dirty = 1 WHERE id = ?')
+      .run(id)
+    await clientB.state().loadSharedHosts(teamId)
+    await clientB.sync()
+    expect(clientB.state().syncConflicts.map(item => item.shareId)).toEqual([id])
+
+    // 冲突快照本身必须带着服务端密文，否则解析器无从知道该落什么。
+    const conflict = clientB.state().syncConflicts[0]
+    console.log(
+      `[C3b] conflict remote cipher=${String(conflict.remoteVersion.encryptedData)} version=${String(conflict.remoteVersion.version)} local cipher=${String(clientB.row(id)?.encrypted_data)}`,
+    )
+    expect(conflict.remoteVersion.encryptedData).toBe(CIPHER_V2)
+
+    await clientB.resolve('REMOTE', id)
+    const local = clientB.row(id)
+    const remote = await serverRow(id)
+    console.log(
+      `[C3b] 本地 cipher=${String(local?.encrypted_data)} v=${String(local?.version)} dirty=${String(local?.dirty)} 服务端 cipher=${String(remote?.encryptedData)} v=${String(remote?.version)}`,
+    )
+
+    expect(clientB.state().syncError).toBeNull()
+    // 关键断言：落盘的是服务端密文，不是本地旧的 CIPHER_V1。
+    expect(local?.encrypted_data).toBe(CIPHER_V2)
+    expect(local?.is_sensitive).toBe(1)
+    expect(Number(local?.version)).toBe(Number(remote?.version))
+    expect(local?.dirty).toBe(0)
+    // 权限与所有者取服务端权威值（本地存储用小写枚举，与服务端 Prisma 枚举
+    // 的大小写不同，这是两条写入路径一直沿用的约定）。
+    expect(local?.permission).toBe(String(remote?.permission).toLowerCase())
+    expect(local?.shared_by).toBe(remote?.sharedBy)
     expect(clientB.state().syncConflicts).toEqual([])
   })
 

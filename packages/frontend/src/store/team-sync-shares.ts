@@ -26,6 +26,20 @@ export function hasData(value: unknown): boolean {
     && Object.keys(value).length > 0
 }
 
+/**
+ * True when this conflict record actually carries the server's snapshot.
+ *
+ * `data` alone is not the test: a sensitive share's snapshot keeps the
+ * ciphertext and leaves `data` an empty placeholder, so judging by `data` would
+ * call the only usable snapshot "empty" and let a push-only report replace it.
+ * A version is what a snapshot always has and a push report never does.
+ */
+function hasRemoteSnapshot(conflict: SyncConflict): boolean {
+  const { remoteVersion } = conflict
+  return typeof remoteVersion.version === 'number'
+    && (hasData(remoteVersion.data) || typeof remoteVersion.encryptedData === 'string')
+}
+
 /** The richer of two reports of one conflict wins: only a pull knows the remote side. */
 export function mergeConflicts(
   existing: SyncConflict[],
@@ -36,8 +50,8 @@ export function mergeConflicts(
   for (const conflict of incoming) {
     const previous = byId.get(conflict.shareId)
     const keepRemote = previous !== undefined
-      && hasData(previous.remoteVersion.data)
-      && !hasData(conflict.remoteVersion.data)
+      && hasRemoteSnapshot(previous)
+      && !hasRemoteSnapshot(conflict)
     byId.set(
       conflict.shareId,
       keepRemote
