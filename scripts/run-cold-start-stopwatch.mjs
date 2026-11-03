@@ -825,6 +825,9 @@ export async function runColdStartStopwatch({
         const reachedFrontend = hasStage(lastStages, 'frontend-boot')
         const reachedReady = hasStage(lastStages, 'ready')
         const reachedMounted = hasStage(lastStages, 'terminal-mounted')
+        const requestedSession = stageNames.includes('session-create-requested')
+        const sessionCreated = stageNames.includes('session-created')
+        const enteredSsh = stageNames.includes('ssh-connect-start')
         const stageSummary =
           `stages: ${describeStages(lastStages)}`
           + (firstStageSeenMs === null
@@ -837,9 +840,23 @@ export async function runColdStartStopwatch({
               ? 'the front end evaluated but never reached db ready'
               : !reachedMounted
                 ? 'the app reached db ready but no terminal surface mounted; the restored tab or its host never became usable'
-                : stageNames.includes('session-create-requested')
-                  ? 'the app reached db ready and requested the session; the failure is in the SSH/shell path'
-                  : 'the app reached db ready but never requested the session')
+                : !requestedSession
+                  ? 'the app reached db ready but never requested the session'
+                  : !enteredSsh
+                    ? // `session-created` resolves the frontend command; it
+                      // does not prove a remote transport existed. Keep this
+                      // separate from authentication and PTY failures so a
+                      // local session launched for a missing tab is not called
+                      // an SSH failure (Issue #179).
+                      sessionCreated
+                      ? 'the app requested and created a session, but no SSH stage was ever recorded; the session was not an SSH transport'
+                      : 'the app requested the session, but no SSH stage was ever recorded before the deadline'
+                    : stageNames.includes('ssh-pty-ready') &&
+                        !stageNames.includes('ssh-shell-first-output')
+                      ? 'the SSH PTY became ready, but the remote shell produced no output before the deadline'
+                      : stageNames.includes('ssh-shell-first-output')
+                        ? 'the remote shell produced output, but the prompt marker did not complete'
+                        : 'the app requested the session and entered the SSH path, but it did not reach the PTY before the deadline')
         fail(
           new Error(
             `${readinessLabel} readiness did not complete within ${timeoutMs} ms${details ? ` (last probe: ${details})` : ''} (${stageSummary})` +

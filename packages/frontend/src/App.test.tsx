@@ -216,7 +216,7 @@ describe('startup terminal fallback', () => {
     expect(mocks.appState.addTab).not.toHaveBeenCalled()
   })
 
-  it('opens a local fallback when recovery restored a remote tab without its host', async () => {
+  it('does not open a local fallback for a restored remote tab while its host query is still running', async () => {
     vi.useFakeTimers()
     render(<App />)
     mocks.appState.tabs = [
@@ -227,11 +227,7 @@ describe('startup terminal fallback', () => {
       await vi.advanceTimersByTimeAsync(STARTUP_TERMINAL_FALLBACK_MS)
     })
 
-    expect(mocks.appState.addTab).toHaveBeenCalledWith({
-      label: 'Local',
-      type: 'local',
-      startupFallback: true,
-    })
+    expect(mocks.appState.addTab).not.toHaveBeenCalled()
   })
 
   it('does not add a local fallback when a restored remote host is loaded', async () => {
@@ -249,7 +245,7 @@ describe('startup terminal fallback', () => {
     expect(mocks.appState.addTab).not.toHaveBeenCalled()
   })
 
-  it('restores a local fallback when delayed recovery leaves only an unavailable remote tab', async () => {
+  it('does not duplicate the fallback when delayed recovery restores a remote tab', async () => {
     vi.useFakeTimers()
     let resolveRecovery: (value: {
       dispose: () => void
@@ -275,12 +271,7 @@ describe('startup terminal fallback', () => {
       await Promise.resolve()
     })
 
-    expect(mocks.appState.addTab).toHaveBeenCalledTimes(2)
-    expect(mocks.appState.addTab).toHaveBeenLastCalledWith({
-      label: 'Local',
-      type: 'local',
-      startupFallback: true,
-    })
+    expect(mocks.appState.addTab).toHaveBeenCalledOnce()
   })
 
   it('cancels the fallback when a slow recovery restores a tab', async () => {

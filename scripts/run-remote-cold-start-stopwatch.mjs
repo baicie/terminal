@@ -231,6 +231,12 @@ export async function runRemoteColdStartStopwatch({
     })
     return {
       ...result,
+      // The per-sample timeout is the denominator's configuration, not an
+      // artifact of whichever process happened to fail. Successful results
+      // already carry `binarySha256`; keep the same facts available on both
+      // outcomes so the summarizer can refuse samples measured with a
+      // different budget.
+      timeoutMs,
       fixture: {
         host: fixture.host,
         port: fixture.port,

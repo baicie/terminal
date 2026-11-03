@@ -204,6 +204,7 @@ test('passes the exact marker content to the cold-start stopwatch', async () => 
   assert.equal(calls.stopwatch[0].timeoutMs, 321)
   assert.equal('checkDevServer' in calls.stopwatch[0], false)
   assert.equal(result.marker, 'REMOTE_COLD_MARKER')
+  assert.equal(result.timeoutMs, 321)
   assert.equal(result.markerReady, true)
   assert.equal(calls.stop, 1)
 })

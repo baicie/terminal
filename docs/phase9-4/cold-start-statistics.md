@@ -5,6 +5,22 @@
 > 目标：用同一 SHA、同一 runner 类型、同一 instrumented binary 重复采样，
 > 明确失败率分母，不用一次成功掩盖历史失败。
 
+## 0. 事实更正（2026-11-03）
+
+本文件此前把修复后的两次 300 次运行写成 **NOT_RUN**，这是错误的。两次运行都已真实
+执行并保存完整 artifacts：
+
+- run `41607668007`（commit `dd597eb`，293/300）
+- run `41612216952`（commit `1a4e5ec`，291/300）
+
+本轮重新下载并校验了三次运行的 artifact：每次均为 300 个 `sample-*.json`，编号
+`1..300` 连续、无重复、无 JSON 损坏；失败样本 11 / 7 / 9 个，`summary.json` 与逐样本
+文件一致。修复后的 300 次样本因此是 **已运行、已留证、未通过**，不是未运行。
+
+3 秒 probe 预算对两次修复后运行均生效：workflow 用
+`VITE_TERMINAL_SMOKE_BUILD=1` 构建 debug binary，`bootstrapConfigDeadlineMs()`
+在该构建下返回 3000 ms；`bootstrap-gates` stage 出现在 300/300 个样本中。
+
 ## 1. 30 次样本
 
 | 项 | 值 |
@@ -49,7 +65,15 @@
 | 项 | 值 |
 | --- | --- |
 | run | `41602408642` |
-| commit | `8542ca5` |
+| commit | `8542ca522dca06ef58e6cf14f05b53a1d9d65cac` |
+| commit 父提交 | `a1bd3b6b1ebe42878b16d15fbbf3c1403b1c1bd6` |
+| instrumented build | `VITE_TERMINAL_SMOKE_BUILD=1`，debug，`--no-bundle` |
+| probe 配置预算 | 旧 1000 ms（`44ae449` 尚未合入） |
+| binary SHA256（artifact 记录） | `613aeab7156350546b92d9a194f1bd4922986d5e1a7166b53bf0e099195f4b9f` |
+| 每样本成功结果内 SHA | 289/289 全部为该值；11 个失败样本未写 `binarySha256` |
+| runner | `macos-latest` → `macos-26-arm64`，image `20261026.0455.2` |
+| OS | macOS 26.6.2（`25G83`） |
+| 每样本 readiness timeout | `10000` ms |
 | 样本 | 300 |
 | 成功 | 289 |
 | 失败 | 11 |
@@ -76,7 +100,7 @@ session-create-requested=294 session-created=294
 | 分类 | 次数 |
 | --- | --- |
 | `terminal-not-mounted` | 5 |
-| `ssh-path` | 5 |
+| `ssh-request-not-entered-rust` | 5 |
 | `session-not-requested` | 1 |
 
 失败样本：`24, 49, 50, 56, 57, 109, 110, 230, 231, 241, 242`。
@@ -90,14 +114,126 @@ session-create-requested=294 session-created=294
 - 5 次 `session-created` 已出现，但 10 秒内没有 prompt marker。
 
 **重要限定**：这 300 次使用的是 `8542ca5`（probe 配置预算仍为 1s）。其中 5 次
-`ssh-path` 可能受 `remotePrompt` gate 超时影响，不能全部归因于 SSH 慢；
+`ssh-request-not-entered-rust` 可能受 `remotePrompt` gate 超时影响，不能全部
+归因于 SSH 慢；
 修复后的 `44ae449` 需要单独复测。无论原因如何，**3.7% 的失败率不满足
 “高可靠 RC”要求**，不能因为 300 次比历史 20% 低就宣称已修复。
 
 **修复后的局部验证**：`44ae449` 的 real-machine run `41605898002` 已通过
 shell interaction 与 physical keyboard probe（这两步在修复前分别因 1s 配置预算
-失败）。这证明 3s 预算覆盖了冷首 IPC，但**不是** 300 次冷启动复测；
-post-fix 300 次样本仍是 **NOT_RUN**。
+失败）。这证明 3s 预算覆盖了冷首 IPC，但**不是** 300 次冷启动复测。
+
+## 3.1 修复后 A：run `41607668007`
+
+| 项 | 值 |
+| --- | --- |
+| run | `41607668007` |
+| commit | `dd597eb1972c3069c153cea024faa148c1dba048` |
+| commit 父提交 | `510eae95d040055de45723b48e4431f26cef8aa4` |
+| 与修复的关系 | `44ae449` 是祖先，重放链为 `44ae449 → … → 510eae9 → dd597eb` |
+| instrumented build | `VITE_TERMINAL_SMOKE_BUILD=1`，debug，`--no-bundle` |
+| probe 配置预算 | 3000 ms |
+| binary SHA256 | `2bf151cb6b617a4b2a30d30427c1b6abc5f7622e706e1d584e22e6420cc81b91` |
+| 每样本成功结果内 SHA | 293/293 全部为该值；7 个失败样本未写 `binarySha256` |
+| runner | `macos-latest` → `macos-26-arm64`，image `20261026.0455.2` |
+| OS | macOS 26.6.2（`25G83`） |
+| 每样本 readiness timeout | `10000` ms |
+| samples | 300（1..300 完整） |
+| 成功 / 失败 | **293 / 7** |
+| 点估计失败率 | **2.33%** |
+| Wilson 95% 失败率上界（仅作参考） | 约 4.74% |
+| spawn→ready 中位 / p95 / 最大 | 5095 / 6798 / 8201 ms |
+
+阶段出现：`frontend-boot=300`、`ready=300`、`terminal-mounted=296`、
+`session-create-requested=296`、`session-created=295`。
+
+失败样本：`1, 69, 70, 208, 209, 252, 279`。
+
+分类：`terminal-not-mounted` 4（69/208/252/279）；`ssh-request-not-entered-rust` 2
+（70/209）；`ssh-tcp-pending` 1（1，`ssh-connect-start@4039ms` 后无 TCP 完成）。
+
+## 3.2 修复后 B：run `41612216952`
+
+| 项 | 值 |
+| --- | --- |
+| run | `41612216952` |
+| commit | `1a4e5ec6d9211ee71eb91278e1d6c6a0602ce5c4` |
+| commit 父提交 | `00ee17a4b1e27dce3572c8e344be3ca595bf5677` |
+| 与修复的关系 | `44ae449` 是祖先，重放链为 `44ae449 → … → 00ee17a → 1a4e5ec` |
+| instrumented build | `VITE_TERMINAL_SMOKE_BUILD=1`，debug，`--no-bundle` |
+| probe 配置预算 | 3000 ms |
+| binary SHA256 | `2bf151cb6b617a4b2a30d30427c1b6abc5f7622e706e1d584e22e6420cc81b91` |
+| 每样本成功结果内 SHA | 291/291 全部为该值；9 个失败样本未写 `binarySha256` |
+| runner | `macos-latest` → `macos-26-arm64`，image `20261026.0455.2` |
+| OS | macOS 26.6.2（`25G83`） |
+| 每样本 readiness timeout | `10000` ms |
+| samples | 300（1..300 完整） |
+| 成功 / 失败 | **291 / 9** |
+| 点估计失败率 | **3.00%** |
+| Wilson 95% 失败率上界（仅作参考） | 约 5.60% |
+| spawn→ready 中位 / p95 / 最大 | 5061 / 6237 / 7600 ms |
+
+阶段出现：`frontend-boot=300`、`ready=300`、`terminal-mounted=296`、
+`session-create-requested=296`、`session-created=295`。
+
+失败样本：`1, 106, 107, 190, 191, 201, 202, 293, 294`。
+
+分类：`terminal-not-mounted` 4（106/190/201/293）；`ssh-request-not-entered-rust` 4
+（107/191/202/294）；`ssh-shell-no-output` 1（1：`ssh-pty-ready@3365ms` 后 shell
+首字节未出现）。
+
+## 3.3 汇总
+
+| run | commit | 构建 | 3s probe | 成功 / 失败 | 失败率 |
+| --- | --- | --- | --- | --- | --- |
+| `41602408642` | `8542ca5` | instrumented debug | 否 | 289 / 300 | 3.67% |
+| `41607668007` | `dd597eb` | instrumented debug | 是 | 293 / 300 | 2.33% |
+| `41612216952` | `1a4e5ec` | instrumented debug | 是 | 291 / 300 | 3.00% |
+
+修复后合计 **584 / 600（97.33% 成功，2.67% 失败）**。这三个 run 不能合并成一个
+独立伯努利样本：失败成对出现（见 §3.5），观测到的簇内相关性使 Wilson 上界偏乐观。
+本节不使用 Wilson 数值宣称达标。
+
+## 3.4 失败样本的最终分类
+
+| run | 分类 | 次数 | 失败样本 |
+| --- | --- | --- | --- |
+| `41602408642` | `terminal-not-mounted` | 5 | `24, 49, 109, 230, 241` |
+| `41602408642` | `ssh-request-not-entered-rust` | 5 | `50, 57, 110, 231, 242` |
+| `41602408642` | `session-not-requested` | 1 | `56` |
+| `41607668007` | `terminal-not-mounted` | 4 | `69, 208, 252, 279` |
+| `41607668007` | `ssh-request-not-entered-rust` | 2 | `70, 209` |
+| `41607668007` | `ssh-tcp-pending` | 1 | `1` |
+| `41612216952` | `terminal-not-mounted` | 4 | `106, 190, 201, 293` |
+| `41612216952` | `ssh-request-not-entered-rust` | 4 | `107, 191, 202, 294` |
+| `41612216952` | `ssh-shell-no-output` | 1 | `1` |
+
+两次修复后运行的 SSH 失败里，连 `ssh-connect-start` 都没有出现的占 A 2/3、B 4/5。
+它们不是认证失败，也不是 PTY 失败；产品已请求会话，但 Rust 首个 SSH stage 没有写进
+时间线。旧分类把它们全部叫 `ssh-path`，掩盖了这一点。
+
+## 3.5 连续失败对
+
+失败不是独立散点，而是固定成对出现，且中间恰好执行一次 `log show`：
+
+| run | 连续失败对 | 对间间隔 |
+| --- | --- | --- |
+| `41607668007` | `69/70`、`208/209` | 14.60 s / 12.55 s |
+| `41612216952` | `106/107`、`190/191`、`201/202`、`293/294` | 14.14 / 12.69 / 12.57 / 12.75 s |
+
+正常样本之间的间隔约 5–6 s；失败对内部及失败后的间隔约 12–15 s，与 workflow 执行
+`log show` 的窗口吻合。必须把它当作测量/资源隔离问题调查，不能按独立随机事件计算。
+
+## 3.6 样本完整性
+
+三次 run 的 artifact 均校验：
+
+- 300 个 `sample-*.json`，编号 `1..300` 连续；
+- 无重复编号、无缺失文件、无 JSON 解析失败；
+- 成功样本的 `binarySha256` 与 artifact 中 `cold-start-binary.sha256` 完全一致；
+- 失败样本没有 `binarySha256` 字段（旧 stopwatch 只把 SHA 写进成功结果）；
+- 旧 stopwatch 的成功结果没有 `timeoutMs`；本文件只用失败 JSON 的 `timeoutMs`
+  和 workflow env 证明三次均为 10000 ms，不伪称每个成功样本都自证了该值。
 
 ## 4. 失败分类口径
 
@@ -109,7 +245,12 @@ post-fix 300 次样本仍是 **NOT_RUN**。
 | `db-not-ready` | 有 `frontend-boot`，没有 `ready` |
 | `terminal-not-mounted` | 有 `ready`，没有 `terminal-mounted` |
 | `session-not-requested` | 已挂载，没有 `session-create-requested` |
-| `ssh-path` | 已请求会话，未到 prompt marker |
+| `ssh-request-not-entered-rust` | 已请求会话，但没有 `ssh-connect-start` |
+| `ssh-tcp-pending` | `ssh-connect-start` 后未完成 TCP/握手 |
+| `ssh-auth-pending` | TCP/握手完成，未完成认证 |
+| `ssh-pty-pending` | 认证完成，PTY/shell 未就绪 |
+| `ssh-shell-no-output` | PTY 就绪，shell 未输出首字节 |
+| `ssh-prompt-marker-missing` | shell 已输出，prompt marker 未完成 |
 
 失败样本的 `sample-*.json` 和（若采集到）`sample-*-webkit.log` 会随 artifact
 上传；不会因为 job 汇总而丢弃。

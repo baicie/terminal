@@ -104,11 +104,80 @@ session-create-requested=30 session-created=30
 | --- | --- |
 | 五段诊断链 | **PASS**（30/30 阶段完整） |
 | 30 次真实重复测量 | **PASS**（30/30） |
-| 300 次真实重复测量 | **FAIL**（289/300，3.7%） |
+| 修复前 300 次 | **FAIL**（289/300，3.67%） |
+| 修复后 A 300 次 | **FAIL**（293/300，2.33%） |
+| 修复后 B 300 次 | **FAIL**（291/300，3.00%） |
 | 历史 20% 失败根因 | **NOT_RUN / 未完全复现** |
-| WebKit Unified Log 失败回调 | **NOT_RUN**（本轮无失败可采） |
-| 失败阶段分类 | **PASS**（5 未挂载 / 1 晚挂载 / 5 SSH 路径） |
+| WebKit Unified Log 失败回调 | **NOT_OBSERVED**：7 份/9 份失败日志里都没有 `didFail`、渲染进程退出或 WebKit 崩溃 |
+| 失败阶段分类 | **PASS**（见 `cold-start-statistics.md` §3.4） |
+| 恢复出的远程 tab 被本地 fallback 抢占 | **FIXED**（`app-startup-recovery.ts`） |
+| tab 短暂缺失时默认启动本地 PTY | **FIXED**（`use-terminal-session-binding.ts`） |
+| 失败对与 `log show` 窗口重合 | **CONFIRMED 相关性**，机制未完全证明 |
 
 **不能**把 30/30 写成“20% 失败已修复”。300 次样本把当前失败率点估计压到 3.7%，
-但仍高于 1%，且失败形态至少两类。当前证据只能证明诊断链能把失败定位到
-`terminal-mounted` 前后，不能证明根因已消除。
+修复后仍为 2.33% / 3.00%，高于 1%，且失败形态至少两类。当前证据只能证明诊断链
+能把失败定位到 `terminal-mounted` 前后，不能证明根因已消除。
+
+## 6. 修复后的具体根因证据
+
+### 6.1 `terminal-not-mounted` 不是 WebKit 崩溃
+
+失败样本的 WebKit 日志里，主进程仍有页面加载、渲染树和图层树事件；完整日志中
+没有 `didFailProvisionalLoadForFrame`、`processDidExit`、渲染进程崩溃或 Tauri 主进程
+提前退出。`terminal-mounted` 缺失发生在 React 层，不是 `-1004`。
+
+按现有证据只能确认：`ready` 之后、`useTerminalInstance` 的 effect 执行之前，终端
+视图在 10 秒预算内没有完成挂载。组件没有抛出可观测错误，因为
+`term.open()` 抛错时同样会被误报成“never mounted”。
+
+### 6.2 `ssh-request-not-entered-rust` 的确定性来源
+
+两次修复后运行的 9 个 `ssh` 失败中，6 个没有 `ssh-connect-start`。其中一组样本的
+`session-created@2649ms` 出现在 `session-create-requested@2512ms` 之后约 137 ms，
+但整个时间线没有任何 SSH 阶段；这与 SSH 握手、认证或 PTY 失败都不相容。
+
+审查发现两条会把远程 tab 变成本地 PTY 的产品路径：
+
+1. `useStartupWorkspaceRecovery` 只有在 host 列表已加载时才把远程 tab 视为可用。
+   主机查询最长 1.5 秒，fallback timer 随后触发；布局已恢复但 host 查询未完成时，
+   App 会额外添加 `startupFallback` 本地 tab 并抢走 active tab。
+2. `useTerminalSessionBinding` 在 `tab === undefined` 时用 `?? 'local'` 启动本地 PTY。
+   工作区切换或布局恢复的瞬时窗口里，这会让一个远程 tab id 对应 `session_create_local`，
+   于是时间线出现 `session-created` 却永远没有 SSH 阶段。
+
+两条路径都已修复并有前端回归：远程 tab 只要求自身 `hostId` 存在，不再要求 host
+查询已完成；`tab` 缺失时 session hook 保持 `enabled: false`，直到 tab 恢复。
+
+**证据边界**：这两条路径解释“已创建会话但没有 SSH 阶段”的机制，但旧样本没有记录
+`session-created` 的 detail（仅成功结果有 stages detail），因此不能把 6 个样本逐一
+认定为本地 PTY。修复需要用新构建重新采样验证，不能用推理代替实机结果。
+
+### 6.3 成对失败与 `log show` 强相关
+
+两次修复后运行的失败样本以固定成对出现（A：69/70、208/209；B：106/107、
+190/191、201/202、293/294）。每对内部间隔 12.4–14.6 秒，正常样本约 5–6 秒；
+失败样本之间的额外时间正好与 workflow 执行 `log show` 的窗口重合。
+
+这说明测量夹具会影响后续样本。旧 workflow 用 `log show --last 4m` 采集失败证据，
+它会把前一进程的日志并进来，同时延长下一次启动前的间隔。当前 workflow 已把窗口
+收窄到该样本自己的 `capturedAt` 起 20 秒，并在 provenance 中记录环境；但这只修正
+证据归属，**没有证明**驱动层/WebKit 的跨样本资源隔离已经干净。剩余问题保留为
+P1 残余风险，不得用相关性替代机制证明。
+
+### 6.4 跨样本隔离现状
+
+已确认：
+
+- stopwatch 在每次样本结束后对 Tauri 主进程发 SIGTERM，3 秒内不退出则 SIGKILL，
+  并等待 `close` 事件；本次审查没有发现主进程存活到下一轮的日志。
+- 每次样本使用独立 `mkdtemp` HOME、独立 SQLite 与独立 loopback sshd 临时目录。
+- 失败样本日志的时间窗内没有发现上一轮 `terminal` 主进程仍在运行。
+
+未确认：
+
+- WebKit WebContent/GPU 子进程在父进程退出后的完整回收时序；
+- 端口、socket、文件锁在下一轮开始前的残留；
+- 人为超时后下一轮是否仍从干净状态运行（尚无自动化负面测试）。
+
+因此不能声称“跨样本隔离已闭合”。新增的日志时间窗与 provenance 是让下一次采样
+能回答这些问题的前提，不是答案。

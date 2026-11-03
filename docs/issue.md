@@ -4834,3 +4834,80 @@ actual   7639d533…
 
 **验证**：定向 31 项、前端全量 **151 文件 / 1365 项**、typecheck、ESLint 通过。
 修复后仍需在真实矩阵重采证据。
+
+### Issue #181: 远程 tab 恢复期间被本地 fallback 抢占 / 缺失 tab 误建本地 PTY ✅ 已修复（2026-11-03）
+
+**严重程度**：🔴 Blocker（远程冷启动可靠性统计）
+
+**现象**：修复后的两次 300 次压力运行（`41607668007` 293/300、
+`41612216952` 291/300）中，共 6 个失败样本出现了 `session-created`，却没有任何
+`ssh-connect-start`。它们不是 SSH 握手、认证或 PTY 失败，也被旧分类误记成
+`ssh-path`。
+
+**根因 1**：`useStartupWorkspaceRecovery` 的 `hasUsableTerminal` 要求远程 tab 的
+`hostId` 已出现在 host store。工作区恢复允许 host 查询最长 1.5 秒，而启动 fallback
+timer 只要求自身到期；若布局已恢复、host 查询尚未返回，App 会额外添加
+`startupFallback` 本地 tab 并把它设为 active tab。远程 tab 仍在，但本地会话抢占了
+同一次启动。
+
+**根因 2**：`useTerminalSessionBinding` 在 `tab === undefined` 时把 tab 类型默认为
+`local`，因此工作区切换/布局恢复的瞬时窗口可以启动 `session_create_local`，而 tab id
+仍属于远程 tab。时间线于是出现 `session-created` 而没有 SSH 阶段。
+
+**修复**：
+
+- 远程 tab 的可用性只要求自身带 `hostId`，不再要求 host 查询已完成；fallback 的
+  打开也收敛为幂等函数，连迟到恢复也不会重复添加。
+- `tab` 缺失时 `useTerminalSessionBinding` 保持 `enabled: false`，直到 tab 重新出现；
+  host-key gate 的初始 tabType 仍使用 `local` 只是为了让 hook 顺序稳定，会话不会启动。
+- 新增 `use-terminal-session-binding.test.tsx` 两个回归与 App fallback 回归。
+
+**验证**：前端定向 25 项通过，含 tab 缺失不启动、tab 恢复后启动、host 查询未完成
+不添加 fallback。**真实 300 次复测仍未运行**，因此本 Issue 只能标为“代码修复完成”，
+不能把旧样本的 6 个 `ssh-request-not-entered-rust` 计为已消除。
+
+### Issue #182: 冷启动压力汇总会静默缩小分母 🟡 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（测量基础设施）
+
+**问题**：`summarize-cold-start-samples.mjs` 只统计实际存在的 `sample-*.json`。
+若某个样本进程崩溃、文件写坏或编号重复，汇总器仍会成功，并把 299 个样本的分母
+写成 299。CI 绿色因此不能区分“产品失败”和“样本缺失”。
+
+**修复**：
+
+- 新增 `--expected-samples N`、1..N 连续性、`sampleIndex` 与文件名一致性、重复
+  编号、JSON 解析、成功/失败结构校验与阶段条目校验；测量基础设施错误抛
+  `ColdStartSampleIntegrityError`（exit 3）。
+- 汇总结果加入 `expectedSamples`、`verdict`、失败样本的 `timeoutMs`、
+  `binarySha256` 与 `lastStage`；`RELIABILITY_PASS` 只在 0 失败时出现，
+  有产品失败时为 `MEASUREMENT_COMPLETE_WITH_FAILURES`。
+- workflow 传 `--expected-samples "$SAMPLES"`，并在 verdict 非 `RELIABILITY_PASS`
+  时让 job 失败；样本的源码 SHA、父提交、二进制 SHA、构建类型、runner 与 OS
+  写入 `provenance.json`。
+- `run-cold-start-stress-sample.mjs` 在成功/失败两条路径都记录源码 SHA、父提交、
+  clean 状态、timeout 和环境事实；成功样本不再缺 `timeoutMs`。
+
+**验证**：脚本测试 **12 项**（原 2 项）覆盖缺失、重复、损坏、编号错位、
+缺失阶段、缺失错误消息、因果倒置与 `RELIABILITY_PASS` 判词。
+
+### Issue #183: 冷启动失败分类把“没有 SSH 阶段”误算成 SSH 故障 🟡 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（根因误导）
+
+**问题**：旧分类只有 `ssh-path`，把“已请求会话但没有 `ssh-connect-start`”和
+“`ssh-pty-ready` 后无 shell 输出”混为一类。两次修复后运行的 9 个 SSH 失败里，
+6 个实际上从未进入 Rust 的 SSH 路径。
+
+**修复**：按最深已到达阶段细分 `ssh-request-not-entered-rust`、`ssh-tcp-pending`、
+`ssh-auth-pending`、`ssh-pty-pending`、`ssh-shell-no-output`、
+`ssh-prompt-marker-missing`；stopwatch 失败消息也按同一阶段集合命名。
+
+**证据（旧样本重新分类）**：
+
+- `41602408642`：5 个 `ssh-request-not-entered-rust`（此前 5 个 `ssh-path`）；
+- `41607668007`：2 个 `ssh-request-not-entered-rust` + 1 个 `ssh-tcp-pending`；
+- `41612216952`：4 个 `ssh-request-not-entered-rust` + 1 个 `ssh-shell-no-output`。
+
+**限制**：旧样本的失败 JSON 只有 `stages` 字符串，没有 `session-created` detail，
+因此不能把这些样本逐个证明为本地 PTY；修复的验证必须来自新构建的实机采样。

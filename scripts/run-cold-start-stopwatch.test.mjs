@@ -1157,7 +1157,7 @@ test('names a database bootstrap that never finished', async () => {
   )
 })
 
-test('names a stall in the SSH path once the app reached db ready', async () => {
+test('names a session that was requested but never entered the SSH path', async () => {
   const harness = createHarness({ readiness: ['0,0,0,0'] })
   const stagesPath = '/private/tmp/terminal-cold-start-fixture/terminal-startup-stages.jsonl'
   const readFile = harness.dependencies.readFile
@@ -1186,7 +1186,10 @@ test('names a stall in the SSH path once the app reached db ready', async () => 
       dependencies: harness.dependencies,
     }),
     error => {
-      assert.match(error.message, /the failure is in the SSH\/shell path/)
+      assert.match(
+        error.message,
+        /requested the session, but no SSH stage was ever recorded/,
+      )
       return true
     },
   )

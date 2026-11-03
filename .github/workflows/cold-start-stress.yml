@@ -53,6 +53,7 @@ jobs:
         run: |
           VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle
           shasum -a 256 src-tauri/target/debug/terminal | tee cold-start-binary.sha256
+          node -e "const fs=require('fs');const cp=require('child_process');fs.writeFileSync('cold-start-build.json',JSON.stringify({sourceSha:process.env.GITHUB_SHA,sourceParentSha:(()=>{try{return cp.execFileSync('git',['rev-parse','HEAD^'],{encoding:'utf8'}).trim()}catch{return null}})(),instrumentedBuild:process.env.VITE_TERMINAL_SMOKE_BUILD==='1',buildKind:'debug',bundled:false,nodeVersion:process.version,pnpmVersion:process.env.PNPM_VERSION},null,2))"
 
       - name: Collect cold-start samples
         run: |
@@ -69,20 +70,81 @@ jobs:
               && ! node -e "const s=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));process.exit(s.ok===true?0:1)" "cold-start-samples/sample-$i.json"; then
               # A failed readiness needs the process-level evidence the stage
               # file cannot carry. Keep the query bounded so one failure cannot
-              # consume the whole stress budget.
-              log show --last 4m --style compact \
+              # consume the whole stress budget. Scope the window to this
+              # sample's own capturedAt: a 4-minute tail also includes the
+              # previous samples' processes and makes the log look like
+              # cross-sample contamination that never happened.
+              SAMPLE_START="$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).capturedAt)" "cold-start-samples/sample-$i.json")"
+              SAMPLE_START_NO_Z="$(printf '%s' "$SAMPLE_START" | sed 's/Z$//')"
+              log show --start "$SAMPLE_START_NO_Z" --end "$(date -u -v+20S '+%Y-%m-%d %H:%M:%S')" --style compact \
                 --predicate 'process == "terminal" OR process == "com.apple.WebKit.WebContent"' \
                 > "cold-start-samples/sample-$i-webkit.log" || true
             fi
           done
 
+      - name: Record runner and sample provenance
+        if: always()
+        run: |
+          node - <<'NODE'
+          const { readdir, readFile, writeFile } = require('node:fs/promises')
+          const path = require('node:path')
+          const directory = 'cold-start-samples'
+          const files = (await readdir(directory)).filter(file => /^sample-\d+\.json$/.test(file))
+          const samples = []
+          for (const file of files) {
+            try {
+              samples.push(JSON.parse(await readFile(path.join(directory, file), 'utf8')))
+            } catch {}
+          }
+          const binaryLine = (await readFile('cold-start-binary.sha256', 'utf8')).trim()
+          const binarySha256 = binaryLine.split(/\s+/)[0] ?? null
+          const unique = key => [...new Set(samples.map(sample => sample[key]).filter(Boolean))]
+          const provenance = {
+            workflowRunId: process.env.GITHUB_RUN_ID ?? null,
+            workflowRunAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
+            workflowSha: process.env.GITHUB_SHA ?? null,
+            runnerName: process.env.RUNNER_NAME ?? null,
+            runnerOs: process.env.RUNNER_OS ?? null,
+            runnerArch: process.env.RUNNER_ARCH ?? null,
+            runnerImage: process.env.ImageOS ?? null,
+            sampleCount: samples.length,
+            sourceShas: unique('sourceSha'),
+            sourceParentShas: unique('sourceParentSha'),
+            sourceTreesClean: unique('sourceTreeClean'),
+            osVersions: unique('osVersion'),
+            binarySha256,
+            sampleBinarySha256: unique('binarySha256'),
+            timeoutMs: unique('timeoutMs'),
+            instrumentedBuild: true,
+            instrumentedBuildFlag: 'VITE_TERMINAL_SMOKE_BUILD=1',
+            bootstrapConfigBudgetMs: 3000,
+          }
+          await writeFile(
+            path.join(directory, 'provenance.json'),
+            JSON.stringify(provenance, null, 2),
+          )
+          console.log(JSON.stringify(provenance, null, 2))
+          NODE
+
       - name: Summarize samples
         if: always()
         run: |
           node scripts/summarize-cold-start-samples.mjs cold-start-samples \
+            --expected-samples "$SAMPLES" \
             > cold-start-samples/summary.json \
             2> cold-start-samples/summary.txt
           cat cold-start-samples/summary.txt | tee -a "$GITHUB_STEP_SUMMARY"
+          # A green job must not advertise reliability when product failures
+          # remain, and a broken/partial sample set must fail the job outright.
+          # The summary exits 3 for integrity errors (missing, duplicate,
+          # corrupt, or misnumbered samples); product failures are recorded in
+          # the summary and do not change the exit code.
+          VERDICT="$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).verdict ?? 'UNKNOWN')" cold-start-samples/summary.json)"
+          echo "RELIABILITY_VERDICT=$VERDICT" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$VERDICT" != "RELIABILITY_PASS" ]; then
+            echo "::error::cold-start reliability verdict is $VERDICT"
+            exit 1
+          fi
 
       - name: Upload cold-start samples
         if: always()
@@ -91,5 +153,6 @@ jobs:
           name: cold-start-samples
           path: |
             cold-start-binary.sha256
+            cold-start-build.json
             cold-start-samples/
           if-no-files-found: error

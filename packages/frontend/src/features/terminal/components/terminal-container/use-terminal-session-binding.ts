@@ -20,7 +20,17 @@ interface Options {
   onInput?: () => void
 }
 
-const tabTypeOf = (tab: Tab | undefined): TabType => tab?.type ?? 'local'
+/**
+ * A missing tab must not silently become a local shell.
+ *
+ * `TerminalContainer` renders its empty state before calling this hook in the
+ * normal path, but during a workspace swap the tab object can disappear for one
+ * render. Defaulting to `local` there used to launch a local PTY under a remote
+ * tab id: the session stage said "created" while no SSH stage could ever
+ * appear, which the stress classifier saw as a remote SSH failure (Issue #179).
+ * "No tab" is now an idle surface; the hook starts only after the tab returns.
+ */
+const tabTypeOf = (tab: Tab | undefined): TabType | null => tab?.type ?? null
 
 /**
  * Bind the pane to its live session. The host-key gate stays in front of the
@@ -33,16 +43,17 @@ export function useTerminalSessionBinding(
   reconnectAction: () => void
   hostKeyGate: ReturnType<typeof useSshHostKeyGate>
 } {
+  const tabType = tabTypeOf(options.tab)
   const hostKeyGate = useSshHostKeyGate({
-    tabType: tabTypeOf(options.tab),
+    tabType: tabType ?? 'local',
     host: options.host,
     jumpHost: options.jumpHost,
   })
   const session = useTerminal(options.termInstance, {
     tabId: options.tabId,
     workspaceId: options.workspaceId,
-    tabType: tabTypeOf(options.tab),
-    enabled: hostKeyGate.enabled,
+    tabType: tabType ?? 'local',
+    enabled: tabType !== null && hostKeyGate.enabled,
     expectedHostKey: hostKeyGate.expectedHostKey,
     expectedJumpHostKey: hostKeyGate.expectedJumpHostKey,
     connectionDeadlineAt: hostKeyGate.connectionDeadlineAt,
