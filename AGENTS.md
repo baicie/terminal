@@ -557,7 +557,7 @@ pnpm add <package-name>
 | #     | 问题                                         | 严重程度     | 优先级 |
 | ----- | -------------------------------------------- | ------------ | ------ |
 | —     | 🔴 依赖安全：`cargo audit` **13 条**已记录（8 vulnerabilities + 4 unmaintained + 1 unsound + 0 yanked），其中 **1 条真实、三平台、上游无修复**（`RUSTSEC-2023-0071` rsa 0.10.0-rc.18）。`cargo-audit` 已是阻塞门禁。阻塞发布，不阻塞合并。台账 `docs/phase9-1/security-advisories.md` | 🔴 Blocker（发布） | P0 |
-| —     | ✅ **6 份验收证据已重采**（run `41478709578`，sha `3102093`，指纹 `c4faedfb…`），`check-verification-evidence.mjs` 报 0 problem；证据门禁同时是 CI 阻塞步骤。注意证据绑定代码身份：再改任何 `FINGERPRINT_PATHS` 内文件都要重采 | ✅ 已闭合 | — |
+| —     | ✅ **6 份验收证据已重采**（run `41581014137` 的 CI 对应证据来自 run `41578079126`，sha `bc44c54`，指纹 `43ff429d…`），`check-verification-evidence.mjs` 报 0 problem；证据门禁同时是 CI 阻塞步骤。最终 CI **11/11 全绿**（含新增 `Dependency audit (npm)`）。注意证据绑定代码身份：再改任何 `FINGERPRINT_PATHS` 内文件都要重采 | ✅ 已闭合 | — |
 | —     | ✅ P9.2-9 Linux zsh 探针 **PASS**：run `41432020659` / `41434165000` 的 Linux job 均 success，14 用例全绿（含此前三条）。遗留：空 `$HOME` 的真实 Debian 新账户未测 | ✅ 已闭合 | — |
 | 60    | ⚠️ **macOS 远程冷启动失败率已量化：3/15 = 20%**（16 次 real-machine run 统计，1 次日志过期无法判定）。已知证据只能定位到「db ready 之后、会话请求之前」，**无法证明是 WebKit `-1004`**——那条 Unified Log 证据从未被采集。Phase 9.3.1 补了四种失败形态的诊断分类，但**没有修复** | 🟡 Important（RC 风险） | P0 |
 | —     | ✅ 前端依赖审计已闭合（vuln 25 → 0，新增 CI 阻塞 job）；同步接口与 Share REST 的版本契约统一为 JSON number。详见 `docs/phase9-3/merge-blocker-closure.md` | ✅ 已闭合 | — |

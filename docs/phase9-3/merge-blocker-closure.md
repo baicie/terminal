@@ -267,14 +267,38 @@ Unified Log 证据**——那需要单独的系统日志采集，本轮没有做
 | Team Server lint（CI=1） | 0 error / 89 warning |
 | Team Server typecheck | exit 0 |
 | Team Server 单测 | **117 项** |
-| Team Server 真实 PG | **10 文件 / 85 项**（连续两次全绿） |
+| Team Server 真实 PG | **10 文件 / 85 项**（连续三次全绿） |
 | Rust 测试 | **302 单测 + 3 集成** |
-| 安全门禁 | 13 条全部在基线内，exit 0 |
+| 安全门禁（cargo audit + 完整性判定） | 13 条全部在基线内，exit 0；yanked 检查失败数 **0** |
 | 前端依赖审计 | **No known vulnerabilities found** |
 | 脚本测试 | **370 项** |
 | 源码规模 | **563 个生产文件** |
+| 证据门禁 | **0 problem，exit 0** |
 
-## 10. 附带修掉的一个测试隔离缺陷
+最终 CI run `41581014137`（sha `2a8e1e6`）：**11/11 success**，含
+`Repository gates`、`cargo audit (blocking)`、`Dependency audit (npm)` 三个阻塞 job。
+
+## 10. 一个由门禁修复直接换来的真实发现
+
+修好 yanked 完整性判定后，第一次真正跑起来的 CI 立刻报出：
+
+```
+NEW advisories (1) - not in the baseline:
+  - [yanked] YANKED-async-executor async-executor 1.14.0 (unscored): yanked release
+```
+
+此前的所有 CI run 都看不见它——不是因为它不存在，而是 yanked 检查在 runner 上
+769/769 全部失败，而 gate 只读 JSON。依赖链是
+`async-executor 1.14.0 ← zbus ← tauri-plugin-notification`（Linux 构建图，
+`cargo tree` 需要 `--target all` 才看得见）。
+
+1.14.1 已发布且未撤回，`cargo update -p async-executor --precise 1.14.1` 修掉。
+**没有**把它写进 baseline——它可修，基线只记录修不了的。
+
+**这条链本身就是本轮的论据**：一个"看起来在跑、其实没跑"的检查，
+比一个明确失败的检查更危险。
+
+## 11. 附带修掉的一个测试隔离缺陷
 
 PG 套件此前**不稳定**：同一套代码三次运行中一次报 9 项失败，而每个文件单独跑
 都通过。
@@ -285,32 +309,42 @@ PG 套件此前**不稳定**：同一套代码三次运行中一次报 9 项失�
 修复：记录调用前的长度并取该位置。两个用到它的 spec 都改。
 修复后连续三次 **85/85**。
 
-**这条本身值得记录**：一个会随文件执行顺序变红的测试套件，会让"全量通过"
+**为什么值得单独记录**：一个会随文件执行顺序变红的测试套件，会让"全量通过"
 这个结论失去意义。
 
-## 11. 四个判定
+## 12. 四个判定
 
-**READY_FOR_REVIEW = 是。** 两处 P0 都有先红后绿的复现与修复；P1 各项有据可查；
-未闭合项（macOS 冷启动 20% 失败率、空 `$HOME` Debian 账户）都写明了。
+### READY_FOR_REVIEW = **是**
 
-**READY_FOR_MERGE = 是**，附三条知情条件：
-1. 证据绑定 `FINGERPRINT_PATHS`；本轮改了 `packages/frontend/src` 与 `scripts/`，
-   证据必须重采后才能声称门禁绿。
-2. `RUSTSEC-2023-0071`（rsa 0.10.0-rc.18）仍真实存在、三平台、上游无修复。
-   阻塞发布，不阻塞合并。
-3. macOS 远程冷启动 20% 失败率未修复，见第 7 节。
+两处 P0 都有先红后绿的复现与修复（真实 PostgreSQL、真实 HTTP）；
+P1 各项有据可查；未闭合项都写明了名字与原因。
 
-**READY_FOR_RC = 否。** 阻塞项：
+### READY_FOR_MERGE = **是**，附四条知情条件
+
+1. 证据绑定 `FINGERPRINT_PATHS`，当前绑定 `bc44c54`（指纹 `43ff429d…`）。
+   合并后若再改这些路径，必须重采——这是设计，不是缺陷。
+2. `RUSTSEC-2023-0071`（rsa 0.10.0-rc.18）仍真实存在、三平台、上游
+   `patched = []`。**阻塞发布，不阻塞合并。**
+3. macOS 远程冷启动 **20%（3/15）失败率未修复**，见第 7 节。
+4. 证据是快照：前端依赖审计当前 0 条，但它不是永久性质。
+
+### READY_FOR_RC = **否**
+
+阻塞项：
+
 1. `RUSTSEC-2023-0071` 真实暴露且无上游修复；
 2. macOS 远程冷启动 20% 失败率（本轮量化，未修复）；
 3. Windows / Pageant / 串口硬件实机矩阵仍未采集。
 
-**READY_FOR_RELEASE = 否。** 同 RC，另加：
-- 安装/升级链路（DMG、NSIS、AppImage、`dpkg -i`、旧库兼容）从未验证；
+### READY_FOR_RELEASE = **否**
+
+同 RC，另加：
+
+- 安装/升级链路（DMG、NSIS、AppImage、`dpkg -i`、旧 SQLite 库兼容）从未验证；
 - 未配置 Apple notarization 与 Windows Authenticode；
 - `updater-signed` 只在 `v0.0.1-dev.2` 跑通过一次。
 
-## 12. 仍未闭合的风险
+## 13. 仍未闭合的风险
 
 | 风险 | 说明 |
 | --- | --- |
@@ -318,4 +352,5 @@ PG 套件此前**不稳定**：同一套代码三次运行中一次报 9 项失�
 | rsa Marvin 攻击 | 真实、三平台、上游 `patched = []` |
 | 空 `$HOME` 的真实 Debian 账户 | 探针夹具绕开了系统 `compinit` 提问，真实新账户未验证 |
 | 历史原始日志不在门禁检查面 | gate 只校验当前 manifest 的那一次 run。再增长时应改 CI artifact，不是无限期跟着仓库变大 |
-| 前端依赖审计的时效性 | 本轮为 0，但依赖审计是快照，不是永久性质 |
+| 前端依赖审计的时效性 | 本轮为 0，但那是快照，不是永久性质 |
+| 冷启动数字的解读 | 同一源码在不同 runner 上 1944–6233 ms 都出现过。**不得把单轮数字读成优化或退化**，只有 `readyUnder10s` 是契约 |
