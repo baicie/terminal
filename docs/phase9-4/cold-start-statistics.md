@@ -94,6 +94,11 @@ session-create-requested=294 session-created=294
 修复后的 `44ae449` 需要单独复测。无论原因如何，**3.7% 的失败率不满足
 “高可靠 RC”要求**，不能因为 300 次比历史 20% 低就宣称已修复。
 
+**修复后的局部验证**：`44ae449` 的 real-machine run `41605898002` 已通过
+shell interaction 与 physical keyboard probe（这两步在修复前分别因 1s 配置预算
+失败）。这证明 3s 预算覆盖了冷首 IPC，但**不是** 300 次冷启动复测；
+post-fix 300 次样本仍是 **NOT_RUN**。
+
 ## 4. 失败分类口径
 
 每个失败样本按第一个未到达阶段分类：
