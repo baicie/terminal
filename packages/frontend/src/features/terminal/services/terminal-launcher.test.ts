@@ -3,7 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Host } from '@/types'
 import { profileForHost, startTerminalShell } from './terminal-launcher'
 
+const trace = vi.hoisted(() => ({
+  traceStage: vi.fn(),
+  traceStageAndWait: vi.fn(),
+}))
+
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
+vi.mock('@/service/database/startup-trace', () => ({
+  traceStage: trace.traceStage,
+  traceStageAndWait: trace.traceStageAndWait,
+}))
 
 function host(overrides: Partial<Host> = {}): Host {
   return {
@@ -21,7 +30,12 @@ function host(overrides: Partial<Host> = {}): Host {
   }
 }
 
-beforeEach(() => vi.mocked(invoke).mockReset())
+beforeEach(() => {
+  vi.mocked(invoke).mockReset()
+  trace.traceStage.mockReset()
+  trace.traceStageAndWait.mockReset()
+  trace.traceStageAndWait.mockResolvedValue(undefined)
+})
 
 describe('profileForHost', () => {
   it('keeps the remote profile absent when integration is disabled', () => {
@@ -99,5 +113,29 @@ describe('startTerminalShell startup deadline IPC', () => {
       'session_create_ssh_jump',
       expect.objectContaining({ connectionTimeoutMs: 1_234 }),
     )
+  })
+
+  it('records the request before dispatching the backend session command', async () => {
+    let releaseTrace: () => void = () => undefined
+    trace.traceStageAndWait.mockReturnValue(
+      new Promise<void>(resolve => {
+        releaseTrace = resolve
+      }),
+    )
+
+    const started = startTerminalShell('local', undefined, undefined, 80, 24)
+    await Promise.resolve()
+    expect(invoke).not.toHaveBeenCalled()
+
+    releaseTrace()
+    await started
+    expect(trace.traceStageAndWait).toHaveBeenCalledWith(
+      'session-create-requested',
+      'local',
+    )
+    expect(invoke).toHaveBeenCalledWith('session_create_local', {
+      cols: 80,
+      rows: 24,
+    })
   })
 })

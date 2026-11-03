@@ -4783,6 +4783,13 @@ proxy-addr / source-map-js / mysql2 的覆盖。
 新增 `ready → terminal-mounted` 3 秒预算；失败信息现在能区分「DB 已就绪但
 终端从未挂载」与「已请求会话但 SSH 失败」。
 
+**二次审查（run `41596246878`）**：真实证据里 `ssh-connect-start@3421ms`
+出现在 `session-create-requested@3443ms` 之前。根因是 `traceStage` 为
+fire-and-forget，会话 IPC 先于诊断 IPC 到达 Rust；这会把因果关系读成负耗时。
+修复：启动阶段写入改为串行队列（每项 1 秒上限），关键路径
+`session-create-requested` / `session-created` 使用可等待写入；新增
+`terminal-launcher.test.ts` 回归，未等待 trace 时 `invoke` 不得先发。
+
 ### Issue #179: 01836c9 后验收证据指纹失效 🟡 待重采（2026-11-03）
 
 CI `41590440545` / `41590434867` 均为 10 个 job 成功、`Repository gates` 失败：
@@ -4796,3 +4803,7 @@ actual   7639d533…
 产品测试回归。**不得修改旧 manifest**；必须在冻结源码后由
 `Real-machine terminal matrix` 在真实 runner 重采 6 份证据，再运行
 `check-verification-evidence.mjs` 到 0 problem。
+
+**进展**：run `41596246878`（commit `aa6e19f`，指纹 `cf27517c…`）三平台全绿并
+通过证据门禁；随后发现并修复 trace 顺序缺陷，源码再次变化，因此这份证据只作为
+中间诊断，不作为最终合并证据。最终证据必须绑定修复后的 HEAD。

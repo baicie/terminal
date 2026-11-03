@@ -21,11 +21,51 @@ function enabled(): boolean {
   }
 }
 
-export function traceStage(stage: string, detail = ''): void {
+const TRACE_TIMEOUT_MS = 1_000
+let traceQueue: Promise<void> = Promise.resolve()
+
+async function invokeStage(stage: string, detail: string): Promise<void> {
   if (!enabled()) return
-  void import('@tauri-apps/api/core')
-    .then(({ invoke }) => invoke('startup_stage', { stage, detail }))
-    .catch(() => undefined)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    // A diagnostic write must never become a startup dependency. The queue
+    // below preserves order, but a hung IPC call is dropped after one second
+    // so the operation it annotates can still proceed.
+    await Promise.race([
+      invoke('startup_stage', { stage, detail }),
+      new Promise<void>(resolve => {
+        timer = setTimeout(resolve, TRACE_TIMEOUT_MS)
+      }),
+    ])
+  } catch {
+    // Tracing must never fail startup.
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+function enqueueStage(stage: string, detail: string): Promise<void> {
+  const next = traceQueue.then(() => invokeStage(stage, detail))
+  traceQueue = next.catch(() => undefined)
+  return next
+}
+
+export function traceStage(stage: string, detail = ''): void {
+  void enqueueStage(stage, detail)
+}
+
+/**
+ * Await the stage write before dispatching the operation it describes.
+ *
+ * `traceStage` is fire-and-forget, so the backend command it annotates can
+ * reach Rust first. That made `session-create-requested` appear after
+ * `ssh-connect-start` in real runner evidence (run 41596246878), turning a
+ * causal edge into a negative duration. Critical-path callers use this variant
+ * when the order itself is part of the measured contract.
+ */
+export function traceStageAndWait(stage: string, detail = ''): Promise<void> {
+  return enqueueStage(stage, detail)
 }
 
 /** Report a bootstrap failure together with the stage it happened in. */
