@@ -1,0 +1,89 @@
+name: Cold-start stress
+
+# Phase 9.4: repeat the real macOS remote cold start on one runner and keep
+# every result. This is deliberately separate from the evidence chain in
+# real-machine-matrix.yml: a stress run answers "how often does it fail", not
+# "is this artifact releasable". It never writes docs/verification.
+on:
+  workflow_dispatch:
+    inputs:
+      samples:
+        description: Number of remote cold-start samples
+        required: false
+        default: '30'
+      timeout_ms:
+        description: Per-sample readiness timeout in milliseconds
+        required: false
+        default: '10000'
+
+permissions:
+  contents: read
+
+env:
+  PNPM_VERSION: 10.34.3
+
+jobs:
+  macos-cold-start:
+    name: macOS remote cold-start stress
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      SAMPLES: ${{ inputs.samples }}
+      TIMEOUT_MS: ${{ inputs.timeout_ms }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build the instrumented debug binary
+        run: |
+          VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle
+          shasum -a 256 src-tauri/target/debug/terminal | tee cold-start-binary.sha256
+
+      - name: Collect cold-start samples
+        run: |
+          mkdir -p cold-start-samples
+          for i in $(seq 1 "$SAMPLES"); do
+            echo "=== sample $i / $SAMPLES ==="
+            node scripts/run-cold-start-stress-sample.mjs \
+              "$i" \
+              "cold-start-samples/sample-$i.json" \
+              "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal" \
+              "$TIMEOUT_MS" || true
+
+            if [ -f "cold-start-samples/sample-$i.json" ] \
+              && ! node -e "const s=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));process.exit(s.ok===true?0:1)" "cold-start-samples/sample-$i.json"; then
+              # A failed readiness needs the process-level evidence the stage
+              # file cannot carry. Keep the query bounded so one failure cannot
+              # consume the whole stress budget.
+              log show --last 4m --style compact \
+                --predicate 'process == "terminal" OR process == "com.apple.WebKit.WebContent"' \
+                > "cold-start-samples/sample-$i-webkit.log" || true
+            fi
+          done
+
+      - name: Summarize samples
+        if: always()
+        run: |
+          node scripts/summarize-cold-start-samples.mjs cold-start-samples \
+            > cold-start-samples/summary.json \
+            2> cold-start-samples/summary.txt
+          cat cold-start-samples/summary.txt | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload cold-start samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cold-start-samples
+          path: |
+            cold-start-binary.sha256
+            cold-start-samples/
+          if-no-files-found: error
