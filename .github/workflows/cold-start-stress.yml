@@ -10,7 +10,7 @@ on:
       samples:
         description: Number of remote cold-start samples
         required: false
-        default: '30'
+        default: '300'
       timeout_ms:
         description: Per-sample readiness timeout in milliseconds
         required: false
@@ -32,9 +32,9 @@ jobs:
   macos-cold-start:
     name: macOS remote cold-start stress
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     env:
-      SAMPLES: ${{ github.event.inputs.samples || '30' }}
+      SAMPLES: ${{ github.event.inputs.samples || '300' }}
       TIMEOUT_MS: ${{ github.event.inputs.timeout_ms || '10000' }}
     steps:
       - uses: actions/checkout@v4
