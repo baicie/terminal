@@ -1039,3 +1039,170 @@ test('a stage that never arrived is not a latency violation', () => {
   assert.deepEqual(checked, [])
   assert.deepEqual(violations, [])
 })
+
+// ---------------------------------------------------------------------------
+// P9.3.1 P1-3：四种冷启动失败需要四个不同的判读，不能共用一句话。
+// ---------------------------------------------------------------------------
+
+function stageTimeoutCase(stages) {
+  const harness = createHarness({ readiness: ['0,0,0,0'] })
+  const stagesPath = '/private/tmp/terminal-cold-start-fixture/terminal-startup-stages.jsonl'
+  const readFile = harness.dependencies.readFile
+  let clock = 0
+  harness.dependencies.now = () => clock
+  harness.dependencies.readFile = async (filePath, encoding) => {
+    if (filePath === stagesPath && harness.calls.applicationSpawned) {
+      clock = 900
+      return stages
+        .map(stage => JSON.stringify({ at_ms: stage[1], stage: stage[0], detail: '' }))
+        .join('\n')
+    }
+    return readFile(filePath, encoding)
+  }
+  return assert.rejects(
+    runColdStartStopwatch({
+      appPath: '/Applications/Termius.app/Contents/MacOS/terminal',
+      timeoutMs: 10,
+      readinessMode: 'remote',
+      homeDirectory: '/private/tmp/terminal-cold-start-fixture',
+      markerPath: '/private/tmp/remote-marker',
+      markerContent: 'REMOTE_COLD_MARKER',
+      dependencies: harness.dependencies,
+    }),
+    error => {
+      assert.match(error.message, /terminal readiness did not complete/)
+      return true
+    },
+  ).then(() => harness)
+}
+
+test('says the WebView never evaluated when no stage arrived at all', async () => {
+  const harness = createHarness({ readiness: ['0,0,0,0'] })
+  const stagesPath = '/private/tmp/terminal-cold-start-fixture/terminal-startup-stages.jsonl'
+  const readFile = harness.dependencies.readFile
+  let clock = 0
+  harness.dependencies.now = () => clock
+  harness.dependencies.readFile = async (filePath, encoding) => {
+    if (filePath === stagesPath && harness.calls.applicationSpawned) {
+      clock = 900
+      return ''
+    }
+    return readFile(filePath, encoding)
+  }
+  await assert.rejects(
+    runColdStartStopwatch({
+      appPath: '/Applications/Termius.app/Contents/MacOS/terminal',
+      timeoutMs: 10,
+      readinessMode: 'remote',
+      homeDirectory: '/private/tmp/terminal-cold-start-fixture',
+      markerPath: '/private/tmp/remote-marker',
+      markerContent: 'REMOTE_COLD_MARKER',
+      dependencies: harness.dependencies,
+    }),
+    error => {
+      assert.match(error.message, /no stage ever arrived/)
+      assert.match(error.message, /the front end never evaluated/)
+      return true
+    },
+  )
+})
+
+test('names a database bootstrap that never finished', async () => {
+  const harness = createHarness({ readiness: ['0,0,0,0'] })
+  const stagesPath = '/private/tmp/terminal-cold-start-fixture/terminal-startup-stages.jsonl'
+  const readFile = harness.dependencies.readFile
+  let clock = 0
+  harness.dependencies.now = () => clock
+  harness.dependencies.readFile = async (filePath, encoding) => {
+    if (filePath === stagesPath && harness.calls.applicationSpawned) {
+      clock = 900
+      return [
+        '{"at_ms":2678,"stage":"frontend-boot","detail":"main.tsx evaluated"}',
+        '{"at_ms":2900,"stage":"db-load-started","detail":"sqlite:terminal.db"}',
+      ].join('\n')
+    }
+    return readFile(filePath, encoding)
+  }
+  await assert.rejects(
+    runColdStartStopwatch({
+      appPath: '/Applications/Termius.app/Contents/MacOS/terminal',
+      timeoutMs: 10,
+      readinessMode: 'remote',
+      homeDirectory: '/private/tmp/terminal-cold-start-fixture',
+      markerPath: '/private/tmp/remote-marker',
+      markerContent: 'REMOTE_COLD_MARKER',
+      dependencies: harness.dependencies,
+    }),
+    error => {
+      assert.match(error.message, /the front end evaluated but never reached db ready/)
+      return true
+    },
+  )
+})
+
+test('names a stall in the SSH path once the app reached db ready', async () => {
+  const harness = createHarness({ readiness: ['0,0,0,0'] })
+  const stagesPath = '/private/tmp/terminal-cold-start-fixture/terminal-startup-stages.jsonl'
+  const readFile = harness.dependencies.readFile
+  let clock = 0
+  harness.dependencies.now = () => clock
+  harness.dependencies.readFile = async (filePath, encoding) => {
+    if (filePath === stagesPath && harness.calls.applicationSpawned) {
+      clock = 900
+      return [
+        '{"at_ms":0,"stage":"frontend-boot","detail":"main.tsx evaluated"}',
+        '{"at_ms":1081,"stage":"ready","detail":"connection cached"}',
+        '{"at_ms":1514,"stage":"session-create-requested","detail":"remote"}',
+      ].join('\n')
+    }
+    return readFile(filePath, encoding)
+  }
+  await assert.rejects(
+    runColdStartStopwatch({
+      appPath: '/Applications/Termius.app/Contents/MacOS/terminal',
+      timeoutMs: 10,
+      readinessMode: 'remote',
+      homeDirectory: '/private/tmp/terminal-cold-start-fixture',
+      markerPath: '/private/tmp/remote-marker',
+      markerContent: 'REMOTE_COLD_MARKER',
+      dependencies: harness.dependencies,
+    }),
+    error => {
+      assert.match(error.message, /the failure is in the SSH\/shell path/)
+      return true
+    },
+  )
+})
+
+test('names an app that reached db ready but never asked for a session', async () => {
+  const harness = createHarness({ readiness: ['0,0,0,0'] })
+  const stagesPath = '/private/tmp/terminal-cold-start-fixture/terminal-startup-stages.jsonl'
+  const readFile = harness.dependencies.readFile
+  let clock = 0
+  harness.dependencies.now = () => clock
+  harness.dependencies.readFile = async (filePath, encoding) => {
+    if (filePath === stagesPath && harness.calls.applicationSpawned) {
+      clock = 900
+      return [
+        '{"at_ms":0,"stage":"frontend-boot","detail":"main.tsx evaluated"}',
+        '{"at_ms":1081,"stage":"ready","detail":"connection cached"}',
+      ].join('\n')
+    }
+    return readFile(filePath, encoding)
+  }
+  await assert.rejects(
+    runColdStartStopwatch({
+      appPath: '/Applications/Termius.app/Contents/MacOS/terminal',
+      timeoutMs: 10,
+      readinessMode: 'remote',
+      homeDirectory: '/private/tmp/terminal-cold-start-fixture',
+      markerPath: '/private/tmp/remote-marker',
+      markerContent: 'REMOTE_COLD_MARKER',
+      dependencies: harness.dependencies,
+    }),
+    error => {
+      assert.match(error.message, /never requested the session/)
+      return true
+    },
+  )
+})

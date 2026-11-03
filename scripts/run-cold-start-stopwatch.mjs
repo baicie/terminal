@@ -805,11 +805,33 @@ export async function runColdStartStopwatch({
         // The stage list is the evidence the probe state cannot carry: a
         // stalled WebView, a slow handshake and a shell that never spoke all
         // look identical in the readiness flags.
+        // Three different failures look identical in the readiness flags, so
+        // the message names which one this was. `first stage at N ms` alone
+        // cannot tell a WebView that never rendered from one that rendered and
+        // then stalled before the shell spoke (Issue #65/#157):
+        //
+        //   no stage ever arrived          -> the front end never evaluated at all
+        //   frontend-boot present, nothing
+        //     after `ready` within budget  -> the app came up, the SSH path stalled
+        //   no `ready` stage               -> the database bootstrap stalled
+        //
+        // The four cases need opposite fixes, so they must not share a sentence.
+        const stageNames = lastStages.map(stage => stage.stage)
+        const reachedFrontend = stageNames.includes('frontend-boot')
+        const reachedReady = stageNames.includes('ready')
         const stageSummary =
-          `stages: ${describeStages(lastStages)}` +
-          (firstStageSeenMs === null
+          `stages: ${describeStages(lastStages)}`
+          + (firstStageSeenMs === null
             ? '; no stage ever arrived'
             : `; first stage at ${firstStageSeenMs} ms`)
+          + '; '
+          + (!reachedFrontend
+            ? 'the front end never evaluated (WebView never ran the bundle)'
+            : !reachedReady
+              ? 'the front end evaluated but never reached db ready'
+              : stageNames.includes('session-create-requested')
+                ? 'the app reached db ready and requested the session; the failure is in the SSH/shell path'
+                : 'the app reached db ready but never requested the session')
         fail(
           new Error(
             `${readinessLabel} readiness did not complete within ${timeoutMs} ms${details ? ` (last probe: ${details})` : ''} (${stageSummary})` +
