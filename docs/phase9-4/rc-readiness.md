@@ -23,7 +23,8 @@
 
 ### READY_FOR_REVIEW
 
-**否，待 300 次样本与文档回写完成。**
+**是**（stacked PR）。300 次样本、失败分类、RSA 威胁模型、安装与身份迁移
+前置均已落盘；剩余项明确标为 NOT_RUN / BLOCKED_EXTERNAL。
 
 ### READY_FOR_MERGE
 
