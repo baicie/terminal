@@ -1040,6 +1040,23 @@ test('a stage that never arrived is not a latency violation', () => {
   assert.deepEqual(violations, [])
 })
 
+test('budgets the gap that runs from db ready to a session request', () => {
+  const { checked, violations } = evaluateStageBudgets([
+    { atMs: 1_000, stage: 'ready', detail: '' },
+    { atMs: 5_500, stage: 'terminal-mounted', detail: '' },
+  ])
+
+  assert.deepEqual(violations, [
+    {
+      from: 'ready',
+      to: 'terminal-mounted',
+      elapsedMs: 4_500,
+      budgetMs: 3_000,
+    },
+  ])
+  assert.deepEqual(checked.map(check => check.from), ['ready'])
+})
+
 // ---------------------------------------------------------------------------
 // P9.3.1 P1-3：四种冷启动失败需要四个不同的判读，不能共用一句话。
 // ---------------------------------------------------------------------------
@@ -1152,6 +1169,7 @@ test('names a stall in the SSH path once the app reached db ready', async () => 
       return [
         '{"at_ms":0,"stage":"frontend-boot","detail":"main.tsx evaluated"}',
         '{"at_ms":1081,"stage":"ready","detail":"connection cached"}',
+        '{"at_ms":1514,"stage":"terminal-mounted","detail":"remote-cold-tab"}',
         '{"at_ms":1514,"stage":"session-create-requested","detail":"remote"}',
       ].join('\n')
     }
@@ -1201,8 +1219,12 @@ test('names an app that reached db ready but never asked for a session', async (
       dependencies: harness.dependencies,
     }),
     error => {
-      assert.match(error.message, /never requested the session/)
+      assert.match(
+        error.message,
+        /no terminal surface mounted; the restored tab or its host never became usable/,
+      )
       return true
     },
   )
 })
+

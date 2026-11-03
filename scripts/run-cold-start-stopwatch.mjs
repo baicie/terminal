@@ -52,6 +52,7 @@ const STAGES_ENV_KEY = 'TERMINAL_STARTUP_STAGES_PATH'
 export const STAGE_BUDGETS = [
   ['frontend-boot', 'db-load-started', 2_000],
   ['db-load-started', 'ready', 2_000],
+  ['ready', 'terminal-mounted', 3_000],
   ['session-create-requested', 'ssh-connect-start', 250],
   ['ssh-connect-start', 'ssh-tcp-handshake-done', 1_500],
   ['ssh-tcp-handshake-done', 'ssh-auth-done', 1_500],
@@ -64,6 +65,10 @@ export const STAGE_BUDGETS = [
 function stageTimeline(stages, name) {
   const found = stages.find(stage => stage.stage === name)
   return found === undefined ? null : found.atMs
+}
+
+function hasStage(stages, name) {
+  return stages.some(stage => stage.stage === name)
 }
 
 /**
@@ -817,8 +822,9 @@ export async function runColdStartStopwatch({
         //
         // The four cases need opposite fixes, so they must not share a sentence.
         const stageNames = lastStages.map(stage => stage.stage)
-        const reachedFrontend = stageNames.includes('frontend-boot')
-        const reachedReady = stageNames.includes('ready')
+        const reachedFrontend = hasStage(lastStages, 'frontend-boot')
+        const reachedReady = hasStage(lastStages, 'ready')
+        const reachedMounted = hasStage(lastStages, 'terminal-mounted')
         const stageSummary =
           `stages: ${describeStages(lastStages)}`
           + (firstStageSeenMs === null
@@ -829,9 +835,11 @@ export async function runColdStartStopwatch({
             ? 'the front end never evaluated (WebView never ran the bundle)'
             : !reachedReady
               ? 'the front end evaluated but never reached db ready'
-              : stageNames.includes('session-create-requested')
-                ? 'the app reached db ready and requested the session; the failure is in the SSH/shell path'
-                : 'the app reached db ready but never requested the session')
+              : !reachedMounted
+                ? 'the app reached db ready but no terminal surface mounted; the restored tab or its host never became usable'
+                : stageNames.includes('session-create-requested')
+                  ? 'the app reached db ready and requested the session; the failure is in the SSH/shell path'
+                  : 'the app reached db ready but never requested the session')
         fail(
           new Error(
             `${readinessLabel} readiness did not complete within ${timeoutMs} ms${details ? ` (last probe: ${details})` : ''} (${stageSummary})` +
@@ -891,6 +899,12 @@ export async function runColdStartStopwatch({
           lastStages = await readStages(stagesPath, dependencies)
           const readyNow = dependencies.now()
           if (firstStageSeenMs === null && lastStages.length > 0) {
+            // The stage file records offsets from the front end's origin, and
+            // `frontend-boot` is by definition 0. The distance from process
+            // spawn to that origin is only observable by the watcher, but it
+            // polls every AX_POLL_INTERVAL_MS, so this value can overstate
+            // WebView startup by up to one poll interval. Stage *budgets* use
+            // the app's own offsets and are unaffected.
             firstStageSeenMs = readyNow - spawnStartedAt
           }
           if (readyNow - spawnStartedAt >= timeoutMs) {

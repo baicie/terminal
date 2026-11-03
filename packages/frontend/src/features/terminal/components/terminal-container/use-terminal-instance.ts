@@ -9,6 +9,7 @@ import {
   ShellIntegrationState,
   type ShellIntegrationEvent,
 } from '@/features/terminal/services/terminal-shell-integration'
+import { traceStage } from '@/service/database/startup-trace'
 import { TerminalViewportController } from './terminal-viewport-controller'
 import { useTerminalWebgl } from './use-terminal-webgl'
 
@@ -128,6 +129,10 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     viewportController.attach()
     viewportControllerRef.current = viewportController
     setTermInstance(term)
+    // `ready` only proves the database answered. Without this stage a startup
+    // that never asked for a session cannot be told apart from one whose tab
+    // never reached an xterm instance (Issue #174).
+    traceStage('terminal-mounted', options.tabId)
     const initialFitTimer = window.setTimeout(() => {
       viewportController.fitNow()
       if (activeRef.current) term.focus()
