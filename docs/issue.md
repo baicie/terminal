@@ -4806,7 +4806,12 @@ actual   7639d533…
 
 **进展**：run `41596246878`（commit `aa6e19f`，指纹 `cf27517c…`）三平台全绿并
 通过证据门禁；随后发现并修复 trace 顺序缺陷，源码再次变化，因此这份证据只作为
-中间诊断，不作为最终合并证据。最终证据必须绑定修复后的 HEAD。
+中间诊断，不作为最终合并证据。
+
+**✅ 已闭合（2026-11-03）**：最终源码 `44ae449` 的 real-machine run
+`41605898002` 三平台全绿，证据指纹 `6d7536e7…`，debug SHA
+`2bf151cb…`、release SHA `88ba4714…`。六份证据与 manifest 已安装，
+`check-verification-evidence.mjs` 报 0 problem。
 
 ### Issue #180: probe 配置预算短于冷 WebView 首次 IPC ✅ 已修复（2026-11-03）
 
