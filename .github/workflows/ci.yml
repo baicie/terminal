@@ -42,6 +42,43 @@ jobs:
       - run: pnpm --filter=@terminal/frontend test
       - run: pnpm --filter=@terminal/frontend build:budget
 
+  frontend-audit:
+    # Phase 9.2 recorded the front-end audit as NOT_RUN because the developer
+    # machine's ~/.npmrc points at registry.npmmirror.com, which does not serve
+    # an audit endpoint. That conclusion was about the *machine*, not the
+    # project, and it hid a real result: against the public registry this
+    # workspace carried 25 advisories (1 critical, 12 high), almost all through
+    # overrides that had pinned patched packages to vulnerable versions. A user
+    # override can silently re-introduce a CVE, so this runs on every push.
+    #
+    # It audits the *installed production tree*, not just this package's own
+    # dependencies: a vulnerable transitive package is still shipped.
+    name: Dependency audit (npm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # No registry override: the runner talks to the public registry, which is
+      # the only registry that answers the audit endpoint. A mirrored registry
+      # is a development convenience and must not be able to make this pass.
+      - name: Audit production dependencies
+        run: |
+          pnpm audit --prod --registry https://registry.npmjs.org 2>&1 | tee audit.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "::error::production dependency audit reported findings; see audit.log"
+            exit 1
+          fi
+
   team-server:
     name: Team Server quality
     runs-on: ubuntu-latest
@@ -260,6 +297,16 @@ jobs:
           tool: cargo-audit@0.22.2
       - name: Record tool and advisory-db versions
         run: cargo audit --version
+      - name: Fetch the crates.io registry index
+        # cargo audit needs the *registry index* in the local cargo home to answer
+        # "was this exact version yanked?". Without it, it prints "couldn't check
+        # if the package is yanked" for every crate on stderr and still exits 1
+        # with a JSON report whose warnings.yanked key is simply absent -- which
+        # reads as "no yanked crates" unless something checks the log (P9.3.1
+        # P1-1). `cargo fetch` populates the sparse index without compiling, so
+        # this costs seconds rather than the minutes a build would take.
+        working-directory: src-tauri
+        run: cargo fetch --locked
       # The runner has no advisory-db yet, so this clone is the fetch. It is
       # kept as its own step so an advisory-db outage reads as "could not fetch
       # the database" instead of being misreported as "no vulnerabilities".
@@ -282,11 +329,17 @@ jobs:
         run: |
           mkdir -p "$GITHUB_WORKSPACE/security-scan"
           set +e
+          # stderr is captured on purpose: when the crates.io registry index is
+          # absent from the cargo home, cargo audit reports "couldn't check if
+          # the package is yanked" per crate on stderr and still exits 1 with a
+          # valid report in which warnings.yanked is simply missing. That looks
+          # like "no crate is yanked" unless the log is read (P9.3.1 P1-1).
           cargo audit \
             --db "$RUNNER_TEMP/advisory-db" \
             --no-fetch \
             --json \
-            > "$GITHUB_WORKSPACE/security-scan/cargo-audit.json"
+            > "$GITHUB_WORKSPACE/security-scan/cargo-audit.json" \
+            2> "$GITHUB_WORKSPACE/security-scan/cargo-audit.stderr"
           audit_exit=$?
           set -e
           echo "cargo audit exited $audit_exit (1 means advisories were found, which the gate then rates)"
@@ -302,6 +355,7 @@ jobs:
         run: |
           node scripts/security-gate.mjs \
             --audit security-scan/cargo-audit.json \
+            --audit-log security-scan/cargo-audit.stderr \
             --baseline src-tauri/security-baseline.json
       - name: Rebuild the ledger from this run's audit JSON
         if: always()

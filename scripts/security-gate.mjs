@@ -126,6 +126,56 @@ export function readAuditWarnings(path) {
   return out
 }
 
+/**
+ * The crates whose yanked check `cargo audit` could not perform.
+ *
+ * `cargo audit` needs the crates.io registry index *in the local cargo home* to
+ * answer "has this exact version been yanked?". When the index is missing it
+ * prints, per crate,
+ *
+ *   error: couldn't check if the package is yanked: not found: No such crate in
+ *          crates.io index: <name>
+ *
+ * to stderr, writes nothing to `warnings.yanked`, and exits 1 exactly as it
+ * does when it simply found advisories. The JSON therefore *looks* like a
+ * complete scan in which no crate is yanked. On the GitHub runner that was 769
+ * crates out of 769: the class was not merely empty, it was never evaluated,
+ * while this gate reported a clean sweep (P9.3.1 P1-1).
+ *
+ * A yanked verdict that was never asked for must not be reported as "no yanked
+ * crates", so the caller treats a non-empty result as a failed scan.
+ */
+export function uncheckableYankedCrates(logText) {
+  const names = new Set()
+  for (const line of logText.split(/\r?\n/)) {
+    // Deliberately loose about wording after the crate name: only the "couldn't
+    // check ... yanked" prefix carries the meaning, and a future cargo-audit
+    // that rephrases the tail must still be caught.
+    if (!/couldn't check if the package is yanked/i.test(line)) continue
+    const match = /:\s*([A-Za-z0-9_.\-]+)\s*$/.exec(line)
+    if (match !== null) names.add(match[1])
+  }
+  return [...names].sort()
+}
+
+/**
+ * Classifies the audit's stderr.
+ *
+ * Returns the yanked-check failures plus every other line cargo audit printed at
+ * error level that is NOT one of them, so a scan problem cannot hide behind the
+ * one message this gate already knows how to explain.
+ */
+export function readAuditLog(logText) {
+  const uncheckable = uncheckableYankedCrates(logText)
+  const otherErrors = logText
+    .split(/\r?\n/)
+    .filter(line => /\berror:/i.test(line))
+    .filter(line => !/couldn't check if the package is yanked/i.test(line))
+    .map(line => line.trim())
+    .filter(line => line !== '')
+  return { uncheckable, otherErrors }
+}
+
 /** One audit entry, flattened to what the gate compares and prints. */
 export function toFinding(entry) {
   const advisory = entry.advisory ?? {}
@@ -289,7 +339,7 @@ export function renderReport({ count, fresh, changed, resolved, baselinePath }) 
 
 /** Parse `--audit <path>` / `--baseline <path>` without a dependency. */
 export function parseArgs(argv) {
-  const out = { audit: null, baseline: DEFAULT_BASELINE }
+  const out = { audit: null, auditLog: null, baseline: DEFAULT_BASELINE }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     const takeValue = () => {
@@ -301,6 +351,10 @@ export function parseArgs(argv) {
       out.audit = takeValue()
     } else if (arg.startsWith('--audit=')) {
       out.audit = arg.slice('--audit='.length)
+    } else if (arg === '--audit-log') {
+      out.auditLog = takeValue()
+    } else if (arg.startsWith('--audit-log=')) {
+      out.auditLog = arg.slice('--audit-log='.length)
     } else if (arg === '--baseline' || arg === '-b') {
       out.baseline = takeValue() ?? DEFAULT_BASELINE
     } else if (arg.startsWith('--baseline=')) {
@@ -319,7 +373,7 @@ export function verdictFor({ fresh, changed }) {
 }
 
 export function main(argv = process.argv.slice(2)) {
-  const { audit, baseline: baselinePath } = parseArgs(argv)
+  const { audit, auditLog, baseline: baselinePath } = parseArgs(argv)
   if (audit === null) {
     console.error(
       'No cargo audit snapshot given.\n'
@@ -328,6 +382,41 @@ export function main(argv = process.argv.slice(2)) {
       + '  node scripts/security-gate.mjs --audit "$TMPDIR/audit.json"',
     )
     return EXIT_SCAN_FAILED
+  }
+
+  // A yanked verdict that was never evaluated is not the same as "nothing is
+  // yanked". Without the crates.io index in the local cargo home, cargo audit
+  // says so on stderr and still exits 1 with an otherwise valid JSON report.
+  if (auditLog !== null) {
+    if (!existsSync(auditLog)) {
+      console.error(
+        `cargo audit log not found: ${auditLog}\n`
+        + 'Pass the captured stderr, or omit --audit-log and accept that the '
+        + 'yanked class is unverified.',
+      )
+      return EXIT_SCAN_FAILED
+    }
+    const { uncheckable, otherErrors } = readAuditLog(readFileSync(auditLog, 'utf8'))
+    if (uncheckable.length > 0) {
+      console.error(
+        `cargo audit could not evaluate the yanked class for ${uncheckable.length} crate(s):\n`
+        + `  ${uncheckable.slice(0, 10).join(', ')}${uncheckable.length > 10 ? ', ...' : ''}\n\n`
+        + 'This happens when the crates.io registry index is missing from the local\n'
+        + 'cargo home. cargo audit still exits 1 and still writes a valid report in\n'
+        + 'which warnings.yanked is absent -- so a clean-looking report here means\n'
+        + '"never checked", not "no yanked crates".\n\n'
+        + 'Fix the scan (let cargo fetch the index, or vendor it into CARGO_HOME)\n'
+        + 'instead of recording the crates as acceptable.',
+      )
+      return EXIT_SCAN_FAILED
+    }
+    if (otherErrors.length > 0) {
+      console.error(
+        'cargo audit logged errors this gate does not recognise:\n'
+        + otherErrors.map(line => `  ${line}`).join('\n'),
+      )
+      return EXIT_SCAN_FAILED
+    }
   }
 
   let findings

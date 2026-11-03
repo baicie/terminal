@@ -11,11 +11,13 @@ import {
   EXIT_SCAN_FAILED,
   main,
   parseArgs,
+  readAuditLog,
   readAuditSnapshot,
   readAuditWarnings,
   readBaseline,
   renderReport,
   toFinding,
+  uncheckableYankedCrates,
   verdictFor,
 } from './security-gate.mjs'
 
@@ -292,12 +294,15 @@ test('the report names what to do instead of only what failed', () => {
 test('--audit and --baseline are parsed, including the = form', () => {
   assert.deepEqual(parseArgs(['--audit', 'a.json']), {
     audit: 'a.json',
+    auditLog: null,
     baseline: parseArgs([]).baseline,
   })
   assert.equal(parseArgs(['--audit=a.json']).audit, 'a.json')
   assert.equal(parseArgs(['-a', 'a.json']).baseline, parseArgs([]).baseline)
   assert.equal(parseArgs(['--baseline', 'b.json']).baseline, 'b.json')
   assert.equal(parseArgs(['--baseline=b.json']).baseline, 'b.json')
+  assert.equal(parseArgs(['--audit-log', 'e.log']).auditLog, 'e.log')
+  assert.equal(parseArgs(['--audit-log=e.log']).auditLog, 'e.log')
 })
 
 test('running without --audit is a failed scan, never an implicit pass', () => {
@@ -411,4 +416,75 @@ test('main rates warning classes too, so a yanked release fails the build', () =
     const base = writeJson(dir, 'baseline.json', baseline([]))
     assert.equal(main(['--audit', audit, '--baseline', base]), EXIT_FINDINGS)
   })
+})
+
+test('a yanked check cargo audit could not perform is a failed scan', () => {
+  // The exact shape GitHub's runner produced: no crates.io index in the cargo
+  // home, so every crate reports this and warnings.yanked is absent from the
+  // JSON. Reporting that as "no yanked crates" is the integrity hole P9.3.1 P1-1
+  // is about.
+  withTempDir((dir) => {
+    const audit = writeJson(dir, 'audit.json', snapshot([], {}))
+    const base = writeJson(dir, 'baseline.json', baseline([]))
+    const log = join(dir, 'audit.stderr')
+    writeFileSync(
+      log,
+      'error: couldn\'t check if the package is yanked: not found: No such crate in crates.io index: aes\n'
+      + 'error: couldn\'t check if the package is yanked: not found: No such crate in crates.io index: ahash\n',
+    )
+    assert.equal(
+      main(['--audit', audit, '--audit-log', log, '--baseline', base]),
+      EXIT_SCAN_FAILED,
+    )
+  })
+})
+
+test('a run with no uncheckable crates still passes', () => {
+  withTempDir((dir) => {
+    const audit = writeJson(dir, 'audit.json', snapshot([], {}))
+    const base = writeJson(dir, 'baseline.json', baseline([]))
+    const log = join(dir, 'audit.stderr')
+    writeFileSync(log, 'warning: some unrelated notice\n')
+    assert.equal(
+      main(['--audit', audit, '--audit-log', log, '--baseline', base]),
+      EXIT_PASS,
+    )
+  })
+})
+
+test('an unrecognised audit error does not hide behind the yanked message', () => {
+  withTempDir((dir) => {
+    const audit = writeJson(dir, 'audit.json', snapshot([], {}))
+    const base = writeJson(dir, 'baseline.json', baseline([]))
+    const log = join(dir, 'audit.stderr')
+    writeFileSync(log, 'error: failed to load advisory database: permission denied\n')
+    assert.equal(
+      main(['--audit', audit, '--audit-log', log, '--baseline', base]),
+      EXIT_SCAN_FAILED,
+    )
+  })
+})
+
+test('a missing audit log is a failed scan when one was promised', () => {
+  withTempDir((dir) => {
+    const audit = writeJson(dir, 'audit.json', snapshot([], {}))
+    const base = writeJson(dir, 'baseline.json', baseline([]))
+    assert.equal(
+      main(['--audit', audit, '--audit-log', join(dir, 'absent.log'), '--baseline', base]),
+      EXIT_SCAN_FAILED,
+    )
+  })
+})
+
+test('the yanked-check parser reads crate names and ignores the rest', () => {
+  const text = [
+    'error: couldn\'t check if the package is yanked: not found: No such crate in crates.io index: aes-gcm',
+    'error: couldn\'t check if the package is yanked: not found: No such crate in crates.io index: aes',
+    'error: couldn\'t check if the package is yanked: not found: No such crate in crates.io index: aes',
+    'warning: not an error',
+  ].join('\n')
+  assert.deepEqual(uncheckableYankedCrates(text), ['aes', 'aes-gcm'])
+  const { uncheckable, otherErrors } = readAuditLog(text)
+  assert.deepEqual(uncheckable, ['aes', 'aes-gcm'])
+  assert.deepEqual(otherErrors, [])
 })
