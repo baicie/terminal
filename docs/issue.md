@@ -4875,6 +4875,13 @@ timer 只要求自身到期；若布局已恢复、host 查询尚未返回，App
 job 在 provenance 步骤变红。后续提交已把该脚本改为 async IIFE，并用同一 artifact
 本地重放通过。
 
+**第二次产品修复后实机**：run `41644270883`（`fda76ae`）**282/300（94.0%）**，
+18 个失败（9 个 `terminal-not-mounted`、8 个 `ssh-request-not-entered-rust`、
+1 个 `session-not-requested`）。失败率反而升到 6.00%。同一轮还暴露三个测量缺陷：
+样本 `sourceSha` 全为 null（git cwd 多退一层）、`cold-start-build.json` 与
+provenance 的 `instrumentedBuild` 矛盾、`log show` 的 ISO 时间格式导致日志全为
+0 字节。修复后尚未重新采样，根因仍未闭合。
+
 ### Issue #182: 冷启动压力汇总会静默缩小分母 🟡 已修复（2026-11-03）
 
 **严重程度**：🟡 Important（测量基础设施）

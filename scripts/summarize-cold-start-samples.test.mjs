@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import {
   ColdStartSampleIntegrityError,
   causalViolations,
+  mountedTerminalType,
   summarizeColdStartSamples,
 } from './summarize-cold-start-samples.mjs'
 
@@ -205,6 +206,43 @@ test('all-pass samples produce RELIABILITY_PASS', async () => {
     })
     assert.equal(summary.verdict, 'RELIABILITY_PASS')
   })
+})
+
+test('separates a local mount from a remote mount in the summary', async () => {
+  await withDirectory(async directory => {
+    await writeSample(directory, 'sample-1.json', successSample(1, {
+      stages: [
+        { stage: 'frontend-boot', atMs: 0 },
+        { stage: 'ready', atMs: 400 },
+        { stage: 'terminal-mounted', atMs: 900, detail: 'tab@ws@local' },
+      ],
+    }))
+    await writeSample(directory, 'sample-2.json', successSample(2, {
+      stages: [
+        { stage: 'frontend-boot', atMs: 0 },
+        { stage: 'ready', atMs: 400 },
+        { stage: 'terminal-mounted', atMs: 900, detail: 'tab@ws@remote' },
+      ],
+    }))
+    await writeSample(directory, 'sample-3.json', successSample(3))
+    const summary = await summarizeColdStartSamples(directory, {
+      expectedSamples: 3,
+    })
+    assert.deepEqual(summary.mountEvidence, {
+      local: 1,
+      remote: 1,
+      unknown: 1,
+    })
+  })
+})
+
+test('reads the old two-part mount detail as unknown, not local', () => {
+  assert.equal(
+    mountedTerminalType({
+      stages: [{ stage: 'terminal-mounted', atMs: 1, detail: 'tab@ws' }],
+    }),
+    'unknown',
+  )
 })
 
 test('flags a session-created timestamp that precedes the SSH connect stage', () => {

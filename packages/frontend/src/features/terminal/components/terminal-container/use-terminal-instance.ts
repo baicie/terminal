@@ -16,6 +16,10 @@ import { useTerminalWebgl } from './use-terminal-webgl'
 interface UseTerminalInstanceOptions {
   tabId: string
   workspaceId: string
+  /** Owning tab type is part of the mount evidence, not just UI state. */
+  terminalType: 'local' | 'remote' | 'serial' | 'missing'
+  /** True once the tab exists; a late restore must retrigger the mount. */
+  tabAvailable: boolean
   isMobile: boolean
   cursorBlink: boolean
   cursorStyle: 'block' | 'underline' | 'bar'
@@ -48,6 +52,7 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
   )
   const [isReady, setIsReady] = useState(false)
   const [liveFontSize, setLiveFontSize] = useState(options.fontSize)
+  const [mountFailure, setMountFailure] = useState<string | null>(null)
 
   const requestFit = useCallback(() => {
     viewportControllerRef.current?.requestFit()
@@ -63,7 +68,9 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
   })
 
   useEffect(() => {
-    if (!containerRef.current || !options.tabId) return
+    if (!options.tabAvailable || !containerRef.current || !options.tabId) {
+      return
+    }
     const term = new TerminalComponent({
       cursorBlink: options.cursorBlink,
       cursorStyle: options.cursorStyle,
@@ -110,7 +117,35 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     term.attachCustomKeyEventHandler(event =>
       handleXtermShortcut(event, activeRef.current),
     )
-    term.open(containerRef.current)
+    traceStage(
+      'terminal-open-start',
+      `${options.tabId}@${options.workspaceId}@${options.terminalType}`,
+    )
+    try {
+      term.open(containerRef.current)
+    } catch (error) {
+      // `term.open` used to throw out of the effect, so React reported an
+      // uncaught render error and the readiness probe saw exactly the same
+      // "no terminal surface mounted" as a container that never appeared.
+      const message = error instanceof Error ? error.message : String(error)
+      setMountFailure(message)
+      traceStage('terminal-open-failed', message)
+      // The effect still owns the terminal until its cleanup runs; disposing
+      // here as well would double-dispose when React tears this attempt down.
+      return () => {
+        titleDisposable.dispose()
+        for (const disposable of shellIntegrationDisposables) {
+          disposable.dispose()
+        }
+        term.dispose()
+        termRef.current = null
+      }
+    }
+    traceStage(
+      'terminal-open-done',
+      `${options.tabId}@${options.workspaceId}@${options.terminalType}`,
+    )
+    setMountFailure(null)
     const initialDimensions = fitAddon.proposeDimensions()
     if (
       initialDimensions &&
@@ -134,7 +169,7 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     // never reached an xterm instance (Issue #174).
     traceStage(
       'terminal-mounted',
-      `${options.tabId}@${options.workspaceId}`,
+      `${options.tabId}@${options.workspaceId}@${options.terminalType}`,
     )
     const initialFitTimer = window.setTimeout(() => {
       viewportController.fitNow()
@@ -159,7 +194,7 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     }
     // Recreating xterm for store object changes closes the backend session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options.tabId, options.workspaceId])
+  }, [options.tabAvailable, options.tabId, options.workspaceId])
 
   useEffect(() => {
     if (!options.active || !isReady) return
@@ -249,6 +284,7 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     outputWriter: viewportControllerRef.current ?? termInstance,
     requestFit,
     isReady,
+    mountFailure,
     fontSize: liveFontSize,
     changeFontSize,
     resetFontSize,

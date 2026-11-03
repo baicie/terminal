@@ -857,15 +857,27 @@ export async function runColdStartStopwatch({
                       : stageNames.includes('ssh-shell-first-output')
                         ? 'the remote shell produced output, but the prompt marker did not complete'
                         : 'the app requested the session and entered the SSH path, but it did not reach the PTY before the deadline')
-        fail(
-          new Error(
-            `${readinessLabel} readiness did not complete within ${timeoutMs} ms${details ? ` (last probe: ${details})` : ''} (${stageSummary})` +
-              describeStalledReadiness(
-                lastReadiness,
-                effectiveReadinessTarget,
-              ),
-          ),
+        const timeoutError = new Error(
+          `${readinessLabel} readiness did not complete within ${timeoutMs} ms${details ? ` (last probe: ${details})` : ''} (${stageSummary})` +
+            describeStalledReadiness(
+              lastReadiness,
+              effectiveReadinessTarget,
+            ),
         )
+        // The human message is intentionally bounded, but the evidence must
+        // not be: a failed sample used to discard the parsed stages (and their
+        // details), so `session-created@1459ms` could not be tied to a local or
+        // SSH session after the fact.
+        timeoutError.stages = lastStages
+        timeoutError.probe = {
+          readiness: lastReadiness,
+          readinessTarget: effectiveReadinessTarget,
+          axProbe: reportedAxProbe,
+          windowReady: lastWindowReady,
+          terminalReady: lastTerminalReady,
+          markerReady: lastMarkerReady,
+        }
+        fail(timeoutError)
       }
 
       const poll = async () => {

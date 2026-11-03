@@ -976,6 +976,13 @@ test('attributes a readiness timeout to the last stage the app reached', async (
         error.message,
         /stages: frontend-boot@120ms -> ssh-connect-start@880ms/,
       )
+      // A bounded human message must not be the only place the timeline is
+      // kept: the failed sample JSON needs the parsed stages and details.
+      assert.deepEqual(error.stages, [
+        { atMs: 120, stage: 'frontend-boot', detail: 'main.tsx evaluated' },
+        { atMs: 880, stage: 'ssh-connect-start', detail: '127.0.0.1:22' },
+      ])
+      assert.equal(error.probe.readinessTarget, 'terminal')
       return true
     },
   )

@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   webglContextLossHandlers: [] as Array<() => void>,
   titleChangeHandlers: [] as Array<(title: string) => void>,
   oscHandlers: new Map<number, (data: string) => boolean>(),
+  open: vi.fn(),
   traceStage: vi.fn(),
 }))
 
@@ -81,7 +82,9 @@ vi.mock('@baicie/xterm', () => ({
       mocks.titleChangeHandlers.push(handler)
       return { dispose: vi.fn() }
     }
-    open() {}
+    open(container?: HTMLElement) {
+      mocks.open(container)
+    }
     resize(cols: number, rows: number) {
       this.cols = cols
       this.rows = rows
@@ -104,6 +107,8 @@ class ResizeObserverStub {
 const baseOptions = {
   tabId: '',
   workspaceId: 'workspace-one',
+  terminalType: 'local' as const,
+  tabAvailable: true,
   isMobile: false,
   cursorBlink: true,
   cursorStyle: 'block' as const,
@@ -187,8 +192,86 @@ describe('useTerminalInstance activation', () => {
 
     expect(mocks.traceStage).toHaveBeenCalledWith(
       'terminal-mounted',
-      'terminal-one@workspace-one',
+      'terminal-one@workspace-one@local',
     )
+  })
+
+  it('records the owning tab type in mount evidence', () => {
+    const { result, rerender } = renderHook(
+      ({ tabId, terminalType }) =>
+        useTerminalInstance({
+          ...baseOptions,
+          tabId,
+          terminalType,
+        }),
+      { initialProps: { tabId: '', terminalType: 'remote' as const } },
+    )
+
+    result.current.containerRef.current = document.createElement('div')
+    rerender({ tabId: 'remote-one', terminalType: 'remote' })
+    expect(mocks.traceStage).toHaveBeenCalledWith(
+      'terminal-mounted',
+      'remote-one@workspace-one@remote',
+    )
+  })
+
+  it('records open-start and open-done around a successful xterm open', () => {
+    const { result, rerender } = renderHook(
+      ({ tabId }) => useTerminalInstance({ ...baseOptions, tabId }),
+      { initialProps: { tabId: '' } },
+    )
+    result.current.containerRef.current = document.createElement('div')
+    rerender({ tabId: 'terminal-one' })
+
+    expect(mocks.open).toHaveBeenCalledOnce()
+    expect(mocks.traceStage.mock.calls.map(call => call[0])).toEqual(
+      expect.arrayContaining([
+        'terminal-open-start',
+        'terminal-open-done',
+        'terminal-mounted',
+      ]),
+    )
+    expect(result.current.mountFailure).toBeNull()
+  })
+
+  it('records a failed xterm open instead of throwing out of the effect', () => {
+    mocks.open.mockImplementationOnce(() => {
+      throw new Error('open failed in WebKit')
+    })
+    const { result, rerender } = renderHook(
+      ({ tabId }) => useTerminalInstance({ ...baseOptions, tabId }),
+      { initialProps: { tabId: '' } },
+    )
+    result.current.containerRef.current = document.createElement('div')
+
+    expect(() => rerender({ tabId: 'terminal-one' })).not.toThrow()
+    expect(result.current.mountFailure).toBe('open failed in WebKit')
+    expect(mocks.traceStage).toHaveBeenCalledWith(
+      'terminal-open-failed',
+      'open failed in WebKit',
+    )
+    expect(mocks.traceStage).not.toHaveBeenCalledWith(
+      'terminal-mounted',
+      expect.anything(),
+    )
+  })
+
+  it('mounts a terminal restored after the empty container already rendered', () => {
+    const { result, rerender } = renderHook(
+      ({ tabId, tabAvailable }) =>
+        useTerminalInstance({ ...baseOptions, tabId, tabAvailable }),
+      { initialProps: { tabId: '', tabAvailable: false } },
+    )
+    result.current.containerRef.current = document.createElement('div')
+
+    expect(mocks.traceStage).not.toHaveBeenCalled()
+    rerender({ tabId: 'remote-one', tabAvailable: true })
+
+    expect(mocks.traceStage).toHaveBeenCalledWith(
+      'terminal-mounted',
+      'remote-one@workspace-one@local',
+    )
+    expect(result.current.termInstance).not.toBeNull()
   })
 
   it('cancels the deferred initial fit when the terminal is unmounted', () => {

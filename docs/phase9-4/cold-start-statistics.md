@@ -278,6 +278,63 @@ Wilson 上限；失败仍然成对，见 §3.7。
 job 仍在 provenance 步骤变红。该脚本已在后续提交修复，并本地用同一 artifact 验证。
 这不是产品失败，不能算作一次可靠性的通过或失败；但**样本本身的统计仍然有效**。
 
+## 3.8 修复后 D：run `41644270883`（第二次产品修复后）
+
+这一轮在 `fda76ae` 上运行，包含 provenance 脚本修复。**结果更差**：
+
+| 项 | 值 |
+| --- | --- |
+| run | `41644270883` |
+| commit | `fda76aeae7ccc41be997f38774327a4327b25c35` |
+| binary SHA256 | `2a9351e822b5d6f2cb2df98527a58e92aff9c85b582dfec6330b7cdddd62c7b9` |
+| samples | 300（1..300 完整） |
+| 成功 / 失败 | **282 / 18** |
+| 点估计失败率 | **6.00%** |
+| Wilson 95% 失败率上界（仅作参考） | 约 9.28% |
+| spawn→ready 最小 / 中位 / p95 / 最大 | 3913 / 4892 / 6123 / 9973 ms |
+| 阶段出现 | `frontend-boot=300`、`ready=300`、`terminal-mounted=291`、`session-requested=290`、`session-created=290` |
+
+失败样本：`52, 61, 62, 112, 113, 143, 144, 162, 163, 208, 209, 211, 212, 221, 222, 243, 244, 263`。
+
+| 分类 | 次数 | 失败样本 |
+| --- | --- | --- |
+| `terminal-not-mounted` | 9 | `52, 112, 143, 162, 208, 211, 221, 243, 263` |
+| `ssh-request-not-entered-rust` | 8 | `62, 113, 144, 163, 209, 212, 222, 244` |
+| `session-not-requested` | 1 | `61`（`terminal-mounted@7888ms` 后无会话请求） |
+
+失败形态仍是“前一条挂载失败、后一条无 SSH 阶段”的成对/连续窗口：`208/209`、
+`211/212`、`221/222`、`243/244`，以及 `52`、`61/62`、`112/113`、`143/144`、
+`162/163`、`263`。正常样本间隔约 5–7 秒，失败对内部约 11 秒。
+
+**本轮测量缺陷（已修，未用于本轮结论）**：
+
+- 样本内 `sourceSha` 全为 `null`：`gitValue` 的 cwd 多退了一层目录；已改回仓库根。
+- `cold-start-build.json` 的 `instrumentedBuild` 为 `false`，与 provenance 硬编码的
+  `true` 自相矛盾：workflow 的 `VITE_TERMINAL_SMOKE_BUILD` 只写在构建命令前，
+  Node 步骤读不到；已提升为 job env。
+- 所有失败样本的 `sample-*-webkit.log` 都是 0 字节：`log show` 不接受
+  ISO `T`/小数秒，且 stderr 被 `|| true` 吞掉；已改成 `Y-M-D H:m:s` 并加
+  `--info --debug`，provenance 现在会因空日志直接失败。
+
+**不能用本轮证明任何修复有效**。它只证明：在产品修复后、测量脚本仍有缺陷的状态下，
+失败率仍为 6%，高于修复前 3.67% 和修复后 A/B 的 2.33%/3.00%。
+
+### 3.9 已确认的确定性挂载缺陷
+
+第二轮失败暴露了两个可复现的 React 生命周期缺陷：
+
+1. `useTerminalInstance` 的挂载 effect 依赖 `[tabId, workspaceId]`。工作区恢复时
+   容器可以先渲染、`containerRef.current` 仍为空，effect 直接 return；tab 随后恢复
+   但依赖不变，effect 不会重跑，xterm 永远不会创建。这正是 `terminal-not-mounted`
+   的“ready 后 9 秒无挂载”形态。
+2. `term.open()` 抛错会直接跳出 effect，React 报未捕获错误；对探针而言与“容器从未
+   出现”完全同形。
+
+已在 `0ba671e` 之后的提交修复：`tabAvailable` 参与 effect 依赖；`term.open()` 的
+异常被记录为 `terminal-open-failed` 并保留可观测 surface；新增
+`terminal-open-start` / `terminal-open-done` / `terminal-open-failed` 三个阶段。
+真实 300 次复测尚未运行，不能把上述失败计为已消除。
+
 ## 4. 失败分类口径
 
 每个失败样本按第一个未到达阶段分类：

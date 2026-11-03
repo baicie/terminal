@@ -108,6 +108,7 @@ session-create-requested=30 session-created=30
 | 修复后 A 300 次 | **FAIL**（293/300，2.33%） |
 | 修复后 B 300 次 | **FAIL**（291/300，3.00%） |
 | 修复后 C 300 次（含产品修复） | **FAIL**（294/300，2.00%） |
+| 修复后 D 300 次（第二次产品修复后） | **FAIL**（282/300，6.00%） |
 | 历史 20% 失败根因 | **NOT_RUN / 未完全复现** |
 | WebKit Unified Log 失败回调 | **NOT_OBSERVED**：7 份/9 份失败日志里都没有 `didFail`、渲染进程退出或 WebKit 崩溃 |
 | 失败阶段分类 | **PASS**（见 `cold-start-statistics.md` §3.4） |
@@ -203,3 +204,30 @@ run `41637922942` 在 `0ba671e` 上运行，包含两条产品修复。失败降
 
 不得把 294/300 写成“修复成功”。它只把失败率从 2.33–3.00% 降到 2.00%，仍未达到 1%
 的 RC 目标，也仍不满足“稳定”的定义。
+
+## 8. 修复后 D：挂载竞态被确认，但采样条件仍不可信
+
+run `41644270883`（`fda76ae`）为 **282/300（6.00%）**，比上一轮更差。失败结构
+仍是相同的两段式：前一条 `terminal-not-mounted`，后一条
+`ssh-request-not-entered-rust`。
+
+这一轮的价值在于暴露了 `terminal-mounted` 缺失的确定性代码缺陷：
+
+- `useTerminalInstance` 的 effect 依赖只有 `[tabId, workspaceId]`。容器先于 tab
+  恢复渲染时 `containerRef.current` 为空，effect 直接 return；tab 随后出现但
+  effect 不重跑，xterm 永远不会 `open()`。
+- `term.open()` 抛错会跳出 effect，与“从未挂载”在阶段上不可区分。
+
+两者都已修复：`tabAvailable` 参与依赖；`term.open()` 失败记录为
+`terminal-open-failed`，并新增 `terminal-open-start` / `terminal-open-done`
+证据。由于修复后尚未完成一次测量脚本可靠的 300 次采样，不能把这轮 18 个失败
+算作已消除。
+
+同一轮还证明测量链本身必须 fail closed：
+
+- 样本内 `sourceSha` 全为 null；
+- `cold-start-build.json` 声称 `instrumentedBuild=false`，provenance 却硬编码 true；
+- 所有失败样本的 WebKit 日志为 0 字节（`log show` 的日期格式/时区处理错误）。
+
+这些缺陷已经修复，并在 provenance 中加入“失败样本必须有非空 WebKit 日志”的
+硬失败，避免“没有证据”被静默当成“没有 WebKit 失败”。

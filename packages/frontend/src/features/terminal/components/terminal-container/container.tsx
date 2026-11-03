@@ -54,9 +54,9 @@ export function TerminalContainer({
       : undefined,
   )
   const isMobile = useIsMobile()
-  const [searchOpen, setSearchOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   const [toolSidebarOpen, setToolSidebarOpen] = useState(false)
   const [shellCwd, setShellCwd] = useState<string | undefined>()
   const [lastExitCode, setLastExitCode] = useState<number | undefined>()
@@ -79,6 +79,8 @@ export function TerminalContainer({
   const terminal = useTerminalInstance({
     tabId,
     workspaceId,
+    terminalType: tab?.type ?? 'missing',
+    tabAvailable: tab !== undefined,
     isMobile,
     cursorBlink: settings.cursorBlink ?? defaultSettings.cursorBlink,
     cursorStyle: settings.cursorStyle ?? defaultSettings.cursorStyle,
@@ -148,10 +150,8 @@ export function TerminalContainer({
     onZoomOut: () => terminal.changeFontSize(-1),
     onResetZoom: terminal.resetFontSize,
   })
-
   const longPress = useTerminalLongPress(() => setMobileMenuOpen(true))
   if (!tab) return <TerminalEmptyState />
-
   return (
     <>
       <div className="relative h-full">

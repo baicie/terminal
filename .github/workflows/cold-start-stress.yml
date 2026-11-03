@@ -36,6 +36,7 @@ jobs:
     env:
       SAMPLES: ${{ github.event.inputs.samples || '300' }}
       TIMEOUT_MS: ${{ github.event.inputs.timeout_ms || '10000' }}
+      VITE_TERMINAL_SMOKE_BUILD: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -51,9 +52,9 @@ jobs:
 
       - name: Build the instrumented debug binary
         run: |
-          VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle
+          pnpm tauri build --debug --no-bundle
           shasum -a 256 src-tauri/target/debug/terminal | tee cold-start-binary.sha256
-          node -e "const fs=require('fs');const cp=require('child_process');fs.writeFileSync('cold-start-build.json',JSON.stringify({sourceSha:process.env.GITHUB_SHA,sourceParentSha:(()=>{try{return cp.execFileSync('git',['rev-parse','HEAD^'],{encoding:'utf8'}).trim()}catch{return null}})(),instrumentedBuild:process.env.VITE_TERMINAL_SMOKE_BUILD==='1',buildKind:'debug',bundled:false,nodeVersion:process.version,pnpmVersion:process.env.PNPM_VERSION},null,2))"
+          node -e "const fs=require('fs');const cp=require('child_process');const parent=(()=>{try{return cp.execFileSync('git',['rev-parse','HEAD^'],{encoding:'utf8'}).trim()}catch{return null}})();fs.writeFileSync('cold-start-build.json',JSON.stringify({sourceSha:process.env.GITHUB_SHA,sourceParentSha:parent,instrumentedBuild:process.env.VITE_TERMINAL_SMOKE_BUILD==='1',buildKind:'debug',bundled:false,nodeVersion:process.version,pnpmVersion:process.env.PNPM_VERSION},null,2))"
 
       - name: Collect cold-start samples
         run: |
@@ -74,9 +75,19 @@ jobs:
               # sample's own capturedAt: a 4-minute tail also includes the
               # previous samples' processes and makes the log look like
               # cross-sample contamination that never happened.
-              SAMPLE_START="$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).capturedAt)" "cold-start-samples/sample-$i.json")"
-              SAMPLE_START_NO_Z="$(printf '%s' "$SAMPLE_START" | sed 's/Z$//')"
-              log show --start "$SAMPLE_START_NO_Z" --end "$(date -u -v+20S '+%Y-%m-%d %H:%M:%S')" --style compact \
+              # `log show` accepts `Y-M-D H:m:s`, not ISO `T` + fractional
+              # seconds. Passing the raw capturedAt silently produced empty
+              # logs (stderr was discarded by `|| true`), so every failure
+              # looked like "no WebKit evidence" when the real problem was the
+              # timestamp format.
+              SAMPLE_START="$(node -e "const t=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).capturedAt;process.stdout.write(t.replace('T',' ').replace(/\\..*$/,'').replace(/Z$/,''))" "cold-start-samples/sample-$i.json")"
+              # `--start/--end` are interpreted in the host timezone, not UTC,
+              # even though capturedAt is an ISO UTC string. Passing UTC here
+              # shifts the window eight hours on the CST runner and returns
+              # nothing (which `|| true` then hides).
+              SAMPLE_START_LOCAL="$(date -j -f '%Y-%m-%d %H:%M:%S' -u \
+                -v+8H "$SAMPLE_START" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || printf '%s' "$SAMPLE_START")"
+              log show --start "$SAMPLE_START_LOCAL" --end "$(date -v+20S '+%Y-%m-%d %H:%M:%S')" --info --debug --style compact \
                 --predicate 'process == "terminal" OR process == "com.apple.WebKit.WebContent"' \
                 > "cold-start-samples/sample-$i-webkit.log" || true
             fi
@@ -103,7 +114,24 @@ jobs:
             }
             const binaryLine = (await readFile('cold-start-binary.sha256', 'utf8')).trim()
             const binarySha256 = binaryLine.split(/\s+/)[0] ?? null
+            const build = JSON.parse(await readFile('cold-start-build.json', 'utf8'))
             const unique = key => [...new Set(samples.map(sample => sample[key]).filter(value => value !== undefined && value !== null))]
+            const webkitLogs = []
+            for (const sample of samples) {
+              if (sample.ok === true) continue
+              const logPath = path.join(directory, `sample-${sample.sampleIndex}-webkit.log`)
+              let bytes = 0
+              try {
+                bytes = (await readFile(logPath)).byteLength
+              } catch {}
+              webkitLogs.push({ sampleIndex: sample.sampleIndex, bytes })
+            }
+            const emptyLogs = webkitLogs.filter(entry => entry.bytes === 0)
+            if (emptyLogs.length > 0) {
+              throw new Error(
+                `failed samples without WebKit evidence: ${emptyLogs.map(entry => entry.sampleIndex).join(',')}`,
+              )
+            }
             const provenance = {
               workflowRunId: process.env.GITHUB_RUN_ID ?? null,
               workflowRunAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
@@ -120,7 +148,9 @@ jobs:
               binarySha256,
               sampleBinarySha256: unique('binarySha256'),
               timeoutMs: unique('timeoutMs'),
-              instrumentedBuild: true,
+              build,
+              webkitLogs,
+              instrumentedBuild: build.instrumentedBuild === true,
               instrumentedBuildFlag: 'VITE_TERMINAL_SMOKE_BUILD=1',
               bootstrapConfigBudgetMs: 3000,
             }

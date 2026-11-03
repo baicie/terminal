@@ -38,7 +38,7 @@ const capturedAt = new Date().toISOString()
 async function gitValue(...args) {
   try {
     const { stdout } = await runCommand('git', args, {
-      cwd: path.resolve(import.meta.dirname, '..', '..'),
+      cwd: path.resolve(import.meta.dirname, '..'),
     })
     return stdout.trim()
   } catch {
@@ -131,6 +131,8 @@ try {
       capturedAt,
       appPath: absoluteAppPath,
       timeoutMs,
+      ...(Array.isArray(error.stages) ? { stages: error.stages } : {}),
+      ...(error.probe === undefined ? {} : { probe: error.probe }),
       sourceSha: environment.commit,
       sourceParentSha: environment.parentCommit,
       sourceTreeClean: environment.workingTreeClean,

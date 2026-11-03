@@ -90,6 +90,25 @@ function stageNames(sample) {
 }
 
 /**
+ * Which tab kind produced the mount evidence, when the new format records it.
+ *
+ * `terminal-mounted` detail is `tabId@workspaceId@type`. Older samples stop at
+ * `tabId@workspaceId`, so "unknown" must stay distinct from "local": the whole
+ * point is to stop calling a local PTY a failed SSH transport.
+ */
+export function mountedTerminalType(sample) {
+  const stages = Array.isArray(sample.stages) ? sample.stages : []
+  const mount = stages.find(stage => stage?.stage === 'terminal-mounted')
+  const detail = typeof mount?.detail === 'string' ? mount.detail : ''
+  const parts = detail.split('@')
+  if (parts.length < 3) return 'unknown'
+  const type = parts.at(-1)
+  return type === 'local' || type === 'remote' || type === 'serial'
+    ? type
+    : 'unknown'
+}
+
+/**
  * A timeline is only trustworthy when its repeated stages moved forward.
  *
  * `session-created` is written by the frontend after the backend command
@@ -305,6 +324,11 @@ export async function summarizeColdStartSamples(
     stagePresence: presence,
     classification,
     invalidSamples,
+    mountEvidence: samples.reduce((accumulator, sample) => {
+      const key = mountedTerminalType(sample)
+      accumulator[key] = (accumulator[key] ?? 0) + 1
+      return accumulator
+    }, {}),
     failureDetails: failures.map(sample => ({
       sampleIndex: sample.sampleIndex ?? null,
       capturedAt: sample.capturedAt ?? null,
@@ -335,6 +359,7 @@ function renderSummary(summary, verdict) {
     `samples=${summary.samples}/${summary.expectedSamples} success=${summary.successes} failure=${summary.failures} successRate=${(summary.successRate * 100).toFixed(1)}%`,
     `durationMs min=${summary.durationMs.min} median=${summary.durationMs.median} p95=${summary.durationMs.p95} max=${summary.durationMs.max}`,
     `stagePresence=${JSON.stringify(summary.stagePresence)}`,
+    `mountEvidence=${JSON.stringify(summary.mountEvidence)}`,
     `classification=${JSON.stringify(summary.classification)}`,
   ]
   for (const failure of summary.failureDetails) {
