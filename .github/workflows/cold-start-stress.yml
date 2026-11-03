@@ -15,6 +15,12 @@ on:
         description: Per-sample readiness timeout in milliseconds
         required: false
         default: '10000'
+  # workflow_dispatch only resolves workflows that exist on the default branch.
+  # This branch-scoped trigger lets the stress workflow run before PR #6 is
+  # merged; changing this file is the explicit consent to spend one runner.
+  push:
+    paths:
+      - .github/workflows/cold-start-stress.yml
 
 permissions:
   contents: read
@@ -28,8 +34,8 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 45
     env:
-      SAMPLES: ${{ inputs.samples }}
-      TIMEOUT_MS: ${{ inputs.timeout_ms }}
+      SAMPLES: ${{ github.event.inputs.samples || '30' }}
+      TIMEOUT_MS: ${{ github.event.inputs.timeout_ms || '10000' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
