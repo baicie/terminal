@@ -2,16 +2,19 @@
 
 > 日期：2026-11-03
 > 分支：`feat/phase9-4-rc-reliability`
-> 基线：`44ae449`（Phase 9.3.2，stacked branch；PR #6 尚未合并）
+> 基线：`47b9a6e`（Phase 9.3.2 code `44ae449` + evidence `5da2085` + final review；
+> stacked branch；PR #6 尚未合并）
 
 ## 1. 基线事实
 
 | 项 | 值 |
 | --- | --- |
-| Phase 9.3.2 HEAD | `44ae449` |
+| Phase 9.3.2 HEAD | `47b9a6e` |
 | `main` | `2f1d68f` |
 | PR #6 | Draft / OPEN / MERGEABLE |
-| Phase 9.4 分支 | 从 `44ae449` 切出，**不是**合并后的 main |
+| Phase 9.4 分支 | 从 `47b9a6e` 切出，**不是**合并后的 main |
+| Phase 9.3.2 最终 CI | run `41609555766`，11/11 success |
+| Phase 9.3.2 证据 | run `41605898002`，指纹 `6d7536e7…`，门禁 0 problem |
 | Node 24.16.0 | CI 使用；本机为 v22.12.0，所有本地命令记录该差异 |
 | 证据 manifest | Phase 9.3.2 最终证据在独立 run 重采；本文件不引用旧 manifest |
 

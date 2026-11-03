@@ -1,7 +1,7 @@
 # Phase 9.4 — RC Readiness
 
 > 日期：2026-11-03
-> 基线：`44ae449`（stacked branch，PR #6 尚未合并）
+> 基线：`47b9a6e`（stacked branch，PR #6 尚未合并）
 
 ## 1. 逐项状态
 
