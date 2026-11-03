@@ -333,7 +333,7 @@ job 仍在 provenance 步骤变红。该脚本已在后续提交修复，并本�
 已在 `0ba671e` 之后的提交修复：`tabAvailable` 参与 effect 依赖；`term.open()` 的
 异常被记录为 `terminal-open-failed` 并保留可观测 surface；新增
 `terminal-open-start` / `terminal-open-done` / `terminal-open-failed` 三个阶段。
-真实 300 次复测尚未运行，不能把上述失败计为已消除。
+真实 300 次复测见 §3.10；不能把上述失败计为已消除。
 
 ## 3.10 修复后 E：run `41674133535`（late-tab + open 证据修复后）
 

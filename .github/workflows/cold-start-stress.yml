@@ -75,18 +75,13 @@ jobs:
               # sample's own capturedAt: a 4-minute tail also includes the
               # previous samples' processes and makes the log look like
               # cross-sample contamination that never happened.
-              # `log show` accepts `Y-M-D H:m:s`, not ISO `T` + fractional
-              # seconds. Passing the raw capturedAt silently produced empty
-              # logs (stderr was discarded by `|| true`), so every failure
-              # looked like "no WebKit evidence" when the real problem was the
-              # timestamp format.
-              SAMPLE_START="$(node -e "const t=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).capturedAt;process.stdout.write(t.replace('T',' ').replace(/\\..*$/,'').replace(/Z$/,''))" "cold-start-samples/sample-$i.json")"
-              # `--start/--end` are interpreted in the host timezone, not UTC,
-              # even though capturedAt is an ISO UTC string. Passing UTC here
-              # shifts the window eight hours on the CST runner and returns
-              # nothing (which `|| true` then hides).
-              SAMPLE_START_LOCAL="$(date -j -f '%Y-%m-%d %H:%M:%S' -u \
-                -v+8H "$SAMPLE_START" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || printf '%s' "$SAMPLE_START")"
+              # `capturedAt` is UTC with fractional seconds. `log show` takes
+              # host-local `Y-M-D H:m:s`, and manually adding eight hours is
+              # wrong on a UTC runner (it produced a 44-byte header-only log).
+              # Convert the real instant to epoch, then let `date -r` render it
+              # in the host timezone.
+              SAMPLE_EPOCH="$(node -e "const t=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).capturedAt;process.stdout.write(String(Math.floor(Date.parse(t)/1000)))" "cold-start-samples/sample-$i.json")"
+              SAMPLE_START_LOCAL="$(date -r "$SAMPLE_EPOCH" '+%Y-%m-%d %H:%M:%S')"
               log show --start "$SAMPLE_START_LOCAL" --end "$(date -v+20S '+%Y-%m-%d %H:%M:%S')" --info --debug --style compact \
                 --predicate 'process == "terminal" OR process == "com.apple.WebKit.WebContent"' \
                 > "cold-start-samples/sample-$i-webkit.log" || true
@@ -121,12 +116,19 @@ jobs:
               if (sample.ok === true) continue
               const logPath = path.join(directory, `sample-${sample.sampleIndex}-webkit.log`)
               let bytes = 0
+              let lines = 0
               try {
-                bytes = (await readFile(logPath)).byteLength
+                const contents = await readFile(logPath, 'utf8')
+                bytes = contents.length
+                lines = contents
+                  .split('\n')
+                  .filter(line => line.trim() !== '' && !line.startsWith('Timestamp')).length
               } catch {}
-              webkitLogs.push({ sampleIndex: sample.sampleIndex, bytes })
+              webkitLogs.push({ sampleIndex: sample.sampleIndex, bytes, lines })
             }
-            const emptyLogs = webkitLogs.filter(entry => entry.bytes === 0)
+            const emptyLogs = webkitLogs.filter(
+              entry => entry.bytes === 0 || entry.lines === 0,
+            )
             if (emptyLogs.length > 0) {
               throw new Error(
                 `failed samples without WebKit evidence: ${emptyLogs.map(entry => entry.sampleIndex).join(',')}`,

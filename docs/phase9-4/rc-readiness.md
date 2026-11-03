@@ -3,6 +3,22 @@
 > 日期：2026-11-03
 > 基线：`47b9a6e`（stacked branch，PR #6 尚未合并）
 
+## 0. 最终验收快照（2026-11-03）
+
+| 项 | 值 |
+| --- | --- |
+| 分支 HEAD | `ff28ebe6173fcac5ff3d14d34c0ba7667216cc2d` |
+| PR #7 | OPEN / Draft，base 仍为 `feat/phase9-2-sync-security-hardening` |
+| PR #6 | OPEN / Draft，未合并；main 未变更 |
+| 最新 CI | run `41680750423`：9 success / 1 failure / 1 cancelled |
+| CI 唯一失败 | `Repository gates` 的 `Verification evidence matches this checkout`：当前源码指纹 `890cc0d1…`，证据仍为 `6d7536e7…` |
+| CI macOS job | `cancelled`（被同 sha 的并发 run 取消，不是编译失败）；Windows / Linux 均 success |
+| 冷启动 E 轮 | run `41674133535`（`b5c7f46`）：294/300，2.00% |
+| 本地门禁 | 前端 152 文件 / 1371 项；脚本 385 项；typecheck、ESLint、source-size 563 文件、actionlint 通过 |
+
+六份验收证据必须由 `real-machine-matrix` 在当前源码上重采，不能改旧 manifest；
+本轮不自动合并、不打 tag、不发布。
+
 ## 1. 逐项状态
 
 | 项 | 状态 | 证据 / 原因 |
