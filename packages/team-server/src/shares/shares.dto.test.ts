@@ -56,7 +56,21 @@ describe('Shares DTO validation', () => {
       ),
     ).toEqual([])
     expect(
+      validateSync(
+        plainToInstance(UpdateShareDto, {
+          baseVersion: 12,
+          permission: 'READWRITE',
+        }),
+      ),
+    ).toEqual([])
+    expect(
       validateSync(plainToInstance(UpdateShareDto, { isSensitive: 'yes' })),
+    ).not.toEqual([])
+    expect(
+      validateSync(plainToInstance(UpdateShareDto, { baseVersion: -1 })),
+    ).not.toEqual([])
+    expect(
+      validateSync(plainToInstance(UpdateShareDto, { baseVersion: 1.5 })),
     ).not.toEqual([])
     expect(
       validateSync(plainToInstance(UpdateShareDto, { isSensitive: true })),

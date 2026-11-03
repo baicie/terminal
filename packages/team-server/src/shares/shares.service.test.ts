@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
 } from '@nestjs/common'
 import { describe, expect, it, vi } from 'vitest'
 import { SharesService } from './shares.service'
@@ -93,6 +94,7 @@ describe('SharesService sensitive share updates', () => {
     const service = new SharesService(prisma as never)
 
     await service.update('team-a', 'share-a', 'creator-a', {
+      baseVersion: 1,
       data: { hostname: 'plaintext' },
     })
 
@@ -100,8 +102,7 @@ describe('SharesService sensitive share updates', () => {
       where: {
         id: 'share-a',
         teamId: 'team-a',
-        sharedBy: 'creator-a',
-        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        version: 1n,
       },
       data: { data: {}, encryptedData: 'ciphertext', isSensitive: true },
     })
@@ -126,6 +127,7 @@ describe('SharesService sensitive share updates', () => {
 
     await expect(
       service.update('team-a', 'share-a', 'creator-a', {
+        baseVersion: 1,
         isSensitive: false,
       }),
     ).rejects.toBeInstanceOf(BadRequestException)
@@ -153,6 +155,7 @@ describe('SharesService sensitive share updates', () => {
     const service = new SharesService(prisma as never)
 
     await service.update('team-a', 'share-a', 'member-a', {
+      baseVersion: 1,
       permission: 'READONLY',
       data: { hostname: 'member-write' },
     })
@@ -161,8 +164,7 @@ describe('SharesService sensitive share updates', () => {
       where: {
         id: 'share-a',
         teamId: 'team-a',
-        sharedBy: 'owner-a',
-        updatedAt: share.updatedAt,
+        version: 1n,
       },
       data: {
         data: { hostname: 'member-write' },
@@ -194,6 +196,7 @@ describe('SharesService sensitive share updates', () => {
 
     await expect(
       readOnlyService.update('team-a', 'share-a', 'member-a', {
+        baseVersion: 1,
         data: { hostname: 'member-write' },
       }),
     ).rejects.toBeInstanceOf(ForbiddenException)
@@ -221,6 +224,7 @@ describe('SharesService sensitive share updates', () => {
 
     await expect(
       racedService.update('team-a', 'share-a', 'creator-a', {
+        baseVersion: 1,
         data: { hostname: 'raced' },
       }),
     ).rejects.toBeInstanceOf(ConflictException)
@@ -247,6 +251,7 @@ describe('SharesService sensitive share updates', () => {
     const service = new SharesService(prisma as never)
 
     await service.update('team-a', 'share-a', 'member-a', {
+      baseVersion: 1,
       isSensitive: false,
       data: { password: 'plaintext-must-not-be-stored' },
     })
@@ -255,8 +260,7 @@ describe('SharesService sensitive share updates', () => {
       where: {
         id: 'share-a',
         teamId: 'team-a',
-        sharedBy: 'owner-a',
-        updatedAt: sensitiveShare.updatedAt,
+        version: 1n,
       },
       data: {
         data: {},
@@ -288,6 +292,7 @@ describe('SharesService sensitive share updates', () => {
     const service = new SharesService(prisma as never)
 
     await service.update('team-a', 'share-a', 'member-a', {
+      baseVersion: 1,
       isSensitive: true,
       encryptedData: 'member-ciphertext',
       data: { hostname: 'member-host' },
@@ -297,8 +302,7 @@ describe('SharesService sensitive share updates', () => {
       where: {
         id: 'share-a',
         teamId: 'team-a',
-        sharedBy: 'owner-a',
-        updatedAt: plaintextShare.updatedAt,
+        version: 1n,
       },
       data: {
         data: { hostname: 'member-host' },
@@ -307,5 +311,48 @@ describe('SharesService sensitive share updates', () => {
         permission: 'READWRITE',
       },
     })
+  })
+
+  it('requires a base version before it writes a share', async () => {
+    const prisma = {
+      teamMember: { findUnique: vi.fn().mockResolvedValue({ id: 'member-a' }) },
+      share: {
+        findFirst: vi.fn(),
+        updateMany: vi.fn(),
+      },
+    }
+    const service = new SharesService(prisma as never)
+
+    await expect(
+      service.update('team-a', 'share-a', 'creator-a', {
+        data: { hostname: 'unconditional-write' },
+      }),
+    ).rejects.toBeInstanceOf(HttpException)
+    expect(prisma.share.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('rejects a base version that cannot identify a row unambiguously', async () => {
+    const prisma = {
+      teamMember: { findUnique: vi.fn().mockResolvedValue({ id: 'member-a' }) },
+      share: {
+        findFirst: vi.fn().mockResolvedValue(shareRow()),
+        updateMany: vi.fn(),
+      },
+    }
+    const service = new SharesService(prisma as never)
+
+    await expect(
+      service.update('team-a', 'share-a', 'creator-a', {
+        baseVersion: -1,
+        data: { hostname: 'negative-version' },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException)
+    await expect(
+      service.update('team-a', 'share-a', 'creator-a', {
+        baseVersion: 1.5,
+        data: { hostname: 'fractional-version' },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException)
+    expect(prisma.share.updateMany).not.toHaveBeenCalled()
   })
 })

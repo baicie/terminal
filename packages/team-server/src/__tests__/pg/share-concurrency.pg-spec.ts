@@ -118,9 +118,11 @@ describe('team sync 并发语义（真实 PostgreSQL）', () => {
 
     const writers = Promise.allSettled([
       sharesA.update(ctx.teamId, created.id, ctx.creatorId, {
+        baseVersion: created.version,
         data: { host: 'v2' },
       }),
       sharesB.update(ctx.teamId, created.id, ctx.creatorId, {
+        baseVersion: created.version,
         data: { host: 'v3' },
       }),
     ])
@@ -157,6 +159,7 @@ describe('team sync 并发语义（真实 PostgreSQL）', () => {
     const staleVersion = stale!.updatedAt.getTime()
     await delay(5)
     await sharesA.update(ctx.teamId, payload.id, ctx.creatorId, {
+      baseVersion: Number(stale!.version),
       data: { host: 'server-newer' },
     })
 
@@ -182,6 +185,7 @@ describe('team sync 并发语义（真实 PostgreSQL）', () => {
     const before = await prismaA.share.findUnique({ where: { id: payload.id } })
     const baseVersion = before!.updatedAt.getTime()
     await sharesA.update(ctx.teamId, payload.id, ctx.creatorId, {
+      baseVersion: Number(before!.version),
       data: { host: 'first-write' },
     })
 

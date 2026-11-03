@@ -4740,3 +4740,59 @@ proxy-addr / source-map-js / mysql2 的覆盖。
 
 **仍未做**：gate 只校验当前 manifest 那一次 run，历史 6 次不在检查面内。
 再增长时应改 CI artifact + 清单引用，而不是无限期跟着仓库变大。
+
+## 十六、Phase 9.3.2（2026-11-03）
+
+### Issue #177: Share REST PUT 只能防同请求内竞争，无法防旧版本晚提交 ✅ 已修复（2026-11-03）
+
+**严重程度**：🔴 Blocker（多人协作数据覆盖）
+
+**复现**：两个客户端都读到 v10。A 先 PUT 成功得到 v11；B 仍持有 v10 的数据，
+随后 PUT。旧实现会在执行时重新读取最新行，再用该行的 `updatedAt` 做条件写，
+因此 B 的请求会覆盖 A 刚提交的 v11。`/sync` 的 `baseVersion` CAS 与此无关，
+不能拿同步链路的绿灯证明普通 REST PUT 安全。
+
+**修复**：
+
+- `UpdateShareDto` 增加 `baseVersion`（非负安全整数）。
+- `SharesService.update()` 以服务端 `version` 做原子 CAS，不再用毫秒
+  `updatedAt`；同一毫秒内的 stale 写入也会返回 409。
+- 缺失 `baseVersion` 返回 **428**，非法值返回 400；授权/权限检查仍先执行，
+  非成员或 READONLY 成员仍得到 403。
+- 前端 `TeamApiResources.updateShare()` 必须显式传 `baseVersion`，并给
+  `ApiShare` 补 `version: number`。
+
+**验证**：
+
+- 新增 `shares-nest-http.pg-spec.ts`：真实 Nest Express adapter +
+  ValidationPipe + ApiKeyGuard + DTO + 真实 PostgreSQL + 实际 HTTP。
+  9/9 覆盖 GET、POST、PUT、409、428、403、404、401、400 与 BigInt 序列化。
+- 完整真实 PG 套件 **11 文件 / 94 项** 全绿。
+- 旧 PG 用例补 `baseVersion`，未放宽任何断言。
+
+### Issue #178: `terminal-mounted` 只带 tabId，无法跨工作区关联 ✅ 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（诊断可关联性）
+
+**审查结论**：阶段确实在 xterm `open()` 与 viewport attach 之后发出，早于
+`session-create-requested`，因此只表示终端视图挂载，不冒充 PTY/SSH 已建立；
+`open()` 抛错时不会发出。重复挂载会再次发出，但分析脚本的 stage budget 使用
+**首次** `terminal-mounted`，不会把后续 tab 切换误算成首次启动。
+
+**修复**：detail 改为 `${tabId}@${workspaceId}`，并新增前端回归。冷启动分析
+新增 `ready → terminal-mounted` 3 秒预算；失败信息现在能区分「DB 已就绪但
+终端从未挂载」与「已请求会话但 SSH 失败」。
+
+### Issue #179: 01836c9 后验收证据指纹失效 🟡 待重采（2026-11-03）
+
+CI `41590440545` / `41590434867` 均为 10 个 job 成功、`Repository gates` 失败：
+
+```
+expected 43ff429d…
+actual   7639d533…
+```
+
+这是 `FINGERPRINT_PATHS` 内新增 `terminal-mounted` 后证据门禁的正确行为，不是
+产品测试回归。**不得修改旧 manifest**；必须在冻结源码后由
+`Real-machine terminal matrix` 在真实 runner 重采 6 份证据，再运行
+`check-verification-evidence.mjs` 到 0 problem。

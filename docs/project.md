@@ -816,6 +816,22 @@ src-tauri/
 
 ---
 
+### Phase 9.3.2 - 合并收口：Share REST CAS 与冷启动可观测性 🟡 代码与本地门禁完成，证据待重采
+
+> 2026-11-03，分支 `feat/phase9-2-sync-security-hardening`，审查基线 `01836c9`。
+
+| 领域 | 改动 |
+| --- | --- |
+| Share REST 并发 | `PUT /teams/:teamId/shares/:shareId` 必须携带 `baseVersion`；服务端用 `version` 原子 CAS，旧版本晚提交返回 409，缺失版本返回 428。权限检查仍在写前执行，非创建者 READONLY 仍返回 403 |
+| 真实 Nest 集成 | 新增 `shares-nest-http.pg-spec.ts`：真实 Nest Express adapter、ValidationPipe、ApiKeyGuard、DTO、PostgreSQL 与实际 HTTP，覆盖 GET/POST/PUT/409/428/403/404/401/400 和 BigInt 序列化 |
+| 冷启动可观测性 | `terminal-mounted` detail 补 workspaceId；新增 `ready → terminal-mounted` 3 秒预算，失败归因可区分「DB 已就绪但终端未挂载」 |
+
+**本地门禁（2026-11-03 实跑）**：前端 **151 文件 / 1363 项**、Team Server **25 文件 / 119 项**、真实 PostgreSQL **11 文件 / 94 项**、Rust **302 单测 + 3 集成测试**、脚本 **371 项**、563 个生产文件行数门禁、bundle budget（initial gzip 130.28 KB / total 572.71 KB）全部通过。
+
+**⚠️ 证据状态**：`01836c9` 改动 `FINGERPRINT_PATHS` 后旧证据（指纹 `43ff429d…`）失效，CI `41590440545` / `41590434867` 的 `Repository gates` 正确失败。按规则必须在冻结源码后由真实 runner 重采 6 份证据；在此之前 **不得宣称 PR #6 可合并**。
+
+---
+
 ## 待办事项
 
 ### P0 - 必须完成

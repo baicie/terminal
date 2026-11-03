@@ -14,6 +14,7 @@ type ApiShare = {
   data: unknown
   permission: string
   sharedBy: string
+  version: number
   createdAt: string
 }
 type ApiInvite = {
@@ -114,12 +115,14 @@ export class TeamApiResources extends TeamApiAuth {
   async updateShare(
     teamId: string,
     shareId: string,
+    baseVersion: number,
     permission?: 'READONLY' | 'READWRITE',
     data?: unknown,
     encryptedData?: string,
     isSensitive?: boolean,
   ): Promise<ApiResponse<void>> {
     return this.request('PUT', `/teams/${teamId}/shares/${shareId}`, {
+      baseVersion,
       ...(permission !== undefined && { permission }),
       ...(data !== undefined && { data }),
       ...(encryptedData !== undefined && { encryptedData }),

@@ -132,7 +132,10 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     // `ready` only proves the database answered. Without this stage a startup
     // that never asked for a session cannot be told apart from one whose tab
     // never reached an xterm instance (Issue #174).
-    traceStage('terminal-mounted', options.tabId)
+    traceStage(
+      'terminal-mounted',
+      `${options.tabId}@${options.workspaceId}`,
+    )
     const initialFitTimer = window.setTimeout(() => {
       viewportController.fitNow()
       if (activeRef.current) term.focus()

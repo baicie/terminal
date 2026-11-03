@@ -178,10 +178,16 @@ describe('Share REST 的 JSON 版本契约（真实 PostgreSQL + 真实 HTTP）'
   })
 
   it('serialises an updated share', async () => {
+    const current = await prisma.share.findUniqueOrThrow({
+      where: { id: shareId },
+    })
     const response = await fetch(`${baseUrl}/teams/${teamId}/shares/${shareId}`, {
       method: 'PUT',
       headers,
-      body: JSON.stringify({ data: { name: 'web-2' } }),
+      body: JSON.stringify({
+        baseVersion: Number(current.version),
+        data: { name: 'web-2' },
+      }),
     })
     const text = await response.text()
     expect(response.status, `PUT failed: ${text.slice(0, 1200)}`).toBe(200)

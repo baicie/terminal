@@ -1,6 +1,9 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
@@ -71,6 +74,7 @@ export class SharesService {
     shareId: string,
     userId: string,
     data: {
+      baseVersion?: number
       permission?: 'READONLY' | 'READWRITE'
       data?: unknown
       encryptedData?: string
@@ -86,13 +90,17 @@ export class SharesService {
     if (!isCreator && share.permission !== 'READWRITE') {
       throw new ForbiddenException('Only creator can update share')
     }
+    const baseVersion = this.requireBaseVersion(data.baseVersion)
 
     const written = await this.prisma.share.updateMany({
       where: {
         id: shareId,
         teamId,
-        sharedBy: share.sharedBy,
-        updatedAt: share.updatedAt,
+        // The version column is written by the database trigger on every
+        // update. Comparing it makes the write a true CAS: a caller holding a
+        // stale row cannot overwrite a newer edit, even when both writes land
+        // in the same millisecond (P9.3.2 A2).
+        version: baseVersion,
       },
       data: isCreator
         ? buildShareUpdateData(data, share)
@@ -134,5 +142,20 @@ export class SharesService {
       throw new ForbiddenException('Not a team member')
     }
     return membership
+  }
+
+  private requireBaseVersion(baseVersion: number | undefined): bigint {
+    if (baseVersion === undefined) {
+      throw new HttpException(
+        'baseVersion is required for share updates',
+        HttpStatus.PRECONDITION_REQUIRED,
+      )
+    }
+    if (!Number.isSafeInteger(baseVersion) || baseVersion < 0) {
+      throw new BadRequestException(
+        'baseVersion must be a non-negative safe integer',
+      )
+    }
+    return BigInt(baseVersion)
   }
 }
