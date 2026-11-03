@@ -42,7 +42,7 @@
 | **docs/shadcn-components.md**  | shadcn/ui 全部组件索引与用法说明      | 查阅组件选型与用法 |
 | **docs/build-optimization.md** | 构建体积分析与优化指南                | 优化打包时查阅     |
 | **docs/release/**             | 发布与证据规则（`workflow-rules.md`，必读）、CI 审计、三级发布模式、签名密钥、Release 操作指南（Nightly 通道已移除）、最近一次 CI 报告 | 改动发布链路或源码指纹路径时必读 |
-| **docs/phase9-3/**            | Phase 9.3 交付：bootstrap 五个配置探测串行饥饿（Issue #166）、测量收尾 ENOTEMPTY 竞态（Issue #167）、证据重采（Issue #168） | 接手启动链路或证据采集链时必读 |
+| **docs/phase9-3/**            | Phase 9.3 / 9.3.1 交付：bootstrap 配置探测饥饿（#166）、ENOTEMPTY 竞态（#167）、证据重采（#168）、REMOTE 旧密文与 REST BigInt（#169/#170）、yanked 扫描完整性、前端依赖 25→0、冷启动 20% 失败率量化 | 接手启动链路、同步或证据采集链时必读 |
 | **docs/phase9-2/**            | Phase 9.2 交付：同步冲突五处 P0 根因、双客户端真实 PG 端到端、依赖安全整改台账、证据门禁、身份迁移方案、最终报告（PASS/FAIL/NOT_RUN 分列） | 接手同步、安全或验收证据相关工作时必读 |
 | **AGENTS.md**                  | 本文件 - Agent 使用指南               | 初次接手项目时阅读 |
 
@@ -535,7 +535,7 @@ pnpm add <package-name>
 - 🔴 **依赖安全：13 条已记录，1 条真实不可修**：`cargo audit` 从 42 条（25 vulnerabilities + 9 unmaintained + 4 unsound + 4 yanked）降到 **13 条（8 + 4 + 1 + 0）**，修掉 29 条。剩余结构：7 条锁文件残留（不在任何构建图：quinn-proto ×5、rkyv、rsa 0.9.10）；5 条真实但**只在 Linux**（glib、proc-macro-error、zvariant、zbus_names、zvariant_derive，均来自 Tauri 托盘/通知栈，已用 `cargo tree --target` 三平台实测）；**1 条真实、三平台、上游无修复**：`RUSTSEC-2023-0071`（rsa 0.10.0-rc.18，Marvin 攻击，`patched = []`，russh 与 ssh-key 精确钉死该版本）。
   `cargo-audit` job 已从 `continue-on-error: true` 改为**阻塞门禁**，由 `scripts/security-gate.mjs` 以三态退出码裁定（0 全在基线 / 1 有新 advisory 或版本变化 / 2 扫描失败）。门禁键为 `kind|id|crate` + 版本，所以 rsa 的两条不会互相搭便车。台账 `docs/phase9-1/security-advisories.md`，基线 `src-tauri/security-baseline.json`，`src-tauri/deny.toml` 仅作手工参考、**不是 CI 门禁**
   **不得在任何交付材料中声称「生产依赖审计为 0 个已知漏洞」**，也不得把这里的绿读成「没有已知漏洞」——它只表示「没有未记录的 advisory」（详见 `docs/phase9-2/security-remediation.md`）
-- 🔴 **前端依赖漏洞审计仍 NOT_RUN**：镜像源 registry.npmmirror.com 不提供 audit 端点（`ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS`），归因与沙箱无关。「未测量」≠「无漏洞」
+- ✅ **前端依赖审计已闭合，且它不是「未测量」而是 25 条真实漏洞**（Phase 9.3.1）：Phase 9.2 的 NOT_RUN 结论关于的是**开发机**（本机 npmrc 指向国内镜像），不是项目。对公共 registry 实测为 25 条（1 critical / 12 high / 9 moderate / 3 low），几乎全部经由**我们自己的 `pnpm.overrides`** 把已修复的包钉在脆弱版本上（body-parser / fast-uri / js-yaml / qs / multer / proxy-addr / source-map-js / mysql2）。升级 override 后 `pnpm audit --prod` 报 **No known vulnerabilities found**。新增 `Dependency audit (npm)` CI job（不带 registry 覆盖）。**注意：依赖审计是快照，不是永久性质**
 - ✅ 560 个生产源码文件均满足行数限制
 - ✅ GitHub Actions CI `41233703193`（sha `3fb006c`）：**9/9 success**；`41230214611`（sha `030fda4`）同为 9/9 success。覆盖前端、Team Server、Team Server 容器、Rust、源码规模门禁与 macOS/Windows/Linux 三平台 Tauri 编译（含安装链与数据保留）。其中 `zsh probe diagnostic` 配置了 `continue-on-error: true`，它的 success **不构成产品门禁**
 - ⚠️ **CI `41434168073`（sha `a093fc7`）为 9/10**：除 `Repository gates (source size, evidence, script tests)` 外全部 success（该 job 红的唯一原因是证据还没提交）。证据落盘并推送后需再跑一次 CI 才能看到 10/10；**在该 run 出现之前，不得把这次 CI 记成全绿**。同一 sha 的实机矩阵 run `41434165000` 为 3/3 success（macOS / Linux / Windows）
@@ -559,8 +559,8 @@ pnpm add <package-name>
 | —     | 🔴 依赖安全：`cargo audit` **13 条**已记录（8 vulnerabilities + 4 unmaintained + 1 unsound + 0 yanked），其中 **1 条真实、三平台、上游无修复**（`RUSTSEC-2023-0071` rsa 0.10.0-rc.18）。`cargo-audit` 已是阻塞门禁。阻塞发布，不阻塞合并。台账 `docs/phase9-1/security-advisories.md` | 🔴 Blocker（发布） | P0 |
 | —     | ✅ **6 份验收证据已重采**（run `41478709578`，sha `3102093`，指纹 `c4faedfb…`），`check-verification-evidence.mjs` 报 0 problem；证据门禁同时是 CI 阻塞步骤。注意证据绑定代码身份：再改任何 `FINGERPRINT_PATHS` 内文件都要重采 | ✅ 已闭合 | — |
 | —     | ✅ P9.2-9 Linux zsh 探针 **PASS**：run `41432020659` / `41434165000` 的 Linux job 均 success，14 用例全绿（含此前三条）。遗留：空 `$HOME` 的真实 Debian 新账户未测 | ✅ 已闭合 | — |
-| 60    | ⚠️ P9.2-10 macOS 冷启动：当前源码已在 run `41478709578` 实测通过（debug 1944 / 1330 / 1323 ms，release 2283 / 2074 / 1959 ms，远程提示符 3158 ms）。**同一天另一次 run `41475640293` 该步骤失败**，Phase 9.0 记录的约 20% WebKit 加载失败率（`code=-1004`）仍未修复，样本不足以排除它 | 🟡 Important（RC 风险） | P0 |
-| —     | ⚠️ 前端依赖漏洞审计 **NOT_RUN**：镜像源 registry.npmmirror.com 不提供 audit 端点（`ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS`）。「未测量」≠「无漏洞」 | 🟡 Important | P1 |
+| 60    | ⚠️ **macOS 远程冷启动失败率已量化：3/15 = 20%**（16 次 real-machine run 统计，1 次日志过期无法判定）。已知证据只能定位到「db ready 之后、会话请求之前」，**无法证明是 WebKit `-1004`**——那条 Unified Log 证据从未被采集。Phase 9.3.1 补了四种失败形态的诊断分类，但**没有修复** | 🟡 Important（RC 风险） | P0 |
+| —     | ✅ 前端依赖审计已闭合（vuln 25 → 0，新增 CI 阻塞 job）；同步接口与 Share REST 的版本契约统一为 JSON number。详见 `docs/phase9-3/merge-blocker-closure.md` | ✅ 已闭合 | — |
 | 57    | 真实 SSH 认证矩阵 ✅ 当前源码（run `41478709578`，sha `3102093`）：debug 11/11、release 8/8、shell 交互 14/14（另 Linux 14 + Windows 5，全矩阵 40 个 probe 用例 0 FAILED） | 🟡 Important | P1 |
 | 58    | 物理键盘 30 轮重叠 `a/s/d`、中文 IME、Option/dead key 待人工键入（Ctrl+C、vim、nano、PTY resize、行编辑已在本地 PTY **与真实 SSH** 上自动化覆盖） | 🟡 Important | P1 |
 | 21/39 | Windows/Pageant/串口硬件实机矩阵（macOS 与 Linux 的 CI 矩阵已全绿，含 Linux shell-probe 14/14；Windows 只有 PowerShell/cmd 矩阵，Pageant 与串口硬件仍未采） | 🟡 Important | P1 |

@@ -4561,3 +4561,182 @@ macOS job **25 步全 success**（含 `Generate the six evidence files and the C
 
 **证据门禁**：安装后 `node scripts/check-verification-evidence.mjs` →
 **passed for 6 current evidence file(s)，exit 0**。
+
+## 十五、Phase 9.3.1（2026-11-03）
+
+### Issue #169: 敏感共享 REMOTE 解决用本地旧密文冒充远端 ✅ 已修复（2026-11-03）
+
+**严重程度**：🔴 Blocker（数据完整性）
+
+**症状**：`applyWindow()` 记录的冲突快照只有 `version` / `data` / `isSensitive`，
+没有 `encryptedData`。选 REMOTE 时 `syncWithConflictResolution` 用**本地行**的
+密文补齐，于是：
+
+```
+服务端：version 6，encryptedData = ciphertext-B
+客户端：version 5，encryptedData = ciphertext-A
+选 REMOTE 后：version 6，encryptedData = ciphertext-A，dirty = 0
+```
+
+版本与内容不一致，却被当成"已收敛"。用户以为自己采用了服务器版本，实际保留的
+是被自己丢弃的旧密文。
+
+**顺带发现的第二个形态**：`mergeConflicts` 用 `hasData()` 判断「远端快照是否存在」，
+但敏感共享的 `data` 是 `{}` 占位符——pull 产生的唯一可用快照被判为「空壳」，
+被 push 的空壳冲突覆盖。所以只改 `applyWindow` 不足以修复。
+
+**复现（先红）**：真实 PostgreSQL + 真实客户端 store（`dual-client-sync.pg-spec.ts`
+新增 C3b），A 改密文 → B 冲突 → B 选 REMOTE：
+
+```
+[C3b] conflict remote cipher=undefined version=undefined local cipher=ciphertext-version-1
+```
+
+**修复**：
+- 冲突快照携带 `encryptedData` / `sharedBy` / `permission`
+- 快照缺这些字段时**回读服务端**，而不是用本地行补齐
+- 敏感快照没有密文一律拒绝，不再以空敏感行冒充收敛
+- `adoptRemoteShare` 采用服务端权威的 owner / permission / teamId（小写枚举，
+  与 `convertApiShare` 的既有约定一致）
+- `mergeConflicts` 改用「有无 version/密文」判断快照是否可用
+
+**验证（后绿）**：`[C3b] 本地 cipher=ciphertext-version-2 v=507792 dirty=0
+服务端 cipher=ciphertext-version-2 v=507792`。新增前端 4 项 + PG 1 项。
+
+### Issue #170: Share REST 的 BigInt 版本导致 500 ✅ 已修复（2026-11-03）
+
+**严重程度**：🔴 Blocker（接口不可用）
+
+**症状**：Prisma 的 `Share.version` 是 `BigInt`，Node 原生 `JSON.stringify` 无法
+序列化。`findOne` / `findAll` / `create` / `update` 都直接返回 Prisma 行，
+于是这些接口全部 500；同步接口没事，因为它一直走 `toShareSnapshot`。
+
+**复现（先红）**：真实 HTTP server + 真实 controller + 真实 PostgreSQL：
+
+```
+GET single failed: {"statusCode":500,"message":"Do not know how to serialize a BigInt"}
+GET list failed:   {"statusCode":500,"message":"Do not know how to serialize a BigInt"}
+```
+
+**修复**：新增 `shares/share-serializer.ts`，与同步接口共用 `ShareSnapshot` 形状，
+`version` 为 JSON number 并强制 `Number.isSafeInteger`（超出范围抛错而不是静默丢精度）。
+
+没有改成十进制字符串（客户端 DTO 早已声明 `version: number`，两套接口给出两种
+类型只会制造新的漂移），也没有用全局 `BigInt.prototype.toJSON`（那会掩盖其他
+字段的同类问题）。
+
+**验证（后绿）**：4 项 HTTP 契约测试全过。去掉序列化后 3 项变红。
+
+### Issue #171: cargo audit 的 yanked 类从未被评估，却被当成"没有 yanked" ✅ 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（安全门禁完整性）
+
+**症状**：CI run `41489824295` 的 cargo audit job **成功**，日志里却有 **769 条**
+`error: couldn't check if the package is yanked: not found: No such crate in
+crates.io index: <crate>`——每一个 crate 都有。
+
+cargo audit 需要本地 cargo home 持有 crates.io registry index 才能回答
+"这个确切版本是否被撤回"。runner 上没有时，它逐条打 stderr、**不写**
+`warnings.yanked`、仍以 exit 1 结束（与"发现 advisory"同一个退出码）。gate
+只读 JSON，于是"从未检查"读成了"没有 yanked"。
+
+**复现（先红）**：`CARGO_HOME` 指向只有 advisory-db 的空目录 → 769 条错误、
+`warnings` 只剩 unmaintained/unsound，gate 仍 exit 0。
+
+**修复**：`security-gate.mjs` 新增 `--audit-log`，出现一条无法评估的 yanked
+检查就 exit 2；其他未识别的 error 行同样 exit 2。`ci.yml` 把 stderr 落盘并在
+审计前 `cargo fetch --locked` 填充 registry index。
+
+**验证**：新增 5 项回归；去掉判定后第一条变红，恢复后 32/32。
+
+### Issue #172: 前端依赖审计不是「未测量」，是 25 条真实漏洞 ✅ 已修复（2026-11-03）
+
+**严重程度**：🔴 Blocker（发布）
+
+**更正一个持续了两轮的结论**：Phase 9.2 把前端审计记为 NOT_RUN，归因是
+"镜像源不提供 audit 端点"。**那个结论关于的是开发机**（本机 `~/.npmrc` 指向
+国内镜像），不是项目本身。CI runner 走公共 registry，那里可以跑。
+
+**实测**：25 条（1 critical / 12 high / 9 moderate / 3 low），几乎全部经由
+**我们自己的 `pnpm.overrides`** 把已修复的包钉在脆弱版本上：
+body-parser 2.3.0、fast-uri 3.1.5、js-yaml 5.2.3、qs 6.15.2，另缺 multer /
+proxy-addr / source-map-js / mysql2 的覆盖。
+
+**修复**：八个 override 升级到已修复版本。`pnpm audit --prod` →
+**No known vulnerabilities found**。新增 `Dependency audit (npm)` CI job，
+审计已安装的生产依赖树，不带 registry 覆盖。
+
+**必须记住**：一个 override 条目就能在无人察觉时重新引入 CVE。依赖审计是
+快照，不是永久性质。
+
+### Issue #173: bootstrap 静默回落与正常启动同形 ✅ 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（可观测性）
+
+并发化之后五個 gate 仍共享同一个 1 秒绝对预算。从返回值看，「探针未启用」
+「IPC 超时」「预算耗尽导致根本没有调用」全是同一个 `null`。
+
+**修复**：每个 gate 记录结局（`not-configured` / `loaded` / `timed-out` /
+`deadline-passed` / `errored`）+ 耗时，mode 决定时经既有的 `startup_stage`
+输出一行汇总。只记结局、耗时与错误消息，不记配置值。
+
+**没有**把 1 秒调大：那会掩盖「IPC 是否按时返回」这个真正要观测的事实。
+新增 9 项回归，含「五个 gate 全悬挂仍全部被启动」。
+
+### Issue #174: macOS 远程冷启动失败率已量化为 20%，但未修复 ⚠️ 未修复（2026-11-03）
+
+**严重程度**：🟡 Important（RC 阻塞）
+
+**定量**：按 step 结论统计 16 次 real-machine run：
+
+| 结论 | 次数 |
+| --- | --- |
+| success | 12 |
+| failure | 3 |
+| 日志已过期、无法判定 | 1 |
+
+**失败率 3/15 = 20%**，与 Phase 9.0 记录的「10 次里 2 次失败」一致。
+**因此不把这条写成已修复**：一个 20% 的失败率用一次成功复跑来否定是不成立的。
+
+**现有证据的边界**：失败 run `41475640293` 的记录是
+`stages: frontend-boot@0ms -> ... -> ready@1081ms; first stage at 2678 ms`，
+该步骤应用自身日志行数为 **0**。
+
+- **能证明**：WebView 执行到了 `frontend-boot`，db 到了 `ready`，此后无阶段。
+- **不能证明**：这是 WebKit 主框架加载失败。Issue #65 记录的是
+  `didFailProvisionalLoadForFrame code=-1004`，而该次运行**没有采集到那条
+  Unified Log 证据**。
+
+**本轮做的**：超时消息现在区分四种互斥形态（前端从未求值 / db 卡住 / 未请求
+会话 / SSH 路径失败），新增 4 项回归。**没有修复**，也没有把风险降级。
+
+### Issue #175: PG 测试套件随文件执行顺序偶发失败 ✅ 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（会让"全量通过"失去意义）
+
+**症状**：同一套代码三次运行中一次报 9 项失败，而每个文件单独跑都通过。
+
+**根因**：`sqlite.databases.at(-1)` 取的是**共享注册表**的最后一项。同一 worker
+里先跑过另一个 spec 时，最后一项属于那个文件的数据库，客户端读到别人的 store。
+
+**修复**：记录调用前的长度并取该位置。两个用到它的 spec 都改。修复后连续
+三次 **85/85**。
+
+**为什么值得单独记录**：一个会随文件执行顺序变红的测试套件，比一条已知的
+失败更危险——它让"全量绿"这个结论不可信。
+
+### Issue #176: PR 里 62 MB 原始日志 ✅ 已处理（2026-11-03）
+
+**处理**：gzip -n -9 压缩到 3.9 MB（16:1），每次 run 目录加 `SHA256SUMS`。
+
+**没有删除证据**：7 次 run 的日志一条没少，每条做了 `gzip -t` 与解压后行数核对，
+校验清单实测 `-c` 通过。
+
+**没有放松门禁**：gate 本就支持 `<name>.gz`；补 2 项测试钉住「压缩可接受、
+压缩档案缺文件仍报 missing」。
+
+**敏感信息扫描**：私钥 / 公钥材料 / Bearer token / password= 全部 **0 命中**；
+只有 `/Users/runner/` 与 loopback `127.0.0.1:<port>`，是托管 runner 的通用值。
+
+**仍未做**：gate 只校验当前 manifest 那一次 run，历史 6 次不在检查面内。
+再增长时应改 CI artifact + 清单引用，而不是无限期跟着仓库变大。
