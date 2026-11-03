@@ -78,8 +78,25 @@ session-create-requested=30 session-created=30
 `0.8^30 ≈ 0.12%`；但这不是“失败率已经为 0”的证明。0/30 的单侧 95% 置信上界约为
 **9.5%**，仍高于 RC 目标。
 
-为把 95% 上界压到约 1%，需要约 **300** 次连续样本；Phase 9.4 已提高工作流样本量
-并重新运行，结果见 `cold-start-statistics.md`。
+300 次扩展样本（run `41602408642`，commit `8542ca5`）结果：
+
+| 指标 | 值 |
+| --- | --- |
+| 成功 / 失败 | 289 / 11 |
+| 点估计失败率 | **3.7%** |
+| Wilson 95% 失败率上界 | **约 6.4%** |
+| spawn→ready 中位 / p95 / 最大 | 4602 / 6143 / 8814 ms |
+
+失败不是单一形态：
+
+- 5 次 `terminal-not-mounted`：`ready` 已到，但 9.5 秒内 xterm 没挂载；
+- 1 次 `terminal-mounted@8756ms`：挂载太晚，已没有会话请求窗口；
+- 5 次 `ssh-path`：`session-created` 已出现，但 prompt marker 未在 10 秒内出现。
+
+这 300 次使用的是 1 秒 probe 配置预算的 `8542ca5`；其中 5 次 `ssh-path`
+可能受 `remotePrompt` gate 超时影响。修复后的 `44ae449` 需要复测，不能把
+11 次失败全部归因于 WebKit。**3.7% 仍不满足高可靠 RC**，历史 20% 也未得到
+“已修复”的证明。
 
 ## 5. 根因状态
 
@@ -87,10 +104,11 @@ session-create-requested=30 session-created=30
 | --- | --- |
 | 五段诊断链 | **PASS**（30/30 阶段完整） |
 | 30 次真实重复测量 | **PASS**（30/30） |
-| 历史 20% 失败根因 | **NOT_RUN / 未复现** |
+| 300 次真实重复测量 | **FAIL**（289/300，3.7%） |
+| 历史 20% 失败根因 | **NOT_RUN / 未完全复现** |
 | WebKit Unified Log 失败回调 | **NOT_RUN**（本轮无失败可采） |
-| 300 次高压样本 | 见 `cold-start-statistics.md` |
+| 失败阶段分类 | **PASS**（5 未挂载 / 1 晚挂载 / 5 SSH 路径） |
 
-**不能**把 30/30 写成“20% 失败已修复”。本轮只能证明：在新的诊断链下，这批样本
-全部走完 `frontend-boot → ready → terminal-mounted → session-create-requested`
-并建立了 SSH 会话；历史失败仍需在更大样本或失败复现时用 Unified Log 定位。
+**不能**把 30/30 写成“20% 失败已修复”。300 次样本把当前失败率点估计压到 3.7%，
+但仍高于 1%，且失败形态至少两类。当前证据只能证明诊断链能把失败定位到
+`terminal-mounted` 前后，不能证明根因已消除。

@@ -9,7 +9,7 @@
 | --- | --- | --- |
 | macOS 冷启动诊断链 | **PASS** | `terminal-mounted`、串行 trace、30/30 阶段完整 |
 | macOS 冷启动 20% 根因 | **NOT_RUN** | 30 次未复现；历史失败 Unified Log 未采到 |
-| 300 次冷启动置信样本 | 进行中 | run `41602408642` |
+| 300 次冷启动样本 | **FAIL（3.7%）** | run `41602408642`：289/300，Wilson 95% 上界约 6.4% |
 | RSA Marvin 可达性 | **PASS**（有条件接受） | 见 `rsa-threat-model.md` |
 | RSA 上游修复 | **BLOCKED_EXTERNAL** | `patched = []` |
 | 单版本安装 + 数据内容保留 | **PASS** | 现有三平台 install job |
@@ -36,10 +36,12 @@ Phase 9.4 是 stacked branch，不能独立合并到 main；PR #6 合并后需�
 
 至少还缺：
 
-1. 300 次冷启动统计与 95% 置信上界（当前 run 进行中）。
+1. 把 3.7% 失败率降到 1% 以下；当前 300 次样本不足以支持 RC。
 2. 历史 20% 失败的 Unified Log 根因，或明确的“环境/时间窗口”解释。
-3. 跨版本升级、回滚、失败恢复。
-4. Windows / Pageant / 串口 / 物理键盘实机验收。
+3. `terminal-not-mounted` 与晚挂载失败的产品级修复。
+4. 修复后重新做 300 次样本（当前 `8542ca5` 之后已有 probe 配置预算修复）。
+5. 跨版本升级、回滚、失败恢复。
+6. Windows / Pageant / 串口 / 物理键盘实机验收。
 
 ### READY_FOR_RELEASE
 
