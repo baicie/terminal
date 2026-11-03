@@ -2137,8 +2137,9 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
       B 291/300，不再标 NOT_RUN。
 - [x] 本地门禁：前端 **152 文件 / 1367 项**、脚本 **383 项**、typecheck、ESLint、
       source-size 563 文件、actionlint 通过。
-- [ ] **修复后实机 300 次复测未运行**。必须用新构建确认
-      `ssh-request-not-entered-rust` 是否消失、`terminal-not-mounted` 是否仍存在。
+- [x] 修复后实机 300 次已运行：run `41674133535`（`b5c7f46`）294/300（2.00%）。
+      `ssh-request-not-entered-rust` 仍有 2 个（均为本地 fallback），
+      `terminal-not-mounted` 仍有 3 个，`ssh-prompt-marker-missing` 1 个。
 - [ ] 跨样本隔离负面测试未做：故意让一轮超时，验证下一轮、WebKit 子进程、
       端口/socket/文件锁均干净。
 - [ ] 当前源码改动在 `FINGERPRINT_PATHS` 内，六份验收证据已失效，必须由

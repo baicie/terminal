@@ -4882,6 +4882,13 @@ job 在 provenance 步骤变红。后续提交已把该脚本改为 async IIFE�
 provenance 的 `instrumentedBuild` 矛盾、`log show` 的 ISO 时间格式导致日志全为
 0 字节。修复后尚未重新采样，根因仍未闭合。
 
+**修复后 E 轮实机**：run `41674133535`（`b5c7f46`）**294/300（2.00%）**。
+6 个失败第一次可自证：3 个 `terminal-not-mounted`（`122/194/292`，连
+`terminal-open-start` 都没有）、2 个本地 fallback（`195/293`，`terminal-mounted`
+detail 为 `local-...@...@local`）、1 个 `ssh-prompt-marker-missing`（`1`，
+`ssh-startup-settle` 后无 write）。这证明本地 fallback 路径仍会发生，且
+late-tab 修复只覆盖了 effect 内 ref 为空的路径。根因保持未闭合。
+
 ### Issue #182: 冷启动压力汇总会静默缩小分母 🟡 已修复（2026-11-03）
 
 **严重程度**：🟡 Important（测量基础设施）

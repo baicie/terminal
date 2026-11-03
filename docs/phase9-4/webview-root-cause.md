@@ -109,6 +109,7 @@ session-create-requested=30 session-created=30
 | 修复后 B 300 次 | **FAIL**（291/300，3.00%） |
 | 修复后 C 300 次（含产品修复） | **FAIL**（294/300，2.00%） |
 | 修复后 D 300 次（第二次产品修复后） | **FAIL**（282/300，6.00%） |
+| 修复后 E 300 次（late-tab + open 诊断后） | **FAIL**（294/300，2.00%） |
 | 历史 20% 失败根因 | **NOT_RUN / 未完全复现** |
 | WebKit Unified Log 失败回调 | **NOT_OBSERVED**：7 份/9 份失败日志里都没有 `didFail`、渲染进程退出或 WebKit 崩溃 |
 | 失败阶段分类 | **PASS**（见 `cold-start-statistics.md` §3.4） |
@@ -231,3 +232,23 @@ run `41644270883`（`fda76ae`）为 **282/300（6.00%）**，比上一轮更差�
 
 这些缺陷已经修复，并在 provenance 中加入“失败样本必须有非空 WebKit 日志”的
 硬失败，避免“没有证据”被静默当成“没有 WebKit 失败”。
+
+## 9. 修复后 E：分类终于可自证
+
+run `41674133535`（`b5c7f46`）的 `terminal-mounted` detail 已带上 tab 类型，
+6 个失败第一次可以逐条说清：
+
+| 类型 | 样本 | 证据 |
+| --- | --- | --- |
+| 容器未出现 | `122, 194, 292` | 只有 `ready`，连 `terminal-open-start` 都没有 |
+| 本地 fallback | `195, 293` | `terminal-open-*` 和 `terminal-mounted` 的 detail 都是 `local-...@...@local` |
+| SSH prompt 未完成 | `1` | `ssh-startup-settle@3609ms` 后无 `ssh-startup-write-begin` |
+
+这证明两件事：
+
+1. “session created 但没有 SSH stage”不一定是 SSH 问题；E 轮有 2 个明确是本地
+   fallback 会话。旧分类把它们叫 `ssh-path` 是错的。
+2. `terminal-not-mounted` 仍有 3 个发生在 `terminal-open-start` 之前，说明 late-tab
+   effect 修复没有覆盖“容器/tab 本身没有出现”的上游路径，根因仍未闭合。
+
+不能把 294/300 写成修复成功：失败率仍 2.00%，且这三类失败分别需要不同的修复。

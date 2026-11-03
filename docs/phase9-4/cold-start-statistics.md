@@ -335,6 +335,54 @@ job 仍在 provenance 步骤变红。该脚本已在后续提交修复，并本�
 `terminal-open-start` / `terminal-open-done` / `terminal-open-failed` 三个阶段。
 真实 300 次复测尚未运行，不能把上述失败计为已消除。
 
+## 3.10 修复后 E：run `41674133535`（late-tab + open 证据修复后）
+
+这是目前唯一一轮“测量链完整”的产品修复后 300 次运行：样本内源码 SHA、二进制 SHA、
+clean 状态、probe timeout 都齐全，WebKit 日志文件非空（虽然只含表头，见下）。
+
+| 项 | 值 |
+| --- | --- |
+| run | `41674133535` |
+| commit | `b5c7f4695a3430e6f6ba0d0f4ba06c8a5fa99eb3` |
+| commit 父提交 | `fda76aeae7ccc41be997f38774327a4327b25c35` |
+| instrumented build | `VITE_TERMINAL_SMOKE_BUILD=1`，debug，`--no-bundle` |
+| probe 配置预算 | 3000 ms |
+| binary SHA256 | `d843a2f6d011ca18222910e3dc55db0294bce09b2d311252768d5a24e6922751` |
+| 每样本 SHA | 300/300 均为该值 |
+| runner | `macos-26-arm64`，3 vCPU / 7 GiB，macOS 26.6.2 |
+| 每样本 readiness timeout | `10000` ms |
+| samples | 300（1..300 完整） |
+| 成功 / 失败 | **294 / 6** |
+| 点估计失败率 | **2.00%** |
+| Wilson 95% 失败率上界（仅作参考） | 约 4.29% |
+| spawn→ready 最小 / 中位 / p95 / 最大 | 3605 / 4677 / 5978 / 7124 ms |
+| 阶段出现 | `frontend-boot=300`、`ready=300`、`terminal-mounted=297`、`session-requested=297`、`session-created=296` |
+| mount evidence | `remote=295`、`local=2`、`unknown=3` |
+
+失败样本：`1, 122, 194, 195, 292, 293`。
+
+| 分类 | 次数 | 失败样本 | 最终状态 |
+| --- | --- | --- | --- |
+| `terminal-not-mounted` | 3 | `122, 194, 292` | `ready` 后没有 `terminal-open-start`，即 xterm 构造/挂载根本没有开始 |
+| `ssh-request-not-entered-rust` | 2 | `195, 293` | `terminal-open-*` 完整，但 detail 明确是 `local-...@workspace@local`，即本地 fallback 会话 |
+| `ssh-prompt-marker-missing` | 1 | `1` | SSH 全部到 `ssh-startup-settle`，没有 `ssh-startup-write-begin`，prompt marker 未完成 |
+
+关键结论：
+
+- 两个 `ssh-request-not-entered-rust` 不再需要猜测：`terminal-mounted` detail 是
+  `local`，证明这是本地 fallback 抢占，不是 SSH 认证/PTY 故障。
+- 三个 `terminal-not-mounted` 连 `terminal-open-start` 都没有，说明问题发生在
+  `useTerminalInstance` effect 之外（tab/容器尚未出现），不是 `term.open()` 抛错；
+  之前修的 late-tab 依赖只覆盖“effect 已进入但 ref 为空”的路径。
+- `terminal-open-*` 阶段在 297 个挂载样本中出现，说明新诊断链有效。
+- 6 个失败仍成对/相邻：`194/195`、`292/293`，正常样本间隔 5–6 秒，失败对间隔
+  11–12 秒；`1` 是首样本，`122` 是单条第 122 个样本。
+- 失败样本的 WebKit 日志只有 44 字节表头。这满足 provenance 的“非空”门禁，但
+  仍不足以证明 WebKit 子进程状态；剩余根因必须靠下一轮更聚焦的日志采集。
+
+**判定**：294/300 比前几轮好，但仍高于 1% 的 RC 目标，且仍有 3 个未挂载 + 2 个
+本地 fallback + 1 个 SSH prompt 失败，不能称为稳定。
+
 ## 4. 失败分类口径
 
 每个失败样本按第一个未到达阶段分类：

@@ -14,8 +14,10 @@
 | 修复后 B 300 次冷启动样本 | **FAIL（3.00%）** | run `41612216952`：291/300 |
 | 修复后 C 300 次冷启动样本 | **FAIL（2.00%）** | run `41637922942`：294/300；失败仍为 3 对 |
 | 修复后 D 300 次冷启动样本 | **FAIL（6.00%）** | run `41644270883`：282/300；18 个失败，测量脚本还有缺陷 |
-| 本地 fallback 抢占恢复的远程 tab | **FIXED（待真实 300 次复采）** | host 查询未完成时不再添加本地 tab；前端回归通过 |
-| tab 缺失时误建本地 PTY | **FIXED（待真实 300 次复采）** | `tab === undefined` 时 session 保持 disabled；前端回归通过 |
+| 修复后 E 300 次冷启动样本 | **FAIL（2.00%）** | run `41674133535`：294/300；3 未挂载 / 2 本地 fallback / 1 prompt marker |
+| 本地 fallback 抢占恢复的远程 tab | **PARTIAL** | E 轮仍有 2 个 local mount（195/293），说明该路径未消除 |
+| tab 缺失时误建本地 PTY | **FIXED（证据）** | E 轮 195/293 的 `terminal-mounted ... @local` 证明是 fallback 本地会话，不是 SSH |
+| late-tab 挂载竞态 | **FIXED（待更强证据）** | `tabAvailable` 已参与 effect；E 轮 3 个未挂载仍连 `terminal-open-start` 都没有 |
 | 压力测试样本完整性门禁 | **PASS** | `--expected-samples`、1..N 连续性、sampleIndex 一致性、JSON 结构；12 项脚本测试 |
 | 压力工作流 verdict | **PASS** | 有失败时 `MEASUREMENT_COMPLETE_WITH_FAILURES` 并让 job 失败；不再用绿图标冒充可靠性 |
 | 跨样本隔离 | **PARTIAL** | 主进程与独立 HOME 已确认；WebKit 子进程、端口/锁残留、故意超时负面测试 **NOT_RUN** |
@@ -50,14 +52,14 @@ Phase 9.4 是 stacked branch，不能独立合并到 main；PR #6 合并后需�
 至少还缺：
 
 1. 用修复后的构建重新做 300 次样本，并把失败率降到 1% 以下；修复前 3.67%、
-   修复后 A 2.33%、B 3.00%、C 2.00%、D 6.00% 都不满足高可靠 RC。
+   修复后 A 2.33%、B 3.00%、C 2.00%、D 6.00%、E 2.00% 都不满足高可靠 RC。
 2. 历史 20% 失败的 Unified Log 根因，或明确的“环境/时间窗口”解释。
 3. `terminal-not-mounted` 的产品级修复。当前日志没有 WebKit 崩溃证据，失败发生在
    React 挂载阶段，机制尚未定位。
 4. 跨样本隔离的负面测试：故意让一轮超时，确认下一轮仍从干净状态开始；
    确认 WebKit 子进程、端口、socket 与文件锁都已回收。
 5. 修复本地 fallback 与 tab 缺失路径后，真实采样必须证明 `ssh-request-not-entered-rust`
-   不再出现；前端回归不能替代 300 次实机结果。
+   不再出现；E 轮仍有 2 个，前端回归不能替代实机结果。
 6. 跨版本升级、回滚、失败恢复。
 7. Windows / Pageant / 串口 / 物理键盘实机验收。
 
