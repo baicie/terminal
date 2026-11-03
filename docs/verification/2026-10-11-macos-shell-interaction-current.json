@@ -1,6 +1,6 @@
 {
-  "recordedAt": "2026-11-02T16:25:50.632Z",
-  "recordedDate": "2026-11-02",
+  "recordedAt": "2026-11-03T04:48:52.863Z",
+  "recordedDate": "2026-11-03",
   "kind": "tauri-local-shell-interaction-current-worktree",
   "command": "pnpm smoke:shell-probe:matrix --reuse-binary --shells bash,zsh -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt",
   "matrixCommand": "pnpm smoke:shell-probe:matrix --reuse-binary --shells bash,zsh -- cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt",
@@ -12,12 +12,12 @@
   },
   "revision": {
     "head": "",
-    "commit": "3102093",
+    "commit": "bc44c54",
     "dirtyWorktree": false
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "efacdc6b3cb8f001f3916a000cc10ee757db98a841aef317035caafcfbc865d7"
+    "sha256": "049f0194a6a510f13bf450ee89d161a325ce634b41ade4f8957e8292091f149b"
   },
   "shells": [
     "bash",
@@ -32,122 +32,122 @@
       "shell": "bash",
       "case": "cat-eof",
       "ok": true,
-      "durationMs": 419
+      "durationMs": 507
     },
     {
       "shell": "bash",
       "case": "readline-history",
       "ok": true,
-      "durationMs": 301
+      "durationMs": 360
     },
     {
       "shell": "bash",
       "case": "readline-tab",
       "ok": true,
-      "durationMs": 465
+      "durationMs": 507
     },
     {
       "shell": "bash",
       "case": "vim-edit",
       "ok": true,
-      "durationMs": 5184
+      "durationMs": 5195
     },
     {
       "shell": "bash",
       "case": "nano-edit",
       "ok": true,
-      "durationMs": 4678
+      "durationMs": 4764
     },
     {
       "shell": "bash",
       "case": "pty-resize",
       "ok": true,
-      "durationMs": 1373
+      "durationMs": 1421
     },
     {
       "shell": "bash",
       "case": "ctrl-c-interrupt",
       "ok": true,
-      "durationMs": 1059
+      "durationMs": 1099
     },
     {
       "shell": "zsh",
       "case": "cat-eof",
       "ok": true,
-      "durationMs": 437
+      "durationMs": 489
     },
     {
       "shell": "zsh",
       "case": "readline-history",
       "ok": true,
-      "durationMs": 283
+      "durationMs": 367
     },
     {
       "shell": "zsh",
       "case": "readline-tab",
       "ok": true,
-      "durationMs": 428
+      "durationMs": 478
     },
     {
       "shell": "zsh",
       "case": "vim-edit",
       "ok": true,
-      "durationMs": 5173
+      "durationMs": 5200
     },
     {
       "shell": "zsh",
       "case": "nano-edit",
       "ok": true,
-      "durationMs": 4675
+      "durationMs": 4725
     },
     {
       "shell": "zsh",
       "case": "pty-resize",
       "ok": true,
-      "durationMs": 1369
+      "durationMs": 1411
     },
     {
       "shell": "zsh",
       "case": "ctrl-c-interrupt",
       "ok": true,
-      "durationMs": 1088
+      "durationMs": 1138
     }
   ],
   "sshCases": [
     {
       "case": "cat-eof",
       "ok": true,
-      "durationMs": 564
+      "durationMs": 629
     },
     {
       "case": "readline-history",
       "ok": true,
-      "durationMs": 437
+      "durationMs": 475
     },
     {
       "case": "readline-tab",
       "ok": true,
-      "durationMs": 566
+      "durationMs": 589
     },
     {
       "case": "vim-edit",
       "ok": true,
-      "durationMs": 5280
+      "durationMs": 5307
     },
     {
       "case": "nano-edit",
       "ok": true,
-      "durationMs": 4770
+      "durationMs": 4839
     },
     {
       "case": "pty-resize",
       "ok": true,
-      "durationMs": 1438
+      "durationMs": 1630
     },
     {
       "case": "ctrl-c-interrupt",
       "ok": true,
-      "durationMs": 1192
+      "durationMs": 1389
     }
   ],
   "allCasesPassed": true,
@@ -155,7 +155,7 @@
   "shellNote": "Each case drives the real Tauri/WKWebView xterm surface into a local PTY or a loopback SSH channel and checks the exact readback.",
   "dialectNote": "bash and zsh have dedicated dialects; fish/sh are rejected before any build until they do.",
   "source": {
-    "fingerprint": "c4faedfb2a06408dc6eb7d3dd5c78ecc63816fb98ee89a047f8837c912d49264",
+    "fingerprint": "43ff429dfeb79b6faeb9bd5122f8eb95d7acab38231d52b646a249a50c1ba35c",
     "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs on the checked-out CI sources at evidence build time."
   },
   "limitations": [
@@ -165,12 +165,12 @@
   ],
   "provenance": {
     "source": "github-actions",
-    "runId": "41478709578",
+    "runId": "41578079126",
     "runAttempt": "1",
     "workflow": "Real-machine terminal matrix",
     "job": "macos-ssh-matrix",
-    "commit": "310209347927b87a5dff8d11777279ccac173f70",
-    "fingerprint": "c4faedfb2a06408dc6eb7d3dd5c78ecc63816fb98ee89a047f8837c912d49264",
+    "commit": "bc44c541e83d6a3032ef0f79e00f1e1a53b29bff",
+    "fingerprint": "43ff429dfeb79b6faeb9bd5122f8eb95d7acab38231d52b646a249a50c1ba35c",
     "runner": {
       "os": "macOS",
       "arch": "ARM64"
