@@ -194,6 +194,10 @@ shell interaction 与 physical keyboard probe（这两步在修复前分别因 1
 独立伯努利样本：失败成对出现（见 §3.5），观测到的簇内相关性使 Wilson 上界偏乐观。
 本节不使用 Wilson 数值宣称达标。
 
+再加上产品修复后首轮 `41637922942` 的 294/300，修复后合计
+**878 / 900（97.56% 成功，2.44% 失败）**。该合计同样**不能**按独立样本套用
+Wilson 上限；失败仍然成对，见 §3.7。
+
 ## 3.4 失败样本的最终分类
 
 | run | 分类 | 次数 | 失败样本 |
@@ -234,6 +238,45 @@ shell interaction 与 physical keyboard probe（这两步在修复前分别因 1
 - 失败样本没有 `binarySha256` 字段（旧 stopwatch 只把 SHA 写进成功结果）；
 - 旧 stopwatch 的成功结果没有 `timeoutMs`；本文件只用失败 JSON 的 `timeoutMs`
   和 workflow env 证明三次均为 10000 ms，不伪称每个成功样本都自证了该值。
+
+## 3.7 修复后 C：run `41637922942`（产品修复后首轮）
+
+这一轮在 `0ba671e` 上运行，包含本地 fallback / tab 缺失两个产品修复，以及新的
+样本完整性门禁。**它仍不是一次通过**，但失败从 7–9 个降到 6 个。
+
+| 项 | 值 |
+| --- | --- |
+| run | `41637922942` |
+| commit | `0ba671eaa576f75f28983b35b285e694f3b13546` |
+| commit 父提交 | `3cd02c1fdff38e900bd3a99a0184e5369a7abf48`（来自 GitHub commit API；workflow checkout 为 depth=1，样本内 `sourceParentSha` 为 `null`） |
+| instrumented build | `VITE_TERMINAL_SMOKE_BUILD=1`，debug，`--no-bundle` |
+| probe 配置预算 | 3000 ms |
+| binary SHA256 | `2a9351e822b5d6f2cb2df98527a58e92aff9c85b582dfec6330b7cdddd62c7b9` |
+| 每样本成功结果内 SHA | 294/294 全部为该值；6 个失败样本按旧路径未写 SHA（新路径会写） |
+| runner | GitHub Actions `macos-26-arm64`；样本内 `cpuCount=3`、`memoryBytes=7516192768`、macOS 26.6.2 |
+| 每样本 readiness timeout | `10000` ms |
+| samples | 300（1..300 完整） |
+| 成功 / 失败 | **294 / 6** |
+| 点估计失败率 | **2.00%** |
+| Wilson 95% 失败率上界（仅作参考） | 约 4.29% |
+| spawn→ready 最小 / 中位 / p95 / 最大 | 3186 / 4410 / 5742 / 8763 ms |
+| 阶段出现 | `frontend-boot=300`、`ready=300`、`terminal-mounted=297`、`session-requested=297`、`session-created=297` |
+
+失败样本：`189, 190, 260, 261, 287, 288`。
+
+| 分类 | 次数 | 失败样本 |
+| --- | --- | --- |
+| `terminal-not-mounted` | 3 | `189, 260, 287` |
+| `ssh-request-not-entered-rust` | 3 | `190, 261, 288` |
+
+成对形态仍在：`189/190`、`260/261`、`287/288`，对间间隔分别为 11.00 s、10.86 s、
+10.93 s；正常样本约 5–6 s。这说明修复没有消除成对失败，只是把每轮样本数从 7–9
+降到 6。
+
+**测量缺陷暴露**：本轮新增的 `Record runner and sample provenance` 步骤因 CommonJS
+`require` 与 top-level await 混用而失败（exit 1），导致即使样本与 summary 都已完整，
+job 仍在 provenance 步骤变红。该脚本已在后续提交修复，并本地用同一 artifact 验证。
+这不是产品失败，不能算作一次可靠性的通过或失败；但**样本本身的统计仍然有效**。
 
 ## 4. 失败分类口径
 

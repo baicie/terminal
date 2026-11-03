@@ -86,44 +86,53 @@ jobs:
         if: always()
         run: |
           node - <<'NODE'
-          const { readdir, readFile, writeFile } = require('node:fs/promises')
-          const path = require('node:path')
-          const directory = 'cold-start-samples'
-          const files = (await readdir(directory)).filter(file => /^sample-\d+\.json$/.test(file))
-          const samples = []
-          for (const file of files) {
-            try {
-              samples.push(JSON.parse(await readFile(path.join(directory, file), 'utf8')))
-            } catch {}
-          }
-          const binaryLine = (await readFile('cold-start-binary.sha256', 'utf8')).trim()
-          const binarySha256 = binaryLine.split(/\s+/)[0] ?? null
-          const unique = key => [...new Set(samples.map(sample => sample[key]).filter(Boolean))]
-          const provenance = {
-            workflowRunId: process.env.GITHUB_RUN_ID ?? null,
-            workflowRunAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
-            workflowSha: process.env.GITHUB_SHA ?? null,
-            runnerName: process.env.RUNNER_NAME ?? null,
-            runnerOs: process.env.RUNNER_OS ?? null,
-            runnerArch: process.env.RUNNER_ARCH ?? null,
-            runnerImage: process.env.ImageOS ?? null,
-            sampleCount: samples.length,
-            sourceShas: unique('sourceSha'),
-            sourceParentShas: unique('sourceParentSha'),
-            sourceTreesClean: unique('sourceTreeClean'),
-            osVersions: unique('osVersion'),
-            binarySha256,
-            sampleBinarySha256: unique('binarySha256'),
-            timeoutMs: unique('timeoutMs'),
-            instrumentedBuild: true,
-            instrumentedBuildFlag: 'VITE_TERMINAL_SMOKE_BUILD=1',
-            bootstrapConfigBudgetMs: 3000,
-          }
-          await writeFile(
-            path.join(directory, 'provenance.json'),
-            JSON.stringify(provenance, null, 2),
-          )
-          console.log(JSON.stringify(provenance, null, 2))
+          // CommonJS stdin has no top-level await, and Node refuses to guess a
+          // module format when `require` and top-level await coexist. Keep this
+          // self-contained async IIFE so provenance can never fail the run
+          // after 300 samples were already collected.
+          ;(async () => {
+            const { readdir, readFile, writeFile } = require('node:fs/promises')
+            const path = require('node:path')
+            const directory = 'cold-start-samples'
+            const files = (await readdir(directory)).filter(file => /^sample-\d+\.json$/.test(file))
+            const samples = []
+            for (const file of files) {
+              try {
+                samples.push(JSON.parse(await readFile(path.join(directory, file), 'utf8')))
+              } catch {}
+            }
+            const binaryLine = (await readFile('cold-start-binary.sha256', 'utf8')).trim()
+            const binarySha256 = binaryLine.split(/\s+/)[0] ?? null
+            const unique = key => [...new Set(samples.map(sample => sample[key]).filter(value => value !== undefined && value !== null))]
+            const provenance = {
+              workflowRunId: process.env.GITHUB_RUN_ID ?? null,
+              workflowRunAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
+              workflowSha: process.env.GITHUB_SHA ?? null,
+              runnerName: process.env.RUNNER_NAME ?? null,
+              runnerOs: process.env.RUNNER_OS ?? null,
+              runnerArch: process.env.RUNNER_ARCH ?? null,
+              runnerImage: process.env.ImageOS ?? null,
+              sampleCount: samples.length,
+              sourceShas: unique('sourceSha'),
+              sourceParentShas: unique('sourceParentSha'),
+              sourceTreesClean: unique('sourceTreeClean'),
+              osVersions: [...new Set(samples.map(sample => sample.environment?.osVersion).filter(Boolean))],
+              binarySha256,
+              sampleBinarySha256: unique('binarySha256'),
+              timeoutMs: unique('timeoutMs'),
+              instrumentedBuild: true,
+              instrumentedBuildFlag: 'VITE_TERMINAL_SMOKE_BUILD=1',
+              bootstrapConfigBudgetMs: 3000,
+            }
+            await writeFile(
+              path.join(directory, 'provenance.json'),
+              JSON.stringify(provenance, null, 2),
+            )
+            console.log(JSON.stringify(provenance, null, 2))
+          })().catch(error => {
+            console.error(error)
+            process.exitCode = 1
+          })
           NODE
 
       - name: Summarize samples

@@ -107,6 +107,7 @@ session-create-requested=30 session-created=30
 | 修复前 300 次 | **FAIL**（289/300，3.67%） |
 | 修复后 A 300 次 | **FAIL**（293/300，2.33%） |
 | 修复后 B 300 次 | **FAIL**（291/300，3.00%） |
+| 修复后 C 300 次（含产品修复） | **FAIL**（294/300，2.00%） |
 | 历史 20% 失败根因 | **NOT_RUN / 未完全复现** |
 | WebKit Unified Log 失败回调 | **NOT_OBSERVED**：7 份/9 份失败日志里都没有 `didFail`、渲染进程退出或 WebKit 崩溃 |
 | 失败阶段分类 | **PASS**（见 `cold-start-statistics.md` §3.4） |
@@ -181,3 +182,24 @@ P1 残余风险，不得用相关性替代机制证明。
 
 因此不能声称“跨样本隔离已闭合”。新增的日志时间窗与 provenance 是让下一次采样
 能回答这些问题的前提，不是答案。
+
+## 7. 修复后 C 轮的新事实
+
+run `41637922942` 在 `0ba671e` 上运行，包含两条产品修复。失败降到 6 个（2.00%），
+但失败仍严格成对：`189/190`、`260/261`、`287/288`。每对中的第一条是
+`terminal-not-mounted`（最后阶段 `ready`），第二条是 `ssh-request-not-entered-rust`
+（最后阶段 `session-created`，没有任何 SSH 阶段）。
+
+这说明：
+
+- 本地 fallback 与 tab 缺失两条路径的代码修复**没有消除这 6 个失败**；它们可能解释
+  了“session-created 却无 SSH stage”的旧形态，但不能解释第一条的挂载失败，也不能
+  证明成对失败已经消失。
+- 成功样本的 SSH 阶段完整（`ssh-connect-start → … → ssh-pty-ready →
+  ssh-shell-first-output → ssh-startup-write-done → session-created`），
+  所以第二条失败不是整体 SSH 服务不可用。
+- 失败对间隔从旧 run 的 12–15 s 降到约 11 s，仍显著高于正常样本的 5–6 s。
+  这与 `log show` 的采集窗口、以及失败后的额外进程清理时间一致，但机制仍未证明。
+
+不得把 294/300 写成“修复成功”。它只把失败率从 2.33–3.00% 降到 2.00%，仍未达到 1%
+的 RC 目标，也仍不满足“稳定”的定义。

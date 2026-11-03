@@ -132,7 +132,21 @@ function classificationOf(sample) {
   if (/never requested the session/.test(message)) {
     return 'session-not-requested'
   }
-  if (/failure is in the SSH\/shell path/.test(message)) {
+  // Accept both the current wording ("the app requested ... no SSH stage was
+  // ever recorded") and the older one ("the failure is in the SSH/shell path")
+  // so re-running the classifier over previous 300-sample artifacts stays
+  // honest instead of labelling them unclassified. The old `stages` string has
+  // no `session-created` detail, so the SSH sub-class derived below cannot tell
+  // whether that session was a local PTY; only the new samples can.
+  if (
+    /failure is in the SSH\/shell path/.test(message) ||
+    /no SSH stage was ever recorded/.test(message) ||
+    /the SSH PTY became ready, but the remote shell produced no output/.test(
+      message,
+    ) ||
+    /the remote shell produced output, but the prompt marker/.test(message) ||
+    /did not reach the PTY before the deadline/.test(message)
+  ) {
     // The stopwatch's message only proves "the session promise resolved but the
     // prompt marker did not". Name the deepest stage the product actually
     // reported so a request that never entered Rust is not counted as an

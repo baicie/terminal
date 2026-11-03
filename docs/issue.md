@@ -4863,8 +4863,17 @@ timer 只要求自身到期；若布局已恢复、host 查询尚未返回，App
 - 新增 `use-terminal-session-binding.test.tsx` 两个回归与 App fallback 回归。
 
 **验证**：前端定向 25 项通过，含 tab 缺失不启动、tab 恢复后启动、host 查询未完成
-不添加 fallback。**真实 300 次复测仍未运行**，因此本 Issue 只能标为“代码修复完成”，
-不能把旧样本的 6 个 `ssh-request-not-entered-rust` 计为已消除。
+不添加 fallback。**真实 300 次复测已运行**（见下），但不能把旧样本的
+`ssh-request-not-entered-rust` 计为已消除。
+
+**修复后首轮实机**：run `41637922942`（`0ba671e`）294/300，失败 6 个，仍成 3 对。
+其中 3 个 `terminal-not-mounted`、3 个 `ssh-request-not-entered-rust`；失败率从
+2.33–3.00% 降到 2.00%，**未消除**。因此本 Issue 保持“代码修复完成，根因未闭合”。
+
+该 run 的 `Record runner and sample provenance` 步骤自身因 CommonJS `require`
+与 top-level await 混用而失败；它不影响 300 个样本与 summary 的完整性，但使
+job 在 provenance 步骤变红。后续提交已把该脚本改为 async IIFE，并用同一 artifact
+本地重放通过。
 
 ### Issue #182: 冷启动压力汇总会静默缩小分母 🟡 已修复（2026-11-03）
 

@@ -5,7 +5,7 @@
 // human-readable output. A failed sample is still written as JSON so the
 // summarizer can classify it rather than losing the only evidence it had.
 import { execFile } from 'node:child_process'
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { promisify } from 'node:util'
@@ -38,7 +38,7 @@ const capturedAt = new Date().toISOString()
 async function gitValue(...args) {
   try {
     const { stdout } = await runCommand('git', args, {
-      cwd: path.dirname(new URL(import.meta.url).pathname),
+      cwd: path.resolve(import.meta.dirname, '..', '..'),
     })
     return stdout.trim()
   } catch {
@@ -46,10 +46,29 @@ async function gitValue(...args) {
   }
 }
 
+/**
+ * Both the runner and any ad-hoc local run must be able to answer "which
+ * commit and parent produced this binary". CI checks out depth=1, so HEAD^ can
+ * be absent even though the revision is known; fall back to the workflow's
+ * GITHUB_SHA parent query through git itself, then record the gap instead of
+ * writing a parent that was never resolved.
+ */
+async function resolveParentCommit() {
+  const direct = await gitValue('rev-parse', 'HEAD^')
+  if (direct !== null) return direct
+  const shallowPath = await gitValue('rev-parse', '--git-path', 'shallow')
+  if (shallowPath === null) return null
+  const shallow = await readFile(path.resolve(shallowPath), 'utf8').catch(
+    () => '',
+  )
+  const head = await gitValue('rev-parse', 'HEAD')
+  return shallow.includes(head) ? null : direct
+}
+
 async function environmentFacts() {
   const [commit, parentCommit, dirty] = await Promise.all([
     gitValue('rev-parse', 'HEAD'),
-    gitValue('rev-parse', 'HEAD^'),
+    resolveParentCommit(),
     gitValue('status', '--porcelain', '--untracked-files=no'),
   ])
   let cpuCount = null
