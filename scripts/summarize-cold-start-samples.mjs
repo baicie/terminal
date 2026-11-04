@@ -96,9 +96,7 @@ function stageNames(sample) {
  * `tabId@workspaceId`, so "unknown" must stay distinct from "local": the whole
  * point is to stop calling a local PTY a failed SSH transport.
  */
-export function mountedTerminalType(sample) {
-  const stages = Array.isArray(sample.stages) ? sample.stages : []
-  const mount = stages.find(stage => stage?.stage === 'terminal-mounted')
+function terminalTypeOfMount(mount) {
   const detail = typeof mount?.detail === 'string' ? mount.detail : ''
   const parts = detail.split('@')
   if (parts.length < 3) return 'unknown'
@@ -106,6 +104,30 @@ export function mountedTerminalType(sample) {
   return type === 'local' || type === 'remote' || type === 'serial'
     ? type
     : 'unknown'
+}
+
+/**
+ * First mount. Kept for failure analysis: a startup that first mounted a local
+ * fallback and only later restored remote is still evidence that arbitration
+ * let the fallback run.
+ */
+export function mountedTerminalType(sample) {
+  const stages = Array.isArray(sample.stages) ? sample.stages : []
+  return terminalTypeOfMount(
+    stages.find(stage => stage?.stage === 'terminal-mounted'),
+  )
+}
+
+/**
+ * Last mount. This is the terminal the user actually kept: a transient local
+ * fallback replaced by the saved remote layout within the same startup is not
+ * a failed remote mount (run 41843065808, sample 37: local at 5010/5066 ms,
+ * remote at 5124 ms).
+ */
+export function finalMountedTerminalType(sample) {
+  const stages = Array.isArray(sample.stages) ? sample.stages : []
+  const mounts = stages.filter(stage => stage?.stage === 'terminal-mounted')
+  return terminalTypeOfMount(mounts.at(-1))
 }
 
 /**
@@ -366,12 +388,15 @@ export async function summarizeColdStartSamples(
   const successes = samples.filter(sample => sample.ok === true)
   if (requireMount === 'remote') {
     const wrongMount = successes.filter(
-      sample => mountedTerminalType(sample) !== 'remote',
+      sample => finalMountedTerminalType(sample) !== 'remote',
     )
     if (wrongMount.length > 0) {
       failClosed(
-        `successful remote samples mounted the wrong terminal: ${wrongMount
-          .map(sample => `${sample.sampleIndex}=${mountedTerminalType(sample)}`)
+        `successful remote samples ended on the wrong terminal: ${wrongMount
+          .map(
+            sample =>
+              `${sample.sampleIndex}=${finalMountedTerminalType(sample)}`,
+          )
           .join(',')}`,
       )
     }
@@ -440,6 +465,11 @@ export async function summarizeColdStartSamples(
       accumulator[key] = (accumulator[key] ?? 0) + 1
       return accumulator
     }, {}),
+    finalMountEvidence: samples.reduce((accumulator, sample) => {
+      const key = finalMountedTerminalType(sample)
+      accumulator[key] = (accumulator[key] ?? 0) + 1
+      return accumulator
+    }, {}),
     failureDetails: failures.map(sample => ({
       sampleIndex: sample.sampleIndex ?? null,
       capturedAt: sample.capturedAt ?? null,
@@ -472,6 +502,7 @@ function renderSummary(summary, verdict) {
     `durationMs min=${summary.durationMs.min} median=${summary.durationMs.median} p95=${summary.durationMs.p95} max=${summary.durationMs.max}`,
     `stagePresence=${JSON.stringify(summary.stagePresence)}`,
     `mountEvidence=${JSON.stringify(summary.mountEvidence)}`,
+    `finalMountEvidence=${JSON.stringify(summary.finalMountEvidence)}`,
     `classification=${JSON.stringify(summary.classification)}`,
   ]
   for (const failure of summary.failureDetails) {

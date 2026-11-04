@@ -5090,3 +5090,20 @@ journal 键又固定为 `terminal.workspace.recovery.v1.remote-cold-workspace`�
 
 **验证**：隔离脚本测试 5 项通过（新增“control 到 SSH 但 prompt marker 失败仍
 ISOLATION_PASS”与“control 未挂载 remote 则 FAIL”）。修复后的第二轮待重跑。
+
+### Issue #190: `--require-mount remote` 用首次挂载误判临时 fallback ✅ 已修复（2026-11-04）
+
+**严重程度**：🟡 Important（测量判据）
+
+**问题**：第二轮 `41843065808` 的样本 37 先挂载本地 fallback，再在 5124 ms 被
+保存的远程布局替换（`restore-layout-committed reason=replaced-startup-fallback`），
+远程 marker 已写入、`markerReady=true`。但 `--require-mount remote` 使用
+**第一次** `terminal-mounted`，把它判成 `37=local`，于是 300 样本的 workflow
+在 `Summarize samples` 以 exit 3 变红。这不是产品失败，是判据过严。
+
+**修复**：`summarize-cold-start-samples.mjs` 新增 `finalMountedTerminalType()`
+（最后一次挂载）；`--require-mount remote` 改用最终挂载；`summary.json` 同时保留
+`mountEvidence`（首次，用于失败分析）与 `finalMountEvidence`（最终，用于门禁）。
+用同一 artifact 复算：**300/300 `RELIABILITY_PASS`**，首次 remote 299/local 1，
+最终 remote 300。workflow 的红色状态保留在 GitHub，不改写为绿；修复后的 clean
+round 另行运行。

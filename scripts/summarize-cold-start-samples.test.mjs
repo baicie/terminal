@@ -430,3 +430,49 @@ test('marks causal violations as an invalid measurement, not a pass', async () =
     assert.equal(summary.verdict, 'MEASUREMENT_INVALID')
   })
 })
+
+test('uses the final mount for the remote gate and keeps the first for analysis', async () => {
+  await withDirectory(async directory => {
+    await writeSample(
+      directory,
+      'sample-1.json',
+      successSample(1, {
+        ...provenanceFields,
+        stages: [
+          { stage: 'frontend-boot', atMs: 0 },
+          { stage: 'ready', atMs: 500 },
+          {
+            stage: 'terminal-mounted',
+            atMs: 900,
+            detail: 'local-1@workspace@local',
+          },
+          {
+            stage: 'terminal-mounted',
+            atMs: 1_200,
+            detail: 'remote-1@workspace@remote',
+          },
+          { stage: 'session-create-requested', atMs: 1_300 },
+        ],
+      }),
+    )
+    const summary = await summarizeColdStartSamples(directory, {
+      expectedSamples: 1,
+      requireMount: 'remote',
+    })
+    assert.deepEqual(summary.mountEvidence, { local: 1 })
+    assert.deepEqual(summary.finalMountEvidence, { remote: 1 })
+  })
+})
+
+test('finalMountedTerminalType reports the last mount', async () => {
+  const sample = successSample(1, {
+    stages: [
+      { stage: 'terminal-mounted', atMs: 100, detail: 'local-1@ws@local' },
+      { stage: 'terminal-mounted', atMs: 200, detail: 'remote-1@ws@remote' },
+    ],
+  })
+  const { finalMountedTerminalType } = await import(
+    './summarize-cold-start-samples.mjs'
+  )
+  assert.equal(finalMountedTerminalType(sample), 'remote')
+})

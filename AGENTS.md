@@ -533,10 +533,10 @@ pnpm add <package-name>
 - ✅ **两个失败已定位为确定性缺陷，不是 WebKit 崩溃**：228 = App chunk 的 8 秒 deadline 被错传成 terminal fallback deadline；229 = 共享 WKWebView localStorage 的 local-only recovery journal 污染（两个样本的 `local-1793728115282` tab id 生成时间早于 229 的 `capturedAt`）
 - ✅ Phase 9.4.2 代码：`startup-recovery-arbiter` 状态机；layout 读取失败抛错重试；workspace/layout 3 秒超时；`loadHosts` generation 竞态；用户输入与程序化写入区分；journal 不再遮蔽 remote 布局；fallback 与用户 tab 合并
 - ✅ 测量链：失败样本补 `binarySha256`/fixture/stages；checkout `fetch-depth: 2`；汇总器 `--require-provenance` / SHA / timeout / mount fail-closed；每样本前清空 WebKit 数据；新增 1 ms 强制超时 + 正常样本的隔离验证
-- ✅ 本地门禁：前端 **153 文件 / 1393 项**、脚本 **83 项**、typecheck、ESLint、source-size **568 文件**、actionlint 通过；本机真实回归 **10/10 remote、0 local**，隔离验证 **ISOLATION_PASS**
+- ✅ 本地门禁：前端 **153 文件 / 1393 项**、冷启动相关脚本 **83 项**、typecheck、ESLint、source-size **568 文件**、actionlint 通过；本机真实回归 **10/10 remote、0 local**，隔离验证 **ISOLATION_PASS**
 - ✅ **G 轮真实 runner（run `41838269784`，`ac01091`）：300/300（100%），`RELIABILITY_PASS`**；`remote=300`、0 个 local；中位 3412 ms / p95 3722 ms；严格 provenance 汇总通过；`Verify cross-sample isolation` 真实 runner **ISOLATION_PASS**
 - ✅ **WebKit CRASHSTRING 已排除为失败信号**：控制组两个成功样本各 1 次 `CRASHSTRING`、0 个 `processExits`
-- 🟡 第二轮尝试 `41841717975` 被隔离门禁的 control `ssh-prompt-marker-missing` 挡住（control 已挂载 remote 并进入 SSH，非隔离污染）；门禁已解耦为“新 fixture + remote mount + 进入 SSH”，控制样本的产品失败留给 300 样本分母；修复后重跑中。单轮 0/300 的 Wilson 95% 上界约 1.26%，多轮结论待第二轮
+- 🟡 第二轮尝试 `41841717975` 被隔离门禁的 control `ssh-prompt-marker-missing` 挡住；解耦后重跑 `41843065808`，artifact 用**最终挂载**判据复算为 **300/300 `RELIABILITY_PASS`**（首次 remote 299/local 1，样本 37 的临时 local 在 5124 ms 被 remote 替换，最终 remote 300）。workflow 因旧的首次挂载门禁为红，clean round 待重跑。单轮 0/300 的 Wilson 95% 上界约 1.26%
 - 🔴 六份验收证据仍因 `FINGERPRINT_PATHS` 内源码改动而失效；真实矩阵 run `41841781191` 进行中，完成后安装证据
 - 📋 Phase 9.4.2 剩余：第二轮压力结论、六份证据重采、最终 CI 11/11、PR #6 合并后 rebase PR #7
 

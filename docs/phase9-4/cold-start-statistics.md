@@ -515,8 +515,43 @@ runner 复测之前，本条仍不能写成“已修复”。
 且没有进程退出事件，因此它不是失败信号，也不是 F 轮根因。
 
 **统计边界**：0/300 的 Wilson 95% 上界约 **1.26%**（单侧 Clopper–Pearson 约
-1.0%）。这只是单轮结果；第二轮（run `41841717975`）正在进行，不能因为这一轮
-300/300 就宣布长期稳定。
+1.0%）。这只是单轮结果；不能因为这一轮 300/300 就宣布长期稳定。
+
+## 3.13 第二轮：run `41843065808`（2026-11-04，artifact 复算）
+
+第一次第二轮尝试 `41841717975` 在隔离门禁的 control 上遇到
+`ssh-prompt-marker-missing`，300 样本未执行（见 Issue #189）。门禁解耦后重跑：
+
+| 项 | 值 |
+| --- | --- |
+| run | `41843065808` |
+| commit | `2db95aa633d0e2f950b0c0fd08fe472b89e639ea` |
+| binary SHA256 | `0eb823fa8d366e070ac7cb6bd0810fd64a273ac23f73765aaf6e4f9f416eac8c`（与 G 轮相同） |
+| samples | 300（1..300 完整） |
+| 成功 / 失败 | **300 / 0** |
+| verdict（artifact 复算） | **RELIABILITY_PASS** |
+| spawn→ready 最小 / 中位 / p95 / 最大 | 4023 / 4978 / 6393 / 8635 ms |
+| 首次挂载 | `remote=299`、`local=1` |
+| **最终挂载** | **`remote=300`** |
+
+**样本 37 是本轮唯一的 local 首次挂载，但不是失败**：
+
+- `workspace-load-start@365ms`；
+- `workspace-load-failed@3262ms`，原因是 **Workspace recovery timed out**（3 秒上限）；
+- 重试 `recovery-2` 启动；`fallback-defer-expired@4022ms` 后本地 fallback 打开；
+- `terminal-mounted local@5010/5066ms`；
+- `layout-load-done@5101ms` → `restore-layout-committed@5119ms`
+  （`reason=replaced-startup-fallback`）→ `terminal-mounted remote@5124ms`；
+- 远程 marker `REMOTE_COLD_MARKER` 已写入，`markerReady=true`。
+
+也就是说，本地 fallback 只存在约 1.1 秒，随后被保存的远程布局替换；最终状态是
+remote。旧汇总器用**第一次** `terminal-mounted` 判定 `--require-mount remote`，
+把这一样本判成失败，导致 workflow 在 `Summarize samples` 以 exit 3 变红。
+用**最后一次**挂载复算 artifact 后是 **300/300 `RELIABILITY_PASS`**。
+
+`mountEvidence` 现在同时报告首次与最终挂载：首次用于失败分析，最终用于
+`--require-mount remote` 门禁。workflow 这一轮的红色状态保留在 GitHub 上，不
+改写为绿；修复后的 clean round 将另行运行。
 
 ## 4. 失败分类口径
 

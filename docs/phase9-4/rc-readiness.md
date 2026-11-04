@@ -16,8 +16,8 @@
 | 冷启动 F 轮 | run `41683645429`（`7600963`）：**298/300，0.67%** |
 | **冷启动 G 轮（9.4.2 修复后）** | run `41838269784`（`ac01091`）：**300/300，100%，RELIABILITY_PASS**；`remote=300`，中位 3412 ms / p95 3722 ms |
 | 跨样本隔离 | run `41838269784`：**ISOLATION_PASS**（真实 runner） |
-| 第二轮压力 | run `41841717975`：隔离门禁失败（control `ssh-prompt-marker-missing`，未进入 300 样本）；门禁已解耦，重跑中 |
-| 本地门禁 | 前端 **153 文件 / 1393 项**、脚本 **83 项**、source-size **568 文件**、typecheck/ESLint/actionlint 通过 |
+| 第二轮压力 | run `41843065808`（`2db95aa`）：artifact 复算 **300/300 `RELIABILITY_PASS`**；首次挂载 remote 299 / local 1（样本 37），最终挂载 **remote 300**。workflow 因旧的“首次挂载”门禁变红，门禁已改为最终挂载；clean round 待重跑 |
+| 本地门禁 | 前端 **153 文件 / 1393 项**、冷启动相关脚本 **83 项**、source-size **568 文件**、typecheck/ESLint/actionlint 通过 |
 
 六份验收证据必须由 `real-machine-matrix` 在**最终冻结源码**上重采，不能改旧 manifest；
 本轮不自动合并、不打 tag、不发布。
@@ -33,7 +33,7 @@ F 轮的两个失败已定位为两个确定性缺陷，不是 WebKit 崩溃：
 | layout 读取失败被吞、workspace/layout 无超时、`loadHosts` generation 竞态 | 代码审查 + 现有测试 | **CODE FIXED**；抛错重试、3 秒超时、host 快照不可用时保留远程 tab |
 | fallback 全有或全无替换、程序化写入误判为用户接管 | 代码审查 | **CODE FIXED**；用户输入过的 fallback 与远程布局合并，`wasUserInput` 区分来源 |
 
-本地门禁：前端 **153 文件 / 1393 项**、脚本 **83 项**、typecheck、ESLint、
+本地门禁：前端 **153 文件 / 1393 项**、冷启动相关脚本 **83 项**、typecheck、ESLint、
 source-size **568 文件**、actionlint 通过。新增 `startup-recovery-arbiter` 状态机、
 分段 trace、provenance fail-closed、跨样本隔离验证。本机真实回归 **10/10 remote、
 0 local**（中位 3475 ms），隔离验证 **ISOLATION_PASS**；但二进制来自未提交工作树
@@ -44,8 +44,15 @@ source-size **568 文件**、actionlint 通过。新增 `startup-recovery-arbite
 严格 provenance 汇总通过；`Verify cross-sample isolation` success；控制组成功样本
 也出现 1 次 `CRASHSTRING`、0 个进程退出，证明该字符串不是失败信号。
 
-第二轮压力（`41841717975`）与真实矩阵/六份证据重采仍在进行。**在第二轮、证据
-门禁 0 problem、最终 CI 11/11 出现之前，READY_FOR_RC 仍为否。**
+**真实矩阵（run `41841781191`，`ac01091`）**：macOS / Linux / Windows
+**3/3 success**；六份证据已安装，`check-verification-evidence.mjs` 报
+**0 problem**；debug `0eb823fa…`、release `a1cf8181…`。
+
+**第二轮（run `41843065808`，`2db95aa`）**：artifact 用最终挂载判据复算为
+**300/300 `RELIABILITY_PASS`**；首次挂载 remote 299 / local 1（样本 37 的临时
+fallback，5124 ms 被 remote 替换），最终挂载 remote 300。workflow 因旧的
+“首次挂载”门禁为红，该红色状态保留；修复后 clean round 待重跑。
+**在 clean round 与最终 CI 11/11 出现之前，READY_FOR_RC 仍为否。**
 
 详见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`。
 
@@ -73,7 +80,7 @@ source-size **568 文件**、actionlint 通过。新增 `startup-recovery-arbite
 | 失败样本逐样本构建身份 | **PASS（G 轮）** | 300/300 的 `sourceSha=ac01091`、`sourceParentSha=7600963`、`binarySha256=0eb823fa…`、`timeoutMs=10000` |
 | 跨样本隔离 | **PASS（G 轮，真实 runner）** | `Verify cross-sample isolation` success；强制 1 ms 超时后正常样本仍 300/300 远程 |
 | 修复后本地门禁 | **PASS** | 前端 152 文件 / 1367 项、脚本 383 项、typecheck、ESLint、source-size、actionlint |
-| 六份验收证据（当前源码） | **STALE** | 当前改动在 `FINGERPRINT_PATHS` 内；必须真实 runner 重采，禁止改旧证据 |
+| 六份验收证据（当前源码） | **PASS** | run `41841781191`（`ac01091`，指纹 `d14fb1d1…`）：macOS / Linux / Windows 3/3 success；debug `0eb823fa…`、release `a1cf8181…`；门禁 **0 problem** |
 | RSA Marvin 可达性 | **PASS**（有条件接受） | 见 `rsa-threat-model.md` |
 | RSA 上游修复 | **BLOCKED_EXTERNAL** | `patched = []` |
 | 单版本安装 + 数据内容保留 | **PASS** | 现有三平台 install job |

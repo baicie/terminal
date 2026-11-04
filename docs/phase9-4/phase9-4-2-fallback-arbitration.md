@@ -157,6 +157,8 @@ App 侧新增 `fallback-deadline-reached`、`fallback-decision`、
 | 真实 runner 隔离验证 | **ISOLATION_PASS**；forced port 49195 / control 49199 |
 | WebKit 控制组 | 样本 1/2（均成功）：2299/2215 行，`crashStrings=1`、`processExits=0` |
 | 第二轮尝试（run `41841717975`） | 隔离门禁失败：control 已挂载 remote、进入 SSH、拿到 shell 首字节，但 `ssh-prompt-marker-missing`；300 样本被跳过。门禁已解耦为“隔离属性”而非“控制样本 ready” |
+| 第二轮重跑（run `41843065808`，artifact 复算） | **300/300 `RELIABILITY_PASS`**；中位 4978 ms / p95 6393 ms；首次挂载 remote 299 / local 1，**最终 remote 300**；样本 37 的临时 local 在 5124 ms 被 remote 替换 |
+| 真实矩阵（run `41841781191`） | macOS / Linux / Windows **3/3 success**；六份证据已安装，门禁 **0 problem**；debug `0eb823fa…`、release `a1cf8181…` |
 
 本机回归使用的二进制由**未提交工作树**构建（`sourceTreeClean=false`），只能证明
 产品路径在开发机上工作；真实 runner G 轮才是有效证据。第二轮 `41841717975`
@@ -165,9 +167,9 @@ App 侧新增 `fallback-deadline-reached`、`fallback-decision`、
 ## 7. 仍未完成（不能写成 PASS）
 
 1. 第一轮真实 300 次（G 轮）已 **300/300**；第二次尝试 `41841717975` 在隔离
-   门禁处被 control 的 `ssh-prompt-marker-missing` 挡住，300 样本未执行。门禁已
-   改为只校验“下一个样本拿到新 fixture、挂载 remote、进入 SSH”，产品 readiness
-   留给 300 样本分母；修复后需要重跑第二轮。
+   门禁处被 control 的 `ssh-prompt-marker-missing` 挡住，300 样本未执行。重跑
+   `41843065808` 的 artifact 用最终挂载判据复算为 **300/300**；workflow 因旧的
+   “首次挂载”门禁为红，修复后的 clean round 仍需运行。
 2. 用新的分段 trace 证明样本 228 的 recovery 停点：G 轮的 trace 已能显示
    全程 `layout-load-done` / `host-load-done` / `restore-layout-committed`，
    但 F 轮旧样本没有这些阶段，无法事后补齐。
