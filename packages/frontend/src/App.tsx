@@ -13,6 +13,7 @@ import { applyNotificationPrefs } from './service/notifications'
 import { syncCloseToTray } from './service/window-ux'
 import { useTerminalHostWake } from './hooks/use-terminal-host-wake'
 import {
+  STARTUP_FALLBACK_DEFER_MS,
   STARTUP_TERMINAL_FALLBACK_MS,
   WORKSPACE_RECOVERY_RETRY_DELAYS_MS,
   useStartupWorkspaceRecovery,
@@ -20,7 +21,11 @@ import {
 
 // Leave enough time for SQLite/workspace recovery while reserving most of the
 // ten-second first-terminal budget for PTY startup and the shell prompt.
-export { STARTUP_TERMINAL_FALLBACK_MS, WORKSPACE_RECOVERY_RETRY_DELAYS_MS }
+export {
+  STARTUP_FALLBACK_DEFER_MS,
+  STARTUP_TERMINAL_FALLBACK_MS,
+  WORKSPACE_RECOVERY_RETRY_DELAYS_MS,
+}
 
 interface AppProps {
   /** Absolute attempt deadline supplied by the bootstrapper. */

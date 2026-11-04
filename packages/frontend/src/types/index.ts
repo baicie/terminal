@@ -101,6 +101,11 @@ export interface Tab {
   label: string
   /** Temporary empty-workspace startup fallback; never persisted by recovery. */
   startupFallback?: boolean
+  /**
+   * The user typed into this startup fallback. It is still app-owned, but a
+   * late remote restore must keep it instead of replacing it (Issue #184).
+   */
+  startupFallbackInteracted?: boolean
   /** Process-local OSC 0/2 title; workspace recovery intentionally drops it. */
   title?: string
   type: 'local' | 'remote' | 'serial'

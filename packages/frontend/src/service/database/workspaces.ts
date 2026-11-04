@@ -117,7 +117,12 @@ export async function getWorkspaceLayout(
   if (results.length === 0) return null
   try {
     return JSON.parse(results[0].layout_data)
-  } catch {
-    return null
+  } catch (error) {
+    // "There is no row" and "the row is unreadable" need opposite answers:
+    // the first may persist a first-run local tab, the second must preserve
+    // the saved layout and let startup recovery retry.
+    throw new Error(`Workspace layout ${workspaceId} is not valid JSON`, {
+      cause: error,
+    })
   }
 }

@@ -167,6 +167,7 @@ export async function runRemoteColdStartStopwatch({
     path.join(dependencies.tempDirectory, 'terminal-remote-cold-fixture-'),
   )
   let fixture
+  let primaryError = null
   try {
     fixture = await dependencies.startSshd({
       runDirectory,
@@ -250,10 +251,53 @@ export async function runRemoteColdStartStopwatch({
       expectedCwd: fixture.homePath,
       expectedExitCode: 1,
     }
+  } catch (error) {
+    primaryError = error
+    // A failed sample still needs the fixture identity to prove it was a real
+    // remote attempt and to compare it with the next sample's isolated fixture.
+    if (error && typeof error === 'object' && fixture) {
+      error.fixture = {
+        host: fixture.host,
+        port: fixture.port,
+        username: fixture.username,
+      }
+      error.shell = shell
+      error.shellIntegration = shellIntegration
+      error.marker = DEFAULT_MARKER
+      error.promptMarker = DEFAULT_PROMPT_MARKER
+    }
+    if (error && typeof error === 'object') {
+      // The isolation verifier checks that a failed sample really removed its
+      // per-sample home and fixture directory before the next sample starts.
+      error.tempDirectories = { home, runDirectory }
+    }
+    throw error
   } finally {
-    await fixture?.stop().catch(() => {})
-    await dependencies.rm(runDirectory, MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS)
-    await dependencies.rm(home, MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS)
+    const cleanupErrors = []
+    try {
+      await fixture?.stop()
+    } catch (error) {
+      cleanupErrors.push(error)
+    }
+    for (const directory of [runDirectory, home]) {
+      try {
+        await dependencies.rm(
+          directory,
+          MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS,
+        )
+      } catch (error) {
+        cleanupErrors.push(error)
+      }
+    }
+    if (cleanupErrors.length > 0) {
+      if (primaryError && typeof primaryError === 'object') {
+        primaryError.cleanupErrors = cleanupErrors.map(error =>
+          error instanceof Error ? error.message : String(error),
+        )
+      } else {
+        throw cleanupErrors[0]
+      }
+    }
   }
 }
 

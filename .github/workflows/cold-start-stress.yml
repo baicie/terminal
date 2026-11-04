@@ -36,9 +36,14 @@ jobs:
     env:
       SAMPLES: ${{ github.event.inputs.samples || '300' }}
       TIMEOUT_MS: ${{ github.event.inputs.timeout_ms || '10000' }}
+      CONTROL_SAMPLES: '2'
       VITE_TERMINAL_SMOKE_BUILD: '1'
     steps:
       - uses: actions/checkout@v4
+        with:
+          # `HEAD^` must resolve so every sample records its real parent SHA
+          # instead of a bare null (Issue #185).
+          fetch-depth: 2
       - uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
@@ -56,35 +61,69 @@ jobs:
           shasum -a 256 src-tauri/target/debug/terminal | tee cold-start-binary.sha256
           node -e "const fs=require('fs');const cp=require('child_process');const parent=(()=>{try{return cp.execFileSync('git',['rev-parse','HEAD^'],{encoding:'utf8'}).trim()}catch{return null}})();fs.writeFileSync('cold-start-build.json',JSON.stringify({sourceSha:process.env.GITHUB_SHA,sourceParentSha:parent,instrumentedBuild:process.env.VITE_TERMINAL_SMOKE_BUILD==='1',buildKind:'debug',bundled:false,nodeVersion:process.version,pnpmVersion:process.env.PNPM_VERSION},null,2))"
 
+      - name: Verify cross-sample isolation
+        run: |
+          mkdir -p cold-start-isolation
+          # One deliberately hopeless sample, then one normal sample on the
+          # same binary. The verifier proves the timeout left no temp dirs and
+          # that the next run got a fresh SSH fixture.
+          node scripts/run-cold-start-stress-sample.mjs \
+            1 cold-start-isolation/forced.json \
+            "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal" 1 || true
+          rm -rf "$HOME/Library/WebKit/com.baicie.termius" \
+            "$HOME/Library/Caches/com.baicie.termius" \
+            "$HOME/Library/HTTPStorages/com.baicie.termius" 2>/dev/null || true
+          node scripts/run-cold-start-stress-sample.mjs \
+            2 cold-start-isolation/control.json \
+            "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal" "$TIMEOUT_MS"
+          node scripts/verify-cold-start-isolation.mjs cold-start-isolation
+
       - name: Collect cold-start samples
         run: |
           mkdir -p cold-start-samples
           for i in $(seq 1 "$SAMPLES"); do
             echo "=== sample $i / $SAMPLES ==="
+            # WKWebView keeps localStorage in the real user home even when the
+            # process HOME is redirected. A local-only recovery journal from one
+            # sample was inherited by the next (samples 228/229 shared the same
+            # local-1793728115282 tab id). Each sample must start with an empty
+            # web data store; that is isolation, not a timing tweak.
+            rm -rf "$HOME/Library/WebKit/com.baicie.termius" \
+              "$HOME/Library/Caches/com.baicie.termius" \
+              "$HOME/Library/HTTPStorages/com.baicie.termius" 2>/dev/null || true
             node scripts/run-cold-start-stress-sample.mjs \
               "$i" \
               "cold-start-samples/sample-$i.json" \
               "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal" \
               "$TIMEOUT_MS" || true
 
+            SAMPLE_OK=0
             if [ -f "cold-start-samples/sample-$i.json" ] \
-              && ! node -e "const s=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));process.exit(s.ok===true?0:1)" "cold-start-samples/sample-$i.json"; then
-              # A failed readiness needs the process-level evidence the stage
-              # file cannot carry. Keep the query bounded so one failure cannot
-              # consume the whole stress budget. Scope the window to this
-              # sample's own capturedAt: a 4-minute tail also includes the
-              # previous samples' processes and makes the log look like
-              # cross-sample contamination that never happened.
-              # `capturedAt` is UTC with fractional seconds. `log show` takes
-              # host-local `Y-M-D H:m:s`, and manually adding eight hours is
-              # wrong on a UTC runner (it produced a 44-byte header-only log).
-              # Convert the real instant to epoch, then let `date -r` render it
-              # in the host timezone.
-              SAMPLE_EPOCH="$(node -e "const t=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).capturedAt;process.stdout.write(String(Math.floor(Date.parse(t)/1000)))" "cold-start-samples/sample-$i.json")"
-              SAMPLE_START_LOCAL="$(date -r "$SAMPLE_EPOCH" '+%Y-%m-%d %H:%M:%S')"
-              log show --start "$SAMPLE_START_LOCAL" --end "$(date -v+20S '+%Y-%m-%d %H:%M:%S')" --info --debug --style compact \
-                --predicate 'process == "terminal" OR process == "com.apple.WebKit.WebContent"' \
-                > "cold-start-samples/sample-$i-webkit.log" || true
+              && node -e "const s=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));process.exit(s.ok===true?0:1)" "cold-start-samples/sample-$i.json"; then
+              SAMPLE_OK=1
+            fi
+            # Failures get process-level evidence; the first CONTROL_SAMPLES
+            # successes get the same log so launchservicesd/CRASHSTRING can be
+            # compared against a control instead of assumed (Issue #184).
+            if [ "$SAMPLE_OK" -eq 0 ] || [ "$i" -le "$CONTROL_SAMPLES" ]; then
+              if [ -f "cold-start-samples/sample-$i.json" ]; then
+                # A failed readiness needs the process-level evidence the stage
+                # file cannot carry. Keep the query bounded so one failure cannot
+                # consume the whole stress budget. Scope the window to this
+                # sample's own capturedAt: a 4-minute tail also includes the
+                # previous samples' processes and makes the log look like
+                # cross-sample contamination that never happened.
+                # `capturedAt` is UTC with fractional seconds. `log show` takes
+                # host-local `Y-M-D H:m:s`, and manually adding eight hours is
+                # wrong on a UTC runner (it produced a 44-byte header-only log).
+                # Convert the real instant to epoch, then let `date -r` render it
+                # in the host timezone.
+                SAMPLE_EPOCH="$(node -e "const t=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).capturedAt;process.stdout.write(String(Math.floor(Date.parse(t)/1000)))" "cold-start-samples/sample-$i.json")"
+                SAMPLE_START_LOCAL="$(date -r "$SAMPLE_EPOCH" '+%Y-%m-%d %H:%M:%S')"
+                log show --start "$SAMPLE_START_LOCAL" --end "$(date -v+20S '+%Y-%m-%d %H:%M:%S')" --info --debug --style compact \
+                  --predicate 'process == "terminal" OR process == "com.apple.WebKit.WebContent"' \
+                  > "cold-start-samples/sample-$i-webkit.log" || true
+              fi
             fi
           done
 
@@ -100,44 +139,93 @@ jobs:
             const { readdir, readFile, writeFile } = require('node:fs/promises')
             const path = require('node:path')
             const directory = 'cold-start-samples'
-            const files = (await readdir(directory)).filter(file => /^sample-\d+\.json$/.test(file))
+            const expected = Number(process.env.SAMPLES)
+            const files = (await readdir(directory))
+              .filter(file => /^sample-\d+\.json$/.test(file))
+              .sort((a, b) => Number(a.match(/\d+/)[0]) - Number(b.match(/\d+/)[0]))
+            if (files.length !== expected) {
+              throw new Error(`expected ${expected} sample files, found ${files.length}`)
+            }
             const samples = []
             for (const file of files) {
               try {
                 samples.push(JSON.parse(await readFile(path.join(directory, file), 'utf8')))
-              } catch {}
+              } catch (error) {
+                throw new Error(`${file} is not valid JSON: ${error.message}`)
+              }
             }
             const binaryLine = (await readFile('cold-start-binary.sha256', 'utf8')).trim()
             const binarySha256 = binaryLine.split(/\s+/)[0] ?? null
             const build = JSON.parse(await readFile('cold-start-build.json', 'utf8'))
-            const unique = key => [...new Set(samples.map(sample => sample[key]).filter(value => value !== undefined && value !== null))]
+            const workflowSha = process.env.GITHUB_SHA ?? null
+            const timeoutMs = Number(process.env.TIMEOUT_MS)
+            const controlSamples = Number(process.env.CONTROL_SAMPLES ?? 0)
+            const problems = []
+            const wrongBinary = samples
+              .filter(sample => sample.binarySha256 !== binarySha256)
+              .map(sample => sample.sampleIndex)
+            if (wrongBinary.length > 0) {
+              problems.push(`binarySha256 differs or is missing on samples: ${wrongBinary.join(',')}`)
+            }
+            const wrongSource = samples
+              .filter(sample => sample.sourceSha !== workflowSha || sample.sourceSha !== build.sourceSha)
+              .map(sample => sample.sampleIndex)
+            if (wrongSource.length > 0) {
+              problems.push(`sourceSha differs or is missing on samples: ${wrongSource.join(',')}`)
+            }
+            const wrongTimeout = samples
+              .filter(sample => sample.timeoutMs !== timeoutMs)
+              .map(sample => sample.sampleIndex)
+            if (wrongTimeout.length > 0) {
+              problems.push(`timeoutMs differs or is missing on samples: ${wrongTimeout.join(',')}`)
+            }
+            for (const sample of samples) {
+              if (sample.sourceParentSha === null || sample.sourceParentSha === undefined) {
+                if (sample.sourceParentShaSource !== 'unknown' || !sample.sourceParentShaReason) {
+                  problems.push(`sample ${sample.sampleIndex} has an unlabelled null parent SHA`)
+                }
+              }
+            }
             const webkitLogs = []
             for (const sample of samples) {
-              if (sample.ok === true) continue
               const logPath = path.join(directory, `sample-${sample.sampleIndex}-webkit.log`)
-              let bytes = 0
-              let lines = 0
+              let contents = null
               try {
-                const contents = await readFile(logPath, 'utf8')
-                bytes = contents.length
-                lines = contents
-                  .split('\n')
-                  .filter(line => line.trim() !== '' && !line.startsWith('Timestamp')).length
+                contents = await readFile(logPath, 'utf8')
               } catch {}
-              webkitLogs.push({ sampleIndex: sample.sampleIndex, bytes, lines })
+              if (contents === null) {
+                if (sample.ok !== true) {
+                  problems.push(`failed sample ${sample.sampleIndex} has no WebKit log`)
+                }
+                continue
+              }
+              const rows = contents.split('\n').filter(line => line.trim() !== '' && !line.startsWith('Timestamp'))
+              const crashStrings = rows.filter(line => line.includes('CRASHSTRING')).length
+              const processExits = rows.filter(line => /processDidExit|didCrash|SIGKILL/.test(line)).length
+              if (rows.length === 0) {
+                if (sample.ok !== true) {
+                  problems.push(`failed sample ${sample.sampleIndex} has an empty WebKit log`)
+                } else if (sample.sampleIndex <= controlSamples) {
+                  problems.push(`control sample ${sample.sampleIndex} has an empty WebKit log`)
+                }
+              }
+              webkitLogs.push({
+                sampleIndex: sample.sampleIndex,
+                kind: sample.ok === true ? 'control' : 'failure',
+                bytes: contents.length,
+                lines: rows.length,
+                crashStrings,
+                processExits,
+              })
             }
-            const emptyLogs = webkitLogs.filter(
-              entry => entry.bytes === 0 || entry.lines === 0,
-            )
-            if (emptyLogs.length > 0) {
-              throw new Error(
-                `failed samples without WebKit evidence: ${emptyLogs.map(entry => entry.sampleIndex).join(',')}`,
-              )
+            if (problems.length > 0) {
+              throw new Error(problems.join('; '))
             }
+            const unique = key => [...new Set(samples.map(sample => sample[key]))]
             const provenance = {
               workflowRunId: process.env.GITHUB_RUN_ID ?? null,
               workflowRunAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
-              workflowSha: process.env.GITHUB_SHA ?? null,
+              workflowSha,
               runnerName: process.env.RUNNER_NAME ?? null,
               runnerOs: process.env.RUNNER_OS ?? null,
               runnerArch: process.env.RUNNER_ARCH ?? null,
@@ -145,6 +233,7 @@ jobs:
               sampleCount: samples.length,
               sourceShas: unique('sourceSha'),
               sourceParentShas: unique('sourceParentSha'),
+              sourceParentShaSources: unique('sourceParentShaSource'),
               sourceTreesClean: unique('sourceTreeClean'),
               osVersions: [...new Set(samples.map(sample => sample.environment?.osVersion).filter(Boolean))],
               binarySha256,
@@ -170,8 +259,14 @@ jobs:
       - name: Summarize samples
         if: always()
         run: |
+          BINARY_SHA="$(cut -d' ' -f1 cold-start-binary.sha256)"
           node scripts/summarize-cold-start-samples.mjs cold-start-samples \
             --expected-samples "$SAMPLES" \
+            --require-provenance \
+            --expected-binary-sha256 "$BINARY_SHA" \
+            --expected-source-sha "$GITHUB_SHA" \
+            --expected-timeout-ms "$TIMEOUT_MS" \
+            --require-mount remote \
             > cold-start-samples/summary.json \
             2> cold-start-samples/summary.txt
           cat cold-start-samples/summary.txt | tee -a "$GITHUB_STEP_SUMMARY"
@@ -196,4 +291,5 @@ jobs:
             cold-start-binary.sha256
             cold-start-build.json
             cold-start-samples/
+            cold-start-isolation/
           if-no-files-found: error

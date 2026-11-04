@@ -252,3 +252,65 @@ run `41674133535`（`b5c7f46`）的 `terminal-mounted` detail 已带上 tab 类�
    effect 修复没有覆盖“容器/tab 本身没有出现”的上游路径，根因仍未闭合。
 
 不能把 294/300 写成修复成功：失败率仍 2.00%，且这三类失败分别需要不同的修复。
+
+## 10. 修复后 F：首次拿到非空 WebKit 日志（2026-11-04）
+
+run `41683645429`（`7600963`）在 `log show` 时间参数改为“epoch → `date -r` 本地
+时间”后，失败样本第一次留下了可读的 WebKit 日志。统计结果见
+`cold-start-statistics.md` §3.11：298/300（0.67%），2 个失败均为本地 fallback。
+
+| 样本 | 日志行数 | WebContent 异常 | PID 变化 |
+| --- | --- | --- | --- |
+| 228 | 2112 | `CRASHSTRING: rdar://problem/28724618 Couldn't connect to launchservicesd.` @ 17:48:26.554 | 62249 → 62597 |
+| 229 | 2048 | `CRASHSTRING: rdar://problem/28724618 Couldn't connect to launchservicesd.` @ 17:48:38.397 | 62671 → 62931 |
+
+时间线特征：
+
+- 样本 228：frontend boot 约 27.0 s（窗口内），`terminal-open-start` 在 8436 ms
+  才出现，中间有约 4–7 秒的近静默窗口；挂载 detail 是 `local-...@local`。
+- 样本 229：`terminal-open-start` 在 1107 ms 就出现，同样是 local；之后探针等到
+  10 秒超时都没有远程 prompt。
+- 两个样本都出现新的 WebProcess PID，但没有 `processDidExit`、`didCrash`、
+  `SIGKILL` 或 WebKit 的进程终止事件。
+
+**结论边界**：
+
+1. 不能把 `CRASHSTRING` 直接判为 WebKit 崩溃。同一 PID 在错误文本之后仍有日志输出，
+   它更像 launchservices 连接失败/进程重启信号，而不是已确认的 crash。
+2. 工作流只为失败样本采集 WebKit 日志。没有同一 runner、同一构建、相近时间窗口的
+   成功样本对照，不能证明该串只在失败样本出现。
+3. 因此根因状态仍是 **未闭合**；本轮只新增了一个可验证假设：
+   “启动早期 WebContent/launchservices 异常 → 前端挂载延迟 → 恢复尚未完成时本地
+   fallback 被选中”。
+
+下一轮证据必须补齐：
+
+- 成功样本的 WebKit 对照日志（至少同一批次的 2–3 个成功样本）；
+- WebContent PID 的完整生命周期（启动、退出、重启）；
+- 页面导航失败回调；
+- `db ready → terminal-mounted` 的实际耗时；
+- workspace / layout / host 查询的实际完成时间；
+- 恢复与 fallback 的分段 trace（见 Phase 9.4.2 状态机）。
+
+## 11. F 轮最终判读：不是 WebKit 崩溃（2026-11-04）
+
+样本 228/229 的本地 tab id 提供了决定性证据：
+
+- 两者都是 `local-1793728115282`，时间戳 `17:48:35.282Z`。
+- 样本 228 的 `capturedAt` 是 `17:48:25.616Z`，该 id 是它 8.2 秒后创建的本地
+  fallback。
+- 样本 229 的 `capturedAt` 是 `17:48:37.399Z`，比该 id 的生成时间还晚 2.1 秒，
+  不可能自己生成同一个 id。
+
+结论：
+
+1. 样本 228 的 local tab 是 **8 秒 fallback 截止时间**（生产代码把 App chunk
+   deadline 错传成 fallback deadline）产生的，不是 WebKit 崩溃。
+2. 样本 229 的 local tab 是从**共享 WKWebView localStorage 里的 local-only
+   recovery journal** 恢复出来的，不是一次新的 SSH 失败。WKWebView 的数据目录
+   在真实用户 home，采样进程的 per-sample HOME 管不到它。
+3. `CRASHSTRING: Couldn't connect to launchservicesd` 与这两个失败同时出现，但
+   没有进程退出事件和成功样本对照；它只是待验证的伴随现象，不是根因。
+
+因此“macOS 冷启动 20% 根因 = WebKit 崩溃”这条假设没有被 F 轮证据支持。真正的
+产品/测量缺陷与修复见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`。

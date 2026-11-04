@@ -300,3 +300,133 @@ test('reports causal violations in the summary without hiding the failure count'
     ])
   })
 })
+
+const provenanceFields = {
+  sourceSha: 'b'.repeat(40),
+  sourceParentSha: null,
+  sourceParentShaSource: 'unknown',
+  sourceParentShaReason: 'shallow-checkout',
+}
+
+test('fails closed when binary SHA values differ across samples', async () => {
+  await withDirectory(async directory => {
+    await writeSample(
+      directory,
+      'sample-1.json',
+      successSample(1, provenanceFields),
+    )
+    await writeSample(
+      directory,
+      'sample-2.json',
+      successSample(2, { ...provenanceFields, binarySha256: 'c'.repeat(64) }),
+    )
+    await assert.rejects(
+      summarizeColdStartSamples(directory, { expectedSamples: 2 }),
+      ColdStartSampleIntegrityError,
+    )
+  })
+})
+
+test('requires a binary SHA on every sample when provenance is mandatory', async () => {
+  await withDirectory(async directory => {
+    await writeSample(
+      directory,
+      'sample-1.json',
+      successSample(1, { ...provenanceFields, binarySha256: undefined }),
+    )
+    await assert.rejects(
+      summarizeColdStartSamples(directory, {
+        expectedSamples: 1,
+        requireProvenance: true,
+      }),
+      ColdStartSampleIntegrityError,
+    )
+  })
+})
+
+test('checks the expected binary, source, and timeout identities', async () => {
+  await withDirectory(async directory => {
+    await writeSample(
+      directory,
+      'sample-1.json',
+      successSample(1, provenanceFields),
+    )
+    await assert.rejects(
+      summarizeColdStartSamples(directory, {
+        expectedSamples: 1,
+        expectedBinarySha256: 'c'.repeat(64),
+      }),
+      ColdStartSampleIntegrityError,
+    )
+    await assert.rejects(
+      summarizeColdStartSamples(directory, {
+        expectedSamples: 1,
+        expectedSourceSha: 'd'.repeat(40),
+      }),
+      ColdStartSampleIntegrityError,
+    )
+    await assert.rejects(
+      summarizeColdStartSamples(directory, {
+        expectedSamples: 1,
+        expectedTimeoutMs: 4_000,
+      }),
+      ColdStartSampleIntegrityError,
+    )
+  })
+})
+
+test('rejects a successful remote sample that mounted a local terminal', async () => {
+  await withDirectory(async directory => {
+    await writeSample(
+      directory,
+      'sample-1.json',
+      successSample(1, {
+        ...provenanceFields,
+        stages: [
+          { stage: 'frontend-boot', atMs: 0 },
+          { stage: 'ready', atMs: 500 },
+          {
+            stage: 'terminal-mounted',
+            atMs: 900,
+            detail: 'local-1@workspace@local',
+          },
+        ],
+      }),
+    )
+    await assert.rejects(
+      summarizeColdStartSamples(directory, {
+        expectedSamples: 1,
+        requireMount: 'remote',
+      }),
+      ColdStartSampleIntegrityError,
+    )
+  })
+})
+
+test('marks causal violations as an invalid measurement, not a pass', async () => {
+  await withDirectory(async directory => {
+    await writeSample(
+      directory,
+      'sample-1.json',
+      successSample(1, {
+        ...provenanceFields,
+        stages: [
+          { stage: 'frontend-boot', atMs: 0 },
+          { stage: 'ready', atMs: 500 },
+          {
+            stage: 'terminal-mounted',
+            atMs: 900,
+            detail: 'remote-1@workspace@remote',
+          },
+          { stage: 'session-create-requested', atMs: 1_000 },
+          { stage: 'ssh-connect-start', atMs: 1_100 },
+          { stage: 'session-created', atMs: 1_050 },
+        ],
+      }),
+    )
+    const summary = await summarizeColdStartSamples(directory, {
+      expectedSamples: 1,
+    })
+    assert.equal(summary.verdict, 'MEASUREMENT_INVALID')
+  })
+})

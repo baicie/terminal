@@ -241,28 +241,156 @@ describe('workspace recovery', () => {
     recovery.dispose()
   })
 
-  it('does not replace a fallback after the user has entered input', async () => {
+  it('keeps a user-interacted fallback alongside the restored remote layout', async () => {
     const savedLayout: WorkspaceLayout = {
       workspaceId: 'workspace-one',
-      tabs: [{ id: 'saved', label: 'Saved', type: 'local' }],
+      tabs: [
+        {
+          id: 'saved-remote',
+          label: 'Production',
+          type: 'remote',
+          hostId: 'host-one',
+        },
+      ],
       splitGroups: [],
-      activeTabId: 'saved',
+      activeTabId: 'saved-remote',
       sidebarVisible: true,
     }
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.hostState.hosts = [{ id: 'host-one' }]
     mocks.appState.tabs = [
       {
         id: 'fallback',
         label: 'Local',
         type: 'local',
-        startupFallback: false,
+        startupFallback: true,
+        startupFallbackInteracted: true,
         connectionStatus: 'connected',
       },
     ] as WorkspaceLayout['tabs']
+    mocks.appState.activeTabId = 'fallback'
+    mocks.appState.restoreLayout.mockImplementation(layout => {
+      mocks.appState.tabs = layout.tabs
+      mocks.appState.activeTabId = layout.activeTabId
+    })
 
     const recovery = await startWorkspaceRecovery()
 
+    expect(mocks.appState.restoreLayout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tabs: [
+          savedLayout.tabs[0],
+          expect.objectContaining({
+            id: 'fallback',
+            startupFallback: true,
+            startupFallbackInteracted: true,
+          }),
+        ],
+        activeTabId: 'fallback',
+      }),
+    )
+    recovery.dispose()
+  })
+
+  it('rejects when the saved layout cannot be read so startup retries', async () => {
+    mocks.workspaceState.loadLayout.mockRejectedValue(
+      new Error('database busy'),
+    )
+
+    await expect(startWorkspaceRecovery()).rejects.toThrow('database busy')
     expect(mocks.appState.restoreLayout).not.toHaveBeenCalled()
+  })
+
+  it('lets a saved remote layout win over a local-only recovery journal', async () => {
+    const savedLayout: WorkspaceLayout = {
+      workspaceId: 'workspace-one',
+      tabs: [
+        {
+          id: 'saved-remote',
+          label: 'Production',
+          type: 'remote',
+          hostId: 'host-one',
+        },
+      ],
+      splitGroups: [],
+      activeTabId: 'saved-remote',
+      sidebarVisible: true,
+    }
+    mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.hostState.hosts = [{ id: 'host-one' }]
+    localStorage.setItem(
+      getWorkspaceRecoveryJournalKey('workspace-one'),
+      JSON.stringify({
+        version: 1,
+        savedAt: Date.now(),
+        layout: {
+          workspaceId: 'workspace-one',
+          tabs: [{ id: 'local-fallback', label: 'Local', type: 'local' }],
+          splitGroups: [],
+          activeTabId: 'local-fallback',
+          sidebarVisible: true,
+        },
+      }),
+    )
+
+    const recovery = await startWorkspaceRecovery()
+
+    expect(mocks.appState.restoreLayout).toHaveBeenCalledWith(savedLayout)
+    const journalAfterRestore = localStorage.getItem(
+      getWorkspaceRecoveryJournalKey('workspace-one'),
+    )
+    expect(journalAfterRestore).toContain('saved-remote')
+    expect(journalAfterRestore).not.toContain('local-fallback')
+    recovery.dispose()
+  })
+
+  it('does not treat an unrestorable layout as absent', async () => {
+    const savedLayout: WorkspaceLayout = {
+      workspaceId: 'workspace-one',
+      tabs: [
+        {
+          id: 'saved-remote',
+          label: 'Production',
+          type: 'remote',
+          hostId: 'host-one',
+        },
+      ],
+      splitGroups: [],
+      activeTabId: 'saved-remote',
+      sidebarVisible: true,
+    }
+    mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.hostState.loadHosts.mockResolvedValue([])
+    mocks.hostState.hosts = []
+
+    await expect(startWorkspaceRecovery()).rejects.toThrow(
+      'no tab can be restored',
+    )
+    expect(mocks.appState.restoreLayout).not.toHaveBeenCalled()
+  })
+
+  it('keeps saved remote tabs when a concurrent host load supersedes this one', async () => {
+    const savedLayout: WorkspaceLayout = {
+      workspaceId: 'workspace-one',
+      tabs: [
+        {
+          id: 'saved-remote',
+          label: 'Production',
+          type: 'remote',
+          hostId: 'host-one',
+        },
+      ],
+      splitGroups: [],
+      activeTabId: 'saved-remote',
+      sidebarVisible: true,
+    }
+    mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
+    mocks.hostState.loadHosts.mockResolvedValue(null)
+    mocks.hostState.hosts = []
+
+    const recovery = await startWorkspaceRecovery()
+
+    expect(mocks.appState.restoreLayout).toHaveBeenCalledWith(savedLayout)
     recovery.dispose()
   })
 
@@ -463,7 +591,7 @@ describe('workspace recovery', () => {
     expect(mocks.workspaceState.loadLayout).not.toHaveBeenCalled()
 
     resolveWorkspace?.()
-    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(0)
     expect(mocks.workspaceState.loadLayout).toHaveBeenCalledWith(
       'workspace-one',
     )

@@ -110,10 +110,10 @@ export function TerminalContainer({
     jumpHost,
     outputWriter: terminal.outputWriter ?? undefined,
     onOutput: remotePrompt.onOutput,
-    onInput: () => {
-      if (tab?.startupFallback) {
-        updateTab(tabId, { startupFallback: false })
-      }
+    onInput: event => {
+      if (event?.wasUserInput === false) return
+      if (tab?.startupFallback && !tab.startupFallbackInteracted)
+        updateTab(tabId, { startupFallbackInteracted: true })
     },
   })
   const { status, error, attempt, reason, retryable, write, disconnect } =

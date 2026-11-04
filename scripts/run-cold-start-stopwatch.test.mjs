@@ -857,7 +857,7 @@ test('does not blame the UI when some readiness condition was observed', async (
   )
 })
 
-test('fails if SIGTERM does not produce a close event before cleanup grace', async () => {
+test('preserves the readiness failure when SIGTERM does not produce a close event before cleanup grace', async () => {
   const harness = createHarness({ closeOnKill: false })
   await assert.rejects(
     runColdStartStopwatch({
@@ -866,7 +866,14 @@ test('fails if SIGTERM does not produce a close event before cleanup grace', asy
       cleanupGraceMs: 1,
       dependencies: harness.dependencies,
     }),
-    /did not exit within 1 ms/,
+    error => {
+      // Cleanup must not replace the evidence-producing failure. The cleanup
+      // problem is attached instead of becoming the sample's only error.
+      assert.match(error.message, /window readiness did not complete/)
+      assert.match(error.cleanupError, /did not exit within 1 ms/)
+      assert.equal(error.binarySha256.length, 64)
+      return true
+    },
   )
   assert.deepEqual(harness.calls.kill, ['SIGTERM', 'SIGKILL'])
 })

@@ -1,6 +1,6 @@
 # macOS 远程冷启动统计
 
-> 日期：2026-11-03
+> 日期：2026-11-03（2026-11-04 追加 F 轮）
 > 工作流：`Cold-start stress`
 > 目标：用同一 SHA、同一 runner 类型、同一 instrumented binary 重复采样，
 > 明确失败率分母，不用一次成功掩盖历史失败。
@@ -382,6 +382,99 @@ clean 状态、probe timeout 都齐全，WebKit 日志文件非空（虽然只�
 
 **判定**：294/300 比前几轮好，但仍高于 1% 的 RC 目标，且仍有 3 个未挂载 + 2 个
 本地 fallback + 1 个 SSH prompt 失败，不能称为稳定。
+
+## 3.11 修复后 F：run `41683645429`（WebKit 日志时区修复后）
+
+这是目前**点估计最低**的一轮，也是第一次拿到失败样本的非空 WebKit 日志。它仍然是
+一轮样本，不足以单独证明“稳定低于 1%”。
+
+| 项 | 值 |
+| --- | --- |
+| run | `41683645429` |
+| commit | `760096341d0273c3833a5244ff2cb522fbcdeb08` |
+| workflow | `Cold-start stress`（push 触发） |
+| instrumented build | `VITE_TERMINAL_SMOKE_BUILD=1`，debug，`--no-bundle` |
+| build provenance | `cold-start-build.json`：`instrumentedBuild=true`、`buildKind=debug`、`bundled=false`、Node `v24.16.0`、pnpm `10.34.3` |
+| binary SHA256 | `d843a2f6d011ca18222910e3dc55db0294bce09b2d311252768d5a24e6922751`（artifact `cold-start-binary.sha256`） |
+| runner | `macos-26-arm64`，3 vCPU / 7 GiB，macOS 26.6.2 |
+| samples | 300（1..300 完整，`expectedSamples=300`） |
+| 成功 / 失败 | **298 / 2** |
+| 点估计失败率 | **0.67%** |
+| Wilson 95% 区间（仅作参考） | 约 **[0.18%, 2.40%]** |
+| spawn→ready 最小 / 中位 / p95 / 最大 | 3200 / 3930 / 4365 / 7174 ms |
+| 阶段出现 | `frontend-boot=300`、`ready=300`、`terminal-mounted=300`、`session-requested=300`、`session-created=300` |
+| mount evidence | `remote=298`、`local=2` |
+
+失败样本：**228、229**（相邻）。
+
+| 分类 | 次数 | 失败样本 | 最终状态 |
+| --- | --- | --- | --- |
+| `ssh-request-not-entered-rust` | 2 | `228, 229` | `terminal-mounted` detail 均为 `local-...@remote-cold-workspace@local`，未进入 SSH 路径 |
+
+关键结论：
+
+- `terminal-mounted=300`：E 轮的 3 个 `terminal-not-mounted` 在本轮没有复现；
+  late-tab 修复至少在这一轮有效。
+- 298 个成功样本全部挂载 `remote`，2 个失败样本全部挂载 `local`。本地 fallback
+  与失败完全重合，说明剩余失败不是 SSH 握手/认证/PTY 问题。
+- 样本 228：`ready@434ms` → `terminal-open-start@8436ms`（detail `local`）→
+  `session-created@8549ms`；从 frontend 启动到挂载有约 8 秒延迟。
+- 样本 229：`ready@440ms` → `terminal-open-start@1107ms`（detail `local`）→
+  `session-created@1211ms`；挂载很快，但探针在 10 秒内没有等到远程 prompt。
+- **统计边界**：0.67% 只是点估计。2/300 的 Wilson 95% 上界约 2.40%，不能用这一轮
+  宣称“统计上稳定低于 1%”；至少需要多轮样本与预先定义的置信口径。
+
+### 3.11.1 WebKit 日志（首次非空）
+
+`7600963` 把 `log show` 的时间参数从“手工加 8 小时”改为“epoch → `date -r` 本地
+时间”后，失败样本的日志不再只有 44 字节表头：
+
+| 样本 | 日志行数 | 关键异常 |
+| --- | --- | --- |
+| 228 | 2112 | `WebContent[62249] CRASHSTRING: rdar://problem/28724618 Couldn't connect to launchservicesd.`（17:48:26.554） |
+| 229 | 2048 | `WebContent[62671] CRASHSTRING: rdar://problem/28724618 Couldn't connect to launchservicesd.`（17:48:38.397） |
+
+两个失败样本都出现同一条 `CRASHSTRING`，并且都伴随新的 WebProcess PID
+（228：62249 → 62597；229：62671 → 62931）与数秒的近静默窗口。
+
+**不能据此判定 WebKit 崩溃**：
+
+- 同一 PID 在 `CRASHSTRING` 之后仍有日志输出，不能证明进程真实退出；
+- 工作流只为失败样本采集 WebKit 日志，没有成功样本对照，无法证明该串只在失败时出现；
+- `CRASHSTRING` 是 launchservices 的错误文本，不是 WebKit 的 `processDidExit` /
+  `didCrash` 事件。
+
+因此本轮只把它记为**待验证假设**，不写成已确认根因。下一轮必须加同一 runner、
+同一构建、相近时间窗口的成功样本对照，并记录 PID 变化、导航失败回调与进程退出事件。
+
+### 3.11.2 本轮 provenance 缺口
+
+- 失败样本 JSON 没有 `binarySha256`（成功样本有），汇总中的失败行因此显示
+  `binarySha256=unknown`；构建身份只能从 artifact 的 `cold-start-binary.sha256` 取得。
+- 所有样本的 `sourceParentSha` 都是 `null`：CI checkout 为 `depth=1`，`HEAD^` 不存在。
+- 这两项不改变 298/300 的统计有效性，但削弱了“失败样本 ↔ 构建身份”的逐样本绑定，
+  已列入 Phase 9.4.2 的 P1 修复。
+
+### 3.11.3 最终判读（2026-11-04，Phase 9.4.2）
+
+F 轮两个失败不是 WebKit 崩溃，也不是两个独立的 SSH 故障：
+
+1. **样本 228**：本地 tab id `local-1793728115282` 的时间戳是
+   `17:48:35.282Z`，frontend boot 约 `17:48:27.05`，间隔约 8.2 秒。生产
+   `terminal-bootstrap.tsx` 把 8 秒的 App chunk deadline 错当成了
+   `startupTerminalFallbackAt`，所以本地 fallback 在 8 秒而不是 2 秒才触发。
+   这一轮里 recovery 没有在 8 秒内恢复远程布局，具体停在哪一步由新加的
+   `workspace-load-*` / `layout-load-*` / `host-load-*` 分段 trace 在下一轮回答。
+2. **样本 229**：它复用了样本 228 的本地 tab id
+   `local-1793728115282`，而该 id 的生成时间早于样本 229 的 `capturedAt`。
+   WKWebView 的 localStorage 在真实用户目录
+   `~/Library/WebKit/com.baicie.termius`，不受采样进程 `HOME` 重定向影响；
+   recovery journal 的 workspaceId 又是固定的 `remote-cold-workspace`。
+   样本 228 的 local-only journal 因此被样本 229 继承，并遮蔽了 SQLite 里的
+   remote 布局。这是**跨样本污染**，不是产品 SSH 路径失败。
+
+修复与验证方案见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`。在真实
+runner 复测之前，本条仍不能写成“已修复”。
 
 ## 4. 失败分类口径
 

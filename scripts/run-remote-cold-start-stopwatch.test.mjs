@@ -306,3 +306,63 @@ test('supports Linux remote prompt fixtures with an isolated XDG config root', a
   ])
   assert.equal(calls.stop, 1)
 })
+
+test('preserves a timeout and attaches fixture identity when cleanup fails', async () => {
+  const fixture = {
+    host: '127.0.0.1',
+    port: 65_342,
+    username: 'tester',
+    privateKey: 'PRIVATE KEY',
+    homePath: '/private/tmp/remote-fixture-home',
+    knownHostsPath: '/private/tmp/remote-fixture-known-hosts',
+    stop: async () => {
+      throw new Error('fixture stop failed')
+    },
+  }
+  let tempDirectoryIndex = 0
+  const dependencies = {
+    access: async () => {},
+    mkdir: async () => {},
+    mkdtemp: async prefix => `${prefix}${tempDirectoryIndex++}`,
+    platform: 'darwin',
+    readFile: async () => 'known-host fixture\n',
+    rm: async () => {
+      throw new Error('rm failed')
+    },
+    runStopwatch: async () => {
+      const error = new Error('readiness timed out')
+      error.binarySha256 = 'a'.repeat(64)
+      throw error
+    },
+    spawn: () => {
+      const child = new EventEmitter()
+      child.stdin = new PassThrough()
+      child.stderr = new PassThrough()
+      queueMicrotask(() => child.emit('close', 0, null))
+      return child
+    },
+    startSshd: async () => fixture,
+    tempDirectory: '/private/tmp',
+    writeFile: async () => {},
+  }
+
+  await assert.rejects(
+    runRemoteColdStartStopwatch({
+      appPath: '/Applications/Termius.app/Contents/MacOS/terminal',
+      dependencies,
+    }),
+    error => {
+      assert.match(error.message, /readiness timed out/)
+      assert.equal(error.binarySha256, 'a'.repeat(64))
+      assert.equal(error.fixture.port, 65_342)
+      assert.deepEqual(error.cleanupErrors, [
+        'fixture stop failed',
+        'rm failed',
+        'rm failed',
+      ])
+      assert.equal(typeof error.tempDirectories.home, 'string')
+      assert.equal(typeof error.tempDirectories.runDirectory, 'string')
+      return true
+    },
+  )
+})

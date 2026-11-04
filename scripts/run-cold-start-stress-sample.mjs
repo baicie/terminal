@@ -55,22 +55,39 @@ async function gitValue(...args) {
  */
 async function resolveParentCommit() {
   const direct = await gitValue('rev-parse', 'HEAD^')
-  if (direct !== null) return direct
-  const shallowPath = await gitValue('rev-parse', '--git-path', 'shallow')
-  if (shallowPath === null) return null
-  const shallow = await readFile(path.resolve(shallowPath), 'utf8').catch(
-    () => '',
-  )
+  if (direct !== null) {
+    return { sha: direct, source: 'git', reason: null }
+  }
   const head = await gitValue('rev-parse', 'HEAD')
-  return shallow.includes(head) ? null : direct
+  const gitDir = await gitValue('rev-parse', '--absolute-git-dir')
+  if (head !== null && gitDir !== null) {
+    const shallow = await readFile(path.join(gitDir, 'shallow'), 'utf8').catch(
+      () => '',
+    )
+    if (shallow.includes(head)) {
+      return { sha: null, source: 'unknown', reason: 'shallow-checkout' }
+    }
+  }
+  const parents = await gitValue('rev-list', '--parents', '-n', '1', 'HEAD')
+  if (parents !== null) {
+    const [resolvedHead, firstParent] = parents.trim().split(/\s+/)
+    if (resolvedHead && firstParent) {
+      return { sha: firstParent, source: 'git', reason: null }
+    }
+    if (resolvedHead) {
+      return { sha: null, source: 'unknown', reason: 'root-commit' }
+    }
+  }
+  return { sha: null, source: 'unknown', reason: 'command-failed' }
 }
 
 async function environmentFacts() {
-  const [commit, parentCommit, dirty] = await Promise.all([
+  const [commit, parent, dirty] = await Promise.all([
     gitValue('rev-parse', 'HEAD'),
     resolveParentCommit(),
     gitValue('status', '--porcelain', '--untracked-files=no'),
   ])
+  const parentCommit = parent.sha
   let cpuCount = null
   try {
     const { stdout } = await runCommand('/usr/sbin/sysctl', ['-n', 'hw.ncpu'])
@@ -92,6 +109,8 @@ async function environmentFacts() {
   return {
     commit,
     parentCommit,
+    parentCommitSource: parent.source,
+    parentCommitReason: parent.reason,
     workingTreeClean: dirty === '',
     cpuCount,
     memoryBytes,
@@ -115,6 +134,8 @@ try {
       capturedAt,
       sourceSha: environment.commit,
       sourceParentSha: environment.parentCommit,
+      sourceParentShaSource: environment.parentCommitSource,
+      sourceParentShaReason: environment.parentCommitReason,
       sourceTreeClean: environment.workingTreeClean,
       timeoutMs,
       environment,
@@ -133,8 +154,34 @@ try {
       timeoutMs,
       ...(Array.isArray(error.stages) ? { stages: error.stages } : {}),
       ...(error.probe === undefined ? {} : { probe: error.probe }),
+      // The failure path must carry the same build identity as the success
+      // path. A missing value is recorded as unknown with a reason, never
+      // guessed (Issue #185).
+      ...(typeof error.binarySha256 === 'string'
+        ? { binarySha256: error.binarySha256 }
+        : { binarySha256: null, binarySha256Reason: 'unavailable' }),
+      ...(error.fixture === undefined ? {} : { fixture: error.fixture }),
+      ...(error.shell === undefined ? {} : { shell: error.shell }),
+      ...(error.shellIntegration === undefined
+        ? {}
+        : { shellIntegration: error.shellIntegration }),
+      ...(error.marker === undefined ? {} : { marker: error.marker }),
+      ...(error.promptMarker === undefined
+        ? {}
+        : { promptMarker: error.promptMarker }),
+      ...(error.cleanupError === undefined
+        ? {}
+        : { cleanupError: error.cleanupError }),
+      ...(error.cleanupErrors === undefined
+        ? {}
+        : { cleanupErrors: error.cleanupErrors }),
+      ...(error.tempDirectories === undefined
+        ? {}
+        : { tempDirectories: error.tempDirectories }),
       sourceSha: environment.commit,
       sourceParentSha: environment.parentCommit,
+      sourceParentShaSource: environment.parentCommitSource,
+      sourceParentShaReason: environment.parentCommitReason,
       sourceTreeClean: environment.workingTreeClean,
       environment,
       error: message,

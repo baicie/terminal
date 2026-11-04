@@ -715,35 +715,53 @@ export async function runColdStartStopwatch({
     terminate(child)
   }
 
-  const finishCleanup = async () => {
-    if (timeoutTimer !== undefined) dependencies.clearTimeout(timeoutTimer)
-    if (child && !childClosed) {
-      stopChild()
-      try {
-        await waitForChildClose(childClosePromise, dependencies, cleanupGraceMs)
-      } catch (error) {
-        // A Tauri process can ignore or outlive SIGTERM while WebKit is still
-        // tearing down. Escalate once so a failed probe cannot leak a desktop
-        // process into the next run, but preserve the original cleanup error
-        // when the child still refuses to report close.
-        if (!childClosed) terminate(child, 'SIGKILL')
+  const finishCleanup = async primaryError => {
+    try {
+      if (timeoutTimer !== undefined) dependencies.clearTimeout(timeoutTimer)
+      if (child && !childClosed) {
+        stopChild()
         try {
           await waitForChildClose(
             childClosePromise,
             dependencies,
             cleanupGraceMs,
           )
-        } catch {
-          // The caller still receives the first, more useful timeout error.
+        } catch (error) {
+          // A Tauri process can ignore or outlive SIGTERM while WebKit is still
+          // tearing down. Escalate once so a failed probe cannot leak a desktop
+          // process into the next run, but preserve the original cleanup error
+          // when the child still refuses to report close.
+          if (!childClosed) terminate(child, 'SIGKILL')
+          try {
+            await waitForChildClose(
+              childClosePromise,
+              dependencies,
+              cleanupGraceMs,
+            )
+          } catch {
+            // The caller still receives the first, more useful timeout error.
+          }
+          throw error
         }
-        throw error
       }
-    }
-    if (ownsHome) {
-      await dependencies.rm(home, MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS)
+      if (ownsHome) {
+        await dependencies.rm(home, MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS)
+      }
+    } catch (cleanupError) {
+      // Cleanup must not replace the readiness failure: the sample's stages,
+      // probe and binary SHA are the only evidence that failure produced.
+      if (primaryError && typeof primaryError === 'object') {
+        primaryError.cleanupError =
+          cleanupError instanceof Error
+            ? cleanupError.message
+            : String(cleanupError)
+        return
+      }
+      throw cleanupError
     }
   }
 
+  let primaryError = null
   try {
     if (shouldProbeAx && axProbe === 'native') {
       await compileNativeAccessibilityProbe(
@@ -781,6 +799,28 @@ export async function runColdStartStopwatch({
         if (settled) return
         settled = true
         stopChild()
+        // Every failure exit gets the same build identity and timeline. The
+        // stress wrapper used to reconstruct failed samples from a whitelist,
+        // so only readiness timeouts carried these facts and every other
+        // failure became `binarySha256=unknown` (Issue #185).
+        if (error && typeof error === 'object') {
+          if (error.binarySha256 === undefined) {
+            error.binarySha256 = binarySha256
+          }
+          if (error.stages === undefined) {
+            error.stages = lastStages
+          }
+          if (error.probe === undefined) {
+            error.probe = {
+              readiness: lastReadiness,
+              readinessTarget: effectiveReadinessTarget,
+              axProbe: reportedAxProbe,
+              windowReady: lastWindowReady,
+              terminalReady: lastTerminalReady,
+              markerReady: lastMarkerReady,
+            }
+          }
+        }
         reject(error)
       }
 
@@ -1026,8 +1066,11 @@ export async function runColdStartStopwatch({
       }, timeoutMs)
     })
     return result
+  } catch (error) {
+    primaryError = error
+    throw error
   } finally {
-    await finishCleanup()
+    await finishCleanup(primaryError)
   }
 }
 

@@ -1,6 +1,7 @@
 import type { Terminal as TerminalComponent } from '@baicie/xterm'
 import type { Host, Tab } from '@/types'
 import type {
+  TerminalInputDiagnosticEvent,
   TerminalOutputDiagnosticEvent,
   UseTerminalResult,
 } from '@/hooks/terminal-session-types'
@@ -17,7 +18,7 @@ interface Options {
   jumpHost: Host | undefined
   outputWriter: Pick<TerminalComponent, 'write'> | undefined
   onOutput: (event: TerminalOutputDiagnosticEvent) => void
-  onInput?: () => void
+  onInput?: (event: TerminalInputDiagnosticEvent) => void
 }
 
 /**

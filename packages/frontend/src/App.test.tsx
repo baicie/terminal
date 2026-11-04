@@ -1,6 +1,7 @@
 import { act, render, waitFor } from '@testing-library/react'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import App, {
+  STARTUP_FALLBACK_DEFER_MS,
   STARTUP_TERMINAL_FALLBACK_MS,
   WORKSPACE_RECOVERY_RETRY_DELAYS_MS,
 } from './App'
@@ -136,7 +137,7 @@ describe('startup terminal fallback', () => {
     })
   })
 
-  it('keeps the startup fallback when workspace recovery fails', async () => {
+  it('keeps the startup fallback when workspace recovery keeps failing', async () => {
     vi.useFakeTimers()
     mocks.startWorkspaceRecovery.mockRejectedValue(
       new Error('database unavailable'),
@@ -144,6 +145,76 @@ describe('startup terminal fallback', () => {
     render(<App />)
 
     await act(async () => {
+      await vi.advanceTimersByTimeAsync(
+        STARTUP_TERMINAL_FALLBACK_MS + STARTUP_FALLBACK_DEFER_MS,
+      )
+    })
+
+    expect(mocks.appState.addTab).toHaveBeenCalledWith({
+      label: 'Local',
+      type: 'local',
+      startupFallback: true,
+    })
+  })
+
+  it('defers the fallback while a retry may still restore the remote layout', async () => {
+    vi.useFakeTimers()
+    mocks.startWorkspaceRecovery.mockRejectedValue(
+      new Error('database unavailable'),
+    )
+    render(<App />)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STARTUP_TERMINAL_FALLBACK_MS)
+    })
+    expect(mocks.appState.addTab).not.toHaveBeenCalled()
+  })
+
+  it('opens the fallback after the bounded defer budget if recovery never settles', async () => {
+    vi.useFakeTimers()
+    mocks.startWorkspaceRecovery.mockReturnValue(new Promise(() => undefined))
+    render(<App />)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STARTUP_TERMINAL_FALLBACK_MS)
+    })
+    expect(mocks.appState.addTab).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STARTUP_FALLBACK_DEFER_MS)
+    })
+    expect(mocks.appState.addTab).toHaveBeenCalledOnce()
+  })
+
+  it('does not open a fallback once recovery reports a saved layout', async () => {
+    vi.useFakeTimers()
+    mocks.startWorkspaceRecovery.mockReturnValue(new Promise(() => undefined))
+    render(<App />)
+
+    const [[{ onObservation }]] = mocks.startWorkspaceRecovery.mock.calls
+    await act(async () => {
+      onObservation({
+        correlationId: 'recovery-test',
+        phase: 'layout-load-done',
+        remoteLayoutExpected: true,
+      })
+      await vi.advanceTimersByTimeAsync(STARTUP_TERMINAL_FALLBACK_MS)
+    })
+
+    expect(mocks.appState.addTab).not.toHaveBeenCalled()
+  })
+
+  it('opens the fallback immediately when recovery confirms no saved layout', async () => {
+    vi.useFakeTimers()
+    mocks.startWorkspaceRecovery.mockReturnValue(new Promise(() => undefined))
+    render(<App />)
+
+    const [[{ onObservation }]] = mocks.startWorkspaceRecovery.mock.calls
+    await act(async () => {
+      onObservation({
+        correlationId: 'recovery-test',
+        phase: 'layout-absent',
+      })
       await vi.advanceTimersByTimeAsync(STARTUP_TERMINAL_FALLBACK_MS)
     })
 
@@ -258,10 +329,12 @@ describe('startup terminal fallback', () => {
     )
     render(<App />)
 
+    // The deadline alone must not add a local tab while recovery is still in
+    // flight; that was the exact F-round takeover (Issue #184).
     await act(async () => {
       await vi.advanceTimersByTimeAsync(STARTUP_TERMINAL_FALLBACK_MS)
     })
-    expect(mocks.appState.addTab).toHaveBeenCalledOnce()
+    expect(mocks.appState.addTab).not.toHaveBeenCalled()
 
     mocks.appState.tabs = [
       { id: 'remote', label: 'Saved', type: 'remote', hostId: 'host-one' },
@@ -271,7 +344,7 @@ describe('startup terminal fallback', () => {
       await Promise.resolve()
     })
 
-    expect(mocks.appState.addTab).toHaveBeenCalledOnce()
+    expect(mocks.appState.addTab).not.toHaveBeenCalled()
   })
 
   it('cancels the fallback when a slow recovery restores a tab', async () => {
