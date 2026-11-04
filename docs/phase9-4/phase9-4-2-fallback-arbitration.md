@@ -159,6 +159,7 @@ App 侧新增 `fallback-deadline-reached`、`fallback-decision`、
 | 第二轮尝试（run `41841717975`） | 隔离门禁失败：control 已挂载 remote、进入 SSH、拿到 shell 首字节，但 `ssh-prompt-marker-missing`；300 样本被跳过。门禁已解耦为“隔离属性”而非“控制样本 ready” |
 | 第二轮重跑（run `41843065808`，artifact 复算） | **300/300 `RELIABILITY_PASS`**；中位 4978 ms / p95 6393 ms；首次挂载 remote 299 / local 1，**最终 remote 300**；样本 37 的临时 local 在 5124 ms 被 remote 替换 |
 | 真实矩阵（run `41841781191`） | macOS / Linux / Windows **3/3 success**；六份证据已安装，门禁 **0 problem**；debug `0eb823fa…`、release `a1cf8181…` |
+| 最终 CI（run `41850097122`） | **11/11 success**（`d4a972a`），`Repository gates` 证据 0 problem |
 
 本机回归使用的二进制由**未提交工作树**构建（`sourceTreeClean=false`），只能证明
 产品路径在开发机上工作；真实 runner G 轮才是有效证据。第二轮 `41841717975`
@@ -166,22 +167,26 @@ App 侧新增 `fallback-deadline-reached`、`fallback-decision`、
 
 ## 7. 仍未完成（不能写成 PASS）
 
-1. 第一轮真实 300 次（G 轮）已 **300/300**；第二次尝试 `41841717975` 在隔离
-   门禁处被 control 的 `ssh-prompt-marker-missing` 挡住，300 样本未执行。重跑
-   `41843065808` 的 artifact 用最终挂载判据复算为 **300/300**；workflow 因旧的
-   “首次挂载”门禁为红，修复后的 clean round 仍需运行。
-2. 用新的分段 trace 证明样本 228 的 recovery 停点：G 轮的 trace 已能显示
-   全程 `layout-load-done` / `host-load-done` / `restore-layout-committed`，
-   但 F 轮旧样本没有这些阶段，无法事后补齐。
-3. 成功样本 WebKit 对照日志已经采集并判读：控制组各 1 次 `CRASHSTRING`、
-   0 个 `processExits`，因此该字符串不是失败信号。
+1. G 轮 **300/300**；第二轮 `41843065808` artifact 用最终挂载判据复算
+   **300/300**；clean 轮 `41850205866` **300/300**（首次与最终均 remote）。
+   三个 run 合计 900 样本，0 个最终 local 挂载。
+2. 分段 trace 已在真实 runner 上证明恢复链：样本 37 的
+   `workspace-load-failed` → 重试 → `restore-layout-committed` → remote mount；
+   F 轮旧样本没有这些阶段，无法事后补齐。
+3. 成功样本 WebKit 对照日志已判读：控制组各 1 次 `CRASHSTRING`、
+   0 个 `processExits`，该字符串不是失败信号。
 4. 真实 runner 隔离样本已执行并 **ISOLATION_PASS**。
-5. 六份验收证据重采（矩阵 run `41841781191` 进行中）、最终 CI 11/11。
-6. Windows / Pageant / 串口 / 物理键盘 / 跨版本升级 / 签名等既有 NOT_RUN。
+5. 六份验收证据已安装（run `41841781191`，0 problem）；最终 CI `41850097122`
+   **11/11 success**。
+6. 剩余 NOT_RUN/BLOCKED_EXTERNAL：跨版本升级、硬件矩阵、物理键盘/IME、
+   notarization/Authenticode/updater 签名、身份迁移、真实 Vault 解锁。
 
-## 8. 判定
+## 8. 判定（2026-11-04 最终）
 
-- **READY_FOR_REVIEW**：代码与本地门禁通过后为是（待推送后的 CI 确认）。
-- **READY_FOR_MERGE**：Phase 9.4 仍是 stacked branch；PR #6 合并后需 rebase。
-- **READY_FOR_RC**：**否**。真实 300 次复测、证据重采、隔离负面测试与最终 CI 未完成。
-- **READY_FOR_RELEASE**：**否**。
+- **READY_FOR_REVIEW**：**是**。代码、900 样本、证据与 CI 11/11 均已落盘。
+- **READY_FOR_MERGE**：**否（Phase 9.4 独立合并）**。PR #7 是 stacked branch；
+  PR #6 交人工合并后需 rebase/retarget PR #7。
+- **READY_FOR_RC**：**否**。冷启动/隔离/证据/CI 已闭合；仍缺跨版本升级与回滚、
+  Windows/Pageant/串口/物理键盘/IME 实机、notarization/Authenticode/updater
+  签名、身份迁移、真实 Vault 解锁。
+- **READY_FOR_RELEASE**：**否**。同 RC，另加发布签名与安装升级链路。

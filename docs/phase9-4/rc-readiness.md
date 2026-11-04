@@ -10,8 +10,8 @@
 | 分支 HEAD | `ac010913dc0e60c8f4af58c2db093edf4e02921a` |
 | PR #7 | OPEN / Draft，base 仍为 `feat/phase9-2-sync-security-hardening` |
 | PR #6 | OPEN / Draft，Phase 9.3.2 条件已满足，待人工合并；main 未变更 |
-| 最新 CI | run `41838270083`：**10 success / 1 failure** |
-| CI 唯一失败 | `Repository gates` 的 `Verification evidence matches this checkout`：当前源码指纹 `d14fb1d1…`，证据仍为 `6d7536e7…`（7 problem） |
+| 最新 CI | run `41850097122`（`d4a972a`）：**11/11 success** |
+| CI 失败项 | 无；`Repository gates` 的证据门禁已随六份证据归档通过 |
 | CI 三平台构建 | macOS / Windows / Linux 均 success |
 | 冷启动 F 轮 | run `41683645429`（`7600963`）：**298/300，0.67%** |
 | **冷启动 G 轮（9.4.2 修复后）** | run `41838269784`（`ac01091`）：**300/300，100%，RELIABILITY_PASS**；`remote=300`，中位 3412 ms / p95 3722 ms |
@@ -51,8 +51,17 @@ source-size **568 文件**、actionlint 通过。新增 `startup-recovery-arbite
 **第二轮（run `41843065808`，`2db95aa`）**：artifact 用最终挂载判据复算为
 **300/300 `RELIABILITY_PASS`**；首次挂载 remote 299 / local 1（样本 37 的临时
 fallback，5124 ms 被 remote 替换），最终挂载 remote 300。workflow 因旧的
-“首次挂载”门禁为红，该红色状态保留；修复后 clean round 待重跑。
-**在 clean round 与最终 CI 11/11 出现之前，READY_FOR_RC 仍为否。**
+“首次挂载”门禁为红，该红色状态保留；修复后的 clean round 在 `41850205866`
+重跑。
+
+**clean 轮（run `41850205866`，`d4a972a`）**：**300/300 `RELIABILITY_PASS`**；
+首次挂载与最终挂载都是 `remote=300`；中位 3721 ms / p95 5482 ms；控制组两个成功
+样本各有 1 次 `CRASHSTRING`、0 个 `processExits`；隔离步骤 success。
+
+**最终 CI（run `41850097122`，`d4a972a`）**：**11/11 success**，包括
+`Repository gates`（证据 0 problem）、三平台 Tauri build、cargo/npm audit、
+Frontend/Rust/Team Server。**RC 仍为否的原因已不再是冷启动或 CI，而是跨版本
+升级、硬件矩阵、签名与身份迁移等 NOT_RUN/BLOCKED_EXTERNAL 项。**
 
 详见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`。
 
@@ -61,7 +70,7 @@ fallback，5124 ms 被 remote 替换），最终挂载 remote 300。workflow 因
 | 项 | 状态 | 证据 / 原因 |
 | --- | --- | --- |
 | macOS 冷启动诊断链 | **PASS** | `terminal-mounted`、串行 trace、30/30 阶段完整 |
-| macOS 冷启动 20% 根因 | **NOT_RUN** | 30 次未复现；历史失败 Unified Log 未采到 |
+| macOS 冷启动 20% 根因 | **PARTIAL** | F 轮的确定性机制已定位（8 秒 deadline 错传 + journal 污染）；历史 20% 的 Unified Log 仍未采到，但 G/第二轮/clean 轮共 900 样本 0 个最终 local 挂载，未再复现 |
 | 修复前 300 次冷启动样本 | **FAIL（3.67%）** | run `41602408642`：289/300 |
 | 修复后 A 300 次冷启动样本 | **FAIL（2.33%）** | run `41607668007`：293/300 |
 | 修复后 B 300 次冷启动样本 | **FAIL（3.00%）** | run `41612216952`：291/300 |
@@ -69,8 +78,10 @@ fallback，5124 ms 被 remote 替换），最终挂载 remote 300。workflow 因
 | 修复后 D 300 次冷启动样本 | **FAIL（6.00%）** | run `41644270883`：282/300；18 个失败，测量脚本还有缺陷 |
 | 修复后 E 300 次冷启动样本 | **FAIL（2.00%）** | run `41674133535`：294/300；3 未挂载 / 2 本地 fallback / 1 prompt marker |
 | 修复后 F 300 次冷启动样本 | **FAIL（0.67%）** | run `41683645429`：298/300；2 个失败均为本地 fallback；点估计首次低于 1%，但 Wilson 95% 上界约 2.40%，且只有一轮 |
-| **修复后 G 300 次冷启动样本** | **PASS（100%）** | run `41838269784`：300/300，`remote=300`，`RELIABILITY_PASS`；单轮 0/300 的 Wilson 95% 上界约 1.26%，第二轮进行中 |
-| 本地 fallback 抢占恢复的远程 tab | **PASS（G 轮）** | 300 个成功样本全部 `remote`，0 个 local；228 = 8 秒 deadline 错传，229 = journal 污染，均已修 |
+| **修复后 G 300 次冷启动样本** | **PASS（100%）** | run `41838269784`：300/300，`remote=300`，`RELIABILITY_PASS`；单轮 0/300 的 Wilson 95% 上界约 1.26% |
+| **第二轮 artifact 复算** | **PASS（最终挂载 100%）** | run `41843065808`：300/300；首次 remote 299 / local 1（样本 37），最终 remote 300；旧首次挂载门禁使 workflow 为红，已修 |
+| **clean 轮** | **PASS（100%）** | run `41850205866`：300/300，首次与最终均 `remote=300`；中位 3721 ms / p95 5482 ms |
+| 本地 fallback 抢占恢复的远程 tab | **PASS（最终状态）** | 900 个样本 0 个最终 local 挂载；唯一 1 个首次 local（第二轮样本 37）在 5124 ms 被 remote 替换 |
 | 跨样本隔离（真实 runner） | **PASS** | run `41838269784` 的 `Verify cross-sample isolation`：forced port 49195 / control 49199，临时目录已删除 |
 | tab 缺失时误建本地 PTY | **FIXED（证据）** | E/F 轮 `terminal-mounted ... @local` 证明失败是 fallback 本地会话，不是 SSH |
 | late-tab 挂载竞态 | **FIXED（更强证据）** | F 轮 `terminal-mounted=300`，E 轮的 3 个 `terminal-not-mounted` 未复现 |
@@ -79,7 +90,7 @@ fallback，5124 ms 被 remote 替换），最终挂载 remote 300。workflow 因
 | WebKit 失败日志 | **CLOSED（非根因）** | G 轮控制组两个**成功**样本各出现 1 次 `CRASHSTRING`、0 个 `processExits`；该字符串不是失败信号 |
 | 失败样本逐样本构建身份 | **PASS（G 轮）** | 300/300 的 `sourceSha=ac01091`、`sourceParentSha=7600963`、`binarySha256=0eb823fa…`、`timeoutMs=10000` |
 | 跨样本隔离 | **PASS（G 轮，真实 runner）** | `Verify cross-sample isolation` success；强制 1 ms 超时后正常样本仍 300/300 远程 |
-| 修复后本地门禁 | **PASS** | 前端 152 文件 / 1367 项、脚本 383 项、typecheck、ESLint、source-size、actionlint |
+| 修复后本地门禁 | **PASS** | 前端 153 文件 / 1393 项、冷启动相关脚本 83 项（最终 26 项新增/变更通过）、typecheck、ESLint、source-size 568 文件、actionlint |
 | 六份验收证据（当前源码） | **PASS** | run `41841781191`（`ac01091`，指纹 `d14fb1d1…`）：macOS / Linux / Windows 3/3 success；debug `0eb823fa…`、release `a1cf8181…`；门禁 **0 problem** |
 | RSA Marvin 可达性 | **PASS**（有条件接受） | 见 `rsa-threat-model.md` |
 | RSA 上游修复 | **BLOCKED_EXTERNAL** | `patched = []` |
@@ -94,35 +105,39 @@ fallback，5124 ms 被 remote 替换），最终挂载 remote 300。workflow 因
 
 ### READY_FOR_REVIEW
 
-**是**（stacked PR）。三次 300 次样本、失败分类、两个确定性产品缺陷、压力测试
-完整性门禁、RSA 威胁模型、安装与身份迁移前置均已落盘；剩余项明确标为
+**是。** 代码、恢复仲裁状态机、分段 trace、provenance 门禁、跨样本隔离验证、
+900 个真实样本（G 300/300、第二轮 artifact 300/300、clean 轮 300/300）、
+六份验收证据（0 problem）与最终 CI **11/11** 均已落盘；剩余项明确标为
 NOT_RUN / BLOCKED_EXTERNAL。
 
 ### READY_FOR_MERGE
 
-Phase 9.4 是 stacked branch，不能独立合并到 main；PR #6 合并后需要 rebase。
+**否（Phase 9.4 独立合并）。** PR #7 仍是 stacked branch，base 为
+`feat/phase9-2-sync-security-hardening`；PR #6 已满足既定条件，交由人工合并。
+PR #6 合并后需要 rebase/retarget PR #7，并在最终 HEAD 重跑 CI 与证据检查。
 本阶段不自动合并。
 
 ### READY_FOR_RC
 
-**否。**
+**否。** 冷启动、隔离、provenance 与 CI 已闭合：
 
-至少还缺：
+- G 轮 300/300、clean 轮 300/300，两个 clean 轮 600/600；0/600 的 Wilson 95%
+  上界约 0.64%（单侧 CP 约 0.50%）；
+- 第二轮 artifact 复算 300/300，最终挂载 remote 300，唯一 1 个首次 local 在
+  5124 ms 被 remote 替换；
+- 隔离、控制组 WebKit、逐样本构建身份均 PASS；
+- 六份证据 0 problem，最终 CI 11/11。
 
-1. 用修复后的构建做**多轮** 300 次样本，并把失败率稳定降到 1% 以下；F 轮 298/300
-   （0.67%），G 轮 **300/300（100%）**。G 轮单轮 0/300 的 Wilson 95% 上界约
-   1.26%，第二轮（`41841717975`）完成后才能谈统计稳定。
-2. 历史 20% 失败的 Unified Log 根因，或明确的“环境/时间窗口”解释。
-3. 本地 fallback 抢占远程 tab 的**真实 runner 闭合**：228 = 8 秒 deadline 错传，
-   229 = 共享 WebKit localStorage journal 污染。代码与 harness 已修，状态机与分段
-   trace 已加；仍需真实 300 次样本证明 `ssh-request-not-entered-rust` 不再出现。
-4. `terminal-not-mounted` 的产品级修复。F 轮未复现，但 late-tab 修复后的机制仍未
-   被独立证据闭合；新 trace 需要在真实 runner 上确认。
-5. 跨样本隔离的负面测试：workflow 已加 1 ms 强制超时 + 正常样本的验证步骤，
-   **尚未在真实 runner 执行**。
-6. 失败样本的逐样本构建身份：代码已补，**真实 runner 的 provenance 尚未重采**。
-7. 跨版本升级、回滚、失败恢复。
-8. Windows / Pageant / 串口 / 物理键盘实机验收。
+仍缺（这些不是冷启动问题）：
+
+1. 历史 20% 失败的 Unified Log 仍未采到；当前 900 样本未复现，F 轮的确定性机制
+   已定位，但历史样本本身无法事后补齐。
+2. 跨版本升级、回滚、失败恢复 **NOT_RUN**。
+3. Windows / Pageant / 串口硬件 **NOT_RUN**。
+4. 物理键盘 / 中文 IME 人工验收 **NOT_RUN**。
+5. notarization / Authenticode / updater 真实签名 **BLOCKED_EXTERNAL**。
+6. 身份迁移 T1–T12 **NOT_RUN / BLOCKED_EXTERNAL**。
+7. 安装后真实 Vault 解锁与 Team Sync 升级数据保留 **NOT_RUN**。
 
 ### READY_FOR_RELEASE
 

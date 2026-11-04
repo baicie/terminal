@@ -534,17 +534,18 @@ pnpm add <package-name>
 - ✅ Phase 9.4.2 代码：`startup-recovery-arbiter` 状态机；layout 读取失败抛错重试；workspace/layout 3 秒超时；`loadHosts` generation 竞态；用户输入与程序化写入区分；journal 不再遮蔽 remote 布局；fallback 与用户 tab 合并
 - ✅ 测量链：失败样本补 `binarySha256`/fixture/stages；checkout `fetch-depth: 2`；汇总器 `--require-provenance` / SHA / timeout / mount fail-closed；每样本前清空 WebKit 数据；新增 1 ms 强制超时 + 正常样本的隔离验证
 - ✅ 本地门禁：前端 **153 文件 / 1393 项**、冷启动相关脚本 **83 项**、typecheck、ESLint、source-size **568 文件**、actionlint 通过；本机真实回归 **10/10 remote、0 local**，隔离验证 **ISOLATION_PASS**
-- ✅ **G 轮真实 runner（run `41838269784`，`ac01091`）：300/300（100%），`RELIABILITY_PASS`**；`remote=300`、0 个 local；中位 3412 ms / p95 3722 ms；严格 provenance 汇总通过；`Verify cross-sample isolation` 真实 runner **ISOLATION_PASS**
-- ✅ **WebKit CRASHSTRING 已排除为失败信号**：控制组两个成功样本各 1 次 `CRASHSTRING`、0 个 `processExits`
-- 🟡 第二轮尝试 `41841717975` 被隔离门禁的 control `ssh-prompt-marker-missing` 挡住；解耦后重跑 `41843065808`，artifact 用**最终挂载**判据复算为 **300/300 `RELIABILITY_PASS`**（首次 remote 299/local 1，样本 37 的临时 local 在 5124 ms 被 remote 替换，最终 remote 300）。workflow 因旧的首次挂载门禁为红，clean round 待重跑。单轮 0/300 的 Wilson 95% 上界约 1.26%
-- 🔴 六份验收证据仍因 `FINGERPRINT_PATHS` 内源码改动而失效；真实矩阵 run `41841781191` 进行中，完成后安装证据
-- 📋 Phase 9.4.2 剩余：第二轮压力结论、六份证据重采、最终 CI 11/11、PR #6 合并后 rebase PR #7
+- ✅ **G 轮真实 runner（run `41838269784`，`ac01091`）：300/300（100%），`RELIABILITY_PASS`**；`remote=300`、0 个 local；中位 3412 ms / p95 3722 ms；隔离验证 **ISOLATION_PASS**
+- ✅ **第二轮 artifact 复算（run `41843065808`）：300/300**；首次 remote 299/local 1（样本 37 的临时 local 在 5124 ms 被 remote 替换），最终 remote 300；旧首次挂载门禁已修
+- ✅ **clean 轮（run `41850205866`，`d4a972a`）：300/300（100%）**；首次与最终均 `remote=300`；中位 3721 ms / p95 5482 ms；三个 run 合计 **900 样本，0 个最终 local**
+- ✅ **WebKit CRASHSTRING 已排除为失败信号**：控制组成功样本各 1 次 `CRASHSTRING`、0 个 `processExits`
+- ✅ 六份验收证据已由真实矩阵 run `41841781191` 重采（`ac01091`，指纹 `d14fb1d1…`，debug `0eb823fa…`、release `a1cf8181…`），门禁 **0 problem**；最终 CI `41850097122`（`d4a972a`）**11/11 success**
+- 📋 Phase 9.4.2 冷启动收口完成；剩余 RC 阻断是跨版本升级/回滚、Windows/Pageant/串口/物理键盘/IME、签名/公证、身份迁移与真实 Vault 解锁（NOT_RUN/BLOCKED_EXTERNAL）
 
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
 - ✅ Phase 9.4 本地门禁快照（文档记录）：前端 **152 文件 / 1371 项**、脚本 **385 项**、**563** 个生产文件行数门禁、bundle budget；Rust / Team Server 以 CI 结果为准。Phase 9.4.2 修复后必须重跑并以实跑数字更新
-- ✅ **六份验收证据曾在 Phase 9.3.2 的真实 runner 重采**：run `41605898002`（sha `44ae449`），源码指纹 **`6d7536e7…`**，三平台 3/3 success，`check-verification-evidence.mjs` 报 **0 problem**。**Phase 9.4 的源码改动已再次使其失效**：当前源码指纹 `890cc0d1…`，CI `Repository gates` 报 7 problem。**不得修改旧 evidence 让门禁变绿**，必须在最终冻结源码后由 real-machine-matrix 重采
+- ✅ **六份验收证据已在 Phase 9.4.2 的真实 runner 重采**：run `41841781191`（sha `ac01091`），源码指纹 **`d14fb1d1…`**，三平台 3/3 success，debug `0eb823fa…`、release `a1cf8181…`，`check-verification-evidence.mjs` 报 **0 problem**；证据与 manifest 已归档，最终 CI `41850097122` 为 **11/11**。**不得修改旧 evidence 让门禁变绿**；任何 `FINGERPRINT_PATHS` 内改动仍需重采
   - 证据绑定**代码身份**而非"最近一次成功"：任何 `FINGERPRINT_PATHS` 内的改动（包括前端恢复链与采样脚本）都会让旧证据当场失效
 - ✅ **证据门禁已是真门禁**：`check-verification-evidence.mjs` 此前只能经 `pnpm verify` 抵达，而 CI 里没有 job 调用它，等于自愿遵守。现在它是 `source-size` job（已改名 `Repository gates (source size, evidence, script tests)`）里的阻塞步骤，**无 `continue-on-error`**
 - 🔴 **依赖安全：13 条已记录，1 条真实不可修**：`cargo audit` 从 42 条（25 vulnerabilities + 9 unmaintained + 4 unsound + 4 yanked）降到 **13 条（8 + 4 + 1 + 0）**，修掉 29 条。剩余结构：7 条锁文件残留（不在任何构建图：quinn-proto ×5、rkyv、rsa 0.9.10）；5 条真实但**只在 Linux**（glib、proc-macro-error、zvariant、zbus_names、zvariant_derive，均来自 Tauri 托盘/通知栈，已用 `cargo tree --target` 三平台实测）；**1 条真实、三平台、上游无修复**：`RUSTSEC-2023-0071`（rsa 0.10.0-rc.18，Marvin 攻击，`patched = []`，russh 与 ssh-key 精确钉死该版本）。
@@ -572,9 +573,9 @@ pnpm add <package-name>
 | #     | 问题                                         | 严重程度     | 优先级 |
 | ----- | -------------------------------------------- | ------------ | ------ |
 | —     | 🔴 依赖安全：`cargo audit` **13 条**已记录（8 vulnerabilities + 4 unmaintained + 1 unsound + 0 yanked），其中 **1 条真实、三平台、上游无修复**（`RUSTSEC-2023-0071` rsa 0.10.0-rc.18）。`cargo-audit` 已是阻塞门禁。阻塞发布，不阻塞合并。台账 `docs/phase9-1/security-advisories.md` | 🔴 Blocker（发布） | P0 |
-| —     | 🟡 **六份验收证据再次失效**：Phase 9.3.2 的 `6d7536e7…` 证据与当前源码指纹 `890cc0d1…` 不匹配（7 problem）。这是 `FINGERPRINT_PATHS` 内改动后的正确行为；必须在最终冻结源码后由 real-machine-matrix 重采，不能改旧 manifest | 🟡 Blocker（合并前） | P0 |
+| —     | ✅ **六份验收证据已重采并归档**：run `41841781191`（`ac01091`，指纹 `d14fb1d1…`），三平台 3/3 success，门禁 0 problem；最终 CI `41850097122` 11/11。任何后续 `FINGERPRINT_PATHS` 改动仍需重采 | ✅ 已闭合 | — |
 | —     | ✅ P9.2-9 Linux zsh 探针 **PASS**：run `41432020659` / `41434165000` 的 Linux job 均 success，14 用例全绿（含此前三条）。遗留：空 `$HOME` 的真实 Debian 新账户未测 | ✅ 已闭合 | — |
-| 60    | ✅ **macOS 远程冷启动 G 轮：300/300（100%），`RELIABILITY_PASS`**（run `41838269784`，`ac01091`）；`remote=300`、0 个 local；隔离验证 PASS；控制组证明 `CRASHSTRING` 不是失败信号。第二轮 `41841717975` 与证据重采进行中；单轮 0/300 的 Wilson 95% 上界约 1.26%，多轮结论待第二轮 | 🟡 Important（待多轮） | P0 |
+| 60    | ✅ **macOS 远程冷启动已收口**：G 300/300、第二轮 artifact 300/300（最终 remote 300）、clean 300/300；三个 run 共 **900 样本，0 个最终 local**；隔离/控制组/证据/CI 11/11 均 PASS。仍缺：历史 20% 的 Unified Log、跨版本升级、硬件矩阵、签名、身份迁移 | ✅ 已闭合（冷启动） | — |
 | —     | ✅ 前端依赖审计已闭合（vuln 25 → 0，新增 CI 阻塞 job）；同步接口与 Share REST 的版本契约统一为 JSON number。详见 `docs/phase9-3/merge-blocker-closure.md` | ✅ 已闭合 | — |
 | 57    | 真实 SSH 认证矩阵 ✅ 当前源码（run `41478709578`，sha `3102093`）：debug 11/11、release 8/8、shell 交互 14/14（另 Linux 14 + Windows 5，全矩阵 40 个 probe 用例 0 FAILED） | 🟡 Important | P1 |
 | 58    | 物理键盘 30 轮重叠 `a/s/d`、中文 IME、Option/dead key 待人工键入（Ctrl+C、vim、nano、PTY resize、行编辑已在本地 PTY **与真实 SSH** 上自动化覆盖） | 🟡 Important | P1 |
@@ -1027,7 +1028,7 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-11-04 (Phase 9.4.2：G 轮真实 runner run `41838269784` 达成 **300/300（100%），`RELIABILITY_PASS`**，`remote=300`、0 个 local，隔离验证 PASS；控制组成功样本同样出现 `CRASHSTRING`，排除其为失败信号；第二轮 `41841717975` 因隔离门禁与控制样本 readiness 耦合而中止，已解耦并重跑；真实矩阵 `41841781191` 进行中，六份证据待安装；详见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`)_
+_文档更新时间: 2026-11-04 (Phase 9.4.2 最终：G 轮 `41838269784` 300/300、第二轮 artifact `41843065808` 300/300（最终 remote 300）、clean 轮 `41850205866` 300/300，三个 run 共 900 样本 0 个最终 local；真实矩阵 `41841781191` 3/3 success 并安装六份证据（0 problem）；最终 CI `41850097122` 11/11；隔离与控制组 WebKit 均 PASS；RC 仍否，剩余跨版本升级、硬件矩阵、签名、身份迁移等 NOT_RUN/BLOCKED_EXTERNAL；详见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`)_
 
 _历史更新 2026-11-03: (Phase 9.3：bootstrap 的五个配置探测由串行改并发，修掉「一个慢 IPC 饿死其余」——这是 real-machine run `41437956656` 上 `nano-edit`「从未写 result.json」的根因；冷启动测量目录清理改带重试，修掉 `ENOTEMPTY` 假红；6 份证据随 run `41478709578` 重采为指纹 `c4faedfb…`，门禁 0 problem；交付 `docs/phase9-3/bootstrap-probe-starvation.md`)_
 

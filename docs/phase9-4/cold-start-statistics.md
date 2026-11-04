@@ -553,6 +553,31 @@ remote。旧汇总器用**第一次** `terminal-mounted` 判定 `--require-mount
 `--require-mount remote` 门禁。workflow 这一轮的红色状态保留在 GitHub 上，不
 改写为绿；修复后的 clean round 将另行运行。
 
+## 3.14 clean 轮：run `41850205866`（2026-11-04）
+
+| 项 | 值 |
+| --- | --- |
+| run | `41850205866` |
+| commit | `d4a972a513febc1785821bfc9c0b7e1a41e1f391` |
+| 父提交 | `2db95aa633d0e2f950b0c0fd08fe472b89e639ea`（`sourceParentShaSource=git`） |
+| binary SHA256 | `0eb823fa8d366e070ac7cb6bd0810fd64a273ac23f73765aaf6e4f9f416eac8c` |
+| samples | 300（1..300 完整） |
+| 成功 / 失败 | **300 / 0** |
+| verdict | **RELIABILITY_PASS** |
+| 中位 / p95 / 最大 | 3721 / 5482 / 6505 ms |
+| 首次挂载 | `remote=300` |
+| 最终挂载 | `remote=300` |
+| 控制组 WebKit | 样本 1/2：2254/2234 行，`crashStrings=1`、`processExits=0` |
+| 隔离步骤 | success |
+
+这是 G 轮之后第二个 clean 300/300。结合第二轮 artifact 的最终挂载复算
+（300/300，1 个临时 local 被 remote 替换），Phase 9.4.2 共覆盖 **900 个样本，
+0 个最终 local 挂载**。
+
+**统计边界**：两个 clean 轮合计 600/600，0/600 的 Wilson 95% 上界约 **0.64%**
+（单侧 Clopper–Pearson 约 0.50%）。这比单轮强，但仍不是长期保证；若把第二轮
+artifact 也算入，900/900 的 Wilson 上界约 0.43%（单侧 CP 约 0.33%）。
+
 ## 4. 失败分类口径
 
 每个失败样本按第一个未到达阶段分类：
