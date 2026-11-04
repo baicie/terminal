@@ -4935,7 +4935,7 @@ late-tab 修复只覆盖了 effect 内 ref 为空的路径。根因保持未闭�
 **限制**：旧样本的失败 JSON 只有 `stages` 字符串，没有 `session-created` detail，
 因此不能把这些样本逐个证明为本地 PTY；修复的验证必须来自新构建的实机采样。
 
-### Issue #184: F 轮仍有 2 个本地 fallback 抢占远程会话 🟡 未闭合（2026-11-04）
+### Issue #184: F 轮仍有 2 个本地 fallback 抢占远程会话 ✅ 已修复（G 轮 300/300，2026-11-04）
 
 **严重程度**：🟡 Important（RC 可靠性）
 
@@ -4977,7 +4977,12 @@ connect to launchservicesd.`，并伴随新的 WebProcess PID 与数秒近静默
 
 详见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`。
 
-### Issue #185: 失败样本缺 binarySha256，parent SHA 为 null 🟡 未闭合（2026-11-04）
+**G 轮真实验证**：run `41838269784`（`ac01091`）**300/300，100%，
+`RELIABILITY_PASS`**；`mountEvidence={"remote":300}`，0 个 local fallback；
+中位 3412 ms / p95 3722 ms。`Verify cross-sample isolation` 在同一 run 通过。
+第二轮 `41841717975` 与六份证据重采仍在进行，多轮结论待第二轮完成。
+
+### Issue #185: 失败样本缺 binarySha256，parent SHA 为 null ✅ 已修复（G 轮验证，2026-11-04）
 
 **严重程度**：🟡 Important（证据链）
 
@@ -5010,7 +5015,11 @@ connect to launchservicesd.`，并伴随新的 WebProcess PID 与数秒近静默
   已删除、fixture 端口不同、binary SHA 相同。
 - 脚本测试 83 项通过。
 
-### Issue #186: 生产 fallback 截止时间被错传成 8 秒 ✅ 已修复（代码，2026-11-04）
+**G 轮真实验证**：run `41838269784` 的 300 个样本全部
+`sourceSha=ac01091`、`sourceParentSha=7600963`（`source=git`）、
+`binarySha256=0eb823fa…`、`timeoutMs=10000`；严格汇总门禁通过。
+
+### Issue #186: 生产 fallback 截止时间被错传成 8 秒 ✅ 已修复（G 轮验证，2026-11-04）
 
 **严重程度**：🔴 Blocker（冷启动可靠性）
 
@@ -5027,7 +5036,7 @@ deadline）作为 `startupTerminalFallbackAt` 传给 App；`BOOTSTRAP_TERMINAL_F
 **验证**：`terminal-bootstrap.test.tsx` 断言不再是 app-chunk deadline；真实
 runner 复测待执行。
 
-### Issue #187: 跨样本共享 WKWebView localStorage 导致 recovery journal 污染 ✅ 已修复（代码，2026-11-04）
+### Issue #187: 跨样本共享 WKWebView localStorage 导致 recovery journal 污染 ✅ 已修复（G 轮验证，2026-11-04）
 
 **严重程度**：🔴 Blocker（测量完整性）
 
@@ -5048,7 +5057,7 @@ journal 键又固定为 `terminal.workspace.recovery.v1.remote-cold-workspace`�
 **限制**：这不能证明 228 的第一因；228 的 recovery 停点需要新分段 trace 在
 真实 runner 上判定。
 
-### Issue #188: 恢复链读取失败被吞、无超时与 host generation 竞态 ✅ 已修复（代码，2026-11-04）
+### Issue #188: 恢复链读取失败被吞、无超时与 host generation 竞态 ✅ 已修复（G 轮验证，2026-11-04）
 
 **严重程度**：🟡 Important（恢复可靠性）
 
@@ -5062,3 +5071,22 @@ journal 键又固定为 `terminal.workspace.recovery.v1.remote-cold-workspace`�
 - 新增 `startup-recovery-arbiter.ts` 状态机：布局确认不存在才创建 fallback；
   布局读取中/重试中/已有远程布局时 defer，带 2 秒有界 defer 预算防止永久空白。
 - 新增恢复分段 trace 与 `fallback-decision` / `fallback-opened` 等阶段。
+
+### Issue #189: 隔离门禁与控制样本 readiness 耦合 ✅ 已修复（2026-11-04）
+
+**严重程度**：🟡 Important（测量基础设施）
+
+**问题**：第二轮 300 次（run `41841717975`）的 `Verify cross-sample isolation`
+把 control 样本的 `ok === true` 当成隔离通过条件。control 实际已
+`terminal-mounted ... @remote`、`ssh-connect-start`、`ssh-pty-ready`、
+`ssh-shell-first-output`，只是在 10 秒内没有完成 prompt marker
+（`ssh-prompt-marker-missing`）。隔离步骤因此失败，300 样本被跳过。这不是
+隔离污染，也不是启动失败；控制样本的产品失败应计入 300 样本分母。
+
+**修复**：`verify-cold-start-isolation.mjs` 不再要求 `control.ok === true`，改为
+断言：control 使用不同 fixture 端口、挂载 `remote`、进入 `ssh-connect-start`、
+临时目录已删除、binary SHA 相同；control 的 `error` 仍写入 result。workflow
+对 control 命令加 `|| true`，让 verifier 自己裁定。
+
+**验证**：隔离脚本测试 5 项通过（新增“control 到 SSH 但 prompt marker 失败仍
+ISOLATION_PASS”与“control 未挂载 remote 则 FAIL”）。修复后的第二轮待重跑。

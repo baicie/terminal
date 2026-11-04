@@ -476,6 +476,48 @@ F 轮两个失败不是 WebKit 崩溃，也不是两个独立的 SSH 故障：
 修复与验证方案见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`。在真实
 runner 复测之前，本条仍不能写成“已修复”。
 
+## 3.12 修复后 G 轮：run `41838269784`（2026-11-04）
+
+这是 Phase 9.4.2 修复后的第一轮真实 300 次样本，也是目前唯一一轮
+`RELIABILITY_PASS`。
+
+| 项 | 值 |
+| --- | --- |
+| run | `41838269784` |
+| commit | `ac010913dc0e60c8f4af58c2db093edf4e02921a` |
+| 父提交 | `760096341d0273c3833a5244ff2cb522fbcdeb08`（`sourceParentShaSource=git`） |
+| binary SHA256 | `0eb823fa8d366e070ac7cb6bd0810fd64a273ac23f73765aaf6e4f9f416eac8c` |
+| samples | 300（1..300 完整） |
+| 成功 / 失败 | **300 / 0** |
+| 成功率 | **100.0%** |
+| verdict | **RELIABILITY_PASS** |
+| spawn→ready 最小 / 中位 / p95 / 最大 | 2667 / **3412** / **3722** / 4021 ms |
+| 阶段出现 | `frontend-boot=300`、`ready=300`、`terminal-mounted=300`、`session-requested=300`、`session-created=300` |
+| mount evidence | **`remote=300`** |
+
+严格汇总门禁（`--require-provenance`、expected binary/source/timeout、
+`--require-mount remote`）全部通过：300 个样本的 `sourceSha` 都是 `ac01091`，
+`sourceParentSha` 都是 `7600963`，`binarySha256` 都是 `0eb823fa…`，
+`timeoutMs` 都是 10000。
+
+**跨样本隔离**：`Verify cross-sample isolation` 在真实 runner 上
+**ISOLATION_PASS**；强制超时样本 fixture 端口 `49195`，紧随的正常样本端口
+`49199`，临时目录已删除。
+
+**WebKit 控制组**：前 2 个成功样本也采集了日志：
+
+| 样本 | 行数 | `crashStrings` | `processExits` |
+| --- | --- | --- | --- |
+| 1 | 2299 | 1 | 0 |
+| 2 | 2215 | 1 | 0 |
+
+`CRASHSTRING: Couldn't connect to launchservicesd` 在**成功样本**里同样出现，
+且没有进程退出事件，因此它不是失败信号，也不是 F 轮根因。
+
+**统计边界**：0/300 的 Wilson 95% 上界约 **1.26%**（单侧 Clopper–Pearson 约
+1.0%）。这只是单轮结果；第二轮（run `41841717975`）正在进行，不能因为这一轮
+300/300 就宣布长期稳定。
+
 ## 4. 失败分类口径
 
 每个失败样本按第一个未到达阶段分类：

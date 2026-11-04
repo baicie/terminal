@@ -314,3 +314,25 @@ run `41683645429`（`7600963`）在 `log show` 时间参数改为“epoch → `d
 
 因此“macOS 冷启动 20% 根因 = WebKit 崩溃”这条假设没有被 F 轮证据支持。真正的
 产品/测量缺陷与修复见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`。
+
+## 12. G 轮控制组：CRASHSTRING 不是失败信号（2026-11-04）
+
+Phase 9.4.2 的 stress workflow 现在为前 2 个**成功**样本采集同样的 WebKit 日志。
+run `41838269784` 的结果：
+
+| 样本 | 类型 | 行数 | `crashStrings` | `processExits` |
+| --- | --- | --- | --- | --- |
+| 1 | control（成功） | 2299 | 1 | 0 |
+| 2 | control（成功） | 2215 | 1 | 0 |
+
+成功样本同样出现
+`WebContent[...] CRASHSTRING: rdar://problem/28724618 Couldn't connect to
+launchservicesd.`，且同样没有进程退出事件。
+
+**结论**：这条 `CRASHSTRING` 与冷启动失败**没有相关性**。F 轮把它当作根因线索
+是合理的假设，但控制组已经否定了“它只在失败时出现”。历史 20% 失败若仍有
+WebKit 侧原因，需要另一类证据（例如真正的 `processDidExit`/`didCrash`），
+不能再用这条字符串解释。
+
+G 轮 300/300、300 个远程挂载、0 个 local fallback；本地 fallback 与 journal
+污染的产品/测量修复见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`。

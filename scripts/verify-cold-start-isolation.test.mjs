@@ -33,6 +33,14 @@ async function writeSamples(directory, overrides = {}) {
     ok: true,
     binarySha256: 'a'.repeat(64),
     fixture: { port: 65_001 },
+    stages: [
+      {
+        stage: 'terminal-mounted',
+        atMs: 900,
+        detail: 'remote-cold-tab@workspace@remote',
+      },
+      { stage: 'ssh-connect-start', atMs: 1_000 },
+    ],
     ...overrides.control,
   }
   await writeFile(path.join(directory, 'forced.json'), JSON.stringify(forced))
@@ -80,5 +88,43 @@ test('fails when the control reused the forced fixture port', async () => {
     await assert.rejects(
       run('node', ['scripts/verify-cold-start-isolation.mjs', directory]),
     )
+  })
+})
+
+test('accepts a control that reached SSH but missed the prompt marker', async () => {
+  await withIsolationDirectory(async directory => {
+    await writeSamples(directory, {
+      control: {
+        ok: false,
+        error: 'the remote shell produced output, but the prompt marker did not complete',
+      },
+    })
+    await run('node', ['scripts/verify-cold-start-isolation.mjs', directory])
+    const result = JSON.parse(
+      await readFile(path.join(directory, 'result.json'), 'utf8'),
+    )
+    assert.equal(result.verdict, 'ISOLATION_PASS')
+    assert.equal(result.control.ok, false)
+    assert.equal(result.control.mountedRemote, true)
+    assert.equal(result.control.enteredSsh, true)
+  })
+})
+
+test('fails when the control never mounted a remote terminal', async () => {
+  await withIsolationDirectory(async directory => {
+    await writeSamples(directory, {
+      control: {
+        ok: false,
+        stages: [{ stage: 'frontend-boot', atMs: 0 }],
+      },
+    })
+    await assert.rejects(
+      run('node', ['scripts/verify-cold-start-isolation.mjs', directory]),
+    )
+    const result = JSON.parse(
+      await readFile(path.join(directory, 'result.json'), 'utf8'),
+    )
+    assert.equal(result.verdict, 'ISOLATION_FAIL')
+    assert.match(result.problems.join(' '), /did not mount a remote terminal/)
   })
 })

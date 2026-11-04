@@ -153,17 +153,28 @@ App 侧新增 `fallback-deadline-reached`、`fallback-decision`、
 | actionlint | `cold-start-stress.yml` 通过 |
 | 本机真实回归（非 CI 证据） | **10/10 remote、0 local**；中位 3475 ms、p95 3998 ms；严格 provenance 汇总通过 |
 | 本机隔离验证（非 CI 证据） | **ISOLATION_PASS**：强制 1 ms 超时样本 + 正常样本；临时目录已删除、fixture 端口不同、binary SHA 相同 |
+| 真实 runner G 轮（run `41838269784`） | **300/300，100%，`RELIABILITY_PASS`**；`remote=300`，中位 3412 ms / p95 3722 ms |
+| 真实 runner 隔离验证 | **ISOLATION_PASS**；forced port 49195 / control 49199 |
+| WebKit 控制组 | 样本 1/2（均成功）：2299/2215 行，`crashStrings=1`、`processExits=0` |
+| 第二轮尝试（run `41841717975`） | 隔离门禁失败：control 已挂载 remote、进入 SSH、拿到 shell 首字节，但 `ssh-prompt-marker-missing`；300 样本被跳过。门禁已解耦为“隔离属性”而非“控制样本 ready” |
 
 本机回归使用的二进制由**未提交工作树**构建（`sourceTreeClean=false`），只能证明
-产品路径在开发机上工作，不能替代真实 runner 证据。
+产品路径在开发机上工作；真实 runner G 轮才是有效证据。第二轮 `41841717975`
+与真实矩阵/证据重采仍在进行。
 
 ## 7. 仍未完成（不能写成 PASS）
 
-1. 在真实 runner 上重跑多轮 300 次样本；当前只有本地单元/脚本证据。
-2. 用新的分段 trace 证明样本 228 的 recovery 到底停在哪一步。
-3. 成功样本 WebKit 对照日志是否出现同样的 `CRASHSTRING`；目前只是已采集，未判读。
-4. 故意超时的真实 runner 隔离样本（workflow step 已就绪，未执行）。
-5. 六份验收证据重采、最终 CI 11/11。
+1. 第一轮真实 300 次（G 轮）已 **300/300**；第二次尝试 `41841717975` 在隔离
+   门禁处被 control 的 `ssh-prompt-marker-missing` 挡住，300 样本未执行。门禁已
+   改为只校验“下一个样本拿到新 fixture、挂载 remote、进入 SSH”，产品 readiness
+   留给 300 样本分母；修复后需要重跑第二轮。
+2. 用新的分段 trace 证明样本 228 的 recovery 停点：G 轮的 trace 已能显示
+   全程 `layout-load-done` / `host-load-done` / `restore-layout-committed`，
+   但 F 轮旧样本没有这些阶段，无法事后补齐。
+3. 成功样本 WebKit 对照日志已经采集并判读：控制组各 1 次 `CRASHSTRING`、
+   0 个 `processExits`，因此该字符串不是失败信号。
+4. 真实 runner 隔离样本已执行并 **ISOLATION_PASS**。
+5. 六份验收证据重采（矩阵 run `41841781191` 进行中）、最终 CI 11/11。
 6. Windows / Pageant / 串口 / 物理键盘 / 跨版本升级 / 签名等既有 NOT_RUN。
 
 ## 8. 判定

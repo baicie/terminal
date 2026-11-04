@@ -533,11 +533,12 @@ pnpm add <package-name>
 - ✅ **两个失败已定位为确定性缺陷，不是 WebKit 崩溃**：228 = App chunk 的 8 秒 deadline 被错传成 terminal fallback deadline；229 = 共享 WKWebView localStorage 的 local-only recovery journal 污染（两个样本的 `local-1793728115282` tab id 生成时间早于 229 的 `capturedAt`）
 - ✅ Phase 9.4.2 代码：`startup-recovery-arbiter` 状态机；layout 读取失败抛错重试；workspace/layout 3 秒超时；`loadHosts` generation 竞态；用户输入与程序化写入区分；journal 不再遮蔽 remote 布局；fallback 与用户 tab 合并
 - ✅ 测量链：失败样本补 `binarySha256`/fixture/stages；checkout `fetch-depth: 2`；汇总器 `--require-provenance` / SHA / timeout / mount fail-closed；每样本前清空 WebKit 数据；新增 1 ms 强制超时 + 正常样本的隔离验证
-- ✅ 本地门禁：前端 **153 文件 / 1393 项**、脚本 **83 项**、typecheck、ESLint、source-size **568 文件**、actionlint 通过；本机真实回归 **10/10 remote、0 local**，隔离验证 **ISOLATION_PASS**（二进制来自未提交工作树，不是 CI 证据）
-- 🟡 真实 runner 的多轮 300 次复测、成功样本 WebKit 对照、隔离负面测试、六份证据重采与最终 CI **尚未执行**；不能把代码完成写成 RC 通过
-- 🟡 0.67% 只是点估计；2/300 的 Wilson 95% 上界约 2.40%，不能据此宣布统计上稳定
-- 🔴 六份验收证据仍因 `FINGERPRINT_PATHS` 内源码改动而失效，需在最终冻结源码后重采
-- 📋 Phase 9.4.2 剩余：真实压力复测、证据重采、PR #6 合并后 rebase PR #7
+- ✅ 本地门禁：前端 **153 文件 / 1393 项**、脚本 **83 项**、typecheck、ESLint、source-size **568 文件**、actionlint 通过；本机真实回归 **10/10 remote、0 local**，隔离验证 **ISOLATION_PASS**
+- ✅ **G 轮真实 runner（run `41838269784`，`ac01091`）：300/300（100%），`RELIABILITY_PASS`**；`remote=300`、0 个 local；中位 3412 ms / p95 3722 ms；严格 provenance 汇总通过；`Verify cross-sample isolation` 真实 runner **ISOLATION_PASS**
+- ✅ **WebKit CRASHSTRING 已排除为失败信号**：控制组两个成功样本各 1 次 `CRASHSTRING`、0 个 `processExits`
+- 🟡 第二轮尝试 `41841717975` 被隔离门禁的 control `ssh-prompt-marker-missing` 挡住（control 已挂载 remote 并进入 SSH，非隔离污染）；门禁已解耦为“新 fixture + remote mount + 进入 SSH”，控制样本的产品失败留给 300 样本分母；修复后重跑中。单轮 0/300 的 Wilson 95% 上界约 1.26%，多轮结论待第二轮
+- 🔴 六份验收证据仍因 `FINGERPRINT_PATHS` 内源码改动而失效；真实矩阵 run `41841781191` 进行中，完成后安装证据
+- 📋 Phase 9.4.2 剩余：第二轮压力结论、六份证据重采、最终 CI 11/11、PR #6 合并后 rebase PR #7
 
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
@@ -573,7 +574,7 @@ pnpm add <package-name>
 | —     | 🔴 依赖安全：`cargo audit` **13 条**已记录（8 vulnerabilities + 4 unmaintained + 1 unsound + 0 yanked），其中 **1 条真实、三平台、上游无修复**（`RUSTSEC-2023-0071` rsa 0.10.0-rc.18）。`cargo-audit` 已是阻塞门禁。阻塞发布，不阻塞合并。台账 `docs/phase9-1/security-advisories.md` | 🔴 Blocker（发布） | P0 |
 | —     | 🟡 **六份验收证据再次失效**：Phase 9.3.2 的 `6d7536e7…` 证据与当前源码指纹 `890cc0d1…` 不匹配（7 problem）。这是 `FINGERPRINT_PATHS` 内改动后的正确行为；必须在最终冻结源码后由 real-machine-matrix 重采，不能改旧 manifest | 🟡 Blocker（合并前） | P0 |
 | —     | ✅ P9.2-9 Linux zsh 探针 **PASS**：run `41432020659` / `41434165000` 的 Linux job 均 success，14 用例全绿（含此前三条）。遗留：空 `$HOME` 的真实 Debian 新账户未测 | ✅ 已闭合 | — |
-| 60    | 🟡 **macOS 远程冷启动：F 轮 298/300（0.67%）**；2 个失败已定位为 8 秒 fallback deadline 错传（228）与共享 WebKit localStorage journal 污染（229），代码与 harness 已修。0.67% 的 Wilson 95% 上界约 2.40%，只有一轮；真实多轮复测、成功样本 WebKit 对照、隔离负面测试与证据重采**尚未执行** | 🟡 Important（RC 风险） | P0 |
+| 60    | ✅ **macOS 远程冷启动 G 轮：300/300（100%），`RELIABILITY_PASS`**（run `41838269784`，`ac01091`）；`remote=300`、0 个 local；隔离验证 PASS；控制组证明 `CRASHSTRING` 不是失败信号。第二轮 `41841717975` 与证据重采进行中；单轮 0/300 的 Wilson 95% 上界约 1.26%，多轮结论待第二轮 | 🟡 Important（待多轮） | P0 |
 | —     | ✅ 前端依赖审计已闭合（vuln 25 → 0，新增 CI 阻塞 job）；同步接口与 Share REST 的版本契约统一为 JSON number。详见 `docs/phase9-3/merge-blocker-closure.md` | ✅ 已闭合 | — |
 | 57    | 真实 SSH 认证矩阵 ✅ 当前源码（run `41478709578`，sha `3102093`）：debug 11/11、release 8/8、shell 交互 14/14（另 Linux 14 + Windows 5，全矩阵 40 个 probe 用例 0 FAILED） | 🟡 Important | P1 |
 | 58    | 物理键盘 30 轮重叠 `a/s/d`、中文 IME、Option/dead key 待人工键入（Ctrl+C、vim、nano、PTY resize、行编辑已在本地 PTY **与真实 SSH** 上自动化覆盖） | 🟡 Important | P1 |
@@ -1026,7 +1027,7 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-11-04 (Phase 9.4.2：F 轮两个失败定位为 8 秒 fallback deadline 错传与共享 WKWebView localStorage 的 journal 污染，不是 WebKit 崩溃；已加恢复仲裁状态机、分段 trace、3 秒查询超时、journal 优先级、用户输入/程序化写入区分、失败样本 provenance 与每样本 WebKit 清空；本地门禁前端 153 文件 / 1393 项、脚本 83 项、source-size 568 文件通过；真实 300 次复测与六份证据重采仍未执行；详见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`)_
+_文档更新时间: 2026-11-04 (Phase 9.4.2：G 轮真实 runner run `41838269784` 达成 **300/300（100%），`RELIABILITY_PASS`**，`remote=300`、0 个 local，隔离验证 PASS；控制组成功样本同样出现 `CRASHSTRING`，排除其为失败信号；第二轮 `41841717975` 因隔离门禁与控制样本 readiness 耦合而中止，已解耦并重跑；真实矩阵 `41841781191` 进行中，六份证据待安装；详见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`)_
 
 _历史更新 2026-11-03: (Phase 9.3：bootstrap 的五个配置探测由串行改并发，修掉「一个慢 IPC 饿死其余」——这是 real-machine run `41437956656` 上 `nano-edit`「从未写 result.json」的根因；冷启动测量目录清理改带重试，修掉 `ENOTEMPTY` 假红；6 份证据随 run `41478709578` 重采为指纹 `c4faedfb…`，门禁 0 problem；交付 `docs/phase9-3/bootstrap-probe-starvation.md`)_
 

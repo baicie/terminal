@@ -73,9 +73,12 @@ jobs:
           rm -rf "$HOME/Library/WebKit/com.baicie.termius" \
             "$HOME/Library/Caches/com.baicie.termius" \
             "$HOME/Library/HTTPStorages/com.baicie.termius" 2>/dev/null || true
+          # A product-level prompt-marker timeout is a legitimate control
+          # outcome; the verifier decides whether isolation held, not whether
+          # the control happened to finish readiness.
           node scripts/run-cold-start-stress-sample.mjs \
             2 cold-start-isolation/control.json \
-            "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal" "$TIMEOUT_MS"
+            "$GITHUB_WORKSPACE/src-tauri/target/debug/terminal" "$TIMEOUT_MS" || true
           node scripts/verify-cold-start-isolation.mjs cold-start-isolation
 
       - name: Collect cold-start samples

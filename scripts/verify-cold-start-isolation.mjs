@@ -30,11 +30,28 @@ if (forced.ok !== false) {
 if (typeof forced.binarySha256 !== 'string' || !/^[a-f0-9]{64}$/.test(forced.binarySha256)) {
   problems.push('the forced-timeout sample has no verifiable binarySha256')
 }
-if (control.ok !== true) {
-  problems.push('the control sample did not succeed')
-}
 if (control.binarySha256 !== forced.binarySha256) {
   problems.push('the control and forced samples used different binaries')
+}
+// The control is an isolation witness, not a product-readiness assertion.
+// It must prove that the next sample got a fresh fixture and really entered
+// the remote path; a prompt-marker timeout after `ssh-connect-start` is a
+// product measurement for the 300-sample denominator, not contamination.
+const controlStages = Array.isArray(control.stages) ? control.stages : []
+const controlMount = controlStages.find(
+  stage => stage?.stage === 'terminal-mounted',
+)
+const controlMountDetail =
+  typeof controlMount?.detail === 'string' ? controlMount.detail : ''
+const controlMountedRemote = controlMountDetail.endsWith('@remote')
+const controlEnteredSsh = controlStages.some(
+  stage => stage?.stage === 'ssh-connect-start',
+)
+if (!controlMountedRemote) {
+  problems.push('the control sample did not mount a remote terminal')
+}
+if (!controlEnteredSsh) {
+  problems.push('the control sample did not enter the SSH path')
 }
 if (!forced.fixture || !control.fixture) {
   problems.push('fixture metadata is missing from one of the samples')
@@ -70,6 +87,9 @@ const result = {
     ok: control.ok,
     binarySha256: control.binarySha256 ?? null,
     fixturePort: control.fixture?.port ?? null,
+    mountedRemote: controlMountedRemote,
+    enteredSsh: controlEnteredSsh,
+    ...(typeof control.error === 'string' ? { error: control.error } : {}),
   },
 }
 await writeFile(
