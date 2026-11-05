@@ -29,8 +29,8 @@
  * Exit codes: 0 every assertion held, 1 an assertion failed, 2 usage error.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 const PROVIDER = 'data-retention'
@@ -245,21 +245,111 @@ function cmdSchema(flags) {
   db.close()
 }
 
+function tableColumns(db, table) {
+  return db
+    .prepare("SELECT name FROM pragma_table_info('" + table + "')")
+    .all()
+    .map(function (row) { return row.name })
+}
+
+function hasTable(db, table) {
+  return Boolean(
+    db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?").get(table),
+  )
+}
+
+/** Insert only the columns this version's table actually has. */
+function insertCompatible(db, table, row) {
+  if (!hasTable(db, table)) return false
+  const existing = new Set(tableColumns(db, table))
+  const keys = Object.keys(row).filter(function (key) { return existing.has(key) })
+  if (keys.length === 0) return false
+  const sql = 'INSERT OR REPLACE INTO "' + table + '" (' +
+    keys.map(function (key) { return '"' + key + '"' }).join(', ') + ') VALUES (' +
+    keys.map(function () { return '?' }).join(', ') + ')'
+  db.prepare(sql).run(...keys.map(function (key) { return row[key] }))
+  return true
+}
+
+function seededTeamRows(token) {
+  const teamId = 'phase95-team-' + token
+  return {
+    team: {
+      id: teamId, name: 'phase95-team-' + token, owner_id: 'phase95-user',
+      mode: 'local', endpoint: null, api_token: null, auto_sync: 1,
+      created_at: CREATED_AT, updated_at: CREATED_AT
+    },
+    member: {
+      id: 'phase95-member-' + token, team_id: teamId, user_id: 'phase95-user',
+      user_name: 'phase95-user', user_email: null, role: 'owner', joined_at: CREATED_AT
+    },
+    sharedHost: {
+      id: 'phase95-shared-' + token, team_id: teamId,
+      host_data: JSON.stringify({ id: 'phase95-shared-' + token, name: 'phase95-shared-' + token, hostname: 'shared.invalid' }),
+      shared_by: 'phase95-user', permission: 'readonly', created_at: CREATED_AT
+    },
+    syncQueue: {
+      id: 'phase95-queue-' + token, user_id: 'phase95-user', team_id: teamId,
+      type: 'host', resource: 'team_shared_hosts', resource_id: 'phase95-shared-' + token,
+      data: JSON.stringify({ marker: token }), status: 'pending', retry_count: 0,
+      error: null, created_at: CREATED_AT, synced_at: null
+    },
+    profile: {
+      id: 'phase95-user', name: 'phase95-user',
+      created_at: CREATED_AT, updated_at: CREATED_AT
+    }
+  }
+}
+
+function collectTeamRows(db, token) {
+  const teamId = 'phase95-team-' + token
+  const row = function (table, where, value) {
+    if (!hasTable(db, table)) return null
+    return db.prepare('SELECT * FROM "' + table + '" WHERE ' + where + ' = ?').get(value) || null
+  }
+  return {
+    team: row('teams', 'id', teamId),
+    member: row('team_members', 'id', 'phase95-member-' + token),
+    sharedHost: row('team_shared_hosts', 'id', 'phase95-shared-' + token),
+    syncQueue: row('sync_queue', 'id', 'phase95-queue-' + token),
+    profile: row('user_profile', 'id', 'phase95-user')
+  }
+}
+
 function cmdSeed(flags) {
   const dbPath = requireFlag(flags, 'db')
   const token = requireFlag(flags, 'token')
   const vaultPath = typeof flags.vault === 'string' ? flags.vault : null
+  // Upgrade mode: seed an older version's database, whose hosts table may not
+  // have every column the current fixture knows about. Insert only the columns
+  // that actually exist; the new ones are added by B's migration and asserted
+  // there. Without this, A=dev.1 fails before the upgrade even starts.
+  const compatible = flags.compatible === true
   const db = openDb(dbPath)
   const host = seededHost(token)
   const workspace = seededWorkspace(token)
   const settingsJson = JSON.stringify(seededSettings(token))
   const layoutJson = JSON.stringify(seededLayout(token))
-  const hostColumns = Object.keys(host)
-  const wsColumns = ['id', 'name', 'description', 'icon', 'color', '"order"', 'is_active', 'created_at', 'updated_at']
-  const wsValues = [
-    workspace.id, workspace.name, workspace.description, workspace.icon, workspace.color,
-    workspace.order, workspace.is_active, workspace.created_at, workspace.updated_at
-  ]
+  const existingHostColumns = compatible ? new Set(tableColumns(db, 'hosts')) : null
+  const existingWorkspaceColumns = compatible ? new Set(tableColumns(db, 'workspaces')) : null
+  const hostColumns = Object.keys(host).filter(
+    function (column) { return !existingHostColumns || existingHostColumns.has(column) },
+  )
+  const workspaceColumnValues = {
+    id: workspace.id,
+    name: workspace.name,
+    description: workspace.description,
+    icon: workspace.icon,
+    color: workspace.color,
+    '"order"': workspace.order,
+    is_active: workspace.is_active,
+    created_at: workspace.created_at,
+    updated_at: workspace.updated_at
+  }
+  const wsColumns = Object.keys(workspaceColumnValues).filter(function (column) {
+    return !existingWorkspaceColumns || existingWorkspaceColumns.has(column.replaceAll('"', ''))
+  })
+  const wsValues = wsColumns.map(function (column) { return workspaceColumnValues[column] })
   db.exec('BEGIN IMMEDIATE')
   try {
     db.prepare('DELETE FROM hosts WHERE id = ?').run(host.id)
@@ -285,9 +375,22 @@ function cmdSeed(flags) {
     fail('seeding the database failed: ' + error.message)
     process.exit(1)
   }
+  const teamRows = seededTeamRows(token)
+  const seededTeamTables = []
+  for (const [table, row] of [
+    ['teams', teamRows.team],
+    ['team_members', teamRows.member],
+    ['team_shared_hosts', teamRows.sharedHost],
+    ['sync_queue', teamRows.syncQueue],
+    ['user_profile', teamRows.profile]
+  ]) {
+    if (insertCompatible(db, table, row)) seededTeamTables.push(table)
+  }
+
   pass('seeded hosts row id=' + host.id + ' (auth_type=agent, password NULL, private_key NULL)')
   pass('seeded settings row key=app_settings (marker=' + token + ')')
   pass('seeded workspaces row id=' + workspace.id + ' and its workspace_layouts row')
+  pass('seeded team sync rows: ' + (seededTeamTables.join(', ') || 'none (A has no team schema)'))
 
   if (vaultPath) {
     mkdirSync(dirname(vaultPath), { recursive: true })
@@ -307,7 +410,8 @@ function collectRows(db, token) {
     settings: db.prepare('SELECT key, value FROM settings WHERE key = ?').get('app_settings') || null,
     workspace: db.prepare('SELECT * FROM workspaces WHERE id = ?').get('phase89-ws-' + token) || null,
     layout: db.prepare('SELECT workspace_id, layout_data FROM workspace_layouts WHERE workspace_id = ?')
-      .get('phase89-ws-' + token) || null
+      .get('phase89-ws-' + token) || null,
+    team: collectTeamRows(db, token)
   }
 }
 
@@ -353,13 +457,25 @@ function cmdSnapshot(flags) {
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
       .all()
       .map(function (row) { return row.name }),
+    schema: (function () {
+      const columns = {}
+      for (const table of db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+        .all()) {
+        columns[table.name] = tableColumns(db, table.name)
+      }
+      return columns
+    })(),
     counts: {
       hosts: singleValue(db, 'SELECT COUNT(*) FROM hosts'),
       workspaces: singleValue(db, 'SELECT COUNT(*) FROM workspaces'),
       settings: singleValue(db, 'SELECT COUNT(*) FROM settings'),
-      layouts: singleValue(db, 'SELECT COUNT(*) FROM workspace_layouts')
+      layouts: singleValue(db, 'SELECT COUNT(*) FROM workspace_layouts'),
+      teams: hasTable(db, 'teams') ? singleValue(db, 'SELECT COUNT(*) FROM teams') : 0,
+      syncQueue: hasTable(db, 'sync_queue') ? singleValue(db, 'SELECT COUNT(*) FROM sync_queue') : 0
     },
     host: rows.host,
+    team: rows.team,
     settings: {
       key: rows.settings ? rows.settings.key : null,
       value: rows.settings ? rows.settings.value : null,
@@ -373,7 +489,8 @@ function cmdSnapshot(flags) {
     host: snapshot.host,
     settings: snapshot.settings.value,
     workspace: snapshot.workspace,
-    layout: snapshot.layout
+    layout: snapshot.layout,
+    team: snapshot.team
   })))
   db.close()
   mkdirSync(dirname(out), { recursive: true })
@@ -407,6 +524,7 @@ function cmdVerify(flags) {
   const token = requireFlag(flags, 'token')
   const vaultPath = typeof flags.vault === 'string' ? flags.vault : null
   const expectAppWrite = flags['expect-app-write'] === true
+  const allowSettingsMigration = flags['allow-settings-migration'] === true
   if (!existsSync(beforePath)) {
     fail('snapshot file missing: ' + beforePath)
     process.exit(1)
@@ -425,8 +543,40 @@ function cmdVerify(flags) {
     .map(function (row) { return row.name })
   for (const name of before.tables) check(tables.includes(name), 'table "' + name + '" still exists (schema not reset)')
 
+  // Upgrade mode: compare only the columns A actually had; B may add columns.
+  // A missing old column is still a failure; a new column is reported and, when
+  // the caller names it in --expected-new-host-columns, gated for existence.
+  const beforeHostColumns = before.schema && Array.isArray(before.schema.hosts)
+    ? before.schema.hosts
+    : null
+  if (before.schema) {
+    for (const table of Object.keys(before.schema)) {
+      const afterColumns = tableColumns(db, table)
+      for (const column of before.schema[table]) {
+        check(afterColumns.includes(column), 'schema: ' + table + '.' + column + ' still exists')
+      }
+    }
+  }
+  const expectedNewHostColumns = typeof flags['expected-new-host-columns'] === 'string'
+    ? flags['expected-new-host-columns'].split(',').map(function (value) { return value.trim() }).filter(Boolean)
+    : []
+  const afterHostColumns = tableColumns(db, 'hosts')
+  for (const column of expectedNewHostColumns) {
+    check(afterHostColumns.includes(column), 'schema: new hosts column "' + column + '" was added by the upgrade')
+  }
+
   const rows = collectRows(db, token)
-  compareRow('hosts', before.host, rows.host, HOST_FIELDS)
+  const hostFields = beforeHostColumns
+    ? HOST_FIELDS.filter(function (field) { return beforeHostColumns.includes(field) })
+    : HOST_FIELDS
+  compareRow('hosts', before.host, rows.host, hostFields)
+  if (rows.host) {
+    for (const column of expectedNewHostColumns) {
+      if (afterHostColumns.includes(column)) {
+        info('hosts.' + column + ' after upgrade = ' + JSON.stringify(rows.host[column]))
+      }
+    }
+  }
   if (rows.host) {
     check(rows.host.password === null, 'hosts.password is still NULL (no credential was ever stored)')
     check(rows.host.private_key === null, 'hosts.private_key is still NULL (no credential was ever stored)')
@@ -464,6 +614,15 @@ function cmdVerify(flags) {
     }
   }
 
+  if (before.team) {
+    for (const key of ['team', 'member', 'sharedHost', 'syncQueue', 'profile']) {
+      const expected = before.team[key]
+      if (!expected) continue
+      const actual = rows.team ? rows.team[key] : null
+      compareRow('team.' + key, expected, actual, Object.keys(expected))
+    }
+  }
+
   if (!rows.settings) {
     fail('settings: the seeded app_settings row is gone after the install/relaunch cycle')
   } else {
@@ -476,12 +635,20 @@ function cmdVerify(flags) {
     check(parsed !== null, 'settings.app_settings still parses as JSON')
     if (parsed) {
       const beforeParsed = before.settings.parsed || {}
-      for (const field of SETTINGS_ASSERTED) {
+      // Compare every key the fixture carried, not a hand-picked subset. A
+      // syncServiceToken or notification preference must not disappear just
+      // because it was not in SETTINGS_ASSERTED. The two terminalThemeLight
+      // fields are the app's one-time migration and are reported below.
+      for (const field of Object.keys(beforeParsed)) {
+        if (field === 'terminalThemeLight' || field === 'terminalThemeLightMigrated') continue
         check(
           canonical(parsed[field]) === canonical(beforeParsed[field]),
           'settings.app_settings.' + field + ' == ' + JSON.stringify(parsed[field]) +
             ' (expected ' + JSON.stringify(beforeParsed[field]) + ')'
         )
+      }
+      for (const field of Object.keys(parsed)) {
+        if (!(field in beforeParsed)) info('settings gained a new key after upgrade: ' + field)
       }
       check(parsed.phase89Marker === token, 'settings.app_settings.phase89Marker is still ' + token)
       if (expectAppWrite) {
@@ -495,6 +662,13 @@ function cmdVerify(flags) {
         )
         info('settings.terminalThemeLight ' + JSON.stringify(beforeParsed.terminalThemeLight) + ' -> ' +
           JSON.stringify(parsed.terminalThemeLight) + ' (legacy-default migration; reported, not gated)')
+      } else if (allowSettingsMigration) {
+        // Across an upgrade, B may legitimately perform the one-time
+        // terminalThemeLight migration. Report the value instead of gating it;
+        // the seeded marker and the user-owned settings fields are still gated.
+        info('settings.terminalThemeLightMigrated ' +
+          JSON.stringify(beforeParsed.terminalThemeLightMigrated) + ' -> ' +
+          JSON.stringify(parsed.terminalThemeLightMigrated) + ' (one-time app migration; reported, not gated)')
       } else {
         check(
           canonical(parsed.terminalThemeLightMigrated) === canonical(beforeParsed.terminalThemeLightMigrated),
@@ -545,11 +719,27 @@ function cmdVerify(flags) {
   db.close()
 }
 
+function parseExpectedColumns(value) {
+  if (typeof value !== 'string' || value.length === 0) usage('--expect-columns is required for migration-columns mode')
+  const expected = {}
+  for (const group of value.split(';')) {
+    const [table, columns] = group.split(':')
+    if (!table || !columns) usage('--expect-columns format is table:column[,column];table:column')
+    expected[table] = columns.split(',').map(function (column) { return column.trim() }).filter(Boolean)
+  }
+  return expected
+}
+
 function cmdWait(flags) {
   const dbPath = requireFlag(flags, 'db')
   const mode = typeof flags.mode === 'string' ? flags.mode : 'db-exists'
-  if (mode !== 'db-exists' && mode !== 'app-write') usage('--mode must be db-exists or app-write')
+  if (mode !== 'db-exists' && mode !== 'app-write' && mode !== 'migration-columns') {
+    usage('--mode must be db-exists, app-write or migration-columns')
+  }
   const token = mode === 'app-write' ? requireFlag(flags, 'token') : flags.token
+  const expectedColumns = mode === 'migration-columns'
+    ? parseExpectedColumns(flags['expect-columns'])
+    : null
   const timeoutSeconds = Number(flags.timeout || 120)
   const deadline = Date.now() + timeoutSeconds * 1000
   let attempts = 0
@@ -564,6 +754,37 @@ function cmdWait(flags) {
           return
         }
         lastDetail = 'file exists but its header is not "SQLite format 3": ' + JSON.stringify(header)
+      }
+    } else if (mode === 'migration-columns') {
+      if (!existsSync(dbPath)) {
+        lastDetail = 'database file does not exist yet'
+      } else {
+        try {
+          const db = new DatabaseSync(dbPath)
+          db.exec('PRAGMA busy_timeout=5000')
+          const missing = []
+          for (const table of Object.keys(expectedColumns)) {
+            const present = new Set(
+              db.prepare("SELECT name FROM pragma_table_info('" + table + "')").all()
+                .map(function (row) { return row.name }),
+            )
+            for (const column of expectedColumns[table]) {
+              if (!present.has(column)) missing.push(table + '.' + column)
+            }
+          }
+          const integrity = String(db.prepare('PRAGMA integrity_check').get().integrity_check)
+          db.close()
+          if (missing.length === 0 && integrity === 'ok') {
+            pass('B migrated the schema after ' + attempts + ' probe(s): ' +
+              Object.keys(expectedColumns).map(function (table) {
+                return table + '.' + expectedColumns[table].join('+')
+              }).join('; ') + ' present, integrity ok')
+            return
+          }
+          lastDetail = 'missing=' + (missing.join(',') || 'none') + ' integrity=' + integrity
+        } catch (error) {
+          lastDetail = 'could not read the database: ' + error.message
+        }
       }
     } else if (existsSync(dbPath)) {
       try {
@@ -598,6 +819,56 @@ function cmdWait(flags) {
   }
   fail(mode + ' condition not reached within ' + timeoutSeconds + 's after ' + attempts +
     ' probe(s); last observation: ' + lastDetail)
+}
+
+function cmdCheckpoint(flags) {
+  const dbPath = requireFlag(flags, 'db')
+  const db = openDb(dbPath)
+  db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+  pass('WAL checkpoint completed on ' + dbPath)
+  db.close()
+}
+
+function cmdBackupVerify(flags) {
+  const directory = requireFlag(flags, 'dir')
+  const token = requireFlag(flags, 'token')
+  const out = typeof flags.out === 'string' ? flags.out : null
+  if (!existsSync(directory)) usage('backup directory does not exist: ' + directory)
+  const snapshots = readdirSync(directory)
+    .filter(function (name) { return /^pre-migration-.*\.db$/.test(name) })
+    .map(function (name) {
+      const path = join(directory, name)
+      return { name: name, path: path, mtimeMs: statSync(path).mtimeMs }
+    })
+    .sort(function (left, right) { return right.mtimeMs - left.mtimeMs })
+  check(snapshots.length > 0, 'a pre-migration snapshot exists in ' + directory)
+  if (snapshots.length === 0) return
+  const newest = snapshots[0]
+  const db = openDb(newest.path)
+  const integrity = String(singleValue(db, 'PRAGMA integrity_check'))
+  check(integrity === 'ok', 'backup integrity_check => ' + integrity + ' (' + newest.name + ')')
+  const rows = collectRows(db, token)
+  check(Boolean(rows.host), 'backup still carries the seeded host')
+  check(Boolean(rows.settings), 'backup still carries the seeded settings row')
+  check(Boolean(rows.workspace), 'backup still carries the seeded workspace')
+  check(Boolean(rows.layout), 'backup still carries the seeded workspace layout')
+  db.close()
+  const report = {
+    directory: directory,
+    newest: newest.name,
+    snapshots: snapshots.map(function (snapshot) { return snapshot.name }),
+    integrity: integrity,
+    hostReadable: Boolean(rows.host),
+    settingsReadable: Boolean(rows.settings),
+    workspaceReadable: Boolean(rows.workspace),
+    layoutReadable: Boolean(rows.layout)
+  }
+  if (out) {
+    writeFileSync(out, JSON.stringify(report, null, 2) + '\n')
+    info('backup verification written to ' + out)
+  } else {
+    info(JSON.stringify(report))
+  }
 }
 
 function cmdDigest(flags) {
@@ -656,6 +927,8 @@ const handlers = {
   snapshot: cmdSnapshot,
   verify: cmdVerify,
   wait: cmdWait,
+  checkpoint: cmdCheckpoint,
+  'backup-verify': cmdBackupVerify,
   digest: cmdDigest,
   'test-break': cmdTestBreak
 }

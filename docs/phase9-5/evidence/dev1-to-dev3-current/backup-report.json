@@ -1,0 +1,13 @@
+{
+  "directory": "/tmp/phase95-upgrade-work5/terminal-upgrade-xwH6YB/home/Library/Application Support/com.baicie.termius/backups",
+  "newest": "pre-migration-1793844401192.db",
+  "snapshots": [
+    "pre-migration-1793844401192.db",
+    "pre-migration-1793844401156.db"
+  ],
+  "integrity": "ok",
+  "hostReadable": true,
+  "settingsReadable": true,
+  "workspaceReadable": true,
+  "layoutReadable": true
+}

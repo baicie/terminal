@@ -5107,3 +5107,44 @@ ISOLATION_PASS”与“control 未挂载 remote 则 FAIL”）。修复后的第
 用同一 artifact 复算：**300/300 `RELIABILITY_PASS`**，首次 remote 299/local 1，
 最终 remote 300。workflow 的红色状态保留在 GitHub，不改写为绿；修复后的 clean
 round 另行运行。
+
+### Issue #191: Phase 9.5 双版本升级 harness 与真实 E2E 🟡 macOS PASS，跨平台未完成（2026-11-05）
+
+**严重程度**：🟡 Important（RC）
+
+**已实现**：`scripts/verify-install/upgrade-e2e.mjs` + `asset-metadata.mjs`，
+复用 `data-retention.mjs`；真实发布 `dev.1` → `dev.2` PASS，`dev.1` → 当前源码
+`dev.3-local` PASS。schema hosts 20→22 列，settings 全键、workspaces/layout、
+Team Sync 本地 5 表、vault 文件、当前 B 的 pre-migration backup 均可读回。
+故障注入 corrupt-db / read-only-data-dir / restart-idempotent PASS。
+
+**未完成**：Linux/Windows 适配器、迁移中断、磁盘满、从备份恢复、B→A 降级。
+证据 `docs/phase9-5/evidence/`。
+
+### Issue #192: Windows 安装验证实际未隔离且会删除真实 APPDATA 🟡 BLOCKED_EXTERNAL（2026-11-05）
+
+**严重程度**：🔴 Blocker（故障测试安全）
+
+`verify-install-windows.ps1` 把 APPDATA/LOCALAPPDATA 指向临时目录，但 Tauri 的
+`dirs::config_dir()` 走 `SHGetKnownFolderPath`，不读 APPDATA；首启探测失败后会
+回退到真实 `%APPDATA%\Termius`，并在首启前 `Remove-Item -Recurse -Force` 删除它。
+**禁止在真实用户 profile 上运行升级/故障注入**；必须使用一次性 profile/VM。
+Windows 升级适配器因此标 `BLOCKED_EXTERNAL`，未执行。
+
+### Issue #193: Linux 安装脚本在 apt 失败时解包回退仍可判绿 🟡 NOT_RUN（2026-11-05）
+
+`verify-install-linux.sh` 在 `sudo apt-get install` 失败时打印 `[SKIPPED]`、
+`dpkg-deb -x` 解包并继续跑 payload，job 仍可能绿。升级 harness 必须 fail-closed：
+A/B 没有真正经过 dpkg/AppImage 安装就不能声称升级通过。Linux 适配器本轮未实现，
+标 `NOT_RUN`；Xvfb 固定 `:99` 也需改为唯一 display。
+
+### Issue #194: 升级签名、updater、身份迁移与回滚仍未闭合 🟡 NOT_RUN / BLOCKED_EXTERNAL（2026-11-05）
+
+- Apple notarization / Developer ID、Windows Authenticode、Tauri updater
+  `pubkey` 均为 `BLOCKED_EXTERNAL`；
+- updater 运行时下载/安装/重启 `NOT_RUN`；历史 `.sig` 不能替代运行时更新链；
+- 身份迁移 T1–T12 `NOT_RUN/BLOCKED_EXTERNAL`；identifier 仍为
+  `com.baicie.termius`；
+- 真实 Vault 主密码解锁、Team Sync 服务端升级、B→A 降级 `NOT_RUN`。
+
+详见 `docs/phase9-5/release-blockers.md`。

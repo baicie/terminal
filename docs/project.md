@@ -850,6 +850,24 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 
 **✅ 证据状态**：最终源码 `44ae449` 已由 real-machine run `41605898002` 重采 6 份证据，指纹 `6d7536e7…`，debug SHA `2bf151cb…`、release SHA `88ba4714…`；证据门禁 0 problem。此前 `01836c9` 的指纹失配是门禁的正确阻断，不是产品回归。
 
+### Phase 9.5 - Integration Closure & Real Upgrade Foundation 🟡 基础完成
+
+> 2026-11-05，分支 `feat/phase9-5-upgrade-integrity`，base `a7a65bc`（stacked，不是 main）。
+
+| 领域 | 结果 |
+| --- | --- |
+| Phase 9.4.2 归档 | `PHASE_9_4_2_ENGINEERING_CLOSED=YES`；900 样本 0 个最终 local；六份证据 0 problem；`d4a972a` CI 11/11 |
+| PR 集成 | PR #6 `CLEAN` 11/11；PR #7 18 unique commits；模拟 post-#6 rebase 0 冲突、门禁 0、source-size 568 |
+| 真实升级 | 发布 `0.0.1-dev.1` → `0.0.1-dev.2` PASS；`dev.1` → 当前源码 `0.0.1-dev.3-local` PASS |
+| schema | hosts 20→22 列；settings 全键、workspaces/layout、Team Sync 本地 5 表、vault 文件逐字段 PASS |
+| 备份 | 当前 B 的 `pre-migration-<epoch>.db` 生成且可读回；dev.2 无备份能力，NOT_RUN |
+| 故障 | 损坏 DB、只读目录、重复启动、备份可读 PASS；迁移中断/磁盘满/自动恢复/B→A NOT_RUN |
+| 平台 | macOS 本机 PASS；Linux/Windows 适配器 NOT_RUN |
+| 签名/身份 | notarization/Authenticode/updater pubkey BLOCKED_EXTERNAL；T1–T12 NOT_RUN |
+| 判定 | `READY_FOR_RC=NO`、`READY_FOR_RELEASE=NO` |
+
+详见 `docs/phase9-5/implementation-report.md`。
+
 ---
 
 ## 待办事项

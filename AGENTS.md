@@ -42,6 +42,7 @@
 | **docs/shadcn-components.md**  | shadcn/ui 全部组件索引与用法说明      | 查阅组件选型与用法 |
 | **docs/build-optimization.md** | 构建体积分析与优化指南                | 优化打包时查阅     |
 | **docs/release/**             | 发布与证据规则（`workflow-rules.md`，必读）、CI 审计、三级发布模式、签名密钥、Release 操作指南（Nightly 通道已移除）、最近一次 CI 报告 | 改动发布链路或源码指纹路径时必读 |
+| **docs/phase9-5/**            | Phase 9.5 交付：Phase 9.4.2 归档、PR #6/#7 集成方案、真实 dev.1→dev.2 与 dev.1→当前源码升级 E2E、双版本 harness、corrupt/read-only/restart/backup 故障恢复、签名与身份迁移阻塞项 | 接手升级、数据完整性或发布准备时必读 |
 | **docs/phase9-4/**            | Phase 9.4 / 9.4.1 / 9.4.2 交付：macOS 远程冷启动 300 次压力统计（F 轮 298/300）、8 秒 fallback deadline 错传、跨样本 journal 污染、恢复仲裁状态机与分段 trace、provenance fail-closed、RSA 威胁模型、安装升级与身份迁移前置、RC 判定 | 接手冷启动、恢复仲裁或 RC 收尾时必读 |
 | **docs/phase9-3/**            | Phase 9.3 / 9.3.1 交付：bootstrap 配置探测饥饿（#166）、ENOTEMPTY 竞态（#167）、证据重采（#168）、REMOTE 旧密文与 REST BigInt（#169/#170）、yanked 扫描完整性、前端依赖 25→0、冷启动 20% 失败率量化 | 接手启动链路、同步或证据采集链时必读 |
 | **docs/phase9-2/**            | Phase 9.2 交付：同步冲突五处 P0 根因、双客户端真实 PG 端到端、依赖安全整改台账、证据门禁、身份迁移方案、最终报告（PASS/FAIL/NOT_RUN 分列） | 接手同步、安全或验收证据相关工作时必读 |
@@ -541,6 +542,19 @@ pnpm add <package-name>
 - ✅ 六份验收证据已由真实矩阵 run `41841781191` 重采（`ac01091`，指纹 `d14fb1d1…`，debug `0eb823fa…`、release `a1cf8181…`），门禁 **0 problem**；最终 CI `41850097122`（`d4a972a`）**11/11 success**
 - 📋 Phase 9.4.2 冷启动收口完成；剩余 RC 阻断是跨版本升级/回滚、Windows/Pageant/串口/物理键盘/IME、签名/公证、身份迁移与真实 Vault 解锁（NOT_RUN/BLOCKED_EXTERNAL）
 
+### Phase 9.5 - Integration Closure & Real Upgrade Foundation ✅ 基础完成
+
+- 分支 `feat/phase9-5-upgrade-integrity`，base `a7a65bc`（stacked，不是 main）
+- ✅ PR #6：`mergeStateStatus=CLEAN`、11/11 checks、evidence 0、无冲突；`PR_6_READY_FOR_HUMAN_MERGE=YES`
+- ✅ PR #7：18 个 unique commits；模拟 PR #6 合并后 `git rebase --onto` **0 冲突**，证据门禁 0、source-size 568；`PR_7_INTEGRATION_READY=YES`（先人工合并 #6）
+- ✅ 真实 A→B：发布 `0.0.1-dev.1`（`73cf7483…`）→ 发布 `0.0.1-dev.2`（`2c9a0ca3…`）PASS；dev.1 → 当前源码 `0.0.1-dev.3-local`（`66f2465d…`）PASS
+- ✅ schema：hosts 20→22 列（`agent_forwarding`、`shell_integration`）；settings 全键、workspaces/layout、Team Sync 本地 5 表、vault 文件逐字段 PASS
+- ✅ 当前 B 的 `pre-migration-<epoch>.db` 已生成且可读回；dev.2 无备份能力，标 NOT_RUN
+- ✅ 故障：损坏 DB、只读数据目录、重复启动、备份可读均 PASS；迁移中断/磁盘满/自动恢复/B→A 降级 NOT_RUN
+- 🟡 Linux/Windows 升级适配器 NOT_RUN；Windows APPDATA 实际未隔离且现有脚本会删除真实目录，禁止在真实 profile 上跑
+- 🟡 真实 Vault 解锁、Team Sync 服务端同步、updater 运行时下载/安装/重启、签名/公证、身份迁移、RC/Release 均未闭合
+- 📋 Phase 9.5.1：Linux fail-closed 适配器、Windows 一次性 profile/VM、迁移中断/磁盘满/恢复 E2E、updater 升级链、把升级证据纳入 release 指纹
+
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
@@ -576,6 +590,9 @@ pnpm add <package-name>
 | —     | ✅ **六份验收证据已重采并归档**：run `41841781191`（`ac01091`，指纹 `d14fb1d1…`），三平台 3/3 success，门禁 0 problem；最终 CI `41850097122` 11/11。任何后续 `FINGERPRINT_PATHS` 改动仍需重采 | ✅ 已闭合 | — |
 | —     | ✅ P9.2-9 Linux zsh 探针 **PASS**：run `41432020659` / `41434165000` 的 Linux job 均 success，14 用例全绿（含此前三条）。遗留：空 `$HOME` 的真实 Debian 新账户未测 | ✅ 已闭合 | — |
 | 60    | ✅ **macOS 远程冷启动已收口**：G 300/300、第二轮 artifact 300/300（最终 remote 300）、clean 300/300；三个 run 共 **900 样本，0 个最终 local**；隔离/控制组/证据/CI 11/11 均 PASS。仍缺：历史 20% 的 Unified Log、跨版本升级、硬件矩阵、签名、身份迁移 | ✅ 已闭合（冷启动） | — |
+| —     | 🟡 **跨版本升级**：macOS 真实发布 dev.1→dev.2 与 dev.1→当前源码 PASS（schema 20→22 列、settings 全键、Team Sync 本地 5 表、vault 文件、backup 可读）；Linux/Windows、迁移中断、磁盘满、自动恢复、B→A 降级 **NOT_RUN**。详见 `docs/phase9-5/` | 🟡 Important（RC） | P1 |
+| —     | 🔴 **签名/公证/updater**：Apple notarization、Windows Authenticode、Tauri updater `pubkey` 均 **BLOCKED_EXTERNAL**；updater 运行时下载/安装/重启 **NOT_RUN**；历史 `.sig` 不能替代运行时更新链 | 🔴 Blocker（发布） | P0 |
+| —     | 🟡 **身份迁移**：`productName=Termius`、`identifier=com.baicie.termius` 未改；T1–T12 **NOT_RUN/BLOCKED_EXTERNAL**；迁移代码不存在 | 🟡 Important（发布） | P1 |
 | —     | ✅ 前端依赖审计已闭合（vuln 25 → 0，新增 CI 阻塞 job）；同步接口与 Share REST 的版本契约统一为 JSON number。详见 `docs/phase9-3/merge-blocker-closure.md` | ✅ 已闭合 | — |
 | 57    | 真实 SSH 认证矩阵 ✅ 当前源码（run `41478709578`，sha `3102093`）：debug 11/11、release 8/8、shell 交互 14/14（另 Linux 14 + Windows 5，全矩阵 40 个 probe 用例 0 FAILED） | 🟡 Important | P1 |
 | 58    | 物理键盘 30 轮重叠 `a/s/d`、中文 IME、Option/dead key 待人工键入（Ctrl+C、vim、nano、PTY resize、行编辑已在本地 PTY **与真实 SSH** 上自动化覆盖） | 🟡 Important | P1 |
@@ -1028,7 +1045,7 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-11-04 (Phase 9.4.2 最终：G 轮 `41838269784` 300/300、第二轮 artifact `41843065808` 300/300（最终 remote 300）、clean 轮 `41850205866` 300/300，三个 run 共 900 样本 0 个最终 local；真实矩阵 `41841781191` 3/3 success 并安装六份证据（0 problem）；最终 CI `41850097122` 11/11；隔离与控制组 WebKit 均 PASS；RC 仍否，剩余跨版本升级、硬件矩阵、签名、身份迁移等 NOT_RUN/BLOCKED_EXTERNAL；详见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`)_
+_文档更新时间: 2026-11-05 (Phase 9.5：Phase 9.4.2 归档；PR #6 CLEAN 11/11、PR #7 18 commits 模拟 post-#6 rebase 0 冲突；真实发布 dev.1→dev.2 与 dev.1→当前源码升级 PASS，hosts 20→22 列、settings 全键、Team Sync 本地 5 表、vault、backup 可读；corrupt/read-only/restart/backup 故障 PASS；Linux/Windows、回滚、签名、身份迁移、真实 Vault 解锁仍 NOT_RUN/BLOCKED_EXTERNAL；详见 `docs/phase9-5/implementation-report.md`)_
 
 _历史更新 2026-11-03: (Phase 9.3：bootstrap 的五个配置探测由串行改并发，修掉「一个慢 IPC 饿死其余」——这是 real-machine run `41437956656` 上 `nano-edit`「从未写 result.json」的根因；冷启动测量目录清理改带重试，修掉 `ENOTEMPTY` 假红；6 份证据随 run `41478709578` 重采为指纹 `c4faedfb…`，门禁 0 problem；交付 `docs/phase9-3/bootstrap-probe-starvation.md`)_
 

@@ -1,0 +1,390 @@
+{
+  "provider": "data-retention",
+  "token": "phase95-upgrade-1793842873751",
+  "db": {
+    "path": "/tmp/phase95-upgrade-work3/terminal-upgrade-K3cR7a/home/Library/Application Support/com.baicie.termius/terminal.db",
+    "exists": true,
+    "bytes": 266240,
+    "sha256": "dca539e354f6b6f3f1d73e54bdefd291b0eee42064a53a2b60e586c9baf72ec1"
+  },
+  "wal": {
+    "path": "/tmp/phase95-upgrade-work3/terminal-upgrade-K3cR7a/home/Library/Application Support/com.baicie.termius/terminal.db-wal",
+    "exists": true,
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "integrity": "ok",
+  "tables": [
+    "command_history",
+    "connection_logs",
+    "groups",
+    "hosts",
+    "known_hosts",
+    "port_forward_rules",
+    "script_executions",
+    "scripts",
+    "settings",
+    "snippet_packages",
+    "snippets",
+    "ssh_keys",
+    "sync_queue",
+    "team_audit_logs",
+    "team_invites",
+    "team_members",
+    "team_shared_hosts",
+    "team_shared_snippets",
+    "teams",
+    "user_profile",
+    "workspace_layouts",
+    "workspaces"
+  ],
+  "schema": {
+    "command_history": [
+      "id",
+      "host_id",
+      "command",
+      "executed_at",
+      "session_id"
+    ],
+    "connection_logs": [
+      "id",
+      "host_id",
+      "host_name",
+      "host_address",
+      "username",
+      "connection_type",
+      "started_at",
+      "ended_at",
+      "duration_seconds",
+      "is_saved",
+      "notes",
+      "error_message",
+      "error_raw"
+    ],
+    "groups": [
+      "id",
+      "name",
+      "parent_id",
+      "color",
+      "inherit_settings",
+      "settings",
+      "order"
+    ],
+    "hosts": [
+      "id",
+      "name",
+      "hostname",
+      "port",
+      "username",
+      "auth_type",
+      "password",
+      "private_key",
+      "certificate",
+      "group_id",
+      "is_favorite",
+      "color",
+      "tags",
+      "port_forwards",
+      "startup_command",
+      "environment",
+      "jump_host_id",
+      "jump_host_auth_type",
+      "created_at",
+      "updated_at"
+    ],
+    "known_hosts": [
+      "id",
+      "hostname",
+      "port",
+      "fingerprint",
+      "key_type",
+      "added_at"
+    ],
+    "port_forward_rules": [
+      "id",
+      "name",
+      "type",
+      "local_host",
+      "local_port",
+      "remote_host",
+      "remote_port",
+      "host_id",
+      "enabled",
+      "created_at",
+      "updated_at"
+    ],
+    "script_executions": [
+      "id",
+      "script_id",
+      "script_name",
+      "host_id",
+      "host_name",
+      "host_address",
+      "status",
+      "output",
+      "error",
+      "started_at",
+      "ended_at",
+      "duration_ms"
+    ],
+    "scripts": [
+      "id",
+      "name",
+      "description",
+      "script",
+      "host_ids",
+      "schedule_type",
+      "schedule_value",
+      "enabled",
+      "timeout_seconds",
+      "retry_count",
+      "created_at",
+      "updated_at"
+    ],
+    "settings": [
+      "key",
+      "value"
+    ],
+    "snippet_packages": [
+      "id",
+      "name",
+      "description"
+    ],
+    "snippets": [
+      "id",
+      "name",
+      "description",
+      "script",
+      "package_id",
+      "tags",
+      "variables"
+    ],
+    "ssh_keys": [
+      "id",
+      "name",
+      "key_type",
+      "private_key",
+      "public_key",
+      "certificate",
+      "passphrase",
+      "is_encrypted",
+      "created_at",
+      "updated_at"
+    ],
+    "sync_queue": [
+      "id",
+      "user_id",
+      "team_id",
+      "type",
+      "resource",
+      "resource_id",
+      "data",
+      "status",
+      "retry_count",
+      "error",
+      "created_at",
+      "synced_at"
+    ],
+    "team_audit_logs": [
+      "id",
+      "team_id",
+      "user_id",
+      "user_name",
+      "host_name",
+      "action",
+      "details",
+      "created_at"
+    ],
+    "team_invites": [
+      "id",
+      "team_id",
+      "type",
+      "code",
+      "link_token",
+      "email",
+      "role",
+      "created_by",
+      "expires_at",
+      "used_at",
+      "created_at"
+    ],
+    "team_members": [
+      "id",
+      "team_id",
+      "user_id",
+      "user_name",
+      "user_email",
+      "role",
+      "joined_at"
+    ],
+    "team_shared_hosts": [
+      "id",
+      "team_id",
+      "host_data",
+      "shared_by",
+      "permission",
+      "created_at"
+    ],
+    "team_shared_snippets": [
+      "id",
+      "team_id",
+      "snippet_data",
+      "shared_by",
+      "permission",
+      "created_at"
+    ],
+    "teams": [
+      "id",
+      "name",
+      "owner_id",
+      "mode",
+      "endpoint",
+      "api_token",
+      "auto_sync",
+      "created_at",
+      "updated_at"
+    ],
+    "user_profile": [
+      "id",
+      "name",
+      "created_at",
+      "updated_at"
+    ],
+    "workspace_layouts": [
+      "workspace_id",
+      "layout_data"
+    ],
+    "workspaces": [
+      "id",
+      "name",
+      "description",
+      "icon",
+      "color",
+      "order",
+      "is_active",
+      "created_at",
+      "updated_at"
+    ]
+  },
+  "counts": {
+    "hosts": 1,
+    "workspaces": 1,
+    "settings": 1,
+    "layouts": 1,
+    "teams": 1,
+    "syncQueue": 1
+  },
+  "host": {
+    "id": "phase89-host-phase95-upgrade-1793842873751",
+    "name": "phase89-host-phase95-upgrade-1793842873751",
+    "hostname": "phase89.invalid",
+    "port": 2222,
+    "username": "phase89-user",
+    "auth_type": "agent",
+    "password": null,
+    "private_key": null,
+    "certificate": null,
+    "group_id": null,
+    "is_favorite": 1,
+    "color": "#336699",
+    "tags": "[\"phase89\",\"phase95-upgrade-1793842873751\"]",
+    "port_forwards": null,
+    "startup_command": "echo phase89-phase95-upgrade-1793842873751",
+    "environment": "{\"PHASE89\":\"phase95-upgrade-1793842873751\"}",
+    "jump_host_id": null,
+    "jump_host_auth_type": null,
+    "created_at": 1750000000000,
+    "updated_at": 1750000000000
+  },
+  "team": {
+    "team": {
+      "id": "phase95-team-phase95-upgrade-1793842873751",
+      "name": "phase95-team-phase95-upgrade-1793842873751",
+      "owner_id": "phase95-user",
+      "mode": "local",
+      "endpoint": null,
+      "api_token": null,
+      "auto_sync": 1,
+      "created_at": 1750000000000,
+      "updated_at": 1750000000000
+    },
+    "member": {
+      "id": "phase95-member-phase95-upgrade-1793842873751",
+      "team_id": "phase95-team-phase95-upgrade-1793842873751",
+      "user_id": "phase95-user",
+      "user_name": "phase95-user",
+      "user_email": null,
+      "role": "owner",
+      "joined_at": 1750000000000
+    },
+    "sharedHost": {
+      "id": "phase95-shared-phase95-upgrade-1793842873751",
+      "team_id": "phase95-team-phase95-upgrade-1793842873751",
+      "host_data": "{\"id\":\"phase95-shared-phase95-upgrade-1793842873751\",\"name\":\"phase95-shared-phase95-upgrade-1793842873751\",\"hostname\":\"shared.invalid\"}",
+      "shared_by": "phase95-user",
+      "permission": "readonly",
+      "created_at": 1750000000000
+    },
+    "syncQueue": {
+      "id": "phase95-queue-phase95-upgrade-1793842873751",
+      "user_id": "phase95-user",
+      "team_id": "phase95-team-phase95-upgrade-1793842873751",
+      "type": "host",
+      "resource": "team_shared_hosts",
+      "resource_id": "phase95-shared-phase95-upgrade-1793842873751",
+      "data": "{\"marker\":\"phase95-upgrade-1793842873751\"}",
+      "status": "pending",
+      "retry_count": 0,
+      "error": null,
+      "created_at": 1750000000000,
+      "synced_at": null
+    },
+    "profile": {
+      "id": "phase95-user",
+      "name": "phase95-user",
+      "created_at": 1750000000000,
+      "updated_at": 1750000000000
+    }
+  },
+  "settings": {
+    "key": "app_settings",
+    "value": "{\"theme\":\"dark\",\"language\":\"en\",\"fontSize\":14,\"fontFamily\":\"Menlo, Monaco, \\\"Courier New\\\", monospace\",\"terminalTheme\":\"one-dark\",\"terminalThemeDark\":\"one-dark\",\"terminalThemeLight\":\"solarized-light\",\"terminalThemeLightMigrated\":false,\"scrollback\":12345,\"phase89Marker\":\"phase95-upgrade-1793842873751\"}",
+    "parsed": {
+      "theme": "dark",
+      "language": "en",
+      "fontSize": 14,
+      "fontFamily": "Menlo, Monaco, \"Courier New\", monospace",
+      "terminalTheme": "one-dark",
+      "terminalThemeDark": "one-dark",
+      "terminalThemeLight": "solarized-light",
+      "terminalThemeLightMigrated": false,
+      "scrollback": 12345,
+      "phase89Marker": "phase95-upgrade-1793842873751"
+    }
+  },
+  "workspace": {
+    "id": "phase89-ws-phase95-upgrade-1793842873751",
+    "name": "phase89-workspace-phase95-upgrade-1793842873751",
+    "description": "controlled workspace for retention verification",
+    "icon": "📁",
+    "color": "#123456",
+    "order": 7,
+    "is_active": 1,
+    "created_at": 1750000000000,
+    "updated_at": 1750000000000
+  },
+  "layout": {
+    "workspace_id": "phase89-ws-phase95-upgrade-1793842873751",
+    "layout_data": "{\"tabs\":[],\"splitGroups\":[],\"activeTabId\":null,\"sidebarVisible\":false,\"phase89Marker\":\"phase95-upgrade-1793842873751\"}"
+  },
+  "vault": {
+    "path": "/tmp/phase95-upgrade-work3/terminal-upgrade-K3cR7a/home/Library/Application Support/terminal/vault.json",
+    "exists": true,
+    "bytes": 48,
+    "sha256": "31d674ad54e75e3b8d7b8f07ab071743cb7fe5a887a41a5db9060a1ea75902aa",
+    "parses": true,
+    "salt": "cGhhc2U4OS12YXVsdDE2IQ==",
+    "entries": 0
+  },
+  "row_digest": "abe4eb1d6d265fdde3eb064ef015a52fb2772220e50b37bf99f7120dc224274a"
+}

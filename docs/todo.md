@@ -2144,3 +2144,28 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
       端口/socket/文件锁均干净。
 - [ ] 当前源码改动在 `FINGERPRINT_PATHS` 内，六份验收证据已失效，必须由
       `real-machine-matrix` 在真实 runner 重采；不得手工修改旧证据。
+
+### 2026-11-05 Phase 9.5 - 双版本升级与集成收口 🟡 基础完成
+
+- [x] Phase 9.4.2 正式归档：900 样本 0 个最终 local、六份证据 0 problem、
+      `d4a972a` CI 11/11；最终 HEAD `a7a65bc` 的 macOS PR job 被 runner 容量
+      三次取消，已如实记录，未美化。
+- [x] PR #6 人工合并检查表：`CLEAN`、11/11、evidence 0、无冲突；
+      `PR_6_READY_FOR_HUMAN_MERGE=YES`。
+- [x] PR #7 集成方案：18 unique commits；模拟 post-#6 main + rebase 0 冲突、
+      证据门禁 0、source-size 568；`PR_7_INTEGRATION_READY=YES`（先人工合并 #6）。
+- [x] 资产元数据校验：真实 dev.1/dev.2 DMG 的 SHA256、版本、identifier、arm64
+      全部 PASS；Linux/Windows 资产存在但适配器未实现。
+- [x] 双版本 harness：`scripts/verify-install/upgrade-e2e.mjs`，复用
+      `data-retention.mjs`，A→seed→B→verify，JSON/Markdown 报告。
+- [x] 真实 E2E：dev.1→dev.2 PASS；dev.1→当前源码 dev.3-local PASS
+      （schema 20→22 列、settings 全键、Team Sync 本地 5 表、vault、backup）。
+- [x] 故障恢复：corrupt DB、只读数据目录、重复启动、备份可读 PASS。
+- [x] 新增 9 项脚本测试（data-retention 5 + asset-metadata 4）与
+      `.github/workflows/upgrade-e2e.yml`。
+- [ ] Linux 升级适配器：真实 dpkg/AppImage、禁止解包回退、唯一 Xvfb display。
+- [ ] Windows 升级适配器：一次性 profile/VM；禁止在真实 `%APPDATA%` 上跑。
+- [ ] 迁移中断、磁盘满、从备份恢复、B→A 降级。
+- [ ] updater 运行时下载/安装/重启；签名/公证。
+- [ ] 身份迁移 T1–T12。
+- [ ] 把升级报告纳入 release 证据指纹（如需要）。

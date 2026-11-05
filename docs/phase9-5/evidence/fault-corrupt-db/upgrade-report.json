@@ -1,0 +1,176 @@
+{
+  "provider": "upgrade-e2e",
+  "generatedAt": "2026-11-05T02:01:49.938Z",
+  "platform": "darwin",
+  "hostArch": "arm64",
+  "fault": "corrupt-db",
+  "work": "/tmp/phase95-fault-corrupt5/terminal-upgrade-p3FVuq",
+  "token": "phase95-upgrade-1793844109938",
+  "a": {
+    "provider": "asset-metadata",
+    "installer": "/tmp/phase95-assets/Terminal_0.0.1-dev.1_macos-aarch64.dmg",
+    "size": 11298182,
+    "sha256": "73cf7483e912af33c34791a50aaae378cd85ca3be6b0fccf9e8bd4fcea56a7b8",
+    "platform": "darwin",
+    "bundleName": "Termius.app",
+    "identifier": "com.baicie.termius",
+    "version": "0.0.1-dev.1",
+    "arch": "arm64",
+    "executable": "terminal",
+    "checks": [
+      "dmg mounted read-only",
+      "plist identity and executable read"
+    ],
+    "status": "PASS",
+    "expected": {
+      "sha256": null,
+      "version": "0.0.1-dev.1",
+      "identifier": "com.baicie.termius"
+    },
+    "problems": []
+  },
+  "b": {
+    "provider": "asset-metadata",
+    "installer": "/Users/liuzhiwei/Desktop/workspace/git-code/terminal/src-tauri/target/release/bundle/dmg/Termius_0.0.1-dev.3-local_aarch64.dmg",
+    "size": 13471110,
+    "sha256": "66f2465d44bb3e8ec190fb6e2ce47bf3cdad4256fb1dd660f0853150e282c62b",
+    "platform": "darwin",
+    "bundleName": "Termius.app",
+    "identifier": "com.baicie.termius",
+    "version": "0.0.1-dev.3-local",
+    "arch": "arm64",
+    "executable": "terminal",
+    "checks": [
+      "dmg mounted read-only",
+      "plist identity and executable read"
+    ],
+    "status": "PASS",
+    "expected": {
+      "sha256": null,
+      "version": "0.0.1-dev.3-local",
+      "identifier": "com.baicie.termius"
+    },
+    "problems": []
+  },
+  "schema": {
+    "beforeTables": [
+      "command_history",
+      "connection_logs",
+      "groups",
+      "hosts",
+      "known_hosts",
+      "port_forward_rules",
+      "script_executions",
+      "scripts",
+      "settings",
+      "snippet_packages",
+      "snippets",
+      "ssh_keys",
+      "sync_queue",
+      "team_audit_logs",
+      "team_invites",
+      "team_members",
+      "team_shared_hosts",
+      "team_shared_snippets",
+      "teams",
+      "user_profile",
+      "workspace_layouts",
+      "workspaces"
+    ],
+    "beforeHostColumns": [
+      "id",
+      "name",
+      "hostname",
+      "port",
+      "username",
+      "auth_type",
+      "password",
+      "private_key",
+      "certificate",
+      "group_id",
+      "is_favorite",
+      "color",
+      "tags",
+      "port_forwards",
+      "startup_command",
+      "environment",
+      "jump_host_id",
+      "jump_host_auth_type",
+      "created_at",
+      "updated_at"
+    ],
+    "afterTables": null,
+    "afterHostColumns": null,
+    "addedHostColumns": null
+  },
+  "checks": [
+    {
+      "name": "A metadata",
+      "status": "PASS",
+      "detail": "0.0.1-dev.1 73cf7483e912af33"
+    },
+    {
+      "name": "B metadata",
+      "status": "PASS",
+      "detail": "0.0.1-dev.3-local 66f2465d44bb3e8e"
+    },
+    {
+      "name": "install A",
+      "status": "PASS",
+      "detail": "/tmp/phase95-fault-corrupt5/terminal-upgrade-p3FVuq/Applications/Termius.app"
+    },
+    {
+      "name": "A database created",
+      "status": "PASS",
+      "detail": "/tmp/phase95-fault-corrupt5/terminal-upgrade-p3FVuq/home/Library/Application Support/com.baicie.termius/terminal.db"
+    },
+    {
+      "name": "A schema ready",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "A stopped",
+      "status": "PASS",
+      "detail": "sigkill"
+    },
+    {
+      "name": "seed A data",
+      "status": "PASS",
+      "detail": "compatible with A schema"
+    },
+    {
+      "name": "A read-back snapshot",
+      "status": "PASS",
+      "detail": "hosts/settings/workspace/layout/vault readable"
+    },
+    {
+      "name": "install B",
+      "status": "PASS",
+      "detail": "/tmp/phase95-fault-corrupt5/terminal-upgrade-p3FVuq/Applications/Termius.app"
+    },
+    {
+      "name": "corrupt DB preserved",
+      "status": "PASS",
+      "detail": "ef5bbdadad856776 -> ef5bbdadad856776"
+    },
+    {
+      "name": "corruption detected by the app",
+      "status": "PASS",
+      "detail": "app log: file is not a database"
+    }
+  ],
+  "notRun": [
+    "real Vault master-password unlock (requires interactive credential; file persistence is asserted only)",
+    "rollback B->A (no product rollback state machine; pre-migration backup readability is asserted)",
+    "Linux and Windows adapters (NOT_RUN in this first implementation)",
+    "Gatekeeper / notarization / Authenticode (BLOCKED_EXTERNAL)",
+    "disk-full (read-only data directory is covered; installer media read-only is not)"
+  ],
+  "logs": {
+    "a": "/tmp/phase95-fault-corrupt5/terminal-upgrade-p3FVuq/logs/a.log",
+    "b": "/tmp/phase95-fault-corrupt5/terminal-upgrade-p3FVuq/logs/b.log",
+    "fault": "/tmp/phase95-fault-corrupt5/terminal-upgrade-p3FVuq/logs/b-fault.log"
+  },
+  "status": "PASS"
+}
