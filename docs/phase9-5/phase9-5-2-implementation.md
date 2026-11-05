@@ -88,8 +88,9 @@
 3. `check-verification-evidence.mjs` 必须 0 problem；
 4. 不修改旧证据冒充新源码。
 
-最终 fingerprint/run 号在证据重采后回写；在此之前普通 CI 的
-`Repository gates` 会因指纹失配而红，这是正确阻断，不是产品回归。
+**已完成**：run `41998303201` 产出六份证据 + 7 份原始日志，源码指纹
+`fd9cc8ac…`，门禁 **0 problem**；manifest commit `a82bd45`。旧 `b73c5fd2…`
+证据只作为历史，不再被当前源码引用。
 
 ## 6. 未完成与风险
 

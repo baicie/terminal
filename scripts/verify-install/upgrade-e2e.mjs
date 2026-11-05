@@ -408,6 +408,7 @@ async function runMacos(flags) {
   const add = (name, status, detail) => {
     reportJson.checks.push({ name, status, detail: detail || '' })
   }
+  let child = null
   const applyFaultAssessment = (kind, facts) => {
     const assessment = assessFault(kind, facts)
     reportJson.faultAssessment = { kind, ...assessment }
@@ -457,10 +458,9 @@ async function runMacos(flags) {
     const aBinary = path.join(aAppCopy, 'Contents', 'MacOS', 'terminal')
     add('install A', 'PASS', installedApp)
 
-    let child = launch(binary, home, reportJson.logs.a)
+    child = launch(binary, home, reportJson.logs.a)
     await waitForDatabase(db)
     add('A database created', 'PASS', db)
-    if (mode === 'appimage') add('AppImage app startup', 'PASS', 'stock or documented fallback payload started')
     await waitForSchema(db, 'hosts:id;settings:key;workspaces:id;workspace_layouts:workspace_id')
     add('A schema ready', 'PASS')
     const stopA = await stop(child)
@@ -876,6 +876,7 @@ async function runMacos(flags) {
     await report(work, reportDir, reportJson)
     return reportJson
   } catch (error) {
+    if (child) await stop(child).catch(() => undefined)
     add('harness', 'FAIL', errorMessage(error))
     reportJson.status = 'FAIL'
     await report(work, reportDir, reportJson).catch(() => undefined)

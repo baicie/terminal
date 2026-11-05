@@ -571,6 +571,7 @@ pnpm add <package-name>
 
 ### Phase 9.5.2 - Upgrade Trust & Secure Data Continuity 🟡 实现完成，外部环境待补
 
+- ✅ 六份证据因 `vault_tests.rs` 已知答案测试改变源码指纹，已用官方流程 run `41998303201` 重采（`fd9cc8ac…`，0 problem）；未手改旧 manifest
 - ✅ 场景级升级证据契约：10 个场景、22 项契约/负测试；`PASS` 必须全部 required checks/facts PASS，只有 AppImage payload-only 允许 `PARTIAL`；校验 `sourceSha`/`runId`/artifact status/problems/expected SHA、恢复后 A 启动、降级 B 列保留、中断缺失列
 - ✅ 备份恢复加固：checkpoint busy/log/checkpointed 校验、先删 sidecar 再 rename、最早 `pre-migration-*` 备份、恢复前 A 快照校验、A 启动证据
 - ✅ Vault：Node 24 Argon2id/AES-GCM 独立 fixture + Rust 已知答案测试；升级后 B 文件中的加密条目可解密、错误密码拒绝（app-level unlock 仍 NOT_RUN）
