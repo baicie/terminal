@@ -580,7 +580,7 @@ pnpm add <package-name>
 - 🟡 降级：A 读取加法 schema + B 快照字段保留 PASS；未来不兼容 schema 拒绝 **NOT_RUN**
 - 🟡 磁盘满/busy checkpoint/恢复 crash point/**ENOSPC** **NOT_RUN**
 - 🟡 Updater：latest.json 静态契约/负测试；运行时下载/验签/安装/重启 **NOT_RUN**；release manifest deb/arm64/签名验证缺陷仍存在
-- 📋 代码 HEAD `a82bd45`；最终 CI/证据重采结果见 `docs/phase9-5/phase9-5-2-implementation.md`
+- 📋 代码 HEAD `78dd0d8`（文档 `eccabe6`）；最终 CI/证据重采结果见 `docs/phase9-5/phase9-5-2-implementation.md`
 
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
