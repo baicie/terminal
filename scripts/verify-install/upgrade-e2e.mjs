@@ -908,6 +908,12 @@ async function runLinux(flags) {
       XDG_DATA_HOME: data,
       XDG_CACHE_HOME: cache,
       WEBKIT_DISABLE_COMPOSITING_MODE: '1',
+      // WebKit's WebProcess sandbox cannot reach the X socket/EGL device on
+      // this headless runner; the UI process starts, then the WebProcess
+      // aborts. This is a test-environment setting, not a product default.
+      WEBKIT_FORCE_SANDBOX: '0',
+      WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: '1',
+      EGL_LOG_LEVEL: 'debug',
       LIBGL_ALWAYS_SOFTWARE: '1',
       // AppImages can bundle libEGL without the matching Mesa DRI drivers.
       // Point the loader at the runner's software stack explicitly.

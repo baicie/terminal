@@ -320,12 +320,31 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             xvfb x11-utils libegl1 libegl-mesa0 libgles2 libgl1 libgl1-mesa-dri \
-            libayatana-appindicator3-1 libwebkit2gtk-4.1-0 libgtk-3-0 mesa-utils
+            libayatana-appindicator3-1 libwebkit2gtk-4.1-0 libgtk-3-0 mesa-utils \
+            gcc libegl1-mesa-dev
       - name: Probe the headless EGL stack
         run: |
           ls -l /usr/share/glvnd/egl_vendor.d || true
           ls /usr/lib/x86_64-linux-gnu/dri | head -10
           xvfb-run -a eglinfo -B 2>&1 | head -20 || true
+          cat > /tmp/egl-default.c <<'EOF'
+          #include <EGL/egl.h>
+          #include <stdio.h>
+          int main(void) {
+            EGLDisplay d = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+            EGLint major = 0, minor = 0;
+            if (d == EGL_NO_DISPLAY || !eglInitialize(d, &major, &minor)) {
+              printf("eglGetDisplay/default failed: 0x%x\n", eglGetError());
+              return 1;
+            }
+            printf("eglGetDisplay/default OK: %d.%d\n", major, minor);
+            return 0;
+          }
+          EOF
+          gcc /tmp/egl-default.c -lEGL -o /tmp/egl-default
+          xvfb-run -a /tmp/egl-default
+          EGL_PLATFORM=x11 xvfb-run -a /tmp/egl-default
+          EGL_PLATFORM=surfaceless xvfb-run -a /tmp/egl-default || true
       - name: Download published AppImages
         env:
           GH_TOKEN: ${{ github.token }}
