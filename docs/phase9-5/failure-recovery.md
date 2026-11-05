@@ -3,6 +3,24 @@
 > 日期：2026-11-05
 > 证据：`docs/phase9-5/evidence/fault-*`
 > 所有故障注入都在临时 HOME / 临时 Applications 目录中执行，不接触真实用户数据。
+> 注意：macOS 的 WKWebView localStorage 位于真实用户 home，不受 `HOME` 重定向；
+> 本轮没有清理或读取其中内容，故障只注入数据库、vault 和临时 app 副本。该隔离
+> 限制与 Phase 9.4.2 的跨样本 journal 发现一致，下一轮应使用一次性 profile/VM。
+
+## 0. 十项覆盖矩阵
+
+| # | 场景 | 状态 | 证据 |
+| --- | --- | --- | --- |
+| 1 | A 数据保留后安装 B | **PASS** | dev.1→dev.2 / dev.1→当前源码 |
+| 2 | Migration 抛错 | **PASS** | 只读目录使迁移失败，旧 DB 不变 |
+| 3 | 重启后重新执行迁移 | **PASS** | 第二次 B 启动幂等 |
+| 4 | 重复启动幂等性 | **PASS** | `fault-restart-idempotent/` |
+| 5 | 数据库损坏检测 | **PASS** | `fault-corrupt-db/`，日志 `file is not a database` |
+| 6 | 磁盘空间不足 | **NOT_RUN** | 未实现确定性小容量卷 |
+| 7 | 目标路径只读 | **PASS** | `fault-read-only-data-dir/` |
+| 8 | 备份失败 | **PASS** | 只读目录同时阻断 backups，迁移不执行 |
+| 9 | 迁移中断 | **NOT_RUN** | 两个 ALTER 的窗口太短，不伪造 |
+| 10 | 恢复前后数据一致性 | **PARTIAL** | 备份可读回；实际恢复步骤未端到端执行 |
 
 ## 1. 已执行
 
