@@ -12,7 +12,7 @@
 | 1 | 故障五事实拆分与 fail-closed 负测试 | **完成**：`fault-assessment.mjs` + 5 项测试 |
 | 2 | 当前 HEAD 的真实 CI 升级链 | **完成**：7 个报告全部 PASS（run `41980039459`） |
 | 3 | Linux DEB 真实安装 | **完成**：`apt-get`/dpkg + 版本读回 + 字段级验证 |
-| 4 | Linux AppImage 同路径替换 | **完成**：替换 + SHA 校验；headless 启动见 `linux-upgrade-verification.md` |
+| 4 | Linux AppImage 同路径替换 | **部分**：payload-only，替换 + SHA 校验；启动/迁移 NOT_RUN，见 `linux-upgrade-verification.md` |
 | 5 | 确定性迁移中断 | **完成**：第一条列提交后 SIGKILL，重启收敛 |
 | 6 | 备份恢复端到端 | **完成**：复制备份 + A 启动读回 + SHA 一致 |
 | 7 | B→A 降级读取 | **完成（读取）**：A 可读加法 schema，数据哈希未变 |
