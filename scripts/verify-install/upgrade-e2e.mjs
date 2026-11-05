@@ -821,6 +821,16 @@ async function extractAppImageWithSystemWebKit(installer, destination, work) {
     for (const name of ['libwebkit2gtk-4.1.so.0', 'libjavascriptcoregtk-4.1.so.0']) {
       rmSync(path.join(directory, name), { force: true })
     }
+    // System WebKit links the system GStreamer; the payload's older bundled
+    // GStreamer would otherwise win via LD_LIBRARY_PATH and fail at symbol
+    // resolution (gst_pad_probe_info_set_buffer).
+    if (existsSync(directory)) {
+      for (const entry of readdirSync(directory)) {
+        if (/^libgst.*\.so/.test(entry)) {
+          rmSync(path.join(directory, entry), { force: true })
+        }
+      }
+    }
   }
   return path.join(destination, 'AppRun')
 }
