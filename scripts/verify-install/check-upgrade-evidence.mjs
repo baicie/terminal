@@ -17,9 +17,13 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import {
+  CONTRACT_VERSION,
+  validateScenarioContract,
+} from './upgrade-evidence-contract.mjs'
 
 const SHA256 = /^[a-f0-9]{64}$/
-const STATUSES = new Set(['PASS', 'PARTIAL', 'FAIL', 'NOT_RUN'])
+const STATUSES = new Set(['PASS', 'PARTIAL', 'FAIL', 'NOT_RUN', 'BLOCKED_EXTERNAL'])
 const VALID_CHECK = new Set(['PASS', 'FAIL', 'NOT_RUN'])
 
 function fail(message) {
@@ -30,10 +34,25 @@ function isObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export function checkUpgradeReport(report, label = 'upgrade-report.json') {
+export function checkUpgradeReport(
+  report,
+  label = 'upgrade-report.json',
+  { requireContract = false } = {},
+) {
   if (!isObject(report)) fail(label + ' is not an object')
   if (report.provider !== 'upgrade-e2e') fail(label + ' has no upgrade-e2e provider')
   if (!STATUSES.has(report.status)) fail(label + ' has an invalid status: ' + report.status)
+  if (requireContract && report.contractVersion !== CONTRACT_VERSION) {
+    fail(label + ' does not declare contractVersion ' + CONTRACT_VERSION)
+  }
+  if (report.contractVersion === CONTRACT_VERSION) {
+    if (typeof report.sourceSha !== 'string' || !/^[a-f0-9]{40}$/.test(report.sourceSha)) {
+      fail(label + ' has no 40-hex sourceSha')
+    }
+    if (typeof report.runId !== 'string' || report.runId.length === 0) {
+      fail(label + ' has no CI runId')
+    }
+  }
   if (typeof report.platform !== 'string' || report.platform.length === 0) fail(label + ' has no platform')
   if (typeof report.token !== 'string' || report.token.length === 0) fail(label + ' has no fixture token')
 
@@ -59,9 +78,31 @@ export function checkUpgradeReport(report, label = 'upgrade-report.json') {
     if (typeof artifact.arch !== 'string' || artifact.arch.length === 0) {
       fail(label + ' ' + side + ' has no architecture')
     }
+    if (report.contractVersion === CONTRACT_VERSION &&
+        (typeof artifact.installer !== 'string' || artifact.installer.length === 0)) {
+      fail(label + ' ' + side + ' has no installer path')
+    }
   }
   if (unverifiedMetadata.length > 0 && report.status === 'PASS') {
     fail(label + ' is PASS with unverified metadata on ' + unverifiedMetadata.join(','))
+  }
+  if (report.contractVersion === 2 && report.payloadOnly !== true) {
+    for (const side of ['a', 'b']) {
+      const artifact = report[side]
+      if (artifact.status !== 'PASS') {
+        fail(label + ' ' + side + ' artifact status is ' + artifact.status)
+      }
+      if (!Array.isArray(artifact.problems) || artifact.problems.length > 0) {
+        fail(label + ' ' + side + ' artifact has metadata problems')
+      }
+      const expectedSha = artifact.expected && artifact.expected.sha256
+      if (typeof expectedSha !== 'string' || !SHA256.test(expectedSha)) {
+        fail(label + ' ' + side + ' has no pinned expected sha256')
+      }
+      if (expectedSha !== artifact.sha256) {
+        fail(label + ' ' + side + ' expected sha256 differs from the measured installer')
+      }
+    }
   }
   if (report.a.identifier !== report.b.identifier) {
     fail(label + ' A/B identifiers differ: ' + report.a.identifier + ' / ' + report.b.identifier)
@@ -137,13 +178,18 @@ export function checkUpgradeReport(report, label = 'upgrade-report.json') {
     }
   }
 
-  if (report.faultAssessment) {
+  if (report.contractVersion === CONTRACT_VERSION) {
+    validateScenarioContract(report, label)
+  } else if (report.faultAssessment) {
     const fault = report.faultAssessment
     if (!isObject(fault) || !Array.isArray(fault.required) || !Array.isArray(fault.failed)) {
       fail(label + ' has a malformed faultAssessment')
     }
     if (fault.failed.length > 0) fail(label + ' fault has failed facts: ' + fault.failed.join(','))
     if (fault.overall === 'FAIL') fail(label + ' fault overall is FAIL')
+    if (report.status === 'PASS' && fault.overall !== 'PASS') {
+      fail(label + ' is PASS while fault overall is ' + fault.overall)
+    }
     if (fault.overall === 'PARTIAL') {
       // Partial is allowed only when the missing fact is listed; the report
       // must not silently claim PASS.
@@ -171,9 +217,10 @@ export function checkUpgradeReport(report, label = 'upgrade-report.json') {
 }
 
 function main(argv) {
+  const requireContract = argv.includes('--require-contract')
   const files = argv.filter(argument => !argument.startsWith('--'))
   if (files.length === 0) {
-    console.error('usage: check-upgrade-evidence.mjs <report.json>...')
+    console.error('usage: check-upgrade-evidence.mjs [--require-contract] <report.json>...')
     process.exit(2)
   }
   let failed = 0
@@ -186,7 +233,7 @@ function main(argv) {
     }
     try {
       const report = JSON.parse(readFileSync(absolute, 'utf8'))
-      const summary = checkUpgradeReport(report, absolute)
+      const summary = checkUpgradeReport(report, absolute, { requireContract })
       console.log('[PASS] ' + absolute + ' ' + JSON.stringify(summary))
     } catch (error) {
       console.error('[FAIL] ' + absolute + ': ' + (error instanceof Error ? error.message : String(error)))

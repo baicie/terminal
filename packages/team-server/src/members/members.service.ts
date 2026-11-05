@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
+import { teamMemberResponse } from '../teams/team-response'
 
 function isUniqueConstraintViolation(error: unknown): boolean {
   return (
@@ -22,10 +23,11 @@ export class MembersService {
     // Verify user is a member
     await this.checkMembership(teamId, userId)
 
-    return this.prisma.teamMember.findMany({
+    const members = await this.prisma.teamMember.findMany({
       where: { teamId },
       include: { user: { select: { id: true } } },
     })
+    return members.map(teamMemberResponse)
   }
 
   async addMember(
@@ -48,7 +50,7 @@ export class MembersService {
     }
 
     try {
-      return await this.prisma.teamMember.create({
+      const member = await this.prisma.teamMember.create({
         data: {
           teamId,
           userId: newUserId,
@@ -57,6 +59,7 @@ export class MembersService {
           role,
         },
       })
+      return teamMemberResponse(member)
     } catch (error) {
       if (isUniqueConstraintViolation(error)) {
         throw new ConflictException('User is already a member')
@@ -86,10 +89,11 @@ export class MembersService {
       throw new ForbiddenException('Cannot change owner role')
     }
 
-    return this.prisma.teamMember.update({
+    const updated = await this.prisma.teamMember.update({
       where: { id: memberId },
       data: { role },
     })
+    return teamMemberResponse(updated)
   }
 
   async removeMember(teamId: string, userId: string, memberId: string) {

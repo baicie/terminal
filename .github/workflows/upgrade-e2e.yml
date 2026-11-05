@@ -74,7 +74,7 @@ jobs:
             --report-dir upgrade-report
 
       - name: Fail closed on incomplete upgrade evidence
-        run: node scripts/verify-install/check-upgrade-evidence.mjs upgrade-report/upgrade-report.json
+        run: node scripts/verify-install/check-upgrade-evidence.mjs --require-contract upgrade-report/upgrade-report.json
 
       - name: Upload historical evidence
         if: always()
@@ -181,6 +181,7 @@ jobs:
           node scripts/verify-install/upgrade-e2e.mjs run \
             --a-installer upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg \
             --b-installer "$B_DMG" --platform darwin \
+            --expect-a-sha256 "$DEV1_SHA256" --expect-b-sha256 "$B_SHA" \
             --expect-a-version 0.0.1-dev.1 --expect-b-version 0.0.1-dev.4-local \
             --expect-identifier com.baicie.termius \
             --expect-new-host-columns agent_forwarding,shell_integration \
@@ -192,6 +193,7 @@ jobs:
           node scripts/verify-install/upgrade-e2e.mjs run \
             --a-installer upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg \
             --b-installer "$B_DMG" --platform darwin \
+            --expect-a-sha256 "$DEV1_SHA256" --expect-b-sha256 "$B_SHA" \
             --expect-a-version 0.0.1-dev.1 --expect-b-version 0.0.1-dev.4-local \
             --expect-identifier com.baicie.termius \
             --expect-new-host-columns agent_forwarding,shell_integration \
@@ -203,6 +205,7 @@ jobs:
           node scripts/verify-install/upgrade-e2e.mjs run \
             --a-installer upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg \
             --b-installer "$B_DMG" --platform darwin \
+            --expect-a-sha256 "$DEV1_SHA256" --expect-b-sha256 "$B_SHA" \
             --expect-a-version 0.0.1-dev.1 --expect-b-version 0.0.1-dev.4-local \
             --expect-identifier com.baicie.termius \
             --expect-new-host-columns agent_forwarding,shell_integration \
@@ -211,7 +214,7 @@ jobs:
 
       - name: Fail closed on incomplete upgrade evidence
         run: |
-          node scripts/verify-install/check-upgrade-evidence.mjs \
+          node scripts/verify-install/check-upgrade-evidence.mjs --require-contract \
             upgrade-current-report/upgrade-report.json \
             upgrade-current-interrupt-report/upgrade-report.json \
             upgrade-current-restore-report/upgrade-report.json \
@@ -286,7 +289,7 @@ jobs:
             --expect-new-host-columns agent_forwarding,shell_integration \
             --work-dir upgrade-linux-deb --report-dir upgrade-linux-deb-report
       - name: Fail closed on incomplete Linux DEB evidence
-        run: node scripts/verify-install/check-upgrade-evidence.mjs upgrade-linux-deb-report/upgrade-report.json
+        run: node scripts/verify-install/check-upgrade-evidence.mjs --require-contract upgrade-linux-deb-report/upgrade-report.json
       - name: Upload Linux DEB evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -369,7 +372,7 @@ jobs:
             --expect-new-host-columns agent_forwarding,shell_integration \
             --work-dir upgrade-linux-appimage --report-dir upgrade-linux-appimage-report
       - name: Fail closed on incomplete AppImage evidence
-        run: node scripts/verify-install/check-upgrade-evidence.mjs upgrade-linux-appimage-report/upgrade-report.json
+        run: node scripts/verify-install/check-upgrade-evidence.mjs --require-contract upgrade-linux-appimage-report/upgrade-report.json
       - name: Upload AppImage evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -386,19 +389,37 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Test the isolation state machine
+        run: node --test scripts/verify-install/windows-isolation-classify.test.mjs
       - name: Prove the shared runner profile fails closed
         shell: pwsh
         run: |
+          $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
           $out = Join-Path $env:RUNNER_TEMP 'windows-isolation.json'
-          & pwsh -NoProfile -File ./scripts/verify-install/windows-isolation-check.ps1 -OutFile $out
+          & pwsh -NoProfile -File ./scripts/verify-install/windows-isolation-check.ps1 `
+            -ExpectedSid $sid -RunnerSid $sid -OutFile $out
           $code = $LASTEXITCODE
-          if ($code -eq 0) {
-            throw 'The shared runner reported itself isolated; this preflight must fail closed on a shared profile.'
+          if ($code -ne 1) {
+            throw "The shared runner must fail closed with exit 1, got $code"
           }
+          if (-not (Test-Path $out)) { throw 'The preflight wrote no report' }
           $report = Get-Content $out -Raw | ConvertFrom-Json
           if ($report.isolated -ne $false) { throw 'isolated must be false on the shared runner' }
           if ($report.wouldTouchRealProfile -ne $true) { throw 'wouldTouchRealProfile must be true on the shared runner' }
-          if ($report.targetIsRealRoaming -ne $true) { throw 'the target must resolve to the real Roaming profile' }
+          if ($report.reasonCode -ne 'REFUSED_SHARED_RUNNER_PROFILE') {
+            throw "unexpected reasonCode: $($report.reasonCode)"
+          }
+          if ($report.evidenceComplete -ne $true) { throw 'evidenceComplete must be true' }
+          if ($report.readOnlyPreflight -ne $true) { throw 'readOnlyPreflight must be true' }
+          $assertions = [ordered]@{
+            exitCode = $code
+            reasonCode = [string]$report.reasonCode
+            isolated = $report.isolated
+            wouldTouchRealProfile = $report.wouldTouchRealProfile
+            evidenceComplete = $report.evidenceComplete
+            processSid = $sid
+          }
+          $assertions | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'windows-isolation-assertions.json') -Encoding UTF8
           Write-Host 'Windows preflight failed closed on the shared profile; no install or delete was attempted.'
           # The preflight intentionally exits 1 to fail closed. The assertions
           # above prove that the failure was the expected isolation refusal, so
@@ -409,5 +430,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-isolation-report
-          path: ${{ runner.temp }}/windows-isolation.json
-          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/windows-isolation.json
+            ${{ runner.temp }}/windows-isolation-assertions.json
+          if-no-files-found: error

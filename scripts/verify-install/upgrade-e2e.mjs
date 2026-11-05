@@ -49,6 +49,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { promisify } from 'node:util'
 import { assessFault } from './fault-assessment.mjs'
+import { createVaultFile, verifyVaultFile, verifyWrongPasswordRejected } from './vault-crypto.mjs'
 
 const run = promisify(execFile)
 const HERE = import.meta.dirname
@@ -58,6 +59,26 @@ const PROVIDER = 'upgrade-e2e'
 
 function sha256File(filePath) {
   return createHash('sha256').update(readFileSync(filePath)).digest('hex')
+}
+
+function fileSetDigest(dbPath) {
+  const hash = createHash('sha256')
+  for (const suffix of ['', '-wal', '-shm', '-journal']) {
+    const file = dbPath + suffix
+    if (!existsSync(file)) {
+      hash.update('missing:' + suffix + '\n')
+      continue
+    }
+    hash.update('present:' + suffix + ':' + statSync(file).size + '\n')
+    hash.update(readFileSync(file))
+  }
+  return hash.digest('hex')
+}
+
+function chmodDatabaseFiles(dbPath, mode) {
+  for (const file of [dbPath, dbPath + '-wal', dbPath + '-shm', dbPath + '-journal']) {
+    if (existsSync(file)) chmodSync(file, mode)
+  }
 }
 
 function sleep(ms) {
@@ -113,10 +134,19 @@ async function inspectAsset(installer, platform, expected) {
   try {
     await run(process.execPath, [ASSET, ...args])
   } catch (error) {
-    if (existsSync(json)) return JSON.parse(readFileSync(json, 'utf8'))
+    // Never accept a stale .metadata-*.json: its SHA may describe different
+    // bytes than the installer that was actually installed.
     throw error
   }
-  return JSON.parse(readFileSync(json, 'utf8'))
+  const metadata = JSON.parse(readFileSync(json, 'utf8'))
+  const actualSha = sha256File(installer)
+  if (metadata.sha256 !== actualSha) {
+    throw new Error('metadata sha256 does not match installer bytes: ' + installer)
+  }
+  if (expected.sha256 && metadata.sha256 !== expected.sha256) {
+    throw new Error('installer sha256 does not match the pinned digest: ' + installer)
+  }
+  return metadata
 }
 
 function mountDmg(dmg, mountPoint) {
@@ -211,29 +241,68 @@ async function waitForSchema(dbPath, expectedColumns, timeoutMs = 120_000) {
   ])
 }
 
-async function replaceWithBackup(db, backup, dataDir) {
-  // The app is stopped and every data-retention command has closed its
-  // connection before this runs. Checkpoint first, then replace atomically in
-  // the same directory; WAL/SHM are removed only after the checkpoint.
-  await dr(['checkpoint', '--db', db])
-  const temporary = path.join(dataDir, 'terminal.restore.tmp')
-  cpSync(backup, temporary)
-  const fd = openSync(temporary, 'r+')
+function fsyncDirectory(directory) {
+  const fd = openSync(directory, 'r')
   try {
     fsyncSync(fd)
   } finally {
     closeSync(fd)
   }
-  renameSync(temporary, db)
-  rmSync(db + '-wal', { force: true })
-  rmSync(db + '-shm', { force: true })
+}
+
+async function replaceWithBackup(db, backup, dataDir, { beforePath, token } = {}) {
+  // A restore must never publish a pre-migration main DB next to a
+  // post-migration WAL: SQLite would replay those frames on the next open.
+  // Checkpoint and verify first, remove sidecars before the rename, and fsync
+  // the directory on both sides of the publish.
+  try {
+    await dr(['checkpoint', '--db', db])
+  } catch (error) {
+    // A corrupt DB has no valid header to checkpoint; the caller may still be
+    // restoring over it. Any other checkpoint failure must abort.
+    if (!/not a SQLite database|no such file/i.test(errorMessage(error))) throw error
+  }
+  const temporary = path.join(dataDir, 'terminal.restore.tmp')
+  try {
+    cpSync(backup, temporary)
+    const fd = openSync(temporary, 'r+')
+    try {
+      fsyncSync(fd)
+    } finally {
+      closeSync(fd)
+    }
+    if (beforePath && token) {
+      await dr([
+        'verify', '--db', temporary, '--before', beforePath, '--token', token,
+        '--forbid-columns', 'agent_forwarding,shell_integration',
+        '--allow-settings-migration',
+      ])
+    }
+    rmSync(db + '-wal', { force: true })
+    rmSync(db + '-shm', { force: true })
+    rmSync(db + '-journal', { force: true })
+    fsyncDirectory(dataDir)
+    renameSync(temporary, db)
+    fsyncDirectory(dataDir)
+  } catch (error) {
+    rmSync(temporary, { force: true })
+    throw error
+  }
 }
 
 async function waitForBackup(backupsDir, timeoutMs = 30_000) {
   return waitFor(() => {
     if (!existsSync(backupsDir)) return null
-    const files = readdirSync(backupsDir).filter(name => /^pre-migration-.*\.db$/.test(name))
-    return files.length > 0 ? path.join(backupsDir, files.sort().at(-1)) : null
+    const files = readdirSync(backupsDir)
+      .filter(name => /^pre-migration-\d+(?:-\d+)?\.db$/.test(name))
+      .sort((left, right) => {
+        const stamp = name => Number(/^pre-migration-(\d+)/.exec(name)[1])
+        return stamp(left) - stamp(right)
+      })
+    // The first snapshot is the only one guaranteed to predate the first
+    // ALTER. Later snapshots can be written during recovery of a partial
+    // migration and may already contain the new columns.
+    return files.length > 0 ? path.join(backupsDir, files[0]) : null
   }, timeoutMs, 'pre-migration backup in ' + backupsDir)
 }
 
@@ -306,6 +375,10 @@ async function runMacos(flags) {
   const reportJson = {
     provider: PROVIDER,
     generatedAt: new Date().toISOString(),
+    contractVersion: 2,
+    scenario: fault === 'none' ? 'normal' : fault,
+    sourceSha: process.env.GITHUB_SHA || null,
+    runId: process.env.GITHUB_RUN_ID || null,
     platform: 'darwin',
     hostArch: process.arch,
     fault,
@@ -317,7 +390,7 @@ async function runMacos(flags) {
     schema: null,
     checks: [],
     notRun: [
-      'real Vault master-password unlock (requires interactive credential; file persistence is asserted only)',
+      'app-level Vault unlock through the UI (encrypted fixture is unlocked by the independent Node verifier; file persistence is asserted)',
       'incompatible-schema downgrade refusal (dev.1 reads the additive current schema; a non-additive future schema is not tested)',
       'Linux and Windows adapters (NOT_RUN in this first implementation)',
       'Gatekeeper / notarization / Authenticode (BLOCKED_EXTERNAL)',
@@ -335,7 +408,9 @@ async function runMacos(flags) {
     for (const name of assessment.required) {
       add('fault.' + name, assessment.facts[name], '')
     }
-    reportJson.status = assessment.overall
+    reportJson.status = reportJson.checks.some(check => check.status === 'FAIL')
+      ? 'FAIL'
+      : assessment.overall
   }
 
   try {
@@ -379,6 +454,7 @@ async function runMacos(flags) {
     let child = launch(binary, home, reportJson.logs.a)
     await waitForDatabase(db)
     add('A database created', 'PASS', db)
+    if (mode === 'appimage') add('AppImage app startup', 'PASS', 'stock or documented fallback payload started')
     await waitForSchema(db, 'hosts:id;settings:key;workspaces:id;workspace_layouts:workspace_id')
     add('A schema ready', 'PASS')
     const stopA = await stop(child)
@@ -386,8 +462,20 @@ async function runMacos(flags) {
     await dr(['checkpoint', '--db', db])
     await dr(['seed', '--db', db, '--token', token, '--vault', vault, '--compatible'])
     add('seed A data', 'PASS', 'compatible with A schema')
-    await dr(['snapshot', '--db', db, '--token', token, '--vault', vault, '--out', path.join(work, 'a-snapshot.json')])
-    const before = JSON.parse(readFileSync(path.join(work, 'a-snapshot.json'), 'utf8'))
+    const vaultPassword = 'phase952-test-only-master-password'
+    const vaultSecret = 'phase952-test-only-secret'
+    let vaultFixture = false
+    try {
+      createVaultFile(vault, vaultPassword, { host: vaultSecret })
+      vaultFixture = true
+      add('vault encrypted fixture', 'PASS', 'Argon2id + AES-256-GCM entry created')
+    } catch (error) {
+      add('vault encrypted fixture', 'NOT_RUN', errorMessage(error))
+      reportJson.notRun.push('real Vault fixture (Node crypto.argon2Sync unavailable)')
+    }
+    const beforePath = path.join(work, 'a-snapshot.json')
+    await dr(['snapshot', '--db', db, '--token', token, '--vault', vault, '--out', beforePath])
+    const before = JSON.parse(readFileSync(beforePath, 'utf8'))
     reportJson.schema = {
       beforeTables: before.tables,
       beforeHostColumns: before.schema?.hosts ?? null,
@@ -396,7 +484,7 @@ async function runMacos(flags) {
       addedHostColumns: null,
     }
     add('A read-back snapshot', 'PASS', 'hosts/settings/workspace/layout/vault readable')
-    const dbHashBefore = sha256File(db)
+    const dbHashBefore = fileSetDigest(db)
 
     await installFromDmg(bInstaller, installedApp, work)
     const bBinary = path.join(installedApp, 'Contents', 'MacOS', 'terminal')
@@ -405,15 +493,16 @@ async function runMacos(flags) {
 
     if (fault === 'corrupt-db') {
       writeFaultCorrupt(db)
-      const corruptedHash = sha256File(db)
+      const corruptedHash = fileSetDigest(db)
       const faultLog = path.join(logs, 'b-fault.log')
       reportJson.logs.fault = faultLog
       child = launch(bBinary, home, faultLog)
       await sleep(15_000)
       await stop(child)
-      const afterHash = sha256File(db)
+      const afterHash = fileSetDigest(db)
       const preserved = afterHash === corruptedHash
-      add('corrupt DB preserved', preserved ? 'PASS' : 'FAIL', `${corruptedHash.slice(0, 16)} -> ${afterHash.slice(0, 16)}`)
+      add('corrupt DB preserved', preserved ? 'PASS' : 'FAIL',
+        `${corruptedHash.slice(0, 16)} -> ${afterHash.slice(0, 16)} (db/wal/shm/journal set)`)
       await sleep(1_000)
       await waitFor(() => existsSync(faultLog) && statSync(faultLog).size > 0, 3_000).catch(() => null)
       const faultText = existsSync(faultLog) ? readFileSync(faultLog, 'utf8') : ''
@@ -438,11 +527,13 @@ async function runMacos(flags) {
       const faultLog = path.join(logs, 'b-fault.log')
       reportJson.logs.fault = faultLog
       chmodSync(dataDir, 0o500)
+      chmodDatabaseFiles(db, 0o400)
       child = launch(bBinary, home, faultLog)
       await sleep(15_000)
       await stop(child)
       chmodSync(dataDir, 0o700)
-      const afterHash = sha256File(db)
+      chmodDatabaseFiles(db, 0o600)
+      const afterHash = fileSetDigest(db)
       const preserved = afterHash === dbHashBefore
       add('read-only data dir preserved DB', preserved ? 'PASS' : 'FAIL', `${dbHashBefore.slice(0, 16)} -> ${afterHash.slice(0, 16)}`)
       await sleep(1_000)
@@ -471,7 +562,7 @@ async function runMacos(flags) {
         await dr(['checkpoint', '--db', db])
         await dr([
           'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
-          '--token', token, '--vault', vault,
+          '--token', token, '--vault', vault, '--vault-allow-encrypted',
           '--expected-new-host-columns', expectedNewHostColumns.join(','),
           '--allow-settings-migration',
         ])
@@ -561,7 +652,7 @@ async function runMacos(flags) {
         await dr(['checkpoint', '--db', db])
         await dr([
           'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
-          '--token', token, '--vault', vault,
+          '--token', token, '--vault', vault, '--vault-allow-encrypted',
           '--expected-new-host-columns', expectedNewHostColumns.join(','),
           '--allow-settings-migration',
         ])
@@ -628,11 +719,22 @@ async function runMacos(flags) {
     reportJson.schema.addedHostColumns = afterColumns.filter(column => !(reportJson.schema.beforeHostColumns || []).includes(column))
     await dr([
       'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
-      '--token', token, '--vault', vault,
+      '--token', token, '--vault', vault, '--vault-allow-encrypted',
       '--expected-new-host-columns', expectedNewHostColumns.join(','),
       '--allow-settings-migration',
     ])
     add('data integrity after B', 'PASS', 'field-by-field')
+    if (vaultFixture) {
+      try {
+        const result = verifyVaultFile(vault, vaultPassword, { host: vaultSecret })
+        add('vault crypto unlock after B', result.verified ? 'PASS' : 'FAIL',
+          'encrypted entry decrypted with the same password')
+        add('vault wrong password rejected', verifyWrongPasswordRejected(vault, 'wrong-password')
+          ? 'PASS' : 'FAIL')
+      } catch (error) {
+        add('vault crypto unlock after B', 'FAIL', errorMessage(error))
+      }
+    }
     if (before.team && Object.values(before.team).some(Boolean)) {
       add('Team Sync local persistence', 'PASS',
         'teams/members/shared hosts/sync_queue/user_profile')
@@ -646,10 +748,15 @@ async function runMacos(flags) {
     if (fault === 'restart-idempotent') {
       child = launch(bBinary, home, path.join(logs, 'b-restart.log'))
       await waitForSchema(db, 'hosts:' + expectedNewHostColumns.join(','))
+      add(
+        'second B launch',
+        child.exitCode === null ? 'PASS' : 'FAIL',
+        child.exitCode === null ? 'second B process stayed alive through schema wait' : 'B exited before the second launch was observed',
+      )
       await stop(child)
       await dr([
         'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
-        '--token', token, '--vault', vault,
+        '--token', token, '--vault', vault, '--vault-allow-encrypted',
         '--expected-new-host-columns', expectedNewHostColumns.join(','),
         '--allow-settings-migration',
       ])
@@ -669,7 +776,7 @@ async function runMacos(flags) {
         add('backup restore', 'FAIL', 'this B produced no pre-migration backup')
       } else {
         copyFileSync(db, path.join(work, 'post-upgrade.db'))
-        await replaceWithBackup(db, backup, dataDir)
+        await replaceWithBackup(db, backup, dataDir, { beforePath, token })
         const restoredHash = sha256File(db)
         add(
           'restored DB matches backup',
@@ -679,11 +786,18 @@ async function runMacos(flags) {
         child = launch(aBinary, home, path.join(logs, 'a-restored.log'))
         try {
           await waitForSchema(db, 'hosts:id;settings:key;workspaces:id;workspace_layouts:workspace_id')
+          add(
+            'restored A launch',
+            child.exitCode === null ? 'PASS' : 'FAIL',
+            child.exitCode === null ? 'A process stayed alive through schema wait' : 'A exited before the restore was observed',
+          )
           await stop(child)
           await dr(['checkpoint', '--db', db])
           await dr([
             'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
-            '--token', token, '--vault', vault, '--allow-settings-migration',
+            '--token', token, '--vault', vault, '--vault-allow-encrypted',
+            '--forbid-columns', 'agent_forwarding,shell_integration',
+            '--allow-settings-migration',
           ])
           add('backup restore', 'PASS', 'A launched and read the restored pre-migration DB')
         } catch (error) {
@@ -699,17 +813,25 @@ async function runMacos(flags) {
     if (fault === 'downgrade') {
       copyFileSync(db, path.join(work, 'post-upgrade.db'))
       const beforeDowngrade = sha256File(db)
+      const downgradeSnapshot = path.join(work, 'b-before-downgrade.json')
+      await dr(['snapshot', '--db', db, '--token', token, '--vault', vault, '--out', downgradeSnapshot])
       let compatible = false
       child = launch(aBinary, home, path.join(logs, 'a-downgrade.log'))
       try {
         await waitForSchema(db, 'hosts:id;settings:key;workspaces:id;workspace_layouts:workspace_id')
+        add(
+          'downgrade A launch',
+          child.exitCode === null ? 'PASS' : 'FAIL',
+          child.exitCode === null ? 'A process stayed alive through schema wait' : 'A exited before the downgrade was observed',
+        )
         await stop(child)
         await dr([
-          'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
-          '--token', token, '--vault', vault, '--allow-settings-migration',
+          'verify', '--db', db, '--before', downgradeSnapshot,
+          '--token', token, '--vault', vault, '--vault-allow-encrypted', '--allow-settings-migration',
         ])
         compatible = true
         add('downgrade readability', 'PASS', 'A reads the additive post-migration schema')
+        add('downgrade preserved B columns', 'PASS', 'B-era rows/columns still compare')
       } catch (error) {
         await stop(child)
         const columns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
@@ -726,8 +848,10 @@ async function runMacos(flags) {
       const afterDowngrade = sha256File(db)
       add(
         'downgrade did not destroy data',
-        afterDowngrade === beforeDowngrade || compatible ? 'PASS' : 'FAIL',
-        afterDowngrade.slice(0, 16),
+        compatible ? 'PASS' : 'FAIL',
+        compatible
+          ? 'field-level verify against the B snapshot passed; sha ' + afterDowngrade.slice(0, 16)
+          : 'A could not read or verify the B-era data',
       )
       reportJson.status = reportJson.checks.some(check => check.status === 'FAIL') ? 'FAIL' : 'PASS'
       await report(work, reportDir, reportJson)
@@ -884,9 +1008,16 @@ async function runLinux(flags) {
   const token = 'phase951-linux-' + Date.now()
   const db = path.join(config, expectedIdentifier, 'terminal.db')
   const vault = path.join(config, 'terminal', 'vault.json')
+  const payloadOnly = flags['payload-only'] === true
   const reportJson = {
     provider: PROVIDER,
     generatedAt: new Date().toISOString(),
+    contractVersion: 2,
+    scenario: mode === 'deb'
+      ? 'linux-deb'
+      : payloadOnly ? 'linux-appimage' : 'linux-appimage-full',
+    sourceSha: process.env.GITHUB_SHA || null,
+    runId: process.env.GITHUB_RUN_ID || null,
     platform: 'linux',
     mode,
     hostArch: process.arch,
@@ -957,7 +1088,7 @@ async function runLinux(flags) {
       aBinary = installAppImage(aInstaller, path.join(apps, 'Terminal-A.AppImage'))
       add('install A (AppImage replacement)', 'PASS', aBinary)
     }
-    if (flags['payload-only'] === true) {
+    if (payloadOnly) {
       if (mode !== 'appimage') throw new Error('--payload-only is only valid for AppImage')
       // The headless runner cannot initialise this AppImage's bundled
       // WebKitGTK EGL stack (EGL_BAD_PARAMETER); a system-WebKit fallback then
@@ -1039,6 +1170,7 @@ async function runLinux(flags) {
       await waitForDatabase(db)
     }
     add('A database created', 'PASS', db)
+    if (mode === 'appimage') add('AppImage app startup', 'PASS', 'stock or documented fallback payload started')
     await waitForSchema(db, 'hosts:id;settings:key;workspaces:id;workspace_layouts:workspace_id')
     add('A schema ready', 'PASS')
     const stopA = await stop(aProcess)
@@ -1047,6 +1179,17 @@ async function runLinux(flags) {
     await dr(['checkpoint', '--db', db])
     await dr(['seed', '--db', db, '--token', token, '--vault', vault, '--compatible'])
     add('seed A data', 'PASS', 'compatible with A schema')
+    const vaultPassword = 'phase952-test-only-master-password'
+    const vaultSecret = 'phase952-test-only-secret'
+    let vaultFixture = false
+    try {
+      createVaultFile(vault, vaultPassword, { host: vaultSecret })
+      vaultFixture = true
+      add('vault encrypted fixture', 'PASS', 'Argon2id + AES-256-GCM entry created')
+    } catch (error) {
+      add('vault encrypted fixture', 'NOT_RUN', errorMessage(error))
+      reportJson.notRun.push('real Vault fixture (Node crypto.argon2Sync unavailable)')
+    }
     const beforePath = path.join(work, 'a-snapshot.json')
     await dr(['snapshot', '--db', db, '--token', token, '--vault', vault, '--out', beforePath])
     const before = JSON.parse(readFileSync(beforePath, 'utf8'))
@@ -1081,8 +1224,10 @@ async function runLinux(flags) {
       if (replacedSha !== bMetadata.sha256) {
         add('B AppImage replaced in place', 'FAIL',
           replacedSha + ' != ' + bMetadata.sha256)
+        add('AppImage payload replacement', 'FAIL', replacedSha + ' != ' + bMetadata.sha256)
       } else {
         add('B AppImage replaced in place', 'PASS', bBinary)
+        add('AppImage payload replacement', 'PASS', bBinary)
       }
     }
 
@@ -1120,11 +1265,22 @@ async function runLinux(flags) {
     )
     await dr([
       'verify', '--db', db, '--before', beforePath,
-      '--token', token, '--vault', vault,
+      '--token', token, '--vault', vault, '--vault-allow-encrypted',
       '--expected-new-host-columns', expectedNewHostColumns.join(','),
       '--allow-settings-migration',
     ])
     add('data integrity after B', 'PASS', 'field-by-field')
+    if (vaultFixture) {
+      try {
+        const result = verifyVaultFile(vault, vaultPassword, { host: vaultSecret })
+        add('vault crypto unlock after B', result.verified ? 'PASS' : 'FAIL',
+          'encrypted entry decrypted with the same password')
+        add('vault wrong password rejected', verifyWrongPasswordRejected(vault, 'wrong-password')
+          ? 'PASS' : 'FAIL')
+      } catch (error) {
+        add('vault crypto unlock after B', 'FAIL', errorMessage(error))
+      }
+    }
     if (before.team && Object.values(before.team).some(Boolean)) {
       add('Team Sync local persistence', 'PASS',
         'teams/members/shared hosts/sync_queue/user_profile')
@@ -1175,7 +1331,9 @@ async function main() {
   // PARTIAL is a real result (for example, AppImage payloads without internal
   // version metadata). The independent evidence gate decides whether its
   // missing facts are acceptable; only FAIL/NOT_RUN make the harness itself red.
-  process.exitCode = result.status === 'FAIL' || result.status === 'NOT_RUN' ? 1 : 0
+  const hasFailedCheck = Array.isArray(result.checks) &&
+    result.checks.some(check => check.status === 'FAIL')
+  process.exitCode = result.status === 'FAIL' || result.status === 'NOT_RUN' || hasFailedCheck ? 1 : 0
 }
 
 main().catch(error => {

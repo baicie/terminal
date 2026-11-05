@@ -1243,3 +1243,29 @@ fn windows_locks_a_zero_length_placeholder_and_serialises_reclaims() {
     assert!(opens_vault(&path, OLD_PASSWORD, "host"));
     assert_eq!(dir_entries(dir.path()), vec!["vault.json".to_string()]);
 }
+
+/// Known-answer fixture produced outside Rust (Node 24 `crypto.argon2Sync` +
+/// AES-256-GCM) with the same public format. This catches a KDF, verifier or
+/// nonce-layout change that a Rust-only round-trip would not notice.
+#[test]
+fn decrypts_the_external_node_fixture_and_rejects_a_wrong_password() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("vault-node-fixture.json");
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let path = vault_path(dir.path());
+    fs::copy(&source, &path).expect("copy fixture");
+
+    let vault = VaultState::unlock("phase952-known-answer-password", path.clone())
+        .expect("unlock external fixture");
+    assert_eq!(
+        vault.get("host").expect("read external entry"),
+        "phase952-known-answer-secret"
+    );
+
+    assert!(matches!(
+        VaultState::unlock("phase952-wrong-password", path),
+        Err(VaultError::InvalidPassword)
+    ));
+}

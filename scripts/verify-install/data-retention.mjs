@@ -525,6 +525,7 @@ function cmdVerify(flags) {
   const vaultPath = typeof flags.vault === 'string' ? flags.vault : null
   const expectAppWrite = flags['expect-app-write'] === true
   const allowSettingsMigration = flags['allow-settings-migration'] === true
+  const allowEncryptedVault = flags['vault-allow-encrypted'] === true
   if (!existsSync(beforePath)) {
     fail('snapshot file missing: ' + beforePath)
     process.exit(1)
@@ -560,9 +561,15 @@ function cmdVerify(flags) {
   const expectedNewHostColumns = typeof flags['expected-new-host-columns'] === 'string'
     ? flags['expected-new-host-columns'].split(',').map(function (value) { return value.trim() }).filter(Boolean)
     : []
+  const forbiddenHostColumns = typeof flags['forbid-columns'] === 'string'
+    ? flags['forbid-columns'].split(',').map(function (value) { return value.trim() }).filter(Boolean)
+    : []
   const afterHostColumns = tableColumns(db, 'hosts')
   for (const column of expectedNewHostColumns) {
     check(afterHostColumns.includes(column), 'schema: new hosts column "' + column + '" was added by the upgrade')
+  }
+  for (const column of forbiddenHostColumns) {
+    check(!afterHostColumns.includes(column), 'schema: forbidden new hosts column "' + column + '" is absent')
   }
 
   const rows = collectRows(db, token)
@@ -707,7 +714,7 @@ function cmdVerify(flags) {
     const vault = vaultState(vaultPath)
     check(vault.exists, 'vault file still exists at ' + vaultPath)
     check(vault.parses, 'vault file still parses as the app JSON vault config')
-    if (vault.parses) {
+    if (vault.parses && !allowEncryptedVault) {
       check(vault.salt === VAULT_SALT, 'vault salt field is byte-identical to the seeded value')
       check(vault.entries === 0, 'vault entry count is still 0 (got ' + vault.entries + ')')
     }
@@ -824,9 +831,33 @@ function cmdWait(flags) {
 function cmdCheckpoint(flags) {
   const dbPath = requireFlag(flags, 'db')
   const db = openDb(dbPath)
-  db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
-  pass('WAL checkpoint completed on ' + dbPath)
-  db.close()
+  try {
+    // PRAGMA wal_checkpoint returns (busy, log, checkpointed). The old code
+    // discarded that row and always reported success, so a busy checkpoint
+    // could be followed by deleting a WAL that still held committed frames.
+    const row = db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()
+    const busy = Number(row.busy)
+    const log = Number(row.log)
+    const checkpointed = Number(row.checkpointed)
+    if (busy !== 0) {
+      fail('WAL checkpoint stayed busy (busy=' + busy + ', log=' + log +
+        ', checkpointed=' + checkpointed + ') on ' + dbPath)
+      process.exit(1)
+    }
+    if (log !== checkpointed) {
+      fail('WAL checkpoint did not cover all frames (log=' + log +
+        ', checkpointed=' + checkpointed + ') on ' + dbPath)
+      process.exit(1)
+    }
+    const wal = dbPath + '-wal'
+    if (existsSync(wal) && statSync(wal).size > 0) {
+      fail('WAL file is still non-empty after checkpoint: ' + wal)
+      process.exit(1)
+    }
+    pass('WAL checkpoint completed and verified on ' + dbPath)
+  } finally {
+    db.close()
+  }
 }
 
 function cmdBackupVerify(flags) {
@@ -835,12 +866,15 @@ function cmdBackupVerify(flags) {
   const out = typeof flags.out === 'string' ? flags.out : null
   if (!existsSync(directory)) usage('backup directory does not exist: ' + directory)
   const snapshots = readdirSync(directory)
-    .filter(function (name) { return /^pre-migration-.*\.db$/.test(name) })
+    .filter(function (name) { return /^pre-migration-\d+(?:-\d+)?\.db$/.test(name) })
     .map(function (name) {
       const path = join(directory, name)
-      return { name: name, path: path, mtimeMs: statSync(path).mtimeMs }
+      const stamp = Number(/^pre-migration-(\d+)/.exec(name)[1])
+      return { name: name, path: path, mtimeMs: statSync(path).mtimeMs, stamp: stamp }
     })
-    .sort(function (left, right) { return right.mtimeMs - left.mtimeMs })
+    // The first snapshot predates the first ALTER; recovery snapshots may
+    // already contain B's columns and must not be adopted as pre-migration.
+    .sort(function (left, right) { return left.stamp - right.stamp })
   check(snapshots.length > 0, 'a pre-migration snapshot exists in ' + directory)
   if (snapshots.length === 0) return
   const newest = snapshots[0]
