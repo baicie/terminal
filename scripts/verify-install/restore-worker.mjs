@@ -111,21 +111,29 @@ export function inspectDatabase(dbPath, expectValue) {
   }
 }
 
-export function createFixture(dbPath, value) {
+const JOURNAL_MODES = new Set(['WAL', 'DELETE', 'TRUNCATE', 'PERSIST', 'MEMORY', 'OFF'])
+
+export function createFixture(dbPath, value, { bulkBytes = 0, journalMode = 'WAL' } = {}) {
+  const mode = String(journalMode).toUpperCase()
+  if (!JOURNAL_MODES.has(mode)) throw new Error('unsupported journal mode: ' + journalMode)
   rmSync(dbPath, { force: true })
   for (const suffix of SIDECARS) rmSync(dbPath + suffix, { force: true })
   mkdirSync(path.dirname(dbPath), { recursive: true })
   const db = new DatabaseSync(dbPath)
   try {
-    db.exec('PRAGMA journal_mode=WAL')
+    db.exec('PRAGMA journal_mode=' + mode)
     db.exec('CREATE TABLE matrix_fixture (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
     db.prepare('INSERT INTO matrix_fixture (key, value) VALUES (?, ?)').run('state', value)
+    if (bulkBytes > 0) {
+      db.exec('CREATE TABLE bulk_data (payload BLOB NOT NULL)')
+      db.prepare('INSERT INTO bulk_data (payload) VALUES (zeroblob(?))').run(bulkBytes)
+    }
     // Leave no WAL behind so the pre-crash file set is deterministic.
     db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
   } finally {
     db.close()
   }
-  return { db: dbPath, value, sha256: sha256File(dbPath) }
+  return { db: dbPath, value, sha256: sha256File(dbPath), size: statSync(dbPath).size }
 }
 
 function verifyWithProductHarness(file, { before, token }) {
@@ -213,6 +221,8 @@ function main() {
       'stage-log': { type: 'string' },
       'crash-at': { type: 'string' },
       'expect-value': { type: 'string' },
+      'bulk-bytes': { type: 'string' },
+      'journal-mode': { type: 'string' },
       before: { type: 'string' },
       token: { type: 'string' },
       value: { type: 'string' },
@@ -220,7 +230,13 @@ function main() {
   })
   const options = parsed.values
   if (mode === 'create') {
-    process.stdout.write(JSON.stringify(createFixture(options.db, options.value ?? 'live')) + '\n')
+    const bulkBytes = options['bulk-bytes'] ? Number(options['bulk-bytes']) : 0
+    process.stdout.write(JSON.stringify(
+      createFixture(options.db, options.value ?? 'live', {
+        bulkBytes,
+        journalMode: options['journal-mode'] ?? 'WAL',
+      }),
+    ) + '\n')
     return
   }
   if (mode === 'inspect') {

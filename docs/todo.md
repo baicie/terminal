@@ -2245,6 +2245,9 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] 独立 recovery worker + 8 阶段真实 SIGKILL + control；PID 归属、精确
       文件集 SHA、integrity/content 断言；Harness 恢复改为 spawn 同一 worker。
 - [x] crash 后独立 retry：6 阶段 `restored`、2 阶段 `already-restored`。
+- [x] staged restore ENOSPC：真实 64 MB 隔离卷，主库不变、retry 收敛、
+      伪造 staging 被丢弃。
+- [ ] 备份 VACUUM/migration/安装阶段 ENOSPC。
 - [ ] 产品启动时自动恢复状态机。
 - [ ] ENOSPC 小容量卷矩阵。
 - [ ] 进程组/WebKit/PTY quiescence。

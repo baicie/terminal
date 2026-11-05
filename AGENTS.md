@@ -601,7 +601,8 @@ pnpm add <package-name>
 - ✅ **恢复重试**：崩溃后独立 retry 进程，6 阶段 `restored`、2 阶段 `already-restored`，最终文件集恰好 `{terminal.db: 备份 SHA}`；产品启动时自动恢复仍 **NOT_RUN**
 - ✅ 恢复状态机 8 阶段 + `backup restore stages`；Harness 恢复改为 spawn `restore-worker.mjs`，与矩阵共用一份实现；busy checkpoint 真实第二连接测试 **PASS**
 - ✅ `raceAfter()` 清理 `Promise.race` 遗留计时器，脚本测试不再被 30s 定时器拖住；`process-lifecycle` 10/10
-- 🔴 ENOSPC、Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock **NOT_RUN/PARTIAL**
+- ✅ **staged restore ENOSPC**：真实 64 MB HFS+ DMG（Linux 用 size-capped tmpfs，无 sudo 显式 skip）上 restore 失败后主库 SHA 不变且可读，释放空间后 retry `restored`，伪造 staging 被丢弃；备份 VACUUM/migration/安装 ENOSPC 仍 **NOT_RUN**
+- 🔴 Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock **NOT_RUN/PARTIAL**
 - 📋 判定见 `docs/phase9-5/phase9-5-4-implementation.md` 与 `real-crash-point-matrix.md`
 
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
@@ -639,7 +640,7 @@ pnpm add <package-name>
 | —     | ✅ **六份验收证据已重采并归档**：Phase 9.5.1 因 smoke-only 迁移延迟使指纹变为 `b73c5fd2…`，已用 run `41970525110` 官方重采（commit `225c363`），门禁 0 problem；未手改旧 manifest。任何后续 `FINGERPRINT_PATHS` 改动仍需重采 | ✅ 已闭合 | — |
 | —     | ✅ P9.2-9 Linux zsh 探针 **PASS**：run `41432020659` / `41434165000` 的 Linux job 均 success，14 用例全绿（含此前三条）。遗留：空 `$HOME` 的真实 Debian 新账户未测 | ✅ 已闭合 | — |
 | 60    | ✅ **macOS 远程冷启动已收口**：G 300/300、第二轮 artifact 300/300（最终 remote 300）、clean 300/300；三个 run 共 **900 样本，0 个最终 local**；隔离/控制组/证据/CI 11/11 均 PASS。仍缺：历史 20% 的 Unified Log、跨版本升级、硬件矩阵、签名、身份迁移 | ✅ 已闭合（冷启动） | — |
-| —     | 🟡 **跨版本升级**：Phase 9.5.4 已收紧 stop/quiescence，并以独立 worker 完成 8/8 阶段真实 SIGKILL crash 矩阵与恢复重试；ENOSPC、Windows A→B、app-level Vault、Team Sync 跨版本、updater 运行时、AppImage stock 仍 **NOT_RUN/PARTIAL**。详见 `docs/phase9-5/phase9-5-4-implementation.md` | 🟡 Important（RC） | P1 |
+| —     | 🟡 **跨版本升级**：Phase 9.5.4 已收紧 stop/quiescence，并以独立 worker 完成 8/8 阶段真实 SIGKILL crash 矩阵与恢复重试；staged restore ENOSPC 已 PASS（隔离卷），备份/迁移/安装 ENOSPC、Windows A→B、app-level Vault、Team Sync 跨版本、updater 运行时、AppImage stock 仍 **NOT_RUN/PARTIAL**。详见 `docs/phase9-5/phase9-5-4-implementation.md` | 🟡 Important（RC） | P1 |
 | —     | 🔴 **签名/公证/updater**：Apple notarization、Windows Authenticode、Tauri updater `pubkey` 均 **BLOCKED_EXTERNAL**；updater 运行时下载/安装/重启 **NOT_RUN**；历史 `.sig` 不能替代运行时更新链 | 🔴 Blocker（发布） | P0 |
 | —     | 🟡 **身份迁移**：`productName=Termius`、`identifier=com.baicie.termius` 未改；T1–T12 **NOT_RUN/BLOCKED_EXTERNAL**；迁移代码不存在 | 🟡 Important（发布） | P1 |
 | —     | ✅ 前端依赖审计已闭合（vuln 25 → 0，新增 CI 阻塞 job）；同步接口与 Share REST 的版本契约统一为 JSON number。详见 `docs/phase9-3/merge-blocker-closure.md` | ✅ 已闭合 | — |
@@ -1094,7 +1095,7 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-11-05 (Phase 9.5.4：真实独立 worker crash 矩阵 8/8 阶段 SIGKILL + control、恢复重试、精确文件集与 integrity/content 读回；Harness 恢复改为 spawn 同一 worker；修复 `Promise.race` 计时器泄漏；E2E `42030992498` 5/5、CI `42031006776` 11/11 对应 `051f8c6`，矩阵改动后的最终 run 见 phase9-5-4 文档；Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、ENOSPC、AppImage stock 仍 NOT_RUN/PARTIAL；详见 docs/phase9-5/phase9-5-4-implementation.md)_
+_文档更新时间: 2026-11-05 (Phase 9.5.4：真实独立 worker crash 矩阵 8/8 阶段 SIGKILL + control、恢复重试、精确文件集与 integrity/content 读回；Harness 恢复改为 spawn 同一 worker；修复 `Promise.race` 计时器泄漏；E2E `42030992498` 5/5、CI `42031006776` 11/11 对应 `051f8c6`，矩阵改动后的最终 run 见 phase9-5-4 文档；Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、备份/迁移/安装 ENOSPC、AppImage stock 仍 NOT_RUN/PARTIAL；详见 docs/phase9-5/phase9-5-4-implementation.md)_
 
 _历史更新 2026-11-03: (Phase 9.3：bootstrap 的五个配置探测由串行改并发，修掉「一个慢 IPC 饿死其余」——这是 real-machine run `41437956656` 上 `nano-edit`「从未写 result.json」的根因；冷启动测量目录清理改带重试，修掉 `ENOTEMPTY` 假红；6 份证据随 run `41478709578` 重采为指纹 `c4faedfb…`，门禁 0 problem；交付 `docs/phase9-3/bootstrap-probe-starvation.md`)_
 
