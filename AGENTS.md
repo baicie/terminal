@@ -601,7 +601,8 @@ pnpm add <package-name>
 - ✅ **恢复重试**：崩溃后独立 retry 进程，6 阶段 `restored`、2 阶段 `already-restored`，最终文件集恰好 `{terminal.db: 备份 SHA}`；产品启动时自动恢复仍 **NOT_RUN**
 - ✅ 恢复状态机 8 阶段 + `backup restore stages`；Harness 恢复改为 spawn `restore-worker.mjs`，与矩阵共用一份实现；busy checkpoint 真实第二连接测试 **PASS**
 - ✅ `raceAfter()` 清理 `Promise.race` 遗留计时器，脚本测试不再被 30s 定时器拖住；`process-lifecycle` 10/10
-- ✅ **staged restore ENOSPC**：真实 64 MB HFS+ DMG（Linux 用 size-capped tmpfs，无 sudo 显式 skip）上 restore 失败后主库 SHA 不变且可读，释放空间后 retry `restored`，伪造 staging 被丢弃；备份 VACUUM/migration/安装 ENOSPC 仍 **NOT_RUN**
+- ✅ **staged restore ENOSPC**：真实 64 MB HFS+ DMG（Linux 用 size-capped tmpfs，无 sudo 显式 skip）上 restore 失败后主库 SHA 不变且可读，释放空间后 retry `restored`，伪造 staging 被丢弃
+- ✅ **产品迁移 disk-full（Phase 9.5.5）**：64 MB DMG + 24 MB A 时代 DB + 约 8 MB 空闲；B 满卷未完成迁移（0/2 新列），A 数据可读，释放空间后迁移收敛并生成可读备份；E2E `42061498904` 五事实 PASS；`0602541` 起报告纳入归档与阻塞门禁；安装 B/目录 fsync 仍 **NOT_RUN**
 - 🔴 Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock **NOT_RUN/PARTIAL**
 - 📋 判定见 `docs/phase9-5/phase9-5-4-implementation.md` 与 `real-crash-point-matrix.md`
 

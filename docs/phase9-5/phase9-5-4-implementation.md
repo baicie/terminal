@@ -68,7 +68,7 @@
 | 5 | `SQLITE_RECOVERY_ATOMICITY_VERIFIED` | **YES（恢复协议）** | rename 前主 DB 始终为 live，rename 后为备份；无第三态；产品自动恢复仍 NOT_RUN |
 | 6 | `RECOVERY_RETRY_VERIFIED` | **YES** | 崩溃后独立 retry：6 个阶段 `restored`，2 个阶段 `already-restored`，最终 integrity/content 通过 |
 | 7 | `BUSY_CHECKPOINT_VERIFIED` | **YES** | 真实第二连接测试 |
-| 8 | `ENOSPC_RECOVERY_VERIFIED` | **PARTIAL** | 真实 64 MB DMG：restore 失败、主库 SHA 不变且可读、释放空间后 retry `restored`、伪造 staging 被丢弃；备份 VACUUM/migration/安装 ENOSPC NOT_RUN |
+| 8 | `ENOSPC_RECOVERY_VERIFIED` | **PARTIAL** | staged restore 与产品迁移两路径均 PASS（64 MB DMG）；安装 B/目录 fsync NOT_RUN，迁移失败点未归因到具体错误码 |
 | 9 | `WINDOWS_DISPOSABLE_PROFILE_VERIFIED` | **NOT_RUN** | 无真实一次性用户/VM |
 | 10 | `WINDOWS_UPGRADE_E2E` | **NOT_RUN** | 未安装/升级 |
 | 11 | `VAULT_APP_LEVEL_VERIFIED` | **NOT_RUN** | 无 app-level probe |

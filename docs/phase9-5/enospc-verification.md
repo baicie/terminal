@@ -57,8 +57,43 @@ Node 24.18）中同样 **PASS**（505 ms）。GitHub ubuntu runner 的 sudo 路�
 - 目录 fsync 失败；
 - 安装 B 时空间不足。
 
-## 5. 判定
+## 5. 产品备份/迁移路径（Phase 9.5.5）
+
+`upgrade-e2e.mjs --fault disk-full` 把 A 时代的 `pre-migration-*.db` 复制到
+一次性 64 MB HFS+ DMG 的 HOME 中，膨胀到 24 MB（`zeroblob`），再用 filler
+只留约 8 MB 空闲，然后启动 B：
+
+1. B 的预迁移 `VACUUM INTO` 无法在 8 MB 中写入 24 MB 副本；
+2. 断言 `hosts` 仍无 `agent_forwarding`/`shell_integration`，A 字段通过
+   `data-retention verify` 读回，进程干净停止且四项 quiescence PASS；
+3. 移除 filler 后重启 B，等待 schema 迁移完成，验证数据与新的
+   `pre-migration-*.db` 可读。
+
+该场景的五事实（FAULT_INJECTED / APPLICATION_FAILURE_OBSERVED /
+ORIGINAL_DATA_PRESERVED / NO_PARTIAL_MIGRATION / RECOVERY_SUCCEEDED）
+由 `fault-assessment.mjs` 的 `disk-full` 契约裁定；证据契约新增同名场景。
+
+E2E `42061498904`（`92b0117`）的 macOS current job 中，该场景报告
+**status=PASS**，五项事实全部 PASS：
+
+```text
+disk-full migration blocked      PASS  hosts still has 0/2 new columns
+disk-full original data preserved PASS  A fields readable and no B columns
+disk-full backup readable        PASS  pre-migration snapshot verified
+disk-full recovery               PASS  B migrated after space was freed
+FAULT_INJECTED / APPLICATION_FAILURE_OBSERVED / ORIGINAL_DATA_PRESERVED /
+NO_PARTIAL_MIGRATION / RECOVERY_SUCCEEDED = PASS
+```
+
+该轮报告只在 job 日志中，未进入 artifact/门禁；`0602541` 已把
+`upgrade-current-diskfull-report` 加入 `check-upgrade-evidence` 与上传路径，
+最终归档结果见 `phase9-5-5-implementation.md`。
+
+局限：失败点由“满卷上 0/2 新列 + 释放后收敛”观测，应用日志没有暴露
+`VACUUM INTO` 的具体错误码，因此不能声称已精确归因到 VACUUM 行。
+
+## 6. 判定
 
 - `STAGED_RESTORE_ENOSPC = PASS`（macOS 真实小容量卷）
-- `ENOSPC_RECOVERY_VERIFIED = PARTIAL`（只覆盖 staged restore）
+- `ENOSPC_RECOVERY_VERIFIED = PARTIAL`（staged restore 已验；产品迁移待 E2E）
 - 其余 ENOSPC 子场景 `NOT_RUN`

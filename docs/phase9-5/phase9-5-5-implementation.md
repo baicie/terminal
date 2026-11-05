@@ -13,6 +13,7 @@
 | Harness 接入 | 6 个 `assertQuiescence` 异步收敛；A/B/恢复/降级/Linux 全覆盖 |
 | E2E 证据 | `42047193259`（`10fffd5`）**5/5 success**；10 份报告四项事实全 PASS（含 Linux WebKitGTK 子进程） |
 | CI | `42047193385`（`10fffd5`）**11/11 success** |
+| disk-full 备份/迁移 | **PASS（行为）**：64 MB DMG + 24 MB A 时代 DB + 约 8 MB 空闲；E2E `42061498904` 五事实 PASS；归档/门禁见下 |
 | 本地脚本 | **467 tests / 465 pass / 2 skipped / 0 fail** |
 
 详见 `process-tree-quiescence.md`。
@@ -29,7 +30,7 @@
 
 ## 3. 未完成
 
-- ENOSPC：备份 `VACUUM INTO`、migration/WAL 写入、安装 B；
+- ENOSPC：安装 B、目录 fsync；备份/迁移路径已有行为证据（未归因到具体错误码）；
 - Windows disposable profile/VM 与 NSIS A→B（无 `pgrep`，进程树事实 NOT_RUN）；
 - Vault app-level unlock/change_password；
 - Team Sync A→B 跨版本客户端；

@@ -2247,7 +2247,8 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] crash 后独立 retry：6 阶段 `restored`、2 阶段 `already-restored`。
 - [x] staged restore ENOSPC：真实 64 MB 隔离卷，主库不变、retry 收敛、
       伪造 staging 被丢弃。
-- [ ] 备份 VACUUM/migration/安装阶段 ENOSPC。
+- [x] 产品迁移 disk-full：64 MB DMG + 24 MB DB，满卷 0/2 新列、A 数据可读、释放后收敛（行为；未归因错误码）。
+- [ ] 安装 B/目录 fsync ENOSPC。
 - [ ] 产品启动时自动恢复状态机。
 - [ ] Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时。
 - [ ] AppImage stock 启动。

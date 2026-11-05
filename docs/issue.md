@@ -5144,15 +5144,17 @@ quiescence（process/stream/lsof DB）接入 A/B/恢复/降级；真实 crash-po
 独立 `restore-worker.mjs` 的 8/8 阶段 SIGKILL + control，恢复重试
 （`restored`/`already-restored`）与精确文件集/integrity/content 均 PASS，
 Harness 恢复改为 spawn 同一 worker；staged restore ENOSPC 已在真实 64 MB
-隔离卷验证（主库不变、retry 收敛），备份/迁移/安装 ENOSPC、Windows
+隔离卷验证（主库不变、retry 收敛），产品迁移 disk-full 也在 64 MB DMG 上
+验证（满卷 0/2 新列、A 数据可读、释放后收敛）；安装 B/目录 fsync、Windows
 disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage
 stock 与产品启动时自动恢复仍 NOT_RUN/PARTIAL；见
 `docs/phase9-5/phase9-5-4-implementation.md`。
 
 **Phase 9.5.5**：`OWNED_CHILDREN_SETTLED` 补齐——停止前递归快照后代、退出后
 等待收敛，泄漏判 FAIL；E2E `42047193259` 的 10 份报告（macOS + Linux）
-四项 quiescence 事实全 PASS。备份/migration/安装 ENOSPC、Windows、Vault
-app-level、Team Sync 跨版本、updater 运行时、AppImage stock 仍 NOT_RUN；见
+四项 quiescence 事实全 PASS。产品迁移 disk-full（E2E `42061498904`）五事实
+PASS；安装 B/fsync ENOSPC、Windows、Vault app-level、Team Sync 跨版本、
+updater 运行时、AppImage stock 仍 NOT_RUN；见
 `docs/phase9-5/phase9-5-5-implementation.md`。
 
 ### Issue #192: Windows 安装验证实际未隔离且会删除真实 APPDATA 🟡 BLOCKED_EXTERNAL（2026-11-05）
