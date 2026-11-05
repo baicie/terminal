@@ -21,9 +21,42 @@ export const QUIESCENCE_FACTS = [
  * spawns PTY shells and helper processes as children; after the app exits they
  * are reparented, so this must run first.
  */
+function windowsChildren(pid) {
+  const script = "Get-CimInstance Win32_Process -Filter 'ParentProcessId=" + pid +
+    "' -ErrorAction SilentlyContinue | ForEach-Object { $_.ProcessId }"
+  for (const shell of ['powershell.exe', 'pwsh.exe']) {
+    try {
+      const output = execFileSync(shell, ['-NoProfile', '-NonInteractive', '-Command', script], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+      return output.split('\n').map(line => Number(line.trim())).filter(Number.isInteger)
+    } catch (error) {
+      if (error?.code === 'ENOENT') continue
+      throw error
+    }
+  }
+  throw Object.assign(new Error('neither powershell.exe nor pwsh.exe is available'), { code: 'ENOENT' })
+}
+
 export function snapshotDescendants(pid, { pgrep = 'pgrep' } = {}) {
-  if (!pid || process.platform === 'win32') {
-    return { supported: false, pids: [], reason: 'process tree probe is unavailable on ' + process.platform }
+  if (!pid) return { supported: false, pids: [], reason: 'no pid' }
+  if (process.platform === 'win32') {
+    const seen = new Set()
+    const queue = [pid]
+    try {
+      while (queue.length > 0) {
+        const current = queue.shift()
+        for (const child of windowsChildren(current)) {
+          if (child <= 0 || seen.has(child)) continue
+          seen.add(child)
+          queue.push(child)
+        }
+      }
+    } catch (error) {
+      return { supported: false, pids: [...seen], reason: String(error?.message || error) }
+    }
+    return { supported: true, pids: [...seen] }
   }
   const seen = new Set()
   const queue = [pid]

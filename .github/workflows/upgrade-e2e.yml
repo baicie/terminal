@@ -406,6 +406,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test the isolation state machine
         run: node --test scripts/verify-install/windows-isolation-classify.test.mjs
+      - name: Test the native process-tree probe
+        run: node --test scripts/verify-install/quiescence-windows.test.mjs
       - name: Prove the shared runner profile fails closed
         shell: pwsh
         run: |
