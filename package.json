@@ -55,11 +55,15 @@
   },
   "pnpm": {
     "overrides": {
-      "body-parser": "2.3.0",
+      "body-parser": "2.4.0",
       "deepmerge-ts": "8.0.1",
-      "fast-uri": "3.1.5",
-      "js-yaml": "5.2.3",
-      "qs": "6.15.2"
+      "fast-uri": "3.1.9",
+      "js-yaml": "5.5.0",
+      "qs": "6.17.1",
+      "multer": "2.5.0",
+      "proxy-addr": "2.0.8",
+      "source-map-js": "1.2.2",
+      "mysql2": "3.23.1"
     },
     "onlyBuiltDependencies": [
       "@nestjs/core",

@@ -654,7 +654,7 @@ src-tauri/
 | HTTP 安全 | 生产 CORS fail-closed、Helmet、全局及注册限流、Swagger 生产默认关闭、1MB body limit、DTO 与路径/查询验证 |
 | 运行可靠性 | 数据库不可用时 health/readiness 返回 503；Compose 使用 readiness；启用 shutdown hooks；删除与审计 tombstone 在同一事务中提交；离线队列并发 claim 使用 token 租约并恢复陈旧任务 |
 | 错误边界 | API Key 数据库故障保留 5xx；同步响应、离线队列和服务日志不返回或记录原始 Prisma 错误 |
-| 供应链 | 锁定已修补的传递依赖；⚠️ `pnpm audit --prod --audit-level high` **未测量（NOT_RUN）**：镜像源 `registry.npmmirror.com` 不实现 audit 端点（`ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS`），取不到结果，不得记为 0 漏洞（见 `docs/phase9/dependency-audit.md`）。🔴 Rust 侧 `cargo audit` 实测 27 条已知漏洞（21 条在构建图内，含 6 条基准分 7.5），台账见 `docs/phase9-1/security-advisories.md` |
+| 供应链 | 锁定已修补的传递依赖；⚠️ `pnpm audit --prod --audit-level high` **未测量（NOT_RUN）**：镜像源 `registry.npmmirror.com` 不实现 audit 端点（`ERR_PNPM_AUDIT_ENDPOINT_NOT_EXISTS`），取不到结果，不得记为 0 漏洞（见 `docs/phase9/dependency-audit.md`）。Rust 侧 `cargo audit` 从 42 条降到 **13 条**（8 vulnerabilities + 4 unmaintained + 1 unsound + 0 yanked），`cargo-audit` job 已是阻塞门禁；剩余中 **1 条真实、三平台、上游无修复**（`RUSTSEC-2023-0071` rsa 0.10.0-rc.18），7 条不在任何构建图，5 条只在 Linux。台账 `docs/phase9-1/security-advisories.md`，基线 `src-tauri/security-baseline.json`，说明 `docs/phase9-2/security-remediation.md` |
 | 远程存储 | 修正 S3 SigV4 scope、canonical URI/query、string-to-sign、列表 URL 与 UTF-8 编码；固定向量测试通过，真实 S3 仍待外部验证 |
 | 高级脚本 | timeout 秒值正确转换并传递，`retry_count` 生效；interval/once/cron 非法配置 fail-closed，防重入并捕获异步异常 |
 | Tauri 打包 | 注册 dialog/fs 插件，仅开放选定文本文件读写；CSP 允许用户配置的 HTTP(S) Team endpoint，并有静态配置测试 |
@@ -794,6 +794,45 @@ src-tauri/
 
 ---
 
+### Phase 9.2 - 同步完整性、依赖安全与 RC 加固 🟡 代码与自动化门禁完成，实机证据待重采
+
+> 2026-11-02，分支 `feat/phase9-2-sync-security-hardening`，起点 `2f1d68f`。
+> 完整交付见 `docs/phase9-2/`（8 份文档），逐项状态见其中 `final-report.md`。
+
+| 领域 | 改动 |
+| --- | --- |
+| 同步冲突 5 处 P0 | 解决冲突时绕过 CAS（条件写被替换为无条件写）、敏感共享可被非创建者以明文覆盖、失败被伪装成成功、REMOTE 解决未落盘即删冲突、毫秒墙钟与版本协议混用。五处均在 `84f73b0` 修复，每处都有「先红后绿」的回归 |
+| 同步端到端验证 | 新增 4 个 pg-spec 文件、29 项；真实 PostgreSQL + 真实 `SyncService` + 两个独立客户端 store（`vi.resetModules()` 各自持有 SQLite），唯一替换的是 `fetch`。总计 **9 文件 / 80 项**，C1–C12 覆盖并发、敏感、失败注入、崩溃与分页边界。断言读的是**服务端行与客户端 SQLite 行**，不是返回值 |
+| 依赖安全 | `cargo audit` **42 → 13 条**（25 vuln + 9 unmaintained + 4 unsound + 4 yanked → 8 + 4 + 1 + 0）。核心动作是 `russh 0.60 → 0.65`、`ssh-key 0.6 → 0.7.0-rc.11` 与 15 个依赖升级。剩余：7 条不在任何构建图、5 条只在 Linux（Tauri 托盘/通知栈）、**1 条真实全平台且上游无修复**（`RUSTSEC-2023-0071` rsa 0.10.0-rc.18） |
+| 安全 CI | `cargo-audit` 从 `continue-on-error: true` 改为**阻塞门禁**，由 `scripts/security-gate.mjs` 以三态退出码裁定；覆盖 vulnerabilities + unsound + unmaintained + yanked 四类；基线键为 `kind\|id\|crate` + 版本，所以 rsa 的两条不会互相搭便车。自测 27 项 |
+| 证据门禁 | `check-verification-evidence.mjs` 此前只能经 `pnpm verify` 抵达、CI 无任何 job 调用。现已接入 `source-size` job（改名 `Repository gates (source size, evidence, script tests)`）作为**阻塞步骤**，与 359 项脚本自测同 job 运行 |
+| 身份迁移 | 只交付方案（`identity-migration-plan.md`）：清点 4 处硬编码 `com.baicie.termius` 的脚本、给出 T1–T12 测试前置条件。**未改 identifier / productName，未移动或删除任何旧数据目录** |
+
+**门禁状态（2026-11-02 本机实跑）**：前端 150 文件 / 1347 项、Team Server 25 / 117、真实 PostgreSQL 9 / 80、Rust 302 + 3、脚本 359、560 个生产文件行数门禁，全部通过；`cargo fmt --check`、`cargo clippy -D warnings`、前端 lint/typecheck 全绿。
+
+**✅ 已闭合**：6 份验收证据已由 real-machine-matrix 在真实 runner 上重采（run `41434165000`，sha `a093fc7`，指纹 `365bdee7…`），`check-verification-evidence.mjs` 报 **0 problem**；Linux zsh 探针 14 用例（bash 7 + zsh 7）全绿；macOS 冷启动当前源码实测 debug 7679 / 4042 / 3301 ms、release 4692 / 3621 / 3128 ms。
+
+**⚠️ 仍未闭合**：前端依赖漏洞审计 **NOT_RUN**（镜像源无 audit 端点，「未测量」≠「无漏洞」）；`RUSTSEC-2023-0071`（rsa 0.10.0-rc.18）上游无修复版本；macOS 远程冷启动的约 20% WebKit `-1004` 失败率**未被本阶段修复**，三次观测不足以排除它；空 `$HOME` 的真实 Debian 新账户是否会撞上 `compinit` 提问仍未测。证据绑定代码身份——**任何 `FINGERPRINT_PATHS` 内的改动都要重采**。
+
+---
+
+### Phase 9.3.2 - 合并收口：Share REST CAS 与冷启动可观测性 🟡 代码与本地门禁完成，证据待重采
+
+> 2026-11-03，分支 `feat/phase9-2-sync-security-hardening`，审查基线 `01836c9`。
+
+| 领域 | 改动 |
+| --- | --- |
+| Share REST 并发 | `PUT /teams/:teamId/shares/:shareId` 必须携带 `baseVersion`；服务端用 `version` 原子 CAS，旧版本晚提交返回 409，缺失版本返回 428。权限检查仍在写前执行，非创建者 READONLY 仍返回 403 |
+| 真实 Nest 集成 | 新增 `shares-nest-http.pg-spec.ts`：真实 Nest Express adapter、ValidationPipe、ApiKeyGuard、DTO、PostgreSQL 与实际 HTTP，覆盖 GET/POST/PUT/409/428/403/404/401/400 和 BigInt 序列化 |
+| 冷启动可观测性 | `terminal-mounted` detail 补 workspaceId；新增 `ready → terminal-mounted` 3 秒预算；trace 写入改为串行队列，关键阶段可等待，修复 `ssh-connect-start` 早于 `session-create-requested` 的因果倒置 |
+| Probe 配置预算 | 冷 WebView 首次 IPC 约 1.8s，1s 配置预算会让所有 gate 超时并回落到 app；instrumented 构建改为 3s，产品构建保持 1s |
+
+**本地门禁（2026-11-03 实跑）**：前端 **151 文件 / 1365 项**、Team Server **25 文件 / 119 项**、真实 PostgreSQL **11 文件 / 94 项**、Rust **302 单测 + 3 集成测试**、脚本 **371 项**、563 个生产文件行数门禁、bundle budget（initial gzip 130.28 KB / total 572.71 KB）全部通过。
+
+**✅ 证据状态**：最终源码 `44ae449` 已由 real-machine run `41605898002` 重采 6 份证据，指纹 `6d7536e7…`，debug SHA `2bf151cb…`、release SHA `88ba4714…`；证据门禁 0 problem。此前 `01836c9` 的指纹失配是门禁的正确阻断，不是产品回归。
+
+---
+
 ## 待办事项
 
 ### P0 - 必须完成
@@ -846,6 +885,9 @@ src-tauri/
 | 48  | 终端输入失真、输出失控与生命周期泄漏 | 🔴 High | 🟡 核心链路、macOS Tauri/xterm smoke 与三种 raw-input 协议 case 已通过，人工/跨平台/硬件矩阵待验收 (2026-10-11) |
 | 55  | 重连 smoke 未断开独立 SSH session 进程组 | 🔴 High | ✅ 已修复并通过真实 localhost OpenSSH 重连 (2026-08-24) |
 | 98  | 首次连接失败不触发任何自动重连 | 🟡 Important | ✅ 已修复并补 3 项回归（真实弱网首连仍待实机） (2026-10-15) |
+| 157 | 同步冲突解决的五处 P0 缺陷（CAS 绕过、敏感数据覆盖、假成功、REMOTE 未落盘、版本协议不一致） | 🔴 Critical | ✅ 已修复并通过双客户端真实 PG 回归 80 项 (2026-11-02) |
+| 158 | 安全 CI 是诊断 job 且只覆盖 vulnerabilities 一类 | 🔴 High | ✅ 已改为阻塞门禁，覆盖四类，基线 13 条 (2026-11-02) |
+| 159 | 验收证据门禁从未进入 CI，证据可描述旧代码而全绿 | 🔴 High | ✅ 已接入阻塞步骤；6 份证据待重采 (2026-11-02) |
 
 ---
 

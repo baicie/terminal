@@ -56,6 +56,8 @@ export function toSharedHost(record: TeamSharedHostRecord): SharedHost {
     createdAt: record.created_at,
     version: record.version ?? null,
     updatedAt: record.updated_at ?? record.created_at,
+    isSensitive: record.is_sensitive === 1,
+    encryptedData: record.encrypted_data ?? null,
   }
 }
 export function toSharedSnippet(
@@ -70,6 +72,8 @@ export function toSharedSnippet(
     createdAt: record.created_at,
     version: record.version ?? null,
     updatedAt: record.updated_at ?? record.created_at,
+    isSensitive: record.is_sensitive === 1,
+    encryptedData: record.encrypted_data ?? null,
   }
 }
 export function toTeamInvite(record: TeamInviteRecord): TeamInvite {

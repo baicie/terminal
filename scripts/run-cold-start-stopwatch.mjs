@@ -11,6 +11,21 @@ export const AX_POLL_INTERVAL_MS = 100
 export const AX_PROBE_TIMEOUT_MS = 3_000
 export const NATIVE_AX_PROBE_COMPILE_TIMEOUT_MS = 15_000
 export const CLEANUP_GRACE_MS = 3_000
+/**
+ * Options for removing the throwaway HOME a measurement ran in.
+ *
+ * WebKitGTK can leave a Mesa shader-cache writer alive for a short while after
+ * the app closes, so a plain `rm` races that child and fails ENOTEMPTY *after*
+ * the measurement itself succeeded (run 41475640293, Linux remote cold start).
+ * Retrying lets the writer drain instead of turning a green measurement red.
+ * The same policy is used by the shell-probe runner for the same reason.
+ */
+export const MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS = {
+  recursive: true,
+  force: true,
+  maxRetries: 20,
+  retryDelay: 100,
+}
 export const READINESS_MODES = ['local', 'remote']
 /**
  * File the app appends its staged startup timeline to. Every run gets its own
@@ -37,6 +52,7 @@ const STAGES_ENV_KEY = 'TERMINAL_STARTUP_STAGES_PATH'
 export const STAGE_BUDGETS = [
   ['frontend-boot', 'db-load-started', 2_000],
   ['db-load-started', 'ready', 2_000],
+  ['ready', 'terminal-mounted', 3_000],
   ['session-create-requested', 'ssh-connect-start', 250],
   ['ssh-connect-start', 'ssh-tcp-handshake-done', 1_500],
   ['ssh-tcp-handshake-done', 'ssh-auth-done', 1_500],
@@ -49,6 +65,10 @@ export const STAGE_BUDGETS = [
 function stageTimeline(stages, name) {
   const found = stages.find(stage => stage.stage === name)
   return found === undefined ? null : found.atMs
+}
+
+function hasStage(stages, name) {
+  return stages.some(stage => stage.stage === name)
 }
 
 /**
@@ -720,7 +740,7 @@ export async function runColdStartStopwatch({
       }
     }
     if (ownsHome) {
-      await dependencies.rm(home, { recursive: true, force: true })
+      await dependencies.rm(home, MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS)
     }
   }
 
@@ -790,11 +810,36 @@ export async function runColdStartStopwatch({
         // The stage list is the evidence the probe state cannot carry: a
         // stalled WebView, a slow handshake and a shell that never spoke all
         // look identical in the readiness flags.
+        // Three different failures look identical in the readiness flags, so
+        // the message names which one this was. `first stage at N ms` alone
+        // cannot tell a WebView that never rendered from one that rendered and
+        // then stalled before the shell spoke (Issue #65/#157):
+        //
+        //   no stage ever arrived          -> the front end never evaluated at all
+        //   frontend-boot present, nothing
+        //     after `ready` within budget  -> the app came up, the SSH path stalled
+        //   no `ready` stage               -> the database bootstrap stalled
+        //
+        // The four cases need opposite fixes, so they must not share a sentence.
+        const stageNames = lastStages.map(stage => stage.stage)
+        const reachedFrontend = hasStage(lastStages, 'frontend-boot')
+        const reachedReady = hasStage(lastStages, 'ready')
+        const reachedMounted = hasStage(lastStages, 'terminal-mounted')
         const stageSummary =
-          `stages: ${describeStages(lastStages)}` +
-          (firstStageSeenMs === null
+          `stages: ${describeStages(lastStages)}`
+          + (firstStageSeenMs === null
             ? '; no stage ever arrived'
             : `; first stage at ${firstStageSeenMs} ms`)
+          + '; '
+          + (!reachedFrontend
+            ? 'the front end never evaluated (WebView never ran the bundle)'
+            : !reachedReady
+              ? 'the front end evaluated but never reached db ready'
+              : !reachedMounted
+                ? 'the app reached db ready but no terminal surface mounted; the restored tab or its host never became usable'
+                : stageNames.includes('session-create-requested')
+                  ? 'the app reached db ready and requested the session; the failure is in the SSH/shell path'
+                  : 'the app reached db ready but never requested the session')
         fail(
           new Error(
             `${readinessLabel} readiness did not complete within ${timeoutMs} ms${details ? ` (last probe: ${details})` : ''} (${stageSummary})` +
@@ -854,6 +899,12 @@ export async function runColdStartStopwatch({
           lastStages = await readStages(stagesPath, dependencies)
           const readyNow = dependencies.now()
           if (firstStageSeenMs === null && lastStages.length > 0) {
+            // The stage file records offsets from the front end's origin, and
+            // `frontend-boot` is by definition 0. The distance from process
+            // spawn to that origin is only observable by the watcher, but it
+            // polls every AX_POLL_INTERVAL_MS, so this value can overstate
+            // WebView startup by up to one poll interval. Stage *budgets* use
+            // the app's own offsets and are unaffected.
             firstStageSeenMs = readyNow - spawnStartedAt
           }
           if (readyNow - spawnStartedAt >= timeoutMs) {

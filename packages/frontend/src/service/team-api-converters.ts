@@ -60,6 +60,8 @@ export function convertApiShare(apiShare: {
   teamId?: string
   version?: number
   updatedAt?: string
+  isSensitive?: boolean
+  encryptedData?: string | null
 }): SharedHost | SharedSnippet {
   const createdAt = new Date(apiShare.createdAt).getTime()
   const base = {
@@ -72,6 +74,11 @@ export function convertApiShare(apiShare: {
     updatedAt: apiShare.updatedAt
       ? new Date(apiShare.updatedAt).getTime()
       : createdAt,
+    // Security state travels with the row. Dropping it here is what made the
+    // local copy unable to prove whether a conflict resolution would downgrade
+    // the share, so the client guessed `isSensitive: false` (P9.2-2).
+    isSensitive: apiShare.isSensitive === true,
+    encryptedData: apiShare.encryptedData ?? null,
   }
   return apiShare.type === 'SNIPPET_PACKAGE'
     ? ({

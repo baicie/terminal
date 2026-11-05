@@ -4273,3 +4273,564 @@ Phase 8.9 的 version CAS 杜绝了**并发**丢失更新。但旧客户端若�
 
 **要修必须先有 PowerShell 环境。** 在没有解析器的前提下继续改这个文件，
 只是把猜测从一处挪到另一处。
+
+---
+
+## 十四、Phase 9.2（2026-11-02）
+
+### Issue #158: 同步冲突解决的三处数据安全缺陷 ✅ 已修复（2026-11-02，`84f73b0`）
+
+**严重程度**：🔴 Critical
+**状态**：✅ 已修复，回归 80 项真实 PostgreSQL 全绿
+**详细**：`docs/phase9-2/sync-conflict-root-causes.md`
+
+| 缺陷 | 症状 | 根因 |
+| --- | --- | --- |
+| 条件写被降级为无条件写 | 第二个人解决冲突时覆盖第一个人的结果 | 已在 `84f73b0` 用 CAS + `baseVersion` 必填修复 |
+| 非创建者可用明文覆盖敏感共享 | `data` 被写成明文，`encryptedData` 被清空 | 解决路径未复用 `remoteGuard` 的敏感判定 |
+| 失败被报成成功 | HTTP 200 + `{success:false}` 但客户端清空了冲突 | 只检查状态码，未检查响应体 |
+
+### Issue #159: 失败被伪装成成功、REMOTE 未落盘即删冲突 ✅ 已修复（2026-11-02，`84f73b0`）
+
+**严重程度**：🔴 Critical
+**症状**：REMOTE 解决时先删冲突再写库；写库失败后本地编辑丢失且无错误提示。
+**修复**：先落盘（内容、版本、`dirty=0` 三项都断言）再删冲突；5xx、空 body、非法 JSON、
+`200 {success:false}` 四种响应都保留冲突并明确报错。回归见 `dual-client-sync.pg-spec.ts` 的 C3–C7。
+
+### Issue #160: 毫秒墙钟与版本协议混用 ✅ 已修复（2026-11-02，`84f73b0`）
+
+**严重程度**：🔴 High
+**症状**：「同毫秒内的两次写」既可能被判为冲突也可能被静默接受，取决于时序。
+**修复**：`classifyBaseVersion` 统一返回 `match / stale / future / unproven / legacy-timestamp / unverifiable`，
+不再用时间戳比较替代版本比较。回归 `conflict-version-protocol.pg-spec.ts` 5 项。
+
+### Issue #161: 安全 CI 是诊断 job，只覆盖 vulnerabilities 🔴 → ✅ 已修复（2026-11-02）
+
+**严重程度**：🔴 High（它让下面这件事发生了：）本轮起点实测 25 条 vulnerabilities + 17 条告警，
+而 CI 的 `cargo-audit-diagnostic` 挂着 `continue-on-error: true` 且只读 `vulnerabilities.list`——
+unsound / unmaintained / yanked 从来没进过视野。**27 → 21 → 27 → 25 这个漂移没人发现。**
+
+**修复**：
+- `.github/workflows/ci.yml` 的 job 改名 `cargo audit (blocking)`，删除 `continue-on-error`
+- 新增 `scripts/security-gate.mjs`：三态退出码（0 全在基线 / 1 新 advisory 或版本变化 / 2 扫描失败），
+  覆盖四类告警，基线 `src-tauri/security-baseline.json` 以 `kind|id|crate` + 版本为键
+- 不用 cargo-deny 的原因：它的 ignore 只能按 advisory id，忽略 `RUSTSEC-2023-0071` 会同时
+  压掉 rsa 0.9.10（不在图内）与 rsa 0.10.0-rc.18（在图内）——正是被禁止的"批量 ignore"
+- 自测 27 项（`scripts/security-gate.test.mjs`）
+
+**残留**：13 条已记录，其中 `RUSTSEC-2023-0071`（rsa 0.10.0-rc.18）在三个平台都真实生效且上游无修复。
+**绿色在这里表示「没有未记录的 advisory」，不是「没有已知漏洞」。**
+
+### Issue #162: 验收证据门禁从未进入 CI 🔴 → ✅ 已修复（2026-11-02）
+
+**严重程度**：🔴 High
+**症状**：`check-verification-evidence.mjs` 只能通过 `pnpm verify` 抵达，而 CI 里没有任何 job
+调用 `pnpm verify`。后果是一个 commit 可以改产品源码、留下六份描述旧 checkout 的证据文件，
+十个 job 全绿。
+
+**修复**：`.github/workflows/ci.yml` 的 `source-size` job 改名
+`Repository gates (source size, evidence, script tests)`，加入证据门禁作为**阻塞步骤**
+（无 `continue-on-error`），并把 `node --test scripts/*.test.mjs`（359 项）放在同一 job。
+
+**重采前状态：** `node scripts/check-verification-evidence.mjs` 报 **7 个问题，exit 1**——
+六份证据加上 manifest 记录的是指纹 `2f62fabd…`，当时源码指纹 `41b45f31…`。
+**这是正确结果**，因为本阶段确实改了 `FINGERPRINT_PATHS` 内的七处源码（russh 0.65 迁移 + 15 个依赖升级）。
+
+**✅ 已闭合（2026-11-02）**：由 real-machine-matrix 在真实 runner 上重采
+（run `41434165000`，sha `a093fc7`，指纹 `365bdee7…`），
+`node scripts/check-verification-evidence.mjs` → **0 problem，exit 0**。
+证据文件由脚本整份覆盖写入，**没有手工改过任何指纹**。
+两次 run 的有效范围：run `41432020659`（sha `e367e3d`）三平台全绿且已生成证据，但随后又提交了
+`.github/workflows/real-machine-matrix.yml` 的注释更正，该文件在 `FINGERPRINT_PATHS` 内，
+证据当场失效——**证据绑定的是代码身份，不是"最近一次成功"**，所以最终采用的是 run `41434165000`。
+详见 `docs/phase9-2/verification-evidence.md`。
+
+### Issue #163: Linux zsh 三条用例的当前状态是 NOT_RUN，不是 FAIL ✅ 已闭合（2026-11-02）
+
+**严重程度**：🟡 Important（状态记录口径）
+**更正内容**：本阶段初稿把 Issue #156 的结论沿用为「修好之后仍然失败」。核对后不成立：
+
+```bash
+git merge-base --is-ancestor 030fda4 3d71988 && echo YES      # 030fda4 是祖先
+git show 030fda4:scripts/run-terminal-shell-probe.mjs | grep -c skip_global_compinit   # 0
+gh run list --workflow real-machine-matrix.yml --limit 30 --json createdAt,headSha
+# 最新仍是 2026-10-31T18:49:26Z / 030fda4；没有任何 run 在 3d71988 或之后
+```
+
+唯一一次 Linux shell-probe 测量跑的是**修复前**的脚本：探针夹具
+`PROBE_HOME_STARTUP_FILES` / `seedProbeHome()` 是 `3d71988` 才加的。
+所以「修复后仍然失败」**从未被测量过**。把过时测量写成当前 FAIL，会让下一个人
+去修一个可能已经不存在的问题。
+
+**判定口径**：没有在包含修复的代码上跑过 = **NOT_RUN**。
+**闭合方式**：`gh workflow run real-machine-matrix.yml --ref <含修复的分支>`。
+**机制**（已定位，见 `docs/phase9/linux-zsh-probe-diagnosis.md`）：Debian `/etc/zsh/zshrc`
+调用 `compinit`，它在 insecure directories 上用 `read -q` 提问，而 `read -q` 只吃一个字符；
+探针盲打，被吃掉的正是 setup 命令首字符。受影响用例恰好是
+`readline-history` / `readline-tab` / `pty-resize` 三条，与门禁记录的失败集合 3/3 吻合。
+
+**✅ 已闭合（2026-11-02）**：run `41432020659`（sha `e367e3d`）与 run `41434165000`
+（sha `a093fc7`，= 当前 HEAD）的 `Linux real SSH smoke` job 均 **success**，
+`Run the real Linux shell interaction matrix` 步骤输出 14 个用例（bash 7 + zsh 7）全部
+`ok: true`，含此前超时的三条：`zsh/readline-history` 360 ms、`zsh/readline-tab` 449 ms、
+`zsh/pty-resize` 1425 ms。
+
+**仍然保留的遗留风险（未测）**：这条绿测的是**产品的 shell 注入链**。探针夹具
+（`seedProbeHome` 写入 `.zshenv` = `skip_global_compinit=1`）正是为了绕开系统 `compinit`
+提问而把 `HOME` 造得像正常账户，所以它**不能**证明「一个 `$HOME` 为空的真实 Debian
+新账户也不会遇到提问」。后者需要 Linux 实机新账户验证，本轮没有做。
+
+### Issue #164: macOS 冷启动在当前源码上无有效测量 ✅ 已重采（2026-11-02）
+
+**严重程度**：🔴 Blocker（RC）→ ✅ 当前源码已有有效测量
+**原因**：冷启动证据随源码指纹一起失效（见 Issue #162）。
+最后一次有效测量（`030fda4`）：debug 7679 / 4462 / 4109 ms、release 4666 / 4759 / 4291 ms、
+远程提示符 7025 ms。**这组数字描述的是旧代码。**
+
+**本阶段没有针对冷启动的产品改动**，相关改动只有依赖升级与 russh API 迁移
+（后者不在启动路径上，但同样是 `src-tauri/src` 的改动）。所以闭合只能靠重采，不能靠推理。
+
+**✅ 已重采（2026-11-02）**：run `41434165000`（sha `a093fc7`，指纹 `365bdee7…`）：
+
+| 场景 | spawn→ready（三次） |
+| --- | --- |
+| debug 本地冷启动 | 7679 / 4042 / 3301 ms |
+| release 本地冷启动 | 4692 / 3621 / 3128 ms |
+| debug 远程冷启动（提示符观测） | 5061 ms（单次） |
+
+debug 第一次的 `7679` 与旧值相同，但 `capturedAt` / `pid` / `nonce` 全部是新的，后两次也与旧值不同——
+是巧合，不是复制旧值。
+
+**另一条未修的事实**：Phase 9.0 实测 10 次远程冷启动里 2 次失败，
+`stages: none recorded` + `didFailProvisionalLoadForFrame code=-1004`（WebKit 主框架加载失败）。
+**本轮三次观测没有出现 `-1004`，但三次不足以排除约 20% 的失败率**
+（三次全过的概率在 20% 单次失败率下约为 51%）。所以这里的 PASS 意思是
+「本轮在真实 runner 上测到了」，不是「冷启动已证明稳定」。这条风险仍然开着。
+
+### Issue #165: Team Server lint 在 `84f73b0` 的 CI 上失败 ✅ 已修复（2026-11-02）
+
+**严重程度**：🟡 Important
+**症状**：CI run `41401379387`（sha `84f73b0`）`Team Server quality` 失败：
+
+```
+20:1  error  Expected "../../shares/shares.service" to come before "../../sync/sync.service"
+             perfectionist/sort-imports
+```
+
+**修复**：`client-sync-e2e.pg-spec.ts` 调整两个 import 顺序；顺带删除
+`dual-client-sync.pg-spec.ts` 首行多余的 `/* eslint-disable ts/ban-ts-comment */`
+（该抑制已无处可用，eslint 报 `Unused eslint-disable directive`）。
+修复后 `CI=1 pnpm exec eslint src` → **0 error / 87 warning**（原 88 warning，删除的那条正是它）。
+
+**为什么本地一开始没发现**：`@antfu/eslint-config` 在检测到编辑器环境时会关掉部分规则，
+本地输出带有 `Detected running in editor, some rules are disabled.`；
+用 `CI=1` 复跑才与 CI 一致。**这是本仓库本地 lint 与 CI lint 可能不一致的地方，值得记住。**
+
+### Issue #166: bootstrap 的五个配置探测串行共享 1 秒预算，一个慢 IPC 就能饿死其余 ✅ 已修复（2026-11-02）
+
+**严重程度**：🔴 Blocker（验收证据）——它让 shell probe 偶发「从未写 result.json」，
+症状与真实用例失败无法区分，且**没有任何日志**说明配置加载被跳过。
+
+**症状**：real-machine 定时矩阵 run `41437956656`（sha `2f1d68f`，main）
+macOS job 的 `nano-edit` 用例：
+
+```
+[ssh/default/nano-edit] running...  tauri app starting up
+  startup: db bootstrap stage=frontend-boot detail=main.tsx evaluated
+  startup: db bootstrap stage=db-load-started / ... / stage=ready
+  terminal_lib::window_cmd: close-to-tray flag updated
+  ...（8.6 秒静默）...
+  startup: db bootstrap stage=session-create-requested detail=local
+ FAILED: nano-edit shell probe result timed out after 60000 ms: the app never wrote result.json
+```
+
+注意 `detail=local`：探针请求的是 **remote**，出现 `local` 说明**普通 App** 挂载了，
+不是 shell probe 根组件。同一 run 的其余 6 条用例都正常打印
+`input_probe_config invoked` 并 `ok`；只有这一条整段**没有任何 probe 配置 IPC 到达 Rust**。
+
+**根因**：`bootstrapTerminalApp` 把五个配置读取（`terminal_smoke_config`、
+`remote_prompt_probe_config`、`input_probe_config`、`raw_input_probe_config`、
+`shell_probe_config`）**串行**跑在同一个绝对截止时间
+`attemptStartedAt + BOOTSTRAP_CONFIG_DEADLINE_MS`（1000 ms）上。
+`loadBootstrapConfig` 一旦发现 `deadlineAt - now() <= 0`，会**不调用加载器**直接返回 `null`。
+于是冷 WebView 的第一次 IPC（`terminal_smoke_config`）只要慢一点，排在后面的
+`remote_prompt_probe_config` / `input_probe_config` / … 就**根本没有被调用**，
+全部得到 `null`，bootstrap 判定「没有任何探测被启用」，静默挂载普通 App。
+
+这是**队列饥饿**，不是超时预算是「不够大」：把 1 秒调成 8 秒只能降低概率，
+排队结构本身仍然会让第一个慢调用吃掉后来者的全部机会。
+
+**修复**：`packages/frontend/src/terminal-bootstrap-deadline.ts`
+的 `loadOptionalBootstrapConfigs` 改为 `Promise.all` 并发启动四个可选加载器
+（`remotePrompt` / `inputProbe` / `rawProbe` / `shellProbe`）；
+`terminal-bootstrap.tsx` 让 `loadConfig`（smoke 门）与这四个**同时**开始，
+smoke 结果先判定，非 smoke 时再 `await` 那四个已完成/在途的 Promise。
+每个加载器仍各自在同一个绝对截止时间放弃，语义不变：
+**慢的不会拖死快的，也不会拖过全局预算**。
+
+**回归（先红后绿）**：
+- `terminal-bootstrap-deadline.test.ts` 新增 2 项：
+  「所有加载器在任何 one settle 之前都已启动」（串行实现在一个宏任务后仍停在第一个
+  unresolved promise 上）、「前面的加载器悬挂时，后面的仍能拿到自己的配置」。
+- `terminal-bootstrap.test.tsx` 那条既有断言 `expect(loadRawProbeConfig).not.toHaveBeenCalled()`
+  **断言的正是缺陷行为**，已改为 `toHaveBeenCalledOnce()` 并写明理由。
+- 区分力实测：把 `loadOptionalBootstrapConfigs` 临时改回串行，新增两项**均变红**
+  （`shellProbe` 得到 `null`）；恢复后 4/4 通过。
+
+**验证**：前端全量 **150 文件 / 1349 项**通过（原 1347 + 新增 2）；
+`node scripts/check-source-size.mjs` **560 个生产文件**通过；
+`pnpm --filter=@terminal/frontend typecheck` exit 0；改动文件 `eslint` exit 0。
+
+**真实 runner 验收（2026-11-02，run `41478709578`，sha `3102093`）**：
+macOS job 25 步全 success，`Run the shell interaction matrix over real SSH` 里
+`nano-edit` 输出 `ok (4770 ms)`，且 `input_probe_config invoked` 正常出现——
+与失败 run 里整段没有该 IPC 的情形相反。全矩阵 **40 个 probe 用例 `ok`，0 个 FAILED**
+（macOS 本地 14 + 真实 SSH 7 + Linux 14 + Windows 5）。
+
+**同轮还暴露并修掉了第二个缺陷**（同一个 run，见 Issue #167）：Linux 远程冷启动
+在测量成功后被清理阶段判红。修掉后下一次 run `41478709578` 三平台 3/3 success。
+
+本修复改动了 `packages/frontend/src`（`FINGERPRINT_PATHS` 内），6 份实机证据已随
+run `41478709578` 重采（见 `docs/phase9-2/verification-evidence.md`）。
+
+### Issue #167: 冷启动测量在收尾清理阶段被 ENOTEMPTY 判红，测量本身已成功 ✅ 已修复（2026-11-02）
+
+**严重程度**：🟡 Important（假红——把成功的测量报成失败，会诱导人去修不存在的产品问题）
+
+**症状**：run `41475640293`（sha `d3368ab`）Linux job 的
+`Measure Linux remote SSH cold-start to prompt marker` 失败：
+
+```
+ENOTEMPTY: directory not empty, rmdir '/home/runner/terminal-remote-cold-home-f91pr0/.cache/mesa_shader_cache'
+ELIFECYCLE Command failed with exit code 1.
+```
+
+但同一步的日志显示应用把**全部** SSH 启动阶段走完了：
+`ssh-tcp-handshake-done` → `ssh-auth-done` → `ssh-pty-ready` →
+`ssh-shell-first-output` → `ssh-startup-write-done` → `session-created`。
+失败发生在 `finally` 的目录清理，**测量结果已经被算出来了**。
+
+**根因**：WebKitGTK 关闭后仍会有一小段时间在写 Mesa 着色器缓存，
+裸 `rm(recursive, force)` 与那个子进程竞争。`scripts/run-terminal-shell-probe.mjs`
+早在 Issue #156 的修复里就为同一原因用过 `maxRetries: 20 / retryDelay: 100`，
+但冷启动那三个脚本从未同步这个策略。
+
+**修复**：把该策略提为 `run-cold-start-stopwatch.mjs` 导出的
+`MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS`，三处清理统一使用：
+- `run-cold-start-stopwatch.mjs`（stopwatch 自建的 `home`）
+- `run-local-cold-start-stopwatch.mjs`（本地 `runDirectory`）
+- `run-remote-cold-start-stopwatch.mjs`（远程 `runDirectory` 与 `home`）
+
+**回归（先红后绿）**：`run-local-cold-start-stopwatch.test.mjs` 增加断言钉住
+`rm` 的 `maxRetries = 20` / `retryDelay = 100`。把清理改回裸 `rm` 后该用例变红
+（`not ok 2 - drives strict readiness with a PTY marker carrying the run nonce`）；
+恢复后 3 个冷启动测试文件 **55 项全过**。
+
+**验证**：run `41478709578`（sha `3102093`）Linux job **success**，同一场景通过。
+
+**一处必须记住的教训**：这条红的报文（`ENOTEMPTY`）与产品完全无关，
+但它在 CI 上出现的位置（证据采集链）会直接让 6 份证据生成不出来。
+以后看到采集链的红，先确认**测量本身**是否已经完成，再判断是不是产品回归。
+
+### Issue #168: 6 份验收证据在 Issue #166 之后失效，已随 run `41478709578` 重采 ✅ 已闭合（2026-11-02）
+
+**触发**：Issue #166 改了 `packages/frontend/src/terminal-bootstrap*.ts(x)`，
+这些文件在 `FINGERPRINT_PATHS` 内，所以旧证据（run `41434165000`，指纹 `365bdee7…`）
+在提交瞬间失效。`check-verification-evidence.mjs` 当场报 **7 problem / exit 1**——这是门禁在正确工作。
+
+**重采**：run `41478709578`（sha `3102093`，workflow_dispatch），三平台 3/3 success，
+macOS job **25 步全 success**（含 `Generate the six evidence files and the CI manifest`）。
+
+| 指标 | 旧证据（`a093fc7`） | 新证据（`3102093`） |
+| --- | --- | --- |
+| 源码指纹 | `365bdee7…` | **`c4faedfb…`** |
+| debug 本地冷启动 | 7679 / 4042 / 3301 ms | **1944 / 1330 / 1323 ms** |
+| release 本地冷启动 | 4692 / 3621 / 3128 ms | **2283 / 2074 / 1959 ms** |
+| debug 远程冷启动（提示符） | 5061 ms | **3158 ms** |
+| debug SSH 矩阵 | 11/11 | **11/11** |
+| release SSH 矩阵 | 8/8 | **8/8** |
+| shell 交互用例 | 14/14 | **14/14**（`nano-edit` bash 4678 ms、zsh 4675 ms 均 ok） |
+
+**注意**：冷启动数字整体变小，主要因为 runner 实例不同（不是本轮的产品优化）。
+本阶段**没有**任何冷启动路径的性能改动；不得把这次数字下降解读成「冷启动变快了」。
+
+**安装过程中遇到的一个工具问题（记录备查）**：`fetch-verification-evidence.mjs` 的
+`gh run download` 在解压 120 MB artifact 时挂住不退出（进程存活但长时间无进展）。
+已解压内容完整，改用脚本自身的 `--from <bundle>` 路径完成安装，门禁随即 0 problem。
+下次遇到同样卡顿，可直接复用下载目录而不是杀掉重下。
+
+**证据门禁**：安装后 `node scripts/check-verification-evidence.mjs` →
+**passed for 6 current evidence file(s)，exit 0**。
+
+## 十五、Phase 9.3.1（2026-11-03）
+
+### Issue #169: 敏感共享 REMOTE 解决用本地旧密文冒充远端 ✅ 已修复（2026-11-03）
+
+**严重程度**：🔴 Blocker（数据完整性）
+
+**症状**：`applyWindow()` 记录的冲突快照只有 `version` / `data` / `isSensitive`，
+没有 `encryptedData`。选 REMOTE 时 `syncWithConflictResolution` 用**本地行**的
+密文补齐，于是：
+
+```
+服务端：version 6，encryptedData = ciphertext-B
+客户端：version 5，encryptedData = ciphertext-A
+选 REMOTE 后：version 6，encryptedData = ciphertext-A，dirty = 0
+```
+
+版本与内容不一致，却被当成"已收敛"。用户以为自己采用了服务器版本，实际保留的
+是被自己丢弃的旧密文。
+
+**顺带发现的第二个形态**：`mergeConflicts` 用 `hasData()` 判断「远端快照是否存在」，
+但敏感共享的 `data` 是 `{}` 占位符——pull 产生的唯一可用快照被判为「空壳」，
+被 push 的空壳冲突覆盖。所以只改 `applyWindow` 不足以修复。
+
+**复现（先红）**：真实 PostgreSQL + 真实客户端 store（`dual-client-sync.pg-spec.ts`
+新增 C3b），A 改密文 → B 冲突 → B 选 REMOTE：
+
+```
+[C3b] conflict remote cipher=undefined version=undefined local cipher=ciphertext-version-1
+```
+
+**修复**：
+- 冲突快照携带 `encryptedData` / `sharedBy` / `permission`
+- 快照缺这些字段时**回读服务端**，而不是用本地行补齐
+- 敏感快照没有密文一律拒绝，不再以空敏感行冒充收敛
+- `adoptRemoteShare` 采用服务端权威的 owner / permission / teamId（小写枚举，
+  与 `convertApiShare` 的既有约定一致）
+- `mergeConflicts` 改用「有无 version/密文」判断快照是否可用
+
+**验证（后绿）**：`[C3b] 本地 cipher=ciphertext-version-2 v=507792 dirty=0
+服务端 cipher=ciphertext-version-2 v=507792`。新增前端 4 项 + PG 1 项。
+
+### Issue #170: Share REST 的 BigInt 版本导致 500 ✅ 已修复（2026-11-03）
+
+**严重程度**：🔴 Blocker（接口不可用）
+
+**症状**：Prisma 的 `Share.version` 是 `BigInt`，Node 原生 `JSON.stringify` 无法
+序列化。`findOne` / `findAll` / `create` / `update` 都直接返回 Prisma 行，
+于是这些接口全部 500；同步接口没事，因为它一直走 `toShareSnapshot`。
+
+**复现（先红）**：真实 HTTP server + 真实 controller + 真实 PostgreSQL：
+
+```
+GET single failed: {"statusCode":500,"message":"Do not know how to serialize a BigInt"}
+GET list failed:   {"statusCode":500,"message":"Do not know how to serialize a BigInt"}
+```
+
+**修复**：新增 `shares/share-serializer.ts`，与同步接口共用 `ShareSnapshot` 形状，
+`version` 为 JSON number 并强制 `Number.isSafeInteger`（超出范围抛错而不是静默丢精度）。
+
+没有改成十进制字符串（客户端 DTO 早已声明 `version: number`，两套接口给出两种
+类型只会制造新的漂移），也没有用全局 `BigInt.prototype.toJSON`（那会掩盖其他
+字段的同类问题）。
+
+**验证（后绿）**：4 项 HTTP 契约测试全过。去掉序列化后 3 项变红。
+
+### Issue #171: cargo audit 的 yanked 类从未被评估，却被当成"没有 yanked" ✅ 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（安全门禁完整性）
+
+**症状**：CI run `41489824295` 的 cargo audit job **成功**，日志里却有 **769 条**
+`error: couldn't check if the package is yanked: not found: No such crate in
+crates.io index: <crate>`——每一个 crate 都有。
+
+cargo audit 需要本地 cargo home 持有 crates.io registry index 才能回答
+"这个确切版本是否被撤回"。runner 上没有时，它逐条打 stderr、**不写**
+`warnings.yanked`、仍以 exit 1 结束（与"发现 advisory"同一个退出码）。gate
+只读 JSON，于是"从未检查"读成了"没有 yanked"。
+
+**复现（先红）**：`CARGO_HOME` 指向只有 advisory-db 的空目录 → 769 条错误、
+`warnings` 只剩 unmaintained/unsound，gate 仍 exit 0。
+
+**修复**：`security-gate.mjs` 新增 `--audit-log`，出现一条无法评估的 yanked
+检查就 exit 2；其他未识别的 error 行同样 exit 2。`ci.yml` 把 stderr 落盘并在
+审计前 `cargo fetch --locked` 填充 registry index。
+
+**验证**：新增 5 项回归；去掉判定后第一条变红，恢复后 32/32。
+
+### Issue #172: 前端依赖审计不是「未测量」，是 25 条真实漏洞 ✅ 已修复（2026-11-03）
+
+**严重程度**：🔴 Blocker（发布）
+
+**更正一个持续了两轮的结论**：Phase 9.2 把前端审计记为 NOT_RUN，归因是
+"镜像源不提供 audit 端点"。**那个结论关于的是开发机**（本机 `~/.npmrc` 指向
+国内镜像），不是项目本身。CI runner 走公共 registry，那里可以跑。
+
+**实测**：25 条（1 critical / 12 high / 9 moderate / 3 low），几乎全部经由
+**我们自己的 `pnpm.overrides`** 把已修复的包钉在脆弱版本上：
+body-parser 2.3.0、fast-uri 3.1.5、js-yaml 5.2.3、qs 6.15.2，另缺 multer /
+proxy-addr / source-map-js / mysql2 的覆盖。
+
+**修复**：八个 override 升级到已修复版本。`pnpm audit --prod` →
+**No known vulnerabilities found**。新增 `Dependency audit (npm)` CI job，
+审计已安装的生产依赖树，不带 registry 覆盖。
+
+**必须记住**：一个 override 条目就能在无人察觉时重新引入 CVE。依赖审计是
+快照，不是永久性质。
+
+### Issue #173: bootstrap 静默回落与正常启动同形 ✅ 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（可观测性）
+
+并发化之后五個 gate 仍共享同一个 1 秒绝对预算。从返回值看，「探针未启用」
+「IPC 超时」「预算耗尽导致根本没有调用」全是同一个 `null`。
+
+**修复**：每个 gate 记录结局（`not-configured` / `loaded` / `timed-out` /
+`deadline-passed` / `errored`）+ 耗时，mode 决定时经既有的 `startup_stage`
+输出一行汇总。只记结局、耗时与错误消息，不记配置值。
+
+**没有**把 1 秒调大：那会掩盖「IPC 是否按时返回」这个真正要观测的事实。
+新增 9 项回归，含「五个 gate 全悬挂仍全部被启动」。
+
+### Issue #174: macOS 远程冷启动失败率已量化为 20%，但未修复 ⚠️ 未修复（2026-11-03）
+
+**严重程度**：🟡 Important（RC 阻塞）
+
+**定量**：按 step 结论统计 16 次 real-machine run：
+
+| 结论 | 次数 |
+| --- | --- |
+| success | 12 |
+| failure | 3 |
+| 日志已过期、无法判定 | 1 |
+
+**失败率 3/15 = 20%**，与 Phase 9.0 记录的「10 次里 2 次失败」一致。
+**因此不把这条写成已修复**：一个 20% 的失败率用一次成功复跑来否定是不成立的。
+
+**现有证据的边界**：失败 run `41475640293` 的记录是
+`stages: frontend-boot@0ms -> ... -> ready@1081ms; first stage at 2678 ms`，
+该步骤应用自身日志行数为 **0**。
+
+- **能证明**：WebView 执行到了 `frontend-boot`，db 到了 `ready`，此后无阶段。
+- **不能证明**：这是 WebKit 主框架加载失败。Issue #65 记录的是
+  `didFailProvisionalLoadForFrame code=-1004`，而该次运行**没有采集到那条
+  Unified Log 证据**。
+
+**本轮做的**：超时消息现在区分四种互斥形态（前端从未求值 / db 卡住 / 未请求
+会话 / SSH 路径失败），新增 4 项回归。**没有修复**，也没有把风险降级。
+
+### Issue #175: PG 测试套件随文件执行顺序偶发失败 ✅ 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（会让"全量通过"失去意义）
+
+**症状**：同一套代码三次运行中一次报 9 项失败，而每个文件单独跑都通过。
+
+**根因**：`sqlite.databases.at(-1)` 取的是**共享注册表**的最后一项。同一 worker
+里先跑过另一个 spec 时，最后一项属于那个文件的数据库，客户端读到别人的 store。
+
+**修复**：记录调用前的长度并取该位置。两个用到它的 spec 都改。修复后连续
+三次 **85/85**。
+
+**为什么值得单独记录**：一个会随文件执行顺序变红的测试套件，比一条已知的
+失败更危险——它让"全量绿"这个结论不可信。
+
+### Issue #176: PR 里 62 MB 原始日志 ✅ 已处理（2026-11-03）
+
+**处理**：gzip -n -9 压缩到 3.9 MB（16:1），每次 run 目录加 `SHA256SUMS`。
+
+**没有删除证据**：7 次 run 的日志一条没少，每条做了 `gzip -t` 与解压后行数核对，
+校验清单实测 `-c` 通过。
+
+**没有放松门禁**：gate 本就支持 `<name>.gz`；补 2 项测试钉住「压缩可接受、
+压缩档案缺文件仍报 missing」。
+
+**敏感信息扫描**：私钥 / 公钥材料 / Bearer token / password= 全部 **0 命中**；
+只有 `/Users/runner/` 与 loopback `127.0.0.1:<port>`，是托管 runner 的通用值。
+
+**仍未做**：gate 只校验当前 manifest 那一次 run，历史 6 次不在检查面内。
+再增长时应改 CI artifact + 清单引用，而不是无限期跟着仓库变大。
+
+## 十六、Phase 9.3.2（2026-11-03）
+
+### Issue #177: Share REST PUT 只能防同请求内竞争，无法防旧版本晚提交 ✅ 已修复（2026-11-03）
+
+**严重程度**：🔴 Blocker（多人协作数据覆盖）
+
+**复现**：两个客户端都读到 v10。A 先 PUT 成功得到 v11；B 仍持有 v10 的数据，
+随后 PUT。旧实现会在执行时重新读取最新行，再用该行的 `updatedAt` 做条件写，
+因此 B 的请求会覆盖 A 刚提交的 v11。`/sync` 的 `baseVersion` CAS 与此无关，
+不能拿同步链路的绿灯证明普通 REST PUT 安全。
+
+**修复**：
+
+- `UpdateShareDto` 增加 `baseVersion`（非负安全整数）。
+- `SharesService.update()` 以服务端 `version` 做原子 CAS，不再用毫秒
+  `updatedAt`；同一毫秒内的 stale 写入也会返回 409。
+- 缺失 `baseVersion` 返回 **428**，非法值返回 400；授权/权限检查仍先执行，
+  非成员或 READONLY 成员仍得到 403。
+- 前端 `TeamApiResources.updateShare()` 必须显式传 `baseVersion`，并给
+  `ApiShare` 补 `version: number`。
+
+**验证**：
+
+- 新增 `shares-nest-http.pg-spec.ts`：真实 Nest Express adapter +
+  ValidationPipe + ApiKeyGuard + DTO + 真实 PostgreSQL + 实际 HTTP。
+  9/9 覆盖 GET、POST、PUT、409、428、403、404、401、400 与 BigInt 序列化。
+- 完整真实 PG 套件 **11 文件 / 94 项** 全绿。
+- 旧 PG 用例补 `baseVersion`，未放宽任何断言。
+
+### Issue #178: `terminal-mounted` 只带 tabId，无法跨工作区关联 ✅ 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（诊断可关联性）
+
+**审查结论**：阶段确实在 xterm `open()` 与 viewport attach 之后发出，早于
+`session-create-requested`，因此只表示终端视图挂载，不冒充 PTY/SSH 已建立；
+`open()` 抛错时不会发出。重复挂载会再次发出，但分析脚本的 stage budget 使用
+**首次** `terminal-mounted`，不会把后续 tab 切换误算成首次启动。
+
+**修复**：detail 改为 `${tabId}@${workspaceId}`，并新增前端回归。冷启动分析
+新增 `ready → terminal-mounted` 3 秒预算；失败信息现在能区分「DB 已就绪但
+终端从未挂载」与「已请求会话但 SSH 失败」。
+
+**二次审查（run `41596246878`）**：真实证据里 `ssh-connect-start@3421ms`
+出现在 `session-create-requested@3443ms` 之前。根因是 `traceStage` 为
+fire-and-forget，会话 IPC 先于诊断 IPC 到达 Rust；这会把因果关系读成负耗时。
+修复：启动阶段写入改为串行队列（每项 1 秒上限），关键路径
+`session-create-requested` / `session-created` 使用可等待写入；新增
+`terminal-launcher.test.ts` 回归，未等待 trace 时 `invoke` 不得先发。
+
+### Issue #179: 01836c9 后验收证据指纹失效 🟡 待重采（2026-11-03）
+
+CI `41590440545` / `41590434867` 均为 10 个 job 成功、`Repository gates` 失败：
+
+```
+expected 43ff429d…
+actual   7639d533…
+```
+
+这是 `FINGERPRINT_PATHS` 内新增 `terminal-mounted` 后证据门禁的正确行为，不是
+产品测试回归。**不得修改旧 manifest**；必须在冻结源码后由
+`Real-machine terminal matrix` 在真实 runner 重采 6 份证据，再运行
+`check-verification-evidence.mjs` 到 0 problem。
+
+**进展**：run `41596246878`（commit `aa6e19f`，指纹 `cf27517c…`）三平台全绿并
+通过证据门禁；随后发现并修复 trace 顺序缺陷，源码再次变化，因此这份证据只作为
+中间诊断，不作为最终合并证据。
+
+**✅ 已闭合（2026-11-03）**：最终源码 `44ae449` 的 real-machine run
+`41605898002` 三平台全绿，证据指纹 `6d7536e7…`，debug SHA
+`2bf151cb…`、release SHA `88ba4714…`。六份证据与 manifest 已安装，
+`check-verification-evidence.mjs` 报 0 problem。
+
+### Issue #180: probe 配置预算短于冷 WebView 首次 IPC ✅ 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（验收假阴性）
+
+**复现**：
+
+- run `41600744475`：`local/bash/nano-edit` 的五个 gate 全部
+  `timed-out(1006ms)`，bootstrap 回落到 app，probe 从未写 `result.json`。
+- run `41602816075`：physical keyboard probe 同样五个 gate 全部
+  `timed-out(1000ms)`，round 1 checkpoint 60s 超时。
+
+**根因**：冷 WebView 的首次 Tauri IPC（`startup_stage`）在两次 run 中约
+1.8s；`input_probe_config invoked` 虽已到 Rust，1s 的配置预算只剩几十毫秒。
+这不是 probe 未启用，也不是 SSH/PTY 慢。
+
+**修复**：`bootstrapConfigDeadlineMs(smokeBuild)`：instrumented 构建
+（`VITE_TERMINAL_SMOKE_BUILD=1`）使用 3s，普通产品构建保持 1s。这样只放宽测试
+入口的配置读取窗口，不改变用户冷启动的配置回落预算。新增回归断言两种预算。
+
+**验证**：定向 31 项、前端全量 **151 文件 / 1365 项**、typecheck、ESLint 通过。
+修复后仍需在真实矩阵重采证据。

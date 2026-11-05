@@ -1,4 +1,10 @@
 import type {
+  ConflictCheckItem,
+  ConflictLocalData,
+  ConflictResolution,
+  ConflictResolutionResult,
+} from './sync-conflicts'
+import type {
   ConflictInfo,
   IncrementalSyncResult,
   PushedShare,
@@ -9,6 +15,10 @@ import { PrismaService } from '../prisma.service'
 import { deleteShareWithAudit } from '../shares/share-deletion'
 import { OfflineSyncService } from './offline-sync.service'
 import { buildShareCreateData, buildShareUpdateData } from './share-write-data'
+import {
+  checkConflicts,
+  resolveConflict,
+} from './sync-conflicts'
 import { readChangeWindow } from './sync-delivery'
 import { describeSyncError, SYNC_OPERATION_FAILED } from './sync-error'
 import {
@@ -220,80 +230,23 @@ export class SyncService extends OfflineSyncService {
 
   async checkConflicts(
     userId: string,
-    items: Array<{
-      id: string
-      updatedAt: number
-      type: 'HOST' | 'SNIPPET_PACKAGE'
-    }>,
+    items: ConflictCheckItem[],
   ): Promise<ConflictInfo[]> {
-    const conflicts: ConflictInfo[] = []
-    for (const item of items) {
-      const share = await this.prisma.share.findUnique({ where: { id: item.id } })
-      if (!share) continue
-      const membership = await this.prisma.teamMember.findUnique(
-        { where: { teamId_userId: { teamId: share.teamId, userId } } },
-      )
-      if (membership && share.updatedAt.getTime() > item.updatedAt) {
-        conflicts.push({
-          shareId: item.id,
-          localVersion: { updatedAt: item.updatedAt, data: item },
-          remoteVersion: {
-            updatedAt: share.updatedAt.getTime(),
-            data: share.isSensitive ? { encrypted: true } : share.data,
-            updatedBy: share.sharedBy,
-          },
-        })
-      }
-    }
-    return conflicts
+    return checkConflicts(this.prisma, userId, items)
   }
 
   async resolveConflict(
     shareId: string,
     userId: string,
-    resolution: 'LOCAL' | 'REMOTE',
-    clientData?: {
-      data: unknown
-      encryptedData?: string
-      isSensitive?: boolean
-      permission?: string
-      baseVersion?: number
-    },
-  ): Promise<{ success: boolean, error?: string }> {
-    const share = await this.prisma.share.findUnique({ where: { id: shareId } })
-    if (!share) return { success: false, error: 'Share not found' }
-    const membership = await this.prisma.teamMember.findUnique({ where: { teamId_userId: { teamId: share.teamId, userId } } })
-    if (!membership) return { success: false, error: 'Not a team member' }
-    if (share.sharedBy !== userId) {
-      return { success: false, error: 'Only creator can resolve share conflicts' }
-    }
-
-    if (resolution === 'LOCAL' && clientData?.isSensitive === undefined) {
-      return { success: false, error: 'Local conflict data must include an explicit sensitive state' }
-    }
-    if (
-      resolution === 'LOCAL'
-      && clientData?.isSensitive === true
-      && !clientData.encryptedData
-    ) {
-      return {
-        success: false,
-        error: 'Local sensitive conflict data must include encryptedData',
-      }
-    }
-    if (resolution === 'LOCAL' && clientData) {
-      // A LOCAL resolution is an explicit overwrite, never an unconditional one:
-      // the row still has to carry the version this write is based on. A client
-      // that cannot prove one is bounded by the version read in this request
-      // (docs/phase8/sync-protocol.md §6.3).
-      const written = await this.prisma.share.updateMany({
-        where: { id: shareId, version: clientData.baseVersion ?? share.version },
-        data: buildShareUpdateData(clientData, share, true),
-      })
-      if (written.count !== 1) {
-        return { success: false, error: 'CONFLICT_STALE_VERSION' }
-      }
-    }
-    return { success: true }
+    resolution: ConflictResolution,
+    clientData?: ConflictLocalData,
+  ): Promise<ConflictResolutionResult> {
+    return resolveConflict(
+      this.prisma,
+      shareId,
+      userId,
+      resolution,
+      clientData,
+    )
   }
 }

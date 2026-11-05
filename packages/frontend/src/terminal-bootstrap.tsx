@@ -23,8 +23,8 @@ import {
   BOOTSTRAP_APP_DEADLINE_MS,
   bootstrapNow,
   loadBootstrapConfig,
-  loadOptionalBootstrapConfigs,
 } from './terminal-bootstrap-deadline'
+import { loadBootstrapGates } from './terminal-bootstrap-gate-loader'
 
 export { reportTerminalSmokeBootstrapFailure } from './terminal-bootstrap-failure'
 export { BOOTSTRAP_CONFIG_DEADLINE_MS } from './terminal-bootstrap-deadline'
@@ -96,11 +96,19 @@ export async function bootstrapTerminalApp(
     attemptStartedAt +
       (dependencies.rootLoadTimeoutMs ?? BOOTSTRAP_APP_DEADLINE_MS),
   )
-  const config = await loadBootstrapConfig(
-    dependencies.loadConfig,
+  const gates = await loadBootstrapGates(
+    {
+      smoke: dependencies.loadConfig,
+      remotePrompt: dependencies.loadRemotePromptProbeConfig,
+      inputProbe: dependencies.loadProbeConfig,
+      rawProbe: dependencies.loadRawProbeConfig,
+      shellProbe: dependencies.loadShellProbeConfig,
+    },
     configDeadlineAt,
     signal,
   )
+  const reportMode = gates.reportMode
+  const config = gates.smoke
   if (config !== null) {
     const SmokeRoot = await loadBootstrapRoot(
       dependencies.loadSmokeRoot,
@@ -118,19 +126,11 @@ export async function bootstrapTerminalApp(
         submitResult: submitTerminalSmokeResult,
       }),
     )
+    reportMode('smoke')
     return 'smoke'
   }
 
-  const configs = await loadOptionalBootstrapConfigs(
-    {
-      remotePrompt: dependencies.loadRemotePromptProbeConfig,
-      inputProbe: dependencies.loadProbeConfig,
-      rawProbe: dependencies.loadRawProbeConfig,
-      shellProbe: dependencies.loadShellProbeConfig,
-    },
-    configDeadlineAt,
-    signal,
-  )
+  const configs = gates.optional
   configureRemotePromptProbe(configs.remotePrompt)
 
   const probeConfig = configs.inputProbe
@@ -142,6 +142,7 @@ export async function bootstrapTerminalApp(
       signal,
     )
     root.render(createElement(ProbeRoot, { config: probeConfig }))
+    reportMode('probe')
     return 'probe'
   }
 
@@ -154,6 +155,7 @@ export async function bootstrapTerminalApp(
       signal,
     )
     root.render(createElement(RawProbeRoot, { config: rawProbeConfig }))
+    reportMode('raw-probe')
     return 'raw-probe'
   }
 
@@ -166,6 +168,7 @@ export async function bootstrapTerminalApp(
       signal,
     )
     root.render(createElement(ShellProbeRoot, { config: shellProbeConfig }))
+    reportMode('shell-probe')
     return 'shell-probe'
   }
 
@@ -186,5 +189,6 @@ export async function bootstrapTerminalApp(
       startupTerminalFallbackAt: startupDeadlineAt,
     }),
   )
+  reportMode('app')
   return 'app'
 }

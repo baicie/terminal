@@ -696,6 +696,31 @@ test('rejects a manifest whose raw log is missing from the archive', async () =>
   assert.equal(checked, ALL_CURRENT.length)
 })
 
+test('accepts a raw log stored compressed, because the archive keeps the trail', async () => {
+  // Compression is how the PR stops carrying 60 MB of CI logs without deleting
+  // any of them. The gate must treat <name>.gz as the same evidence, otherwise
+  // the only way to stay green would be to keep the uncompressed tail.
+  const compressed = RAW_LOGS.map(name => `${name}.gz`)
+  const { problems, checked } = await checkVerificationEvidence(
+    createHarness({ rawLogs: compressed }),
+  )
+  assert.deepEqual(problems, [])
+  assert.equal(checked, ALL_CURRENT.length)
+})
+
+test('still fails closed when a compressed raw log is missing', async () => {
+  const absent = 'debug-ssh-matrix.log'
+  const compressed = RAW_LOGS
+    .filter(name => name !== absent)
+    .map(name => `${name}.gz`)
+  const { problems } = await checkVerificationEvidence(
+    createHarness({ rawLogs: compressed }),
+  )
+  assert.equal(problems.length, 1, JSON.stringify(problems))
+  assert.match(problems[0], /raw log\(s\) of run 4242424242 are missing/)
+  assert.ok(problems[0].includes(absent))
+})
+
 test('rejects a manifest that lists no raw log at all', async () => {
   const withoutLogs = manifestFor()
   delete withoutLogs.rawLogs

@@ -297,10 +297,38 @@ impl ClientHandler {
 impl Handler for ClientHandler {
     type Error = anyhow::Error;
 
+    /// Verifies the server's identity against known_hosts.
+    ///
+    /// russh 0.65 splits the two cases: a plain key arrives as
+    /// `PublicKeyOrCertificate::PublicKey`, a host certificate arrives as
+    /// `Certificate` and *replaces* the key check. Both are verified here, and
+    /// the certificate case is a deliberate choice of *what* to verify:
+    ///
+    /// The certificate's embedded public key is the identity the server
+    /// authenticated with, so that is the key checked against known_hosts - the
+    /// same trust decision a plain key gets, with the same "changed key is a hard
+    /// failure" outcome. This also keeps the pre-0.65 behaviour, where the
+    /// certificate was decoded as an ordinary public key and checked the same
+    /// way, so an existing known_hosts entry does not suddenly start failing
+    /// after the upgrade.
+    ///
+    /// Validating the certificate against a CA key is *not* done here because
+    /// this application has no per-host host-certificate CA setting: inventing
+    /// one would silently reject every certificate-authenticated server that
+    /// works today. Refusing the certificate outright would do the same.
     async fn check_server_key(
         &mut self,
-        server_public_key: &russh::keys::PublicKey,
+        presented: &russh::keys::PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
+        let server_public_key = match presented {
+            russh::keys::PublicKeyOrCertificate::PublicKey { key, .. } => key.clone(),
+            // `Certificate::public_key()` returns the bare KeyData; wrap it into a
+            // PublicKey so both branches yield the same type the known_hosts check takes.
+            russh::keys::PublicKeyOrCertificate::Certificate(cert) => {
+                russh::keys::PublicKey::from(cert.public_key().clone())
+            }
+        };
+        let server_public_key = &server_public_key;
         let has_matching_preflight_key = match &self.expected_host_key {
             Some(expected_host_key)
                 if expected_host_key.key_data() == server_public_key.key_data() =>
@@ -340,23 +368,39 @@ impl Handler for ClientHandler {
         }
     }
 
+    /// Accepts an agent-forwarding channel only when the user opted in.
+    ///
+    /// russh 0.65 added a `reply` handle: the channel-open is now confirmed
+    /// explicitly, and dropping the handle rejects it with
+    /// `AdministrativelyProhibited`. That default is the *correct* answer for the
+    /// un-opted-in path, so the refusal is stated rather than left to the drop -
+    /// a reviewer should be able to see that the denial is deliberate.
     async fn server_channel_open_agent_forward(
         &mut self,
         channel: Channel<client::Msg>,
+        reply: client::ChannelOpenHandle,
         _session: &mut client::Session,
     ) -> Result<(), Self::Error> {
         if !self.allow_agent_forwarding {
+            // `channel` is unused on this path: russh only constructs it after the
+            // open is accepted, and this branch answers the open with a refusal.
             tracing::warn!(
                 host = %self.host,
                 port = self.port,
                 "rejecting unauthorized SSH agent forwarding channel"
             );
-            let _ = channel.close().await;
+            // No CHANNEL_CLOSE follows: the open never succeeded, so there is no
+            // channel for the peer to close. russh 0.65's own handler sends the
+            // open-failure reply and nothing else.
+            reply
+                .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                .await;
             return Ok(());
         }
 
         match connect_agent_transport(self.agent_socket.clone()).await {
             Ok(mut agent) => {
+                reply.accept().await;
                 let mut channel_stream = channel.into_stream();
                 tokio::spawn(async move {
                     if let Err(error) =
@@ -368,7 +412,10 @@ impl Handler for ClientHandler {
             }
             Err(error) => {
                 tracing::warn!(%error, "rejecting SSH agent forwarding channel");
-                let _ = channel.close().await;
+                // Same as above: the open is answered, not closed.
+                reply
+                    .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                    .await;
             }
         }
         Ok(())
@@ -385,6 +432,7 @@ impl Handler for ClientHandler {
         connected_port: u32,
         originator_address: &str,
         originator_port: u32,
+        reply: client::ChannelOpenHandle,
         _session: &mut client::Session,
     ) -> Result<(), Self::Error> {
         // std::sync::RwLock guard is dropped before any await.
@@ -403,6 +451,11 @@ impl Handler for ClientHandler {
                 originator_address: originator_address.to_string(),
                 originator_port,
             };
+            // Accept only once a forward listener will actually service the
+            // channel: accepting first and then finding no receiver would open a
+            // tunnel nobody reads. The handle's default drop is a rejection, which
+            // is exactly right when there is no listener.
+            reply.accept().await;
             if l.sender.send(msg).await.is_err() {
                 tracing::debug!("forward listener receiver dropped");
             }
@@ -509,6 +562,13 @@ mod tests {
         assert!(guard.is_empty());
     }
 
+    /// russh 0.65 hands `check_server_key` a key-or-certificate. These tests
+    /// exercise the plain-key branch, so the fixture key is wrapped the same way
+    /// the client wraps a server's key on the wire.
+    fn presented(key: &russh::keys::PublicKey) -> russh::keys::PublicKeyOrCertificate {
+        russh::keys::PublicKeyOrCertificate::from(key.clone())
+    }
+
     #[tokio::test]
     async fn server_key_is_accepted_only_when_it_matches_known_hosts() {
         let path =
@@ -517,7 +577,7 @@ mod tests {
         let key = russh::keys::PublicKey::from_openssh(ED25519_PUBLIC_KEY).unwrap();
         let mut handler = ClientHandler::for_host_with_known_hosts("example.com", 22, path.clone());
 
-        let accepted = handler.check_server_key(&key).await.unwrap();
+        let accepted = handler.check_server_key(&presented(&key)).await.unwrap();
 
         std::fs::remove_file(path).unwrap();
         assert!(accepted);
@@ -534,7 +594,10 @@ mod tests {
         let mut handler =
             ClientHandler::for_host_with_known_hosts("unknown.example", 22, path.clone());
 
-        let error = handler.check_server_key(&key).await.unwrap_err();
+        let error = handler
+            .check_server_key(&presented(&key))
+            .await
+            .unwrap_err();
 
         std::fs::remove_file(path).unwrap();
         assert!(error.to_string().contains("host key verification failed"));
@@ -552,7 +615,10 @@ mod tests {
         );
         let mut handler = ClientHandler::for_host_with_known_hosts("example.com", 22, path.clone());
 
-        let error = handler.check_server_key(&changed_key).await.unwrap_err();
+        let error = handler
+            .check_server_key(&presented(&changed_key))
+            .await
+            .unwrap_err();
 
         std::fs::remove_file(path).unwrap();
         assert!(error.to_string().contains("host key verification failed"));
@@ -570,7 +636,7 @@ mod tests {
             ClientHandler::for_host_with_expected_key("example.com", 22, key.clone(), false);
         handler.known_hosts_path = Some(path.clone());
 
-        let accepted = handler.check_server_key(&key).await.unwrap();
+        let accepted = handler.check_server_key(&presented(&key)).await.unwrap();
 
         std::fs::remove_file(path).unwrap();
         assert!(accepted);
@@ -585,7 +651,10 @@ mod tests {
         let mut handler =
             ClientHandler::for_host_with_expected_key("example.com", 22, expected, false);
 
-        let error = handler.check_server_key(&changed).await.unwrap_err();
+        let error = handler
+            .check_server_key(&presented(&changed))
+            .await
+            .unwrap_err();
 
         assert!(error.to_string().contains("preflight key"));
     }
@@ -604,7 +673,7 @@ mod tests {
             ClientHandler::for_host_with_expected_key("example.com", 22, changed.clone(), false);
         handler.known_hosts_path = Some(path.clone());
 
-        let result = handler.check_server_key(&changed).await;
+        let result = handler.check_server_key(&presented(&changed)).await;
 
         std::fs::remove_file(path).unwrap();
         assert!(
@@ -625,7 +694,7 @@ mod tests {
             ClientHandler::for_host_with_expected_key("example.com", 22, key.clone(), false);
         handler.known_hosts_path = Some(path.clone());
 
-        let result = handler.check_server_key(&key).await;
+        let result = handler.check_server_key(&presented(&key)).await;
 
         std::fs::remove_file(path).unwrap();
         assert!(

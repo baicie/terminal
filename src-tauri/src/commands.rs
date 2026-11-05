@@ -743,27 +743,37 @@ pub async fn key_generate(
         SessionError::KeyGenerationFailed(format!("unsupported key type: {}", key_type))
     })?;
 
-    use ssh_key::rand_core::OsRng;
+    // ssh-key 0.7 removed `OsRng`: rand_core 0.10 exposes the OS generator as
+    // `getrandom::SysRng`, which is fallible, and `UnwrapErr` is the adapter the
+    // crate documents for turning it back into the infallible `CryptoRng` these
+    // calls take. A failing OS RNG is not a condition a key generator can
+    // continue through anyway.
+    use ssh_key::getrandom::SysRng;
+    use ssh_key::rand_core::UnwrapErr;
 
     let private_key = match key_type {
-        SshKeyType::Ed25519 => ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519)
-            .map_err(|e| {
-                SessionError::KeyGenerationFailed(format!("ed25519 generation failed: {}", e))
-            })?,
-        SshKeyType::Rsa2048 => {
-            ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Rsa { hash: None })
+        SshKeyType::Ed25519 => {
+            ssh_key::PrivateKey::random(&mut UnwrapErr(SysRng), ssh_key::Algorithm::Ed25519)
                 .map_err(|e| {
-                    SessionError::KeyGenerationFailed(format!("rsa2048 generation failed: {}", e))
+                    SessionError::KeyGenerationFailed(format!("ed25519 generation failed: {}", e))
                 })?
         }
-        SshKeyType::Rsa4096 => {
-            ssh_key::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Rsa { hash: None })
-                .map_err(|e| {
-                    SessionError::KeyGenerationFailed(format!("rsa4096 generation failed: {}", e))
-                })?
-        }
+        SshKeyType::Rsa2048 => ssh_key::PrivateKey::random(
+            &mut UnwrapErr(SysRng),
+            ssh_key::Algorithm::Rsa { hash: None },
+        )
+        .map_err(|e| {
+            SessionError::KeyGenerationFailed(format!("rsa2048 generation failed: {}", e))
+        })?,
+        SshKeyType::Rsa4096 => ssh_key::PrivateKey::random(
+            &mut UnwrapErr(SysRng),
+            ssh_key::Algorithm::Rsa { hash: None },
+        )
+        .map_err(|e| {
+            SessionError::KeyGenerationFailed(format!("rsa4096 generation failed: {}", e))
+        })?,
         SshKeyType::EcdsaNistp256 => ssh_key::PrivateKey::random(
-            &mut OsRng,
+            &mut UnwrapErr(SysRng),
             ssh_key::Algorithm::Ecdsa {
                 curve: ssh_key::EcdsaCurve::NistP256,
             },
@@ -772,7 +782,7 @@ pub async fn key_generate(
             SessionError::KeyGenerationFailed(format!("ecdsa-nistp256 generation failed: {}", e))
         })?,
         SshKeyType::EcdsaNistp384 => ssh_key::PrivateKey::random(
-            &mut OsRng,
+            &mut UnwrapErr(SysRng),
             ssh_key::Algorithm::Ecdsa {
                 curve: ssh_key::EcdsaCurve::NistP384,
             },
@@ -781,7 +791,7 @@ pub async fn key_generate(
             SessionError::KeyGenerationFailed(format!("ecdsa-nistp384 generation failed: {}", e))
         })?,
         SshKeyType::EcdsaNistp521 => ssh_key::PrivateKey::random(
-            &mut OsRng,
+            &mut UnwrapErr(SysRng),
             ssh_key::Algorithm::Ecdsa {
                 curve: ssh_key::EcdsaCurve::NistP521,
             },
@@ -796,7 +806,7 @@ pub async fn key_generate(
         private_key
     } else {
         let mut pk = private_key;
-        pk.set_comment(&comment);
+        pk.set_comment(comment.as_str());
         pk
     };
 
@@ -804,7 +814,7 @@ pub async fn key_generate(
     let private_key = if let Some(ref pw) = passphrase {
         if !pw.is_empty() {
             private_key
-                .encrypt(&mut OsRng, pw.as_bytes())
+                .encrypt(&mut UnwrapErr(SysRng), pw.as_bytes())
                 .map_err(|e| {
                     SessionError::KeyGenerationFailed(format!("encryption failed: {}", e))
                 })?

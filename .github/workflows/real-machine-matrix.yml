@@ -249,11 +249,16 @@ jobs:
           export TERMINAL_SMOKE_TMP="$HOME/terminal-smoke-tmp"
           xvfb-run -a node scripts/run-terminal-smoke-matrix.mjs password,password-reconnect
       - name: Run the real Linux shell interaction matrix
-        # Three zsh cases (readline-history, readline-tab, pty-resize) time out
-        # without printing a single verdict line, so the only way to tell a
-        # dropped keystroke from a slow shell is the in-app PTY timeline. The
-        # diagnostics are off by default; this job is the one that needs them,
-        # and the artifact below is what the next diagnosis reads.
+        # The three zsh cases this job used to time out on (readline-history,
+        # readline-tab, pty-resize) were never slow: the probe's synthetic HOME
+        # is empty, which is the one state a real account is never in, so
+        # Debian's /etc/zsh/zshrc compinit asked its "insecure directories"
+        # question and ate the first typed byte with `read -q`. `seedProbeHome`
+        # in scripts/run-terminal-shell-probe.mjs now writes `.zshenv` with
+        # `skip_global_compinit=1` before that rc runs, and all three pass.
+        # The PTY diagnostics stay on for this job because a dropped keystroke
+        # and a slow shell still read identically in a verdict-only log, and
+        # the artifact below is what the next such diagnosis reads.
         env:
           TERMINAL_PTY_DIAGNOSTICS_PATH: ${{ github.workspace }}/pty-diagnostics
         run: |

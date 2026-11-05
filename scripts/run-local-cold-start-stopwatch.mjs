@@ -5,7 +5,10 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { parseShellProbeResult } from './run-terminal-shell-probe.mjs'
-import { runColdStartStopwatch } from './run-cold-start-stopwatch.mjs'
+import {
+  MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS,
+  runColdStartStopwatch,
+} from './run-cold-start-stopwatch.mjs'
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..')
 export const DEFAULT_TIMEOUT_MS = 10_000
@@ -131,7 +134,7 @@ export async function runLocalColdStartStopwatch({
       probeResult,
     }
   } finally {
-    await dependencies.rm(runDirectory, { recursive: true, force: true })
+    await dependencies.rm(runDirectory, MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS)
   }
 }
 

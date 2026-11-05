@@ -1,6 +1,18 @@
 // Probe configuration only selects explicitly enabled test entry points. It
 // must not hold the normal application hostage while backend IPC is starting.
-export const BOOTSTRAP_CONFIG_DEADLINE_MS = 1_000
+//
+// The first IPC round-trip on a cold WKWebView can take ~1.8 s (runs
+// 41600744475 and 41602816075). A 1 s budget therefore expires before the
+// config command has even returned, all gates time out, and probe builds fall
+// back to the normal app. Instrumented builds get a larger budget so the test
+// entry point is not lost to that cold-start cost; the product's non-probe
+// path keeps the original 1 s budget.
+export function bootstrapConfigDeadlineMs(smokeBuild: boolean): number {
+  return smokeBuild ? 3_000 : 1_000
+}
+export const BOOTSTRAP_CONFIG_DEADLINE_MS = bootstrapConfigDeadlineMs(
+  import.meta.env.VITE_TERMINAL_SMOKE_BUILD === '1',
+)
 // The normal application chunk is bundled locally, but a bounded deadline is
 // still required so a stalled WebView import cannot leave a blank window.
 export const BOOTSTRAP_APP_DEADLINE_MS = 8_000
@@ -44,17 +56,68 @@ async function waitUntilBootstrapDeadline(
   }
 }
 
+/**
+ * How one gate's configuration read ended.
+ *
+ * Three outcomes look identical from the value alone (`null`), and they need
+ * opposite answers: a gate that is not enabled is normal, a gate whose IPC was
+ * slower than the budget is a probe that will never report, and a gate that was
+ * never invoked at all is a scheduler bug. Without this record a silent
+ * fallback to the normal application is indistinguishable from an ordinary
+ * launch (P9.3.1 P1-2).
+ */
+export type BootstrapConfigOutcome
+  = | 'not-configured'
+    | 'loaded'
+    | 'timed-out'
+    | 'deadline-passed'
+    | 'errored'
+
+export interface BootstrapConfigReport {
+  gate: string
+  outcome: BootstrapConfigOutcome
+  /** Milliseconds this gate spent, from its own start to its verdict. */
+  elapsedMs: number
+  /** Present only for `errored`, and only with the message, never the payload. */
+  error?: string
+}
+
 export async function loadBootstrapConfig<T>(
   loader: (() => Promise<T | null>) | undefined,
   deadlineAt: number,
   signal?: AbortSignal,
   now: BootstrapClock = bootstrapNow,
+  report?: (report: BootstrapConfigReport) => void,
+  gate = 'config',
 ): Promise<T | null> {
+  const startedAt = now()
+  const finish = (outcome: BootstrapConfigOutcome, error?: unknown): void => {
+    report?.({
+      gate,
+      outcome,
+      elapsedMs: Math.max(0, Math.round(now() - startedAt)),
+      // The message only: a gate config carries endpoints and tokens, and a
+      // diagnostic that leaks one is worse than the silence it replaces.
+      ...(error === undefined
+        ? {}
+        : { error: error instanceof Error ? error.message : String(error) }),
+    })
+  }
+  if (loader === undefined) {
+    finish('not-configured')
+    return null
+  }
   if (signal?.aborted) {
+    finish('errored', signal.reason ?? new Error('Bootstrap attempt was aborted'))
     throw signal.reason ?? new Error('Bootstrap attempt was aborted')
   }
   const remainingMs = Math.max(0, deadlineAt - now())
-  if (remainingMs === 0) return null
+  if (remainingMs === 0) {
+    // The budget was gone before this gate was asked: it never ran at all, and
+    // saying "not enabled" here is what hid the starvation for weeks.
+    finish('deadline-passed')
+    return null
+  }
 
   const pending = Promise.resolve().then(() => loader?.() ?? null)
   // Keep observing rejection even if the timeout wins the race.
@@ -81,15 +144,39 @@ export async function loadBootstrapConfig<T>(
       // Timers can fire a fraction early relative to performance.now(). Keep
       // the absolute deadline strict before allowing the next probe to start.
       await waitUntilBootstrapDeadline(deadlineAt, signal, now)
+      finish('timed-out')
       return null
     }
-    return now() >= deadlineAt ? null : result
+    if (now() >= deadlineAt) {
+      finish('timed-out')
+      return null
+    }
+    finish(result === null ? 'not-configured' : 'loaded')
+    return result
+  } catch (error) {
+    finish('errored', error)
+    throw error
   } finally {
     if (timer !== undefined) clearTimeout(timer)
     if (onAbort !== undefined) signal?.removeEventListener('abort', onAbort)
   }
 }
 
+/**
+ * Loads every optional probe configuration within the same absolute budget.
+ *
+ * The loaders are five independent IPC round-trips, and they used to run one
+ * after another against a single absolute deadline. That made the budget a
+ * queue: when the first round-trip took most of the second (a cold WebView's
+ * first calls are the slowest ones), the loaders behind it were never invoked
+ * at all -- `loadBootstrapConfig` returns null without calling the loader once
+ * the deadline has passed. Nothing was logged, the normal application mounted,
+ * and the acceptance runner could only report that result.json never appeared
+ * 60 seconds later (run 41437956656, macOS `nano-edit`).
+ *
+ * Starting them together keeps a slow loader from starving the rest while each
+ * one still gives up at the same absolute deadline.
+ */
 export async function loadOptionalBootstrapConfigs<
   TRemote,
   TProbe,
@@ -104,23 +191,14 @@ export async function loadOptionalBootstrapConfigs<
   },
   deadlineAt: number,
   signal?: AbortSignal,
+  report?: (report: BootstrapConfigReport) => void,
 ) {
-  return {
-    remotePrompt: await loadBootstrapConfig(
-      loaders.remotePrompt,
-      deadlineAt,
-      signal,
-    ),
-    inputProbe: await loadBootstrapConfig(
-      loaders.inputProbe,
-      deadlineAt,
-      signal,
-    ),
-    rawProbe: await loadBootstrapConfig(loaders.rawProbe, deadlineAt, signal),
-    shellProbe: await loadBootstrapConfig(
-      loaders.shellProbe,
-      deadlineAt,
-      signal,
-    ),
-  }
+  const [remotePrompt, inputProbe, rawProbe, shellProbe] = await Promise.all([
+    loadBootstrapConfig(loaders.remotePrompt, deadlineAt, signal, bootstrapNow, report, 'remotePrompt'),
+    loadBootstrapConfig(loaders.inputProbe, deadlineAt, signal, bootstrapNow, report, 'inputProbe'),
+    loadBootstrapConfig(loaders.rawProbe, deadlineAt, signal, bootstrapNow, report, 'rawProbe'),
+    loadBootstrapConfig(loaders.shellProbe, deadlineAt, signal, bootstrapNow, report, 'shellProbe'),
+  ])
+  return { remotePrompt, inputProbe, rawProbe, shellProbe }
 }
+

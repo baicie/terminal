@@ -1,6 +1,9 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
@@ -8,6 +11,7 @@ import { PrismaService } from '../prisma.service'
 import { buildShareUpdateData } from '../sync/share-write-data'
 import { deleteShareWithAudit } from './share-deletion'
 import { resolveCreateSensitivity } from './share-security'
+import { toShareSnapshot, toShareSnapshots } from './share-serializer'
 
 @Injectable()
 export class SharesService {
@@ -15,10 +19,14 @@ export class SharesService {
 
   async findAll(teamId: string, userId: string) {
     await this.checkMembership(teamId, userId)
-    return this.prisma.share.findMany({
+    const rows = await this.prisma.share.findMany({
       where: { teamId },
       orderBy: { createdAt: 'desc' },
     })
+    // Every response goes through the same mapping as the sync endpoints: a
+    // Prisma row carries a BigInt version, which JSON.stringify refuses to
+    // serialise (P9.3.1 P0-2).
+    return toShareSnapshots(rows)
   }
 
   async create(
@@ -37,7 +45,7 @@ export class SharesService {
       data.isSensitive,
       data.encryptedData,
     )
-    return this.prisma.share.create({
+    const created = await this.prisma.share.create({
       data: {
         teamId,
         type: data.type,
@@ -49,6 +57,7 @@ export class SharesService {
         isSensitive,
       },
     })
+    return toShareSnapshot(created)
   }
 
   async findOne(teamId: string, shareId: string, userId: string) {
@@ -57,7 +66,7 @@ export class SharesService {
       where: { id: shareId, teamId },
     })
     if (!share) throw new NotFoundException('Share not found')
-    return share
+    return toShareSnapshot(share)
   }
 
   async update(
@@ -65,6 +74,7 @@ export class SharesService {
     shareId: string,
     userId: string,
     data: {
+      baseVersion?: number
       permission?: 'READONLY' | 'READWRITE'
       data?: unknown
       encryptedData?: string
@@ -80,13 +90,17 @@ export class SharesService {
     if (!isCreator && share.permission !== 'READWRITE') {
       throw new ForbiddenException('Only creator can update share')
     }
+    const baseVersion = this.requireBaseVersion(data.baseVersion)
 
     const written = await this.prisma.share.updateMany({
       where: {
         id: shareId,
         teamId,
-        sharedBy: share.sharedBy,
-        updatedAt: share.updatedAt,
+        // The version column is written by the database trigger on every
+        // update. Comparing it makes the write a true CAS: a caller holding a
+        // stale row cannot overwrite a newer edit, even when both writes land
+        // in the same millisecond (P9.3.2 A2).
+        version: baseVersion,
       },
       data: isCreator
         ? buildShareUpdateData(data, share)
@@ -95,7 +109,11 @@ export class SharesService {
     if (written.count !== 1) {
       throw new ConflictException('Share was modified concurrently')
     }
-    return this.prisma.share.findFirst({ where: { id: shareId, teamId } })
+    const updated = await this.prisma.share.findFirst({
+      where: { id: shareId, teamId },
+    })
+    if (!updated) throw new NotFoundException('Share not found')
+    return toShareSnapshot(updated)
   }
 
   async delete(teamId: string, shareId: string, userId: string) {
@@ -124,5 +142,20 @@ export class SharesService {
       throw new ForbiddenException('Not a team member')
     }
     return membership
+  }
+
+  private requireBaseVersion(baseVersion: number | undefined): bigint {
+    if (baseVersion === undefined) {
+      throw new HttpException(
+        'baseVersion is required for share updates',
+        HttpStatus.PRECONDITION_REQUIRED,
+      )
+    }
+    if (!Number.isSafeInteger(baseVersion) || baseVersion < 0) {
+      throw new BadRequestException(
+        'baseVersion must be a non-negative safe integer',
+      )
+    }
+    return BigInt(baseVersion)
   }
 }

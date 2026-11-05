@@ -93,10 +93,22 @@ class ConflictItemDto {
   @Matches(IDENTIFIER_PATTERN)
   id!: string
 
+  /** Display only: a millisecond clock is not a version and never decides. */
   @IsInt()
   @Min(0)
   @Max(Number.MAX_SAFE_INTEGER)
   updatedAt!: number
+
+  /**
+   * Server version this client's copy is based on. When present it is the only
+   * thing the verdict is computed from, so all three endpoints agree on what a
+   * conflict is; without it the millisecond timestamp is all there is.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(Number.MAX_SAFE_INTEGER)
+  version?: number
 
   @IsIn(['HOST', 'SNIPPET_PACKAGE'])
   type!: 'HOST' | 'SNIPPET_PACKAGE'

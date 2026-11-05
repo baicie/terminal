@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { Host } from '@/types'
 import type { TabType } from '../types'
-import { traceStage } from '@/service/database/startup-trace'
+import { traceStageAndWait } from '@/service/database/startup-trace'
 import { buildSshJumpHostIpcConfig } from './ssh-jump-config'
 
 export type TerminalShellIntegration = 'bash' | 'zsh'
@@ -47,7 +47,7 @@ export async function startTerminalShell(
   attemptId?: string,
   connectionTimeoutMs?: number,
 ): Promise<string> {
-  traceStage('session-create-requested', tabType)
+  await traceStageAndWait('session-create-requested', tabType)
   const sessionId = await createTerminalShell(
     tabType,
     host,
@@ -60,7 +60,7 @@ export async function startTerminalShell(
     attemptId,
     connectionTimeoutMs,
   )
-  traceStage('session-created', sessionId)
+  await traceStageAndWait('session-created', sessionId)
   return sessionId
 }
 

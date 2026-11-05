@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   removeSharesAbsentFromSnapshot: vi.fn(),
   removeSharedSnippet: vi.fn(),
   removeUnauthorizedTeamShares: vi.fn(),
+  resolveConflict: vi.fn(),
+  getShare: vi.fn(),
 }))
 
 vi.mock('@/service/database', () => ({
@@ -33,6 +35,8 @@ vi.mock('@/service/team-api', () => ({
     configure: mocks.configure,
     getChanges: mocks.getChanges,
     pushChanges: mocks.pushChanges,
+    resolveConflict: mocks.resolveConflict,
+    getShare: mocks.getShare,
   },
 }))
 
@@ -531,4 +535,210 @@ it('never prunes local rows on a round that proves nothing about absence', async
   await createHarness().actions.sync()
 
   expect(mocks.removeSharesAbsentFromSnapshot).not.toHaveBeenCalled()
+})
+
+// ---------------------------------------------------------------------------
+// P9.3.1 P0-1：REMOTE 解决必须落盘服务端密文
+//
+// 复现路径：pull 发现冲突 → 用户在冲突对话框选 REMOTE → syncWithConflictResolution。
+// 旧实现用本地行的 encryptedData 填充冲突快照缺失的字段，于是服务端是
+// version 6 / ciphertext-B，客户端写回 version 6 / ciphertext-A 且 dirty=0。
+// ---------------------------------------------------------------------------
+
+function sensitiveConflictRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'share-1',
+    teamId: 'team-1',
+    hostData: {},
+    sharedBy: 'user-1',
+    permission: 'READWRITE',
+    createdAt: 1,
+    updatedAt: 2,
+    version: 5,
+    isSensitive: true,
+    encryptedData: 'ciphertext-LOCAL-STALE',
+    ...overrides,
+  }
+}
+
+it('adopts the remote ciphertext, never the stale local one, for a sensitive REMOTE resolution', async () => {
+  const harness = createHarness({
+    sharedHosts: [sensitiveConflictRow()],
+    syncConflicts: [
+      {
+        shareId: 'share-1',
+        shareType: 'HOST',
+        localVersion: { updatedAt: 2, data: {} },
+        remoteVersion: {
+          updatedAt: 3,
+          data: {},
+          updatedBy: 'user-2',
+          version: 6,
+          isSensitive: true,
+        },
+      },
+    ],
+  } as unknown as Partial<TeamState>)
+
+  mocks.resolveConflict.mockResolvedValue({ ok: true, data: { success: true } })
+  mocks.getShare.mockResolvedValue({
+    ok: true,
+    data: {
+      id: 'share-1',
+      teamId: 'team-1',
+      type: 'HOST',
+      data: {},
+      encryptedData: 'ciphertext-REMOTE-NEW',
+      isSensitive: true,
+      permission: 'READWRITE',
+      sharedBy: 'user-2',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+      version: 6,
+    },
+  })
+
+  await harness.actions.syncWithConflictResolution('REMOTE', 'share-1')
+
+  expect(harness.state().syncError).toBeNull()
+  const written = mocks.addSharedHost.mock.calls.at(-1)?.[0]
+  expect(written.encrypted_data).toBe('ciphertext-REMOTE-NEW')
+  expect(written.version).toBe(6)
+  expect(written.is_sensitive).toBe(1)
+  expect(written.shared_by).toBe('user-2')
+  expect(written.permission).toBe('readwrite')
+  expect(harness.state().syncConflicts).toEqual([])
+})
+
+it('reads the server copy when a sensitive conflict snapshot has no ciphertext', async () => {
+  // A conflict recorded before the snapshot carried its ciphertext must not be
+  // completed from the local row: that is the exact substitution P9.3.1 P0-1.
+  const harness = createHarness({
+    sharedHosts: [sensitiveConflictRow()],
+    syncConflicts: [
+      {
+        shareId: 'share-1',
+        shareType: 'HOST',
+        localVersion: { updatedAt: 2, data: {} },
+        remoteVersion: { updatedAt: 3, data: {}, updatedBy: 'user-2', version: 6, isSensitive: true },
+      },
+    ],
+  } as unknown as Partial<TeamState>)
+
+  mocks.resolveConflict.mockResolvedValue({ ok: true, data: { success: true } })
+  mocks.getShare.mockResolvedValue({
+    ok: true,
+    data: {
+      id: 'share-1',
+      teamId: 'team-1',
+      type: 'HOST',
+      data: {},
+      encryptedData: 'ciphertext-REMOTE-NEW',
+      isSensitive: true,
+      permission: 'READONLY',
+      sharedBy: 'user-2',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+      version: 7,
+    },
+  })
+
+  await harness.actions.syncWithConflictResolution('REMOTE', 'share-1')
+
+  expect(mocks.getShare).toHaveBeenCalledOnce()
+  const written = mocks.addSharedHost.mock.calls.at(-1)?.[0]
+  expect(written.encrypted_data).toBe('ciphertext-REMOTE-NEW')
+  expect(written.version).toBe(7)
+  expect(written.permission).toBe('readonly')
+  expect(written.shared_by).toBe('user-2')
+})
+
+it('keeps the conflict when a sensitive snapshot still has no ciphertext on the server', async () => {
+  const harness = createHarness({
+    sharedHosts: [sensitiveConflictRow()],
+    syncConflicts: [
+      {
+        shareId: 'share-1',
+        shareType: 'HOST',
+        localVersion: { updatedAt: 2, data: {} },
+        remoteVersion: { updatedAt: 3, data: {}, updatedBy: 'user-2', isSensitive: true },
+      },
+    ],
+  } as unknown as Partial<TeamState>)
+
+  mocks.resolveConflict.mockResolvedValue({ ok: true, data: { success: true } })
+  mocks.getShare.mockResolvedValue({
+    ok: true,
+    data: {
+      id: 'share-1',
+      teamId: 'team-1',
+      type: 'HOST',
+      data: {},
+      encryptedData: null,
+      isSensitive: true,
+      permission: 'READWRITE',
+      sharedBy: 'user-2',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+      version: 6,
+    },
+  })
+
+  await harness.actions.syncWithConflictResolution('REMOTE', 'share-1')
+
+  expect(mocks.addSharedHost).not.toHaveBeenCalled()
+  expect(harness.state().syncConflicts).toHaveLength(1)
+  expect(harness.state().syncError).toContain('ciphertext')
+})
+
+it('adopts server permission and owner for a plaintext REMOTE resolution', async () => {
+  const harness = createHarness({
+    sharedHosts: [
+      {
+        id: 'share-1',
+        teamId: 'team-1',
+        hostData: { name: 'local' },
+        sharedBy: 'user-1',
+        permission: 'READWRITE',
+        createdAt: 1,
+        updatedAt: 2,
+        version: 5,
+        isSensitive: false,
+        encryptedData: null,
+      },
+    ],
+    syncConflicts: [
+      {
+        shareId: 'share-1',
+        shareType: 'HOST',
+        localVersion: { updatedAt: 2, data: { name: 'local' } },
+        remoteVersion: { updatedAt: 3, data: { name: 'remote' }, updatedBy: 'user-2', version: 6 },
+      },
+    ],
+  } as unknown as Partial<TeamState>)
+
+  mocks.resolveConflict.mockResolvedValue({ ok: true, data: { success: true } })
+  mocks.getShare.mockResolvedValue({
+    ok: true,
+    data: {
+      id: 'share-1',
+      teamId: 'team-1',
+      type: 'HOST',
+      data: { name: 'remote' },
+      encryptedData: null,
+      isSensitive: false,
+      permission: 'READONLY',
+      sharedBy: 'user-2',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+      version: 6,
+    },
+  })
+
+  await harness.actions.syncWithConflictResolution('REMOTE', 'share-1')
+
+  const written = mocks.addSharedHost.mock.calls.at(-1)?.[0]
+  expect(written.permission).toBe('readonly')
+  expect(written.shared_by).toBe('user-2')
+  expect(JSON.parse(written.host_data)).toEqual({ name: 'remote' })
 })

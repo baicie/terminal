@@ -26,6 +26,20 @@ export function hasData(value: unknown): boolean {
     && Object.keys(value).length > 0
 }
 
+/**
+ * True when this conflict record actually carries the server's snapshot.
+ *
+ * `data` alone is not the test: a sensitive share's snapshot keeps the
+ * ciphertext and leaves `data` an empty placeholder, so judging by `data` would
+ * call the only usable snapshot "empty" and let a push-only report replace it.
+ * A version is what a snapshot always has and a push report never does.
+ */
+function hasRemoteSnapshot(conflict: SyncConflict): boolean {
+  const { remoteVersion } = conflict
+  return typeof remoteVersion.version === 'number'
+    && (hasData(remoteVersion.data) || typeof remoteVersion.encryptedData === 'string')
+}
+
 /** The richer of two reports of one conflict wins: only a pull knows the remote side. */
 export function mergeConflicts(
   existing: SyncConflict[],
@@ -36,8 +50,8 @@ export function mergeConflicts(
   for (const conflict of incoming) {
     const previous = byId.get(conflict.shareId)
     const keepRemote = previous !== undefined
-      && hasData(previous.remoteVersion.data)
-      && !hasData(conflict.remoteVersion.data)
+      && hasRemoteSnapshot(previous)
+      && !hasRemoteSnapshot(conflict)
     byId.set(
       conflict.shareId,
       keepRemote
@@ -81,11 +95,19 @@ export async function pushLocalShares(
   if (local.length === 0) return []
   const pushed = local.map(item => {
     const baseVersion = typeof item.version === 'number' ? item.version : null
+    const isSensitive = item.isSensitive === true
     return {
       id: item.id,
       teamId: item.teamId || currentTeamId,
       type: item._type,
-      data: shareData(item),
+      // A sensitive share's payload *is* its ciphertext: sending the local
+      // plaintext alongside `isSensitive` would either be refused or stored as
+      // plaintext, and both break the secrecy the flag promises (P9.2-2).
+      data: isSensitive ? {} : shareData(item),
+      ...(isSensitive && typeof item.encryptedData === 'string'
+        ? { encryptedData: item.encryptedData }
+        : {}),
+      isSensitive,
       permission: item.permission.toUpperCase() as 'READONLY' | 'READWRITE',
       operation: baseVersion === null ? ('CREATE' as const) : ('UPDATE' as const),
       ...(baseVersion === null ? {} : { baseVersion }),
@@ -110,6 +132,8 @@ export async function pushLocalShares(
       created_at: item.createdAt,
       version: typeof item.version === 'number' ? item.version : null,
       updated_at: item.updatedAt ?? item.createdAt,
+      is_sensitive: item.isSensitive === true ? 1 : 0,
+      encrypted_data: item.encryptedData ?? null,
     }
     if (item._type === 'HOST') {
       await addSharedHost(
@@ -123,7 +147,11 @@ export async function pushLocalShares(
       )
     }
   }
-  return (response.data?.conflicts ?? []).map(shareId =>
-    localConflict(local.find(item => item.id === shareId)),
-  )
+  return (response.data?.conflicts ?? []).map((shareId) => {
+    const item = local.find(entry => entry.id === shareId)
+    return {
+      ...localConflict(item),
+      shareType: item?._type === 'SNIPPET_PACKAGE' ? 'SNIPPET_PACKAGE' : 'HOST',
+    }
+  })
 }

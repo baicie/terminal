@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
@@ -236,24 +237,29 @@ test('the rendered table carries a real score on every scored row', () => {
   // The regression this whole file exists for. The advisory table's rows are
   // parsed rather than substring-counted, because the not-published marker also
   // appears legitimately in the summary histograms above the table.
+  // The table gained a leading `类别` (kind) column in Phase 9.2, so the row
+  // pattern now allows a kind cell before the advisory id. A `RUSTSEC-` id is
+  // still required: a row that lost its id is not a row this test should skip
+  // silently.
   const dataRows = markdown
     .split('\n')
-    .filter(line => /^\| \d+ \| RUSTSEC-/.test(line))
+    .filter(line => /^\| \d+ \| \w+ \| RUSTSEC-/.test(line))
     .map(line => line.split('|').map(cell => cell.trim()))
   assert.equal(dataRows.length, 6)
 
-  // Column 5 is the vector, column 6 the recomputed score. A row holding a real
+  // Column indices after the kind column: 0 '', 1 '#', 2 kind, 3 id, 4 crate,
+  // 5 version, 6 score, 7 vector, 8 reach, 9 platforms. A row holding a real
   // vector but an empty score cell is exactly the bug the broken regex caused:
   // the data was in hand and the column readers rely on was blank anyway.
   const vectorWithoutScore = dataRows.filter(
-    cells => cells[5] !== NOT_PUBLISHED && cells[6] === NOT_PUBLISHED,
+    cells => cells[7] !== NOT_PUBLISHED && cells[6] === NOT_PUBLISHED,
   )
   assert.deepEqual(vectorWithoutScore, [])
 
   // Only the two advisories RustSec published no vector for stay unscored.
   const unscored = dataRows.filter(cells => cells[6] === NOT_PUBLISHED)
   assert.deepEqual(
-    unscored.map(cells => cells[3]),
+    unscored.map(cells => cells[4]),
     ['h2', 'quinn-proto'],
   )
 })
@@ -270,4 +276,60 @@ test('the report highlights high severity inside the build graph', () => {
   const markdown = renderLedgerMarkdown(rows, summarize(rows))
   assert.match(markdown, /russh/)
   assert.match(markdown, /russh-cryptovec/)
+})
+
+test('unsound, unmaintained and yanked crates are ledger rows too', () => {
+  // Until Phase 9.2 this script read only `vulnerabilities.list`, so a crate
+  // that cargo audit flags as unsound or withdrawn never appeared in the ledger
+  // at all. The rows are tagged with their class so a vulnerability and a
+  // maintenance signal stay distinguishable.
+  const snapshot = {
+    vulnerabilities: { list: [] },
+    warnings: {
+      unsound: [
+        {
+          advisory: { id: 'RUSTSEC-2024-0429', title: 'unsound iterator', cvss: null },
+          package: { name: 'glib', version: '0.18.5' },
+        },
+      ],
+      unmaintained: [
+        {
+          advisory: { id: 'RUSTSEC-2024-0370', title: 'nobody maintains this', cvss: null },
+          package: { name: 'proc-macro-error', version: '1.0.4' },
+        },
+      ],
+      yanked: [{ package: { name: 'aes', version: '0.9.0' }, kind: 'yanked' }],
+    },
+  }
+  const dir = mkdtempSync(path.join(tmpdir(), 'ledger-'))
+  try {
+    const input = path.join(dir, 'audit.json')
+    writeFileSync(input, JSON.stringify(snapshot))
+    const rows = readAudit(input)
+    // Order is presentation, not contract: assert the set so a future reordering
+    // of the classes does not fail a test that is about coverage.
+    assert.deepEqual(
+      rows.map(row => row.kind + ':' + row.package.name).sort(),
+      ['unmaintained:proc-macro-error', 'unsound:glib', 'yanked:aes'],
+    )
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a yanked entry becomes a readable ledger row without a fabricated score', () => {
+  // A yanked entry has no advisory object at all: no id, no title, no vector.
+  // Without a synthesized id it would key as an empty string, and the row must
+  // not invent a CVSS score it does not have.
+  // The crate name/version have to be one the stub trees know: an unknown pair
+  // trips the "line scan says absent, --invert says present" guard, which is the
+  // guard doing its job rather than a fixture problem to work around.
+  const row = buildRow(
+    { kind: 'yanked', package: { name: 'quinn-proto', version: '0.11.14' } },
+    stubTrees(),
+  )
+  assert.equal(row.id, 'YANKED-quinn-proto')
+  assert.equal(row.title, 'withdrawn release')
+  assert.equal(row.score, null)
+  assert.equal(row.cvss, NOT_PUBLISHED)
 })

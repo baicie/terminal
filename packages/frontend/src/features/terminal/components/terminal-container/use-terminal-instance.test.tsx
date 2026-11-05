@@ -21,6 +21,11 @@ const mocks = vi.hoisted(() => ({
   webglContextLossHandlers: [] as Array<() => void>,
   titleChangeHandlers: [] as Array<(title: string) => void>,
   oscHandlers: new Map<number, (data: string) => boolean>(),
+  traceStage: vi.fn(),
+}))
+
+vi.mock('@/service/database/startup-trace', () => ({
+  traceStage: mocks.traceStage,
 }))
 
 vi.mock('@xterm/addon-fit', () => ({
@@ -169,6 +174,21 @@ describe('useTerminalInstance activation', () => {
     expect(mocks.proposeDimensions).toHaveBeenCalledOnce()
     expect(mocks.resize).toHaveBeenCalledWith(132, 43)
     expect(result.current.termInstance).toMatchObject({ cols: 132, rows: 43 })
+  })
+
+  it('records the terminal mount against both tab and workspace', () => {
+    const { result, rerender } = renderHook(
+      ({ tabId }) => useTerminalInstance({ ...baseOptions, tabId }),
+      { initialProps: { tabId: '' } },
+    )
+
+    result.current.containerRef.current = document.createElement('div')
+    rerender({ tabId: 'terminal-one' })
+
+    expect(mocks.traceStage).toHaveBeenCalledWith(
+      'terminal-mounted',
+      'terminal-one@workspace-one',
+    )
   })
 
   it('cancels the deferred initial fit when the terminal is unmounted', () => {

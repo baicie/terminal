@@ -217,8 +217,11 @@ it('mounts the normal app when probe config IPC never settles and observes late 
   await expect(startup).resolves.toBe('app')
   expect(render.mock.calls[0][0].type).toBe(App)
   expect(loadProbeConfig).toHaveBeenCalledOnce()
-  expect(loadRawProbeConfig).not.toHaveBeenCalled()
-  expect(loadShellProbeConfig).not.toHaveBeenCalled()
+  // The siblings start alongside the hung probe rather than queueing behind
+  // it. Queueing let one slow round-trip consume the whole config budget and
+  // silently drop every probe that came after it (run 41437956656).
+  expect(loadRawProbeConfig).toHaveBeenCalledOnce()
+  expect(loadShellProbeConfig).toHaveBeenCalledOnce()
 
   rejectConfig(new Error('late IPC rejection'))
   await Promise.resolve()

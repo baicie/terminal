@@ -1,5 +1,3 @@
-/* eslint-disable ts/ban-ts-comment -- the client sources reachable only through the alias below */
-
 // The client under test lives in the front-end package and reaches its own sources
 // through the '@/' alias that vitest.pg.config.ts resolves to ../frontend/src.
 // TypeScript cannot do the same here: that tree sits outside this project's rootDir
@@ -16,8 +14,15 @@ import type { PrismaService } from '../../prisma.service'
 // @ts-expect-error -- alias owned by vitest.pg.config.ts; see the note above
 import type { SharedHost, TeamState } from '@/store/team-types'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { SharesService } from '../../shares/shares.service'
 import { SyncService } from '../../sync/sync.service'
 import { connectRaw, createPrisma, resetDatabase } from './pg-harness'
+
+/** `/teams/<teamId>/shares/<shareId>` — the single-share read a REMOTE resolution uses. */
+function shareRead(path: string): { teamId: string, shareId: string } | null {
+  const match = /^\/teams\/([^/]+)\/shares\/([^/]+)$/.exec(path)
+  return match === null ? null : { teamId: match[1], shareId: match[2] }
+}
 
 // Phase 8.9 Task 3：客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 store）。
 // 唯一的接缝是网络：fetch 被换成把请求直接投给真实 SyncService 的桥，客户端
@@ -120,6 +125,7 @@ interface ClientHandle {
 describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 store）', () => {
   let prisma: PrismaService
   let service: SyncService
+  let sharesService: SharesService
   let raw: Client
   let teamId: string
   let clientA: ClientHandle
@@ -144,9 +150,17 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
     const { toSharedHost, toSharedSnippet } = await import('@/store/team-types')
     // @ts-expect-error -- alias owned by vitest.pg.config.ts
     const { syncCursorStorageKey } = await import('@/store/team-sync-engine')
-    // Forces this client's own connection: one SQLite database per module instance.
+    // Forces this client's own connection: one SQLite database per module
+    // instance. Take the handle this call opened rather than whatever is last
+    // in the shared registry -- another spec file in the same worker may have
+    // left its own databases behind, and reading its store would make the
+    // whole suite fail while each file passes alone (P9.3.1 flake).
+    const openedBefore = sqlite.databases.length
     await getDb()
-    const db = sqlite.databases[sqlite.databases.length - 1] as DatabaseSync
+    const db = sqlite.databases[openedBefore] as DatabaseSync
+    if (db === undefined) {
+      throw new Error('the client store did not open a SQLite database')
+    }
     // The local team row is what the share foreign key points at.
     await createTeam({
       id: teamId,
@@ -262,6 +276,7 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
     vi.stubGlobal('localStorage', new MemoryStorage())
     prisma = createPrisma()
     service = new SyncService(prisma)
+    sharesService = new SharesService(prisma)
     raw = await connectRaw()
     await resetDatabase(prisma)
     await prisma.user.createMany({ data: [{ id: USER_A }, { id: USER_B }] })
@@ -307,6 +322,11 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
           body.resolution,
           body.clientData,
         )
+      } else if (shareRead(path) !== null) {
+        // A REMOTE resolution reads the authoritative snapshot instead of trusting
+        // the (possibly placeholder) copy the conflict carried.
+        const { teamId: readTeamId, shareId } = shareRead(path)!
+        result = await sharesService.findOne(readTeamId, shareId, userId)
       } else {
         return new Response(JSON.stringify({ message: `Unhandled ${  path}` }), {
           status: 404,

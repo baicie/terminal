@@ -7,8 +7,8 @@ import {
 const teamSchemaStatements = [
   `CREATE TABLE IF NOT EXISTS teams (id TEXT PRIMARY KEY, name TEXT NOT NULL, owner_id TEXT NOT NULL, mode TEXT DEFAULT 'local', endpoint TEXT, api_token TEXT, auto_sync INTEGER DEFAULT 0, created_at INTEGER, updated_at INTEGER)`,
   `CREATE TABLE IF NOT EXISTS team_members (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, user_id TEXT NOT NULL, user_name TEXT, user_email TEXT, role TEXT DEFAULT 'member', joined_at INTEGER, FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE, UNIQUE(team_id, user_id))`,
-  `CREATE TABLE IF NOT EXISTS team_shared_hosts (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, host_data TEXT NOT NULL, shared_by TEXT NOT NULL, permission TEXT DEFAULT 'readonly', created_at INTEGER, version INTEGER, updated_at INTEGER, dirty INTEGER DEFAULT 0, FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE)`,
-  `CREATE TABLE IF NOT EXISTS team_shared_snippets (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, snippet_data TEXT NOT NULL, shared_by TEXT NOT NULL, permission TEXT DEFAULT 'readonly', created_at INTEGER, version INTEGER, updated_at INTEGER, dirty INTEGER DEFAULT 0, FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE)`,
+  `CREATE TABLE IF NOT EXISTS team_shared_hosts (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, host_data TEXT NOT NULL, shared_by TEXT NOT NULL, permission TEXT DEFAULT 'readonly', created_at INTEGER, version INTEGER, updated_at INTEGER, dirty INTEGER DEFAULT 0, is_sensitive INTEGER DEFAULT 0, encrypted_data TEXT, FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE)`,
+  `CREATE TABLE IF NOT EXISTS team_shared_snippets (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, snippet_data TEXT NOT NULL, shared_by TEXT NOT NULL, permission TEXT DEFAULT 'readonly', created_at INTEGER, version INTEGER, updated_at INTEGER, dirty INTEGER DEFAULT 0, is_sensitive INTEGER DEFAULT 0, encrypted_data TEXT, FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE)`,
   `CREATE TABLE IF NOT EXISTS team_invites (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, type TEXT NOT NULL, code TEXT UNIQUE, link_token TEXT UNIQUE, email TEXT, role TEXT DEFAULT 'member', created_by TEXT NOT NULL, expires_at INTEGER, used_at INTEGER, created_at INTEGER, FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE)`,
   `CREATE TABLE IF NOT EXISTS team_audit_logs (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, user_id TEXT NOT NULL, user_name TEXT, host_name TEXT, action TEXT NOT NULL, details TEXT, created_at INTEGER, FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE)`,
   `CREATE TABLE IF NOT EXISTS sync_queue (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, team_id TEXT NOT NULL, type TEXT NOT NULL, resource TEXT NOT NULL, resource_id TEXT NOT NULL, data TEXT, status TEXT DEFAULT 'pending', retry_count INTEGER DEFAULT 0, error TEXT, created_at INTEGER, synced_at INTEGER)`,
@@ -45,6 +45,19 @@ function sharedColumns(table: string): TeamColumnMigration[] {
       table,
       column: 'dirty',
       sql: `ALTER TABLE ${table} ADD COLUMN dirty INTEGER DEFAULT 0`,
+    },
+    {
+      // A client that does not know a row is sensitive cannot resolve a conflict
+      // on it without either downgrading it or guessing: both flags have to be
+      // stored locally, not only on the server (P9.2-2).
+      table,
+      column: 'is_sensitive',
+      sql: `ALTER TABLE ${table} ADD COLUMN is_sensitive INTEGER DEFAULT 0`,
+    },
+    {
+      table,
+      column: 'encrypted_data',
+      sql: `ALTER TABLE ${table} ADD COLUMN encrypted_data TEXT`,
     },
   ]
 }

@@ -1,0 +1,222 @@
+{
+  "$comment": [
+    "The advisories this build knowingly carries. `scripts/security-gate.mjs` reads this file:",
+    "an advisory not listed here fails the gate, and so does a listed advisory whose locked",
+    "version changed. The file can shrink without review; growing it requires a reason below",
+    "that somebody can check. This is a record of exposure, NOT a claim that the build is clean.",
+    "",
+    "Coverage is all three classes `cargo audit --json` reports, not just vulnerabilities:",
+    "`vulnerability` (a defect an attacker can use), `unsound` (a crate breaking a safety",
+    "invariant this build links), `unmaintained` (nobody will patch it) and `yanked` (the",
+    "publisher withdrew it). cargo-deny fails on all of them by default; before Phase 9.2",
+    "nothing in CI looked at any of them.",
+    "",
+    "Baseline state: 2026-11-02, after the russh 0.60.3 -> 0.65.0 migration and fifteen",
+    "dependency upgrades in the same cycle (h2, ctutils, rustls, rustls-webpki,",
+    "webpki-root-certs, aws-lc-rs, tauri-plugin-updater, tauri-plugin-notification, spin,",
+    "chacha20, aes, anyhow, event-listener, zvariant, tokio). Over those steps cargo audit",
+    "went from 27 vulnerabilities plus 16 warnings down to 8 plus 5. Not a straight line:",
+    "the snapshots taken along the way read 27/16, 25/17, 15/17, 10/12, 8/10, 8/6, 8/5,",
+    "because each upgrade reshuffled what the database knew and some intermediate states",
+    "were measured moments apart. Only the endpoints are meaningful. What changed: three",
+    "yanked releases were upgraded to non-withdrawn ones, and the unsound entries in",
+    "anyhow, event-listener and tokio were cleared by upgrading them.",
+    "",
+    "What remains, and what green means: 13 entries, of which 7 are lock-file residue absent",
+    "from every build graph, 5 are real but Linux-only (Tauri's tray and notification stack,",
+    "absent from the macOS and Windows graphs), and 1 (rsa on Linux, macOS and Windows) is a",
+    "live, unfixable exposure. Green here means 'no unrecorded advisory', NOT 'no known",
+    "vulnerabilities'. docs/phase9-2/security-remediation.md has the per-entry evidence.",
+    "",
+    "Every reachability claim below was produced by:",
+    "  cd src-tauri && cargo tree --invert <crate>@<version> --target all --all-features",
+    "A claim of 'absent' requires that command to print `nothing to print`. Platform-scoped",
+    "claims name the specific target triple instead of `--target all`. Re-run before",
+    "trusting any entry: an ignore whose re-review trigger has fired is a finding."
+  ],
+  "generated": "2026-11-02",
+  "auditTool": "cargo-audit 0.22.2",
+  "accepted": [
+    {
+      "id": "RUSTSEC-2026-0185",
+      "crate": "quinn-proto",
+      "version": "0.11.14",
+      "title": "Remote memory exhaustion in quinn-proto from unbounded out-of-order stream reassembly",
+      "severity": "7.5 high",
+      "reachable": false,
+      "reason": "Lock-file residue, not in the build graph. Chain: quinn-proto <- quinn <- reqwest, where quinn is an optional reqwest dependency behind its `http3` feature. Nothing in this workspace enables http3, and reqwest is only reached through tauri and tauri-plugin-updater, neither of which asks for HTTP/3. Cargo records the crate in Cargo.lock but never builds it.",
+      "evidence": "`cargo tree --invert quinn-proto@0.11.14 --target all --all-features` prints `nothing to print`. The intermediate `cargo tree --invert quinn@0.11.9 --target all --all-features` also prints `nothing to print`, so the whole QUIC subtree is absent rather than just this leaf.",
+      "reReviewWhen": "reqwest's feature set changes; tauri or tauri-plugin-updater bumps its reqwest requirement; or anything in this workspace enables an http3/QUIC feature. Enabling http3 makes this a live exposure immediately."
+    },
+    {
+      "id": "RUSTSEC-2026-0338",
+      "crate": "quinn-proto",
+      "version": "0.11.14",
+      "title": "Remote peer can panic quinn-proto with zero-length STREAM frames during unordered reads",
+      "severity": "unscored",
+      "reachable": false,
+      "reason": "Same absent QUIC subtree as RUSTSEC-2026-0185: quinn is an optional reqwest dependency behind the unused `http3` feature.",
+      "evidence": "`cargo tree --invert quinn-proto@0.11.14 --target all --all-features` prints `nothing to print`.",
+      "reReviewWhen": "Same as RUSTSEC-2026-0185."
+    },
+    {
+      "id": "RUSTSEC-2026-0339",
+      "crate": "quinn-proto",
+      "version": "0.11.14",
+      "title": "Unbounded growth of pending connection ID retirements in quinn-proto",
+      "severity": "unscored",
+      "reachable": false,
+      "reason": "Same absent QUIC subtree as RUSTSEC-2026-0185: quinn is an optional reqwest dependency behind the unused `http3` feature.",
+      "evidence": "`cargo tree --invert quinn-proto@0.11.14 --target all --all-features` prints `nothing to print`.",
+      "reReviewWhen": "Same as RUSTSEC-2026-0185."
+    },
+    {
+      "id": "RUSTSEC-2026-0340",
+      "crate": "quinn-proto",
+      "version": "0.11.14",
+      "title": "Peer minimum ACK delay can panic quinn-proto when ACK_FREQUENCY transmission is enabled",
+      "severity": "7.5 high",
+      "reachable": false,
+      "reason": "Same absent QUIC subtree as RUSTSEC-2026-0185: quinn is an optional reqwest dependency behind the unused `http3` feature.",
+      "evidence": "`cargo tree --invert quinn-proto@0.11.14 --target all --all-features` prints `nothing to print`.",
+      "reReviewWhen": "Same as RUSTSEC-2026-0185."
+    },
+    {
+      "id": "RUSTSEC-2026-0342",
+      "crate": "quinn-proto",
+      "version": "0.11.14",
+      "title": "Zero-length DATAGRAM frames bypass the receive buffer limit in quinn-proto",
+      "severity": "unscored",
+      "reachable": false,
+      "reason": "Same absent QUIC subtree as RUSTSEC-2026-0185: quinn is an optional reqwest dependency behind the unused `http3` feature.",
+      "evidence": "`cargo tree --invert quinn-proto@0.11.14 --target all --all-features` prints `nothing to print`.",
+      "reReviewWhen": "Same as RUSTSEC-2026-0185."
+    },
+    {
+      "id": "RUSTSEC-2026-0235",
+      "crate": "rkyv",
+      "version": "0.7.46",
+      "title": "Insufficient archive validation can cause out-of-bounds reads in archives containing Rc/Arc",
+      "severity": "unscored",
+      "reachable": false,
+      "reason": "Lock-file residue via a disabled feature. Chain: rkyv <- rust_decimal <- sqlx-core <- sqlx / tauri-plugin-sql. Unlike the quinn entries, rust_decimal itself IS in the build graph (curl: `cargo tree --invert rust_decimal@1.41.0` prints the sqlx chain), so this rests on rust_decimal's `rkyv` feature being off, not on the parent being absent. src-tauri/Cargo.toml pins sqlx with `default-features = false, features = [\"sqlite\", \"runtime-tokio\"]`, and none of that turns the feature on.",
+      "evidence": "`cargo tree --invert rkyv@0.7.46 --target all --all-features` prints `nothing to print`, while `cargo tree --invert rust_decimal@1.41.0 --target all --all-features` does print the sqlx chain. That contrast is the point: the parent is present, the advisory crate is not.",
+      "reReviewWhen": "sqlx's features in src-tauri/Cargo.toml change; sqlx or tauri-plugin-sql is bumped; or any dependency starts enabling rust_decimal's `rkyv`/`rkyv-safe` feature."
+    },
+    {
+      "id": "RUSTSEC-2023-0071",
+      "crate": "rsa",
+      "version": "0.9.10",
+      "title": "Marvin Attack: potential key recovery through timing sidechannels",
+      "severity": "5.9 medium",
+      "reachable": false,
+      "reason": "Lock-file residue via an unbuilt feature set. Present only through sqlx-mysql (sqlx's MySQL backend, own dependency of the sqlx workspace member), which this project never builds: sqlx is pinned to `features = [\"sqlite\", \"runtime-tokio\"]`. `cargo tree --invert rsa@0.9.10 --target all --all-features` prints `nothing to print`, confirming the MySQL subtree is absent.",
+      "evidence": "`cargo tree --invert rsa@0.9.10 --target all --all-features` prints `nothing to print`. Cargo.lock still lists the advisory crate because Cargo resolves sqlx's optional backends into the lock file.",
+      "reReviewWhen": "sqlx features change to include `mysql`; sqlx or tauri-plugin-sql is bumped in a way that pulls the MySQL backend into the graph."
+    },
+    {
+      "id": "RUSTSEC-2023-0071",
+      "crate": "rsa",
+      "version": "0.10.0-rc.18",
+      "title": "Marvin Attack: potential key recovery through timing sidechannels",
+      "severity": "5.9 medium",
+      "reachable": true,
+      "blocking": true,
+      "reason": "REAL exposure in the build graph, recorded here because it cannot be fixed. Chain: rsa 0.10.0-rc.18 <- russh 0.65.0 and <- ssh-key 0.7.0-rc.11, both of which are the SSH core. The advisory has `patched = []`: there is no fixed release. RustCrypto/RSA#626 (the issue this tracks) is still open as of the advisory data fetched on 2026-11-02, and the maintainers' position is that the constant-time fix is a rewrite, not a patch. `russh`'s `rsa` feature is on by default and this application genuinely needs RSA key support: turning it off to lower the count would remove a supported authentication method users depend on, which the Phase 9.2 brief explicitly forbids ('不得随意关闭密码学后端以换取审计数量下降').",
+      "evidence": "`cargo tree --invert rsa@0.10.0-rc.18 --target all --all-features` prints the russh 0.65.0 and ssh-key 0.7.0-rc.11 chains. Both `russh 0.65.0` and `ssh-key 0.7.0-rc.11` pin `rsa = \"=0.10.0-rc.18\"` exactly, so no patch-level bump is possible from here.",
+      "exposure": "Timing side channel on RSA private-key operations. Exploiting it needs an attacker who can time many decryptions with the same key, which over SSH means an authenticated peer plus extremely low network jitter. This client also acts as an SSH *client* far more often than as a server, and the affected operation is on the private key that russh uses when authenticating with an RSA key.",
+      "mitigation": "None available in-code without replacing russh's RSA backend. Documented as an accepted risk for the dev channel; see docs/phase9-2/security-remediation.md section 'Residual RSA'. A future russh release that moves off `rsa` (e.g. to a constant-time implementation) resolves this and must be taken as soon as it exists.",
+      "reReviewWhen": "russh or ssh-key publishes a release pinning a different rsa version, or RustCrypto/RSA#626 closes with a fix. Check the advisory data on every dependency bump: this entry must disappear the moment a patched rsa exists.",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    },
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2024-0370",
+      "crate": "proc-macro-error",
+      "version": "1.0.4",
+      "title": "proc-macro-error is unmaintained",
+      "severity": null,
+      "reachable": true,
+      "platforms": [
+        "linux"
+      ],
+      "reason": "Real but Linux-only, and only as a build-time macro. Chain: proc-macro-error <- glib-macros (proc-macro) <- glib <- atk <- gtk <- libappindicator <- tray-icon <- tauri. Tauri's tray-icon integration on Linux goes through GTK 3, whose gtk-rs binding 0.18 still uses proc-macro-error. The crate is never linked into the binary: it runs while compiling glib-macros and produces no code that ships. There is no upstream fix available at the gtk-rs version Tauri pins, and gtk-rs 0.19+ moved off it, so this resolves when Tauri bumps its GTK stack.",
+      "evidence": "`cargo tree --invert proc-macro-error@1.0.4 --target all --all-features` prints the glib-macros chain. Platform scope: the same command against `--target aarch64-apple-darwin` and `--target x86_64-pc-windows-msvc` both print `nothing to print`; only `--target x86_64-unknown-linux-gnu` shows it present.",
+      "exposure": "Build-time only on Linux. No attacker-controlled input reaches it: it formats compiler diagnostics inside a proc macro. The advisory is a maintenance signal, not a defect.",
+      "reReviewWhen": "tauri, tray-icon or the gtk-rs stack is bumped. Any Tauri release that moves to glib 0.19+ retires this entry."
+    },
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2026-0370",
+      "crate": "zvariant",
+      "version": "5.15.1",
+      "title": "`zvariant` is unmaintained",
+      "severity": null,
+      "reachable": true,
+      "platforms": [
+        "linux"
+      ],
+      "reason": "Real but Linux-only. Chain: zvariant <- zbus <- notify-rust <- tauri-plugin-notification. notify-rust uses zbus (D-Bus) to raise desktop notifications on Linux; this project calls that through the notification plugin's public API and never touches zvariant directly. The advisory says zvariant merged into zbus 6.0.0 as its `wire` module; that migration belongs to notify-rust, not to this project.",
+      "evidence": "`cargo tree --invert zvariant@5.15.1 --target all --all-features` prints the notify-rust chain. Platform scope: absent on `--target aarch64-apple-darwin` and `--target x86_64-pc-windows-msvc`, present only on `--target x86_64-unknown-linux-gnu`.",
+      "exposure": "No direct calls: `grep -rn 'zbus\\|zvariant' src-tauri/src/` returns nothing. The crate parses D-Bus wire data produced by the desktop notification daemon on the same machine.",
+      "reReviewWhen": "notify-rust or tauri-plugin-notification is bumped to a release built on zbus 6+, which retires this entry and the two below."
+    },
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2026-0371",
+      "crate": "zbus_names",
+      "version": "4.3.2",
+      "title": "`zbus_names` is unmaintained",
+      "severity": null,
+      "reachable": true,
+      "platforms": [
+        "linux"
+      ],
+      "reason": "Same zvariant/zbus migration as RUSTSEC-2026-0370: the crate is a helper of the zbus stack behind notify-rust, reached only on Linux, and the upstream project folded it into zbus 6.0.0.",
+      "evidence": "Absent from the macOS and Windows graphs, present on `--target x86_64-unknown-linux-gnu` via the chain shown for RUSTSEC-2026-0370.",
+      "exposure": "No direct calls from this project.",
+      "reReviewWhen": "Same as RUSTSEC-2026-0370."
+    },
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2026-0372",
+      "crate": "zvariant_derive",
+      "version": "5.15.1",
+      "title": "`zvariant_derive` is unmaintained",
+      "severity": null,
+      "reachable": true,
+      "platforms": [
+        "linux"
+      ],
+      "reason": "Same zvariant/zbus migration as RUSTSEC-2026-0370, and like proc-macro-error it is a proc macro: it runs while compiling zvariant and contributes no shipped code.",
+      "evidence": "Absent from the macOS and Windows graphs, present on `--target x86_64-unknown-linux-gnu`.",
+      "exposure": "Build-time only on Linux.",
+      "reReviewWhen": "Same as RUSTSEC-2026-0370."
+    },
+    {
+      "kind": "unsound",
+      "id": "RUSTSEC-2024-0429",
+      "crate": "glib",
+      "version": "0.18.5",
+      "title": "Unsoundness in `Iterator` and `DoubleEndedIterator` impls for `glib::VariantStrIter`",
+      "severity": null,
+      "reachable": true,
+      "platforms": [
+        "linux"
+      ],
+      "reason": "Real but Linux-only, and behind an API this project does not call. Chain: glib <- atk <- gtk <- libappindicator <- tray-icon <- tauri. The unsound code is `VariantStrIter`'s iterator implementation; it is reachable only by iterating a GLib Variant string iterator from Rust. This project writes no GTK or GLib code at all (`grep -rn 'glib' src-tauri/src/` returns nothing): Tauri's tray implementation is the only consumer, and it does not iterate VariantStrIter. gtk-rs fixed it in 0.18.6+ but Tauri pins 0.18.5 through its GTK stack, so the fix has to come from a Tauri bump.",
+      "evidence": "`cargo tree --invert glib@0.18.5 --target all --all-features` prints the atk/gtk/libappindicator chain. Platform scope: `nothing to print` for `--target aarch64-apple-darwin` and `--target x86_64-pc-windows-msvc`; present only for `--target x86_64-unknown-linux-gnu`.",
+      "exposure": "Requires Rust code to call `VariantStrIter`'s iterator methods. Nothing in this crate does; the only path into glib is Tauri's tray code, which uses a fixed set of GTK calls.",
+      "reReviewWhen": "tauri or tray-icon bumps its gtk-rs dependency to glib 0.18.6+ or 0.19+, which retires this entry."
+    }
+  ],
+  "advisoryDatabase": {
+    "commit": "2295466c4e9df26647fd67d8fa1c705ac2fc7f81",
+    "updated": "2026-10-30T12:12:39+01:00",
+    "advisoryCount": 1395
+  }
+}

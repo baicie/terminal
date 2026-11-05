@@ -1,40 +1,37 @@
-# cargo-deny configuration for the Tauri backend.
+# cargo-deny configuration, kept for anyone running the tool by hand.
 #
-# Scope: only the `advisories` check is wired into CI (as a *diagnostic* job,
-# see .github/workflows/ci.yml -> cargo-audit-diagnostic). `bans`, `licenses`
-# and `sources` are deliberately left at their defaults and are NOT gates; do
-# not assume this file has vetted them.
+# THIS IS NOT A CI GATE. The `advisories` check in .github/workflows/ci.yml runs
+# scripts/security-gate.mjs against src-tauri/security-baseline.json instead.
+# Reasons, both of them concrete:
 #
-# What the ignore list below is for
-# ---------------------------------
-# `cargo audit` reports 27 advisories against Cargo.lock. 21 of those are on
-# crates that are really in the build graph: those are defects to fix, and NONE
-# of them is ignored here. The remaining 6 are on crates that appear in
-# Cargo.lock but are not in the build graph at all -- they are lock-file residue
-# from optional dependencies that no enabled feature turns on.
+#   1. cargo-deny's ignore list is keyed by advisory id alone, so an ignore for
+#      RUSTSEC-2023-0071 (rsa) silences it for every locked version at once. That
+#      advisory fires against rsa 0.9.10, which is not in the build graph, and
+#      against rsa 0.10.0-rc.18, which is in the graph via russh and has no
+#      upstream fix. Recording the first would hide the second; the baseline keys
+#      on kind+id+crate+version so both decisions can be stated separately.
+#   2. cargo-deny 0.20.2 accepts only `id` and `reason` per ignore (it rejects
+#      `expiration`), so there is no way to make an exemption expire. The
+#      re-review trigger has to live inside free text, which nothing enforces.
 #
-# Before this file existed those 6 sat silently in the same count as the 21,
-# which made the number look worse than it is and gave no record of *why* they
-# were being skipped. Each ignore below carries the command another person can
-# re-run to disprove it.
+# security-gate.mjs has neither problem, and it also rates the crates cargo audit
+# reports under `warnings` - unsound, unmaintained and yanked - not just
+# vulnerabilities. Use this file to cross-check your reading of the baseline, and
+# if the two ever disagree, the baseline and its gate are authoritative.
 #
-# These are NOT permanent exemptions. cargo-deny 0.20.2 accepts only `id` and
-# `reason` in an ignore entry (`expiration` is rejected by the deserializer), so
-# the re-review trigger lives inside each `reason` string. Honour it: an ignore
-# whose trigger has fired is a finding, not a decision.
-#
-# Reachability method (identical for every entry below):
+# Reachability method used to justify each entry below:
 #
 #   cd src-tauri
-#   cargo tree --invert <crate> --target all --offline
-#   cargo tree --invert <crate> --target all --all-features --offline
+#   cargo tree --invert <crate>@<version> --target all --all-features
 #
-# Both must print `warning: nothing to print.` for the ignore to stand. The
-# `--target all` flag matters: a Windows-only dependency is invisible from a
-# macOS host without it, and an ignore justified on a single host is worthless.
-# `--all-features` matters because CI builds with `--all-features`, so a crate
-# that is unreachable by default but reachable under all-features would be a
-# real exposure.
+# That command must print `warning: nothing to print.` for the ignore to stand.
+# `--target all` matters because a Windows- or Linux-only dependency is invisible
+# from a macOS host without it; `--all-features` matters because CI builds with
+# --all-features.
+#
+# Kept for hand-runs only, NOT wired into CI. See src-tauri/security-baseline.json
+# for the authoritative record and docs/phase9-2/security-remediation.md for the
+# per-entry evidence, including the rsa exposure this file cannot express.
 
 [advisories]
 version = 2
@@ -85,5 +82,27 @@ ignore = [
   # Re-review trigger: whenever sqlx's features in src-tauri/Cargo.toml change,
   # whenever sqlx or tauri-plugin-sql is bumped, or if any dependency starts
   # enabling rust_decimal's `rkyv` / `rkyv-safe` feature.
-  { id = "RUSTSEC-2026-0235", reason = "rkyv 0.7.46 is lock-file residue, not in the build graph: rkyv is an optional rust_decimal dep behind rust_decimal's unused `rkyv` feature. rust_decimal itself IS reachable via sqlx-core, so this rests on the feature being off, not the parent being absent. Verified by `cargo tree --invert rkyv --target all` and `--target all --all-features`, both `nothing to print`, while `--invert rust_decimal` prints the sqlx chain. Re-review when sqlx features in src-tauri/Cargo.toml change, when sqlx/tauri-plugin-sql is bumped, or if anything enables rust_decimal's rkyv feature." },
+  { id = "RUSTSEC-2026-0235", reason = "rkyv 0.7.46 is lock-file residue, not in the build graph: rkyv is an optional rust_decimal dep behind rust_decimal's unused `rkyv` feature. rust_decimal itself IS reachable via sqlx-core, so this rests on the feature being off, not the parent being absent. Verified by `cargo tree --invert rkyv@0.7.46 --target all --all-features`, which prints `nothing to print`, while `--invert rust_decimal@1.41.0` prints the sqlx chain. Re-review when sqlx features in src-tauri/Cargo.toml change, when sqlx/tauri-plugin-sql is bumped, or if anything enables rust_decimal's rkyv feature." },
+
+  # --- rsa 0.9.10: 1 advisory, not in the build graph ---------------------
+  #
+  # Residual chain: rsa 0.9.10 <- sqlx-mysql <- sqlx. The project pins sqlx to
+  # `default-features = false, features = ["sqlite", "runtime-tokio"]`
+  # (src-tauri/Cargo.toml), so the MySQL backend is resolved into Cargo.lock but
+  # never built.
+  #
+  # This is the version-specific half of RUSTSEC-2023-0071. The advisory also
+  # fires against rsa 0.10.0-rc.18, which IS in the build graph via russh; that
+  # one is deliberately absent from this list and recorded in
+  # security-baseline.json instead. cargo-deny's ignore is keyed by advisory id,
+  # so ignoring this id here suppresses *both* - which is exactly why
+  # security-gate.mjs, not cargo-deny, is the tool that rates the build. Treat a
+  # green `cargo deny` as "no unrecorded advisory of any kind other than the ones
+  # the baseline already names", never as "rsa is fine".
+  #
+  # Re-review trigger: sqlx features change to include `mysql`; sqlx or
+  # tauri-plugin-sql is bumped; or russh/ssh-key publish a release that pins a
+  # different rsa version (which should retire this ignore and the baseline entry
+  # together).
+  { id = "RUSTSEC-2023-0071", reason = "rsa 0.9.10 is lock-file residue, not in the build graph: it comes only from sqlx-mysql (sqlx's MySQL backend), and sqlx is pinned to `default-features = false, features = [\"sqlite\", \"runtime-tokio\"]`. Verified by `cargo tree --invert rsa@0.9.10 --target all --all-features`, which prints `nothing to print`. NOTE: the same advisory is LIVE on rsa 0.10.0-rc.18 via russh and is recorded in security-baseline.json, not fixed. Re-review when sqlx features change, when sqlx/tauri-plugin-sql is bumped, or when russh/ssh-key move off rsa 0.10.0-rc.18." },
 ]
