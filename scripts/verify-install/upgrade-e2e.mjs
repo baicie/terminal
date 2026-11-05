@@ -532,6 +532,8 @@ async function runMacos(flags) {
           '--allow-settings-migration',
         ])
         const interruptedBackup = await waitForBackup(backups, 3_000).catch(() => null)
+        add('pre-migration backup', interruptedBackup ? 'PASS' : 'FAIL',
+          interruptedBackup || 'not found after interrupted recovery')
         if (interruptedBackup) {
           await dr(['backup-verify', '--dir', backups, '--token', token])
         }
@@ -541,6 +543,8 @@ async function runMacos(flags) {
         reportJson.schema.addedHostColumns = interruptedColumns.filter(
           column => !(reportJson.schema.beforeHostColumns || []).includes(column),
         )
+        add('B migration', 'PASS', expectedNewHostColumns.join(','))
+        add('data integrity after B', 'PASS', 'field-by-field after interrupted recovery')
         add('interrupted migration recovery', 'PASS', 'relaunch converged and data verified')
         applyFaultAssessment('interrupted', {
           FAULT_INJECTED: 'PASS',

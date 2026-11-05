@@ -312,8 +312,15 @@ jobs:
           node-version: 24.16.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Install headless display tools
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb x11-utils
+      - name: Install headless display and AppImage runtime libraries
+        # The AppImage does not bundle libEGL/libGL; without these the binary
+        # exits 127 before creating the database. The DEB job gets the same
+        # libraries through its package dependencies.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb x11-utils libegl1 libgl1 libayatana-appindicator3-1 \
+            libwebkit2gtk-4.1-0 libgtk-3-0
       - name: Download published AppImages
         env:
           GH_TOKEN: ${{ github.token }}

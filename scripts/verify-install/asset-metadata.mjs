@@ -168,6 +168,28 @@ async function inspectLinux(installer) {
         version = field('X-AppImage-Version') || field('Version')
         if (version) metadataSource = 'desktop'
       }
+      if (!version) {
+        // Tauri's linuxdeploy AppImage usually omits X-AppImage-Version; the
+        // AppStream metadata is the remaining payload-owned version.
+        const metainfoDirs = [
+          path.join(root, 'usr', 'share', 'metainfo'),
+          path.join(root, 'usr', 'share', 'appdata'),
+        ]
+        for (const directory of metainfoDirs) {
+          if (!existsSync(directory)) continue
+          for (const entry of readdirSync(directory)) {
+            if (!/\.(metainfo|appdata)\.xml$/.test(entry)) continue
+            const xml = readFileSync(path.join(directory, entry), 'utf8')
+            const release = /<release[^>]*\bversion="([^"]+)"/.exec(xml)
+            if (release) {
+              version = release[1]
+              metadataSource = 'appstream'
+              break
+            }
+          }
+          if (version) break
+        }
+      }
       const appRun = path.join(root, 'AppRun')
       if (existsSync(appRun)) {
         const file = (await run('file', ['-b', appRun])).stdout

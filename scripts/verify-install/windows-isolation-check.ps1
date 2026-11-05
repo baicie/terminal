@@ -40,7 +40,9 @@ if ($null -ne $testRootFull) {
   $prefix = $testRootFull.TrimEnd('\') + '\'
   $underTestRoot = $targetFull.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)
 }
-$isRealRoaming = $targetFull.Equals($roamingFull, [System.StringComparison]::OrdinalIgnoreCase)
+$roamingPrefix = $roamingFull.TrimEnd('\') + '\'
+$isRealRoaming = $targetFull.Equals($roamingFull, [System.StringComparison]::OrdinalIgnoreCase) -or
+  $targetFull.StartsWith($roamingPrefix, [System.StringComparison]::OrdinalIgnoreCase)
 $wouldTouchRealProfile = -not $underTestRoot -or $isRealRoaming
 
 $uninstallEntries = @()
