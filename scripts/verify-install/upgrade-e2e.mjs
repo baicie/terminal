@@ -692,6 +692,8 @@ async function runMacos(flags) {
           }
           add('disk-full backup readable', backupReadable ? 'PASS' : 'FAIL',
             backupReadable ? 'pre-migration snapshot verified' : 'no verifiable pre-migration snapshot')
+          add('pre-migration backup', backupReadable ? 'PASS' : 'FAIL',
+            backupReadable ? 'post-recovery pre-migration snapshot verified' : 'no verifiable pre-migration snapshot')
           add('disk-full recovery data integrity', 'PASS',
             'post-recovery DB verified field by field with the new columns')
           recovery = 'PASS'

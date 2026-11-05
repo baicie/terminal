@@ -26,7 +26,6 @@ export const SCENARIO_CONTRACTS = {
       'B stopped',
       'data integrity after B',
       'vault crypto unlock after B',
-      'pre-migration backup',
     ],
     requiredFacts: [],
   },
@@ -229,6 +228,15 @@ export function validateScenarioContract(report, label) {
   const checkState = statusOfChecks(report.checks, contract.requiredChecks)
   if (checkState.missing.length > 0) {
     throw new Error(label + ' is missing required checks: ' + checkState.missing.join(','))
+  }
+  // A backup is required only when the report claims one is expected. The
+  // historical dev.1 -> dev.2 pair predates the snapshot feature and records
+  // NOT_RUN, which must not be read as a green backup.
+  if (report.expectBackup === true) {
+    const backup = checkState.byName.get('pre-migration backup')
+    if (backup !== 'PASS') {
+      throw new Error(label + ' expects a readable pre-migration backup but got ' + (backup ?? 'missing'))
+    }
   }
   for (const [name, expected] of Object.entries(contract.requiredCheckStatus || {})) {
     if (checkState.byName.get(name) !== expected) {

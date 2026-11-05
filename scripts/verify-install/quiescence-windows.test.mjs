@@ -17,7 +17,7 @@ test('Windows process tree detects a child that outlives its parent', { skip: !w
   const ready = path.join(dir, 'child.pid')
   const parent = launchProcess(process.execPath, ['-e', `
     const { spawn } = require('node:child_process')
-    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', detached: true, windowsHide: true })
     require('fs').writeFileSync(${JSON.stringify(ready)}, String(child.pid))
     setInterval(() => {}, 1000)
   `], { logPath: logPath(dir, 'parent.log') })
