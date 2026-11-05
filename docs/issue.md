@@ -5108,7 +5108,7 @@ ISOLATION_PASS”与“control 未挂载 remote 则 FAIL”）。修复后的第
 最终 remote 300。workflow 的红色状态保留在 GitHub，不改写为绿；修复后的 clean
 round 另行运行。
 
-### Issue #191: Phase 9.5 双版本升级 harness 与真实 E2E 🟡 macOS PASS，跨平台未完成（2026-11-05）
+### Issue #191: Phase 9.5 双版本升级 harness 与真实 E2E 🟡 macOS 与 Linux DEB PASS，Windows/AppImage 受限（2026-11-05，Phase 9.5.1 更新）
 
 **严重程度**：🟡 Important（RC）
 
@@ -5118,8 +5118,15 @@ round 另行运行。
 Team Sync 本地 5 表、vault 文件、当前 B 的 pre-migration backup 均可读回。
 故障注入 corrupt-db / read-only-data-dir / restart-idempotent PASS。
 
-**未完成**：Linux/Windows 适配器、迁移中断、磁盘满、从备份恢复、B→A 降级。
-证据 `docs/phase9-5/evidence/`。
+**Phase 9.5.1**：当前 HEAD CI 升级 run `41975451672` 的 7 个报告全部 PASS；
+新增真实中途迁移中断（第一条列提交后 SIGKILL）、备份恢复、B→A 读取降级；
+Linux x64 DEB 真实 `apt-get`/dpkg 升级 PASS（run `41972602296`）。
+故障五事实与独立 `check-upgrade-evidence.mjs` 门禁已接入。
+
+**仍未完成**：Windows 一次性 profile/VM 升级 E2E；Linux AppImage 在 headless
+Xvfb 下的 stock WebKit EGL 启动（同路径替换与 SHA 已验）；磁盘满、Linux
+故障注入、自动回滚。证据 `docs/phase9-5/evidence/` 与
+`docs/phase9-5/phase9-5-1-implementation.md`。
 
 ### Issue #192: Windows 安装验证实际未隔离且会删除真实 APPDATA 🟡 BLOCKED_EXTERNAL（2026-11-05）
 
@@ -5131,12 +5138,22 @@ Team Sync 本地 5 表、vault 文件、当前 B 的 pre-migration backup 均可
 **禁止在真实用户 profile 上运行升级/故障注入**；必须使用一次性 profile/VM。
 Windows 升级适配器因此标 `BLOCKED_EXTERNAL`，未执行。
 
+Phase 9.5.1 新增 `scripts/verify-install/windows-isolation-check.ps1`：只读预检
+Known Folder 与目标目录，共享 runner 上 `isolated=false`、
+`wouldTouchRealProfile=true`，以退出码 1 fail-closed；job 在真实验证拒绝后成功。
+这只证明“不会被误装”，不证明 Windows 升级可用；后者仍 NOT_RUN。
+
 ### Issue #193: Linux 安装脚本在 apt 失败时解包回退仍可判绿 🟡 NOT_RUN（2026-11-05）
 
 `verify-install-linux.sh` 在 `sudo apt-get install` 失败时打印 `[SKIPPED]`、
 `dpkg-deb -x` 解包并继续跑 payload，job 仍可能绿。升级 harness 必须 fail-closed：
-A/B 没有真正经过 dpkg/AppImage 安装就不能声称升级通过。Linux 适配器本轮未实现，
-标 `NOT_RUN`；Xvfb 固定 `:99` 也需改为唯一 display。
+A/B 没有真正经过 dpkg/AppImage 安装就不能声称升级通过。
+
+Phase 9.5.1 已实现 `installDeb()`：`sudo apt-get install -y <deb>` 后用
+`dpkg-query` 读回版本，找不到 `/usr/bin` 可执行文件即失败；**没有**解包回退。
+Xvfb display 由 harness 动态分配，不再固定 `:99`。AppImage 同路径替换并校验
+替换后 SHA。**该 Issue 的 fail-closed 部分已修复**；AppImage 的 headless 图形
+限制另见 Issue #191。
 
 ### Issue #194: 升级签名、updater、身份迁移与回滚仍未闭合 🟡 NOT_RUN / BLOCKED_EXTERNAL（2026-11-05）
 
@@ -5145,6 +5162,10 @@ A/B 没有真正经过 dpkg/AppImage 安装就不能声称升级通过。Linux �
 - updater 运行时下载/安装/重启 `NOT_RUN`；历史 `.sig` 不能替代运行时更新链；
 - 身份迁移 T1–T12 `NOT_RUN/BLOCKED_EXTERNAL`；identifier 仍为
   `com.baicie.termius`；
-- 真实 Vault 主密码解锁、Team Sync 服务端升级、B→A 降级 `NOT_RUN`。
+- 真实 Vault 主密码解锁、Team Sync 服务端升级仍 `NOT_RUN`；
+- B→A **读取**加法 schema 已 PASS（Phase 9.5.1），但正式降级状态机与写回保证
+  仍不存在，整体仍为 `PARTIAL`；
+- Linux AppImage 的 stock 启动在 headless Xvfb 下受 WebKit/Mesa EGL 限制，
+  同路径替换已经验证，整体 `PARTIAL`。
 
 详见 `docs/phase9-5/release-blockers.md`。

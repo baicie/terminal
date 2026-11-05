@@ -1,0 +1,18 @@
+{
+  "provider": "windows-isolation-check",
+  "user": "runnervmhao91\\runneradmin",
+  "sid": "S-1-5-21-3077485881-3661871218-4154919024-500",
+  "userProfile": "C:\\Users\\runneradmin",
+  "knownFolderRoaming": "C:\\Users\\runneradmin\\AppData\\Roaming",
+  "knownFolderLocal": "C:\\Users\\runneradmin\\AppData\\Local",
+  "envAppData": "C:\\Users\\runneradmin\\AppData\\Roaming",
+  "envLocalAppData": "C:\\Users\\runneradmin\\AppData\\Local",
+  "testRoot": null,
+  "targetDataDirectory": "C:\\Users\\runneradmin\\AppData\\Roaming\\com.baicie.termius",
+  "targetIsRealRoaming": true,
+  "targetUnderTestRoot": false,
+  "wouldTouchRealProfile": true,
+  "isolated": false,
+  "existingUninstallEntries": [],
+  "action": "read-only preflight; no install, delete, or profile write"
+}

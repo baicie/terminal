@@ -557,6 +557,18 @@ pnpm add <package-name>
 - 🟡 真实 Vault 解锁、Team Sync 服务端同步、updater 运行时下载/安装/重启、签名/公证、身份迁移、RC/Release 均未闭合
 - 📋 Phase 9.5.1：Linux fail-closed 适配器、Windows 一次性 profile/VM、迁移中断/磁盘满/恢复 E2E、updater 升级链、把升级证据纳入 release 指纹
 
+### Phase 9.5.1 - Cross-Platform Upgrade & Recovery Hardening 🟡 实现完成，平台证据待补
+
+- ✅ 故障五事实（`FAULT_INJECTED` / `APPLICATION_FAILURE_OBSERVED` / `ORIGINAL_DATA_PRESERVED` / `NO_PARTIAL_MIGRATION` / `RECOVERY_SUCCEEDED`）与 5 项负测试；独立 `check-upgrade-evidence.mjs` 门禁
+- ✅ 当前 HEAD CI 升级 run `41980039459`：7/7 报告 PASS；B=`0.0.1-dev.4-local`、source `94f4b32`、DMG SHA `00afd8ff…`
+- ✅ 真实中途迁移中断：`agent_forwarding` 提交后、`shell_integration` 前 SIGKILL；重启收敛、字段级验证 PASS
+- ✅ 备份恢复：复制 `pre-migration-<epoch>.db`、删除 WAL/SHM、A 启动读回、SHA 一致
+- ✅ Linux x64 DEB：真实 `apt-get`/dpkg、`dpkg-query` 版本变化、字段级数据 PASS（run `41972602296`）
+- 🟡 Linux AppImage：payload-only 报告 PASS（同路径替换 + 替换后 SHA）；headless Xvfb 下 bundled WebKit EGL 启动失败，系统 WebKit 回退又受 bundled GStreamer/GLib 符号版本阻断，启动/迁移显式 NOT_RUN；详见 `docs/phase9-5/linux-upgrade-verification.md`
+- 🟡 Windows：只读隔离预检在 `windows-latest` 正确 fail-closed；升级 E2E 仍 NOT_RUN，需一次性 profile/VM
+- ✅ 六份实机证据因 smoke-only 迁移延迟变为指纹 `b73c5fd2…`，已用官方流程重采（run `41970525110`，0 problem）；未手改旧 manifest
+- 📋 未完成：Windows 升级 E2E、Linux AppImage stock 启动、磁盘满/Linux 故障注入、真实 Vault 解锁、Team Sync 服务端、签名/公证/updater/身份迁移
+
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
@@ -589,10 +601,10 @@ pnpm add <package-name>
 | #     | 问题                                         | 严重程度     | 优先级 |
 | ----- | -------------------------------------------- | ------------ | ------ |
 | —     | 🔴 依赖安全：`cargo audit` **13 条**已记录（8 vulnerabilities + 4 unmaintained + 1 unsound + 0 yanked），其中 **1 条真实、三平台、上游无修复**（`RUSTSEC-2023-0071` rsa 0.10.0-rc.18）。`cargo-audit` 已是阻塞门禁。阻塞发布，不阻塞合并。台账 `docs/phase9-1/security-advisories.md` | 🔴 Blocker（发布） | P0 |
-| —     | ✅ **六份验收证据已重采并归档**：run `41841781191`（`ac01091`，指纹 `d14fb1d1…`），三平台 3/3 success，门禁 0 problem；最终 CI `41850097122` 11/11。任何后续 `FINGERPRINT_PATHS` 改动仍需重采 | ✅ 已闭合 | — |
+| —     | ✅ **六份验收证据已重采并归档**：Phase 9.5.1 因 smoke-only 迁移延迟使指纹变为 `b73c5fd2…`，已用 run `41970525110` 官方重采（commit `225c363`），门禁 0 problem；未手改旧 manifest。任何后续 `FINGERPRINT_PATHS` 改动仍需重采 | ✅ 已闭合 | — |
 | —     | ✅ P9.2-9 Linux zsh 探针 **PASS**：run `41432020659` / `41434165000` 的 Linux job 均 success，14 用例全绿（含此前三条）。遗留：空 `$HOME` 的真实 Debian 新账户未测 | ✅ 已闭合 | — |
 | 60    | ✅ **macOS 远程冷启动已收口**：G 300/300、第二轮 artifact 300/300（最终 remote 300）、clean 300/300；三个 run 共 **900 样本，0 个最终 local**；隔离/控制组/证据/CI 11/11 均 PASS。仍缺：历史 20% 的 Unified Log、跨版本升级、硬件矩阵、签名、身份迁移 | ✅ 已闭合（冷启动） | — |
-| —     | 🟡 **跨版本升级**：macOS 真实发布 dev.1→dev.2 与 dev.1→当前源码 PASS（schema 20→22 列、settings 全键、Team Sync 本地 5 表、vault 文件、backup 可读）；Linux/Windows、迁移中断、磁盘满、自动恢复、B→A 降级 **NOT_RUN**。详见 `docs/phase9-5/` | 🟡 Important（RC） | P1 |
+| —     | 🟡 **跨版本升级**：Phase 9.5.1 当前 HEAD CI 7/7 PASS、Linux DEB PASS、真实中途中断/备份恢复 PASS、B→A 读取 PASS；AppImage stock 启动受 headless WebKit EGL 限制、Windows 升级 E2E **NOT_RUN**、磁盘满/Linux 故障注入/自动回滚 **NOT_RUN**。详见 `docs/phase9-5/phase9-5-1-implementation.md` | 🟡 Important（RC） | P1 |
 | —     | 🔴 **签名/公证/updater**：Apple notarization、Windows Authenticode、Tauri updater `pubkey` 均 **BLOCKED_EXTERNAL**；updater 运行时下载/安装/重启 **NOT_RUN**；历史 `.sig` 不能替代运行时更新链 | 🔴 Blocker（发布） | P0 |
 | —     | 🟡 **身份迁移**：`productName=Termius`、`identifier=com.baicie.termius` 未改；T1–T12 **NOT_RUN/BLOCKED_EXTERNAL**；迁移代码不存在 | 🟡 Important（发布） | P1 |
 | —     | ✅ 前端依赖审计已闭合（vuln 25 → 0，新增 CI 阻塞 job）；同步接口与 Share REST 的版本契约统一为 JSON number。详见 `docs/phase9-3/merge-blocker-closure.md` | ✅ 已闭合 | — |
@@ -1047,7 +1059,7 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-11-05 (Phase 9.5：Phase 9.4.2 归档；PR #6 已合并为 `9a0ca15`；PR #7 rebase 到 main 为 `00715d6`（18/18、0 冲突、门禁 0、source-size 568），PR #8 重放为 `1f04c91`；真实发布 dev.1→dev.2 与 dev.1→当前源码升级 PASS，Upgrade E2E CI `41954815468` 与重放后 `41961803808` 均 success；hosts 20→22 列、settings 全键、Team Sync 本地 5 表、vault、backup 可读；corrupt/read-only/restart/backup 故障 PASS；Linux/Windows、回滚、签名、身份迁移、真实 Vault 解锁仍 NOT_RUN/BLOCKED_EXTERNAL；详见 `docs/phase9-5/implementation-report.md`)_
+_文档更新时间: 2026-11-05 (Phase 9.5.1：故障五事实与独立升级证据门禁；当前 HEAD CI 升级 run `41980039459` 7/7 PASS；真实中途迁移中断、备份恢复、B→A 读取降级 PASS；Linux x64 DEB 真实 dpkg 升级 PASS；AppImage 改为 payload-only（同路径替换/SHA PASS，启动/迁移 NOT_RUN，headless WebKit EGL 限制）；Windows 只读隔离预检 fail-closed，升级 E2E NOT_RUN；六份证据因 smoke-only 迁移延迟重采为指纹 `b73c5fd2…`（run `41970525110`，0 problem）；签名/公证/updater/身份迁移/真实 Vault/Team Sync 服务端仍未闭合；详见 `docs/phase9-5/phase9-5-1-implementation.md`)_
 
 _历史更新 2026-11-03: (Phase 9.3：bootstrap 的五个配置探测由串行改并发，修掉「一个慢 IPC 饿死其余」——这是 real-machine run `41437956656` 上 `nano-edit`「从未写 result.json」的根因；冷启动测量目录清理改带重试，修掉 `ENOTEMPTY` 假红；6 份证据随 run `41478709578` 重采为指纹 `c4faedfb…`，门禁 0 problem；交付 `docs/phase9-3/bootstrap-probe-starvation.md`)_
 

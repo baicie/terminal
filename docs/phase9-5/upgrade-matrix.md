@@ -10,10 +10,12 @@
 | --- | --- | --- | --- | --- | --- |
 | `0.0.1-dev.1` | macOS arm64 | `Terminal_0.0.1-dev.1_macos-aarch64.dmg` | 11,298,182 | `73cf7483…` | PASS |
 | `0.0.1-dev.2` | macOS arm64 | `Terminal_0.0.1-dev.2_macos-aarch64.dmg` | 12,035,266 | `2c9a0ca3…` | PASS |
-| `0.0.1-dev.1` | Linux x64/arm64 | `.deb` / `.AppImage` | — | `4ed449bf…` / `8fdef570…` | 资产存在；适配器 NOT_RUN |
-| `0.0.1-dev.2` | Linux x64/arm64 | `.deb` / `.AppImage` | — | `80c40e72…` / `0641b59f…` | 资产存在；适配器 NOT_RUN |
-| `0.0.1-dev.1` | Windows x64/arm64 | `-setup.exe` | — | `be51f04a…` / `ce59349e…` | 资产存在；适配器 NOT_RUN |
-| `0.0.1-dev.2` | Windows x64/arm64 | `-setup.exe` | — | `e068a8ae…` / `178ff483…` | 资产存在；适配器 NOT_RUN |
+| `0.0.1-dev.1` | Linux x64 | `.deb` / `.AppImage` | 13.2 MB / 86.7 MB | `4ed449bf…` / `5a60bb64…` | **DEB PASS**；AppImage 见第 5 节 |
+| `0.0.1-dev.2` | Linux x64 | `.deb` / `.AppImage` | 13.5 MB / 88.6 MB | `80c40e72…` / `9ec65f53…` | **DEB PASS**；AppImage 见第 5 节 |
+| `0.0.1-dev.1` | Linux arm64 | `.deb` / `.AppImage` | — | `8fdef570…` | 资产存在；arm64 适配器 NOT_RUN |
+| `0.0.1-dev.2` | Linux arm64 | `.deb` / `.AppImage` | — | `0641b59f…` | 资产存在；arm64 适配器 NOT_RUN |
+| `0.0.1-dev.1` | Windows x64/arm64 | `-setup.exe` | — | `be51f04a…` / `ce59349e…` | 资产存在；**只做隔离预检** |
+| `0.0.1-dev.2` | Windows x64/arm64 | `-setup.exe` | — | `e068a8ae…` / `178ff483…` | 资产存在；**只做隔离预检** |
 
 macOS 资产元数据（`asset-metadata.mjs` 直接读 DMG，不依赖文件名）：
 
@@ -36,8 +38,9 @@ macOS 资产元数据（`asset-metadata.mjs` 直接读 DMG，不依赖文件名�
 - dev.1 的前端 schema 代码使用 `catch {}` 吞掉所有 ALTER 错误，dev.2 只忽略
   duplicate-column；当前产品（Phase 9.4.2）还要求迁移前 `VACUUM INTO` 备份。
   因此 **dev.2 作为 B 时没有 pre-migration 备份**，报告标 `NOT_RUN`，不伪造。
-- 两个版本之间没有自动回滚/降级契约；B→A 未验证。`backup` 能力只在当前产品
-  的 B 中存在。
+- 两个版本之间没有自动回滚/降级契约。Phase 9.5.1 已验证 A **读取** B 的加法
+  schema 且数据哈希未变，但这不等于正式的 B→A 降级支持；`backup` 能力只在当前
+  产品的 B 中存在。
 
 ## 3. 资产获取命令
 
@@ -60,11 +63,22 @@ gh release download v0.0.1-dev.2 \
 - Windows 的 `%APPDATA%` 不是隔离目录；禁止在真实用户 profile 上运行升级/故障
   测试，必须使用一次性 profile 或 VM。
 
-## 5. 判定
+## 5. Phase 9.5.1 执行结果
+
+| 平台/格式 | A→B | 版本读回 | 数据完整性 | 判定 |
+| --- | --- | --- | --- | --- |
+| macOS DMG（历史 dev.1→dev.2） | 真实安装 | Info.plist | 字段级 PASS | **PASS** |
+| macOS DMG（dev.1→当前源码） | 真实安装 | Info.plist | 字段级 PASS + backup | **PASS** |
+| Linux DEB x64（dev.1→dev.2） | 真实 `apt-get`/dpkg | `dpkg-query` PASS | 字段级 PASS | **PASS** |
+| Linux AppImage x64（dev.1→dev.2） | 同路径替换 | 载荷无内部版本 → NOT_RUN | 最终结果见 `linux-upgrade-verification.md` | **PARTIAL / 见该文档** |
+| Windows NSIS | 未安装 | — | — | **NOT_RUN**（只做隔离预检） |
+
+## 6. 判定
 
 | 项 | 结果 |
 | --- | --- |
-| 历史资产可下载且 digest 匹配 | **YES**（macOS dev.1/dev.2；Linux/Windows 资产存在但未执行） |
+| 历史资产可下载且 digest 匹配 | **YES**（macOS/Linux x64 已执行；Linux arm64/Windows 资产存在但未执行） |
 | dev.1 → dev.2 schema 兼容 | **YES**（加法迁移；E2E 见 `upgrade-e2e.md`） |
-| 跨版本升级已验证 | **PARTIAL**（macOS 真实发布资产；Linux/Windows NOT_RUN） |
-| 回滚 / 降级 | **NOT_RUN** |
+| 跨版本升级已验证 | **PARTIAL**（macOS 与 Linux x64 DEB 真实执行；Windows/arm64 NOT_RUN） |
+| AppImage 替换 | **PARTIAL**（同路径替换与数据校验；内部版本元数据不可读） |
+| 回滚 / 降级 | **PASS（读取）/ PARTIAL（无状态机）**，见 `rollback-and-recovery.md` |

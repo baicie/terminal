@@ -103,6 +103,11 @@ PR #6 合并不会改变 PR #7 的树；rebase 后在最终 HEAD 重跑门禁即
 的升级 harness 不在 `FINGERPRINT_PATHS`，不会自动作废证据；但若要把升级报告
 作为 release 证据，需要显式把它纳入指纹并重采（见 `release-blockers.md`）。
 
+Phase 9.5.1 在 `packages/frontend/src/service/database/connection-schema-core.ts`
+增加 smoke-only 迁移延迟，指纹因此从 `d14fb1d1…` 变为 `b73c5fd2…`。这不是
+“重采旧证据”或“改指纹”，而是源码变化后的必要复测：run `41970525110` 产出
+六份新证据与 7 份原始日志，`check-verification-evidence.mjs` 0 problem。
+
 ## 5. 升级 harness 架构
 
 `scripts/verify-install/upgrade-e2e.mjs`：
@@ -141,9 +146,10 @@ inspect A/B (asset-metadata.mjs: sha256/version/identifier/arch)
 
 | 平台 | 状态 | 说明 |
 | --- | --- | --- |
-| macOS | **实现** | DMG mount + .app copy + HOME 隔离；A/B 真实发布资产已验证 |
-| Linux | **NOT_RUN** | 现有 Linux 脚本在 apt 失败时会退回解包仍判绿；升级 harness 必须 fail-closed，下一轮实现 |
-| Windows | **BLOCKED/NOT_RUN** | APPDATA 重定向不被 `SHGetKnownFolderPath` 采纳，现有脚本会删除真实 `%APPDATA%\Termius`；必须在一次性 profile/VM 中实现，禁止在真实用户目录跑故障注入 |
+| macOS | **实现** | DMG mount + .app copy + HOME 隔离；A/B 真实发布资产与当前 HEAD 构建已验证 |
+| Linux DEB | **实现** | 真实 `apt-get`/dpkg 安装、`dpkg-query` 版本读回、字段级数据验证；没有解包回退 |
+| Linux AppImage | **实现（图形受限）** | 同路径替换 + SHA 校验；Xvfb 下 WebKit WebProcess 的 EGL 启动问题单独记录，内部版本元数据不可读 |
+| Windows | **只读预检** | `SHGetKnownFolderPath` 不受 `%APPDATA%` 重定向；共享 runner 必须 fail-closed，升级 E2E 仍需一次性 profile/VM |
 
 ## 6. 判定
 

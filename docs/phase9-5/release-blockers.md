@@ -52,29 +52,42 @@
 | 项 | 状态 |
 | --- | --- |
 | 单版本安装 + 数据内容保留 | PASS（三平台历史 CI） |
-| dev.1 → dev.2 真实升级 | 见 `upgrade-e2e.md`（macOS） |
-| 跨版本回滚 B→A | **NOT_RUN**（无产品回滚状态机） |
-| 升级失败自动回滚 | **NOT_RUN** |
-| migration 抛错/只读/损坏 | 见 `failure-recovery.md`（第一版覆盖） |
+| dev.1 → dev.2 真实升级 | **PASS**（macOS DMG、Linux x64 DEB；见 `upgrade-e2e.md`） |
+| dev.1 → 当前源码升级 | **PASS**（macOS CI 当前 HEAD 构建；见 `ci-current-version-upgrade.md`） |
+| Linux AppImage 同路径替换 | 见 `linux-upgrade-verification.md`（内部版本元数据不可读） |
+| 跨版本回滚 B→A | **PASS（读取）/ PARTIAL**；无产品回滚状态机 |
+| 升级失败自动回滚 | **NOT_RUN**（产品没有自动回滚） |
+| migration 抛错/只读/损坏/重启 | **PASS**（见 `rollback-and-recovery.md`） |
+| 升级中途 kill | **PASS**（第一条列提交后 SIGKILL，重启收敛） |
+| 备份恢复 | **PASS**（端到端复制备份并用 A 读回） |
 | 磁盘满/安装介质只读 | **NOT_RUN**（未实现确定性 fixture） |
-| 升级中途 kill | **NOT_RUN**（迁移窗口太短，不伪造） |
+| Linux 故障注入 | **NOT_RUN**（本轮只做正常 A→B） |
 | 真实 Vault 主密码解锁 | **NOT_RUN** |
 | Team Sync 服务端升级 | **NOT_RUN**（本地表持久化已覆盖） |
+| Windows 升级 E2E | **NOT_RUN**；隔离预检 **PARTIAL**（见 `windows-isolation.md`） |
 | Windows/Pageant/串口硬件 | **NOT_RUN** |
 | 物理键盘/中文 IME | **NOT_RUN** |
 
 ## 5. 证据绑定
 
-升级 harness 产出的 JSON/Markdown **当前不在** `FINGERPRINT_PATHS`。若要把升级
-报告作为 release 证据，需要：
+升级 harness 产出的 JSON/Markdown **当前不在** `FINGERPRINT_PATHS`；Phase 9.5.1
+新增的 `check-upgrade-evidence.mjs` 是**独立**门禁，在 `Upgrade E2E` workflow 中
+阻塞该 workflow，但不改动六份实机证据 manifest。若要把升级报告并入 release
+指纹，需要：
 
 1. 把 `scripts/verify-install/**` 与 `.github/workflows/upgrade-e2e.yml` 纳入
    `FINGERPRINT_PATHS`；
 2. 在纳入后的源码上重新采集六份实机证据；
 3. 在 release 门禁中把升级报告的 A/B SHA、平台、schema、数据域结果作为阻塞项。
 
-未完成以上三步前，升级报告只能作为 Phase 9.5 工程证据，不能冒充六份 release
-evidence 的一部分。
+未完成以上三步前，升级报告只能作为工程证据，不能冒充六份 release evidence 的
+一部分；但 `check-upgrade-evidence.mjs` 已经会拒绝缺 A/B SHA、缺数据完整性、
+缺备份或故障事实不全的报告。
+
+注意：Phase 9.5.1 的 smoke-only 迁移延迟位于 `packages/frontend/src`，因此六份
+证据的源码指纹从 `d14fb1d1…` 变为 `b73c5fd2…`。本轮已通过官方
+`fetch-verification-evidence.mjs --run-id 41970525110` 重采，门禁 0 problem；
+没有手工改写旧 manifest 或指纹。
 
 ## 6. 判定
 

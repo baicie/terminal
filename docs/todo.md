@@ -2163,12 +2163,35 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] 故障恢复：corrupt DB、只读数据目录、重复启动、备份可读 PASS。
 - [x] 新增 9 项脚本测试（data-retention 5 + asset-metadata 4）与
       `.github/workflows/upgrade-e2e.yml`。
-- [ ] Linux 升级适配器：真实 dpkg/AppImage、禁止解包回退、唯一 Xvfb display。
-- [ ] Windows 升级适配器：一次性 profile/VM；禁止在真实 `%APPDATA%` 上跑。
-- [ ] 迁移中断、磁盘满、从备份恢复、B→A 降级。
+- [x] Linux 升级适配器：真实 dpkg、同路径 AppImage 替换、失败即红，无解包回退；
+      唯一 Xvfb display。
+- [x] 迁移中断、从备份恢复、B→A 降级读取：真实中途 kill、备份复制回读、
+      A 读取加法 schema。
+- [x] Windows 只读隔离预检：共享 runner fail-closed，未安装/删除任何 profile。
+- [ ] Windows 一次性 profile/VM 的升级 E2E。
+- [ ] 磁盘满/安装介质只读/Linux 故障注入。
 - [ ] updater 运行时下载/安装/重启；签名/公证。
 - [ ] 身份迁移 T1–T12。
 - [ ] 把升级报告纳入 release 证据指纹（如需要）。
 - [x] 集成执行（2026-11-05）：PR #6 合并为 `9a0ca15`；PR #7 rebase 到 main 为
       `00715d6`（18/18、0 冲突、门禁 0、source-size 568）；PR #8 重放为
       `1f04c91`（5 commits、40 文件，仍 Draft）。
+
+### 2026-11-05 Phase 9.5.1 - 跨平台升级与恢复加固 🟡 实现完成，平台证据待补
+
+- [x] 故障五事实拆分：`FAULT_INJECTED` / `APPLICATION_FAILURE_OBSERVED` /
+      `ORIGINAL_DATA_PRESERVED` / `NO_PARTIAL_MIGRATION` / `RECOVERY_SUCCEEDED`，
+      5 项负测试，缺 required 即 PARTIAL/FAIL。
+- [x] 当前 HEAD CI 升级：run `41975451672` 的 7 个报告全部 PASS；B 构建身份
+      (`sourceSha=0819fd0…`, `0.0.1-dev.4-local`, DMG SHA `c3bb8caf…`) 已归档。
+- [x] 真实迁移中断：第一条 host 列提交后 SIGKILL，重启后两列齐全，数据逐字段。
+- [x] 备份恢复：复制 `pre-migration-<epoch>.db`、删除 WAL/SHM、A 启动读回。
+- [x] Linux DEB：真实 dpkg 安装、版本读回、字段级数据；run `41972602296` PASS。
+- [ ] Linux AppImage stock 启动：同路径替换/SHA 已验；headless Xvfb 下 bundled
+      WebKit 的 EGL 初始化仍失败，回退系统 WebKit 的结果见
+      `docs/phase9-5/linux-upgrade-verification.md`。
+- [x] Windows 只读预检：共享 runner fail-closed，未安装/删除。
+- [ ] Windows 升级 E2E：需要一次性 profile/VM。
+- [ ] 磁盘满/安装介质只读/Linux 故障注入。
+- [x] 六份实机证据因 smoke-only 迁移延迟改变指纹，已用官方流程重采
+      （run `41970525110`，指纹 `b73c5fd2…`，0 problem）；未手改旧 manifest。

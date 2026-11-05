@@ -868,6 +868,25 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 
 详见 `docs/phase9-5/implementation-report.md`。
 
+### Phase 9.5.1 - Cross-Platform Upgrade & Recovery Hardening 🟡 进行中
+
+> 2026-11-05，继续在 `feat/phase9-5-upgrade-integrity`（PR #8 Draft）上完成。
+
+| 领域 | 结果 |
+| --- | --- |
+| 当前 HEAD CI 升级 | **PASS**：run `41980039459`，7/7 报告（normal/interrupt/restore/downgrade/corrupt/readonly/restart）；B=`0.0.1-dev.4-local`，SHA `00afd8ff…` |
+| 真实迁移中断 | **PASS**：`agent_forwarding` 已提交、`shell_integration` 缺失时 SIGKILL；重启后两列齐全、字段级验证 |
+| 备份恢复 | **PASS**：复制 `pre-migration-<epoch>.db`、删除 WAL/SHM、A 启动读回、SHA 一致 |
+| B→A 降级 | **PASS（读取）/ PARTIAL**：A 可读加法 schema、数据哈希未变；无降级状态机 |
+| Linux DEB | **PASS**：真实 `apt-get`/dpkg、`dpkg-query` 版本变化、字段级数据、Team Sync 本地 |
+| Linux AppImage | **PARTIAL**：同路径替换 + SHA 校验；headless WebKit/EGL 启动限制见 `docs/phase9-5/linux-upgrade-verification.md` |
+| Windows | **PARTIAL**：共享 runner 只读预检正确 fail-closed；升级 E2E **NOT_RUN** |
+| 故障五事实 | **完成**：`fault-assessment.mjs` + 5 项负测试；独立 `check-upgrade-evidence.mjs` 门禁 |
+| 证据 | 指纹由 `d14fb1d1…` 变为 `b73c5fd2…`，已用 run `41970525110` 官方重采六份证据，0 problem |
+| 判定 | `PHASE_9_5_1_IMPLEMENTATION_COMPLETE=YES`；`READY_FOR_RC=NO` |
+
+详见 `docs/phase9-5/phase9-5-1-implementation.md` 与 `docs/phase9-5/ci-current-version-upgrade.md`。
+
 ---
 
 ## 待办事项

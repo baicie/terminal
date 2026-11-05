@@ -48,7 +48,8 @@
 - **Vault 真实解锁**：测试 vault 是 schema-valid、零条目的 fixture；没有主密码，
   不执行加解密。真实 Vault 解锁和 Team Sync 服务端升级均 NOT_RUN。
 - **Team Sync 服务端**：只验证本地表持久化；没有 server、token 或网络同步。
-- **schema 降级**：B→A 未验证；B 写过的 schema 不能假设 A 可读。
+- **schema 降级**：Phase 9.5.1 已验证 A **读取** B 的加法 schema（数据哈希未变），
+  但没有正式降级状态机，也没有 B→A 写回保证；不能把“A 能读”写成“降级安全”。
 - **字节级相同**：没有把文件哈希相同当作数据保留证据；哈希只用于 vault/文件
   存在性辅助。
 
@@ -56,3 +57,6 @@
 
 `UPGRADE_DATA_INTEGRITY_VERIFIED = YES`（macOS，hosts/settings/workspaces/layout/
 Team Sync 本地/vault 文件/schema/backup；不含真实 Vault 解锁与服务端同步）。
+
+Phase 9.5.1 追加：Linux DEB 真实安装链同样逐字段 PASS；当前源码的 CI 升级链见
+`ci-current-version-upgrade.md`；中断/恢复/降级见 `rollback-and-recovery.md`。

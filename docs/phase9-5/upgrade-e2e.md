@@ -89,7 +89,31 @@ PR #8 重放到新的 PR #7 HEAD 后，强制推送误触发了同一 Upgrade E2
 run `41961803808` **success**，证明重放后的树仍可执行 A→B 与三个故障测试。
 误触发的 300 次冷启动压测已取消，没有重复无意义压测。
 
-## 6. 判定
+Phase 9.5.1 的当前版本 job 另行运行：run `41975451672`（`0819fd0`）的
+`macOS current-version upgrade and recovery` **success**，7 个报告全部 PASS；
+最终脚本的 run `41980039459`（`94f4b32`）完成同一组 job：macOS current 7/7 报告
+PASS，Linux DEB success，Windows 预检 success，AppImage payload-only success
+（启动/迁移 NOT_RUN）。详见 `ci-current-version-upgrade.md` 与
+`linux-upgrade-verification.md`。
+
+## 6. Phase 9.5.1：当前版本 CI 升级链
+
+`Upgrade E2E` workflow 新增：
+
+| job | 内容 |
+| --- | --- |
+| `macos-current-upgrade` | 下载 dev.1，构建当前 HEAD（`0.0.1-dev.4-local`，`VITE_TERMINAL_SMOKE_BUILD=1`、`VITE_TERMINAL_MIGRATION_DELAY_MS=1500`），执行正常升级 + 中断 + 备份恢复 + 降级 + corrupt/read-only/restart |
+| `linux-deb-upgrade` | dev.1 → dev.2 真实 dpkg 安装与字段级验证 |
+| `linux-appimage-upgrade` | dev.1 → dev.2 同路径 AppImage 替换 |
+| `windows-isolation-preflight` | 共享 profile 只读预检必须 fail-closed |
+
+当前 HEAD 构建的 `current-b-build.json` 记录 `sourceSha`、`kind=current-source-test-build`、
+`instrumentedBuild=true`、`migrationDelayMs=1500`，不把测试构建伪装成历史发布包。
+七个报告统一由 `check-upgrade-evidence.mjs` 检查；该门禁与六份实机证据独立。
+
+最终运行号、B 构建 SHA、七份报告结果见 `ci-current-version-upgrade.md`。
+
+## 7. 判定
 
 - `REAL_TWO_VERSION_UPGRADE_VERIFIED = YES`（macOS 本机真实发布 dev.1→dev.2 与
   dev.1→当前源码；真实 runner `41954815468` 也 **success**）
