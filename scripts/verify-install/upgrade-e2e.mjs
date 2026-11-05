@@ -908,7 +908,6 @@ async function runLinux(flags) {
       XDG_DATA_HOME: data,
       XDG_CACHE_HOME: cache,
       WEBKIT_DISABLE_COMPOSITING_MODE: '1',
-      WEBKIT_DISABLE_DMABUF_RENDERER: '1',
       LIBGL_ALWAYS_SOFTWARE: '1',
       // AppImages can bundle libEGL without the matching Mesa DRI drivers.
       // Point the loader at the runner's software stack explicitly.
@@ -916,9 +915,7 @@ async function runLinux(flags) {
       MESA_LOADER_DRIVER_OVERRIDE: 'llvmpipe',
       GALLIUM_DRIVER: 'llvmpipe',
       EGL_PLATFORM: 'x11',
-      __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/50_mesa.json',
       GDK_BACKEND: 'x11',
-      GDK_GL: 'disable',
       NO_AT_BRIDGE: '1',
       APPIMAGE_EXTRACT_AND_RUN: '1',
       DISPLAY: display,
