@@ -2232,3 +2232,17 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [ ] Team Sync A→B 客户端真实 fetch 链。
 - [ ] Updater 运行时 check/download/verify/install/restart。
 - [ ] AppImage stock 启动。
+
+### 2026-11-05 Phase 9.5.4 - 崩溃恢复证据与升级安全收口 🟡 P0 门禁完成
+
+- [x] `requireStopped` 严格拒绝 spawn-error/timeout/exit/close/logError/非预期信号；
+      A/B/恢复/降级/Linux 路径统一 `stopChecked`。
+- [x] 终止语义与日志失败独立诊断；9 项 lifecycle 测试。
+- [x] quiescence：process/streams/lsof DB 句柄；owned children NOT_RUN。
+- [x] 恢复 8 阶段与 `backup restore stages`；busy checkpoint 真实负测试。
+- [ ] 独立 recovery worker + 8 阶段真实 SIGKILL/exit 矩阵。
+- [ ] crash 后恢复重试/幂等/数据读回。
+- [ ] ENOSPC 小容量卷矩阵。
+- [ ] 进程组/WebKit/PTY quiescence。
+- [ ] Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时。
+- [ ] AppImage stock 启动。

@@ -49,7 +49,8 @@ import path from 'node:path'
 import process from 'node:process'
 import { promisify } from 'node:util'
 import { assessFault } from './fault-assessment.mjs'
-import { delay, describeStop, launchProcess, stopProcess as stop } from './process-lifecycle.mjs'
+import { delay, describeStop, launchProcess, requireStopped, stopProcess as stop } from './process-lifecycle.mjs'
+import { requireQuiescent } from './quiescence.mjs'
 import { assertStageOrder, crashPoint } from './recovery-state-machine.mjs'
 import { createVaultFile, verifyVaultFile, verifyWrongPasswordRejected } from './vault-crypto.mjs'
 
@@ -183,6 +184,22 @@ function launch(binary, home, logPath, extraEnv = {}) {
     },
     logPath,
   })
+}
+
+async function stopChecked(child, options = {}) {
+  return requireStopped(await stop(child, options), {
+    allowForced: false,
+    allowSignals: ['SIGTERM'],
+    ...options,
+  })
+}
+
+function assertQuiescence(add, name, result, db) {
+  const assessment = requireQuiescent(result, [
+    db, db + '-wal', db + '-shm', db + '-journal',
+  ], { label: name })
+  add(name, assessment.overall === 'PASS' ? 'PASS' : 'NOT_RUN',
+    JSON.stringify(assessment.facts))
 }
 
 async function waitFor(predicate, timeoutMs, label) {
@@ -451,8 +468,9 @@ async function runMacos(flags) {
     add('A database created', 'PASS', db)
     await waitForSchema(db, 'hosts:id;settings:key;workspaces:id;workspace_layouts:workspace_id')
     add('A schema ready', 'PASS')
-    const stopA = await stop(child)
+    const stopA = await stopChecked(child)
     add('A stopped', 'PASS', describeStop(stopA))
+    assertQuiescence(add, 'A quiescence', stopA, db)
     await dr(['checkpoint', '--db', db])
     await dr(['seed', '--db', db, '--token', token, '--vault', vault, '--compatible'])
     add('seed A data', 'PASS', 'compatible with A schema')
@@ -492,7 +510,7 @@ async function runMacos(flags) {
       reportJson.logs.fault = faultLog
       child = launch(bBinary, home, faultLog)
       await delay(15_000)
-      await stop(child)
+      await stopChecked(child)
       const afterHash = fileSetDigest(db)
       const preserved = afterHash === corruptedHash
       add('corrupt DB preserved', preserved ? 'PASS' : 'FAIL',
@@ -524,7 +542,7 @@ async function runMacos(flags) {
       chmodDatabaseFiles(db, 0o400)
       child = launch(bBinary, home, faultLog)
       await delay(15_000)
-      await stop(child)
+      await stopChecked(child)
       chmodSync(dataDir, 0o700)
       chmodDatabaseFiles(db, 0o600)
       const afterHash = fileSetDigest(db)
@@ -552,7 +570,7 @@ async function runMacos(flags) {
       try {
         child = launch(bBinary, home, path.join(logs, 'b-recovery.log'))
         await waitForSchema(db, 'hosts:' + expectedNewHostColumns.join(','))
-        await stop(child)
+        await stopChecked(child)
         await dr(['checkpoint', '--db', db])
         await dr([
           'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
@@ -612,7 +630,7 @@ async function runMacos(flags) {
           ? expectedNewHostColumns.filter(column => !killColumns.includes(column))
           : []
         if (!killColumns || missingAtKill.length === 0) {
-          await stop(child)
+          await stopChecked(child)
           add(
             'interrupted migration recovery',
             'NOT_RUN',
@@ -631,10 +649,7 @@ async function runMacos(flags) {
           return reportJson
         }
         child.kill('SIGKILL')
-        await Promise.race([
-          new Promise(resolve => child.once('exit', resolve)),
-          new Promise(resolve => setTimeout(resolve, 2_000)),
-        ])
+        await stopChecked(child, { allowSignals: ['SIGKILL'], allowForced: true })
         add('interrupted after backup', 'PASS', 'killed between snapshot-finished and core-schema-finished')
         add('interrupted mid-migration', 'PASS',
           'committed ' + killColumns.join(',') + '; missing ' + missingAtKill.join(','))
@@ -642,7 +657,7 @@ async function runMacos(flags) {
           TERMINAL_STARTUP_STAGES_PATH: path.join(work, 'b-recovery-stages.jsonl'),
         })
         await waitForSchema(db, 'hosts:' + expectedNewHostColumns.join(','))
-        await stop(child)
+        await stopChecked(child)
         await dr(['checkpoint', '--db', db])
         await dr([
           'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
@@ -673,7 +688,7 @@ async function runMacos(flags) {
           RECOVERY_SUCCEEDED: 'PASS',
         })
       } else {
-        await stop(child)
+        await stopChecked(child)
         add(
           'interrupted migration recovery',
           'NOT_RUN',
@@ -704,8 +719,9 @@ async function runMacos(flags) {
         backup || 'B ' + reportJson.b.version + ' predates the pre-migration snapshot feature')
       reportJson.notRun.push('pre-migration backup (B ' + reportJson.b.version + ' has no backup command)')
     }
-    const stopB = await stop(child)
+    const stopB = await stopChecked(child)
     add('B stopped', 'PASS', describeStop(stopB))
+    assertQuiescence(add, 'B quiescence', stopB, db)
     await dr(['checkpoint', '--db', db])
     const afterColumns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
     reportJson.schema.afterTables = execFileSyncSqlite(db, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -747,7 +763,7 @@ async function runMacos(flags) {
         child.exitCode === null ? 'PASS' : 'FAIL',
         child.exitCode === null ? 'second B process stayed alive through schema wait' : 'B exited before the second launch was observed',
       )
-      await stop(child)
+      await stopChecked(child)
       await dr([
         'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
         '--token', token, '--vault', vault, '--vault-allow-encrypted',
@@ -786,7 +802,8 @@ async function runMacos(flags) {
             child.exitCode === null ? 'PASS' : 'FAIL',
             child.exitCode === null ? 'A process stayed alive through schema wait' : 'A exited before the restore was observed',
           )
-          await stop(child)
+          const restoredStop = await stopChecked(child)
+          assertQuiescence(add, 'restored A quiescence', restoredStop, db)
           await dr(['checkpoint', '--db', db])
           await dr([
             'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
@@ -796,7 +813,7 @@ async function runMacos(flags) {
           ])
           add('backup restore', 'PASS', 'A launched and read the restored pre-migration DB')
         } catch (error) {
-          await stop(child)
+          await stopChecked(child)
           add('backup restore', 'FAIL', errorMessage(error))
         }
       }
@@ -819,7 +836,8 @@ async function runMacos(flags) {
           child.exitCode === null ? 'PASS' : 'FAIL',
           child.exitCode === null ? 'A process stayed alive through schema wait' : 'A exited before the downgrade was observed',
         )
-        await stop(child)
+        const downgradeStop = await stopChecked(child)
+        assertQuiescence(add, 'downgrade A quiescence', downgradeStop, db)
         await dr([
           'verify', '--db', db, '--before', downgradeSnapshot,
           '--token', token, '--vault', vault, '--vault-allow-encrypted', '--allow-settings-migration',
@@ -828,7 +846,7 @@ async function runMacos(flags) {
         add('downgrade readability', 'PASS', 'A reads the additive post-migration schema')
         add('downgrade preserved B columns', 'PASS', 'B-era rows/columns still compare')
       } catch (error) {
-        await stop(child)
+        await stopChecked(child)
         const columns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
         const schemaIntact = expectedNewHostColumns.every(column => columns.includes(column))
         add(
@@ -865,7 +883,7 @@ async function runMacos(flags) {
     await report(work, reportDir, reportJson)
     return reportJson
   } catch (error) {
-    if (child) await stop(child).catch(() => undefined)
+    if (child) await stopChecked(child).catch(() => undefined)
     add('harness', 'FAIL', errorMessage(error))
     reportJson.status = 'FAIL'
     await report(work, reportDir, reportJson).catch(() => undefined)
@@ -963,7 +981,7 @@ async function launchAppImageWithEglFallback({
     await waitForDatabase(db)
     return { child, binary: stockBinary, fallback: false }
   } catch (error) {
-    await stop(child)
+    await stopChecked(child)
     const text = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
     if (!/EGL|BAD_PARAMETER/i.test(text)) throw error
     const appRun = await extractAppImageWithSystemWebKit(
@@ -1169,9 +1187,10 @@ async function runLinux(flags) {
     if (mode === 'appimage') add('AppImage app startup', 'PASS', 'stock or documented fallback payload started')
     await waitForSchema(db, 'hosts:id;settings:key;workspaces:id;workspace_layouts:workspace_id')
     add('A schema ready', 'PASS')
-    const stopA = await stop(aProcess)
+    const stopA = await stopChecked(aProcess)
     aProcess = null
     add('A stopped', 'PASS', describeStop(stopA))
+    assertQuiescence(add, 'A quiescence', stopA, db)
     await dr(['checkpoint', '--db', db])
     await dr(['seed', '--db', db, '--token', token, '--vault', vault, '--compatible'])
     add('seed A data', 'PASS', 'compatible with A schema')
@@ -1250,9 +1269,10 @@ async function runLinux(flags) {
     }
     await waitForSchema(db, 'hosts:' + expectedNewHostColumns.join(','))
     add('B migration', 'PASS', expectedNewHostColumns.join(','))
-    const stopB = await stop(aProcess)
+    const stopB = await stopChecked(aProcess)
     aProcess = null
     add('B stopped', 'PASS', describeStop(stopB))
+    assertQuiescence(add, 'B quiescence', stopB, db)
     await dr(['checkpoint', '--db', db])
     const afterColumns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
     reportJson.schema.afterHostColumns = afterColumns
@@ -1293,7 +1313,7 @@ async function runLinux(flags) {
     await report(work, reportDir, reportJson).catch(() => undefined)
     return reportJson
   } finally {
-    if (aProcess) await stop(aProcess).catch(() => undefined)
+    if (aProcess) await stopChecked(aProcess).catch(() => undefined)
     xvfb?.stop()
   }
 }

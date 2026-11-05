@@ -29,6 +29,7 @@ export function launchProcess(command, args = [], options = {}) {
     closePromise: null,
     stopPromise: null,
     logWritten: false,
+    logError: null,
     logPath: options.logPath || null,
   }
   let resolveExit
@@ -52,10 +53,14 @@ export function launchProcess(command, args = [], options = {}) {
   if (child.stdout) {
     child.stdout.on('data', chunk => output.push(String(chunk)))
     child.stdout.once('close', () => { state.stdoutClosed = true })
+  } else {
+    state.stdoutClosed = true
   }
   if (child.stderr) {
     child.stderr.on('data', chunk => output.push(String(chunk)))
     child.stderr.once('close', () => { state.stderrClosed = true })
+  } else {
+    state.stderrClosed = true
   }
   child.once('exit', (code, signal) => {
     state.exitObserved = true
@@ -74,12 +79,19 @@ export function launchProcess(command, args = [], options = {}) {
     if (state.logPath && !state.logWritten) {
       state.logWritten = true
       // close fires after stdout/stderr are closed, so the log is complete.
-      writeFileSync(
-        state.logPath,
-        output.join('') + `\n[exit code=${code} signal=${signal}]\n`,
-      )
+      try {
+        writeFileSync(
+          state.logPath,
+          output.join('') + `\n[exit code=${code} signal=${signal}]\n`,
+        )
+      } catch (error) {
+        state.logError = String(error?.message || error)
+      } finally {
+        resolveClose()
+      }
+    } else {
+      resolveClose()
     }
-    resolveClose()
   })
   return child
 }
@@ -103,11 +115,22 @@ export async function stopProcess(child, { waitMs = 30_000, killWaitMs = 5_000, 
       signal: state.signal,
       exitObserved: state.exitObserved,
       closeObserved: state.closeObserved,
+      stdoutClosed: state.stdoutClosed,
+      stderrClosed: state.stderrClosed,
       elapsedMs: 0,
       escalationUsed: false,
     }
+    const termination = (forced = false) => {
+      if (state.spawnError) return 'spawn-error'
+      if (forced) return 'forced-sigkill'
+      if (state.signal === 'SIGTERM') return 'terminated-by-sigterm'
+      if (state.signal !== null && state.signal !== undefined) return 'terminated-by-' + state.signal
+      return state.exitObserved ? 'clean-exit' : 'timeout'
+    }
+    result.termination = termination(false)
     if (state.spawnError) {
       result.outcome = 'spawn-error'
+      result.termination = 'spawn-error'
       result.error = String(state.spawnError.message || state.spawnError)
       result.elapsedMs = Date.now() - started
       return result
@@ -119,6 +142,10 @@ export async function stopProcess(child, { waitMs = 30_000, killWaitMs = 5_000, 
       result.signal = state.signal
       await Promise.race([state.closePromise, delay(closeWaitMs)])
       result.closeObserved = state.closeObserved
+      result.stdoutClosed = state.stdoutClosed
+      result.stderrClosed = state.stderrClosed
+      result.termination = termination(false)
+      result.logError = state.logError
       result.elapsedMs = Date.now() - started
       return result
     }
@@ -136,14 +163,19 @@ export async function stopProcess(child, { waitMs = 30_000, killWaitMs = 5_000, 
       child.kill('SIGKILL')
       await Promise.race([state.exitPromise, delay(killWaitMs)])
       result.outcome = state.exitObserved ? 'forced' : 'timeout'
+      result.termination = termination(state.exitObserved)
     } else {
       result.outcome = 'graceful'
+      result.termination = termination(false)
     }
     await Promise.race([state.closePromise, delay(closeWaitMs)])
     result.exitObserved = state.exitObserved
     result.closeObserved = state.closeObserved
+    result.stdoutClosed = state.stdoutClosed
+    result.stderrClosed = state.stderrClosed
     result.exitCode = state.exitCode
     result.signal = state.signal
+    result.logError = state.logError
     result.elapsedMs = Date.now() - started
     if (!state.exitObserved) {
       result.error = 'process did not exit after SIGKILL within ' + killWaitMs + ' ms'
@@ -153,14 +185,45 @@ export async function stopProcess(child, { waitMs = 30_000, killWaitMs = 5_000, 
   return state.stopPromise
 }
 
+export function requireStopped(result, { allowForced = false, allowSignals = ['SIGTERM'] } = {}) {
+  const problems = []
+  if (!result || typeof result !== 'object') problems.push('no stop result')
+  else {
+    if (result.outcome === 'spawn-error' || result.termination === 'spawn-error') {
+      problems.push('spawn-error')
+    }
+    if (result.outcome === 'timeout' || result.termination === 'timeout') problems.push('timeout')
+    if (result.exitObserved !== true) problems.push('exitObserved=false')
+    if (result.closeObserved !== true) problems.push('closeObserved=false')
+    if (result.stdoutClosed === false) problems.push('stdoutClosed=false')
+    if (result.stderrClosed === false) problems.push('stderrClosed=false')
+    if (result.logError) problems.push('logError=' + result.logError)
+    if (!allowForced && result.outcome === 'forced') problems.push('forced-sigkill')
+    if (!allowForced && result.termination === 'forced-sigkill') problems.push('forced-sigkill')
+    if (typeof result.termination === 'string' && result.termination.startsWith('terminated-by-')) {
+      const signal = result.termination.slice('terminated-by-'.length).toLowerCase()
+      if (!allowSignals.some(allowed => allowed.toLowerCase() === signal)) {
+        problems.push('unexpected termination signal ' + signal)
+      }
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error('process did not stop cleanly: ' + problems.join(', '))
+  }
+  return result
+}
+
 export function describeStop(result) {
   return [
     result.outcome,
+    'termination=' + (result.termination ?? 'unknown'),
     'pid=' + (result.pid ?? 'null'),
     'exit=' + (result.exitCode ?? 'null'),
     'signal=' + (result.signal ?? 'null'),
     'exitObserved=' + result.exitObserved,
     'closeObserved=' + result.closeObserved,
+    'stdoutClosed=' + result.stdoutClosed,
+    'stderrClosed=' + result.stderrClosed,
     'escalation=' + result.escalationUsed,
     'elapsedMs=' + result.elapsedMs,
   ].join(' ')
