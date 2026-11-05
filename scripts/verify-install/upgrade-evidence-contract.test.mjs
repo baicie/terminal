@@ -188,6 +188,59 @@ test('full AppImage cannot be claimed with replacement only', () => {
   )
 })
 
+test('disk-full must prove blocked migration, preserved data, backup and recovery', () => {
+  for (const name of [
+    'disk-full migration blocked',
+    'disk-full original data preserved',
+    'disk-full backup readable',
+    'disk-full recovery',
+    'disk-full recovery data integrity',
+  ]) {
+    const value = reportFor('disk-full')
+    value.checks = value.checks.filter(check => check.name !== name)
+    assert.throws(
+      () => checkUpgradeReport(value, 'disk-full', { requireContract: true }),
+      /missing required checks/,
+      name,
+    )
+  }
+})
+
+test('disk-full cannot convert failed recovery or partial migration into PASS', () => {
+  for (const [fact, status] of [
+    ['NO_PARTIAL_MIGRATION', 'FAIL'],
+    ['RECOVERY_SUCCEEDED', 'FAIL'],
+    ['RECOVERY_SUCCEEDED', 'NOT_RUN'],
+    ['ORIGINAL_DATA_PRESERVED', 'FAIL'],
+  ]) {
+    const value = reportFor('disk-full')
+    value.faultAssessment.facts[fact] = status
+    assert.throws(
+      () => checkUpgradeReport(value, 'disk-full', { requireContract: true }),
+      /differs|failed facts|missing/,
+      fact + '=' + status,
+    )
+  }
+})
+
+test('a PASS report cannot carry a FAIL check', () => {
+  const value = reportFor('disk-full')
+  value.checks.find(check => check.name === 'disk-full migration blocked').status = 'FAIL'
+  assert.throws(
+    () => checkUpgradeReport(value, 'disk-full', { requireContract: true }),
+    /PASS while a check is FAIL|PASS with required FAIL facts/,
+  )
+})
+
+test('rejects a report whose pinned SHA differs from the measured installer', () => {
+  const value = reportFor('normal')
+  value.a.expected.sha256 = 'c'.repeat(64)
+  assert.throws(
+    () => checkUpgradeReport(value, 'normal', { requireContract: true }),
+    /expected sha256 differs/,
+  )
+})
+
 test('a version-2 report is required when the CLI asks for the contract', () => {
   const value = reportFor('normal')
   delete value.contractVersion

@@ -115,28 +115,22 @@ export function checkUpgradeReport(
     fail(label + ' A/B versions are identical: ' + report.a.version)
   }
 
-  const migrationFaults = new Set(['corrupt-db', 'read-only-data-dir'])
-  const faultAssessmentModes = new Set([
-    'corrupt-db',
-    'read-only-data-dir',
-    'restart-idempotent',
-    'interrupted',
-  ])
+  // Universal shape only. Which columns must be added, and which checks prove
+  // migration, backup or recovery, is scenario-specific and lives in
+  // upgrade-evidence-contract.mjs — never in a second whitelist here.
   if (report.payloadOnly !== true) {
     if (!isObject(report.schema)) fail(label + ' has no schema transition')
     const before = report.schema.beforeHostColumns
     const after = report.schema.afterHostColumns
-    if (!migrationFaults.has(report.fault)) {
-      if (!Array.isArray(before) || !Array.isArray(after)) {
-        fail(label + ' schema before/after host columns must be arrays')
-      }
-      const added = after.filter(column => !before.includes(column))
-      const declared = Array.isArray(report.schema.addedHostColumns)
-        ? report.schema.addedHostColumns
-        : []
-      if (declared.length > 0 && added.join(',') !== declared.join(',')) {
-        fail(label + ' schema added columns contradict the before/after sets')
-      }
+    if (!Array.isArray(before) || !Array.isArray(after)) {
+      fail(label + ' schema before/after host columns must be arrays')
+    }
+    const added = after.filter(column => !before.includes(column))
+    const declared = Array.isArray(report.schema.addedHostColumns)
+      ? report.schema.addedHostColumns
+      : []
+    if (declared.length > 0 && added.join(',') !== declared.join(',')) {
+      fail(label + ' schema added columns contradict the before/after sets')
     }
   }
 
@@ -153,7 +147,8 @@ export function checkUpgradeReport(
     names.add(check.name)
   }
   const byName = new Map(report.checks.map(check => [check.name, check.status]))
-  if (report.payloadOnly === true) {
+  if (report.payloadOnly === true && report.contractVersion !== CONTRACT_VERSION) {
+    // Legacy payload-only reports predate the scenario contract.
     if (report.mode !== 'appimage') fail(label + ' payloadOnly is only valid for AppImage')
     if (report.status === 'PASS') fail(label + ' payloadOnly cannot be PASS')
     if (byName.get('AppImage payload replacement') !== 'PASS') {
@@ -162,47 +157,54 @@ export function checkUpgradeReport(
     if (byName.get('AppImage app startup') !== 'NOT_RUN') {
       fail(label + ' payloadOnly must record app startup as NOT_RUN')
     }
-  } else if (!migrationFaults.has(report.fault)) {
-    if (byName.get('data integrity after B') !== 'PASS') {
-      fail(label + ' does not prove data integrity after B')
-    }
-    if (byName.get('B migration') !== 'PASS') fail(label + ' does not prove the B migration')
-  }
-  if (!migrationFaults.has(report.fault) && report.payloadOnly !== true) {
-    const backup = byName.get('pre-migration backup')
-    if (backup !== 'PASS' && backup !== 'NOT_RUN') {
-      fail(label + ' has no backup result')
-    }
-    if (report.expectBackup === true && backup !== 'PASS') {
-      fail(label + ' expected a readable pre-migration backup but got ' + backup)
-    }
   }
 
   if (report.contractVersion === CONTRACT_VERSION) {
+    // v2: every scenario-specific requirement (migration, data integrity,
+    // backup, expected failure, recovery) is declared in the contract.
     validateScenarioContract(report, label)
-  } else if (report.faultAssessment) {
-    const fault = report.faultAssessment
-    if (!isObject(fault) || !Array.isArray(fault.required) || !Array.isArray(fault.failed)) {
-      fail(label + ' has a malformed faultAssessment')
-    }
-    if (fault.failed.length > 0) fail(label + ' fault has failed facts: ' + fault.failed.join(','))
-    if (fault.overall === 'FAIL') fail(label + ' fault overall is FAIL')
-    if (report.status === 'PASS' && fault.overall !== 'PASS') {
-      fail(label + ' is PASS while fault overall is ' + fault.overall)
-    }
-    if (fault.overall === 'PARTIAL') {
-      // Partial is allowed only when the missing fact is listed; the report
-      // must not silently claim PASS.
-      if (!Array.isArray(fault.missing) || fault.missing.length === 0) {
-        fail(label + ' fault PARTIAL has no missing fact list')
+  } else {
+    // Legacy (pre-contract) reports keep the old generic requirements. New
+    // reports must declare them per scenario in the contract. A legacy fault
+    // report is an expected-failure report, so it proves its facts instead of
+    // a completed B migration.
+    if (report.fault === 'none' && report.payloadOnly !== true) {
+      if (byName.get('data integrity after B') !== 'PASS') {
+        fail(label + ' does not prove data integrity after B')
+      }
+      if (byName.get('B migration') !== 'PASS') fail(label + ' does not prove the B migration')
+      const backup = byName.get('pre-migration backup')
+      if (backup !== 'PASS' && backup !== 'NOT_RUN') {
+        fail(label + ' has no backup result')
+      }
+      if (report.expectBackup === true && backup !== 'PASS') {
+        fail(label + ' expected a readable pre-migration backup but got ' + backup)
       }
     }
-    for (const name of fault.required) {
-      const status = fault.facts ? fault.facts[name] : undefined
-      if (status === 'FAIL') fail(label + ' fault fact ' + name + ' is FAIL')
+    if (report.faultAssessment) {
+      const fault = report.faultAssessment
+      if (!isObject(fault) || !Array.isArray(fault.required) || !Array.isArray(fault.failed)) {
+        fail(label + ' has a malformed faultAssessment')
+      }
+      if (fault.failed.length > 0) fail(label + ' fault has failed facts: ' + fault.failed.join(','))
+      if (fault.overall === 'FAIL') fail(label + ' fault overall is FAIL')
+      if (report.status === 'PASS' && fault.overall !== 'PASS') {
+        fail(label + ' is PASS while fault overall is ' + fault.overall)
+      }
+      if (fault.overall === 'PARTIAL') {
+        // Partial is allowed only when the missing fact is listed; the report
+        // must not silently claim PASS.
+        if (!Array.isArray(fault.missing) || fault.missing.length === 0) {
+          fail(label + ' fault PARTIAL has no missing fact list')
+        }
+      }
+      for (const name of fault.required) {
+        const status = fault.facts ? fault.facts[name] : undefined
+        if (status === 'FAIL') fail(label + ' fault fact ' + name + ' is FAIL')
+      }
+    } else if (report.fault && report.fault !== 'none') {
+      fail(label + ' fault ' + report.fault + ' has no faultAssessment')
     }
-  } else if (faultAssessmentModes.has(report.fault)) {
-    fail(label + ' fault ' + report.fault + ' has no faultAssessment')
   }
 
   if (report.status === 'PASS' && report.checks.some(check => check.status === 'FAIL')) {

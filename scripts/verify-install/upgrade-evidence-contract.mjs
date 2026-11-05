@@ -26,6 +26,7 @@ export const SCENARIO_CONTRACTS = {
       'B stopped',
       'data integrity after B',
       'vault crypto unlock after B',
+      'pre-migration backup',
     ],
     requiredFacts: [],
   },
@@ -46,6 +47,7 @@ export const SCENARIO_CONTRACTS = {
       'read-only failure detected by the app',
       'no partial migration',
       'read-only recovery',
+      'read-only recovery data integrity',
     ],
     requiredFacts: [
       'FAULT_INJECTED',
@@ -57,7 +59,7 @@ export const SCENARIO_CONTRACTS = {
   },
   'restart-idempotent': {
     platform: 'darwin',
-    requiredChecks: ['B migration', 'second B launch', 'restart idempotent', 'data integrity after B'],
+    requiredChecks: ['B migration', 'second B launch', 'restart idempotent', 'data integrity after B', 'pre-migration backup'],
     requiredFacts: ['ORIGINAL_DATA_PRESERVED', 'NO_PARTIAL_MIGRATION', 'RECOVERY_SUCCEEDED'],
   },
   interrupted: {
@@ -87,6 +89,7 @@ export const SCENARIO_CONTRACTS = {
       'disk-full original data preserved',
       'disk-full backup readable',
       'disk-full recovery',
+      'disk-full recovery data integrity',
     ],
     requiredFacts: [
       'FAULT_INJECTED',
@@ -106,6 +109,7 @@ export const SCENARIO_CONTRACTS = {
       'restored A launch',
       'backup restore',
       'backup restore stages',
+      'pre-migration backup',
     ],
     requiredFacts: [],
     requiredDetail: {

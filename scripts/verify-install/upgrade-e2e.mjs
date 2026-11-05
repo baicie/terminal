@@ -492,6 +492,13 @@ async function runMacos(flags) {
         appObserved ? 'PASS' : 'NOT_RUN',
         appObserved ? 'app log: file is not a database' : 'no matching line in the app log',
       )
+      // The corrupted file is preserved bit-for-bit but cannot be opened. Keep
+      // the schema fields as the pre-fault observation and say so explicitly
+      // rather than presenting them as a fresh read.
+      reportJson.schema.afterTables = reportJson.schema.beforeTables
+      reportJson.schema.afterHostColumns = reportJson.schema.beforeHostColumns
+      reportJson.schema.addedHostColumns = []
+      reportJson.schema.afterUnreadable = true
       applyFaultAssessment('corrupt-db', {
         FAULT_INJECTED: corruptedHash !== dbHashBefore ? 'PASS' : 'FAIL',
         APPLICATION_FAILURE_OBSERVED: appObserved ? 'PASS' : 'NOT_RUN',
@@ -547,11 +554,21 @@ async function runMacos(flags) {
           '--allow-settings-migration',
         ])
         recovery = 'PASS'
+        add('read-only recovery data integrity', 'PASS',
+          'post-recovery DB verified field by field with the new columns')
         add('read-only recovery', 'PASS', 'B migrated after the directory became writable')
       } catch (error) {
         recovery = 'FAIL'
+        add('read-only recovery data integrity', 'FAIL', errorMessage(error))
         add('read-only recovery', 'FAIL', errorMessage(error))
       }
+      reportJson.schema.afterTables = execFileSyncSqlite(
+        db,
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
+      reportJson.schema.afterHostColumns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
+      reportJson.schema.addedHostColumns = reportJson.schema.afterHostColumns
+        .filter(column => expectedNewHostColumns.includes(column))
       applyFaultAssessment('read-only-data-dir', {
         FAULT_INJECTED: 'PASS',
         APPLICATION_FAILURE_OBSERVED: appObserved ? 'PASS' : 'NOT_RUN',
@@ -675,10 +692,13 @@ async function runMacos(flags) {
           }
           add('disk-full backup readable', backupReadable ? 'PASS' : 'FAIL',
             backupReadable ? 'pre-migration snapshot verified' : 'no verifiable pre-migration snapshot')
+          add('disk-full recovery data integrity', 'PASS',
+            'post-recovery DB verified field by field with the new columns')
           recovery = 'PASS'
           add('disk-full recovery', 'PASS', 'B migrated after space was freed')
         } catch (error) {
           recovery = 'FAIL'
+          add('disk-full recovery data integrity', 'FAIL', errorMessage(error))
           add('disk-full recovery', 'FAIL', errorMessage(error))
         }
         reportJson.schema.afterTables = execFileSyncSqlite(
