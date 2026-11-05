@@ -798,6 +798,53 @@ function installAppImage(installer, destination) {
   return destination
 }
 
+async function extractAppImageWithSystemWebKit(installer, destination, work) {
+  const temp = mkdtempSync(path.join(work, 'appimage-extract-'))
+  try {
+    await run(installer, ['--appimage-extract'], { cwd: temp, timeout: 120_000, maxBuffer: 32 * 1024 * 1024 })
+    rmSync(destination, { recursive: true, force: true })
+    renameSync(path.join(temp, 'squashfs-root'), destination)
+  } finally {
+    rmSync(temp, { recursive: true, force: true })
+  }
+  // Headless CI has no DRM/GBM device. The payload's bundled WebKit (2.52)
+  // aborts in PlatformDisplayDefault::create() on this runner, while the
+  // system WebKit used by the DEB starts. Removing the bundled copy makes the
+  // extracted AppRun resolve the system WebKit; the app binary and data path
+  // remain the AppImage payload's. This is recorded as a fallback, never as a
+  // stock AppImage launch.
+  for (const directory of [
+    path.join(destination, 'usr', 'lib'),
+    path.join(destination, 'usr', 'lib', 'x86_64-linux-gnu'),
+    path.join(destination, 'usr', 'lib', 'aarch64-linux-gnu'),
+  ]) {
+    for (const name of ['libwebkit2gtk-4.1.so.0', 'libjavascriptcoregtk-4.1.so.0']) {
+      rmSync(path.join(directory, name), { force: true })
+    }
+  }
+  return path.join(destination, 'AppRun')
+}
+
+async function launchAppImageWithEglFallback({
+  installer, stockBinary, home, db, logPath, fallbackLogPath, env, work, label,
+}) {
+  let child = launch(stockBinary, home, logPath, env)
+  try {
+    await waitForDatabase(db)
+    return { child, binary: stockBinary, fallback: false }
+  } catch (error) {
+    await stop(child)
+    const text = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
+    if (!/EGL|BAD_PARAMETER/i.test(text)) throw error
+    const appRun = await extractAppImageWithSystemWebKit(
+      installer, path.join(work, label + '-appimage-extracted'), work,
+    )
+    child = launch(appRun, home, fallbackLogPath, { ...env, APPIMAGE_EXTRACT_AND_RUN: '0' })
+    await waitForDatabase(db)
+    return { child, binary: appRun, fallback: true }
+  }
+}
+
 async function runLinux(flags) {
   const aInstaller = path.resolve(flags['a-installer'])
   const bInstaller = path.resolve(flags['b-installer'])
@@ -932,8 +979,28 @@ async function runLinux(flags) {
       APPIMAGE_EXTRACT_AND_RUN: '1',
       DISPLAY: display,
     }
-    aProcess = launch(aBinary, home, reportJson.logs.a, env)
-    await waitForDatabase(db)
+    if (mode === 'appimage') {
+      const startedA = await launchAppImageWithEglFallback({
+        installer: aInstaller,
+        stockBinary: aBinary,
+        home,
+        db,
+        logPath: reportJson.logs.a,
+        fallbackLogPath: path.join(logs, 'a-fallback.log'),
+        env,
+        work,
+        label: 'a',
+      })
+      aProcess = startedA.child
+      if (startedA.fallback) {
+        reportJson.logs.aFallback = path.join(logs, 'a-fallback.log')
+        add('AppImage headless WebKit fallback', 'PASS',
+          'bundled WebKit could not create EGL display; system WebKit used with the AppImage payload')
+      }
+    } else {
+      aProcess = launch(aBinary, home, reportJson.logs.a, env)
+      await waitForDatabase(db)
+    }
     add('A database created', 'PASS', db)
     await waitForSchema(db, 'hosts:id;settings:key;workspaces:id;workspace_layouts:workspace_id')
     add('A schema ready', 'PASS')
@@ -982,7 +1049,27 @@ async function runLinux(flags) {
       }
     }
 
-    aProcess = launch(bBinary, home, reportJson.logs.b, env)
+    if (mode === 'appimage') {
+      const startedB = await launchAppImageWithEglFallback({
+        installer: bInstaller,
+        stockBinary: bBinary,
+        home,
+        db,
+        logPath: reportJson.logs.b,
+        fallbackLogPath: path.join(logs, 'b-fallback.log'),
+        env,
+        work,
+        label: 'b',
+      })
+      aProcess = startedB.child
+      if (startedB.fallback) {
+        reportJson.logs.bFallback = path.join(logs, 'b-fallback.log')
+        add('AppImage B headless WebKit fallback', 'PASS',
+          'system WebKit used with the replaced AppImage payload')
+      }
+    } else {
+      aProcess = launch(bBinary, home, reportJson.logs.b, env)
+    }
     await waitForSchema(db, 'hosts:' + expectedNewHostColumns.join(','))
     add('B migration', 'PASS', expectedNewHostColumns.join(','))
     const stopB = await stop(aProcess)
