@@ -755,9 +755,11 @@ async function runMacos(flags) {
 
 async function startXvfb() {
   const display = ':' + (90 + (process.pid % 50))
-  const child = spawn('Xvfb', [display, '-screen', '0', '1280x1024x24'], {
-    stdio: 'ignore',
-  })
+  const child = spawn(
+    'Xvfb',
+    [display, '-screen', '0', '1280x1024x24', '+extension', 'GLX', '+render', '-noreset'],
+    { stdio: 'ignore' },
+  )
   await waitFor(
     async () => {
       try {
@@ -916,6 +918,7 @@ async function runLinux(flags) {
       EGL_PLATFORM: 'x11',
       __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/50_mesa.json',
       GDK_BACKEND: 'x11',
+      GDK_GL: 'disable',
       NO_AT_BRIDGE: '1',
       APPIMAGE_EXTRACT_AND_RUN: '1',
       DISPLAY: display,

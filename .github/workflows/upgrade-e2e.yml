@@ -319,8 +319,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            xvfb x11-utils libegl1 libgl1 libgl1-mesa-dri \
-            libayatana-appindicator3-1 libwebkit2gtk-4.1-0 libgtk-3-0
+            xvfb x11-utils libegl1 libegl-mesa0 libgles2 libgl1 libgl1-mesa-dri \
+            libayatana-appindicator3-1 libwebkit2gtk-4.1-0 libgtk-3-0 mesa-utils
+      - name: Probe the headless EGL stack
+        run: |
+          ls -l /usr/share/glvnd/egl_vendor.d || true
+          ls /usr/lib/x86_64-linux-gnu/dri | head -10
+          xvfb-run -a eglinfo -B 2>&1 | head -20 || true
       - name: Download published AppImages
         env:
           GH_TOKEN: ${{ github.token }}
