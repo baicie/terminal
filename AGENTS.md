@@ -584,13 +584,13 @@ pnpm add <package-name>
 
 ### Phase 9.5.3 - Process Lifecycle & Crash-Safe Recovery 🟡 P0 完成，外部环境待补
 
-- ✅ 异步进程生命周期：`process-lifecycle.mjs`，真实 exit/close、SIGTERM→SIGKILL、日志 close 后写入、7 项 dummy child 测试；不再用 `Atomics.wait`
+- ✅ 异步进程生命周期：`process-lifecycle.mjs`，真实 exit/close、SIGTERM→SIGKILL、日志 close 后写入、7 项 dummy child 测试；不再用 `Atomics.wait`；E2E `42019746261` 11 次 stop 全 graceful、0 forced
 - ✅ 恢复状态机：`PREPARE→QUIESCE→VERIFY_BACKUP→STAGE→VERIFY_STAGED→COMMIT→VERIFY→COMPLETE`，crash point 仅 `TERMINAL_TEST_CRASH=1` 启用；报告记录 `backup restore stages`
 - ✅ busy checkpoint：真实第二个 SQLite 连接持读事务，checkpoint 非零退出
 - 🟡 进程组/WebKit/PTY/lsof quiescence **NOT_RUN**；crash point 真实逐点执行 **NOT_RUN**
 - 🟡 磁盘满/ENOSPC、Windows disposable profile/VM、Vault app-level、Team Sync 跨版本客户端、updater 运行时 **NOT_RUN**
 - 🟡 AppImage 仍 payload-only（stock 启动 NOT_RUN）
-- 📋 最终代码/CI/判定见 `docs/phase9-5/phase9-5-3-implementation.md`
+- ✅ 最终 E2E `42019746261` 5/5、CI `42019753323` 11/11；代码 HEAD `d958e28`；判定见 `docs/phase9-5/phase9-5-3-implementation.md`
 
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
@@ -1082,7 +1082,7 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-11-05 (Phase 9.5.2：场景级升级证据契约与 22 项负测试；备份/WAL 恢复顺序、真实 Vault Argon2id/AES fixture、Team Sync full AppModule HTTP、Windows 隔离状态机；Windows A→B/磁盘满/app-level Vault/updater 运行时/AppImage stock 启动仍 NOT_RUN 或 PARTIAL；六份证据按 fd9cc8ac 指纹重采，详见 docs/phase9-5/phase9-5-2-implementation.md)_
+_文档更新时间: 2026-11-05 (Phase 9.5.3：异步进程生命周期、恢复状态机 8 阶段与 crash point、busy checkpoint 真实负测试；E2E `42019746261` 5/5、CI `42019753323` 11/11；Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、ENOSPC、AppImage stock 仍 NOT_RUN/PARTIAL；详见 docs/phase9-5/phase9-5-3-implementation.md)_
 
 _历史更新 2026-11-03: (Phase 9.3：bootstrap 的五个配置探测由串行改并发，修掉「一个慢 IPC 饿死其余」——这是 real-machine run `41437956656` 上 `nano-edit`「从未写 result.json」的根因；冷启动测量目录清理改带重试，修掉 `ENOTEMPTY` 假红；6 份证据随 run `41478709578` 重采为指纹 `c4faedfb…`，门禁 0 problem；交付 `docs/phase9-3/bootstrap-probe-starvation.md`)_
 

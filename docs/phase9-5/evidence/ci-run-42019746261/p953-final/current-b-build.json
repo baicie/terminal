@@ -1,0 +1,8 @@
+{
+  "sourceSha": "d958e283b75813ff00191a50e34256875747bdc0",
+  "version": "0.0.1-dev.4-local",
+  "kind": "current-source-test-build",
+  "instrumentedBuild": true,
+  "migrationDelayMs": 1500,
+  "nodeVersion": "v24.16.0"
+}

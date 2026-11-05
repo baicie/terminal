@@ -1,6 +1,7 @@
 # Phase 9.5.3 — Process Lifecycle & Crash-Safe Recovery
 
 > 日期：2026-11-05
+> 代码 HEAD：`d958e28`；最终 E2E `42019746261`、CI `42019753323`
 > 分支：`feat/phase9-5-upgrade-integrity`（PR #8 Draft）
 > 约束：不合并 PR、不打 tag、不发布 Release、不改生产密钥/identifier。
 
@@ -8,7 +9,7 @@
 
 | 项 | 结果 |
 | --- | --- |
-| 异步进程生命周期 | **完成**：`process-lifecycle.mjs`，7 项单元测试 |
+| 异步进程生命周期 | **完成**：`process-lifecycle.mjs`，7 项单元测试；真实 E2E 11 次 stop 全部 graceful、0 forced |
 | 真实子进程停止 | **完成**：exit/close 事件、SIGTERM→SIGKILL、日志 close 后写入 |
 | SQLite 恢复状态机 | **完成**：8 阶段、顺序断言、crash point hook |
 | busy checkpoint | **完成**：真实第二连接测试，checkpoint 非零退出 |
@@ -33,7 +34,7 @@
 
 ## 3. 测试
 
-- `node --test scripts/verify-install/*.test.mjs`：**54 passed / 2 skipped**
+- `node --test scripts/verify-install/*.test.mjs`：**57 passed / 2 skipped**
   （本地 Node 22 跳过 Argon2；Node 24 CI 全过）。
 - 本机 normal / restore：PASS；`A stopped`/`B stopped` 为
   `graceful exitObserved=true closeObserved=true escalation=false`。
