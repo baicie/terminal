@@ -1,5 +1,8 @@
 import { expect, it, vi } from 'vitest'
-import { initializeCoreSchema } from './connection-schema-core'
+import {
+  initializeCoreSchema,
+  parseSmokeMigrationDelay,
+} from './connection-schema-core'
 
 const invoke = vi.hoisted(() => vi.fn())
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
@@ -57,6 +60,14 @@ function connectionWith(tables: Record<string, string[]>) {
 
 /** A database that is one release behind: both tables exist without the new columns. */
 const legacyTables = { hosts: HOST_COLUMNS.slice(0, 12), connection_logs: ['id'] }
+
+it('parses the test-only migration delay only in instrumented builds', () => {
+  expect(parseSmokeMigrationDelay('1500', true)).toBe(1500)
+  expect(parseSmokeMigrationDelay('0', true)).toBe(0)
+  expect(parseSmokeMigrationDelay('-1', true)).toBe(0)
+  expect(parseSmokeMigrationDelay('not-a-number', true)).toBe(0)
+  expect(parseSmokeMigrationDelay('1500', false)).toBe(0)
+})
 
 it('creates and migrates the host agent forwarding setting', async () => {
   const execute = vi.fn().mockResolvedValue(undefined)

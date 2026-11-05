@@ -19,6 +19,7 @@
 import { execFile, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   readdirSync,
@@ -145,14 +146,51 @@ async function inspectLinux(installer) {
     }
   }
   if (name.endsWith('.AppImage')) {
+    // Prefer the payload's own .desktop/AppRun metadata. The filename is a
+    // fallback for display only; it must not be presented as a read identity.
+    const work = mkdtempSync(path.join(os.tmpdir(), 'appimage-meta-'))
+    let version = null
+    let arch = null
+    let metadataSource = 'UNKNOWN'
+    const checks = []
+    try {
+      chmodSync(installer, 0o755)
+      await run(installer, ['--appimage-extract'], { cwd: work, timeout: 60_000 })
+      checks.push('AppImage payload extracted')
+      const root = path.join(work, 'squashfs-root')
+      const desktop = readdirSync(root).find(entry => entry.endsWith('.desktop'))
+      if (desktop) {
+        const contents = readFileSync(path.join(root, desktop), 'utf8')
+        const field = key => {
+          const match = new RegExp('^' + key + '=(.*)$', 'm').exec(contents)
+          return match ? match[1].trim() : null
+        }
+        version = field('X-AppImage-Version') || field('Version')
+        if (version) metadataSource = 'desktop'
+      }
+      const appRun = path.join(root, 'AppRun')
+      if (existsSync(appRun)) {
+        const file = (await run('file', ['-b', appRun])).stdout
+        if (/aarch64|ARM aarch64/i.test(file)) arch = 'arm64'
+        else if (/x86-64|x86_64/i.test(file)) arch = 'x64'
+      }
+      checks.push('AppImage AppRun inspected')
+    } catch (error) {
+      checks.push('AppImage extraction failed: ' + errorMessage(error))
+    } finally {
+      rmSync(work, { recursive: true, force: true })
+    }
     return {
       platform: 'linux',
       bundleName: name,
       identifier: null,
-      version: versionFromFileName(name),
-      arch: archFromFileName(name),
-      checks: ['AppImage metadata derived from the published filename'],
-      status: 'PASS',
+      version,
+      filenameVersion: versionFromFileName(name),
+      arch: arch || archFromFileName(name),
+      archSource: arch ? 'AppRun' : 'filename',
+      metadataSource,
+      checks,
+      status: version ? 'PASS' : 'NOT_RUN',
     }
   }
   throw new Error('unsupported Linux installer: ' + name)

@@ -218,6 +218,30 @@ export async function ensurePreMigrationSnapshot(
   }
 }
 
+/**
+ * Test-only pause between column migrations.
+ *
+ * The upgrade harness needs a deterministic window to kill the app between
+ * `snapshot-finished` and `core-schema-finished`. Random kills are not
+ * evidence. The delay is compiled only into instrumented smoke builds; a
+ * normal product build returns 0 even if the environment variable is present.
+ */
+export function parseSmokeMigrationDelay(
+  value: unknown,
+  smokeBuild: boolean,
+): number {
+  if (!smokeBuild) return 0
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+function smokeMigrationDelayMs(): number {
+  return parseSmokeMigrationDelay(
+    import.meta.env.VITE_TERMINAL_MIGRATION_DELAY_MS,
+    import.meta.env.VITE_TERMINAL_SMOKE_BUILD === '1',
+  )
+}
+
 export async function initializeCoreSchema(
   database: SqliteConnection,
 ): Promise<void> {
@@ -234,7 +258,11 @@ export async function initializeCoreSchema(
 
   for (const statement of schemaStatements.slice(0, 15))
     await database.execute(statement)
+  const migrationDelay = smokeMigrationDelayMs()
   for (const migration of columnMigrations) {
+    if (migrationDelay > 0) {
+      await new Promise(resolve => setTimeout(resolve, migrationDelay))
+    }
     try {
       await database.execute(migration.sql)
     } catch (error) {
