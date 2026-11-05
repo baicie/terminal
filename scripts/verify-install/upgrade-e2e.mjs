@@ -681,6 +681,16 @@ async function runMacos(flags) {
           recovery = 'FAIL'
           add('disk-full recovery', 'FAIL', errorMessage(error))
         }
+        reportJson.schema.afterTables = execFileSyncSqlite(
+          smallDb,
+          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+        reportJson.schema.afterHostColumns = execFileSyncSqlite(
+          smallDb,
+          "SELECT name FROM pragma_table_info('hosts')",
+        )
+        reportJson.schema.addedHostColumns = reportJson.schema.afterHostColumns
+          .filter(column => expectedNewHostColumns.includes(column))
         applyFaultAssessment('disk-full', {
           FAULT_INJECTED: 'PASS',
           APPLICATION_FAILURE_OBSERVED: fullyMigrated ? 'FAIL' : 'PASS',
