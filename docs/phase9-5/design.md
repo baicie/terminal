@@ -31,6 +31,11 @@
 - [x] 11/11 checks pass（run `41612144366`，head `47b9a6e`）。
 - [x] 六份 evidence 与源码指纹匹配，门禁 0 problem。
 - [x] source-size 563 个生产文件通过。
+- [x] 数据兼容性（**静态**）：PR #6 的 database diff 无 `DROP`/`DELETE FROM`；
+      `team_shared_hosts`/`team_shared_snippets` 新增 `is_sensitive`/`encrypted_data`
+      同时出现在 `CREATE TABLE IF NOT EXISTS` 与 `ALTER TABLE` 迁移中。**main →
+      PR #6 的实机 A→B 升级仍是 NOT_RUN**；本轮 dev.1→dev.2 是历史发布链，不是
+      main 的升级证据。该限制已在此写明，不把静态审查写成运行证据。
 - [x] 依赖安全：`cargo audit` 13 条已记录，`RUSTSEC-2023-0071` 仍阻塞发布、不阻塞合并；
   `pnpm audit --prod` 无已知漏洞。
 - [x] 同步冲突五处 P0、双客户端真实 PG、Share REST、Linux zsh 等证据见
