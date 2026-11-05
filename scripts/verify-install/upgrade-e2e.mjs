@@ -564,18 +564,9 @@ async function runMacos(flags) {
     }
 
     if (fault === 'disk-full') {
-      if (!backup) {
-        add('disk-full pre-migration backup', 'FAIL', 'this B produced no pre-migration backup')
-        applyFaultAssessment('disk-full', {
-          FAULT_INJECTED: 'NOT_RUN',
-          APPLICATION_FAILURE_OBSERVED: 'NOT_RUN',
-          ORIGINAL_DATA_PRESERVED: 'NOT_RUN',
-          NO_PARTIAL_MIGRATION: 'NOT_RUN',
-          RECOVERY_SUCCEEDED: 'NOT_RUN',
-        })
-        await report(work, reportDir, reportJson)
-        return reportJson
-      }
+      // This branch runs before the normal B launch, so `db` is still the A
+      // database. Checkpoint it first so the copy is a single consistent file.
+      await dr(['checkpoint', '--db', db])
       const volume = createSmallVolume(64)
       if (volume.unavailable) {
         add('disk-full volume', 'FAIL', volume.unavailable)
@@ -594,7 +585,7 @@ async function runMacos(flags) {
         const smallDataDir = path.join(smallHome, 'Library', 'Application Support', expectedIdentifier)
         const smallDb = path.join(smallDataDir, 'terminal.db')
         mkdirSync(smallDataDir, { recursive: true })
-        cpSync(backup, smallDb)
+        cpSync(db, smallDb)
         const smallVaultDir = path.join(smallHome, 'Library', 'Application Support', 'terminal')
         mkdirSync(smallVaultDir, { recursive: true })
         if (existsSync(vault)) copyFileSync(vault, path.join(smallVaultDir, 'vault.json'))
@@ -602,7 +593,9 @@ async function runMacos(flags) {
         // we leave behind: 24 MB database, roughly 8 MB free.
         execFileSyncSqlite(
           smallDb,
-          'CREATE TABLE disk_full_bulk (payload BLOB); INSERT INTO disk_full_bulk VALUES (zeroblob(25165824));',
+          'CREATE TABLE disk_full_bulk (payload BLOB); ' +
+          'INSERT INTO disk_full_bulk VALUES (zeroblob(25165824)); ' +
+          'PRAGMA wal_checkpoint(TRUNCATE);',
         )
         const fillerDir = path.join(volume.mountDir, 'filler')
         mkdirSync(fillerDir, { recursive: true })
