@@ -66,7 +66,11 @@ export function checkUpgradeReport(report, label = 'upgrade-report.json') {
   if (report.a.identifier !== report.b.identifier) {
     fail(label + ' A/B identifiers differ: ' + report.a.identifier + ' / ' + report.b.identifier)
   }
-  if (report.a.version === report.b.version) {
+  if (
+    typeof report.a.version === 'string' &&
+    typeof report.b.version === 'string' &&
+    report.a.version === report.b.version
+  ) {
     fail(label + ' A/B versions are identical: ' + report.a.version)
   }
 

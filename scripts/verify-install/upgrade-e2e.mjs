@@ -980,7 +980,10 @@ async function main() {
   }
   const result = platform === 'darwin' ? await runMacos(parsed.flags) : await runLinux(parsed.flags)
   console.log(JSON.stringify(result, null, 2))
-  process.exitCode = result.status === 'PASS' ? 0 : 1
+  // PARTIAL is a real result (for example, AppImage payloads without internal
+  // version metadata). The independent evidence gate decides whether its
+  // missing facts are acceptable; only FAIL/NOT_RUN make the harness itself red.
+  process.exitCode = result.status === 'FAIL' || result.status === 'NOT_RUN' ? 1 : 0
 }
 
 main().catch(error => {

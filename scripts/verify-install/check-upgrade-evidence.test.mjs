@@ -84,6 +84,37 @@ test('rejects a report without data integrity or a required backup', () => {
   )
 })
 
+test('accepts an AppImage PARTIAL with unverified internal version metadata', () => {
+  const value = report({
+    status: 'PARTIAL',
+    expectBackup: false,
+    a: {
+      version: null,
+      metadataSource: 'UNKNOWN',
+      sha256: 'a'.repeat(64),
+      identifier: null,
+      arch: 'x64',
+    },
+    b: {
+      version: null,
+      metadataSource: 'UNKNOWN',
+      sha256: 'b'.repeat(64),
+      identifier: null,
+      arch: 'x64',
+    },
+    checks: [
+      { name: 'B migration', status: 'PASS' },
+      { name: 'data integrity after B', status: 'PASS' },
+      { name: 'pre-migration backup', status: 'NOT_RUN' },
+    ],
+  })
+  assert.equal(checkUpgradeReport(value).status, 'PARTIAL')
+  assert.throws(
+    () => checkUpgradeReport({ ...value, status: 'PASS' }),
+    /unverified metadata/,
+  )
+})
+
 test('rejects a fault report with a failed required fact', () => {
   assert.throws(
     () =>
