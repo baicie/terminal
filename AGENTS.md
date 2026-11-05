@@ -544,14 +544,15 @@ pnpm add <package-name>
 
 ### Phase 9.5 - Integration Closure & Real Upgrade Foundation ✅ 基础完成
 
-- 分支 `feat/phase9-5-upgrade-integrity`，base `a7a65bc`（stacked，不是 main）
-- ✅ PR #6：`mergeStateStatus=CLEAN`、11/11 checks、evidence 0、无冲突；`PR_6_READY_FOR_HUMAN_MERGE=YES`
-- ✅ PR #7：18 个 unique commits；模拟 PR #6 合并后 `git rebase --onto` **0 冲突**，证据门禁 0、source-size 568；`PR_7_INTEGRATION_READY=YES`（先人工合并 #6）
+- 分支 `feat/phase9-5-upgrade-integrity`，已重放到 PR #7 `00715d6`
+- ✅ PR #6：**已合并**为 `9a0ca15`（2026-11-05T03:24:04Z），main 已更新；合并前 `CLEAN`、11/11、evidence 0
+- ✅ PR #7：已 rebase 到 main（18/18、0 冲突、证据门禁 0、source-size 568），head `00715d6`，base 已改为 `main`
+- ✅ PR #8：已重放到 `00715d6`，head `1f04c91`，5 commits、40 文件，仍为 Draft
 - ✅ 真实 A→B：发布 `0.0.1-dev.1`（`73cf7483…`）→ 发布 `0.0.1-dev.2`（`2c9a0ca3…`）PASS；dev.1 → 当前源码 `0.0.1-dev.3-local`（`66f2465d…`）PASS
 - ✅ schema：hosts 20→22 列（`agent_forwarding`、`shell_integration`）；settings 全键、workspaces/layout、Team Sync 本地 5 表、vault 文件逐字段 PASS
 - ✅ 当前 B 的 `pre-migration-<epoch>.db` 已生成且可读回；dev.2 无备份能力，标 NOT_RUN
 - ✅ 故障：损坏 DB、只读数据目录、重复启动、备份可读均 PASS；迁移中断/磁盘满/自动恢复/B→A 降级 NOT_RUN
-- ✅ CI：`Upgrade E2E` run `41954815468` **success**（A→B + corrupt/read-only/restart）；普通 CI `Repository gates` 已加入 `scripts/verify-install/*.test.mjs`
+- ✅ CI：`Upgrade E2E` run `41954815468` **success**（A→B + corrupt/read-only/restart）；PR #8 重放后 run `41961803808` 也 **success**；普通 CI `Repository gates` 已加入 `scripts/verify-install/*.test.mjs`
 - 🟡 Linux/Windows 升级适配器 NOT_RUN；Windows APPDATA 实际未隔离且现有脚本会删除真实目录，禁止在真实 profile 上跑
 - 🟡 真实 Vault 解锁、Team Sync 服务端同步、updater 运行时下载/安装/重启、签名/公证、身份迁移、RC/Release 均未闭合
 - 📋 Phase 9.5.1：Linux fail-closed 适配器、Windows 一次性 profile/VM、迁移中断/磁盘满/恢复 E2E、updater 升级链、把升级证据纳入 release 指纹
@@ -1046,7 +1047,7 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-11-05 (Phase 9.5：Phase 9.4.2 归档；PR #6 CLEAN 11/11、PR #7 18 commits 模拟 post-#6 rebase 0 冲突；真实发布 dev.1→dev.2 与 dev.1→当前源码升级 PASS，Upgrade E2E CI run `41954815468` success；hosts 20→22 列、settings 全键、Team Sync 本地 5 表、vault、backup 可读；corrupt/read-only/restart/backup 故障 PASS；Linux/Windows、回滚、签名、身份迁移、真实 Vault 解锁仍 NOT_RUN/BLOCKED_EXTERNAL；详见 `docs/phase9-5/implementation-report.md`)_
+_文档更新时间: 2026-11-05 (Phase 9.5：Phase 9.4.2 归档；PR #6 已合并为 `9a0ca15`；PR #7 rebase 到 main 为 `00715d6`（18/18、0 冲突、门禁 0、source-size 568），PR #8 重放为 `1f04c91`；真实发布 dev.1→dev.2 与 dev.1→当前源码升级 PASS，Upgrade E2E CI `41954815468` 与重放后 `41961803808` 均 success；hosts 20→22 列、settings 全键、Team Sync 本地 5 表、vault、backup 可读；corrupt/read-only/restart/backup 故障 PASS；Linux/Windows、回滚、签名、身份迁移、真实 Vault 解锁仍 NOT_RUN/BLOCKED_EXTERNAL；详见 `docs/phase9-5/implementation-report.md`)_
 
 _历史更新 2026-11-03: (Phase 9.3：bootstrap 的五个配置探测由串行改并发，修掉「一个慢 IPC 饿死其余」——这是 real-machine run `41437956656` 上 `nano-edit`「从未写 result.json」的根因；冷启动测量目录清理改带重试，修掉 `ENOTEMPTY` 假红；6 份证据随 run `41478709578` 重采为指纹 `c4faedfb…`，门禁 0 problem；交付 `docs/phase9-3/bootstrap-probe-starvation.md`)_
 

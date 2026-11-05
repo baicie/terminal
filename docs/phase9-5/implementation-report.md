@@ -53,6 +53,24 @@ corrupt/read-only/restart 全部 success。
 
 ## 4. 九项判定
 
+## 3.1 集成执行结果（2026-11-05）
+
+| 动作 | 结果 |
+| --- | --- |
+| PR #6 | **MERGED**，merge commit `9a0ca15`，main 已更新 |
+| PR #7 rebase | `git rebase --onto origin/main 47b9a6e`：18/18、0 冲突、门禁 0、source-size 568；head `00715d6` |
+| PR #7 retarget | base 已改为 `main`，diff 62 文件 |
+| PR #8 rebase | 重放到 `00715d6`：5/5、0 冲突；head `1f04c91`，diff 40 文件 |
+| 误触发的 300 次压测 | 已取消（`41961803975`、`41961588916`），不重复无意义压测；GitHub 将其记为 cancelled/fail check，属预期副作用 |
+| 重放后的 Upgrade E2E | run `41961803808` **success** |
+| main CI（PR #6 merge 后） | run `41961359521` **success**（11/11） |
+| PR #7 push CI | run `41961588850` **success** |
+| PR #7 pull_request CI | run `41961595884` **success** |
+| PR #8 push CI | run `41961803954` **success** |
+| PR #8 pull_request CI | run `41961809894`：Windows build 待完成；其余 job success |
+
+## 4. 九项判定
+
 | 判定 | 结果 | 依据 |
 | --- | --- | --- |
 | `PHASE_9_4_2_ENGINEERING_CLOSED` | **YES** | `docs/phase9-4/phase9-4-2-closure.md` |

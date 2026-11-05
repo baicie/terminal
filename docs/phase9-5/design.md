@@ -17,13 +17,14 @@
 
 | 项 | 值 |
 | --- | --- |
-| main | `2f1d68ff9232f51a90de997e4dbfa240ed2068d0` |
-| PR #6 | OPEN / Draft，head `47b9a6e`，base `main`，`mergeStateStatus=CLEAN`，11/11 checks pass |
-| PR #7 | OPEN / Draft，head `a7a65bc`，base `feat/phase9-2-sync-security-hardening`，`mergeable=MERGEABLE`，`mergeStateStatus=UNSTABLE` |
+| main | `9a0ca15416f11ab84c044b4eed27a65914631ca8`（PR #6 merge commit，2026-11-05T03:24:04Z） |
+| PR #6 | **MERGED**，merge commit `9a0ca15`，head `47b9a6e`，base `main` |
+| PR #7 | OPEN，head `00715d6`，base `main`，**18 unique commits**，rebase 后待 CI |
+| PR #8 | OPEN / Draft，head `1f04c91`，base `feat/phase9-4-rc-reliability`，**5 commits** |
 | PR #6 evidence | 6 份，指纹 `6d7536e7…`，门禁 0 problem（独立 worktree 复核） |
 | PR #6 source-size | 563 个生产文件 |
-| PR #7 unique commits | `47b9a6e..a7a65bc` 共 **18** 个 |
-| Phase 9.5 分支 | 从 `a7a65bc` 切出；**stacked dependency**，不是 main |
+| PR #7 unique commits | `47b9a6e..a7a65bc` 共 18 个；rebase 后 `main..00715d6` 仍为 18 个 |
+| Phase 9.5 分支 | 从 `a7a65bc` 切出；已重放到 `00715d6` |
 
 ## 3. PR #6 人工合并检查表
 
@@ -72,7 +73,12 @@ base branch 共享，不会在 PR #7 的 diff 中重复出现。
 `scripts/run-cold-start-stopwatch.test.mjs` 产生冲突；这是预期的假冲突，不是
 post-#6 集成的真实冲突。**必须先合并 PR #6，再 rebase。**
 
-### 4.3 执行步骤（PR #6 真正合并后）
+### 4.3 执行步骤（已执行）
+
+2026-11-05：PR #6 已合并为 `9a0ca15`；PR #7 已执行
+`git rebase --onto origin/main 47b9a6e`（18/18，0 冲突，门禁 0，source-size 568），
+推送为 `00715d6` 并 retarget 到 main；PR #8 已重放到 `00715d6`，head `1f04c91`，
+5 commits、40 文件。以下步骤保留为复核清单。
 
 1. 核对 main 最新 SHA，确认它包含 PR #6 的树。
 2. 在 PR #7 分支执行 `git fetch origin && git rebase --onto origin/main 47b9a6e`。

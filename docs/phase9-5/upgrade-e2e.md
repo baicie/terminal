@@ -85,6 +85,10 @@ node scripts/verify-install/upgrade-e2e.mjs run \
 `scripts/verify-install/*.test.mjs`（已加入 `node --test` 命令），避免新增测试
 只在本地执行。
 
+PR #8 重放到新的 PR #7 HEAD 后，强制推送误触发了同一 Upgrade E2E workflow：
+run `41961803808` **success**，证明重放后的树仍可执行 A→B 与三个故障测试。
+误触发的 300 次冷启动压测已取消，没有重复无意义压测。
+
 ## 6. 判定
 
 - `REAL_TWO_VERSION_UPGRADE_VERIFIED = YES`（macOS 本机真实发布 dev.1→dev.2 与
