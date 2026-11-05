@@ -265,6 +265,7 @@ async function runMacos(flags) {
   const fault = typeof flags.fault === 'string' ? flags.fault : 'none'
   const expectBackup = flags['expect-backup'] === true
   const workRoot = path.resolve(flags['work-dir'] || os.tmpdir())
+  mkdirSync(workRoot, { recursive: true })
   const work = mkdtempSync(path.join(workRoot, 'terminal-upgrade-'))
   const reportDir = path.resolve(flags['report-dir'] || path.join(work, 'report'))
   const home = path.join(work, 'home')
