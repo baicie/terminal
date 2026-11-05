@@ -40,7 +40,7 @@
 | `node --test scripts/verify-install/*.test.mjs` | **22/22 pass** |
 | `pnpm check:source-size` | **568 files pass** |
 | 六份证据门禁（本地） | **0 problem** |
-| 当前 HEAD CI 升级（`41975451672`） | 7/7 报告 **PASS** |
+| 当前 HEAD CI 升级（`41980039459`） | 7/7 报告 **PASS** |
 | Linux DEB（`41972602296`） | **PASS** |
 | Windows 预检（`41972602296`） | **success**（隔离拒绝正确） |
 | Linux AppImage | 见 `linux-upgrade-verification.md` |
