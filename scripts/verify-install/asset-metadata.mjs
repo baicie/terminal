@@ -197,6 +197,28 @@ async function inspectLinux(installer) {
         else if (/x86-64|x86_64/i.test(file)) arch = 'x64'
       }
       checks.push('AppImage AppRun inspected')
+      // Record whether the payload carries its own GL stack; this explains
+      // EGL failures on a headless runner without guessing.
+      const bundledGl = (
+        await run('find', [
+          root,
+          '-maxdepth',
+          '5',
+          '-name',
+          'libEGL*',
+          '-o',
+          '-name',
+          'libGL*',
+          '-o',
+          '-name',
+          'dri',
+        ])
+      ).stdout
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map(entry => path.relative(root, entry))
+      checks.push('bundled GL entries: ' + (bundledGl.join(',') || 'none'))
     } catch (error) {
       checks.push('AppImage extraction failed: ' + errorMessage(error))
     } finally {
