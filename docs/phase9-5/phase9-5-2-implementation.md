@@ -2,7 +2,7 @@
 
 > 日期：2026-11-05
 > 分支：`feat/phase9-5-upgrade-integrity`（PR #8 Draft）
-> HEAD：`a82bd45`（代码）+ 本轮文档提交
+> HEAD：`428ef5f`（文档）/ `78dd0d8`（代码）
 > 约束：不合并 PR #7/#8、不打 tag、不发布 Release、不改生产密钥/identifier。
 
 ## 1. 完成内容
@@ -53,7 +53,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 代码 HEAD | `a82bd45` |
+| 代码 HEAD | `78dd0d8`；文档 HEAD `428ef5f` |
 | Upgrade E2E | `42003371472` **success 5/5**：macOS current 7/7、historical、Linux DEB、AppImage payload-only、Windows 预检；B source `78dd0d8`、DMG SHA `dcd865d1…` |
 | 普通 CI | `42003381820` **success 11/11**（代码 + fd9cc8ac 证据提交） |
 | 证据重采 | 见第 5 节；最终 run 号会回写 |
