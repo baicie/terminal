@@ -62,7 +62,7 @@
 | WAL/恢复顺序 | **PASS（恢复协议）**：checkpoint/sidecar/最早备份/A 启动 + 8 阶段真实崩溃矩阵；ENOSPC 仅 staged restore |
 | 不兼容降级 | **NOT_RUN**：加法 schema 读取已验，未来 schema 拒绝未实现 |
 | updater 运行时链 | **NOT_RUN**：只有 latest.json 静态契约；下载/验签/安装/重启未验证 |
-| 进程生命周期 | **PARTIAL（Phase 9.5.4）**：stop 严格 fail-closed、quiescence process/stream/lsof DB；进程组/PTY/WebKit 未实现 |
+| 进程生命周期 | **PASS（macOS/Linux，Phase 9.5.5）**：stop 严格 fail-closed + 四事实 quiescence（process/streams/process-tree/lsof DB）；E2E 10 份报告全 PASS；Windows 无 pgrep，NOT_RUN |
 | 真实 crash-point | **PASS（Phase 9.5.4）**：独立 worker 在 8/8 阶段真实 SIGKILL + control；PID 归属、精确文件集、integrity/content 全断言（见 `real-crash-point-matrix.md`） |
 | ENOSPC | **PARTIAL（Phase 9.5.4）**：64 MB 隔离卷（macOS DMG、Linux tmpfs，CI 实测）上 staged restore 失败后主库不变、retry 收敛；备份 VACUUM/migration/安装 ENOSPC **NOT_RUN**（见 `enospc-verification.md`） |
 | 恢复 crash point / 重试 | **PASS（恢复协议）**：崩溃后独立 retry，6 阶段 `restored`、2 阶段 `already-restored`；**产品启动时自动恢复仍 NOT_RUN** |

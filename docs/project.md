@@ -920,7 +920,7 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 | 领域 | 结果 |
 | --- | --- |
 | Stop fail-closed | `requireStopped` 拒绝 spawn-error/timeout/exit/close/logError/非预期信号；10 项 lifecycle 测试；`raceAfter` 清理计时器泄漏 |
-| Quiescence | process/streams/lsof DB PASS；owned children/PTY/WebKit NOT_RUN |
+| Quiescence | process/streams/process-tree/lsof DB 四事实 PASS（E2E 10 份报告）；Windows 无 pgrep NOT_RUN |
 | Real crash matrix | 独立 `restore-worker.mjs` 在 8/8 阶段真实 `SIGKILL` + control；PID 归属、精确文件集 SHA、integrity/content 全断言 |
 | Recovery retry | 独立 retry 进程：6 阶段 `restored`、2 阶段 `already-restored`；最终只留备份 DB |
 | Busy checkpoint | 真实第二连接测试 PASS |

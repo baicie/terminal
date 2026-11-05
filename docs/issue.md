@@ -5149,6 +5149,12 @@ disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImag
 stock 与产品启动时自动恢复仍 NOT_RUN/PARTIAL；见
 `docs/phase9-5/phase9-5-4-implementation.md`。
 
+**Phase 9.5.5**：`OWNED_CHILDREN_SETTLED` 补齐——停止前递归快照后代、退出后
+等待收敛，泄漏判 FAIL；E2E `42047193259` 的 10 份报告（macOS + Linux）
+四项 quiescence 事实全 PASS。备份/migration/安装 ENOSPC、Windows、Vault
+app-level、Team Sync 跨版本、updater 运行时、AppImage stock 仍 NOT_RUN；见
+`docs/phase9-5/phase9-5-5-implementation.md`。
+
 ### Issue #192: Windows 安装验证实际未隔离且会删除真实 APPDATA 🟡 BLOCKED_EXTERNAL（2026-11-05）
 
 **严重程度**：🔴 Blocker（故障测试安全）

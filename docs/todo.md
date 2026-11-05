@@ -2226,7 +2226,7 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
       `backup restore stages` 报告；本地 normal/restore PASS。
 - [x] busy checkpoint：真实第二连接持读事务，checkpoint 非零退出。
 - [x] crash point 真实逐点执行（PREPARE…COMPLETE，Phase 9.5.4 独立 worker SIGKILL）。
-- [ ] 进程组/WebKit/PTY/lsof quiescence。
+- [x] 进程树/WebKitGTK/lsof quiescence（Phase 9.5.5：停止前快照 + 退出后收敛）。
 - [ ] ENOSPC 小容量卷矩阵。
 - [ ] Windows disposable profile/VM 与 NSIS A→B。
 - [ ] Vault app-level probe/change_password/legacy verifier。
@@ -2240,7 +2240,7 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
       A/B/恢复/降级/Linux 路径统一 `stopChecked`。
 - [x] 终止语义与日志失败独立诊断；10 项 lifecycle 测试；`raceAfter` 清理
       `Promise.race` 遗留计时器。
-- [x] quiescence：process/streams/lsof DB 句柄；owned children NOT_RUN。
+- [x] quiescence：process/streams/process-tree/lsof DB 四事实；E2E 10 份报告全 PASS。
 - [x] 恢复 8 阶段与 `backup restore stages`；busy checkpoint 真实负测试。
 - [x] 独立 recovery worker + 8 阶段真实 SIGKILL + control；PID 归属、精确
       文件集 SHA、integrity/content 断言；Harness 恢复改为 spawn 同一 worker。
@@ -2249,7 +2249,16 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
       伪造 staging 被丢弃。
 - [ ] 备份 VACUUM/migration/安装阶段 ENOSPC。
 - [ ] 产品启动时自动恢复状态机。
-- [ ] ENOSPC 小容量卷矩阵。
-- [ ] 进程组/WebKit/PTY quiescence。
 - [ ] Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时。
 - [ ] AppImage stock 启动。
+
+### 2026-11-05 Phase 9.5.5 - 进程树 quiescence 与 ENOSPC 扩展 🔄 进行中
+
+- [x] `snapshotDescendants`：SIGTERM 前递归记录 app 后代，退出后等待 2s 收敛；
+      漏掉的子进程判 FAIL 并列出 PID。
+- [x] 真实父子进程测试：忽略 SIGTERM 的子进程被检测；无子进程父进程 PASS；
+      quiescence 四项事实进入必需集合。
+- [x] E2E `42047193259` 10 份报告（macOS + Linux）四项事实全 PASS。
+- [ ] ENOSPC：备份 VACUUM、migration/WAL、安装 B。
+- [ ] Windows 进程树探针（无 pgrep）与 Windows A→B。
+- [ ] Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock。

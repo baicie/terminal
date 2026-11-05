@@ -42,7 +42,7 @@
 | **docs/shadcn-components.md**  | shadcn/ui 全部组件索引与用法说明      | 查阅组件选型与用法 |
 | **docs/build-optimization.md** | 构建体积分析与优化指南                | 优化打包时查阅     |
 | **docs/release/**             | 发布与证据规则（`workflow-rules.md`，必读）、CI 审计、三级发布模式、签名密钥、Release 操作指南（Nightly 通道已移除）、最近一次 CI 报告 | 改动发布链路或源码指纹路径时必读 |
-| **docs/phase9-5/**            | Phase 9.5 交付：Phase 9.4.2 归档、PR #6/#7 集成方案、真实 dev.1→dev.2 与 dev.1→当前源码升级 E2E、双版本 harness、corrupt/read-only/restart/backup 故障恢复、签名与身份迁移阻塞项 | 接手升级、数据完整性或发布准备时必读 |
+| **docs/phase9-5/**            | Phase 9.5 交付：Phase 9.4.2 归档、PR #6/#7 集成方案、真实 dev.1→dev.2 与 dev.1→当前源码升级 E2E、双版本 harness、corrupt/read-only/restart/backup 故障恢复、独立 worker 真实 crash 矩阵与恢复重试、进程树 quiescence、隔离卷 ENOSPC、签名与身份迁移阻塞项 | 接手升级、数据完整性或发布准备时必读 |
 | **docs/phase9-4/**            | Phase 9.4 / 9.4.1 / 9.4.2 交付：macOS 远程冷启动 300 次压力统计（F 轮 298/300）、8 秒 fallback deadline 错传、跨样本 journal 污染、恢复仲裁状态机与分段 trace、provenance fail-closed、RSA 威胁模型、安装升级与身份迁移前置、RC 判定 | 接手冷启动、恢复仲裁或 RC 收尾时必读 |
 | **docs/phase9-3/**            | Phase 9.3 / 9.3.1 交付：bootstrap 配置探测饥饿（#166）、ENOTEMPTY 竞态（#167）、证据重采（#168）、REMOTE 旧密文与 REST BigInt（#169/#170）、yanked 扫描完整性、前端依赖 25→0、冷启动 20% 失败率量化 | 接手启动链路、同步或证据采集链时必读 |
 | **docs/phase9-2/**            | Phase 9.2 交付：同步冲突五处 P0 根因、双客户端真实 PG 端到端、依赖安全整改台账、证据门禁、身份迁移方案、最终报告（PASS/FAIL/NOT_RUN 分列） | 接手同步、安全或验收证据相关工作时必读 |
@@ -596,7 +596,7 @@ pnpm add <package-name>
 
 - ✅ 严格 `requireStopped`：拒绝 spawn-error/timeout/exit/close/logError/非预期信号；A/B、恢复、降级、Linux 路径统一 `stopChecked`
 - ✅ 终止语义拆分：clean-exit / terminated-by-sigterm / forced-sigkill / spawn-error / timeout；日志写在 close 内且失败独立诊断
-- ✅ quiescence：PROCESS_EXITED/STREAMS_CLOSED/DB_HANDLES_RELEASED（lsof）；OWNED_CHILDREN_SETTLED **NOT_RUN**
+- ✅ quiescence：PROCESS_EXITED/STREAMS_CLOSED/**OWNED_CHILDREN_SETTLED**/DB_HANDLES_RELEASED 四事实；E2E `42047193259` 的 10 份报告全 PASS（含 Linux WebKitGTK 子进程）；Windows 无 pgrep，仍 NOT_RUN
 - ✅ **真实 crash 矩阵**：`restore-worker.mjs` 独立进程在 8/8 阶段真实 `SIGKILL` + control；父进程断言 PID 归属、`signal=SIGKILL`/`code=null`、精确文件集 SHA、`integrity_check` 与内容读回；**8/8 PASS**
 - ✅ **恢复重试**：崩溃后独立 retry 进程，6 阶段 `restored`、2 阶段 `already-restored`，最终文件集恰好 `{terminal.db: 备份 SHA}`；产品启动时自动恢复仍 **NOT_RUN**
 - ✅ 恢复状态机 8 阶段 + `backup restore stages`；Harness 恢复改为 spawn `restore-worker.mjs`，与矩阵共用一份实现；busy checkpoint 真实第二连接测试 **PASS**
@@ -1095,7 +1095,7 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-11-05 (Phase 9.5.4：真实独立 worker crash 矩阵 8/8 阶段 SIGKILL + control、恢复重试、精确文件集与 integrity/content 读回；Harness 恢复改为 spawn 同一 worker；修复 `Promise.race` 计时器泄漏；E2E `42030992498` 5/5、CI `42031006776` 11/11 对应 `051f8c6`；独立 worker 接入后 E2E `42035362763` 5/5、CI `42035362783` 11/11 对应 `d4b7759`，macOS runner 报告 `restore crash matrix=PASS`；最终 E2E `42037724319` 5/5、CI `42037724332` 11/11 对应 `df57c0c`（代码 `b069beb`），ubuntu runner 真实执行 ENOSPC 测试 457 ms PASS；Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、备份/迁移/安装 ENOSPC、AppImage stock 仍 NOT_RUN/PARTIAL；详见 docs/phase9-5/phase9-5-4-implementation.md)_
+_文档更新时间: 2026-11-05 (Phase 9.5.4：真实独立 worker crash 矩阵 8/8 阶段 SIGKILL + control、恢复重试、精确文件集与 integrity/content 读回；Harness 恢复改为 spawn 同一 worker；修复 `Promise.race` 计时器泄漏；E2E `42030992498` 5/5、CI `42031006776` 11/11 对应 `051f8c6`；独立 worker 接入后 E2E `42035362763` 5/5、CI `42035362783` 11/11 对应 `d4b7759`，macOS runner 报告 `restore crash matrix=PASS`；最终 E2E `42037724319` 5/5、CI `42037724332` 11/11 对应 `df57c0c`（代码 `b069beb`），ubuntu runner 真实执行 ENOSPC 测试 457 ms PASS；Phase 9.5.5 补齐进程树 quiescence：停止前快照后代、退出后 2s 收敛，E2E `42047193259`（`10fffd5`）的 10 份报告四项事实全 PASS（macOS + Linux），CI `42047193385` 11/11；Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、备份/迁移/安装 ENOSPC、AppImage stock 仍 NOT_RUN/PARTIAL；详见 docs/phase9-5/phase9-5-4-implementation.md 与 phase9-5-5-implementation.md)_
 
 _历史更新 2026-11-03: (Phase 9.3：bootstrap 的五个配置探测由串行改并发，修掉「一个慢 IPC 饿死其余」——这是 real-machine run `41437956656` 上 `nano-edit`「从未写 result.json」的根因；冷启动测量目录清理改带重试，修掉 `ENOTEMPTY` 假红；6 份证据随 run `41478709578` 重采为指纹 `c4faedfb…`，门禁 0 problem；交付 `docs/phase9-3/bootstrap-probe-starvation.md`)_
 

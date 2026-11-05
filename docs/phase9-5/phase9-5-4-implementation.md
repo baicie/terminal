@@ -11,7 +11,7 @@
 | 严格 stop fail-closed | **完成**：`requireStopped` + 所有 A/B/恢复/降级/Linux 路径 `stopChecked` |
 | 终止语义 | **完成**：clean-exit / terminated-by-sigterm / forced-sigkill / timeout / spawn-error |
 | 日志失败 | **完成**：close 内 try/catch/finally，`logError` 独立诊断，场景 fail-closed |
-| 进程/DB quiescence | **PARTIAL**：process/streams/lsof DB 句柄；进程树/PTY/WebKit NOT_RUN |
+| 进程/DB quiescence | **PASS（macOS/Linux）**：process/streams/process-tree/lsof DB 四事实；E2E 10 份报告全 PASS；Windows NOT_RUN |
 | 恢复状态机 | **完成**：8 阶段、顺序断言、stages 入报告 |
 | 真实 crash-point 矩阵 | **完成**：独立 worker，8/8 阶段真实 SIGKILL + control |
 | 恢复重试 | **完成**：`restored` / `already-restored` 两态，独立 retry 进程 |
@@ -25,8 +25,8 @@
 | --- | --- |
 | `process-lifecycle.mjs` | `termination`、`stdoutClosed`/`stderrClosed`、logError、`requireStopped`；`raceAfter` 清理超时计时器，不再让 30s 定时器拖住测试进程 |
 | `process-lifecycle.test.mjs` | 10 项；就绪标记在 handler 注册后发布，already-exited/日志失败改为有界等待 |
-| `quiescence.mjs` | 四事实、lsof DB 句柄、`requireQuiescent` |
-| `quiescence.test.mjs` | 3 项，含真实文件句柄 |
+| `quiescence.mjs` | 四事实、`snapshotDescendants`/`settledChildren`、lsof DB 句柄、异步 `requireQuiescent` |
+| `quiescence.test.mjs` | 4 项，含真实 lsof 句柄与父子进程泄漏 |
 | `recovery-state-machine.mjs` | 8 阶段与顺序断言；`crashPoint()` 仅保留为单元测试契约，Harness 已不再使用 |
 | `restore-worker.mjs` | 独立进程执行 8 阶段恢复；`--crash-at` 自 SIGKILL；`retry` 收敛；可调用 `data-retention verify` |
 | `restore-crash-matrix.mjs` | 8 阶段 + control 矩阵、PID 归属、精确文件集、retry 读回 |
@@ -39,7 +39,7 @@
   2 skipped**（Node 22 跳过 Argon2；Node 24 CI 全跑）。
 - 全部脚本（含 `scripts/*.test.mjs`）：**465 tests / 463 pass / 2 skipped / 0 fail**。
 - `process-lifecycle.test.mjs`：10/10。
-- `quiescence.test.mjs`：3/3（真实 lsof 文件句柄）。
+- `quiescence.test.mjs`：4/4（真实 lsof 句柄 + 父子进程泄漏探针）。
 - `recovery-state-machine.test.mjs`：3/3。
 - `restore-crash-matrix.test.mjs`：1/1（内部 8 阶段 + control，约 4.3s）。
 - `enospc-recovery.test.mjs`：1/1（真实 64 MB DMG；Linux 无 sudo 时显式 skip）。
@@ -63,7 +63,7 @@
 | --- | --- | --- | --- |
 | 1 | `PHASE_9_5_4_ENGINEERING_COMPLETE` | **PARTIAL** | stop/quiescence/crash 矩阵/retry 完成；ENOSPC 仅 staged restore，外部平台未做 |
 | 2 | `PROCESS_STOP_FAIL_CLOSED` | **YES** | requireStopped + 10 项测试 + 所有路径 stopChecked |
-| 3 | `PROCESS_RESOURCE_QUIESCENCE_VERIFIED` | **PARTIAL** | process/streams/lsof DB PASS；owned children/PTY/WebKit NOT_RUN |
+| 3 | `PROCESS_RESOURCE_QUIESCENCE_VERIFIED` | **YES（macOS/Linux）** | 四事实全 PASS：PROCESS_EXITED/STREAMS_CLOSED/OWNED_CHILDREN_SETTLED/DB_HANDLES_RELEASED；E2E `42047193259` 的 10 份报告均 PASS；Windows NOT_RUN |
 | 4 | `REAL_CRASH_POINT_MATRIX_VERIFIED` | **YES** | 8/8 阶段独立 worker SIGKILL + control；PID/stage/文件集/重试全断言 |
 | 5 | `SQLITE_RECOVERY_ATOMICITY_VERIFIED` | **YES（恢复协议）** | rename 前主 DB 始终为 live，rename 后为备份；无第三态；产品自动恢复仍 NOT_RUN |
 | 6 | `RECOVERY_RETRY_VERIFIED` | **YES** | 崩溃后独立 retry：6 个阶段 `restored`，2 个阶段 `already-restored`，最终 integrity/content 通过 |
@@ -79,7 +79,7 @@
 
 ## 5. 未完成与风险
 
-- 进程组/WebKit/PTY 子进程 quiescence；
+- Windows 没有 pgrep，进程树事实在 Windows 上仍 NOT_RUN；
 - 产品自身没有启动时自动恢复状态机（矩阵验证的是 Harness 恢复协议）；
 - 备份 VACUUM/migration/安装阶段 ENOSPC（staged restore 已在隔离卷验证）；
 - Windows disposable、Vault app-level、Team Sync 跨版本、Updater 运行时；
@@ -91,7 +91,7 @@
 > 在 `feat/phase9-5-upgrade-integrity` 继续：
 > 1) 补齐备份 VACUUM/migration/安装阶段 ENOSPC（staged restore 已在 64 MB
 >    隔离卷验证）；不得填满共享 runner 根分区。
-> 2) 进程组/WebKit/PTY/quiescence 与 lsof 进程树确认。
+> 2) Windows 进程树 quiescence（无 pgrep）与 Windows E2E。
 > 3) Windows disposable VM/用户 NSIS A→B。
 > 4) Vault smoke probe A/B app-level unlock/change_password/legacy verifier。
 > 5) Team Sync A→B 真实客户端 fetch 链。
