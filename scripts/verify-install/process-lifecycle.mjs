@@ -105,7 +105,12 @@ export function launchProcess(command, args = [], options = {}) {
   return child
 }
 
-export async function stopProcess(child, { waitMs = 30_000, killWaitMs = 5_000, closeWaitMs = 2_000 } = {}) {
+export async function stopProcess(child, {
+  waitMs = 30_000,
+  killWaitMs = 5_000,
+  closeWaitMs = 2_000,
+  onBeforeSignal = null,
+} = {}) {
   const state = child?.lifecycle
   const started = Date.now()
   if (!state) {
@@ -128,6 +133,7 @@ export async function stopProcess(child, { waitMs = 30_000, killWaitMs = 5_000, 
       stderrClosed: state.stderrClosed,
       elapsedMs: 0,
       escalationUsed: false,
+      ownedChildren: null,
     }
     const termination = (forced = false) => {
       if (state.spawnError) return 'spawn-error'
@@ -159,6 +165,19 @@ export async function stopProcess(child, { waitMs = 30_000, killWaitMs = 5_000, 
       return result
     }
 
+    // Snapshot descendants before the signal: once the parent exits, its
+    // children are reparented and can no longer be attributed to it.
+    if (typeof onBeforeSignal === 'function') {
+      try {
+        result.ownedChildren = onBeforeSignal(child.pid)
+      } catch (error) {
+        result.ownedChildren = {
+          supported: false,
+          pids: [],
+          error: String(error?.message || error),
+        }
+      }
+    }
     const sent = child.kill('SIGTERM')
     if (!sent && !state.exitObserved) {
       result.outcome = 'spawn-error'
@@ -234,6 +253,7 @@ export function describeStop(result) {
     'stdoutClosed=' + result.stdoutClosed,
     'stderrClosed=' + result.stderrClosed,
     'escalation=' + result.escalationUsed,
+    'children=' + (result.ownedChildren?.pids ? result.ownedChildren.pids.length : 'unobserved'),
     'elapsedMs=' + result.elapsedMs,
   ].join(' ')
 }

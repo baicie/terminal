@@ -49,7 +49,7 @@ import process from 'node:process'
 import { promisify } from 'node:util'
 import { assessFault } from './fault-assessment.mjs'
 import { delay, describeStop, launchProcess, requireStopped, stopProcess as stop } from './process-lifecycle.mjs'
-import { requireQuiescent } from './quiescence.mjs'
+import { requireQuiescent, snapshotDescendants } from './quiescence.mjs'
 import { assertStageOrder } from './recovery-state-machine.mjs'
 import { runCrashMatrix } from './restore-crash-matrix.mjs'
 import { createVaultFile, verifyVaultFile, verifyWrongPasswordRejected } from './vault-crypto.mjs'
@@ -188,15 +188,20 @@ function launch(binary, home, logPath, extraEnv = {}) {
 }
 
 async function stopChecked(child, options = {}) {
-  return requireStopped(await stop(child, options), {
+  return requireStopped(await stop(child, {
+    // Capture the app's descendants before SIGTERM: after it exits they are
+    // reparented and can no longer be attributed to it.
+    onBeforeSignal: pid => snapshotDescendants(pid),
+    ...options,
+  }), {
     allowForced: false,
     allowSignals: ['SIGTERM'],
     ...options,
   })
 }
 
-function assertQuiescence(add, name, result, db) {
-  const assessment = requireQuiescent(result, [
+async function assertQuiescence(add, name, result, db) {
+  const assessment = await requireQuiescent(result, [
     db, db + '-wal', db + '-shm', db + '-journal',
   ], { label: name })
   add(name, assessment.overall === 'PASS' ? 'PASS' : 'NOT_RUN',
@@ -432,7 +437,7 @@ async function runMacos(flags) {
     add('A schema ready', 'PASS')
     const stopA = await stopChecked(child)
     add('A stopped', 'PASS', describeStop(stopA))
-    assertQuiescence(add, 'A quiescence', stopA, db)
+    await assertQuiescence(add, 'A quiescence', stopA, db)
     await dr(['checkpoint', '--db', db])
     await dr(['seed', '--db', db, '--token', token, '--vault', vault, '--compatible'])
     add('seed A data', 'PASS', 'compatible with A schema')
@@ -683,7 +688,7 @@ async function runMacos(flags) {
     }
     const stopB = await stopChecked(child)
     add('B stopped', 'PASS', describeStop(stopB))
-    assertQuiescence(add, 'B quiescence', stopB, db)
+    await assertQuiescence(add, 'B quiescence', stopB, db)
     await dr(['checkpoint', '--db', db])
     const afterColumns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
     reportJson.schema.afterTables = execFileSyncSqlite(db, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -788,7 +793,7 @@ async function runMacos(flags) {
             child.exitCode === null ? 'A process stayed alive through schema wait' : 'A exited before the restore was observed',
           )
           const restoredStop = await stopChecked(child)
-          assertQuiescence(add, 'restored A quiescence', restoredStop, db)
+          await assertQuiescence(add, 'restored A quiescence', restoredStop, db)
           await dr(['checkpoint', '--db', db])
           await dr([
             'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
@@ -822,7 +827,7 @@ async function runMacos(flags) {
           child.exitCode === null ? 'A process stayed alive through schema wait' : 'A exited before the downgrade was observed',
         )
         const downgradeStop = await stopChecked(child)
-        assertQuiescence(add, 'downgrade A quiescence', downgradeStop, db)
+        await assertQuiescence(add, 'downgrade A quiescence', downgradeStop, db)
         await dr([
           'verify', '--db', db, '--before', downgradeSnapshot,
           '--token', token, '--vault', vault, '--vault-allow-encrypted', '--allow-settings-migration',
@@ -1175,7 +1180,7 @@ async function runLinux(flags) {
     const stopA = await stopChecked(aProcess)
     aProcess = null
     add('A stopped', 'PASS', describeStop(stopA))
-    assertQuiescence(add, 'A quiescence', stopA, db)
+    await assertQuiescence(add, 'A quiescence', stopA, db)
     await dr(['checkpoint', '--db', db])
     await dr(['seed', '--db', db, '--token', token, '--vault', vault, '--compatible'])
     add('seed A data', 'PASS', 'compatible with A schema')
@@ -1257,7 +1262,7 @@ async function runLinux(flags) {
     const stopB = await stopChecked(aProcess)
     aProcess = null
     add('B stopped', 'PASS', describeStop(stopB))
-    assertQuiescence(add, 'B quiescence', stopB, db)
+    await assertQuiescence(add, 'B quiescence', stopB, db)
     await dr(['checkpoint', '--db', db])
     const afterColumns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
     reportJson.schema.afterHostColumns = afterColumns
