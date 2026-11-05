@@ -923,7 +923,10 @@ async function runLinux(flags) {
       LIBGL_DRIVERS_PATH: driPath,
       MESA_LOADER_DRIVER_OVERRIDE: 'llvmpipe',
       GALLIUM_DRIVER: 'llvmpipe',
-      EGL_PLATFORM: 'x11',
+      // The probe shows Mesa's surfaceless platform initialises under Xvfb;
+      // WebKit's default-display path is the one that fails. Prefer the
+      // platform that does not need a DRM/GBM device.
+      EGL_PLATFORM: 'surfaceless',
       GDK_BACKEND: 'x11',
       NO_AT_BRIDGE: '1',
       APPIMAGE_EXTRACT_AND_RUN: '1',
