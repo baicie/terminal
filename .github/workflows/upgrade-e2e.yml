@@ -319,8 +319,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            xvfb x11-utils libegl1 libgl1 libayatana-appindicator3-1 \
-            libwebkit2gtk-4.1-0 libgtk-3-0
+            xvfb x11-utils libegl1 libgl1 libgl1-mesa-dri \
+            libayatana-appindicator3-1 libwebkit2gtk-4.1-0 libgtk-3-0
       - name: Download published AppImages
         env:
           GH_TOKEN: ${{ github.token }}
@@ -376,6 +376,10 @@ jobs:
           if ($report.wouldTouchRealProfile -ne $true) { throw 'wouldTouchRealProfile must be true on the shared runner' }
           if ($report.targetIsRealRoaming -ne $true) { throw 'the target must resolve to the real Roaming profile' }
           Write-Host 'Windows preflight failed closed on the shared profile; no install or delete was attempted.'
+          # The preflight intentionally exits 1 to fail closed. The assertions
+          # above prove that the failure was the expected isolation refusal, so
+          # this wrapper step itself is green.
+          exit 0
       - name: Upload Windows isolation evidence
         if: always()
         uses: actions/upload-artifact@v4

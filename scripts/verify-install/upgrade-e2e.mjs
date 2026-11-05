@@ -512,13 +512,47 @@ async function runMacos(flags) {
         stageSeen = null
       }
       if (stageSeen === 'snapshot-finished') {
-        await sleep(300)
+        // Wait until the first column is actually committed, then kill before
+        // the delayed second ALTER. This is a real mid-migration interruption,
+        // not merely a kill before migration started.
+        const killColumns = await waitFor(() => {
+          try {
+            const columns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
+            return columns.includes(expectedNewHostColumns[0]) ? columns : null
+          } catch {
+            return null
+          }
+        }, 15_000, 'first migrated host column').catch(() => null)
+        const missingAtKill = killColumns
+          ? expectedNewHostColumns.filter(column => !killColumns.includes(column))
+          : []
+        if (!killColumns || missingAtKill.length === 0) {
+          await stop(child)
+          add(
+            'interrupted migration recovery',
+            'NOT_RUN',
+            killColumns
+              ? 'migration finished before the kill window; increase VITE_TERMINAL_MIGRATION_DELAY_MS'
+              : 'first migrated host column was not observed',
+          )
+          applyFaultAssessment('interrupted', {
+            FAULT_INJECTED: 'NOT_RUN',
+            APPLICATION_FAILURE_OBSERVED: 'NOT_RUN',
+            ORIGINAL_DATA_PRESERVED: 'NOT_RUN',
+            NO_PARTIAL_MIGRATION: 'NOT_RUN',
+            RECOVERY_SUCCEEDED: 'NOT_RUN',
+          })
+          await report(work, reportDir, reportJson)
+          return reportJson
+        }
         child.kill('SIGKILL')
         await Promise.race([
           new Promise(resolve => child.once('exit', resolve)),
           new Promise(resolve => setTimeout(resolve, 2_000)),
         ])
         add('interrupted after backup', 'PASS', 'killed between snapshot-finished and core-schema-finished')
+        add('interrupted mid-migration', 'PASS',
+          'committed ' + killColumns.join(',') + '; missing ' + missingAtKill.join(','))
         child = launch(bBinary, home, path.join(logs, 'b-recovery.log'), {
           TERMINAL_STARTUP_STAGES_PATH: path.join(work, 'b-recovery-stages.jsonl'),
         })
@@ -869,6 +903,10 @@ async function runLinux(flags) {
       XDG_DATA_HOME: data,
       XDG_CACHE_HOME: cache,
       WEBKIT_DISABLE_COMPOSITING_MODE: '1',
+      WEBKIT_DISABLE_DMABUF_RENDERER: '1',
+      LIBGL_ALWAYS_SOFTWARE: '1',
+      GDK_BACKEND: 'x11',
+      NO_AT_BRIDGE: '1',
       APPIMAGE_EXTRACT_AND_RUN: '1',
       DISPLAY: display,
     }
@@ -910,8 +948,16 @@ async function runLinux(flags) {
       }
       bBinary = bInstalled.binary
     } else {
-      bBinary = installAppImage(bInstaller, path.join(apps, 'Terminal-B.AppImage'))
-      add('B AppImage replaced in place', 'PASS', bBinary)
+      // Replace the exact file A was launched from: this is the upgrade a user
+      // performs by substituting the AppImage, not a second side-by-side copy.
+      bBinary = installAppImage(bInstaller, aBinary)
+      const replacedSha = sha256File(bBinary)
+      if (replacedSha !== bMetadata.sha256) {
+        add('B AppImage replaced in place', 'FAIL',
+          replacedSha + ' != ' + bMetadata.sha256)
+      } else {
+        add('B AppImage replaced in place', 'PASS', bBinary)
+      }
     }
 
     aProcess = launch(bBinary, home, reportJson.logs.b, env)
