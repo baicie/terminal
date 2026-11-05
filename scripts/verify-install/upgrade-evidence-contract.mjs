@@ -80,6 +80,22 @@ export const SCENARIO_CONTRACTS = {
       'interrupted mid-migration': 'missing',
     },
   },
+  'disk-full': {
+    platform: 'darwin',
+    requiredChecks: [
+      'disk-full migration blocked',
+      'disk-full original data preserved',
+      'disk-full backup readable',
+      'disk-full recovery',
+    ],
+    requiredFacts: [
+      'FAULT_INJECTED',
+      'APPLICATION_FAILURE_OBSERVED',
+      'ORIGINAL_DATA_PRESERVED',
+      'NO_PARTIAL_MIGRATION',
+      'RECOVERY_SUCCEEDED',
+    ],
+  },
   'restore-backup': {
     platform: 'darwin',
     requiredChecks: [

@@ -22,7 +22,7 @@
  *     [--expect-identifier com.baicie.termius] \
  *     [--expect-new-host-columns agent_forwarding,shell_integration] \
  *     [--expect-backup] \
- *     [--fault none|corrupt-db|read-only-data-dir|restart-idempotent|restore-backup|downgrade|interrupted]
+ *     [--fault none|corrupt-db|read-only-data-dir|restart-idempotent|restore-backup|downgrade|interrupted|disk-full]
  */
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -52,6 +52,7 @@ import { delay, describeStop, launchProcess, requireStopped, stopProcess as stop
 import { requireQuiescent, snapshotDescendants } from './quiescence.mjs'
 import { assertStageOrder } from './recovery-state-machine.mjs'
 import { runCrashMatrix } from './restore-crash-matrix.mjs'
+import { createSmallVolume, freeBytes } from './enospc-volume.mjs'
 import { createVaultFile, verifyVaultFile, verifyWrongPasswordRejected } from './vault-crypto.mjs'
 
 const run = promisify(execFile)
@@ -372,7 +373,7 @@ async function runMacos(flags) {
       'incompatible-schema downgrade refusal (dev.1 reads the additive current schema; a non-additive future schema is not tested)',
       'Linux and Windows adapters (NOT_RUN in this first implementation)',
       'Gatekeeper / notarization / Authenticode (BLOCKED_EXTERNAL)',
-      'disk-full (read-only data directory is covered; installer media read-only is not)',
+      'installer media full (disk-full covers the app data volume only)',
     ],
     logs: { a: path.join(logs, 'a.log'), b: path.join(logs, 'b.log') },
     status: 'FAIL',
@@ -560,6 +561,143 @@ async function runMacos(flags) {
       })
       await report(work, reportDir, reportJson)
       return reportJson
+    }
+
+    if (fault === 'disk-full') {
+      if (!backup) {
+        add('disk-full pre-migration backup', 'FAIL', 'this B produced no pre-migration backup')
+        applyFaultAssessment('disk-full', {
+          FAULT_INJECTED: 'NOT_RUN',
+          APPLICATION_FAILURE_OBSERVED: 'NOT_RUN',
+          ORIGINAL_DATA_PRESERVED: 'NOT_RUN',
+          NO_PARTIAL_MIGRATION: 'NOT_RUN',
+          RECOVERY_SUCCEEDED: 'NOT_RUN',
+        })
+        await report(work, reportDir, reportJson)
+        return reportJson
+      }
+      const volume = createSmallVolume(64)
+      if (volume.unavailable) {
+        add('disk-full volume', 'FAIL', volume.unavailable)
+        applyFaultAssessment('disk-full', {
+          FAULT_INJECTED: 'NOT_RUN',
+          APPLICATION_FAILURE_OBSERVED: 'NOT_RUN',
+          ORIGINAL_DATA_PRESERVED: 'NOT_RUN',
+          NO_PARTIAL_MIGRATION: 'NOT_RUN',
+          RECOVERY_SUCCEEDED: 'NOT_RUN',
+        })
+        await report(work, reportDir, reportJson)
+        return reportJson
+      }
+      try {
+        const smallHome = path.join(volume.mountDir, 'home')
+        const smallDataDir = path.join(smallHome, 'Library', 'Application Support', expectedIdentifier)
+        const smallDb = path.join(smallDataDir, 'terminal.db')
+        mkdirSync(smallDataDir, { recursive: true })
+        cpSync(backup, smallDb)
+        const smallVaultDir = path.join(smallHome, 'Library', 'Application Support', 'terminal')
+        mkdirSync(smallVaultDir, { recursive: true })
+        if (existsSync(vault)) copyFileSync(vault, path.join(smallVaultDir, 'vault.json'))
+        // Make the pre-migration VACUUM INTO copy too large for the free space
+        // we leave behind: 24 MB database, roughly 8 MB free.
+        execFileSyncSqlite(
+          smallDb,
+          'CREATE TABLE disk_full_bulk (payload BLOB); INSERT INTO disk_full_bulk VALUES (zeroblob(25165824));',
+        )
+        const fillerDir = path.join(volume.mountDir, 'filler')
+        mkdirSync(fillerDir, { recursive: true })
+        const chunk = Buffer.alloc(1024 * 1024, 0x62)
+        let fillerCount = 0
+        while (freeBytes(volume.mountDir) > 8 * 1024 * 1024) {
+          writeFileSync(path.join(fillerDir, 'filler-' + fillerCount), chunk)
+          fillerCount += 1
+        }
+        const faultLog = path.join(logs, 'b-disk-full.log')
+        reportJson.logs.fault = faultLog
+        child = launch(bBinary, smallHome, faultLog)
+        await delay(15_000)
+        const faultStop = await stopChecked(child)
+        await assertQuiescence(add, 'disk-full quiescence', faultStop, smallDb)
+        const columnsAfterFault = execFileSyncSqlite(smallDb, "SELECT name FROM pragma_table_info('hosts')")
+        const migratedCount = expectedNewHostColumns.filter(column => columnsAfterFault.includes(column)).length
+        const fullyMigrated = migratedCount === expectedNewHostColumns.length
+        const partiallyMigrated = migratedCount > 0 && !fullyMigrated
+        add(
+          'disk-full migration blocked',
+          fullyMigrated ? 'FAIL' : 'PASS',
+          fullyMigrated
+            ? 'B migrated despite the full volume'
+            : `hosts still has ${migratedCount}/${expectedNewHostColumns.length} new columns`,
+        )
+        // Free the filler before verification: the database itself is not
+        // touched by removing the filler, and a checkpoint must not fail with
+        // ENOSPC while we are checking the fail-closed state.
+        rmSync(fillerDir, { recursive: true, force: true })
+        let preserved = false
+        try {
+          await dr(['checkpoint', '--db', smallDb])
+          await dr([
+            'verify', '--db', smallDb, '--before', path.join(work, 'a-snapshot.json'),
+            '--token', token, '--vault', vault, '--vault-allow-encrypted',
+            '--forbid-columns', expectedNewHostColumns.join(','),
+            '--allow-settings-migration',
+          ])
+          preserved = true
+          add('disk-full original data preserved', 'PASS', 'A fields readable and no B columns')
+        } catch (error) {
+          add('disk-full original data preserved', 'FAIL', errorMessage(error))
+        }
+
+        let recovery = 'NOT_RUN'
+        try {
+          child = launch(bBinary, smallHome, path.join(logs, 'b-disk-full-recovery.log'))
+          await waitForSchema(smallDb, 'hosts:' + expectedNewHostColumns.join(','))
+          const recoveryStop = await stopChecked(child)
+          await assertQuiescence(add, 'disk-full recovery quiescence', recoveryStop, smallDb)
+          await dr(['checkpoint', '--db', smallDb])
+          await dr([
+            'verify', '--db', smallDb, '--before', path.join(work, 'a-snapshot.json'),
+            '--token', token, '--vault', vault, '--vault-allow-encrypted',
+            '--expected-new-host-columns', expectedNewHostColumns.join(','),
+            '--allow-settings-migration',
+          ])
+          const smallBackups = path.join(smallDataDir, 'backups')
+          let backupReadable = false
+          if (existsSync(smallBackups)) {
+            const files = readdirSync(smallBackups)
+              .filter(name => /^pre-migration-\d+(?:-\d+)?\.db$/.test(name))
+              .sort()
+            if (files.length > 0) {
+              await dr([
+                'verify', '--db', path.join(smallBackups, files[0]),
+                '--before', path.join(work, 'a-snapshot.json'),
+                '--token', token, '--vault', vault, '--vault-allow-encrypted',
+                '--forbid-columns', expectedNewHostColumns.join(','),
+                '--allow-settings-migration',
+              ])
+              backupReadable = true
+            }
+          }
+          add('disk-full backup readable', backupReadable ? 'PASS' : 'FAIL',
+            backupReadable ? 'pre-migration snapshot verified' : 'no verifiable pre-migration snapshot')
+          recovery = 'PASS'
+          add('disk-full recovery', 'PASS', 'B migrated after space was freed')
+        } catch (error) {
+          recovery = 'FAIL'
+          add('disk-full recovery', 'FAIL', errorMessage(error))
+        }
+        applyFaultAssessment('disk-full', {
+          FAULT_INJECTED: 'PASS',
+          APPLICATION_FAILURE_OBSERVED: fullyMigrated ? 'FAIL' : 'PASS',
+          ORIGINAL_DATA_PRESERVED: preserved ? 'PASS' : 'FAIL',
+          NO_PARTIAL_MIGRATION: partiallyMigrated ? 'FAIL' : 'PASS',
+          RECOVERY_SUCCEEDED: recovery,
+        })
+        await report(work, reportDir, reportJson)
+        return reportJson
+      } finally {
+        volume.cleanup()
+      }
     }
 
     if (fault === 'interrupted') {
