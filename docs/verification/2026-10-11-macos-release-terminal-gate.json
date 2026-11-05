@@ -1,8 +1,8 @@
 {
-  "recordedAt": "2026-11-05T05:17:33.779Z",
+  "recordedAt": "2026-11-05T09:07:02.040Z",
   "recordedDate": "2026-11-05",
   "kind": "tauri-release-ten-second-terminal-gate",
-  "why": "Release artifact 6412f5b3fe7acda5620e82e503d14032c7ed56df954c8b302d121f59fde299d7 was built and measured by GitHub Actions run 41970525110 attempt 1 at commit 225c363107b16c59bdf1ecbaa1b5dc8f5806e7ae; this record re-measures the ten-second terminal gate the earlier local captures described, on the artifact that run produced.",
+  "why": "Release artifact 6412f5b3fe7acda5620e82e503d14032c7ed56df954c8b302d121f59fde299d7 was built and measured by GitHub Actions run 41998303201 attempt 1 at commit a82bd457539269a69b3d52e112c362c1bbc86646; this record re-measures the ten-second terminal gate the earlier local captures described, on the artifact that run produced.",
   "environment": {
     "os": "macOS 26.6.2",
     "architecture": "arm64",
@@ -10,7 +10,7 @@
   },
   "revision": {
     "head": "",
-    "commit": "225c363",
+    "commit": "a82bd45",
     "dirtyWorktree": false
   },
   "build": {
@@ -26,52 +26,52 @@
     "measuredFrom": "child-spawn-event",
     "readinessTarget": "terminal",
     "repeatSpawnToReadyMs": [
-      4557,
-      3899,
-      3678
+      2249,
+      1849,
+      1756
     ],
     "readyUnder10s": true,
     "terminalRuns": [
       {
         "run": 1,
-        "capturedAt": "2026-11-05T05:15:12.675Z",
-        "pid": 67459,
+        "capturedAt": "2026-11-05T09:05:50.939Z",
+        "pid": 51900,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 4557,
-        "requestToReadyMs": 4563,
+        "spawnToReadyMs": 2249,
+        "requestToReadyMs": 2251,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 2,
-        "capturedAt": "2026-11-05T05:15:17.493Z",
-        "pid": 67714,
+        "capturedAt": "2026-11-05T09:05:53.193Z",
+        "pid": 51962,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 3899,
-        "requestToReadyMs": 3904,
+        "spawnToReadyMs": 1849,
+        "requestToReadyMs": 1852,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 3,
-        "capturedAt": "2026-11-05T05:15:22.231Z",
-        "pid": 67763,
+        "capturedAt": "2026-11-05T09:05:55.285Z",
+        "pid": 52008,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 3678,
-        "requestToReadyMs": 3682,
+        "spawnToReadyMs": 1756,
+        "requestToReadyMs": 1758,
         "probeCaseName": "cat-eof",
         "ok": true
       }
     ]
   },
   "source": {
-    "fingerprint": "b73c5fd2190190868c4c932131deb96e167d1ee55b68e93406a41f008fdedeea",
+    "fingerprint": "fd9cc8ac711f8e9c14dbe8b0b3f0d23d0221a5a97bdeaf788457a5b374b9a314",
     "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs on the checked-out CI sources at evidence build time."
   },
   "limitations": [
@@ -84,12 +84,12 @@
   "instrumentationCaveat": "This binary is built with VITE_TERMINAL_SMOKE_BUILD=1, which compiles the smoke and input-probe entry points and the experiments nav item into the frontend. A shipping build omits all of them, so these numbers describe a slightly larger bundle than a user receives and are a conservative upper bound.",
   "provenance": {
     "source": "github-actions",
-    "runId": "41970525110",
+    "runId": "41998303201",
     "runAttempt": "1",
     "workflow": "Real-machine terminal matrix",
     "job": "macos-ssh-matrix",
-    "commit": "225c363107b16c59bdf1ecbaa1b5dc8f5806e7ae",
-    "fingerprint": "b73c5fd2190190868c4c932131deb96e167d1ee55b68e93406a41f008fdedeea",
+    "commit": "a82bd457539269a69b3d52e112c362c1bbc86646",
+    "fingerprint": "fd9cc8ac711f8e9c14dbe8b0b3f0d23d0221a5a97bdeaf788457a5b374b9a314",
     "runner": {
       "os": "macOS",
       "arch": "ARM64"
