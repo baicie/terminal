@@ -64,7 +64,7 @@
 | updater 运行时链 | **NOT_RUN**：只有 latest.json 静态契约；下载/验签/安装/重启未验证 |
 | 进程生命周期 | **PARTIAL（Phase 9.5.4）**：stop 严格 fail-closed、quiescence process/stream/lsof DB；进程组/PTY/WebKit 未实现 |
 | 真实 crash-point | **PASS（Phase 9.5.4）**：独立 worker 在 8/8 阶段真实 SIGKILL + control；PID 归属、精确文件集、integrity/content 全断言（见 `real-crash-point-matrix.md`） |
-| ENOSPC | **PARTIAL（Phase 9.5.4）**：64 MB 隔离卷上 staged restore 失败后主库不变、retry 收敛；备份 VACUUM/migration/安装 ENOSPC **NOT_RUN**（见 `enospc-verification.md`） |
+| ENOSPC | **PARTIAL（Phase 9.5.4）**：64 MB 隔离卷（macOS DMG、Linux tmpfs，CI 实测）上 staged restore 失败后主库不变、retry 收敛；备份 VACUUM/migration/安装 ENOSPC **NOT_RUN**（见 `enospc-verification.md`） |
 | 恢复 crash point / 重试 | **PASS（恢复协议）**：崩溃后独立 retry，6 阶段 `restored`、2 阶段 `already-restored`；**产品启动时自动恢复仍 NOT_RUN** |
 | 备份恢复 | **PASS**（端到端复制备份并用 A 读回；Harness 恢复已改为独立 worker） |
 | 磁盘满/安装介质只读 | **NOT_RUN**（未实现确定性 fixture） |

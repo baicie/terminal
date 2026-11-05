@@ -52,7 +52,10 @@
   `restore crash matrix` 为 **PASS**，8 条记录 PID 30001–30038、
   `signal=SIGKILL`、`code=null`，`postCrashFiles` 与 retry 结果与第 3 节一致。
 - `b069beb`（ENOSPC）的 Linux tmpfs 路径已在本地 privileged 容器
-  （Node 24.18）实测 **PASS**；GitHub ubuntu runner 结果见第 7 节。
+  （Node 24.18）实测 **PASS**。
+- `df57c0c`（含最终代码 `b069beb`）的 E2E `42037724319` **5/5 success**、CI `42037724332`
+  **11/11 success**；macOS 报告矩阵仍 **PASS**；ubuntu `Repository gates`
+  真实执行 ENOSPC 测试并 **PASS**（457 ms），不是 skip。
 
 ## 4. 15 项判定
 
@@ -103,7 +106,7 @@
 | 本地脚本 | **465/463/2/0 fail**；verify-install 子集 **67/65/2** |
 | 矩阵 CLI | 8/8 + control PASS（见 `real-crash-point-matrix.md`） |
 | ENOSPC | 真实 64 MB DMG PASS（见 `enospc-verification.md`） |
-| 代码提交 | `d4b7759`（已推送）、`b069beb`（本次推送） |
-| Upgrade E2E | `42035362763` **5/5 success** @ `d4b7759`；矩阵 check **PASS** |
-| 普通 CI | `42035362783` **11/11 success** @ `d4b7759` |
-| ENOSPC Linux | privileged 容器（Node 24.18）**PASS**；ubuntu runner 待 `b069beb` |
+| 代码提交 | `b069beb`（文档 HEAD `df57c0c`） |
+| Upgrade E2E | `42037724319` **5/5 success** @ `df57c0c`；矩阵 check **PASS** |
+| 普通 CI | `42037724332` **11/11 success** @ `df57c0c` |
+| ENOSPC | macOS 64 MB DMG **PASS**；Linux privileged 容器 **PASS**；ubuntu runner tmpfs 457 ms **PASS** |

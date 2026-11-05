@@ -924,7 +924,7 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 | Real crash matrix | 独立 `restore-worker.mjs` 在 8/8 阶段真实 `SIGKILL` + control；PID 归属、精确文件集 SHA、integrity/content 全断言 |
 | Recovery retry | 独立 retry 进程：6 阶段 `restored`、2 阶段 `already-restored`；最终只留备份 DB |
 | Busy checkpoint | 真实第二连接测试 PASS |
-| ENOSPC | staged restore 在真实 64 MB DMG 上失败后主库不变、retry 收敛；备份/迁移/安装 ENOSPC NOT_RUN |
+| ENOSPC | staged restore 在真实 64 MB DMG（macOS）与 tmpfs（Linux CI）上失败后主库不变、retry 收敛；备份/迁移/安装 ENOSPC NOT_RUN |
 | 未完成 | 备份/迁移/安装 ENOSPC、Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock；产品启动时自动恢复 NOT_RUN |
 | 判定 | `PHASE_9_5_4_ENGINEERING_COMPLETE=PARTIAL`；RC/Release NO |
 

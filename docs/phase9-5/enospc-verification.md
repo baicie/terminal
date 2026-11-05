@@ -43,8 +43,9 @@
 测试耗时约 2.5 s（含创建/挂载/卸载 DMG）。
 
 Linux tmpfs 路径在本地 privileged 容器（`node:24.18.0-bookworm-slim`，
-Node 24.18）中同样 **PASS**，耗时 505 ms。GitHub ubuntu runner 的 sudo
-路径在 `b069beb` 的 CI 中复跑，结果见 `phase9-5-4-implementation.md`。
+Node 24.18）中同样 **PASS**（505 ms）。GitHub ubuntu runner 的 sudo 路径
+在 CI `42037724332`（`df57c0c`）的 `Repository gates` 中真实执行并 **PASS**
+（457 ms），不是 skip。
 
 ## 4. 未覆盖
 
@@ -54,8 +55,7 @@ Node 24.18）中同样 **PASS**，耗时 505 ms。GitHub ubuntu runner 的 sudo
 - 备份写一半 ENOSPC；
 - migration / WAL 写入 ENOSPC；
 - 目录 fsync 失败；
-- 安装 B 时空间不足；
-- Linux tmpfs 在 CI 上的实际执行结果（若 sudo 不可用会 skip）。
+- 安装 B 时空间不足。
 
 ## 5. 判定
 
