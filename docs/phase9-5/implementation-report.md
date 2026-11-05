@@ -1,6 +1,9 @@
 # Phase 9.5 — Implementation Report
 
 > 日期：2026-11-05
+> **Phase 9.5.1 后续交付见 `docs/phase9-5/phase9-5-1-implementation.md`**：当前
+> HEAD CI 升级 7/7、Linux DEB、真实迁移中断/备份恢复、Windows 隔离预检与
+> AppImage payload-only 结果以该文档为准。
 > 分支：`feat/phase9-5-upgrade-integrity`
 > Base：`a7a65bc`（PR #7 HEAD，stacked；不是 main）
 > 本轮不合并 PR、不打 tag、不发布 Release。

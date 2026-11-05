@@ -70,7 +70,7 @@ gh release download v0.0.1-dev.2 \
 | macOS DMG（历史 dev.1→dev.2） | 真实安装 | Info.plist | 字段级 PASS | **PASS** |
 | macOS DMG（dev.1→当前源码） | 真实安装 | Info.plist | 字段级 PASS + backup | **PASS** |
 | Linux DEB x64（dev.1→dev.2） | 真实 `apt-get`/dpkg | `dpkg-query` PASS | 字段级 PASS | **PASS** |
-| Linux AppImage x64（dev.1→dev.2） | 同路径替换 | 载荷无内部版本 → NOT_RUN | 最终结果见 `linux-upgrade-verification.md` | **PARTIAL / 见该文档** |
+| Linux AppImage x64（dev.1→dev.2） | 同路径替换 | 载荷无内部版本 → NOT_RUN | 启动/迁移 NOT_RUN；替换 SHA PASS | **PARTIAL**（payload-only） |
 | Windows NSIS | 未安装 | — | — | **NOT_RUN**（只做隔离预检） |
 
 ## 6. 判定

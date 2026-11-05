@@ -5143,7 +5143,7 @@ Known Folder 与目标目录，共享 runner 上 `isolated=false`、
 `wouldTouchRealProfile=true`，以退出码 1 fail-closed；job 在真实验证拒绝后成功。
 这只证明“不会被误装”，不证明 Windows 升级可用；后者仍 NOT_RUN。
 
-### Issue #193: Linux 安装脚本在 apt 失败时解包回退仍可判绿 🟡 NOT_RUN（2026-11-05）
+### Issue #193: Linux 安装脚本在 apt 失败时解包回退仍可判绿 🟡 fail-closed 部分已修复（2026-11-05）
 
 `verify-install-linux.sh` 在 `sudo apt-get install` 失败时打印 `[SKIPPED]`、
 `dpkg-deb -x` 解包并继续跑 payload，job 仍可能绿。升级 harness 必须 fail-closed：
