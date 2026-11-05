@@ -233,6 +233,7 @@ jobs:
             upgrade-current-downgrade-report/upgrade-report.json \
             upgrade-current-corrupt-report/upgrade-report.json \
             upgrade-current-readonly-report/upgrade-report.json \
+            upgrade-current-diskfull-report/upgrade-report.json \
             upgrade-current-restart-report/upgrade-report.json
 
       - name: Upload current-version evidence
@@ -249,6 +250,7 @@ jobs:
             upgrade-current-downgrade-report/
             upgrade-current-corrupt-report/
             upgrade-current-readonly-report/
+            upgrade-current-diskfull-report/
             upgrade-current-restart-report/
             upgrade-current/*/logs/
             upgrade-current-interrupt/*/logs/
@@ -256,6 +258,7 @@ jobs:
             upgrade-current-downgrade/*/logs/
             upgrade-current-corrupt/*/logs/
             upgrade-current-readonly/*/logs/
+            upgrade-current-diskfull/*/logs/
             upgrade-current-restart/*/logs/
           if-no-files-found: warn
 

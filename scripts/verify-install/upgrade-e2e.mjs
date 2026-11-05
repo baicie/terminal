@@ -661,8 +661,10 @@ async function runMacos(flags) {
               .filter(name => /^pre-migration-\d+(?:-\d+)?\.db$/.test(name))
               .sort()
             if (files.length > 0) {
+              // The failed attempt may have left an earlier partial snapshot;
+              // the successful one is the newest by epoch.
               await dr([
-                'verify', '--db', path.join(smallBackups, files[0]),
+                'verify', '--db', path.join(smallBackups, files[files.length - 1]),
                 '--before', path.join(work, 'a-snapshot.json'),
                 '--token', token, '--vault', vault, '--vault-allow-encrypted',
                 '--forbid-columns', expectedNewHostColumns.join(','),
