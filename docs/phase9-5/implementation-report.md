@@ -14,9 +14,9 @@
 | 资产元数据校验 | `scripts/verify-install/asset-metadata.mjs` + 4 项测试 | 完成 |
 | 版本兼容 seed/verify | `scripts/verify-install/data-retention.mjs` 扩展 + 5 项测试 | 完成 |
 | 双版本升级 harness | `scripts/verify-install/upgrade-e2e.mjs` | 完成（macOS） |
-| 真实 A→B E2E | dev.1→dev.2、dev.1→当前源码 | **PASS**（本机 macOS） |
+| 真实 A→B E2E | dev.1→dev.2、dev.1→当前源码 | **PASS**（本机 macOS + CI `41954815468`） |
 | 故障恢复测试 | corrupt-db、read-only、restart、backup | **PASS** |
-| CI 工作流 | `.github/workflows/upgrade-e2e.yml` | 已建立，待真实 runner 运行 |
+| CI 工作流 | `.github/workflows/upgrade-e2e.yml` | **success**（run `41954815468`） |
 | 结构化证据 | `docs/phase9-5/evidence/**/upgrade-report.{json,md}` | 已归档 |
 
 ## 2. 实际运行结果
@@ -44,8 +44,12 @@ Team Sync 本地 5 表逐字段 PASS。
 | actionlint `upgrade-e2e.yml` | pass |
 | 证据归档 | `docs/phase9-5/evidence/` |
 
-未运行：`upgrade-e2e.yml` 的真实 GitHub runner 运行；Linux/Windows 适配器；
-迁移中断/磁盘满/自动恢复/B→A 降级；真实 Vault 解锁；Team Sync 服务端同步。
+已运行：`upgrade-e2e.yml` 的真实 GitHub runner run `41954815468`，A→B 与
+corrupt/read-only/restart 全部 success。
+
+未运行：Linux/Windows 适配器；迁移中断/磁盘满/自动恢复/B→A 降级；真实 Vault
+解锁；Team Sync 服务端同步。CI 的 B 是 dev.2，因此备份与当前产品应用日志检查
+在 CI 报告中为 NOT_RUN；当前 B 的这两项由本机运行 2 覆盖。
 
 ## 4. 九项判定
 
@@ -55,7 +59,7 @@ Team Sync 本地 5 表逐字段 PASS。
 | `PR_6_READY_FOR_HUMAN_MERGE` | **YES** | `mergeStateStatus=CLEAN`，11/11 checks，evidence 0 |
 | `PR_7_INTEGRATION_READY` | **YES（条件：先人工合并 #6）** | 模拟 post-#6 main + rebase：18 提交、0 冲突、门禁 0、source-size 568 |
 | `PHASE_9_5_FOUNDATION_COMPLETE` | **YES** | harness、真实 E2E、故障测试、CI 工作流、7 份文档、9 项新测试 |
-| `REAL_TWO_VERSION_UPGRADE_VERIFIED` | **YES（macOS 本机；CI 待跑）** | 真实发布 dev.1→dev.2 + dev.1→当前源码 |
+| `REAL_TWO_VERSION_UPGRADE_VERIFIED` | **YES（macOS 本机 + CI）** | 真实发布 dev.1→dev.2 + dev.1→当前源码；CI run `41954815468` success |
 | `UPGRADE_DATA_INTEGRITY_VERIFIED` | **YES（macOS 本机）** | hosts/settings/workspaces/layout/Team Sync 本地/vault 文件/schema/backup |
 | `FAILURE_RECOVERY_VERIFIED` | **PARTIAL** | corrupt/read-only/restart/backup PASS；中断/磁盘满/自动恢复/B→A NOT_RUN |
 | `READY_FOR_RC` | **NO** | 跨版本升级仅 macOS 本机、无回滚、硬件/签名/身份迁移未闭合 |

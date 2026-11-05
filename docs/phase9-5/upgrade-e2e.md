@@ -71,13 +71,24 @@ node scripts/verify-install/upgrade-e2e.mjs run \
 `upgrade-report*/` 与日志。工作流与普通 CI 分离，只有路径命中
 `scripts/verify-install/**` 或该 workflow 时触发。
 
-**本文件中的 PASS 来自本机真实执行，不是 CI 运行结果。** CI 运行结果在
-`implementation-report.md` 中单独记录；未运行前不写成 CI PASS。
+**本文件中的 PASS 来自本机真实执行。** CI 另有一次真实 runner 运行：
+
+| 项 | 值 |
+| --- | --- |
+| run | `41954815468`（`ab9515c`） |
+| 结果 | **success** |
+| 步骤 | 下载/校验 dev.1、dev.2；A→B 字段验证；corrupt DB；read-only；restart 全部 success |
+| 证据 | `docs/phase9-5/evidence/ci-run-41954815468/` |
+| 限制 | CI 的 B 是 dev.2，没有迁移备份命令，也没有当前产品的应用级错误日志；因此 `pre-migration backup` 与 `* detected by the app` 在 CI 报告中是 `NOT_RUN`。当前 B 的备份/日志证据来自本机运行 2。 |
+
+普通 CI 的 `Repository gates` 现在也会运行
+`scripts/verify-install/*.test.mjs`（已加入 `node --test` 命令），避免新增测试
+只在本地执行。
 
 ## 6. 判定
 
-- `REAL_TWO_VERSION_UPGRADE_VERIFIED = YES`（macOS 本机，真实发布 dev.1→dev.2 与
-  dev.1→当前源码；CI 重复运行另行记录）
+- `REAL_TWO_VERSION_UPGRADE_VERIFIED = YES`（macOS 本机真实发布 dev.1→dev.2 与
+  dev.1→当前源码；真实 runner `41954815468` 也 **success**）
 - `UPGRADE_DATA_INTEGRITY_VERIFIED = YES`（macOS 本机；真实 Vault 解锁、Team Sync
   服务端同步、Linux/Windows 不在本判定内）
 - `FAILURE_RECOVERY_VERIFIED = PARTIAL`（见 `failure-recovery.md`）

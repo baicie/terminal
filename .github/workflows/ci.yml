@@ -190,6 +190,8 @@ jobs:
     #
     # Tests for the gate scripts themselves run here too (the glob is collected
     # from disk, so a new scripts/*.test.mjs is picked up without editing this).
+    # The verify-install upgrade harness tests live one level down because they
+    # exercise the same installer fixtures as the platform scripts.
     name: Repository gates (source size, evidence, script tests)
     runs-on: ubuntu-latest
     steps:
@@ -209,7 +211,7 @@ jobs:
       # here would recreate the exact gap this job was widened to close.
       - name: Verification evidence matches this checkout
         run: node scripts/check-verification-evidence.mjs
-      - run: node --test scripts/*.test.mjs
+      - run: node --test scripts/*.test.mjs scripts/verify-install/*.test.mjs
 
   rust:
     name: Rust quality
