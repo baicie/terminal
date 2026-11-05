@@ -75,6 +75,19 @@ PASS CONTROL       full staged restore
 每个阶段 `exitObserved=true`、`closeObserved=true`、`signal=SIGKILL`、
 `code=null`，stage 日志 PID 与 spawn PID 一致。
 
+GitHub macOS runner（E2E `42035362763`，`d4b7759`）的
+`upgrade-current-restore-report` 中，`restore crash matrix` 为 **PASS**：
+
+```text
+8/8 stages SIGKILL; pid-owned stage log; file set exact; retry converged:
+PREPARE=restored, QUIESCE=restored, VERIFY_BACKUP=restored, STAGE=restored,
+VERIFY_STAGED=restored, COMMIT=restored, VERIFY=already-restored,
+COMPLETE=already-restored
+```
+
+报告同时保存 8 条 `{stage, pid, signal, code, retry, postCrashFiles,
+finalFiles, integrity}`；这是真实 runner 上的独立进程终止，不是异常 hook。
+
 ## 6. 接入升级 Harness
 
 `upgrade-e2e.mjs` 的 `replaceWithBackup` 不再在 Harness 进程内执行恢复，改为

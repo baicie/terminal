@@ -42,6 +42,10 @@
 
 测试耗时约 2.5 s（含创建/挂载/卸载 DMG）。
 
+Linux tmpfs 路径在本地 privileged 容器（`node:24.18.0-bookworm-slim`，
+Node 24.18）中同样 **PASS**，耗时 505 ms。GitHub ubuntu runner 的 sudo
+路径在 `b069beb` 的 CI 中复跑，结果见 `phase9-5-4-implementation.md`。
+
 ## 4. 未覆盖
 
 以下路径仍 **NOT_RUN**，不能由本轮结果推断：

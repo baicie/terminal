@@ -46,8 +46,13 @@
 - `checkpoint-safety.test.mjs`：1/1（真实第二连接 busy）。
 - 本机 normal 在最后一轮被共享 WKWebView localStorage 恢复状态污染（A 启动后
   直接 exit 0），CI fresh runner 不受该本地状态影响；不以本地失败掩盖 CI 结果。
-- `051f8c6` 的 E2E `42030992498` **5/5 success**、CI `42031006776` **11/11 success**；
-  本轮矩阵改动在 `051f8c6` 之后，最终 run 见第 7 节。
+- `051f8c6` 的 E2E `42030992498` **5/5 success**、CI `42031006776` **11/11 success**。
+- `d4b7759`（独立 worker + Harness 接入）的 E2E `42035362763` **5/5 success**、
+  CI `42035362783` **11/11 success**；macOS current 报告中的
+  `restore crash matrix` 为 **PASS**，8 条记录 PID 30001–30038、
+  `signal=SIGKILL`、`code=null`，`postCrashFiles` 与 retry 结果与第 3 节一致。
+- `b069beb`（ENOSPC）的 Linux tmpfs 路径已在本地 privileged 容器
+  （Node 24.18）实测 **PASS**；GitHub ubuntu runner 结果见第 7 节。
 
 ## 4. 15 项判定
 
@@ -98,6 +103,7 @@
 | 本地脚本 | **465/463/2/0 fail**；verify-install 子集 **67/65/2** |
 | 矩阵 CLI | 8/8 + control PASS（见 `real-crash-point-matrix.md`） |
 | ENOSPC | 真实 64 MB DMG PASS（见 `enospc-verification.md`） |
-| 代码提交 | 待推送 |
-| Upgrade E2E | 待运行（改动后） |
-| 普通 CI | 待运行（改动后） |
+| 代码提交 | `d4b7759`（已推送）、`b069beb`（本次推送） |
+| Upgrade E2E | `42035362763` **5/5 success** @ `d4b7759`；矩阵 check **PASS** |
+| 普通 CI | `42035362783` **11/11 success** @ `d4b7759` |
+| ENOSPC Linux | privileged 容器（Node 24.18）**PASS**；ubuntu runner 待 `b069beb` |
