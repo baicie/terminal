@@ -564,7 +564,7 @@ pnpm add <package-name>
 - ✅ 真实中途迁移中断：`agent_forwarding` 提交后、`shell_integration` 前 SIGKILL；重启收敛、字段级验证 PASS
 - ✅ 备份恢复：复制 `pre-migration-<epoch>.db`、删除 WAL/SHM、A 启动读回、SHA 一致
 - ✅ Linux x64 DEB：真实 `apt-get`/dpkg、`dpkg-query` 版本变化、字段级数据 PASS（run `41972602296`）
-- 🟡 Linux AppImage：payload-only 报告 PASS（同路径替换 + 替换后 SHA）；headless Xvfb 下 bundled WebKit EGL 启动失败，系统 WebKit 回退又受 bundled GStreamer/GLib 符号版本阻断，启动/迁移显式 NOT_RUN；详见 `docs/phase9-5/linux-upgrade-verification.md`
+- 🟡 Linux AppImage：payload-only job success，**报告为 PARTIAL**（同路径替换 + 替换后 SHA PASS）；headless Xvfb 下 bundled WebKit EGL 启动失败，系统 WebKit 回退又受 bundled GStreamer/GLib 符号版本阻断，启动/迁移显式 NOT_RUN；详见 `docs/phase9-5/linux-upgrade-verification.md`
 - 🟡 Windows：只读隔离预检在 `windows-latest` 正确 fail-closed；升级 E2E 仍 NOT_RUN，需一次性 profile/VM
 - ✅ 六份实机证据因 smoke-only 迁移延迟变为指纹 `b73c5fd2…`，已用官方流程重采（run `41970525110`，0 problem）；未手改旧 manifest
 - 📋 未完成：Windows 升级 E2E、Linux AppImage stock 启动、磁盘满/Linux 故障注入、真实 Vault 解锁、Team Sync 服务端、签名/公证/updater/身份迁移
