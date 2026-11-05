@@ -5140,9 +5140,12 @@ app-level、Team Sync 跨版本、updater 运行时；见
 `docs/phase9-5/phase9-5-3-implementation.md`。
 
 **Phase 9.5.4**：`requireStopped` 严格 fail-closed、终止语义与日志失败诊断、
-quiescence（process/stream/lsof DB）接入 A/B/恢复/降级；真实 crash-point
-仍是异常 hook，独立 worker/恢复重试/ENOSPC 仍 NOT_RUN；见
-`docs/phase9-5/phase9-5-4-implementation.md`。
+quiescence（process/stream/lsof DB）接入 A/B/恢复/降级；真实 crash-point 已升级为
+独立 `restore-worker.mjs` 的 8/8 阶段 SIGKILL + control，恢复重试
+（`restored`/`already-restored`）与精确文件集/integrity/content 均 PASS，
+Harness 恢复改为 spawn 同一 worker；ENOSPC、Windows disposable、Vault
+app-level、Team Sync 跨版本、updater 运行时、AppImage stock 与产品启动时
+自动恢复仍 NOT_RUN/PARTIAL；见 `docs/phase9-5/phase9-5-4-implementation.md`。
 
 ### Issue #192: Windows 安装验证实际未隔离且会删除真实 APPDATA 🟡 BLOCKED_EXTERNAL（2026-11-05）
 

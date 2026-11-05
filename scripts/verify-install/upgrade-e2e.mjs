@@ -32,7 +32,6 @@ import {
   copyFileSync,
   cpSync,
   existsSync,
-  fsyncSync,
   mkdirSync,
   mkdtempSync,
   openSync,
@@ -51,12 +50,14 @@ import { promisify } from 'node:util'
 import { assessFault } from './fault-assessment.mjs'
 import { delay, describeStop, launchProcess, requireStopped, stopProcess as stop } from './process-lifecycle.mjs'
 import { requireQuiescent } from './quiescence.mjs'
-import { assertStageOrder, crashPoint } from './recovery-state-machine.mjs'
+import { assertStageOrder } from './recovery-state-machine.mjs'
+import { runCrashMatrix } from './restore-crash-matrix.mjs'
 import { createVaultFile, verifyVaultFile, verifyWrongPasswordRejected } from './vault-crypto.mjs'
 
 const run = promisify(execFile)
 const HERE = import.meta.dirname
 const DR = path.join(HERE, 'data-retention.mjs')
+const WORKER = path.join(HERE, 'restore-worker.mjs')
 const ASSET = path.join(HERE, 'asset-metadata.mjs')
 const PROVIDER = 'upgrade-e2e'
 
@@ -230,75 +231,36 @@ async function waitForSchema(dbPath, expectedColumns, timeoutMs = 120_000) {
   ])
 }
 
-function fsyncDirectory(directory) {
-  const fd = openSync(directory, 'r')
-  try {
-    fsyncSync(fd)
-  } finally {
-    closeSync(fd)
-  }
-}
-
 async function replaceWithBackup(db, backup, dataDir, { beforePath, token } = {}) {
-  // A restore must never publish a pre-migration main DB next to a
-  // post-migration WAL: SQLite would replay those frames on the next open.
-  // Checkpoint and verify first, remove sidecars before the rename, and fsync
-  // the directory on both sides of the publish.
-  const stages = []
-  const stage = name => {
-    stages.push(name)
-    crashPoint(name)
-  }
-  stage('PREPARE')
+  // The restore runs in its own process. The real crash-point matrix kills
+  // that worker at every stage, so the harness and the matrix share one
+  // implementation instead of exercising an in-process exception hook.
+  const stageDir = mkdtempSync(path.join(os.tmpdir(), 'restore-stages-'))
+  const stageLog = path.join(stageDir, 'stages.jsonl')
+  const args = [
+    WORKER, 'restore',
+    '--db', db,
+    '--backup', backup,
+    '--data-dir', dataDir,
+    '--stage-log', stageLog,
+  ]
+  if (beforePath && token) args.push('--before', beforePath, '--token', token)
   try {
-    await dr(['checkpoint', '--db', db])
+    await run(process.execPath, [...nodeFlag, ...args], {
+      timeout: 180_000,
+      maxBuffer: 32 * 1024 * 1024,
+    })
   } catch (error) {
-    // A corrupt DB has no valid header to checkpoint; the caller may still be
-    // restoring over it. Any other checkpoint failure must abort.
-    if (!/not a SQLite database|no such file/i.test(errorMessage(error))) throw error
+    throw new Error('staged restore failed: ' + errorMessage(error))
   }
-  stage('QUIESCE')
-  if (beforePath && token) {
-    await dr([
-      'verify', '--db', backup, '--before', beforePath, '--token', token,
-      '--forbid-columns', 'agent_forwarding,shell_integration',
-      '--allow-settings-migration',
-    ])
-  }
-  stage('VERIFY_BACKUP')
-  const temporary = path.join(dataDir, 'terminal.restore.tmp')
-  try {
-    cpSync(backup, temporary)
-    const fd = openSync(temporary, 'r+')
-    try {
-      fsyncSync(fd)
-    } finally {
-      closeSync(fd)
-    }
-    stage('STAGE')
-    if (beforePath && token) {
-      await dr([
-        'verify', '--db', temporary, '--before', beforePath, '--token', token,
-        '--forbid-columns', 'agent_forwarding,shell_integration',
-        '--allow-settings-migration',
-      ])
-    }
-    stage('VERIFY_STAGED')
-    rmSync(db + '-wal', { force: true })
-    rmSync(db + '-shm', { force: true })
-    rmSync(db + '-journal', { force: true })
-    fsyncDirectory(dataDir)
-    stage('COMMIT')
-    renameSync(temporary, db)
-    fsyncDirectory(dataDir)
-    stage('VERIFY')
-    stage('COMPLETE')
-    assertStageOrder(stages)
-    return { stages }
-  } catch (error) {
-    rmSync(temporary, { force: true })
-    throw error
-  }
+  const stages = readFileSync(stageLog, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map(line => JSON.parse(line).stage)
+  assertStageOrder(stages)
+  rmSync(stageDir, { recursive: true, force: true })
+  return { stages }
 }
 
 async function waitForBackup(backupsDir, timeoutMs = 30_000) {
@@ -785,6 +747,29 @@ async function runMacos(flags) {
       if (!backup) {
         add('backup restore', 'FAIL', 'this B produced no pre-migration backup')
       } else {
+        try {
+          const matrix = await runCrashMatrix()
+          add(
+            'restore crash matrix',
+            matrix.passed ? 'PASS' : 'FAIL',
+            matrix.passed
+              ? '8/8 stages SIGKILL; pid-owned stage log; file set exact; retry converged: ' +
+                matrix.stages.map(entry => entry.stage + '=' + entry.retry.outcome).join(',')
+              : matrix.problems.join('; '),
+          )
+          reportJson.crashMatrix = matrix.stages.map(entry => ({
+            stage: entry.stage,
+            pid: entry.pid,
+            signal: entry.exit.signal,
+            code: entry.exit.code,
+            retry: entry.retry.outcome,
+            postCrashFiles: Object.keys(entry.postCrash),
+            finalFiles: Object.keys(entry.final),
+            integrity: entry.integrity,
+          }))
+        } catch (error) {
+          add('restore crash matrix', 'FAIL', errorMessage(error))
+        }
         copyFileSync(db, path.join(work, 'post-upgrade.db'))
         const recovery = await replaceWithBackup(db, backup, dataDir, { beforePath, token })
         add('backup restore stages', 'PASS', recovery.stages.join('>'))

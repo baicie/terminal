@@ -14,6 +14,15 @@ export function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+// Promise.race() leaves the losing timer armed, which keeps Node's event loop
+// alive for up to waitMs after the harness has already finished. Clear it as
+// soon as either side settles.
+export function raceAfter(promise, ms) {
+  let timer
+  const timeout = new Promise(resolve => { timer = setTimeout(resolve, ms) })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
 export function launchProcess(command, args = [], options = {}) {
   const output = []
   const state = {
@@ -140,7 +149,7 @@ export async function stopProcess(child, { waitMs = 30_000, killWaitMs = 5_000, 
       result.exitObserved = true
       result.exitCode = state.exitCode
       result.signal = state.signal
-      await Promise.race([state.closePromise, delay(closeWaitMs)])
+      await raceAfter(state.closePromise, closeWaitMs)
       result.closeObserved = state.closeObserved
       result.stdoutClosed = state.stdoutClosed
       result.stderrClosed = state.stderrClosed
@@ -157,18 +166,18 @@ export async function stopProcess(child, { waitMs = 30_000, killWaitMs = 5_000, 
       result.elapsedMs = Date.now() - started
       return result
     }
-    await Promise.race([state.exitPromise, delay(waitMs)])
+    await raceAfter(state.exitPromise, waitMs)
     if (!state.exitObserved) {
       result.escalationUsed = true
       child.kill('SIGKILL')
-      await Promise.race([state.exitPromise, delay(killWaitMs)])
+      await raceAfter(state.exitPromise, killWaitMs)
       result.outcome = state.exitObserved ? 'forced' : 'timeout'
       result.termination = termination(state.exitObserved)
     } else {
       result.outcome = 'graceful'
       result.termination = termination(false)
     }
-    await Promise.race([state.closePromise, delay(closeWaitMs)])
+    await raceAfter(state.closePromise, closeWaitMs)
     result.exitObserved = state.exitObserved
     result.closeObserved = state.closeObserved
     result.stdoutClosed = state.stdoutClosed

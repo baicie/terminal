@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { delay, launchProcess, requireStopped, stopProcess } from './process-lifecycle.mjs'
+import { delay, launchProcess, raceAfter, requireStopped, stopProcess } from './process-lifecycle.mjs'
 
 function logPath() {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'process-lifecycle-'))
@@ -17,10 +17,17 @@ function script(code) {
 function scriptWithReady(code) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'process-lifecycle-'))
   const ready = path.join(dir, 'ready')
+  // Publish readiness only after the child body has run, so handlers are
+  // registered before the test can observe the marker and send a signal.
   const child = launchProcess(process.execPath, ['-e',
-    `require('fs').writeFileSync(${JSON.stringify(ready)}, '1');${code}`,
+    `${code}\nrequire('fs').writeFileSync(${JSON.stringify(ready)}, '1')`,
   ], { logPath: path.join(dir, 'child.log') })
   return { child, ready }
+}
+
+async function awaitClose(child, timeoutMs = 10_000) {
+  const closed = await raceAfter(child.lifecycle.closePromise.then(() => true), timeoutMs)
+  assert.equal(closed, true, 'child close event did not arrive')
 }
 
 async function waitReady(ready) {
@@ -30,11 +37,11 @@ async function waitReady(ready) {
 }
 
 test('waits for a graceful SIGTERM exit and flushes stdout/stderr before close', async () => {
-  const child = script(`
+  const { child, ready } = scriptWithReady(`
     process.on('SIGTERM', () => { console.log('stdout-line'); console.error('stderr-line'); process.exit(0) })
     setInterval(() => {}, 1000)
   `)
-  await delay(400)
+  await waitReady(ready)
   const result = await stopProcess(child, { waitMs: 5000 })
   assert.equal(result.outcome, 'graceful')
   assert.equal(result.termination, 'clean-exit')
@@ -71,7 +78,7 @@ test('escalates to SIGKILL when the child ignores SIGTERM', async () => {
 
 test('returns already-exited for a child that finished before stop', async () => {
   const child = script(`console.log('done')`)
-  await Promise.race([child.lifecycle.closePromise, delay(1000)])
+  await awaitClose(child)
   const result = await stopProcess(child)
   assert.equal(result.outcome, 'already-exited')
   assert.equal(result.exitObserved, true)
@@ -92,7 +99,9 @@ test('concurrent stop calls share one decision and do not double-signal', async 
 
 test('reports a spawn error without claiming a graceful stop', async () => {
   const child = launchProcess('/definitely-not-a-real-command-952', [], { logPath: logPath() })
-  await delay(200)
+  const deadline = Date.now() + 5000
+  while (!child.lifecycle.spawnError && Date.now() < deadline) await delay(20)
+  assert.ok(child.lifecycle.spawnError, 'spawn error was never observed')
   const result = await stopProcess(child, { waitMs: 100 })
   assert.equal(result.outcome, 'spawn-error')
   assert.equal(result.exitObserved, false)
@@ -131,9 +140,11 @@ test('requireStopped rejects missing close and forced escalation', async () => {
 })
 
 test('a log write failure is diagnostic and does not hang close', async () => {
-  const child = script(`console.log('output')`)
-  child.lifecycle.logPath = path.join(path.dirname(child.lifecycle.logPath), 'missing-dir', 'child.log')
-  await Promise.race([child.lifecycle.closePromise, delay(2000)])
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'process-lifecycle-'))
+  const child = launchProcess(process.execPath, ['-e', `console.log('output')`], {
+    logPath: path.join(dir, 'missing-dir', 'child.log'),
+  })
+  await awaitClose(child)
   const result = await stopProcess(child)
   assert.match(result.logError, /ENOENT|no such file/i)
   assert.equal(result.closeObserved, true)

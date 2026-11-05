@@ -59,14 +59,14 @@
 | 升级失败自动回滚 | **NOT_RUN**（产品没有自动回滚） |
 | migration 抛错/只读/损坏/重启 | **PASS**（见 `rollback-and-recovery.md`） |
 | 升级中途 kill | **PASS**（第一条列提交后 SIGKILL，重启收敛） |
-| WAL/恢复顺序 | **PARTIAL**：checkpoint/ sidecar/最早备份/A 启动已加固；busy checkpoint/ENOSPC/crash point NOT_RUN |
+| WAL/恢复顺序 | **PASS（恢复协议）**：checkpoint/sidecar/最早备份/A 启动 + 8 阶段真实崩溃矩阵；ENOSPC 仍 NOT_RUN |
 | 不兼容降级 | **NOT_RUN**：加法 schema 读取已验，未来 schema 拒绝未实现 |
 | updater 运行时链 | **NOT_RUN**：只有 latest.json 静态契约；下载/验签/安装/重启未验证 |
 | 进程生命周期 | **PARTIAL（Phase 9.5.4）**：stop 严格 fail-closed、quiescence process/stream/lsof DB；进程组/PTY/WebKit 未实现 |
-| 真实 crash-point | **NOT_RUN（Phase 9.5.4）**：仍是异常 hook，独立 worker/SIGKILL 矩阵未执行 |
+| 真实 crash-point | **PASS（Phase 9.5.4）**：独立 worker 在 8/8 阶段真实 SIGKILL + control；PID 归属、精确文件集、integrity/content 全断言（见 `real-crash-point-matrix.md`） |
 | ENOSPC | **NOT_RUN**：无安全小容量卷 |
-| 恢复 crash point | **NOT_RUN**：状态机/hook 已实现，未逐点执行 |
-| 备份恢复 | **PASS**（端到端复制备份并用 A 读回） |
+| 恢复 crash point / 重试 | **PASS（恢复协议）**：崩溃后独立 retry，6 阶段 `restored`、2 阶段 `already-restored`；**产品启动时自动恢复仍 NOT_RUN** |
+| 备份恢复 | **PASS**（端到端复制备份并用 A 读回；Harness 恢复已改为独立 worker） |
 | 磁盘满/安装介质只读 | **NOT_RUN**（未实现确定性 fixture） |
 | Linux 故障注入 | **NOT_RUN**（本轮只做正常 A→B） |
 | 真实 Vault 主密码解锁 | **PARTIAL（Phase 9.5.2）**：真实 Argon2id/AES fixture 与升级后独立解密 PASS；app-level `vault_unlock` NOT_RUN |

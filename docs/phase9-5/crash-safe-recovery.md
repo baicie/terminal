@@ -4,6 +4,10 @@
 > 代码：`upgrade-e2e.mjs`、`recovery-state-machine.mjs`、`data-retention.mjs`
 > 测试：`recovery-state-machine.test.mjs`、`checkpoint-safety.test.mjs`
 > 判定：`SQLITE_RECOVERY_CRASH_SAFETY_VERIFIED = PARTIAL`
+>
+> **Phase 9.5.4 更新**：本文第 3 节的同进程 `crashPoint()` 已不再被 Harness 使用。
+> 恢复改由独立 `restore-worker.mjs` 执行，8 个阶段逐点真实 `SIGKILL`，并有
+> 独立 retry 收敛；见 `real-crash-point-matrix.md`。下面的 9.5.3 记录保留为历史。
 
 ## 1. 状态机
 

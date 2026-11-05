@@ -915,15 +915,16 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 
 详见 `docs/phase9-5/phase9-5-3-implementation.md`。
 
-### Phase 9.5.4 - Crash Recovery Evidence & Upgrade Safety Closure 🟡 P0 门禁完成
+### Phase 9.5.4 - Crash Recovery Evidence & Upgrade Safety Closure 🟡 P0 门禁完成，真实 crash 矩阵 PASS
 
 | 领域 | 结果 |
 | --- | --- |
-| Stop fail-closed | `requireStopped` 拒绝 spawn-error/timeout/exit/close/logError/非预期信号；9 项 lifecycle 测试 |
-| Quiescence | process/streams/lsof DB PASS；owned children NOT_RUN |
-| Recovery | 8 阶段 + stages 报告；crash point 仍为异常 hook，真实 worker 矩阵 NOT_RUN |
+| Stop fail-closed | `requireStopped` 拒绝 spawn-error/timeout/exit/close/logError/非预期信号；10 项 lifecycle 测试；`raceAfter` 清理计时器泄漏 |
+| Quiescence | process/streams/lsof DB PASS；owned children/PTY/WebKit NOT_RUN |
+| Real crash matrix | 独立 `restore-worker.mjs` 在 8/8 阶段真实 `SIGKILL` + control；PID 归属、精确文件集 SHA、integrity/content 全断言 |
+| Recovery retry | 独立 retry 进程：6 阶段 `restored`、2 阶段 `already-restored`；最终只留备份 DB |
 | Busy checkpoint | 真实第二连接测试 PASS |
-| 未完成 | 真实 crash matrix、恢复重试、ENOSPC、Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock |
+| 未完成 | ENOSPC、Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock；产品启动时自动恢复 NOT_RUN |
 | 判定 | `PHASE_9_5_4_ENGINEERING_COMPLETE=PARTIAL`；RC/Release NO |
 
 详见 `docs/phase9-5/phase9-5-4-implementation.md`。

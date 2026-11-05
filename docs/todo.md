@@ -2211,7 +2211,8 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
       PG 12 文件/96 项通过。
 - [x] Windows 隔离：状态机 + 8 项负测试；共享 runner fail-closed。
 - [ ] Windows 一次性 profile/VM 的 NSIS A→B。
-- [ ] 磁盘满/ENOSPC、busy checkpoint 负测、恢复 crash point。
+- [x] busy checkpoint 负测、恢复 crash point 真实矩阵（Phase 9.5.4）。
+- [ ] 磁盘满/ENOSPC。
 - [ ] app-level Vault unlock/change_password 升级链。
 - [ ] Team Sync 跨版本客户端、冲突/离线/删除传播。
 - [ ] updater 运行时下载/签名验证/安装/重启；release manifest deb/arm64 修复。
@@ -2224,7 +2225,7 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] 恢复状态机：8 阶段、顺序断言、`TERMINAL_TEST_CRASH` crash point hook、
       `backup restore stages` 报告；本地 normal/restore PASS。
 - [x] busy checkpoint：真实第二连接持读事务，checkpoint 非零退出。
-- [ ] crash point 真实逐点执行（PREPARE…COMPLETE）。
+- [x] crash point 真实逐点执行（PREPARE…COMPLETE，Phase 9.5.4 独立 worker SIGKILL）。
 - [ ] 进程组/WebKit/PTY/lsof quiescence。
 - [ ] ENOSPC 小容量卷矩阵。
 - [ ] Windows disposable profile/VM 与 NSIS A→B。
@@ -2237,11 +2238,14 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 
 - [x] `requireStopped` 严格拒绝 spawn-error/timeout/exit/close/logError/非预期信号；
       A/B/恢复/降级/Linux 路径统一 `stopChecked`。
-- [x] 终止语义与日志失败独立诊断；9 项 lifecycle 测试。
+- [x] 终止语义与日志失败独立诊断；10 项 lifecycle 测试；`raceAfter` 清理
+      `Promise.race` 遗留计时器。
 - [x] quiescence：process/streams/lsof DB 句柄；owned children NOT_RUN。
 - [x] 恢复 8 阶段与 `backup restore stages`；busy checkpoint 真实负测试。
-- [ ] 独立 recovery worker + 8 阶段真实 SIGKILL/exit 矩阵。
-- [ ] crash 后恢复重试/幂等/数据读回。
+- [x] 独立 recovery worker + 8 阶段真实 SIGKILL + control；PID 归属、精确
+      文件集 SHA、integrity/content 断言；Harness 恢复改为 spawn 同一 worker。
+- [x] crash 后独立 retry：6 阶段 `restored`、2 阶段 `already-restored`。
+- [ ] 产品启动时自动恢复状态机。
 - [ ] ENOSPC 小容量卷矩阵。
 - [ ] 进程组/WebKit/PTY quiescence。
 - [ ] Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时。
