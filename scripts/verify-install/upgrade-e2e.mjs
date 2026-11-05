@@ -49,6 +49,8 @@ import path from 'node:path'
 import process from 'node:process'
 import { promisify } from 'node:util'
 import { assessFault } from './fault-assessment.mjs'
+import { delay, describeStop, launchProcess, stopProcess as stop } from './process-lifecycle.mjs'
+import { assertStageOrder, crashPoint } from './recovery-state-machine.mjs'
 import { createVaultFile, verifyVaultFile, verifyWrongPasswordRejected } from './vault-crypto.mjs'
 
 const run = promisify(execFile)
@@ -79,11 +81,6 @@ function chmodDatabaseFiles(dbPath, mode) {
   for (const file of [dbPath, dbPath + '-wal', dbPath + '-shm', dbPath + '-journal']) {
     if (existsSync(file)) chmodSync(file, mode)
   }
-}
-
-function sleep(ms) {
-  const pause = new Int32Array(new SharedArrayBuffer(4))
-  Atomics.wait(pause, 0, 0, ms)
 }
 
 function errorMessage(error) {
@@ -176,8 +173,7 @@ async function installFromDmg(dmg, targetApp, work) {
 }
 
 function launch(binary, home, logPath, extraEnv = {}) {
-  const output = []
-  const child = spawn(binary, [], {
+  return launchProcess(binary, [], {
     cwd: os.tmpdir(),
     env: {
       ...process.env,
@@ -185,38 +181,8 @@ function launch(binary, home, logPath, extraEnv = {}) {
       SSH_AUTH_SOCK: '',
       ...extraEnv,
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    logPath,
   })
-  const append = chunk => {
-    output.push(String(chunk))
-    if (output.length > 2000) output.splice(0, output.length - 2000)
-  }
-  child.stdout.on('data', append)
-  child.stderr.on('data', append)
-  child.once('exit', (code, signal) => {
-    writeFileSync(logPath, output.join('') + `\n[exit code=${code} signal=${signal}]\n`)
-  })
-  return child
-}
-
-async function stop(child, waitMs = 30_000) {
-  if (child.exitCode !== null || child.signalCode !== null) return 'already-exited'
-  child.kill('SIGTERM')
-  const deadline = Date.now() + waitMs
-  while (Date.now() < deadline && child.exitCode === null && child.signalCode === null) {
-    sleep(250)
-  }
-  if (child.exitCode === null && child.signalCode === null) {
-    child.kill('SIGKILL')
-    // Wait for the exit event so the log handler has flushed before the caller
-    // reads b-fault.log. Returning on the signal alone raced the evidence.
-    await Promise.race([
-      new Promise(resolve => child.once('exit', resolve)),
-      new Promise(resolve => setTimeout(resolve, 2_000)),
-    ])
-    return 'sigkill'
-  }
-  return 'sigterm'
 }
 
 async function waitFor(predicate, timeoutMs, label) {
@@ -229,7 +195,7 @@ async function waitFor(predicate, timeoutMs, label) {
     } catch (error) {
       lastError = error
     }
-    sleep(500)
+    await delay(500)
   }
   throw new Error(label + ' not reached within ' + timeoutMs + ' ms' +
     (lastError ? ': ' + errorMessage(lastError) : ''))
@@ -261,6 +227,12 @@ async function replaceWithBackup(db, backup, dataDir, { beforePath, token } = {}
   // post-migration WAL: SQLite would replay those frames on the next open.
   // Checkpoint and verify first, remove sidecars before the rename, and fsync
   // the directory on both sides of the publish.
+  const stages = []
+  const stage = name => {
+    stages.push(name)
+    crashPoint(name)
+  }
+  stage('PREPARE')
   try {
     await dr(['checkpoint', '--db', db])
   } catch (error) {
@@ -268,6 +240,15 @@ async function replaceWithBackup(db, backup, dataDir, { beforePath, token } = {}
     // restoring over it. Any other checkpoint failure must abort.
     if (!/not a SQLite database|no such file/i.test(errorMessage(error))) throw error
   }
+  stage('QUIESCE')
+  if (beforePath && token) {
+    await dr([
+      'verify', '--db', backup, '--before', beforePath, '--token', token,
+      '--forbid-columns', 'agent_forwarding,shell_integration',
+      '--allow-settings-migration',
+    ])
+  }
+  stage('VERIFY_BACKUP')
   const temporary = path.join(dataDir, 'terminal.restore.tmp')
   try {
     cpSync(backup, temporary)
@@ -277,6 +258,7 @@ async function replaceWithBackup(db, backup, dataDir, { beforePath, token } = {}
     } finally {
       closeSync(fd)
     }
+    stage('STAGE')
     if (beforePath && token) {
       await dr([
         'verify', '--db', temporary, '--before', beforePath, '--token', token,
@@ -284,12 +266,18 @@ async function replaceWithBackup(db, backup, dataDir, { beforePath, token } = {}
         '--allow-settings-migration',
       ])
     }
+    stage('VERIFY_STAGED')
     rmSync(db + '-wal', { force: true })
     rmSync(db + '-shm', { force: true })
     rmSync(db + '-journal', { force: true })
     fsyncDirectory(dataDir)
+    stage('COMMIT')
     renameSync(temporary, db)
     fsyncDirectory(dataDir)
+    stage('VERIFY')
+    stage('COMPLETE')
+    assertStageOrder(stages)
+    return { stages }
   } catch (error) {
     rmSync(temporary, { force: true })
     throw error
@@ -464,7 +452,7 @@ async function runMacos(flags) {
     await waitForSchema(db, 'hosts:id;settings:key;workspaces:id;workspace_layouts:workspace_id')
     add('A schema ready', 'PASS')
     const stopA = await stop(child)
-    add('A stopped', 'PASS', stopA)
+    add('A stopped', 'PASS', describeStop(stopA))
     await dr(['checkpoint', '--db', db])
     await dr(['seed', '--db', db, '--token', token, '--vault', vault, '--compatible'])
     add('seed A data', 'PASS', 'compatible with A schema')
@@ -503,13 +491,13 @@ async function runMacos(flags) {
       const faultLog = path.join(logs, 'b-fault.log')
       reportJson.logs.fault = faultLog
       child = launch(bBinary, home, faultLog)
-      await sleep(15_000)
+      await delay(15_000)
       await stop(child)
       const afterHash = fileSetDigest(db)
       const preserved = afterHash === corruptedHash
       add('corrupt DB preserved', preserved ? 'PASS' : 'FAIL',
         `${corruptedHash.slice(0, 16)} -> ${afterHash.slice(0, 16)} (db/wal/shm/journal set)`)
-      await sleep(1_000)
+      await delay(1_000)
       await waitFor(() => existsSync(faultLog) && statSync(faultLog).size > 0, 3_000).catch(() => null)
       const faultText = existsSync(faultLog) ? readFileSync(faultLog, 'utf8') : ''
       const appObserved = /file is not a database|db bootstrap failed|SQLite/i.test(faultText)
@@ -535,14 +523,14 @@ async function runMacos(flags) {
       chmodSync(dataDir, 0o500)
       chmodDatabaseFiles(db, 0o400)
       child = launch(bBinary, home, faultLog)
-      await sleep(15_000)
+      await delay(15_000)
       await stop(child)
       chmodSync(dataDir, 0o700)
       chmodDatabaseFiles(db, 0o600)
       const afterHash = fileSetDigest(db)
       const preserved = afterHash === dbHashBefore
       add('read-only data dir preserved DB', preserved ? 'PASS' : 'FAIL', `${dbHashBefore.slice(0, 16)} -> ${afterHash.slice(0, 16)}`)
-      await sleep(1_000)
+      await delay(1_000)
       await waitFor(() => existsSync(faultLog) && statSync(faultLog).size > 0, 3_000).catch(() => null)
       const faultText = existsSync(faultLog) ? readFileSync(faultLog, 'utf8') : ''
       const appObserved = /readonly database|read-only|permission|db bootstrap failed/i.test(faultText)
@@ -717,7 +705,7 @@ async function runMacos(flags) {
       reportJson.notRun.push('pre-migration backup (B ' + reportJson.b.version + ' has no backup command)')
     }
     const stopB = await stop(child)
-    add('B stopped', 'PASS', stopB)
+    add('B stopped', 'PASS', describeStop(stopB))
     await dr(['checkpoint', '--db', db])
     const afterColumns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
     reportJson.schema.afterTables = execFileSyncSqlite(db, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -782,7 +770,8 @@ async function runMacos(flags) {
         add('backup restore', 'FAIL', 'this B produced no pre-migration backup')
       } else {
         copyFileSync(db, path.join(work, 'post-upgrade.db'))
-        await replaceWithBackup(db, backup, dataDir, { beforePath, token })
+        const recovery = await replaceWithBackup(db, backup, dataDir, { beforePath, token })
+        add('backup restore stages', 'PASS', recovery.stages.join('>'))
         const restoredHash = sha256File(db)
         add(
           'restored DB matches backup',
@@ -1182,7 +1171,7 @@ async function runLinux(flags) {
     add('A schema ready', 'PASS')
     const stopA = await stop(aProcess)
     aProcess = null
-    add('A stopped', 'PASS', stopA)
+    add('A stopped', 'PASS', describeStop(stopA))
     await dr(['checkpoint', '--db', db])
     await dr(['seed', '--db', db, '--token', token, '--vault', vault, '--compatible'])
     add('seed A data', 'PASS', 'compatible with A schema')
@@ -1263,7 +1252,7 @@ async function runLinux(flags) {
     add('B migration', 'PASS', expectedNewHostColumns.join(','))
     const stopB = await stop(aProcess)
     aProcess = null
-    add('B stopped', 'PASS', stopB)
+    add('B stopped', 'PASS', describeStop(stopB))
     await dr(['checkpoint', '--db', db])
     const afterColumns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
     reportJson.schema.afterHostColumns = afterColumns

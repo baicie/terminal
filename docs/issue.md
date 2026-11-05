@@ -5133,6 +5133,12 @@ Argon2id/AES fixture、Team Sync full AppModule HTTP 同步、Windows 隔离
 状态机、WAL checkpoint/恢复顺序加固。Windows E2E、磁盘满、app-level Vault、
 updater 运行时仍 NOT_RUN/PARTIAL；见 `docs/phase9-5/phase9-5-2-implementation.md`。
 
+**Phase 9.5.3**：进程生命周期改为异步 exit/close，移除 `Atomics.wait`；
+恢复状态机 8 阶段 + crash point hook；busy checkpoint 真实负测试。仍缺
+进程组/lsof、crash point 逐点执行、ENOSPC、Windows disposable、Vault
+app-level、Team Sync 跨版本、updater 运行时；见
+`docs/phase9-5/phase9-5-3-implementation.md`。
+
 ### Issue #192: Windows 安装验证实际未隔离且会删除真实 APPDATA 🟡 BLOCKED_EXTERNAL（2026-11-05）
 
 **严重程度**：🔴 Blocker（故障测试安全）

@@ -903,6 +903,19 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 
 详见 `docs/phase9-5/phase9-5-2-implementation.md`。
 
+### Phase 9.5.3 - Process Lifecycle & Crash-Safe Recovery 🟡 P0 完成，外部环境待补
+
+| 领域 | 结果 |
+| --- | --- |
+| 进程生命周期 | 异步 exit/close，SIGTERM→SIGKILL，日志 close 后写入；7 项单元测试；真实 normal/restore 为 graceful |
+| 恢复状态机 | 8 阶段、顺序断言、crash point hook（仅测试开关）；`backup restore stages` 入报告 |
+| busy checkpoint | 真实第二个 SQLite 连接测试，checkpoint 非零退出 |
+| 未完成 | 进程组/lsof、crash point 逐点执行、ENOSPC、Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock |
+| 判定 | `PHASE_9_5_3_ENGINEERING_COMPLETE=PARTIAL`；`READY_FOR_RC=NO`、`READY_FOR_RELEASE=NO` |
+
+详见 `docs/phase9-5/phase9-5-3-implementation.md`。
+
+
 
 ---
 

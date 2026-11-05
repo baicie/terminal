@@ -96,6 +96,12 @@ B、A/B 的 SHA/架构可读；应用启动与 A→B 迁移显式标 `NOT_RUN`�
 startup NOT_RUN，并拒绝 `PASS`。**没有**把 EGL 失败写成 PASS，也没有把系统
 WebKit 回退写成 stock AppImage 启动。
 
+## 5.1 Phase 9.5.3 边界
+
+本轮不重复 Mesa/EGL 参数实验；stock AppImage 仍为同一结论：
+`LINUX_APPIMAGE_FULL_UPGRADE = PARTIAL`，payload-only 替换/SHA 有效，启动与
+迁移 NOT_RUN。若后续在真实桌面/VM 启动成功，再单独升级该判定。
+
 ## 6. 判定
 
 - `LINUX_DEB_UPGRADE_VERIFIED = YES`：真实 dpkg 安装、版本读回、B 迁移与

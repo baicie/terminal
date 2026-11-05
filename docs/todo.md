@@ -2216,3 +2216,19 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [ ] Team Sync 跨版本客户端、冲突/离线/删除传播。
 - [ ] updater 运行时下载/签名验证/安装/重启；release manifest deb/arm64 修复。
 - [ ] AppImage 真实桌面/VM 启动与 A→B 迁移。
+
+### 2026-11-05 Phase 9.5.3 - 进程生命周期与崩溃安全恢复 🟡 P0 完成，外部环境待补
+
+- [x] 异步进程生命周期：真实 exit/close、SIGTERM→SIGKILL、日志 close 后写入，
+      7 项 dummy child 测试；移除 `Atomics.wait` 轮询。
+- [x] 恢复状态机：8 阶段、顺序断言、`TERMINAL_TEST_CRASH` crash point hook、
+      `backup restore stages` 报告；本地 normal/restore PASS。
+- [x] busy checkpoint：真实第二连接持读事务，checkpoint 非零退出。
+- [ ] crash point 真实逐点执行（PREPARE…COMPLETE）。
+- [ ] 进程组/WebKit/PTY/lsof quiescence。
+- [ ] ENOSPC 小容量卷矩阵。
+- [ ] Windows disposable profile/VM 与 NSIS A→B。
+- [ ] Vault app-level probe/change_password/legacy verifier。
+- [ ] Team Sync A→B 客户端真实 fetch 链。
+- [ ] Updater 运行时 check/download/verify/install/restart。
+- [ ] AppImage stock 启动。

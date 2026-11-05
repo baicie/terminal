@@ -62,5 +62,8 @@
 `UPGRADE_DATA_INTEGRITY_VERIFIED = YES`（macOS，hosts/settings/workspaces/layout/
 Team Sync 本地/vault 文件/schema/backup；不含真实 Vault 解锁与服务端同步）。
 
+Phase 9.5.3 追加：恢复顺序/备份选择/checkpoint busy 已加固；真实 crash point
+逐点执行与 ENOSPC 仍 NOT_RUN，见 `crash-safe-recovery.md`、`recovery-fault-matrix.md`。
+
 Phase 9.5.1 追加：Linux DEB 真实安装链同样逐字段 PASS；当前源码的 CI 升级链见
 `ci-current-version-upgrade.md`；中断/恢复/降级见 `rollback-and-recovery.md`。

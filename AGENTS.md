@@ -582,6 +582,16 @@ pnpm add <package-name>
 - 🟡 Updater：latest.json 静态契约/负测试；运行时下载/验签/安装/重启 **NOT_RUN**；release manifest deb/arm64/签名验证缺陷仍存在
 - 📋 代码 HEAD `78dd0d8`（文档 `eccabe6`）；最终 CI/证据重采结果见 `docs/phase9-5/phase9-5-2-implementation.md`
 
+### Phase 9.5.3 - Process Lifecycle & Crash-Safe Recovery 🟡 P0 完成，外部环境待补
+
+- ✅ 异步进程生命周期：`process-lifecycle.mjs`，真实 exit/close、SIGTERM→SIGKILL、日志 close 后写入、7 项 dummy child 测试；不再用 `Atomics.wait`
+- ✅ 恢复状态机：`PREPARE→QUIESCE→VERIFY_BACKUP→STAGE→VERIFY_STAGED→COMMIT→VERIFY→COMPLETE`，crash point 仅 `TERMINAL_TEST_CRASH=1` 启用；报告记录 `backup restore stages`
+- ✅ busy checkpoint：真实第二个 SQLite 连接持读事务，checkpoint 非零退出
+- 🟡 进程组/WebKit/PTY/lsof quiescence **NOT_RUN**；crash point 真实逐点执行 **NOT_RUN**
+- 🟡 磁盘满/ENOSPC、Windows disposable profile/VM、Vault app-level、Team Sync 跨版本客户端、updater 运行时 **NOT_RUN**
+- 🟡 AppImage 仍 payload-only（stock 启动 NOT_RUN）
+- 📋 最终代码/CI/判定见 `docs/phase9-5/phase9-5-3-implementation.md`
+
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
@@ -617,7 +627,7 @@ pnpm add <package-name>
 | —     | ✅ **六份验收证据已重采并归档**：Phase 9.5.1 因 smoke-only 迁移延迟使指纹变为 `b73c5fd2…`，已用 run `41970525110` 官方重采（commit `225c363`），门禁 0 problem；未手改旧 manifest。任何后续 `FINGERPRINT_PATHS` 改动仍需重采 | ✅ 已闭合 | — |
 | —     | ✅ P9.2-9 Linux zsh 探针 **PASS**：run `41432020659` / `41434165000` 的 Linux job 均 success，14 用例全绿（含此前三条）。遗留：空 `$HOME` 的真实 Debian 新账户未测 | ✅ 已闭合 | — |
 | 60    | ✅ **macOS 远程冷启动已收口**：G 300/300、第二轮 artifact 300/300（最终 remote 300）、clean 300/300；三个 run 共 **900 样本，0 个最终 local**；隔离/控制组/证据/CI 11/11 均 PASS。仍缺：历史 20% 的 Unified Log、跨版本升级、硬件矩阵、签名、身份迁移 | ✅ 已闭合（冷启动） | — |
-| —     | 🟡 **跨版本升级**：Phase 9.5.2 新增场景级证据契约、真实 Vault fixture、Team Sync 真实 HTTP、Windows 隔离状态机；Windows A→B、磁盘满、app-level Vault、updater 运行时、AppImage stock 启动仍 **NOT_RUN/PARTIAL**。详见 `docs/phase9-5/phase9-5-2-implementation.md` | 🟡 Important（RC） | P1 |
+| —     | 🟡 **跨版本升级**：Phase 9.5.3 完成异步进程生命周期、恢复状态机与 busy checkpoint；Windows A→B、磁盘满、app-level Vault、Team Sync 跨版本、updater 运行时、AppImage stock 启动仍 **NOT_RUN/PARTIAL**。详见 `docs/phase9-5/phase9-5-3-implementation.md` | 🟡 Important（RC） | P1 |
 | —     | 🔴 **签名/公证/updater**：Apple notarization、Windows Authenticode、Tauri updater `pubkey` 均 **BLOCKED_EXTERNAL**；updater 运行时下载/安装/重启 **NOT_RUN**；历史 `.sig` 不能替代运行时更新链 | 🔴 Blocker（发布） | P0 |
 | —     | 🟡 **身份迁移**：`productName=Termius`、`identifier=com.baicie.termius` 未改；T1–T12 **NOT_RUN/BLOCKED_EXTERNAL**；迁移代码不存在 | 🟡 Important（发布） | P1 |
 | —     | ✅ 前端依赖审计已闭合（vuln 25 → 0，新增 CI 阻塞 job）；同步接口与 Share REST 的版本契约统一为 JSON number。详见 `docs/phase9-3/merge-blocker-closure.md` | ✅ 已闭合 | — |

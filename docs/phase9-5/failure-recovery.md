@@ -81,6 +81,9 @@
 
 `FAILURE_RECOVERY_VERIFIED = PARTIAL`
 
+Phase 9.5.3：恢复状态机与 busy checkpoint 已实现；crash point/ENOSPC 仍
+NOT_RUN，详见 `crash-safe-recovery.md` 与 `recovery-fault-matrix.md`。
+
 - 已覆盖：损坏 DB、只读目录、备份失败、重复启动、备份可读、迁移中途中断、
   备份恢复、A 读取降级；
 - 未覆盖：磁盘满、安装介质只读、自动恢复/自动回滚、B→A 写回保证、Linux 故障

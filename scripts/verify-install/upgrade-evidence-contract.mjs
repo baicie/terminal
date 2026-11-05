@@ -89,6 +89,7 @@ export const SCENARIO_CONTRACTS = {
       'restored DB matches backup',
       'restored A launch',
       'backup restore',
+      'backup restore stages',
     ],
     requiredFacts: [],
     requiredDetail: {

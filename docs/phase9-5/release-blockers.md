@@ -62,6 +62,8 @@
 | WAL/恢复顺序 | **PARTIAL**：checkpoint/ sidecar/最早备份/A 启动已加固；busy checkpoint/ENOSPC/crash point NOT_RUN |
 | 不兼容降级 | **NOT_RUN**：加法 schema 读取已验，未来 schema 拒绝未实现 |
 | updater 运行时链 | **NOT_RUN**：只有 latest.json 静态契约；下载/验签/安装/重启未验证 |
+| 进程生命周期 | **PARTIAL（Phase 9.5.3）**：直接子进程异步 stop 已验证；进程组/lsof 未实现 |
+| 恢复 crash point | **NOT_RUN**：状态机/hook 已实现，未逐点执行 |
 | 备份恢复 | **PASS**（端到端复制备份并用 A 读回） |
 | 磁盘满/安装介质只读 | **NOT_RUN**（未实现确定性 fixture） |
 | Linux 故障注入 | **NOT_RUN**（本轮只做正常 A→B） |

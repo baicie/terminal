@@ -1,0 +1,167 @@
+/**
+ * Asynchronous child-process lifecycle for the upgrade harness.
+ *
+ * The old stop() polled with Atomics.wait(), which blocks Node's event loop and
+ * can delay the very exit events it is waiting for. This module waits on real
+ * `exit` and `close` events, never treats kill()'s return value as proof of
+ * exit, and records whether stdout/stderr were closed before the log was
+ * written.
+ */
+import { spawn } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
+
+export function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+export function launchProcess(command, args = [], options = {}) {
+  const output = []
+  const state = {
+    spawned: false,
+    spawnError: null,
+    exitObserved: false,
+    closeObserved: false,
+    exitCode: null,
+    signal: null,
+    stdoutClosed: false,
+    stderrClosed: false,
+    exitPromise: null,
+    closePromise: null,
+    stopPromise: null,
+    logWritten: false,
+    logPath: options.logPath || null,
+  }
+  let resolveExit
+  let resolveClose
+  state.exitPromise = new Promise(resolve => { resolveExit = resolve })
+  state.closePromise = new Promise(resolve => { resolveClose = resolve })
+
+  const child = spawn(command, args, {
+    cwd: options.cwd,
+    env: options.env,
+    stdio: options.stdio || ['ignore', 'pipe', 'pipe'],
+  })
+  child.lifecycle = state
+  child.once('spawn', () => { state.spawned = true })
+  child.once('error', error => {
+    state.spawnError = error
+    // A spawn error may be followed by close without a real exit. Keep
+    // exitObserved false so callers do not treat it as a graceful process exit.
+    resolveExit()
+  })
+  if (child.stdout) {
+    child.stdout.on('data', chunk => output.push(String(chunk)))
+    child.stdout.once('close', () => { state.stdoutClosed = true })
+  }
+  if (child.stderr) {
+    child.stderr.on('data', chunk => output.push(String(chunk)))
+    child.stderr.once('close', () => { state.stderrClosed = true })
+  }
+  child.once('exit', (code, signal) => {
+    state.exitObserved = true
+    state.exitCode = code
+    state.signal = signal
+    resolveExit()
+  })
+  child.once('close', (code, signal) => {
+    state.closeObserved = true
+    state.exitCode = code
+    state.signal = signal
+    if (!state.spawnError && !state.exitObserved) {
+      state.exitObserved = true
+      resolveExit()
+    }
+    if (state.logPath && !state.logWritten) {
+      state.logWritten = true
+      // close fires after stdout/stderr are closed, so the log is complete.
+      writeFileSync(
+        state.logPath,
+        output.join('') + `\n[exit code=${code} signal=${signal}]\n`,
+      )
+    }
+    resolveClose()
+  })
+  return child
+}
+
+export async function stopProcess(child, { waitMs = 30_000, killWaitMs = 5_000, closeWaitMs = 2_000 } = {}) {
+  const state = child?.lifecycle
+  const started = Date.now()
+  if (!state) {
+    return {
+      outcome: 'spawn-error', pid: child?.pid ?? null, exitCode: null, signal: null,
+      exitObserved: false, closeObserved: false, elapsedMs: 0, escalationUsed: false,
+      error: 'process has no lifecycle state',
+    }
+  }
+  if (state.stopPromise) return state.stopPromise
+  state.stopPromise = (async () => {
+    const result = {
+      outcome: 'graceful',
+      pid: child.pid ?? null,
+      exitCode: state.exitCode,
+      signal: state.signal,
+      exitObserved: state.exitObserved,
+      closeObserved: state.closeObserved,
+      elapsedMs: 0,
+      escalationUsed: false,
+    }
+    if (state.spawnError) {
+      result.outcome = 'spawn-error'
+      result.error = String(state.spawnError.message || state.spawnError)
+      result.elapsedMs = Date.now() - started
+      return result
+    }
+    if (state.exitObserved) {
+      result.outcome = 'already-exited'
+      result.exitObserved = true
+      result.exitCode = state.exitCode
+      result.signal = state.signal
+      await Promise.race([state.closePromise, delay(closeWaitMs)])
+      result.closeObserved = state.closeObserved
+      result.elapsedMs = Date.now() - started
+      return result
+    }
+
+    const sent = child.kill('SIGTERM')
+    if (!sent && !state.exitObserved) {
+      result.outcome = 'spawn-error'
+      result.error = 'SIGTERM could not be delivered'
+      result.elapsedMs = Date.now() - started
+      return result
+    }
+    await Promise.race([state.exitPromise, delay(waitMs)])
+    if (!state.exitObserved) {
+      result.escalationUsed = true
+      child.kill('SIGKILL')
+      await Promise.race([state.exitPromise, delay(killWaitMs)])
+      result.outcome = state.exitObserved ? 'forced' : 'timeout'
+    } else {
+      result.outcome = 'graceful'
+    }
+    await Promise.race([state.closePromise, delay(closeWaitMs)])
+    result.exitObserved = state.exitObserved
+    result.closeObserved = state.closeObserved
+    result.exitCode = state.exitCode
+    result.signal = state.signal
+    result.elapsedMs = Date.now() - started
+    if (!state.exitObserved) {
+      result.error = 'process did not exit after SIGKILL within ' + killWaitMs + ' ms'
+    }
+    return result
+  })()
+  return state.stopPromise
+}
+
+export function describeStop(result) {
+  return [
+    result.outcome,
+    'pid=' + (result.pid ?? 'null'),
+    'exit=' + (result.exitCode ?? 'null'),
+    'signal=' + (result.signal ?? 'null'),
+    'exitObserved=' + result.exitObserved,
+    'closeObserved=' + result.closeObserved,
+    'escalation=' + result.escalationUsed,
+    'elapsedMs=' + result.elapsedMs,
+  ].join(' ')
+}
