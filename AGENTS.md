@@ -560,7 +560,7 @@ pnpm add <package-name>
 ### Phase 9.5.1 - Cross-Platform Upgrade & Recovery Hardening 🟡 实现完成，平台证据待补
 
 - ✅ 故障五事实（`FAULT_INJECTED` / `APPLICATION_FAILURE_OBSERVED` / `ORIGINAL_DATA_PRESERVED` / `NO_PARTIAL_MIGRATION` / `RECOVERY_SUCCEEDED`）与 5 项负测试；独立 `check-upgrade-evidence.mjs` 门禁
-- ✅ 当前 HEAD CI 升级 run `41980039459`：7/7 报告 PASS；B=`0.0.1-dev.4-local`、source `94f4b32`、DMG SHA `00afd8ff…`
+- ✅ 当前 HEAD CI 升级 run `42003371472`：5/5 job success、macOS current 7/7；B=`0.0.1-dev.4-local`、source `78dd0d8`、DMG SHA `dcd865d1…`；普通 CI `42003381820` 11/11
 - ✅ 真实中途迁移中断：`agent_forwarding` 提交后、`shell_integration` 前 SIGKILL；重启收敛、字段级验证 PASS
 - ✅ 备份恢复：复制 `pre-migration-<epoch>.db`、删除 WAL/SHM、A 启动读回、SHA 一致
 - ✅ Linux x64 DEB：真实 `apt-get`/dpkg、`dpkg-query` 版本变化、字段级数据 PASS（run `41972602296`）
@@ -1072,7 +1072,7 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-11-05 (Phase 9.5.1：故障五事实与独立升级证据门禁；当前 HEAD CI 升级 run `41980039459` 7/7 PASS；真实中途迁移中断、备份恢复、B→A 读取降级 PASS；Linux x64 DEB 真实 dpkg 升级 PASS；AppImage 改为 payload-only（同路径替换/SHA PASS，启动/迁移 NOT_RUN，headless WebKit EGL 限制）；Windows 只读隔离预检 fail-closed，升级 E2E NOT_RUN；六份证据因 smoke-only 迁移延迟重采为指纹 `b73c5fd2…`（run `41970525110`，0 problem）；签名/公证/updater/身份迁移/真实 Vault/Team Sync 服务端仍未闭合；详见 `docs/phase9-5/phase9-5-1-implementation.md`)_
+_文档更新时间: 2026-11-05 (Phase 9.5.2：场景级升级证据契约与 22 项负测试；备份/WAL 恢复顺序、真实 Vault Argon2id/AES fixture、Team Sync full AppModule HTTP、Windows 隔离状态机；Windows A→B/磁盘满/app-level Vault/updater 运行时/AppImage stock 启动仍 NOT_RUN 或 PARTIAL；六份证据按 fd9cc8ac 指纹重采，详见 docs/phase9-5/phase9-5-2-implementation.md)_
 
 _历史更新 2026-11-03: (Phase 9.3：bootstrap 的五个配置探测由串行改并发，修掉「一个慢 IPC 饿死其余」——这是 real-machine run `41437956656` 上 `nano-edit`「从未写 result.json」的根因；冷启动测量目录清理改带重试，修掉 `ENOTEMPTY` 假红；6 份证据随 run `41478709578` 重采为指纹 `c4faedfb…`，门禁 0 problem；交付 `docs/phase9-3/bootstrap-probe-starvation.md`)_
 

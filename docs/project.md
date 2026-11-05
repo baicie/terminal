@@ -874,7 +874,7 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 
 | 领域 | 结果 |
 | --- | --- |
-| 当前 HEAD CI 升级 | **PASS**：run `41980039459`，7/7 报告（normal/interrupt/restore/downgrade/corrupt/readonly/restart）；B=`0.0.1-dev.4-local`，SHA `00afd8ff…` |
+| 当前 HEAD CI 升级 | **PASS**：run `42003371472` 5/5 job，macOS current 7/7；B=`0.0.1-dev.4-local`、source `78dd0d8`、SHA `dcd865d1…`；普通 CI `42003381820` 11/11 |
 | 真实迁移中断 | **PASS**：`agent_forwarding` 已提交、`shell_integration` 缺失时 SIGKILL；重启后两列齐全、字段级验证 |
 | 备份恢复 | **PASS**：复制 `pre-migration-<epoch>.db`、删除 WAL/SHM、A 启动读回、SHA 一致 |
 | B→A 降级 | **PASS（读取）/ PARTIAL**：A 可读加法 schema、数据哈希未变；无降级状态机 |

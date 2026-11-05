@@ -47,7 +47,7 @@ reparse/unsafe test root、错误 owner、已有安装/数据、cleanup 拒绝�
 
 ## 4. CI 真实结果
 
-`windows-isolation-preflight`：
+`windows-isolation-preflight`（最终 run `42003371472`）：
 
 1. 先在 Windows runner 跑上述 state-machine 测试；
 2. 以当前 runner SID 作为 `ExpectedSid` 和 `RunnerSid` 调用 PS；

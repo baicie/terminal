@@ -35,7 +35,7 @@ A 安装后启动、创建 schema；seed 后安装 B；B 的 `dpkg-query` 版本
 
 | 项 | 值 |
 | --- | --- |
-| run | `41980039459`（`94f4b32`）；前一版 `41972602296` 同样 PASS |
+| run | `42003371472`（`78dd0d8`）**success**；`41980039459`/`41972602296` 同样 PASS |
 | job | `Linux real DEB upgrade` — **success** |
 | A | `0.0.1-dev.1`，SHA256 `4ed449bf…` |
 | B | `0.0.1-dev.2`，SHA256 `80c40e72…` |

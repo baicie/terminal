@@ -39,8 +39,8 @@
 
 测试：
 
-- `node --test scripts/verify-install/*.test.mjs`：**46 passed / 2 skipped**（Node 22
-  跳过 Argon2；CI Node 24 全过）。
+- `node --test scripts/verify-install/*.test.mjs`：本地 Node 22 **46 passed / 2 skipped**
+  （Argon2 测试跳过）；CI Node 24 **48/48 passed**。
 - Team Server PG：**12 files / 96 tests passed**（含新增 2 项真实 HTTP）。
 - Team Server 单测：**25 files / 119 tests passed**。
 - Rust：**303 passed**。
@@ -54,8 +54,8 @@
 | 项 | 值 |
 | --- | --- |
 | 代码 HEAD | `a82bd45` |
-| Upgrade E2E | `41997387782`（macOS current 7/7、Linux DEB、AppImage payload-only、Windows 预检） |
-| 普通 CI | `41997394538`（代码提交；evidence gate 因源码指纹变化需重采） |
+| Upgrade E2E | `42003371472` **success 5/5**：macOS current 7/7、historical、Linux DEB、AppImage payload-only、Windows 预检；B source `78dd0d8`、DMG SHA `dcd865d1…` |
+| 普通 CI | `42003381820` **success 11/11**（代码 + fd9cc8ac 证据提交） |
 | 证据重采 | 见第 5 节；最终 run 号会回写 |
 | 本地测试 DB | `team_server_e2e_952`（PostgreSQL 17.10） |
 

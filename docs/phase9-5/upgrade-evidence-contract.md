@@ -93,7 +93,7 @@ node scripts/verify-install/check-upgrade-evidence.mjs --require-contract <repor
 | 本地脚本测试 | 46 passed / 2 skipped（Node 22 无 argon2；Node 24 全过） |
 | 本地真实 normal 报告 | PASS，`vault crypto unlock after B` PASS |
 | 本地 restore/downgrade/interrupted | 均 PASS，新增 A/B 启动与 B 列检查 |
-| CI | 见 `phase9-5-2-implementation.md` 的最终 run |
+| CI | `42003371472` 5/5 success；macOS current 7/7、Linux DEB、AppImage payload-only、Windows 预检均通过 `--require-contract` |
 
 ## 7. 不能声称
 

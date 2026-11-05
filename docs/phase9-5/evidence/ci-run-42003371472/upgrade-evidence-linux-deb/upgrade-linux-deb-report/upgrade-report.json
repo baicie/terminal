@@ -1,0 +1,214 @@
+{
+  "provider": "upgrade-e2e",
+  "generatedAt": "2026-11-05T09:34:08.362Z",
+  "contractVersion": 2,
+  "scenario": "linux-deb",
+  "sourceSha": "78dd0d85d0dd618d095bc251f34415938a84a891",
+  "runId": "42003371472",
+  "platform": "linux",
+  "mode": "deb",
+  "hostArch": "x64",
+  "fault": "none",
+  "expectBackup": false,
+  "work": "/home/runner/work/terminal/terminal/upgrade-linux-deb/terminal-upgrade-linux-lvlOgA",
+  "token": "phase951-linux-1793871248362",
+  "a": {
+    "provider": "asset-metadata",
+    "installer": "/home/runner/work/terminal/terminal/upgrade-assets/linux-deb1/Terminal_0.0.1-dev.1_linux-x86_64.deb",
+    "size": 13230012,
+    "sha256": "4ed449bf4a64727f867a6fa73f2d62c29abbb06baf3edf351c5c25650eed0cee",
+    "platform": "linux",
+    "bundleName": "termius",
+    "identifier": "termius",
+    "version": "0.0.1-dev.1",
+    "arch": "amd64",
+    "checks": [
+      "deb control metadata read"
+    ],
+    "status": "PASS",
+    "expected": {
+      "sha256": "4ed449bf4a64727f867a6fa73f2d62c29abbb06baf3edf351c5c25650eed0cee",
+      "version": "0.0.1-dev.1",
+      "identifier": null
+    },
+    "problems": []
+  },
+  "b": {
+    "provider": "asset-metadata",
+    "installer": "/home/runner/work/terminal/terminal/upgrade-assets/linux-deb2/Terminal_0.0.1-dev.2_linux-x86_64.deb",
+    "size": 14120892,
+    "sha256": "80c40e72989b4c597b63cd7224e324463e6d0665956cb8e421415376ca4f6643",
+    "platform": "linux",
+    "bundleName": "termius",
+    "identifier": "termius",
+    "version": "0.0.1-dev.2",
+    "arch": "amd64",
+    "checks": [
+      "deb control metadata read"
+    ],
+    "status": "PASS",
+    "expected": {
+      "sha256": "80c40e72989b4c597b63cd7224e324463e6d0665956cb8e421415376ca4f6643",
+      "version": "0.0.1-dev.2",
+      "identifier": null
+    },
+    "problems": []
+  },
+  "schema": {
+    "beforeHostColumns": [
+      "id",
+      "name",
+      "hostname",
+      "port",
+      "username",
+      "auth_type",
+      "password",
+      "private_key",
+      "certificate",
+      "group_id",
+      "is_favorite",
+      "color",
+      "tags",
+      "port_forwards",
+      "startup_command",
+      "environment",
+      "jump_host_id",
+      "jump_host_auth_type",
+      "created_at",
+      "updated_at"
+    ],
+    "afterHostColumns": [
+      "id",
+      "name",
+      "hostname",
+      "port",
+      "username",
+      "auth_type",
+      "password",
+      "private_key",
+      "certificate",
+      "group_id",
+      "is_favorite",
+      "color",
+      "tags",
+      "port_forwards",
+      "startup_command",
+      "environment",
+      "jump_host_id",
+      "jump_host_auth_type",
+      "created_at",
+      "updated_at",
+      "agent_forwarding",
+      "shell_integration"
+    ],
+    "addedHostColumns": [
+      "agent_forwarding",
+      "shell_integration"
+    ]
+  },
+  "checks": [
+    {
+      "name": "A metadata",
+      "status": "PASS",
+      "detail": "0.0.1-dev.1"
+    },
+    {
+      "name": "B metadata",
+      "status": "PASS",
+      "detail": "0.0.1-dev.2"
+    },
+    {
+      "name": "install A (deb)",
+      "status": "PASS",
+      "detail": "termius 0.0.1-dev.1"
+    },
+    {
+      "name": "A database created",
+      "status": "PASS",
+      "detail": "/home/runner/work/terminal/terminal/upgrade-linux-deb/terminal-upgrade-linux-lvlOgA/config/com.baicie.termius/terminal.db"
+    },
+    {
+      "name": "A schema ready",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "A stopped",
+      "status": "PASS",
+      "detail": "sigkill"
+    },
+    {
+      "name": "seed A data",
+      "status": "PASS",
+      "detail": "compatible with A schema"
+    },
+    {
+      "name": "vault encrypted fixture",
+      "status": "PASS",
+      "detail": "Argon2id + AES-256-GCM entry created"
+    },
+    {
+      "name": "A read-back snapshot",
+      "status": "PASS",
+      "detail": "hosts/settings/workspace/layout/vault readable"
+    },
+    {
+      "name": "B installed version",
+      "status": "PASS",
+      "detail": "0.0.1-dev.2"
+    },
+    {
+      "name": "A->B version changed",
+      "status": "PASS",
+      "detail": "0.0.1-dev.1 -> 0.0.1-dev.2"
+    },
+    {
+      "name": "B migration",
+      "status": "PASS",
+      "detail": "agent_forwarding,shell_integration"
+    },
+    {
+      "name": "B stopped",
+      "status": "PASS",
+      "detail": "sigkill"
+    },
+    {
+      "name": "data integrity after B",
+      "status": "PASS",
+      "detail": "field-by-field"
+    },
+    {
+      "name": "vault crypto unlock after B",
+      "status": "PASS",
+      "detail": "encrypted entry decrypted with the same password"
+    },
+    {
+      "name": "vault wrong password rejected",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "Team Sync local persistence",
+      "status": "PASS",
+      "detail": "teams/members/shared hosts/sync_queue/user_profile"
+    },
+    {
+      "name": "pre-migration backup",
+      "status": "NOT_RUN",
+      "detail": "Linux B has no backup probe in this iteration"
+    }
+  ],
+  "notRun": [
+    "real Vault master-password unlock (file persistence only)",
+    "Team Sync server synchronization (local tables only)",
+    "fault injection on Linux (not implemented; root/read-only semantics differ)",
+    "Windows adapter",
+    "AppImage internal metadata when extraction is unavailable"
+  ],
+  "logs": {
+    "a": "/home/runner/work/terminal/terminal/upgrade-linux-deb/terminal-upgrade-linux-lvlOgA/logs/a.log",
+    "b": "/home/runner/work/terminal/terminal/upgrade-linux-deb/terminal-upgrade-linux-lvlOgA/logs/b.log"
+  },
+  "status": "PASS",
+  "display": ":131"
+}
