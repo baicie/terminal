@@ -45,9 +45,13 @@
   `terminalThemeLightMigrated` 写回，因此没有内容依赖的 read-back 探针。本报告
   只能证明 A 创建了真实 schema、受控行可通过 SQL 读回；不能声称“A 的 UI 读到了
   这些行”。该限制标 PARTIAL，未写成 PASS。
-- **Vault 真实解锁**：测试 vault 是 schema-valid、零条目的 fixture；没有主密码，
-  不执行加解密。真实 Vault 解锁和 Team Sync 服务端升级均 NOT_RUN。
-- **Team Sync 服务端**：只验证本地表持久化；没有 server、token 或网络同步。
+- **Vault 真实解锁**：Phase 9.5.2 改用 Node 24 Argon2id/AES-GCM 真实条目
+  fixture，Rust 已知答案测试与升级后独立解密均 PASS；但**应用 UI 的
+  `vault_unlock` 命令仍未执行**，整体 `VAULT_UNLOCK_AFTER_UPGRADE=PARTIAL`。
+  Team Sync 已有 full AppModule HTTP 同步，跨版本客户端链仍 NOT_RUN。
+- **Team Sync 服务端**：升级报告只验证本地 5 张表；Phase 9.5.2 另有 full
+  AppModule 真实 Nest HTTP + PostgreSQL 同步测试，但**没有** A→B 跨版本客户端链，
+  不能把本地表持久化当成跨版本服务端同步。
 - **schema 降级**：Phase 9.5.1 已验证 A **读取** B 的加法 schema（数据哈希未变），
   但没有正式降级状态机，也没有 B→A 写回保证；不能把“A 能读”写成“降级安全”。
 - **字节级相同**：没有把文件哈希相同当作数据保留证据；哈希只用于 vault/文件

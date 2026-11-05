@@ -887,6 +887,23 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 
 详见 `docs/phase9-5/phase9-5-1-implementation.md` 与 `docs/phase9-5/ci-current-version-upgrade.md`。
 
+### Phase 9.5.2 - Upgrade Trust & Secure Data Continuity 🟡 实现完成，外部环境待补
+
+| 领域 | 结果 |
+| --- | --- |
+| 证据契约 | 10 场景、22 项负测试；PASS 必须全部 required checks/facts PASS；payload-only 才允许 PARTIAL；校验 sourceSha/runId/artifact SHA/恢复 A 启动/降级 B 列/中断缺失列 |
+| 备份恢复 | checkpoint busy/log 校验、sidecar 先删后 rename、最早备份、A 快照校验、A 启动证据 |
+| Vault | Node 24 Argon2id/AES-GCM fixture + Rust 已知答案；升级后独立解密/错误密码拒绝；app-level unlock NOT_RUN |
+| Team Sync | TeamMember BigInt 修复；full AppModule 真实 Nest HTTP + PostgreSQL 同步；PG 96 项通过；跨版本客户端 NOT_RUN |
+| Windows | 隔离状态机 8 项负测试；共享 runner fail-closed；一次性 profile/VM 与 A→B NOT_RUN |
+| 降级 | A 读取加法 schema + B 快照字段保留 PASS；不兼容未来 schema NOT_RUN |
+| 磁盘满/恢复 | busy checkpoint/崩溃窗口/ENOSPC NOT_RUN |
+| Updater | latest.json 静态契约/负测试；运行时下载/验签/安装/重启 NOT_RUN |
+| 判定 | `PHASE_9_5_2_COMPLETE=PARTIAL`；`READY_FOR_RC=NO`、`READY_FOR_RELEASE=NO` |
+
+详见 `docs/phase9-5/phase9-5-2-implementation.md`。
+
+
 ---
 
 ## 待办事项

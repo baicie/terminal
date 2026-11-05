@@ -569,6 +569,18 @@ pnpm add <package-name>
 - ✅ 六份实机证据因 smoke-only 迁移延迟变为指纹 `b73c5fd2…`，已用官方流程重采（run `41970525110`，0 problem）；未手改旧 manifest
 - 📋 未完成：Windows 升级 E2E、Linux AppImage stock 启动、磁盘满/Linux 故障注入、真实 Vault 解锁、Team Sync 服务端、签名/公证/updater/身份迁移
 
+### Phase 9.5.2 - Upgrade Trust & Secure Data Continuity 🟡 实现完成，外部环境待补
+
+- ✅ 场景级升级证据契约：10 个场景、22 项契约/负测试；`PASS` 必须全部 required checks/facts PASS，只有 AppImage payload-only 允许 `PARTIAL`；校验 `sourceSha`/`runId`/artifact status/problems/expected SHA、恢复后 A 启动、降级 B 列保留、中断缺失列
+- ✅ 备份恢复加固：checkpoint busy/log/checkpointed 校验、先删 sidecar 再 rename、最早 `pre-migration-*` 备份、恢复前 A 快照校验、A 启动证据
+- ✅ Vault：Node 24 Argon2id/AES-GCM 独立 fixture + Rust 已知答案测试；升级后 B 文件中的加密条目可解密、错误密码拒绝（app-level unlock 仍 NOT_RUN）
+- ✅ Team Sync：修复 TeamMember `joinedTxid` BigInt HTTP 序列化；新增 full AppModule + 真实 Nest HTTP + 真实 PostgreSQL 同步测试（PG 12 文件/96 项）
+- 🟡 Windows：身份+路径+owner+reparse+existing data+cleanup+VM attestation 状态机，8 项负测试；共享 runner fail-closed；一次性 profile/VM 与 A→B **NOT_RUN**
+- 🟡 降级：A 读取加法 schema + B 快照字段保留 PASS；未来不兼容 schema 拒绝 **NOT_RUN**
+- 🟡 磁盘满/busy checkpoint/恢复 crash point/**ENOSPC** **NOT_RUN**
+- 🟡 Updater：latest.json 静态契约/负测试；运行时下载/验签/安装/重启 **NOT_RUN**；release manifest deb/arm64/签名验证缺陷仍存在
+- 📋 代码 HEAD `a82bd45`；最终 CI/证据重采结果见 `docs/phase9-5/phase9-5-2-implementation.md`
+
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
@@ -604,7 +616,7 @@ pnpm add <package-name>
 | —     | ✅ **六份验收证据已重采并归档**：Phase 9.5.1 因 smoke-only 迁移延迟使指纹变为 `b73c5fd2…`，已用 run `41970525110` 官方重采（commit `225c363`），门禁 0 problem；未手改旧 manifest。任何后续 `FINGERPRINT_PATHS` 改动仍需重采 | ✅ 已闭合 | — |
 | —     | ✅ P9.2-9 Linux zsh 探针 **PASS**：run `41432020659` / `41434165000` 的 Linux job 均 success，14 用例全绿（含此前三条）。遗留：空 `$HOME` 的真实 Debian 新账户未测 | ✅ 已闭合 | — |
 | 60    | ✅ **macOS 远程冷启动已收口**：G 300/300、第二轮 artifact 300/300（最终 remote 300）、clean 300/300；三个 run 共 **900 样本，0 个最终 local**；隔离/控制组/证据/CI 11/11 均 PASS。仍缺：历史 20% 的 Unified Log、跨版本升级、硬件矩阵、签名、身份迁移 | ✅ 已闭合（冷启动） | — |
-| —     | 🟡 **跨版本升级**：Phase 9.5.1 当前 HEAD CI 7/7 PASS、Linux DEB PASS、真实中途中断/备份恢复 PASS、B→A 读取 PASS；AppImage stock 启动受 headless WebKit EGL 限制、Windows 升级 E2E **NOT_RUN**、磁盘满/Linux 故障注入/自动回滚 **NOT_RUN**。详见 `docs/phase9-5/phase9-5-1-implementation.md` | 🟡 Important（RC） | P1 |
+| —     | 🟡 **跨版本升级**：Phase 9.5.2 新增场景级证据契约、真实 Vault fixture、Team Sync 真实 HTTP、Windows 隔离状态机；Windows A→B、磁盘满、app-level Vault、updater 运行时、AppImage stock 启动仍 **NOT_RUN/PARTIAL**。详见 `docs/phase9-5/phase9-5-2-implementation.md` | 🟡 Important（RC） | P1 |
 | —     | 🔴 **签名/公证/updater**：Apple notarization、Windows Authenticode、Tauri updater `pubkey` 均 **BLOCKED_EXTERNAL**；updater 运行时下载/安装/重启 **NOT_RUN**；历史 `.sig` 不能替代运行时更新链 | 🔴 Blocker（发布） | P0 |
 | —     | 🟡 **身份迁移**：`productName=Termius`、`identifier=com.baicie.termius` 未改；T1–T12 **NOT_RUN/BLOCKED_EXTERNAL**；迁移代码不存在 | 🟡 Important（发布） | P1 |
 | —     | ✅ 前端依赖审计已闭合（vuln 25 → 0，新增 CI 阻塞 job）；同步接口与 Share REST 的版本契约统一为 JSON number。详见 `docs/phase9-3/merge-blocker-closure.md` | ✅ 已闭合 | — |

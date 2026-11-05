@@ -80,7 +80,7 @@ async function inspectMacos(installer) {
   let mounted = false
   try {
     execFileSync('mkdir', ['-p', mount])
-    await run('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, installer])
+    await run('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, installer], { timeout: 120_000 })
     mounted = true
     checks.push('dmg mounted read-only')
     const entries = readdirSyncSafe(mount)
@@ -113,7 +113,7 @@ async function inspectMacos(installer) {
     }
   } finally {
     if (mounted) {
-      await run('hdiutil', ['detach', mount, '-force']).catch(() => undefined)
+      await run('hdiutil', ['detach', mount, '-force'], { timeout: 60_000 }).catch(() => undefined)
     }
     rmSync(work, { recursive: true, force: true })
   }

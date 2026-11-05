@@ -5128,6 +5128,11 @@ Xvfb 下的 stock WebKit EGL 启动（同路径替换与 SHA 已验）；磁盘�
 故障注入、自动回滚。证据 `docs/phase9-5/evidence/` 与
 `docs/phase9-5/phase9-5-1-implementation.md`。
 
+**Phase 9.5.2**：新增场景级证据契约（10 场景/22 负测试）、真实 Vault
+Argon2id/AES fixture、Team Sync full AppModule HTTP 同步、Windows 隔离
+状态机、WAL checkpoint/恢复顺序加固。Windows E2E、磁盘满、app-level Vault、
+updater 运行时仍 NOT_RUN/PARTIAL；见 `docs/phase9-5/phase9-5-2-implementation.md`。
+
 ### Issue #192: Windows 安装验证实际未隔离且会删除真实 APPDATA 🟡 BLOCKED_EXTERNAL（2026-11-05）
 
 **严重程度**：🔴 Blocker（故障测试安全）
@@ -5162,10 +5167,14 @@ Xvfb display 由 harness 动态分配，不再固定 `:99`。AppImage 同路径�
 - updater 运行时下载/安装/重启 `NOT_RUN`；历史 `.sig` 不能替代运行时更新链；
 - 身份迁移 T1–T12 `NOT_RUN/BLOCKED_EXTERNAL`；identifier 仍为
   `com.baicie.termius`；
-- 真实 Vault 主密码解锁、Team Sync 服务端升级仍 `NOT_RUN`；
-- B→A **读取**加法 schema 已 PASS（Phase 9.5.1），但正式降级状态机与写回保证
-  仍不存在，整体仍为 `PARTIAL`；
+- 真实 Vault 主密码 app-level 解锁仍 `NOT_RUN`；Phase 9.5.2 已用独立 Node
+  Argon2id/AES fixture + Rust 已知答案验证格式与升级后解密，整体 `PARTIAL`；
+- Team Sync 已有 full AppModule 真实 HTTP 同步，但 A→B 跨版本客户端链仍
+  `NOT_RUN`；本地表持久化、HTTP 同步、跨版本同步必须分开表述；
+- B→A **读取**加法 schema 已 PASS（Phase 9.5.1/9.5.2），并新增 B 快照字段
+  保留验证；正式降级状态机、不兼容未来 schema 拒绝仍不存在，整体 `PARTIAL`；
 - Linux AppImage 的 stock 启动在 headless Xvfb 下受 WebKit/Mesa EGL 限制，
-  同路径替换已经验证，整体 `PARTIAL`。
+  同路径替换已经验证，整体 `PARTIAL`；
+- updater 只有静态 manifest 契约，运行时下载/验签/安装/重启 `NOT_RUN`。
 
 详见 `docs/phase9-5/release-blockers.md`。

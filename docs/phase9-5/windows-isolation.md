@@ -1,5 +1,9 @@
 # Phase 9.5.1 — Windows Profile Isolation
 
+> **Phase 9.5.2 更新**：本文的路径级 `targetIsRealRoaming` 模型已被
+> `docs/phase9-5/windows-profile-e2e.md` 的身份+路径+owner+cleanup 状态机取代；
+> 旧脚本的 `isolated=true` 不可达，旧 CI 的 success 只证明“总是拒绝”。
+
 > 日期：2026-11-05
 > 脚本：`scripts/verify-install/windows-isolation-check.ps1`
 > 工作流：`.github/workflows/upgrade-e2e.yml` 的 `windows-isolation-preflight`

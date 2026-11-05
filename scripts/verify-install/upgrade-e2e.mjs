@@ -117,7 +117,10 @@ const nodeFlag = (() => {
 })()
 
 async function dr(args) {
-  return run(process.execPath, [...nodeFlag, DR, ...args])
+  return run(process.execPath, [...nodeFlag, DR, ...args], {
+    timeout: 180_000,
+    maxBuffer: 32 * 1024 * 1024,
+  })
 }
 
 async function inspectAsset(installer, platform, expected) {
@@ -151,7 +154,10 @@ async function inspectAsset(installer, platform, expected) {
 
 function mountDmg(dmg, mountPoint) {
   mkdirSync(mountPoint, { recursive: true })
-  return run('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mountPoint, dmg])
+  return run('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mountPoint, dmg], {
+    timeout: 120_000,
+    maxBuffer: 10 * 1024 * 1024,
+  })
 }
 
 async function installFromDmg(dmg, targetApp, work) {
@@ -165,7 +171,7 @@ async function installFromDmg(dmg, targetApp, work) {
     cpSync(source, targetApp, { recursive: true, dereference: true })
     return targetApp
   } finally {
-    await run('hdiutil', ['detach', mount, '-force']).catch(() => undefined)
+    await run('hdiutil', ['detach', mount, '-force'], { timeout: 60_000 }).catch(() => undefined)
   }
 }
 

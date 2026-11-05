@@ -59,11 +59,14 @@
 | 升级失败自动回滚 | **NOT_RUN**（产品没有自动回滚） |
 | migration 抛错/只读/损坏/重启 | **PASS**（见 `rollback-and-recovery.md`） |
 | 升级中途 kill | **PASS**（第一条列提交后 SIGKILL，重启收敛） |
+| WAL/恢复顺序 | **PARTIAL**：checkpoint/ sidecar/最早备份/A 启动已加固；busy checkpoint/ENOSPC/crash point NOT_RUN |
+| 不兼容降级 | **NOT_RUN**：加法 schema 读取已验，未来 schema 拒绝未实现 |
+| updater 运行时链 | **NOT_RUN**：只有 latest.json 静态契约；下载/验签/安装/重启未验证 |
 | 备份恢复 | **PASS**（端到端复制备份并用 A 读回） |
 | 磁盘满/安装介质只读 | **NOT_RUN**（未实现确定性 fixture） |
 | Linux 故障注入 | **NOT_RUN**（本轮只做正常 A→B） |
-| 真实 Vault 主密码解锁 | **NOT_RUN** |
-| Team Sync 服务端升级 | **NOT_RUN**（本地表持久化已覆盖） |
+| 真实 Vault 主密码解锁 | **PARTIAL（Phase 9.5.2）**：真实 Argon2id/AES fixture 与升级后独立解密 PASS；app-level `vault_unlock` NOT_RUN |
+| Team Sync 服务端升级 | **PARTIAL（Phase 9.5.2）**：full AppModule 真实 HTTP 同步 PASS；A→B 跨版本客户端链 NOT_RUN |
 | Windows 升级 E2E | **NOT_RUN**；隔离预检 **PARTIAL**（见 `windows-isolation.md`） |
 | Windows/Pageant/串口硬件 | **NOT_RUN** |
 | 物理键盘/中文 IME | **NOT_RUN** |

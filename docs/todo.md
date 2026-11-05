@@ -2195,3 +2195,24 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [ ] 磁盘满/安装介质只读/Linux 故障注入。
 - [x] 六份实机证据因 smoke-only 迁移延迟改变指纹，已用官方流程重采
       （run `41970525110`，指纹 `b73c5fd2…`，0 problem）；未手改旧 manifest。
+
+### 2026-11-05 Phase 9.5.2 - 升级信任与安全数据连续性 🟡 实现完成，外部环境待补
+
+- [x] 场景级升级证据契约：10 场景、22 项负测试；PASS 必须有全部 required
+      checks/facts，只有 AppImage payload-only 允许 PARTIAL；拒绝 FAIL/NOT_RUN/
+      BLOCKED、scenario 伪装、缺 sourceSha/runId/expected SHA。
+- [x] `--require-contract` 接入 Upgrade E2E；artifact status/problems/expected
+      SHA、恢复后 A 启动、降级 B 列、中断缺失列均强制。
+- [x] 备份恢复：checkpoint 非 busy 且覆盖全部 WAL；sidecar 先删后 rename；
+      最早 `pre-migration-*`；恢复前 A 快照校验；A 启动证据。
+- [x] Vault：Node 24 Argon2id/AES-GCM fixture + Rust 已知答案；升级后条目
+      解密/错误密码拒绝；app-level unlock 仍 NOT_RUN。
+- [x] Team Sync：修复 TeamMember BigInt 序列化；full AppModule 真实 HTTP 同步；
+      PG 12 文件/96 项通过。
+- [x] Windows 隔离：状态机 + 8 项负测试；共享 runner fail-closed。
+- [ ] Windows 一次性 profile/VM 的 NSIS A→B。
+- [ ] 磁盘满/ENOSPC、busy checkpoint 负测、恢复 crash point。
+- [ ] app-level Vault unlock/change_password 升级链。
+- [ ] Team Sync 跨版本客户端、冲突/离线/删除传播。
+- [ ] updater 运行时下载/签名验证/安装/重启；release manifest deb/arm64 修复。
+- [ ] AppImage 真实桌面/VM 启动与 A→B 迁移。

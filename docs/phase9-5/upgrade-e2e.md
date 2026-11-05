@@ -96,6 +96,10 @@ PASS，Linux DEB success，Windows 预检 success，AppImage payload-only succes
 （启动/迁移 NOT_RUN）。详见 `ci-current-version-upgrade.md` 与
 `linux-upgrade-verification.md`。
 
+Phase 9.5.2 起 gate 使用 `--require-contract`；场景 required checks/facts、
+状态策略与负测试见 `upgrade-evidence-contract.md`。新报告带 `contractVersion: 2`、
+`sourceSha`、`runId` 和强制 artifact expected SHA。
+
 ## 6. Phase 9.5.1：当前版本 CI 升级链
 
 `Upgrade E2E` workflow 新增：
