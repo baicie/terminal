@@ -81,19 +81,21 @@ export function checkUpgradeReport(report, label = 'upgrade-report.json') {
     'restart-idempotent',
     'interrupted',
   ])
-  if (!isObject(report.schema)) fail(label + ' has no schema transition')
-  const before = report.schema.beforeHostColumns
-  const after = report.schema.afterHostColumns
-  if (!migrationFaults.has(report.fault)) {
-    if (!Array.isArray(before) || !Array.isArray(after)) {
-      fail(label + ' schema before/after host columns must be arrays')
-    }
-    const added = after.filter(column => !before.includes(column))
-    const declared = Array.isArray(report.schema.addedHostColumns)
-      ? report.schema.addedHostColumns
-      : []
-    if (declared.length > 0 && added.join(',') !== declared.join(',')) {
-      fail(label + ' schema added columns contradict the before/after sets')
+  if (report.payloadOnly !== true) {
+    if (!isObject(report.schema)) fail(label + ' has no schema transition')
+    const before = report.schema.beforeHostColumns
+    const after = report.schema.afterHostColumns
+    if (!migrationFaults.has(report.fault)) {
+      if (!Array.isArray(before) || !Array.isArray(after)) {
+        fail(label + ' schema before/after host columns must be arrays')
+      }
+      const added = after.filter(column => !before.includes(column))
+      const declared = Array.isArray(report.schema.addedHostColumns)
+        ? report.schema.addedHostColumns
+        : []
+      if (declared.length > 0 && added.join(',') !== declared.join(',')) {
+        fail(label + ' schema added columns contradict the before/after sets')
+      }
     }
   }
 
@@ -110,13 +112,22 @@ export function checkUpgradeReport(report, label = 'upgrade-report.json') {
     names.add(check.name)
   }
   const byName = new Map(report.checks.map(check => [check.name, check.status]))
-  if (!migrationFaults.has(report.fault)) {
+  if (report.payloadOnly === true) {
+    if (report.mode !== 'appimage') fail(label + ' payloadOnly is only valid for AppImage')
+    if (report.status === 'PASS') fail(label + ' payloadOnly cannot be PASS')
+    if (byName.get('AppImage payload replacement') !== 'PASS') {
+      fail(label + ' does not prove the AppImage payload replacement')
+    }
+    if (byName.get('AppImage app startup') !== 'NOT_RUN') {
+      fail(label + ' payloadOnly must record app startup as NOT_RUN')
+    }
+  } else if (!migrationFaults.has(report.fault)) {
     if (byName.get('data integrity after B') !== 'PASS') {
       fail(label + ' does not prove data integrity after B')
     }
     if (byName.get('B migration') !== 'PASS') fail(label + ' does not prove the B migration')
   }
-  if (!migrationFaults.has(report.fault)) {
+  if (!migrationFaults.has(report.fault) && report.payloadOnly !== true) {
     const backup = byName.get('pre-migration backup')
     if (backup !== 'PASS' && backup !== 'NOT_RUN') {
       fail(label + ' has no backup result')

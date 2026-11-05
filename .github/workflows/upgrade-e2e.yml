@@ -361,7 +361,7 @@ jobs:
       - name: AppImage replacement A->B
         run: |
           node scripts/verify-install/upgrade-e2e.mjs run \
-            --platform linux --mode appimage \
+            --platform linux --mode appimage --payload-only \
             --a-installer upgrade-assets/linux-app1/Terminal_0.0.1-dev.1_linux-x86_64.AppImage \
             --b-installer upgrade-assets/linux-app2/Terminal_0.0.1-dev.2_linux-x86_64.AppImage \
             --expect-a-sha256 5a60bb64264e8dacbf021798f7a0fe67e0c84a17dd0af2e662825ccf0d30bdf2 \

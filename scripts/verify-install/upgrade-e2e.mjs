@@ -957,6 +957,33 @@ async function runLinux(flags) {
       aBinary = installAppImage(aInstaller, path.join(apps, 'Terminal-A.AppImage'))
       add('install A (AppImage replacement)', 'PASS', aBinary)
     }
+    if (flags['payload-only'] === true) {
+      if (mode !== 'appimage') throw new Error('--payload-only is only valid for AppImage')
+      // The headless runner cannot initialise this AppImage's bundled
+      // WebKitGTK EGL stack (EGL_BAD_PARAMETER); a system-WebKit fallback then
+      // fails on bundled GStreamer/GLib symbol versions. Do not turn that into
+      // an upgrade claim: verify the payload replacement and record startup as
+      // NOT_RUN. The DEB/current-DMG jobs carry the migration evidence.
+      const bBinary = installAppImage(bInstaller, aBinary)
+      const replacedSha = sha256File(bBinary)
+      if (replacedSha !== bMetadata.sha256) {
+        add('AppImage payload replacement', 'FAIL',
+          replacedSha + ' != ' + bMetadata.sha256)
+      } else {
+        add('AppImage payload replacement', 'PASS', aBinary)
+      }
+      add('AppImage app startup', 'NOT_RUN',
+        'headless Xvfb: bundled WebKit EGL_BAD_PARAMETER; system-WebKit fallback hits bundled GStreamer/GLib ABI')
+      reportJson.payloadOnly = true
+      reportJson.notRun.push(
+        'AppImage app startup and A->B migration (headless WebKit/EGL limitation; replacement only)',
+      )
+      reportJson.status = reportJson.checks.some(check => check.status === 'FAIL')
+        ? 'FAIL'
+        : 'PARTIAL'
+      await report(work, reportDir, reportJson)
+      return reportJson
+    }
     const driPath = process.arch === 'arm64'
       ? '/usr/lib/aarch64-linux-gnu/dri'
       : '/usr/lib/x86_64-linux-gnu/dri'

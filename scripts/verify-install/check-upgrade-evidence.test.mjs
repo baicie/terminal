@@ -115,6 +115,27 @@ test('accepts an AppImage PARTIAL with unverified internal version metadata', ()
   )
 })
 
+test('accepts a payload-only AppImage replacement without claiming startup', () => {
+  const value = report({
+    status: 'PARTIAL',
+    mode: 'appimage',
+    payloadOnly: true,
+    schema: null,
+    expectBackup: false,
+    a: { version: null, metadataSource: 'UNKNOWN', sha256: 'a'.repeat(64), identifier: null, arch: 'x64' },
+    b: { version: null, metadataSource: 'UNKNOWN', sha256: 'b'.repeat(64), identifier: null, arch: 'x64' },
+    checks: [
+      { name: 'AppImage payload replacement', status: 'PASS' },
+      { name: 'AppImage app startup', status: 'NOT_RUN' },
+    ],
+  })
+  assert.equal(checkUpgradeReport(value).status, 'PARTIAL')
+  assert.throws(
+    () => checkUpgradeReport({ ...value, checks: [{ name: 'AppImage app startup', status: 'NOT_RUN' }] }),
+    /payload replacement/,
+  )
+})
+
 test('rejects a fault report with a failed required fact', () => {
   assert.throws(
     () =>
