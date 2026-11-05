@@ -911,8 +911,11 @@ async function runLinux(flags) {
       // WebKit's WebProcess sandbox cannot reach the X socket/EGL device on
       // this headless runner; the UI process starts, then the WebProcess
       // aborts. This is a test-environment setting, not a product default.
-      WEBKIT_FORCE_SANDBOX: '0',
       WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: '1',
+      // Keep DMABUF enabled but avoid the GBM allocator; the runner has no
+      // DRM device, and WebKit's GBM EGL path is what fails here.
+      WEBKIT_DMABUF_RENDERER_DISABLE_GBM: '1',
+      WEBKIT_DMABUF_RENDERER_FORCE_SHM: '1',
       EGL_LOG_LEVEL: 'debug',
       LIBGL_ALWAYS_SOFTWARE: '1',
       // AppImages can bundle libEGL without the matching Mesa DRI drivers.
