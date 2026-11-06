@@ -1096,31 +1096,6 @@ pub async fn startup_recovery_locked<R: Runtime>(app: &AppHandle<R>) -> Recovery
     result
 }
 
-pub async fn startup_recovery_for<R: Runtime>(app: &AppHandle<R>) -> RecoveryStatus {
-    match (database_path(app), marker_path(app), backups_path(app)) {
-        (Ok(db), Ok(marker), Ok(backups)) => {
-            let marker_dir = marker
-                .parent()
-                .unwrap_or_else(|| Path::new(""))
-                .to_path_buf();
-            let result = startup_recovery(&db, &marker_dir, &backups).await;
-            record_state(result.state, &result.reason);
-            tracing::info!(
-                target: "startup",
-                stage = "database-recovery",
-                state = ?result.state,
-                reason = %result.reason,
-                stages = ?result.stages,
-                "db recovery"
-            );
-            result
-        }
-        (Err(error), _, _) | (_, Err(error), _) | (_, _, Err(error)) => {
-            status(RecoveryState::ManualInterventionRequired, error)
-        }
-    }
-}
-
 #[tauri::command]
 pub async fn db_recovery_status(
     verdict: State<'_, RecoveryVerdict>,
@@ -1132,21 +1107,50 @@ pub async fn db_recovery_status(
         .map_err(|_| "the recovery verdict lock is poisoned".to_string())
 }
 
+/// The retry path, independent of Tauri state so the blocked verdicts can be
+/// tested with a real second process holding the lock.
+pub async fn retry_recovery(
+    db: &Path,
+    marker_dir: &Path,
+    backups: &Path,
+    lock: &RecoveryLock,
+) -> RecoveryStatus {
+    // Serialize against a backup/restore already running in this process, and
+    // refuse while a migration transaction is still open.
+    let operation = match lock.lock_operation().await {
+        Ok(guard) => guard,
+        Err(error) => return status(RecoveryState::ManualInterventionRequired, error),
+    };
+    if lock.migration_in_progress() {
+        return status(
+            RecoveryState::ManualInterventionRequired,
+            "a migration transaction is still open in this Terminal process",
+        );
+    }
+    if marker_dir.join(MARKER_FILE).exists() {
+        if let Err(error) = lock.ensure(marker_dir) {
+            return status(RecoveryState::ManualInterventionRequired, error);
+        }
+    }
+    let result = startup_recovery(db, marker_dir, backups).await;
+    record_state(result.state, &result.reason);
+    if result.state != RecoveryState::Recovered || marker_dir.join(MARKER_FILE).exists() {
+        lock.release();
+    }
+    drop(operation);
+    result
+}
+
 /// Explicit user retry: re-runs the same startup decision and replaces the
-/// stored verdict only with the result of that run.
+/// stored verdict with the result of that run. Blocked paths also replace it.
 #[tauri::command]
 pub async fn db_recovery_retry<R: Runtime>(
     app: AppHandle<R>,
     verdict: State<'_, RecoveryVerdict>,
 ) -> Result<RecoveryStatus, String> {
-    let lock = app.state::<RecoveryLock>();
-    // Serialize against a backup/restore already running in this process, and
-    // refuse while a migration transaction is still open. The verdict is
-    // updated on every path, so a blocked retry cannot leave the UI reading an
-    // older "healthy" decision.
-    let operation = match lock.lock_operation().await {
-        Ok(guard) => guard,
-        Err(error) => {
+    let (db, marker, backups) = match (database_path(&app), marker_path(&app), backups_path(&app)) {
+        (Ok(db), Ok(marker), Ok(backups)) => (db, marker, backups),
+        (Err(error), _, _) | (_, Err(error), _) | (_, _, Err(error)) => {
             let blocked = status(RecoveryState::ManualInterventionRequired, error);
             *verdict
                 .0
@@ -1156,45 +1160,17 @@ pub async fn db_recovery_retry<R: Runtime>(
             return Ok(blocked);
         }
     };
-    if lock.migration_in_progress() {
-        let blocked = status(
-            RecoveryState::ManualInterventionRequired,
-            "a migration transaction is still open in this Terminal process",
-        );
-        *verdict
-            .0
-            .lock()
-            .map_err(|_| "the recovery verdict lock is poisoned".to_string())? = blocked.clone();
-        return Ok(blocked);
-    }
-    if let Ok(marker) = marker_path(&app) {
-        if marker.exists() {
-            let directory = marker
-                .parent()
-                .unwrap_or_else(|| Path::new(""))
-                .to_path_buf();
-            if let Err(error) = ensure_lock(&lock, &directory) {
-                let blocked = status(RecoveryState::ManualInterventionRequired, error);
-                *verdict
-                    .0
-                    .lock()
-                    .map_err(|_| "the recovery verdict lock is poisoned".to_string())? =
-                    blocked.clone();
-                return Ok(blocked);
-            }
-        }
-    }
-    let status = startup_recovery_for(&app).await;
-    if status.state != RecoveryState::Recovered || marker_path(&app).is_ok_and(|path| path.exists())
-    {
-        release_lock(&lock);
-    }
+    let directory = marker
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .to_path_buf();
+    let lock = app.state::<RecoveryLock>();
+    let result = retry_recovery(&db, &directory, &backups, &lock).await;
     *verdict
         .0
         .lock()
-        .map_err(|_| "the recovery verdict lock is poisoned".to_string())? = status.clone();
-    drop(operation);
-    Ok(status)
+        .map_err(|_| "the recovery verdict lock is poisoned".to_string())? = result.clone();
+    Ok(result)
 }
 
 /// The backend decides whether a migration may be marked complete: every
@@ -1907,6 +1883,49 @@ mod tests {
         assert!(!dir.path().join(TEMP_FILE).exists());
         let columns = host_columns(&db).await.expect("columns");
         assert!(!columns.iter().any(|column| column == "agent_forwarding"));
+    }
+
+    #[tokio::test]
+    async fn retry_is_blocked_while_a_migration_is_open() {
+        let (dir, db, backups, _snapshot) = temp_paths();
+        create_database(&db, "a").await;
+        let lock = RecoveryLock::default();
+        lock.note_migration_started();
+        let result = retry_recovery(&db, dir.path(), &backups, &lock).await;
+        assert_eq!(
+            result.state,
+            RecoveryState::ManualInterventionRequired,
+            "{result:?}"
+        );
+        assert!(result.reason.contains("still open"), "{}", result.reason);
+        lock.note_migration_finished();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn retry_reports_the_blocked_verdict_when_another_process_holds_the_lock() {
+        let (dir, db, backups, snapshot) = temp_paths();
+        create_database(&snapshot, "a").await;
+        create_database(&db, "partial").await;
+        begin_transaction(dir.path(), &snapshot, "core", core_targets())
+            .await
+            .expect("marker");
+        let mut child = spawn_child(dir.path(), "hold", None);
+        wait_for_child_file(&dir.path().join("child.locked"), 15_000);
+        let lock = RecoveryLock::default();
+        let result = retry_recovery(&db, dir.path(), &backups, &lock).await;
+        assert_eq!(
+            result.state,
+            RecoveryState::ManualInterventionRequired,
+            "{result:?}"
+        );
+        assert!(
+            result.reason.contains("another Terminal instance"),
+            "{}",
+            result.reason
+        );
+        child.kill().expect("kill lock owner");
+        let _ = wait_for_child_exit(child, 10_000);
     }
 
     #[cfg(unix)]
