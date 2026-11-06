@@ -984,7 +984,7 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 | 恢复互斥 | OS 文件锁 + 进程内异步互斥；启动探测锁、第二实例 fail-closed；真实双进程 E2E PASS |
 | 完成语义 | 完成/清除核对事务 ID；清除失败返回 RestoreInterrupted；retry 阻断裁决一致 |
 | Windows | windows-latest 19 项恢复测试 PASS；reparse/ACL/NSIS NOT_RUN |
-| Team SIGKILL | 1/3/5/10 目标点、恢复、幂等、数据完整性 PASS（E2E `42241399575`） |
+| Team SIGKILL | 1/3/5/10 目标点、恢复、幂等、数据完整性 PASS（E2E `42249215589`） |
 | 判定 | `PHASE_9_6_3_ENGINEERING_COMPLETE=PARTIAL`、`PHASE_9_7_ENTRY_READY=PARTIAL`；RC/Release NO |
 
 详见 `docs/phase9-6/phase9-6-3-final-data-safety.md`。

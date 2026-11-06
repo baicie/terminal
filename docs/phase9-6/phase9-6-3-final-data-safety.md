@@ -1,8 +1,8 @@
 # Phase 9.6.3 — Final Recovery Safety Closure & Phase 9.7 Entry Gate
 
-> 日期：2026-11-06
+> 日期：2026-11-07
 > 分支：`feat/phase9-5-upgrade-integrity`（PR #8 Draft）
-> 代码 HEAD：`8e34d31`（最终 E2E 构建点；证据矩阵在 `151c990` 上采集，两者仅差 `scripts/verify-install`，不在证据指纹内）
+> 代码 HEAD：`65299c8`（最终 E2E 构建点；证据矩阵在 `151c990` 上采集，两者仅差 `scripts/verify-install`，不在证据指纹内）
 > 基线：PR #7 `00715d6`（Open）、PR #8 `bc49d66`（Draft）、证据指纹 `c138d564…`
 
 ## 1. 实际复现的缺陷
@@ -61,9 +61,9 @@
 | 前端 | 155 文件 / 1412 项；typecheck、ESLint、source-size 574 文件 |
 | 脚本 | verify-install 75 项（4 skipped） |
 | Team SIGKILL | 1/3/5/10 目标点；快照/标记/恢复/幂等/字段级数据断言 |
-| Upgrade E2E | run `42241399575`（`151c990`）**5/5 success**；Team 场景 4/4 目标点全部 PASS |
+| Upgrade E2E | run `42249215589`（`65299c8`，最终 HEAD）**5/5 success**；Team 场景 4/4 目标点全部 PASS |
 | 证据重采 | run `42245189022` 3/3 success，指纹 **`9bad378d…`**（debug `b1bb9fd1…`、release `e04080f3…`），官方门禁 0 problem |
-| 最终 CI | 待证据提交后回填 |
+| 最终 CI | 证据与文档提交后在最终 HEAD 上执行，结果见交付报告 |
 
 ## 4. 判定
 

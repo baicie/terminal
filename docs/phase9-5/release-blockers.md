@@ -137,7 +137,7 @@
 - Windows：目录 `ERROR_ACCESS_DENIED` 先做可写探测；windows-latest 19 项
   `db_recovery` 测试通过（含打开中数据库不得半替换）。
 - Team 应用级 SIGKILL：1/3/5/10 目标点、Core 完成/Team 未完成、快照、恢复、
-  幂等、字段级数据全部 PASS（E2E `42241399575`）。
+  幂等、字段级数据全部 PASS（E2E `42249215589`）。
 - 证据：官方矩阵 run `42245189022`（`151c990`）3/3，指纹 `9bad378d…`，门禁 0 problem。
 - 未闭合：已运行实例在另一实例恢复期间的普通写入（无全程实例锁）、
   Windows reparse/ACL/NSIS A→B。RC/Release 仍 **NO**。
