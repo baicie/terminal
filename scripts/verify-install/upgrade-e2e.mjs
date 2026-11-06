@@ -586,10 +586,13 @@ async function runMacos(flags) {
         add('read-only recovery', 'FAIL', errorMessage(error))
       }
       reportJson.schema.afterTables = execFileSyncSqlite(
-        db,
+        lastRunDb,
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
       )
-      reportJson.schema.afterHostColumns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
+      reportJson.schema.afterHostColumns = execFileSyncSqlite(
+        lastRunDb,
+        "SELECT name FROM pragma_table_info('hosts')",
+      )
       reportJson.schema.addedHostColumns = reportJson.schema.afterHostColumns
         .filter(column => expectedNewHostColumns.includes(column))
       applyFaultAssessment('read-only-data-dir', {
@@ -761,6 +764,7 @@ async function runMacos(flags) {
       let dataOk = 0
       let idempotentOk = 0
       let completionOk = 0
+      let lastRunDb = db
       const recoveryDetails = []
 
       for (const point of killPoints) {
@@ -769,6 +773,7 @@ async function runMacos(flags) {
         cpSync(home, runHome, { recursive: true })
         const runDataDir = path.join(runHome, 'Library', 'Application Support', expectedIdentifier)
         const runDb = path.join(runDataDir, 'terminal.db')
+        lastRunDb = runDb
         const markerFile = path.join(runDataDir, 'migration.pending.json')
         child = launch(bBinary, runHome, path.join(logs, 'b-team-kill-' + point + '.log'), {
           TERMINAL_STARTUP_STAGES_PATH: path.join(runRoot, 'stages.jsonl'),
@@ -904,10 +909,13 @@ async function runMacos(flags) {
         idempotentOk + '/' + killPoints.length + ' relaunches were idempotent')
 
       reportJson.schema.afterTables = execFileSyncSqlite(
-        db,
+        lastRunDb,
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
       )
-      reportJson.schema.afterHostColumns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
+      reportJson.schema.afterHostColumns = execFileSyncSqlite(
+        lastRunDb,
+        "SELECT name FROM pragma_table_info('hosts')",
+      )
       applyFaultAssessment('team-interrupted', {
         FAULT_INJECTED: killsObserved === killPoints.length ? 'PASS' : 'FAIL',
         APPLICATION_FAILURE_OBSERVED: 'NOT_RUN',

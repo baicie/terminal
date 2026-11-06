@@ -125,6 +125,22 @@
 - E2E `42189361366`（`af33ea2`）5/5；证据 `42214762202`（`7df9e3a`）指纹
   `c138d564…`，门禁 0 problem。
 
+## 5.3 Phase 9.6.3 最终数据安全收口
+
+- 标记 v3 事务所有权：`transaction_id` + 进程令牌；旧事务只允许同一进程扩展，
+  扩展前验证快照不含新目标列；完成/回滚/清除均核对事务 ID。
+- `VACUUM INTO` 失败按原始字节回滚标记；下一次启动恢复事务 A。
+- 恢复互斥：OS 文件锁（跨进程）+ tokio 进程内互斥 + `migration_active`；
+  启动每次探测锁，第二实例 fail-closed；真实双进程 E2E 通过。
+- 恢复/重试语义：标记清除失败不报告完成；retry 的锁失败与迁移进行中均写入
+  一致的阻断裁决；恢复后不残留锁。
+- Windows：目录 `ERROR_ACCESS_DENIED` 先做可写探测；windows-latest 19 项
+  `db_recovery` 测试通过（含打开中数据库不得半替换）。
+- Team 应用级 SIGKILL：1/3/5/10 目标点、Core 完成/Team 未完成、快照、恢复、
+  幂等、字段级数据全部 PASS（E2E `42241399575`）。
+- 未闭合：已运行实例在另一实例恢复期间的普通写入（无全程实例锁）、
+  Windows reparse/ACL/NSIS A→B。RC/Release 仍 **NO**。
+
 ## 6. 判定
 
 | 判定 | 结果 |

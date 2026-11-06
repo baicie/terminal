@@ -5180,6 +5180,13 @@ E2E `42189361366` 5/5，证据 `42214762202` 指纹 `c138d564…`。真实双进
 启动、Team 应用级 SIGKILL、Windows 完整文件系统矩阵/NSIS 仍 NOT_RUN/PARTIAL；
 见 `docs/phase9-6/phase9-6-2-recovery-concurrency.md`。
 
+**Phase 9.6.3**：修复迁移标记被新事务改写（v3 transaction_id/owner，扩展前
+验证快照兼容，VACUUM 失败逐字节回滚）、同进程并发备份/恢复、启动无标记绕过
+锁、标记清除失败仍报告完成、retry 锁失败不更新裁决。真实双进程 E2E 与
+Team 应用级 SIGKILL（1/3/5/10 目标点）通过；Windows runner 19 项恢复测试
+通过。剩余：已运行实例在另一实例恢复期间的普通写入、Windows reparse/ACL/
+NSIS。见 `docs/phase9-6/phase9-6-3-final-data-safety.md`。
+
 ### Issue #192: Windows 安装验证实际未隔离且会删除真实 APPDATA 🟡 BLOCKED_EXTERNAL（2026-11-05）
 
 **严重程度**：🔴 Blocker（故障测试安全）
