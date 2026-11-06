@@ -2275,3 +2275,15 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [ ] Team Sync 跨版本客户端。
 - [ ] updater 运行时链（需正式/临时签名）。
 - [ ] 安装 B/fsync ENOSPC、AppImage stock 启动。
+
+### 2026-11-06 Phase 9.6.1 - 恢复安全审计与启动门禁收口 🔄 进行中
+
+- [x] StartupGate 根门禁 fail-closed；Tauri 状态异常阻断；getDb 守卫。
+- [x] 后端持久化 RecoveryVerdict；只读 status + 显式 retry。
+- [x] 标记 v2（Core/Team targets/migrationId）、合并、v1 兼容。
+- [x] 后端完成校验；Team 迁移成功清理标记。
+- [x] 备份 canonicalization 与符号链接边界。
+- [x] Windows 目录 fsync backup-semantics 实现。
+- [ ] 多实例恢复锁与并发启动。
+- [ ] 真实 Windows `cargo test` / 非破坏性文件系统矩阵。
+- [ ] Team 应用级 SIGKILL E2E（当前仅 Rust 状态机测试）。

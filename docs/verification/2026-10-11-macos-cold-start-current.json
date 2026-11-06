@@ -1,21 +1,21 @@
 {
-  "recordedAt": "2026-11-06T04:03:18.157Z",
+  "recordedAt": "2026-11-06T06:46:45.516Z",
   "recordedDate": "2026-11-06",
   "kind": "tauri-process-cold-start-stopwatch-current-worktree",
   "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal (invoked 3 times, one measured run per invocation)",
   "environment": {
-    "os": "macOS 26.6.2",
+    "os": "macOS 26.7.2",
     "architecture": "arm64",
     "node": "24.16.0"
   },
   "revision": {
     "head": "",
-    "commit": "68767d7",
+    "commit": "bf6e392",
     "dirtyWorktree": false
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "9a37d62a5cb4196435227c9f94417a58ecc1bc3d29ae8138b67659fa594ab85e"
+    "sha256": "3af9ca252f3c24b53e497409e59dacfbfe94f18e2c953ac12cd25c64de28c5e4"
   },
   "measurement": {
     "probe": "Rust TERMINAL_SHELL_PROBE marker written only after the frontend sent its nonce through xterm -> session_write -> local PTY and read the marker back",
@@ -23,58 +23,58 @@
     "readinessTarget": "terminal",
     "caseName": "cat-eof",
     "repeatSpawnToReadyMs": [
-      6525,
-      4808,
-      5149
+      7481,
+      4280,
+      4065
     ],
     "readyUnder10s": true,
     "terminalRuns": [
       {
         "run": 1,
-        "capturedAt": "2026-11-06T03:47:22.241Z",
-        "pid": 22284,
-        "nonce": "local_8268988870808c89cd5cfa89",
-        "marker": "TERMINAL_LOCAL_COLD_START_local_8268988870808c89cd5cfa89",
+        "capturedAt": "2026-11-06T06:29:39.979Z",
+        "pid": 24787,
+        "nonce": "local_42fcee2a6f5622283e409301",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_42fcee2a6f5622283e409301",
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 6525,
-        "requestToReadyMs": 6528,
+        "spawnToReadyMs": 7481,
+        "requestToReadyMs": 7486,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 2,
-        "capturedAt": "2026-11-06T03:47:28.188Z",
-        "pid": 22367,
-        "nonce": "local_8a67dc5a2b842552f72cbcd8",
-        "marker": "TERMINAL_LOCAL_COLD_START_local_8a67dc5a2b842552f72cbcd8",
+        "capturedAt": "2026-11-06T06:29:45.693Z",
+        "pid": 25092,
+        "nonce": "local_2faee69dc09dadfdcab4a4ee",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_2faee69dc09dadfdcab4a4ee",
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 4808,
-        "requestToReadyMs": 4815,
+        "spawnToReadyMs": 4280,
+        "requestToReadyMs": 4283,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 3,
-        "capturedAt": "2026-11-06T03:47:34.746Z",
-        "pid": 22606,
-        "nonce": "local_6bb5877a55fe48d54983b1fb",
-        "marker": "TERMINAL_LOCAL_COLD_START_local_6bb5877a55fe48d54983b1fb",
+        "capturedAt": "2026-11-06T06:29:50.910Z",
+        "pid": 25146,
+        "nonce": "local_16fb423236dbe33e5ed35304",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_16fb423236dbe33e5ed35304",
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 5149,
-        "requestToReadyMs": 5155,
+        "spawnToReadyMs": 4065,
+        "requestToReadyMs": 4076,
         "probeCaseName": "cat-eof",
         "ok": true
       }
     ]
   },
   "source": {
-    "fingerprint": "47c25a033371c62401e955e162851ec723e2f8b86384e2a43ca5bf6b1f511f8d",
+    "fingerprint": "fbfa5a00053879557cdcaff3a47f24b93a013f2121e767ec54be65bc1318f1c7",
     "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs on the checked-out CI sources at evidence build time."
   },
   "limitations": [
@@ -85,12 +85,12 @@
   ],
   "provenance": {
     "source": "github-actions",
-    "runId": "42158238718",
+    "runId": "42174128131",
     "runAttempt": "1",
     "workflow": "Real-machine terminal matrix",
     "job": "macos-ssh-matrix",
-    "commit": "68767d78571576a9f91e52cf058f424e212009fe",
-    "fingerprint": "47c25a033371c62401e955e162851ec723e2f8b86384e2a43ca5bf6b1f511f8d",
+    "commit": "bf6e392ece16783d006e54f4f58bcab2dbb7b98a",
+    "fingerprint": "fbfa5a00053879557cdcaff3a47f24b93a013f2121e767ec54be65bc1318f1c7",
     "runner": {
       "os": "macOS",
       "arch": "ARM64"

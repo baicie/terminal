@@ -945,6 +945,22 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 详见 `docs/phase9-6/implementation.md`。
 
 
+
+### Phase 9.6.1 - Recovery Safety Audit & Startup Gate Hardening 🟡 P0 门禁完成
+
+| 领域 | 结果 |
+| --- | --- |
+| 启动门禁 | `StartupGate` 根组件，只有 HEALTHY/RECOVERED 挂载 App；Tauri 异常 fail-closed；`getDb` 第二道门；14 项负向测试 |
+| 裁决持久化 | `RecoveryVerdict` + 只读状态命令 + 显式 retry |
+| 标记协议 | v2 targets/migrationId，Core/Team 共用、合并、v1 兼容；后端完成校验 |
+| 备份边界 | canonicalization 拒绝目录外符号链接 |
+| Windows | 目录 fsync backup-semantics；真实 Windows `cargo test` NOT_RUN |
+| 证据 | E2E `42174132285` 5/5；证据 `42174128131` 指纹 `fbfa5a00…`，门禁 0 |
+| 未完成 | 多实例恢复锁、Team 应用级崩溃 E2E、Windows 真实文件系统测试 |
+| 判定 | `PHASE_9_6_1_ENGINEERING_COMPLETE=PARTIAL`；RC/Release NO |
+
+详见 `docs/phase9-6/phase9-6-1-safety-closure.md`。
+
 ---
 
 ## 待办事项

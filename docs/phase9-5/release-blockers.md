@@ -96,6 +96,21 @@
 `fetch-verification-evidence.mjs --run-id 41970525110` 重采，门禁 0 problem；
 没有手工改写旧 manifest 或指纹。
 
+## 5.1 Phase 9.6.1 恢复安全收口
+
+- 启动门禁 fail-closed：只有 HEALTHY/RECOVERED 挂载业务 App；Tauri 状态查询
+  异常、非法对象、RECOVERY_REQUIRED/RESTORING/RESTORE_INTERRUPTED/MANUAL
+  均阻断；`getDb()` 在 pending/blocked 抛错。前端 14 项负向测试。
+- 后端持久化本次启动裁决（`RecoveryVerdict`），`db_recovery_status` 只读，
+  `db_recovery_retry` 显式重跑。
+- 标记 v2：`targets[]` + `migrationId`，Core/Team 共用、合并写入、v1 兼容；
+  完成清除由后端校验所有目标列 + integrity。
+- 备份快照 canonicalization：拒绝备份目录之外的符号链接与 live DB。
+- Windows 目录 fsync 使用 `FILE_FLAG_BACKUP_SEMANTICS`；仅
+  `ERROR_INVALID_FUNCTION` 视为该卷不支持。真实 Windows `cargo test` **NOT_RUN**。
+- 多实例恢复锁 **NOT_RUN**。
+- E2E `42174132285`（`bf6e392`）5/5，interrupted/corrupt 通过。
+
 ## 6. 判定
 
 | 判定 | 结果 |

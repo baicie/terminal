@@ -5164,6 +5164,13 @@ updater 运行时、AppImage stock 仍 NOT_RUN；见
 Vault app-level、Team Sync 跨版本、updater 运行时、安装 ENOSPC 仍
 NOT_RUN/PARTIAL；见 `docs/phase9-6/implementation.md`。
 
+**Phase 9.6.1**：修复启动门禁 fail-open（App 内条件渲染无法阻止已注册
+effects）、状态查询异常被当作正常、RECOVERY_REQUIRED 未阻断、Team 标记不清理、
+TARGET_COLUMNS 只覆盖 hosts、完成通知只信任前端、Windows 目录 fsync 失败。
+门禁改为根组件；后端持久化裁决；标记 v2（targets/migrationId）；完成由后端
+校验；快照 canonicalization；Windows backup-semantics。E2E `42174132285` 5/5，
+证据 `42174128131` 指纹 `fbfa5a00…`。多实例锁与真实 Windows 测试仍 NOT_RUN。
+
 ### Issue #192: Windows 安装验证实际未隔离且会删除真实 APPDATA 🟡 BLOCKED_EXTERNAL（2026-11-05）
 
 **严重程度**：🔴 Blocker（故障测试安全）
