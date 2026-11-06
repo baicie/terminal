@@ -208,7 +208,12 @@ fn fsync_dir(directory: &Path) -> Result<(), String> {
 fn fsync_dir(directory: &Path) -> Result<(), String> {
     use std::os::windows::fs::OpenOptionsExt;
     const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    // NTFS has no user-mode directory flush. FlushFileBuffers on a directory
+    // handle reports ERROR_INVALID_FUNCTION on some volumes and
+    // ERROR_ACCESS_DENIED on others; both are recorded as a capability
+    // downgrade. Any other error remains fatal.
     const ERROR_INVALID_FUNCTION: i32 = 1;
+    const ERROR_ACCESS_DENIED: i32 = 5;
     let file = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
@@ -216,7 +221,12 @@ fn fsync_dir(directory: &Path) -> Result<(), String> {
         .map_err(|error| format!("could not open {} for fsync: {error}", directory.display()))?;
     match file.sync_all() {
         Ok(()) => Ok(()),
-        Err(error) if error.raw_os_error() == Some(ERROR_INVALID_FUNCTION) => {
+        Err(error)
+            if matches!(
+                error.raw_os_error(),
+                Some(ERROR_INVALID_FUNCTION) | Some(ERROR_ACCESS_DENIED)
+            ) =>
+        {
             tracing::warn!(
                 target: "startup",
                 directory = %directory.display(),
