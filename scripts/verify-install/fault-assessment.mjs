@@ -49,6 +49,12 @@ export const REQUIRED_FACTS = {
     'NO_PARTIAL_MIGRATION',
     'RECOVERY_SUCCEEDED',
   ],
+  'team-interrupted': [
+    'FAULT_INJECTED',
+    'ORIGINAL_DATA_PRESERVED',
+    'NO_PARTIAL_MIGRATION',
+    'RECOVERY_SUCCEEDED',
+  ],
 }
 
 const VALID = new Set(['PASS', 'FAIL', 'NOT_RUN'])

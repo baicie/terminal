@@ -1,7 +1,9 @@
 import type { SqliteConnection } from './connection-schema-core'
 import {
+  clearMigrationMarker,
   ensurePreMigrationSnapshot,
   isDuplicateColumnError,
+  parseSmokeMigrationDelay,
 } from './connection-schema-core'
 
 const teamSchemaStatements = [
@@ -115,14 +117,35 @@ async function pendingTeamColumnMigrations(
   return pending
 }
 
+/**
+ * Test-only pause between Team column migrations, compiled only into
+ * instrumented smoke builds. It gives the upgrade harness a deterministic
+ * window to kill the real application between Team ALTERs; a normal product
+ * build returns 0 even if the environment variable is present.
+ */
+function teamMigrationDelayMs(): number {
+  return parseSmokeMigrationDelay(
+    import.meta.env.VITE_TERMINAL_TEAM_MIGRATION_DELAY_MS,
+    import.meta.env.VITE_TERMINAL_SMOKE_BUILD === '1',
+  )
+}
+
 export async function initializeTeamSchema(
   database: SqliteConnection,
 ): Promise<void> {
   const pending = await pendingTeamColumnMigrations(database)
-  if (pending.length > 0) await ensurePreMigrationSnapshot(pending, 'team')
+  let transactionId: string | undefined
+  if (pending.length > 0) {
+    const snapshot = await ensurePreMigrationSnapshot(pending, 'team')
+    transactionId = snapshot.transactionId
+  }
   for (const statement of teamSchemaStatements)
     await database.execute(statement)
+  const migrationDelay = teamMigrationDelayMs()
   for (const migration of teamColumnMigrations) {
+    if (migrationDelay > 0) {
+      await new Promise(resolve => setTimeout(resolve, migrationDelay))
+    }
     try {
       await database.execute(migration.sql)
     } catch (error) {
@@ -130,10 +153,15 @@ export async function initializeTeamSchema(
       throw error
     }
   }
+  // Leave a kill window after the last Team ALTER and before the completion
+  // callback, so the harness can stop at the 10th target too.
+  if (migrationDelay > 0 && pending.length > 0) {
+    await new Promise(resolve => setTimeout(resolve, migrationDelay))
+  }
   if (pending.length > 0) {
-    // The backend verifies every target column and integrity before clearing
-    // the marker; a failed Team migration keeps it for the next startup.
-    const { invoke } = await import('@tauri-apps/api/core')
-    await invoke('database_migration_completed')
+    // The backend verifies every target column, the transaction id and
+    // integrity before clearing the marker; a failed Team migration keeps it
+    // for the next startup.
+    await clearMigrationMarker(transactionId)
   }
 }

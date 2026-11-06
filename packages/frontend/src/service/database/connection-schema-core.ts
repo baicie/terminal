@@ -13,6 +13,10 @@
  */
 
 import { groupMigrationTargets } from './migration-targets'
+import {
+  requireMigrationSnapshot,
+  type MigrationSnapshot,
+} from './migration-snapshot'
 import { traceStage } from './startup-trace'
 
 export interface SqliteConnection {
@@ -92,16 +96,6 @@ const columnMigrations: ColumnMigration[] = [
     sql: "ALTER TABLE hosts ADD COLUMN shell_integration TEXT DEFAULT 'off'",
   },
 ]
-
-/** What the backend reports about the snapshot it wrote. */
-export interface MigrationSnapshot {
-  /** Absolute path of the snapshot file. */
-  path: string
-  /** Tables the backend verified against the database. */
-  tables: number
-  /** Rows the snapshot carries. */
-  rows: number
-}
 
 /**
  * Does this error mean "the column is already there"?
@@ -206,9 +200,7 @@ export async function ensurePreMigrationSnapshot(
       'backup_database_before_migration',
       { targets: groupMigrationTargets(pending), migrationId },
     )
-    if (!snapshot || typeof snapshot.path !== 'string' || snapshot.path === '') {
-      throw new Error('the backend did not report a snapshot path')
-    }
+    requireMigrationSnapshot(snapshot)
     console.info(
       `[Database] pre-migration snapshot ${snapshot.path} verified (${snapshot.tables} tables, ${snapshot.rows} rows) before migrating ${pending.length} column(s)`,
     )
@@ -253,9 +245,10 @@ export async function initializeCoreSchema(
     'pending-migrations-detected',
     pending.length + ' column migration(s): ' + pending.map(entry => entry.column).join(','),
   )
+  let snapshot: MigrationSnapshot | undefined
   if (pending.length > 0) {
     traceStage('snapshot-started', pending.length + ' migration(s) pending')
-    await ensurePreMigrationSnapshot(pending)
+    snapshot = await ensurePreMigrationSnapshot(pending)
     traceStage('snapshot-finished', 'the pre-migration snapshot was verified')
   }
 
@@ -275,21 +268,20 @@ export async function initializeCoreSchema(
   }
   for (const statement of schemaStatements.slice(15))
     await database.execute(statement)
-  if (pending.length > 0) await clearMigrationMarker()
+  if (pending.length > 0) await clearMigrationMarker(snapshot?.transactionId)
   traceStage('core-schema-finished', schemaStatements.length + ' statement(s) applied')
 }
 
 /**
  * The backend writes a pending-migration marker before the snapshot. Only after
- * every schema statement has succeeded may it be cleared; a failure here is
- * logged and left for the next startup, which recognizes the completed schema
- * and clears the stale marker without restoring anything.
+ * every schema statement has succeeded may it be cleared, and only for the
+ * transaction this snapshot opened. A rejection here is a real failure: the
+ * launch must not claim the migration completed while the marker still says a
+ * transaction is open.
  */
-async function clearMigrationMarker(): Promise<void> {
-  try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    await invoke('database_migration_completed')
-  } catch (error) {
-    console.warn('[Database] could not clear the migration marker:', error)
-  }
+export async function clearMigrationMarker(
+  transactionId?: string,
+): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('database_migration_completed', { transactionId })
 }

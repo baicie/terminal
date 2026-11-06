@@ -66,6 +66,8 @@ pub struct BackupReport {
     pub tables: u64,
     /// Rows the snapshot carries, summed over those tables.
     pub rows: i64,
+    /// The transaction the frontend must name when it reports completion.
+    pub transaction_id: String,
 }
 
 /// Tauri command: snapshot the application database before the schema is migrated.
@@ -90,31 +92,49 @@ pub async fn backup_database_before_migration<R: Runtime>(
     let config = directory
         .parent()
         .ok_or_else(|| "the backups directory has no parent".to_string())?;
+    // Serialize against another backup/restore in this process. The file lock
+    // below covers other processes; this guard covers two Tauri commands.
+    let _operation = lock.lock_operation().await?;
+    if lock.migration_in_progress() {
+        return Err(
+            "another migration transaction is already open in this Terminal process".to_string(),
+        );
+    }
     // No migration may touch the database until this process owns the
     // cross-process lock. The lock is held through completion so the frontend's
     // ALTER statements are covered too.
     crate::db_recovery::ensure_lock(&lock, config)?;
     let targets = targets.unwrap_or_else(crate::db_recovery::core_targets);
     let migration_id = migration_id.unwrap_or_else(|| "core".to_string());
-    let created =
-        match crate::db_recovery::write_marker(config, &destination, &migration_id, targets) {
-            Ok(created) => created,
+    let transaction =
+        match crate::db_recovery::begin_transaction(config, &destination, &migration_id, targets)
+            .await
+        {
+            Ok(transaction) => transaction,
             Err(error) => {
                 crate::db_recovery::release_lock(&lock);
                 return Err(error);
             }
         };
+    lock.note_migration_started();
     let report = match snapshot_before_migration(&pool, &destination).await {
-        Ok(report) => report,
+        Ok(mut report) => {
+            report.transaction_id = transaction.transaction_id.clone();
+            report
+        }
         Err(error) => {
-            // Only roll back a marker this call created. A pre-existing
-            // transaction (created=false) keeps its marker, snapshot and
-            // recovery evidence untouched.
-            if created {
-                let _ = crate::db_recovery::clear_marker(config);
-                crate::db_recovery::release_lock(&lock);
-            }
-            return Err(error.to_string());
+            // Restore the previous marker byte for byte. "Not clearing it" is
+            // not enough: `begin_transaction` may already have merged this
+            // call's targets into the open transaction.
+            let rollback = crate::db_recovery::rollback_transaction(config, &transaction);
+            lock.note_migration_finished();
+            crate::db_recovery::release_lock(&lock);
+            return match rollback {
+                Ok(()) => Err(error.to_string()),
+                Err(rollback_error) => Err(format!(
+                    "{error}; additionally the previous migration marker could not be restored: {rollback_error}"
+                )),
+            };
         }
     };
     // After the new snapshot is verified, never before: pruning first would drop a
@@ -294,6 +314,7 @@ async fn verify_snapshot(
             path: path.clone(),
             tables: tables.len() as u64,
             rows,
+            transaction_id: String::new(),
         })
     }
     .await;

@@ -23,6 +23,10 @@ function reportFor(scenario, overrides = {}) {
     checks.find(check => check.name === 'interrupted mid-migration').detail =
       'committed agent_forwarding; missing shell_integration'
   }
+  if (scenario === 'team-interrupted') {
+    checks.find(check => check.name === 'team kill points').detail =
+      '1:1/10 3:3/10 5:5/10 10:10/10'
+  }
   for (const name of ['B migration', 'data integrity after B', 'pre-migration backup']) {
     if (!checks.find(check => check.name === name)) {
       checks.push({
@@ -56,7 +60,7 @@ function reportFor(scenario, overrides = {}) {
     mode: scenario === 'linux-deb' ? 'deb' : scenario.startsWith('linux-appimage') ? 'appimage' : undefined,
     token: 'fixture-1',
     fault: scenario === 'normal' || scenario.startsWith('linux-') ? 'none' : scenario,
-    expectBackup: ['normal', 'restore-backup', 'downgrade', 'interrupted', 'restart-idempotent'].includes(scenario),
+    expectBackup: ['normal', 'restore-backup', 'downgrade', 'interrupted', 'team-interrupted', 'restart-idempotent'].includes(scenario),
     a: {
       version: '0.0.1-dev.1',
       installer: '/tmp/A.dmg',

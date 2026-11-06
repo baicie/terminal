@@ -85,6 +85,31 @@ export const SCENARIO_CONTRACTS = {
       'interrupted mid-migration': 'missing',
     },
   },
+  'team-interrupted': {
+    platform: 'darwin',
+    requiredChecks: [
+      'team kill points',
+      'team pre-migration snapshots',
+      'team marker after kills',
+      'core complete team incomplete not healthy',
+      'pre-migration backup',
+      'team product recovery',
+      'team data preserved',
+      'team idempotent relaunch',
+    ],
+    requiredFacts: [
+      'FAULT_INJECTED',
+      'ORIGINAL_DATA_PRESERVED',
+      'NO_PARTIAL_MIGRATION',
+      'RECOVERY_SUCCEEDED',
+    ],
+    requiredCheckStatus: {
+      'team product recovery': 'PASS',
+    },
+    requiredDetail: {
+      'team kill points': '/10',
+    },
+  },
   'disk-full': {
     platform: 'darwin',
     requiredChecks: [

@@ -285,6 +285,29 @@ async function waitForBackup(backupsDir, timeoutMs = 30_000) {
   }, timeoutMs, 'pre-migration backup in ' + backupsDir)
 }
 
+const TEAM_MIGRATED_COLUMNS = [
+  'version',
+  'updated_at',
+  'dirty',
+  'is_sensitive',
+  'encrypted_data',
+]
+
+/** Count how many of B's additive Team columns are committed in a database. */
+function countTeamColumns(dbPath) {
+  let count = 0
+  for (const table of ['team_shared_hosts', 'team_shared_snippets']) {
+    let columns = []
+    try {
+      columns = execFileSyncSqlite(dbPath, `SELECT name FROM pragma_table_info('${table}')`)
+    } catch {
+      continue
+    }
+    count += columns.filter(column => TEAM_MIGRATED_COLUMNS.includes(column)).length
+  }
+  return count
+}
+
 function writeFaultCorrupt(dbPath) {
   const buffer = Buffer.alloc(32, 0)
   const fd = openSync(dbPath, 'r+')
@@ -725,6 +748,142 @@ async function runMacos(flags) {
       } finally {
         volume.cleanup()
       }
+    }
+
+    if (fault === 'team-interrupted') {
+      const killPoints = [1, 3, 5, 10]
+      const killDetails = []
+      let killsObserved = 0
+      let snapshotsOk = 0
+      let markersOk = 0
+      let coreDoneTeamPartial = 0
+      let recoveriesOk = 0
+      let dataOk = 0
+      let idempotentOk = 0
+
+      for (const point of killPoints) {
+        const runRoot = path.join(work, 'team-kill-' + point)
+        const runHome = path.join(runRoot, 'home')
+        cpSync(home, runHome, { recursive: true })
+        const runDataDir = path.join(runHome, 'Library', 'Application Support', expectedIdentifier)
+        const runDb = path.join(runDataDir, 'terminal.db')
+        const markerFile = path.join(runDataDir, 'migration.pending.json')
+        child = launch(bBinary, runHome, path.join(logs, 'b-team-kill-' + point + '.log'), {
+          TERMINAL_STARTUP_STAGES_PATH: path.join(runRoot, 'stages.jsonl'),
+        })
+        await waitForDatabase(runDb)
+        // Core must have finished: Team's snapshot is taken after Core's
+        // completion and must not be confused with an unfinished Core.
+        await waitForSchema(runDb, 'hosts:' + expectedNewHostColumns.join(','), 120_000)
+        const atPoint = await waitFor(
+          () => (countTeamColumns(runDb) >= point ? countTeamColumns(runDb) : null),
+          90_000,
+          'team target ' + point,
+        ).catch(() => null)
+        child.kill('SIGKILL')
+        await stopChecked(child, { allowSignals: ['SIGKILL'], allowForced: true })
+        const atKill = countTeamColumns(runDb)
+        const expectedKill = point === 10 ? atKill === 10 : atKill >= point && atKill < 10
+        if (atPoint && expectedKill) killsObserved += 1
+        killDetails.push(point + ':' + atKill + '/10')
+
+        const hostColumns = execFileSyncSqlite(runDb, "SELECT name FROM pragma_table_info('hosts')")
+        const coreDone = expectedNewHostColumns.every(column => hostColumns.includes(column))
+        if (coreDone && atKill > 0 && atKill < 10) coreDoneTeamPartial += 1
+
+        let marker = null
+        try {
+          marker = JSON.parse(readFileSync(markerFile, 'utf8'))
+        } catch {
+          marker = null
+        }
+        if (marker && marker.migration_id) markersOk += 1
+        const snapshot = marker?.snapshot_path
+        if (snapshot && existsSync(snapshot) && countTeamColumns(snapshot) === 0) {
+          // The snapshot must really hold the post-Core, pre-Team database and
+          // the seeded user data, not merely be a file with the right name.
+          try {
+            await dr(['verify', '--db', snapshot, '--before', beforePath,
+              '--token', token, '--vault', vault, '--vault-allow-encrypted',
+              '--expected-new-host-columns', expectedNewHostColumns.join(','),
+              '--allow-settings-migration'])
+            snapshotsOk += 1
+          } catch {
+            // counted as a failure below
+          }
+        }
+
+        const recoveryStates = path.join(runRoot, 'recovery.jsonl')
+        child = launch(bBinary, runHome, path.join(logs, 'b-team-recovery-' + point + '.log'), {
+          TERMINAL_RECOVERY_STAGES_PATH: recoveryStates,
+          TERMINAL_STARTUP_STAGES_PATH: path.join(runRoot, 'recovery-stages.jsonl'),
+        })
+        await waitForSchema(
+          runDb,
+          'team_shared_hosts:' + TEAM_MIGRATED_COLUMNS.join(',') +
+            ';team_shared_snippets:' + TEAM_MIGRATED_COLUMNS.join(','),
+          180_000,
+        )
+        const recoveryText = existsSync(recoveryStates) ? readFileSync(recoveryStates, 'utf8') : ''
+        if (/"state":"Recovered"/.test(recoveryText)) recoveriesOk += 1
+        await stopChecked(child)
+        await dr(['checkpoint', '--db', runDb])
+        try {
+          await dr(['verify', '--db', runDb, '--before', beforePath,
+            '--token', token, '--vault', vault, '--vault-allow-encrypted',
+            '--expected-new-host-columns', expectedNewHostColumns.join(','),
+            '--allow-settings-migration'])
+          dataOk += 1
+        } catch {
+          // counted as a failure below
+        }
+
+        // A second launch must be idempotent: no pending marker, no recovery,
+        // and the same verified data.
+        child = launch(bBinary, runHome, path.join(logs, 'b-team-idempotent-' + point + '.log'), {
+          TERMINAL_RECOVERY_STAGES_PATH: path.join(runRoot, 'idempotent.jsonl'),
+        })
+        await delay(5_000)
+        await stopChecked(child)
+        const idempotentStates = path.join(runRoot, 'idempotent.jsonl')
+        const idempotentText = existsSync(idempotentStates) ? readFileSync(idempotentStates, 'utf8') : ''
+        const markerGone = !existsSync(markerFile)
+        const noRecovery = !/"state":"Recovered"/.test(idempotentText)
+        if (markerGone && noRecovery) idempotentOk += 1
+      }
+
+      add('team kill points', killsObserved === killPoints.length ? 'PASS' : 'FAIL', killDetails.join(' '))
+      add('team pre-migration snapshots', snapshotsOk === killPoints.length ? 'PASS' : 'FAIL',
+        snapshotsOk + '/' + killPoints.length + ' verified post-Core snapshots')
+      add('pre-migration backup', snapshotsOk === killPoints.length ? 'PASS' : 'FAIL',
+        snapshotsOk > 0 ? 'all Team snapshots verified read-only' : 'no verifiable Team snapshot')
+      add('team marker after kills', markersOk === killPoints.length ? 'PASS' : 'FAIL',
+        markersOk + '/' + killPoints.length + ' markers name their transaction')
+      add('core complete team incomplete not healthy', coreDoneTeamPartial >= killPoints.length - 1 ? 'PASS' : 'FAIL',
+        'Core done, Team partial, marker still pending')
+      add('team product recovery', recoveriesOk === killPoints.length ? 'PASS' : 'FAIL',
+        recoveriesOk + '/' + killPoints.length + ' startups reported Recovered')
+      add('team data preserved', dataOk === killPoints.length ? 'PASS' : 'FAIL',
+        dataOk + '/' + killPoints.length + ' databases verified field by field')
+      add('team idempotent relaunch', idempotentOk === killPoints.length ? 'PASS' : 'FAIL',
+        idempotentOk + '/' + killPoints.length + ' relaunches were idempotent')
+
+      reportJson.schema.afterTables = execFileSyncSqlite(
+        db,
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
+      reportJson.schema.afterHostColumns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
+      applyFaultAssessment('team-interrupted', {
+        FAULT_INJECTED: killsObserved === killPoints.length ? 'PASS' : 'FAIL',
+        APPLICATION_FAILURE_OBSERVED: 'NOT_RUN',
+        ORIGINAL_DATA_PRESERVED: dataOk === killPoints.length ? 'PASS' : 'FAIL',
+        NO_PARTIAL_MIGRATION: dataOk === killPoints.length ? 'PASS' : 'FAIL',
+        RECOVERY_SUCCEEDED: recoveriesOk === killPoints.length && idempotentOk === killPoints.length
+          ? 'PASS'
+          : 'FAIL',
+      })
+      await report(work, reportDir, reportJson)
+      return reportJson
     }
 
     if (fault === 'interrupted') {

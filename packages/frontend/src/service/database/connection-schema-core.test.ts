@@ -146,7 +146,12 @@ it('snapshots the database before it runs a single schema statement', async () =
   const order: string[] = []
   invoke.mockReset().mockImplementation(async (command: string) => {
     order.push(`invoke:${command}`)
-    return { path: '/backups/pre-migration-1.db', tables: 2, rows: 12 }
+    return {
+      path: '/backups/pre-migration-1.db',
+      tables: 2,
+      rows: 12,
+      transactionId: 'core-tx',
+    }
   })
   const execute = vi.fn(async (sql: string) => {
     order.push(sql)
@@ -161,7 +166,9 @@ it('snapshots the database before it runs a single schema statement', async () =
     'backup_database_before_migration',
     expect.objectContaining({ migrationId: 'core' }),
   )
-  expect(invoke).toHaveBeenNthCalledWith(2, 'database_migration_completed')
+  expect(invoke).toHaveBeenNthCalledWith(2, 'database_migration_completed', {
+    transactionId: 'core-tx',
+  })
   expect(order[0]).toBe('invoke:backup_database_before_migration')
   expect(order.at(-1)).toBe('invoke:database_migration_completed')
   expect(order.some(entry => entry.startsWith('CREATE TABLE'))).toBe(true)
