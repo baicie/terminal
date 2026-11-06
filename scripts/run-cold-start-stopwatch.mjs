@@ -715,35 +715,53 @@ export async function runColdStartStopwatch({
     terminate(child)
   }
 
-  const finishCleanup = async () => {
-    if (timeoutTimer !== undefined) dependencies.clearTimeout(timeoutTimer)
-    if (child && !childClosed) {
-      stopChild()
-      try {
-        await waitForChildClose(childClosePromise, dependencies, cleanupGraceMs)
-      } catch (error) {
-        // A Tauri process can ignore or outlive SIGTERM while WebKit is still
-        // tearing down. Escalate once so a failed probe cannot leak a desktop
-        // process into the next run, but preserve the original cleanup error
-        // when the child still refuses to report close.
-        if (!childClosed) terminate(child, 'SIGKILL')
+  const finishCleanup = async primaryError => {
+    try {
+      if (timeoutTimer !== undefined) dependencies.clearTimeout(timeoutTimer)
+      if (child && !childClosed) {
+        stopChild()
         try {
           await waitForChildClose(
             childClosePromise,
             dependencies,
             cleanupGraceMs,
           )
-        } catch {
-          // The caller still receives the first, more useful timeout error.
+        } catch (error) {
+          // A Tauri process can ignore or outlive SIGTERM while WebKit is still
+          // tearing down. Escalate once so a failed probe cannot leak a desktop
+          // process into the next run, but preserve the original cleanup error
+          // when the child still refuses to report close.
+          if (!childClosed) terminate(child, 'SIGKILL')
+          try {
+            await waitForChildClose(
+              childClosePromise,
+              dependencies,
+              cleanupGraceMs,
+            )
+          } catch {
+            // The caller still receives the first, more useful timeout error.
+          }
+          throw error
         }
-        throw error
       }
-    }
-    if (ownsHome) {
-      await dependencies.rm(home, MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS)
+      if (ownsHome) {
+        await dependencies.rm(home, MEASUREMENT_DIRECTORY_CLEANUP_OPTIONS)
+      }
+    } catch (cleanupError) {
+      // Cleanup must not replace the readiness failure: the sample's stages,
+      // probe and binary SHA are the only evidence that failure produced.
+      if (primaryError && typeof primaryError === 'object') {
+        primaryError.cleanupError =
+          cleanupError instanceof Error
+            ? cleanupError.message
+            : String(cleanupError)
+        return
+      }
+      throw cleanupError
     }
   }
 
+  let primaryError = null
   try {
     if (shouldProbeAx && axProbe === 'native') {
       await compileNativeAccessibilityProbe(
@@ -781,6 +799,28 @@ export async function runColdStartStopwatch({
         if (settled) return
         settled = true
         stopChild()
+        // Every failure exit gets the same build identity and timeline. The
+        // stress wrapper used to reconstruct failed samples from a whitelist,
+        // so only readiness timeouts carried these facts and every other
+        // failure became `binarySha256=unknown` (Issue #185).
+        if (error && typeof error === 'object') {
+          if (error.binarySha256 === undefined) {
+            error.binarySha256 = binarySha256
+          }
+          if (error.stages === undefined) {
+            error.stages = lastStages
+          }
+          if (error.probe === undefined) {
+            error.probe = {
+              readiness: lastReadiness,
+              readinessTarget: effectiveReadinessTarget,
+              axProbe: reportedAxProbe,
+              windowReady: lastWindowReady,
+              terminalReady: lastTerminalReady,
+              markerReady: lastMarkerReady,
+            }
+          }
+        }
         reject(error)
       }
 
@@ -825,6 +865,9 @@ export async function runColdStartStopwatch({
         const reachedFrontend = hasStage(lastStages, 'frontend-boot')
         const reachedReady = hasStage(lastStages, 'ready')
         const reachedMounted = hasStage(lastStages, 'terminal-mounted')
+        const requestedSession = stageNames.includes('session-create-requested')
+        const sessionCreated = stageNames.includes('session-created')
+        const enteredSsh = stageNames.includes('ssh-connect-start')
         const stageSummary =
           `stages: ${describeStages(lastStages)}`
           + (firstStageSeenMs === null
@@ -837,18 +880,44 @@ export async function runColdStartStopwatch({
               ? 'the front end evaluated but never reached db ready'
               : !reachedMounted
                 ? 'the app reached db ready but no terminal surface mounted; the restored tab or its host never became usable'
-                : stageNames.includes('session-create-requested')
-                  ? 'the app reached db ready and requested the session; the failure is in the SSH/shell path'
-                  : 'the app reached db ready but never requested the session')
-        fail(
-          new Error(
-            `${readinessLabel} readiness did not complete within ${timeoutMs} ms${details ? ` (last probe: ${details})` : ''} (${stageSummary})` +
-              describeStalledReadiness(
-                lastReadiness,
-                effectiveReadinessTarget,
-              ),
-          ),
+                : !requestedSession
+                  ? 'the app reached db ready but never requested the session'
+                  : !enteredSsh
+                    ? // `session-created` resolves the frontend command; it
+                      // does not prove a remote transport existed. Keep this
+                      // separate from authentication and PTY failures so a
+                      // local session launched for a missing tab is not called
+                      // an SSH failure (Issue #179).
+                      sessionCreated
+                      ? 'the app requested and created a session, but no SSH stage was ever recorded; the session was not an SSH transport'
+                      : 'the app requested the session, but no SSH stage was ever recorded before the deadline'
+                    : stageNames.includes('ssh-pty-ready') &&
+                        !stageNames.includes('ssh-shell-first-output')
+                      ? 'the SSH PTY became ready, but the remote shell produced no output before the deadline'
+                      : stageNames.includes('ssh-shell-first-output')
+                        ? 'the remote shell produced output, but the prompt marker did not complete'
+                        : 'the app requested the session and entered the SSH path, but it did not reach the PTY before the deadline')
+        const timeoutError = new Error(
+          `${readinessLabel} readiness did not complete within ${timeoutMs} ms${details ? ` (last probe: ${details})` : ''} (${stageSummary})` +
+            describeStalledReadiness(
+              lastReadiness,
+              effectiveReadinessTarget,
+            ),
         )
+        // The human message is intentionally bounded, but the evidence must
+        // not be: a failed sample used to discard the parsed stages (and their
+        // details), so `session-created@1459ms` could not be tied to a local or
+        // SSH session after the fact.
+        timeoutError.stages = lastStages
+        timeoutError.probe = {
+          readiness: lastReadiness,
+          readinessTarget: effectiveReadinessTarget,
+          axProbe: reportedAxProbe,
+          windowReady: lastWindowReady,
+          terminalReady: lastTerminalReady,
+          markerReady: lastMarkerReady,
+        }
+        fail(timeoutError)
       }
 
       const poll = async () => {
@@ -997,8 +1066,11 @@ export async function runColdStartStopwatch({
       }, timeoutMs)
     })
     return result
+  } catch (error) {
+    primaryError = error
+    throw error
   } finally {
-    await finishCleanup()
+    await finishCleanup(primaryError)
   }
 }
 

@@ -857,7 +857,7 @@ test('does not blame the UI when some readiness condition was observed', async (
   )
 })
 
-test('fails if SIGTERM does not produce a close event before cleanup grace', async () => {
+test('preserves the readiness failure when SIGTERM does not produce a close event before cleanup grace', async () => {
   const harness = createHarness({ closeOnKill: false })
   await assert.rejects(
     runColdStartStopwatch({
@@ -866,7 +866,14 @@ test('fails if SIGTERM does not produce a close event before cleanup grace', asy
       cleanupGraceMs: 1,
       dependencies: harness.dependencies,
     }),
-    /did not exit within 1 ms/,
+    error => {
+      // Cleanup must not replace the evidence-producing failure. The cleanup
+      // problem is attached instead of becoming the sample's only error.
+      assert.match(error.message, /window readiness did not complete/)
+      assert.match(error.cleanupError, /did not exit within 1 ms/)
+      assert.equal(error.binarySha256.length, 64)
+      return true
+    },
   )
   assert.deepEqual(harness.calls.kill, ['SIGTERM', 'SIGKILL'])
 })
@@ -976,6 +983,13 @@ test('attributes a readiness timeout to the last stage the app reached', async (
         error.message,
         /stages: frontend-boot@120ms -> ssh-connect-start@880ms/,
       )
+      // A bounded human message must not be the only place the timeline is
+      // kept: the failed sample JSON needs the parsed stages and details.
+      assert.deepEqual(error.stages, [
+        { atMs: 120, stage: 'frontend-boot', detail: 'main.tsx evaluated' },
+        { atMs: 880, stage: 'ssh-connect-start', detail: '127.0.0.1:22' },
+      ])
+      assert.equal(error.probe.readinessTarget, 'terminal')
       return true
     },
   )
@@ -1157,7 +1171,7 @@ test('names a database bootstrap that never finished', async () => {
   )
 })
 
-test('names a stall in the SSH path once the app reached db ready', async () => {
+test('names a session that was requested but never entered the SSH path', async () => {
   const harness = createHarness({ readiness: ['0,0,0,0'] })
   const stagesPath = '/private/tmp/terminal-cold-start-fixture/terminal-startup-stages.jsonl'
   const readFile = harness.dependencies.readFile
@@ -1186,7 +1200,10 @@ test('names a stall in the SSH path once the app reached db ready', async () => 
       dependencies: harness.dependencies,
     }),
     error => {
-      assert.match(error.message, /the failure is in the SSH\/shell path/)
+      assert.match(
+        error.message,
+        /requested the session, but no SSH stage was ever recorded/,
+      )
       return true
     },
   )

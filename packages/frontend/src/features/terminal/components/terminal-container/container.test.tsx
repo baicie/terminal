@@ -248,10 +248,44 @@ describe('TerminalContainer settings', () => {
     render(<TerminalContainer tabId="terminal-one" workspaceId="workspace" />)
 
     const options = mocks.useTerminal.mock.calls.at(-1)?.[1]
-    act(() => options.onInput({ kind: 'text', data: 'ls\r', bytes: 3 }))
+    act(() =>
+      options.onInput({
+        kind: 'text',
+        data: 'ls\r',
+        bytes: 3,
+        wasUserInput: true,
+      }),
+    )
 
     expect(mocks.appState.updateTab).toHaveBeenCalledWith('terminal-one', {
-      startupFallback: false,
+      startupFallbackInteracted: true,
+    })
+  })
+
+  it('does not claim a startup fallback for programmatic writes', () => {
+    mocks.appState.tabs = [
+      {
+        id: 'terminal-one',
+        label: 'Local',
+        type: 'local',
+        startupFallback: true,
+      },
+    ]
+
+    render(<TerminalContainer tabId="terminal-one" workspaceId="workspace" />)
+
+    const options = mocks.useTerminal.mock.calls.at(-1)?.[1]
+    act(() =>
+      options.onInput({
+        kind: 'text',
+        data: 'clear\r',
+        bytes: 6,
+        wasUserInput: false,
+      }),
+    )
+
+    expect(mocks.appState.updateTab).not.toHaveBeenCalledWith('terminal-one', {
+      startupFallbackInteracted: true,
     })
   })
 

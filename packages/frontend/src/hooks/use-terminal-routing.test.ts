@@ -143,18 +143,17 @@ describe('useTerminal emitter routing', () => {
 
     act(() => {
       instance.result.current.write('clear\r')
-      mocks.listeners.forEach(listener => listener('history\r', 'tab-direct-write'))
+      mocks.listeners.forEach(listener =>
+        listener('history\r', 'tab-direct-write'),
+      )
     })
 
     expect(onInput.mock.calls.map(([event]) => event)).toEqual([
-      { kind: 'text', data: 'clear\r', bytes: 6 },
-      { kind: 'text', data: 'history\r', bytes: 8 },
+      { kind: 'text', data: 'clear\r', bytes: 6, wasUserInput: false },
+      { kind: 'text', data: 'history\r', bytes: 8, wasUserInput: false },
     ])
     const sessionWrites = mocks.bindings.get('tab-direct-write')?.write
-    expect(sessionWrites?.mock.calls).toEqual([
-      ['clear\r'],
-      ['history\r'],
-    ])
+    expect(sessionWrites?.mock.calls).toEqual([['clear\r'], ['history\r']])
     expect(onInput.mock.invocationCallOrder[0]).toBeLessThan(
       sessionWrites?.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     )

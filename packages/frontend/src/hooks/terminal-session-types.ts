@@ -14,6 +14,12 @@ export interface TerminalInputDiagnosticEvent {
   kind: 'text' | 'raw'
   data: string | Uint8Array
   bytes: number
+  /**
+   * False for snippet / command-palette / mobile-key-bar writes, true for
+   * xterm `onData`. Recovery only treats real user input as tab ownership;
+   * a programmatic write must not make a temporary fallback permanent.
+   */
+  wasUserInput?: boolean
 }
 
 export interface TerminalOutputDiagnosticEvent {

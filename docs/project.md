@@ -827,6 +827,25 @@ src-tauri/
 | 冷启动可观测性 | `terminal-mounted` detail 补 workspaceId；新增 `ready → terminal-mounted` 3 秒预算；trace 写入改为串行队列，关键阶段可等待，修复 `ssh-connect-start` 早于 `session-create-requested` 的因果倒置 |
 | Probe 配置预算 | 冷 WebView 首次 IPC 约 1.8s，1s 配置预算会让所有 gate 超时并回落到 app；instrumented 构建改为 3s，产品构建保持 1s |
 
+### Phase 9.4.1 - 修复后冷启动根因收口 🟡 代码与本地门禁完成，实机复测待做
+
+> 2026-11-03，分支 `feat/phase9-4-rc-reliability`，stacked 于 `3cd02c1`。
+
+| 领域 | 改动 |
+| --- | --- |
+| 压力测试事实 | 修复后 A run `41607668007` 293/300、B run `41612216952` 291/300；完整 300 个样本与二进制 SHA 已校验，不再标 NOT_RUN |
+| 失败分类 | `ssh-path` 拆为 `ssh-request-not-entered-rust` / `ssh-tcp-pending` / `ssh-auth-pending` / `ssh-pty-pending` / `ssh-shell-no-output` / `ssh-prompt-marker-missing` |
+| 产品修复 | 恢复的远程 tab 不再因 host 查询未完成被本地 fallback 抢占；`tab === undefined` 时 session hook 保持 disabled，不再误建本地 PTY |
+| 完整性门禁 | 新增 `--expected-samples`、1..N 连续性、sampleIndex 一致性、JSON/结构校验与 `MEASUREMENT_COMPLETE_WITH_FAILURES` / `RELIABILITY_PASS` 判词；事实基础设施错误 exit 3 |
+| 证据 | 每样本记录源码 SHA、父提交、clean 状态、timeout、环境；workflow 生成 `provenance.json` 与 `cold-start-build.json` |
+
+**本地门禁（2026-11-03 实跑）**：前端 **152 文件 / 1367 项**、脚本 **383 项**、
+typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
+
+**仍未闭合**：修复后真实 300 次复测 **NOT_RUN**；跨样本隔离负面测试 **NOT_RUN**；
+`terminal-not-mounted` 的产品机制 **NOT_RUN**；六份验收证据因源码进入
+`FINGERPRINT_PATHS` 已失效，必须由 real-machine runner 重采。
+
 **本地门禁（2026-11-03 实跑）**：前端 **151 文件 / 1365 项**、Team Server **25 文件 / 119 项**、真实 PostgreSQL **11 文件 / 94 项**、Rust **302 单测 + 3 集成测试**、脚本 **371 项**、563 个生产文件行数门禁、bundle budget（initial gzip 130.28 KB / total 572.71 KB）全部通过。
 
 **✅ 证据状态**：最终源码 `44ae449` 已由 real-machine run `41605898002` 重采 6 份证据，指纹 `6d7536e7…`，debug SHA `2bf151cb…`、release SHA `88ba4714…`；证据门禁 0 problem。此前 `01836c9` 的指纹失配是门禁的正确阻断，不是产品回归。

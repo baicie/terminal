@@ -8,7 +8,10 @@ import {
 } from './terminal-bootstrap'
 import { renderStartupFailure } from './terminal-bootstrap-failure-ui'
 import { startTerminalApp } from './terminal-bootstrap-start'
-import { BOOTSTRAP_APP_DEADLINE_MS } from './terminal-bootstrap-deadline'
+import {
+  BOOTSTRAP_APP_DEADLINE_MS,
+  BOOTSTRAP_TERMINAL_FALLBACK_MS,
+} from './terminal-bootstrap-deadline'
 import type { TerminalSmokeConfig } from './features/terminal/smoke/terminal-smoke-contract'
 import { terminalSmokeTestConfig } from './features/terminal/smoke/terminal-smoke-test-fixtures'
 
@@ -161,7 +164,7 @@ it('loads the normal application when Rust returns no smoke or probe config', as
   expect(render.mock.calls[0][0].type).toBe(App)
 })
 
-it('passes the attempt deadline to the normal App as its fallback timestamp', async () => {
+it('passes the terminal fallback deadline, not the app-chunk deadline', async () => {
   const render = vi.fn()
   const App: ComponentType<{ startupTerminalFallbackAt?: number }> = () => null
   const startupDeadlineAt = performance.now() + BOOTSTRAP_APP_DEADLINE_MS
@@ -182,7 +185,9 @@ it('passes the attempt deadline to the normal App as its fallback timestamp', as
   ).resolves.toBe('app')
 
   expect(render.mock.calls[0][0].props.startupTerminalFallbackAt).toBe(
-    startupDeadlineAt,
+    startupDeadlineAt -
+      BOOTSTRAP_APP_DEADLINE_MS +
+      BOOTSTRAP_TERMINAL_FALLBACK_MS,
   )
 })
 

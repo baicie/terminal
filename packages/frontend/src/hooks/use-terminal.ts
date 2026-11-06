@@ -72,6 +72,7 @@ export function useTerminal(
         kind: 'text',
         data,
         bytes: new TextEncoder().encode(data).byteLength,
+        wasUserInput: false,
       })
     } catch (error) {
       console.error('[useTerminal] input diagnostic observer failed:', error)
@@ -158,7 +159,10 @@ export function useTerminal(
           // silently dropped and the pane looked frozen on a healthy
           // connection. A session id means a live backend, so that is where the
           // output path becomes usable again.
-          if (snapshot.sessionId && outputScheduler.snapshot().state === 'failed') {
+          if (
+            snapshot.sessionId &&
+            outputScheduler.snapshot().state === 'failed'
+          ) {
             outputScheduler.reset()
           }
           setError(outputErrorRef.current ?? snapshot.error)
@@ -182,7 +186,7 @@ export function useTerminal(
       writeRaw: binding.writeRaw,
       resize: binding.resize,
       onInput: (event: TerminalInputDiagnosticEvent) =>
-        onInputRef.current?.(event),
+        onInputRef.current?.({ ...event, wasUserInput: true }),
     })
     const writeProgrammaticInput = (data: string) => {
       notifyProgrammaticInput(data)

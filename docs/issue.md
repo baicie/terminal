@@ -4834,3 +4834,276 @@ actual   7639d533…
 
 **验证**：定向 31 项、前端全量 **151 文件 / 1365 项**、typecheck、ESLint 通过。
 修复后仍需在真实矩阵重采证据。
+
+### Issue #181: 远程 tab 恢复期间被本地 fallback 抢占 / 缺失 tab 误建本地 PTY ✅ 已修复（2026-11-03）
+
+**严重程度**：🔴 Blocker（远程冷启动可靠性统计）
+
+**现象**：修复后的两次 300 次压力运行（`41607668007` 293/300、
+`41612216952` 291/300）中，共 6 个失败样本出现了 `session-created`，却没有任何
+`ssh-connect-start`。它们不是 SSH 握手、认证或 PTY 失败，也被旧分类误记成
+`ssh-path`。
+
+**根因 1**：`useStartupWorkspaceRecovery` 的 `hasUsableTerminal` 要求远程 tab 的
+`hostId` 已出现在 host store。工作区恢复允许 host 查询最长 1.5 秒，而启动 fallback
+timer 只要求自身到期；若布局已恢复、host 查询尚未返回，App 会额外添加
+`startupFallback` 本地 tab 并把它设为 active tab。远程 tab 仍在，但本地会话抢占了
+同一次启动。
+
+**根因 2**：`useTerminalSessionBinding` 在 `tab === undefined` 时把 tab 类型默认为
+`local`，因此工作区切换/布局恢复的瞬时窗口可以启动 `session_create_local`，而 tab id
+仍属于远程 tab。时间线于是出现 `session-created` 而没有 SSH 阶段。
+
+**修复**：
+
+- 远程 tab 的可用性只要求自身带 `hostId`，不再要求 host 查询已完成；fallback 的
+  打开也收敛为幂等函数，连迟到恢复也不会重复添加。
+- `tab` 缺失时 `useTerminalSessionBinding` 保持 `enabled: false`，直到 tab 重新出现；
+  host-key gate 的初始 tabType 仍使用 `local` 只是为了让 hook 顺序稳定，会话不会启动。
+- 新增 `use-terminal-session-binding.test.tsx` 两个回归与 App fallback 回归。
+
+**验证**：前端定向 25 项通过，含 tab 缺失不启动、tab 恢复后启动、host 查询未完成
+不添加 fallback。**真实 300 次复测已运行**（见下），但不能把旧样本的
+`ssh-request-not-entered-rust` 计为已消除。
+
+**修复后首轮实机**：run `41637922942`（`0ba671e`）294/300，失败 6 个，仍成 3 对。
+其中 3 个 `terminal-not-mounted`、3 个 `ssh-request-not-entered-rust`；失败率从
+2.33–3.00% 降到 2.00%，**未消除**。因此本 Issue 保持“代码修复完成，根因未闭合”。
+
+该 run 的 `Record runner and sample provenance` 步骤自身因 CommonJS `require`
+与 top-level await 混用而失败；它不影响 300 个样本与 summary 的完整性，但使
+job 在 provenance 步骤变红。后续提交已把该脚本改为 async IIFE，并用同一 artifact
+本地重放通过。
+
+**第二次产品修复后实机**：run `41644270883`（`fda76ae`）**282/300（94.0%）**，
+18 个失败（9 个 `terminal-not-mounted`、8 个 `ssh-request-not-entered-rust`、
+1 个 `session-not-requested`）。失败率反而升到 6.00%。同一轮还暴露三个测量缺陷：
+样本 `sourceSha` 全为 null（git cwd 多退一层）、`cold-start-build.json` 与
+provenance 的 `instrumentedBuild` 矛盾、`log show` 的 ISO 时间格式导致日志全为
+0 字节。修复后尚未重新采样，根因仍未闭合。
+
+**修复后 E 轮实机**：run `41674133535`（`b5c7f46`）**294/300（2.00%）**。
+6 个失败第一次可自证：3 个 `terminal-not-mounted`（`122/194/292`，连
+`terminal-open-start` 都没有）、2 个本地 fallback（`195/293`，`terminal-mounted`
+detail 为 `local-...@...@local`）、1 个 `ssh-prompt-marker-missing`（`1`，
+`ssh-startup-settle` 后无 write）。这证明本地 fallback 路径仍会发生，且
+late-tab 修复只覆盖了 effect 内 ref 为空的路径。根因保持未闭合。
+
+### Issue #182: 冷启动压力汇总会静默缩小分母 🟡 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（测量基础设施）
+
+**问题**：`summarize-cold-start-samples.mjs` 只统计实际存在的 `sample-*.json`。
+若某个样本进程崩溃、文件写坏或编号重复，汇总器仍会成功，并把 299 个样本的分母
+写成 299。CI 绿色因此不能区分“产品失败”和“样本缺失”。
+
+**修复**：
+
+- 新增 `--expected-samples N`、1..N 连续性、`sampleIndex` 与文件名一致性、重复
+  编号、JSON 解析、成功/失败结构校验与阶段条目校验；测量基础设施错误抛
+  `ColdStartSampleIntegrityError`（exit 3）。
+- 汇总结果加入 `expectedSamples`、`verdict`、失败样本的 `timeoutMs`、
+  `binarySha256` 与 `lastStage`；`RELIABILITY_PASS` 只在 0 失败时出现，
+  有产品失败时为 `MEASUREMENT_COMPLETE_WITH_FAILURES`。
+- workflow 传 `--expected-samples "$SAMPLES"`，并在 verdict 非 `RELIABILITY_PASS`
+  时让 job 失败；样本的源码 SHA、父提交、二进制 SHA、构建类型、runner 与 OS
+  写入 `provenance.json`。
+- `run-cold-start-stress-sample.mjs` 在成功/失败两条路径都记录源码 SHA、父提交、
+  clean 状态、timeout 和环境事实；成功样本不再缺 `timeoutMs`。
+
+**验证**：脚本测试 **12 项**（原 2 项）覆盖缺失、重复、损坏、编号错位、
+缺失阶段、缺失错误消息、因果倒置与 `RELIABILITY_PASS` 判词。
+
+### Issue #183: 冷启动失败分类把“没有 SSH 阶段”误算成 SSH 故障 🟡 已修复（2026-11-03）
+
+**严重程度**：🟡 Important（根因误导）
+
+**问题**：旧分类只有 `ssh-path`，把“已请求会话但没有 `ssh-connect-start`”和
+“`ssh-pty-ready` 后无 shell 输出”混为一类。两次修复后运行的 9 个 SSH 失败里，
+6 个实际上从未进入 Rust 的 SSH 路径。
+
+**修复**：按最深已到达阶段细分 `ssh-request-not-entered-rust`、`ssh-tcp-pending`、
+`ssh-auth-pending`、`ssh-pty-pending`、`ssh-shell-no-output`、
+`ssh-prompt-marker-missing`；stopwatch 失败消息也按同一阶段集合命名。
+
+**证据（旧样本重新分类）**：
+
+- `41602408642`：5 个 `ssh-request-not-entered-rust`（此前 5 个 `ssh-path`）；
+- `41607668007`：2 个 `ssh-request-not-entered-rust` + 1 个 `ssh-tcp-pending`；
+- `41612216952`：4 个 `ssh-request-not-entered-rust` + 1 个 `ssh-shell-no-output`。
+
+**限制**：旧样本的失败 JSON 只有 `stages` 字符串，没有 `session-created` detail，
+因此不能把这些样本逐个证明为本地 PTY；修复的验证必须来自新构建的实机采样。
+
+### Issue #184: F 轮仍有 2 个本地 fallback 抢占远程会话 ✅ 已修复（G 轮 300/300，2026-11-04）
+
+**严重程度**：🟡 Important（RC 可靠性）
+
+**实测**：run `41683645429`（`7600963`）300 次样本 **298/300（0.67%）**，首次点估计
+低于 1%。两个失败样本 **228、229** 相邻，`terminal-mounted` detail 均为
+`local-...@remote-cold-workspace@local`；298 个成功样本全部挂载 `remote`。
+本轮 `terminal-mounted=300`，E 轮的 3 个 `terminal-not-mounted` 未复现。
+
+**统计边界**：0.67% 只是点估计；2/300 的 Wilson 95% 区间约 `[0.18%, 2.40%]`，
+不能据此宣布统计上稳定低于 1%。
+
+**WebKit 日志**：`7600963` 的时区修复后，失败样本日志首次非空（2112 / 2048 行）。
+两个样本都出现 `WebContent[...] CRASHSTRING: rdar://problem/28724618 Couldn't
+connect to launchservicesd.`，并伴随新的 WebProcess PID 与数秒近静默；但同一 PID
+之后仍有输出，且没有成功样本对照，**不能判定为 WebKit 崩溃**。
+
+**下一步**：Phase 9.4.2 增加恢复/fallback 状态机与分段 trace，区分“布局未读取 /
+已读取但 host 未返回 / 布局不存在 / 读取失败 / 用户本地 tab / 系统 fallback”，
+并用可控异步竞态测试先红后绿；随后补成功样本 WebKit 对照和多轮 300 次采样。
+不能只把 2 秒改成 4 秒。
+
+**2026-11-04 根因与修复（代码完成，真实 runner 待复测）**：
+
+- **样本 228**：生产 `terminal-bootstrap.tsx` 把 8 秒 App chunk deadline 错当成
+  `startupTerminalFallbackAt`，本地 fallback 在 8 秒才触发（tab id 时间戳
+  与 frontend boot 间隔 8.2 秒）。已改为 `attemptStartedAt + 2 s`。
+- **样本 229**：复用了样本 228 的 `local-1793728115282` tab id，而该 id 生成于
+  样本 229 开始之前。WKWebView localStorage 在真实用户 home
+  `~/Library/WebKit/com.baicie.termius`，不受 per-sample HOME 影响；local-only
+  recovery journal 遮蔽了 SQLite 的 remote 布局。已修产品 journal 优先级与
+  provisional fallback 持久化，并在 stress workflow 每个样本前清空 WebKit
+  数据目录。
+- 同时修复：layout 读取失败被吞、workspace/layout 查询无超时、`loadHosts`
+  generation 竞态、用户输入与程序化写入不区分、fallback 全有或全无替换。
+- 新增 `startup-recovery-arbiter.ts` 状态机与 `workspace-load-*` /
+  `layout-load-*` / `host-load-*` / `fallback-*` 分段 trace。
+- 本地门禁：前端 153 文件 / 1393 项、脚本 83 项、typecheck、ESLint、
+  source-size 568 文件通过。**真实 300 次复测尚未执行，不能写成已修复。**
+
+详见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`。
+
+**G 轮真实验证**：run `41838269784`（`ac01091`）**300/300，100%，
+`RELIABILITY_PASS`**；`mountEvidence={"remote":300}`，0 个 local fallback；
+中位 3412 ms / p95 3722 ms。`Verify cross-sample isolation` 在同一 run 通过。
+第二轮 `41841717975` 与六份证据重采仍在进行，多轮结论待第二轮完成。
+
+### Issue #185: 失败样本缺 binarySha256，parent SHA 为 null ✅ 已修复（G 轮验证，2026-11-04）
+
+**严重程度**：🟡 Important（证据链）
+
+**现象**：F 轮成功样本记录了 `binarySha256=d843a2f6…`，失败样本 JSON 没有该字段，
+汇总因此显示 `binarySha256=unknown`；所有样本的 `sourceParentSha` 都为 `null`
+（CI checkout `depth=1`）。
+
+**影响**：不改变 298/300 的统计有效性，但削弱“失败样本 ↔ 构建身份”的逐样本绑定，
+也让 provenance 无法证明失败与成功来自同一二进制。
+
+**修复要求**：
+
+- 成功与失败路径写同一份构建身份；失败路径也要计算并写入 `binarySha256`。
+- CI checkout 获取足够历史以解析 parent SHA；解析不到时显式记为 `unknown`，
+  不推测。
+- 汇总器遇到互相矛盾的 SHA 必须 fail closed。
+- 预期 300 个序号连续完整。
+- 增加“故意让一次启动超时，下一次进程/临时目录/SSH fixture 不受污染”的负面测试。
+
+**2026-11-04 修复（代码完成，真实 runner 待复测）**：
+
+- 失败路径透传 `binarySha256`、`stages`、`probe`、`fixture`、`shell`、
+  `marker`、`tempDirectories`；cleanup 失败不再替换 readiness 主错误。
+- stress workflow checkout 改为 `fetch-depth: 2`；parent SHA 解析区分
+  `git` / `unknown` 并记录 `shallow-checkout` / `root-commit` / `command-failed`。
+- 汇总器新增 `--require-provenance`、`--expected-binary-sha256`、
+  `--expected-source-sha`、`--expected-timeout-ms`、`--require-mount remote`；
+  跨样本 SHA 矛盾/缺失、timeout 不一致、成功样本挂 local tab 都会 fail closed。
+- 新增 `verify-cold-start-isolation.mjs`：强制 1 ms 超时 + 正常样本，断言临时目录
+  已删除、fixture 端口不同、binary SHA 相同。
+- 脚本测试 83 项通过。
+
+**G 轮真实验证**：run `41838269784` 的 300 个样本全部
+`sourceSha=ac01091`、`sourceParentSha=7600963`（`source=git`）、
+`binarySha256=0eb823fa…`、`timeoutMs=10000`；严格汇总门禁通过。
+
+### Issue #186: 生产 fallback 截止时间被错传成 8 秒 ✅ 已修复（G 轮验证，2026-11-04）
+
+**严重程度**：🔴 Blocker（冷启动可靠性）
+
+**问题**：`terminal-bootstrap.tsx` 把 `startupDeadlineAt`（App chunk 的 8 秒
+deadline）作为 `startupTerminalFallbackAt` 传给 App；`BOOTSTRAP_TERMINAL_FALLBACK_MS
+= 2_000` 只有定义、没有调用点。生产本地 fallback 因此约 8 秒才触发，10 秒探针
+只剩不到 2 秒。
+
+**证据**：F 轮样本 228 的 `terminal-open-start` detail 为
+`local-1793728115282`，该 id 时间戳 `17:48:35.282Z`；frontend boot 约
+`17:48:27.05`，间隔 8.2 秒。
+
+**修复**：传 `attemptStartedAt + BOOTSTRAP_TERMINAL_FALLBACK_MS`（2 秒）。
+**验证**：`terminal-bootstrap.test.tsx` 断言不再是 app-chunk deadline；真实
+runner 复测待执行。
+
+### Issue #187: 跨样本共享 WKWebView localStorage 导致 recovery journal 污染 ✅ 已修复（G 轮验证，2026-11-04）
+
+**严重程度**：🔴 Blocker（测量完整性）
+
+**问题**：样本 228 与 229 的本地 tab id 都是 `local-1793728115282`，且该 id
+生成时间早于样本 229 的 `capturedAt`。WKWebView 的 localStorage 位于真实用户
+home 的 `~/Library/WebKit/com.baicie.termius`，不受 per-sample HOME 重定向；
+journal 键又固定为 `terminal.workspace.recovery.v1.remote-cold-workspace`。
+样本 228 的 local-only journal 被 229 继承并遮蔽 SQLite 的 remote 布局。
+
+**修复**：
+
+- 产品：local-only journal 不再遮蔽含 remote tab 的 SQLite 布局；layout
+  读取失败/超时/不可恢复时不返回 recovery handle，因此不会写回 local-only
+  快照；用户输入过的 fallback 与远程布局合并。
+- 测量：stress workflow 每个样本前清空 WebKit/Caches/HTTPStorages 数据目录；
+  新增强制超时 + 正常样本的隔离验证。
+
+**限制**：这不能证明 228 的第一因；228 的 recovery 停点需要新分段 trace 在
+真实 runner 上判定。
+
+### Issue #188: 恢复链读取失败被吞、无超时与 host generation 竞态 ✅ 已修复（G 轮验证，2026-11-04）
+
+**严重程度**：🟡 Important（恢复可靠性）
+
+- `loadLayout` 异常被 `console.warn` 吞掉，`savedLayout` 保持 null，recovery
+  仍 resolve 成功，因此不会重试；已改为抛错，交给 App 的有界重试。
+- workspace/layout 查询没有超时；已加 3 秒上限，超时按失败处理。
+- `loadHosts` 的 generation 去重可能让本次查询成功但结果被丢弃，
+  `hostsLoaded=true` 而 hostIds 为空，远程 tab 被过滤；已让 `loadHosts`
+  返回本次行，`null` 表示结果不可用并保留远程 tab。
+- JSON 解析失败的布局不再返回 null（与“没有行”同形），而是抛错。
+- 新增 `startup-recovery-arbiter.ts` 状态机：布局确认不存在才创建 fallback；
+  布局读取中/重试中/已有远程布局时 defer，带 2 秒有界 defer 预算防止永久空白。
+- 新增恢复分段 trace 与 `fallback-decision` / `fallback-opened` 等阶段。
+
+### Issue #189: 隔离门禁与控制样本 readiness 耦合 ✅ 已修复（2026-11-04）
+
+**严重程度**：🟡 Important（测量基础设施）
+
+**问题**：第二轮 300 次（run `41841717975`）的 `Verify cross-sample isolation`
+把 control 样本的 `ok === true` 当成隔离通过条件。control 实际已
+`terminal-mounted ... @remote`、`ssh-connect-start`、`ssh-pty-ready`、
+`ssh-shell-first-output`，只是在 10 秒内没有完成 prompt marker
+（`ssh-prompt-marker-missing`）。隔离步骤因此失败，300 样本被跳过。这不是
+隔离污染，也不是启动失败；控制样本的产品失败应计入 300 样本分母。
+
+**修复**：`verify-cold-start-isolation.mjs` 不再要求 `control.ok === true`，改为
+断言：control 使用不同 fixture 端口、挂载 `remote`、进入 `ssh-connect-start`、
+临时目录已删除、binary SHA 相同；control 的 `error` 仍写入 result。workflow
+对 control 命令加 `|| true`，让 verifier 自己裁定。
+
+**验证**：隔离脚本测试 5 项通过（新增“control 到 SSH 但 prompt marker 失败仍
+ISOLATION_PASS”与“control 未挂载 remote 则 FAIL”）。修复后的第二轮待重跑。
+
+### Issue #190: `--require-mount remote` 用首次挂载误判临时 fallback ✅ 已修复（2026-11-04）
+
+**严重程度**：🟡 Important（测量判据）
+
+**问题**：第二轮 `41843065808` 的样本 37 先挂载本地 fallback，再在 5124 ms 被
+保存的远程布局替换（`restore-layout-committed reason=replaced-startup-fallback`），
+远程 marker 已写入、`markerReady=true`。但 `--require-mount remote` 使用
+**第一次** `terminal-mounted`，把它判成 `37=local`，于是 300 样本的 workflow
+在 `Summarize samples` 以 exit 3 变红。这不是产品失败，是判据过严。
+
+**修复**：`summarize-cold-start-samples.mjs` 新增 `finalMountedTerminalType()`
+（最后一次挂载）；`--require-mount remote` 改用最终挂载；`summary.json` 同时保留
+`mountEvidence`（首次，用于失败分析）与 `finalMountEvidence`（最终，用于门禁）。
+用同一 artifact 复算：**300/300 `RELIABILITY_PASS`**，首次 remote 299/local 1，
+最终 remote 300。workflow 的红色状态保留在 GitHub，不改写为绿；修复后的 clean
+round 另行运行。

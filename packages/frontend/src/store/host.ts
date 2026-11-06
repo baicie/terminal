@@ -21,7 +21,13 @@ export interface HostState {
   getGroupChildren: (parentId: string | null) => Group[]
   getHostsByGroup: (groupId: string | null) => Host[]
   // Actions
-  loadHosts: (signal?: AbortSignal) => Promise<void>
+  /**
+   * Resolve with the rows this call loaded, or `null` when another concurrent
+   * call owns the store generation. Startup recovery must not infer "no hosts"
+   * from a superseded call: that filtered restorable remote tabs and let a
+   * local fallback win (Issue #184).
+   */
+  loadHosts: (signal?: AbortSignal) => Promise<Host[] | null>
   loadGroups: () => Promise<void>
   addHost: (host: Omit<Host, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Host>
   updateHost: (id: string, updates: Partial<Host>) => Promise<void>
@@ -57,7 +63,7 @@ export const useHostStore = create<HostState>((set, get) => {
     },
 
     async loadHosts(signal) {
-      if (signal?.aborted) return
+      if (signal?.aborted) return null
       const generation = ++loadGeneration
       const clearLoadingOnAbort = () => {
         if (generation === loadGeneration) set({ loading: false })
@@ -67,12 +73,14 @@ export const useHostStore = create<HostState>((set, get) => {
       if (signal?.aborted) {
         clearLoadingOnAbort()
         signal.removeEventListener('abort', clearLoadingOnAbort)
-        return
+        return null
       }
       try {
         const rows = await select<HostRow>('SELECT * FROM hosts ORDER BY name')
-        if (signal?.aborted || generation !== loadGeneration) return
-        set({ hosts: rows.map(hostRowToHost), dbAvailable: true })
+        if (signal?.aborted || generation !== loadGeneration) return null
+        const hosts = rows.map(hostRowToHost)
+        set({ hosts, dbAvailable: true })
+        return hosts
       } catch (error) {
         // Check if it's a "not in Tauri context" error
         if (
@@ -82,7 +90,7 @@ export const useHostStore = create<HostState>((set, get) => {
           if (!signal?.aborted && generation === loadGeneration) {
             set({ hosts: [], dbAvailable: false })
           }
-          return
+          return []
         }
         throw error
       } finally {

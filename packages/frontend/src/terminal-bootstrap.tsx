@@ -21,6 +21,7 @@ import { defaultBootstrapDependencies } from './terminal-bootstrap-default-depen
 import {
   BOOTSTRAP_CONFIG_DEADLINE_MS,
   BOOTSTRAP_APP_DEADLINE_MS,
+  BOOTSTRAP_TERMINAL_FALLBACK_MS,
   bootstrapNow,
   loadBootstrapConfig,
 } from './terminal-bootstrap-deadline'
@@ -186,7 +187,11 @@ export async function bootstrapTerminalApp(
   )
   root.render(
     createElement(App, {
-      startupTerminalFallbackAt: startupDeadlineAt,
+      // The app-chunk deadline (8 s) is not the terminal fallback deadline.
+      // Passing it here delayed the local fallback to ~8 s and left only ~2 s
+      // of the 10 s probe budget (Issue #184).
+      startupTerminalFallbackAt:
+        attemptStartedAt + BOOTSTRAP_TERMINAL_FALLBACK_MS,
     }),
   )
   reportMode('app')

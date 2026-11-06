@@ -2123,3 +2123,24 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] Issue #167：冷启动测量收尾的 `ENOTEMPTY` 假红（Mesa 着色器缓存子进程），三处清理统一改用 `maxRetries: 20 / retryDelay: 100`；同一 run 的 Linux job 曾因此把已成功的测量判红。
 - [x] 最终 CI：run `41485572963`（sha `2a29430`）**10/10 全绿**，证据门禁作为阻塞步骤通过。
 - [ ] macOS 远程冷启动稳定性仍**未证明**：同一天 run `41475640293` 该步骤失败（本地冷启动三次全正常、历史 4 次全绿、同提交下一次 run 通过），定性为 Issue #65/#157 的既有 WebKit flake；约 20% 历史失败率未被排除。
+
+### 2026-11-03 Phase 9.4.1 - 修复后冷启动根因收口 🟡 代码与本地门禁完成，实机复测待做
+
+- [x] Issue #181：恢复的远程 tab 不再因 host 查询未完成而被本地 fallback 抢占；
+      `tab === undefined` 时 session hook 保持 disabled，不再误建本地 PTY。
+- [x] Issue #182：汇总器新增 `--expected-samples`、1..N 连续性、sampleIndex 一致性、
+      JSON/结构校验与 `RELIABILITY_PASS` / `MEASUREMENT_COMPLETE_WITH_FAILURES`
+      判词；workflow 在非 PASS 时失败，并记录源码 SHA、二进制 SHA、timeout、
+      runner 与 OS。
+- [x] Issue #183：`ssh-path` 拆成 6 个按最深阶段命名的分类；旧三次运行重新分类。
+- [x] 更正 `docs/phase9-4/cold-start-statistics.md`：修复后 A 293/300、
+      B 291/300，不再标 NOT_RUN。
+- [x] 本地门禁：前端 **152 文件 / 1367 项**、脚本 **383 项**、typecheck、ESLint、
+      source-size 563 文件、actionlint 通过。
+- [x] 修复后实机 300 次已运行：run `41674133535`（`b5c7f46`）294/300（2.00%）。
+      `ssh-request-not-entered-rust` 仍有 2 个（均为本地 fallback），
+      `terminal-not-mounted` 仍有 3 个，`ssh-prompt-marker-missing` 1 个。
+- [ ] 跨样本隔离负面测试未做：故意让一轮超时，验证下一轮、WebKit 子进程、
+      端口/socket/文件锁均干净。
+- [ ] 当前源码改动在 `FINGERPRINT_PATHS` 内，六份验收证据已失效，必须由
+      `real-machine-matrix` 在真实 runner 重采；不得手工修改旧证据。
