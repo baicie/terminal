@@ -820,13 +820,26 @@ async function runMacos(flags) {
           TERMINAL_RECOVERY_STAGES_PATH: recoveryStates,
           TERMINAL_STARTUP_STAGES_PATH: path.join(runRoot, 'recovery-stages.jsonl'),
         })
+        // Wait for the startup verdict before looking at the schema: at the
+        // 10th target the database is already fully migrated, so a schema wait
+        // returns instantly and used to race the verdict write.
+        const recoveryText = await waitFor(
+          () => {
+            if (!existsSync(recoveryStates)) return null
+            const text = readFileSync(recoveryStates, 'utf8')
+            return /"state":"(Recovered|Healthy|ManualInterventionRequired|RestoreInterrupted)"/.test(text)
+              ? text
+              : null
+          },
+          60_000,
+          'startup verdict for team target ' + point,
+        ).catch(() => '')
         await waitForSchema(
           runDb,
           'team_shared_hosts:' + TEAM_MIGRATED_COLUMNS.join(',') +
             ';team_shared_snippets:' + TEAM_MIGRATED_COLUMNS.join(','),
           180_000,
         )
-        const recoveryText = existsSync(recoveryStates) ? readFileSync(recoveryStates, 'utf8') : ''
         const recovered = /"state":"Recovered"/.test(recoveryText)
         if (recovered) recoveriesOk += 1
         recoveryDetails.push(point + ':' + (recovered ? 'Recovered' : 'no-Recovered'))

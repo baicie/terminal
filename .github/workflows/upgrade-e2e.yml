@@ -376,8 +376,11 @@ jobs:
           }
           EOF
           gcc /tmp/egl-default.c -lEGL -o /tmp/egl-default
-          xvfb-run -a /tmp/egl-default
-          EGL_PLATFORM=x11 xvfb-run -a /tmp/egl-default
+          # Diagnostic only: the AppImage scenario records app startup as
+          # NOT_RUN when EGL is unavailable and stays PARTIAL. A flaky Mesa
+          # probe on a shared runner must not fail a payload-only job.
+          xvfb-run -a /tmp/egl-default || true
+          EGL_PLATFORM=x11 xvfb-run -a /tmp/egl-default || true
           EGL_PLATFORM=surfaceless xvfb-run -a /tmp/egl-default || true
       - name: Download published AppImages
         env:
