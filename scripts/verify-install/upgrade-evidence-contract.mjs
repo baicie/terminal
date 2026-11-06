@@ -70,6 +70,7 @@ export const SCENARIO_CONTRACTS = {
       'B migration',
       'data integrity after B',
       'interrupted migration recovery',
+      'product recovery after interruption',
     ],
     requiredFacts: [
       'FAULT_INJECTED',
@@ -77,6 +78,9 @@ export const SCENARIO_CONTRACTS = {
       'NO_PARTIAL_MIGRATION',
       'RECOVERY_SUCCEEDED',
     ],
+    requiredCheckStatus: {
+      'product recovery after interruption': 'PASS',
+    },
     requiredDetail: {
       'interrupted mid-migration': 'missing',
     },

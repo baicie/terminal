@@ -80,9 +80,21 @@ pub async fn backup_database_before_migration<R: Runtime>(
     let pool = super::sqlite_pool(&app).await?;
     let directory = backup_directory(&app)?;
     let destination = unique_destination(&directory)?;
-    let report = snapshot_before_migration(&pool, &destination)
-        .await
-        .map_err(|error| error.to_string())?;
+    // Publish the pending-migration marker before VACUUM starts. A crash between
+    // the snapshot and the first ALTER is then visible on the next start, while a
+    // crash during VACUUM leaves a marker whose missing snapshot is detected as
+    // "nothing was migrated" and cleared without touching the database.
+    let config = directory
+        .parent()
+        .ok_or_else(|| "the backups directory has no parent".to_string())?;
+    crate::db_recovery::write_marker(config, &destination)?;
+    let report = match snapshot_before_migration(&pool, &destination).await {
+        Ok(report) => report,
+        Err(error) => {
+            let _ = crate::db_recovery::clear_marker(config);
+            return Err(error.to_string());
+        }
+    };
     // After the new snapshot is verified, never before: pruning first would drop a
     // good older copy before this call proved it has a replacement.
     prune_old_snapshots(&directory, MAX_SNAPSHOT_COPIES);

@@ -785,10 +785,21 @@ async function runMacos(flags) {
         add('interrupted after backup', 'PASS', 'killed between snapshot-finished and core-schema-finished')
         add('interrupted mid-migration', 'PASS',
           'committed ' + killColumns.join(',') + '; missing ' + missingAtKill.join(','))
+        const recoveryStates = path.join(work, 'b-recovery-states.jsonl')
         child = launch(bBinary, home, path.join(logs, 'b-recovery.log'), {
           TERMINAL_STARTUP_STAGES_PATH: path.join(work, 'b-recovery-stages.jsonl'),
+          TERMINAL_RECOVERY_STAGES_PATH: recoveryStates,
         })
         await waitForSchema(db, 'hosts:' + expectedNewHostColumns.join(','))
+        const recoveryText = existsSync(recoveryStates) ? readFileSync(recoveryStates, 'utf8') : ''
+        const productRecovered = /"state":"Recovered"/.test(recoveryText)
+        add(
+          'product recovery after interruption',
+          productRecovered ? 'PASS' : 'NOT_RUN',
+          productRecovered
+            ? 'startup restored the verified pre-migration snapshot'
+            : 'no Recovered state observed: ' + recoveryText.slice(0, 200),
+        )
         await stopChecked(child)
         await dr(['checkpoint', '--db', db])
         await dr([

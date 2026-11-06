@@ -272,5 +272,21 @@ export async function initializeCoreSchema(
   }
   for (const statement of schemaStatements.slice(15))
     await database.execute(statement)
+  if (pending.length > 0) await clearMigrationMarker()
   traceStage('core-schema-finished', schemaStatements.length + ' statement(s) applied')
+}
+
+/**
+ * The backend writes a pending-migration marker before the snapshot. Only after
+ * every schema statement has succeeded may it be cleared; a failure here is
+ * logged and left for the next startup, which recognizes the completed schema
+ * and clears the stale marker without restoring anything.
+ */
+async function clearMigrationMarker(): Promise<void> {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('database_migration_completed')
+  } catch (error) {
+    console.warn('[Database] could not clear the migration marker:', error)
+  }
 }

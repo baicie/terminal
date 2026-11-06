@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import { RouterProvider } from 'react-router-dom'
 import { Toaster } from '@/components/ui/sonner'
@@ -6,6 +6,12 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import locales from './locales'
 import { router } from './router'
+import { Button } from '@/components/ui/button'
+import {
+  fetchDbRecoveryStatus,
+  recoveryBlocksStartup,
+  type DbRecoveryStatus,
+} from './service/database/recovery-status'
 import { useAppStore } from './store/app'
 import { useTeamStore } from './store/team'
 import { getAppSettings } from './service/database'
@@ -40,6 +46,20 @@ export default function App({ startupTerminalFallbackAt }: AppProps) {
   const initializeTeam = useTeamStore(s => s.initialize)
 
   useTerminalHostWake()
+
+  const [recovery, setRecovery] = useState<{
+    checked: boolean
+    status: DbRecoveryStatus | null
+  }>({ checked: false, status: null })
+
+  const checkRecovery = useCallback(async () => {
+    const status = await fetchDbRecoveryStatus()
+    setRecovery({ checked: true, status })
+  }, [])
+
+  useEffect(() => {
+    void checkRecovery()
+  }, [checkRecovery])
 
   useEffect(() => {
     void initializeTeam()
@@ -93,6 +113,42 @@ export default function App({ startupTerminalFallbackAt }: AppProps) {
     mq.addEventListener('change', onSystemChange)
     return () => mq.removeEventListener('change', onSystemChange)
   }, [theme])
+
+  if (!recovery.checked) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
+        <p className="text-sm text-muted-foreground">
+          {i18n.language.startsWith('zh') ? '正在检查数据库状态…' : 'Checking database state…'}
+        </p>
+      </div>
+    )
+  }
+
+  if (recoveryBlocksStartup(recovery.status)) {
+    const zh = i18n.language.startsWith('zh')
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-background p-6 text-foreground">
+        <div className="max-w-lg space-y-4 rounded-lg border bg-card p-6">
+          <h1 className="text-lg font-semibold">
+            {zh ? '数据库需要人工恢复' : 'Database recovery needs attention'}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {zh
+              ? '检测到未完成的迁移，且没有可安全使用的迁移前备份。应用没有覆盖你的数据库。'
+              : 'A partial migration was detected and no safe pre-migration backup is available. Your database was not overwritten.'}
+          </p>
+          <pre className="max-h-40 overflow-auto rounded bg-muted p-3 text-xs">
+            {recovery.status?.state}
+            {recovery.status?.reason ? '\n' + recovery.status.reason : ''}
+            {recovery.status?.restoredFrom ? '\n' + recovery.status.restoredFrom : ''}
+          </pre>
+          <Button size="sm" onClick={() => void checkRecovery()}>
+            {zh ? '重新检查' : 'Retry'}
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <TooltipProvider>

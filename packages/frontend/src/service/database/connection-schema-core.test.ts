@@ -155,9 +155,11 @@ it('snapshots the database before it runs a single schema statement', async () =
 
   await initializeCoreSchema({ execute, select: connectionWith(legacyTables) })
 
-  expect(invoke).toHaveBeenCalledTimes(1)
-  expect(invoke).toHaveBeenCalledWith('backup_database_before_migration')
+  expect(invoke).toHaveBeenCalledTimes(2)
+  expect(invoke).toHaveBeenNthCalledWith(1, 'backup_database_before_migration')
+  expect(invoke).toHaveBeenNthCalledWith(2, 'database_migration_completed')
   expect(order[0]).toBe('invoke:backup_database_before_migration')
+  expect(order.at(-1)).toBe('invoke:database_migration_completed')
   expect(order.some(entry => entry.startsWith('CREATE TABLE'))).toBe(true)
   expect(info.mock.calls.join(' ')).toContain('/backups/pre-migration-1.db')
   info.mockRestore()
