@@ -12,6 +12,7 @@
  *    statement runs at all and the caller sees the snapshot error.
  */
 
+import { groupMigrationTargets } from './migration-targets'
 import { traceStage } from './startup-trace'
 
 export interface SqliteConnection {
@@ -195,23 +196,6 @@ export async function pendingColumnMigrations(
  * not run a single schema statement, since the migration it is about to perform cannot
  * be undone.
  */
-export interface MigrationTarget {
-  table: string
-  columns: string[]
-}
-
-export function groupMigrationTargets(
-  pending: { table: string; column: string }[],
-): MigrationTarget[] {
-  const grouped = new Map<string, string[]>()
-  for (const item of pending) {
-    const columns = grouped.get(item.table) ?? []
-    if (!columns.includes(item.column)) columns.push(item.column)
-    grouped.set(item.table, columns)
-  }
-  return [...grouped].map(([table, columns]) => ({ table, columns }))
-}
-
 export async function ensurePreMigrationSnapshot(
   pending: ColumnMigration[],
   migrationId = 'core',
