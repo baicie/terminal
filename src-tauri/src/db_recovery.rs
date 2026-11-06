@@ -22,7 +22,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteConnection};
 use sqlx::{Connection, Row};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Manager, Runtime, State};
 
 pub const MARKER_FILE: &str = "migration.pending.json";
 pub const TARGET_COLUMNS: [&str; 2] = ["agent_forwarding", "shell_integration"];
@@ -52,11 +52,61 @@ pub struct RecoveryStatus {
     pub marker_cleared: bool,
 }
 
+/// The one verdict this launch decided. The frontend may read it or ask for a
+/// re-run, but it can never replace RESTORE_INTERRUPTED with a fresh diagnosis.
+#[derive(Debug)]
+pub struct RecoveryVerdict(pub std::sync::Mutex<RecoveryStatus>);
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MigrationTarget {
+    pub table: String,
+    pub columns: Vec<String>,
+}
+
+fn marker_version() -> u32 {
+    1
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct MigrationMarker {
+    #[serde(default = "marker_version")]
+    version: u32,
     snapshot_path: String,
     created_at_ms: u64,
+    /// v1 marker: hosts columns only.
+    #[serde(default)]
     target_columns: Vec<String>,
+    /// v2 marker: every table/column group this migration touches.
+    #[serde(default)]
+    targets: Vec<MigrationTarget>,
+    #[serde(default)]
+    migration_id: String,
+}
+
+impl MigrationMarker {
+    /// v1 markers are rendered as one hosts target; they are never ignored.
+    fn normalized_targets(&self) -> Vec<MigrationTarget> {
+        if !self.targets.is_empty() {
+            return self.targets.clone();
+        }
+        if self.target_columns.is_empty() {
+            return Vec::new();
+        }
+        vec![MigrationTarget {
+            table: "hosts".to_string(),
+            columns: self.target_columns.clone(),
+        }]
+    }
+}
+
+pub fn core_targets() -> Vec<MigrationTarget> {
+    vec![MigrationTarget {
+        table: "hosts".to_string(),
+        columns: TARGET_COLUMNS
+            .iter()
+            .map(|column| column.to_string())
+            .collect(),
+    }]
 }
 
 fn status(state: RecoveryState, reason: impl Into<String>) -> RecoveryStatus {
@@ -115,16 +165,58 @@ fn fsync_file(file: &Path) -> Result<(), String> {
 /// Write the marker before the snapshot: a crash between the marker and the
 /// migration is then visible on the next start instead of silently leaving a
 /// half-migrated database.
-pub fn write_marker(directory: &Path, snapshot: &Path) -> Result<(), String> {
+pub fn write_marker(
+    directory: &Path,
+    snapshot: &Path,
+    migration_id: &str,
+    targets: Vec<MigrationTarget>,
+) -> Result<(), String> {
     fs::create_dir_all(directory)
         .map_err(|error| format!("could not create {}: {error}", directory.display()))?;
+    // Never replace an open marker: the first snapshot is the pre-migration
+    // state, and overwriting it would move the restore point forward. Merge the
+    // new targets into the existing marker instead.
+    let existing = read_marker(directory).ok().flatten();
+    let (snapshot_path, created_at_ms, mut merged_targets, id) = match existing {
+        Some(marker) => (
+            marker.snapshot_path.clone(),
+            marker.created_at_ms,
+            marker.normalized_targets(),
+            if marker.migration_id.is_empty() {
+                migration_id.to_string()
+            } else {
+                format!("{},{}", marker.migration_id, migration_id)
+            },
+        ),
+        None => (
+            snapshot.display().to_string(),
+            now_ms(),
+            Vec::new(),
+            migration_id.to_string(),
+        ),
+    };
+    for target in targets {
+        match merged_targets
+            .iter_mut()
+            .find(|item| item.table == target.table)
+        {
+            Some(item) => {
+                for column in target.columns {
+                    if !item.columns.contains(&column) {
+                        item.columns.push(column);
+                    }
+                }
+            }
+            None => merged_targets.push(target),
+        }
+    }
     let marker = MigrationMarker {
-        snapshot_path: snapshot.display().to_string(),
-        created_at_ms: now_ms(),
-        target_columns: TARGET_COLUMNS
-            .iter()
-            .map(|column| column.to_string())
-            .collect(),
+        version: 2,
+        snapshot_path,
+        created_at_ms,
+        target_columns: Vec::new(),
+        targets: merged_targets,
+        migration_id: id,
     };
     let temporary = directory.join(MARKER_FILE.to_string() + ".tmp");
     let payload = serde_json::to_vec(&marker)
@@ -185,36 +277,54 @@ async fn integrity(path: &Path) -> Result<(), String> {
     result
 }
 
-async fn host_columns(path: &Path) -> Result<Vec<String>, String> {
+async fn table_columns(path: &Path, table: &str) -> Result<Vec<String>, String> {
     let mut connection = open_read_only(path).await?;
-    let rows = sqlx::query("SELECT name FROM pragma_table_info('hosts')")
-        .fetch_all(&mut connection)
-        .await;
+    let sql = format!(
+        "SELECT name FROM pragma_table_info('{}')",
+        table.replace('\'', "''")
+    );
+    let rows = sqlx::query(&sql).fetch_all(&mut connection).await;
     let _ = connection.close().await;
     rows.map(|rows| {
         rows.iter()
             .map(|row| row.get::<String, _>("name"))
             .collect()
     })
-    .map_err(|error| format!("could not read the hosts schema: {error}"))
+    .map_err(|error| format!("could not read the {table} schema: {error}"))
 }
 
-fn has_targets(columns: &[String]) -> bool {
-    TARGET_COLUMNS
-        .iter()
-        .all(|target| columns.iter().any(|column| column == target))
+async fn host_columns(path: &Path) -> Result<Vec<String>, String> {
+    table_columns(path, "hosts").await
 }
 
-fn has_any_target(columns: &[String]) -> bool {
-    TARGET_COLUMNS
-        .iter()
-        .any(|target| columns.iter().any(|column| column == target))
+/// Count how many of the marker's target columns exist in the live schema.
+async fn target_progress(
+    path: &Path,
+    targets: &[MigrationTarget],
+) -> Result<(usize, usize), String> {
+    let mut present = 0usize;
+    let mut total = 0usize;
+    for target in targets {
+        let columns = table_columns(path, &target.table).await?;
+        for column in &target.columns {
+            total += 1;
+            if columns.iter().any(|name| name == column) {
+                present += 1;
+            }
+        }
+    }
+    Ok((present, total))
 }
 
 /// A snapshot is only trusted when it is a different file inside the app's own
 /// backups directory, opens read-only, passes integrity, still has the A-era
 /// hosts schema, and carries the hosts table.
-async fn validate_snapshot(snapshot: &Path, db: &Path, backups: &Path) -> Result<(), String> {
+async fn validate_snapshot(
+    snapshot: &Path,
+    db: &Path,
+    backups: &Path,
+    targets: &[MigrationTarget],
+) -> Result<(), String> {
     if snapshot == db {
         return Err("the marker points at the live database".to_string());
     }
@@ -232,11 +342,12 @@ async fn validate_snapshot(snapshot: &Path, db: &Path, backups: &Path) -> Result
         ));
     }
     integrity(snapshot).await?;
-    let columns = host_columns(snapshot).await?;
-    if columns.is_empty() {
+    let host = host_columns(snapshot).await?;
+    if host.is_empty() {
         return Err("the snapshot has no hosts table".to_string());
     }
-    if has_any_target(&columns) {
+    let (present, _total) = target_progress(snapshot, targets).await?;
+    if present > 0 {
         return Err("the snapshot already contains a migrated schema".to_string());
     }
     Ok(())
@@ -284,6 +395,7 @@ pub async fn restore_from_snapshot(
     snapshot: &Path,
     marker_dir: &Path,
     backups: &Path,
+    targets: &[MigrationTarget],
 ) -> RecoveryStatus {
     let mut stages: Vec<String> = Vec::new();
     fn interrupted(stages: &[String], stage: &str, reason: String) -> RecoveryStatus {
@@ -299,7 +411,7 @@ pub async fn restore_from_snapshot(
     }
     stages.push("QUIESCE".into());
 
-    if let Err(error) = validate_snapshot(snapshot, db, backups).await {
+    if let Err(error) = validate_snapshot(snapshot, db, backups, targets).await {
         return interrupted(&stages, "VERIFY_BACKUP", error);
     }
     stages.push("VERIFY_BACKUP".into());
@@ -320,7 +432,8 @@ pub async fn restore_from_snapshot(
         // the live database rather than in backups/.
         integrity(&temporary).await?;
         let columns = host_columns(&temporary).await?;
-        if columns.is_empty() || has_any_target(&columns) {
+        let (present, _total) = target_progress(&temporary, targets).await?;
+        if columns.is_empty() || present > 0 {
             return Err("the staged snapshot has an unexpected schema".to_string());
         }
         Ok::<(), String>(())
@@ -398,8 +511,15 @@ pub async fn diagnose(db: &Path, marker_dir: &Path, backups: &Path) -> RecoveryS
         };
     };
 
-    let columns = match host_columns(db).await {
-        Ok(columns) => columns,
+    let targets = marker.normalized_targets();
+    if targets.is_empty() {
+        return status(
+            RecoveryState::ManualInterventionRequired,
+            "the migration marker names no target columns; refusing to guess",
+        );
+    }
+    let (present, total) = match target_progress(db, &targets).await {
+        Ok(progress) => progress,
         Err(error) => {
             return status(
                 RecoveryState::ManualInterventionRequired,
@@ -407,19 +527,34 @@ pub async fn diagnose(db: &Path, marker_dir: &Path, backups: &Path) -> RecoveryS
             )
         }
     };
-    if has_targets(&columns) {
+    if present == total {
+        // Columns alone are not proof: verify the file before clearing anything.
+        if let Err(error) = integrity(db).await {
+            return status(
+                RecoveryState::ManualInterventionRequired,
+                format!(
+                    "all target columns exist but integrity_check failed ({error}); marker kept"
+                ),
+            );
+        }
         let cleared = clear_marker(marker_dir).unwrap_or(false);
         let mut status = status(
             RecoveryState::Recovered,
-            "the migration already completed; the stale marker was cleared",
+            "all target columns exist and integrity_check passed; stale marker cleared",
         );
         status.marker_cleared = cleared;
         return status;
     }
-    if !has_any_target(&columns) {
+    if present == 0 {
         // Nothing was applied: the crash happened before the first ALTER, so the
         // database is still the pre-migration database. Keep it and clear the
         // marker; no restore is needed and no file is overwritten.
+        if let Err(error) = integrity(db).await {
+            return status(
+                RecoveryState::ManualInterventionRequired,
+                format!("no migration was applied but integrity_check failed: {error}"),
+            );
+        }
         let cleared = clear_marker(marker_dir).unwrap_or(false);
         let mut status = status(
             RecoveryState::Healthy,
@@ -435,7 +570,7 @@ pub async fn diagnose(db: &Path, marker_dir: &Path, backups: &Path) -> RecoveryS
         "a partial migration was detected; validating the pre-migration snapshot",
     );
     validating.stages.push("VERIFY_BACKUP".into());
-    if let Err(error) = validate_snapshot(&snapshot, db, backups).await {
+    if let Err(error) = validate_snapshot(&snapshot, db, backups, &targets).await {
         return status(
             RecoveryState::ManualInterventionRequired,
             format!("the pre-migration snapshot is not usable: {error}"),
@@ -463,6 +598,11 @@ pub async fn startup_recovery(db: &Path, marker_dir: &Path, backups: &Path) -> R
             "recovery was required but no snapshot path was reported",
         );
     };
+    let targets = read_marker(marker_dir)
+        .ok()
+        .flatten()
+        .map(|marker| marker.normalized_targets())
+        .unwrap_or_default();
     let mut restoring = status(
         RecoveryState::Restoring,
         "restoring the verified pre-migration snapshot",
@@ -474,7 +614,7 @@ pub async fn startup_recovery(db: &Path, marker_dir: &Path, backups: &Path) -> R
         snapshot = %snapshot.display(),
         "db recovery"
     );
-    restore_from_snapshot(db, &snapshot, marker_dir, backups).await
+    restore_from_snapshot(db, &snapshot, marker_dir, backups, &targets).await
 }
 
 /// Resolve the app paths and run the startup decision before the frontend opens
@@ -522,25 +662,60 @@ pub async fn startup_recovery_for<R: Runtime>(app: &AppHandle<R>) -> RecoverySta
 }
 
 #[tauri::command]
-pub async fn db_recovery_status<R: Runtime>(app: AppHandle<R>) -> Result<RecoveryStatus, String> {
-    match (database_path(&app), marker_path(&app), backups_path(&app)) {
-        (Ok(db), Ok(marker), Ok(backups)) => {
-            let marker_dir = marker
-                .parent()
-                .unwrap_or_else(|| Path::new(""))
-                .to_path_buf();
-            Ok(diagnose(&db, &marker_dir, &backups).await)
-        }
-        (Err(error), _, _) | (_, Err(error), _) | (_, _, Err(error)) => Err(error),
-    }
+pub async fn db_recovery_status(
+    verdict: State<'_, RecoveryVerdict>,
+) -> Result<RecoveryStatus, String> {
+    verdict
+        .0
+        .lock()
+        .map(|status| status.clone())
+        .map_err(|_| "the recovery verdict lock is poisoned".to_string())
 }
 
-/// Called by the frontend only after every schema statement has succeeded.
+/// Explicit user retry: re-runs the same startup decision and replaces the
+/// stored verdict only with the result of that run.
+#[tauri::command]
+pub async fn db_recovery_retry<R: Runtime>(
+    app: AppHandle<R>,
+    verdict: State<'_, RecoveryVerdict>,
+) -> Result<RecoveryStatus, String> {
+    let status = startup_recovery_for(&app).await;
+    *verdict
+        .0
+        .lock()
+        .map_err(|_| "the recovery verdict lock is poisoned".to_string())? = status.clone();
+    Ok(status)
+}
+
+/// The backend decides whether a migration may be marked complete: every
+/// target column in the marker must exist and the database must pass
+/// integrity_check. A frontend callback alone is never trusted.
+pub async fn verify_completion(db: &Path, marker_dir: &Path) -> Result<bool, String> {
+    let Some(marker) = read_marker(marker_dir)? else {
+        return Ok(false);
+    };
+    let targets = marker.normalized_targets();
+    if targets.is_empty() {
+        return Err("the migration marker names no target columns".to_string());
+    }
+    integrity(db).await?;
+    let (present, total) = target_progress(db, &targets).await?;
+    if present != total {
+        return Err(format!(
+            "migration completion rejected: {present}/{total} target columns present"
+        ));
+    }
+    clear_marker(marker_dir)
+}
+
+/// Called by the frontend only after every schema statement has succeeded; the
+/// command verifies the marker's targets before clearing it.
 #[tauri::command]
 pub async fn database_migration_completed<R: Runtime>(app: AppHandle<R>) -> Result<bool, String> {
+    let db = database_path(&app)?;
     let marker = marker_path(&app)?;
     let directory = marker.parent().unwrap_or_else(|| Path::new(""));
-    clear_marker(directory)
+    verify_completion(&db, directory).await
 }
 
 #[cfg(test)]
@@ -605,7 +780,7 @@ mod tests {
         create_database(&db, "partial").await;
         // Simulate the first ALTER having been applied: agent_forwarding exists,
         // shell_integration does not. The snapshot is A-era and verified.
-        write_marker(dir.path(), &snapshot).expect("marker");
+        write_marker(dir.path(), &snapshot, "core", core_targets()).expect("marker");
         let result = startup_recovery(&db, dir.path(), &backups).await;
         assert_eq!(result.state, RecoveryState::Recovered, "{:?}", result);
         assert!(result.stages.contains(&"COMPLETE".to_string()));
@@ -625,7 +800,7 @@ mod tests {
     async fn a_missing_snapshot_never_overwrites_the_database() {
         let (dir, db, backups, snapshot) = temp_paths();
         create_database(&db, "a").await;
-        write_marker(dir.path(), &snapshot).expect("marker");
+        write_marker(dir.path(), &snapshot, "core", core_targets()).expect("marker");
         // The marker exists but the snapshot was never written; the live schema
         // has no target columns, so the safe action is to keep it and clear the
         // marker rather than claim a recovery.
@@ -638,9 +813,98 @@ mod tests {
     async fn a_completed_migration_with_a_stale_marker_is_recovered() {
         let (dir, db, backups, _snapshot) = temp_paths();
         create_database(&db, "migrated").await;
-        write_marker(dir.path(), &backups.join("pre-migration-1.db")).expect("marker");
+        write_marker(
+            dir.path(),
+            &backups.join("pre-migration-1.db"),
+            "core",
+            core_targets(),
+        )
+        .expect("marker");
         let result = startup_recovery(&db, dir.path(), &backups).await;
         assert_eq!(result.state, RecoveryState::Recovered);
         assert!(!dir.path().join(MARKER_FILE).exists());
+    }
+    #[tokio::test]
+    async fn completion_guard_rejects_a_partial_target_set_and_keeps_the_marker() {
+        let (dir, db, _backups, snapshot) = temp_paths();
+        create_database(&db, "partial").await;
+        write_marker(dir.path(), &snapshot, "core", core_targets()).expect("marker");
+        let error = verify_completion(&db, dir.path())
+            .await
+            .expect_err("a partial target set must not complete");
+        assert!(error.contains("completion rejected"), "{error}");
+        assert!(dir.path().join(MARKER_FILE).exists());
+
+        let mut connection =
+            SqliteConnection::connect_with(&SqliteConnectOptions::new().filename(&db))
+                .await
+                .expect("database");
+        sqlx::query("ALTER TABLE hosts ADD COLUMN shell_integration TEXT DEFAULT 'off'")
+            .execute(&mut connection)
+            .await
+            .expect("complete the second column");
+        let _ = connection.close().await;
+        assert!(verify_completion(&db, dir.path()).await.expect("verify"));
+        assert!(!dir.path().join(MARKER_FILE).exists());
+    }
+
+    #[tokio::test]
+    async fn a_partial_team_migration_is_restored_without_losing_rows() {
+        let (dir, db, backups, snapshot) = temp_paths();
+        for path in [&snapshot, &db] {
+            let mut connection = SqliteConnection::connect_with(
+                &SqliteConnectOptions::new()
+                    .filename(path)
+                    .create_if_missing(true),
+            )
+            .await
+            .expect("database");
+            sqlx::query("CREATE TABLE hosts (id TEXT PRIMARY KEY)")
+                .execute(&mut connection)
+                .await
+                .expect("hosts table");
+            sqlx::query("CREATE TABLE team_shared_hosts (id TEXT PRIMARY KEY, name TEXT)")
+                .execute(&mut connection)
+                .await
+                .expect("team table");
+            sqlx::query("INSERT INTO team_shared_hosts (id, name) VALUES ('t1', 'kept')")
+                .execute(&mut connection)
+                .await
+                .expect("team row");
+            let _ = connection.close().await;
+        }
+        let mut connection =
+            SqliteConnection::connect_with(&SqliteConnectOptions::new().filename(&db))
+                .await
+                .expect("database");
+        sqlx::query("ALTER TABLE team_shared_hosts ADD COLUMN version INTEGER")
+            .execute(&mut connection)
+            .await
+            .expect("partial team column");
+        let _ = connection.close().await;
+
+        write_marker(
+            dir.path(),
+            &snapshot,
+            "team",
+            vec![MigrationTarget {
+                table: "team_shared_hosts".to_string(),
+                columns: vec!["version".to_string(), "dirty".to_string()],
+            }],
+        )
+        .expect("marker");
+
+        let result = startup_recovery(&db, dir.path(), &backups).await;
+        assert_eq!(result.state, RecoveryState::Recovered, "{result:?}");
+        let columns = table_columns(&db, "team_shared_hosts")
+            .await
+            .expect("columns");
+        assert_eq!(columns, vec!["id".to_string(), "name".to_string()]);
+        let mut connection = open_read_only(&db).await.expect("open");
+        let name: String = sqlx::query_scalar("SELECT name FROM team_shared_hosts WHERE id = 't1'")
+            .fetch_one(&mut connection)
+            .await
+            .expect("row");
+        assert_eq!(name, "kept");
     }
 }

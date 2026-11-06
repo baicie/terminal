@@ -119,7 +119,7 @@ export async function initializeTeamSchema(
   database: SqliteConnection,
 ): Promise<void> {
   const pending = await pendingTeamColumnMigrations(database)
-  if (pending.length > 0) await ensurePreMigrationSnapshot(pending)
+  if (pending.length > 0) await ensurePreMigrationSnapshot(pending, 'team')
   for (const statement of teamSchemaStatements)
     await database.execute(statement)
   for (const migration of teamColumnMigrations) {
@@ -129,5 +129,11 @@ export async function initializeTeamSchema(
       if (isDuplicateColumnError(error)) continue
       throw error
     }
+  }
+  if (pending.length > 0) {
+    // The backend verifies every target column and integrity before clearing
+    // the marker; a failed Team migration keeps it for the next startup.
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('database_migration_completed')
   }
 }

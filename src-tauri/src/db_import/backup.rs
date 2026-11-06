@@ -76,6 +76,8 @@ pub struct BackupReport {
 #[tauri::command]
 pub async fn backup_database_before_migration<R: Runtime>(
     app: AppHandle<R>,
+    targets: Option<Vec<crate::db_recovery::MigrationTarget>>,
+    migration_id: Option<String>,
 ) -> Result<BackupReport, String> {
     let pool = super::sqlite_pool(&app).await?;
     let directory = backup_directory(&app)?;
@@ -87,7 +89,9 @@ pub async fn backup_database_before_migration<R: Runtime>(
     let config = directory
         .parent()
         .ok_or_else(|| "the backups directory has no parent".to_string())?;
-    crate::db_recovery::write_marker(config, &destination)?;
+    let targets = targets.unwrap_or_else(crate::db_recovery::core_targets);
+    let migration_id = migration_id.unwrap_or_else(|| "core".to_string());
+    crate::db_recovery::write_marker(config, &destination, &migration_id, targets)?;
     let report = match snapshot_before_migration(&pool, &destination).await {
         Ok(report) => report,
         Err(error) => {

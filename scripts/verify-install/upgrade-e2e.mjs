@@ -486,7 +486,7 @@ async function runMacos(flags) {
       await delay(1_000)
       await waitFor(() => existsSync(faultLog) && statSync(faultLog).size > 0, 3_000).catch(() => null)
       const faultText = existsSync(faultLog) ? readFileSync(faultLog, 'utf8') : ''
-      const appObserved = /file is not a database|db bootstrap failed|SQLite/i.test(faultText)
+      const appObserved = /file is not a database|db bootstrap failed|SQLite|manual recovery|integrity_check failed/i.test(faultText)
       add(
         'corruption detected by the app',
         appObserved ? 'PASS' : 'NOT_RUN',

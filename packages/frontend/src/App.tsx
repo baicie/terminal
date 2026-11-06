@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import { RouterProvider } from 'react-router-dom'
 import { Toaster } from '@/components/ui/sonner'
@@ -6,10 +6,6 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import locales from './locales'
 import { router } from './router'
-import {
-  fetchDbRecoveryStatus,
-  type DbRecoveryStatus,
-} from './service/database/recovery-status'
 import { useAppStore } from './store/app'
 import { useTeamStore } from './store/team'
 import { getAppSettings } from './service/database'
@@ -44,20 +40,6 @@ export default function App({ startupTerminalFallbackAt }: AppProps) {
   const initializeTeam = useTeamStore(s => s.initialize)
 
   useTerminalHostWake()
-
-  const [recovery, setRecovery] = useState<{
-    checked: boolean
-    status: DbRecoveryStatus | null
-  }>({ checked: false, status: null })
-
-  const checkRecovery = useCallback(async () => {
-    const status = await fetchDbRecoveryStatus()
-    setRecovery({ checked: true, status })
-  }, [])
-
-  useEffect(() => {
-    void checkRecovery()
-  }, [checkRecovery])
 
   useEffect(() => {
     void initializeTeam()
@@ -111,20 +93,6 @@ export default function App({ startupTerminalFallbackAt }: AppProps) {
     mq.addEventListener('change', onSystemChange)
     return () => mq.removeEventListener('change', onSystemChange)
   }, [theme])
-
-  if (!recovery.checked) return null
-
-  if (
-    recovery.status?.state === 'MANUAL_INTERVENTION_REQUIRED' ||
-    recovery.status?.state === 'RESTORE_INTERRUPTED'
-  ) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-background p-6 text-center text-sm text-muted-foreground">
-        Database recovery needs attention: {recovery.status.state}.{' '}
-        {recovery.status.reason}. Restart the application after fixing the issue.
-      </div>
-    )
-  }
 
   return (
     <TooltipProvider>

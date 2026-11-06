@@ -3,6 +3,7 @@ import { isTauri } from '@tauri-apps/api/core'
 import { initializeCoreSchema } from './connection-schema-core'
 import { initializeTeamSchema } from './connection-schema-team'
 import { traceStage, traceStageFailed } from './startup-trace'
+import { assertDatabaseAllowed } from './startup-gate'
 
 async function loadDb() {
   const Database = (await import('@tauri-apps/plugin-sql')).default
@@ -53,6 +54,9 @@ async function establishConnection(): Promise<Database> {
 export async function getDb() {
   if (db) return db
   if (initPromise) return initPromise
+  // The startup gate must decide before any caller reaches SQLite; this is the
+  // second line of defence behind the root component.
+  assertDatabaseAllowed()
   if (!isTauri()) throw new Error('Database only available in Tauri context')
   initPromise = establishConnection()
   return initPromise
