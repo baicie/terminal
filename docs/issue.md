@@ -5157,6 +5157,13 @@ PASS；安装 B/fsync ENOSPC、Windows、Vault app-level、Team Sync 跨版本�
 updater 运行时、AppImage stock 仍 NOT_RUN；见
 `docs/phase9-5/phase9-5-5-implementation.md`。
 
+**Phase 9.6**：产品启动恢复状态机落地——迁移标记、部分迁移检测、已验证
+快照自动恢复、无快照 MANUAL 不覆盖、恢复 UI 与脱敏状态；E2E
+`42146486221` 的 interrupted 报告 `product recovery after interruption=PASS`。
+证据按官方流程重采（run `42158238718`，指纹 `47c25a03…`）。Windows NSIS、
+Vault app-level、Team Sync 跨版本、updater 运行时、安装 ENOSPC 仍
+NOT_RUN/PARTIAL；见 `docs/phase9-6/implementation.md`。
+
 ### Issue #192: Windows 安装验证实际未隔离且会删除真实 APPDATA 🟡 BLOCKED_EXTERNAL（2026-11-05）
 
 **严重程度**：🔴 Blocker（故障测试安全）

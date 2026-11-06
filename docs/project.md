@@ -925,11 +925,24 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 | Recovery retry | 独立 retry 进程：6 阶段 `restored`、2 阶段 `already-restored`；最终只留备份 DB |
 | Busy checkpoint | 真实第二连接测试 PASS |
 | ENOSPC | staged restore（macOS DMG + Linux tmpfs）与产品迁移 disk-full（64 MB DMG：0/2 新列、数据可读、释放后收敛）均实测；安装 B/fsync NOT_RUN |
-| 未完成 | 备份/迁移/安装 ENOSPC、Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock；产品启动时自动恢复 NOT_RUN |
+| 未完成 | 安装 ENOSPC、Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock；产品启动恢复已由 Phase 9.6 补齐 |
 | 判定 | `PHASE_9_5_4_ENGINEERING_COMPLETE=PARTIAL`；RC/Release NO |
 
 详见 `docs/phase9-5/phase9-5-4-implementation.md`。
 
+
+
+### Phase 9.6 - Product Recovery & Cross-Platform RC Closure 🟡 P0 产品恢复完成
+
+| 领域 | 结果 |
+| --- | --- |
+| 产品自动恢复 | Rust `db_recovery`：迁移标记、启动检测、快照校验、8 阶段恢复；部分迁移自动恢复，无有效快照 MANUAL 不覆盖；E2E interrupted `product recovery=PASS` |
+| 恢复 UI | MANUAL/RESTORE_INTERRUPTED 阻断并显示脱敏状态；不提供危险覆盖操作 |
+| 证据 | 官方重采 run `42158238718`，指纹 `47c25a03…`，门禁 0 problem；CI `42160597380` 11/11 |
+| 未完成 | Windows NSIS、Vault app-level、Team Sync 跨版本、updater 运行时、安装 ENOSPC、AppImage stock |
+| 判定 | `PHASE_9_6_ENGINEERING_COMPLETE=PARTIAL`；RC/Release NO |
+
+详见 `docs/phase9-6/implementation.md`。
 
 
 ---

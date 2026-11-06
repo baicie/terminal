@@ -49,6 +49,7 @@
 
 ## 3. 证据与 CI
 
+- E2E `42162439728`（`8a7a0e4`，含恢复阻断 UI）**5/5 success**；
 - E2E `42146486221`（`b460faf`）**5/5 success**；macOS current 的 interrupted
   报告 `product recovery after interruption = PASS`，detail 为
   “startup restored the verified pre-migration snapshot”，随后 B 迁移收敛、

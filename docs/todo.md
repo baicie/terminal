@@ -2263,3 +2263,15 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [ ] ENOSPC：备份 VACUUM、migration/WAL、安装 B。
 - [ ] Windows 进程树探针（无 pgrep）与 Windows A→B。
 - [ ] Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock。
+
+### 2026-11-06 Phase 9.6 - 产品恢复与跨平台 RC 收口 🔄 进行中
+
+- [x] 产品启动 `db_recovery` 状态机：标记、检测、快照校验、8 阶段恢复、脱敏状态。
+- [x] 部分迁移自动恢复；无有效快照 MANUAL 且不覆盖；二次启动幂等。
+- [x] 恢复 UI 阻断与脱敏诊断；E2E `product recovery after interruption=PASS`。
+- [x] 官方证据重采（`42158238718`，指纹 `47c25a03…`，0 problem）。
+- [ ] Windows NSIS A→B（一次性 profile/VM）。
+- [ ] Vault app-level unlock/change_password（Tauri command→UI）。
+- [ ] Team Sync 跨版本客户端。
+- [ ] updater 运行时链（需正式/临时签名）。
+- [ ] 安装 B/fsync ENOSPC、AppImage stock 启动。
