@@ -586,11 +586,11 @@ async function runMacos(flags) {
         add('read-only recovery', 'FAIL', errorMessage(error))
       }
       reportJson.schema.afterTables = execFileSyncSqlite(
-        lastRunDb,
+        db,
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
       )
       reportJson.schema.afterHostColumns = execFileSyncSqlite(
-        lastRunDb,
+        db,
         "SELECT name FROM pragma_table_info('hosts')",
       )
       reportJson.schema.addedHostColumns = reportJson.schema.afterHostColumns

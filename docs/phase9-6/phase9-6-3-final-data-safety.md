@@ -2,7 +2,7 @@
 
 > 日期：2026-11-06
 > 分支：`feat/phase9-5-upgrade-integrity`（PR #8 Draft）
-> 代码 HEAD：`151c990`
+> 代码 HEAD：`8e34d31`（最终 E2E 构建点；证据矩阵在 `151c990` 上采集，两者仅差 `scripts/verify-install`，不在证据指纹内）
 > 基线：PR #7 `00715d6`（Open）、PR #8 `bc49d66`（Draft）、证据指纹 `c138d564…`
 
 ## 1. 实际复现的缺陷
@@ -62,7 +62,7 @@
 | 脚本 | verify-install 75 项（4 skipped） |
 | Team SIGKILL | 1/3/5/10 目标点；快照/标记/恢复/幂等/字段级数据断言 |
 | Upgrade E2E | run `42241399575`（`151c990`）**5/5 success**；Team 场景 4/4 目标点全部 PASS |
-| 证据重采 | run `42245189022`（`151c990`），取回后回填指纹 |
+| 证据重采 | run `42245189022` 3/3 success，指纹 **`9bad378d…`**（debug `b1bb9fd1…`、release `e04080f3…`），官方门禁 0 problem |
 | 最终 CI | 待证据提交后回填 |
 
 ## 4. 判定
@@ -80,7 +80,7 @@ TEAM_APPLICATION_SIGKILL_E2E=PASS
 RECOVERY_VERDICT_CONSISTENT=PASS
 WINDOWS_FILESYSTEM_RECOVERY_VERIFIED=PARTIAL
 UPGRADE_E2E_CURRENT_HEAD=PASS
-EVIDENCE_FINGERPRINT_VALID=待重采
+EVIDENCE_FINGERPRINT_VALID=PASS
 PHASE_9_6_3_ENGINEERING_COMPLETE=PARTIAL
 PHASE_9_7_ENTRY_READY=PARTIAL
 PR_8_INTEGRATION_READY=待最终 CI
