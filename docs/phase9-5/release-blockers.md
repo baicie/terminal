@@ -109,7 +109,7 @@
 - Windows 目录 fsync 使用 `FILE_FLAG_BACKUP_SEMANTICS`；仅
   `ERROR_INVALID_FUNCTION` 视为该卷不支持。真实 Windows `cargo test` **NOT_RUN**。
 - 多实例恢复锁 **NOT_RUN**。
-- E2E `42174132285`（`bf6e392`）5/5，interrupted/corrupt 通过。
+- E2E `42179513200`（`efb96aa`）5/5，interrupted/corrupt 通过；证据 `42179506989` 指纹 `3fd0148a…`，门禁 0。
 
 ## 6. 判定
 

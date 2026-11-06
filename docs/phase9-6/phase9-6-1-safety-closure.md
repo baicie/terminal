@@ -2,7 +2,7 @@
 
 > 日期：2026-11-06
 > 分支：`feat/phase9-5-upgrade-integrity`（PR #8 Draft）
-> 代码 HEAD：`a0df771`
+> 代码 HEAD：`efb96aa`
 
 ## 1. 审计发现的真实缺陷
 
@@ -72,7 +72,7 @@ READY_FOR_RELEASE=NO
 | 启动门禁 fail-closed | `startup-gate.test.tsx` 14 项（9 状态 + Tauri 失败 + 非 Tauri + Retry + StrictMode）；`getDb` 守卫 |
 | 业务 SQL 阻断 | 阻断状态不挂载 App；`connection.ts` 在 pending/blocked 抛错 |
 | 裁决持久化 | `RecoveryVerdict` + `db_recovery_status` 只读 + `db_recovery_retry`；E2E 启动读取同一裁决。未单独断言“不重新 diagnose”，故 PARTIAL |
-| Core 恢复 | Rust `a_partial_migration_is_restored...`；E2E `42174132285`（`bf6e392`）interrupted `product recovery=PASS` |
+| Core 恢复 | Rust `a_partial_migration_is_restored...`；E2E `42179513200`（`efb96aa`）interrupted `product recovery=PASS` |
 | Team 恢复 | Rust `a_partial_team_migration_is_restored_without_losing_rows`（真实 SQLite，业务行保留）；真实 Team 应用迁移 SIGKILL **NOT_RUN** |
 | 标记协议 | v2 targets/migrationId、合并写入、v1 兼容；Rust 6 项测试 |
 | 完成守卫 | `completion_guard_rejects_a_partial_target_set_and_keeps_the_marker` |
@@ -80,6 +80,6 @@ READY_FOR_RELEASE=NO
 | crash safety | `restore-crash-matrix` 8/8 + E2E interrupted |
 | 多实例 | **NOT_RUN**（无恢复锁/并发启动测试） |
 | Windows FS | `cfg(windows)` backup-semantics + only ERROR_INVALID_FUNCTION tolerated + Windows-only test；未在 windows runner 执行 cargo test → PARTIAL |
-| E2E | run `42174132285`（`bf6e392`）**5/5**；corrupt/interrupted 均通过 |
-| 证据指纹 | run `42174128131`，`docs/verification/evidence-manifest.json` `fbfa5a00…`，门禁 0 problem |
+| E2E | run `42179513200`（`efb96aa`）**5/5**；corrupt/interrupted 均通过 |
+| 证据指纹 | run `42179506989`，`docs/verification/evidence-manifest.json` `3fd0148a…`，门禁 0 problem |
 
