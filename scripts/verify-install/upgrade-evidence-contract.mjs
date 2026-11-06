@@ -93,6 +93,7 @@ export const SCENARIO_CONTRACTS = {
       'team marker after kills',
       'core complete team incomplete not healthy',
       'pre-migration backup',
+      'team completion clears marker',
       'team product recovery',
       'team data preserved',
       'team idempotent relaunch',

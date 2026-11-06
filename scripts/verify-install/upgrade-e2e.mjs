@@ -760,6 +760,8 @@ async function runMacos(flags) {
       let recoveriesOk = 0
       let dataOk = 0
       let idempotentOk = 0
+      let completionOk = 0
+      const recoveryDetails = []
 
       for (const point of killPoints) {
         const runRoot = path.join(work, 'team-kill-' + point)
@@ -825,7 +827,19 @@ async function runMacos(flags) {
           180_000,
         )
         const recoveryText = existsSync(recoveryStates) ? readFileSync(recoveryStates, 'utf8') : ''
-        if (/"state":"Recovered"/.test(recoveryText)) recoveriesOk += 1
+        const recovered = /"state":"Recovered"/.test(recoveryText)
+        if (recovered) recoveriesOk += 1
+        recoveryDetails.push(point + ':' + (recovered ? 'Recovered' : 'no-Recovered'))
+        // The completion callback runs after the last Team ALTER (and after the
+        // smoke delay). Stopping before it would leave the marker behind and
+        // make the next launch look like a second recovery instead of an
+        // idempotent one.
+        const completed = await waitFor(
+          () => !existsSync(markerFile),
+          60_000,
+          'team marker cleared after recovery',
+        ).then(() => true).catch(() => false)
+        if (completed) completionOk += 1
         await stopChecked(child)
         await dr(['checkpoint', '--db', runDb])
         try {
@@ -838,18 +852,23 @@ async function runMacos(flags) {
           // counted as a failure below
         }
 
-        // A second launch must be idempotent: no pending marker, no recovery,
-        // and the same verified data.
-        child = launch(bBinary, runHome, path.join(logs, 'b-team-idempotent-' + point + '.log'), {
-          TERMINAL_RECOVERY_STAGES_PATH: path.join(runRoot, 'idempotent.jsonl'),
-        })
-        await delay(5_000)
-        await stopChecked(child)
+        // A second launch must be idempotent: the startup decision is Healthy
+        // (no pending marker, no second recovery) and the data stays verified.
         const idempotentStates = path.join(runRoot, 'idempotent.jsonl')
+        child = launch(bBinary, runHome, path.join(logs, 'b-team-idempotent-' + point + '.log'), {
+          TERMINAL_RECOVERY_STAGES_PATH: idempotentStates,
+        })
+        const healthy = await waitFor(
+          () => existsSync(idempotentStates) &&
+            /"state":"Healthy"/.test(readFileSync(idempotentStates, 'utf8')),
+          60_000,
+          'healthy idempotent startup',
+        ).then(() => true).catch(() => false)
+        await stopChecked(child)
         const idempotentText = existsSync(idempotentStates) ? readFileSync(idempotentStates, 'utf8') : ''
         const markerGone = !existsSync(markerFile)
         const noRecovery = !/"state":"Recovered"/.test(idempotentText)
-        if (markerGone && noRecovery) idempotentOk += 1
+        if (markerGone && noRecovery && healthy) idempotentOk += 1
       }
 
       add('team kill points', killsObserved === killPoints.length ? 'PASS' : 'FAIL', killDetails.join(' '))
@@ -861,8 +880,11 @@ async function runMacos(flags) {
         markersOk + '/' + killPoints.length + ' markers name their transaction')
       add('core complete team incomplete not healthy', coreDoneTeamPartial >= killPoints.length - 1 ? 'PASS' : 'FAIL',
         'Core done, Team partial, marker still pending')
+      add('team completion clears marker', completionOk === killPoints.length ? 'PASS' : 'FAIL',
+        completionOk + '/' + killPoints.length + ' recovery launches cleared the pending marker')
       add('team product recovery', recoveriesOk === killPoints.length ? 'PASS' : 'FAIL',
-        recoveriesOk + '/' + killPoints.length + ' startups reported Recovered')
+        recoveriesOk + '/' + killPoints.length + ' startups reported Recovered (' +
+          recoveryDetails.join(' ') + ')')
       add('team data preserved', dataOk === killPoints.length ? 'PASS' : 'FAIL',
         dataOk + '/' + killPoints.length + ' databases verified field by field')
       add('team idempotent relaunch', idempotentOk === killPoints.length ? 'PASS' : 'FAIL',
