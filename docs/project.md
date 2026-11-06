@@ -961,6 +961,21 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 
 详见 `docs/phase9-6/phase9-6-1-safety-closure.md`。
 
+### Phase 9.6.2 - Migration Transaction & Recovery Concurrency Closure 🟡 标记/锁/门禁收口
+
+| 领域 | 结果 |
+| --- | --- |
+| 标记生命周期 | 损坏/未知版本 fail-closed；备份失败只回滚本次创建；合并保留旧快照 |
+| 快照 pin | `active_snapshot` 固定保留活动标记引用的快照 |
+| 并发恢复 | `RecoveryLock` OS 文件锁；第二实例 fail-closed；真实双进程 E2E NOT_RUN |
+| 前端门禁 | `getDb` 先断言；`select` 传播门禁拒绝；4 项测试 |
+| Windows | windows-latest 实跑 `cargo test --lib db_recovery` 9 passed；目录 flush 容忍 `ERROR_ACCESS_DENIED` |
+| 证据 | E2E `42189361366` 5/5；证据 `42214762202` 指纹 `c138d564…`，门禁 0 |
+| 未完成 | Team 应用级 SIGKILL、Windows 完整文件系统矩阵/NSIS、双进程并发 E2E |
+| 判定 | `PHASE_9_6_2_ENGINEERING_COMPLETE=PARTIAL`；RC/Release NO |
+
+详见 `docs/phase9-6/phase9-6-2-recovery-concurrency.md`。
+
 ---
 
 ## 待办事项

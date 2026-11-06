@@ -2284,6 +2284,18 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] 后端完成校验；Team 迁移成功清理标记。
 - [x] 备份 canonicalization 与符号链接边界。
 - [x] Windows 目录 fsync backup-semantics 实现。
-- [ ] 多实例恢复锁与并发启动。
-- [ ] 真实 Windows `cargo test` / 非破坏性文件系统矩阵。
+- [x] 多实例恢复锁（`RecoveryLock`）；真实双进程并发启动 E2E 仍未做。
+- [x] 真实 Windows `cargo test --lib db_recovery`（9 passed，job `127803321020`）；非破坏性文件系统矩阵仍未做。
 - [ ] Team 应用级 SIGKILL E2E（当前仅 Rust 状态机测试）。
+
+### 2026-11-06 Phase 9.6.2 - 迁移事务与恢复并发收口 ✅ 实现完成，部分 E2E 待补
+
+- [x] 损坏/未知版本标记 fail-closed；备份失败只回滚本次创建。
+- [x] 活动快照 pin，清理不再误删恢复点。
+- [x] `RecoveryLock` 跨进程锁；第二实例 fail-closed。
+- [x] 前端 `getDb`/`select` 门禁缓存绕过修复（4 项测试）。
+- [x] Windows 目录 flush `ERROR_ACCESS_DENIED` 修复，原生恢复测试 9/9。
+- [x] 证据官方重采 `42214762202`，指纹 `c138d564…`，门禁 0。
+- [ ] 两个真实进程并发启动/迁移/恢复 E2E。
+- [ ] Team 应用级 SIGKILL E2E。
+- [ ] Windows 完整文件系统矩阵与 NSIS A→B。

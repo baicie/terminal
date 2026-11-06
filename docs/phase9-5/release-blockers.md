@@ -111,6 +111,20 @@
 - 多实例恢复锁 **NOT_RUN**。
 - E2E `42179513200`（`efb96aa`）5/5，interrupted/corrupt 通过；证据 `42179506989` 指纹 `3fd0148a…`，门禁 0。
 
+## 5.2 Phase 9.6.2 迁移事务与恢复并发
+
+- 标记损坏/未知版本 fail-closed：`read_marker`/`validate_marker` 返回错误，
+  新事务不会覆盖；备份失败只回滚本次创建的标记。
+- 活动快照 pin：`active_snapshot` + `prune_old_snapshots(pinned)`。
+- 跨进程恢复锁：`RecoveryLock`（OS 文件锁），启动与备份持有到完成；
+  第二实例 fail-closed。真实双进程并发 E2E **NOT_RUN**。
+- 前端门禁缓存绕过：`getDb` 先断言门禁，`select` 传播拒绝；4 项测试。
+- Windows：windows-latest 实跑 `cargo test --lib db_recovery` **9 passed**
+  （job `127803321020`）；修复目录 flush `ERROR_ACCESS_DENIED`；
+  完整文件系统矩阵/NSIS A→B 仍 **NOT_RUN**。
+- E2E `42189361366`（`af33ea2`）5/5；证据 `42214762202`（`7df9e3a`）指纹
+  `c138d564…`，门禁 0 problem。
+
 ## 6. 判定
 
 | 判定 | 结果 |

@@ -5171,6 +5171,15 @@ TARGET_COLUMNS 只覆盖 hosts、完成通知只信任前端、Windows 目录 fs
 校验；快照 canonicalization；Windows backup-semantics。E2E `42174132285` 5/5，
 证据 `42174128131` 指纹 `fbfa5a00…`。多实例锁与真实 Windows 测试仍 NOT_RUN。
 
+**Phase 9.6.2**：修复损坏/未知版本标记被覆盖、备份失败误删旧事务标记、
+清理误删活动快照、缺跨进程恢复锁、`getDb` 缓存绕过门禁。新增
+`RecoveryLock`（OS 文件锁）与活动快照 pin；`getDb` 门禁前置、`select` 不再
+吞掉门禁拒绝。Windows runner 实跑 `cargo test --lib db_recovery`
+**9 passed**（job `127803321020`），并修复目录 flush 的 `ERROR_ACCESS_DENIED`。
+E2E `42189361366` 5/5，证据 `42214762202` 指纹 `c138d564…`。真实双进程并发
+启动、Team 应用级 SIGKILL、Windows 完整文件系统矩阵/NSIS 仍 NOT_RUN/PARTIAL；
+见 `docs/phase9-6/phase9-6-2-recovery-concurrency.md`。
+
 ### Issue #192: Windows 安装验证实际未隔离且会删除真实 APPDATA 🟡 BLOCKED_EXTERNAL（2026-11-05）
 
 **严重程度**：🔴 Blocker（故障测试安全）
