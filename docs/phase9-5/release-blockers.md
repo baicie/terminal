@@ -56,7 +56,7 @@
 | dev.1 → 当前源码升级 | **PASS**（macOS CI 当前 HEAD 构建；见 `ci-current-version-upgrade.md`） |
 | Linux AppImage 同路径替换 | 见 `linux-upgrade-verification.md`（内部版本元数据不可读） |
 | 跨版本回滚 B→A | **PASS（读取）/ PARTIAL**；无产品回滚状态机 |
-| 升级失败自动回滚 | **NOT_RUN**（产品没有自动回滚） |
+| 升级失败自动回滚 | **PASS（Phase 9.6，部分迁移）**：启动检测未完成迁移并从已验证快照自动恢复；无有效快照时 MANUAL，不覆盖数据库。E2E `42146486221` 的 interrupted 报告 `product recovery after interruption=PASS`。完整回滚到旧安装包仍 **NOT_RUN** |
 | migration 抛错/只读/损坏/重启 | **PASS**（见 `rollback-and-recovery.md`） |
 | 升级中途 kill | **PASS**（第一条列提交后 SIGKILL，重启收敛） |
 | WAL/恢复顺序 | **PASS（恢复协议）**：checkpoint/sidecar/最早备份/A 启动 + 8 阶段真实崩溃矩阵；ENOSPC 仅 staged restore |
@@ -65,7 +65,7 @@
 | 进程生命周期 | **PASS（macOS/Linux，Phase 9.5.5）**：stop 严格 fail-closed + 四事实 quiescence（process/streams/process-tree/lsof DB）；E2E 10 份报告全 PASS；Windows 无 pgrep，NOT_RUN |
 | 真实 crash-point | **PASS（Phase 9.5.4）**：独立 worker 在 8/8 阶段真实 SIGKILL + control；PID 归属、精确文件集、integrity/content 全断言（见 `real-crash-point-matrix.md`） |
 | ENOSPC | **PARTIAL（Phase 9.5.5）**：staged restore（macOS DMG + Linux tmpfs）与产品迁移 disk-full（64 MB DMG：0/2 新列、数据可读、释放后收敛）均实测；安装 B/fsync **NOT_RUN**，迁移失败点未归因到具体错误码（见 `enospc-verification.md`） |
-| 恢复 crash point / 重试 | **PASS（恢复协议）**：崩溃后独立 retry，6 阶段 `restored`、2 阶段 `already-restored`；**产品启动时自动恢复仍 NOT_RUN** |
+| 恢复 crash point / 重试 | **PASS**：Harness 独立 retry + 产品启动 `db_recovery` 状态机（`src-tauri/src/db_recovery.rs`）自动恢复；中断恢复 E2E 实测 |
 | 备份恢复 | **PASS**（端到端复制备份并用 A 读回；Harness 恢复已改为独立 worker） |
 | 磁盘满/安装介质只读 | **NOT_RUN**（未实现确定性 fixture） |
 | Linux 故障注入 | **NOT_RUN**（本轮只做正常 A→B） |
