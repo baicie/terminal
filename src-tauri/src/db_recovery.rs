@@ -354,23 +354,31 @@ async fn validate_snapshot(
     backups: &Path,
     targets: &[MigrationTarget],
 ) -> Result<(), String> {
-    if snapshot == db {
+    // Canonicalize before trusting the path: a symlink inside backups/ must not
+    // let a marker point at an arbitrary file elsewhere on disk.
+    let canonical_backups = fs::canonicalize(backups)
+        .map_err(|error| format!("the backups directory is unusable: {error}"))?;
+    let canonical_db = fs::canonicalize(db)
+        .map_err(|error| format!("the live database is unreadable: {error}"))?;
+    let canonical_snapshot = fs::canonicalize(snapshot).map_err(|error| {
+        format!(
+            "the snapshot does not exist or cannot be resolved: {} ({error})",
+            snapshot.display()
+        )
+    })?;
+    if canonical_snapshot == canonical_db {
         return Err("the marker points at the live database".to_string());
     }
-    let parent = snapshot.parent().unwrap_or_else(|| Path::new(""));
-    if parent != backups {
+    if canonical_snapshot.parent() != Some(canonical_backups.as_path()) {
         return Err(format!(
             "the snapshot is outside the backups directory: {}",
             snapshot.display()
         ));
     }
-    if !snapshot.exists() {
-        return Err(format!(
-            "the snapshot does not exist: {}",
-            snapshot.display()
-        ));
+    if !canonical_snapshot.is_file() {
+        return Err("the snapshot is not a regular file".to_string());
     }
-    integrity(snapshot).await?;
+    integrity(&canonical_snapshot).await?;
     let host = host_columns(snapshot).await?;
     if host.is_empty() {
         return Err("the snapshot has no hosts table".to_string());
@@ -875,6 +883,20 @@ mod tests {
         let _ = connection.close().await;
         assert!(verify_completion(&db, dir.path()).await.expect("verify"));
         assert!(!dir.path().join(MARKER_FILE).exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_symlinked_snapshot_outside_the_backups_directory_is_rejected() {
+        let (dir, db, backups, snapshot) = temp_paths();
+        create_database(&db, "a").await;
+        let outside = dir.path().join("outside.db");
+        create_database(&outside, "a").await;
+        std::os::unix::fs::symlink(&outside, &snapshot).expect("symlink");
+        let error = validate_snapshot(&snapshot, &db, &backups, &core_targets())
+            .await
+            .expect_err("a symlink outside backups must be rejected");
+        assert!(error.contains("outside the backups directory"), "{error}");
     }
 
     #[tokio::test]
