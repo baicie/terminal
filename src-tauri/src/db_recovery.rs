@@ -144,11 +144,40 @@ fn now_ms() -> u64 {
         .unwrap_or_default()
 }
 
+#[cfg(unix)]
 fn fsync_dir(directory: &Path) -> Result<(), String> {
     let file = File::open(directory)
         .map_err(|error| format!("could not open {} for fsync: {error}", directory.display()))?;
     file.sync_all()
         .map_err(|error| format!("could not fsync {}: {error}", directory.display()))
+}
+
+/// Windows cannot open a directory with `File::open`; a backup-semantics handle
+/// is required. `FlushFileBuffers` on a directory handle is not supported by
+/// every filesystem, so only `ERROR_INVALID_FUNCTION` is treated as "this
+/// volume has no directory flush" and recorded; every other failure is real.
+#[cfg(windows)]
+fn fsync_dir(directory: &Path) -> Result<(), String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    const ERROR_INVALID_FUNCTION: i32 = 1;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(directory)
+        .map_err(|error| format!("could not open {} for fsync: {error}", directory.display()))?;
+    match file.sync_all() {
+        Ok(()) => Ok(()),
+        Err(error) if error.raw_os_error() == Some(ERROR_INVALID_FUNCTION) => {
+            tracing::warn!(
+                target: "startup",
+                directory = %directory.display(),
+                "directory flush is not supported by this Windows volume"
+            );
+            Ok(())
+        }
+        Err(error) => Err(format!("could not fsync {}: {error}", directory.display())),
+    }
 }
 
 fn fsync_file(file: &Path) -> Result<(), String> {
@@ -906,5 +935,26 @@ mod tests {
             .await
             .expect("row");
         assert_eq!(name, "kept");
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_fs_tests {
+    use super::*;
+
+    /// Runs on a real Windows host (`cargo test`): marker publication, removal
+    /// and directory flush must work with backup-semantics handles.
+    #[test]
+    fn marker_roundtrip_and_directory_flush_on_windows() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let snapshot = dir.path().join("backups").join("pre-migration-1.db");
+        std::fs::create_dir_all(snapshot.parent().expect("backups parent"))
+            .expect("backups directory");
+        std::fs::write(&snapshot, b"SQLite format 3\0").expect("snapshot file");
+        write_marker(dir.path(), &snapshot, "core", core_targets()).expect("write marker");
+        assert!(dir.path().join(MARKER_FILE).exists());
+        clear_marker(dir.path()).expect("clear marker");
+        assert!(!dir.path().join(MARKER_FILE).exists());
+        fsync_dir(dir.path()).expect("flush directory");
     }
 }
