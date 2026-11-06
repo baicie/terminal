@@ -6,10 +6,8 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import locales from './locales'
 import { router } from './router'
-import { Button } from '@/components/ui/button'
 import {
   fetchDbRecoveryStatus,
-  recoveryBlocksStartup,
   type DbRecoveryStatus,
 } from './service/database/recovery-status'
 import { useAppStore } from './store/app'
@@ -114,38 +112,16 @@ export default function App({ startupTerminalFallbackAt }: AppProps) {
     return () => mq.removeEventListener('change', onSystemChange)
   }, [theme])
 
-  if (!recovery.checked) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
-        <p className="text-sm text-muted-foreground">
-          {i18n.language.startsWith('zh') ? '正在检查数据库状态…' : 'Checking database state…'}
-        </p>
-      </div>
-    )
-  }
+  if (!recovery.checked) return null
 
-  if (recoveryBlocksStartup(recovery.status)) {
-    const zh = i18n.language.startsWith('zh')
+  if (
+    recovery.status?.state === 'MANUAL_INTERVENTION_REQUIRED' ||
+    recovery.status?.state === 'RESTORE_INTERRUPTED'
+  ) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-background p-6 text-foreground">
-        <div className="max-w-lg space-y-4 rounded-lg border bg-card p-6">
-          <h1 className="text-lg font-semibold">
-            {zh ? '数据库需要人工恢复' : 'Database recovery needs attention'}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {zh
-              ? '检测到未完成的迁移，且没有可安全使用的迁移前备份。应用没有覆盖你的数据库。'
-              : 'A partial migration was detected and no safe pre-migration backup is available. Your database was not overwritten.'}
-          </p>
-          <pre className="max-h-40 overflow-auto rounded bg-muted p-3 text-xs">
-            {recovery.status?.state}
-            {recovery.status?.reason ? '\n' + recovery.status.reason : ''}
-            {recovery.status?.restoredFrom ? '\n' + recovery.status.restoredFrom : ''}
-          </pre>
-          <Button size="sm" onClick={() => void checkRecovery()}>
-            {zh ? '重新检查' : 'Retry'}
-          </Button>
-        </div>
+      <div className="flex h-screen w-screen items-center justify-center bg-background p-6 text-center text-sm text-muted-foreground">
+        Database recovery needs attention: {recovery.status.state}.{' '}
+        {recovery.status.reason}. Restart the application after fixing the issue.
       </div>
     )
   }

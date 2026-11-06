@@ -27,15 +27,8 @@ export async function fetchDbRecoveryStatus(): Promise<DbRecoveryStatus | null> 
   try {
     const { invoke } = await import('@tauri-apps/api/core')
     return await invoke<DbRecoveryStatus>('db_recovery_status')
-  } catch (error) {
-    console.warn('[Database] recovery status is unavailable:', error)
+  } catch {
     return null
   }
 }
 
-export function recoveryBlocksStartup(status: DbRecoveryStatus | null): boolean {
-  return (
-    status?.state === 'MANUAL_INTERVENTION_REQUIRED' ||
-    status?.state === 'RESTORE_INTERRUPTED'
-  )
-}
