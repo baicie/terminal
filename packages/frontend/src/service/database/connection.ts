@@ -52,11 +52,11 @@ async function establishConnection(): Promise<Database> {
 }
 
 export async function getDb() {
+  // Gate first: a cached connection or an in-flight init must not be reachable
+  // while the startup decision is pending or blocked.
+  assertDatabaseAllowed()
   if (db) return db
   if (initPromise) return initPromise
-  // The startup gate must decide before any caller reaches SQLite; this is the
-  // second line of defence behind the root component.
-  assertDatabaseAllowed()
   if (!isTauri()) throw new Error('Database only available in Tauri context')
   initPromise = establishConnection()
   return initPromise
@@ -97,6 +97,9 @@ export async function select<T>(
     const result = await (await getDb()).select<T>(sql, params)
     return Array.isArray(result) ? result : [result as T]
   } catch (error) {
+    // A gate rejection must reach the caller; turning it into [] would look
+    // like "no rows" and let business code run against a blocked database.
+    assertDatabaseAllowed()
     if (
       error instanceof Error &&
       error.message === 'Database only available in Tauri context'

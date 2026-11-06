@@ -57,6 +57,54 @@ pub struct RecoveryStatus {
 #[derive(Debug)]
 pub struct RecoveryVerdict(pub std::sync::Mutex<RecoveryStatus>);
 
+/// Cross-process exclusive lock held for the whole migration/recovery
+/// transaction. The OS releases it when the process dies; a stale file does not
+/// block anyone because ownership is the lock, not the path.
+#[derive(Default)]
+pub struct RecoveryLock(pub std::sync::Mutex<Option<File>>);
+
+const RECOVERY_LOCK_FILE: &str = "recovery.lock";
+
+pub fn try_acquire_lock(directory: &Path) -> Result<File, String> {
+    fs::create_dir_all(directory)
+        .map_err(|error| format!("could not create {}: {error}", directory.display()))?;
+    let path = directory.join(RECOVERY_LOCK_FILE);
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|error| format!("could not open {}: {error}", path.display()))?;
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(std::fs::TryLockError::WouldBlock) => {
+            Err("another Terminal instance is migrating or recovering this database".to_string())
+        }
+        Err(std::fs::TryLockError::Error(error)) => {
+            Err(format!("could not lock {}: {error}", path.display()))
+        }
+    }
+}
+
+pub fn ensure_lock(lock: &RecoveryLock, directory: &Path) -> Result<(), String> {
+    let mut guard = lock
+        .0
+        .lock()
+        .map_err(|_| "the recovery lock state is poisoned".to_string())?;
+    if guard.is_some() {
+        return Ok(());
+    }
+    *guard = Some(try_acquire_lock(directory)?);
+    Ok(())
+}
+
+pub fn release_lock(lock: &RecoveryLock) {
+    if let Ok(mut guard) = lock.0.lock() {
+        *guard = None;
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MigrationTarget {
     pub table: String,
@@ -194,18 +242,24 @@ fn fsync_file(file: &Path) -> Result<(), String> {
 /// Write the marker before the snapshot: a crash between the marker and the
 /// migration is then visible on the next start instead of silently leaving a
 /// half-migrated database.
+/// `true` means this call created the marker (and may roll it back on its own
+/// failure). `false` means it merged into a pre-existing transaction and must
+/// never clear that transaction.
 pub fn write_marker(
     directory: &Path,
     snapshot: &Path,
     migration_id: &str,
     targets: Vec<MigrationTarget>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     fs::create_dir_all(directory)
         .map_err(|error| format!("could not create {}: {error}", directory.display()))?;
     // Never replace an open marker: the first snapshot is the pre-migration
     // state, and overwriting it would move the restore point forward. Merge the
     // new targets into the existing marker instead.
-    let existing = read_marker(directory).ok().flatten();
+    // A corrupt/unreadable marker is a hard stop: do not overwrite an unknown
+    // transaction with a new one.
+    let existing = read_marker(directory)?;
+    let existing_created = existing.is_none();
     let (snapshot_path, created_at_ms, mut merged_targets, id) = match existing {
         Some(marker) => (
             marker.snapshot_path.clone(),
@@ -257,7 +311,14 @@ pub fn write_marker(
         .map_err(|error| format!("could not write {}: {error}", temporary.display()))?;
     fs::rename(&temporary, directory.join(MARKER_FILE))
         .map_err(|error| format!("could not publish the migration marker: {error}"))?;
-    fsync_dir(directory)
+    fsync_dir(directory)?;
+    Ok(existing_created)
+}
+
+/// The snapshot a live marker points at, if any. A corrupt marker is an error:
+/// the caller must not prune anything it cannot prove unreferenced.
+pub fn active_snapshot(directory: &Path) -> Result<Option<PathBuf>, String> {
+    Ok(read_marker(directory)?.map(|marker| PathBuf::from(marker.snapshot_path)))
 }
 
 pub fn clear_marker(directory: &Path) -> Result<bool, String> {
@@ -278,9 +339,39 @@ fn read_marker(directory: &Path) -> Result<Option<MigrationMarker>, String> {
     }
     let raw =
         fs::read(&path).map_err(|error| format!("could not read {}: {error}", path.display()))?;
-    let marker = serde_json::from_slice(&raw)
+    let marker: MigrationMarker = serde_json::from_slice(&raw)
         .map_err(|error| format!("could not parse {}: {error}", path.display()))?;
+    validate_marker(&marker, &path)?;
     Ok(Some(marker))
+}
+
+/// Reject a marker this build does not understand. A corrupt or future marker
+/// must stop the caller, never degrade to "no marker" and start a new
+/// transaction on top of an unknown one.
+fn validate_marker(marker: &MigrationMarker, path: &Path) -> Result<(), String> {
+    if marker.snapshot_path.is_empty() {
+        return Err(format!("{} has no snapshot path", path.display()));
+    }
+    if marker.version > 2 {
+        return Err(format!(
+            "{} declares unsupported marker version {}",
+            path.display(),
+            marker.version
+        ));
+    }
+    if marker.version >= 2 && marker.targets.is_empty() {
+        return Err(format!("{} v2 marker has no targets", path.display()));
+    }
+    if marker.version < 2 && marker.target_columns.is_empty() {
+        return Err(format!(
+            "{} v1 marker has no target columns",
+            path.display()
+        ));
+    }
+    if marker.version >= 2 && marker.migration_id.is_empty() {
+        return Err(format!("{} v2 marker has no migration id", path.display()));
+    }
+    Ok(())
 }
 
 async fn open_read_only(path: &Path) -> Result<SqliteConnection, String> {
@@ -673,6 +764,26 @@ fn record_state(state: RecoveryState, reason: &str) {
     }
 }
 
+/// Startup entry: hold the cross-process lock when a transaction is pending so
+/// a second instance cannot recover or migrate the same database concurrently.
+pub async fn startup_recovery_locked<R: Runtime>(app: &AppHandle<R>) -> RecoveryStatus {
+    let marker = match marker_path(app) {
+        Ok(marker) => marker,
+        Err(error) => return status(RecoveryState::ManualInterventionRequired, error),
+    };
+    if marker.exists() {
+        let directory = marker
+            .parent()
+            .unwrap_or_else(|| Path::new(""))
+            .to_path_buf();
+        let lock = app.state::<RecoveryLock>();
+        if let Err(error) = ensure_lock(&lock, &directory) {
+            return status(RecoveryState::ManualInterventionRequired, error);
+        }
+    }
+    startup_recovery_for(app).await
+}
+
 pub async fn startup_recovery_for<R: Runtime>(app: &AppHandle<R>) -> RecoveryStatus {
     match (database_path(app), marker_path(app), backups_path(app)) {
         (Ok(db), Ok(marker), Ok(backups)) => {
@@ -716,7 +827,22 @@ pub async fn db_recovery_retry<R: Runtime>(
     app: AppHandle<R>,
     verdict: State<'_, RecoveryVerdict>,
 ) -> Result<RecoveryStatus, String> {
+    if let Ok(marker) = marker_path(&app) {
+        if marker.exists() {
+            let directory = marker
+                .parent()
+                .unwrap_or_else(|| Path::new(""))
+                .to_path_buf();
+            let lock = app.state::<RecoveryLock>();
+            if let Err(error) = ensure_lock(&lock, &directory) {
+                return Ok(status(RecoveryState::ManualInterventionRequired, error));
+            }
+        }
+    }
     let status = startup_recovery_for(&app).await;
+    if status.state != RecoveryState::Recovered {
+        release_lock(&app.state::<RecoveryLock>());
+    }
     *verdict
         .0
         .lock()
@@ -752,7 +878,11 @@ pub async fn database_migration_completed<R: Runtime>(app: AppHandle<R>) -> Resu
     let db = database_path(&app)?;
     let marker = marker_path(&app)?;
     let directory = marker.parent().unwrap_or_else(|| Path::new(""));
-    verify_completion(&db, directory).await
+    let completed = verify_completion(&db, directory).await?;
+    if completed {
+        release_lock(&app.state::<RecoveryLock>());
+    }
+    Ok(completed)
 }
 
 #[cfg(test)]
@@ -883,6 +1013,41 @@ mod tests {
         let _ = connection.close().await;
         assert!(verify_completion(&db, dir.path()).await.expect("verify"));
         assert!(!dir.path().join(MARKER_FILE).exists());
+    }
+
+    #[test]
+    fn a_corrupt_marker_is_never_overwritten_and_a_merge_keeps_the_first_snapshot() {
+        let (dir, _db, backups, snapshot) = temp_paths();
+        std::fs::write(dir.path().join(MARKER_FILE), b"not json").expect("corrupt marker");
+        let error = write_marker(dir.path(), &snapshot, "core", core_targets())
+            .expect_err("a corrupt marker must stop a new transaction");
+        assert!(error.contains("could not parse"), "{error}");
+        assert_eq!(
+            std::fs::read(dir.path().join(MARKER_FILE)).expect("marker"),
+            b"not json"
+        );
+
+        std::fs::remove_file(dir.path().join(MARKER_FILE)).expect("remove corrupt marker");
+        assert!(write_marker(dir.path(), &snapshot, "core", core_targets()).expect("first"));
+        let second = backups.join("pre-migration-2.db");
+        assert!(!write_marker(dir.path(), &second, "team", core_targets()).expect("second"));
+        let marker = read_marker(dir.path()).expect("read").expect("marker");
+        assert_eq!(marker.snapshot_path, snapshot.display().to_string());
+        assert!(marker.migration_id.contains("core"));
+        assert!(marker.migration_id.contains("team"));
+    }
+
+    #[test]
+    fn a_second_handle_cannot_take_the_recovery_lock() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let first = try_acquire_lock(dir.path()).expect("first lock");
+        let second = try_acquire_lock(dir.path());
+        assert!(second.is_err(), "a second handle must not own the lock");
+        drop(first);
+        assert!(
+            try_acquire_lock(dir.path()).is_ok(),
+            "drop releases the lock"
+        );
     }
 
     #[cfg(unix)]

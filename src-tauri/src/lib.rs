@@ -171,7 +171,8 @@ pub fn run() {
             // Recovery runs before the webview can open the database: a partial
             // migration must be resolved against a verified snapshot, never by
             // silently rewriting the live file.
-            let recovery = tauri::async_runtime::block_on(db_recovery::startup_recovery_for(app.handle()));
+            app.manage(db_recovery::RecoveryLock::default());
+            let recovery = tauri::async_runtime::block_on(db_recovery::startup_recovery_locked(app.handle()));
             app.manage(db_recovery::RecoveryVerdict(std::sync::Mutex::new(recovery.clone())));
             match recovery.state {
                 db_recovery::RecoveryState::ManualInterventionRequired => {

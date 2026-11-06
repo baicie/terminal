@@ -436,6 +436,11 @@ jobs:
             patchelf \
             libxdo-dev
       - run: pnpm install --frozen-lockfile
+      # Native Windows recovery tests: directory flush, marker roundtrip and
+      # the Windows-only cfg paths, on a real NTFS runner with a temp profile.
+      - name: Windows native recovery tests
+        if: runner.os == 'Windows'
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib db_recovery
       - run: pnpm tauri build --no-bundle --ci -- --locked
       # Phase 8.8 Task E1: produce the installers that the install-chain steps
       # below consume. `tauri bundle` reuses the release binary from the build
