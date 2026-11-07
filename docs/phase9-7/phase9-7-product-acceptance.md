@@ -52,6 +52,11 @@
 `check-verification-evidence.mjs` **0 problem**；raw log 归档
 `docs/verification/raw/42346192749/`。未手工修改 manifest。
 
+最终 Upgrade E2E [`42348255027`](https://github.com/baicie/terminal/actions/runs/42348255027)
+（`e0dd992`）**5/5 success**；最终 CI
+[`42348257607`](https://github.com/baicie/terminal/actions/runs/42348257607)
+**11/11 success**（含 `Repository gates`）。
+
 ## 2. WP1 — Windows NSIS
 
 - 共享 `windows-latest` 只运行隔离状态机与原生进程树探针，并**证明共享 profile
@@ -116,7 +121,7 @@ VAULT_CROSS_VERSION_VERIFIED=NOT_RUN
 
 UPGRADE_E2E_CURRENT_HEAD=PASS
 EVIDENCE_FINGERPRINT_VALID=PASS
-CI_ALL_GREEN=待最终 CI
+CI_ALL_GREEN=PASS
 PHASE_9_7_P0_A_COMPLETE=PARTIAL
 PR_9_READY_FOR_REVIEW=NO
 READY_FOR_RC=NO

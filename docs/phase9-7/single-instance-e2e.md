@@ -56,9 +56,9 @@
 
 ### 结果
 
-Upgrade E2E [`42344829575`](https://github.com/baicie/terminal/actions/runs/42344829575)
+Upgrade E2E [`42348255027`](https://github.com/baicie/terminal/actions/runs/42348255027)
 （`c68aebb`）5/5 success；单实例步骤
-[job 128320197034](https://github.com/baicie/terminal/actions/runs/42344829575/job/128320197034) 的 `single-instance-report.json` 为 **PASS**：
+[job 128330620531](https://github.com/baicie/terminal/actions/runs/42348255027/job/128330620531) 的 `single-instance-report.json` 为 **PASS**：
 
 - 二进制 SHA 与 DMG SHA 校验通过；
 - 首进程启动；第二次启动 code 0、激活首进程、首进程存活、仅一个 `terminal.db`；

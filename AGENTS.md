@@ -654,7 +654,7 @@ pnpm add <package-name>
 - ✅ **真实三进程 E2E**：从 B DMG 安装并校验 SHA；第二次启动 code 0 并激活首进程、仅一个 DB；SIGKILL 后第三进程取得锁、读到并改写 probe 行；E2E `42344829575`（`c68aebb`）**5/5**
 - ✅ **Vault 服务级应用链路**：smoke 构建 + 隔离标记触发的 `VaultService` probe，覆盖创建/锁定/错误密码/改密/重启持久化；结果经 `smoke-vault-probe` feature 写文件；密码/秘密不入日志。UI 自动化与 A→B 跨版本 **NOT_RUN**
 - 🟡 窗口焦点（headless）、Windows NSIS、Team Sync 跨版本、Updater runtime、AppImage stock 仍 **NOT_RUN/BLOCKED_EXTERNAL**
-- ✅ E2E `42344829575`（`c68aebb`）5/5；证据矩阵 `42346192749` 3/3，指纹 `a0a76721…`，门禁 0 problem
+- ✅ 最终 E2E `42348255027` 5/5、最终 CI `42348257607` 11/11（`e0dd992`）；证据矩阵 `42346192749` 3/3，指纹 `a0a76721…`，门禁 0 problem
 - 📋 判定见 `docs/phase9-7/phase9-7-product-acceptance.md`、`single-instance-e2e.md`、`vault-app-e2e.md`
 
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合

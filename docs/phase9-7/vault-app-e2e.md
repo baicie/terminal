@@ -61,9 +61,9 @@ probe 使用一次性的测试密码/秘密，只输出布尔值与阶段名；h
 
 ## 5. 结果
 
-Upgrade E2E [`42344829575`](https://github.com/baicie/terminal/actions/runs/42344829575)
+Upgrade E2E [`42348255027`](https://github.com/baicie/terminal/actions/runs/42348255027)
 （`c68aebb`）的 Vault 步骤
-[job 128320197034](https://github.com/baicie/terminal/actions/runs/42344829575/job/128320197034)：`vault-app-report.json` 为 **PASS**。
+[job 128330620531](https://github.com/baicie/terminal/actions/runs/42348255027/job/128330620531)：`vault-app-report.json` 为 **PASS**。
 
 - 创建 Vault、写入秘密、锁定、错误密码拒绝、正确密码解锁并读取；
 - 改密后旧密码拒绝、新密码读取秘密；
