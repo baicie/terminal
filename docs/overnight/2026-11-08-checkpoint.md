@@ -12,6 +12,12 @@
 - 起点 CI：`Repository gates` 因旧证据与 `fr/app.ts` 301 行失败；其余 job 绿
 - 证据矩阵 `42388505322`（`892137c`）已取消，源码未冻结前不重采
 
+## P1 状态
+
+- UI 截图：本机无 Accessibility/Screen Recording 权限，AppleScript 驱动被系统阻断；
+  仓库未安装 Playwright。`UI_SCREENSHOT_EVIDENCE=NOT_RUN`（不伪造浏览器 mock 截图）。
+- Settings 响应式：Tabs 改为 `grid-cols-3 sm:grid-cols-6`，窄屏两行。
+
 ## 已完成的 P1
 
 - [x] Settings：loading/ready/error 状态机、失败重试、未保存标记与离开回滚。
@@ -38,7 +44,7 @@
 
 ## 正在执行
 
-- P1：UI 截图/交互验收与剩余 P1
+- P2：核心实现风险审查（两个只读子代理并行）
 
 ## 下一步精确命令
 
