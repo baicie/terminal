@@ -54,8 +54,11 @@
 `42355653387`（`5e8ce13`，指纹 `43fdc334…`）因 Vault Escape 监听的
 前端修复而按规则失效，本轮是重采，不是把旧证据改到新源码上。
 
-最终 Upgrade E2E [`42356452096`](https://github.com/baicie/terminal/actions/runs/42356452096)
-（`49e9903`）**5/5 success**；证据提交后的 HEAD `8adff85` 上 CI
+Upgrade E2E [`42356452096`](https://github.com/baicie/terminal/actions/runs/42356452096)
+（`49e9903`）**5/5 success**；证据与 Vault Escape 修复后的最终 HEAD
+`64db332` 上 Upgrade E2E
+[`42365420354`](https://github.com/baicie/terminal/actions/runs/42365420354)
+同为 **5/5 success**（单实例与 Vault 步骤 PASS）。证据提交后的 HEAD `8adff85` 上 CI
 [`42357395943`](https://github.com/baicie/terminal/actions/runs/42357395943)
 **11/11 success**（含 `Repository gates` 的证据门禁）。
 
