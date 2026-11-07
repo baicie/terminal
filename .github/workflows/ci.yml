@@ -41,6 +41,18 @@ jobs:
       - run: pnpm --filter=@terminal/frontend typecheck
       - run: pnpm --filter=@terminal/frontend test
       - run: pnpm --filter=@terminal/frontend build:budget
+      - name: Vault probe is absent from the production bundle
+        run: |
+          if grep -r "phase9.7-vault-one-time" packages/frontend/dist; then
+            echo "smoke-only Vault probe leaked into the production build" >&2
+            exit 1
+          fi
+      - name: Vault probe is present only with the smoke overlay
+        run: |
+          VITE_TERMINAL_SMOKE_BUILD=1 VITE_TERMINAL_VAULT_PROBE=1 \
+            pnpm --filter=@terminal/frontend exec vite build --outDir dist-smoke
+          grep -rq "phase9.7-vault-one-time" packages/frontend/dist-smoke
+          rm -rf packages/frontend/dist-smoke
 
   frontend-audit:
     # Phase 9.2 recorded the front-end audit as NOT_RUN because the developer
@@ -243,6 +255,7 @@ jobs:
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --features smoke-vault-probe vault_probe
 
   cargo-audit:
     # RustSec sweep over src-tauri/Cargo.lock, as a REAL GATE.

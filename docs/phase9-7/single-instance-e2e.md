@@ -57,7 +57,7 @@
 ### 结果
 
 Upgrade E2E [`42348255027`](https://github.com/baicie/terminal/actions/runs/42348255027)
-（`c68aebb`）5/5 success；单实例步骤
+（`e0dd992`）5/5 success；单实例步骤
 [job 128330620531](https://github.com/baicie/terminal/actions/runs/42348255027/job/128330620531) 的 `single-instance-report.json` 为 **PASS**：
 
 - 二进制 SHA 与 DMG SHA 校验通过；

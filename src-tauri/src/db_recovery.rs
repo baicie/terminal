@@ -170,21 +170,35 @@ pub struct RuntimeLockHandle {
     device: u64,
     #[cfg(unix)]
     inode: u64,
+    #[cfg(windows)]
+    creation_time: u64,
+    #[cfg(windows)]
+    file_size: u64,
 }
 
 impl RuntimeLockHandle {
     fn still_owns_path(&self) -> bool {
-        let Ok(metadata) = fs::metadata(&self.path) else {
+        // symlink_metadata never follows a link: a symlink planted in place of
+        // the lock file is not the file this process locked.
+        let Ok(metadata) = fs::symlink_metadata(&self.path) else {
             return false;
         };
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return false;
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
             metadata.dev() == self.device && metadata.ino() == self.inode
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
         {
-            metadata.is_file()
+            use std::os::windows::fs::MetadataExt;
+            metadata.creation_time() == self.creation_time && metadata.file_size() == self.file_size
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            true
         }
     }
 }
@@ -232,21 +246,59 @@ pub fn acquire_runtime_lock(directory: &Path) -> Result<RuntimeLockHandle, Strin
         .map_err(|error| format!("could not open {}: {error}", path.display()))?;
     match file.try_lock() {
         Ok(()) => {
-            let metadata = fs::metadata(&path)
+            // Identity comes from the *locked descriptor*, never from the path:
+            // a path swapped between open and stat must not be mistaken for the
+            // file this process actually locked.
+            let file_metadata = file
+                .metadata()
+                .map_err(|error| format!("could not stat the locked file: {error}"))?;
+            let path_metadata = fs::symlink_metadata(&path)
                 .map_err(|error| format!("could not stat {}: {error}", path.display()))?;
+            if path_metadata.file_type().is_symlink() || !path_metadata.is_file() {
+                return Err(format!(
+                    "{} is not a regular lock file; refusing a symlink or special file",
+                    path.display()
+                ));
+            }
             #[cfg(unix)]
             {
                 use std::os::unix::fs::MetadataExt;
+                if file_metadata.dev() != path_metadata.dev()
+                    || file_metadata.ino() != path_metadata.ino()
+                {
+                    return Err(format!(
+                        "{} changed while the lock was being acquired",
+                        path.display()
+                    ));
+                }
                 Ok(RuntimeLockHandle {
                     file,
                     path,
-                    device: metadata.dev(),
-                    inode: metadata.ino(),
+                    device: file_metadata.dev(),
+                    inode: file_metadata.ino(),
                 })
             }
-            #[cfg(not(unix))]
+            #[cfg(windows)]
             {
-                let _ = metadata;
+                use std::os::windows::fs::MetadataExt;
+                if file_metadata.creation_time() != path_metadata.creation_time()
+                    || file_metadata.file_size() != path_metadata.file_size()
+                {
+                    return Err(format!(
+                        "{} changed while the lock was being acquired",
+                        path.display()
+                    ));
+                }
+                Ok(RuntimeLockHandle {
+                    file,
+                    path,
+                    creation_time: file_metadata.creation_time(),
+                    file_size: file_metadata.file_size(),
+                })
+            }
+            #[cfg(not(any(unix, windows)))]
+            {
+                let _ = file_metadata;
                 Ok(RuntimeLockHandle { file, path })
             }
         }
@@ -1930,6 +1982,51 @@ mod tests {
             !state.is_held(),
             "a deleted runtime-lock path must not count as ownership"
         );
+    }
+
+    #[test]
+    fn replacing_the_runtime_lock_path_invalidates_ownership() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let state = RuntimeInstanceLock::default();
+        state.set(acquire_runtime_lock(dir.path()).expect("runtime lock"));
+        assert!(state.is_held());
+        let path = dir.path().join(RUNTIME_LOCK_FILE);
+        std::fs::rename(&path, dir.path().join("old.lock")).expect("move the locked file");
+        std::fs::write(&path, b"replacement").expect("plant a replacement");
+        assert!(
+            !state.is_held(),
+            "a replaced lock path must not count as ownership"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_at_the_runtime_lock_path_invalidates_ownership() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let state = RuntimeInstanceLock::default();
+        state.set(acquire_runtime_lock(dir.path()).expect("runtime lock"));
+        let path = dir.path().join(RUNTIME_LOCK_FILE);
+        let target = dir.path().join("target.lock");
+        std::fs::rename(&path, &target).expect("move the locked file");
+        std::os::unix::fs::symlink(&target, &path).expect("plant a symlink");
+        assert!(
+            !state.is_held(),
+            "a symlink at the lock path must not count as ownership"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn acquire_runtime_lock_refuses_a_symlink_path() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let outside = tempfile::tempdir().expect("outside directory");
+        let target = outside.path().join("target.lock");
+        std::fs::write(&target, b"target").expect("target file");
+        std::os::unix::fs::symlink(&target, dir.path().join(RUNTIME_LOCK_FILE))
+            .expect("symlink lock path");
+        let error =
+            acquire_runtime_lock(dir.path()).expect_err("a symlinked lock path must be refused");
+        assert!(error.contains("symlink"), "{error}");
     }
 
     #[tokio::test]

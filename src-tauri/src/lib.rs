@@ -451,3 +451,34 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod vault_probe_tests {
+    use super::vault_probe_report;
+
+    #[cfg(not(feature = "smoke-vault-probe"))]
+    #[test]
+    fn the_vault_probe_report_is_a_noop_without_the_feature() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let path = dir.path().join("probe.json");
+        std::env::set_var("TERMINAL_VAULT_PROBE_RESULT", &path);
+        let wrote = vault_probe_report("{\"phase\":\"create\"}".to_string());
+        std::env::remove_var("TERMINAL_VAULT_PROBE_RESULT");
+        assert!(!wrote, "production builds must not write probe results");
+        assert!(!path.exists(), "production builds must not create the file");
+    }
+
+    #[cfg(feature = "smoke-vault-probe")]
+    #[test]
+    fn the_vault_probe_report_writes_only_to_the_configured_test_path() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let path = dir.path().join("probe.json");
+        std::env::set_var("TERMINAL_VAULT_PROBE_RESULT", &path);
+        assert!(vault_probe_report("{\"phase\":\"create\"}".to_string()));
+        std::env::remove_var("TERMINAL_VAULT_PROBE_RESULT");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("probe result"),
+            "{\"phase\":\"create\"}"
+        );
+    }
+}
