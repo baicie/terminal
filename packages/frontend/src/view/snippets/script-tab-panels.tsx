@@ -35,7 +35,13 @@ interface ScriptTabPanelsProps {
   onRefresh: () => void
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({
+  status,
+  t,
+}: {
+  status: string
+  t: (key: string, options?: Record<string, unknown>) => string
+}) {
   const variants: Record<
     string,
     'default' | 'destructive' | 'outline' | 'secondary'
@@ -45,10 +51,16 @@ function StatusBadge({ status }: { status: string }) {
     running: 'secondary',
     timeout: 'outline',
   }
+  const labels: Record<string, string> = {
+    success: 'scripts.statusSuccess',
+    failed: 'scripts.statusFailed',
+    running: 'scripts.statusRunning',
+    timeout: 'scripts.statusTimeout',
+  }
 
   return (
     <Badge variant={variants[status] || 'outline'} className="capitalize">
-      {status}
+      {labels[status] ? t(labels[status]) : status}
     </Badge>
   )
 }
@@ -128,7 +140,7 @@ export function ScriptTabPanels({
                   {executions.map(execution => (
                     <TableRow key={execution.id}>
                       <TableCell>
-                        <StatusBadge status={execution.status} />
+                        <StatusBadge status={execution.status} t={t} />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">

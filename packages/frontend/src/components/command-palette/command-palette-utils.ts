@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import type { ResultType } from './command-palette-types'
 
 export function fuzzyScore(pattern: string, text: string): number {
@@ -30,13 +31,13 @@ export function fuzzyMatch(pattern: string, text: string): boolean {
   return fuzzyScore(pattern, text) > 0
 }
 
-export function formatTimeAgo(timestamp: number): string {
+export function formatTimeAgo(timestamp: number, t: TFunction): string {
   const minutes = Math.floor((Date.now() - timestamp) / 60000)
-  if (minutes < 1) return 'Just now'
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 1) return t('cmdHistory.justNow')
+  if (minutes < 60) return t('cmdHistory.minAgo', { count: minutes })
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.floor(hours / 24)}d ago`
+  if (hours < 24) return t('cmdHistory.hoursAgo', { count: hours })
+  return t('cmdHistory.daysAgo', { count: Math.floor(hours / 24) })
 }
 
 export function getTypeBadgeClass(type: ResultType): string {
@@ -60,23 +61,23 @@ export function getTypeBadgeClass(type: ResultType): string {
   }
 }
 
-export function getTypeLabel(type: ResultType): string {
+export function getTypeLabelKey(type: ResultType): string {
   switch (type) {
     case 'host':
-      return 'host'
+      return 'cmdPalette.typeHost'
     case 'sftp':
-      return 'sftp'
+      return 'cmdPalette.typeSftp'
     case 'snippet':
-      return 'snippet'
+      return 'cmdPalette.typeSnippet'
     case 'history':
-      return 'history'
+      return 'cmdPalette.typeHistory'
     case 'workspace':
-      return 'workspace'
+      return 'cmdPalette.typeWorkspace'
     case 'open-tab':
-      return 'tab'
+      return 'cmdPalette.typeTab'
     case 'closed-tab':
-      return 'closed'
+      return 'cmdPalette.typeClosed'
     case 'action':
-      return 'action'
+      return 'cmdPalette.typeAction'
   }
 }

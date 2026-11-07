@@ -39,6 +39,22 @@ export default {
   'snippets.deletePackageConfirm':
     'Êtes-vous sûr de vouloir supprimer "{{name}}" ? Tous les extraits de ce paquet seront déplacés vers non classé.',
   'snippets.enterVar': 'Entrez {{name}}',
+  'snippets.filterSnippets': 'Filtrer les extraits...',
+  'snippets.filterHistory': "Filtrer l'historique...",
+  'snippets.quickRun': 'Exécution rapide',
+  'snippets.historyTab': 'Historique',
+  'snippets.collapseSidebar': 'Réduire',
+  'snippets.executing': 'Exécution : {{name}}',
+  'snippets.enterVarPrompt': 'Saisissez la valeur de {{name}} :',
+  'snippets.loadFailed': 'Échec du chargement des données : {{error}}',
+  'snippets.saveFailed': "Échec de l'enregistrement du script : {{error}}",
+  'snippets.deleteFailed': 'Échec de la suppression du script : {{error}}',
+  'snippets.toggleFailed':
+    "Échec de la modification de l'état du script : {{error}}",
+  'snippets.executeFailed': "Échec de l'exécution : {{error}}",
+  'snippets.create': 'Créer',
+  'snippets.namePlaceholder': 'Mon extrait',
+  'snippets.packageLabel': 'Paquet',
 
   // Scripts
   'scripts.title': 'Scripts par lot',
@@ -99,4 +115,10 @@ export default {
     'Êtes-vous sûr de vouloir supprimer "{{name}}" ? Cette action est irréversible.',
   'scripts.nameAndScriptRequired': 'Le nom et le script sont requis',
   'scripts.noHosts': 'Aucun hôte sélectionné pour ce script',
+  'scripts.hostSelectedCount': '{{count}} hôte sélectionné',
+  'scripts.hostsSelectedCount': '{{count}} hôtes sélectionnés',
+  'scripts.statusSuccess': 'Réussi',
+  'scripts.statusFailed': 'Échoué',
+  'scripts.statusRunning': 'En cours',
+  'scripts.statusTimeout': 'Délai dépassé',
 }

@@ -8,6 +8,7 @@ import {
 } from '@/service/database'
 import { ArrowLeft, Key, KeyRound, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { ResponsiveConfirm } from '@/components/ui/responsive-dialog'
 import { cn } from '@/lib/utils'
@@ -25,6 +26,7 @@ import { useKeyForm } from './use-key-form'
 type KeyFilter = 'all' | 'key' | 'certificate' | 'touchid' | 'fido2'
 
 const KeychainView: React.FC = () => {
+  const { t } = useTranslation()
   const [keys, setKeys] = useState<SSHKeyRecord[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [filterType, setFilterType] = useState<KeyFilter>('all')
@@ -164,8 +166,8 @@ const KeychainView: React.FC = () => {
           <ViewContent className="flex items-center justify-center">
             <EmptyState
               icon={<Key className="size-12" />}
-              title="Select a key"
-              description="Choose a key from the list to view or edit details"
+              title={t('keychain.selectKey')}
+              description={t('keychain.selectKeyDesc')}
             />
           </ViewContent>
         ) : (
@@ -176,7 +178,7 @@ const KeychainView: React.FC = () => {
                   variant="ghost"
                   size="icon"
                   className="size-11 md:hidden"
-                  aria-label="Back to keys"
+                  aria-label={t('keychain.backToKeys')}
                   onClick={handleBackToList}
                 >
                   <ArrowLeft data-icon="inline-start" />
@@ -185,7 +187,7 @@ const KeychainView: React.FC = () => {
                   <KeyRound className="size-4" />
                 </div>
                 <span className="font-semibold">
-                  {isNewKey ? 'New Key' : 'Edit Key'}
+                  {isNewKey ? t('keychain.newKey') : t('keychain.editKey')}
                 </span>
               </div>
               <div className="flex gap-2">
@@ -200,11 +202,11 @@ const KeychainView: React.FC = () => {
                     }}
                   >
                     <Trash2 className="size-4 mr-1" data-icon="inline-start" />
-                    Delete
+                    {t('common.delete')}
                   </Button>
                 )}
                 <Button size="sm" onClick={handleSaveAndReload} disabled={!formName.trim()}>
-                  Save
+                  {t('common.save')}
                 </Button>
               </div>
             </ViewToolbar>
@@ -236,13 +238,13 @@ const KeychainView: React.FC = () => {
       <ResponsiveConfirm
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete SSH Key"
+        title={t('keychain.deleteKeyTitle')}
         description={
           keyToDelete
-            ? `Are you sure you want to delete the key "${keyToDelete.name}"? This action cannot be undone.`
+            ? t('keychain.deleteKeyConfirm', { name: keyToDelete.name })
             : undefined
         }
-        confirmText="Delete"
+        confirmText={t('common.delete')}
         destructive
         onConfirm={handleDeleteAndReload}
         onCancel={() => setKeyToDelete(null)}

@@ -1,5 +1,6 @@
 import type { Host } from '@/types'
 import type { ScriptRecord } from '@/service/database'
+import { useTranslation } from 'react-i18next'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -42,41 +43,42 @@ export const ScriptFormDialogContent: React.FC<
   onFormChange,
   onHostToggle,
 }) => {
+  const { t } = useTranslation()
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="script-name">Name *</Label>
+        <Label htmlFor="script-name">{t('scripts.name')} *</Label>
         <Input
           id="script-name"
           value={formName}
           onChange={e => onFormChange('name', e.target.value)}
-          placeholder="Script name"
+          placeholder={t('scripts.namePlaceholder')}
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="script-description">Description</Label>
+        <Label htmlFor="script-description">{t('scripts.description')}</Label>
         <Input
           id="script-description"
           value={formDescription}
           onChange={e => onFormChange('description', e.target.value)}
-          placeholder="Optional description"
+          placeholder={t('scripts.descriptionPlaceholder')}
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="script-content">Script *</Label>
+        <Label htmlFor="script-content">{t('scripts.script')} *</Label>
         <Textarea
           id="script-content"
           value={formScript}
           onChange={e => onFormChange('script', e.target.value)}
-          placeholder="Enter script..."
+          placeholder={t('scripts.scriptPlaceholder')}
           className="font-mono text-sm min-h-[150px]"
         />
       </div>
 
       <div className="space-y-2">
-        <Label>Target Hosts</Label>
+        <Label>{t('scripts.targetHosts')}</Label>
         <div className="flex flex-wrap gap-2 p-3 border rounded-md max-h-48 overflow-y-auto">
           {hosts.map(host => (
             <div key={host.id} className="flex items-center gap-2">
@@ -95,14 +97,15 @@ export const ScriptFormDialogContent: React.FC<
           ))}
         </div>
         <p className="text-xs text-muted-foreground">
-          {formHostIds.length}{' '}
-          {formHostIds.length !== 1 ? 'hosts selected' : 'host selected'}
+          {formHostIds.length === 1
+            ? t('scripts.hostSelectedCount', { count: formHostIds.length })
+            : t('scripts.hostsSelectedCount', { count: formHostIds.length })}
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="schedule-type">Schedule Type</Label>
+          <Label htmlFor="schedule-type">{t('scripts.scheduleType')}</Label>
           <Select
             value={formScheduleType}
             onValueChange={v => onFormChange('scheduleType', v)}
@@ -111,16 +114,16 @@ export const ScriptFormDialogContent: React.FC<
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="manual">Manual</SelectItem>
-              <SelectItem value="once">Once</SelectItem>
-              <SelectItem value="interval">Interval</SelectItem>
-              <SelectItem value="cron">Cron</SelectItem>
+              <SelectItem value="manual">{t('scripts.manual')}</SelectItem>
+              <SelectItem value="once">{t('scripts.once')}</SelectItem>
+              <SelectItem value="interval">{t('scripts.interval')}</SelectItem>
+              <SelectItem value="cron">{t('scripts.cron')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="schedule-value">Schedule Value</Label>
+          <Label htmlFor="schedule-value">{t('scripts.scheduleValue')}</Label>
           <Input
             id="schedule-value"
             value={formScheduleValue}
@@ -139,7 +142,7 @@ export const ScriptFormDialogContent: React.FC<
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="timeout">Timeout (seconds)</Label>
+          <Label htmlFor="timeout">{t('scripts.timeoutSeconds')}</Label>
           <Input
             id="timeout"
             type="number"
@@ -159,7 +162,7 @@ export const ScriptFormDialogContent: React.FC<
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="retry-count">Retry Count</Label>
+          <Label htmlFor="retry-count">{t('scripts.retryCount')}</Label>
           <Input
             id="retry-count"
             type="number"

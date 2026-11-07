@@ -136,4 +136,14 @@ export default {
   'teams.copied': 'Copié dans le presse-papiers',
   'teams.action': 'Action',
   'teams.time': 'Temps',
+  'teams.email': 'E-mail',
+  'teams.host': 'Hôte',
+  'teams.packageFileFilter': "Paquet d'équipe",
+  'teams.allFilesFilter': 'Tous les fichiers',
+  'teams.importedSummary':
+    '{{hosts}} hôtes et {{snippets}} extraits importés',
+  'teams.packageHosts': '{{count}} hôte(s)',
+  'teams.packageGroups': '{{count}} groupe(s)',
+  'teams.packageSnippets': '{{count}} extrait(s)',
+  'teams.packageMembers': '{{count}} membre(s)',
 }

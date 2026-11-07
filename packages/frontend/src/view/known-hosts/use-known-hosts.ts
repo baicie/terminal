@@ -1,5 +1,6 @@
 import type { KnownHostRecord } from '@/service/database'
 import { useCallback, useEffect, useState } from 'react'
+import i18n from '@/locales'
 import {
   addKnownHosts,
   clearAllKnownHosts,
@@ -58,9 +59,7 @@ export function useKnownHosts() {
       if (parsed) validHosts.push({ ...parsed, added_at: Date.now() })
     }
     if (validHosts.length === 0) {
-      setImportError(
-        'No valid SSH known hosts entries found. Format should be: hostname ssh-rsa KEY',
-      )
+      setImportError(i18n.t('knownHosts.invalidImport'))
       return
     }
     await addKnownHosts(validHosts)

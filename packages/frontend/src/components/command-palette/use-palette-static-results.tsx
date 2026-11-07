@@ -12,6 +12,7 @@ import {
   Terminal,
   Zap,
 } from 'lucide-react'
+import type { TFunction } from 'i18next'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/store/app'
@@ -19,6 +20,21 @@ import { useHostStore } from '@/store/host'
 import { useWorkspaceStore } from '@/store/workspace'
 import { formatTimeAgo } from './command-palette-utils'
 import type { PaletteTabItem, SearchResult } from './command-palette-types'
+
+function getTabTypeLabel(type: string, t: TFunction): string {
+  switch (type) {
+    case 'local':
+      return t('sftp.local')
+    case 'remote':
+      return t('sftp.remote')
+    case 'sftp':
+      return t('sftp.title')
+    case 'serial':
+      return t('toolbar.serial')
+    default:
+      return type
+  }
+}
 
 export function usePaletteStaticResults() {
   const { t } = useTranslation()
@@ -76,7 +92,7 @@ export function usePaletteStaticResults() {
         id: tab.id,
         type: 'open-tab' as const,
         title: tab.label,
-        description: `${tab.type}${tab.hostId ? ` · ${hosts.find(host => host.id === tab.hostId)?.name ?? tab.hostId}` : ''}`,
+        description: `${getTabTypeLabel(tab.type, t)}${tab.hostId ? ` · ${hosts.find(host => host.id === tab.hostId)?.name ?? tab.hostId}` : ''}`,
         hint: t('cmdPalette.switchToTabHint'),
         icon: <Square className="size-4" />,
         data: tab,
@@ -90,7 +106,7 @@ export function usePaletteStaticResults() {
         id: closed.id,
         type: 'closed-tab' as const,
         title: t('cmdPalette.reopenTab', { label: closed.label }),
-        description: `${closed.type} · ${formatTimeAgo(closed.closedAt)}`,
+        description: `${getTabTypeLabel(closed.type, t)} · ${formatTimeAgo(closed.closedAt, t)}`,
         hint: t('cmdPalette.reopenTabHint'),
         icon: <Square className="size-4" />,
         data: closed,

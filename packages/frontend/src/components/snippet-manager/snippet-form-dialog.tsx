@@ -1,4 +1,5 @@
 import type { SnippetPackageRecord, SnippetRecord } from '@/service/database'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -44,6 +45,7 @@ export const SnippetFormDialog: React.FC<SnippetFormDialogProps> = ({
   onFormChange,
   onSubmit,
 }) => {
+  const { t } = useTranslation()
   const isEdit = mode === 'edit'
 
   const handleSubmit = () => {
@@ -67,55 +69,61 @@ export const SnippetFormDialog: React.FC<SnippetFormDialogProps> = ({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit Snippet' : 'Create Snippet'}</DialogTitle>
+          <DialogTitle>
+            {isEdit ? t('snippets.editSnippet') : t('snippets.createSnippet')}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
-            <Label htmlFor="snippet-name">Name</Label>
+            <Label htmlFor="snippet-name">{t('common.name')}</Label>
             <Input
               id="snippet-name"
               value={isEdit && snippet ? snippet.name : formData.name}
               onChange={e =>
                 onFormChange({ name: e.target.value })
               }
-              placeholder="My Snippet"
+              placeholder={t('snippets.namePlaceholder')}
             />
           </div>
 
           <div>
-            <Label htmlFor="snippet-description">Description</Label>
+            <Label htmlFor="snippet-description">
+              {t('common.description')}
+            </Label>
             <Input
               id="snippet-description"
               value={isEdit && snippet ? snippet.description || '' : formData.description}
               onChange={e =>
                 onFormChange({ description: e.target.value })
               }
-              placeholder="Optional description"
+              placeholder={t('snippets.optionalDesc')}
             />
           </div>
 
           <div>
-            <Label htmlFor="snippet-script">Script</Label>
+            <Label htmlFor="snippet-script">{t('snippets.script')}</Label>
             <textarea
               id="snippet-script"
               value={isEdit && snippet ? snippet.script : formData.script}
               onChange={e =>
                 onFormChange({ script: e.target.value })
               }
-              placeholder="echo 'Hello World'"
+              placeholder={t('snippets.helloWorld')}
               className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
             />
           </div>
 
           <div>
-            <Label htmlFor="snippet-package">Package</Label>
+            <Label htmlFor="snippet-package">
+              {t('snippets.packageLabel')}
+            </Label>
             <Select
               value={isEdit && snippet ? snippet.package_id || '' : formData.packageId}
               onValueChange={v => onFormChange({ packageId: v })}
             >
               <SelectTrigger id="snippet-package">
-                <SelectValue placeholder="No Package" />
+                <SelectValue placeholder={t('snippets.noPackage')} />
               </SelectTrigger>
               <SelectContent>
                 {packages.map(pkg => (
@@ -131,11 +139,11 @@ export const SnippetFormDialog: React.FC<SnippetFormDialogProps> = ({
         <DialogFooter>
           <DialogClose asChild>
             <Button type="button" variant="outline">
-              Cancel
+              {t('common.cancel')}
             </Button>
           </DialogClose>
           <Button type="button" onClick={handleSubmit}>
-            {isEdit ? 'Save' : 'Create'}
+            {isEdit ? t('common.save') : t('snippets.create')}
           </Button>
         </DialogFooter>
       </DialogContent>

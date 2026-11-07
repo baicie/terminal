@@ -1,6 +1,7 @@
 import type { CommandHistoryRecord } from '@/service/database'
 import { Clock, Search, Terminal, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +38,7 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
   onClose,
   onSelect,
 }) => {
+  const { t } = useTranslation()
   const [history, setHistory] = useState<CommandHistoryRecord[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(false)
@@ -85,10 +87,13 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
     const now = new Date()
     const diff = now.getTime() - date.getTime()
 
-    if (diff < 60000) return 'Just now'
-    if (diff < 3600000) return `${Math.floor(diff / 60000)} min ago`
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)} hours ago`
-    if (diff < 604800000) return `${Math.floor(diff / 86400000)} days ago`
+    if (diff < 60000) return t('cmdHistory.justNow')
+    if (diff < 3600000)
+      return t('cmdHistory.minAgo', { count: Math.floor(diff / 60000) })
+    if (diff < 86400000)
+      return t('cmdHistory.hoursAgo', { count: Math.floor(diff / 3600000) })
+    if (diff < 604800000)
+      return t('cmdHistory.daysAgo', { count: Math.floor(diff / 86400000) })
 
     return date.toLocaleDateString()
   }
@@ -104,7 +109,7 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Clock className="size-5" />
-            Command History
+            {t('cmdHistory.commandHistory')}
           </DialogTitle>
         </DialogHeader>
 
@@ -112,7 +117,7 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
           <div className="relative flex-1">
             <Search className="absolute left-2 top-2.5 size-4 text-muted-foreground" />
             <Input
-              placeholder="Search commands..."
+              placeholder={t('cmdHistory.searchCommands')}
               className="pl-8"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
@@ -130,22 +135,27 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
           </div>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="outline" size="icon" title="Clear history">
+              <Button
+                variant="outline"
+                size="icon"
+                title={t('cmdHistory.clearHistory')}
+              >
                 <Trash2 className="size-4" />
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Clear Command History</AlertDialogTitle>
+                <AlertDialogTitle>
+                  {t('cmdHistory.clearHistory')}
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  Are you sure you want to clear all command history? This
-                  action cannot be undone.
+                  {t('cmdHistory.clearConfirm')}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                 <AlertDialogAction onClick={handleClearHistory}>
-                  Clear
+                  {t('cmdHistory.clear')}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -155,11 +165,13 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="text-center text-muted-foreground py-8">
-              Loading...
+              {t('common.loading')}
             </div>
           ) : history.length === 0 ? (
             <div className="text-center text-muted-foreground py-8">
-              {searchQuery ? 'No commands found' : 'No command history'}
+              {searchQuery
+                ? t('cmdHistory.noCommands')
+                : t('cmdHistory.noHistory')}
             </div>
           ) : (
             <div className="space-y-1">
@@ -177,7 +189,9 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
                     <div className="text-xs text-muted-foreground mt-1">
                       {formatDate(record.executed_at)}
                       {record.host_id &&
-                        ` • Host: ${record.host_id.substring(0, 8)}...`}
+                        ` • ${t('cmdHistory.hostLabel', {
+                          host: record.host_id.substring(0, 8),
+                        })}...`}
                     </div>
                   </div>
                 </div>
@@ -187,8 +201,7 @@ const CommandHistoryDialog: React.FC<CommandHistoryDialogProps> = ({
         </div>
 
         <div className="text-xs text-muted-foreground text-center pt-2 border-t">
-          {history.length} command
-          {history.length !== 1 ? 's' : ''} in history
+          {t('cmdHistory.inHistory', { count: history.length })}
         </div>
       </DialogContent>
     </Dialog>

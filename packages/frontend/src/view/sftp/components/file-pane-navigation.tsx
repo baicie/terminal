@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Server,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -38,6 +39,7 @@ export function FilePaneNavigation({
   onForward,
   onRefresh,
 }: FilePaneNavigationProps) {
+  const { t } = useTranslation()
   const pathParts = currentPath.split('/').filter(Boolean)
 
   return (
@@ -49,7 +51,9 @@ export function FilePaneNavigation({
           ) : (
             <Server className="size-4" />
           )}
-          <span>{type === 'local' ? 'Local' : 'Remote'}</span>
+          <span>
+            {type === 'local' ? t('sftp.local') : t('sftp.remote')}
+          </span>
         </div>
         <div className="flex-1" />
         <Button
@@ -108,7 +112,7 @@ export function FilePaneNavigation({
             className="h-5 text-xs ml-2 flex-1 min-w-0 max-w-[200px]"
             value={filter}
             onChange={e => onFilterChange(e.target.value)}
-            placeholder="Filter..."
+            placeholder={t('sftp.filter')}
           />
         )}
       </div>
@@ -119,7 +123,7 @@ export function FilePaneNavigation({
             className="h-6 text-xs"
             value={filter}
             onChange={e => onFilterChange(e.target.value)}
-            placeholder="Filter files..."
+            placeholder={t('sftp.filterFiles')}
           />
         </div>
       )}

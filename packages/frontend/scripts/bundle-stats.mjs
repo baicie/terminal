@@ -56,7 +56,11 @@ const budgets = {
   // 583 KB (was 577 KB): the settings, host create/edit and port-forward
   // dialogs were hardcoded English. Localizing them adds en/cn/fr copy only
   // (≈2.5 KB gzip on CI); no view, dependency or code path was added.
-  totalGzip: 583 * 1024,
+  //
+  // 588 KB (was 583 KB): the same sweep for keychain, SFTP, snippets, teams,
+  // known hosts, command palette, logs and serial adds another ≈5.6 KB gzip of
+  // three-locale copy. Again strings only.
+  totalGzip: 588 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

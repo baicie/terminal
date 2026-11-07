@@ -1,4 +1,5 @@
 import type { FileItem } from '@/service/ssh'
+import { useTranslation } from 'react-i18next'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,29 +24,34 @@ export const DeleteDialog: React.FC<DeleteDialogProps> = ({
   file,
   onOpenChange,
   onConfirm,
-}) => (
-  <AlertDialog open={open} onOpenChange={onOpenChange}>
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle>
-          Delete {file?.is_directory ? 'Folder' : 'File'}
-        </AlertDialogTitle>
-        <AlertDialogDescription>
-          Are you sure you want to delete &quot;{file?.name}&quot;? This action cannot be undone.
-        </AlertDialogDescription>
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel>Cancel</AlertDialogCancel>
-        <AlertDialogAction
-          onClick={onConfirm}
-          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-        >
-          Delete
-        </AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
-)
+}) => {
+  const { t } = useTranslation()
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {file?.is_directory
+              ? t('sftp.deleteFolderTitle')
+              : t('sftp.deleteFileTitle')}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {t('sftp.deleteConfirm', { name: file?.name })}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={onConfirm}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {t('common.delete')}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
 
 interface DeleteTriggerProps {
   file: FileItem | null

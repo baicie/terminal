@@ -113,25 +113,25 @@ const LogsView: React.FC = () => {
         </Button>
         <Button size="sm" variant="outline">
           <Download className="size-4 mr-1" data-icon="inline-start" />
-          Export
+          {t('logs.export')}
         </Button>
       </ViewToolbar>
 
       <ViewContent className="p-0">
         <ViewHeader
-          title={t('logs.title') ?? 'Connection Logs'}
-          description="View connection and session logs"
+          title={t('logs.title')}
+          description={t('logs.description')}
           className="px-6 pt-6"
         />
 
         <ScrollArea className="h-[calc(100vh-220px)]">
           {loading ? (
             <div className="flex items-center justify-center h-64 text-muted-foreground">
-              Loading...
+              {t('common.loading')}
             </div>
           ) : logs.length === 0 ? (
             <div className="flex items-center justify-center h-64 text-muted-foreground">
-              {t('logs.noLogs') ?? 'No connection logs yet'}
+              {t('logs.noLogs')}
             </div>
           ) : (
             <div className="px-6 pb-6">
@@ -139,13 +139,21 @@ const LogsView: React.FC = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-20">Type</TableHead>
-                      <TableHead>Host</TableHead>
-                      <TableHead>User</TableHead>
-                      <TableHead>Started</TableHead>
-                      <TableHead className="w-20">Duration</TableHead>
-                      <TableHead className="w-32">Error</TableHead>
-                      <TableHead className="w-24 text-right">Actions</TableHead>
+                      <TableHead className="w-20">
+                        {t('logs.tableType')}
+                      </TableHead>
+                      <TableHead>{t('logs.tableHost')}</TableHead>
+                      <TableHead>{t('logs.tableUser')}</TableHead>
+                      <TableHead>{t('logs.tableStarted')}</TableHead>
+                      <TableHead className="w-20">
+                        {t('logs.tableDuration')}
+                      </TableHead>
+                      <TableHead className="w-32">
+                        {t('logs.tableError')}
+                      </TableHead>
+                      <TableHead className="w-24 text-right">
+                        {t('common.actions')}
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -194,8 +202,7 @@ const LogsView: React.FC = () => {
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="max-w-xs">
                                   <p className="font-medium">
-                                    {t('logs.readableError') ??
-                                      'Readable Error'}
+                                    {t('logs.readableError')}
                                   </p>
                                   <p className="text-xs mt-1">
                                     {getReadableTerminalError(
@@ -214,7 +221,7 @@ const LogsView: React.FC = () => {
                                     className="text-xs text-muted-foreground hover:text-foreground transition-colors text-left"
                                   >
                                     {expandedErrors.has(log.id) ? '▲' : '▼'}{' '}
-                                    {t('logs.rawError') ?? 'Raw'}
+                                    {t('logs.rawError')}
                                   </button>
                                 )}
 
@@ -225,7 +232,9 @@ const LogsView: React.FC = () => {
                               )}
                             </div>
                           ) : (
-                            <span className="text-sm text-success">OK</span>
+                            <span className="text-sm text-success">
+                              {t('logs.ok')}
+                            </span>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
@@ -252,8 +261,8 @@ const LogsView: React.FC = () => {
                               </TooltipTrigger>
                               <TooltipContent>
                                 {log.is_saved
-                                  ? (t('logs.unsave') ?? 'Remove from saved')
-                                  : (t('logs.save') ?? 'Save log')}
+                                  ? t('logs.unsave')
+                                  : t('logs.save')}
                               </TooltipContent>
                             </Tooltip>
 

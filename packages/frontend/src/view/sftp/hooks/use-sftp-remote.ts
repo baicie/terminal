@@ -2,6 +2,7 @@ import type { FileItem } from '@/service/ssh'
 import { sshService } from '@/service/ssh'
 import { toast } from '@/components/ui/sonner'
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface UseSftpRemoteOptions {
   activeHost: { authType: string; name: string } | null
@@ -26,6 +27,7 @@ interface UseSftpRemoteResult {
 }
 
 export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemoteResult {
+  const { t } = useTranslation()
   const [files, setFiles] = useState<FileItem[]>([])
   const [path, setPath] = useState('/')
   const [history, setHistory] = useState(['/'])
@@ -44,21 +46,21 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
     } else if (activeHost.authType === 'key') {
       connResult = await sshService.createSshSessionKey(activeHost as Parameters<typeof sshService.createSshSessionKey>[0])
     } else {
-      toast.error('Unsupported auth type')
+      toast.error(t('sftp.unsupportedAuthType'))
       return null
     }
     if (!connResult.success || !connResult.sessionId) {
-      toast.error(`Connection failed: ${connResult.message}`)
+      toast.error(t('sftp.connectionFailed', { error: connResult.message }))
       return null
     }
     const sftpResult = await sshService.sftpConnect(connResult.sessionId)
     if (!sftpResult.success) {
-      toast.error(`SFTP init failed: ${sftpResult.message}`)
+      toast.error(t('sftp.initFailed', { error: sftpResult.message }))
       return null
     }
     setSessionId(connResult.sessionId)
     return connResult.sessionId
-  }, [activeHost, sessionId])
+  }, [activeHost, sessionId, t])
 
   const loadDir = useCallback(
     async (p: string) => {
@@ -71,15 +73,15 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
           setFiles(result.files)
           setPath(p)
         } else {
-          toast.error(result.message || 'Failed to list directory')
+          toast.error(result.message || t('sftp.listFailed'))
         }
       } catch (e) {
-        toast.error(`Error: ${e}`)
+        toast.error(t('sftp.genericError', { error: String(e) }))
       } finally {
         setLoading(false)
       }
     },
-    [ensureSession],
+    [ensureSession, t],
   )
 
   // Reset on host change
@@ -119,13 +121,13 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
       if (!sid) return
       const result = await sshService.sftpDelete(sid, file.path, file.is_directory)
       if (result.success) {
-        toast.success('Deleted successfully')
+        toast.success(t('sftp.deleted'))
         void loadDir(path)
       } else {
-        toast.error(result.message || 'Delete failed')
+        toast.error(result.message || t('sftp.deleteFailed'))
       }
     },
-    [path, loadDir, ensureSession],
+    [path, loadDir, ensureSession, t],
   )
 
   const renameFile = useCallback(
@@ -135,13 +137,13 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
       const newPath = path === '/' ? `/${newName}` : `${path}/${newName}`
       const result = await sshService.sftpRename(sid, file.path, newPath)
       if (result.success) {
-        toast.success('Renamed successfully')
+        toast.success(t('sftp.renamed'))
         void loadDir(path)
       } else {
-        toast.error(result.message || 'Rename failed')
+        toast.error(result.message || t('sftp.renameFailed'))
       }
     },
-    [path, loadDir, ensureSession],
+    [path, loadDir, ensureSession, t],
   )
 
   const mkdir = useCallback(
@@ -151,13 +153,13 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
       const newPath = path === '/' ? `/${name}` : `${path}/${name}`
       const result = await sshService.sftpMkdir(sid, newPath)
       if (result.success) {
-        toast.success('Folder created')
+        toast.success(t('sftp.folderCreated'))
         void loadDir(path)
       } else {
-        toast.error(result.message || 'Create folder failed')
+        toast.error(result.message || t('sftp.createFolderFailed'))
       }
     },
-    [path, loadDir, ensureSession],
+    [path, loadDir, ensureSession, t],
   )
 
   return {

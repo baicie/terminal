@@ -36,6 +36,21 @@ export default {
   'snippets.deletePackageConfirm':
     'Are you sure you want to delete "{{name}}"? All snippets in this package will be moved to uncategorized.',
   'snippets.enterVar': 'Enter {{name}}',
+  'snippets.filterSnippets': 'Filter snippets...',
+  'snippets.filterHistory': 'Filter history...',
+  'snippets.quickRun': 'Quick Run',
+  'snippets.historyTab': 'History',
+  'snippets.collapseSidebar': 'Collapse',
+  'snippets.executing': 'Executing: {{name}}',
+  'snippets.enterVarPrompt': 'Enter value for {{name}}:',
+  'snippets.loadFailed': 'Failed to load data: {{error}}',
+  'snippets.saveFailed': 'Failed to save script: {{error}}',
+  'snippets.deleteFailed': 'Failed to delete script: {{error}}',
+  'snippets.toggleFailed': 'Failed to toggle script: {{error}}',
+  'snippets.executeFailed': 'Execution failed: {{error}}',
+  'snippets.create': 'Create',
+  'snippets.namePlaceholder': 'My Snippet',
+  'snippets.packageLabel': 'Package',
 
   // Scripts
   'scripts.title': 'Batch Scripts',
@@ -96,4 +111,10 @@ export default {
     'Are you sure you want to delete "{{name}}"? This action cannot be undone.',
   'scripts.nameAndScriptRequired': 'Name and script are required',
   'scripts.noHosts': 'No hosts selected for this script',
+  'scripts.hostSelectedCount': '{{count}} host selected',
+  'scripts.hostsSelectedCount': '{{count}} hosts selected',
+  'scripts.statusSuccess': 'Success',
+  'scripts.statusFailed': 'Failed',
+  'scripts.statusRunning': 'Running',
+  'scripts.statusTimeout': 'Timed out',
 }

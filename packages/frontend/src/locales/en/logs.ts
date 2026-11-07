@@ -9,4 +9,12 @@ export default {
   'logs.rawError': 'Raw',
   'logs.unsave': 'Remove from saved',
   'logs.save': 'Save log',
+  'logs.description': 'View connection and session logs',
+  'logs.tableType': 'Type',
+  'logs.tableHost': 'Host',
+  'logs.tableUser': 'User',
+  'logs.tableStarted': 'Started',
+  'logs.tableDuration': 'Duration',
+  'logs.tableError': 'Error',
+  'logs.ok': 'OK',
 }

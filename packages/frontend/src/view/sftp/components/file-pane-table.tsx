@@ -1,5 +1,6 @@
 import type { FileItem } from '@/service/ssh'
 import { Download, Edit3, Loader2, MoreHorizontal, Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -10,7 +11,11 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { format } from '@/lib/date-utils'
 import { cn } from '@/lib/utils'
-import { formatFileSize, getFileIcon, getFileKind } from './file-pane-file-info'
+import {
+  formatFileSize,
+  getFileIcon,
+  getFileKindKey,
+} from './file-pane-file-info'
 
 export type FilePaneSortBy = 'name' | 'size' | 'modified'
 
@@ -51,6 +56,7 @@ export function FilePaneTable({
   onRename,
   onDelete,
 }: FilePaneTableProps) {
+  const { t } = useTranslation()
   if (loading) {
     return (
       <div className="flex-1 overflow-auto">
@@ -65,7 +71,7 @@ export function FilePaneTable({
     return (
       <div className="flex-1 overflow-auto">
         <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-          {filter ? 'No matching files' : 'Empty directory'}
+          {filter ? t('sftp.noMatchingFiles') : t('sftp.emptyDirectory')}
         </div>
       </div>
     )
@@ -80,23 +86,25 @@ export function FilePaneTable({
               className="px-2 sm:px-3 py-1.5 font-medium cursor-pointer hover:text-foreground select-none"
               onClick={() => onSort('name')}
             >
-              Name {sortBy === 'name' && (sortDir === 'asc' ? '↑' : '↓')}
+              {t('sftp.tableName')}{' '}
+              {sortBy === 'name' && (sortDir === 'asc' ? '↑' : '↓')}
             </th>
             <th
               className="px-2 sm:px-3 py-1.5 font-medium cursor-pointer hover:text-foreground select-none w-16 sm:w-24"
               onClick={() => onSort('size')}
             >
-              Size {sortBy === 'size' && (sortDir === 'asc' ? '↑' : '↓')}
+              {t('sftp.tableSize')}{' '}
+              {sortBy === 'size' && (sortDir === 'asc' ? '↑' : '↓')}
             </th>
             <th
               className="px-2 sm:px-3 py-1.5 font-medium cursor-pointer hover:text-foreground select-none w-20 sm:w-28 hidden sm:table-cell"
               onClick={() => onSort('modified')}
             >
-              Modified{' '}
+              {t('sftp.tableModified')}{' '}
               {sortBy === 'modified' && (sortDir === 'asc' ? '↑' : '↓')}
             </th>
             <th className="px-2 sm:px-3 py-1.5 font-medium w-16 sm:w-28 hidden sm:table-cell">
-              Kind
+              {t('sftp.tableKind')}
             </th>
             <th className="px-3 py-1.5 w-7 sm:w-8" />
           </tr>
@@ -138,7 +146,7 @@ export function FilePaneTable({
                 {format(file.modified_time, 'MMM dd, HH:mm')}
               </td>
               <td className="px-2 sm:px-3 py-1.5 text-muted-foreground text-[10px] sm:text-xs hidden sm:table-cell">
-                {getFileKind(file)}
+                {t(getFileKindKey(file))}
               </td>
               <td className="px-3 py-1.5">
                 {type === 'remote' && sessionId && (
@@ -154,17 +162,19 @@ export function FilePaneTable({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => onDownload?.(file)}>
-                        <Download className="size-3.5 mr-2" /> Download
+                        <Download className="size-3.5 mr-2" />{' '}
+                        {t('sftp.download')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => onRename(file)}>
-                        <Edit3 className="size-3.5 mr-2" /> Rename
+                        <Edit3 className="size-3.5 mr-2" /> {t('sftp.rename')}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         className="text-destructive"
                         onClick={() => onDelete(file)}
                       >
-                        <Trash2 className="size-3.5 mr-2" /> Delete
+                        <Trash2 className="size-3.5 mr-2" />{' '}
+                        {t('common.delete')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

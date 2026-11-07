@@ -127,4 +127,13 @@ export default {
   'teams.copied': 'Copied to clipboard',
   'teams.action': 'Action',
   'teams.time': 'Time',
+  'teams.email': 'Email',
+  'teams.host': 'Host',
+  'teams.packageFileFilter': 'Team Package',
+  'teams.allFilesFilter': 'All Files',
+  'teams.importedSummary': '{{hosts}} hosts, {{snippets}} snippets imported',
+  'teams.packageHosts': '{{count}} host(s)',
+  'teams.packageGroups': '{{count}} group(s)',
+  'teams.packageSnippets': '{{count}} snippet(s)',
+  'teams.packageMembers': '{{count}} member(s)',
 }

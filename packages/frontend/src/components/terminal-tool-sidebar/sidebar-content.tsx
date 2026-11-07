@@ -1,5 +1,6 @@
 import type { CommandHistoryRecord, SnippetRecord } from '@/service/database'
 import { Clock, Code, Loader2, Play, Search } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -26,6 +27,7 @@ export function SidebarContent({
   onExecuteSnippet,
   onExecuteHistory,
 }: SidebarContentProps) {
+  const { t } = useTranslation()
   return (
     <>
       <div className="shrink-0 border-b border-border/50 px-3 py-2">
@@ -35,8 +37,8 @@ export function SidebarContent({
             className="h-7 pl-8 text-xs"
             placeholder={
               activeTab === 'snippets'
-                ? 'Filter snippets...'
-                : 'Filter history...'
+                ? t('snippets.filterSnippets')
+                : t('snippets.filterHistory')
             }
             value={searchQuery}
             onChange={event => onSearchChange(event.target.value)}
@@ -47,7 +49,7 @@ export function SidebarContent({
       {activeTab === 'snippets' && (
         <div className="flex shrink-0 flex-col gap-1.5 border-b border-border/50 px-3 py-2">
           <p className="text-[10px] font-medium uppercase text-muted-foreground">
-            Quick Run
+            {t('snippets.quickRun')}
           </p>
           <div className="flex flex-col gap-1">
             {snippets.slice(0, 3).map(snippet => (
@@ -147,13 +149,14 @@ function EmptyMessage({
   hasSearch: boolean
   type: 'snippets' | 'history'
 }) {
+  const { t } = useTranslation()
   const message = hasSearch
     ? type === 'snippets'
-      ? 'No matching snippets'
-      : 'No matching commands'
+      ? t('snippets.noMatch')
+      : t('cmdHistory.noMatchingCommands')
     : type === 'snippets'
-      ? 'No snippets yet'
-      : 'No command history'
+      ? t('snippets.emptyTitle')
+      : t('cmdHistory.noHistory')
   return (
     <div className="py-8 text-center text-xs text-muted-foreground">
       {message}

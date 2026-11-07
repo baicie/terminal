@@ -48,7 +48,7 @@ export function MemberList({ members }: MemberListProps) {
       <TableHeader>
         <TableRow>
           <TableHead>{t('common.name')}</TableHead>
-          <TableHead>Email</TableHead>
+          <TableHead>{t('teams.email')}</TableHead>
           <TableHead>{t('teams.role')}</TableHead>
           <TableHead>{t('common.actions')}</TableHead>
         </TableRow>

@@ -43,7 +43,7 @@ export function usePaletteSelection(onClose: () => void) {
             /\$\{([^}]+)\}/g,
             (_, variableName) =>
               window.prompt(
-                `Enter value for ${variableName}:`,
+                t('snippets.enterVarPrompt', { name: variableName }),
                 variables.find(variable => variable.name === variableName)
                   ?.defaultValue || '',
               ) || '',
@@ -52,13 +52,13 @@ export function usePaletteSelection(onClose: () => void) {
             const variable = variables.find(item => item.name === variableName)
             return variable
               ? window.prompt(
-                  `Enter value for ${variableName}:`,
+                  t('snippets.enterVarPrompt', { name: variableName }),
                   variable.defaultValue || '',
                 ) || ''
               : ''
           })
           terminalEmitter.writeCommand(script)
-          toast.success(`Executing: ${snippet.name}`)
+          toast.success(t('snippets.executing', { name: snippet.name }))
           break
         }
         case 'history':

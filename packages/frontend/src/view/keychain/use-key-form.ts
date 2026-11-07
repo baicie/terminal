@@ -1,5 +1,6 @@
 import type { SSHKeyRecord } from '@/service/database'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import i18n from '@/locales'
 
 export interface KeyFormValues {
   formName: string
@@ -164,7 +165,9 @@ export function useKeyForm(): UseKeyFormReturn {
       fingerprint: string
     }) => {
       const setters = settersRef.current
-      setters.setFormName(`Generated ${result.key_type} Key`)
+      setters.setFormName(
+        i18n.t('keychain.generatedKeyName', { type: result.key_type }),
+      )
       setters.setFormKeyType('key')
       setters.setFormPrivateKey(result.private_key)
       setters.setFormPublicKey(result.public_key)

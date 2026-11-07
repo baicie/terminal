@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Plus, Upload } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useBreakpointMax } from '@/hooks/use-breakpoint'
 import type { FileItem } from '@/service/ssh'
@@ -47,6 +48,7 @@ export const FilePane: React.FC<FilePaneProps> = ({
   onUpload,
   onDownload,
 }) => {
+  const { t } = useTranslation()
   const [filter, setFilter] = useState('')
   const [sortBy, setSortBy] = useState<FilePaneSortBy>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -139,7 +141,7 @@ export const FilePane: React.FC<FilePaneProps> = ({
             className="h-7 text-xs gap-1"
             onClick={() => onUpload?.(currentPath)}
           >
-            <Upload className="size-3" /> Upload
+            <Upload className="size-3" /> {t('sftp.upload')}
           </Button>
           <Button
             size="sm"
@@ -148,7 +150,7 @@ export const FilePane: React.FC<FilePaneProps> = ({
             onClick={onMkdir}
           >
             <Plus className="size-3" />
-            New Folder
+            {t('sftp.newFolder')}
           </Button>
         </div>
       )}

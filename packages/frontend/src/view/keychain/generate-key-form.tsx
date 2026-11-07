@@ -1,4 +1,5 @@
 import { Eye, EyeOff } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -35,18 +36,21 @@ export function GenerateKeyForm({
   onConfirmPassphraseChange,
   onTogglePassphrase,
 }: GenerateKeyFormProps) {
+  const { t } = useTranslation()
   return (
     <>
       <div>
-        <Label htmlFor="gen-type">Key Type</Label>
+        <Label htmlFor="gen-type">{t('keychain.keyType')}</Label>
         <Select value={keyType} onValueChange={onKeyTypeChange}>
           <SelectTrigger id="gen-type">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ed25519">Ed25519 (Recommended)</SelectItem>
-            <SelectItem value="rsa4096">RSA 4096-bit</SelectItem>
-            <SelectItem value="rsa">RSA 2048-bit</SelectItem>
+            <SelectItem value="ed25519">
+              {t('keychain.ed25519Recommended')}
+            </SelectItem>
+            <SelectItem value="rsa4096">{t('keychain.rsa4096')}</SelectItem>
+            <SelectItem value="rsa">{t('keychain.rsa2048')}</SelectItem>
             <SelectItem value="ecdsa-nistp256">ECDSA P-256</SelectItem>
             <SelectItem value="ecdsa-nistp384">ECDSA P-384</SelectItem>
             <SelectItem value="ecdsa-nistp521">ECDSA P-521</SelectItem>
@@ -55,7 +59,7 @@ export function GenerateKeyForm({
       </div>
 
       <div>
-        <Label htmlFor="gen-comment">Comment / Label</Label>
+        <Label htmlFor="gen-comment">{t('keychain.commentLabel')}</Label>
         <Input
           id="gen-comment"
           placeholder="user@hostname"
@@ -65,12 +69,14 @@ export function GenerateKeyForm({
       </div>
 
       <div>
-        <Label htmlFor="gen-passphrase">Passphrase (optional)</Label>
+        <Label htmlFor="gen-passphrase">
+          {t('keychain.passphraseOptional')}
+        </Label>
         <div className="relative">
           <Input
             id="gen-passphrase"
             type={showPassphrase ? 'text' : 'password'}
-            placeholder="Enter passphrase"
+            placeholder={t('keychain.enterPassphrase')}
             value={passphrase}
             onChange={e => onPassphraseChange(e.target.value)}
           />
@@ -90,11 +96,13 @@ export function GenerateKeyForm({
       </div>
 
       <div>
-        <Label htmlFor="gen-confirm-passphrase">Confirm Passphrase</Label>
+        <Label htmlFor="gen-confirm-passphrase">
+          {t('keychain.confirmPassphrase')}
+        </Label>
         <Input
           id="gen-confirm-passphrase"
           type={showPassphrase ? 'text' : 'password'}
-          placeholder="Confirm passphrase"
+          placeholder={t('keychain.confirmPassphrasePlaceholder')}
           value={confirmPassphrase}
           onChange={e => onConfirmPassphraseChange(e.target.value)}
         />

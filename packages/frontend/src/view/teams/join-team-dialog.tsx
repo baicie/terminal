@@ -54,8 +54,8 @@ export const JoinTeamDialog: React.FC<JoinTeamDialogProps> = ({
       const selected = await openDialog({
         multiple: false,
         filters: [
-          { name: 'Team Package', extensions: ['json'] },
-          { name: 'All Files', extensions: ['*'] },
+          { name: t('teams.packageFileFilter'), extensions: ['json'] },
+          { name: t('teams.allFilesFilter'), extensions: ['*'] },
         ],
       })
 
@@ -91,7 +91,10 @@ export const JoinTeamDialog: React.FC<JoinTeamDialogProps> = ({
       const stats = await importTeamPackage(content, 'merge')
       await enableTeamMode({ mode: 'local' })
       toast.success(t('teams.importSuccess'), {
-        description: `${stats.hosts} hosts, ${stats.snippets} snippets imported`,
+        description: t('teams.importedSummary', {
+          hosts: stats.hosts,
+          snippets: stats.snippets,
+        }),
       })
       onOpenChange(false)
     } catch (err) {
@@ -135,16 +138,28 @@ export const JoinTeamDialog: React.FC<JoinTeamDialogProps> = ({
               </div>
               <div className="text-sm text-muted-foreground space-y-1">
                 {previewData.hosts > 0 && (
-                  <div>•{previewData.hosts} host(s)</div>
+                  <div>
+                    •{t('teams.packageHosts', { count: previewData.hosts })}
+                  </div>
                 )}
                 {previewData.groups > 0 && (
-                  <div>•{previewData.groups} group(s)</div>
+                  <div>
+                    •{t('teams.packageGroups', { count: previewData.groups })}
+                  </div>
                 )}
                 {previewData.snippets > 0 && (
-                  <div>•{previewData.snippets} snippet(s)</div>
+                  <div>
+                    •{t('teams.packageSnippets', {
+                      count: previewData.snippets,
+                    })}
+                  </div>
                 )}
                 {previewData.members > 0 && (
-                  <div>•{previewData.members} member(s)</div>
+                  <div>
+                    •{t('teams.packageMembers', {
+                      count: previewData.members,
+                    })}
+                  </div>
                 )}
               </div>
             </div>
