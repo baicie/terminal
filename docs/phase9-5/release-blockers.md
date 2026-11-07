@@ -156,6 +156,18 @@
 - 真实进程 E2E `42344829575`（`c68aebb`）5/5：单实例与 Vault 报告均 PASS；窗口焦点 NOT_RUN。
 - 证据：官方矩阵 `42346192749` 3/3，指纹 `a0a76721…`，门禁 0 problem。
 - P0-A.2：会话锁缓存/init 闭合；证据 `42355653387` 指纹 `43fdc334…`；E2E `42356452096` 5/5。
+- 最终 CI `42357395943`（`8adff85`）11/11。
+
+## 5.5 Phase 9.7 WP3 Team Sync 跨版本（新增阻塞）
+
+- 历史 `v0.0.1-dev.2` 客户端与当前客户端以独立进程、真实 HTTP/PG/SQLite 实测：
+  首次推送/拉取 PASS，当前客户端在 A 数据库上升级并推送脏行 PASS。
+- **旧客户端无法再次同步**：服务端把毫秒游标视为超出安全水位并返回全量窗口，
+  历史客户端用裸 `INSERT` 应用快照，重复 share 触发 `UNIQUE constraint failed`，
+  整轮同步中止。旧客户端对已有 share 的更新也会被服务端按 `legacy-timestamp` 拒绝。
+- 结论 `TEAM_CROSS_VERSION_A_TO_B_VERIFIED=FAIL`；修复路径不是放宽服务端游标语义，
+  而是先完成客户端升级（WP4 updater 仍 NOT_RUN）。见
+  `docs/phase9-7/team-sync-cross-version.md`。
 
 ## 6. 判定
 

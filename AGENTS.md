@@ -654,8 +654,11 @@ pnpm add <package-name>
 - ✅ **P0-A.2 会话锁闭合**：`getDb` 每次调用（含缓存/初始化中）校验锁；锁失效即关闭缓存句柄并阻断。锁身份取自已加锁 fd，Unix 对比 inode、拒绝 symlink/替换；Windows 用 creation_time+size 近似（PARTIAL）。plugin-sql 直接命令的信任边界已记录（不做前端万能声明）
 - ✅ **真实三进程 E2E**：从 B DMG 安装并校验 SHA；第二次启动 code 0 并激活首进程、仅一个 DB；SIGKILL 后第三进程取得锁、读到并改写 probe 行；E2E `42344829575`（`c68aebb`）**5/5**
 - ✅ **Vault 服务级应用链路**：smoke 构建 + 隔离标记触发的 `VaultService` probe，覆盖创建/锁定/错误密码/改密/重启持久化；结果经 `smoke-vault-probe` feature 写文件；密码/秘密不入日志。UI 自动化与 A→B 跨版本 **NOT_RUN**
-- 🟡 窗口焦点（headless）、Windows NSIS、Team Sync 跨版本、Updater runtime、AppImage stock 仍 **NOT_RUN/BLOCKED_EXTERNAL**
-- ✅ 最终 E2E `42356452096` 5/5（`49e9903`）；证据矩阵 `42355653387` 3/3，指纹 `43fdc334…`，门禁 0 problem
+- ✅ **WP3 Team Sync 跨版本已实跑**：`v0.0.1-dev.2` 源码（固定 `835fae82…`）与当前 HEAD 各自独立进程，真实 HTTP/PG/磁盘 SQLite。A 首次推送/拉取 PASS，当前客户端在 A 数据库上升级并推送脏行 PASS；**A 的第二次同步 FAIL**：服务端把毫秒游标判为超出安全水位并返回全量窗口，历史客户端裸 `INSERT` 命中 `UNIQUE constraint failed`。已记录 finding 与复现脚本；CI 中该步骤是诊断（`continue-on-error`），不冒充产品门禁
+- 🟡 窗口焦点（headless）、Windows NSIS、Updater runtime、AppImage stock 仍 **NOT_RUN/BLOCKED_EXTERNAL**
+- 🟡 **Updater 运行时仍未实现**：`updates.ts` 只有检查与失败分类，无 `downloadAndInstall` 入口；临时密钥 + loopback 的 A/B 双构建尚未落地
+- ✅ 最终 E2E `42356452096` 5/5（`49e9903`）；证据矩阵 `42355653387` 3/3，指纹 `43fdc334…`，门禁 0 problem；最终 CI `42357395943`（`8adff85`）**11/11**
+- 📋 WP3 交付见 `docs/phase9-7/team-sync-cross-version.md`；跨版本兼容性**未通过**，是 RC 阻塞项
 - ✅ **Vault 生产构建门禁**：无 feature 时 `vault_probe_report` no-op；生产 bundle 无 probe 常量、smoke overlay 有 probe，均有构建断言
 - 📋 判定见 `docs/phase9-7/phase9-7-product-acceptance.md`、`single-instance-e2e.md`、`vault-app-e2e.md`、`session-lock-safety.md`
 

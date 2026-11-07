@@ -46,3 +46,10 @@ verify-install-evidence/
 # chasing a specific failure. Never an input to a gate, so a stray `git add -A`
 # must not sweep it into a commit.
 .workbuddy/
+
+# Historical client tree materialised by
+# scripts/verify-install/prepare-team-sync-a.mjs for the cross-version run.
+packages/team-server/.tmp/
+
+# Written by scripts/verify-install/team-cross-version.mjs in CI.
+team-cross-version-report.json
