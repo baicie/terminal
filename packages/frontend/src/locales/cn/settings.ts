@@ -198,4 +198,7 @@ export default {
   'settings.knownHosts': '{{count}} 个已知主机',
   'settings.checking': '检查中…',
   'settings.checkForUpdates': '检查更新',
+  'settings.loadFailed': '加载设置失败。',
+  'settings.saving': '保存中…',
+  'settings.unsavedChanges': '有未保存的更改',
 }

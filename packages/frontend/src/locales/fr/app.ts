@@ -260,4 +260,5 @@ export default {
     'Échec de la vérification de la clé hôte. Vérifiez known_hosts.',
   'terminal.sessionTimeout':
     "Délai d'expiration de la session. La connexion peut avoir été fermée.",
+  'toolbar.resizeSidebar': 'Redimensionner la barre latérale',
 }

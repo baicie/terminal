@@ -137,4 +137,10 @@ export default {
   'hosts.toast.updated': '主机已更新',
   'hosts.toast.created': '主机已创建',
   'hosts.toast.saveFailed': '保存主机失败',
+  'hosts.loadFailed': '加载主机失败。',
+  'hosts.form.dialogDescription': '配置该主机的连接、认证与高级选项。',
+  'hosts.form.discardTitle': '放弃更改？',
+  'hosts.form.discardDescription': '对该主机的修改尚未保存，关闭将丢弃这些修改。',
+  'hosts.form.discard': '放弃',
+  'hosts.form.keepEditing': '继续编辑',
 }

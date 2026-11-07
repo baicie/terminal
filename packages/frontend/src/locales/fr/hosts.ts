@@ -140,4 +140,10 @@ export default {
   'hosts.toast.updated': 'Hôte mis à jour',
   'hosts.toast.created': 'Hôte créé',
   'hosts.toast.saveFailed': "Échec de l'enregistrement de l'hôte",
+  'hosts.loadFailed': 'Échec du chargement des hôtes.',
+  'hosts.form.dialogDescription': 'Configurez la connexion, l’authentification et les options avancées de cet hôte.',
+  'hosts.form.discardTitle': 'Abandonner les modifications ?',
+  'hosts.form.discardDescription': 'Les modifications de cet hôte ne sont pas enregistrées. Fermer les abandonnera.',
+  'hosts.form.discard': 'Abandonner',
+  'hosts.form.keepEditing': 'Continuer',
 }

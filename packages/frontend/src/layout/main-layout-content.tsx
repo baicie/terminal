@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import AppSidebar from '@/components/app-sidebar'
 import { SwipeBackIndicator } from '@/components/swipe-back-indicator'
 import TopToolbar from '@/components/top-toolbar'
@@ -8,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 import { RouteTransition } from './route-transition'
 import { useSidebarResize } from './use-sidebar-resize'
+import { SIDEBAR_MAX, SIDEBAR_MIN } from './sidebar-width'
 import { useSwipeBack } from './use-swipe-back'
 
 const BottomNav = lazy(() => import('@/components/bottom-nav'))
@@ -30,13 +32,15 @@ export function MainLayoutContent({
   onToggleSidebar,
   onSidebarWidthChange,
 }: MainLayoutContentProps) {
+  const { t } = useTranslation()
   const isMobile = useIsMobile()
   const isTerminalRoute = useLocation().pathname === '/terminal'
   const hasTerminalTabs = useAppStore(state => state.tabs.length > 0)
   const terminalLayerMountedRef = useRef(false)
   const shouldMountTerminal =
     hasTerminalTabs || terminalLayerMountedRef.current
-  const { resizing, onResizeStart, onToggleCollapse } = useSidebarResize(
+  const { resizing, onResizeStart, onResizeKeyDown, onToggleCollapse }
+    = useSidebarResize(
     sidebarWidth,
     onSidebarWidthChange,
   )
@@ -74,14 +78,18 @@ export function MainLayoutContent({
             <div
               role="separator"
               aria-orientation="vertical"
+              aria-valuemin={SIDEBAR_MIN}
+              aria-valuemax={SIDEBAR_MAX}
               aria-valuenow={sidebarWidth}
+              aria-label={t('toolbar.resizeSidebar')}
               tabIndex={0}
               className={cn(
                 'w-[6px] shrink-0 cursor-col-resize flex items-center justify-center group outline-none select-none',
                 'hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                 resizing && 'cursor-col-resize bg-primary/20',
               )}
-              onMouseDown={onResizeStart}
+              onPointerDown={onResizeStart}
+              onKeyDown={onResizeKeyDown}
             >
               <div className="flex flex-col gap-1.5 py-8 opacity-0 group-hover:opacity-100 transition-opacity">
                 <span className="size-1 rounded-full bg-muted-foreground/60" />

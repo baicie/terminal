@@ -216,4 +216,7 @@ export default {
   'settings.knownHosts': '{{count}} hôte(s) connu(s)',
   'settings.checking': 'Vérification…',
   'settings.checkForUpdates': 'Rechercher des mises à jour',
+  'settings.loadFailed': 'Échec du chargement des paramètres.',
+  'settings.saving': 'Enregistrement…',
+  'settings.unsavedChanges': 'Modifications non enregistrées',
 }

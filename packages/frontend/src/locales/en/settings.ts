@@ -208,4 +208,7 @@ export default {
   'settings.knownHosts': '{{count}} known host(s)',
   'settings.checking': 'Checking…',
   'settings.checkForUpdates': 'Check for updates',
+  'settings.loadFailed': 'Failed to load settings.',
+  'settings.saving': 'Saving…',
+  'settings.unsavedChanges': 'Unsaved changes',
 }

@@ -12,6 +12,13 @@
 - 起点 CI：`Repository gates` 因旧证据与 `fr/app.ts` 301 行失败；其余 job 绿
 - 证据矩阵 `42388505322`（`892137c`）已取消，源码未冻结前不重采
 
+## 已完成的 P1
+
+- [x] Settings：loading/ready/error 状态机、失败重试、未保存标记与离开回滚。
+- [x] Hosts：loadHosts 失败显示错误与重试，中止/卸载保护，loadGroups 不再 unhandled。
+- [x] Host Dialog：改用 shadcn Dialog（焦点/Esc/aria），未保存关闭需确认；表单逻辑拆到 hook。
+- [x] Sidebar：分隔条支持 Arrow/Shift+Arrow/Home/End 键盘调整与 pointer 拖拽。
+
 ## 已完成的 P0
 
 - [x] Team Sync 最低支持版本策略：毫秒时间戳游标在读取任何数据前返回
@@ -31,7 +38,7 @@
 
 ## 正在执行
 
-- P1：Settings/Hosts 失败态
+- P1：UI 截图/交互验收与剩余 P1
 
 ## 下一步精确命令
 

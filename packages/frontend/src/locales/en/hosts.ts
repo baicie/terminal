@@ -140,4 +140,10 @@ export default {
   'hosts.toast.updated': 'Host updated',
   'hosts.toast.created': 'Host created',
   'hosts.toast.saveFailed': 'Failed to save host',
+  'hosts.loadFailed': 'Failed to load hosts.',
+  'hosts.form.dialogDescription': 'Configure the connection, authentication and advanced options for this host.',
+  'hosts.form.discardTitle': 'Discard changes?',
+  'hosts.form.discardDescription': 'Your edits to this host have not been saved. Closing now discards them.',
+  'hosts.form.discard': 'Discard',
+  'hosts.form.keepEditing': 'Keep editing',
 }

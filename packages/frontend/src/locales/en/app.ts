@@ -259,4 +259,5 @@ export default {
   'terminal.hostKeyFailed': 'Host key verification failed. Check known_hosts.',
   'terminal.sessionTimeout':
     'Session timed out. The connection may have been closed.',
+  'toolbar.resizeSidebar': 'Resize sidebar',
 }
