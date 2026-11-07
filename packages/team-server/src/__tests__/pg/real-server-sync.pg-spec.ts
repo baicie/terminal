@@ -120,4 +120,24 @@ describe('real Nest HTTP sync', () => {
       .shares.find(item => item.id === share.id)
     expect(updatedShare?.data.name).toBe('http-e2e-host-updated')
   })
+
+  it('refuses a retired timestamp cursor with 426 and changes nothing', async () => {
+    const before = await call('GET', '/api/v1/sync?since=0', tokenA)
+    const refused = await call(
+      'GET',
+      `/api/v1/sync?since=${Date.now()}`,
+      tokenA,
+    )
+    expect(refused.status).toBe(426)
+    expect(refused.json).toMatchObject({
+      code: 'CLIENT_UPGRADE_REQUIRED',
+      requiredCursorVersion: 2,
+    })
+    const after = await call('GET', '/api/v1/sync?since=0', tokenA)
+    const ids = (result: { json: unknown }) =>
+      (result.json as { shares: Array<{ id: string }> }).shares
+        .map(share => share.id)
+        .sort()
+    expect(ids(after)).toEqual(ids(before))
+  })
 })

@@ -109,6 +109,24 @@ function legacyAnchor(cursor: bigint, safeNow: bigint): ChangeWindowAnchor {
  * version, or a watermark above the current one (cluster reset, restore) -
  * degrades to a full resnapshot instead of a guess.
  */
+/**
+ * A bare numeric cursor at or above the millisecond epoch floor cannot come
+ * from the current client (it sends `2.<bound>.<txid>.<seq>`), and it cannot
+ * be served safely either: a timestamp is above every PostgreSQL watermark, so
+ * the old code answered with the entire window, which historical clients
+ * re-insert with a non-idempotent INSERT and abort. Such a client is told to
+ * upgrade instead of being handed data it cannot apply.
+ */
+export function isLegacyTimestampCursor(
+  cursor: string | number | undefined | null,
+): boolean {
+  if (cursor === undefined || cursor === null) return false
+  const text = String(cursor).trim()
+  if (!/^\d+$/.test(text)) return false
+  const value = Number(text)
+  return Number.isSafeInteger(value) && value >= LEGACY_TIMESTAMP_VERSION
+}
+
 export function resolveChangeWindowAnchor(
   raw: string | number | undefined | null,
   safeNow: bigint,

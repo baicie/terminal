@@ -1,6 +1,6 @@
 # Overnight sprint checkpoint — 2026-11-08
 
-- 当前时间（北京时间）：2026-11-08 00:33
+- 当前时间（北京时间）：2026-11-08 00:42
 - 分支：`feat/phase9-7-product-acceptance`
 - PR #9：Open，**非 Draft**
 - 硬截止：2026-11-08 12:00 +08:00
@@ -13,6 +13,10 @@
 - 证据矩阵 `42388505322`（`892137c`）已取消，源码未冻结前不重采
 
 ## 已完成的 P0
+
+- [x] Team Sync 最低支持版本策略：毫秒时间戳游标在读取任何数据前返回
+      426 CLIENT_UPGRADE_REQUIRED；旧客户端不能继续同步（A_TO_B=FAIL），但拒绝安全
+      （本地 2 主机 + 1 snippet、服务端 share 集合不变），见 ADR。
 
 - [x] 云团队创建改走真实服务端：`createCloudTeamWithSettings` 先在服务端创建/复用同名团队，
       再持久化服务端 id、成员与 settings；失败不提示成功；服务端成功而本地失败时返回
@@ -27,7 +31,7 @@
 
 ## 正在执行
 
-- P0-3：Team Sync 跨版本 ADR 与安全策略
+- P1：Settings/Hosts 失败态
 
 ## 下一步精确命令
 

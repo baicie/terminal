@@ -7,11 +7,18 @@
 
 ```text
 TEAM_CROSS_VERSION_A_TO_B_VERIFIED=FAIL
+TEAM_LEGACY_CLIENT_SAFE_REJECTION=PASS
+TEAM_MIN_SUPPORTED_CLIENT_POLICY=PASS
 TEAM_CROSS_VERSION_DIRTY_ROW_UPGRADE=PASS
 TEAM_CROSS_VERSION_TOMBSTONE_CONSUMED=FAIL
 TEAM_CROSS_VERSION_TOMBSTONE_RESURRECTION=NOT_RUN
 TEAM_CROSS_VERSION_UPDATE_SAFETY=PASS
 ```
+
+> 2026-11-08 更新：服务端改为**最低支持版本策略**——毫秒时间戳游标在读取任何数据
+> 之前返回 `426 CLIENT_UPGRADE_REQUIRED`。旧客户端不能继续同步（`A_TO_B=FAIL`），
+> 但拒绝本身已实测为安全（无数据交付、本地与服务端数据不变），见
+> [adr-legacy-sync-policy.md](adr-legacy-sync-policy.md)。
 
 历史客户端能在空服务器上完成**首次**推送与拉取；一旦服务器上已有数据，它的下一次
 同步就会失败。这不是环境问题，是两条代码路径的真实不兼容，证据见 §4。

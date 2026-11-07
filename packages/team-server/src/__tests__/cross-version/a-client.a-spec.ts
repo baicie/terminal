@@ -238,65 +238,59 @@ async function runVerify(
 ): Promise<VerifyResult> {
   const client = await createClient(bootstrap, bootstrap.dbA)
   const failures: string[] = []
-  // The app hydrates the team's shares before it syncs; starting from an empty
-  // state would hide what the historical push does with the pre-pull snapshot.
+  // The app hydrates the team's shares before it syncs. The server must refuse
+  // the retired timestamp cursor before any data is applied.
   await client.data.loadSharedHosts(bootstrap.teamId)
   await client.data.loadSharedSnippets(bootstrap.teamId)
   client.store.lastSyncAt = seed.seededAt
   await client.sync.sync()
 
-  const upgrade = readUpgradeResult()
-  const expectedHostOne = upgrade?.details?.editedHostData ?? null
+  const syncError = client.store.syncError
+  const legacyRejected = syncError !== null
+    && /retired timestamp cursor|CLIENT_UPGRADE_REQUIRED|426|upgrade/i.test(syncError)
+  if (!legacyRejected) {
+    failures.push(
+      `expected the server to refuse the historical timestamp cursor, got: ${syncError ?? 'no error'}`,
+    )
+  }
+
+  // The refusal must not have touched the historical client's own data.
+  const storedHosts = seed.hostIds.length < 2
+    ? []
+    : seed.hostIds.map(id => hostData(client.db, id))
+  if (storedHosts.length !== 2 || storedHosts.some(value => value === null)) {
+    failures.push('the historical client lost a local host during the rejected sync')
+  }
+  const snippetCount = count(client.db, 'team_shared_snippets', bootstrap.teamId)
+  if (snippetCount !== 1) {
+    failures.push(`the historical client lost its snippet (${snippetCount})`)
+  }
+
   const deletedSnippetId = readState<{ deletedSnippetId?: string }>('tombstone.json')
     .deletedSnippetId
-  const storedHosts = [seed.hostIds[0], seed.hostIds[1]].map(id => hostData(client.db, id))
-  if (expectedHostOne !== null) {
-    const first = storedHosts[0] as { name?: string, note?: string } | null
-    if (first === null || first.name !== (expectedHostOne as { name?: string }).name) {
-      failures.push('the historical client did not keep the edited host')
-    }
-    if ((expectedHostOne as { note?: string }).note !== undefined
-      && first?.note !== (expectedHostOne as { note?: string }).note) {
-      failures.push('the historical client did not apply the newer host content')
-    }
-  }
-  const tombstoneRow = deletedSnippetId === undefined
-    ? undefined
-    : client.db
-        .prepare('SELECT id FROM team_shared_snippets WHERE id = ?')
-        .get(deletedSnippetId)
-  if (deletedSnippetId !== undefined && tombstoneRow !== undefined) {
-    failures.push('the historical client kept a share the server deleted')
-  }
-  const remoteAfterPush = await serverShareIds(client.api)
-  const resurrected = deletedSnippetId === undefined
-    ? false
-    : remoteAfterPush.includes(deletedSnippetId)
-  if (client.store.syncError !== null) failures.push(`sync error: ${client.store.syncError}`)
+  const remoteAfter = await serverShareIds(client.api)
+  // The tombstone removed the share from the active set; the historical
+  // client keeps its stale local copy precisely because the pull was refused.
+  const deletedSnippetStillOnServer = deletedSnippetId !== undefined
+    && remoteAfter.includes(deletedSnippetId)
 
   const result: VerifyResult = {
     ok: failures.length === 0,
     failedAssertions: failures,
     details: {
+      legacyRejected,
+      syncError,
       storedHostNames: storedHosts.map(value =>
         value === null ? null : (value as { name?: string }).name),
+      localSnippetCount: snippetCount,
       deletedSnippetId: deletedSnippetId ?? null,
-      deletedSnippetStillOnServerAfterHistoricalPush: resurrected,
+      deletedSnippetStillOnServerAfterHistoricalPush: deletedSnippetStillOnServer,
       pushConflicts: client.store.syncConflicts.map(conflict => conflict.shareId),
-      syncError: client.store.syncError,
-      serverShareIds: remoteAfterPush,
+      serverShareIds: remoteAfter,
     },
   }
   client.db.close()
   return result
-}
-
-function readUpgradeResult(): { details?: { editedHostData?: unknown } } | null {
-  try {
-    return readState<{ details?: { editedHostData?: unknown } }>('b-upgrade.json')
-  } catch {
-    return null
-  }
 }
 
 describe('historical client (v0.0.1-dev.2) against the current server', () => {

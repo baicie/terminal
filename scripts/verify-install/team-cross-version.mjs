@@ -261,13 +261,29 @@ async function main() {
       verify: verify === null ? null : { ok: verify.ok, details: verify.details },
     },
     matrix: {
-      TEAM_CROSS_VERSION_A_TO_B_VERIFIED: allOk ? 'PASS' : 'FAIL',
+      // A PASS here would mean the released client can keep syncing. The
+      // minimum-version policy deliberately stops it, so this stays FAIL even
+      // when the refusal itself is verified below.
+      TEAM_CROSS_VERSION_A_TO_B_VERIFIED: allOk
+        && verify?.details?.legacyRejected !== true
+        ? 'PASS'
+        : 'FAIL',
       TEAM_CROSS_VERSION_DIRTY_ROW_UPGRADE: dirtyPathOk ? 'PASS' : 'FAIL',
+      TEAM_LEGACY_CLIENT_SAFE_REJECTION: verify?.ok === true
+        && verify?.details?.legacyRejected === true
+        ? 'PASS'
+        : 'FAIL',
+      TEAM_MIN_SUPPORTED_CLIENT_POLICY: verify?.ok === true
+        && verify?.details?.legacyRejected === true
+        ? 'PASS'
+        : 'FAIL',
       TEAM_CROSS_VERSION_TOMBSTONE_CONSUMED: verify?.ok === true
+        && verify?.details?.legacyRejected !== true
         && verify?.details?.deletedSnippetId !== null
         ? 'PASS'
         : 'FAIL',
       TEAM_CROSS_VERSION_TOMBSTONE_RESURRECTION: verify?.ok !== true
+        || verify?.details?.legacyRejected === true
         ? 'NOT_RUN'
         : verify?.details?.deletedSnippetStillOnServerAfterHistoricalPush === true
           ? 'DETECTED'
@@ -299,12 +315,7 @@ function findingsFrom(verify) {
   if (verify?.ok === true) return []
   const error = verify?.details?.syncError
   if (typeof error !== 'string') return []
-  if (!error.includes('UNIQUE constraint failed')) return [error]
-  return [
-    'The historical client applies a full snapshot with a plain INSERT: re-delivering a share it already stores raises UNIQUE and aborts the whole sync.',
-    'The current server answers the historical client\'s millisecond cursor with a full resnapshot (the cursor is above the PostgreSQL safe watermark), so every restart with existing data re-delivers every share.',
-    'The old client cannot update shares against the current server either: it sends its createdAt as baseVersion, which the server classifies as legacy-timestamp and refuses.',
-  ]
+  return [error]
 }
 
 main().catch((error) => {

@@ -421,15 +421,14 @@ describe('SyncService authorization', () => {
     // No incremental read may window Share or AuditLog by time.
     expect(prisma.share.findMany).not.toHaveBeenCalled()
     expect(prisma.auditLog.findMany).not.toHaveBeenCalled()
-    // A legacy epoch cursor is above the watermark, so it degrades to a full resnapshot.
-    const resync = await service.getChanges('user-a', 1_760_000_000_000)
-    expect(resync.resync).toBe(true)
-    expect(resync.cursor).toBe(COMPLETE_CURSOR)
-    expect(prisma.syncChange.findMany).toHaveBeenLastCalledWith({
-      where: { teamId: { in: ['team-a'] }, txid: { lt: safe } },
-      orderBy: [{ txid: 'asc' }, { seq: 'asc' }],
-      take: LEGACY_FULL_DELIVERY_LIMIT + 1,
-    })
+    // A legacy epoch cursor cannot be served safely: the historical client
+    // re-inserts a full window with a non-idempotent INSERT, so the server
+    // refuses it before reading anything and asks for an upgrade.
+    const readsBeforeRefusal = prisma.syncChange.findMany.mock.calls.length
+    await expect(
+      service.getChanges('user-a', 1_760_000_000_000),
+    ).rejects.toThrow(/retired timestamp cursor/)
+    expect(prisma.syncChange.findMany).toHaveBeenCalledTimes(readsBeforeRefusal)
     // 超过完整交付上限：不交付部分数据，水位不前进，明确要求升级协议
     prisma.syncChange.findMany.mockResolvedValue(
       Array.from(

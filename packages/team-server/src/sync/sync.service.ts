@@ -10,7 +10,7 @@ import type {
   PushedShare,
   PushResult,
 } from './sync-results'
-import { Injectable, Logger } from '@nestjs/common'
+import { HttpException, Injectable, Logger } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
 import { deleteShareWithAudit } from '../shares/share-deletion'
 import { OfflineSyncService } from './offline-sync.service'
@@ -23,6 +23,7 @@ import { readChangeWindow } from './sync-delivery'
 import { describeSyncError, SYNC_OPERATION_FAILED } from './sync-error'
 import {
   classifyBaseVersion,
+  isLegacyTimestampCursor,
   parseVersion,
   shareContentDigest,
   SYNC_CURSOR_VERSION,
@@ -47,6 +48,20 @@ export class SyncService extends OfflineSyncService {
     userId: string,
     cursor?: number | string,
   ): Promise<IncrementalSyncResult & { userId: string, teams: string[] }> {
+    // Reject before reading anything: a client that cannot name a cursor this
+    // server issued must upgrade, not receive a window it will corrupt.
+    if (isLegacyTimestampCursor(cursor)) {
+      throw new HttpException(
+        {
+          statusCode: 426,
+          code: 'CLIENT_UPGRADE_REQUIRED',
+          message:
+            'This client uses the retired timestamp cursor. Upgrade the client before syncing again; no data was changed.',
+          requiredCursorVersion: SYNC_CURSOR_VERSION,
+        },
+        426,
+      )
+    }
     const memberships = await this.prisma.teamMember.findMany(
       { where: { userId }, select: { teamId: true, joinedTxid: true } },
     )
