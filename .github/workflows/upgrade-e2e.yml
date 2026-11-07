@@ -129,6 +129,13 @@ jobs:
           echo "B_SHA=$B_SHA" >> "$GITHUB_ENV"
           node -e "const fs=require('fs');fs.writeFileSync('current-b-build.json',JSON.stringify({sourceSha:process.env.GITHUB_SHA,version:'0.0.1-dev.4-local',kind:'current-source-test-build',instrumentedBuild:true,migrationDelayMs:1500,teamMigrationDelayMs:1500,nodeVersion:process.version},null,2))"
 
+      - name: Single-instance real process check
+        run: |
+          node scripts/verify-install/single-instance-e2e.mjs \
+            --binary "src-tauri/target/release/bundle/macos/Termius.app/Contents/MacOS/terminal" \
+            --work-dir single-instance-work \
+            --report single-instance-report.json
+
       - name: Run current-version A->B upgrade
         run: |
           node scripts/verify-install/upgrade-e2e.mjs run \
@@ -258,6 +265,8 @@ jobs:
           path: |
             current-b.sha256
             current-b-build.json
+            single-instance-report.json
+            single-instance-work/*/logs/
             upgrade-current-report/
             upgrade-current-interrupt-report/
             upgrade-current-restore-report/

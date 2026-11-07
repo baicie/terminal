@@ -69,6 +69,7 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 tracing-log = "0.2"
+tauri-plugin-single-instance = "2"
 
 # Tauri's dependency graph is large. Full dependency debuginfo plus Cargo's
 # incremental caches can otherwise grow the local target directory by tens of

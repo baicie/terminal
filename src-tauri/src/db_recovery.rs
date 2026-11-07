@@ -156,6 +156,74 @@ pub fn release_lock(lock: &RecoveryLock) {
     lock.release();
 }
 
+const RUNTIME_LOCK_FILE: &str = "instance.lock";
+
+/// Held for the whole process lifetime so a second process cannot open the
+/// database even if it bypasses the single-instance IPC (a direct binary
+/// launch, a different entry point, or a platform where the instance socket
+/// could not be created).
+#[derive(Default)]
+pub struct RuntimeInstanceLock(
+    // Held only for RAII: dropping the value releases the OS lock.
+    #[allow(dead_code)] pub StdMutex<Option<File>>,
+);
+
+pub fn acquire_runtime_lock(directory: &Path) -> Result<File, String> {
+    fs::create_dir_all(directory)
+        .map_err(|error| format!("could not create {}: {error}", directory.display()))?;
+    let path = directory.join(RUNTIME_LOCK_FILE);
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|error| format!("could not open {}: {error}", path.display()))?;
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(std::fs::TryLockError::WouldBlock) => {
+            Err("another Terminal instance is already running with this data directory".to_string())
+        }
+        Err(std::fs::TryLockError::Error(error)) => {
+            Err(format!("could not lock {}: {error}", path.display()))
+        }
+    }
+}
+
+pub fn acquire_runtime_lock_for<R: Runtime>(app: &AppHandle<R>) -> Result<File, String> {
+    let db = database_path(app)?;
+    let directory = db
+        .parent()
+        .ok_or_else(|| "the database has no parent directory".to_string())?;
+    acquire_runtime_lock(directory)
+}
+
+/// A verdict the frontend can render without opening the database.
+pub fn manual_status(reason: impl Into<String>) -> RecoveryStatus {
+    status(RecoveryState::ManualInterventionRequired, reason)
+}
+
+/// Transactions this process has already verified and cleared. It makes a
+/// repeated completion callback idempotent without treating an externally
+/// deleted marker as a success.
+#[derive(Default)]
+pub struct CompletionLedger(pub StdMutex<std::collections::HashSet<String>>);
+
+impl CompletionLedger {
+    fn record(&self, transaction_id: &str) {
+        if let Ok(mut set) = self.0.lock() {
+            set.insert(transaction_id.to_string());
+        }
+    }
+
+    fn contains(&self, transaction_id: &str) -> bool {
+        self.0
+            .lock()
+            .map(|set| set.contains(transaction_id))
+            .unwrap_or(false)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MigrationTarget {
     pub table: String,
@@ -1180,10 +1248,25 @@ pub async fn verify_completion(
     db: &Path,
     marker_dir: &Path,
     expected_transaction: Option<&str>,
+    ledger: &CompletionLedger,
 ) -> Result<bool, String> {
     let Some(marker) = read_marker(marker_dir)? else {
-        // Nothing is pending: the transaction is complete (idempotent repeat).
-        return Ok(true);
+        // A marker that vanished is not proof of completion. Only a transaction
+        // this process already verified may be reported complete again; a
+        // non-empty id with no record is an anomaly the caller must not turn
+        // into "done" (and must not release another transaction's lock for).
+        return match expected_transaction {
+            Some(expected) if !expected.is_empty() => {
+                if ledger.contains(expected) {
+                    Ok(true)
+                } else {
+                    Err(format!(
+                        "migration completion rejected: transaction {expected} is not pending and has no verified completion"
+                    ))
+                }
+            }
+            _ => Ok(false),
+        };
     };
     if let Some(expected) = expected_transaction {
         if !expected.is_empty() && marker.migration_id != expected {
@@ -1205,6 +1288,7 @@ pub async fn verify_completion(
         ));
     }
     clear_transaction(marker_dir, Some(&marker.migration_id))?;
+    ledger.record(&marker.migration_id);
     Ok(true)
 }
 
@@ -1214,11 +1298,12 @@ pub async fn verify_completion(
 pub async fn database_migration_completed<R: Runtime>(
     app: AppHandle<R>,
     transaction_id: Option<String>,
+    ledger: State<'_, CompletionLedger>,
 ) -> Result<bool, String> {
     let db = database_path(&app)?;
     let marker = marker_path(&app)?;
     let directory = marker.parent().unwrap_or_else(|| Path::new(""));
-    let completed = verify_completion(&db, directory, transaction_id.as_deref()).await?;
+    let completed = verify_completion(&db, directory, transaction_id.as_deref(), &ledger).await?;
     if completed {
         let lock = app.state::<RecoveryLock>();
         lock.note_migration_finished();
@@ -1345,9 +1430,14 @@ mod tests {
         let transaction = begin_transaction(dir.path(), &snapshot, "core", core_targets())
             .await
             .expect("marker");
-        let error = verify_completion(&db, dir.path(), Some(&transaction.transaction_id))
-            .await
-            .expect_err("a partial target set must not complete");
+        let error = verify_completion(
+            &db,
+            dir.path(),
+            Some(&transaction.transaction_id),
+            &CompletionLedger::default(),
+        )
+        .await
+        .expect_err("a partial target set must not complete");
         assert!(error.contains("completion rejected"), "{error}");
         assert!(dir.path().join(MARKER_FILE).exists());
 
@@ -1360,11 +1450,14 @@ mod tests {
             .await
             .expect("complete the second column");
         let _ = connection.close().await;
-        assert!(
-            verify_completion(&db, dir.path(), Some(&transaction.transaction_id))
-                .await
-                .expect("verify")
-        );
+        assert!(verify_completion(
+            &db,
+            dir.path(),
+            Some(&transaction.transaction_id),
+            &CompletionLedger::default(),
+        )
+        .await
+        .expect("verify"));
         assert!(!dir.path().join(MARKER_FILE).exists());
     }
 
@@ -1508,12 +1601,95 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn completion_without_a_pending_marker_is_idempotent() {
+    async fn a_marker_that_vanished_is_not_a_verified_completion() {
         let (dir, db, _backups, _snapshot) = temp_paths();
         create_database(&db, "migrated").await;
-        assert!(verify_completion(&db, dir.path(), Some("whatever"))
+        let error = verify_completion(
+            &db,
+            dir.path(),
+            Some("vanished-transaction"),
+            &CompletionLedger::default(),
+        )
+        .await
+        .expect_err("a missing marker with an unknown id is not a completion");
+        assert!(error.contains("no verified completion"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_duplicate_completion_callback_is_idempotent() {
+        let (dir, db, _backups, snapshot) = temp_paths();
+        create_database(&snapshot, "a").await;
+        create_database(&db, "migrated").await;
+        let transaction = begin_transaction(dir.path(), &snapshot, "core", core_targets())
             .await
-            .expect("idempotent completion"));
+            .expect("transaction");
+        let ledger = CompletionLedger::default();
+        assert!(
+            verify_completion(&db, dir.path(), Some(&transaction.transaction_id), &ledger)
+                .await
+                .expect("first completion")
+        );
+        assert!(!dir.path().join(MARKER_FILE).exists());
+        assert!(
+            verify_completion(&db, dir.path(), Some(&transaction.transaction_id), &ledger)
+                .await
+                .expect("the duplicate callback is idempotent")
+        );
+    }
+
+    #[tokio::test]
+    async fn an_externally_deleted_marker_is_not_reported_as_completion() {
+        let (dir, db, _backups, snapshot) = temp_paths();
+        create_database(&snapshot, "a").await;
+        create_database(&db, "migrated").await;
+        let transaction = begin_transaction(dir.path(), &snapshot, "core", core_targets())
+            .await
+            .expect("transaction");
+        std::fs::remove_file(dir.path().join(MARKER_FILE)).expect("external deletion");
+        let error = verify_completion(
+            &db,
+            dir.path(),
+            Some(&transaction.transaction_id),
+            &CompletionLedger::default(),
+        )
+        .await
+        .expect_err("a deleted marker must not be read as success");
+        assert!(error.contains("no verified completion"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_late_callback_for_an_old_transaction_is_rejected() {
+        let (dir, db, _backups, snapshot) = temp_paths();
+        create_database(&snapshot, "a").await;
+        create_database(&db, "migrated").await;
+        let first = begin_transaction(dir.path(), &snapshot, "core", core_targets())
+            .await
+            .expect("transaction A");
+        // A newer transaction replaces the marker (as a later launch would do).
+        let newer = MigrationMarker {
+            version: 3,
+            snapshot_path: snapshot.display().to_string(),
+            created_at_ms: now_ms(),
+            target_columns: Vec::new(),
+            targets: core_targets(),
+            migration_id: "newer-transaction".to_string(),
+            owner_pid: std::process::id(),
+            owner_token: process_token().to_string(),
+        };
+        publish_marker(dir.path(), &newer).expect("newer marker");
+        let error = verify_completion(
+            &db,
+            dir.path(),
+            Some(&first.transaction_id),
+            &CompletionLedger::default(),
+        )
+        .await
+        .expect_err("a late callback must not clear another transaction");
+        assert!(
+            error.contains("belongs to transaction newer-transaction"),
+            "{error}"
+        );
+        assert!(dir.path().join(MARKER_FILE).exists());
     }
 
     #[tokio::test]
@@ -1633,6 +1809,39 @@ mod tests {
     }
 
     #[test]
+    fn a_second_handle_cannot_take_the_runtime_lock() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let first = acquire_runtime_lock(dir.path()).expect("first runtime lock");
+        let second = acquire_runtime_lock(dir.path());
+        assert!(
+            second.is_err(),
+            "a second handle must not own the runtime lock"
+        );
+        drop(first);
+        assert!(
+            acquire_runtime_lock(dir.path()).is_ok(),
+            "dropping the owner releases the runtime lock"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_second_process_cannot_take_the_runtime_lock() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let mut child = spawn_child(dir.path(), "runtime", None);
+        wait_for_child_file(&dir.path().join("child.locked"), 15_000);
+        let error = acquire_runtime_lock(dir.path())
+            .expect_err("a second process must not own the runtime lock");
+        assert!(error.contains("already running"), "{error}");
+        child.kill().expect("kill runtime owner");
+        let _ = wait_for_child_exit(child, 10_000);
+        assert!(
+            acquire_runtime_lock(dir.path()).is_ok(),
+            "the OS releases the runtime lock when the owner dies"
+        );
+    }
+
+    #[test]
     fn a_second_handle_cannot_take_the_recovery_lock() {
         let dir = tempfile::tempdir().expect("temporary directory");
         let first = try_acquire_lock(dir.path()).expect("first lock");
@@ -1668,6 +1877,11 @@ mod tests {
                 std::fs::write(directory.join("child.locked"), b"1").expect("locked marker");
                 wait_for_child_file(&directory.join("child.release"), 20_000);
                 drop(file);
+            }
+            "runtime" => {
+                let _file = acquire_runtime_lock(&directory).expect("child runtime lock");
+                std::fs::write(directory.join("child.locked"), b"1").expect("locked marker");
+                wait_for_child_file(&directory.join("child.release"), 20_000);
             }
             "migrate-partial" => {
                 let _file = try_acquire_lock(&directory).expect("child lock");

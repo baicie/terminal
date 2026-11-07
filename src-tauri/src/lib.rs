@@ -134,6 +134,38 @@ impl GracefulExitState {
     }
 }
 
+/// Bring the already-running instance to the front when a second launch is
+/// refused by the single-instance plugin. If the window was closed while the
+/// process stayed alive in the tray, it is rebuilt from the window config.
+fn activate_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    } else if let Some(config) = app.config().app.windows.first().cloned() {
+        match tauri::WebviewWindowBuilder::from_config(app, &config)
+            .and_then(|builder| builder.build())
+        {
+            Ok(window) => {
+                let _ = window.set_focus();
+            }
+            Err(error) => tracing::error!(error = %error, "could not recreate the main window"),
+        }
+    }
+    // Test-only observation point: the single-instance E2E asserts that the
+    // *first* process handled the second launch.
+    if let Ok(path) = std::env::var("TERMINAL_SINGLE_INSTANCE_ACTIVATION_PATH") {
+        use std::io::Write as _;
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            let _ = writeln!(file, "activated pid={}", std::process::id());
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_tracing();
@@ -147,6 +179,11 @@ pub fn run() {
     let shell_probe_state = ShellProbeState::from_env();
 
     let app = tauri::Builder::default()
+        // Must be the first plugin: the second launch has to be intercepted
+        // before any window, database or recovery state exists in that process.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            activate_main_window(app);
+        }))
         .manage(std::sync::Arc::clone(&shared_state))
         .manage(storage_manager)
         .manage(terminal_smoke_state)
@@ -171,8 +208,26 @@ pub fn run() {
             // Recovery runs before the webview can open the database: a partial
             // migration must be resolved against a verified snapshot, never by
             // silently rewriting the live file.
+            app.manage(db_recovery::CompletionLedger::default());
             app.manage(db_recovery::RecoveryLock::default());
-            let recovery = tauri::async_runtime::block_on(db_recovery::startup_recovery_locked(app.handle()));
+            // The single-instance plugin normally exits a second process before
+            // this point. This lifetime lock is the fail-closed backstop: even a
+            // direct binary launch cannot reach the database while another
+            // process owns this data directory.
+            let recovery = match db_recovery::acquire_runtime_lock_for(app.handle()) {
+                Ok(instance_lock) => {
+                    app.manage(db_recovery::RuntimeInstanceLock(std::sync::Mutex::new(
+                        Some(instance_lock),
+                    )));
+                    tauri::async_runtime::block_on(db_recovery::startup_recovery_locked(
+                        app.handle(),
+                    ))
+                }
+                Err(error) => {
+                    tracing::error!(reason = %error, "refusing to open the database in a second instance");
+                    db_recovery::manual_status(error)
+                }
+            };
             app.manage(db_recovery::RecoveryVerdict(std::sync::Mutex::new(recovery.clone())));
             match recovery.state {
                 db_recovery::RecoveryState::ManualInterventionRequired => {
