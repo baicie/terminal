@@ -72,7 +72,10 @@ export function createSyncActions(
         // readable offline, and pushing them would aim writes at a team the
         // server has already refused.
         if (pull.authorizedTeams !== null) {
-          await removeUnauthorizedTeamShares(pull.authorizedTeams)
+          await removeUnauthorizedTeamShares(
+            pull.authorizedTeams,
+            settings.endpoint,
+          )
         }
         // Reload before pushing, so the push starts from the versions that just
         // landed instead of a snapshot taken before the pull advanced them.

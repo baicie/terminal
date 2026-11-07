@@ -50,13 +50,20 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
   const hostKeyRef = useRef(hostKey)
   hostKeyRef.current = hostKey
   const sessionRef = useRef<SessionBinding | null>(null)
+  // A second caller while the first is still connecting must wait for that
+  // connection instead of opening another SSH+SFTP session that nobody owns.
+  const inflightRef = useRef<{ key: string, promise: Promise<string | null> } | null>(
+    null,
+  )
   // Every host switch starts a new generation; responses from older
   // generations are dropped instead of overwriting the new host's listing.
   const generationRef = useRef(0)
+  const unmountedRef = useRef(false)
 
   const releaseSession = useCallback(() => {
     const current = sessionRef.current
     sessionRef.current = null
+    inflightRef.current = null
     setSessionId(null)
     if (current) void sshService.close(current.id).catch(() => undefined)
   }, [])
@@ -70,6 +77,9 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
       const current = sessionRef.current
       if (current?.key === expectedKey) return current.id
 
+      const inflight = inflightRef.current
+      if (inflight?.key === expectedKey) return inflight.promise
+
       // A session for another host (or none) must not be reused.
       if (current) {
         sessionRef.current = null
@@ -77,28 +87,48 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
         void sshService.close(current.id).catch(() => undefined)
       }
 
-      let connResult
-      if (host.authType === 'password') {
-        connResult = await sshService.createSshSessionPassword(host as Parameters<typeof sshService.createSshSessionPassword>[0])
-      } else if (host.authType === 'key') {
-        connResult = await sshService.createSshSessionKey(host as Parameters<typeof sshService.createSshSessionKey>[0])
-      } else {
-        toast.error(t('sftp.unsupportedAuthType'))
-        return null
+      const promise = (async () => {
+        let connResult
+        if (host.authType === 'password') {
+          connResult = await sshService.createSshSessionPassword(host as Parameters<typeof sshService.createSshSessionPassword>[0])
+        } else if (host.authType === 'key') {
+          connResult = await sshService.createSshSessionKey(host as Parameters<typeof sshService.createSshSessionKey>[0])
+        } else {
+          toast.error(t('sftp.unsupportedAuthType'))
+          return null
+        }
+        // The host changed while connecting: the session is unusable here and
+        // must not leak, even though nobody has stored it yet.
+        if (unmountedRef.current || expectedKey !== hostKeyRef.current) {
+          if (connResult.success && connResult.sessionId) {
+            void sshService.close(connResult.sessionId).catch(() => undefined)
+          }
+          return null
+        }
+        if (!connResult.success || !connResult.sessionId) {
+          toast.error(t('sftp.connectionFailed', { error: connResult.message }))
+          return null
+        }
+        const sftpResult = await sshService.sftpConnect(connResult.sessionId)
+        if (unmountedRef.current || expectedKey !== hostKeyRef.current) {
+          void sshService.close(connResult.sessionId).catch(() => undefined)
+          return null
+        }
+        if (!sftpResult.success) {
+          toast.error(t('sftp.initFailed', { error: sftpResult.message }))
+          void sshService.close(connResult.sessionId).catch(() => undefined)
+          return null
+        }
+        sessionRef.current = { key: expectedKey, id: connResult.sessionId }
+        setSessionId(connResult.sessionId)
+        return connResult.sessionId
+      })()
+      inflightRef.current = { key: expectedKey, promise }
+      try {
+        return await promise
+      } finally {
+        if (inflightRef.current?.promise === promise) inflightRef.current = null
       }
-      if (!connResult.success || !connResult.sessionId) {
-        toast.error(t('sftp.connectionFailed', { error: connResult.message }))
-        return null
-      }
-      const sftpResult = await sshService.sftpConnect(connResult.sessionId)
-      if (!sftpResult.success) {
-        toast.error(t('sftp.initFailed', { error: sftpResult.message }))
-        void sshService.close(connResult.sessionId).catch(() => undefined)
-        return null
-      }
-      sessionRef.current = { key: expectedKey, id: connResult.sessionId }
-      setSessionId(connResult.sessionId)
-      return connResult.sessionId
     },
     [t],
   )
@@ -132,6 +162,10 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
     },
     [activeHost, hostKey, ensureSession, t],
   )
+
+  useEffect(() => () => {
+    unmountedRef.current = true
+  }, [])
 
   // Reset and release on host change, and close the last session on unmount.
   useEffect(() => {

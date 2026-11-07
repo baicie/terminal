@@ -351,20 +351,23 @@ describe('sync 增量分页正确性（真实 PostgreSQL）', () => {
     expect(pages[pages.length - 1].hasMore).toBe(false)
   })
 
-  it('L3 旧 epoch-ms 游标：降级为全量重同步，并在上限内一次完整交付', async () => {
+  it('L3 旧 epoch-ms 游标：安全拒绝 426，协议 2 仍完整交付', async () => {
     await bulkInsert('epoch-', 210)
     const epoch = Date.now()
-    const resynced = await syncA.getChanges(ctx.creatorId, epoch)
-    const ids = new Set(resynced.shares.map(share => share.id))
 
+    // A millisecond cursor cannot come from the current client and cannot be
+    // served safely: historical clients re-insert the window with a plain
+    // INSERT. The server refuses before reading; no data is lost.
+    await expect(
+      syncA.getChanges(ctx.creatorId, epoch),
+    ).rejects.toThrow(/retired timestamp cursor/)
+
+    const pages = await pullAll(undefined, 40)
+    expect(delivered(pages)).toHaveLength(210)
+    expect(pages[pages.length - 1].hasMore).toBe(false)
     console.log(
-      `[L3] epoch游标=${epoch} 当前水位=${resynced.timestamp} resync=${resynced.resync} upgradeRequired=${resynced.upgradeRequired} 一次交付=${ids.size} hasMore=${resynced.hasMore}`,
+      `[L3] epoch游标=${epoch} 已拒绝，协议2交付=${delivered(pages).length}`,
     )
-    expect(epoch).toBeGreaterThan(resynced.timestamp)
-    expect(resynced.resync).toBe(true)
-    expect(resynced.upgradeRequired).toBe(false)
-    expect(ids.size).toBe(210)
-    expect(resynced.hasMore).toBe(false)
   })
 
   it('L4 数据库从备份恢复：游标水位高于当前 safe 时一律全量重同步，且完整交付', async () => {

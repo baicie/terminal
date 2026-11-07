@@ -226,10 +226,14 @@ export async function pullChanges(
       ? window.cursor
       : null
     if (next !== null && scope !== null) storeCursor(scope, next)
-    if (!window.hasMore || next === null || next === cursor) {
+    // Only a page that says there is nothing more ends the round. A page that
+    // claims more but hands back no usable cursor did not prove absence, so the
+    // round stays incomplete and must not prune local rows.
+    if (window.hasMore !== true) {
       truncated = false
       break
     }
+    if (next === null || next === cursor) break
     cursor = next
   }
   // Only a complete resnapshot may delete anything: a truncated one has not seen the

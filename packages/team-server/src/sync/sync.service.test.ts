@@ -603,3 +603,31 @@ describe('SyncService authorization', () => {
     expect(logged).not.toContain('database-secret')
   })
 })
+
+describe('SyncService push operations', () => {
+  it('refuses a DELETE operation instead of rewriting or recreating the share', async () => {
+    const prisma = {
+      share: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
+      teamMember: { findUnique: vi.fn() },
+    }
+    const service = new SyncService(prisma as never)
+    const result = await service.pushChanges('user-a', {
+      shares: [
+        {
+          id: 'share-delete',
+          teamId: 'team-a',
+          type: 'HOST',
+          data: {},
+          permission: 'READONLY',
+          operation: 'DELETE',
+        },
+      ],
+    } as never)
+    expect(result.errors).toEqual([
+      { id: 'share-delete', error: 'DELETE_OPERATION_NOT_SUPPORTED' },
+    ])
+    expect(prisma.share.findUnique).not.toHaveBeenCalled()
+    expect(prisma.share.create).not.toHaveBeenCalled()
+    expect(prisma.share.updateMany).not.toHaveBeenCalled()
+  })
+})

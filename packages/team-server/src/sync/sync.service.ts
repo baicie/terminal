@@ -140,6 +140,16 @@ export class SyncService extends OfflineSyncService {
     share: PushedShare,
     result: PushResult,
   ): Promise<void> {
+    // The push DTO accepts DELETE, but this path never executed one: an existing
+    // row would have been rewritten as an update and a missing one recreated.
+    // Refuse it explicitly until a delete is routed through the audited path.
+    if (share.operation === 'DELETE') {
+      result.errors.push({
+        id: share.id,
+        error: 'DELETE_OPERATION_NOT_SUPPORTED',
+      })
+      return
+    }
     const existing = await this.prisma.share.findUnique({ where: { id: share.id } })
     if (existing) {
       // Team scope is checked before membership so a cross-team push never

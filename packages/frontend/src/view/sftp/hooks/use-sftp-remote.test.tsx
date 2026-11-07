@@ -89,6 +89,41 @@ describe('useSftpRemote host isolation', () => {
     expect(mocks.close).toHaveBeenCalledWith('sess-a')
   })
 
+  it('opens one session when two loads race before the connection resolves', async () => {
+    const slowCreate = deferred<{ success: boolean, sessionId: string }>()
+    mocks.createSshSessionPassword.mockReturnValue(slowCreate.promise)
+    mocks.sftpList.mockResolvedValue({ success: true, files: [] })
+
+    const { result } = renderHook(
+      ({ host }) => useSftpRemote({ activeHost: host }),
+      { initialProps: { host: HOST_A } },
+    )
+    act(() => {
+      void result.current.loadDir('/one')
+      void result.current.loadDir('/two')
+    })
+    await act(async () => {
+      slowCreate.resolve({ success: true, sessionId: 'sess-a' })
+    })
+
+    await waitFor(() => expect(result.current.sessionId).toBe('sess-a'))
+    expect(mocks.createSshSessionPassword).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes a session that resolves after the view unmounted', async () => {
+    const slowCreate = deferred<{ success: boolean, sessionId: string }>()
+    mocks.createSshSessionPassword.mockReturnValue(slowCreate.promise)
+    mocks.sftpList.mockResolvedValue({ success: true, files: [] })
+
+    const { unmount } = renderHook(() => useSftpRemote({ activeHost: HOST_A }))
+    unmount()
+    await act(async () => {
+      slowCreate.resolve({ success: true, sessionId: 'sess-a' })
+    })
+
+    await waitFor(() => expect(mocks.close).toHaveBeenCalledWith('sess-a'))
+  })
+
   it('sends file operations only to the session of the current host', async () => {
     mocks.sftpList.mockResolvedValue({ success: true, files: [file('b.txt')] })
     const { result, rerender } = renderHook(

@@ -353,7 +353,10 @@ it('drops the local rows of teams the server no longer authorizes', async () => 
 
   await harness.actions.sync()
 
-  expect(mocks.removeUnauthorizedTeamShares).toHaveBeenCalledWith(['team-1'])
+  expect(mocks.removeUnauthorizedTeamShares).toHaveBeenCalledWith(
+    ['team-1'],
+    'https://team.example.test',
+  )
   expect(harness.state().syncError).toBeNull()
 })
 
@@ -520,7 +523,21 @@ it('never prunes local rows on a round that proves nothing about absence', async
     }
   })
   await createHarness().actions.sync()
-  // 3. A resnapshot that reported no authorizing scope at all.
+  // 3. A resnapshot that claims more pages but hands back no usable cursor.
+  mocks.getChanges.mockReset()
+  mocks.getChanges.mockResolvedValue({
+    data: {
+      shares: [],
+      deletedShareIds: [],
+      cursor: 'garbage',
+      hasMore: true,
+      resync: true,
+      userId: 'user-1',
+      teams: ['team-1'],
+    },
+  })
+  await createHarness().actions.sync()
+  // 4. A resnapshot that reported no authorizing scope at all.
   mocks.getChanges.mockReset()
   mocks.getChanges.mockResolvedValue({
     data: {
