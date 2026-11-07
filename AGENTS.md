@@ -661,6 +661,10 @@ pnpm add <package-name>
 - ✅ 最终 E2E `42365420354`（`64db332`）5/5，此前 `42356452096`（`49e9903`）同为 5/5；证据矩阵 `42362610762`（`7be52ec`）3/3，指纹 **`72831ed9…`**（debug `4ddcc9dc…`、release `0b93d4b9…`），门禁 0 problem；最终 CI 见 PR
 - ✅ **Vault Escape 竞态修复**：窗口 `keydown` 监听改为注册一次并通过 ref 读取当前层级，消除告警刚渲染、effect 尚未重注册时 Escape 被旧闭包忽略的一帧；`packages/frontend/src` 因此变更，六份证据按规则重采为 `72831ed9…`
 - 📋 WP3 交付见 `docs/phase9-7/team-sync-cross-version.md`；跨版本兼容性**未通过**，是 RC 阻塞项
+- ✅ **夜间 P0 修复**：SFTP 会话绑定 hostKey、切换即关闭旧会话并丢弃过期 generation 响应（双主机竞态测试旧实现失败/新实现通过）；云团队创建改走真实 `POST /teams` 并持久化服务端 id（失败不提示成功）；历史毫秒游标按最低版本策略返回 426（ADR `adr-legacy-sync-policy.md`）
+- ✅ **夜间数据安全修复（代码审查）**：云同步不再删除 local/其他 endpoint 的共享；敏感态冲突返回 `SENSITIVE_STATE_MISMATCH`；`operation=DELETE` push 明确拒绝；不完整 resync 不再清理本地行；SFTP 在途会话复用/卸载关闭；端口转发读写拆分消除全双工死锁
+- ✅ **夜间 UI 修复**：Settings loading/ready/error + 重试 + 未保存回滚；Hosts 加载失败重试；Host Dialog 改 shadcn Dialog（焦点/Esc/未保存确认）；侧栏 Arrow/Home/End 键盘调整；设置/主机/端口转发/钥匙串/SFTP/片段/团队/命令面板全量中文化（bundle 预算 577→588 KB，按预算注释逐次说明）
+- 🟡 未修但已记录（`docs/phase9-7/overnight-review-findings.md`）：-R 远端转发未接线、SSH writer 超时竞态、协议 1 无游标首同步截断、teamApi 单例跨 endpoint、上传截断远端文件、SFTP mtime；UI 截图因本机无辅助功能/录屏权限 NOT_RUN
 - ✅ **Vault 生产构建门禁**：无 feature 时 `vault_probe_report` no-op；生产 bundle 无 probe 常量、smoke overlay 有 probe，均有构建断言
 - 📋 判定见 `docs/phase9-7/phase9-7-product-acceptance.md`、`single-instance-e2e.md`、`vault-app-e2e.md`、`session-lock-safety.md`
 
