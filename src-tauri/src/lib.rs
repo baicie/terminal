@@ -21,6 +21,8 @@ mod state;
 mod storage;
 mod terminal_smoke;
 mod tray;
+#[cfg(feature = "smoke-updater")]
+mod updater_probe;
 mod vault;
 mod window_cmd;
 
@@ -41,7 +43,9 @@ use commands::{
     session_list, session_resize, session_write, session_write_raw,
 };
 use db_import::{backup_database_before_migration, import_backup_data};
-use db_recovery::{database_migration_completed, db_recovery_retry, db_recovery_status};
+use db_recovery::{
+    database_migration_completed, db_recovery_retry, db_recovery_status, runtime_instance_lock_held,
+};
 use input_probe::{
     input_probe_config, input_probe_diag, input_probe_focus, input_probe_ready, input_probe_result,
     InputProbeState,
@@ -134,6 +138,65 @@ impl GracefulExitState {
     }
 }
 
+/// Bring the already-running instance to the front when a second launch is
+/// refused by the single-instance plugin. If the window was closed while the
+/// process stayed alive in the tray, it is rebuilt from the window config.
+/// Smoke-build only: the frontend Vault probe runs when the test harness has
+/// placed this marker inside the isolated app config directory. A normal build
+/// never calls the probe at all (it is compiled behind VITE_TERMINAL_VAULT_PROBE),
+/// and a production data directory does not contain the marker.
+/// Smoke-build only result channel: the probe writes its structured result to
+/// the path the harness put in `TERMINAL_VAULT_PROBE_RESULT`. Without the
+/// `smoke-vault-probe` feature this command is a no-op in production builds.
+#[tauri::command]
+fn vault_probe_report(payload: String) -> bool {
+    #[cfg(feature = "smoke-vault-probe")]
+    {
+        if let Ok(path) = std::env::var("TERMINAL_VAULT_PROBE_RESULT") {
+            return std::fs::write(path, payload).is_ok();
+        }
+    }
+    let _ = payload;
+    false
+}
+
+#[tauri::command]
+fn vault_probe_enabled(app: tauri::AppHandle) -> bool {
+    app.path()
+        .app_config_dir()
+        .map(|directory| directory.join("vault-probe.enabled").is_file())
+        .unwrap_or(false)
+}
+
+fn activate_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    } else if let Some(config) = app.config().app.windows.first().cloned() {
+        match tauri::WebviewWindowBuilder::from_config(app, &config)
+            .and_then(|builder| builder.build())
+        {
+            Ok(window) => {
+                let _ = window.set_focus();
+            }
+            Err(error) => tracing::error!(error = %error, "could not recreate the main window"),
+        }
+    }
+    // Test-only observation point: the single-instance E2E asserts that the
+    // *first* process handled the second launch.
+    if let Ok(path) = std::env::var("TERMINAL_SINGLE_INSTANCE_ACTIVATION_PATH") {
+        use std::io::Write as _;
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            let _ = writeln!(file, "activated pid={}", std::process::id());
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_tracing();
@@ -147,6 +210,11 @@ pub fn run() {
     let shell_probe_state = ShellProbeState::from_env();
 
     let app = tauri::Builder::default()
+        // Must be the first plugin: the second launch has to be intercepted
+        // before any window, database or recovery state exists in that process.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            activate_main_window(app);
+        }))
         .manage(std::sync::Arc::clone(&shared_state))
         .manage(storage_manager)
         .manage(terminal_smoke_state)
@@ -171,8 +239,26 @@ pub fn run() {
             // Recovery runs before the webview can open the database: a partial
             // migration must be resolved against a verified snapshot, never by
             // silently rewriting the live file.
+            app.manage(db_recovery::CompletionLedger::default());
             app.manage(db_recovery::RecoveryLock::default());
-            let recovery = tauri::async_runtime::block_on(db_recovery::startup_recovery_locked(app.handle()));
+            app.manage(db_recovery::RuntimeInstanceLock::default());
+            // The single-instance plugin normally exits a second process before
+            // this point. This lifetime lock is the fail-closed backstop: even a
+            // direct binary launch cannot reach the database while another
+            // process owns this data directory.
+            let recovery = match db_recovery::acquire_runtime_lock_for(app.handle()) {
+                Ok(instance_lock) => {
+                    app.state::<db_recovery::RuntimeInstanceLock>()
+                        .set(instance_lock);
+                    tauri::async_runtime::block_on(db_recovery::startup_recovery_locked(
+                        app.handle(),
+                    ))
+                }
+                Err(error) => {
+                    tracing::error!(reason = %error, "refusing to open the database in a second instance");
+                    db_recovery::manual_status(error)
+                }
+            };
             app.manage(db_recovery::RecoveryVerdict(std::sync::Mutex::new(recovery.clone())));
             match recovery.state {
                 db_recovery::RecoveryState::ManualInterventionRequired => {
@@ -182,6 +268,13 @@ pub fn run() {
                     tracing::error!(reason = %recovery.reason, "database restore was interrupted; next start will retry");
                 }
                 _ => {}
+            }
+            // Test-only updater runtime (feature + environment gated); no-op in
+            // every production build.
+            #[cfg(feature = "smoke-updater")]
+            {
+                updater_probe::record_boot(app.handle());
+                updater_probe::maybe_start(app.handle());
             }
             if !terminal_smoke::setup(app) {
                 if let Err(e) = tray::build_tray(app.handle()) {
@@ -264,6 +357,9 @@ pub fn run() {
             backup_database_before_migration,
             db_recovery_status,
             db_recovery_retry,
+            runtime_instance_lock_held,
+            vault_probe_enabled,
+            vault_probe_report,
             database_migration_completed,
             // Storage commands
             storage_init,
@@ -361,6 +457,37 @@ mod tests {
             (actual, state.is_complete()),
             ((true, false, false), true),
             "only one cleanup task may start before the final exit request is allowed"
+        );
+    }
+}
+
+#[cfg(test)]
+mod vault_probe_tests {
+    use super::vault_probe_report;
+
+    #[cfg(not(feature = "smoke-vault-probe"))]
+    #[test]
+    fn the_vault_probe_report_is_a_noop_without_the_feature() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let path = dir.path().join("probe.json");
+        std::env::set_var("TERMINAL_VAULT_PROBE_RESULT", &path);
+        let wrote = vault_probe_report("{\"phase\":\"create\"}".to_string());
+        std::env::remove_var("TERMINAL_VAULT_PROBE_RESULT");
+        assert!(!wrote, "production builds must not write probe results");
+        assert!(!path.exists(), "production builds must not create the file");
+    }
+
+    #[cfg(feature = "smoke-vault-probe")]
+    #[test]
+    fn the_vault_probe_report_writes_only_to_the_configured_test_path() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let path = dir.path().join("probe.json");
+        std::env::set_var("TERMINAL_VAULT_PROBE_RESULT", &path);
+        assert!(vault_probe_report("{\"phase\":\"create\"}".to_string()));
+        std::env::remove_var("TERMINAL_VAULT_PROBE_RESULT");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("probe result"),
+            "{\"phase\":\"create\"}"
         );
     }
 }

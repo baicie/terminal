@@ -5180,6 +5180,21 @@ E2E `42189361366` 5/5，证据 `42214762202` 指纹 `c138d564…`。真实双进
 启动、Team 应用级 SIGKILL、Windows 完整文件系统矩阵/NSIS 仍 NOT_RUN/PARTIAL；
 见 `docs/phase9-6/phase9-6-2-recovery-concurrency.md`。
 
+**Phase 9.7 P0-A.2**：修复 `getDb` 只在校验首次连接的问题——缓存连接与初始化中
+Promise 在锁文件被删除/替换后仍可使用。现将运行时锁校验前置到每次 `getDb`，
+失效时关闭缓存句柄、清空 init、阻断启动；锁身份改为已加锁 fd 的 inode，
+拒绝 symlink/替换（Windows 用 creation_time+size 近似）。Vault probe 增加
+生产构建 no-op 与 bundle 断言。plugin-sql 直接命令仍受 capability 暴露，
+信任边界见 `docs/phase9-7/session-lock-safety.md`。
+
+**Phase 9.7 P0-A**：确认并修复运行时锁 Retry 绕过——setup 拿不到 `instance.lock`
+时只给出 MANUAL，原 `db_recovery_retry` 不复查锁，无标记时会 diagnose 为 HEALTHY
+并放行 UI。现由 `RuntimeInstanceLock` 统一所有权：Retry、迁移完成、备份命令与
+前端 `getDb` 全部校验；锁文件被删除/替换（inode 变化）即失效。新增真实三进程
+E2E（第二次启动激活、SIGKILL 后第三进程读写、不同数据目录的全局身份）与
+Vault 服务级 probe。详见 `docs/phase9-7/single-instance-e2e.md`、
+`vault-app-e2e.md`。
+
 **Phase 9.6.3**：修复迁移标记被新事务改写（v3 transaction_id/owner，扩展前
 验证快照兼容，VACUUM 失败逐字节回滚）、同进程并发备份/恢复、启动无标记绕过
 锁、标记清除失败仍报告完成、retry 锁失败不更新裁决。真实双进程 E2E 与
@@ -5232,3 +5247,49 @@ Xvfb display 由 harness 动态分配，不再固定 `:99`。AppImage 同路径�
 - updater 只有静态 manifest 契约，运行时下载/验签/安装/重启 `NOT_RUN`。
 
 详见 `docs/phase9-5/release-blockers.md`。
+
+### Issue #195: 路由切换时页面闪烁一次并透出背后的终端 ✅ 已修复（2026-11-07）
+
+**严重程度**: 🟡 Important
+**状态**: ✅ 已修复
+**影响功能**: 所有非 `/terminal` 路由（Vault、Hosts、Settings 等）
+
+**症状**:
+
+1. 从终端切到其他页面时，目标页面出现后瞬间消失，再重新出现（"一闪而过"）；
+2. Vault 等未使用 `ViewContainer` 的页面背景透明，终端输出会从页面中间透出来；
+3. 懒加载路由会多走一次 Suspense fallback。
+
+**根因**:
+
+- `RouteTransition` 把 pathname 存进 state，并在 `useEffect` 里更新。导航后的第一帧
+  仍以旧 key 渲染新页面（第一次挂载），effect 再改 key，导致同一页面被卸载并
+  **重新挂载一次**；route-enter 动画也因此重放。
+- 过渡容器没有背景色，而终端层始终挂载在其后；`route-enter` 从 `opacity: 0`
+  淡入，进一步放大了"透出终端"的观感。
+
+**修复**:
+
+- `RouteTransition` 直接以 `pathname` 作为 key（同一帧内完成替换），删除 state/effect；
+- 容器加 `bg-background`；
+- `route-enter` 只做 4px 位移，不再改变透明度；
+- 新增 `route-transition.test.tsx`，断言导航后新页面只挂载一次，并验证旧实现会让该测试失败。
+
+**验证**: 前端单测 4/4（route-transition + main-layout-content），完整前端套件与 CI 见 PR #9。
+
+### Issue #196: 切换中文后设置页仍有英文文案 ✅ 已修复（2026-11-07）
+
+**严重程度**: 🟡 Important
+**状态**: ✅ 已修复
+**影响功能**: 设置对话框（外观、导入导出、团队、更新检查）、懒加载占位、404
+
+**症状**: 语言选择中文后，设置页的 "Font Size / Cursor Style / Import Preview /
+Update checks need the desktop app." 等仍是英文；懒加载路由显示硬编码 "Loading..."。
+
+**根因**: 这些组件把文案直接写死，未使用已存在的 `settings.*` / `common.*` 翻译键；
+`lazy-route.tsx` 与 404 同样硬编码。
+
+**修复**: 接入 `useTranslation`，复用已有键；补齐 cursor 选项、更新检查、区域、
+团队状态、导入计数等单位文案（en/cn/fr 三语）；`update-check.test.tsx` 显式初始化
+i18n 并固定为英文断言。翻译键一致性测试（`translation-keys.test.ts`）与前端全量
+156 文件/1416 项通过。

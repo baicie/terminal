@@ -1,0 +1,71 @@
+# Phase 9.7 — RC Readiness
+
+> 分支 `feat/phase9-7-product-acceptance`（Draft PR #9）
+> 代码基线：`5e8ce13`（P0-A.2）；最终 CI/E2E 与证据结果见交付报告
+
+## 判定矩阵
+
+```text
+RUNTIME_LOCK_CACHED_CONNECTION_SAFE=PASS
+RUNTIME_LOCK_INFLIGHT_INIT_SAFE=PASS
+RUNTIME_LOCK_FILE_REPLACEMENT_SAFE=PASS
+RUNTIME_LOCK_WINDOWS_IDENTITY_VERIFIED=PARTIAL
+DIRECT_PLUGIN_SQL_TRUST_BOUNDARY_DOCUMENTED=PASS
+RUNTIME_LOCK_RETRY_BYPASS_BLOCKED=PASS
+
+VAULT_PROBE_PRODUCTION_DISABLED=PASS
+VAULT_SERVICE_E2E_VERIFIED=PASS
+VAULT_UI_E2E_VERIFIED=NOT_RUN
+VAULT_CROSS_VERSION_VERIFIED=NOT_RUN
+
+TEAM_REAL_SERVER_HTTP_VERIFIED=PASS
+TEAM_REAL_CLIENT_RUNTIME_VERIFIED=PASS
+TEAM_CROSS_VERSION_A_TO_B_VERIFIED=FAIL
+TEAM_CROSS_VERSION_DIRTY_ROW_UPGRADE=PASS
+TEAM_CROSS_VERSION_TOMBSTONE_CONSUMED=FAIL
+TEAM_CROSS_VERSION_UPDATE_SAFETY=PASS
+TEAM_DIRTY_RETRY_VERIFIED=PARTIAL
+TEAM_CONFLICT_SAFETY_VERIFIED=PARTIAL
+TEAM_DELETE_PROPAGATION_VERIFIED=PARTIAL
+
+UPDATER_RUNTIME_CHECK_VERIFIED=PASS
+UPDATER_SIGNED_DOWNLOAD_VERIFIED=PASS
+UPDATER_INSTALL_RESTART_VERIFIED=PASS
+UPDATER_DATA_PRESERVATION_VERIFIED=PASS
+UPDATER_NEGATIVE_MATRIX_VERIFIED=PASS
+UPDATER_PLATFORM_SCOPE=macOS-arm64
+
+WINDOWS_NSIS_UPGRADE_VERIFIED=BLOCKED_EXTERNAL
+LINUX_APPIMAGE_STOCK_VERIFIED=NOT_RUN
+INSTALL_ENOSPC_VERIFIED=PARTIAL
+
+EVIDENCE_FINGERPRINT_VALID=PASS
+CI_ALL_GREEN=PASS
+PHASE_9_7_ENGINEERING_COMPLETE=PARTIAL
+PR_9_INTEGRATION_READY=YES
+READY_FOR_RC=NO
+READY_FOR_RELEASE=NO
+```
+
+## 依据
+
+| 判定 | 依据 |
+| --- | --- |
+| 会话锁缓存/init | `connection.ts` 每次 `getDb` 校验；`connection-gate.test.ts` 新增关闭缓存与拒绝写入测试 |
+| 锁文件替换 | `RuntimeLockHandle` fd inode；Rust 删除/替换/symlink 测试 |
+| Windows 身份 | creation_time+size 近似，未做 `GetFileInformationByHandle` → PARTIAL |
+| plugin-sql | capability 仍开放命令；信任边界文档化，未实现后端 SQL guard |
+| Vault 生产禁用 | 生产 bundle 无 probe 常量；无 feature 时命令 no-op；smoke overlay 有 probe |
+| Vault 服务级 | E2E `42348255027` 的 `vault-app-report.json` PASS |
+| Team HTTP | CI `Team Server quality` 真实 PG 套件 |
+| Team 跨版本 | `v0.0.1-dev.2` 源码 + 当前源码，双进程真实 HTTP/PG/SQLite；A 重同步 UNIQUE 失败，见 `team-sync-cross-version.md` |
+| Updater | 临时密钥 + loopback + 真实 A/B 构建；本机 9 用例全 PASS，见 `updater-runtime.md`；Windows/Linux 运行时 NOT_RUN |
+| Windows NSIS | 共享 runner 仅预检；无一次性 VM → BLOCKED_EXTERNAL |
+| AppImage stock | headless WebKit/EGL 阻断 → NOT_RUN |
+| ENOSPC | 迁移 disk-full/staged restore PASS；安装/fsync 未测 → PARTIAL |
+
+## RC 结论
+
+`READY_FOR_RC=NO`、`READY_FOR_RELEASE=NO`。单实例/会话锁与 Vault 服务级链路
+已闭合；Team Sync 跨版本**实测失败**（旧客户端无法再次同步）、Updater 运行时、
+Vault UI、Windows NSIS、AppImage stock 与正式签名/身份迁移仍是阻塞项。

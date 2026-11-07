@@ -41,6 +41,18 @@ jobs:
       - run: pnpm --filter=@terminal/frontend typecheck
       - run: pnpm --filter=@terminal/frontend test
       - run: pnpm --filter=@terminal/frontend build:budget
+      - name: Vault probe is absent from the production bundle
+        run: |
+          if grep -r "phase9.7-vault-one-time" packages/frontend/dist; then
+            echo "smoke-only Vault probe leaked into the production build" >&2
+            exit 1
+          fi
+      - name: Vault probe is present only with the smoke overlay
+        run: |
+          VITE_TERMINAL_SMOKE_BUILD=1 VITE_TERMINAL_VAULT_PROBE=1 \
+            pnpm --filter=@terminal/frontend exec vite build --outDir dist-smoke
+          grep -rq "phase9.7-vault-one-time" packages/frontend/dist-smoke
+          rm -rf packages/frontend/dist-smoke
 
   frontend-audit:
     # Phase 9.2 recorded the front-end audit as NOT_RUN because the developer
@@ -133,6 +145,31 @@ jobs:
         env:
           TEAM_SERVER_TEST_DATABASE_URL: postgresql://postgres:ci-password@127.0.0.1:5432/team_server_concurrency_test
         run: pnpm exec vitest run --config vitest.pg.config.ts
+      # Cross-version acceptance: the released v0.0.1-dev.2 client (materialised
+      # from the tag, not re-built from HEAD) and the current client, in separate
+      # processes, against this server over real HTTP and PostgreSQL. The step is
+      # currently a diagnostic, not a gate: it has already recorded that the
+      # historical client cannot re-sync against the current server, and a red
+      # step exists to keep that finding visible. Making it blocking is the job
+      # of the fix, not of the harness.
+      - name: Fetch the historical client tag
+        run: git fetch --depth 1 origin refs/tags/v0.0.1-dev.2:refs/tags/v0.0.1-dev.2
+      - name: Team Sync cross-version acceptance (diagnostic)
+        continue-on-error: true
+        env:
+          TEAM_SERVER_TEST_DATABASE_URL: postgresql://postgres:ci-password@127.0.0.1:5432/team_server_cross_version_test
+          TEAM_SYNC_E2E_REPORT: team-cross-version-report.json
+        run: node scripts/verify-install/team-cross-version.mjs
+      - name: Show cross-version report
+        if: always()
+        run: cat team-cross-version-report.json || true
+      - name: Upload cross-version report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: team-sync-cross-version-report
+          path: team-cross-version-report.json
+          if-no-files-found: warn
 
   zsh-probe-diagnostic:
     # Evidence for the Linux zsh timeouts. The standalone workflow file could not
@@ -243,6 +280,7 @@ jobs:
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --features smoke-vault-probe vault_probe
 
   cargo-audit:
     # RustSec sweep over src-tauri/Cargo.lock, as a REAL GATE.

@@ -142,6 +142,42 @@
 - 未闭合：已运行实例在另一实例恢复期间的普通写入（无全程实例锁）、
   Windows reparse/ACL/NSIS A→B。RC/Release 仍 **NO**。
 
+## 5.4 Phase 9.7 P0-A 单实例与运行时锁
+
+- 单实例：`tauri-plugin-single-instance v2.5.5` 首个注册插件；第二次启动激活首进程。
+- 运行时锁：`instance.lock` 在 setup 中、任何数据库访问前持有；`RuntimeLockHandle`
+  校验 inode，锁文件被删除/替换即失效。
+- Retry 绕过已封堵：`retry_recovery(..., runtime_held)` 未持锁一律 Manual；
+  完成迁移、备份命令与前端 `getDb` 均校验所有权。
+- plugin-sql 无法按进程动态禁用；`getDb` 在打开前查询 `runtime_instance_lock_held`，
+  直接调用 `plugin:sql|load` 的恶意 webview 不在本轮信任模型内（已记录）。
+- Vault 应用级：smoke 构建 + 隔离目录标记的服务级 probe，覆盖创建/锁定/解锁/
+  错误密码/改密/重启持久化；UI 自动化与 A→B 跨版本仍 NOT_RUN。
+- 真实进程 E2E `42344829575`（`c68aebb`）5/5：单实例与 Vault 报告均 PASS；窗口焦点 NOT_RUN。
+- 证据：官方矩阵 `42346192749` 3/3，指纹 `a0a76721…`，门禁 0 problem。
+- P0-A.2：会话锁缓存/init 闭合；证据 `42362610762` 指纹 `72831ed9…`（Vault Escape 修复后重采）；E2E `42356452096` 5/5。
+- 最终 CI `42357395943`（`8adff85`）11/11。
+
+## 5.5 Phase 9.7 WP3 Team Sync 跨版本（新增阻塞）
+
+- 历史 `v0.0.1-dev.2` 客户端与当前客户端以独立进程、真实 HTTP/PG/SQLite 实测：
+  首次推送/拉取 PASS，当前客户端在 A 数据库上升级并推送脏行 PASS。
+- **旧客户端无法再次同步**：服务端把毫秒游标视为超出安全水位并返回全量窗口，
+  历史客户端用裸 `INSERT` 应用快照，重复 share 触发 `UNIQUE constraint failed`，
+  整轮同步中止。旧客户端对已有 share 的更新也会被服务端按 `legacy-timestamp` 拒绝。
+- 结论 `TEAM_CROSS_VERSION_A_TO_B_VERIFIED=FAIL`；修复路径不是放宽服务端游标语义，
+  而是先完成客户端升级（WP4 updater 仍 NOT_RUN）。见
+  `docs/phase9-7/team-sync-cross-version.md`。
+
+## 5.6 Phase 9.7 WP4 Updater 运行时（macOS）
+
+- `smoke-updater` feature 的 Rust 探针补齐 check/download/验签/install/restart，
+  生产构建不编译；harness 用临时 minisign 密钥 + loopback HTTP + 两次真实构建。
+- macOS arm64：正向安装并重启为 B、SQLite 数据保留、7 个负向（降级、错误架构、
+  404、缺签名、错签名、篡改、截断）全部按预期拒绝且无半安装，5 项判定均 PASS。
+- Windows NSIS/MSI 与 Linux AppImage/deb 的运行时安装、Apple notarization、
+  Windows Authenticode、生产 updater 公钥仍 **NOT_RUN/BLOCKED_EXTERNAL**。
+
 ## 6. 判定
 
 | 判定 | 结果 |

@@ -26,13 +26,14 @@
 }
 
 /* Route transition — used by RouteTransition component */
+/* No opacity here: the routed layer sits over the always-mounted terminal, so
+   fading it in shows the terminal through the page. The slide alone is enough
+   to signal the change without that flash. */
 @keyframes route-enter {
   from {
-    opacity: 0;
     transform: translateY(4px);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }

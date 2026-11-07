@@ -16,6 +16,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# Test-only Vault acceptance probe; the command is a no-op without it.
+smoke-vault-probe = []
+# Test-only updater runtime: check, download, verify and install from a loopback
+# endpoint. Absent from every production build.
+smoke-updater = []
+
 [dependencies]
 tauri = { version = "2.10", features = ["macos-private-api", "tray-icon", "image-png"] }
 tauri-plugin-shell = "2"
@@ -69,6 +76,7 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 tracing-log = "0.2"
+tauri-plugin-single-instance = "2"
 
 # Tauri's dependency graph is large. Full dependency debuginfo plus Cargo's
 # incremental caches can otherwise grow the local target directory by tens of

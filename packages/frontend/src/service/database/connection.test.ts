@@ -6,7 +6,10 @@ const database = vi.hoisted(() => ({
   select: vi.fn(),
 }))
 
-vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true }))
+vi.mock('@tauri-apps/api/core', () => ({
+  isTauri: () => true,
+  invoke: async () => true,
+}))
 vi.mock('@tauri-apps/plugin-sql', () => ({
   default: { load: vi.fn(async () => database) },
 }))

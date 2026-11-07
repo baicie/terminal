@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,11 +15,12 @@ export function TerminalAppearanceControls({
   settings: DialogTerminalSettings
   updateSetting: UpdateDialogTerminalSetting
 }) {
+  const { t } = useTranslation()
   return (
     <div className="space-y-5">
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label htmlFor="fontSize">Font Size</Label>
+          <Label htmlFor="fontSize">{t('settings.fontSize')}</Label>
           <span className="text-sm text-muted-foreground tabular-nums">
             {settings.fontSize ?? 14}px
           </span>
@@ -34,7 +36,7 @@ export function TerminalAppearanceControls({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="fontFamily">Font Family</Label>
+        <Label htmlFor="fontFamily">{t('settings.fontFamily')}</Label>
         <Input
           id="fontFamily"
           value={settings.fontFamily ?? 'Menlo, Monaco, monospace'}
@@ -43,9 +45,13 @@ export function TerminalAppearanceControls({
         />
       </div>
       <div className="space-y-2">
-        <Label>Cursor Style</Label>
+        <Label>{t('settings.cursorStyle')}</Label>
         <div className="flex gap-2">
-          {(['block', 'underline', 'bar'] as const).map(value => (
+          {([
+            ['block', 'settings.cursorBlock'],
+            ['underline', 'settings.cursorUnderline'],
+            ['bar', 'settings.cursorBar'],
+          ] as const).map(([value, key]) => (
             <Button
               key={value}
               variant={settings.cursorStyle === value ? 'default' : 'outline'}
@@ -53,7 +59,7 @@ export function TerminalAppearanceControls({
               onClick={() => updateSetting('cursorStyle', value)}
               className="flex-1"
             >
-              {value[0].toUpperCase() + value.slice(1)}
+              {t(key)}
             </Button>
           ))}
         </div>
@@ -61,10 +67,10 @@ export function TerminalAppearanceControls({
       <div className="flex items-center justify-between">
         <div>
           <Label htmlFor="cursorBlink" className="cursor-pointer">
-            Cursor Blink
+            {t('settings.cursorBlink')}
           </Label>
           <p className="text-xs text-muted-foreground">
-            Enable blinking cursor animation
+            {t('settings.cursorBlinkDesc')}
           </p>
         </div>
         <Switch
@@ -75,7 +81,7 @@ export function TerminalAppearanceControls({
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label htmlFor="scrollback">Scrollback Lines</Label>
+          <Label htmlFor="scrollback">{t('settings.scrollbackLines')}</Label>
           <span className="text-sm text-muted-foreground tabular-nums">
             {(settings.scrollback ?? 10000).toLocaleString()}
           </span>

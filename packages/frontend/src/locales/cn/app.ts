@@ -276,4 +276,5 @@ export default {
   'terminal.authFailed': '认证失败。请检查用户名和凭据。',
   'terminal.hostKeyFailed': '主机密钥验证失败。请检查 known_hosts。',
   'terminal.sessionTimeout': '会话超时。连接可能已关闭。',
+  'common.pageNotFound': '页面不存在',
 }

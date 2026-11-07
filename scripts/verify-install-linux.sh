@@ -113,17 +113,25 @@ xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 || { tail -5 "$WORK/xvfb.log"; fail
 pass "Xvfb running on $DISPLAY (pid $XVFB_PID)"
 
 wait_for_exit() {
-  # Polls for the process to be gone; escalates to SIGKILL after 30s.
+  # Polls for the process to be gone; escalates to SIGKILL after 30s, then
+  # clears the whole session/process group so the AppImage runtime or a webview
+  # child cannot keep the single-instance lock (and the database lock) alive.
   local pid="$1" i=0
   while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 30 ]; do
     sleep 1
     i=$((i + 1))
   done
+  kill -TERM -- -"$pid" 2>/dev/null || true
+  sleep 1
   if kill -0 "$pid" 2>/dev/null; then
     kill -9 "$pid" 2>/dev/null || true   # teardown only, assertions already made
-    sleep 1
   fi
+  kill -9 -- -"$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
+  for _ in $(seq 1 25); do
+    kill -0 -- -"$pid" 2>/dev/null || break
+    sleep 0.2
+  done
 }
 
 # --- one isolated data cycle -------------------------------------------------
@@ -148,9 +156,19 @@ cycle_setup() {
 
 launch_app() {
   local log="$1"
-  HOME="$CYCLE_HOME" XDG_CONFIG_HOME="$CYCLE_CONFIG" XDG_DATA_HOME="$CYCLE_DATA" \
-    XDG_CACHE_HOME="$CYCLE_CACHE" WEBKIT_DISABLE_COMPOSITING_MODE=1 \
-    "${APP_CMD[@]}" >"$log" 2>&1 &
+  # Own session: the AppImage runtime can leave the real app (and its webview
+  # children) behind after the wrapper exits. A new launch would then be
+  # correctly refused by the single-instance lock while the old app still owns
+  # the database, so each cycle is torn down as a process group.
+  if command -v setsid >/dev/null 2>&1; then
+    setsid env HOME="$CYCLE_HOME" XDG_CONFIG_HOME="$CYCLE_CONFIG" XDG_DATA_HOME="$CYCLE_DATA" \
+      XDG_CACHE_HOME="$CYCLE_CACHE" WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+      "${APP_CMD[@]}" >"$log" 2>&1 &
+  else
+    HOME="$CYCLE_HOME" XDG_CONFIG_HOME="$CYCLE_CONFIG" XDG_DATA_HOME="$CYCLE_DATA" \
+      XDG_CACHE_HOME="$CYCLE_CACHE" WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+      "${APP_CMD[@]}" >"$log" 2>&1 &
+  fi
   echo $!
 }
 

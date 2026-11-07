@@ -156,6 +156,197 @@ pub fn release_lock(lock: &RecoveryLock) {
     lock.release();
 }
 
+const RUNTIME_LOCK_FILE: &str = "instance.lock";
+
+/// The lock handle remembers the inode it was taken on. Deleting the lock path
+/// (or replacing it with a new file) must not leave the process believing it
+/// still owns the runtime lock.
+#[derive(Debug)]
+pub struct RuntimeLockHandle {
+    #[allow(dead_code)]
+    file: File,
+    path: PathBuf,
+    #[cfg(unix)]
+    device: u64,
+    #[cfg(unix)]
+    inode: u64,
+    #[cfg(windows)]
+    creation_time: u64,
+    #[cfg(windows)]
+    file_size: u64,
+}
+
+impl RuntimeLockHandle {
+    fn still_owns_path(&self) -> bool {
+        // symlink_metadata never follows a link: a symlink planted in place of
+        // the lock file is not the file this process locked.
+        let Ok(metadata) = fs::symlink_metadata(&self.path) else {
+            return false;
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return false;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            metadata.dev() == self.device && metadata.ino() == self.inode
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            metadata.creation_time() == self.creation_time && metadata.file_size() == self.file_size
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            true
+        }
+    }
+}
+
+/// Held for the whole process lifetime so a second process cannot open the
+/// database even if it bypasses the single-instance IPC (a direct binary
+/// launch, a different entry point, or a platform where the instance socket
+/// could not be created).
+#[derive(Default)]
+pub struct RuntimeInstanceLock(StdMutex<Option<RuntimeLockHandle>>);
+
+impl RuntimeInstanceLock {
+    pub fn set(&self, handle: RuntimeLockHandle) {
+        if let Ok(mut guard) = self.0.lock() {
+            *guard = Some(handle);
+        }
+    }
+
+    /// The single backend invariant every database-writing path checks:
+    /// without this lock the process must not open or mutate the database.
+    /// A deleted or replaced lock path invalidates ownership.
+    pub fn is_held(&self) -> bool {
+        self.0
+            .lock()
+            .map(|guard| {
+                guard
+                    .as_ref()
+                    .map(RuntimeLockHandle::still_owns_path)
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    }
+}
+
+pub fn acquire_runtime_lock(directory: &Path) -> Result<RuntimeLockHandle, String> {
+    fs::create_dir_all(directory)
+        .map_err(|error| format!("could not create {}: {error}", directory.display()))?;
+    let path = directory.join(RUNTIME_LOCK_FILE);
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|error| format!("could not open {}: {error}", path.display()))?;
+    match file.try_lock() {
+        Ok(()) => {
+            // Identity comes from the *locked descriptor*, never from the path:
+            // a path swapped between open and stat must not be mistaken for the
+            // file this process actually locked.
+            let file_metadata = file
+                .metadata()
+                .map_err(|error| format!("could not stat the locked file: {error}"))?;
+            let path_metadata = fs::symlink_metadata(&path)
+                .map_err(|error| format!("could not stat {}: {error}", path.display()))?;
+            if path_metadata.file_type().is_symlink() || !path_metadata.is_file() {
+                return Err(format!(
+                    "{} is not a regular lock file; refusing a symlink or special file",
+                    path.display()
+                ));
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                if file_metadata.dev() != path_metadata.dev()
+                    || file_metadata.ino() != path_metadata.ino()
+                {
+                    return Err(format!(
+                        "{} changed while the lock was being acquired",
+                        path.display()
+                    ));
+                }
+                Ok(RuntimeLockHandle {
+                    file,
+                    path,
+                    device: file_metadata.dev(),
+                    inode: file_metadata.ino(),
+                })
+            }
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                if file_metadata.creation_time() != path_metadata.creation_time()
+                    || file_metadata.file_size() != path_metadata.file_size()
+                {
+                    return Err(format!(
+                        "{} changed while the lock was being acquired",
+                        path.display()
+                    ));
+                }
+                Ok(RuntimeLockHandle {
+                    file,
+                    path,
+                    creation_time: file_metadata.creation_time(),
+                    file_size: file_metadata.file_size(),
+                })
+            }
+            #[cfg(not(any(unix, windows)))]
+            {
+                let _ = file_metadata;
+                Ok(RuntimeLockHandle { file, path })
+            }
+        }
+        Err(std::fs::TryLockError::WouldBlock) => {
+            Err("another Terminal instance is already running with this data directory".to_string())
+        }
+        Err(std::fs::TryLockError::Error(error)) => {
+            Err(format!("could not lock {}: {error}", path.display()))
+        }
+    }
+}
+
+pub fn acquire_runtime_lock_for<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<RuntimeLockHandle, String> {
+    let db = database_path(app)?;
+    let directory = db
+        .parent()
+        .ok_or_else(|| "the database has no parent directory".to_string())?;
+    acquire_runtime_lock(directory)
+}
+
+/// A verdict the frontend can render without opening the database.
+pub fn manual_status(reason: impl Into<String>) -> RecoveryStatus {
+    status(RecoveryState::ManualInterventionRequired, reason)
+}
+
+/// Transactions this process has already verified and cleared. It makes a
+/// repeated completion callback idempotent without treating an externally
+/// deleted marker as a success.
+#[derive(Default)]
+pub struct CompletionLedger(pub StdMutex<std::collections::HashSet<String>>);
+
+impl CompletionLedger {
+    fn record(&self, transaction_id: &str) {
+        if let Ok(mut set) = self.0.lock() {
+            set.insert(transaction_id.to_string());
+        }
+    }
+
+    fn contains(&self, transaction_id: &str) -> bool {
+        self.0
+            .lock()
+            .map(|set| set.contains(transaction_id))
+            .unwrap_or(false)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MigrationTarget {
     pub table: String,
@@ -1096,6 +1287,14 @@ pub async fn startup_recovery_locked<R: Runtime>(app: &AppHandle<R>) -> Recovery
     result
 }
 
+/// The frontend's database service consults this before asking plugin-sql to
+/// open the file: a process without the instance lock must never reach the
+/// SQLite plugin either.
+#[tauri::command]
+pub fn runtime_instance_lock_held(runtime: State<'_, RuntimeInstanceLock>) -> bool {
+    runtime.is_held()
+}
+
 #[tauri::command]
 pub async fn db_recovery_status(
     verdict: State<'_, RecoveryVerdict>,
@@ -1114,7 +1313,16 @@ pub async fn retry_recovery(
     marker_dir: &Path,
     backups: &Path,
     lock: &RecoveryLock,
+    runtime_held: bool,
 ) -> RecoveryStatus {
+    // A retry must never upgrade a runtime-lock refusal to HEALTHY: without
+    // the instance lock this process may not open the database at all.
+    if !runtime_held {
+        return status(
+            RecoveryState::ManualInterventionRequired,
+            "this Terminal process does not own the runtime instance lock for the data directory",
+        );
+    }
     // Serialize against a backup/restore already running in this process, and
     // refuse while a migration transaction is still open.
     let operation = match lock.lock_operation().await {
@@ -1147,6 +1355,7 @@ pub async fn retry_recovery(
 pub async fn db_recovery_retry<R: Runtime>(
     app: AppHandle<R>,
     verdict: State<'_, RecoveryVerdict>,
+    runtime: State<'_, RuntimeInstanceLock>,
 ) -> Result<RecoveryStatus, String> {
     let (db, marker, backups) = match (database_path(&app), marker_path(&app), backups_path(&app)) {
         (Ok(db), Ok(marker), Ok(backups)) => (db, marker, backups),
@@ -1165,7 +1374,7 @@ pub async fn db_recovery_retry<R: Runtime>(
         .unwrap_or_else(|| Path::new(""))
         .to_path_buf();
     let lock = app.state::<RecoveryLock>();
-    let result = retry_recovery(&db, &directory, &backups, &lock).await;
+    let result = retry_recovery(&db, &directory, &backups, &lock, runtime.is_held()).await;
     *verdict
         .0
         .lock()
@@ -1180,10 +1389,25 @@ pub async fn verify_completion(
     db: &Path,
     marker_dir: &Path,
     expected_transaction: Option<&str>,
+    ledger: &CompletionLedger,
 ) -> Result<bool, String> {
     let Some(marker) = read_marker(marker_dir)? else {
-        // Nothing is pending: the transaction is complete (idempotent repeat).
-        return Ok(true);
+        // A marker that vanished is not proof of completion. Only a transaction
+        // this process already verified may be reported complete again; a
+        // non-empty id with no record is an anomaly the caller must not turn
+        // into "done" (and must not release another transaction's lock for).
+        return match expected_transaction {
+            Some(expected) if !expected.is_empty() => {
+                if ledger.contains(expected) {
+                    Ok(true)
+                } else {
+                    Err(format!(
+                        "migration completion rejected: transaction {expected} is not pending and has no verified completion"
+                    ))
+                }
+            }
+            _ => Ok(false),
+        };
     };
     if let Some(expected) = expected_transaction {
         if !expected.is_empty() && marker.migration_id != expected {
@@ -1205,6 +1429,7 @@ pub async fn verify_completion(
         ));
     }
     clear_transaction(marker_dir, Some(&marker.migration_id))?;
+    ledger.record(&marker.migration_id);
     Ok(true)
 }
 
@@ -1214,11 +1439,18 @@ pub async fn verify_completion(
 pub async fn database_migration_completed<R: Runtime>(
     app: AppHandle<R>,
     transaction_id: Option<String>,
+    ledger: State<'_, CompletionLedger>,
+    runtime: State<'_, RuntimeInstanceLock>,
 ) -> Result<bool, String> {
+    if !runtime.is_held() {
+        return Err(
+            "refusing to complete a migration without the runtime instance lock".to_string(),
+        );
+    }
     let db = database_path(&app)?;
     let marker = marker_path(&app)?;
     let directory = marker.parent().unwrap_or_else(|| Path::new(""));
-    let completed = verify_completion(&db, directory, transaction_id.as_deref()).await?;
+    let completed = verify_completion(&db, directory, transaction_id.as_deref(), &ledger).await?;
     if completed {
         let lock = app.state::<RecoveryLock>();
         lock.note_migration_finished();
@@ -1345,9 +1577,14 @@ mod tests {
         let transaction = begin_transaction(dir.path(), &snapshot, "core", core_targets())
             .await
             .expect("marker");
-        let error = verify_completion(&db, dir.path(), Some(&transaction.transaction_id))
-            .await
-            .expect_err("a partial target set must not complete");
+        let error = verify_completion(
+            &db,
+            dir.path(),
+            Some(&transaction.transaction_id),
+            &CompletionLedger::default(),
+        )
+        .await
+        .expect_err("a partial target set must not complete");
         assert!(error.contains("completion rejected"), "{error}");
         assert!(dir.path().join(MARKER_FILE).exists());
 
@@ -1360,11 +1597,14 @@ mod tests {
             .await
             .expect("complete the second column");
         let _ = connection.close().await;
-        assert!(
-            verify_completion(&db, dir.path(), Some(&transaction.transaction_id))
-                .await
-                .expect("verify")
-        );
+        assert!(verify_completion(
+            &db,
+            dir.path(),
+            Some(&transaction.transaction_id),
+            &CompletionLedger::default(),
+        )
+        .await
+        .expect("verify"));
         assert!(!dir.path().join(MARKER_FILE).exists());
     }
 
@@ -1508,12 +1748,95 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn completion_without_a_pending_marker_is_idempotent() {
+    async fn a_marker_that_vanished_is_not_a_verified_completion() {
         let (dir, db, _backups, _snapshot) = temp_paths();
         create_database(&db, "migrated").await;
-        assert!(verify_completion(&db, dir.path(), Some("whatever"))
+        let error = verify_completion(
+            &db,
+            dir.path(),
+            Some("vanished-transaction"),
+            &CompletionLedger::default(),
+        )
+        .await
+        .expect_err("a missing marker with an unknown id is not a completion");
+        assert!(error.contains("no verified completion"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_duplicate_completion_callback_is_idempotent() {
+        let (dir, db, _backups, snapshot) = temp_paths();
+        create_database(&snapshot, "a").await;
+        create_database(&db, "migrated").await;
+        let transaction = begin_transaction(dir.path(), &snapshot, "core", core_targets())
             .await
-            .expect("idempotent completion"));
+            .expect("transaction");
+        let ledger = CompletionLedger::default();
+        assert!(
+            verify_completion(&db, dir.path(), Some(&transaction.transaction_id), &ledger)
+                .await
+                .expect("first completion")
+        );
+        assert!(!dir.path().join(MARKER_FILE).exists());
+        assert!(
+            verify_completion(&db, dir.path(), Some(&transaction.transaction_id), &ledger)
+                .await
+                .expect("the duplicate callback is idempotent")
+        );
+    }
+
+    #[tokio::test]
+    async fn an_externally_deleted_marker_is_not_reported_as_completion() {
+        let (dir, db, _backups, snapshot) = temp_paths();
+        create_database(&snapshot, "a").await;
+        create_database(&db, "migrated").await;
+        let transaction = begin_transaction(dir.path(), &snapshot, "core", core_targets())
+            .await
+            .expect("transaction");
+        std::fs::remove_file(dir.path().join(MARKER_FILE)).expect("external deletion");
+        let error = verify_completion(
+            &db,
+            dir.path(),
+            Some(&transaction.transaction_id),
+            &CompletionLedger::default(),
+        )
+        .await
+        .expect_err("a deleted marker must not be read as success");
+        assert!(error.contains("no verified completion"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_late_callback_for_an_old_transaction_is_rejected() {
+        let (dir, db, _backups, snapshot) = temp_paths();
+        create_database(&snapshot, "a").await;
+        create_database(&db, "migrated").await;
+        let first = begin_transaction(dir.path(), &snapshot, "core", core_targets())
+            .await
+            .expect("transaction A");
+        // A newer transaction replaces the marker (as a later launch would do).
+        let newer = MigrationMarker {
+            version: 3,
+            snapshot_path: snapshot.display().to_string(),
+            created_at_ms: now_ms(),
+            target_columns: Vec::new(),
+            targets: core_targets(),
+            migration_id: "newer-transaction".to_string(),
+            owner_pid: std::process::id(),
+            owner_token: process_token().to_string(),
+        };
+        publish_marker(dir.path(), &newer).expect("newer marker");
+        let error = verify_completion(
+            &db,
+            dir.path(),
+            Some(&first.transaction_id),
+            &CompletionLedger::default(),
+        )
+        .await
+        .expect_err("a late callback must not clear another transaction");
+        assert!(
+            error.contains("belongs to transaction newer-transaction"),
+            "{error}"
+        );
+        assert!(dir.path().join(MARKER_FILE).exists());
     }
 
     #[tokio::test]
@@ -1633,6 +1956,115 @@ mod tests {
     }
 
     #[test]
+    fn a_second_handle_cannot_take_the_runtime_lock() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let first = acquire_runtime_lock(dir.path()).expect("first runtime lock");
+        let second = acquire_runtime_lock(dir.path());
+        assert!(
+            second.is_err(),
+            "a second handle must not own the runtime lock"
+        );
+        drop(first);
+        assert!(
+            acquire_runtime_lock(dir.path()).is_ok(),
+            "dropping the owner releases the runtime lock"
+        );
+    }
+
+    #[test]
+    fn deleting_the_runtime_lock_path_invalidates_ownership() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let state = RuntimeInstanceLock::default();
+        state.set(acquire_runtime_lock(dir.path()).expect("runtime lock"));
+        assert!(state.is_held());
+        std::fs::remove_file(dir.path().join(RUNTIME_LOCK_FILE)).expect("delete lock path");
+        assert!(
+            !state.is_held(),
+            "a deleted runtime-lock path must not count as ownership"
+        );
+    }
+
+    #[test]
+    fn replacing_the_runtime_lock_path_invalidates_ownership() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let state = RuntimeInstanceLock::default();
+        state.set(acquire_runtime_lock(dir.path()).expect("runtime lock"));
+        assert!(state.is_held());
+        let path = dir.path().join(RUNTIME_LOCK_FILE);
+        std::fs::rename(&path, dir.path().join("old.lock")).expect("move the locked file");
+        std::fs::write(&path, b"replacement").expect("plant a replacement");
+        assert!(
+            !state.is_held(),
+            "a replaced lock path must not count as ownership"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_at_the_runtime_lock_path_invalidates_ownership() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let state = RuntimeInstanceLock::default();
+        state.set(acquire_runtime_lock(dir.path()).expect("runtime lock"));
+        let path = dir.path().join(RUNTIME_LOCK_FILE);
+        let target = dir.path().join("target.lock");
+        std::fs::rename(&path, &target).expect("move the locked file");
+        std::os::unix::fs::symlink(&target, &path).expect("plant a symlink");
+        assert!(
+            !state.is_held(),
+            "a symlink at the lock path must not count as ownership"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn acquire_runtime_lock_refuses_a_symlink_path() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let outside = tempfile::tempdir().expect("outside directory");
+        let target = outside.path().join("target.lock");
+        std::fs::write(&target, b"target").expect("target file");
+        std::os::unix::fs::symlink(&target, dir.path().join(RUNTIME_LOCK_FILE))
+            .expect("symlink lock path");
+        let error =
+            acquire_runtime_lock(dir.path()).expect_err("a symlinked lock path must be refused");
+        assert!(error.contains("symlink"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn recovery_completion_keeps_the_runtime_lock() {
+        let (dir, db, backups, snapshot) = temp_paths();
+        create_database(&snapshot, "a").await;
+        create_database(&db, "partial").await;
+        begin_transaction(dir.path(), &snapshot, "core", core_targets())
+            .await
+            .expect("marker");
+        let state = RuntimeInstanceLock::default();
+        state.set(acquire_runtime_lock(dir.path()).expect("runtime lock"));
+        let result = startup_recovery(&db, dir.path(), &backups).await;
+        assert_eq!(result.state, RecoveryState::Recovered, "{result:?}");
+        assert!(
+            state.is_held(),
+            "the runtime lock belongs to the process, not to one recovery"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_second_process_cannot_take_the_runtime_lock() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let mut child = spawn_child(dir.path(), "runtime", None);
+        wait_for_child_file(&dir.path().join("child.locked"), 15_000);
+        let error = acquire_runtime_lock(dir.path())
+            .expect_err("a second process must not own the runtime lock");
+        assert!(error.contains("already running"), "{error}");
+        child.kill().expect("kill runtime owner");
+        let _ = wait_for_child_exit(child, 10_000);
+        assert!(
+            acquire_runtime_lock(dir.path()).is_ok(),
+            "the OS releases the runtime lock when the owner dies"
+        );
+    }
+
+    #[test]
     fn a_second_handle_cannot_take_the_recovery_lock() {
         let dir = tempfile::tempdir().expect("temporary directory");
         let first = try_acquire_lock(dir.path()).expect("first lock");
@@ -1668,6 +2100,11 @@ mod tests {
                 std::fs::write(directory.join("child.locked"), b"1").expect("locked marker");
                 wait_for_child_file(&directory.join("child.release"), 20_000);
                 drop(file);
+            }
+            "runtime" => {
+                let _file = acquire_runtime_lock(&directory).expect("child runtime lock");
+                std::fs::write(directory.join("child.locked"), b"1").expect("locked marker");
+                wait_for_child_file(&directory.join("child.release"), 20_000);
             }
             "migrate-partial" => {
                 let _file = try_acquire_lock(&directory).expect("child lock");
@@ -1886,12 +2323,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn retry_cannot_upgrade_a_runtime_lock_refusal_to_healthy() {
+        let (dir, db, backups, _snapshot) = temp_paths();
+        create_database(&db, "migrated").await;
+        // Same inputs that would otherwise diagnose Healthy: no marker, a valid
+        // database. Without the runtime lock the retry must stay blocked.
+        let lock = RecoveryLock::default();
+        let result = retry_recovery(&db, dir.path(), &backups, &lock, false).await;
+        assert_eq!(
+            result.state,
+            RecoveryState::ManualInterventionRequired,
+            "{result:?}"
+        );
+        assert!(
+            result.reason.contains("runtime instance lock"),
+            "{}",
+            result.reason
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_with_the_runtime_lock_still_works() {
+        let (dir, db, backups, _snapshot) = temp_paths();
+        create_database(&db, "migrated").await;
+        let lock = RecoveryLock::default();
+        let result = retry_recovery(&db, dir.path(), &backups, &lock, true).await;
+        assert_eq!(result.state, RecoveryState::Healthy, "{result:?}");
+    }
+
+    #[tokio::test]
     async fn retry_is_blocked_while_a_migration_is_open() {
         let (dir, db, backups, _snapshot) = temp_paths();
         create_database(&db, "a").await;
         let lock = RecoveryLock::default();
         lock.note_migration_started();
-        let result = retry_recovery(&db, dir.path(), &backups, &lock).await;
+        let result = retry_recovery(&db, dir.path(), &backups, &lock, true).await;
         assert_eq!(
             result.state,
             RecoveryState::ManualInterventionRequired,
@@ -1913,7 +2379,7 @@ mod tests {
         let mut child = spawn_child(dir.path(), "hold", None);
         wait_for_child_file(&dir.path().join("child.locked"), 15_000);
         let lock = RecoveryLock::default();
-        let result = retry_recovery(&db, dir.path(), &backups, &lock).await;
+        let result = retry_recovery(&db, dir.path(), &backups, &lock, true).await;
         assert_eq!(
             result.state,
             RecoveryState::ManualInterventionRequired,
