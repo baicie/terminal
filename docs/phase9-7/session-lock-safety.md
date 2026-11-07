@@ -84,7 +84,13 @@ VAULT_UI_E2E_VERIFIED=NOT_RUN
 VAULT_CROSS_VERSION_VERIFIED=NOT_RUN
 ```
 
-## 6. 未闭合
+## 6. 运行证据
+
+- Upgrade E2E `42356452096`（`49e9903`）5/5：单实例与 Vault 报告 PASS；
+- 六份证据 `42355653387`（`5e8ce13`）3/3，指纹 `43fdc334…`，门禁 0；
+- 最终 CI 在证据提交后的 HEAD 上执行。
+
+## 7. 未闭合
 
 - Windows 文件身份是 creation_time + size 近似，不是 file index；需要
   `GetFileInformationByHandle` 级别的验证。

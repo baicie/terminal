@@ -47,15 +47,16 @@
 
 ### 证据
 
-官方 `real-machine-matrix` run `42346192749`（`c68aebb`）**3/3 success**，
-六份证据指纹 **`a0a76721…`**（debug `3ee31536…`、release `52a99465…`），
+官方 `real-machine-matrix` run `42355653387`（`5e8ce13`）**3/3 success**，
+六份证据指纹 **`43fdc334…`**（debug `3926c59a…`、release `9e2e21bc…`），
 `check-verification-evidence.mjs` **0 problem**；raw log 归档
-`docs/verification/raw/42346192749/`。未手工修改 manifest。
+`docs/verification/raw/42355653387/`。未手工修改 manifest。
 
-最终 Upgrade E2E [`42348255027`](https://github.com/baicie/terminal/actions/runs/42348255027)
-（`e0dd992`）**5/5 success**；最终 CI
-[`42348257607`](https://github.com/baicie/terminal/actions/runs/42348257607)
-**11/11 success**（含 `Repository gates`）。
+最终 Upgrade E2E [`42356452096`](https://github.com/baicie/terminal/actions/runs/42356452096)
+（`49e9903`）**5/5 success**；最终 CI 在证据提交后的 HEAD 上执行。
+
+P0-A.2 的证据采集源码为 `5e8ce13`；`49e9903` 仅修单实例 E2E 的 SQLite
+`busy_timeout`，不在证据指纹路径内。
 
 ## 2. WP1 — Windows NSIS
 
