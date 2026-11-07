@@ -17,6 +17,8 @@ mod tests;
 mod writer;
 
 pub use backup::backup_database_before_migration;
+#[cfg(test)]
+pub(crate) use backup::snapshot_before_migration;
 pub use payload::ImportPayload;
 pub use writer::ImportReport;
 

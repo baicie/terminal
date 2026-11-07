@@ -20,7 +20,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteConnection};
 use sqlx::{Connection, Pool, Sqlite};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Manager, Runtime, State};
 
 /// Budget for one snapshot, from `VACUUM INTO` through the read-back verification.
 pub const BACKUP_BUDGET: Duration = Duration::from_secs(60);
@@ -66,6 +66,8 @@ pub struct BackupReport {
     pub tables: u64,
     /// Rows the snapshot carries, summed over those tables.
     pub rows: i64,
+    /// The transaction the frontend must name when it reports completion.
+    pub transaction_id: String,
 }
 
 /// Tauri command: snapshot the application database before the schema is migrated.
@@ -76,16 +78,76 @@ pub struct BackupReport {
 #[tauri::command]
 pub async fn backup_database_before_migration<R: Runtime>(
     app: AppHandle<R>,
+    lock: State<'_, crate::db_recovery::RecoveryLock>,
+    targets: Option<Vec<crate::db_recovery::MigrationTarget>>,
+    migration_id: Option<String>,
 ) -> Result<BackupReport, String> {
     let pool = super::sqlite_pool(&app).await?;
     let directory = backup_directory(&app)?;
     let destination = unique_destination(&directory)?;
-    let report = snapshot_before_migration(&pool, &destination)
-        .await
-        .map_err(|error| error.to_string())?;
+    // Publish the pending-migration marker before VACUUM starts. A crash between
+    // the snapshot and the first ALTER is then visible on the next start, while a
+    // crash during VACUUM leaves a marker whose missing snapshot is detected as
+    // "nothing was migrated" and cleared without touching the database.
+    let config = directory
+        .parent()
+        .ok_or_else(|| "the backups directory has no parent".to_string())?;
+    // Serialize against another backup/restore in this process. The file lock
+    // below covers other processes; this guard covers two Tauri commands.
+    let _operation = lock.lock_operation().await?;
+    if lock.migration_in_progress() {
+        return Err(
+            "another migration transaction is already open in this Terminal process".to_string(),
+        );
+    }
+    // No migration may touch the database until this process owns the
+    // cross-process lock. The lock is held through completion so the frontend's
+    // ALTER statements are covered too.
+    crate::db_recovery::ensure_lock(&lock, config)?;
+    let targets = targets.unwrap_or_else(crate::db_recovery::core_targets);
+    let migration_id = migration_id.unwrap_or_else(|| "core".to_string());
+    let transaction =
+        match crate::db_recovery::begin_transaction(config, &destination, &migration_id, targets)
+            .await
+        {
+            Ok(transaction) => transaction,
+            Err(error) => {
+                crate::db_recovery::release_lock(&lock);
+                return Err(error);
+            }
+        };
+    lock.note_migration_started();
+    let report = match snapshot_before_migration(&pool, &destination).await {
+        Ok(mut report) => {
+            report.transaction_id = transaction.transaction_id.clone();
+            report
+        }
+        Err(error) => {
+            // Restore the previous marker byte for byte. "Not clearing it" is
+            // not enough: `begin_transaction` may already have merged this
+            // call's targets into the open transaction.
+            let rollback = crate::db_recovery::rollback_transaction(config, &transaction);
+            lock.note_migration_finished();
+            crate::db_recovery::release_lock(&lock);
+            return match rollback {
+                Ok(()) => Err(error.to_string()),
+                Err(rollback_error) => Err(format!(
+                    "{error}; additionally the previous migration marker could not be restored: {rollback_error}"
+                )),
+            };
+        }
+    };
     // After the new snapshot is verified, never before: pruning first would drop a
     // good older copy before this call proved it has a replacement.
-    prune_old_snapshots(&directory, MAX_SNAPSHOT_COPIES);
+    match crate::db_recovery::active_snapshot(config) {
+        Ok(pinned) => {
+            prune_old_snapshots(&directory, MAX_SNAPSHOT_COPIES, pinned.as_deref());
+        }
+        Err(error) => tracing::warn!(
+            error = %error,
+            "the active migration marker cannot be read; skipping snapshot pruning"
+        ),
+    }
     Ok(report)
 }
 
@@ -252,6 +314,7 @@ async fn verify_snapshot(
             path: path.clone(),
             tables: tables.len() as u64,
             rows,
+            transaction_id: String::new(),
         })
     }
     .await;
@@ -301,7 +364,7 @@ fn snapshot_stamp(name: &str) -> Option<u128> {
 /// file. The scan does not recurse, and only regular files whose name
 /// `snapshot_stamp` recognises are candidates, so nothing else in the directory can be
 /// touched.
-fn prune_old_snapshots(directory: &Path, keep: usize) -> usize {
+fn prune_old_snapshots(directory: &Path, keep: usize, pinned: Option<&Path>) -> usize {
     let entries = match std::fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(error) => {
@@ -335,8 +398,20 @@ fn prune_old_snapshots(directory: &Path, keep: usize) -> usize {
     }
 
     snapshots.sort();
+    let pinned_name = pinned
+        .and_then(|path| path.file_name())
+        .map(|name| name.to_string_lossy().into_owned());
+    let target = snapshots.len() - keep;
     let mut removed = 0;
-    for (_, name) in snapshots.iter().take(snapshots.len() - keep) {
+    for (_, name) in &snapshots {
+        if removed >= target {
+            break;
+        }
+        // A snapshot referenced by a live migration marker is an active
+        // recovery asset; it is never pruned for age or count.
+        if pinned_name.as_deref() == Some(name.as_str()) {
+            continue;
+        }
         match std::fs::remove_file(directory.join(name)) {
             Ok(()) => {
                 removed += 1;
@@ -717,7 +792,7 @@ mod tests {
         std::fs::write(dir.path().join(&collision), b"a snapshot").expect("write a snapshot");
         written.push(collision);
 
-        let removed = prune_old_snapshots(dir.path(), MAX_SNAPSHOT_COPIES);
+        let removed = prune_old_snapshots(dir.path(), MAX_SNAPSHOT_COPIES, None);
 
         assert_eq!(
             removed, 3,
@@ -778,7 +853,7 @@ mod tests {
         let directory_named_like_a_snapshot = dir.path().join("pre-migration-99.db");
         std::fs::create_dir(&directory_named_like_a_snapshot).expect("create a directory");
 
-        let removed = prune_old_snapshots(dir.path(), 1);
+        let removed = prune_old_snapshots(dir.path(), 1, None);
 
         assert_eq!(removed, 8, "only the eight real snapshots above the cap go");
         assert!(
@@ -817,7 +892,7 @@ mod tests {
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555))
             .expect("make the directory read-only");
 
-        let removed = prune_old_snapshots(dir.path(), 1);
+        let removed = prune_old_snapshots(dir.path(), 1, None);
 
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755))
             .expect("restore the directory");
@@ -831,5 +906,22 @@ mod tests {
                 .join(format!("pre-migration-{stamp}.db"))
                 .exists());
         }
+    }
+    #[test]
+    fn a_pinned_snapshot_survives_pruning_even_when_it_is_the_oldest() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        for index in 1..=6 {
+            std::fs::write(
+                dir.path().join(format!("pre-migration-{index}.db")),
+                b"snapshot",
+            )
+            .expect("snapshot file");
+        }
+        let pinned = dir.path().join("pre-migration-1.db");
+        let removed = prune_old_snapshots(dir.path(), 5, Some(&pinned));
+        assert_eq!(removed, 1);
+        assert!(pinned.exists(), "the active snapshot must never be pruned");
+        let remaining = std::fs::read_dir(dir.path()).expect("dir").count();
+        assert_eq!(remaining, 5);
     }
 }

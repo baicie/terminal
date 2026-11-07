@@ -1,0 +1,472 @@
+name: Upgrade E2E
+
+# Real two-version upgrade, deliberately separate from the normal CI install
+# jobs. Two macOS jobs:
+#   historical: published dev.1 -> published dev.2
+#   current:    published dev.1 -> current HEAD build, plus fault/recovery
+# A normal push must not pay this cost; path filters keep it to the upgrade
+# harness and this workflow. The Linux/Windows adapters are separate jobs added
+# only after their isolation contracts are implemented.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/verify-install/**'
+      - '.github/workflows/upgrade-e2e.yml'
+
+permissions:
+  contents: read
+
+env:
+  PNPM_VERSION: 10.34.3
+  DEV1_SHA256: 73cf7483e912af33c34791a50aaae378cd85ca3be6b0fccf9e8bd4fcea56a7b8
+
+jobs:
+  macos-historical-upgrade:
+    name: macOS historical dev.1 -> dev.2
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Download published A and B installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p upgrade-assets/dev1 upgrade-assets/dev2
+          gh release download v0.0.1-dev.1 \
+            -p 'Terminal_0.0.1-dev.1_macos-aarch64.dmg' \
+            -p 'SHA256SUMS.txt' \
+            -D upgrade-assets/dev1 --clobber
+          gh release download v0.0.1-dev.2 \
+            -p 'Terminal_0.0.1-dev.2_macos-aarch64.dmg' \
+            -p 'SHA256SUMS.txt' \
+            -D upgrade-assets/dev2 --clobber
+
+      - name: Verify release digests before installing
+        run: |
+          set -euo pipefail
+          (cd upgrade-assets/dev1 && grep 'macos-aarch64.dmg' SHA256SUMS.txt > expected.txt && shasum -a 256 -c expected.txt)
+          (cd upgrade-assets/dev2 && grep 'macos-aarch64.dmg' SHA256SUMS.txt > expected.txt && shasum -a 256 -c expected.txt)
+
+      - name: Run historical A->B upgrade with field-by-field verification
+        run: |
+          node scripts/verify-install/upgrade-e2e.mjs run \
+            --a-installer upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg \
+            --b-installer upgrade-assets/dev2/Terminal_0.0.1-dev.2_macos-aarch64.dmg \
+            --platform darwin \
+            --expect-a-sha256 "$DEV1_SHA256" \
+            --expect-b-sha256 2c9a0ca3af22ac797f732889e27b887e6fd5921f7b583f59e3ba6f64a024e1d5 \
+            --expect-a-version 0.0.1-dev.1 \
+            --expect-b-version 0.0.1-dev.2 \
+            --expect-identifier com.baicie.termius \
+            --expect-new-host-columns agent_forwarding,shell_integration \
+            --work-dir upgrade-work \
+            --report-dir upgrade-report
+
+      - name: Fail closed on incomplete upgrade evidence
+        run: node scripts/verify-install/check-upgrade-evidence.mjs --require-contract upgrade-report/upgrade-report.json
+
+      - name: Upload historical evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgrade-evidence-historical
+          path: |
+            upgrade-report/
+            upgrade-work/*/logs/
+          if-no-files-found: warn
+
+  macos-current-upgrade:
+    name: macOS current-version upgrade and recovery
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+
+      - name: Download published A installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p upgrade-assets/dev1
+          gh release download v0.0.1-dev.1 \
+            -p 'Terminal_0.0.1-dev.1_macos-aarch64.dmg' \
+            -p 'SHA256SUMS.txt' \
+            -D upgrade-assets/dev1 --clobber
+          (cd upgrade-assets/dev1 && grep 'macos-aarch64.dmg' SHA256SUMS.txt > expected.txt && shasum -a 256 -c expected.txt)
+
+      - name: Build current HEAD as test version B
+        run: |
+          set -euo pipefail
+          VITE_TERMINAL_SMOKE_BUILD=1 \
+          VITE_TERMINAL_MIGRATION_DELAY_MS=1500 \
+          VITE_TERMINAL_TEAM_MIGRATION_DELAY_MS=1500 \
+            pnpm tauri build --bundles dmg --config '{"version":"0.0.1-dev.4-local"}'
+          B_DMG="$(find src-tauri/target/release/bundle/dmg -maxdepth 1 -name 'Termius_0.0.1-dev.4-local_*.dmg' -print -quit)"
+          test -n "$B_DMG"
+          shasum -a 256 "$B_DMG" | tee current-b.sha256
+          B_SHA="$(cut -d' ' -f1 current-b.sha256)"
+          echo "B_DMG=$B_DMG" >> "$GITHUB_ENV"
+          echo "B_SHA=$B_SHA" >> "$GITHUB_ENV"
+          node -e "const fs=require('fs');fs.writeFileSync('current-b-build.json',JSON.stringify({sourceSha:process.env.GITHUB_SHA,version:'0.0.1-dev.4-local',kind:'current-source-test-build',instrumentedBuild:true,migrationDelayMs:1500,teamMigrationDelayMs:1500,nodeVersion:process.version},null,2))"
+
+      - name: Run current-version A->B upgrade
+        run: |
+          node scripts/verify-install/upgrade-e2e.mjs run \
+            --a-installer upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg \
+            --b-installer "$B_DMG" --platform darwin \
+            --expect-a-sha256 "$DEV1_SHA256" --expect-b-sha256 "$B_SHA" \
+            --expect-a-version 0.0.1-dev.1 --expect-b-version 0.0.1-dev.4-local \
+            --expect-identifier com.baicie.termius \
+            --expect-new-host-columns agent_forwarding,shell_integration \
+            --expect-backup \
+            --work-dir upgrade-current --report-dir upgrade-current-report
+
+      - name: Deterministic migration interruption and recovery
+        run: |
+          node scripts/verify-install/upgrade-e2e.mjs run \
+            --a-installer upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg \
+            --b-installer "$B_DMG" --platform darwin \
+            --expect-a-sha256 "$DEV1_SHA256" --expect-b-sha256 "$B_SHA" \
+            --expect-a-version 0.0.1-dev.1 --expect-b-version 0.0.1-dev.4-local \
+            --expect-identifier com.baicie.termius \
+            --expect-new-host-columns agent_forwarding,shell_integration \
+            --expect-backup --fault interrupted \
+            --work-dir upgrade-current-interrupt --report-dir upgrade-current-interrupt-report
+
+      - name: Team schema interruption at 1/3/5/10 targets
+        run: |
+          node scripts/verify-install/upgrade-e2e.mjs run \
+            --a-installer upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg \
+            --b-installer "$B_DMG" --platform darwin \
+            --expect-a-sha256 "$DEV1_SHA256" --expect-b-sha256 "$B_SHA" \
+            --expect-a-version 0.0.1-dev.1 --expect-b-version 0.0.1-dev.4-local \
+            --expect-identifier com.baicie.termius \
+            --expect-new-host-columns agent_forwarding,shell_integration \
+            --expect-backup --fault team-interrupted \
+            --work-dir upgrade-current-team --report-dir upgrade-current-team-report
+
+      - name: Restore the pre-migration backup
+        run: |
+          node scripts/verify-install/upgrade-e2e.mjs run \
+            --a-installer upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg \
+            --b-installer "$B_DMG" --platform darwin \
+            --expect-a-sha256 "$DEV1_SHA256" --expect-b-sha256 "$B_SHA" \
+            --expect-a-version 0.0.1-dev.1 --expect-b-version 0.0.1-dev.4-local \
+            --expect-identifier com.baicie.termius \
+            --expect-new-host-columns agent_forwarding,shell_integration \
+            --expect-backup --fault restore-backup \
+            --work-dir upgrade-current-restore --report-dir upgrade-current-restore-report
+
+      - name: Downgrade readability and data safety
+        run: |
+          node scripts/verify-install/upgrade-e2e.mjs run \
+            --a-installer upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg \
+            --b-installer "$B_DMG" --platform darwin \
+            --expect-a-sha256 "$DEV1_SHA256" --expect-b-sha256 "$B_SHA" \
+            --expect-a-version 0.0.1-dev.1 --expect-b-version 0.0.1-dev.4-local \
+            --expect-identifier com.baicie.termius \
+            --expect-new-host-columns agent_forwarding,shell_integration \
+            --expect-backup --fault downgrade \
+            --work-dir upgrade-current-downgrade --report-dir upgrade-current-downgrade-report
+
+      - name: Corrupt database must be preserved and observed
+        run: |
+          node scripts/verify-install/upgrade-e2e.mjs run \
+            --a-installer upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg \
+            --b-installer "$B_DMG" --platform darwin \
+            --expect-a-sha256 "$DEV1_SHA256" --expect-b-sha256 "$B_SHA" \
+            --expect-a-version 0.0.1-dev.1 --expect-b-version 0.0.1-dev.4-local \
+            --expect-identifier com.baicie.termius \
+            --expect-new-host-columns agent_forwarding,shell_integration \
+            --fault corrupt-db \
+            --work-dir upgrade-current-corrupt --report-dir upgrade-current-corrupt-report
+
+      - name: Read-only data directory must be preserved and observed
+        run: |
+          node scripts/verify-install/upgrade-e2e.mjs run \
+            --a-installer upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg \
+            --b-installer "$B_DMG" --platform darwin \
+            --expect-a-sha256 "$DEV1_SHA256" --expect-b-sha256 "$B_SHA" \
+            --expect-a-version 0.0.1-dev.1 --expect-b-version 0.0.1-dev.4-local \
+            --expect-identifier com.baicie.termius \
+            --expect-new-host-columns agent_forwarding,shell_integration \
+            --fault read-only-data-dir \
+            --work-dir upgrade-current-readonly --report-dir upgrade-current-readonly-report
+
+      - name: Disk-full backup and migration must fail closed
+        run: |
+          node scripts/verify-install/upgrade-e2e.mjs run \
+            --a-installer upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg \
+            --b-installer "$B_DMG" --platform darwin \
+            --expect-a-sha256 "$DEV1_SHA256" --expect-b-sha256 "$B_SHA" \
+            --expect-a-version 0.0.1-dev.1 --expect-b-version 0.0.1-dev.4-local \
+            --expect-identifier com.baicie.termius \
+            --expect-new-host-columns agent_forwarding,shell_integration \
+            --expect-backup --fault disk-full \
+            --work-dir upgrade-current-diskfull --report-dir upgrade-current-diskfull-report
+
+      - name: Second B launch must be idempotent
+        run: |
+          node scripts/verify-install/upgrade-e2e.mjs run \
+            --a-installer upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg \
+            --b-installer "$B_DMG" --platform darwin \
+            --expect-a-sha256 "$DEV1_SHA256" --expect-b-sha256 "$B_SHA" \
+            --expect-a-version 0.0.1-dev.1 --expect-b-version 0.0.1-dev.4-local \
+            --expect-identifier com.baicie.termius \
+            --expect-new-host-columns agent_forwarding,shell_integration \
+            --expect-backup --fault restart-idempotent \
+            --work-dir upgrade-current-restart --report-dir upgrade-current-restart-report
+
+      - name: Fail closed on incomplete upgrade evidence
+        run: |
+          node scripts/verify-install/check-upgrade-evidence.mjs --require-contract \
+            upgrade-current-report/upgrade-report.json \
+            upgrade-current-interrupt-report/upgrade-report.json \
+            upgrade-current-restore-report/upgrade-report.json \
+            upgrade-current-downgrade-report/upgrade-report.json \
+            upgrade-current-corrupt-report/upgrade-report.json \
+            upgrade-current-readonly-report/upgrade-report.json \
+            upgrade-current-diskfull-report/upgrade-report.json \
+            upgrade-current-restart-report/upgrade-report.json \
+            upgrade-current-team-report/upgrade-report.json
+
+      - name: Upload current-version evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgrade-evidence-current
+          path: |
+            current-b.sha256
+            current-b-build.json
+            upgrade-current-report/
+            upgrade-current-interrupt-report/
+            upgrade-current-restore-report/
+            upgrade-current-downgrade-report/
+            upgrade-current-corrupt-report/
+            upgrade-current-readonly-report/
+            upgrade-current-diskfull-report/
+            upgrade-current-restart-report/
+            upgrade-current-team-report/
+            upgrade-current/*/logs/
+            upgrade-current-interrupt/*/logs/
+            upgrade-current-restore/*/logs/
+            upgrade-current-downgrade/*/logs/
+            upgrade-current-corrupt/*/logs/
+            upgrade-current-readonly/*/logs/
+            upgrade-current-diskfull/*/logs/
+            upgrade-current-restart/*/logs/
+            upgrade-current-team/*/logs/
+          if-no-files-found: warn
+
+  linux-deb-upgrade:
+    name: Linux real DEB upgrade
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install headless display tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb x11-utils
+      - name: Download published Linux DEBs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p upgrade-assets/linux-deb1 upgrade-assets/linux-deb2
+          gh release download v0.0.1-dev.1 \
+            -p 'Terminal_0.0.1-dev.1_linux-x86_64.deb' \
+            -p 'SHA256SUMS.txt' -D upgrade-assets/linux-deb1 --clobber
+          gh release download v0.0.1-dev.2 \
+            -p 'Terminal_0.0.1-dev.2_linux-x86_64.deb' \
+            -p 'SHA256SUMS.txt' -D upgrade-assets/linux-deb2 --clobber
+          (cd upgrade-assets/linux-deb1 && grep 'linux-x86_64.deb' SHA256SUMS.txt > expected.txt && shasum -a 256 -c expected.txt)
+          (cd upgrade-assets/linux-deb2 && grep 'linux-x86_64.deb' SHA256SUMS.txt > expected.txt && shasum -a 256 -c expected.txt)
+      - name: Real DEB A->B upgrade
+        run: |
+          node scripts/verify-install/upgrade-e2e.mjs run \
+            --platform linux --mode deb \
+            --a-installer upgrade-assets/linux-deb1/Terminal_0.0.1-dev.1_linux-x86_64.deb \
+            --b-installer upgrade-assets/linux-deb2/Terminal_0.0.1-dev.2_linux-x86_64.deb \
+            --expect-a-sha256 4ed449bf4a64727f867a6fa73f2d62c29abbb06baf3edf351c5c25650eed0cee \
+            --expect-b-sha256 80c40e72989b4c597b63cd7224e324463e6d0665956cb8e421415376ca4f6643 \
+            --expect-a-version 0.0.1-dev.1 --expect-b-version 0.0.1-dev.2 \
+            --expect-new-host-columns agent_forwarding,shell_integration \
+            --work-dir upgrade-linux-deb --report-dir upgrade-linux-deb-report
+      - name: Fail closed on incomplete Linux DEB evidence
+        run: node scripts/verify-install/check-upgrade-evidence.mjs --require-contract upgrade-linux-deb-report/upgrade-report.json
+      - name: Upload Linux DEB evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgrade-evidence-linux-deb
+          path: |
+            upgrade-linux-deb-report/
+            upgrade-linux-deb/*/logs/
+          if-no-files-found: warn
+
+  linux-appimage-upgrade:
+    name: Linux AppImage replacement
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install headless display and AppImage runtime libraries
+        # The AppImage does not bundle libEGL/libGL; without these the binary
+        # exits 127 before creating the database. The DEB job gets the same
+        # libraries through its package dependencies.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb x11-utils libegl1 libegl-mesa0 libgles2 libgl1 libgl1-mesa-dri \
+            libayatana-appindicator3-1 libwebkit2gtk-4.1-0 libgtk-3-0 mesa-utils \
+            gcc libegl1-mesa-dev
+      - name: Probe the headless EGL stack
+        run: |
+          ls -l /usr/share/glvnd/egl_vendor.d || true
+          ls /usr/lib/x86_64-linux-gnu/dri | head -10
+          xvfb-run -a eglinfo -B 2>&1 | head -20 || true
+          cat > /tmp/egl-default.c <<'EOF'
+          #include <EGL/egl.h>
+          #include <stdio.h>
+          int main(void) {
+            EGLDisplay d = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+            EGLint major = 0, minor = 0;
+            if (d == EGL_NO_DISPLAY || !eglInitialize(d, &major, &minor)) {
+              printf("eglGetDisplay/default failed: 0x%x\n", eglGetError());
+              return 1;
+            }
+            printf("eglGetDisplay/default OK: %d.%d\n", major, minor);
+            return 0;
+          }
+          EOF
+          gcc /tmp/egl-default.c -lEGL -o /tmp/egl-default
+          # Diagnostic only: the AppImage scenario records app startup as
+          # NOT_RUN when EGL is unavailable and stays PARTIAL. A flaky Mesa
+          # probe on a shared runner must not fail a payload-only job.
+          xvfb-run -a /tmp/egl-default || true
+          EGL_PLATFORM=x11 xvfb-run -a /tmp/egl-default || true
+          EGL_PLATFORM=surfaceless xvfb-run -a /tmp/egl-default || true
+      - name: Download published AppImages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p upgrade-assets/linux-app1 upgrade-assets/linux-app2
+          gh release download v0.0.1-dev.1 \
+            -p 'Terminal_0.0.1-dev.1_linux-x86_64.AppImage' \
+            -p 'SHA256SUMS.txt' -D upgrade-assets/linux-app1 --clobber
+          gh release download v0.0.1-dev.2 \
+            -p 'Terminal_0.0.1-dev.2_linux-x86_64.AppImage' \
+            -p 'SHA256SUMS.txt' -D upgrade-assets/linux-app2 --clobber
+          (cd upgrade-assets/linux-app1 && grep 'linux-x86_64.AppImage' SHA256SUMS.txt > expected.txt && shasum -a 256 -c expected.txt)
+          (cd upgrade-assets/linux-app2 && grep 'linux-x86_64.AppImage' SHA256SUMS.txt > expected.txt && shasum -a 256 -c expected.txt)
+      - name: AppImage replacement A->B
+        run: |
+          node scripts/verify-install/upgrade-e2e.mjs run \
+            --platform linux --mode appimage --payload-only \
+            --a-installer upgrade-assets/linux-app1/Terminal_0.0.1-dev.1_linux-x86_64.AppImage \
+            --b-installer upgrade-assets/linux-app2/Terminal_0.0.1-dev.2_linux-x86_64.AppImage \
+            --expect-a-sha256 5a60bb64264e8dacbf021798f7a0fe67e0c84a17dd0af2e662825ccf0d30bdf2 \
+            --expect-b-sha256 9ec65f538e8ef0a1125ae82b25edc4ab4f5c80d8c0c8e4efc1a792e693c446ac \
+            --expect-new-host-columns agent_forwarding,shell_integration \
+            --work-dir upgrade-linux-appimage --report-dir upgrade-linux-appimage-report
+      - name: Fail closed on incomplete AppImage evidence
+        run: node scripts/verify-install/check-upgrade-evidence.mjs --require-contract upgrade-linux-appimage-report/upgrade-report.json
+      - name: Upload AppImage evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgrade-evidence-linux-appimage
+          path: |
+            upgrade-linux-appimage-report/
+            upgrade-linux-appimage/*/logs/
+          if-no-files-found: warn
+
+  windows-isolation-preflight:
+    name: Windows profile isolation preflight
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the isolation state machine
+        run: node --test scripts/verify-install/windows-isolation-classify.test.mjs
+      - name: Test the native process-tree probe
+        run: node --test scripts/verify-install/quiescence-windows.test.mjs
+      - name: Prove the shared runner profile fails closed
+        shell: pwsh
+        run: |
+          $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          $out = Join-Path $env:RUNNER_TEMP 'windows-isolation.json'
+          & pwsh -NoProfile -File ./scripts/verify-install/windows-isolation-check.ps1 `
+            -ExpectedSid $sid -RunnerSid $sid -OutFile $out
+          $code = $LASTEXITCODE
+          if ($code -ne 1) {
+            throw "The shared runner must fail closed with exit 1, got $code"
+          }
+          if (-not (Test-Path $out)) { throw 'The preflight wrote no report' }
+          $report = Get-Content $out -Raw | ConvertFrom-Json
+          if ($report.isolated -ne $false) { throw 'isolated must be false on the shared runner' }
+          if ($report.wouldTouchRealProfile -ne $true) { throw 'wouldTouchRealProfile must be true on the shared runner' }
+          if ($report.reasonCode -ne 'REFUSED_SHARED_RUNNER_PROFILE') {
+            throw "unexpected reasonCode: $($report.reasonCode)"
+          }
+          if ($report.evidenceComplete -ne $true) { throw 'evidenceComplete must be true' }
+          if ($report.readOnlyPreflight -ne $true) { throw 'readOnlyPreflight must be true' }
+          $assertions = [ordered]@{
+            exitCode = $code
+            reasonCode = [string]$report.reasonCode
+            isolated = $report.isolated
+            wouldTouchRealProfile = $report.wouldTouchRealProfile
+            evidenceComplete = $report.evidenceComplete
+            processSid = $sid
+          }
+          $assertions | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'windows-isolation-assertions.json') -Encoding UTF8
+          Write-Host 'Windows preflight failed closed on the shared profile; no install or delete was attempted.'
+          # The preflight intentionally exits 1 to fail closed. The assertions
+          # above prove that the failure was the expected isolation refusal, so
+          # this wrapper step itself is green.
+          exit 0
+      - name: Upload Windows isolation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-isolation-report
+          path: |
+            ${{ runner.temp }}/windows-isolation.json
+            ${{ runner.temp }}/windows-isolation-assertions.json
+          if-no-files-found: error

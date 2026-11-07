@@ -1,0 +1,126 @@
+# Phase 9.5 — Real Two-Version Upgrade E2E
+
+> 日期：2026-11-05
+> 平台：macOS arm64（本机真实执行）
+> 资产：GitHub Releases `v0.0.1-dev.1` / `v0.0.1-dev.2` + 当前源码本地构建
+> 报告与日志：`docs/phase9-5/evidence/`
+
+## 1. 执行命令
+
+```bash
+node scripts/verify-install/upgrade-e2e.mjs run \
+  --a-installer <A.dmg> --b-installer <B.dmg> --platform darwin \
+  --expect-a-sha256 <A-SHA> --expect-b-sha256 <B-SHA> \
+  --expect-a-version <A-version> --expect-b-version <B-version> \
+  --expect-identifier com.baicie.termius \
+  --expect-new-host-columns agent_forwarding,shell_integration \
+  [--expect-backup] \
+  --work-dir <work> --report-dir <report>
+```
+
+## 2. 运行 1：dev.1 → dev.2（两个真实发布资产）
+
+| 项 | 值 |
+| --- | --- |
+| A | `0.0.1-dev.1`，SHA256 `73cf7483…`，arm64，`com.baicie.termius` |
+| B | `0.0.1-dev.2`，SHA256 `2c9a0ca3…`，arm64，`com.baicie.termius` |
+| 结果 | **PASS** |
+| schema | A 的 hosts 20 列 → B 的 22 列；新增 `agent_forwarding`、`shell_integration` |
+| 数据 | hosts / settings（全键）/ workspaces / layout / Team Sync 本地 5 表 逐字段 PASS |
+| vault | 文件存在、可解析、salt/entries 不变；真实主密码解锁 NOT_RUN |
+| pre-migration backup | **NOT_RUN**（dev.2 的 schema 代码早于当前备份命令） |
+| 证据 | `docs/phase9-5/evidence/dev1-to-dev2/upgrade-report.json` |
+
+## 3. 运行 2：dev.1 → 当前源码 dev.3-local
+
+| 项 | 值 |
+| --- | --- |
+| A | `0.0.1-dev.1`，发布资产 |
+| B | `0.0.1-dev.3-local`，当前源码本地构建，SHA256 `66f2465d…`，arm64，identifier 不变 |
+| 结果 | **PASS** |
+| schema | 新增 `agent_forwarding`、`shell_integration` |
+| 数据 | 与运行 1 相同的全字段检查 PASS |
+| Team Sync 本地 | **PASS**（teams / team_members / team_shared_hosts / sync_queue / user_profile） |
+| pre-migration backup | **PASS**：`pre-migration-<epoch>.db` 已生成且可打开、可读回 seeded 行 |
+| 证据 | `docs/phase9-5/evidence/dev1-to-dev3-current/upgrade-report.json`、`backup-report.json` |
+
+说明：`0.0.1-dev.3-local` 是用 Tauri `--config '{"version":"0.0.1-dev.3-local"}'`
+构建的**当前源码**测试包，只用于标识 A→B 的版本差；它不是 GitHub 发布资产，报告
+也没有把它写成历史发布包。
+
+## 4. 结果分类
+
+| 结论 | 结果 |
+| --- | --- |
+| A 元数据（版本/identifier/arch/SHA） | **PASS**（从产物自身读取） |
+| A 安装、首启、真实 schema 创建 | **PASS** |
+| A 数据 seed（按 A 的 schema 兼容列） | **PASS** |
+| A SQL 读回 | **PASS**（app 级写回探针在 dev.1 不存在，见 data-integrity.md） |
+| B 覆盖安装、版本/identifier 不变 | **PASS** |
+| B schema migration | **PASS** |
+| 字段级数据完整性 | **PASS** |
+| Team Sync 本地持久化 | **PASS**（两张表以上的历史 schema 均存在） |
+| Vault 文件持久化 | **PASS**；真实解锁 **NOT_RUN** |
+| pre-migration backup（当前 B） | **PASS**；历史 B **NOT_RUN** |
+| 三平台 | macOS **PASS**（本机）；Linux/Windows **NOT_RUN** |
+
+## 5. CI
+
+新增 `.github/workflows/upgrade-e2e.yml`：下载 dev.1/dev.2、校验
+`SHA256SUMS.txt`、运行 A→B 与 corrupt/read-only/restart 三个故障测试，上传
+`upgrade-report*/` 与日志。工作流与普通 CI 分离，只有路径命中
+`scripts/verify-install/**` 或该 workflow 时触发。
+
+**本文件中的 PASS 来自本机真实执行。** CI 另有一次真实 runner 运行：
+
+| 项 | 值 |
+| --- | --- |
+| run | `41954815468`（`ab9515c`） |
+| 结果 | **success** |
+| 步骤 | 下载/校验 dev.1、dev.2；A→B 字段验证；corrupt DB；read-only；restart 全部 success |
+| 证据 | `docs/phase9-5/evidence/ci-run-41954815468/` |
+| 限制 | CI 的 B 是 dev.2，没有迁移备份命令，也没有当前产品的应用级错误日志；因此 `pre-migration backup` 与 `* detected by the app` 在 CI 报告中是 `NOT_RUN`。当前 B 的备份/日志证据来自本机运行 2。 |
+
+普通 CI 的 `Repository gates` 现在也会运行
+`scripts/verify-install/*.test.mjs`（已加入 `node --test` 命令），避免新增测试
+只在本地执行。
+
+PR #8 重放到新的 PR #7 HEAD 后，强制推送误触发了同一 Upgrade E2E workflow：
+run `41961803808` **success**，证明重放后的树仍可执行 A→B 与三个故障测试。
+误触发的 300 次冷启动压测已取消，没有重复无意义压测。
+
+Phase 9.5.1 的当前版本 job 另行运行：run `41975451672`（`0819fd0`）的
+`macOS current-version upgrade and recovery` **success**，7 个报告全部 PASS；
+最终脚本的 run `41980039459`（`94f4b32`）完成同一组 job：macOS current 7/7 报告
+PASS，Linux DEB success，Windows 预检 success，AppImage payload-only success
+（启动/迁移 NOT_RUN）。详见 `ci-current-version-upgrade.md` 与
+`linux-upgrade-verification.md`。
+
+Phase 9.5.2 起 gate 使用 `--require-contract`；场景 required checks/facts、
+状态策略与负测试见 `upgrade-evidence-contract.md`。新报告带 `contractVersion: 2`、
+`sourceSha`、`runId` 和强制 artifact expected SHA。
+
+## 6. Phase 9.5.1：当前版本 CI 升级链
+
+`Upgrade E2E` workflow 新增：
+
+| job | 内容 |
+| --- | --- |
+| `macos-current-upgrade` | 下载 dev.1，构建当前 HEAD（`0.0.1-dev.4-local`，`VITE_TERMINAL_SMOKE_BUILD=1`、`VITE_TERMINAL_MIGRATION_DELAY_MS=1500`），执行正常升级 + 中断 + 备份恢复 + 降级 + corrupt/read-only/restart |
+| `linux-deb-upgrade` | dev.1 → dev.2 真实 dpkg 安装与字段级验证 |
+| `linux-appimage-upgrade` | dev.1 → dev.2 同路径 AppImage 替换 |
+| `windows-isolation-preflight` | 共享 profile 只读预检必须 fail-closed |
+
+当前 HEAD 构建的 `current-b-build.json` 记录 `sourceSha`、`kind=current-source-test-build`、
+`instrumentedBuild=true`、`migrationDelayMs=1500`，不把测试构建伪装成历史发布包。
+七个报告统一由 `check-upgrade-evidence.mjs` 检查；该门禁与六份实机证据独立。
+
+最终运行号、B 构建 SHA、七份报告结果见 `ci-current-version-upgrade.md`。
+
+## 7. 判定
+
+- `REAL_TWO_VERSION_UPGRADE_VERIFIED = YES`（macOS 本机真实发布 dev.1→dev.2 与
+  dev.1→当前源码；真实 runner `41954815468` 也 **success**）
+- `UPGRADE_DATA_INTEGRITY_VERIFIED = YES`（macOS 本机；真实 Vault 解锁、Team Sync
+  服务端同步、Linux/Windows 不在本判定内）
+- `FAILURE_RECOVERY_VERIFIED = PARTIAL`（见 `failure-recovery.md`）

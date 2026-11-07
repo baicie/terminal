@@ -850,6 +850,145 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 
 **✅ 证据状态**：最终源码 `44ae449` 已由 real-machine run `41605898002` 重采 6 份证据，指纹 `6d7536e7…`，debug SHA `2bf151cb…`、release SHA `88ba4714…`；证据门禁 0 problem。此前 `01836c9` 的指纹失配是门禁的正确阻断，不是产品回归。
 
+### Phase 9.5 - Integration Closure & Real Upgrade Foundation 🟡 基础完成
+
+> 2026-11-05，分支 `feat/phase9-5-upgrade-integrity`，base `a7a65bc`（stacked，不是 main）。
+
+| 领域 | 结果 |
+| --- | --- |
+| Phase 9.4.2 归档 | `PHASE_9_4_2_ENGINEERING_CLOSED=YES`；900 样本 0 个最终 local；六份证据 0 problem；`d4a972a` CI 11/11 |
+| PR 集成 | PR #6 `CLEAN` 11/11；PR #7 18 unique commits；模拟 post-#6 rebase 0 冲突、门禁 0、source-size 568 |
+| 真实升级 | 发布 `0.0.1-dev.1` → `0.0.1-dev.2` PASS；`dev.1` → 当前源码 `0.0.1-dev.3-local` PASS |
+| schema | hosts 20→22 列；settings 全键、workspaces/layout、Team Sync 本地 5 表、vault 文件逐字段 PASS |
+| 备份 | 当前 B 的 `pre-migration-<epoch>.db` 生成且可读回；dev.2 无备份能力，NOT_RUN |
+| 故障 | 损坏 DB、只读目录、重复启动、备份可读 PASS；迁移中断/磁盘满/自动恢复/B→A NOT_RUN |
+| 平台 | macOS 本机 PASS；Linux/Windows 适配器 NOT_RUN |
+| 签名/身份 | notarization/Authenticode/updater pubkey BLOCKED_EXTERNAL；T1–T12 NOT_RUN |
+| 判定 | `READY_FOR_RC=NO`、`READY_FOR_RELEASE=NO` |
+
+详见 `docs/phase9-5/implementation-report.md`。
+
+### Phase 9.5.1 - Cross-Platform Upgrade & Recovery Hardening 🟡 进行中
+
+> 2026-11-05，继续在 `feat/phase9-5-upgrade-integrity`（PR #8 Draft）上完成。
+
+| 领域 | 结果 |
+| --- | --- |
+| 当前 HEAD CI 升级 | **PASS**：run `42003371472` 5/5 job，macOS current 7/7；B=`0.0.1-dev.4-local`、source `78dd0d8`、SHA `dcd865d1…`；普通 CI `42003381820` 11/11 |
+| 真实迁移中断 | **PASS**：`agent_forwarding` 已提交、`shell_integration` 缺失时 SIGKILL；重启后两列齐全、字段级验证 |
+| 备份恢复 | **PASS**：复制 `pre-migration-<epoch>.db`、删除 WAL/SHM、A 启动读回、SHA 一致 |
+| B→A 降级 | **PASS（读取）/ PARTIAL**：A 可读加法 schema、数据哈希未变；无降级状态机 |
+| Linux DEB | **PASS**：真实 `apt-get`/dpkg、`dpkg-query` 版本变化、字段级数据、Team Sync 本地 |
+| Linux AppImage | **PARTIAL**：同路径替换 + SHA 校验；headless WebKit/EGL 启动限制见 `docs/phase9-5/linux-upgrade-verification.md` |
+| Windows | **PARTIAL**：共享 runner 只读预检正确 fail-closed；升级 E2E **NOT_RUN** |
+| 故障五事实 | **完成**：`fault-assessment.mjs` + 5 项负测试；独立 `check-upgrade-evidence.mjs` 门禁 |
+| 证据 | 指纹由 `d14fb1d1…` 变为 `b73c5fd2…`，已用 run `41970525110` 官方重采六份证据，0 problem |
+| 判定 | `PHASE_9_5_1_IMPLEMENTATION_COMPLETE=YES`；`READY_FOR_RC=NO` |
+
+详见 `docs/phase9-5/phase9-5-1-implementation.md` 与 `docs/phase9-5/ci-current-version-upgrade.md`。
+
+### Phase 9.5.2 - Upgrade Trust & Secure Data Continuity 🟡 实现完成，外部环境待补
+
+| 领域 | 结果 |
+| --- | --- |
+| 证据契约 | 10 场景、22 项负测试；PASS 必须全部 required checks/facts PASS；payload-only 才允许 PARTIAL；校验 sourceSha/runId/artifact SHA/恢复 A 启动/降级 B 列/中断缺失列 |
+| 备份恢复 | checkpoint busy/log 校验、sidecar 先删后 rename、最早备份、A 快照校验、A 启动证据 |
+| Vault | Node 24 Argon2id/AES-GCM fixture + Rust 已知答案；升级后独立解密/错误密码拒绝；app-level unlock NOT_RUN |
+| Team Sync | TeamMember BigInt 修复；full AppModule 真实 Nest HTTP + PostgreSQL 同步；PG 96 项通过；跨版本客户端 NOT_RUN |
+| Windows | 隔离状态机 8 项负测试；共享 runner fail-closed；一次性 profile/VM 与 A→B NOT_RUN |
+| 降级 | A 读取加法 schema + B 快照字段保留 PASS；不兼容未来 schema NOT_RUN |
+| 磁盘满/恢复 | busy checkpoint/崩溃窗口/ENOSPC NOT_RUN |
+| Updater | latest.json 静态契约/负测试；运行时下载/验签/安装/重启 NOT_RUN |
+| 判定 | `PHASE_9_5_2_COMPLETE=PARTIAL`；`READY_FOR_RC=NO`、`READY_FOR_RELEASE=NO` |
+
+详见 `docs/phase9-5/phase9-5-2-implementation.md`。
+
+### Phase 9.5.3 - Process Lifecycle & Crash-Safe Recovery 🟡 P0 完成，外部环境待补
+
+| 领域 | 结果 |
+| --- | --- |
+| 进程生命周期 | 异步 exit/close，SIGTERM→SIGKILL，日志 close 后写入；7 项单元测试；真实 normal/restore 为 graceful |
+| 恢复状态机 | 8 阶段、顺序断言、crash point hook（仅测试开关）；`backup restore stages` 入报告 |
+| busy checkpoint | 真实第二个 SQLite 连接测试，checkpoint 非零退出 |
+| 未完成 | 进程组/lsof、crash point 逐点执行、ENOSPC、Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock |
+| CI/判定 | E2E `42019746261` 5/5、CI `42019753323` 11/11；`PHASE_9_5_3_ENGINEERING_COMPLETE=PARTIAL`；`READY_FOR_RC=NO`、`READY_FOR_RELEASE=NO` |
+
+详见 `docs/phase9-5/phase9-5-3-implementation.md`。
+
+### Phase 9.5.4 - Crash Recovery Evidence & Upgrade Safety Closure 🟡 P0 门禁完成，真实 crash 矩阵 PASS
+
+| 领域 | 结果 |
+| --- | --- |
+| Stop fail-closed | `requireStopped` 拒绝 spawn-error/timeout/exit/close/logError/非预期信号；10 项 lifecycle 测试；`raceAfter` 清理计时器泄漏 |
+| Quiescence | process/streams/process-tree/lsof DB 四事实 PASS（E2E 10 份报告）；Windows 无 pgrep NOT_RUN |
+| Real crash matrix | 独立 `restore-worker.mjs` 在 8/8 阶段真实 `SIGKILL` + control；PID 归属、精确文件集 SHA、integrity/content 全断言 |
+| Recovery retry | 独立 retry 进程：6 阶段 `restored`、2 阶段 `already-restored`；最终只留备份 DB |
+| Busy checkpoint | 真实第二连接测试 PASS |
+| ENOSPC | staged restore（macOS DMG + Linux tmpfs）与产品迁移 disk-full（64 MB DMG：0/2 新列、数据可读、释放后收敛）均实测；安装 B/fsync NOT_RUN |
+| 未完成 | 安装 ENOSPC、Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock；产品启动恢复已由 Phase 9.6 补齐 |
+| 判定 | `PHASE_9_5_4_ENGINEERING_COMPLETE=PARTIAL`；RC/Release NO |
+
+详见 `docs/phase9-5/phase9-5-4-implementation.md`。
+
+
+
+### Phase 9.6 - Product Recovery & Cross-Platform RC Closure 🟡 P0 产品恢复完成
+
+| 领域 | 结果 |
+| --- | --- |
+| 产品自动恢复 | Rust `db_recovery`：迁移标记、启动检测、快照校验、8 阶段恢复；部分迁移自动恢复，无有效快照 MANUAL 不覆盖；E2E interrupted `product recovery=PASS` |
+| 恢复 UI | MANUAL/RESTORE_INTERRUPTED 阻断并显示脱敏状态；不提供危险覆盖操作 |
+| 证据 | 官方重采 run `42158238718`，指纹 `47c25a03…`，门禁 0 problem；CI `42160597380` 11/11 |
+| 未完成 | Windows NSIS、Vault app-level、Team Sync 跨版本、updater 运行时、安装 ENOSPC、AppImage stock |
+| 判定 | `PHASE_9_6_ENGINEERING_COMPLETE=PARTIAL`；RC/Release NO |
+
+详见 `docs/phase9-6/implementation.md`。
+
+
+
+### Phase 9.6.1 - Recovery Safety Audit & Startup Gate Hardening 🟡 P0 门禁完成
+
+| 领域 | 结果 |
+| --- | --- |
+| 启动门禁 | `StartupGate` 根组件，只有 HEALTHY/RECOVERED 挂载 App；Tauri 异常 fail-closed；`getDb` 第二道门；14 项负向测试 |
+| 裁决持久化 | `RecoveryVerdict` + 只读状态命令 + 显式 retry |
+| 标记协议 | v2 targets/migrationId，Core/Team 共用、合并、v1 兼容；后端完成校验 |
+| 备份边界 | canonicalization 拒绝目录外符号链接 |
+| Windows | 目录 fsync backup-semantics；真实 Windows `cargo test` NOT_RUN |
+| 证据 | E2E `42174132285` 5/5；证据 `42174128131` 指纹 `fbfa5a00…`，门禁 0 |
+| 未完成 | 多实例恢复锁、Team 应用级崩溃 E2E、Windows 真实文件系统测试 |
+| 判定 | `PHASE_9_6_1_ENGINEERING_COMPLETE=PARTIAL`；RC/Release NO |
+
+详见 `docs/phase9-6/phase9-6-1-safety-closure.md`。
+
+### Phase 9.6.2 - Migration Transaction & Recovery Concurrency Closure 🟡 标记/锁/门禁收口
+
+| 领域 | 结果 |
+| --- | --- |
+| 标记生命周期 | 损坏/未知版本 fail-closed；备份失败只回滚本次创建；合并保留旧快照 |
+| 快照 pin | `active_snapshot` 固定保留活动标记引用的快照 |
+| 并发恢复 | `RecoveryLock` OS 文件锁；第二实例 fail-closed；真实双进程 E2E NOT_RUN |
+| 前端门禁 | `getDb` 先断言；`select` 传播门禁拒绝；4 项测试 |
+| Windows | windows-latest 实跑 `cargo test --lib db_recovery` 9 passed；目录 flush 容忍 `ERROR_ACCESS_DENIED` |
+| 证据 | E2E `42189361366` 5/5；证据 `42214762202` 指纹 `c138d564…`，门禁 0 |
+| 未完成 | Team 应用级 SIGKILL、Windows 完整文件系统矩阵/NSIS、双进程并发 E2E |
+| 判定 | `PHASE_9_6_2_ENGINEERING_COMPLETE=PARTIAL`；RC/Release NO |
+
+详见 `docs/phase9-6/phase9-6-2-recovery-concurrency.md`。
+
+### Phase 9.6.3 - Final Recovery Safety Closure & Phase 9.7 Entry Gate 🟡 数据安全闭环，平台项待补
+
+| 领域 | 结果 |
+| --- | --- |
+| 事务所有权 | 标记 v3（transaction_id/owner）；跨进程或旧版本标记拒绝合并；VACUUM 失败逐字节回滚 |
+| 恢复互斥 | OS 文件锁 + 进程内异步互斥；启动探测锁、第二实例 fail-closed；真实双进程 E2E PASS |
+| 完成语义 | 完成/清除核对事务 ID；清除失败返回 RestoreInterrupted；retry 阻断裁决一致 |
+| Windows | windows-latest 19 项恢复测试 PASS；reparse/ACL/NSIS NOT_RUN |
+| Team SIGKILL | 1/3/5/10 目标点、恢复、幂等、数据完整性 PASS（E2E `42249215589`） |
+| 判定 | `PHASE_9_6_3_ENGINEERING_COMPLETE=PARTIAL`、`PHASE_9_7_ENTRY_READY=PARTIAL`；RC/Release NO |
+
+详见 `docs/phase9-6/phase9-6-3-final-data-safety.md`。
+
 ---
 
 ## 待办事项

@@ -42,6 +42,7 @@
 | **docs/shadcn-components.md**  | shadcn/ui 全部组件索引与用法说明      | 查阅组件选型与用法 |
 | **docs/build-optimization.md** | 构建体积分析与优化指南                | 优化打包时查阅     |
 | **docs/release/**             | 发布与证据规则（`workflow-rules.md`，必读）、CI 审计、三级发布模式、签名密钥、Release 操作指南（Nightly 通道已移除）、最近一次 CI 报告 | 改动发布链路或源码指纹路径时必读 |
+| **docs/phase9-5/**            | Phase 9.5 交付：Phase 9.4.2 归档、PR #6/#7 集成方案、真实 dev.1→dev.2 与 dev.1→当前源码升级 E2E、双版本 harness、corrupt/read-only/restart/backup 故障恢复、独立 worker 真实 crash 矩阵与恢复重试、进程树 quiescence、隔离卷 ENOSPC、签名与身份迁移阻塞项 | 接手升级、数据完整性或发布准备时必读 |
 | **docs/phase9-4/**            | Phase 9.4 / 9.4.1 / 9.4.2 交付：macOS 远程冷启动 300 次压力统计（F 轮 298/300）、8 秒 fallback deadline 错传、跨样本 journal 污染、恢复仲裁状态机与分段 trace、provenance fail-closed、RSA 威胁模型、安装升级与身份迁移前置、RC 判定 | 接手冷启动、恢复仲裁或 RC 收尾时必读 |
 | **docs/phase9-3/**            | Phase 9.3 / 9.3.1 交付：bootstrap 配置探测饥饿（#166）、ENOTEMPTY 竞态（#167）、证据重采（#168）、REMOTE 旧密文与 REST BigInt（#169/#170）、yanked 扫描完整性、前端依赖 25→0、冷启动 20% 失败率量化 | 接手启动链路、同步或证据采集链时必读 |
 | **docs/phase9-2/**            | Phase 9.2 交付：同步冲突五处 P0 根因、双客户端真实 PG 端到端、依赖安全整改台账、证据门禁、身份迁移方案、最终报告（PASS/FAIL/NOT_RUN 分列） | 接手同步、安全或验收证据相关工作时必读 |
@@ -541,6 +542,111 @@ pnpm add <package-name>
 - ✅ 六份验收证据已由真实矩阵 run `41841781191` 重采（`ac01091`，指纹 `d14fb1d1…`，debug `0eb823fa…`、release `a1cf8181…`），门禁 **0 problem**；最终 CI `41850097122`（`d4a972a`）**11/11 success**
 - 📋 Phase 9.4.2 冷启动收口完成；剩余 RC 阻断是跨版本升级/回滚、Windows/Pageant/串口/物理键盘/IME、签名/公证、身份迁移与真实 Vault 解锁（NOT_RUN/BLOCKED_EXTERNAL）
 
+### Phase 9.5 - Integration Closure & Real Upgrade Foundation ✅ 基础完成
+
+- 分支 `feat/phase9-5-upgrade-integrity`，已重放到 PR #7 `00715d6`
+- ✅ PR #6：**已合并**为 `9a0ca15`（2026-11-05T03:24:04Z），main 已更新；合并前 `CLEAN`、11/11、evidence 0
+- ✅ PR #7：已 rebase 到 main（18/18、0 冲突、证据门禁 0、source-size 568），head `00715d6`，base 已改为 `main`
+- ✅ PR #8：已重放到 `00715d6`，head `1f04c91`，5 commits、40 文件，仍为 Draft
+- ✅ 真实 A→B：发布 `0.0.1-dev.1`（`73cf7483…`）→ 发布 `0.0.1-dev.2`（`2c9a0ca3…`）PASS；dev.1 → 当前源码 `0.0.1-dev.3-local`（`66f2465d…`）PASS
+- ✅ schema：hosts 20→22 列（`agent_forwarding`、`shell_integration`）；settings 全键、workspaces/layout、Team Sync 本地 5 表、vault 文件逐字段 PASS
+- ✅ 当前 B 的 `pre-migration-<epoch>.db` 已生成且可读回；dev.2 无备份能力，标 NOT_RUN
+- ✅ 故障：损坏 DB、只读数据目录、重复启动、备份可读均 PASS；迁移中断/磁盘满/自动恢复/B→A 降级 NOT_RUN
+- ✅ CI：`Upgrade E2E` run `41954815468` **success**（A→B + corrupt/read-only/restart）；PR #8 重放后 run `41961803808` 也 **success**；普通 CI `Repository gates` 已加入 `scripts/verify-install/*.test.mjs`
+- 🟡 Linux/Windows 升级适配器 NOT_RUN；Windows APPDATA 实际未隔离且现有脚本会删除真实目录，禁止在真实 profile 上跑
+- 🟡 真实 Vault 解锁、Team Sync 服务端同步、updater 运行时下载/安装/重启、签名/公证、身份迁移、RC/Release 均未闭合
+- 📋 Phase 9.5.1：Linux fail-closed 适配器、Windows 一次性 profile/VM、迁移中断/磁盘满/恢复 E2E、updater 升级链、把升级证据纳入 release 指纹
+
+### Phase 9.5.1 - Cross-Platform Upgrade & Recovery Hardening 🟡 实现完成，平台证据待补
+
+- ✅ 故障五事实（`FAULT_INJECTED` / `APPLICATION_FAILURE_OBSERVED` / `ORIGINAL_DATA_PRESERVED` / `NO_PARTIAL_MIGRATION` / `RECOVERY_SUCCEEDED`）与 5 项负测试；独立 `check-upgrade-evidence.mjs` 门禁
+- ✅ 当前 HEAD CI 升级 run `42003371472`：5/5 job success、macOS current 7/7；B=`0.0.1-dev.4-local`、source `78dd0d8`、DMG SHA `dcd865d1…`；普通 CI `42003381820` 11/11
+- ✅ 真实中途迁移中断：`agent_forwarding` 提交后、`shell_integration` 前 SIGKILL；重启收敛、字段级验证 PASS
+- ✅ 备份恢复：复制 `pre-migration-<epoch>.db`、删除 WAL/SHM、A 启动读回、SHA 一致
+- ✅ Linux x64 DEB：真实 `apt-get`/dpkg、`dpkg-query` 版本变化、字段级数据 PASS（run `41972602296`）
+- 🟡 Linux AppImage：payload-only job success，**报告为 PARTIAL**（同路径替换 + 替换后 SHA PASS）；headless Xvfb 下 bundled WebKit EGL 启动失败，系统 WebKit 回退又受 bundled GStreamer/GLib 符号版本阻断，启动/迁移显式 NOT_RUN；详见 `docs/phase9-5/linux-upgrade-verification.md`
+- 🟡 Windows：只读隔离预检在 `windows-latest` 正确 fail-closed；升级 E2E 仍 NOT_RUN，需一次性 profile/VM
+- ✅ 六份实机证据因 smoke-only 迁移延迟变为指纹 `b73c5fd2…`，已用官方流程重采（run `41970525110`，0 problem）；未手改旧 manifest
+- 📋 未完成：Windows 升级 E2E、Linux AppImage stock 启动、磁盘满/Linux 故障注入、真实 Vault 解锁、Team Sync 服务端、签名/公证/updater/身份迁移
+
+### Phase 9.5.2 - Upgrade Trust & Secure Data Continuity 🟡 实现完成，外部环境待补
+
+- ✅ 六份证据因 `vault_tests.rs` 已知答案测试改变源码指纹，已用官方流程 run `41998303201` 重采（`fd9cc8ac…`，0 problem）；未手改旧 manifest
+- ✅ 场景级升级证据契约：10 个场景、22 项契约/负测试；`PASS` 必须全部 required checks/facts PASS，只有 AppImage payload-only 允许 `PARTIAL`；校验 `sourceSha`/`runId`/artifact status/problems/expected SHA、恢复后 A 启动、降级 B 列保留、中断缺失列
+- ✅ 备份恢复加固：checkpoint busy/log/checkpointed 校验、先删 sidecar 再 rename、最早 `pre-migration-*` 备份、恢复前 A 快照校验、A 启动证据
+- ✅ Vault：Node 24 Argon2id/AES-GCM 独立 fixture + Rust 已知答案测试；升级后 B 文件中的加密条目可解密、错误密码拒绝（app-level unlock 仍 NOT_RUN）
+- ✅ Team Sync：修复 TeamMember `joinedTxid` BigInt HTTP 序列化；新增 full AppModule + 真实 Nest HTTP + 真实 PostgreSQL 同步测试（PG 12 文件/96 项）
+- 🟡 Windows：身份+路径+owner+reparse+existing data+cleanup+VM attestation 状态机，8 项负测试；共享 runner fail-closed；一次性 profile/VM 与 A→B **NOT_RUN**
+- 🟡 降级：A 读取加法 schema + B 快照字段保留 PASS；未来不兼容 schema 拒绝 **NOT_RUN**
+- 🟡 磁盘满/busy checkpoint/恢复 crash point/**ENOSPC** **NOT_RUN**
+- 🟡 Updater：latest.json 静态契约/负测试；运行时下载/验签/安装/重启 **NOT_RUN**；release manifest deb/arm64/签名验证缺陷仍存在
+- 📋 代码 HEAD `78dd0d8`（文档 `eccabe6`）；最终 CI/证据重采结果见 `docs/phase9-5/phase9-5-2-implementation.md`
+
+### Phase 9.5.3 - Process Lifecycle & Crash-Safe Recovery 🟡 P0 完成，外部环境待补
+
+- ✅ 异步进程生命周期：`process-lifecycle.mjs`，真实 exit/close、SIGTERM→SIGKILL、日志 close 后写入、7 项 dummy child 测试；不再用 `Atomics.wait`；E2E `42019746261` 11 次 stop 全 graceful、0 forced
+- ✅ 恢复状态机：`PREPARE→QUIESCE→VERIFY_BACKUP→STAGE→VERIFY_STAGED→COMMIT→VERIFY→COMPLETE`，crash point 仅 `TERMINAL_TEST_CRASH=1` 启用；报告记录 `backup restore stages`
+- ✅ busy checkpoint：真实第二个 SQLite 连接持读事务，checkpoint 非零退出
+- 🟡 进程组/WebKit/PTY/lsof quiescence **NOT_RUN**；crash point 真实逐点执行 **NOT_RUN**
+- 🟡 磁盘满/ENOSPC、Windows disposable profile/VM、Vault app-level、Team Sync 跨版本客户端、updater 运行时 **NOT_RUN**
+- 🟡 AppImage 仍 payload-only（stock 启动 NOT_RUN）
+- ✅ 最终 E2E `42019746261` 5/5、CI `42019753323` 11/11；代码 HEAD `d958e28`；判定见 `docs/phase9-5/phase9-5-3-implementation.md`
+
+### Phase 9.5.4 - Crash Recovery Evidence & Upgrade Safety Closure 🟡 P0 门禁完成，真实 crash 矩阵已通过
+
+- ✅ 严格 `requireStopped`：拒绝 spawn-error/timeout/exit/close/logError/非预期信号；A/B、恢复、降级、Linux 路径统一 `stopChecked`
+- ✅ 终止语义拆分：clean-exit / terminated-by-sigterm / forced-sigkill / spawn-error / timeout；日志写在 close 内且失败独立诊断
+- ✅ quiescence：PROCESS_EXITED/STREAMS_CLOSED/**OWNED_CHILDREN_SETTLED**/DB_HANDLES_RELEASED 四事实；E2E `42047193259` 的 10 份报告全 PASS（含 Linux WebKitGTK 子进程）；Windows 无 pgrep，仍 NOT_RUN
+- ✅ **真实 crash 矩阵**：`restore-worker.mjs` 独立进程在 8/8 阶段真实 `SIGKILL` + control；父进程断言 PID 归属、`signal=SIGKILL`/`code=null`、精确文件集 SHA、`integrity_check` 与内容读回；**8/8 PASS**
+- ✅ **恢复重试**：崩溃后独立 retry 进程，6 阶段 `restored`、2 阶段 `already-restored`，最终文件集恰好 `{terminal.db: 备份 SHA}`；产品启动时自动恢复仍 **NOT_RUN**
+- ✅ 恢复状态机 8 阶段 + `backup restore stages`；Harness 恢复改为 spawn `restore-worker.mjs`，与矩阵共用一份实现；busy checkpoint 真实第二连接测试 **PASS**
+- ✅ `raceAfter()` 清理 `Promise.race` 遗留计时器，脚本测试不再被 30s 定时器拖住；`process-lifecycle` 10/10
+- ✅ **staged restore ENOSPC**：真实 64 MB HFS+ DMG（Linux 用 size-capped tmpfs，无 sudo 显式 skip）上 restore 失败后主库 SHA 不变且可读，释放空间后 retry `restored`，伪造 staging 被丢弃
+- ✅ **产品迁移 disk-full（Phase 9.5.5）**：64 MB DMG + 24 MB A 时代 DB + 约 8 MB 空闲；B 满卷未完成迁移（0/2 新列），A 数据可读，释放空间后迁移收敛并生成可读备份；E2E `42061498904` 五事实 PASS；`0602541` 起报告纳入归档与阻塞门禁；安装 B/目录 fsync 仍 **NOT_RUN**
+- 🔴 Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock **NOT_RUN/PARTIAL**
+- 📋 判定见 `docs/phase9-5/phase9-5-4-implementation.md` 与 `real-crash-point-matrix.md`
+
+### Phase 9.6 - Product Recovery & Cross-Platform RC Closure 🟡 P0 产品恢复完成，外部平台待补
+
+- ✅ **产品启动自动恢复**：`src-tauri/src/db_recovery.rs`；迁移前标记、启动检测、快照校验、8 阶段恢复、脱敏状态；部分迁移自动恢复，无有效快照 MANUAL 且不覆盖；二次启动幂等
+- ✅ E2E `42146486221`（`b460faf`）**5/5**，interrupted 报告 `product recovery after interruption=PASS`（真实 B 启动检测并恢复快照）
+- ✅ 恢复 UI：启动查询状态，MANUAL/RESTORE_INTERRUPTED 阻断主界面并显示脱敏 state/reason；不提供危险覆盖操作
+- ✅ 证据重采：`real-machine-matrix` run `42158238718` 3/3，新指纹 `47c25a03…`，官方门禁 0 problem；CI `42160597380`（`8a7a0e4`）**11/11**
+- 🟡 Windows NSIS、Vault app-level、Team Sync 跨版本、updater 运行时、安装 ENOSPC、AppImage stock **NOT_RUN/PARTIAL**
+- 📋 判定见 `docs/phase9-6/implementation.md`
+
+### Phase 9.6.1 - Recovery Safety Audit & Startup Gate Hardening 🟡 P0 门禁完成，外部平台待补
+
+- ✅ **启动门禁 fail-closed**：`StartupGate` 根组件只有 HEALTHY/RECOVERED 才挂载业务 App；Tauri 状态异常/非法对象一律阻断；`getDb()` 在 pending/blocked 抛错；前端 14 项负向测试
+- ✅ **裁决持久化**：`RecoveryVerdict` 保存本次启动状态，`db_recovery_status` 只读，`db_recovery_retry` 显式重跑
+- ✅ **标记 v2**：Core/Team 共用 `targets[]`+`migrationId`，合并写入、v1 兼容；完成清除由后端校验目标列 + integrity
+- ✅ **备份边界**：canonicalization 拒绝备份目录外符号链接与 live DB
+- ✅ **Windows 目录 fsync**：`FILE_FLAG_BACKUP_SEMANTICS`，仅 `ERROR_INVALID_FUNCTION` 容忍
+- ✅ E2E `42174132285`（`bf6e392`）5/5；证据矩阵 `42174128131` 3/3，指纹 `fbfa5a00…`，门禁 0
+- 🟡 多实例恢复锁、真实 Windows `cargo test`、Team 应用级崩溃 E2E **NOT_RUN**
+- 📋 判定见 `docs/phase9-6/phase9-6-1-safety-closure.md`
+
+### Phase 9.6.2 - Migration Transaction & Recovery Concurrency Closure 🟡 标记/锁/门禁收口完成，真实多进程 E2E 待补
+
+- ✅ **损坏/未知版本标记 fail-closed**：`read_marker` + `validate_marker`，绝不覆盖未知事务；备份失败只回滚本次创建的标记，合并时保留旧快照
+- ✅ **活动快照 pin**：`active_snapshot` 固定保留标记引用的快照；标记不可读时跳过清理
+- ✅ **跨进程恢复锁**：`RecoveryLock`（OS 文件锁），启动有标记先加锁、第二实例 fail-closed；句柄级测试通过，**两个真实进程并发 E2E NOT_RUN**
+- ✅ **前端门禁缓存绕过修复**：`getDb` 先断言门禁，`select` 不再把门禁拒绝吞成 `[]`；4 项新测试
+- ✅ **Windows 原生恢复测试**：windows-latest job `127803321020` 实跑 `cargo test --lib db_recovery` **9 passed / 0 failed**（含 Windows-only 目录 flush）；修复 `ERROR_ACCESS_DENIED`
+- ✅ E2E `42189361366`（`af33ea2`）**5/5**；证据 `42214762202`（`7df9e3a`）指纹 `c138d564…`，官方门禁 0 problem；旧 CI `42191186517` 为 10/11（仅证据未提交）
+- 🟡 Team 应用级 SIGKILL、Windows 完整文件系统矩阵/NSIS A→B **NOT_RUN/PARTIAL**
+- 📋 判定见 `docs/phase9-6/phase9-6-2-recovery-concurrency.md`
+
+### Phase 9.6.3 - Final Recovery Safety Closure & Phase 9.7 Entry Gate 🟡 数据安全闭环，平台项待补
+
+- ✅ **事务所有权**：标记 v3（`transaction_id`/`owner_pid`/`owner_token`）；跨进程或旧版本标记拒绝合并；扩展前验证快照不含新目标列；真实只读目录注入 `VACUUM INTO` 失败后标记逐字节回滚，下一次启动恢复事务 A
+- ✅ **恢复互斥**：`RecoveryLock` = OS 文件锁 + tokio 进程内互斥 + `migration_active`；启动每次探测锁、第二实例 fail-closed；真实双进程 E2E（持锁拒绝、SIGKILL 释放、ALTER 中被杀后恢复、并发启动只恢复一次）
+- ✅ **完成语义**：完成/清除核对事务 ID；标记清除失败返回 `RestoreInterrupted`；retry 的锁失败与迁移进行中均写入一致的阻断裁决
+- ✅ **Windows**：windows-latest `cargo test --lib db_recovery` **19 passed**，含目录写探测与“打开中数据库不得半替换”
+- ✅ **Team 应用级 SIGKILL**：1/3/5/10 目标点、Core 完成/Team 部分、快照/恢复/幂等/字段级数据全部 PASS；E2E `42249215589`（`65299c8`）**5/5 jobs success**
+- 🟡 已运行实例在另一实例恢复期间的普通写入、Windows reparse/ACL/NSIS A→B 仍 PARTIAL/NOT_RUN
+- 📋 判定见 `docs/phase9-6/phase9-6-3-final-data-safety.md`
+
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
@@ -573,9 +679,12 @@ pnpm add <package-name>
 | #     | 问题                                         | 严重程度     | 优先级 |
 | ----- | -------------------------------------------- | ------------ | ------ |
 | —     | 🔴 依赖安全：`cargo audit` **13 条**已记录（8 vulnerabilities + 4 unmaintained + 1 unsound + 0 yanked），其中 **1 条真实、三平台、上游无修复**（`RUSTSEC-2023-0071` rsa 0.10.0-rc.18）。`cargo-audit` 已是阻塞门禁。阻塞发布，不阻塞合并。台账 `docs/phase9-1/security-advisories.md` | 🔴 Blocker（发布） | P0 |
-| —     | ✅ **六份验收证据已重采并归档**：run `41841781191`（`ac01091`，指纹 `d14fb1d1…`），三平台 3/3 success，门禁 0 problem；最终 CI `41850097122` 11/11。任何后续 `FINGERPRINT_PATHS` 改动仍需重采 | ✅ 已闭合 | — |
+| —     | ✅ **六份验收证据已重采并归档**：Phase 9.5.1 因 smoke-only 迁移延迟使指纹变为 `b73c5fd2…`，已用 run `41970525110` 官方重采（commit `225c363`），门禁 0 problem；未手改旧 manifest。任何后续 `FINGERPRINT_PATHS` 改动仍需重采 | ✅ 已闭合 | — |
 | —     | ✅ P9.2-9 Linux zsh 探针 **PASS**：run `41432020659` / `41434165000` 的 Linux job 均 success，14 用例全绿（含此前三条）。遗留：空 `$HOME` 的真实 Debian 新账户未测 | ✅ 已闭合 | — |
 | 60    | ✅ **macOS 远程冷启动已收口**：G 300/300、第二轮 artifact 300/300（最终 remote 300）、clean 300/300；三个 run 共 **900 样本，0 个最终 local**；隔离/控制组/证据/CI 11/11 均 PASS。仍缺：历史 20% 的 Unified Log、跨版本升级、硬件矩阵、签名、身份迁移 | ✅ 已闭合（冷启动） | — |
+| —     | 🟡 **跨版本升级**：Phase 9.5.4 已收紧 stop/quiescence，并以独立 worker 完成 8/8 阶段真实 SIGKILL crash 矩阵与恢复重试；staged restore ENOSPC 已 PASS（隔离卷），备份/迁移/安装 ENOSPC、Windows A→B、app-level Vault、Team Sync 跨版本、updater 运行时、AppImage stock 仍 **NOT_RUN/PARTIAL**。详见 `docs/phase9-5/phase9-5-4-implementation.md` | 🟡 Important（RC） | P1 |
+| —     | 🔴 **签名/公证/updater**：Apple notarization、Windows Authenticode、Tauri updater `pubkey` 均 **BLOCKED_EXTERNAL**；updater 运行时下载/安装/重启 **NOT_RUN**；历史 `.sig` 不能替代运行时更新链 | 🔴 Blocker（发布） | P0 |
+| —     | 🟡 **身份迁移**：`productName=Termius`、`identifier=com.baicie.termius` 未改；T1–T12 **NOT_RUN/BLOCKED_EXTERNAL**；迁移代码不存在 | 🟡 Important（发布） | P1 |
 | —     | ✅ 前端依赖审计已闭合（vuln 25 → 0，新增 CI 阻塞 job）；同步接口与 Share REST 的版本契约统一为 JSON number。详见 `docs/phase9-3/merge-blocker-closure.md` | ✅ 已闭合 | — |
 | 57    | 真实 SSH 认证矩阵 ✅ 当前源码（run `41478709578`，sha `3102093`）：debug 11/11、release 8/8、shell 交互 14/14（另 Linux 14 + Windows 5，全矩阵 40 个 probe 用例 0 FAILED） | 🟡 Important | P1 |
 | 58    | 物理键盘 30 轮重叠 `a/s/d`、中文 IME、Option/dead key 待人工键入（Ctrl+C、vim、nano、PTY resize、行编辑已在本地 PTY **与真实 SSH** 上自动化覆盖） | 🟡 Important | P1 |
@@ -1028,7 +1137,7 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-11-04 (Phase 9.4.2 最终：G 轮 `41838269784` 300/300、第二轮 artifact `41843065808` 300/300（最终 remote 300）、clean 轮 `41850205866` 300/300，三个 run 共 900 样本 0 个最终 local；真实矩阵 `41841781191` 3/3 success 并安装六份证据（0 problem）；最终 CI `41850097122` 11/11；隔离与控制组 WebKit 均 PASS；RC 仍否，剩余跨版本升级、硬件矩阵、签名、身份迁移等 NOT_RUN/BLOCKED_EXTERNAL；详见 `docs/phase9-4/phase9-4-2-fallback-arbitration.md`)_
+_文档更新时间: 2026-11-06 (Phase 9.6.3：标记 v3 事务所有权与逐字节回滚、OS 文件锁 + 进程内互斥、真实双进程 E2E、Team 1/3/5/10 SIGKILL E2E、Windows 19 项恢复测试；E2E `42249215589` 5/5，证据 `42245189022` 指纹 `9bad378d…` 门禁 0；剩余已运行实例并发写入与 Windows reparse/ACL/NSIS 为 PARTIAL/NOT_RUN。历史 Phase 9.6.2：迁移标记 fail-closed（损坏/未知版本不覆盖）、备份失败只回滚本次创建、活动快照 pin、`RecoveryLock` 跨进程锁、前端 `getDb` 门禁前置；Windows runner 实跑 `cargo test --lib db_recovery` 9/9 并修复目录 flush `ERROR_ACCESS_DENIED`；E2E `42189361366` 5/5，证据 `42214762202` 指纹 `c138d564…` 门禁 0；真实双进程 E2E、Team 应用级 SIGKILL、Windows 文件系统矩阵/NSIS 仍 NOT_RUN/PARTIAL。历史 Phase 9.6.1：启动门禁 fail-closed、裁决持久化、标记 v2（Core/Team）、完成校验、备份 canonicalization、Windows 目录 fsync；E2E `42179513200`（`efb96aa`）5/5，证据 `42179506989` 指纹 `3fd0148a…`，门禁 0；历史 Phase 9.6：产品启动 `db_recovery` 状态机、部分迁移自动恢复、脱敏恢复 UI；E2E `42146486221` `product recovery=PASS`，证据重采 `42158238718` 指纹 `47c25a03…`，CI `42160597380` 11/11；Windows NSIS/Vault app-level/TeamSync 跨版本/updater/安装 ENOSPC 仍 NOT_RUN/PARTIAL。历史 Phase 9.5.4：真实独立 worker crash 矩阵 8/8 阶段 SIGKILL + control、恢复重试、精确文件集与 integrity/content 读回；Harness 恢复改为 spawn 同一 worker；修复 `Promise.race` 计时器泄漏；E2E `42030992498` 5/5、CI `42031006776` 11/11 对应 `051f8c6`；独立 worker 接入后 E2E `42035362763` 5/5、CI `42035362783` 11/11 对应 `d4b7759`，macOS runner 报告 `restore crash matrix=PASS`；最终 E2E `42037724319` 5/5、CI `42037724332` 11/11 对应 `df57c0c`（代码 `b069beb`），ubuntu runner 真实执行 ENOSPC 测试 457 ms PASS；Phase 9.5.5 补齐进程树 quiescence：停止前快照后代、退出后 2s 收敛，E2E `42047193259`（`10fffd5`）的 10 份报告四项事实全 PASS（macOS + Linux），CI `42047193385` 11/11；Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、备份/迁移/安装 ENOSPC、AppImage stock 仍 NOT_RUN/PARTIAL；详见 docs/phase9-5/phase9-5-4-implementation.md 与 phase9-5-5-implementation.md)_
 
 _历史更新 2026-11-03: (Phase 9.3：bootstrap 的五个配置探测由串行改并发，修掉「一个慢 IPC 饿死其余」——这是 real-machine run `41437956656` 上 `nano-edit`「从未写 result.json」的根因；冷启动测量目录清理改带重试，修掉 `ENOTEMPTY` 假红；6 份证据随 run `41478709578` 重采为指纹 `c4faedfb…`，门禁 0 problem；交付 `docs/phase9-3/bootstrap-probe-starvation.md`)_
 

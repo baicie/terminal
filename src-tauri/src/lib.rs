@@ -5,6 +5,7 @@
 mod agent;
 mod commands;
 mod db_import;
+mod db_recovery;
 mod errors;
 mod input_probe;
 mod port_forward;
@@ -40,6 +41,7 @@ use commands::{
     session_list, session_resize, session_write, session_write_raw,
 };
 use db_import::{backup_database_before_migration, import_backup_data};
+use db_recovery::{database_migration_completed, db_recovery_retry, db_recovery_status};
 use input_probe::{
     input_probe_config, input_probe_diag, input_probe_focus, input_probe_ready, input_probe_result,
     InputProbeState,
@@ -64,6 +66,7 @@ use storage::{
     storage_delete, storage_download, storage_health_check, storage_init, storage_list,
     storage_upload,
 };
+use tauri::Manager;
 use terminal_smoke::{
     terminal_smoke_complete, terminal_smoke_config, terminal_smoke_connected,
     terminal_smoke_emit_stale_output, terminal_smoke_host_wake, terminal_smoke_reconnect_requested,
@@ -165,6 +168,21 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             tracing::info!("tauri app starting up");
+            // Recovery runs before the webview can open the database: a partial
+            // migration must be resolved against a verified snapshot, never by
+            // silently rewriting the live file.
+            app.manage(db_recovery::RecoveryLock::default());
+            let recovery = tauri::async_runtime::block_on(db_recovery::startup_recovery_locked(app.handle()));
+            app.manage(db_recovery::RecoveryVerdict(std::sync::Mutex::new(recovery.clone())));
+            match recovery.state {
+                db_recovery::RecoveryState::ManualInterventionRequired => {
+                    tracing::error!(reason = %recovery.reason, "database needs manual recovery");
+                }
+                db_recovery::RecoveryState::RestoreInterrupted => {
+                    tracing::error!(reason = %recovery.reason, "database restore was interrupted; next start will retry");
+                }
+                _ => {}
+            }
             if !terminal_smoke::setup(app) {
                 if let Err(e) = tray::build_tray(app.handle()) {
                     tracing::error!(error = %e, "failed to build tray icon");
@@ -244,6 +262,9 @@ pub fn run() {
             startup_trace::startup_stage,
             startup_trace::startup_stage_failed,
             backup_database_before_migration,
+            db_recovery_status,
+            db_recovery_retry,
+            database_migration_completed,
             // Storage commands
             storage_init,
             storage_health_check,

@@ -2144,3 +2144,168 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
       端口/socket/文件锁均干净。
 - [ ] 当前源码改动在 `FINGERPRINT_PATHS` 内，六份验收证据已失效，必须由
       `real-machine-matrix` 在真实 runner 重采；不得手工修改旧证据。
+
+### 2026-11-05 Phase 9.5 - 双版本升级与集成收口 🟡 基础完成
+
+- [x] Phase 9.4.2 正式归档：900 样本 0 个最终 local、六份证据 0 problem、
+      `d4a972a` CI 11/11；最终 HEAD `a7a65bc` 的 macOS PR job 被 runner 容量
+      三次取消，已如实记录，未美化。
+- [x] PR #6 人工合并检查表：`CLEAN`、11/11、evidence 0、无冲突；
+      `PR_6_READY_FOR_HUMAN_MERGE=YES`。
+- [x] PR #7 集成方案：18 unique commits；模拟 post-#6 main + rebase 0 冲突、
+      证据门禁 0、source-size 568；`PR_7_INTEGRATION_READY=YES`（先人工合并 #6）。
+- [x] 资产元数据校验：真实 dev.1/dev.2 DMG 的 SHA256、版本、identifier、arm64
+      全部 PASS；Linux/Windows 资产存在但适配器未实现。
+- [x] 双版本 harness：`scripts/verify-install/upgrade-e2e.mjs`，复用
+      `data-retention.mjs`，A→seed→B→verify，JSON/Markdown 报告。
+- [x] 真实 E2E：dev.1→dev.2 PASS；dev.1→当前源码 dev.3-local PASS
+      （schema 20→22 列、settings 全键、Team Sync 本地 5 表、vault、backup）。
+- [x] 故障恢复：corrupt DB、只读数据目录、重复启动、备份可读 PASS。
+- [x] 新增 9 项脚本测试（data-retention 5 + asset-metadata 4）与
+      `.github/workflows/upgrade-e2e.yml`。
+- [x] Linux 升级适配器：真实 dpkg、同路径 AppImage 替换、失败即红，无解包回退；
+      唯一 Xvfb display。
+- [x] 迁移中断、从备份恢复、B→A 降级读取：真实中途 kill、备份复制回读、
+      A 读取加法 schema。
+- [x] Windows 只读隔离预检：共享 runner fail-closed，未安装/删除任何 profile。
+- [ ] Windows 一次性 profile/VM 的升级 E2E。
+- [ ] 磁盘满/安装介质只读/Linux 故障注入。
+- [ ] updater 运行时下载/安装/重启；签名/公证。
+- [ ] 身份迁移 T1–T12。
+- [ ] 把升级报告纳入 release 证据指纹（如需要）。
+- [x] 集成执行（2026-11-05）：PR #6 合并为 `9a0ca15`；PR #7 rebase 到 main 为
+      `00715d6`（18/18、0 冲突、门禁 0、source-size 568）；PR #8 重放为
+      `1f04c91`（5 commits、40 文件，仍 Draft）。
+
+### 2026-11-05 Phase 9.5.1 - 跨平台升级与恢复加固 🟡 实现完成，平台证据待补
+
+- [x] 故障五事实拆分：`FAULT_INJECTED` / `APPLICATION_FAILURE_OBSERVED` /
+      `ORIGINAL_DATA_PRESERVED` / `NO_PARTIAL_MIGRATION` / `RECOVERY_SUCCEEDED`，
+      5 项负测试，缺 required 即 PARTIAL/FAIL。
+- [x] 当前 HEAD CI 升级：run `41975451672` 的 7 个报告全部 PASS；B 构建身份
+      (`sourceSha=0819fd0…`, `0.0.1-dev.4-local`, DMG SHA `c3bb8caf…`) 已归档。
+- [x] 真实迁移中断：第一条 host 列提交后 SIGKILL，重启后两列齐全，数据逐字段。
+- [x] 备份恢复：复制 `pre-migration-<epoch>.db`、删除 WAL/SHM、A 启动读回。
+- [x] Linux DEB：真实 dpkg 安装、版本读回、字段级数据；run `41972602296` PASS。
+- [ ] Linux AppImage stock 启动：同路径替换/SHA 已验；headless Xvfb 下 bundled
+      WebKit 的 EGL 初始化仍失败，回退系统 WebKit 的结果见
+      `docs/phase9-5/linux-upgrade-verification.md`。
+- [x] Windows 只读预检：共享 runner fail-closed，未安装/删除。
+- [ ] Windows 升级 E2E：需要一次性 profile/VM。
+- [ ] 磁盘满/安装介质只读/Linux 故障注入。
+- [x] 六份实机证据因 smoke-only 迁移延迟改变指纹，已用官方流程重采
+      （run `41970525110`，指纹 `b73c5fd2…`，0 problem）；未手改旧 manifest。
+
+### 2026-11-05 Phase 9.5.2 - 升级信任与安全数据连续性 🟡 实现完成，外部环境待补
+
+- [x] 场景级升级证据契约：10 场景、22 项负测试；PASS 必须有全部 required
+      checks/facts，只有 AppImage payload-only 允许 PARTIAL；拒绝 FAIL/NOT_RUN/
+      BLOCKED、scenario 伪装、缺 sourceSha/runId/expected SHA。
+- [x] `--require-contract` 接入 Upgrade E2E；artifact status/problems/expected
+      SHA、恢复后 A 启动、降级 B 列、中断缺失列均强制。
+- [x] 备份恢复：checkpoint 非 busy 且覆盖全部 WAL；sidecar 先删后 rename；
+      最早 `pre-migration-*`；恢复前 A 快照校验；A 启动证据。
+- [x] Vault：Node 24 Argon2id/AES-GCM fixture + Rust 已知答案；升级后条目
+      解密/错误密码拒绝；app-level unlock 仍 NOT_RUN。
+- [x] Team Sync：修复 TeamMember BigInt 序列化；full AppModule 真实 HTTP 同步；
+      PG 12 文件/96 项通过。
+- [x] Windows 隔离：状态机 + 8 项负测试；共享 runner fail-closed。
+- [ ] Windows 一次性 profile/VM 的 NSIS A→B。
+- [x] busy checkpoint 负测、恢复 crash point 真实矩阵（Phase 9.5.4）。
+- [ ] 磁盘满/ENOSPC。
+- [ ] app-level Vault unlock/change_password 升级链。
+- [ ] Team Sync 跨版本客户端、冲突/离线/删除传播。
+- [ ] updater 运行时下载/签名验证/安装/重启；release manifest deb/arm64 修复。
+- [ ] AppImage 真实桌面/VM 启动与 A→B 迁移。
+
+### 2026-11-05 Phase 9.5.3 - 进程生命周期与崩溃安全恢复 🟡 P0 完成，外部环境待补
+
+- [x] 异步进程生命周期：真实 exit/close、SIGTERM→SIGKILL、日志 close 后写入，
+      7 项 dummy child 测试；移除 `Atomics.wait` 轮询。
+- [x] 恢复状态机：8 阶段、顺序断言、`TERMINAL_TEST_CRASH` crash point hook、
+      `backup restore stages` 报告；本地 normal/restore PASS。
+- [x] busy checkpoint：真实第二连接持读事务，checkpoint 非零退出。
+- [x] crash point 真实逐点执行（PREPARE…COMPLETE，Phase 9.5.4 独立 worker SIGKILL）。
+- [x] 进程树/WebKitGTK/lsof quiescence（Phase 9.5.5：停止前快照 + 退出后收敛）。
+- [ ] ENOSPC 小容量卷矩阵。
+- [ ] Windows disposable profile/VM 与 NSIS A→B。
+- [ ] Vault app-level probe/change_password/legacy verifier。
+- [ ] Team Sync A→B 客户端真实 fetch 链。
+- [ ] Updater 运行时 check/download/verify/install/restart。
+- [ ] AppImage stock 启动。
+
+### 2026-11-05 Phase 9.5.4 - 崩溃恢复证据与升级安全收口 🟡 P0 门禁完成
+
+- [x] `requireStopped` 严格拒绝 spawn-error/timeout/exit/close/logError/非预期信号；
+      A/B/恢复/降级/Linux 路径统一 `stopChecked`。
+- [x] 终止语义与日志失败独立诊断；10 项 lifecycle 测试；`raceAfter` 清理
+      `Promise.race` 遗留计时器。
+- [x] quiescence：process/streams/process-tree/lsof DB 四事实；E2E 10 份报告全 PASS。
+- [x] 恢复 8 阶段与 `backup restore stages`；busy checkpoint 真实负测试。
+- [x] 独立 recovery worker + 8 阶段真实 SIGKILL + control；PID 归属、精确
+      文件集 SHA、integrity/content 断言；Harness 恢复改为 spawn 同一 worker。
+- [x] crash 后独立 retry：6 阶段 `restored`、2 阶段 `already-restored`。
+- [x] staged restore ENOSPC：真实 64 MB 隔离卷，主库不变、retry 收敛、
+      伪造 staging 被丢弃。
+- [x] 产品迁移 disk-full：64 MB DMG + 24 MB DB，满卷 0/2 新列、A 数据可读、释放后收敛（行为；未归因错误码）。
+- [ ] 安装 B/目录 fsync ENOSPC。
+- [ ] 产品启动时自动恢复状态机。
+- [ ] Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时。
+- [ ] AppImage stock 启动。
+
+### 2026-11-05 Phase 9.5.5 - 进程树 quiescence 与 ENOSPC 扩展 🔄 进行中
+
+- [x] `snapshotDescendants`：SIGTERM 前递归记录 app 后代，退出后等待 2s 收敛；
+      漏掉的子进程判 FAIL 并列出 PID。
+- [x] 真实父子进程测试：忽略 SIGTERM 的子进程被检测；无子进程父进程 PASS；
+      quiescence 四项事实进入必需集合。
+- [x] E2E `42047193259` 10 份报告（macOS + Linux）四项事实全 PASS。
+- [ ] ENOSPC：备份 VACUUM、migration/WAL、安装 B。
+- [ ] Windows 进程树探针（无 pgrep）与 Windows A→B。
+- [ ] Vault app-level、Team Sync 跨版本、updater 运行时、AppImage stock。
+
+### 2026-11-06 Phase 9.6 - 产品恢复与跨平台 RC 收口 🔄 进行中
+
+- [x] 产品启动 `db_recovery` 状态机：标记、检测、快照校验、8 阶段恢复、脱敏状态。
+- [x] 部分迁移自动恢复；无有效快照 MANUAL 且不覆盖；二次启动幂等。
+- [x] 恢复 UI 阻断与脱敏诊断；E2E `product recovery after interruption=PASS`。
+- [x] 官方证据重采（`42158238718`，指纹 `47c25a03…`，0 problem）。
+- [ ] Windows NSIS A→B（一次性 profile/VM）。
+- [ ] Vault app-level unlock/change_password（Tauri command→UI）。
+- [ ] Team Sync 跨版本客户端。
+- [ ] updater 运行时链（需正式/临时签名）。
+- [ ] 安装 B/fsync ENOSPC、AppImage stock 启动。
+
+### 2026-11-06 Phase 9.6.1 - 恢复安全审计与启动门禁收口 🔄 进行中
+
+- [x] StartupGate 根门禁 fail-closed；Tauri 状态异常阻断；getDb 守卫。
+- [x] 后端持久化 RecoveryVerdict；只读 status + 显式 retry。
+- [x] 标记 v2（Core/Team targets/migrationId）、合并、v1 兼容。
+- [x] 后端完成校验；Team 迁移成功清理标记。
+- [x] 备份 canonicalization 与符号链接边界。
+- [x] Windows 目录 fsync backup-semantics 实现。
+- [x] 多实例恢复锁（`RecoveryLock`）；真实双进程并发启动 E2E 仍未做。
+- [x] 真实 Windows `cargo test --lib db_recovery`（9 passed，job `127803321020`）；非破坏性文件系统矩阵仍未做。
+- [ ] Team 应用级 SIGKILL E2E（当前仅 Rust 状态机测试）。
+
+### 2026-11-06 Phase 9.6.3 - 最终数据安全收口 ✅ P0 完成，平台项待补
+
+- [x] 标记 v3 事务所有权；跨进程/旧版本标记拒绝合并；VACUUM 失败逐字节回滚。
+- [x] 同进程异步互斥 + OS 文件锁；真实双进程 E2E（持锁/杀进程/并发启动）。
+- [x] 完成/清除核对事务 ID；清除失败不报告完成；retry 阻断裁决一致。
+- [x] Windows 原生 19 项恢复测试（含目录写探测、打开中数据库半替换）。
+- [x] Team 应用级 SIGKILL 1/3/5/10 目标点 E2E（`42241399575`）。
+- [ ] 已运行实例在另一实例恢复期间的普通写入。
+- [ ] Windows reparse point / ACL 拒绝目录 / NSIS A→B。
+
+### 2026-11-06 Phase 9.6.2 - 迁移事务与恢复并发收口 ✅ 实现完成，部分 E2E 待补
+
+- [x] 损坏/未知版本标记 fail-closed；备份失败只回滚本次创建。
+- [x] 活动快照 pin，清理不再误删恢复点。
+- [x] `RecoveryLock` 跨进程锁；第二实例 fail-closed。
+- [x] 前端 `getDb`/`select` 门禁缓存绕过修复（4 项测试）。
+- [x] Windows 目录 flush `ERROR_ACCESS_DENIED` 修复，原生恢复测试 9/9。
+- [x] 证据官方重采 `42214762202`，指纹 `c138d564…`，门禁 0。
+- [ ] 两个真实进程并发启动/迁移/恢复 E2E。
+- [ ] Team 应用级 SIGKILL E2E。
+- [ ] Windows 完整文件系统矩阵与 NSIS A→B。

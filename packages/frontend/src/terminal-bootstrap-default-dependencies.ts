@@ -8,7 +8,7 @@ import { loadRemotePromptProbeConfig } from './features/terminal/services/remote
 export const defaultBootstrapDependencies: BootstrapDependencies = {
   loadConfig: loadTerminalSmokeConfig,
   loadProbeConfig: loadInputProbeAutomationConfig,
-  loadApp: async () => (await import('./App.tsx')).default,
+  loadApp: async () => (await import('./startup-gate.tsx')).default,
   loadSmokeRoot: async () => {
     if (import.meta.env.VITE_TERMINAL_SMOKE_BUILD !== '1') {
       throw new Error('Terminal smoke UI is not included in this build')

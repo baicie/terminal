@@ -12,6 +12,11 @@
  *    statement runs at all and the caller sees the snapshot error.
  */
 
+import { groupMigrationTargets } from './migration-targets'
+import {
+  requireMigrationSnapshot,
+  type MigrationSnapshot,
+} from './migration-snapshot'
 import { traceStage } from './startup-trace'
 
 export interface SqliteConnection {
@@ -91,16 +96,6 @@ const columnMigrations: ColumnMigration[] = [
     sql: "ALTER TABLE hosts ADD COLUMN shell_integration TEXT DEFAULT 'off'",
   },
 ]
-
-/** What the backend reports about the snapshot it wrote. */
-export interface MigrationSnapshot {
-  /** Absolute path of the snapshot file. */
-  path: string
-  /** Tables the backend verified against the database. */
-  tables: number
-  /** Rows the snapshot carries. */
-  rows: number
-}
 
 /**
  * Does this error mean "the column is already there"?
@@ -197,15 +192,15 @@ export async function pendingColumnMigrations(
  */
 export async function ensurePreMigrationSnapshot(
   pending: ColumnMigration[],
+  migrationId = 'core',
 ): Promise<MigrationSnapshot> {
   const { invoke } = await import('@tauri-apps/api/core')
   try {
     const snapshot = await invoke<MigrationSnapshot>(
       'backup_database_before_migration',
+      { targets: groupMigrationTargets(pending), migrationId },
     )
-    if (!snapshot || typeof snapshot.path !== 'string' || snapshot.path === '') {
-      throw new Error('the backend did not report a snapshot path')
-    }
+    requireMigrationSnapshot(snapshot)
     console.info(
       `[Database] pre-migration snapshot ${snapshot.path} verified (${snapshot.tables} tables, ${snapshot.rows} rows) before migrating ${pending.length} column(s)`,
     )
@@ -218,6 +213,30 @@ export async function ensurePreMigrationSnapshot(
   }
 }
 
+/**
+ * Test-only pause between column migrations.
+ *
+ * The upgrade harness needs a deterministic window to kill the app between
+ * `snapshot-finished` and `core-schema-finished`. Random kills are not
+ * evidence. The delay is compiled only into instrumented smoke builds; a
+ * normal product build returns 0 even if the environment variable is present.
+ */
+export function parseSmokeMigrationDelay(
+  value: unknown,
+  smokeBuild: boolean,
+): number {
+  if (!smokeBuild) return 0
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+function smokeMigrationDelayMs(): number {
+  return parseSmokeMigrationDelay(
+    import.meta.env.VITE_TERMINAL_MIGRATION_DELAY_MS,
+    import.meta.env.VITE_TERMINAL_SMOKE_BUILD === '1',
+  )
+}
+
 export async function initializeCoreSchema(
   database: SqliteConnection,
 ): Promise<void> {
@@ -226,15 +245,20 @@ export async function initializeCoreSchema(
     'pending-migrations-detected',
     pending.length + ' column migration(s): ' + pending.map(entry => entry.column).join(','),
   )
+  let snapshot: MigrationSnapshot | undefined
   if (pending.length > 0) {
     traceStage('snapshot-started', pending.length + ' migration(s) pending')
-    await ensurePreMigrationSnapshot(pending)
+    snapshot = await ensurePreMigrationSnapshot(pending)
     traceStage('snapshot-finished', 'the pre-migration snapshot was verified')
   }
 
   for (const statement of schemaStatements.slice(0, 15))
     await database.execute(statement)
+  const migrationDelay = smokeMigrationDelayMs()
   for (const migration of columnMigrations) {
+    if (migrationDelay > 0) {
+      await new Promise(resolve => setTimeout(resolve, migrationDelay))
+    }
     try {
       await database.execute(migration.sql)
     } catch (error) {
@@ -244,5 +268,20 @@ export async function initializeCoreSchema(
   }
   for (const statement of schemaStatements.slice(15))
     await database.execute(statement)
+  if (pending.length > 0) await clearMigrationMarker(snapshot?.transactionId)
   traceStage('core-schema-finished', schemaStatements.length + ' statement(s) applied')
+}
+
+/**
+ * The backend writes a pending-migration marker before the snapshot. Only after
+ * every schema statement has succeeded may it be cleared, and only for the
+ * transaction this snapshot opened. A rejection here is a real failure: the
+ * launch must not claim the migration completed while the marker still says a
+ * transaction is open.
+ */
+export async function clearMigrationMarker(
+  transactionId?: string,
+): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('database_migration_completed', { transactionId })
 }

@@ -1,0 +1,11 @@
+{
+  "provider": "windows-isolation-classifier",
+  "classification": "REFUSED",
+  "isolated": false,
+  "wouldTouchRealProfile": true,
+  "reasonCode": "REFUSED_SHARED_RUNNER_PROFILE",
+  "reasonDetail": "current token is the shared runner identity",
+  "evidenceComplete": true,
+  "readOnlyPreflight": true,
+  "checks": []
+}

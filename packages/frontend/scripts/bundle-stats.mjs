@@ -48,7 +48,11 @@ const budgets = {
   // has to cover that delta or it is not a gate, it is a coin flip.
   // The initial budget above is untouched: time-to-first-terminal rides on the
   // critical path, not on this line.
-  totalGzip: 575 * 1024,
+  //
+  // 577 KB (was 575 KB): Phase 9.6 adds the product startup recovery gate and
+  // its redacted state probe so a partial migration cannot silently reach the
+  // main UI. It is one small screen; keep the next increase this specific.
+  totalGzip: 577 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

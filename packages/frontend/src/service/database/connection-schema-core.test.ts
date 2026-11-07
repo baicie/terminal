@@ -1,5 +1,8 @@
 import { expect, it, vi } from 'vitest'
-import { initializeCoreSchema } from './connection-schema-core'
+import {
+  initializeCoreSchema,
+  parseSmokeMigrationDelay,
+} from './connection-schema-core'
 
 const invoke = vi.hoisted(() => vi.fn())
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
@@ -57,6 +60,14 @@ function connectionWith(tables: Record<string, string[]>) {
 
 /** A database that is one release behind: both tables exist without the new columns. */
 const legacyTables = { hosts: HOST_COLUMNS.slice(0, 12), connection_logs: ['id'] }
+
+it('parses the test-only migration delay only in instrumented builds', () => {
+  expect(parseSmokeMigrationDelay('1500', true)).toBe(1500)
+  expect(parseSmokeMigrationDelay('0', true)).toBe(0)
+  expect(parseSmokeMigrationDelay('-1', true)).toBe(0)
+  expect(parseSmokeMigrationDelay('not-a-number', true)).toBe(0)
+  expect(parseSmokeMigrationDelay('1500', false)).toBe(0)
+})
 
 it('creates and migrates the host agent forwarding setting', async () => {
   const execute = vi.fn().mockResolvedValue(undefined)
@@ -135,7 +146,12 @@ it('snapshots the database before it runs a single schema statement', async () =
   const order: string[] = []
   invoke.mockReset().mockImplementation(async (command: string) => {
     order.push(`invoke:${command}`)
-    return { path: '/backups/pre-migration-1.db', tables: 2, rows: 12 }
+    return {
+      path: '/backups/pre-migration-1.db',
+      tables: 2,
+      rows: 12,
+      transactionId: 'core-tx',
+    }
   })
   const execute = vi.fn(async (sql: string) => {
     order.push(sql)
@@ -144,9 +160,17 @@ it('snapshots the database before it runs a single schema statement', async () =
 
   await initializeCoreSchema({ execute, select: connectionWith(legacyTables) })
 
-  expect(invoke).toHaveBeenCalledTimes(1)
-  expect(invoke).toHaveBeenCalledWith('backup_database_before_migration')
+  expect(invoke).toHaveBeenCalledTimes(2)
+  expect(invoke).toHaveBeenNthCalledWith(
+    1,
+    'backup_database_before_migration',
+    expect.objectContaining({ migrationId: 'core' }),
+  )
+  expect(invoke).toHaveBeenNthCalledWith(2, 'database_migration_completed', {
+    transactionId: 'core-tx',
+  })
   expect(order[0]).toBe('invoke:backup_database_before_migration')
+  expect(order.at(-1)).toBe('invoke:database_migration_completed')
   expect(order.some(entry => entry.startsWith('CREATE TABLE'))).toBe(true)
   expect(info.mock.calls.join(' ')).toContain('/backups/pre-migration-1.db')
   info.mockRestore()

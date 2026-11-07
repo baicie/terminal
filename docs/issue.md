@@ -5107,3 +5107,128 @@ ISOLATION_PASS”与“control 未挂载 remote 则 FAIL”）。修复后的第
 用同一 artifact 复算：**300/300 `RELIABILITY_PASS`**，首次 remote 299/local 1，
 最终 remote 300。workflow 的红色状态保留在 GitHub，不改写为绿；修复后的 clean
 round 另行运行。
+
+### Issue #191: Phase 9.5 双版本升级 harness 与真实 E2E 🟡 macOS 与 Linux DEB PASS，Windows/AppImage 受限（2026-11-05，Phase 9.5.1 更新）
+
+**严重程度**：🟡 Important（RC）
+
+**已实现**：`scripts/verify-install/upgrade-e2e.mjs` + `asset-metadata.mjs`，
+复用 `data-retention.mjs`；真实发布 `dev.1` → `dev.2` PASS，`dev.1` → 当前源码
+`dev.3-local` PASS。schema hosts 20→22 列，settings 全键、workspaces/layout、
+Team Sync 本地 5 表、vault 文件、当前 B 的 pre-migration backup 均可读回。
+故障注入 corrupt-db / read-only-data-dir / restart-idempotent PASS。
+
+**Phase 9.5.1**：当前 HEAD CI 升级 run `41975451672` 的 7 个报告全部 PASS；
+新增真实中途迁移中断（第一条列提交后 SIGKILL）、备份恢复、B→A 读取降级；
+Linux x64 DEB 真实 `apt-get`/dpkg 升级 PASS（run `41972602296`）。
+故障五事实与独立 `check-upgrade-evidence.mjs` 门禁已接入。
+
+**仍未完成**：Windows 一次性 profile/VM 升级 E2E；Linux AppImage 在 headless
+Xvfb 下的 stock WebKit EGL 启动（同路径替换与 SHA 已验）；磁盘满、Linux
+故障注入、自动回滚。证据 `docs/phase9-5/evidence/` 与
+`docs/phase9-5/phase9-5-1-implementation.md`。
+
+**Phase 9.5.2**：新增场景级证据契约（10 场景/22 负测试）、真实 Vault
+Argon2id/AES fixture、Team Sync full AppModule HTTP 同步、Windows 隔离
+状态机、WAL checkpoint/恢复顺序加固。Windows E2E、磁盘满、app-level Vault、
+updater 运行时仍 NOT_RUN/PARTIAL；见 `docs/phase9-5/phase9-5-2-implementation.md`。
+
+**Phase 9.5.3**：进程生命周期改为异步 exit/close，移除 `Atomics.wait`；
+恢复状态机 8 阶段 + crash point hook；busy checkpoint 真实负测试。仍缺
+进程组/lsof、crash point 逐点执行、ENOSPC、Windows disposable、Vault
+app-level、Team Sync 跨版本、updater 运行时；见
+`docs/phase9-5/phase9-5-3-implementation.md`。
+
+**Phase 9.5.4**：`requireStopped` 严格 fail-closed、终止语义与日志失败诊断、
+quiescence（process/stream/lsof DB）接入 A/B/恢复/降级；真实 crash-point 已升级为
+独立 `restore-worker.mjs` 的 8/8 阶段 SIGKILL + control，恢复重试
+（`restored`/`already-restored`）与精确文件集/integrity/content 均 PASS，
+Harness 恢复改为 spawn 同一 worker；staged restore ENOSPC 已在真实 64 MB
+隔离卷验证（主库不变、retry 收敛），产品迁移 disk-full 也在 64 MB DMG 上
+验证（满卷 0/2 新列、A 数据可读、释放后收敛）；安装 B/目录 fsync、Windows
+disposable、Vault app-level、Team Sync 跨版本、updater 运行时、AppImage
+stock 与产品启动时自动恢复仍 NOT_RUN/PARTIAL；见
+`docs/phase9-5/phase9-5-4-implementation.md`。
+
+**Phase 9.5.5**：`OWNED_CHILDREN_SETTLED` 补齐——停止前递归快照后代、退出后
+等待收敛，泄漏判 FAIL；E2E `42047193259` 的 10 份报告（macOS + Linux）
+四项 quiescence 事实全 PASS。产品迁移 disk-full（E2E `42061498904`）五事实
+PASS；安装 B/fsync ENOSPC、Windows、Vault app-level、Team Sync 跨版本、
+updater 运行时、AppImage stock 仍 NOT_RUN；见
+`docs/phase9-5/phase9-5-5-implementation.md`。
+
+**Phase 9.6**：产品启动恢复状态机落地——迁移标记、部分迁移检测、已验证
+快照自动恢复、无快照 MANUAL 不覆盖、恢复 UI 与脱敏状态；E2E
+`42146486221` 的 interrupted 报告 `product recovery after interruption=PASS`。
+证据按官方流程重采（run `42158238718`，指纹 `47c25a03…`）。Windows NSIS、
+Vault app-level、Team Sync 跨版本、updater 运行时、安装 ENOSPC 仍
+NOT_RUN/PARTIAL；见 `docs/phase9-6/implementation.md`。
+
+**Phase 9.6.1**：修复启动门禁 fail-open（App 内条件渲染无法阻止已注册
+effects）、状态查询异常被当作正常、RECOVERY_REQUIRED 未阻断、Team 标记不清理、
+TARGET_COLUMNS 只覆盖 hosts、完成通知只信任前端、Windows 目录 fsync 失败。
+门禁改为根组件；后端持久化裁决；标记 v2（targets/migrationId）；完成由后端
+校验；快照 canonicalization；Windows backup-semantics。E2E `42174132285` 5/5，
+证据 `42174128131` 指纹 `fbfa5a00…`。多实例锁与真实 Windows 测试仍 NOT_RUN。
+
+**Phase 9.6.2**：修复损坏/未知版本标记被覆盖、备份失败误删旧事务标记、
+清理误删活动快照、缺跨进程恢复锁、`getDb` 缓存绕过门禁。新增
+`RecoveryLock`（OS 文件锁）与活动快照 pin；`getDb` 门禁前置、`select` 不再
+吞掉门禁拒绝。Windows runner 实跑 `cargo test --lib db_recovery`
+**9 passed**（job `127803321020`），并修复目录 flush 的 `ERROR_ACCESS_DENIED`。
+E2E `42189361366` 5/5，证据 `42214762202` 指纹 `c138d564…`。真实双进程并发
+启动、Team 应用级 SIGKILL、Windows 完整文件系统矩阵/NSIS 仍 NOT_RUN/PARTIAL；
+见 `docs/phase9-6/phase9-6-2-recovery-concurrency.md`。
+
+**Phase 9.6.3**：修复迁移标记被新事务改写（v3 transaction_id/owner，扩展前
+验证快照兼容，VACUUM 失败逐字节回滚）、同进程并发备份/恢复、启动无标记绕过
+锁、标记清除失败仍报告完成、retry 锁失败不更新裁决。真实双进程 E2E 与
+Team 应用级 SIGKILL（1/3/5/10 目标点）通过；Windows runner 19 项恢复测试
+通过。剩余：已运行实例在另一实例恢复期间的普通写入、Windows reparse/ACL/
+NSIS。见 `docs/phase9-6/phase9-6-3-final-data-safety.md`。
+
+### Issue #192: Windows 安装验证实际未隔离且会删除真实 APPDATA 🟡 BLOCKED_EXTERNAL（2026-11-05）
+
+**严重程度**：🔴 Blocker（故障测试安全）
+
+`verify-install-windows.ps1` 把 APPDATA/LOCALAPPDATA 指向临时目录，但 Tauri 的
+`dirs::config_dir()` 走 `SHGetKnownFolderPath`，不读 APPDATA；首启探测失败后会
+回退到真实 `%APPDATA%\Termius`，并在首启前 `Remove-Item -Recurse -Force` 删除它。
+**禁止在真实用户 profile 上运行升级/故障注入**；必须使用一次性 profile/VM。
+Windows 升级适配器因此标 `BLOCKED_EXTERNAL`，未执行。
+
+Phase 9.5.1 新增 `scripts/verify-install/windows-isolation-check.ps1`：只读预检
+Known Folder 与目标目录，共享 runner 上 `isolated=false`、
+`wouldTouchRealProfile=true`，以退出码 1 fail-closed；job 在真实验证拒绝后成功。
+这只证明“不会被误装”，不证明 Windows 升级可用；后者仍 NOT_RUN。
+
+### Issue #193: Linux 安装脚本在 apt 失败时解包回退仍可判绿 🟡 fail-closed 部分已修复（2026-11-05）
+
+`verify-install-linux.sh` 在 `sudo apt-get install` 失败时打印 `[SKIPPED]`、
+`dpkg-deb -x` 解包并继续跑 payload，job 仍可能绿。升级 harness 必须 fail-closed：
+A/B 没有真正经过 dpkg/AppImage 安装就不能声称升级通过。
+
+Phase 9.5.1 已实现 `installDeb()`：`sudo apt-get install -y <deb>` 后用
+`dpkg-query` 读回版本，找不到 `/usr/bin` 可执行文件即失败；**没有**解包回退。
+Xvfb display 由 harness 动态分配，不再固定 `:99`。AppImage 同路径替换并校验
+替换后 SHA。**该 Issue 的 fail-closed 部分已修复**；AppImage 的 headless 图形
+限制另见 Issue #191。
+
+### Issue #194: 升级签名、updater、身份迁移与回滚仍未闭合 🟡 NOT_RUN / BLOCKED_EXTERNAL（2026-11-05）
+
+- Apple notarization / Developer ID、Windows Authenticode、Tauri updater
+  `pubkey` 均为 `BLOCKED_EXTERNAL`；
+- updater 运行时下载/安装/重启 `NOT_RUN`；历史 `.sig` 不能替代运行时更新链；
+- 身份迁移 T1–T12 `NOT_RUN/BLOCKED_EXTERNAL`；identifier 仍为
+  `com.baicie.termius`；
+- 真实 Vault 主密码 app-level 解锁仍 `NOT_RUN`；Phase 9.5.2 已用独立 Node
+  Argon2id/AES fixture + Rust 已知答案验证格式与升级后解密，整体 `PARTIAL`；
+- Team Sync 已有 full AppModule 真实 HTTP 同步，但 A→B 跨版本客户端链仍
+  `NOT_RUN`；本地表持久化、HTTP 同步、跨版本同步必须分开表述；
+- B→A **读取**加法 schema 已 PASS（Phase 9.5.1/9.5.2），并新增 B 快照字段
+  保留验证；正式降级状态机、不兼容未来 schema 拒绝仍不存在，整体 `PARTIAL`；
+- Linux AppImage 的 stock 启动在 headless Xvfb 下受 WebKit/Mesa EGL 限制，
+  同路径替换已经验证，整体 `PARTIAL`；
+- updater 只有静态 manifest 契约，运行时下载/验签/安装/重启 `NOT_RUN`。
+
+详见 `docs/phase9-5/release-blockers.md`。

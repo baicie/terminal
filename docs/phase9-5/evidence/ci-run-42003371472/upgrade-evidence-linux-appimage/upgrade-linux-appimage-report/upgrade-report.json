@@ -1,0 +1,115 @@
+{
+  "provider": "upgrade-e2e",
+  "generatedAt": "2026-11-05T09:34:21.921Z",
+  "contractVersion": 2,
+  "scenario": "linux-appimage",
+  "sourceSha": "78dd0d85d0dd618d095bc251f34415938a84a891",
+  "runId": "42003371472",
+  "platform": "linux",
+  "mode": "appimage",
+  "hostArch": "x64",
+  "fault": "none",
+  "expectBackup": false,
+  "work": "/home/runner/work/terminal/terminal/upgrade-linux-appimage/terminal-upgrade-linux-sMzTFn",
+  "token": "phase951-linux-1793871261921",
+  "a": {
+    "provider": "asset-metadata",
+    "installer": "/home/runner/work/terminal/terminal/upgrade-assets/linux-app1/Terminal_0.0.1-dev.1_linux-x86_64.AppImage",
+    "size": 86735352,
+    "sha256": "5a60bb64264e8dacbf021798f7a0fe67e0c84a17dd0af2e662825ccf0d30bdf2",
+    "platform": "linux",
+    "bundleName": "Terminal_0.0.1-dev.1_linux-x86_64.AppImage",
+    "identifier": null,
+    "version": null,
+    "filenameVersion": "0.0.1-dev.1",
+    "arch": "x64",
+    "archSource": "filename",
+    "metadataSource": "UNKNOWN",
+    "checks": [
+      "AppImage payload extracted",
+      "AppImage AppRun inspected",
+      "bundled GL entries: none"
+    ],
+    "status": "NOT_RUN",
+    "expected": {
+      "sha256": "5a60bb64264e8dacbf021798f7a0fe67e0c84a17dd0af2e662825ccf0d30bdf2",
+      "version": null,
+      "identifier": null
+    },
+    "problems": []
+  },
+  "b": {
+    "provider": "asset-metadata",
+    "installer": "/home/runner/work/terminal/terminal/upgrade-assets/linux-app2/Terminal_0.0.1-dev.2_linux-x86_64.AppImage",
+    "size": 88631800,
+    "sha256": "9ec65f538e8ef0a1125ae82b25edc4ab4f5c80d8c0c8e4efc1a792e693c446ac",
+    "platform": "linux",
+    "bundleName": "Terminal_0.0.1-dev.2_linux-x86_64.AppImage",
+    "identifier": null,
+    "version": null,
+    "filenameVersion": "0.0.1-dev.2",
+    "arch": "x64",
+    "archSource": "filename",
+    "metadataSource": "UNKNOWN",
+    "checks": [
+      "AppImage payload extracted",
+      "AppImage AppRun inspected",
+      "bundled GL entries: none"
+    ],
+    "status": "NOT_RUN",
+    "expected": {
+      "sha256": "9ec65f538e8ef0a1125ae82b25edc4ab4f5c80d8c0c8e4efc1a792e693c446ac",
+      "version": null,
+      "identifier": null
+    },
+    "problems": []
+  },
+  "schema": null,
+  "checks": [
+    {
+      "name": "A metadata",
+      "status": "NOT_RUN",
+      "detail": "UNKNOWN"
+    },
+    {
+      "name": "B metadata",
+      "status": "NOT_RUN",
+      "detail": "UNKNOWN"
+    },
+    {
+      "name": "A/B version comparison",
+      "status": "NOT_RUN",
+      "detail": "internal AppImage version metadata unavailable"
+    },
+    {
+      "name": "install A (AppImage replacement)",
+      "status": "PASS",
+      "detail": "/home/runner/work/terminal/terminal/upgrade-linux-appimage/terminal-upgrade-linux-sMzTFn/apps/Terminal-A.AppImage"
+    },
+    {
+      "name": "AppImage payload replacement",
+      "status": "PASS",
+      "detail": "/home/runner/work/terminal/terminal/upgrade-linux-appimage/terminal-upgrade-linux-sMzTFn/apps/Terminal-A.AppImage"
+    },
+    {
+      "name": "AppImage app startup",
+      "status": "NOT_RUN",
+      "detail": "headless Xvfb: bundled WebKit EGL_BAD_PARAMETER; system-WebKit fallback hits bundled GStreamer/GLib ABI"
+    }
+  ],
+  "notRun": [
+    "real Vault master-password unlock (file persistence only)",
+    "Team Sync server synchronization (local tables only)",
+    "fault injection on Linux (not implemented; root/read-only semantics differ)",
+    "Windows adapter",
+    "AppImage internal metadata when extraction is unavailable",
+    "AppImage app startup and A->B migration (headless WebKit/EGL limitation; replacement only)"
+  ],
+  "logs": {
+    "a": "/home/runner/work/terminal/terminal/upgrade-linux-appimage/terminal-upgrade-linux-sMzTFn/logs/a.log",
+    "b": "/home/runner/work/terminal/terminal/upgrade-linux-appimage/terminal-upgrade-linux-sMzTFn/logs/b.log"
+  },
+  "status": "PARTIAL",
+  "display": ":115",
+  "payloadOnly": true
+}

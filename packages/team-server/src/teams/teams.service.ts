@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
+import { teamResponse } from './team-response'
 
 @Injectable()
 export class TeamsService {
@@ -24,7 +25,7 @@ export class TeamsService {
       },
       include: { members: true },
     })
-    return team
+    return teamResponse(team)
   }
 
   async findAll(userId: string) {

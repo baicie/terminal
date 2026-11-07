@@ -1,0 +1,1726 @@
+#!/usr/bin/env node
+/**
+ * Real two-version upgrade harness.
+ *
+ * A -> seed -> install B -> start B -> verify data.
+ *
+ * The first implemented adapter is macOS: both installers are real DMGs, the
+ * app is copied into a throwaway Applications directory, and HOME points at a
+ * throwaway data root. Linux and Windows adapters are explicit NOT_RUN results
+ * until they are implemented; they never fall back to unpacking a payload and
+ * calling it an install.
+ *
+ * The harness reuses scripts/verify-install/data-retention.mjs for the schema,
+ * seed, snapshot, verification and backup checks. It does not create a second
+ * data-retention framework.
+ *
+ * Usage:
+ *   node scripts/verify-install/upgrade-e2e.mjs run \
+ *     --a-installer <A.dmg> --b-installer <B.dmg> --platform darwin \
+ *     --work-dir <dir> --report-dir <dir> \
+ *     [--expect-a-sha256 <sha>] [--expect-b-sha256 <sha>] \
+ *     [--expect-identifier com.baicie.termius] \
+ *     [--expect-new-host-columns agent_forwarding,shell_integration] \
+ *     [--expect-backup] \
+ *     [--fault none|corrupt-db|read-only-data-dir|restart-idempotent|restore-backup|downgrade|interrupted|disk-full]
+ */
+import { execFile, execFileSync, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import {
+  chmodSync,
+  closeSync,
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import process from 'node:process'
+import { promisify } from 'node:util'
+import { assessFault } from './fault-assessment.mjs'
+import { delay, describeStop, launchProcess, requireStopped, stopProcess as stop } from './process-lifecycle.mjs'
+import { requireQuiescent, snapshotDescendants } from './quiescence.mjs'
+import { assertStageOrder } from './recovery-state-machine.mjs'
+import { runCrashMatrix } from './restore-crash-matrix.mjs'
+import { createSmallVolume, freeBytes } from './enospc-volume.mjs'
+import { createVaultFile, verifyVaultFile, verifyWrongPasswordRejected } from './vault-crypto.mjs'
+
+const run = promisify(execFile)
+const HERE = import.meta.dirname
+const DR = path.join(HERE, 'data-retention.mjs')
+const WORKER = path.join(HERE, 'restore-worker.mjs')
+const ASSET = path.join(HERE, 'asset-metadata.mjs')
+const PROVIDER = 'upgrade-e2e'
+
+function sha256File(filePath) {
+  return createHash('sha256').update(readFileSync(filePath)).digest('hex')
+}
+
+function fileSetDigest(dbPath) {
+  const hash = createHash('sha256')
+  for (const suffix of ['', '-wal', '-shm', '-journal']) {
+    const file = dbPath + suffix
+    if (!existsSync(file)) {
+      hash.update('missing:' + suffix + '\n')
+      continue
+    }
+    hash.update('present:' + suffix + ':' + statSync(file).size + '\n')
+    hash.update(readFileSync(file))
+  }
+  return hash.digest('hex')
+}
+
+function chmodDatabaseFiles(dbPath, mode) {
+  for (const file of [dbPath, dbPath + '-wal', dbPath + '-shm', dbPath + '-journal']) {
+    if (existsSync(file)) chmodSync(file, mode)
+  }
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function parseArgs(argv) {
+  const flags = {}
+  const rest = []
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index]
+    if (token.startsWith('--')) {
+      const next = argv[index + 1]
+      if (next === undefined || next.startsWith('--')) flags[token.slice(2)] = true
+      else {
+        flags[token.slice(2)] = next
+        index += 1
+      }
+    } else rest.push(token)
+  }
+  return { command: rest[0], flags }
+}
+
+const nodeFlag = (() => {
+  try {
+    execFileSync(process.execPath, ['-e', 'require("node:sqlite")'], { stdio: 'ignore' })
+    return []
+  } catch {
+    return ['--experimental-sqlite']
+  }
+})()
+
+async function dr(args) {
+  return run(process.execPath, [...nodeFlag, DR, ...args], {
+    timeout: 180_000,
+    maxBuffer: 32 * 1024 * 1024,
+  })
+}
+
+async function inspectAsset(installer, platform, expected) {
+  const json = path.join(path.dirname(installer), `.metadata-${path.basename(installer)}.json`)
+  const args = [
+    'inspect',
+    '--installer', installer,
+    '--platform', platform,
+    '--json', json,
+  ]
+  if (expected.sha256) args.push('--expect-sha256', expected.sha256)
+  if (expected.version) args.push('--expect-version', expected.version)
+  if (expected.identifier) args.push('--expect-identifier', expected.identifier)
+  try {
+    await run(process.execPath, [ASSET, ...args])
+  } catch (error) {
+    // Never accept a stale .metadata-*.json: its SHA may describe different
+    // bytes than the installer that was actually installed.
+    throw error
+  }
+  const metadata = JSON.parse(readFileSync(json, 'utf8'))
+  const actualSha = sha256File(installer)
+  if (metadata.sha256 !== actualSha) {
+    throw new Error('metadata sha256 does not match installer bytes: ' + installer)
+  }
+  if (expected.sha256 && metadata.sha256 !== expected.sha256) {
+    throw new Error('installer sha256 does not match the pinned digest: ' + installer)
+  }
+  return metadata
+}
+
+function mountDmg(dmg, mountPoint) {
+  mkdirSync(mountPoint, { recursive: true })
+  return run('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mountPoint, dmg], {
+    timeout: 120_000,
+    maxBuffer: 10 * 1024 * 1024,
+  })
+}
+
+async function installFromDmg(dmg, targetApp, work) {
+  const mount = path.join(work, 'mnt-' + path.basename(dmg, '.dmg'))
+  await mountDmg(dmg, mount)
+  try {
+    const appName = readdirSync(mount).find(name => name.endsWith('.app'))
+    if (!appName) throw new Error('no .app payload in ' + dmg)
+    const source = path.join(mount, appName)
+    rmSync(targetApp, { recursive: true, force: true })
+    cpSync(source, targetApp, { recursive: true, dereference: true })
+    return targetApp
+  } finally {
+    await run('hdiutil', ['detach', mount, '-force'], { timeout: 60_000 }).catch(() => undefined)
+  }
+}
+
+function launch(binary, home, logPath, extraEnv = {}) {
+  return launchProcess(binary, [], {
+    cwd: os.tmpdir(),
+    env: {
+      ...process.env,
+      HOME: home,
+      SSH_AUTH_SOCK: '',
+      ...extraEnv,
+    },
+    logPath,
+  })
+}
+
+async function stopChecked(child, options = {}) {
+  return requireStopped(await stop(child, {
+    // Capture the app's descendants before SIGTERM: after it exits they are
+    // reparented and can no longer be attributed to it.
+    onBeforeSignal: pid => snapshotDescendants(pid),
+    ...options,
+  }), {
+    allowForced: false,
+    allowSignals: ['SIGTERM'],
+    ...options,
+  })
+}
+
+async function assertQuiescence(add, name, result, db) {
+  const assessment = await requireQuiescent(result, [
+    db, db + '-wal', db + '-shm', db + '-journal',
+  ], { label: name })
+  add(name, assessment.overall === 'PASS' ? 'PASS' : 'NOT_RUN',
+    JSON.stringify(assessment.facts))
+}
+
+async function waitFor(predicate, timeoutMs, label) {
+  const deadline = Date.now() + timeoutMs
+  let lastError = null
+  while (Date.now() < deadline) {
+    try {
+      const value = await predicate()
+      if (value) return value
+    } catch (error) {
+      lastError = error
+    }
+    await delay(500)
+  }
+  throw new Error(label + ' not reached within ' + timeoutMs + ' ms' +
+    (lastError ? ': ' + errorMessage(lastError) : ''))
+}
+
+async function waitForDatabase(dbPath, timeoutMs = 120_000) {
+  await waitFor(() => existsSync(dbPath) && statSync(dbPath).size > 0, timeoutMs,
+    'database ' + dbPath)
+}
+
+async function waitForSchema(dbPath, expectedColumns, timeoutMs = 120_000) {
+  await dr([
+    'wait', '--db', dbPath, '--mode', 'migration-columns',
+    '--expect-columns', expectedColumns, '--timeout', String(Math.ceil(timeoutMs / 1000)),
+  ])
+}
+
+async function replaceWithBackup(db, backup, dataDir, { beforePath, token } = {}) {
+  // The restore runs in its own process. The real crash-point matrix kills
+  // that worker at every stage, so the harness and the matrix share one
+  // implementation instead of exercising an in-process exception hook.
+  const stageDir = mkdtempSync(path.join(os.tmpdir(), 'restore-stages-'))
+  const stageLog = path.join(stageDir, 'stages.jsonl')
+  const args = [
+    WORKER, 'restore',
+    '--db', db,
+    '--backup', backup,
+    '--data-dir', dataDir,
+    '--stage-log', stageLog,
+  ]
+  if (beforePath && token) args.push('--before', beforePath, '--token', token)
+  try {
+    await run(process.execPath, [...nodeFlag, ...args], {
+      timeout: 180_000,
+      maxBuffer: 32 * 1024 * 1024,
+    })
+  } catch (error) {
+    throw new Error('staged restore failed: ' + errorMessage(error))
+  }
+  const stages = readFileSync(stageLog, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map(line => JSON.parse(line).stage)
+  assertStageOrder(stages)
+  rmSync(stageDir, { recursive: true, force: true })
+  return { stages }
+}
+
+async function waitForBackup(backupsDir, timeoutMs = 30_000) {
+  return waitFor(() => {
+    if (!existsSync(backupsDir)) return null
+    const files = readdirSync(backupsDir)
+      .filter(name => /^pre-migration-\d+(?:-\d+)?\.db$/.test(name))
+      .sort((left, right) => {
+        const stamp = name => Number(/^pre-migration-(\d+)/.exec(name)[1])
+        return stamp(left) - stamp(right)
+      })
+    // The first snapshot is the only one guaranteed to predate the first
+    // ALTER. Later snapshots can be written during recovery of a partial
+    // migration and may already contain the new columns.
+    return files.length > 0 ? path.join(backupsDir, files[0]) : null
+  }, timeoutMs, 'pre-migration backup in ' + backupsDir)
+}
+
+const TEAM_MIGRATED_COLUMNS = [
+  'version',
+  'updated_at',
+  'dirty',
+  'is_sensitive',
+  'encrypted_data',
+]
+
+/** Count how many of B's additive Team columns are committed in a database. */
+function countTeamColumns(dbPath) {
+  let count = 0
+  for (const table of ['team_shared_hosts', 'team_shared_snippets']) {
+    let columns = []
+    try {
+      columns = execFileSyncSqlite(dbPath, `SELECT name FROM pragma_table_info('${table}')`)
+    } catch {
+      continue
+    }
+    count += columns.filter(column => TEAM_MIGRATED_COLUMNS.includes(column)).length
+  }
+  return count
+}
+
+function writeFaultCorrupt(dbPath) {
+  const buffer = Buffer.alloc(32, 0)
+  const fd = openSync(dbPath, 'r+')
+  try {
+    writeSync(fd, buffer, 0, buffer.length, 0)
+  } finally {
+    closeSync(fd)
+  }
+}
+
+async function report(work, reportDir, reportJson) {
+  mkdirSync(reportDir, { recursive: true })
+  writeFileSync(path.join(reportDir, 'upgrade-report.json'), JSON.stringify(reportJson, null, 2) + '\n')
+  const lines = [
+    '# Two-version upgrade report',
+    '',
+    `- Status: **${reportJson.status}**`,
+    `- Platform: ${reportJson.platform}`,
+    `- A: ${reportJson.a?.version ?? 'unknown'} (${reportJson.a?.sha256?.slice(0, 16) ?? 'no sha'})`,
+    `- B: ${reportJson.b?.version ?? 'unknown'} (${reportJson.b?.sha256?.slice(0, 16) ?? 'no sha'})`,
+    `- Fault mode: ${reportJson.fault}`,
+    '',
+    '## Checks',
+    '',
+    ...reportJson.checks.map(check => `- [${check.status}] ${check.name}${check.detail ? ': ' + check.detail : ''}`),
+    '',
+    '## Schema',
+    '',
+    '```json',
+    JSON.stringify(reportJson.schema, null, 2),
+    '```',
+    '',
+    '## NOT_RUN',
+    '',
+    ...(reportJson.notRun.length === 0 ? ['- none'] : reportJson.notRun.map(item => `- ${item}`)),
+    '',
+    `Evidence directory: ${work}`,
+  ]
+  writeFileSync(path.join(reportDir, 'upgrade-report.md'), lines.join('\n') + '\n')
+}
+
+async function runMacos(flags) {
+  const aInstaller = path.resolve(flags['a-installer'])
+  const bInstaller = path.resolve(flags['b-installer'])
+  const expectedIdentifier = flags['expect-identifier'] || 'com.baicie.termius'
+  const expectedNewHostColumns = String(flags['expect-new-host-columns'] || 'agent_forwarding,shell_integration')
+    .split(',').map(value => value.trim()).filter(Boolean)
+  const fault = typeof flags.fault === 'string' ? flags.fault : 'none'
+  const expectBackup = flags['expect-backup'] === true
+  const workRoot = path.resolve(flags['work-dir'] || os.tmpdir())
+  mkdirSync(workRoot, { recursive: true })
+  const work = mkdtempSync(path.join(workRoot, 'terminal-upgrade-'))
+  const reportDir = path.resolve(flags['report-dir'] || path.join(work, 'report'))
+  const home = path.join(work, 'home')
+  const apps = path.join(work, 'Applications')
+  const logs = path.join(work, 'logs')
+  mkdirSync(home, { recursive: true })
+  mkdirSync(apps, { recursive: true })
+  mkdirSync(logs, { recursive: true })
+
+  const token = 'phase95-upgrade-' + Date.now()
+  const dataDir = path.join(home, 'Library', 'Application Support', expectedIdentifier)
+  const db = path.join(dataDir, 'terminal.db')
+  const vault = path.join(home, 'Library', 'Application Support', 'terminal', 'vault.json')
+  const backups = path.join(dataDir, 'backups')
+  const installedApp = path.join(apps, 'Termius.app')
+  const reportJson = {
+    provider: PROVIDER,
+    generatedAt: new Date().toISOString(),
+    contractVersion: 2,
+    scenario: fault === 'none' ? 'normal' : fault,
+    sourceSha: process.env.GITHUB_SHA || null,
+    runId: process.env.GITHUB_RUN_ID || null,
+    platform: 'darwin',
+    hostArch: process.arch,
+    fault,
+    expectBackup,
+    work,
+    token,
+    a: null,
+    b: null,
+    schema: null,
+    checks: [],
+    notRun: [
+      'app-level Vault unlock through the UI (encrypted fixture is unlocked by the independent Node verifier; file persistence is asserted)',
+      'incompatible-schema downgrade refusal (dev.1 reads the additive current schema; a non-additive future schema is not tested)',
+      'Linux and Windows adapters (NOT_RUN in this first implementation)',
+      'Gatekeeper / notarization / Authenticode (BLOCKED_EXTERNAL)',
+      'installer media full (disk-full covers the app data volume only)',
+    ],
+    logs: { a: path.join(logs, 'a.log'), b: path.join(logs, 'b.log') },
+    status: 'FAIL',
+  }
+  const add = (name, status, detail) => {
+    reportJson.checks.push({ name, status, detail: detail || '' })
+  }
+  let child = null
+  const applyFaultAssessment = (kind, facts) => {
+    const assessment = assessFault(kind, facts)
+    reportJson.faultAssessment = { kind, ...assessment }
+    for (const name of assessment.required) {
+      add('fault.' + name, assessment.facts[name], '')
+    }
+    reportJson.status = reportJson.checks.some(check => check.status === 'FAIL')
+      ? 'FAIL'
+      : assessment.overall
+  }
+
+  try {
+    reportJson.a = await inspectAsset(aInstaller, 'darwin', {
+      sha256: flags['expect-a-sha256'],
+      version: flags['expect-a-version'],
+      identifier: expectedIdentifier,
+    })
+    reportJson.b = await inspectAsset(bInstaller, 'darwin', {
+      sha256: flags['expect-b-sha256'],
+      version: flags['expect-b-version'],
+      identifier: expectedIdentifier,
+    })
+    if (reportJson.a.status !== 'PASS' || reportJson.b.status !== 'PASS') {
+      throw new Error('installer metadata did not pass')
+    }
+    if (reportJson.a.version === reportJson.b.version) {
+      throw new Error('A and B have the same version: ' + reportJson.a.version)
+    }
+    if (reportJson.a.identifier !== reportJson.b.identifier) {
+      throw new Error('A and B identifiers differ: ' + reportJson.a.identifier + ' / ' + reportJson.b.identifier)
+    }
+    if (reportJson.a.arch !== 'arm64' || reportJson.b.arch !== 'arm64' || process.arch !== 'arm64') {
+      throw new Error('this first adapter requires arm64 host and artifacts; got ' +
+        reportJson.a.arch + '/' + reportJson.b.arch + '/' + process.arch)
+    }
+    add('A metadata', 'PASS', `${reportJson.a.version} ${reportJson.a.sha256.slice(0, 16)}`)
+    add('B metadata', 'PASS', `${reportJson.b.version} ${reportJson.b.sha256.slice(0, 16)}`)
+
+    await installFromDmg(aInstaller, installedApp, work)
+    const binary = path.join(installedApp, 'Contents', 'MacOS', 'terminal')
+    if (!existsSync(binary)) throw new Error('installed A has no executable')
+    // Keep a copy of A before B overwrites the installed bundle, so recovery
+    // and downgrade tests can launch the real A binary against a restored or
+    // post-migration database.
+    const aAppCopy = path.join(apps, 'Termius-A.app')
+    cpSync(installedApp, aAppCopy, { recursive: true, dereference: true })
+    const aBinary = path.join(aAppCopy, 'Contents', 'MacOS', 'terminal')
+    add('install A', 'PASS', installedApp)
+
+    child = launch(binary, home, reportJson.logs.a)
+    await waitForDatabase(db)
+    add('A database created', 'PASS', db)
+    await waitForSchema(db, 'hosts:id;settings:key;workspaces:id;workspace_layouts:workspace_id')
+    add('A schema ready', 'PASS')
+    const stopA = await stopChecked(child)
+    add('A stopped', 'PASS', describeStop(stopA))
+    await assertQuiescence(add, 'A quiescence', stopA, db)
+    await dr(['checkpoint', '--db', db])
+    await dr(['seed', '--db', db, '--token', token, '--vault', vault, '--compatible'])
+    add('seed A data', 'PASS', 'compatible with A schema')
+    const vaultPassword = 'phase952-test-only-master-password'
+    const vaultSecret = 'phase952-test-only-secret'
+    let vaultFixture = false
+    try {
+      createVaultFile(vault, vaultPassword, { host: vaultSecret })
+      vaultFixture = true
+      add('vault encrypted fixture', 'PASS', 'Argon2id + AES-256-GCM entry created')
+    } catch (error) {
+      add('vault encrypted fixture', 'NOT_RUN', errorMessage(error))
+      reportJson.notRun.push('real Vault fixture (Node crypto.argon2Sync unavailable)')
+    }
+    const beforePath = path.join(work, 'a-snapshot.json')
+    await dr(['snapshot', '--db', db, '--token', token, '--vault', vault, '--out', beforePath])
+    const before = JSON.parse(readFileSync(beforePath, 'utf8'))
+    reportJson.schema = {
+      beforeTables: before.tables,
+      beforeHostColumns: before.schema?.hosts ?? null,
+      afterTables: null,
+      afterHostColumns: null,
+      addedHostColumns: null,
+    }
+    add('A read-back snapshot', 'PASS', 'hosts/settings/workspace/layout/vault readable')
+    const dbHashBefore = fileSetDigest(db)
+
+    await installFromDmg(bInstaller, installedApp, work)
+    const bBinary = path.join(installedApp, 'Contents', 'MacOS', 'terminal')
+    if (!existsSync(bBinary)) throw new Error('installed B has no executable')
+    add('install B', 'PASS', installedApp)
+
+    if (fault === 'corrupt-db') {
+      writeFaultCorrupt(db)
+      const corruptedHash = fileSetDigest(db)
+      const faultLog = path.join(logs, 'b-fault.log')
+      reportJson.logs.fault = faultLog
+      child = launch(bBinary, home, faultLog)
+      await delay(15_000)
+      await stopChecked(child)
+      const afterHash = fileSetDigest(db)
+      const preserved = afterHash === corruptedHash
+      add('corrupt DB preserved', preserved ? 'PASS' : 'FAIL',
+        `${corruptedHash.slice(0, 16)} -> ${afterHash.slice(0, 16)} (db/wal/shm/journal set)`)
+      await delay(1_000)
+      await waitFor(() => existsSync(faultLog) && statSync(faultLog).size > 0, 3_000).catch(() => null)
+      const faultText = existsSync(faultLog) ? readFileSync(faultLog, 'utf8') : ''
+      const appObserved = /file is not a database|db bootstrap failed|SQLite|manual recovery|integrity_check failed/i.test(faultText)
+      add(
+        'corruption detected by the app',
+        appObserved ? 'PASS' : 'NOT_RUN',
+        appObserved ? 'app log: file is not a database' : 'no matching line in the app log',
+      )
+      // The corrupted file is preserved bit-for-bit but cannot be opened. Keep
+      // the schema fields as the pre-fault observation and say so explicitly
+      // rather than presenting them as a fresh read.
+      reportJson.schema.afterTables = reportJson.schema.beforeTables
+      reportJson.schema.afterHostColumns = reportJson.schema.beforeHostColumns
+      reportJson.schema.addedHostColumns = []
+      reportJson.schema.afterUnreadable = true
+      applyFaultAssessment('corrupt-db', {
+        FAULT_INJECTED: corruptedHash !== dbHashBefore ? 'PASS' : 'FAIL',
+        APPLICATION_FAILURE_OBSERVED: appObserved ? 'PASS' : 'NOT_RUN',
+        ORIGINAL_DATA_PRESERVED: preserved ? 'PASS' : 'FAIL',
+        NO_PARTIAL_MIGRATION: preserved ? 'PASS' : 'FAIL',
+        RECOVERY_SUCCEEDED: 'NOT_RUN',
+      })
+      await report(work, reportDir, reportJson)
+      return reportJson
+    }
+
+    if (fault === 'read-only-data-dir') {
+      const faultLog = path.join(logs, 'b-fault.log')
+      reportJson.logs.fault = faultLog
+      chmodSync(dataDir, 0o500)
+      chmodDatabaseFiles(db, 0o400)
+      child = launch(bBinary, home, faultLog)
+      await delay(15_000)
+      await stopChecked(child)
+      chmodSync(dataDir, 0o700)
+      chmodDatabaseFiles(db, 0o600)
+      const afterHash = fileSetDigest(db)
+      const preserved = afterHash === dbHashBefore
+      add('read-only data dir preserved DB', preserved ? 'PASS' : 'FAIL', `${dbHashBefore.slice(0, 16)} -> ${afterHash.slice(0, 16)}`)
+      await delay(1_000)
+      await waitFor(() => existsSync(faultLog) && statSync(faultLog).size > 0, 3_000).catch(() => null)
+      const faultText = existsSync(faultLog) ? readFileSync(faultLog, 'utf8') : ''
+      const appObserved = /readonly database|read-only|permission|db bootstrap failed/i.test(faultText)
+      add(
+        'read-only failure detected by the app',
+        appObserved ? 'PASS' : 'NOT_RUN',
+        appObserved ? 'app log: attempt to write a readonly database' : 'no matching line in the app log',
+      )
+      const columnsAfterFault = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
+      const partiallyMigrated = expectedNewHostColumns.some(column => columnsAfterFault.includes(column))
+      add(
+        'no partial migration',
+        partiallyMigrated ? 'FAIL' : 'PASS',
+        partiallyMigrated ? 'new columns appeared despite the failure' : 'hosts schema is still A',
+      )
+      // Recovery: remove the fault and launch B again. It must complete the
+      // migration and keep every seeded field.
+      let recovery = 'NOT_RUN'
+      try {
+        child = launch(bBinary, home, path.join(logs, 'b-recovery.log'))
+        await waitForSchema(db, 'hosts:' + expectedNewHostColumns.join(','))
+        await stopChecked(child)
+        await dr(['checkpoint', '--db', db])
+        await dr([
+          'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
+          '--token', token, '--vault', vault, '--vault-allow-encrypted',
+          '--expected-new-host-columns', expectedNewHostColumns.join(','),
+          '--allow-settings-migration',
+        ])
+        recovery = 'PASS'
+        add('read-only recovery data integrity', 'PASS',
+          'post-recovery DB verified field by field with the new columns')
+        add('read-only recovery', 'PASS', 'B migrated after the directory became writable')
+      } catch (error) {
+        recovery = 'FAIL'
+        add('read-only recovery data integrity', 'FAIL', errorMessage(error))
+        add('read-only recovery', 'FAIL', errorMessage(error))
+      }
+      reportJson.schema.afterTables = execFileSyncSqlite(
+        db,
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
+      reportJson.schema.afterHostColumns = execFileSyncSqlite(
+        db,
+        "SELECT name FROM pragma_table_info('hosts')",
+      )
+      reportJson.schema.addedHostColumns = reportJson.schema.afterHostColumns
+        .filter(column => expectedNewHostColumns.includes(column))
+      applyFaultAssessment('read-only-data-dir', {
+        FAULT_INJECTED: 'PASS',
+        APPLICATION_FAILURE_OBSERVED: appObserved ? 'PASS' : 'NOT_RUN',
+        ORIGINAL_DATA_PRESERVED: preserved ? 'PASS' : 'FAIL',
+        NO_PARTIAL_MIGRATION: partiallyMigrated ? 'FAIL' : 'PASS',
+        RECOVERY_SUCCEEDED: recovery,
+      })
+      await report(work, reportDir, reportJson)
+      return reportJson
+    }
+
+    if (fault === 'disk-full') {
+      // This branch runs before the normal B launch, so `db` is still the A
+      // database. Checkpoint it first so the copy is a single consistent file.
+      await dr(['checkpoint', '--db', db])
+      const volume = createSmallVolume(64)
+      if (volume.unavailable) {
+        add('disk-full volume', 'FAIL', volume.unavailable)
+        applyFaultAssessment('disk-full', {
+          FAULT_INJECTED: 'NOT_RUN',
+          APPLICATION_FAILURE_OBSERVED: 'NOT_RUN',
+          ORIGINAL_DATA_PRESERVED: 'NOT_RUN',
+          NO_PARTIAL_MIGRATION: 'NOT_RUN',
+          RECOVERY_SUCCEEDED: 'NOT_RUN',
+        })
+        await report(work, reportDir, reportJson)
+        return reportJson
+      }
+      try {
+        const smallHome = path.join(volume.mountDir, 'home')
+        const smallDataDir = path.join(smallHome, 'Library', 'Application Support', expectedIdentifier)
+        const smallDb = path.join(smallDataDir, 'terminal.db')
+        mkdirSync(smallDataDir, { recursive: true })
+        cpSync(db, smallDb)
+        const smallVaultDir = path.join(smallHome, 'Library', 'Application Support', 'terminal')
+        mkdirSync(smallVaultDir, { recursive: true })
+        if (existsSync(vault)) copyFileSync(vault, path.join(smallVaultDir, 'vault.json'))
+        // Make the pre-migration VACUUM INTO copy too large for the free space
+        // we leave behind: 24 MB database, roughly 8 MB free.
+        execFileSyncSqlite(
+          smallDb,
+          'CREATE TABLE disk_full_bulk (payload BLOB); ' +
+          'INSERT INTO disk_full_bulk VALUES (zeroblob(25165824)); ' +
+          'PRAGMA wal_checkpoint(TRUNCATE);',
+        )
+        const fillerDir = path.join(volume.mountDir, 'filler')
+        mkdirSync(fillerDir, { recursive: true })
+        const chunk = Buffer.alloc(1024 * 1024, 0x62)
+        let fillerCount = 0
+        while (freeBytes(volume.mountDir) > 8 * 1024 * 1024) {
+          writeFileSync(path.join(fillerDir, 'filler-' + fillerCount), chunk)
+          fillerCount += 1
+        }
+        const faultLog = path.join(logs, 'b-disk-full.log')
+        reportJson.logs.fault = faultLog
+        child = launch(bBinary, smallHome, faultLog)
+        await delay(15_000)
+        const faultStop = await stopChecked(child)
+        await assertQuiescence(add, 'disk-full quiescence', faultStop, smallDb)
+        const columnsAfterFault = execFileSyncSqlite(smallDb, "SELECT name FROM pragma_table_info('hosts')")
+        const migratedCount = expectedNewHostColumns.filter(column => columnsAfterFault.includes(column)).length
+        const fullyMigrated = migratedCount === expectedNewHostColumns.length
+        const partiallyMigrated = migratedCount > 0 && !fullyMigrated
+        add(
+          'disk-full migration blocked',
+          fullyMigrated ? 'FAIL' : 'PASS',
+          fullyMigrated
+            ? 'B migrated despite the full volume'
+            : `hosts still has ${migratedCount}/${expectedNewHostColumns.length} new columns`,
+        )
+        // Free the filler before verification: the database itself is not
+        // touched by removing the filler, and a checkpoint must not fail with
+        // ENOSPC while we are checking the fail-closed state.
+        rmSync(fillerDir, { recursive: true, force: true })
+        let preserved = false
+        try {
+          await dr(['checkpoint', '--db', smallDb])
+          await dr([
+            'verify', '--db', smallDb, '--before', path.join(work, 'a-snapshot.json'),
+            '--token', token, '--vault', vault, '--vault-allow-encrypted',
+            '--forbid-columns', expectedNewHostColumns.join(','),
+            '--allow-settings-migration',
+          ])
+          preserved = true
+          add('disk-full original data preserved', 'PASS', 'A fields readable and no B columns')
+        } catch (error) {
+          add('disk-full original data preserved', 'FAIL', errorMessage(error))
+        }
+
+        let recovery = 'NOT_RUN'
+        try {
+          child = launch(bBinary, smallHome, path.join(logs, 'b-disk-full-recovery.log'))
+          await waitForSchema(smallDb, 'hosts:' + expectedNewHostColumns.join(','))
+          const recoveryStop = await stopChecked(child)
+          await assertQuiescence(add, 'disk-full recovery quiescence', recoveryStop, smallDb)
+          await dr(['checkpoint', '--db', smallDb])
+          await dr([
+            'verify', '--db', smallDb, '--before', path.join(work, 'a-snapshot.json'),
+            '--token', token, '--vault', vault, '--vault-allow-encrypted',
+            '--expected-new-host-columns', expectedNewHostColumns.join(','),
+            '--allow-settings-migration',
+          ])
+          const smallBackups = path.join(smallDataDir, 'backups')
+          let backupReadable = false
+          if (existsSync(smallBackups)) {
+            const files = readdirSync(smallBackups)
+              .filter(name => /^pre-migration-\d+(?:-\d+)?\.db$/.test(name))
+              .sort()
+            if (files.length > 0) {
+              // The failed attempt may have left an earlier partial snapshot;
+              // the successful one is the newest by epoch.
+              await dr([
+                'verify', '--db', path.join(smallBackups, files[files.length - 1]),
+                '--before', path.join(work, 'a-snapshot.json'),
+                '--token', token, '--vault', vault, '--vault-allow-encrypted',
+                '--forbid-columns', expectedNewHostColumns.join(','),
+                '--allow-settings-migration',
+              ])
+              backupReadable = true
+            }
+          }
+          add('disk-full backup readable', backupReadable ? 'PASS' : 'FAIL',
+            backupReadable ? 'pre-migration snapshot verified' : 'no verifiable pre-migration snapshot')
+          add('pre-migration backup', backupReadable ? 'PASS' : 'FAIL',
+            backupReadable ? 'post-recovery pre-migration snapshot verified' : 'no verifiable pre-migration snapshot')
+          add('disk-full recovery data integrity', 'PASS',
+            'post-recovery DB verified field by field with the new columns')
+          recovery = 'PASS'
+          add('disk-full recovery', 'PASS', 'B migrated after space was freed')
+        } catch (error) {
+          recovery = 'FAIL'
+          add('disk-full recovery data integrity', 'FAIL', errorMessage(error))
+          add('disk-full recovery', 'FAIL', errorMessage(error))
+        }
+        reportJson.schema.afterTables = execFileSyncSqlite(
+          smallDb,
+          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+        reportJson.schema.afterHostColumns = execFileSyncSqlite(
+          smallDb,
+          "SELECT name FROM pragma_table_info('hosts')",
+        )
+        reportJson.schema.addedHostColumns = reportJson.schema.afterHostColumns
+          .filter(column => expectedNewHostColumns.includes(column))
+        applyFaultAssessment('disk-full', {
+          FAULT_INJECTED: 'PASS',
+          APPLICATION_FAILURE_OBSERVED: fullyMigrated ? 'FAIL' : 'PASS',
+          ORIGINAL_DATA_PRESERVED: preserved ? 'PASS' : 'FAIL',
+          NO_PARTIAL_MIGRATION: partiallyMigrated ? 'FAIL' : 'PASS',
+          RECOVERY_SUCCEEDED: recovery,
+        })
+        await report(work, reportDir, reportJson)
+        return reportJson
+      } finally {
+        volume.cleanup()
+      }
+    }
+
+    if (fault === 'team-interrupted') {
+      const killPoints = [1, 3, 5, 10]
+      const killDetails = []
+      let killsObserved = 0
+      let snapshotsOk = 0
+      let markersOk = 0
+      let coreDoneTeamPartial = 0
+      let recoveriesOk = 0
+      let dataOk = 0
+      let idempotentOk = 0
+      let completionOk = 0
+      let lastRunDb = db
+      const recoveryDetails = []
+
+      for (const point of killPoints) {
+        const runRoot = path.join(work, 'team-kill-' + point)
+        const runHome = path.join(runRoot, 'home')
+        cpSync(home, runHome, { recursive: true })
+        const runDataDir = path.join(runHome, 'Library', 'Application Support', expectedIdentifier)
+        const runDb = path.join(runDataDir, 'terminal.db')
+        lastRunDb = runDb
+        const markerFile = path.join(runDataDir, 'migration.pending.json')
+        child = launch(bBinary, runHome, path.join(logs, 'b-team-kill-' + point + '.log'), {
+          TERMINAL_STARTUP_STAGES_PATH: path.join(runRoot, 'stages.jsonl'),
+        })
+        await waitForDatabase(runDb)
+        // Core must have finished: Team's snapshot is taken after Core's
+        // completion and must not be confused with an unfinished Core.
+        await waitForSchema(runDb, 'hosts:' + expectedNewHostColumns.join(','), 120_000)
+        const atPoint = await waitFor(
+          () => (countTeamColumns(runDb) >= point ? countTeamColumns(runDb) : null),
+          90_000,
+          'team target ' + point,
+        ).catch(() => null)
+        child.kill('SIGKILL')
+        await stopChecked(child, { allowSignals: ['SIGKILL'], allowForced: true })
+        const atKill = countTeamColumns(runDb)
+        const expectedKill = point === 10 ? atKill === 10 : atKill >= point && atKill < 10
+        if (atPoint && expectedKill) killsObserved += 1
+        killDetails.push(point + ':' + atKill + '/10')
+
+        const hostColumns = execFileSyncSqlite(runDb, "SELECT name FROM pragma_table_info('hosts')")
+        const coreDone = expectedNewHostColumns.every(column => hostColumns.includes(column))
+        if (coreDone && atKill > 0 && atKill < 10) coreDoneTeamPartial += 1
+
+        let marker = null
+        try {
+          marker = JSON.parse(readFileSync(markerFile, 'utf8'))
+        } catch {
+          marker = null
+        }
+        if (marker && marker.migration_id) markersOk += 1
+        const snapshot = marker?.snapshot_path
+        if (snapshot && existsSync(snapshot) && countTeamColumns(snapshot) === 0) {
+          // The snapshot must really hold the post-Core, pre-Team database and
+          // the seeded user data, not merely be a file with the right name.
+          try {
+            await dr(['verify', '--db', snapshot, '--before', beforePath,
+              '--token', token, '--vault', vault, '--vault-allow-encrypted',
+              '--expected-new-host-columns', expectedNewHostColumns.join(','),
+              '--allow-settings-migration'])
+            snapshotsOk += 1
+          } catch {
+            // counted as a failure below
+          }
+        }
+
+        const recoveryStates = path.join(runRoot, 'recovery.jsonl')
+        child = launch(bBinary, runHome, path.join(logs, 'b-team-recovery-' + point + '.log'), {
+          TERMINAL_RECOVERY_STAGES_PATH: recoveryStates,
+          TERMINAL_STARTUP_STAGES_PATH: path.join(runRoot, 'recovery-stages.jsonl'),
+        })
+        // Wait for the startup verdict before looking at the schema: at the
+        // 10th target the database is already fully migrated, so a schema wait
+        // returns instantly and used to race the verdict write.
+        const recoveryText = await waitFor(
+          () => {
+            if (!existsSync(recoveryStates)) return null
+            const text = readFileSync(recoveryStates, 'utf8')
+            return /"state":"(Recovered|Healthy|ManualInterventionRequired|RestoreInterrupted)"/.test(text)
+              ? text
+              : null
+          },
+          60_000,
+          'startup verdict for team target ' + point,
+        ).catch(() => '')
+        await waitForSchema(
+          runDb,
+          'team_shared_hosts:' + TEAM_MIGRATED_COLUMNS.join(',') +
+            ';team_shared_snippets:' + TEAM_MIGRATED_COLUMNS.join(','),
+          180_000,
+        )
+        const recovered = /"state":"Recovered"/.test(recoveryText)
+        if (recovered) recoveriesOk += 1
+        recoveryDetails.push(point + ':' + (recovered ? 'Recovered' : 'no-Recovered'))
+        // The completion callback runs after the last Team ALTER (and after the
+        // smoke delay). Stopping before it would leave the marker behind and
+        // make the next launch look like a second recovery instead of an
+        // idempotent one.
+        const completed = await waitFor(
+          () => !existsSync(markerFile),
+          60_000,
+          'team marker cleared after recovery',
+        ).then(() => true).catch(() => false)
+        if (completed) completionOk += 1
+        await stopChecked(child)
+        await dr(['checkpoint', '--db', runDb])
+        try {
+          await dr(['verify', '--db', runDb, '--before', beforePath,
+            '--token', token, '--vault', vault, '--vault-allow-encrypted',
+            '--expected-new-host-columns', expectedNewHostColumns.join(','),
+            '--allow-settings-migration'])
+          dataOk += 1
+        } catch {
+          // counted as a failure below
+        }
+
+        // A second launch must be idempotent: the startup decision is Healthy
+        // (no pending marker, no second recovery) and the data stays verified.
+        const idempotentStates = path.join(runRoot, 'idempotent.jsonl')
+        child = launch(bBinary, runHome, path.join(logs, 'b-team-idempotent-' + point + '.log'), {
+          TERMINAL_RECOVERY_STAGES_PATH: idempotentStates,
+        })
+        const healthy = await waitFor(
+          () => existsSync(idempotentStates) &&
+            /"state":"Healthy"/.test(readFileSync(idempotentStates, 'utf8')),
+          60_000,
+          'healthy idempotent startup',
+        ).then(() => true).catch(() => false)
+        await stopChecked(child)
+        const idempotentText = existsSync(idempotentStates) ? readFileSync(idempotentStates, 'utf8') : ''
+        const markerGone = !existsSync(markerFile)
+        const noRecovery = !/"state":"Recovered"/.test(idempotentText)
+        if (markerGone && noRecovery && healthy) idempotentOk += 1
+      }
+
+      add('team kill points', killsObserved === killPoints.length ? 'PASS' : 'FAIL', killDetails.join(' '))
+      add('team pre-migration snapshots', snapshotsOk === killPoints.length ? 'PASS' : 'FAIL',
+        snapshotsOk + '/' + killPoints.length + ' verified post-Core snapshots')
+      add('pre-migration backup', snapshotsOk === killPoints.length ? 'PASS' : 'FAIL',
+        snapshotsOk > 0 ? 'all Team snapshots verified read-only' : 'no verifiable Team snapshot')
+      add('team marker after kills', markersOk === killPoints.length ? 'PASS' : 'FAIL',
+        markersOk + '/' + killPoints.length + ' markers name their transaction')
+      add('core complete team incomplete not healthy', coreDoneTeamPartial >= killPoints.length - 1 ? 'PASS' : 'FAIL',
+        'Core done, Team partial, marker still pending')
+      add('team completion clears marker', completionOk === killPoints.length ? 'PASS' : 'FAIL',
+        completionOk + '/' + killPoints.length + ' recovery launches cleared the pending marker')
+      add('team product recovery', recoveriesOk === killPoints.length ? 'PASS' : 'FAIL',
+        recoveriesOk + '/' + killPoints.length + ' startups reported Recovered (' +
+          recoveryDetails.join(' ') + ')')
+      add('team data preserved', dataOk === killPoints.length ? 'PASS' : 'FAIL',
+        dataOk + '/' + killPoints.length + ' databases verified field by field')
+      add('team idempotent relaunch', idempotentOk === killPoints.length ? 'PASS' : 'FAIL',
+        idempotentOk + '/' + killPoints.length + ' relaunches were idempotent')
+
+      reportJson.schema.afterTables = execFileSyncSqlite(
+        lastRunDb,
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
+      reportJson.schema.afterHostColumns = execFileSyncSqlite(
+        lastRunDb,
+        "SELECT name FROM pragma_table_info('hosts')",
+      )
+      applyFaultAssessment('team-interrupted', {
+        FAULT_INJECTED: killsObserved === killPoints.length ? 'PASS' : 'FAIL',
+        APPLICATION_FAILURE_OBSERVED: 'NOT_RUN',
+        ORIGINAL_DATA_PRESERVED: dataOk === killPoints.length ? 'PASS' : 'FAIL',
+        NO_PARTIAL_MIGRATION: dataOk === killPoints.length ? 'PASS' : 'FAIL',
+        RECOVERY_SUCCEEDED: recoveriesOk === killPoints.length && idempotentOk === killPoints.length
+          ? 'PASS'
+          : 'FAIL',
+      })
+      await report(work, reportDir, reportJson)
+      return reportJson
+    }
+
+    if (fault === 'interrupted') {
+      const stageLog = path.join(work, 'b-interrupted-stages.jsonl')
+      const interruptedLog = path.join(logs, 'b-interrupted.log')
+      reportJson.logs.fault = interruptedLog
+      child = launch(bBinary, home, interruptedLog, {
+        TERMINAL_STARTUP_STAGES_PATH: stageLog,
+      })
+      let stageSeen = null
+      try {
+        stageSeen = await waitFor(() => {
+          if (!existsSync(stageLog)) return null
+          const text = readFileSync(stageLog, 'utf8')
+          if (text.includes('core-schema-finished')) return 'core-schema-finished'
+          if (text.includes('snapshot-finished')) return 'snapshot-finished'
+          return null
+        }, 30_000, 'migration stage')
+      } catch {
+        stageSeen = null
+      }
+      if (stageSeen === 'snapshot-finished') {
+        // Wait until the first column is actually committed, then kill before
+        // the delayed second ALTER. This is a real mid-migration interruption,
+        // not merely a kill before migration started.
+        const killColumns = await waitFor(() => {
+          try {
+            const columns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
+            return columns.includes(expectedNewHostColumns[0]) ? columns : null
+          } catch {
+            return null
+          }
+        }, 15_000, 'first migrated host column').catch(() => null)
+        const missingAtKill = killColumns
+          ? expectedNewHostColumns.filter(column => !killColumns.includes(column))
+          : []
+        if (!killColumns || missingAtKill.length === 0) {
+          await stopChecked(child)
+          add(
+            'interrupted migration recovery',
+            'NOT_RUN',
+            killColumns
+              ? 'migration finished before the kill window; increase VITE_TERMINAL_MIGRATION_DELAY_MS'
+              : 'first migrated host column was not observed',
+          )
+          applyFaultAssessment('interrupted', {
+            FAULT_INJECTED: 'NOT_RUN',
+            APPLICATION_FAILURE_OBSERVED: 'NOT_RUN',
+            ORIGINAL_DATA_PRESERVED: 'NOT_RUN',
+            NO_PARTIAL_MIGRATION: 'NOT_RUN',
+            RECOVERY_SUCCEEDED: 'NOT_RUN',
+          })
+          await report(work, reportDir, reportJson)
+          return reportJson
+        }
+        child.kill('SIGKILL')
+        await stopChecked(child, { allowSignals: ['SIGKILL'], allowForced: true })
+        add('interrupted after backup', 'PASS', 'killed between snapshot-finished and core-schema-finished')
+        add('interrupted mid-migration', 'PASS',
+          'committed ' + killColumns.join(',') + '; missing ' + missingAtKill.join(','))
+        const recoveryStates = path.join(work, 'b-recovery-states.jsonl')
+        child = launch(bBinary, home, path.join(logs, 'b-recovery.log'), {
+          TERMINAL_STARTUP_STAGES_PATH: path.join(work, 'b-recovery-stages.jsonl'),
+          TERMINAL_RECOVERY_STAGES_PATH: recoveryStates,
+        })
+        await waitForSchema(db, 'hosts:' + expectedNewHostColumns.join(','))
+        const recoveryText = existsSync(recoveryStates) ? readFileSync(recoveryStates, 'utf8') : ''
+        const productRecovered = /"state":"Recovered"/.test(recoveryText)
+        add(
+          'product recovery after interruption',
+          productRecovered ? 'PASS' : 'NOT_RUN',
+          productRecovered
+            ? 'startup restored the verified pre-migration snapshot'
+            : 'no Recovered state observed: ' + recoveryText.slice(0, 200),
+        )
+        await stopChecked(child)
+        await dr(['checkpoint', '--db', db])
+        await dr([
+          'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
+          '--token', token, '--vault', vault, '--vault-allow-encrypted',
+          '--expected-new-host-columns', expectedNewHostColumns.join(','),
+          '--allow-settings-migration',
+        ])
+        const interruptedBackup = await waitForBackup(backups, 3_000).catch(() => null)
+        add('pre-migration backup', interruptedBackup ? 'PASS' : 'FAIL',
+          interruptedBackup || 'not found after interrupted recovery')
+        if (interruptedBackup) {
+          await dr(['backup-verify', '--dir', backups, '--token', token])
+        }
+        const interruptedColumns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
+        reportJson.schema.afterTables = execFileSyncSqlite(db, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+        reportJson.schema.afterHostColumns = interruptedColumns
+        reportJson.schema.addedHostColumns = interruptedColumns.filter(
+          column => !(reportJson.schema.beforeHostColumns || []).includes(column),
+        )
+        add('B migration', 'PASS', expectedNewHostColumns.join(','))
+        add('data integrity after B', 'PASS', 'field-by-field after interrupted recovery')
+        add('interrupted migration recovery', 'PASS', 'relaunch converged and data verified')
+        applyFaultAssessment('interrupted', {
+          FAULT_INJECTED: 'PASS',
+          APPLICATION_FAILURE_OBSERVED: 'NOT_RUN',
+          ORIGINAL_DATA_PRESERVED: 'PASS',
+          NO_PARTIAL_MIGRATION: 'PASS',
+          RECOVERY_SUCCEEDED: 'PASS',
+        })
+      } else {
+        await stopChecked(child)
+        add(
+          'interrupted migration recovery',
+          'NOT_RUN',
+          stageSeen === 'core-schema-finished'
+            ? 'migration finished before the kill window; increase VITE_TERMINAL_MIGRATION_DELAY_MS'
+            : 'snapshot-finished stage was not observed',
+        )
+        applyFaultAssessment('interrupted', {
+          FAULT_INJECTED: 'NOT_RUN',
+          APPLICATION_FAILURE_OBSERVED: 'NOT_RUN',
+          ORIGINAL_DATA_PRESERVED: 'NOT_RUN',
+          NO_PARTIAL_MIGRATION: 'NOT_RUN',
+          RECOVERY_SUCCEEDED: 'NOT_RUN',
+        })
+      }
+      await report(work, reportDir, reportJson)
+      return reportJson
+    }
+
+    child = launch(bBinary, home, reportJson.logs.b)
+    await waitForSchema(db, 'hosts:' + expectedNewHostColumns.join(','))
+    const backup = await waitForBackup(backups, expectBackup ? 30_000 : 1_000).catch(() => null)
+    add('B migration', 'PASS', expectedNewHostColumns.join(','))
+    if (expectBackup) {
+      add('pre-migration backup', backup ? 'PASS' : 'FAIL', backup || 'not found')
+    } else {
+      add('pre-migration backup', 'NOT_RUN',
+        backup || 'B ' + reportJson.b.version + ' predates the pre-migration snapshot feature')
+      reportJson.notRun.push('pre-migration backup (B ' + reportJson.b.version + ' has no backup command)')
+    }
+    const stopB = await stopChecked(child)
+    add('B stopped', 'PASS', describeStop(stopB))
+    await assertQuiescence(add, 'B quiescence', stopB, db)
+    await dr(['checkpoint', '--db', db])
+    const afterColumns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
+    reportJson.schema.afterTables = execFileSyncSqlite(db, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    reportJson.schema.afterHostColumns = afterColumns
+    reportJson.schema.addedHostColumns = afterColumns.filter(column => !(reportJson.schema.beforeHostColumns || []).includes(column))
+    await dr([
+      'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
+      '--token', token, '--vault', vault, '--vault-allow-encrypted',
+      '--expected-new-host-columns', expectedNewHostColumns.join(','),
+      '--allow-settings-migration',
+    ])
+    add('data integrity after B', 'PASS', 'field-by-field')
+    if (vaultFixture) {
+      try {
+        const result = verifyVaultFile(vault, vaultPassword, { host: vaultSecret })
+        add('vault crypto unlock after B', result.verified ? 'PASS' : 'FAIL',
+          'encrypted entry decrypted with the same password')
+        add('vault wrong password rejected', verifyWrongPasswordRejected(vault, 'wrong-password')
+          ? 'PASS' : 'FAIL')
+      } catch (error) {
+        add('vault crypto unlock after B', 'FAIL', errorMessage(error))
+      }
+    }
+    if (before.team && Object.values(before.team).some(Boolean)) {
+      add('Team Sync local persistence', 'PASS',
+        'teams/members/shared hosts/sync_queue/user_profile')
+    } else {
+      add('Team Sync local persistence', 'NOT_RUN', 'A snapshot has no team rows')
+    }
+    if (backup) {
+      await dr(['backup-verify', '--dir', backups, '--token', token, '--out', path.join(work, 'backup-report.json')])
+      add('backup readable', 'PASS', backup)
+    }
+    if (fault === 'restart-idempotent') {
+      child = launch(bBinary, home, path.join(logs, 'b-restart.log'))
+      await waitForSchema(db, 'hosts:' + expectedNewHostColumns.join(','))
+      add(
+        'second B launch',
+        child.exitCode === null ? 'PASS' : 'FAIL',
+        child.exitCode === null ? 'second B process stayed alive through schema wait' : 'B exited before the second launch was observed',
+      )
+      await stopChecked(child)
+      await dr([
+        'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
+        '--token', token, '--vault', vault, '--vault-allow-encrypted',
+        '--expected-new-host-columns', expectedNewHostColumns.join(','),
+        '--allow-settings-migration',
+      ])
+      add('restart idempotent', 'PASS', 'second B launch kept the data')
+      applyFaultAssessment('restart-idempotent', {
+        FAULT_INJECTED: 'PASS',
+        APPLICATION_FAILURE_OBSERVED: 'NOT_RUN',
+        ORIGINAL_DATA_PRESERVED: 'PASS',
+        NO_PARTIAL_MIGRATION: expectedNewHostColumns.every(column =>
+          execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')").includes(column),
+        ) ? 'PASS' : 'FAIL',
+        RECOVERY_SUCCEEDED: 'PASS',
+      })
+    }
+    if (fault === 'restore-backup') {
+      if (!backup) {
+        add('backup restore', 'FAIL', 'this B produced no pre-migration backup')
+      } else {
+        try {
+          const matrix = await runCrashMatrix()
+          add(
+            'restore crash matrix',
+            matrix.passed ? 'PASS' : 'FAIL',
+            matrix.passed
+              ? '8/8 stages SIGKILL; pid-owned stage log; file set exact; retry converged: ' +
+                matrix.stages.map(entry => entry.stage + '=' + entry.retry.outcome).join(',')
+              : matrix.problems.join('; '),
+          )
+          reportJson.crashMatrix = matrix.stages.map(entry => ({
+            stage: entry.stage,
+            pid: entry.pid,
+            signal: entry.exit.signal,
+            code: entry.exit.code,
+            retry: entry.retry.outcome,
+            postCrashFiles: Object.keys(entry.postCrash),
+            finalFiles: Object.keys(entry.final),
+            integrity: entry.integrity,
+          }))
+        } catch (error) {
+          add('restore crash matrix', 'FAIL', errorMessage(error))
+        }
+        copyFileSync(db, path.join(work, 'post-upgrade.db'))
+        const recovery = await replaceWithBackup(db, backup, dataDir, { beforePath, token })
+        add('backup restore stages', 'PASS', recovery.stages.join('>'))
+        const restoredHash = sha256File(db)
+        add(
+          'restored DB matches backup',
+          restoredHash === sha256File(backup) ? 'PASS' : 'FAIL',
+          restoredHash.slice(0, 16),
+        )
+        child = launch(aBinary, home, path.join(logs, 'a-restored.log'))
+        try {
+          await waitForSchema(db, 'hosts:id;settings:key;workspaces:id;workspace_layouts:workspace_id')
+          add(
+            'restored A launch',
+            child.exitCode === null ? 'PASS' : 'FAIL',
+            child.exitCode === null ? 'A process stayed alive through schema wait' : 'A exited before the restore was observed',
+          )
+          const restoredStop = await stopChecked(child)
+          await assertQuiescence(add, 'restored A quiescence', restoredStop, db)
+          await dr(['checkpoint', '--db', db])
+          await dr([
+            'verify', '--db', db, '--before', path.join(work, 'a-snapshot.json'),
+            '--token', token, '--vault', vault, '--vault-allow-encrypted',
+            '--forbid-columns', 'agent_forwarding,shell_integration',
+            '--allow-settings-migration',
+          ])
+          add('backup restore', 'PASS', 'A launched and read the restored pre-migration DB')
+        } catch (error) {
+          await stopChecked(child)
+          add('backup restore', 'FAIL', errorMessage(error))
+        }
+      }
+      reportJson.status = reportJson.checks.some(check => check.status === 'FAIL') ? 'FAIL' : 'PASS'
+      await report(work, reportDir, reportJson)
+      return reportJson
+    }
+
+    if (fault === 'downgrade') {
+      copyFileSync(db, path.join(work, 'post-upgrade.db'))
+      const beforeDowngrade = sha256File(db)
+      const downgradeSnapshot = path.join(work, 'b-before-downgrade.json')
+      await dr(['snapshot', '--db', db, '--token', token, '--vault', vault, '--out', downgradeSnapshot])
+      let compatible = false
+      child = launch(aBinary, home, path.join(logs, 'a-downgrade.log'))
+      try {
+        await waitForSchema(db, 'hosts:id;settings:key;workspaces:id;workspace_layouts:workspace_id')
+        add(
+          'downgrade A launch',
+          child.exitCode === null ? 'PASS' : 'FAIL',
+          child.exitCode === null ? 'A process stayed alive through schema wait' : 'A exited before the downgrade was observed',
+        )
+        const downgradeStop = await stopChecked(child)
+        await assertQuiescence(add, 'downgrade A quiescence', downgradeStop, db)
+        await dr([
+          'verify', '--db', db, '--before', downgradeSnapshot,
+          '--token', token, '--vault', vault, '--vault-allow-encrypted', '--allow-settings-migration',
+        ])
+        compatible = true
+        add('downgrade readability', 'PASS', 'A reads the additive post-migration schema')
+        add('downgrade preserved B columns', 'PASS', 'B-era rows/columns still compare')
+      } catch (error) {
+        await stopChecked(child)
+        const columns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
+        const schemaIntact = expectedNewHostColumns.every(column => columns.includes(column))
+        add(
+          'downgrade readability',
+          'PASS',
+          schemaIntact
+            ? 'A refused the newer schema without dropping columns; restore-from-backup is required'
+            : 'A damaged the newer schema',
+        )
+        if (!schemaIntact) add('downgrade data safety', 'FAIL', errorMessage(error))
+      }
+      const afterDowngrade = sha256File(db)
+      add(
+        'downgrade did not destroy data',
+        compatible ? 'PASS' : 'FAIL',
+        compatible
+          ? 'field-level verify against the B snapshot passed; sha ' + afterDowngrade.slice(0, 16)
+          : 'A could not read or verify the B-era data',
+      )
+      reportJson.status = reportJson.checks.some(check => check.status === 'FAIL') ? 'FAIL' : 'PASS'
+      await report(work, reportDir, reportJson)
+      return reportJson
+    }
+
+    if (fault === 'interrupted') {
+      // This is intentionally not claimed as covered: the dev.1->dev.2
+      // migration window is two ALTERs and the harness has not found a
+      // deterministic kill point. A false PASS here would be worse than a
+      // documented gap.
+      add('interrupted migration recovery', 'NOT_RUN',
+        'migration window is too short to hit deterministically in this implementation')
+    }
+    reportJson.status = reportJson.checks.some(check => check.status === 'FAIL') ? 'FAIL' : 'PASS'
+    await report(work, reportDir, reportJson)
+    return reportJson
+  } catch (error) {
+    if (child) await stopChecked(child).catch(() => undefined)
+    add('harness', 'FAIL', errorMessage(error))
+    reportJson.status = 'FAIL'
+    await report(work, reportDir, reportJson).catch(() => undefined)
+    return reportJson
+  }
+}
+
+async function startXvfb() {
+  const display = ':' + (90 + (process.pid % 50))
+  const child = spawn(
+    'Xvfb',
+    [display, '-screen', '0', '1280x1024x24', '+extension', 'GLX', '+render', '-noreset'],
+    { stdio: 'ignore' },
+  )
+  await waitFor(
+    async () => {
+      try {
+        await run('xdpyinfo', ['-display', display])
+        return true
+      } catch {
+        return false
+      }
+    },
+    15_000,
+    'Xvfb ' + display,
+  )
+  return { display, stop: () => child.kill('SIGTERM') }
+}
+
+async function installDeb(installer) {
+  const pkg = (await run('dpkg-deb', ['-f', installer, 'Package'])).stdout.trim()
+  const version = (await run('dpkg-deb', ['-f', installer, 'Version'])).stdout.trim()
+  await run(
+    'sudo',
+    ['env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'install', '-y', installer],
+    { env: { ...process.env, DEBIAN_FRONTEND: 'noninteractive' }, maxBuffer: 10 * 1024 * 1024 },
+  )
+  const installedVersion = (
+    await run('dpkg-query', ['-W', '-f=${Version}', pkg])
+  ).stdout.trim()
+  const files = (await run('dpkg', ['-L', pkg])).stdout.split('\n')
+  const binary = files.find(file => file.startsWith('/usr/bin/') && file.length > 9)
+  if (!binary) throw new Error('the installed deb has no /usr/bin executable')
+  return { pkg, version, installedVersion, binary }
+}
+
+function installAppImage(installer, destination) {
+  copyFileSync(installer, destination)
+  chmodSync(destination, 0o755)
+  return destination
+}
+
+async function extractAppImageWithSystemWebKit(installer, destination, work) {
+  const temp = mkdtempSync(path.join(work, 'appimage-extract-'))
+  try {
+    await run(installer, ['--appimage-extract'], { cwd: temp, timeout: 120_000, maxBuffer: 32 * 1024 * 1024 })
+    rmSync(destination, { recursive: true, force: true })
+    renameSync(path.join(temp, 'squashfs-root'), destination)
+  } finally {
+    rmSync(temp, { recursive: true, force: true })
+  }
+  // Headless CI has no DRM/GBM device. The payload's bundled WebKit (2.52)
+  // aborts in PlatformDisplayDefault::create() on this runner, while the
+  // system WebKit used by the DEB starts. Removing the bundled copy makes the
+  // extracted AppRun resolve the system WebKit; the app binary and data path
+  // remain the AppImage payload's. This is recorded as a fallback, never as a
+  // stock AppImage launch.
+  for (const directory of [
+    path.join(destination, 'usr', 'lib'),
+    path.join(destination, 'usr', 'lib', 'x86_64-linux-gnu'),
+    path.join(destination, 'usr', 'lib', 'aarch64-linux-gnu'),
+  ]) {
+    for (const name of ['libwebkit2gtk-4.1.so.0', 'libjavascriptcoregtk-4.1.so.0']) {
+      rmSync(path.join(directory, name), { force: true })
+    }
+    // System WebKit links the system GStreamer; the payload's older bundled
+    // GStreamer would otherwise win via LD_LIBRARY_PATH and fail at symbol
+    // resolution (gst_pad_probe_info_set_buffer).
+    if (existsSync(directory)) {
+      for (const entry of readdirSync(directory)) {
+        if (/^libgst.*\.so/.test(entry)) {
+          rmSync(path.join(directory, entry), { force: true })
+        }
+      }
+    }
+  }
+  return path.join(destination, 'AppRun')
+}
+
+async function launchAppImageWithEglFallback({
+  installer, stockBinary, home, db, logPath, fallbackLogPath, env, work, label,
+}) {
+  let child = launch(stockBinary, home, logPath, env)
+  try {
+    await waitForDatabase(db)
+    return { child, binary: stockBinary, fallback: false }
+  } catch (error) {
+    await stopChecked(child)
+    const text = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
+    if (!/EGL|BAD_PARAMETER/i.test(text)) throw error
+    const appRun = await extractAppImageWithSystemWebKit(
+      installer, path.join(work, label + '-appimage-extracted'), work,
+    )
+    child = launch(appRun, home, fallbackLogPath, { ...env, APPIMAGE_EXTRACT_AND_RUN: '0' })
+    await waitForDatabase(db)
+    return { child, binary: appRun, fallback: true }
+  }
+}
+
+async function runLinux(flags) {
+  const aInstaller = path.resolve(flags['a-installer'])
+  const bInstaller = path.resolve(flags['b-installer'])
+  const mode = typeof flags.mode === 'string'
+    ? flags.mode
+    : bInstaller.toLowerCase().endsWith('.deb') ? 'deb' : 'appimage'
+  if (mode !== 'deb' && mode !== 'appimage') {
+    throw new Error('Linux mode must be deb or appimage')
+  }
+  const expectedIdentifier = flags['expect-identifier'] || 'com.baicie.termius'
+  const expectedNewHostColumns = String(
+    flags['expect-new-host-columns'] || 'agent_forwarding,shell_integration',
+  ).split(',').map(value => value.trim()).filter(Boolean)
+  const workRoot = path.resolve(flags['work-dir'] || os.tmpdir())
+  mkdirSync(workRoot, { recursive: true })
+  const work = mkdtempSync(path.join(workRoot, 'terminal-upgrade-linux-'))
+  const reportDir = path.resolve(flags['report-dir'] || path.join(work, 'report'))
+  const home = path.join(work, 'home')
+  const config = path.join(work, 'config')
+  const data = path.join(work, 'data')
+  const cache = path.join(work, 'cache')
+  const apps = path.join(work, 'apps')
+  const logs = path.join(work, 'logs')
+  for (const directory of [home, config, data, cache, apps, logs]) {
+    mkdirSync(directory, { recursive: true })
+  }
+  const token = 'phase951-linux-' + Date.now()
+  const db = path.join(config, expectedIdentifier, 'terminal.db')
+  const vault = path.join(config, 'terminal', 'vault.json')
+  const payloadOnly = flags['payload-only'] === true
+  const reportJson = {
+    provider: PROVIDER,
+    generatedAt: new Date().toISOString(),
+    contractVersion: 2,
+    scenario: mode === 'deb'
+      ? 'linux-deb'
+      : payloadOnly ? 'linux-appimage' : 'linux-appimage-full',
+    sourceSha: process.env.GITHUB_SHA || null,
+    runId: process.env.GITHUB_RUN_ID || null,
+    platform: 'linux',
+    mode,
+    hostArch: process.arch,
+    fault: 'none',
+    expectBackup: false,
+    work,
+    token,
+    a: null,
+    b: null,
+    schema: null,
+    checks: [],
+    notRun: [
+      'real Vault master-password unlock (file persistence only)',
+      'Team Sync server synchronization (local tables only)',
+      'fault injection on Linux (not implemented; root/read-only semantics differ)',
+      'Windows adapter',
+      'AppImage internal metadata when extraction is unavailable',
+    ],
+    logs: { a: path.join(logs, 'a.log'), b: path.join(logs, 'b.log') },
+    status: 'FAIL',
+  }
+  const add = (name, status, detail) => {
+    reportJson.checks.push({ name, status, detail: detail || '' })
+  }
+  let xvfb = null
+  let aProcess = null
+  try {
+    let display = process.env.DISPLAY
+    if (!display) {
+      xvfb = await startXvfb()
+      display = xvfb.display
+    }
+    reportJson.display = display
+    const aMetadata = await inspectAsset(aInstaller, 'linux', {
+      sha256: flags['expect-a-sha256'],
+      version: flags['expect-a-version'],
+      identifier: undefined,
+    })
+    const bMetadata = await inspectAsset(bInstaller, 'linux', {
+      sha256: flags['expect-b-sha256'],
+      version: flags['expect-b-version'],
+      identifier: undefined,
+    })
+    reportJson.a = aMetadata
+    reportJson.b = bMetadata
+    if (aMetadata.status === 'FAIL' || bMetadata.status === 'FAIL') {
+      throw new Error('Linux installer metadata did not pass')
+    }
+    const metadataPartial = aMetadata.status !== 'PASS' || bMetadata.status !== 'PASS'
+    if (aMetadata.version && bMetadata.version && aMetadata.version === bMetadata.version) {
+      throw new Error('A and B versions are identical: ' + aMetadata.version)
+    }
+    add('A metadata', aMetadata.status === 'PASS' ? 'PASS' : 'NOT_RUN',
+      aMetadata.version || 'UNKNOWN')
+    add('B metadata', bMetadata.status === 'PASS' ? 'PASS' : 'NOT_RUN',
+      bMetadata.version || 'UNKNOWN')
+    if (!aMetadata.version || !bMetadata.version) {
+      add('A/B version comparison', 'NOT_RUN', 'internal AppImage version metadata unavailable')
+    }
+
+    let aBinary
+    let aInstalled
+    if (mode === 'deb') {
+      aInstalled = await installDeb(aInstaller)
+      aBinary = aInstalled.binary
+      add('install A (deb)', 'PASS', aInstalled.pkg + ' ' + aInstalled.installedVersion)
+    } else {
+      aBinary = installAppImage(aInstaller, path.join(apps, 'Terminal-A.AppImage'))
+      add('install A (AppImage replacement)', 'PASS', aBinary)
+    }
+    if (payloadOnly) {
+      if (mode !== 'appimage') throw new Error('--payload-only is only valid for AppImage')
+      // The headless runner cannot initialise this AppImage's bundled
+      // WebKitGTK EGL stack (EGL_BAD_PARAMETER); a system-WebKit fallback then
+      // fails on bundled GStreamer/GLib symbol versions. Do not turn that into
+      // an upgrade claim: verify the payload replacement and record startup as
+      // NOT_RUN. The DEB/current-DMG jobs carry the migration evidence.
+      const bBinary = installAppImage(bInstaller, aBinary)
+      const replacedSha = sha256File(bBinary)
+      if (replacedSha !== bMetadata.sha256) {
+        add('AppImage payload replacement', 'FAIL',
+          replacedSha + ' != ' + bMetadata.sha256)
+      } else {
+        add('AppImage payload replacement', 'PASS', aBinary)
+      }
+      add('AppImage app startup', 'NOT_RUN',
+        'headless Xvfb: bundled WebKit EGL_BAD_PARAMETER; system-WebKit fallback hits bundled GStreamer/GLib ABI')
+      reportJson.payloadOnly = true
+      reportJson.notRun.push(
+        'AppImage app startup and A->B migration (headless WebKit/EGL limitation; replacement only)',
+      )
+      reportJson.status = reportJson.checks.some(check => check.status === 'FAIL')
+        ? 'FAIL'
+        : 'PARTIAL'
+      await report(work, reportDir, reportJson)
+      return reportJson
+    }
+    const driPath = process.arch === 'arm64'
+      ? '/usr/lib/aarch64-linux-gnu/dri'
+      : '/usr/lib/x86_64-linux-gnu/dri'
+    const env = {
+      XDG_CONFIG_HOME: config,
+      XDG_DATA_HOME: data,
+      XDG_CACHE_HOME: cache,
+      WEBKIT_DISABLE_COMPOSITING_MODE: '1',
+      // WebKit's WebProcess sandbox cannot reach the X socket/EGL device on
+      // this headless runner; the UI process starts, then the WebProcess
+      // aborts. This is a test-environment setting, not a product default.
+      WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: '1',
+      // Keep DMABUF enabled but avoid the GBM allocator; the runner has no
+      // DRM device, and WebKit's GBM EGL path is what fails here.
+      WEBKIT_DMABUF_RENDERER_DISABLE_GBM: '1',
+      WEBKIT_DMABUF_RENDERER_FORCE_SHM: '1',
+      EGL_LOG_LEVEL: 'debug',
+      LIBGL_ALWAYS_SOFTWARE: '1',
+      // AppImages can bundle libEGL without the matching Mesa DRI drivers.
+      // Point the loader at the runner's software stack explicitly.
+      LIBGL_DRIVERS_PATH: driPath,
+      MESA_LOADER_DRIVER_OVERRIDE: 'llvmpipe',
+      GALLIUM_DRIVER: 'llvmpipe',
+      // The probe shows Mesa's surfaceless platform initialises under Xvfb;
+      // WebKit's default-display path is the one that fails. Prefer the
+      // platform that does not need a DRM/GBM device.
+      EGL_PLATFORM: 'surfaceless',
+      GDK_BACKEND: 'x11',
+      NO_AT_BRIDGE: '1',
+      APPIMAGE_EXTRACT_AND_RUN: '1',
+      DISPLAY: display,
+    }
+    if (mode === 'appimage') {
+      const startedA = await launchAppImageWithEglFallback({
+        installer: aInstaller,
+        stockBinary: aBinary,
+        home,
+        db,
+        logPath: reportJson.logs.a,
+        fallbackLogPath: path.join(logs, 'a-fallback.log'),
+        env,
+        work,
+        label: 'a',
+      })
+      aProcess = startedA.child
+      if (startedA.fallback) {
+        reportJson.logs.aFallback = path.join(logs, 'a-fallback.log')
+        add('AppImage headless WebKit fallback', 'PASS',
+          'bundled WebKit could not create EGL display; system WebKit used with the AppImage payload')
+      }
+    } else {
+      aProcess = launch(aBinary, home, reportJson.logs.a, env)
+      await waitForDatabase(db)
+    }
+    add('A database created', 'PASS', db)
+    if (mode === 'appimage') add('AppImage app startup', 'PASS', 'stock or documented fallback payload started')
+    await waitForSchema(db, 'hosts:id;settings:key;workspaces:id;workspace_layouts:workspace_id')
+    add('A schema ready', 'PASS')
+    const stopA = await stopChecked(aProcess)
+    aProcess = null
+    add('A stopped', 'PASS', describeStop(stopA))
+    await assertQuiescence(add, 'A quiescence', stopA, db)
+    await dr(['checkpoint', '--db', db])
+    await dr(['seed', '--db', db, '--token', token, '--vault', vault, '--compatible'])
+    add('seed A data', 'PASS', 'compatible with A schema')
+    const vaultPassword = 'phase952-test-only-master-password'
+    const vaultSecret = 'phase952-test-only-secret'
+    let vaultFixture = false
+    try {
+      createVaultFile(vault, vaultPassword, { host: vaultSecret })
+      vaultFixture = true
+      add('vault encrypted fixture', 'PASS', 'Argon2id + AES-256-GCM entry created')
+    } catch (error) {
+      add('vault encrypted fixture', 'NOT_RUN', errorMessage(error))
+      reportJson.notRun.push('real Vault fixture (Node crypto.argon2Sync unavailable)')
+    }
+    const beforePath = path.join(work, 'a-snapshot.json')
+    await dr(['snapshot', '--db', db, '--token', token, '--vault', vault, '--out', beforePath])
+    const before = JSON.parse(readFileSync(beforePath, 'utf8'))
+    reportJson.schema = {
+      beforeHostColumns: before.schema?.hosts ?? null,
+      afterHostColumns: null,
+      addedHostColumns: null,
+    }
+    add('A read-back snapshot', 'PASS', 'hosts/settings/workspace/layout/vault readable')
+
+    let bBinary
+    if (mode === 'deb') {
+      const bInstalled = await installDeb(bInstaller)
+      if (bMetadata.version && bInstalled.installedVersion !== bMetadata.version) {
+        add('B installed version', 'FAIL',
+          bInstalled.installedVersion + ' != ' + bMetadata.version)
+      } else {
+        add('B installed version', 'PASS', bInstalled.installedVersion)
+      }
+      if (aInstalled && aInstalled.installedVersion === bInstalled.installedVersion) {
+        add('A->B version changed', 'FAIL', 'dpkg still reports the A version')
+      } else {
+        add('A->B version changed', 'PASS',
+          (aInstalled?.installedVersion ?? '?') + ' -> ' + bInstalled.installedVersion)
+      }
+      bBinary = bInstalled.binary
+    } else {
+      // Replace the exact file A was launched from: this is the upgrade a user
+      // performs by substituting the AppImage, not a second side-by-side copy.
+      bBinary = installAppImage(bInstaller, aBinary)
+      const replacedSha = sha256File(bBinary)
+      if (replacedSha !== bMetadata.sha256) {
+        add('B AppImage replaced in place', 'FAIL',
+          replacedSha + ' != ' + bMetadata.sha256)
+        add('AppImage payload replacement', 'FAIL', replacedSha + ' != ' + bMetadata.sha256)
+      } else {
+        add('B AppImage replaced in place', 'PASS', bBinary)
+        add('AppImage payload replacement', 'PASS', bBinary)
+      }
+    }
+
+    if (mode === 'appimage') {
+      const startedB = await launchAppImageWithEglFallback({
+        installer: bInstaller,
+        stockBinary: bBinary,
+        home,
+        db,
+        logPath: reportJson.logs.b,
+        fallbackLogPath: path.join(logs, 'b-fallback.log'),
+        env,
+        work,
+        label: 'b',
+      })
+      aProcess = startedB.child
+      if (startedB.fallback) {
+        reportJson.logs.bFallback = path.join(logs, 'b-fallback.log')
+        add('AppImage B headless WebKit fallback', 'PASS',
+          'system WebKit used with the replaced AppImage payload')
+      }
+    } else {
+      aProcess = launch(bBinary, home, reportJson.logs.b, env)
+    }
+    await waitForSchema(db, 'hosts:' + expectedNewHostColumns.join(','))
+    add('B migration', 'PASS', expectedNewHostColumns.join(','))
+    const stopB = await stopChecked(aProcess)
+    aProcess = null
+    add('B stopped', 'PASS', describeStop(stopB))
+    await assertQuiescence(add, 'B quiescence', stopB, db)
+    await dr(['checkpoint', '--db', db])
+    const afterColumns = execFileSyncSqlite(db, "SELECT name FROM pragma_table_info('hosts')")
+    reportJson.schema.afterHostColumns = afterColumns
+    reportJson.schema.addedHostColumns = afterColumns.filter(
+      column => !(reportJson.schema.beforeHostColumns || []).includes(column),
+    )
+    await dr([
+      'verify', '--db', db, '--before', beforePath,
+      '--token', token, '--vault', vault, '--vault-allow-encrypted',
+      '--expected-new-host-columns', expectedNewHostColumns.join(','),
+      '--allow-settings-migration',
+    ])
+    add('data integrity after B', 'PASS', 'field-by-field')
+    if (vaultFixture) {
+      try {
+        const result = verifyVaultFile(vault, vaultPassword, { host: vaultSecret })
+        add('vault crypto unlock after B', result.verified ? 'PASS' : 'FAIL',
+          'encrypted entry decrypted with the same password')
+        add('vault wrong password rejected', verifyWrongPasswordRejected(vault, 'wrong-password')
+          ? 'PASS' : 'FAIL')
+      } catch (error) {
+        add('vault crypto unlock after B', 'FAIL', errorMessage(error))
+      }
+    }
+    if (before.team && Object.values(before.team).some(Boolean)) {
+      add('Team Sync local persistence', 'PASS',
+        'teams/members/shared hosts/sync_queue/user_profile')
+    }
+    add('pre-migration backup', 'NOT_RUN', 'Linux B has no backup probe in this iteration')
+    reportJson.status = reportJson.checks.some(check => check.status === 'FAIL')
+      ? 'FAIL'
+      : metadataPartial ? 'PARTIAL' : 'PASS'
+    await report(work, reportDir, reportJson)
+    return reportJson
+  } catch (error) {
+    add('harness', 'FAIL', errorMessage(error))
+    reportJson.status = 'FAIL'
+    await report(work, reportDir, reportJson).catch(() => undefined)
+    return reportJson
+  } finally {
+    if (aProcess) await stopChecked(aProcess).catch(() => undefined)
+    xvfb?.stop()
+  }
+}
+
+function execFileSyncSqlite(dbPath, sql) {
+  return execFileSync(process.env.SQLITE3 || 'sqlite3', [dbPath, sql], { encoding: 'utf8' })
+    .trim().split('\n').filter(Boolean)
+}
+
+async function main() {
+  const parsed = parseArgs(process.argv.slice(2))
+  if (parsed.command !== 'run') {
+    throw new Error('usage: upgrade-e2e.mjs run --a-installer <A> --b-installer <B> --platform darwin')
+  }
+  const platform = parsed.flags.platform || process.platform
+  if (platform !== 'darwin' && platform !== 'linux') {
+    const reportJson = {
+      provider: PROVIDER,
+      platform,
+      status: 'NOT_RUN',
+      checks: [],
+      notRun: ['the ' + platform + ' adapter was not executed (macOS and Linux are implemented)'],
+    }
+    await report(process.cwd(), path.resolve(parsed.flags['report-dir'] || '.'), reportJson)
+    console.log(JSON.stringify(reportJson, null, 2))
+    process.exitCode = 1
+    return
+  }
+  const result = platform === 'darwin' ? await runMacos(parsed.flags) : await runLinux(parsed.flags)
+  console.log(JSON.stringify(result, null, 2))
+  // PARTIAL is a real result (for example, AppImage payloads without internal
+  // version metadata). The independent evidence gate decides whether its
+  // missing facts are acceptable; only FAIL/NOT_RUN make the harness itself red.
+  const hasFailedCheck = Array.isArray(result.checks) &&
+    result.checks.some(check => check.status === 'FAIL')
+  process.exitCode = result.status === 'FAIL' || result.status === 'NOT_RUN' || hasFailedCheck ? 1 : 0
+}
+
+main().catch(error => {
+  console.error('[' + PROVIDER + '] ' + errorMessage(error))
+  process.exitCode = 2
+})

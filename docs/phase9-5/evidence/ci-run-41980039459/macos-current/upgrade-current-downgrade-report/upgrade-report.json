@@ -1,0 +1,255 @@
+{
+  "provider": "upgrade-e2e",
+  "generatedAt": "2026-11-05T06:33:19.724Z",
+  "platform": "darwin",
+  "hostArch": "arm64",
+  "fault": "downgrade",
+  "expectBackup": true,
+  "work": "/Users/runner/work/terminal/terminal/upgrade-current-downgrade/terminal-upgrade-w1vj5A",
+  "token": "phase95-upgrade-1793860399724",
+  "a": {
+    "provider": "asset-metadata",
+    "installer": "/Users/runner/work/terminal/terminal/upgrade-assets/dev1/Terminal_0.0.1-dev.1_macos-aarch64.dmg",
+    "size": 11298182,
+    "sha256": "73cf7483e912af33c34791a50aaae378cd85ca3be6b0fccf9e8bd4fcea56a7b8",
+    "platform": "darwin",
+    "bundleName": "Termius.app",
+    "identifier": "com.baicie.termius",
+    "version": "0.0.1-dev.1",
+    "arch": "arm64",
+    "executable": "terminal",
+    "checks": [
+      "dmg mounted read-only",
+      "plist identity and executable read"
+    ],
+    "status": "PASS",
+    "expected": {
+      "sha256": "73cf7483e912af33c34791a50aaae378cd85ca3be6b0fccf9e8bd4fcea56a7b8",
+      "version": "0.0.1-dev.1",
+      "identifier": "com.baicie.termius"
+    },
+    "problems": []
+  },
+  "b": {
+    "provider": "asset-metadata",
+    "installer": "/Users/runner/work/terminal/terminal/src-tauri/target/release/bundle/dmg/Termius_0.0.1-dev.4-local_aarch64.dmg",
+    "size": 13556895,
+    "sha256": "00afd8ff0752f9c9f80337a489c500d3e0a7ebf4f07d640aa17cda1ea6c08f0e",
+    "platform": "darwin",
+    "bundleName": "Termius.app",
+    "identifier": "com.baicie.termius",
+    "version": "0.0.1-dev.4-local",
+    "arch": "arm64",
+    "executable": "terminal",
+    "checks": [
+      "dmg mounted read-only",
+      "plist identity and executable read"
+    ],
+    "status": "PASS",
+    "expected": {
+      "sha256": "00afd8ff0752f9c9f80337a489c500d3e0a7ebf4f07d640aa17cda1ea6c08f0e",
+      "version": "0.0.1-dev.4-local",
+      "identifier": "com.baicie.termius"
+    },
+    "problems": []
+  },
+  "schema": {
+    "beforeTables": [
+      "command_history",
+      "connection_logs",
+      "groups",
+      "hosts",
+      "known_hosts",
+      "port_forward_rules",
+      "script_executions",
+      "scripts",
+      "settings",
+      "snippet_packages",
+      "snippets",
+      "ssh_keys",
+      "sync_queue",
+      "team_audit_logs",
+      "team_invites",
+      "team_members",
+      "team_shared_hosts",
+      "team_shared_snippets",
+      "teams",
+      "user_profile",
+      "workspace_layouts",
+      "workspaces"
+    ],
+    "beforeHostColumns": [
+      "id",
+      "name",
+      "hostname",
+      "port",
+      "username",
+      "auth_type",
+      "password",
+      "private_key",
+      "certificate",
+      "group_id",
+      "is_favorite",
+      "color",
+      "tags",
+      "port_forwards",
+      "startup_command",
+      "environment",
+      "jump_host_id",
+      "jump_host_auth_type",
+      "created_at",
+      "updated_at"
+    ],
+    "afterTables": [
+      "command_history",
+      "connection_logs",
+      "groups",
+      "hosts",
+      "known_hosts",
+      "port_forward_rules",
+      "script_executions",
+      "scripts",
+      "settings",
+      "snippet_packages",
+      "snippets",
+      "ssh_keys",
+      "sync_queue",
+      "team_audit_logs",
+      "team_invites",
+      "team_members",
+      "team_shared_hosts",
+      "team_shared_snippets",
+      "teams",
+      "user_profile",
+      "workspace_layouts",
+      "workspaces"
+    ],
+    "afterHostColumns": [
+      "id",
+      "name",
+      "hostname",
+      "port",
+      "username",
+      "auth_type",
+      "password",
+      "private_key",
+      "certificate",
+      "group_id",
+      "is_favorite",
+      "color",
+      "tags",
+      "port_forwards",
+      "startup_command",
+      "environment",
+      "jump_host_id",
+      "jump_host_auth_type",
+      "created_at",
+      "updated_at",
+      "agent_forwarding",
+      "shell_integration"
+    ],
+    "addedHostColumns": [
+      "agent_forwarding",
+      "shell_integration"
+    ]
+  },
+  "checks": [
+    {
+      "name": "A metadata",
+      "status": "PASS",
+      "detail": "0.0.1-dev.1 73cf7483e912af33"
+    },
+    {
+      "name": "B metadata",
+      "status": "PASS",
+      "detail": "0.0.1-dev.4-local 00afd8ff0752f9c9"
+    },
+    {
+      "name": "install A",
+      "status": "PASS",
+      "detail": "/Users/runner/work/terminal/terminal/upgrade-current-downgrade/terminal-upgrade-w1vj5A/Applications/Termius.app"
+    },
+    {
+      "name": "A database created",
+      "status": "PASS",
+      "detail": "/Users/runner/work/terminal/terminal/upgrade-current-downgrade/terminal-upgrade-w1vj5A/home/Library/Application Support/com.baicie.termius/terminal.db"
+    },
+    {
+      "name": "A schema ready",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "A stopped",
+      "status": "PASS",
+      "detail": "sigkill"
+    },
+    {
+      "name": "seed A data",
+      "status": "PASS",
+      "detail": "compatible with A schema"
+    },
+    {
+      "name": "A read-back snapshot",
+      "status": "PASS",
+      "detail": "hosts/settings/workspace/layout/vault readable"
+    },
+    {
+      "name": "install B",
+      "status": "PASS",
+      "detail": "/Users/runner/work/terminal/terminal/upgrade-current-downgrade/terminal-upgrade-w1vj5A/Applications/Termius.app"
+    },
+    {
+      "name": "B migration",
+      "status": "PASS",
+      "detail": "agent_forwarding,shell_integration"
+    },
+    {
+      "name": "pre-migration backup",
+      "status": "PASS",
+      "detail": "/Users/runner/work/terminal/terminal/upgrade-current-downgrade/terminal-upgrade-w1vj5A/home/Library/Application Support/com.baicie.termius/backups/pre-migration-1793860444978.db"
+    },
+    {
+      "name": "B stopped",
+      "status": "PASS",
+      "detail": "sigkill"
+    },
+    {
+      "name": "data integrity after B",
+      "status": "PASS",
+      "detail": "field-by-field"
+    },
+    {
+      "name": "Team Sync local persistence",
+      "status": "PASS",
+      "detail": "teams/members/shared hosts/sync_queue/user_profile"
+    },
+    {
+      "name": "backup readable",
+      "status": "PASS",
+      "detail": "/Users/runner/work/terminal/terminal/upgrade-current-downgrade/terminal-upgrade-w1vj5A/home/Library/Application Support/com.baicie.termius/backups/pre-migration-1793860444978.db"
+    },
+    {
+      "name": "downgrade readability",
+      "status": "PASS",
+      "detail": "A reads the additive post-migration schema"
+    },
+    {
+      "name": "downgrade did not destroy data",
+      "status": "PASS",
+      "detail": "b2cc6c3ecb961431"
+    }
+  ],
+  "notRun": [
+    "real Vault master-password unlock (requires interactive credential; file persistence is asserted only)",
+    "incompatible-schema downgrade refusal (dev.1 reads the additive current schema; a non-additive future schema is not tested)",
+    "Linux and Windows adapters (NOT_RUN in this first implementation)",
+    "Gatekeeper / notarization / Authenticode (BLOCKED_EXTERNAL)",
+    "disk-full (read-only data directory is covered; installer media read-only is not)"
+  ],
+  "logs": {
+    "a": "/Users/runner/work/terminal/terminal/upgrade-current-downgrade/terminal-upgrade-w1vj5A/logs/a.log",
+    "b": "/Users/runner/work/terminal/terminal/upgrade-current-downgrade/terminal-upgrade-w1vj5A/logs/b.log"
+  },
+  "status": "PASS"
+}
