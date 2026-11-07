@@ -13,9 +13,7 @@ import { cn } from '@/lib/utils'
 import { uploadPaths } from '@/service/sftp-transfer'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
-import { DeleteDialog } from './components/delete-dialog'
-import { RenameDialog } from './components/rename-dialog'
-import { MkdirDialog } from './components/mkdir-dialog'
+import { SftpDialogs } from './components/sftp-dialogs'
 import TransferPanel from './transfer-panel'
 import { useSftpDrop } from './use-sftp-drop'
 import { useSftpRemote } from './hooks/use-sftp-remote'
@@ -164,32 +162,28 @@ const SftpContainer: React.FC = () => {
         }}
       />
 
-      <DeleteDialog
-        open={deleteOpen}
-        file={fileToDelete}
-        onOpenChange={setDeleteOpen}
-        onConfirm={() => {
+      <SftpDialogs
+        deleteOpen={deleteOpen}
+        fileToDelete={fileToDelete}
+        onDeleteOpenChange={setDeleteOpen}
+        onDeleteConfirm={() => {
           if (fileToDelete) void remote.deleteFile(fileToDelete)
           setFileToDelete(null)
         }}
-      />
-      <RenameDialog
-        open={renameOpen}
-        file={fileToRename}
-        onOpenChange={v => {
+        renameOpen={renameOpen}
+        fileToRename={fileToRename}
+        onRenameOpenChange={v => {
           setRenameOpen(v)
           if (!v) setFileToRename(null)
         }}
-        onConfirm={newName => {
+        onRenameConfirm={newName => {
           void remote.renameFile(fileToRename!, newName)
           setRenameOpen(false)
           setFileToRename(null)
         }}
-      />
-      <MkdirDialog
-        open={mkdirOpen}
-        onOpenChange={setMkdirOpen}
-        onConfirm={name => {
+        mkdirOpen={mkdirOpen}
+        onMkdirOpenChange={setMkdirOpen}
+        onMkdirConfirm={name => {
           void remote.mkdir(name)
           setMkdirOpen(false)
         }}

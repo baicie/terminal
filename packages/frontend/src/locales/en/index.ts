@@ -1,4 +1,5 @@
 import app from './app'
+import common from './common'
 import cmdPalette from './cmdPalette'
 import home from './home'
 import hosts from './hosts'
@@ -18,6 +19,7 @@ import workspace from './workspace'
 
 export default {
   ...app,
+  ...common,
   ...cmdPalette,
   ...home,
   ...hosts,

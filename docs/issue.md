@@ -5291,6 +5291,7 @@ Update checks need the desktop app." 等仍是英文；懒加载路由显示硬�
 
 **修复**: 接入 `useTranslation`，复用已有键；补齐 cursor 选项、更新检查、区域、
 团队状态、导入计数等单位文案（en/cn/fr 三语）；主机新建/编辑对话框（含认证、
-高级字段、环境变量）与端口转发对话框同样接入 `hosts.form.*` / `portForward.*`；
+高级字段、环境变量）、端口转发、钥匙串、SFTP、代码片段、团队、已知主机、
+命令面板、日志与串口同样接入区域键；
 vitest 增加全局 i18n 初始化；`update-check.test.tsx` 显式固定英文断言。翻译键一致性测试（`translation-keys.test.ts`）与前端全量
 156 文件/1416 项通过。
