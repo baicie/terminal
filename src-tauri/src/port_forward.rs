@@ -10,7 +10,6 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-use tokio::sync::Mutex as TokioMutex;
 use tokio::task::JoinHandle;
 
 /// Type alias for SSH session handle wrapped in Arc
@@ -462,6 +461,26 @@ async fn run_dynamic_forward(
 // Bidirectional forwarding between an SSH channel and a TCP socket
 // ============================================================================
 
+/// Reads from the local socket and hands bytes to the SSH side. Kept separate
+/// from the write half so neither direction waits on the other.
+async fn pipe_socket_to_channel<R>(mut reader: R, tx: mpsc::Sender<Vec<u8>>)
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut buf = [0u8; 8192];
+    loop {
+        match reader.read(&mut buf).await {
+            Ok(0) => break,
+            Ok(n) => {
+                if tx.send(buf[..n].to_vec()).await.is_err() {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+}
+
 async fn forward_socket<S>(
     handle: SshHandle,
     channel_id: ChannelId,
@@ -471,27 +490,14 @@ async fn forward_socket<S>(
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static + Unpin,
 {
-    let socket = Arc::new(TokioMutex::new(socket));
-    let s_read = socket.clone();
-    let s_write = socket.clone();
+    // A single mutex across read and write serialises the two directions:
+    // the reader holds it while waiting for bytes, so a response can never be
+    // written (a full-duplex deadlock). Split the stream instead.
+    let (mut s_read, mut s_write) = tokio::io::split(socket);
     let h = handle.clone();
     let (tx, mut rx) = mpsc::channel::<Vec<u8>>(1024);
 
-    let reader = async move {
-        let mut buf = [0u8; 8192];
-        loop {
-            match s_read.lock().await.read(&mut buf).await {
-                Ok(0) => break,
-                Ok(n) => {
-                    if tx.send(buf[..n].to_vec()).await.is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-        drop(tx);
-    };
+    let reader = pipe_socket_to_channel(s_read, tx);
 
     let writer = async move {
         loop {
@@ -512,17 +518,17 @@ where
                 msg = channel.wait() => {
                     match msg {
                         Some(russh::ChannelMsg::Data { data }) => {
-                            if s_write.lock().await.write_all(&data).await.is_err() {
+                            if s_write.write_all(&data).await.is_err() {
                                 break;
                             }
                         }
                         Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
-                            if s_write.lock().await.write_all(&data).await.is_err() {
+                            if s_write.write_all(&data).await.is_err() {
                                 break;
                             }
                         }
                         Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) => {
-                            let _ = s_write.lock().await.shutdown().await;
+                            let _ = s_write.shutdown().await;
                             break;
                         }
                         None => break,
@@ -531,7 +537,7 @@ where
                 }
             }
         }
-        let _ = s_write.lock().await.shutdown().await;
+        let _ = s_write.shutdown().await;
     };
 
     tokio::join!(reader, writer);
@@ -823,14 +829,51 @@ pub async fn port_forward_list(
 #[cfg(test)]
 mod tests {
     use super::{
-        accept_backoff, bind_tcp_listener, is_fatal_accept_error, unregister_forward_sender_by_key,
-        ACCEPT_BACKOFF_CAP, ACCEPT_BACKOFF_START,
+        accept_backoff, bind_tcp_listener, is_fatal_accept_error, pipe_socket_to_channel,
+        unregister_forward_sender_by_key, ACCEPT_BACKOFF_CAP, ACCEPT_BACKOFF_START,
     };
     use crate::errors::PortForwardError;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::sync::mpsc;
 
     #[test]
     fn unregister_forward_sender_by_key_is_synchronous() {
         assert_eq!(unregister_forward_sender_by_key(usize::MAX), ());
+    }
+
+    #[tokio::test]
+    async fn socket_reader_does_not_block_the_write_direction() {
+        let (local, remote) = tokio::io::duplex(64);
+        let (mut local_read, mut local_write) = tokio::io::split(local);
+        let (remote_read, mut remote_write) = tokio::io::split(remote);
+        let (tx, mut rx) = mpsc::channel(8);
+        let reader = tokio::spawn(pipe_socket_to_channel(remote_read, tx));
+        let writer = tokio::spawn(async move {
+            while let Some(data) = rx.recv().await {
+                if remote_write.write_all(&data).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        // The reader is idle waiting for more bytes; a response must still get
+        // through the write direction within the deadline.
+        local_write.write_all(b"ping").await.expect("write request");
+        let mut buf = [0u8; 4];
+        tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            local_read.read_exact(&mut buf),
+        )
+        .await
+        .expect("a response must not wait for the idle read direction")
+        .expect("read response");
+        assert_eq!(&buf, b"ping");
+
+        // The split halves keep the duplex stream alive; abort the reader so the
+        // test does not wait for an EOF that only both halves could produce.
+        reader.abort();
+        drop(local_write);
+        let _ = writer.await;
     }
 
     #[tokio::test]
