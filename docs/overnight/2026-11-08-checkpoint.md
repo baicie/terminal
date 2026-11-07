@@ -18,6 +18,13 @@
   仓库未安装 Playwright。`UI_SCREENSHOT_EVIDENCE=NOT_RUN`（不伪造浏览器 mock 截图）。
 - Settings 响应式：Tabs 改为 `grid-cols-3 sm:grid-cols-6`，窄屏两行。
 
+## P2 审查结果（详见 docs/phase9-7/overnight-review-findings.md）
+
+- 已修复：本地团队共享被云同步删除、敏感态冲突覆盖、DELETE push、resync 不完整清理、
+  SFTP 会话泄漏、端口转发全双工死锁。
+- 已记录未修：-R 远端转发未接线、SSH writer 超时竞态、协议 1 无游标首同步截断、
+  teamApi 单例跨 endpoint、上传截断远端文件、SFTP mtime。
+
 ## 已完成的 P1
 
 - [x] Settings：loading/ready/error 状态机、失败重试、未保存标记与离开回滚。
@@ -44,7 +51,7 @@
 
 ## 正在执行
 
-- P2：核心实现风险审查（两个只读子代理并行）
+- 源码冻结前的全量门禁与证据重采
 
 ## 下一步精确命令
 

@@ -34,7 +34,9 @@ export {
  *
  * Only rows that belong to a cloud team in the same endpoint scope are eligible:
  * local-mode teams exist solely on this device and a different endpoint's teams
- * are not covered by the server's answer. Rows with `version IS NULL` or
+ * are not covered by the server's answer; a team stored before it carried an
+ * endpoint (NULL) still belongs to this device's current scope. Rows with
+ * `version IS NULL` or
  * `dirty = 1` are local edits the server has never acknowledged, so they are
  * never deleted here.
  */
@@ -42,27 +44,30 @@ export async function removeUnauthorizedTeamShares(
   authorizedTeamIds: string[],
   scopeEndpoint?: string,
 ): Promise<void> {
-  const params: unknown[] = []
-  const filters = [
-    "team_id IN (SELECT id FROM teams WHERE mode = 'cloud')",
-    'dirty = 0',
-    'version IS NOT NULL',
-  ]
-  if (scopeEndpoint !== undefined) {
-    filters.push('team_id IN (SELECT id FROM teams WHERE endpoint = ?)')
-    params.push(scopeEndpoint)
-  }
-  if (authorizedTeamIds.length > 0) {
-    filters.push(
-      `team_id NOT IN (${authorizedTeamIds.map(() => '?').join(', ')})`,
+  const cloudTeams = await select<{ id: string, endpoint: string | null }>(
+    "SELECT id, endpoint FROM teams WHERE mode = 'cloud'",
+  )
+  const authorized = new Set(authorizedTeamIds)
+  const targetTeams = cloudTeams
+    .filter(team =>
+      scopeEndpoint === undefined
+      || team.endpoint === null
+      || team.endpoint === scopeEndpoint,
     )
-    params.push(...authorizedTeamIds)
+    .map(team => team.id)
+    .filter(id => !authorized.has(id))
+  if (targetTeams.length === 0) return
+  const placeholders = targetTeams.map(() => '?').join(', ')
+  for (const table of ['team_shared_hosts', 'team_shared_snippets']) {
+    await executeQuery(
+      `DELETE FROM ${table}
+       WHERE team_id IN (${placeholders})
+         AND dirty = 0
+         AND version IS NOT NULL`,
+      targetTeams,
+    )
   }
-  const where = ` WHERE ${filters.join(' AND ')}`
-  await executeQuery(`DELETE FROM team_shared_hosts${where}`, params)
-  await executeQuery(`DELETE FROM team_shared_snippets${where}`, params)
 }
-
 /**
  * Delete the local shares a complete resynchronization proved the server no longer
  * has.
