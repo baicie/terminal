@@ -258,7 +258,7 @@ async function runVerify(
   const storedHosts = seed.hostIds.length < 2
     ? []
     : seed.hostIds.map(id => hostData(client.db, id))
-  if (storedHosts.length !== 2 || storedHosts.some(value => value === null)) {
+  if (storedHosts.length !== 2 || storedHosts.includes(null)) {
     failures.push('the historical client lost a local host during the rejected sync')
   }
   const snippetCount = count(client.db, 'team_shared_snippets', bootstrap.teamId)
