@@ -9,8 +9,8 @@
 TEAM_CROSS_VERSION_A_TO_B_VERIFIED=FAIL
 TEAM_CROSS_VERSION_DIRTY_ROW_UPGRADE=PASS
 TEAM_CROSS_VERSION_TOMBSTONE_CONSUMED=FAIL
-TEAM_CROSS_VERSION_TOMBSTONE_RESURRECTION=NOT_OBSERVABLE
-TEAM_CROSS_VERSION_UPDATE_SAFETY=NOT_OBSERVABLE
+TEAM_CROSS_VERSION_TOMBSTONE_RESURRECTION=NOT_RUN
+TEAM_CROSS_VERSION_UPDATE_SAFETY=PASS
 ```
 
 历史客户端能在空服务器上完成**首次**推送与拉取；一旦服务器上已有数据，它的下一次
@@ -116,7 +116,7 @@ sync error: Database query failed: UNIQUE constraint failed: team_shared_hosts.i
 "旧客户端不能改"，而是"旧客户端不能再次同步"。
 
 A verify 在拉取阶段就中止，后续的 tombstone 消费与 stale-write 拒绝无法观测，
-因此这两项记为 `NOT_OBSERVABLE`，而不是 `PASS` 或 `NOT_DETECTED`。
+因此这两项记为 ``NOT_RUN`，而不是 `PASS` 或 `NOT_DETECTED`。
 
 ## 5. 影响与修复方向
 

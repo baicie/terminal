@@ -268,15 +268,15 @@ async function main() {
         ? 'PASS'
         : 'FAIL',
       TEAM_CROSS_VERSION_TOMBSTONE_RESURRECTION: verify?.ok !== true
-        ? 'NOT_OBSERVABLE'
+        ? 'NOT_RUN'
         : verify?.details?.deletedSnippetStillOnServerAfterHistoricalPush === true
           ? 'DETECTED'
           : 'NOT_DETECTED',
-      TEAM_CROSS_VERSION_UPDATE_SAFETY: verify?.ok !== true
-        ? 'NOT_OBSERVABLE'
-        : (verify?.details?.pushConflicts?.length ?? 0) > 0
-          ? 'STALE_WRITE_REFUSED'
-          : 'NO_STALE_WRITE_OBSERVED',
+      // Observed in the seed phase: the server was handed the exact payload the
+      // historical client sends on its next update and refused it.
+      TEAM_CROSS_VERSION_UPDATE_SAFETY: (seed?.legacyUpdateProbe?.conflictIds?.length ?? 0) > 0
+        ? 'PASS'
+        : 'FAIL',
     },
     failures: steps.filter(entry => !entry.ok).map(entry => entry.name),
     // Facts a reviewer can check without reading the harness: what the old

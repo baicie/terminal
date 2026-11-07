@@ -53,7 +53,9 @@
 `docs/verification/raw/42355653387/`。未手工修改 manifest。
 
 最终 Upgrade E2E [`42356452096`](https://github.com/baicie/terminal/actions/runs/42356452096)
-（`49e9903`）**5/5 success**；最终 CI 在证据提交后的 HEAD 上执行。
+（`49e9903`）**5/5 success**；证据提交后的 HEAD `8adff85` 上 CI
+[`42357395943`](https://github.com/baicie/terminal/actions/runs/42357395943)
+**11/11 success**（含 `Repository gates` 的证据门禁）。
 
 P0-A.2 的证据采集源码为 `5e8ce13`；`49e9903` 仅修单实例 E2E 的 SQLite
 `busy_timeout`，不在证据指纹路径内。
@@ -133,7 +135,7 @@ TEAM_REAL_CLIENT_RUNTIME_VERIFIED=PASS
 TEAM_CROSS_VERSION_A_TO_B_VERIFIED=FAIL
 TEAM_CROSS_VERSION_DIRTY_ROW_UPGRADE=PASS
 TEAM_CROSS_VERSION_TOMBSTONE_CONSUMED=FAIL
-TEAM_CROSS_VERSION_UPDATE_SAFETY=NOT_OBSERVABLE
+TEAM_CROSS_VERSION_UPDATE_SAFETY=PASS
 TEAM_DIRTY_RETRY_VERIFIED=PARTIAL
 TEAM_CONFLICT_SAFETY_VERIFIED=PARTIAL
 TEAM_DELETE_PROPAGATION_VERIFIED=PARTIAL

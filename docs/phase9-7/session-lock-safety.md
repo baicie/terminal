@@ -88,7 +88,7 @@ VAULT_CROSS_VERSION_VERIFIED=NOT_RUN
 
 - Upgrade E2E `42356452096`（`49e9903`）5/5：单实例与 Vault 报告 PASS；
 - 六份证据 `42355653387`（`5e8ce13`）3/3，指纹 `43fdc334…`，门禁 0；
-- 最终 CI 在证据提交后的 HEAD 上执行。
+- 最终 CI `42357395943`（`8adff85`）**11/11**，`Repository gates` 使用同一指纹且为绿。
 
 ## 7. 未闭合
 
