@@ -1,4 +1,5 @@
 import type { Host } from '@/types'
+import { useTranslation } from 'react-i18next'
 import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -32,6 +33,7 @@ export const HostFormActions: React.FC<HostFormActionsProps> = ({
   onDeleteDialogOpenChange,
   onSubmit,
 }) => {
+  const { t } = useTranslation()
   return (
     <div className="p-4 border-t flex justify-between">
       <div>
@@ -41,19 +43,18 @@ export const HostFormActions: React.FC<HostFormActionsProps> = ({
             onOpenChange={onDeleteDialogOpenChange}
           >
             <AlertDialogTrigger asChild>
-              <Button variant="destructive">Delete</Button>
+              <Button variant="destructive">{t('common.delete')}</Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Delete Host</AlertDialogTitle>
+                <AlertDialogTitle>{t('hosts.form.deleteHost')}</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Are you sure you want to delete "{host.name}
-                  "? This action cannot be undone.
+                  {t('hosts.form.deleteConfirm', { name: host.name })}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={onDelete}>Delete</AlertDialogAction>
+                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                <AlertDialogAction onClick={onDelete}>{t('common.delete')}</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -61,10 +62,10 @@ export const HostFormActions: React.FC<HostFormActionsProps> = ({
       </div>
       <div className="flex gap-2">
         <Button variant="outline" onClick={onClose}>
-          Cancel
+          {t('common.cancel')}
         </Button>
         <Button onClick={onSubmit} disabled={saving}>
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? t('hosts.form.saving') : t('common.save')}
         </Button>
       </div>
     </div>

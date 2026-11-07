@@ -1,4 +1,5 @@
 import type { AuthType } from '@/types'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -43,12 +44,13 @@ export function AuthFields({
   onPrivateKeyChange,
   onCertificateChange,
 }: AuthFieldsProps) {
+  const { t } = useTranslation()
   return (
     <>
       {authType === 'password' && (
         <div className="col-span-2">
           <Label htmlFor="password" className="text-sm font-medium mb-1 block">
-            Password
+            {t('hosts.form.password')}
           </Label>
           <Input
             id="password"
@@ -64,7 +66,7 @@ export function AuthFields({
         <>
           <div className="col-span-2">
             <Label htmlFor="privateKey" className="text-sm font-medium mb-1 block">
-              Private Key
+              {t('hosts.form.privateKey')}
             </Label>
             <div className="flex gap-2">
               <Textarea
@@ -81,13 +83,13 @@ export function AuthFields({
                   browseFile(['pem', 'key', 'ppk', '*'], onPrivateKeyChange)
                 }
               >
-                Browse
+                {t('hosts.form.browse')}
               </Button>
             </div>
           </div>
           <div className="col-span-2">
             <Label htmlFor="passphrase" className="text-sm font-medium mb-1 block">
-              Key Passphrase (optional)
+              {t('hosts.form.keyPassphrase')}
             </Label>
             <Input
               id="passphrase"
@@ -103,8 +105,7 @@ export function AuthFields({
       {authType === 'agent' && (
         <div className="col-span-2 rounded-md border border-border bg-muted/30 p-3">
           <p className="text-sm text-muted-foreground">
-            Uses your system SSH agent (e.g., ssh-agent, Pageant, Windows OpenSSH
-            Agent) for authentication. No password or key file required.
+            {t('hosts.form.agentHint')}
           </p>
         </div>
       )}
@@ -113,7 +114,7 @@ export function AuthFields({
         <>
           <div className="col-span-2">
             <Label htmlFor="certificate" className="text-sm font-medium mb-1 block">
-              SSH Certificate
+              {t('hosts.form.certificate')}
             </Label>
             <div className="flex gap-2">
               <Textarea
@@ -130,16 +131,16 @@ export function AuthFields({
                   browseFile(['crt', 'cert', '*'], onCertificateChange)
                 }
               >
-                Browse
+                {t('hosts.form.browse')}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              OpenSSH user certificate (base64-encoded, signed by a CA key)
+              {t('hosts.form.certificateHint')}
             </p>
           </div>
           <div className="col-span-2">
             <Label htmlFor="signingKey" className="text-sm font-medium mb-1 block">
-              Signing Private Key
+              {t('hosts.form.signingKey')}
             </Label>
             <div className="flex gap-2">
               <Textarea
@@ -156,16 +157,16 @@ export function AuthFields({
                   browseFile(['pem', 'key', 'ppk', '*'], onPrivateKeyChange)
                 }
               >
-                Browse
+                {t('hosts.form.browse')}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Private key used to present the certificate to the server
+              {t('hosts.form.signingKeyHint')}
             </p>
           </div>
           <div className="col-span-2">
             <Label htmlFor="keyPassphrase" className="text-sm font-medium mb-1 block">
-              Key Passphrase (optional)
+              {t('hosts.form.keyPassphrase')}
             </Label>
             <Input
               id="keyPassphrase"
@@ -175,7 +176,7 @@ export function AuthFields({
               placeholder="••••••••"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              Passphrase for the signing private key
+              {t('hosts.form.passphraseHint')}
             </p>
           </div>
         </>

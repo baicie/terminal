@@ -1,4 +1,5 @@
 import { Network, Plus, Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import * as React from 'react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -34,6 +35,7 @@ interface EnvironmentVariablesDialogProps {
 export const EnvironmentVariablesDialog: React.FC<
   EnvironmentVariablesDialogProps
 > = ({ open, onClose, envVars, onSave }) => {
+  const { t } = useTranslation()
   const [localEnvVars, setLocalEnvVars] = useState<EnvVarRow[]>(() =>
     envVars.map(toEnvVarRow),
   )
@@ -94,15 +96,14 @@ export const EnvironmentVariablesDialog: React.FC<
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Network className="size-5" />
-            Environment Variables
+            {t('hosts.form.environment')}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3 max-h-80 overflow-y-auto py-2">
           {localEnvVars.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">
-              No environment variables configured. Click "Add Variable" to add
-              one.
+              {t('hosts.form.environmentEmpty')}
             </p>
           ) : (
             localEnvVars.map((env, index) => (
@@ -139,15 +140,15 @@ export const EnvironmentVariablesDialog: React.FC<
             onClick={handleAddVariable}
           >
             <Plus className="size-4 mr-1" data-icon="inline-start" />
-            Add Variable
+            {t('hosts.form.addVariable')}
           </Button>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
-          <Button onClick={handleSave}>Save</Button>
+          <Button onClick={handleSave}>{t('common.save')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

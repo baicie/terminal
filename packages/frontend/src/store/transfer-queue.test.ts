@@ -5,7 +5,7 @@
  * bytesTotal=0, concurrent updates, speed calculation), useActiveTransfers selector.
  */
 
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { useTransferQueue } from './transfer-queue'
 
 function reset() {

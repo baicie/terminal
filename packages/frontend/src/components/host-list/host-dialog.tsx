@@ -1,6 +1,7 @@
 import type { Host } from '@/types'
 import * as React from 'react'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from '@/components/ui/sonner'
 import PortForwardDialog from '@/components/port-forward'
 import { EnvironmentVariablesDialog } from './environment-dialog'
@@ -45,6 +46,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
   host,
   onClose,
 }) => {
+  const { t } = useTranslation()
   const hostStore = useHostStore()
   const groups = useHostStore(s => s.groups)
   const hosts = useHostStore(s => s.hosts)
@@ -96,9 +98,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
 
   const handleSubmit = async () => {
     if (!form.name || !form.hostname || !form.username) {
-      toast.error(
-        'Please fill in all required fields (name, hostname, username)',
-      )
+      toast.error(t('hosts.toast.requiredFields'))
       return
     }
     setSaving(true)
@@ -108,11 +108,11 @@ export const HostDialog: React.FC<HostDialogProps> = ({
       } else {
         await hostStore.addHost(form)
       }
-      toast.success(host ? 'Host updated' : 'Host created')
+      toast.success(host ? t('hosts.toast.updated') : t('hosts.toast.created'))
       onClose()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      toast.error('Failed to save host', { description: msg })
+      toast.error(t('hosts.toast.saveFailed'), { description: msg })
     } finally {
       setSaving(false)
     }
@@ -137,7 +137,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
       <div className="w-[500px] max-h-[80vh] bg-background rounded-lg shadow-xl overflow-hidden flex flex-col">
         <div className="p-4 border-b">
           <h2 className="text-lg font-semibold">
-            {host ? 'Edit Host' : 'New Host'}
+            {host ? t('hosts.form.editHost') : t('hosts.form.newHost')}
           </h2>
         </div>
 

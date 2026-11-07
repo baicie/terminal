@@ -1,5 +1,6 @@
 import type { AuthType, Host } from '@/types'
 import { Network } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -28,11 +29,12 @@ export function HostDialogAdvancedFields({
   onOpenEnvironment,
   onOpenPortForwards,
 }: HostDialogAdvancedFieldsProps) {
+  const { t } = useTranslation()
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="col-span-2">
         <Label htmlFor="authType" className="text-sm font-medium mb-1 block">
-          Authentication
+          {t('hosts.form.authentication')}
         </Label>
         <Select
           value={form.authType}
@@ -42,10 +44,10 @@ export function HostDialogAdvancedFields({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="password">Password</SelectItem>
-            <SelectItem value="key">SSH Key</SelectItem>
-            <SelectItem value="agent">SSH Agent</SelectItem>
-            <SelectItem value="cert">SSH Certificate</SelectItem>
+            <SelectItem value="password">{t('hosts.form.password')}</SelectItem>
+            <SelectItem value="key">{t('hosts.form.sshKey')}</SelectItem>
+            <SelectItem value="agent">{t('hosts.form.sshAgent')}</SelectItem>
+            <SelectItem value="cert">{t('hosts.form.sshCertificate')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -62,14 +64,14 @@ export function HostDialogAdvancedFields({
 
       <div className="col-span-2 flex items-start justify-between gap-4 rounded-md border p-3">
         <div className="space-y-1">
-          <Label htmlFor="agentForwarding">Forward SSH agent</Label>
+          <Label htmlFor="agentForwarding">{t('hosts.form.forwardAgent')}</Label>
           <p className="text-xs text-muted-foreground">
-            Allow this host to use identities from your local SSH agent.
+            {t('hosts.form.forwardAgentDesc')}
           </p>
         </div>
         <Switch
           id="agentForwarding"
-          aria-label="Forward SSH agent"
+          aria-label={t('hosts.form.forwardAgent')}
           checked={form.agentForwarding ?? false}
           onCheckedChange={agentForwarding =>
             onChange({ ...form, agentForwarding })
@@ -82,7 +84,7 @@ export function HostDialogAdvancedFields({
           htmlFor="shellIntegration"
           className="text-sm font-medium mb-1 block"
         >
-          Remote Shell Integration
+          {t('hosts.form.shellIntegration')}
         </Label>
         <Select
           value={form.shellIntegration ?? 'off'}
@@ -98,13 +100,13 @@ export function HostDialogAdvancedFields({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="off">Disabled</SelectItem>
+            <SelectItem value="off">{t('hosts.form.disabled')}</SelectItem>
             <SelectItem value="bash">Bash</SelectItem>
             <SelectItem value="zsh">Zsh</SelectItem>
           </SelectContent>
         </Select>
         <p className="mt-1 text-xs text-muted-foreground">
-          Adds cwd and command status markers only when explicitly enabled.
+          {t('hosts.form.shellIntegrationDesc')}
         </p>
       </div>
 
@@ -113,7 +115,7 @@ export function HostDialogAdvancedFields({
           htmlFor="startupCommand"
           className="text-sm font-medium mb-1 block"
         >
-          Startup Command (optional)
+          {t('hosts.form.startupCommand')}
         </Label>
         <Input
           id="startupCommand"
@@ -125,11 +127,13 @@ export function HostDialogAdvancedFields({
 
       <div className="col-span-2">
         <Label className="text-sm font-medium mb-1 block">
-          Environment Variables
+          {t('hosts.form.environment')}
         </Label>
         <Button variant="outline" size="sm" onClick={onOpenEnvironment}>
           <Network className="size-4 mr-1" />
-          Configure Environment ({Object.keys(form.environment || {}).length})
+          {t('hosts.form.configureEnvironment', {
+            count: Object.keys(form.environment || {}).length,
+          })}
         </Button>
       </div>
 
@@ -138,7 +142,7 @@ export function HostDialogAdvancedFields({
           htmlFor="portForwards"
           className="text-sm font-medium mb-1 block"
         >
-          Port Forwards
+          {t('hosts.form.portForwards')}
         </Label>
         <Button
           id="portForwards"
@@ -147,7 +151,9 @@ export function HostDialogAdvancedFields({
           onClick={onOpenPortForwards}
         >
           <Network className="size-4 mr-1" />
-          Configure Port Forwards ({form.portForwards?.length || 0})
+          {t('hosts.form.configurePortForwards', {
+            count: form.portForwards?.length || 0,
+          })}
         </Button>
       </div>
     </div>
