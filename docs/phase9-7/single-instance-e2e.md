@@ -56,9 +56,15 @@
 
 ### 结果
 
-- 运行：待 `172207d` 的 Upgrade E2E 回填（run/job URL）。
-- 旧脚本已在 `3c8a919` 的 run `42342729294` 的 macOS current job 通过
-  （`Single-instance real process check | success`），但那版只覆盖场景 A。
+Upgrade E2E [`42344829575`](https://github.com/baicie/terminal/actions/runs/42344829575)
+（`c68aebb`）5/5 success；单实例步骤
+[job 128320197034](https://github.com/baicie/terminal/actions/runs/42344829575/job/128320197034) 的 `single-instance-report.json` 为 **PASS**：
+
+- 二进制 SHA 与 DMG SHA 校验通过；
+- 首进程启动；第二次启动 code 0、激活首进程、首进程存活、仅一个 `terminal.db`；
+- SIGKILL 后第三进程取得锁，读到 `before-kill` 行并写入 `after-kill` 行；
+- 不同 HOME 被全局身份拒绝；第三进程按请求退出；
+- 唯一 `NOT_RUN`：托盘/窗口焦点（headless runner 无窗口服务器观察者）。
 
 ## 5. 未闭合
 

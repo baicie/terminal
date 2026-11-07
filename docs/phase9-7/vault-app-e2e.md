@@ -61,8 +61,16 @@ probe 使用一次性的测试密码/秘密，只输出布尔值与阶段名；h
 
 ## 5. 结果
 
-- 运行：待 `172207d` 的 Upgrade E2E 回填（run/job URL）。
-- 失败/未执行时保持 FAIL/NOT_RUN，不写 PASS。
+Upgrade E2E [`42344829575`](https://github.com/baicie/terminal/actions/runs/42344829575)
+（`c68aebb`）的 Vault 步骤
+[job 128320197034](https://github.com/baicie/terminal/actions/runs/42344829575/job/128320197034)：`vault-app-report.json` 为 **PASS**。
+
+- 创建 Vault、写入秘密、锁定、错误密码拒绝、正确密码解锁并读取；
+- 改密后旧密码拒绝、新密码读取秘密；
+- 第二次启动：旧密码仍拒绝、新密码解锁、秘密完整（重启持久化）；
+- 日志不含任何测试密码或秘密；
+- 链路为 frontend `VaultService` → Tauri command → VaultState → 加密文件；
+  **UI 点击自动化 NOT_RUN**，A→B 跨版本 Vault **NOT_RUN**。
 
 ## 6. 未闭合
 

@@ -153,7 +153,7 @@
   直接调用 `plugin:sql|load` 的恶意 webview 不在本轮信任模型内（已记录）。
 - Vault 应用级：smoke 构建 + 隔离目录标记的服务级 probe，覆盖创建/锁定/解锁/
   错误密码/改密/重启持久化；UI 自动化与 A→B 跨版本仍 NOT_RUN。
-- 真实进程 E2E 与最终 CI：待本轮 run 回填。
+- 真实进程 E2E `42344829575`（`c68aebb`）5/5：单实例与 Vault 报告均 PASS；窗口焦点 NOT_RUN。
 
 ## 6. 判定
 

@@ -58,7 +58,10 @@ class MemoryStorage implements Storage {
 
 vi.mock('@tauri-apps/api/core', () => ({
   isTauri: () => true,
-  invoke: async () => ({ path: '/tmp/dual-snapshot.db', tables: 0, rows: 0 }),
+  invoke: async (command: string) =>
+    command === 'runtime_instance_lock_held'
+      ? true
+      : { path: '/tmp/dual-snapshot.db', tables: 0, rows: 0 },
 }))
 
 vi.mock('@tauri-apps/plugin-sql', () => ({
