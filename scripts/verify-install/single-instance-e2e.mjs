@@ -160,6 +160,7 @@ function databaseTables(dbPath) {
   try {
     const db = new DatabaseSync(dbPath, { readOnly: true })
     try {
+      db.exec('PRAGMA busy_timeout = 10000')
       return db
         .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
         .all()
@@ -175,6 +176,9 @@ function databaseTables(dbPath) {
 function writeProbeRow(dbPath, value) {
   const db = new DatabaseSync(dbPath)
   try {
+    // The running application may hold a short write transaction while it
+    // initialises; wait instead of failing the harness with SQLITE_BUSY.
+    db.exec('PRAGMA busy_timeout = 15000')
     db.exec('CREATE TABLE IF NOT EXISTS single_instance_probe (id TEXT PRIMARY KEY, value TEXT)')
     db.prepare('INSERT OR REPLACE INTO single_instance_probe (id, value) VALUES (?, ?)').run('p1', value)
   } finally {
@@ -185,11 +189,26 @@ function writeProbeRow(dbPath, value) {
 function readProbeRow(dbPath) {
   const db = new DatabaseSync(dbPath, { readOnly: true })
   try {
+    db.exec('PRAGMA busy_timeout = 10000')
     const row = db.prepare('SELECT value FROM single_instance_probe WHERE id = ?').get('p1')
     return row ? row.value : null
   } finally {
     db.close()
   }
+}
+
+async function writeProbeRowWithRetry(dbPath, value) {
+  let last = null
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      writeProbeRow(dbPath, value)
+      return
+    } catch (error) {
+      last = error
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+  }
+  throw last
 }
 
 function countDatabases(root) {
@@ -285,7 +304,7 @@ async function main() {
     )
     await waitForLog(first, 'database-recovery', 60_000, 'the first instance startup log')
     add('first instance spawned', 'PASS', 'pid=' + first.child.pid + ' db=' + db)
-    writeProbeRow(db, 'before-kill')
+    await writeProbeRowWithRetry(db, 'before-kill')
 
     const second = launch(binary, home, path.join(logs, 'second.log'), env)
     processes.push(second)
@@ -339,7 +358,7 @@ async function main() {
     const preserved = readProbeRow(db)
     add('the third instance reads the row written before the kill',
       preserved === 'before-kill' ? 'PASS' : 'FAIL', String(preserved))
-    writeProbeRow(db, 'after-kill')
+    await writeProbeRowWithRetry(db, 'after-kill')
     add('the third instance owns real database access',
       readProbeRow(db) === 'after-kill' ? 'PASS' : 'FAIL', 'probe row rewritten')
 

@@ -651,11 +651,13 @@ pnpm add <package-name>
 
 - ✅ **单实例**：`tauri-plugin-single-instance v2.5.5` 首个注册插件；第二次启动激活/重建主窗口；`instance.lock` 在任何数据库访问前持有，`RuntimeLockHandle` 校验 inode，锁文件被删除/替换即失效
 - ✅ **Retry 绕过封堵**：`retry_recovery(..., runtime_held)`、完成迁移、备份命令与前端 `getDb` 全部校验运行时锁；未持锁不得升级为 HEALTHY
+- ✅ **P0-A.2 会话锁闭合**：`getDb` 每次调用（含缓存/初始化中）校验锁；锁失效即关闭缓存句柄并阻断。锁身份取自已加锁 fd，Unix 对比 inode、拒绝 symlink/替换；Windows 用 creation_time+size 近似（PARTIAL）。plugin-sql 直接命令的信任边界已记录（不做前端万能声明）
 - ✅ **真实三进程 E2E**：从 B DMG 安装并校验 SHA；第二次启动 code 0 并激活首进程、仅一个 DB；SIGKILL 后第三进程取得锁、读到并改写 probe 行；E2E `42344829575`（`c68aebb`）**5/5**
 - ✅ **Vault 服务级应用链路**：smoke 构建 + 隔离标记触发的 `VaultService` probe，覆盖创建/锁定/错误密码/改密/重启持久化；结果经 `smoke-vault-probe` feature 写文件；密码/秘密不入日志。UI 自动化与 A→B 跨版本 **NOT_RUN**
 - 🟡 窗口焦点（headless）、Windows NSIS、Team Sync 跨版本、Updater runtime、AppImage stock 仍 **NOT_RUN/BLOCKED_EXTERNAL**
 - ✅ 最终 E2E `42348255027` 5/5、最终 CI `42348257607` 11/11（`e0dd992`）；证据矩阵 `42346192749` 3/3，指纹 `a0a76721…`，门禁 0 problem
-- 📋 判定见 `docs/phase9-7/phase9-7-product-acceptance.md`、`single-instance-e2e.md`、`vault-app-e2e.md`
+- ✅ **Vault 生产构建门禁**：无 feature 时 `vault_probe_report` no-op；生产 bundle 无 probe 常量、smoke overlay 有 probe，均有构建断言
+- 📋 判定见 `docs/phase9-7/phase9-7-product-acceptance.md`、`single-instance-e2e.md`、`vault-app-e2e.md`、`session-lock-safety.md`
 
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 

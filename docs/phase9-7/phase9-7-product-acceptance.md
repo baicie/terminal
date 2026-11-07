@@ -149,6 +149,15 @@ READY_FOR_RC=NO
 READY_FOR_RELEASE=NO
 ```
 
+## 相关文档
+
+- [single-instance-e2e.md](single-instance-e2e.md)
+- [vault-app-e2e.md](vault-app-e2e.md)
+- [session-lock-safety.md](session-lock-safety.md)
+- [team-sync-cross-version.md](team-sync-cross-version.md)
+- [updater-runtime.md](updater-runtime.md)
+- [rc-readiness.md](rc-readiness.md)
+
 ## 8. 未完成与 Phase 9.8 建议
 
 1. Windows 一次性 VM：SID/Profile/Known Folder/ACL 证明 + NSIS A→B + 卸载边界。

@@ -5180,6 +5180,13 @@ E2E `42189361366` 5/5，证据 `42214762202` 指纹 `c138d564…`。真实双进
 启动、Team 应用级 SIGKILL、Windows 完整文件系统矩阵/NSIS 仍 NOT_RUN/PARTIAL；
 见 `docs/phase9-6/phase9-6-2-recovery-concurrency.md`。
 
+**Phase 9.7 P0-A.2**：修复 `getDb` 只在校验首次连接的问题——缓存连接与初始化中
+Promise 在锁文件被删除/替换后仍可使用。现将运行时锁校验前置到每次 `getDb`，
+失效时关闭缓存句柄、清空 init、阻断启动；锁身份改为已加锁 fd 的 inode，
+拒绝 symlink/替换（Windows 用 creation_time+size 近似）。Vault probe 增加
+生产构建 no-op 与 bundle 断言。plugin-sql 直接命令仍受 capability 暴露，
+信任边界见 `docs/phase9-7/session-lock-safety.md`。
+
 **Phase 9.7 P0-A**：确认并修复运行时锁 Retry 绕过——setup 拿不到 `instance.lock`
 时只给出 MANUAL，原 `db_recovery_retry` 不复查锁，无标记时会 diagnose 为 HEALTHY
 并放行 UI。现由 `RuntimeInstanceLock` 统一所有权：Retry、迁移完成、备份命令与

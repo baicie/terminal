@@ -999,6 +999,7 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 | 绕过修复 | Retry/完成/备份/getDb 校验运行时锁；未持锁不升级 HEALTHY |
 | 真实 E2E | 三进程 SIGKILL/数据库读写/激活；E2E `42344829575` 5/5；证据与最终 CI 见后续 |
 | Vault | 服务级 probe（创建/锁定/改密/重启）；UI 与 A→B NOT_RUN |
+| 会话锁 | 缓存/初始化中每次校验；锁失效关闭句柄并阻断；fd inode 校验；生产构建无 Vault probe |
 | 未完成 | Windows NSIS、Team Sync 跨版本、Updater runtime、Linux AppImage stock |
 
 详见 `docs/phase9-7/phase9-7-product-acceptance.md`。
