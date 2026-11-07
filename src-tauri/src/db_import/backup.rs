@@ -79,9 +79,16 @@ pub struct BackupReport {
 pub async fn backup_database_before_migration<R: Runtime>(
     app: AppHandle<R>,
     lock: State<'_, crate::db_recovery::RecoveryLock>,
+    runtime: State<'_, crate::db_recovery::RuntimeInstanceLock>,
     targets: Option<Vec<crate::db_recovery::MigrationTarget>>,
     migration_id: Option<String>,
 ) -> Result<BackupReport, String> {
+    if !runtime.is_held() {
+        return Err(
+            "refusing to migrate without the runtime instance lock for this data directory"
+                .to_string(),
+        );
+    }
     let pool = super::sqlite_pool(&app).await?;
     let directory = backup_directory(&app)?;
     let destination = unique_destination(&directory)?;

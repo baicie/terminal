@@ -158,17 +158,68 @@ pub fn release_lock(lock: &RecoveryLock) {
 
 const RUNTIME_LOCK_FILE: &str = "instance.lock";
 
+/// The lock handle remembers the inode it was taken on. Deleting the lock path
+/// (or replacing it with a new file) must not leave the process believing it
+/// still owns the runtime lock.
+#[derive(Debug)]
+pub struct RuntimeLockHandle {
+    #[allow(dead_code)]
+    file: File,
+    path: PathBuf,
+    #[cfg(unix)]
+    device: u64,
+    #[cfg(unix)]
+    inode: u64,
+}
+
+impl RuntimeLockHandle {
+    fn still_owns_path(&self) -> bool {
+        let Ok(metadata) = fs::metadata(&self.path) else {
+            return false;
+        };
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            metadata.dev() == self.device && metadata.ino() == self.inode
+        }
+        #[cfg(not(unix))]
+        {
+            metadata.is_file()
+        }
+    }
+}
+
 /// Held for the whole process lifetime so a second process cannot open the
 /// database even if it bypasses the single-instance IPC (a direct binary
 /// launch, a different entry point, or a platform where the instance socket
 /// could not be created).
 #[derive(Default)]
-pub struct RuntimeInstanceLock(
-    // Held only for RAII: dropping the value releases the OS lock.
-    #[allow(dead_code)] pub StdMutex<Option<File>>,
-);
+pub struct RuntimeInstanceLock(StdMutex<Option<RuntimeLockHandle>>);
 
-pub fn acquire_runtime_lock(directory: &Path) -> Result<File, String> {
+impl RuntimeInstanceLock {
+    pub fn set(&self, handle: RuntimeLockHandle) {
+        if let Ok(mut guard) = self.0.lock() {
+            *guard = Some(handle);
+        }
+    }
+
+    /// The single backend invariant every database-writing path checks:
+    /// without this lock the process must not open or mutate the database.
+    /// A deleted or replaced lock path invalidates ownership.
+    pub fn is_held(&self) -> bool {
+        self.0
+            .lock()
+            .map(|guard| {
+                guard
+                    .as_ref()
+                    .map(RuntimeLockHandle::still_owns_path)
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    }
+}
+
+pub fn acquire_runtime_lock(directory: &Path) -> Result<RuntimeLockHandle, String> {
     fs::create_dir_all(directory)
         .map_err(|error| format!("could not create {}: {error}", directory.display()))?;
     let path = directory.join(RUNTIME_LOCK_FILE);
@@ -180,7 +231,25 @@ pub fn acquire_runtime_lock(directory: &Path) -> Result<File, String> {
         .open(&path)
         .map_err(|error| format!("could not open {}: {error}", path.display()))?;
     match file.try_lock() {
-        Ok(()) => Ok(file),
+        Ok(()) => {
+            let metadata = fs::metadata(&path)
+                .map_err(|error| format!("could not stat {}: {error}", path.display()))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                Ok(RuntimeLockHandle {
+                    file,
+                    path,
+                    device: metadata.dev(),
+                    inode: metadata.ino(),
+                })
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = metadata;
+                Ok(RuntimeLockHandle { file, path })
+            }
+        }
         Err(std::fs::TryLockError::WouldBlock) => {
             Err("another Terminal instance is already running with this data directory".to_string())
         }
@@ -190,7 +259,9 @@ pub fn acquire_runtime_lock(directory: &Path) -> Result<File, String> {
     }
 }
 
-pub fn acquire_runtime_lock_for<R: Runtime>(app: &AppHandle<R>) -> Result<File, String> {
+pub fn acquire_runtime_lock_for<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<RuntimeLockHandle, String> {
     let db = database_path(app)?;
     let directory = db
         .parent()
@@ -1164,6 +1235,14 @@ pub async fn startup_recovery_locked<R: Runtime>(app: &AppHandle<R>) -> Recovery
     result
 }
 
+/// The frontend's database service consults this before asking plugin-sql to
+/// open the file: a process without the instance lock must never reach the
+/// SQLite plugin either.
+#[tauri::command]
+pub fn runtime_instance_lock_held(runtime: State<'_, RuntimeInstanceLock>) -> bool {
+    runtime.is_held()
+}
+
 #[tauri::command]
 pub async fn db_recovery_status(
     verdict: State<'_, RecoveryVerdict>,
@@ -1182,7 +1261,16 @@ pub async fn retry_recovery(
     marker_dir: &Path,
     backups: &Path,
     lock: &RecoveryLock,
+    runtime_held: bool,
 ) -> RecoveryStatus {
+    // A retry must never upgrade a runtime-lock refusal to HEALTHY: without
+    // the instance lock this process may not open the database at all.
+    if !runtime_held {
+        return status(
+            RecoveryState::ManualInterventionRequired,
+            "this Terminal process does not own the runtime instance lock for the data directory",
+        );
+    }
     // Serialize against a backup/restore already running in this process, and
     // refuse while a migration transaction is still open.
     let operation = match lock.lock_operation().await {
@@ -1215,6 +1303,7 @@ pub async fn retry_recovery(
 pub async fn db_recovery_retry<R: Runtime>(
     app: AppHandle<R>,
     verdict: State<'_, RecoveryVerdict>,
+    runtime: State<'_, RuntimeInstanceLock>,
 ) -> Result<RecoveryStatus, String> {
     let (db, marker, backups) = match (database_path(&app), marker_path(&app), backups_path(&app)) {
         (Ok(db), Ok(marker), Ok(backups)) => (db, marker, backups),
@@ -1233,7 +1322,7 @@ pub async fn db_recovery_retry<R: Runtime>(
         .unwrap_or_else(|| Path::new(""))
         .to_path_buf();
     let lock = app.state::<RecoveryLock>();
-    let result = retry_recovery(&db, &directory, &backups, &lock).await;
+    let result = retry_recovery(&db, &directory, &backups, &lock, runtime.is_held()).await;
     *verdict
         .0
         .lock()
@@ -1299,7 +1388,13 @@ pub async fn database_migration_completed<R: Runtime>(
     app: AppHandle<R>,
     transaction_id: Option<String>,
     ledger: State<'_, CompletionLedger>,
+    runtime: State<'_, RuntimeInstanceLock>,
 ) -> Result<bool, String> {
+    if !runtime.is_held() {
+        return Err(
+            "refusing to complete a migration without the runtime instance lock".to_string(),
+        );
+    }
     let db = database_path(&app)?;
     let marker = marker_path(&app)?;
     let directory = marker.parent().unwrap_or_else(|| Path::new(""));
@@ -1824,6 +1919,37 @@ mod tests {
         );
     }
 
+    #[test]
+    fn deleting_the_runtime_lock_path_invalidates_ownership() {
+        let dir = tempfile::tempdir().expect("temporary directory");
+        let state = RuntimeInstanceLock::default();
+        state.set(acquire_runtime_lock(dir.path()).expect("runtime lock"));
+        assert!(state.is_held());
+        std::fs::remove_file(dir.path().join(RUNTIME_LOCK_FILE)).expect("delete lock path");
+        assert!(
+            !state.is_held(),
+            "a deleted runtime-lock path must not count as ownership"
+        );
+    }
+
+    #[tokio::test]
+    async fn recovery_completion_keeps_the_runtime_lock() {
+        let (dir, db, backups, snapshot) = temp_paths();
+        create_database(&snapshot, "a").await;
+        create_database(&db, "partial").await;
+        begin_transaction(dir.path(), &snapshot, "core", core_targets())
+            .await
+            .expect("marker");
+        let state = RuntimeInstanceLock::default();
+        state.set(acquire_runtime_lock(dir.path()).expect("runtime lock"));
+        let result = startup_recovery(&db, dir.path(), &backups).await;
+        assert_eq!(result.state, RecoveryState::Recovered, "{result:?}");
+        assert!(
+            state.is_held(),
+            "the runtime lock belongs to the process, not to one recovery"
+        );
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn a_second_process_cannot_take_the_runtime_lock() {
@@ -2100,12 +2226,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn retry_cannot_upgrade_a_runtime_lock_refusal_to_healthy() {
+        let (dir, db, backups, _snapshot) = temp_paths();
+        create_database(&db, "migrated").await;
+        // Same inputs that would otherwise diagnose Healthy: no marker, a valid
+        // database. Without the runtime lock the retry must stay blocked.
+        let lock = RecoveryLock::default();
+        let result = retry_recovery(&db, dir.path(), &backups, &lock, false).await;
+        assert_eq!(
+            result.state,
+            RecoveryState::ManualInterventionRequired,
+            "{result:?}"
+        );
+        assert!(
+            result.reason.contains("runtime instance lock"),
+            "{}",
+            result.reason
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_with_the_runtime_lock_still_works() {
+        let (dir, db, backups, _snapshot) = temp_paths();
+        create_database(&db, "migrated").await;
+        let lock = RecoveryLock::default();
+        let result = retry_recovery(&db, dir.path(), &backups, &lock, true).await;
+        assert_eq!(result.state, RecoveryState::Healthy, "{result:?}");
+    }
+
+    #[tokio::test]
     async fn retry_is_blocked_while_a_migration_is_open() {
         let (dir, db, backups, _snapshot) = temp_paths();
         create_database(&db, "a").await;
         let lock = RecoveryLock::default();
         lock.note_migration_started();
-        let result = retry_recovery(&db, dir.path(), &backups, &lock).await;
+        let result = retry_recovery(&db, dir.path(), &backups, &lock, true).await;
         assert_eq!(
             result.state,
             RecoveryState::ManualInterventionRequired,
@@ -2127,7 +2282,7 @@ mod tests {
         let mut child = spawn_child(dir.path(), "hold", None);
         wait_for_child_file(&dir.path().join("child.locked"), 15_000);
         let lock = RecoveryLock::default();
-        let result = retry_recovery(&db, dir.path(), &backups, &lock).await;
+        let result = retry_recovery(&db, dir.path(), &backups, &lock, true).await;
         assert_eq!(
             result.state,
             RecoveryState::ManualInterventionRequired,

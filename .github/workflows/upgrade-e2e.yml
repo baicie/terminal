@@ -132,19 +132,16 @@ jobs:
       - name: Single-instance real process check
         run: |
           set -euo pipefail
-          APP="$(find src-tauri/target/release/bundle -maxdepth 3 -name '*.app' -type d -print -quit)"
-          if [ -z "$APP" ]; then
-            MNT="$(mktemp -d)"
-            hdiutil attach "$B_DMG" -mountpoint "$MNT" -nobrowse -quiet
-            cp -R "$MNT"/*.app "$RUNNER_TEMP/single-instance.app"
-            hdiutil detach "$MNT" -force -quiet
-            APP="$RUNNER_TEMP/single-instance.app"
-          fi
+          MNT="$(mktemp -d)"
+          APP="$RUNNER_TEMP/single-instance.app"
+          hdiutil attach "$B_DMG" -mountpoint "$MNT" -nobrowse -quiet
+          rm -rf "$APP"
+          cp -R "$MNT"/*.app "$APP"
+          hdiutil detach "$MNT" -force -quiet
           BIN="$APP/Contents/MacOS/terminal"
-          ls -l "$APP/Contents/MacOS/"
           test -x "$BIN"
           node scripts/verify-install/single-instance-e2e.mjs \
-            --binary "$BIN" \
+            --app "$APP" --dmg "$B_DMG" --expected-sha256 "$B_SHA" \
             --work-dir single-instance-work \
             --report single-instance-report.json
 

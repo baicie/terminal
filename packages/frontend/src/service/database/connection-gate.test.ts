@@ -6,7 +6,12 @@ import {
   resetStartupGateForTests,
 } from './startup-gate'
 
-vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true }))
+const coreState = vi.hoisted(() => ({ runtimeLockHeld: true }))
+vi.mock('@tauri-apps/api/core', () => ({
+  isTauri: () => true,
+  invoke: async (command: string) =>
+    command === 'runtime_instance_lock_held' ? coreState.runtimeLockHeld : true,
+}))
 vi.mock('@tauri-apps/plugin-sql', () => {
   const database = {
     execute: vi.fn(async () => undefined),
@@ -27,6 +32,14 @@ import { getDb, select } from './connection'
 describe('database startup gate at the connection layer', () => {
   beforeEach(() => {
     resetStartupGateForTests()
+    coreState.runtimeLockHeld = true
+  })
+
+  it('refuses the database when the runtime instance lock is not held', async () => {
+    allowStartup()
+    coreState.runtimeLockHeld = false
+    await expect(getDb()).rejects.toThrow(/runtime instance lock/)
+    await expect(getDb()).rejects.toThrow(/blocked/)
   })
 
   it('refuses a cached connection once the gate becomes pending', async () => {

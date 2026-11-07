@@ -3,7 +3,7 @@ import { isTauri } from '@tauri-apps/api/core'
 import { initializeCoreSchema } from './connection-schema-core'
 import { initializeTeamSchema } from './connection-schema-team'
 import { traceStage, traceStageFailed } from './startup-trace'
-import { assertDatabaseAllowed } from './startup-gate'
+import { assertDatabaseAllowed, blockStartup } from './startup-gate'
 
 async function loadDb() {
   const Database = (await import('@tauri-apps/plugin-sql')).default
@@ -51,6 +51,32 @@ async function establishConnection(): Promise<Database> {
   }
 }
 
+/**
+ * A process that lost the runtime instance lock must never ask plugin-sql to
+ * open the file. The Rust commands enforce the same invariant; this check
+ * closes the UI/service path as well.
+ */
+async function assertRuntimeInstanceLock(): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  let held = false
+  try {
+    held = await invoke<boolean>('runtime_instance_lock_held')
+  } catch (error) {
+    blockStartup()
+    throw new Error(
+      'the runtime instance lock could not be verified: ' +
+        (error instanceof Error ? error.message : String(error)),
+      { cause: error },
+    )
+  }
+  if (held !== true) {
+    blockStartup()
+    throw new Error(
+      'this process does not own the runtime instance lock for the data directory',
+    )
+  }
+}
+
 export async function getDb() {
   // Gate first: a cached connection or an in-flight init must not be reachable
   // while the startup decision is pending or blocked.
@@ -58,6 +84,7 @@ export async function getDb() {
   if (db) return db
   if (initPromise) return initPromise
   if (!isTauri()) throw new Error('Database only available in Tauri context')
+  await assertRuntimeInstanceLock()
   initPromise = establishConnection()
   return initPromise
 }

@@ -41,7 +41,9 @@ use commands::{
     session_list, session_resize, session_write, session_write_raw,
 };
 use db_import::{backup_database_before_migration, import_backup_data};
-use db_recovery::{database_migration_completed, db_recovery_retry, db_recovery_status};
+use db_recovery::{
+    database_migration_completed, db_recovery_retry, db_recovery_status, runtime_instance_lock_held,
+};
 use input_probe::{
     input_probe_config, input_probe_diag, input_probe_focus, input_probe_ready, input_probe_result,
     InputProbeState,
@@ -210,15 +212,15 @@ pub fn run() {
             // silently rewriting the live file.
             app.manage(db_recovery::CompletionLedger::default());
             app.manage(db_recovery::RecoveryLock::default());
+            app.manage(db_recovery::RuntimeInstanceLock::default());
             // The single-instance plugin normally exits a second process before
             // this point. This lifetime lock is the fail-closed backstop: even a
             // direct binary launch cannot reach the database while another
             // process owns this data directory.
             let recovery = match db_recovery::acquire_runtime_lock_for(app.handle()) {
                 Ok(instance_lock) => {
-                    app.manage(db_recovery::RuntimeInstanceLock(std::sync::Mutex::new(
-                        Some(instance_lock),
-                    )));
+                    app.state::<db_recovery::RuntimeInstanceLock>()
+                        .set(instance_lock);
                     tauri::async_runtime::block_on(db_recovery::startup_recovery_locked(
                         app.handle(),
                     ))
@@ -319,6 +321,7 @@ pub fn run() {
             backup_database_before_migration,
             db_recovery_status,
             db_recovery_retry,
+            runtime_instance_lock_held,
             database_migration_completed,
             // Storage commands
             storage_init,
