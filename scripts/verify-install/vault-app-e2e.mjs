@@ -73,13 +73,13 @@ function dataDir(home) {
   return path.join(home, '.config', IDENTIFIER)
 }
 
-function launch(binary, home, logPath) {
+function launch(binary, home, logPath, extraEnv = {}) {
   const chunks = []
   let child
   try {
     child = spawn(binary, [], {
       cwd: os.tmpdir(),
-      env: { ...process.env, HOME: home, SSH_AUTH_SOCK: '' },
+      env: { ...process.env, HOME: home, SSH_AUTH_SOCK: '', ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
   } catch (error) {
@@ -106,16 +106,14 @@ function launch(binary, home, logPath) {
   }
 }
 
-async function waitForProbe(instance, timeoutMs, label) {
+async function waitForProbeFile(resultPath, timeoutMs, label) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const text = instance.logs()
-    const match = [...text.matchAll(/VAULT_PROBE (\{[^\n]*\})/g)].at(-1)
-    if (match) {
+    if (existsSync(resultPath)) {
       try {
-        return JSON.parse(match[1])
+        return JSON.parse(readFileSync(resultPath, 'utf8'))
       } catch {
-        // keep polling; a partial line can be completed by the next chunk
+        // a partially written file is retried
       }
     }
     await delay(200)
@@ -183,9 +181,12 @@ async function main() {
     mkdirSync(path.dirname(db), { recursive: true })
     writeFileSync(path.join(path.dirname(db), 'vault-probe.enabled'), 'phase9.7\n')
 
-    first = launch(binary, home, path.join(logs, 'first.log'))
+    const firstResult = path.join(work, 'probe-1.json')
+    first = launch(binary, home, path.join(logs, 'first.log'), {
+      TERMINAL_VAULT_PROBE_RESULT: firstResult,
+    })
     if (!first.child) throw new Error('the first launch could not be spawned')
-    const created = await waitForProbe(first, 180_000, 'the create-phase probe')
+    const created = await waitForProbeFile(firstResult, 180_000, 'the create-phase probe')
     add('vault created and secret stored', created.phase === 'create' && created.created ? 'PASS' : 'FAIL',
       JSON.stringify(created))
     add('wrong master password rejected', created.wrongRejected === true ? 'PASS' : 'FAIL', '')
@@ -198,9 +199,12 @@ async function main() {
     add('first launch stopped', 'PASS', '')
     if (!existsSync(db)) add('database present', 'FAIL', db)
 
-    second = launch(binary, home, path.join(logs, 'second.log'))
+    const secondResult = path.join(work, 'probe-2.json')
+    second = launch(binary, home, path.join(logs, 'second.log'), {
+      TERMINAL_VAULT_PROBE_RESULT: secondResult,
+    })
     if (!second.child) throw new Error('the second launch could not be spawned')
-    const verified = await waitForProbe(second, 180_000, 'the verify-phase probe')
+    const verified = await waitForProbeFile(secondResult, 180_000, 'the verify-phase probe')
     add('restart keeps the vault unlockable with the new password', verified.phase === 'verify' && verified.ok ? 'PASS' : 'FAIL',
       JSON.stringify(verified))
     add('old password still rejected after restart', verified.oldRejected === true ? 'PASS' : 'FAIL', '')

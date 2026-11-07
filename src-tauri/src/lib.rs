@@ -143,6 +143,21 @@ impl GracefulExitState {
 /// placed this marker inside the isolated app config directory. A normal build
 /// never calls the probe at all (it is compiled behind VITE_TERMINAL_VAULT_PROBE),
 /// and a production data directory does not contain the marker.
+/// Smoke-build only result channel: the probe writes its structured result to
+/// the path the harness put in `TERMINAL_VAULT_PROBE_RESULT`. Without the
+/// `smoke-vault-probe` feature this command is a no-op in production builds.
+#[tauri::command]
+fn vault_probe_report(payload: String) -> bool {
+    #[cfg(feature = "smoke-vault-probe")]
+    {
+        if let Ok(path) = std::env::var("TERMINAL_VAULT_PROBE_RESULT") {
+            return std::fs::write(path, payload).is_ok();
+        }
+    }
+    let _ = payload;
+    false
+}
+
 #[tauri::command]
 fn vault_probe_enabled(app: tauri::AppHandle) -> bool {
     app.path()
@@ -335,6 +350,7 @@ pub fn run() {
             db_recovery_retry,
             runtime_instance_lock_held,
             vault_probe_enabled,
+            vault_probe_report,
             database_migration_completed,
             // Storage commands
             storage_init,

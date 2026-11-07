@@ -9,6 +9,7 @@
  * The passwords and secret below are one-time test fixtures. They are never
  * logged; the probe reports booleans only.
  */
+import { invoke } from '@tauri-apps/api/core'
 import { toVaultCommandError, VaultService } from './vault'
 
 const PASSWORD_1 = 'phase9.7-vault-one-time-password-1'
@@ -83,14 +84,18 @@ export async function runVaultProbe(): Promise<void> {
   try {
     const exists = await vault.exists()
     const result = exists ? await verifyPhase(vault) : await createPhase(vault)
+    await invoke<boolean>('vault_probe_report', {
+      payload: JSON.stringify(result),
+    })
     console.info('VAULT_PROBE ' + JSON.stringify(result))
   } catch (error) {
     const detail =
       error instanceof Error ? error.message : String(error)
     // Never include a password or secret in the log line.
-    console.info(
-      'VAULT_PROBE ' +
-        JSON.stringify({ phase: 'error', ok: false, error: detail }),
-    )
+    const result = { phase: 'error', ok: false, error: detail }
+    await invoke<boolean>('vault_probe_report', {
+      payload: JSON.stringify(result),
+    }).catch(() => false)
+    console.info('VAULT_PROBE ' + JSON.stringify(result))
   }
 }

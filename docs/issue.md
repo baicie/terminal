@@ -5180,6 +5180,14 @@ E2E `42189361366` 5/5，证据 `42214762202` 指纹 `c138d564…`。真实双进
 启动、Team 应用级 SIGKILL、Windows 完整文件系统矩阵/NSIS 仍 NOT_RUN/PARTIAL；
 见 `docs/phase9-6/phase9-6-2-recovery-concurrency.md`。
 
+**Phase 9.7 P0-A**：确认并修复运行时锁 Retry 绕过——setup 拿不到 `instance.lock`
+时只给出 MANUAL，原 `db_recovery_retry` 不复查锁，无标记时会 diagnose 为 HEALTHY
+并放行 UI。现由 `RuntimeInstanceLock` 统一所有权：Retry、迁移完成、备份命令与
+前端 `getDb` 全部校验；锁文件被删除/替换（inode 变化）即失效。新增真实三进程
+E2E（第二次启动激活、SIGKILL 后第三进程读写、不同数据目录的全局身份）与
+Vault 服务级 probe。详见 `docs/phase9-7/single-instance-e2e.md`、
+`vault-app-e2e.md`。
+
 **Phase 9.6.3**：修复迁移标记被新事务改写（v3 transaction_id/owner，扩展前
 验证快照兼容，VACUUM 失败逐字节回滚）、同进程并发备份/恢复、启动无标记绕过
 锁、标记清除失败仍报告完成、retry 锁失败不更新裁决。真实双进程 E2E 与

@@ -991,6 +991,18 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 
 ---
 
+### Phase 9.7 - Cross-Platform Product Acceptance & RC Hardening 🔄 P0-A 代码完成
+
+| 领域 | 结果 |
+| --- | --- |
+| 单实例 | 插件首个注册；运行时锁 + inode 校验；第二次启动激活首进程 |
+| 绕过修复 | Retry/完成/备份/getDb 校验运行时锁；未持锁不升级 HEALTHY |
+| 真实 E2E | 三进程 SIGKILL/数据库读写/激活；结果待回填 |
+| Vault | 服务级 probe（创建/锁定/改密/重启）；UI 与 A→B NOT_RUN |
+| 未完成 | Windows NSIS、Team Sync 跨版本、Updater runtime、Linux AppImage stock |
+
+详见 `docs/phase9-7/phase9-7-product-acceptance.md`。
+
 ## 待办事项
 
 ### P0 - 必须完成

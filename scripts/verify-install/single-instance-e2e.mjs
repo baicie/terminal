@@ -74,6 +74,14 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+async function waitForLog(instance, needle, timeoutMs, label) {
+  return waitFor(
+    () => (instance.logs().includes(needle) ? true : null),
+    timeoutMs,
+    label,
+  )
+}
+
 async function waitFor(predicate, timeoutMs, label) {
   const deadline = Date.now() + timeoutMs
   let last = null
@@ -275,6 +283,7 @@ async function main() {
       120_000,
       'the first instance database and schema',
     )
+    await waitForLog(first, 'database-recovery', 60_000, 'the first instance startup log')
     add('first instance spawned', 'PASS', 'pid=' + first.child.pid + ' db=' + db)
     writeProbeRow(db, 'before-kill')
 
@@ -321,6 +330,10 @@ async function main() {
       60_000,
       'the third instance database',
     )
+    // The database already exists, so the schema wait alone would return before
+    // the new process acquired the runtime lock. The startup log is written
+    // after setup acquired it and ran the recovery decision.
+    await waitForLog(third, 'database-recovery', 60_000, 'the third instance startup log')
     add('a new instance starts after the owner died', alive(third.child) ? 'PASS' : 'FAIL',
       'pid=' + third.child.pid)
     const preserved = readProbeRow(db)

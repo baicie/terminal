@@ -2288,6 +2288,17 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] 真实 Windows `cargo test --lib db_recovery`（9 passed，job `127803321020`）；非破坏性文件系统矩阵仍未做。
 - [ ] Team 应用级 SIGKILL E2E（当前仅 Rust 状态机测试）。
 
+### 2026-11-07 Phase 9.7 P0-A - 单实例运行时安全 🔄 代码完成，E2E 验证中
+
+- [x] single-instance 插件首个注册；第二次启动激活/重建窗口。
+- [x] 进程生命周期 `instance.lock` + inode 校验；锁文件删除/替换即失效。
+- [x] Retry/完成/备份/getDb 全部校验运行时锁，封堵 HEALTHY 升级路径。
+- [x] Rust 336 / db_recovery 32；前端 1413；typecheck/lint/source-size。
+- [x] Vault 服务级 probe（创建/锁定/错误密码/改密/重启持久化）接入 E2E。
+- [ ] 真实窗口焦点（headless NOT_RUN）。
+- [ ] Vault UI 自动化与 A→B 跨版本。
+- [ ] Windows NSIS、Team Sync 跨版本、Updater runtime（NOT_RUN/BLOCKED_EXTERNAL）。
+
 ### 2026-11-06 Phase 9.6.3 - 最终数据安全收口 ✅ P0 完成，平台项待补
 
 - [x] 标记 v3 事务所有权；跨进程/旧版本标记拒绝合并；VACUUM 失败逐字节回滚。

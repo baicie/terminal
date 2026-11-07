@@ -121,7 +121,7 @@ jobs:
           VITE_TERMINAL_MIGRATION_DELAY_MS=1500 \
           VITE_TERMINAL_TEAM_MIGRATION_DELAY_MS=1500 \
           VITE_TERMINAL_VAULT_PROBE=1 \
-            pnpm tauri build --bundles dmg --config '{"version":"0.0.1-dev.4-local"}'
+            pnpm tauri build --bundles dmg --features smoke-vault-probe --config '{"version":"0.0.1-dev.4-local"}'
           B_DMG="$(find src-tauri/target/release/bundle/dmg -maxdepth 1 -name 'Termius_0.0.1-dev.4-local_*.dmg' -print -quit)"
           test -n "$B_DMG"
           shasum -a 256 "$B_DMG" | tee current-b.sha256

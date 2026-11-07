@@ -142,6 +142,19 @@
 - 未闭合：已运行实例在另一实例恢复期间的普通写入（无全程实例锁）、
   Windows reparse/ACL/NSIS A→B。RC/Release 仍 **NO**。
 
+## 5.4 Phase 9.7 P0-A 单实例与运行时锁
+
+- 单实例：`tauri-plugin-single-instance v2.5.5` 首个注册插件；第二次启动激活首进程。
+- 运行时锁：`instance.lock` 在 setup 中、任何数据库访问前持有；`RuntimeLockHandle`
+  校验 inode，锁文件被删除/替换即失效。
+- Retry 绕过已封堵：`retry_recovery(..., runtime_held)` 未持锁一律 Manual；
+  完成迁移、备份命令与前端 `getDb` 均校验所有权。
+- plugin-sql 无法按进程动态禁用；`getDb` 在打开前查询 `runtime_instance_lock_held`，
+  直接调用 `plugin:sql|load` 的恶意 webview 不在本轮信任模型内（已记录）。
+- Vault 应用级：smoke 构建 + 隔离目录标记的服务级 probe，覆盖创建/锁定/解锁/
+  错误密码/改密/重启持久化；UI 自动化与 A→B 跨版本仍 NOT_RUN。
+- 真实进程 E2E 与最终 CI：待本轮 run 回填。
+
 ## 6. 判定
 
 | 判定 | 结果 |
