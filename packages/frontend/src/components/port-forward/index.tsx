@@ -1,6 +1,7 @@
 import type { PortForward } from '@/types'
 import { Network } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,7 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = ({
   portForwards: initialForwards,
   onSave,
 }) => {
+  const { t } = useTranslation()
   const [portForwards, setPortForwards] = useState<PortForward[]>([])
   const [panel, setPanel] = useState<Panel>('list')
   const [formData, setFormData] = useState(createEmptyPortForwardForm)
@@ -52,7 +54,7 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = ({
   const handleAdd = () => {
     const newForward: PortForward = {
       id: `pf-${Date.now()}`,
-      name: formData.name || `${formData.type} forward`,
+      name: formData.name || t('portForward.addForward'),
       type: formData.type,
       localPort: Number.parseInt(formData.localPort) || 0,
       localHost: formData.localHost || 'localhost',
@@ -87,7 +89,9 @@ const PortForwardDialog: React.FC<PortForwardDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Network className="size-5" />
-            {panel === 'list' ? 'Port Forwards' : 'Add Port Forward'}
+            {panel === 'list'
+              ? t('portForward.portForwards')
+              : t('portForward.addPortForward')}
           </DialogTitle>
         </DialogHeader>
 

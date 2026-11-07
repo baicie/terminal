@@ -1,5 +1,6 @@
 import type { PortForward } from '@/types'
 import { Pause, Play, Plus, Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { DialogFooter } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
@@ -25,23 +26,23 @@ export function PortForwardListPanel({
   onCancel,
   onSave,
 }: PortForwardListPanelProps) {
+  const { t } = useTranslation()
   return (
     <>
       <div className="mb-4 flex items-center justify-between">
         <span className="text-sm text-muted-foreground">
-          {portForwards.length} forward
-          {portForwards.length !== 1 ? 's' : ''} configured
+          {t('portForward.configured', { count: portForwards.length })}
         </span>
         <Button type="button" onClick={onAdd}>
           <Plus data-icon="inline-start" />
-          Add Forward
+          {t('portForward.addForward')}
         </Button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {portForwards.length === 0 ? (
           <div className="py-8 text-center text-muted-foreground">
-            No port forwards configured
+            {t('portForward.noConfigured')}
           </div>
         ) : (
           <div className="flex flex-col gap-2">
@@ -70,7 +71,9 @@ export function PortForwardListPanel({
                     size="icon"
                     type="button"
                     onClick={() => onToggleActive(forward.id)}
-                    title={forward.active ? 'Stop' : 'Start'}
+                    title={forward.active
+                      ? t('portForward.stop')
+                      : t('portForward.start')}
                   >
                     {forward.active ? <Pause /> : <Play />}
                   </Button>
@@ -79,7 +82,7 @@ export function PortForwardListPanel({
                     size="icon"
                     type="button"
                     onClick={() => onDelete(forward.id)}
-                    title="Delete"
+                    title={t('common.delete')}
                   >
                     <Trash2 />
                   </Button>
@@ -92,10 +95,10 @@ export function PortForwardListPanel({
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
+          {t('common.cancel')}
         </Button>
         <Button type="button" onClick={onSave}>
-          Save
+          {t('common.save')}
         </Button>
       </DialogFooter>
     </>

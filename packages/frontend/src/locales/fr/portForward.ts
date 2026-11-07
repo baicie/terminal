@@ -54,4 +54,6 @@ export default {
   'portForwardView.deleteTitle': 'Supprimer le transfert de port',
   'portForwardView.deleteConfirm':
     "Supprimer « {{name}} » ? La règle sera définitivement supprimée. Un tunnel actif n'est pas arrêté : arrêtez-le d'abord.",
+  'portForward.backToList': 'Retour à la liste',
+  'portForward.port': 'Port',
 }

@@ -51,4 +51,6 @@ export default {
   'portForwardView.deleteTitle': 'Delete Port Forward',
   'portForwardView.deleteConfirm':
     'Delete "{{name}}"? The rule is removed permanently. A running tunnel is not stopped, so stop it first.',
+  'portForward.backToList': 'Back to list',
+  'portForward.port': 'Port',
 }
