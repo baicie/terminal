@@ -120,6 +120,7 @@ jobs:
           VITE_TERMINAL_SMOKE_BUILD=1 \
           VITE_TERMINAL_MIGRATION_DELAY_MS=1500 \
           VITE_TERMINAL_TEAM_MIGRATION_DELAY_MS=1500 \
+          VITE_TERMINAL_VAULT_PROBE=1 \
             pnpm tauri build --bundles dmg --config '{"version":"0.0.1-dev.4-local"}'
           B_DMG="$(find src-tauri/target/release/bundle/dmg -maxdepth 1 -name 'Termius_0.0.1-dev.4-local_*.dmg' -print -quit)"
           test -n "$B_DMG"
@@ -127,7 +128,7 @@ jobs:
           B_SHA="$(cut -d' ' -f1 current-b.sha256)"
           echo "B_DMG=$B_DMG" >> "$GITHUB_ENV"
           echo "B_SHA=$B_SHA" >> "$GITHUB_ENV"
-          node -e "const fs=require('fs');fs.writeFileSync('current-b-build.json',JSON.stringify({sourceSha:process.env.GITHUB_SHA,version:'0.0.1-dev.4-local',kind:'current-source-test-build',instrumentedBuild:true,migrationDelayMs:1500,teamMigrationDelayMs:1500,nodeVersion:process.version},null,2))"
+          node -e "const fs=require('fs');fs.writeFileSync('current-b-build.json',JSON.stringify({sourceSha:process.env.GITHUB_SHA,version:'0.0.1-dev.4-local',kind:'current-source-test-build',instrumentedBuild:true,migrationDelayMs:1500,teamMigrationDelayMs:1500,vaultProbe:true,nodeVersion:process.version},null,2))"
 
       - name: Single-instance real process check
         run: |
@@ -144,6 +145,16 @@ jobs:
             --app "$APP" --dmg "$B_DMG" --expected-sha256 "$B_SHA" \
             --work-dir single-instance-work \
             --report single-instance-report.json
+
+      - name: Vault app-level E2E
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/single-instance.app"
+          test -d "$APP"
+          node scripts/verify-install/vault-app-e2e.mjs \
+            --app "$APP" \
+            --work-dir vault-app-work \
+            --report vault-app-report.json
 
       - name: Run current-version A->B upgrade
         run: |
@@ -276,6 +287,8 @@ jobs:
             current-b-build.json
             single-instance-report.json
             single-instance-work/*/logs/
+            vault-app-report.json
+            vault-app-work/*/logs/
             upgrade-current-report/
             upgrade-current-interrupt-report/
             upgrade-current-restore-report/

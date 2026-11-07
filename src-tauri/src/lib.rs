@@ -139,6 +139,18 @@ impl GracefulExitState {
 /// Bring the already-running instance to the front when a second launch is
 /// refused by the single-instance plugin. If the window was closed while the
 /// process stayed alive in the tray, it is rebuilt from the window config.
+/// Smoke-build only: the frontend Vault probe runs when the test harness has
+/// placed this marker inside the isolated app config directory. A normal build
+/// never calls the probe at all (it is compiled behind VITE_TERMINAL_VAULT_PROBE),
+/// and a production data directory does not contain the marker.
+#[tauri::command]
+fn vault_probe_enabled(app: tauri::AppHandle) -> bool {
+    app.path()
+        .app_config_dir()
+        .map(|directory| directory.join("vault-probe.enabled").is_file())
+        .unwrap_or(false)
+}
+
 fn activate_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -322,6 +334,7 @@ pub fn run() {
             db_recovery_status,
             db_recovery_retry,
             runtime_instance_lock_held,
+            vault_probe_enabled,
             database_migration_completed,
             // Storage commands
             storage_init,

@@ -12,6 +12,19 @@ import {
   blockStartup,
 } from './service/database/startup-gate'
 
+const vaultProbeEnabled =
+  import.meta.env.VITE_TERMINAL_SMOKE_BUILD === '1' &&
+  import.meta.env.VITE_TERMINAL_VAULT_PROBE === '1'
+
+async function maybeRunVaultProbe() {
+  if (!vaultProbeEnabled) return
+  const { invoke } = await import('@tauri-apps/api/core')
+  const enabled = await invoke<boolean>('vault_probe_enabled')
+  if (!enabled) return
+  const { runVaultProbe } = await import('./service/vault-probe')
+  await runVaultProbe()
+}
+
 type Decision =
   | { kind: 'checking' }
   | { kind: 'allowed' }
@@ -52,6 +65,7 @@ export default function StartupGate({ startupTerminalFallbackAt }: StartupGatePr
     if (startupAllowed(probe.status)) {
       allowStartup()
       setDecision({ kind: 'allowed' })
+      void maybeRunVaultProbe()
       return
     }
     blockStartup()
