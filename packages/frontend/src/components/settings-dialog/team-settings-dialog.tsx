@@ -1,4 +1,5 @@
 import { Check, Users } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -11,6 +12,7 @@ interface TeamSettingsDialogProps {
 
 export function TeamSettingsDialog({ onClose }: TeamSettingsDialogProps) {
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const isTeamEnabled = useIsTeamEnabled()
 
   return (
@@ -18,22 +20,20 @@ export function TeamSettingsDialog({ onClose }: TeamSettingsDialogProps) {
       <div className="space-y-3">
         <h4 className="text-sm font-medium flex items-center gap-2">
           <Users className="size-4" />
-          Team Collaboration
+          {t('settings.teamCollaboration')}
         </h4>
         <p className="text-sm text-muted-foreground">
-          Enable team features to share hosts and snippets with your team
-          members. Use local mode to export/import team packages as JSON files.
+          {t('settings.teamCollaborationDesc')}
         </p>
 
         {isTeamEnabled ? (
           <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
             <div className="flex items-center gap-2 mb-1">
               <Check className="size-4 text-primary" />
-              <span className="text-sm font-medium">Team mode enabled</span>
+              <span className="text-sm font-medium">{t('settings.teamModeEnabled')}</span>
             </div>
             <p className="text-xs text-muted-foreground ml-6">
-              Teams navigation is visible in the sidebar. Manage your teams from
-              the Teams view.
+              {t('settings.teamEnabledDesc')}
             </p>
             <Button
               variant="outline"
@@ -45,17 +45,17 @@ export function TeamSettingsDialog({ onClose }: TeamSettingsDialogProps) {
               }}
             >
               <Users className="size-3 mr-1" />
-              Open Teams View
+              {t('settings.openTeams')}
             </Button>
           </div>
         ) : (
           <div className="p-3 bg-muted rounded-lg">
             <div className="flex items-center gap-2 mb-1">
               <Users className="size-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Team mode disabled</span>
+              <span className="text-sm font-medium">{t('settings.teamModeDisabled')}</span>
             </div>
             <p className="text-xs text-muted-foreground ml-6">
-              Enable team mode to collaborate with team members.
+              {t('settings.teamDisabledDesc')}
             </p>
             <Button
               size="sm"
@@ -66,7 +66,7 @@ export function TeamSettingsDialog({ onClose }: TeamSettingsDialogProps) {
               }}
             >
               <Users className="size-3 mr-1" />
-              Enable Team Mode
+              {t('settings.enableTeam')}
             </Button>
           </div>
         )}

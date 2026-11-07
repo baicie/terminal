@@ -1,5 +1,6 @@
 import type { TerminalThemePreset } from '@/service/database'
 import type { LucideIcon } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -26,6 +27,7 @@ export function TerminalThemeGrid({
   icon: Icon,
   onSelect,
 }: TerminalThemeGridProps) {
+  const { t } = useTranslation()
   return (
     <div className="flex flex-col gap-3">
       <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -56,7 +58,9 @@ export function TerminalThemeGrid({
             </TooltipTrigger>
             <TooltipContent side="top">
               <p className="font-medium">{getThemeDisplayName(theme)}</p>
-              <p className="text-xs text-muted-foreground/80">Click to apply</p>
+              <p className="text-xs text-muted-foreground/80">
+                {t('settings.clickToApply')}
+              </p>
             </TooltipContent>
           </Tooltip>
         ))}

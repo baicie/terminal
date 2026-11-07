@@ -1,5 +1,6 @@
 import type { RouteObject } from 'react-router-dom'
 import { createBrowserRouter } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { RouteErrorBoundary } from '@/components/error-boundary'
 import Layout from '../layout'
 import { buildRoutes } from './nav-config.tsx'
@@ -21,6 +22,18 @@ export { makeLazyRoute }
  */
 const TerminalRoute: React.FC = () => null
 
+const NotFound: React.FC = () => {
+  const { t } = useTranslation()
+  return (
+    <div className="flex items-center justify-center h-screen">
+      <div className="text-center">
+        <h1 className="text-2xl font-bold mb-2">404</h1>
+        <p className="text-muted-foreground">{t('common.pageNotFound')}</p>
+      </div>
+    </div>
+  )
+}
+
 const routes: RouteObject[] = [
   {
     element: <Layout />,
@@ -37,14 +50,7 @@ const routes: RouteObject[] = [
   },
   {
     path: '*',
-    element: (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-2">404</h1>
-          <p className="text-muted-foreground">Page not found</p>
-        </div>
-      </div>
-    ),
+    element: <NotFound />,
   },
 ]
 

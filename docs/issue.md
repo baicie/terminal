@@ -5276,3 +5276,20 @@ Xvfb display 由 harness 动态分配，不再固定 `:99`。AppImage 同路径�
 - 新增 `route-transition.test.tsx`，断言导航后新页面只挂载一次，并验证旧实现会让该测试失败。
 
 **验证**: 前端单测 4/4（route-transition + main-layout-content），完整前端套件与 CI 见 PR #9。
+
+### Issue #196: 切换中文后设置页仍有英文文案 ✅ 已修复（2026-11-07）
+
+**严重程度**: 🟡 Important
+**状态**: ✅ 已修复
+**影响功能**: 设置对话框（外观、导入导出、团队、更新检查）、懒加载占位、404
+
+**症状**: 语言选择中文后，设置页的 "Font Size / Cursor Style / Import Preview /
+Update checks need the desktop app." 等仍是英文；懒加载路由显示硬编码 "Loading..."。
+
+**根因**: 这些组件把文案直接写死，未使用已存在的 `settings.*` / `common.*` 翻译键；
+`lazy-route.tsx` 与 404 同样硬编码。
+
+**修复**: 接入 `useTranslation`，复用已有键；补齐 cursor 选项、更新检查、区域、
+团队状态、导入计数等单位文案（en/cn/fr 三语）；`update-check.test.tsx` 显式初始化
+i18n 并固定为英文断言。翻译键一致性测试（`translation-keys.test.ts`）与前端全量
+156 文件/1416 项通过。

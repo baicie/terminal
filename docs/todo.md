@@ -2320,3 +2320,14 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [ ] 两个真实进程并发启动/迁移/恢复 E2E。
 - [ ] Team 应用级 SIGKILL E2E。
 - [ ] Windows 完整文件系统矩阵与 NSIS A→B。
+
+### 2026-11-07 Phase 9.7 WP3/WP4 - 跨版本与 Updater 运行时 ✅ 本机验证完成，CI 证据进行中
+
+- [x] Team Sync 跨版本采集器：dev.2 源码 + 当前源码双进程、真实 PG/HTTP/SQLite。
+- [x] 实测记录旧客户端重同步 UNIQUE 失败与服务端拒绝 legacy 更新（RC 阻塞项）。
+- [x] Updater 运行时：`smoke-updater` 探针、临时密钥、loopback、两次真实构建。
+- [x] 正向安装/重启/数据保留 + 7 个负向用例（降级、架构、404、签名、篡改、截断）。
+- [x] 路由切换闪烁修复（RouteTransition 同步 key、不透明层、动画内移）。
+- [ ] Windows NSIS/MSI 与 Linux AppImage/deb 运行时更新。
+- [x] 设置页/懒加载/404 文案接入 i18n（en/cn/fr），更新检查面板同步本地化。
+- [ ] 正式 notarization/Authenticode 与生产 updater 公钥（BLOCKED_EXTERNAL）。

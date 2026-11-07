@@ -8,6 +8,7 @@ import {
   Shield,
   Upload,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
@@ -38,29 +39,28 @@ export function ExportImportContent({
   onReset: () => void
   onImport: () => void
 }) {
+  const { t } = useTranslation()
   const entries = [
-    ['hosts', 'host(s)'],
-    ['groups', 'group(s)'],
-    ['snippets', 'snippet(s)'],
-    ['snippetPackages', 'snippet package(s)'],
-    ['sshKeys', 'SSH key(s)'],
-    ['workspaces', 'workspace(s)'],
-    ['knownHosts', 'known host(s)'],
+    ['hosts', 'settings.hosts'],
+    ['groups', 'settings.groups'],
+    ['snippets', 'settings.snippets'],
+    ['snippetPackages', 'settings.snippetPackages'],
+    ['sshKeys', 'settings.sshKeys'],
+    ['workspaces', 'settings.workspaces'],
+    ['knownHosts', 'settings.knownHosts'],
   ] as const
   return (
     <div className="space-y-3">
       <h4 className="text-sm font-medium flex items-center gap-2">
         <Shield className="size-4" />
-        Local Export / Import
+        {t('settings.localExportImport')}
       </h4>
       <p className="text-sm text-muted-foreground">
-        Export or import your data as a JSON file. This works independently of
-        team mode.
+        {t('settings.exportImportDesc')}
       </p>
       <div className="space-y-2">
         <p className="text-xs text-muted-foreground">
-          Export all hosts, groups, snippets, and settings to a JSON file for
-          backup.
+          {t('settings.exportDesc')}
         </p>
         <Button
           variant="outline"
@@ -71,12 +71,12 @@ export function ExportImportContent({
           {exporting ? (
             <>
               <RefreshCw className="size-4 mr-2 animate-spin" />
-              Exporting...
+              {t('settings.exporting')}
             </>
           ) : (
             <>
               <Download className="size-4 mr-2" />
-              Export to JSON File
+              {t('settings.exportJson')}
             </>
           )}
         </Button>
@@ -84,31 +84,30 @@ export function ExportImportContent({
       <Separator />
       <div className="space-y-2">
         <p className="text-xs text-muted-foreground">
-          Import data from a JSON export file. Supports both full exports and
-          team packages.
+          {t('settings.importFromFileDesc')}
         </p>
         {step === 'idle' && (
           <Button variant="outline" onClick={onSelect} className="w-full">
             <Upload className="size-4 mr-2" />
-            Select Import File
+            {t('settings.selectImportFile')}
           </Button>
         )}
         {step === 'preview' && preview && (
           <div className="space-y-3 p-3 bg-muted rounded-lg">
-            <p className="text-sm font-medium">Import Preview:</p>
+            <p className="text-sm font-medium">{t('settings.importPreview')}</p>
             <ul className="text-sm text-muted-foreground space-y-1">
               {entries.map(
                 ([key, label], index) =>
                   (index < 3 || preview[key] > 0) && (
                     <li key={key}>
                       <Check className="size-3 inline mr-1 text-green-500" />
-                      {preview[key]} {label}
+                      {t(label, { count: preview[key] })}
                     </li>
                   ),
               )}
             </ul>
             <div className="space-y-2 pt-2">
-              <Label className="text-xs">Import Mode</Label>
+              <Label className="text-xs">{t('settings.importMode')}</Label>
               <div className="flex gap-2">
                 <Button
                   variant={importMode === 'merge' ? 'default' : 'outline'}
@@ -117,7 +116,7 @@ export function ExportImportContent({
                   className="flex-1"
                 >
                   <Merge className="size-3 mr-1" />
-                  Merge
+                  {t('settings.merge')}
                 </Button>
                 <Button
                   variant={importMode === 'replace' ? 'default' : 'outline'}
@@ -126,13 +125,13 @@ export function ExportImportContent({
                   className="flex-1"
                 >
                   <Replace className="size-3 mr-1" />
-                  Replace
+                  {t('settings.replace')}
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
                 {importMode === 'merge'
-                  ? 'New items will be added, existing items will be kept.'
-                  : 'Existing items with the same ID will be overwritten.'}
+                  ? t('settings.mergeDesc')
+                  : t('settings.replaceDesc')}
               </p>
             </div>
             <div className="flex gap-2 pt-2">
@@ -142,7 +141,7 @@ export function ExportImportContent({
                 onClick={onReset}
                 className="flex-1"
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 size="sm"
@@ -151,7 +150,7 @@ export function ExportImportContent({
                 className="flex-1"
               >
                 <Upload className="size-3 mr-1" />
-                Import
+                {t('settings.import')}
               </Button>
             </div>
           </div>
@@ -159,7 +158,7 @@ export function ExportImportContent({
         {step === 'importing' && (
           <div className="text-center py-4">
             <RefreshCw className="size-6 mx-auto animate-spin text-primary" />
-            <p className="mt-2 text-sm">Importing data...</p>
+            <p className="mt-2 text-sm">{t('settings.importing')}</p>
           </div>
         )}
         {step === 'success' && (
@@ -167,7 +166,7 @@ export function ExportImportContent({
             <div className="size-8 mx-auto rounded-full bg-green-100 flex items-center justify-center">
               <Check className="size-5 text-green-600" />
             </div>
-            <p className="mt-2 text-sm">Import successful!</p>
+            <p className="mt-2 text-sm">{t('settings.importSuccess')}</p>
           </div>
         )}
         {step === 'error' && (
@@ -177,7 +176,7 @@ export function ExportImportContent({
               <p className="text-sm text-destructive">{errorMessage}</p>
             </div>
             <Button variant="outline" onClick={onReset} className="w-full">
-              Try Again
+              {t('settings.tryAgain')}
             </Button>
           </div>
         )}
