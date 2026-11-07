@@ -493,7 +493,7 @@ where
     // A single mutex across read and write serialises the two directions:
     // the reader holds it while waiting for bytes, so a response can never be
     // written (a full-duplex deadlock). Split the stream instead.
-    let (mut s_read, mut s_write) = tokio::io::split(socket);
+    let (s_read, mut s_write) = tokio::io::split(socket);
     let h = handle.clone();
     let (tx, mut rx) = mpsc::channel::<Vec<u8>>(1024);
 
