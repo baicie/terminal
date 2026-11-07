@@ -20,6 +20,18 @@ export interface Team {
   updatedAt: number
 }
 
+/** Result of creating a cloud team through the real server. */
+export interface CloudTeamCreateResult {
+  ok: boolean
+  team: Team | null
+  /** True when a server team with this name already existed and was adopted. */
+  adopted?: boolean
+  /** Server id, present even when local persistence failed and a retry must adopt. */
+  serverTeamId?: string
+  stage?: 'validate' | 'create' | 'persist' | 'settings'
+  error?: string
+}
+
 export interface TeamMember {
   id: string
   teamId: string
@@ -231,6 +243,11 @@ export interface TeamState {
   getOfflineQueueCount: () => number
   updateUserProfile: (id: string, updates: { name: string }) => Promise<void>
   cloudCreateTeam: (name: string) => Promise<Team | null>
+  createCloudTeamWithSettings: (
+    name: string,
+    endpoint: string,
+    apiToken: string,
+  ) => Promise<CloudTeamCreateResult>
   cloudLoadTeams: () => Promise<void>
   cloudLoadMembers: (teamId: string) => Promise<void>
   cloudLoadShares: (teamId: string) => Promise<void>

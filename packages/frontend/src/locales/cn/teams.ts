@@ -130,4 +130,5 @@ export default {
   'teams.lastSync': '上次同步：{{time}}',
   'teams.syncing': '同步中...',
   'teams.syncNow': '立即同步',
+  'teams.cloudCreateFailed': '无法在服务器上创建团队：{{error}}',
 }

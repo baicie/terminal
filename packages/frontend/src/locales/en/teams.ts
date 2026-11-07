@@ -136,4 +136,5 @@ export default {
   'teams.packageGroups': '{{count}} group(s)',
   'teams.packageSnippets': '{{count}} snippet(s)',
   'teams.packageMembers': '{{count}} member(s)',
+  'teams.cloudCreateFailed': 'Could not create the team on the server: {{error}}',
 }

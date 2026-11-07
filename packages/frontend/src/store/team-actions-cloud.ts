@@ -5,6 +5,7 @@ import {
   convertApiTeam,
   teamApi,
 } from '@/service/team-api'
+import { createTeamOnServer } from './team-actions-cloud-team-create'
 import type {
   SharedHost,
   SharedSnippet,
@@ -39,8 +40,17 @@ export function createCloudActions(
   | 'cloudJoinByCode'
   | 'cloudJoinByLink'
   | 'cloudLoadAuditLogs'
+  | 'createCloudTeamWithSettings'
 > {
   return {
+    async createCloudTeamWithSettings(
+      name: string,
+      endpoint: string,
+      apiToken: string,
+    ) {
+      return createTeamOnServer(set, get, name, endpoint, apiToken)
+    },
+
     async cloudCreateTeam(name: string) {
       const { settings, userProfile } = get()
       if (

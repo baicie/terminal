@@ -1,6 +1,6 @@
 # Overnight sprint checkpoint — 2026-11-08
 
-- 当前时间（北京时间）：2026-11-08 00:15
+- 当前时间（北京时间）：2026-11-08 00:33
 - 分支：`feat/phase9-7-product-acceptance`
 - PR #9：Open，**非 Draft**
 - 硬截止：2026-11-08 12:00 +08:00
@@ -14,13 +14,20 @@
 
 ## 已完成的 P0
 
+- [x] 云团队创建改走真实服务端：`createCloudTeamWithSettings` 先在服务端创建/复用同名团队，
+      再持久化服务端 id、成员与 settings；失败不提示成功；服务端成功而本地失败时返回
+      `serverTeamId` 供重试采纳。5 项 action 测试 + 2 项对话框测试通过。
+
+- [x] SFTP 会话绑定主机身份（hostKey + sessionRef），过期 generation 响应丢弃，
+      切换主机立即 close 旧 session；双主机竞态测试旧实现 2/2 失败、新实现通过（f67f86c）。
+
 - [x] `fr/en/cn` 的 `common.*` 键拆到 `locales/<lang>/common.ts`，`fr/app.ts` 301→263 行；
       `use-palette-static-results.tsx` 的快捷动作拆出；`sftp-container` 的三个对话框拆出。
       `check-source-size` 通过（582 文件）。
 
 ## 正在执行
 
-- P0-1：SFTP 主机切换隔离与陈旧响应保护（待写失败测试）
+- P0-3：Team Sync 跨版本 ADR 与安全策略
 
 ## 下一步精确命令
 
