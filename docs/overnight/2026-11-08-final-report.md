@@ -65,7 +65,7 @@ endpoint；上传失败截断远端文件；SFTP 列表 mtime；Windows NSIS/App
 ## C. CI 与 E2E
 
 - 六份证据：官方矩阵 [`42399093877`](https://github.com/baicie/terminal/actions/runs/42399093877)（`e9858c9`）**3/3 success**，指纹 **`7f426434…`**（debug `893c6c6f…`、release `5c4f92b4…`），`check-verification-evidence` **0 problem**；raw log 在 `docs/verification/raw/42399093877/`。未手工修改 manifest。
-- Upgrade E2E：`42399231199`（`e9858c9`，含 updater runtime job），结果见 CI/PR。
+- Upgrade E2E：`42399231199`（`e9858c9`，含 updater runtime job）**6/6 success**。
 - 最终 CI：证据提交后的 HEAD 上运行，URL 见 PR 检查。
 - 本地门禁：Rust 341 项 + clippy all-features + fmt；前端 164 文件/1436 项；Team Server 124 单测 + 97 真实 PG；source-size 584 文件；bundle budget 通过。
 
