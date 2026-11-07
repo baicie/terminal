@@ -53,3 +53,7 @@ packages/team-server/.tmp/
 
 # Written by scripts/verify-install/team-cross-version.mjs in CI.
 team-cross-version-report.json
+
+# Updater runtime E2E work directory and report.
+updater-e2e-work/
+updater-e2e-report.json

@@ -655,8 +655,9 @@ pnpm add <package-name>
 - ✅ **真实三进程 E2E**：从 B DMG 安装并校验 SHA；第二次启动 code 0 并激活首进程、仅一个 DB；SIGKILL 后第三进程取得锁、读到并改写 probe 行；E2E `42344829575`（`c68aebb`）**5/5**
 - ✅ **Vault 服务级应用链路**：smoke 构建 + 隔离标记触发的 `VaultService` probe，覆盖创建/锁定/错误密码/改密/重启持久化；结果经 `smoke-vault-probe` feature 写文件；密码/秘密不入日志。UI 自动化与 A→B 跨版本 **NOT_RUN**
 - ✅ **WP3 Team Sync 跨版本已实跑**：`v0.0.1-dev.2` 源码（固定 `835fae82…`）与当前 HEAD 各自独立进程，真实 HTTP/PG/磁盘 SQLite。A 首次推送/拉取 PASS，当前客户端在 A 数据库上升级并推送脏行 PASS；**A 的第二次同步 FAIL**：服务端把毫秒游标判为超出安全水位并返回全量窗口，历史客户端裸 `INSERT` 命中 `UNIQUE constraint failed`。已记录 finding 与复现脚本；CI 中该步骤是诊断（`continue-on-error`），不冒充产品门禁
-- 🟡 窗口焦点（headless）、Windows NSIS、Updater runtime、AppImage stock 仍 **NOT_RUN/BLOCKED_EXTERNAL**
-- 🟡 **Updater 运行时仍未实现**：`updates.ts` 只有检查与失败分类，无 `downloadAndInstall` 入口；临时密钥 + loopback 的 A/B 双构建尚未落地
+- ✅ **WP4 Updater 运行时（macOS arm64）**：`smoke-updater` feature 下的 Rust 探针完成 check → download → minisign 验签 → install → restart；临时密钥、loopback HTTP、两次真实构建、测试 identifier 隔离。9 用例全 PASS（正向安装重启、数据保留、7 个负向拒绝且无半安装）；Windows/Linux 运行时与正式签名仍 NOT_RUN/BLOCKED_EXTERNAL。见 `docs/phase9-7/updater-runtime.md`
+- ✅ **路由切换闪烁修复**：`RouteTransition` 改为同步按 pathname 设 key（消除新页面先挂载再重挂），外层不透明、动画只作用于内层内容；Vault 等页面不再透出背后的终端层。回归测试 `route-transition.test.tsx`，旧实现会让它失败
+- 🟡 窗口焦点（headless）、Windows NSIS、AppImage stock 仍 **NOT_RUN/BLOCKED_EXTERNAL**
 - ✅ 最终 E2E `42365420354`（`64db332`）5/5，此前 `42356452096`（`49e9903`）同为 5/5；证据矩阵 `42362610762`（`7be52ec`）3/3，指纹 **`72831ed9…`**（debug `4ddcc9dc…`、release `0b93d4b9…`），门禁 0 problem；最终 CI 见 PR
 - ✅ **Vault Escape 竞态修复**：窗口 `keydown` 监听改为注册一次并通过 ref 读取当前层级，消除告警刚渲染、effect 尚未重注册时 Escape 被旧闭包忽略的一帧；`packages/frontend/src` 因此变更，六份证据按规则重采为 `72831ed9…`
 - 📋 WP3 交付见 `docs/phase9-7/team-sync-cross-version.md`；跨版本兼容性**未通过**，是 RC 阻塞项

@@ -145,11 +145,12 @@ TEAM_DIRTY_RETRY_VERIFIED=PARTIAL
 TEAM_CONFLICT_SAFETY_VERIFIED=PARTIAL
 TEAM_DELETE_PROPAGATION_VERIFIED=PARTIAL
 
-UPDATER_RUNTIME_CHECK_VERIFIED=NOT_RUN
-UPDATER_SIGNED_DOWNLOAD_VERIFIED=NOT_RUN
-UPDATER_INSTALL_RESTART_VERIFIED=NOT_RUN
-UPDATER_DATA_PRESERVATION_VERIFIED=NOT_RUN
-UPDATER_NEGATIVE_MATRIX_VERIFIED=NOT_RUN
+UPDATER_RUNTIME_CHECK_VERIFIED=PASS
+UPDATER_SIGNED_DOWNLOAD_VERIFIED=PASS
+UPDATER_INSTALL_RESTART_VERIFIED=PASS
+UPDATER_DATA_PRESERVATION_VERIFIED=PASS
+UPDATER_NEGATIVE_MATRIX_VERIFIED=PASS
+UPDATER_PLATFORM_SCOPE=macOS-arm64
 
 UPGRADE_E2E_CURRENT_HEAD=PASS
 EVIDENCE_FINGERPRINT_VALID=PASS
@@ -168,6 +169,21 @@ B 是当前 HEAD。A 首次推送与拉取 PASS，当前客户端在 A 数据库
 **A 的第二次同步 FAIL**：服务端把毫秒游标当作超出安全水位并返回全量窗口，
 历史客户端用裸 `INSERT` 应用快照，重复 share 触发 `UNIQUE constraint failed`。
 详见 [team-sync-cross-version.md](team-sync-cross-version.md)。
+
+## WP4 — Updater 运行时（本轮新增）
+
+`src-tauri/src/updater_probe.rs`（`smoke-updater` feature，生产构建不编译）补齐
+check → download → minisign 验签 → install → restart；`updater-e2e.mjs` 用临时密钥、
+loopback HTTP 与两次真实构建跑 9 个用例：正向安装并重启为 B、数据保留、7 个负向
+（降级、错误架构、404、缺签名、错签名、篡改、截断）全部按预期拒绝且不产生半安装。
+macOS arm64 通过；Windows NSIS/Linux AppImage 运行时与正式签名仍 NOT_RUN/BLOCKED_EXTERNAL。
+详见 [updater-runtime.md](updater-runtime.md)。
+
+## 产品缺陷修复（本轮）
+
+- **路由切换闪烁**：`RouteTransition` 用 effect 更新 key 导致新页面先挂载再重挂；
+  改为同步按 pathname 设 key、外层加不透明背景、动画只作用于内层内容（避免位移
+  暴露背后的终端层）。回归测试见 `route-transition.test.tsx`。Issue #195。
 
 ## 相关文档
 

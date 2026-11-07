@@ -21,6 +21,8 @@ mod state;
 mod storage;
 mod terminal_smoke;
 mod tray;
+#[cfg(feature = "smoke-updater")]
+mod updater_probe;
 mod vault;
 mod window_cmd;
 
@@ -266,6 +268,13 @@ pub fn run() {
                     tracing::error!(reason = %recovery.reason, "database restore was interrupted; next start will retry");
                 }
                 _ => {}
+            }
+            // Test-only updater runtime (feature + environment gated); no-op in
+            // every production build.
+            #[cfg(feature = "smoke-updater")]
+            {
+                updater_probe::record_boot(app.handle());
+                updater_probe::maybe_start(app.handle());
             }
             if !terminal_smoke::setup(app) {
                 if let Err(e) = tray::build_tray(app.handle()) {

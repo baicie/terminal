@@ -5247,3 +5247,32 @@ Xvfb display 由 harness 动态分配，不再固定 `:99`。AppImage 同路径�
 - updater 只有静态 manifest 契约，运行时下载/验签/安装/重启 `NOT_RUN`。
 
 详见 `docs/phase9-5/release-blockers.md`。
+
+### Issue #195: 路由切换时页面闪烁一次并透出背后的终端 ✅ 已修复（2026-11-07）
+
+**严重程度**: 🟡 Important
+**状态**: ✅ 已修复
+**影响功能**: 所有非 `/terminal` 路由（Vault、Hosts、Settings 等）
+
+**症状**:
+
+1. 从终端切到其他页面时，目标页面出现后瞬间消失，再重新出现（"一闪而过"）；
+2. Vault 等未使用 `ViewContainer` 的页面背景透明，终端输出会从页面中间透出来；
+3. 懒加载路由会多走一次 Suspense fallback。
+
+**根因**:
+
+- `RouteTransition` 把 pathname 存进 state，并在 `useEffect` 里更新。导航后的第一帧
+  仍以旧 key 渲染新页面（第一次挂载），effect 再改 key，导致同一页面被卸载并
+  **重新挂载一次**；route-enter 动画也因此重放。
+- 过渡容器没有背景色，而终端层始终挂载在其后；`route-enter` 从 `opacity: 0`
+  淡入，进一步放大了"透出终端"的观感。
+
+**修复**:
+
+- `RouteTransition` 直接以 `pathname` 作为 key（同一帧内完成替换），删除 state/effect；
+- 容器加 `bg-background`；
+- `route-enter` 只做 4px 位移，不再改变透明度；
+- 新增 `route-transition.test.tsx`，断言导航后新页面只挂载一次，并验证旧实现会让该测试失败。
+
+**验证**: 前端单测 4/4（route-transition + main-layout-content），完整前端套件与 CI 见 PR #9。

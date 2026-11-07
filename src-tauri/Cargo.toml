@@ -19,6 +19,9 @@ tauri-build = { version = "2", features = [] }
 [features]
 # Test-only Vault acceptance probe; the command is a no-op without it.
 smoke-vault-probe = []
+# Test-only updater runtime: check, download, verify and install from a loopback
+# endpoint. Absent from every production build.
+smoke-updater = []
 
 [dependencies]
 tauri = { version = "2.10", features = ["macos-private-api", "tray-icon", "image-png"] }

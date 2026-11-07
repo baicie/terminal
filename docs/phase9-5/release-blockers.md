@@ -169,6 +169,15 @@
   而是先完成客户端升级（WP4 updater 仍 NOT_RUN）。见
   `docs/phase9-7/team-sync-cross-version.md`。
 
+## 5.6 Phase 9.7 WP4 Updater 运行时（macOS）
+
+- `smoke-updater` feature 的 Rust 探针补齐 check/download/验签/install/restart，
+  生产构建不编译；harness 用临时 minisign 密钥 + loopback HTTP + 两次真实构建。
+- macOS arm64：正向安装并重启为 B、SQLite 数据保留、7 个负向（降级、错误架构、
+  404、缺签名、错签名、篡改、截断）全部按预期拒绝且无半安装，5 项判定均 PASS。
+- Windows NSIS/MSI 与 Linux AppImage/deb 的运行时安装、Apple notarization、
+  Windows Authenticode、生产 updater 公钥仍 **NOT_RUN/BLOCKED_EXTERNAL**。
+
 ## 6. 判定
 
 | 判定 | 结果 |
