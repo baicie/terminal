@@ -45,6 +45,13 @@
   从 B DMG 安装，三次启动：首次存活 → 第二次被拒并激活首进程 → SIGKILL 后
   第三次取得锁并真实读写数据库）。
 
+### 证据
+
+官方 `real-machine-matrix` run `42346192749`（`c68aebb`）**3/3 success**，
+六份证据指纹 **`a0a76721…`**（debug `3ee31536…`、release `52a99465…`），
+`check-verification-evidence.mjs` **0 problem**；raw log 归档
+`docs/verification/raw/42346192749/`。未手工修改 manifest。
+
 ## 2. WP1 — Windows NSIS
 
 - 共享 `windows-latest` 只运行隔离状态机与原生进程树探针，并**证明共享 profile
@@ -108,7 +115,7 @@ VAULT_RESTART_PERSISTENCE_VERIFIED=PASS
 VAULT_CROSS_VERSION_VERIFIED=NOT_RUN
 
 UPGRADE_E2E_CURRENT_HEAD=PASS
-EVIDENCE_FINGERPRINT_VALID=待重采
+EVIDENCE_FINGERPRINT_VALID=PASS
 CI_ALL_GREEN=待最终 CI
 PHASE_9_7_P0_A_COMPLETE=PARTIAL
 PR_9_READY_FOR_REVIEW=NO
