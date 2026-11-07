@@ -657,7 +657,8 @@ pnpm add <package-name>
 - ✅ **WP3 Team Sync 跨版本已实跑**：`v0.0.1-dev.2` 源码（固定 `835fae82…`）与当前 HEAD 各自独立进程，真实 HTTP/PG/磁盘 SQLite。A 首次推送/拉取 PASS，当前客户端在 A 数据库上升级并推送脏行 PASS；**A 的第二次同步 FAIL**：服务端把毫秒游标判为超出安全水位并返回全量窗口，历史客户端裸 `INSERT` 命中 `UNIQUE constraint failed`。已记录 finding 与复现脚本；CI 中该步骤是诊断（`continue-on-error`），不冒充产品门禁
 - 🟡 窗口焦点（headless）、Windows NSIS、Updater runtime、AppImage stock 仍 **NOT_RUN/BLOCKED_EXTERNAL**
 - 🟡 **Updater 运行时仍未实现**：`updates.ts` 只有检查与失败分类，无 `downloadAndInstall` 入口；临时密钥 + loopback 的 A/B 双构建尚未落地
-- ✅ 最终 E2E `42356452096` 5/5（`49e9903`）；证据矩阵 `42355653387` 3/3，指纹 `43fdc334…`，门禁 0 problem；最终 CI `42357395943`（`8adff85`）**11/11**
+- ✅ 最终 E2E `42356452096` 5/5（`49e9903`）；证据矩阵 `42362610762`（`7be52ec`）3/3，指纹 **`72831ed9…`**（debug `4ddcc9dc…`、release `0b93d4b9…`），门禁 0 problem；此前 `42357395943`（`8adff85`）为 11/11，新 HEAD 的 CI 见 PR
+- ✅ **Vault Escape 竞态修复**：窗口 `keydown` 监听改为注册一次并通过 ref 读取当前层级，消除告警刚渲染、effect 尚未重注册时 Escape 被旧闭包忽略的一帧；`packages/frontend/src` 因此变更，六份证据按规则重采为 `72831ed9…`
 - 📋 WP3 交付见 `docs/phase9-7/team-sync-cross-version.md`；跨版本兼容性**未通过**，是 RC 阻塞项
 - ✅ **Vault 生产构建门禁**：无 feature 时 `vault_probe_report` no-op；生产 bundle 无 probe 常量、smoke overlay 有 probe，均有构建断言
 - 📋 判定见 `docs/phase9-7/phase9-7-product-acceptance.md`、`single-instance-e2e.md`、`vault-app-e2e.md`、`session-lock-safety.md`
