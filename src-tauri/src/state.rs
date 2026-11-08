@@ -207,7 +207,10 @@ pub struct SftpFileItem {
     pub path: String,
     pub is_directory: bool,
     pub size: u64,
-    pub modified_time: i64,
+    /// Seconds since the Unix epoch, or `None` when the server did not report a
+    /// modification time. Never filled in with a placeholder: a fabricated
+    /// timestamp sorts and displays as if it were real.
+    pub modified_time: Option<i64>,
     pub permissions: String,
 }
 
