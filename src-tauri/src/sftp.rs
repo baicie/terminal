@@ -2,7 +2,6 @@ use crate::errors::SftpError;
 use crate::session::get_session_manager;
 use crate::state::{SftpFileItem, SharedStateType};
 use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::OpenFlags;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -201,6 +200,8 @@ pub async fn sftp_upload(
 
     let sftp = get_sftp(&state, &session_id).await?;
 
+    // Known before the first remote byte moves, so a failure can still report a
+    // meaningful total to the progress UI.
     let total_bytes = match tokio::fs::metadata(&local_path).await {
         Ok(m) => m.len(),
         Err(e) => {
@@ -222,124 +223,89 @@ pub async fn sftp_upload(
         local_path = %local_path,
         remote_path = %remote_path,
         total_bytes,
-        "sftp_upload: starting",
+        "sftp_upload: starting staged upload",
     );
-
-    let mut local = match tokio::fs::File::open(&local_path).await {
-        Ok(f) => f,
-        Err(e) => {
-            let msg = format!("Failed to open local file: {}", e);
-            emit_progress(
-                &app,
-                &transfer_id,
-                "error",
-                0,
-                total_bytes,
-                Some(msg.clone()),
-                None,
-            );
-            return Err(SftpError::UploadFailed(msg));
-        }
-    };
-
-    let mut remote = match sftp
-        .open_with_flags(
-            &remote_path,
-            OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE,
-        )
-        .await
-    {
-        Ok(f) => f,
-        Err(e) => {
-            let msg = format!("Failed to open remote file: {}", e);
-            emit_progress(
-                &app,
-                &transfer_id,
-                "error",
-                0,
-                total_bytes,
-                Some(msg.clone()),
-                None,
-            );
-            return Err(SftpError::UploadFailed(msg));
-        }
-    };
-
     emit_progress(&app, &transfer_id, "progress", 0, total_bytes, None, None);
 
-    let mut buf = vec![0u8; CHUNK_SIZE];
-    let mut sent: u64 = 0;
+    let remote = crate::sftp_upload::SftpRemote { session: &sftp };
     let mut last_emit = std::time::Instant::now();
-
-    loop {
-        let n = match local.read(&mut buf).await {
-            Ok(0) => break,
-            Ok(n) => n,
-            Err(e) => {
-                let msg = format!("Read local file failed: {}", e);
-                emit_progress(
-                    &app,
-                    &transfer_id,
-                    "error",
-                    sent,
-                    total_bytes,
-                    Some(msg.clone()),
-                    None,
-                );
-                return Err(SftpError::UploadFailed(msg));
+    let result = crate::sftp_upload::staged_upload(
+        &remote,
+        std::path::Path::new(&local_path),
+        &remote_path,
+        |sent, total| {
+            if last_emit.elapsed().as_millis() >= PROGRESS_INTERVAL_MS {
+                emit_progress(&app, &transfer_id, "progress", sent, total, None, None);
+                last_emit = std::time::Instant::now();
             }
-        };
-        if let Err(e) = remote.write_all(&buf[..n]).await {
-            let msg = format!("Write remote file failed: {}", e);
+        },
+        || crate::sftp_upload::is_cancelled(&transfer_id),
+    )
+    .await;
+
+    // The id must not cancel a later transfer that happens to reuse it.
+    crate::sftp_upload::clear_cancel(&transfer_id);
+
+    match result {
+        Ok(outcome) => {
+            tracing::info!(
+                transfer_id = %transfer_id,
+                sent = outcome.bytes,
+                replaced = outcome.replaced,
+                backup_leftover = outcome.backup_leftover,
+                "sftp_upload: completed",
+            );
+            if outcome.backup_leftover {
+                tracing::warn!(
+                    transfer_id = %transfer_id,
+                    "sftp_upload: the previous version could not be removed after the replace",
+                );
+            }
+            emit_progress(
+                &app,
+                &transfer_id,
+                "done",
+                outcome.bytes,
+                total_bytes,
+                None,
+                None,
+            );
+            Ok(())
+        }
+        Err(error) => {
+            let msg = error.to_string();
+            tracing::warn!(
+                transfer_id = %transfer_id,
+                sent = total_bytes,
+                error = %msg,
+                "sftp_upload: failed; the destination was left as it was",
+            );
             emit_progress(
                 &app,
                 &transfer_id,
                 "error",
-                sent,
+                0,
                 total_bytes,
                 Some(msg.clone()),
                 None,
             );
-            return Err(SftpError::UploadFailed(msg));
-        }
-        sent += n as u64;
-
-        if last_emit.elapsed().as_millis() >= PROGRESS_INTERVAL_MS {
-            emit_progress(
-                &app,
-                &transfer_id,
-                "progress",
-                sent,
-                total_bytes,
-                None,
-                None,
-            );
-            last_emit = std::time::Instant::now();
+            Err(SftpError::UploadFailed(msg))
         }
     }
+}
 
-    if let Err(e) = remote.flush().await {
-        let msg = format!("Flush remote file failed: {}", e);
-        emit_progress(
-            &app,
-            &transfer_id,
-            "error",
-            sent,
-            total_bytes,
-            Some(msg.clone()),
-            None,
-        );
-        return Err(SftpError::UploadFailed(msg));
+/// Ask an in-flight upload to stop between chunks.
+///
+/// The flag is read by `staged_upload` and cleared when the upload returns, so a
+/// cancelled transfer leaves no staging file behind and cannot cancel a later
+/// transfer that reuses the id.
+#[tauri::command]
+pub async fn sftp_cancel_transfer(transfer_id: String) -> Result<bool, SftpError> {
+    if transfer_id.is_empty() {
+        return Err(SftpError::InvalidPath("Transfer id cannot be empty".into()));
     }
-
-    tracing::info!(
-        transfer_id = %transfer_id,
-        sent,
-        total_bytes,
-        "sftp_upload: completed",
-    );
-    emit_progress(&app, &transfer_id, "done", sent, total_bytes, None, None);
-    Ok(())
+    crate::sftp_upload::request_cancel(&transfer_id);
+    Ok(true)
 }
 
 /// Streaming download with chunked progress events. Mirror of `sftp_upload`.
