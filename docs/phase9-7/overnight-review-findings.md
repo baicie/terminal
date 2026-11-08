@@ -13,12 +13,12 @@
 | 4 | resync 页 `hasMore=true` 但 cursor 不可用时清理本地行 | `team-sync-engine.ts` | 仅 `hasMore!==true` 才结束轮次 | `team-actions-sync.test.ts` |
 | 5 | SFTP 会话并发创建泄漏；卸载后 resolve 的会话无人关闭 | `use-sftp-remote.ts` | 在途 Promise 复用、卸载/host 变更后 close | `use-sftp-remote.test.tsx` |
 | 6 | `-L/-D` 转发读写共用一把锁，全双工死锁 | `port_forward.rs` | `tokio::io::split` 拆分读写半 | `socket_reader_does_not_block_the_write_direction` |
+| 7 | 远端 `-R` 的 listener 从未接入 SSH handler，`cancel_tcpip_forward` 未调用 | `state.rs`、`session/ssh.rs`、`port_forward.rs` | `ClientHandler` 的 slot 改为共享 `Arc<RwLock<..>>`，建连时存入会话；setup 写入、stop/shutdown 清空并取消绑定 | `the_connection_owner_and_the_handler_share_the_forward_slot`；真实 SSH E2E 仍 NOT_RUN |
 
 ## 已确认但本轮未修复（记录风险）
 
 | # | 风险 | 位置 | 建议 |
 | --- | --- | --- | --- |
-| 7 | 远程端口转发（-R）收不到 `forwarded-tcpip`：`forward_listener` 从未写入，`FORWARD_REGISTRY` 无读取者；stop 不 `cancel_tcpip_forward` | `state.rs:232/253/278/292/441`、`port_forward.rs:369/789` | 建连时把 listener 存入会话；stop 取消远端绑定并清理 |
 | 8 | SSH writer 超时竞态：过期命令丢弃 reply 后被当成 fatal completion，健康会话被拆 | `ssh_writer.rs:179-186/287-311`、`ssh.rs:1227/1317` | 超时分支显式回超时错误；`Ok(Err(_))` 在 deadline 后不 retire |
 | 9 | 协议 1 客户端无 cursor 首次同步 >200 行会静默只拿前 200 | `sync-delivery.ts:180-205`、dev.2 `getChanges(undefined)` | 服务端对无 cursor 走整窗或拒绝；当前客户端显式发送 `2.0.0.0` 初始游标 |
 | 10 | `teamApi` 可变单例可在一次分页同步中被切换 endpoint | `team-api-base.ts`、`team-actions-sync.ts:46` | 每轮快照不可变 client 或凭据作为请求参数 |

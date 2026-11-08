@@ -46,7 +46,20 @@
 - 不完整 resync 不再清理本地行。
 - 端口转发读写拆分，消除 `-L/-D` 全双工死锁（`ccd57ae`，duplex 回归测试）。
 
-### 6. Settings / Hosts / UI
+### 6. 远端端口转发（-R）接线
+- 根因：listener 只写入无人读取的 `FORWARD_REGISTRY`，`ClientHandler.forward_listener`
+  从未赋值；`server_channel_open_forwarded_tcpip` 永远丢弃连接；stop 不取消远端绑定。
+- 修复：slot 改为共享 `Arc<RwLock<..>>`，建连时存入 `SshSessionState`；setup 写入，
+  stop/shutdown 清空并 `cancel_tcpip_forward`。
+- commit `47e4464`；slot 共享回归测试通过；真实 SSH 端到端仍 NOT_RUN（本机无 sshd）。
+
+### 7. 路由预加载
+- 用户首次进入仍看到 Loading：懒加载在点击时才拉取 chunk。
+- 修复：router 创建后立即并行 import 全部路由视图，首次导航命中模块缓存；
+  Suspense fallback 改静默骨架屏（aria-busy），不再显示文字。
+- commit `08ccda7`；前端 164 文件/1436 项与 bundle budget 通过。
+
+### 8. Settings / Hosts / UI
 - Settings：loading/ready/error、失败重试、未保存标记、离开回滚预览、保存中禁用。
 - Hosts：加载失败显示错误与重试，AbortSignal 防过期，loadGroups 不再 unhandled。
 - Host Dialog：shadcn Dialog（焦点/Esc/aria），未保存关闭需确认；表单逻辑拆 hook。
