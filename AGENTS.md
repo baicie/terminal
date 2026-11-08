@@ -717,6 +717,34 @@ pnpm add <package-name>
   报错退出，不把打包失败伪装成通过。
 - ✅ Upgrade E2E `42481700333`（`4f7b83b`）**6/6 success**。
 
+### Phase 10 - Personal Daily Driver 🔄 进行中（Draft PR #22）
+
+定位从"广泛的管理平台"收敛为个人日用终端；原则 Terminal-first / Local-first /
+Keyboard-first / Reliability-first。基线 `main = 18d6ed0`。
+
+- 📄 交付文档：`docs/phase10/01-current-state-audit.md`（现状审计）、`02-personal-terminal-prd.md`、
+  `03-ui-design-system.md`、`04-architecture-and-credential-policy.md`（凭据 ADR）、
+  `05-tabby-migration.md`、`06-daily-driver-acceptance.md`
+- ✅ **M1 凭据边界**：`credential-boundary`（CredentialRef/SecretProvider/SessionCredentialResolver）+
+  `vault-secret-provider`；`hosts` 保存路径 SQL 中 `password`/`private_key` 恒为 NULL，
+  秘密进 Vault，行上只留 `credential_ref`（新增列）。连接时解析：内联秘密优先；
+  有引用但 Vault 不可用 → 失败并说明，不退化为空密码。负向测试在旧实现上 4 项失败。
+- 🟡 **M1 迁移未做**：`ssh_keys` 表仍是明文列；历史明文 WAL/备份清理需用户授权流程
+- ✅ **M2 主机搜索**：命令面板改为全量排序后截断（原 `hosts.slice(0,20)` 使第 21 台永不可搜），
+  1/20/21/100/1000 矩阵测试
+- ✅ **M2 Quick Connect**：新增 `ssh -p 2222 user@host`（选项前置）支持，36 项语法矩阵
+- ✅ **M2 快捷键持久化**：写入 settings 表、冲突显式拒绝、恢复默认、导入导出；
+  顺带修复"恢复默认把 Ctrl+J 换成 Ctrl+K"的按 action 合并缺陷
+- ✅ **M2 安全粘贴**：统一 PastePolicy，多行/控制字符/超大文本先预览确认，不改写、
+  不隐式回车；桌面右键与移动端菜单共用
+- ✅ **M3 Terminal-first**：导航分 primary/secondary/advanced；索引路由指向终端常驻层
+  （element: null，避免第二个 TerminalContainer）；不删路由
+- ✅ **M3 扩展 OpenSSH 导入**：解析 + 导入计划完成（42 项测试），Import 不覆盖、幂等、
+  私钥只存路径；UI 未接；Tabby 格式 NOT_RUN（无稳定样本，不猜）
+- 🟡 未验证：真实 GUI 截图（无 Screen Recording 权限）、SHELL_KEYBOARD_COMPATIBILITY、
+  TERMINAL_SESSION_LIFECYCLE、本轮 SSH/SFTP 真实 E2E 重跑
+- 📋 `DAILY_DRIVER_READY=NO`、`TABBY_REPLACEMENT_READY=NO`（需 7 天真实使用数据）
+
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
