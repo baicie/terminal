@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { createSyncActions } from './team-actions-sync'
 import { MAX_SYNC_PAGES, syncCursorStorageKey } from './team-sync-engine'
+import { INITIAL_SYNC_CURSOR } from '@/service/team-api-sync'
 import { convertApiShare as realConvertApiShare } from '@/service/team-api-converters'
 import type { TeamState } from './team-types'
 
@@ -185,7 +186,7 @@ it('resumes the same window after switching the current team', async () => {
   const harness = createHarness()
 
   await harness.actions.sync()
-  expect(mocks.getChanges.mock.calls[0][0]).toBeUndefined()
+  expect(mocks.getChanges.mock.calls[0][0]).toBe(INITIAL_SYNC_CURSOR)
 
   const switched = harness.state().currentTeam
   expect(switched).not.toBeNull()
@@ -217,7 +218,7 @@ it('discards the legacy global cursor instead of porting it into a scope', async
 
   // A global cursor names no server and no identity, so it cannot be proven to
   // belong here: the round asks for the whole window instead of resuming.
-  expect(mocks.getChanges.mock.calls[0][0]).toBeUndefined()
+  expect(mocks.getChanges.mock.calls[0][0]).toBe(INITIAL_SYNC_CURSOR)
   expect(globalThis.localStorage.getItem(LEGACY_KEY)).toBeNull()
   // The cursor the server issued for this scope is stored as usual.
   expect(globalThis.localStorage.getItem(syncCursorStorageKey(SCOPE))).toBe(
@@ -235,7 +236,7 @@ it('drops a legacy value that is not a cursor instead of replaying it', async ()
 
   await harness.actions.sync()
 
-  expect(mocks.getChanges.mock.calls[0][0]).toBeUndefined()
+  expect(mocks.getChanges.mock.calls[0][0]).toBe(INITIAL_SYNC_CURSOR)
   expect(globalThis.localStorage.getItem(LEGACY_KEY)).toBeNull()
 })
 
@@ -252,7 +253,7 @@ it('pulls every page and only advances the cursor page by page', async () => {
   await harness.actions.sync()
 
   expect(mocks.getChanges).toHaveBeenCalledTimes(2)
-  expect(mocks.getChanges.mock.calls[0][0]).toBeUndefined()
+  expect(mocks.getChanges.mock.calls[0][0]).toBe(INITIAL_SYNC_CURSOR)
   expect(mocks.getChanges.mock.calls[1][0]).toBe(PAGE_ONE)
   expect(globalThis.localStorage.getItem(syncCursorStorageKey(SCOPE))).toBe(
     PAGE_TWO,
