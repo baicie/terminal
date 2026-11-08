@@ -1,6 +1,7 @@
 import type { CommandHistoryRecord, SnippetRecord } from '@/service/database'
 import { ChevronRight, Clock, Code } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/sonner'
 import {
@@ -24,6 +25,7 @@ const TerminalToolSidebar: React.FC<TerminalToolSidebarProps> = ({
   visible,
   onToggle,
 }) => {
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<ActiveTab>('snippets')
   const [searchQuery, setSearchQuery] = useState('')
   const [snippets, setSnippets] = useState<SnippetRecord[]>([])
@@ -91,7 +93,10 @@ const TerminalToolSidebar: React.FC<TerminalToolSidebarProps> = ({
         } catch {
           /* ignore */
         }
-        const value = window.prompt(`Enter value for ${varName}:`, defaultValue)
+        const value = window.prompt(
+          t('snippets.enterVarPrompt', { name: varName }),
+          defaultValue,
+        )
         if (value === null) return // User cancelled
         values[varName] = value
       }
@@ -102,8 +107,8 @@ const TerminalToolSidebar: React.FC<TerminalToolSidebarProps> = ({
     }
 
     terminalEmitter.writeCommand(script)
-    toast.success(`Executing: ${snippet.name}`)
-  }, [])
+    toast.success(t('snippets.executing', { name: snippet.name }))
+  }, [t])
 
   // Execute history command
   const handleExecuteHistory = useCallback((record: CommandHistoryRecord) => {
@@ -135,7 +140,7 @@ const TerminalToolSidebar: React.FC<TerminalToolSidebarProps> = ({
                 onClick={() => setActiveTab('snippets')}
               >
                 <Code className="size-3.5" />
-                Snippets
+                {t('snippets.title')}
               </Button>
               <Button
                 variant="ghost"
@@ -148,7 +153,7 @@ const TerminalToolSidebar: React.FC<TerminalToolSidebarProps> = ({
                 onClick={() => setActiveTab('history')}
               >
                 <Clock className="size-3.5" />
-                History
+                {t('snippets.historyTab')}
               </Button>
             </div>
 
@@ -164,7 +169,9 @@ const TerminalToolSidebar: React.FC<TerminalToolSidebarProps> = ({
                   <ChevronRight className="size-3.5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="left">Collapse</TooltipContent>
+              <TooltipContent side="left">
+                {t('snippets.collapseSidebar')}
+              </TooltipContent>
             </Tooltip>
           </>
         )}

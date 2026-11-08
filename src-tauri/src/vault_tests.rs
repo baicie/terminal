@@ -761,6 +761,51 @@ fn concurrent_creates_leave_exactly_one_vault() {
     assert!(VaultState::unlock(OLD_PASSWORD, path).is_ok());
 }
 
+/// Regression for the `created == 2` failure CI caught: a creator that wins
+/// `create_new` but takes the create lock *after* a reclaiming creator filled
+/// the same placeholder must be refused, not report a second success.
+///
+/// `create_new` only decides who opened the zero-length placeholder. Until that
+/// creator fills it the path still looks like the placeholder of an interrupted
+/// create, so another creator may legitimately reclaim it -- and can reach the
+/// lock first. Filling without re-checking under the lock then overwrote the
+/// reclaimer's vault while both callers were told they had created one.
+#[test]
+fn a_fresh_claim_loses_to_a_reclaimer_that_filled_the_placeholder_first() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    let path = vault_path(dir.path());
+
+    // This thread stands in for the creator that has just won `create_new` and
+    // has not taken the create lock yet: the path holds its empty placeholder.
+    let handle = match claim_new_vault_file(&path).expect("claim the free path") {
+        Claim::Fresh(handle) => handle,
+        Claim::Reclaimed => panic!("a fresh directory must yield a fresh claim"),
+    };
+
+    // The reclaiming creator arrives in that window, finds the empty placeholder
+    // and fills it. It takes the lock and releases it before this thread does.
+    VaultState::create(OLD_PASSWORD, path.clone()).expect("the reclaiming creator fills the path");
+
+    let second = fill_fresh_claim(&path, handle, b"{\"salt\":\"second-creator\"}");
+    assert!(
+        matches!(second, Err(VaultError::AlreadyExists)),
+        "the claim winner must lose to the creator that filled the path, got {second:?}"
+    );
+
+    // The reclaiming creator's vault is the one that survives, byte for byte.
+    assert!(
+        VaultState::unlock(OLD_PASSWORD, path.clone()).is_ok(),
+        "the vault the reclaiming creator wrote must still open"
+    );
+    assert!(
+        !fs::read_to_string(&path)
+            .expect("read vault")
+            .contains("second-creator"),
+        "the losing claim must not leave any of its own content behind"
+    );
+    assert_eq!(dir_entries(dir.path()), vec!["vault.json".to_string()]);
+}
+
 #[test]
 fn every_read_only_path_keeps_the_legacy_bytes_intact() {
     let dir = tempfile::tempdir().expect("temporary directory");

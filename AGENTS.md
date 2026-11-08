@@ -647,6 +647,45 @@ pnpm add <package-name>
 - 🟡 已运行实例在另一实例恢复期间的普通写入、Windows reparse/ACL/NSIS A→B 仍 PARTIAL/NOT_RUN
 - 📋 判定见 `docs/phase9-6/phase9-6-3-final-data-safety.md`
 
+### Phase 9.7 - Cross-Platform Product Acceptance & RC Hardening 🔄 P0-A 完成，产品验收进行中
+
+- ✅ **单实例**：`tauri-plugin-single-instance v2.5.5` 首个注册插件；第二次启动激活/重建主窗口；`instance.lock` 在任何数据库访问前持有，`RuntimeLockHandle` 校验 inode，锁文件被删除/替换即失效
+- ✅ **Retry 绕过封堵**：`retry_recovery(..., runtime_held)`、完成迁移、备份命令与前端 `getDb` 全部校验运行时锁；未持锁不得升级为 HEALTHY
+- ✅ **P0-A.2 会话锁闭合**：`getDb` 每次调用（含缓存/初始化中）校验锁；锁失效即关闭缓存句柄并阻断。锁身份取自已加锁 fd，Unix 对比 inode、拒绝 symlink/替换；Windows 用 creation_time+size 近似（PARTIAL）。plugin-sql 直接命令的信任边界已记录（不做前端万能声明）
+- ✅ **真实三进程 E2E**：从 B DMG 安装并校验 SHA；第二次启动 code 0 并激活首进程、仅一个 DB；SIGKILL 后第三进程取得锁、读到并改写 probe 行；E2E `42344829575`（`c68aebb`）**5/5**
+- ✅ **Vault 服务级应用链路**：smoke 构建 + 隔离标记触发的 `VaultService` probe，覆盖创建/锁定/错误密码/改密/重启持久化；结果经 `smoke-vault-probe` feature 写文件；密码/秘密不入日志。UI 自动化与 A→B 跨版本 **NOT_RUN**
+- ✅ **WP3 Team Sync 跨版本已实跑**：`v0.0.1-dev.2` 源码（固定 `835fae82…`）与当前 HEAD 各自独立进程，真实 HTTP/PG/磁盘 SQLite。A 首次推送/拉取 PASS，当前客户端在 A 数据库上升级并推送脏行 PASS；**A 的第二次同步 FAIL**：服务端把毫秒游标判为超出安全水位并返回全量窗口，历史客户端裸 `INSERT` 命中 `UNIQUE constraint failed`。已记录 finding 与复现脚本；CI 中该步骤是诊断（`continue-on-error`），不冒充产品门禁
+- ✅ **WP4 Updater 运行时（macOS arm64）**：`smoke-updater` feature 下的 Rust 探针完成 check → download → minisign 验签 → install → restart；临时密钥、loopback HTTP、两次真实构建、测试 identifier 隔离。9 用例全 PASS（正向安装重启、数据保留、7 个负向拒绝且无半安装）；Windows/Linux 运行时与正式签名仍 NOT_RUN/BLOCKED_EXTERNAL。见 `docs/phase9-7/updater-runtime.md`
+- ✅ **路由切换闪烁修复**：`RouteTransition` 改为同步按 pathname 设 key（消除新页面先挂载再重挂），外层不透明、动画只作用于内层内容；Vault 等页面不再透出背后的终端层。回归测试 `route-transition.test.tsx`，旧实现会让它失败
+- 🟡 窗口焦点（headless）、Windows NSIS、AppImage stock 仍 **NOT_RUN/BLOCKED_EXTERNAL**
+- ✅ 最终 E2E `42365420354`（`64db332`）5/5，此前 `42356452096`（`49e9903`）同为 5/5；证据矩阵 `42447284830`（`2695f5c`）3/3，指纹 **`32729825…`**（debug `133c8daa…`、release `8b8c2e5d…`），门禁 0 problem；最终 CI 见 PR
+- ✅ **Vault Escape 竞态修复**：窗口 `keydown` 监听改为注册一次并通过 ref 读取当前层级，消除告警刚渲染、effect 尚未重注册时 Escape 被旧闭包忽略的一帧；`packages/frontend/src` 因此变更并触发过一次证据重采
+- ✅ **vault 并发创建双赢修复（CI 实测 `created=2`）**：`create_new` 赢家若在取锁前被抢占，回收者先写盘后它仍会覆盖；现在 `Fresh` 分支取锁后复查 `is_unfilled_placeholder(path)`，两分支同锁下决出唯一赢家。`src-tauri/src` 因此变更，六份证据按规则重采为 `32729825…`（run `42447284830`，`2695f5c`），门禁 0 problem，未手改 manifest
+- 📋 WP3 交付见 `docs/phase9-7/team-sync-cross-version.md`；跨版本兼容性**未通过**，是 RC 阻塞项
+- ✅ **夜间 P0 修复**：SFTP 会话绑定 hostKey、切换即关闭旧会话并丢弃过期 generation 响应（双主机竞态测试旧实现失败/新实现通过）；云团队创建改走真实 `POST /teams` 并持久化服务端 id（失败不提示成功）；历史毫秒游标按最低版本策略返回 426（ADR `adr-legacy-sync-policy.md`）
+- ✅ **夜间数据安全修复（代码审查）**：云同步不再删除 local/其他 endpoint 的共享；敏感态冲突返回 `SENSITIVE_STATE_MISMATCH`；`operation=DELETE` push 明确拒绝；不完整 resync 不再清理本地行；SFTP 在途会话复用/卸载关闭；端口转发读写拆分消除全双工死锁
+- ✅ **夜间 UI 修复**：Settings loading/ready/error + 重试 + 未保存回滚；Hosts 加载失败重试；Host Dialog 改 shadcn Dialog（焦点/Esc/未保存确认）；侧栏 Arrow/Home/End 键盘调整；设置/主机/端口转发/钥匙串/SFTP/片段/团队/命令面板全量中文化（bundle 预算 577→588 KB，按预算注释逐次说明）
+- 🟡 未修但已记录（`docs/phase9-7/overnight-review-findings.md`）：-R 远端转发未接线、SSH writer 超时竞态、协议 1 无游标首同步截断、teamApi 单例跨 endpoint、上传截断远端文件、SFTP mtime；UI 截图因本机无辅助功能/录屏权限 NOT_RUN
+- ✅ **Vault 生产构建门禁**：无 feature 时 `vault_probe_report` no-op；生产 bundle 无 probe 常量、smoke overlay 有 probe，均有构建断言
+- 📋 判定见 `docs/phase9-7/phase9-7-product-acceptance.md`、`single-instance-e2e.md`、`vault-app-e2e.md`、`session-lock-safety.md`
+
+### Phase 9.8 - Data Integrity, Sync Isolation & Real SSH Acceptance 🟡 Draft PR 完成
+
+- ✅ **9.8-A SFTP staged upload**：暂存文件 + 备份替换，失败不再截断原文件；18 项故障测试 + 真实 OpenSSH sftp-server 验收；PR #10。
+- ✅ **9.8-B1 同步身份隔离**：不可变 round 上下文，分页中途切换 endpoint/token/身份即中止；两个真实 HTTP 服务端测试；PR #11。
+- ✅ **9.8-B2 首同步整窗**：`X-Sync-Protocol` 协商，协议 1 整窗 ≤5000、超限 426，矛盾声明 426；真实 PG 0/1/199/200/201/500 矩阵；PR #12。
+- ✅ **9.8-C1 SSH writer 超时**：区分队列超时/已开始超时，已开始的写超时退役 writer 并报“可能已部分送达”；14 项测试；PR #13。
+- ✅ **9.8-C2 `-R` 真实 SSH**：真实 sshd 上绑定、双向、并发、半关闭、cancel、重复绑定、断开释放；`-L` 回归；PR #14。
+- ✅ **9.8-D 修改时间与本地化**：SFTP 列表改用 `modified()`，未知为 `None` 显示 `—`；新增三语键集 parity 测试；PR #15。
+- ✅ **集成与审查**：PR #16 合并六个 WP；PR #9 审查判定 `REQUEST_CHANGES`（同步错误无 UI 提示），已在集成修复（Teams 错误横幅 + 重试）。
+- ✅ 证据：矩阵 `42464747336` 3/3，指纹 `df379960…`（debug `223989bc…`、release `a290c36b…`），门禁 0 problem。
+- 🟡 真实 GUI 截图 NOT_RUN（无 Screen Recording 权限）；`-R` 打包产品实机、Windows sshd fixture 仍 NOT_RUN。
+- ✅ 最终 CI `42480227136`（`6a19662`）**11/11 success**；此前 Linux/Windows 打包因
+  `tauri-apps/binary-releases` 返回 502/504 多次失败（本机 curl 复现），`ci.yml` 的
+  deb+appimage 与 NSIS 步骤改为**有界重试**（4 次、20/40/60 s 退避），仍失败则
+  报错退出，不把打包失败伪装成通过。
+- ✅ Upgrade E2E `42481700333`（`4f7b83b`）**6/6 success**。
+
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装

@@ -53,6 +53,8 @@ export function CommandPaletteDialog({
   onSelect,
   t,
 }: CommandPaletteDialogProps) {
+  const activeTabLabel =
+    allTabs.find(tab => tab.key === activeTab)?.label ?? activeTab
   return (
     <Dialog
       open={open}
@@ -62,7 +64,7 @@ export function CommandPaletteDialog({
     >
       <DialogContent className="max-w-xl p-0 gap-0 overflow-hidden">
         <DialogHeader className="sr-only">
-          <DialogTitle>Command Palette</DialogTitle>
+          <DialogTitle>{t('cmdPalette.title')}</DialogTitle>
         </DialogHeader>
         <div className="p-4 border-b">
           <div className="relative">
@@ -116,7 +118,7 @@ export function CommandPaletteDialog({
                 ? t('cmdPalette.noResults', { query })
                 : activeTab === 'all'
                   ? t('cmdPalette.startTyping')
-                  : t('cmdPalette.noTab', { tab: activeTab })}
+                  : t('cmdPalette.noTab', { tab: activeTabLabel })}
             </div>
           ) : (
             <div className="flex flex-col gap-1">

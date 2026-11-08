@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -25,6 +26,7 @@ export const SnippetPackageDialog: React.FC<SnippetPackageDialogProps> = ({
   onPackageNameChange,
   onSubmit,
 }) => {
+  const { t } = useTranslation()
   const handleSubmit = () => {
     onSubmit()
     onPackageNameChange('')
@@ -39,17 +41,17 @@ export const SnippetPackageDialog: React.FC<SnippetPackageDialogProps> = ({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create Package</DialogTitle>
+          <DialogTitle>{t('snippets.createPackage')}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
-            <Label htmlFor="package-name">Package Name</Label>
+            <Label htmlFor="package-name">{t('snippets.packageName')}</Label>
             <Input
               id="package-name"
               value={packageName}
               onChange={e => onPackageNameChange(e.target.value)}
-              placeholder="My Package"
+              placeholder={t('snippets.myPackage')}
             />
           </div>
         </div>
@@ -57,11 +59,11 @@ export const SnippetPackageDialog: React.FC<SnippetPackageDialogProps> = ({
         <DialogFooter>
           <DialogClose asChild>
             <Button type="button" variant="outline">
-              Cancel
+              {t('common.cancel')}
             </Button>
           </DialogClose>
           <Button type="button" onClick={handleSubmit}>
-            Create
+            {t('snippets.create')}
           </Button>
         </DialogFooter>
       </DialogContent>

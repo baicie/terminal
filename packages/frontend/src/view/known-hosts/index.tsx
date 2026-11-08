@@ -1,5 +1,6 @@
 import type { KnownHostRecord } from '@/service/database'
 import { Search, Trash2, Upload } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ViewContainer, ViewToolbar } from '@/components/view-container'
@@ -8,6 +9,7 @@ import { KnownHostsDialogs } from './known-hosts-dialogs'
 import { useKnownHosts } from './use-known-hosts'
 
 const KnownHostsView: React.FC = () => {
+  const { t } = useTranslation()
   const state = useKnownHosts()
   const openDeleteDialog = (host: KnownHostRecord) => {
     state.setHostToDelete(host)
@@ -24,7 +26,7 @@ const KnownHostsView: React.FC = () => {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
-            placeholder="Search hosts..."
+            placeholder={t('knownHosts.searchHosts')}
             value={state.searchQuery}
             onChange={event => state.handleSearch(event.target.value)}
             className="pl-9 h-9"
@@ -37,7 +39,7 @@ const KnownHostsView: React.FC = () => {
           onClick={state.handleImportFromFile}
         >
           <Upload className="size-4 mr-1" data-icon="inline-start" />
-          Import
+          {t('knownHosts.import')}
         </Button>
         {state.hosts.length > 0 && (
           <Button
@@ -47,7 +49,7 @@ const KnownHostsView: React.FC = () => {
             onClick={() => state.setClearAllDialogOpen(true)}
           >
             <Trash2 className="size-4 mr-1" data-icon="inline-start" />
-            Clear All
+            {t('knownHosts.clearAll')}
           </Button>
         )}
       </ViewToolbar>

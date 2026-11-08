@@ -9,4 +9,12 @@ export default {
   'logs.rawError': 'Erreur brute',
   'logs.unsave': 'Retirer des éléments enregistrés',
   'logs.save': 'Enregistrer le journal',
+  'logs.description': 'Voir les journaux de connexion et de session',
+  'logs.tableType': 'Type',
+  'logs.tableHost': 'Hôte',
+  'logs.tableUser': 'Utilisateur',
+  'logs.tableStarted': 'Démarré',
+  'logs.tableDuration': 'Durée',
+  'logs.tableError': 'Erreur',
+  'logs.ok': 'OK',
 }

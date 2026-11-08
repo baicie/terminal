@@ -83,6 +83,8 @@ export default {
   'teams.syncNow': 'Synchroniser maintenant',
   'teams.syncing': 'Synchronisation...',
   'teams.lastSync': 'Dernière sync : {{time}}',
+  'teams.syncErrorTitle': 'La synchronisation demande votre attention',
+  'teams.syncRetry': 'Réessayer',
   'teams.leaveTeam': "Quitter l'équipe",
   'teams.deleteTeam': "Supprimer l'équipe",
   'teams.deleteTeamConfirm':
@@ -136,4 +138,15 @@ export default {
   'teams.copied': 'Copié dans le presse-papiers',
   'teams.action': 'Action',
   'teams.time': 'Temps',
+  'teams.email': 'E-mail',
+  'teams.host': 'Hôte',
+  'teams.packageFileFilter': "Paquet d'équipe",
+  'teams.allFilesFilter': 'Tous les fichiers',
+  'teams.importedSummary':
+    '{{hosts}} hôtes et {{snippets}} extraits importés',
+  'teams.packageHosts': '{{count}} hôte(s)',
+  'teams.packageGroups': '{{count}} groupe(s)',
+  'teams.packageSnippets': '{{count}} extrait(s)',
+  'teams.packageMembers': '{{count}} membre(s)',
+  'teams.cloudCreateFailed': "Impossible de créer l'équipe sur le serveur : {{error}}",
 }

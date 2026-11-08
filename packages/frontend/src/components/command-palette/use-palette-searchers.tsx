@@ -107,7 +107,9 @@ export function usePaletteSearchers() {
             id: `history-${record.id}`,
             type: 'history',
             title: record.command,
-            description: `Executed ${new Date(record.executed_at).toLocaleDateString()}`,
+            description: t('cmdPalette.executedOn', {
+              date: new Date(record.executed_at).toLocaleDateString(),
+            }),
             icon: <Clock className="size-4" />,
             data: record,
             score: fuzzyScore(query, record.command),
@@ -116,7 +118,7 @@ export function usePaletteSearchers() {
         return []
       }
     },
-    [],
+    [t],
   )
   return { searchHosts, sftpActions, searchSnippetsAction, searchHistory }
 }

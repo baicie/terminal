@@ -1,6 +1,7 @@
 import type { FileItem } from '@/service/ssh'
 import { FolderOpen, RefreshCw, Server } from 'lucide-react'
 import { useCallback, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useBreakpointMax } from '@/hooks/use-breakpoint'
 import {
@@ -12,9 +13,7 @@ import { cn } from '@/lib/utils'
 import { uploadPaths } from '@/service/sftp-transfer'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
-import { DeleteDialog } from './components/delete-dialog'
-import { RenameDialog } from './components/rename-dialog'
-import { MkdirDialog } from './components/mkdir-dialog'
+import { SftpDialogs } from './components/sftp-dialogs'
 import TransferPanel from './transfer-panel'
 import { useSftpDrop } from './use-sftp-drop'
 import { useSftpRemote } from './hooks/use-sftp-remote'
@@ -22,6 +21,7 @@ import { useSftpLocal } from './hooks/use-sftp-local'
 import { SftpFilePanes } from './sftp-file-panes'
 
 const SftpContainer: React.FC = () => {
+  const { t } = useTranslation()
   const tabs = useAppStore(s => s.tabs)
   const activeTabId = useAppStore(s => s.activeTabId)
   const hosts = useHostStore(s => s.hosts)
@@ -99,9 +99,11 @@ const SftpContainer: React.FC = () => {
           <div className="flex flex-col items-center justify-center h-full gap-4">
             <FolderOpen className="size-16 text-muted-foreground/50" />
             <div className="text-center">
-              <p className="text-lg font-medium">No active SFTP session</p>
+              <p className="text-lg font-medium">
+                {t('sftp.noActiveSession')}
+              </p>
               <p className="text-sm text-muted-foreground mt-1">
-                Connect to a host first, then open SFTP to transfer files
+                {t('sftp.noActiveSessionDesc')}
               </p>
             </div>
           </div>
@@ -115,8 +117,7 @@ const SftpContainer: React.FC = () => {
       {isDragging && (
         <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-primary/5 border-2 border-primary border-dashed rounded-md">
           <div className="bg-popover px-6 py-4 rounded-lg shadow-lg border text-sm font-medium">
-            Drop files to upload to{' '}
-            <code className="font-mono">{remote.path}</code>
+            {t('sftp.dropToUpload', { path: remote.path })}
           </div>
         </div>
       )}
@@ -137,7 +138,7 @@ const SftpContainer: React.FC = () => {
           <RefreshCw
             className={cn('size-4 mr-1', remote.loading && 'animate-spin')}
           />
-          Refresh
+          {t('sftp.refresh')}
         </Button>
       </ViewToolbar>
 
@@ -161,32 +162,28 @@ const SftpContainer: React.FC = () => {
         }}
       />
 
-      <DeleteDialog
-        open={deleteOpen}
-        file={fileToDelete}
-        onOpenChange={setDeleteOpen}
-        onConfirm={() => {
+      <SftpDialogs
+        deleteOpen={deleteOpen}
+        fileToDelete={fileToDelete}
+        onDeleteOpenChange={setDeleteOpen}
+        onDeleteConfirm={() => {
           if (fileToDelete) void remote.deleteFile(fileToDelete)
           setFileToDelete(null)
         }}
-      />
-      <RenameDialog
-        open={renameOpen}
-        file={fileToRename}
-        onOpenChange={v => {
+        renameOpen={renameOpen}
+        fileToRename={fileToRename}
+        onRenameOpenChange={v => {
           setRenameOpen(v)
           if (!v) setFileToRename(null)
         }}
-        onConfirm={newName => {
+        onRenameConfirm={newName => {
           void remote.renameFile(fileToRename!, newName)
           setRenameOpen(false)
           setFileToRename(null)
         }}
-      />
-      <MkdirDialog
-        open={mkdirOpen}
-        onOpenChange={setMkdirOpen}
-        onConfirm={name => {
+        mkdirOpen={mkdirOpen}
+        onMkdirOpenChange={setMkdirOpen}
+        onMkdirConfirm={name => {
           void remote.mkdir(name)
           setMkdirOpen(false)
         }}

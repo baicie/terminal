@@ -50,7 +50,7 @@ describe('MainLayoutContent terminal layering', () => {
 
   it('keeps the empty route outlet from covering the terminal workbench', () => {
     const { container } = renderLayout('/terminal')
-    const outletLayer = container.querySelector('.route-transition-enter')
+    const outletLayer = container.querySelector('.route-transition-layer')
 
     expect(outletLayer?.classList.contains('invisible')).toBe(true)
     expect(outletLayer?.classList.contains('pointer-events-none')).toBe(true)
@@ -58,7 +58,7 @@ describe('MainLayoutContent terminal layering', () => {
 
   it('keeps the route outlet interactive on non-terminal views', () => {
     const { container } = renderLayout('/hosts')
-    const outletLayer = container.querySelector('.route-transition-enter')
+    const outletLayer = container.querySelector('.route-transition-layer')
 
     expect(outletLayer?.classList.contains('invisible')).toBe(false)
     expect(outletLayer?.classList.contains('pointer-events-none')).toBe(false)

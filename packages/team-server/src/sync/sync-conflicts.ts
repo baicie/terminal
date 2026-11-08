@@ -127,6 +127,13 @@ export async function resolveConflict(
   if (clientData.isSensitive === true && !clientData.encryptedData) {
     return { success: false, error: 'SENSITIVE_CIPHERTEXT_REQUIRED' }
   }
+  // Resolving a conflict must not change whether a share is sensitive: a local
+  // plaintext snapshot applied to a sensitive row would write `{}` over the
+  // server bytes, and the reverse silently keeps a stale ciphertext. Both
+  // directions are refused instead of guessed.
+  if (clientData.isSensitive !== share.isSensitive) {
+    return { success: false, error: 'SENSITIVE_STATE_MISMATCH' }
+  }
   const verdict = classifyBaseVersion(share.version, clientData.baseVersion)
   if (verdict !== 'match') {
     return {

@@ -35,7 +35,7 @@ export const ScriptList: React.FC<ScriptListProps> = ({
   const { t: tr } = useTranslation()
 
   if (isLoading) {
-    return <div>Loading...</div>
+    return <div>{tr('common.loading')}</div>
   }
 
   if (scripts.length === 0) {
@@ -94,7 +94,9 @@ export const ScriptList: React.FC<ScriptListProps> = ({
                 </div>
                 <div className="flex items-center gap-1">
                   <Clock className="size-4" />
-                  <span className="capitalize">{script.schedule_type}</span>
+                  <span className="capitalize">
+                    {tr(`scripts.${script.schedule_type}`)}
+                  </span>
                 </div>
                 {script.timeout_seconds && (
                   <Badge variant="outline">

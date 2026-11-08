@@ -421,29 +421,24 @@ describe('SyncService authorization', () => {
     // No incremental read may window Share or AuditLog by time.
     expect(prisma.share.findMany).not.toHaveBeenCalled()
     expect(prisma.auditLog.findMany).not.toHaveBeenCalled()
-    // A legacy epoch cursor is above the watermark, so it degrades to a full resnapshot.
-    const resync = await service.getChanges('user-a', 1_760_000_000_000)
-    expect(resync.resync).toBe(true)
-    expect(resync.cursor).toBe(COMPLETE_CURSOR)
-    expect(prisma.syncChange.findMany).toHaveBeenLastCalledWith({
-      where: { teamId: { in: ['team-a'] }, txid: { lt: safe } },
-      orderBy: [{ txid: 'asc' }, { seq: 'asc' }],
-      take: LEGACY_FULL_DELIVERY_LIMIT + 1,
-    })
-    // 超过完整交付上限：不交付部分数据，水位不前进，明确要求升级协议
+    // A legacy epoch cursor cannot be served safely: the historical client
+    // re-inserts a full window with a non-idempotent INSERT, so the server
+    // refuses it before reading anything and asks for an upgrade.
+    const readsBeforeRefusal = prisma.syncChange.findMany.mock.calls.length
+    await expect(
+      service.getChanges('user-a', 1_760_000_000_000),
+    ).rejects.toThrow(/retired timestamp cursor/)
+    expect(prisma.syncChange.findMany).toHaveBeenCalledTimes(readsBeforeRefusal)
+    // 超过完整交付上限：fail closed，不交付任何行，客户端必须升级。
     prisma.syncChange.findMany.mockResolvedValue(
       Array.from(
         { length: LEGACY_FULL_DELIVERY_LIMIT + 1 },
         (_, index) => ({ shareId: `over-${index}`, seq: BigInt(index) }),
       ),
     )
-    const refused = await service.getChanges('user-a', 1_000)
-    expect(refused.upgradeRequired).toBe(true)
-    expect(refused.shares).toEqual([])
-    expect(refused.deletedShareIds).toEqual([])
-    expect(refused.hasMore).toBe(false)
-    // 水位回显旧游标（不前进），忽略提示的客户端只会原地重试，不会跳过数据
-    expect(refused.timestamp).toBe(1_000)
+    await expect(service.getChanges('user-a', 1_000)).rejects.toThrow(
+      /larger than this client can consume/,
+    )
   })
 
   it('refuses an undeclared legacy update instead of degrading to a blind write', async () => {
@@ -602,5 +597,33 @@ describe('SyncService authorization', () => {
     const logged = JSON.stringify(loggerError.mock.calls)
     expect(logged).toContain('code=Error')
     expect(logged).not.toContain('database-secret')
+  })
+})
+
+describe('SyncService push operations', () => {
+  it('refuses a DELETE operation instead of rewriting or recreating the share', async () => {
+    const prisma = {
+      share: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
+      teamMember: { findUnique: vi.fn() },
+    }
+    const service = new SyncService(prisma as never)
+    const result = await service.pushChanges('user-a', {
+      shares: [
+        {
+          id: 'share-delete',
+          teamId: 'team-a',
+          type: 'HOST',
+          data: {},
+          permission: 'READONLY',
+          operation: 'DELETE',
+        },
+      ],
+    } as never)
+    expect(result.errors).toEqual([
+      { id: 'share-delete', error: 'DELETE_OPERATION_NOT_SUPPORTED' },
+    ])
+    expect(prisma.share.findUnique).not.toHaveBeenCalled()
+    expect(prisma.share.create).not.toHaveBeenCalled()
+    expect(prisma.share.updateMany).not.toHaveBeenCalled()
   })
 })

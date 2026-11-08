@@ -5,7 +5,7 @@
  * bytesTotal=0, concurrent updates, speed calculation), useActiveTransfers selector.
  */
 
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { useTransferQueue } from './transfer-queue'
 
 function reset() {
@@ -205,12 +205,21 @@ describe('updateProgress() edge cases', () => {
     expect(t.bytesDone).toBe(500)
   })
 
-  it('speed calculation: zero dt keeps previous speed', async () => {
-    const id = useTransferQueue.getState().enqueue(makeRecord())
-    useTransferQueue.getState().updateProgress(id, 0, 1000)
-    useTransferQueue.getState().updateProgress(id, 100, 1000)
-    const t = useTransferQueue.getState().transfers[0]
-    expect(t.speed).toBe(0)
+  it('speed calculation: zero dt keeps previous speed', () => {
+    // The store samples Date.now(); two calls in the same millisecond is a
+    // real-time race (it failed on a slower CI runner while passing here).
+    // Pin the clock so the zero-dt branch is actually exercised.
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+    try {
+      const id = useTransferQueue.getState().enqueue(makeRecord())
+      useTransferQueue.getState().updateProgress(id, 0, 1000)
+      useTransferQueue.getState().updateProgress(id, 100, 1000)
+      const t = useTransferQueue.getState().transfers[0]
+      expect(t.speed).toBe(0)
+    } finally {
+      clock.mockRestore()
+    }
   })
 
   it('negative bytes delta clamps speed to 0', async () => {

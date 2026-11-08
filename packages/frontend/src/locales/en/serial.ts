@@ -18,4 +18,5 @@ export default {
   'serial.connecting': 'Connecting...',
   'serial.failedLoadPorts': 'Failed to load serial ports',
   'serial.connectionFailed': 'Connection failed',
+  'serial.selectPortRequired': 'Please select a serial port',
 }

@@ -172,13 +172,21 @@ export async function readChangeWindow(
   prisma: PrismaService,
   members: SyncScopeMember[],
   cursor: string | number | undefined,
+  options: { protocol2?: boolean } = {},
 ): Promise<ChangeWindow> {
   const safe = await readSafeWatermark(prisma)
   const anchor = scopeAnchor(resolveChangeWindowAnchor(cursor, safe), members)
   const teamIds = scopeTeamIds(anchor, members)
   if (teamIds.length === 0) return emptyWindow(safe, anchor.resync)
-  if (anchor.legacy === true && cursor !== undefined) {
-    return readLegacyWindow(prisma, teamIds, anchor, safe, cursor)
+  // Protocol 1 has no way to page: it feeds back one number and would skip any
+  // page it was not given whole. That includes its *first* sync, which carries no
+  // cursor at all - so an undeclared client without a cursor is treated as
+  // protocol 1 and receives the complete window (or an upgrade requirement),
+  // never a silently truncated page.
+  const legacyDelivery = anchor.legacy === true
+    || (cursor === undefined && options.protocol2 !== true)
+  if (legacyDelivery) {
+    return readLegacyWindow(prisma, teamIds, anchor, safe, cursor ?? 0)
   }
   const rows = await prisma.syncChange.findMany({
     where: buildChangeWhere(teamIds, anchor),

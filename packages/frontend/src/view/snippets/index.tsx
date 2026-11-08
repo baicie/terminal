@@ -62,11 +62,11 @@ const SnippetsView: React.FC = () => {
       setExecutions(loadedExecutions)
       setHosts(loadedHosts)
     } catch (error) {
-      toast.error(`Failed to load data: ${error}`)
+      toast.error(t('snippets.loadFailed', { error: String(error) }))
     } finally {
       setIsLoading(false)
     }
-  }, [searchQuery])
+  }, [searchQuery, t])
 
   useEffect(() => {
     loadScripts()
@@ -119,7 +119,7 @@ const SnippetsView: React.FC = () => {
       setSelectedScript(null)
       loadScripts()
     } catch (error) {
-      toast.error(`Failed to save script: ${error}`)
+      toast.error(t('snippets.saveFailed', { error: String(error) }))
     }
   }
 
@@ -132,7 +132,7 @@ const SnippetsView: React.FC = () => {
       setSelectedScript(null)
       loadScripts()
     } catch (error) {
-      toast.error(`Failed to delete script: ${error}`)
+      toast.error(t('snippets.deleteFailed', { error: String(error) }))
     }
   }
 
@@ -141,7 +141,7 @@ const SnippetsView: React.FC = () => {
       await scriptService.toggleEnabled(script.id)
       loadScripts()
     } catch (error) {
-      toast.error(`Failed to toggle script: ${error}`)
+      toast.error(t('snippets.toggleFailed', { error: String(error) }))
     }
   }
 
@@ -162,7 +162,7 @@ const SnippetsView: React.FC = () => {
       setExecutionResult(result)
       loadScripts()
     } catch (error) {
-      toast.error(`Execution failed: ${error}`)
+      toast.error(t('snippets.executeFailed', { error: String(error) }))
     } finally {
       setIsExecuting(false)
     }

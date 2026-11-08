@@ -2288,6 +2288,17 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [x] 真实 Windows `cargo test --lib db_recovery`（9 passed，job `127803321020`）；非破坏性文件系统矩阵仍未做。
 - [ ] Team 应用级 SIGKILL E2E（当前仅 Rust 状态机测试）。
 
+### 2026-11-07 Phase 9.7 P0-A - 单实例运行时安全 🔄 代码完成，E2E 已验证
+
+- [x] single-instance 插件首个注册；第二次启动激活/重建窗口。
+- [x] 进程生命周期 `instance.lock` + inode 校验；锁文件删除/替换即失效。
+- [x] Retry/完成/备份/getDb 全部校验运行时锁，封堵 HEALTHY 升级路径。
+- [x] Rust 336 / db_recovery 32；前端 1413；typecheck/lint/source-size。
+- [x] Vault 服务级 probe（创建/锁定/错误密码/改密/重启持久化）接入 E2E。
+- [ ] 真实窗口焦点（headless NOT_RUN）。
+- [ ] Vault UI 自动化与 A→B 跨版本。
+- [ ] Windows NSIS、Team Sync 跨版本、Updater runtime（NOT_RUN/BLOCKED_EXTERNAL）。
+
 ### 2026-11-06 Phase 9.6.3 - 最终数据安全收口 ✅ P0 完成，平台项待补
 
 - [x] 标记 v3 事务所有权；跨进程/旧版本标记拒绝合并；VACUUM 失败逐字节回滚。
@@ -2309,3 +2320,14 @@ _最后更新：2026-10-11 - Phase 6.32 五种 SSH 认证路径初连与重连�
 - [ ] 两个真实进程并发启动/迁移/恢复 E2E。
 - [ ] Team 应用级 SIGKILL E2E。
 - [ ] Windows 完整文件系统矩阵与 NSIS A→B。
+
+### 2026-11-07 Phase 9.7 WP3/WP4 - 跨版本与 Updater 运行时 ✅ 本机验证完成，CI 证据进行中
+
+- [x] Team Sync 跨版本采集器：dev.2 源码 + 当前源码双进程、真实 PG/HTTP/SQLite。
+- [x] 实测记录旧客户端重同步 UNIQUE 失败与服务端拒绝 legacy 更新（RC 阻塞项）。
+- [x] Updater 运行时：`smoke-updater` 探针、临时密钥、loopback、两次真实构建。
+- [x] 正向安装/重启/数据保留 + 7 个负向用例（降级、架构、404、签名、篡改、截断）。
+- [x] 路由切换闪烁修复（RouteTransition 同步 key、不透明层、动画内移）。
+- [ ] Windows NSIS/MSI 与 Linux AppImage/deb 运行时更新。
+- [x] 设置页/懒加载/404 文案接入 i18n（en/cn/fr），更新检查面板同步本地化。
+- [ ] 正式 notarization/Authenticode 与生产 updater 公钥（BLOCKED_EXTERNAL）。

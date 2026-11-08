@@ -9,4 +9,12 @@ export default {
   'logs.rawError': '原始错误',
   'logs.unsave': '取消保存',
   'logs.save': '保存日志',
+  'logs.description': '查看连接和会话日志',
+  'logs.tableType': '类型',
+  'logs.tableHost': '主机',
+  'logs.tableUser': '用户',
+  'logs.tableStarted': '开始时间',
+  'logs.tableDuration': '时长',
+  'logs.tableError': '错误',
+  'logs.ok': '正常',
 }

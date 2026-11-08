@@ -331,7 +331,9 @@ impl VaultState {
     ///
     /// Reclaiming is a check followed by a replace, and both steps run inside
     /// `lock_for_create`, so no other instance of this build can be between its
-    /// own check and its own replace at the same time. That removes the window the
+    /// own check and its own replace at the same time. The `Fresh` branch takes
+    /// the same lock and re-checks the path under it, because a reclaimer can
+    /// legitimately fill the claim winner's zero-length placeholder first. That removes the window the
     /// pair used to leave open: a second creator landing its vault in that gap is
     /// now either serialised behind the first one (and then refused by the
     /// re-check it performs *after* it takes the lock) or blocked by the lock.
@@ -359,19 +361,7 @@ impl VaultState {
         }
 
         match claim {
-            Claim::Fresh(handle) => {
-                // The claim decided that this process may create a vault; the lock
-                // keeps a *reclaiming* creator out of the window between its own
-                // re-check and its replace while this one fills the file.
-                lock_for_create(&self.config_path, &handle)?;
-                if let Err(error) = write_atomic(&self.config_path, &content) {
-                    // Release the handle before unlinking so Windows can delete it too.
-                    drop(handle);
-                    let _ = fs::remove_file(&self.config_path);
-                    return Err(error);
-                }
-                drop(handle);
-            }
+            Claim::Fresh(handle) => fill_fresh_claim(&self.config_path, handle, &content)?,
             Claim::Reclaimed => {
                 // Recovery is only ever allowed to overwrite a zero-length regular
                 // file, and the verdict has to stay true until the replace lands.
@@ -411,6 +401,37 @@ impl VaultState {
         self.config = config;
         Ok(())
     }
+}
+
+/// Fill the zero-length placeholder this process won with `create_new`.
+///
+/// Winning the claim only says this process *opened* the placeholder; it does
+/// not say the path still holds it by the time the create lock is taken. Until
+/// this fill lands the path is zero length, which is exactly the state a
+/// concurrent creator reads as "an interrupted create" and reclaims. That
+/// reclaimer can reach the lock first, re-check, and replace the path with its
+/// own complete vault -- so this branch has to re-check under the lock too,
+/// or both creators report success and the one that locks second silently
+/// overwrites the vault the first one just wrote (`created == 2`).
+///
+/// The re-check is `is_unfilled_placeholder` on the path, not on `handle`: the
+/// reclaimer replaces the path with a rename, so `handle` still points at the
+/// now-unlinked placeholder and would report a stale "still empty".
+fn fill_fresh_claim(path: &Path, handle: fs::File, content: &[u8]) -> Result<(), VaultError> {
+    lock_for_create(path, &handle)?;
+    if !is_unfilled_placeholder(path)? {
+        // Another creator filled (and therefore owned) this path first.
+        // Nothing of ours reached the disk, and the placeholder is gone.
+        return Err(VaultError::AlreadyExists);
+    }
+    if let Err(error) = write_atomic(path, content) {
+        // Release the handle before unlinking so Windows can delete it too.
+        drop(handle);
+        let _ = fs::remove_file(path);
+        return Err(error);
+    }
+    drop(handle);
+    Ok(())
 }
 
 impl Drop for VaultState {

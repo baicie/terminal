@@ -12,6 +12,7 @@ import { HostDialog } from '@/components/host-list/host-dialog'
 import SerialDialog from '@/components/serial-dialog'
 import { ShareHostDialog } from '@/components/share-host-dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import FAB from '@/components/ui/fab'
 import {
   ViewContainer,
@@ -36,6 +37,8 @@ const HostsView: React.FC = () => {
   const [hostDialogOpen, setHostDialogOpen] = useState(false)
   const [mobileToolbarOpen, setMobileToolbarOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [gridView, setGridView] = useState(true)
 
@@ -65,11 +68,26 @@ const HostsView: React.FC = () => {
   } = handlers
 
   useEffect(() => {
+    // Abort the previous load when the view unmounts or retries, so a late
+    // failure cannot mark a view that is already gone as broken.
+    const controller = new AbortController()
     setLoading(true)
-    void hostStore.loadHosts().finally(() => setLoading(false))
-    void hostStore.loadGroups()
+    setLoadError(null)
+    void hostStore
+      .loadHosts(controller.signal)
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setLoadError(error instanceof Error ? error.message : String(error))
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+    void hostStore.loadGroups().catch((error: unknown) => {
+      console.error('Failed to load host groups:', error)
+    })
+    return () => controller.abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [reloadToken])
 
   useEffect(() => {
     if (isTeamEnabled && currentTeam) {
@@ -151,18 +169,34 @@ const HostsView: React.FC = () => {
           />
         )}
 
-        <RenderListBody
-          loading={loading}
-          filteredHosts={filteredHosts}
-          searchQuery={searchQuery}
-          isMobile={isMobile}
-          gridView={gridView}
-          isTeamEnabled={isTeamEnabled}
-          currentTeamId={currentTeam?.id}
-          onConnect={handleConnect}
-          onShareHostClick={handleShareHostClick}
-          onAddHost={() => setHostDialogOpen(true)}
-        />
+        {loadError ? (
+          <Alert variant="destructive">
+            <AlertTitle>{t('hosts.loadFailed')}</AlertTitle>
+            <AlertDescription className="space-y-2">
+              <p className="font-mono text-xs break-all">{loadError}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setReloadToken(token => token + 1)}
+              >
+                {t('common.retry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <RenderListBody
+            loading={loading}
+            filteredHosts={filteredHosts}
+            searchQuery={searchQuery}
+            isMobile={isMobile}
+            gridView={gridView}
+            isTeamEnabled={isTeamEnabled}
+            currentTeamId={currentTeam?.id}
+            onConnect={handleConnect}
+            onShareHostClick={handleShareHostClick}
+            onAddHost={() => setHostDialogOpen(true)}
+          />
+        )}
       </ViewContent>
 
       {isMobile && (

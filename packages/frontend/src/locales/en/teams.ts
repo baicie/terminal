@@ -70,6 +70,8 @@ export default {
   'teams.syncNow': 'Sync Now',
   'teams.syncing': 'Syncing...',
   'teams.lastSync': 'Last sync: {{time}}',
+  'teams.syncErrorTitle': 'Sync needs attention',
+  'teams.syncRetry': 'Retry sync',
   'teams.leaveTeam': 'Leave Team',
   'teams.deleteTeam': 'Delete Team',
   'teams.deleteTeamConfirm':
@@ -127,4 +129,14 @@ export default {
   'teams.copied': 'Copied to clipboard',
   'teams.action': 'Action',
   'teams.time': 'Time',
+  'teams.email': 'Email',
+  'teams.host': 'Host',
+  'teams.packageFileFilter': 'Team Package',
+  'teams.allFilesFilter': 'All Files',
+  'teams.importedSummary': '{{hosts}} hosts, {{snippets}} snippets imported',
+  'teams.packageHosts': '{{count}} host(s)',
+  'teams.packageGroups': '{{count}} group(s)',
+  'teams.packageSnippets': '{{count}} snippet(s)',
+  'teams.packageMembers': '{{count}} member(s)',
+  'teams.cloudCreateFailed': 'Could not create the team on the server: {{error}}',
 }

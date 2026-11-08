@@ -1,5 +1,6 @@
 import { Loader2, Wand2 } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { ResponsiveDialog } from '@/components/ui/responsive-dialog'
 import { toast } from '@/components/ui/sonner'
@@ -21,6 +22,7 @@ export const GenerateKeyDialog: React.FC<GenerateKeyDialogProps> = ({
   onClose,
   onUseKey,
 }) => {
+  const { t } = useTranslation()
   const [genKeyType, setGenKeyType] = useState('ed25519')
   const [genComment, setGenComment] = useState('')
   const [genPassphrase, setGenPassphrase] = useState('')
@@ -42,7 +44,7 @@ export const GenerateKeyDialog: React.FC<GenerateKeyDialogProps> = ({
 
   const handleGenerateKey = async () => {
     if (genPassphrase !== genConfirmPassphrase) {
-      toast.error('Passphrases do not match')
+      toast.error(t('keychain.passphrasesNotMatch'))
       return
     }
     setGenerating(true)
@@ -60,9 +62,9 @@ export const GenerateKeyDialog: React.FC<GenerateKeyDialogProps> = ({
         genPassphrase || undefined,
       )
       setGeneratedResult(result)
-      toast.success('Key generated successfully')
+      toast.success(t('keychain.keyGenerated'))
     } catch (error) {
-      toast.error(`Failed to generate key: ${error}`)
+      toast.error(t('keychain.generateFailed', { error: String(error) }))
     } finally {
       setGenerating(false)
     }
@@ -72,10 +74,10 @@ export const GenerateKeyDialog: React.FC<GenerateKeyDialogProps> = ({
     navigator.clipboard
       .writeText(text)
       .then(() => {
-        toast.success(`${label} copied to clipboard`)
+        toast.success(t('keychain.copiedToClipboard', { label }))
       })
       .catch(() => {
-        toast.error('Failed to copy')
+        toast.error(t('keychain.copyFailed'))
       })
   }
 
@@ -86,7 +88,7 @@ export const GenerateKeyDialog: React.FC<GenerateKeyDialogProps> = ({
       header={
         <div className="flex items-center gap-2">
           <Wand2 className="size-5" />
-          <span className="font-semibold">Generate SSH Key</span>
+          <span className="font-semibold">{t('keychain.generateTitle')}</span>
         </div>
       }
       footer={
@@ -94,18 +96,18 @@ export const GenerateKeyDialog: React.FC<GenerateKeyDialogProps> = ({
           {!generatedResult ? (
             <>
               <Button variant="outline" onClick={handleClose}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button onClick={handleGenerateKey} disabled={generating}>
                 {generating ? (
                   <>
                     <Loader2 className="size-4 mr-1 animate-spin" />
-                    Generating...
+                    {t('keychain.generating')}
                   </>
                 ) : (
                   <>
                     <Wand2 className="size-4 mr-1" data-icon="inline-start" />
-                    Generate Key
+                    {t('keychain.generateKey')}
                   </>
                 )}
               </Button>
@@ -116,7 +118,7 @@ export const GenerateKeyDialog: React.FC<GenerateKeyDialogProps> = ({
                 variant="outline"
                 onClick={() => setGeneratedResult(null)}
               >
-                Generate Another
+                {t('keychain.generateAnother')}
               </Button>
               <Button
                 onClick={() => {
@@ -124,7 +126,7 @@ export const GenerateKeyDialog: React.FC<GenerateKeyDialogProps> = ({
                   handleClose()
                 }}
               >
-                Use This Key
+                {t('keychain.useThisKey')}
               </Button>
             </>
           )}

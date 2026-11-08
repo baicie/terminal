@@ -3,22 +3,35 @@ import {
   Code,
   FileUp,
   FolderClosed,
-  FolderOpen,
-  Keyboard,
   Search,
   Server,
-  Settings,
   Square,
-  Terminal,
   Zap,
 } from 'lucide-react'
+import type { TFunction } from 'i18next'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
 import { useWorkspaceStore } from '@/store/workspace'
 import { formatTimeAgo } from './command-palette-utils'
-import type { PaletteTabItem, SearchResult } from './command-palette-types'
+import { usePaletteQuickActions } from './palette-quick-actions'
+import type { PaletteTabItem } from './command-palette-types'
+
+function getTabTypeLabel(type: string, t: TFunction): string {
+  switch (type) {
+    case 'local':
+      return t('sftp.local')
+    case 'remote':
+      return t('sftp.remote')
+    case 'sftp':
+      return t('sftp.title')
+    case 'serial':
+      return t('toolbar.serial')
+    default:
+      return type
+  }
+}
 
 export function usePaletteStaticResults() {
   const { t } = useTranslation()
@@ -76,7 +89,7 @@ export function usePaletteStaticResults() {
         id: tab.id,
         type: 'open-tab' as const,
         title: tab.label,
-        description: `${tab.type}${tab.hostId ? ` · ${hosts.find(host => host.id === tab.hostId)?.name ?? tab.hostId}` : ''}`,
+        description: `${getTabTypeLabel(tab.type, t)}${tab.hostId ? ` · ${hosts.find(host => host.id === tab.hostId)?.name ?? tab.hostId}` : ''}`,
         hint: t('cmdPalette.switchToTabHint'),
         icon: <Square className="size-4" />,
         data: tab,
@@ -90,7 +103,7 @@ export function usePaletteStaticResults() {
         id: closed.id,
         type: 'closed-tab' as const,
         title: t('cmdPalette.reopenTab', { label: closed.label }),
-        description: `${closed.type} · ${formatTimeAgo(closed.closedAt)}`,
+        description: `${getTabTypeLabel(closed.type, t)} · ${formatTimeAgo(closed.closedAt, t)}`,
         hint: t('cmdPalette.reopenTabHint'),
         icon: <Square className="size-4" />,
         data: closed,
@@ -112,82 +125,6 @@ export function usePaletteStaticResults() {
       })),
     [workspaces, t],
   )
-  const quickActions: SearchResult[] = useMemo(
-    () => [
-      {
-        id: 'new-local',
-        type: 'action',
-        title: t('cmdPalette.newLocalTerminal'),
-        description: t('cmdPalette.createSession'),
-        icon: <Terminal className="size-4" />,
-        data: { action: 'new-local' },
-        score: 0,
-      },
-      {
-        id: 'new-host',
-        type: 'action',
-        title: t('cmdPalette.newSSHConnection'),
-        description: t('cmdPalette.addHost'),
-        icon: <Server className="size-4" />,
-        data: { action: 'new-host' },
-        score: 0,
-      },
-      {
-        id: 'toggle-sidebar',
-        type: 'action',
-        title: t('cmdPalette.toggleSidebar'),
-        description: t('cmdPalette.showSidebar'),
-        icon: <FolderOpen className="size-4" />,
-        data: { action: 'toggle-sidebar' },
-        score: 0,
-      },
-      {
-        id: 'split-horizontal',
-        type: 'action',
-        title: t('cmdPalette.splitHorizontal'),
-        description: t('cmdPalette.splitHoriz'),
-        icon: <Zap className="size-4" />,
-        data: { action: 'split-horizontal' },
-        score: 0,
-      },
-      {
-        id: 'split-vertical',
-        type: 'action',
-        title: t('cmdPalette.splitVertical'),
-        description: t('cmdPalette.splitVert'),
-        icon: <Zap className="size-4" />,
-        data: { action: 'split-vertical' },
-        score: 0,
-      },
-      {
-        id: 'keyboard-shortcuts',
-        type: 'action',
-        title: t('cmdPalette.keyboardShortcuts'),
-        description: t('cmdPalette.viewShortcuts'),
-        icon: <Keyboard className="size-4" />,
-        data: { action: 'shortcuts' },
-        score: 0,
-      },
-      {
-        id: 'settings',
-        type: 'action',
-        title: t('cmdPalette.openSettings'),
-        description: t('cmdPalette.openSettingsHint'),
-        icon: <Settings className="size-4" />,
-        data: { action: 'settings' },
-        score: 0,
-      },
-      {
-        id: 'transfer-queue',
-        type: 'action',
-        title: t('cmdPalette.openTransferQueue'),
-        description: t('cmdPalette.openTransferQueueHint'),
-        icon: <FileUp className="size-4" />,
-        data: { action: 'transfer-queue' },
-        score: 0,
-      },
-    ],
-    [t],
-  )
+  const quickActions = usePaletteQuickActions(t)
   return { allTabs, openTabs, closedTabs, workspaceResults, quickActions }
 }

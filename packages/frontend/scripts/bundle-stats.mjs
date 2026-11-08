@@ -52,7 +52,19 @@ const budgets = {
   // 577 KB (was 575 KB): Phase 9.6 adds the product startup recovery gate and
   // its redacted state probe so a partial migration cannot silently reach the
   // main UI. It is one small screen; keep the next increase this specific.
-  totalGzip: 577 * 1024,
+  //
+  // 583 KB (was 577 KB): the settings, host create/edit and port-forward
+  // dialogs were hardcoded English. Localizing them adds en/cn/fr copy only
+  // (≈2.5 KB gzip on CI); no view, dependency or code path was added.
+  //
+  // 588 KB (was 583 KB): the same sweep for keychain, SFTP, snippets, teams,
+  // known hosts, command palette, logs and serial adds another ≈5.6 KB gzip of
+  // three-locale copy. Again strings only.
+  //
+  // 589 KB (was 588 KB): Phase 9.8 adds the Teams sync-error banner (six locale
+  // strings plus the Alert already shipped with Hosts) and the SFTP "unknown
+  // mtime" dash. No new dependency or view; the measured total was 588.31 KB.
+  totalGzip: 589 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

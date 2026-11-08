@@ -134,7 +134,7 @@ export function StorageServiceSection({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="syncServiceRegion">Region</Label>
+            <Label htmlFor="syncServiceRegion">{t('settings.region')}</Label>
             <Input
               id="syncServiceRegion"
               placeholder="us-east-1"

@@ -33,7 +33,7 @@ export function AuditLogList({ logs }: AuditLogListProps) {
       <TableHeader>
         <TableRow>
           <TableHead>{t('common.name')}</TableHead>
-          <TableHead>Host</TableHead>
+          <TableHead>{t('teams.host')}</TableHead>
           <TableHead>{t('teams.action')}</TableHead>
           <TableHead>{t('teams.time')}</TableHead>
         </TableRow>

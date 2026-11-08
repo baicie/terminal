@@ -1,5 +1,6 @@
 import type { KnownHostRecord } from '@/service/database'
 import { Fingerprint, Key, Server, Shield, Trash2, Upload } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -36,23 +37,24 @@ export function KnownHostsContent({
   onDeleteFromDetails,
   onImport,
 }: KnownHostsContentProps) {
+  const { t } = useTranslation()
   return (
     <ViewContent className="p-6">
       <ViewHeader
-        title="Known Hosts"
-        description="Back up fingerprints in the app; SSH trust uses the OpenSSH .ssh/known_hosts file in your user home directory"
+        title={t('knownHosts.title')}
+        description={t('knownHosts.description')}
       />
       {loading ? (
         <KeyListSkeleton count={6} />
       ) : hosts.length === 0 ? (
         <EmptyState
           icon={<Fingerprint className="size-12" />}
-          title="No known hosts"
-          description="Import a backup copy; update your OpenSSH .ssh/known_hosts file separately to trust a host"
+          title={t('knownHosts.noKnownHosts')}
+          description={t('knownHosts.emptyDescription')}
           action={
             <Button onClick={onImport}>
               <Upload className="size-4 mr-1" data-icon="inline-start" />
-              Import
+              {t('knownHosts.import')}
             </Button>
           }
         />
@@ -71,7 +73,7 @@ export function KnownHostsContent({
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate">{host.hostname}</div>
                   <div className="text-xs text-muted-foreground">
-                    Port {host.port}
+                    {t('knownHosts.portLabel', { port: host.port })}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1 font-mono truncate">
                     {host.key_type}
@@ -101,31 +103,37 @@ export function KnownHostsContent({
               {selectedHost?.hostname}
             </DialogTitle>
             <DialogDescription>
-              App backup only; this record does not control SSH trust.
+              {t('knownHosts.detailsDescription')}
             </DialogDescription>
           </DialogHeader>
           {selectedHost && (
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-sm">
                 <Key className="size-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Key Type:</span>
+                <span className="text-muted-foreground">
+                  {t('knownHosts.keyType')}
+                </span>
                 <span className="font-mono">{selectedHost.key_type}</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <Shield className="size-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Port:</span>
+                <span className="text-muted-foreground">
+                  {t('knownHosts.port')}
+                </span>
                 <span>{selectedHost.port}</span>
               </div>
               <div className="space-y-1">
                 <div className="text-sm text-muted-foreground">
-                  Fingerprint:
+                  {t('knownHosts.fingerprint')}
                 </div>
                 <div className="p-3 rounded-md bg-muted font-mono text-xs break-all">
                   {selectedHost.fingerprint}
                 </div>
               </div>
               <div className="text-sm text-muted-foreground">
-                Added: {format(selectedHost.added_at, 'MMM dd, yyyy HH:mm')}
+                {t('knownHosts.added', {
+                  date: format(selectedHost.added_at, 'MMM dd, yyyy HH:mm'),
+                })}
               </div>
             </div>
           )}
@@ -139,10 +147,10 @@ export function KnownHostsContent({
               }}
             >
               <Trash2 className="size-4 mr-1" data-icon="inline-start" />
-              Delete
+              {t('common.delete')}
             </Button>
             <Button variant="outline" onClick={() => setSelectedHost(null)}>
-              Close
+              {t('common.close')}
             </Button>
           </DialogFooter>
         </DialogContent>

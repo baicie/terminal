@@ -1,5 +1,6 @@
 import type { SSHKeyRecord } from '@/service/database'
 import { KeyRound, Search } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -46,12 +47,23 @@ export function KeyListPanel({
   onNewKey,
   onGenerate,
 }: KeyListPanelProps) {
+  const { t } = useTranslation()
   const filteredKeys = keys.filter(key => {
     if (filterType === 'all') return true
     if (filterType === 'key')
       return key.key_type === null || key.key_type === 'key'
     return key.key_type === filterType
   })
+
+  const getKeyTypeLabel = (type: string | null) => {
+    if (!type) return t('keychain.sshKey')
+    const labels: Record<string, string> = {
+      certificate: t('keychain.certificate'),
+      touchid: t('keychain.touchId'),
+      fido2: t('keychain.fido2'),
+    }
+    return labels[type] ?? type
+  }
 
   return (
     <div
@@ -64,7 +76,7 @@ export function KeyListPanel({
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
-            placeholder="Search keys..."
+            placeholder={t('keychain.searchKeys')}
             value={searchQuery}
             onChange={e => onSearch(e.target.value)}
             className="pl-9 h-9"
@@ -73,21 +85,23 @@ export function KeyListPanel({
         <div className="flex gap-2">
           <Select value={filterType} onValueChange={v => onFilterChange(v as KeyFilter)}>
             <SelectTrigger className="flex-1 h-9">
-              <SelectValue placeholder="Filter" />
+              <SelectValue placeholder={t('keychain.filter')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Keys</SelectItem>
+              <SelectItem value="all">{t('keychain.allKeys')}</SelectItem>
               <SelectItem value="key">KEY</SelectItem>
-              <SelectItem value="certificate">Certificate</SelectItem>
-              <SelectItem value="touchid">Touch ID</SelectItem>
-              <SelectItem value="fido2">FIDO2</SelectItem>
+              <SelectItem value="certificate">
+                {t('keychain.certificate')}
+              </SelectItem>
+              <SelectItem value="touchid">{t('keychain.touchId')}</SelectItem>
+              <SelectItem value="fido2">{t('keychain.fido2')}</SelectItem>
             </SelectContent>
           </Select>
           <Button size="sm" onClick={onNewKey}>
-            New
+            {t('keychain.new')}
           </Button>
           <Button size="sm" variant="outline" onClick={onGenerate}>
-            Generate
+            {t('keychain.generate')}
           </Button>
         </div>
       </ViewToolbar>
@@ -98,11 +112,11 @@ export function KeyListPanel({
         ) : filteredKeys.length === 0 && !loading ? (
           <EmptyState
             icon={<KeyRound className="size-10" />}
-            title="No keys yet"
-            description="Add your first SSH key to get started"
+            title={t('keychain.noKeys')}
+            description={t('keychain.addFirstKey')}
             action={
               <Button onClick={onNewKey}>
-                Add Key
+                {t('keychain.addKey')}
               </Button>
             }
             className="py-12"
@@ -126,7 +140,9 @@ export function KeyListPanel({
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate">{key.name}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">
-                      Type: {key.key_type || 'SSH Key'}
+                      {t('keychain.typeLabel', {
+                        type: getKeyTypeLabel(key.key_type),
+                      })}
                     </div>
                   </div>
                 </div>

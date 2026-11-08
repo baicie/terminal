@@ -1,6 +1,7 @@
 import type { FileItem } from '@/service/ssh'
 import type { Host } from '@/types'
 import { Computer, FolderOpen, Plus, Server } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { ViewContent } from '@/components/view-container'
 import { cn } from '@/lib/utils'
@@ -35,6 +36,7 @@ export function SftpFilePanes({
   onDelete,
   onRename,
 }: SftpFilePanesProps) {
+  const { t } = useTranslation()
   return (
     <ViewContent
       className={cn(
@@ -50,7 +52,7 @@ export function SftpFilePanes({
             className="flex-1 text-xs"
             onClick={() => onMobilePaneChange('local')}
           >
-            <Computer className="size-3 mr-1" /> Local
+            <Computer className="size-3 mr-1" /> {t('sftp.local')}
           </Button>
           <Button
             size="sm"
@@ -58,7 +60,7 @@ export function SftpFilePanes({
             className="flex-1 text-xs"
             onClick={() => onMobilePaneChange('remote')}
           >
-            <Server className="size-3 mr-1" /> Remote
+            <Server className="size-3 mr-1" /> {t('sftp.remote')}
           </Button>
         </div>
       )}
@@ -76,7 +78,7 @@ export function SftpFilePanes({
             className="h-7 text-xs gap-1"
             onClick={local.pickFolder}
           >
-            <FolderOpen className="size-3" /> Pick Folder
+            <FolderOpen className="size-3" /> {t('sftp.pickFolder')}
           </Button>
           <span className="text-xs text-muted-foreground truncate">
             {local.path}
@@ -119,7 +121,7 @@ export function SftpFilePanes({
               className="h-7 text-xs gap-1 ml-auto"
               onClick={onMkdir}
             >
-              <Plus className="size-3" /> Folder
+              <Plus className="size-3" /> {t('sftp.folder')}
             </Button>
           )}
         </div>

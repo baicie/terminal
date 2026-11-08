@@ -18,4 +18,5 @@ export default {
   'serial.connecting': '连接中...',
   'serial.failedLoadPorts': '加载串口列表失败',
   'serial.connectionFailed': '连接失败',
+  'serial.selectPortRequired': '请选择串口',
 }

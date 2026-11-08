@@ -10,7 +10,7 @@ export default mergeConfig(
     test: {
       globals: true,
       environment: 'jsdom',
-      setupFiles: [],
+      setupFiles: ['./src/test-setup.ts'],
       include: ['src/**/*.test.{ts,tsx}'],
       // Keep jsdom workers bounded. The terminal/bootstrap tests intentionally
       // use short async deadlines; an unbounded worker count can starve one

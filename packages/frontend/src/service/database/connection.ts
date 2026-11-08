@@ -3,7 +3,7 @@ import { isTauri } from '@tauri-apps/api/core'
 import { initializeCoreSchema } from './connection-schema-core'
 import { initializeTeamSchema } from './connection-schema-team'
 import { traceStage, traceStageFailed } from './startup-trace'
-import { assertDatabaseAllowed } from './startup-gate'
+import { assertDatabaseAllowed, blockStartup } from './startup-gate'
 
 async function loadDb() {
   const Database = (await import('@tauri-apps/plugin-sql')).default
@@ -26,14 +26,20 @@ function requireDb(): Database {
  */
 async function establishConnection(): Promise<Database> {
   let stage = 'db-load-started'
+  let opened: Database | null = null
   try {
     traceStage(stage, 'sqlite:terminal.db')
     const database = await loadDb()
+    opened = database
     traceStage('db-pool-registered', 'the sql plugin returned a handle')
     stage = 'schema-init'
     await initSchema(database)
     stage = 'pragmas'
     await configureSqlite(database)
+    // Re-check before publishing: a lock that vanished while the schema was
+    // being applied must not leave a usable cached connection behind.
+    stage = 'runtime-lock'
+    await assertRuntimeInstanceLock()
     db = database
     traceStage('ready', 'connection cached')
     return database
@@ -45,9 +51,58 @@ async function establishConnection(): Promise<Database> {
     // collects - that is what turns "the tables were never created" into an
     // actual reason.
     console.error('[db] schema setup failed, the connection was not cached', error)
+    if (opened) {
+      try {
+        await opened.close()
+      } catch {
+        // best effort: the handle is discarded either way
+      }
+    }
     db = null
     initPromise = null
     throw error
+  }
+}
+
+/**
+ * A process that lost the runtime instance lock must never ask plugin-sql to
+ * open the file. The Rust commands enforce the same invariant; this check
+ * closes the UI/service path as well.
+ */
+async function closeCachedConnection(): Promise<void> {
+  const current = db
+  db = null
+  initPromise = null
+  if (!current) return
+  try {
+    await current.close()
+  } catch {
+    // the handle is already unusable; dropping it is the safety property
+  }
+}
+
+async function assertRuntimeInstanceLock(): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  let held = false
+  try {
+    held = await invoke<boolean>('runtime_instance_lock_held')
+  } catch (error) {
+    await closeCachedConnection()
+    blockStartup()
+    throw new Error(
+      'the runtime instance lock could not be verified: ' +
+        (error instanceof Error ? error.message : String(error)),
+      { cause: error },
+    )
+  }
+  if (held !== true) {
+    // The lock path was deleted or replaced: the cached handle and any
+    // in-flight init must not remain usable for new statements.
+    await closeCachedConnection()
+    blockStartup()
+    throw new Error(
+      'this process does not own the runtime instance lock for the data directory',
+    )
   }
 }
 
@@ -55,9 +110,13 @@ export async function getDb() {
   // Gate first: a cached connection or an in-flight init must not be reachable
   // while the startup decision is pending or blocked.
   assertDatabaseAllowed()
+  if (!isTauri()) throw new Error('Database only available in Tauri context')
+  // Every call, including cache and in-flight hits, re-verifies ownership. A
+  // lock file deleted after the first connection must close that connection
+  // instead of letting new statements through it.
+  await assertRuntimeInstanceLock()
   if (db) return db
   if (initPromise) return initPromise
-  if (!isTauri()) throw new Error('Database only available in Tauri context')
   initPromise = establishConnection()
   return initPromise
 }

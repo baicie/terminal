@@ -1,5 +1,6 @@
 import type { SnippetRecord } from '@/service/database'
 import { Play } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -40,6 +41,7 @@ export const SnippetExecuteDialog: React.FC<SnippetExecuteDialogProps> = ({
   onVariableChange,
   onExecute,
 }) => {
+  const { t } = useTranslation()
   const variables = parseVariables(snippet.script)
 
   return (
@@ -51,12 +53,12 @@ export const SnippetExecuteDialog: React.FC<SnippetExecuteDialogProps> = ({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Execute Snippet - Set Variables</DialogTitle>
+          <DialogTitle>{t('snippets.executeSnippet')}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="text-sm text-muted-foreground">
-            Enter values for the variables in this snippet:
+            {t('snippets.enterVariables')}
           </div>
 
           <div className="text-xs font-mono bg-muted p-2 rounded">
@@ -76,7 +78,7 @@ export const SnippetExecuteDialog: React.FC<SnippetExecuteDialogProps> = ({
                       [varName]: e.target.value,
                     })
                   }
-                  placeholder={`Enter ${varName}`}
+                  placeholder={t('snippets.enterVar', { name: varName })}
                 />
               </div>
             ))}
@@ -86,12 +88,12 @@ export const SnippetExecuteDialog: React.FC<SnippetExecuteDialogProps> = ({
         <DialogFooter>
           <DialogClose asChild>
             <Button type="button" variant="outline">
-              Cancel
+              {t('common.cancel')}
             </Button>
           </DialogClose>
           <Button type="button" onClick={onExecute}>
             <Play className="size-4 mr-1" />
-            Execute
+            {t('snippets.execute')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,8 +1,9 @@
 import { ChevronRight } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { SearchResult } from './command-palette-types'
-import { getTypeBadgeClass, getTypeLabel } from './command-palette-utils'
+import { getTypeBadgeClass, getTypeLabelKey } from './command-palette-utils'
 
 interface CommandPaletteResultProps {
   result: SearchResult
@@ -19,6 +20,7 @@ export function CommandPaletteResult({
   onSelect,
   onHover,
 }: CommandPaletteResultProps) {
+  const { t } = useTranslation()
   return (
     <Button
       variant="ghost"
@@ -58,7 +60,7 @@ export function CommandPaletteResult({
           getTypeBadgeClass(result.type),
         )}
       >
-        {getTypeLabel(result.type)}
+        {t(getTypeLabelKey(result.type))}
       </span>
       <ChevronRight
         className={cn(

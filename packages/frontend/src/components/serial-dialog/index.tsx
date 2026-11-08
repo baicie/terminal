@@ -1,6 +1,7 @@
 import type { SerialConfig, SerialPortInfo } from '@/service/serial'
 import { Plug, RefreshCw, Usb } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -31,6 +32,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
   onClose,
   onConnect,
 }) => {
+  const { t } = useTranslation()
   const [ports, setPorts] = useState<SerialPortInfo[]>([])
   const [loading, setLoading] = useState(false)
   const [connecting, setConnecting] = useState(false)
@@ -47,13 +49,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
     921600,
   ]
 
-  useEffect(() => {
-    if (open) {
-      loadPorts()
-    }
-  }, [open])
-
-  const loadPorts = async () => {
+  const loadPorts = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -66,14 +62,20 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
       }
     } catch (err) {
       console.error('Failed to load ports:', err)
-      setError('Failed to load serial ports')
+      setError(t('serial.failedLoadPorts'))
     }
     setLoading(false)
-  }
+  }, [t])
+
+  useEffect(() => {
+    if (open) {
+      void loadPorts()
+    }
+  }, [open, loadPorts])
 
   const handleConnect = async () => {
     if (!selectedPort) {
-      setError('Please select a serial port')
+      setError(t('serial.selectPortRequired'))
       return
     }
 
@@ -97,7 +99,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
         onConnect(config, result.sessionId)
         onClose()
       } else {
-        setError(result.message || 'Connection failed')
+        setError(result.message || t('serial.connectionFailed'))
       }
     } catch (connectError) {
       setError(
@@ -121,23 +123,23 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plug className="size-5" />
-            Connect Serial Port
+            {t('serial.connectSerialPort')}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
           {/* Port Selection */}
           <div className="space-y-2">
-            <Label htmlFor="port">Serial Port</Label>
+            <Label htmlFor="port">{t('serial.serialPort')}</Label>
             <div className="flex gap-2">
               <Select value={selectedPort} onValueChange={setSelectedPort}>
                 <SelectTrigger id="port" className="flex-1">
-                  <SelectValue placeholder="Select a port" />
+                  <SelectValue placeholder={t('serial.selectPort')} />
                 </SelectTrigger>
                 <SelectContent>
                   {ports.length === 0 ? (
                     <SelectItem value="no-ports" disabled>
-                      No ports available
+                      {t('serial.noPortsAvailable')}
                     </SelectItem>
                   ) : (
                     ports.map(port => (
@@ -169,7 +171,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
 
           {/* Baud Rate */}
           <div className="space-y-2">
-            <Label htmlFor="baudRate">Baud Rate</Label>
+            <Label htmlFor="baudRate">{t('serial.baudRate')}</Label>
             <Select
               value={String(baudRate)}
               onValueChange={v => setBaudRate(Number(v))}
@@ -189,7 +191,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
 
           {/* Data Bits */}
           <div className="space-y-2">
-            <Label htmlFor="dataBits">Data Bits</Label>
+            <Label htmlFor="dataBits">{t('serial.dataBits')}</Label>
             <Select
               value={String(dataBits)}
               onValueChange={v => setDataBits(Number(v))}
@@ -208,7 +210,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
 
           {/* Stop Bits */}
           <div className="space-y-2">
-            <Label htmlFor="stopBits">Stop Bits</Label>
+            <Label htmlFor="stopBits">{t('serial.stopBits')}</Label>
             <Select
               value={String(stopBits)}
               onValueChange={v => setStopBits(Number(v))}
@@ -225,30 +227,34 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
 
           {/* Parity */}
           <div className="space-y-2">
-            <Label htmlFor="parity">Parity</Label>
+            <Label htmlFor="parity">{t('serial.parity')}</Label>
             <Select value={parity} onValueChange={setParity}>
               <SelectTrigger id="parity">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="odd">Odd</SelectItem>
-                <SelectItem value="even">Even</SelectItem>
+                <SelectItem value="none">{t('serial.none')}</SelectItem>
+                <SelectItem value="odd">{t('serial.odd')}</SelectItem>
+                <SelectItem value="even">{t('serial.even')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {/* Flow Control */}
           <div className="space-y-2">
-            <Label htmlFor="flowControl">Flow Control</Label>
+            <Label htmlFor="flowControl">{t('serial.flowControl')}</Label>
             <Select value={flowControl} onValueChange={setFlowControl}>
               <SelectTrigger id="flowControl">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="hardware">Hardware (RTS/CTS)</SelectItem>
-                <SelectItem value="software">Software (XON/XOFF)</SelectItem>
+                <SelectItem value="none">{t('serial.none')}</SelectItem>
+                <SelectItem value="hardware">
+                  {t('serial.hardwareFlow')}
+                </SelectItem>
+                <SelectItem value="software">
+                  {t('serial.softwareFlow')}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -263,7 +269,7 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
 
         <DialogFooter>
           <Button variant="outline" type="button" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             onClick={handleConnect}
@@ -272,12 +278,12 @@ const SerialDialog: React.FC<SerialDialogProps> = ({
             {connecting ? (
               <>
                 <RefreshCw className="size-4 mr-2 animate-spin" />
-                Connecting...
+                {t('serial.connecting')}
               </>
             ) : (
               <>
                 <Plug className="size-4 mr-2" />
-                Connect
+                {t('serial.connect')}
               </>
             )}
           </Button>

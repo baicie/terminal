@@ -34,6 +34,21 @@ export default {
   'snippets.deletePackageConfirm':
     '确定要删除 "{{name}}" 吗？包中的所有片段将被移至未分类。',
   'snippets.enterVar': '输入 {{name}}',
+  'snippets.filterSnippets': '筛选片段...',
+  'snippets.filterHistory': '筛选历史...',
+  'snippets.quickRun': '快速运行',
+  'snippets.historyTab': '历史',
+  'snippets.collapseSidebar': '收起',
+  'snippets.executing': '正在执行：{{name}}',
+  'snippets.enterVarPrompt': '请输入 {{name}} 的值：',
+  'snippets.loadFailed': '加载数据失败：{{error}}',
+  'snippets.saveFailed': '保存脚本失败：{{error}}',
+  'snippets.deleteFailed': '删除脚本失败：{{error}}',
+  'snippets.toggleFailed': '切换脚本状态失败：{{error}}',
+  'snippets.executeFailed': '执行失败：{{error}}',
+  'snippets.create': '创建',
+  'snippets.namePlaceholder': '我的片段',
+  'snippets.packageLabel': '包',
 
   // Scripts
   'scripts.title': '批量脚本',
@@ -91,4 +106,10 @@ export default {
   'scripts.noHosts': '此脚本未选择任何主机',
   'scripts.noHistory': '暂无执行历史',
   'scripts.noHistoryDesc': '运行一次脚本后，可在此查看结果',
+  'scripts.hostSelectedCount': '已选择 {{count}} 台主机',
+  'scripts.hostsSelectedCount': '已选择 {{count}} 台主机',
+  'scripts.statusSuccess': '成功',
+  'scripts.statusFailed': '失败',
+  'scripts.statusRunning': '运行中',
+  'scripts.statusTimeout': '已超时',
 }

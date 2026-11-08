@@ -6,11 +6,17 @@ import {
   resetStartupGateForTests,
 } from './startup-gate'
 
-vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true }))
+const coreState = vi.hoisted(() => ({ runtimeLockHeld: true }))
+vi.mock('@tauri-apps/api/core', () => ({
+  isTauri: () => true,
+  invoke: async (command: string) =>
+    command === 'runtime_instance_lock_held' ? coreState.runtimeLockHeld : true,
+}))
 vi.mock('@tauri-apps/plugin-sql', () => {
   const database = {
     execute: vi.fn(async () => undefined),
     select: vi.fn(async () => []),
+    close: vi.fn(async () => true),
   }
   return { default: { load: vi.fn(async () => database) } }
 })
@@ -21,12 +27,20 @@ vi.mock('./connection-schema-team', () => ({
   initializeTeamSchema: vi.fn(async () => undefined),
 }))
 
-import { getDb, select } from './connection'
+import { executeQuery, getDb, select } from './connection'
 
 
 describe('database startup gate at the connection layer', () => {
   beforeEach(() => {
     resetStartupGateForTests()
+    coreState.runtimeLockHeld = true
+  })
+
+  it('refuses the database when the runtime instance lock is not held', async () => {
+    allowStartup()
+    coreState.runtimeLockHeld = false
+    await expect(getDb()).rejects.toThrow(/runtime instance lock/)
+    await expect(getDb()).rejects.toThrow(/blocked/)
   })
 
   it('refuses a cached connection once the gate becomes pending', async () => {
@@ -41,6 +55,25 @@ describe('database startup gate at the connection layer', () => {
     await getDb()
     blockStartup()
     await expect(getDb()).rejects.toThrow(/blocked/)
+  })
+
+  it('closes a cached connection after the runtime lock is lost', async () => {
+    allowStartup()
+    const opened = await getDb()
+    coreState.runtimeLockHeld = false
+    await expect(getDb()).rejects.toThrow(/runtime instance lock/)
+    expect(opened.close).toHaveBeenCalled()
+    await expect(getDb()).rejects.toThrow(/blocked/)
+  })
+
+  it('refuses a write after the runtime lock is lost', async () => {
+    allowStartup()
+    coreState.runtimeLockHeld = true
+    await getDb()
+    coreState.runtimeLockHeld = false
+    await expect(
+      executeQuery('UPDATE hosts SET name = ?', ['changed']),
+    ).rejects.toThrow(/runtime instance lock/)
   })
 
   it('propagates a gate rejection from select instead of returning []', async () => {

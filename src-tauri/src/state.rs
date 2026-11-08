@@ -119,6 +119,11 @@ pub struct ForwardedChannelMsg {
     pub originator_port: u32,
 }
 
+/// Shared slot the SSH client handler reads when the server forwards a
+/// connection. The handler is moved into russh, so this Arc is the only way to
+/// install a listener after the connection exists.
+pub type ForwardListenerSlot = std::sync::Arc<std::sync::RwLock<Option<TcpForwardListener>>>;
+
 /// Remote port forward listener.
 /// Keeps the `tcpip_forward` registration alive and bridges connections.
 #[derive(Clone)]
@@ -127,16 +132,23 @@ pub struct TcpForwardListener {
     #[allow(dead_code)]
     pub bound_port: u32,
     pub sender: tokio::sync::mpsc::Sender<ForwardedChannelMsg>,
-    /// Registry key (pointer address of the SshHandle). Used for cleanup.
-    pub registry_key: usize,
 }
 
-/// Port forwarding task handle with additional info and listener for remote forwards.
+/// Everything needed to undo one remote forward: the SSH connection, the
+/// address/port the server bound, and the slot new channels arrive through.
+pub struct RemoteForwardBinding {
+    pub handle: std::sync::Arc<russh::client::Handle<ClientHandler>>,
+    pub address: String,
+    pub port: u32,
+    pub slot: ForwardListenerSlot,
+    pub listener: TcpForwardListener,
+}
+
+/// Port forwarding task handle with additional info and binding for remote forwards.
 pub struct PortForwardTask {
     pub task: tokio::task::JoinHandle<Result<(), PortForwardError>>,
-    /// `Some` for remote forward (keeps `tcpip_forward` alive); `None` for local/dynamic.
-    #[allow(dead_code)]
-    pub listener: Option<TcpForwardListener>,
+    /// `Some` for remote forward; `None` for local/dynamic.
+    pub remote: Option<RemoteForwardBinding>,
     pub info: PortForwardInfo,
 }
 
@@ -195,7 +207,10 @@ pub struct SftpFileItem {
     pub path: String,
     pub is_directory: bool,
     pub size: u64,
-    pub modified_time: i64,
+    /// Seconds since the Unix epoch, or `None` when the server did not report a
+    /// modification time. Never filled in with a placeholder: a fabricated
+    /// timestamp sorts and displays as if it were real.
+    pub modified_time: Option<i64>,
     pub permissions: String,
 }
 
@@ -229,12 +244,32 @@ pub struct ClientHandler {
     /// Set by `setup_remote_forward` so `server_channel_open_forwarded_tcpip` can route
     /// incoming connections to the forwarder task.
     /// std::sync::RwLock is safe here: the guard is always dropped before any await.
-    pub(crate) forward_listener: std::sync::RwLock<Option<TcpForwardListener>>,
+    pub(crate) forward_listener: ForwardListenerSlot,
 }
 
 impl ClientHandler {
+    /// The slot the connection owner installs a remote-forward listener into.
+    pub fn forward_listener_slot(&self) -> ForwardListenerSlot {
+        std::sync::Arc::clone(&self.forward_listener)
+    }
+
     pub fn for_host(host: impl Into<String>, port: u16) -> Self {
         Self::for_host_with_agent_forwarding(host, port, false)
+    }
+
+    /// A handler that already trusts one server key.
+    ///
+    /// The real-SSH forwarding acceptance starts a throwaway sshd with a fresh
+    /// host key; this pins that key instead of touching the user's known_hosts.
+    #[cfg(test)]
+    pub(crate) fn for_test_with_expected_key(
+        host: impl Into<String>,
+        port: u16,
+        expected_host_key: russh::keys::PublicKey,
+    ) -> Self {
+        let mut handler = Self::for_host(host, port);
+        handler.expected_host_key = Some(expected_host_key);
+        handler
     }
 
     pub fn for_host_with_agent_forwarding(
@@ -250,7 +285,7 @@ impl ClientHandler {
             allow_agent_forwarding,
             agent_socket: get_ssh_agent_socket().map(PathBuf::from),
             session_id: None,
-            forward_listener: std::sync::RwLock::new(None),
+            forward_listener: std::sync::Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
@@ -275,7 +310,7 @@ impl ClientHandler {
             allow_agent_forwarding,
             agent_socket: get_ssh_agent_socket().map(PathBuf::from),
             session_id: None,
-            forward_listener: std::sync::RwLock::new(None),
+            forward_listener: std::sync::Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
@@ -289,7 +324,7 @@ impl ClientHandler {
             allow_agent_forwarding: false,
             agent_socket: get_ssh_agent_socket().map(PathBuf::from),
             session_id: None,
-            forward_listener: std::sync::RwLock::new(None),
+            forward_listener: std::sync::Arc::new(std::sync::RwLock::new(None)),
         }
     }
 }

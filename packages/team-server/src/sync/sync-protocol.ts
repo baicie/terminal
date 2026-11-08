@@ -109,6 +109,45 @@ function legacyAnchor(cursor: bigint, safeNow: bigint): ChangeWindowAnchor {
  * version, or a watermark above the current one (cluster reset, restore) -
  * degrades to a full resnapshot instead of a guess.
  */
+/**
+ * A bare numeric cursor at or above the millisecond epoch floor cannot come
+ * from the current client (it sends `2.<bound>.<txid>.<seq>`), and it cannot
+ * be served safely either: a timestamp is above every PostgreSQL watermark, so
+ * the old code answered with the entire window, which historical clients
+ * re-insert with a non-idempotent INSERT and abort. Such a client is told to
+ * upgrade instead of being handed data it cannot apply.
+ */
+export function isLegacyTimestampCursor(
+  cursor: string | number | undefined | null,
+): boolean {
+  if (cursor === undefined || cursor === null) return false
+  const text = String(cursor).trim()
+  if (!/^\d+$/.test(text)) return false
+  const value = Number(text)
+  return Number.isSafeInteger(value) && value >= LEGACY_TIMESTAMP_VERSION
+}
+
+/** The explicit first position of a protocol-2 client (`2.0.0.0`). */
+export const INITIAL_SYNC_CURSOR = '2.0.0.0'
+
+/**
+ * Explicit protocol declaration of a sync request. New clients send
+ * `X-Sync-Protocol: 2`; older clients send nothing at all, which is the only
+ * evidence the server has that they cannot read a composite cursor.
+ */
+export type DeclaredSyncProtocol = '2' | 'legacy' | 'unsupported' | null
+
+export function normalizeSyncProtocol(
+  raw: string | null | undefined,
+): DeclaredSyncProtocol {
+  if (raw === null || raw === undefined) return null
+  const text = raw.trim().toLowerCase()
+  if (text === '') return null
+  if (text === '2') return '2'
+  if (text === '1') return 'legacy'
+  return 'unsupported'
+}
+
 export function resolveChangeWindowAnchor(
   raw: string | number | undefined | null,
   safeNow: bigint,
@@ -135,6 +174,10 @@ export function resolveChangeWindowAnchor(
   if (bound === 0n) {
     // Finished run: everything below txid is delivered, so resume at txid itself.
     if (seq !== 0n || txid > safeNow) return full
+    // `2.0.0.0` is the explicit initial cursor of a protocol-2 client: it names
+    // no position yet, so the server answers with the whole window (and may
+    // page it), exactly like a first sync.
+    if (txid === 0n) return full
     return {
       bound: safeNow,
       after: { txid, seq: -1n },

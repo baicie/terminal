@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { FileItem } from '@/service/ssh'
 import {
   Dialog,
@@ -24,6 +25,7 @@ export const RenameDialog: React.FC<RenameDialogProps> = ({
   onOpenChange,
   onConfirm,
 }) => {
+  const { t } = useTranslation()
   const initial = file?.name.split('/').pop() || ''
   const [value, setValue] = useState(initial)
 
@@ -36,9 +38,9 @@ export const RenameDialog: React.FC<RenameDialogProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Rename</DialogTitle>
+          <DialogTitle>{t('sftp.renameTitle')}</DialogTitle>
           <DialogDescription>
-            Enter the new name for this item
+            {t('sftp.renameDescription')}
           </DialogDescription>
         </DialogHeader>
         <Input
@@ -51,10 +53,10 @@ export const RenameDialog: React.FC<RenameDialogProps> = ({
         />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button onClick={() => value.trim() && onConfirm(value.trim())} disabled={!value.trim()}>
-            Rename
+            {t('sftp.rename')}
           </Button>
         </DialogFooter>
       </DialogContent>

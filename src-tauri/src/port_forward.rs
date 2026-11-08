@@ -1,8 +1,8 @@
 use crate::errors::PortForwardError;
 use crate::session::get_session_manager;
 use crate::state::{
-    ForwardedChannelMsg, PortForwardConfig, PortForwardInfo, PortForwardTask, SharedStateType,
-    TcpForwardListener,
+    ForwardedChannelMsg, PortForwardConfig, PortForwardInfo, PortForwardTask, RemoteForwardBinding,
+    SharedStateType, TcpForwardListener,
 };
 use russh::ChannelId;
 use std::sync::Arc;
@@ -10,7 +10,6 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-use tokio::sync::Mutex as TokioMutex;
 use tokio::task::JoinHandle;
 
 /// Type alias for SSH session handle wrapped in Arc
@@ -48,8 +47,13 @@ pub async fn port_forward_start(
         ));
     }
 
-    let handle = get_session_manager()
+    let manager = get_session_manager();
+    let handle = manager
         .get_ssh_handle(&session_id)
+        .await
+        .ok_or(PortForwardError::SessionNotFound)?;
+    let forward_slot = manager
+        .get_forward_listener_slot(&session_id)
         .await
         .ok_or(PortForwardError::SessionNotFound)?;
 
@@ -65,6 +69,11 @@ pub async fn port_forward_start(
     let local_host_clone = config.local_host.clone();
     let remote_host_clone = config.remote_host.clone();
     let ft_clone = config.forward_type.clone();
+    let bind_address_for_cancel = if config.remote_host.is_empty() {
+        "0.0.0.0".to_string()
+    } else {
+        config.remote_host.clone()
+    };
 
     if !matches!(ft_clone.as_str(), "local" | "dynamic" | "remote") {
         return Err(PortForwardError::BindFailed(format!(
@@ -88,12 +97,18 @@ pub async fn port_forward_start(
     // be properly cleaned up on stop). The tcpip_forward round trip runs before
     // the map lock is taken, so list/stop/shutdown stay responsive meanwhile.
     if ft_clone == "remote" {
-        let (listener, rx) =
-            setup_remote_forward(handle.clone(), local_port, remote_host_clone, remote_port)
-                .await?;
+        let (listener, rx) = setup_remote_forward(
+            handle.clone(),
+            forward_slot.clone(),
+            local_port,
+            remote_host_clone,
+            remote_port,
+        )
+        .await?;
 
+        let forward_handle = handle.clone();
         let task: JoinHandle<Result<(), PortForwardError>> = tokio::spawn(async move {
-            handle_forwarded_connections(handle, rx, remote_port).await;
+            handle_forwarded_connections(forward_handle, rx, remote_port).await;
             Ok(())
         });
 
@@ -103,7 +118,13 @@ pub async fn port_forward_start(
                 forward_id,
                 PortForwardTask {
                     task,
-                    listener: Some(listener),
+                    remote: Some(RemoteForwardBinding {
+                        handle,
+                        address: bind_address_for_cancel,
+                        port: listener.bound_port,
+                        slot: forward_slot,
+                        listener,
+                    }),
                     info,
                 },
             );
@@ -130,7 +151,7 @@ pub async fn port_forward_start(
             forward_id,
             PortForwardTask {
                 task,
-                listener: None,
+                remote: None,
                 info,
             },
         );
@@ -284,12 +305,13 @@ async fn run_local_forward(
 // 4. Client connects to local target and bridges the two sides
 // ============================================================================
 
-/// Remote port forward setup: requests tcpip_forward, registers the sender,
-/// and returns the TcpForwardListener + receiver pair. The caller must:
-/// 1. Store the TcpForwardListener in PortForwardTask.listener
+/// Remote port forward setup: requests tcpip_forward, installs the listener
+/// into the handler's slot, and returns it with the receiver. The caller must:
+/// 1. Store the binding in PortForwardTask.remote
 /// 2. Spawn the forwarding task with the returned receiver
 async fn setup_remote_forward(
     handle: SshHandle,
+    slot: crate::state::ForwardListenerSlot,
     local_port: u16,
     remote_host: String,
     remote_port: u16,
@@ -333,56 +355,19 @@ async fn setup_remote_forward(
     );
 
     let (tx, rx) = mpsc::channel::<ForwardedChannelMsg>(16);
-    register_forward_sender(&handle, tx.clone()).await;
-
     let listener = TcpForwardListener {
         bound_port,
         sender: tx,
-        registry_key: handle_key(&handle),
     };
+    // The handler is already inside russh; this shared slot is the only way to
+    // tell it where forwarded connections belong. Without it the callback logs
+    // "no listener registered" and drops every remote connection.
+    {
+        let mut guard = slot.write().unwrap_or_else(|error| error.into_inner());
+        *guard = Some(listener.clone());
+    }
 
     Ok((listener, rx))
-}
-
-// ----------------------------------------------------------------------------
-// Global registry of TCP forward senders + handles
-//
-// Keyed by handle pointer address. Stores the mpsc Sender and SshHandle so the
-// registry entry can be cleaned up when a remote port forward is stopped.
-//
-// Key invariants:
-// - Registered in `setup_remote_forward` after `tcpip_forward` succeeds
-// - Unregistered in `port_forward_stop` by calling `unregister_forward_sender`
-// - Registry entry is removed when forward is stopped (prevents memory leaks)
-type RegistryMap = std::collections::HashMap<usize, Box<(ForwardedChannelSender, SshHandle)>>;
-static FORWARD_REGISTRY: std::sync::LazyLock<std::sync::RwLock<RegistryMap>> =
-    std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashMap::new()));
-
-pub type ForwardedChannelSender = mpsc::Sender<ForwardedChannelMsg>;
-
-fn handle_key(handle: &SshHandle) -> usize {
-    Arc::as_ptr(handle) as usize
-}
-
-/// Register a sender + handle for remote port forwarding.
-/// Called by `setup_remote_forward` after `tcpip_forward` succeeds.
-async fn register_forward_sender(handle: &SshHandle, sender: ForwardedChannelSender) {
-    let key = handle_key(handle);
-    let cell: Box<(ForwardedChannelSender, SshHandle)> = Box::new((sender, handle.clone()));
-    if let Ok(mut reg) = FORWARD_REGISTRY.write() {
-        reg.insert(key, cell);
-    } else {
-        tracing::warn!("FORWARD_REGISTRY poisoned, registration skipped");
-    }
-}
-
-/// Unregister a remote forward entry by its stored registry key (usize).
-pub fn unregister_forward_sender_by_key(key: usize) {
-    if let Ok(mut reg) = FORWARD_REGISTRY.write() {
-        if reg.remove(&key).is_some() {
-            tracing::debug!("unregistered forward sender by key {:x}", key);
-        }
-    }
 }
 
 /// Handle each forwarded connection arriving from the SSH server.
@@ -462,6 +447,26 @@ async fn run_dynamic_forward(
 // Bidirectional forwarding between an SSH channel and a TCP socket
 // ============================================================================
 
+/// Reads from the local socket and hands bytes to the SSH side. Kept separate
+/// from the write half so neither direction waits on the other.
+async fn pipe_socket_to_channel<R>(mut reader: R, tx: mpsc::Sender<Vec<u8>>)
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut buf = [0u8; 8192];
+    loop {
+        match reader.read(&mut buf).await {
+            Ok(0) => break,
+            Ok(n) => {
+                if tx.send(buf[..n].to_vec()).await.is_err() {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+}
+
 async fn forward_socket<S>(
     handle: SshHandle,
     channel_id: ChannelId,
@@ -471,27 +476,14 @@ async fn forward_socket<S>(
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static + Unpin,
 {
-    let socket = Arc::new(TokioMutex::new(socket));
-    let s_read = socket.clone();
-    let s_write = socket.clone();
+    // A single mutex across read and write serialises the two directions:
+    // the reader holds it while waiting for bytes, so a response can never be
+    // written (a full-duplex deadlock). Split the stream instead.
+    let (s_read, mut s_write) = tokio::io::split(socket);
     let h = handle.clone();
     let (tx, mut rx) = mpsc::channel::<Vec<u8>>(1024);
 
-    let reader = async move {
-        let mut buf = [0u8; 8192];
-        loop {
-            match s_read.lock().await.read(&mut buf).await {
-                Ok(0) => break,
-                Ok(n) => {
-                    if tx.send(buf[..n].to_vec()).await.is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-        drop(tx);
-    };
+    let reader = pipe_socket_to_channel(s_read, tx);
 
     let writer = async move {
         loop {
@@ -512,17 +504,17 @@ where
                 msg = channel.wait() => {
                     match msg {
                         Some(russh::ChannelMsg::Data { data }) => {
-                            if s_write.lock().await.write_all(&data).await.is_err() {
+                            if s_write.write_all(&data).await.is_err() {
                                 break;
                             }
                         }
                         Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
-                            if s_write.lock().await.write_all(&data).await.is_err() {
+                            if s_write.write_all(&data).await.is_err() {
                                 break;
                             }
                         }
                         Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) => {
-                            let _ = s_write.lock().await.shutdown().await;
+                            let _ = s_write.shutdown().await;
                             break;
                         }
                         None => break,
@@ -531,7 +523,7 @@ where
                 }
             }
         }
-        let _ = s_write.lock().await.shutdown().await;
+        let _ = s_write.shutdown().await;
     };
 
     tokio::join!(reader, writer);
@@ -784,18 +776,27 @@ pub async fn port_forward_stop(
     if let Some(mut forward) = port_forwards.remove(&forward_id) {
         forward.info.status = "stopped".to_string();
 
-        // For remote forwards: close the sender channel and unregister from the
-        // registry so handle_forwarded_connections wakes up and exits cleanly.
-        if let Some(listener) = forward.listener.take() {
-            // Drop sender to close the mpsc channel and wake rx.recv()
-            drop(listener.sender);
-            // Remove registry entry by key so no stale entries remain
-            unregister_forward_sender_by_key(listener.registry_key);
-            tracing::debug!(
-                forward_id = %forward_id,
-                registry_key = %listener.registry_key,
-                "remote forward listener dropped, registry cleaned"
-            );
+        // For remote forwards: stop routing new channels, wake the forwarder,
+        // and ask the server to release the bound port.
+        if let Some(remote) = forward.remote.take() {
+            if let Ok(mut guard) = remote.slot.write() {
+                *guard = None;
+            }
+            drop(remote.listener.sender);
+            if let Err(error) = remote
+                .handle
+                .cancel_tcpip_forward(remote.address.clone(), remote.port)
+                .await
+            {
+                tracing::warn!(
+                    forward_id = %forward_id,
+                    address = %remote.address,
+                    port = %remote.port,
+                    %error,
+                    "server refused to cancel the remote port forward"
+                );
+            }
+            tracing::debug!("remote forward listener cleared and cancelled");
         }
 
         forward.task.abort();
@@ -823,14 +824,340 @@ pub async fn port_forward_list(
 #[cfg(test)]
 mod tests {
     use super::{
-        accept_backoff, bind_tcp_listener, is_fatal_accept_error, unregister_forward_sender_by_key,
-        ACCEPT_BACKOFF_CAP, ACCEPT_BACKOFF_START,
+        accept_backoff, bind_tcp_listener, is_fatal_accept_error, pipe_socket_to_channel,
+        setup_remote_forward, ACCEPT_BACKOFF_CAP, ACCEPT_BACKOFF_START,
     };
     use crate::errors::PortForwardError;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::sync::mpsc;
 
     #[test]
-    fn unregister_forward_sender_by_key_is_synchronous() {
-        assert_eq!(unregister_forward_sender_by_key(usize::MAX), ());
+    fn the_connection_owner_and_the_handler_share_the_forward_slot() {
+        use crate::state::{ClientHandler, TcpForwardListener};
+
+        let handler = ClientHandler::for_host("example.com", 22);
+        // The owner keeps one handle; russh keeps the handler. Both must see
+        // the same slot, otherwise a remote forward is never routed.
+        let owner_slot = handler.forward_listener_slot();
+        let handler_slot = handler.forward_listener_slot();
+        let (sender, _rx) = mpsc::channel(1);
+        {
+            let mut guard = owner_slot.write().expect("slot lock");
+            *guard = Some(TcpForwardListener {
+                bound_port: 4242,
+                sender,
+            });
+        }
+        let seen = handler_slot.read().expect("slot lock");
+        assert_eq!(
+            seen.as_ref().map(|listener| listener.bound_port),
+            Some(4242)
+        );
+        drop(seen);
+        {
+            let mut guard = owner_slot.write().expect("slot lock");
+            *guard = None;
+        }
+        assert!(handler_slot.read().expect("slot lock").is_none());
+    }
+
+    /// Reads one required environment variable of the real-server fixture.
+    fn e2e_env(name: &str) -> String {
+        std::env::var(name).unwrap_or_else(|_| panic!("{name} must be set by the fixture script"))
+    }
+
+    /// Connects to the fixture sshd with the key and host key the script exported.
+    async fn connect_fixture() -> (
+        std::sync::Arc<russh::client::Handle<crate::state::ClientHandler>>,
+        crate::state::ForwardListenerSlot,
+    ) {
+        use crate::state::ClientHandler;
+        use russh::keys::{decode_secret_key, PrivateKeyWithHashAlg};
+        use std::sync::Arc;
+
+        let port: u16 = e2e_env("SSH_E2E_PORT").parse().expect("SSH_E2E_PORT");
+        let user = e2e_env("SSH_E2E_USER");
+        let key_text = std::fs::read_to_string(e2e_env("SSH_E2E_KEY")).expect("fixture key");
+        let key = decode_secret_key(&key_text, None).expect("decode fixture key");
+        let host_key_text =
+            std::fs::read_to_string(e2e_env("SSH_E2E_HOST_KEY")).expect("fixture host key");
+        let host_key =
+            russh::keys::PublicKey::from_openssh(&host_key_text).expect("parse fixture host key");
+        let handler = ClientHandler::for_test_with_expected_key("127.0.0.1", port, host_key);
+        // Captured before the handler moves into russh; it is the only way the
+        // connection owner can install a remote-forward listener afterwards.
+        let slot = handler.forward_listener_slot();
+        let config = Arc::new(russh::client::Config::default());
+        let mut handle = russh::client::connect(config, ("127.0.0.1", port), handler)
+            .await
+            .expect("connect to the fixture sshd");
+        let auth = handle
+            .authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key), None))
+            .await
+            .expect("authenticate");
+        assert!(auth.success(), "public key authentication must succeed");
+        (Arc::new(handle), slot)
+    }
+
+    /// Drives `-R` against a real OpenSSH sshd: the server binds the port, opens
+    /// a real `forwarded-tcpip` channel per connection, and the client bridges it
+    /// to a local echo server. Nothing here is simulated.
+    #[tokio::test]
+    #[ignore = "needs a real sshd; run scripts/verify-install/remote-forward-e2e.mjs"]
+    async fn remote_forward_real_ssh_e2e() {
+        use std::sync::Arc;
+        use tokio::net::{TcpListener, TcpStream};
+
+        let (handle, slot) = connect_fixture().await;
+
+        // The forwarding target: a real TCP echo server on loopback.
+        let echo = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("echo listener");
+        let echo_port = echo.local_addr().expect("echo address").port();
+        let echo_task = tokio::spawn(async move {
+            loop {
+                let Ok((mut socket, _)) = echo.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let mut buffer = [0u8; 4096];
+                    loop {
+                        match socket.read(&mut buffer).await {
+                            Ok(0) | Err(_) => {
+                                let _ = socket.shutdown().await;
+                                break;
+                            }
+                            Ok(read) => {
+                                if socket.write_all(&buffer[..read]).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        // Ask sshd for a remote bind on an ephemeral port and install the
+        // listener the handler routes `forwarded-tcpip` opens into.
+        let (listener, mut channels) = setup_remote_forward(
+            Arc::clone(&handle),
+            Arc::clone(&slot),
+            // The remote bind address decision lives in setup_remote_forward;
+            // an ephemeral port lets the server pick.
+            0,
+            "127.0.0.1".to_string(),
+            echo_port,
+        )
+        .await
+        .expect("the server must accept the remote forward");
+        let bound_port = listener.bound_port;
+        assert!(bound_port > 0, "sshd must report the port it bound");
+        *slot.write().expect("slot lock") = Some(listener.clone());
+        let bridge = tokio::spawn(async move {
+            while let Some(message) = channels.recv().await {
+                let mut channel = message.channel.into_stream();
+                let Ok(mut socket) = TcpStream::connect(("127.0.0.1", echo_port)).await else {
+                    continue;
+                };
+                tokio::spawn(async move {
+                    let _ = tokio::io::copy_bidirectional(&mut channel, &mut socket).await;
+                });
+            }
+        });
+
+        async fn round_trip(port: u32, payload: &[u8]) -> Vec<u8> {
+            let mut stream = TcpStream::connect(("127.0.0.1", port as u16))
+                .await
+                .expect("the remote bind must accept a connection");
+            stream.write_all(payload).await.expect("write payload");
+            stream.shutdown().await.expect("half-close");
+            let mut echoed = Vec::new();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                stream.read_to_end(&mut echoed),
+            )
+            .await
+            .expect("the echo must come back")
+            .expect("read echo");
+            echoed
+        }
+
+        // 1. Different payload lengths round-trip unchanged through the real
+        //    server-side bind and the real forwarded channel.
+        for payload in [b"short".as_slice(), &[7u8; 32 * 1024][..]] {
+            let echoed = round_trip(bound_port, payload).await;
+            assert_eq!(echoed, payload, "payload must survive in both directions");
+        }
+
+        // 2. Two concurrent connections are bridged independently.
+        let first = round_trip(bound_port, b"concurrent-one");
+        let second = round_trip(bound_port, b"concurrent-two");
+        let (first, second) = tokio::join!(first, second);
+        assert_eq!(first, b"concurrent-one");
+        assert_eq!(second, b"concurrent-two");
+
+        // 3. Stop cancels the server-side binding: the port refuses and the
+        //    handler slot no longer routes.
+        *slot.write().expect("slot lock") = None;
+        drop(listener);
+        handle
+            .cancel_tcpip_forward("127.0.0.1", bound_port)
+            .await
+            .expect("cancel_tcpip_forward must be accepted");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(
+            TcpStream::connect(("127.0.0.1", bound_port as u16))
+                .await
+                .is_err(),
+            "the port must stop accepting after the forward is cancelled"
+        );
+
+        bridge.abort();
+        echo_task.abort();
+    }
+
+    /// `-L` shares the channel plumbing with `-R` but not the channel type: it
+    /// opens `direct-tcpip` instead of receiving `forwarded-tcpip`. This drives
+    /// that path against the same real sshd so a change to the forwarding code
+    /// cannot fix `-R` while breaking `-L`.
+    #[tokio::test]
+    #[ignore = "needs a real sshd; run scripts/verify-install/remote-forward-e2e.mjs"]
+    async fn local_forward_real_ssh_e2e() {
+        use tokio::net::TcpListener;
+
+        let (handle, _slot) = connect_fixture().await;
+
+        let echo = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("echo listener");
+        let echo_port = echo.local_addr().expect("echo address").port();
+        tokio::spawn(async move {
+            let Ok((mut socket, _)) = echo.accept().await else {
+                return;
+            };
+            let mut buffer = [0u8; 1024];
+            while let Ok(read) = socket.read(&mut buffer).await {
+                if read == 0 || socket.write_all(&buffer[..read]).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        let channel = handle
+            .channel_open_direct_tcpip("127.0.0.1", echo_port as u32, "127.0.0.1", 0)
+            .await
+            .expect("direct-tcpip channel");
+        let mut stream = channel.into_stream();
+        stream.write_all(b"local-forward").await.expect("write");
+        let mut echoed = [0u8; 13];
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            stream.read_exact(&mut echoed),
+        )
+        .await
+        .expect("the echo must come back")
+        .expect("read echo");
+        assert_eq!(&echoed, b"local-forward");
+    }
+
+    /// A duplicate bind is refused, and an SSH teardown releases the server-side
+    /// bind instead of leaving a port the user cannot see or close.
+    #[tokio::test]
+    #[ignore = "needs a real sshd; run scripts/verify-install/remote-forward-e2e.mjs"]
+    async fn remote_forward_disconnect_and_duplicate_bind_real_ssh_e2e() {
+        use std::sync::Arc;
+        use tokio::net::{TcpListener, TcpStream};
+
+        // Reserve a concrete port, then let sshd bind exactly that one.
+        let probe = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("probe port");
+        let port = probe.local_addr().expect("probe address").port();
+        drop(probe);
+
+        let (handle_a, slot_a) = connect_fixture().await;
+        let (listener, _channels) = setup_remote_forward(
+            Arc::clone(&handle_a),
+            Arc::clone(&slot_a),
+            port,
+            "127.0.0.1".to_string(),
+            9,
+        )
+        .await
+        .expect("the first bind must succeed");
+        // An explicit port request echoes 0 in the reply; the requested port is the binding.
+        assert_eq!(listener.bound_port, 0);
+        *slot_a.write().expect("slot lock") = Some(listener.clone());
+
+        let (handle_b, slot_b) = connect_fixture().await;
+        let duplicate = setup_remote_forward(
+            Arc::clone(&handle_b),
+            slot_b,
+            port,
+            "127.0.0.1".to_string(),
+            9,
+        )
+        .await;
+        assert!(
+            matches!(duplicate, Err(PortForwardError::BindFailed(_))),
+            "a second bind of the same port must be refused"
+        );
+
+        // Tear the SSH session down without a graceful cancel: the server must
+        // release the bind on session end.
+        *slot_a.write().expect("slot lock") = None;
+        drop(listener);
+        let _ = handle_a
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if TcpStream::connect(("127.0.0.1", port)).await.is_err() {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the bound port must be released when the SSH session ends"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn socket_reader_does_not_block_the_write_direction() {
+        let (local, remote) = tokio::io::duplex(64);
+        let (mut local_read, mut local_write) = tokio::io::split(local);
+        let (remote_read, mut remote_write) = tokio::io::split(remote);
+        let (tx, mut rx) = mpsc::channel(8);
+        let reader = tokio::spawn(pipe_socket_to_channel(remote_read, tx));
+        let writer = tokio::spawn(async move {
+            while let Some(data) = rx.recv().await {
+                if remote_write.write_all(&data).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        // The reader is idle waiting for more bytes; a response must still get
+        // through the write direction within the deadline.
+        local_write.write_all(b"ping").await.expect("write request");
+        let mut buf = [0u8; 4];
+        tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            local_read.read_exact(&mut buf),
+        )
+        .await
+        .expect("a response must not wait for the idle read direction")
+        .expect("read response");
+        assert_eq!(&buf, b"ping");
+
+        // The split halves keep the duplex stream alive; abort the reader so the
+        // test does not wait for an EOF that only both halves could produce.
+        reader.abort();
+        drop(local_write);
+        let _ = writer.await;
     }
 
     #[tokio::test]

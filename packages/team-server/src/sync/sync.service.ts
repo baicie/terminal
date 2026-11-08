@@ -27,6 +27,7 @@ import {
   shareContentDigest,
   SYNC_CURSOR_VERSION,
 } from './sync-protocol'
+import { syncUpgradeRequired, validateSyncProtocol } from './sync-request'
 
 @Injectable()
 export class SyncService extends OfflineSyncService {
@@ -46,17 +47,26 @@ export class SyncService extends OfflineSyncService {
   async getChanges(
     userId: string,
     cursor?: number | string,
+    declaredProtocol?: string | null,
   ): Promise<IncrementalSyncResult & { userId: string, teams: string[] }> {
+    // Reject before reading anything: a client that cannot name a cursor this
+    // server issued must upgrade, not receive a window it will corrupt.
+    const { protocol2 } = validateSyncProtocol(cursor, declaredProtocol)
     const memberships = await this.prisma.teamMember.findMany(
       { where: { userId }, select: { teamId: true, joinedTxid: true } },
     )
     const { watermark, upgradeRequired, ...page }
-      = await readChangeWindow(this.prisma, memberships, cursor)
+      = await readChangeWindow(this.prisma, memberships, cursor, { protocol2 })
+    if (upgradeRequired === true) {
+      throw syncUpgradeRequired(
+        'The pending change window is larger than this client can consume. Upgrade the client before syncing again; no rows were sent and no data was changed.',
+      )
+    }
     return {
       userId,
       teams: memberships.map(membership => membership.teamId),
       timestamp: watermark,
-      upgradeRequired: upgradeRequired === true,
+      upgradeRequired: false,
       requiredCursorVersion: SYNC_CURSOR_VERSION,
       ...page,
     }
@@ -125,6 +135,16 @@ export class SyncService extends OfflineSyncService {
     share: PushedShare,
     result: PushResult,
   ): Promise<void> {
+    // The push DTO accepts DELETE, but this path never executed one: an existing
+    // row would have been rewritten as an update and a missing one recreated.
+    // Refuse it explicitly until a delete is routed through the audited path.
+    if (share.operation === 'DELETE') {
+      result.errors.push({
+        id: share.id,
+        error: 'DELETE_OPERATION_NOT_SUPPORTED',
+      })
+      return
+    }
     const existing = await this.prisma.share.findUnique({ where: { id: share.id } })
     if (existing) {
       // Team scope is checked before membership so a cross-team push never

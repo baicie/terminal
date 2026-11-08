@@ -1,6 +1,6 @@
 import i18n from '@/locales'
 import type { VaultEntry } from '@/service/vault'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from '@/components/ui/sonner'
 import { toVaultCommandError, vaultService } from '@/service/vault'
 
@@ -210,26 +210,37 @@ export function useVaultsView() {
    * detail pane. Returns whether anything was closed so an unrelated Escape
    * keeps travelling to the rest of the app.
    */
-  const handleEscape = useCallback((): boolean => {
-    if (bannerKey) {
+  // The listener is registered once and reads the current layer from a ref.
+  // Registering it in an effect keyed on this state leaves a window after the
+  // alert is painted but before the effect re-runs: Escape during it still
+  // sees the previous, empty state and is silently ignored. The vault test
+  // "dismisses the failure alert with Escape" failed exactly there on CI.
+  const escapeTarget = useRef({ banner: false, entry: false })
+  escapeTarget.current = {
+    banner: bannerKey !== null,
+    entry: selectedEntry !== null,
+  }
+  const dismissTransientLayer = useCallback((): boolean => {
+    const target = escapeTarget.current
+    if (target.banner) {
       setBannerKey(null)
       return true
     }
-    if (selectedEntry) {
+    if (target.entry) {
       setSelectedEntry(null)
       return true
     }
     return false
-  }, [bannerKey, selectedEntry])
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      if (handleEscape()) event.preventDefault()
+      if (dismissTransientLayer()) event.preventDefault()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [handleEscape])
+  }, [dismissTransientLayer])
 
   return {
     vaultState,

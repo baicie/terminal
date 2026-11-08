@@ -1,5 +1,6 @@
 import type { FileItem } from '@/service/ssh'
 import { useCallback, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface UseSftpLocalResult {
   files: FileItem[]
@@ -17,6 +18,7 @@ interface UseSftpLocalResult {
 }
 
 export function useSftpLocal(): UseSftpLocalResult {
+  const { t } = useTranslation()
   const [files, setFiles] = useState<FileItem[]>([])
   const [path, setPath] = useState('')
   const [history, setHistory] = useState([''])
@@ -42,14 +44,16 @@ export function useSftpLocal(): UseSftpLocalResult {
           })
         }
         setFiles(entries)
-        setPath(p || window.__localDirHandle.name || 'Selected Folder')
+        setPath(
+          p || window.__localDirHandle.name || t('sftp.selectedFolder'),
+        )
       }
     } catch {
       setFiles([])
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   const pickFolder = useCallback(async () => {
     try {

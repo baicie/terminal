@@ -1,5 +1,6 @@
 import type { KnownHostRecord } from '@/service/database'
 import { Upload } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -48,18 +49,21 @@ export function KnownHostsDialogs({
   onClearAll,
   onImport,
 }: KnownHostsDialogsProps) {
+  const { t } = useTranslation()
   return (
     <>
       <ResponsiveConfirm
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete Known Host"
+        title={t('knownHosts.deleteTitle')}
         description={
           hostToDelete
-            ? `Delete the app backup for "${hostToDelete.hostname}"? This does not remove trust from your OpenSSH .ssh/known_hosts file.`
+            ? t('knownHosts.deleteConfirm', {
+                hostname: hostToDelete.hostname,
+              })
             : undefined
         }
-        confirmText="Delete"
+        confirmText={t('common.delete')}
         destructive
         onConfirm={onDelete}
         onCancel={() => setHostToDelete(null)}
@@ -67,9 +71,11 @@ export function KnownHostsDialogs({
       <ResponsiveConfirm
         open={clearAllDialogOpen}
         onOpenChange={setClearAllDialogOpen}
-        title="Clear All Known Hosts"
-        description={`Delete all ${hosts.length} app backup records? This does not change your OpenSSH .ssh/known_hosts file.`}
-        confirmText="Clear All"
+        title={t('knownHosts.clearAllTitle')}
+        description={t('knownHosts.clearAllConfirm', {
+          count: hosts.length,
+        })}
+        confirmText={t('knownHosts.clearAll')}
         destructive
         onConfirm={onClearAll}
         onCancel={() => setClearAllDialogOpen(false)}
@@ -77,20 +83,20 @@ export function KnownHostsDialogs({
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Import Known Hosts</DialogTitle>
+            <DialogTitle>{t('knownHosts.importTitle')}</DialogTitle>
             <DialogDescription>
-              This imports a backup copy into the app only. It does not update
-              your OpenSSH .ssh/known_hosts file or change SSH trust. Supported
-              format: OpenSSH known_hosts.
+              {t('knownHosts.importDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="known-hosts-content">Known Hosts Content</Label>
+              <Label htmlFor="known-hosts-content">
+                {t('knownHosts.importContentLabel')}
+              </Label>
               <Textarea
                 id="known-hosts-content"
                 className="h-48 font-mono text-xs"
-                placeholder="Paste known_hosts content here..."
+                placeholder={t('knownHosts.importPlaceholder')}
                 value={importContent}
                 onChange={event => setImportContent(event.target.value)}
               />
@@ -104,11 +110,11 @@ export function KnownHostsDialogs({
               variant="outline"
               onClick={() => setImportDialogOpen(false)}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={onImport}>
               <Upload className="size-4 mr-1" data-icon="inline-start" />
-              Import
+              {t('knownHosts.import')}
             </Button>
           </DialogFooter>
         </DialogContent>

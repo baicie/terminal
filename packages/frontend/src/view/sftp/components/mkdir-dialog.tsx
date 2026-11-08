@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Dialog,
   DialogContent,
@@ -21,6 +22,7 @@ export const MkdirDialog: React.FC<MkdirDialogProps> = ({
   onOpenChange,
   onConfirm,
 }) => {
+  const { t } = useTranslation()
   const [value, setValue] = useState('')
 
   useEffect(() => {
@@ -31,9 +33,9 @@ export const MkdirDialog: React.FC<MkdirDialogProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>New Folder</DialogTitle>
+          <DialogTitle>{t('sftp.newFolder')}</DialogTitle>
           <DialogDescription>
-            Enter the name for the new folder
+            {t('sftp.mkdirDescription')}
           </DialogDescription>
         </DialogHeader>
         <Input
@@ -47,10 +49,10 @@ export const MkdirDialog: React.FC<MkdirDialogProps> = ({
         />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button onClick={() => value.trim() && onConfirm(value.trim())} disabled={!value.trim()}>
-            Create
+            {t('sftp.create')}
           </Button>
         </DialogFooter>
       </DialogContent>

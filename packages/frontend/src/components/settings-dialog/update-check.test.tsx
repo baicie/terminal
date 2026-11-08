@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import i18n from '@/locales'
 import type { UpdateFailureStatus } from '@/service/updates'
 
 const mocks = vi.hoisted(() => ({
@@ -29,7 +30,8 @@ const FAILURE_COPY: [UpdateFailureStatus, string][] = [
   ['signature', 'The update failed signature verification and was rejected.'],
 ]
 
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage('en')
   mocks.checkForUpdates.mockReset()
   mocks.readCurrentVersion.mockReset()
   mocks.readCurrentVersion.mockResolvedValue('0.0.1-dev.2')

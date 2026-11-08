@@ -1,5 +1,6 @@
 import type { AuthType, Host } from '@/types'
 import { Network } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import * as React from 'react'
 import {
   Select,
@@ -26,35 +27,36 @@ export const HostFormBasic: React.FC<HostFormBasicProps> = ({
   currentHostId,
   onChange,
 }) => {
+  const { t } = useTranslation()
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="col-span-2">
         <Label htmlFor="name" className="text-sm font-medium mb-1 block">
-          Name
+          {t('hosts.form.name')}
         </Label>
         <Input
           id="name"
           value={form.name}
           onChange={e => onChange({ name: e.target.value })}
-          placeholder="My Server"
+          placeholder={t('hosts.form.namePlaceholder')}
         />
       </div>
 
       <div>
         <Label htmlFor="hostname" className="text-sm font-medium mb-1 block">
-          Hostname
+          {t('hosts.form.hostname')}
         </Label>
         <Input
           id="hostname"
           value={form.hostname}
           onChange={e => onChange({ hostname: e.target.value })}
-          placeholder="192.168.1.1 or example.com"
+          placeholder={t('hosts.form.hostnamePlaceholder')}
         />
       </div>
 
       <div>
         <Label htmlFor="port" className="text-sm font-medium mb-1 block">
-          Port
+          {t('hosts.form.port')}
         </Label>
         <Input
           id="port"
@@ -70,7 +72,7 @@ export const HostFormBasic: React.FC<HostFormBasicProps> = ({
 
       <div>
         <Label htmlFor="username" className="text-sm font-medium mb-1 block">
-          Username
+          {t('hosts.form.username')}
         </Label>
         <Input
           id="username"
@@ -82,14 +84,14 @@ export const HostFormBasic: React.FC<HostFormBasicProps> = ({
 
       <div>
         <Label htmlFor="group" className="text-sm font-medium mb-1 block">
-          Group
+          {t('hosts.form.group')}
         </Label>
         <Select
           value={form.groupId || ''}
           onValueChange={v => onChange({ groupId: v || undefined })}
         >
           <SelectTrigger id="group">
-            <SelectValue placeholder="No Group" />
+            <SelectValue placeholder={t('hosts.form.noGroup')} />
           </SelectTrigger>
           <SelectContent>
             {groups.map(g => (
@@ -107,14 +109,14 @@ export const HostFormBasic: React.FC<HostFormBasicProps> = ({
           className="text-sm font-medium mb-1 flex items-center gap-1"
         >
           <Network className="size-3.5" />
-          Jump Host (Bastion)
+          {t('hosts.form.jumpHost')}
         </Label>
         <Select
           value={form.jumpHostId || ''}
           onValueChange={v => onChange({ jumpHostId: v || undefined })}
         >
           <SelectTrigger id="jumpHost">
-            <SelectValue placeholder="Direct Connection" />
+            <SelectValue placeholder={t('hosts.form.directConnection')} />
           </SelectTrigger>
           <SelectContent>
             {hosts
@@ -127,14 +129,14 @@ export const HostFormBasic: React.FC<HostFormBasicProps> = ({
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground mt-1">
-          Connect through a bastion/jump server
+          {t('hosts.form.jumpHostDesc')}
         </p>
       </div>
 
       {form.jumpHostId && (
         <div className="col-span-2">
           <Label htmlFor="jumpHostAuth" className="text-sm font-medium mb-1 block">
-            Jump Host Auth
+            {t('hosts.form.jumpHostAuth')}
           </Label>
           <Select
             value={form.jumpHostAuthType || ''}
@@ -145,12 +147,12 @@ export const HostFormBasic: React.FC<HostFormBasicProps> = ({
             }
           >
             <SelectTrigger id="jumpHostAuth">
-              <SelectValue placeholder="Use Default Auth" />
+              <SelectValue placeholder={t('hosts.form.defaultAuth')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="password">Password</SelectItem>
-              <SelectItem value="key">SSH Key</SelectItem>
-              <SelectItem value="agent">SSH Agent</SelectItem>
+              <SelectItem value="password">{t('hosts.form.password')}</SelectItem>
+              <SelectItem value="key">{t('hosts.form.sshKey')}</SelectItem>
+              <SelectItem value="agent">{t('hosts.form.sshAgent')}</SelectItem>
             </SelectContent>
           </Select>
         </div>

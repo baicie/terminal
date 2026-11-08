@@ -31,7 +31,9 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
   const [loading, setLoading] = useState(false)
 
   const createTeam = useTeamStore(state => state.createTeam)
-  const updateTeam = useTeamStore(state => state.updateTeam)
+  const createCloudTeamWithSettings = useTeamStore(
+    state => state.createCloudTeamWithSettings,
+  )
   const enableTeamMode = useTeamStore(state => state.enableTeamMode)
 
   const handleCreate = async () => {
@@ -39,20 +41,31 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
 
     setLoading(true)
     try {
-      await createTeam(name.trim(), mode)
-
-      if (mode === 'cloud' && endpoint) {
-        const teams = useTeamStore.getState().teams
-        const createdTeam = teams.find(t => t.name === name.trim())
-        if (createdTeam) {
-          await updateTeam(createdTeam.id, {
-            mode: 'cloud',
-            endpoint,
-            apiToken,
-          })
+      if (mode === 'cloud') {
+        // The server is the source of truth: the team id, owner and
+        // membership come from it, and a failure must never look like a
+        // locally created team.
+        const result = await createCloudTeamWithSettings(
+          name.trim(),
+          endpoint,
+          apiToken,
+        )
+        if (!result.ok) {
+          toast.error(
+            t('teams.cloudCreateFailed', { error: result.error ?? '' }),
+          )
+          return
         }
+        toast.success(t('teams.teamCreated'))
+        onOpenChange(false)
+        setName('')
+        setMode('local')
+        setEndpoint('')
+        setApiToken('')
+        return
       }
 
+      await createTeam(name.trim(), mode)
       await enableTeamMode({ mode, endpoint, apiToken })
       toast.success(t('teams.teamCreated'))
       onOpenChange(false)

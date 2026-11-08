@@ -50,4 +50,6 @@ export default {
   'portForwardView.deleteTitle': '删除端口转发',
   'portForwardView.deleteConfirm':
     '确定删除 "{{name}}" 吗？该转发规则将被永久移除。运行中的隧道不会被停止，请先停止。',
+  'portForward.backToList': '返回列表',
+  'portForward.port': '端口',
 }

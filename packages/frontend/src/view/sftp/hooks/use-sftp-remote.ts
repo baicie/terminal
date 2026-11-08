@@ -1,10 +1,11 @@
 import type { FileItem } from '@/service/ssh'
 import { sshService } from '@/service/ssh'
 import { toast } from '@/components/ui/sonner'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface UseSftpRemoteOptions {
-  activeHost: { authType: string; name: string } | null
+  activeHost: { id: string, authType: string, name: string } | null
 }
 
 interface UseSftpRemoteResult {
@@ -25,7 +26,14 @@ interface UseSftpRemoteResult {
   mkdir: (name: string) => Promise<void>
 }
 
+interface SessionBinding {
+  /** Host identity this session belongs to. */
+  key: string
+  id: string
+}
+
 export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemoteResult {
+  const { t } = useTranslation()
   const [files, setFiles] = useState<FileItem[]>([])
   const [path, setPath] = useState('/')
   const [history, setHistory] = useState(['/'])
@@ -34,59 +42,145 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
 
-  const ensureSession = useCallback(async (): Promise<string | null> => {
-    if (!activeHost) return null
-    if (sessionId) return sessionId
+  // A session is only valid for the host it was opened for. Keeping that
+  // binding next to the id is what makes "switch host then load" safe: the
+  // previous implementation kept the old id in the state closure and could
+  // list the new host through the old connection.
+  const hostKey = activeHost ? `${activeHost.id}:${activeHost.authType}` : null
+  const hostKeyRef = useRef(hostKey)
+  hostKeyRef.current = hostKey
+  const sessionRef = useRef<SessionBinding | null>(null)
+  // A second caller while the first is still connecting must wait for that
+  // connection instead of opening another SSH+SFTP session that nobody owns.
+  const inflightRef = useRef<{ key: string, promise: Promise<string | null> } | null>(
+    null,
+  )
+  // Every host switch starts a new generation; responses from older
+  // generations are dropped instead of overwriting the new host's listing.
+  const generationRef = useRef(0)
+  const unmountedRef = useRef(false)
 
-    let connResult
-    if (activeHost.authType === 'password') {
-      connResult = await sshService.createSshSessionPassword(activeHost as Parameters<typeof sshService.createSshSessionPassword>[0])
-    } else if (activeHost.authType === 'key') {
-      connResult = await sshService.createSshSessionKey(activeHost as Parameters<typeof sshService.createSshSessionKey>[0])
-    } else {
-      toast.error('Unsupported auth type')
-      return null
-    }
-    if (!connResult.success || !connResult.sessionId) {
-      toast.error(`Connection failed: ${connResult.message}`)
-      return null
-    }
-    const sftpResult = await sshService.sftpConnect(connResult.sessionId)
-    if (!sftpResult.success) {
-      toast.error(`SFTP init failed: ${sftpResult.message}`)
-      return null
-    }
-    setSessionId(connResult.sessionId)
-    return connResult.sessionId
-  }, [activeHost, sessionId])
+  const releaseSession = useCallback(() => {
+    const current = sessionRef.current
+    sessionRef.current = null
+    inflightRef.current = null
+    setSessionId(null)
+    if (current) void sshService.close(current.id).catch(() => undefined)
+  }, [])
+
+  const ensureSession = useCallback(
+    async (
+      host: UseSftpRemoteOptions['activeHost'],
+      expectedKey: string | null,
+    ): Promise<string | null> => {
+      if (!host || expectedKey === null) return null
+      const current = sessionRef.current
+      if (current?.key === expectedKey) return current.id
+
+      const inflight = inflightRef.current
+      if (inflight?.key === expectedKey) return inflight.promise
+
+      // A session for another host (or none) must not be reused.
+      if (current) {
+        sessionRef.current = null
+        setSessionId(null)
+        void sshService.close(current.id).catch(() => undefined)
+      }
+
+      const promise = (async () => {
+        let connResult
+        if (host.authType === 'password') {
+          connResult = await sshService.createSshSessionPassword(host as Parameters<typeof sshService.createSshSessionPassword>[0])
+        } else if (host.authType === 'key') {
+          connResult = await sshService.createSshSessionKey(host as Parameters<typeof sshService.createSshSessionKey>[0])
+        } else {
+          toast.error(t('sftp.unsupportedAuthType'))
+          return null
+        }
+        // The host changed while connecting: the session is unusable here and
+        // must not leak, even though nobody has stored it yet.
+        if (unmountedRef.current || expectedKey !== hostKeyRef.current) {
+          if (connResult.success && connResult.sessionId) {
+            void sshService.close(connResult.sessionId).catch(() => undefined)
+          }
+          return null
+        }
+        if (!connResult.success || !connResult.sessionId) {
+          toast.error(t('sftp.connectionFailed', { error: connResult.message }))
+          return null
+        }
+        const sftpResult = await sshService.sftpConnect(connResult.sessionId)
+        if (unmountedRef.current || expectedKey !== hostKeyRef.current) {
+          void sshService.close(connResult.sessionId).catch(() => undefined)
+          return null
+        }
+        if (!sftpResult.success) {
+          toast.error(t('sftp.initFailed', { error: sftpResult.message }))
+          void sshService.close(connResult.sessionId).catch(() => undefined)
+          return null
+        }
+        sessionRef.current = { key: expectedKey, id: connResult.sessionId }
+        setSessionId(connResult.sessionId)
+        return connResult.sessionId
+      })()
+      inflightRef.current = { key: expectedKey, promise }
+      try {
+        return await promise
+      } finally {
+        if (inflightRef.current?.promise === promise) inflightRef.current = null
+      }
+    },
+    [t],
+  )
 
   const loadDir = useCallback(
     async (p: string) => {
+      const key = hostKey
+      if (key === null) return
+      const generation = generationRef.current
       setLoading(true)
       try {
-        const sid = await ensureSession()
+        const sid = await ensureSession(activeHost, key)
         if (!sid) return
         const result = await sshService.sftpList(sid, p)
+        // The host may have changed while the listing was in flight; the
+        // answer describes the previous host and must not reach the UI.
+        if (generation !== generationRef.current || key !== hostKeyRef.current) return
         if (result.success && result.files) {
           setFiles(result.files)
           setPath(p)
         } else {
-          toast.error(result.message || 'Failed to list directory')
+          toast.error(result.message || t('sftp.listFailed'))
         }
       } catch (e) {
-        toast.error(`Error: ${e}`)
+        if (generation === generationRef.current && key === hostKeyRef.current) {
+          toast.error(t('sftp.genericError', { error: String(e) }))
+        }
       } finally {
-        setLoading(false)
+        if (generation === generationRef.current) setLoading(false)
       }
     },
-    [ensureSession],
+    [activeHost, hostKey, ensureSession, t],
   )
 
-  // Reset on host change
+  useEffect(() => () => {
+    unmountedRef.current = true
+  }, [])
+
+  // Reset and release on host change, and close the last session on unmount.
   useEffect(() => {
-    setSessionId(null)
-    if (activeHost) void loadDir('/')
-  }, [activeHost]) // eslint-disable-line react-hooks/exhaustive-deps
+    generationRef.current += 1
+    releaseSession()
+    setFiles([])
+    setPath('/')
+    setHistory(['/'])
+    setHistoryIndex(0)
+    setSelectedFile(null)
+    setLoading(false)
+    if (hostKey !== null) void loadDir('/')
+    return () => releaseSession()
+    // loadDir changes with the host it was built for; hostKey is the trigger.
+  }, [hostKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const navigate = useCallback(
     (p: string) => {
@@ -113,51 +207,64 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
     void loadDir(history[idx])
   }, [historyIndex, history, loadDir])
 
+  /** True when the session still belongs to the host this render shows. */
+  const currentSession = useCallback(
+    async (host: UseSftpRemoteOptions['activeHost'], key: string | null) => {
+      const sid = await ensureSession(host, key)
+      if (!sid || key !== hostKeyRef.current) return null
+      return sid
+    },
+    [ensureSession],
+  )
+
   const deleteFile = useCallback(
     async (file: FileItem) => {
-      const sid = await ensureSession()
+      const sid = await currentSession(activeHost, hostKey)
       if (!sid) return
       const result = await sshService.sftpDelete(sid, file.path, file.is_directory)
+      if (keyChanged(hostKey, hostKeyRef)) return
       if (result.success) {
-        toast.success('Deleted successfully')
+        toast.success(t('sftp.deleted'))
         void loadDir(path)
       } else {
-        toast.error(result.message || 'Delete failed')
+        toast.error(result.message || t('sftp.deleteFailed'))
       }
     },
-    [path, loadDir, ensureSession],
+    [activeHost, hostKey, currentSession, loadDir, path, t],
   )
 
   const renameFile = useCallback(
     async (file: FileItem, newName: string) => {
-      const sid = await ensureSession()
+      const sid = await currentSession(activeHost, hostKey)
       if (!sid || !newName.trim()) return
       const newPath = path === '/' ? `/${newName}` : `${path}/${newName}`
       const result = await sshService.sftpRename(sid, file.path, newPath)
+      if (keyChanged(hostKey, hostKeyRef)) return
       if (result.success) {
-        toast.success('Renamed successfully')
+        toast.success(t('sftp.renamed'))
         void loadDir(path)
       } else {
-        toast.error(result.message || 'Rename failed')
+        toast.error(result.message || t('sftp.renameFailed'))
       }
     },
-    [path, loadDir, ensureSession],
+    [activeHost, hostKey, currentSession, loadDir, path, t],
   )
 
   const mkdir = useCallback(
     async (name: string) => {
-      const sid = await ensureSession()
+      const sid = await currentSession(activeHost, hostKey)
       if (!sid || !name.trim()) return
       const newPath = path === '/' ? `/${name}` : `${path}/${name}`
       const result = await sshService.sftpMkdir(sid, newPath)
+      if (keyChanged(hostKey, hostKeyRef)) return
       if (result.success) {
-        toast.success('Folder created')
+        toast.success(t('sftp.folderCreated'))
         void loadDir(path)
       } else {
-        toast.error(result.message || 'Create folder failed')
+        toast.error(result.message || t('sftp.createFolderFailed'))
       }
     },
-    [path, loadDir, ensureSession],
+    [activeHost, hostKey, currentSession, loadDir, path, t],
   )
 
   return {
@@ -177,4 +284,8 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
     renameFile,
     mkdir,
   }
+}
+
+function keyChanged(key: string | null, ref: { current: string | null }): boolean {
+  return key !== ref.current
 }

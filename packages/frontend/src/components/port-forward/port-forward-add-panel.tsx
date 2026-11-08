@@ -1,4 +1,5 @@
 import { ArrowLeft, ArrowRightLeft } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -25,6 +26,7 @@ export function PortForwardAddPanel({
   onCancel,
   onAdd,
 }: PortForwardAddPanelProps) {
+  const { t } = useTranslation()
   return (
     <>
       <div className="flex flex-col gap-4 overflow-y-auto">
@@ -36,21 +38,21 @@ export function PortForwardAddPanel({
           onClick={onCancel}
         >
           <ArrowLeft data-icon="inline-start" />
-          Back to list
+          {t('portForward.backToList')}
         </Button>
 
         <div>
-          <Label htmlFor="forward-name">Name</Label>
+          <Label htmlFor="forward-name">{t('portForward.name')}</Label>
           <Input
             id="forward-name"
             value={formData.name}
             onChange={event => onChange({ name: event.target.value })}
-            placeholder="My Forward"
+            placeholder={t('portForward.myForward')}
           />
         </div>
 
         <div>
-          <Label htmlFor="forward-type">Type</Label>
+          <Label htmlFor="forward-type">{t('portForward.type')}</Label>
           <Select
             value={formData.type}
             onValueChange={type =>
@@ -61,9 +63,9 @@ export function PortForwardAddPanel({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="local">Local Port Forward (-L)</SelectItem>
-              <SelectItem value="remote">Remote Port Forward (-R)</SelectItem>
-              <SelectItem value="dynamic">Dynamic Port Forward (-D)</SelectItem>
+              <SelectItem value="local">{t('portForward.localForward')}</SelectItem>
+              <SelectItem value="remote">{t('portForward.remoteForward')}</SelectItem>
+              <SelectItem value="dynamic">{t('portForward.dynamicForward')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -77,10 +79,10 @@ export function PortForwardAddPanel({
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
+          {t('common.cancel')}
         </Button>
         <Button type="button" onClick={onAdd}>
-          Add
+          {t('common.add')}
         </Button>
       </DialogFooter>
     </>
@@ -93,9 +95,10 @@ type ForwardFieldsProps = Pick<
 >
 
 function DynamicForwardFields({ formData, onChange }: ForwardFieldsProps) {
+  const { t } = useTranslation()
   return (
     <div>
-      <Label>SOCKS Proxy</Label>
+      <Label>{t('portForward.socksProxy')}</Label>
       <div className="mt-1 flex items-center gap-2">
         <Input
           value={formData.localHost}
@@ -113,18 +116,21 @@ function DynamicForwardFields({ formData, onChange }: ForwardFieldsProps) {
         />
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        Creates a SOCKS proxy at {formData.localHost}:
-        {formData.localPort || '1080'}
+        {t('portForward.socksDesc', {
+          host: formData.localHost,
+          port: formData.localPort || '1080',
+        })}
       </p>
     </div>
   )
 }
 
 function TcpForwardFields({ formData, onChange }: ForwardFieldsProps) {
+  const { t } = useTranslation()
   return (
     <>
       <HostPortFields
-        label="Local"
+        label={t('portForward.local')}
         host={formData.localHost}
         port={formData.localPort}
         onHostChange={localHost => onChange({ localHost })}
@@ -134,7 +140,7 @@ function TcpForwardFields({ formData, onChange }: ForwardFieldsProps) {
         <ArrowRightLeft className="size-5 text-muted-foreground" />
       </div>
       <HostPortFields
-        label="Remote"
+        label={t('portForward.remote')}
         host={formData.remoteHost}
         port={formData.remotePort}
         onHostChange={remoteHost => onChange({ remoteHost })}
@@ -159,6 +165,7 @@ function HostPortFields({
   onHostChange,
   onPortChange,
 }: HostPortFieldsProps) {
+  const { t } = useTranslation()
   return (
     <div>
       <Label>{label}</Label>
@@ -174,7 +181,7 @@ function HostPortFields({
           type="number"
           value={port}
           onChange={event => onPortChange(event.target.value)}
-          placeholder="Port"
+          placeholder={t('portForward.port')}
           className="font-mono"
         />
       </div>

@@ -11,13 +11,13 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
 }
 
-export function getFileKind(file: FileItem): string {
-  if (file.is_directory) return 'Folder'
+export function getFileKindKey(file: FileItem): string {
+  if (file.is_directory) return 'sftp.folder'
   const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
   if (
     ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico'].includes(ext)
   ) {
-    return 'Image'
+    return 'sftp.kindImage'
   }
   if (
     [
@@ -49,20 +49,20 @@ export function getFileKind(file: FileItem): string {
       'kt',
     ].includes(ext)
   ) {
-    return 'Source Code'
+    return 'sftp.kindSourceCode'
   }
   if (['md', 'txt', 'log', 'conf', 'cfg', 'ini', 'env', 'json'].includes(ext)) {
-    return 'Text'
+    return 'sftp.kindText'
   }
-  if (ext === 'pdf') return 'PDF'
+  if (ext === 'pdf') return 'sftp.kindPdf'
   if (['zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar'].includes(ext)) {
-    return 'Archive'
+    return 'sftp.kindArchive'
   }
-  if (['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac'].includes(ext)) return 'Audio'
+  if (['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac'].includes(ext)) return 'sftp.kindAudio'
   if (['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm'].includes(ext)) {
-    return 'Video'
+    return 'sftp.kindVideo'
   }
-  return 'File'
+  return 'sftp.kindFile'
 }
 
 export function getFileIcon(file: FileItem) {

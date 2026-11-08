@@ -58,7 +58,7 @@ export const BatchExecutePanel: React.FC<BatchExecutePanelProps> = ({
       onResult(execResult)
       onRefresh()
     } catch (error) {
-      toast.error(`Execution failed: ${error}`)
+      toast.error(t('snippets.executeFailed', { error: String(error) }))
     } finally {
       setIsExecuting(false)
     }
@@ -87,7 +87,7 @@ export const BatchExecutePanel: React.FC<BatchExecutePanelProps> = ({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label>Select Hosts</Label>
+          <Label>{t('scripts.selectHosts')}</Label>
           <div className="flex flex-wrap gap-2 p-3 border rounded-md max-h-48 overflow-y-auto">
             {hosts.map(host => (
               <div key={host.id} className="flex items-center gap-2">
@@ -103,15 +103,21 @@ export const BatchExecutePanel: React.FC<BatchExecutePanelProps> = ({
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            {selectedHostIds.length} {selectedHostIds.length !== 1 ? 'hosts selected' : 'host selected'}
+            {selectedHostIds.length === 1
+              ? t('scripts.hostSelectedCount', {
+                  count: selectedHostIds.length,
+                })
+              : t('scripts.hostsSelectedCount', {
+                  count: selectedHostIds.length,
+                })}
           </p>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="batch-command">Command</Label>
+          <Label htmlFor="batch-command">{t('scripts.command')}</Label>
           <Textarea
             id="batch-command"
-            placeholder="Enter command..."
+            placeholder={t('scripts.enterCommand')}
             value={command}
             onChange={e => setCommand(e.target.value)}
             className="font-mono text-sm min-h-[100px]"
@@ -119,7 +125,7 @@ export const BatchExecutePanel: React.FC<BatchExecutePanelProps> = ({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="batch-timeout">Timeout (seconds)</Label>
+          <Label htmlFor="batch-timeout">{t('scripts.timeoutSeconds')}</Label>
           <Input
             id="batch-timeout"
             type="number"
