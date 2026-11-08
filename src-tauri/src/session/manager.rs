@@ -222,6 +222,19 @@ impl SessionManager {
         }
     }
 
+    /// Slot a remote port forward installs its listener into, so the SSH
+    /// client handler can route `forwarded-tcpip` channels to it.
+    pub async fn get_forward_listener_slot(
+        &self,
+        session_id: &str,
+    ) -> Option<crate::state::ForwardListenerSlot> {
+        let sessions = self.sessions.lock().await;
+        match sessions.get(session_id)? {
+            SessionState::Ssh(s) => s.forward_listener_slot(),
+            SessionState::Local(_) => None,
+        }
+    }
+
     /// 获取所有 Session 信息
     pub async fn list_sessions(&self) -> Vec<SessionInfo> {
         let sessions = self.sessions.lock().await;

@@ -1,8 +1,8 @@
 use crate::errors::PortForwardError;
 use crate::session::get_session_manager;
 use crate::state::{
-    ForwardedChannelMsg, PortForwardConfig, PortForwardInfo, PortForwardTask, SharedStateType,
-    TcpForwardListener,
+    ForwardedChannelMsg, PortForwardConfig, PortForwardInfo, PortForwardTask, RemoteForwardBinding,
+    SharedStateType, TcpForwardListener,
 };
 use russh::ChannelId;
 use std::sync::Arc;
@@ -47,8 +47,13 @@ pub async fn port_forward_start(
         ));
     }
 
-    let handle = get_session_manager()
+    let manager = get_session_manager();
+    let handle = manager
         .get_ssh_handle(&session_id)
+        .await
+        .ok_or(PortForwardError::SessionNotFound)?;
+    let forward_slot = manager
+        .get_forward_listener_slot(&session_id)
         .await
         .ok_or(PortForwardError::SessionNotFound)?;
 
@@ -64,6 +69,11 @@ pub async fn port_forward_start(
     let local_host_clone = config.local_host.clone();
     let remote_host_clone = config.remote_host.clone();
     let ft_clone = config.forward_type.clone();
+    let bind_address_for_cancel = if config.remote_host.is_empty() {
+        "0.0.0.0".to_string()
+    } else {
+        config.remote_host.clone()
+    };
 
     if !matches!(ft_clone.as_str(), "local" | "dynamic" | "remote") {
         return Err(PortForwardError::BindFailed(format!(
@@ -87,12 +97,18 @@ pub async fn port_forward_start(
     // be properly cleaned up on stop). The tcpip_forward round trip runs before
     // the map lock is taken, so list/stop/shutdown stay responsive meanwhile.
     if ft_clone == "remote" {
-        let (listener, rx) =
-            setup_remote_forward(handle.clone(), local_port, remote_host_clone, remote_port)
-                .await?;
+        let (listener, rx) = setup_remote_forward(
+            handle.clone(),
+            forward_slot.clone(),
+            local_port,
+            remote_host_clone,
+            remote_port,
+        )
+        .await?;
 
+        let forward_handle = handle.clone();
         let task: JoinHandle<Result<(), PortForwardError>> = tokio::spawn(async move {
-            handle_forwarded_connections(handle, rx, remote_port).await;
+            handle_forwarded_connections(forward_handle, rx, remote_port).await;
             Ok(())
         });
 
@@ -102,7 +118,13 @@ pub async fn port_forward_start(
                 forward_id,
                 PortForwardTask {
                     task,
-                    listener: Some(listener),
+                    remote: Some(RemoteForwardBinding {
+                        handle,
+                        address: bind_address_for_cancel,
+                        port: listener.bound_port,
+                        slot: forward_slot,
+                        listener,
+                    }),
                     info,
                 },
             );
@@ -129,7 +151,7 @@ pub async fn port_forward_start(
             forward_id,
             PortForwardTask {
                 task,
-                listener: None,
+                remote: None,
                 info,
             },
         );
@@ -283,12 +305,13 @@ async fn run_local_forward(
 // 4. Client connects to local target and bridges the two sides
 // ============================================================================
 
-/// Remote port forward setup: requests tcpip_forward, registers the sender,
-/// and returns the TcpForwardListener + receiver pair. The caller must:
-/// 1. Store the TcpForwardListener in PortForwardTask.listener
+/// Remote port forward setup: requests tcpip_forward, installs the listener
+/// into the handler's slot, and returns it with the receiver. The caller must:
+/// 1. Store the binding in PortForwardTask.remote
 /// 2. Spawn the forwarding task with the returned receiver
 async fn setup_remote_forward(
     handle: SshHandle,
+    slot: crate::state::ForwardListenerSlot,
     local_port: u16,
     remote_host: String,
     remote_port: u16,
@@ -332,56 +355,19 @@ async fn setup_remote_forward(
     );
 
     let (tx, rx) = mpsc::channel::<ForwardedChannelMsg>(16);
-    register_forward_sender(&handle, tx.clone()).await;
-
     let listener = TcpForwardListener {
         bound_port,
         sender: tx,
-        registry_key: handle_key(&handle),
     };
+    // The handler is already inside russh; this shared slot is the only way to
+    // tell it where forwarded connections belong. Without it the callback logs
+    // "no listener registered" and drops every remote connection.
+    {
+        let mut guard = slot.write().unwrap_or_else(|error| error.into_inner());
+        *guard = Some(listener.clone());
+    }
 
     Ok((listener, rx))
-}
-
-// ----------------------------------------------------------------------------
-// Global registry of TCP forward senders + handles
-//
-// Keyed by handle pointer address. Stores the mpsc Sender and SshHandle so the
-// registry entry can be cleaned up when a remote port forward is stopped.
-//
-// Key invariants:
-// - Registered in `setup_remote_forward` after `tcpip_forward` succeeds
-// - Unregistered in `port_forward_stop` by calling `unregister_forward_sender`
-// - Registry entry is removed when forward is stopped (prevents memory leaks)
-type RegistryMap = std::collections::HashMap<usize, Box<(ForwardedChannelSender, SshHandle)>>;
-static FORWARD_REGISTRY: std::sync::LazyLock<std::sync::RwLock<RegistryMap>> =
-    std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashMap::new()));
-
-pub type ForwardedChannelSender = mpsc::Sender<ForwardedChannelMsg>;
-
-fn handle_key(handle: &SshHandle) -> usize {
-    Arc::as_ptr(handle) as usize
-}
-
-/// Register a sender + handle for remote port forwarding.
-/// Called by `setup_remote_forward` after `tcpip_forward` succeeds.
-async fn register_forward_sender(handle: &SshHandle, sender: ForwardedChannelSender) {
-    let key = handle_key(handle);
-    let cell: Box<(ForwardedChannelSender, SshHandle)> = Box::new((sender, handle.clone()));
-    if let Ok(mut reg) = FORWARD_REGISTRY.write() {
-        reg.insert(key, cell);
-    } else {
-        tracing::warn!("FORWARD_REGISTRY poisoned, registration skipped");
-    }
-}
-
-/// Unregister a remote forward entry by its stored registry key (usize).
-pub fn unregister_forward_sender_by_key(key: usize) {
-    if let Ok(mut reg) = FORWARD_REGISTRY.write() {
-        if reg.remove(&key).is_some() {
-            tracing::debug!("unregistered forward sender by key {:x}", key);
-        }
-    }
 }
 
 /// Handle each forwarded connection arriving from the SSH server.
@@ -790,18 +776,27 @@ pub async fn port_forward_stop(
     if let Some(mut forward) = port_forwards.remove(&forward_id) {
         forward.info.status = "stopped".to_string();
 
-        // For remote forwards: close the sender channel and unregister from the
-        // registry so handle_forwarded_connections wakes up and exits cleanly.
-        if let Some(listener) = forward.listener.take() {
-            // Drop sender to close the mpsc channel and wake rx.recv()
-            drop(listener.sender);
-            // Remove registry entry by key so no stale entries remain
-            unregister_forward_sender_by_key(listener.registry_key);
-            tracing::debug!(
-                forward_id = %forward_id,
-                registry_key = %listener.registry_key,
-                "remote forward listener dropped, registry cleaned"
-            );
+        // For remote forwards: stop routing new channels, wake the forwarder,
+        // and ask the server to release the bound port.
+        if let Some(remote) = forward.remote.take() {
+            if let Ok(mut guard) = remote.slot.write() {
+                *guard = None;
+            }
+            drop(remote.listener.sender);
+            if let Err(error) = remote
+                .handle
+                .cancel_tcpip_forward(remote.address.clone(), remote.port)
+                .await
+            {
+                tracing::warn!(
+                    forward_id = %forward_id,
+                    address = %remote.address,
+                    port = %remote.port,
+                    %error,
+                    "server refused to cancel the remote port forward"
+                );
+            }
+            tracing::debug!("remote forward listener cleared and cancelled");
         }
 
         forward.task.abort();
@@ -830,15 +825,40 @@ pub async fn port_forward_list(
 mod tests {
     use super::{
         accept_backoff, bind_tcp_listener, is_fatal_accept_error, pipe_socket_to_channel,
-        unregister_forward_sender_by_key, ACCEPT_BACKOFF_CAP, ACCEPT_BACKOFF_START,
+        ACCEPT_BACKOFF_CAP, ACCEPT_BACKOFF_START,
     };
     use crate::errors::PortForwardError;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::mpsc;
 
     #[test]
-    fn unregister_forward_sender_by_key_is_synchronous() {
-        assert_eq!(unregister_forward_sender_by_key(usize::MAX), ());
+    fn the_connection_owner_and_the_handler_share_the_forward_slot() {
+        use crate::state::{ClientHandler, TcpForwardListener};
+
+        let handler = ClientHandler::for_host("example.com", 22);
+        // The owner keeps one handle; russh keeps the handler. Both must see
+        // the same slot, otherwise a remote forward is never routed.
+        let owner_slot = handler.forward_listener_slot();
+        let handler_slot = handler.forward_listener_slot();
+        let (sender, _rx) = mpsc::channel(1);
+        {
+            let mut guard = owner_slot.write().expect("slot lock");
+            *guard = Some(TcpForwardListener {
+                bound_port: 4242,
+                sender,
+            });
+        }
+        let seen = handler_slot.read().expect("slot lock");
+        assert_eq!(
+            seen.as_ref().map(|listener| listener.bound_port),
+            Some(4242)
+        );
+        drop(seen);
+        {
+            let mut guard = owner_slot.write().expect("slot lock");
+            *guard = None;
+        }
+        assert!(handler_slot.read().expect("slot lock").is_none());
     }
 
     #[tokio::test]

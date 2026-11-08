@@ -703,8 +703,8 @@ fn client_handler(
     port: u16,
     expected_host_key: Option<PublicKey>,
     allow_agent_forwarding: bool,
-) -> ClientHandler {
-    match expected_host_key {
+) -> (ClientHandler, crate::state::ForwardListenerSlot) {
+    let handler = match expected_host_key {
         Some(public_key) => ClientHandler::for_host_with_expected_key(
             host,
             port,
@@ -712,7 +712,9 @@ fn client_handler(
             allow_agent_forwarding,
         ),
         None => ClientHandler::for_host_with_agent_forwarding(host, port, allow_agent_forwarding),
-    }
+    };
+    let slot = handler.forward_listener_slot();
+    (handler, slot)
 }
 
 /// Global SSH sessions storage
@@ -1087,6 +1089,8 @@ pub struct SshSessionState {
     read_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     /// 连接池 key（用于复用时释放引用）
     pool_key: Option<String>,
+    /// Shared with `ClientHandler`: where a remote-forward listener is installed.
+    forward_listener: crate::state::ForwardListenerSlot,
 }
 
 fn start_ssh_writer(
@@ -1613,6 +1617,7 @@ impl SshSession {
         let raw_handle: client::Handle<ClientHandler>;
         let transport_handle: Option<client::Handle<ClientHandler>>;
         let transport_shutdown: TcpShutdownGuard;
+        let forward_listener_slot: crate::state::ForwardListenerSlot;
 
         if let Some(jh) = jump_host {
             let target = JumpTarget {
@@ -1626,8 +1631,9 @@ impl SshSession {
                 use_agent: use_target_agent,
                 allow_agent_forwarding: agent_forwarding,
             };
-            let (target_handle, jump_handle, jump_shutdown) =
+            let (target_handle, jump_handle, jump_shutdown, target_slot) =
                 Self::connect_via_jump(config.clone(), target, jh, deadline).await?;
+            forward_listener_slot = target_slot;
             crate::startup_trace::stage("ssh-jump-auth-done", "target and jump host authenticated");
             raw_handle = target_handle;
             transport_handle = Some(jump_handle);
@@ -1638,7 +1644,9 @@ impl SshSession {
             let stage_target = format!("{}:{}", host, port);
             crate::startup_trace::stage("ssh-connect-start", &stage_target);
             let addr = stage_target.clone();
-            let handler = client_handler(host, port, expected_host_key, agent_forwarding);
+            let (handler, forward_slot) =
+                client_handler(host, port, expected_host_key, agent_forwarding);
+            forward_listener_slot = forward_slot;
             let (mut direct, direct_shutdown) = connect_tcp_with_shutdown(
                 config,
                 addr,
@@ -1790,6 +1798,7 @@ impl SshSession {
             shutdown_tx,
             read_handle: read_handle.clone(),
             pool_key: Some(pool_key.clone()),
+            forward_listener: forward_listener_slot,
         }));
 
         let startup_command = compose_startup_command(
@@ -1909,6 +1918,7 @@ impl SshSession {
             client::Handle<ClientHandler>,
             client::Handle<ClientHandler>,
             TcpShutdownGuard,
+            crate::state::ForwardListenerSlot,
         ),
     > {
         Box::pin(Self::connect_via_jump_inner(
@@ -1926,6 +1936,7 @@ impl SshSession {
             client::Handle<ClientHandler>,
             client::Handle<ClientHandler>,
             TcpShutdownGuard,
+            crate::state::ForwardListenerSlot,
         ),
         SessionError,
     > {
@@ -1964,7 +1975,7 @@ impl SshSession {
         // 第三步：把 direct-tcpip channel 当成双向流，在隧道内完成目标主机
         // 自己的 SSH 握手和认证。认证跳板 Handle 只会再次认证跳板机。
         let target_stream = target_channel.into_stream();
-        let target_handler = client_handler(
+        let (target_handler, target_forward_slot) = client_handler(
             target.host,
             target.port,
             target.expected_host_key,
@@ -2033,7 +2044,12 @@ impl SshSession {
             return Err(error);
         }
 
-        Ok((target_handle, jump_handle, jump_shutdown))
+        Ok((
+            target_handle,
+            jump_handle,
+            jump_shutdown,
+            target_forward_slot,
+        ))
     }
 
     /// 认证处理（不含 agent；agent 由调用方在需要时单独调用 `authenticate_with_agent`）
@@ -2403,6 +2419,16 @@ impl SshSession {
             None
         }
     }
+
+    /// Slot a remote port forward installs its listener into.
+    pub fn forward_listener_slot(&self) -> Option<crate::state::ForwardListenerSlot> {
+        let state = self.state.try_lock().ok()?;
+        if state.is_alive.load(Ordering::Acquire) {
+            Some(Arc::clone(&state.forward_listener))
+        } else {
+            None
+        }
+    }
 }
 
 /// Connect to a jump host, verify its host key, and authenticate it using the
@@ -2446,7 +2472,8 @@ pub(crate) async fn connect_authenticated_jump_host_with_shutdown(
             jump_host.port,
             expected_host_key,
             false,
-        ),
+        )
+        .0,
         connect_deadline,
         "connect jump host",
     )
@@ -3364,7 +3391,7 @@ mod tests {
         let result = connect_stream_with_deadline(
             Arc::new(interactive_ssh_config()),
             client_stream,
-            client_handler("target.example".to_string(), 22, None, false),
+            client_handler("target.example".to_string(), 22, None, false).0,
             tokio::time::Instant::now() + std::time::Duration::from_millis(20),
             "connect stalled SSH stream",
             None,
@@ -3418,7 +3445,7 @@ mod tests {
             connect_tcp_with_shutdown(
                 Arc::new(interactive_ssh_config()),
                 address.to_string(),
-                client_handler("127.0.0.1".to_string(), address.port(), None, false),
+                client_handler("127.0.0.1".to_string(), address.port(), None, false).0,
                 tokio::time::Instant::now() + std::time::Duration::from_millis(20),
                 "connect stalled SSH server",
             ),

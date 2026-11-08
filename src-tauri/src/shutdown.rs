@@ -1,4 +1,3 @@
-use crate::port_forward::unregister_forward_sender_by_key;
 use crate::serial::close_serial_session;
 use crate::state::SharedStateType;
 
@@ -11,9 +10,11 @@ pub(crate) async fn close_shared_resources(state: &SharedStateType) {
             .collect::<Vec<_>>()
     };
     for mut forward in forwards {
-        if let Some(listener) = forward.listener.take() {
-            unregister_forward_sender_by_key(listener.registry_key);
-            drop(listener.sender);
+        if let Some(remote) = forward.remote.take() {
+            if let Ok(mut guard) = remote.slot.write() {
+                *guard = None;
+            }
+            drop(remote.listener.sender);
         }
         forward.task.abort();
         if let Err(error) = forward.task.await {
@@ -175,7 +176,7 @@ mod tests {
             "forward-on-exit".to_string(),
             PortForwardTask {
                 task,
-                listener: None,
+                remote: None,
                 info: PortForwardInfo {
                     name: "exit probe".to_string(),
                     forward_type: "local".to_string(),
