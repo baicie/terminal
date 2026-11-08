@@ -128,6 +128,8 @@ export default {
   'teams.enableTeamMode': '启用团队功能',
   'teams.enableTeamModeDesc': '启用团队协作功能，与团队成员共享主机和代码片段',
   'teams.lastSync': '上次同步：{{time}}',
+  'teams.syncErrorTitle': '同步需要注意',
+  'teams.syncRetry': '重试同步',
   'teams.syncing': '同步中...',
   'teams.syncNow': '立即同步',
   'teams.cloudCreateFailed': '无法在服务器上创建团队：{{error}}',

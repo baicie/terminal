@@ -60,7 +60,11 @@ const budgets = {
   // 588 KB (was 583 KB): the same sweep for keychain, SFTP, snippets, teams,
   // known hosts, command palette, logs and serial adds another ≈5.6 KB gzip of
   // three-locale copy. Again strings only.
-  totalGzip: 588 * 1024,
+  //
+  // 589 KB (was 588 KB): Phase 9.8 adds the Teams sync-error banner (six locale
+  // strings plus the Alert already shipped with Hosts) and the SFTP "unknown
+  // mtime" dash. No new dependency or view; the measured total was 588.31 KB.
+  totalGzip: 589 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

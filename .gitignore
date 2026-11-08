@@ -57,3 +57,6 @@ team-cross-version-report.json
 # Updater runtime E2E work directory and report.
 updater-e2e-work/
 updater-e2e-report.json
+
+# SFTP acceptance fixture (scripts/verify-install/sftp-staged-upload-e2e.mjs)
+.tmp-sftp-e2e-*/

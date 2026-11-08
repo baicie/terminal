@@ -46,20 +46,42 @@ impl SshChannelWriter for ChannelWriteHalf<client::Msg> {
     }
 }
 
+/// How a timeout affects the writer, decided per command kind.
+#[derive(Clone, Copy)]
+struct TimeoutPolicy {
+    /// The command never started, so nothing could have been written/closed.
+    queued: bool,
+    /// The command was already running: its bytes may have reached the peer.
+    started: bool,
+}
+
+/// Whether a queued command ever reached the channel.
+///
+/// It is the only evidence the caller has when its deadline passes: a command
+/// that never started cannot have written anything, while one that started may
+/// have delivered some or all of its bytes. The two must not share a fate.
+#[derive(Default)]
+struct CommandState {
+    started: AtomicBool,
+}
+
 enum SshWriterCommand {
     Write {
         data: Vec<u8>,
         deadline: Instant,
+        state: Arc<CommandState>,
         reply: oneshot::Sender<Result<(), SessionError>>,
     },
     Resize {
         cols: u16,
         rows: u16,
         deadline: Instant,
+        state: Arc<CommandState>,
         reply: oneshot::Sender<Result<(), SessionError>>,
     },
     Close {
         deadline: Instant,
+        state: Arc<CommandState>,
         reply: oneshot::Sender<Result<(), SessionError>>,
     },
 }
@@ -87,16 +109,26 @@ impl SshWriterHandle {
     pub(crate) async fn write(&self, data: Vec<u8>) -> Result<(), SessionError> {
         let deadline = command_deadline(self.timeouts.write);
         let (reply, response) = oneshot::channel();
+        let state = Arc::new(CommandState::default());
         self.send(
             SshWriterCommand::Write {
                 data,
                 deadline,
+                state: Arc::clone(&state),
                 reply,
             },
+            &state,
             response,
             deadline,
             SessionError::WriteFailed("SSH writer queue is unavailable".to_string()),
-            false,
+            TimeoutPolicy {
+                queued: false,
+                // A write that started may have put bytes on the wire. The
+                // session cannot know whether the peer saw them, so it is
+                // retired rather than left in a state where a retry would
+                // duplicate input.
+                started: true,
+            },
         )
         .await
     }
@@ -104,17 +136,25 @@ impl SshWriterHandle {
     pub(crate) async fn resize(&self, cols: u16, rows: u16) -> Result<(), SessionError> {
         let deadline = command_deadline(self.timeouts.resize);
         let (reply, response) = oneshot::channel();
+        let state = Arc::new(CommandState::default());
         self.send(
             SshWriterCommand::Resize {
                 cols,
                 rows,
                 deadline,
+                state: Arc::clone(&state),
                 reply,
             },
+            &state,
             response,
             deadline,
             SessionError::ResizeFailed("SSH writer queue is unavailable".to_string()),
-            false,
+            TimeoutPolicy {
+                queued: false,
+                // A resize carries no user input; an expiring one does not make
+                // the write channel untrustworthy.
+                started: false,
+            },
         )
         .await
     }
@@ -122,12 +162,21 @@ impl SshWriterHandle {
     pub(crate) async fn close(&self) -> Result<(), SessionError> {
         let deadline = command_deadline(self.timeouts.close);
         let (reply, response) = oneshot::channel();
+        let state = Arc::new(CommandState::default());
         self.send(
-            SshWriterCommand::Close { deadline, reply },
+            SshWriterCommand::Close {
+                deadline,
+                state: Arc::clone(&state),
+                reply,
+            },
+            &state,
             response,
             deadline,
             SessionError::CloseFailed("SSH writer queue is unavailable".to_string()),
-            true,
+            TimeoutPolicy {
+                queued: true,
+                started: true,
+            },
         )
         .await
     }
@@ -145,10 +194,11 @@ impl SshWriterHandle {
     async fn send(
         &self,
         command: SshWriterCommand,
+        state: &Arc<CommandState>,
         response: oneshot::Receiver<Result<(), SessionError>>,
         deadline: Instant,
         queue_error: SessionError,
-        timeout_is_fatal: bool,
+        policy: TimeoutPolicy,
     ) -> Result<(), SessionError> {
         if !self.is_running() {
             return Err(queue_error);
@@ -159,7 +209,7 @@ impl SshWriterHandle {
                 // The command never entered the queue, so the channel is untouched and
                 // the writer stays usable. Only a terminal command may retire it here.
                 return Err(
-                    self.retire_on_timeout(queue_timeout_error(&queue_error), timeout_is_fatal)
+                    self.retire_on_timeout(queue_timeout_error(&queue_error), policy.queued)
                 );
             }
             Ok(Err(_)) => {
@@ -171,10 +221,19 @@ impl SshWriterHandle {
 
         match tokio::time::timeout_at(deadline, response).await {
             Err(_) => {
-                // The worker skips commands whose deadline already expired, so a single
-                // timed-out write or resize must not end the whole write channel.
+                if state.started.load(Ordering::Acquire) {
+                    // The operation was already running when the deadline passed:
+                    // some or all of it may have reached the channel, and no
+                    // caller can tell. Retiring the writer is what keeps a retry
+                    // from sending the same input twice.
+                    let error = uncertain_timeout_error(&queue_error);
+                    return Err(self.retire_on_timeout(error, policy.started));
+                }
+                // The command was still queued (or never left the queue), so
+                // nothing was written: a single timed-out write or resize must
+                // not end the whole write channel.
                 let error = command_timeout_error(&queue_error);
-                Err(self.retire_on_timeout(error, timeout_is_fatal))
+                Err(self.retire_on_timeout(error, policy.queued))
             }
             Ok(Err(_)) => {
                 let error = SessionError::ChannelError(
@@ -239,6 +298,26 @@ fn queue_timeout_error(error: &SessionError) -> SessionError {
     }
 }
 
+/// The operation was running when its deadline passed, so whether its bytes
+/// reached the peer is unknown. The message says so instead of pretending the
+/// write failed cleanly.
+fn uncertain_timeout_error(error: &SessionError) -> SessionError {
+    match error {
+        SessionError::WriteFailed(message) => SessionError::WriteFailed(format!(
+            "{message} (timed out after it started; the bytes may have been partially delivered)"
+        )),
+        SessionError::ResizeFailed(message) => {
+            SessionError::ResizeFailed(format!("{message} (timed out after it started)"))
+        }
+        SessionError::CloseFailed(message) => SessionError::CloseFailed(format!(
+            "{message} (timed out after it started; the channel may be partially closed)"
+        )),
+        _ => SessionError::ChannelError(
+            "SSH writer operation timed out after it started".to_string(),
+        ),
+    }
+}
+
 fn command_timeout_error(error: &SessionError) -> SessionError {
     match error {
         SessionError::WriteFailed(message) => {
@@ -282,11 +361,21 @@ where
                 SshWriterCommand::Write {
                     data,
                     deadline,
+                    state,
                     reply,
                 } => {
-                    if deadline <= Instant::now() || reply.is_closed() {
+                    if reply.is_closed() {
                         continue;
                     }
+                    if deadline <= Instant::now() {
+                        // Expired before it started: nothing was written, so the
+                        // caller must not be told the writer is broken.
+                        let _ = reply.send(Err(SessionError::WriteFailed(
+                            "SSH write expired before it started".to_string(),
+                        )));
+                        continue;
+                    }
+                    state.started.store(true, Ordering::Release);
                     let outcome =
                         run_until_deadline(deadline, writer.write_data(data), "write").await;
                     let fatal = outcome.as_ref().err().is_some_and(CommandFailure::is_fatal);
@@ -305,11 +394,19 @@ where
                     cols,
                     rows,
                     deadline,
+                    state,
                     reply,
                 } => {
-                    if deadline <= Instant::now() || reply.is_closed() {
+                    if reply.is_closed() {
                         continue;
                     }
+                    if deadline <= Instant::now() {
+                        let _ = reply.send(Err(SessionError::ResizeFailed(
+                            "SSH resize expired before it started".to_string(),
+                        )));
+                        continue;
+                    }
+                    state.started.store(true, Ordering::Release);
                     let outcome =
                         run_until_deadline(deadline, writer.resize(cols, rows), "resize").await;
                     let fatal = outcome.as_ref().err().is_some_and(CommandFailure::is_fatal);
@@ -324,10 +421,21 @@ where
                         break;
                     }
                 }
-                SshWriterCommand::Close { deadline, reply } => {
-                    if deadline <= Instant::now() || reply.is_closed() {
+                SshWriterCommand::Close {
+                    deadline,
+                    state,
+                    reply,
+                } => {
+                    if reply.is_closed() {
                         break;
                     }
+                    if deadline <= Instant::now() {
+                        let _ = reply.send(Err(SessionError::CloseFailed(
+                            "SSH close expired before it started".to_string(),
+                        )));
+                        break;
+                    }
+                    state.started.store(true, Ordering::Release);
                     close_attempted = true;
                     let result = run_until_deadline(deadline, writer.close(), "close")
                         .await
@@ -788,7 +896,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn write_timeout_keeps_writer_alive_for_later_commands() {
+    async fn a_write_that_times_out_after_it_started_retires_the_writer() {
         let operations = Arc::new(Mutex::new(Vec::new()));
         let calls = Arc::new(AtomicUsize::new(0));
         let fake = StallingWriter {
@@ -802,27 +910,176 @@ mod tests {
         };
         let (writer, worker) = spawn_ssh_writer(fake, 8, timeouts);
 
-        writer
+        let error = writer
             .write(b"slow".to_vec())
             .await
             .expect_err("a write that never completes must time out");
         assert!(
-            writer.is_running(),
-            "a single write timeout must not retire the SSH write channel"
+            error
+                .to_string()
+                .contains("may have been partially delivered"),
+            "the caller must be told the outcome is unknown: {error}"
         );
-
-        writer
-            .write(b"fast".to_vec())
-            .await
-            .expect("the writer must keep serving writes after one timeout");
+        assert!(
+            !writer.is_running(),
+            "a write that started and then timed out must retire the writer: its bytes may have reached the peer"
+        );
+        let later = writer.write(b"retry".to_vec()).await;
+        assert!(
+            later.is_err(),
+            "a retired writer must not accept a retry that could duplicate input"
+        );
 
         drop(writer);
         worker.await.expect("writer worker should join");
 
+        assert_eq!(*operations.lock().await, vec!["write:slow", "close"]);
+    }
+
+    struct PanickingWriter;
+
+    #[async_trait]
+    impl SshChannelWriter for PanickingWriter {
+        async fn write_data(&mut self, _data: Vec<u8>) -> Result<(), SessionError> {
+            panic!("simulated channel failure");
+        }
+
+        async fn resize(&mut self, _cols: u16, _rows: u16) -> Result<(), SessionError> {
+            Ok(())
+        }
+
+        async fn close(&mut self) -> Result<(), SessionError> {
+            Ok(())
+        }
+    }
+
+    fn uniform_timeouts(timeout: Duration) -> SshWriterTimeouts {
+        SshWriterTimeouts {
+            write: timeout,
+            resize: timeout,
+            close: timeout,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_dropped_write_future_does_not_stall_the_writer() {
+        // The caller abandons a queued write (its reply receiver is dropped).
+        // The worker must skip it and keep serving; a panicking or blocked worker
+        // here would freeze the terminal for every later keystroke.
+        let operations = Arc::new(Mutex::new(Vec::new()));
+        let started = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let fake = BlockingWriter {
+            operations: Arc::clone(&operations),
+            blocked_operation: BlockedOperation::Resize,
+            operation_started: Arc::clone(&started),
+            release_operation: Arc::clone(&release),
+        };
+        let (writer, worker) = spawn_ssh_writer(fake, 1, uniform_timeouts(Duration::from_secs(1)));
+
+        let resize_handle = {
+            let writer = writer.clone();
+            tokio::spawn(async move { writer.resize(80, 24).await })
+        };
+        started.notified().await;
+
+        let abandoned = {
+            let writer = writer.clone();
+            tokio::spawn(async move { writer.write(b"abandoned".to_vec()).await })
+        };
+        tokio::task::yield_now().await;
+        abandoned.abort();
+        let _ = abandoned.await;
+
+        release.notify_one();
+        resize_handle.await.expect("resize task").expect("resize");
+
+        writer
+            .write(b"after".to_vec())
+            .await
+            .expect("the writer must keep serving after a dropped caller");
+        writer.close().await.expect("close");
+        worker.await.expect("writer worker should join");
+
         assert_eq!(
             *operations.lock().await,
-            vec!["write:slow", "write:fast", "close"]
+            vec!["resize:80x24", "write:after", "close"]
         );
+    }
+
+    #[tokio::test]
+    async fn a_panicking_writer_fails_the_command_and_retires_the_channel() {
+        let (writer, worker) =
+            spawn_ssh_writer(PanickingWriter, 1, uniform_timeouts(Duration::from_secs(1)));
+
+        let error = writer
+            .write(b"boom".to_vec())
+            .await
+            .expect_err("a panicking channel operation must surface as an error");
+        assert!(
+            !writer.is_running(),
+            "a writer whose task died must not claim to be running"
+        );
+        assert!(error.to_string().contains("stopped"), "{error}");
+        assert!(
+            writer.write(b"later".to_vec()).await.is_err(),
+            "no command may be accepted after the worker is gone"
+        );
+        assert!(worker.await.is_err(), "the worker task must have panicked");
+    }
+
+    #[tokio::test]
+    async fn queue_capacity_one_keeps_the_writer_usable_after_queued_timeouts() {
+        let operations = Arc::new(Mutex::new(Vec::new()));
+        let started = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let fake = BlockingWriter {
+            operations: Arc::clone(&operations),
+            blocked_operation: BlockedOperation::Resize,
+            operation_started: Arc::clone(&started),
+            release_operation: Arc::clone(&release),
+        };
+        let timeouts = SshWriterTimeouts {
+            write: Duration::from_millis(100),
+            resize: Duration::from_secs(5),
+            close: Duration::from_secs(5),
+        };
+        let (writer, worker) = spawn_ssh_writer(fake, 1, timeouts);
+
+        let resize_handle = {
+            let writer = writer.clone();
+            tokio::spawn(async move { writer.resize(80, 24).await })
+        };
+        started.notified().await;
+
+        // One write fits the single queue slot; the next one cannot be accepted
+        // while the worker is busy, and both deadlines pass in the queue.
+        let buffered = {
+            let writer = writer.clone();
+            tokio::spawn(async move { writer.write(b"buffered".to_vec()).await })
+        };
+        let rejected = writer.write(b"rejected".to_vec()).await;
+        assert!(rejected.is_err(), "the second write cannot fit the queue");
+        assert!(
+            writer.is_running(),
+            "a queue timeout happens before anything is written and must not retire the writer"
+        );
+        let _ = buffered.await;
+        release.notify_one();
+        resize_handle.await.expect("resize task").expect("resize");
+
+        writer
+            .write(b"after".to_vec())
+            .await
+            .expect("the writer must still accept writes after queued timeouts");
+        writer.close().await.expect("close");
+        worker.await.expect("writer worker should join");
+
+        let recorded = operations.lock().await.clone();
+        assert_eq!(recorded.first().map(String::as_str), Some("resize:80x24"));
+        assert!(!recorded.iter().any(|op| op == "write:buffered"));
+        assert!(!recorded.iter().any(|op| op == "write:rejected"));
+        assert!(recorded.iter().any(|op| op == "write:after"));
     }
 
     #[tokio::test]

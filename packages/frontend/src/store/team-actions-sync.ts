@@ -9,6 +9,8 @@ import type { TeamStoreGet, TeamStoreSet } from './team-store-context'
 import type { SyncCursorScope } from './team-sync-engine'
 import {
   MAX_SYNC_PAGES as SYNC_ROUND_PAGES,
+  SyncRoundStaleError,
+  assertSyncRoundCurrent,
   mergeConflicts,
   pullChanges,
   pushLocalShares,
@@ -37,45 +39,59 @@ export function createSyncActions(
   return {
     async sync() {
       const { settings, currentTeam, userProfile, isSyncing } = get()
+      const endpoint = settings.endpoint
+      const apiToken = settings.apiToken
+      const userId = userProfile?.id || ''
       if (
         settings.enabled
         && settings.mode === 'cloud'
-        && settings.endpoint
-        && settings.apiToken
+        && endpoint
+        && apiToken
       ) {
-        teamApi.configure(
-          settings.endpoint,
-          settings.apiToken,
-          userProfile?.id || '',
-        )
+        // The singleton keeps serving every other feature; this round does not
+        // read it again after this point.
+        teamApi.configure(endpoint, apiToken, userId)
       }
       if (!settings.enabled || settings.mode !== 'cloud' || !currentTeam) return
       // A second run while one is in flight would push the same shares twice
       // and let the two runs overwrite each other's state.
       if (isSyncing) return
+      // The round is pinned to the server and identity it started with. If either
+      // moves while it runs (workspace switch, token rotation, another account),
+      // the round stops: its remaining pages are not sent anywhere, its cursor
+      // does not move, and it never marks the new scope as synced.
+      const round = {
+        api: teamApi.forContext({ endpoint: endpoint ?? '', apiToken: apiToken ?? '', userId }),
+        isCurrent: () => {
+          const state = get()
+          return (
+            state.settings.endpoint === endpoint
+            && state.settings.apiToken === apiToken
+            && (state.userProfile?.id || '') === userId
+          )
+        },
+      }
       // The cursor belongs to one server and one identity, never to one team:
       // the window covers every team this identity may read, and the server
       // redecides that scope on each request (docs/phase8/sync-protocol.md §3.8).
       // Without both identities it cannot be attributed, so this round has none
       // and the server answers with a full resnapshot.
       const scope: SyncCursorScope | null
-        = settings.endpoint && userProfile?.id
-          ? { endpoint: settings.endpoint, userId: userProfile.id }
-          : null
+        = endpoint && userId ? { endpoint, userId } : null
       // Conflicts from an earlier run stay visible until they are resolved;
       // clearing them here hid unreviewed conflicts behind a fresh sync.
       set({ isSyncing: true, syncError: null })
       try {
-        const pull = await pullChanges(get, scope)
+        const pull = await pullChanges(get, scope, round)
         // Teams this identity may no longer read lose their local rows before
         // anything is reloaded or pushed: keeping them would leave revoked data
         // readable offline, and pushing them would aim writes at a team the
         // server has already refused.
         if (pull.authorizedTeams !== null) {
-          await removeUnauthorizedTeamShares(
-            pull.authorizedTeams,
-            settings.endpoint,
-          )
+          // The scope the server reported belongs to the round's identity; after
+          // a switch it may not delete anything in the scope the user moved to.
+          assertSyncRoundCurrent(round, 'before pruning revoked teams')
+          await removeUnauthorizedTeamShares(pull.authorizedTeams, endpoint)
         }
         // Reload before pushing, so the push starts from the versions that just
         // landed instead of a snapshot taken before the pull advanced them.
@@ -95,7 +111,12 @@ export function createSyncActions(
           )
           return
         }
-        const pushConflicts = await pushLocalShares(get, currentTeam.id)
+        assertSyncRoundCurrent(round, 'before pushing local shares')
+        const pushConflicts = await pushLocalShares(
+          get,
+          currentTeam.id,
+          round.api,
+        )
         set(state => ({
           syncConflicts: mergeConflicts(state.syncConflicts, [
             ...pull.conflicts,
@@ -105,7 +126,14 @@ export function createSyncActions(
         // Display only: this local timestamp is never used as a cursor.
         set({ lastSyncAt: Date.now() })
       } catch (error) {
-        console.error('Sync error:', error)
+        if (error instanceof SyncRoundStaleError) {
+          // Expected when the user switches workspace or account mid-round: the
+          // old round stops without touching the new scope, and the next sync
+          // starts from scratch under the new identity.
+          console.warn(error.message)
+        } else {
+          console.error('Sync error:', error)
+        }
         set({
           syncError: error instanceof Error ? error.message : 'Sync failed',
         })

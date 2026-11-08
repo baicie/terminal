@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   Post,
   Query,
@@ -32,8 +33,12 @@ export class SyncController {
   @ApiOperation({
     summary: 'Get all changes since timestamp (incremental sync)',
   })
-  async getChanges(@Query() query: SyncQueryDto, @ApiKeyAuth() userId: string) {
-    return this.syncService.getChanges(userId, query.since)
+  async getChanges(
+    @Query() query: SyncQueryDto,
+    @ApiKeyAuth() userId: string,
+    @Headers('x-sync-protocol') protocol?: string,
+  ) {
+    return this.syncService.getChanges(userId, query.since, protocol)
   }
 
   @Post()

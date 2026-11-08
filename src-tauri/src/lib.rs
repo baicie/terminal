@@ -13,6 +13,7 @@ mod raw_input_probe;
 mod remote_prompt_probe;
 mod serial;
 mod sftp;
+mod sftp_upload;
 mod shell_interaction_probe;
 mod shutdown;
 mod ssh_host_key;
@@ -60,8 +61,8 @@ use serial::{
     serial_write, serial_write_raw,
 };
 use sftp::{
-    sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_local_checksum, sftp_mkdir,
-    sftp_remote_checksum, sftp_rename, sftp_upload,
+    sftp_cancel_transfer, sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_local_checksum,
+    sftp_mkdir, sftp_remote_checksum, sftp_rename, sftp_upload,
 };
 use shell_interaction_probe::{shell_probe_config, shell_probe_result, ShellProbeState};
 use ssh_host_key::{ssh_host_key_learn, ssh_host_key_probe, ssh_host_key_probe_via_jump};
@@ -316,6 +317,7 @@ pub fn run() {
             sftp_connect,
             sftp_list,
             sftp_upload,
+            sftp_cancel_transfer,
             sftp_download,
             sftp_mkdir,
             sftp_delete,

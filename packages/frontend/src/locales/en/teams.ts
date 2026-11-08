@@ -70,6 +70,8 @@ export default {
   'teams.syncNow': 'Sync Now',
   'teams.syncing': 'Syncing...',
   'teams.lastSync': 'Last sync: {{time}}',
+  'teams.syncErrorTitle': 'Sync needs attention',
+  'teams.syncRetry': 'Retry sync',
   'teams.leaveTeam': 'Leave Team',
   'teams.deleteTeam': 'Delete Team',
   'teams.deleteTeamConfirm':
