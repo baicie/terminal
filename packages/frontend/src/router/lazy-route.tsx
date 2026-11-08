@@ -21,11 +21,18 @@ function Loading() {
   )
 }
 
-// Lazy wrapper: accepts any React component and returns a Suspense-wrapped lazy component
+// Starts the import when the route table is built (router construction) instead
+// of waiting for the first navigation, so every view is loaded during startup
+// and the first click reads the module cache. The import is still a separate
+// chunk, which keeps the initial shell small.
 export function makeLazyRoute(
   getComponent: () => Promise<{ default: React.ComponentType<object> }>,
 ): ReactNode {
-  const LazyComponent = lazy(getComponent)
+  const loaded = getComponent()
+  // A rejected preload must not surface as an unhandled rejection; the lazy
+  // boundary still receives the same rejection when the route is visited.
+  void loaded.catch(() => undefined)
+  const LazyComponent = lazy(() => loaded)
   return (
     <Suspense fallback={<Loading />}>
       <LazyComponent />

@@ -32,43 +32,8 @@ export interface NavItemConfig {
   condition?: () => boolean
 }
 
-type RouteImporter = () => Promise<{ default: React.ComponentType<object> }>
-
-const lazyRoute = (importer: RouteImporter) => makeLazyRoute(importer)
-
-/**
- * Every routed view, imported once here. `preloadRoutes()` starts all of them
- * as soon as the router exists, so the first navigation reads an already
- * loaded module instead of showing a loading placeholder. The dynamic imports
- * stay so the initial HTML/JS shell is not blocked by view code; nothing is
- * deferred until the user clicks.
- */
-const ROUTE_IMPORTERS = {
-  hosts: () => import('@/view/hosts'),
-  teams: () => import('@/view/teams'),
-  keychain: () => import('@/view/keychain'),
-  vaults: () => import('@/view/vaults/vaults-view'),
-  portForward: () => import('@/view/port-forward'),
-  snippets: () => import('@/view/snippets'),
-  knownHosts: () => import('@/view/known-hosts'),
-  logs: () => import('@/view/app-logs'),
-  sftp: () => import('@/view/sftp/sftp-container'),
-  settings: () => import('@/view/settings'),
-} satisfies Record<string, RouteImporter>
-
-const EXPERIMENT_IMPORTERS = {
-  experiments: () => import('@/experiments/index'),
-  textareaTest: () => import('@/experiments/textarea-test'),
-  xtermTest: () => import('@/experiments/xterm-test'),
-  terminalInputProbe: () => import('@/experiments/terminal-input-probe'),
-} satisfies Record<string, RouteImporter>
-
-/** Start every route chunk now; failures surface on navigation, not here. */
-export function preloadRoutes(): void {
-  const importers: RouteImporter[] = Object.values(ROUTE_IMPORTERS)
-  if (SHOW_EXPERIMENTS) importers.push(...Object.values(EXPERIMENT_IMPORTERS))
-  for (const load of importers) void load().catch(() => undefined)
-}
+const lazyRoute = (importer: () => Promise<{ default: React.ComponentType<object> }>) =>
+  makeLazyRoute(importer)
 
 const primaryNavConfig: NavItemConfig[] = [
   {
@@ -149,7 +114,7 @@ export function buildRoutes(): RouteObject[] {
   const routes: RouteObject[] = [
     {
       index: true,
-      element: lazyRoute(ROUTE_IMPORTERS.hosts),
+      element: lazyRoute(() => import('@/view/hosts')),
     },
     ...primaryNavConfig.map(item => ({
       path: item.path.replace('/', ''),
@@ -162,19 +127,19 @@ export function buildRoutes(): RouteObject[] {
     routes.push(
       {
         path: 'experiments',
-        element: lazyRoute(EXPERIMENT_IMPORTERS.experiments),
+        element: lazyRoute(() => import('@/experiments/index')),
       },
       {
         path: 'experiments/textarea-test',
-        element: lazyRoute(EXPERIMENT_IMPORTERS.textareaTest),
+        element: lazyRoute(() => import('@/experiments/textarea-test')),
       },
       {
         path: 'experiments/xterm-test',
-        element: lazyRoute(EXPERIMENT_IMPORTERS.xtermTest),
+        element: lazyRoute(() => import('@/experiments/xterm-test')),
       },
       {
         path: 'experiments/terminal-input-probe',
-        element: lazyRoute(EXPERIMENT_IMPORTERS.terminalInputProbe),
+        element: lazyRoute(() => import('@/experiments/terminal-input-probe')),
       },
     )
   }
@@ -185,27 +150,27 @@ export function buildRoutes(): RouteObject[] {
 function getRouteElement(path: string) {
   switch (path) {
     case '/hosts':
-      return lazyRoute(ROUTE_IMPORTERS.hosts)
+      return lazyRoute(() => import('@/view/hosts'))
     case '/teams':
-      return lazyRoute(ROUTE_IMPORTERS.teams)
+      return lazyRoute(() => import('@/view/teams'))
     case '/keychain':
-      return lazyRoute(ROUTE_IMPORTERS.keychain)
+      return lazyRoute(() => import('@/view/keychain'))
     case '/vaults':
-      return lazyRoute(ROUTE_IMPORTERS.vaults)
+      return lazyRoute(() => import('@/view/vaults/vaults-view'))
     case '/port-forward':
-      return lazyRoute(ROUTE_IMPORTERS.portForward)
+      return lazyRoute(() => import('@/view/port-forward'))
     case '/snippets':
-      return lazyRoute(ROUTE_IMPORTERS.snippets)
+      return lazyRoute(() => import('@/view/snippets'))
     case '/known-hosts':
-      return lazyRoute(ROUTE_IMPORTERS.knownHosts)
+      return lazyRoute(() => import('@/view/known-hosts'))
     case '/logs':
-      return lazyRoute(ROUTE_IMPORTERS.logs)
+      return lazyRoute(() => import('@/view/app-logs'))
     case '/sftp':
-      return lazyRoute(ROUTE_IMPORTERS.sftp)
+      return lazyRoute(() => import('@/view/sftp/sftp-container'))
     case '/settings':
-      return lazyRoute(ROUTE_IMPORTERS.settings)
+      return lazyRoute(() => import('@/view/settings'))
     default:
-      return lazyRoute(ROUTE_IMPORTERS.hosts)
+      return lazyRoute(() => import('@/view/hosts'))
   }
 }
 
