@@ -72,6 +72,16 @@
   命令面板、日志、串口；bundle 预算 577→588 KB（逐次注明新增来源）。
 - commit `cd39c61` 及之前的 i18n 提交。
 
+### 9. 并发创建 vault 的双赢缺陷（CI 抓到，P0 数据安全）
+- 现象：`Rust quality` 在 `45b79ec` 上 `created: 2`——两个并发 `create` 都返回成功。
+- 根因：`create_new` 只决定谁打开零长 placeholder。该线程尚未写盘时，另一个线程
+  合法地把它当“中断残留”回收；若回收者先取到 create lock 并写盘，claim 赢家随后
+  取锁却不复查，直接 `write_atomic` 覆盖，两个调用都成功，先写入的 vault 被静默替换。
+- 修复：`Fresh` 分支取锁后用 `is_unfilled_placeholder(path)`（path 而非陈旧 handle）
+  复查，已被填则 `AlreadyExists`；两分支在同一把锁下复查，先到者赢。
+- commit `fix(vault): 并发创建不得双赢`；342 项 Rust lib 测试全过，新测试在未修复
+  代码上失败、修复后通过。
+
 ## B. 未完成任务
 
 见 `docs/phase9-7/overnight-review-findings.md`：
@@ -82,6 +92,7 @@ endpoint；上传失败截断远端文件；SFTP 列表 mtime；Windows NSIS/App
 ## C. CI 与 E2E
 
 - 六份证据：官方矩阵 [`42441960278`](https://github.com/baicie/terminal/actions/runs/42441960278)（`9bad962`）**3/3 success**，指纹 **`4bbee997…`**（debug `2e23ea2f…`、release `e7e3b675…`），`check-verification-evidence` **0 problem**；raw log 在 `docs/verification/raw/42441960278/`。未手工修改 manifest。
+- 注意：vault 并发修复改动 `src-tauri/src`，该组证据在修复提交上按规则失效，已重新派发官方矩阵重采（结果见后续提交）。
 - Upgrade E2E：`42444236952`（`758fa36`）于 11:49 派发，截止时 **in_progress**；上一轮 `42399231199`（`e9858c9`，含 updater runtime job）**6/6 success**。
 - 最终 CI：[`42444179936`](https://github.com/baicie/terminal/actions/runs/42444179936)（`758fa36`）：此前唯一红的 `Repository gates`（source size + evidence + script tests）**success**，其余 job 截止时仍在运行（Tauri 三平台构建约 20 分钟），不冒充全绿。
 - 本地门禁：Rust 341 项 + clippy all-features + fmt；前端 164 文件/1436 项；Team Server 124 单测 + 97 真实 PG；source-size 584 文件；bundle budget 通过。

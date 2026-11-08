@@ -14,6 +14,7 @@
 | 5 | SFTP 会话并发创建泄漏；卸载后 resolve 的会话无人关闭 | `use-sftp-remote.ts` | 在途 Promise 复用、卸载/host 变更后 close | `use-sftp-remote.test.tsx` |
 | 6 | `-L/-D` 转发读写共用一把锁，全双工死锁 | `port_forward.rs` | `tokio::io::split` 拆分读写半 | `socket_reader_does_not_block_the_write_direction` |
 | 7 | 远端 `-R` 的 listener 从未接入 SSH handler，`cancel_tcpip_forward` 未调用 | `state.rs`、`session/ssh.rs`、`port_forward.rs` | `ClientHandler` 的 slot 改为共享 `Arc<RwLock<..>>`，建连时存入会话；setup 写入、stop/shutdown 清空并取消绑定 | `the_connection_owner_and_the_handler_share_the_forward_slot`；真实 SSH E2E 仍 NOT_RUN |
+| 7b | 并发 `create` 时，赢得 `create_new` 的线程若在取锁前被抢占，另一个把同一零长 placeholder 当“中断残留”回收并写盘，前者随后取锁、不复查就覆盖，两个调用都返回成功（CI 实测 `created = 2`，后写的 vault 静默替换先写的） | `vault.rs` `create_exclusive` | `Fresh` 分支在取锁后同样复查 `is_unfilled_placeholder(path)`（用 path 而非陈旧 handle），先到者赢、后者 `AlreadyExists` | `a_fresh_claim_loses_to_a_reclaimer_that_filled_the_placeholder_first`（未修复时失败） |
 
 ## 已确认但本轮未修复（记录风险）
 
