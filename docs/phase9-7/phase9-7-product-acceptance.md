@@ -47,12 +47,13 @@
 
 ### 证据
 
-官方 `real-machine-matrix` run `42437603925`（`08ccda7`）**3/3 success**，
-六份证据指纹 **`0c7e9105…`**（debug `1d28883d…`、release `cf327f15…`），
+官方 `real-machine-matrix` run `42441960278`（`9bad962`）**3/3 success**，
+六份证据指纹 **`4bbee997…`**（debug `2e23ea2f…`、release `e7e3b675…`），
 `check-verification-evidence.mjs` **0 problem**；raw log 归档
-`docs/verification/raw/42437603925/`。未手工修改 manifest。此前一轮
-`42355653387`（`5e8ce13`，指纹 `43fdc334…`）因 Vault Escape 监听的
-前端修复而按规则失效，本轮是重采，不是把旧证据改到新源码上。
+`docs/verification/raw/42441960278/`。未手工修改 manifest。此前一轮
+`42437603925`（`08ccda7`，指纹 `0c7e9105…`）因路由预加载改动了
+`packages/frontend/src` 而按规则失效（更早的 `42355653387` 因 Vault Escape
+修复失效），本轮是重采，不是把旧证据改到新源码上。
 
 Upgrade E2E [`42356452096`](https://github.com/baicie/terminal/actions/runs/42356452096)
 （`49e9903`）**5/5 success**；证据与 Vault Escape 修复后的最终 HEAD

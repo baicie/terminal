@@ -3,7 +3,7 @@
 - 截止：2026-11-08 12:00 +08:00
 - 分支：`feat/phase9-7-product-acceptance`
 - 基线：`main` = `3b23e8c`
-- 源码冻结：`08ccda7`（其后仅文档/证据提交）
+- 源码冻结：`9bad962`（其后仅文档/证据提交）
 - PR #9：Open，**非 Draft**，未合并
 
 ## A. 实际完成的代码
@@ -55,9 +55,13 @@
 
 ### 7. 路由预加载
 - 用户首次进入仍看到 Loading：懒加载在点击时才拉取 chunk。
-- 修复：router 创建后立即并行 import 全部路由视图，首次导航命中模块缓存；
-  Suspense fallback 改静默骨架屏（aria-busy），不再显示文字。
-- commit `08ccda7`；前端 164 文件/1436 项与 bundle budget 通过。
+- 修复：`makeLazyRoute` 在路由表构建时立即启动 import，所有视图 chunk 与启动
+  并行加载，首次导航命中模块缓存；Suspense fallback 改静默骨架屏（aria-busy），
+  不再显示文字；预加载失败由 lazy 边界在访问时处理，不产生 unhandled rejection。
+- 中途尝试把 importers 集中到新模块，Rollup 因此复制共享视图 chunk（+90 KB
+  gzip），已回退并改为零新增模块的方案。
+- commit `08ccda7` → `9bad962`；bundle 587.65 KB、source-size 584 文件、
+  前端 164 文件/1436 项通过。
 
 ### 8. Settings / Hosts / UI
 - Settings：loading/ready/error、失败重试、未保存标记、离开回滚预览、保存中禁用。
@@ -77,7 +81,7 @@ endpoint；上传失败截断远端文件；SFTP 列表 mtime；Windows NSIS/App
 
 ## C. CI 与 E2E
 
-- 六份证据：官方矩阵 [`42437603925`](https://github.com/baicie/terminal/actions/runs/42437603925)（`08ccda7`）**3/3 success**，指纹 **`0c7e9105…`**（debug `1d28883d…`、release `cf327f15…`），`check-verification-evidence` **0 problem**；raw log 在 `docs/verification/raw/42437603925/`。未手工修改 manifest。
+- 六份证据：官方矩阵 [`42441960278`](https://github.com/baicie/terminal/actions/runs/42441960278)（`9bad962`）**3/3 success**，指纹 **`4bbee997…`**（debug `2e23ea2f…`、release `e7e3b675…`），`check-verification-evidence` **0 problem**；raw log 在 `docs/verification/raw/42441960278/`。未手工修改 manifest。
 - Upgrade E2E：`42399231199`（`e9858c9`，含 updater runtime job）**6/6 success**。
 - 最终 CI：证据提交后的 HEAD 上运行，URL 见 PR 检查。
 - 本地门禁：Rust 341 项 + clippy all-features + fmt；前端 164 文件/1436 项；Team Server 124 单测 + 97 真实 PG；source-size 584 文件；bundle budget 通过。

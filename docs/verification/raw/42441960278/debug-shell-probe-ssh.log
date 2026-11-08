@@ -1,0 +1,422 @@
+
+> @terminal/monorepo@0.0.1-dev.2 smoke:shell-probe:matrix /Users/runner/work/terminal/terminal
+> node scripts/run-terminal-shell-probe-matrix.mjs -- --transport ssh cat-eof,readline-history,readline-tab,vim-edit,nano-edit,pty-resize,ctrl-c-interrupt --reuse-binary
+
+Verified the reused binary carries smoke instrumentation (7 smoke/probe chunk(s)).
+Measured debug binary 2e23ea2f56da0f4b059d294db093cd2afa20447f6d4cea900a285fc5a37b6d07
+[ssh/default/cat-eof] running...[2m2026-11-08T03:27:52.878995Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-08T03:27:52.879795Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-08T03:27:54.993483Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-08T03:27:54.994685Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-08T03:27:56.512454Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(50ms) remotePrompt=not-configured(51ms) inputProbe=not-configured(51ms) rawProbe=not-configured(51ms) shellProbe=loaded(53ms)
+[2m2026-11-08T03:27:56.671514Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mremote
+[2m2026-11-08T03:27:56.676706Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-connect-start [3mat_ms[0m[2m=[0m0 [3mdetail[0m[2m=[0m127.0.0.1:49444
+[2m2026-11-08T03:27:56.724144Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-tcp-handshake-done [3mat_ms[0m[2m=[0m47 [3mdetail[0m[2m=[0m127.0.0.1:49444
+[2m2026-11-08T03:27:56.798920Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-auth-done [3mat_ms[0m[2m=[0m122 [3mdetail[0m[2m=[0m127.0.0.1:49444
+[2m2026-11-08T03:27:56.811272Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-pty-ready [3mat_ms[0m[2m=[0m134 [3mdetail[0m[2m=[0mchannel, pty-req and shell confirmed
+[2m2026-11-08T03:27:56.811405Z[0m [32m INFO[0m [2mterminal_lib::session::ssh[0m[2m:[0m interactive SSH transport registered [3mkey[0m[2m=[0mterminal:ssh-aea013b8-06ac-4c27-8549-4ba5d6195ad9:runner@127.0.0.1:49444:deny
+[2m2026-11-08T03:27:56.814622Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mssh-aea013b8-06ac-4c27-8549-4ba5d6195ad9
+[2m2026-11-08T03:27:56.822758Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-shell-first-output [3mat_ms[0m[2m=[0m146 [3mdetail[0m[2m=[0mthe remote shell produced its first bytes
+ ok (646 ms)
+[ssh/default/readline-history] running...[2m2026-11-08T03:27:58.207838Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-08T03:27:58.208662Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-08T03:27:59.639931Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-08T03:27:59.641074Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-08T03:28:00.551241Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(30ms) remotePrompt=not-configured(30ms) inputProbe=not-configured(30ms) rawProbe=not-configured(30ms) shellProbe=loaded(31ms)
+[2m2026-11-08T03:28:00.703750Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mremote
+[2m2026-11-08T03:28:00.705071Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-connect-start [3mat_ms[0m[2m=[0m0 [3mdetail[0m[2m=[0m127.0.0.1:49447
+[2m2026-11-08T03:28:00.756149Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-tcp-handshake-done [3mat_ms[0m[2m=[0m51 [3mdetail[0m[2m=[0m127.0.0.1:49447
+[2m2026-11-08T03:28:00.805406Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-auth-done [3mat_ms[0m[2m=[0m99 [3mdetail[0m[2m=[0m127.0.0.1:49447
+[2m2026-11-08T03:28:00.818575Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-pty-ready [3mat_ms[0m[2m=[0m113 [3mdetail[0m[2m=[0mchannel, pty-req and shell confirmed
+[2m2026-11-08T03:28:00.818668Z[0m [32m INFO[0m [2mterminal_lib::session::ssh[0m[2m:[0m interactive SSH transport registered [3mkey[0m[2m=[0mterminal:ssh-b29ef262-5cda-41b0-bcbd-f1dd5bd8e8af:runner@127.0.0.1:49447:deny
+[2m2026-11-08T03:28:00.824751Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mssh-b29ef262-5cda-41b0-bcbd-f1dd5bd8e8af
+[2m2026-11-08T03:28:00.837205Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-shell-first-output [3mat_ms[0m[2m=[0m132 [3mdetail[0m[2m=[0mthe remote shell produced its first bytes
+ ok (508 ms)
+[ssh/default/readline-tab] running...[2m2026-11-08T03:28:01.815428Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-08T03:28:01.815965Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-08T03:28:03.213447Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-08T03:28:03.215702Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-08T03:28:04.299036Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(29ms) remotePrompt=not-configured(29ms) inputProbe=not-configured(29ms) rawProbe=not-configured(29ms) shellProbe=loaded(31ms)
+[2m2026-11-08T03:28:04.460778Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mremote
+[2m2026-11-08T03:28:04.462633Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-connect-start [3mat_ms[0m[2m=[0m0 [3mdetail[0m[2m=[0m127.0.0.1:49450
+[2m2026-11-08T03:28:04.508672Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-tcp-handshake-done [3mat_ms[0m[2m=[0m46 [3mdetail[0m[2m=[0m127.0.0.1:49450
+[2m2026-11-08T03:28:04.559593Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-auth-done [3mat_ms[0m[2m=[0m96 [3mdetail[0m[2m=[0m127.0.0.1:49450
+[2m2026-11-08T03:28:04.572564Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-pty-ready [3mat_ms[0m[2m=[0m109 [3mdetail[0m[2m=[0mchannel, pty-req and shell confirmed
+[2m2026-11-08T03:28:04.572664Z[0m [32m INFO[0m [2mterminal_lib::session::ssh[0m[2m:[0m interactive SSH transport registered [3mkey[0m[2m=[0mterminal:ssh-5803e5f2-5404-4c0e-811b-00f8a4d02e24:runner@127.0.0.1:49450:deny
+[2m2026-11-08T03:28:04.575530Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mssh-5803e5f2-5404-4c0e-811b-00f8a4d02e24
+[2m2026-11-08T03:28:04.581437Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-shell-first-output [3mat_ms[0m[2m=[0m118 [3mdetail[0m[2m=[0mthe remote shell produced its first bytes
+ ok (668 ms)
+[ssh/default/vim-edit] running...[2m2026-11-08T03:28:06.072897Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-08T03:28:06.074307Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-08T03:28:07.809262Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-08T03:28:07.813084Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-08T03:28:09.196482Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(39ms) remotePrompt=not-configured(40ms) inputProbe=not-configured(40ms) rawProbe=not-configured(40ms) shellProbe=loaded(43ms)
+[2m2026-11-08T03:28:09.375219Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mremote
+[2m2026-11-08T03:28:09.378260Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-connect-start [3mat_ms[0m[2m=[0m0 [3mdetail[0m[2m=[0m127.0.0.1:49453
+[2m2026-11-08T03:28:09.415079Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-tcp-handshake-done [3mat_ms[0m[2m=[0m36 [3mdetail[0m[2m=[0m127.0.0.1:49453
+[2m2026-11-08T03:28:09.449550Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-auth-done [3mat_ms[0m[2m=[0m71 [3mdetail[0m[2m=[0m127.0.0.1:49453
+[2m2026-11-08T03:28:09.471474Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-pty-ready [3mat_ms[0m[2m=[0m93 [3mdetail[0m[2m=[0mchannel, pty-req and shell confirmed
+[2m2026-11-08T03:28:09.471581Z[0m [32m INFO[0m [2mterminal_lib::session::ssh[0m[2m:[0m interactive SSH transport registered [3mkey[0m[2m=[0mterminal:ssh-18bbc4d8-d1bd-436a-947b-d6fd79fdb800:runner@127.0.0.1:49453:deny
+[2m2026-11-08T03:28:09.475152Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mssh-18bbc4d8-d1bd-436a-947b-d6fd79fdb800
+[2m2026-11-08T03:28:09.485295Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-shell-first-output [3mat_ms[0m[2m=[0m107 [3mdetail[0m[2m=[0mthe remote shell produced its first bytes
+ ok (5447 ms)
+[ssh/default/nano-edit] running...[2m2026-11-08T03:28:16.439831Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-08T03:28:16.440558Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-08T03:28:17.872848Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-08T03:28:17.876008Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-08T03:28:19.182429Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(34ms) remotePrompt=not-configured(34ms) inputProbe=not-configured(35ms) rawProbe=not-configured(35ms) shellProbe=loaded(36ms)
+[2m2026-11-08T03:28:19.404348Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mremote
+[2m2026-11-08T03:28:19.411065Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-connect-start [3mat_ms[0m[2m=[0m0 [3mdetail[0m[2m=[0m127.0.0.1:49456
+[2m2026-11-08T03:28:19.446639Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-tcp-handshake-done [3mat_ms[0m[2m=[0m35 [3mdetail[0m[2m=[0m127.0.0.1:49456
+[2m2026-11-08T03:28:19.498913Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-auth-done [3mat_ms[0m[2m=[0m87 [3mdetail[0m[2m=[0m127.0.0.1:49456
+[2m2026-11-08T03:28:19.512918Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-pty-ready [3mat_ms[0m[2m=[0m101 [3mdetail[0m[2m=[0mchannel, pty-req and shell confirmed
+[2m2026-11-08T03:28:19.513028Z[0m [32m INFO[0m [2mterminal_lib::session::ssh[0m[2m:[0m interactive SSH transport registered [3mkey[0m[2m=[0mterminal:ssh-64956dd7-b7c7-4ace-8d45-a4beabba3364:runner@127.0.0.1:49456:deny
+[2m2026-11-08T03:28:19.516193Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mssh-64956dd7-b7c7-4ace-8d45-a4beabba3364
+[2m2026-11-08T03:28:19.524656Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-shell-first-output [3mat_ms[0m[2m=[0m113 [3mdetail[0m[2m=[0mthe remote shell produced its first bytes
+ ok (4939 ms)
+[ssh/default/pty-resize] running...[2m2026-11-08T03:28:25.050284Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-08T03:28:25.050892Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-08T03:28:26.590737Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-08T03:28:26.592141Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-08T03:28:27.707704Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(33ms) remotePrompt=not-configured(33ms) inputProbe=not-configured(34ms) rawProbe=not-configured(34ms) shellProbe=loaded(34ms)
+[2m2026-11-08T03:28:27.866592Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mremote
+[2m2026-11-08T03:28:27.869846Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-connect-start [3mat_ms[0m[2m=[0m0 [3mdetail[0m[2m=[0m127.0.0.1:49459
+[2m2026-11-08T03:28:27.901556Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-tcp-handshake-done [3mat_ms[0m[2m=[0m31 [3mdetail[0m[2m=[0m127.0.0.1:49459
+[2m2026-11-08T03:28:27.962378Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-auth-done [3mat_ms[0m[2m=[0m92 [3mdetail[0m[2m=[0m127.0.0.1:49459
+[2m2026-11-08T03:28:27.973915Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-pty-ready [3mat_ms[0m[2m=[0m104 [3mdetail[0m[2m=[0mchannel, pty-req and shell confirmed
+[2m2026-11-08T03:28:27.974150Z[0m [32m INFO[0m [2mterminal_lib::session::ssh[0m[2m:[0m interactive SSH transport registered [3mkey[0m[2m=[0mterminal:ssh-113cd0f4-69a1-40f9-8a4a-8c83a8886942:runner@127.0.0.1:49459:deny
+[2m2026-11-08T03:28:27.976980Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mssh-113cd0f4-69a1-40f9-8a4a-8c83a8886942
+[2m2026-11-08T03:28:27.982135Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-shell-first-output [3mat_ms[0m[2m=[0m112 [3mdetail[0m[2m=[0mthe remote shell produced its first bytes
+ ok (1575 ms)
+[ssh/default/ctrl-c-interrupt] running...[2m2026-11-08T03:28:30.563253Z[0m [32m INFO[0m [2mterminal_lib[0m[2m:[0m tauri app starting up
+[2m2026-11-08T03:28:30.564856Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db recovery [3mstage[0m[2m=[0m"database-recovery" [3mstate[0m[2m=[0mHealthy [3mreason[0m[2m=[0mthe database does not exist yet [3mstages[0m[2m=[0m[]
+[2m2026-11-08T03:28:32.297150Z[0m [32m INFO[0m [2mterminal_lib::input_probe[0m[2m:[0m input_probe_config invoked
+[2m2026-11-08T03:28:32.301194Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mfrontend-boot [3mdetail[0m[2m=[0mmain.tsx evaluated
+[2m2026-11-08T03:28:33.402593Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0mbootstrap-gates [3mdetail[0m[2m=[0mbootstrap mode=shell-probe gates: smoke=not-configured(41ms) remotePrompt=not-configured(40ms) inputProbe=not-configured(40ms) rawProbe=not-configured(40ms) shellProbe=loaded(41ms)
+[2m2026-11-08T03:28:33.558698Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-create-requested [3mdetail[0m[2m=[0mremote
+[2m2026-11-08T03:28:33.561673Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-connect-start [3mat_ms[0m[2m=[0m0 [3mdetail[0m[2m=[0m127.0.0.1:49462
+[2m2026-11-08T03:28:33.595747Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-tcp-handshake-done [3mat_ms[0m[2m=[0m34 [3mdetail[0m[2m=[0m127.0.0.1:49462
+[2m2026-11-08T03:28:33.614138Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-auth-done [3mat_ms[0m[2m=[0m52 [3mdetail[0m[2m=[0m127.0.0.1:49462
+[2m2026-11-08T03:28:33.624466Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-pty-ready [3mat_ms[0m[2m=[0m62 [3mdetail[0m[2m=[0mchannel, pty-req and shell confirmed
+[2m2026-11-08T03:28:33.624550Z[0m [32m INFO[0m [2mterminal_lib::session::ssh[0m[2m:[0m interactive SSH transport registered [3mkey[0m[2m=[0mterminal:ssh-c8e72667-621b-4a8d-b0e0-650d7aec41e7:runner@127.0.0.1:49462:deny
+[2m2026-11-08T03:28:33.627392Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m db bootstrap [3mstage[0m[2m=[0msession-created [3mdetail[0m[2m=[0mssh-c8e72667-621b-4a8d-b0e0-650d7aec41e7
+[2m2026-11-08T03:28:33.632150Z[0m [32m INFO[0m [2mstartup[0m[2m:[0m startup stage [3mstage[0m[2m=[0mssh-shell-first-output [3mat_ms[0m[2m=[0m70 [3mdetail[0m[2m=[0mthe remote shell produced its first bytes
+ ok (1255 ms)
+[
+  {
+    "transport": "ssh",
+    "shell": null,
+    "caseName": "cat-eof",
+    "durationMs": 646,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 381,
+        "dataHex": "73747479206563686f3b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6431272027353139313164616336373864633066376438373339655f52454144595f5f273b2073747479202d6563686f3b2063617074757265643d2428636174293b2073747479206563686f3b206966205b202224636170747572656422203d20276361742d656f662d70726f626527205d3b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6427202731353139313164616336373864633066376438373339655f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6427202731353139313164616336373864633066376438373339655f4641494c5f5f273b2066693b20737474792073616e650d"
+      },
+      {
+        "kind": "text",
+        "bytes": 14,
+        "dataHex": "6361742d656f662d70726f62650d"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "04"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "pass"
+    ],
+    "binarySha256": "2e23ea2f56da0f4b059d294db093cd2afa20447f6d4cea900a285fc5a37b6d07"
+  },
+  {
+    "transport": "ssh",
+    "shell": null,
+    "caseName": "readline-history",
+    "durationMs": 508,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 89,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6637272027353038353131306364306239326339656130376664325f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 266,
+        "dataHex": "6966205b2022247b5348454c4c5f50524f42455f484953544f52595f5345454e3a2d307d22202d65712030205d3b207468656e205348454c4c5f50524f42455f484953544f52595f5345454e3d313b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6627202737353038353131306364306239326339656130376664325f535445505f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6627202737353038353131306364306239326339656130376664325f504153535f5f273b2066690d"
+      },
+      {
+        "kind": "text",
+        "bytes": 4,
+        "dataHex": "1b5b410d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "2e23ea2f56da0f4b059d294db093cd2afa20447f6d4cea900a285fc5a37b6d07"
+  },
+  {
+    "transport": "ssh",
+    "shell": null,
+    "caseName": "readline-tab",
+    "durationMs": 668,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 264,
+        "dataHex": "5348454c4c5f50524f42455f4449523d24286d6b74656d70202d64293b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3527202734323434386432323464346665663466323334303035365f504153535f5f27203e2022245348454c4c5f50524f42455f4449522f616c7068615f70726f6265223b2063642022245348454c4c5f50524f42455f444952223b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3534272027323434386432323464346665663466323334303035365f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 88,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3527202734323434386432323464346665663466323334303035365f535445505f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 7,
+        "dataHex": "63617420616c70"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "09"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "0d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "2e23ea2f56da0f4b059d294db093cd2afa20447f6d4cea900a285fc5a37b6d07"
+  },
+  {
+    "transport": "ssh",
+    "shell": null,
+    "caseName": "vim-edit",
+    "durationMs": 5447,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 217,
+        "dataHex": "5348454c4c5f50524f42455f4449523d24286d6b74656d70202d64293b207072696e746620276f726967696e616c5f70726f62655f6c696e655c725c6e27203e2022245348454c4c5f50524f42455f4449522f7368656c6c5f70726f62655f76696d2e747874223b2063642022245348454c4c5f50524f42455f444952223b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6532272027616364343762353235653261386331613235373039315f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 24,
+        "dataHex": "76696d207368656c6c5f70726f62655f76696d2e7478740d"
+      },
+      {
+        "kind": "text",
+        "bytes": 3,
+        "dataHex": "1b5b49"
+      },
+      {
+        "kind": "text",
+        "bytes": 6,
+        "dataHex": "1b5b323b3252"
+      },
+      {
+        "kind": "text",
+        "bytes": 6,
+        "dataHex": "1b5b333b3152"
+      },
+      {
+        "kind": "text",
+        "bytes": 11,
+        "dataHex": "1b5b3e303b3237363b3063"
+      },
+      {
+        "kind": "text",
+        "bytes": 25,
+        "dataHex": "1b5d31313b7267623a303030302f303030302f303030301b5c"
+      },
+      {
+        "kind": "text",
+        "bytes": 25,
+        "dataHex": "1b5d31303b7267623a666666662f666666662f666666661b5c"
+      },
+      {
+        "kind": "text",
+        "bytes": 9,
+        "dataHex": "1b5b3f31323b322479"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "69"
+      },
+      {
+        "kind": "text",
+        "bytes": 14,
+        "dataHex": "76696d5f70726f62655f65646974"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "1b"
+      },
+      {
+        "kind": "text",
+        "bytes": 4,
+        "dataHex": "3a77710d"
+      },
+      {
+        "kind": "text",
+        "bytes": 331,
+        "dataHex": "69662067726570202d71202776696d5f70726f62655f656469742720277368656c6c5f70726f62655f76696d2e747874273b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6527202732616364343762353235653261386331613235373039315f535445505f5f273b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6527202732616364343762353235653261386331613235373039315f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6527202732616364343762353235653261386331613235373039315f4641494c5f5f273b2066690d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "2e23ea2f56da0f4b059d294db093cd2afa20447f6d4cea900a285fc5a37b6d07"
+  },
+  {
+    "transport": "ssh",
+    "shell": null,
+    "caseName": "nano-edit",
+    "durationMs": 4939,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 218,
+        "dataHex": "5348454c4c5f50524f42455f4449523d24286d6b74656d70202d64293b207072696e746620276f726967696e616c5f70726f62655f6c696e655c725c6e27203e2022245348454c4c5f50524f42455f4449522f7368656c6c5f70726f62655f6e616e6f2e747874223b2063642022245348454c4c5f50524f42455f444952223b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3735272027633232336138353838376136346137623331363866395f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 26,
+        "dataHex": "6e616e6f207368656c6c5f70726f62655f6e616e6f2e7478740d"
+      },
+      {
+        "kind": "text",
+        "bytes": 15,
+        "dataHex": "6e616e6f5f70726f62655f65646974"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "0f"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "0d"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "18"
+      },
+      {
+        "kind": "text",
+        "bytes": 333,
+        "dataHex": "69662067726570202d7120276e616e6f5f70726f62655f656469742720277368656c6c5f70726f62655f6e616e6f2e747874273b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3727202735633232336138353838376136346137623331363866395f535445505f5f273b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3727202735633232336138353838376136346137623331363866395f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f3727202735633232336138353838376136346137623331363866395f4641494c5f5f273b2066690d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "2e23ea2f56da0f4b059d294db093cd2afa20447f6d4cea900a285fc5a37b6d07"
+  },
+  {
+    "transport": "ssh",
+    "shell": null,
+    "caseName": "pty-resize",
+    "durationMs": 1575,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 89,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6634272027663334373935313632376533306135383938626363365f52454144595f5f270d"
+      },
+      {
+        "kind": "text",
+        "bytes": 125,
+        "dataHex": "736574202d2d202428737474792073697a65293b207072696e746620275c725c6e257325733a25735f25735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6627202734663334373935313632376533306135383938626363365f53495a455f5f27202224312220222432220d"
+      },
+      {
+        "kind": "text",
+        "bytes": 125,
+        "dataHex": "736574202d2d202428737474792073697a65293b207072696e746620275c725c6e257325733a25735f25735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6627202734663334373935313632376533306135383938626363365f53495a455f5f27202224312220222432220d"
+      },
+      {
+        "kind": "text",
+        "bytes": 125,
+        "dataHex": "736574202d2d202428737474792073697a65293b207072696e746620275c725c6e257325733a25735f25735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6627202734663334373935313632376533306135383938626363365f53495a455f5f27202224312220222432220d"
+      },
+      {
+        "kind": "text",
+        "bytes": 445,
+        "dataHex": "736574202d2d202428737474792073697a65293b207072696e746620275c725c6e257325733a25735f25735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6627202734663334373935313632376533306135383938626363365f53495a455f5f27202224312220222432223b206966205b2022243122203d2027333127205d202626205b2022243222203d2027393727205d3b207468656e207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6627202734663334373935313632376533306135383938626363365f535445505f5f273b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6627202734663334373935313632376533306135383938626363365f504153535f5f273b20656c7365207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6627202734663334373935313632376533306135383938626363365f4641494c5f5f273b2066690d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "2e23ea2f56da0f4b059d294db093cd2afa20447f6d4cea900a285fc5a37b6d07"
+  },
+  {
+    "transport": "ssh",
+    "shell": null,
+    "caseName": "ctrl-c-interrupt",
+    "durationMs": 1255,
+    "error": null,
+    "inputEvents": [
+      {
+        "kind": "text",
+        "bytes": 112,
+        "dataHex": "73747479206563686f3b207072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6362272027353836363030393739656665346166343238376465365f52454144595f5f273b2073747479202d6563686f0d"
+      },
+      {
+        "kind": "text",
+        "bytes": 98,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6327202762353836363030393739656665346166343238376465365f535445505f5f273b20736c6565702032300d"
+      },
+      {
+        "kind": "text",
+        "bytes": 1,
+        "dataHex": "03"
+      },
+      {
+        "kind": "text",
+        "bytes": 88,
+        "dataHex": "7072696e746620275c725c6e257325735c725c6e2720275f5f5445524d494e414c5f5348454c4c5f50524f42455f7368656c6c5f6327202762353836363030393739656665346166343238376465365f504153535f5f270d"
+      }
+    ],
+    "ok": true,
+    "trace": [
+      "ready",
+      "step",
+      "pass"
+    ],
+    "binarySha256": "2e23ea2f56da0f4b059d294db093cd2afa20447f6d4cea900a285fc5a37b6d07"
+  }
+]
