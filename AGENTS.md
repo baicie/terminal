@@ -658,8 +658,8 @@ pnpm add <package-name>
 - ✅ **WP4 Updater 运行时（macOS arm64）**：`smoke-updater` feature 下的 Rust 探针完成 check → download → minisign 验签 → install → restart；临时密钥、loopback HTTP、两次真实构建、测试 identifier 隔离。9 用例全 PASS（正向安装重启、数据保留、7 个负向拒绝且无半安装）；Windows/Linux 运行时与正式签名仍 NOT_RUN/BLOCKED_EXTERNAL。见 `docs/phase9-7/updater-runtime.md`
 - ✅ **路由切换闪烁修复**：`RouteTransition` 改为同步按 pathname 设 key（消除新页面先挂载再重挂），外层不透明、动画只作用于内层内容；Vault 等页面不再透出背后的终端层。回归测试 `route-transition.test.tsx`，旧实现会让它失败
 - 🟡 窗口焦点（headless）、Windows NSIS、AppImage stock 仍 **NOT_RUN/BLOCKED_EXTERNAL**
-- ✅ 最终 E2E `42365420354`（`64db332`）5/5，此前 `42356452096`（`49e9903`）同为 5/5；证据矩阵 `42399093877`（`e9858c9`）3/3，指纹 **`7f426434…`**（debug `893c6c6f…`、release `5c4f92b4…`），门禁 0 problem；最终 CI 见 PR
-- ✅ **Vault Escape 竞态修复**：窗口 `keydown` 监听改为注册一次并通过 ref 读取当前层级，消除告警刚渲染、effect 尚未重注册时 Escape 被旧闭包忽略的一帧；`packages/frontend/src` 因此变更，六份证据按规则重采为 `7f426434…`
+- ✅ 最终 E2E `42365420354`（`64db332`）5/5，此前 `42356452096`（`49e9903`）同为 5/5；证据矩阵 `42437603925`（`08ccda7`）3/3，指纹 **`0c7e9105…`**（debug `1d28883d…`、release `cf327f15…`），门禁 0 problem；最终 CI 见 PR
+- ✅ **Vault Escape 竞态修复**：窗口 `keydown` 监听改为注册一次并通过 ref 读取当前层级，消除告警刚渲染、effect 尚未重注册时 Escape 被旧闭包忽略的一帧；`packages/frontend/src` 因此变更，六份证据按规则重采为 `0c7e9105…`
 - 📋 WP3 交付见 `docs/phase9-7/team-sync-cross-version.md`；跨版本兼容性**未通过**，是 RC 阻塞项
 - ✅ **夜间 P0 修复**：SFTP 会话绑定 hostKey、切换即关闭旧会话并丢弃过期 generation 响应（双主机竞态测试旧实现失败/新实现通过）；云团队创建改走真实 `POST /teams` 并持久化服务端 id（失败不提示成功）；历史毫秒游标按最低版本策略返回 426（ADR `adr-legacy-sync-policy.md`）
 - ✅ **夜间数据安全修复（代码审查）**：云同步不再删除 local/其他 endpoint 的共享；敏感态冲突返回 `SENSITIVE_STATE_MISMATCH`；`operation=DELETE` push 明确拒绝；不完整 resync 不再清理本地行；SFTP 在途会话复用/卸载关闭；端口转发读写拆分消除全双工死锁

@@ -47,10 +47,10 @@
 
 ### 证据
 
-官方 `real-machine-matrix` run `42399093877`（`e9858c9`）**3/3 success**，
-六份证据指纹 **`7f426434…`**（debug `893c6c6f…`、release `5c4f92b4…`），
+官方 `real-machine-matrix` run `42437603925`（`08ccda7`）**3/3 success**，
+六份证据指纹 **`0c7e9105…`**（debug `1d28883d…`、release `cf327f15…`），
 `check-verification-evidence.mjs` **0 problem**；raw log 归档
-`docs/verification/raw/42399093877/`。未手工修改 manifest。此前一轮
+`docs/verification/raw/42437603925/`。未手工修改 manifest。此前一轮
 `42355653387`（`5e8ce13`，指纹 `43fdc334…`）因 Vault Escape 监听的
 前端修复而按规则失效，本轮是重采，不是把旧证据改到新源码上。
 

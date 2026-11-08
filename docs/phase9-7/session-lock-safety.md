@@ -87,7 +87,7 @@ VAULT_CROSS_VERSION_VERIFIED=NOT_RUN
 ## 6. 运行证据
 
 - Upgrade E2E `42365420354`（`64db332`）5/5，此前 `42356452096`（`49e9903`）同为 5/5：单实例与 Vault 报告 PASS；
-- 六份证据 `42399093877`（`e9858c9`）3/3，指纹 `7f426434…`，门禁 0（`packages/frontend/src` 的 Vault Escape 修复使旧指纹失效后重采）；
+- 六份证据 `42437603925`（`08ccda7`）3/3，指纹 `0c7e9105…`，门禁 0（`packages/frontend/src` 的 Vault Escape 修复使旧指纹失效后重采）；
 - 最终 CI `42357395943`（`8adff85`）**11/11**，`Repository gates` 使用同一指纹且为绿。
 
 ## 7. 未闭合
