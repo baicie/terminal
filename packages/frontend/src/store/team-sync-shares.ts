@@ -1,5 +1,6 @@
 import { addSharedHost, addSharedSnippet } from '@/service/database'
 import { teamApi } from '@/service/team-api'
+import type { TeamApiSync } from '@/service/team-api-sync'
 import type { SharedHost, SharedSnippet, SyncConflict } from './team-types'
 import type { TeamStoreGet } from './team-store-context'
 
@@ -84,6 +85,8 @@ export function localConflict(
 export async function pushLocalShares(
   get: TeamStoreGet,
   currentTeamId: string,
+  // The round's immutable client; the singleton may already point elsewhere.
+  api: TeamApiSync = teamApi,
 ): Promise<SyncConflict[]> {
   const local: LocalShare[] = [
     ...get().sharedHosts.map(item => ({ ...item, _type: 'HOST' as const })),
@@ -113,7 +116,7 @@ export async function pushLocalShares(
       ...(baseVersion === null ? {} : { baseVersion }),
     }
   })
-  const response = await teamApi.pushChanges(pushed)
+  const response = await api.pushChanges(pushed)
   if (response.error) throw new Error(response.error)
   const accepted = new Set([
     ...(response.data?.created ?? []),
