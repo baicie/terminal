@@ -6,6 +6,7 @@ import {
   removeSharedSnippet,
 } from '@/service/database'
 import { convertApiShare, teamApi } from '@/service/team-api'
+import { INITIAL_SYNC_CURSOR } from '@/service/team-api-sync'
 import type { SyncConflict } from './team-types'
 import type { TeamStoreGet } from './team-store-context'
 import { localConflict, shareData } from './team-sync-shares'
@@ -193,7 +194,10 @@ export async function pullChanges(
   // The loop is assumed to run out of pages; every real end of the window clears it.
   let truncated = true
   for (let page = 0; page < MAX_SYNC_PAGES; page += 1) {
-    const response = await teamApi.getChanges(cursor ?? undefined)
+    // A protocol-2 client always names its position, including the first sync:
+    // omitting the cursor is exactly how a protocol-1 client looks, and the
+    // server has to answer that shape with the whole window instead of a page.
+    const response = await teamApi.getChanges(cursor ?? INITIAL_SYNC_CURSOR)
     if (response.error) throw new Error(response.error)
     // The wire payload is read through the scope fields this module declares: the
     // API type is generated from an older shape and must not be the contract here.

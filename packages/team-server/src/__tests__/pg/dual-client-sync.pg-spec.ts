@@ -15,6 +15,7 @@ import type { SeededTeam } from './pg-harness'
 import type { SharedHost, TeamState } from '@/store/team-types'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SharesService } from '../../shares/shares.service'
+import { INITIAL_SYNC_CURSOR } from '../../sync/sync-protocol'
 import { SyncService } from '../../sync/sync.service'
 import { createPrisma, resetDatabase, seedTeams } from './pg-harness'
 
@@ -1005,7 +1006,7 @@ describe('P9.2-6 两客户端同步完整性（真实 PostgreSQL + 真实客户�
     })
 
     await clientA.sync()
-    const pages = await service.getChanges(USER_A)
+    const pages = await service.getChanges(USER_A, INITIAL_SYNC_CURSOR, '2')
     console.log(
       `[C12] hasMore=${String(pages.hasMore)} 首页条数=${pages.shares.length} 游标=${pages.cursor} 本地行数=${clientA.count()} lastSyncAt=${String(clientA.state().lastSyncAt)}`,
     )
