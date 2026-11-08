@@ -108,9 +108,10 @@
 - 各 WP 分支：证据各自在其 HEAD 重采（A/B1/B2/C1/C2/D 各一次矩阵），
   `Repository gates` 全部转绿；PR #10 仍余 1 个上个 HEAD 的 Tauri ubuntu 失败
   （`42473374209`，504），其后的证据提交未再触发该 job 的通过结果。
-- Upgrade E2E：[`42466709309`](https://github.com/baicie/terminal/actions/runs/42466709309)
-  （`18533d1`）**6/6 success**：macOS dev.1→dev.2、macOS 当前版本升级与恢复、
+- Upgrade E2E：[`42481700333`](https://github.com/baicie/terminal/actions/runs/42481700333)
+  （`4f7b83b`，最终 HEAD）**6/6 success**：macOS dev.1→dev.2、macOS 当前版本升级与恢复、
   Linux DEB、Windows 隔离预检、macOS updater runtime、Linux AppImage 替换。
+  此前 `42466709309`（`18533d1`）同为 6/6。
 - 各 WP 的 Draft PR 上 `Repository gates` 会因证据指纹变化而失败：证据是在集成 HEAD
   上重采的，单分支不各自重采（避免 5 次 25 分钟矩阵）。这属于“证据绑定代码身份”
   的预期行为，不是代码回归。
