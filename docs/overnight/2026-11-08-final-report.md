@@ -93,9 +93,9 @@ endpoint；上传失败截断远端文件；SFTP 列表 mtime；Windows NSIS/App
 
 - 六份证据：官方矩阵 [`42447284830`](https://github.com/baicie/terminal/actions/runs/42447284830)（`2695f5c`）**3/3 success**，指纹 **`32729825…`**（debug `133c8daa…`、release `8b8c2e5d…`），`check-verification-evidence` **0 problem**；raw log 在 `docs/verification/raw/42447284830/`。未手工修改 manifest。
 - 注意：vault 并发修复改动 `src-tauri/src`，旧证据按规则失效；本组证据即在该修复提交上重采（`2695f5c`，run `42447284830`）。
-- Upgrade E2E：`42444236952`（`758fa36`）**6/6 success**（含 updater runtime）；上一轮 `42399231199`（`e9858c9`）同为 6/6。
-- 最终 CI：[`42444179936`](https://github.com/baicie/terminal/actions/runs/42444179936)（`758fa36`）：此前唯一红的 `Repository gates`（source size + evidence + script tests）**success**，其余 job 截止时仍在运行（Tauri 三平台构建约 20 分钟），不冒充全绿。
-- 本地门禁：Rust 341 项 + clippy all-features + fmt；前端 164 文件/1436 项；Team Server 124 单测 + 97 真实 PG；source-size 584 文件；bundle budget 通过。
+- Upgrade E2E：[`42448934416`](https://github.com/baicie/terminal/actions/runs/42448934416)（`f171969`，含 vault 修复）**6/6 success**：macOS dev.1→dev.2、macOS 当前版本升级与恢复、Linux DEB、Windows 隔离预检、macOS updater runtime、Linux AppImage 替换。
+- 最终 CI：[`42448840139`](https://github.com/baicie/terminal/actions/runs/42448840139)（`f171969`）**11/11 success**，含 `Repository gates` 与三平台 Tauri 构建；其后仅文档提交，不再改变源码指纹。
+- 本地门禁：Rust 342 项 + clippy all-features + fmt；前端 164 文件/1436 项；Team Server 124 单测 + 97 真实 PG；source-size 584 文件；bundle budget 通过。
 
 ## D. UI 效果
 
