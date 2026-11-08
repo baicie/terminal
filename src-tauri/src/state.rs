@@ -207,7 +207,10 @@ pub struct SftpFileItem {
     pub path: String,
     pub is_directory: bool,
     pub size: u64,
-    pub modified_time: i64,
+    /// Seconds since the Unix epoch, or `None` when the server did not report a
+    /// modification time. Never filled in with a placeholder: a fabricated
+    /// timestamp sorts and displays as if it were real.
+    pub modified_time: Option<i64>,
     pub permissions: String,
 }
 
@@ -252,6 +255,21 @@ impl ClientHandler {
 
     pub fn for_host(host: impl Into<String>, port: u16) -> Self {
         Self::for_host_with_agent_forwarding(host, port, false)
+    }
+
+    /// A handler that already trusts one server key.
+    ///
+    /// The real-SSH forwarding acceptance starts a throwaway sshd with a fresh
+    /// host key; this pins that key instead of touching the user's known_hosts.
+    #[cfg(test)]
+    pub(crate) fn for_test_with_expected_key(
+        host: impl Into<String>,
+        port: u16,
+        expected_host_key: russh::keys::PublicKey,
+    ) -> Self {
+        let mut handler = Self::for_host(host, port);
+        handler.expected_host_key = Some(expected_host_key);
+        handler
     }
 
     pub fn for_host_with_agent_forwarding(

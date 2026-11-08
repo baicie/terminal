@@ -201,10 +201,13 @@ export class EnqueueOperationDto {
 
 export class SyncQueryDto {
   /**
-   * Opaque sync cursor. The composite form is `2.<bound>.<txid>.<seq>`; a bare
-   * decimal number is the legacy single-watermark cursor and is still accepted,
-   * so an old client resyncs safely instead of being rejected
-   * (docs/phase8/sync-protocol.md §3.7).
+   * Opaque sync cursor. The composite form is `2.<bound>.<txid>.<seq>`; a
+   * protocol-2 client sends `2.0.0.0` on its first sync. A bare decimal number is
+   * the retired protocol-1 watermark: a millisecond one is refused with 426, and
+   * a transaction one is served by the legacy whole-window path. Which protocol
+   * the client speaks is declared with `X-Sync-Protocol`; an undeclared request
+   * without a cursor is treated as protocol 1 so it is never silently truncated
+   * (docs/phase9-8/wp-b2-sync-initial-window.md).
    */
   @IsOptional()
   @Type(() => String)

@@ -15,6 +15,7 @@ import type { PrismaService } from '../../prisma.service'
 import type { SharedHost, TeamState } from '@/store/team-types'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { SharesService } from '../../shares/shares.service'
+import { INITIAL_SYNC_CURSOR } from '../../sync/sync-protocol'
 import { SyncService } from '../../sync/sync.service'
 import { connectRaw, createPrisma, resetDatabase } from './pg-harness'
 
@@ -541,7 +542,7 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
     globalThis.localStorage.removeItem(clientB.key())
     requests.length = 0
     await clientB.sync()
-    expect(requests[0]).toMatchObject({ method: 'GET', path: '/sync', since: null })
+    expect(requests[0]).toMatchObject({ method: 'GET', path: '/sync', since: INITIAL_SYNC_CURSOR })
     expect(clientB.db.prepare(rows).all()).toEqual(beforeRows)
     expect(clientB.cursor()).toMatch(CURSOR_PATTERN)
     snapshot('B resynced from no cursor', secondId, { rows: beforeRows.length })
@@ -550,7 +551,7 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
     clientB.state().settings.endpoint = ENDPOINT_B
     requests.length = 0
     await clientB.sync()
-    expect(requests[0]).toMatchObject({ path: '/sync', since: null })
+    expect(requests[0]).toMatchObject({ path: '/sync', since: INITIAL_SYNC_CURSOR })
     clientB.state().settings.endpoint = ENDPOINT_A
     expect(clientB.cursor()).toMatch(CURSOR_PATTERN)
     requests.length = 0
@@ -734,7 +735,7 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
       await seedLocalTeams(other)
       requests.length = 0
       await other.sync()
-      expect(requests[0]).toMatchObject({ path: '/sync', since: null })
+      expect(requests[0]).toMatchObject({ path: '/sync', since: INITIAL_SYNC_CURSOR })
       expect(other.state().syncError).toBeNull()
     })
 
@@ -750,7 +751,7 @@ describe('客户端同步端到端闭环（真实 PostgreSQL + 真实客户端 s
       console.log(
         `[D] 首次请求 since=${String(requests[0]?.since)} 旧键=${String(globalThis.localStorage.getItem(LEGACY_GLOBAL_KEY))} 新键游标=${String(fresh.cursor())}`,
       )
-      expect(requests[0]).toMatchObject({ path: '/sync', since: null })
+      expect(requests[0]).toMatchObject({ path: '/sync', since: INITIAL_SYNC_CURSOR })
       expect(globalThis.localStorage.getItem(LEGACY_GLOBAL_KEY)).toBeNull()
       expect(fresh.cursor()).toMatch(CURSOR_PATTERN)
       expect(fresh.state().syncError).toBeNull()

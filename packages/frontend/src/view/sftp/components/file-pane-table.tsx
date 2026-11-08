@@ -143,7 +143,9 @@ export function FilePaneTable({
                 {file.is_directory ? '-' : formatFileSize(file.size)}
               </td>
               <td className="px-2 sm:px-3 py-1.5 text-muted-foreground text-[10px] sm:text-xs hidden sm:table-cell">
-                {format(file.modified_time, 'MMM dd, HH:mm')}
+                {file.modified_time === null
+                  ? '—'
+                  : format(file.modified_time, 'MMM dd, HH:mm')}
               </td>
               <td className="px-2 sm:px-3 py-1.5 text-muted-foreground text-[10px] sm:text-xs hidden sm:table-cell">
                 {t(getFileKindKey(file))}

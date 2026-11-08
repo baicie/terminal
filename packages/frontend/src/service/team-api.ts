@@ -1,6 +1,8 @@
 /** Team API service facade and response converters. */
 import { TeamApiSync } from './team-api-sync'
 
+export type { TeamApiContext } from './team-api-base'
+
 export {
   convertApiAuditLog,
   convertApiInvite,

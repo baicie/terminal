@@ -1,4 +1,9 @@
 import { TeamApiResources } from './team-api-resources'
+
+/** The sync protocol this client speaks; sent on every change request. */
+export const SYNC_CLIENT_PROTOCOL = '2'
+/** Explicit initial position: names no row, so the server returns the whole window. */
+export const INITIAL_SYNC_CURSOR = '2.0.0.0'
 import type {
   ApiOperationResult,
   ApiOutcome,
@@ -36,7 +41,11 @@ export class TeamApiSync extends TeamApiResources {
     }>
   > {
     const query = since ? `?since=${encodeURIComponent(since)}` : ''
-    return this.request('GET', `/sync${query}`)
+    // The server must be able to tell "a protocol-2 client that can page" from
+    // "an old client that cannot": the latter sends no header and no cursor.
+    return this.request('GET', `/sync${query}`, undefined, {
+      'X-Sync-Protocol': SYNC_CLIENT_PROTOCOL,
+    })
   }
 
   async pushChanges(
