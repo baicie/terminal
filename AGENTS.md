@@ -669,6 +669,18 @@ pnpm add <package-name>
 - ✅ **Vault 生产构建门禁**：无 feature 时 `vault_probe_report` no-op；生产 bundle 无 probe 常量、smoke overlay 有 probe，均有构建断言
 - 📋 判定见 `docs/phase9-7/phase9-7-product-acceptance.md`、`single-instance-e2e.md`、`vault-app-e2e.md`、`session-lock-safety.md`
 
+### Phase 9.8 - Data Integrity, Sync Isolation & Real SSH Acceptance 🟡 Draft PR 完成
+
+- ✅ **9.8-A SFTP staged upload**：暂存文件 + 备份替换，失败不再截断原文件；18 项故障测试 + 真实 OpenSSH sftp-server 验收；PR #10。
+- ✅ **9.8-B1 同步身份隔离**：不可变 round 上下文，分页中途切换 endpoint/token/身份即中止；两个真实 HTTP 服务端测试；PR #11。
+- ✅ **9.8-B2 首同步整窗**：`X-Sync-Protocol` 协商，协议 1 整窗 ≤5000、超限 426，矛盾声明 426；真实 PG 0/1/199/200/201/500 矩阵；PR #12。
+- ✅ **9.8-C1 SSH writer 超时**：区分队列超时/已开始超时，已开始的写超时退役 writer 并报“可能已部分送达”；14 项测试；PR #13。
+- ✅ **9.8-C2 `-R` 真实 SSH**：真实 sshd 上绑定、双向、并发、半关闭、cancel、重复绑定、断开释放；`-L` 回归；PR #14。
+- ✅ **9.8-D 修改时间与本地化**：SFTP 列表改用 `modified()`，未知为 `None` 显示 `—`；新增三语键集 parity 测试；PR #15。
+- ✅ **集成与审查**：PR #16 合并六个 WP；PR #9 审查判定 `REQUEST_CHANGES`（同步错误无 UI 提示），已在集成修复（Teams 错误横幅 + 重试）。
+- ✅ 证据：矩阵 `42464747336` 3/3，指纹 `df379960…`（debug `223989bc…`、release `a290c36b…`），门禁 0 problem。
+- 🟡 真实 GUI 截图 NOT_RUN（无 Screen Recording 权限）；`-R` 打包产品实机、Windows sshd fixture 仍 NOT_RUN。
+
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
