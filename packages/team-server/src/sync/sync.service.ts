@@ -10,7 +10,7 @@ import type {
   PushedShare,
   PushResult,
 } from './sync-results'
-import { HttpException, Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
 import { deleteShareWithAudit } from '../shares/share-deletion'
 import { OfflineSyncService } from './offline-sync.service'
@@ -20,7 +20,6 @@ import {
   resolveConflict,
 } from './sync-conflicts'
 import { readChangeWindow } from './sync-delivery'
-import { syncUpgradeRequired, validateSyncProtocol } from './sync-request'
 import { describeSyncError, SYNC_OPERATION_FAILED } from './sync-error'
 import {
   classifyBaseVersion,
@@ -28,6 +27,7 @@ import {
   shareContentDigest,
   SYNC_CURSOR_VERSION,
 } from './sync-protocol'
+import { syncUpgradeRequired, validateSyncProtocol } from './sync-request'
 
 @Injectable()
 export class SyncService extends OfflineSyncService {
