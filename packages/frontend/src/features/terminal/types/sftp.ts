@@ -9,7 +9,8 @@ export interface SftpFile {
   path: string
   is_directory: boolean
   size: number
-  modified_time: number
+  /** Epoch seconds, or null when the server did not report an mtime. */
+  modified_time: number | null
   permissions: string
 }
 

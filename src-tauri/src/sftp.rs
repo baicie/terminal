@@ -149,13 +149,12 @@ pub async fn sftp_list(
                 let full_path = format!("{}/{}", dir_path.trim_end_matches('/'), name);
                 let metadata = entry.metadata();
 
-                let modified_time = match metadata.accessed() {
-                    Ok(time) => match time.duration_since(std::time::UNIX_EPOCH) {
-                        Ok(duration) => duration.as_secs() as i64,
-                        Err(_) => 0,
-                    },
-                    Err(_) => 0,
-                };
+                // The listing is sorted on the modification time, which is what
+                // a file manager shows. `accessed()` (the previous source of this
+                // field) is atime: it changes on every read and, on servers with
+                // `relatime`, is not even updated. A server that reports no mtime
+                // gets `None`, never a made-up epoch.
+                let modified_time = modified_time_secs(metadata.modified());
 
                 items.push(SftpFileItem {
                     name,
@@ -173,6 +172,18 @@ pub async fn sftp_list(
             e
         ))),
     }
+}
+
+/// Converts a metadata timestamp into seconds since the epoch.
+///
+/// `None` means "the server did not say": a pre-epoch or unreadable timestamp
+/// must not be reported as a precise one.
+fn modified_time_secs(modified: Result<std::time::SystemTime, std::io::Error>) -> Option<i64> {
+    modified
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_secs() as i64)
 }
 
 /// Streaming upload with chunked progress events.
@@ -773,4 +784,17 @@ mod tests {
             "a failed SFTP handshake must not be reported as a missing session"
         );
     }
+    #[test]
+    fn the_listing_uses_the_real_modification_time_or_none() {
+        // A reported mtime is carried through as epoch seconds.
+        let stamp = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+        assert_eq!(super::modified_time_secs(Ok(stamp)), Some(1_700_000_000));
+        // No mtime from the server is "unknown", never the epoch.
+        let unavailable = std::io::Error::other("no mtime");
+        assert_eq!(super::modified_time_secs(Err(unavailable)), None);
+        // A pre-epoch timestamp must not be turned into 0 either.
+        let before_epoch = std::time::UNIX_EPOCH - std::time::Duration::from_secs(1);
+        assert_eq!(super::modified_time_secs(Ok(before_epoch)), None);
+    }
+
 }
