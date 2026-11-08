@@ -227,7 +227,8 @@ it('keeps a running round on its own server when the singleton is reconfigured',
   await sync
 
   expect(serverA.requests.map(request => request.path)).toEqual([
-    '/api/v1/sync',
+    // A protocol-2 client names its starting position even on the first sync.
+    '/api/v1/sync?since=2.0.0.0',
     '/api/v1/sync?since=2.0.0.1',
   ])
   expect(serverB.requests).toEqual([])

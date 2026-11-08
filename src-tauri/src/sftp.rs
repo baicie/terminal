@@ -796,5 +796,4 @@ mod tests {
         let before_epoch = std::time::UNIX_EPOCH - std::time::Duration::from_secs(1);
         assert_eq!(super::modified_time_secs(Ok(before_epoch)), None);
     }
-
 }
