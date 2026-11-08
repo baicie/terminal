@@ -2,8 +2,7 @@
 // still reachable, and opening the app lands on the terminal layer.
 
 import { describe, expect, it } from 'vitest'
-import { getNavItemsByTier, getVisibleNavItems } from './nav-config'
-import { buildRoutes } from './nav-config'
+import { buildRoutes, getNavItemsByTier, getVisibleNavItems } from './nav-config'
 
 describe('navigation tiers', () => {
   it('keeps terminal, hosts and SFTP as the primary tier', () => {
