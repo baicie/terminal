@@ -429,20 +429,16 @@ describe('SyncService authorization', () => {
       service.getChanges('user-a', 1_760_000_000_000),
     ).rejects.toThrow(/retired timestamp cursor/)
     expect(prisma.syncChange.findMany).toHaveBeenCalledTimes(readsBeforeRefusal)
-    // 超过完整交付上限：不交付部分数据，水位不前进，明确要求升级协议
+    // 超过完整交付上限：fail closed，不交付任何行，客户端必须升级。
     prisma.syncChange.findMany.mockResolvedValue(
       Array.from(
         { length: LEGACY_FULL_DELIVERY_LIMIT + 1 },
         (_, index) => ({ shareId: `over-${index}`, seq: BigInt(index) }),
       ),
     )
-    const refused = await service.getChanges('user-a', 1_000)
-    expect(refused.upgradeRequired).toBe(true)
-    expect(refused.shares).toEqual([])
-    expect(refused.deletedShareIds).toEqual([])
-    expect(refused.hasMore).toBe(false)
-    // 水位回显旧游标（不前进），忽略提示的客户端只会原地重试，不会跳过数据
-    expect(refused.timestamp).toBe(1_000)
+    await expect(service.getChanges('user-a', 1_000)).rejects.toThrow(
+      /larger than this client can consume/,
+    )
   })
 
   it('refuses an undeclared legacy update instead of degrading to a blind write', async () => {

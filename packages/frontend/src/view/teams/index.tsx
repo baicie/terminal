@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -60,6 +61,7 @@ const TeamsView: React.FC = () => {
   const sync = useTeamStore(state => state.sync)
   const isSyncing = useTeamStore(state => state.isSyncing)
   const lastSyncAt = useTeamStore(state => state.lastSyncAt)
+  const syncError = useTeamStore(state => state.syncError)
   const userProfile = useTeamStore(state => state.userProfile)
 
   useEffect(() => {
@@ -130,6 +132,27 @@ const TeamsView: React.FC = () => {
           onProfile={() => setProfileDialogOpen(true)}
         />
       </ViewToolbar>
+
+      {syncError !== null && (
+        <div className="px-6 pt-4">
+          <Alert variant="destructive">
+            <AlertTitle>{t('teams.syncErrorTitle')}</AlertTitle>
+            <AlertDescription className="flex items-center justify-between gap-3">
+              {/* The server's message, verbatim: an upgrade requirement and a
+                  data error must not be flattened into one generic sentence. */}
+              <span className="break-words">{syncError}</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void handleSync()}
+                disabled={isSyncing}
+              >
+                {t('teams.syncRetry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
 
       <ViewContent className="p-6">
         <div className="flex gap-6">

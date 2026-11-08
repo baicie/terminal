@@ -8,6 +8,13 @@ import type {
 /** A hung request is aborted after this long instead of blocking a sync forever. */
 export const TEAM_API_TIMEOUT_MS = 15_000
 
+/** The exact server + identity a request is sent as. */
+export interface TeamApiContext {
+  endpoint: string
+  apiToken: string
+  userId: string
+}
+
 export class TeamApiBase {
   protected endpoint = ''
   protected apiToken = ''
@@ -19,6 +26,31 @@ export class TeamApiBase {
     this.userId = userId
   }
 
+  /** The configuration currently in effect, for one immutable round. */
+  context(): TeamApiContext {
+    return {
+      endpoint: this.endpoint,
+      apiToken: this.apiToken,
+      userId: this.userId,
+    }
+  }
+
+  /**
+   * A client that keeps `context` for its whole life.
+   *
+   * The singleton is shared by every feature, and `configure()` can run while a
+   * paginated sync is between two pages. A round must never read page 2 from the
+   * server that answered page 1 with a different token or identity, so it takes
+   * this copy at the start and sends every request of the round through it.
+   */
+  forContext(context: TeamApiContext): this {
+    const copy = new (this.constructor as new () => this)()
+    copy.endpoint = context.endpoint.replace(/\/$/, '')
+    copy.apiToken = context.apiToken
+    copy.userId = context.userId
+    return copy
+  }
+
   isConfigured(): boolean {
     return Boolean(this.endpoint && this.apiToken && this.userId)
   }
@@ -27,9 +59,10 @@ export class TeamApiBase {
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     path: string,
     body?: unknown,
+    headers: Record<string, string> = {},
   ): Promise<ApiResponse<T>> {
     if (!this.isConfigured()) return { error: 'API not configured' }
-    return this.performRequest(method, path, body, true)
+    return this.performRequest(method, path, body, true, headers)
   }
 
   protected async publicRequest<T>(
@@ -38,7 +71,7 @@ export class TeamApiBase {
     body?: unknown,
   ): Promise<ApiResponse<T>> {
     if (!this.endpoint) return { error: 'API endpoint not configured' }
-    return this.performRequest(method, path, body, false)
+    return this.performRequest(method, path, body, false, {})
   }
 
   /**
@@ -110,8 +143,15 @@ export class TeamApiBase {
     path: string,
     body: unknown,
     authenticated: boolean,
+    headers: Record<string, string>,
   ): Promise<ApiResponse<T>> {
-    const outcome = await this.performOutcome<T>(method, path, body, authenticated)
+    const outcome = await this.performOutcome<T>(
+      method,
+      path,
+      body,
+      authenticated,
+      headers,
+    )
     return outcome.ok ? { data: outcome.data } : { error: outcome.message }
   }
 
@@ -120,6 +160,7 @@ export class TeamApiBase {
     path: string,
     body: unknown,
     authenticated: boolean,
+    headers: Record<string, string> = {},
   ): Promise<ApiOutcome<T>> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), TEAM_API_TIMEOUT_MS)
@@ -129,6 +170,7 @@ export class TeamApiBase {
         headers: {
           'Content-Type': 'application/json',
           ...(authenticated && { Authorization: `Bearer ${this.apiToken}` }),
+          ...headers,
         },
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
