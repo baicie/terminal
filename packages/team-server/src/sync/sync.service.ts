@@ -20,11 +20,10 @@ import {
   resolveConflict,
 } from './sync-conflicts'
 import { readChangeWindow } from './sync-delivery'
+import { syncUpgradeRequired, validateSyncProtocol } from './sync-request'
 import { describeSyncError, SYNC_OPERATION_FAILED } from './sync-error'
 import {
   classifyBaseVersion,
-  isLegacyTimestampCursor,
-  normalizeSyncProtocol,
   parseVersion,
   shareContentDigest,
   SYNC_CURSOR_VERSION,
@@ -50,46 +49,16 @@ export class SyncService extends OfflineSyncService {
     cursor?: number | string,
     declaredProtocol?: string | null,
   ): Promise<IncrementalSyncResult & { userId: string, teams: string[] }> {
-    const protocol = normalizeSyncProtocol(declaredProtocol)
     // Reject before reading anything: a client that cannot name a cursor this
     // server issued must upgrade, not receive a window it will corrupt.
-    if (isLegacyTimestampCursor(cursor)) {
-      throw this.upgradeRequired(
-        'This client uses the retired timestamp cursor. Upgrade the client before syncing again; no data was changed.',
-      )
-    }
-    if (protocol === 'unsupported') {
-      throw this.upgradeRequired(
-        `Sync protocol ${String(declaredProtocol).trim()} is not supported. Upgrade the client before syncing again; no data was changed.`,
-      )
-    }
-    const cursorText = typeof cursor === 'string' ? cursor.trim() : ''
-    const cursorIsV2 = cursorText.includes('.')
-    if (protocol === '2' && cursorText !== '' && !cursorIsV2) {
-      // A protocol-2 client always names a composite position. A bare number is
-      // the retired protocol-1 cursor and the two cannot both be true.
-      throw this.upgradeRequired(
-        'This client declares sync protocol 2 but sent a protocol-1 cursor. Upgrade the client before syncing again; no data was changed.',
-      )
-    }
-    if (protocol === 'legacy' && cursorIsV2) {
-      // A client that declares protocol 1 cannot have issued a composite cursor;
-      // believing either half would be a guess about which one is real.
-      throw this.upgradeRequired(
-        'This client declares sync protocol 1 but sent a protocol-2 cursor. Upgrade the client before syncing again; no data was changed.',
-      )
-    }
+    const { protocol2 } = validateSyncProtocol(cursor, declaredProtocol)
     const memberships = await this.prisma.teamMember.findMany(
       { where: { userId }, select: { teamId: true, joinedTxid: true } },
     )
     const { watermark, upgradeRequired, ...page }
-      = await readChangeWindow(this.prisma, memberships, cursor, {
-        // A composite cursor proves the client understands protocol 2 even when
-        // it forgot the header; an undeclared, cursor-less request does not.
-        protocol2: protocol === '2' || cursorIsV2,
-      })
+      = await readChangeWindow(this.prisma, memberships, cursor, { protocol2 })
     if (upgradeRequired === true) {
-      throw this.upgradeRequired(
+      throw syncUpgradeRequired(
         'The pending change window is larger than this client can consume. Upgrade the client before syncing again; no rows were sent and no data was changed.',
       )
     }
@@ -101,18 +70,6 @@ export class SyncService extends OfflineSyncService {
       requiredCursorVersion: SYNC_CURSOR_VERSION,
       ...page,
     }
-  }
-
-  private upgradeRequired(message: string): HttpException {
-    return new HttpException(
-      {
-        statusCode: 426,
-        code: 'CLIENT_UPGRADE_REQUIRED',
-        message,
-        requiredCursorVersion: SYNC_CURSOR_VERSION,
-      },
-      426,
-    )
   }
 
   async pushChanges(
