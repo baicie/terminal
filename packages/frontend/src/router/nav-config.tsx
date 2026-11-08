@@ -16,10 +16,12 @@ import {
   Shield,
   Users,
 } from 'lucide-react'
-import type { RouteObject } from 'react-router-dom'
-import { makeLazyRoute } from './lazy-route'
+import { navTierOf } from './nav-tier'
+import type { NavTier } from './nav-tier'
 
-const SHOW_EXPERIMENTS =
+export type { NavTier } from './nav-tier'
+
+export const SHOW_EXPERIMENTS =
   import.meta.env.DEV || import.meta.env.VITE_TERMINAL_SMOKE_BUILD === '1'
 
 export interface NavItemConfig {
@@ -30,12 +32,10 @@ export interface NavItemConfig {
   sidebar?: boolean
   /** 条件显示（如 IS_DEV、team 模式），返回 true 则显示 */
   condition?: () => boolean
+  tier?: NavTier
 }
 
-const lazyRoute = (importer: () => Promise<{ default: React.ComponentType<object> }>) =>
-  makeLazyRoute(importer)
-
-const primaryNavConfig: NavItemConfig[] = [
+export const primaryNavConfig: NavItemConfig[] = [
   {
     path: '/hosts',
     labelKey: 'nav.hosts',
@@ -45,47 +45,56 @@ const primaryNavConfig: NavItemConfig[] = [
     path: '/teams',
     labelKey: 'nav.teams',
     icon: <Users className="size-5" />,
+    tier: 'advanced',
     // 不设 condition，由 AppSidebar 根据 isTeamEnabled 动态控制
   },
   {
     path: '/keychain',
     labelKey: 'nav.keychain',
     icon: <Key className="size-5" />,
+    tier: 'secondary',
   },
   {
     path: '/vaults',
     labelKey: 'vaults.title',
     icon: <Shield className="size-5" />,
+    tier: 'advanced',
   },
   {
     path: '/port-forward',
     labelKey: 'nav.portForward',
     icon: <ArrowLeftRight className="size-5" />,
+    tier: 'secondary',
   },
   {
     path: '/snippets',
     labelKey: 'nav.snippets',
     icon: <Code2 className="size-5" />,
+    tier: 'secondary',
   },
   {
     path: '/known-hosts',
     labelKey: 'nav.knownHosts',
     icon: <Fingerprint className="size-5" />,
+    tier: 'advanced',
   },
   {
     path: '/logs',
     labelKey: 'nav.logs',
     icon: <FileText className="size-5" />,
+    tier: 'advanced',
   },
   {
     path: '/sftp',
     labelKey: 'nav.sftp',
     icon: <FolderUp className="size-5" />,
+    tier: 'primary',
   },
   {
     path: '/settings',
     labelKey: 'nav.settings',
     icon: <Settings className="size-5" />,
+    tier: 'secondary',
   },
 ]
 
@@ -107,76 +116,7 @@ export function getVisibleNavItems(): NavItemConfig[] {
   return navConfig.filter(item => item.condition == null || item.condition())
 }
 
-/**
- * 导出给路由用的完整 RouteObject 列表
- */
-export function buildRoutes(): RouteObject[] {
-  const routes: RouteObject[] = [
-    {
-      index: true,
-      element: lazyRoute(() => import('@/view/hosts')),
-    },
-    ...primaryNavConfig.map(item => ({
-      path: item.path.replace('/', ''),
-      element: getRouteElement(item.path),
-    })),
-  ]
-
-  // Experiments 子页面
-  if (SHOW_EXPERIMENTS) {
-    routes.push(
-      {
-        path: 'experiments',
-        element: lazyRoute(() => import('@/experiments/index')),
-      },
-      {
-        path: 'experiments/textarea-test',
-        element: lazyRoute(() => import('@/experiments/textarea-test')),
-      },
-      {
-        path: 'experiments/xterm-test',
-        element: lazyRoute(() => import('@/experiments/xterm-test')),
-      },
-      {
-        path: 'experiments/terminal-input-probe',
-        element: lazyRoute(() => import('@/experiments/terminal-input-probe')),
-      },
-    )
-  }
-
-  return routes
+/** Visible items of one tier, in declaration order. */
+export function getNavItemsByTier(tier: NavTier): NavItemConfig[] {
+  return getVisibleNavItems().filter(item => navTierOf(item) === tier)
 }
-
-function getRouteElement(path: string) {
-  switch (path) {
-    case '/hosts':
-      return lazyRoute(() => import('@/view/hosts'))
-    case '/teams':
-      return lazyRoute(() => import('@/view/teams'))
-    case '/keychain':
-      return lazyRoute(() => import('@/view/keychain'))
-    case '/vaults':
-      return lazyRoute(() => import('@/view/vaults/vaults-view'))
-    case '/port-forward':
-      return lazyRoute(() => import('@/view/port-forward'))
-    case '/snippets':
-      return lazyRoute(() => import('@/view/snippets'))
-    case '/known-hosts':
-      return lazyRoute(() => import('@/view/known-hosts'))
-    case '/logs':
-      return lazyRoute(() => import('@/view/app-logs'))
-    case '/sftp':
-      return lazyRoute(() => import('@/view/sftp/sftp-container'))
-    case '/settings':
-      return lazyRoute(() => import('@/view/settings'))
-    default:
-      return lazyRoute(() => import('@/view/hosts'))
-  }
-}
-
-// 注意：故意没有 '/terminal' 分支。
-// 终端路由由 router/index.tsx 写死为 <TerminalRoute /> → null，
-// 实际渲染走 layout 内常驻的 <TerminalByUrl />，这样切换路由时
-// 终端实例不会被 Outlet 销毁，可在后台继续保持连接。
-// 同时 navConfig 数组里也没有 '/terminal'，所以这个 switch case
-// 永远到不了，曾经存在的分支是死代码并触发 INEFFECTIVE_DYNAMIC_IMPORT。

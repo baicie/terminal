@@ -5,7 +5,8 @@ import i18n from '@/locales'
 import cn from '@/locales/cn/vaults'
 import en from '@/locales/en/vaults'
 import fr from '@/locales/fr/vaults'
-import { buildRoutes, getVisibleNavItems, navConfig } from '@/router/nav-config'
+import { getVisibleNavItems, navConfig } from '@/router/nav-config'
+import { buildRoutes } from '@/router/route-table'
 import type * as VaultModule from '@/service/vault'
 import VaultsView from './vaults-view'
 
@@ -72,7 +73,7 @@ describe('vault route reachability', () => {
   })
 
   it('resolves /vaults through the real route table to VaultsView', async () => {
-    const vaultRoute = buildRoutes().find(route => route.path === 'vaults')
+    const vaultRoute = buildRoutes().find((route: { path?: string }) => route.path === 'vaults')
     expect(vaultRoute).toBeDefined()
     vaultMock.exists.mockResolvedValue(false)
 
