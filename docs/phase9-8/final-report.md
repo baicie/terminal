@@ -106,8 +106,10 @@
   重试到绿为止：`ci.yml` 的 Linux deb+appimage 与 Windows NSIS 步骤加入**有界**重试
   （4 次、20/40/60 s 退避），仍失败则报错退出，不把打包失败伪装成通过。
 - 各 WP 分支：证据各自在其 HEAD 重采（A/B1/B2/C1/C2/D 各一次矩阵），
-  `Repository gates` 全部转绿；PR #10 仍余 1 个上个 HEAD 的 Tauri ubuntu 失败
-  （`42473374209`，504），其后的证据提交未再触发该 job 的通过结果。
+  `Repository gates` 全部转绿；PR #10 的 Tauri ubuntu 504 在移植同一份有界重试后
+  转绿（`42484853799`，`ad37d75`）。
+- 最终各 Draft PR 检查：**#10 22/22、#11 11/11、#12 11/11、#13 11/11、
+  #14 11/11、#15 11/11、#16 11/11**，无失败项。
 - Upgrade E2E：[`42481700333`](https://github.com/baicie/terminal/actions/runs/42481700333)
   （`4f7b83b`，最终 HEAD）**6/6 success**：macOS dev.1→dev.2、macOS 当前版本升级与恢复、
   Linux DEB、Windows 隔离预检、macOS updater runtime、Linux AppImage 替换。
