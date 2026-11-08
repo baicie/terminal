@@ -82,8 +82,8 @@ endpoint；上传失败截断远端文件；SFTP 列表 mtime；Windows NSIS/App
 ## C. CI 与 E2E
 
 - 六份证据：官方矩阵 [`42441960278`](https://github.com/baicie/terminal/actions/runs/42441960278)（`9bad962`）**3/3 success**，指纹 **`4bbee997…`**（debug `2e23ea2f…`、release `e7e3b675…`），`check-verification-evidence` **0 problem**；raw log 在 `docs/verification/raw/42441960278/`。未手工修改 manifest。
-- Upgrade E2E：`42399231199`（`e9858c9`，含 updater runtime job）**6/6 success**。
-- 最终 CI：证据提交后的 HEAD 上运行，URL 见 PR 检查。
+- Upgrade E2E：`42444236952`（`758fa36`）于 11:49 派发，截止时 **in_progress**；上一轮 `42399231199`（`e9858c9`，含 updater runtime job）**6/6 success**。
+- 最终 CI：[`42444179936`](https://github.com/baicie/terminal/actions/runs/42444179936)（`758fa36`）：此前唯一红的 `Repository gates`（source size + evidence + script tests）**success**，其余 job 截止时仍在运行（Tauri 三平台构建约 20 分钟），不冒充全绿。
 - 本地门禁：Rust 341 项 + clippy all-features + fmt；前端 164 文件/1436 项；Team Server 124 单测 + 97 真实 PG；source-size 584 文件；bundle budget 通过。
 
 ## D. UI 效果
