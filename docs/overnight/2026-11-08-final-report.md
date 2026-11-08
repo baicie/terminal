@@ -3,7 +3,7 @@
 - 截止：2026-11-08 12:00 +08:00
 - 分支：`feat/phase9-7-product-acceptance`
 - 基线：`main` = `3b23e8c`
-- 源码冻结：`9bad962`（其后仅文档/证据提交）
+- 源码冻结：`2695f5c`（其后仅文档/证据提交）
 - PR #9：Open，**非 Draft**，未合并
 
 ## A. 实际完成的代码
@@ -91,9 +91,9 @@ endpoint；上传失败截断远端文件；SFTP 列表 mtime；Windows NSIS/App
 
 ## C. CI 与 E2E
 
-- 六份证据：官方矩阵 [`42441960278`](https://github.com/baicie/terminal/actions/runs/42441960278)（`9bad962`）**3/3 success**，指纹 **`4bbee997…`**（debug `2e23ea2f…`、release `e7e3b675…`），`check-verification-evidence` **0 problem**；raw log 在 `docs/verification/raw/42441960278/`。未手工修改 manifest。
-- 注意：vault 并发修复改动 `src-tauri/src`，该组证据在修复提交上按规则失效，已重新派发官方矩阵重采（结果见后续提交）。
-- Upgrade E2E：`42444236952`（`758fa36`）于 11:49 派发，截止时 **in_progress**；上一轮 `42399231199`（`e9858c9`，含 updater runtime job）**6/6 success**。
+- 六份证据：官方矩阵 [`42447284830`](https://github.com/baicie/terminal/actions/runs/42447284830)（`2695f5c`）**3/3 success**，指纹 **`32729825…`**（debug `133c8daa…`、release `8b8c2e5d…`），`check-verification-evidence` **0 problem**；raw log 在 `docs/verification/raw/42447284830/`。未手工修改 manifest。
+- 注意：vault 并发修复改动 `src-tauri/src`，旧证据按规则失效；本组证据即在该修复提交上重采（`2695f5c`，run `42447284830`）。
+- Upgrade E2E：`42444236952`（`758fa36`）**6/6 success**（含 updater runtime）；上一轮 `42399231199`（`e9858c9`）同为 6/6。
 - 最终 CI：[`42444179936`](https://github.com/baicie/terminal/actions/runs/42444179936)（`758fa36`）：此前唯一红的 `Repository gates`（source size + evidence + script tests）**success**，其余 job 截止时仍在运行（Tauri 三平台构建约 20 分钟），不冒充全绿。
 - 本地门禁：Rust 341 项 + clippy all-features + fmt；前端 164 文件/1436 项；Team Server 124 单测 + 97 真实 PG；source-size 584 文件；bundle budget 通过。
 
