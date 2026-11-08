@@ -83,6 +83,8 @@ export default {
   'teams.syncNow': 'Synchroniser maintenant',
   'teams.syncing': 'Synchronisation...',
   'teams.lastSync': 'Dernière sync : {{time}}',
+  'teams.syncErrorTitle': 'La synchronisation demande votre attention',
+  'teams.syncRetry': 'Réessayer',
   'teams.leaveTeam': "Quitter l'équipe",
   'teams.deleteTeam': "Supprimer l'équipe",
   'teams.deleteTeamConfirm':

@@ -5,7 +5,10 @@ import {
   removeSharesAbsentFromSnapshot,
   removeSharedSnippet,
 } from '@/service/database'
-import { convertApiShare, teamApi } from '@/service/team-api'
+import { convertApiShare } from '@/service/team-api'
+import { INITIAL_SYNC_CURSOR } from '@/service/team-api-sync'
+import type { SyncRoundContext } from './team-sync-round'
+import { DEFAULT_SYNC_ROUND, assertSyncRoundCurrent } from './team-sync-round'
 import type { SyncConflict } from './team-types'
 import type { TeamStoreGet } from './team-store-context'
 import { localConflict, shareData } from './team-sync-shares'
@@ -168,6 +171,13 @@ export async function applyWindow(
   return conflicts
 }
 
+// Round identity lives in its own module; re-exported so callers keep one import.
+export {
+  SyncRoundStaleError,
+  assertSyncRoundCurrent,
+} from './team-sync-round'
+export type { SyncRoundContext } from './team-sync-round'
+
 /**
  * Pulls pages until the window is exhausted. A page's cursor is committed only
  * after every change of that page landed, so an interruption re-delivers a page
@@ -180,6 +190,7 @@ export async function applyWindow(
 export async function pullChanges(
   get: TeamStoreGet,
   scope: SyncCursorScope | null,
+  round: SyncRoundContext = DEFAULT_SYNC_ROUND,
 ): Promise<PullOutcome> {
   const conflicts: SyncConflict[] = []
   let cursor = scope === null ? null : readStoredCursor(scope)
@@ -193,7 +204,16 @@ export async function pullChanges(
   // The loop is assumed to run out of pages; every real end of the window clears it.
   let truncated = true
   for (let page = 0; page < MAX_SYNC_PAGES; page += 1) {
-    const response = await teamApi.getChanges(cursor ?? undefined)
+    assertSyncRoundCurrent(round, 'before a page request')
+    // Every page is sent through the round's own client: the singleton may have
+    // been reconfigured for another workspace while the previous page was in
+    // flight, and reading page 2 from that other server with that other token
+    // would mix two identities into one cursor slot. A protocol-2 client always
+    // names its position, including the first sync: omitting the cursor is
+    // exactly how a protocol-1 client looks, and the server has to answer that
+    // shape with the whole window instead of a page.
+    const response = await round.api.getChanges(cursor ?? INITIAL_SYNC_CURSOR)
+    assertSyncRoundCurrent(round, 'after a page response')
     if (response.error) throw new Error(response.error)
     // The wire payload is read through the scope fields this module declares: the
     // API type is generated from an older shape and must not be the contract here.
@@ -225,7 +245,10 @@ export async function pullChanges(
       && CURSOR_PATTERN.test(window.cursor)
       ? window.cursor
       : null
-    if (next !== null && scope !== null) storeCursor(scope, next)
+    if (next !== null && scope !== null) {
+      assertSyncRoundCurrent(round, 'before persisting the cursor')
+      storeCursor(scope, next)
+    }
     // Only a page that says there is nothing more ends the round. A page that
     // claims more but hands back no usable cursor did not prove absence, so the
     // round stays incomplete and must not prune local rows.
@@ -239,6 +262,7 @@ export async function pullChanges(
   // Only a complete resnapshot may delete anything: a truncated one has not seen the
   // whole window, and an incremental one never could. `authorizedTeams === null` means
   // the server named no scope, so no absence was proven either.
+  assertSyncRoundCurrent(round, 'before pruning rows a resnapshot proved absent')
   if (resnapshot && !truncated && authorizedTeams !== null) {
     const removed = await removeSharesAbsentFromSnapshot(
       authorizedTeams,
@@ -252,5 +276,6 @@ export async function pullChanges(
   }
   return { conflicts, authorizedTeams, hasMore: truncated }
 }
+
 
 

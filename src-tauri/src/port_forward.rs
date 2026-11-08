@@ -825,7 +825,7 @@ pub async fn port_forward_list(
 mod tests {
     use super::{
         accept_backoff, bind_tcp_listener, is_fatal_accept_error, pipe_socket_to_channel,
-        ACCEPT_BACKOFF_CAP, ACCEPT_BACKOFF_START,
+        setup_remote_forward, ACCEPT_BACKOFF_CAP, ACCEPT_BACKOFF_START,
     };
     use crate::errors::PortForwardError;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -859,6 +859,270 @@ mod tests {
             *guard = None;
         }
         assert!(handler_slot.read().expect("slot lock").is_none());
+    }
+
+    /// Reads one required environment variable of the real-server fixture.
+    fn e2e_env(name: &str) -> String {
+        std::env::var(name).unwrap_or_else(|_| panic!("{name} must be set by the fixture script"))
+    }
+
+    /// Connects to the fixture sshd with the key and host key the script exported.
+    async fn connect_fixture() -> (
+        std::sync::Arc<russh::client::Handle<crate::state::ClientHandler>>,
+        crate::state::ForwardListenerSlot,
+    ) {
+        use crate::state::ClientHandler;
+        use russh::keys::{decode_secret_key, PrivateKeyWithHashAlg};
+        use std::sync::Arc;
+
+        let port: u16 = e2e_env("SSH_E2E_PORT").parse().expect("SSH_E2E_PORT");
+        let user = e2e_env("SSH_E2E_USER");
+        let key_text = std::fs::read_to_string(e2e_env("SSH_E2E_KEY")).expect("fixture key");
+        let key = decode_secret_key(&key_text, None).expect("decode fixture key");
+        let host_key_text =
+            std::fs::read_to_string(e2e_env("SSH_E2E_HOST_KEY")).expect("fixture host key");
+        let host_key =
+            russh::keys::PublicKey::from_openssh(&host_key_text).expect("parse fixture host key");
+        let handler = ClientHandler::for_test_with_expected_key("127.0.0.1", port, host_key);
+        // Captured before the handler moves into russh; it is the only way the
+        // connection owner can install a remote-forward listener afterwards.
+        let slot = handler.forward_listener_slot();
+        let config = Arc::new(russh::client::Config::default());
+        let mut handle = russh::client::connect(config, ("127.0.0.1", port), handler)
+            .await
+            .expect("connect to the fixture sshd");
+        let auth = handle
+            .authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key), None))
+            .await
+            .expect("authenticate");
+        assert!(auth.success(), "public key authentication must succeed");
+        (Arc::new(handle), slot)
+    }
+
+    /// Drives `-R` against a real OpenSSH sshd: the server binds the port, opens
+    /// a real `forwarded-tcpip` channel per connection, and the client bridges it
+    /// to a local echo server. Nothing here is simulated.
+    #[tokio::test]
+    #[ignore = "needs a real sshd; run scripts/verify-install/remote-forward-e2e.mjs"]
+    async fn remote_forward_real_ssh_e2e() {
+        use std::sync::Arc;
+        use tokio::net::{TcpListener, TcpStream};
+
+        let (handle, slot) = connect_fixture().await;
+
+        // The forwarding target: a real TCP echo server on loopback.
+        let echo = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("echo listener");
+        let echo_port = echo.local_addr().expect("echo address").port();
+        let echo_task = tokio::spawn(async move {
+            loop {
+                let Ok((mut socket, _)) = echo.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let mut buffer = [0u8; 4096];
+                    loop {
+                        match socket.read(&mut buffer).await {
+                            Ok(0) | Err(_) => {
+                                let _ = socket.shutdown().await;
+                                break;
+                            }
+                            Ok(read) => {
+                                if socket.write_all(&buffer[..read]).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        // Ask sshd for a remote bind on an ephemeral port and install the
+        // listener the handler routes `forwarded-tcpip` opens into.
+        let (listener, mut channels) = setup_remote_forward(
+            Arc::clone(&handle),
+            Arc::clone(&slot),
+            // The remote bind address decision lives in setup_remote_forward;
+            // an ephemeral port lets the server pick.
+            0,
+            "127.0.0.1".to_string(),
+            echo_port,
+        )
+        .await
+        .expect("the server must accept the remote forward");
+        let bound_port = listener.bound_port;
+        assert!(bound_port > 0, "sshd must report the port it bound");
+        *slot.write().expect("slot lock") = Some(listener.clone());
+        let bridge = tokio::spawn(async move {
+            while let Some(message) = channels.recv().await {
+                let mut channel = message.channel.into_stream();
+                let Ok(mut socket) = TcpStream::connect(("127.0.0.1", echo_port)).await else {
+                    continue;
+                };
+                tokio::spawn(async move {
+                    let _ = tokio::io::copy_bidirectional(&mut channel, &mut socket).await;
+                });
+            }
+        });
+
+        async fn round_trip(port: u32, payload: &[u8]) -> Vec<u8> {
+            let mut stream = TcpStream::connect(("127.0.0.1", port as u16))
+                .await
+                .expect("the remote bind must accept a connection");
+            stream.write_all(payload).await.expect("write payload");
+            stream.shutdown().await.expect("half-close");
+            let mut echoed = Vec::new();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                stream.read_to_end(&mut echoed),
+            )
+            .await
+            .expect("the echo must come back")
+            .expect("read echo");
+            echoed
+        }
+
+        // 1. Different payload lengths round-trip unchanged through the real
+        //    server-side bind and the real forwarded channel.
+        for payload in [b"short".as_slice(), &[7u8; 32 * 1024][..]] {
+            let echoed = round_trip(bound_port, payload).await;
+            assert_eq!(echoed, payload, "payload must survive in both directions");
+        }
+
+        // 2. Two concurrent connections are bridged independently.
+        let first = round_trip(bound_port, b"concurrent-one");
+        let second = round_trip(bound_port, b"concurrent-two");
+        let (first, second) = tokio::join!(first, second);
+        assert_eq!(first, b"concurrent-one");
+        assert_eq!(second, b"concurrent-two");
+
+        // 3. Stop cancels the server-side binding: the port refuses and the
+        //    handler slot no longer routes.
+        *slot.write().expect("slot lock") = None;
+        drop(listener);
+        handle
+            .cancel_tcpip_forward("127.0.0.1", bound_port)
+            .await
+            .expect("cancel_tcpip_forward must be accepted");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(
+            TcpStream::connect(("127.0.0.1", bound_port as u16))
+                .await
+                .is_err(),
+            "the port must stop accepting after the forward is cancelled"
+        );
+
+        bridge.abort();
+        echo_task.abort();
+    }
+
+    /// `-L` shares the channel plumbing with `-R` but not the channel type: it
+    /// opens `direct-tcpip` instead of receiving `forwarded-tcpip`. This drives
+    /// that path against the same real sshd so a change to the forwarding code
+    /// cannot fix `-R` while breaking `-L`.
+    #[tokio::test]
+    #[ignore = "needs a real sshd; run scripts/verify-install/remote-forward-e2e.mjs"]
+    async fn local_forward_real_ssh_e2e() {
+        use tokio::net::TcpListener;
+
+        let (handle, _slot) = connect_fixture().await;
+
+        let echo = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("echo listener");
+        let echo_port = echo.local_addr().expect("echo address").port();
+        tokio::spawn(async move {
+            let Ok((mut socket, _)) = echo.accept().await else {
+                return;
+            };
+            let mut buffer = [0u8; 1024];
+            while let Ok(read) = socket.read(&mut buffer).await {
+                if read == 0 || socket.write_all(&buffer[..read]).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        let channel = handle
+            .channel_open_direct_tcpip("127.0.0.1", echo_port as u32, "127.0.0.1", 0)
+            .await
+            .expect("direct-tcpip channel");
+        let mut stream = channel.into_stream();
+        stream.write_all(b"local-forward").await.expect("write");
+        let mut echoed = [0u8; 13];
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            stream.read_exact(&mut echoed),
+        )
+        .await
+        .expect("the echo must come back")
+        .expect("read echo");
+        assert_eq!(&echoed, b"local-forward");
+    }
+
+    /// A duplicate bind is refused, and an SSH teardown releases the server-side
+    /// bind instead of leaving a port the user cannot see or close.
+    #[tokio::test]
+    #[ignore = "needs a real sshd; run scripts/verify-install/remote-forward-e2e.mjs"]
+    async fn remote_forward_disconnect_and_duplicate_bind_real_ssh_e2e() {
+        use std::sync::Arc;
+        use tokio::net::{TcpListener, TcpStream};
+
+        // Reserve a concrete port, then let sshd bind exactly that one.
+        let probe = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("probe port");
+        let port = probe.local_addr().expect("probe address").port();
+        drop(probe);
+
+        let (handle_a, slot_a) = connect_fixture().await;
+        let (listener, _channels) = setup_remote_forward(
+            Arc::clone(&handle_a),
+            Arc::clone(&slot_a),
+            port,
+            "127.0.0.1".to_string(),
+            9,
+        )
+        .await
+        .expect("the first bind must succeed");
+        // An explicit port request echoes 0 in the reply; the requested port is the binding.
+        assert_eq!(listener.bound_port, 0);
+        *slot_a.write().expect("slot lock") = Some(listener.clone());
+
+        let (handle_b, slot_b) = connect_fixture().await;
+        let duplicate = setup_remote_forward(
+            Arc::clone(&handle_b),
+            slot_b,
+            port,
+            "127.0.0.1".to_string(),
+            9,
+        )
+        .await;
+        assert!(
+            matches!(duplicate, Err(PortForwardError::BindFailed(_))),
+            "a second bind of the same port must be refused"
+        );
+
+        // Tear the SSH session down without a graceful cancel: the server must
+        // release the bind on session end.
+        *slot_a.write().expect("slot lock") = None;
+        drop(listener);
+        let _ = handle_a
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if TcpStream::connect(("127.0.0.1", port)).await.is_err() {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the bound port must be released when the SSH session ends"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
     }
 
     #[tokio::test]
