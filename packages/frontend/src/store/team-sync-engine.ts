@@ -6,6 +6,7 @@ import {
   removeSharedSnippet,
 } from '@/service/database'
 import { convertApiShare } from '@/service/team-api'
+import { INITIAL_SYNC_CURSOR } from '@/service/team-api-sync'
 import type { SyncRoundContext } from './team-sync-round'
 import { DEFAULT_SYNC_ROUND, assertSyncRoundCurrent } from './team-sync-round'
 import type { SyncConflict } from './team-types'
@@ -207,8 +208,11 @@ export async function pullChanges(
     // Every page is sent through the round's own client: the singleton may have
     // been reconfigured for another workspace while the previous page was in
     // flight, and reading page 2 from that other server with that other token
-    // would mix two identities into one cursor slot.
-    const response = await round.api.getChanges(cursor ?? undefined)
+    // would mix two identities into one cursor slot. A protocol-2 client always
+    // names its position, including the first sync: omitting the cursor is
+    // exactly how a protocol-1 client looks, and the server has to answer that
+    // shape with the whole window instead of a page.
+    const response = await round.api.getChanges(cursor ?? INITIAL_SYNC_CURSOR)
     assertSyncRoundCurrent(round, 'after a page response')
     if (response.error) throw new Error(response.error)
     // The wire payload is read through the scope fields this module declares: the

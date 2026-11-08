@@ -3,8 +3,22 @@ import type { PrismaService } from '../../prisma.service'
 import type { SeededTeam } from './pg-harness'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { LEGACY_FULL_DELIVERY_LIMIT } from '../../sync/sync-delivery'
+import { INITIAL_SYNC_CURSOR as INITIAL } from '../../sync/sync-protocol'
 import { SyncService } from '../../sync/sync.service'
+
 import { connectRaw, createPrisma, resetDatabase, seedTeams } from './pg-harness'
+
+async function expectUpgradeRequired(
+  operation: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    await operation()
+    throw new Error('the request should have been refused with 426')
+  } catch (error) {
+    const status = (error as { getStatus?: () => number }).getStatus?.()
+    expect(status).toBe(426)
+  }
+}
 
 // Phase 8.9 Task 1：分页正确性（真实 PostgreSQL，不 mock Prisma）。
 // 游标在用例里被当作不透明值：回传给 getChanges 时原样透传，因此同一份用例
@@ -53,8 +67,15 @@ describe('sync 增量分页正确性（真实 PostgreSQL）', () => {
     deleted: string[]
   }
 
-  async function pull(cursor: unknown): Promise<Page> {
-    const result = await syncA.getChanges(ctx.creatorId, cursor as PullCursor)
+  async function pull(
+    cursor: unknown,
+    protocol: string | null = '2',
+  ): Promise<Page> {
+    const result = await syncA.getChanges(
+      ctx.creatorId,
+      cursor as PullCursor,
+      protocol,
+    )
     return {
       cursor: result.cursor,
       hasMore: (result as { hasMore?: boolean }).hasMore,
@@ -326,29 +347,27 @@ describe('sync 增量分页正确性（真实 PostgreSQL）', () => {
     console.log(`[L1] ${report.join(' | ')}`)
   })
 
-  it('L2 超过完整交付上限：返回 upgradeRequired，不交付部分数据，水位不前进', async () => {
+  it('L2 超过完整交付上限：以 426 拒绝，不交付部分数据', async () => {
     const total = LEGACY_FULL_DELIVERY_LIMIT + 1
     await bulkInsert('over-limit-', total)
 
-    const refused = await syncA.getChanges(ctx.creatorId, 0)
-    console.log(
-      `[L2] 记录数=${total} upgradeRequired=${refused.upgradeRequired} 交付条数=${refused.shares.length} hasMore=${refused.hasMore} 水位=${refused.timestamp} 需要协议=${refused.requiredCursorVersion}`,
-    )
-    expect(refused.upgradeRequired).toBe(true)
-    expect(refused.shares).toHaveLength(0)
-    expect(refused.deletedShareIds).toHaveLength(0)
-    expect(refused.hasMore).toBe(false)
-    expect(refused.requiredCursorVersion).toBe(2)
-    // 水位不前进：忽略升级提示的旧客户端重放同一 since 只会拿到同一份拒绝，
-    // 而不是「跳过这一万条、只看之后的增量」。
-    expect(refused.timestamp).toBe(0)
-    const replayed = await syncA.getChanges(ctx.creatorId, refused.timestamp)
-    expect(replayed.upgradeRequired).toBe(true)
-    expect(replayed.shares).toHaveLength(0)
-    // 但数据一条没丢：协议 2 客户端可以翻页拿全。
-    const pages = await pullAll(undefined, 40)
-    expect(delivered(pages)).toHaveLength(total)
-    expect(pages[pages.length - 1].hasMore).toBe(false)
+    // Fail closed: the old client gets an explicit upgrade requirement instead of
+    // a partial window it cannot page through (and would skip forever).
+    await expectUpgradeRequired(() => syncA.getChanges(ctx.creatorId, 0))
+    await expectUpgradeRequired(() => syncA.getChanges(ctx.creatorId, undefined, null))
+
+    // 数据一条没丢：协议 2 客户端可以翻页拿全。
+    const pages: Page[] = []
+    let cursor: unknown = '2.0.0.0'
+    for (let round = 0; round < 40; round++) {
+      const page = await pull(cursor)
+      pages.push(page)
+      if (page.hasMore !== true) break
+      cursor = page.cursor
+    }
+    const ids = delivered(pages)
+    console.log(`[L2] 426 拒绝后协议 2 交付=${ids.length}/${total} 页数=${pages.length}`)
+    expect(ids).toHaveLength(total)
   })
 
   it('L3 旧 epoch-ms 游标：安全拒绝 426，协议 2 仍完整交付', async () => {
@@ -555,5 +574,105 @@ describe('sync 增量分页正确性（真实 PostgreSQL）', () => {
     expect(refused.error).toBe('CONFLICT_STALE_VERSION')
     expect(row?.data).toEqual({ host: 'a-newer' })
     expect(Number(row?.version)).toBe(current)
+  })
+})
+
+describe('sync 首窗协商（真实 PostgreSQL）', () => {
+  let prisma: PrismaService
+  let sync: SyncService
+  let ctx: SeededTeam
+
+  beforeAll(() => {
+    prisma = createPrisma()
+    sync = new SyncService(prisma)
+  })
+  afterAll(async () => {
+    await prisma.onModuleDestroy()
+  })
+  beforeEach(async () => {
+    await resetDatabase(prisma)
+    ctx = await seedTeams(prisma)
+  })
+
+  async function seed(count: number): Promise<void> {
+    const client = await connectRaw()
+    await client.query('BEGIN')
+    await client.query(
+      `INSERT INTO "Share" (id, "teamId", type, data, "sharedBy", permission, "isSensitive", "createdAt", "updatedAt")
+       SELECT 'negotiation-' || g, $1, 'HOST', jsonb_build_object('host', g), $2, 'READONLY', false, NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC'
+         FROM generate_series(1, $3::int) AS g`,
+      [ctx.teamId, ctx.creatorId, count],
+    )
+    await client.query('COMMIT')
+    await client.end()
+  }
+
+  it('协议 1 的首次同步拿到整窗，而不是被静默截断的第一页', async () => {
+    await seed(201)
+    const result = await sync.getChanges(ctx.creatorId, undefined, null)
+    expect(result.shares).toHaveLength(201)
+    expect((result as { hasMore?: boolean }).hasMore).toBe(false)
+  })
+
+  it('协议 2 的显式初始游标完整分页：201 → 200 + 1', async () => {
+    await seed(201)
+    const first = await sync.getChanges(ctx.creatorId, INITIAL, '2')
+    expect(first.shares).toHaveLength(200)
+    expect((first as { hasMore?: boolean }).hasMore).toBe(true)
+    const second = await sync.getChanges(ctx.creatorId, first.cursor, '2')
+    expect(second.shares).toHaveLength(1)
+    expect((second as { hasMore?: boolean }).hasMore).toBe(false)
+  })
+
+  it('未声明协议但带了复合游标：客户端已证明自己会分页', async () => {
+    await seed(201)
+    const first = await sync.getChanges(ctx.creatorId, INITIAL, '2')
+    const second = await sync.getChanges(ctx.creatorId, first.cursor, null)
+    expect(second.shares).toHaveLength(1)
+    expect((second as { hasMore?: boolean }).hasMore).toBe(false)
+  })
+
+  it('0/1/199/200/201/500 条：协议 1 整窗、协议 2 完整分页且不重不漏', async () => {
+    for (const count of [0, 1, 199, 200, 201, 500]) {
+      await resetDatabase(prisma)
+      ctx = await seedTeams(prisma)
+      if (count > 0) await seed(count)
+
+      const legacy = await sync.getChanges(ctx.creatorId, undefined, null)
+      expect(legacy.shares).toHaveLength(count)
+      expect((legacy as { hasMore?: boolean }).hasMore).toBe(false)
+
+      const seen: string[] = []
+      let cursor: unknown = INITIAL
+      for (let round = 0; round < 10; round++) {
+        const page = await sync.getChanges(ctx.creatorId, cursor as string, '2')
+        seen.push(...page.shares.map(share => share.id))
+        if ((page as { hasMore?: boolean }).hasMore !== true) break
+        cursor = page.cursor
+      }
+      expect(new Set(seen).size).toBe(count)
+      expect(seen).toHaveLength(count)
+      console.log(`[matrix] ${count} -> 协议1=${legacy.shares.length} 协议2去重=${new Set(seen).size}`)
+    }
+  })
+
+  it('协议 1 的首次同步超过整窗上限时 fail-closed（426）', async () => {
+    await seed(LEGACY_FULL_DELIVERY_LIMIT + 1)
+    await expectUpgradeRequired(() => sync.getChanges(ctx.creatorId, undefined, null))
+  })
+
+  it('声明协议 2 却发送裸数字游标：矛盾请求被拒绝（426）', async () => {
+    await seed(1)
+    await expectUpgradeRequired(() => sync.getChanges(ctx.creatorId, '5', '2'))
+  })
+
+  it('未知协议声明被拒绝（426）', async () => {
+    await seed(1)
+    await expectUpgradeRequired(() => sync.getChanges(ctx.creatorId, INITIAL, '3'))
+  })
+
+  it('声明协议 1 却发送复合游标：矛盾请求被拒绝（426）', async () => {
+    await seed(1)
+    await expectUpgradeRequired(() => sync.getChanges(ctx.creatorId, INITIAL, '1'))
   })
 })
