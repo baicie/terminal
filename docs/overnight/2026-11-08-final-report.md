@@ -75,7 +75,7 @@
 ## B. 未完成任务
 
 见 `docs/phase9-7/overnight-review-findings.md`：
--R 远端转发未接线；SSH writer 超时竞态；协议 1 首同步截断；teamApi 单例跨
+-R 接线已修（slot 共享 + stop 取消绑定，真实 SSH E2E 仍 NOT_RUN）；SSH writer 超时竞态；协议 1 首同步截断；teamApi 单例跨
 endpoint；上传失败截断远端文件；SFTP 列表 mtime；Windows NSIS/AppImage stock；
 正式签名/公证/身份迁移；UI 截图（本机无辅助功能/录屏权限，NOT_RUN）。
 
@@ -88,7 +88,7 @@ endpoint；上传失败截断远端文件；SFTP 列表 mtime；Windows NSIS/App
 
 ## D. UI 效果
 
-- 真实 Tauri：`/Applications/Termius.app` 安装 `0.0.1-dev.10-local`（本机验证）。
+- 真实 Tauri：`/Applications/Termius.app` 安装 `0.0.1-dev.13-local`（本机验证；含路由预加载与 -R 接线）。
 - 截图：NOT_RUN（无屏幕录制/辅助功能权限；仓库未安装 Playwright）。
 - 浏览器 mock 截图未生成，不以 mock 冒充真实桌面。
 
@@ -96,7 +96,7 @@ endpoint；上传失败截断远端文件；SFTP 列表 mtime；Windows NSIS/App
 
 - 分支：`feat/phase9-7-product-acceptance`
 - PR #9：Open，非 Draft；未合并、未打 Tag、未发布 Release。
-- 工作区：待证据提交后确认 clean。
+- 工作区：clean（证据与文档已提交）。
 
 ## F. 质量评价
 
