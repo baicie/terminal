@@ -3,7 +3,7 @@ import { createBrowserRouter } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { RouteErrorBoundary } from '@/components/error-boundary'
 import Layout from '../layout'
-import { buildRoutes } from './nav-config.tsx'
+import { buildRoutes, preloadRoutes } from './nav-config.tsx'
 import { makeLazyRoute } from './lazy-route.tsx'
 
 export { makeLazyRoute }
@@ -55,3 +55,7 @@ const routes: RouteObject[] = [
 ]
 
 export const router = createBrowserRouter(routes)
+
+// Load every routed view immediately, in parallel with startup. The import
+// cache makes this a no-op for modules a lazy route already pulled in.
+preloadRoutes()
