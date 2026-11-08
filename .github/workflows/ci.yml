@@ -495,10 +495,41 @@ jobs:
           fi
       - name: Bundle installer (Windows NSIS)
         if: runner.os == 'Windows'
-        run: pnpm tauri bundle --bundles nsis
+        # Same upstream download (nsis-*.zip from tauri-apps/binary-releases),
+        # same intermittent 502/504. Bounded retries, then a real failure.
+        run: |
+          for attempt in 1 2 3 4; do
+            if pnpm tauri bundle --bundles nsis; then
+              exit 0
+            fi
+            if [ "$attempt" = 4 ]; then
+              echo "::error::NSIS bundling failed after 4 attempts (upstream tauri-apps/binary-releases was returning 502/504 in earlier runs)"
+              exit 1
+            fi
+            echo "::warning::bundling failed (attempt $attempt/4); retrying in $((attempt * 20))s"
+            sleep $((attempt * 20))
+          done
+        shell: bash
       - name: Bundle installer (Linux deb + AppImage)
         if: runner.os == 'Linux'
-        run: pnpm tauri bundle --bundles deb,appimage
+        # `tauri bundle` downloads AppRun from tauri-apps/binary-releases, and
+        # that host intermittently answers 502/504 (observed 2026-11-08 on
+        # several runs). The download is retried here with a bounded backoff;
+        # if the host stays down the step still fails, so a packaging failure is
+        # never reported as a pass. The three retries are enough to ride out the
+        # short blips seen so far, which lasted seconds to a couple of minutes.
+        run: |
+          for attempt in 1 2 3 4; do
+            if pnpm tauri bundle --bundles deb,appimage; then
+              exit 0
+            fi
+            if [ "$attempt" = 4 ]; then
+              echo "::error::AppImage/deb bundling failed after 4 attempts (upstream tauri-apps/binary-releases was returning 502/504 in earlier runs)"
+              exit 1
+            fi
+            echo "::warning::bundling failed (attempt $attempt/4); retrying in $((attempt * 20))s"
+            sleep $((attempt * 20))
+          done
       - name: Install Xvfb and the desktop-file validator (Linux)
         if: runner.os == 'Linux'
         # x11-utils provides xdpyinfo, which the verification script uses to
