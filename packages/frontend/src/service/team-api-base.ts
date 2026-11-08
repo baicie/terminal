@@ -8,6 +8,13 @@ import type {
 /** A hung request is aborted after this long instead of blocking a sync forever. */
 export const TEAM_API_TIMEOUT_MS = 15_000
 
+/** The exact server + identity a request is sent as. */
+export interface TeamApiContext {
+  endpoint: string
+  apiToken: string
+  userId: string
+}
+
 export class TeamApiBase {
   protected endpoint = ''
   protected apiToken = ''
@@ -17,6 +24,31 @@ export class TeamApiBase {
     this.endpoint = endpoint.replace(/\/$/, '')
     this.apiToken = apiToken
     this.userId = userId
+  }
+
+  /** The configuration currently in effect, for one immutable round. */
+  context(): TeamApiContext {
+    return {
+      endpoint: this.endpoint,
+      apiToken: this.apiToken,
+      userId: this.userId,
+    }
+  }
+
+  /**
+   * A client that keeps `context` for its whole life.
+   *
+   * The singleton is shared by every feature, and `configure()` can run while a
+   * paginated sync is between two pages. A round must never read page 2 from the
+   * server that answered page 1 with a different token or identity, so it takes
+   * this copy at the start and sends every request of the round through it.
+   */
+  forContext(context: TeamApiContext): this {
+    const copy = new (this.constructor as new () => this)()
+    copy.endpoint = context.endpoint.replace(/\/$/, '')
+    copy.apiToken = context.apiToken
+    copy.userId = context.userId
+    return copy
   }
 
   isConfigured(): boolean {

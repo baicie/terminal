@@ -38,6 +38,14 @@ vi.mock('@/service/team-api', () => ({
     pushChanges: mocks.pushChanges,
     resolveConflict: mocks.resolveConflict,
     getShare: mocks.getShare,
+    // A sync round takes an immutable copy; in these tests it is the same mocks.
+    forContext: () => ({
+      checkConflicts: mocks.checkConflicts,
+      getChanges: mocks.getChanges,
+      pushChanges: mocks.pushChanges,
+      resolveConflict: mocks.resolveConflict,
+      getShare: mocks.getShare,
+    }),
   },
 }))
 
