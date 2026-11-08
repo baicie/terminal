@@ -98,8 +98,16 @@
   `FINGERPRINT_PATHS`），因此证据指纹与最终 HEAD 一致，门禁在最终 HEAD 仍是 0 problem。
 - 证据内容：SSH 矩阵 11/11、shell 交互 14/14 + SSH 7/7、release SSH 8/8、
   冷启动 7420/4145/3996 ms、prompt rerun 标记就绪。
-- 最终 CI：证据提交后的 `feat/phase9-8-integration` HEAD 上运行，结果见
-  PR #16 的检查页（不在本文件内伪造结论）。
+- 最终 CI：[`42467723921`](https://github.com/baicie/terminal/actions/runs/42467723921)
+  （`eb8cc55`，证据 + 预算调整后的 HEAD）：**9/11 success**，包括 `Repository gates`、
+  Frontend、Rust、Team Server、cargo/npm 审计与 **Tauri build (macos-latest)**。
+  `Tauri build (ubuntu-latest)` 与 `(windows-latest)` 失败于打包阶段下载
+  `tauri-apps/binary-releases` 的 `AppRun-x86_64` / `nsis-3.11.zip` 返回 **HTTP 504**；
+  本机 `curl` 同样得到 504，属于上游资产故障，不是代码回归（编译阶段已通过，
+  仅打包工具下载失败）。判定 `BLOCKED_EXTERNAL`，不冒充全绿。
+- Upgrade E2E：[`42466709309`](https://github.com/baicie/terminal/actions/runs/42466709309)
+  （`18533d1`）**6/6 success**：macOS dev.1→dev.2、macOS 当前版本升级与恢复、
+  Linux DEB、Windows 隔离预检、macOS updater runtime、Linux AppImage 替换。
 - 各 WP 的 Draft PR 上 `Repository gates` 会因证据指纹变化而失败：证据是在集成 HEAD
   上重采的，单分支不各自重采（避免 5 次 25 分钟矩阵）。这属于“证据绑定代码身份”
   的预期行为，不是代码回归。

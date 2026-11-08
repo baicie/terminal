@@ -680,6 +680,9 @@ pnpm add <package-name>
 - ✅ **集成与审查**：PR #16 合并六个 WP；PR #9 审查判定 `REQUEST_CHANGES`（同步错误无 UI 提示），已在集成修复（Teams 错误横幅 + 重试）。
 - ✅ 证据：矩阵 `42464747336` 3/3，指纹 `df379960…`（debug `223989bc…`、release `a290c36b…`），门禁 0 problem。
 - 🟡 真实 GUI 截图 NOT_RUN（无 Screen Recording 权限）；`-R` 打包产品实机、Windows sshd fixture 仍 NOT_RUN。
+- 🟡 最终 CI `42467723921`（`eb8cc55`）**9/11**：Linux/Windows Tauri 打包因
+  `tauri-apps/binary-releases` 资产 504 失败（本机 curl 复现，BLOCKED_EXTERNAL）；
+  macOS 打包与其余 8 个 job 全绿。Upgrade E2E `42466709309` **6/6 success**。
 
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
