@@ -28,6 +28,9 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
+import { useSafePaste } from './use-safe-paste'
+import { PasteConfirmDialog } from './paste-confirm-dialog'
+import type { PasteConfirmRequest } from './paste-confirm-dialog'
 
 interface TerminalContextMenuProps {
   /** xterm 实例，用于读取选中内容、写入数据 */
@@ -52,6 +55,26 @@ export function TerminalContextMenu({
 }: TerminalContextMenuProps) {
   const { t } = useTranslation()
   const restoreFocusRef = React.useRef(true)
+  const [pasteRequest, setPasteRequest] =
+    React.useState<PasteConfirmRequest | null>(null)
+  const pasteResolver = React.useRef<((accepted: boolean) => void) | null>(null)
+
+  const askPasteConfirm = React.useCallback(
+    (request: PasteConfirmRequest) =>
+      new Promise<boolean>(resolve => {
+        pasteResolver.current = resolve
+        setPasteRequest(request)
+      }),
+    [],
+  )
+
+  const resolvePaste = React.useCallback((accepted: boolean) => {
+    pasteResolver.current?.(accepted)
+    pasteResolver.current = null
+    setPasteRequest(null)
+    // The dialog steals focus; put the caret back where the user was typing.
+    restoreFocusRef.current = true
+  }, [])
 
   const handleCopy = React.useCallback(async () => {
     if (!term) return
@@ -67,19 +90,10 @@ export function TerminalContextMenu({
     }
   }, [term, t])
 
+  const paste = useSafePaste(term, { confirm: askPasteConfirm })
   const handlePaste = React.useCallback(async () => {
-    if (!term) return
-    try {
-      const text = await navigator.clipboard.readText()
-      if (!text) {
-        toast.warning(t('terminal.pasteEmpty'))
-        return
-      }
-      term.paste(text)
-    } catch {
-      toast.error(t('terminal.pasteEmpty'))
-    }
-  }, [term, t])
+    await paste()
+  }, [paste])
 
   const handleSelectAll = React.useCallback(() => {
     term?.selectAll()
@@ -95,6 +109,8 @@ export function TerminalContextMenu({
   }, [onOpenSearch])
 
   return (
+    <>
+    <PasteConfirmDialog request={pasteRequest} onResolve={resolvePaste} />
     <ContextMenu
       onOpenChange={open => {
         if (open) restoreFocusRef.current = true
@@ -155,6 +171,7 @@ export function TerminalContextMenu({
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
+    </>
   )
 }
 

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { getCommandHistory, searchSnippets } from '@/service/database'
 import { useHostStore } from '@/store/host'
 import { fuzzyMatch, fuzzyScore } from './command-palette-utils'
+import { rankHosts } from './host-ranking'
 import type { SearchResult } from './command-palette-types'
 
 export function usePaletteSearchers() {
@@ -12,66 +13,35 @@ export function usePaletteSearchers() {
   const hosts = useHostStore(state => state.hosts)
   const searchHosts = useCallback(
     (query: string): SearchResult[] => {
-      const targets = hosts.slice(0, 20)
-      if (!query)
-        return targets.map(host => ({
-          id: host.id,
-          type: 'host' as const,
-          title: host.name,
-          description: `${host.username}@${host.hostname}:${host.port}`,
-          hint: t('cmdPalette.openSftpHint'),
-          icon: <Server className="size-4" />,
-          data: host,
-          score: 0,
-        }))
-      return targets
-        .filter(host =>
-          fuzzyMatch(
-            query,
-            `${host.name} ${host.hostname} ${host.username} ${host.tags?.join(' ') ?? ''}`.toLowerCase(),
-          ),
-        )
-        .map(host => ({
-          id: host.id,
-          type: 'host' as const,
-          title: host.name,
-          description: `${host.username}@${host.hostname}:${host.port}`,
-          hint: t('cmdPalette.openSftpHint'),
-          icon: <Server className="size-4" />,
-          data: host,
-          score: fuzzyScore(
-            query,
-            `${host.name} ${host.hostname} ${host.username}`,
-          ),
-        }))
-        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-        .slice(0, 10)
+      // Rank the *whole* host list, then limit what is displayed. Truncating
+      // first made every host past the 20th unreachable (Phase 10 audit B1).
+      return rankHosts(hosts, query, { limit: 10 }).map(entry => ({
+        id: entry.host.id,
+        type: 'host' as const,
+        title: entry.host.name,
+        description: `${entry.host.username}@${entry.host.hostname}:${entry.host.port}`,
+        hint: t('cmdPalette.openSftpHint'),
+        icon: <Server className="size-4" />,
+        data: entry.host,
+        score: entry.score,
+      }))
     },
     [hosts, t],
   )
   const sftpActions = useCallback(
     (query: string): SearchResult[] => {
       if (!query && hosts.length === 0) return []
-      const targets = hosts.slice(0, 20)
-      const filtered = query
-        ? targets.filter(
-            host =>
-              fuzzyMatch(query, host.name) || fuzzyMatch(query, host.hostname),
-          )
-        : targets
-      return filtered
-        .map(host => ({
-          id: `sftp-${host.id}`,
-          type: 'sftp' as const,
-          title: t('cmdPalette.openSftpSession', { host: host.name }),
-          description: `${host.username}@${host.hostname}:${host.port}`,
-          hint: t('cmdPalette.openSftpHint'),
-          icon: <FileUp className="size-4" />,
-          data: { host },
-          score: query ? fuzzyScore(query, host.name) : 0,
-        }))
-        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-        .slice(0, 10)
+      // Same rule as the host searcher: rank everything, then limit.
+      return rankHosts(hosts, query, { limit: 10 }).map(entry => ({
+        id: `sftp-${entry.host.id}`,
+        type: 'sftp' as const,
+        title: t('cmdPalette.openSftpSession', { host: entry.host.name }),
+        description: `${entry.host.username}@${entry.host.hostname}:${entry.host.port}`,
+        hint: t('cmdPalette.openSftpHint'),
+        icon: <FileUp className="size-4" />,
+        data: { host: entry.host },
+        score: entry.score,
+      }))
     },
     [hosts, t],
   )

@@ -63,12 +63,22 @@ export function ShortcutsSettings() {
           id,
         )
         if (conflictingShortcut) {
+          // The service refuses the change as well; say so and keep recording off
+          // rather than showing a binding that was never applied.
           toast.warning(
             `${t('settings.shortcuts.conflictWith')} "${conflictingShortcut.name}"`,
           )
+          setRecordingId(null)
+          reload()
+          return
         }
 
-        shortcutsService.updateShortcut(id, { keys: parsed })
+        if (!shortcutsService.updateShortcut(id, { keys: parsed })) {
+          toast.error(t('settings.saveFailed'))
+          setRecordingId(null)
+          reload()
+          return
+        }
         setRecordingId(null)
         reload()
       }

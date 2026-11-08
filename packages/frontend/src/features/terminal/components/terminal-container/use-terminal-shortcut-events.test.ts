@@ -101,15 +101,23 @@ describe('handleXtermShortcut', () => {
 
   it('lets a remapped Ctrl binding run as an application command', () => {
     const search = shortcutsService.getShortcutByAction('search-terminal')!
-    shortcutsService.updateShortcut(search.id, { keys: ['Ctrl', 'L'] })
+    // Ctrl+L already belongs to Clear Terminal; a remap onto a bound key is now
+    // refused, so this uses a combination nothing else holds.
+    expect(
+      shortcutsService.updateShortcut(search.id, { keys: ['Ctrl', 'Shift', 'F'] }),
+    ).toBe(true)
     const listener = vi.fn()
     const removeListener = shortcutsService.addListener(listener)
 
-    expect(handleXtermShortcut(keydown('l', { ctrlKey: true }), true)).toBe(
-      false,
-    )
+    expect(
+      handleXtermShortcut(
+        keydown('f', { ctrlKey: true, shiftKey: true }),
+        true,
+      ),
+    ).toBe(false)
     expect(listener).toHaveBeenCalledWith('search-terminal')
     removeListener()
+    shortcutsService.resetToDefault()
   })
 })
 

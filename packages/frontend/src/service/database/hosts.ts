@@ -3,8 +3,35 @@
  */
 import type { Host } from '@/types'
 import { hostRowToHost } from '@/store/host-mappers'
+import { splitHostSecrets } from '@/service/credential-boundary'
+import { vaultSecretProvider } from '@/service/vault-secret-provider'
 import { executeQuery, select } from './connection'
 import type { HostRecord } from './types'
+
+/**
+ * Persist a host's secrets to the vault and return the reference to store on the
+ * row.
+ *
+ * The row must never carry the value: `password`, `private_key` and `certificate`
+ * are written as NULL unconditionally, and the reference is what tells a later
+ * connection where to look. A host with no secrets gets a NULL reference, which is
+ * a valid state (agent authentication, or a password asked at connect time).
+ *
+ * The secrets are written before the row is committed, so a failure to store them
+ * fails the save instead of leaving a row whose reference points at nothing.
+ */
+async function persistHostSecrets(host: {
+  id: string
+  password?: string | null
+  privateKey?: string | null
+  passphrase?: string | null
+}): Promise<string | null> {
+  const { ref, secrets } = splitHostSecrets(host)
+  for (const secret of secrets) {
+    await vaultSecretProvider.write(host.id, secret.kind, secret.value)
+  }
+  return ref === null ? null : JSON.stringify(ref)
+}
 
 export async function getHosts(): Promise<Host[]> {
   const rows = await select<HostRecord>('SELECT * FROM hosts ORDER BY name')
@@ -23,9 +50,14 @@ export async function createHost(
   host: Omit<Host, 'createdAt' | 'updatedAt'>,
 ): Promise<void> {
   const now = Date.now()
+  const credentialRef = await persistHostSecrets({
+    id: host.id,
+    password: host.password,
+    privateKey: host.privateKey,
+  })
   await executeQuery(
-    `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, shell_integration, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, credential_ref, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, shell_integration, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       host.id,
       host.name,
@@ -33,9 +65,9 @@ export async function createHost(
       host.port,
       host.username,
       host.authType,
-      host.password ?? null,
-      host.privateKey ?? null,
+      // A certificate is public material; it stays on the row.
       host.certificate ?? null,
+      credentialRef,
       host.groupId ?? null,
       host.isFavorite ? 1 : 0,
       host.color ?? null,
@@ -58,17 +90,26 @@ export async function updateHost(
   updates: Partial<Host>,
 ): Promise<void> {
   const now = Date.now()
+  // Only touches secrets when the update actually carries one; an unrelated edit
+  // (rename, colour) must not blank a stored credential.
+  const hasSecrets = Boolean(updates.password || updates.privateKey)
+  const credentialRef = hasSecrets
+    ? await persistHostSecrets({
+        id,
+        password: updates.password,
+        privateKey: updates.privateKey,
+      })
+    : undefined
   await executeQuery(
-    `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, certificate = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?`,
+    `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = COALESCE(?, credential_ref), group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?`,
     [
       updates.name,
       updates.hostname,
       updates.port,
       updates.username,
       updates.authType,
-      updates.password ?? null,
-      updates.privateKey ?? null,
       updates.certificate ?? null,
+      credentialRef ?? null,
       updates.groupId ?? null,
       updates.isFavorite !== undefined
         ? updates.isFavorite
