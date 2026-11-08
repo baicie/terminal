@@ -3,7 +3,7 @@ import { createBrowserRouter } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { RouteErrorBoundary } from '@/components/error-boundary'
 import Layout from '../layout'
-import { buildRoutes } from './route-table.tsx'
+import { buildRoutes } from './nav-config.tsx'
 import { makeLazyRoute } from './lazy-route.tsx'
 
 export { makeLazyRoute }

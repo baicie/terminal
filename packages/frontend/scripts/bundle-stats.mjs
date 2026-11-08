@@ -64,7 +64,12 @@ const budgets = {
   // 589 KB (was 588 KB): Phase 9.8 adds the Teams sync-error banner (six locale
   // strings plus the Alert already shipped with Hosts) and the SFTP "unknown
   // mtime" dash. No new dependency or view; the measured total was 588.31 KB.
-  totalGzip: 589 * 1024,
+  //
+  // 593 KB (was 589 KB): Phase 10 adds the credential boundary and vault provider,
+  // the paste policy + confirm dialog, the OpenSSH importer, host ranking, and the
+  // shortcut persistence layer, plus five locale strings in three languages.
+  // No new dependency. Measured total 591.42 KB; 593 leaves ~1.5 KB of headroom.
+  totalGzip: 593 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

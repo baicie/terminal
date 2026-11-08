@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { getNavItemsByTier, getVisibleNavItems } from './nav-config'
-import { buildRoutes } from './route-table'
+import { buildRoutes } from './nav-config'
 
 describe('navigation tiers', () => {
   it('keeps terminal, hosts and SFTP as the primary tier', () => {

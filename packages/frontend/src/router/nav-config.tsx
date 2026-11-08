@@ -16,12 +16,14 @@ import {
   Shield,
   Users,
 } from 'lucide-react'
+import type { RouteObject } from 'react-router-dom'
+import { getRouteElement, lazyRoute } from './view-route-elements'
 import { navTierOf } from './nav-tier'
 import type { NavTier } from './nav-tier'
 
 export type { NavTier } from './nav-tier'
 
-export const SHOW_EXPERIMENTS =
+const SHOW_EXPERIMENTS =
   import.meta.env.DEV || import.meta.env.VITE_TERMINAL_SMOKE_BUILD === '1'
 
 export interface NavItemConfig {
@@ -32,10 +34,14 @@ export interface NavItemConfig {
   sidebar?: boolean
   /** 条件显示（如 IS_DEV、team 模式），返回 true 则显示 */
   condition?: () => boolean
+  /**
+   * Sidebar placement. Presentational only: every route keeps working, advanced
+   * items are still listed, just below the daily ones (Phase 10 M3).
+   */
   tier?: NavTier
 }
 
-export const primaryNavConfig: NavItemConfig[] = [
+const primaryNavConfig: NavItemConfig[] = [
   {
     path: '/hosts',
     labelKey: 'nav.hosts',
@@ -120,3 +126,57 @@ export function getVisibleNavItems(): NavItemConfig[] {
 export function getNavItemsByTier(tier: NavTier): NavItemConfig[] {
   return getVisibleNavItems().filter(item => navTierOf(item) === tier)
 }
+
+/**
+ * 导出给路由用的完整 RouteObject 列表
+ */
+export function buildRoutes(): RouteObject[] {
+  const routes: RouteObject[] = [
+    {
+      // Terminal first: opening the app must land on something you can type in,
+      // not on a host management table (Phase 10 audit C1/C2).
+      //
+      // The element is deliberately null: the terminal is rendered by the layout's
+      // always-mounted `TerminalByUrl`. A route that rendered it would mount a
+      // second TerminalContainer for the same tab id (see router/index.tsx).
+      index: true,
+      element: null,
+    },
+    ...primaryNavConfig.map(item => ({
+      path: item.path.replace('/', ''),
+      element: getRouteElement(item.path),
+    })),
+  ]
+
+  // Experiments 子页面
+  if (SHOW_EXPERIMENTS) {
+    routes.push(
+      {
+        path: 'experiments',
+        element: lazyRoute(() => import('@/experiments/index')),
+      },
+      {
+        path: 'experiments/textarea-test',
+        element: lazyRoute(() => import('@/experiments/textarea-test')),
+      },
+      {
+        path: 'experiments/xterm-test',
+        element: lazyRoute(() => import('@/experiments/xterm-test')),
+      },
+      {
+        path: 'experiments/terminal-input-probe',
+        element: lazyRoute(() => import('@/experiments/terminal-input-probe')),
+      },
+    )
+  }
+
+  return routes
+}
+
+
+// 注意：故意没有 '/terminal' 分支。
+// 终端路由由 router/index.tsx 写死为 <TerminalRoute /> → null，
+// 实际渲染走 layout 内常驻的 <TerminalByUrl />，这样切换路由时
+// 终端实例不会被 Outlet 销毁，可在后台继续保持连接。
+// 同时 navConfig 数组里也没有 '/terminal'，所以这个 switch case
+// 永远到不了，曾经存在的分支是死代码并触发 INEFFECTIVE_DYNAMIC_IMPORT。
