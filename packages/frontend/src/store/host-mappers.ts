@@ -73,11 +73,15 @@ export function hostRowToHost(row: HostRow): Host {
     port: row.port,
     username: row.username,
     authType: row.auth_type as AuthType,
-    // Secrets are never read back into the store: the vault holds them and the
-    // reference says which kinds exist. A row that still has a plaintext value is
-    // pre-migration data; it is deliberately not surfaced here, so no code path
-    // can start using it again by accident.
+    // The reference says which secrets the vault holds.
     credentialRef: parseCredentialRef(row.credential_ref),
+    // Legacy plaintext is still read, and must be until the migration has run:
+    // ignoring it would leave every host saved by an older build unable to
+    // connect, which is a worse outcome than the plaintext it replaces. New
+    // writes never produce these values (see hosts.ts), so the only rows that
+    // have them are pre-migration ones - and the migration clears them.
+    password: row.password ?? undefined,
+    privateKey: row.private_key ?? undefined,
     certificate: row.certificate ?? undefined,
     groupId: row.group_id ?? undefined,
     isFavorite: row.is_favorite === 1,

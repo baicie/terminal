@@ -177,6 +177,45 @@ describe('the UI write path never puts a secret in SQLite', () => {
   })
 })
 
+describe('legacy rows stay usable until the migration runs', () => {
+  it('reads a pre-migration plaintext secret so the host still connects', async () => {
+    // Ignoring these would leave every host saved by an older build unable to
+    // connect, which is worse than the plaintext it would remove. The boundary is
+    // the write path; the read path stays compatible until migration clears them.
+    mocks.select.mockResolvedValue([
+      {
+        id: 'legacy-1',
+        name: 'legacy',
+        hostname: 'legacy.example.test',
+        port: 22,
+        username: 'alice',
+        auth_type: 'password',
+        password: 'legacy-plaintext',
+        private_key: null,
+        certificate: null,
+        credential_ref: null,
+        group_id: null,
+        is_favorite: 0,
+        color: null,
+        tags: null,
+        port_forwards: '[]',
+        startup_command: null,
+        environment: null,
+        jump_host_id: null,
+        jump_host_auth_type: null,
+        agent_forwarding: 0,
+        shell_integration: 'off',
+        created_at: 0,
+        updated_at: 0,
+      },
+    ])
+    await useHostStore.getState().loadHosts()
+    const host = useHostStore.getState().hosts[0]
+    expect(host.password).toBe('legacy-plaintext')
+    expect(host.credentialRef).toBeNull()
+  })
+})
+
 describe('the store does not keep secrets in memory after a reload', () => {
   it('getHosts returns metadata and a reference, never a plaintext secret', async () => {
     mocks.select.mockResolvedValue([
