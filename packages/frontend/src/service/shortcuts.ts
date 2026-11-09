@@ -29,6 +29,14 @@ export const memoryOnlyShortcutStorage: ShortcutStorage = {
 export { builtInActions, defaultShortcuts }
 export type { Shortcut, ShortcutAction } from './shortcut-types'
 
+/** How the last write went, so the UI can say so. */
+export type ShortcutPersistStatus = 'idle' | 'pending' | 'saved' | 'failed'
+
+export interface ShortcutPersistState {
+  status: ShortcutPersistStatus
+  error: string | null
+}
+
 export class ShortcutsService {
   // Deep copies: the defaults are a module-level constant, and a shallow copy
   // would let one service instance mutate the shared objects (which then leaks
@@ -41,6 +49,10 @@ export class ShortcutsService {
   private storage: ShortcutStorage = memoryOnlyShortcutStorage
   /** Bumped on every change so a stale in-flight load cannot overwrite it. */
   private revision = 0
+  /** Tail of the write chain: every save waits for the previous one. */
+  private writeChain: Promise<void> = Promise.resolve()
+  private persistState: ShortcutPersistState = { status: 'idle', error: null }
+  private persistListeners: Array<(state: ShortcutPersistState) => void> = []
 
   /** Attach the persistent backend. Call once at startup, before `hydrate()`. */
   useStorage(storage: ShortcutStorage): void {
@@ -92,7 +104,59 @@ export class ShortcutsService {
    */
   private async persist(): Promise<void> {
     this.revision += 1
-    await this.storage.save(this.getShortcuts())
+    this.setPersistState({ status: 'pending', error: null })
+
+    // Serialise writes. Letting two saves run at once means the slower one can
+    // land last and leave the database holding a binding the user already
+    // changed away from.
+    const write = this.writeChain.then(async () => {
+      try {
+        await this.storage.save(this.getShortcuts())
+        this.setPersistState({ status: 'saved', error: null })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.setPersistState({ status: 'failed', error: message })
+        // The in-memory binding keeps what the user chose; the state says the
+        // write did not land, so the UI can offer a retry instead of pretending.
+        throw error
+      }
+    })
+    // The chain must not stay rejected, or every later write would be skipped.
+    this.writeChain = write.catch(() => undefined)
+    await write
+  }
+
+  getPersistState(): ShortcutPersistState {
+    return { ...this.persistState }
+  }
+
+  onPersistStateChange(
+    listener: (state: ShortcutPersistState) => void,
+  ): () => void {
+    this.persistListeners.push(listener)
+    return () => {
+      const index = this.persistListeners.indexOf(listener)
+      if (index !== -1) this.persistListeners.splice(index, 1)
+    }
+  }
+
+  private setPersistState(state: ShortcutPersistState): void {
+    this.persistState = state
+    this.persistListeners.forEach(listener => listener({ ...state }))
+  }
+
+  /** Re-runs the last write; used by the UI's retry action. */
+  async retryPersist(): Promise<boolean> {
+    try {
+      await this.persist()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  getShortcutById(id: string): Shortcut | undefined {
+    return this.shortcuts.find(shortcut => shortcut.id === id)
   }
 
   private notifyChange(): void {
@@ -132,9 +196,10 @@ export class ShortcutsService {
       }
     }
     this.shortcuts[index] = { ...this.shortcuts[index], ...updates }
-    void this.persist().catch(error =>
-      console.error('Shortcut change was not saved.', error),
-    )
+    // Reported through `getPersistState()`, not only the console: a binding the
+    // user thinks they saved must not silently fail to persist.
+    void this.persist().catch(() => undefined)
+    this.notifyChange()
     return true
   }
 
@@ -181,9 +246,8 @@ export class ShortcutsService {
       ...shortcut,
       keys: [...shortcut.keys],
     }))
-    void this.persist().catch(error =>
-      console.error('Resetting shortcuts was not saved.', error),
-    )
+    void this.persist().catch(() => undefined)
+    this.notifyChange()
   }
 
   /** Maps Command to the shared Ctrl binding on macOS. */
@@ -249,9 +313,7 @@ export class ShortcutsService {
       )
       if (!valid) return false
       this.shortcuts = this.mergeWithDefaults(shortcuts)
-      void this.persist().catch(error =>
-        console.error('Imported shortcuts were not saved.', error),
-      )
+      void this.persist().catch(() => undefined)
       this.notifyChange()
       return true
     } catch {

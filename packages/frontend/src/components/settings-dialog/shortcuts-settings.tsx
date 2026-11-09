@@ -178,6 +178,7 @@ export function ShortcutsSettings() {
               onStartRecord={startRecord}
               onStopRecord={stopRecord}
               onReset={() => handleReset(shortcut.id)}
+              onChange={reload}
               t={t}
             />
           ))

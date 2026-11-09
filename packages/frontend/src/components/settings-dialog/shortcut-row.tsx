@@ -9,6 +9,9 @@ interface ShortcutRowProps {
   onStartRecord: (id: string) => void
   onStopRecord: () => void
   onReset: () => void
+  /** Called after a change so the list re-reads the service; without it the
+   *  enable/disable button toggled the service but the row kept the old label. */
+  onChange: () => void
   t: (key: string) => string
 }
 
@@ -19,6 +22,7 @@ export function ShortcutRow({
   onStartRecord,
   onStopRecord,
   onReset,
+  onChange,
   t,
 }: ShortcutRowProps) {
   const isThisRecording = isRecording && recordingId === shortcut.id
@@ -58,11 +62,14 @@ export function ShortcutRow({
           variant="ghost"
           size="sm"
           className="h-7 px-2 text-xs"
-          onClick={() =>
+          onClick={() => {
             shortcutsService.updateShortcut(shortcut.id, {
               enabled: !shortcut.enabled,
             })
-          }
+            // The service holds the truth; the row must re-read it or the label
+            // stays on the old state until something else re-renders the list.
+            onChange()
+          }}
         >
           {shortcut.enabled
             ? t('settings.shortcuts.enabled')
