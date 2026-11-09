@@ -1,5 +1,33 @@
 import type { AuthType, Group, Host, ShellIntegrationMode } from '@/types'
 
+/**
+ * Parses the `credential_ref` column.
+ *
+ * A malformed value is treated as "no reference" rather than throwing: a broken
+ * pointer must not make the host list unreadable. It also must not be silently
+ * turned into a *valid* reference, which would claim secrets exist that do not.
+ */
+function parseCredentialRef(
+  raw: string | null | undefined,
+): import('@/service/credential-boundary').CredentialRef | null {
+  if (raw === null || raw === undefined || raw === '') return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (parsed === null || typeof parsed !== 'object') return null
+    const kindList = (parsed as { kinds?: unknown }).kinds
+    const provider = (parsed as { provider?: unknown }).provider
+    if (!Array.isArray(kindList) || provider !== 'vault') return null
+    const kinds = kindList.filter(
+      (kind): kind is 'password' | 'privateKey' | 'passphrase' =>
+        kind === 'password' || kind === 'privateKey' || kind === 'passphrase',
+    )
+    if (kinds.length === 0) return null
+    return { kinds, provider: 'vault' }
+  } catch {
+    return null
+  }
+}
+
 export interface HostRow {
   id: string
   name: string
@@ -9,6 +37,7 @@ export interface HostRow {
   auth_type: string
   password: string | null
   private_key: string | null
+  credential_ref?: string | null
   certificate: string | null
   group_id: string | null
   is_favorite: number
@@ -43,8 +72,11 @@ export function hostRowToHost(row: HostRow): Host {
     port: row.port,
     username: row.username,
     authType: row.auth_type as AuthType,
-    password: row.password ?? undefined,
-    privateKey: row.private_key ?? undefined,
+    // Secrets are never read back into the store: the vault holds them and the
+    // reference says which kinds exist. A row that still has a plaintext value is
+    // pre-migration data; it is deliberately not surfaced here, so no code path
+    // can start using it again by accident.
+    credentialRef: parseCredentialRef(row.credential_ref),
     certificate: row.certificate ?? undefined,
     groupId: row.group_id ?? undefined,
     isFavorite: row.is_favorite === 1,

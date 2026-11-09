@@ -141,7 +141,10 @@ describe('updateHost keeps secrets out of SQLite', () => {
     // No secret in the update: the vault is not written and the reference is
     // left alone by COALESCE(?, credential_ref).
     expect(mocks.vaultWrite).not.toHaveBeenCalled()
-    expect(statementText()).toMatch(/credential_ref = COALESCE\(\?, credential_ref\)/)
+    // "no secret in this update" keeps the existing reference: the CASE marker
+    // says keep, and the CASE only clears when that marker is the empty string.
+    expect(statementText()).toMatch(/CASE WHEN \? = '' THEN NULL ELSE COALESCE/)
+    expect(parameters()).toContain('keep')
     expect(parameters()[parameters().length - 1]).toBe('host-1')
   })
 })

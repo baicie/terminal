@@ -3,6 +3,7 @@ import { writeTextFile } from '@tauri-apps/plugin-fs'
 import { getUserProfile, selectStrict } from '@/service/database'
 import { getKnownHosts } from '@/service/database/known-hosts'
 import { getSSHKeys } from '@/service/database/ssh-keys'
+import { sanitizeHostRow, sanitizeSshKeyRow } from './export-sanitize'
 import {
   getWorkspaceLayout,
   getWorkspaces,
@@ -67,13 +68,17 @@ export async function collectExportData(
     exportedAt: Date.now(),
     exportedBy: userProfile?.id,
     type: 'full',
-    hosts,
+    // Whitelisted, not `SELECT *`: the rows above may still carry pre-migration
+    // plaintext, and a column added later must not leak by default.
+    hosts: hosts.map(sanitizeHostRow),
     groups,
     snippets,
     snippetPackages,
     workspaces,
     workspaceLayouts,
-    sshKeys,
+    sshKeys: sshKeys.map(key =>
+      sanitizeSshKeyRow(key as unknown as Record<string, unknown>),
+    ),
     knownHosts,
     settings,
     ...(includeTeam && userProfile

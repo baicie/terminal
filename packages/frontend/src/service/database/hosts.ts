@@ -27,6 +27,16 @@ async function persistHostSecrets(host: {
   passphrase?: string | null
 }): Promise<string | null> {
   const { ref, secrets } = splitHostSecrets(host)
+  if (secrets.length === 0) return null
+
+  // Fail before touching anything if the vault cannot take the secret. Saying
+  // "saved" while the secret only exists in memory is how a user ends up unable
+  // to reconnect after a restart.
+  if (!(await vaultSecretProvider.isAvailable())) {
+    throw new Error(
+      'This host has a password or private key, but the vault is locked. Unlock the vault to save it, or connect with an SSH agent or a password typed at connect time instead.',
+    )
+  }
   for (const secret of secrets) {
     await vaultSecretProvider.write(host.id, secret.kind, secret.value)
   }
@@ -93,6 +103,17 @@ export async function updateHost(
   // Only touches secrets when the update actually carries one; an unrelated edit
   // (rename, colour) must not blank a stored credential.
   const hasSecrets = Boolean(updates.password || updates.privateKey)
+  const clearing = updates.clearCredential === true
+  if (clearing && hasSecrets) {
+    // "Clear" and "set a new one" in the same call is a caller bug, and guessing
+    // which one wins could delete a credential the user just typed.
+    throw new Error('A host update cannot both clear and set a credential')
+  }
+  if (clearing) {
+    for (const kind of ['password', 'privateKey', 'passphrase'] as const) {
+      await vaultSecretProvider.remove(id, kind)
+    }
+  }
   const credentialRef = hasSecrets
     ? await persistHostSecrets({
         id,
@@ -101,7 +122,7 @@ export async function updateHost(
       })
     : undefined
   await executeQuery(
-    `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = COALESCE(?, credential_ref), group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?`,
+    `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = CASE WHEN ? = '' THEN NULL ELSE COALESCE(?, credential_ref) END, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?`,
     [
       updates.name,
       updates.hostname,
@@ -109,6 +130,9 @@ export async function updateHost(
       updates.username,
       updates.authType,
       updates.certificate ?? null,
+      // 1st placeholder: the CASE marker ('' means "clear").
+      clearing ? '' : 'keep',
+      // 2nd placeholder: the new reference, or NULL when there is none.
       credentialRef ?? null,
       updates.groupId ?? null,
       updates.isFavorite !== undefined

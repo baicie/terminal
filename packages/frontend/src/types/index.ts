@@ -36,8 +36,24 @@ export interface Host {
   port: number
   username: string
   authType: AuthType
+  /**
+   * A secret typed into a form that has not been saved yet.
+   *
+   * It is never persisted: the save path moves it to the vault and stores only
+   * `credentialRef`. A host read back from the database has this undefined.
+   */
   password?: string
   privateKey?: string
+  /**
+   * Where this host's secrets live. Absent/null means "none stored" — agent
+   * authentication, or a password asked at connect time.
+   */
+  credentialRef?: import('@/service/credential-boundary').CredentialRef | null
+  /**
+   * Update-only: delete the stored credential. Distinct from "no secret in this
+   * update", which leaves the existing one alone.
+   */
+  clearCredential?: boolean
   /** SSH 证书（OpenSSH 格式 base64 字符串） */
   certificate?: string
   groupId?: string
