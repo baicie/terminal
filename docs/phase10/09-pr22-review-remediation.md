@@ -171,3 +171,49 @@ TABBY_REPLACEMENT_READY=NO
 manifest 或任何旧证据文件。`fe920f7` 是本轮源码改完后的统一冻结点。
 
 `fe920f7` 上 `12c8c39`（纯证据提交）的 CI 见 PR #22 的最终检查列表。
+
+## 12. 第二次独立审查（不是自查）
+
+第一次审查由外部提出，我据此修复；修复本身也需要被检查。第二次由独立的
+审查 agent 在完全不知道修复过程的前提下，按"逐条证伪"的方式重读源码。
+
+它的结论是：**我先前标记为 PASS 的项里有两项是错的，还漏掉三处 P1。**
+
+### 12.1 被推翻的判定
+
+| 原判定 | 实际 | 证据 |
+| --- | --- | --- |
+| `PLAIN_EXPORT_SECRET_EXCLUDED=PASS` | **不成立** | 白名单只覆盖 `sync-export.ts`；团队包导出 `sync-team.ts` 仍 `SELECT *` + `JSON.stringify`，而它有真实 UI 入口（Teams → 导出） |
+| `HOST_WRITE_PATH_UNIFIED=PASS`（作为"唯一写入方"） | **不成立** | Rust 侧 `src-tauri/src/db_import/writer.rs` 仍把 `password`/`private_key` 绑进列，且经 `sync-import.ts` 可达 |
+
+第二条尤其值得记下来：我 grep 的是前端，报告的却是"单一写入路径"这个跨语言
+结论。范围没覆盖到，结论就越界了。
+
+### 12.2 新发现的缺陷与修复
+
+| 级别 | 缺陷 | 修复 |
+| --- | --- | --- |
+| P0 | 团队包导出泄露遗留明文密码/私钥 | 两个数组套用同一白名单；摘掉修复后 3 项测试变红 |
+| P0 | 局部更新会摧毁迁移前明文凭据（`password = NULL` 无条件写） | 先读当前行合并；置空改为 `CASE WHEN ? = 1` 条件写入 |
+| P1 | `toggleFavorite` 抛 NOT NULL（本轮引入的回归） | 同上，根因是丢了 `main` 上的合并步骤 |
+| P1 | 脚本/批量执行经跳板机不带凭据 | 复用 `withResolvedCredential`；`terminal-launcher` 与 exec 路径收敛到 `resolveSessionCredential` |
+| P1 | 删除主机不清 Vault | 删行后逐个删三种 kind |
+| P2 | `vault-secret-provider` 读错错误字段（`.kind` vs `type`） | 改用 `toVaultCommandError`；补 7 项测试（此前为零） |
+
+### 12.3 已知但本轮未修
+
+| 项 | 级别 | 说明 |
+| --- | --- | --- |
+| 首次运行无法保存密码 | P1 | Vault 未创建与已锁定被映射成同一个 `false`，提示文案指向错误动作；需要区分 `uninitialized` / `locked` 并在主机对话框内提供创建入口 |
+| 新存的主机需重载列表才能连接 | P2 | store 内的副本没有 `credentialRef`；应让 `createHost` 返回 ref 或保存后重载 |
+| 损坏的 `credential_ref` 退化为"无凭据" | P2 | 解析失败返回 `null`，被当作合法空凭据；应区分"读不懂的引用"并失败 |
+| 导出/同步仍带 `syncServiceToken` | P2 | 存储服务密码随设置表整体导出；是一行白名单的距离 |
+| SSH key 的秘密无消费方 | P2 | `getSSHKeySecret` 零调用方，keychain 也没有展示/复制路径 |
+
+这几项都记在案，不声称已解决。
+
+### 12.4 一句结论
+
+第一次修复解决了"外部指出的问题"。这一次说明：**自查的覆盖率本身就是缺陷来源**——
+我验证了自己写的路径，没有验证"还有哪些路径"。第二次审查的价值不在找到了几个 bug，
+而在于它证明第一次的 PASS 是范围内的 PASS。
