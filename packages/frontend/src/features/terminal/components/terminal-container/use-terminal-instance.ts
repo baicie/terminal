@@ -5,7 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal as TerminalComponent, type ITheme } from '@baicie/xterm'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { handleXtermShortcut } from './use-terminal-shortcut-events'
-import { installPasteGate } from './paste-gate'
+import { installTerminalPasteGate } from './install-terminal-paste-gate'
 import type { PasteConfirmRequest } from './paste-confirm-dialog'
 import {
   ShellIntegrationState,
@@ -33,11 +33,7 @@ interface UseTerminalInstanceOptions {
   active: boolean
   onTitleChange?: (title: string) => void
   onShellIntegration?: (event: ShellIntegrationEvent) => void
-  /**
-   * Asks the user before a risky paste (multi-line, control characters, large).
-   * Supplied by the container so the same dialog serves the DOM gate and the
-   * context menus; when absent the paste is refused rather than sent blind.
-   */
+  /** Asks before a risky paste; absent means such a paste is refused. */
   onConfirmRiskyPaste?: (request: PasteConfirmRequest) => Promise<boolean>
 }
 
@@ -122,22 +118,8 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
       })
       .catch(error => console.warn('Failed to load ClipboardAddon:', error))
 
-    term.attachCustomKeyEventHandler(event =>
-      handleXtermShortcut(event, activeRef.current),
-    )
-
-    // Cmd/Ctrl+V, the native menu and the clipboard addon all deliver text to
-    // xterm without passing through the context menus. The gate is installed on
-    // the container so every one of those routes is judged by the same policy,
-    // and it cancels the browser paste so nothing is delivered twice.
-    const pasteGate = installPasteGate(
-      containerRef.current,
-      () => termRef.current,
-      {
-        confirm: options.onConfirmRiskyPaste ?? (async () => false),
-        onPasted: () => termRef.current?.focus(),
-      },
-    )
+    term.attachCustomKeyEventHandler(event => handleXtermShortcut(event, activeRef.current))
+    const pasteGate = installTerminalPasteGate(containerRef.current, termRef, options.onConfirmRiskyPaste)
     traceStage(
       'terminal-open-start',
       `${options.tabId}@${options.workspaceId}@${options.terminalType}`,

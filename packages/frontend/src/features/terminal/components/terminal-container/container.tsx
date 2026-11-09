@@ -1,5 +1,5 @@
 /** Main xterm container and terminal-session coordinator. */
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
 import { useIsMobile } from '@/hooks/use-breakpoint'
@@ -14,7 +14,8 @@ import {
   SshHostKeyOverlaySurface,
 } from './ssh-host-key-surfaces'
 import { PasteConfirmDialog } from './paste-confirm-dialog'
-import type { PasteConfirmRequest } from './paste-confirm-dialog'
+import { usePasteConfirm } from './use-paste-confirm'
+import { useTerminalPaneUi } from './use-terminal-pane-ui'
 import { TerminalBody } from './terminal-body'
 import { TerminalEmptyState } from './terminal-empty-state'
 import { useTerminalInstance } from './use-terminal-instance'
@@ -56,12 +57,7 @@ export function TerminalContainer({
       : undefined,
   )
   const isMobile = useIsMobile()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [toolSidebarOpen, setToolSidebarOpen] = useState(false)
-  const [shellCwd, setShellCwd] = useState<string | undefined>()
-  const [lastExitCode, setLastExitCode] = useState<number | undefined>()
+  const ui = useTerminalPaneUi()
   const remotePrompt = useRemotePromptProbe({
     tabId,
     isRemote: tab?.type === 'remote',
@@ -70,31 +66,11 @@ export function TerminalContainer({
     settings.terminalThemeDark ?? defaultSettings.terminalThemeDark
   const lightPreset =
     settings.terminalThemeLight ?? defaultSettings.terminalThemeLight
-  const activeTheme = useTerminalActivePreset({
-    appTheme,
-    dark: darkPreset,
-    light: lightPreset,
-  })
+  const activeTheme = useTerminalActivePreset({ appTheme, dark: darkPreset, light: lightPreset })
   const theme = getThemeColors(activeTheme)
   const terminalIsActive = isActive && location.pathname === '/terminal'
   const onTitleChange = useTabTitle(tabId)
-  // One dialog for every paste route: the DOM gate (Cmd/Ctrl+V, native menu) and
-  // the context menus all resolve through this promise, so a paste is never
-  // confirmed twice and never delivered twice.
-  const [pasteRequest, setPasteRequest] = useState<PasteConfirmRequest | null>(null)
-  const [pasteResolver, setPasteResolver] = useState<
-    ((accepted: boolean) => void) | null
-  >(null)
-  const confirmRiskyPaste = (request: PasteConfirmRequest) =>
-    new Promise<boolean>(resolve => {
-      setPasteRequest(request)
-      setPasteResolver(() => resolve)
-    })
-  const resolvePaste = (accepted: boolean) => {
-    pasteResolver?.(accepted)
-    setPasteResolver(null)
-    setPasteRequest(null)
-  }
+  const pasteConfirm = usePasteConfirm()
 
   const terminal = useTerminalInstance({
     tabId,
@@ -112,10 +88,10 @@ export function TerminalContainer({
       settings.allowProposedApi ?? defaultSettings.allowProposedApi,
     active: terminalIsActive,
     onTitleChange,
-    onConfirmRiskyPaste: confirmRiskyPaste,
+    onConfirmRiskyPaste: pasteConfirm.confirm,
     onShellIntegration: event => {
-      if (event.kind === 'cwd') setShellCwd(event.cwd)
-      if (event.kind === 'command-finished') setLastExitCode(event.exitCode)
+      if (event.kind === 'cwd') ui.setShellCwd(event.cwd)
+      else if (event.kind === 'command-finished') ui.setLastExitCode(event.exitCode)
       remotePrompt.onShellIntegration(event)
     },
   })
@@ -133,12 +109,11 @@ export function TerminalContainer({
     onOutput: remotePrompt.onOutput,
     onInput: event => {
       if (event?.wasUserInput === false) return
-      if (tab?.startupFallback && !tab.startupFallbackInteracted)
-        updateTab(tabId, { startupFallbackInteracted: true })
+      const pending = tab?.startupFallback && !tab.startupFallbackInteracted
+      if (pending) updateTab(tabId, { startupFallbackInteracted: true })
     },
   })
-  const { status, error, attempt, reason, retryable, write, disconnect } =
-    session
+  const { status, error, attempt, reason, retryable, write, disconnect } = session
   const { reconnectAction, hostKeyGate } = session
   const { isReady, requestFit } = terminal
 
@@ -157,25 +132,25 @@ export function TerminalContainer({
   }, [isReady, requestFit, status])
   useEffect(() => {
     if (terminalIsActive) return
-    setIsFullscreen(false)
-    setSearchOpen(false)
-    setMobileMenuOpen(false)
+    ui.setIsFullscreen(false)
+    ui.setSearchOpen(false)
+    ui.setMobileMenuOpen(false)
   }, [terminalIsActive])
 
   useTerminalShortcutEvents({
     active: terminalIsActive,
     onReconnect: reconnectAction,
     onClear: () => terminal.termInstance?.clear(),
-    onSearch: () => setSearchOpen(true),
+    onSearch: () => ui.setSearchOpen(true),
     onZoomIn: () => terminal.changeFontSize(1),
     onZoomOut: () => terminal.changeFontSize(-1),
     onResetZoom: terminal.resetFontSize,
   })
-  const longPress = useTerminalLongPress(() => setMobileMenuOpen(true))
+  const longPress = useTerminalLongPress(() => ui.setMobileMenuOpen(true))
   if (!tab) return <TerminalEmptyState />
   return (
     <>
-      <PasteConfirmDialog request={pasteRequest} onResolve={resolvePaste} />
+      <PasteConfirmDialog request={pasteConfirm.request} onResolve={pasteConfirm.resolve} />
       <div className="relative h-full">
         <TerminalBody
           tab={tab}
@@ -187,27 +162,27 @@ export function TerminalContainer({
           reconnectRetryable={retryable}
           isMobile={isMobile}
           active={terminalIsActive}
-          isFullscreen={isFullscreen}
+          isFullscreen={ui.isFullscreen}
           terminalFontSize={terminal.fontSize}
           terminalBackground={theme.background}
-          shellCwd={shellCwd}
-          lastExitCode={lastExitCode}
+          shellCwd={ui.shellCwd}
+          lastExitCode={ui.lastExitCode}
           term={terminal.termInstance}
           containerRef={terminal.containerRef}
           searchAddon={terminal.searchAddonRef.current}
-          searchOpen={searchOpen}
-          mobileMenuOpen={mobileMenuOpen}
-          onSearchOpenChange={setSearchOpen}
-          onMobileMenuOpenChange={setMobileMenuOpen}
+          searchOpen={ui.searchOpen}
+          mobileMenuOpen={ui.mobileMenuOpen}
+          onSearchOpenChange={ui.setSearchOpen}
+          onMobileMenuOpenChange={ui.setMobileMenuOpen}
           onSendKey={write}
           onFontSizeChange={terminal.changeFontSize}
           onResetFontSize={terminal.resetFontSize}
           onClear={() => terminal.termInstance?.clear()}
-          toolSidebarOpen={toolSidebarOpen}
-          onToggleToolSidebar={() => setToolSidebarOpen(current => !current)}
+          toolSidebarOpen={ui.toolSidebarOpen}
+          onToggleToolSidebar={() => ui.setToolSidebarOpen(!ui.toolSidebarOpen)}
           onReconnect={reconnectAction}
           onDisconnect={disconnect}
-          onToggleFullscreen={() => setIsFullscreen(current => !current)}
+          onToggleFullscreen={() => ui.setIsFullscreen(!ui.isFullscreen)}
           onTouchStart={longPress.start}
           onTouchEnd={longPress.cancel}
           onTouchMove={longPress.move}
