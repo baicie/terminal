@@ -206,13 +206,13 @@ manifest 或任何旧证据文件。
 
 | 项 | 级别 | 说明 |
 | --- | --- | --- |
-| 首次运行无法保存密码 | P1 | Vault 未创建与已锁定被映射成同一个 `false`，提示文案指向错误动作；需要区分 `uninitialized` / `locked` 并在主机对话框内提供创建入口 |
+| 首次运行无法保存密码 | P1 | **已修**（`f9a6e4e`）：`availability()` 区分 `uninitialized` / `locked` / `unusable`，文案分别指向创建 / 解锁 / 检查。**未做**：主机对话框内直接创建 Vault 的入口，用户仍需自己去 Vaults 页 |
 | 新存的主机需重载列表才能连接 | P2 | store 内的副本没有 `credentialRef`；应让 `createHost` 返回 ref 或保存后重载 |
 | 损坏的 `credential_ref` 退化为"无凭据" | P2 | 解析失败返回 `null`，被当作合法空凭据；应区分"读不懂的引用"并失败 |
 | 导出/同步仍带 `syncServiceToken` | P2 | 存储服务密码随设置表整体导出；是一行白名单的距离 |
 | SSH key 的秘密无消费方 | P2 | `getSSHKeySecret` 零调用方，keychain 也没有展示/复制路径 |
 
-这几项都记在案，不声称已解决。
+其余四项仍记在案，不声称已解决。
 
 ### 12.4 一句结论
 
