@@ -1,7 +1,7 @@
 # PR #22 — 外部审查与修复报告
 
 - 审查基线 HEAD：`a6e330b`
-- 修复后冻结 HEAD：`fd3f3c6`
+- 修复后冻结 HEAD：`fe920f7`（证据 `12c8c39`，矩阵 run `42578266796`）
 - PR：[#22](https://github.com/baicie/terminal/pull/22)
 
 ## 1. 审查确认的确定性缺陷
@@ -94,6 +94,9 @@ SQLite 与 Vault 无共享事务，因此按失败状态定义而非宣称原子
 
 - 写入串行化：`ShortcutWriter` 保证任何时刻只有一个在途写入，后写不会先落地
 - 状态可见：`idle / pending / saved / failed`，失败保留错误信息并可 `retryPersist()`
+- **失败对用户可见**：`ShortcutPersistBanner` 订阅 `onPersistStateChange`，失败时在
+  设置面板顶部显示原因并提供「重新保存」；`shortcuts-settings-wiring.test.tsx` 断言
+  面板真的挂载了它——把那一行 JSX 删掉，该测试变红。此前只有服务层记录，用户看不到
 - 启用/禁用：`ShortcutRow` 调用后回读列表，标签立即更新
 - hydrate 竞态：`revision` 保证慢载入不覆盖用户刚做的修改
 
@@ -128,7 +131,7 @@ LEGACY_CREDENTIAL_MIGRATION=NOT_RUN
 PLAIN_EXPORT_SECRET_EXCLUDED=PASS
 SECRET_PROVIDER_FAILURE_HANDLING=PASS
 SHORTCUT_WRITE_ORDER=PASS
-SHORTCUT_FAILURE_FEEDBACK=PASS
+SHORTCUT_FAILURE_FEEDBACK=PASS            （服务状态 + 设置面板横幅 + 重试）
 PASTE_ALL_ENTRYPOINTS=PASS                （DOM 层覆盖；真实 Vim/less 未跑）
 SSH_REAL_E2E=NOT_RUN
 VAULT_REAL_E2E=NOT_RUN
@@ -156,3 +159,15 @@ TABBY_REPLACEMENT_READY=NO
 直到迁移清除它们。已在 `6ab950b` 修正，并新增测试断言"迁移前旧主机仍可连接"。
 
 这条记录保留，作为"更严格"不等于"更正确"的实例。
+
+## 11. 证据重采记录（源码改动必然作废旧证据）
+
+| 冻结 HEAD | 矩阵 run | 指纹 | 作废原因 |
+| --- | --- | --- | --- |
+| `6ab950b` | `42574545815` | `f19198b4…` | 读端兼容修复 |
+| `fe920f7` | `42578266796` | `ff11c12d…` | 快捷键失败横幅、pane-ui memo 化、三语文案 |
+
+两次都按官方流程 `fetch-verification-evidence.mjs --run-id` 获取，没有手改
+manifest 或任何旧证据文件。`fe920f7` 是本轮源码改完后的统一冻结点。
+
+`fe920f7` 上 `12c8c39`（纯证据提交）的 CI 见 PR #22 的最终检查列表。
