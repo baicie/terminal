@@ -32,7 +32,8 @@ vi.mock('@/service/vault-secret-provider', () => ({
 const { useHostStore } = await import('./host')
 
 const PASSWORD = 'ui-path-password-should-never-hit-sqlite'
-const PRIVATE_KEY = '-----BEGIN OPENSSH PRIVATE KEY-----\nui-path-key\n-----END OPENSSH PRIVATE KEY-----'
+const PRIVATE_KEY =
+  '-----BEGIN OPENSSH PRIVATE KEY-----\nui-path-key\n-----END OPENSSH PRIVATE KEY-----'
 
 function baseForm(overrides: Record<string, unknown> = {}) {
   return {
@@ -48,7 +49,7 @@ function baseForm(overrides: Record<string, unknown> = {}) {
 }
 
 /** Every SQL string and parameter list the store issued during one call. */
-function issuedStatements(): Array<{ sql: string, params: unknown[] }> {
+function issuedStatements(): Array<{ sql: string; params: unknown[] }> {
   return mocks.executeQuery.mock.calls.map(([sql, params]) => ({
     sql: String(sql),
     params: (params as unknown[]) ?? [],
@@ -70,6 +71,44 @@ beforeEach(() => {
   mocks.select.mockResolvedValue([])
   useHostStore.setState({ hosts: [] })
 })
+
+/**
+ * Makes the row `updateHost` reads back exist.
+ *
+ * `updateHost` merges onto the stored row so a partial update cannot blank
+ * columns it never mentioned; these tests therefore need the row they update to
+ * be readable. The returned row is what the previous assertions already assume.
+ */
+function seedStoredRow(id: string, overrides: Record<string, unknown> = {}) {
+  mocks.select.mockResolvedValue([
+    {
+      id,
+      name: 'prod',
+      hostname: 'prod.example.test',
+      port: 22,
+      username: 'alice',
+      auth_type: 'password',
+      password: null,
+      private_key: null,
+      certificate: null,
+      credential_ref: null,
+      group_id: null,
+      is_favorite: 0,
+      color: null,
+      tags: null,
+      port_forwards: '[]',
+      startup_command: null,
+      environment: null,
+      jump_host_id: null,
+      jump_host_auth_type: null,
+      agent_forwarding: 0,
+      shell_integration: 'off',
+      created_at: 0,
+      updated_at: 0,
+      ...overrides,
+    },
+  ])
+}
 
 describe('the UI write path never puts a secret in SQLite', () => {
   it('addHost writes the password to the vault, not to a column', async () => {
@@ -105,11 +144,10 @@ describe('the UI write path never puts a secret in SQLite', () => {
 
   it('updateHost with a new password keeps it out of SQLite', async () => {
     const created = await useHostStore.getState().addHost(baseForm())
+    seedStoredRow(created.id)
     mocks.executeQuery.mockClear()
 
-    await useHostStore
-      .getState()
-      .updateHost(created.id, { password: PASSWORD })
+    await useHostStore.getState().updateHost(created.id, { password: PASSWORD })
 
     expect(mocks.vaultWrite).toHaveBeenCalledWith(
       created.id,
@@ -120,11 +158,17 @@ describe('the UI write path never puts a secret in SQLite', () => {
     const update = issuedStatements().find(statement =>
       statement.sql.startsWith('UPDATE hosts'),
     )
-    expect(update?.sql).toMatch(/password = NULL, private_key = NULL/)
+    // The columns are blanked behind a marker that is 1 because this call is the
+    // one carrying the secret.
+    expect(update?.sql).toMatch(
+      /password = CASE WHEN \? = 1 THEN NULL ELSE password END/,
+    )
+    expect(update?.params.slice(5, 7)).toEqual([1, 1])
   })
 
   it('an edit that carries no secret does not touch the vault', async () => {
     const created = await useHostStore.getState().addHost(baseForm())
+    seedStoredRow(created.id)
     mocks.vaultWrite.mockClear()
     mocks.executeQuery.mockClear()
 
@@ -144,6 +188,7 @@ describe('the UI write path never puts a secret in SQLite', () => {
     const created = await useHostStore
       .getState()
       .addHost(baseForm({ password: PASSWORD }))
+    seedStoredRow(created.id)
     mocks.vaultWrite.mockClear()
     mocks.vaultRemove.mockClear()
     mocks.executeQuery.mockClear()
@@ -229,7 +274,10 @@ describe('the store does not keep secrets in memory after a reload', () => {
         password: null,
         private_key: null,
         certificate: null,
-        credential_ref: JSON.stringify({ kinds: ['password'], provider: 'vault' }),
+        credential_ref: JSON.stringify({
+          kinds: ['password'],
+          provider: 'vault',
+        }),
         group_id: null,
         is_favorite: 0,
         color: null,
@@ -251,6 +299,9 @@ describe('the store does not keep secrets in memory after a reload', () => {
     const host = useHostStore.getState().hosts[0]
     expect(host.password).toBeUndefined()
     expect(host.privateKey).toBeUndefined()
-    expect(host.credentialRef).toEqual({ kinds: ['password'], provider: 'vault' })
+    expect(host.credentialRef).toEqual({
+      kinds: ['password'],
+      provider: 'vault',
+    })
   })
 })

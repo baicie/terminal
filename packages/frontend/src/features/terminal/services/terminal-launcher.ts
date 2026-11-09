@@ -1,9 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { Host } from '@/types'
-import { SessionCredentialResolver } from '@/service/credential-boundary'
-import type { HostMetadata } from '@/service/credential-boundary'
-import { vaultSecretProvider } from '@/service/vault-secret-provider'
 import type { TabType } from '../types'
+import { resolveSessionCredential } from './session-credentials'
 import { traceStageAndWait } from '@/service/database/startup-trace'
 import { buildSshJumpHostIpcConfig } from './ssh-jump-config'
 
@@ -27,32 +25,23 @@ export type TerminalProfilePayload = {
  * Returns a copy of the host with the resolved secrets applied, so callers keep
  * using `host.password` / `host.privateKey` and cannot forget to resolve.
  */
-async function withResolvedCredential(host: Host): Promise<Host> {
+export async function withResolvedCredential(host: Host): Promise<Host> {
   if (host.authType === 'agent') return host
   if (host.password || host.privateKey) return host
   const ref = host.credentialRef ?? null
   if (ref === null || ref.kinds.length === 0) return host
 
-  const metadata: HostMetadata = {
-    id: host.id,
-    name: host.name,
-    hostname: host.hostname,
-    port: host.port,
-    username: host.username,
-    authType: host.authType,
-    credentialRef: ref,
-  }
-  const resolved = await new SessionCredentialResolver(vaultSecretProvider).resolve(
-    metadata,
-  )
+  // One implementation, shared with the script/batch path, so a change to the
+  // resolution rule cannot apply to the terminal and miss the exec path.
+  const resolved = await resolveSessionCredential(host)
   if (!resolved.ok) {
     // The reason is user-facing and never contains the secret.
     throw new Error(resolved.message)
   }
   return {
     ...host,
-    password: resolved.credential.password,
-    privateKey: resolved.credential.privateKey,
+    password: resolved.password,
+    privateKey: resolved.privateKey,
   }
 }
 
@@ -130,7 +119,9 @@ async function createTerminalShell(
     // different hosts and may store different kinds.
     host = await withResolvedCredential(host)
     const resolvedJump =
-      jumpHost === undefined ? undefined : await withResolvedCredential(jumpHost)
+      jumpHost === undefined
+        ? undefined
+        : await withResolvedCredential(jumpHost)
     jumpHost = resolvedJump
     const profile = profileForHost(host)
     if (host.jumpHostId) {

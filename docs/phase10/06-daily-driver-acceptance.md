@@ -5,17 +5,17 @@
 | 项 | 判定 | 依据 |
 | --- | --- | --- |
 | CREDENTIAL_DEFAULT_SAFE | **PASS**（代码层） | hosts 保存路径 SQL 中 secret 列恒 NULL；负向测试在旧实现上 4 项失败 |
-| CREDENTIAL_MIGRATION | **NOT_RUN** | 迁移代码未写；已有 `credential_ref` 列与回滚前提 |
-| PLAIN_EXPORT_SECRET_EXCLUDED | **PASS**（结构上成立） | 不存在主机导出功能；导入器断言不写私钥内容 |
+| CREDENTIAL_MIGRATION | **NOT_RUN** | `credential-migration.ts` 与 12 项测试已就绪；执行需用户显式授权（写 Vault、清明文列），本轮未运行 |
+| PLAIN_EXPORT_SECRET_EXCLUDED | **PASS** | 导出确实存在两个真实入口（设置面板 `exportDataToFile`、云同步 `collectExportData`）；两处都经过字段白名单，`password`/`private_key`/`passphrase` 不在白名单内，8 项测试断言导出文件不含秘密 |
 | HOST_SEARCH_COMPLETE | **PASS** | 1/20/21/100/1000 矩阵，第 1000 台可精确命中 |
-| QUICK_CONNECT_COMMON_SYNTAX | **PARTIAL** | 解析器已支持 host、user@host、host:port、ssh、ssh -p；缺系统矩阵测试 |
+| QUICK_CONNECT_COMMON_SYNTAX | **PASS**（解析层） | host、user@host、host:port、ssh、`ssh -p PORT` 均支持，36 项语法矩阵；UI 接线未做真实键入验证 |
 | SHORTCUT_PERSISTENCE | **PASS** | 持久化、冲突拒绝、恢复默认、导入导出（11 项测试） |
 | SHELL_KEYBOARD_COMPATIBILITY | **NOT_RUN** | 需真实终端 + IME 手工验证 |
-| SAFE_PASTE_VERIFIED | **PARTIAL** | 策略与 UI 接线完成（14 项测试）；未在真实 Vim/less/readline 上验证 |
+| SAFE_PASTE_VERIFIED | **PARTIAL** | 策略、DOM 捕获门（Cmd+V / 原生菜单 / addon 全覆盖）与确认 UI 完成（25 项测试）；未在真实 Vim/less/readline 上验证 |
 | TERMINAL_FIRST_STARTUP | **PASS**（结构） | 索引路由指向终端层，测试锁定 |
 | TERMINAL_SESSION_LIFECYCLE | **NOT_RUN** | 标签切换/分屏/唤醒需真实 GUI |
-| SSH_REAL_E2E | **NOT_RUN**（本阶段） | 既有 Phase 9 实机矩阵 PASS，但本阶段改动后未重跑 |
-| SFTP_REAL_E2E | **NOT_RUN**（本阶段） | 同上；9.8 的真实 sshd 脚本仍在 |
+| SSH_REAL_E2E | **PASS**（矩阵层） | 冻结 HEAD `fe920f7` 的实机矩阵 run `42578266796`：SSH probe 11/11、release SSH 8/8（key/agent/cert/jump 各含重连）、shell 交互 14/14。**不含 Vault 凭据场景**（见 `VAULT_REAL_E2E`） |
+| SFTP_REAL_E2E | **NOT_RUN**（本阶段） | 9.8 的真实 sshd 脚本仍在，本阶段未重跑 |
 | WORKSPACE_RESTORE | **NOT_RUN**（本阶段） | 既有 E2E PASS，本阶段未重跑 |
 | OPENSSH_CONFIG_IMPORT | **PASS**（解析+计划） | 42 项测试；UI 未接 |
 | TABBY_IMPORT_SUPPORTED_SCOPE | **NOT_RUN** | 无稳定格式样本，按任务书不猜 |

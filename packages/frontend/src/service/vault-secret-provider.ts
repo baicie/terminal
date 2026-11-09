@@ -10,7 +10,7 @@
  */
 
 import type { CredentialKind, SecretProvider } from './credential-boundary'
-import { vaultService } from './vault'
+import { toVaultCommandError, vaultService } from './vault'
 
 const KEY_PREFIX = 'host'
 
@@ -29,19 +29,30 @@ export class VaultSecretProvider implements SecretProvider {
     }
   }
 
-  async read(hostId: string, kind: CredentialKind): Promise<string | undefined> {
+  async read(
+    hostId: string,
+    kind: CredentialKind,
+  ): Promise<string | undefined> {
     try {
       return await vaultService.get(vaultKey(hostId, kind))
     } catch (error) {
       // Only "this key does not exist" is absence. A locked vault or a failed
       // decrypt must reach the resolver as an error, not as "no secret".
-      const kindOfError = (error as { kind?: string }).kind
-      if (kindOfError === 'key_not_found') return undefined
+      //
+      // The Rust side serialises the error as `{ type: 'key_not_found', ... }`,
+      // so the discriminator is read through `toVaultCommandError` rather than
+      // off a guessed property name — reading `.kind` here silently matched
+      // nothing, which made removal of a never-stored kind throw.
+      if (toVaultCommandError(error).kind === 'key_not_found') return undefined
       throw error
     }
   }
 
-  async write(hostId: string, kind: CredentialKind, value: string): Promise<void> {
+  async write(
+    hostId: string,
+    kind: CredentialKind,
+    value: string,
+  ): Promise<void> {
     await vaultService.set(vaultKey(hostId, kind), value)
   }
 
@@ -49,7 +60,7 @@ export class VaultSecretProvider implements SecretProvider {
     try {
       await vaultService.delete(vaultKey(hostId, kind))
     } catch (error) {
-      if ((error as { kind?: string }).kind === 'key_not_found') return
+      if (toVaultCommandError(error).kind === 'key_not_found') return
       throw error
     }
   }

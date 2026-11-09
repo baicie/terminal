@@ -100,6 +100,20 @@ export async function updateHost(
   updates: Partial<Host>,
 ): Promise<void> {
   const now = Date.now()
+
+  // Merge onto the row that is actually stored. A caller may send only the field
+  // it changed — `toggleFavorite` sends `{ isFavorite }` — and binding the raw
+  // `Partial` would write NULL into every required column.
+  const existingRows = await select<HostRecord>(
+    'SELECT * FROM hosts WHERE id = ?',
+    [id],
+  )
+  if (existingRows.length === 0) {
+    throw new Error(`Host ${id} does not exist`)
+  }
+  const existing = hostRowToHost(existingRows[0])
+  const merged: Host = { ...existing, ...updates }
+
   // Only touches secrets when the update actually carries one; an unrelated edit
   // (rename, colour) must not blank a stored credential.
   const hasSecrets = Boolean(updates.password || updates.privateKey)
@@ -121,34 +135,39 @@ export async function updateHost(
         privateKey: updates.privateKey,
       })
     : undefined
+
+  // The secret columns are cleared only when this call is the one that moves or
+  // removes them. A plain edit leaves them alone, because a pre-migration row
+  // still keeps its plaintext there and blanking it would destroy the user's
+  // only copy before the migration has run.
+  const rewriteSecrets = hasSecrets || clearing
+
   await executeQuery(
-    `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = CASE WHEN ? = '' THEN NULL ELSE COALESCE(?, credential_ref) END, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?`,
+    `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = CASE WHEN ? = 1 THEN NULL ELSE password END, private_key = CASE WHEN ? = 1 THEN NULL ELSE private_key END, certificate = ?, credential_ref = CASE WHEN ? = '' THEN NULL ELSE COALESCE(?, credential_ref) END, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?`,
     [
-      updates.name,
-      updates.hostname,
-      updates.port,
-      updates.username,
-      updates.authType,
-      updates.certificate ?? null,
+      merged.name,
+      merged.hostname,
+      merged.port,
+      merged.username,
+      merged.authType,
+      rewriteSecrets ? 1 : 0,
+      rewriteSecrets ? 1 : 0,
+      merged.certificate ?? null,
       // 1st placeholder: the CASE marker ('' means "clear").
       clearing ? '' : 'keep',
       // 2nd placeholder: the new reference, or NULL when there is none.
       credentialRef ?? null,
-      updates.groupId ?? null,
-      updates.isFavorite !== undefined
-        ? updates.isFavorite
-          ? 1
-          : 0
-        : undefined,
-      updates.color ?? null,
-      updates.tags ? JSON.stringify(updates.tags) : null,
-      JSON.stringify(updates.portForwards),
-      updates.startupCommand ?? null,
-      updates.environment ? JSON.stringify(updates.environment) : null,
-      updates.jumpHostId ?? null,
-      updates.jumpHostAuthType ?? null,
-      updates.agentForwarding ? 1 : 0,
-      updates.shellIntegration ?? 'off',
+      merged.groupId ?? null,
+      merged.isFavorite ? 1 : 0,
+      merged.color ?? null,
+      merged.tags ? JSON.stringify(merged.tags) : null,
+      JSON.stringify(merged.portForwards ?? []),
+      merged.startupCommand ?? null,
+      merged.environment ? JSON.stringify(merged.environment) : null,
+      merged.jumpHostId ?? null,
+      merged.jumpHostAuthType ?? null,
+      merged.agentForwarding ? 1 : 0,
+      merged.shellIntegration ?? 'off',
       now,
       id,
     ],
@@ -156,7 +175,19 @@ export async function updateHost(
 }
 
 export async function deleteHost(id: string): Promise<void> {
+  // Row first, then the vault: a failure between the two leaves an unreferenced
+  // secret (wasteful) rather than a host whose secret is already gone (broken).
+  // The reverse order would make the host unrecoverable if the delete failed.
   await executeQuery('DELETE FROM hosts WHERE id = ?', [id])
+  for (const kind of ['password', 'privateKey', 'passphrase'] as const) {
+    try {
+      await vaultSecretProvider.remove(id, kind)
+    } catch {
+      // A vault that is locked or a kind that was never stored must not make the
+      // delete look failed — the row is already gone, so reporting an error here
+      // would push the caller into retrying a delete that already happened.
+    }
+  }
 }
 
 export async function searchHosts(query: string): Promise<Host[]> {

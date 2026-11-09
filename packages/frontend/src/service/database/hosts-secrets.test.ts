@@ -33,7 +33,8 @@ vi.mock('@/store/host-mappers', () => ({
 const { createHost, updateHost } = await import('./hosts')
 
 const SECRET_PASSWORD = 'super-secret-password'
-const SECRET_KEY = '-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n-----END OPENSSH PRIVATE KEY-----'
+const SECRET_KEY =
+  '-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n-----END OPENSSH PRIVATE KEY-----'
 
 function baseHost(overrides: Record<string, unknown> = {}) {
   return {
@@ -66,13 +67,39 @@ beforeEach(() => {
   mocks.select.mockReset()
   mocks.vaultWrite.mockReset()
   mocks.vaultWrite.mockResolvedValue(undefined)
+  // `updateHost` merges onto the stored row, so it reads it first.
+  mocks.select.mockResolvedValue([
+    {
+      id: 'host-1',
+      name: 'prod',
+      hostname: 'prod.example.test',
+      port: 22,
+      username: 'alice',
+      auth_type: 'password',
+      password: null,
+      private_key: null,
+      certificate: null,
+      credential_ref: null,
+      group_id: null,
+      is_favorite: 0,
+      color: null,
+      tags: null,
+      port_forwards: '[]',
+      startup_command: null,
+      environment: null,
+      jump_host_id: null,
+      jump_host_auth_type: null,
+      agent_forwarding: 0,
+      shell_integration: 'off',
+      created_at: 0,
+      updated_at: 0,
+    },
+  ])
 })
 
 describe('createHost keeps secrets out of SQLite', () => {
   it('writes the password to the vault and NULL to the column', async () => {
-    await createHost(
-      baseHost({ password: SECRET_PASSWORD }) as never,
-    )
+    await createHost(baseHost({ password: SECRET_PASSWORD }) as never)
 
     expect(mocks.vaultWrite).toHaveBeenCalledWith(
       'host-1',
@@ -92,7 +119,9 @@ describe('createHost keeps secrets out of SQLite', () => {
   })
 
   it('writes a private key to the vault and never to the row', async () => {
-    await createHost(baseHost({ authType: 'key', privateKey: SECRET_KEY }) as never)
+    await createHost(
+      baseHost({ authType: 'key', privateKey: SECRET_KEY }) as never,
+    )
 
     expect(mocks.vaultWrite).toHaveBeenCalledWith(
       'host-1',
@@ -116,7 +145,10 @@ describe('createHost keeps secrets out of SQLite', () => {
 
   it('keeps the certificate on the row: it is public material', async () => {
     await createHost(
-      baseHost({ authType: 'cert', certificate: 'ssh-ed25519-cert-v01@openssh.com AAAA' }) as never,
+      baseHost({
+        authType: 'cert',
+        certificate: 'ssh-ed25519-cert-v01@openssh.com AAAA',
+      }) as never,
     )
     expect(parameters()).toContain('ssh-ed25519-cert-v01@openssh.com AAAA')
   })
@@ -131,7 +163,12 @@ describe('updateHost keeps secrets out of SQLite', () => {
       'password',
       SECRET_PASSWORD,
     )
-    expect(statementText()).toMatch(/password = NULL, private_key = NULL/)
+    // The column is only blanked when this call is the one moving the secret,
+    // which is exactly what the "rewrite" marker records.
+    expect(statementText()).toMatch(
+      /password = CASE WHEN \? = 1 THEN NULL ELSE password END/,
+    )
+    expect(parameters().slice(5, 7)).toEqual([1, 1])
     expect(parameters()).not.toContain(SECRET_PASSWORD)
   })
 

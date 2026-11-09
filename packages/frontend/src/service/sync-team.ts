@@ -7,6 +7,7 @@ import {
   getWorkspaceLayout,
   getWorkspaces,
 } from '@/service/database/workspaces'
+import { sanitizeHostRow, sanitizeSshKeyRow } from './export-sanitize'
 import { createImportStats, importResources } from './sync-import'
 import { assertExportTablesReadable } from './sync-export'
 import type {
@@ -55,7 +56,9 @@ export async function exportTeamPackage(
         ? selectStrict<Record<string, unknown>>('SELECT * FROM snippets')
         : [],
       options?.includeSnippets
-        ? selectStrict<Record<string, unknown>>('SELECT * FROM snippet_packages')
+        ? selectStrict<Record<string, unknown>>(
+            'SELECT * FROM snippet_packages',
+          )
         : [],
       options?.includeMembers
         ? selectStrict<Record<string, unknown>>(
@@ -81,11 +84,16 @@ export async function exportTeamPackage(
       exportedAt: new Date().toISOString(),
       exportedBy: userProfile?.id || '',
       members,
-      hosts,
+      // Same whitelist as the plain export: a team package is a file on disk,
+      // and a row saved by an older build still carries plaintext there. Mapping
+      // both arrays is what stops this path from being the one that leaks.
+      hosts: hosts.map(sanitizeHostRow),
       groups,
       snippets,
       snippetPackages,
-      sshKeys,
+      sshKeys: sshKeys.map(key =>
+        sanitizeSshKeyRow(key as unknown as Record<string, unknown>),
+      ),
       knownHosts,
       workspaces,
       workspaceLayouts,
