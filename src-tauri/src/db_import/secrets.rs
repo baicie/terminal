@@ -236,28 +236,37 @@ pub fn imported_credential_ref(value: Option<&Value>) -> ImportedCredentialRef {
     }
 }
 
+/// One host row's identity and the two fields that can hold a secret.
+///
+/// A named struct rather than a four-tuple: the tuple made every call site a
+/// position game, and "which of these `Option<&Value>` is the password" is not a
+/// question a security counter should have to answer by counting.
+#[derive(Debug, Clone, Copy)]
+pub struct ScannedHost<'a> {
+    pub id: Option<&'a Value>,
+    pub name: Option<&'a Value>,
+    pub password: Option<&'a Value>,
+    pub private_key: Option<&'a Value>,
+}
+
+/// One ssh key row's identity and its two secret fields.
+#[derive(Debug, Clone, Copy)]
+pub struct ScannedKey<'a> {
+    pub id: Option<&'a Value>,
+    pub name: Option<&'a Value>,
+    pub private_key: Option<&'a Value>,
+    pub passphrase: Option<&'a Value>,
+}
+
 /// Build the report from the rows an import is about to write.
 ///
 /// Runs before any statement, so the counts in the report are the counts the
 /// writer actually saw, not a second pass that could drift.
-pub fn scan(
-    hosts: &[(
-        Option<&Value>,
-        Option<&Value>,
-        Option<&Value>,
-        Option<&Value>,
-    )],
-    keys: &[(
-        Option<&Value>,
-        Option<&Value>,
-        Option<&Value>,
-        Option<&Value>,
-    )],
-) -> ImportSecretReport {
+pub fn scan(hosts: &[ScannedHost<'_>], keys: &[ScannedKey<'_>]) -> ImportSecretReport {
     let mut report = ImportSecretReport::default();
 
-    for (id, name, password, private_key) in hosts {
-        let presence = host_presence(*password, *private_key);
+    for host in hosts {
+        let presence = host_presence(host.password, host.private_key);
         if !presence.any() {
             continue;
         }
@@ -268,15 +277,15 @@ pub fn scan(
             report.host_secrets.host_private_keys += 1;
         }
         report.hosts.push(ImportSecretHost {
-            id: row_id(*id),
-            name: row_name(*name),
+            id: row_id(host.id),
+            name: row_name(host.name),
             password: presence.password,
             private_key: presence.private_key,
         });
     }
 
-    for (id, name, private_key, passphrase) in keys {
-        let presence = ssh_key_presence(*private_key, *passphrase);
+    for key in keys {
+        let presence = ssh_key_presence(key.private_key, key.passphrase);
         if !presence.any() {
             continue;
         }
@@ -287,8 +296,8 @@ pub fn scan(
             report.host_secrets.ssh_key_passphrases += 1;
         }
         report.keys.push(ImportSecretKey {
-            id: row_id(*id),
-            name: row_name(*name),
+            id: row_id(key.id),
+            name: row_name(key.name),
             private_key: presence.private_key,
             passphrase: presence.passphrase,
         });
@@ -387,13 +396,18 @@ mod tests {
         let passphrase = json!("pp");
 
         let report = scan(
-            &[(Some(&host_id), Some(&host_name), Some(&password), None)],
-            &[(
-                Some(&key_id),
-                Some(&key_name),
-                Some(&private_key),
-                Some(&passphrase),
-            )],
+            &[ScannedHost {
+                id: Some(&host_id),
+                name: Some(&host_name),
+                password: Some(&password),
+                private_key: None,
+            }],
+            &[ScannedKey {
+                id: Some(&key_id),
+                name: Some(&key_name),
+                private_key: Some(&private_key),
+                passphrase: Some(&passphrase),
+            }],
         );
 
         assert_eq!(report.host_secrets.host_passwords, 1);

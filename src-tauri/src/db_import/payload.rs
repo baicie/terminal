@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::secrets::{row_id, scan, ImportSecretReport};
+use super::secrets::{row_id, scan, ImportSecretReport, ScannedHost, ScannedKey};
 
 /// Hard ceiling on the records one import may carry.
 pub const MAX_RECORDS: usize = 50_000;
@@ -120,10 +120,13 @@ pub fn parse_bound_ref(value: Option<&Value>) -> Option<String> {
 /// What to do with plaintext secrets found in an import file.
 ///
 /// The default is [`SecretsPolicy::Reject`]: a caller that has not thought about
-/// secrets does not get to import a file that has them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// secrets does not get to import a file that has them. It is expressed as the
+/// derive's default variant so "the default" cannot drift from "the first variant"
+/// — the ordering is the policy.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SecretsPolicy {
     /// Refuse the whole import and report the counts.
+    #[default]
     Reject,
     /// The secrets are already in the vault; strip them from the rows and require
     /// a reference on every row that had one.
@@ -131,12 +134,6 @@ pub enum SecretsPolicy {
     /// The user chose not to bring the secrets across. Strip them, store no
     /// reference, and report the hosts as needing a rebind.
     Discard,
-}
-
-impl Default for SecretsPolicy {
-    fn default() -> Self {
-        Self::Reject
-    }
 }
 
 fn parse_policy(raw: Option<&str>) -> SecretsPolicy {
@@ -329,25 +326,21 @@ impl ImportPayload {
         let hosts = self
             .hosts
             .iter()
-            .map(|row| {
-                (
-                    row.id.as_ref(),
-                    row.name.as_ref(),
-                    row.password.as_ref(),
-                    row.private_key.as_ref(),
-                )
+            .map(|row| ScannedHost {
+                id: row.id.as_ref(),
+                name: row.name.as_ref(),
+                password: row.password.as_ref(),
+                private_key: row.private_key.as_ref(),
             })
             .collect::<Vec<_>>();
         let keys = self
             .ssh_keys
             .iter()
-            .map(|row| {
-                (
-                    row.id.as_ref(),
-                    row.name.as_ref(),
-                    row.private_key.as_ref(),
-                    row.passphrase.as_ref(),
-                )
+            .map(|row| ScannedKey {
+                id: row.id.as_ref(),
+                name: row.name.as_ref(),
+                private_key: row.private_key.as_ref(),
+                passphrase: row.passphrase.as_ref(),
             })
             .collect::<Vec<_>>();
         scan(&hosts, &keys)

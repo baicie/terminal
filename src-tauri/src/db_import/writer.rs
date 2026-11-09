@@ -481,13 +481,14 @@ async fn apply(
 
     let replace = payload.is_replace();
     let now = payload.now_ms();
-    let mut report = ImportReport::default();
-
     // What the file brought along is computed once, from the rows as they arrived,
     // before a single statement runs: the same pass the validation used, so the
     // counters in the report are the ones that decision was made on.
-    report.secrets = payload.scan_secrets();
-    report.credentials_needing_rebind = rebind_list(payload);
+    let mut report = ImportReport {
+        secrets: payload.scan_secrets(),
+        credentials_needing_rebind: rebind_list(payload),
+        ..ImportReport::default()
+    };
 
     for row in &payload.groups {
         upsert(conn, &mut report.groups, replace, group_plan(row)).await?;
