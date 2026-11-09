@@ -1,7 +1,9 @@
 import { selectStrict } from '@/service/database'
 import { storageDownload, storageUpload } from '@/service/storage'
 import { collectExportData } from './sync-export'
-import { importDataFromFile, previewImportData } from './sync-file'
+import { diagnoseImport } from './import-security'
+import type { ImportSecretsDiagnosis, ImportSecretsPolicy } from './import-security'
+import { importDataFromFile, importDataWithSecretPolicy, previewImportData } from './sync-file'
 import type { ExportData, ImportStats, MergeMode } from './sync-types'
 
 type SyncCounts = ImportStats
@@ -14,6 +16,16 @@ export interface DownloadResult {
   success: boolean
   data?: ExportData
   stats?: SyncCounts
+  /**
+   * What the downloaded backup holds, with no values.
+   *
+   * A cloud restore is the same problem as a file import: the backup may have been
+   * made by a build that stored plaintext, and the token that uploaded it may be an
+   * old one. The caller needs the diagnosis to ask, and the policy to answer.
+   */
+  secrets?: ImportSecretsDiagnosis
+  /** Rows the restore imported without a usable credential. */
+  needsRebind?: Array<{ resource: 'host' | 'sshKey', id: string, name: string }>
 }
 export interface ServerPreview {
   success: boolean
@@ -52,8 +64,21 @@ export async function syncToServer(): Promise<SyncResult> {
   }
 }
 
+/**
+ * Download and restore the cloud backup.
+ *
+ * `secrets` defaults to `reject`: a backup that carries plaintext is refused and
+ * reported, rather than imported with the secrets silently dropped. The caller
+ * (the restore UI) shows the same decision a file import shows and calls again with
+ * the user's answer.
+ *
+ * This is deliberately not "just import what is there": the upload side stopped
+ * sending plaintext, so a backup that has it is *old*, and an old backup is exactly
+ * the one whose credentials the user still needs.
+ */
 export async function downloadFromServer(
   mergeMode: MergeMode = 'merge',
+  secrets: ImportSecretsPolicy = 'reject',
 ): Promise<DownloadResult> {
   try {
     const download = await storageDownload('terminal-latest.json')
@@ -62,9 +87,29 @@ export async function downloadFromServer(
       throw new Error(`Failed to download backup: ${download.error}`)
     const data = previewImportData(download.data)
     if (!data) throw new Error('Invalid data format from server')
-    const stats = await importDataFromFile(download.data, mergeMode)
+    const diagnosis = diagnoseImport(data)
+    if (secrets === 'reject' && diagnosis.needsDecision) {
+      // Report the decision instead of importing: the caller shows the counts and
+      // asks. Nothing has been written at this point.
+      return { success: false, data, secrets: diagnosis }
+    }
+    if (secrets === 'reject') {
+      const stats = await importDataFromFile(download.data, mergeMode)
+      localStorage.setItem('terminal.lastSyncTime', String(Date.now()))
+      return { success: true, data, stats, secrets: diagnosis, needsRebind: [] }
+    }
+    const { stats } = await importDataWithSecretPolicy(download.data, mergeMode, {
+      policy: secrets,
+    })
     localStorage.setItem('terminal.lastSyncTime', String(Date.now()))
-    return { success: true, data, stats }
+    return {
+      success: true,
+      data,
+      stats,
+      secrets: diagnosis,
+      needsRebind:
+        secrets === 'migrate' ? [] : [...diagnosis.rows, ...diagnosis.sourceCredentialRefs],
+    }
   } catch (error) {
     console.error('Download from server failed:', error)
     throw error

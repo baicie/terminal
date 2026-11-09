@@ -41,7 +41,37 @@ export default {
   'settings.importing': '导入中...',
   'settings.importSuccess': '导入成功！',
   'settings.securityWarning':
-    '数据以明文 JSON 格式导出。敏感信息（如密码）可能会被包含在导出文件中。请妥善保管您的导出文件。',
+    '导出文件不包含密码或私钥。每个主机只保留「曾有哪些凭据」的描述，因此在另一台设备恢复时需要重新设置。',
+  'settings.importSecretsTitle': '该备份包含明文凭据',
+  'settings.importSecretsDesc':
+    '旧版本生成的备份会把密码和私钥直接存进文件。请选择如何处理它们。',
+  'settings.importSecretsNone': '该文件不包含明文凭据。',
+  'settings.importSecretsCounts':
+    '{{hostPasswords}} 个主机密码、{{hostPrivateKeys}} 个主机私钥、{{sshKeyPrivateKeys}} 个密钥私钥、{{sshKeyPassphrases}} 个密钥口令。',
+  'settings.importSecretsMigrate': '迁移到 Vault',
+  'settings.importSecretsMigrateDesc':
+    '逐个写入本机 Vault 并读回验证，数据库只保存引用。需要 Vault 已解锁。',
+  'settings.importSecretsDiscard': '不导入凭据',
+  'settings.importSecretsDiscardDesc':
+    '只导入主机与密钥的元数据。每个条目在连接前都需要重新设置密码或私钥。',
+  'settings.importSecretsCancel': '不导入',
+  'settings.importNeedsRebind': '{{count}} 个条目未带入凭据',
+  'settings.importNeedsRebindDesc': '以下条目在连接前需要重新设置密码或私钥：',
+
+  'settings.migrationTitle': '明文存储的凭据',
+  'settings.migrationDesc':
+    '旧版本保存的主机与密钥可能仍在本地数据库中以明文保存密码或私钥。迁移到 Vault 会清除这些列。',
+  'settings.migrationChecking': '正在检查数据库...',
+  'settings.migrationWarning':
+    '会先备份数据库。清除列不会改写旧的 WAL 或已存在的导出文件，这些也请妥善保管。',
+  'settings.migrationRun': '将明文凭据迁移到 Vault',
+  'settings.migrationCounts': '已迁移 {{hosts}} 个主机、{{keys}} 个密钥；{{failed}} 个失败。',
+  'settings.migrationSnapshot': '数据库备份：{{path}}',
+  'settings.migrationVerified': '验证通过：不再有明文列，且每个引用都能从 Vault 读回。',
+  'settings.migrationVerifyFailed': '验证发现 {{count}} 个问题，部分条目可能仍需处理。',
+  'settings.migrationSucceeded': '凭据已迁移到 Vault。',
+  'settings.migrationPartial': '{{failed}} 个条目无法迁移，已保留其明文。',
+  'settings.migrationVaultUnavailable': 'Vault 不可用。请先创建或解锁，然后再次运行。',
 
   // Appearance
   'settings.theme': '主题',

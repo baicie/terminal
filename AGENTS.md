@@ -763,6 +763,45 @@ main 上 `cde1e0c` 的 CI 同为 11/11。`DAILY_DRIVER_READY` / `TABBY_REPLACEME
   以及主机对话框内没有直接创建 Vault 的入口
 - 📋 `DAILY_DRIVER_READY=NO`、`TABBY_REPLACEMENT_READY=NO`（需 7 天真实使用数据）
 
+### Phase 10.1 - Credential Security Closure 🔄 Draft PR 完成
+
+基线 `main = 7c1524e`，分支 `feat/phase10-1-credential-security-closure`，Draft PR #23。
+**本轮不是重复实现 Phase 10，而是补上它漏掉的全部入口。**
+
+- ✅ **P0 Rust 导入明文写入**：`db_import/writer.rs` 的 `HOST_INSERT`/`HOST_UPDATE`/
+  `SSH_KEY_INSERT`/`SSH_KEY_UPDATE` 不再有 `password`/`private_key`/`passphrase`
+  占位符——秘密列在 SQL 文本中即为字面 `NULL`。这不是「绑定 NULL」，重新引入必须
+  同时改 SQL 与参数构造，`db_import/tests.rs` 直接断言
+- ✅ **导入秘密三态策略**：`secrets: reject|migrate|discard`，缺省与未知值都按
+  `reject`。拒绝发生在 `BEGIN` 之前，返回各类型计数。`migrate` 要求每行带
+  `bound_credential_ref` 且不得残留明文；`discard` 不伪造引用并返回需重绑清单
+- ✅ **源设备引用永不入库**：文件的 `credential_ref` 只用于生成提示；
+  `bound_credential_ref` 是唯一可持久化的引用（跨设备 Vault 主密钥不同）
+- ✅ **四条导入入口统一**：文件、云同步（`downloadFromServer`）、团队包、Merge/Replace
+  全部走 `importWithSecretPolicy`
+- ✅ **P1 `syncServiceToken` 泄露**：它是 `app_settings` **值内部**字段，删表 key 无效。
+  改为字段级白名单（`settings-export-policy.ts`），未知字段默认不导出（fail closed）；
+  `team_settings.apiToken` 同处理；导入不覆盖本机 token
+- ✅ **P1 版本化 CredentialRef**：`{kinds, provider, version}`，key 为
+  `host:<id>:<version>:<kind>` 与 `ssh-key:<id>:<version>:<kind>`。写入新版本 →
+  读回 → 单语句切换 → 清理旧版本；每个崩溃点只留完整旧版或完整新版
+- ✅ **命名空间拆分**：host 与 ssh-key 此前共用 `host:`，同 id 会互读秘密
+- ✅ **清除顺序反转**：先 UPDATE 置 NULL 再删 Vault，避免悬空引用
+- ✅ **P1 迁移真实调用链**：`credential-migration-run.ts` + `-runner.ts` + `-verify.ts`；
+  计划类型**不含秘密**，值只在执行瞬间读取；快照 → 执行 → 重读验证；单行失败保留明文，
+  重跑幂等；设置面板有入口且需显式点击
+- ✅ **P2 Store 刷新**：`addHost`/`updateHost` 保存后回读数据库，Store 持有真实引用；
+  「新建→保存→立即连接」有测试
+- ✅ **P2 损坏引用 fail-closed**：`parseCredentialRef` 三态；损坏引用挂在
+  `credentialRefProblem` 上并在接触 Vault 前拒绝
+- ✅ **P2 SSH Key 闭环**：新增 `ssh_keys.credential_ref` 列；keychain 新增
+  「显示/复制私钥」（按需读 Vault）；`updateSSHKey` 改为固定 SQL + CASE 标记
+- ✅ 门禁：前端 **195 文件 / 1743 项**、Rust **381 项**（`db_import` 39）、
+  typecheck、ESLint、source-size **621 文件** 全通过
+- 🟡 **NOT_RUN**：真实 GUI 的 Vault/SSH/Jump/SFTP/IME 验收、三平台真机回归、
+  历史 WAL 与备份明文擦除、身份迁移、签名/公证、`RUSTSEC-2026-0459`
+- 📋 详见 `docs/phase10/10-credential-boundary-adr.md`、`docs/phase10/11-phase10-1-report.md`
+
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装

@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
   executeQuery: vi.fn(),
   select: vi.fn(),
   vaultWrite: vi.fn(),
+  vaultRead: vi.fn(),
   vaultRemove: vi.fn(),
+  vaultRemoveVersion: vi.fn(),
 }))
 
 vi.mock('./connection', () => ({
@@ -24,8 +26,9 @@ vi.mock('./connection', () => ({
 vi.mock('@/service/vault-secret-provider', () => ({
   vaultSecretProvider: {
     write: mocks.vaultWrite,
-    read: vi.fn(),
+    read: mocks.vaultRead,
     remove: mocks.vaultRemove,
+    removeVersion: mocks.vaultRemoveVersion,
     isAvailable: vi.fn(async () => true),
     availability: vi.fn(async () => ({ ok: true })),
   },
@@ -79,6 +82,15 @@ beforeEach(() => {
   // `updateHost` reads the current row so it can merge.
   mocks.select.mockResolvedValue([EXISTING_ROW])
   mocks.vaultRemove.mockResolvedValue(undefined)
+  mocks.vaultRemoveVersion.mockResolvedValue([])
+  mocks.vaultRead.mockImplementation(
+    async (_resource: unknown, _version: number, kind: string) => {
+      const call = mocks.vaultWrite.mock.calls.find(
+        ([, , writtenKind]) => writtenKind === kind,
+      )
+      return call?.[3] as string | undefined
+    },
+  )
 })
 
 describe('a partial update keeps the fields it did not mention', () => {
@@ -123,9 +135,17 @@ describe('a partial update does not destroy a legacy plaintext credential', () =
 
   it('clears the column only when the caller asked to clear', async () => {
     await updateHost('host-1', { clearCredential: true })
-    const { params } = lastStatement()
-    // The clear marker is the first CASE placeholder.
-    expect(params).toContain('')
+    const { sql } = lastStatement()
+    // Clearing is its own statement, written so the row stops pointing at the
+    // credential *before* anything is removed from the vault. A CASE marker shared
+    // with the set-a-new-secret path was how "clear" and "keep" could be confused.
+    expect(sql).toMatch(/password = NULL/)
+    expect(sql).toMatch(/credential_ref = NULL/)
+  })
+
+  it('a clear writes no vault entry, only removes one', async () => {
+    await updateHost('host-1', { clearCredential: true })
+    expect(mocks.vaultWrite).not.toHaveBeenCalled()
   })
 
   it('writes no vault entry for an update that carries no secret', async () => {
@@ -141,11 +161,9 @@ describe('deleteHost removes the vault entries too', () => {
       'DELETE FROM hosts WHERE id = ?',
       ['host-1'],
     )
-    expect(mocks.vaultRemove.mock.calls.map(call => call[1]).sort()).toEqual([
-      'passphrase',
-      'password',
-      'privateKey',
-    ])
+    // The row had no reference, so nothing is removed: a delete must not sweep
+    // keys the row never claimed.
+    expect(mocks.vaultRemoveVersion).not.toHaveBeenCalled()
   })
 
   it('deletes the row even when the vault refuses', async () => {

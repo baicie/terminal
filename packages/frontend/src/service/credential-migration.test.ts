@@ -6,45 +6,70 @@ import {
   isEmptyPlan,
   migrationComplete,
   planCredentialMigration,
-  refForMigratedHost,
   runCredentialMigration,
 } from './credential-migration'
+import type { CredentialRef } from './credential-boundary'
 import type { MigrationPlan, MigrationStore, MigrationVault } from './credential-migration'
+
+type Resource = { type: 'host' | 'ssh-key', id: string }
 
 class FakeVault implements MigrationVault {
   available = true
   readonly store = new Map<string, string>()
+  readonly writes: string[] = []
   failOnWrite: string | null = null
   /** When set, reads return a value that differs from what was written. */
   corruptReads = false
+
+  private key(resource: Resource, version: number, kind: string): string {
+    return `${resource.type}:${resource.id}:${version}:${kind}`
+  }
 
   async isAvailable(): Promise<boolean> {
     return this.available
   }
 
-  async write(id: string, kind: string, value: string): Promise<void> {
-    if (this.failOnWrite === id) throw new Error('vault write failed')
-    this.store.set(`${id}:${kind}`, value)
+  async write(
+    resource: Resource,
+    version: number,
+    kind: 'password' | 'privateKey' | 'passphrase',
+    value: string,
+  ): Promise<void> {
+    if (this.failOnWrite === resource.id) throw new Error('vault write failed')
+    this.writes.push(this.key(resource, version, kind))
+    this.store.set(this.key(resource, version, kind), value)
   }
 
-  async read(id: string, kind: string): Promise<string | undefined> {
-    const stored = this.store.get(`${id}:${kind}`)
+  async read(
+    resource: Resource,
+    version: number,
+    kind: 'password' | 'privateKey' | 'passphrase',
+  ): Promise<string | undefined> {
+    const stored = this.store.get(this.key(resource, version, kind))
     return this.corruptReads && stored !== undefined ? `${stored}-corrupt` : stored
+  }
+
+  async remove(
+    resource: Resource,
+    version: number,
+    kind: 'password' | 'privateKey' | 'passphrase',
+  ): Promise<void> {
+    this.store.delete(this.key(resource, version, kind))
   }
 }
 
 class FakeStore implements MigrationStore {
   readonly committedHosts: Array<{ id: string, ref: unknown }> = []
-  readonly committedKeys: string[] = []
+  readonly committedKeys: Array<{ id: string, ref: unknown }> = []
   failOnHost: string | null = null
 
-  async commitHost(id: string, ref: unknown): Promise<void> {
+  async commitHost(id: string, ref: CredentialRef): Promise<void> {
     if (this.failOnHost === id) throw new Error('sqlite write failed')
     this.committedHosts.push({ id, ref })
   }
 
-  async commitKey(id: string): Promise<void> {
-    this.committedKeys.push(id)
+  async commitKey(id: string, ref: CredentialRef): Promise<void> {
+    this.committedKeys.push({ id, ref })
   }
 }
 
@@ -106,44 +131,69 @@ describe('planCredentialMigration', () => {
     expect(plan.summary).toMatch(/nothing to migrate/i)
   })
 
-  it('builds the reference a migrated host should carry', () => {
-    expect(
-      refForMigratedHost({
-        id: 'h1',
-        name: 'a',
-        password: 'p',
-        privateKey: null,
-        credentialRef: null,
-      }),
-    ).toEqual({ kinds: ['password'], provider: 'vault' })
+  it('counts each kind separately for the preview', () => {
+    const plan = planCredentialMigration(
+      [{ id: 'h1', name: 'a', password: 'p', privateKey: null }],
+      [{ id: 'k1', name: 'key', privateKey: 'kk', passphrase: 'pp' }],
+    )
+    expect(plan.counts).toEqual({
+      hostPasswords: 1,
+      hostPrivateKeys: 0,
+      sshKeyPrivateKeys: 1,
+      sshKeyPassphrases: 1,
+    })
   })
 })
 
 describe('runCredentialMigration', () => {
+  // The plan names kinds only; the values travel separately, so a plan can be
+  // rendered or logged without carrying a secret.
   const plan: MigrationPlan = {
     hosts: [
-      { id: 'h1', name: 'a', password: 'p1', privateKey: null, credentialRef: null },
-      { id: 'h2', name: 'b', password: null, privateKey: 'k2', credentialRef: null },
+      { id: 'h1', name: 'a', kinds: ['password'], credentialRef: null },
+      { id: 'h2', name: 'b', kinds: ['privateKey'], credentialRef: null },
     ],
-    keys: [{ id: 'k1', name: 'key', privateKey: 'kk', passphrase: 'pp' }],
+    keys: [
+      { id: 'k1', name: 'key', kinds: ['privateKey', 'passphrase'], credentialRef: null },
+    ],
     alreadyMigrated: 0,
+    counts: {
+      hostPasswords: 1,
+      hostPrivateKeys: 1,
+      sshKeyPrivateKeys: 1,
+      sshKeyPassphrases: 1,
+    },
     summary: '',
   }
 
+  const values = {
+    hosts: [
+      { id: 'h1', password: 'p1', privateKey: null },
+      { id: 'h2', password: null, privateKey: 'k2' },
+    ],
+    keys: [{ id: 'k1', privateKey: 'kk', passphrase: 'pp' }],
+  }
+
   it('moves every secret and commits each row', async () => {
-    const result = await runCredentialMigration(plan, vault, store)
+    const result = await runCredentialMigration(plan, values, vault, store)
 
     expect(result.migratedHosts).toBe(2)
     expect(result.migratedKeys).toBe(1)
     expect(result.failed).toEqual([])
     expect(migrationComplete(result)).toBe(true)
-    expect(vault.store.get('h1:password')).toBe('p1')
+    expect(vault.store.get('host:h1:1:password')).toBe('p1')
     expect(store.committedHosts.map(entry => entry.id)).toEqual(['h1', 'h2'])
+    // Every committed reference names the version its secret was written under.
+    expect(store.committedHosts[0].ref).toEqual({
+      kinds: ['password'],
+      provider: 'vault',
+      version: 1,
+    })
   })
 
   it('aborts entirely when the vault is locked', async () => {
     vault.available = false
-    const result = await runCredentialMigration(plan, vault, store)
+    const result = await runCredentialMigration(plan, values, vault, store)
 
     expect(result.aborted).toBe(true)
     expect(result.migratedHosts).toBe(0)
@@ -155,7 +205,7 @@ describe('runCredentialMigration', () => {
 
   it('leaves a row untouched when its vault write fails', async () => {
     vault.failOnWrite = 'h1'
-    const result = await runCredentialMigration(plan, vault, store)
+    const result = await runCredentialMigration(plan, values, vault, store)
 
     expect(result.failed).toHaveLength(1)
     expect(result.failed[0]).toMatchObject({ id: 'h1', kind: 'host' })
@@ -166,7 +216,7 @@ describe('runCredentialMigration', () => {
 
   it('does not clear a row whose vault value cannot be read back', async () => {
     vault.corruptReads = true
-    const result = await runCredentialMigration(plan, vault, store)
+    const result = await runCredentialMigration(plan, values, vault, store)
 
     expect(result.failed).toHaveLength(3)
     expect(store.committedHosts).toEqual([])
@@ -175,25 +225,25 @@ describe('runCredentialMigration', () => {
 
   it('leaves a host untouched when the database write fails', async () => {
     store.failOnHost = 'h2'
-    const result = await runCredentialMigration(plan, vault, store)
+    const result = await runCredentialMigration(plan, values, vault, store)
 
     expect(result.failed.map(entry => entry.id)).toEqual(['h2'])
     // h2's secret is in the vault but its row still points at plaintext, so the
     // old path keeps working and a retry is safe (same vault key).
-    expect(vault.store.get('h2:privateKey')).toBe('k2')
+    expect(vault.store.get('host:h2:1:privateKey')).toBe('k2')
   })
 
   it('is idempotent: running it twice migrates nothing the second time', async () => {
-    await runCredentialMigration(plan, vault, store)
+    await runCredentialMigration(plan, values, vault, store)
     const afterFirst = planCredentialMigration([], [])
-    const second = await runCredentialMigration(afterFirst, vault, store)
+    const second = await runCredentialMigration(afterFirst, { hosts: [], keys: [] }, vault, store)
     expect(second.migratedHosts).toBe(0)
     expect(second.migratedKeys).toBe(0)
   })
 
   it('does nothing at all for an empty plan', async () => {
     const empty = planCredentialMigration([], [])
-    const result = await runCredentialMigration(empty, vault, store)
+    const result = await runCredentialMigration(empty, { hosts: [], keys: [] }, vault, store)
     expect(result).toMatchObject({ migratedHosts: 0, migratedKeys: 0, aborted: false })
     expect(vault.store.size).toBe(0)
   })

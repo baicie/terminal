@@ -8,7 +8,8 @@ import {
   getWorkspaces,
 } from '@/service/database/workspaces'
 import { sanitizeHostRow, sanitizeSshKeyRow } from './export-sanitize'
-import { createImportStats, importResources } from './sync-import'
+import type { ImportSecretsPolicy } from './import-security'
+import { createImportStats, importWithSecretPolicy } from './sync-import'
 import { assertExportTablesReadable } from './sync-export'
 import type {
   MergeMode,
@@ -124,17 +125,36 @@ export function previewTeamPackage(content: string): TeamPackageExport | null {
   }
 }
 
+/**
+ * Import a team package.
+ *
+ * A team package is a file like any other, so it goes through the same secret
+ * boundary: the default policy is `reject`, which means a package carrying
+ * plaintext is refused and reported instead of imported with the credentials
+ * silently dropped. The caller shows the decision and calls again with the answer.
+ *
+ * `settings` is always `{}`: a team package carries no settings, and passing the
+ * file's own map through would let a crafted package write one.
+ */
 export async function importTeamPackage(
   content: string,
   mergeMode: MergeMode = 'merge',
+  options: {
+    policy?: ImportSecretsPolicy
+    versionFor?: (resource: 'host' | 'sshKey', id: string) => number
+  } = {},
 ): Promise<TeamImportStats> {
   const data = previewTeamPackage(content)
   if (!data) throw new Error('Invalid team package format')
   const stats: TeamImportStats = { ...createImportStats(), members: 0 }
-  await importResources(
+  await importWithSecretPolicy(
     { ...data, exportedAt: 0, type: 'team', settings: {} },
     mergeMode,
     stats,
+    {
+      policy: options.policy ?? 'reject',
+      versionFor: options.versionFor,
+    },
   )
   return stats
 }

@@ -16,6 +16,7 @@ const ALTERS = [
   'ALTER TABLE hosts ADD COLUMN agent_forwarding INTEGER DEFAULT 0',
   "ALTER TABLE hosts ADD COLUMN shell_integration TEXT DEFAULT 'off'",
   'ALTER TABLE hosts ADD COLUMN credential_ref TEXT',
+  'ALTER TABLE ssh_keys ADD COLUMN credential_ref TEXT',
 ]
 
 const HOST_COLUMNS = [

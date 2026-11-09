@@ -45,7 +45,43 @@ export default {
   'settings.importing': 'Importation...',
   'settings.importSuccess': 'Importation réussie !',
   'settings.securityWarning':
-    "Les données sont exportées au format JSON brut. Les informations sensibles comme les mots de passe peuvent être incluses. Gardez vos fichiers d'exportation en sécurité.",
+    "Le fichier exporté ne contient aucun mot de passe ni clé privée. Chaque hôte ne conserve qu'une description des identifiants qu'il avait ; une restauration sur un autre appareil vous demandera de les redéfinir.",
+  'settings.importSecretsTitle': 'Cette sauvegarde contient des identifiants en clair',
+  'settings.importSecretsDesc':
+    "Une sauvegarde produite par une ancienne version stocke les mots de passe et les clés privées dans le fichier. Choisissez ce qu'il advient d'eux.",
+  'settings.importSecretsNone': 'Ce fichier ne contient aucun identifiant en clair.',
+  'settings.importSecretsCounts':
+    '{{hostPasswords}} mot(s) de passe d\'hôte, {{hostPrivateKeys}} clé(s) privée(s) d\'hôte, {{sshKeyPrivateKeys}} clé(s) privée(s) de clé, {{sshKeyPassphrases}} phrase(s) secrète(s).',
+  'settings.importSecretsMigrate': 'Les déplacer vers le coffre',
+  'settings.importSecretsMigrateDesc':
+    "Écrit chaque valeur dans le coffre de cet appareil, la relit, puis n'importe qu'une référence. Le coffre doit être déverrouillé.",
+  'settings.importSecretsDiscard': 'Importer sans les identifiants',
+  'settings.importSecretsDiscardDesc':
+    "Importe les hôtes et les clés comme métadonnées seulement. Chacun devra être reconfiguré avant de pouvoir se connecter.",
+  'settings.importSecretsCancel': "Ne pas importer",
+  'settings.importNeedsRebind': '{{count}} élément(s) importé(s) sans identifiants',
+  'settings.importNeedsRebindDesc':
+    "Ceux-ci nécessitent un mot de passe ou une clé avant de pouvoir se connecter :",
+
+  'settings.migrationTitle': 'Identifiants stockés en clair',
+  'settings.migrationDesc':
+    "Les hôtes et les clés enregistrés par une ancienne version peuvent encore contenir leur mot de passe ou leur clé privée dans la base locale. Les déplacer vers le coffre efface ces colonnes.",
+  'settings.migrationChecking': 'Vérification de la base...',
+  'settings.migrationWarning':
+    "Une sauvegarde de la base est effectuée d'abord. Effacer une colonne ne réécrit pas un ancien WAL ni un fichier d'export existant ; protégez-les aussi.",
+  'settings.migrationRun': 'Déplacer les identifiants en clair vers le coffre',
+  'settings.migrationCounts':
+    '{{hosts}} hôte(s) et {{keys}} clé(s) déplacés ; {{failed}} échec(s).',
+  'settings.migrationSnapshot': 'Sauvegarde de la base : {{path}}',
+  'settings.migrationVerified':
+    'Vérifié : aucune colonne en clair ne subsiste et chaque référence se résout dans le coffre.',
+  'settings.migrationVerifyFailed':
+    'La vérification a trouvé {{count}} problème(s) — certaines lignes peuvent encore nécessiter une action.',
+  'settings.migrationSucceeded': 'Identifiants déplacés vers le coffre.',
+  'settings.migrationPartial':
+    '{{failed}} ligne(s) n\'ont pas pu être migrées et conservent leur clair.',
+  'settings.migrationVaultUnavailable':
+    "Le coffre n'est pas disponible. Créez-le ou déverrouillez-le, puis relancez.",
 
   // Appearance
   'settings.theme': 'Thème',

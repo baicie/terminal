@@ -1,32 +1,25 @@
-import type { CredentialRef } from '@/service/credential-boundary'
+import { parseCredentialRef as parseRef } from '@/service/credential-boundary'
+import type { CredentialRef, CredentialRefProblem } from '@/service/credential-boundary'
 import type { AuthType, Group, Host, ShellIntegrationMode } from '@/types'
 
 /**
- * Parses the `credential_ref` column.
+ * Reads the `credential_ref` column for a host row.
  *
- * A malformed value is treated as "no reference" rather than throwing: a broken
- * pointer must not make the host list unreadable. It also must not be silently
- * turned into a *valid* reference, which would claim secrets exist that do not.
+ * A broken pointer must not make the host list unreadable, so this never throws.
+ * But it must not be flattened to `null` either: `null` means "this host stores
+ * nothing", and a damaged reference means "this host stores something I cannot
+ * read". The difference is the difference between connecting with an agent and
+ * connecting with an empty password, so the problem is kept on the host and the
+ * connect path refuses with it. See `docs/phase10/10-credential-boundary-adr.md` §4.
  */
-function parseCredentialRef(
-  raw: string | null | undefined,
-): CredentialRef | null {
-  if (raw === null || raw === undefined || raw === '') return null
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (parsed === null || typeof parsed !== 'object') return null
-    const kindList = (parsed as { kinds?: unknown }).kinds
-    const provider = (parsed as { provider?: unknown }).provider
-    if (!Array.isArray(kindList) || provider !== 'vault') return null
-    const kinds = kindList.filter(
-      (kind): kind is 'password' | 'privateKey' | 'passphrase' =>
-        kind === 'password' || kind === 'privateKey' || kind === 'passphrase',
-    )
-    if (kinds.length === 0) return null
-    return { kinds, provider: 'vault' }
-  } catch {
-    return null
-  }
+function readCredentialRef(raw: string | null | undefined): {
+  credentialRef: CredentialRef | null
+  credentialRefProblem: CredentialRefProblem | null
+} {
+  const parsed = parseRef(raw)
+  return parsed.ok
+    ? { credentialRef: parsed.ref, credentialRefProblem: null }
+    : { credentialRef: null, credentialRefProblem: parsed.problem }
 }
 
 export interface HostRow {
@@ -66,6 +59,7 @@ export interface GroupRow {
 }
 
 export function hostRowToHost(row: HostRow): Host {
+  const ref = readCredentialRef(row.credential_ref)
   return {
     id: row.id,
     name: row.name,
@@ -73,8 +67,10 @@ export function hostRowToHost(row: HostRow): Host {
     port: row.port,
     username: row.username,
     authType: row.auth_type as AuthType,
-    // The reference says which secrets the vault holds.
-    credentialRef: parseCredentialRef(row.credential_ref),
+    // The reference says which secrets the vault holds; the problem says why it
+    // could not be read when it is present.
+    credentialRef: ref.credentialRef,
+    credentialRefProblem: ref.credentialRefProblem,
     // Legacy plaintext is still read, and must be until the migration has run:
     // ignoring it would leave every host saved by an older build unable to
     // connect, which is a worse outcome than the plaintext it replaces. New

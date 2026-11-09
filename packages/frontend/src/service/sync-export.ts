@@ -4,6 +4,7 @@ import { getUserProfile, selectStrict } from '@/service/database'
 import { getKnownHosts } from '@/service/database/known-hosts'
 import { getSSHKeys } from '@/service/database/ssh-keys'
 import { sanitizeHostRow, sanitizeSshKeyRow } from './export-sanitize'
+import { exportableSettings } from './settings-export-policy'
 import {
   getWorkspaceLayout,
   getWorkspaces,
@@ -55,13 +56,11 @@ export async function collectExportData(
       layoutData: await getWorkspaceLayout(workspace.id),
     })),
   )
-  const settings = settingsRows.reduce<Record<string, unknown>>(
-    (result, row) => {
-      if (row.key) result[row.key] = row.value
-      return result
-    },
-    {},
-  )
+  // Field-level allowlist, not a table-key filter: `syncServiceToken` is a field
+  // inside the `app_settings` JSON blob, so removing the key named
+  // `syncServiceToken` from the settings table would leave the token in place and
+  // look correct while doing it.
+  const settings = exportableSettings(settingsRows)
   const userProfile = await getUserProfile()
   return {
     version: '1.0.0',

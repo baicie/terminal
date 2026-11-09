@@ -5,6 +5,8 @@ import {
   useStorageSync,
   type StorageServiceConfig,
 } from '@/hooks/use-storage-sync'
+import type { ImportSecretsDiagnosis } from '@/service/sync'
+import { ImportSecretsPanel } from './import-secrets-panel'
 import { StorageModeSection } from './storage-mode-section'
 import { StorageServiceSection } from './storage-service-section'
 import { StorageSyncActions } from './storage-sync-actions'
@@ -39,6 +41,8 @@ export function StorageSettingsDialog({
         }
       : null
   const sync = useStorageSync({ getConfig })
+  const [pendingRestoreDecision, setPendingRestoreDecision] =
+    useState<ImportSecretsDiagnosis | null>(null)
   const onTestConnection = async () => {
     if (!settings.syncServiceEndpoint) {
       toast.error(t('settings.testConnection'), {
@@ -53,7 +57,18 @@ export function StorageSettingsDialog({
     onSyncComplete?.()
   }
   const onRestore = async () => {
-    await sync.handleRestoreFromServer(restoreMode)
+    const outcome = await sync.handleRestoreFromServer(restoreMode)
+    if (outcome.needsDecision) {
+      // The backup was found and deliberately not imported. Show the same counts
+      // and choices a file import shows, rather than reporting "not found".
+      setPendingRestoreDecision(outcome.needsDecision)
+      return
+    }
+    onSyncComplete?.()
+  }
+  const resolveRestoreDecision = async (policy: 'migrate' | 'discard') => {
+    await sync.handleRestoreFromServer(restoreMode, policy)
+    setPendingRestoreDecision(null)
     onSyncComplete?.()
   }
   return (
@@ -70,6 +85,15 @@ export function StorageSettingsDialog({
         showTokenVisible={showTokenVisible}
         onToggleToken={() => setShowTokenVisible(v => !v)}
       />
+      {pendingRestoreDecision && (
+        <ImportSecretsPanel
+          diagnosis={pendingRestoreDecision}
+          busy={sync.restoring}
+          onMigrate={() => void resolveRestoreDecision('migrate')}
+          onDiscard={() => void resolveRestoreDecision('discard')}
+          onCancel={() => setPendingRestoreDecision(null)}
+        />
+      )}
       <StorageSyncActions
         t={t}
         endpoint={settings.syncServiceEndpoint}

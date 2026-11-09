@@ -12,6 +12,8 @@
  *    statement runs at all and the caller sees the snapshot error.
  */
 
+import { columnMigrations } from './connection-schema-migrations'
+import type { ColumnMigration } from './connection-schema-migrations'
 import { groupMigrationTargets } from './migration-targets'
 import {
   requireMigrationSnapshot,
@@ -25,13 +27,6 @@ export interface SqliteConnection {
   select?: (sql: string, params?: unknown[]) => Promise<unknown[]>
 }
 
-/** One column an upgrade adds to a table an older release already created. */
-interface ColumnMigration {
-  table: string
-  column: string
-  sql: string
-}
-
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS hosts (id TEXT PRIMARY KEY, name TEXT NOT NULL, hostname TEXT NOT NULL, port INTEGER DEFAULT 22, username TEXT NOT NULL, auth_type TEXT DEFAULT 'password', password TEXT, private_key TEXT, certificate TEXT, group_id TEXT, is_favorite INTEGER DEFAULT 0, color TEXT, tags TEXT, port_forwards TEXT, startup_command TEXT, environment TEXT, jump_host_id TEXT, jump_host_auth_type TEXT, agent_forwarding INTEGER DEFAULT 0, shell_integration TEXT DEFAULT 'off', created_at INTEGER, updated_at INTEGER)`,
   `CREATE TABLE IF NOT EXISTS groups (id TEXT PRIMARY KEY, name TEXT NOT NULL, parent_id TEXT, color TEXT, inherit_settings INTEGER DEFAULT 1, settings TEXT, "order" INTEGER DEFAULT 0)`,
@@ -40,7 +35,7 @@ const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`,
   `CREATE TABLE IF NOT EXISTS known_hosts (id TEXT PRIMARY KEY, hostname TEXT NOT NULL, port INTEGER DEFAULT 22, fingerprint TEXT NOT NULL, key_type TEXT, added_at INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS idx_known_hosts_hostname ON known_hosts(hostname)`,
-  `CREATE TABLE IF NOT EXISTS ssh_keys (id TEXT PRIMARY KEY, name TEXT NOT NULL, key_type TEXT, private_key TEXT, public_key TEXT, certificate TEXT, passphrase TEXT, is_encrypted INTEGER DEFAULT 0, created_at INTEGER, updated_at INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS ssh_keys (id TEXT PRIMARY KEY, name TEXT NOT NULL, key_type TEXT, private_key TEXT, public_key TEXT, certificate TEXT, passphrase TEXT, credential_ref TEXT, is_encrypted INTEGER DEFAULT 0, created_at INTEGER, updated_at INTEGER)`,
   `CREATE INDEX IF NOT EXISTS idx_ssh_keys_name ON ssh_keys(name)`,
   `CREATE TABLE IF NOT EXISTS command_history (id INTEGER PRIMARY KEY AUTOINCREMENT, host_id TEXT, command TEXT NOT NULL, executed_at INTEGER NOT NULL, session_id TEXT)`,
   `CREATE INDEX IF NOT EXISTS idx_command_history_host_id ON command_history(host_id)`,
@@ -55,57 +50,8 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS idx_script_executions_started_at ON script_executions(started_at DESC)`,
 ]
 
-/**
- * The additive part of the schema, as one list so the statements and the "is this
- * upgrade still pending?" check can never disagree about what an upgrade is.
- */
-const columnMigrations: ColumnMigration[] = [
-  {
-    table: 'connection_logs',
-    column: 'error_message',
-    sql: 'ALTER TABLE connection_logs ADD COLUMN error_message TEXT',
-  },
-  {
-    table: 'connection_logs',
-    column: 'error_raw',
-    sql: 'ALTER TABLE connection_logs ADD COLUMN error_raw TEXT',
-  },
-  {
-    table: 'hosts',
-    column: 'certificate',
-    sql: 'ALTER TABLE hosts ADD COLUMN certificate TEXT',
-  },
-  {
-    table: 'hosts',
-    column: 'jump_host_id',
-    sql: 'ALTER TABLE hosts ADD COLUMN jump_host_id TEXT',
-  },
-  {
-    table: 'hosts',
-    column: 'jump_host_auth_type',
-    sql: 'ALTER TABLE hosts ADD COLUMN jump_host_auth_type TEXT',
-  },
-  {
-    table: 'hosts',
-    column: 'agent_forwarding',
-    sql: 'ALTER TABLE hosts ADD COLUMN agent_forwarding INTEGER DEFAULT 0',
-  },
-  {
-    table: 'hosts',
-    column: 'shell_integration',
-    sql: "ALTER TABLE hosts ADD COLUMN shell_integration TEXT DEFAULT 'off'",
-  },
-  {
-    // Phase 10: the host row stops carrying secrets. This column names what is
-    // stored in the vault (JSON `{kinds:[], provider:'vault'}`), never the value.
-    // The legacy `password` / `private_key` / `certificate` columns stay for
-    // migration and rollback; see docs/phase10/04-architecture-and-credential-policy.md.
-    table: 'hosts',
-    column: 'credential_ref',
-    sql: 'ALTER TABLE hosts ADD COLUMN credential_ref TEXT',
-  },
-]
-
+export { columnMigrations } from './connection-schema-migrations'
+export type { ColumnMigration } from './connection-schema-migrations'
 /**
  * Does this error mean "the column is already there"?
  *

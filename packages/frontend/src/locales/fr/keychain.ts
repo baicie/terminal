@@ -52,6 +52,15 @@ export default {
   'keychain.fido2': 'FIDO2',
   'keychain.privateKeyRequired': 'Clé privée *',
   'keychain.importFromFile': 'Importer depuis un fichier',
+  'keychain.revealPrivateKey': 'Afficher la clé privée',
+  'keychain.hidePrivateKey': 'Masquer la clé privée',
+  'keychain.copyPrivateKey': 'Copier la clé privée',
+  'keychain.privateKeyCopied': 'Clé privée copiée dans le presse-papiers.',
+  'keychain.privateKeyVisibleWarning':
+    "La clé privée reste affichée jusqu'à ce que vous la masquiez ou sélectionniez une autre clé. Elle est lue depuis le coffre à la demande et n'est jamais stockée sur la ligne de la clé.",
+  'keychain.privateKeyUnavailable': 'La clé privée n\'a pas pu être lue',
+  'keychain.privateKeyUnavailableDesc':
+    "Elle est stockée dans le coffre. Déverrouillez le coffre et réessayez, ou réimportez la clé.",
   'keychain.privateKeyPlaceholder':
     'Collez le contenu de la clé privée ou importez depuis un fichier...',
   'keychain.publicKeyPlaceholder': 'Collez le contenu de la clé publique...',

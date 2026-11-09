@@ -1,6 +1,6 @@
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { readTextFile } from '@tauri-apps/plugin-fs'
-import { Download, Package, RefreshCw, Upload } from 'lucide-react'
+import { RefreshCw, Upload } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -8,11 +8,12 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { importTeamPackage, previewTeamPackage } from '@/service/sync'
+import { diagnoseImport, importTeamPackage, previewTeamPackage } from '@/service/sync'
+import type { ImportSecretsDiagnosis, ImportSecretsPolicy } from '@/service/sync'
+import { TeamPackagePreviewCard } from './team-package-preview-card'
 import { useTeamStore } from '@/store/team'
 
 interface JoinTeamDialogProps {
@@ -26,6 +27,7 @@ export const JoinTeamDialog: React.FC<JoinTeamDialogProps> = ({
 }) => {
   const { t } = useTranslation()
   const [step, setStep] = useState<'select' | 'preview' | 'importing'>('select')
+  const [secrets, setSecrets] = useState<ImportSecretsDiagnosis | null>(null)
   const [previewData, setPreviewData] = useState<{
     teamName: string
     hosts: number
@@ -34,7 +36,7 @@ export const JoinTeamDialog: React.FC<JoinTeamDialogProps> = ({
     members: number
   } | null>(null)
   const [content, setContent] = useState<string | null>(null)
-  const [, setLoading] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const enableTeamMode = useTeamStore(state => state.enableTeamMode)
@@ -65,6 +67,10 @@ export const JoinTeamDialog: React.FC<JoinTeamDialogProps> = ({
 
         if (preview) {
           setContent(fileContent)
+          // A team package can carry plaintext secrets from an older build. The
+          // decision is shown before Import is enabled, so the answer is the
+          // user's, not a default that either leaks or silently drops.
+          setSecrets(diagnoseImport(preview))
           setPreviewData({
             teamName: preview.teamName,
             hosts: preview.hosts?.length || 0,
@@ -82,13 +88,13 @@ export const JoinTeamDialog: React.FC<JoinTeamDialogProps> = ({
     }
   }
 
-  const handleImport = async () => {
+  const handleImport = async (policy: ImportSecretsPolicy = 'reject') => {
     if (!content) return
 
     setStep('importing')
     setLoading(true)
     try {
-      const stats = await importTeamPackage(content, 'merge')
+      const stats = await importTeamPackage(content, 'merge', { policy })
       await enableTeamMode({ mode: 'local' })
       toast.success(t('teams.importSuccess'), {
         description: t('teams.importedSummary', {
@@ -104,6 +110,9 @@ export const JoinTeamDialog: React.FC<JoinTeamDialogProps> = ({
       setLoading(false)
     }
   }
+
+  const handleMigrateSecrets = () => void handleImport('migrate')
+  const handleDiscardSecrets = () => void handleImport('discard')
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -130,56 +139,17 @@ export const JoinTeamDialog: React.FC<JoinTeamDialogProps> = ({
         )}
 
         {step === 'preview' && previewData && (
-          <div className="space-y-4 py-4">
-            <div className="p-4 bg-muted rounded-lg space-y-2">
-              <div className="font-medium flex items-center gap-2">
-                <Package className="size-4" />
-                {previewData.teamName}
-              </div>
-              <div className="text-sm text-muted-foreground space-y-1">
-                {previewData.hosts > 0 && (
-                  <div>
-                    •{t('teams.packageHosts', { count: previewData.hosts })}
-                  </div>
-                )}
-                {previewData.groups > 0 && (
-                  <div>
-                    •{t('teams.packageGroups', { count: previewData.groups })}
-                  </div>
-                )}
-                {previewData.snippets > 0 && (
-                  <div>
-                    •{t('teams.packageSnippets', {
-                      count: previewData.snippets,
-                    })}
-                  </div>
-                )}
-                {previewData.members > 0 && (
-                  <div>
-                    •{t('teams.packageMembers', {
-                      count: previewData.members,
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-            {error && (
-              <div className="p-3 bg-destructive/10 text-destructive text-sm rounded-lg">
-                {error}
-              </div>
-            )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setStep('select')}>
-                {t('common.cancel')}
-              </Button>
-              <Button onClick={handleImport}>
-                <Download className="size-4 mr-2" />
-                {t('teams.import')}
-              </Button>
-            </DialogFooter>
-          </div>
+          <TeamPackagePreviewCard
+            preview={previewData}
+            error={error}
+            secrets={secrets}
+            busy={loading}
+            onCancel={() => setStep('select')}
+            onImport={() => handleImport()}
+            onMigrateSecrets={handleMigrateSecrets}
+            onDiscardSecrets={handleDiscardSecrets}
+          />
         )}
-
         {step === 'importing' && (
           <div className="py-8 text-center space-y-3">
             <RefreshCw className="size-8 mx-auto animate-spin text-primary" />

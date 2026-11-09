@@ -16,12 +16,14 @@ use sqlx::sqlite::{SqliteArguments, SqliteConnection};
 use sqlx::{query::Query, Pool, Sqlite};
 use tokio::sync::Mutex;
 
-use super::payload::{ImportPayload, PayloadError};
+use super::payload::{parse_bound_ref, ImportPayload, PayloadError};
+use super::secrets::{host_presence, imported_credential_ref, ssh_key_presence, ImportSecretReport, ImportedCredentialRef};
 
 /// Serializes imports across windows and entry points inside this process.
 static IMPORT_LOCK: Mutex<()> = Mutex::const_new(());
 
-/// Rows imported per table, matching `ImportStats` on the frontend.
+/// Rows imported per table, matching `ImportStats` on the frontend, plus what the
+/// import could not carry and what the user must do about it.
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportReport {
@@ -32,6 +34,26 @@ pub struct ImportReport {
     pub ssh_keys: u64,
     pub known_hosts: u64,
     pub workspaces: u64,
+    /// Hosts whose credential did not come across because the vault key belongs to
+    /// another device. Each needs the user to set a password or key again.
+    pub credentials_needing_rebind: Vec<NeedsRebind>,
+    /// Secrets found in the file and what happened to them. Empty under a payload
+    /// that carried none, which is the normal case for a Phase 10.1 export.
+    pub secrets: ImportSecretReport,
+}
+
+/// One host or key the user has to fix after an import.
+///
+/// Carries the kinds the source device stored so the UI can say "this host needs
+/// its password again" instead of a generic "credentials missing".
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NeedsRebind {
+    /// `host` or `sshKey`.
+    pub resource: &'static str,
+    pub id: String,
+    pub name: String,
+    pub kinds: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -64,6 +86,13 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 }
 
 // Statement text. Table and column names live here and nowhere else.
+//
+// The host and ssh-key statements deliberately have **no** secret column:
+// `password`, `private_key` and `passphrase` are absent from the SQL itself, not
+// bound as NULL through a parameter. That is what makes the boundary structural
+// rather than a convention — there is no placeholder a value could be passed
+// through, so re-introducing one requires editing this SQL and the plan builder
+// below, which the failure tests in `tests.rs` guard directly.
 const BEGIN_IMMEDIATE: &str = "BEGIN IMMEDIATE";
 const COMMIT: &str = "COMMIT";
 const ROLLBACK: &str = "ROLLBACK";
@@ -73,8 +102,8 @@ const GROUP_INSERT: &str = "INSERT INTO groups (id, name, parent_id, color, inhe
 const GROUP_UPDATE: &str = "UPDATE groups SET name = ?, parent_id = ?, color = ?, inherit_settings = ?, settings = ?, \"order\" = ? WHERE id = ?";
 
 const HOST_EXISTS: &str = "SELECT id FROM hosts WHERE id = ?";
-const HOST_INSERT: &str = "INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, shell_integration, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-const HOST_UPDATE: &str = "UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, certificate = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?";
+const HOST_INSERT: &str = "INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, credential_ref, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, shell_integration, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+const HOST_UPDATE: &str = "UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?";
 
 const SNIPPET_PACKAGE_EXISTS: &str = "SELECT id FROM snippet_packages WHERE id = ?";
 const SNIPPET_PACKAGE_INSERT: &str =
@@ -88,8 +117,8 @@ const SNIPPET_UPDATE: &str =
     "UPDATE snippets SET name = ?, description = ?, script = ?, package_id = ?, tags = ?, variables = ? WHERE id = ?";
 
 const SSH_KEY_EXISTS: &str = "SELECT id FROM ssh_keys WHERE id = ?";
-const SSH_KEY_INSERT: &str = "INSERT INTO ssh_keys (id, name, key_type, private_key, public_key, certificate, passphrase, is_encrypted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-const SSH_KEY_UPDATE: &str = "UPDATE ssh_keys SET name = ?, key_type = ?, private_key = ?, public_key = ?, certificate = ?, passphrase = ?, is_encrypted = ?, updated_at = ? WHERE id = ?";
+const SSH_KEY_INSERT: &str = "INSERT INTO ssh_keys (id, name, key_type, private_key, public_key, certificate, passphrase, credential_ref, is_encrypted, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?)";
+const SSH_KEY_UPDATE: &str = "UPDATE ssh_keys SET name = ?, key_type = ?, private_key = NULL, public_key = ?, certificate = ?, passphrase = NULL, credential_ref = ?, is_encrypted = ?, updated_at = ? WHERE id = ?";
 
 const KNOWN_HOST_EXISTS: &str = "SELECT id FROM known_hosts WHERE hostname = ? AND port = ?";
 const KNOWN_HOST_INSERT: &str =
@@ -252,6 +281,29 @@ fn group_plan(row: &super::payload::GroupRow) -> Upsert {
     }
 }
 
+/// The `credential_ref` value an imported host is stored with.
+///
+/// Two inputs, never mixed:
+///
+/// - `bound_credential_ref` is the reference *this* build wrote when it moved the
+///   secret into this device's vault. Only that one may be persisted.
+/// - `credential_ref` came from the file and describes the *source* device's
+///   vault. It is a fact for the migration prompt, never a value to store: the
+///   target has a different master key, so the pointer would dangle.
+fn imported_ref_arg(row: &super::payload::HostRow) -> SqlArg {
+    match super::payload::parse_bound_ref(row.bound_credential_ref.as_ref()) {
+        Some(reference) => SqlArg::Text(reference),
+        None => SqlArg::Null,
+    }
+}
+
+fn imported_key_ref_arg(row: &super::payload::SshKeyRow) -> SqlArg {
+    match super::payload::parse_bound_ref(row.bound_credential_ref.as_ref()) {
+        Some(reference) => SqlArg::Text(reference),
+        None => SqlArg::Null,
+    }
+}
+
 fn host_plan(row: &super::payload::HostRow, now: i64) -> Upsert {
     let shared = || {
         vec![
@@ -260,9 +312,8 @@ fn host_plan(row: &super::payload::HostRow, now: i64) -> Upsert {
             arg(row.port.as_ref()),
             arg(row.username.as_ref()),
             arg(row.auth_type.as_ref()),
-            arg(row.password.as_ref()),
-            arg(row.private_key.as_ref()),
             arg(row.certificate.as_ref()),
+            imported_ref_arg(row),
             arg(row.group_id.as_ref()),
             arg(row.is_favorite.as_ref()),
             arg(row.color.as_ref()),
@@ -342,10 +393,9 @@ fn ssh_key_plan(row: &super::payload::SshKeyRow, now: i64) -> Upsert {
         vec![
             arg(row.name.as_ref()),
             arg(row.key_type.as_ref()),
-            arg(row.private_key.as_ref()),
             arg(row.public_key.as_ref()),
             arg(row.certificate.as_ref()),
-            arg(row.passphrase.as_ref()),
+            imported_key_ref_arg(row),
             arg(row.is_encrypted.as_ref()),
         ]
     };
@@ -430,6 +480,12 @@ async fn apply(
     let now = payload.now_ms();
     let mut report = ImportReport::default();
 
+    // What the file brought along is computed once, from the rows as they arrived,
+    // before a single statement runs: the same pass the validation used, so the
+    // counters in the report are the ones that decision was made on.
+    report.secrets = payload.scan_secrets();
+    report.credentials_needing_rebind = rebind_list(payload);
+
     for row in &payload.groups {
         upsert(conn, &mut report.groups, replace, group_plan(row)).await?;
     }
@@ -491,6 +547,100 @@ fn layout_arg(value: Option<&Value>) -> Option<SqlArg> {
     match value {
         None | Some(Value::Null) => None,
         Some(layout) => Some(SqlArg::Text(layout.to_string())),
+    }
+}
+
+/// Which rows the user must rebind a credential for after this import.
+///
+/// Two sources, unioned because they mean the same thing to the user:
+///
+/// - the file described a stored credential (a source-device reference) that could
+///   not be carried across, and
+/// - the file carried a plaintext secret that the `discard` policy dropped.
+///
+/// A row under `migrate` has a bound reference and is *not* listed: its secret is
+/// in this device's vault already.
+fn rebind_list(payload: &ImportPayload) -> Vec<NeedsRebind> {
+    let mut rebind = Vec::new();
+    let discarded = payload.secrets_policy() == super::payload::SecretsPolicy::Discard;
+
+    for row in &payload.hosts {
+        let id = row_arg_string(row.id.as_ref());
+        let name = row_arg_string(row.name.as_ref());
+        // A bound reference means this import already put the secret in this
+        // device's vault; the host is ready to connect and must not be reported as
+        // needing anything. Checked first, because under `migrate` the file's own
+        // reference is still present as the record of what the source device had.
+        if parse_bound_ref(row.bound_credential_ref.as_ref()).is_some() {
+            continue;
+        }
+        let from_file = match imported_credential_ref(row.credential_ref.as_ref()) {
+            ImportedCredentialRef::NeedsRebind { kinds } => kinds,
+            ImportedCredentialRef::None => Vec::new(),
+        };
+        if !from_file.is_empty() {
+            rebind.push(NeedsRebind {
+                resource: "host",
+                id,
+                name,
+                kinds: from_file,
+            });
+            continue;
+        }
+        if !discarded {
+            continue;
+        }
+        // The file had no reference but did have a plaintext secret; name the
+        // kinds so the prompt is specific.
+        let presence = host_presence(row.password.as_ref(), row.private_key.as_ref());
+        if !presence.any() {
+            continue;
+        }
+        let mut kinds = Vec::new();
+        if presence.password {
+            kinds.push("password".to_string());
+        }
+        if presence.private_key {
+            kinds.push("privateKey".to_string());
+        }
+        rebind.push(NeedsRebind {
+            resource: "host",
+            id,
+            name,
+            kinds,
+        });
+    }
+
+    for row in &payload.ssh_keys {
+        if parse_bound_ref(row.bound_credential_ref.as_ref()).is_some() {
+            continue;
+        }
+        let presence = ssh_key_presence(row.private_key.as_ref(), row.passphrase.as_ref());
+        if !presence.any() {
+            continue;
+        }
+        let mut kinds = Vec::new();
+        if presence.private_key {
+            kinds.push("privateKey".to_string());
+        }
+        if presence.passphrase {
+            kinds.push("passphrase".to_string());
+        }
+        rebind.push(NeedsRebind {
+            resource: "sshKey",
+            id: row_arg_string(row.id.as_ref()),
+            name: row_arg_string(row.name.as_ref()),
+            kinds,
+        });
+    }
+
+    rebind
+}
+
+fn row_arg_string(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::String(text)) => text.clone(),
+        _ => String::new(),
     }
 }
 

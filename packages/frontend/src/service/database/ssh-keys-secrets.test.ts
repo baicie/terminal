@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   select: vi.fn(),
   vaultWrite: vi.fn(),
   vaultRemove: vi.fn(),
+  vaultRead: vi.fn(),
+  vaultRemoveVersion: vi.fn(),
   vaultAvailable: vi.fn(async () => true),
 }))
 
@@ -20,7 +22,8 @@ vi.mock('@/service/vault-secret-provider', () => ({
   vaultSecretProvider: {
     write: mocks.vaultWrite,
     remove: mocks.vaultRemove,
-    read: vi.fn(),
+    read: mocks.vaultRead,
+    removeVersion: mocks.vaultRemoveVersion,
     isAvailable: mocks.vaultAvailable,
     // The save path now asks why the vault is unavailable so it can name the
     // right next step; this stub reports an existing, locked vault.
@@ -51,6 +54,38 @@ beforeEach(() => {
   mocks.vaultRemove.mockReset()
   mocks.vaultWrite.mockResolvedValue(undefined)
   mocks.vaultRemove.mockResolvedValue(undefined)
+  mocks.vaultRemoveVersion.mockReset()
+  mocks.vaultRemoveVersion.mockResolvedValue([])
+  mocks.vaultRead.mockReset()
+  // Every write is read back before the reference is produced.
+  mocks.vaultRead.mockImplementation(
+    async (_resource: unknown, _version: number, kind: string) => {
+      const call = mocks.vaultWrite.mock.calls.find(
+        ([, , writtenKind]) => writtenKind === kind,
+      )
+      return call?.[3] as string | undefined
+    },
+  )
+  // `updateSSHKey` reads the stored row before deciding the next version.
+  mocks.select.mockResolvedValue([
+    {
+      id: 'key-1',
+      name: 'deploy',
+      key_type: 'ssh-ed25519',
+      private_key: null,
+      public_key: null,
+      certificate: null,
+      passphrase: null,
+      credential_ref: JSON.stringify({
+        kinds: ['privateKey'],
+        provider: 'vault',
+        version: 1,
+      }),
+      is_encrypted: 1,
+      created_at: 0,
+      updated_at: 0,
+    },
+  ])
   mocks.vaultAvailable.mockResolvedValue(true)
 })
 
@@ -67,12 +102,21 @@ describe('createSSHKey', () => {
       is_encrypted: 0,
     } as never)
 
-    expect(mocks.vaultWrite).toHaveBeenCalledWith('key-1', 'privateKey', PRIVATE_KEY)
+    expect(mocks.vaultWrite).toHaveBeenCalledWith(
+      { type: 'ssh-key', id: 'key-1' },
+      1,
+      'privateKey',
+      PRIVATE_KEY,
+    )
     expect(parameters()).not.toContain(PRIVATE_KEY)
     expect(JSON.stringify(parameters())).not.toContain('BEGIN OPENSSH')
     // The INSERT hard-codes NULL for both secret columns (private_key and
     // passphrase), which are not adjacent in the column list.
-    expect(statementText()).toMatch(/VALUES \(\?, \?, \?, NULL, \?, \?, NULL,/)
+    // The INSERT hard-codes NULL for both secret columns and carries the
+    // reference instead.
+    expect(statementText()).toMatch(
+      /VALUES \(\?, \?, \?, NULL, \?, \?, NULL, \?, \?, \?, \?\)/,
+    )
   })
 
   it('writes a passphrase to the vault', async () => {
@@ -87,7 +131,12 @@ describe('createSSHKey', () => {
       is_encrypted: 1,
     } as never)
 
-    expect(mocks.vaultWrite).toHaveBeenCalledWith('key-1', 'passphrase', PASSPHRASE)
+    expect(mocks.vaultWrite).toHaveBeenCalledWith(
+      { type: 'ssh-key', id: 'key-1' },
+      expect.any(Number),
+      'passphrase',
+      PASSPHRASE,
+    )
     expect(JSON.stringify(parameters())).not.toContain(PASSPHRASE)
   })
 
@@ -125,22 +174,46 @@ describe('createSSHKey', () => {
 })
 
 describe('updateSSHKey', () => {
-  it('routes a new private key to the vault', async () => {
+  it('routes a new private key to the vault under a new version', async () => {
     await updateSSHKey('key-1', { private_key: PRIVATE_KEY } as never)
-    expect(mocks.vaultWrite).toHaveBeenCalledWith('key-1', 'privateKey', PRIVATE_KEY)
+    // The row already points at version 1, so the new value must not overwrite it:
+    // a failure after this write has to leave the old key usable.
+    expect(mocks.vaultWrite).toHaveBeenCalledWith(
+      { type: 'ssh-key', id: 'key-1' },
+      2,
+      'privateKey',
+      PRIVATE_KEY,
+    )
     expect(JSON.stringify(parameters())).not.toContain('BEGIN OPENSSH')
-    expect(statementText()).toMatch(/private_key = NULL/)
+    // The column is blanked only behind a marker that says this call carries the
+    // secret, so an unrelated edit cannot destroy a pre-migration plaintext.
+    expect(statementText()).toMatch(
+      /private_key = CASE WHEN \? = 1 THEN NULL ELSE private_key END/,
+    )
+    expect(parameters()[2]).toBe(1)
   })
 
   it('routes a new passphrase to the vault', async () => {
     await updateSSHKey('key-1', { passphrase: PASSPHRASE } as never)
-    expect(mocks.vaultWrite).toHaveBeenCalledWith('key-1', 'passphrase', PASSPHRASE)
+    expect(mocks.vaultWrite).toHaveBeenCalledWith(
+      { type: 'ssh-key', id: 'key-1' },
+      expect.any(Number),
+      'passphrase',
+      PASSPHRASE,
+    )
     expect(JSON.stringify(parameters())).not.toContain(PASSPHRASE)
   })
 
   it('a rename does not touch stored secrets', async () => {
     await updateSSHKey('key-1', { name: 'renamed' } as never)
     expect(mocks.vaultWrite).not.toHaveBeenCalled()
-    expect(statementText()).not.toMatch(/private_key|passphrase/)
+    // The statement mentions the columns (their CASE marker is always present) but
+    // the marker is 0, so the stored values survive.
+    const params = parameters()
+    expect(params[2]).toBe(0)
+    expect(params[5]).toBe(0)
+    expect(params).not.toContainEqual(
+      expect.stringContaining('"provider":"vault"'),
+    )
   })
 })

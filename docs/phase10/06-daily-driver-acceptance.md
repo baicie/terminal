@@ -34,7 +34,7 @@
 | 分屏 resize | 流畅 | 待测 |
 | 大输出内存 | 有上限 | 待测 |
 | 100 台主机搜索 | 任意命中 | **已达标**（测试） |
-| 凭据迁移可靠性 | 可回滚 | 迁移未实现 |
+| 凭据迁移可靠性 | 可回滚 | **已实现**（10.1：快照→写入→读回→单语句提交→重读验证；真实 GUI 执行 NOT_RUN） |
 | SFTP 完整性 | 暂存上传 | **已达标**（9.8 真实 sshd） |
 
 ## 7 天个人日用验收模板
@@ -64,3 +64,46 @@ D1   |         |         |         |              |
 
 CI 与单测能证明"逻辑正确"，不能证明"这个应用在真实桌面上好用"。本阶段所有需要
 真实 GUI、真实远端、真实键盘输入的项目一律标 NOT_RUN，不用 jsdom 结果冒充。
+
+---
+
+## Phase 10.1 验收补充（凭据安全收尾）
+
+Phase 10 的验收结论建立在一个不完整的前提上：它验证的是「新建/编辑路径不写明文」，
+而真实用户入口还包括 Rust 备份导入、云同步恢复和团队包。10.1 逐个封堵后，状态如下。
+
+### 已闭合（自动化证据）
+
+| 项 | 状态 | 证据 |
+| --- | --- | --- |
+| Rust 导入不写秘密列 | **PASS** | `db_import/tests.rs` 39 项，其中 12 项为 10.1 新增；秘密列在 SQL 文本中即为 `NULL` |
+| 旧版备份含明文默认拒绝 | **PASS** | 拒绝发生在 `BEGIN` 之前，返回各类型计数 |
+| `discard` 不伪造引用 | **PASS** | 断言 `credential_ref` 为 NULL 且返回需重绑清单 |
+| `migrate` 契约 | **PASS** | 残留明文、缺绑定引用、畸形引用、源设备引用均被拒绝 |
+| Merge / Replace 双模式 | **PASS** | replace 的 UPDATE 语句同样无秘密列 |
+| 前端 payload 不含明文 | **PASS** | `import-security.test.ts` 15 项，断言序列化文本 |
+| 云同步与团队包同一边界 | **PASS** | 两者均走 `importWithSecretPolicy`，默认 `reject` |
+| `syncServiceToken` 不导出 | **PASS** | `settings-export-policy.test.ts` 9 项，断言真实导出文件与上传 body |
+| 导入不覆盖本机 token | **PASS** | `mergeRestoredAppSettings` + 测试 |
+| 普通偏好仍能恢复 | **PASS** | 断言 theme/language/fontSize/endpoint/username |
+| 版本化写入与补偿 | **PASS** | `hosts-credential-versions.test.ts` 12 项 |
+| 清除顺序（先断引用后删） | **PASS** | 断言执行顺序 `['update','vault']` |
+| 迁移生产调用链 | **PASS** | `credential-migration-run.test.ts` 11 项 |
+| 计划不含秘密 | **PASS** | 类型上无值字段；断言序列化结果 |
+| Store 与数据库一致 | **PASS** | `host-refresh.test.ts` 7 项：新建→保存→立即连接 |
+| 损坏引用 fail-closed | **PASS** | `credential-ref-problems.test.ts` 12 项 |
+| SSH Key 命名空间隔离 | **PASS** | 同 id 主机与密钥不互通 |
+| SSH Key 按需读取 | **PASS** | `ssh-keys-lifecycle.test.ts` 16 项 |
+
+### 未执行（必须标 NOT_RUN）
+
+| 项 | 原因 |
+| --- | --- |
+| `VAULT_REAL_E2E`（真实 Vault 创建/解锁/改密/重启持久化） | 需要真实 GUI 交互；本轮只做服务层与临时目录演练 |
+| `SSH_VAULT_REAL_E2E`（Vault 密码/私钥真实登录） | 需要真实 sshd + 真实 Vault 会话 |
+| `JUMP_HOST_VAULT_REAL_E2E` | 同上，且需要双端凭据 |
+| `SFTP_REAL_E2E`（10.1 改动后） | 本轮未重跑 |
+| `WORKSPACE_RESTORE` | 本轮未重跑 |
+| `GUI_IME` / 中文输入 | 无辅助功能权限，无法驱动真实输入法 |
+| macOS / Windows / Linux 三平台真机回归 | 无环境 |
+| 真实用户数据库上的迁移执行 | 按规范不做；只允许 disposable SQLite + 测试 Vault |

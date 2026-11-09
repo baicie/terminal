@@ -5,18 +5,21 @@
  * goes through `vaultService`, which talks to the Rust vault (Argon2id + AES-GCM)
  * and never to SQLite.
  *
- * Key naming is per host and per kind, so removing one host's secret cannot touch
- * another's, and a reference that names `privateKey` can never read a password.
+ * Key naming comes from the credential boundary, which is the single place that
+ * decides what a key looks like. It has to be, because two things depend on the
+ * exact string: a connection that is looking for a secret it once stored, and a
+ * cleanup that removes the *previous* version's keys after a successful save. A
+ * second implementation of the naming would drift and the cleanup would delete the
+ * wrong generation.
  */
 
-import type { CredentialKind, SecretProvider } from './credential-boundary'
+import { vaultKey } from './credential-boundary'
+import type {
+  CredentialKind,
+  CredentialResource,
+  SecretProvider,
+} from './credential-boundary'
 import { toVaultCommandError, vaultService } from './vault'
-
-const KEY_PREFIX = 'host'
-
-function vaultKey(hostId: string, kind: CredentialKind): string {
-  return `${KEY_PREFIX}:${hostId}:${kind}`
-}
 
 /**
  * Why the vault cannot take a secret right now.
@@ -28,7 +31,7 @@ function vaultKey(hostId: string, kind: CredentialKind): string {
  */
 export type VaultAvailability =
   | { ok: true }
-  | { ok: false; state: 'uninitialized' | 'locked' | 'unusable' }
+  | { ok: false, state: 'uninitialized' | 'locked' | 'unusable' }
 
 export class VaultSecretProvider implements SecretProvider {
   async isAvailable(): Promise<boolean> {
@@ -54,11 +57,12 @@ export class VaultSecretProvider implements SecretProvider {
   }
 
   async read(
-    hostId: string,
+    resource: CredentialResource,
+    version: number,
     kind: CredentialKind,
   ): Promise<string | undefined> {
     try {
-      return await vaultService.get(vaultKey(hostId, kind))
+      return await vaultService.get(vaultKey(resource, version, kind))
     } catch (error) {
       // Only "this key does not exist" is absence. A locked vault or a failed
       // decrypt must reach the resolver as an error, not as "no secret".
@@ -73,20 +77,49 @@ export class VaultSecretProvider implements SecretProvider {
   }
 
   async write(
-    hostId: string,
+    resource: CredentialResource,
+    version: number,
     kind: CredentialKind,
     value: string,
   ): Promise<void> {
-    await vaultService.set(vaultKey(hostId, kind), value)
+    await vaultService.set(vaultKey(resource, version, kind), value)
   }
 
-  async remove(hostId: string, kind: CredentialKind): Promise<void> {
+  async remove(
+    resource: CredentialResource,
+    version: number,
+    kind: CredentialKind,
+  ): Promise<void> {
     try {
-      await vaultService.delete(vaultKey(hostId, kind))
+      await vaultService.delete(vaultKey(resource, version, kind))
     } catch (error) {
       if (toVaultCommandError(error).kind === 'key_not_found') return
       throw error
     }
+  }
+
+  /**
+   * Remove a whole version of a resource's credentials.
+   *
+   * Best effort per kind, and it *returns* the kinds it could not remove instead of
+   * swallowing them: a failed cleanup leaves orphaned ciphertext, which is a
+   * warning worth recording, while the row already points at the new version and
+   * must not be reported as failed for it.
+   */
+  async removeVersion(
+    resource: CredentialResource,
+    version: number,
+    kinds: CredentialKind[],
+  ): Promise<CredentialKind[]> {
+    const failed: CredentialKind[] = []
+    for (const kind of kinds) {
+      try {
+        await this.remove(resource, version, kind)
+      } catch {
+        failed.push(kind)
+      }
+    }
+    return failed
   }
 }
 

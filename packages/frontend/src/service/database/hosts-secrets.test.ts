@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   executeQuery: vi.fn(),
   select: vi.fn(),
   vaultWrite: vi.fn(),
+  vaultRead: vi.fn(),
+  vaultRemove: vi.fn(),
+  vaultRemoveVersion: vi.fn(),
 }))
 
 vi.mock('./connection', () => ({
@@ -20,8 +23,9 @@ vi.mock('./connection', () => ({
 vi.mock('@/service/vault-secret-provider', () => ({
   vaultSecretProvider: {
     write: mocks.vaultWrite,
-    read: vi.fn(),
-    remove: vi.fn(),
+    read: mocks.vaultRead,
+    remove: mocks.vaultRemove,
+    removeVersion: mocks.vaultRemoveVersion,
     isAvailable: vi.fn(async () => true),
     availability: vi.fn(async () => ({ ok: true })),
   },
@@ -67,7 +71,21 @@ beforeEach(() => {
   mocks.executeQuery.mockReset()
   mocks.select.mockReset()
   mocks.vaultWrite.mockReset()
+  mocks.vaultRead.mockReset()
+  mocks.vaultRemove.mockReset()
+  mocks.vaultRemoveVersion.mockReset()
+  mocks.vaultRemoveVersion.mockResolvedValue([])
   mocks.vaultWrite.mockResolvedValue(undefined)
+  // The read-back after every write must return the value it was given, or the
+  // save is refused — which is the behaviour under test elsewhere.
+  mocks.vaultRead.mockImplementation(
+    async (_resource: unknown, _version: number, kind: string) => {
+      const call = mocks.vaultWrite.mock.calls.find(
+        ([, , writtenKind]) => writtenKind === kind,
+      )
+      return call?.[3] as string | undefined
+    },
+  )
   // `updateHost` merges onto the stored row, so it reads it first.
   mocks.select.mockResolvedValue([
     {
@@ -103,7 +121,8 @@ describe('createHost keeps secrets out of SQLite', () => {
     await createHost(baseHost({ password: SECRET_PASSWORD }) as never)
 
     expect(mocks.vaultWrite).toHaveBeenCalledWith(
-      'host-1',
+      { type: 'host', id: 'host-1' },
+      1,
       'password',
       SECRET_PASSWORD,
     )
@@ -115,7 +134,7 @@ describe('createHost keeps secrets out of SQLite', () => {
     expect(parameters()).not.toContain(SECRET_PASSWORD)
     // The reference is persisted instead.
     expect(parameters()).toContainEqual(
-      JSON.stringify({ kinds: ['password'], provider: 'vault' }),
+      JSON.stringify({ kinds: ['password'], provider: 'vault', version: 1 }),
     )
   })
 
@@ -125,7 +144,8 @@ describe('createHost keeps secrets out of SQLite', () => {
     )
 
     expect(mocks.vaultWrite).toHaveBeenCalledWith(
-      'host-1',
+      { type: 'host', id: 'host-1' },
+      1,
       'privateKey',
       SECRET_KEY,
     )
@@ -160,7 +180,8 @@ describe('updateHost keeps secrets out of SQLite', () => {
     await updateHost('host-1', { password: SECRET_PASSWORD } as never)
 
     expect(mocks.vaultWrite).toHaveBeenCalledWith(
-      'host-1',
+      { type: 'host', id: 'host-1' },
+      1,
       'password',
       SECRET_PASSWORD,
     )
@@ -179,10 +200,12 @@ describe('updateHost keeps secrets out of SQLite', () => {
     // No secret in the update: the vault is not written and the reference is
     // left alone by COALESCE(?, credential_ref).
     expect(mocks.vaultWrite).not.toHaveBeenCalled()
-    // "no secret in this update" keeps the existing reference: the CASE marker
-    // says keep, and the CASE only clears when that marker is the empty string.
-    expect(statementText()).toMatch(/CASE WHEN \? = '' THEN NULL ELSE COALESCE/)
-    expect(parameters()).toContain('keep')
+    // "no secret in this update" keeps the existing reference: the new-reference
+    // placeholder is NULL and COALESCE falls back to the stored value.
+    expect(statementText()).toMatch(/credential_ref = COALESCE\(\?, credential_ref\)/)
+    expect(parameters()).not.toContainEqual(
+      expect.stringContaining('"provider":"vault"'),
+    )
     expect(parameters()[parameters().length - 1]).toBe('host-1')
   })
 })
