@@ -54,6 +54,11 @@ export function describeRefProblem(problem: CredentialRefProblem): string {
 export async function resolveSessionCredential(
   host: SessionCredentialInput,
 ): Promise<SessionCredentialOutcome> {
+  // Agent authentication resolves nothing, on every path. `withResolvedCredential`
+  // already short-circuits it; repeating the rule here keeps the two entry points
+  // from disagreeing about which guards apply — the shape that let a damaged
+  // reference slip through on the terminal path.
+  if (host.authType === 'agent') return { ok: true }
   const inlinePassword = host.password
   const inlineKey = host.privateKey
   if (inlinePassword || inlineKey) {

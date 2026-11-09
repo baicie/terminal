@@ -51,8 +51,14 @@ export type CredentialRefParse =
  * A reference written by a *newer* build (a version above `MAX_SUPPORTED_VERSION`)
  * is refused rather than guessed at: reading it with the wrong key layout would
  * report "the vault holds none", which reads as data loss.
+ *
+ * The ceiling is a real number, not `Number.MAX_SAFE_INTEGER`. With the latter the
+ * check could never fire — every value that reaches it is already a safe integer —
+ * so the `unsupported-version` branch was unreachable and the promise it documents
+ * was untested. The value is generous enough that this build will never write it:
+ * versions increment once per credential change on one device.
  */
-export const MAX_SUPPORTED_VERSION = Number.MAX_SAFE_INTEGER
+export const MAX_SUPPORTED_VERSION = 1_000_000_000
 
 export function parseCredentialRef(raw: unknown): CredentialRefParse {
   if (raw === null || raw === undefined || raw === '') {

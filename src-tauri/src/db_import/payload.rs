@@ -117,7 +117,6 @@ pub fn parse_bound_ref(value: Option<&Value>) -> Option<String> {
     Some(canonical.to_string())
 }
 
-
 /// What to do with plaintext secrets found in an import file.
 ///
 /// The default is [`SecretsPolicy::Reject`]: a caller that has not thought about
@@ -476,10 +475,7 @@ impl ImportPayload {
     /// back, the payload carries no plaintext, and each such row names the
     /// reference it wrote. Anything else is a partial migration, and a partial
     /// migration is refused rather than written.
-    fn validate_migrated_secrets(
-        &self,
-        report: &ImportSecretReport,
-    ) -> Result<(), PayloadError> {
+    fn validate_migrated_secrets(&self, report: &ImportSecretReport) -> Result<(), PayloadError> {
         // 1. No plaintext may survive under `migrate`.
         if let Some(host) = report.hosts.first() {
             return Err(PayloadError::SecretNotMigrated {
@@ -487,9 +483,7 @@ impl ImportPayload {
             });
         }
         if let Some(key) = report.keys.first() {
-            return Err(PayloadError::KeySecretNotMigrated {
-                id: key.id.clone(),
-            });
+            return Err(PayloadError::KeySecretNotMigrated { id: key.id.clone() });
         }
 
         // 2. A row that says "the source device had a credential" must now name the
@@ -500,9 +494,7 @@ impl ImportPayload {
         for row in &self.hosts {
             let id = row_id(row.id.as_ref());
             let declared = matches!(
-                crate::db_import::secrets::imported_credential_ref(
-                    row.credential_ref.as_ref()
-                ),
+                crate::db_import::secrets::imported_credential_ref(row.credential_ref.as_ref()),
                 crate::db_import::secrets::ImportedCredentialRef::NeedsRebind { .. }
             );
             let bound = row
@@ -526,9 +518,7 @@ impl ImportPayload {
             // a row that describes one and names no binding would leave the vault
             // holding a key nothing points at.
             let declared = matches!(
-                crate::db_import::secrets::imported_credential_ref(
-                    row.credential_ref.as_ref()
-                ),
+                crate::db_import::secrets::imported_credential_ref(row.credential_ref.as_ref()),
                 crate::db_import::secrets::ImportedCredentialRef::NeedsRebind { .. }
             );
             let bound = row

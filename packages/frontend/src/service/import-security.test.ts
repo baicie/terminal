@@ -11,6 +11,7 @@ import type { ExportData } from './sync-types'
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  select: vi.fn(),
   vaultWrite: vi.fn(),
   vaultRead: vi.fn(),
   vaultAvailability: vi.fn(async () => ({ ok: true as const })),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
+vi.mock('./database/connection', () => ({ select: mocks.select }))
 vi.mock('./vault-secret-provider', () => ({
   vaultSecretProvider: {
     write: mocks.vaultWrite,
@@ -117,6 +119,7 @@ beforeEach(() => {
       keys: [],
     },
   })
+  mocks.select.mockReset().mockResolvedValue([])
   mocks.vaultWrite.mockReset().mockResolvedValue(undefined)
   mocks.vaultRemove.mockReset().mockResolvedValue(undefined)
   mocks.vaultAvailability.mockReset().mockResolvedValue({ ok: true })
@@ -370,5 +373,65 @@ describe('settings travel through the same boundary', () => {
     const settings = sentPayload().settings as Record<string, string>
     // The preference still restores.
     expect(JSON.parse(settings.app_settings)).toEqual({ theme: 'dark' })
+  })
+})
+
+describe('an import cannot overwrite a live credential generation', () => {
+  // `vaultService.set` overwrites unconditionally, so writing a migrated secret at
+  // version 1 replaces whatever this device already has at version 1 — and any host
+  // whose row points there keeps pointing there in merge mode, so it silently
+  // resolves to the imported value. The version must come from the local row.
+  it('writes above the version the local row already points at', async () => {
+    mocks.select.mockResolvedValue([
+      {
+        credential_ref: JSON.stringify({
+          kinds: ['password'],
+          provider: 'vault',
+          version: 3,
+        }),
+      },
+    ])
+
+    await importWithSecretPolicy(legacyExport(), 'merge', createImportStats(), {
+      policy: 'migrate',
+    })
+
+    const hostWrites = mocks.vaultWrite.mock.calls.filter(
+      ([resource]) => (resource as { type: string }).type === 'host',
+    )
+    expect(hostWrites.length).toBeGreaterThan(0)
+    // Version 4, not 1: the live generation at 3 is untouched.
+    expect(hostWrites.every(([, version]) => version === 4)).toBe(true)
+  })
+
+  it('uses version 1 only when the local row has no credential', async () => {
+    mocks.select.mockResolvedValue([])
+    await importWithSecretPolicy(legacyExport(), 'merge', createImportStats(), {
+      policy: 'migrate',
+    })
+    const hostWrites = mocks.vaultWrite.mock.calls.filter(
+      ([resource]) => (resource as { type: string }).type === 'host',
+    )
+    expect(hostWrites.every(([, version]) => version === 1)).toBe(true)
+  })
+
+  it('never writes the same version it read', async () => {
+    mocks.select.mockResolvedValue([
+      {
+        credential_ref: JSON.stringify({
+          kinds: ['password'],
+          provider: 'vault',
+          version: 1,
+        }),
+      },
+    ])
+    await importWithSecretPolicy(legacyExport(), 'merge', createImportStats(), {
+      policy: 'migrate',
+    })
+    const hostWrites = mocks.vaultWrite.mock.calls.filter(
+      ([resource]) => (resource as { type: string }).type === 'host',
+    )
+    // The previous implementation wrote exactly this collision.
+    expect(hostWrites.some(([, version]) => version === 1)).toBe(false)
   })
 })

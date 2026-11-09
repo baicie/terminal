@@ -222,7 +222,10 @@ describe('view and copy', () => {
 
 describe('edit', () => {
   it('writes a new version and retires the old one', async () => {
+    // Both kinds the row's reference names must exist, or carrying them forward
+    // fails — which is the correct behaviour, just not what this case tests.
     entries.set('ssh-key:key-1:1:privateKey', 'old-key')
+    entries.set('ssh-key:key-1:1:passphrase', 'old-pass')
     mocks.select.mockResolvedValue([keyRow()])
 
     await updateSSHKey('key-1', { private_key: PRIVATE_KEY })
@@ -231,7 +234,7 @@ describe('edit', () => {
     expect(entries.has('ssh-key:key-1:1:privateKey')).toBe(false)
   })
 
-  it('keeps the kinds the row already had when only one is re-entered', async () => {
+  it('carries the un-retyped kind into the new version instead of claiming it', async () => {
     entries.set('ssh-key:key-1:1:privateKey', 'old-key')
     entries.set('ssh-key:key-1:1:passphrase', 'old-pass')
     mocks.select.mockResolvedValue([keyRow()])
@@ -245,14 +248,37 @@ describe('edit', () => {
     const ref = (update?.[1] as unknown[]).find(
       value => typeof value === 'string' && value.includes('provider'),
     )
-    // Both kinds stay listed, or the passphrase would become unreadable.
-    expect(JSON.parse(String(ref)).kinds.sort()).toEqual(['passphrase', 'privateKey'])
-    // The passphrase itself was not rewritten, so it is not in the new version.
-    expect(entries.has('ssh-key:key-1:2:passphrase')).toBe(false)
+    const kinds = JSON.parse(String(ref)).kinds as string[]
+    // The reference may only name kinds the new generation actually holds.
+    expect(kinds.sort()).toEqual(['passphrase', 'privateKey'])
+    // The passphrase was not retyped, so it is copied forward — not dropped.
+    // Previously the reference listed it while version 2 did not contain it, and
+    // the old version was deleted: the key permanently lost its passphrase and
+    // reported "the vault holds none" on every later read.
+    expect(entries.get('ssh-key:key-1:2:passphrase')).toBe('old-pass')
+    expect(entries.get('ssh-key:key-1:2:privateKey')).toBe(PRIVATE_KEY)
+    // And the old generation is gone only after that copy succeeded.
+    expect(entries.has('ssh-key:key-1:1:passphrase')).toBe(false)
+  })
+
+  it('refuses the update when the un-retyped kind is missing from the old version', async () => {
+    // The row claims a passphrase the vault does not hold. Copying the hole forward
+    // would make the new version claim it too; the update must fail instead, leaving
+    // the old generation (and the private key the user can still use) untouched.
+    entries.set('ssh-key:key-1:1:privateKey', 'old-key')
+    mocks.select.mockResolvedValue([keyRow()])
+
+    await expect(
+      updateSSHKey('key-1', { private_key: PRIVATE_KEY }),
+    ).rejects.toThrow(/does not hold the passphrase/i)
+
+    expect(entries.get('ssh-key:key-1:1:privateKey')).toBe('old-key')
+    expect(entries.has('ssh-key:key-1:2:privateKey')).toBe(false)
   })
 
   it('keeps the old version when the row update fails', async () => {
     entries.set('ssh-key:key-1:1:privateKey', 'old-key')
+    entries.set('ssh-key:key-1:1:passphrase', 'old-pass')
     mocks.select.mockResolvedValue([keyRow()])
     mocks.executeQuery.mockRejectedValue(new Error('database is locked'))
 

@@ -191,6 +191,59 @@ tauri-plugin-sql 2.6.0 要求 `sqlx ^0.8`，整条链够不到修补版 >= 0.39.
 | 历史 WAL / 备份文件明文擦除 | 需用户单独授权 |
 | 证据指纹 | 本轮未重采 `docs/verification/` |
 
+## 7.1 独立审查发现并已修复的缺陷
+
+审查代理（未参与开发）给出 VERDICT: **PARTIAL**，并找出三个我漏掉的真实缺陷。三者
+都已修复并补了回归测试——这是本轮最重要的记录，因为它说明「自查通过」不等于正确。
+
+### DEFECT-1（P1）损坏引用在真实连接路径上没有 fail-closed
+
+`withResolvedCredential` 是终端实际调用的函数，它的第一行判断是
+`if (ref === null …) return host`。而 mapper 对损坏引用返回的正是
+`credentialRef: null` + `credentialRefProblem`，于是它在走到
+`resolveSessionCredential` 里的守卫之前就返回了。结果：空密码登录 + IPC 参数错误，
+而不是「请重新保存凭据」的提示。
+
+原来的测试直接调用 `resolveSessionCredential`，所以**测试绿而生产路径红**——与
+Phase 10 的 P0-1 是同一形状的错误。
+
+修复：守卫移到 `withResolvedCredential`，并在 `resolveSessionCredential` 里重复
+`agent` 短路，使两条入口的守卫集合一致。
+
+### DEFECT-2（P1）SSH Key 部分更新会永久丢失未重输的那一半
+
+`persistKeySecrets` 只写入本次提交的 kind，却把旧 kinds 并入新引用，然后删除整个
+旧版本。用户只重输私钥 → 新引用声明 `passphrase`，但版本 2 没有它，而版本 1 被删了。
+
+更糟的是：**我自己的测试把这个错误状态断言成了正确结果**。
+
+修复：未重输的 kind 从旧版本**复制**到新版本；若旧版本并不持有它，更新失败而不是
+把空洞带过去。新引用只列新版本真实持有的 kinds。
+
+### DEFECT-3（P1）导入迁移硬编码版本 1，会覆盖在用凭据
+
+`migrateSecretToVault` 的 `versionFor` 无生产调用方，因此一律写版本 1。
+`vaultService.set` 无条件覆盖，而本地主机若正指向版本 1，它就是一个**在用**的 key。
+Merge 模式下该行不会被改写，于是它继续指向版本 1 并解析到导入的值——用户的当前
+密码从 Vault 里静默消失。
+
+修复：新增 `localNextVersion()`，读取本机该行现有引用并取下一版本；读不到时回退到
+远高于任何本版本写入值的版本号。
+
+### 其他已修
+
+- **DEFECT-6（P2）** `MAX_SUPPORTED_VERSION = Number.MAX_SAFE_INTEGER` 使
+  「更新版本写的引用」这条分支不可达。改为 1e9，并补了「超过上限被拒绝 / 等于上限
+  可接受」两项测试。
+
+### 记录但本轮不修
+
+- **DEFECT-4（P2）** `team_shared_hosts.host_data` 是第二条明文写入路径：用户显式
+  勾选「包含密码/私钥」且未启用加密时写入明文并同步到服务端。属于既有产品功能，
+  已在 ADR §9.1 显式声明，`SHARE_HOST_CREDENTIAL_PLAINTEXT` 记为 **PARTIAL**。
+- **DEFECT-7（P2）** 无版本字段的引用解析为 `LEGACY_VERSION`，属刻意兼容，
+  导入路径已由 `bound_credential_ref` 校验挡住，仅直接改库可达。
+
 ## 8. 证据
 
 | 层 | 结果 |

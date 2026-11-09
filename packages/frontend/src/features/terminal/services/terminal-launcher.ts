@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { Host } from '@/types'
 import type { TabType } from '../types'
-import { resolveSessionCredential } from './session-credentials'
+import { resolveSessionCredential, describeRefProblem } from './session-credentials'
 import { traceStageAndWait } from '@/service/database/startup-trace'
 import { buildSshJumpHostIpcConfig } from './ssh-jump-config'
 
@@ -28,6 +28,15 @@ export type TerminalProfilePayload = {
 export async function withResolvedCredential(host: Host): Promise<Host> {
   if (host.authType === 'agent') return host
   if (host.password || host.privateKey) return host
+  // A damaged reference is checked *before* the "no reference → nothing stored"
+  // early return. Both look like `credentialRef === null` coming out of the mapper,
+  // so checking only the reference here silently treated a corrupt pointer as "this
+  // host stores nothing" and sent an empty password — the exact failure the
+  // three-state parse exists to prevent. This is the function the terminal actually
+  // calls, so the guard has to live here, not only inside the resolver.
+  if (host.credentialRefProblem) {
+    throw new Error(describeRefProblem(host.credentialRefProblem))
+  }
   const ref = host.credentialRef ?? null
   if (ref === null || ref.kinds.length === 0) return host
 

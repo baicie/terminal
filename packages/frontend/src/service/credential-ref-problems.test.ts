@@ -9,6 +9,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   LEGACY_VERSION,
+  MAX_SUPPORTED_VERSION,
   parseCredentialRef,
   refVersion,
   vaultKey,
@@ -69,16 +70,32 @@ describe('parseCredentialRef', () => {
     })
   })
 
-  it('an unsupported version is refused rather than guessed at', () => {
+  it('a version above the ceiling is refused rather than guessed at', () => {
+    // A row written by a newer build. Reading it with this key layout would report
+    // "the vault holds none", which reads as data loss; the refusal names the real
+    // cause instead.
     const parsed = parseCredentialRef(
       JSON.stringify({
         kinds: ['password'],
         provider: 'vault',
-        version: Number.MAX_SAFE_INTEGER - 1,
+        version: MAX_SUPPORTED_VERSION + 1,
       }),
     )
-    // Values up to the ceiling are supported; above it the row comes from a newer
-    // build and reading it with this key layout would report "none stored".
+    expect(parsed.ok).toBe(false)
+    expect(parsed.problem).toEqual({
+      kind: 'unsupported-version',
+      version: MAX_SUPPORTED_VERSION + 1,
+    })
+  })
+
+  it('a version at the ceiling is still accepted', () => {
+    const parsed = parseCredentialRef(
+      JSON.stringify({
+        kinds: ['password'],
+        provider: 'vault',
+        version: MAX_SUPPORTED_VERSION,
+      }),
+    )
     expect(parsed.ok).toBe(true)
   })
 
@@ -150,5 +167,77 @@ describe('the connect path refuses a damaged reference', () => {
     // A damaged pointer is refused before any vault access, so it cannot be
     // mistaken for a locked vault either.
     expect(read).not.toHaveBeenCalled()
+  })
+})
+
+describe('the terminal connect path refuses a damaged reference', () => {
+  // The guard inside `resolveSessionCredential` is not enough: the function the
+  // terminal actually calls is `withResolvedCredential`, and it returned early on
+  // `credentialRef === null` — which is exactly what the mapper produces for a
+  // corrupt pointer. The host then connected with an empty password and the user
+  // saw an argument error instead of "re-save the credentials".
+  it('withResolvedCredential throws the diagnostic, not an empty-password attempt', async () => {
+    const { withResolvedCredential } = await import(
+      '@/features/terminal/services/terminal-launcher'
+    )
+    await expect(
+      withResolvedCredential({
+        id: 'h1',
+        name: 'prod',
+        hostname: 'p.example',
+        port: 22,
+        username: 'root',
+        authType: 'password',
+        isFavorite: false,
+        portForwards: [],
+        credentialRef: null,
+        credentialRefProblem: { kind: 'malformed', detail: 'not valid JSON' },
+        createdAt: 0,
+        updatedAt: 0,
+      }),
+    ).rejects.toThrow(/re-save/i)
+  })
+
+  it('an unknown-provider reference is refused on the same path', async () => {
+    const { withResolvedCredential } = await import(
+      '@/features/terminal/services/terminal-launcher'
+    )
+    await expect(
+      withResolvedCredential({
+        id: 'h1',
+        name: 'prod',
+        hostname: 'p.example',
+        port: 22,
+        username: 'root',
+        authType: 'password',
+        isFavorite: false,
+        portForwards: [],
+        credentialRef: null,
+        credentialRefProblem: { kind: 'unknown-provider', provider: 'keychain' },
+        createdAt: 0,
+        updatedAt: 0,
+      }),
+    ).rejects.toThrow(/keychain/)
+  })
+
+  it('a host that genuinely stores nothing still connects', async () => {
+    const { withResolvedCredential } = await import(
+      '@/features/terminal/services/terminal-launcher'
+    )
+    const host = {
+      id: 'h1',
+      name: 'prod',
+      hostname: 'p.example',
+      port: 22,
+      username: 'root',
+      authType: 'agent' as const,
+      isFavorite: false,
+      portForwards: [],
+      credentialRef: null,
+      credentialRefProblem: null,
+      createdAt: 0,
+      updatedAt: 0,
+    }
+    await expect(withResolvedCredential(host)).resolves.toBe(host)
   })
 })

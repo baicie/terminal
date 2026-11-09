@@ -11,6 +11,10 @@
  * target device claim a credential that does not exist.
  */
 
+import { refVersion } from './credential-boundary'
+import type { CredentialRef } from './credential-boundary'
+import { parseCredentialRef } from './credential-ref'
+import { select } from './database/connection'
 import { diagnoseImport, hostSecretKinds, sshKeySecretKinds } from './import-security'
 import { vaultUnavailableMessage } from './vault-unavailable-message'
 import { vaultSecretProvider } from './vault-secret-provider'
@@ -37,9 +41,54 @@ export interface BoundCredential {
  * secret the vault does not actually hold is worse than no import: it makes the
  * target device claim a credential that does not exist.
  */
+/**
+ * The version an imported secret must be written under.
+ *
+ * Never a fixed number. `vaultService.set` overwrites unconditionally, so writing a
+ * migrated secret at version 1 replaces whatever this device already stores at
+ * version 1 — which is a *live* generation for any host whose row points there.
+ * Merge mode makes it worse: the row is left alone, so it keeps pointing at
+ * version 1 and now resolves to the imported value. The user's current password is
+ * silently gone from the vault.
+ *
+ * So the rule is the same one every other write path uses: read what the row points
+ * at, and write the next generation above it.
+ */
+export type VersionResolver = (
+  resource: 'host' | 'sshKey',
+  id: string,
+) => Promise<number>
+
+/** Read the local row's reference and return the generation after it. */
+async function localNextVersion(
+  resource: 'host' | 'sshKey',
+  id: string,
+): Promise<number> {
+  const table = resource === 'host' ? 'hosts' : 'ssh_keys'
+  let rows: Array<{ credential_ref: string | null }>
+  try {
+    rows = await select<{ credential_ref: string | null }>(
+      `SELECT credential_ref FROM ${table} WHERE id = ?`,
+      [id],
+    )
+  } catch {
+    // Could not read: assume the worst (a live generation may be there) and start
+    // far enough above version 1 that a collision is not possible for any row this
+    // build wrote. Writing a fresh, unreferenced generation is always safe; only
+    // *overwriting* one is not.
+    // Well under MAX_SUPPORTED_VERSION (1e9) so the reference this writes is still
+    // readable by this build, and far above any version it would have written.
+    return 10_000
+  }
+  const raw = rows.length > 0 ? rows[0].credential_ref : null
+  const parsed = parseCredentialRef(raw)
+  const current: CredentialRef | null = parsed.ok ? parsed.ref : null
+  return current === null ? 1 : refVersion(current) + 1
+}
+
 export async function migrateSecretToVault(
   data: { hosts?: unknown, sshKeys?: unknown },
-  options: { versionFor?: (resource: 'host' | 'sshKey', id: string) => number } = {},
+  options: { versionFor?: VersionResolver } = {},
 ): Promise<BoundCredential[]> {
   const diagnosis = diagnoseImport(data)
   if (diagnosis.rows.length === 0) return []
@@ -58,7 +107,9 @@ export async function migrateSecretToVault(
     if (kinds.length === 0) continue
     const id = String(row.id ?? '')
     if (!id) throw new Error('A host in this file has no id, so its secret cannot be stored.')
-    const version = options.versionFor?.('host', id) ?? 1
+    const version = options.versionFor
+      ? await options.versionFor('host', id)
+      : await localNextVersion('host', id)
     const resource = { type: 'host' as const, id }
     const values: Partial<Record<(typeof kinds)[number], string>> = {
       password: typeof row.password === 'string' ? row.password : undefined,
@@ -86,7 +137,9 @@ export async function migrateSecretToVault(
     if (kinds.length === 0) continue
     const id = String(row.id ?? '')
     if (!id) throw new Error('A key in this file has no id, so its secret cannot be stored.')
-    const version = options.versionFor?.('sshKey', id) ?? 1
+    const version = options.versionFor
+      ? await options.versionFor('sshKey', id)
+      : await localNextVersion('sshKey', id)
     const resource = { type: 'ssh-key' as const, id }
     const values: Partial<Record<(typeof kinds)[number], string>> = {
       privateKey: typeof row.private_key === 'string' ? row.private_key : undefined,

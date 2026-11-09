@@ -194,6 +194,18 @@ describe('updateSSHKey', () => {
   })
 
   it('routes a new passphrase to the vault', async () => {
+    // The row's reference names both kinds, so the un-retyped private key has to be
+    // present in the old generation for the update to carry it forward.
+    mocks.vaultRead.mockImplementation(
+      async (_resource: unknown, _version: number, kind: string) => {
+        const call = [...mocks.vaultWrite.mock.calls]
+          .reverse()
+          .find(([, , writtenKind]) => writtenKind === kind)
+        if (call) return call[3] as string
+        // The existing private key, read from version 1.
+        return kind === 'privateKey' ? 'existing-private-key' : undefined
+      },
+    )
     await updateSSHKey('key-1', { passphrase: PASSPHRASE } as never)
     expect(mocks.vaultWrite).toHaveBeenCalledWith(
       { type: 'ssh-key', id: 'key-1' },

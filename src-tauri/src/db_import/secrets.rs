@@ -55,7 +55,6 @@ impl SecretCount {
             + self.ssh_key_private_keys
             + self.ssh_key_passphrases
     }
-
 }
 
 /// Whether a secret field carries a value that would have been written.
@@ -204,9 +203,9 @@ pub fn imported_credential_ref(value: Option<&Value>) -> ImportedCredentialRef {
     let text = match value {
         Some(Value::String(text)) if !text.trim().is_empty() => text,
         // A reference that arrived already parsed (a JSON object in the file).
-        Some(other @ Value::Object(_)) => return imported_credential_ref(Some(&Value::String(
-            other.to_string(),
-        ))),
+        Some(other @ Value::Object(_)) => {
+            return imported_credential_ref(Some(&Value::String(other.to_string())))
+        }
         _ => return ImportedCredentialRef::None,
     };
     let parsed: Value = match serde_json::from_str(text) {
@@ -242,8 +241,18 @@ pub fn imported_credential_ref(value: Option<&Value>) -> ImportedCredentialRef {
 /// Runs before any statement, so the counts in the report are the counts the
 /// writer actually saw, not a second pass that could drift.
 pub fn scan(
-    hosts: &[(Option<&Value>, Option<&Value>, Option<&Value>, Option<&Value>)],
-    keys: &[(Option<&Value>, Option<&Value>, Option<&Value>, Option<&Value>)],
+    hosts: &[(
+        Option<&Value>,
+        Option<&Value>,
+        Option<&Value>,
+        Option<&Value>,
+    )],
+    keys: &[(
+        Option<&Value>,
+        Option<&Value>,
+        Option<&Value>,
+        Option<&Value>,
+    )],
 ) -> ImportSecretReport {
     let mut report = ImportSecretReport::default();
 
@@ -295,7 +304,12 @@ mod tests {
 
     #[test]
     fn an_empty_or_absent_field_is_not_a_secret() {
-        for value in [None, Some(&json!(null)), Some(&json!("")), Some(&json!("   "))] {
+        for value in [
+            None,
+            Some(&json!(null)),
+            Some(&json!("")),
+            Some(&json!("   ")),
+        ] {
             assert!(!carries_secret(value), "{value:?} is not a secret");
         }
     }
@@ -313,9 +327,10 @@ mod tests {
 
     #[test]
     fn a_reference_to_the_vault_needs_rebinding() {
-        let value = json!(
-            serde_json::to_string(&json!({"kinds": ["password"], "provider": "vault"})).unwrap()
-        );
+        let value = json!(serde_json::to_string(
+            &json!({"kinds": ["password"], "provider": "vault"})
+        )
+        .unwrap());
         assert_eq!(
             imported_credential_ref(Some(&value)),
             ImportedCredentialRef::NeedsRebind {
@@ -336,9 +351,10 @@ mod tests {
 
     #[test]
     fn an_unknown_provider_needs_rebinding() {
-        let value =
-            json!(serde_json::to_string(&json!({"kinds": ["password"], "provider": "keychain"}))
-                .unwrap());
+        let value = json!(serde_json::to_string(
+            &json!({"kinds": ["password"], "provider": "keychain"})
+        )
+        .unwrap());
         assert_eq!(
             imported_credential_ref(Some(&value)),
             ImportedCredentialRef::NeedsRebind { kinds: Vec::new() }
@@ -371,12 +387,7 @@ mod tests {
         let passphrase = json!("pp");
 
         let report = scan(
-            &[(
-                Some(&host_id),
-                Some(&host_name),
-                Some(&password),
-                None,
-            )],
+            &[(Some(&host_id), Some(&host_name), Some(&password), None)],
             &[(
                 Some(&key_id),
                 Some(&key_name),

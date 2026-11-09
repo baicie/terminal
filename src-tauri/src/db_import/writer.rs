@@ -17,7 +17,10 @@ use sqlx::{query::Query, Pool, Sqlite};
 use tokio::sync::Mutex;
 
 use super::payload::{parse_bound_ref, ImportPayload, PayloadError};
-use super::secrets::{host_presence, imported_credential_ref, ssh_key_presence, ImportSecretReport, ImportedCredentialRef};
+use super::secrets::{
+    host_presence, imported_credential_ref, ssh_key_presence, ImportSecretReport,
+    ImportedCredentialRef,
+};
 
 /// Serializes imports across windows and entry points inside this process.
 static IMPORT_LOCK: Mutex<()> = Mutex::const_new(());

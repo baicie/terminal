@@ -8,6 +8,7 @@ import {
   getWorkspaces,
 } from '@/service/database/workspaces'
 import { sanitizeHostRow, sanitizeSshKeyRow } from './export-sanitize'
+import type { VersionResolver } from './import-vault-migration'
 import type { ImportSecretsPolicy } from './import-security'
 import { createImportStats, importWithSecretPolicy } from './sync-import'
 import { assertExportTablesReadable } from './sync-export'
@@ -141,7 +142,7 @@ export async function importTeamPackage(
   mergeMode: MergeMode = 'merge',
   options: {
     policy?: ImportSecretsPolicy
-    versionFor?: (resource: 'host' | 'sshKey', id: string) => number
+    versionFor?: VersionResolver
   } = {},
 ): Promise<TeamImportStats> {
   const data = previewTeamPackage(content)

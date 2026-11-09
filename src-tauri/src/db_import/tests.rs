@@ -1031,7 +1031,10 @@ async fn discarding_secrets_imports_the_metadata_and_writes_no_secret_column() {
         .expect("row")
         .try_get(0)
         .expect("text");
-    assert!(reference.is_none(), "a discarded host must not claim a credential");
+    assert!(
+        reference.is_none(),
+        "a discarded host must not claim a credential"
+    );
 
     // The user is told which rows need a credential again, with the kinds and no
     // secret material.
@@ -1129,14 +1132,13 @@ async fn migrate_stores_the_bound_reference_and_never_the_files_own() {
     .expect("a fully migrated payload imports");
 
     secret_columns_are_empty(&pool, "hosts", "h-migrated").await;
-    let stored: Option<String> =
-        sqlx::query("SELECT credential_ref FROM hosts WHERE id = ?")
-            .bind("h-migrated")
-            .fetch_one(&pool)
-            .await
-            .expect("row")
-            .try_get(0)
-            .expect("text");
+    let stored: Option<String> = sqlx::query("SELECT credential_ref FROM hosts WHERE id = ?")
+        .bind("h-migrated")
+        .fetch_one(&pool)
+        .await
+        .expect("row")
+        .try_get(0)
+        .expect("text");
     assert!(
         stored.is_some(),
         "a migrated host keeps the reference this device's vault answers to"
@@ -1186,7 +1188,11 @@ async fn migrate_refuses_a_row_that_describes_a_credential_but_names_no_binding(
 async fn migrate_refuses_a_malformed_bound_reference() {
     let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
 
-    for bad in [json!("not json"), json!("{\"kinds\":[],\"provider\":\"vault\"}"), json!("{\"kinds\":[\"password\"],\"provider\":\"keychain\"}")] {
+    for bad in [
+        json!("not json"),
+        json!("{\"kinds\":[],\"provider\":\"vault\"}"),
+        json!("{\"kinds\":[\"password\"],\"provider\":\"keychain\"}"),
+    ] {
         let error = run_import(
             &pool,
             &payload(json!({
@@ -1204,7 +1210,10 @@ async fn migrate_refuses_a_malformed_bound_reference() {
         .await
         .expect_err("a reference this build cannot honour must be refused");
         assert!(
-            matches!(error, ImportError::Payload(PayloadError::MalformedBoundReference { .. })),
+            matches!(
+                error,
+                ImportError::Payload(PayloadError::MalformedBoundReference { .. })
+            ),
             "unexpected error: {error}"
         );
     }

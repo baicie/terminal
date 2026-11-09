@@ -11,7 +11,7 @@ import {
   migrateSecretToVault,
   rollbackMigratedSecrets,
 } from './import-vault-migration'
-import type { BoundCredential } from './import-vault-migration'
+import type { BoundCredential, VersionResolver } from './import-vault-migration'
 import { importableSettings } from './settings-export-policy'
 import {
   normalizeImportedAgentForwarding,
@@ -200,7 +200,7 @@ export async function importWithSecretPolicy(
   stats: ImportStats,
   options: {
     policy: ImportSecretsPolicy
-    versionFor?: (resource: 'host' | 'sshKey', id: string) => number
+    versionFor?: VersionResolver
   },
 ): Promise<{ report: ImportReport, diagnosis: ImportSecretsDiagnosis }> {
   const diagnosis = diagnoseImport(data)

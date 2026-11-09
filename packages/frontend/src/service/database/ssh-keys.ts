@@ -10,95 +10,19 @@
  * explicit call (`getSSHKeySecret`) that the UI makes only when the user asks to
  * view or copy a key, and that a connection makes only when it needs one.
  */
-import {
-  parseCredentialRef,
-  refVersion,
-  serializeCredentialRef,
-} from '@/service/credential-boundary'
-import type { CredentialKind, CredentialRef } from '@/service/credential-boundary'
+import { refVersion, serializeCredentialRef } from '@/service/credential-boundary'
+import type { CredentialRef } from '@/service/credential-boundary'
 import { vaultSecretProvider } from '@/service/vault-secret-provider'
-import { vaultUnavailableMessage } from '@/service/vault-unavailable-message'
 import { executeQuery, select } from './connection'
+import {
+  discardKeyVersion,
+  persistKeySecrets,
+  readKeyCredentialRef,
+  retireKeyVersion,
+} from './ssh-key-credentials'
 import type { SSHKeyRecord } from './types'
 
-function nextVersion(current: CredentialRef | null): number {
-  if (current === null) return 1
-  return refVersion(current) + 1
-}
-
-/** The reference stored on a key row, read back the same way hosts read theirs. */
-export function readKeyCredentialRef(
-  raw: string | null | undefined,
-): CredentialRef | null {
-  const parsed = parseCredentialRef(raw)
-  return parsed.ok ? parsed.ref : null
-}
-
-/**
- * Move a key's secret material into the vault under a new version.
- *
- * Returns the reference to store and the version it replaced. Writing under a fresh
- * version is what makes "the private key landed but the passphrase did not"
- * recoverable: nothing the row points at has been touched.
- */
-async function persistKeySecrets(
-  id: string,
-  secrets: { privateKey?: string | null, passphrase?: string | null },
-  current: CredentialRef | null,
-): Promise<{ ref: CredentialRef | null, previous: CredentialRef | null }> {
-  const entries: Array<[CredentialKind, string]> = []
-  if (secrets.privateKey) entries.push(['privateKey', secrets.privateKey])
-  if (secrets.passphrase) entries.push(['passphrase', secrets.passphrase])
-  if (entries.length === 0) return { ref: current, previous: null }
-
-  const availability = await vaultSecretProvider.availability()
-  if (!availability.ok) {
-    throw new Error(vaultUnavailableMessage(availability.state))
-  }
-
-  const version = nextVersion(current)
-  const resource = { type: 'ssh-key' as const, id }
-  const written: CredentialKind[] = []
-  try {
-    for (const [kind, value] of entries) {
-      await vaultSecretProvider.write(resource, version, kind, value)
-      written.push(kind)
-    }
-    for (const [kind, value] of entries) {
-      const readBack = await vaultSecretProvider.read(resource, version, kind)
-      if (readBack !== value) {
-        throw new Error(`the vault did not return the ${kind} it was just given`)
-      }
-    }
-  } catch (error) {
-    await vaultSecretProvider.removeVersion(resource, version, written)
-    throw error
-  }
-
-  // The new reference carries every kind this key now has: kinds that were already
-  // stored keep their values, so they must stay listed or a connection would stop
-  // reading them.
-  const kinds = Array.from(
-    new Set<CredentialKind>([...(current?.kinds ?? []), ...written]),
-  )
-  return {
-    ref: { kinds, provider: 'vault', version },
-    previous: current,
-  }
-}
-
-/** Retire a key's previous version after the row stopped pointing at it. */
-async function retireKeyVersion(
-  id: string,
-  previous: CredentialRef | null,
-): Promise<void> {
-  if (!previous) return
-  await vaultSecretProvider.removeVersion(
-    { type: 'ssh-key', id },
-    refVersion(previous),
-    previous.kinds,
-  )
-}
+export { readKeyCredentialRef } from './ssh-key-credentials'
 
 /**
  * Reads a key's stored secret back, for a connection that needs it.
@@ -157,13 +81,7 @@ export async function createSSHKey(
       ],
     )
   } catch (error) {
-    if (persisted.ref && persisted.ref.version !== undefined) {
-      await vaultSecretProvider.removeVersion(
-        { type: 'ssh-key', id: key.id },
-        persisted.ref.version,
-        persisted.ref.kinds,
-      )
-    }
+    if (persisted.ref) await discardKeyVersion(key.id, persisted.ref)
     throw error
   }
   return key.id
@@ -240,13 +158,7 @@ export async function updateSSHKey(
   } catch (error) {
     // The row still points at the previous version; this attempt's generation is
     // unreachable. Remove it so a retry does not accumulate ciphertext.
-    if (newRef && newRef.version !== undefined) {
-      await vaultSecretProvider.removeVersion(
-        { type: 'ssh-key', id },
-        newRef.version,
-        newRef.kinds,
-      )
-    }
+    if (newRef) await discardKeyVersion(id, newRef)
     throw error
   }
 
