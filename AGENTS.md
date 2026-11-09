@@ -717,10 +717,13 @@ pnpm add <package-name>
   报错退出，不把打包失败伪装成通过。
 - ✅ Upgrade E2E `42481700333`（`4f7b83b`）**6/6 success**。
 
-### Phase 10 - Personal Daily Driver 🔄 进行中（Draft PR #22）
+### Phase 10 - Personal Daily Driver ✅ 已合入（PR #22 → `cde1e0c`）
 
 定位从"广泛的管理平台"收敛为个人日用终端；原则 Terminal-first / Local-first /
 Keyboard-first / Reliability-first。基线 `main = 18d6ed0`。
+
+代码冻结点 `57bbe2e`，证据 run `42627456782`（指纹 `22087920…`），合入前 CI **11/11**；
+main 上 `cde1e0c` 的 CI 同为 11/11。`DAILY_DRIVER_READY` / `TABBY_REPLACEMENT_READY` 仍为 **NO**。
 
 - 📄 交付文档：`docs/phase10/01-current-state-audit.md`（现状审计）、`02-personal-terminal-prd.md`、
   `03-ui-design-system.md`、`04-architecture-and-credential-policy.md`（凭据 ADR）、
@@ -729,7 +732,12 @@ Keyboard-first / Reliability-first。基线 `main = 18d6ed0`。
   `vault-secret-provider`；`hosts` 保存路径 SQL 中 `password`/`private_key` 恒为 NULL，
   秘密进 Vault，行上只留 `credential_ref`（新增列）。连接时解析：内联秘密优先；
   有引用但 Vault 不可用 → 失败并说明，不退化为空密码。负向测试在旧实现上 4 项失败。
-- 🟡 **M1 迁移未做**：`ssh_keys` 表仍是明文列；历史明文 WAL/备份清理需用户授权流程
+- ✅ **M1 `ssh_keys` 也已进 Vault**：`private_key` / `passphrase` 写 NULL，秘密进 Vault；
+  编辑时不重输则保留原值（否则会静默删掉已存私钥）
+- ✅ **M1 导出脱敏**：普通导出与**团队包导出**两条路径都走字段白名单，
+  `password`/`private_key`/`passphrase` 不在白名单内；团队包这条是第二轮独立审查发现的漏网路径
+- 🟡 **M1 迁移未运行**：`credential-migration.ts` 与 12 项测试就绪，执行需用户显式授权
+  （写 Vault + 清明文列）；历史明文 WAL/备份清理同样待授权
 - ✅ **M2 主机搜索**：命令面板改为全量排序后截断（原 `hosts.slice(0,20)` 使第 21 台永不可搜），
   1/20/21/100/1000 矩阵测试
 - ✅ **M2 Quick Connect**：新增 `ssh -p 2222 user@host`（选项前置）支持，36 项语法矩阵
@@ -741,8 +749,18 @@ Keyboard-first / Reliability-first。基线 `main = 18d6ed0`。
   （element: null，避免第二个 TerminalContainer）；不删路由
 - ✅ **M3 扩展 OpenSSH 导入**：解析 + 导入计划完成（42 项测试），Import 不覆盖、幂等、
   私钥只存路径；UI 未接；Tabby 格式 NOT_RUN（无稳定样本，不猜）
+- ✅ **两轮独立审查**：外部指出四处 P0；修复后再由独立 agent 逐条证伪，**推翻了先前两项 PASS**
+  （团队包导出泄露、`HOST_WRITE_PATH_UNIFIED` 越界结论——Rust `db_import/writer.rs` 仍绑定秘密列）。
+  完整记录见 `docs/phase10/09-pr22-review-remediation.md` §12
+- ✅ **M2 快捷键失败可见**：`ShortcutPersistBanner` 在设置面板显示失败原因并可重试；
+  接线测试断言「把横幅摘掉就变红」
+- ✅ **首次运行保存密码**：`availability()` 区分 `uninitialized` / `locked` / `unusable`，
+  文案分别指向创建 / 解锁 / 检查（此前把「没有 Vault」报成「Vault 已锁定」）
 - 🟡 未验证：真实 GUI 截图（无 Screen Recording 权限）、SHELL_KEYBOARD_COMPATIBILITY、
-  TERMINAL_SESSION_LIFECYCLE、本轮 SSH/SFTP 真实 E2E 重跑
+  TERMINAL_SESSION_LIFECYCLE、SFTP 真实 E2E 本轮未重跑
+- 🔴 已知未修（`docs/phase10/09-pr22-review-remediation.md` §12.3）：新存主机需重载列表、
+  损坏 `credential_ref` 退化为空凭据、导出仍带 `syncServiceToken`、SSH key 秘密无消费方；
+  以及主机对话框内没有直接创建 Vault 的入口
 - 📋 `DAILY_DRIVER_READY=NO`、`TABBY_REPLACEMENT_READY=NO`（需 7 天真实使用数据）
 
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
@@ -752,7 +770,7 @@ Keyboard-first / Reliability-first。基线 `main = 18d6ed0`。
 - ✅ **六份验收证据已在 Phase 9.4.2 的真实 runner 重采**：run `41841781191`（sha `ac01091`），源码指纹 **`d14fb1d1…`**，三平台 3/3 success，debug `0eb823fa…`、release `a1cf8181…`，`check-verification-evidence.mjs` 报 **0 problem**；证据与 manifest 已归档，最终 CI `41850097122` 为 **11/11**。**不得修改旧 evidence 让门禁变绿**；任何 `FINGERPRINT_PATHS` 内改动仍需重采
   - 证据绑定**代码身份**而非"最近一次成功"：任何 `FINGERPRINT_PATHS` 内的改动（包括前端恢复链与采样脚本）都会让旧证据当场失效
 - ✅ **证据门禁已是真门禁**：`check-verification-evidence.mjs` 此前只能经 `pnpm verify` 抵达，而 CI 里没有 job 调用它，等于自愿遵守。现在它是 `source-size` job（已改名 `Repository gates (source size, evidence, script tests)`）里的阻塞步骤，**无 `continue-on-error`**
-- 🔴 **依赖安全：13 条已记录，1 条真实不可修**：`cargo audit` 从 42 条（25 vulnerabilities + 9 unmaintained + 4 unsound + 4 yanked）降到 **13 条（8 + 4 + 1 + 0）**，修掉 29 条。剩余结构：7 条锁文件残留（不在任何构建图：quinn-proto ×5、rkyv、rsa 0.9.10）；5 条真实但**只在 Linux**（glib、proc-macro-error、zvariant、zbus_names、zvariant_derive，均来自 Tauri 托盘/通知栈，已用 `cargo tree --target` 三平台实测）；**1 条真实、三平台、上游无修复**：`RUSTSEC-2023-0071`（rsa 0.10.0-rc.18，Marvin 攻击，`patched = []`，russh 与 ssh-key 精确钉死该版本）。
+- 🔴 **依赖安全：14 条已记录，2 条真实不可修**：`cargo audit` 从 42 条（25 vulnerabilities + 9 unmaintained + 4 unsound + 4 yanked）降到 **13 条（8 + 4 + 1 + 0）**，修掉 29 条；2026-11-09 新增披露 1 条，现为 **14 条（9 + 4 + 1 + 0）**。剩余结构：7 条锁文件残留（不在任何构建图：quinn-proto ×5、rkyv、rsa 0.9.10）；5 条真实但**只在 Linux**（glib、proc-macro-error、zvariant、zbus_names、zvariant_derive，均来自 Tauri 托盘/通知栈，已用 `cargo tree --target` 三平台实测）；**2 条真实、上游无修复**：`RUSTSEC-2023-0071`（rsa 0.10.0-rc.18，Marvin 攻击，`patched = []`，russh 与 ssh-key 精确钉死该版本）；`RUSTSEC-2026-0459`（libsqlite3-sys 0.30.1 捆绑的 SQLite 有 CVE-2026-119375：构造 db + `-wal` 页大小不一致时返回未初始化页缓存内存；修补版 >= 0.39.0，但 sqlx 0.9.0 要求 `<0.38.0`、tauri-plugin-sql 2.6.0 要求 `sqlx ^0.8`，**整条链够不到修补版**）。
   `cargo-audit` job 已从 `continue-on-error: true` 改为**阻塞门禁**，由 `scripts/security-gate.mjs` 以三态退出码裁定（0 全在基线 / 1 有新 advisory 或版本变化 / 2 扫描失败）。门禁键为 `kind|id|crate` + 版本，所以 rsa 的两条不会互相搭便车。台账 `docs/phase9-1/security-advisories.md`，基线 `src-tauri/security-baseline.json`，`src-tauri/deny.toml` 仅作手工参考、**不是 CI 门禁**
   **不得在任何交付材料中声称「生产依赖审计为 0 个已知漏洞」**，也不得把这里的绿读成「没有已知漏洞」——它只表示「没有未记录的 advisory」（详见 `docs/phase9-2/security-remediation.md`）
 - ✅ **前端依赖审计已闭合，且它不是「未测量」而是 25 条真实漏洞**（Phase 9.3.1）：Phase 9.2 的 NOT_RUN 结论关于的是**开发机**（本机 npmrc 指向国内镜像），不是项目。对公共 registry 实测为 25 条（1 critical / 12 high / 9 moderate / 3 low），几乎全部经由**我们自己的 `pnpm.overrides`** 把已修复的包钉在脆弱版本上（body-parser / fast-uri / js-yaml / qs / multer / proxy-addr / source-map-js / mysql2）。升级 override 后 `pnpm audit --prod` 报 **No known vulnerabilities found**。新增 `Dependency audit (npm)` CI job（不带 registry 覆盖）。**注意：依赖审计是快照，不是永久性质**
@@ -1235,7 +1253,7 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-11-09 (新增「分支与工作区清理」强制规范：PR 合并后确认状态再删本地与远端分支、`git fetch --prune` 与 `[gone]` 分支清理、Open PR 分支与验收证据不得删除、临时产物不入库且禁止 `git clean -xdf` 式批量清理。历史 2026-11-06：Phase 9.6.3：标记 v3 事务所有权与逐字节回滚、OS 文件锁 + 进程内互斥、真实双进程 E2E、Team 1/3/5/10 SIGKILL E2E、Windows 19 项恢复测试；E2E `42249215589` 5/5，证据 `42245189022` 指纹 `9bad378d…` 门禁 0；剩余已运行实例并发写入与 Windows reparse/ACL/NSIS 为 PARTIAL/NOT_RUN。历史 Phase 9.6.2：迁移标记 fail-closed（损坏/未知版本不覆盖）、备份失败只回滚本次创建、活动快照 pin、`RecoveryLock` 跨进程锁、前端 `getDb` 门禁前置；Windows runner 实跑 `cargo test --lib db_recovery` 9/9 并修复目录 flush `ERROR_ACCESS_DENIED`；E2E `42189361366` 5/5，证据 `42214762202` 指纹 `c138d564…` 门禁 0；真实双进程 E2E、Team 应用级 SIGKILL、Windows 文件系统矩阵/NSIS 仍 NOT_RUN/PARTIAL。历史 Phase 9.6.1：启动门禁 fail-closed、裁决持久化、标记 v2（Core/Team）、完成校验、备份 canonicalization、Windows 目录 fsync；E2E `42179513200`（`efb96aa`）5/5，证据 `42179506989` 指纹 `3fd0148a…`，门禁 0；历史 Phase 9.6：产品启动 `db_recovery` 状态机、部分迁移自动恢复、脱敏恢复 UI；E2E `42146486221` `product recovery=PASS`，证据重采 `42158238718` 指纹 `47c25a03…`，CI `42160597380` 11/11；Windows NSIS/Vault app-level/TeamSync 跨版本/updater/安装 ENOSPC 仍 NOT_RUN/PARTIAL。历史 Phase 9.5.4：真实独立 worker crash 矩阵 8/8 阶段 SIGKILL + control、恢复重试、精确文件集与 integrity/content 读回；Harness 恢复改为 spawn 同一 worker；修复 `Promise.race` 计时器泄漏；E2E `42030992498` 5/5、CI `42031006776` 11/11 对应 `051f8c6`；独立 worker 接入后 E2E `42035362763` 5/5、CI `42035362783` 11/11 对应 `d4b7759`，macOS runner 报告 `restore crash matrix=PASS`；最终 E2E `42037724319` 5/5、CI `42037724332` 11/11 对应 `df57c0c`（代码 `b069beb`），ubuntu runner 真实执行 ENOSPC 测试 457 ms PASS；Phase 9.5.5 补齐进程树 quiescence：停止前快照后代、退出后 2s 收敛，E2E `42047193259`（`10fffd5`）的 10 份报告四项事实全 PASS（macOS + Linux），CI `42047193385` 11/11；Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、备份/迁移/安装 ENOSPC、AppImage stock 仍 NOT_RUN/PARTIAL；详见 docs/phase9-5/phase9-5-4-implementation.md 与 phase9-5-5-implementation.md)_
+_文档更新时间: 2026-11-09 (Phase 10 已合入 `cde1e0c`：凭据边界（hosts 与 ssh_keys 双表）、两轮独立审查（第二次推翻了先前的两项 PASS）、导出双路径白名单、快捷键失败可见、Vault 三态提示；代码冻结点 `57bbe2e`，证据 run `42627456782` 指纹 `22087920…`，CI 11/11；新增 `RUSTSEC-2026-0459`（libsqlite3-sys 0.30.1）已记录为不可修。分支与工作区清理强制规范：PR 合并后确认状态再删本地与远端分支、`git fetch --prune` 与 `[gone]` 分支清理、Open PR 分支与验收证据不得删除、临时产物不入库且禁止 `git clean -xdf` 式批量清理。历史 2026-11-06：Phase 9.6.3：标记 v3 事务所有权与逐字节回滚、OS 文件锁 + 进程内互斥、真实双进程 E2E、Team 1/3/5/10 SIGKILL E2E、Windows 19 项恢复测试；E2E `42249215589` 5/5，证据 `42245189022` 指纹 `9bad378d…` 门禁 0；剩余已运行实例并发写入与 Windows reparse/ACL/NSIS 为 PARTIAL/NOT_RUN。历史 Phase 9.6.2：迁移标记 fail-closed（损坏/未知版本不覆盖）、备份失败只回滚本次创建、活动快照 pin、`RecoveryLock` 跨进程锁、前端 `getDb` 门禁前置；Windows runner 实跑 `cargo test --lib db_recovery` 9/9 并修复目录 flush `ERROR_ACCESS_DENIED`；E2E `42189361366` 5/5，证据 `42214762202` 指纹 `c138d564…` 门禁 0；真实双进程 E2E、Team 应用级 SIGKILL、Windows 文件系统矩阵/NSIS 仍 NOT_RUN/PARTIAL。历史 Phase 9.6.1：启动门禁 fail-closed、裁决持久化、标记 v2（Core/Team）、完成校验、备份 canonicalization、Windows 目录 fsync；E2E `42179513200`（`efb96aa`）5/5，证据 `42179506989` 指纹 `3fd0148a…`，门禁 0；历史 Phase 9.6：产品启动 `db_recovery` 状态机、部分迁移自动恢复、脱敏恢复 UI；E2E `42146486221` `product recovery=PASS`，证据重采 `42158238718` 指纹 `47c25a03…`，CI `42160597380` 11/11；Windows NSIS/Vault app-level/TeamSync 跨版本/updater/安装 ENOSPC 仍 NOT_RUN/PARTIAL。历史 Phase 9.5.4：真实独立 worker crash 矩阵 8/8 阶段 SIGKILL + control、恢复重试、精确文件集与 integrity/content 读回；Harness 恢复改为 spawn 同一 worker；修复 `Promise.race` 计时器泄漏；E2E `42030992498` 5/5、CI `42031006776` 11/11 对应 `051f8c6`；独立 worker 接入后 E2E `42035362763` 5/5、CI `42035362783` 11/11 对应 `d4b7759`，macOS runner 报告 `restore crash matrix=PASS`；最终 E2E `42037724319` 5/5、CI `42037724332` 11/11 对应 `df57c0c`（代码 `b069beb`），ubuntu runner 真实执行 ENOSPC 测试 457 ms PASS；Phase 9.5.5 补齐进程树 quiescence：停止前快照后代、退出后 2s 收敛，E2E `42047193259`（`10fffd5`）的 10 份报告四项事实全 PASS（macOS + Linux），CI `42047193385` 11/11；Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、备份/迁移/安装 ENOSPC、AppImage stock 仍 NOT_RUN/PARTIAL；详见 docs/phase9-5/phase9-5-4-implementation.md 与 phase9-5-5-implementation.md)_
 
 _历史更新 2026-11-03: (Phase 9.3：bootstrap 的五个配置探测由串行改并发，修掉「一个慢 IPC 饿死其余」——这是 real-machine run `41437956656` 上 `nano-edit`「从未写 result.json」的根因；冷启动测量目录清理改带重试，修掉 `ENOTEMPTY` 假红；6 份证据随 run `41478709578` 重采为指纹 `c4faedfb…`，门禁 0 problem；交付 `docs/phase9-3/bootstrap-probe-starvation.md`)_
 
