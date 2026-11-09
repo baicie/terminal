@@ -13,6 +13,8 @@ import {
   SshHostKeyDialogSurface,
   SshHostKeyOverlaySurface,
 } from './ssh-host-key-surfaces'
+import { PasteConfirmDialog } from './paste-confirm-dialog'
+import type { PasteConfirmRequest } from './paste-confirm-dialog'
 import { TerminalBody } from './terminal-body'
 import { TerminalEmptyState } from './terminal-empty-state'
 import { useTerminalInstance } from './use-terminal-instance'
@@ -76,6 +78,24 @@ export function TerminalContainer({
   const theme = getThemeColors(activeTheme)
   const terminalIsActive = isActive && location.pathname === '/terminal'
   const onTitleChange = useTabTitle(tabId)
+  // One dialog for every paste route: the DOM gate (Cmd/Ctrl+V, native menu) and
+  // the context menus all resolve through this promise, so a paste is never
+  // confirmed twice and never delivered twice.
+  const [pasteRequest, setPasteRequest] = useState<PasteConfirmRequest | null>(null)
+  const [pasteResolver, setPasteResolver] = useState<
+    ((accepted: boolean) => void) | null
+  >(null)
+  const confirmRiskyPaste = (request: PasteConfirmRequest) =>
+    new Promise<boolean>(resolve => {
+      setPasteRequest(request)
+      setPasteResolver(() => resolve)
+    })
+  const resolvePaste = (accepted: boolean) => {
+    pasteResolver?.(accepted)
+    setPasteResolver(null)
+    setPasteRequest(null)
+  }
+
   const terminal = useTerminalInstance({
     tabId,
     workspaceId,
@@ -92,6 +112,7 @@ export function TerminalContainer({
       settings.allowProposedApi ?? defaultSettings.allowProposedApi,
     active: terminalIsActive,
     onTitleChange,
+    onConfirmRiskyPaste: confirmRiskyPaste,
     onShellIntegration: event => {
       if (event.kind === 'cwd') setShellCwd(event.cwd)
       if (event.kind === 'command-finished') setLastExitCode(event.exitCode)
@@ -154,6 +175,7 @@ export function TerminalContainer({
   if (!tab) return <TerminalEmptyState />
   return (
     <>
+      <PasteConfirmDialog request={pasteRequest} onResolve={resolvePaste} />
       <div className="relative h-full">
         <TerminalBody
           tab={tab}
