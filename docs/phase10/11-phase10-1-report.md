@@ -31,6 +31,7 @@ SSH_KEY_CREDENTIAL_MIGRATION=PASS
 HOST_STORE_REFRESH=PASS
 CORRUPT_REF_FAIL_CLOSED=PASS
 SSH_KEY_VAULT_LIFECYCLE=PASS
+SHARE_HOST_CREDENTIAL_PLAINTEXT=PARTIAL
 
 VAULT_REAL_E2E=NOT_RUN
 SSH_VAULT_REAL_E2E=NOT_RUN
@@ -50,7 +51,8 @@ TABBY_REPLACEMENT_READY=NO
 
 ### 为什么 `PHASE10_1_SECURITY_VERDICT=PARTIAL`
 
-12 个可自动化的门禁全部 PASS，但以下三类没有执行，且它们不是「可以推断」的：
+13 个凭据门禁中 12 个 PASS、1 个 PARTIAL（团队共享主机的明文路径，见 ADR §9.1，
+属既有产品功能）。此外以下三类没有执行，且它们不是「可以推断」的：
 
 1. **真实 GUI 的凭据链路**：Vault 创建/解锁/改密/重启持久化、Vault 密码与私钥真实
    SSH 登录、Jump Host 双端凭据、SFTP、IME 中文输入。本轮只有服务层测试与
