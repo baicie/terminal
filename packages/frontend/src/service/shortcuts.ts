@@ -6,6 +6,8 @@ import {
   shouldHandleShortcutInEditableTarget,
 } from './shortcut-keyboard'
 import type { Shortcut } from './shortcut-types'
+import { ShortcutWriter } from './shortcut-writer'
+import type { ShortcutPersistState } from './shortcut-persist-state'
 
 /** Where the user's bindings live in the existing settings table. */
 export const SHORTCUTS_SETTING_KEY = 'shortcuts.bindings'
@@ -28,14 +30,7 @@ export const memoryOnlyShortcutStorage: ShortcutStorage = {
 
 export { builtInActions, defaultShortcuts }
 export type { Shortcut, ShortcutAction } from './shortcut-types'
-
-/** How the last write went, so the UI can say so. */
-export type ShortcutPersistStatus = 'idle' | 'pending' | 'saved' | 'failed'
-
-export interface ShortcutPersistState {
-  status: ShortcutPersistStatus
-  error: string | null
-}
+export type { ShortcutPersistState, ShortcutPersistStatus } from './shortcut-persist-state'
 
 export class ShortcutsService {
   // Deep copies: the defaults are a module-level constant, and a shallow copy
@@ -49,10 +44,8 @@ export class ShortcutsService {
   private storage: ShortcutStorage = memoryOnlyShortcutStorage
   /** Bumped on every change so a stale in-flight load cannot overwrite it. */
   private revision = 0
-  /** Tail of the write chain: every save waits for the previous one. */
-  private writeChain: Promise<void> = Promise.resolve()
-  private persistState: ShortcutPersistState = { status: 'idle', error: null }
-  private persistListeners: Array<(state: ShortcutPersistState) => void> = []
+  /** Serialised writes plus the state the UI needs to show them. */
+  private readonly writer = new ShortcutWriter()
 
   /** Attach the persistent backend. Call once at startup, before `hydrate()`. */
   useStorage(storage: ShortcutStorage): void {
@@ -103,46 +96,28 @@ export class ShortcutsService {
    * by the caller so it is never mistaken for a saved binding.
    */
   private async persist(): Promise<void> {
+    // Bumping the revision is what stops a slow in-flight hydrate from
+    // overwriting what the user just changed (see hydrate()).
     this.revision += 1
-    this.setPersistState({ status: 'pending', error: null })
+    this.writer.write(() => this.storage.save(this.getShortcuts()))
+  }
 
-    // Serialise writes. Letting two saves run at once means the slower one can
-    // land last and leave the database holding a binding the user already
-    // changed away from.
-    const write = this.writeChain.then(async () => {
-      try {
-        await this.storage.save(this.getShortcuts())
-        this.setPersistState({ status: 'saved', error: null })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        this.setPersistState({ status: 'failed', error: message })
-        // The in-memory binding keeps what the user chose; the state says the
-        // write did not land, so the UI can offer a retry instead of pretending.
-        throw error
-      }
-    })
-    // The chain must not stay rejected, or every later write would be skipped.
-    this.writeChain = write.catch(() => undefined)
-    await write
+  getShortcutById(id: string): Shortcut | undefined {
+    return this.shortcuts.find(shortcut => shortcut.id === id)
+  }
+
+  private notifyChange(): void {
+    this.listeners.forEach(listener => listener('shortcuts-changed'))
   }
 
   getPersistState(): ShortcutPersistState {
-    return { ...this.persistState }
+    return this.writer.state()
   }
 
   onPersistStateChange(
     listener: (state: ShortcutPersistState) => void,
   ): () => void {
-    this.persistListeners.push(listener)
-    return () => {
-      const index = this.persistListeners.indexOf(listener)
-      if (index !== -1) this.persistListeners.splice(index, 1)
-    }
-  }
-
-  private setPersistState(state: ShortcutPersistState): void {
-    this.persistState = state
-    this.persistListeners.forEach(listener => listener({ ...state }))
+    return this.writer.onChange(listener)
   }
 
   /** Re-runs the last write; used by the UI's retry action. */
@@ -153,14 +128,6 @@ export class ShortcutsService {
     } catch {
       return false
     }
-  }
-
-  getShortcutById(id: string): Shortcut | undefined {
-    return this.shortcuts.find(shortcut => shortcut.id === id)
-  }
-
-  private notifyChange(): void {
-    this.listeners.forEach(listener => listener('shortcuts-changed'))
   }
 
   getShortcuts(): Shortcut[] {
