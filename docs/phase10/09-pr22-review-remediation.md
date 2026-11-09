@@ -122,20 +122,20 @@ SQLite 与 Vault 无共享事务，因此按失败状态定义而非宣称原子
 ## 9. 判定
 
 ```
-HOST_WRITE_PATH_UNIFIED=PASS
-SQLITE_PLAINTEXT_ELIMINATED=PASS          （新写入；历史数据见下）
+HOST_WRITE_PATH_UNIFIED=PASS(前端)        Rust db_import/writer.rs 仍绑定秘密列，见 §12.3
+SQLITE_PLAINTEXT_ELIMINATED=PASS          （仅新写入；历史明文仍在旧库、WAL、备份）
 CREDENTIAL_REF_MAPPING=PASS
-TERMINAL_CREDENTIAL_RESOLUTION=PASS       （单元层；真实 SSH 未复测）
-JUMP_HOST_CREDENTIAL_RESOLUTION=PASS      （单元层）
+TERMINAL_CREDENTIAL_RESOLUTION=PASS       （单元层 + 实机矩阵 shell 路径）
+JUMP_HOST_CREDENTIAL_RESOLUTION=PASS      （单元层；exec 跳板机已修，矩阵含 jump 重连）
 LEGACY_CREDENTIAL_MIGRATION=NOT_RUN
-PLAIN_EXPORT_SECRET_EXCLUDED=PASS
+PLAIN_EXPORT_SECRET_EXCLUDED=PASS         （两条导出路径均已白名单，各 8 项/4 项测试）
 SECRET_PROVIDER_FAILURE_HANDLING=PASS
 SHORTCUT_WRITE_ORDER=PASS
 SHORTCUT_FAILURE_FEEDBACK=PASS            （服务状态 + 设置面板横幅 + 重试）
 PASTE_ALL_ENTRYPOINTS=PASS                （DOM 层覆盖；真实 Vim/less 未跑）
-SSH_REAL_E2E=NOT_RUN
+SSH_REAL_E2E=PASS                         （矩阵 42586825845：probe 11/11、release 8/8、shell 14/14；不含 Vault 凭据场景）
 VAULT_REAL_E2E=NOT_RUN
-PR22_REVIEW_VERDICT=APPROVE（就本轮四处 P0 而言；数据迁移仍待授权执行）
+PR22_REVIEW_VERDICT=APPROVE（两轮审查的 P0/P1 已修；§12.3 所列已知缺陷未修）
 DAILY_DRIVER_READY=NO
 TABBY_REPLACEMENT_READY=NO
 ```
@@ -168,10 +168,11 @@ TABBY_REPLACEMENT_READY=NO
 | `fe920f7` | `42578266796` | `ff11c12d…` | 快捷键失败横幅、pane-ui memo 化、三语文案 |
 | `1f8f517` | `42586825845` | `65ff5262…` | 二次审查的 P0/P1 修复（导出白名单、局部更新、exec 跳板机、删除清 Vault、Vault 错误字段） |
 
-两次都按官方流程 `fetch-verification-evidence.mjs --run-id` 获取，没有手改
-manifest 或任何旧证据文件。`fe920f7` 是本轮源码改完后的统一冻结点。
+三次都按官方流程 `fetch-verification-evidence.mjs --run-id` 获取，没有手改
+manifest 或任何旧证据文件。
 
-`1f8f517` 是最终冻结点；其后只有文档提交与证据提交 `c2c9f2a`，均不改源码。
+`1f8f517` 是最终冻结点；其后只有文档提交与证据提交 `c2c9f2a`（及文档 `0152a67`），
+均不改源码。这一点用 `git diff --name-only 1f8f517..HEAD | grep -v '^docs/'` 为空验证。
 
 ## 12. 第二次独立审查（不是自查）
 
