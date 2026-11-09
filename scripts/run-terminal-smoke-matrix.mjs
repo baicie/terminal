@@ -56,7 +56,14 @@ const CASES = [
   // there is no session to retire, and the reconnect checkpoint is only ever
   // published from an already interactive terminal. What matters is simply
   // that the app reaches `connected` on its own once the host answers again.
-  { name: 'key-first-connect-outage', auth: 'key', firstConnectOutageHoldMs: 6_000 },
+  // The hold is deliberately short: the first-connect budget is a fixed 10 s, so
+  // every millisecond held here is subtracted from the time the app has to start
+  // and reconnect. At 6 s the case sat at 6041–7037 ms locally and failed on CI
+  // whenever the runner was slow; raising the deadline instead trips OpenSSH's
+  // `srclimit_penalise` (20 s ban after repeated reconnects), which is worse.
+  // The property under test — the app reaches `connected` on its own once the
+  // host answers — does not depend on how long the outage was.
+  { name: 'key-first-connect-outage', auth: 'key', firstConnectOutageHoldMs: 2_000 },
   { name: 'password', auth: 'password', reconnect: false },
   { name: 'password-reconnect', auth: 'password', reconnect: true },
   { name: 'agent', auth: 'agent', reconnect: false },
