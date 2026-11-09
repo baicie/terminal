@@ -5,6 +5,7 @@ import type { Host } from '@/types'
 import { hostRowToHost } from '@/store/host-mappers'
 import { splitHostSecrets } from '@/service/credential-boundary'
 import { vaultSecretProvider } from '@/service/vault-secret-provider'
+import { vaultUnavailableMessage } from '@/service/vault-unavailable-message'
 import { executeQuery, select } from './connection'
 import type { HostRecord } from './types'
 
@@ -32,10 +33,12 @@ async function persistHostSecrets(host: {
   // Fail before touching anything if the vault cannot take the secret. Saying
   // "saved" while the secret only exists in memory is how a user ends up unable
   // to reconnect after a restart.
-  if (!(await vaultSecretProvider.isAvailable())) {
-    throw new Error(
-      'This host has a password or private key, but the vault is locked. Unlock the vault to save it, or connect with an SSH agent or a password typed at connect time instead.',
-    )
+  //
+  // The message names the action that actually works: a fresh install has no
+  // vault to unlock, so telling the user to unlock one sends them in a circle.
+  const availability = await vaultSecretProvider.availability()
+  if (!availability.ok) {
+    throw new Error(vaultUnavailableMessage(availability.state))
   }
   for (const secret of secrets) {
     await vaultSecretProvider.write(host.id, secret.kind, secret.value)

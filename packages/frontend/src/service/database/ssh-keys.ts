@@ -2,6 +2,7 @@
  * SSH Keys CRUD 操作
  */
 import { vaultSecretProvider } from '@/service/vault-secret-provider'
+import { vaultUnavailableMessage } from '@/service/vault-unavailable-message'
 import { executeQuery, select } from './connection'
 import type { SSHKeyRecord } from './types'
 
@@ -20,10 +21,9 @@ async function persistKeySecrets(
   if (secrets.privateKey) entries.push(['privateKey', secrets.privateKey])
   if (secrets.passphrase) entries.push(['passphrase', secrets.passphrase])
   if (entries.length === 0) return
-  if (!(await vaultSecretProvider.isAvailable())) {
-    throw new Error(
-      "This SSH key has private material, but the vault is locked. Unlock the vault to save it.",
-    )
+  const availability = await vaultSecretProvider.availability()
+  if (!availability.ok) {
+    throw new Error(vaultUnavailableMessage(availability.state))
   }
   for (const [kind, value] of entries) {
     await vaultSecretProvider.write(id, kind, value)

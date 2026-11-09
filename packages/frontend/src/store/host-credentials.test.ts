@@ -26,6 +26,10 @@ vi.mock('@/service/vault-secret-provider', () => ({
     remove: mocks.vaultRemove,
     read: vi.fn(),
     isAvailable: mocks.vaultAvailable,
+    availability: async () =>
+      (await mocks.vaultAvailable())
+        ? { ok: true }
+        : { ok: false, state: 'locked' },
   },
 }))
 

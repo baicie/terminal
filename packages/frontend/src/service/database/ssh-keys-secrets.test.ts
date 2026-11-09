@@ -22,6 +22,12 @@ vi.mock('@/service/vault-secret-provider', () => ({
     remove: mocks.vaultRemove,
     read: vi.fn(),
     isAvailable: mocks.vaultAvailable,
+    // The save path now asks why the vault is unavailable so it can name the
+    // right next step; this stub reports an existing, locked vault.
+    availability: vi.fn(async () => {
+      const ok = await mocks.vaultAvailable()
+      return ok ? { ok: true } : { ok: false, state: 'locked' }
+    }),
   },
 }))
 

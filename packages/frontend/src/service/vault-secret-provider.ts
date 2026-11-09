@@ -18,14 +18,38 @@ function vaultKey(hostId: string, kind: CredentialKind): string {
   return `${KEY_PREFIX}:${hostId}:${kind}`
 }
 
+/**
+ * Why the vault cannot take a secret right now.
+ *
+ * `uninitialized` and `locked` used to collapse into a single `false`, so a user
+ * on a fresh install was told to "unlock" a vault that did not exist yet — an
+ * instruction that cannot be followed. They are separate states because they
+ * need separate next steps: create, or unlock.
+ */
+export type VaultAvailability =
+  | { ok: true }
+  | { ok: false; state: 'uninitialized' | 'locked' | 'unusable' }
+
 export class VaultSecretProvider implements SecretProvider {
   async isAvailable(): Promise<boolean> {
-    // A locked vault reports itself as locked; any other failure (no vault file,
-    // corrupt file) means the backend cannot serve secrets either.
+    return (await this.availability()).ok
+  }
+
+  /** The same check, with the reason kept so the caller can act on it. */
+  async availability(): Promise<VaultAvailability> {
     try {
-      return await vaultService.isUnlocked()
+      if (await vaultService.isUnlocked()) return { ok: true }
     } catch {
-      return false
+      // Fall through to the file check: a failing status call says nothing
+      // about whether the vault file is there.
+    }
+    try {
+      return (await vaultService.exists())
+        ? { ok: false, state: 'locked' }
+        : { ok: false, state: 'uninitialized' }
+    } catch {
+      // Could not even ask. Treat it as unusable rather than guessing a fix.
+      return { ok: false, state: 'unusable' }
     }
   }
 

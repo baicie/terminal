@@ -27,6 +27,7 @@ vi.mock('@/service/vault-secret-provider', () => ({
     read: vi.fn(),
     remove: mocks.vaultRemove,
     isAvailable: vi.fn(async () => true),
+    availability: vi.fn(async () => ({ ok: true })),
   },
 }))
 
