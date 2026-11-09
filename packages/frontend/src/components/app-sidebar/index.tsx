@@ -10,6 +10,8 @@ import {
 import { cn } from '@/lib/utils'
 import { useIsTeamEnabled } from '@/store/team'
 import { getVisibleNavItems, type NavItemConfig } from '@/router/nav-config.tsx'
+import { navTierOf } from '@/router/nav-tier'
+import { Separator } from '@/components/ui/separator'
 
 interface NavItemProps {
   item: NavItemConfig
@@ -100,6 +102,10 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
     if (item.path === '/teams' && !isTeamEnabled) return false
     return true
   })
+  // Daily items first, then everything else. The grouping is visual only: every
+  // route stays reachable, nothing is removed (Phase 10 M3).
+  const primaryItems = navItems.filter(item => navTierOf(item) === 'primary')
+  const otherItems = navItems.filter(item => navTierOf(item) !== 'primary')
 
   return (
     <div
@@ -135,14 +141,26 @@ const AppSidebar: React.FC<AppSidebarProps> = ({
       </div>
 
       {/* Navigation Items */}
-      <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
-        {navItems.map((item, index) => (
+      <nav className="flex-1 px-3 py-4 flex flex-col gap-1 overflow-y-auto">
+        {primaryItems.map((item, index) => (
           <NavItem
             key={item.path}
             item={item}
             iconOnly={iconOnly}
             className="slide-in-from-left fade-in"
             style={{ animationDelay: `${index * 40}ms` }}
+          />
+        ))}
+        {otherItems.length > 0 && !iconOnly && (
+          <Separator className="my-2" />
+        )}
+        {otherItems.map((item, index) => (
+          <NavItem
+            key={item.path}
+            item={item}
+            iconOnly={iconOnly}
+            className="slide-in-from-left fade-in"
+            style={{ animationDelay: `${(primaryItems.length + index) * 40}ms` }}
           />
         ))}
       </nav>

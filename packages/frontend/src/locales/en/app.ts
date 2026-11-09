@@ -68,6 +68,13 @@ export default {
   'terminal.closeTab': 'Close Tab',
   'terminal.copyEmpty': 'Nothing selected',
   'terminal.pasteEmpty': 'Clipboard is empty',
+  'terminal.pasteConfirmTitle': 'Paste multiple lines?',
+  'terminal.pasteConfirmDescription':
+    'You are about to paste {{count}} lines. The last line is sent as Return, so the shell will run it.',
+  'terminal.pasteConfirmControl':
+    'This text contains control characters that the terminal will act on (ESC, Ctrl-C, Ctrl-D, Ctrl-Z).',
+  'terminal.pasteConfirmOmitted': '{{count}} more lines',
+  'terminal.pasteConfirmAction': 'Paste anyway',
   'terminal.searchPlaceholder': 'Find in terminal…',
   'terminal.searchNext': 'Next match',
   'terminal.searchPrev': 'Previous match',
@@ -150,6 +157,9 @@ export default {
   'settings.shortcuts.noResults': 'No shortcuts found',
   'settings.shortcuts.conflictWith': 'Conflict with',
   'settings.shortcuts.resetSuccess': 'Shortcuts reset to defaults',
+  'settings.shortcuts.saveFailed':
+    'Your shortcut change is in effect but could not be saved',
+  'settings.shortcuts.retrySave': 'Save again',
   'settings.shortcuts.recordingHint':
     'Press a key combination to bind, or Escape to cancel...',
 
@@ -209,7 +219,8 @@ export default {
   'experiments.inputProbeTitle': 'Terminal physical input probe',
   'experiments.inputProbeDesc':
     'Record xterm input and bytes received by a real Tauri PTY.',
-  'experiments.inputProbeInstruction': 'Enter the expected text, then press Enter',
+  'experiments.inputProbeInstruction':
+    'Enter the expected text, then press Enter',
   'experiments.inputProbeRounds': 'Rounds',
   'experiments.inputProbeExpected': 'Expected text',
   'experiments.inputProbeStart': 'Start probe',

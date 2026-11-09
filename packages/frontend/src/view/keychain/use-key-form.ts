@@ -106,16 +106,23 @@ export function useKeyForm(): UseKeyFormReturn {
           is_encrypted: formValues.formPrivateKey ? 0 : 0,
         }
       } else if (selectedKey) {
+        // Editing an existing key: the row no longer holds the private material
+        // (it lives in the vault), so the form starts empty. Sending that empty
+        // string would delete the stored key, so the field is omitted unless the
+        // user actually typed a new one — "unchanged" and "cleared" are different
+        // operations, and only an explicit re-entry replaces the secret.
+        const typedPrivateKey = formValues.formPrivateKey.trim()
+        const typedPassphrase = formValues.formPassphrase.trim()
         return {
           id: selectedKey.id,
           name: formValues.formName,
           key_type: formValues.formKeyType,
-          private_key: formValues.formPrivateKey || null,
+          ...(typedPrivateKey === '' ? {} : { private_key: typedPrivateKey }),
           public_key: formValues.formPublicKey || null,
           certificate: formValues.formCertificate || null,
-          passphrase: formValues.formPassphrase || null,
-          is_encrypted: formValues.formPrivateKey ? 1 : 0,
-        }
+          ...(typedPassphrase === '' ? {} : { passphrase: typedPassphrase }),
+          is_encrypted: typedPrivateKey === '' ? selectedKey.is_encrypted : 1,
+        } as Omit<SSHKeyRecord, 'created_at' | 'updated_at'>
       }
       return null
     },

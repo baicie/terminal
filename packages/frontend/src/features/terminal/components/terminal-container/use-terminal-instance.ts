@@ -5,6 +5,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal as TerminalComponent, type ITheme } from '@baicie/xterm'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { handleXtermShortcut } from './use-terminal-shortcut-events'
+import { installTerminalPasteGate } from './install-terminal-paste-gate'
+import type { PasteConfirmRequest } from './paste-confirm-dialog'
 import {
   ShellIntegrationState,
   type ShellIntegrationEvent,
@@ -31,6 +33,8 @@ interface UseTerminalInstanceOptions {
   active: boolean
   onTitleChange?: (title: string) => void
   onShellIntegration?: (event: ShellIntegrationEvent) => void
+  /** Asks before a risky paste; absent means such a paste is refused. */
+  onConfirmRiskyPaste?: (request: PasteConfirmRequest) => Promise<boolean>
 }
 
 export function useTerminalInstance(options: UseTerminalInstanceOptions) {
@@ -114,9 +118,8 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
       })
       .catch(error => console.warn('Failed to load ClipboardAddon:', error))
 
-    term.attachCustomKeyEventHandler(event =>
-      handleXtermShortcut(event, activeRef.current),
-    )
+    term.attachCustomKeyEventHandler(event => handleXtermShortcut(event, activeRef.current))
+    const pasteGate = installTerminalPasteGate(containerRef.current, termRef, options.onConfirmRiskyPaste)
     traceStage(
       'terminal-open-start',
       `${options.tabId}@${options.workspaceId}@${options.terminalType}`,
@@ -133,6 +136,7 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
       // The effect still owns the terminal until its cleanup runs; disposing
       // here as well would double-dispose when React tears this attempt down.
       return () => {
+        pasteGate()
         titleDisposable.dispose()
         for (const disposable of shellIntegrationDisposables) {
           disposable.dispose()

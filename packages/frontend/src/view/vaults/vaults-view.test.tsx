@@ -72,7 +72,7 @@ describe('vault route reachability', () => {
   })
 
   it('resolves /vaults through the real route table to VaultsView', async () => {
-    const vaultRoute = buildRoutes().find(route => route.path === 'vaults')
+    const vaultRoute = buildRoutes().find((route: { path?: string }) => route.path === 'vaults')
     expect(vaultRoute).toBeDefined()
     vaultMock.exists.mockResolvedValue(false)
 

@@ -95,6 +95,15 @@ const columnMigrations: ColumnMigration[] = [
     column: 'shell_integration',
     sql: "ALTER TABLE hosts ADD COLUMN shell_integration TEXT DEFAULT 'off'",
   },
+  {
+    // Phase 10: the host row stops carrying secrets. This column names what is
+    // stored in the vault (JSON `{kinds:[], provider:'vault'}`), never the value.
+    // The legacy `password` / `private_key` / `certificate` columns stay for
+    // migration and rollback; see docs/phase10/04-architecture-and-credential-policy.md.
+    table: 'hosts',
+    column: 'credential_ref',
+    sql: 'ALTER TABLE hosts ADD COLUMN credential_ref TEXT',
+  },
 ]
 
 /**

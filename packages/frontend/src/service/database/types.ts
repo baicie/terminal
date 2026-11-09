@@ -13,6 +13,7 @@ export interface HostRecord {
   auth_type: string
   password: string | null
   private_key: string | null
+  credential_ref?: string | null
   certificate: string | null
   group_id: string | null
   is_favorite: number

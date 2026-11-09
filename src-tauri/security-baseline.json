@@ -212,6 +212,17 @@
       "evidence": "`cargo tree --invert glib@0.18.5 --target all --all-features` prints the atk/gtk/libappindicator chain. Platform scope: `nothing to print` for `--target aarch64-apple-darwin` and `--target x86_64-pc-windows-msvc`; present only for `--target x86_64-unknown-linux-gnu`.",
       "exposure": "Requires Rust code to call `VariantStrIter`'s iterator methods. Nothing in this crate does; the only path into glib is Tauri's tray code, which uses a fixed set of GTK calls.",
       "reReviewWhen": "tauri or tray-icon bumps its gtk-rs dependency to glib 0.18.6+ or 0.19+, which retires this entry."
+    },
+    {
+      "id": "RUSTSEC-2026-0459",
+      "crate": "libsqlite3-sys",
+      "version": "0.30.1",
+      "title": "`libsqlite3-sys` via C SQLite CVE-2026-119375: crafted db + -wal pair with mismatched page size returns uninitialized page-cache memory",
+      "severity": "unscored (CVSS 4.0 vector given, no score)",
+      "reachable": true,
+      "reason": "Live exposure on all three platforms and not fixable from here. sqlx's `bundled` feature compiles the crate's copy of SQLite into the binary, and `cargo tree -i SQLite` shows the linkage is real: sqlx-sqlite -> libsqlite3-sys on the normal (not only proc-macro) path. The patched releases are libsqlite3-sys >= 0.39.0, but every link in our chain caps below that: sqlx 0.9.0 requires `>=0.30.1, <0.38.0`, sqlx 0.8.6 requires `^0.30.1`, and tauri-plugin-sql 2.6.0 (current latest) requires `sqlx ^0.8`. Upgrading sqlx alone therefore cannot reach a patched build; the fix has to come from sqlx widening its window first.",
+      "evidence": "`cd src-tauri && cargo tree -i libsqlite3-sys --target aarch64-apple-darwin` prints libsqlite3-sys -> sqlx-sqlite -> sqlx -> {tauri-plugin-sql, terminal}; the same command with `--target x86_64-unknown-linux-gnu` prints the same chain. `cargo tree -i libsqlite3-sys -e features` shows the `bundled` feature active, i.e. the vendored SQLite source is compiled in. Version ceilings read from crates.io dependency metadata for sqlx 0.9.0 (`libsqlite3-sys >=0.30.1, <0.38.0`), sqlx 0.8.6 (`^0.30.1`) and tauri-plugin-sql 2.6.0 (`sqlx ^0.8`) on 2026-11-09.",
+      "reReviewWhen": "sqlx publishes a release whose libsqlite3-sys requirement allows >= 0.39.0, or tauri-plugin-sql moves to sqlx 0.9+, or we stop bundling SQLite (e.g. link the system library, which the advisory says is not affected by the crate's copy). Any of those makes this entry removable rather than merely accepted."
     }
   ],
   "advisoryDatabase": {

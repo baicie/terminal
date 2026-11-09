@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { Host } from '@/types'
 import type { TabType } from '../types'
+import { resolveSessionCredential } from './session-credentials'
 import { traceStageAndWait } from '@/service/database/startup-trace'
 import { buildSshJumpHostIpcConfig } from './ssh-jump-config'
 
@@ -10,6 +11,38 @@ export type TerminalProfilePayload = {
   startupCommand?: string
   environment?: Record<string, string>
   shellIntegration?: TerminalShellIntegration
+}
+
+/**
+ * The one place a connection's secrets are resolved.
+ *
+ * A host object reaching this module may carry `password`/`privateKey` because the
+ * user just typed them into a form. Otherwise `credentialRef` decides: absent means
+ * "agent, or ask at connect time"; present means the vault must answer, and a vault
+ * that cannot answer fails the connection with its own explanation rather than
+ * sending an empty password that looks like a wrong one.
+ *
+ * Returns a copy of the host with the resolved secrets applied, so callers keep
+ * using `host.password` / `host.privateKey` and cannot forget to resolve.
+ */
+export async function withResolvedCredential(host: Host): Promise<Host> {
+  if (host.authType === 'agent') return host
+  if (host.password || host.privateKey) return host
+  const ref = host.credentialRef ?? null
+  if (ref === null || ref.kinds.length === 0) return host
+
+  // One implementation, shared with the script/batch path, so a change to the
+  // resolution rule cannot apply to the terminal and miss the exec path.
+  const resolved = await resolveSessionCredential(host)
+  if (!resolved.ok) {
+    // The reason is user-facing and never contains the secret.
+    throw new Error(resolved.message)
+  }
+  return {
+    ...host,
+    password: resolved.password,
+    privateKey: resolved.privateKey,
+  }
 }
 
 export function profileForHost(host: Host): TerminalProfilePayload | undefined {
@@ -82,6 +115,14 @@ async function createTerminalShell(
 
   if (tabType === 'remote') {
     if (!host) throw new Error('Host info required for remote connection')
+    // Both sides of a jump connection resolve their own secrets: they are
+    // different hosts and may store different kinds.
+    host = await withResolvedCredential(host)
+    const resolvedJump =
+      jumpHost === undefined
+        ? undefined
+        : await withResolvedCredential(jumpHost)
+    jumpHost = resolvedJump
     const profile = profileForHost(host)
     if (host.jumpHostId) {
       if (!jumpHost || jumpHost.id !== host.jumpHostId) {

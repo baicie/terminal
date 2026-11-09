@@ -1,4 +1,33 @@
+import type { CredentialRef } from '@/service/credential-boundary'
 import type { AuthType, Group, Host, ShellIntegrationMode } from '@/types'
+
+/**
+ * Parses the `credential_ref` column.
+ *
+ * A malformed value is treated as "no reference" rather than throwing: a broken
+ * pointer must not make the host list unreadable. It also must not be silently
+ * turned into a *valid* reference, which would claim secrets exist that do not.
+ */
+function parseCredentialRef(
+  raw: string | null | undefined,
+): CredentialRef | null {
+  if (raw === null || raw === undefined || raw === '') return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (parsed === null || typeof parsed !== 'object') return null
+    const kindList = (parsed as { kinds?: unknown }).kinds
+    const provider = (parsed as { provider?: unknown }).provider
+    if (!Array.isArray(kindList) || provider !== 'vault') return null
+    const kinds = kindList.filter(
+      (kind): kind is 'password' | 'privateKey' | 'passphrase' =>
+        kind === 'password' || kind === 'privateKey' || kind === 'passphrase',
+    )
+    if (kinds.length === 0) return null
+    return { kinds, provider: 'vault' }
+  } catch {
+    return null
+  }
+}
 
 export interface HostRow {
   id: string
@@ -9,6 +38,7 @@ export interface HostRow {
   auth_type: string
   password: string | null
   private_key: string | null
+  credential_ref?: string | null
   certificate: string | null
   group_id: string | null
   is_favorite: number
@@ -43,6 +73,13 @@ export function hostRowToHost(row: HostRow): Host {
     port: row.port,
     username: row.username,
     authType: row.auth_type as AuthType,
+    // The reference says which secrets the vault holds.
+    credentialRef: parseCredentialRef(row.credential_ref),
+    // Legacy plaintext is still read, and must be until the migration has run:
+    // ignoring it would leave every host saved by an older build unable to
+    // connect, which is a worse outcome than the plaintext it replaces. New
+    // writes never produce these values (see hosts.ts), so the only rows that
+    // have them are pre-migration ones - and the migration clears them.
     password: row.password ?? undefined,
     privateKey: row.private_key ?? undefined,
     certificate: row.certificate ?? undefined,

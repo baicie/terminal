@@ -1,4 +1,6 @@
 import { useEffect } from 'react'
+import { shortcutsService } from '@/service/shortcuts'
+import { shortcutsSettingStorage } from '@/service/shortcuts-storage'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import { RouterProvider } from 'react-router-dom'
 import { Toaster } from '@/components/ui/sonner'
@@ -44,6 +46,13 @@ export default function App({ startupTerminalFallbackAt }: AppProps) {
   useEffect(() => {
     void initializeTeam()
   }, [initializeTeam])
+
+  // Shortcut bindings live in the settings table and must be in place before the
+  // first keystroke is matched, so this runs before anything else can read them.
+  useEffect(() => {
+    shortcutsService.useStorage(shortcutsSettingStorage)
+    void shortcutsService.hydrate()
+  }, [])
 
   useStartupWorkspaceRecovery(startupTerminalFallbackAt)
 

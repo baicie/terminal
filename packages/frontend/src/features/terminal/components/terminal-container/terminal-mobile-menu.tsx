@@ -26,6 +26,9 @@ import {
   SheetDescription,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { PasteConfirmDialog } from './paste-confirm-dialog'
+import type { PasteConfirmRequest } from './paste-confirm-dialog'
+import { useSafePaste } from './use-safe-paste'
 
 interface TerminalMobileMenuProps {
   /** xterm 实例，用于读取选中、写入数据、清屏等 */
@@ -47,6 +50,22 @@ export function TerminalMobileMenu({
   onOpenChange,
 }: TerminalMobileMenuProps) {
   const { t } = useTranslation()
+  const [pasteRequest, setPasteRequest] =
+    React.useState<PasteConfirmRequest | null>(null)
+  const pasteResolver = React.useRef<((accepted: boolean) => void) | null>(null)
+  const askPasteConfirm = React.useCallback(
+    (request: PasteConfirmRequest) =>
+      new Promise<boolean>(resolve => {
+        pasteResolver.current = resolve
+        setPasteRequest(request)
+      }),
+    [],
+  )
+  const resolvePaste = React.useCallback((accepted: boolean) => {
+    pasteResolver.current?.(accepted)
+    pasteResolver.current = null
+    setPasteRequest(null)
+  }, [])
 
   const handleCopy = async () => {
     onOpenChange(false)
@@ -64,19 +83,12 @@ export function TerminalMobileMenu({
     }
   }
 
+  // Same policy as the desktop menu: the mobile path must not be the one that
+  // skips confirmation.
+  const paste = useSafePaste(term, { confirm: askPasteConfirm })
   const handlePaste = async () => {
     onOpenChange(false)
-    if (!term) return
-    try {
-      const text = await navigator.clipboard.readText()
-      if (!text) {
-        toast.warning(t('terminal.pasteEmpty'))
-        return
-      }
-      term.paste(text)
-    } catch {
-      toast.error(t('terminal.pasteEmpty'))
-    }
+    await paste()
   }
 
   const handleSelectAll = () => {
@@ -100,6 +112,8 @@ export function TerminalMobileMenu({
   }
 
   return (
+    <>
+    <PasteConfirmDialog request={pasteRequest} onResolve={resolvePaste} />
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
@@ -151,6 +165,7 @@ export function TerminalMobileMenu({
         </div>
       </SheetContent>
     </Sheet>
+    </>
   )
 }
 

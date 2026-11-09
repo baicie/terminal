@@ -20,6 +20,7 @@ import {
   type Shortcut,
 } from '@/service/shortcuts'
 import { findShortcutConflict } from './shortcut-conflict'
+import { ShortcutPersistBanner } from './shortcut-persist-banner'
 import { ShortcutRow } from './shortcut-row'
 
 export function ShortcutsSettings() {
@@ -63,12 +64,22 @@ export function ShortcutsSettings() {
           id,
         )
         if (conflictingShortcut) {
+          // The service refuses the change as well; say so and keep recording off
+          // rather than showing a binding that was never applied.
           toast.warning(
             `${t('settings.shortcuts.conflictWith')} "${conflictingShortcut.name}"`,
           )
+          setRecordingId(null)
+          reload()
+          return
         }
 
-        shortcutsService.updateShortcut(id, { keys: parsed })
+        if (!shortcutsService.updateShortcut(id, { keys: parsed })) {
+          toast.error(t('settings.saveFailed'))
+          setRecordingId(null)
+          reload()
+          return
+        }
         setRecordingId(null)
         reload()
       }
@@ -125,6 +136,8 @@ export function ShortcutsSettings() {
 
   return (
     <div className="space-y-4 py-4">
+      <ShortcutPersistBanner />
+
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Keyboard className="size-4" />
@@ -168,6 +181,7 @@ export function ShortcutsSettings() {
               onStartRecord={startRecord}
               onStopRecord={stopRecord}
               onReset={() => handleReset(shortcut.id)}
+              onChange={reload}
               t={t}
             />
           ))

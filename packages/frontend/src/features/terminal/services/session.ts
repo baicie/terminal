@@ -1,5 +1,6 @@
 /** 会话管理服务 - 统一管理本地/SSH 会话。 */
 import { invoke } from '@tauri-apps/api/core'
+import { resolveSessionCredential } from './session-credentials'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
   ConnectionResult,
@@ -51,11 +52,13 @@ export class SessionService {
   ): Promise<ConnectionResult> {
     const { host, cols = 80, rows = 24 } = options
     try {
+      const credential = await resolveSessionCredential(host)
+      if (!credential.ok) return { success: false, message: credential.message }
       const sessionId = await invoke<string>('session_create_ssh_password', {
         host: host.hostname,
         port: host.port,
         username: host.username,
-        password: host.password,
+        password: credential.password,
         agentForwarding: host.agentForwarding ?? false,
         cols,
         rows,
@@ -73,12 +76,14 @@ export class SessionService {
   async createSshKey(options: SshKeyOptions): Promise<ConnectionResult> {
     const { host, cols = 80, rows = 24 } = options
     try {
+      const credential = await resolveSessionCredential(host)
+      if (!credential.ok) return { success: false, message: credential.message }
       const sessionId = await invoke<string>('session_create_ssh_key', {
         host: host.hostname,
         port: host.port,
         username: host.username,
-        privateKey: host.privateKey,
-        password: host.password,
+        privateKey: credential.privateKey,
+        password: credential.password,
         agentForwarding: host.agentForwarding ?? false,
         cols,
         rows,
@@ -96,13 +101,15 @@ export class SessionService {
   async createSshCert(options: SshCertOptions): Promise<ConnectionResult> {
     const { host, cols = 80, rows = 24 } = options
     try {
+      const credential = await resolveSessionCredential(host)
+      if (!credential.ok) return { success: false, message: credential.message }
       const sessionId = await invoke<string>('session_create_ssh_cert', {
         host: host.hostname,
         port: host.port,
         username: host.username,
         certificate: host.certificate ?? '',
-        privateKey: host.privateKey ?? '',
-        password: host.password ?? null,
+        privateKey: credential.privateKey ?? '',
+        password: credential.password ?? null,
         agentForwarding: host.agentForwarding ?? false,
         cols,
         rows,

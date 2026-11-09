@@ -20,6 +20,22 @@ describe('parseQuickConnectInput', () => {
     expect(parseQuickConnectInput(input)).toEqual({ ok: true, target })
   })
 
+  it.each([
+    // The forms the Phase 10 task names explicitly, including the option order
+    // the parser did not accept before this matrix existed.
+    ['server.example.com', { hostname: 'server.example.com', port: 22 }],
+    ['deploy@server.example.com', { hostname: 'server.example.com', username: 'deploy', port: 22 }],
+    ['server.example.com:2222', { hostname: 'server.example.com', port: 2222 }],
+    ['ssh server.example.com', { hostname: 'server.example.com', port: 22 }],
+    ['ssh deploy@server.example.com', { hostname: 'server.example.com', username: 'deploy', port: 22 }],
+    ['ssh -p 2222 deploy@server.example.com', { hostname: 'server.example.com', username: 'deploy', port: 2222 }],
+    ['ssh deploy@server.example.com -p 2222', { hostname: 'server.example.com', username: 'deploy', port: 2222 }],
+    ['[2001:db8::1]:2222', { hostname: '2001:db8::1', port: 2222 }],
+    ['ssh deploy@[2001:db8::1]', { hostname: '2001:db8::1', username: 'deploy', port: 22 }],
+  ])('accepts the common syntax %s', (input, target) => {
+    expect(parseQuickConnectInput(input)).toEqual({ ok: true, target })
+  })
+
   it('trims surrounding whitespace and supports ssh without an explicit port', () => {
     expect(parseQuickConnectInput('  ssh deploy@server.example.com  ')).toEqual(
       {

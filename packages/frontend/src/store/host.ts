@@ -1,6 +1,11 @@
 import type { Group, Host } from '@/types'
 import { create } from 'zustand'
 import { executeQuery, selectStrict as select } from '@/service/database'
+import {
+  createHost as createHostRow,
+  deleteHost as deleteHostRow,
+  updateHost as updateHostRow,
+} from '@/service/database/hosts'
 import { generateId } from '@/utils/id'
 import {
   groupRowToGroup,
@@ -128,83 +133,37 @@ export const useHostStore = create<HostState>((set, get) => {
         updatedAt: now,
       }
 
-      await executeQuery(
-        `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, shell_integration, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          newHost.id,
-          newHost.name,
-          newHost.hostname,
-          newHost.port,
-          newHost.username,
-          newHost.authType,
-          newHost.password ?? null,
-          newHost.privateKey ?? null,
-          newHost.certificate ?? null,
-          newHost.groupId ?? null,
-          newHost.isFavorite ? 1 : 0,
-          newHost.color ?? null,
-          newHost.tags ? JSON.stringify(newHost.tags) : null,
-          JSON.stringify(newHost.portForwards),
-          newHost.startupCommand ?? null,
-          newHost.environment ? JSON.stringify(newHost.environment) : null,
-          newHost.jumpHostId ?? null,
-          newHost.jumpHostAuthType ?? null,
-          newHost.agentForwarding ? 1 : 0,
-          newHost.shellIntegration ?? 'off',
-          newHost.createdAt,
-          newHost.updatedAt,
-        ],
-      )
+      // The one place a host row is written. It moves any secret into the vault
+      // and stores only a reference, so no other module can reintroduce a
+      // plaintext column by writing its own INSERT (see
+      // docs/phase10/08-credential-single-write-path-adr.md).
+      await createHostRow(newHost)
 
-      set(state => ({ hosts: [...state.hosts, newHost] }))
-      return newHost
+      // The in-memory copy drops the secret: it is in the vault now, and keeping
+      // it would leave plaintext lying in the store for the session.
+      const { password: _password, privateKey: _privateKey, ...metadata } = newHost
+      set(state => ({ hosts: [...state.hosts, metadata as Host] }))
+      return { ...metadata, password: newHost.password, privateKey: newHost.privateKey } as Host
     },
 
     async updateHost(id, updates) {
       const existing = get().hosts.find(h => h.id === id)
       if (!existing) return
 
-      const updated: Host = {
-        ...existing,
-        ...updates,
-        updatedAt: Date.now(),
-      }
+      await updateHostRow(id, updates)
 
-      await executeQuery(
-        `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = ?, private_key = ?, certificate = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?`,
-        [
-          updated.name,
-          updated.hostname,
-          updated.port,
-          updated.username,
-          updated.authType,
-          updated.password ?? null,
-          updated.privateKey ?? null,
-          updated.certificate ?? null,
-          updated.groupId ?? null,
-          updated.isFavorite ? 1 : 0,
-          updated.color ?? null,
-          updated.tags ? JSON.stringify(updated.tags) : null,
-          JSON.stringify(updated.portForwards),
-          updated.startupCommand ?? null,
-          updated.environment ? JSON.stringify(updated.environment) : null,
-          updated.jumpHostId ?? null,
-          updated.jumpHostAuthType ?? null,
-          updated.agentForwarding ? 1 : 0,
-          updated.shellIntegration ?? 'off',
-          updated.updatedAt,
-          id,
-        ],
-      )
-
+      const merged = { ...existing, ...updates, updatedAt: Date.now() }
+      const { password: _password, privateKey: _privateKey, clearCredential: _clear, ...metadata } = merged
       set(state => ({
-        hosts: state.hosts.map(h => (h.id === id ? updated : h)),
+        hosts: state.hosts.map(h => (h.id === id ? (metadata as Host) : h)),
       }))
     },
 
     async deleteHost(id) {
-      await executeQuery('DELETE FROM hosts WHERE id = ?', [id])
+      // Deletes the row first, then the vault keys: a failure between the two
+      // leaves an unreferenced secret, never a host whose secret is already gone
+      // (ADR §4).
+      await deleteHostRow(id)
       set(state => ({ hosts: state.hosts.filter(h => h.id !== id) }))
     },
 

@@ -127,18 +127,25 @@ export function parseQuickConnectInput(input: string): QuickConnectParseResult {
 
   if (tokens.length === 1) return failure('invalid-target')
   if (tokens.length === 2) return toResult(parseTarget(tokens[1]))
-  if (tokens[2] !== '-p') return failure('unsupported-arguments')
+
+  // `ssh -p 2222 user@host` and `ssh user@host -p 2222` are both what people
+  // actually type (and what `ssh` itself accepts), so the option may come before
+  // or after the destination. Anything else is refused, never guessed at.
+  const portFlag = tokens.indexOf('-p')
+  if (portFlag === -1) return failure('unsupported-arguments')
+  const destinationIndex = portFlag === 1 ? 3 : 1
+  const portIndex = portFlag === 1 ? 2 : 3
   if (tokens.length !== 4) {
     return tokens.length < 4
       ? failure('invalid-port')
       : failure('unsupported-arguments')
   }
 
-  const parsed = parseTarget(tokens[1])
+  const parsed = parseTarget(tokens[destinationIndex])
   if (isParseFailure(parsed)) return parsed
   if (parsed.hasExplicitPort) return failure('invalid-target')
 
-  const port = parsePort(tokens[3])
+  const port = parsePort(tokens[portIndex])
   if (port === null) return failure('invalid-port')
   return { ok: true, target: { ...parsed.target, port } }
 }
