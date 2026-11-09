@@ -1,3 +1,4 @@
+import type { CredentialRef } from '@/service/credential-boundary'
 import type { AuthType, Group, Host, ShellIntegrationMode } from '@/types'
 
 /**
@@ -9,7 +10,7 @@ import type { AuthType, Group, Host, ShellIntegrationMode } from '@/types'
  */
 function parseCredentialRef(
   raw: string | null | undefined,
-): import('@/service/credential-boundary').CredentialRef | null {
+): CredentialRef | null {
   if (raw === null || raw === undefined || raw === '') return null
   try {
     const parsed = JSON.parse(raw) as unknown

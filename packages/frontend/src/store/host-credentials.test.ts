@@ -29,11 +29,6 @@ vi.mock('@/service/vault-secret-provider', () => ({
   },
 }))
 
-vi.mock('@/service/database', async importOriginal => {
-  const actual = await importOriginal<typeof import('@/service/database')>()
-  return actual
-})
-
 const { useHostStore } = await import('./host')
 
 const PASSWORD = 'ui-path-password-should-never-hit-sqlite'

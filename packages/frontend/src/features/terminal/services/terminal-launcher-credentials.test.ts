@@ -22,7 +22,7 @@ vi.mock('@/service/vault-secret-provider', () => ({
   },
 }))
 vi.mock('@/service/credential-boundary', async importOriginal => {
-  const actual = await importOriginal<typeof import('@/service/credential-boundary')>()
+  const actual = await importOriginal<Record<string, unknown>>()
   return {
     ...actual,
     SessionCredentialResolver: class {

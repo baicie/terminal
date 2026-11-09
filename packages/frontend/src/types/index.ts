@@ -1,3 +1,5 @@
+import type { CredentialRef } from '@/service/credential-boundary'
+
 // Host types based on design.md
 
 export type AuthType = 'password' | 'key' | 'agent' | 'cert'
@@ -48,7 +50,7 @@ export interface Host {
    * Where this host's secrets live. Absent/null means "none stored" — agent
    * authentication, or a password asked at connect time.
    */
-  credentialRef?: import('@/service/credential-boundary').CredentialRef | null
+  credentialRef?: CredentialRef | null
   /**
    * Update-only: delete the stored credential. Distinct from "no secret in this
    * update", which leaves the existing one alone.
