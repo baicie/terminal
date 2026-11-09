@@ -1,0 +1,311 @@
+
+> @terminal/monorepo@0.0.1-dev.2 smoke:remote-cold-start /Users/runner/work/terminal/terminal
+> node scripts/run-remote-cold-start-stopwatch.mjs -- --app-path /Users/runner/work/terminal/terminal/src-tauri/target/debug/terminal
+
+{
+  "ok": true,
+  "appPath": "/Users/runner/work/terminal/terminal/src-tauri/target/debug/terminal",
+  "binarySha256": "9c8c4b487c4294eaf674c46d4cc6c2e48d28489c0560fea43f9c03f8ffd6f59d",
+  "capturedAt": "2026-11-09T02:59:07.966Z",
+  "pid": 26684,
+  "measuredFrom": "child-spawn-event",
+  "axProbe": "none",
+  "readinessMode": "remote",
+  "readinessTarget": "terminal",
+  "readyAt": "terminal",
+  "markerPath": "/var/folders/h5/t85nd63d71x27_8gl5gw3l_w0000gn/T/terminal-remote-cold-fixture-ueRoet/sshd/home/REMOTE_COLD_MARKER",
+  "markerReady": true,
+  "markerChecks": [
+    {
+      "path": "/var/folders/h5/t85nd63d71x27_8gl5gw3l_w0000gn/T/terminal-remote-cold-fixture-ueRoet/sshd/home/REMOTE_PROMPT_MARKER",
+      "content": "REMOTE_PROMPT_MARKER",
+      "ready": true
+    }
+  ],
+  "requestToReadyMs": 6236,
+  "spawnToReadyMs": 6234,
+  "firstStageSeenMs": 1757,
+  "stages": [
+    {
+      "atMs": 0,
+      "stage": "frontend-boot",
+      "detail": "main.tsx evaluated"
+    },
+    {
+      "atMs": 107,
+      "stage": "bootstrap-gates",
+      "detail": "bootstrap mode=app gates: smoke=not-configured(35ms) remotePrompt=loaded(36ms) inputProbe=not-configured(36ms) rawProbe=not-configured(36ms) shellProbe=not-configured(36ms)"
+    },
+    {
+      "atMs": 1391,
+      "stage": "workspace-load-start",
+      "detail": "correlationId=recovery-1"
+    },
+    {
+      "atMs": 1499,
+      "stage": "fallback-decision",
+      "detail": "action=defer reason=deadline-pending trigger=observation:workspace-load-start layout=pending recoveryActive=true retryScheduled=false correlationId=recovery-1"
+    },
+    {
+      "atMs": 1508,
+      "stage": "db-load-started",
+      "detail": "sqlite:terminal.db"
+    },
+    {
+      "atMs": 1525,
+      "stage": "db-pool-registered",
+      "detail": "the sql plugin returned a handle"
+    },
+    {
+      "atMs": 1557,
+      "stage": "pending-migrations-detected",
+      "detail": "1 column migration(s): credential_ref"
+    },
+    {
+      "atMs": 1566,
+      "stage": "snapshot-started",
+      "detail": "1 migration(s) pending"
+    },
+    {
+      "atMs": 1623,
+      "stage": "snapshot-finished",
+      "detail": "the pre-migration snapshot was verified"
+    },
+    {
+      "atMs": 1703,
+      "stage": "core-schema-finished",
+      "detail": "20 statement(s) applied"
+    },
+    {
+      "atMs": 1775,
+      "stage": "ready",
+      "detail": "connection cached"
+    },
+    {
+      "atMs": 1783,
+      "stage": "workspace-load-done",
+      "detail": "correlationId=recovery-1 workspaceId=remote-cold-workspace"
+    },
+    {
+      "atMs": 1785,
+      "stage": "fallback-decision",
+      "detail": "action=defer reason=deadline-pending trigger=observation:workspace-load-done layout=pending recoveryActive=true retryScheduled=false correlationId=recovery-1"
+    },
+    {
+      "atMs": 1787,
+      "stage": "layout-load-start",
+      "detail": "correlationId=recovery-1 workspaceId=remote-cold-workspace"
+    },
+    {
+      "atMs": 1788,
+      "stage": "fallback-decision",
+      "detail": "action=defer reason=deadline-pending trigger=observation:layout-load-start layout=pending recoveryActive=true retryScheduled=false correlationId=recovery-1"
+    },
+    {
+      "atMs": 1814,
+      "stage": "layout-load-done",
+      "detail": "correlationId=recovery-1 workspaceId=remote-cold-workspace"
+    },
+    {
+      "atMs": 1832,
+      "stage": "fallback-decision",
+      "detail": "action=defer reason=deadline-pending trigger=observation:layout-load-done layout=known recoveryActive=true retryScheduled=false correlationId=recovery-1"
+    },
+    {
+      "atMs": 1856,
+      "stage": "host-load-start",
+      "detail": "correlationId=recovery-1 workspaceId=remote-cold-workspace"
+    },
+    {
+      "atMs": 1865,
+      "stage": "fallback-decision",
+      "detail": "action=defer reason=deadline-pending trigger=observation:host-load-start layout=known recoveryActive=true retryScheduled=false correlationId=recovery-1"
+    },
+    {
+      "atMs": 1888,
+      "stage": "host-load-done",
+      "detail": "correlationId=recovery-1 workspaceId=remote-cold-workspace reason=loaded"
+    },
+    {
+      "atMs": 1897,
+      "stage": "fallback-decision",
+      "detail": "action=defer reason=deadline-pending trigger=observation:host-load-done layout=known recoveryActive=true retryScheduled=false correlationId=recovery-1"
+    },
+    {
+      "atMs": 1906,
+      "stage": "recovery-layout-available",
+      "detail": "correlationId=recovery-1 workspaceId=remote-cold-workspace tabs=1 remoteTabs=1"
+    },
+    {
+      "atMs": 1909,
+      "stage": "fallback-decision",
+      "detail": "action=defer reason=deadline-pending trigger=observation:recovery-layout-available layout=known recoveryActive=true retryScheduled=false correlationId=recovery-1"
+    },
+    {
+      "atMs": 1911,
+      "stage": "restore-layout-committed",
+      "detail": "correlationId=recovery-1 workspaceId=remote-cold-workspace tabs=1 remoteTabs=1 reason=restored-empty-startup"
+    },
+    {
+      "atMs": 1913,
+      "stage": "fallback-decision",
+      "detail": "action=suppress reason=usable-terminal trigger=observation:restore-layout-committed layout=known recoveryActive=true retryScheduled=false correlationId=recovery-1"
+    },
+    {
+      "atMs": 1915,
+      "stage": "active-tab-selected",
+      "detail": "correlationId=recovery-1 workspaceId=remote-cold-workspace activeTabId=remote-cold-tab tabType=remote"
+    },
+    {
+      "atMs": 1918,
+      "stage": "fallback-decision",
+      "detail": "action=suppress reason=usable-terminal trigger=recovery-settled layout=known recoveryActive=false retryScheduled=false correlationId=recovery-1"
+    },
+    {
+      "atMs": 2873,
+      "stage": "terminal-open-start",
+      "detail": "remote-cold-tab@remote-cold-workspace@remote"
+    },
+    {
+      "atMs": 3130,
+      "stage": "terminal-open-done",
+      "detail": "remote-cold-tab@remote-cold-workspace@remote"
+    },
+    {
+      "atMs": 3133,
+      "stage": "terminal-mounted",
+      "detail": "remote-cold-tab@remote-cold-workspace@remote"
+    },
+    {
+      "atMs": 3142,
+      "stage": "session-create-requested",
+      "detail": "remote"
+    },
+    {
+      "atMs": 3184,
+      "stage": "ssh-connect-start",
+      "detail": "127.0.0.1:49201"
+    },
+    {
+      "atMs": 3222,
+      "stage": "ssh-tcp-handshake-done",
+      "detail": "127.0.0.1:49201"
+    },
+    {
+      "atMs": 3317,
+      "stage": "ssh-auth-done",
+      "detail": "127.0.0.1:49201"
+    },
+    {
+      "atMs": 3328,
+      "stage": "ssh-pty-ready",
+      "detail": "channel, pty-req and shell confirmed"
+    },
+    {
+      "atMs": 3398,
+      "stage": "ssh-shell-first-output",
+      "detail": "the remote shell produced its first bytes"
+    },
+    {
+      "atMs": 3398,
+      "stage": "ssh-startup-settle",
+      "detail": "the remote shell produced output before the settle delay"
+    },
+    {
+      "atMs": 4401,
+      "stage": "ssh-startup-write-begin",
+      "detail": "467 bytes"
+    },
+    {
+      "atMs": 4402,
+      "stage": "ssh-startup-write-done",
+      "detail": "the startup command reached the pty"
+    },
+    {
+      "atMs": 4444,
+      "stage": "session-created",
+      "detail": "ssh-7c8ea288-72f4-4831-b63b-bbaae097cd40"
+    }
+  ],
+  "stageBudgets": {
+    "checked": [
+      {
+        "from": "frontend-boot",
+        "to": "db-load-started",
+        "elapsedMs": 1508,
+        "budgetMs": 2000
+      },
+      {
+        "from": "db-load-started",
+        "to": "ready",
+        "elapsedMs": 267,
+        "budgetMs": 2000
+      },
+      {
+        "from": "ready",
+        "to": "terminal-mounted",
+        "elapsedMs": 1358,
+        "budgetMs": 3000
+      },
+      {
+        "from": "session-create-requested",
+        "to": "ssh-connect-start",
+        "elapsedMs": 42,
+        "budgetMs": 250
+      },
+      {
+        "from": "ssh-connect-start",
+        "to": "ssh-tcp-handshake-done",
+        "elapsedMs": 38,
+        "budgetMs": 1500
+      },
+      {
+        "from": "ssh-tcp-handshake-done",
+        "to": "ssh-auth-done",
+        "elapsedMs": 95,
+        "budgetMs": 1500
+      },
+      {
+        "from": "ssh-auth-done",
+        "to": "ssh-pty-ready",
+        "elapsedMs": 11,
+        "budgetMs": 1500
+      },
+      {
+        "from": "ssh-pty-ready",
+        "to": "ssh-shell-first-output",
+        "elapsedMs": 70,
+        "budgetMs": 2000
+      },
+      {
+        "from": "ssh-startup-settle",
+        "to": "ssh-startup-write-begin",
+        "elapsedMs": 1003,
+        "budgetMs": 1500
+      },
+      {
+        "from": "ssh-startup-write-done",
+        "to": "session-created",
+        "elapsedMs": 42,
+        "budgetMs": 500
+      }
+    ],
+    "violations": []
+  },
+  "windowReady": false,
+  "terminalReady": true,
+  "readiness": null,
+  "timeoutMs": 10000,
+  "fixture": {
+    "host": "127.0.0.1",
+    "port": 49201,
+    "username": "runner"
+  },
+  "marker": "REMOTE_COLD_MARKER",
+  "promptMarker": "REMOTE_PROMPT_MARKER",
+  "promptMarkerPath": "/var/folders/h5/t85nd63d71x27_8gl5gw3l_w0000gn/T/terminal-remote-cold-fixture-ueRoet/sshd/home/REMOTE_PROMPT_MARKER",
+  "shell": "bash",
+  "shellIntegration": "bash",
+  "expectedCwd": "/var/folders/h5/t85nd63d71x27_8gl5gw3l_w0000gn/T/terminal-remote-cold-fixture-ueRoet/sshd/home",
+  "expectedExitCode": 1
+}

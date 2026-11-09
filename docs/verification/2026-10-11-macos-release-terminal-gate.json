@@ -1,8 +1,8 @@
 {
-  "recordedAt": "2026-11-08T19:52:20.203Z",
-  "recordedDate": "2026-11-08",
+  "recordedAt": "2026-11-09T03:13:48.355Z",
+  "recordedDate": "2026-11-09",
   "kind": "tauri-release-ten-second-terminal-gate",
-  "why": "Release artifact 85b4d1bca3b13397c123266d6e1c8c8e554b196aec98ca8ea1cc0d9a92f9b67a was built and measured by GitHub Actions run 42516316488 attempt 1 at commit 104071c424d4f365313cd205227fe9ce36338c3d; this record re-measures the ten-second terminal gate the earlier local captures described, on the artifact that run produced.",
+  "why": "Release artifact 85b4d1bca3b13397c123266d6e1c8c8e554b196aec98ca8ea1cc0d9a92f9b67a was built and measured by GitHub Actions run 42550960098 attempt 2 at commit d9d8eca6fc01d5a6ad9f8d4437ee7708ab5e6d62; this record re-measures the ten-second terminal gate the earlier local captures described, on the artifact that run produced.",
   "environment": {
     "os": "macOS 26.7.2",
     "architecture": "arm64",
@@ -10,7 +10,7 @@
   },
   "revision": {
     "head": "",
-    "commit": "104071c",
+    "commit": "d9d8eca",
     "dirtyWorktree": false
   },
   "build": {
@@ -26,52 +26,52 @@
     "measuredFrom": "child-spawn-event",
     "readinessTarget": "terminal",
     "repeatSpawnToReadyMs": [
-      2502,
-      1861,
-      1962
+      3733,
+      4375,
+      2999
     ],
     "readyUnder10s": true,
     "terminalRuns": [
       {
         "run": 1,
-        "capturedAt": "2026-11-08T19:51:11.835Z",
-        "pid": 78023,
+        "capturedAt": "2026-11-09T03:11:49.539Z",
+        "pid": 64496,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 2502,
-        "requestToReadyMs": 2504,
+        "spawnToReadyMs": 3733,
+        "requestToReadyMs": 3736,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 2,
-        "capturedAt": "2026-11-08T19:51:14.078Z",
-        "pid": 78085,
+        "capturedAt": "2026-11-09T03:11:54.731Z",
+        "pid": 64550,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 1861,
-        "requestToReadyMs": 1863,
+        "spawnToReadyMs": 4375,
+        "requestToReadyMs": 4379,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 3,
-        "capturedAt": "2026-11-08T19:51:16.424Z",
-        "pid": 78203,
+        "capturedAt": "2026-11-09T03:11:58.529Z",
+        "pid": 64866,
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 1962,
-        "requestToReadyMs": 1964,
+        "spawnToReadyMs": 2999,
+        "requestToReadyMs": 3001,
         "probeCaseName": "cat-eof",
         "ok": true
       }
     ]
   },
   "source": {
-    "fingerprint": "2f7dcaef0b7ff890958bba9728837a21423cdd9a28b82317caf77fbcb9a9f8b1",
+    "fingerprint": "263e739e815490d7b28e0263d72d303f085b314fff251c37771462c5c9b50dd8",
     "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs on the checked-out CI sources at evidence build time."
   },
   "limitations": [
@@ -84,12 +84,12 @@
   "instrumentationCaveat": "This binary is built with VITE_TERMINAL_SMOKE_BUILD=1, which compiles the smoke and input-probe entry points and the experiments nav item into the frontend. A shipping build omits all of them, so these numbers describe a slightly larger bundle than a user receives and are a conservative upper bound.",
   "provenance": {
     "source": "github-actions",
-    "runId": "42516316488",
-    "runAttempt": "1",
+    "runId": "42550960098",
+    "runAttempt": "2",
     "workflow": "Real-machine terminal matrix",
     "job": "macos-ssh-matrix",
-    "commit": "104071c424d4f365313cd205227fe9ce36338c3d",
-    "fingerprint": "2f7dcaef0b7ff890958bba9728837a21423cdd9a28b82317caf77fbcb9a9f8b1",
+    "commit": "d9d8eca6fc01d5a6ad9f8d4437ee7708ab5e6d62",
+    "fingerprint": "263e739e815490d7b28e0263d72d303f085b314fff251c37771462c5c9b50dd8",
     "runner": {
       "os": "macOS",
       "arch": "ARM64"
