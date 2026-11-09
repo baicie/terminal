@@ -69,8 +69,10 @@ export default {
   'terminal.copyEmpty': 'Aucune sélection',
   'terminal.pasteEmpty': 'Presse-papiers vide',
   'terminal.pasteConfirmTitle': 'Coller plusieurs lignes ?',
-  'terminal.pasteConfirmDescription': 'Vous allez coller {{count}} lignes. La dernière est envoyée comme Entrée, donc le shell va l\'exécuter.',
-  'terminal.pasteConfirmControl': 'Ce texte contient des caractères de contrôle que le terminal interprétera comme des touches (Échap, Ctrl-C, Ctrl-D, Ctrl-Z).',
+  'terminal.pasteConfirmDescription':
+    "Vous allez coller {{count}} lignes. La dernière est envoyée comme Entrée, donc le shell va l'exécuter.",
+  'terminal.pasteConfirmControl':
+    'Ce texte contient des caractères de contrôle que le terminal interprétera comme des touches (Échap, Ctrl-C, Ctrl-D, Ctrl-Z).',
   'terminal.pasteConfirmOmitted': '{{count}} lignes supplémentaires',
   'terminal.pasteConfirmAction': 'Coller quand même',
   'terminal.searchPlaceholder': 'Rechercher dans le terminal…',
@@ -155,6 +157,9 @@ export default {
   'settings.shortcuts.noResults': 'Aucun raccourci trouvé',
   'settings.shortcuts.conflictWith': 'Conflit avec',
   'settings.shortcuts.resetSuccess': 'Raccourcis réinitialisés',
+  'settings.shortcuts.saveFailed':
+    "Le raccourci s'applique mais n'a pas pu être enregistré",
+  'settings.shortcuts.retrySave': 'Réessayer',
   'settings.shortcuts.recordingHint':
     'Appuyez sur une combinaison de touches pour lier, ou Échap pour annuler...',
 
@@ -213,7 +218,8 @@ export default {
   'experiments.inputProbeTitle': "Sonde d'entrée physique du terminal",
   'experiments.inputProbeDesc':
     "Enregistrer l'entrée xterm et les octets reçus par un PTY Tauri réel.",
-  'experiments.inputProbeInstruction': "Saisissez le texte attendu puis appuyez sur Entrée",
+  'experiments.inputProbeInstruction':
+    'Saisissez le texte attendu puis appuyez sur Entrée',
   'experiments.inputProbeRounds': 'Tours',
   'experiments.inputProbeExpected': 'Texte attendu',
   'experiments.inputProbeStart': 'Démarrer la sonde',
@@ -226,7 +232,8 @@ export default {
   'experiments.inputProbeDiagnostics': 'Diagnostic FIFO',
   'experiments.inputProbePassed': 'Tours réussis',
   'experiments.inputProbeEvents': "Événements d'entrée",
-  'experiments.inputProbeNoEvents': "En attente d'une saisie clavier physique...",
+  'experiments.inputProbeNoEvents':
+    "En attente d'une saisie clavier physique...",
   'experiments.copy': 'Copier',
   'experiments.copyEvents': "Copier le journal d'événements",
   'experiments.copied': 'Copié !',

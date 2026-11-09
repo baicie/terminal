@@ -135,7 +135,9 @@ export function TerminalContainer({
     ui.setIsFullscreen(false)
     ui.setSearchOpen(false)
     ui.setMobileMenuOpen(false)
-  }, [terminalIsActive])
+    // `ui` keeps its identity across renders that do not change pane UI state
+    // (see useTerminalPaneUi), so this does not re-run every frame.
+  }, [terminalIsActive, ui])
 
   useTerminalShortcutEvents({
     active: terminalIsActive,

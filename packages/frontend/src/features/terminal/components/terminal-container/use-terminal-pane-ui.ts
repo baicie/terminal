@@ -5,7 +5,7 @@
  * limit; nothing here touches the terminal, the session or a credential.
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 export interface TerminalPaneUi {
   mobileMenuOpen: boolean
@@ -29,18 +29,27 @@ export function useTerminalPaneUi(): TerminalPaneUi {
   const [toolSidebarOpen, setToolSidebarOpen] = useState(false)
   const [shellCwd, setShellCwd] = useState<string | undefined>()
   const [lastExitCode, setLastExitCode] = useState<number | undefined>()
-  return {
-    mobileMenuOpen,
-    setMobileMenuOpen,
-    isFullscreen,
-    setIsFullscreen,
-    searchOpen,
-    setSearchOpen,
-    toolSidebarOpen,
-    setToolSidebarOpen,
-    shellCwd,
-    setShellCwd,
-    lastExitCode,
-    setLastExitCode,
-  }
+  /**
+   * Memoised on the state values alone: every setter below is a stable
+   * `useState` setter, so the object keeps its identity across renders that do
+   * not change the pane's UI state. Without this, an effect depending on `ui`
+   * would run on every render.
+   */
+  return useMemo(
+    () => ({
+      mobileMenuOpen,
+      setMobileMenuOpen,
+      isFullscreen,
+      setIsFullscreen,
+      searchOpen,
+      setSearchOpen,
+      toolSidebarOpen,
+      setToolSidebarOpen,
+      shellCwd,
+      setShellCwd,
+      lastExitCode,
+      setLastExitCode,
+    }),
+    [mobileMenuOpen, isFullscreen, searchOpen, toolSidebarOpen, shellCwd, lastExitCode],
+  )
 }

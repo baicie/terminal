@@ -67,8 +67,10 @@ export default {
   'terminal.copyEmpty': '没有选中内容',
   'terminal.pasteEmpty': '剪贴板为空',
   'terminal.pasteConfirmTitle': '粘贴多行内容？',
-  'terminal.pasteConfirmDescription': '即将粘贴 {{count}} 行。最后一行会作为回车发送，Shell 会执行它。',
-  'terminal.pasteConfirmControl': '文本包含控制字符，终端会把它们当成按键（ESC、Ctrl-C、Ctrl-D、Ctrl-Z）。',
+  'terminal.pasteConfirmDescription':
+    '即将粘贴 {{count}} 行。最后一行会作为回车发送，Shell 会执行它。',
+  'terminal.pasteConfirmControl':
+    '文本包含控制字符，终端会把它们当成按键（ESC、Ctrl-C、Ctrl-D、Ctrl-Z）。',
   'terminal.pasteConfirmOmitted': '另有 {{count}} 行',
   'terminal.pasteConfirmAction': '仍然粘贴',
   'terminal.searchPlaceholder': '在终端中查找…',
@@ -146,6 +148,8 @@ export default {
   'settings.shortcuts.noResults': '未找到快捷键',
   'settings.shortcuts.conflictWith': '与以下快捷键冲突',
   'settings.shortcuts.resetSuccess': '快捷键已恢复默认值',
+  'settings.shortcuts.saveFailed': '快捷键已生效，但未能保存到设置',
+  'settings.shortcuts.retrySave': '重新保存',
   'settings.shortcuts.recordingHint': '按下组合键进行绑定，或按 Escape 取消...',
 
   // SFTP transfer queue
@@ -199,7 +203,8 @@ export default {
   'experiments.textareaPlaceholder': '在此输入...',
   'experiments.textareaHint': '点击此文本框并输入以在下方查看捕获的事件。',
   'experiments.inputProbeTitle': '终端物理输入探针',
-  'experiments.inputProbeDesc': '在真实 Tauri PTY 中记录 xterm 输入与实收字节。',
+  'experiments.inputProbeDesc':
+    '在真实 Tauri PTY 中记录 xterm 输入与实收字节。',
   'experiments.inputProbeInstruction': '每轮输入预期文本并按 Enter',
   'experiments.inputProbeRounds': '轮数',
   'experiments.inputProbeExpected': '预期文本',

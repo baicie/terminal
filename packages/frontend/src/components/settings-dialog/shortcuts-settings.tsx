@@ -20,6 +20,7 @@ import {
   type Shortcut,
 } from '@/service/shortcuts'
 import { findShortcutConflict } from './shortcut-conflict'
+import { ShortcutPersistBanner } from './shortcut-persist-banner'
 import { ShortcutRow } from './shortcut-row'
 
 export function ShortcutsSettings() {
@@ -135,6 +136,8 @@ export function ShortcutsSettings() {
 
   return (
     <div className="space-y-4 py-4">
+      <ShortcutPersistBanner />
+
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Keyboard className="size-4" />
