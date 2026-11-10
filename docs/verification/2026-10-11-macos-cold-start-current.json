@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-11-10T13:20:39.049Z",
+  "recordedAt": "2026-11-10T14:28:09.699Z",
   "recordedDate": "2026-11-10",
   "kind": "tauri-process-cold-start-stopwatch-current-worktree",
   "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:local-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal (invoked 3 times, one measured run per invocation)",
@@ -10,7 +10,7 @@
   },
   "revision": {
     "head": "",
-    "commit": "64c3a0d",
+    "commit": "5755c31",
     "dirtyWorktree": false
   },
   "binary": {
@@ -23,58 +23,58 @@
     "readinessTarget": "terminal",
     "caseName": "cat-eof",
     "repeatSpawnToReadyMs": [
-      2651,
-      1324,
-      1328
+      8147,
+      4214,
+      3827
     ],
     "readyUnder10s": true,
     "terminalRuns": [
       {
         "run": 1,
-        "capturedAt": "2026-11-10T13:11:57.893Z",
-        "pid": 18352,
-        "nonce": "local_bb3db434dc3dec6fb6dd6eeb",
-        "marker": "TERMINAL_LOCAL_COLD_START_local_bb3db434dc3dec6fb6dd6eeb",
+        "capturedAt": "2026-11-10T14:06:28.726Z",
+        "pid": 22003,
+        "nonce": "local_2710ef277aa4937e31f5da3e",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_2710ef277aa4937e31f5da3e",
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 2651,
-        "requestToReadyMs": 2654,
+        "spawnToReadyMs": 8147,
+        "requestToReadyMs": 8151,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 2,
-        "capturedAt": "2026-11-10T13:11:59.635Z",
-        "pid": 18411,
-        "nonce": "local_4bbd09759450f8dd8953e675",
-        "marker": "TERMINAL_LOCAL_COLD_START_local_4bbd09759450f8dd8953e675",
+        "capturedAt": "2026-11-10T14:06:34.657Z",
+        "pid": 22381,
+        "nonce": "local_f8aa86c050b7bbd24edba090",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_f8aa86c050b7bbd24edba090",
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 1324,
-        "requestToReadyMs": 1326,
+        "spawnToReadyMs": 4214,
+        "requestToReadyMs": 4224,
         "probeCaseName": "cat-eof",
         "ok": true
       },
       {
         "run": 3,
-        "capturedAt": "2026-11-10T13:12:01.344Z",
-        "pid": 18457,
-        "nonce": "local_f2542aa4d9fec4d829a89deb",
-        "marker": "TERMINAL_LOCAL_COLD_START_local_f2542aa4d9fec4d829a89deb",
+        "capturedAt": "2026-11-10T14:06:39.517Z",
+        "pid": 22435,
+        "nonce": "local_bc3c331c4564f5a3d7d5b325",
+        "marker": "TERMINAL_LOCAL_COLD_START_local_bc3c331c4564f5a3d7d5b325",
         "readyAt": "terminal",
         "terminalReady": true,
         "markerReady": true,
-        "spawnToReadyMs": 1328,
-        "requestToReadyMs": 1331,
+        "spawnToReadyMs": 3827,
+        "requestToReadyMs": 3831,
         "probeCaseName": "cat-eof",
         "ok": true
       }
     ]
   },
   "source": {
-    "fingerprint": "ab1b14c680da829a1688efe4ce5bb6dce9519dcbfd447d13df5fdcad5710c4d1",
+    "fingerprint": "de97ec8bb55414254f50ef7ccdec8f72fe980c4524dd345863226392a7e48836",
     "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs on the checked-out CI sources at evidence build time."
   },
   "limitations": [
@@ -85,12 +85,12 @@
   ],
   "provenance": {
     "source": "github-actions",
-    "runId": "42821961685",
+    "runId": "42829594709",
     "runAttempt": "1",
     "workflow": "Real-machine terminal matrix",
     "job": "macos-ssh-matrix",
-    "commit": "64c3a0d7a815204f1dc3205593b0c5d094557e03",
-    "fingerprint": "ab1b14c680da829a1688efe4ce5bb6dce9519dcbfd447d13df5fdcad5710c4d1",
+    "commit": "5755c319b802cfae4d6646dd690ab9868ebd3e9a",
+    "fingerprint": "de97ec8bb55414254f50ef7ccdec8f72fe980c4524dd345863226392a7e48836",
     "runner": {
       "os": "macOS",
       "arch": "ARM64"
