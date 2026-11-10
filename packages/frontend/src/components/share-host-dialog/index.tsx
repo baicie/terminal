@@ -22,6 +22,10 @@ import {
 } from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
 import { Switch } from '@/components/ui/switch'
+import {
+  readHostSecretsForShare,
+  shareKindsFor,
+} from '@/service/share-host-secrets'
 import { createShareableTeamHostData } from '@/service/team-host-data'
 import {
   encryptWithPassword,
@@ -61,35 +65,41 @@ export function ShareHostDialog({
     try {
       const hostData = createShareableTeamHostData(host)
 
-      // Handle password inclusion and encryption
-      if (includePassword && host.password) {
-        if (encryptPassword && password) {
-          // Encrypt the password
-          const encrypted = await encryptWithPassword(host.password, password)
-          hostData.password_encrypted = {
-            ...encrypted,
-            original: undefined, // Don't include original
-          }
-          hostData._encrypted = true
-        } else {
-          // Include password as-is (warning)
-          hostData.password = host.password
+      // Credentials are not on the row any more — they live in the vault behind
+      // `credentialRef`. Reading `host.password` here (as this dialog used to)
+      // was permanently false, so "share with credentials" shared nothing and
+      // still reported success. Read the real values, through the reference.
+      const kinds = shareKindsFor(host.credentialRef ?? null, includePassword)
+      if (kinds.length > 0) {
+        const read = await readHostSecretsForShare(host.id, host.credentialRef ?? null, kinds)
+        if (!read.ok) {
+          // Nothing was shared, so nothing may claim it was.
+          toast.error(read.message)
+          return
         }
-      }
 
-      // Handle private key inclusion and encryption
-      if (includePassword && host.privateKey) {
-        if (encryptPassword && password) {
-          // Encrypt the private key
-          const encrypted = await encryptWithPassword(host.privateKey, password)
-          hostData.private_key_encrypted = {
-            ...encrypted,
-            original: undefined,
-          }
+        // Rule: a secret only ever travels encrypted. Sharing it in the clear was
+        // previously possible behind a warning; that path is gone, because a
+        // warning does not make a plaintext password on a server acceptable.
+        if (!encryptPassword || !password) {
+          toast.error(t('hosts.share.encryptionRequired'))
+          return
+        }
+
+        if (read.secrets.password !== undefined) {
+          const encrypted = await encryptWithPassword(read.secrets.password, password)
+          hostData.password_encrypted = { ...encrypted, original: undefined }
           hostData._encrypted = true
-        } else {
-          // Include private key as-is (warning - less secure)
-          hostData.private_key = host.privateKey
+        }
+        if (read.secrets.privateKey !== undefined) {
+          const encrypted = await encryptWithPassword(read.secrets.privateKey, password)
+          hostData.private_key_encrypted = { ...encrypted, original: undefined }
+          hostData._encrypted = true
+        }
+        if (read.secrets.passphrase !== undefined) {
+          const encrypted = await encryptWithPassword(read.secrets.passphrase, password)
+          hostData.passphrase_encrypted = { ...encrypted, original: undefined }
+          hostData._encrypted = true
         }
       }
 

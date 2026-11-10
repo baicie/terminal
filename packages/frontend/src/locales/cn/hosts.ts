@@ -157,6 +157,7 @@ export default {
   'hosts.import.resultTitle': '已导入 {{count}} 台主机',
   'hosts.import.confirm': '导入 {{count}} 台',
   'common.done': '完成',
+  'hosts.share.encryptionRequired': '共享的密码或私钥必须加密。请设置加密口令，或不共享凭据。',
   'hosts.vault.createTitle': '需要先创建 Vault 才能保存这个密码',
   'hosts.vault.createBody':
     '秘密不会写进数据库。在这里创建 Vault 后，会用你已填写的内容继续保存。',

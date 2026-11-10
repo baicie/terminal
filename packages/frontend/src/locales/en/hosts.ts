@@ -160,6 +160,7 @@ export default {
   'hosts.import.resultTitle': '{{count}} host(s) imported',
   'hosts.import.confirm': 'Import {{count}}',
   'common.done': 'Done',
+  'hosts.share.encryptionRequired': 'A shared password or key must be encrypted. Set an encryption password, or share the host without credentials.',
   'hosts.vault.createTitle': 'A vault is needed to store this password',
   'hosts.vault.createBody':
     'Secrets never go into the database. Create a vault here and the save continues with what you already typed.',

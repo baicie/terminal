@@ -160,6 +160,7 @@ export default {
   'hosts.import.resultTitle': '{{count}} hôte(s) importé(s)',
   'hosts.import.confirm': 'Importer {{count}}',
   'common.done': 'Terminé',
+  'hosts.share.encryptionRequired': 'Un mot de passe ou une clé partagé doit être chiffré. Définissez un mot de passe de chiffrement, ou partagez l’hôte sans identifiants.',
   'hosts.vault.createTitle': 'Un coffre est nécessaire pour stocker ce mot de passe',
   'hosts.vault.createBody':
     'Les secrets ne vont jamais dans la base. Créez un coffre ici et l’enregistrement reprend avec ce que vous avez déjà saisi.',
