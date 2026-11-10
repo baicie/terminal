@@ -173,7 +173,10 @@ it('runs the whole restore through one command call', async () => {
   expect(payload.knownHosts).toHaveLength(1)
   expect(payload.workspaces).toHaveLength(1)
   expect(payload.workspaceLayouts).toHaveLength(1)
-  expect(payload.settings).toEqual({ app_settings: '{}' })
+  // An empty `app_settings` object is filtered to nothing by the allowlist: a
+  // setting with no fields is not a setting, and passing the literal through
+  // would have made a leak-shaped pass look like normal behaviour.
+  expect(payload.settings).toEqual({})
   expect(typeof payload.now).toBe('number')
 })
 

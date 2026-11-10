@@ -74,7 +74,15 @@ const budgets = {
   // the native menu, which the context menus never did), the credential migration
   // planner, and the shortcuts write-order state machine. Still no new dependency;
   // measured 593.42 KB.
-  totalGzip: 595 * 1024,
+  //
+  // 607 KB (was 595 KB): Phase 10.1 closes the credential boundary. Four new
+  // surfaces — the import secret decision panel, the import preview card, the
+  // plaintext-credential migration panel, and the keychain show/copy actions — plus
+  // the versioned-reference and settings-allowlist modules and ≈30 locale strings
+  // in three languages. No new dependency; measured 604.80 KB, so 607 leaves
+  // ~2 KB of headroom. The initial budget above is unchanged: none of this is on
+  // the time-to-first-terminal path, and the critical path still measures the same.
+  totalGzip: 607 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

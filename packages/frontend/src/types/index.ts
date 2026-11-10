@@ -1,4 +1,4 @@
-import type { CredentialRef } from '@/service/credential-boundary'
+import type { CredentialRef, CredentialRefProblem } from '@/service/credential-boundary'
 
 // Host types based on design.md
 
@@ -51,6 +51,17 @@ export interface Host {
    * authentication, or a password asked at connect time.
    */
   credentialRef?: CredentialRef | null
+  /**
+   * Why `credentialRef` could not be read, when the column holds something that is
+   * not a usable reference.
+   *
+   * Present means the host *does* have a stored credential this build cannot
+   * resolve — a corrupt pointer, an unknown provider, a version from a newer build.
+   * The connect path refuses with this rather than falling back to an empty
+   * password, because an empty password turns a data problem into a login failure
+   * the user cannot diagnose.
+   */
+  credentialRefProblem?: CredentialRefProblem | null
   /**
    * Update-only: delete the stored credential. Distinct from "no secret in this
    * update", which leaves the existing one alone.

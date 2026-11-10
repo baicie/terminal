@@ -9,6 +9,7 @@ import {
 } from './credential-boundary'
 import type {
   CredentialKind,
+  CredentialResource,
   HostMetadata,
   SecretProvider,
 } from './credential-boundary'
@@ -17,24 +18,43 @@ class FakeProvider implements SecretProvider {
   available = true
   readonly store = new Map<string, string>()
   readonly reads: CredentialKind[] = []
+  readonly versions: number[] = []
   failRead: Error | null = null
+
+  private key(resource: CredentialResource, version: number, kind: CredentialKind) {
+    return `${resource.type}:${resource.id}:${version}:${kind}`
+  }
 
   async isAvailable(): Promise<boolean> {
     return this.available
   }
 
-  async read(hostId: string, kind: CredentialKind): Promise<string | undefined> {
+  async read(
+    resource: CredentialResource,
+    version: number,
+    kind: CredentialKind,
+  ): Promise<string | undefined> {
     this.reads.push(kind)
+    this.versions.push(version)
     if (this.failRead) throw this.failRead
-    return this.store.get(`${hostId}:${kind}`)
+    return this.store.get(this.key(resource, version, kind))
   }
 
-  async write(hostId: string, kind: CredentialKind, value: string): Promise<void> {
-    this.store.set(`${hostId}:${kind}`, value)
+  async write(
+    resource: CredentialResource,
+    version: number,
+    kind: CredentialKind,
+    value: string,
+  ): Promise<void> {
+    this.store.set(this.key(resource, version, kind), value)
   }
 
-  async remove(hostId: string, kind: CredentialKind): Promise<void> {
-    this.store.delete(`${hostId}:${kind}`)
+  async remove(
+    resource: CredentialResource,
+    version: number,
+    kind: CredentialKind,
+  ): Promise<void> {
+    this.store.delete(this.key(resource, version, kind))
   }
 }
 
@@ -75,12 +95,17 @@ describe('SessionCredentialResolver', () => {
   })
 
   it('reads exactly the stored kinds', async () => {
-    await provider.write('host-1', 'privateKey', 'KEY')
-    await provider.write('host-1', 'passphrase', 'PASS')
+    const resource = { type: 'host' as const, id: 'host-1' }
+    await provider.write(resource, 1, 'privateKey', 'KEY')
+    await provider.write(resource, 1, 'passphrase', 'PASS')
     const result = await resolver.resolve(
       host({
         authType: 'key',
-        credentialRef: { kinds: ['privateKey', 'passphrase'], provider: 'vault' },
+        credentialRef: {
+          kinds: ['privateKey', 'passphrase'],
+          provider: 'vault',
+          version: 1,
+        },
       }),
     )
     expect(result).toEqual({
@@ -89,13 +114,17 @@ describe('SessionCredentialResolver', () => {
     })
     // The password was never stored, so it is never read.
     expect(provider.reads).toEqual(['privateKey', 'passphrase'])
+    // Every read used the version the reference named.
+    expect(provider.versions).toEqual([1, 1])
   })
 
   it('fails loudly when the vault is locked instead of sending an empty password', async () => {
-    await provider.write('host-1', 'password', 'SECRET')
+    await provider.write({ type: 'host', id: 'host-1' }, 1, 'password', 'SECRET')
     provider.available = false
     const result = await resolver.resolve(
-      host({ credentialRef: { kinds: ['password'], provider: 'vault' } }),
+      host({
+        credentialRef: { kinds: ['password'], provider: 'vault', version: 1 },
+      }),
     )
     expect(result.ok).toBe(false)
     if (result.ok) throw new Error('unreachable')
@@ -108,7 +137,9 @@ describe('SessionCredentialResolver', () => {
 
   it('fails when a recorded secret is missing from the store', async () => {
     const result = await resolver.resolve(
-      host({ credentialRef: { kinds: ['password'], provider: 'vault' } }),
+      host({
+        credentialRef: { kinds: ['password'], provider: 'vault', version: 1 },
+      }),
     )
     expect(result.ok).toBe(false)
     if (result.ok) throw new Error('unreachable')
@@ -119,7 +150,9 @@ describe('SessionCredentialResolver', () => {
   it('surfaces a read error without leaking the underlying value', async () => {
     provider.failRead = new Error('decrypt failed for secret=hunter2')
     const result = await resolver.resolve(
-      host({ credentialRef: { kinds: ['password'], provider: 'vault' } }),
+      host({
+        credentialRef: { kinds: ['password'], provider: 'vault', version: 1 },
+      }),
     )
     expect(result.ok).toBe(false)
     if (result.ok) throw new Error('unreachable')
@@ -130,14 +163,14 @@ describe('SessionCredentialResolver', () => {
 
 describe('splitHostSecrets', () => {
   it('produces a reference and the values, never a reference alone', () => {
-    const split = splitHostSecrets({
-      password: 'P',
-      privateKey: 'K',
-      passphrase: null,
-    })
+    const split = splitHostSecrets(
+      { password: 'P', privateKey: 'K', passphrase: null },
+      1,
+    )
     expect(split.ref).toEqual({
       kinds: ['password', 'privateKey'],
       provider: 'vault',
+      version: 1,
     })
     expect(split.secrets).toEqual([
       { kind: 'password', value: 'P' },
@@ -146,16 +179,20 @@ describe('splitHostSecrets', () => {
   })
 
   it('returns a null reference when nothing is stored', () => {
-    expect(splitHostSecrets({})).toEqual({ ref: null, secrets: [] })
-    expect(splitHostSecrets({ password: '', privateKey: null })).toEqual({
+    expect(splitHostSecrets({}, 1)).toEqual({ ref: null, secrets: [] })
+    expect(splitHostSecrets({ password: '', privateKey: null }, 1)).toEqual({
       ref: null,
       secrets: [],
     })
   })
 
   it('keeps an empty-string secret out of the reference', () => {
-    const split = splitHostSecrets({ password: '', passphrase: 'pp' })
-    expect(split.ref).toEqual({ kinds: ['passphrase'], provider: 'vault' })
+    const split = splitHostSecrets({ password: '', passphrase: 'pp' }, 3)
+    expect(split.ref).toEqual({
+      kinds: ['passphrase'],
+      provider: 'vault',
+      version: 3,
+    })
   })
 })
 

@@ -28,6 +28,7 @@ const TABLES: &[(&str, &[&str])] = &[
             "password",
             "private_key",
             "certificate",
+            "credential_ref",
             "group_id",
             "is_favorite",
             "color",
@@ -78,6 +79,7 @@ const TABLES: &[(&str, &[&str])] = &[
             "public_key",
             "certificate",
             "passphrase",
+            "credential_ref",
             "is_encrypted",
             "created_at",
             "updated_at",
@@ -115,13 +117,13 @@ const TABLES: &[(&str, &[&str])] = &[
 /// The application schema, plus a deferred foreign key on workspace_layouts so
 /// a real COMMIT can fail after every statement succeeded.
 const SCHEMA: &[&str] = &[
-    "CREATE TABLE IF NOT EXISTS hosts (id TEXT PRIMARY KEY, name TEXT NOT NULL, hostname TEXT NOT NULL, port INTEGER DEFAULT 22, username TEXT NOT NULL, auth_type TEXT DEFAULT 'password', password TEXT, private_key TEXT, certificate TEXT, group_id TEXT, is_favorite INTEGER DEFAULT 0, color TEXT, tags TEXT, port_forwards TEXT, startup_command TEXT, environment TEXT, jump_host_id TEXT, jump_host_auth_type TEXT, agent_forwarding INTEGER DEFAULT 0, shell_integration TEXT DEFAULT 'off', created_at INTEGER, updated_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS hosts (id TEXT PRIMARY KEY, name TEXT NOT NULL, hostname TEXT NOT NULL, port INTEGER DEFAULT 22, username TEXT NOT NULL, auth_type TEXT DEFAULT 'password', password TEXT, private_key TEXT, certificate TEXT, credential_ref TEXT, group_id TEXT, is_favorite INTEGER DEFAULT 0, color TEXT, tags TEXT, port_forwards TEXT, startup_command TEXT, environment TEXT, jump_host_id TEXT, jump_host_auth_type TEXT, agent_forwarding INTEGER DEFAULT 0, shell_integration TEXT DEFAULT 'off', created_at INTEGER, updated_at INTEGER)",
     "CREATE TABLE IF NOT EXISTS groups (id TEXT PRIMARY KEY, name TEXT NOT NULL, parent_id TEXT, color TEXT, inherit_settings INTEGER DEFAULT 1, settings TEXT, \"order\" INTEGER DEFAULT 0)",
     "CREATE TABLE IF NOT EXISTS snippets (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, script TEXT NOT NULL, package_id TEXT, tags TEXT, variables TEXT)",
     "CREATE TABLE IF NOT EXISTS snippet_packages (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT)",
     "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)",
     "CREATE TABLE IF NOT EXISTS known_hosts (id TEXT PRIMARY KEY, hostname TEXT NOT NULL, port INTEGER DEFAULT 22, fingerprint TEXT NOT NULL, key_type TEXT, added_at INTEGER NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS ssh_keys (id TEXT PRIMARY KEY, name TEXT NOT NULL, key_type TEXT, private_key TEXT, public_key TEXT, certificate TEXT, passphrase TEXT, is_encrypted INTEGER DEFAULT 0, created_at INTEGER, updated_at INTEGER)",
+    "CREATE TABLE IF NOT EXISTS ssh_keys (id TEXT PRIMARY KEY, name TEXT NOT NULL, key_type TEXT, private_key TEXT, public_key TEXT, certificate TEXT, passphrase TEXT, credential_ref TEXT, is_encrypted INTEGER DEFAULT 0, created_at INTEGER, updated_at INTEGER)",
     "CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, icon TEXT, color TEXT, \"order\" INTEGER DEFAULT 0, is_active INTEGER DEFAULT 0, created_at INTEGER, updated_at INTEGER)",
     "CREATE TABLE IF NOT EXISTS workspace_layouts (workspace_id TEXT PRIMARY KEY, layout_data TEXT, FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED)",
 ];
@@ -277,8 +279,7 @@ fn full_backup(merge_mode: &str) -> ImportPayload {
         }],
         "hosts": [{
             "id": "h1", "name": "Target", "hostname": "target.example", "port": 22,
-            "username": "root", "auth_type": "key", "password": "secret",
-            "private_key": "private-key", "certificate": "cert", "group_id": "g1",
+            "username": "root", "auth_type": "key", "certificate": "cert", "group_id": "g1",
             "is_favorite": 1, "color": "#fff", "tags": "[\"prod\"]", "port_forwards": "[]",
             "startup_command": "uptime", "environment": "{}", "jump_host_id": "j1",
             "jump_host_auth_type": "agent", "agent_forwarding": true,
@@ -290,8 +291,8 @@ fn full_backup(merge_mode: &str) -> ImportPayload {
             "package_id": "p1", "tags": "[]", "variables": "{}"
         }],
         "sshKeys": [{
-            "id": "k1", "name": "Key", "key_type": "ed25519", "private_key": "pk",
-            "public_key": "pub", "certificate": "kc", "passphrase": "pp",
+            "id": "k1", "name": "Key", "key_type": "ed25519",
+            "public_key": "pub", "certificate": "kc",
             "is_encrypted": 1, "created_at": 11, "updated_at": 12
         }],
         "knownHosts": [{
@@ -642,7 +643,9 @@ async fn every_column_round_trips_into_its_own_column() {
 
     assert_eq!(
         row_dump(&pool, "hosts", "id", "h1").await,
-        "'h1'|'Target'|'target.example'|22|'root'|'key'|'secret'|'private-key'|'cert'|'g1'|1|'#fff'|'[\"prod\"]'|'[]'|'uptime'|'{}'|'j1'|'agent'|1|'zsh'|100|200"
+        // Phase 10.1: the two secret columns are NULL by construction, and
+        // `credential_ref` is NULL because the file's reference is never persisted.
+        "'h1'|'Target'|'target.example'|22|'root'|'key'|NULL|NULL|'cert'|NULL|'g1'|1|'#fff'|'[\"prod\"]'|'[]'|'uptime'|'{}'|'j1'|'agent'|1|'zsh'|100|200"
     );
     assert_eq!(
         row_dump(&pool, "groups", "id", "g1").await,
@@ -658,7 +661,9 @@ async fn every_column_round_trips_into_its_own_column() {
     );
     assert_eq!(
         row_dump(&pool, "ssh_keys", "id", "k1").await,
-        "'k1'|'Key'|'ed25519'|'pk'|'pub'|'kc'|'pp'|1|11|12"
+        // Same rule for keys: the private half and passphrase are NULL, and the
+        // file's own reference is not persisted.
+        "'k1'|'Key'|'ed25519'|NULL|'pub'|'kc'|NULL|NULL|1|11|12"
     );
     assert_eq!(
         row_dump(&pool, "known_hosts", "id", "kh1").await,
@@ -903,4 +908,387 @@ async fn a_panic_inside_the_transaction_does_not_return_a_dirty_connection() {
         .expect("a later import must succeed");
     assert_eq!(report.hosts, 1);
     assert_eq!(count(&pool, "hosts").await, 1);
+}
+
+// ============================================================================
+// Phase 10.1 — the import security boundary.
+//
+// These are the tests that make "no import writes a secret" a property of the
+// code rather than of a reviewer's memory. They assert on the persisted rows,
+// not on the plan: a plan can be right while the SQL still binds a column.
+// ============================================================================
+
+/// One host row carrying plaintext, as a pre-Phase-10 backup has it.
+fn legacy_host() -> serde_json::Value {
+    json!({
+        "id": "h-legacy", "name": "legacy", "hostname": "legacy.example", "port": 22,
+        "username": "root", "auth_type": "password",
+        "password": "legacy-plaintext",
+        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nlegacy\n-----END OPENSSH PRIVATE KEY-----",
+        "certificate": null, "created_at": 1, "updated_at": 2
+    })
+}
+
+fn legacy_key() -> serde_json::Value {
+    json!({
+        "id": "k-legacy", "name": "legacy key", "key_type": "ed25519",
+        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n-----END OPENSSH PRIVATE KEY-----",
+        "public_key": "ssh-ed25519 AAAA", "certificate": null,
+        "passphrase": "legacy-passphrase", "is_encrypted": 1,
+        "created_at": 1, "updated_at": 2
+    })
+}
+
+async fn secret_columns_are_empty(pool: &SqlitePool, table: &str, id: &str) {
+    let columns: &[&str] = match table {
+        "hosts" => &["password", "private_key"],
+        _ => &["private_key", "passphrase"],
+    };
+    let row = sqlx::query(&format!(
+        "SELECT {} FROM {} WHERE id = ?",
+        columns.join(", "),
+        table
+    ))
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .expect("the imported row exists");
+    for (index, column) in columns.iter().enumerate() {
+        let value: Option<String> = row.try_get(index).expect("column is text or null");
+        assert!(
+            value.is_none(),
+            "{table}.{column} must be NULL after import, found {value:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_legacy_backup_without_a_decision_is_refused_before_anything_is_written() {
+    let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+    let before = snapshot(&pool).await;
+
+    let error = run_import(
+        &pool,
+        &payload(json!({
+            "mergeMode": "merge",
+            "hosts": [legacy_host()],
+            "sshKeys": [legacy_key()],
+        })),
+        BUDGET,
+    )
+    .await
+    .expect_err("a file with plaintext and no policy must be refused");
+
+    match error {
+        ImportError::Payload(PayloadError::SecretsNeedADecision {
+            host_passwords,
+            host_private_keys,
+            ssh_key_private_keys,
+            ssh_key_passphrases,
+        }) => {
+            assert_eq!(host_passwords, 1);
+            assert_eq!(host_private_keys, 1);
+            assert_eq!(ssh_key_private_keys, 1);
+            assert_eq!(ssh_key_passphrases, 1);
+        }
+        other => panic!("unexpected error: {other}"),
+    }
+
+    assert_eq!(
+        snapshot(&pool).await,
+        before,
+        "a refused import must leave every table untouched"
+    );
+}
+
+#[tokio::test]
+async fn discarding_secrets_imports_the_metadata_and_writes_no_secret_column() {
+    let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+
+    let report = run_import(
+        &pool,
+        &payload(json!({
+            "mergeMode": "merge",
+            "secrets": "discard",
+            "hosts": [legacy_host()],
+            "sshKeys": [legacy_key()],
+        })),
+        BUDGET,
+    )
+    .await
+    .expect("discard is an explicit decision and must import");
+
+    assert_eq!(report.hosts, 1);
+    assert_eq!(report.ssh_keys, 1);
+    secret_columns_are_empty(&pool, "hosts", "h-legacy").await;
+    secret_columns_are_empty(&pool, "ssh_keys", "k-legacy").await;
+
+    // The row is metadata only; no reference may claim a credential exists.
+    let reference: Option<String> = sqlx::query("SELECT credential_ref FROM hosts WHERE id = ?")
+        .bind("h-legacy")
+        .fetch_one(&pool)
+        .await
+        .expect("row")
+        .try_get(0)
+        .expect("text");
+    assert!(
+        reference.is_none(),
+        "a discarded host must not claim a credential"
+    );
+
+    // The user is told which rows need a credential again, with the kinds and no
+    // secret material.
+    let rebind = &report.credentials_needing_rebind;
+    assert_eq!(rebind.len(), 2);
+    let host = rebind
+        .iter()
+        .find(|item| item.resource == "host")
+        .expect("the host is listed");
+    assert_eq!(host.id, "h-legacy");
+    assert_eq!(host.kinds, vec!["password", "privateKey"]);
+    let key = rebind
+        .iter()
+        .find(|item| item.resource == "sshKey")
+        .expect("the key is listed");
+    assert_eq!(key.kinds, vec!["privateKey", "passphrase"]);
+
+    let serialised = serde_json::to_string(&report).expect("the report serialises");
+    assert!(!serialised.contains("legacy-plaintext"));
+    assert!(!serialised.contains("legacy-passphrase"));
+    assert!(!serialised.contains("BEGIN OPENSSH"));
+}
+
+#[tokio::test]
+async fn an_import_with_no_secrets_carries_an_empty_secret_report() {
+    let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+
+    let report = run_import(&pool, &full_backup("merge"), BUDGET)
+        .await
+        .expect("a clean backup imports without a policy");
+
+    assert_eq!(report.secrets.host_secrets.total(), 0);
+    assert!(report.secrets.is_empty());
+    assert!(report.credentials_needing_rebind.is_empty());
+}
+
+#[tokio::test]
+async fn migrate_refuses_a_payload_that_still_carries_plaintext() {
+    let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+    let before = snapshot(&pool).await;
+
+    let error = run_import(
+        &pool,
+        &payload(json!({
+            "mergeMode": "merge",
+            "secrets": "migrate",
+            "hosts": [legacy_host()],
+        })),
+        BUDGET,
+    )
+    .await
+    .expect_err("migrate with plaintext still present must be refused");
+
+    assert!(
+        matches!(
+            error,
+            ImportError::Payload(PayloadError::SecretNotMigrated { ref id }) if id == "h-legacy"
+        ),
+        "unexpected error: {error}"
+    );
+    assert_eq!(snapshot(&pool).await, before);
+}
+
+#[tokio::test]
+async fn migrate_stores_the_bound_reference_and_never_the_files_own() {
+    let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+
+    let source_ref = serde_json::to_string(&json!({
+        "kinds": ["password"], "provider": "vault"
+    }))
+    .expect("serialise");
+    let bound_ref = serde_json::to_string(&json!({
+        "kinds": ["password"], "provider": "vault"
+    }))
+    .expect("serialise");
+
+    let report = run_import(
+        &pool,
+        &payload(json!({
+            "mergeMode": "merge",
+            "secrets": "migrate",
+            "hosts": [{
+                "id": "h-migrated", "name": "migrated", "hostname": "m.example",
+                "port": 22, "username": "root", "auth_type": "password",
+                // The file describes what the *source* device stored.
+                "credential_ref": source_ref,
+                // The frontend says what *this* device's vault now holds.
+                "bound_credential_ref": bound_ref,
+                "created_at": 1, "updated_at": 2
+            }],
+        })),
+        BUDGET,
+    )
+    .await
+    .expect("a fully migrated payload imports");
+
+    secret_columns_are_empty(&pool, "hosts", "h-migrated").await;
+    let stored: Option<String> = sqlx::query("SELECT credential_ref FROM hosts WHERE id = ?")
+        .bind("h-migrated")
+        .fetch_one(&pool)
+        .await
+        .expect("row")
+        .try_get(0)
+        .expect("text");
+    assert!(
+        stored.is_some(),
+        "a migrated host keeps the reference this device's vault answers to"
+    );
+    // The migrated host is not reported as needing a rebind.
+    assert!(report.credentials_needing_rebind.is_empty());
+}
+
+#[tokio::test]
+async fn migrate_refuses_a_row_that_describes_a_credential_but_names_no_binding() {
+    let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+    let before = snapshot(&pool).await;
+
+    let source_ref = serde_json::to_string(&json!({
+        "kinds": ["password"], "provider": "vault"
+    }))
+    .expect("serialise");
+
+    let error = run_import(
+        &pool,
+        &payload(json!({
+            "mergeMode": "merge",
+            "secrets": "migrate",
+            "hosts": [{
+                "id": "h-half", "name": "half", "hostname": "h.example",
+                "port": 22, "username": "root", "auth_type": "password",
+                "credential_ref": source_ref,
+                "created_at": 1, "updated_at": 2
+            }],
+        })),
+        BUDGET,
+    )
+    .await
+    .expect_err("a secret written to the vault with nothing pointing at it must be refused");
+
+    assert!(
+        matches!(
+            error,
+            ImportError::Payload(PayloadError::MissingBoundReference { ref id }) if id == "h-half"
+        ),
+        "unexpected error: {error}"
+    );
+    assert_eq!(snapshot(&pool).await, before);
+}
+
+#[tokio::test]
+async fn migrate_refuses_a_malformed_bound_reference() {
+    let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+
+    for bad in [
+        json!("not json"),
+        json!("{\"kinds\":[],\"provider\":\"vault\"}"),
+        json!("{\"kinds\":[\"password\"],\"provider\":\"keychain\"}"),
+    ] {
+        let error = run_import(
+            &pool,
+            &payload(json!({
+                "mergeMode": "merge",
+                "secrets": "migrate",
+                "hosts": [{
+                    "id": "h-bad", "name": "bad", "hostname": "b.example",
+                    "port": 22, "username": "root", "auth_type": "password",
+                    "bound_credential_ref": bad,
+                    "created_at": 1, "updated_at": 2
+                }],
+            })),
+            BUDGET,
+        )
+        .await
+        .expect_err("a reference this build cannot honour must be refused");
+        assert!(
+            matches!(
+                error,
+                ImportError::Payload(PayloadError::MalformedBoundReference { .. })
+            ),
+            "unexpected error: {error}"
+        );
+    }
+    assert_eq!(count(&pool, "hosts").await, 0);
+}
+
+#[tokio::test]
+async fn an_unknown_policy_string_behaves_like_reject() {
+    let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+
+    let error = run_import(
+        &pool,
+        &payload(json!({
+            "mergeMode": "merge",
+            "secrets": "whatever-the-caller-thought",
+            "hosts": [legacy_host()],
+        })),
+        BUDGET,
+    )
+    .await
+    .expect_err("an unreadable policy must not be treated as permission");
+
+    assert!(matches!(
+        error,
+        ImportError::Payload(PayloadError::SecretsNeedADecision { .. })
+    ));
+    assert_eq!(count(&pool, "hosts").await, 0);
+}
+
+#[tokio::test]
+async fn replace_mode_does_not_drop_an_existing_secret_freed_row_into_a_secret_column() {
+    let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+
+    // An existing row whose secret already lives in the vault.
+    run_import(
+        &pool,
+        &payload(json!({
+            "mergeMode": "merge",
+            "hosts": [{
+                "id": "h1", "name": "old", "hostname": "old.example", "port": 22,
+                "username": "root", "auth_type": "password", "created_at": 1, "updated_at": 1
+            }],
+        })),
+        BUDGET,
+    )
+    .await
+    .expect("seed row");
+
+    // Replace mode rewrites the row from a legacy backup. The update statement has
+    // no secret column either, so the plaintext cannot land.
+    run_import(
+        &pool,
+        &payload(json!({
+            "mergeMode": "replace",
+            "secrets": "discard",
+            "hosts": [{
+                "id": "h1", "name": "new", "hostname": "new.example", "port": 22,
+                "username": "root", "auth_type": "password",
+                "password": "should-never-land",
+                "private_key": "should-never-land-either",
+                "created_at": 1, "updated_at": 2
+            }],
+        })),
+        BUDGET,
+    )
+    .await
+    .expect("replace import");
+
+    secret_columns_are_empty(&pool, "hosts", "h1").await;
+    let name: String = sqlx::query("SELECT name FROM hosts WHERE id = ?")
+        .bind("h1")
+        .fetch_one(&pool)
+        .await
+        .expect("row")
+        .try_get(0)
+        .expect("text");
+    assert_eq!(name, "new", "the rest of the replace still applies");
 }

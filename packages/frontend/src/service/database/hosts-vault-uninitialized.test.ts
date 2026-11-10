@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   executeQuery: vi.fn(),
   select: vi.fn(),
   vaultWrite: vi.fn(),
+  vaultRead: vi.fn(),
   unlocked: vi.fn(async () => false),
   exists: vi.fn(async () => false),
 }))
@@ -21,8 +22,9 @@ vi.mock('./connection', () => ({
 vi.mock('@/service/vault-secret-provider', () => ({
   vaultSecretProvider: {
     write: mocks.vaultWrite,
-    read: vi.fn(),
+    read: mocks.vaultRead,
     remove: vi.fn(),
+    removeVersion: vi.fn(async () => []),
     isAvailable: vi.fn(async () => Boolean(await mocks.unlocked())),
     availability: vi.fn(async () => {
       if (await mocks.unlocked()) return { ok: true }
@@ -113,10 +115,17 @@ describe('an unlocked vault saves normally', () => {
   it('writes the secret to the vault and the row to SQLite', async () => {
     mocks.unlocked.mockResolvedValue(true)
     mocks.vaultWrite.mockResolvedValue(undefined)
+    // The save reads every value back before it trusts the write.
+    mocks.vaultRead.mockResolvedValue('secret-password')
 
     await createHost(form() as never)
 
-    expect(mocks.vaultWrite).toHaveBeenCalledWith('host-1', 'password', 'secret-password')
+    expect(mocks.vaultWrite).toHaveBeenCalledWith(
+      { type: 'host', id: 'host-1' },
+      1,
+      'password',
+      'secret-password',
+    )
     expect(mocks.executeQuery).toHaveBeenCalled()
   })
 })

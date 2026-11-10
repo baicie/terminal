@@ -204,15 +204,25 @@ manifest 或任何旧证据文件。
 
 ### 12.3 已知但本轮未修
 
+**Phase 10.1 更新（2026-11-10）**：下表四项 P2 已全部闭合，详见
+`10-credential-boundary-adr.md`。唯一仍开放的是主机对话框内直接创建 Vault 的入口。
+
 | 项 | 级别 | 说明 |
 | --- | --- | --- |
-| 首次运行无法保存密码 | P1 | **已修**（`f9a6e4e`）：`availability()` 区分 `uninitialized` / `locked` / `unusable`，文案分别指向创建 / 解锁 / 检查。**未做**：主机对话框内直接创建 Vault 的入口，用户仍需自己去 Vaults 页 |
-| 新存的主机需重载列表才能连接 | P2 | store 内的副本没有 `credentialRef`；应让 `createHost` 返回 ref 或保存后重载 |
-| 损坏的 `credential_ref` 退化为"无凭据" | P2 | 解析失败返回 `null`，被当作合法空凭据；应区分"读不懂的引用"并失败 |
-| 导出/同步仍带 `syncServiceToken` | P2 | 存储服务密码随设置表整体导出；是一行白名单的距离 |
-| SSH key 的秘密无消费方 | P2 | `getSSHKeySecret` 零调用方，keychain 也没有展示/复制路径 |
+| 首次运行无法保存密码 | P1 | **已修**（`f9a6e4e`）：`availability()` 区分 `uninitialized` / `locked` / `unusable`，文案分别指向创建 / 解锁 / 检查。**仍未做**：主机对话框内直接创建 Vault 的入口，用户仍需自己去 Vaults 页 |
+| 新存的主机需重载列表才能连接 | P2 | **已修（10.1）**：`addHost` / `updateHost` 保存后回读数据库，Store 持有真实 `credentialRef`（含 version）。`host-refresh.test.ts` 7 项，含「新建→保存→立即连接」 |
+| 损坏的 `credential_ref` 退化为"无凭据" | P2 | **已修（10.1）**：`parseCredentialRef` 返回三态，损坏引用挂在 `credentialRefProblem` 上并在连接前拒绝。`credential-ref-problems.test.ts` 12 项 |
+| 导出/同步仍带 `syncServiceToken` | P2 | **已修（10.1）**：`syncServiceToken` 是 `app_settings` 值内字段，按字段白名单过滤；`team_settings.apiToken` 同处理。真实导出文件与上传 body 均有断言 |
+| SSH key 的秘密无消费方 | P2 | **已修（10.1）**：keychain 新增「显示 / 复制私钥」，只在点击时读 Vault；命名空间从 `host:` 拆为 `ssh-key:`。`ssh-keys-lifecycle.test.ts` 16 项 |
 
-其余四项仍记在案，不声称已解决。
+**10.1 新发现并修复的同源缺陷**（不在原审查清单内）：
+
+| 项 | 级别 | 说明 |
+| --- | --- | --- |
+| Rust `db_import` 仍绑定秘密列 | **P0** | 所有备份导入（文件/云/团队包）都把明文写回 SQLite。现在秘密列在 SQL 文本中即 `NULL` |
+| 多秘密更新部分失败 | **P1** | 固定 key 直接覆盖，password 成功、privateKey 失败时留下从未存在的组合。改为版本化写入 |
+| 清除凭据顺序 | **P1** | 先删 Vault 后更新 SQLite，后者失败即留下悬空引用。已反转 |
+| 迁移无生产调用链 | **P1** | 只有规则与 Fake Vault 测试。已实现 `credential-migration-run.ts` + 设置面板入口 |
 
 ### 12.4 一句结论
 

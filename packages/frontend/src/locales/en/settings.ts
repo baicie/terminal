@@ -43,7 +43,42 @@ export default {
   'settings.importing': 'Importing...',
   'settings.importSuccess': 'Import successful!',
   'settings.securityWarning':
-    'Data is exported as plain JSON. Sensitive information like passwords may be included. Keep your export files secure.',
+    'The exported file contains no passwords or private keys. Each host keeps only a description of which credentials it had, so a restore on another device asks you to set them again.',
+  'settings.importSecretsTitle': 'This backup contains plaintext credentials',
+  'settings.importSecretsDesc':
+    'A backup made by an older version stores passwords and private keys in the file itself. Choose what happens to them.',
+  'settings.importSecretsNone': 'This file contains no plaintext credentials.',
+  'settings.importSecretsCounts':
+    '{{hostPasswords}} host password(s), {{hostPrivateKeys}} host private key(s), {{sshKeyPrivateKeys}} key private key(s), {{sshKeyPassphrases}} key passphrase(s).',
+  'settings.importSecretsMigrate': 'Move them into the vault',
+  'settings.importSecretsMigrateDesc':
+    'Writes each value to this device\'s vault, reads it back, then imports only a reference. The vault must be unlocked.',
+  'settings.importSecretsDiscard': 'Import without the credentials',
+  'settings.importSecretsDiscardDesc':
+    'Imports hosts and keys as metadata only. Each one needs its password or key set again before it can connect.',
+  'settings.importSecretsCancel': 'Do not import',
+  'settings.importNeedsRebind': '{{count}} item(s) imported without credentials',
+  'settings.importNeedsRebindDesc':
+    'These need a password or key set again before they can connect:',
+
+  'settings.migrationTitle': 'Stored credentials in plaintext',
+  'settings.migrationDesc':
+    'Hosts and keys saved by an older version may still hold their password or private key in the local database. Moving them into the vault clears those columns.',
+  'settings.migrationChecking': 'Checking the database...',
+  'settings.migrationWarning':
+    'A backup of the database is taken first. Clearing a column does not rewrite an old WAL or an existing export file, so keep those secure as well.',
+  'settings.migrationRun': 'Move plaintext credentials into the vault',
+  'settings.migrationCounts':
+    'Moved {{hosts}} host(s) and {{keys}} key(s); {{failed}} failed.',
+  'settings.migrationSnapshot': 'Database backup: {{path}}',
+  'settings.migrationVerified':
+    'Verified: no plaintext column remains and every reference resolves in the vault.',
+  'settings.migrationVerifyFailed':
+    'Verification found {{count}} problem(s) — some rows may still need attention.',
+  'settings.migrationSucceeded': 'Credentials moved into the vault.',
+  'settings.migrationPartial': '{{failed}} row(s) could not be migrated and kept their plaintext.',
+  'settings.migrationVaultUnavailable':
+    'The vault is not available. Create or unlock it, then run this again.',
 
   // Appearance
   'settings.theme': 'Theme',

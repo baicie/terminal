@@ -19,6 +19,7 @@ import {
   ViewToolbar,
 } from '@/components/view-container'
 import { GenerateKeyDialog } from './generate-dialog'
+import { KeySecretActions } from './key-secret-actions'
 import { KeyForm } from './key-form'
 import { KeyListPanel } from './key-list-panel'
 import { useKeyForm } from './use-key-form'
@@ -212,6 +213,14 @@ const KeychainView: React.FC = () => {
             </ViewToolbar>
 
             <ViewContent className="p-4 sm:p-6">
+              {/* Reading the private half is a separate, explicit request: the
+                  key row stores only a reference, so the value is fetched from
+                  the vault on click and never enters the form or the store. */}
+              {!isNewKey && selectedKey && (
+                <div className="mb-4">
+                  <KeySecretActions selectedKey={selectedKey} />
+                </div>
+              )}
               <KeyForm
                 selectedKey={selectedKey}
                 isNewKey={isNewKey}

@@ -48,6 +48,15 @@ export default {
   'keychain.fido2': 'FIDO2',
   'keychain.privateKeyRequired': '私钥 *',
   'keychain.importFromFile': '从文件导入',
+  'keychain.revealPrivateKey': '显示私钥',
+  'keychain.hidePrivateKey': '隐藏私钥',
+  'keychain.copyPrivateKey': '复制私钥',
+  'keychain.privateKeyCopied': '私钥已复制到剪贴板。',
+  'keychain.privateKeyVisibleWarning':
+    '私钥会保持显示，直到你隐藏它或选择其他密钥。它按需从 Vault 读取，从不写入密钥行。',
+  'keychain.privateKeyUnavailable': '无法读取私钥',
+  'keychain.privateKeyUnavailableDesc':
+    '私钥存放在 Vault 中。请先解锁 Vault 后重试，或重新导入该密钥。',
   'keychain.privateKeyPlaceholder': '粘贴私钥内容或从文件导入...',
   'keychain.publicKeyPlaceholder': '粘贴公钥内容...',
   'keychain.passphrase': '密码短语',

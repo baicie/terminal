@@ -99,10 +99,18 @@ export interface SSHKeyRecord {
   id: string
   name: string
   key_type: string | null
+  /**
+   * Legacy plaintext column. New writes always store NULL here — the private half
+   * lives in the vault and `credential_ref` points at it. A value can only be
+   * present on a row written before Phase 10, until the migration clears it.
+   */
   private_key: string | null
   public_key: string | null
   certificate: string | null
+  /** Legacy plaintext column, same rule as `private_key`. */
   passphrase: string | null
+  /** JSON `{kinds, provider:'vault', version}`, or NULL when the key stores nothing. */
+  credential_ref?: string | null
   is_encrypted: number
   created_at: number
   updated_at: number

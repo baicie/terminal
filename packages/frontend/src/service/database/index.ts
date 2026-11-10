@@ -106,6 +106,10 @@ export {
   updateSSHKey,
   deleteSSHKey,
   searchSSHKeys,
+  // On-demand only: these read the vault, never the row.
+  getSSHKeySecret,
+  getSSHKeyCredentials,
+  readKeyCredentialRef,
 } from './ssh-keys'
 
 // Workspaces

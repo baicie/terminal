@@ -11,6 +11,7 @@
  * authenticate on its own.
  */
 
+import { parseCredentialRef } from './credential-ref'
 import type { CredentialRef } from './credential-boundary'
 
 /** A host as it appears in an export: metadata and a credential pointer only. */
@@ -71,19 +72,23 @@ const HOST_FIELDS = [
 export const HOST_SECRET_FIELDS = ['password', 'private_key', 'passphrase'] as const
 export const SSH_KEY_SECRET_FIELDS = ['private_key', 'passphrase'] as const
 
+/**
+ * The reference to write into an export, or `null` when there is none to describe.
+ *
+ * Uses the same parser as the read path — one implementation, so the file can never
+ * describe a reference this build would not accept. The previous local copy dropped
+ * `version`, which meant a re-imported backup described a credential that had no
+ * generation, and it flattened a *damaged* reference to `null`, which told the user
+ * the source device had stored nothing when in fact it had something unreadable.
+ *
+ * A damaged reference is exported as `null` rather than as a claim: the file is a
+ * description, and the honest description of "unreadable" is "not something the
+ * target can rebind from". The host still imports; the user simply re-sets the
+ * credential, which is what they would have had to do anyway.
+ */
 function parseRef(raw: unknown): CredentialRef | null {
-  if (typeof raw !== 'string' || raw === '') return null
-  try {
-    const parsed = JSON.parse(raw) as { kinds?: unknown, provider?: unknown }
-    if (parsed.provider !== 'vault' || !Array.isArray(parsed.kinds)) return null
-    const kinds = parsed.kinds.filter(
-      (kind): kind is 'password' | 'privateKey' | 'passphrase' =>
-        kind === 'password' || kind === 'privateKey' || kind === 'passphrase',
-    )
-    return kinds.length === 0 ? null : { kinds, provider: 'vault' }
-  } catch {
-    return null
-  }
+  const parsed = parseCredentialRef(raw)
+  return parsed.ok ? parsed.ref : null
 }
 
 export function sanitizeHostRow(row: Record<string, unknown>): ExportedHost {

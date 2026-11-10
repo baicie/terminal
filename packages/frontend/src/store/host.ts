@@ -4,6 +4,7 @@ import { executeQuery, selectStrict as select } from '@/service/database'
 import {
   createHost as createHostRow,
   deleteHost as deleteHostRow,
+  getHostById,
   updateHost as updateHostRow,
 } from '@/service/database/hosts'
 import { generateId } from '@/utils/id'
@@ -45,8 +46,15 @@ export interface HostState {
   setSelectedGroup: (id: string | null) => void
 }
 
-export const useHostStore = create<HostState>((set, get) => {
-  let loadGeneration = 0
+/** Drop the form-only secret fields, keeping everything the row actually stores. */
+function withoutSecrets(host: Host): Host {
+  const { password: _password, privateKey: _privateKey, ...metadata } = host
+  // `clearCredential` is an instruction for a write, never state a host holds.
+  const { clearCredential: _clear, ...rest } = metadata as Host
+  return rest as Host
+}
+
+export const useHostStore = create<HostState>((set, get) => {  let loadGeneration = 0
 
   return {
     hosts: [],
@@ -139,11 +147,18 @@ export const useHostStore = create<HostState>((set, get) => {
       // docs/phase10/08-credential-single-write-path-adr.md).
       await createHostRow(newHost)
 
-      // The in-memory copy drops the secret: it is in the vault now, and keeping
-      // it would leave plaintext lying in the store for the session.
-      const { password: _password, privateKey: _privateKey, ...metadata } = newHost
-      set(state => ({ hosts: [...state.hosts, metadata as Host] }))
-      return { ...metadata, password: newHost.password, privateKey: newHost.privateKey } as Host
+      // Read the row back instead of guessing what it became. The reference and
+      // its version are decided by the write path, so a caller that needs the
+      // stored host — "save, then connect", "save, then show it" — would otherwise
+      // hold an object with no credential at all. That was a real defect: the
+      // in-memory copy had no reference, so the very next connection said "no
+      // stored secret" while the vault held one.
+      const stored = await getHostById(id)
+      // The value typed into the form never enters the store: it is in the vault
+      // now, and keeping it would leave plaintext in memory for the session.
+      const metadata = withoutSecrets(stored ?? newHost)
+      set(state => ({ hosts: [...state.hosts, metadata] }))
+      return metadata
     },
 
     async updateHost(id, updates) {
@@ -152,10 +167,19 @@ export const useHostStore = create<HostState>((set, get) => {
 
       await updateHostRow(id, updates)
 
-      const merged = { ...existing, ...updates, updatedAt: Date.now() }
-      const { password: _password, privateKey: _privateKey, clearCredential: _clear, ...metadata } = merged
+      // Same reason as addHost: a credential change, a clear, or a version bump is
+      // decided inside the write path. Re-deriving it here would drift from what is
+      // stored, and the drift is exactly a stale credential.
+      const stored = await getHostById(id)
+      if (stored === null) {
+        // The row is gone (deleted concurrently). Drop it from the list rather than
+        // keeping a host that no longer exists.
+        set(state => ({ hosts: state.hosts.filter(h => h.id !== id) }))
+        return
+      }
+      const metadata = withoutSecrets(stored)
       set(state => ({
-        hosts: state.hosts.map(h => (h.id === id ? (metadata as Host) : h)),
+        hosts: state.hosts.map(h => (h.id === id ? metadata : h)),
       }))
     },
 

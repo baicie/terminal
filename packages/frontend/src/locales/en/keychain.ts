@@ -49,6 +49,15 @@ export default {
   'keychain.fido2': 'FIDO2',
   'keychain.privateKeyRequired': 'Private Key *',
   'keychain.importFromFile': 'Import from file',
+  'keychain.revealPrivateKey': 'Show private key',
+  'keychain.hidePrivateKey': 'Hide private key',
+  'keychain.copyPrivateKey': 'Copy private key',
+  'keychain.privateKeyCopied': 'Private key copied to the clipboard.',
+  'keychain.privateKeyVisibleWarning':
+    'The private key is shown until you hide it or select another key. It is read from the vault on demand and never stored on the key row.',
+  'keychain.privateKeyUnavailable': 'The private key could not be read',
+  'keychain.privateKeyUnavailableDesc':
+    'It is stored in the vault. Unlock the vault and try again, or re-import the key.',
   'keychain.privateKeyPlaceholder':
     'Paste private key content or import from file...',
   'keychain.publicKeyPlaceholder': 'Paste public key content...',

@@ -1,119 +1,186 @@
 /**
  * SSH Keys CRUD 操作
+ *
+ * Same contract as hosts: the row keeps identity and the public half, the vault
+ * keeps the private key and its passphrase, and the row carries a reference that
+ * names the *version* of that secret. The namespace is `ssh-key:<id>:…`, separate
+ * from hosts — the two used to share `host:` and could collide on an id.
+ *
+ * The private half is never returned by a list read. Reading it is a separate,
+ * explicit call (`getSSHKeySecret`) that the UI makes only when the user asks to
+ * view or copy a key, and that a connection makes only when it needs one.
  */
+import { refVersion, serializeCredentialRef } from '@/service/credential-boundary'
+import type { CredentialRef } from '@/service/credential-boundary'
 import { vaultSecretProvider } from '@/service/vault-secret-provider'
-import { vaultUnavailableMessage } from '@/service/vault-unavailable-message'
 import { executeQuery, select } from './connection'
+import {
+  discardKeyVersion,
+  persistKeySecrets,
+  readKeyCredentialRef,
+  retireKeyVersion,
+} from './ssh-key-credentials'
 import type { SSHKeyRecord } from './types'
 
-/**
- * Moves a key's secret material into the vault.
- *
- * Same rule as hosts: the row keeps identity and the public half, the vault keeps
- * the private key and its passphrase. A vault that cannot take them fails the save
- * rather than silently storing plaintext.
- */
-async function persistKeySecrets(
-  id: string,
-  secrets: { privateKey?: string | null, passphrase?: string | null },
-): Promise<void> {
-  const entries: Array<['privateKey' | 'passphrase', string]> = []
-  if (secrets.privateKey) entries.push(['privateKey', secrets.privateKey])
-  if (secrets.passphrase) entries.push(['passphrase', secrets.passphrase])
-  if (entries.length === 0) return
-  const availability = await vaultSecretProvider.availability()
-  if (!availability.ok) {
-    throw new Error(vaultUnavailableMessage(availability.state))
-  }
-  for (const [kind, value] of entries) {
-    await vaultSecretProvider.write(id, kind, value)
-  }
-}
+export { readKeyCredentialRef } from './ssh-key-credentials'
 
-/** Reads a key's stored secret back, for a connection that needs it. */
+/**
+ * Reads a key's stored secret back, for a connection that needs it.
+ *
+ * The only way a private key leaves the vault, and it is per-kind and per-call:
+ * nothing here caches, logs or returns the value to a list read.
+ */
 export async function getSSHKeySecret(
   id: string,
   kind: 'privateKey' | 'passphrase',
 ): Promise<string | undefined> {
-  return vaultSecretProvider.read(id, kind)
+  const key = await getSSHKeyById(id)
+  if (!key) return undefined
+  const ref = readKeyCredentialRef(key.credential_ref)
+  if (ref === null) return undefined
+  if (!ref.kinds.includes(kind)) return undefined
+  return vaultSecretProvider.read({ type: 'ssh-key', id }, refVersion(ref), kind)
+}
+
+/** Both halves of a key's secret, for a connection that authenticates with it. */
+export async function getSSHKeyCredentials(id: string): Promise<{
+  privateKey?: string
+  passphrase?: string
+}> {
+  const result: { privateKey?: string, passphrase?: string } = {}
+  const privateKey = await getSSHKeySecret(id, 'privateKey')
+  if (privateKey !== undefined) result.privateKey = privateKey
+  const passphrase = await getSSHKeySecret(id, 'passphrase')
+  if (passphrase !== undefined) result.passphrase = passphrase
+  return result
 }
 
 export async function createSSHKey(
   key: Omit<SSHKeyRecord, 'created_at' | 'updated_at'>,
 ): Promise<string> {
   const now = Date.now()
-  await persistKeySecrets(key.id, {
-    privateKey: key.private_key,
-    passphrase: key.passphrase,
-  })
-  await executeQuery(
-    `INSERT INTO ssh_keys (id, name, key_type, private_key, public_key, certificate, passphrase, is_encrypted, created_at, updated_at)
-     VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?)`,
-    [
-      key.id,
-      key.name,
-      key.key_type,
-      key.public_key,
-      key.certificate,
-      key.is_encrypted,
-      now,
-      now,
-    ],
+  const persisted = await persistKeySecrets(
+    key.id,
+    { privateKey: key.private_key, passphrase: key.passphrase },
+    null,
   )
+  try {
+    await executeQuery(
+      `INSERT INTO ssh_keys (id, name, key_type, private_key, public_key, certificate, passphrase, credential_ref, is_encrypted, created_at, updated_at)
+     VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?)`,
+      [
+        key.id,
+        key.name,
+        key.key_type,
+        key.public_key,
+        key.certificate,
+        persisted.ref === null ? null : serializeCredentialRef(persisted.ref),
+        key.is_encrypted,
+        now,
+        now,
+      ],
+    )
+  } catch (error) {
+    if (persisted.ref) await discardKeyVersion(key.id, persisted.ref)
+    throw error
+  }
   return key.id
 }
 
+/**
+ * Update a key's metadata and, when new secret material is supplied, move it into
+ * the vault under a new version.
+ *
+ * The SQL is a fixed statement rather than a `fields.join(', ')` list. A dynamic
+ * list is how a future field could reintroduce a secret column with a placeholder:
+ * adding `private_key = ?` to the list would look like every other line, and the
+ * only thing standing between it and plaintext in SQLite would be the reviewer
+ * noticing. Fixed text with a literal `NULL` cannot be extended that way — it has to
+ * be rewritten, which is a visible change.
+ *
+ * `COALESCE(?, credential_ref)` keeps the existing reference when this call carries
+ * no secret; the new reference is supplied only after the vault write succeeded.
+ */
 export async function updateSSHKey(
   id: string,
   updates: Partial<SSHKeyRecord>,
 ): Promise<void> {
-  const fields: string[] = []
-  const values: unknown[] = []
+  const hasSecrets =
+    updates.private_key !== undefined || updates.passphrase !== undefined
 
-  if (updates.name !== undefined) {
-    fields.push('name = ?')
-    values.push(updates.name)
-  }
-  if (updates.key_type !== undefined) {
-    fields.push('key_type = ?')
-    values.push(updates.key_type)
-  }
-  if (updates.private_key !== undefined) {
-    // The value goes to the vault; only the "it is now stored" fact reaches the
-    // row, and the column is explicitly cleared so no leftover plaintext remains.
-    await persistKeySecrets(id, { privateKey: updates.private_key })
-    fields.push('private_key = NULL')
-  }
-  if (updates.public_key !== undefined) {
-    fields.push('public_key = ?')
-    values.push(updates.public_key)
-  }
-  if (updates.certificate !== undefined) {
-    fields.push('certificate = ?')
-    values.push(updates.certificate)
-  }
-  if (updates.passphrase !== undefined) {
-    await persistKeySecrets(id, { passphrase: updates.passphrase })
-    fields.push('passphrase = NULL')
-  }
-  if (updates.is_encrypted !== undefined) {
-    fields.push('is_encrypted = ?')
-    values.push(updates.is_encrypted)
-  }
+  const existing = await getSSHKeyById(id)
+  if (!existing) return
 
-  if (fields.length > 0) {
-    fields.push('updated_at = ?')
-    values.push(Date.now())
-    values.push(id)
-    await executeQuery(
-      `UPDATE ssh_keys SET ${fields.join(', ')} WHERE id = ?`,
-      values,
+  let previousRef: CredentialRef | null = null
+  let newRef: CredentialRef | null = null
+  if (hasSecrets) {
+    const current = readKeyCredentialRef(existing.credential_ref)
+    const persisted = await persistKeySecrets(
+      id,
+      { privateKey: updates.private_key, passphrase: updates.passphrase },
+      current,
     )
+    newRef = persisted.ref
+    previousRef = persisted.previous
   }
+
+  // Only fields the update actually names are replaced; everything else is the
+  // stored value, read back through the same merge rule hosts use.
+  const merged: SSHKeyRecord = { ...existing, ...updates }
+
+  try {
+    await executeQuery(
+      `UPDATE ssh_keys SET
+         name = ?, key_type = ?,
+         private_key = CASE WHEN ? = 1 THEN NULL ELSE private_key END,
+         public_key = ?, certificate = ?,
+         passphrase = CASE WHEN ? = 1 THEN NULL ELSE passphrase END,
+         credential_ref = COALESCE(?, credential_ref),
+         is_encrypted = ?, updated_at = ?
+       WHERE id = ?`,
+      [
+        merged.name,
+        merged.key_type,
+        // The marker says "this call is the one moving the secret". A plain edit
+        // leaves both columns alone, because a pre-migration row still keeps its
+        // plaintext there and blanking it would destroy the user's only copy
+        // before the migration has run.
+        hasSecrets ? 1 : 0,
+        merged.public_key,
+        merged.certificate,
+        hasSecrets ? 1 : 0,
+        newRef === null ? null : serializeCredentialRef(newRef),
+        merged.is_encrypted,
+        Date.now(),
+        id,
+      ],
+    )
+  } catch (error) {
+    // The row still points at the previous version; this attempt's generation is
+    // unreachable. Remove it so a retry does not accumulate ciphertext.
+    if (newRef) await discardKeyVersion(id, newRef)
+    throw error
+  }
+
+  if (hasSecrets) await retireKeyVersion(id, previousRef)
 }
 
 export async function deleteSSHKey(id: string): Promise<void> {
+  // Same ordering as hosts: the row goes first, so a failure after it leaves an
+  // unreferenced secret rather than a key whose secret is already gone.
+  const existing = await getSSHKeyById(id)
+  const ref = existing ? readKeyCredentialRef(existing.credential_ref) : null
   await executeQuery('DELETE FROM ssh_keys WHERE id = ?', [id])
+  if (!ref) return
+  try {
+    await vaultSecretProvider.removeVersion(
+      { type: 'ssh-key', id },
+      refVersion(ref),
+      ref.kinds,
+    )
+  } catch {
+    // A locked vault must not make a completed delete look failed.
+  }
 }
 
 export async function getSSHKeys(): Promise<SSHKeyRecord[]> {

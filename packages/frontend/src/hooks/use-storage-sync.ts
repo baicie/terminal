@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from '@/components/ui/sonner'
+import type { ImportSecretsDiagnosis } from '@/service/sync'
 import {
   downloadFromServer,
   formatLastSyncTime,
@@ -106,22 +107,44 @@ export function useStorageSync({ getConfig }: UseStorageSyncOptions) {
     }
   }, [initService])
 
-  const handleRestoreFromServer = useCallback(async (restoreMode: 'merge' | 'replace'): Promise<void> => {
-    if (!(await initService())) return
+  /**
+   * Restore the cloud backup.
+   *
+   * A backup that carries plaintext credentials is refused by default and the
+   * refusal is *reported*, not swallowed: the caller then asks the user the same
+   * question a file import asks, and calls again with the answer. Reporting
+   * "no backup found" for a file that was found and deliberately not imported
+   * would send the user looking in the wrong place.
+   */
+  const handleRestoreFromServer = useCallback(async (
+    restoreMode: 'merge' | 'replace',
+    secrets: 'reject' | 'migrate' | 'discard' = 'reject',
+  ): Promise<{ needsDecision: ImportSecretsDiagnosis | null }> => {
+    if (!(await initService())) return { needsDecision: null }
 
     setRestoring(true)
     try {
-      const result = await downloadFromServer(restoreMode)
+      const result = await downloadFromServer(restoreMode, secrets)
       if (result.success && result.stats) {
         setLastSyncTime(formatLastSyncTime())
+        const missing = result.needsRebind?.length ?? 0
         toast.success('Restore successful', {
-          description: `${result.stats.hosts} hosts, ${result.stats.snippets} snippets, ${result.stats.workspaces} workspaces`,
+          description: `${result.stats.hosts} hosts, ${result.stats.snippets} snippets, ${result.stats.workspaces} workspaces${
+            missing > 0
+              ? ` — ${missing} need a credential set again`
+              : ''
+          }`,
         })
-      } else {
-        toast.error('Restore failed', { description: 'No backup found on server' })
+        return { needsDecision: null }
       }
+      if (result.secrets?.needsDecision) {
+        return { needsDecision: result.secrets }
+      }
+      toast.error('Restore failed', { description: 'No backup found on server' })
+      return { needsDecision: null }
     } catch (error) {
       toast.error('Restore failed', { description: String(error) })
+      return { needsDecision: null }
     } finally {
       setRestoring(false)
     }

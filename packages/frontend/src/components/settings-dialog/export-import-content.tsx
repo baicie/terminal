@@ -2,16 +2,16 @@ import {
   AlertCircle,
   Check,
   Download,
-  Merge,
   RefreshCw,
-  Replace,
   Shield,
   Upload,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import type { ImportSecretsDiagnosis } from '@/service/sync'
+import { NeedsRebindPanel } from './import-secrets-panel'
+import { ImportPreviewCard } from './import-preview-card'
 import type { ImportMode, ImportPreview } from './export-import-operations'
 
 export function ExportImportContent({
@@ -21,11 +21,17 @@ export function ExportImportContent({
   content,
   step,
   errorMessage,
+  secrets,
+  needsRebind,
   onExport,
   onSelect,
   onModeChange,
   onReset,
   onImport,
+  onMigrateSecrets,
+  onDiscardSecrets,
+  onCancelSecrets,
+  onClose,
 }: {
   exporting: boolean
   importMode: ImportMode
@@ -33,22 +39,19 @@ export function ExportImportContent({
   content: string | null
   step: string
   errorMessage: string | null
+  secrets: ImportSecretsDiagnosis | null
+  needsRebind: ImportSecretsDiagnosis['sourceCredentialRefs']
   onExport: () => void
   onSelect: () => void
   onModeChange: (mode: ImportMode) => void
   onReset: () => void
   onImport: () => void
+  onMigrateSecrets: () => void
+  onDiscardSecrets: () => void
+  onCancelSecrets: () => void
+  onClose?: () => void
 }) {
   const { t } = useTranslation()
-  const entries = [
-    ['hosts', 'settings.hosts'],
-    ['groups', 'settings.groups'],
-    ['snippets', 'settings.snippets'],
-    ['snippetPackages', 'settings.snippetPackages'],
-    ['sshKeys', 'settings.sshKeys'],
-    ['workspaces', 'settings.workspaces'],
-    ['knownHosts', 'settings.knownHosts'],
-  ] as const
   return (
     <div className="space-y-3">
       <h4 className="text-sm font-medium flex items-center gap-2">
@@ -93,67 +96,18 @@ export function ExportImportContent({
           </Button>
         )}
         {step === 'preview' && preview && (
-          <div className="space-y-3 p-3 bg-muted rounded-lg">
-            <p className="text-sm font-medium">{t('settings.importPreview')}</p>
-            <ul className="text-sm text-muted-foreground space-y-1">
-              {entries.map(
-                ([key, label], index) =>
-                  (index < 3 || preview[key] > 0) && (
-                    <li key={key}>
-                      <Check className="size-3 inline mr-1 text-green-500" />
-                      {t(label, { count: preview[key] })}
-                    </li>
-                  ),
-              )}
-            </ul>
-            <div className="space-y-2 pt-2">
-              <Label className="text-xs">{t('settings.importMode')}</Label>
-              <div className="flex gap-2">
-                <Button
-                  variant={importMode === 'merge' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => onModeChange('merge')}
-                  className="flex-1"
-                >
-                  <Merge className="size-3 mr-1" />
-                  {t('settings.merge')}
-                </Button>
-                <Button
-                  variant={importMode === 'replace' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => onModeChange('replace')}
-                  className="flex-1"
-                >
-                  <Replace className="size-3 mr-1" />
-                  {t('settings.replace')}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {importMode === 'merge'
-                  ? t('settings.mergeDesc')
-                  : t('settings.replaceDesc')}
-              </p>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onReset}
-                className="flex-1"
-              >
-                {t('common.cancel')}
-              </Button>
-              <Button
-                size="sm"
-                onClick={onImport}
-                disabled={!content}
-                className="flex-1"
-              >
-                <Upload className="size-3 mr-1" />
-                {t('settings.import')}
-              </Button>
-            </div>
-          </div>
+          <ImportPreviewCard
+            importMode={importMode}
+            preview={preview}
+            content={content}
+            secrets={secrets}
+            onModeChange={onModeChange}
+            onReset={onReset}
+            onImport={onImport}
+            onMigrateSecrets={onMigrateSecrets}
+            onDiscardSecrets={onDiscardSecrets}
+            onCancelSecrets={onCancelSecrets}
+          />
         )}
         {step === 'importing' && (
           <div className="text-center py-4">
@@ -162,11 +116,24 @@ export function ExportImportContent({
           </div>
         )}
         {step === 'success' && (
-          <div className="text-center py-4">
-            <div className="size-8 mx-auto rounded-full bg-green-100 flex items-center justify-center">
-              <Check className="size-5 text-green-600" />
+          <div className="space-y-3 py-2">
+            <div className="text-center">
+              <div className="size-8 mx-auto rounded-full bg-green-100 flex items-center justify-center">
+                <Check className="size-5 text-green-600" />
+              </div>
+              <p className="mt-2 text-sm">{t('settings.importSuccess')}</p>
             </div>
-            <p className="mt-2 text-sm">{t('settings.importSuccess')}</p>
+            <NeedsRebindPanel rows={needsRebind} />
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={onReset} className="flex-1">
+                {t('settings.importData')}
+              </Button>
+              {onClose && (
+                <Button size="sm" onClick={onClose} className="flex-1">
+                  {t('common.close')}
+                </Button>
+              )}
+            </div>
           </div>
         )}
         {step === 'error' && (

@@ -104,3 +104,69 @@ READY_FOR_PUBLIC_RELEASE=NO
 3. 导入向导 UI（file dialog + 预览 + 确认）
 4. 真实 GUI 与键盘验收（需授权环境）
 5. 7 天 Scorecard 记录
+
+---
+
+# Phase 10.1 — 安全收尾审查
+
+- 基线：`main = 7c1524ed38daac4dab69b92babcac9102e87ce22`
+- 分支：`feat/phase10-1-credential-security-closure`
+- Draft PR：[#23](https://github.com/baicie/terminal/pull/23)
+- 未合并、未打 Tag、未发布 Release
+
+## 为什么需要这一轮
+
+Phase 10 的验收写的是 `PLAIN_EXPORT_SECRET_EXCLUDED=PASS`、
+`HOST_WRITE_PATH_UNIFIED=PASS`。这两条都是**在它自己的范围内**成立的，而范围漏掉了
+用户真实的四条导入入口。逐条复核后的结论：
+
+1. `db_import/writer.rs` 仍绑定 `password` / `private_key` / `passphrase` 到真实列 —
+   任何备份导入都写明文，包括云同步恢复和团队包；
+2. `syncServiceToken` 位于 `app_settings` 的 JSON 值内部，导出与云上传都带真实凭据；
+3. 固定 Vault key 直接覆盖，多秘密更新部分失败会留下从未存在的凭据组合；
+4. `credential-migration.ts` 只有规则与 Fake Vault 测试，没有任何生产调用链。
+
+第 1 条是 P0：它让「新建路径安全」这个结论对一个**已经被删除的旧版本备份**完全不成立。
+
+## 本轮变更
+
+### 代码
+
+| 层 | 文件 | 性质 |
+| --- | --- | --- |
+| Rust 导入边界 | `db_import/secrets.rs`（新）、`payload.rs`、`writer.rs` | 秘密列从 SQL 中移除；三态策略；源引用永不入库 |
+| 导入前端边界 | `service/import-security.ts`（新）、`import-vault-migration.ts`（新）、`sync-import.ts` | 诊断/决定/迁移/补偿 |
+| 设置导出策略 | `service/settings-export-policy.ts`（新）、`sync-export.ts` | 字段级白名单，含 `team_settings.apiToken` |
+| 版本化凭据 | `credential-boundary.ts` + `credential-ref.ts`（新） | `version` 字段、`LEGACY_VERSION`、命名空间拆分、三态解析 |
+| 主机写入 | `database/hosts.ts` + `host-credentials.ts`（新） | 新版本写入 → 读回 → 单语句切换 → 清理旧版本 |
+| SSH Key | `database/ssh-keys.ts` + `connection-schema-migrations.ts`（新） | 新增 `credential_ref` 列、按需读取、独立命名空间 |
+| 迁移 | `credential-migration.ts` + `-runner.ts` + `-verify.ts` + `-run.ts`（均新/拆） | 计划不含秘密；快照→执行→重读验证 |
+| Store | `store/host.ts`、`host-mappers.ts` | 保存后回读；损坏引用随主机携带 |
+| UI | `import-secrets-panel.tsx`、`import-preview-card.tsx`、`credential-migration-panel.tsx`、`key-secret-actions.tsx`（均新） | 决策面板、需重绑清单、迁移面板、显示/复制私钥 |
+
+### 测试增量
+
+| 文件 | 项数 | 锁住的性质 |
+| --- | --- | --- |
+| `db_import/tests.rs`（Rust） | +12 | 秘密列不可达、策略三态、源引用不持久化 |
+| `import-security.test.ts` | 15 | 发给 Rust 的 payload 文本不含明文 |
+| `settings-export-policy.test.ts` | 9 | 真实导出文件与上传 body 不含 token |
+| `hosts-credential-versions.test.ts` | 12 | 各失败点只留完整版本 |
+| `credential-migration-run.test.ts` | 11 | 生产链路、快照、故障注入 |
+| `credential-ref-problems.test.ts` | 12 | 损坏引用不等于无凭据 |
+| `ssh-keys-lifecycle.test.ts` | 16 | 新建/查看/复制/编辑/删除/命名空间 |
+| `host-refresh.test.ts` | 7 | 新建→保存→Store→立即连接 |
+
+## 判定
+
+见 `docs/phase10/11-phase10-1-report.md` 的完整状态表。核心结论：
+
+- 所有真实导入入口（文件、云同步、团队包、Merge、Replace、旧版备份、恶意构造）
+  现在经过同一个边界，且该边界在 Rust 侧结构性成立；
+- `syncServiceToken` 与 `apiToken` 不进入任何导出与上传；
+- 版本化凭据使多秘密更新的每个失败点都可恢复；
+- 迁移有真实调用链、快照、断点续跑与重读验证。
+
+**仍未闭合**：真实 GUI 的 Vault/SSH/Jump/SFTP/IME 验收、三平台真机回归、
+历史 WAL 与备份文件明文擦除、身份迁移、签名/公证、`RUSTSEC-2026-0459`。
+`DAILY_DRIVER_READY` 与 `TABBY_REPLACEMENT_READY` 仍为 **NO**。

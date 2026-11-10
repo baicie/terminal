@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
   executeQuery: vi.fn(),
   select: vi.fn(),
   vaultWrite: vi.fn(),
+  vaultRead: vi.fn(),
   vaultRemove: vi.fn(),
+  vaultRemoveVersion: vi.fn(),
   vaultAvailable: vi.fn(async () => true),
 }))
 
@@ -24,7 +26,8 @@ vi.mock('@/service/vault-secret-provider', () => ({
   vaultSecretProvider: {
     write: mocks.vaultWrite,
     remove: mocks.vaultRemove,
-    read: vi.fn(),
+    read: mocks.vaultRead,
+    removeVersion: mocks.vaultRemoveVersion,
     isAvailable: mocks.vaultAvailable,
     availability: async () =>
       (await mocks.vaultAvailable())
@@ -71,6 +74,18 @@ beforeEach(() => {
   mocks.vaultRemove.mockReset()
   mocks.vaultWrite.mockResolvedValue(undefined)
   mocks.vaultRemove.mockResolvedValue(undefined)
+  mocks.vaultRemoveVersion.mockReset()
+  mocks.vaultRemoveVersion.mockResolvedValue([])
+  mocks.vaultRead.mockReset()
+  // The write path reads every value back before it produces a reference.
+  mocks.vaultRead.mockImplementation(
+    async (_resource: unknown, _version: number, kind: string) => {
+      const call = mocks.vaultWrite.mock.calls.find(
+        ([, , writtenKind]) => writtenKind === kind,
+      )
+      return call?.[3] as string | undefined
+    },
+  )
   mocks.vaultAvailable.mockResolvedValue(true)
   mocks.select.mockResolvedValue([])
   useHostStore.setState({ hosts: [] })
@@ -119,7 +134,8 @@ describe('the UI write path never puts a secret in SQLite', () => {
     await useHostStore.getState().addHost(baseForm({ password: PASSWORD }))
 
     expect(mocks.vaultWrite).toHaveBeenCalledWith(
-      expect.any(String),
+      expect.objectContaining({ type: 'host' }),
+      1,
       'password',
       PASSWORD,
     )
@@ -139,7 +155,8 @@ describe('the UI write path never puts a secret in SQLite', () => {
       .addHost(baseForm({ authType: 'key', privateKey: PRIVATE_KEY }))
 
     expect(mocks.vaultWrite).toHaveBeenCalledWith(
-      expect.any(String),
+      expect.objectContaining({ type: 'host' }),
+      1,
       'privateKey',
       PRIVATE_KEY,
     )
@@ -154,7 +171,8 @@ describe('the UI write path never puts a secret in SQLite', () => {
     await useHostStore.getState().updateHost(created.id, { password: PASSWORD })
 
     expect(mocks.vaultWrite).toHaveBeenCalledWith(
-      created.id,
+      { type: 'host', id: created.id },
+      1,
       'password',
       PASSWORD,
     )
@@ -179,20 +197,30 @@ describe('the UI write path never puts a secret in SQLite', () => {
     await useHostStore.getState().updateHost(created.id, { name: 'renamed' })
 
     expect(mocks.vaultWrite).not.toHaveBeenCalled()
-    // The reference must survive an unrelated edit: the CASE marker says "keep"
-    // and the second placeholder is NULL, so COALESCE falls back to the column.
+    // The reference must survive an unrelated edit: the new-reference
+    // placeholder is NULL and COALESCE falls back to the stored column.
     const update = issuedStatements().find(statement =>
       statement.sql.startsWith('UPDATE hosts'),
     )
-    expect(update?.sql).toMatch(/CASE WHEN \? = '' THEN NULL ELSE COALESCE/)
-    expect(update?.params).toContain('keep')
+    expect(update?.sql).toMatch(/credential_ref = COALESCE\(\?, credential_ref\)/)
+    expect(update?.params).not.toContainEqual(
+      expect.stringContaining('"provider":"vault"'),
+    )
   })
 
   it('clearing a credential deletes it from the vault explicitly', async () => {
     const created = await useHostStore
       .getState()
       .addHost(baseForm({ password: PASSWORD }))
-    seedStoredRow(created.id)
+    // The stored row must carry the reference `addHost` produced, or there is
+    // nothing for the clear to retire.
+    seedStoredRow(created.id, {
+      credential_ref: JSON.stringify({
+        kinds: ['password'],
+        provider: 'vault',
+        version: 1,
+      }),
+    })
     mocks.vaultWrite.mockClear()
     mocks.vaultRemove.mockClear()
     mocks.executeQuery.mockClear()
@@ -201,13 +229,18 @@ describe('the UI write path never puts a secret in SQLite', () => {
       .getState()
       .updateHost(created.id, { clearCredential: true })
 
-    expect(mocks.vaultRemove).toHaveBeenCalledWith(created.id, 'password')
+    // The removal now targets the version the row pointed at.
+    expect(mocks.vaultRemoveVersion).toHaveBeenCalledWith(
+      { type: 'host', id: created.id },
+      1,
+      ['password'],
+    )
     const update = issuedStatements().find(statement =>
       statement.sql.startsWith('UPDATE hosts'),
     )
-    // An explicit clear sets the reference to NULL rather than preserving it.
-    expect(update?.sql).toMatch(/CASE WHEN \? = '' THEN NULL ELSE COALESCE/)
-    expect(update?.params).toContain('')
+    // An explicit clear sets the reference to NULL rather than preserving it, and
+    // does so *before* the vault entry is removed.
+    expect(update?.sql).toMatch(/credential_ref = NULL/)
   })
 
   it('refuses to save when the vault cannot accept the secret', async () => {
