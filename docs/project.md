@@ -1085,6 +1085,27 @@ agent 逐条尝试推翻。
 
 详见 `docs/phase10/12-phase10-1-1-report.md`。
 
+### Phase 10.2 - Host Management Completion & OpenSSH Import ✅ 已合入（PR #27 → `5a24f9b`）
+
+| 工作包 | 内容 | 测试（先红后绿） |
+| --- | --- | --- |
+| **A1 主机编辑入口** | 卡片菜单 / 移动端 Sheet / 三种卡片变体接线 `onEdit`；对话框带已有值；保存走 `updateHost` | 10 项 |
+| **A2 Vault 首次使用** | 被拒绝时对话框就地提供创建/解锁，成功后自动重试同一 payload | 5 项 |
+| **B1 OpenSSH 导入向导** | 选文件/粘贴 → 预览 → 勾选 → 导入 → 逐项结果；预览不写盘，重复项默认不选 | 17 项 |
+| **B2 IdentityFile** | 路径进独立列（含 schema 迁移），不再冒充 `privateKey`；连接层明确拒绝 | 4 项 |
+| **B3 ProxyJump** | 两遍解析别名 → 候选 id；解析不到标 invalid 并写 warning | 3 项 |
+
+`HOST_EDIT_UI_WIRED=PASS`、`OPENSSH_IMPORT_UI_READY=PASS` 是本轮唯一能升的两项 ——
+它们是代码可达性，由组件测试驱动真实交互链路证明。其余 12 项需要真实 GUI / sshd /
+硬件，保持 NOT_RUN。
+
+门禁：前端 **204 文件 / 1815 项**、source-size **631 文件**、bundle budget
+（total 607→624 KB，initial 仅 +0.16 KB）、证据重采 run `42793219061` 0 problem、
+CI **11/11**。
+
+详见 `docs/phase10/13-phase10-2-security-ledger.md`、
+`docs/phase10/14-phase10-3-tabby-replacement.md`。
+
 ## 待办事项
 
 ### P0 - 必须完成
