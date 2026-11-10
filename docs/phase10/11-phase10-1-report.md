@@ -250,7 +250,7 @@ Merge 模式下该行不会被改写，于是它继续指向版本 1 并解析�
 
 | 层 | 结果 |
 | --- | --- |
-| CI | run `42739526802`（`b8dc716`）**11/11 success**，含 Repository gates（source-size + evidence + script tests，无 continue-on-error） |
+| CI | run `42739526802`（`b8dc716`，最后一个含代码的提交）**11/11 success**；`7169fe3`（仅文档）run `42742351316` 同样 **11/11 success**。Ubuntu/Windows 在该 run 首次失败是 crates.io 下载 `moxcms` 时的 `SSL_ERROR_SYSCALL` 网络故障，与代码无关（同一代码的 `b8dc716` 三平台构建首次即 success），重跑后通过 |
 | 真实矩阵 | run `42670402197`（`708f3cc`）三平台全 success |
 | 前端 | 195 文件 / 1751 项（含审查后新增的 8 项回归） |
 | Rust lib | 381 项（`db_import` 39，其中 12 项为 10.1 新增） |
