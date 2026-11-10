@@ -140,6 +140,18 @@ export default {
   'hosts.toast.updated': 'Host updated',
   'hosts.toast.created': 'Host created',
   'hosts.toast.saveFailed': 'Failed to save host',
+  'hosts.vault.createTitle': 'A vault is needed to store this password',
+  'hosts.vault.createBody':
+    'Secrets never go into the database. Create a vault here and the save continues with what you already typed.',
+  'hosts.vault.createAction': 'Create a vault',
+  'hosts.vault.unlockTitle': 'The vault is locked',
+  'hosts.vault.unlockBody':
+    'Unlock it here and the save continues with what you already typed.',
+  'hosts.vault.unlockAction': 'Unlock the vault',
+  'hosts.vault.unusableTitle': 'The vault could not be read',
+  'hosts.vault.unusableBody':
+    'Nothing was saved. Check the Vaults page, or connect with an SSH agent or a password typed at connect time instead.',
+  'hosts.vault.masterPassword': 'Vault master password',
   'hosts.loadFailed': 'Failed to load hosts.',
   'hosts.form.dialogDescription': 'Configure the connection, authentication and advanced options for this host.',
   'hosts.form.discardTitle': 'Discard changes?',

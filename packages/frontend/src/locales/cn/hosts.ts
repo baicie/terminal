@@ -137,6 +137,17 @@ export default {
   'hosts.toast.updated': '主机已更新',
   'hosts.toast.created': '主机已创建',
   'hosts.toast.saveFailed': '保存主机失败',
+  'hosts.vault.createTitle': '需要先创建 Vault 才能保存这个密码',
+  'hosts.vault.createBody':
+    '秘密不会写进数据库。在这里创建 Vault 后，会用你已填写的内容继续保存。',
+  'hosts.vault.createAction': '创建 Vault',
+  'hosts.vault.unlockTitle': 'Vault 已锁定',
+  'hosts.vault.unlockBody': '在这里解锁后，会用你已填写的内容继续保存。',
+  'hosts.vault.unlockAction': '解锁 Vault',
+  'hosts.vault.unusableTitle': 'Vault 无法读取',
+  'hosts.vault.unusableBody':
+    '本次没有保存任何内容。请检查 Vaults 页面，或改用 SSH Agent / 连接时输入密码。',
+  'hosts.vault.masterPassword': 'Vault 主密码',
   'hosts.loadFailed': '加载主机失败。',
   'hosts.form.dialogDescription': '配置该主机的连接、认证与高级选项。',
   'hosts.form.discardTitle': '放弃更改？',

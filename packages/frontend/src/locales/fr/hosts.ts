@@ -140,6 +140,18 @@ export default {
   'hosts.toast.updated': 'Hôte mis à jour',
   'hosts.toast.created': 'Hôte créé',
   'hosts.toast.saveFailed': "Échec de l'enregistrement de l'hôte",
+  'hosts.vault.createTitle': 'Un coffre est nécessaire pour stocker ce mot de passe',
+  'hosts.vault.createBody':
+    'Les secrets ne vont jamais dans la base. Créez un coffre ici et l’enregistrement reprend avec ce que vous avez déjà saisi.',
+  'hosts.vault.createAction': 'Créer un coffre',
+  'hosts.vault.unlockTitle': 'Le coffre est verrouillé',
+  'hosts.vault.unlockBody':
+    'Déverrouillez-le ici et l’enregistrement reprend avec ce que vous avez déjà saisi.',
+  'hosts.vault.unlockAction': 'Déverrouiller le coffre',
+  'hosts.vault.unusableTitle': 'Le coffre n’a pas pu être lu',
+  'hosts.vault.unusableBody':
+    'Rien n’a été enregistré. Vérifiez la page Coffres, ou utilisez un agent SSH ou un mot de passe saisi à la connexion.',
+  'hosts.vault.masterPassword': 'Mot de passe maître du coffre',
   'hosts.loadFailed': 'Échec du chargement des hôtes.',
   'hosts.form.dialogDescription': 'Configurez la connexion, l’authentification et les options avancées de cet hôte.',
   'hosts.form.discardTitle': 'Abandonner les modifications ?',
