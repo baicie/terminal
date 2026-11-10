@@ -148,11 +148,11 @@ DAMAGED vault    = {"1:password":"new-password","1:privateKey":"OLD-KEY"}
 
 ## 4. 回归测试
 
-三个新文件共 22 项，全部先红后绿：
+三个新文件共 25 项，全部先红后绿：
 
 | 文件 | 项数 | 覆盖 |
 | --- | --- | --- |
-| `database/hosts-partial-secret-update.test.ts` | 6 | password-only / privateKey-only / 三秘密 / 旧版本不持有该 kind / 结转顺序 |
+| `database/hosts-partial-secret-update.test.ts` | 9 | password-only / privateKey-only / 三秘密 / 旧版本不持有该 kind / 结转顺序 / **损坏引用拒绝写入** / **mapper 交付 null+problem** / **legacy 无版本引用结转** |
 | `import-vault-migration.test.ts` | 8 | 第二个写失败 / 读回不符 / 后续行缺 id / key 循环失败 / 不删在用版本 / 异常不被覆盖 / 补偿失败可见 |
 | `import-vault-version.test.ts` | 8 | 读失败拒绝 / 不当作无引用 / 损坏引用拒绝 / 新版本引用拒绝 / N→N+1 / 无引用→1 / legacy→1 / 连续导入递增 |
 
@@ -161,17 +161,31 @@ DAMAGED vault    = {"1:password":"new-password","1:privateKey":"OLD-KEY"}
 - WP1：`5 failed | 1 passed (6)`
 - WP2：`4 failed | 4 passed (8)`
 - WP3：`6 failed | 2 passed (8)`
+- 损坏引用（WP4 复审发现）：`1 failed | 7 passed (8)`
+
+**测试用的是真实 mapper**，不是 `JSON.parse` 的替身。这一条是刻意的：损坏引用的
+行为完全由 mapper 决定（它把 `credentialRef` 变成 `null` 并把原因放进
+`credentialRefProblem`），一个手写的替身会把这个 case 直接藏起来 ——
+本轮第一版测试就是那样写的，直到复审指出。
 
 ## 5. 门禁结果
 
 | 项 | 结果 |
 | --- | --- |
-| 前端全量 | **198 文件 / 1773 项通过**（基线 195 / 1751，新增 3 文件 22 项） |
-| service 层 | 51 文件 / 465 项通过 |
+| 前端全量 | **198 文件 / 1776 项通过**（基线 195 / 1751，新增 3 文件 25 项） |
+| service 层 | 51 文件 / 468 项通过 |
 | typecheck | 通过 |
 | ESLint | 0 error / 0 warning |
-| source-size | 623 个生产文件通过 |
-| Rust lib | 见 §5.1 |
+| source-size | **624** 个生产文件通过 |
+| 证据门禁 | **0 problem**，六份证据 + 七个原始日志，run `42773465085` |
+| Rust lib | 381 passed / 0 failed（本轮未改 Rust） |
+
+本轮过程中被 CI 抓到一个**自己引入的**规范违反：给 `hosts.ts` 加守卫注释后
+文件达到 316 行，超过 `source-size` 的 300 行上限。已把 `hostUpdateArgs`（纯 SQL
+参数构造）拆到 `host-update-args.ts`，`hosts.ts` 回到 257 行。
+
+记录这一条是因为它说明：改完代码后**没有立刻重跑全部门禁**，而是等到 CI 才
+发现。项目里这不是小事 —— 源码改动会让证据失效，任何补丁都会再触发一轮重采。
 
 ### 5.1 Rust
 

@@ -138,6 +138,30 @@ UPDATE 失败会留下「指向已删除 key 的引用」，而那条路径没�
 拒绝并给出可执行提示（「重新保存凭据」/「升级 Terminal」）。旧版无版本字段的引用
 解析为 `LEGACY_VERSION = 0`，对应无版本段的 key，因此历史主机仍能连接。
 
+### 6.0 修正（Phase 10.1.1）：写入路径也需要同一个守卫
+
+上面这条只覆盖了**读**。写入路径从来不看 `credentialRefProblem`，而 mapper 交付的
+是 `credentialRef: null` **加上** `credentialRefProblem` —— 对写入路径来说，
+「损坏的引用」和「没有引用」是同一个值。
+
+后果（实测）：
+
+```
+mapper.credentialRef        = null
+mapper.credentialRefProblem = {"kind":"malformed",...}
+updateHost 产出的引用        = {"kinds":["password"],"provider":"vault","version":1}
+vault 之后                  = {"1:password":"new","1:privateKey":"OLD-KEY"}
+```
+
+写入选了版本 1，覆盖了那里的密码，产出一个只列 `password` 的引用。私钥仍在 vault
+的同一版本下，**但没有任何引用能到达它**。写入之前这台主机的连接会失败并提示
+「重新保存凭据」（显式、可恢复）；写入之后它静默变成一台只有密码的主机，**严格更糟**。
+
+规则：`updateHost` 在**携带秘密**且 `existing.credentialRefProblem` 存在时拒绝写入。
+不携带秘密的更新（改名、收藏、颜色）不受影响 —— 它们本来就不碰凭据。
+
+`clearCredential` 仍然允许：那是用户显式要求清除，语义上是「丢弃」而非「保留」。
+
 ### 6.1 修正（Phase 10.1.1）：版本号不可猜，读不到就拒绝
 
 版本化要求「写到当前版本之上」。但当**读不到当前版本**时，有一个看起来安全的诱惑：
