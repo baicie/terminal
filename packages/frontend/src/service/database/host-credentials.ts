@@ -97,21 +97,64 @@ export async function persistHostSecrets(
   }
 
   const resource = { type: 'host' as const, id: host.id }
+  const suppliedKinds = new Set(secrets.map(secret => secret.kind))
   const written: CredentialKind[] = []
+  const carried: CredentialKind[] = []
+
+  // The un-retyped half has to come forward with the half that was retyped.
+  //
+  // The edit dialog starts empty for every secret field — the values live in the
+  // vault and the columns are NULL — so "the user retyped the password" and "the
+  // user left the key alone" arrive as different facts on the same call. Building
+  // the new reference from the submitted fields alone lists only `password`, and
+  // `retirePreviousVersion` then removes the whole old generation, private key
+  // included. That is the same loss `persistKeySecrets` already guards against;
+  // this path had no equivalent because its only multi-secret test wrote both
+  // secrets at once.
+  //
+  // If the old generation does not actually hold a kind its reference promised,
+  // the update fails rather than carrying a hole forward: a reference that names a
+  // secret the vault cannot deliver reads as "nothing stored" at connect time,
+  // with nothing left to recover from.
+  const kinds = [...suppliedKinds, ...(current?.kinds ?? [])].filter(
+    (kind, index, all) => all.indexOf(kind) === index,
+  )
+
+  // What each kind under the new version must read back as. Carried kinds are
+  // captured while copying, so the verification below does not go back to the old
+  // generation — by then the caller may already have replaced it.
+  const expected = new Map<CredentialKind, string>()
+
   try {
-    for (const secret of secrets) {
-      await vaultSecretProvider.write(resource, version, secret.kind, secret.value)
-      written.push(secret.kind)
+    for (const kind of kinds) {
+      if (suppliedKinds.has(kind)) continue
+      const value = await vaultSecretProvider.read(
+        resource,
+        refVersion(current!),
+        kind,
+      )
+      if (value === undefined) {
+        throw new Error(
+          `the vault does not hold the ${kind} this host recorded, so it was not updated`,
+        )
+      }
+      await vaultSecretProvider.write(resource, version, kind, value)
+      expected.set(kind, value)
+      carried.push(kind)
     }
     for (const secret of secrets) {
-      const readBack = await vaultSecretProvider.read(
-        resource,
-        version,
-        secret.kind,
-      )
-      if (readBack !== secret.value) {
+      await vaultSecretProvider.write(resource, version, secret.kind, secret.value)
+      expected.set(secret.kind, secret.value)
+      written.push(secret.kind)
+    }
+    // Read back everything the new reference will name — the carried kinds too,
+    // because a reference is a promise and this is the only place that can check
+    // it before the row starts pointing at the new version.
+    for (const [kind, want] of expected) {
+      const readBack = await vaultSecretProvider.read(resource, version, kind)
+      if (readBack !== want) {
         throw new Error(
-          `the vault did not return the ${secret.kind} it was just given`,
+          `the vault did not return the ${kind} it was just given`,
         )
       }
     }
@@ -120,11 +163,22 @@ export async function persistHostSecrets(
     // does not accumulate unreachable ciphertext. A cleanup failure is not allowed
     // to mask the original error: the row still points at the old version, so the
     // leftover is orphaned data, not a broken credential.
-    await vaultSecretProvider.removeVersion(resource, version, written)
+    await vaultSecretProvider.removeVersion(resource, version, [
+      ...written,
+      ...carried,
+    ])
     throw error
   }
 
-  return previous
+  // The reference lists exactly the kinds the new generation holds — no more.
+  return {
+    ...previous,
+    ref: {
+      kinds: [...written, ...carried],
+      provider: 'vault',
+      version,
+    },
+  }
 }
 
 /**
