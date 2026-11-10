@@ -42,7 +42,7 @@ GUI_IME=NOT_RUN
 
 RUSTSEC_2026_0459=UNRESOLVED_BASELINED
 CI=<见 PR #23>
-EVIDENCE_FINGERPRINT_VALID=PENDING_RERUN
+EVIDENCE_FINGERPRINT_VALID=PASS
 
 PHASE10_1_SECURITY_VERDICT=PARTIAL
 DAILY_DRIVER_READY=NO
@@ -191,7 +191,7 @@ tauri-plugin-sql 2.6.0 要求 `sqlx ^0.8`，整条链够不到修补版 >= 0.39.
 | macOS / Windows / Linux 真机 | 无环境 |
 | 真实用户数据库迁移 | 按规范不做 |
 | 历史 WAL / 备份文件明文擦除 | 需用户单独授权 |
-| 证据指纹 | **本轮改动落在 `FINGERPRINT_PATHS` 内，旧证据必然失效**。已按规则在分支上触发真实矩阵重采（run `42669002192`），不手改旧 manifest |
+| 证据指纹 | **本轮改动落在 `FINGERPRINT_PATHS` 内，旧证据必然失效**。已按官方流程在分支上重采：真实矩阵 run `42670402197` 三平台全 success，指纹 **`0fc777fe…`**（旧 `22087920…`），六份 JSON + manifest + 七个原始日志入库，`check-verification-evidence.mjs` **0 problem**。未手改旧 manifest |
 
 ## 7.1 独立审查发现并已修复的缺陷
 
