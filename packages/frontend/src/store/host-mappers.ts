@@ -44,6 +44,7 @@ export interface HostRow {
   jump_host_auth_type: string | null
   agent_forwarding?: number | null
   shell_integration?: string | null
+  identity_file_path?: string | null
   created_at: number
   updated_at: number
 }
@@ -92,6 +93,7 @@ export function hostRowToHost(row: HostRow): Host {
       : undefined,
     agentForwarding: row.agent_forwarding === 1,
     shellIntegration: normalizeShellIntegration(row.shell_integration),
+    identityFilePath: row.identity_file_path ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

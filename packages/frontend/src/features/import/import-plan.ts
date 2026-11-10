@@ -17,6 +17,7 @@
 import type { Host } from '@/types'
 import type { ParsedSshConfig, ParsedSshHost } from './ssh-config-parser'
 import { isUsableHostname } from './ssh-config-parser'
+import { resolveProxyJumps } from './import-proxy-jump'
 
 export type ImportDecision = 'create' | 'duplicate' | 'invalid'
 
@@ -31,6 +32,16 @@ export interface ImportCandidate {
   authType: Host['authType']
   identityFile: string | null
   proxyJump: string | null
+  /**
+   * The candidate id this entry's ProxyJump resolves to, or null when it names
+   * nothing importable.
+   *
+   * `proxyJump` is an ssh-config alias (`bastion`) or a `user@host:port` triple.
+   * A jump *id* is this app's internal identifier. Storing the alias in the id
+   * column produced a reference to a host that does not exist and silently
+   * dropped the jump requirement.
+   */
+  resolvedJumpHostId: string | null
   decision: ImportDecision
   /** Why this entry is a duplicate or invalid; empty for a creatable entry. */
   reason: string
@@ -102,6 +113,9 @@ export function planImport(
       authType: (entry.identityFile === null ? 'agent' : 'key') as Host['authType'],
       identityFile: entry.identityFile,
       proxyJump: entry.proxyJump,
+      // Filled by resolveProxyJumps once every candidate is known: a jump can
+      // name an entry that appears later in the file.
+      resolvedJumpHostId: null,
     }
 
     if (!isUsableHostname(entry.hostname)) {
@@ -151,6 +165,8 @@ export function planImport(
     }
   })
 
+  resolveProxyJumps(candidates, parsed.hosts, parsed.warnings)
+
   const summary = {
     total: candidates.length,
     creatable: candidates.filter(candidate => candidate.decision === 'create').length,
@@ -182,10 +198,13 @@ export function materialiseImport(
       port: candidate.port,
       username: candidate.username,
       authType: candidate.authType,
-      // A key path is a reference, not key material: the row points at the file
-      // the user already has instead of copying it into the database.
-      privateKey: candidate.identityFile ?? undefined,
-      jumpHostId: candidate.proxyJump ?? undefined,
+      // A key path is a reference, not key material. It goes in its own field;
+      // `privateKey` means PEM content and is handed to the SSH layer verbatim,
+      // so a path there fails at connect time with an error that names nothing.
+      identityFilePath: candidate.identityFile ?? undefined,
+      // Only a resolved id may be stored. An unresolvable ProxyJump is surfaced
+      // as a warning and the host is not creatable, so this cannot be an alias.
+      jumpHostId: candidate.resolvedJumpHostId ?? undefined,
       isFavorite: false,
       portForwards: [],
       tags: ['imported'],

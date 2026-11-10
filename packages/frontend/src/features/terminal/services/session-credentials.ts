@@ -29,6 +29,8 @@ export interface SessionCredentialInput {
   authType: string
   password?: string
   privateKey?: string
+  /** A key file path an OpenSSH import recorded; see the guard in the resolver. */
+  identityFilePath?: string
   credentialRef?: CredentialRef | null
   credentialRefProblem?: CredentialRefProblem | null
 }
@@ -63,6 +65,21 @@ export async function resolveSessionCredential(
   const inlineKey = host.privateKey
   if (inlinePassword || inlineKey) {
     return { ok: true, password: inlinePassword, privateKey: inlineKey }
+  }
+  // A host imported from an ssh config may carry a *path* to a key file instead
+  // of key material. That path is never read implicitly: doing so would mean the
+  // app opens arbitrary files during a connection attempt, and a path that has
+  // since moved would fail in a way the user cannot connect to anything.
+  // Import resolves the file explicitly (with the user's consent) and stores the
+  // material in the vault; until that happens, say what is missing.
+  if (host.identityFilePath) {
+    return {
+      ok: false,
+      message:
+        `This host was imported with the key file ${host.identityFilePath}, which ` +
+        'has not been imported into the vault yet. Open the host and re-select the ' +
+        'key, or connect with the SSH agent instead.',
+    }
   }
   // Refuse before touching the vault: the row says a credential exists and this
   // build cannot name it. Connecting with nothing would look like a wrong password.
