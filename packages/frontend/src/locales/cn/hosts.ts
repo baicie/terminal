@@ -166,6 +166,13 @@ export default {
   'hosts.share.referenceUnreadable':
     '这台主机的已存凭据本版本无法读取，因此不能共享。请先重新保存凭据。',
   'hosts.share.encryptionRequired': '共享的密码或私钥必须加密。请设置加密口令，或不共享凭据。',
+  'hosts.clearCredential.action': '清除已存凭据',
+  'hosts.clearCredential.title': '要清除已存储的凭据吗？',
+  'hosts.clearCredential.description':
+    '这台主机在 Vault 中的密码或密钥会被删除。主机本身、分组、标签和收藏都会保留。下次连接时需要重新认证。',
+  'hosts.clearCredential.confirm': '清除凭据',
+  'hosts.clearCredential.done': '已清除存储的凭据',
+  'hosts.clearCredential.failed': '无法清除凭据',
   'hosts.vault.createTitle': '需要先创建 Vault 才能保存这个密码',
   'hosts.vault.createBody':
     '秘密不会写进数据库。在这里创建 Vault 后，会用你已填写的内容继续保存。',

@@ -24,6 +24,7 @@ import { EnvironmentVariablesDialog } from './environment-dialog'
 import { HostFormBasic } from './host-form-basic'
 import { HostFormActions } from './host-form-actions'
 import { HostDialogAdvancedFields } from './host-dialog-advanced-fields'
+import { ClearCredentialAction } from './clear-credential-action'
 import { IdentityFileNotice } from './identity-file-notice'
 import { VaultRecovery } from './vault-recovery'
 import { useHostStore } from '@/store/host'
@@ -56,6 +57,7 @@ export const HostDialog: React.FC<HostDialogProps> = ({
     discardOpen,
     setDiscardOpen,
     handleSubmit,
+    handleClearCredential,
     vaultRecovery,
     recoverVault,
     handleDelete,
@@ -63,6 +65,8 @@ export const HostDialog: React.FC<HostDialogProps> = ({
     requestClose,
   } = useHostDialogForm({ open, host, onClose })
 
+  // "Clear" on a host that stores nothing would be a button that does nothing.
+  const hasStoredCredential = (host?.credentialRef?.kinds.length ?? 0) > 0
   if (!open) return null
 
   return (
@@ -84,6 +88,10 @@ export const HostDialog: React.FC<HostDialogProps> = ({
               the key is bound. Showing that here is the difference between a host
               that looks configured and one the user can actually fix.
             */}
+            {hasStoredCredential && (
+              <ClearCredentialAction onClear={handleClearCredential} />
+            )}
+
             {host?.identityFilePath !== undefined && (
               <IdentityFileNotice
                 path={host.identityFilePath}
@@ -118,10 +126,6 @@ export const HostDialog: React.FC<HostDialogProps> = ({
               onOpenPortForwards={() => setPortForwardDialogOpen(true)}
             />
 
-            {/*
-              A refused save keeps the dialog open with the typed values, so the
-              fix belongs here rather than on another page.
-            */}
             {vaultRecovery && (
               <VaultRecovery
                 state={vaultRecovery}

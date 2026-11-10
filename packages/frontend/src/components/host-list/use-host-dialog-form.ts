@@ -177,6 +177,26 @@ export function useHostDialogForm({ open, host, onClose }: Options) {
     }
   }
 
+  /**
+   * Forget the stored credential, keeping the host.
+   *
+   * `clearCredential` is the service-layer flag that already does the right
+   * sequence (row stops pointing before the vault entry is removed). This is the
+   * UI's only job: call it, and do not report success unless it resolved.
+   */
+  const handleClearCredential = async () => {
+    if (!host) return
+    try {
+      await hostStore.updateHost(host.id, { clearCredential: true })
+      toast.success(t('hosts.clearCredential.done'))
+      onClose()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error(t('hosts.clearCredential.failed'), { description: msg })
+      throw err
+    }
+  }
+
   const handleDelete = async () => {
     if (!host) return
     await hostStore.deleteHost(host.id)
@@ -208,6 +228,7 @@ export function useHostDialogForm({ open, host, onClose }: Options) {
     setDiscardOpen,
     dirty,
     handleSubmit,
+    handleClearCredential,
     vaultRecovery,
     recoverVault,
     handleDelete,

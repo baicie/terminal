@@ -169,6 +169,13 @@ export default {
   'hosts.share.referenceUnreadable':
     'This host has a stored credential that this build cannot read, so it cannot be shared. Re-save the credential first.',
   'hosts.share.encryptionRequired': 'A shared password or key must be encrypted. Set an encryption password, or share the host without credentials.',
+  'hosts.clearCredential.action': 'Forget the stored credential',
+  'hosts.clearCredential.title': 'Forget the stored credential?',
+  'hosts.clearCredential.description':
+    'The password or key stored for this host will be removed from the vault. The host, its groups, tags and favourites stay. You will be asked to authenticate again the next time you connect.',
+  'hosts.clearCredential.confirm': 'Clear the credential',
+  'hosts.clearCredential.done': 'Stored credential cleared',
+  'hosts.clearCredential.failed': 'The credential could not be cleared',
   'hosts.vault.createTitle': 'A vault is needed to store this password',
   'hosts.vault.createBody':
     'Secrets never go into the database. Create a vault here and the save continues with what you already typed.',
