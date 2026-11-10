@@ -8,7 +8,6 @@
  */
 import type { Host } from '@/types'
 import { refVersion } from '@/service/credential-boundary'
-import type { CredentialRef } from '@/service/credential-boundary'
 import { hostRowToHost } from '@/store/host-mappers'
 import { vaultSecretProvider } from '@/service/vault-secret-provider'
 import { executeQuery, select } from './connection'
@@ -16,6 +15,7 @@ import {
   persistHostSecrets,
   retirePreviousVersion,
 } from './host-credentials'
+import { hostUpdateArgs } from './host-update-args'
 import type { HostRecord } from './types'
 
 export async function getHosts(): Promise<Host[]> {
@@ -115,6 +115,22 @@ export async function updateHost(
     throw new Error('A host update cannot both clear and set a credential')
   }
 
+  // A damaged reference is not "nothing stored", but the mapper makes them the
+  // same value: both arrive as `credentialRef: null`, and only `credentialRefProblem`
+  // tells them apart. Writing a secret while ignoring that would pick version 1,
+  // write the retyped half over whatever is there, and produce a reference that
+  // names only the retyped kinds — orphaning the rest under a version nothing
+  // points at. Before Phase 10.1.1 the host at least refused at connect time with
+  // "re-save the credentials"; after the write it would silently resolve as
+  // password-only, which is strictly worse.
+  //
+  // This is the write-path half of the guard the connect path already has.
+  if (hasSecrets && existing.credentialRefProblem) {
+    throw new Error(
+      'This host has a stored credential that this build cannot read, so its secrets cannot be updated. Re-save the credential from the host dialog after clearing it.',
+    )
+  }
+
   if (clearing) {
     // Clear is the one operation that removes a secret the row still points at, so
     // the *row* has to stop pointing at it first. Doing it the other way round
@@ -180,65 +196,6 @@ export async function updateHost(
       )
     }
   }
-}
-
-/** Shared argument list for the host UPDATE statements. */
-function hostUpdateArgs(
-  merged: Host,
-  now: number,
-  id: string,
-  options?: { rewriteSecrets?: boolean, newRef?: CredentialRef | null },
-): unknown[] {
-  const rewriteSecrets = options?.rewriteSecrets ? 1 : 0
-  const base: unknown[] = [
-    merged.name,
-    merged.hostname,
-    merged.port,
-    merged.username,
-    merged.authType,
-  ]
-  if (!options) {
-    // The clear statement has no placeholders for the secret columns.
-    return [
-      ...base,
-      merged.certificate ?? null,
-      merged.groupId ?? null,
-      merged.isFavorite ? 1 : 0,
-      merged.color ?? null,
-      merged.tags ? JSON.stringify(merged.tags) : null,
-      JSON.stringify(merged.portForwards ?? []),
-      merged.startupCommand ?? null,
-      merged.environment ? JSON.stringify(merged.environment) : null,
-      merged.jumpHostId ?? null,
-      merged.jumpHostAuthType ?? null,
-      merged.agentForwarding ? 1 : 0,
-      merged.shellIntegration ?? 'off',
-      now,
-      id,
-    ]
-  }
-  return [
-    ...base,
-    rewriteSecrets,
-    rewriteSecrets,
-    merged.certificate ?? null,
-    options.newRef === undefined || options.newRef === null
-      ? null
-      : JSON.stringify(options.newRef),
-    merged.groupId ?? null,
-    merged.isFavorite ? 1 : 0,
-    merged.color ?? null,
-    merged.tags ? JSON.stringify(merged.tags) : null,
-    JSON.stringify(merged.portForwards ?? []),
-    merged.startupCommand ?? null,
-    merged.environment ? JSON.stringify(merged.environment) : null,
-    merged.jumpHostId ?? null,
-    merged.jumpHostAuthType ?? null,
-    merged.agentForwarding ? 1 : 0,
-    merged.shellIntegration ?? 'off',
-    now,
-    id,
-  ]
 }
 
 export async function deleteHost(id: string): Promise<void> {

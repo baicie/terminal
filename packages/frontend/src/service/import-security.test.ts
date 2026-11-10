@@ -12,6 +12,7 @@ import type { ExportData } from './sync-types'
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   select: vi.fn(),
+  selectStrict: vi.fn(),
   vaultWrite: vi.fn(),
   vaultRead: vi.fn(),
   vaultAvailability: vi.fn(async () => ({ ok: true as const })),
@@ -19,7 +20,13 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
-vi.mock('./database/connection', () => ({ select: mocks.select }))
+vi.mock('./database/connection', () => ({
+  select: mocks.select,
+  // The import path reads the row's current reference through `selectStrict`, so a
+  // failed query is distinguishable from "no reference". Callers of this mock keep
+  // `select` for the paths that legitimately treat a read failure as empty.
+  selectStrict: mocks.selectStrict,
+}))
 vi.mock('./vault-secret-provider', () => ({
   vaultSecretProvider: {
     write: mocks.vaultWrite,
@@ -120,6 +127,7 @@ beforeEach(() => {
     },
   })
   mocks.select.mockReset().mockResolvedValue([])
+  mocks.selectStrict.mockReset().mockResolvedValue([])
   mocks.vaultWrite.mockReset().mockResolvedValue(undefined)
   mocks.vaultRemove.mockReset().mockResolvedValue(undefined)
   mocks.vaultAvailability.mockReset().mockResolvedValue({ ok: true })
@@ -382,7 +390,7 @@ describe('an import cannot overwrite a live credential generation', () => {
   // whose row points there keeps pointing there in merge mode, so it silently
   // resolves to the imported value. The version must come from the local row.
   it('writes above the version the local row already points at', async () => {
-    mocks.select.mockResolvedValue([
+    mocks.selectStrict.mockResolvedValue([
       {
         credential_ref: JSON.stringify({
           kinds: ['password'],
@@ -416,7 +424,7 @@ describe('an import cannot overwrite a live credential generation', () => {
   })
 
   it('never writes the same version it read', async () => {
-    mocks.select.mockResolvedValue([
+    mocks.selectStrict.mockResolvedValue([
       {
         credential_ref: JSON.stringify({
           kinds: ['password'],
