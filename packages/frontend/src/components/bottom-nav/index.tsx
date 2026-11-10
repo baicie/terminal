@@ -10,6 +10,7 @@ import {
   Key,
   MoreHorizontal,
   Settings,
+  ShieldCheck,
   Terminal,
   Usb,
 } from 'lucide-react'
@@ -70,6 +71,15 @@ const moreItems: NavItem[] = [
     label: 'Logs',
     icon: FileText,
     path: '/logs',
+  },
+  {
+    // The sidebar hides below `md`, and that hide is driven by width — dragging a
+    // desktop window narrow reaches it too. Without this entry there is no way to
+    // unlock the vault in that window, and a locked vault means no SSH at all.
+    id: 'vaults',
+    label: 'Vaults',
+    icon: ShieldCheck,
+    path: '/vaults',
   },
   { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
 ]

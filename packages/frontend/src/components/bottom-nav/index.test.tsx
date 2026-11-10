@@ -81,3 +81,22 @@ describe('BottomNav route activation', () => {
     ).toBeNull()
   })
 })
+
+describe('WP-D — the vault is reachable when the sidebar is not', () => {
+  it('offers a Vaults entry in the More sheet', () => {
+    renderBottomNav('/hosts')
+    // Below `md` the sidebar is not mounted, so this sheet is the only navigation.
+    fireEvent.click(screen.getByRole('button', { name: /more/i }))
+
+    // If this fails there is no way to unlock the vault in a narrow window, and
+    // a locked vault means no SSH connection can be made at all.
+    expect(screen.getByRole('button', { name: 'Vaults' })).toBeTruthy()
+  })
+
+  it('navigates to the vaults route from the sheet', () => {
+    renderBottomNav('/hosts')
+    fireEvent.click(screen.getByRole('button', { name: /more/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Vaults' }))
+    expect(screen.getByTestId('location').textContent).toBe('/vaults')
+  })
+})
