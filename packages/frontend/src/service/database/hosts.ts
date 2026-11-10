@@ -139,8 +139,8 @@ export async function updateHost(
     // UPDATE then failed, the user would have lost the credential with the row
     // still claiming to have one.
     await executeQuery(
-      `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = NULL, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, identity_file_path = ?, updated_at = ? WHERE id = ?`,
-      hostUpdateArgs(merged, now, id),
+      `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = NULL, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, identity_file_path = NULL, updated_at = ? WHERE id = ?`,
+      hostUpdateArgs(merged, now, id, { dropIdentityFilePathArgument: true }),
     )
     // Now that nothing references them, the secrets can go. A failure here leaves
     // orphaned ciphertext, never a host pointing at nothing.
@@ -171,6 +171,9 @@ export async function updateHost(
       hostUpdateArgs(merged, now, id, {
         rewriteSecrets: hasSecrets,
         newRef: persisted?.ref ?? null,
+        // A credential now lives in the vault, so the imported path must not keep
+        // blocking the connection it was standing in for.
+        clearIdentityFilePath: hasSecrets,
       }),
     )
   } catch (error) {

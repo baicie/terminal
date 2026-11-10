@@ -24,6 +24,7 @@ import { EnvironmentVariablesDialog } from './environment-dialog'
 import { HostFormBasic } from './host-form-basic'
 import { HostFormActions } from './host-form-actions'
 import { HostDialogAdvancedFields } from './host-dialog-advanced-fields'
+import { IdentityFileNotice } from './identity-file-notice'
 import { VaultRecovery } from './vault-recovery'
 import { useHostStore } from '@/store/host'
 import { useHostDialogForm } from './use-host-dialog-form'
@@ -78,6 +79,22 @@ export const HostDialog: React.FC<HostDialogProps> = ({
           </DialogHeader>
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+            {/*
+              An imported host whose config named a key file cannot connect until
+              the key is bound. Showing that here is the difference between a host
+              that looks configured and one the user can actually fix.
+            */}
+            {host?.identityFilePath !== undefined && (
+              <IdentityFileNotice
+                path={host.identityFilePath}
+                onFocusKeyField={() => {
+                  document
+                    .getElementById('privateKey')
+                    ?.scrollIntoView({ block: 'center' })
+                }}
+              />
+            )}
+
             <HostFormBasic
               form={form}
               groups={groups}

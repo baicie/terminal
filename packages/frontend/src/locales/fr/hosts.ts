@@ -160,6 +160,10 @@ export default {
   'hosts.import.resultTitle': '{{count}} hôte(s) importé(s)',
   'hosts.import.confirm': 'Importer {{count}}',
   'common.done': 'Terminé',
+  'hosts.identityFile.title': 'Cet hôte attend un fichier de clé sur le disque',
+  'hosts.identityFile.explain':
+    'Il a été importé depuis une config ssh qui nommait le fichier ci-dessus. L’application ne lit pas les fichiers d’elle-même pendant une connexion ; collez la clé ci-dessous pour la stocker dans le coffre.',
+  'hosts.identityFile.bindAction': 'Associer la clé',
   'hosts.share.encryptionRequired': 'Un mot de passe ou une clé partagé doit être chiffré. Définissez un mot de passe de chiffrement, ou partagez l’hôte sans identifiants.',
   'hosts.vault.createTitle': 'Un coffre est nécessaire pour stocker ce mot de passe',
   'hosts.vault.createBody':

@@ -157,6 +157,10 @@ export default {
   'hosts.import.resultTitle': '已导入 {{count}} 台主机',
   'hosts.import.confirm': '导入 {{count}} 台',
   'common.done': '完成',
+  'hosts.identityFile.title': '这台主机期望使用磁盘上的密钥文件',
+  'hosts.identityFile.explain':
+    '它从 ssh 配置导入而来，配置里指定了上面的文件。应用不会在连接时自行读取文件，请在下方粘贴密钥以存入 Vault。',
+  'hosts.identityFile.bindAction': '绑定密钥',
   'hosts.share.encryptionRequired': '共享的密码或私钥必须加密。请设置加密口令，或不共享凭据。',
   'hosts.vault.createTitle': '需要先创建 Vault 才能保存这个密码',
   'hosts.vault.createBody':

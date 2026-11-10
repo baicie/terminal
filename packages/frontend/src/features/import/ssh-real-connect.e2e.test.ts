@@ -24,6 +24,9 @@ import path from 'node:path'
 import process from 'node:process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+// The fixture is a plain .mjs script with no types; the shape this file uses is
+// declared here rather than widening the project's compiler settings for one test.
+// @ts-expect-error - no declaration file for the smoke sshd fixture
 import { startTerminalSmokeSshd } from '../../../../../scripts/terminal-smoke-sshd.mjs'
 
 const SUPPORTED = process.platform === 'darwin' || process.platform === 'linux'

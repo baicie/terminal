@@ -160,6 +160,10 @@ export default {
   'hosts.import.resultTitle': '{{count}} host(s) imported',
   'hosts.import.confirm': 'Import {{count}}',
   'common.done': 'Done',
+  'hosts.identityFile.title': 'This host expects a key file on disk',
+  'hosts.identityFile.explain':
+    'It was imported from an ssh config that named the file above. The app does not read files on its own during a connection, so paste the key below to store it in the vault.',
+  'hosts.identityFile.bindAction': 'Bind the key',
   'hosts.share.encryptionRequired': 'A shared password or key must be encrypted. Set an encryption password, or share the host without credentials.',
   'hosts.vault.createTitle': 'A vault is needed to store this password',
   'hosts.vault.createBody':
