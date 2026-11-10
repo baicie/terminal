@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-11-10T10:10:00.004Z",
+  "generatedAt": "2026-11-10T13:20:39.049Z",
   "source": "github-actions",
-  "runId": "42793219061",
+  "runId": "42821961685",
   "runAttempt": "1",
   "workflow": "Real-machine terminal matrix",
   "job": "macos-ssh-matrix",
-  "commit": "cc81b532bbb409610be1a8dc5299cf7217e51df0",
-  "fingerprint": "bda287be846e05b56c0b7e8bac9035b0c0f0d84741b264d0e539ef797d56f917",
-  "debugSha": "d8151d7d37acc3df3547e1abf5e7ac28845cd1d2434b0f63c9a4e89ac2b47b4b",
-  "releaseSha": "c6dac6b377f087817075a0859f5acef3a10f59aac0f6024109052330a33c0ee1",
+  "commit": "64c3a0d7a815204f1dc3205593b0c5d094557e03",
+  "fingerprint": "ab1b14c680da829a1688efe4ce5bb6dce9519dcbfd447d13df5fdcad5710c4d1",
+  "debugSha": "e05fe31d81780017387f167377f46d5fb6db2c0a1a7a8381516096e2fa3109d2",
+  "releaseSha": "a9985b97acba2a44a8d0692e99cab408edcff953fea64a355fc90d0acfefe0b7",
   "runner": {
     "os": "macOS",
     "arch": "ARM64"
@@ -18,37 +18,37 @@
       "file": "2026-10-11-macos-cold-start-current.json",
       "profile": "debug",
       "kind": "tauri-process-cold-start-stopwatch-current-worktree",
-      "sha256": "d8151d7d37acc3df3547e1abf5e7ac28845cd1d2434b0f63c9a4e89ac2b47b4b"
+      "sha256": "e05fe31d81780017387f167377f46d5fb6db2c0a1a7a8381516096e2fa3109d2"
     },
     {
       "file": "2026-10-11-macos-remote-shell-prompt-rerun.json",
       "profile": "debug",
       "kind": "tauri-remote-cold-start-shell-prompt-observed-rerun",
-      "sha256": "d8151d7d37acc3df3547e1abf5e7ac28845cd1d2434b0f63c9a4e89ac2b47b4b"
+      "sha256": "e05fe31d81780017387f167377f46d5fb6db2c0a1a7a8381516096e2fa3109d2"
     },
     {
       "file": "2026-10-11-macos-ssh-matrix-current.json",
       "profile": "debug",
       "kind": "tauri-real-ssh-matrix-current-worktree",
-      "sha256": "d8151d7d37acc3df3547e1abf5e7ac28845cd1d2434b0f63c9a4e89ac2b47b4b"
+      "sha256": "e05fe31d81780017387f167377f46d5fb6db2c0a1a7a8381516096e2fa3109d2"
     },
     {
       "file": "2026-10-11-macos-shell-interaction-current.json",
       "profile": "debug",
       "kind": "tauri-local-shell-interaction-current-worktree",
-      "sha256": "d8151d7d37acc3df3547e1abf5e7ac28845cd1d2434b0f63c9a4e89ac2b47b4b"
+      "sha256": "e05fe31d81780017387f167377f46d5fb6db2c0a1a7a8381516096e2fa3109d2"
     },
     {
       "file": "2026-10-11-macos-release-terminal-gate.json",
       "profile": "release",
       "kind": "tauri-release-ten-second-terminal-gate",
-      "sha256": "c6dac6b377f087817075a0859f5acef3a10f59aac0f6024109052330a33c0ee1"
+      "sha256": "a9985b97acba2a44a8d0692e99cab408edcff953fea64a355fc90d0acfefe0b7"
     },
     {
       "file": "2026-10-11-macos-release-ssh-matrix.json",
       "profile": "release",
       "kind": "tauri-release-ssh-and-shell-matrix",
-      "sha256": "c6dac6b377f087817075a0859f5acef3a10f59aac0f6024109052330a33c0ee1"
+      "sha256": "a9985b97acba2a44a8d0692e99cab408edcff953fea64a355fc90d0acfefe0b7"
     }
   ],
   "rawLogs": {
