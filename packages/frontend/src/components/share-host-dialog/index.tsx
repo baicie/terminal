@@ -70,6 +70,21 @@ export function ShareHostDialog({
       // was permanently false, so "share with credentials" shared nothing and
       // still reported success. Read the real values, through the reference.
       const kinds = shareKindsFor(host.credentialRef ?? null, includePassword)
+
+      // "Include the password" with nothing to include is a contradiction, and it
+      // is the exact case that used to fall through: `shareKindsFor` returned an
+      // empty list, the whole block was skipped, and the dialog said the share
+      // succeeded. The teammate then received a host with no credential and no
+      // hint that one was meant to be there.
+      if (includePassword && kinds.length === 0) {
+        toast.error(
+          host.credentialRefProblem
+            ? t('hosts.share.referenceUnreadable')
+            : t('hosts.share.noStoredCredential'),
+        )
+        return
+      }
+
       if (kinds.length > 0) {
         const read = await readHostSecretsForShare(host.id, host.credentialRef ?? null, kinds)
         if (!read.ok) {
@@ -96,11 +111,16 @@ export function ShareHostDialog({
           hostData.private_key_encrypted = { ...encrypted, original: undefined }
           hostData._encrypted = true
         }
-        if (read.secrets.passphrase !== undefined) {
-          const encrypted = await encryptWithPassword(read.secrets.passphrase, password)
-          hostData.passphrase_encrypted = { ...encrypted, original: undefined }
-          hostData._encrypted = true
-        }
+        // No `passphrase_encrypted` is produced.
+        //
+        // `hosts` has no passphrase column and `updateHost` never supplies that
+        // kind, so a host row cannot hold one — the field would always be absent.
+        // Emitting it anyway created a value the receiving side has no field to
+        // map it to (`handleDecryptAndImport` handles password and private key
+        // only), which is the "produced but never consumed" shape this phase
+        // exists to remove. The kind is still accepted by
+        // `readHostSecretsForShare` because `ssh_keys` does carry a passphrase;
+        // sharing an ssh key is a separate flow from sharing a host.
       }
 
       await onShare(hostData, permission)

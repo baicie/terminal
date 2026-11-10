@@ -164,6 +164,10 @@ export default {
   'hosts.identityFile.explain':
     'It was imported from an ssh config that named the file above. The app does not read files on its own during a connection, so paste the key below to store it in the vault.',
   'hosts.identityFile.bindAction': 'Bind the key',
+  'hosts.share.noStoredCredential':
+    'This host has no stored password or key, so there is nothing to share. Share it without credentials, or save a credential first.',
+  'hosts.share.referenceUnreadable':
+    'This host has a stored credential that this build cannot read, so it cannot be shared. Re-save the credential first.',
   'hosts.share.encryptionRequired': 'A shared password or key must be encrypted. Set an encryption password, or share the host without credentials.',
   'hosts.vault.createTitle': 'A vault is needed to store this password',
   'hosts.vault.createBody':

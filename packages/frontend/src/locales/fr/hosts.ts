@@ -164,6 +164,10 @@ export default {
   'hosts.identityFile.explain':
     'Il a été importé depuis une config ssh qui nommait le fichier ci-dessus. L’application ne lit pas les fichiers d’elle-même pendant une connexion ; collez la clé ci-dessous pour la stocker dans le coffre.',
   'hosts.identityFile.bindAction': 'Associer la clé',
+  'hosts.share.noStoredCredential':
+    'Cet hôte n’a aucun mot de passe ni clé enregistré, il n’y a donc rien à partager. Partagez-le sans identifiants, ou enregistrez d’abord un identifiant.',
+  'hosts.share.referenceUnreadable':
+    'Cet hôte a un identifiant enregistré que cette version ne peut pas lire, il ne peut donc pas être partagé. Réenregistrez-le d’abord.',
   'hosts.share.encryptionRequired': 'Un mot de passe ou une clé partagé doit être chiffré. Définissez un mot de passe de chiffrement, ou partagez l’hôte sans identifiants.',
   'hosts.vault.createTitle': 'Un coffre est nécessaire pour stocker ce mot de passe',
   'hosts.vault.createBody':

@@ -161,6 +161,10 @@ export default {
   'hosts.identityFile.explain':
     '它从 ssh 配置导入而来，配置里指定了上面的文件。应用不会在连接时自行读取文件，请在下方粘贴密钥以存入 Vault。',
   'hosts.identityFile.bindAction': '绑定密钥',
+  'hosts.share.noStoredCredential':
+    '这台主机没有存储密码或密钥，没有可共享的凭据。请不共享凭据，或先保存凭据。',
+  'hosts.share.referenceUnreadable':
+    '这台主机的已存凭据本版本无法读取，因此不能共享。请先重新保存凭据。',
   'hosts.share.encryptionRequired': '共享的密码或私钥必须加密。请设置加密口令，或不共享凭据。',
   'hosts.vault.createTitle': '需要先创建 Vault 才能保存这个密码',
   'hosts.vault.createBody':
