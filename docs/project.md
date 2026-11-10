@@ -1004,6 +1004,67 @@ typecheck、ESLint、563 个生产文件行数门禁、actionlint 通过。
 
 详见 `docs/phase9-7/phase9-7-product-acceptance.md`。
 
+### Phase 9.8 - Data Integrity, Sync Isolation & Real SSH Acceptance ✅ 已合入（PR #16 → `6c5e842`，各 WP 亦单独合并 #10–#15/#17–#21）
+
+六个 WP 各自独立 PR、再由 PR #16 整合。判据是「真实进程/真实协议」，不是 mock：
+
+| WP | 内容 | 关键点 |
+| --- | --- | --- |
+| 9.8-A | SFTP staged upload | 暂存 + 备份替换，失败不再截断原文件；18 项故障测试 + 真实 OpenSSH sftp-server |
+| 9.8-B1 | 同步身份隔离 | 不可变 round 上下文，分页中途切 endpoint/token 即中止；两个真实 HTTP 服务端 |
+| 9.8-B2 | 首同步整窗 | `X-Sync-Protocol` 协商，协议 1 整窗 ≤5000、超限/矛盾声明 426；真实 PG 0/1/199/200/201/500 |
+| 9.8-C1 | SSH writer 超时 | 区分队列超时与已开始超时；已开始的写超时退役 writer 并报「可能已部分送达」 |
+| 9.8-C2 | `-R` 真实 SSH | 真实 sshd 上绑定/双向/并发/半关闭/cancel/重复绑定/断开释放 |
+| 9.8-D | 修改时间与本地化 | SFTP 改用 `modified()`，未知显示 `—`；三语键集 parity 测试 |
+
+证据：矩阵 `42464747336` 3/3，指纹 `df379960…`，门禁 0 problem。最终 CI `42480227136`（`6a19662`）**11/11**；
+Upgrade E2E `42481700333`（`4f7b83b`）**6/6**。
+🟡 真实 GUI 截图（无 Screen Recording 权限）、`-R` 打包产品实机、Windows sshd fixture 仍 NOT_RUN。
+
+### Phase 10 - Personal Daily Driver ✅ 已合入（PR #22 → `cde1e0c`）
+
+定位从「广泛的管理平台」收敛为个人日用终端：Terminal-first / Local-first / Keyboard-first / Reliability-first。
+
+| 里程碑 | 结果 |
+| --- | --- |
+| M1 凭据边界 | `credential-boundary` + `vault-secret-provider`；`hosts`/`ssh_keys` 的 `password`/`private_key`/`passphrase` 在 SQL 中恒为 NULL，秘密进 Vault，行上只留 `credential_ref`；有引用但 Vault 不可用即失败，不退化为空密码 |
+| M1 导出脱敏 | 普通导出与**团队包导出**两条路径都走字段白名单（团队包这条是第二轮独立审查发现的漏网路径） |
+| M2 主机搜索 | 命令面板改为全量排序后截断（原 `hosts.slice(0,20)` 使第 21 台永不可搜），1/20/21/100/1000 矩阵 |
+| M2 Quick Connect | 支持 `ssh -p 2222 user@host`（选项前置），36 项语法矩阵 |
+| M2 快捷键持久化 | 写入 settings、冲突显式拒绝、恢复默认、导入导出；修复「恢复默认把 Ctrl+J 换成 Ctrl+K」的按 action 合并缺陷 |
+| M2 安全粘贴 | 统一 PastePolicy，多行/控制字符/超大文本先预览确认，不改写、不隐式回车 |
+| M3 Terminal-first | 导航分 primary/secondary/advanced；索引路由指向终端常驻层（`element: null`，避免第二个 TerminalContainer）；不删路由 |
+
+两轮独立审查：外部指出四处 P0，修复后独立 agent 逐条证伪，**推翻了先前两项 PASS**
+（团队包导出泄露、`HOST_WRITE_PATH_UNIFIED` 越界结论——Rust `db_import/writer.rs` 仍绑定秘密列）。
+这正是 Phase 10.1 的直接动因。
+
+代码冻结点 `57bbe2e`，证据 run `42627456782`（指纹 `22087920…`），CI 11/11。
+🔴 未修（`docs/phase10/09-pr22-review-remediation.md` §12.3）：新存主机需重载列表、损坏
+`credential_ref` 退化为空凭据、导出仍带 `syncServiceToken`、SSH key 秘密无消费方。
+`DAILY_DRIVER_READY=NO`、`TABBY_REPLACEMENT_READY=NO`（需 7 天真实使用数据）。
+
+### Phase 10.1 - Credential Security Closure 🟡 PR #23 就绪，判定 PARTIAL
+
+补上 Phase 10 漏掉的**入口**（不是实现）：秘密列从 Rust SQL 文本中移除（字面 `NULL`，
+不是绑定 NULL）、导入秘密三态策略默认 `reject`、源设备引用永不入库、四条导入入口统一、
+`syncServiceToken` 字段级白名单、版本化 `CredentialRef`、host/ssh-key 命名空间拆分、
+迁移真实调用链、Store 回读、损坏引用 fail-closed、SSH Key 闭环。
+
+独立审查找出并修复三个 P1：DEFECT-1 真实连接路径 `withResolvedCredential` 未 fail-closed
+（**测试绿而生产路径红**）、DEFECT-2 SSH Key 部分更新丢一半（**原测试把错误状态断言成正确**）、
+DEFECT-3 导入迁移硬编码版本 1 覆盖在用凭据。
+
+门禁：前端 **195 文件 / 1751 项**、Rust **381 项**、source-size **623 文件**、typecheck、
+ESLint、cargo fmt 全通过；证据重采 `0fc777fe…`（run `42670402197`）门禁 0；CI 11/11。
+
+`PHASE10_1_SECURITY_VERDICT=PARTIAL`：13 个凭据门禁 12 PASS / 1 PARTIAL
+（`SHARE_HOST_CREDENTIAL_PLAINTEXT`，团队共享主机的明文路径属既有产品功能）。
+NOT_RUN：真实 GUI 的 Vault/SSH/Jump/SFTP/IME、三平台真机、历史 WAL 与备份明文擦除、
+身份迁移、签名/公证；`RUSTSEC-2026-0459` 不可修（sqlx/tauri-plugin-sql 版本链够不到修补版）。
+
+详见 `docs/phase10/10-credential-boundary-adr.md`、`docs/phase10/11-phase10-1-report.md`。
+
 ## 待办事项
 
 ### P0 - 必须完成
