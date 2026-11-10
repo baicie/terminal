@@ -298,5 +298,9 @@ describe('the un-retyped half is never invented', () => {
         String(sql).startsWith('UPDATE hosts'),
       ),
     ).toBe(false)
+    // And the attempt left nothing behind under the version it opened, so a retry
+    // starts from a clean slate rather than accumulating unreachable ciphertext.
+    expect(vault.entries.has('host:host-1:2:password')).toBe(false)
+    expect(vault.entries.has('host:host-1:2:privateKey')).toBe(false)
   })
 })
