@@ -78,14 +78,18 @@ describe('an imported host explains the key file it expects', () => {
     )
   })
 
-  it('offers the one action that resolves it', () => {
+  it('offers the one action that resolves it, and clicking it does not throw', () => {
     render(<HostDialog open host={importedHost} onClose={vi.fn()} />)
     const action = screen.getByTestId('identity-file-bind-key')
     // The key field already exists in the form; this points at it rather than
     // opening a second flow.
     expect(document.getElementById('privateKey')).not.toBeNull()
-    fireEvent.click(action)
-    expect(document.getElementById('privateKey')).not.toBeNull()
+
+    // Clicking is the part that was untested. jsdom does not implement
+    // `scrollIntoView`, so a plain call threw an unhandled error that the suite
+    // reported as "Errors 1" while every assertion still passed — the kind of
+    // failure that hides behind a green run.
+    expect(() => fireEvent.click(action)).not.toThrow()
   })
 
   it('does not appear for a host with no imported path', () => {

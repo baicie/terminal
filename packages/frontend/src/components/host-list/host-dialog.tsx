@@ -88,9 +88,17 @@ export const HostDialog: React.FC<HostDialogProps> = ({
               <IdentityFileNotice
                 path={host.identityFilePath}
                 onFocusKeyField={() => {
-                  document
-                    .getElementById('privateKey')
-                    ?.scrollIntoView({ block: 'center' })
+                  // `scrollIntoView` and `focus` are both optional here: the point
+                  // is to put the cursor in the key field, and a runtime without
+                  // them (jsdom, or an embedder with a reduced DOM) must not throw
+                  // from an advisory button.
+                  const field = document.getElementById('privateKey') as
+                    | HTMLTextAreaElement
+                    | HTMLInputElement
+                    | null
+                  if (field === null) return
+                  field.scrollIntoView?.({ block: 'center' })
+                  field.focus?.()
                 }}
               />
             )}
