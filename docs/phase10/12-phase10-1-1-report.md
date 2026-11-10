@@ -17,16 +17,40 @@ Phase 10.1 建立了凭据的**结构边界**（秘密列不在 SQL 文本、四
 
 | WP | 结论 | 证据 |
 | --- | --- | --- |
-| WP1 Host 部分凭据更新 | **CONFIRMED** | 独立 agent 在干净 worktree 对 `main` 实跑真实入口，观察到私钥从 vault 彻底消失 |
+| WP1 Host 部分凭据更新 | **CONFIRMED（函数级）/ DISPROVED（生产可达性）** | 见 §3.1 |
 | WP2 Import Prepare 阶段补偿 | **CONFIRMED** | 行号定位 `sync-import.ts:209` 在 `try`（211）之外；`bound.push` 在整行成功后（`import-vault-migration.ts:128/158`） |
 | WP3 Version Resolver fail-closed | **CONFIRMED**，且**实际风险大于题设** | 见 §3.3 |
+
+**WP1 的结论被独立复审推翻了一半，这一条必须先说清楚。**
 
 ## 3. 每个缺陷的最小复现与失败模式
 
 ### 3.1 WP1 — 双秘密主机只改密码，私钥永久丢失
 
-**设置**：`credential_ref = {"kinds":["password","privateKey"],"provider":"vault","version":1}`，
-vault 持有 `host:h1:1:password` 与 `host:h1:1:privateKey`，秘密列均为 NULL（10.1 后的正常状态）。
+**先给结论，因为它不是完整的 CONFIRMED：**
+
+| 断言 | 判定 |
+| --- | --- |
+| `persistHostSecrets` 本身会丢未重输的 kind | **CONFIRMED**（真实运行验证） |
+| 存在真实 UI 路径能触发它 | **DISPROVED** |
+
+复审推翻的是第二条。`HostDialog` 在两处入口被渲染，**都没有传 `host` prop**：
+
+- `components/top-toolbar/toolbar-overlays.tsx`：`<HostDialog open={...} onClose={...} />`
+- `view/hosts/index.tsx:218`：同样是 `<HostDialog open={...} onClose={...} />`
+
+`host` 未传 → `host` 为 `undefined` → `handleSubmit` 走 `addHost` 分支，**永远不到 `updateHost`**。
+全仓库唯一提到「编辑主机」的地方是 i18n 文案（`hostDialog.editHost` / `hosts.form.editHost`），
+没有任何代码传入 `host`。**编辑已有主机的 UI 在 main 上根本没有接线。**
+
+所以：这是一个**函数级真实、生产不可达**的缺陷。它会在编辑入口接线的那一天立刻变成
+数据丢失，但今天没有用户能触发它。
+
+**修复仍然保留**，理由：修复是 20 行、与 `persistKeySecrets` 对齐、且被独立测试覆盖；
+留着一个「一旦接线就丢秘密」的陷阱比修掉它更糟。但**不把它记为已发生的事故**。
+
+**设置**（对函数级验证）：`credential_ref = {"kinds":["password","privateKey"],...}`，
+vault 持有两把钥匙，秘密列均为 NULL。
 
 **调用**：`updateHost('h1', { password: 'NEW' })`。
 
@@ -38,13 +62,6 @@ VAULT_ENTRIES = [["host:h1:2:password","NEW"]]
 ```
 
 私钥没有版本 2 的副本，版本 1（唯一副本）已被 `retirePreviousVersion` 删除。
-而且**丢失是静默的**：新引用根本不列 `privateKey`，resolver 报的是「这个主机没有私钥」，
-不是「私钥读不到」，所以用户没有任何线索。
-
-**为什么这是真实 UI 路径**：编辑对话框的秘密字段初值是 `host.password || ''` 与
-`host.privateKey || ''`，而 10.1 之后两列恒为 NULL —— 打开编辑框时**两个字段都是空的**。
-用户只重新输入密码并保存，`privateKey` 以 `undefined` 进入 `hasSecrets` 判断与
-`splitHostSecrets`，于是新引用只列 `password`。
 
 **为什么测试没抓到**：现有 5 个相关测试文件 42 项全部在缺陷存在时通过。
 `hosts-credential-versions.test.ts` 的双秘密用例**同时写入两个秘密**，`splitHostSecrets`
@@ -55,6 +72,34 @@ VAULT_ENTRIES = [["host:h1:2:password","NEW"]]
 **修复**：`persistHostSecrets` 把未重输的 kind 从旧版本复制到**新版本**（与
 `persistKeySecrets` 同一契约）。旧版本不持有该 kind 时**失败**而不是带空洞过去 ——
 一个列了但读不出的引用比没有引用更糟。所有被引用的 kind 都在切换引用前读回验证。
+
+### 3.1b WP4 复审另外发现的缺陷：损坏引用的写入路径
+
+复审在尝试推翻 `OLD_CREDENTIAL_PRESERVED_ON_FAILURE=PASS` 时，写出了这条失败用例并**成功**：
+
+```
+DAMAGED mapper.credentialRef        = null
+DAMAGED mapper.credentialRefProblem = {"kind":"malformed",...}
+DAMAGED boundRef = {"kinds":["password"],"provider":"vault","version":1}
+DAMAGED vault    = {"1:password":"new-password","1:privateKey":"OLD-KEY"}
+```
+
+`credential_ref` 损坏时，mapper 交付的是 `credentialRef: null` **加上** `credentialRefProblem`。
+`updateHost` 只看前者，于是把它当成「没有存储凭据」：选版本 1、写入新密码、
+产出只列 `password` 的引用。私钥仍在 vault 的同一个版本下，**但没有任何引用能到达它**。
+
+修复前这台主机在连接时会报「请重新保存凭据」—— 一个显式、可恢复的失败。
+写入之后它静默变成「只有密码的主机」，**严格更糟**。
+
+这是 Phase 10.1 的 DEFECT-1（损坏引用在连接路径未 fail-closed）在**写入路径**上的镜像：
+当时修了读，没修写。
+
+**修复**：`updateHost` 在携带秘密且 `existing.credentialRefProblem` 存在时拒绝写入。
+这是连接路径已有的守卫在写侧的对偶。
+
+**这条与 WP1 的可达性不同**：它需要「损坏引用 + 冒号后有秘密写入」，而编辑入口未接线，
+所以**当前同样不可达**。但 `clearCredential` 与未来的编辑入口都会走到这里，守卫是必要的。
+
 
 ### 3.2 WP2 — 导入准备阶段失败留下无人回收的密文
 
@@ -168,10 +213,11 @@ VAULT_ENTRIES = [["host:h1:2:password","NEW"]]
 ## 8. 判定
 
 ```
-HOST_PARTIAL_SECRET_UPDATE_SAFE=PASS
+HOST_PARTIAL_SECRET_UPDATE_SAFE=PASS（函数级；生产编辑入口未接线，see §3.1）
 IMPORT_PREPARE_ROLLBACK_SAFE=PASS
 CREDENTIAL_VERSION_NO_COLLISION=PASS（单进程内）
 OLD_CREDENTIAL_PRESERVED_ON_FAILURE=PASS
+HOST_EDIT_UI_WIRED=NO（编辑已有主机的入口不存在，因此 WP1 的缺陷当前不可达）
 CROSS_PROCESS_CONCURRENT_IMPORT=NOT_VERIFIED
 
 PHASE10_1_1_VERDICT=PARTIAL
@@ -181,6 +227,14 @@ TABBY_REPLACEMENT_READY=NO
 
 `PARTIAL` 的理由与前几轮一致且未变：代码层面的确定性缺陷已修且可复现验证，
 但真实 GUI 的凭据链路、三平台真机、历史明文擦除全部 NOT_RUN。
+
+**另外必须写明的两条**：
+
+1. `HOST_PARTIAL_SECRET_UPDATE_SAFE=PASS` 只在函数级成立。生产编辑入口不存在，
+   所以这个 PASS 描述的是「接线后不会丢」，不是「今天不会丢」。
+2. 报告初稿曾声称 WP1 走真实 UI 链路可达，**该说法被独立复审推翻并已更正**。
+   这是本轮最重要的过程记录：一个在干净 worktree 上真实运行验证过的缺陷，
+   仍然可能在可达性上判断错误。
 
 ## 9. Phase 10.2 产品验收准备情况
 

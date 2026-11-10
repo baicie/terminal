@@ -42,21 +42,12 @@ vi.mock('@/service/vault-secret-provider', () => ({
   },
 }))
 
-vi.mock('@/store/host-mappers', () => ({
-  hostRowToHost: (row: Record<string, unknown>) => ({
-    ...row,
-    authType: row.auth_type,
-    credentialRef: row.credential_ref
-      ? JSON.parse(String(row.credential_ref))
-      : null,
-    isFavorite: row.is_favorite === 1,
-    portForwards: [],
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }),
-}))
-
+// The real mapper, not a stand-in. A damaged `credential_ref` must reach this
+// code the way production delivers it — `credentialRef: null` *plus*
+// `credentialRefProblem` — and a hand-written mock that just JSON.parses the
+// column would hide exactly the case this file has to cover.
 const { updateHost } = await import('./hosts')
+const { hostRowToHost } = await import('@/store/host-mappers')
 
 const OLD_PASSWORD = 'old-password'
 const OLD_KEY =
@@ -74,7 +65,15 @@ const NEW_PASSWORD = 'new-password-value'
 class FakeVault {
   readonly entries = new Map<string, string>()
 
+  /**
+   * The same key layout `vaultKey` produces — including the legacy case.
+   *
+   * A pre-10.1 generation is `host:<id>:<kind>`, with no version segment. A fake
+   * that always inserts the version would make the legacy tests fail for a reason
+   * that has nothing to do with the code under test.
+   */
   key(resource: { type: string; id: string }, version: number, kind: string) {
+    if (version === 0) return `${resource.type}:${resource.id}:${kind}`
     return `${resource.type}:${resource.id}:${version}:${kind}`
   }
 
@@ -302,5 +301,81 @@ describe('the un-retyped half is never invented', () => {
     // starts from a clean slate rather than accumulating unreachable ciphertext.
     expect(vault.entries.has('host:host-1:2:password')).toBe(false)
     expect(vault.entries.has('host:host-1:2:privateKey')).toBe(false)
+  })
+})
+
+describe('a damaged credential_ref is not the same as "nothing stored"', () => {
+  // Phase 10.1 fixed this on the *read* path: a broken pointer refuses the
+  // connection with "re-save the credentials" instead of connecting with an empty
+  // password. The write path never got the same treatment, and the mapper makes
+  // the two states look identical to it — a damaged reference becomes
+  // `credentialRef: null` (plus a problem the update path never looked at).
+  //
+  // So a password-only edit on such a host picks version 1, writes the new
+  // password there, and produces a reference that lists `password` alone. The
+  // private key is still in the vault under the same version and is now
+  // unaddressable: what was an explicit, recoverable failure becomes a host that
+  // silently resolves as password-only.
+
+  it('refuses an edit rather than orphaning the secret it cannot name', async () => {
+    mocks.select.mockResolvedValue([
+      { ...storedRow(['password', 'privateKey']), credential_ref: '{this is not json' },
+    ])
+    // The vault really does hold both, under the version this write would pick.
+    vault.entries.set('host:host-1:1:password', OLD_PASSWORD)
+    vault.entries.set('host:host-1:1:privateKey', OLD_KEY)
+
+    await expect(updateHost('host-1', { password: NEW_PASSWORD })).rejects.toThrow()
+
+    // Nothing was written: the old password is untouched, so a connect still
+    // reports the damaged reference the user can act on.
+    expect(vault.entries.get('host:host-1:1:password')).toBe(OLD_PASSWORD)
+    expect(vault.entries.get('host:host-1:1:privateKey')).toBe(OLD_KEY)
+    expect(
+      mocks.executeQuery.mock.calls.some(([sql]) =>
+        String(sql).startsWith('UPDATE hosts'),
+      ),
+    ).toBe(false)
+  })
+
+  it('the mapper really does hand the update path a null reference', async () => {
+    // Locks the reason the guard is needed: these two states are the same value.
+    const mapped = hostRowToHost({
+      ...storedRow(['password', 'privateKey']),
+      credential_ref: '{this is not json',
+    } as never)
+    expect(mapped.credentialRef).toBeNull()
+    expect(mapped.credentialRefProblem).not.toBeNull()
+  })
+})
+
+describe('a reference from before versions existed', () => {
+  // Pre-10.1 references carry no `version` and their secrets live under
+  // `host:<id>:<kind>` (LEGACY_VERSION). The carry-forward must read *there* and
+  // write forward to version 1, not read from a version-1 key that never existed.
+  it('carries the un-retyped half from the unversioned keys', async () => {
+    mocks.select.mockResolvedValue([
+      {
+        ...storedRow(['password', 'privateKey']),
+        credential_ref: JSON.stringify({
+          kinds: ['password', 'privateKey'],
+          provider: 'vault',
+        }),
+      },
+    ])
+    // Legacy layout: no version segment.
+    vault.entries.set('host:host-1:password', OLD_PASSWORD)
+    vault.entries.set('host:host-1:privateKey', OLD_KEY)
+
+    await updateHost('host-1', { password: NEW_PASSWORD })
+
+    const ref = boundRef()
+    expect(ref.kinds.sort()).toEqual(['password', 'privateKey'])
+    expect(ref.version).toBe(1)
+    expect(vault.entries.get('host:host-1:1:password')).toBe(NEW_PASSWORD)
+    expect(vault.entries.get('host:host-1:1:privateKey')).toBe(OLD_KEY)
+    // The unversioned generation is retired once the row points at version 1.
+    expect(vault.entries.has('host:host-1:password')).toBe(false)
+    expect(vault.entries.has('host:host-1:privateKey')).toBe(false)
   })
 })

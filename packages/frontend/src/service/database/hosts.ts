@@ -115,6 +115,22 @@ export async function updateHost(
     throw new Error('A host update cannot both clear and set a credential')
   }
 
+  // A damaged reference is not "nothing stored", but the mapper makes them the
+  // same value: both arrive as `credentialRef: null`, and only `credentialRefProblem`
+  // tells them apart. Writing a secret while ignoring that would pick version 1,
+  // write the retyped half over whatever is there, and produce a reference that
+  // names only the retyped kinds — orphaning the rest under a version nothing
+  // points at. Before Phase 10.1.1 the host at least refused at connect time with
+  // "re-save the credentials"; after the write it would silently resolve as
+  // password-only, which is strictly worse.
+  //
+  // This is the write-path half of the guard the connect path already has.
+  if (hasSecrets && existing.credentialRefProblem) {
+    throw new Error(
+      'This host has a stored credential that this build cannot read, so its secrets cannot be updated. Re-save the credential from the host dialog after clearing it.',
+    )
+  }
+
   if (clearing) {
     // Clear is the one operation that removes a secret the row still points at, so
     // the *row* has to stop pointing at it first. Doing it the other way round
