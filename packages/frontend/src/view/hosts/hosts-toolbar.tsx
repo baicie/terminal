@@ -1,5 +1,6 @@
 import {
   ChevronDown,
+  FileUp,
   LayoutGrid,
   List,
   Server,
@@ -24,6 +25,7 @@ interface HostsToolbarProps {
   onOpenHostDialog: () => void
   onNewLocalTerminal: () => void
   onOpenSerialDialog: () => void
+  onOpenImportDialog: () => void
   gridView: boolean
   onGridViewChange: (grid: boolean) => void
 }
@@ -36,6 +38,7 @@ export const HostsToolbar: React.FC<HostsToolbarProps> = ({
   onOpenHostDialog,
   onNewLocalTerminal,
   onOpenSerialDialog,
+  onOpenImportDialog,
   gridView,
   onGridViewChange,
 }) => {
@@ -82,7 +85,13 @@ export const HostsToolbar: React.FC<HostsToolbarProps> = ({
               <Usb className="size-4" data-icon="inline-start" />
               {t('hosts.serial')}
             </DropdownMenuItem>
-            <DropdownMenuItem disabled>{t('hosts.importFromFile')}</DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={onOpenImportDialog}
+              data-testid="hosts-import-from-file"
+            >
+              <FileUp className="size-4" data-icon="inline-start" />
+              {t('hosts.importFromFile')}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
