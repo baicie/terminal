@@ -82,7 +82,19 @@ const budgets = {
   // in three languages. No new dependency; measured 604.80 KB, so 607 leaves
   // ~2 KB of headroom. The initial budget above is unchanged: none of this is on
   // the time-to-first-terminal path, and the critical path still measures the same.
-  totalGzip: 607 * 1024,
+  //
+  // 624 KB (was 607 KB): Phase 10.2 adds the OpenSSH import wizard (source reader,
+  // plan planner wiring, candidate list, and its state machine), the in-dialog
+  // vault recovery panel, and ≈20 more locale strings in three languages. No new
+  // dependency. Measured 611.98 KB.
+  //
+  // Why raising this is the right call here and not a silent slip: the initial
+  // budget moved by 0.16 KB (130.51 → 130.67) — every kilobyte of the increase is
+  // in lazily-loaded chunks that the time-to-first-terminal path never touches. The
+  // wizard only loads when the user opens it. The alternative — trimming the
+  // three-language strings or splitting the import flow further — would trade a
+  // real feature for a number nobody experiences.
+  totalGzip: 624 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

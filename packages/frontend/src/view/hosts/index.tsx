@@ -9,6 +9,7 @@ import { TeamSharedSection } from './team-shared-section'
 import { useHostsViewHandlers } from './use-hosts-view-handlers'
 import { RenderListBody } from './components/render-list-body'
 import { HostDialog } from '@/components/host-list/host-dialog'
+import { OpenSshImportDialog } from '@/features/import/open-ssh-import-dialog'
 import SerialDialog from '@/components/serial-dialog'
 import { ShareHostDialog } from '@/components/share-host-dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -35,6 +36,7 @@ const HostsView: React.FC = () => {
   const isMobile = useIsMobile()
 
   const [hostDialogOpen, setHostDialogOpen] = useState(false)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [mobileToolbarOpen, setMobileToolbarOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -44,6 +46,9 @@ const HostsView: React.FC = () => {
 
   const handlers = useHostsViewHandlers()
   const {
+    editingHost,
+    setEditingHost,
+    handleEditHost,
     shareDialogOpen,
     setShareDialogOpen,
     shareDialogHost,
@@ -121,6 +126,7 @@ const HostsView: React.FC = () => {
           onOpenHostDialog={() => setHostDialogOpen(true)}
           onNewLocalTerminal={handleNewLocalTerminal}
           onOpenSerialDialog={() => setSerialDialogOpen(true)}
+          onOpenImportDialog={() => setImportDialogOpen(true)}
           gridView={gridView}
           onGridViewChange={setGridView}
         />
@@ -195,6 +201,7 @@ const HostsView: React.FC = () => {
             onConnect={handleConnect}
             onShareHostClick={handleShareHostClick}
             onAddHost={() => setHostDialogOpen(true)}
+            onEditHost={handleEditHost}
           />
         )}
       </ViewContent>
@@ -215,7 +222,23 @@ const HostsView: React.FC = () => {
         </>
       )}
 
-      <HostDialog open={hostDialogOpen} onClose={() => setHostDialogOpen(false)} />
+      {/*
+        `host` is what makes this an edit rather than a create: with it,
+        `handleSubmit` calls `updateHost` and the form is seeded from the stored
+        row. Without it the dialog has only ever been able to create.
+      */}
+      <HostDialog
+        open={hostDialogOpen || editingHost !== null}
+        host={editingHost ?? undefined}
+        onClose={() => {
+          setHostDialogOpen(false)
+          setEditingHost(null)
+        }}
+      />
+      <OpenSshImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+      />
       <QuickConnectDialog
         open={quickConnectTarget !== null}
         target={quickConnectTarget}

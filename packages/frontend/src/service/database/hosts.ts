@@ -45,8 +45,8 @@ export async function createHost(
   )
   try {
     await executeQuery(
-      `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, credential_ref, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, shell_integration, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, credential_ref, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, shell_integration, identity_file_path, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         host.id,
         host.name,
@@ -68,6 +68,7 @@ export async function createHost(
         host.jumpHostAuthType ?? null,
         host.agentForwarding ? 1 : 0,
         host.shellIntegration ?? 'off',
+        host.identityFilePath ?? null,
         now,
         now,
       ],
@@ -138,7 +139,7 @@ export async function updateHost(
     // UPDATE then failed, the user would have lost the credential with the row
     // still claiming to have one.
     await executeQuery(
-      `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = NULL, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = NULL, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, identity_file_path = ?, updated_at = ? WHERE id = ?`,
       hostUpdateArgs(merged, now, id),
     )
     // Now that nothing references them, the secrets can go. A failure here leaves
@@ -166,7 +167,7 @@ export async function updateHost(
 
   try {
     await executeQuery(
-      `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = CASE WHEN ? = 1 THEN NULL ELSE password END, private_key = CASE WHEN ? = 1 THEN NULL ELSE private_key END, certificate = ?, credential_ref = COALESCE(?, credential_ref), group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = CASE WHEN ? = 1 THEN NULL ELSE password END, private_key = CASE WHEN ? = 1 THEN NULL ELSE private_key END, certificate = ?, credential_ref = COALESCE(?, credential_ref), group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, identity_file_path = ?, updated_at = ? WHERE id = ?`,
       hostUpdateArgs(merged, now, id, {
         rewriteSecrets: hasSecrets,
         newRef: persisted?.ref ?? null,

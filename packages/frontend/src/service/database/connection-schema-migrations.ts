@@ -54,6 +54,16 @@ export const columnMigrations: ColumnMigration[] = [
     sql: "ALTER TABLE hosts ADD COLUMN shell_integration TEXT DEFAULT 'off'",
   },
   {
+    // Phase 10.2-B2: an OpenSSH import records `IdentityFile` as a path to a file
+    // the user keeps. It must not go in `private_key`: that column means key
+    // material and is handed to the SSH layer verbatim, so a path there fails at
+    // connect time with a parser error naming nothing useful. Its own column also
+    // keeps the row honest — it says "the key lives in a file", not "I hold it".
+    table: 'hosts',
+    column: 'identity_file_path',
+    sql: 'ALTER TABLE hosts ADD COLUMN identity_file_path TEXT',
+  },
+  {
     // Phase 10: the host row stops carrying secrets. This column names what is
     // stored in the vault (JSON `{kinds:[], provider:'vault'}`), never the value.
     // The legacy `password` / `private_key` / `certificate` columns stay for

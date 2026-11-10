@@ -41,6 +41,7 @@ describe('HostCardActions', () => {
         showTeamActions={false}
         onCopySsh={vi.fn()}
         onRequestDelete={vi.fn()}
+        onEdit={vi.fn()}
       />,
     )
 
@@ -57,6 +58,7 @@ describe('HostCardActions', () => {
         showTeamActions={false}
         onCopySsh={vi.fn()}
         onRequestDelete={onRequestDelete}
+        onEdit={vi.fn()}
       />,
     )
 
@@ -82,6 +84,7 @@ describe('HostCardActions', () => {
             showTeamActions={false}
             onCopySsh={vi.fn()}
             onRequestDelete={() => setOpen(true)}
+            onEdit={vi.fn()}
           />
           <HostDeleteConfirm host={host} open={open} onOpenChange={setOpen} />
         </div>

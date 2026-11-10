@@ -47,6 +47,17 @@ export interface Host {
   password?: string
   privateKey?: string
   /**
+   * A path to a key file the *user* keeps outside the app, from an OpenSSH
+   * import (`IdentityFile`).
+   *
+   * This is deliberately not `privateKey`: that field means key material and is
+   * handed to the SSH layer as-is, so a path there fails at connect time with a
+   * parser error that names nothing useful. The connection resolves this field
+   * by reading the file, and the row never claims to store a secret it does not
+   * have.
+   */
+  identityFilePath?: string
+  /**
    * Where this host's secrets live. Absent/null means "none stored" — agent
    * authentication, or a password asked at connect time.
    */

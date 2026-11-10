@@ -15,6 +15,7 @@ const ALTERS = [
   'ALTER TABLE hosts ADD COLUMN jump_host_auth_type TEXT',
   'ALTER TABLE hosts ADD COLUMN agent_forwarding INTEGER DEFAULT 0',
   "ALTER TABLE hosts ADD COLUMN shell_integration TEXT DEFAULT 'off'",
+  'ALTER TABLE hosts ADD COLUMN identity_file_path TEXT',
   'ALTER TABLE hosts ADD COLUMN credential_ref TEXT',
   'ALTER TABLE ssh_keys ADD COLUMN credential_ref TEXT',
 ]
@@ -40,6 +41,7 @@ const HOST_COLUMNS = [
   'jump_host_auth_type',
   'agent_forwarding',
   'shell_integration',
+  'identity_file_path',
   'credential_ref',
 ]
 const LOG_COLUMNS = ['id', 'error_message', 'error_raw']

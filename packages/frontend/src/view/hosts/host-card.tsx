@@ -18,6 +18,8 @@ interface HostCardProps {
   currentTeamId?: string
   onConnect: (host: Host) => void
   onShare?: (host: Host) => void
+  /** Open the host dialog on this host. See `HostCardActions`. */
+  onEdit: (host: Host) => void
 }
 
 /**
@@ -36,6 +38,7 @@ export const HostCard: React.FC<HostCardProps> = ({
   currentTeamId,
   onConnect,
   onShare,
+  onEdit,
 }) => {
   const { t } = useTranslation()
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -79,12 +82,14 @@ export const HostCard: React.FC<HostCardProps> = ({
             copySsh: t('hosts.copySsh'),
             share: showTeamActions && onShare ? t('teams.shareHost') : '',
             delete: t('common.delete'),
+            edit: t('common.edit'),
           }}
           onSheetOpenChange={setSheetOpen}
           onConnect={onConnect}
           onShare={onShare}
           onCopySsh={handleCopySsh}
           onDelete={requestDelete}
+          onEdit={onEdit}
         />
         {deleteConfirm}
       </>
@@ -95,30 +100,43 @@ export const HostCard: React.FC<HostCardProps> = ({
   if (variant === 'list') {
     const anim = staggerList(index)
     return (
-      <button
-        type="button"
-        className={cn(
-          'card-interactive flex items-center gap-3 p-3 rounded-lg',
-          'border border-border/50 bg-card/80 text-left',
-          anim.className,
-        )}
-        style={anim.style}
-        onClick={() => onConnect(host)}
-      >
-        <Server
-          className="size-5 shrink-0"
-          style={iconColor ? { color: iconColor } : undefined}
-        />
-        <div className="flex-1 min-w-0">
-          <div className="font-medium truncate">{host.name}</div>
-          <div className="text-sm text-muted-foreground truncate">
-            {t('hosts.sshAuth', { username: host.username })} · {host.hostname}
+      // A `div` wrapper, not a single button: the actions menu has to sit beside
+      // the row rather than inside it. A button cannot contain another button
+      // without breaking the accessibility tree.
+      <div className={cn('relative group', anim.className)} style={anim.style}>
+        <button
+          type="button"
+          className={cn(
+            'card-interactive flex items-center gap-3 p-3 pr-10 rounded-lg w-full',
+            'border border-border/50 bg-card/80 text-left',
+          )}
+          onClick={() => onConnect(host)}
+        >
+          <Server
+            className="size-5 shrink-0"
+            style={iconColor ? { color: iconColor } : undefined}
+          />
+          <div className="flex-1 min-w-0">
+            <div className="font-medium truncate">{host.name}</div>
+            <div className="text-sm text-muted-foreground truncate">
+              {t('hosts.sshAuth', { username: host.username })} · {host.hostname}
+            </div>
           </div>
-        </div>
-        {host.isFavorite && (
-          <Star className="size-4 fill-warning text-warning shrink-0" />
-        )}
-      </button>
+          {host.isFavorite && (
+            <Star className="size-4 fill-warning text-warning shrink-0" />
+          )}
+        </button>
+
+        <HostCardActions
+          host={host}
+          showTeamActions={showTeamActions}
+          onShare={onShare}
+          onCopySsh={handleCopySsh}
+          onRequestDelete={requestDelete}
+          onEdit={onEdit}
+        />
+        {deleteConfirm}
+      </div>
     )
   }
 
@@ -166,6 +184,7 @@ export const HostCard: React.FC<HostCardProps> = ({
         onShare={onShare}
         onCopySsh={handleCopySsh}
         onRequestDelete={requestDelete}
+        onEdit={onEdit}
       />
       {deleteConfirm}
     </div>

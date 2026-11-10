@@ -168,7 +168,12 @@ describe('materialiseImport', () => {
   it('stores the key path as a reference and never key material', () => {
     const rows = materialiseImport(plan.candidates, allIds)
     const web = rows.find(row => row.name === 'web')
-    expect(web?.privateKey).toBe('~/.ssh/id_ed25519')
+    // Phase 10.2-B2: the path used to land in `privateKey`, which means PEM
+    // content everywhere else and is handed to the SSH layer verbatim — the host
+    // imported "successfully" and then failed authentication with a parser error.
+    // The path now has its own field; `privateKey` stays for real key material.
+    expect(web?.identityFilePath).toBe('~/.ssh/id_ed25519')
+    expect(web?.privateKey).toBeUndefined()
     expect(JSON.stringify(web)).not.toContain('BEGIN')
   })
 

@@ -26,6 +26,7 @@ export interface HostRecord {
   jump_host_auth_type: string | null
   agent_forwarding: number | null
   shell_integration: string | null
+  identity_file_path?: string | null
   created_at: number
   updated_at: number
 }

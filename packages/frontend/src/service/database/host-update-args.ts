@@ -41,6 +41,7 @@ export function hostUpdateArgs(
       merged.jumpHostAuthType ?? null,
       merged.agentForwarding ? 1 : 0,
       merged.shellIntegration ?? 'off',
+      merged.identityFilePath ?? null,
       now,
       id,
     ]
@@ -64,6 +65,7 @@ export function hostUpdateArgs(
     merged.jumpHostAuthType ?? null,
     merged.agentForwarding ? 1 : 0,
     merged.shellIntegration ?? 'off',
+    merged.identityFilePath ?? null,
     now,
     id,
   ]

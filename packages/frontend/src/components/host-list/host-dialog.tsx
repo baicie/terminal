@@ -24,6 +24,7 @@ import { EnvironmentVariablesDialog } from './environment-dialog'
 import { HostFormBasic } from './host-form-basic'
 import { HostFormActions } from './host-form-actions'
 import { HostDialogAdvancedFields } from './host-dialog-advanced-fields'
+import { VaultRecovery } from './vault-recovery'
 import { useHostStore } from '@/store/host'
 import { useHostDialogForm } from './use-host-dialog-form'
 
@@ -54,6 +55,8 @@ export const HostDialog: React.FC<HostDialogProps> = ({
     discardOpen,
     setDiscardOpen,
     handleSubmit,
+    vaultRecovery,
+    recoverVault,
     handleDelete,
     handleFormChange,
     requestClose,
@@ -89,6 +92,18 @@ export const HostDialog: React.FC<HostDialogProps> = ({
               onOpenEnvironment={() => setEnvironmentDialogOpen(true)}
               onOpenPortForwards={() => setPortForwardDialogOpen(true)}
             />
+
+            {/*
+              A refused save keeps the dialog open with the typed values, so the
+              fix belongs here rather than on another page.
+            */}
+            {vaultRecovery && (
+              <VaultRecovery
+                state={vaultRecovery}
+                onCreate={recoverVault}
+                onUnlock={recoverVault}
+              />
+            )}
           </div>
 
           <HostFormActions
