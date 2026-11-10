@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-11-10T13:20:39.049Z",
+  "generatedAt": "2026-11-10T14:28:09.699Z",
   "source": "github-actions",
-  "runId": "42821961685",
+  "runId": "42829594709",
   "runAttempt": "1",
   "workflow": "Real-machine terminal matrix",
   "job": "macos-ssh-matrix",
-  "commit": "64c3a0d7a815204f1dc3205593b0c5d094557e03",
-  "fingerprint": "ab1b14c680da829a1688efe4ce5bb6dce9519dcbfd447d13df5fdcad5710c4d1",
+  "commit": "5755c319b802cfae4d6646dd690ab9868ebd3e9a",
+  "fingerprint": "de97ec8bb55414254f50ef7ccdec8f72fe980c4524dd345863226392a7e48836",
   "debugSha": "e05fe31d81780017387f167377f46d5fb6db2c0a1a7a8381516096e2fa3109d2",
   "releaseSha": "a9985b97acba2a44a8d0692e99cab408edcff953fea64a355fc90d0acfefe0b7",
   "runner": {
