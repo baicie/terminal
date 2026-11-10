@@ -1,5 +1,5 @@
 import type { Host } from '@/types'
-import { ChevronRight, Copy, Server, Star, Trash2, Users } from 'lucide-react'
+import { ChevronRight, Copy, Pencil, Server, Star, Trash2, Users } from 'lucide-react'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 
@@ -13,12 +13,14 @@ interface MobileHostCardProps {
     copySsh: string
     share: string
     delete: string
+    edit: string
   }
   onSheetOpenChange: (open: boolean) => void
   onConnect: (host: Host) => void
   onShare?: (host: Host) => void
   onCopySsh: () => void
   onDelete: () => void
+  onEdit: (host: Host) => void
 }
 
 export function MobileHostCard({
@@ -32,6 +34,7 @@ export function MobileHostCard({
   onShare,
   onCopySsh,
   onDelete,
+  onEdit,
 }: MobileHostCardProps) {
   return (
     <>
@@ -86,6 +89,14 @@ export function MobileHostCard({
               onClick={() => {
                 onSheetOpenChange(false)
                 onConnect(host)
+              }}
+            />
+            <SheetAction
+              icon={<Pencil className="size-5 text-muted-foreground" />}
+              label={labels.edit}
+              onClick={() => {
+                onSheetOpenChange(false)
+                onEdit(host)
               }}
             />
             <SheetAction

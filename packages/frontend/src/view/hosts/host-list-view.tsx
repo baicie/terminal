@@ -10,6 +10,7 @@ interface HostListViewProps {
   gridView: boolean
   handleConnect: (host: Host) => void
   handleShareHostClick: (host: Host) => void
+  onEditHost: (host: Host) => void
   isTeamEnabled: boolean
   currentTeamId?: string
 }
@@ -24,6 +25,7 @@ export function HostListView({
   gridView,
   handleConnect,
   handleShareHostClick,
+  onEditHost,
   isTeamEnabled,
   currentTeamId,
 }: HostListViewProps) {
@@ -69,6 +71,7 @@ export function HostListView({
             currentTeamId={currentTeamId}
             onConnect={handleConnect}
             onShare={handleShareHostClick}
+            onEdit={onEditHost}
           />
         ))}
       </div>
@@ -87,6 +90,7 @@ export function HostListView({
           currentTeamId={currentTeamId}
           onConnect={handleConnect}
           onShare={handleShareHostClick}
+            onEdit={onEditHost}
         />
       ))}
     </div>

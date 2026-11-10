@@ -18,6 +18,7 @@ interface RenderListBodyProps {
   onConnect: (host: Host) => void
   onShareHostClick: (host: Host) => void
   onAddHost: () => void
+  onEditHost: (host: Host) => void
 }
 
 export const RenderListBody: React.FC<RenderListBodyProps> = ({
@@ -31,6 +32,7 @@ export const RenderListBody: React.FC<RenderListBodyProps> = ({
   onConnect,
   onShareHostClick,
   onAddHost,
+  onEditHost,
 }) => {
   const { t } = useTranslation()
 
@@ -75,6 +77,7 @@ export const RenderListBody: React.FC<RenderListBodyProps> = ({
             currentTeamId={currentTeamId}
             onConnect={onConnect}
             onShare={onShareHostClick}
+            onEdit={onEditHost}
           />
         ))}
       </div>
@@ -89,6 +92,7 @@ export const RenderListBody: React.FC<RenderListBodyProps> = ({
       gridView={gridView}
       handleConnect={onConnect}
       handleShareHostClick={onShareHostClick}
+      onEditHost={onEditHost}
       isTeamEnabled={isTeamEnabled}
       currentTeamId={currentTeamId}
     />

@@ -44,6 +44,9 @@ const HostsView: React.FC = () => {
 
   const handlers = useHostsViewHandlers()
   const {
+    editingHost,
+    setEditingHost,
+    handleEditHost,
     shareDialogOpen,
     setShareDialogOpen,
     shareDialogHost,
@@ -195,6 +198,7 @@ const HostsView: React.FC = () => {
             onConnect={handleConnect}
             onShareHostClick={handleShareHostClick}
             onAddHost={() => setHostDialogOpen(true)}
+            onEditHost={handleEditHost}
           />
         )}
       </ViewContent>
@@ -215,7 +219,19 @@ const HostsView: React.FC = () => {
         </>
       )}
 
-      <HostDialog open={hostDialogOpen} onClose={() => setHostDialogOpen(false)} />
+      {/*
+        `host` is what makes this an edit rather than a create: with it,
+        `handleSubmit` calls `updateHost` and the form is seeded from the stored
+        row. Without it the dialog has only ever been able to create.
+      */}
+      <HostDialog
+        open={hostDialogOpen || editingHost !== null}
+        host={editingHost ?? undefined}
+        onClose={() => {
+          setHostDialogOpen(false)
+          setEditingHost(null)
+        }}
+      />
       <QuickConnectDialog
         open={quickConnectTarget !== null}
         target={quickConnectTarget}

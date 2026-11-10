@@ -1,5 +1,5 @@
 import type { Host } from '@/types'
-import { Copy, MoreHorizontal, Trash2, Users } from 'lucide-react'
+import { Copy, MoreHorizontal, Pencil, Trash2, Users } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -20,6 +20,14 @@ interface HostCardActionsProps {
   onShare?: (host: Host) => void
   onCopySsh: () => void
   onRequestDelete: () => void
+  /**
+   * Open the host dialog on this host.
+   *
+   * Required, not optional: without it there is no way to change a saved host at
+   * all (Phase 10.2-A). `HostDialog` and `updateHost` were both complete while
+   * every render site omitted the `host` prop, so the dialog could only create.
+   */
+  onEdit: (host: Host) => void
 }
 
 /**
@@ -27,6 +35,8 @@ interface HostCardActionsProps {
  *
  * 删除入口只负责**请求**删除：真正落地在 HostDeleteConfirm，那里先说明后果再执行。
  * 图标按钮必须带可访问名称，否则读屏软件只能读出「button」。
+ *
+ * 编辑与删除必须分开成两个菜单项：一个是可逆的常规操作，另一个不可逆。
  */
 export function HostCardActions({
   host,
@@ -34,6 +44,7 @@ export function HostCardActions({
   onShare,
   onCopySsh,
   onRequestDelete,
+  onEdit,
 }: HostCardActionsProps) {
   const { t } = useTranslation()
   const moreActionsLabel = t('hosts.moreActions', { name: host.name })
@@ -53,6 +64,13 @@ export function HostCardActions({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={() => onEdit(host)}
+          data-testid="host-card-edit"
+        >
+          <Pencil className="size-4 mr-2" data-icon="inline-start" />
+          {t('common.edit')}
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={onCopySsh}>
           <Copy className="size-4 mr-2" data-icon="inline-start" />
           {t('hosts.copySsh')}

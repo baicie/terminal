@@ -38,6 +38,13 @@ export function useHostsViewHandlers() {
   const [serialDialogOpen, setSerialDialogOpen] = useState(false)
   const [quickConnectTarget, setQuickConnectTarget] =
     useState<QuickConnectTarget | null>(null)
+  /**
+   * The host the dialog is editing, or null when it is creating one.
+   *
+   * This is what makes `HostDialog`'s `host` prop non-empty. Before Phase 10.2
+   * every render site passed only open/onClose, so the dialog could only create.
+   */
+  const [editingHost, setEditingHost] = useState<Host | null>(null)
 
   const importHostData = useCallback(
     async (hostData: Record<string, unknown>) => {
@@ -238,7 +245,15 @@ export function useHostsViewHandlers() {
     [app, navigate],
   )
 
+  /** Open the dialog on an existing host. */
+  const handleEditHost = useCallback((host: Host) => {
+    setEditingHost(host)
+  }, [])
+
   return {
+    editingHost,
+    setEditingHost,
+    handleEditHost,
     shareDialogOpen,
     setShareDialogOpen,
     shareDialogHost,
