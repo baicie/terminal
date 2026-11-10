@@ -906,6 +906,65 @@ advisory、并发仍 NOT_VERIFIED）、`docs/phase10/14-phase10-3-tabby-replacem
 `TERMINAL_SESSION_LIFECYCLE`、`WORKSPACE_RESTORE`、`CROSS_PLATFORM_RUNTIME_QA`、
 `DAILY_DRIVER_7DAY_SCORECARD`。`DAILY_DRIVER_READY=NO`、`TABBY_REPLACEMENT_READY=NO`。
 
+### Phase 10.3 - 真实可达性审查与链路闭环 ✅ 已合入（PR #29 → `cc96381`、PR #31 → `d60ae78`）
+
+**WP0 审查方法**：五个独立 agent 各追一条链路，从 UI 入口走到实际效果，逐跳给
+`file:line`。**五条链路里三条在审查前不可用。** 这推翻了 Phase 10.2 记录的 B2/B3
+两项 PASS —— 它们在入口层成立、在效果层断链。
+
+**五处产品 P0（全部先红后绿）**
+
+1. **`identityFilePath` 守卫从未执行**：它在 `terminal-launcher.ts:41` 的
+   `if (ref === null || …) return host` **之后**调用的 resolver 里。导入的主机恰好
+   `credentialRef` 为 null，被原样返回，launcher 继续用空私钥开会话。**与 10.1 的
+   DEFECT-1 同一形状**（守卫存在、有单测、真实入口在它之前返回）。守卫已上移。
+2. **`addHost` 丢弃导入计划生成的 id**：`materialiseImport` 派生
+   `import-<host>-<port>-<user>` 并让 `jumpHostId` 指向它，但 `addHost` 无条件
+   `generateId()` —— 每条导入的 ProxyJump 指向不存在的行。现有测试没抓到，因为它在
+   `materialiseImport` 返回的数组内部比较（数据库写入前当然相等）。
+3. **ProxyJump fallback 返回不会插入的候选**：fallback 含 `duplicate` 候选，而
+   `materialiseImport` 只输出 `create`。**两处都要改**：`byNameOrHost` 拆成
+   `byNewCandidate` + `bySavedHost`；`byAlias` 也要跳过 duplicate，否则别名路径绕过修复。
+4. **切换认证方式带旧凭据**：`persistHostSecrets` 的结转逻辑对「部分更新」对、对
+   「切换方式」错。password→key 把旧账号密码并入新版本，SSH 层把它当作**私钥口令**；
+   key→agent 走 `COALESCE` 保留旧引用且无 UI 可清理。修复为只在**确实发生切换**时
+   丢弃属于旧方式的 kind（不按当前 authType 一刀切 —— `key` 下的 `password` 是私钥口令）。
+5. **「包含密码」共享零个秘密**：`if (includePassword && host.password)` 在 10.1 之后
+   **永远为假**（秘密在 Vault），分享零个秘密却 `toast.success`。**比明文共享更糟** ——
+   同事以为拿到了。新增 `share-host-secrets.ts` 按引用从 Vault 读；同时移除「未加密则
+   带警告共享明文」的分支。
+
+**两处我引入的缺陷（由门禁与 CI 发现）**
+6. `IdentityFileNotice` 的 `scrollIntoView` 未捕获异常 —— 全量测试 `Errors 1` 单独一行，
+   断言全绿。**第一次看到时判断「上轮也有所以无害」是错的。**
+7. E2E fixture 用 `os.tmpdir()`，Linux runner 上是 `/tmp`（1777）被 sshd 的
+   `StrictModes` 拒绝 —— 本地过、CI 挂。改用 `$HOME` 下的私有目录，不改 fixture 的
+   安全配置、不加「CI 上跳过」的旁路。
+
+**真实 sshd E2E（复用既有 `scripts/terminal-smoke-sshd.mjs`，不新建 Harness）**
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `ssh-real-connect.e2e.test.ts` | IdentityFile 读入内容→`ssh -i`→真实登录；路径自身当密钥→失败；Two-hop ProxyJump 各用各的凭据；Bastion 不可达不降级直连 |
+| `vault-ssh-real.e2e.test.ts` | `SessionCredentialResolver` 输出→真实 sshd 登录；版本不匹配不回退旧代；锁定拒绝而非空登录；解密失败 vs「没有」被区分；引用未列的 kind 绝不返回 |
+
+**门禁**：前端 211 文件 / 1841 项（无未捕获错误）、Rust 381、typecheck、ESLint、
+source-size **633**、bundle budget 613/624 KB；证据重采 run `42829594709` 门禁 0；
+两 PR 的 CI 均 **11/11**。
+
+**判定**：`HOST_EDIT_UI_WIRED=PASS`、`OPENSSH_IMPORT_UI_READY=PASS`、
+`SHARE_HOST_CREDENTIAL_PLAINTEXT=PASS`；其余 12 项真机验收 NOT_RUN。
+`OPENSSH_IDENTITYFILE_REAL_CONNECT` 与 `OPENSSH_PROXYJUMP_REAL_CONNECT` 保持 NOT_RUN ——
+真实 sshd 验证的是「密钥材料可用」，不是「Tauri 应用的 Rust 会话驱动了握手」。
+
+**记录未修（详见 `docs/phase10/15-phase10-3-reachability-audit.md` §7）**：
+`clearCredential` 无 UI 入口（产品决策）、移动端无法进 `/vaults` 解锁、Vault 锁定被
+归入可重试网络错误（用户看到「等待重试」而非「请解锁」）、`passphrase_encrypted`
+无消费方（设计缺口）。
+
+**文档**：`15-phase10-3-reachability-audit.md`（逐跳审查）、
+`16-phase10-3-daily-driver-package.md`（7 天验收包、备份恢复、GUI 清单、阻断分级）。
+
 ### 发布就绪门禁 ⚠️ 同步、安全与实机证据门禁已闭合；Phase 9.4 冷启动、证据重采与外设实机未闭合
 
 - ✅ `pnpm install --frozen-lockfile` 可重复安装
@@ -1396,7 +1455,7 @@ npx shadcn@latest search @shadcn -q "sidebar"
 
 ---
 
-_文档更新时间: 2026-11-10 (Phase 10.2「主机管理收口与 OpenSSH 导入」PR #27 已合入 `5a24f9b`：A1 主机编辑入口接线（`HOST_EDIT_UI_WIRED` NO→PASS）、A2 Vault 首次使用就地创建/解锁并自动重试、B1 OpenSSH 导入向导 UI（`OPENSSH_IMPORT_UI_READY` PASS）、B2 IdentityFile 路径不再冒充 `privateKey`（新增 `identity_file_path` 列 + 迁移，连接层拒绝未导入路径）、B3 ProxyJump 别名两遍解析到候选 id 且不可解析时标 invalid 写 warning。门禁：前端 204 文件 / 1815 项、source-size 631 文件、bundle budget total 607→624 KB（initial 仅 +0.16 KB，增长全在 lazy chunk）、证据重采 run `42793219061` 0 problem、CI 11/11。12 项真机验收保持 NOT_RUN；`DAILY_DRIVER_READY=NO`、`TABBY_REPLACEMENT_READY=NO`。过程记录：同一类错误犯了两次（漏跑 source-size、漏跑 build:budget），都是改完代码没跑全部门禁，两次都由 CI 抓到并各触发一轮证据重采。历史 2026-11-10：Phase 10.1.1「凭据生命周期回归收口」PR #25 已合入 `3deebb4`：独立审查 + 另一独立 agent 逐条尝试推翻。WP2 导入准备阶段失败留下无人回收密文（`migrateSecretToVault` 在调用方 `try` 之外且 `bound` 逐行 push）已改逐 kind 记录自补偿；WP3 版本解析的固定 `10000` 实为死代码（`select()` 把失败转 `[]` → 解析为「无引用」即版本 1），改用 `selectStrict` 并拒绝损坏引用；WP4 复审发现损坏引用的**写入路径**未 fail-closed（mapper 给 `null`+`credentialRefProblem`，`updateHost` 只看前者），已加守卫；WP1 部分更新丢私钥为**函数级真实但生产不可达** —— 两处 `HostDialog` 入口都没传 `host` prop，编辑入口未接线，原报告的「真实 UI 可达」被推翻并更正，记 `HOST_EDIT_UI_WIRED=NO`（Phase 10.2 必修）。门禁：前端 198 文件 / 1776 项、service 468 项、Rust 381 项、source-size 624 文件、证据门禁 0 problem（重采 run `42773465085`）；CI 11/11。本轮自己引入并修复过一次 source-size 违规（`hosts.ts` 316 行），教训是改完代码先跑全部门禁。历史 2026-11-10：Phase 10.1「凭据安全收尾」PR #23 合入 `00643e7`、判定 PARTIAL：Rust 导入 SQL 的秘密列为字面 `NULL`、导入秘密三态策略（`reject` 默认）、源设备引用永不入库、四条导入入口统一、`syncServiceToken` 字段级白名单、版本化 CredentialRef 与 host/ssh-key 命名空间拆分、迁移真实调用链、Store 回读、损坏引用 fail-closed、SSH Key 闭环；独立审查找出并修复三个 P1。门禁：前端 195 文件 / 1751 项、Rust 381 项、source-size 623 文件；证据重采 `0fc777fe…`（run `42670402197`）门禁 0；CI 11/11。`SHARE_HOST_CREDENTIAL_PLAINTEXT=PARTIAL`；真实 GUI/三平台真机/历史 WAL 擦除/身份迁移/签名公证/`RUSTSEC-2026-0459` 仍 NOT_RUN 或不可修。历史 2026-11-09：Phase 10 已合入 `cde1e0c`：凭据边界（hosts 与 ssh_keys 双表）、两轮独立审查（第二次推翻了先前的两项 PASS）、导出双路径白名单、快捷键失败可见、Vault 三态提示；代码冻结点 `57bbe2e`，证据 run `42627456782` 指纹 `22087920…`，CI 11/11。分支与工作区清理强制规范：PR 合并后确认状态再删本地与远端分支、`git fetch --prune` 与 `[gone]` 分支清理、Open PR 分支与验收证据不得删除、临时产物不入库且禁止 `git clean -xdf` 式批量清理。历史 2026-11-06：Phase 9.6.3：标记 v3 事务所有权与逐字节回滚、OS 文件锁 + 进程内互斥、真实双进程 E2E、Team 1/3/5/10 SIGKILL E2E、Windows 19 项恢复测试；E2E `42249215589` 5/5，证据 `42245189022` 指纹 `9bad378d…` 门禁 0；剩余已运行实例并发写入与 Windows reparse/ACL/NSIS 为 PARTIAL/NOT_RUN。历史 Phase 9.6.2：迁移标记 fail-closed（损坏/未知版本不覆盖）、备份失败只回滚本次创建、活动快照 pin、`RecoveryLock` 跨进程锁、前端 `getDb` 门禁前置；Windows runner 实跑 `cargo test --lib db_recovery` 9/9 并修复目录 flush `ERROR_ACCESS_DENIED`；E2E `42189361366` 5/5，证据 `42214762202` 指纹 `c138d564…` 门禁 0；真实双进程 E2E、Team 应用级 SIGKILL、Windows 文件系统矩阵/NSIS 仍 NOT_RUN/PARTIAL。历史 Phase 9.6.1：启动门禁 fail-closed、裁决持久化、标记 v2（Core/Team）、完成校验、备份 canonicalization、Windows 目录 fsync；E2E `42179513200`（`efb96aa`）5/5，证据 `42179506989` 指纹 `3fd0148a…`，门禁 0；历史 Phase 9.6：产品启动 `db_recovery` 状态机、部分迁移自动恢复、脱敏恢复 UI；E2E `42146486221` `product recovery=PASS`，证据重采 `42158238718` 指纹 `47c25a03…`，CI `42160597380` 11/11；Windows NSIS/Vault app-level/TeamSync 跨版本/updater/安装 ENOSPC 仍 NOT_RUN/PARTIAL。历史 Phase 9.5.4：真实独立 worker crash 矩阵 8/8 阶段 SIGKILL + control、恢复重试、精确文件集与 integrity/content 读回；Harness 恢复改为 spawn 同一 worker；修复 `Promise.race` 计时器泄漏；E2E `42030992498` 5/5、CI `42031006776` 11/11 对应 `051f8c6`；独立 worker 接入后 E2E `42035362763` 5/5、CI `42035362783` 11/11 对应 `d4b7759`，macOS runner 报告 `restore crash matrix=PASS`；最终 E2E `42037724319` 5/5、CI `42037724332` 11/11 对应 `df57c0c`（代码 `b069beb`），ubuntu runner 真实执行 ENOSPC 测试 457 ms PASS；Phase 9.5.5 补齐进程树 quiescence：停止前快照后代、退出后 2s 收敛，E2E `42047193259`（`10fffd5`）的 10 份报告四项事实全 PASS（macOS + Linux），CI `42047193385` 11/11；Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、备份/迁移/安装 ENOSPC、AppImage stock 仍 NOT_RUN/PARTIAL；详见 docs/phase9-5/phase9-5-4-implementation.md 与 phase9-5-5-implementation.md)_
+_文档更新时间: 2026-11-10 (Phase 10.3「真实可达性审查与链路闭环」PR #29 合入 `cc96381`、PR #31 合入 `d60ae78`：五个独立 agent 逐跳追踪五条链路，发现三条在审查前不可用 —— 推翻了 Phase 10.2 的 B2/B3 两项 PASS。修五处产品 P0（`identityFilePath` 守卫在 early return 之后从未执行、`addHost` 丢弃导入 id 致 ProxyJump 悬空、ProxyJump fallback 返回不会插入的 duplicate 候选、切换认证方式把旧密码带进新方式当作私钥口令、「包含密码」共享零个秘密却报成功），加两处我引入的缺陷（`scrollIntoView` 未捕获异常被「全绿」掩盖、E2E fixture 的 `/tmp` 在 Linux 被 StrictModes 拒绝）。真实 sshd E2E 9 项复用既有 fixture，不新建 Harness。门禁：前端 211 文件 / 1841 项、Rust 381、source-size 633、bundle budget 613/624 KB、证据重采 run `42829594709` 0 problem、两 PR CI 均 11/11。判定 `HOST_EDIT_UI_WIRED=PASS`、`OPENSSH_IMPORT_UI_READY=PASS`、`SHARE_HOST_CREDENTIAL_PLAINTEXT=PASS`；其余 12 项真机验收 NOT_RUN，`DAILY_DRIVER_READY=NO`、`TABBY_REPLACEMENT_READY=NO`。记录未修四项：clearCredential 无 UI 入口、移动端无法进 /vaults、Vault 锁定被当作可重试网络错误、passphrase_encrypted 无消费方。历史 2026-11-10：Phase 10.2「主机管理收口与 OpenSSH 导入」PR #27 已合入 `5a24f9b`：A1 主机编辑入口接线（`HOST_EDIT_UI_WIRED` NO→PASS）、A2 Vault 首次使用就地创建/解锁并自动重试、B1 OpenSSH 导入向导 UI（`OPENSSH_IMPORT_UI_READY` PASS）、B2 IdentityFile 路径不再冒充 `privateKey`（新增 `identity_file_path` 列 + 迁移，连接层拒绝未导入路径）、B3 ProxyJump 别名两遍解析到候选 id 且不可解析时标 invalid 写 warning。门禁：前端 204 文件 / 1815 项、source-size 631 文件、bundle budget total 607→624 KB（initial 仅 +0.16 KB，增长全在 lazy chunk）、证据重采 run `42793219061` 0 problem、CI 11/11。12 项真机验收保持 NOT_RUN；`DAILY_DRIVER_READY=NO`、`TABBY_REPLACEMENT_READY=NO`。过程记录：同一类错误犯了两次（漏跑 source-size、漏跑 build:budget），都是改完代码没跑全部门禁，两次都由 CI 抓到并各触发一轮证据重采。历史 2026-11-10：Phase 10.1.1「凭据生命周期回归收口」PR #25 已合入 `3deebb4`：独立审查 + 另一独立 agent 逐条尝试推翻。WP2 导入准备阶段失败留下无人回收密文（`migrateSecretToVault` 在调用方 `try` 之外且 `bound` 逐行 push）已改逐 kind 记录自补偿；WP3 版本解析的固定 `10000` 实为死代码（`select()` 把失败转 `[]` → 解析为「无引用」即版本 1），改用 `selectStrict` 并拒绝损坏引用；WP4 复审发现损坏引用的**写入路径**未 fail-closed（mapper 给 `null`+`credentialRefProblem`，`updateHost` 只看前者），已加守卫；WP1 部分更新丢私钥为**函数级真实但生产不可达** —— 两处 `HostDialog` 入口都没传 `host` prop，编辑入口未接线，原报告的「真实 UI 可达」被推翻并更正，记 `HOST_EDIT_UI_WIRED=NO`（Phase 10.2 必修）。门禁：前端 198 文件 / 1776 项、service 468 项、Rust 381 项、source-size 624 文件、证据门禁 0 problem（重采 run `42773465085`）；CI 11/11。本轮自己引入并修复过一次 source-size 违规（`hosts.ts` 316 行），教训是改完代码先跑全部门禁。历史 2026-11-10：Phase 10.1「凭据安全收尾」PR #23 合入 `00643e7`、判定 PARTIAL：Rust 导入 SQL 的秘密列为字面 `NULL`、导入秘密三态策略（`reject` 默认）、源设备引用永不入库、四条导入入口统一、`syncServiceToken` 字段级白名单、版本化 CredentialRef 与 host/ssh-key 命名空间拆分、迁移真实调用链、Store 回读、损坏引用 fail-closed、SSH Key 闭环；独立审查找出并修复三个 P1。门禁：前端 195 文件 / 1751 项、Rust 381 项、source-size 623 文件；证据重采 `0fc777fe…`（run `42670402197`）门禁 0；CI 11/11。`SHARE_HOST_CREDENTIAL_PLAINTEXT=PARTIAL`；真实 GUI/三平台真机/历史 WAL 擦除/身份迁移/签名公证/`RUSTSEC-2026-0459` 仍 NOT_RUN 或不可修。历史 2026-11-09：Phase 10 已合入 `cde1e0c`：凭据边界（hosts 与 ssh_keys 双表）、两轮独立审查（第二次推翻了先前的两项 PASS）、导出双路径白名单、快捷键失败可见、Vault 三态提示；代码冻结点 `57bbe2e`，证据 run `42627456782` 指纹 `22087920…`，CI 11/11。分支与工作区清理强制规范：PR 合并后确认状态再删本地与远端分支、`git fetch --prune` 与 `[gone]` 分支清理、Open PR 分支与验收证据不得删除、临时产物不入库且禁止 `git clean -xdf` 式批量清理。历史 2026-11-06：Phase 9.6.3：标记 v3 事务所有权与逐字节回滚、OS 文件锁 + 进程内互斥、真实双进程 E2E、Team 1/3/5/10 SIGKILL E2E、Windows 19 项恢复测试；E2E `42249215589` 5/5，证据 `42245189022` 指纹 `9bad378d…` 门禁 0；剩余已运行实例并发写入与 Windows reparse/ACL/NSIS 为 PARTIAL/NOT_RUN。历史 Phase 9.6.2：迁移标记 fail-closed（损坏/未知版本不覆盖）、备份失败只回滚本次创建、活动快照 pin、`RecoveryLock` 跨进程锁、前端 `getDb` 门禁前置；Windows runner 实跑 `cargo test --lib db_recovery` 9/9 并修复目录 flush `ERROR_ACCESS_DENIED`；E2E `42189361366` 5/5，证据 `42214762202` 指纹 `c138d564…` 门禁 0；真实双进程 E2E、Team 应用级 SIGKILL、Windows 文件系统矩阵/NSIS 仍 NOT_RUN/PARTIAL。历史 Phase 9.6.1：启动门禁 fail-closed、裁决持久化、标记 v2（Core/Team）、完成校验、备份 canonicalization、Windows 目录 fsync；E2E `42179513200`（`efb96aa`）5/5，证据 `42179506989` 指纹 `3fd0148a…`，门禁 0；历史 Phase 9.6：产品启动 `db_recovery` 状态机、部分迁移自动恢复、脱敏恢复 UI；E2E `42146486221` `product recovery=PASS`，证据重采 `42158238718` 指纹 `47c25a03…`，CI `42160597380` 11/11；Windows NSIS/Vault app-level/TeamSync 跨版本/updater/安装 ENOSPC 仍 NOT_RUN/PARTIAL。历史 Phase 9.5.4：真实独立 worker crash 矩阵 8/8 阶段 SIGKILL + control、恢复重试、精确文件集与 integrity/content 读回；Harness 恢复改为 spawn 同一 worker；修复 `Promise.race` 计时器泄漏；E2E `42030992498` 5/5、CI `42031006776` 11/11 对应 `051f8c6`；独立 worker 接入后 E2E `42035362763` 5/5、CI `42035362783` 11/11 对应 `d4b7759`，macOS runner 报告 `restore crash matrix=PASS`；最终 E2E `42037724319` 5/5、CI `42037724332` 11/11 对应 `df57c0c`（代码 `b069beb`），ubuntu runner 真实执行 ENOSPC 测试 457 ms PASS；Phase 9.5.5 补齐进程树 quiescence：停止前快照后代、退出后 2s 收敛，E2E `42047193259`（`10fffd5`）的 10 份报告四项事实全 PASS（macOS + Linux），CI `42047193385` 11/11；Windows disposable、Vault app-level、Team Sync 跨版本、updater 运行时、备份/迁移/安装 ENOSPC、AppImage stock 仍 NOT_RUN/PARTIAL；详见 docs/phase9-5/phase9-5-4-implementation.md 与 phase9-5-5-implementation.md)_
 
 _历史更新 2026-11-03: (Phase 9.3：bootstrap 的五个配置探测由串行改并发，修掉「一个慢 IPC 饿死其余」——这是 real-machine run `41437956656` 上 `nano-edit`「从未写 result.json」的根因；冷启动测量目录清理改带重试，修掉 `ENOTEMPTY` 假红；6 份证据随 run `41478709578` 重采为指纹 `c4faedfb…`，门禁 0 problem；交付 `docs/phase9-3/bootstrap-probe-starvation.md`)_
 

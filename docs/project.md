@@ -1106,6 +1106,36 @@ CI **11/11**。
 详见 `docs/phase10/13-phase10-2-security-ledger.md`、
 `docs/phase10/14-phase10-3-tabby-replacement.md`。
 
+### Phase 10.3 - 真实可达性审查与链路闭环 ✅ 已合入（PR #29 → `cc96381`、PR #31 → `d60ae78`）
+
+五个独立 agent 各追一条链路（UI 入口 → 实际效果，逐跳 `file:line`）：**五条里三条
+在审查前不可用**，推翻了 Phase 10.2 的 B2/B3 两项 PASS。
+
+| WP | 内容 |
+| --- | --- |
+| WP0 审查 | 5 条链路逐跳追踪；发现 5 处产品 P0 |
+| 修复 1 | `identityFilePath` 守卫在 `terminal-launcher` early return 之后，从未执行 |
+| 修复 2 | `addHost` 丢弃导入计划生成的 id → 每条 ProxyJump 悬空 |
+| 修复 3 | ProxyJump fallback 返回不会插入的 duplicate 候选（两处都要改） |
+| 修复 4 | 切换认证方式带旧凭据 → 旧密码被当作私钥口令 |
+| 修复 5 | 「包含密码」共享零个秘密却报成功 |
+| WP1/WP2 | 真实 sshd E2E：IdentityFile、两跳 ProxyJump、跳板不可达不降级 |
+| WP3 | 解析器输出 → 真实 sshd 登录（5 项） |
+| WP7 | `16-phase10-3-daily-driver-package.md`：7 天验收包、备份恢复、GUI 清单、阻断分级 |
+
+**两处我自己引入的缺陷**（由门禁与 CI 发现）：`scrollIntoView` 未捕获异常（`Errors 1`
+单独一行、断言全绿被掩盖）、E2E fixture 的 `/tmp` 在 Linux 被 `StrictModes` 拒绝。
+
+门禁：前端 **211 文件 / 1841 项**（无未捕获错误）、Rust 381、source-size **633**、
+bundle budget 613/624 KB、证据重采 run `42829594709` **0 problem**；两 PR 的 CI 均 **11/11**。
+
+判定：`HOST_EDIT_UI_WIRED=PASS`、`OPENSSH_IMPORT_UI_READY=PASS`、
+`SHARE_HOST_CREDENTIAL_PLAINTEXT=PASS`；其余 12 项真机验收 NOT_RUN。
+`DAILY_DRIVER_READY=NO`、`TABBY_REPLACEMENT_READY=NO`。
+
+详见 `docs/phase10/15-phase10-3-reachability-audit.md`、
+`docs/phase10/16-phase10-3-daily-driver-package.md`。
+
 ## 待办事项
 
 ### P0 - 必须完成
