@@ -1044,7 +1044,7 @@ Upgrade E2E `42481700333`（`4f7b83b`）**6/6**。
 `credential_ref` 退化为空凭据、导出仍带 `syncServiceToken`、SSH key 秘密无消费方。
 `DAILY_DRIVER_READY=NO`、`TABBY_REPLACEMENT_READY=NO`（需 7 天真实使用数据）。
 
-### Phase 10.1 - Credential Security Closure 🟡 PR #23 就绪，判定 PARTIAL
+### Phase 10.1 - Credential Security Closure ✅ 已合入（PR #23 → `00643e7`），判定 PARTIAL
 
 补上 Phase 10 漏掉的**入口**（不是实现）：秘密列从 Rust SQL 文本中移除（字面 `NULL`，
 不是绑定 NULL）、导入秘密三态策略默认 `reject`、源设备引用永不入库、四条导入入口统一、

@@ -763,9 +763,10 @@ main 上 `cde1e0c` 的 CI 同为 11/11。`DAILY_DRIVER_READY` / `TABBY_REPLACEME
   以及主机对话框内没有直接创建 Vault 的入口
 - 📋 `DAILY_DRIVER_READY=NO`、`TABBY_REPLACEMENT_READY=NO`（需 7 天真实使用数据）
 
-### Phase 10.1 - Credential Security Closure 🟡 PR #23 已就绪（非 Draft），判定 PARTIAL
+### Phase 10.1 - Credential Security Closure ✅ 已合入（PR #23 → `00643e7`），判定 PARTIAL
 
-基线 `main = 7c1524e`，分支 `feat/phase10-1-credential-security-closure`，PR #23（已转 Ready）。
+基线 `main = 7c1524e`，分支 `feat/phase10-1-credential-security-closure`，**PR #23 已 squash 合并为
+`00643e7`（2026-11-10T05:22:51Z）**，本地与远端分支均已删除。
 **本轮不是重复实现 Phase 10，而是补上它漏掉的全部入口。**
 
 - ✅ **P0 Rust 导入明文写入**：`db_import/writer.rs` 的 `HOST_INSERT`/`HOST_UPDATE`/
