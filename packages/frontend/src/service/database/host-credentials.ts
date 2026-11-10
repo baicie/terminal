@@ -79,6 +79,18 @@ export async function persistHostSecrets(
     password?: string | null
     privateKey?: string | null
     passphrase?: string | null
+    /**
+     * The auth method the row will have after this write.
+     *
+     * It decides which of the old kinds still make sense. The carry-forward below
+     * exists so a password-only edit keeps the key it did not mention; without
+     * this, the same rule keeps a password the user switched *away* from. The old
+     * secret then lands in the same generation as the new one, where the SSH layer
+     * treats the account password as the key's passphrase.
+     */
+    authType?: string
+    /** The auth method the row had before this write, to detect a switch. */
+    previousAuthType?: string
   },
   current: CredentialRef | null,
 ): Promise<PersistedSecrets> {
@@ -116,9 +128,25 @@ export async function persistHostSecrets(
   // the update fails rather than carrying a hole forward: a reference that names a
   // secret the vault cannot deliver reads as "nothing stored" at connect time,
   // with nothing left to recover from.
-  const kinds = [...suppliedKinds, ...(current?.kinds ?? [])].filter(
-    (kind, index, all) => all.indexOf(kind) === index,
+  // Which old kinds survive this write.
+  //
+  // The carry-forward exists so a password-only edit keeps the key it did not
+  // mention. It must not extend to a kind the new auth method cannot use: after a
+  // switch from `password` to `key`, an account password left in the generation
+  // is handed to the SSH layer as the key's passphrase.
+  //
+  // The distinction is between "the user did not mention it" and "the user
+  // switched away from it". Only the second drops anything, and only the kinds
+  // that belong to the method being left.
+  const droppedBySwitch = droppedKindsForSwitch(
+    host.authType,
+    host.previousAuthType,
+    current?.kinds ?? [],
   )
+
+  const kinds = [...suppliedKinds, ...(current?.kinds ?? [])]
+    .filter(kind => !droppedBySwitch.has(kind))
+    .filter((kind, index, all) => all.indexOf(kind) === index)
 
   // What each kind under the new version must read back as. Carried kinds are
   // captured while copying, so the verification below does not go back to the old
@@ -210,3 +238,36 @@ export async function retirePreviousVersion(
   }
 }
 
+
+/**
+ * The old kinds a switch to `authType` makes useless.
+ *
+ * Empty for the common case: the auth method did not change, so whatever the row
+ * already holds is still what the row is for. A host on `key` may legitimately
+ * keep a `password` alongside it (the form uses that field for a key
+ * passphrase), so nothing is dropped merely because of the current type — only
+ * because the *previous* type's secret has no role in the new one.
+ */
+function droppedKindsForSwitch(
+  authType: string | undefined,
+  previousAuthType: string | undefined,
+  currentKinds: CredentialKind[],
+): Set<CredentialKind> {
+  const dropped = new Set<CredentialKind>()
+  if (authType === 'agent') {
+    // Agent authentication stores nothing at all.
+    for (const kind of currentKinds) dropped.add(kind)
+    return dropped
+  }
+  // A switch away from password-based auth leaves an account password with no
+  // role: the key form uses that field for the key's passphrase, so carrying the
+  // old value forward would hand the SSH layer a passphrase the user never set.
+  const switchedFromPassword =
+    previousAuthType === 'password' &&
+    authType !== undefined &&
+    authType !== 'password'
+  if (switchedFromPassword && !currentKinds.includes('passphrase')) {
+    dropped.add('password')
+  }
+  return dropped
+}

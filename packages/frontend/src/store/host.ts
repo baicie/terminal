@@ -35,7 +35,16 @@ export interface HostState {
    */
   loadHosts: (signal?: AbortSignal) => Promise<Host[] | null>
   loadGroups: () => Promise<void>
-  addHost: (host: Omit<Host, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Host>
+  /**
+   * Create a host row.
+   *
+   * `id` is optional: a host created by hand gets one minted, while an imported
+   * host arrives with the deterministic id its `jumpHostId` fields already point
+   * at. Dropping that id silently breaks every imported ProxyJump reference.
+   */
+  addHost: (
+    host: Omit<Host, 'id' | 'createdAt' | 'updatedAt'> & { id?: string },
+  ) => Promise<Host>
   updateHost: (id: string, updates: Partial<Host>) => Promise<void>
   deleteHost: (id: string) => Promise<void>
   toggleFavorite: (id: string) => Promise<void>
@@ -133,7 +142,15 @@ export const useHostStore = create<HostState>((set, get) => {  let loadGeneratio
 
     async addHost(host) {
       const now = Date.now()
-      const id = generateId()
+      // Keep a planned id when there is one.
+      //
+      // An OpenSSH import derives ids deterministically from host+port+user, and
+      // its `jumpHostId` fields are derived from the same function — so rewriting
+      // the id here made every imported ProxyJump reference a row that could never
+      // exist. The id is also what makes a second import idempotent. A host created
+      // by hand carries no id, and still gets one minted.
+      const plannedId = (host as { id?: string }).id
+      const id = plannedId && plannedId.length > 0 ? plannedId : generateId()
       const newHost: Host = {
         ...host,
         id,

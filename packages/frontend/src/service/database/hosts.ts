@@ -110,6 +110,16 @@ export async function updateHost(
   // (rename, colour) must not blank a stored credential.
   const hasSecrets = Boolean(updates.password || updates.privateKey)
   const clearing = updates.clearCredential === true
+
+  // Switching to agent authentication means "stop using a stored credential", and
+  // it arrives as an update with no secret in it. Treating that as "leave the
+  // reference alone" (what COALESCE does) leaves a password in the vault that the
+  // user has just told the app not to use, and keeps the row pointing at it.
+  //
+  // Only an explicit authType change triggers this. A rename also has no secret,
+  // and must not silently drop one.
+  const switchedToAgent =
+    updates.authType === 'agent' && existing.authType !== 'agent'
   if (clearing && hasSecrets) {
     // "Clear" and "set a new one" in the same call is a caller bug, and guessing
     // which one wins could delete a credential the user just typed.
@@ -132,6 +142,24 @@ export async function updateHost(
     )
   }
 
+  if (switchedToAgent) {
+    // Same ordering as `clearing`: stop pointing at the credential first, then
+    // remove it. A late failure leaves orphaned ciphertext rather than a row that
+    // names a key nothing holds.
+    await executeQuery(
+      `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = NULL, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, identity_file_path = NULL, updated_at = ? WHERE id = ?`,
+      hostUpdateArgs(merged, now, id, { dropIdentityFilePathArgument: true }),
+    )
+    await retirePreviousVersion(id, {
+      ref: null,
+      previousVersion: existing.credentialRef
+        ? refVersion(existing.credentialRef)
+        : null,
+      previousKinds: existing.credentialRef?.kinds ?? [],
+    })
+    return
+  }
+
   if (clearing) {
     // Clear is the one operation that removes a secret the row still points at, so
     // the *row* has to stop pointing at it first. Doing it the other way round
@@ -139,8 +167,8 @@ export async function updateHost(
     // UPDATE then failed, the user would have lost the credential with the row
     // still claiming to have one.
     await executeQuery(
-      `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = NULL, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, identity_file_path = ?, updated_at = ? WHERE id = ?`,
-      hostUpdateArgs(merged, now, id),
+      `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = NULL, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, identity_file_path = NULL, updated_at = ? WHERE id = ?`,
+      hostUpdateArgs(merged, now, id, { dropIdentityFilePathArgument: true }),
     )
     // Now that nothing references them, the secrets can go. A failure here leaves
     // orphaned ciphertext, never a host pointing at nothing.
@@ -160,6 +188,9 @@ export async function updateHost(
           id,
           password: updates.password,
           privateKey: updates.privateKey,
+          // Lets the write path drop kinds the new auth method cannot use.
+          authType: merged.authType,
+          previousAuthType: existing.authType,
         },
         existing.credentialRef ?? null,
       )
@@ -171,6 +202,9 @@ export async function updateHost(
       hostUpdateArgs(merged, now, id, {
         rewriteSecrets: hasSecrets,
         newRef: persisted?.ref ?? null,
+        // A credential now lives in the vault, so the imported path must not keep
+        // blocking the connection it was standing in for.
+        clearIdentityFilePath: hasSecrets,
       }),
     )
   } catch (error) {

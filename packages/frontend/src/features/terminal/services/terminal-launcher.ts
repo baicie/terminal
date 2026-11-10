@@ -37,6 +37,24 @@ export async function withResolvedCredential(host: Host): Promise<Host> {
   if (host.credentialRefProblem) {
     throw new Error(describeRefProblem(host.credentialRefProblem))
   }
+
+  // An imported host can carry a key *path* instead of a credential. It looks
+  // configured — hostname, user, auth type — and is not connectable: the app does
+  // not read files during a connection attempt, and the row holds no secret.
+  //
+  // This guard has to sit above the "no reference" early return. Below it (where
+  // it was, inside the resolver) it never ran: a host with a path has no
+  // reference, so the launcher returned it unchanged and started a session with
+  // an empty key. The error then described a key parse failure rather than the
+  // one thing the user could actually fix.
+  if (host.identityFilePath) {
+    throw new Error(
+      `This host was imported with the key file ${host.identityFilePath}, which ` +
+        'has not been bound yet. Open the host and paste the key, or connect ' +
+        'with the SSH agent instead.',
+    )
+  }
+
   const ref = host.credentialRef ?? null
   if (ref === null || ref.kinds.length === 0) return host
 

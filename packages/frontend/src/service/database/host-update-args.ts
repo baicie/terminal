@@ -15,7 +15,31 @@ export function hostUpdateArgs(
   merged: Host,
   now: number,
   id: string,
-  options?: { rewriteSecrets?: boolean, newRef?: CredentialRef | null },
+  options?: {
+    rewriteSecrets?: boolean
+    newRef?: CredentialRef | null
+    /**
+     * Set when this update bound a credential or cleared one.
+     *
+     * An imported host carries `identityFilePath` — a path the user keeps, not a
+     * secret we hold. `resolveSessionCredential` refuses to connect while it is
+     * set, because reading arbitrary files during a connect attempt is not
+     * something the app should do implicitly. That guard is right, but it made
+     * the host permanently unconnectable: saving a real key stored a vault
+     * reference the guard never reached.
+     *
+     * So a write that supplies a credential retires the path in the same
+     * statement. A rename does not: the path is still how that host expects to
+     * authenticate.
+     */
+    clearIdentityFilePath?: boolean
+    /**
+     * True for the clear statement, which now writes `identity_file_path = NULL`
+     * in its SQL text — so it binds no value for that column and the argument
+     * list has to be one shorter.
+     */
+    dropIdentityFilePathArgument?: boolean
+  },
 ): unknown[] {
   const rewriteSecrets = options?.rewriteSecrets ? 1 : 0
   const base: unknown[] = [
@@ -41,7 +65,6 @@ export function hostUpdateArgs(
       merged.jumpHostAuthType ?? null,
       merged.agentForwarding ? 1 : 0,
       merged.shellIntegration ?? 'off',
-      merged.identityFilePath ?? null,
       now,
       id,
     ]
@@ -65,7 +88,9 @@ export function hostUpdateArgs(
     merged.jumpHostAuthType ?? null,
     merged.agentForwarding ? 1 : 0,
     merged.shellIntegration ?? 'off',
-    merged.identityFilePath ?? null,
+    // A write that supplies a credential retires the imported path in the same
+    // statement — see `clearIdentityFilePath` above for why it must not survive.
+    options?.clearIdentityFilePath ? null : merged.identityFilePath ?? null,
     now,
     id,
   ]
