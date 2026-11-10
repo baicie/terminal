@@ -1065,6 +1065,26 @@ NOT_RUN：真实 GUI 的 Vault/SSH/Jump/SFTP/IME、三平台真机、历史 WAL 
 
 详见 `docs/phase10/10-credential-boundary-adr.md`、`docs/phase10/11-phase10-1-report.md`。
 
+### Phase 10.1.1 - Credential Lifecycle Regression Closure ✅ 已合入（PR #25 → `3deebb4`）
+
+Phase 10.1 合入后的独立审查，目标是**生命周期**（不是写入边界），结论由另一个独立
+agent 逐条尝试推翻。
+
+| WP | 结论 | 内容 |
+| --- | --- | --- |
+| WP2 Import Prepare 补偿 | **CONFIRMED** | `migrateSecretToVault` 在调用方 `try` 之外，`bound` 只在整行成功后 push；准备阶段失败留下无人回收的密文。改为逐 kind 记录并自补偿 |
+| WP3 版本解析 | **CONFIRMED**（比题设更严重） | 固定 `10000` 是死代码：`select()` 把失败转 `[]`，解析为「无引用」即**版本 1**。改用 `selectStrict`，读失败与损坏引用一律拒绝 |
+| 损坏引用写侧 | **CONFIRMED**（WP4 复审发现） | mapper 交付 `null` + `credentialRefProblem`，`updateHost` 只看前者 → 覆盖密码、私钥无法寻址。DEFECT-1 在写侧的镜像 |
+| WP1 Host 部分更新 | **CONFIRMED（函数级）/ DISPROVED（可达性）** | 函数确实丢未重输的 kind，已修复；但两处 `HostDialog` 都没传 `host` prop，**编辑入口根本没接线** |
+
+`HOST_EDIT_UI_WIRED=NO` —— 组件、i18n、`updateHost` 齐备，唯独入口未接线，用户今天
+无法编辑已保存的主机。Phase 10.2 必修项。
+
+门禁：前端 **198 文件 / 1776 项**、service 468 项、Rust **381 项**、source-size
+**624 文件**、证据门禁 **0 problem**（重采 run `42773465085`）；CI **11/11**。
+
+详见 `docs/phase10/12-phase10-1-1-report.md`。
+
 ## 待办事项
 
 ### P0 - 必须完成
