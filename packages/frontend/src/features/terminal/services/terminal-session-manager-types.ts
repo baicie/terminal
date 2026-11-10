@@ -69,6 +69,8 @@ export interface TerminalSessionSnapshot {
   reason?: string
   nextRetryAt?: number
   retryable?: boolean
+  /** Credential failure kind, when the error came from the vault layer. */
+  credentialKind?: string
 }
 
 export interface TerminalOutputReceipt {
@@ -114,6 +116,8 @@ export interface TerminalRecord {
   reconnectReason: string | null
   reconnectNextRetryAt: number | null
   retryable: boolean | null
+  /** Credential failure kind, when the last error came from the vault layer. */
+  credentialKind: string | null
   closed: boolean
 }
 
@@ -140,6 +144,9 @@ export function getTerminalSnapshot(
     snapshot.nextRetryAt = record.reconnectNextRetryAt
   }
   if (record.retryable !== null) snapshot.retryable = record.retryable
+  if (record.credentialKind !== null) {
+    snapshot.credentialKind = record.credentialKind
+  }
   return snapshot
 }
 

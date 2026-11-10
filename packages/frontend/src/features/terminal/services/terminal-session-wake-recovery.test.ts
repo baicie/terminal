@@ -21,6 +21,7 @@ function record(overrides: Partial<TerminalRecord> = {}): TerminalRecord {
     reconnectReason: null,
     reconnectNextRetryAt: null,
     retryable: null,
+    credentialKind: null,
     closed: false,
     ...overrides,
   }

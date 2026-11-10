@@ -4,6 +4,7 @@ import type { TabType } from '../types'
 import { resolveSessionCredential, describeRefProblem } from './session-credentials'
 import { traceStageAndWait } from '@/service/database/startup-trace'
 import { buildSshJumpHostIpcConfig } from './ssh-jump-config'
+import { CredentialFailure, credentialFailureFrom } from './credential-failure'
 
 export type TerminalShellIntegration = 'bash' | 'zsh'
 
@@ -48,7 +49,8 @@ export async function withResolvedCredential(host: Host): Promise<Host> {
   // an empty key. The error then described a key parse failure rather than the
   // one thing the user could actually fix.
   if (host.identityFilePath) {
-    throw new Error(
+    throw new CredentialFailure(
+      'credential-not-bound',
       `This host was imported with the key file ${host.identityFilePath}, which ` +
         'has not been bound yet. Open the host and paste the key, or connect ' +
         'with the SSH agent instead.',
@@ -62,8 +64,18 @@ export async function withResolvedCredential(host: Host): Promise<Host> {
   // resolution rule cannot apply to the terminal and miss the exec path.
   const resolved = await resolveSessionCredential(host)
   if (!resolved.ok) {
-    // The reason is user-facing and never contains the secret.
-    throw new Error(resolved.message)
+    // The reason is user-facing and never contains the secret. It is also
+    // structured: a locked vault must not be retried as if it were a network
+    // blip, and the classifier can only tell the two apart if it receives the
+    // kind rather than a sentence.
+    throw resolved.reason !== undefined
+      ? credentialFailureFrom({
+          ok: false,
+          reason: resolved.reason,
+          message: resolved.message,
+          ...(resolved.reason === 'read-failed' ? { cause: null } : {}),
+        } as Parameters<typeof credentialFailureFrom>[0])
+      : new CredentialFailure('credential-missing', resolved.message)
   }
   return {
     ...host,

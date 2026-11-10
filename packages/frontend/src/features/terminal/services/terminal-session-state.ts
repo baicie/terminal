@@ -21,6 +21,9 @@ export function updateTerminalState(
     record.reconnectNextRetryAt = null
   }
   if (next.retryable !== undefined) record.retryable = next.retryable
+  if (next.credentialKind !== undefined) {
+    record.credentialKind = next.credentialKind
+  }
   else if (
     next.status !== undefined &&
     next.status !== 'error' &&

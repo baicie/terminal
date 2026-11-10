@@ -1,4 +1,5 @@
 import { formatIpcError } from '@/hooks/terminal-session-helpers'
+import { asCredentialFailure } from './credential-failure'
 import { closeTerminalBackend } from './terminal-session-backend'
 import type { TerminalSessionOutputBuffer } from './terminal-session-output-buffer'
 import { updateTerminalState } from './terminal-session-state'
@@ -7,6 +8,12 @@ import type { TerminalRecord } from './terminal-session-manager-types'
 export interface TerminalFailure {
   error: string
   retryable: boolean
+  /**
+   * Set when the failure came from the credential layer, so the UI can offer the
+   * action that actually resolves it (create / unlock the vault, re-save the
+   * credential) instead of a generic "retry".
+   */
+  credentialKind?: string
 }
 
 const NON_RETRYABLE_KINDS = new Set([
@@ -30,6 +37,13 @@ const NON_RETRYABLE_MESSAGES = [
   'terminal output byte count does not match',
   'xterm rejected terminal output',
   'terminal input queue exceeded',
+  // Fallbacks for errors that reach this classifier without the structured
+  // wrapper — a record serialised before this change, or a path that still throws
+  // a plain Error. These sentences are constants this repository owns, not input.
+  'which is locked. unlock the vault',
+  'no vault has been set up yet',
+  'the vault could not be read',
+  'this build cannot read',
 ]
 
 // russh reports a transport failure that happens during authentication as
@@ -49,7 +63,39 @@ const TRANSIENT_AUTHENTICATION_MESSAGES = [
   'transport closed',
 ]
 
+/**
+ * Credential failures that no amount of waiting fixes.
+ *
+ * These arrive as `CredentialFailure` from the launcher, so the decision is made
+ * on the kind rather than on the message. A locked vault, an uninitialised vault
+ * and a damaged reference all need the user to do something; retrying spends the
+ * budget that a real network outage would need.
+ */
+const TERMINAL_CREDENTIAL_KINDS = new Set([
+  'vault-locked',
+  'vault-uninitialized',
+  'vault-unusable',
+  'credential-corrupt-reference',
+  'credential-not-bound',
+  'credential-missing',
+])
+
 export function classifyTerminalFailure(error: unknown): TerminalFailure {
+  const credential = asCredentialFailure(error)
+  if (credential !== null) {
+    return {
+      error: credential.message,
+      credentialKind: credential.kind,
+      // `credential-read-failed` is the one credential case that may be
+      // transient — a decrypt can fail because the vault is being re-keyed under
+      // us. It still does not climb the network ladder; the pane says what to
+      // check rather than "waiting to retry".
+      retryable:
+        credential.kind === 'credential-read-failed' ||
+        !TERMINAL_CREDENTIAL_KINDS.has(credential.kind),
+    }
+  }
+
   const formatted = formatIpcError(error)
   const record =
     error && typeof error === 'object'
@@ -95,6 +141,9 @@ export function handleTerminalIoError(
     sessionId: null,
     error: failure.error,
     retryable: failure.retryable,
+    ...(failure.credentialKind !== undefined
+      ? { credentialKind: failure.credentialKind }
+      : {}),
   })
   return failure
 }

@@ -29,6 +29,7 @@ function record(overrides: Partial<TerminalRecord> = {}): TerminalRecord {
     reconnectReason: 'network unavailable',
     reconnectNextRetryAt: 1234,
     retryable: true,
+    credentialKind: null,
     closed: false,
     ...overrides,
   }
@@ -61,7 +62,7 @@ describe('updateTerminalState', () => {
   })
 
   it('records the retry schedule while a reconnect is running', () => {
-    const target = record({ status: 'connected', reconnectAttempt: null, reconnectReason: null, reconnectNextRetryAt: null, retryable: null })
+    const target = record({ status: 'connected', reconnectAttempt: null, reconnectReason: null, reconnectNextRetryAt: null, retryable: null, credentialKind: null })
 
     updateTerminalState(target, {
       status: 'reconnecting',

@@ -197,3 +197,44 @@ describe('TerminalPaneHeader', () => {
     expect(status.textContent).not.toContain('Retrying soon')
   })
 })
+
+describe('a vault failure offers the action that resolves it', () => {
+  // The pane used to show the vault's sentence and nothing else. "Unlock the
+  // vault" is advice; the user then has to find the Vaults page themselves. The
+  // header offers it directly, and only for credential failures — a network
+  // error has nothing to do with the vault.
+  const base = {
+    tab,
+    host,
+    onReconnect: vi.fn(),
+    onDisconnect: vi.fn(),
+  } as unknown as React.ComponentProps<typeof TerminalPaneHeader>
+
+  it('shows a vault action when the vault is locked', () => {
+    render(
+      <TooltipProvider>
+        <TerminalPaneHeader
+          {...base}
+          status="error"
+          reconnectRetryable={false}
+          errorMessage="This host stores its credentials in the vault, which is locked. Unlock the vault and connect again."
+        />
+      </TooltipProvider>,
+    )
+    expect(screen.getByTestId('terminal-vault-action')).toBeTruthy()
+  })
+
+  it('does not offer it for an ordinary network error', () => {
+    render(
+      <TooltipProvider>
+        <TerminalPaneHeader
+          {...base}
+          status="error"
+          reconnectRetryable
+          errorMessage="connection reset by peer"
+        />
+      </TooltipProvider>,
+    )
+    expect(screen.queryByTestId('terminal-vault-action')).toBeNull()
+  })
+})

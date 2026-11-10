@@ -16,6 +16,7 @@ import { getTabDisplayLabel } from '@/features/terminal/services/terminal-title'
 import { TerminalPaneHeaderButton as HeaderButton } from './terminal-pane-header-button'
 import { TerminalPaneMenu } from './terminal-pane-menu'
 import { TerminalPaneCommandStatus } from './terminal-pane-command-status'
+import { TerminalVaultAction, vaultActionFor } from './terminal-vault-action'
 import type {
   ConnectionStatus,
   TerminalPaneHeaderProps,
@@ -47,6 +48,7 @@ export function TerminalPaneHeader(props: TerminalPaneHeaderProps) {
   const statusLabel = recoverableError
     ? t('terminal.status.retryExhausted')
     : t(`terminal.status.${props.status}`)
+  const vaultAction = vaultActionFor(props.errorMessage)
   const statusText =
     props.status === 'reconnecting' && props.reconnectAttempt
       ? `${statusLabel} · ${props.reconnectAttempt}`
@@ -99,6 +101,10 @@ export function TerminalPaneHeader(props: TerminalPaneHeaderProps) {
           <TerminalPaneCommandStatus lastExitCode={props.lastExitCode} />
         </div>
       </div>
+
+      {vaultAction !== null && (
+        <TerminalVaultAction action={vaultAction} title={props.errorMessage} />
+      )}
 
       <div
         className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"

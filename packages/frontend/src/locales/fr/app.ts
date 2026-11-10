@@ -91,6 +91,9 @@ export default {
   'terminal.status.connected': 'Connecté',
   'terminal.status.disconnected': 'Déconnecté',
   'terminal.status.error': 'Erreur',
+  'terminal.vault.create': 'Créer un coffre',
+  'terminal.vault.unlock': 'Déverrouiller le coffre',
+  'terminal.vault.manage': 'Ouvrir les coffres',
   'terminal.hostKeyChangedTitle': "La clé d'hôte SSH a changé",
   'terminal.hostKeyTrustTitle': 'Faire confiance à cet hôte SSH ?',
   'terminal.hostKeyChangedDescription':

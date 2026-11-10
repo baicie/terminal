@@ -16,6 +16,7 @@ import { SessionCredentialResolver } from '@/service/credential-boundary'
 import type {
   CredentialRef,
   CredentialRefProblem,
+  CredentialResolutionFailure,
   HostMetadata,
 } from '@/service/credential-boundary'
 import { vaultSecretProvider } from '@/service/vault-secret-provider'
@@ -37,7 +38,14 @@ export interface SessionCredentialInput {
 
 export type SessionCredentialOutcome =
   | { ok: true; password?: string; privateKey?: string }
-  | { ok: false; message: string }
+  /**
+   * The failure, with the resolver's structured reason when there was one.
+   *
+   * `reason` is absent for failures this module raises itself (a damaged
+   * reference, a not-yet-bound import path); those are already terminal and the
+   * caller classifies them by the error type it throws.
+   */
+  | { ok: false; message: string; reason?: CredentialResolutionFailure['reason'] }
 
 /** The sentence a user can act on, per failure mode. Never contains a secret. */
 export function describeRefProblem(problem: CredentialRefProblem): string {
@@ -98,7 +106,10 @@ export async function resolveSessionCredential(
   const resolved = await new SessionCredentialResolver(
     vaultSecretProvider,
   ).resolve(metadata)
-  if (!resolved.ok) return { ok: false, message: resolved.message }
+  // Keep the whole failure, not just its sentence. The reason is what lets the
+  // session classifier tell a locked vault from a network error instead of
+  // matching text.
+  if (!resolved.ok) return resolved
   return {
     ok: true,
     password: resolved.credential.password,

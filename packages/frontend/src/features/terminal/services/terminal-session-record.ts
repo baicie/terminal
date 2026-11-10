@@ -37,6 +37,7 @@ export function createTerminalRecord(
     reconnectReason: null,
     reconnectNextRetryAt: null,
     retryable: null,
+    credentialKind: null,
     closed: false,
   }
 }

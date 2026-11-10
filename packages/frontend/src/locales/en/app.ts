@@ -91,6 +91,9 @@ export default {
   'terminal.status.connected': 'Connected',
   'terminal.status.disconnected': 'Disconnected',
   'terminal.status.error': 'Error',
+  'terminal.vault.create': 'Create a vault',
+  'terminal.vault.unlock': 'Unlock the vault',
+  'terminal.vault.manage': 'Open Vaults',
   'terminal.hostKeyChangedTitle': 'SSH host key changed',
   'terminal.hostKeyTrustTitle': 'Trust this SSH host?',
   'terminal.hostKeyChangedDescription':
