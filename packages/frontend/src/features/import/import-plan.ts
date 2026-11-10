@@ -165,7 +165,7 @@ export function planImport(
     }
   })
 
-  resolveProxyJumps(candidates, parsed.hosts, parsed.warnings)
+  resolveProxyJumps(candidates, parsed.hosts, parsed.warnings, options.existingHosts)
 
   const summary = {
     total: candidates.length,

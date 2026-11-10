@@ -157,3 +157,62 @@ Host plain
     expect(plain?.jumpHostId ?? null).toBeNull()
   })
 })
+
+describe('B3 — a ProxyJump never resolves to a row that will not be inserted', () => {
+  it('points at the saved host id when the bastion is already in the database', () => {
+    // The bastion is already saved, so this file's copy of it is a duplicate and
+    // is never inserted. The jump must name the row that exists — not the
+    // candidate id that `materialiseImport` will skip.
+    const plan = planImport(parseSshConfig(`
+Host bastion
+  HostName bastion.example.test
+  User admin
+
+Host db
+  HostName db.internal
+  User deploy
+  ProxyJump bastion
+`), {
+      existingHosts: [
+        {
+          id: 'uuid-of-the-saved-bastion',
+          name: 'bastion',
+          hostname: 'bastion.example.test',
+          port: 22,
+          username: 'admin',
+          authType: 'key',
+          isFavorite: false,
+          portForwards: [],
+          createdAt: 0,
+          updatedAt: 0,
+        } as never,
+      ],
+    })
+
+    const bastion = plan.candidates.find(c => c.name === 'bastion')
+    expect(bastion?.decision).toBe('duplicate')
+
+    const db = plan.candidates.find(c => c.name === 'db')
+    expect(db?.decision).toBe('create')
+    // The id that actually exists, not the never-inserted candidate id.
+    expect(db?.resolvedJumpHostId).toBe('uuid-of-the-saved-bastion')
+  })
+
+  it('still resolves to the new candidate when the bastion is being imported', () => {
+    const plan = planImport(parseSshConfig(`
+Host bastion
+  HostName bastion2.example.test
+  User admin
+
+Host db2
+  HostName db2.internal
+  User deploy
+  ProxyJump bastion
+`), { existingHosts: [] })
+
+    const bastion = plan.candidates.find(c => c.name === 'bastion')
+    const db = plan.candidates.find(c => c.name === 'db2')
+    expect(bastion?.decision).toBe('create')
+    expect(db?.resolvedJumpHostId).toBe(bastion?.id)
+  })
+})

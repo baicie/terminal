@@ -31,6 +31,16 @@ export function resolveProxyJumps(
   candidates: ImportCandidate[],
   entries: ParsedSshHost[],
   warnings: SshConfigWarning[],
+  /**
+   * Hosts already in the database, with their real ids.
+   *
+   * This is the only safe fallback. An earlier version fell back to the other
+   * *candidates* — including the ones marked `duplicate`. A duplicate is never
+   * inserted (`materialiseImport` emits `create` rows only), so a jump that
+   * resolved to one pointed at an id that would never exist, and the host
+   * imported successfully and then failed to connect.
+   */
+  existingHosts: ReadonlyArray<{ id: string, name: string, hostname: string }> = [],
 ): void {
   if (candidates.length === 0) return
 
@@ -38,17 +48,32 @@ export function resolveProxyJumps(
 
   /** alias (lowercased) -> candidate id, for entries defined in this file. */
   const byAlias = new Map<string, string>()
-  /** name / hostname (lowercased) -> candidate id, as a fallback. */
-  const byNameOrHost = new Map<string, string>()
+  /**
+   * name / hostname (lowercased) -> candidate id, for candidates this import
+   * will actually insert. A `duplicate` is deliberately absent: its row already
+   * exists under its own id, which the next map supplies.
+   */
+  const byNewCandidate = new Map<string, string>()
   for (const candidate of candidates) {
-    byNameOrHost.set(candidate.name.toLowerCase(), candidate.id)
-    byNameOrHost.set(candidate.hostname.toLowerCase(), candidate.id)
+    if (candidate.decision !== 'create') continue
+    byNewCandidate.set(candidate.name.toLowerCase(), candidate.id)
+    byNewCandidate.set(candidate.hostname.toLowerCase(), candidate.id)
+  }
+  /** name / hostname (lowercased) -> id of a row already in the database. */
+  const bySavedHost = new Map<string, string>()
+  for (const existing of existingHosts) {
+    bySavedHost.set(existing.name.toLowerCase(), existing.id)
+    bySavedHost.set(existing.hostname.toLowerCase(), existing.id)
   }
   for (const entry of entries) {
     const owner = candidates.find(
       candidate => candidate.hostname === entry.hostname && candidate.port === entry.port,
     )
     if (owner === undefined) continue
+    // A duplicate is not inserted, so its alias must resolve to the *saved* row
+    // instead. Leaving it here reintroduced the dangling reference through the
+    // alias path even after the name/hostname fallback was fixed.
+    if (owner.decision !== 'create') continue
     for (const alias of entry.aliases) {
       byAlias.set(alias.toLowerCase(), owner.id)
     }
@@ -69,14 +94,15 @@ export function resolveProxyJumps(
     }
     const resolved =
       byAlias.get(target.toLowerCase()) ??
-      byNameOrHost.get(target.toLowerCase()) ??
+      byNewCandidate.get(target.toLowerCase()) ??
+      bySavedHost.get(target.toLowerCase()) ??
       null
     candidate.resolvedJumpHostId = resolved
     if (resolved === null) {
       candidate.decision = 'invalid'
       candidate.reason =
-        `ProxyJump "${candidate.proxyJump}" names a host that is neither in this ` +
-        'file nor saved locally. Import it first, or add the jump host by hand.'
+        `ProxyJump "${candidate.proxyJump}" names a host that is neither imported ` +
+        'by this file nor saved locally. Import it first, or add the jump host by hand.'
       candidate.selectedByDefault = false
       unresolvedJumps.push(candidate)
     }
