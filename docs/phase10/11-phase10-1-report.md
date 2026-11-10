@@ -2,9 +2,9 @@
 
 - 基线：`main = 7c1524ed38daac4dab69b92babcac9102e87ce22`
 - 分支：`feat/phase10-1-credential-security-closure`
-- Draft PR：[#23](https://github.com/baicie/terminal/pull/23)
+- PR：[#23](https://github.com/baicie/terminal/pull/23) — **已 squash 合并为 `00643e77d17f4e38cfaf80b42d572cef917ba21d`（2026-11-10T05:22:51Z）**，本地与远端分支均已删除
 - ADR：`docs/phase10/10-credential-boundary-adr.md`
-- 未合并、未打 Tag、未发布 Release、未修改真实用户数据库
+- 未打 Tag、未发布 Release、未修改真实用户数据库
 
 ## 1. 一句话结论
 
@@ -16,7 +16,7 @@ Phase 10 的安全结论成立于「新建/编辑」这一条路径。本轮把�
 
 ```
 BASE_SHA=7c1524ed38daac4dab69b92babcac9102e87ce22
-FINAL_SHA=<见 PR #23 最新提交>
+FINAL_SHA=00643e77d17f4e38cfaf80b42d572cef917ba21d（squash merge，2026-11-10T05:22:51Z）
 PR_URL=https://github.com/baicie/terminal/pull/23
 
 FRONTEND_HOST_WRITE_SAFE=PASS
@@ -41,7 +41,7 @@ WORKSPACE_RESTORE=NOT_RUN
 GUI_IME=NOT_RUN
 
 RUSTSEC_2026_0459=UNRESOLVED_BASELINED
-CI=PASS（run 42739526802，11/11）
+CI=PASS（合并前 run 42759330993（`81e1bb7`）11/11；此前 run 42739526802（`b8dc716`）同为 11/11）
 EVIDENCE_FINGERPRINT_VALID=PASS
 
 PHASE10_1_SECURITY_VERDICT=PARTIAL
@@ -250,7 +250,7 @@ Merge 模式下该行不会被改写，于是它继续指向版本 1 并解析�
 
 | 层 | 结果 |
 | --- | --- |
-| CI | run `42739526802`（`b8dc716`，最后一个含代码的提交）**11/11 success**；`7169fe3`（仅文档）run `42742351316` 同样 **11/11 success**。Ubuntu/Windows 在该 run 首次失败是 crates.io 下载 `moxcms` 时的 `SSL_ERROR_SYSCALL` 网络故障，与代码无关（同一代码的 `b8dc716` 三平台构建首次即 success），重跑后通过 |
+| CI | 合并前 run `42759330993`（`81e1bb7`，分支 HEAD）**11/11 success**；此前 run `42739526802`（`b8dc716`）与 run `42742351316`（`7169fe3`，仅文档）同为 11/11。Ubuntu/Windows 曾因 crates.io 下载 `moxcms` 的 `SSL_ERROR_SYSCALL` 首次失败，重跑通过，与代码无关。合并为 squash（源码树不变，证据指纹不受影响） |
 | 真实矩阵 | run `42670402197`（`708f3cc`）三平台全 success |
 | 前端 | 195 文件 / 1751 项（含审查后新增的 8 项回归） |
 | Rust lib | 381 项（`db_import` 39，其中 12 项为 10.1 新增） |
