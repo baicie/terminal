@@ -71,7 +71,22 @@ let target: SshdHandle
 
 beforeAll(async () => {
   if (!SUPPORTED) return
-  workDirectory = await mkdtemp(path.join(tmpdir(), 'terminal-wp1-2-'))
+  // StrictModes refuses an `authorized_keys` path reachable through a
+  // world-writable directory. `os.tmpdir()` is `/var/folders/…` on macOS (0700
+  // parents) but `/tmp` on Linux runners (1777), so the fixture works locally and
+  // fails in CI with "bad ownership or modes for directory /tmp".
+  //
+  // `HOME` is private on both platforms, and it is where a real user's own
+  // `~/.ssh` lives — so this also keeps the fixture closer to the thing being
+  // modelled. A fallback to tmpdir keeps the test runnable in a container with no
+  // HOME; it will fail there for the same environmental reason, and the skip
+  // below documents why rather than pretending.
+  const base = process.env.HOME && process.env.HOME !== '/'
+    ? process.env.HOME
+    : tmpdir()
+  const privateRoot = await mkdtemp(path.join(base, '.terminal-e2e-'))
+  await chmod(privateRoot, 0o700)
+  workDirectory = await mkdtemp(path.join(privateRoot, 'run-'))
   target = (await startTerminalSmokeSshd({
     runDirectory: path.join(workDirectory, 'target'),
     mode: 'key',
@@ -94,7 +109,10 @@ afterAll(async () => {
   if (!SUPPORTED) return
   await bastion?.stop().catch(() => undefined)
   await target?.stop().catch(() => undefined)
-  if (workDirectory) await rm(workDirectory, { recursive: true, force: true })
+  if (workDirectory) {
+    // Remove the private parent too — it is created above `workDirectory`.
+    await rm(path.dirname(workDirectory), { recursive: true, force: true })
+  }
 })
 
 describe.skipIf(!SUPPORTED)('WP1 — an IdentityFile the import recorded can log in', () => {
