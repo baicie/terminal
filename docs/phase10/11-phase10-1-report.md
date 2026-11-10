@@ -41,7 +41,7 @@ WORKSPACE_RESTORE=NOT_RUN
 GUI_IME=NOT_RUN
 
 RUSTSEC_2026_0459=UNRESOLVED_BASELINED
-CI=<见 PR #23>
+CI=PASS（run 42739526802，11/11）
 EVIDENCE_FINGERPRINT_VALID=PASS
 
 PHASE10_1_SECURITY_VERDICT=PARTIAL
@@ -250,6 +250,8 @@ Merge 模式下该行不会被改写，于是它继续指向版本 1 并解析�
 
 | 层 | 结果 |
 | --- | --- |
+| CI | run `42739526802`（`b8dc716`）**11/11 success**，含 Repository gates（source-size + evidence + script tests，无 continue-on-error） |
+| 真实矩阵 | run `42670402197`（`708f3cc`）三平台全 success |
 | 前端 | 195 文件 / 1751 项（含审查后新增的 8 项回归） |
 | Rust lib | 381 项（`db_import` 39，其中 12 项为 10.1 新增） |
 | typecheck | 通过 |
