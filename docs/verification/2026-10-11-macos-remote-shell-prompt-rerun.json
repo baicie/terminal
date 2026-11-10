@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-11-10T14:28:09.699Z",
+  "recordedAt": "2026-11-10T17:01:24.920Z",
   "recordedDate": "2026-11-10",
   "kind": "tauri-remote-cold-start-shell-prompt-observed-rerun",
   "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:remote-cold-start -- --app-path $PWD/src-tauri/target/debug/terminal",
@@ -10,20 +10,20 @@
   },
   "revision": {
     "head": "",
-    "commit": "5755c31",
+    "commit": "aeb3bfd",
     "dirtyWorktree": false
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "e05fe31d81780017387f167377f46d5fb6db2c0a1a7a8381516096e2fa3109d2"
+    "sha256": "98e25b25b85456781f8988725eff3f424cf3144293d59c6c6e9021de8ed66d98"
   },
   "application": {
     "path": "/Users/runner/work/terminal/terminal/src-tauri/target/debug/terminal",
-    "pid": 22741
+    "pid": 21351
   },
   "fixture": {
     "host": "127.0.0.1",
-    "port": 49204,
+    "port": 49205,
     "username": "runner"
   },
   "shell": "bash",
@@ -32,8 +32,8 @@
     "probe": "loopback sshd fixture prints an OSC 133 prompt; the app reports ready only after the remote prompt marker round-trip",
     "measuredFrom": "child-spawn-event",
     "readinessTarget": "terminal",
-    "spawnToPromptObservedMs": 6314,
-    "requestToPromptObservedMs": 6316,
+    "spawnToPromptObservedMs": 6762,
+    "requestToPromptObservedMs": 6766,
     "markerReady": true,
     "terminalReady": true,
     "windowReady": false,
@@ -41,18 +41,18 @@
     "underTenSeconds": true
   },
   "evidence": {
-    "markerPath": "/var/folders/h5/t85nd63d71x27_8gl5gw3l_w0000gn/T/terminal-remote-cold-fixture-a6OVMu/sshd/home/REMOTE_COLD_MARKER",
-    "promptMarkerPath": "/var/folders/h5/t85nd63d71x27_8gl5gw3l_w0000gn/T/terminal-remote-cold-fixture-a6OVMu/sshd/home/REMOTE_PROMPT_MARKER",
+    "markerPath": "/var/folders/h5/t85nd63d71x27_8gl5gw3l_w0000gn/T/terminal-remote-cold-fixture-V8QZ8p/sshd/home/REMOTE_COLD_MARKER",
+    "promptMarkerPath": "/var/folders/h5/t85nd63d71x27_8gl5gw3l_w0000gn/T/terminal-remote-cold-fixture-V8QZ8p/sshd/home/REMOTE_PROMPT_MARKER",
     "markerChecks": [
       {
-        "path": "/var/folders/h5/t85nd63d71x27_8gl5gw3l_w0000gn/T/terminal-remote-cold-fixture-a6OVMu/sshd/home/REMOTE_PROMPT_MARKER",
+        "path": "/var/folders/h5/t85nd63d71x27_8gl5gw3l_w0000gn/T/terminal-remote-cold-fixture-V8QZ8p/sshd/home/REMOTE_PROMPT_MARKER",
         "content": "REMOTE_PROMPT_MARKER",
         "ready": true
       }
     ]
   },
   "source": {
-    "fingerprint": "de97ec8bb55414254f50ef7ccdec8f72fe980c4524dd345863226392a7e48836",
+    "fingerprint": "0c43a2f651e546d352a6e9cf209461268fd69ec02657275a7a27b40d11a82436",
     "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs on the checked-out CI sources at evidence build time."
   },
   "limitations": [
@@ -63,12 +63,12 @@
   ],
   "provenance": {
     "source": "github-actions",
-    "runId": "42829594709",
+    "runId": "42855501840",
     "runAttempt": "1",
     "workflow": "Real-machine terminal matrix",
     "job": "macos-ssh-matrix",
-    "commit": "5755c319b802cfae4d6646dd690ab9868ebd3e9a",
-    "fingerprint": "de97ec8bb55414254f50ef7ccdec8f72fe980c4524dd345863226392a7e48836",
+    "commit": "aeb3bfde010e132805b7834a2326facf54f5278e",
+    "fingerprint": "0c43a2f651e546d352a6e9cf209461268fd69ec02657275a7a27b40d11a82436",
     "runner": {
       "os": "macOS",
       "arch": "ARM64"
