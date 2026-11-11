@@ -48,6 +48,8 @@ export function useTerminal(
     reason?: string
     nextRetryAt?: number
     retryable?: boolean
+    recovery?: UseTerminalResult['recovery']
+    credentialKind?: string
   }>({})
   const bindingRef = useRef<TerminalSessionBinding | null>(null)
   const outputSchedulerRef = useRef<TerminalOutputScheduler | null>(null)
@@ -171,6 +173,11 @@ export function useTerminal(
             reason: snapshot.reason,
             nextRetryAt: snapshot.nextRetryAt,
             retryable: snapshot.retryable,
+            // These two are what make the pane's vault action structural. They
+            // were present on the snapshot since Phase 10.4 and never read here,
+            // so the header had nothing but the sentence to work with.
+            recovery: snapshot.recovery,
+            credentialKind: snapshot.credentialKind,
           })
         },
       },

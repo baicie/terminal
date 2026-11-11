@@ -9,12 +9,31 @@ export interface TerminalFailure {
   error: string
   retryable: boolean
   /**
+   * What a retry would take, which is not always "wait".
+   *
+   * One boolean could not say this. "Automatic" means the recovery ladder may
+   * run on its own; "manual" means a person must change something first; and
+   * "after-vault" means the retry only becomes meaningful once the vault is
+   * fixed. Collapsing the last two into `retryable: true` is what put a locked
+   * vault on the same five-attempt backoff as a dropped network.
+   */
+  recovery: TerminalFailureRecovery
+  /**
    * Set when the failure came from the credential layer, so the UI can offer the
    * action that actually resolves it (create / unlock the vault, re-save the
    * credential) instead of a generic "retry".
    */
   credentialKind?: string
 }
+
+/** The three ways a failed connection can become a working one. */
+export type TerminalFailureRecovery =
+  /** Transient: the session manager may retry without asking. */
+  | 'automatic'
+  /** The user must change something (credentials, host, key) before retrying. */
+  | 'manual'
+  /** Blocked on the vault; retry is meaningful only once the vault is usable. */
+  | 'after-vault'
 
 const NON_RETRYABLE_KINDS = new Set([
   'authentication_failed',
@@ -64,35 +83,45 @@ const TRANSIENT_AUTHENTICATION_MESSAGES = [
 ]
 
 /**
- * Credential failures that no amount of waiting fixes.
+ * Credential failures and what a retry would take.
  *
  * These arrive as `CredentialFailure` from the launcher, so the decision is made
- * on the kind rather than on the message. A locked vault, an uninitialised vault
- * and a damaged reference all need the user to do something; retrying spends the
- * budget that a real network outage would need.
+ * on the kind rather than on the message. None of them may spend the automatic
+ * reconnect budget: waiting cannot unlock a vault, create one, or repair a
+ * reference, and the budget is then unavailable for the network outage that might
+ * genuinely follow.
+ *
+ * They are not all the same situation, though. A vault problem is fixed on the
+ * Vaults page and the connection becomes worth retrying immediately afterwards;
+ * a damaged reference or an unbound key path needs the host edited first.
  */
-const TERMINAL_CREDENTIAL_KINDS = new Set([
-  'vault-locked',
-  'vault-uninitialized',
-  'vault-unusable',
-  'credential-corrupt-reference',
-  'credential-not-bound',
-  'credential-missing',
-])
+const CREDENTIAL_RECOVERY: Record<string, TerminalFailureRecovery> = {
+  'vault-locked': 'after-vault',
+  'vault-uninitialized': 'after-vault',
+  'vault-unusable': 'after-vault',
+  // A decrypt that failed is retried by unlocking or repairing the vault, not by
+  // reconnecting. It used to be the one credential kind treated as transient,
+  // which is how a vault failure reached the network retry loop.
+  'credential-read-failed': 'after-vault',
+  'credential-corrupt-reference': 'manual',
+  'credential-not-bound': 'manual',
+  'credential-missing': 'manual',
+}
 
 export function classifyTerminalFailure(error: unknown): TerminalFailure {
   const credential = asCredentialFailure(error)
   if (credential !== null) {
+    const recovery = CREDENTIAL_RECOVERY[credential.kind] ?? 'manual'
     return {
       error: credential.message,
       credentialKind: credential.kind,
-      // `credential-read-failed` is the one credential case that may be
-      // transient — a decrypt can fail because the vault is being re-keyed under
-      // us. It still does not climb the network ladder; the pane says what to
-      // check rather than "waiting to retry".
-      retryable:
-        credential.kind === 'credential-read-failed' ||
-        !TERMINAL_CREDENTIAL_KINDS.has(credential.kind),
+      recovery,
+      // False for every credential kind, including `after-vault`. The pane reads
+      // this as "the manager is still trying on its own" and renders "waiting to
+      // retry"; nothing is retrying, and the user's next step is on the Vaults
+      // page. `recovery` is what carries the difference between "fix the vault
+      // and retry" and "edit the host first".
+      retryable: false,
     }
   }
 
@@ -108,12 +137,17 @@ export function classifyTerminalFailure(error: unknown): TerminalFailure {
     TRANSIENT_AUTHENTICATION_MESSAGES.some(message =>
       normalized.includes(message),
     )
+  const retryable =
+    transientAuthenticationFailure ||
+    (!(typeof kind === 'string' && NON_RETRYABLE_KINDS.has(kind)) &&
+      !NON_RETRYABLE_MESSAGES.some(message => normalized.includes(message)))
   return {
     error: formatted,
-    retryable:
-      transientAuthenticationFailure ||
-      (!(typeof kind === 'string' && NON_RETRYABLE_KINDS.has(kind)) &&
-        !NON_RETRYABLE_MESSAGES.some(message => normalized.includes(message))),
+    retryable,
+    // Everything that reaches here without a credential kind is a transport or
+    // protocol failure. The ones that retry are the transient network cases the
+    // ladder exists for; the ones that do not need the user to act.
+    recovery: retryable ? 'automatic' : 'manual',
   }
 }
 
@@ -141,9 +175,11 @@ export function handleTerminalIoError(
     sessionId: null,
     error: failure.error,
     retryable: failure.retryable,
+    recovery: failure.recovery,
     ...(failure.credentialKind !== undefined
       ? { credentialKind: failure.credentialKind }
       : {}),
   })
   return failure
 }
+

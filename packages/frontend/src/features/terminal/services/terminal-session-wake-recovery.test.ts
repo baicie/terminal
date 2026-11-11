@@ -21,6 +21,7 @@ function record(overrides: Partial<TerminalRecord> = {}): TerminalRecord {
     reconnectReason: null,
     reconnectNextRetryAt: null,
     retryable: null,
+    recovery: null,
     credentialKind: null,
     closed: false,
     ...overrides,
@@ -117,22 +118,45 @@ describe('TerminalSessionWakeRecovery', () => {
   it('resumes only retryable remote sessions that are not already reconnecting', () => {
     const wake = new TerminalSessionWakeRecovery()
 
-    expect(wake.canResume(record({ status: 'error', retryable: true }))).toBe(
-      true,
-    )
+    expect(
+      wake.canResume(
+        record({ status: 'error', retryable: true, recovery: 'automatic' }),
+      ),
+    ).toBe(true)
     expect(wake.canResume(record({ status: 'error', retryable: false }))).toBe(
       false,
     )
     expect(
-      wake.canResume(record({ status: 'connected', retryable: true })),
+      wake.canResume(
+        record({ status: 'connected', retryable: true, recovery: 'automatic' }),
+      ),
     ).toBe(false)
     expect(
       wake.canResume(
         record({
           status: 'error',
           retryable: true,
+          recovery: 'automatic',
           reconnectPromise: Promise.resolve(),
         }),
+      ),
+    ).toBe(false)
+  })
+
+  it('does not resume a vault failure, which waiting cannot fix', () => {
+    // `retryable` is false for every credential kind, so this also guards the
+    // case where a future change makes it true again: the wake path asks
+    // `recovery`, and a vault needs the user, not a lid closing and opening.
+    const wake = new TerminalSessionWakeRecovery()
+
+    expect(
+      wake.canResume(
+        record({ status: 'error', retryable: true, recovery: 'after-vault' }),
+      ),
+    ).toBe(false)
+    expect(
+      wake.canResume(
+        record({ status: 'error', retryable: true, recovery: 'manual' }),
       ),
     ).toBe(false)
   })
@@ -149,6 +173,7 @@ describe('TerminalSessionWakeRecovery', () => {
       reconnectMode: 'automatic',
       reconnectPromise: ownership,
       retryable: true,
+      recovery: 'automatic',
     })
     let resumed = 0
 
@@ -160,6 +185,7 @@ describe('TerminalSessionWakeRecovery', () => {
     target.reconnectMode = null
     target.status = 'error'
     target.retryable = true
+    target.recovery = 'automatic'
     target.generation = 8
     resolveOwnership()
     await ownership

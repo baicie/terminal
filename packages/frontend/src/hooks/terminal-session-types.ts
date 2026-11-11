@@ -73,6 +73,10 @@ export interface UseTerminalResult {
   reason?: string
   nextRetryAt?: number
   retryable?: boolean
+  /** What a retry would take, when the failure came from the credential layer. */
+  recovery?: 'automatic' | 'manual' | 'after-vault'
+  /** Which credential failure this was, so the pane can offer the right fix. */
+  credentialKind?: string
   getInputDiagnostics: () => TerminalSessionIoSnapshot | null
   getOutputDiagnostics: () => TerminalOutputSchedulerSnapshot | null
   write: (data: string) => void

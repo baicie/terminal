@@ -1,6 +1,18 @@
 import type { TerminalRecord } from './terminal-session-manager-types'
 
 /**
+ * Whether the automatic ladder is allowed to retry this record.
+ *
+ * Two fields have to agree, and they say different things: `retryable` answers
+ * "is the session still recoverable at all?" and `recovery` answers "does it
+ * recover by waiting?". A vault failure is recoverable but not by waiting, and
+ * waking a suspended laptop is exactly a "try again in a moment" event.
+ */
+function resumable(record: TerminalRecord): boolean {
+  return record.retryable === true && record.recovery === 'automatic'
+}
+
+/**
  * Tracks host sleep/wake recovery for remote sessions.
  *
  * Sleeping suspends timers and tears down the socket, so an automatic
@@ -29,7 +41,7 @@ export class TerminalSessionWakeRecovery {
       !record.reconnectPromise &&
       record.reconnectMode !== 'manual' &&
       record.status === 'error' &&
-      record.retryable === true
+      resumable(record)
     )
   }
 
@@ -42,7 +54,7 @@ export class TerminalSessionWakeRecovery {
       if (
         !ownership ||
         record.status !== 'error' ||
-        record.retryable !== true ||
+        !resumable(record) ||
         record.reconnectMode !== 'automatic'
       ) {
         return false
@@ -54,7 +66,7 @@ export class TerminalSessionWakeRecovery {
           record.generation !== generation ||
           record.reconnectPromise ||
           record.status !== 'error' ||
-          record.retryable !== true
+          !resumable(record)
         ) {
           return
         }

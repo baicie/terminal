@@ -133,11 +133,17 @@ export async function startTerminalSession(
     }
     record.io.disconnect()
     const failure = classifyTerminalFailure(error)
+    // Only a transient transport fault may spend the automatic budget. A vault
+    // failure is `after-vault`: waiting cannot fix it, and the five attempts it
+    // used to consume (plus the 30 s recovery timer) were spent guaranteeing the
+    // same failure again. `retryable` is still true there because the pane keeps
+    // offering a manual retry — the ladder is what `recovery` gates.
+    const automatic = failure.recovery === 'automatic'
     // An attempt that was suspended by host sleep fails without a sessionId, so
     // the ordinary I/O-error path cannot re-arm it. If a wake arrived while it
     // was still in flight, spend a fresh attempt budget now.
     if (
-      failure.retryable &&
+      automatic &&
       dependencies.reconnects.consumeWakeArming(record)
     ) {
       if (record.reconnectMode) {
@@ -147,7 +153,7 @@ export async function startTerminalSession(
       return 'cancelled'
     }
     if (!record.reconnectMode) {
-      if (failure.retryable && record.request.tabType === 'remote') {
+      if (automatic && record.request.tabType === 'remote') {
         // The very first connection is not covered by the I/O-error path: that
         // path requires a live sessionId, and a connection that never came up
         // has none. Reporting the error alone therefore left the pane dead

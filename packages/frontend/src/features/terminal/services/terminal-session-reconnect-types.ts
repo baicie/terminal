@@ -1,11 +1,19 @@
 import type { TerminalSessionOutputBuffer } from './terminal-session-output-buffer'
 import type { TerminalRecord } from './terminal-session-manager-types'
+import type { TerminalFailureRecovery } from './terminal-session-manager-errors'
 
 export type TerminalReconnectStartResult =
   | 'connected'
   | 'cancelled'
   | { status: 'retry'; error: string }
-  | { status: 'failed'; error: string; retryable: boolean }
+  | {
+      status: 'failed'
+      error: string
+      retryable: boolean
+      /** Which way forward this failure has; only `automatic` keeps the loop. */
+      recovery: TerminalFailureRecovery
+      credentialKind?: string
+    }
 
 export interface TerminalReconnectOptions {
   baseDelayMs?: number
