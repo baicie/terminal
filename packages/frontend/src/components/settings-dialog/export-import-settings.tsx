@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Separator } from '@/components/ui/separator'
 import { toast } from '@/components/ui/sonner'
 import { exportDataToFile, importDataWithSecretPolicy } from '@/service/sync'
+import { ExportIntegrityError } from '@/service/export-sanitize'
 import type { ImportSecretsDiagnosis, ImportSecretsPolicy } from '@/service/sync'
 import { CredentialMigrationPanel } from './credential-migration-panel'
 import { ExportImportContent } from './export-import-content'
@@ -49,7 +50,14 @@ export function ExportImportSettings({ onClose }: ExportImportSettingsProps) {
         toast.success('Export successful', { description: filePath })
     } catch (error) {
       console.error('Export failed:', error)
-      setErrorMessage(`Export failed: ${error}`)
+      // An integrity refusal already explains itself: it names the host and the
+      // reason and says what to do. Prefixing it with "Export failed: Error:"
+      // buries the one sentence the user needs.
+      setErrorMessage(
+        error instanceof ExportIntegrityError
+          ? error.message
+          : `Export failed: ${error}`,
+      )
     } finally {
       setExporting(false)
     }
