@@ -624,16 +624,18 @@ fn rebind_list(payload: &ImportPayload) -> Vec<NeedsRebind> {
         if parse_bound_ref(row.bound_credential_ref.as_ref()).is_some() {
             continue;
         }
-        let from_file = match imported_credential_ref(row.credential_ref.as_ref()) {
-            ImportedCredentialRef::NeedsRebind { kinds } => kinds,
-            ImportedCredentialRef::None => Vec::new(),
-        };
-        if !from_file.is_empty() {
+        // `NeedsRebind` is the report, not the kind list. An unknown provider or a
+        // damaged reference yields an empty list — the source stored a credential
+        // this build cannot name — and filtering on `is_empty` dropped exactly
+        // those rows, so the import completed and said nothing.
+        if let ImportedCredentialRef::NeedsRebind { kinds } =
+            imported_credential_ref(row.credential_ref.as_ref())
+        {
             rebind.push(NeedsRebind {
                 resource: "host",
                 id,
                 name,
-                kinds: from_file,
+                kinds,
             });
             continue;
         }
@@ -663,6 +665,21 @@ fn rebind_list(payload: &ImportPayload) -> Vec<NeedsRebind> {
 
     for row in &payload.ssh_keys {
         if parse_bound_ref(row.bound_credential_ref.as_ref()).is_some() {
+            continue;
+        }
+        // A key that describes a stored credential must be reported even when the
+        // file carries no plaintext: the whole point of the vault is that the
+        // secret is not in the file, so `presence` is empty for exactly the rows
+        // that need rebinding. Checking only the plaintext columns dropped them.
+        if let ImportedCredentialRef::NeedsRebind { kinds } =
+            imported_credential_ref(row.credential_ref.as_ref())
+        {
+            rebind.push(NeedsRebind {
+                resource: "sshKey",
+                id: row_arg_string(row.id.as_ref()),
+                name: row_arg_string(row.name.as_ref()),
+                kinds,
+            });
             continue;
         }
         let presence = ssh_key_presence(row.private_key.as_ref(), row.passphrase.as_ref());

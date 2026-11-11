@@ -1468,3 +1468,116 @@ mod credential_preservation {
         );
     }
 }
+
+// WP3 — a reference this build cannot read is still a credential that was there.
+//
+// `rebind_list` only pushed a row when it could name the kinds. An unknown
+// provider or a damaged reference yields an empty kind list, so those hosts were
+// never reported: the import completed, said nothing, and the user found out only
+// when the connection failed with no stored credential.
+mod rebind_reporting {
+    use super::*;
+
+    fn rebind_ids(report: &crate::db_import::writer::ImportReport) -> Vec<String> {
+        report
+            .credentials_needing_rebind
+            .iter()
+            .map(|r| r.id.clone())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn an_unknown_provider_is_reported_not_silently_dropped() {
+        let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+        let backup = payload(json!({
+            "mergeMode": "merge",
+            "now": 9_000,
+            "hosts": [{
+                "id": "h1", "name": "From a newer build", "hostname": "n.example",
+                "port": 22, "username": "root", "auth_type": "password",
+                "credential_ref": r#"{"kinds":["password"],"provider":"system-keychain","version":1}"#
+            }]
+        }));
+
+        let report = run_import(&pool, &backup, BUDGET).await.expect("import");
+
+        assert!(
+            rebind_ids(&report).contains(&"h1".to_string()),
+            "a host whose stored credential this build cannot name must be reported \
+             as needing a rebind; the report was {:?}",
+            report.credentials_needing_rebind
+        );
+    }
+
+    #[tokio::test]
+    async fn a_damaged_reference_is_reported_too() {
+        let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+        let backup = payload(json!({
+            "mergeMode": "merge",
+            "now": 9_000,
+            "hosts": [{
+                "id": "h2", "name": "Damaged", "hostname": "d.example",
+                "port": 22, "username": "root", "auth_type": "password",
+                "credential_ref": "{\"kinds\":["
+            }]
+        }));
+
+        let report = run_import(&pool, &backup, BUDGET).await.expect("import");
+        assert!(
+            rebind_ids(&report).contains(&"h2".to_string()),
+            "a damaged credential reference must be reported; got {:?}",
+            report.credentials_needing_rebind
+        );
+    }
+
+    #[tokio::test]
+    async fn an_ssh_key_reference_is_reported() {
+        // The ssh-key loop only looked at plaintext columns, but a vault-backed
+        // key has none — so exactly the keys that needed rebinding were the ones
+        // it never reported.
+        let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+        let backup = payload(json!({
+            "mergeMode": "merge",
+            "now": 9_000,
+            "sshKeys": [{
+                "id": "k1", "name": "Vault key", "key_type": "ed25519",
+                "public_key": "pub",
+                "credential_ref": r#"{"kinds":["privateKey"],"provider":"vault","version":2}"#
+            }]
+        }));
+
+        let report = run_import(&pool, &backup, BUDGET).await.expect("import");
+        let keys: Vec<&str> = report
+            .credentials_needing_rebind
+            .iter()
+            .filter(|r| r.resource == "sshKey")
+            .map(|r| r.id.as_str())
+            .collect();
+        assert!(
+            keys.contains(&"k1"),
+            "a vault-backed ssh key must be reported as needing a rebind; got {:?}",
+            report.credentials_needing_rebind
+        );
+    }
+
+    #[tokio::test]
+    async fn a_host_with_no_credential_is_not_reported() {
+        // The inverse: a host that never stored anything must not be listed as
+        // needing a rebind, or the prompt becomes noise the user learns to ignore.
+        let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+        let backup = payload(json!({
+            "mergeMode": "merge",
+            "now": 9_000,
+            "hosts": [{
+                "id": "h3", "name": "Agent host", "hostname": "a.example",
+                "port": 22, "username": "root", "auth_type": "agent"
+            }]
+        }));
+
+        let report = run_import(&pool, &backup, BUDGET).await.expect("import");
+        assert!(
+            !rebind_ids(&report).contains(&"h3".to_string()),
+            "a host with no stored credential must not need a rebind"
+        );
+    }
+}
