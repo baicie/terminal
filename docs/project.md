@@ -1136,6 +1136,83 @@ bundle budget 613/624 KB、证据重采 run `42829594709` **0 problem**；两 PR
 详见 `docs/phase10/15-phase10-3-reachability-audit.md`、
 `docs/phase10/16-phase10-3-daily-driver-package.md`。
 
+### Phase 10.4 / 10.4.1 - 日用阻断收口 ✅ 已合入（PR #33 → `e234091`）
+
+Phase 10.3 记录的四项「未修」逐条闭合，合并前又做了一次针对性复审。
+
+**10.4 四个工作包**
+
+- ✅ **WP-A Vault 锁定不再消耗重连预算**：`CredentialFailure` 携带 `kind`，
+  Classifier 按结构而非文案判断。锁定/未初始化/不可用三种状态各有独立入口。
+- ✅ **WP-B 清除凭据 UI**：`updateHost` 自 10.1 起接受 `clearCredential: true`，
+  但全仓没有 UI 设置它。用户想「不再存密码」只能删主机、连带丢分组标签。
+- ✅ **WP-C 共享空秘密被拒绝**：`shareKindsFor(ref=null, includeCredentials=true)`
+  返回 `[]`，整块跳过直接 `toast.success`。勾选「包含密码」却共享 0 个秘密。
+  `passphrase_encrypted` 核实后确认 `hosts` 表无 passphrase 列，生产契约无法产生，
+  按要求移除产出而非保留无人消费的字段。
+- ✅ **WP-D 窄屏 Vault 入口**：侧栏隐藏由宽度驱动，桌面窗口拖窄同样触发；
+  More 面板新增 Vaults。
+- ✅ 真实 Tauri 应用启动验收（`docs/phase10/17-phase10-4-real-app-launch.md`）：
+  隔离 `HOME` 启动 release 二进制、recovery 状态机、bootstrap 链、`hosts` 24 列。
+
+**10.4.1 合并前三项修复**（先红后绿）
+
+- ✅ **清除凭据失败泄漏未处理 rejection**：`void confirm()` +
+  `try/finally` 无 `catch` + 调用方 rethrow。先红证据是 vitest `Errors 5`。
+- ✅ **Vault 读取失败进入网络重连**：`credential-read-failed` 返回
+  `retryable: true`，一次读取失败消耗 5 次重连 + 30 秒计时器（先红：
+  `expected 1 times, but got 6 times`）。引入 `TerminalFailureRecovery` 三态
+  （`automatic` / `manual` / `after-vault`），只有 `automatic` 允许自动阶梯，
+  三处：`start.ts`、`reconnect.ts` 循环、`wake-recovery.ts` host wake。
+- ✅ **结构化 kind 未到 UI**：`credentialKind` 已加进 record 与 snapshot，
+  但 `use-terminal.ts` 从未读取，header 仍在 `vaultActionFor(errorMessage)` 上
+  做字符串匹配，`could not be read` 被映射成 **Unlock**。改为按 kind + status
+  决策；`credentialFailureFrom` 不再用 `message.includes` 反推，provider 的
+  `state` 作为结构化字段传递。
+
+**本轮自己引入又修掉的三处**
+
+1. `resolveSessionCredential` 的 `if (!resolved.ok) return resolved` ——
+   解析器字段叫 `state`、模块叫 `vaultState`，结构相近 **TypeScript 不报错**，
+   state 被静默丢弃，所有 Vault 故障在真实路径退化成 `unusable`。
+2. `href="#/vaults"` 在 `createBrowserRouter` 下不匹配任何路由，**点击毫无反应**；
+   裸 `<a href>` 会整页导航拆掉所有会话。改为保留 `href` +
+   `preventDefault()` + `useNavigate()`。
+3. source-size 触发三次（`credential-boundary.ts` 352、
+   `terminal-pane-header.tsx` 205、`container.tsx` 201），**全部本地发现并拆分**。
+
+**独立审查（未参与开发，逐条尝试推翻）**
+
+| 断言 | 判定 | 处理 |
+| --- | --- | --- |
+| WP1 | CONFIRMED | — |
+| WP2 | PARTIAL | 已补修 |
+| WP3 | PARTIAL | 已补修 |
+
+审查找出两处真问题并已修复：`credential-corrupt-reference` **无生产者**
+（launcher 对损坏引用抛裸 `Error`，四种损坏仍跑满 5 次退避）；以及**测试未锁住
+`recovery` 判定** —— 变异回 `retryable` 后 8/8 仍绿，因为分类器保证两字段对每个
+真实失败一致。补 `terminal-recovery-field-contract.test.ts` 用分叉组合
+（`retryable: true` + `recovery: 'after-vault'`）钉住契约，三处判定的变异现均变红。
+
+**仍为 PARTIAL**：`credential-missing` 无生产者，兜底分支不可达。保留枚举与 UI
+映射（状态真实），**不伪造生产者补测**。
+
+**门禁**：前端 **217 文件 / 1926 项**（`Errors 0`）、Rust **381 passed**、
+typecheck、ESLint、source-size **638**、bundle **615.74 / 624 KB**；
+证据重采 run `42949968274`（`b561d38`）三平台 success，指纹
+**`5caf8efd…`**（旧 `0c43a2f6…`），门禁 **0 problem**；最终 CI `42952974237`
+（`0ed6042`）**11/11**。
+
+**判定**：`CLEAR_CREDENTIAL_UNHANDLED_REJECTION=PASS`、
+`VAULT_READ_FAILURE_SKIPS_NETWORK_RETRY=PASS`、`CREDENTIAL_KIND_REACHES_UI=PASS`、
+`CREDENTIAL_UI_DECIDES_ON_STRUCTURE=PASS`、`VAULT_ACTION_REACHABLE=PASS`；
+真实 GUI 的 Vault / SSH / Jump / SFTP / IME / Workspace 恢复全部 **NOT_RUN**。
+`DAILY_DRIVER_READY=NO`、`TABBY_REPLACEMENT_READY=NO`。
+
+**停止线**：按任务书，本轮后停止新增 Phase 10.x 功能，下一阶段只做真实 macOS
+Daily Driver 验收。详见 `docs/phase10/18-phase10-4-1-pre-merge-review.md`。
+
 ## 待办事项
 
 ### P0 - 必须完成
