@@ -17,6 +17,13 @@ export interface TerminalStatusSnapshot {
   tabId: string
   cols: number
   rows: number
+  /**
+   * The session status the pane is actually in.
+   *
+   * Carried here rather than read from the tab: a tab exists whether or not its
+   * session connected, so "tab present" is not a connection state.
+   */
+  status: 'idle' | 'connecting' | 'reconnecting' | 'connected' | 'disconnected' | 'error'
 }
 
 interface TerminalStatusState {
@@ -33,7 +40,8 @@ export const useTerminalStatusStore = create<TerminalStatusState>(set => ({
     set(state =>
       state.active?.tabId === snapshot.tabId &&
       state.active.cols === snapshot.cols &&
-      state.active.rows === snapshot.rows
+      state.active.rows === snapshot.rows &&
+      state.active.status === snapshot.status
         ? state
         : { active: snapshot },
     ),

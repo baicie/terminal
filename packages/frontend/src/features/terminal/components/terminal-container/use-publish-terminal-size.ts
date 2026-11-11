@@ -1,5 +1,8 @@
 import { useEffect } from 'react'
-import { useTerminalStatusStore } from '@/store/terminal-status'
+import {
+  useTerminalStatusStore,
+  type TerminalStatusSnapshot,
+} from '@/store/terminal-status'
 
 /**
  * Report this pane's size to the status bar, but only while it is the active tab.
@@ -18,7 +21,7 @@ export function usePublishTerminalSize(options: {
   isReady: boolean
   term: { cols: number, rows: number } | null
   /** Re-runs the publish when the session state changes, e.g. after a reconnect. */
-  status: string
+  status: TerminalStatusSnapshot['status']
 }): void {
   const publish = useTerminalStatusStore(state => state.publish)
   const clear = useTerminalStatusStore(state => state.clear)
@@ -32,7 +35,7 @@ export function usePublishTerminalSize(options: {
     if (!isReady || !term) return
     const report = () => {
       if (term.cols > 0 && term.rows > 0) {
-        publish({ tabId, cols: term.cols, rows: term.rows })
+        publish({ tabId, cols: term.cols, rows: term.rows, status })
       }
     }
     report()

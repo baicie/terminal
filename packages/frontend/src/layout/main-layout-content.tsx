@@ -147,6 +147,7 @@ export function MainLayoutContent({
         <StatusBar
           cols={activePaneSize?.cols}
           rows={activePaneSize?.rows}
+          status={activePaneSize?.status}
           transfers={activeTransfers}
         />
       )}

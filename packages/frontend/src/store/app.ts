@@ -96,7 +96,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   tabs: [],
   splitGroups: [],
   activeTabId: null,
-  sidebarVisible: true,
+  // The activity rail is now the permanent navigation. The detailed sidebar is
+  // an optional panel the user opens, so the terminal gets its width by default.
+  sidebarVisible: false,
   recentlyClosedTabs: [],
 
   setTheme(theme) {
