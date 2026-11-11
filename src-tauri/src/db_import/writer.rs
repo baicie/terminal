@@ -43,6 +43,13 @@ pub struct ImportReport {
     /// Secrets found in the file and what happened to them. Empty under a payload
     /// that carried none, which is the normal case for a Phase 10.1 export.
     pub secrets: ImportSecretReport,
+    /// Rows whose existing credential reference was kept because the file had no
+    /// usable one to replace it with.
+    ///
+    /// Without this count a replace import that overwrote a working reference with
+    /// NULL looked identical to one that left it alone: the row was rewritten, the
+    /// report said "hosts: 1", and the credential was simply gone.
+    pub preserved_credentials: u64,
 }
 
 /// One host or key the user has to fix after an import.
@@ -106,7 +113,7 @@ const GROUP_UPDATE: &str = "UPDATE groups SET name = ?, parent_id = ?, color = ?
 
 const HOST_EXISTS: &str = "SELECT id FROM hosts WHERE id = ?";
 const HOST_INSERT: &str = "INSERT INTO hosts (id, name, hostname, port, username, auth_type, password, private_key, certificate, credential_ref, group_id, is_favorite, color, tags, port_forwards, startup_command, environment, jump_host_id, jump_host_auth_type, agent_forwarding, shell_integration, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-const HOST_UPDATE: &str = "UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = ?, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?";
+const HOST_UPDATE: &str = "UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = COALESCE(?, credential_ref), group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, updated_at = ? WHERE id = ?";
 
 const SNIPPET_PACKAGE_EXISTS: &str = "SELECT id FROM snippet_packages WHERE id = ?";
 const SNIPPET_PACKAGE_INSERT: &str =
@@ -121,7 +128,7 @@ const SNIPPET_UPDATE: &str =
 
 const SSH_KEY_EXISTS: &str = "SELECT id FROM ssh_keys WHERE id = ?";
 const SSH_KEY_INSERT: &str = "INSERT INTO ssh_keys (id, name, key_type, private_key, public_key, certificate, passphrase, credential_ref, is_encrypted, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?)";
-const SSH_KEY_UPDATE: &str = "UPDATE ssh_keys SET name = ?, key_type = ?, private_key = NULL, public_key = ?, certificate = ?, passphrase = NULL, credential_ref = ?, is_encrypted = ?, updated_at = ? WHERE id = ?";
+const SSH_KEY_UPDATE: &str = "UPDATE ssh_keys SET name = ?, key_type = ?, private_key = NULL, public_key = ?, certificate = ?, passphrase = NULL, credential_ref = COALESCE(?, credential_ref), is_encrypted = ?, updated_at = ? WHERE id = ?";
 
 const KNOWN_HOST_EXISTS: &str = "SELECT id FROM known_hosts WHERE hostname = ? AND port = ?";
 const KNOWN_HOST_INSERT: &str =
@@ -234,6 +241,14 @@ struct Upsert {
     insert_args: Vec<SqlArg>,
     update_sql: &'static str,
     update_args: Vec<SqlArg>,
+    /// Position of `credential_ref` in `update_args`, for the two tables whose
+    /// update carries `credential_ref = COALESCE(?, …)`.
+    ///
+    /// When the file has no bound reference the statement leaves the target's own
+    /// reference alone, so the row keeps a credential it can still use. That is the
+    /// right behaviour, but it must be *reported*: otherwise a replace import looks
+    /// like it replaced everything while silently keeping the old pointer.
+    credential_arg_index: Option<usize>,
 }
 
 /// Inserts a missing row, updates an existing one in replace mode and counts
@@ -241,11 +256,18 @@ struct Upsert {
 async fn upsert(
     conn: &mut SqliteConnection,
     counter: &mut u64,
+    preserved: &mut u64,
     replace: bool,
     plan: Upsert,
 ) -> Result<(), ImportError> {
     if exists(conn, plan.exists_sql, &plan.exists_args).await? {
         if replace {
+            // `COALESCE(?, credential_ref)` keeps the target's own reference when
+            // the file has none. Count that, so the report cannot claim a complete
+            // replacement while a credential was quietly carried over.
+            if plan.credential_arg_is_null() {
+                *preserved += 1;
+            }
             execute(conn, plan.update_sql, &plan.update_args).await?;
             *counter += 1;
         }
@@ -254,6 +276,19 @@ async fn upsert(
         *counter += 1;
     }
     Ok(())
+}
+
+impl Upsert {
+    /// Whether the `credential_ref` argument in `update_args` is absent.
+    ///
+    /// The plans put the reference at a fixed position, but rather than encode that
+    /// index twice the plans record it explicitly via `credential_arg_index`.
+    fn credential_arg_is_null(&self) -> bool {
+        match self.credential_arg_index {
+            Some(index) => matches!(self.update_args.get(index), Some(SqlArg::Null)),
+            None => false,
+        }
+    }
 }
 
 fn group_plan(row: &super::payload::GroupRow) -> Upsert {
@@ -267,6 +302,7 @@ fn group_plan(row: &super::payload::GroupRow) -> Upsert {
     ];
     update_args.push(arg(row.id.as_ref()));
     Upsert {
+        credential_arg_index: None,
         exists_sql: GROUP_EXISTS,
         exists_args: vec![arg(row.id.as_ref())],
         insert_sql: GROUP_INSERT,
@@ -338,6 +374,8 @@ fn host_plan(row: &super::payload::HostRow, now: i64) -> Upsert {
     update_args.push(SqlArg::Int(now));
     update_args.push(arg(row.id.as_ref()));
     Upsert {
+        // `imported_ref_arg` is the 7th element of `shared()`.
+        credential_arg_index: Some(6),
         exists_sql: HOST_EXISTS,
         exists_args: vec![arg(row.id.as_ref())],
         insert_sql: HOST_INSERT,
@@ -349,6 +387,7 @@ fn host_plan(row: &super::payload::HostRow, now: i64) -> Upsert {
 
 fn snippet_package_plan(row: &super::payload::SnippetPackageRow) -> Upsert {
     Upsert {
+        credential_arg_index: None,
         exists_sql: SNIPPET_PACKAGE_EXISTS,
         exists_args: vec![arg(row.id.as_ref())],
         insert_sql: SNIPPET_PACKAGE_INSERT,
@@ -382,6 +421,7 @@ fn snippet_plan(row: &super::payload::SnippetRow) -> Upsert {
     let mut update_args = shared();
     update_args.push(arg(row.id.as_ref()));
     Upsert {
+        credential_arg_index: None,
         exists_sql: SNIPPET_EXISTS,
         exists_args: vec![arg(row.id.as_ref())],
         insert_sql: SNIPPET_INSERT,
@@ -410,6 +450,8 @@ fn ssh_key_plan(row: &super::payload::SshKeyRow, now: i64) -> Upsert {
     update_args.push(SqlArg::Int(now));
     update_args.push(arg(row.id.as_ref()));
     Upsert {
+        // `imported_key_ref_arg` is the 6th element of the ssh key arg list.
+        credential_arg_index: Some(5),
         exists_sql: SSH_KEY_EXISTS,
         exists_args: vec![arg(row.id.as_ref())],
         insert_sql: SSH_KEY_INSERT,
@@ -421,6 +463,7 @@ fn ssh_key_plan(row: &super::payload::SshKeyRow, now: i64) -> Upsert {
 
 fn known_host_plan(row: &super::payload::KnownHostRow) -> Upsert {
     Upsert {
+        credential_arg_index: None,
         exists_sql: KNOWN_HOST_EXISTS,
         exists_args: vec![arg(row.hostname.as_ref()), arg(row.port.as_ref())],
         insert_sql: KNOWN_HOST_INSERT,
@@ -462,6 +505,7 @@ fn workspace_plan(row: &super::payload::WorkspaceRow, now: i64) -> Upsert {
     update_args.push(SqlArg::Int(now));
     update_args.push(arg(row.id.as_ref()));
     Upsert {
+        credential_arg_index: None,
         exists_sql: WORKSPACE_EXISTS,
         exists_args: vec![arg(row.id.as_ref())],
         insert_sql: WORKSPACE_INSERT,
@@ -491,33 +535,35 @@ async fn apply(
     };
 
     for row in &payload.groups {
-        upsert(conn, &mut report.groups, replace, group_plan(row)).await?;
+        upsert(conn, &mut report.groups, &mut report.preserved_credentials, replace, group_plan(row)).await?;
     }
     for row in &payload.hosts {
-        upsert(conn, &mut report.hosts, replace, host_plan(row, now)).await?;
+        upsert(conn, &mut report.hosts, &mut report.preserved_credentials, replace, host_plan(row, now)).await?;
     }
     for row in &payload.snippet_packages {
         upsert(
             conn,
             &mut report.snippet_packages,
+            &mut report.preserved_credentials,
             replace,
             snippet_package_plan(row),
         )
         .await?;
     }
     for row in &payload.snippets {
-        upsert(conn, &mut report.snippets, replace, snippet_plan(row)).await?;
+        upsert(conn, &mut report.snippets, &mut report.preserved_credentials, replace, snippet_plan(row)).await?;
     }
     for row in &payload.ssh_keys {
-        upsert(conn, &mut report.ssh_keys, replace, ssh_key_plan(row, now)).await?;
+        upsert(conn, &mut report.ssh_keys, &mut report.preserved_credentials, replace, ssh_key_plan(row, now)).await?;
     }
     for row in &payload.known_hosts {
-        upsert(conn, &mut report.known_hosts, replace, known_host_plan(row)).await?;
+        upsert(conn, &mut report.known_hosts, &mut report.preserved_credentials, replace, known_host_plan(row)).await?;
     }
     for row in &payload.workspaces {
         upsert(
             conn,
             &mut report.workspaces,
+            &mut report.preserved_credentials,
             replace,
             workspace_plan(row, now),
         )

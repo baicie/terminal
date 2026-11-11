@@ -1292,3 +1292,179 @@ async fn replace_mode_does_not_drop_an_existing_secret_freed_row_into_a_secret_c
         .expect("text");
     assert_eq!(name, "new", "the rest of the replace still applies");
 }
+
+// WP3 — a replace import must not destroy a credential the target can still use.
+//
+// `HOST_UPDATE` sets `credential_ref = ?` unconditionally, and `imported_ref_arg`
+// yields `SqlArg::Null` whenever the file carries no usable *bound* reference. The
+// source device's own `credential_ref` is a description of a vault this device
+// cannot open, so it is rightly never stored. But writing NULL over a row that
+// already had a working reference is a different act: it deletes a credential the
+// user could still connect with, and nothing in the report says it happened.
+//
+// These tests drive the real SQLite import path, not the payload parser.
+mod credential_preservation {
+    use super::*;
+
+    /// A target row that already holds a reference this device can use.
+    async fn seed_host_with_credential(pool: &SqlitePool) {
+        sqlx::query(
+            "INSERT INTO hosts (id, name, hostname, port, username, auth_type, \
+             password, private_key, certificate, credential_ref, group_id, is_favorite, \
+             color, tags, port_forwards, startup_command, environment, jump_host_id, \
+             jump_host_auth_type, agent_forwarding, shell_integration, \
+             created_at, updated_at) \
+             VALUES ('h1', 'Existing', 'old.example', 22, 'root', 'password', \
+             NULL, NULL, NULL, ?, NULL, 0, NULL, NULL, '[]', NULL, NULL, NULL, NULL, 0, 'off', 1, 1)",
+        )
+        .bind(r#"{"kinds":["password"],"provider":"vault","version":3}"#)
+        .execute(pool)
+        .await
+        .expect("seed host");
+    }
+
+    async fn stored_ref(pool: &SqlitePool, id: &str) -> Option<String> {
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT credential_ref FROM hosts WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .expect("read ref")
+    }
+
+    /// A replace payload for h1 that carries no bound reference at all — the
+    /// shape a backup from another device has when it never had a bindable secret.
+    fn replace_without_bound_ref() -> ImportPayload {
+        payload(json!({
+            "mergeMode": "replace",
+            "now": 9_000,
+            "hosts": [{
+                "id": "h1", "name": "Renamed", "hostname": "new.example", "port": 22,
+                "username": "root", "auth_type": "password"
+            }]
+        }))
+    }
+
+    #[tokio::test]
+    async fn replace_keeps_a_working_reference_when_the_file_has_none() {
+        let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+        seed_host_with_credential(&pool).await;
+
+        let report = run_import(&pool, &replace_without_bound_ref(), BUDGET)
+            .await
+            .expect("replace import");
+
+        // The rename still applies — this is about the credential, not the row.
+        let name: String = sqlx::query_scalar("SELECT name FROM hosts WHERE id = 'h1'")
+            .fetch_one(&pool)
+            .await
+            .expect("row");
+        assert_eq!(name, "Renamed");
+
+        let ref_after = stored_ref(&pool, "h1").await;
+        assert_eq!(
+            ref_after.as_deref(),
+            Some(r#"{"kinds":["password"],"provider":"vault","version":3}"#),
+            "replace deleted a credential reference this device could still use"
+        );
+
+        // And the report must say the credential was kept, so the user is not
+        // left believing the backup replaced everything.
+        assert!(
+            report.preserved_credentials > 0,
+            "the import report did not record that an existing credential was kept"
+        );
+    }
+
+    #[tokio::test]
+    async fn replace_still_applies_a_bound_reference_the_file_does_carry() {
+        // The other direction: when the file *does* carry a bound reference, it is
+        // the intended value and must win. A fix that simply refuses to write the
+        // column would break the legitimate case.
+        let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+        seed_host_with_credential(&pool).await;
+
+        let with_bound = payload(json!({
+            "mergeMode": "replace",
+            "now": 9_000,
+            "hosts": [{
+                "id": "h1", "name": "Renamed", "hostname": "new.example", "port": 22,
+                "username": "root", "auth_type": "password",
+                "bound_credential_ref": r#"{"kinds":["password"],"provider":"vault","version":7}"#
+            }]
+        }));
+        run_import(&pool, &with_bound, BUDGET)
+            .await
+            .expect("replace import");
+
+        assert_eq!(
+            stored_ref(&pool, "h1").await.as_deref(),
+            Some(r#"{"kinds":["password"],"provider":"vault","version":7}"#),
+            "an explicit bound reference must still be applied"
+        );
+    }
+
+    #[tokio::test]
+    async fn merge_never_touches_an_existing_row() {
+        // Merge already skips existing rows entirely. Pinned so a future change to
+        // `upsert` cannot make merge start overwriting credentials by accident.
+        let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+        seed_host_with_credential(&pool).await;
+
+        let merge = payload(json!({
+            "mergeMode": "merge",
+            "now": 9_000,
+            "hosts": [{
+                "id": "h1", "name": "Renamed", "hostname": "new.example", "port": 22,
+                "username": "root", "auth_type": "password"
+            }]
+        }));
+        run_import(&pool, &merge, BUDGET).await.expect("merge import");
+
+        let name: String = sqlx::query_scalar("SELECT name FROM hosts WHERE id = 'h1'")
+            .fetch_one(&pool)
+            .await
+            .expect("row");
+        assert_eq!(name, "Existing", "merge must not rewrite an existing row");
+        assert_eq!(
+            stored_ref(&pool, "h1").await.as_deref(),
+            Some(r#"{"kinds":["password"],"provider":"vault","version":3}"#)
+        );
+    }
+
+    #[tokio::test]
+    async fn replace_keeps_an_ssh_key_reference_too() {
+        // The same statement shape exists for ssh_keys; the same defect would be
+        // there, and a fix that only covered `hosts` would leave it.
+        let (_dir, pool) = test_pool(Duration::from_secs(1)).await;
+        sqlx::query(
+            "INSERT INTO ssh_keys (id, name, key_type, private_key, public_key, certificate, \
+             passphrase, credential_ref, is_encrypted, created_at, updated_at) \
+             VALUES ('k1', 'Existing', 'ed25519', NULL, 'pub', NULL, NULL, ?, 0, 1, 1)",
+        )
+        .bind(r#"{"kinds":["privateKey"],"provider":"vault","version":5}"#)
+        .execute(&pool)
+        .await
+        .expect("seed key");
+
+        let replace = payload(json!({
+            "mergeMode": "replace",
+            "now": 9_000,
+            "sshKeys": [{ "id": "k1", "name": "Renamed", "key_type": "ed25519", "public_key": "pub2" }]
+        }));
+        run_import(&pool, &replace, BUDGET).await.expect("replace import");
+
+        let ref_after = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT credential_ref FROM ssh_keys WHERE id = 'k1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("read key ref");
+        assert_eq!(
+            ref_after.as_deref(),
+            Some(r#"{"kinds":["privateKey"],"provider":"vault","version":5}"#),
+            "replace deleted an ssh key credential reference"
+        );
+    }
+}
