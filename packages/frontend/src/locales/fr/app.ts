@@ -95,6 +95,8 @@ export default {
   'terminal.vault.unlock': 'Déverrouiller le coffre',
   'terminal.vault.manage': 'Ouvrir les coffres',
   'terminal.vault.rebind': 'Enregistrer à nouveau le justificatif',
+  'terminal.errorOverlay.title': 'Connexion échouée',
+  'terminal.errorOverlay.dismiss': 'Fermer',
   'terminal.hostKeyChangedTitle': "La clé d'hôte SSH a changé",
   'terminal.hostKeyTrustTitle': 'Faire confiance à cet hôte SSH ?',
   'terminal.hostKeyChangedDescription':

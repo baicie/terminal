@@ -41,6 +41,8 @@ function renderBody(term: XTerminal, active = true, isFullscreen = false) {
     tab: { id: 'mobile-one', label: 'Mobile', type: 'local' as const },
     status: 'connected' as const,
     readableError: null,
+    errorDismissed: false,
+    onDismissError: () => {},
     isMobile: true,
     terminalFontSize: 14,
     terminalBackground: '#282c34',

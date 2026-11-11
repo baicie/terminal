@@ -9,11 +9,9 @@ import {
 import { createPortal } from 'react-dom'
 import type { Host, Tab } from '@/types'
 import type { UseTerminalResult } from '@/hooks/terminal-session-types'
-import { TerminalContextMenu } from './terminal-context-menu'
 import { TerminalKeyboardBar } from './keyboard-bar'
-import { TerminalMobileMenu } from './terminal-mobile-menu'
 import { TerminalPaneHeader } from './terminal-pane-header'
-import { TerminalSearchOverlay } from './terminal-search-overlay'
+import { TerminalSurface } from './terminal-surface'
 import TerminalToolSidebar from '@/components/terminal-tool-sidebar'
 
 interface TerminalBodyProps {
@@ -25,6 +23,9 @@ interface TerminalBodyProps {
   reconnectReason?: string
   reconnectRetryable?: boolean
   credentialKind?: string
+  /** Cleared by the pane when the user dismisses the failure overlay. */
+  errorDismissed: boolean
+  onDismissError: () => void
   isMobile: boolean
   active: boolean
   isFullscreen: boolean
@@ -112,51 +113,30 @@ export function TerminalBody(props: TerminalBodyProps) {
           onReconnect={props.onReconnect}
           onDisconnect={props.onDisconnect}
         />
-        <div className="relative flex-1 min-h-0">
-          {props.isMobile ? (
-            <div
-              ref={setContainerRef}
-              className="absolute inset-0 overflow-hidden"
-              tabIndex={0}
-              role="application"
-              aria-label="Terminal"
-              style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
-              onTouchStart={props.onTouchStart}
-              onTouchEnd={props.onTouchEnd}
-              onTouchCancel={props.onTouchEnd}
-              onTouchMove={props.onTouchMove}
-            />
-          ) : (
-            <TerminalContextMenu
-              term={props.term}
-              onFontSizeChange={props.onFontSizeChange}
-              onOpenSearch={() => props.onSearchOpenChange(true)}
-            >
-              <div
-                ref={setContainerRef}
-                className="absolute inset-0 overflow-hidden focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
-                tabIndex={0}
-                role="application"
-                aria-label="Terminal"
-                style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
-              />
-            </TerminalContextMenu>
-          )}
-          <TerminalSearchOverlay
-            open={props.searchOpen}
-            onClose={closeSearch}
-            searchAddon={props.searchAddon}
-          />
-          {props.isMobile && (
-            <TerminalMobileMenu
-              term={props.term}
-              onFontSizeChange={props.onFontSizeChange}
-              onOpenSearch={() => props.onSearchOpenChange(true)}
-              open={props.mobileMenuOpen}
-              onOpenChange={setMobileMenuOpen}
-            />
-          )}
-        </div>
+        <TerminalSurface
+          tab={props.tab}
+          host={props.host}
+          status={props.status}
+          readableError={props.readableError}
+          credentialKind={props.credentialKind}
+          errorDismissed={props.errorDismissed}
+          isMobile={props.isMobile}
+          term={props.term}
+          containerRef={props.containerRef}
+          setContainerRef={setContainerRef}
+          searchAddon={props.searchAddon}
+          searchOpen={props.searchOpen}
+          mobileMenuOpen={props.mobileMenuOpen}
+          onSearchOpenChange={props.onSearchOpenChange}
+          onSearchClose={closeSearch}
+          onMobileMenuOpenChange={setMobileMenuOpen}
+          onFontSizeChange={props.onFontSizeChange}
+          onReconnect={props.onReconnect}
+          onDismissError={props.onDismissError}
+          onTouchStart={props.onTouchStart}
+          onTouchEnd={props.onTouchEnd}
+          onTouchMove={props.onTouchMove}
+        />
         {props.isMobile && (
           <TerminalKeyboardBar
             onSendKey={props.onSendKey}

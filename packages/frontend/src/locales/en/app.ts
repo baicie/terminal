@@ -95,6 +95,8 @@ export default {
   'terminal.vault.unlock': 'Unlock the vault',
   'terminal.vault.manage': 'Open Vaults',
   'terminal.vault.rebind': 'Re-save the credential',
+  'terminal.errorOverlay.title': 'Connection failed',
+  'terminal.errorOverlay.dismiss': 'Dismiss',
   'terminal.hostKeyChangedTitle': 'SSH host key changed',
   'terminal.hostKeyTrustTitle': 'Trust this SSH host?',
   'terminal.hostKeyChangedDescription':

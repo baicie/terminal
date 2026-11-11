@@ -16,6 +16,7 @@ import {
 import { PasteConfirmDialog } from './paste-confirm-dialog'
 import { usePasteConfirm } from './use-paste-confirm'
 import { useTerminalPaneUi } from './use-terminal-pane-ui'
+import { useTerminalErrorDismissal } from './use-terminal-error-dismissal'
 import { TerminalBody } from './terminal-body'
 import { TerminalEmptyState } from './terminal-empty-state'
 import { useTerminalInstance } from './use-terminal-instance'
@@ -48,13 +49,9 @@ export function TerminalContainer({
   const savedHost = useHostStore(state =>
     tab?.hostId ? state.hosts.find(item => item.id === tab.hostId) : undefined,
   )
-  const host = tab?.profileId
-    ? getTemporaryTerminalProfile(tab.profileId)
-    : savedHost
+  const host = tab?.profileId ? getTemporaryTerminalProfile(tab.profileId) : savedHost
   const jumpHost = useHostStore(state =>
-    host?.jumpHostId
-      ? state.hosts.find(item => item.id === host.jumpHostId)
-      : undefined,
+    host?.jumpHostId ? state.hosts.find(item => item.id === host.jumpHostId) : undefined,
   )
   const isMobile = useIsMobile()
   const ui = useTerminalPaneUi()
@@ -113,11 +110,11 @@ export function TerminalContainer({
       if (pending) updateTab(tabId, { startupFallbackInteracted: true })
     },
   })
-  const { status, error, attempt, reason, retryable, credentialKind } = session
-  const { write, disconnect, reconnectAction, hostKeyGate } = session
+  const { status, error, attempt, reason, retryable, credentialKind, write } = session
+  const { disconnect, reconnectAction, hostKeyGate } = session
   const { isReady, requestFit } = terminal
-
   const readableError = error ? getReadableTerminalError(error, t) : null
+  const errorOverlay = useTerminalErrorDismissal(readableError)
   useTabConnectionStatus(tabId, status)
   useTerminalStatusEffects({
     status,
@@ -159,6 +156,8 @@ export function TerminalContainer({
           host={host}
           status={status}
           readableError={readableError}
+          errorDismissed={errorOverlay.dismissed}
+          onDismissError={errorOverlay.dismiss}
           reconnectAttempt={attempt}
           reconnectReason={reason}
           reconnectRetryable={retryable}

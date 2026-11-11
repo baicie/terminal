@@ -92,6 +92,8 @@ export default {
   'terminal.vault.unlock': '解锁 Vault',
   'terminal.vault.manage': '打开 Vaults',
   'terminal.vault.rebind': '重新保存凭据',
+  'terminal.errorOverlay.title': '连接失败',
+  'terminal.errorOverlay.dismiss': '关闭',
   'terminal.hostKeyChangedTitle': 'SSH 主机密钥已变更',
   'terminal.hostKeyTrustTitle': '是否信任此 SSH 主机？',
   'terminal.hostKeyChangedDescription':
