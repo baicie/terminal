@@ -73,22 +73,63 @@ export const HOST_SECRET_FIELDS = ['password', 'private_key', 'passphrase'] as c
 export const SSH_KEY_SECRET_FIELDS = ['private_key', 'passphrase'] as const
 
 /**
- * The reference to write into an export, or `null` when there is none to describe.
+ * The reference to write into an export, or `null` when the host stores none.
  *
  * Uses the same parser as the read path — one implementation, so the file can never
- * describe a reference this build would not accept. The previous local copy dropped
- * `version`, which meant a re-imported backup described a credential that had no
- * generation, and it flattened a *damaged* reference to `null`, which told the user
- * the source device had stored nothing when in fact it had something unreadable.
+ * describe a reference this build would not accept.
  *
- * A damaged reference is exported as `null` rather than as a claim: the file is a
- * description, and the honest description of "unreadable" is "not something the
- * target can rebind from". The host still imports; the user simply re-sets the
- * credential, which is what they would have had to do anyway.
+ * ## Why an unreadable reference stops the export
+ *
+ * This used to write `null` and continue, on the argument that "the honest
+ * description of 'unreadable' is 'not something the target can rebind from'". That
+ * is true about rebinding and false about the file: after export → import the
+ * target cannot distinguish "this host never stored a credential" from "this host
+ * stored one the exporting build could not read". The first is a fact the user can
+ * act on; the second is a defect, and a backup that hides it is worse than no
+ * backup — the user restores it believing the file is complete.
+ *
+ * So a reference that exists but does not parse aborts the export and names the
+ * row. `null` is reserved for the one case where it is true: nothing was stored.
  */
-function parseRef(raw: unknown): CredentialRef | null {
+export class ExportIntegrityError extends Error {
+  constructor(
+    readonly hostId: string,
+    readonly reason: string,
+    readonly kind: 'host' | 'ssh-key',
+    /** For an unknown provider, which one. It is a name, not a secret. */
+    readonly provider?: string,
+  ) {
+    // `reason` is the parser's own problem kind, never the reference text: the
+    // column holds metadata today, and echoing raw JSON into an error message is
+    // how a future field becomes a leak.
+    super(
+      `The ${kind} "${hostId}" has a stored credential this build cannot read ` +
+        `(${provider === undefined ? reason : `${reason}: ${provider}`}). ` +
+        'Export aborted so the backup does not describe the host as having no ' +
+        'credential. Re-save that credential, or remove it, then export again.',
+    )
+    this.name = 'ExportIntegrityError'
+  }
+}
+
+function readRef(
+  raw: unknown,
+  id: string,
+  kind: 'host' | 'ssh-key',
+): CredentialRef | null {
+  // Absent means nothing was stored. That is a fact, and it exports as `null`.
+  if (raw === null || raw === undefined || raw === '') return null
   const parsed = parseCredentialRef(raw)
-  return parsed.ok ? parsed.ref : null
+  if (!parsed.ok) {
+    const problem = parsed.problem
+    throw new ExportIntegrityError(
+      id,
+      problem.kind,
+      kind,
+      problem.kind === 'unknown-provider' ? problem.provider : undefined,
+    )
+  }
+  return parsed.ref
 }
 
 export function sanitizeHostRow(row: Record<string, unknown>): ExportedHost {
@@ -97,7 +138,7 @@ export function sanitizeHostRow(row: Record<string, unknown>): ExportedHost {
     // `undefined` becomes `null` so the file's shape stays stable across rows.
     out[field] = row[field] ?? null
   }
-  out.credential_ref = parseRef(row.credential_ref)
+  out.credential_ref = readRef(row.credential_ref, String(out.id), 'host')
   return out as unknown as ExportedHost
 }
 
@@ -111,6 +152,14 @@ export interface ExportedSshKey {
   is_encrypted: number | null
   created_at: number | null
   updated_at: number | null
+  /**
+   * Which secret this key stored, and where — same rule as `ExportedHost`.
+   *
+   * This field used to be absent entirely, so every exported key described itself
+   * as having no stored private material even when it had one. The target then
+   * imported a key that could never authenticate and nothing said why.
+   */
+  credential_ref: CredentialRef | null
 }
 
 const SSH_KEY_FIELDS = [
@@ -129,6 +178,11 @@ export function sanitizeSshKeyRow(row: Record<string, unknown>): ExportedSshKey 
   for (const field of SSH_KEY_FIELDS) {
     out[field] = row[field] ?? null
   }
+  out.credential_ref = readRef(
+    row.credential_ref,
+    String(out.id),
+    'ssh-key',
+  )
   return out as unknown as ExportedSshKey
 }
 
