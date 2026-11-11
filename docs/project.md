@@ -1212,6 +1212,92 @@ typecheck、ESLint、source-size **638**、bundle **615.74 / 624 KB**；
 
 **停止线**：按任务书，本轮后停止新增 Phase 10.x 功能，下一阶段只做真实 macOS
 Daily Driver 验收。详见 `docs/phase10/18-phase10-4-1-pre-merge-review.md`。
+### Credential Export / Import Preservation ✅ 已合入（PR #35 → `e710369`）
+
+独立于 Terminal Next 设计的一次修复：三条**现在就存在**的凭据引用关联丢失路径。
+
+先区分三种「丢失」，它们的严重程度差一个数量级：
+
+| 类型 | 含义 | 能否恢复 |
+| --- | --- | --- |
+| 秘密数据丢失 | Vault 密文被删 | 不能 |
+| **引用关联丢失** | 密文还在，行上的指针被抹掉 | 手工可恢复 —— **本轮修的就是这个** |
+| 导入后需重新绑定 | 跨设备引用失效，属预期 | 重输一次，只需**被报告** |
+
+本轮**没有一处触碰密文、密钥派生或 `vault.json` 条目**。
+
+**1. 导出静默降级为 null**
+
+`export-sanitize.ts` 的 `parseRef` 在引用解析失败时返回 `null` 并继续导出。原注释的
+理由是「unreadable 的诚实描述就是 target 无法重新绑定」—— 那句话对「重新绑定」成立，
+对文件不成立：导出→导入之后无法区分「这台主机从来没存过凭据」与「存过一个导出方
+读不懂的凭据」。**隐瞒它的备份比没有备份更糟。**
+
+同一模块的 **ssh key 侧完全没有 `credential_ref` 字段** —— 每把导出的 key 都声称
+自己没有存储私钥材料，即使它有。
+
+这个模块此前**没有任何测试文件**，这是缺陷长期存在的原因。现在 16 项，含 7 种损坏
+形态各自的 fail-closed。新增 `ExportIntegrityError`（携带 hostId / reason / provider，
+不回显引用原文）。
+
+**2. replace 导入清除目标设备仍可用的引用**
+
+`HOST_UPDATE` / `SSH_KEY_UPDATE` 无条件写 `credential_ref = ?`，而 `imported_ref_arg`
+在文件无 bound ref 时给 `SqlArg::Null`。改为 `COALESCE(?, credential_ref)`，并新增
+`preserved_credentials` 计数写进报告。**merge 不受影响**（`upsert` 对已存在的行整行
+跳过，有测试钉住）。
+
+**3. 读不懂的引用从未被报告**
+
+`rebind_list` 只在能列出 kinds 时才推送 `NeedsRebind`，而未知 provider 与损坏引用
+产生的正是空 kinds —— **这些主机从未出现在重绑提示里**。ssh key 侧更严重：那个循环
+完全不看 `credential_ref`，只看明文列，而 vault 化的 key 恰恰没有明文列，所以
+**最需要重绑的 key 是唯一不会报出来的**。
+
+**4. Rust 接受前端会拒绝的版本**
+
+前端 `MAX_SUPPORTED_VERSION = 1e9`，Rust 侧没有上限。一个「未来版本」写的引用会被
+写进列里，然后同一个应用读不了它。Rust 侧加同名常量并在 `parse_bound_ref` 拒绝。
+
+**5. 依赖安全：`RUSTSEC-2026-0486`（范围外改动）**
+
+advisory-db 在 2026-11-11 更新后 `cargo audit` 从 14 条变 15 条，新增 rustix 的
+xattr 零长度缓冲区 unsound。**有修补版**（`>= 1.1.6`），升级 `rustix 1.1.4 → 1.1.6`
+修掉，未记入基线绕过。这条超出本轮批准范围，理由是不修 CI 必红。
+
+**门禁**：前端 **219 文件 / 1952 项**、Rust **391 passed**（原 381 + 10 项新测试，
+全部在真实 SQLite 与真实 `run_import` 上，不是 parse 纯函数）、typecheck、ESLint、
+source-size 641、bundle 616.51/624 KB；证据重采 run `43022343598`（`f8ee8bf`）
+指纹 **`8e0e3ffd…`**、门禁 0 problem；CI `43027613259`（`1c42090`）**11/11**。
+
+**判定**：
+
+```
+EXPORT_UNKNOWN_REF_FAIL_CLOSED      = PASS
+MERGE_PRESERVES_EXISTING_CREDENTIAL = PASS
+REPLACE_REQUIRES_EXPLICIT_POLICY    = PARTIAL
+UNKNOWN_PROVIDER_REBIND_REPORTED    = PASS
+SSH_KEY_REFERENCE_SAFE              = PASS
+LEGACY_BACKUP_COMPATIBILITY         = PARTIAL
+NO_SECRET_IN_EXPORT                 = PASS
+REAL_SQLITE_IMPORT_E2E              = PASS
+```
+
+**两项 PARTIAL 的理由**：`REPLACE_REQUIRES_EXPLICIT_POLICY` —— 补「确认替换」对话框
+比不补更糟（确认清空 = 删可用凭据；确认仍 COALESCE = 对话框是谎言），须先由 UX-2a
+的凭据状态机定义语义；已写进 `docs/design/terminal-next/01-credential-keychain-vault.md` §8。
+`LEGACY_BACKUP_COMPATIBILITY` —— 改新版本无法改变已发布旧版本的解析行为，能证明的
+只是「新版本拒绝 version > 1e9」，不是「旧版本安全」。
+
+**过程记录**：本轮漏跑 `cargo fmt --check`，`Rust quality` 由 CI 抓到失败一次
+（`f8ee8bf` 修复），与 Phase 10.2 记录过的「改完没跑全部门禁」同类。另两次证据派发
+（`43019078326`、`43019864483`）在采集中途因又改源码而取消 —— 正确顺序是「改完 →
+跑完全部门禁 → 不再动源码 → 才派证据」。
+
+**同时**：Terminal Next 的 UX-0 设计文档在 PR #34（分支 `design/terminal-next-ux0`），
+仍为 Draft，未实施任何代码。
+
+
 
 ## 待办事项
 
