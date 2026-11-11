@@ -29,6 +29,15 @@ class FakeProvider implements SecretProvider {
     return this.available
   }
 
+  /**
+   * The real provider reports *which* state it is in; a fake that only answers
+   * the boolean would exercise the resolver's fallback path instead of the one
+   * production takes.
+   */
+  async availabilityState() {
+    return this.available ? { ok: true as const } : { ok: false as const, state: 'locked' as const }
+  }
+
   async read(
     resource: CredentialResource,
     version: number,

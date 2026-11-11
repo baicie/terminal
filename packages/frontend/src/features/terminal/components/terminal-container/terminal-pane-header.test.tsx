@@ -4,6 +4,10 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import type { Host, Tab } from '@/types'
 import { TerminalPaneHeader } from './terminal-pane-header'
 
+// The header's vault action routes through the router rather than reloading the
+// webview, so it needs a navigator even when the test only checks that it renders.
+vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }))
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: { code?: number }) =>
@@ -203,6 +207,10 @@ describe('a vault failure offers the action that resolves it', () => {
   // vault" is advice; the user then has to find the Vaults page themselves. The
   // header offers it directly, and only for credential failures — a network
   // error has nothing to do with the vault.
+  //
+  // The action is chosen from `credentialKind`. Phase 10.4 picked it by matching
+  // this sentence, which is why "the vault could not be read" offered an unlock.
+  // The per-kind mapping is covered in `terminal-vault-action.test.tsx`.
   const base = {
     tab,
     host,
@@ -217,6 +225,7 @@ describe('a vault failure offers the action that resolves it', () => {
           {...base}
           status="error"
           reconnectRetryable={false}
+          credentialKind="vault-locked"
           errorMessage="This host stores its credentials in the vault, which is locked. Unlock the vault and connect again."
         />
       </TooltipProvider>,

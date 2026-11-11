@@ -41,11 +41,17 @@ export type SessionCredentialOutcome =
   /**
    * The failure, with the resolver's structured reason when there was one.
    *
-   * `reason` is absent for failures this module raises itself (a damaged
-   * reference, a not-yet-bound import path); those are already terminal and the
-   * caller classifies them by the error type it throws.
+   * `reason` and `vaultState` are absent for failures this module raises itself
+   * (a damaged reference, a not-yet-bound import path); those are already
+   * terminal and the caller classifies them by the error type it throws.
    */
-  | { ok: false; message: string; reason?: CredentialResolutionFailure['reason'] }
+  | {
+      ok: false
+      message: string
+      reason?: CredentialResolutionFailure['reason']
+      /** Which vault situation stopped the read, when the provider could say. */
+      vaultState?: 'uninitialized' | 'locked' | 'unusable'
+    }
 
 /** The sentence a user can act on, per failure mode. Never contains a secret. */
 export function describeRefProblem(problem: CredentialRefProblem): string {
@@ -108,8 +114,24 @@ export async function resolveSessionCredential(
   ).resolve(metadata)
   // Keep the whole failure, not just its sentence. The reason is what lets the
   // session classifier tell a locked vault from a network error instead of
-  // matching text.
-  if (!resolved.ok) return resolved
+  // matching text, and `state` is what lets the pane choose between "create",
+  // "unlock" and "check the vault".
+  //
+  // Mapped rather than returned as-is: the resolver names the field `state` and
+  // this module names it `vaultState` (its `reason` field is also present for
+  // failures that are not vault ones). Returning the resolver object directly
+  // type-checks only because both are structurally close — and silently drops
+  // the state, which is what the launcher then cannot forward.
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      message: resolved.message,
+      reason: resolved.reason,
+      ...('state' in resolved && resolved.state !== undefined
+        ? { vaultState: resolved.state }
+        : {}),
+    }
+  }
   return {
     ok: true,
     password: resolved.credential.password,

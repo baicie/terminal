@@ -91,6 +91,7 @@ export default {
   'terminal.vault.create': '创建 Vault',
   'terminal.vault.unlock': '解锁 Vault',
   'terminal.vault.manage': '打开 Vaults',
+  'terminal.vault.rebind': '重新保存凭据',
   'terminal.hostKeyChangedTitle': 'SSH 主机密钥已变更',
   'terminal.hostKeyTrustTitle': '是否信任此 SSH 主机？',
   'terminal.hostKeyChangedDescription':

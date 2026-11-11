@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { getTabDisplayLabel } from '@/features/terminal/services/terminal-title'
 import { TerminalPaneHeaderButton as HeaderButton } from './terminal-pane-header-button'
 import { TerminalPaneMenu } from './terminal-pane-menu'
+import { getSessionTarget } from './terminal-pane-target'
 import { TerminalPaneCommandStatus } from './terminal-pane-command-status'
 import { TerminalVaultAction, vaultActionFor } from './terminal-vault-action'
 import type {
@@ -48,7 +49,9 @@ export function TerminalPaneHeader(props: TerminalPaneHeaderProps) {
   const statusLabel = recoverableError
     ? t('terminal.status.retryExhausted')
     : t(`terminal.status.${props.status}`)
-  const vaultAction = vaultActionFor(props.errorMessage)
+  // Structured, not textual: the kind decides the action, and the status gates
+  // it so a stale kind cannot offer a vault fix on a working connection.
+  const vaultAction = vaultActionFor(props.credentialKind, props.status)
   const statusText =
     props.status === 'reconnecting' && props.reconnectAttempt
       ? `${statusLabel} · ${props.reconnectAttempt}`
@@ -103,7 +106,10 @@ export function TerminalPaneHeader(props: TerminalPaneHeaderProps) {
       </div>
 
       {vaultAction !== null && (
-        <TerminalVaultAction action={vaultAction} title={props.errorMessage} />
+        <TerminalVaultAction
+          action={vaultAction}
+          title={props.errorMessage}
+        />
       )}
 
       <div
@@ -181,20 +187,4 @@ export function TerminalPaneHeader(props: TerminalPaneHeaderProps) {
       />
     </div>
   )
-}
-
-function getSessionTarget(
-  props: Pick<TerminalPaneHeaderProps, 'tab' | 'host'>,
-  t: (key: string) => string,
-): string {
-  if (props.tab.type === 'serial') {
-    const port =
-      props.tab.serialConfig?.port?.split(/[/\\]/).pop() ?? props.tab.label
-    return `${port} · ${props.tab.serialConfig?.baudRate ?? '?'} bps`
-  }
-  if (props.tab.type === 'local') return t('sidebar.localTerminal')
-  if (props.host) {
-    return `${props.host.username}@${props.host.hostname}:${props.host.port}`
-  }
-  return props.tab.label
 }

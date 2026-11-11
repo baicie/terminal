@@ -56,6 +56,16 @@ export class VaultSecretProvider implements SecretProvider {
     }
   }
 
+  /**
+   * The `SecretProvider` spelling of `availability`.
+   *
+   * Same call, named for the interface so the resolver can reach it without
+   * knowing which provider it holds.
+   */
+  availabilityState(): Promise<VaultAvailability> {
+    return this.availability()
+  }
+
   async read(
     resource: CredentialResource,
     version: number,

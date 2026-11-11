@@ -36,7 +36,16 @@ export async function withResolvedCredential(host: Host): Promise<Host> {
   // three-state parse exists to prevent. This is the function the terminal actually
   // calls, so the guard has to live here, not only inside the resolver.
   if (host.credentialRefProblem) {
-    throw new Error(describeRefProblem(host.credentialRefProblem))
+    // A `CredentialFailure`, not a bare `Error`: a damaged reference is the
+    // sixth kind the pane maps to "re-save the credential", and this is its only
+    // producer. Throwing a plain Error here meant the enum member existed for
+    // nothing — the classifier fell through to message matching, the session
+    // spent its full five-attempt reconnect budget on a row that cannot be fixed
+    // by waiting, and the header had no action to offer.
+    throw new CredentialFailure(
+      'credential-corrupt-reference',
+      describeRefProblem(host.credentialRefProblem),
+    )
   }
 
   // An imported host can carry a key *path* instead of a credential. It looks
@@ -73,6 +82,12 @@ export async function withResolvedCredential(host: Host): Promise<Host> {
           ok: false,
           reason: resolved.reason,
           message: resolved.message,
+          // `state` is the whole point of making the vault availability
+          // structured: dropping it here would send a first-run user to unlock a
+          // vault that does not exist, which is the defect this field replaces.
+          ...(resolved.vaultState === undefined
+            ? {}
+            : { state: resolved.vaultState }),
           ...(resolved.reason === 'read-failed' ? { cause: null } : {}),
         } as Parameters<typeof credentialFailureFrom>[0])
       : new CredentialFailure('credential-missing', resolved.message)

@@ -93,6 +93,16 @@ export interface ResolvedCredential {
 export interface SecretProvider {
   /** True when the backend can be read right now (e.g. the vault is unlocked). */
   isAvailable(): Promise<boolean>
+  /**
+   * The same check with the reason kept, when the provider can say it.
+   *
+   * Optional so existing providers keep compiling, but the resolver prefers it:
+   * a boolean is what forced the state to be recovered from a sentence later.
+   */
+  availabilityState?(): Promise<
+    | { ok: true }
+    | { ok: false; state: 'uninitialized' | 'locked' | 'unusable' }
+  >
   read(
     resource: CredentialResource,
     version: number,
@@ -118,7 +128,20 @@ export interface CredentialResource {
 }
 
 export type CredentialResolutionFailure =
-  | { ok: false, reason: 'vault-unavailable'; message: string }
+  | {
+      ok: false
+      reason: 'vault-unavailable'
+      message: string
+      /**
+       * Which vault situation stopped the read.
+       *
+       * `reason` alone cannot say it: "unavailable" covers three states with
+       * three different next steps (create, unlock, check the vault). The
+       * provider already knows which one it is; carrying it here keeps callers
+       * from reverse-engineering the state out of an English sentence.
+       */
+      state?: 'uninitialized' | 'locked' | 'unusable'
+    }
   | { ok: false; reason: 'read-failed'; message: string; cause: unknown }
   | {
       ok: false
@@ -132,8 +155,6 @@ export type CredentialResolution =
   | { ok: true; credential: ResolvedCredential }
   | CredentialResolutionFailure
 
-const KINDS: CredentialKind[] = ['password', 'privateKey', 'passphrase']
-
 // The parsing rules live in their own module; re-exported here so callers keep one
 // import for the boundary as a whole.
 export {
@@ -144,6 +165,10 @@ export type {
   CredentialRefParse,
   CredentialRefProblem,
 } from './credential-ref'
+
+// Resolution reads secrets, so it lives beside the boundary rather than inside it.
+// Re-exported for the same reason as the parse rules.
+export { SessionCredentialResolver } from './credential-resolver'
 
 /** The version a reference resolves to, with the legacy fallback made explicit. */
 export function refVersion(ref: CredentialRef): number {
@@ -169,67 +194,6 @@ export function vaultKey(
     return `${namespace}:${resource.id}:${kind}`
   }
   return `${namespace}:${resource.id}:${version}:${kind}`
-}
-
-/**
- * Resolves the secrets a connection needs, at the moment it needs them.
- *
- * The resolver takes the metadata (not a full host object with embedded
- * secrets), so a caller cannot accidentally connect with a plaintext field that
- * was never meant to exist.
- */
-export class SessionCredentialResolver {
-  constructor(private readonly provider: SecretProvider) {}
-
-  async resolve(host: HostMetadata): Promise<CredentialResolution> {
-    const ref = host.credentialRef
-    // No reference: nothing is stored. The caller connects with the Agent, or
-    // asks the user for a password. This is a success with empty credentials.
-    if (ref === null || ref.kinds.length === 0) {
-      return { ok: true, credential: {} }
-    }
-
-    // A reference with no readable backend is a failure, not an empty password:
-    // the user did store a secret and it must not silently vanish.
-    if (!(await this.provider.isAvailable())) {
-      return {
-        ok: false,
-        reason: 'vault-unavailable',
-        message:
-          'This host stores its credentials in the vault, which is locked. Unlock the vault and connect again.',
-      }
-    }
-
-    const resource: CredentialResource = { type: 'host', id: host.id }
-    const version = refVersion(ref)
-    const credential: ResolvedCredential = {}
-    for (const kind of KINDS) {
-      if (!ref.kinds.includes(kind)) continue
-      let value: string | undefined
-      try {
-        value = await this.provider.read(resource, version, kind)
-      } catch (error) {
-        return {
-          ok: false,
-          reason: 'read-failed',
-          message: `Reading the stored ${kind} for this host failed.`,
-          cause: error,
-        }
-      }
-      if (value === undefined) {
-        // The reference promised this secret and the store does not have it.
-        // Continuing would send a connection with a missing half.
-        return {
-          ok: false,
-          reason: 'read-failed',
-          message: `This host records a stored ${kind}, but the vault holds none. Re-save the host's credentials.`,
-          cause: null,
-        }
-      }
-      credential[kind] = value
-    }
-    return { ok: true, credential }
-  }
 }
 
 /** The credential kinds present in a set of secrets, in a stable order. */

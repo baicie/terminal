@@ -33,12 +33,15 @@ export class CredentialFailure extends Error {
   readonly kind: CredentialFailureKind
   /** The resolver reason this came from, when there was one. */
   readonly reason: CredentialResolutionFailure['reason'] | null
+  /** Which vault situation caused it, when the provider could say. */
+  readonly vaultState: 'uninitialized' | 'locked' | 'unusable' | null
 
   constructor(
     kind: CredentialFailureKind,
     message: string,
     options: {
       reason?: CredentialResolutionFailure['reason'] | null
+      vaultState?: 'uninitialized' | 'locked' | 'unusable' | null
       cause?: unknown
     } = {},
   ) {
@@ -46,6 +49,7 @@ export class CredentialFailure extends Error {
     this.name = 'CredentialFailure'
     this.kind = kind
     this.reason = options.reason ?? null
+    this.vaultState = options.vaultState ?? null
     if (options.cause !== undefined) this.cause = options.cause
   }
 }
@@ -69,25 +73,30 @@ export function asCredentialFailure(error: unknown): CredentialFailure | null {
 /**
  * Map a resolver failure onto the stable kind the classifier uses.
  *
- * `vault-unavailable` is one reason but three situations with three different
- * next steps (create / unlock / check the vault), so the message the resolver
- * already produced is what distinguishes them — and that message is a constant
- * this repository owns, not user input.
+ * The vault branch reads `state`, which the provider reports structurally. It
+ * used to recover the state from the message with `includes('no vault has been
+ * set up')` — a string match on English text, which is precisely the failure this
+ * module exists to stop. `unusable` is the honest answer for a provider that
+ * cannot say why it is unavailable: we know the vault cannot be read.
  */
 export function credentialFailureFrom(
   failure: CredentialResolutionFailure,
 ): CredentialFailure {
   switch (failure.reason) {
     case 'vault-unavailable': {
-      const kind: CredentialFailureKind = failure.message.includes(
-        'no vault has been set up',
-      )
-        ? 'vault-uninitialized'
-        : failure.message.includes('could not be read')
-          ? 'vault-unusable'
-          : 'vault-locked'
+      // No message matching decides this. When the provider reports a state it is
+      // used as-is; when it cannot, `unusable` is the honest answer, because we
+      // know the vault cannot be read and not why. Defaulting to `locked` would
+      // send the user to an unlock prompt that does not address the problem.
+      const kind: CredentialFailureKind =
+        failure.state === 'uninitialized'
+          ? 'vault-uninitialized'
+          : failure.state === 'locked'
+            ? 'vault-locked'
+            : 'vault-unusable'
       return new CredentialFailure(kind, failure.message, {
         reason: failure.reason,
+        ...(failure.state === undefined ? {} : { vaultState: failure.state }),
       })
     }
     case 'read-failed':

@@ -62,6 +62,13 @@ class InMemoryVault implements SecretProvider {
     return !this.locked
   }
 
+  /** Mirrors `VaultSecretProvider`: the state is reported, not inferred. */
+  async availabilityState() {
+    return this.locked
+      ? { ok: false as const, state: 'locked' as const }
+      : { ok: true as const }
+  }
+
   async read(
     resource: CredentialResource,
     version: number,
