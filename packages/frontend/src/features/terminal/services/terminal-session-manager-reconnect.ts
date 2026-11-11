@@ -153,6 +153,10 @@ export class TerminalSessionReconnect {
         nextRetryAt:
           mode === 'automatic' ? this.policy.now() + delay : undefined,
         retryable: true,
+        // This loop is the automatic ladder, so the record says so while it
+        // runs. Without it the record would carry `null` and a host wake could
+        // not tell an in-progress network recovery from a vault failure.
+        recovery: 'automatic',
       })
       if (attempt === 1 && sessionId) {
         await closeTerminalBackend(record.request.tabType, sessionId)
@@ -169,6 +173,7 @@ export class TerminalSessionReconnect {
               status: 'error',
               error: formatIpcError(error),
               retryable: true,
+              recovery: 'automatic',
             })
             this.scheduleRecovery(record)
           }
@@ -190,12 +195,21 @@ export class TerminalSessionReconnect {
         continue
       }
       lastError = result.error
-      if (!result.retryable) {
+      if (result.recovery !== 'automatic') {
+        // The retry loop is itself the automatic ladder. A failure that needs
+        // the vault fixed, or a person to change something, must leave the loop
+        // rather than run out its remaining attempts against the same cause.
+        // Writing the verdict through `updateTerminalState` also carries the
+        // credential kind to the pane.
         updateTerminalState(record, {
           status: 'error',
           sessionId: null,
           error: result.error,
-          retryable: false,
+          retryable: result.retryable,
+          recovery: result.recovery,
+          ...(result.credentialKind !== undefined
+            ? { credentialKind: result.credentialKind }
+            : {}),
         })
         return
       }
@@ -206,6 +220,7 @@ export class TerminalSessionReconnect {
       sessionId: null,
       error: lastError,
       retryable: true,
+      recovery: 'automatic',
     })
     this.scheduleRecovery(record)
   }

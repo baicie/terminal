@@ -176,3 +176,78 @@ describe('sharing only metadata', () => {
     expect(mocks.vaultGet).not.toHaveBeenCalled()
   })
 })
+
+describe('WP-C — asking to share a secret that does not exist is refused', () => {
+  it('a host with no credentialRef cannot be shared "with credentials"', async () => {
+    const bare = {
+      ...savedHost,
+      id: 'h-bare',
+      credentialRef: null,
+      identityFilePath: undefined,
+    } as unknown as Host
+
+    render(
+      <ShareHostDialog
+        open
+        onOpenChange={vi.fn()}
+        host={bare}
+        onShare={mocks.onShare}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('switch', { name: /include password|密码/i }))
+    fireEvent.click(screen.getByRole('button', { name: /share|分享/i }))
+
+    // The old behaviour: `shareKindsFor` returned [] and the whole credential
+    // block was skipped, so this reached `toast.success` having attached nothing.
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalled())
+    expect(mocks.onShare).not.toHaveBeenCalled()
+    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+  })
+
+  it('a corrupt reference cannot be shared "with credentials"', async () => {
+    const corrupt = {
+      ...savedHost,
+      id: 'h-corrupt',
+      credentialRef: null,
+      credentialRefProblem: { kind: 'malformed', detail: 'not json' },
+    } as unknown as Host
+
+    render(
+      <ShareHostDialog
+        open
+        onOpenChange={vi.fn()}
+        host={corrupt}
+        onShare={mocks.onShare}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('switch', { name: /include password|密码/i }))
+    fireEvent.click(screen.getByRole('button', { name: /share|分享/i }))
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalled())
+    expect(mocks.onShare).not.toHaveBeenCalled()
+  })
+
+  it('sharing only metadata still works on such a host', async () => {
+    const bare = {
+      ...savedHost,
+      id: 'h-bare-2',
+      credentialRef: null,
+      identityFilePath: undefined,
+    } as unknown as Host
+
+    render(
+      <ShareHostDialog
+        open
+        onOpenChange={vi.fn()}
+        host={bare}
+        onShare={mocks.onShare}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /share|分享/i }))
+
+    await waitFor(() => expect(mocks.onShare).toHaveBeenCalled())
+    expect(mocks.toastError).not.toHaveBeenCalled()
+  })
+})

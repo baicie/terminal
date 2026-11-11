@@ -4,6 +4,7 @@ import type { TabType } from '../types'
 import { resolveSessionCredential, describeRefProblem } from './session-credentials'
 import { traceStageAndWait } from '@/service/database/startup-trace'
 import { buildSshJumpHostIpcConfig } from './ssh-jump-config'
+import { CredentialFailure, credentialFailureFrom } from './credential-failure'
 
 export type TerminalShellIntegration = 'bash' | 'zsh'
 
@@ -35,7 +36,16 @@ export async function withResolvedCredential(host: Host): Promise<Host> {
   // three-state parse exists to prevent. This is the function the terminal actually
   // calls, so the guard has to live here, not only inside the resolver.
   if (host.credentialRefProblem) {
-    throw new Error(describeRefProblem(host.credentialRefProblem))
+    // A `CredentialFailure`, not a bare `Error`: a damaged reference is the
+    // sixth kind the pane maps to "re-save the credential", and this is its only
+    // producer. Throwing a plain Error here meant the enum member existed for
+    // nothing — the classifier fell through to message matching, the session
+    // spent its full five-attempt reconnect budget on a row that cannot be fixed
+    // by waiting, and the header had no action to offer.
+    throw new CredentialFailure(
+      'credential-corrupt-reference',
+      describeRefProblem(host.credentialRefProblem),
+    )
   }
 
   // An imported host can carry a key *path* instead of a credential. It looks
@@ -48,7 +58,8 @@ export async function withResolvedCredential(host: Host): Promise<Host> {
   // an empty key. The error then described a key parse failure rather than the
   // one thing the user could actually fix.
   if (host.identityFilePath) {
-    throw new Error(
+    throw new CredentialFailure(
+      'credential-not-bound',
       `This host was imported with the key file ${host.identityFilePath}, which ` +
         'has not been bound yet. Open the host and paste the key, or connect ' +
         'with the SSH agent instead.',
@@ -62,8 +73,24 @@ export async function withResolvedCredential(host: Host): Promise<Host> {
   // resolution rule cannot apply to the terminal and miss the exec path.
   const resolved = await resolveSessionCredential(host)
   if (!resolved.ok) {
-    // The reason is user-facing and never contains the secret.
-    throw new Error(resolved.message)
+    // The reason is user-facing and never contains the secret. It is also
+    // structured: a locked vault must not be retried as if it were a network
+    // blip, and the classifier can only tell the two apart if it receives the
+    // kind rather than a sentence.
+    throw resolved.reason !== undefined
+      ? credentialFailureFrom({
+          ok: false,
+          reason: resolved.reason,
+          message: resolved.message,
+          // `state` is the whole point of making the vault availability
+          // structured: dropping it here would send a first-run user to unlock a
+          // vault that does not exist, which is the defect this field replaces.
+          ...(resolved.vaultState === undefined
+            ? {}
+            : { state: resolved.vaultState }),
+          ...(resolved.reason === 'read-failed' ? { cause: null } : {}),
+        } as Parameters<typeof credentialFailureFrom>[0])
+      : new CredentialFailure('credential-missing', resolved.message)
   }
   return {
     ...host,

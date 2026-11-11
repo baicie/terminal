@@ -182,3 +182,86 @@ describe('useTerminal error reporting', () => {
     expect(scheduleOutput.mock.calls.length).toBe(before)
   })
 })
+
+// Phase 10.4.1 WP3 — the credential diagnosis has to survive the hook.
+//
+// `credentialKind` was added to the session snapshot in Phase 10.4 and never read
+// by `useTerminal`, so it stopped one layer short of the pane. The header then had
+// only the error sentence to work with. These tests hold the last hop.
+describe('useTerminal carries the credential diagnosis to the pane', () => {
+  beforeEach(() => {
+    scheduleOutput.mockClear()
+    listener = null
+    overflow = null
+  })
+
+  it('exposes the credential kind of a vault failure', () => {
+    const view = renderUseTerminal()
+
+    act(() => {
+      listener?.onState({
+        status: 'error',
+        sessionId: null,
+        error: 'the vault is locked',
+        retryable: false,
+        recovery: 'after-vault',
+        credentialKind: 'vault-locked',
+      })
+    })
+
+    expect(view.result.current.credentialKind).toBe('vault-locked')
+    expect(view.result.current.recovery).toBe('after-vault')
+  })
+
+  it('drops the kind when a later failure is not a credential one', () => {
+    const view = renderUseTerminal()
+
+    act(() => {
+      listener?.onState({
+        status: 'error',
+        sessionId: null,
+        error: 'the vault is locked',
+        retryable: false,
+        recovery: 'after-vault',
+        credentialKind: 'vault-locked',
+      })
+    })
+    expect(view.result.current.credentialKind).toBe('vault-locked')
+
+    act(() => {
+      listener?.onState({
+        status: 'error',
+        sessionId: null,
+        error: 'connection reset by peer',
+        retryable: true,
+        recovery: 'automatic',
+      })
+    })
+    // The stale kind would make the header offer "Unlock the vault" for a
+    // network drop.
+    expect(view.result.current.credentialKind).toBeUndefined()
+  })
+
+  it('drops the kind once the session connects again', () => {
+    const view = renderUseTerminal()
+
+    act(() => {
+      listener?.onState({
+        status: 'error',
+        sessionId: null,
+        error: 'the vault is locked',
+        credentialKind: 'vault-locked',
+      })
+    })
+    act(() => {
+      listener?.onState({
+        status: 'connected',
+        sessionId: 'session-9',
+        error: null,
+      })
+    })
+
+    expect(view.result.current.credentialKind).toBeUndefined()
+    expect(view.result.current.recovery).toBeUndefined()
+  })
+})

@@ -164,7 +164,18 @@ export default {
   'hosts.identityFile.explain':
     'Il a été importé depuis une config ssh qui nommait le fichier ci-dessus. L’application ne lit pas les fichiers d’elle-même pendant une connexion ; collez la clé ci-dessous pour la stocker dans le coffre.',
   'hosts.identityFile.bindAction': 'Associer la clé',
+  'hosts.share.noStoredCredential':
+    'Cet hôte n’a aucun mot de passe ni clé enregistré, il n’y a donc rien à partager. Partagez-le sans identifiants, ou enregistrez d’abord un identifiant.',
+  'hosts.share.referenceUnreadable':
+    'Cet hôte a un identifiant enregistré que cette version ne peut pas lire, il ne peut donc pas être partagé. Réenregistrez-le d’abord.',
   'hosts.share.encryptionRequired': 'Un mot de passe ou une clé partagé doit être chiffré. Définissez un mot de passe de chiffrement, ou partagez l’hôte sans identifiants.',
+  'hosts.clearCredential.action': 'Oublier l’identifiant enregistré',
+  'hosts.clearCredential.title': 'Oublier l’identifiant enregistré ?',
+  'hosts.clearCredential.description':
+    'Le mot de passe ou la clé enregistré pour cet hôte sera supprimé du coffre. L’hôte, ses groupes, ses étiquettes et ses favoris restent. Une nouvelle authentification sera demandée à la prochaine connexion.',
+  'hosts.clearCredential.confirm': 'Effacer l’identifiant',
+  'hosts.clearCredential.done': 'Identifiant enregistré effacé',
+  'hosts.clearCredential.failed': 'Impossible d’effacer l’identifiant',
   'hosts.vault.createTitle': 'Un coffre est nécessaire pour stocker ce mot de passe',
   'hosts.vault.createBody':
     'Les secrets ne vont jamais dans la base. Créez un coffre ici et l’enregistrement reprend avec ce que vous avez déjà saisi.',

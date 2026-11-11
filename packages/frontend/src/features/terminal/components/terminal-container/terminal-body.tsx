@@ -24,6 +24,7 @@ interface TerminalBodyProps {
   reconnectAttempt?: number
   reconnectReason?: string
   reconnectRetryable?: boolean
+  credentialKind?: string
   isMobile: boolean
   active: boolean
   isFullscreen: boolean
@@ -96,6 +97,7 @@ export function TerminalBody(props: TerminalBodyProps) {
           reconnectAttempt={props.reconnectAttempt}
           reconnectReason={props.reconnectReason}
           reconnectRetryable={props.reconnectRetryable}
+          credentialKind={props.credentialKind}
           fontSize={props.terminalFontSize}
           isMobile={props.isMobile}
           toolsOpen={props.toolSidebarOpen}

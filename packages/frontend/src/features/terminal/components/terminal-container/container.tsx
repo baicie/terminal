@@ -113,8 +113,8 @@ export function TerminalContainer({
       if (pending) updateTab(tabId, { startupFallbackInteracted: true })
     },
   })
-  const { status, error, attempt, reason, retryable, write, disconnect } = session
-  const { reconnectAction, hostKeyGate } = session
+  const { status, error, attempt, reason, retryable, credentialKind } = session
+  const { write, disconnect, reconnectAction, hostKeyGate } = session
   const { isReady, requestFit } = terminal
 
   const readableError = error ? getReadableTerminalError(error, t) : null
@@ -162,6 +162,7 @@ export function TerminalContainer({
           reconnectAttempt={attempt}
           reconnectReason={reason}
           reconnectRetryable={retryable}
+          credentialKind={credentialKind}
           isMobile={isMobile}
           active={terminalIsActive}
           isFullscreen={ui.isFullscreen}

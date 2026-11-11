@@ -28,6 +28,13 @@ export interface TerminalPaneHeaderProps {
    * then reads as recoverable rather than as a hard failure.
    */
   reconnectRetryable?: boolean
+  /**
+   * What the failure was, when it came from the credential layer.
+   *
+   * The header chooses its vault action from this, never from `errorMessage`:
+   * two vault states can produce similar sentences and need different fixes.
+   */
+  credentialKind?: string
   fontSize: number
   isMobile: boolean
   toolsOpen: boolean

@@ -262,7 +262,10 @@ export class TerminalSessionManager {
     const shouldReconnect =
       record?.request.tabType === 'remote' &&
       Boolean(record.sessionId) &&
-      failure.retryable
+      // Only a transient fault re-arms the ladder. A vault failure on an
+      // established session has the same problem as one on connect: retrying it
+      // five times cannot unlock anything.
+      failure.recovery === 'automatic'
     if (record) this.cancelConnection(record)
     if (record?.sessionId) this.lifecycle.retire(record.sessionId)
     handleTerminalIoError(

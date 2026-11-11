@@ -1,10 +1,8 @@
 import type { Host } from '@/types'
 import type { TabType } from '../types'
-import type {
-  TerminalSessionIo,
-  TerminalSessionIoSnapshot,
-} from './terminal-session-io'
+import type { TerminalSessionIo, TerminalSessionIoSnapshot } from './terminal-session-io'
 import type { TerminalSessionAudience } from './terminal-session-output-buffer'
+import type { TerminalFailureRecovery } from './terminal-session-manager-errors'
 
 export type TerminalSessionStatus =
   | 'idle'
@@ -69,6 +67,16 @@ export interface TerminalSessionSnapshot {
   reason?: string
   nextRetryAt?: number
   retryable?: boolean
+  /**
+   * What a retry would take, when the last failure said so.
+   *
+   * `retryable` answers "is there any way forward?"; this answers "which way?".
+   * The automatic reconnect ladder and the host-wake resume both key on
+   * `'automatic'`, so a vault failure cannot be resurrected by either.
+   */
+  recovery?: TerminalFailureRecovery
+  /** Credential failure kind, when the error came from the vault layer. */
+  credentialKind?: string
 }
 
 export interface TerminalOutputReceipt {
@@ -114,6 +122,10 @@ export interface TerminalRecord {
   reconnectReason: string | null
   reconnectNextRetryAt: number | null
   retryable: boolean | null
+  /** What a retry would take, when the last failure came from a classified error. */
+  recovery: TerminalFailureRecovery | null
+  /** Credential failure kind, when the last error came from the vault layer. */
+  credentialKind: string | null
   closed: boolean
 }
 
@@ -140,6 +152,10 @@ export function getTerminalSnapshot(
     snapshot.nextRetryAt = record.reconnectNextRetryAt
   }
   if (record.retryable !== null) snapshot.retryable = record.retryable
+  if (record.recovery !== null) snapshot.recovery = record.recovery
+  if (record.credentialKind !== null) {
+    snapshot.credentialKind = record.credentialKind
+  }
   return snapshot
 }
 
