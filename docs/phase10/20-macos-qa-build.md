@@ -135,3 +135,33 @@ CLEAR_CREDENTIAL_FAILURE_UI  = NOT_RUN
 实现 jump 角色，因此 `ssh -W` 经 Bastion 转发会被拒。这不是产品缺陷 —— fixture
 是为**产品自己的 ProxyJump 协议**设计的。用 `ssh -W` 验证它只能得出「CLI 层不适用」
 的结论，不能记成产品 ProxyJump 失败，也不能记成通过。
+
+
+---
+
+## 第二版构建（含错误面板修复）
+
+第一版（`13e9d96`）真机验收发现：连接失败时错误只以 toast 出现、几秒后消失，
+终端区域没有持久提示。修复提交 `227d3ea` 后重新构建。
+
+| 项 | 值 |
+| --- | --- |
+| 源码 | `c3321e6`（含 `227d3ea`；`b9f209a` 仅文档，代码相同） |
+| 路径 | `~/terminal-qa-builds/Terminal-qa-c3321e6-aarch64.dmg` |
+| SHA256 | `62c9b63cde16afa28fbc260fe7564f7c89f3c16638975ecb6d2f250e37aa0be6` |
+| 大小 | 13,789,893 bytes |
+| 架构 | arm64 |
+| 签名 | adhoc，无 Developer ID，未公证 |
+
+隔离启动冒烟：`terminal-mounted` 1 次，stdout/stderr 中 panic/ERROR 计数均为 0。
+
+### 这一版改了什么
+
+连接失败的错误现在覆盖在终端区域上，**没有计时器**，直到会话恢复或用户点「关闭」。
+面板里按 `credentialKind` 给出真正的下一步（解锁 / 创建 Vault、打开 Vaults、
+重新保存凭据），普通网络错误只给「重试」。同时显示失败的目标 `user@host:port`。
+
+### 仍未验证
+
+这一版**没有**经过真机 GUI 操作验证 —— 构建机上 `AXIsProcessTrusted: false`，
+无法点击。第 2 节（Vault）的勾选仍为空，需要用户重做。
