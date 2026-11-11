@@ -1324,13 +1324,11 @@ mod credential_preservation {
     }
 
     async fn stored_ref(pool: &SqlitePool, id: &str) -> Option<String> {
-        sqlx::query_scalar::<_, Option<String>>(
-            "SELECT credential_ref FROM hosts WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_one(pool)
-        .await
-        .expect("read ref")
+        sqlx::query_scalar::<_, Option<String>>("SELECT credential_ref FROM hosts WHERE id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("read ref")
     }
 
     /// A replace payload for h1 that carries no bound reference at all — the
@@ -1420,7 +1418,9 @@ mod credential_preservation {
                 "username": "root", "auth_type": "password"
             }]
         }));
-        run_import(&pool, &merge, BUDGET).await.expect("merge import");
+        run_import(&pool, &merge, BUDGET)
+            .await
+            .expect("merge import");
 
         let name: String = sqlx::query_scalar("SELECT name FROM hosts WHERE id = 'h1'")
             .fetch_one(&pool)
@@ -1453,7 +1453,9 @@ mod credential_preservation {
             "now": 9_000,
             "sshKeys": [{ "id": "k1", "name": "Renamed", "key_type": "ed25519", "public_key": "pub2" }]
         }));
-        run_import(&pool, &replace, BUDGET).await.expect("replace import");
+        run_import(&pool, &replace, BUDGET)
+            .await
+            .expect("replace import");
 
         let ref_after = sqlx::query_scalar::<_, Option<String>>(
             "SELECT credential_ref FROM ssh_keys WHERE id = 'k1'",

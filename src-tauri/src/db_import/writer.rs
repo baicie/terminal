@@ -535,10 +535,24 @@ async fn apply(
     };
 
     for row in &payload.groups {
-        upsert(conn, &mut report.groups, &mut report.preserved_credentials, replace, group_plan(row)).await?;
+        upsert(
+            conn,
+            &mut report.groups,
+            &mut report.preserved_credentials,
+            replace,
+            group_plan(row),
+        )
+        .await?;
     }
     for row in &payload.hosts {
-        upsert(conn, &mut report.hosts, &mut report.preserved_credentials, replace, host_plan(row, now)).await?;
+        upsert(
+            conn,
+            &mut report.hosts,
+            &mut report.preserved_credentials,
+            replace,
+            host_plan(row, now),
+        )
+        .await?;
     }
     for row in &payload.snippet_packages {
         upsert(
@@ -551,13 +565,34 @@ async fn apply(
         .await?;
     }
     for row in &payload.snippets {
-        upsert(conn, &mut report.snippets, &mut report.preserved_credentials, replace, snippet_plan(row)).await?;
+        upsert(
+            conn,
+            &mut report.snippets,
+            &mut report.preserved_credentials,
+            replace,
+            snippet_plan(row),
+        )
+        .await?;
     }
     for row in &payload.ssh_keys {
-        upsert(conn, &mut report.ssh_keys, &mut report.preserved_credentials, replace, ssh_key_plan(row, now)).await?;
+        upsert(
+            conn,
+            &mut report.ssh_keys,
+            &mut report.preserved_credentials,
+            replace,
+            ssh_key_plan(row, now),
+        )
+        .await?;
     }
     for row in &payload.known_hosts {
-        upsert(conn, &mut report.known_hosts, &mut report.preserved_credentials, replace, known_host_plan(row)).await?;
+        upsert(
+            conn,
+            &mut report.known_hosts,
+            &mut report.preserved_credentials,
+            replace,
+            known_host_plan(row),
+        )
+        .await?;
     }
     for row in &payload.workspaces {
         upsert(
