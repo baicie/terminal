@@ -218,7 +218,15 @@ CLEAR_CREDENTIAL_UNHANDLED_REJECTION=PASS
 VAULT_READ_FAILURE_SKIPS_NETWORK_RETRY=PASS
 CREDENTIAL_KIND_REACHES_UI=PASS
 CREDENTIAL_UI_DECIDES_ON_STRUCTURE=PASS
-VAULT_ACTION_REACHABLE=PASS
+VAULT_ACTION_REACHABLE=NOT_VERIFIED（2026-11-11 真机验收后下调）
+
+// 原记录为 PASS，依据是链接的 href、文案与点击导航都有测试。
+// 那测的是「链接正确」，不是「用户能通过它解决问题」。
+// 真机验收发现：连接失败时错误只以 toast 出现、几秒后消失，终端区域没有任何
+// 持久提示 —— 用户根本走不到那个链接。这正是本项目反复出现的形状：
+// 组件存在、有测试、真实入口走另一条路。
+// 已在 227d3ea 修复（持久错误面板 + 面板内给出下一步），
+// 修复后的真机复验仍待用户完成。
 VAULT_REAL_E2E=NOT_RUN
 SSH_VAULT_REAL_E2E=NOT_RUN
 JUMP_HOST_VAULT_REAL_E2E=NOT_RUN
