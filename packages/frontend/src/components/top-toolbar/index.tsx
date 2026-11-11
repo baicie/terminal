@@ -165,22 +165,11 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
 
         <Separator orientation="vertical" className="mx-1 h-5" />
         <div className="flex shrink-0 items-center gap-0.5">
+          {/* `WorkspaceSwitcher variant="vaults"` **is** the vault entry: it renders
+              the cloud glyph and navigates to /vaults. Adding a second control next
+              to it produced two doors to the same room in the first screenshot
+              pass. */}
           <WorkspaceSwitcher variant="vaults" />
-          <Tooltip delayDuration={200}>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8 text-muted-foreground hover:text-foreground"
-                onClick={() => navigate('/vaults')}
-                aria-label={t('vaults.title')}
-                data-tauri-drag-region="false"
-              >
-                <VaultGlyph />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('vaults.title')}</TooltipContent>
-          </Tooltip>
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <Button
@@ -249,21 +238,3 @@ function CountBadge({ count }: { count: number }) {
 }
 
 export default TopToolbar
-
-/** Shield glyph for the vault entry, kept local like the other inline icons. */
-function VaultGlyph() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-4"
-    >
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  )
-}
