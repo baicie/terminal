@@ -124,7 +124,6 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
   const isMac =
     typeof navigator !== 'undefined' && /mac|darwin/i.test(navigator.platform)
   const commandKeyLabel = isMac ? '⌘K' : 'Ctrl+K'
-  const isSftpActive = location.pathname === '/sftp'
 
   return (
     <>
@@ -146,25 +145,6 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
             data-tauri-drag-region="false"
           >
             <PanelLeft />
-          </Button>
-          <WorkspaceSwitcher variant="vaults" />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate('/sftp')}
-            className={cn(
-              'relative h-8 gap-1.5 rounded-md px-3',
-              isSftpActive
-                ? 'bg-secondary/80 text-foreground'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-            data-tauri-drag-region="false"
-          >
-            <FolderUp data-icon="inline-start" />
-            {t('toolbar.sftp')}
-            {activeTransferCount > 0 && (
-              <CountBadge count={activeTransferCount} />
-            )}
           </Button>
         </div>
 
@@ -189,6 +169,24 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
+                size="icon"
+                className="relative size-8 text-muted-foreground hover:text-foreground"
+                onClick={() => navigate('/sftp')}
+                aria-label={t('toolbar.sftp')}
+                data-tauri-drag-region="false"
+              >
+                <FolderUp />
+                {activeTransferCount > 0 && (
+                  <CountBadge count={activeTransferCount} />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('toolbar.sftp')}</TooltipContent>
+          </Tooltip>
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
                 size="sm"
                 onClick={() => setCommandPaletteOpen(true)}
                 aria-label={t('toolbar.commandPalette')}
@@ -203,6 +201,7 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
             </TooltipTrigger>
             <TooltipContent>{t('toolbar.commandPalette')}</TooltipContent>
           </Tooltip>
+          <WorkspaceSwitcher variant="vaults" />
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <Button

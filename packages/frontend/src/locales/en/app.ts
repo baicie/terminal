@@ -97,6 +97,8 @@ export default {
   'terminal.vault.rebind': 'Re-save the credential',
   'terminal.errorOverlay.title': 'Connection failed',
   'terminal.errorOverlay.dismiss': 'Dismiss',
+  'statusBar.transfers': '{{count}} transfer(s) active',
+  'toolbar.activityRail': 'Activity',
   'terminal.hostKeyChangedTitle': 'SSH host key changed',
   'terminal.hostKeyTrustTitle': 'Trust this SSH host?',
   'terminal.hostKeyChangedDescription':

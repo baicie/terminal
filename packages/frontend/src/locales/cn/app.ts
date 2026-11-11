@@ -94,6 +94,8 @@ export default {
   'terminal.vault.rebind': '重新保存凭据',
   'terminal.errorOverlay.title': '连接失败',
   'terminal.errorOverlay.dismiss': '关闭',
+  'statusBar.transfers': '{{count}} 个传输进行中',
+  'toolbar.activityRail': '活动栏',
   'terminal.hostKeyChangedTitle': 'SSH 主机密钥已变更',
   'terminal.hostKeyTrustTitle': '是否信任此 SSH 主机？',
   'terminal.hostKeyChangedDescription':

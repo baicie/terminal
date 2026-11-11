@@ -7,7 +7,6 @@ import { defaultSettings, type AppSettings } from '@/service/database'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
 import { getThemeColors } from '@/utils/terminal-themes'
-import { getReadableTerminalError } from '@/features/terminal/utils/readable-error'
 import { getTemporaryTerminalProfile } from '@/features/terminal/services/temporary-terminal-profiles'
 import {
   SshHostKeyDialogSurface,
@@ -15,16 +14,19 @@ import {
 } from './ssh-host-key-surfaces'
 import { PasteConfirmDialog } from './paste-confirm-dialog'
 import { usePasteConfirm } from './use-paste-confirm'
+import { usePaneShortcuts } from './use-pane-shortcuts'
 import { useTerminalPaneUi } from './use-terminal-pane-ui'
-import { useTerminalErrorDismissal } from './use-terminal-error-dismissal'
+import { usePublishTerminalSize } from './use-publish-terminal-size'
+import { useTerminalBodyProps } from './use-terminal-body-props'
+import { useTerminalErrorSurface } from './use-terminal-error-dismissal'
 import { TerminalBody } from './terminal-body'
 import { TerminalEmptyState } from './terminal-empty-state'
 import { useTerminalInstance } from './use-terminal-instance'
-import { useTerminalLongPress } from './use-terminal-long-press'
+
 import { useRemotePromptProbe } from './use-remote-prompt-probe'
 import { useTerminalActivePreset } from './use-terminal-active-preset'
 import { useTerminalSessionBinding } from './use-terminal-session-binding'
-import { useTerminalShortcutEvents } from './use-terminal-shortcut-events'
+
 import { useTerminalStatusEffects } from './use-terminal-status-effects'
 import { useTabConnectionStatus } from './use-tab-connection-status'
 import { useTabTitle } from './use-tab-title'
@@ -95,6 +97,12 @@ export function TerminalContainer({
   remotePrompt.inputRef.current = terminal.termInstance
     ? (data, wasUserInput) => terminal.termInstance?.input(data, wasUserInput)
     : undefined
+  const onUserInput = (event?: { wasUserInput?: boolean }) => {
+    if (event?.wasUserInput === false) return
+    if (tab?.startupFallback && !tab.startupFallbackInteracted) {
+      updateTab(tabId, { startupFallbackInteracted: true })
+    }
+  }
   const session = useTerminalSessionBinding({
     termInstance: terminal.termInstance,
     tabId,
@@ -104,17 +112,13 @@ export function TerminalContainer({
     jumpHost,
     outputWriter: terminal.outputWriter ?? undefined,
     onOutput: remotePrompt.onOutput,
-    onInput: event => {
-      if (event?.wasUserInput === false) return
-      const pending = tab?.startupFallback && !tab.startupFallbackInteracted
-      if (pending) updateTab(tabId, { startupFallbackInteracted: true })
-    },
+    onInput: onUserInput,
   })
-  const { status, error, attempt, reason, retryable, credentialKind, write } = session
+  const { status, error, write } = session
   const { disconnect, reconnectAction, hostKeyGate } = session
   const { isReady, requestFit } = terminal
-  const readableError = error ? getReadableTerminalError(error, t) : null
-  const errorOverlay = useTerminalErrorDismissal(readableError)
+  const errorSurface = useTerminalErrorSurface(error)
+  const { readableError } = errorSurface
   useTabConnectionStatus(tabId, status)
   useTerminalStatusEffects({
     status,
@@ -127,6 +131,13 @@ export function TerminalContainer({
   useEffect(() => {
     if (isReady) requestFit()
   }, [isReady, requestFit, status])
+  usePublishTerminalSize({
+    tabId,
+    isActive,
+    isReady,
+    term: terminal.termInstance,
+    status,
+  })
   useEffect(() => {
     if (terminalIsActive) return
     ui.setIsFullscreen(false)
@@ -136,59 +147,42 @@ export function TerminalContainer({
     // (see useTerminalPaneUi), so this does not re-run every frame.
   }, [terminalIsActive, ui])
 
-  useTerminalShortcutEvents({
+  const longPress = usePaneShortcuts({
     active: terminalIsActive,
-    onReconnect: reconnectAction,
-    onClear: () => terminal.termInstance?.clear(),
+    term: terminal.termInstance,
+    reconnectAction,
     onSearch: () => ui.setSearchOpen(true),
     onZoomIn: () => terminal.changeFontSize(1),
     onZoomOut: () => terminal.changeFontSize(-1),
     onResetZoom: terminal.resetFontSize,
+    onLongPress: () => ui.setMobileMenuOpen(true),
   })
-  const longPress = useTerminalLongPress(() => ui.setMobileMenuOpen(true))
+  const bodyProps = useTerminalBodyProps({
+    tab: tab ?? null,
+    host,
+    session: { ...session, disconnect, reconnectAction },
+    errorSurface,
+    isMobile,
+    terminalIsActive,
+    containerRef: terminal.containerRef,
+    term: terminal.termInstance,
+    searchAddon: terminal.searchAddonRef.current,
+    themeBackground: theme.background,
+    ui,
+    terminal: {
+      fontSize: terminal.fontSize,
+      changeFontSize: terminal.changeFontSize,
+      resetFontSize: terminal.resetFontSize,
+    },
+    write,
+    longPress,
+  })
   if (!tab) return <TerminalEmptyState />
   return (
     <>
       <PasteConfirmDialog request={pasteConfirm.request} onResolve={pasteConfirm.resolve} />
       <div className="relative h-full">
-        <TerminalBody
-          tab={tab}
-          host={host}
-          status={status}
-          readableError={readableError}
-          errorDismissed={errorOverlay.dismissed}
-          onDismissError={errorOverlay.dismiss}
-          reconnectAttempt={attempt}
-          reconnectReason={reason}
-          reconnectRetryable={retryable}
-          credentialKind={credentialKind}
-          isMobile={isMobile}
-          active={terminalIsActive}
-          isFullscreen={ui.isFullscreen}
-          terminalFontSize={terminal.fontSize}
-          terminalBackground={theme.background}
-          shellCwd={ui.shellCwd}
-          lastExitCode={ui.lastExitCode}
-          term={terminal.termInstance}
-          containerRef={terminal.containerRef}
-          searchAddon={terminal.searchAddonRef.current}
-          searchOpen={ui.searchOpen}
-          mobileMenuOpen={ui.mobileMenuOpen}
-          onSearchOpenChange={ui.setSearchOpen}
-          onMobileMenuOpenChange={ui.setMobileMenuOpen}
-          onSendKey={write}
-          onFontSizeChange={terminal.changeFontSize}
-          onResetFontSize={terminal.resetFontSize}
-          onClear={() => terminal.termInstance?.clear()}
-          toolSidebarOpen={ui.toolSidebarOpen}
-          onToggleToolSidebar={() => ui.setToolSidebarOpen(!ui.toolSidebarOpen)}
-          onReconnect={reconnectAction}
-          onDisconnect={disconnect}
-          onToggleFullscreen={() => ui.setIsFullscreen(!ui.isFullscreen)}
-          onTouchStart={longPress.start}
-          onTouchEnd={longPress.cancel}
-          onTouchMove={longPress.move}
-        />
+        <TerminalBody {...bodyProps} />
         <SshHostKeyOverlaySurface gate={hostKeyGate} />
       </div>
       <SshHostKeyDialogSurface gate={hostKeyGate} />

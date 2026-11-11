@@ -97,6 +97,8 @@ export default {
   'terminal.vault.rebind': 'Enregistrer à nouveau le justificatif',
   'terminal.errorOverlay.title': 'Connexion échouée',
   'terminal.errorOverlay.dismiss': 'Fermer',
+  'statusBar.transfers': '{{count}} transfert(s) en cours',
+  'toolbar.activityRail': 'Activité',
   'terminal.hostKeyChangedTitle': "La clé d'hôte SSH a changé",
   'terminal.hostKeyTrustTitle': 'Faire confiance à cet hôte SSH ?',
   'terminal.hostKeyChangedDescription':
