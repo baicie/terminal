@@ -11,7 +11,7 @@ use serde_json::json;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
 
-use super::payload::{ImportPayload, PayloadError, MAX_RECORDS};
+use super::payload::{parse_bound_ref, ImportPayload, PayloadError, MAX_RECORDS};
 use super::writer::{fault_injection, run_import, ImportError};
 
 /// Columns of every imported table, in schema order.
@@ -1578,6 +1578,43 @@ mod rebind_reporting {
         assert!(
             !rebind_ids(&report).contains(&"h3".to_string()),
             "a host with no stored credential must not need a rebind"
+        );
+    }
+}
+
+// WP4 — cross-version behaviour.
+//
+// The frontend refuses a reference above `MAX_SUPPORTED_VERSION` (1e9) with
+// `unsupported-version`. This import path had no such ceiling, so a file written by
+// a "future" build could put a reference into the column that the very same app
+// then cannot read: the import succeeds, and the host is permanently unreadable
+// until the user re-saves it.
+//
+// The ceiling is duplicated here on purpose. It is a wire-format boundary, and the
+// two sides must agree about what they will accept.
+mod version_ceiling {
+    use super::*;
+    use serde_json::Value;
+
+    const MAX_SUPPORTED_VERSION: u64 = 1_000_000_000;
+
+    fn ref_with_version(version: u64) -> String {
+        format!(r#"{{"kinds":["password"],"provider":"vault","version":{version}}}"#)
+    }
+
+    #[test]
+    fn a_version_at_the_ceiling_is_accepted() {
+        let value = Value::String(ref_with_version(MAX_SUPPORTED_VERSION));
+        let parsed = parse_bound_ref(Some(&value)).expect("ceiling is still supported");
+        assert!(parsed.contains(&MAX_SUPPORTED_VERSION.to_string()));
+    }
+
+    #[test]
+    fn a_version_above_the_ceiling_is_refused() {
+        let value = Value::String(ref_with_version(MAX_SUPPORTED_VERSION + 1));
+        assert!(
+            parse_bound_ref(Some(&value)).is_none(),
+            "a reference this build cannot resolve must not be written to the column"
         );
     }
 }

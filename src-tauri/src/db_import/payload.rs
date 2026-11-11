@@ -106,6 +106,14 @@ pub fn parse_bound_ref(value: Option<&Value>) -> Option<String> {
     // Re-serialise from the validated parts: an unexpected extra property cannot
     // ride along into the column.
     let version = parsed.get("version").and_then(Value::as_u64);
+    // The frontend refuses a reference above its own ceiling with
+    // `unsupported-version`. Accepting one here would write a pointer into the
+    // column that the same application then cannot resolve, and the host would be
+    // unreadable until the user re-saved it. The ceiling is a wire-format boundary:
+    // both sides have to agree about what they accept.
+    if version.is_some_and(|version| version > MAX_SUPPORTED_VERSION) {
+        return None;
+    }
     let canonical = match version {
         Some(version) => serde_json::json!({
             "kinds": kinds,
@@ -116,6 +124,13 @@ pub fn parse_bound_ref(value: Option<&Value>) -> Option<String> {
     };
     Some(canonical.to_string())
 }
+
+/// The highest reference version this build can resolve.
+///
+/// Mirrors `MAX_SUPPORTED_VERSION` in
+/// `packages/frontend/src/service/credential-ref.ts`. A reference above it was
+/// written by a newer build and must not enter the column.
+pub const MAX_SUPPORTED_VERSION: u64 = 1_000_000_000;
 
 /// What to do with plaintext secrets found in an import file.
 ///
