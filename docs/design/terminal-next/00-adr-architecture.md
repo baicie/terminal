@@ -25,26 +25,31 @@
 
 ## 3. 但对设计包的两处修正
 
-### 3.1 UX-2（Keychain 默认）有一个 P0 前置阻断：代码签名
+### 3.1 UX-2 拆成两步，Keychain 的门禁是「稳定访问已验证」而非「必须有 Developer ID」
 
 **审查结论**：`tauri.conf.json` 无 `signingIdentity`、无 entitlements；发布工作流也未配置签名身份。当前所有构建是 `adhoc` 签名（实测 `codesign -dv` → `Signature=adhoc`）。
 
-macOS Keychain 条目的 ACL **绑定代码签名身份**。未签名或身份变化的构建会导致：
+**修正一处表述**：Developer ID 是**公开分发**的推荐方案，不是所有 macOS Keychain API 的绝对技术前置。Keychain 条目确实绑定签名身份，但用固定自签名证书（self-signed identity）或稳定的 adhoc 身份在单机上也能读写一致；真正会出问题的是「每次构建身份都变」。
 
-- 每次重新构建都被重新询问授权
-- 用户点「始终允许」不生效
-- 身份变更后读不到旧条目
+所以门禁不写成「必须购买 Developer ID」，而写成**可验证的事实**：
 
-**后果**：如果先做 Keychain 再做签名，用户体验会从「输一次主密码」变成「每次连接弹系统授权框」。**这比现状更差。**
+```
+KEYCHAIN_STABLE_ACCESS_VERIFIED
+  = 同一构建身份下创建 → 重启 → 读取成功
+  = 升级到新构建后仍能读取旧条目
+  = 有真机实测记录，不是推断
+```
 
 **决策**：UX-2 拆成两步。
 
 | 步骤 | 内容 | 前置条件 |
 | --- | --- | --- |
 | UX-2a | 凭据交互与状态机（连接时输入、认证成功后保存、内联解锁） | 无 |
-| UX-2b | Keychain provider 接入 | **Developer ID 签名落地** |
+| UX-2b | Keychain provider 接入 | `KEYCHAIN_STABLE_ACCESS_VERIFIED` |
 
 UX-2a 可以先做，它解决的是「必须提前建 Vault」这个真实痛点，与 provider 无关。
+
+若 UX-2b 要作为**默认**存储发布，则需要、并且应当提供稳定的签名身份（Developer ID 是推荐路径）与跨升级访问的实测证据。不要求本轮购买，但发布前必须有。
 
 ### 3.2 UX-4（Rig）的 MSRV 差距已实测确认
 
@@ -96,12 +101,15 @@ UX-2a 可以先做，它解决的是「必须提前建 Vault」这个真实痛�
 UX-0  设计审查与交付（本文档集）           ← 当前
 UX-1  Terminal-first Workspace             （16 条不变量为门禁）
 UX-2a 凭据交互与状态机（provider 无关）
-UX-2b Keychain provider                    ← 前置：Developer ID 签名
+UX-2b Keychain provider                    ← 前置：KEYCHAIN_STABLE_ACCESS_VERIFIED
 UX-3  Extension API v0（内置插件）
 UX-4  Rig AI MVP                           ← 前置：MSRV ADR
 ```
 
-**与设计包原始顺序的差异**：UX-2 拆成 a/b，UX-2b 增加签名前置；UX-4 增加 MSRV 前置。
+**与设计包原始顺序的差异**：UX-2 拆成 a/b，UX-2b 增加「稳定访问已验证」前置；UX-4 增加 MSRV 前置。
+
+**独立的先行修复**：`EXPORT_UNKNOWN_REF_FAIL_CLOSED` 与 `MERGE_PRESERVES_EXISTING_CREDENTIAL`
+不是设计的一部分，是现在就存在的缺陷，已在 PR #35 单独修复，不等待任何阶段。
 
 ## 6. 非目标（明确不做）
 
@@ -115,7 +123,7 @@ UX-4  Rig AI MVP                           ← 前置：MSRV ADR
 
 ```
 UX_DESIGN_APPROVED             = PENDING（等用户确认本文档）
-KEYCHAIN_DEFAULT_PATH          = BLOCKED（Developer ID 签名未落地）
+KEYCHAIN_DEFAULT_PATH          = BLOCKED（待 KEYCHAIN_STABLE_ACCESS_VERIFIED）
 LEGACY_VAULT_COMPAT            = PASS（读方向；写方向见 01 号文档风险 2）
 TERMINAL_CANVAS_DEFAULT        = NOT_IMPLEMENTED
 SINGLE_PTY_LIFECYCLE           = PASS（现有，16 条不变量为回归门禁）

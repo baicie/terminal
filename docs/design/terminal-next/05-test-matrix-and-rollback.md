@@ -64,7 +64,7 @@ NO_VAULT_REQUIRED_GATE        不强制先建 Vault
 ### UX-2b（Keychain provider）
 
 ```
-KEYCHAIN_DEFAULT_PATH         BLOCKED — 需 Developer ID 签名
+KEYCHAIN_DEFAULT_PATH         BLOCKED — 待 KEYCHAIN_STABLE_ACCESS_VERIFIED
 LEGACY_VAULT_COMPAT           真实 fixture 解密，非 parse
 PROVIDER_DISPATCH_BY_REF      resolver 按 ref.provider 分派
 CROSS_PROVIDER_ROLLBACK_SAFE  三组负向测试全过
@@ -133,6 +133,14 @@ MOCK_VS_REAL_SEPARATED        本地假服务与真实 provider 分开报告
 - 旧路由保留为深链，回滚后仍可访问
 
 ### 5.2 凭据特有回滚
+
+**三种"丢失"要分开处理**（定义见 `01-credential-keychain-vault.md` §4.2）：
+
+| 类型 | 回滚手段 |
+| --- | --- |
+| 秘密数据丢失 | 只能从 `vault.json` 备份恢复；本轮的修复不涉及这一类 |
+| 引用关联丢失 | Vault 文件里密文仍在，可手工重建引用；本轮已修复三条产生它的路径 |
+| 导入后需重新绑定 | 无损失，重输一次；本轮确保它被报告 |
 
 **这是唯一可能丢数据的部分。**
 
