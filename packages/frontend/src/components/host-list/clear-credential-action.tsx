@@ -45,6 +45,12 @@ export function ClearCredentialAction({
     try {
       await onClear()
       setOpen(false)
+    } catch {
+      // The caller reports the failure and keeps its own state; swallowing it
+      // here is what stops `void confirm()` from becoming an unhandled
+      // rejection. The dialog stays open on purpose: a failure that closes the
+      // confirmation looks exactly like a success, and leaves the user with no
+      // way to retry.
     } finally {
       setBusy(false)
     }
