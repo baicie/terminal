@@ -96,6 +96,9 @@ export default {
   'terminal.errorOverlay.dismiss': '关闭',
   'statusBar.transfers': '{{count}} 个传输进行中',
   'toolbar.activityRail': '活动栏',
+  'statusBar.session.local': '本地',
+  'statusBar.session.remote': 'SSH',
+  'statusBar.session.serial': '串口',
   'terminal.hostKeyChangedTitle': 'SSH 主机密钥已变更',
   'terminal.hostKeyTrustTitle': '是否信任此 SSH 主机？',
   'terminal.hostKeyChangedDescription':

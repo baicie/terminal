@@ -22,10 +22,11 @@ export function usePublishTerminalSize(options: {
   term: { cols: number, rows: number } | null
   /** Re-runs the publish when the session state changes, e.g. after a reconnect. */
   status: TerminalStatusSnapshot['status']
+  sessionType: TerminalStatusSnapshot['sessionType']
 }): void {
   const publish = useTerminalStatusStore(state => state.publish)
   const clear = useTerminalStatusStore(state => state.clear)
-  const { tabId, isActive, isReady, term, status } = options
+  const { tabId, isActive, isReady, term, status, sessionType } = options
 
   useEffect(() => {
     if (!isActive) {
@@ -35,11 +36,11 @@ export function usePublishTerminalSize(options: {
     if (!isReady || !term) return
     const report = () => {
       if (term.cols > 0 && term.rows > 0) {
-        publish({ tabId, cols: term.cols, rows: term.rows, status })
+        publish({ tabId, cols: term.cols, rows: term.rows, status, sessionType })
       }
     }
     report()
     window.addEventListener('resize', report)
     return () => window.removeEventListener('resize', report)
-  }, [tabId, isActive, isReady, term, status, publish, clear])
+  }, [tabId, isActive, isReady, term, status, sessionType, publish, clear])
 }

@@ -148,6 +148,9 @@ export function MainLayoutContent({
           cols={activePaneSize?.cols}
           rows={activePaneSize?.rows}
           status={activePaneSize?.status}
+          sessionLabel={
+            activePaneSize === null ? undefined : t(`statusBar.session.${activePaneSize.sessionType}`)
+          }
           transfers={activeTransfers}
         />
       )}

@@ -99,6 +99,9 @@ export default {
   'terminal.errorOverlay.dismiss': 'Dismiss',
   'statusBar.transfers': '{{count}} transfer(s) active',
   'toolbar.activityRail': 'Activity',
+  'statusBar.session.local': 'Local',
+  'statusBar.session.remote': 'SSH',
+  'statusBar.session.serial': 'Serial',
   'terminal.hostKeyChangedTitle': 'SSH host key changed',
   'terminal.hostKeyTrustTitle': 'Trust this SSH host?',
   'terminal.hostKeyChangedDescription':

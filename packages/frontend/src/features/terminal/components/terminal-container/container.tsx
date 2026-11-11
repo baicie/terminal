@@ -137,6 +137,7 @@ export function TerminalContainer({
     isReady,
     term: terminal.termInstance,
     status,
+    sessionType: tab?.type ?? 'local',
   })
   useEffect(() => {
     if (terminalIsActive) return

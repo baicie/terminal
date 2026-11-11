@@ -24,6 +24,8 @@ export interface TerminalStatusSnapshot {
    * session connected, so "tab present" is not a connection state.
    */
   status: 'idle' | 'connecting' | 'reconnecting' | 'connected' | 'disconnected' | 'error'
+  /** Local / SSH / Serial, as the tab itself declares. */
+  sessionType: 'local' | 'remote' | 'serial'
 }
 
 interface TerminalStatusState {
@@ -41,7 +43,8 @@ export const useTerminalStatusStore = create<TerminalStatusState>(set => ({
       state.active?.tabId === snapshot.tabId &&
       state.active.cols === snapshot.cols &&
       state.active.rows === snapshot.rows &&
-      state.active.status === snapshot.status
+      state.active.status === snapshot.status &&
+      state.active.sessionType === snapshot.sessionType
         ? state
         : { active: snapshot },
     ),
