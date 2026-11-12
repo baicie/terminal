@@ -79,8 +79,17 @@ describeIf('real sshd fixture', () => {
   let payload: string
 
   beforeAll(async () => {
-    workDir = await mkdtemp(path.join(tmpdir(), 'ux1-live-'))
-    await mkdir(workDir, { recursive: true })
+    // `HOME`, not `tmpdir()`. On Linux runners `tmpdir()` is `/tmp` (mode 1777)
+    // and sshd's StrictModes refuses a home directory it considers world-writable
+    // — "Authentication refused: bad ownership or modes for directory /tmp".
+    // That is the same trap Phase 10.3 hit; `ssh-real-connect.e2e.test.ts` uses
+    // `HOME` for the same reason.
+    const base =
+      process.env.HOME && process.env.HOME !== '/' ? process.env.HOME : tmpdir()
+    const privateRoot = await mkdtemp(path.join(base, '.terminal-e2e-'))
+    await chmod(privateRoot, 0o700)
+    workDir = await mkdtemp(path.join(privateRoot, 'ux1-live-'))
+    await chmod(workDir, 0o700)
     sshd = (await startTerminalSmokeSshd({
       runDirectory: path.join(workDir, 'target'),
       mode: 'key',
@@ -108,7 +117,10 @@ describeIf('real sshd fixture', () => {
 
   afterAll(async () => {
     await sshd?.stop().catch(() => undefined)
-    if (workDir) await rm(workDir, { recursive: true, force: true })
+    // Remove the private parent too, not just the run directory: `privateRoot`
+    // is created under `$HOME`, and leaving one behind per run pollutes a real
+    // user's home directory.
+    if (workDir) await rm(path.dirname(workDir), { recursive: true, force: true })
   })
 
   it('the payload is 24 MB and hashes to a stable value', async () => {
