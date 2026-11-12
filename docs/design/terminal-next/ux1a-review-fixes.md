@@ -247,7 +247,58 @@ SFTP 已在 Activity Rail 上常驻，顶栏那个 SFTP 按钮是**同一个房�
 
 ---
 
-## 6. 验收边界
+## 6. 截图：本轮未能补拍
+
+### 6.1 应用确实启动并建出了正确的窗口
+
+release 二进制（`src-tauri/target/release/terminal`，33992192 字节）以隔离
+`HOME` 启动，进程存活，日志记录 `tauri app starting up` 与
+`db recovery state=Healthy reason=the database does not exist yet`。
+
+窗口在 CoreGraphics 窗口列表里的实测值：
+
+```
+num=14144 layer=0 alpha=1.0 onscreen=true bounds={X:360, Y:85, W:1200, H:800}
+```
+
+`layer=0`（普通窗口层）、`alpha=1.0`、`onscreen=true`、**1200×800 与基线截图同尺寸**。
+
+### 6.2 但截不到内容
+
+窗口被 Chrome 遮挡，而把应用提到前台的四条路径全部被权限挡住：
+
+| 尝试 | 结果 |
+| --- | --- |
+| `screencapture -l 14144` | 全灰图 —— 截图 API 只返回窗口的可见像素 |
+| `osascript ... activate` | `-1719`，辅助功能未授权 |
+| `NSRunningApplication.hide()`（移开 Chrome） | 返回 `false`，同样需要权限 |
+| ScreenCaptureKit `SCScreenshotManager` | 命令行工具无 window server 连接，`CGS_REQUIRE_INIT` 断言崩溃 |
+
+`AXIsProcessTrusted: false` 意味着**能读取窗口几何，不能改变窗口层级**。
+
+### 6.3 这对证据意味着什么
+
+`docs/design/terminal-next/ux1a-evidence/03-final.png` 是 `8ceee84` 拍摄的，
+**不是 `021ad81`**。
+
+本轮三处改动里，只有「顶栏 SFTP 按钮从常驻变为仅在传输时出现」在视觉上可见，
+其余两处（订阅 `onResize`、布局版本化迁移）是数据通路与持久化逻辑。而截图是
+在无传输的空闲状态下拍的 —— 两者视觉上应当完全一致。
+
+但「应当一致」不是证据。**旧截图不被冒充为本轮产物。**
+
+### 6.4 补拍所需
+
+把 terminal 窗口切到前台（人工点击一次即可），执行：
+
+```
+swift /tmp/list-windows.swift   # 取新的 windowId
+screencapture -l <windowId> -o docs/design/terminal-next/ux1a-evidence/04-review-fixes.png
+```
+
+---
+
+## 7. 验收边界
 
 ### 6.1 静态与自动化（PASS）
 
@@ -285,7 +336,7 @@ VAULT_REAL_FLOW                   = NOT_RUN
 
 ---
 
-## 7. 合并建议
+## 8. 合并建议
 
 **READY**（受以下条件约束）
 
