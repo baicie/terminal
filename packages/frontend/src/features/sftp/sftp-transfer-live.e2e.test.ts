@@ -101,7 +101,10 @@ describeIf('real sshd fixture', () => {
     )
     for (let index = 0; index < 24; index += 1) await file.write(chunk)
     await file.close()
-  })
+    // CI starts sshd far slower than a laptop: the default 10s hook timeout is
+    // what failed, not the fixture. The existing `ssh-real-connect.e2e` uses the
+    // same budget for the same reason.
+  }, 120_000)
 
   afterAll(async () => {
     await sshd?.stop().catch(() => undefined)
