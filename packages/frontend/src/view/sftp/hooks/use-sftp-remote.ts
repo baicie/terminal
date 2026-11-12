@@ -3,6 +3,9 @@ import { sshService } from '@/service/ssh'
 import { toast } from '@/components/ui/sonner'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { hasTransfersForSession } from '@/service/sftp-transfer-session'
+import { releaseOrDefer } from './sftp-deferred-release'
+import { useSftpFileOperations } from './use-sftp-file-operations'
 
 interface UseSftpRemoteOptions {
   activeHost: { id: string, authType: string, name: string } | null
@@ -60,12 +63,32 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
   const generationRef = useRef(0)
   const unmountedRef = useRef(false)
 
-  const releaseSession = useCallback(() => {
+  /**
+   * Close the session now, unless a transfer is still using it.
+   *
+   * When something is running or queued, the session is handed to a watcher that
+   * polls the queue and closes it once the last transfer for it settles. The
+   * watcher owns the id from that moment, so a remount cannot double-close or
+   * lose the connection.
+   *
+   * Polling rather than subscribing because the queue is a plain zustand store
+   * with no "last of this session settled" event, and a 1 s cadence costs
+   * nothing while a panel is closing.
+   */
+  const releaseSessionUnlessBusy = useCallback((): boolean => {
     const current = sessionRef.current
-    sessionRef.current = null
-    inflightRef.current = null
-    setSessionId(null)
-    if (current) void sshService.close(current.id).catch(() => undefined)
+    if (!current) {
+      inflightRef.current = null
+      setSessionId(null)
+      return true
+    }
+    const released = releaseOrDefer(current.id, hasTransfersForSession)
+    if (released) {
+      sessionRef.current = null
+      inflightRef.current = null
+      setSessionId(null)
+    }
+    return released
   }, [])
 
   const ensureSession = useCallback(
@@ -80,11 +103,14 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
       const inflight = inflightRef.current
       if (inflight?.key === expectedKey) return inflight.promise
 
-      // A session for another host (or none) must not be reused.
+      // A session for another host (or none) must not be reused. It also must
+      // not be *closed* while a transfer is still using it — that is `INV-14`
+      // on the host-switch path, and it goes through the same guard as unmount.
       if (current) {
-        sessionRef.current = null
-        setSessionId(null)
-        void sshService.close(current.id).catch(() => undefined)
+        const released = releaseSessionUnlessBusy()
+        // A deferred session belongs to another host and cannot be reused here;
+        // drop the reference without closing the connection.
+        if (!released) sessionRef.current = null
       }
 
       const promise = (async () => {
@@ -130,7 +156,7 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
         if (inflightRef.current?.promise === promise) inflightRef.current = null
       }
     },
-    [t],
+    [releaseSessionUnlessBusy, t],
   )
 
   const loadDir = useCallback(
@@ -167,10 +193,22 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
     unmountedRef.current = true
   }, [])
 
-  // Reset and release on host change, and close the last session on unmount.
+  // Reset and release on host change; on unmount, release only when nothing is
+  // still using the connection.
+  //
+  // `INV-14`: every transfer carries the session id of the connection this hook
+  // opened. Closing it on unmount truncated an upload that was halfway through —
+  // the file on the far side stopped growing and the transfer reported an error
+  // the user did not cause. Closing a *panel* must not do that.
+  // `releaseSessionUnlessBusy` decides *whether* the connection may close; the
+  // effect decides *when* to ask. Calling it from both the body and the cleanup
+  // double-released: the body cleared `sessionRef`, then `loadDir` reconnected,
+  // then the cleanup cleared it again on the next host change.
   useEffect(() => {
     generationRef.current += 1
-    releaseSession()
+    // The previous host's connection is released here, not in the cleanup: by
+    // the time the cleanup runs, `loadDir` below has already opened the new one.
+    releaseSessionUnlessBusy()
     setFiles([])
     setPath('/')
     setHistory(['/'])
@@ -178,7 +216,11 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
     setSelectedFile(null)
     setLoading(false)
     if (hostKey !== null) void loadDir('/')
-    return () => releaseSession()
+    return () => {
+      // Unmount only. Nothing to reconnect to, so this is the last chance to
+      // release — and it still refuses while a transfer is using the session.
+      releaseSessionUnlessBusy()
+    }
     // loadDir changes with the host it was built for; hostKey is the trigger.
   }, [hostKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -217,55 +259,14 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
     [ensureSession],
   )
 
-  const deleteFile = useCallback(
-    async (file: FileItem) => {
-      const sid = await currentSession(activeHost, hostKey)
-      if (!sid) return
-      const result = await sshService.sftpDelete(sid, file.path, file.is_directory)
-      if (keyChanged(hostKey, hostKeyRef)) return
-      if (result.success) {
-        toast.success(t('sftp.deleted'))
-        void loadDir(path)
-      } else {
-        toast.error(result.message || t('sftp.deleteFailed'))
-      }
-    },
-    [activeHost, hostKey, currentSession, loadDir, path, t],
-  )
-
-  const renameFile = useCallback(
-    async (file: FileItem, newName: string) => {
-      const sid = await currentSession(activeHost, hostKey)
-      if (!sid || !newName.trim()) return
-      const newPath = path === '/' ? `/${newName}` : `${path}/${newName}`
-      const result = await sshService.sftpRename(sid, file.path, newPath)
-      if (keyChanged(hostKey, hostKeyRef)) return
-      if (result.success) {
-        toast.success(t('sftp.renamed'))
-        void loadDir(path)
-      } else {
-        toast.error(result.message || t('sftp.renameFailed'))
-      }
-    },
-    [activeHost, hostKey, currentSession, loadDir, path, t],
-  )
-
-  const mkdir = useCallback(
-    async (name: string) => {
-      const sid = await currentSession(activeHost, hostKey)
-      if (!sid || !name.trim()) return
-      const newPath = path === '/' ? `/${name}` : `${path}/${name}`
-      const result = await sshService.sftpMkdir(sid, newPath)
-      if (keyChanged(hostKey, hostKeyRef)) return
-      if (result.success) {
-        toast.success(t('sftp.folderCreated'))
-        void loadDir(path)
-      } else {
-        toast.error(result.message || t('sftp.createFolderFailed'))
-      }
-    },
-    [activeHost, hostKey, currentSession, loadDir, path, t],
-  )
+  const { deleteFile, renameFile, mkdir } = useSftpFileOperations({
+    activeHost,
+    hostKey,
+    hostKeyRef,
+    currentSession,
+    loadDir,
+    path,
+  })
 
   return {
     files,
@@ -284,8 +285,4 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
     renameFile,
     mkdir,
   }
-}
-
-function keyChanged(key: string | null, ref: { current: string | null }): boolean {
-  return key !== ref.current
 }

@@ -14,6 +14,7 @@ import { RouteTransition } from './route-transition'
 import { useSidebarResize } from './use-sidebar-resize'
 import { useSwipeBack } from './use-swipe-back'
 import { LeftPanel } from './left-panel'
+import { RightPanel } from './right-panel'
 import { useConnectToHost } from '@/features/connection-explorer/use-connect-to-host'
 import type { Host } from '@/types'
 import { HostDialog } from '@/components/host-list/host-dialog'
@@ -136,20 +137,28 @@ export function MainLayoutContent({
             isMobile && 'mobile-safe-bottom',
           )}
         >
-          {shouldMountTerminal ? (
-            <Suspense fallback={null}>
-              <TerminalByUrl />
-            </Suspense>
-          ) : null}
-          <RouteTransition
-            className={cn(
-              isTerminalRoute
-                ? 'invisible pointer-events-none'
-                : 'relative z-10',
-            )}
-          >
-            <Outlet />
-          </RouteTransition>
+          <div className="flex h-full min-h-0">
+            <div className="relative min-w-0 flex-1" data-terminal-canvas>
+              {shouldMountTerminal ? (
+                <Suspense fallback={null}>
+                  <TerminalByUrl />
+                </Suspense>
+              ) : null}
+              <RouteTransition
+                className={cn(
+                  isTerminalRoute
+                    ? 'invisible pointer-events-none'
+                    : 'relative z-10',
+                )}
+              >
+                <Outlet />
+              </RouteTransition>
+            </div>
+            {/* The dock is a sibling of the terminal layer, never an ancestor:
+                opening it must not touch a PTY. It exists only on the canvas
+                route, because it is a tool for the session in front of you. */}
+            {isTerminalRoute && !isMobile ? <RightPanel /> : null}
+          </div>
         </main>
       </div>
 

@@ -1,24 +1,24 @@
 import type { FileItem } from '@/service/ssh'
-import { FolderOpen, RefreshCw, Server } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { FolderOpen } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
 import { useBreakpointMax } from '@/hooks/use-breakpoint'
-import {
-  ViewContainer,
-  ViewContent,
-  ViewToolbar,
-} from '@/components/view-container'
-import { cn } from '@/lib/utils'
+import { ViewContainer, ViewContent } from '@/components/view-container'
 import { uploadPaths } from '@/service/sftp-transfer'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
+import { useSftpBindingStore } from '@/store/sftp-binding-store'
+import {
+  differsFromActiveTab,
+  resolveSftpHostId,
+} from '@/store/sftp-binding'
 import { SftpDialogs } from './components/sftp-dialogs'
 import TransferPanel from './transfer-panel'
 import { useSftpDrop } from './use-sftp-drop'
 import { useSftpRemote } from './hooks/use-sftp-remote'
 import { useSftpLocal } from './hooks/use-sftp-local'
 import { SftpFilePanes } from './sftp-file-panes'
+import { SftpDockToolbar } from './sftp-dock-toolbar'
 
 const SftpContainer: React.FC = () => {
   const { t } = useTranslation()
@@ -28,9 +28,12 @@ const SftpContainer: React.FC = () => {
   const isMobile = useBreakpointMax('md')
 
   const activeTab = tabs.find(t => t.id === activeTabId)
-  const activeHost = activeTab?.hostId
-    ? (hosts.find(h => h.id === activeTab.hostId) ?? null)
-    : null
+  const pinnedHostId = useSftpBindingStore(state => state.hostId)
+  // `INV-13`: a pin wins over the active tab; focus is not an instruction to
+  // open a different server. First visit pins the current tab's host.
+  const hostId = resolveSftpHostId(pinnedHostId, activeTab?.hostId)
+  const activeHost = hostId ? (hosts.find(h => h.id === hostId) ?? null) : null
+  const followsAnotherTab = differsFromActiveTab(pinnedHostId, activeTab?.hostId)
 
   // Mobile pane
   const [mobilePane, setMobilePane] = useState<'local' | 'remote'>('local')
@@ -41,6 +44,18 @@ const SftpContainer: React.FC = () => {
   const [renameOpen, setRenameOpen] = useState(false)
   const [fileToRename, setFileToRename] = useState<FileItem | null>(null)
   const [mkdirOpen, setMkdirOpen] = useState(false)
+
+  // Pin on first open; a later tab switch leaves the panel where it is.
+  const openFor = useSftpBindingStore(state => state.openFor)
+  useEffect(() => {
+    if (pinnedHostId === null && activeTab?.hostId) openFor(activeTab.hostId)
+    // Deliberately keyed on the pin, not on the active tab: re-pinning whenever
+    // focus moves is the defect this replaced.
+  }, [pinnedHostId, activeTab?.hostId, openFor])
+
+  const followHostOfActiveTab = useCallback(() => {
+    if (activeTab?.hostId) openFor(activeTab.hostId)
+  }, [activeTab?.hostId, openFor])
 
   // Hooks
   const remote = useSftpRemote({ activeHost })
@@ -124,23 +139,13 @@ const SftpContainer: React.FC = () => {
 
       <TransferPanel />
 
-      <ViewToolbar className="gap-2">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Server className="size-4" />
-          <span>{activeHost.name}</span>
-        </div>
-        <div className="flex-1" />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => remote.loadDir(remote.path)}
-        >
-          <RefreshCw
-            className={cn('size-4 mr-1', remote.loading && 'animate-spin')}
-          />
-          {t('sftp.refresh')}
-        </Button>
-      </ViewToolbar>
+      <SftpDockToolbar
+        boundHostName={activeHost.name}
+        followsAnotherTab={followsAnotherTab}
+        loading={remote.loading}
+        onFollowActiveTab={followHostOfActiveTab}
+        onRefresh={() => remote.loadDir(remote.path)}
+      />
 
       <SftpFilePanes
         activeHost={activeHost}

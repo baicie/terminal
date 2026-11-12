@@ -16,6 +16,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app'
+import { useRightPanelStore } from '@/store/right-panel-store'
 import { ActivityRail } from './index'
 
 vi.mock('react-i18next', () => ({
@@ -35,6 +36,7 @@ function renderRail(initial = '/terminal') {
 describe('activity rail', () => {
   beforeEach(() => {
     useAppStore.setState({ leftPanel: 'none' })
+    useRightPanelStore.setState({ rightPanel: 'none' })
   })
 
   it('offers the terminal as the first control', () => {
@@ -77,14 +79,30 @@ describe('activity rail', () => {
     expect(useAppStore.getState().sidebarVisible).toBe(false)
   })
 
-  it('reaches the daily surfaces through real links', () => {
+  it('reaches the management surfaces through real links', () => {
+    // SFTP is deliberately absent from this list: since UX-1c it opens the dock
+    // instead of navigating, because it is a panel you work in while the terminal
+    // keeps running. `/sftp` still exists as a deep link.
     renderRail()
-    for (const path of ['hosts', 'sftp', 'keychain', 'snippets', 'port-forward']) {
+    for (const path of ['hosts', 'keychain', 'snippets', 'port-forward']) {
       const link = screen.getByTestId(`rail-${path}`)
       // A link, not an onClick handler: it keeps middle-click and the router's
       // own navigation working, and it cannot swallow the click.
       expect(link.getAttribute('href')).toBe(`/${path}`)
     }
+  })
+
+  it('opens the SFTP dock instead of navigating away from the canvas', () => {
+    renderRail()
+    const files = screen.getByTestId('rail-sftp')
+    expect(files.tagName).toBe('BUTTON')
+    expect(files.getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(files)
+    expect(useRightPanelStore.getState().rightPanel).toBe('sftp')
+
+    fireEvent.click(files)
+    expect(useRightPanelStore.getState().rightPanel).toBe('none')
   })
 
   it('does not reach the advanced surfaces', () => {
