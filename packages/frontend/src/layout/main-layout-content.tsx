@@ -15,6 +15,7 @@ import { useSidebarResize } from './use-sidebar-resize'
 import { useSwipeBack } from './use-swipe-back'
 import { LeftPanel } from './left-panel'
 import { RightPanel } from './right-panel'
+import { usePanelLayout } from './use-panel-layout'
 import { useConnectToHost } from '@/features/connection-explorer/use-connect-to-host'
 import type { Host } from '@/types'
 import { HostDialog } from '@/components/host-list/host-dialog'
@@ -62,6 +63,7 @@ export function MainLayoutContent({
   const { swipeProgress, onSwipeStart, onSwipeMove, onSwipeEnd } =
     useSwipeBack()
   const leftPanel = useAppStore(state => state.leftPanel)
+  const panelLayout = usePanelLayout()
   const activeTabHostId = useAppStore(
     state => state.tabs.find(tab => tab.id === state.activeTabId)?.hostId ?? null,
   )
@@ -117,7 +119,9 @@ export function MainLayoutContent({
             not touch `TerminalByUrl`, so no PTY is created, moved or disposed. */}
         {!isMobile ? (
           <LeftPanel
-            mode={panelMode}
+            mode={
+              panelMode === 'explorer' && !panelLayout.allowLeft ? 'none' : panelMode
+            }
             width={sidebarWidth}
             resizing={resizing}
             resizeLabel={t('toolbar.resizeSidebar')}
@@ -137,7 +141,7 @@ export function MainLayoutContent({
             isMobile && 'mobile-safe-bottom',
           )}
         >
-          <div className="flex h-full min-h-0">
+          <div className="relative flex h-full min-h-0">
             <div className="relative min-w-0 flex-1" data-terminal-canvas>
               {shouldMountTerminal ? (
                 <Suspense fallback={null}>
@@ -157,7 +161,9 @@ export function MainLayoutContent({
             {/* The dock is a sibling of the terminal layer, never an ancestor:
                 opening it must not touch a PTY. It exists only on the canvas
                 route, because it is a tool for the session in front of you. */}
-            {isTerminalRoute && !isMobile ? <RightPanel /> : null}
+            {isTerminalRoute && !isMobile && panelLayout.dockMode !== 'hidden' ? (
+              <RightPanel mode={panelLayout.dockMode} />
+            ) : null}
           </div>
         </main>
       </div>
