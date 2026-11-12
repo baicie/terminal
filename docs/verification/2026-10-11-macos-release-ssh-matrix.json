@@ -1,8 +1,8 @@
 {
-  "recordedAt": "2026-11-12T07:38:43.930Z",
+  "recordedAt": "2026-11-12T09:45:45.521Z",
   "recordedDate": "2026-11-12",
   "kind": "tauri-release-ssh-and-shell-matrix",
-  "why": "Release artifact 268118f6f86953b941ad3fc8e66b5341f9439fd8a35d7fa19db5cb76f832f7b6 was built and measured by GitHub Actions run 43173729868 attempt 1 at commit 4ecedb6d2dc78e36ae55d91f2283f4d15ae4bd26; this records the 8-case authentication matrix the gate requires, on that artifact.",
+  "why": "Release artifact 268118f6f86953b941ad3fc8e66b5341f9439fd8a35d7fa19db5cb76f832f7b6 was built and measured by GitHub Actions run 43190986769 attempt 1 at commit 82ac5e1e9055fe0625bae2e9f95b4b1310843224; this records the 8-case authentication matrix the gate requires, on that artifact.",
   "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle && pnpm smoke:ssh-matrix --reuse-binary --release key,key-reconnect,agent,agent-reconnect,cert,cert-reconnect,jump,jump-reconnect",
   "environment": {
     "os": "macOS 26.7.2",
@@ -11,7 +11,7 @@
   },
   "revision": {
     "head": "",
-    "commit": "4ecedb6",
+    "commit": "82ac5e1",
     "dirtyWorktree": false
   },
   "build": {
@@ -26,72 +26,72 @@
     "passed": 8,
     "failed": 0,
     "firstConnectionMsRange": [
-      2566,
-      3542
+      2609,
+      3506
     ],
     "cases": [
       {
         "name": "key",
         "ok": true,
         "binarySha256": "268118f6f86953b941ad3fc8e66b5341f9439fd8a35d7fa19db5cb76f832f7b6",
-        "firstConnectionMs": 2727,
-        "durationMs": 10161,
+        "firstConnectionMs": 2850,
+        "durationMs": 9711,
         "uniqueSessionCount": 10
       },
       {
         "name": "key-reconnect",
         "ok": true,
         "binarySha256": "268118f6f86953b941ad3fc8e66b5341f9439fd8a35d7fa19db5cb76f832f7b6",
-        "firstConnectionMs": 3460,
-        "durationMs": 11775,
+        "firstConnectionMs": 2910,
+        "durationMs": 11469,
         "uniqueSessionCount": 11
       },
       {
         "name": "agent",
         "ok": true,
         "binarySha256": "268118f6f86953b941ad3fc8e66b5341f9439fd8a35d7fa19db5cb76f832f7b6",
-        "firstConnectionMs": 2566,
-        "durationMs": 8867,
+        "firstConnectionMs": 2983,
+        "durationMs": 9361,
         "uniqueSessionCount": 10
       },
       {
         "name": "agent-reconnect",
         "ok": true,
         "binarySha256": "268118f6f86953b941ad3fc8e66b5341f9439fd8a35d7fa19db5cb76f832f7b6",
-        "firstConnectionMs": 2940,
-        "durationMs": 12684,
+        "firstConnectionMs": 3506,
+        "durationMs": 10929,
         "uniqueSessionCount": 11
       },
       {
         "name": "cert",
         "ok": true,
         "binarySha256": "268118f6f86953b941ad3fc8e66b5341f9439fd8a35d7fa19db5cb76f832f7b6",
-        "firstConnectionMs": 3542,
-        "durationMs": 10914,
+        "firstConnectionMs": 2731,
+        "durationMs": 9019,
         "uniqueSessionCount": 10
       },
       {
         "name": "cert-reconnect",
         "ok": true,
         "binarySha256": "268118f6f86953b941ad3fc8e66b5341f9439fd8a35d7fa19db5cb76f832f7b6",
-        "firstConnectionMs": 3061,
-        "durationMs": 10324,
+        "firstConnectionMs": 2609,
+        "durationMs": 9247,
         "uniqueSessionCount": 11
       },
       {
         "name": "jump",
         "ok": true,
         "binarySha256": "268118f6f86953b941ad3fc8e66b5341f9439fd8a35d7fa19db5cb76f832f7b6",
-        "firstConnectionMs": 2929,
-        "durationMs": 15473,
+        "firstConnectionMs": 2613,
+        "durationMs": 10416,
         "uniqueSessionCount": 10
       },
       {
         "name": "jump-reconnect",
         "ok": true,
         "binarySha256": "268118f6f86953b941ad3fc8e66b5341f9439fd8a35d7fa19db5cb76f832f7b6",
-        "firstConnectionMs": 3404,
-        "durationMs": 12779,
+        "firstConnectionMs": 2935,
+        "durationMs": 11151,
         "uniqueSessionCount": 11
       }
     ]
@@ -104,12 +104,12 @@
   ],
   "provenance": {
     "source": "github-actions",
-    "runId": "43173729868",
+    "runId": "43190986769",
     "runAttempt": "1",
     "workflow": "Real-machine terminal matrix",
     "job": "macos-ssh-matrix",
-    "commit": "4ecedb6d2dc78e36ae55d91f2283f4d15ae4bd26",
-    "fingerprint": "ac1b1b7d0a8a7f67a616d889e05a5ef6ed8c9bb64f6c46a839f6288960896cee",
+    "commit": "82ac5e1e9055fe0625bae2e9f95b4b1310843224",
+    "fingerprint": "7711e974480b785a9682ec9a383fac04351012d6eae132a52808bf8e65b3a47a",
     "runner": {
       "os": "macOS",
       "arch": "ARM64"
