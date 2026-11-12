@@ -94,3 +94,26 @@ incremental = false
 
 [profile.test.package."*"]
 debug = 0
+
+# Release size, opt-in only.
+#
+# The default `release` profile is deliberately left untouched so `cargo build
+# --release`, the CI compile gate and every local debug cycle keep their current
+# cost. Size-optimised artifacts are produced with `--profile release-small`.
+#
+# Why this exists: the stock binary is 34.4 MB, of which __LINKEDIT alone is
+# 7.1 MB of symbol and string tables nothing consumes -- there is no dSYM
+# archive step and no backtrace symbolication anywhere in this crate.
+#
+# `panic` stays at the inherited default `unwind`. db_import::writer uses
+# AssertUnwindSafe(..).catch_unwind() to keep a panicking import on the same
+# ROLLBACK path as any other failure; `panic = "abort"` would kill the process
+# with the transaction still open and the pooled connection unrecoverable.
+#
+# `opt-level` stays at 3 for the same reason: this binary drives PTY and SFTP
+# data paths, and "s"/"z" costs throughput that no test here would catch.
+[profile.release-small]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

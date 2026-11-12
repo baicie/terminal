@@ -80,11 +80,101 @@
 
 ```
 src-tauri/target/release/
-├── terminal              # macOS 可执行文件 (~10-15 MB)
+├── terminal              # macOS 可执行文件（release profile 见下）
 └── bundle/
     └── macos/
-        └── Terminal.app  # macOS 应用包 (~30-40 MB)
+        └── Termius.app   # macOS 应用包
 ```
+
+#### 可选的 `[profile.release-small]`（2026-11-12）
+
+`src-tauri/Cargo.toml` 此前**没有 `[profile.release]` 段**，于是走 Cargo 默认值：
+不做 LTO、16 个 codegen units、符号表原样保留。实测单个 macOS 可执行文件
+**34,373,984 B（32.78 MB）**，其中 `__LINKEDIT` 单独占 **7,111,008 B** ——
+全部是符号表与字符串表（80,518 个符号）。
+
+现在新增了一个**独立的** `release-small` profile：
+
+```toml
+[profile.release-small]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+```
+
+**默认 `[profile.release]` 完全未覆盖。** 日常 `cargo build --release`、
+`pnpm tauri build`、CI 编译门禁全部继续走原来的成本；只有显式
+`cargo build --profile release-small` 才付 LTO 的代价。这是刻意的：
+不把日常开发、CI 与发布流程绑到高成本构建上。
+
+**`panic` 刻意保持继承来的 `unwind`。** `db_import::writer` 用
+`AssertUnwindSafe(..).catch_unwind()` 让 panic 中的导入走和其他失败相同的
+ROLLBACK 路径；改成 `panic = "abort"` 会在事务仍打开时直接杀死进程，池里的
+连接不可恢复。改这一条之前先读 `src-tauri/src/db_import/writer.rs` 那段注释。
+
+**`opt-level` 保持 3。** 这个二进制承载 PTY 与 SFTP 数据通路，
+`"s"` / `"z"` 损失的是吞吐，而仓库里没有任何测试会因此变红。
+
+#### 三方案实测（2026-11-12，macOS arm64）
+
+| 指标 | A 原始 | B 仅 strip | C strip+LTO |
+| --- | --- | --- | --- |
+| 可执行文件 | 34,373,984 B（32.78 MB） | 28,108,480 B（26.81 MB） | **22,567,264 B（21.52 MB）** |
+| 相对 A 节省 | — | 5.98 MB（**18.2%**） | 11.26 MB（**34.3%**） |
+| 符号数 | 80,518 | 494 | 436 |
+| `__LINKEDIT` | 7,111,008 B | 845,504 B | 285,024 B |
+| 冷构建耗时 | 405s + 233s | **9m01s** | **21m15s** |
+| 启动 / DB 恢复 | `Healthy` ✓ | `Healthy` ✓ | `Healthy` ✓ |
+
+三者均以 `terminal` 直接运行验证，全部输出
+`db recovery stage="database-recovery" state=Healthy`。
+
+**增量收益的关键事实**：B（仅 strip）拿到 18.2%，几乎零构建成本；
+C 在 B 的基础上再减 5.28 MB（19.7%），代价是构建时间从 9 分钟涨到 21 分钟。
+**strip 是构建后处理，不增加编译时间；LTO 才是那个 +12 分钟。**
+
+完整记录、跨平台未验证说明与崩溃符号化前置条件见
+[`build-optimization-measurements.md`](build-optimization-measurements.md)。
+
+#### 采用 strip 的前置条件：dSYM 归档
+
+本仓库**没有任何 dSYM 归档流程**（`.github/workflows/` 与 `scripts/` 已 grep 确认）。
+A 方案保留的 7.1 MB 符号是"碰巧留下的"，不是刻意的调试能力。因此：
+
+**一旦采用 B 或 C，线上崩溃将永久失去符号化能力**，除非同时引入 dSYM 归档。
+这是采用 strip 的前置条件，不是可选项 —— 决策时必须一起做。
+
+#### 关于"CleanMyMac 显示 100MB"
+
+这个数字不是单个包的大小。构建会在**三处**留下同名的 `Termius.app`：
+
+```
+/Applications/Termius.app                                             33 MB
+<repo>/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/    33 MB
+<worktree>/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/ 33 MB
+```
+
+清理工具按 app 名聚合，把三份加在一起报成 ~100MB。留着的 UX-1a 遗留
+worktree 会让这个数字持续偏高，而且它们各自的 `target` 就有 1.8 GB。
+
+#### 体积构成参考
+
+`size -m` 对未优化二进制的分段（34.4 MB）：
+
+| 段 | 大小 | 性质 |
+| --- | --- | --- |
+| `__text` | 18.98 MB | 真实机器码 |
+| `__LINKEDIT` | 7.11 MB | 符号表 + 字符串表（现已被 `strip` 去掉） |
+| `__const` | 2.64 MB | 常量与字符串 |
+| `__eh_frame` | 2.47 MB | 栈展开表 |
+| `__gcc_except_tab` | 1.28 MB | 异常表 |
+| 其余 DATA 段 | ~1.1 MB | |
+
+33MB 量级对这套依赖栈是正常的：`russh` + `rustls` + `aws-lc-sys` +
+`reqwest` + `sqlx`(bundled SQLite) + `serialport` + `argon2` 都是真实会进
+最终二进制的代码。对照 `/Applications/Tabby.app` 的 419 MB（Electron），
+Tauri 这条路径已经小一个数量级。
 
 ### 低磁盘开发流程
 
