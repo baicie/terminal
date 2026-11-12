@@ -1,4 +1,5 @@
 import type { WorkspaceLayout } from '@/types'
+import { migrateLayoutVisibility } from './workspace-layout-version'
 
 const WORKSPACE_RECOVERY_JOURNAL_VERSION = 1
 const WORKSPACE_RECOVERY_JOURNAL_PREFIX = 'terminal.workspace.recovery.v1.'
@@ -70,9 +71,17 @@ export function readRecoveryJournal(
       localStorage.removeItem(key)
       return null
     }
+    // The journal is a second source of pre-upgrade layouts: it holds whatever
+    // the previous build last wrote, including `sidebarVisible: true` from
+    // before the activity rail existed. Migrating only the database row would
+    // leave the regression reachable for exactly one launch — the one right
+    // after the upgrade, when the journal is most likely to be present.
+    const { sidebarVisible, layoutVersion } = migrateLayoutVisibility(
+      parsed.layout,
+    )
     const snapshot = createRecoveryJournal(
       workspaceId,
-      parsed.layout,
+      { ...parsed.layout, sidebarVisible, layoutVersion },
       sanitizeLayout,
     )
     writeRecoveryJournal(snapshot)

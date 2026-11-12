@@ -170,24 +170,33 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
               to it produced two doors to the same room in the first screenshot
               pass. */}
           <WorkspaceSwitcher variant="vaults" />
-          <Tooltip delayDuration={200}>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="relative size-8 text-muted-foreground hover:text-foreground"
-                onClick={() => navigate('/sftp')}
-                aria-label={t('toolbar.sftp')}
-                data-tauri-drag-region="false"
-              >
-                <FolderUp />
-                {activeTransferCount > 0 && (
+          {/* SFTP lives on the activity rail, one click away at all times. A second
+              SFTP button here was the same room again — but the transfer badge had
+              no other home, so this renders only while something is actually
+              moving. An idle duplicate disappears; a running transfer keeps the
+              one indicator that says it is running. */}
+          {activeTransferCount > 0 && (
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative size-8 text-muted-foreground hover:text-foreground"
+                  onClick={() => navigate('/sftp')}
+                  aria-label={t('toolbar.sftpTransfers', {
+                    count: activeTransferCount,
+                  })}
+                  data-tauri-drag-region="false"
+                >
+                  <FolderUp />
                   <CountBadge count={activeTransferCount} />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('toolbar.sftp')}</TooltipContent>
-          </Tooltip>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('toolbar.sftpTransfers', { count: activeTransferCount })}
+              </TooltipContent>
+            </Tooltip>
+          )}
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <Button

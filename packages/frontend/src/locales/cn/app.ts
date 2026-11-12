@@ -21,6 +21,8 @@ export default {
   'toolbar.menu': '打开导航菜单',
   'toolbar.mobileNavigationDescription': '在视图和工作区之间导航',
   'toolbar.sftp': 'SFTP',
+  'toolbar.sftpTransfers_one': '{{count}} 个传输进行中',
+  'toolbar.sftpTransfers_other': '{{count}} 个传输进行中',
   'toolbar.newTab': '新建标签',
   'toolbar.more': '更多',
   'toolbar.serial': '串口',

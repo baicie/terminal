@@ -1,17 +1,26 @@
 import type { WorkspaceLayout } from '@/types'
 import { useAppStore } from '@/store/app'
 import { useWorkspaceStore } from '@/store/workspace'
+import { LAYOUT_SCHEMA_VERSION } from './workspace-layout-version'
 
 type RestorableLayout = Pick<
   WorkspaceLayout,
-  'tabs' | 'splitGroups' | 'activeTabId' | 'sidebarVisible'
+  'tabs' | 'splitGroups' | 'activeTabId' | 'sidebarVisible' | 'layoutVersion'
 >
 
+/**
+ * A workspace with no saved layout yet.
+ *
+ * `layoutVersion` is current on purpose: this is a decision made *now*, by this
+ * build, that a new workspace opens in the terminal-first arrangement. Stamping
+ * it as legacy would make the first save look like a pre-upgrade layout.
+ */
 const EMPTY_LAYOUT: RestorableLayout = {
   tabs: [],
   splitGroups: [],
   activeTabId: null,
-  sidebarVisible: true,
+  sidebarVisible: false,
+  layoutVersion: LAYOUT_SCHEMA_VERSION,
 }
 
 let switchQueue: Promise<void> = Promise.resolve()
@@ -20,7 +29,16 @@ const MAX_STABILITY_ATTEMPTS = 5
 function readCurrentLayout(): RestorableLayout {
   const { tabs, splitGroups, activeTabId, sidebarVisible } =
     useAppStore.getState()
-  return { tabs, splitGroups, activeTabId, sidebarVisible }
+  // The in-memory visibility is already a decision of this build (restoreLayout
+  // migrates on entry, and a toggle is the user acting now), so the snapshot
+  // being saved is current-version by construction.
+  return {
+    tabs,
+    splitGroups,
+    activeTabId,
+    sidebarVisible,
+    layoutVersion: LAYOUT_SCHEMA_VERSION,
+  }
 }
 
 function isCurrentLayout(layout: RestorableLayout): boolean {

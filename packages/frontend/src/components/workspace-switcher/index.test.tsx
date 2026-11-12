@@ -121,7 +121,10 @@ describe('WorkspaceSwitcher', () => {
     })
     expect(useAppStore.getState().splitGroups).toEqual([])
     expect(useAppStore.getState().activeTabId).toBeNull()
-    expect(useAppStore.getState().sidebarVisible).toBe(true)
+    // UX-1a: a workspace with no saved layout opens terminal-first. The old
+    // expectation was `true`, from when the sidebar was the only navigation and
+    // therefore always on. Now the rail is, so a fresh workspace opens closed.
+    expect(useAppStore.getState().sidebarVisible).toBe(false)
   })
 
   it('loads the target layout before committing the active workspace', async () => {

@@ -185,12 +185,31 @@ describe('restoreLayout', () => {
     expect(state.sidebarVisible).toBe(false)
   })
 
-  it('defaults a missing persisted sidebar value to visible', () => {
+  it('defaults a missing persisted sidebar value to hidden', () => {
+    // UX-1a: the activity rail is permanent navigation and the sidebar is an
+    // optional panel, so "the field is absent" means "no preference recorded",
+    // and the terminal-first default is closed. Defaulting to visible here is
+    // what put a 220px sidebar next to a 46px rail on first launch.
     useAppStore.getState().restoreLayout({
       tabs: [],
       splitGroups: [],
       activeTabId: null,
       sidebarVisible: undefined as unknown as boolean,
+    })
+
+    expect(useAppStore.getState().sidebarVisible).toBe(false)
+  })
+
+  it('honors a sidebar the current schema version says is open', () => {
+    // The other half of the same rule: a recorded preference at the current
+    // version is restored as-is, or opening the explorer would never survive a
+    // restart.
+    useAppStore.getState().restoreLayout({
+      tabs: [],
+      splitGroups: [],
+      activeTabId: null,
+      sidebarVisible: true,
+      layoutVersion: 2,
     })
 
     expect(useAppStore.getState().sidebarVisible).toBe(true)

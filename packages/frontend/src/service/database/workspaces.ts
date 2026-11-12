@@ -4,6 +4,10 @@
 import { executeQuery, selectStrict as select } from './connection'
 import type { WorkspaceRecord, WorkspaceLayoutRecord } from './types'
 import type { WorkspaceLayout } from '@/types'
+import {
+  LAYOUT_SCHEMA_VERSION,
+  migrateLayoutVisibility,
+} from '@/service/workspace-layout-version'
 
 export async function getWorkspaces(): Promise<WorkspaceRecord[]> {
   return select<WorkspaceRecord>('SELECT * FROM workspaces ORDER BY "order"')
@@ -100,7 +104,15 @@ export async function saveWorkspaceLayout(
   workspaceId: string,
   layoutData: WorkspaceLayout,
 ): Promise<void> {
-  const jsonData = JSON.stringify(layoutData)
+  // Stamp the schema version on every write, here rather than in the store.
+  // Every caller (recovery persistence, workspace switch, flush-on-hide) goes
+  // through this function, so an unversioned row can only mean "written by a
+  // build that predates the migration" — which is exactly what the read side
+  // needs to be able to distinguish.
+  const jsonData = JSON.stringify({
+    ...layoutData,
+    layoutVersion: LAYOUT_SCHEMA_VERSION,
+  })
   await executeQuery(
     'INSERT OR REPLACE INTO workspace_layouts (workspace_id, layout_data) VALUES (?, ?)',
     [workspaceId, jsonData],
@@ -115,8 +127,9 @@ export async function getWorkspaceLayout(
     [workspaceId],
   )
   if (results.length === 0) return null
+  let parsed: WorkspaceLayout
   try {
-    return JSON.parse(results[0].layout_data)
+    parsed = JSON.parse(results[0].layout_data)
   } catch (error) {
     // "There is no row" and "the row is unreadable" need opposite answers:
     // the first may persist a first-run local tab, the second must preserve
@@ -125,4 +138,11 @@ export async function getWorkspaceLayout(
       cause: error,
     })
   }
+  // Migrate at the read boundary, not in each consumer. Three callers read this
+  // row (startup recovery, workspace switch, team/cloud export), and a migration
+  // applied in only one of them is exactly how the double-navigation regression
+  // came back. Only the sidebar flag is touched; tabs, split groups and the
+  // active tab pass through untouched.
+  const { sidebarVisible, layoutVersion } = migrateLayoutVisibility(parsed)
+  return { ...parsed, sidebarVisible, layoutVersion }
 }

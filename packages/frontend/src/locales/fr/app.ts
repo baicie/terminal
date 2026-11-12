@@ -22,6 +22,8 @@ export default {
   'toolbar.mobileNavigationDescription':
     'Naviguer entre les vues et les espaces de travail',
   'toolbar.sftp': 'SFTP',
+  'toolbar.sftpTransfers_one': '{{count}} transfert en cours',
+  'toolbar.sftpTransfers_other': '{{count}} transferts en cours',
   'toolbar.newTab': 'Nouvel onglet',
   'toolbar.more': 'Plus',
   'toolbar.serial': 'Série',
