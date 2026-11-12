@@ -1297,7 +1297,7 @@ REAL_SQLITE_IMPORT_E2E              = PASS
 **同时**：Terminal Next 的 UX-0 设计文档在 PR #34（分支 `design/terminal-next-ux0`），
 仍为 Draft，未实施任何代码。
 
-### Terminal Next UX-1a - Terminal Workspace Shell 🟡 Draft PR #36
+### Terminal Next UX-1a - Terminal Workspace Shell ✅ 已合入（PR #36 → `4270629`）
 
 目标：把明显偏管理后台的主框架改造成以终端为中心的桌面应用。**只做 shell，
 不改 PTY/SSH 核心**；不实施 UX-1b/1c、Keychain、插件运行时或 Rust Rig。
@@ -1325,7 +1325,64 @@ REAL_SQLITE_IMPORT_E2E              = PASS
   全 success（Linux real SSH smoke / Windows PowerShell+cmd / macOS real SSH matrix），
   manifest 绑定 `021ad81`、debug `7ccca2ef…`、release `320a5eb4…`，
   门禁 **0 problem**，未手改旧 manifest
-- 📋 详见 `docs/design/terminal-next/ux1a-review-fixes.md`；**未合并、未打 Tag**
+- ✅ **已合入**：PR #36 squash 为 `4270629`，合并前 CI 11/11
+- 📋 详见 `docs/design/terminal-next/ux1a-review-fixes.md`
+
+### Terminal Next UX-1b - Connection Explorer ✅ 已合入（PR #37 → `fa6d6c8`）
+
+把 Hosts 的高频连接能力移进 Terminal-first Workspace。
+
+- ✅ **Connection Explorer**：搜索（主机名 + 地址）、收藏、按组展示、最近连接、
+  点击即连、行内编辑与收藏切换。加载中 / 读取失败 / 数据库不可用 / 真的没有主机
+  四种状态分开，不互相冒充
+- ✅ **最近连接只用真实连接记录**：来源是 `connection_logs` 的 `(host_id, started_at)`，
+  由 `session.ts` 六条连接路径（local + 五种 ssh 认证）成功时写入，**零 schema 改动**。
+  从不用 `hosts.updated_at` 兜底 —— 先红后绿的教训是只测纯函数抓不到这个缺陷
+  （回退写在 I/O 包装里），补 `loadRecentHosts` 测试后才变红
+- ✅ **单面板左栏**：`AppStore.leftPanel` = `none | explorer | navigation`，
+  规则集中在 `left-panel-state.ts`。测试断言**面板计数 ≤ 1**，而不是某个面板存在
+- ✅ **INV-5 收敛**：`router/terminal-route.ts` 是唯一判定源。13 处 `/terminal?tab=`
+  拼接 → `terminalTabPath()`、5 处 `pathname === '/terminal'` → `isTerminalPath()`；
+  **保留**导航目标形式的字面量与 `/terminal?tab=` 深链兼容。
+  `terminal-route-literal-guard.test.ts` 读源码树禁止比较式字面量重新出现
+- ✅ **连接路径只有一条**：`useConnectToHost` 是唯一实现，Hosts 页委托给它；
+  测试用真实 hook 而非 mock
+- ✅ **先红后绿三处**：`updated_at` 兜底 1 红；**让 Explorer 成为终端层祖先 → 4/6 红**；
+  Rail 回退为纯链接 3 红
+- ✅ **16 条不变量 14 PASS / 2 NOT_RUN**：INV-5 从 NOT_RUN 转 PASS；INV-13/14 留 UX-1c
+- 门禁：前端 233 文件 / 2095 项、Rust 391、source-size 663、bundle 623.04/628 KB
+  （预算 624→628 的实测依据写在 `packages/frontend/scripts/bundle-stats.mjs` 注释里）
+- 📋 详见 `docs/design/terminal-next/ux1b-connection-explorer.md`
+
+### Terminal Next UX-1c - Context Dock ✅ 已合入（PR #39 → `c134ba5`）
+
+右栏文件面板 + **两个现在就存在的 SFTP 缺陷**。后者是本轮主要价值 —— 都不是
+UX-1c 引入的，但 Dock 让它们从「偶尔」变成「一天几十次」。
+
+- ✅ **INV-13 SFTP 不再跟随 `activeTabId`**：`sftp-container.tsx:31` 原来是
+  `activeTab?.hostId`，切标签就静默换服务器 —— 而删除、重命名、上传都打在
+  「面板当前显示的那台」上。改为显式 pinned binding（`store/sftp-binding.ts`）：
+  pin 优先、首次打开 pin 住当前 tab、切 tab 时给「跟随当前标签」按钮。
+  **不持久化**：重启自动连上一台服务器是用户没要求的连接。先红后绿 1 项
+- ✅ **INV-14 关闭面板不截断传输**：`use-sftp-remote.ts` 的 cleanup 无条件
+  `releaseSession()`，而每个传输都带那个 `sessionId` —— 开面板 → 上传 → 回终端 →
+  上传半路失败，错因是应用自己关的连接。改为有 `running`/`queued` 传输时交给
+  watcher，最后一个落地才关；`ensureSession` 的 host-switch 释放走同一 guard。
+  **原实现上 4 项红**
+- ✅ **Context Dock**：`none | sftp`，与左栏同一套单占位者规则；是 `TerminalByUrl`
+  的**兄弟**而非祖先；只在 `/terminal`、非移动端；SFTP 组件 lazy 加载；不持久化。
+  Rail 的 Files 项改为开 Dock，`/sftp` 路由保留为深链
+- ✅ **16 条不变量 16 PASS / 0 NOT_RUN** —— 三轮 Terminal Next 里唯一一次全部闭合
+- 门禁：前端 236 文件 / 2121 项、Rust 391、ESLint 0 warning、source-size 672、
+  bundle 624.04/628 KB；证据 run `43216612027` 三平台 success，指纹
+  `7711e974…` → **`936df33f…`**，门禁 0 problem；CI 11/11
+- ✅ **过程中自己引入又修掉**：第一版把释放逻辑同时放进 effect body 与 cleanup，
+  切一次 host 触发 **9 次** `createSshSessionPassword`。探针（正常 `create=2 close=[]`）
+  定位后修正：body 管「切 host 前释放」，cleanup 只管卸载
+- 🟡 **真实 GUI 全部 NOT_RUN**：`AXIsProcessTrusted: false`，且会话运行在 Claude
+  桌面应用内、其窗口全屏覆盖，应用窗口拿不到可见像素。
+  **`UPLOAD_SURVIVES_DOCK_CLOSE` 自动化能证明的是「会话未被 close」，不是「字节还在流」**
+- 📋 详见 `docs/design/terminal-next/ux1c-context-dock.md`
 
 ### Terminal Next UX-0 - 设计交付 ✅ 已合入（PR #34 → `f576680`）
 
