@@ -282,6 +282,42 @@ HOME=/tmp/ux1-gui-home ./target/release/terminal
 
 ---
 
+## 4.5 过程记录：我这轮犯了两次同一类错
+
+### 第一次：派完证据又改源码
+
+证据 run `43249031048` 在 `5ce9aa1`（指纹 `ff265ac2`）上派发。之后我为了修 CI
+失败改了两次 E2E（`ea95279`、`7c4574e`），指纹变成 `8129680b`，那次证据当场作废。
+
+**这个错误在 Phase 10.x 已记录过两次**：正确顺序是「改完 → 跑完全部门禁 →
+不再动源码 → 才派证据」。我这次的顺序是「派证据 → 看 CI → 改代码」。
+
+代价：一次 30 分钟的 macOS job 白跑。
+
+### 第二次：`tmpdir()` 被 sshd StrictModes 拒绝
+
+我写的 E2E 用 `mkdtemp(tmpdir())`。Linux runner 上那是 `/tmp`（1777），
+sshd 拒绝：
+
+```
+Authentication refused: bad ownership or modes for directory /tmp
+```
+
+**项目在 Phase 10.3 就记过这一条**，我自己写的记录原文是：
+
+> E2E fixture 用 `os.tmpdir()`，Linux runner 上是 `/tmp`（1777）被 sshd 的
+> `StrictModes` 拒绝 —— 本地过、CI 挂。
+
+我读到了这条记录，然后在同一个项目里重犯。改法与既有
+`ssh-real-connect.e2e.test.ts` 完全一致：`$HOME` 下建 0700 私有父目录。
+
+### 这两次共同说明什么
+
+两次都不是「不知道怎么做」，是**知道却没照做**。第一次是流程顺序，第二次是
+已记录的陷阱。测试与门禁都拦不住这两类 —— 它们只能靠执行者按已知顺序操作。
+
+---
+
 ## 5. 代码与构建预算
 
 | 项 | 基线 | 本轮 | 变化 |
