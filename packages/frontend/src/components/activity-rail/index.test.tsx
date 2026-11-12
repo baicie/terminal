@@ -1,15 +1,21 @@
-// UX-1a — the rail switches surfaces without touching the terminal.
+// UX-1a/1b — the rail switches surfaces without touching the terminal.
 //
-// The rail is the one new element that can break the single-mount invariant: it
-// navigates, and a naive implementation that renders the terminal inside a routed
-// component would rebuild the PTY on every click. The mount point is unchanged
-// (`main-layout-content.tsx` keeps `TerminalByUrl` outside the outlet); these
-// tests pin the rail's own contract so it cannot drift into owning a session.
+// Two things changed in UX-1b and both are pinned here:
+//
+// 1. the terminal entry is a **button**, not a link. Clicking it closes the left
+//    panel and returns to `/terminal`; it does not navigate *away* from the canvas
+//    to a different page.
+// 2. a **Connections** entry toggles the Connection Explorer, which is the panel
+//    the rail exists for now. It also does not navigate away.
+//
+// The invariant these tests defend is unchanged: the rail never owns a session.
+// It renders no terminal and holds no PTY state, so no click can take one with it.
 
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { useAppStore } from '@/store/app'
 import { ActivityRail } from './index'
 
 vi.mock('react-i18next', () => ({
@@ -27,10 +33,48 @@ function renderRail(initial = '/terminal') {
 }
 
 describe('activity rail', () => {
-  it('offers the terminal as the first destination', () => {
+  beforeEach(() => {
+    useAppStore.setState({ leftPanel: 'none' })
+  })
+
+  it('offers the terminal as the first control', () => {
     renderRail()
     const terminal = screen.getByTestId('rail-terminal')
-    expect(terminal.getAttribute('href')).toBe('/terminal')
+    // A button, because its job is "close the panel and go back to the canvas",
+    // not "navigate to another page". The old assertion expected `href="/terminal"`.
+    expect(terminal.tagName).toBe('BUTTON')
+    expect(terminal.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('toggles the connection explorer without leaving the terminal', () => {
+    renderRail()
+    const connections = screen.getByTestId('rail-connections')
+    expect(connections.tagName).toBe('BUTTON')
+    expect(connections.getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(connections)
+    expect(useAppStore.getState().leftPanel).toBe('explorer')
+    expect(useAppStore.getState().sidebarVisible).toBe(true)
+  })
+
+  it('closes the explorer when the connections entry is clicked again', () => {
+    useAppStore.setState({ leftPanel: 'explorer', sidebarVisible: true })
+    renderRail()
+
+    fireEvent.click(screen.getByTestId('rail-connections'))
+
+    expect(useAppStore.getState().leftPanel).toBe('none')
+    expect(useAppStore.getState().sidebarVisible).toBe(false)
+  })
+
+  it('closes whichever panel is open when the terminal entry is clicked', () => {
+    useAppStore.setState({ leftPanel: 'navigation', sidebarVisible: true })
+    renderRail()
+
+    fireEvent.click(screen.getByTestId('rail-terminal'))
+
+    expect(useAppStore.getState().leftPanel).toBe('none')
+    expect(useAppStore.getState().sidebarVisible).toBe(false)
   })
 
   it('reaches the daily surfaces through real links', () => {
@@ -44,8 +88,8 @@ describe('activity rail', () => {
   })
 
   it('does not reach the advanced surfaces', () => {
-    // Teams, logs, known hosts and vaults are not daily; a permanent rail slot
-    // for them costs terminal width every second of the day.
+    // Teams, logs, known hosts and vaults live in the navigation panel and the
+    // command palette. A permanent rail slot costs terminal width every second.
     renderRail()
     for (const path of ['teams', 'logs', 'known-hosts', 'vaults']) {
       expect(screen.queryByTestId(`rail-${path}`)).toBeNull()
@@ -64,12 +108,14 @@ describe('activity rail', () => {
   })
 
   it('navigates without unmounting anything the rail does not own', () => {
-    // The rail renders no terminal and holds no session state: a click is an
-    // anchor navigation. Asserting "no session-ish props" is the cheap version of
-    // "the rail cannot take the PTY with it".
+    // The rail renders no terminal and holds no session state: a click is either
+    // an anchor navigation or a panel toggle. Asserting "no session-ish nodes" is
+    // the cheap version of "the rail cannot take the PTY with it".
     const { container } = renderRail()
     expect(container.querySelector('[data-terminal-workbench]')).toBeNull()
     fireEvent.click(screen.getByTestId('rail-hosts'))
+    expect(container.querySelector('[data-terminal-workbench]')).toBeNull()
+    fireEvent.click(screen.getByTestId('rail-connections'))
     expect(container.querySelector('[data-terminal-workbench]')).toBeNull()
   })
 })

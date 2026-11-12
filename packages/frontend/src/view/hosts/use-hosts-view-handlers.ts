@@ -21,6 +21,8 @@ import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
 import { useTeamStore } from '@/store/team'
 import { decryptWithPassword, isEncryptedData, type EncryptedData } from '@/utils/team-encryption'
+import { useConnectToHost } from '@/features/connection-explorer/use-connect-to-host'
+import { terminalTabPath } from '@/router/terminal-route'
 
 export function useHostsViewHandlers() {
   const hosts = useHostStore(s => s.hosts)
@@ -29,6 +31,7 @@ export function useHostsViewHandlers() {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const currentTeam = useTeamStore(s => s.currentTeam)
+  const { connectToHost } = useConnectToHost()
 
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [shareDialogHost, setShareDialogHost] = useState<Host | null>(null)
@@ -142,15 +145,17 @@ export function useHostsViewHandlers() {
 
   const handleConnect = useCallback(
     (host: Host) => {
-      const newTab = app.addTab({ label: host.name, type: 'remote', hostId: host.id })
-      navigate(`/terminal?tab=${newTab.id}`)
+      // One connect path for the whole app: the Connection Explorer calls the same
+      // hook. Duplicating `addTab` + `navigate` here is how the two surfaces would
+      // drift into opening sessions differently.
+      connectToHost(host)
     },
-    [app, navigate],
+    [connectToHost],
   )
 
   const handleNewLocalTerminal = useCallback(() => {
     const newTab = app.addTab({ label: 'Local', type: 'local' })
-    navigate(`/terminal?tab=${newTab.id}`)
+    navigate(terminalTabPath(newTab.id))
   }, [app, navigate])
 
   const handleQuickConnect = useCallback(
@@ -170,7 +175,7 @@ export function useHostsViewHandlers() {
           profileId,
         })
         setQuickConnectTarget(null)
-        navigate(`/terminal?tab=${newTab.id}`)
+        navigate(terminalTabPath(newTab.id))
       } catch (error) {
         removeTemporaryTerminalProfile(profileId)
         throw error
@@ -239,7 +244,7 @@ export function useHostsViewHandlers() {
         serialSessionId: sessionId,
         serialConfig: { port: config.name, baudRate: config.baudRate },
       })
-      navigate(`/terminal?tab=${newTab.id}`)
+      navigate(terminalTabPath(newTab.id))
       setSerialDialogOpen(false)
     },
     [app, navigate],

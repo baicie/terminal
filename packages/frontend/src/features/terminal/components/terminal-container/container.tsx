@@ -31,6 +31,7 @@ import { useTerminalStatusEffects } from './use-terminal-status-effects'
 import { useTabConnectionStatus } from './use-tab-connection-status'
 import { useTabTitle } from './use-tab-title'
 import '@baicie/xterm/css/xterm.css'
+import { isTerminalPath } from '@/router/terminal-route'
 
 export interface TerminalContainerProps {
   tabId: string
@@ -67,7 +68,7 @@ export function TerminalContainer({
     settings.terminalThemeLight ?? defaultSettings.terminalThemeLight
   const activeTheme = useTerminalActivePreset({ appTheme, dark: darkPreset, light: lightPreset })
   const theme = getThemeColors(activeTheme)
-  const terminalIsActive = isActive && location.pathname === '/terminal'
+  const terminalIsActive = isActive && isTerminalPath(location.pathname)
   const onTitleChange = useTabTitle(tabId)
   const pasteConfirm = usePasteConfirm()
 

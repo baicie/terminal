@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-11-12T04:28:24.361Z",
+  "recordedAt": "2026-11-12T07:38:43.930Z",
   "recordedDate": "2026-11-12",
   "kind": "tauri-real-ssh-matrix-current-worktree",
   "command": "VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --debug --no-bundle && pnpm smoke:ssh-matrix --reuse-binary key,key-reconnect,key-outage-reconnect,key-outage-wake-reconnect,key-first-connect-outage,agent,agent-reconnect,cert,cert-reconnect,jump,jump-reconnect",
@@ -10,107 +10,107 @@
   },
   "revision": {
     "head": "",
-    "commit": "021ad81",
+    "commit": "4ecedb6",
     "dirtyWorktree": false
   },
   "binary": {
     "path": "src-tauri/target/debug/terminal",
-    "sha256": "7ccca2efbfff514432d711afd40b0a6ba9398e0cf308656f204025ab0fd4f32d"
+    "sha256": "d1949fb19551099d5759c6cc2d38cc78aa378cd32b422952f6677edd96360d2c"
   },
   "allCasesPassed": true,
   "cases": [
     {
       "name": "key",
       "ok": true,
-      "binarySha256": "7ccca2efbfff514432d711afd40b0a6ba9398e0cf308656f204025ab0fd4f32d",
-      "firstConnectionMs": 4530,
-      "durationMs": 17755,
+      "binarySha256": "d1949fb19551099d5759c6cc2d38cc78aa378cd32b422952f6677edd96360d2c",
+      "firstConnectionMs": 3982,
+      "durationMs": 15811,
       "uniqueSessionCount": 10
     },
     {
       "name": "key-reconnect",
       "ok": true,
-      "binarySha256": "7ccca2efbfff514432d711afd40b0a6ba9398e0cf308656f204025ab0fd4f32d",
-      "firstConnectionMs": 4829,
-      "durationMs": 16956,
+      "binarySha256": "d1949fb19551099d5759c6cc2d38cc78aa378cd32b422952f6677edd96360d2c",
+      "firstConnectionMs": 4786,
+      "durationMs": 16254,
       "uniqueSessionCount": 11
     },
     {
       "name": "key-outage-reconnect",
       "ok": true,
-      "binarySha256": "7ccca2efbfff514432d711afd40b0a6ba9398e0cf308656f204025ab0fd4f32d",
-      "firstConnectionMs": 3816,
-      "durationMs": 25438,
+      "binarySha256": "d1949fb19551099d5759c6cc2d38cc78aa378cd32b422952f6677edd96360d2c",
+      "firstConnectionMs": 3880,
+      "durationMs": 24920,
       "uniqueSessionCount": 11
     },
     {
       "name": "key-outage-wake-reconnect",
       "ok": true,
-      "binarySha256": "7ccca2efbfff514432d711afd40b0a6ba9398e0cf308656f204025ab0fd4f32d",
-      "firstConnectionMs": 4402,
-      "durationMs": 35312,
+      "binarySha256": "d1949fb19551099d5759c6cc2d38cc78aa378cd32b422952f6677edd96360d2c",
+      "firstConnectionMs": 4090,
+      "durationMs": 32083,
       "uniqueSessionCount": 11
     },
     {
       "name": "key-first-connect-outage",
       "ok": true,
-      "binarySha256": "7ccca2efbfff514432d711afd40b0a6ba9398e0cf308656f204025ab0fd4f32d",
-      "firstConnectionMs": 3384,
-      "durationMs": 14434,
+      "binarySha256": "d1949fb19551099d5759c6cc2d38cc78aa378cd32b422952f6677edd96360d2c",
+      "firstConnectionMs": 3996,
+      "durationMs": 16530,
       "uniqueSessionCount": 10
     },
     {
       "name": "agent",
       "ok": true,
-      "binarySha256": "7ccca2efbfff514432d711afd40b0a6ba9398e0cf308656f204025ab0fd4f32d",
-      "firstConnectionMs": 3925,
-      "durationMs": 19942,
+      "binarySha256": "d1949fb19551099d5759c6cc2d38cc78aa378cd32b422952f6677edd96360d2c",
+      "firstConnectionMs": 3835,
+      "durationMs": 14869,
       "uniqueSessionCount": 10
     },
     {
       "name": "agent-reconnect",
       "ok": true,
-      "binarySha256": "7ccca2efbfff514432d711afd40b0a6ba9398e0cf308656f204025ab0fd4f32d",
-      "firstConnectionMs": 3989,
-      "durationMs": 19104,
+      "binarySha256": "d1949fb19551099d5759c6cc2d38cc78aa378cd32b422952f6677edd96360d2c",
+      "firstConnectionMs": 4008,
+      "durationMs": 15125,
       "uniqueSessionCount": 11
     },
     {
       "name": "cert",
       "ok": true,
-      "binarySha256": "7ccca2efbfff514432d711afd40b0a6ba9398e0cf308656f204025ab0fd4f32d",
-      "firstConnectionMs": 3570,
-      "durationMs": 14234,
+      "binarySha256": "d1949fb19551099d5759c6cc2d38cc78aa378cd32b422952f6677edd96360d2c",
+      "firstConnectionMs": 3319,
+      "durationMs": 17635,
       "uniqueSessionCount": 10
     },
     {
       "name": "cert-reconnect",
       "ok": true,
-      "binarySha256": "7ccca2efbfff514432d711afd40b0a6ba9398e0cf308656f204025ab0fd4f32d",
-      "firstConnectionMs": 3115,
-      "durationMs": 15130,
+      "binarySha256": "d1949fb19551099d5759c6cc2d38cc78aa378cd32b422952f6677edd96360d2c",
+      "firstConnectionMs": 3851,
+      "durationMs": 15595,
       "uniqueSessionCount": 11
     },
     {
       "name": "jump",
       "ok": true,
-      "binarySha256": "7ccca2efbfff514432d711afd40b0a6ba9398e0cf308656f204025ab0fd4f32d",
-      "firstConnectionMs": 3468,
-      "durationMs": 17103,
+      "binarySha256": "d1949fb19551099d5759c6cc2d38cc78aa378cd32b422952f6677edd96360d2c",
+      "firstConnectionMs": 3323,
+      "durationMs": 18554,
       "uniqueSessionCount": 10
     },
     {
       "name": "jump-reconnect",
       "ok": true,
-      "binarySha256": "7ccca2efbfff514432d711afd40b0a6ba9398e0cf308656f204025ab0fd4f32d",
-      "firstConnectionMs": 3406,
-      "durationMs": 18370,
+      "binarySha256": "d1949fb19551099d5759c6cc2d38cc78aa378cd32b422952f6677edd96360d2c",
+      "firstConnectionMs": 3729,
+      "durationMs": 23134,
       "uniqueSessionCount": 11
     }
   ],
   "passwordFixtureNote": "The password cases run against the terminal-smoke-password-sshd Docker image so a real password prompt is exercised, not a stub.",
   "source": {
-    "fingerprint": "f98592077cf8c3aca071422914493572eb021e69fb9a441d9cb9efb8267ae422",
+    "fingerprint": "ac1b1b7d0a8a7f67a616d889e05a5ef6ed8c9bb64f6c46a839f6288960896cee",
     "note": "Computed over FINGERPRINT_PATHS by scripts/check-verification-evidence.mjs on the checked-out CI sources at evidence build time."
   },
   "limitations": [
@@ -121,12 +121,12 @@
   ],
   "provenance": {
     "source": "github-actions",
-    "runId": "43152440486",
+    "runId": "43173729868",
     "runAttempt": "1",
     "workflow": "Real-machine terminal matrix",
     "job": "macos-ssh-matrix",
-    "commit": "021ad8180f282465dfe7f5d56949dca4b90adb35",
-    "fingerprint": "f98592077cf8c3aca071422914493572eb021e69fb9a441d9cb9efb8267ae422",
+    "commit": "4ecedb6d2dc78e36ae55d91f2283f4d15ae4bd26",
+    "fingerprint": "ac1b1b7d0a8a7f67a616d889e05a5ef6ed8c9bb64f6c46a839f6288960896cee",
     "runner": {
       "os": "macOS",
       "arch": "ARM64"
