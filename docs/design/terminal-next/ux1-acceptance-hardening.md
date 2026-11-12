@@ -189,43 +189,82 @@ ssh -s user@127.0.0.1 sftp  →  subsystem request failed on channel 0
 
 ## 4. 真实 GUI 验收
 
-### 4.1 权限现状（已尝试的方式）
+### 4.1 一个决定性的对照实验
 
-| 方式 | 结果 |
+之前的结论「结构性遮挡」不完整。用两个二进制做对照：
+
+| 二进制 | 来源 | 结果 |
+| --- | --- | --- |
+| `release-small`（22.1 MB，`strip = "symbols"` + LTO） | `cargo build --profile release-small` | 日志仅 2 行、无 `bootstrap-gates`、**无数据库**、窗口内容全灰 |
+| `release`（22.5 MB，未 strip） | 主工作区的既有产物 | **30 行日志、bootstrap 完成、数据库创建、界面完整渲染** |
+
+**这是本轮最重要的发现**：`release-small` 的 `strip = "symbols"` 破坏了前端渲染。
+
+PR #38 记录「三方案均以 `terminal` 直接运行验证，全部 `db recovery state=Healthy`」——
+Healthy 只证明 Rust 侧启动，不证明前端渲染。本轮第一次对照，暴露出这个缺口。
+
+**这不属于本轮范围**（release profile 来自 PR #38），但它意味着：
+
+- `release-small` 目前**不能用作 GUI 验收构建**；
+- PR #38 的「21.52 MB」需要附上「前端可渲染」这个前提，否则省下的 5 MB 换来一个打不开的界面。
+
+建议：给 `release-small` 补一条与 `release` 的对照测试，或去掉 `strip` 只保留 LTO。
+
+### 4.2 截图能力：可用，但交互不可用
+
+用 `release` 二进制、隔离 `HOME` 启动，`screencapture -l <windowId>` **成功拍摄**：
+
+`docs/design/terminal-next/ux1h-evidence/01-default-workspace.png`
+
+图中可见：
+
+| 区域 | 内容 |
 | --- | --- |
-| `AXIsProcessTrusted()` | **false** |
-| `screencapture -x`（全屏） | 成功出图（2.2 MB）—— 屏幕录制**有**权限 |
-| `screencapture -l <windowId>`（单窗口） | 全灰 —— 窗口被全屏覆盖，截不到内容 |
-| `osascript ... activate` | `-1719` 辅助功能未授权 |
-| `NSRunningApplication.hide()` | 返回 `false` |
-| ScreenCaptureKit `SCScreenshotManager` | 命令行工具无 window server 连接，断言崩溃 |
+| 顶栏 | 标签 `Local`、`+`、右侧 `Vaults` 与图标组、`● Connected` |
+| 左栏 | 46px Activity Rail（终端 / Connections / Files / 其余） |
+| 终端 | `liuzhiwei@liuzhiweideMacBook-Pro ux1h-home2 %` |
+| **状态栏** | `● Connected  Local` ｜ **`142×43`** |
 
-**结论**：屏幕录制本身可用，但本会话运行在 Claude 桌面应用内，其窗口全屏覆盖，
-应用窗口拿不到可见像素。这不是权限缺失，是结构性遮挡。
+**`142×43` 与 UX-1a 记录的列数一致** —— 状态栏确实来自 xterm 的 `onResize`。
 
-### 4.2 任务书要求的七张截图
+### 4.2.1 交互不可用（已实测）
+
+尝试用 `CGEventPost` 合成鼠标事件：
 
 ```
-DEFAULT_WORKSPACE_SCREENSHOT   = NOT_RUN
-EXPLORER_OPEN_SCREENSHOT       = NOT_RUN
-DOCK_OPEN_SCREENSHOT           = NOT_RUN
-BOTH_PANELS_SCREENSHOT         = NOT_RUN
-NARROW_WINDOW_SCREENSHOT       = NOT_RUN
-SPLIT_DRAG_SCREENSHOT          = NOT_RUN
-SFTP_PIN_FOLLOW_SCREENSHOT     = NOT_RUN
+move posted: true
+cursor now: (857.30, 305.32)   # 目标是 (100, 100)
 ```
 
-**不使用模拟 DOM 截图冒充真实桌面截图。**
+**光标没动** —— 无辅助功能权限时 `CGEventPost` 被系统静默忽略。所以：
 
-### 4.3 人工操作步骤（供后续执行）
+- **能**：拍默认状态
+- **不能**：切面板、开 Dock、拖窄窗口、分屏拖拽、点击 Follow 按钮
+
+### 4.3 七张截图的实际状态
+
+```
+DEFAULT_WORKSPACE_SCREENSHOT   = PASS   （docs/design/terminal-next/ux1h-evidence/01-default-workspace.png）
+EXPLORER_OPEN_SCREENSHOT       = NOT_RUN（需点击 Rail）
+DOCK_OPEN_SCREENSHOT           = NOT_RUN（需点击 Rail）
+BOTH_PANELS_SCREENSHOT         = NOT_RUN（需两次点击）
+NARROW_WINDOW_SCREENSHOT       = NOT_RUN（需拖拽窗口边缘）
+SPLIT_DRAG_SCREENSHOT          = NOT_RUN（需拖拽 sash）
+SFTP_PIN_FOLLOW_SCREENSHOT     = NOT_RUN（需点击 Follow 按钮）
+```
+
+七张里拍到一张。其余六张都需要合成鼠标事件，而 `CGEventPost` 在无辅助功能权限
+时被忽略（见 §4.2.1）。**不使用模拟 DOM 截图冒充真实桌面截图。**
+
+### 4.4 人工操作步骤（供后续执行）
 
 ```bash
-# 1. 构建（release-small 需要 LTO，约 20 分钟）
+# 1. 构建。注意：用 release-small 拍不到界面（见 §4.1），用 release。
 cd packages/frontend && pnpm build
-cd ../../src-tauri && cargo build --profile release-small
+cd ../../src-tauri && cargo build --release
 
 # 2. 隔离 HOME 启动
-HOME=/tmp/ux1-gui-home ./target/release-small/terminal
+HOME=/tmp/ux1-gui-home ./target/release/terminal
 
 # 3. 按任务书逐项拍摄，同一组用同一窗口尺寸（1200×800）
 #    默认 → Explorer → Dock → 双面板 → 拖窄 → 分屏拖拽 → SFTP pin/follow
