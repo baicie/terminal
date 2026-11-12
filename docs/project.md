@@ -1316,7 +1316,15 @@ REAL_SQLITE_IMPORT_E2E              = PASS
 - 🟡 **16 条不变量 13 PASS / 3 NOT_RUN**：INV-5（11 处 `/terminal` 字面量）留 UX-1b，
   INV-13/14（SFTP 绑定与生命周期）留 UX-1c
 - 🟡 **真实 GUI NOT_RUN**：本机 `AXIsProcessTrusted: false`，能截图不能点击/键入。
-  截图证明布局与终端列数（133 → 142），**不证明交互**
+  窗口在 CoreGraphics 列表里实测 `layer=0 alpha=1.0 onscreen=true 1200×800`，
+  但被其他窗口遮挡且四条前台化路径全部被权限拒绝（`screencapture -l` 只返回可见像素、
+  `osascript activate` 报 -1719、`NSRunningApplication.hide()` 返回 false、
+  ScreenCaptureKit 在命令行工具里因无 window server 连接断言崩溃）。
+  **上一版的 `03-final.png` 是 `8ceee84` 拍摄的，不冒充为本轮产物**
+- ✅ **证据**：源码指纹 `bfe5221a…` → **`f9859207…`**，run `43152440486` 三平台
+  全 success（Linux real SSH smoke / Windows PowerShell+cmd / macOS real SSH matrix），
+  manifest 绑定 `021ad81`、debug `7ccca2ef…`、release `320a5eb4…`，
+  门禁 **0 problem**，未手改旧 manifest
 - 📋 详见 `docs/design/terminal-next/ux1a-review-fixes.md`；**未合并、未打 Tag**
 
 ### Terminal Next UX-0 - 设计交付 ✅ 已合入（PR #34 → `f576680`）

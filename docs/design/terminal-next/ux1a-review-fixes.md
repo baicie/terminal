@@ -193,7 +193,8 @@ SFTP 已在 Activity Rail 上常驻，顶栏那个 SFTP 按钮是**同一个房�
 | ESLint | 通过 |
 | source-size | **648** 个生产文件 |
 | bundle budget | **618.16 / 624 KB**（initial 130.70 / 240） |
-| 证据指纹 | 源码改动 → `bfe5221a…` → `f9859207…`，**按官方流程重采** |
+| 证据 | 指纹 `bfe5221a…` → **`f9859207…`**，run `43152440486` 三平台全 success，门禁 **0 problem** |
+| 证据 manifest | commit `021ad81`、debug `7ccca2ef…`、release `320a5eb4…` |
 
 ### 4.1 测试基数变化
 
