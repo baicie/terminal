@@ -1,4 +1,6 @@
 export default {
+  'sftp.dockTitle': '文件',
+  'sftp.followActiveTab': '跟随当前标签',
   // SFTP
   'sftp.title': 'SFTP',
   'sftp.newFolder': '新建文件夹',

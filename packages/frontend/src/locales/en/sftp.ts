@@ -1,4 +1,6 @@
 export default {
+  'sftp.dockTitle': 'Files',
+  'sftp.followActiveTab': 'Follow this tab',
   // SFTP
   'sftp.title': 'SFTP',
   'sftp.newFolder': 'New Folder',

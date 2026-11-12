@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { getVisibleNavItems, type NavItemConfig } from '@/router/nav-config.tsx'
 import { navTierOf } from '@/router/nav-tier'
 import { useAppStore } from '@/store/app'
+import { useRightPanelStore } from '@/store/right-panel-store'
 
 /**
  * The 46px tool rail on the left edge.
@@ -31,7 +32,7 @@ import { useAppStore } from '@/store/app'
  * `/hosts`, `/sftp` and the rest working as deep links, exactly as before.
  */
 
-const RAIL_ITEMS = ['/hosts', '/sftp', '/keychain', '/snippets', '/port-forward']
+const RAIL_ITEMS = ['/hosts', '/keychain', '/snippets', '/port-forward']
 
 function railItems(): NavItemConfig[] {
   const byPath = new Map(getVisibleNavItems().map(item => [item.path, item]))
@@ -45,6 +46,8 @@ export function ActivityRail({ className }: { className?: string }) {
   const navigate = useNavigate()
   const leftPanel = useAppStore(state => state.leftPanel)
   const setLeftPanel = useAppStore(state => state.setLeftPanel)
+  const rightPanel = useRightPanelStore(state => state.rightPanel)
+  const toggleRightPanel = useRightPanelStore(state => state.toggleRightPanel)
   const items = railItems()
 
   const openConnections = () => {
@@ -103,6 +106,31 @@ export function ActivityRail({ className }: { className?: string }) {
           </button>
         </TooltipTrigger>
         <TooltipContent side="right">{t('explorer.title')}</TooltipContent>
+      </Tooltip>
+
+      {/* Files opens the dock rather than navigating: it is a panel you work in
+          while the terminal keeps running, not a page you leave the canvas for.
+          The `/sftp` route stays reachable as a deep link. */}
+      <Tooltip delayDuration={300}>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={() => {
+              toggleRightPanel()
+              if (rightPanel === 'none') navigate('/terminal')
+            }}
+            aria-pressed={rightPanel !== 'none'}
+            aria-label={t('nav.sftp')}
+            data-testid="rail-sftp"
+            className={cn(
+              railItemClass(),
+              rightPanel !== 'none' && 'bg-secondary text-foreground',
+            )}
+          >
+            <FilesGlyph />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right">{t('nav.sftp')}</TooltipContent>
       </Tooltip>
 
       <div className="my-1 h-px w-5 bg-border/60" aria-hidden="true" />
@@ -168,6 +196,24 @@ function ConnectionsGlyph() {
       <rect x="3" y="13" width="18" height="7" rx="1" />
       <line x1="7" y1="7.5" x2="7.01" y2="7.5" />
       <line x1="7" y1="16.5" x2="7.01" y2="16.5" />
+    </svg>
+  )
+}
+
+/** A folder with a server: the file panel, not the connections list. */
+function FilesGlyph() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-4"
+    >
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
     </svg>
   )
 }
