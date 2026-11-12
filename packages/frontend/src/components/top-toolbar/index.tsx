@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { isTauri } from '@tauri-apps/api/core'
+import WorkspaceSwitcher from '@/components/workspace-switcher'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -10,7 +11,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import WorkspaceSwitcher from '@/components/workspace-switcher'
 import { useIsMobile } from '@/hooks/use-breakpoint'
 import MenuTabs from '@/layout/tabs'
 import { cn } from '@/lib/utils'
@@ -124,7 +124,6 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
   const isMac =
     typeof navigator !== 'undefined' && /mac|darwin/i.test(navigator.platform)
   const commandKeyLabel = isMac ? '⌘K' : 'Ctrl+K'
-  const isSftpActive = location.pathname === '/sftp'
 
   return (
     <>
@@ -147,25 +146,6 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
           >
             <PanelLeft />
           </Button>
-          <WorkspaceSwitcher variant="vaults" />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate('/sftp')}
-            className={cn(
-              'relative h-8 gap-1.5 rounded-md px-3',
-              isSftpActive
-                ? 'bg-secondary/80 text-foreground'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-            data-tauri-drag-region="false"
-          >
-            <FolderUp data-icon="inline-start" />
-            {t('toolbar.sftp')}
-            {activeTransferCount > 0 && (
-              <CountBadge count={activeTransferCount} />
-            )}
-          </Button>
         </div>
 
         <Separator orientation="vertical" className="mx-1 h-5" />
@@ -185,6 +165,38 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
 
         <Separator orientation="vertical" className="mx-1 h-5" />
         <div className="flex shrink-0 items-center gap-0.5">
+          {/* `WorkspaceSwitcher variant="vaults"` **is** the vault entry: it renders
+              the cloud glyph and navigates to /vaults. Adding a second control next
+              to it produced two doors to the same room in the first screenshot
+              pass. */}
+          <WorkspaceSwitcher variant="vaults" />
+          {/* SFTP lives on the activity rail, one click away at all times. A second
+              SFTP button here was the same room again — but the transfer badge had
+              no other home, so this renders only while something is actually
+              moving. An idle duplicate disappears; a running transfer keeps the
+              one indicator that says it is running. */}
+          {activeTransferCount > 0 && (
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative size-8 text-muted-foreground hover:text-foreground"
+                  onClick={() => navigate('/sftp')}
+                  aria-label={t('toolbar.sftpTransfers', {
+                    count: activeTransferCount,
+                  })}
+                  data-tauri-drag-region="false"
+                >
+                  <FolderUp />
+                  <CountBadge count={activeTransferCount} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('toolbar.sftpTransfers', { count: activeTransferCount })}
+              </TooltipContent>
+            </Tooltip>
+          )}
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <Button

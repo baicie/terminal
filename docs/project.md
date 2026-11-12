@@ -1297,6 +1297,42 @@ REAL_SQLITE_IMPORT_E2E              = PASS
 **同时**：Terminal Next 的 UX-0 设计文档在 PR #34（分支 `design/terminal-next-ux0`），
 仍为 Draft，未实施任何代码。
 
+### Terminal Next UX-1a - Terminal Workspace Shell 🟡 Draft PR #36
+
+目标：把明显偏管理后台的主框架改造成以终端为中心的桌面应用。**只做 shell，
+不改 PTY/SSH 核心**；不实施 UX-1b/1c、Keychain、插件运行时或 Rust Rig。
+
+- ✅ **Activity Rail（46px）**：复用 `getVisibleNavItems()` 的 `primary` 层，
+  只放终端 + 五个日用目的地。高级入口（teams/logs/known-hosts/vaults）不占槽位
+- ✅ **StatusBar（24px）**：只显示有真实来源的值 —— 连接状态来自 session record 的
+  `status`、尺寸来自 xterm 自己的 `onResize`、传输数来自 transfer queue。
+  **没有编码字段、没有 shell 名**：全应用没有任何一处报告这两个事实
+- ✅ **TitleBar 精简**：移除左侧 `WorkspaceSwitcher` 与 SFTP 文字按钮；右侧保留
+  `WorkspaceSwitcher variant="vaults"`（它**就是** Vault 入口）+ 传输中徽章 + 命令面板 + 通知
+- ✅ **`sidebarVisible` 默认 `false`**：Rail 是常驻导航，详细侧栏是可开的面板
+- ✅ **复审三项修复**（先红后绿）：状态栏订阅 xterm `onResize` 而非 `window.resize`；
+  布局版本化迁移（`layoutVersion`，只影响 `sidebarVisible`，三个读写边界，恢复字段逐字段透传）；
+  去掉顶栏第三处重复的 SFTP 入口
+- 🟡 **16 条不变量 13 PASS / 3 NOT_RUN**：INV-5（11 处 `/terminal` 字面量）留 UX-1b，
+  INV-13/14（SFTP 绑定与生命周期）留 UX-1c
+- 🟡 **真实 GUI NOT_RUN**：本机 `AXIsProcessTrusted: false`，能截图不能点击/键入。
+  窗口在 CoreGraphics 列表里实测 `layer=0 alpha=1.0 onscreen=true 1200×800`，
+  但被其他窗口遮挡且四条前台化路径全部被权限拒绝（`screencapture -l` 只返回可见像素、
+  `osascript activate` 报 -1719、`NSRunningApplication.hide()` 返回 false、
+  ScreenCaptureKit 在命令行工具里因无 window server 连接断言崩溃）。
+  **上一版的 `03-final.png` 是 `8ceee84` 拍摄的，不冒充为本轮产物**
+- ✅ **证据**：源码指纹 `bfe5221a…` → **`f9859207…`**，run `43152440486` 三平台
+  全 success（Linux real SSH smoke / Windows PowerShell+cmd / macOS real SSH matrix），
+  manifest 绑定 `021ad81`、debug `7ccca2ef…`、release `320a5eb4…`，
+  门禁 **0 problem**，未手改旧 manifest
+- 📋 详见 `docs/design/terminal-next/ux1a-review-fixes.md`；**未合并、未打 Tag**
+
+### Terminal Next UX-0 - 设计交付 ✅ 已合入（PR #34 → `f576680`）
+
+`docs/design/terminal-next/` 六篇：架构 ADR（含 16 条不变量与两处对设计包的修正）、
+凭据/Keychain/Vault、终端工作区五态规格、扩展平台、Rust Rig AI、测试矩阵与回滚。
+未实施任何代码。
+
 
 
 ## 待办事项

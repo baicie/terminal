@@ -5,6 +5,12 @@ import { useAppStore } from '@/store/app'
 import { MainLayoutContent } from './main-layout-content'
 
 vi.mock('@/components/app-sidebar', () => ({ default: () => null }))
+vi.mock('@/components/activity-rail', () => ({
+  ActivityRail: () => <div data-testid="activity-rail" />,
+}))
+vi.mock('@/components/status-bar', () => ({
+  StatusBar: () => <div data-testid="status-bar" />,
+}))
 vi.mock('@/components/bottom-nav', () => ({ default: () => null }))
 vi.mock('@/components/swipe-back-indicator', () => ({
   SwipeBackIndicator: () => null,

@@ -14,6 +14,7 @@ import {
   resizeTerminalSplit,
   splitTerminalTab,
 } from './app-terminal-layout'
+import { migrateLayoutVisibility } from '@/service/workspace-layout-version'
 
 type NewTab = Omit<Tab, 'id'>
 type RestorableLayout = {
@@ -21,6 +22,12 @@ type RestorableLayout = {
   splitGroups: SplitGroup[]
   activeTabId: string | null
   sidebarVisible: boolean
+  /**
+   * On-disk schema version, carried through so the visibility decision can tell
+   * a pre-rail default from a preference. Absent means legacy — see
+   * `service/workspace-layout-version.ts`.
+   */
+  layoutVersion?: number
 }
 
 function hasMissingTemporaryProfile(tab: unknown): boolean {
@@ -96,7 +103,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   tabs: [],
   splitGroups: [],
   activeTabId: null,
-  sidebarVisible: true,
+  // The activity rail is now the permanent navigation. The detailed sidebar is
+  // an optional panel the user opens, so the terminal gets its width by default.
+  sidebarVisible: false,
   recentlyClosedTabs: [],
 
   setTheme(theme) {
@@ -135,13 +144,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...layout,
       tabs: restorableTabs,
     })
-    set({
-      ...normalizedLayout,
-      sidebarVisible:
-        typeof layout.sidebarVisible === 'boolean'
-          ? layout.sidebarVisible
-          : true,
-    })
+    // The sidebar flag is decided by the layout schema version, not by the raw
+    // boolean. A layout written before the activity rail always says `true`
+    // because that was the default then, and honoring it would open a second
+    // navigation column next to the rail on the user's first launch after
+    // upgrading. See `service/workspace-layout-version.ts`.
+    const visibility = migrateLayoutVisibility(layout)
+    set({ ...normalizedLayout, sidebarVisible: visibility.sidebarVisible })
     releaseUnreferencedTemporaryProfiles(previousTabs, normalizedLayout.tabs)
   },
 

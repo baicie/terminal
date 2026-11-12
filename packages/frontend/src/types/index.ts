@@ -197,5 +197,17 @@ export interface WorkspaceLayout {
   tabs: Tab[]
   splitGroups: SplitGroup[]
   activeTabId: string | null
+  /**
+   * Sidebar visibility, as a preference the user set.
+   *
+   * Only meaningful together with `layoutVersion`: a layout written before the
+   * activity rail existed has `sidebarVisible: true` because that was the default
+   * then, not because anyone chose it. See `service/workspace-layout-version.ts`.
+   */
   sidebarVisible: boolean
+  /**
+   * On-disk schema version. Absent means "written before versioning", which is
+   * exactly the pre-rail case the migration exists for.
+   */
+  layoutVersion?: number
 }

@@ -11,6 +11,7 @@ import {
   updateWorkspace,
 } from '@/service/database'
 import { generateId } from '@/utils/id'
+import { LAYOUT_SCHEMA_VERSION } from '@/service/workspace-layout-version'
 
 function rowToWorkspace(row: WorkspaceRecord): Workspace {
   return {
@@ -203,6 +204,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         splitGroups,
         activeTabId,
         sidebarVisible,
+        // Every relay in this path carries a value this build either restored
+        // through the migration or received from a user action, so it is
+        // current-version by construction. Omitting it would make the stored row
+        // look legacy on the next read and silently collapse an open sidebar.
+        layoutVersion: LAYOUT_SCHEMA_VERSION,
       }
       await saveWorkspaceLayout(workspaceId, layout)
     },

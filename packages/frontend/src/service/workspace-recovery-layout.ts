@@ -2,6 +2,10 @@ import type { Tab, WorkspaceLayout } from '@/types'
 import { normalizeTerminalLayout } from '@/store/app-terminal-layout'
 import { useAppStore } from '@/store/app'
 import type { PendingWorkspaceSnapshot } from './workspace-recovery-journal'
+import {
+  LAYOUT_SCHEMA_VERSION,
+  migrateLayoutVisibility,
+} from './workspace-layout-version'
 
 function isRestorableTab(tab: Tab, hostIds?: ReadonlySet<string>): boolean {
   if (tab.profileId || tab.type === 'serial') return false
@@ -47,8 +51,11 @@ export function sanitizeWorkspaceRecoveryLayout(
   return {
     workspaceId,
     ...normalized,
-    sidebarVisible:
-      typeof layout.sidebarVisible === 'boolean' ? layout.sidebarVisible : true,
+    // Same rule as `restoreLayout`: a layout from before the activity rail has
+    // `sidebarVisible: true` because that was the old default, not a choice.
+    // Sanitizing must not reintroduce it on the way to disk.
+    sidebarVisible: migrateLayoutVisibility(layout).sidebarVisible,
+    layoutVersion: LAYOUT_SCHEMA_VERSION,
   }
 }
 
@@ -60,7 +67,12 @@ export function readRecoveryLayout(workspaceId: string): WorkspaceLayout {
     tabs,
     splitGroups,
     activeTabId,
+    // In-memory visibility is a decision of *this* build: `restoreLayout`
+    // migrated it on entry, and a toggle is the user acting now. Stamping the
+    // legacy version here would fold a sidebar the user just opened back shut
+    // on every journal write.
     sidebarVisible,
+    layoutVersion: LAYOUT_SCHEMA_VERSION,
   })
 }
 

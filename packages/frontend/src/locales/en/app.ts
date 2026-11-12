@@ -22,6 +22,8 @@ export default {
   'toolbar.mobileNavigationDescription':
     'Navigate between views and workspaces',
   'toolbar.sftp': 'SFTP',
+  'toolbar.sftpTransfers_one': '{{count}} active transfer',
+  'toolbar.sftpTransfers_other': '{{count}} active transfers',
   'toolbar.newTab': 'New tab',
   'toolbar.more': 'More',
   'toolbar.serial': 'Serial',
@@ -97,6 +99,11 @@ export default {
   'terminal.vault.rebind': 'Re-save the credential',
   'terminal.errorOverlay.title': 'Connection failed',
   'terminal.errorOverlay.dismiss': 'Dismiss',
+  'statusBar.transfers': '{{count}} transfer(s) active',
+  'toolbar.activityRail': 'Activity',
+  'statusBar.session.local': 'Local',
+  'statusBar.session.remote': 'SSH',
+  'statusBar.session.serial': 'Serial',
   'terminal.hostKeyChangedTitle': 'SSH host key changed',
   'terminal.hostKeyTrustTitle': 'Trust this SSH host?',
   'terminal.hostKeyChangedDescription':

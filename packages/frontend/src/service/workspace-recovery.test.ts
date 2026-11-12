@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WorkspaceLayout } from '@/types'
+import { LAYOUT_SCHEMA_VERSION } from './workspace-layout-version'
 
 const mocks = vi.hoisted(() => {
   const appState = {
@@ -139,6 +140,7 @@ describe('workspace recovery', () => {
       ],
       activeTabId: 'temporary',
       sidebarVisible: false,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
 
     expect(sanitizeWorkspaceRecoveryLayout(layout)).toEqual({
@@ -172,6 +174,7 @@ describe('workspace recovery', () => {
       ],
       activeTabId: 'local',
       sidebarVisible: false,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     })
   })
 
@@ -182,6 +185,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'local',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
 
@@ -204,6 +208,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'saved',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
     mocks.appState.tabs = [
@@ -223,6 +228,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'saved',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
     mocks.appState.tabs = [
@@ -255,6 +261,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'saved-remote',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
     mocks.hostState.hosts = [{ id: 'host-one' }]
@@ -315,6 +322,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'saved-remote',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
     mocks.hostState.hosts = [{ id: 'host-one' }]
@@ -329,6 +337,7 @@ describe('workspace recovery', () => {
           splitGroups: [],
           activeTabId: 'local-fallback',
           sidebarVisible: true,
+          layoutVersion: LAYOUT_SCHEMA_VERSION,
         },
       }),
     )
@@ -358,6 +367,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'saved-remote',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
     mocks.hostState.loadHosts.mockResolvedValue([])
@@ -383,6 +393,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'saved-remote',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
     mocks.hostState.loadHosts.mockResolvedValue(null)
@@ -408,6 +419,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'saved-remote',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     let resolveWorkspace: (() => void) | undefined
     mocks.hostState.hosts = [{ id: 'host-one' }]
@@ -522,6 +534,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'saved',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
     mocks.appState.tabs = [
@@ -615,6 +628,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'remote-tab',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
     mocks.hostState.loadHosts.mockRejectedValue(new Error('database busy'))
@@ -639,6 +653,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'remote-tab',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     let hostSignal: AbortSignal | undefined
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
@@ -664,6 +679,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'local-tab',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     let resolveHosts: (() => void) | undefined
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
@@ -697,6 +713,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'remote-tab',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     let resolveHosts: (() => void) | undefined
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
@@ -740,6 +757,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'local-tab',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     let hostSignal: AbortSignal | undefined
     mocks.workspaceState.loadLayout.mockResolvedValue(savedLayout)
@@ -841,6 +859,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'old',
       sidebarVisible: true,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     const journalLayout: WorkspaceLayout = {
       workspaceId: 'workspace-one',
@@ -848,6 +867,7 @@ describe('workspace recovery', () => {
       splitGroups: [],
       activeTabId: 'latest',
       sidebarVisible: false,
+      layoutVersion: LAYOUT_SCHEMA_VERSION,
     }
     mocks.workspaceState.loadLayout.mockResolvedValue(databaseLayout)
     localStorage.setItem(

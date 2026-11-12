@@ -1,9 +1,13 @@
 import { lazy, Suspense, useEffect, useRef } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { ActivityRail } from '@/components/activity-rail'
 import AppSidebar from '@/components/app-sidebar'
 import { SwipeBackIndicator } from '@/components/swipe-back-indicator'
 import TopToolbar from '@/components/top-toolbar'
+import { StatusBar } from '@/components/status-bar'
+import { useTerminalStatusStore } from '@/store/terminal-status'
+import { useTransferQueue } from '@/store/transfer-queue'
 import { useIsMobile } from '@/hooks/use-breakpoint'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
@@ -46,6 +50,16 @@ export function MainLayoutContent({
   )
   const { swipeProgress, onSwipeStart, onSwipeMove, onSwipeEnd } =
     useSwipeBack()
+  // Only what a real source reported: the active pane's size, and the transfer
+  // queue's live count. Nothing here is inferred from "a tab exists".
+  const activePaneSize = useTerminalStatusStore(state => state.active)
+  const activeTransfers = useTransferQueue(
+    state =>
+      state.transfers.filter(
+        transfer =>
+          transfer.status === 'running' || transfer.status === 'queued',
+      ).length,
+  )
 
   useEffect(() => {
     if (hasTerminalTabs) terminalLayerMountedRef.current = true
@@ -67,6 +81,8 @@ export function MainLayoutContent({
             className="absolute left-2 top-1/2 -translate-y-1/2 z-50 text-muted-foreground"
           />
         )}
+
+        {!isMobile ? <ActivityRail /> : null}
 
         {sidebarOpen && (
           <>
@@ -127,7 +143,17 @@ export function MainLayoutContent({
         <Suspense fallback={<div className="bottom-nav" aria-hidden="true" />}>
           <BottomNav />
         </Suspense>
-      ) : null}
+      ) : (
+        <StatusBar
+          cols={activePaneSize?.cols}
+          rows={activePaneSize?.rows}
+          status={activePaneSize?.status}
+          sessionLabel={
+            activePaneSize === null ? undefined : t(`statusBar.session.${activePaneSize.sessionType}`)
+          }
+          transfers={activeTransfers}
+        />
+      )}
     </div>
   )
 }

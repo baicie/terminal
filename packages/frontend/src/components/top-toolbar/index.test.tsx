@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { isTauri } from '@tauri-apps/api/core'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app'
+import { useTransferQueue } from '@/store/transfer-queue'
 import TopToolbar from './index'
 
 vi.mock('react-i18next', () => ({
@@ -209,5 +210,71 @@ describe('TopToolbar workspace entry', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'toolbar.newTab' }))
     expect(useAppStore.getState().tabs).toHaveLength(2)
+  })
+})
+
+describe('TopToolbar SFTP entry', () => {
+  beforeEach(() => {
+    mocks.mobile = false
+    vi.mocked(isTauri).mockReturnValue(false)
+    useAppStore.setState({
+      tabs: [{ id: 'one', label: 'One', type: 'local' }],
+      splitGroups: [],
+      activeTabId: 'one',
+    })
+    useTransferQueue.setState({ transfers: [] })
+  })
+
+  function renderToolbar() {
+    return render(
+      <MemoryRouter initialEntries={['/terminal']}>
+        <TooltipProvider>
+          <TopToolbar onToggleSidebar={vi.fn()} />
+        </TooltipProvider>
+      </MemoryRouter>,
+    )
+  }
+
+  it('does not add a second SFTP door while nothing is transferring', () => {
+    // SFTP is on the activity rail permanently. A second always-visible button in
+    // the tool bar is the same duplication that produced two vault buttons.
+    const { container } = renderToolbar()
+    const links = [...container.querySelectorAll('button[aria-label]')].map(
+      node => node.getAttribute('aria-label'),
+    )
+    expect(links).not.toContain('toolbar.sftp')
+  })
+
+  it('surfaces the transfer count while something is moving', () => {
+    // The badge is the one thing the removed button carried that the rail does
+    // not, so it has to survive somewhere. Two running plus one queued is three.
+    useTransferQueue.setState({
+      transfers: [
+        { id: '1', kind: 'upload', name: 'a', localPath: '/a', remotePath: '/a', sessionId: 's', status: 'running', bytesDone: 0, bytesTotal: 10, speed: 0, startedAt: 0 },
+        { id: '2', kind: 'download', name: 'b', localPath: '/b', remotePath: '/b', sessionId: 's', status: 'running', bytesDone: 0, bytesTotal: 10, speed: 0, startedAt: 0 },
+        { id: '3', kind: 'upload', name: 'c', localPath: '/c', remotePath: '/c', sessionId: 's', status: 'queued', bytesDone: 0, bytesTotal: 10, speed: 0, startedAt: 0 },
+        { id: '4', kind: 'upload', name: 'd', localPath: '/d', remotePath: '/d', sessionId: 's', status: 'done', bytesDone: 10, bytesTotal: 10, speed: 0, startedAt: 0 },
+      ],
+    })
+
+    renderToolbar()
+
+    expect(screen.getByText('3')).toBeTruthy()
+    expect(
+      screen.getByLabelText('toolbar.sftpTransfers'),
+    ).toBeTruthy()
+  })
+
+  it('drops the badge again once the transfer finishes', () => {
+    useTransferQueue.setState({
+      transfers: [
+        { id: '1', kind: 'upload', name: 'a', localPath: '/a', remotePath: '/a', sessionId: 's', status: 'done', bytesDone: 10, bytesTotal: 10, speed: 0, startedAt: 0 },
+      ],
+    })
+
+    const { container } = renderToolbar()
+
+    expect(screen.queryByLabelText('toolbar.sftpTransfers')).toBeNull()
+    expect(container.textContent).not.toContain('1')
   })
 })

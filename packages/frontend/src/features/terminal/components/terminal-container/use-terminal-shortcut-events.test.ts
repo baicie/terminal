@@ -155,3 +155,98 @@ describe('useTerminalShortcutEvents', () => {
     expect(handlers.onClear).toHaveBeenCalledOnce()
   })
 })
+
+// UX-1a — the keys readline needs must keep reaching the shell.
+//
+// The layout work in this phase adds an activity rail and a status bar, and the
+// obvious way to wire a rail is "one key per destination". That is exactly how a
+// terminal app loses readline: Ctrl+P (previous command), Ctrl+N (next command)
+// and Ctrl+R (reverse search) are three of the most-used keys in a shell, and
+// nothing in this repository protects them today.
+//
+// These tests exist before the layout changes so the changes cannot quietly take
+// them. They assert today's behaviour, which is already correct: an unbound
+// control key is left alone for the terminal.
+describe('readline keys are never taken by the application', () => {
+  // `f` is deliberately absent: `Ctrl+F` is bound to `search-terminal` today and
+  // therefore never reaches the shell, which breaks readline's forward-char. It is
+  // pre-existing behaviour, recorded in `docs/design/terminal-next/02-*.md` and in
+  // the UX-1a delivery notes rather than changed here — taking it back would be a
+  // product decision about search, not a side effect of a layout change.
+  const readlineKeys = ['p', 'n', 'r', 'a', 'e', 'u', 'y', 'd', 'c']
+
+  it.each(readlineKeys)('leaves physical Ctrl+%s to the shell', key => {
+    const event = keydown(key.toUpperCase(), { ctrlKey: true })
+    // Not active means "this pane is not the foreground terminal", which is the
+    // one case where the app is allowed to act. Here it is active.
+    const reachedShell = handleXtermShortcut(event, true)
+    expect(reachedShell).toBe(true)
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  it('does not have any default binding on Ctrl+P, Ctrl+N or Ctrl+R', () => {
+    // A binding would turn these into application actions the moment someone
+    // presses them in a shell. Pinned by name so adding one has to be deliberate.
+    const bound = shortcutsService
+      .getShortcuts()
+      .map(shortcut => shortcut.keys.join('+'))
+    for (const key of ['Ctrl+P', 'Ctrl+N', 'Ctrl+R']) {
+      expect(bound).not.toContain(key)
+    }
+  })
+
+  it('still lets the bound control keys reach the shell', () => {
+    // The inverse, so a future "cleanup" of DEFAULT_SHELL_CTRL_BINDINGS that
+    // removed these would fail here rather than in a user's shell.
+    for (const key of ['J', 'K', 'L', 'W', 'T', 'B']) {
+      const event = keydown(key, { ctrlKey: true })
+      expect(handleXtermShortcut(event, true)).toBe(true)
+      expect(event.defaultPrevented).toBe(false)
+    }
+  })
+})
+
+describe('a shortcut with a modifier is the application\'s, not the shell\'s', () => {
+  // `parseShortcutKeyboardEvent` maps `metaKey` to `Ctrl` only on a Mac platform.
+  // jsdom reports a Linux platform, so the tests that care about Cmd have to say
+  // so explicitly — otherwise they would be asserting Linux behaviour under a
+  // macOS name.
+  function asMac<T>(run: () => T): T {
+    const original = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(navigator),
+      'platform',
+    )
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    })
+    try {
+      return run()
+    } finally {
+      if (original) {
+        Object.defineProperty(Object.getPrototypeOf(navigator), 'platform', original)
+      }
+    }
+  }
+
+  it('Cmd+K opens the palette instead of reaching the terminal', () => {
+    asMac(() => {
+      const event = keydown('k', { metaKey: true })
+      const reachedShell = handleXtermShortcut(event, true)
+      expect(reachedShell).toBe(false)
+      expect(event.defaultPrevented).toBe(true)
+    })
+  })
+
+  it('leaves every key alone while the pane is not the active terminal', () => {
+    // A background pane must not consume shortcuts: the rail, the explorer and
+    // any dialog need the keyboard while the terminal is not focused.
+    asMac(() => {
+      for (const key of ['k', 't', 'w']) {
+        const event = keydown(key, { metaKey: true })
+        expect(handleXtermShortcut(event, false)).toBe(true)
+        expect(event.defaultPrevented).toBe(false)
+      }
+    })
+  })
+})

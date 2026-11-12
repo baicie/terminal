@@ -22,6 +22,8 @@ export default {
   'toolbar.mobileNavigationDescription':
     'Naviguer entre les vues et les espaces de travail',
   'toolbar.sftp': 'SFTP',
+  'toolbar.sftpTransfers_one': '{{count}} transfert en cours',
+  'toolbar.sftpTransfers_other': '{{count}} transferts en cours',
   'toolbar.newTab': 'Nouvel onglet',
   'toolbar.more': 'Plus',
   'toolbar.serial': 'Série',
@@ -97,6 +99,11 @@ export default {
   'terminal.vault.rebind': 'Enregistrer à nouveau le justificatif',
   'terminal.errorOverlay.title': 'Connexion échouée',
   'terminal.errorOverlay.dismiss': 'Fermer',
+  'statusBar.transfers': '{{count}} transfert(s) en cours',
+  'toolbar.activityRail': 'Activité',
+  'statusBar.session.local': 'Local',
+  'statusBar.session.remote': 'SSH',
+  'statusBar.session.serial': 'Série',
   'terminal.hostKeyChangedTitle': "La clé d'hôte SSH a changé",
   'terminal.hostKeyTrustTitle': 'Faire confiance à cet hôte SSH ?',
   'terminal.hostKeyChangedDescription':
