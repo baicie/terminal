@@ -15,6 +15,12 @@ import {
   splitTerminalTab,
 } from './app-terminal-layout'
 import { migrateLayoutVisibility } from '@/service/workspace-layout-version'
+import {
+  leftPanelForRestoredVisibility,
+  toggleLeftPanel,
+  withLeftPanel,
+  type LeftPanelMode,
+} from './left-panel-state'
 
 type NewTab = Omit<Tab, 'id'>
 type RestorableLayout = {
@@ -75,6 +81,9 @@ export interface AppState {
   splitGroups: SplitGroup[]
   activeTabId: string | null
   sidebarVisible: boolean
+  /** Which panel occupies the left column. See `left-panel-state.ts`. */
+  leftPanel: LeftPanelMode
+  setLeftPanel: (panel: LeftPanelMode) => void
   recentlyClosedTabs: RecentlyClosedTab[]
   // Actions
   setTheme: (theme: AppThemeMode) => void
@@ -106,6 +115,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // The activity rail is now the permanent navigation. The detailed sidebar is
   // an optional panel the user opens, so the terminal gets its width by default.
   sidebarVisible: false,
+  leftPanel: 'none',
   recentlyClosedTabs: [],
 
   setTheme(theme) {
@@ -144,13 +154,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...layout,
       tabs: restorableTabs,
     })
-    // The sidebar flag is decided by the layout schema version, not by the raw
-    // boolean. A layout written before the activity rail always says `true`
-    // because that was the default then, and honoring it would open a second
-    // navigation column next to the rail on the user's first launch after
-    // upgrading. See `service/workspace-layout-version.ts`.
+    // Versioned, not raw: a pre-rail layout always says `true`. See
+    // `service/workspace-layout-version.ts`.
     const visibility = migrateLayoutVisibility(layout)
-    set({ ...normalizedLayout, sidebarVisible: visibility.sidebarVisible })
+    set({
+      ...normalizedLayout,
+      sidebarVisible: visibility.sidebarVisible,
+      leftPanel: leftPanelForRestoredVisibility(visibility.sidebarVisible),
+    })
     releaseUnreferencedTemporaryProfiles(previousTabs, normalizedLayout.tabs)
   },
 
@@ -240,7 +251,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   toggleSidebar() {
-    set(state => ({ sidebarVisible: !state.sidebarVisible }))
+    // The rail's toggle opens the *explorer* — the daily-use panel — and closing
+    // it closes whichever panel is open. The full navigation sidebar is reached by
+    // its own rail entry, so `⌘B` can never produce two columns.
+    set(state => toggleLeftPanel(state.leftPanel))
+  },
+
+  setLeftPanel(panel) {
+    set(withLeftPanel(panel))
   },
 
   setConfig(config) {

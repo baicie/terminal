@@ -6,6 +6,7 @@ import { terminalSessionManager } from '@/features/terminal/services/terminal-se
 import { useTranslation } from 'react-i18next'
 import { useWorkspaceStore } from '@/store/workspace'
 import { TerminalWorkbench } from './terminal-workbench'
+import { isTerminalPath } from '@/router/terminal-route'
 
 const TerminalContainer = React.lazy(() =>
   import('@/features/terminal/components/terminal-container/container').then(
@@ -50,7 +51,7 @@ export function TerminalByUrl() {
   const tab = urlTab ?? activeTab ?? tabs[0]
 
   useEffect(() => {
-    if (location.pathname !== '/terminal') {
+    if (!isTerminalPath(location.pathname)) {
       handledUrlTabIdRef.current = null
       return
     }
@@ -102,7 +103,7 @@ export function TerminalByUrl() {
   const visibleIds = new Set(
     activeSplitGroup ? activeSplitGroup.tabs.slice(0, 2) : [visibleTabId],
   )
-  const isTerminalRoute = location.pathname === '/terminal'
+  const isTerminalRoute = isTerminalPath(location.pathname)
 
   return (
     <React.Suspense fallback={<TerminalLoadingFallback />}>

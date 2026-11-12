@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { SHORTCUT_EVENT_PREFIX } from '@/hooks/use-global-shortcuts'
 import { useAppStore } from '@/store/app'
+import { isTerminalPath } from '@/router/terminal-route'
 
 interface LayoutShortcutHandlers {
   onNewLocalTerminal: () => void
@@ -49,7 +50,7 @@ export function useLayoutShortcutEvents({
   onToggleHelp,
   onOpenHelp,
 }: LayoutShortcutHandlers) {
-  const isTerminalRoute = useLocation().pathname === '/terminal'
+  const isTerminalRoute = isTerminalPath(useLocation().pathname)
 
   useEffect(() => {
     const onTerminalRoute = (action: () => void) => () => {

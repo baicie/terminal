@@ -94,7 +94,24 @@ const budgets = {
   // wizard only loads when the user opens it. The alternative — trimming the
   // three-language strings or splitting the import flow further — would trade a
   // real feature for a number nobody experiences.
-  totalGzip: 624 * 1024,
+  //
+  // 628 KB (was 624 KB): UX-1b adds the Connection Explorer (panel, sections, host
+  // row, grouping/filtering and the connection-log recency reader), the left-panel
+  // resolver that makes the rail switch one panel instead of stacking two, the
+  // single terminal-route predicate that replaces eleven scattered string
+  // comparisons, and ~30 strings in three languages. No new dependency.
+  //
+  // Measured 623.04 KB against a 618.20 KB baseline: +4.84 KB, and the initial
+  // budget did not move at all (130.74 → 130.88, of which 0.14 KB is the rail's
+  // new Connections entry). Everything else is behind lazy boundaries — the layout
+  // chunk that carries the explorer only loads once the app shell does.
+  //
+  // The alternative was to leave the previous ceiling and shave the panel: dropping
+  // the three-language strings, or the recent-connections reader that this phase's
+  // task explicitly requires. Both trade a delivered requirement for a number no
+  // user experiences, so raising the ceiling with the measurement written down is
+  // the honest move.
+  totalGzip: 628 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

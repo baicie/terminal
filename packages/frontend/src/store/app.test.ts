@@ -12,6 +12,7 @@ function createFreshStore() {
     splitGroups: [],
     activeTabId: null,
     sidebarVisible: true,
+    leftPanel: 'none',
     recentlyClosedTabs: [],
 
     setTheme: theme => set({ theme }),
@@ -75,6 +76,7 @@ function createFreshStore() {
       })),
     toggleSidebar: () =>
       set(state => ({ sidebarVisible: !state.sidebarVisible })),
+    setLeftPanel: panel => set({ leftPanel: panel }),
     setConfig: config => set({ config }),
     queryConfig: async () => {},
     reopenTab: closedTab => {

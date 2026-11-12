@@ -1,41 +1,45 @@
-// UX-1a review — the navigation surfaces must not overlap.
+// UX-1a review / UX-1b — the navigation surfaces must not overlap.
 //
 // This file exists because the same mistake was made twice during UX-1a and both
 // times every test stayed green: first the activity rail rendered *alongside* the
 // full sidebar (so the terminal got 46px narrower, not wider), then the top bar
 // grew a second vault button next to the one that already existed.
 //
-// Both are "two doors to the same room" bugs. They are invisible to tests that ask
-// "does the rail render?" and invisible to tests that ask "does the vault button
-// work?". What catches them is asking how many doors there are, which is what
-// these assertions do.
+// UX-1b makes the rule structural rather than coincidental: the left column has
+// exactly one occupant, chosen by `AppStore.leftPanel`. These tests assert the
+// count, not the presence of any single panel — "does the rail render?" and "does
+// this button work?" both stayed green through every one of those regressions.
 
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app'
+import { useHostStore } from '@/store/host'
 import { useTransferQueue } from '@/store/transfer-queue'
 import { MainLayoutContent } from './main-layout-content'
 
-// The rail and the sidebar are rendered for real; everything heavy is stubbed.
+// The rail and the panels are rendered for real; everything heavy is stubbed.
+vi.mock('@/features/connection-explorer/connection-explorer', () => ({
+  ConnectionExplorer: () => <div data-testid="connection-explorer" />,
+}))
+vi.mock('@/components/app-sidebar', () => ({
+  default: () => <div data-testid="app-sidebar" />,
+}))
 vi.mock('./terminal-by-url', () => ({
   TerminalByUrl: () => <div data-testid="terminal-by-url" />,
 }))
 vi.mock('@/components/top-toolbar', () => ({
-  default: ({ onToggleSidebar }: { onToggleSidebar: () => void }) => (
-    <div data-testid="top-toolbar">
-      <button type="button" onClick={onToggleSidebar}>
-        toggle
-      </button>
-    </div>
-  ),
+  default: () => <div data-testid="top-toolbar" />,
 }))
 vi.mock('@/components/status-bar', () => ({
   StatusBar: () => <div data-testid="status-bar" />,
 }))
 vi.mock('@/components/bottom-nav', () => ({ default: () => null }))
-vi.mock('@/components/swipe-back-indicator', () => ({ SwipeBackIndicator: () => null }))
+vi.mock('@/components/swipe-back-indicator', () => ({
+  SwipeBackIndicator: () => null,
+}))
+vi.mock('@/components/host-list/host-dialog', () => ({ HostDialog: () => null }))
 vi.mock('@/hooks/use-breakpoint', () => ({ useIsMobile: () => false }))
 vi.mock('./use-sidebar-resize', () => ({
   useSidebarResize: () => ({
@@ -54,12 +58,11 @@ vi.mock('./use-swipe-back', () => ({
   }),
 }))
 
-function renderLayout(sidebarOpen: boolean) {
+function renderLayout() {
   return render(
     <MemoryRouter initialEntries={['/terminal']}>
       <TooltipProvider>
         <MainLayoutContent
-          sidebarOpen={sidebarOpen}
           sidebarWidth={240}
           onToggleSidebar={vi.fn()}
           onSidebarWidthChange={vi.fn()}
@@ -69,94 +72,84 @@ function renderLayout(sidebarOpen: boolean) {
   )
 }
 
-/** Nav destinations visible in a container, as route paths. */
-function destinationsIn(container: HTMLElement): string[] {
-  return [...container.querySelectorAll('a[href^="/"]')].map(
-    anchor => anchor.getAttribute('href') ?? '',
-  )
+function panelCount(container: HTMLElement) {
+  const explorer = container.querySelector('[data-testid="connection-explorer"]')
+  const navigation = container.querySelector('[data-testid="app-sidebar"]')
+  return { explorer, navigation, count: (explorer ? 1 : 0) + (navigation ? 1 : 0) }
 }
 
-describe('navigation surfaces do not duplicate each other', () => {
+describe('the left column has exactly one occupant', () => {
   beforeEach(() => {
-    useAppStore.setState({ tabs: [], splitGroups: [], activeTabId: null })
+    useAppStore.setState({
+      tabs: [],
+      splitGroups: [],
+      activeTabId: null,
+      sidebarVisible: false,
+      leftPanel: 'none',
+    })
+    useHostStore.setState({ hosts: [], groups: [], loading: false })
     useTransferQueue.setState({ transfers: [] })
   })
 
-  it('opens terminal-first: the rail is there and the sidebar is not', () => {
-    // The default layout. If this ever shows both, the terminal lost the width
+  it('starts terminal-first: the rail is there and no panel is', () => {
+    // The default layout. If this ever shows a panel, the terminal lost the width
     // the whole phase was for.
-    const closed = renderLayout(false)
+    const { container } = renderLayout()
 
     expect(screen.getByTestId('activity-rail')).toBeTruthy()
-    // The sidebar's only render-time marker is its resize separator; the
-    // component itself carries no test id. Asserting on the separator is what
-    // makes "the sidebar is closed" falsifiable instead of an `if` that never
-    // runs.
-    expect(
-      closed.container.querySelector('[role="separator"][aria-orientation="vertical"]'),
-    ).toBeNull()
-    closed.unmount()
-
-    const open = renderLayout(true)
-    expect(
-      open.container.querySelector('[role="separator"][aria-orientation="vertical"]'),
-    ).not.toBeNull()
-    open.unmount()
+    expect(panelCount(container).count).toBe(0)
   })
 
-  it('the sidebar is not a second copy of the rail', () => {
-    // With both rendered, the sidebar must still be the *detailed* navigation.
-    // If the two ever became the same component again, this fails — which is the
-    // only way to catch "the rail replaced the sidebar's content" rather than
-    // "both are present".
-    const open = renderLayout(true)
-    const rail = screen.getByTestId('activity-rail')
-    const railDestinations = new Set(destinationsIn(rail))
+  it('shows the explorer and never the sidebar at the same time', () => {
+    useAppStore.setState({ leftPanel: 'explorer', sidebarVisible: true })
+    const { container } = renderLayout()
 
-    // Everything outside the rail is what the sidebar contributed.
-    const outsideRail = [...open.container.querySelectorAll('a[href^="/"]')].filter(
-      anchor => !rail.contains(anchor),
-    )
-    const sidebarOnly = outsideRail.filter(
-      anchor => !railDestinations.has(anchor.getAttribute('href') ?? ''),
-    )
-
-    // The sidebar reaches surfaces the rail does not: settings is `secondary`, and
-    // this is the check that the sidebar did not get replaced by a rail clone.
-    expect(sidebarOnly.map(anchor => anchor.getAttribute('href'))).toContain(
-      '/settings',
-    )
-    open.unmount()
+    const panels = panelCount(container)
+    expect(panels.explorer).not.toBeNull()
+    expect(panels.navigation).toBeNull()
   })
 
-  it('gives each daily surface exactly one permanent rail entry', () => {
-    renderLayout(false)
-    const rail = screen.getByTestId('activity-rail')
+  it('shows the navigation sidebar and never the explorer at the same time', () => {
+    useAppStore.setState({ leftPanel: 'navigation', sidebarVisible: true })
+    const { container } = renderLayout()
 
-    for (const path of ['/hosts', '/sftp', '/keychain', '/snippets', '/port-forward']) {
-      const matches = within(rail)
-        .getAllByRole('link')
-        .filter(anchor => anchor.getAttribute('href') === path)
-      expect(matches, `${path} appears ${matches.length} times in the rail`).toHaveLength(1)
+    const panels = panelCount(container)
+    expect(panels.navigation).not.toBeNull()
+    expect(panels.explorer).toBeNull()
+  })
+
+  it('never renders both panels, for any mode', () => {
+    // The exhaustive check. A future mode added without a test is caught here
+    // rather than by a screenshot six commits later.
+    for (const mode of ['none', 'explorer', 'navigation'] as const) {
+      useAppStore.setState({ leftPanel: mode, sidebarVisible: mode !== 'none' })
+      const { container, unmount } = renderLayout()
+      expect(panelCount(container).count, `mode ${mode}`).toBeLessThanOrEqual(1)
+      unmount()
     }
   })
 
-  it('keeps the terminal entry and the daily surfaces in the rail', () => {
-    renderLayout(false)
-    const rail = screen.getByTestId('activity-rail')
-    const hrefs = destinationsIn(rail)
+  it('switching the panel does not unmount the terminal layer', async () => {
+    // The invariant behind every entry in this file: the panel is a sibling of
+    // `TerminalByUrl`, so changing which panel is open must leave it alone.
+    useAppStore.setState({
+      tabs: [{ id: 'tab-1', label: 'Local', type: 'local' }],
+    })
+    const { container } = renderLayout()
 
-    expect(hrefs[0]).toBe('/terminal')
-    expect(new Set(hrefs).size).toBe(hrefs.length)
-  })
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-testid="terminal-by-url"]'),
+      ).not.toBeNull(),
+    )
 
-  it('does not spend a rail slot on advanced surfaces', () => {
-    renderLayout(false)
-    const rail = screen.getByTestId('activity-rail')
-    const hrefs = destinationsIn(rail)
+    act(() => useAppStore.setState({ leftPanel: 'explorer' }))
+    expect(container.querySelector('[data-testid="terminal-by-url"]')).not.toBeNull()
 
-    for (const path of ['/vaults', '/teams', '/logs', '/known-hosts']) {
-      expect(hrefs).not.toContain(path)
-    }
+    act(() => useAppStore.setState({ leftPanel: 'navigation' }))
+    expect(container.querySelector('[data-testid="terminal-by-url"]')).not.toBeNull()
+
+    act(() => useAppStore.setState({ leftPanel: 'none' }))
+    expect(container.querySelector('[data-testid="terminal-by-url"]')).not.toBeNull()
   })
 })

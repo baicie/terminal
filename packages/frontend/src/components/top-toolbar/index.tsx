@@ -19,6 +19,7 @@ import { useNotificationStore } from '@/store/notification'
 import { useTransferQueue } from '@/store/transfer-queue'
 import { ToolbarOverlays } from './toolbar-overlays'
 import { MobileToolbar } from './mobile-toolbar'
+import { isTerminalPath, terminalTabPath } from '@/router/terminal-route'
 
 function isMacPlatform(): boolean {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -77,7 +78,7 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
   )
   const handleNewLocalTerminal = () => {
     const newTab = addTab({ label: 'Local', type: 'local' })
-    navigate(`/terminal?tab=${newTab.id}`)
+    navigate(terminalTabPath(newTab.id))
   }
   const padForMacTrafficLights = isMacPlatform()
 
@@ -95,7 +96,7 @@ const TopToolbar: React.FC<{ onToggleSidebar: () => void }> = ({
           }}
           onBack={() => navigate(-1)}
         />
-        {location.pathname === '/terminal' ? (
+        {isTerminalPath(location.pathname) ? (
           <div
             className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-1"
             data-mobile-terminal-sessions

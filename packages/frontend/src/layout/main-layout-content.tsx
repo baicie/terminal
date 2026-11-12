@@ -1,8 +1,7 @@
-import { lazy, Suspense, useEffect, useRef } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ActivityRail } from '@/components/activity-rail'
-import AppSidebar from '@/components/app-sidebar'
 import { SwipeBackIndicator } from '@/components/swipe-back-indicator'
 import TopToolbar from '@/components/top-toolbar'
 import { StatusBar } from '@/components/status-bar'
@@ -13,8 +12,12 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 import { RouteTransition } from './route-transition'
 import { useSidebarResize } from './use-sidebar-resize'
-import { SIDEBAR_MAX, SIDEBAR_MIN } from './sidebar-width'
 import { useSwipeBack } from './use-swipe-back'
+import { LeftPanel } from './left-panel'
+import { useConnectToHost } from '@/features/connection-explorer/use-connect-to-host'
+import type { Host } from '@/types'
+import { HostDialog } from '@/components/host-list/host-dialog'
+import { isTerminalPath } from '@/router/terminal-route'
 
 const BottomNav = lazy(() => import('@/components/bottom-nav'))
 const TerminalByUrl = lazy(() =>
@@ -24,21 +27,28 @@ const TerminalByUrl = lazy(() =>
 )
 
 interface MainLayoutContentProps {
-  sidebarOpen: boolean
+  /**
+   * Superseded by `AppStore.leftPanel` and intentionally no longer read.
+   *
+   * Kept in the prop list for one release because `layout/index.tsx` still passes
+   * it and external callers (tests, the smoke harness) construct this component.
+   * Removing the parameter is a separate, mechanical change; leaving it silently
+   * unused would be worse than saying why it is unused.
+   */
+  sidebarOpen?: boolean
   sidebarWidth: number
   onToggleSidebar: () => void
   onSidebarWidthChange: (width: number) => void
 }
 
 export function MainLayoutContent({
-  sidebarOpen,
   sidebarWidth,
   onToggleSidebar,
   onSidebarWidthChange,
 }: MainLayoutContentProps) {
   const { t } = useTranslation()
   const isMobile = useIsMobile()
-  const isTerminalRoute = useLocation().pathname === '/terminal'
+  const isTerminalRoute = isTerminalPath(useLocation().pathname)
   const hasTerminalTabs = useAppStore(state => state.tabs.length > 0)
   const terminalLayerMountedRef = useRef(false)
   const shouldMountTerminal =
@@ -50,6 +60,23 @@ export function MainLayoutContent({
   )
   const { swipeProgress, onSwipeStart, onSwipeMove, onSwipeEnd } =
     useSwipeBack()
+  const leftPanel = useAppStore(state => state.leftPanel)
+  const activeTabHostId = useAppStore(
+    state => state.tabs.find(tab => tab.id === state.activeTabId)?.hostId ?? null,
+  )
+  const { connectToHost } = useConnectToHost()
+  const [editingHost, setEditingHost] = useState<Host | null>(null)
+  const [creatingHost, setCreatingHost] = useState(false)
+  const handleEditHost = useCallback((host: Host) => setEditingHost(host), [])
+  const handleNewHost = useCallback(() => setCreatingHost(true), [])
+  const closeHostDialog = useCallback(() => {
+    setEditingHost(null)
+    setCreatingHost(false)
+  }, [])
+
+  // Mobile has its own navigation. A panel cannot be open there, so the mode is
+  // forced to `none` rather than left at whatever the desktop last had.
+  const panelMode = isMobile ? 'none' : leftPanel
   // Only what a real source reported: the active pane's size, and the transfer
   // queue's live count. Nothing here is inferred from "a tab exists".
   const activePaneSize = useTerminalStatusStore(state => state.active)
@@ -84,37 +111,24 @@ export function MainLayoutContent({
 
         {!isMobile ? <ActivityRail /> : null}
 
-        {sidebarOpen && (
-          <>
-            <AppSidebar
-              onToggleCollapse={onToggleCollapse}
-              width={sidebarWidth}
-              resizing={resizing}
-            />
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-valuemin={SIDEBAR_MIN}
-              aria-valuemax={SIDEBAR_MAX}
-              aria-valuenow={sidebarWidth}
-              aria-label={t('toolbar.resizeSidebar')}
-              tabIndex={0}
-              className={cn(
-                'w-[6px] shrink-0 cursor-col-resize flex items-center justify-center group outline-none select-none',
-                'hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
-                resizing && 'cursor-col-resize bg-primary/20',
-              )}
-              onPointerDown={onResizeStart}
-              onKeyDown={onResizeKeyDown}
-            >
-              <div className="flex flex-col gap-1.5 py-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="size-1 rounded-full bg-muted-foreground/60" />
-                <span className="size-1 rounded-full bg-muted-foreground/60" />
-                <span className="size-1 rounded-full bg-muted-foreground/60" />
-              </div>
-            </div>
-          </>
-        )}
+        {/* One panel at a time, and it is a *sibling* of the terminal below —
+            never an ancestor. Opening or closing it re-renders this row; it does
+            not touch `TerminalByUrl`, so no PTY is created, moved or disposed. */}
+        {!isMobile ? (
+          <LeftPanel
+            mode={panelMode}
+            width={sidebarWidth}
+            resizing={resizing}
+            resizeLabel={t('toolbar.resizeSidebar')}
+            onToggleCollapse={onToggleCollapse}
+            onResizeStart={onResizeStart}
+            onResizeKeyDown={onResizeKeyDown}
+            onConnect={connectToHost}
+            onEdit={handleEditHost}
+            onNewHost={handleNewHost}
+            activeHostId={activeTabHostId}
+          />
+        ) : null}
 
         <main
           className={cn(
@@ -138,6 +152,12 @@ export function MainLayoutContent({
           </RouteTransition>
         </main>
       </div>
+
+      <HostDialog
+        open={creatingHost || editingHost !== null}
+        host={editingHost ?? undefined}
+        onClose={closeHostDialog}
+      />
 
       {isMobile ? (
         <Suspense fallback={<div className="bottom-nav" aria-hidden="true" />}>

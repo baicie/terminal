@@ -9,6 +9,7 @@ import { switchWorkspaceLayout } from '@/service/workspace-switch'
 import { useAppStore, type RecentlyClosedTab } from '@/store/app'
 import { useTransferQueue } from '@/store/transfer-queue'
 import type { SearchResult } from './command-palette-types'
+import { terminalTabPath } from '@/router/terminal-route'
 
 export function usePaletteSelection(onClose: () => void) {
   const { t } = useTranslation()
@@ -25,7 +26,7 @@ export function usePaletteSelection(onClose: () => void) {
             type: 'remote',
             hostId: host.id,
           })
-          navigate(`/terminal?tab=${tab.id}`)
+          navigate(terminalTabPath(tab.id))
           break
         }
         case 'sftp':
@@ -69,12 +70,12 @@ export function usePaletteSelection(onClose: () => void) {
         case 'open-tab': {
           const tab = result.data as { id: string }
           app.setActiveTab(tab.id)
-          navigate(`/terminal?tab=${tab.id}`)
+          navigate(terminalTabPath(tab.id))
           break
         }
         case 'closed-tab': {
           const reopened = app.reopenTab(result.data as RecentlyClosedTab)
-          navigate(`/terminal?tab=${reopened.id}`)
+          navigate(terminalTabPath(reopened.id))
           break
         }
         case 'workspace':
@@ -91,7 +92,7 @@ export function usePaletteSelection(onClose: () => void) {
           switch ((result.data as { action: string }).action) {
             case 'new-local': {
               const tab = app.addTab({ label: 'Local', type: 'local' })
-              navigate(`/terminal?tab=${tab.id}`)
+              navigate(terminalTabPath(tab.id))
               break
             }
             case 'new-host':

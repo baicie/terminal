@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
 import { FavoritesSection, GroupsSection } from './sidebar-sections'
+import { terminalTabPath } from '@/router/terminal-route'
 
 interface HostListProps {
   onConnect?: (host: Host) => void
@@ -25,7 +26,7 @@ const Sidebar: React.FC<HostListProps> = ({ onConnect }) => {
         type: 'remote',
         hostId: host.id,
       })
-      navigate(`/terminal?tab=${newTab.id}`)
+      navigate(terminalTabPath(newTab.id))
     },
     [addTab, navigate, onConnect],
   )
@@ -35,7 +36,7 @@ const Sidebar: React.FC<HostListProps> = ({ onConnect }) => {
       label: 'Local',
       type: 'local',
     })
-    navigate(`/terminal?tab=${newTab.id}`)
+    navigate(terminalTabPath(newTab.id))
   }
 
   useEffect(() => {

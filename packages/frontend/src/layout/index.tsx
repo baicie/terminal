@@ -10,6 +10,7 @@ import { useAppStore } from '@/store/app'
 import { MainLayoutContent } from './main-layout-content'
 import { readSidebarWidth } from './sidebar-width'
 import { useLayoutShortcutEvents } from './use-layout-shortcut-events'
+import { terminalTabPath } from '@/router/terminal-route'
 
 const SettingsDialog = React.lazy(() => import('@/components/settings-dialog'))
 
@@ -49,7 +50,7 @@ const MainLayout: React.FC = () => {
       return
     }
     autoOpenedRef.current = true
-    navigate(`/terminal?tab=${encodeURIComponent(activeTabId)}`, {
+    navigate(terminalTabPath(activeTabId), {
       replace: true,
     })
   }, [activeTabId, location.pathname, navigate, tabCount])
@@ -60,7 +61,7 @@ const MainLayout: React.FC = () => {
 
   const handleNewLocalTerminal = useCallback(() => {
     const newTab = addTab({ label: 'Local', type: 'local' })
-    navigate(`/terminal?tab=${newTab.id}`)
+    navigate(terminalTabPath(newTab.id))
   }, [addTab, navigate])
 
   const handleToggleSidebar = useCallback(() => {

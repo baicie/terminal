@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
+import { terminalTabPath } from '@/router/terminal-route'
 
 interface NavItem {
   id: string
@@ -111,7 +112,7 @@ const BottomNav: React.FC = () => {
         baudRate: config.baudRate,
       },
     })
-    navigate(`/terminal?tab=${newTab.id}`)
+    navigate(terminalTabPath(newTab.id))
     setSerialDialogOpen(false)
   }
 
@@ -120,7 +121,7 @@ const BottomNav: React.FC = () => {
       // If no tabs, go to hosts; otherwise go to most recent terminal tab
       const lastTab = tabs[tabs.length - 1]
       if (lastTab) {
-        navigate(`/terminal?tab=${lastTab.id}`)
+        navigate(terminalTabPath(lastTab.id))
       } else {
         navigate('/hosts')
       }
