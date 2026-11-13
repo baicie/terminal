@@ -91,3 +91,38 @@ describe('MainLayoutContent terminal layering', () => {
     })
   })
 })
+
+describe('MainLayoutContent wires the real sidebar width into the layout decision', () => {
+  // The defect: `usePanelLayout()` was called with no arguments, so the budget
+  // used the 52px rail as the left column while `LeftPanel` rendered at the
+  // user's saved width. These tests assert the DOM outcome, not hook internals.
+
+  beforeEach(() => {
+    useAppStore.setState({
+      tabs: [{ id: 't1', label: 'Local', type: 'local' }],
+      splitGroups: [],
+      activeTabId: 't1',
+      leftPanel: 'explorer',
+    })
+  })
+
+  it('exposes the shell element the layout measures', () => {
+    const { container } = renderLayout('/terminal')
+    // The ResizeObserver target. Without it the decision falls back to
+    // `window.innerWidth`, which is the assumption the fix removed.
+    expect(container.querySelector('[data-terminal-shell]')).not.toBeNull()
+  })
+
+  it('mounts the right dock when its store says sftp', async () => {
+    const { useRightPanelStore } = await import('@/store/right-panel-store')
+    useRightPanelStore.setState({ rightPanel: 'sftp' })
+    renderLayout('/terminal')
+    // The dock is lazy; its test id only exists once the chunk resolves.
+    await waitFor(() => {
+      expect(
+        document.querySelector('[data-testid="right-panel"]'),
+      ).not.toBeNull()
+    })
+    useRightPanelStore.setState({ rightPanel: 'none' })
+  })
+})

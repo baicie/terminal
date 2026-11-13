@@ -4,6 +4,7 @@ use crate::state::{SftpFileItem, SharedStateType};
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -67,6 +68,36 @@ async fn get_sftp(
     map.get(session_id)
         .cloned()
         .ok_or(SftpError::SessionNotFound)
+}
+
+/// Drop the SFTP channel that belongs to a closing SSH session.
+///
+/// `sftp_connect` inserts into `state.sftp_sessions`, keyed by the SSH session id
+/// it borrowed the handle from. Nothing used to remove that entry: the only
+/// `clear()` was the whole-map one at process exit. So every SFTP session a user
+/// opened stayed in the map until the app quit, holding an `Arc<SftpSession>`
+/// whose underlying channel had already been torn down by
+/// `SshConnectionPool::release` — a dangling reference, not merely retained
+/// memory.
+///
+/// Returns whether an entry was actually removed, which is what the tests assert.
+/// Idempotent: closing twice (or closing a session that never opened SFTP) is a
+/// no-op rather than an error, because `session_close` must not start failing
+/// just because SFTP was never used.
+pub(crate) async fn forget_session(state: &SharedStateType, session_id: &str) -> bool {
+    let mut map = state.sftp_sessions.lock().await;
+    remove_session_entry(&mut map, session_id)
+}
+
+/// The registry rule, independent of the concrete value type.
+///
+/// `SftpSession` cannot be constructed without a live SSH channel, so a test that
+/// wanted to assert "the right key was removed" would otherwise have to reach for
+/// a live server or skip the assertion entirely. Keeping the rule generic is what
+/// makes `closing_a_session_forgets_its_sftp_channel` a real test of the shipped
+/// code path rather than a restatement of `HashMap::remove`.
+pub(crate) fn remove_session_entry<V>(map: &mut HashMap<String, V>, session_id: &str) -> bool {
+    map.remove(session_id).is_some()
 }
 
 /// Stage of `sftp_connect` that failed. Each stage maps to its own error kind so
@@ -754,8 +785,9 @@ pub async fn sftp_remote_checksum(
 
 #[cfg(test)]
 mod tests {
-    use super::{connect_error, SftpConnectStage};
+    use super::{connect_error, forget_session, remove_session_entry, SftpConnectStage};
     use crate::errors::SftpError;
+    use std::collections::HashMap;
 
     struct StageFailure(&'static str);
 
@@ -784,6 +816,48 @@ mod tests {
             "a failed SFTP handshake must not be reported as a missing session"
         );
     }
+    #[test]
+    fn closing_a_session_forgets_its_sftp_channel() {
+        // The registry rule, exercised on the same function `forget_session` calls.
+        // `SftpSession` needs a live channel to exist, so the value type is a
+        // stand-in; what matters and what is asserted is the *key* semantics the
+        // command depends on.
+        let mut registry: HashMap<String, u8> = HashMap::new();
+        registry.insert("ssh-a".to_string(), 1);
+        registry.insert("ssh-b".to_string(), 2);
+
+        assert!(remove_session_entry(&mut registry, "ssh-a"));
+        assert!(!registry.contains_key("ssh-a"));
+        // Keyed, not a wholesale clear: the other session survives.
+        assert!(registry.contains_key("ssh-b"));
+        assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn forgetting_is_idempotent_and_reports_whether_it_did_anything() {
+        let mut registry: HashMap<String, u8> = HashMap::new();
+        registry.insert("ssh-a".to_string(), 1);
+
+        assert!(remove_session_entry(&mut registry, "ssh-a"));
+        // Closing twice is a no-op, not an error: `session_close` must not start
+        // failing because SFTP was closed twice or never opened at all.
+        assert!(!remove_session_entry(&mut registry, "ssh-a"));
+        assert!(!remove_session_entry(&mut registry, "never-opened"));
+        assert!(registry.is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_shared_state_registry_starts_empty_and_stays_keyed() {
+        // End-to-end through the type the Tauri command actually receives: a fresh
+        // app state has no SFTP sessions, and forgetting an id that was never
+        // inserted is a no-op rather than a panic.
+        let state = crate::state::create_shared_state();
+        assert!(state.sftp_sessions.lock().await.is_empty());
+        assert!(!forget_session(&state, "ssh-never-connected").await);
+        assert!(!forget_session(&state, "ssh-never-connected").await);
+        assert!(state.sftp_sessions.lock().await.is_empty());
+    }
+
     #[test]
     fn the_listing_uses_the_real_modification_time_or_none() {
         // A reported mtime is carried through as epoch seconds.

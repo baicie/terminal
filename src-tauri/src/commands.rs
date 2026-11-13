@@ -79,9 +79,22 @@ pub async fn session_ack_output(session_id: String, bytes: usize) -> Result<(), 
 }
 
 /// 关闭会话
+///
+/// The SFTP channel that was opened on this SSH connection is dropped here too.
+/// `SessionManager` only knows about terminal sessions; the SFTP registry is a
+/// separate map keyed by the same id, and before this it was never cleaned
+/// outside process exit (`forge0 / GAP-SFTP-REGISTRY`). Closing the terminal is
+/// the natural point: the SFTP channel rides on that connection, so once the
+/// connection is gone the entry is a dangling reference.
 #[tauri::command]
-pub async fn session_close(session_id: String) -> Result<(), SessionError> {
+pub async fn session_close(
+    state: tauri::State<'_, crate::state::SharedStateType>,
+    session_id: String,
+) -> Result<(), SessionError> {
     finish_session_output(&session_id);
+    // Before removing the session: if removal fails we still want the SFTP entry
+    // gone, because the channel is already unusable either way.
+    crate::sftp::forget_session(&state, &session_id).await;
     let manager = get_session_manager();
     manager.remove_session(&session_id).await
 }

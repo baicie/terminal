@@ -30,12 +30,8 @@ const TerminalByUrl = lazy(() =>
 
 interface MainLayoutContentProps {
   /**
-   * Superseded by `AppStore.leftPanel` and intentionally no longer read.
-   *
-   * Kept in the prop list for one release because `layout/index.tsx` still passes
-   * it and external callers (tests, the smoke harness) construct this component.
-   * Removing the parameter is a separate, mechanical change; leaving it silently
-   * unused would be worse than saying why it is unused.
+   * Superseded by `AppStore.leftPanel`; kept for one release because
+   * `layout/index.tsx` and external callers still pass it.
    */
   sidebarOpen?: boolean
   sidebarWidth: number
@@ -63,7 +59,10 @@ export function MainLayoutContent({
   const { swipeProgress, onSwipeStart, onSwipeMove, onSwipeEnd } =
     useSwipeBack()
   const leftPanel = useAppStore(state => state.leftPanel)
-  const panelLayout = usePanelLayout()
+  // The sidebar's real width, which is what `LeftPanel` renders at. Passing it is
+  // the whole point: the previous call omitted it and the budget believed the left
+  // column was the 52px rail.
+  const panelLayout = usePanelLayout({ explorerWidth: sidebarWidth })
   const activeTabHostId = useAppStore(
     state => state.tabs.find(tab => tab.id === state.activeTabId)?.hostId ?? null,
   )
@@ -104,7 +103,11 @@ export function MainLayoutContent({
     >
       <TopToolbar onToggleSidebar={onToggleSidebar} />
 
-      <div className="flex-1 flex overflow-hidden min-h-0 relative">
+      <div
+        ref={panelLayout.shellRef}
+        className="flex-1 flex overflow-hidden min-h-0 relative"
+        data-terminal-shell=""
+      >
         {swipeProgress > 0 && (
           <SwipeBackIndicator
             progress={swipeProgress}

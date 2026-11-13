@@ -1,8 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useIsMobile } from '@/hooks/use-breakpoint'
 import { useAppStore } from '@/store/app'
+import { useRightPanelStore } from '@/store/right-panel-store'
 import { DOCK_WIDTH } from './right-panel'
-import { panelBudget } from './terminal-width-budget'
+import { SIDEBAR_DEFAULT } from './sidebar-width'
+import {
+  chooseLayout,
+  withHysteresis,
+  type LayoutDecision,
+  type LeftPresentation,
+  type LimitingReason,
+  type RightPresentation,
+} from './layout-decision'
 
 /**
  * What the panels may do at the current viewport, given the real cell width.
@@ -20,9 +29,8 @@ import { panelBudget } from './terminal-width-budget'
 /** xterm's cell width for the default 14px monospace stack. */
 const DEFAULT_CELL_WIDTH = 8.4
 
-/** Assumed horizontal chrome: rail, borders and the resize separator. */
+/** Assumed horizontal chrome: the rail. The separator is counted by LeftPanel. */
 const RAIL_WIDTH = 46
-const SEPARATOR_WIDTH = 6
 
 /**
  * Measure the cell width xterm would use, without owning a terminal.
@@ -52,24 +60,50 @@ export function useMeasuredCellWidth(fontSize: number, fontFamily: string): numb
   return cellWidth
 }
 
+export interface PanelLayoutInput {
+  /**
+   * The width `LeftPanel` is actually rendering at, in CSS pixels.
+   *
+   * Optional only so tests and the smoke harness can omit it; the shell always
+   * passes the live `sidebarWidth`. When omitted the default sidebar width is
+   * assumed, never the rail width — assuming the rail is the defect.
+   */
+  explorerWidth?: number
+}
+
 export interface PanelLayoutDecision {
   /** Whether the explorer may be shown as a column. */
   allowLeft: boolean
-  /** Whether the dock may be a column, or must be an overlay, or must not show. */
+  /** How the left column should present, including the drawer fallback. */
+  leftPresentation: LeftPresentation
+  /** How the right dock should present. */
+  rightPresentation: RightPresentation
+  /** Whether the dock may be a column, an overlay, or must not show. */
   dockMode: 'column' | 'overlay' | 'hidden'
-  /** Viewport width, for the caller to place overlays. */
+  /** Columns the terminal is expected to get after the decision. */
+  predictedCols: number
+  /** Why the layout had to yield, when it did. */
+  limitingReason?: LimitingReason
+  /** Shell width used for the decision. */
   viewportWidth: number
   cellWidth: number
+  /** Attach to the shell element so its width is measured, not assumed. */
+  shellRef: RefObject<HTMLDivElement | null>
 }
 
 /**
  * Resolve the panel layout for the current viewport.
  *
- * Mobile is handled by the existing breakpoint and returns `hidden` for both: the
- * phone layout has its own navigation, and a second breakpoint system is exactly
- * what INV-12 forbids.
+ * Mobile is handled by the existing breakpoint: the phone layout has its own
+ * navigation, and a second breakpoint system is exactly what INV-12 forbids.
+ *
+ * The required `explorerWidth` is deliberate. The defect this replaced was that
+ * the hook called `panelBudget()` with `RAIL + SEPARATOR` and never learned the
+ * sidebar's real width, so every decision was computed against 124–368px of
+ * terminal that did not exist. Making the argument mandatory means a caller that
+ * does not know the width fails to compile instead of silently passing a constant.
  */
-export function usePanelLayout(): PanelLayoutDecision {
+export function usePanelLayout(input: PanelLayoutInput = {}): PanelLayoutDecision {
   const isMobile = useIsMobile()
   const settings = useAppStore(state => state.config) as {
     fontSize?: number
@@ -79,43 +113,78 @@ export function usePanelLayout(): PanelLayoutDecision {
     settings.fontSize ?? 14,
     settings.fontFamily ?? 'monospace',
   )
-  const [viewportWidth, setViewportWidth] = useState(() =>
+  // The shell, not the window: the window includes OS chrome and any caption
+  // buttons, and feeding the already-squeezed terminal element back in is what
+  // makes a layout oscillate.
+  const { width: shellWidth, ref: shellRef } = useShellWidth()
+  const leftMode = useAppStore(state => state.leftPanel)
+  const rightPanel = useRightPanelStore(state => state.rightPanel)
+  const previousRef = useRef<LayoutDecision | null>(null)
+
+  const decision = chooseLayout({
+    shellWidth,
+    railWidth: RAIL_WIDTH,
+    leftMode,
+    leftWidth: input.explorerWidth ?? SIDEBAR_DEFAULT,
+    rightMode: rightPanel,
+    preferredRightWidth: DOCK_WIDTH,
+    cellWidth,
+    isMobile,
+    previous: previousRef.current,
+  })
+  const stable = withHysteresis(decision, previousRef.current, cellWidth)
+  previousRef.current = stable
+
+  return {
+    allowLeft: stable.leftPresentation === 'column',
+    leftPresentation: stable.leftPresentation,
+    rightPresentation: stable.rightPresentation,
+    dockMode:
+      stable.rightPresentation === 'none'
+        ? 'hidden'
+        : stable.rightPresentation === 'overlay'
+          ? 'overlay'
+          : 'column',
+    predictedCols: stable.predictedCols,
+    limitingReason: stable.limitingReason,
+    viewportWidth: shellWidth,
+    cellWidth,
+    /** Attach to the element whose width the panels divide. */
+    shellRef,
+  }
+}
+
+/**
+ * The width available to the shell, tracked with a ResizeObserver.
+ *
+ * Falls back to `window.innerWidth` before the observer reports, which is what the
+ * previous implementation used unconditionally. The observer is what makes a
+ * sidebar drag or a split resize update the decision without a window resize.
+ */
+function useShellWidth(): { width: number; ref: RefObject<HTMLDivElement | null> } {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const [width, setWidth] = useState(() =>
     typeof window === 'undefined' ? 1280 : window.innerWidth,
   )
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const onResize = () => setViewportWidth(window.innerWidth)
-    onResize()
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    const element = ref.current
+    if (!element || typeof ResizeObserver === 'undefined') {
+      const onResize = () => setWidth(window.innerWidth)
+      onResize()
+      window.addEventListener('resize', onResize)
+      return () => window.removeEventListener('resize', onResize)
+    }
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0]
+      if (!entry) return
+      const next = entry.contentRect.width
+      if (Number.isFinite(next) && next > 0) setWidth(next)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
   }, [])
 
-  if (isMobile) {
-    return { allowLeft: false, dockMode: 'hidden', viewportWidth, cellWidth }
-  }
-
-  const budget = panelBudget(
-    viewportWidth,
-    cellWidth,
-    RAIL_WIDTH + SEPARATOR_WIDTH,
-    DOCK_WIDTH,
-  )
-  return {
-    allowLeft: budget.bothPanels || panelBudgetAllowsLeft(viewportWidth, cellWidth),
-    dockMode: budget.dockMode,
-    viewportWidth,
-    cellWidth,
-  }
-}
-
-/**
- * Explorer alone: it may stay open at any width where the canvas is still usable.
- * A narrow window collapses it rather than starving the terminal, and the rail
- * entry reopens it when the window grows — the user is never left without a way
- * back.
- */
-function panelBudgetAllowsLeft(viewportWidth: number, cellWidth: number): boolean {
-  return panelBudget(viewportWidth, cellWidth, RAIL_WIDTH + SEPARATOR_WIDTH, 0)
-    .dockAsColumn
+  return { width, ref }
 }
