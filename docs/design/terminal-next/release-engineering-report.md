@@ -442,9 +442,19 @@ UUID 匹配是关键：一个属于**别的**构建的 dSYM 会给出行号错�
 
 ### 6.1 构建（PASS）
 
-CI run `43343241289`（`d6f3878`）：`Tauri build (macos-latest)` / `(ubuntu-latest)` /
-`(windows-latest)` **三者全部 success**。本轮新增的 `custom-protocol` feature 不影响它们
-（`pnpm tauri build` 本就加这个 feature）。
+**两个** CI run 都证明了三平台可编译：
+
+| run | commit | macOS | Ubuntu | Windows |
+| --- | --- | --- | --- | --- |
+| `43343241289` | `d6f3878`（本轮改动之前） | success | success | success |
+| `43397442700` | `dbdb82a`（**含本轮 custom-protocol 改动**） | success | success | success |
+
+第二行是关键：它证明 `custom-protocol` feature 与新增的 `release-*` profile
+**没有破坏任何平台的 `pnpm tauri build`**。
+
+`Rust quality` 在同一 run 里 `check` / `clippy -D warnings` / `test` / `vault_probe`
+四步全 success，验证了 §1.4 的 CI 修复确实解决了 `--all-features` 的
+`generate_context!` panic。
 
 ### 6.2 运行时（PARTIAL）
 
