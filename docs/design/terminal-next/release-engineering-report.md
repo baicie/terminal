@@ -78,6 +78,32 @@ custom-protocol = ["tauri/custom-protocol"]
 `pnpm tauri build` 本来就会加这个 feature，因此 **CI 与发布链路行为完全不变**——
 这一点很重要：修复不改变任何已有的门禁或产物，只让裸 `cargo build --release` 不再产出坏二进制。
 
+### 1.4 修复暴露了一条此前被掩盖的构建依赖（CI 实测发现）
+
+加上 `custom-protocol` 后，`Rust quality` 的
+`cargo check --all-features` **失败**了：
+
+```
+error: proc macro panicked
+  --> src/lib.rs:402:16
+   | .build(tauri::generate_context!())
+   = help: message: The `frontendDist` configuration is set to `"../dist"`
+     but this path doesn't exist
+```
+
+原因：`--all-features` 现在包含 `custom-protocol`，`generate_context!` 会真的去读
+`../dist` 并嵌入；而这个 job 从来不构建前端。之前它走 dev 分支，从不读 `dist`，
+所以这条依赖一直存在但被掩盖。
+
+本地复现确认（移走 `dist/` → 同样的 panic；移回 → 通过）。
+
+**修复**：在 `ci.yml` 的 `rust` job 里加 `pnpm install` + `vite build`。
+不能靠调整步骤顺序绕开——不启用 `custom-protocol` 的编译产物正是无法渲染的灰屏二进制，
+而那个门禁存在的意义就是拦住它。
+
+> 这条值得单独记：**一个「加一行 feature」的修复，让一条隐藏的构建期依赖浮出水面。**
+> 如果只跑本地（本地一直有 `dist/`），永远发现不了。
+
 ---
 
 ## 2. Updater 策略
@@ -251,17 +277,29 @@ custom-protocol = ["tauri/custom-protocol"]
 
 ### 4.1 体积
 
-| 变体 | release 配置差异 | 二进制 | vs baseline | 构建耗时 | 前端嵌入 |
-| --- | --- | --- | --- | --- | --- |
-| `release` | 无（Cargo 默认） | **34,390,448 B / 32.80 MiB** | — | 基线 | ✅ 102 个 JS 引用 |
-| `release-strip` | `strip = "symbols"` | **28,125,072 B / 26.82 MiB** | **−5.98 MiB（−18.2%）** | 660 s | ✅ 5/5 入口 |
-| `release-lto` | `lto = "fat"` + `codegen-units = 1` | **25,650,304 B / 24.46 MiB** | **−8.34 MiB（−25.4%）** | 约 900 s | ✅ |
-| `release-strip-lto` | 两者 | （见 4.1b） | | | |
+| 变体 | release 配置差异 | 二进制 | vs baseline | 前端嵌入 |
+| --- | --- | --- | --- | --- |
+| `release` | 无（Cargo 默认） | **34,390,448 B / 32.80 MiB** | — | ✅ 5/5 |
+| `release-strip` | `strip = "symbols"` | **28,125,072 B / 26.82 MiB** | **−5.98 MiB（−18.2%）** | ✅ 5/5 |
+| `release-lto` | `lto = "fat"` + `codegen-units = 1` | **25,650,304 B / 24.46 MiB** | **−8.34 MiB（−25.4%）** | ✅ 5/5 |
+| `release-strip-lto` | 两者 | **22,583,776 B / 21.54 MiB** | **−11.27 MiB（−34.3%）** | ✅ 5/5 |
 
-**反直觉但重要**：**LTO 单独比 strip 单独省得更多**（−25.4% vs −18.2%）。
-`build-optimization.md` 此前的表述是「strip 的 18.2% 几乎免费，LTO 的额外 5.28 MB 要
-+12 分钟」，暗示 LTO 只是锦上添花。实测在本 commit 上，LTO 单独就已经超过 strip，
-两者叠加才是最小。**这个结论只在 macOS arm64 上测得，不能外推到 Windows/Linux。**
+`release-strip-lto` 与既有 `[profile.release-small]` **配置逐字相同**，所以最后一行
+就是 `release-small` 的实测结论。
+
+**两条与 `build-optimization.md` 不同的实测结论**：
+
+1. **LTO 单独比 strip 单独省得更多**（−25.4% vs −18.2%）。此前文档的叙述是
+   「strip 的 18.2% 几乎免费，LTO 的额外 5.28 MB 要 +12 分钟」，暗示 LTO 只是锦上添花。
+   在本 commit 上，只开 LTO 就已经超过只开 strip。
+2. **strip + LTO 是 −34.3%，不是「18.2% + 额外一点」**。两者不是简单相加。
+
+**仅 macOS arm64 测得，不外推到 Windows/Linux**（那两个平台连构建都没跑）。
+
+**构建耗时**：本文档初稿曾写 strip 660 s / LTO 约 900 s，那是首次全量编译的墙钟时间，
+包含了共享依赖的编译。四个变体各自是一次独立的 `target/<profile>` 全量构建，
+把耗时当作「某个 profile 的开销」是不成立的——**依赖编译占总时间的绝大部分，
+profile 只影响最后的优化与链接**。因此表中不再列耗时，避免误导。
 
 `release-strip-lto` 与既有 `[profile.release-small]` **配置逐字相同**，因此
 「strip + LTO 的实测结论」就是 `release-small` 的结论。
@@ -277,7 +315,7 @@ custom-protocol = ["tauri/custom-protocol"]
 | `release`（首次启动） | ✅ 完整 | ✅ `/bin/zsh`（pid 26366） | `Connected · 142×43` | `gui/fresh-release.png` |
 | `release-strip`（首次启动） | ✅ 完整 | ✅ `/bin/zsh`（pid 33128） | `Connected · 142×43` | `gui/strip-final.png` |
 | `release-lto`（首次启动） | ✅ 完整 | ✅ `/bin/zsh`（pid 63126） | `Connected · 142×43` | `gui/lto-win.png` |
-| `release-strip-lto` | （见 4.3） | | | |
+| `release-strip-lto`（首次启动） | ✅ 完整 | ✅ `/bin/zsh`（pid 86305） | `Connected · 142×43` | `gui/strip-lto-win.png` |
 
 **两次都是空 HOME 的首启动**，条件相同。看到的画面完全一致：
 Activity Rail、`Local` 标签页、`... %` 提示符、底部状态栏。
@@ -367,6 +405,8 @@ fi
 | --- | --- | --- | --- | --- |
 | `release` | 34,390,448 B | 8,704,000 B | `E6DBC00C-2BAF-39C5-AF3A-87EE8E9BD293` ✅ | **true** |
 | `release-strip` | 28,125,072 B | 2,490,368 B | ✅ | **true** |
+| `release-lto` | 25,650,304 B | ✅ | ✅ | **true** |
+| `release-strip-lto` | 22,583,776 B | ✅ | ✅ | **true** |
 
 UUID 匹配是关键：一个属于**别的**构建的 dSYM 会给出行号错误的栈，比没有符号更糟。
 
