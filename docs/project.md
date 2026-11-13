@@ -1384,6 +1384,41 @@ UX-1c 引入的，但 Dock 让它们从「偶尔」变成「一天几十次」�
   **`UPLOAD_SURVIVES_DOCK_CLOSE` 自动化能证明的是「会话未被 close」，不是「字节还在流」**
 - 📋 详见 `docs/design/terminal-next/ux1c-context-dock.md`
 
+### Terminal Next - 独立集成验收与最终审查 🟡 判定 FAIL（RC 准入）
+
+基线 `main = 1a24eed`，独立 Release Gatekeeper 视角，不采信实现者总结，
+每条结论回到源码 `file:line` 与实跑结果。详见
+`docs/design/terminal-next/integrated-acceptance-report.md`。
+
+- ✅ **本地全量门禁实跑退出码 0**：前端 240 文件 / 2160 项、Team Server 27/124、
+  Rust 391 passed、scripts 398 项、source-size 674、bundle 624.71/628 KB、
+  `cargo fmt --check` / `clippy -D warnings` / typecheck / 证据门禁 0 problem
+- ✅ **真实 SSH E2E 亲自执行**：3 文件 / **14 项全通过**（真实 OpenSSH fixture），
+  覆盖 IdentityFile 登录、两跳 ProxyJump、Vault 解析器→真实 sshd、
+  24 MB 字节通路与连接存活
+- ✅ **证据链复核有效**：HEAD 实算指纹 = manifest = `8129680b…`（`MATCH: true`）；
+  manifest 的 commit `51599bca` 虽非 main 祖先，但与 main 在**全部指纹路径上内容一致**
+- 🔴 **本仓库没有 LLM Agent**：`src-tauri/src/agent.rs` 是 **SSH Agent 协议（RFC 4716）**；
+  全仓无 `rig-core`/`openai`/`anthropic`/`tool_call`/`composer`；`04-rust-rig-ai.md` 是 Draft。
+  任务书 12 个竞态场景中 8 个、8 项安全检查中 3 项无对象，判 **NOT_APPLICABLE**（非 NOT_RUN）
+- 🔴 **P0-1 IPC 秘密读取面**：`vault_get(任意 key)` + `fs:allow-read/write-text-file`
+  **无 `fs:scope`** + `sql:allow-*`。`session-lock-safety.md` §3 只记了 plugin-sql，
+  未记 `vault_get` 与 fs scope，实际攻击面比该文档更大
+- 🔴 **P0-2** updater `pubkey` 仍是 `REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY`；
+  **P0-3** `productName=Termius` / `identifier=com.baicie.termius` 未改
+- 🔴 **P1-1 布局预算漏算左侧栏**：`use-panel-layout.ts` 只传 `RAIL+SEPARATOR=52px`，
+  实际左栏 176–420px。1024px + 420px 左栏时终端只剩 **33 列**（下限 60）。
+  `ux1-acceptance-hardening.md` 的 INV-12「PASS」**不成立**（它只验证了移动端分支）
+- 🔴 **P1-2 `sftp_sessions` 无关闭路径**：唯一清理点是 `shutdown.rs:38` 的进程退出；
+  每次开 SFTP 留一条悬挂引用（底层 handle 已被 `SshConnectionPool::release` 移除）。
+  **零测试覆盖**。与 UX-1i 分支修的前端幂等性是两个不同层的问题
+- 🟡 **P1-3 `PRODUCT_SFTP_E2E = NOT_RUN`**：fixture 无 `Subsystem sftp`，
+  `sftp-transfer-live.e2e.test.ts` 自己写明「SFTP over the fixture fails for a fixture reason」
+- 🟡 **P1-4 `GUI_E2E = NOT_RUN`**：仅 `ux1h-evidence/01-default-workspace.png` 一张静态图
+- **判定**：`WORKSPACE_DAILY_DRIVER_READY=PARTIAL`、`SFTP_TRANSFER_SAFE=PARTIAL`、
+  `RELEASE_SMALL_READY=PARTIAL`、`CROSS_PLATFORM_READY=PARTIAL`、
+  `TERMINAL_NEXT_RC_READY=FAIL`；三项 Agent 判定为 `NOT_APPLICABLE`
+
 ### Terminal Next UX-0 - 设计交付 ✅ 已合入（PR #34 → `f576680`）
 
 `docs/design/terminal-next/` 六篇：架构 ADR（含 16 条不变量与两处对设计包的修正）、
