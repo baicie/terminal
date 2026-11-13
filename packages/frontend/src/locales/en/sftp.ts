@@ -1,4 +1,5 @@
 export default {
+  'sftp.closeDock': 'Close file panel',
   'sftp.dockTitle': 'Files',
   'sftp.followActiveTab': 'Follow this tab',
   // SFTP

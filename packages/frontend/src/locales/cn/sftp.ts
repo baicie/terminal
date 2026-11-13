@@ -1,4 +1,5 @@
 export default {
+  'sftp.closeDock': '关闭文件面板',
   'sftp.dockTitle': '文件',
   'sftp.followActiveTab': '跟随当前标签',
   // SFTP

@@ -29,6 +29,7 @@ vi.mock('react-i18next', () => ({
 }))
 
 const { useSftpRemote } = await import('@/view/sftp/hooks/use-sftp-remote')
+const { __resetDeferredReleases } = await import('./sftp-deferred-release')
 
 const HOST = { id: 'host-prod', name: 'prod', authType: 'password' }
 
@@ -50,6 +51,9 @@ function transfer(sessionId: string, status: TransferRecord['status']): Transfer
 
 describe('unmounting the SFTP view', () => {
   beforeEach(() => {
+    // The deferred-release map is module scope: a watcher left over from the
+    // previous test would close this test's session early.
+    __resetDeferredReleases()
     ssh.close.mockClear()
     ssh.sftpConnect.mockResolvedValue({ success: true, message: '' })
     ssh.sftpList.mockResolvedValue({ success: true, files: [] })
@@ -63,6 +67,7 @@ describe('unmounting the SFTP view', () => {
   afterEach(() => {
     vi.useRealTimers()
     useTransferQueue.setState({ transfers: [] })
+    __resetDeferredReleases()
   })
 
   async function mountAndConnect() {
