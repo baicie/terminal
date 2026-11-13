@@ -250,9 +250,13 @@ CONFLICT (content): Merge conflict in docs/verification/2026-10-11-macos-ssh-mat
 
 ## 8. 最终 SHA 与证据
 
-- 修复提交：`98e8de2`
-- 证据重采：run `43479528469`（commit `98e8de2`）
-- 证据入库后的最终 head：见 PR #44 的 head
+- 修复提交：`98e8de2`（源码冻结点）
+- 安全台账：`5b18169`（三条 QUIC advisory，不在指纹路径内）
+- 证据重采：run `43479528469`（commit `98e8de2`，指纹 `49547275…`）
+- **最终 head：`9e4fe8e`**，CI **11/11 pass**，PR 保持 **Draft**
+
+`98e8de2` 与 `9e4fe8e` 的源码指纹实测相同（`49547275…`）——后者只增加
+`docs/verification/` 下的证据文件，不在 `FINGERPRINT_PATHS` 内。
 
 ---
 
