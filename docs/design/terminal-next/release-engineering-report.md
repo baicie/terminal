@@ -406,13 +406,38 @@ Linux real SSH smoke **3/3 success**。但：
 
 ## 7. 证据索引
 
+### 7.0 本轮改动会让六份验收证据失效（预期行为，未规避）
+
+`src-tauri/Cargo.toml` 与 `scripts/terminal-smoke-sshd.mjs` 都在 `FINGERPRINT_PATHS` 内，
+所以本轮 PR 的 `Repository gates` 会**失败**，断言原文：
+
+```
+2026-10-11-macos-cold-start-current.json was recorded against source fingerprint
+8129680b… but the terminal sources now fingerprint as b94a26ee…
+This file describes an older checkout. Re-run the scenario on the current sources
+instead of citing measurements taken before this change.
+```
+
+**这是规则正确工作的表现，不是缺陷。** 按 AGENTS.md：
+
+- ❌ 不改旧 manifest 让门禁变绿；
+- ❌ 不改 `FINGERPRINT_PATHS` 把 `Cargo.toml` 排除掉（那会让「改 Cargo.toml 不影响
+  构建产物」这个明显错误的假设写进门禁）；
+- ✅ 用官方流程重采：`workflow_dispatch` 触发 `Real-machine terminal matrix`，
+  下载产物后由 `build-verification-evidence.mjs` 生成新 manifest。
+
+**重采尚未执行**（需要触发一次约 30 分钟的 macOS runner）。在重采完成前，
+本 PR 的 `Repository gates` 保持红色是**正确状态**。
+
+### 7.1 判定与证据对照
+
 | 判定 | 证据 |
 | --- | --- |
-| `DEVELOPMENT_BUILD_READY` | §1.2 实验对照；本地全量门禁退出码 0（前一报告 §6.1） |
-| `SIGNED_RELEASE_READY` | §2.1 表：无 Apple/Windows 证书；§5.4 无 dSYM 归档 |
-| `UPDATER_READY` | §2.2 策略 A；§2.1 占位符 + fail-closed 实测 |
-| `RELEASE_SMALL_GUI_READY` | §4 四变体 GUI 截图 + shell 子进程验证 |
-| `IDENTITY_MIGRATION_READY` | §3.3 方案；§3.4 未执行理由 |
-| `CROSS_PLATFORM_BUILD_READY` | §6.1 CI run `43343241289` |
-| `CROSS_PLATFORM_RUNTIME_READY` | §6.2 matrix run `43259056123` |
-| `RC_READY` | 综合：`SIGNED_RELEASE_READY=FAIL` 且 `IDENTITY_MIGRATION_READY=NOT_RUN` |
+| `DEVELOPMENT_BUILD_READY` | §1.2 实验对照；`cargo check` 默认与 `--features custom-protocol` 两种模式均通过；本地 typecheck / lint / source-size / 398 项脚本测试通过 |
+| `SIGNED_RELEASE_READY` | §2.1 表：无 Apple/Windows 证书；§5.4 `release.yml` 无 dSYM 归档步骤 |
+| `UPDATER_READY` | §2.2 策略 A；§2.1 占位符 + `lib.rs:234-236` fail-closed |
+| `RELEASE_SMALL_GUI_READY` | §4.2 四变体真实启动 + 截图 + shell 子进程验证 |
+| `IDENTITY_MIGRATION_READY` | §3.3 方案；§3.4 未执行理由；§3.2 五个历史目录实测 |
+| `CROSS_PLATFORM_BUILD_READY` | §6.1 CI run `43343241289` 三平台 success |
+| `CROSS_PLATFORM_RUNTIME_READY` | §6.2 matrix run `43259056123` 3/3 |
+| `RC_READY` | 综合：`SIGNED_RELEASE_READY=FAIL` + `IDENTITY_MIGRATION_READY=NOT_RUN` + 证据待重采 |
