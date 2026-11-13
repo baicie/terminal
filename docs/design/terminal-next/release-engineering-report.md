@@ -501,6 +501,17 @@ instead of citing measurements taken before this change.
 
 未改旧 manifest、未改 `FINGERPRINT_PATHS`、未手填任何数字。
 
+**重采后的实测值**（不是只看门禁过没过）：
+
+| 项 | 值 |
+| --- | --- |
+| debug SSH 矩阵 | **11/11 case `ok=true`**，`allCasesPassed: true` |
+| 各 case 首连耗时 | 1392–2725 ms（中位数约 2500 ms） |
+| 证据内 `revision` | `commit: 85a5b04`、`dirtyWorktree: false` |
+
+`dirtyWorktree: false` 证明采集期间源码确实处于冻结状态——这是「先冻结再派发」
+这条规则是否被遵守的直接证据，而不是靠声明。
+
 ### 7.1 判定与证据对照
 
 | 判定 | 证据 |
