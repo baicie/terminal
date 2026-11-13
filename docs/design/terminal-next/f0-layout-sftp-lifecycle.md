@@ -146,6 +146,26 @@ remove」——那是复述标准库而不是验证行为。泛型化之后，�
 | `cargo clippy -D warnings` | 通过 |
 | `cargo test` | **397 passed**（基线 394，+3 项 SFTP） |
 
+### 4.1 证据重采
+
+`sftp.rs` 与 `commands.rs` 都在 `FINGERPRINT_PATHS` 内，所以本 PR 的
+`Repository gates` 初始为红——**这是规则正确工作的表现，不是缺陷**。
+
+按 `docs/release/workflow-rules.md` §1 的固定顺序处理：
+
+| 项 | 值 |
+| --- | --- |
+| runId | `43415027513` |
+| commit | `bea9bf7`（源码冻结点，含实现与文档） |
+| 三平台 job | macOS real SSH / Linux real SSH / Windows shell 全 **success** |
+| 指纹 | `8129680b…` → **`dc249ed7…`**（= 当前源码实算值） |
+| 入库 | 六份 JSON + manifest + `raw/43415027513/` 七份原始日志 |
+
+未改旧 manifest、未改 `FINGERPRINT_PATHS`、未手填任何数字。
+
+**没有与 PR #43 冲突**：两个分支的源码改动零重叠（仅 `docs/project.md`
+这个不在指纹路径内的文件同时被改），因此两个 PR 可以独立重采、独立合并。
+
 **source-size 触发过两次**，都在本地发现并拆分（不是等 CI）：
 `terminal-width-budget.ts` 308 行 → 拆出 `layout-decision.ts`（190 行）；
 `main-layout-content.tsx` 205 行 → 压缩注释回 200 行以内。
