@@ -21,7 +21,20 @@
 | `CROSS_PLATFORM_RUNTIME_READY` | **PARTIAL** |
 | `RC_READY` | **FAIL** |
 
-每项的证据见 §7。
+### 为什么 `RC_READY = FAIL`
+
+三项**互不重叠**的阻断，每一项都不是「再测一轮就能变绿」：
+
+1. `SIGNED_RELEASE_READY=FAIL` —— 无 Apple Developer ID、无 Windows Authenticode、
+   `release.yml` 没有 dSYM 归档步骤。这是外部凭据与流程问题。
+2. `IDENTITY_MIGRATION_READY=NOT_RUN` —— 身份迁移代码不存在，新名字未定，
+   迁移方案本身还需要产品决策。
+3. 六份验收证据待重采（§7.0）—— 本轮改了 `Cargo.toml`，指纹必然失效。
+
+`RELEASE_SMALL_GUI_READY=PASS` 是本轮唯一一个从「未知」推进到「已证实」的项，
+但它不改变 RC 判定。
+
+---
 
 ---
 
