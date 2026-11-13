@@ -223,6 +223,39 @@
       "reason": "Live exposure on all three platforms and not fixable from here. sqlx's `bundled` feature compiles the crate's copy of SQLite into the binary, and `cargo tree -i SQLite` shows the linkage is real: sqlx-sqlite -> libsqlite3-sys on the normal (not only proc-macro) path. The patched releases are libsqlite3-sys >= 0.39.0, but every link in our chain caps below that: sqlx 0.9.0 requires `>=0.30.1, <0.38.0`, sqlx 0.8.6 requires `^0.30.1`, and tauri-plugin-sql 2.6.0 (current latest) requires `sqlx ^0.8`. Upgrading sqlx alone therefore cannot reach a patched build; the fix has to come from sqlx widening its window first.",
       "evidence": "`cd src-tauri && cargo tree -i libsqlite3-sys --target aarch64-apple-darwin` prints libsqlite3-sys -> sqlx-sqlite -> sqlx -> {tauri-plugin-sql, terminal}; the same command with `--target x86_64-unknown-linux-gnu` prints the same chain. `cargo tree -i libsqlite3-sys -e features` shows the `bundled` feature active, i.e. the vendored SQLite source is compiled in. Version ceilings read from crates.io dependency metadata for sqlx 0.9.0 (`libsqlite3-sys >=0.30.1, <0.38.0`), sqlx 0.8.6 (`^0.30.1`) and tauri-plugin-sql 2.6.0 (`sqlx ^0.8`) on 2026-11-09.",
       "reReviewWhen": "sqlx publishes a release whose libsqlite3-sys requirement allows >= 0.39.0, or tauri-plugin-sql moves to sqlx 0.9+, or we stop bundling SQLite (e.g. link the system library, which the advisory says is not affected by the crate's copy). Any of those makes this entry removable rather than merely accepted."
+    },
+    {
+      "id": "RUSTSEC-2026-0523",
+      "crate": "quinn-proto",
+      "version": "0.11.14",
+      "title": "MAX_STREAM_DATA frame can open streams beyond the stream limit",
+      "severity": "unscored",
+      "reachable": false,
+      "reason": "Same absent QUIC subtree as RUSTSEC-2026-0185: quinn is an optional reqwest dependency behind its `http3` feature, which nothing in this workspace enables. Disclosed 2026-11-13; recorded here rather than suppressed.",
+      "evidence": "`cargo tree --invert quinn-proto@0.11.14 --target all --all-features` prints `nothing to print`.",
+      "reReviewWhen": "Same as RUSTSEC-2026-0185."
+    },
+    {
+      "id": "RUSTSEC-2026-0524",
+      "crate": "quinn-proto",
+      "version": "0.11.14",
+      "title": "Long Retry token can panic or exhaust memory in a QUIC client",
+      "severity": "unscored",
+      "reachable": false,
+      "reason": "Same absent QUIC subtree as RUSTSEC-2026-0185. Disclosed 2026-11-13.",
+      "evidence": "`cargo tree --invert quinn-proto@0.11.14 --target all --all-features` prints `nothing to print`.",
+      "reReviewWhen": "Same as RUSTSEC-2026-0185."
+    },
+    {
+      "id": "RUSTSEC-2026-0538",
+      "crate": "quinn-udp",
+      "version": "0.5.14",
+      "title": "Receive loop can spin after a truncated datagram",
+      "severity": "unscored",
+      "reachable": false,
+      "reason": "Same absent QUIC subtree as RUSTSEC-2026-0185: quinn-udp <- quinn <- reqwest behind the unused `http3` feature. Disclosed 2026-11-13.",
+      "evidence": "`cargo tree --invert quinn-udp --target all --all-features` prints `nothing to print`; the full tree contains no quinn-udp node.",
+      "reReviewWhen": "Same as RUSTSEC-2026-0185."
     }
   ],
   "advisoryDatabase": {
