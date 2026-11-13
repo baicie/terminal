@@ -494,3 +494,34 @@ instead of citing measurements taken before this change.
 | `CROSS_PLATFORM_BUILD_READY` | §6.1 CI run `43343241289` 三平台 success |
 | `CROSS_PLATFORM_RUNTIME_READY` | §6.2 matrix run `43259056123` 3/3 |
 | `RC_READY` | 综合：`SIGNED_RELEASE_READY=FAIL` + `IDENTITY_MIGRATION_READY=NOT_RUN` + 证据待重采 |
+
+---
+
+## 8. 证据重采：操作步骤（尚未执行）
+
+按 `docs/release/workflow-rules.md` §1 的固定顺序，**不可跳步、不可并行**：
+
+```bash
+# 1. 先冻结源码：重采期间不得再改任何 FINGERPRINT_PATHS 内的文件
+git status --porcelain            # 必须干净
+
+# 2. 派发 macOS 证据 job（约 30 分钟）
+gh workflow run "Real-machine terminal matrix" --ref <当前分支>
+
+# 3. 等 run 结束，下载产物
+node scripts/fetch-verification-evidence.mjs --latest --with-binaries
+
+# 4. 过门禁（必须 0 problem）
+node scripts/check-verification-evidence.mjs
+
+# 5. 一起提交：六份 JSON + manifest + raw/<runId>/ 日志
+```
+
+**本轮未执行**，原因有两条，都不是技术障碍：
+
+1. 触发一次 macOS runner 是外部动作，应由你决定何时占用；
+2. 更实际的是——如果后续还要改 `Cargo.toml`（例如按 §4 的结论把
+   `release-small` 的 LTO 提为默认），重采会再作废一次。**应当等构建配置定型后再采。**
+
+CI 当前状态：`Repository gates` 因证据指纹失效而红。
+**这是正确状态**，不应为了让它变绿去改 manifest 或改 `FINGERPRINT_PATHS`。
