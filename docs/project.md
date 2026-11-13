@@ -1472,10 +1472,11 @@ UX-1c 引入的，但 Dock 让它们从「偶尔」变成「一天几十次」�
   `terminal.db`/`backups/`/`instance.lock`/`.window-state.json`/WebKit/Caches
   全由 `app_config_dir()` 派生。本机实测已有**五个** identifier 目录，
   证明改 identifier 什么都不迁移。8 步迁移时序与 8 处必须同批更新的 CI 断言见报告 §3
-- 🔴 **六份验收证据已失效，待重采**：`Cargo.toml` 与
+- ✅ **六份验收证据已按官方流程重采**：`Cargo.toml` 与
   `terminal-smoke-sshd.mjs` 都在 `FINGERPRINT_PATHS` 内，指纹
-  `8129680b…` → `b94a26ee…`。**未改旧 manifest、未改指纹路径**，
-  按规则需 `workflow_dispatch` 重采
+  `8129680b…` → `b94a26ee…`。按 `workflow-rules.md` §1 顺序执行：
+  冻结源码（`85a5b04`）→ `workflow_dispatch` → run `43400523659` 三平台全 success
+  → 下载 → 门禁 0 problem。**未改旧 manifest、未改指纹路径、未手填数字**
 - **判定**：`DEVELOPMENT_BUILD_READY=PASS`、`SIGNED_RELEASE_READY=FAIL`、
   `UPDATER_READY=NOT_RUN`、`RELEASE_SMALL_GUI_READY=PASS`、
   `IDENTITY_MIGRATION_READY=NOT_RUN`、`CROSS_PLATFORM_BUILD_READY=PASS`、

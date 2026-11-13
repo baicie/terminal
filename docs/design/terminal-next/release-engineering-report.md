@@ -29,7 +29,7 @@
    `release.yml` 没有 dSYM 归档步骤。这是外部凭据与流程问题。
 2. `IDENTITY_MIGRATION_READY=NOT_RUN` —— 身份迁移代码不存在，新名字未定，
    迁移方案本身还需要产品决策。
-3. 六份验收证据待重采（§7.0）—— 本轮改了 `Cargo.toml`，指纹必然失效。
+3. ~~六份验收证据待重采~~ —— **已重采**（run `43400523659`，指纹 `b94a26ee…`，见 §7.0）。
 
 `RELEASE_SMALL_GUI_READY=PASS` 是本轮唯一一个从「未知」推进到「已证实」的项，
 但它不改变 RC 判定。
@@ -489,8 +489,17 @@ instead of citing measurements taken before this change.
 - ✅ 用官方流程重采：`workflow_dispatch` 触发 `Real-machine terminal matrix`，
   下载产物后由 `build-verification-evidence.mjs` 生成新 manifest。
 
-**重采尚未执行**（需要触发一次约 30 分钟的 macOS runner）。在重采完成前，
-本 PR 的 `Repository gates` 保持红色是**正确状态**。
+**已按该流程重采**：
+
+| 项 | 值 |
+| --- | --- |
+| runId | `43400523659` |
+| commit | `85a5b04`（源码冻结点） |
+| 三平台 job | macOS real SSH / Linux real SSH / Windows shell 全 **success** |
+| 指纹 | `8129680b…` → **`b94a26ee…`**（= 当前源码实算值） |
+| 入库内容 | 六份 JSON + `evidence-manifest.json` + `raw/43400523659/` 七份原始日志 |
+
+未改旧 manifest、未改 `FINGERPRINT_PATHS`、未手填任何数字。
 
 ### 7.1 判定与证据对照
 
@@ -503,11 +512,11 @@ instead of citing measurements taken before this change.
 | `IDENTITY_MIGRATION_READY` | §3.3 方案；§3.4 未执行理由；§3.2 五个历史目录实测 |
 | `CROSS_PLATFORM_BUILD_READY` | §6.1 CI run `43343241289` 三平台 success |
 | `CROSS_PLATFORM_RUNTIME_READY` | §6.2 matrix run `43259056123` 3/3 |
-| `RC_READY` | 综合：`SIGNED_RELEASE_READY=FAIL` + `IDENTITY_MIGRATION_READY=NOT_RUN` + 证据待重采 |
+| `RC_READY` | 综合：`SIGNED_RELEASE_READY=FAIL` + `IDENTITY_MIGRATION_READY=NOT_RUN` |
 
 ---
 
-## 8. 证据重采：操作步骤（尚未执行）
+## 8. 证据重采：操作步骤（本轮已执行）
 
 按 `docs/release/workflow-rules.md` §1 的固定顺序，**不可跳步、不可并行**：
 
@@ -527,11 +536,21 @@ node scripts/check-verification-evidence.mjs
 # 5. 一起提交：六份 JSON + manifest + raw/<runId>/ 日志
 ```
 
-**本轮未执行**，原因有两条，都不是技术障碍：
+**本轮已执行**（run `43400523659`，commit `85a5b04`）：
 
-1. 触发一次 macOS runner 是外部动作，应由你决定何时占用；
-2. 更实际的是——如果后续还要改 `Cargo.toml`（例如按 §4 的结论把
-   `release-small` 的 LTO 提为默认），重采会再作废一次。**应当等构建配置定型后再采。**
+```bash
+gh workflow run "Real-machine terminal matrix" --ref feat/release-engineering-acceptance
+# → run 43400523659，三平台 job 全 success
+node scripts/fetch-verification-evidence.mjs --run-id 43400523659 --with-binaries
+# → 六份 JSON + manifest + raw/43400523659/ 七份日志
+node scripts/check-verification-evidence.mjs
+# → Verification evidence gate passed for 6 current evidence file(s).
+```
 
-CI 当前状态：`Repository gates` 因证据指纹失效而红。
-**这是正确状态**，不应为了让它变绿去改 manifest 或改 `FINGERPRINT_PATHS`。
+指纹 `8129680b…` → `b94a26ee…`（= 当前源码实算值），源码冻结点 `85a5b04`。
+
+**为什么是现在采**：本轮改动已全部完成，剩余的待定项（是否把 `release-small`
+提为默认）是**产品决策**，不落地就不改 `Cargo.toml`；一旦要改，届时再按同一流程
+重采一次即可，规则本来就要求如此。
+
+**没有做的事**：未改旧 manifest、未改 `FINGERPRINT_PATHS`、未手填任何数字。
