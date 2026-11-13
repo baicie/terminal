@@ -7,11 +7,7 @@
  * order, and how stubbornly it holds its previous answer).
  */
 
-import {
-  HYSTERESIS_PX,
-  terminalColumns,
-  USABLE_COLS,
-} from './terminal-width-budget'
+import { terminalColumns, USABLE_COLS } from './terminal-width-budget'
 
 export type LeftPresentation = 'none' | 'column' | 'drawer'
 export type RightPresentation = 'none' | 'column' | 'overlay'
@@ -51,6 +47,15 @@ export interface LayoutInput {
 export interface LayoutDecision {
   leftPresentation: LeftPresentation
   rightPresentation: RightPresentation
+  /**
+   * The modes this decision was computed for.
+   *
+   * Carried on the decision so `withHysteresis` can tell a width-driven flip from
+   * a user opening or closing a panel. Without it the two are indistinguishable,
+   * and the band suppresses the user's own action.
+   */
+  leftMode: 'none' | 'explorer' | 'navigation'
+  rightMode: 'none' | 'sftp'
   /** Width the terminal canvas is expected to get, in CSS pixels. */
   terminalCssWidth: number
   /** Columns that width buys at the measured cell width. */
@@ -88,8 +93,11 @@ export function chooseLayout(input: LayoutInput): LayoutDecision {
   const widthFor = (left: number, right: number): number =>
     Math.max(0, shellWidth - chrome - left - right)
 
+  const modes = { leftMode: input.leftMode, rightMode: input.rightMode }
+
   if (input.isMobile) {
     return {
+      ...modes,
       leftPresentation: leftOpen ? 'drawer' : 'none',
       rightPresentation: rightOpen ? 'overlay' : 'none',
       terminalCssWidth: widthFor(0, 0),
@@ -101,6 +109,7 @@ export function chooseLayout(input: LayoutInput): LayoutDecision {
   // 1. Both as columns, if the terminal still clears the floor.
   if (leftOpen && rightOpen && cols(leftWidth, rightWidth) >= usableColsMin) {
     return {
+      ...modes,
       leftPresentation: 'column',
       rightPresentation: 'column',
       terminalCssWidth: widthFor(leftWidth, rightWidth),
@@ -111,6 +120,7 @@ export function chooseLayout(input: LayoutInput): LayoutDecision {
   // 2. Dock as a column with the explorer yielding to a drawer.
   if (rightOpen && cols(0, rightWidth) >= usableColsMin) {
     return {
+      ...modes,
       leftPresentation: leftOpen ? 'drawer' : 'none',
       rightPresentation: 'column',
       terminalCssWidth: widthFor(0, rightWidth),
@@ -122,6 +132,7 @@ export function chooseLayout(input: LayoutInput): LayoutDecision {
   if (rightOpen) {
     const withLeft = leftOpen && cols(leftWidth, 0) >= usableColsMin
     return {
+      ...modes,
       leftPresentation: withLeft ? 'column' : leftOpen ? 'drawer' : 'none',
       rightPresentation: 'overlay',
       terminalCssWidth: widthFor(withLeft ? leftWidth : 0, 0),
@@ -134,6 +145,7 @@ export function chooseLayout(input: LayoutInput): LayoutDecision {
   if (leftOpen) {
     const fits = cols(leftWidth, 0) >= usableColsMin
     return {
+      ...modes,
       leftPresentation: fits ? 'column' : 'drawer',
       rightPresentation: 'none',
       terminalCssWidth: widthFor(fits ? leftWidth : 0, 0),
@@ -145,6 +157,7 @@ export function chooseLayout(input: LayoutInput): LayoutDecision {
   // 5. Focus: nothing open, the terminal gets everything.
   const focusCols = cols(0, 0)
   return {
+    ...modes,
     leftPresentation: 'none',
     rightPresentation: 'none',
     terminalCssWidth: widthFor(0, 0),
@@ -154,37 +167,19 @@ export function chooseLayout(input: LayoutInput): LayoutDecision {
 }
 
 /**
- * Apply the hysteresis band to a fresh decision.
+ * What presentation the left panel should actually render with.
  *
- * Only one step of excursion is allowed before the previous decision is honoured:
- * a panel that is a column stays a column until the terminal would fall more than
- * `HYSTERESIS_PX` worth of columns below the floor. That is enough to stop the
- * measure → re-decide → re-measure loop, and it still yields promptly when the
- * user actually drags the window narrower.
+ * A decision is only worth anything if the component obeys it. Previously the
+ * shell read `allowLeft` (a boolean derived from `leftPresentation === 'column'`)
+ * and used it to set the panel mode to `none` — so a `drawer` decision silently
+ * rendered *nothing*, and navigation ignored the decision altogether. Keeping the
+ * mapping in one place makes "the DOM follows the decision" a single expression
+ * that a test can pin.
  */
-export function withHysteresis(
-  next: LayoutDecision,
-  previous: LayoutDecision | null | undefined,
-  cellWidth: number,
-  usableColsMin: number = USABLE_COLS,
-): LayoutDecision {
-  if (!previous) return next
-  if (
-    previous.leftPresentation === next.leftPresentation &&
-    previous.rightPresentation === next.rightPresentation
-  ) {
-    return next
-  }
-  // The slack is expressed in columns so it scales with the font, exactly like the
-  // floor it is guarding.
-  const slackCols = Math.max(1, Math.floor(HYSTERESIS_PX / Math.max(1, cellWidth)))
-  const wasComfortable = previous.predictedCols >= usableColsMin
-  const isComfortable = next.predictedCols >= usableColsMin
-  // Only hold a *comfortable* previous decision. A layout that is already starving
-  // the terminal must be allowed to degrade immediately — hysteresis is a damper,
-  // not a lock.
-  if (wasComfortable && !isComfortable && next.predictedCols >= usableColsMin - slackCols) {
-    return previous
-  }
-  return next
+export function leftPresentationFor(
+  decision: Pick<LayoutDecision, 'leftPresentation'>,
+  mode: 'none' | 'explorer' | 'navigation',
+): LeftPresentation {
+  if (mode === 'none') return 'none'
+  return decision.leftPresentation
 }

@@ -3,15 +3,15 @@ import { useIsMobile } from '@/hooks/use-breakpoint'
 import { useAppStore } from '@/store/app'
 import { useRightPanelStore } from '@/store/right-panel-store'
 import { DOCK_WIDTH } from './right-panel'
-import { SIDEBAR_DEFAULT } from './sidebar-width'
 import {
   chooseLayout,
-  withHysteresis,
   type LayoutDecision,
+  type LayoutInput,
   type LeftPresentation,
   type LimitingReason,
   type RightPresentation,
 } from './layout-decision'
+import { withHysteresis } from './layout-hysteresis'
 
 /**
  * What the panels may do at the current viewport, given the real cell width.
@@ -64,11 +64,14 @@ export interface PanelLayoutInput {
   /**
    * The width `LeftPanel` is actually rendering at, in CSS pixels.
    *
-   * Optional only so tests and the smoke harness can omit it; the shell always
-   * passes the live `sidebarWidth`. When omitted the default sidebar width is
-   * assumed, never the rail width — assuming the rail is the defect.
+   * **Required.** It used to be optional with a fallback to the default sidebar
+   * width, which defeated the point: a caller that forgot to pass it compiled
+   * fine and silently got the wrong budget — the same class of defect as the
+   * original 52px constant, just quieter. There is no legitimate production
+   * caller that does not know this value: the shell owns `sidebarWidth` and
+   * passes the same number it renders with.
    */
-  explorerWidth?: number
+  explorerWidth: number
 }
 
 export interface PanelLayoutDecision {
@@ -103,7 +106,7 @@ export interface PanelLayoutDecision {
  * terminal that did not exist. Making the argument mandatory means a caller that
  * does not know the width fails to compile instead of silently passing a constant.
  */
-export function usePanelLayout(input: PanelLayoutInput = {}): PanelLayoutDecision {
+export function usePanelLayout(input: PanelLayoutInput): PanelLayoutDecision {
   const isMobile = useIsMobile()
   const settings = useAppStore(state => state.config) as {
     fontSize?: number
@@ -117,22 +120,24 @@ export function usePanelLayout(input: PanelLayoutInput = {}): PanelLayoutDecisio
   // buttons, and feeding the already-squeezed terminal element back in is what
   // makes a layout oscillate.
   const { width: shellWidth, ref: shellRef } = useShellWidth()
+  const chromeWidth = useMeasuredChrome(shellRef)
   const leftMode = useAppStore(state => state.leftPanel)
   const rightPanel = useRightPanelStore(state => state.rightPanel)
   const previousRef = useRef<LayoutDecision | null>(null)
 
-  const decision = chooseLayout({
+  const layoutInput: LayoutInput = {
     shellWidth,
     railWidth: RAIL_WIDTH,
     leftMode,
-    leftWidth: input.explorerWidth ?? SIDEBAR_DEFAULT,
+    leftWidth: input.explorerWidth,
     rightMode: rightPanel,
     preferredRightWidth: DOCK_WIDTH,
     cellWidth,
+    paddingAndBorders: chromeWidth,
     isMobile,
-    previous: previousRef.current,
-  })
-  const stable = withHysteresis(decision, previousRef.current, cellWidth)
+  }
+  const decision = chooseLayout(layoutInput)
+  const stable = withHysteresis(decision, previousRef.current, layoutInput)
   previousRef.current = stable
 
   return {
@@ -152,6 +157,39 @@ export function usePanelLayout(input: PanelLayoutInput = {}): PanelLayoutDecisio
     /** Attach to the element whose width the panels divide. */
     shellRef,
   }
+}
+
+/**
+ * The horizontal chrome inside the shell that the terminal never gets.
+ *
+ * Measured rather than assumed. The layout used to subtract nothing here, so the
+ * separator, panel borders and the terminal's own padding were all unaccounted
+ * for — a few pixels each, which matters exactly at a threshold. Reading it from
+ * `getComputedStyle` keeps it correct when a theme changes padding or a border
+ * width without anyone remembering to update a constant.
+ */
+function useMeasuredChrome(shellRef: RefObject<HTMLDivElement | null>): number {
+  const [chrome, setChrome] = useState(0)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const element = shellRef.current
+    if (!element || typeof getComputedStyle === 'undefined') return
+    const measure = () => {
+      const style = getComputedStyle(element)
+      const horizontal =
+        (Number.parseFloat(style.paddingLeft) || 0) +
+        (Number.parseFloat(style.paddingRight) || 0) +
+        (Number.parseFloat(style.borderLeftWidth) || 0) +
+        (Number.parseFloat(style.borderRightWidth) || 0)
+      if (Number.isFinite(horizontal)) setChrome(horizontal)
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [shellRef])
+  return chrome
 }
 
 /**

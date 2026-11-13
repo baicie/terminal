@@ -15,6 +15,7 @@ import { useSidebarResize } from './use-sidebar-resize'
 import { useSwipeBack } from './use-swipe-back'
 import { LeftPanel } from './left-panel'
 import { RightPanel } from './right-panel'
+import { leftPresentationFor } from './layout-decision'
 import { usePanelLayout } from './use-panel-layout'
 import { useConnectToHost } from '@/features/connection-explorer/use-connect-to-host'
 import type { Host } from '@/types'
@@ -29,10 +30,7 @@ const TerminalByUrl = lazy(() =>
 )
 
 interface MainLayoutContentProps {
-  /**
-   * Superseded by `AppStore.leftPanel`; kept for one release because
-   * `layout/index.tsx` and external callers still pass it.
-   */
+  /** Superseded by `AppStore.leftPanel`; kept for one release. */
   sidebarOpen?: boolean
   sidebarWidth: number
   onToggleSidebar: () => void
@@ -59,6 +57,8 @@ export function MainLayoutContent({
   const { swipeProgress, onSwipeStart, onSwipeMove, onSwipeEnd } =
     useSwipeBack()
   const leftPanel = useAppStore(state => state.leftPanel)
+  const setLeftPanel = useAppStore(state => state.setLeftPanel)
+  const dismissLeftPanel = useCallback(() => setLeftPanel('none'), [setLeftPanel])
   // The sidebar's real width, which is what `LeftPanel` renders at. Passing it is
   // the whole point: the previous call omitted it and the budget believed the left
   // column was the 52px rail.
@@ -117,18 +117,20 @@ export function MainLayoutContent({
 
         {!isMobile ? <ActivityRail /> : null}
 
-        {/* One panel at a time, and it is a *sibling* of the terminal below —
-            never an ancestor. Opening or closing it re-renders this row; it does
-            not touch `TerminalByUrl`, so no PTY is created, moved or disposed. */}
+        {/* Sibling of the terminal: opening or closing this never touches
+            `TerminalByUrl`, so no PTY is created or disposed. The presentation is
+            honoured for both modes — previously only `explorer` read it, and only
+            to hide itself, so a `drawer` decision rendered nothing. */}
         {!isMobile ? (
           <LeftPanel
-            mode={
-              panelMode === 'explorer' && !panelLayout.allowLeft ? 'none' : panelMode
-            }
+            mode={panelMode}
+            presentation={leftPresentationFor(panelLayout, panelMode)}
             width={sidebarWidth}
             resizing={resizing}
             resizeLabel={t('toolbar.resizeSidebar')}
+            drawerLabel={t('explorer.title')}
             onToggleCollapse={onToggleCollapse}
+            onDismissDrawer={dismissLeftPanel}
             onResizeStart={onResizeStart}
             onResizeKeyDown={onResizeKeyDown}
             onConnect={connectToHost}

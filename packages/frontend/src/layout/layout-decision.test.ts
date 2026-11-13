@@ -12,12 +12,8 @@
 
 import { describe, expect, it } from 'vitest'
 import { USABLE_COLS, terminalColumns } from './terminal-width-budget'
-import {
-  chooseLayout,
-  withHysteresis,
-  type LayoutDecision,
-  type LayoutInput,
-} from './layout-decision'
+import { chooseLayout, type LayoutDecision, type LayoutInput } from './layout-decision'
+import { bandColumns, evaluatePresentation, withHysteresis } from './layout-hysteresis'
 
 /** A 8.4px cell is xterm's default 14px monospace, which is what ships. */
 const CELL = 8.4
@@ -198,73 +194,157 @@ describe('chooseLayout counts the explorer width that is actually rendered', () 
   })
 })
 
-describe('withHysteresis damps the flip instead of locking it', () => {
-  const comfortable: LayoutDecision = {
-    leftPresentation: 'column',
-    rightPresentation: 'column',
-    terminalCssWidth: 800,
-    predictedCols: 95,
+
+describe('withHysteresis judges the previous presentation on the current width', () => {
+  // The first implementation compared `previous.predictedCols` (measured at the
+  // old width) with `next.predictedCols` (measured at the new width, after the
+  // demotion). Because a demotion almost always restores the floor, the
+  // "next is not comfortable" branch almost never fired and the band never
+  // engaged — the layout flipped at the exact threshold pixel.
+  //
+  // These tests drive width one pixel at a time across the threshold and assert
+  // that the presentation does not oscillate.
+
+  const base = {
+    railWidth: RAIL,
+    leftMode: 'explorer' as const,
+    leftWidth: 420,
+    rightMode: 'sftp' as const,
+    preferredRightWidth: DOCK,
+    cellWidth: CELL,
   }
 
-  it('returns the fresh decision when there is no previous one', () => {
-    const next: LayoutDecision = {
-      leftPresentation: 'none',
-      rightPresentation: 'overlay',
-      terminalCssWidth: 500,
-      predictedCols: 59,
+  /**
+   * Walk a width range and return the sequence of presentations.
+   *
+   * `step` carries its own sign (pass -1 to walk down). An earlier version
+   * multiplied it by a direction derived from `from`/`to`, which double-negated
+   * and turned a descending sweep into an ascending one that never terminated.
+   */
+  function sweep(from: number, to: number, step: number): string[] {
+    if (step === 0) throw new Error('sweep needs a non-zero step')
+    if (from !== to && Math.sign(to - from) !== Math.sign(step)) {
+      throw new Error(`sweep step ${step} does not head from ${from} to ${to}`)
     }
-    expect(withHysteresis(next, null, CELL)).toEqual(next)
+    let previous: LayoutDecision | null = null
+    const seen: string[] = []
+    for (let w = from; step > 0 ? w <= to : w >= to; w += step) {
+      const input = { ...base, shellWidth: w }
+      const next = chooseLayout(input)
+      const stable = withHysteresis(next, previous, input)
+      previous = stable
+      const key = `${stable.leftPresentation}/${stable.rightPresentation}`
+      if (seen[seen.length - 1] !== key) seen.push(key)
+    }
+    return seen
+  }
+
+  it('does not oscillate while shrinking one pixel at a time', () => {
+    const transitions = sweep(1500, 900, -1)
+    // Each distinct presentation may appear once per direction. A thrash shows up
+    // as the same state reappearing after another one.
+    const counts = new Map<string, number>()
+    for (const state of transitions) counts.set(state, (counts.get(state) ?? 0) + 1)
+    for (const [state, count] of counts) {
+      expect(count, `state ${state} appeared ${count} times while shrinking`).toBe(1)
+    }
   })
 
-  it('holds a comfortable previous decision one column below the floor', () => {
-    const next: LayoutDecision = {
-      leftPresentation: 'drawer',
-      rightPresentation: 'overlay',
-      terminalCssWidth: 500,
-      predictedCols: 59,
+  it('does not oscillate on a round trip through the threshold', () => {
+    const down = sweep(1500, 900, -1)
+    const up = sweep(900, 1500, 1)
+    for (const sequence of [down, up]) {
+      const counts = new Map<string, number>()
+      for (const state of sequence) counts.set(state, (counts.get(state) ?? 0) + 1)
+      for (const [state, count] of counts) {
+        expect(count, `state ${state} appeared ${count} times`).toBe(1)
+      }
     }
-    // 59 is within the 24px band (floor(24/8.4) = 2 cols) of 60.
-    expect(withHysteresis(next, comfortable, CELL)).toEqual(comfortable)
   })
 
-  it('yields immediately once the excursion leaves the band', () => {
-    const next: LayoutDecision = {
-      leftPresentation: 'drawer',
-      rightPresentation: 'overlay',
-      terminalCssWidth: 400,
-      predictedCols: 45,
+  it('holds the column layout for the band before yielding', () => {
+    // Find the width where a column layout stops being comfortable, then check it
+    // is still held a few pixels below that point.
+    let threshold = 0
+    for (let w = 1500; w >= 900; w -= 1) {
+      const cols = terminalColumns({
+        viewportWidth: w,
+        leftWidth: 420,
+        rightWidth: DOCK,
+        chromeWidth: RAIL,
+        cellWidth: CELL,
+      })
+      if (cols < USABLE_COLS) {
+        threshold = w
+        break
+      }
     }
-    expect(withHysteresis(next, comfortable, CELL)).toEqual(next)
-  })
+    expect(threshold).toBeGreaterThan(900)
 
-  it('does not hold a previous decision that was already starving', () => {
-    const starving: LayoutDecision = {
-      leftPresentation: 'column',
-      rightPresentation: 'column',
-      terminalCssWidth: 400,
-      predictedCols: 50,
-    }
-    const next: LayoutDecision = {
-      leftPresentation: 'drawer',
-      rightPresentation: 'overlay',
-      terminalCssWidth: 400,
-      predictedCols: 50,
-    }
-    expect(withHysteresis(next, starving, CELL)).toEqual(next)
-  })
+    const band = bandColumns(CELL)
+    // Prime with a comfortable width.
+    const primeInput = { ...base, shellWidth: threshold + 40 }
+    const previous = chooseLayout(primeInput)
+    expect(previous.leftPresentation).toBe('column')
 
-  it('scales the band with the cell width', () => {
-    const next: LayoutDecision = {
-      leftPresentation: 'drawer',
-      rightPresentation: 'overlay',
-      terminalCssWidth: 500,
-      predictedCols: 59,
-    }
-    // At 12px cells the 24px band is 2 columns; at 30px cells it is 1.
-    expect(withHysteresis(next, comfortable, 30)).toEqual(comfortable)
-    expect(withHysteresis({ ...next, predictedCols: 57 }, comfortable, 30)).toEqual({
-      ...next,
-      predictedCols: 57,
+    const justBelow = { ...base, shellWidth: threshold - 1 }
+    const held = withHysteresis(chooseLayout(justBelow), previous, justBelow)
+    const colsJustBelow = terminalColumns({
+      viewportWidth: threshold - 1,
+      leftWidth: 420,
+      rightWidth: DOCK,
+      chromeWidth: RAIL,
+      cellWidth: CELL,
     })
+
+    if (USABLE_COLS - colsJustBelow <= band) {
+      // Inside the band the old presentation is held — but never below the floor
+      // minus the band. That is the whole trade: a couple of columns of slack to
+      // stop the flip, not permission to starve the terminal indefinitely.
+      expect(held.leftPresentation).toBe('column')
+      expect(held.predictedCols).toBeGreaterThanOrEqual(USABLE_COLS - band)
+    } else {
+      expect(held.leftPresentation).not.toBe('column')
+      expect(held.predictedCols).toBeGreaterThanOrEqual(USABLE_COLS)
+    }
+  })
+
+  it('still yields immediately once the excursion leaves the band', () => {
+    const comfortable = chooseLayout({ ...base, shellWidth: 1500 })
+    expect(comfortable.leftPresentation).toBe('column')
+    const far = { ...base, shellWidth: 900 }
+    const yielded = withHysteresis(chooseLayout(far), comfortable, far)
+    expect(yielded.leftPresentation).not.toBe('column')
+    expect(yielded.predictedCols).toBeGreaterThanOrEqual(USABLE_COLS)
+  })
+
+  it('re-evaluates the old presentation instead of trusting its old column count', () => {
+    // Prime at a very wide width so `previous.predictedCols` is large.
+    const wide = { ...base, shellWidth: 1600 }
+    const previous = chooseLayout(wide)
+    expect(previous.predictedCols).toBeGreaterThan(USABLE_COLS + 10)
+
+    // Now at a narrow width the old presentation is NOT acceptable, even though
+    // `previous.predictedCols` still says it was.
+    const narrow = { ...base, shellWidth: 820 }
+    const result = withHysteresis(chooseLayout(narrow), previous, narrow)
+    expect(result.predictedCols).toBeGreaterThanOrEqual(USABLE_COLS)
+    // The old presentation measured at the current width is what decides.
+    const previousNow = evaluatePresentation(
+      previous.leftPresentation,
+      previous.rightPresentation,
+      narrow,
+    )
+    expect(previousNow.predictedCols).toBeLessThan(USABLE_COLS)
+  })
+
+  it('handles a font change through the same path', () => {
+    const narrow = { ...base, shellWidth: 1100 }
+    const at14 = chooseLayout({ ...narrow, cellWidth: 8.4 })
+    const at20 = chooseLayout({ ...narrow, cellWidth: 12 })
+    // A larger cell means fewer columns; the decision must react, not hold.
+    expect(at20.predictedCols).toBeLessThan(at14.predictedCols)
+    const stabilized = withHysteresis(at20, at14, { ...narrow, cellWidth: 12 })
+    expect(stabilized.predictedCols).toBeGreaterThanOrEqual(USABLE_COLS)
   })
 })

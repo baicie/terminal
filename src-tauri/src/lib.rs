@@ -203,6 +203,7 @@ pub fn run() {
     init_tracing();
 
     let shared_state = create_shared_state();
+    crate::sftp::register_registry_lifecycle(&shared_state);
     let storage_manager = std::sync::Arc::new(crate::storage::StorageManager::new());
     let terminal_smoke_state = TerminalSmokeState::from_env();
     let input_probe_state = InputProbeState::from_env();

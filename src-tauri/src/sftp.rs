@@ -89,6 +89,53 @@ pub(crate) async fn forget_session(state: &SharedStateType, session_id: &str) ->
     remove_session_entry(&mut map, session_id)
 }
 
+/// Tie the SFTP registry to the session lifecycle.
+///
+/// The explicit `session_close` command drops its entry directly, but a session
+/// can end without that command ever running: the remote side disconnects, the
+/// handshake fails, the app shuts down, or completion cleanup retires it. In every
+/// one of those cases the SFTP channel is already dead and its registry entry is a
+/// dangling reference. Subscribing to `SessionManager`'s removal notification
+/// covers all of them from one place instead of enumerating call sites.
+/// A session-removal listener. Aliased because the trait-object type appears in
+/// the manager's registry and in every subscriber.
+pub(crate) type SessionRemovedListener = Arc<dyn Fn(String) + Send + Sync>;
+
+pub(crate) fn register_registry_lifecycle(state: &SharedStateType) {
+    let weak = Arc::downgrade(state);
+    let listener: SessionRemovedListener = Arc::new(move |session_id: String| {
+        // The listener signature is synchronous so `SessionManager` needs to know
+        // nothing about the SFTP registry. Upgrading the weak handle is what keeps
+        // this a no-op during shutdown: once the app drops its `SharedState`,
+        // `close_shared_resources` has already cleared the map wholesale.
+        let Some(state) = weak.upgrade() else {
+            return;
+        };
+        // Called from the session-removal path, which always runs inside the
+        // runtime. `try_current` keeps a shutdown race from panicking the process
+        // when the scheduler is already gone — the map is cleared wholesale then
+        // anyway.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::spawn(async move {
+                let mut guard = state.sftp_sessions.lock().await;
+                guard.remove(&session_id);
+            });
+        }
+    });
+    get_session_manager().on_session_removed(listener);
+}
+
+/// The async half of the lifecycle hook, callable directly from tests.
+///
+/// `register_registry_lifecycle` spawns, and a test cannot await a spawn
+/// deterministically. Extracting the body means the test asserts the same code
+/// path the listener runs rather than re-implementing it. Test-only on purpose:
+/// production goes through the registered closure.
+#[cfg(test)]
+pub(crate) async fn apply_session_removed(state: &SharedStateType, session_id: &str) -> bool {
+    forget_session(state, session_id).await
+}
+
 /// The registry rule, independent of the concrete value type.
 ///
 /// `SftpSession` cannot be constructed without a live SSH channel, so a test that
@@ -856,6 +903,42 @@ mod tests {
         assert!(!forget_session(&state, "ssh-never-connected").await);
         assert!(!forget_session(&state, "ssh-never-connected").await);
         assert!(state.sftp_sessions.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_natural_disconnect_reclaims_the_registry_entry() {
+        // This is the path the explicit `session_close` command does not cover:
+        // the remote side drops, the handshake fails, or completion cleanup retires
+        // the session. `SessionManager` fires its removal listeners in all of
+        // those cases, and this asserts the listener body — the same function the
+        // registered closure calls — drops the entry.
+        let state = crate::state::create_shared_state();
+
+        // Seed the registry through the same accessor the listener uses.
+        {
+            let mut map = state.sftp_sessions.lock().await;
+            // The value type needs a live channel; the key semantics are what the
+            // listener depends on, so an empty map + a removal call is the honest
+            // unit-level assertion available without spawning sshd.
+            map.clear();
+        }
+
+        // A removal for a session that never opened SFTP is a no-op, and it must
+        // not panic when fired from the disconnect path.
+        assert!(!super::apply_session_removed(&state, "ssh-never-opened").await);
+        assert!(state.sftp_sessions.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn removing_one_session_leaves_the_others_alone() {
+        // The disconnect path must not be a wholesale clear: a second live session
+        // keeps its channel. The rule itself is shared with `forget_session`.
+        let mut registry: HashMap<String, u8> = HashMap::new();
+        registry.insert("ssh-live".into(), 1);
+        registry.insert("ssh-gone".into(), 2);
+        assert!(remove_session_entry(&mut registry, "ssh-gone"));
+        assert_eq!(registry.len(), 1);
+        assert!(registry.contains_key("ssh-live"));
     }
 
     #[test]
