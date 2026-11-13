@@ -1,0 +1,77 @@
+{
+  "commit": "2a5e36c3fc6483170a4909ea81be1258a1b0369a",
+  "results": [
+    {
+      "profile": "release",
+      "path": "src-tauri/target/release/terminal",
+      "bytes": 34390448,
+      "mib": 32.8,
+      "sha256": "813455d21b4c79130b92c4bc2548f912500e63cf08bb4dfede3b441a6fc51969",
+      "jsEntryNames": [
+        "index.Bb4ZuQhg.js",
+        "rolldown-runtime.BYplFrKj.js",
+        "icons.q0ZBnWDa.js",
+        "react-runtime.Km-A_KVb.js",
+        "core.8VMK5MVj.js"
+      ],
+      "embeddedEntries": 5,
+      "frontendEmbedded": true,
+      "buildSeconds": 5,
+      "commit": "2a5e36c3fc6483170a4909ea81be1258a1b0369a"
+    },
+    {
+      "profile": "release-strip",
+      "path": "src-tauri/target/release-strip/terminal",
+      "bytes": 28125072,
+      "mib": 26.82,
+      "sha256": "33abe02b3042fc9c76bf8b234f129fda5343e30b3a1182edac69275a997777ad",
+      "jsEntryNames": [
+        "index.Bb4ZuQhg.js",
+        "rolldown-runtime.BYplFrKj.js",
+        "icons.q0ZBnWDa.js",
+        "react-runtime.Km-A_KVb.js",
+        "core.8VMK5MVj.js"
+      ],
+      "embeddedEntries": 5,
+      "frontendEmbedded": true,
+      "buildSeconds": 3,
+      "commit": "2a5e36c3fc6483170a4909ea81be1258a1b0369a"
+    },
+    {
+      "profile": "release-lto",
+      "path": "src-tauri/target/release-lto/terminal",
+      "bytes": 25650304,
+      "mib": 24.46,
+      "sha256": "4e2e3196f8c3bf654b6bc2f6209973cb6a97f8b677ceaf576f58db15aaf379e7",
+      "jsEntryNames": [
+        "index.Bb4ZuQhg.js",
+        "rolldown-runtime.BYplFrKj.js",
+        "icons.q0ZBnWDa.js",
+        "react-runtime.Km-A_KVb.js",
+        "core.8VMK5MVj.js"
+      ],
+      "embeddedEntries": 5,
+      "frontendEmbedded": true,
+      "buildSeconds": 3,
+      "commit": "2a5e36c3fc6483170a4909ea81be1258a1b0369a"
+    },
+    {
+      "profile": "release-strip-lto",
+      "path": "src-tauri/target/release-strip-lto/terminal",
+      "bytes": 22583776,
+      "mib": 21.54,
+      "sha256": "fb6ce2ff0efe060b0370ddaa9cab5b7149788a858cec703e5e5e8a7c11355693",
+      "jsEntryNames": [
+        "index.Bb4ZuQhg.js",
+        "rolldown-runtime.BYplFrKj.js",
+        "icons.q0ZBnWDa.js",
+        "react-runtime.Km-A_KVb.js",
+        "core.8VMK5MVj.js"
+      ],
+      "embeddedEntries": 5,
+      "frontendEmbedded": true,
+      "buildSeconds": 3,
+      "commit": "2a5e36c3fc6483170a4909ea81be1258a1b0369a"
+    }
+  ]
+}
