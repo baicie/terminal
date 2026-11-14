@@ -1,7 +1,7 @@
 {
   "case": "e2e-01",
   "verdict": "PASS",
-  "recordedAt": "2026-11-14T01:37:51.300Z",
+  "recordedAt": "2026-11-14T05:20:16.637Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
@@ -10,7 +10,7 @@
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "1a24eed0c1a89994a317776a2a6ce2ee3e49053a",
+    "sha": "d31b4d7b91a5086bf3bb9d6da0dcc803def884c0",
     "branch": "feat/tn-03-native-gui-e2e",
     "dirty": true
   },
@@ -31,5 +31,12 @@
     "rows": 39,
     "statusBarText": "ConnectedLocal142×39"
   },
-  "screenshot": "e2e/gui/artifacts/e2e-01/screens/e2e-01-1794620271072.png"
+  "command": {
+    "token": "guie2e1794633592073",
+    "outputLines": 1,
+    "promptMatchesBefore": 1,
+    "promptMatchesAfter": 2,
+    "bufferTail": "liuzhiwei@liuzhiweideMacBook-Pro terminal-gui-e2e-75515-1794633559280 % echo guie2e1794633592073\nguie2e1794633592073\nliuzhiwei@liuzhiweideMacBook-Pro terminal-gui-e2e-75515-1794633559280 % "
+  },
+  "screenshot": "e2e/gui/artifacts/e2e-01/screens/e2e-01-1794633616144.png"
 }

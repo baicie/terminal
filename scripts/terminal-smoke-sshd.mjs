@@ -301,6 +301,14 @@ function quoteSshdPath(value) {
   return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
 }
 
+/** Single-quote a value for /bin/sh, so a path with spaces survives the wrapper. */
+function quoteShellWord(value) {
+  if (/[\n\r\0]/.test(value)) {
+    throw new Error('terminal smoke paths cannot contain control characters')
+  }
+  return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
 function parsePublicKey(serialized, label) {
   const [kind, body] = serialized.trim().split(/\s+/)
   if (kind !== 'ssh-ed25519' || !/^[A-Za-z0-9+/]+={0,2}$/.test(body ?? '')) {
@@ -367,6 +375,13 @@ function daemonConfiguration(paths, port, username, options) {
       'DisableForwarding yes',
       'PermitTTY yes',
     )
+  }
+  if (options.enableSftp) {
+    // `internal-sftp` is the in-process implementation and needs no path; a
+    // real `sftp-server` binary is used when one is given so the fixture
+    // exercises the same code path a production server would.
+    const server = options.sftpServerPath || 'internal-sftp'
+    lines.push(`Subsystem sftp ${quoteSshdPath(server)}`)
   }
   lines.push('')
   return lines.join('\n')
@@ -543,6 +558,15 @@ export async function startTerminalSmokeSshd({
   targetPort,
   connectionExtra = {},
   dependencies: overrides = {},
+  // Opt-in SFTP subsystem. Off by default so the existing 45 fixture tests keep
+  // the exact daemon they were written against. When on, the daemon declares
+  // `Subsystem sftp` pointing at the platform's sftp-server, which is what
+  // `ssh -s sftp` needs; without the declaration OpenSSH answers
+  // "subsystem request failed on channel 0" and a real upload cannot run at all.
+  enableSftp = false,
+  sftpServerPath = process.platform === 'darwin'
+    ? '/usr/libexec/sftp-server'
+    : '/usr/lib/openssh/sftp-server',
 }) {
   const dependencies = { ...defaultDependencies, ...overrides }
   if (dependencies.platform !== 'darwin' && dependencies.platform !== 'linux') {
@@ -593,7 +617,16 @@ export async function startTerminalSmokeSshd({
   const shellRcPath = `'${paths.shellRc.replaceAll("'", `\'"\'"\'`)}'`
   const loginShell = LOGIN_SHELL_PATHS[shell]
   const shellArguments = shell === 'sh' ? '' : ' -i'
-  const wrapper = `#!/bin/sh\nset -eu\nif [ "\${SSH_ORIGINAL_COMMAND:-}" = "${READY_COMMAND}" ]; then\n  printf '%s\\n' '${SSHD_READY_MARKER}'\n  exit 0\nfi\nexec /usr/bin/env -i HOME=${home} ENV=${shellRcPath} PATH=/usr/bin:/bin TERM="\${TERM:-xterm-256color}" LANG=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 ${loginShell}${shellArguments}\n`
+  // `command="..."` in authorized_keys hijacks *every* session, an sftp
+  // subsystem request included — the subsystem never gets a chance to start
+  // because the wrapper runs instead. When the fixture is asked for sftp, the
+  // wrapper therefore has to hand `SSH_ORIGINAL_COMMAND` back to the real
+  // sftp-server before falling through to the interactive shell.
+  const sftpHandoff =
+    enableSftp && role !== 'jump'
+      ? `if [ -n "\${SSH_ORIGINAL_COMMAND:-}" ]; then\n  exec ${quoteShellWord(sftpServerPath)} -e\nfi\n`
+      : ''
+  const wrapper = `#!/bin/sh\nset -eu\nif [ "\${SSH_ORIGINAL_COMMAND:-}" = "${READY_COMMAND}" ]; then\n  printf '%s\\n' '${SSHD_READY_MARKER}'\n  exit 0\nfi\n${sftpHandoff}exec /usr/bin/env -i HOME=${home} ENV=${shellRcPath} PATH=/usr/bin:/bin TERM="\${TERM:-xterm-256color}" LANG=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 ${loginShell}${shellArguments}\n`
   await writeSecure(paths.wrapper, wrapper, 0o700, dependencies)
   const forcedCommand = paths.wrapper
     .replaceAll('\\', '\\\\')
@@ -624,6 +657,8 @@ export async function startTerminalSmokeSshd({
         mode,
         role,
         targetPort,
+        enableSftp,
+        sftpServerPath,
       })
       await writeSecure(paths.config, config, 0o600, dependencies)
       await writeSecure(

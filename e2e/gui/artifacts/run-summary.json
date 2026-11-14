@@ -1,15 +1,25 @@
 {
-  "ranAt": "2026-11-14T01:40:44.406Z",
-  "binary": {
-    "path": "src-tauri/target/release/terminal",
-    "sha256": "e1df90e82625d6724746af14c42eeffb10cbf5ef100510198cc9e2fd604f71c9"
-  },
+  "ranAt": "2026-11-14T05:23:05.661Z",
   "platform": {
     "platform": "darwin",
     "arch": "arm64",
     "release": "24.6.0"
   },
-  "isolatedHome": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-e2e-30868-1794620183008",
+  "binary": {
+    "path": "src-tauri/target/release/terminal"
+  },
+  "isolatedProfile": {
+    "path": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-e2e-75515-1794633559280",
+    "variables": [
+      "HOME",
+      "USERPROFILE",
+      "APPDATA",
+      "LOCALAPPDATA",
+      "XDG_CONFIG_HOME",
+      "XDG_DATA_HOME",
+      "XDG_CACHE_HOME"
+    ]
+  },
   "exitCode": 1,
   "verdict": "FAIL"
 }

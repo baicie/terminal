@@ -1,0 +1,35 @@
+{
+  "profile": "release-strip",
+  "label": "release-strip",
+  "platform": "darwin",
+  "binary": "src-tauri/target/release-strip/terminal",
+  "binaryBytes": 28125072,
+  "binarySha256": "33abe02b3042fc9c76bf8b234f129fda5343e30b3a1182edac69275a997777ad",
+  "commit": "f5c0434bfa4052e3b206ef85c593ba8aad8fb46b",
+  "symbols": {
+    "platform": "macos",
+    "status": "PASS",
+    "artifact": "symbols/release-strip/terminal.dSYM",
+    "dsymUuid": "DB6C03B0-2A03-3D7C-BBD5-FD20CF1D0975",
+    "binaryUuid": {
+      "ok": true,
+      "status": 0,
+      "stdout": "UUID: DB6C03B0-2A03-3D7C-BBD5-FD20CF1D0975 (arm64) src-tauri/target/release-strip/terminal",
+      "stderr": ""
+    },
+    "uuidMatches": true,
+    "bytes": 2490368
+  },
+  "pairingComplete": true,
+  "otherPlatforms": [
+    {
+      "platform": "linux",
+      "status": "NOT_RUN"
+    },
+    {
+      "platform": "windows",
+      "status": "NOT_RUN",
+      "reason": "PDB is produced by the MSVC linker on Windows; not buildable from this host"
+    }
+  ]
+}

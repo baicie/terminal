@@ -132,10 +132,14 @@ writeFileSync(
 // developer's tmp from filling with databases after a few hundred runs. On
 // Windows a locked SQLite file can make the removal fail — that is reported but
 // does not change the test verdict.
-try {
-  rmSync(home, { recursive: true, force: true })
-} catch (error) {
-  console.warn(`[gui-e2e] could not remove ${home}: ${error.message}`)
+if (process.env.GUI_E2E_KEEP_PROFILE === '1') {
+  log(`profile kept at ${home} (GUI_E2E_KEEP_PROFILE=1)`)
+} else {
+  try {
+    rmSync(home, { recursive: true, force: true })
+  } catch (error) {
+    console.warn(`[gui-e2e] could not remove ${home}: ${error.message}`)
+  }
 }
 
 log(`finished with exit ${run.status}`)

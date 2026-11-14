@@ -22,14 +22,28 @@ smoke-vault-probe = []
 # Test-only updater runtime: check, download, verify and install from a loopback
 # endpoint. Absent from every production build.
 smoke-updater = []
+# Embeds the frontend from `frontendDist` into the binary via Tauri's custom
+# protocol. Without it `tauri/build.rs` sets `dev = !custom_protocol`, and a bare
+# `cargo build --release` produces an executable that loads an empty shell from a
+# dev server that is not running — a grey window with no JS ever executing.
+#
+# `tauri build` adds this feature automatically, which is why the packaged app
+# always worked and only hand-rolled `cargo build --release` was broken. Declaring
+# it here makes the two paths agree. Empty by default: `tauri build` still turns
+# it on, and every other `cargo` invocation stays a dev-server build unless asked.
+custom-protocol = ["tauri/custom-protocol"]
 # Native GUI E2E: embeds a loopback WebDriver HTTP server so WebdriverIO can drive
 # the real WKWebView/WebKitGTK/WebView2. NOT a default feature and never enabled by
 # a release build. See docs/testing/native-gui-e2e.md and the threat model.
 #
+# It requires `custom-protocol`: a GUI harness driving an empty shell with no
+# JavaScript is testing nothing. That dependency is stated here rather than left
+# to the caller so `--features gui-e2e` alone produces a runnable app.
+#
 # This feature exists so the driver can be *proven absent* from a production
 # binary rather than merely documented as absent: `scripts/check-gui-e2e-isolation.mjs`
 # builds without it and asserts the symbols and the config are gone.
-gui-e2e = ["dep:tauri-plugin-wdio-webdriver"]
+gui-e2e = ["dep:tauri-plugin-wdio-webdriver", "custom-protocol"]
 
 [dependencies]
 tauri = { version = "2.10", features = ["macos-private-api", "tray-icon", "image-png"] }
@@ -123,6 +137,32 @@ debug = 0
 # `opt-level` stays at 3 for the same reason: this binary drives PTY and SFTP
 # data paths, and "s"/"z" costs throughput that no test here would catch.
 [profile.release-small]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+
+# Release Engineering acceptance matrix (this round only).
+#
+# `release-small` above bundles strip + LTO, so it cannot say which of the two
+# produced the size change. These three isolate one axis each against the
+# untouched `release` profile, which is the fourth arm of the comparison. All
+# four must be built from the same commit and the same `dist/`.
+#
+# Symbol files are archived alongside each arm (see
+# `scripts/release-engineering/build-matrix.mjs`): `strip` alone is only
+# acceptable for a shipped build if the dSYM/PDB/debug file is kept, because
+# there is no other way to symbolicate a crash.
+[profile.release-strip]
+inherits = "release"
+strip = "symbols"
+
+[profile.release-lto]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
+[profile.release-strip-lto]
 inherits = "release"
 lto = "fat"
 codegen-units = 1
