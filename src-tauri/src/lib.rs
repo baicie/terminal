@@ -13,6 +13,9 @@ mod raw_input_probe;
 mod remote_prompt_probe;
 mod serial;
 mod sftp;
+mod sftp_download;
+#[cfg(test)]
+mod sftp_download_tests;
 mod sftp_upload;
 mod shell_interaction_probe;
 mod shutdown;

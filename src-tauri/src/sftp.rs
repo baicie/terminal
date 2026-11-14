@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 
 /// Chunk size for streaming uploads/downloads. 64 KB ≈ a single SFTP packet,
 /// keeps memory low while staying within sensible request boundaries.
@@ -468,15 +468,39 @@ pub async fn sftp_download(
         }
     }
 
-    let mut local = match tokio::fs::File::create(&local_path).await {
-        Ok(f) => f,
-        Err(e) => {
-            let msg = format!("Failed to create local file: {}", e);
+    // Receive into a temporary file beside the target, then promote atomically.
+    //
+    // `File::create(&local_path)` used to truncate the destination immediately, so a
+    // read error, a write error or a flush failure left the user with a destroyed
+    // original. `receive_download` writes to `.<name>.terminal-download-tmp.<n>` in
+    // the same directory, syncs it, and only then renames it over the target.
+    let target = match crate::sftp_download::DownloadTarget::new(
+        std::path::Path::new(&local_path),
+        unique_download_suffix(&transfer_id),
+    ) {
+        Ok(target) => target,
+        Err(error) => {
+            emit_progress(
+                &app,
+                &transfer_id,
+                "error",
+                0,
+                total_bytes,
+                Some(error.clone()),
+                None,
+            );
+            return Err(SftpError::DownloadFailed(error));
+        }
+    };
+
+    let sink = match crate::sftp_download::FileSink::create(&target.temp).await {
+        Ok(sink) => sink,
+        Err(error) => {
             tracing::warn!(
                 transfer_id = %transfer_id,
                 local_path = %local_path,
-                error = %e,
-                "sftp_download: create local file failed",
+                error = %error,
+                "sftp_download: create temporary file failed",
             );
             emit_progress(
                 &app,
@@ -484,10 +508,10 @@ pub async fn sftp_download(
                 "error",
                 0,
                 total_bytes,
-                Some(msg.clone()),
+                Some(error.clone()),
                 None,
             );
-            return Err(SftpError::DownloadFailed(msg));
+            return Err(SftpError::DownloadFailed(error));
         }
     };
 
@@ -499,90 +523,85 @@ pub async fn sftp_download(
         total_bytes,
         "sftp_download: starting",
     );
-
     emit_progress(&app, &transfer_id, "progress", 0, total_bytes, None, None);
 
-    let mut buf = vec![0u8; CHUNK_SIZE];
-    let mut received: u64 = 0;
+    // Progress events are emitted from the byte count, not from inside the reader.
     let mut last_emit = std::time::Instant::now();
-
-    loop {
-        let n = match remote.read(&mut buf).await {
-            Ok(0) => break,
-            Ok(n) => n,
-            Err(e) => {
-                let msg = format!("Read remote file failed: {}", e);
+    let result = crate::sftp_download::receive_download(
+        &target,
+        if total_bytes > 0 {
+            Some(total_bytes)
+        } else {
+            None
+        },
+        &mut remote,
+        |received| {
+            if last_emit.elapsed().as_millis() >= PROGRESS_INTERVAL_MS {
                 emit_progress(
                     &app,
                     &transfer_id,
-                    "error",
+                    "progress",
                     received,
                     total_bytes,
-                    Some(msg.clone()),
+                    None,
                     None,
                 );
-                return Err(SftpError::DownloadFailed(msg));
+                last_emit = std::time::Instant::now();
             }
-        };
-        if let Err(e) = local.write_all(&buf[..n]).await {
-            let msg = format!("Write local file failed: {}", e);
+        },
+        sink,
+    )
+    .await;
+
+    match result {
+        Ok(received) => {
+            tracing::info!(
+                transfer_id = %transfer_id,
+                received,
+                total_bytes,
+                "sftp_download: completed",
+            );
+            emit_progress(
+                &app,
+                &transfer_id,
+                "done",
+                received,
+                total_bytes,
+                None,
+                None,
+            );
+            Ok(())
+        }
+        Err(message) => {
+            tracing::warn!(
+                transfer_id = %transfer_id,
+                error = %message,
+                "sftp_download: failed; the destination was left as it was",
+            );
             emit_progress(
                 &app,
                 &transfer_id,
                 "error",
-                received,
+                0,
                 total_bytes,
-                Some(msg.clone()),
+                Some(message.clone()),
                 None,
             );
-            return Err(SftpError::DownloadFailed(msg));
-        }
-        received += n as u64;
-
-        if last_emit.elapsed().as_millis() >= PROGRESS_INTERVAL_MS {
-            emit_progress(
-                &app,
-                &transfer_id,
-                "progress",
-                received,
-                total_bytes,
-                None,
-                None,
-            );
-            last_emit = std::time::Instant::now();
+            Err(SftpError::DownloadFailed(message))
         }
     }
+}
 
-    if let Err(e) = local.flush().await {
-        let msg = format!("Flush local file failed: {}", e);
-        emit_progress(
-            &app,
-            &transfer_id,
-            "error",
-            received,
-            total_bytes,
-            Some(msg.clone()),
-            None,
-        );
-        return Err(SftpError::DownloadFailed(msg));
-    }
-
-    tracing::info!(
-        transfer_id = %transfer_id,
-        received,
-        total_bytes,
-        "sftp_download: completed",
-    );
-    emit_progress(
-        &app,
-        &transfer_id,
-        "done",
-        received,
-        total_bytes,
-        None,
-        None,
-    );
-    Ok(())
+/// A per-download uniquifier for the temporary file name.
+///
+/// Two concurrent downloads to the same target must not share a temporary name — the
+/// second would write into the first's file. The transfer id is already unique per
+/// download; hashing it keeps the suffix filesystem-safe.
+fn unique_download_suffix(transfer_id: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    transfer_id.hash(&mut hasher);
+    hasher.finish()
 }
 
 #[tauri::command]
