@@ -4,6 +4,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal as TerminalComponent, type ITheme } from '@baicie/xterm'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { installGuiE2EProbeIfBuilt } from './install-gui-e2e-probe'
 import { handleXtermShortcut } from './use-terminal-shortcut-events'
 import { installTerminalPasteGate } from './install-terminal-paste-gate'
 import type { PasteConfirmRequest } from './paste-confirm-dialog'
@@ -168,6 +169,8 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
     viewportController.attach()
     viewportControllerRef.current = viewportController
     setTermInstance(term)
+    // Read-only observation surface for native GUI E2E; see `install-gui-e2e-probe.ts`.
+    const disposeGuiE2EProbe = installGuiE2EProbeIfBuilt(term, () => disposed)
     // `ready` only proves the database answered. Without this stage a startup
     // that never asked for a session cannot be told apart from one whose tab
     // never reached an xterm instance (Issue #174).
@@ -190,6 +193,7 @@ export function useTerminalInstance(options: UseTerminalInstanceOptions) {
       }
       titleDisposable.dispose()
       for (const disposable of shellIntegrationDisposables) disposable.dispose()
+      disposeGuiE2EProbe()
       term.dispose()
       termRef.current = null
       searchAddonRef.current = null

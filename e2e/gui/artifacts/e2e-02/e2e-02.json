@@ -1,0 +1,38 @@
+{
+  "case": "e2e-02",
+  "verdict": "FAIL",
+  "recordedAt": "2026-11-14T01:40:41.304Z",
+  "platform": {
+    "platform": "darwin",
+    "release": "24.6.0",
+    "arch": "arm64",
+    "node": "v22.12.0",
+    "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
+  },
+  "source": {
+    "sha": "1a24eed0c1a89994a317776a2a6ce2ee3e49053a",
+    "branch": "feat/tn-03-native-gui-e2e",
+    "dirty": true
+  },
+  "binary": {
+    "path": "src-tauri/target/release/terminal",
+    "sha256": "e1df90e82625d6724746af14c42eeffb10cbf5ef100510198cc9e2fd604f71c9",
+    "bytes": 36671952
+  },
+  "window": {
+    "requestedWidth": 1440,
+    "cssWidth": 1440,
+    "devicePixelRatio": 2,
+    "left": "column",
+    "leftColumnWidth": 176,
+    "right": "column",
+    "rightWidth": 300,
+    "terminalWidth": 1136,
+    "cols": 142,
+    "rows": 39
+  },
+  "terminal": null,
+  "screenshot": "e2e/gui/artifacts/e2e-02/screens/e2e-02-1794620441059.png",
+  "notes": "[\n  {\n    \"requestedWidth\": 1440,\n    \"cssWidth\": 1440,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 176,\n    \"right\": \"column\",\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 39\n  },\n  {\n    \"requestedWidth\": 1280,\n    \"cssWidth\": 1280,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 176,\n    \"right\": \"column\",\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 39\n  },\n  {\n    \"requestedWidth\": 1024,\n    \"cssWidth\": 1024,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 176,\n    \"right\": \"column\",\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 39\n  },\n  {\n    \"requestedWidth\": 900,\n    \"cssWidth\": 900,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 176,\n    \"right\": \"column\",\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 39,\n    \"policyViolation\": {\n      \"available\": 424,\n      \"required\": 504,\n      \"reason\": \"both panels stayed columns with less than the floor left over\"\n    }\n  },\n  {\n    \"requestedWidth\": 768,\n    \"cssWidth\": 768,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 176,\n    \"right\": \"overlay\",\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 39\n  },\n  {\n    \"requestedWidth\": 640,\n    \"cssWidth\": 640,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 176,\n    \"right\": \"overlay\",\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 39\n  }\n]\n\nrequestAnimationFrame observed under automation: false. The terminal refit path is rAF-driven and therefore NOT exercised here; xterm cols are reported for information only. See docs/testing/native-gui-e2e.md.",
+  "error": "1 width(s) violated the layout policy"
+}

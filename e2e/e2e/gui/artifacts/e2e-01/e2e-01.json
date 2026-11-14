@@ -1,0 +1,35 @@
+{
+  "case": "e2e-01",
+  "verdict": "PASS",
+  "recordedAt": "2026-11-14T00:10:18.798Z",
+  "platform": {
+    "platform": "darwin",
+    "release": "24.6.0",
+    "arch": "arm64",
+    "node": "v22.12.0",
+    "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
+  },
+  "source": {
+    "sha": "1a24eed0c1a89994a317776a2a6ce2ee3e49053a",
+    "branch": "feat/tn-03-native-gui-e2e",
+    "dirty": true
+  },
+  "binary": {
+    "path": "../src-tauri/target/release/terminal",
+    "sha256": "30b5655a30b0e8ea8204e8a8f610e67bc5e896a2d110d67b86801d9ba0bbe844",
+    "bytes": 36671952
+  },
+  "window": {
+    "cssHeight": 740,
+    "cssWidth": 1200,
+    "devicePixelRatio": 2,
+    "height": 624,
+    "width": 1136
+  },
+  "terminal": {
+    "cols": 142,
+    "rows": 39,
+    "statusBarText": "ConnectedLocal142×39"
+  },
+  "screenshot": "e2e/gui/artifacts/e2e-01/screens/e2e-01-1794615018581.png"
+}

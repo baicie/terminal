@@ -60,3 +60,11 @@ updater-e2e-report.json
 
 # SFTP acceptance fixture (scripts/verify-install/sftp-staged-upload-e2e.mjs)
 .tmp-sftp-e2e-*/
+
+# Native GUI E2E runtime artifacts. The evidence worth keeping is committed
+# explicitly under e2e/gui/artifacts/<case>/ (one JSON + one PNG per run); the
+# per-run JSON reporter output and stale screenshots are not.
+e2e/gui/artifacts/json/
+e2e/gui/artifacts/**/screens/*.png
+!e2e/gui/artifacts/e2e-01/screens/*.png
+!e2e/gui/artifacts/e2e-02/screens/*.png

@@ -22,9 +22,19 @@ smoke-vault-probe = []
 # Test-only updater runtime: check, download, verify and install from a loopback
 # endpoint. Absent from every production build.
 smoke-updater = []
+# Native GUI E2E: embeds a loopback WebDriver HTTP server so WebdriverIO can drive
+# the real WKWebView/WebKitGTK/WebView2. NOT a default feature and never enabled by
+# a release build. See docs/testing/native-gui-e2e.md and the threat model.
+#
+# This feature exists so the driver can be *proven absent* from a production
+# binary rather than merely documented as absent: `scripts/check-gui-e2e-isolation.mjs`
+# builds without it and asserts the symbols and the config are gone.
+gui-e2e = ["dep:tauri-plugin-wdio-webdriver"]
 
 [dependencies]
 tauri = { version = "2.10", features = ["macos-private-api", "tray-icon", "image-png"] }
+# Optional on purpose: absent from the dependency graph unless `gui-e2e` is on.
+tauri-plugin-wdio-webdriver = { version = "1.5", optional = true }
 tauri-plugin-shell = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
