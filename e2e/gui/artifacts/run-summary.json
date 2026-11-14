@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-11-14T05:23:05.661Z",
+  "ranAt": "2026-11-14T05:33:54.946Z",
   "platform": {
     "platform": "darwin",
     "arch": "arm64",
@@ -9,7 +9,7 @@
     "path": "src-tauri/target/release/terminal"
   },
   "isolatedProfile": {
-    "path": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-e2e-75515-1794633559280",
+    "path": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-e2e-79492-1794634322890",
     "variables": [
       "HOME",
       "USERPROFILE",

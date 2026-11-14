@@ -1,7 +1,7 @@
 {
   "case": "e2e-01",
   "verdict": "PASS",
-  "recordedAt": "2026-11-14T05:20:16.637Z",
+  "recordedAt": "2026-11-14T05:32:50.598Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
@@ -10,33 +10,33 @@
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "d31b4d7b91a5086bf3bb9d6da0dcc803def884c0",
+    "sha": "4b522bc33e81e87ad3e8e81bc8f1ca14c218d30f",
     "branch": "feat/tn-03-native-gui-e2e",
     "dirty": true
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "e1df90e82625d6724746af14c42eeffb10cbf5ef100510198cc9e2fd604f71c9",
-    "bytes": 36671952
+    "sha256": "9f7a8717392129f7c447befae2a10efa1023a71ca336d42e3f95f055266b102f",
+    "bytes": 36667568
   },
   "window": {
     "cssHeight": 740,
-    "cssWidth": 1200,
+    "cssWidth": 1024,
     "devicePixelRatio": 2,
     "height": 624,
-    "width": 1136
+    "width": 656
   },
   "terminal": {
-    "cols": 142,
+    "cols": 82,
     "rows": 39,
-    "statusBarText": "ConnectedLocal142×39"
+    "statusBarText": "ConnectedLocal82×39"
   },
   "command": {
-    "token": "guie2e1794633592073",
+    "token": "guie2e1794634350228",
     "outputLines": 1,
-    "promptMatchesBefore": 1,
-    "promptMatchesAfter": 2,
-    "bufferTail": "liuzhiwei@liuzhiweideMacBook-Pro terminal-gui-e2e-75515-1794633559280 % echo guie2e1794633592073\nguie2e1794633592073\nliuzhiwei@liuzhiweideMacBook-Pro terminal-gui-e2e-75515-1794633559280 % "
+    "promptMatchesBefore": 2,
+    "promptMatchesAfter": 3,
+    "bufferTail": "liuzhiwei@liuzhiweideMacBook-Pro terminal-gui-e2e-80048-1794634233421 % echo guie2e179463426\n3370\nguie2e1794634263370\nliuzhiwei@liuzhiweideMacBook-Pro terminal-gui-e2e-80048-1794634233421 % echo guie2e179463435\n0228\nguie2e1794634350228\nliuzhiwei@liuzhiweideMacBook-Pro terminal-gui-e2e-80048-1794634233421 % "
   },
-  "screenshot": "e2e/gui/artifacts/e2e-01/screens/e2e-01-1794633616144.png"
+  "screenshot": "e2e/gui/artifacts/e2e-01/screens/e2e-01-1794634370503.png"
 }

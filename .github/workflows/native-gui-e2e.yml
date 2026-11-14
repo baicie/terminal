@@ -3,13 +3,23 @@ name: Native GUI E2E
 # Drives the real Tauri WebView (WKWebView / WebKitGTK / WebView2) through the
 # in-process WebDriver server that the `gui-e2e` Cargo feature compiles in.
 #
-# NOT a required check. The harness is new, and a flaky GUI job that blocks every
-# merge teaches people to ignore it — the same failure mode the repository already
-# recorded for the zsh probe. It becomes required once it has a stable record.
+# ## Required vs Informational — stated, not implied by a badge
+#
+# REQUIRED (blocking):
+#   • Driver isolation gate — deterministic, fast, and the security contract.
+#   * macOS GUI E2E — the only platform with a proven pass record so far.
+#
+# INFORMATIONAL (non-blocking, `continue-on-error: true`):
+#   • Windows GUI E2E — the app builds and starts, but no case has yet been
+#     observed to pass on a Windows runner.
+#   • Linux GUI E2E — same.
+#
+# `continue-on-error` there is NOT a way to hide a failure: the job names say
+# "(informational)", and a failure stays visible in the PR's checks list. When
+# either platform has a stable pass record, remove the flag and the suffix —
+# that is the only change needed.
 #
 # macOS runs first because driving a real WKWebView was the long-standing gap.
-# Windows and Linux jobs are present but will only report once a runner for them
-# is trusted; each is marked NOT_RUN in the summary until then.
 
 on:
   workflow_dispatch:
@@ -84,11 +94,10 @@ jobs:
           if-no-files-found: warn
 
   windows:
-    name: Windows GUI E2E
+    name: Windows GUI E2E (informational)
     runs-on: windows-latest
     timeout-minutes: 45
-    # Kept visible but non-blocking until it has actually been run on a trusted
-    # runner. A green badge here would claim coverage this repository does not have.
+    # INFORMATIONAL. See the header: a failure here is visible but does not block.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -117,7 +126,7 @@ jobs:
           if-no-files-found: warn
 
   linux:
-    name: Linux GUI E2E
+    name: Linux GUI E2E (informational)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     continue-on-error: true

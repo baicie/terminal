@@ -28,26 +28,43 @@ async function readCols() {
 /**
  * What the shell actually rendered, read from the DOM.
  *
- * Keys on the markers that exist on `main`: `connection-explorer` for the left
- * panel and `right-panel` for the dock. The `data-testid="left-column"` /
- * `left-drawer` markers belong to PR #44's drawer work and are absent here —
- * this harness is independent test infrastructure and must not depend on an
- * unmerged branch. `docs/testing/native-gui-e2e.md` records the mapping.
+ * Prefers TN-01's markers (`left-column` / `left-drawer`), which is what makes a
+ * drawer decision observable; falls back to `connection-explorer` so the spec still
+ * runs on a checkout without that work. See §"TN-01 dependency" below.
  */
 async function readPresentations() {
   return browser.execute(() => {
-    const left = document.querySelector('[data-testid="connection-explorer"]')
+    // TN-01 (merged as #44) renders the drawer as `left-drawer` and the column as
+    // `left-column`. Reading both is what makes "the DOM obeys the decision"
+    // checkable; before TN-01 only `connection-explorer` existed and a drawer
+    // decision rendered nothing at all.
+    const leftColumn = document.querySelector('[data-testid="left-column"]')
+    const leftDrawer = document.querySelector('[data-testid="left-drawer"]')
+    const leftAny = leftColumn
+      ?? leftDrawer
+      ?? document.querySelector('[data-testid="connection-explorer"]')
       ?? document.querySelector('[data-testid="app-sidebar"]')
     const rightPanel = document.querySelector('[data-testid="right-panel"]')
     const terminal = document.querySelector('.xterm-screen')
     const rect = terminal?.getBoundingClientRect()
+    const left = leftColumn
+      ? 'column'
+      : leftDrawer
+        ? 'drawer'
+        : leftAny
+          ? 'column'
+          : 'none'
     return {
-      left: left ? 'column' : 'none',
-      leftColumnWidth: left ? Math.round(left.getBoundingClientRect().width) : 0,
+      left,
+      leftColumnWidth: leftAny ? Math.round(leftAny.getBoundingClientRect().width) : 0,
       right: rightPanel
         ? (rightPanel.getAttribute('data-presentation') ?? 'column')
         : 'none',
       rightWidth: rightPanel ? Math.round(rightPanel.getBoundingClientRect().width) : 0,
+      // A drawer or overlay costs the terminal nothing, so only a *column*
+      // counts against the terminal's width.
+      leftCostsWidth: left === 'column',
+      rightCostsWidth: rightPanel?.getAttribute('data-presentation') !== 'overlay',
       terminalWidth: rect ? Math.round(rect.width) : 0,
       cssWidth: document.documentElement.clientWidth,
       devicePixelRatio: window.devicePixelRatio,
@@ -91,13 +108,16 @@ async function resizeWindow(width, height = 900) {
 }
 
 /**
- * Is PR #44's layout rewrite present in this checkout?
+ * TN-01 dependency.
  *
  * `chooseLayout` — the function that measures the real sidebar width and demotes a
- * panel instead of starving the terminal — lives on that branch, not on `main`.
- * The 60-column floor is the design package's contract and is **not** relaxed for
- * `main`: a checkout without TN-01 genuinely violates it at 900px, and the spec
- * says so. What changes is only how the result is *reported*.
+ * panel instead of starving the terminal — landed with #44. On a checkout that
+ * predates it, 900px genuinely violates the 60-column floor.
+ *
+ * The floor is the design package's contract and is **never** relaxed: the
+ * assertion runs unchanged either way. What changes without TN-01 is only the
+ * *label* — `PENDING_REQUIRES_TN01` instead of `FAIL` — so a known historical
+ * defect is not confused with a regression.
  */
 function hasTn01(/* browser */) {
   return browser.execute(() =>
@@ -176,7 +196,7 @@ describe('E2E-02 Explorer and Dock across widths', () => {
       // terminal, below the 60-column floor. That is the defect PR #44's
       // `chooseLayout` rewrite fixes; this harness is what makes it visible in a
       // real window instead of only in a decision-function unit test.
-      if (seen.left === 'column' && seen.right === 'column') {
+      if (seen.leftCostsWidth && seen.rightCostsWidth) {
         const available = seen.cssWidth - seen.leftColumnWidth - seen.rightWidth
         const required = FLOOR * 8.4
         if (available < required) {
