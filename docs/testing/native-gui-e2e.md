@@ -178,6 +178,41 @@ is genuinely xterm's measurement and is read correctly, but the *refit on resize
 path cannot be exercised here. `E2E-02` therefore reports `PARTIAL` rather than
 `PASS` when rAF did not run, and says so in its evidence file.
 
+## 6.1 CI 实测结果（run 43564046995，commit 6c3ef77）
+
+| 平台 | Job | 结果 | 说明 |
+| --- | --- | --- | --- |
+| macOS | `macOS GUI E2E` | **success** | 真实 WKWebView，E2E-01 + E2E-02 全过 |
+| Linux | `Linux GUI E2E (informational)` | **success** | Xvfb + WebKitGTK，同样跑通 |
+| Windows | `Windows GUI E2E (informational)` | **failure** | 见下 |
+| — | `Driver isolation gate` | **success** | 安全隔离门禁 |
+
+### Windows 的实际状态
+
+**跨平台修复全部生效**。与修复前的对比：
+
+| 阶段 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 前端构建 | 104ms 内静默 exit 1，无输出 | 正常完成 |
+| Tauri 构建 | 从未到达 | 正常完成（14 分钟） |
+| 二进制 | — | `src-tauri\target\release\terminal.exe` |
+| 隔离 profile | — | `C:\Users\RUNNER~1\AppData\Local\Temp\terminal-gui-e2e-...` |
+| WebDriver session | 从未到达 | **`msedge 156.0.0.0 windows`** |
+| E2E 断言 | — | 失败 |
+
+失败集中在**运行时行为差异**，不是启动：
+
+```
+Error: no shell prompt ever appeared in the terminal buffer
+Error: window never reached 1440px / 640px
+```
+
+即：Windows 上 PowerShell 的提示符形状与 POSIX shell 不同，且 `setWindowSize`
+对 Tauri 窗口不生效（与 macOS 上 rAF 受限同类）。
+
+按任务书 §6 的分阶段标准，**第一阶段（构建、启动、建立 session）已达成**；
+第二阶段（真实窗口操作断言）Windows 仍 NOT_RUN。
+
 ## 7. Not run
 
 | Item | Why |
