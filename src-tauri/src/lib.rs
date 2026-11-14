@@ -8,6 +8,7 @@ mod db_import;
 mod db_recovery;
 mod errors;
 mod input_probe;
+mod path_lock;
 mod port_forward;
 mod raw_input_probe;
 mod remote_prompt_probe;

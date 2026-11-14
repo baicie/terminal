@@ -18,12 +18,25 @@
 //! 3. The target is replaced with `rename`, which is atomic on POSIX. On Windows
 //!    `rename` fails when the destination exists, so the sequence there is
 //!    backup → rename → remove backup, with a restore step if the rename fails.
-//! 4. Any failure removes the temporary file and leaves the target untouched.
+//! 4. **Any** failure removes the temporary file and leaves the target untouched —
+//!    including a failure in the commit itself, which is issue #74.
+//! 5. If the displaced original cannot be restored, the error names the backup path
+//!    and the backup is **kept**. Losing the user's file silently is the one outcome
+//!    that must be impossible.
+//! 6. Commits to the same target serialise (issue #75). Without that, the Windows
+//!    fallback's three steps can interleave across two downloads and strand one
+//!    original in a backup file.
 //!
-//! The helper is written against a small trait so the failure paths can be driven
-//! deterministically in tests, which is the only way to prove "the original is
-//! intact after a mid-write failure" without racing a real disk.
+//! ## Why the filesystem is behind a trait
+//!
+//! Every rule above is a failure path, and a failure path that can only be reached
+//! by making a real disk fail is a failure path that is never tested. `FileOps` is
+//! the injection point: the production implementation forwards to `tokio::fs`, and
+//! tests supply one that fails a specific operation at a specific step. That is what
+//! makes "the original survives a failed restore" a deterministic assertion instead
+//! of a hope.
 
+use crate::path_lock::PathLockRegistry;
 use std::path::{Path, PathBuf};
 use tokio::io::AsyncReadExt;
 
@@ -31,6 +44,52 @@ use tokio::io::AsyncReadExt;
 const TEMP_MARKER: &str = ".terminal-download-tmp";
 /// Marker for the displaced original during a Windows-style replace.
 const BACKUP_MARKER: &str = ".terminal-download-backup";
+
+/// One registry for download commits, keyed by canonical target path.
+static DOWNLOAD_LOCKS: PathLockRegistry = PathLockRegistry::new();
+
+/// Test-only: how many commit locks the registry holds, and whether one is live.
+#[cfg(test)]
+pub(crate) fn download_lock_registry() -> &'static PathLockRegistry {
+    &DOWNLOAD_LOCKS
+}
+
+/// The filesystem operations the commit performs.
+///
+/// Narrow on purpose: renames, existence checks and removals are the whole of the
+/// commit, so a test that fails one of them is describing a real failure mode rather
+/// than a contrived one.
+#[async_trait::async_trait]
+pub(crate) trait FileOps: Send + Sync {
+    /// Rename, replacing the destination if the platform allows it.
+    async fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()>;
+    /// Does this path exist?
+    async fn exists(&self, path: &Path) -> bool;
+    /// Remove a file, treating "not there" as success.
+    async fn remove(&self, path: &Path) -> std::io::Result<()>;
+}
+
+/// The production implementation: real renames on the real filesystem.
+pub(crate) struct RealFileOps;
+
+#[async_trait::async_trait]
+impl FileOps for RealFileOps {
+    async fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+        tokio::fs::rename(from, to).await
+    }
+
+    async fn exists(&self, path: &Path) -> bool {
+        tokio::fs::try_exists(path).await.unwrap_or(false)
+    }
+
+    async fn remove(&self, path: &Path) -> std::io::Result<()> {
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+}
 
 /// What the sink does with the bytes.
 ///
@@ -43,7 +102,10 @@ pub(crate) trait DownloadSink: Send {
     /// Flush and fsync. Called once, after the last chunk and before the replace.
     async fn finish(&mut self) -> Result<(), String>;
     /// Give up: the sink must leave no temporary file behind.
-    async fn abandon(&mut self);
+    ///
+    /// Returns the cleanup failure when the temp file could not be removed, so the
+    /// caller can report that instead of claiming a clean abort.
+    async fn abandon(&mut self) -> Option<String>;
 }
 
 /// Where the bytes go and how the target is replaced.
@@ -79,19 +141,53 @@ impl DownloadTarget {
             backup: directory.join(format!(".{name}.{BACKUP_MARKER}.{unique}")),
         })
     }
+
+    /// The key two downloads to the same file must agree on.
+    ///
+    /// Canonicalised when the target already exists, so `./a.txt` and `a.txt` and a
+    /// symlinked parent all serialise against each other. When it does not exist yet
+    /// there is nothing to canonicalise, so the parent is resolved instead — the file
+    /// name itself needs no resolution.
+    async fn lock_key(&self) -> String {
+        if let Ok(resolved) = tokio::fs::canonicalize(&self.path).await {
+            return resolved.to_string_lossy().to_string();
+        }
+        let directory = self
+            .path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let resolved_directory = tokio::fs::canonicalize(directory)
+            .await
+            .unwrap_or_else(|_| directory.to_path_buf());
+        let name = self
+            .path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default();
+        resolved_directory.join(name).to_string_lossy().to_string()
+    }
+
+    /// A copy of the three paths, for handing to a spawned task.
+    #[cfg(test)]
+    pub(crate) fn clone_paths(&self) -> Self {
+        Self {
+            path: self.path.clone(),
+            temp: self.temp.clone(),
+            backup: self.backup.clone(),
+        }
+    }
+
+    /// The key this target's commit lock uses. Tests assert the registry entry
+    /// survives while a second commit is queued.
+    #[cfg(test)]
+    pub(crate) async fn lock_key_for_tests(&self) -> String {
+        self.lock_key().await
+    }
 }
 
 fn is_already_exists(error: &std::io::Error) -> bool {
     error.kind() == std::io::ErrorKind::AlreadyExists
-}
-
-/// Remove a path, ignoring "it was not there".
-async fn remove_if_present(path: &Path) -> Result<(), String> {
-    match tokio::fs::remove_file(path).await {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("could not remove {}: {error}", path.display())),
-    }
 }
 
 /// Replace `target` with `temp`, keeping the original until the new bytes are in
@@ -99,49 +195,148 @@ async fn remove_if_present(path: &Path) -> Result<(), String> {
 ///
 /// POSIX `rename` replaces silently. Windows refuses when the destination exists, so
 /// the fallback is: move the original aside, rename the temporary into place, delete
-/// the displaced copy. If the rename then fails, the original is moved back — the
-/// user's file is never the thing that disappears.
-async fn replace_target(target: &DownloadTarget) -> Result<(), String> {
-    match tokio::fs::rename(&target.temp, &target.path).await {
+/// the displaced copy.
+///
+/// ## What the failure branches guarantee
+///
+/// * The temporary file is always removed when the commit fails, whatever the reason.
+///   Before issue #74 a failed commit returned early and left a
+///   `.terminal-download-tmp` file beside the user's file.
+/// * If the promotion fails and the original was moved aside, the original is moved
+///   back. If **that** fails, the backup is kept and the error says where it is —
+///   the one thing that must never happen silently is the user's file ending up
+///   somewhere they do not know about.
+async fn replace_target_with(target: &DownloadTarget, ops: &dyn FileOps) -> Result<(), String> {
+    // Issue #75: serialise the whole commit for this target. The Windows fallback is
+    // three steps, and two commits interleaving them can leave one original stranded
+    // in its backup file. The guard is dropped when this function returns.
+    let _guard = DOWNLOAD_LOCKS.acquire(&target.lock_key().await).await;
+
+    let outcome = match ops.rename(&target.temp, &target.path).await {
         Ok(()) => Ok(()),
-        Err(error)
-            if is_already_exists(&error)
-                || error.kind() == std::io::ErrorKind::PermissionDenied =>
-        {
-            // A platform whose rename will not replace. Displace, then rename.
-            let had_original = tokio::fs::try_exists(&target.path).await.unwrap_or(false);
-            if had_original {
-                remove_if_present(&target.backup).await?;
-                tokio::fs::rename(&target.path, &target.backup)
-                    .await
-                    .map_err(|e| format!("could not move the original aside: {e}"))?;
-            }
-            match tokio::fs::rename(&target.temp, &target.path).await {
-                Ok(()) => {
-                    if had_original {
-                        // A leftover backup is not worth failing the download over;
-                        // the new bytes are already in place and verified.
-                        let _ = remove_if_present(&target.backup).await;
-                    }
-                    Ok(())
-                }
-                Err(rename_error) => {
-                    if had_original {
-                        // Put the original back before reporting, so the failure
-                        // leaves the user exactly where they started.
-                        let _ = tokio::fs::rename(&target.backup, &target.path).await;
-                    }
-                    Err(format!(
-                        "could not replace {}: {rename_error}",
-                        target.path.display()
-                    ))
-                }
-            }
+        Err(error) if is_already_exists(&error) => promote_over_existing(target, ops).await,
+        // Windows reports a plain rename onto an existing file as a permission
+        // error rather than `AlreadyExists`, so the fallback has to cover both.
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            promote_over_existing(target, ops).await
         }
         Err(error) => Err(format!(
             "could not replace {}: {error}",
             target.path.display()
         )),
+    };
+    finish_commit(target, ops, outcome).await
+}
+
+/// Remove the temporary file after a failed commit, and report a failure to do so.
+///
+/// Shared by the real path and the test entry point so the two cannot drift. The
+/// received bytes are worthless once the commit fails — they are either at the
+/// target or nowhere — but a leftover `.terminal-download-tmp` file beside the
+/// user's file is a defect, and a cleanup that silently fails is worse than one that
+/// says so (issue #74).
+async fn finish_commit(
+    target: &DownloadTarget,
+    ops: &dyn FileOps,
+    outcome: Result<(), String>,
+) -> Result<(), String> {
+    let Err(reason) = outcome else {
+        return Ok(());
+    };
+    match ops.remove(&target.temp).await {
+        Ok(()) => Err(reason),
+        Err(cleanup) => Err(format!(
+            "{reason}; the temporary file {} also could not be removed: {cleanup}",
+            target.temp.display()
+        )),
+    }
+}
+
+/// Run the commit, but assume the platform refuses to replace in place.
+///
+/// Exists so the Windows fallback can be driven on a POSIX runner: `replace_target_with`
+/// only reaches it when `rename` answers `AlreadyExists`/`PermissionDenied`, which a
+/// Linux or macOS filesystem will not do for a plain rename. The tests need the branch
+/// itself — displace, promote, restore — not the platform condition that selects it.
+///
+/// Holds the per-target commit lock exactly as the real path does, so a test using
+/// this is also testing the serialisation.
+#[cfg(test)]
+pub(crate) async fn replace_target_as_windows_with(
+    target: &DownloadTarget,
+    ops: &dyn FileOps,
+) -> Result<(), String> {
+    let _guard = DOWNLOAD_LOCKS.acquire(&target.lock_key().await).await;
+    let outcome = promote_over_existing(target, ops).await;
+    finish_commit(target, ops, outcome).await
+}
+
+/// The Windows-shaped branch: move the original aside, promote, then tidy up.
+///
+/// Reached from `replace_target_with` when the platform's `rename` will not replace
+/// an existing file. Exposed to the crate for tests, which drive it directly because
+/// no POSIX filesystem produces the failure that leads here.
+pub(crate) async fn promote_over_existing(
+    target: &DownloadTarget,
+    ops: &dyn FileOps,
+) -> Result<(), String> {
+    let had_original = ops.exists(&target.path).await;
+    if had_original {
+        // A leftover backup from a previous crash would make the rename below fail;
+        // clearing it is safe because it is not the file the user is looking at.
+        if let Err(error) = ops.remove(&target.backup).await {
+            return Err(format!(
+                "could not clear the stale backup {}: {error}",
+                target.backup.display()
+            ));
+        }
+        if let Err(error) = ops.rename(&target.path, &target.backup).await {
+            return Err(format!(
+                "could not move the original {} aside: {error}",
+                target.path.display()
+            ));
+        }
+    }
+
+    match ops.rename(&target.temp, &target.path).await {
+        Ok(()) => {
+            if had_original {
+                // A leftover backup is not worth failing the download over: the new
+                // bytes are already in place. But say so, because a silent failure
+                // here is a file the user does not know about.
+                if let Err(error) = ops.remove(&target.backup).await {
+                    eprintln!(
+                        "sftp_download: the new file is in place but the displaced \
+                         original {} could not be removed: {error}",
+                        target.backup.display()
+                    );
+                }
+            }
+            Ok(())
+        }
+        Err(promotion_error) => {
+            let promotion = format!(
+                "could not replace {}: {promotion_error}",
+                target.path.display()
+            );
+            if !had_original {
+                // Nothing was displaced, so there is nothing to restore. The target
+                // never existed and still does not.
+                return Err(promotion);
+            }
+            if let Err(restore_error) = ops.rename(&target.backup, &target.path).await {
+                // The one case that must never be silent. The backup is left exactly
+                // where it is — deleting it would destroy the only copy of the
+                // user's file.
+                return Err(format!(
+                    "{promotion}; the original could not be restored to {} \
+                     ({restore_error}) and is still at {}",
+                    target.path.display(),
+                    target.backup.display()
+                ));
+            }
+            Err(promotion)
+        }
     }
 }
 
@@ -157,8 +352,32 @@ pub(crate) async fn receive_download<T, R>(
     target: &DownloadTarget,
     expected_len: Option<u64>,
     reader: &mut R,
+    on_progress: impl FnMut(u64),
+    sink: T,
+) -> Result<u64, String>
+where
+    T: DownloadSink,
+    R: tokio::io::AsyncRead + Unpin,
+{
+    receive_download_with(
+        target,
+        expected_len,
+        reader,
+        on_progress,
+        sink,
+        &RealFileOps,
+    )
+    .await
+}
+
+/// `receive_download` with the filesystem injected. See `FileOps`.
+pub(crate) async fn receive_download_with<T, R>(
+    target: &DownloadTarget,
+    expected_len: Option<u64>,
+    reader: &mut R,
     mut on_progress: impl FnMut(u64),
     mut sink: T,
+    ops: &dyn FileOps,
 ) -> Result<u64, String>
 where
     T: DownloadSink,
@@ -172,13 +391,17 @@ where
             Ok(0) => break,
             Ok(n) => n,
             Err(error) => {
-                sink.abandon().await;
-                return Err(format!("read remote file failed: {error}"));
+                return Err(aborted(
+                    sink.abandon().await,
+                    format!("read remote file failed: {error}"),
+                ))
             }
         };
         if let Err(error) = sink.write(&buffer[..n]).await {
-            sink.abandon().await;
-            return Err(format!("write local file failed: {error}"));
+            return Err(aborted(
+                sink.abandon().await,
+                format!("write local file failed: {error}"),
+            ));
         }
         received += n as u64;
         on_progress(received);
@@ -186,20 +409,36 @@ where
 
     if let Some(expected) = expected_len {
         if received != expected {
-            sink.abandon().await;
-            return Err(format!(
-                "the server sent {received} of {expected} bytes; the download is incomplete"
+            return Err(aborted(
+                sink.abandon().await,
+                format!(
+                    "the server sent {received} of {expected} bytes; the download is incomplete"
+                ),
             ));
         }
     }
 
     if let Err(error) = sink.finish().await {
-        sink.abandon().await;
-        return Err(format!("flush local file failed: {error}"));
+        return Err(aborted(
+            sink.abandon().await,
+            format!("flush local file failed: {error}"),
+        ));
     }
 
-    replace_target(target).await?;
+    // The data is on disk and synced; the sink no longer owns the temp file, so the
+    // commit path is the only thing that can clean it up now. That is why
+    // `replace_target_with` removes it on every failure.
+    replace_target_with(target, ops).await?;
     Ok(received)
+}
+
+/// Attach a cleanup failure to an abort message, so a caller never reports a clean
+/// abort when a temp file was actually left behind.
+fn aborted(cleanup: Option<String>, message: String) -> String {
+    match cleanup {
+        Some(cleanup) => format!("{message}; {cleanup}"),
+        None => message,
+    }
 }
 
 /// The production sink: a temporary file that is synced before it is promoted.
@@ -245,8 +484,15 @@ impl DownloadSink for FileSink {
         Ok(())
     }
 
-    async fn abandon(&mut self) {
+    async fn abandon(&mut self) -> Option<String> {
         self.file = None;
-        let _ = remove_if_present(&self.temp).await;
+        match tokio::fs::remove_file(&self.temp).await {
+            Ok(()) => None,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => Some(format!(
+                "the temporary file {} could not be removed: {error}",
+                self.temp.display()
+            )),
+        }
     }
 }
