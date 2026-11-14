@@ -1,5 +1,6 @@
 import type { FileItem } from '@/service/ssh'
 import { Download, Edit3, MoreHorizontal, Trash2 } from 'lucide-react'
+import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
@@ -61,6 +62,42 @@ export function FilePaneRow({
   onDelete,
 }: FilePaneRowProps) {
   const { t } = useTranslation()
+
+  /**
+   * The keyboard gets the same two gestures the mouse has.
+   *
+   * The row carried `tabIndex={0}` without an `onKeyDown`, so Tab reached it and
+   * then nothing worked: a keyboard user could move the highlight through a file
+   * list but could not select a file or open a directory.
+   *
+   *   - **Space** selects, like a click.
+   *   - **Enter** opens, like a double click (which for this table means navigate
+   *     into a directory; the pane decides, the row only reports).
+   *
+   * Everything else is left alone on purpose. Arrows, Home/End and Tab belong to
+   * the table and to focus order; a modified Enter (Cmd/Ctrl) is a shortcut
+   * elsewhere; and a key press that originated inside the action menu must not
+   * bubble into "open the file and close the menu at once".
+   */
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTableRowElement>) => {
+      if (event.target !== event.currentTarget) return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+
+      if (event.key === ' ') {
+        // Space scrolls the pane by default; the row wants it.
+        event.preventDefault()
+        onSelect(file)
+        return
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        onDoubleClick(file)
+      }
+    },
+    [file, onDoubleClick, onSelect],
+  )
+
   return (
     <tr
       className={cn(
@@ -69,8 +106,13 @@ export function FilePaneRow({
       )}
       onClick={() => onSelect(file)}
       onDoubleClick={() => onDoubleClick(file)}
+      onKeyDown={onKeyDown}
       tabIndex={0}
       onFocus={() => onFocus(file)}
+      // `aria-selected` is what tells a screen reader which row the table considers
+      // current. Without it the visual highlight is the only signal, and it is
+      // invisible to assistive tech.
+      aria-selected={selected}
       data-testid="file-row"
     >
       <td className="px-2 sm:px-3 py-1.5">
