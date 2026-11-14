@@ -1,0 +1,35 @@
+{
+  "profile": "release",
+  "label": "release",
+  "platform": "darwin",
+  "binary": "src-tauri/target/release/terminal",
+  "binaryBytes": 34390448,
+  "binarySha256": "813455d21b4c79130b92c4bc2548f912500e63cf08bb4dfede3b441a6fc51969",
+  "commit": "f5c0434bfa4052e3b206ef85c593ba8aad8fb46b",
+  "symbols": {
+    "platform": "macos",
+    "status": "PASS",
+    "artifact": "symbols/release/terminal.dSYM",
+    "dsymUuid": "E6DBC00C-2BAF-39C5-AF3A-87EE8E9BD293",
+    "binaryUuid": {
+      "ok": true,
+      "status": 0,
+      "stdout": "UUID: E6DBC00C-2BAF-39C5-AF3A-87EE8E9BD293 (arm64) src-tauri/target/release/terminal",
+      "stderr": ""
+    },
+    "uuidMatches": true,
+    "bytes": 8704000
+  },
+  "pairingComplete": true,
+  "otherPlatforms": [
+    {
+      "platform": "linux",
+      "status": "NOT_RUN"
+    },
+    {
+      "platform": "windows",
+      "status": "NOT_RUN",
+      "reason": "PDB is produced by the MSVC linker on Windows; not buildable from this host"
+    }
+  ]
+}

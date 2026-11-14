@@ -276,6 +276,27 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+      # `--all-features` includes `custom-protocol`, which makes
+      # `generate_context!` embed `frontendDist` instead of falling back to a dev
+      # server. That macro reads `../dist` at compile time and panics when the
+      # directory is absent: "The `frontendDist` configuration is set to
+      # \"../dist\" but this path doesn't exist". This job never built the
+      # frontend, so it must now do so — the dependency is real, not avoidable by
+      # order of steps: without `custom-protocol` the crate would compile to a
+      # binary that cannot render (grey window), which is what this gate exists
+      # to prevent. A bare `vite build` is enough; the budget check is the
+      # frontend job's business.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the frontend that `custom-protocol` embeds
+        run: pnpm --filter=@terminal/frontend build
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings

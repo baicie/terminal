@@ -1425,6 +1425,104 @@ UX-1c 引入的，但 Dock 让它们从「偶尔」变成「一天几十次」�
 - 本分支**未碰** `Cargo.toml`/`custom-protocol`/`release-*`/证据文件
   （设计包要求不与 PR #43 重叠）
 
+### Terminal Next - 独立集成验收与最终审查 🟡 判定 FAIL（RC 准入）
+
+基线 `main = 1a24eed`，独立 Release Gatekeeper 视角，不采信实现者总结，
+每条结论回到源码 `file:line` 与实跑结果。详见
+`docs/design/terminal-next/integrated-acceptance-report.md`。
+
+- ✅ **本地全量门禁实跑退出码 0**：前端 240 文件 / 2160 项、Team Server 27/124、
+  Rust 391 passed、scripts 398 项、source-size 674、bundle 624.71/628 KB、
+  `cargo fmt --check` / `clippy -D warnings` / typecheck / 证据门禁 0 problem
+- ✅ **真实 SSH E2E 亲自执行**：3 文件 / **14 项全通过**（真实 OpenSSH fixture），
+  覆盖 IdentityFile 登录、两跳 ProxyJump、Vault 解析器→真实 sshd、
+  24 MB 字节通路与连接存活
+- ✅ **证据链复核有效**：HEAD 实算指纹 = manifest = `8129680b…`（`MATCH: true`）；
+  manifest 的 commit `51599bca` 虽非 main 祖先，但与 main 在**全部指纹路径上内容一致**
+- 🔴 **本仓库没有 LLM Agent**：`src-tauri/src/agent.rs` 是 **SSH Agent 协议（RFC 4716）**；
+  全仓无 `rig-core`/`openai`/`anthropic`/`tool_call`/`composer`；`04-rust-rig-ai.md` 是 Draft。
+  任务书 12 个竞态场景中 8 个、8 项安全检查中 3 项无对象，判 **NOT_APPLICABLE**（非 NOT_RUN）
+- 🔴 **P0-1 IPC 秘密读取面**：`vault_get(任意 key)` + `fs:allow-read/write-text-file`
+  **无 `fs:scope`** + `sql:allow-*`。`session-lock-safety.md` §3 只记了 plugin-sql，
+  未记 `vault_get` 与 fs scope，实际攻击面比该文档更大
+- 🔴 **P0-2** updater `pubkey` 仍是 `REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY`；
+  **P0-3** `productName=Termius` / `identifier=com.baicie.termius` 未改
+- 🔴 **P1-1 布局预算漏算左侧栏**：`use-panel-layout.ts` 只传 `RAIL+SEPARATOR=52px`，
+  实际左栏 176–420px。1024px + 420px 左栏时终端只剩 **33 列**（下限 60）。
+  `ux1-acceptance-hardening.md` 的 INV-12「PASS」**不成立**（它只验证了移动端分支）
+- 🔴 **P1-2 `sftp_sessions` 无关闭路径**：唯一清理点是 `shutdown.rs:38` 的进程退出；
+  每次开 SFTP 留一条悬挂引用（底层 handle 已被 `SshConnectionPool::release` 移除）。
+  **零测试覆盖**。与 UX-1i 分支修的前端幂等性是两个不同层的问题
+- 🟡 **P1-3 `PRODUCT_SFTP_E2E = NOT_RUN`**：fixture 无 `Subsystem sftp`，
+  `sftp-transfer-live.e2e.test.ts` 自己写明「SFTP over the fixture fails for a fixture reason」
+- 🟡 **P1-4 `GUI_E2E = NOT_RUN`**：仅 `ux1h-evidence/01-default-workspace.png` 一张静态图
+- **判定**：`WORKSPACE_DAILY_DRIVER_READY=PARTIAL`、`SFTP_TRANSFER_SAFE=PARTIAL`、
+  `RELEASE_SMALL_READY=PARTIAL`、`CROSS_PLATFORM_READY=PARTIAL`、
+  `TERMINAL_NEXT_RC_READY=FAIL`；三项 Agent 判定为 `NOT_APPLICABLE`
+
+### Release Engineering - Updater、身份与原生构建验收 🔴 RC_READY=FAIL
+
+基线 `f5c0434`，Draft PR #43。详见
+`docs/design/terminal-next/release-engineering-report.md` 与
+`release-engineering-evidence/`（脚本生成的实测 JSON，非手填）。
+
+- ✅ **灰屏根因确证并修复**：`tauri-2.12.5/build.rs:253` 是
+  `let dev = !custom_protocol;`，本 crate 的 `[features]` 从来没有
+  `custom-protocol`。裸 `cargo build --release` 因此以 dev 模式编译、
+  不嵌入 `frontendDist`、JS 从不执行。实验对照：旧 `tauri build` 产物的
+  `build/terminal-*/output` 只有 `desktop`、二进制含 102 个 JS 引用、正常；
+  旧裸 `cargo build` 含 `dev`、**0 个引用**、灰屏；加
+  `--features custom-protocol` 后 102 个引用、正常。
+  **默认 feature 仍为空**，`pnpm tauri build` 本就会加它，CI 与发布链路行为不变
+- ✅ **修复暴露一条被掩盖的构建依赖**：`--all-features` 现在含 `custom-protocol`，
+  `generate_context!` 会真的读 `../dist`，而 `Rust quality` 从不构建前端 →
+  `proc macro panicked: The frontendDist ... path doesn't exist`。
+  本地复现（移走 `dist/` 即 panic，移回即通过）后，在该 job 里加
+  `pnpm install` + `vite build`。不能靠调步骤顺序绕开——不启用该 feature 的
+  产物正是灰屏二进制
+- ✅ **四变体实测（同一 commit、同一 dist）**：`release` 32.80 MiB、
+  `release-strip` 26.82（−18.2%）、`release-lto` 24.46（−25.4%）、
+  `release-strip-lto` **21.54 MiB（−34.3%）**，全部 5/5 前端嵌入。
+  `release-strip-lto` 与既有 `[profile.release-small]` 配置逐字相同。
+  **两条推翻**：LTO 单独优于 strip 单独（此前表述是「LTO 只是锦上添花」）；
+  strip+lto 是 −34.3% 而非两者相加。**仅 macOS arm64 测得，不外推**
+- ✅ **GUI 真机验收（四个变体全部 PASS）**：隔离 `HOME` 启动，
+  `CGWindowListCopyWindowInfo` 取窗口 ID 后 `screencapture -l` 按窗口截图，
+  `ps -ax -o pid,ppid` 确认真的拉起 `/bin/zsh`。四张截图均显示
+  `Connected · 142×43` 与 shell 提示符
+- ⚠️ **差点误判**：第一次截 `release-strip` 是「Rail 在、tab 在、终端空白」，
+  像是 strip 特有缺陷。实际是首次启动 8 秒 fallback 空窗
+  （`08:17:56.780` startup → `08:17:59.977` fallback-opened，3.2 s）。
+  用 `release` 在同条件对照后排除。**后续 GUI 验收必须等过该 deadline**
+- ✅ **真实 SFTP 补上 `PRODUCT_SFTP_E2E=NOT_RUN`**：根因两层 ——
+  `daemonConfiguration()` 从未写 `Subsystem` 行，且 `authorized_keys` 的
+  `command="<wrapper>"` **劫持所有会话**（含 sftp 子系统请求）。新增 opt-in
+  `enableSftp`：写 `Subsystem` 行 + wrapper 把 `SSH_ORIGINAL_COMMAND` 交还
+  `sftp-server`。新测试 3/3（子系统可用、4 MiB 上传 SHA-256 双侧一致、
+  覆盖替换无残留），**既有 21 项 fixture 测试行为不变**
+- ✅ **符号配对**：新增 `archive-symbols.mjs`，`dwarfdump --uuid` 验证
+  二进制与 dSYM 的 UUID 一致（不匹配的 dSYM 比没符号更糟）。四变体
+  `pairingComplete` 全 true。Linux/Windows 显式 `NOT_RUN`
+- 🔴 **Updater 策略 A：明确不启用**。`pubkey` 保持占位符不改（当前已 fail-closed）。
+  密钥对其实早已存在（`~/.tauri/terminal-updater.key`，真实 minisign key
+  `2705CA64B67A87D7`），私钥**从未入过库**。不启用理由：OS 层无签名 →
+  更新后 Gatekeeper 拦下 = 应用打不开；身份即将变更；无稳定用户群。
+  转 B 的 6 项前置条件写在报告 §2.3
+- 🔴 **身份迁移只给方案不执行**。关键发现：**`vault.json` 不在 identifier
+  派生路径下**（`vault.rs:939` 用 `dirs::config_dir()/terminal/`），而
+  `terminal.db`/`backups/`/`instance.lock`/`.window-state.json`/WebKit/Caches
+  全由 `app_config_dir()` 派生。本机实测已有**五个** identifier 目录，
+  证明改 identifier 什么都不迁移。8 步迁移时序与 8 处必须同批更新的 CI 断言见报告 §3
+- ✅ **六份验收证据已按官方流程重采**：`Cargo.toml` 与
+  `terminal-smoke-sshd.mjs` 都在 `FINGERPRINT_PATHS` 内，指纹
+  `8129680b…` → `b94a26ee…`。按 `workflow-rules.md` §1 顺序执行：
+  冻结源码（`85a5b04`）→ `workflow_dispatch` → run `43400523659` 三平台全 success
+  → 下载 → 门禁 0 problem。**未改旧 manifest、未改指纹路径、未手填数字**
+- **判定**：`DEVELOPMENT_BUILD_READY=PASS`、`SIGNED_RELEASE_READY=FAIL`、
+  `UPDATER_READY=NOT_RUN`、`RELEASE_SMALL_GUI_READY=PASS`、
+  `IDENTITY_MIGRATION_READY=NOT_RUN`、`CROSS_PLATFORM_BUILD_READY=PASS`、
+  `CROSS_PLATFORM_RUNTIME_READY=PARTIAL`、`RC_READY=FAIL`
+
 ### Terminal Next UX-0 - 设计交付 ✅ 已合入（PR #34 → `f576680`）
 
 `docs/design/terminal-next/` 六篇：架构 ADR（含 16 条不变量与两处对设计包的修正）、
