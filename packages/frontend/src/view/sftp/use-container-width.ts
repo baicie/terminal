@@ -46,6 +46,24 @@ export function useContainerWidth(): ContainerWidth {
       if (Number.isFinite(next) && next > 0) setWidth(next)
     })
     observer.observe(element)
+
+    // Measure once immediately, before the first callback.
+    //
+    // `ResizeObserver` only fires on a *change*, and a container that mounts at its
+    // final size never changes. The `/sftp` page is exactly that case: it mounts at
+    // full width and stays there, so no callback ever arrived, `width` stayed `null`,
+    // and `pansNeedSingleColumn(null)` treated a 1370px container as narrow. The dock
+    // hid this because it mounts at 300px and is then resized by the layout decision,
+    // which does produce a callback.
+    //
+    // Reading the content box here keeps the unit identical to `contentRect`.
+    const initial = element.clientWidth
+    const style = getComputedStyle(element)
+    const horizontalPadding =
+      Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight)
+    const measured = initial - (Number.isFinite(horizontalPadding) ? horizontalPadding : 0)
+    if (Number.isFinite(measured) && measured > 0) setWidth(measured)
+
     return () => observer.disconnect()
   }, [])
 
@@ -56,12 +74,17 @@ export function useContainerWidth(): ContainerWidth {
  * Below this, two file panes side by side leave each pane too narrow to show a
  * usable file name.
  *
- * 520 CSS px: two panes of ~230px inside the 24px of padding and the 12px gap, which
- * fits a name column plus a size column without truncating every entry to three
- * characters. The dock is 300, so it is always single-pane; the full `/sftp` view at
- * any sane window is always two.
+ * **Measured against the same box the observer reports.** `entry.contentRect.width`
+ * is the content box: it already excludes the pane's own padding. The budget is
+ * therefore 496 content px = 520 outer px − 24 px of horizontal padding (`p-3` is
+ * 12 px each side). Stating it as 520 while comparing content widths made the
+ * switch happen ~24 px later than the number claimed.
+ *
+ * Inside 496 content px the two panes are ~230px each after the 12px gap, which fits
+ * a name column plus a size column. The dock is 300 outer (276 content), so it is
+ * always single-pane; the full `/sftp` view at any sane window is always two.
  */
-export const TWO_PANE_MIN_WIDTH = 520
+export const TWO_PANE_MIN_WIDTH = 496
 
 export function pansNeedSingleColumn(width: number | null): boolean {
   // Unmeasured counts as narrow: rendering two panes and then collapsing is a

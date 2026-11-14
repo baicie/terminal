@@ -34,7 +34,7 @@ use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::OpenFlags;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use std::sync::{Arc, Mutex as StdMutex, OnceLock, Weak};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 
@@ -382,24 +382,75 @@ fn split_remote_path(path: &str) -> Result<(String, String), UploadError> {
     Ok((directory, name))
 }
 
-fn upload_locks() -> &'static StdMutex<HashMap<String, Arc<AsyncMutex<()>>>> {
-    static LOCKS: OnceLock<StdMutex<HashMap<String, Arc<AsyncMutex<()>>>>> = OnceLock::new();
+/// `Weak`, so the map never keeps a mutex alive past its last upload.
+fn upload_locks() -> &'static StdMutex<HashMap<String, Weak<AsyncMutex<()>>>> {
+    static LOCKS: OnceLock<StdMutex<HashMap<String, Weak<AsyncMutex<()>>>>> = OnceLock::new();
     LOCKS.get_or_init(|| StdMutex::new(HashMap::new()))
 }
 
+/// Drop registry entries whose mutex is gone.
+///
+/// Called on the acquire path, which is the only place a dead key can be observed
+/// as harmless. A `Weak` that fails to upgrade means no upload holds or awaits that
+/// destination any more, so the key is pure residue.
+fn prune_dead_locks(locks: &mut HashMap<String, Weak<AsyncMutex<()>>>) {
+    locks.retain(|_, weak| weak.strong_count() > 0);
+}
+
+/// Per-destination serialisation for staged uploads.
+///
+/// ## The two failures this has to avoid at once
+///
+/// **Losing mutual exclusion.** The entry must not be forgotten while any upload
+/// still holds or is waiting on that destination's mutex. Forgetting it lets the
+/// next caller build a *fresh* mutex for the same path, and two uploads then
+/// interleave their staging/backup/rename steps — exactly what the serialisation
+/// exists to prevent.
+///
+/// **Growing without bound.** Every destination that ever uploaded used to leave its
+/// entry behind forever. Measured: 200 sequential uploads to distinct paths left
+/// 203 entries. A long-running app accumulates one per file it ever touched.
+///
+/// ## Why the old check never fired
+///
+/// It read `Arc::strong_count(&lock) == 2` after taking the guard. At that moment
+/// there are always **three** strong references — the registry's, the local `lock`
+/// binding, and the one the `OwnedMutexGuard` holds. Measured with a probe: the
+/// value is 3, always. The branch was dead code, which is why the registry only
+/// ever grew.
+///
+/// ## Why a `Weak` registry
+///
+/// Storing `Weak<Mutex>` makes the two requirements the same requirement. The
+/// registry does not keep the mutex alive; the uploads do. So:
+///
+///   * a mutex disappears exactly when its last upload finishes — no counter to get
+///     wrong, no threshold to tune;
+///   * every caller that *is* holding or waiting on it holds a strong reference, so
+///     the mutex cannot vanish underneath them;
+///   * the map still needs pruning of dead keys, which happens on each call.
+///
+/// That is the whole mechanism. It is not a threshold on a reference count; it is
+/// the language's own ownership rule doing the work.
 async fn upload_lock(path: &str) -> OwnedMutexGuard<()> {
-    let lock = {
+    let mutex = {
         let mut locks = upload_locks().lock().expect("upload lock registry");
-        Arc::clone(locks.entry(path.to_string()).or_default())
+        // Drop any entry whose mutex no longer exists, then take or create ours.
+        // Pruning happens here rather than on a timer: the only time a dead key can
+        // appear is between an upload finishing and the next one arriving.
+        prune_dead_locks(&mut locks);
+        match locks.get(path).and_then(Weak::upgrade) {
+            Some(existing) => existing,
+            None => {
+                let fresh = Arc::new(AsyncMutex::new(()));
+                locks.insert(path.to_string(), Arc::downgrade(&fresh));
+                fresh
+            }
+        }
     };
-    let guard = Arc::clone(&lock).lock_owned().await;
-    // Drop the registry entry once this guard is the only holder, so distinct
-    // destinations do not accumulate for the lifetime of the process.
-    let mut locks = upload_locks().lock().expect("upload lock registry");
-    if Arc::strong_count(&lock) == 2 {
-        locks.remove(path);
-    }
-    guard
+    // The strong reference travels with the future, so the mutex stays alive for as
+    // long as anyone is waiting on it.
+    mutex.lock_owned().await
 }
 
 fn cancelled_transfers() -> &'static StdMutex<HashSet<String>> {

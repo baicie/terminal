@@ -3,6 +3,7 @@ import { sshService } from '@/service/ssh'
 import { toast } from '@/components/ui/sonner'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { registerSession } from '@/service/sftp-session-claim'
 import { isSessionBusy } from '@/service/sftp-transfer-session'
 import { releaseOrDefer } from './sftp-deferred-release'
 import { useSftpFileOperations } from './use-sftp-file-operations'
@@ -145,6 +146,10 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
           void sshService.close(connResult.sessionId).catch(() => undefined)
           return null
         }
+        // Register before anything can claim it. The claim module is an allowlist:
+        // an id it has never seen is refused, which is how a closed connection
+        // stays closed without keeping a tombstone for it.
+        registerSession(connResult.sessionId)
         sessionRef.current = { key: expectedKey, id: connResult.sessionId }
         setSessionId(connResult.sessionId)
         return connResult.sessionId

@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-11-14T05:33:54.946Z",
+  "ranAt": "2026-11-14T16:16:59.885Z",
   "platform": {
     "platform": "darwin",
     "arch": "arm64",
@@ -9,7 +9,7 @@
     "path": "src-tauri/target/release/terminal"
   },
   "isolatedProfile": {
-    "path": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-e2e-79492-1794634322890",
+    "path": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-e2e-45413-1794672776684",
     "variables": [
       "HOME",
       "USERPROFILE",
@@ -20,6 +20,6 @@
       "XDG_CACHE_HOME"
     ]
   },
-  "exitCode": 1,
-  "verdict": "FAIL"
+  "exitCode": 0,
+  "verdict": "PASS"
 }
