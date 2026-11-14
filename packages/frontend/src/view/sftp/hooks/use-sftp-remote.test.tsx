@@ -124,6 +124,48 @@ describe('useSftpRemote host isolation', () => {
     await waitFor(() => expect(mocks.close).toHaveBeenCalledWith('sess-a'))
   })
 
+  it('does not register a session whose sftp channel failed to open', async () => {
+    // The registry is an allowlist, so anything registerSession records becomes
+    // claimable. A connection that never reached SFTP must leave nothing behind —
+    // otherwise a later transfer could take a claim on a session that does not work,
+    // and the failure would surface as a raw backend error instead of "reconnect".
+    const { __resetSessionClaimsForTests, __trackedSessionCount, claimSession } =
+      await import('@/service/sftp-session-claim')
+    __resetSessionClaimsForTests()
+
+    mocks.sftpConnect.mockResolvedValue({ success: false, message: 'channel refused' })
+    const { result } = renderHook(() => useSftpRemote({ activeHost: HOST_A }))
+    await act(async () => {
+      await result.current.loadDir('/')
+    })
+
+    expect(result.current.sessionId).toBeNull()
+    // The SSH session was torn down…
+    expect(mocks.close).toHaveBeenCalledWith('sess-a')
+    // …and nothing was registered, so the id stays unclaimable.
+    expect(__trackedSessionCount()).toBe(0)
+    expect(claimSession('sess-a').ok).toBe(false)
+  })
+
+  it('does not register a session whose ssh connection failed', async () => {
+    const { __resetSessionClaimsForTests, __trackedSessionCount } = await import(
+      '@/service/sftp-session-claim'
+    )
+    __resetSessionClaimsForTests()
+
+    mocks.createSshSessionPassword.mockResolvedValue({
+      success: false,
+      message: 'auth rejected',
+    })
+    const { result } = renderHook(() => useSftpRemote({ activeHost: HOST_A }))
+    await act(async () => {
+      await result.current.loadDir('/')
+    })
+
+    expect(result.current.sessionId).toBeNull()
+    expect(__trackedSessionCount()).toBe(0)
+  })
+
   it('sends file operations only to the session of the current host', async () => {
     mocks.sftpList.mockResolvedValue({ success: true, files: [file('b.txt')] })
     const { result, rerender } = renderHook(

@@ -32,6 +32,7 @@ import {
   type TransferRuntime,
 } from './sftp-transfer'
 import type { SftpProgressPayload, TransferArgs } from './sftp-transfer-types'
+import { __resetSessionClaimsForTests, registerSession } from './sftp-session-claim'
 
 type Kind = SftpProgressPayload['kind']
 
@@ -136,6 +137,12 @@ beforeEach(() => {
   __resetProgressListenerForTests()
   configureTransferRuntime(null)
   vi.clearAllMocks()
+  // The claim module is an allowlist: a transfer only starts on a session the app
+  // registered. These cases exercise the queue, not admission, so they register the
+  // ids they use instead of relying on the pre-#73 behaviour where any id was
+  // admitted. `s1` is the session every case uses unless it names its own.
+  __resetSessionClaimsForTests()
+  registerSession('s1')
 })
 
 // ---------------------------------------------------------------------------
@@ -320,6 +327,9 @@ describe('progress / done / error 事件', () => {
     await drain(5)
     expect(runSlotIds()).toHaveLength(0)
 
+    // A reconnect produces a fresh session id, which the hook registers before
+    // anything can claim it.
+    registerSession('session-after-reconnect')
     await enqueueUploads(2, 'session-after-reconnect')
     await flush()
     expect(byStatus('running')).toHaveLength(2)

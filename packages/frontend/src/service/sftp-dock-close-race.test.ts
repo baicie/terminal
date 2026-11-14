@@ -26,11 +26,13 @@ const {
 
 const {
   __resetSessionClaimsForTests,
-  __liveSessionCount,
+  __trackedSessionCount,
+  __claimedSessionCount,
   beginSessionClose,
   claimCountForSession,
   claimSession,
   forgetSession,
+  isSessionClosing,
   registerSession,
 } = await import('./sftp-session-claim')
 
@@ -62,6 +64,10 @@ describe('closing the dock while a transfer is being set up', () => {
     __resetDeferredReleases()
     useTransferQueue.setState({ transfers: [] })
     ssh.close.mockClear()
+    // The claim module is an allowlist: an id nobody registered is refused before
+    // any of these cases reach the interesting part. `s1` is the session the panel
+    // opened in these scenarios; `s2` is registered by the case that needs it.
+    registerSession('s1')
   })
 
   afterEach(() => {
@@ -188,23 +194,31 @@ describe('closing the dock while a transfer is being set up', () => {
     // Two separate requirements, and they pull in opposite directions:
     //   * the id must stay refused — a late upload must not reach a dead connection;
     //   * no *claim* bookkeeping may survive a settled transfer.
-    // Issue #51 settled the first; the bounded closed-history in the claim module
-    // settles the second without giving up the first.
+    // Issue #73 settled both at once: the entry is deleted on completion, so the id
+    // is refused because it is absent rather than because it is remembered.
     expect(claimSession('s1').ok).toBe(false)
     expect(claimCountForSession('s1')).toBe(0)
-    expect(__liveSessionCount()).toBe(0)
+    expect(__trackedSessionCount()).toBe(0)
   })
 
-  it('a session is claimable again only if a new connection registers the id', async () => {
+  it('a closing id cannot be reopened by registering it again', async () => {
     // The refusal has to exist for its window: between `beginSessionClose` and the
     // actual close, new work must not be admitted.
     beginSessionClose('s1')
     expect(claimSession('s1').ok).toBe(false)
 
     // A real reconnect gets a fresh `ssh-<uuid>`, so nothing the user does depends
-    // on this id coming back. `registerSession` is the explicit way back, and it is
-    // only correct for an id that is genuinely live again.
+    // on this id coming back. A second `registerSession` for the same id can only
+    // be a duplicate call — the hook registers once, from the `sftpConnect` that
+    // created it — and resurrecting a close in flight would let the in-flight
+    // `session_close` drop the connection under whatever just claimed it.
     registerSession('s1')
+    expect(claimSession('s1').ok).toBe(false)
+    expect(isSessionClosing('s1')).toBe(true)
+
+    // The only sanctioned way back is a cancelled release, which the caller must
+    // ask for explicitly.
+    forgetSession('s1')
     expect(claimSession('s1').ok).toBe(true)
   })
 
@@ -246,6 +260,8 @@ describe('closing the dock while a transfer is being set up', () => {
   })
 
   it('a host switch mid-preparation does not close the old connection', async () => {
+    // The old connection is a real one the panel registered before this case.
+    registerSession('old')
     const gate = deferred()
     configureTransferRuntime({
       available: true,
@@ -275,20 +291,20 @@ describe('closing the dock while a transfer is being set up', () => {
     // Two requirements that pull against each other, and the assertion has to hold
     // both at once:
     //
-    //   * issue #51: a closed id must stay refused, so something reasonable has to
-    //     remember that it closed;
-    //   * the earlier leak: that memory must not grow with the number of
-    //     connections the app has ever made.
+    //   * a closed id must stay refused, so a late upload cannot reach a dead
+    //     connection;
+    //   * that refusal must not cost memory proportional to uptime.
     //
-    // 1000 cycles is under the 4096 cap, so the history is 1000 entries and no claim
-    // bookkeeping survives any of them. What must be zero is the live part.
+    // Issue #73 removed the tension: a completed close deletes the entry, so the
+    // id is refused because it is *absent*. Nothing is remembered, and nothing
+    // needs a cap.
     configureTransferRuntime({
       available: true,
       installProgressListener: async () => undefined,
       run: vi.fn(async () => undefined),
     })
 
-    const { __closedHistorySize } = await import('./sftp-session-claim')
+    const { __trackedSessionCount } = await import('./sftp-session-claim')
     for (let index = 0; index < 1000; index += 1) {
       const id = `ssh-cycle-${index}`
       registerSession(id)
@@ -299,10 +315,12 @@ describe('closing the dock while a transfer is being set up', () => {
     await flush()
 
     // No claim survived a settled transfer.
-    expect(__liveSessionCount()).toBe(0)
-    // The closed history is bounded by the cap, not by uptime.
-    expect(__closedHistorySize()).toBeLessThanOrEqual(4096)
-    // And the very first id is still refused: nothing reopened it.
+    expect(__claimedSessionCount()).toBe(0)
+    // And no session entry survived its close: the registry tracks open
+    // connections, not the number the app has ever opened. `s1` is the one the
+    // `beforeEach` registered and this case never closed — the only entry left.
+    expect(__trackedSessionCount()).toBe(1)
+    // The very first id is still refused — because nothing holds an entry for it.
     expect(claimSession('ssh-cycle-0').ok).toBe(false)
   })
 

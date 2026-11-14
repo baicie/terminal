@@ -1,5 +1,5 @@
 /**
- * Session claims — who is using a session right now, and which sessions are alive.
+ * Session claims — who is using a session, and which sessions are alive.
  *
  * ## The window claims close
  *
@@ -9,48 +9,62 @@
  * is taken **synchronously, before the first `await`**, so the request owns its
  * session from the moment the user asked for it.
  *
- * ## The window the registry closes
+ * ## The lifecycle
  *
- * `sshService.close()` → `invoke('session_close')` is asynchronous. The previous
- * version deleted the closing marker synchronously, right after firing the close,
- * so a late `uploadFile()` during that round trip found no record, was admitted,
- * and then had the connection closed underneath it by the close that was already
- * in flight.
+ * ```
+ *            registerSession(id)         beginSessionClose(id)
+ *   UNKNOWN ─────────────────▶ ACTIVE ────────────────────▶ CLOSING
+ *      ▲                         ▲                             │
+ *      │                         └────── forgetSession(id) ─────┤
+ *      └──────────────── completeSessionClose(id) ◀─────────────┘
+ * ```
  *
- * The fix is not a longer-lived tombstone — that grows without bound, which is what
- * the previous round had to fix in the other direction. It is an **allowlist**:
+ * `UNKNOWN` is not a stored state — it is the absence of an entry. A claim is
+ * granted only to an id this module has been told is live, so the registry holds
+ * live connections plus in-flight closes and nothing else: no tombstone, no history
+ * cap, nothing that can evict a dead id back into being claimable. A retired id is
+ * refused because it is *absent*, which is why 4097 connect/close cycles leave an
+ * empty registry rather than 4096 remembered ids.
  *
- *   * a session id is claimable only while it is registered as active;
- *   * `beginSessionClose` moves it to closing, where claims are refused;
- *   * only when the backend confirms does it leave both sets;
- *   * after that it is *unknown*, and unknown is refused.
+ * `forgetSession` is the one transition back toward claimable, and it restores what
+ * the session was before the close was requested: a registered session returns to
+ * `ACTIVE`; one that never registered has nothing to restore and is retired. See
+ * `Entry.resumable`.
  *
- * So the map holds live connections and in-flight closes, and nothing else. An
- * unknown id is refused by construction rather than by remembering that it died.
- *
- * ## Why failing to delete matters
- *
- * If `session_close` rejects, the id stays in closing. That is deliberate: the
- * backend may or may not have torn the connection down, and admitting a transfer
- * onto a connection in that state is exactly the failure this module exists to
- * prevent. A new connection gets a new `ssh-<uuid>` from
- * `src-tauri/src/session/ssh.rs`, so nothing the user does depends on the old id
- * becoming usable again.
+ * If `session_close` rejects, the id stays `CLOSING`: the backend may or may not
+ * have torn the connection down, and admitting a transfer onto it is exactly what
+ * this module prevents. A new connection gets a new `ssh-<uuid>` from
+ * `src-tauri/src/session/ssh.rs`, so nothing depends on the old id reviving.
  */
 
+/** A session this module knows about. `UNKNOWN` is the absence of an entry. */
+const ACTIVE = 'active'
+const CLOSING = 'closing'
+
+export type SessionState = typeof ACTIVE | typeof CLOSING
+
 /**
- * Sessions whose close has been requested, or that have been confirmed closed.
+ * One entry per live connection or in-flight close.
  *
- * One set rather than two: from a claim's point of view both states answer the same
- * thing — refuse. Keeping them apart would mean a status flag no caller needs and a
- * second thing to keep in sync.
+ * `resumable` records **what the session was before the close was requested**, and
+ * exists for exactly one decision: `forgetSession`, the cancelled-release path.
+ * Cancelling a close returns the session to what it was — `ACTIVE` if a real
+ * connection had registered it, and nothing at all if it was never registered.
+ * Without the flag those two cases are indistinguishable, and the safe-looking
+ * choice (reopen) turns a cancel request for an id nobody vouched for into a live
+ * session — which is the allowlist bypass this module exists to prevent.
  *
- * Bounded by `CLOSED_HISTORY_LIMIT`. Session ids are `ssh-<uuid>` and never reused,
- * so an evicted id can never be seen again; the cap exists so a very long session
- * cannot grow this without limit. Eviction is oldest-first.
+ * It is not a tombstone: the flag lives and dies with its entry, so nothing here
+ * grows with the number of connections the app has ever made.
  */
-const closed = new Map<string, true>()
-/** Outstanding claim tokens, per session. */
+interface Entry {
+  state: SessionState
+  /** Only meaningful while `state === CLOSING`. */
+  resumable: boolean
+}
+
+const sessions = new Map<string, Entry>()
+/** Outstanding claim tokens, per session. Never outlives its session entry. */
 const claims = new Map<string, Set<string>>()
 
 let nextToken = 0
@@ -65,11 +79,26 @@ export type ClaimResult =
  * Record a session as live.
  *
  * Called by the SFTP hook once `sftpConnect` succeeds — the one place that knows a
- * session id is real. Without this the allowlist would refuse everything.
+ * session id is real. Without this the allowlist refuses everything, which is the
+ * correct answer for an id nobody vouched for.
+ *
+ * This is the **only** way an id becomes claimable. `forgetSession` restores a
+ * session that was already live; it cannot create one.
+ *
+ * The durability of "a closed id stays closed" therefore rests on session ids never
+ * being reused, which holds: `src-tauri/src/session/ssh.rs` mints `ssh-<uuid>` per
+ * connection. If ids were ever recycled, this call would be the one to revisit.
  */
 export function registerSession(sessionId: string): void {
-  // A re-registered id means a new connection reusing the name; treat it as live.
-  closed.delete(sessionId)
+  // A session on its way out must not be resurrected by a repeated call. The hook
+  // registers once, from the `sftpConnect` that created the id; a second call can
+  // only be a duplicate, and the one thing it must never do is turn a close in
+  // flight back into a live connection.
+  //
+  // Registering an already-ACTIVE id is a no-op too, which keeps `resumable`
+  // meaningful: it only ever describes a real transition.
+  if (sessions.has(sessionId)) return
+  sessions.set(sessionId, { state: ACTIVE, resumable: false })
 }
 
 /**
@@ -77,12 +106,15 @@ export function registerSession(sessionId: string): void {
  *
  * Synchronous on purpose: every caller must invoke this before its first `await`,
  * because the point is to be visible during that await. There is no interleaving to
- * lose between the checks and the insert.
+ * lose between the lookup and the insert.
  */
 export function claimSession(sessionId: string): ClaimResult {
-  // Refused while the close is in flight **and** after it completes. That is the
-  // fix: the marker outlives the IPC call instead of dying with it.
-  if (closed.has(sessionId)) return { ok: false, reason: 'closing' }
+  const entry = sessions.get(sessionId)
+  // Two rejections, deliberately distinct so callers can report the right thing:
+  // `unknown` means the app never vouched for this id (a late transfer, a stale
+  // reference); `closing` means it is on its way out.
+  if (entry === undefined) return { ok: false, reason: 'unknown' }
+  if (entry.state === CLOSING) return { ok: false, reason: 'closing' }
 
   nextToken += 1
   const token = `claim-${nextToken}`
@@ -95,6 +127,7 @@ export function claimSession(sessionId: string): ClaimResult {
     ok: true,
     token,
     release: () => {
+      // Idempotent: a double release must not free another holder's claim.
       if (released) return
       released = true
       releaseToken(sessionId, token)
@@ -107,10 +140,10 @@ function releaseToken(sessionId: string, token: string): void {
   if (!tokens) return
   tokens.delete(token)
   if (tokens.size > 0) return
+  // The session entry itself is untouched: it is still registered, and
+  // `hasClaimsForSession` answers from this map alone, so dropping the empty set
+  // keeps the two maps from disagreeing about what exists.
   claims.delete(sessionId)
-  // No tokens and not closing: nothing remembers this id, which is correct — it is
-  // still registered, so `hasClaimsForSession` stays false rather than the id
-  // disappearing from the allowlist.
 }
 
 /**
@@ -136,93 +169,107 @@ export function claimCountForSession(sessionId: string): number {
  * a claim on a connection already on its way out.
  *
  * Returns false when outstanding claims remain, in which case the caller defers.
- * Unknown ids are marked too: a close request for an id the registry never saw still
- * has to refuse later claims for it.
+ *
+ * An id this module has never seen still gets an entry — with `resumable: false`, so
+ * cancelling this close retires the id instead of making it live. Recording the
+ * unknown id is not a leak (the close retires it either way) and it is what makes a
+ * close request for an unknown id refuse claims for it in the interim, instead of
+ * leaving a hole where a straggler could be admitted.
  */
 export function beginSessionClose(sessionId: string): boolean {
-  rememberClosed(sessionId)
+  const previous = sessions.get(sessionId)
+  // `resumable` carries across a repeated close request: only a session that was
+  // live when the *first* close was requested may be restored by a cancel.
+  const wasActive = previous?.state === ACTIVE || previous?.resumable === true
+  sessions.set(sessionId, { state: CLOSING, resumable: wasActive })
   return !hasClaimsForSession(sessionId)
-}
-
-/** How many closed ids to remember. */
-const CLOSED_HISTORY_LIMIT = 4096
-
-/**
- * Record that a session is closing, evicting the oldest entry past the cap.
- *
- * `Map` preserves insertion order, so the first key is the oldest. Evicting is safe
- * because a session id is generated per connection and never reused.
- */
-function rememberClosed(sessionId: string): void {
-  closed.delete(sessionId)
-  closed.set(sessionId, true)
-  while (closed.size > CLOSED_HISTORY_LIMIT) {
-    const oldest = closed.keys().next()
-    if (oldest.done) break
-    closed.delete(oldest.value)
-  }
 }
 
 /**
  * Close confirmed by the backend — retire the id.
  *
- * Removes it from every set. From here a claim is refused as `unknown`, which is the
- * durable answer without a durable record.
+ * Deletes the entry, so the id is `UNKNOWN` from here on and every later claim is
+ * refused with `unknown`. That is the durable answer without a durable record: the
+ * refusal comes from the id being absent, not from remembering that it died.
  */
 export function completeSessionClose(sessionId: string): void {
-  // Keep the closing record: the id must stay refused. Only the claim bookkeeping
-  // goes, and by now there is none.
+  sessions.delete(sessionId)
+  // By construction there are no claims left — the close only proceeds at zero — but
+  // a token released after its entry was dropped must be a no-op rather than an
+  // orphan, so drop the set explicitly instead of relying on that.
   claims.delete(sessionId)
 }
 
 /**
  * Forget a session that is staying (a cancelled release).
  *
- * The connection is still alive, so the id goes back to being claimable. Only for
- * callers that have decided the close was a mistake; the completed path must use
- * `completeSessionClose` instead.
+ * Only a session that is currently `CLOSING` **and was live before the close was
+ * requested** goes back to being claimable. The two refusals are deliberate:
+ *
+ *   * an `UNKNOWN` id is not resurrected — that would turn "nothing vouched for
+ *     this connection" into "this connection is live" on the strength of a cancel;
+ *   * an id whose close already completed is not resurrected either — the
+ *     connection is gone, and the entry with it.
+ *
+ * Today the hook does not call this: it keeps a session it cannot release. It
+ * exists for a caller that does decide the connection stays, so that decision has
+ * one correct way to undo the marker.
  */
 export function forgetSession(sessionId: string): void {
-  closed.delete(sessionId)
+  const entry = sessions.get(sessionId)
+  if (entry?.state !== CLOSING) return
+  if (!entry.resumable) {
+    // The close was requested for an id that was never live. There is nothing to
+    // restore, so retire it: the cancelled close still ends with the id refused.
+    sessions.delete(sessionId)
+    claims.delete(sessionId)
+    return
+  }
+  sessions.set(sessionId, { state: ACTIVE, resumable: false })
   if (!hasClaimsForSession(sessionId)) claims.delete(sessionId)
 }
 
 /** Is this session marked closing (including while the close is in flight)? */
 export function isSessionClosing(sessionId: string): boolean {
-  return closed.has(sessionId)
+  return sessions.get(sessionId)?.state === CLOSING
 }
 
-/** Is this id registered as a live session? */
+/**
+ * Is this id registered as a live session?
+ *
+ * `false` for both `CLOSING` and `UNKNOWN`. Named for the question callers ask —
+ * "may I use this connection?" — rather than "is it not closing?", which is the
+ * reading that made an unknown id answer `true` before.
+ */
 export function isSessionActive(sessionId: string): boolean {
-  return !closed.has(sessionId)
+  return sessions.get(sessionId)?.state === ACTIVE
 }
 
 /** Test-only: drop every set. */
 export function __resetSessionClaimsForTests(): void {
-  closed.clear()
+  sessions.clear()
   claims.clear()
   nextToken = 0
 }
 
-/** Test-only: ids that are registered, claimed or closing. */
-export function __claimedSessionCount(): number {
-  return new Set([...closed.keys(), ...claims.keys()]).size
+/**
+ * Test-only: how many sessions this module holds an entry for.
+ *
+ * Bounded by live connections plus in-flight closes. A completed close removes its
+ * entry, so this returns to zero after a connect/close cycle and does not grow with
+ * the number of connections the app has ever made.
+ */
+export function __trackedSessionCount(): number {
+  return sessions.size
 }
 
 /**
- * Test-only: sessions whose close never settled.
+ * Test-only: sessions with at least one outstanding claim.
  *
- * The bound that matters. `active` + `claims` are live connections, which the user
- * controls; `closing` only holds in-flight and failed closes, which must not grow
- * with ordinary connect/close cycles.
+ * Separate from `__trackedSessionCount` because the two answer different leak
+ * questions: this one catches claims that never released, the other catches session
+ * entries that never retired.
  */
-export function __liveSessionCount(): number {
-  let live = 0
-  for (const tokens of claims.values()) if (tokens.size > 0) live += 1
-  return live
-}
-
-/** Test-only: how many closed ids are remembered. */
-export function __closedHistorySize(): number {
-  return closed.size
+export function __claimedSessionCount(): number {
+  return claims.size
 }

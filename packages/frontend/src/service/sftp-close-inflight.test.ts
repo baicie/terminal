@@ -214,8 +214,16 @@ describe('a session being closed refuses claims until the close settles', () => 
     await flush()
 
     // Bounded, but not by forgetting that these ids are dead: see the module note.
-    // What must not grow is *live* bookkeeping — records whose close never settled.
-    const { __liveSessionCount } = await import('./sftp-session-claim')
-    expect(__liveSessionCount()).toBe(0)
+    // With the allowlist a retired id is simply absent, so what must not grow is
+    // the number of entries the registry still holds. `s1` is the one session the
+    // `beforeEach` registered and this case never closed, so it is the only entry
+    // that may remain — the 1000 cycle ids must all be gone.
+    const { __trackedSessionCount, __claimedSessionCount } = await import(
+      './sftp-session-claim'
+    )
+    expect(__trackedSessionCount()).toBe(1)
+    expect(__claimedSessionCount()).toBe(0)
+    // And the oldest cycle id is refused because no entry exists for it.
+    expect(claimSession('ssh-cycle-0').ok).toBe(false)
   })
 })
