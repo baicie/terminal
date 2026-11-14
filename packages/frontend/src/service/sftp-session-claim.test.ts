@@ -172,12 +172,27 @@ describe('session claims', () => {
       expect(claimSession('s1').ok).toBe(true)
     })
 
-    it('a completed close keeps refusing claims for that id', () => {
-      // Session ids are not reused, so the residue costs one small record and
-      // buys a clear refusal instead of a backend error on a dead session.
+    it('a completed close forgets the session, so the map does not grow', () => {
+      // The defect this replaced: `beginSessionClose` created a record for every
+      // connection and nothing ever removed it. Session ids are unique and never
+      // reused, so refusing claims for the id is harmless — but keeping the record
+      // forever is not: 1000 dock open/close cycles left 1000 entries.
       beginSessionClose('s1')
       expect(isSessionClosing('s1')).toBe(true)
-      expect(claimSession('s1').ok).toBe(false)
+      forgetSession('s1')
+      expect(__claimedSessionCount()).toBe(0)
+      expect(isSessionClosing('s1')).toBe(false)
+    })
+
+    it('forgetting an id that still has a claim does not resurrect it', () => {
+      // `releaseOrDefer` only forgets once nothing is claimed, so this ordering
+      // cannot happen in production. It is pinned anyway because a release that
+      // arrives after its entry was dropped must be a no-op, not a crash.
+      const claim = claimSession('s1')
+      if (!claim.ok) throw new Error('claim should be granted')
+      forgetSession('s1')
+      expect(() => claim.release()).not.toThrow()
+      expect(__claimedSessionCount()).toBe(0)
     })
 
     it('drops the bookkeeping once nothing is claimed and nothing closed', () => {
