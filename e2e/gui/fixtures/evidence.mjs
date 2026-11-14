@@ -11,6 +11,7 @@
  *   • nothing that could carry a credential reaches disk — see `redact`.
  */
 import { execFileSync } from 'node:child_process'
+import { appBinaryPath } from '../../../scripts/gui-e2e-platform.mjs'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
@@ -22,7 +23,7 @@ const ROOT = path.resolve(import.meta.dirname, '../../..')
 const ARTIFACTS = path.join(ROOT, 'e2e/gui/artifacts')
 
 export function binaryPath() {
-  return process.env.GUI_E2E_BINARY ?? path.join(ROOT, 'src-tauri/target/release/terminal')
+  return process.env.GUI_E2E_BINARY ?? appBinaryPath(ROOT)
 }
 
 /** Strip anything that looks like a secret before it can be written to disk. */
@@ -84,7 +85,7 @@ export function binaryInfo() {
  * `verdict` is one of PASS / FAIL / PARTIAL / NOT_RUN and is written verbatim —
  * this module never upgrades an outcome.
  */
-export async function writeEvidence(caseId, { verdict = 'PASS', terminal, window, notes, error } = {}) {
+export async function writeEvidence(caseId, { verdict = 'PASS', terminal, window, command, notes, error } = {}) {
   const dir = path.join(ARTIFACTS, caseId)
   mkdirSync(path.join(dir, 'screens'), { recursive: true })
 
@@ -108,6 +109,9 @@ export async function writeEvidence(caseId, { verdict = 'PASS', terminal, window
     binary: binaryInfo(),
     window: window ?? null,
     terminal: terminal ?? null,
+    // Raw command buffer evidence: when a case fails only in CI, the buffer tail
+    // is what makes the difference diagnosable without a re-run.
+    command: command ?? null,
     screenshot,
     notes: notes ? redact(notes) : undefined,
     error: error ? redact(error) : undefined,

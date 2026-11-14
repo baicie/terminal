@@ -39,7 +39,7 @@ describe('E2E-01 startup and terminal readiness', () => {
   // Collected during the run and written once, in `after`. Writing inside the last
   // `it` would leave no record at all when an earlier assertion fails — and a
   // failing case is exactly when the evidence matters.
-  const observed = { terminal: null, window: null, failures: [] }
+  const observed = { terminal: null, window: null, command: null, failures: [] }
   let currentTest = ''
 
   beforeEach(function () {
@@ -94,40 +94,83 @@ describe('E2E-01 startup and terminal readiness', () => {
   })
 
   it('echoes a command and returns the shell output', async () => {
-    // Alphanumeric only: WebDriver's `keys` parses `-` as a modifier separator.
+    // ## Why the assertion is shaped this way
+    //
+    // The first version required the token to appear **twice** — once in the
+    // echoed command line and once in the output. That holds on a developer's
+    // zsh but not on the CI runner's shell, where the echoed line can be
+    // redrawn or scrolled such that the marker count differs. Counting
+    // occurrences measures the *shell's* echo behaviour, not that the command
+    // ran.
+    //
+    // What is actually invariant: after sending the line, a line consisting
+    // exactly of the token appears, and then a *new prompt* appears after it.
+    // A prompt after the output is the shell saying "done" — that is the
+    // completion signal, and it does not depend on how the shell echoes input.
+    //
+    // Uniqueness comes from a token that cannot appear by accident; alphanumeric
+    // only, because WebDriver parses `-` in a key string as a modifier separator.
     const token = `guie2e${Date.now()}`
-    // Focus the terminal's input surface. `browser.keys` sends to the focused
-    // element, and xterm listens on its helper textarea.
-    await browser.$('.xterm-helper-textarea').click()
-    // Use `addValue` (the W3C *Element Send Keys* command), not the session-level
-    // `keys`. Against this WKWebView, `browser.keys()` delivers a multi-character
-    // string as a single key event — only the first character reaches xterm — and
-    // per-character `keys` calls reorder characters when xterm handles them as
-    // shortcuts. `addValue` on the helper textarea is the faithful "user typed
-    // this line" path and lands the whole string in order.
-    // See docs/testing/native-gui-e2e.md §Keyboard input.
+    const promptPattern = /[$#%]\s*$/
+
+    const before = await terminalSnapshot()
+    const promptMatchesBefore = (before.text.match(/[$#%]\s*$/gm) ?? []).length
+
+    // Real keyboard path: W3C *Element Send Keys* against the focused helper
+    // textarea. Not a synthesized DOM event.
     const helper = await browser.$('.xterm-helper-textarea')
     await helper.addValue(`echo ${token}`)
     await browser.keys('Enter')
-    // The shell echoes the command line, then prints the command's own output, so
-    // the token appears twice. Waiting for *two* occurrences is what distinguishes
-    // "the keystrokes reached the terminal" from "the shell actually ran it".
-    await browser.waitUntil(
-      async () => (await terminalText()).split(token).length - 1 >= 2,
-      {
-        timeout: 30_000,
-        interval: 250,
-        timeoutMsg: 'the echo output never appeared',
-      },
-    ).catch(async err => {
-      const snap = await terminalSnapshot()
-      throw new Error(`${err.message}\n--- buffer tail ---\n${snap.text.slice(-500)}`)
-    })
-    const text = await terminalText()
-    const occurrences = text.split(token).length - 1
-    expect(occurrences).toBeGreaterThanOrEqual(2)
-    // Exactly twice also proves the input was not delivered twice.
-    expect(occurrences).toBe(2)
+
+    // 1. The command produced its own output line.
+    await browser
+      .waitUntil(
+        async () => {
+          const { text } = await terminalSnapshot()
+          return text.split('\n').some(line => line.trim() === token)
+        },
+        { timeout: 30_000, interval: 250, timeoutMsg: 'the command output line never appeared' },
+      )
+      .catch(async err => {
+        const snap = await terminalSnapshot()
+        throw new Error(`${err.message}\n--- buffer tail ---\n${snap.text.slice(-600)}`)
+      })
+
+    // 2. A new prompt followed it — the shell is done with the command.
+    await browser
+      .waitUntil(
+        async () => {
+          const { text } = await terminalSnapshot()
+          const lines = text.split('\n').filter(line => line.length > 0)
+          const outputIndex = lines.findIndex(line => line.trim() === token)
+          if (outputIndex === -1) return false
+          return lines.slice(outputIndex + 1).some(line => promptPattern.test(line))
+        },
+        { timeout: 30_000, interval: 250, timeoutMsg: 'no new prompt appeared after the output' },
+      )
+      .catch(async err => {
+        const snap = await terminalSnapshot()
+        throw new Error(`${err.message}\n--- buffer tail ---\n${snap.text.slice(-600)}`)
+      })
+
+    const after = await terminalSnapshot()
+    // 3. Ran exactly once: one output line, not two.
+    const outputLines = after.text.split('\n').filter(line => line.trim() === token)
+    expect(outputLines.length).toBe(1)
+
+    // 4. More prompts than before: the shell returned to its input state.
+    const promptMatchesAfter = (after.text.match(/[$#%]\s*$/gm) ?? []).length
+    expect(promptMatchesAfter).toBeGreaterThan(promptMatchesBefore)
+
+    // 5. Keep the raw buffer in the evidence so a CI-only difference is
+    //    diagnosable without re-running.
+    observed.command = {
+      token,
+      outputLines: outputLines.length,
+      promptMatchesBefore,
+      promptMatchesAfter,
+      bufferTail: after.text.slice(-400),
+    }
   })
 
   it('reports cols and rows that came from xterm, and they are usable', async () => {
@@ -163,6 +206,7 @@ describe('E2E-01 startup and terminal readiness', () => {
       verdict: observed.failures.length === 0 ? 'PASS' : 'FAIL',
       terminal: observed.terminal,
       window: observed.window,
+      command: observed.command,
       error:
         observed.failures.length > 0
           ? observed.failures.map(f => `${f.test}: ${f.error}`).join('\n')

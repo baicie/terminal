@@ -6,121 +6,137 @@
  * test suite becomes dangerous or useless:
  *
  *   • build with the `gui-e2e` feature (never the default feature set);
- *   • create a throwaway HOME so the app cannot touch the real database, vault or
- *     SSH keys;
+ *   • create a throwaway profile so the app cannot touch the real database, Vault
+ *     or SSH keys — on Windows that means USERPROFILE/APPDATA/LOCALAPPDATA too;
  *   • refuse to run when the binary was NOT built with the feature, with the
  *     reason spelled out rather than a bare timeout;
- *   • write the evidence bundle and exit non-zero on failure.
+ *   • never turn a failed spawn into a silent exit 1 (see `gui-e2e-platform.mjs`).
  */
-import { execFileSync, spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
+import {
+  appBinaryPath,
+  binaryHasWebDriver,
+  describeFailure,
+  isolatedProfileEnv,
+  IS_WINDOWS,
+  runCommand,
+} from './gui-e2e-platform.mjs'
 
 const ROOT = path.resolve(import.meta.dirname, '..')
-const BINARY = path.join(ROOT, 'src-tauri/target/release/terminal')
-const ARTIFACTS = path.join(ROOT, 'e2e/gui/artifacts')
 
 function log(message) {
   console.log(`[gui-e2e] ${message}`)
 }
 
-/** Does this binary contain the embedded WebDriver server? */
-function binaryHasDriver(file) {
-  try {
-    // The readiness string lives in the plugin. A build without the `gui-e2e`
-    // feature cannot contain it, which is the same fact the isolation gate
-    // asserts from the other direction.
-    return execFileSync('strings', [file], { encoding: 'utf8', maxBuffer: 1 << 28 }).includes(
-      'tauri-plugin-webdriver is ready',
-    )
-  } catch {
-    return false
-  }
+function fail(message) {
+  console.error(`[gui-e2e] ${message}`)
+  process.exit(1)
 }
 
-const args = new Set(process.argv.slice(2))
-const skipBuild = args.has('--no-build')
+const argv = process.argv.slice(2)
+const flags = new Set(argv.filter(a => a.startsWith('--')))
+const specArgs = argv
+  .map((arg, index) => (arg === '--spec' ? ['--spec', argv[index + 1]] : null))
+  .filter(Boolean)
+  .flat()
+  .filter(v => v !== undefined)
+
+const skipBuild = flags.has('--no-build')
 
 if (!skipBuild) {
   log('building frontend with the GUI E2E probe')
   // The probe is compiled in only when this is set, so a production `dist/` never
   // contains it. `tauri build` rebuilds the frontend, so the variable has to be
   // in the environment for that step too.
-  const frontend = spawnSync('pnpm', ['--filter=@terminal/frontend', 'build'], {
+  const frontend = runCommand('pnpm', ['--filter=@terminal/frontend', 'build'], {
     cwd: ROOT,
-    stdio: 'inherit',
     env: { ...process.env, VITE_TERMINAL_GUI_E2E: '1' },
   })
-  if (frontend.status !== 0) process.exit(frontend.status ?? 1)
+  if (!frontend.ok) fail(describeFailure('frontend build', frontend))
 
   log('building the app with --features gui-e2e (via tauri build)')
-  const build = spawnSync(
+  const build = runCommand(
     'pnpm',
     ['tauri', 'build', '--no-bundle', '--', '--features', 'gui-e2e'],
-    { cwd: ROOT, stdio: 'inherit', env: { ...process.env, VITE_TERMINAL_GUI_E2E: '1' } },
+    { cwd: ROOT, env: { ...process.env, VITE_TERMINAL_GUI_E2E: '1' } },
   )
-  if (build.status !== 0) process.exit(build.status ?? 1)
+  if (!build.ok) fail(describeFailure('tauri build', build))
 }
 
-if (!existsSync(BINARY)) {
-  console.error(`[gui-e2e] no binary at ${BINARY}`)
-  process.exit(2)
-}
-if (!binaryHasDriver(BINARY)) {
-  console.error(
-    '[gui-e2e] the binary does not contain the embedded WebDriver server.\n' +
-      '          It was built without `--features gui-e2e`. Re-run without --no-build,\n' +
-      '          or rebuild: pnpm tauri build --no-bundle -- --features gui-e2e',
+const binary = appBinaryPath(ROOT)
+const marker = binaryHasWebDriver(binary)
+if (!marker.present) {
+  fail(
+    `the app binary cannot be used for GUI E2E.\n` +
+      `  path:   ${binary}\n` +
+      `  reason: ${marker.reason}\n` +
+      (marker.reason === 'binary missing'
+        ? '  It was not built. Re-run without --no-build.'
+        : '  Rebuild: pnpm tauri build --no-bundle -- --features gui-e2e'),
   )
-  process.exit(2)
 }
 
-const home = path.join(
-  os.tmpdir(),
-  `terminal-gui-e2e-${process.pid}-${Date.now()}`,
+const home = path.join(os.tmpdir(), `terminal-gui-e2e-${process.pid}-${Date.now()}`)
+const profile = isolatedProfileEnv(home)
+for (const dir of [home, profile.APPDATA, profile.LOCALAPPDATA, profile.XDG_CONFIG_HOME]) {
+  mkdirSync(dir, { recursive: true })
+}
+
+log(`binary ${path.relative(ROOT, binary)}`)
+log(`isolated profile ${home}`)
+log(
+  `isolation env: ${Object.keys(profile)
+    .map(key => `${key}=${path.relative(home, profile[key]) || '.'}`)
+    .join(' ')}`,
 )
-mkdirSync(home, { recursive: true })
-mkdirSync(ARTIFACTS, { recursive: true })
 
-const sha = createHash('sha256').update(readFileSync(BINARY)).digest('hex')
-log(`binary sha256 ${sha}`)
-log(`isolated HOME ${home}`)
-
-const run = spawnSync(
-  'npx',
-  ['wdio', 'run', 'wdio.conf.mjs', ...process.argv.slice(2).filter(a => a.startsWith('--spec'))],
-  {
-    cwd: path.join(ROOT, 'e2e/gui'),
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      GUI_E2E_BINARY: BINARY,
-      GUI_E2E_HOME: home,
-    },
+const run = runCommand('npx', ['wdio', 'run', 'wdio.conf.mjs', ...specArgs], {
+  cwd: path.join(ROOT, 'e2e/gui'),
+  env: {
+    ...process.env,
+    GUI_E2E_BINARY: binary,
+    GUI_E2E_HOME: home,
   },
-)
+})
 
-// Summarise whatever the run left behind, then clean the throwaway profile. The
-// evidence files reference the home path but never contain its contents.
+if (!run.ok && run.error) {
+  // A failed spawn is not a failed test. Say so, keep the profile for inspection,
+  // and do not claim any case ran.
+  console.error(describeFailure('wdio', run))
+  console.error(`[gui-e2e] the isolated profile was left at ${home} for inspection`)
+  process.exit(1)
+}
+
+// Summarise whatever the run left behind, then clean the throwaway profile.
 const summary = {
   ranAt: new Date().toISOString(),
-  binary: { path: path.relative(ROOT, BINARY), sha256: sha },
-  platform: { platform: process.platform, arch: process.arch, release: os.release() },
-  isolatedHome: home,
+  platform: {
+    platform: process.platform,
+    arch: process.arch,
+    release: os.release(),
+  },
+  binary: { path: path.relative(ROOT, binary) },
+  isolatedProfile: { path: home, variables: Object.keys(profile) },
   exitCode: run.status,
-  verdict: run.status === 0 ? 'PASS' : 'FAIL',
+  verdict: run.ok ? 'PASS' : 'FAIL',
 }
 writeFileSync(
-  path.join(ARTIFACTS, 'run-summary.json'),
+  path.join(ROOT, 'e2e/gui/artifacts/run-summary.json'),
   `${JSON.stringify(summary, null, 2)}\n`,
 )
 
-// The isolated profile is disposable by construction. Removing it keeps a
-// developer's tmp from filling with databases after a few hundred runs.
-rmSync(home, { recursive: true, force: true })
+// The isolated profile is disposable by construction; removing it keeps a
+// developer's tmp from filling with databases after a few hundred runs. On
+// Windows a locked SQLite file can make the removal fail — that is reported but
+// does not change the test verdict.
+try {
+  rmSync(home, { recursive: true, force: true })
+} catch (error) {
+  console.warn(`[gui-e2e] could not remove ${home}: ${error.message}`)
+}
 
 log(`finished with exit ${run.status}`)
-process.exit(run.status ?? 1)
+process.exit(run.ok ? 0 : (run.status ?? 1))

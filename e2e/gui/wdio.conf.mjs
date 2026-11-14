@@ -31,17 +31,22 @@
  */
 import path from 'node:path'
 import process from 'node:process'
+import { appBinaryPath, isolatedProfileEnv } from '../../scripts/gui-e2e-platform.mjs'
 
 const ROOT = path.resolve(import.meta.dirname, '../..')
-const BINARY = process.env.GUI_E2E_BINARY ?? path.join(ROOT, 'src-tauri/target/release/terminal')
+const BINARY = process.env.GUI_E2E_BINARY ?? appBinaryPath(ROOT)
 const HOME = process.env.GUI_E2E_HOME
 
 if (!HOME) {
   throw new Error(
     'GUI_E2E_HOME is not set. Run through `node scripts/run-gui-e2e.mjs` so the app ' +
-      'gets a throwaway HOME instead of your real one.',
+      'gets a throwaway profile instead of your real one.',
   )
 }
+
+// Windows keeps user state in USERPROFILE/APPDATA/LOCALAPPDATA, not only HOME.
+// Passing the full set is what stops the app reading a developer's real Vault.
+const profileEnv = isolatedProfileEnv(HOME)
 
 export const config = {
   runner: 'local',
@@ -77,9 +82,7 @@ export const config = {
         appBinaryPath: BINARY,
         // The app must never see the developer's real profile.
         env: {
-          HOME,
-          XDG_CONFIG_HOME: path.join(HOME, '.config'),
-          XDG_DATA_HOME: path.join(HOME, '.local/share'),
+          ...profileEnv,
           RUST_LOG: process.env.RUST_LOG ?? 'info',
         },
         startTimeout: 120_000,
