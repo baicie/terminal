@@ -164,7 +164,15 @@ src-tauri/
    ```
 
 3. **仍有 OPEN PR 的分支不得删除**（删除远端分支不可逆，只对已确认合并的分支执行）
-4. 只合并了部分提交、或 PR 被关闭但未合并（`CLOSED`）的分支，先确认没有未合并提交，再按同样流程处理
+4. **stacked PR：删除 base 分支会连带关闭下游 PR，且无法重开。** 若 PR B 的 base 是 PR A 的分支，合并 A 时：
+
+   ```bash
+   gh pr merge A --squash            # 不要加 --delete-branch
+   ```
+
+   A 合并后先把 `main` 合进 B 的分支、把 B 的 base 改成 `main`，再合 B；分支在所有下游 PR 处理完之后才删。2026-11-14 合并 TN-SFTP-01（#47）时加了 `--delete-branch`，
+   base 分支消失导致 #48 被 GitHub 自动 `CLOSED`，而 `gh pr reopen` 与 `--base main` 都因 base 不存在被拒——只能新建 PR 承载同一份内容（#50）。**这个错误没有技术补救，只有重开 PR 的成本。**
+5. 只合并了部分提交、或 PR 被关闭但未合并（`CLOSED`）的分支，先确认没有未合并提交，再按同样流程处理
 
 #### 2. 定期清理
 
