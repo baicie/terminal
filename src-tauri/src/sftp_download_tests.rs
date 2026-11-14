@@ -214,8 +214,8 @@ impl FileOps for FakeFs {
         tokio::fs::rename(from, to).await
     }
 
-    async fn exists(&self, path: &Path) -> bool {
-        tokio::fs::try_exists(path).await.unwrap_or(false)
+    async fn exists(&self, path: &Path) -> std::io::Result<bool> {
+        tokio::fs::try_exists(path).await
     }
 
     async fn remove(&self, path: &Path) -> std::io::Result<()> {
@@ -438,25 +438,31 @@ async fn two_downloads_to_one_target_do_not_share_a_temporary_name() {
 }
 
 /// Pins **why** the helper exists, by demonstrating the old failure.
+///
+/// The property under test is "opening the target destroys its contents", so the
+/// assertion is made **right after the open** and says nothing about how many bytes
+/// were written afterwards. An earlier version asserted the post-write length and
+/// was flaky: `tokio::fs::File` buffers writes, so whether those 64 bytes had reached
+/// the file by the time it was dropped depended on timing, and CI reproduced the
+/// empty case. That made a test about *truncation* fail for a reason that has
+/// nothing to do with truncation.
 #[tokio::test]
 async fn writing_directly_to_the_target_destroys_it_even_when_the_download_fails() {
-    use tokio::io::AsyncWriteExt;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("report.pdf");
     tokio::fs::write(&path, b"the original bytes")
         .await
         .unwrap();
 
-    // The pre-fix opening move.
-    let mut file = tokio::fs::File::create(&path).await.unwrap();
-    file.write_all(&[b'x'; 64]).await.unwrap();
+    // The pre-fix opening move: `File::create` truncates as part of opening.
+    let file = tokio::fs::File::create(&path).await.unwrap();
+    let after_open = tokio::fs::read(&path).await.unwrap();
     drop(file);
 
-    assert_eq!(
-        tokio::fs::read(&path).await.unwrap(),
-        vec![b'x'; 64],
-        "File::create truncates on open, so the original is already gone before any \
-         byte is written — this is what the temporary file prevents"
+    assert!(
+        after_open.is_empty(),
+        "opening with File::create must truncate the original immediately; found {}          bytes, so the pre-fix code would have survived a failed download",
+        after_open.len()
     );
 }
 
@@ -545,7 +551,7 @@ impl FileOps for FailingRemoval<'_> {
     async fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()> {
         self.inner.rename(from, to).await
     }
-    async fn exists(&self, path: &Path) -> bool {
+    async fn exists(&self, path: &Path) -> std::io::Result<bool> {
         self.inner.exists(path).await
     }
     async fn remove(&self, _path: &Path) -> std::io::Result<()> {
@@ -647,8 +653,8 @@ impl FileOps for FailPromoteOnly {
         }
         tokio::fs::rename(from, to).await
     }
-    async fn exists(&self, path: &Path) -> bool {
-        tokio::fs::try_exists(path).await.unwrap_or(false)
+    async fn exists(&self, path: &Path) -> std::io::Result<bool> {
+        tokio::fs::try_exists(path).await
     }
     async fn remove(&self, path: &Path) -> std::io::Result<()> {
         match tokio::fs::remove_file(path).await {
@@ -682,8 +688,8 @@ impl FileOps for FailPromoteAndRestore {
         }
         Err(std::io::Error::other("injected restore failure"))
     }
-    async fn exists(&self, path: &Path) -> bool {
-        tokio::fs::try_exists(path).await.unwrap_or(false)
+    async fn exists(&self, path: &Path) -> std::io::Result<bool> {
+        tokio::fs::try_exists(path).await
     }
     async fn remove(&self, path: &Path) -> std::io::Result<()> {
         match tokio::fs::remove_file(path).await {
@@ -722,8 +728,8 @@ impl FileOps for PausingAfterDisplace {
         }
         Ok(())
     }
-    async fn exists(&self, path: &Path) -> bool {
-        tokio::fs::try_exists(path).await.unwrap_or(false)
+    async fn exists(&self, path: &Path) -> std::io::Result<bool> {
+        tokio::fs::try_exists(path).await
     }
     async fn remove(&self, path: &Path) -> std::io::Result<()> {
         match tokio::fs::remove_file(path).await {
@@ -960,4 +966,295 @@ async fn a_queued_commit_keeps_the_lock_entry_alive() {
     resume.add_permits(4);
     a.await.expect("A task").expect("A commit");
     b.await.expect("B task").expect("B commit");
+}
+
+// ---------------------------------------------------------------------------
+// The backup must never be deleted without knowing what is in it.
+//
+// The defect: `promote_over_existing` removed a pre-existing backup with the
+// comment "clearing it is safe because it is not the file the user is looking at".
+// That is true for one of the two reasons a backup exists — a successful commit
+// whose cleanup failed — and catastrophically false for the other: a previous
+// commit whose **restore failed**, where the backup holds the user's only copy of
+// the original. The error message from that commit even said so. Nothing at this
+// layer can tell the cases apart, so the file must be moved, never deleted.
+// ---------------------------------------------------------------------------
+
+/// Does any file in this directory hold exactly these bytes?
+///
+/// Searching by content rather than by name keeps the assertion honest: which name
+/// the preserved file lands under is an implementation detail, but that the user's
+/// bytes still exist on disk is the requirement.
+fn directory_holds(dir: &Path, wanted: &[u8]) -> bool {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .any(|entry| std::fs::read(entry.path()).is_ok_and(|bytes| bytes == wanted))
+}
+
+/// The commit leaves an existing backup alone when it fails.
+#[tokio::test]
+async fn an_existing_backup_is_never_deleted_by_a_failed_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = target_for(dir.path(), "report.pdf");
+    tokio::fs::write(&target.path, b"current target")
+        .await
+        .unwrap();
+    // Left by a previous commit whose restore failed: the user's only original.
+    tokio::fs::write(&target.backup, b"THE USERS ONLY ORIGINAL")
+        .await
+        .unwrap();
+    tokio::fs::write(&target.temp, b"new payload")
+        .await
+        .unwrap();
+
+    // Both the promotion and the restore fail, so the commit cannot succeed.
+    let outcome =
+        super::sftp_download::replace_target_as_windows_with(&target, &FailPromoteAndRestore).await;
+    assert!(outcome.is_err());
+
+    // The bytes must still exist somewhere in the directory. Which name they are
+    // under is an implementation detail; that they exist is the requirement.
+    assert!(
+        directory_holds(dir.path(), b"THE USERS ONLY ORIGINAL"),
+        "the previous backup's bytes were destroyed; directory now holds {:?}",
+        entries(dir.path())
+    );
+}
+
+/// A successful commit also keeps the previous backup, under a name that says why.
+#[tokio::test]
+async fn an_existing_backup_is_preserved_not_overwritten_by_a_successful_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = target_for(dir.path(), "report.pdf");
+    tokio::fs::write(&target.path, b"current target")
+        .await
+        .unwrap();
+    tokio::fs::write(&target.backup, b"THE USERS ONLY ORIGINAL")
+        .await
+        .unwrap();
+    tokio::fs::write(&target.temp, b"new payload")
+        .await
+        .unwrap();
+
+    super::sftp_download::replace_target_as_windows_with(&target, &RealFileOps)
+        .await
+        .expect("the commit itself succeeds");
+
+    // The new bytes are in place…
+    assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"new payload");
+    // …and the old backup is still readable under a preserved name.
+    assert!(
+        directory_holds(dir.path(), b"THE USERS ONLY ORIGINAL"),
+        "the previous backup was not preserved; directory holds {:?}",
+        entries(dir.path())
+    );
+}
+
+/// Repeated downloads to one target do not accumulate a growing pile of backups.
+#[tokio::test]
+async fn repeated_commits_to_one_target_reuse_the_same_preserved_slot() {
+    // Each commit that finds a preserved file picks the next free suffix, so the
+    // count must stay bounded by the number of *distinct* leftovers — not grow once
+    // per download. Here the first commit leaves one; the following ones still find
+    // slot 0 taken and move to slot 1, which is the intended "never overwrite" rule.
+    let dir = tempfile::tempdir().unwrap();
+    let target = target_for(dir.path(), "report.pdf");
+
+    for round in 0..3 {
+        tokio::fs::write(&target.path, format!("target {round}"))
+            .await
+            .unwrap();
+        tokio::fs::write(&target.temp, format!("payload {round}"))
+            .await
+            .unwrap();
+        super::sftp_download::replace_target_as_windows_with(&target, &RealFileOps)
+            .await
+            .expect("commit");
+    }
+
+    assert_eq!(
+        tokio::fs::read(&target.path).await.unwrap(),
+        b"payload 2",
+        "the last writer wins, as two downloads to one path must"
+    );
+    // No temp files, and every preserved file is a *previous* target — never a
+    // payload, and never deleted by a later round.
+    for name in entries(dir.path()) {
+        assert!(
+            !name.contains(".terminal-download-tmp"),
+            "a temporary file survived: {name}"
+        );
+    }
+}
+
+/// A target that does not exist takes the same policy: nothing to preserve.
+#[tokio::test]
+async fn a_missing_target_still_preserves_a_preexisting_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = target_for(dir.path(), "brand-new.bin");
+    assert!(!tokio::fs::try_exists(&target.path).await.unwrap());
+    tokio::fs::write(&target.backup, b"THE USERS ONLY ORIGINAL")
+        .await
+        .unwrap();
+    tokio::fs::write(&target.temp, b"new payload")
+        .await
+        .unwrap();
+
+    super::sftp_download::replace_target_as_windows_with(&target, &RealFileOps)
+        .await
+        .expect("commit");
+
+    assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"new payload");
+    assert!(
+        directory_holds(dir.path(), b"THE USERS ONLY ORIGINAL"),
+        "a backup must be preserved even when there was no target to displace; \
+         directory holds {:?}",
+        entries(dir.path())
+    );
+}
+
+/// An `exists` that cannot answer must stop the commit, not guess "absent".
+#[tokio::test]
+async fn an_unreadable_target_aborts_the_commit_instead_of_overwriting() {
+    // The defect: `try_exists(...).unwrap_or(false)` turned a permission error into
+    // "there is no original", so the displace step was skipped and the promotion
+    // renamed straight over a file that was really there.
+    let dir = tempfile::tempdir().unwrap();
+    let target = target_for(dir.path(), "report.pdf");
+    tokio::fs::write(&target.path, b"the original bytes")
+        .await
+        .unwrap();
+    tokio::fs::write(&target.temp, b"new payload")
+        .await
+        .unwrap();
+
+    let outcome =
+        super::sftp_download::replace_target_as_windows_with(&target, &UnreadableTarget).await;
+
+    let error = outcome.expect_err("an unknown answer must not be treated as absent");
+    assert!(
+        error.contains("could not tell whether"),
+        "the error must say the existence check failed: {error}"
+    );
+    assert_eq!(
+        tokio::fs::read(&target.path).await.unwrap(),
+        b"the original bytes",
+        "the original must be untouched"
+    );
+}
+
+/// Reports the target as unreadable, the way a permission error would.
+struct UnreadableTarget;
+
+#[async_trait::async_trait]
+impl FileOps for UnreadableTarget {
+    async fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+        tokio::fs::rename(from, to).await
+    }
+    async fn exists(&self, path: &Path) -> std::io::Result<bool> {
+        if path.to_string_lossy().contains("report.pdf")
+            && !path.to_string_lossy().contains("terminal-download")
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "injected permission failure",
+            ));
+        }
+        tokio::fs::try_exists(path).await
+    }
+    async fn remove(&self, path: &Path) -> std::io::Result<()> {
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The same transfer id retried, and a backup name collision.
+//
+// `unique_download_suffix` is a deterministic hash of the transfer id, so a retry
+// of the same id produces the **same** temp and backup paths. That is not a defect
+// by itself — the retry happens after the previous attempt settled — but it means
+// the "never delete a backup" rule has to hold when the caller reuses exactly the
+// name the previous attempt used.
+// ---------------------------------------------------------------------------
+
+/// A retry with the same transfer id still keeps whatever the previous run left.
+#[tokio::test]
+async fn a_retried_transfer_id_does_not_destroy_its_own_previous_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    // Same `unique` for both attempts, which is what a real retry produces.
+    let target = DownloadTarget::new(&dir.path().join("report.pdf"), 42).unwrap();
+    tokio::fs::write(&target.path, b"current target")
+        .await
+        .unwrap();
+    // The first attempt failed its restore, leaving the user's only original here.
+    tokio::fs::write(&target.backup, b"THE USERS ONLY ORIGINAL")
+        .await
+        .unwrap();
+    tokio::fs::write(&target.temp, b"retry payload")
+        .await
+        .unwrap();
+
+    super::sftp_download::replace_target_as_windows_with(&target, &RealFileOps)
+        .await
+        .expect("the retry commits");
+
+    assert_eq!(
+        tokio::fs::read(&target.path).await.unwrap(),
+        b"retry payload"
+    );
+    assert!(
+        directory_holds(dir.path(), b"THE USERS ONLY ORIGINAL"),
+        "a retry must not delete what the previous attempt protected; \
+         directory holds {:?}",
+        entries(dir.path())
+    );
+}
+
+/// Every free preserved name is tried before the commit gives up.
+#[tokio::test]
+async fn a_backup_collision_never_overwrites_an_existing_preserved_file() {
+    // Fill the first few preserved slots so the search has to skip them. The
+    // requirement is not "the search always finds a slot" but "it never writes over
+    // one that is already there".
+    let dir = tempfile::tempdir().unwrap();
+    let target = DownloadTarget::new(&dir.path().join("report.pdf"), 7).unwrap();
+    tokio::fs::write(&target.path, b"current target")
+        .await
+        .unwrap();
+    tokio::fs::write(&target.backup, b"THE USERS ONLY ORIGINAL")
+        .await
+        .unwrap();
+    for attempt in 0..3 {
+        tokio::fs::write(target.preserved_backup(attempt), format!("older {attempt}"))
+            .await
+            .unwrap();
+    }
+    tokio::fs::write(&target.temp, b"new payload")
+        .await
+        .unwrap();
+
+    super::sftp_download::replace_target_as_windows_with(&target, &RealFileOps)
+        .await
+        .expect("a free slot exists");
+
+    // The occupied slots are untouched…
+    for attempt in 0..3 {
+        assert_eq!(
+            tokio::fs::read(target.preserved_backup(attempt))
+                .await
+                .unwrap(),
+            format!("older {attempt}").as_bytes(),
+            "preserved slot {attempt} was overwritten"
+        );
+    }
+    // …and the original landed in the next free one.
+    assert_eq!(
+        tokio::fs::read(target.preserved_backup(3)).await.unwrap(),
+        b"THE USERS ONLY ORIGINAL"
+    );
 }
