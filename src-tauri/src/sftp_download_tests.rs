@@ -438,25 +438,31 @@ async fn two_downloads_to_one_target_do_not_share_a_temporary_name() {
 }
 
 /// Pins **why** the helper exists, by demonstrating the old failure.
+///
+/// The property under test is "opening the target destroys its contents", so the
+/// assertion is made **right after the open** and says nothing about how many bytes
+/// were written afterwards. An earlier version asserted the post-write length and
+/// was flaky: `tokio::fs::File` buffers writes, so whether those 64 bytes had reached
+/// the file by the time it was dropped depended on timing, and CI reproduced the
+/// empty case. That made a test about *truncation* fail for a reason that has
+/// nothing to do with truncation.
 #[tokio::test]
 async fn writing_directly_to_the_target_destroys_it_even_when_the_download_fails() {
-    use tokio::io::AsyncWriteExt;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("report.pdf");
     tokio::fs::write(&path, b"the original bytes")
         .await
         .unwrap();
 
-    // The pre-fix opening move.
-    let mut file = tokio::fs::File::create(&path).await.unwrap();
-    file.write_all(&[b'x'; 64]).await.unwrap();
+    // The pre-fix opening move: `File::create` truncates as part of opening.
+    let file = tokio::fs::File::create(&path).await.unwrap();
+    let after_open = tokio::fs::read(&path).await.unwrap();
     drop(file);
 
-    assert_eq!(
-        tokio::fs::read(&path).await.unwrap(),
-        vec![b'x'; 64],
-        "File::create truncates on open, so the original is already gone before any \
-         byte is written — this is what the temporary file prevents"
+    assert!(
+        after_open.is_empty(),
+        "opening with File::create must truncate the original immediately; found {}          bytes, so the pre-fix code would have survived a failed download",
+        after_open.len()
     );
 }
 
