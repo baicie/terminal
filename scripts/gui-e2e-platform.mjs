@@ -50,12 +50,23 @@ export const WEBDRIVER_READY_MARKER = 'tauri-plugin-webdriver is ready'
 export function resolveCliCommand(command, args) {
   if (!IS_WINDOWS) return { file: command, args, shell: false }
   const shim = command.endsWith('.cmd') || command.endsWith('.exe') ? command : `${command}.cmd`
-  // `/d` skips AutoRun, `/s` + the outer quotes preserve quoting exactly,
-  // `/c` runs the command. This is Node's documented form for `.cmd` files.
+  // `/d` skips AutoRun, `/c` runs the command string, `/s` keeps the rest of the
+  // line verbatim after the first and last quote.
+  //
+  // The first version wrapped the whole command in an extra pair of quotes and
+  // let Node re-escape them. cmd.exe then received literal backslash-quote
+  // characters and answered:
+  //
+  //   '\"pnpm.cmd --filter=@terminal/frontend build\"' is not recognized …
+  //
+  // `windowsVerbatimArguments` is what stops Node from touching the string: with
+  // it set, the final argument reaches cmd.exe exactly as written, which is the
+  // only way `/s` semantics line up with what we built.
   return {
     file: process.env.COMSPEC ?? 'cmd.exe',
-    args: ['/d', '/s', '/c', `"${shim} ${args.map(quoteForCmd).join(' ')}"`],
+    args: ['/d', '/s', '/c', `"${[shim, ...args.map(quoteForCmd)].join(' ')}"`],
     shell: false,
+    windowsVerbatimArguments: true,
   }
 }
 
@@ -76,10 +87,11 @@ function quoteForCmd(value) {
  * description of a spawn failure — never `undefined` when something went wrong.
  */
 export function runCommand(command, args, options = {}) {
-  const { file, args: argv, shell } = resolveCliCommand(command, args)
+  const { file, args: argv, shell, windowsVerbatimArguments } = resolveCliCommand(command, args)
   const result = spawnSync(file, argv, {
     stdio: 'inherit',
     shell,
+    windowsVerbatimArguments,
     ...options,
   })
 
