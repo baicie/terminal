@@ -47,6 +47,14 @@ verify-install-evidence/
 # must not sweep it into a commit.
 .workbuddy/
 
+# Agent worktrees for isolated tasks (`git worktree add .worktrees/<name>`).
+# Root-anchored on purpose: only the top-level directory is ignored, so a
+# legitimate source tree named `worktrees` deeper in the repo is unaffected.
+# Without this, `git add -A` at the repo root records each worktree as an
+# embedded repository — it did exactly that on 2026-11-14 and the entry had to
+# be removed from the index and the commit amended (see issue #71).
+/.worktrees/
+
 # Historical client tree materialised by
 # scripts/verify-install/prepare-team-sync-a.mjs for the cross-version run.
 packages/team-server/.tmp/
