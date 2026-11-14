@@ -27,7 +27,8 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import {
@@ -35,6 +36,11 @@ import {
   findTestModuleFiles,
   isTestSource,
 } from './check-verification-evidence.mjs'
+
+/** `findTestModuleFiles` over a synthetic crate, with `root` injected. */
+function discoverTestModules(root, relativeRoot) {
+  return findTestModuleFiles([relativeRoot], { readdir, stat, readFile }, root)
+}
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 
@@ -204,4 +210,145 @@ test('the exclusion does not depend on a directory being named after tests', asy
   // about: a real source file in such a directory would vanish from the hash.
   assert.equal(isTestSource('packages/frontend/src/view/__tests__/helper.ts'), false)
   assert.equal(isTestSource('packages/frontend/src/fixtures/sample.ts'), false)
+})
+
+// ---------------------------------------------------------------------------
+// Fail-closed: the fingerprint must never exclude a production file.
+//
+// The cases above prove the *intent*. These prove the *guarantee*, and they were
+// written against defects the first version of this rule had:
+//
+//   * `findTestModuleFiles` matched its declaration regex against raw source, so
+//     `// #[cfg(test)] mod sftp;` in a doc comment excluded `sftp.rs` from the
+//     fingerprint — a production edit would have left the evidence looking valid;
+//   * the `_tests.rs` suffix alone was treated as proof, so a production file
+//     named `production_tests.rs` was silently untracked;
+//   * `.spec.*` and `.stories.*` were excluded although `vitest.config.ts`
+//     collects only `src/**/*.test.{ts,tsx}` and this repo configures no
+//     Storybook — a `.spec.tsx` the router imported would ship in the bundle.
+// ---------------------------------------------------------------------------
+
+/** Run `findTestModuleFiles` over a synthetic crate rooted in a temp directory. */
+async function discoverIn(files) {
+  const dir = await mkdtemp(path.join(tmpdir(), 'fp-crate-'))
+  try {
+    for (const [relative, contents] of Object.entries(files)) {
+      const target = path.join(dir, 'src-tauri', 'src', relative)
+      await mkdir(path.dirname(target), { recursive: true })
+      await writeFile(target, contents)
+    }
+    return await discoverTestModules(dir, 'src-tauri/src')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
+test('a declaration mentioned in a comment does not exclude the file it names', async () => {
+  // The exact shape of the defect: `sftp.rs` is production, and a doc comment in
+  // another module happens to show the attribute.
+  const modules = await discoverIn({
+    'main.rs': [
+      '/// Tests live in',
+      '/// #[cfg(test)]',
+      '/// mod sftp;',
+      '// #[cfg(test)] mod sftp;',
+      '/* #[cfg(test)] mod sftp; */',
+      '/* /* nested */ #[cfg(test)] mod sftp; */',
+      'pub fn run() {}',
+    ].join('\n'),
+    'sftp.rs': 'pub fn upload() {}',
+  })
+  assert.equal(
+    modules.has('src-tauri/src/sftp.rs'),
+    false,
+    'a comment must never resolve a module as a test',
+  )
+  assert.deepEqual([...modules], [])
+})
+
+test('a declaration inside a string literal does not exclude the file it names', async () => {
+  const modules = await discoverIn({
+    'main.rs': [
+      'const DOC: &str = "#[cfg(test)] mod sftp;";',
+      'static DOC2: &str = r#"#[cfg(test)] mod sftp;"#;',
+      'pub fn run() {}',
+    ].join('\n'),
+    'sftp.rs': 'pub fn upload() {}',
+  })
+  assert.deepEqual([...modules], [])
+})
+
+test('a real #[cfg(test)] declaration is still discovered', async () => {
+  const modules = await discoverIn({
+    'main.rs': '#[cfg(test)]\n#[path = "probe_tests.rs"]\nmod probe;\npub fn run() {}',
+    'probe_tests.rs': 'fn helper() {}',
+  })
+  assert.ok(modules.has('src-tauri/src/probe_tests.rs'), [...modules].join(','))
+})
+
+test('a production module named *_tests.rs is still fingerprinted', async () => {
+  // The suffix is a habit, not a compiler rule. Nothing declares this file as a
+  // `#[cfg(test)]` module, so it can be a real `mod` and a real part of the build.
+  const modules = await discoverIn({
+    'lib.rs': 'mod production_tests;\npub fn run() {}',
+    'production_tests.rs': 'pub fn shipped_logic() {}',
+  })
+  assert.equal(modules.has('production_tests.rs'), false)
+  assert.equal(isTestSource('src-tauri/src/production_tests.rs', modules), false)
+})
+
+test('a .spec or .stories file is not excluded by its name', async () => {
+  // vitest's `include` is `src/**/*.test.{ts,tsx}`; no Storybook is configured.
+  // Neither pattern has build evidence behind it, so neither may be excluded.
+  assert.equal(isTestSource('packages/frontend/src/view/row.spec.tsx'), false)
+  assert.equal(isTestSource('packages/frontend/src/view/row.stories.tsx'), false)
+  assert.equal(isTestSource('packages/frontend/src/view/row.spec.ts'), false)
+})
+
+test('a .test file is excluded only because vitest collects exactly that pattern', async () => {
+  assert.equal(isTestSource('packages/frontend/src/view/row.test.tsx'), true)
+  assert.equal(isTestSource('packages/frontend/src/view/row.test.ts'), true)
+  // The narrow form matters: a `.tsx` that is not `.test.`-infixed stays hashed.
+  assert.equal(isTestSource('packages/frontend/src/view/row-test.tsx'), false)
+  assert.equal(isTestSource('packages/frontend/src/experiments/textarea-test.tsx'), false)
+})
+
+test('the evidence generator and the gate itself are never excluded', async () => {
+  // Both are hand-listed in FINGERPRINT_PATHS and neither is inside a source root,
+  // so the answer must be `false` — a weaker rule here would let the algorithm be
+  // swapped without the evidence noticing.
+  for (const file of [
+    'scripts/check-verification-evidence.mjs',
+    'scripts/build-verification-evidence.mjs',
+    'scripts/fetch-verification-evidence.mjs',
+  ]) {
+    assert.equal(isTestSource(file), false, `${file} must be hashed`)
+  }
+})
+
+test('the real crate still resolves every #[cfg(test)] module it had before', async () => {
+  // Guards the regression the stripper introduced once: replacing string bodies
+  // with a placeholder also ate `#[path = "..."]`'s argument, and discovery fell
+  // from 9 modules to 3. A smaller set means production test files were pulled
+  // *into* the fingerprint — noisy but safe — while a *wrong* set means a
+  // production file was excluded. Assert the exact members.
+  const modules = await findTestModuleFiles(['src-tauri/src'], real)
+  for (const expected of [
+    'src-tauri/src/db_import/tests.rs',
+    'src-tauri/src/session/manager_tests.rs',
+    'src-tauri/src/session/terminal_output_tests.rs',
+    'src-tauri/src/sftp_command_e2e_tests.rs',
+    'src-tauri/src/sftp_download_tests.rs',
+    'src-tauri/src/sftp_upload_tests.rs',
+    'src-tauri/src/ssh_host_key_tests.rs',
+    'src-tauri/src/terminal_smoke_tests.rs',
+    'src-tauri/src/vault_tests.rs',
+  ]) {
+    assert.ok(modules.has(expected), `${expected} must be discovered`)
+  }
+  // And nothing outside the crate: a `#[path]` that escapes `src-tauri/src` names a
+  // file this collector cannot see, so it must not be claimed as a test.
+  for (const file of modules) {
+    assert.ok(file.startsWith('src-tauri/src/'), `${file} escapes src-tauri/src`)
+  }
 })

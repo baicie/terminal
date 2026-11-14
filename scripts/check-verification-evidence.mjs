@@ -391,25 +391,48 @@ const FINGERPRINT_IGNORED = new Set(['node_modules', 'dist', 'target', '.git'])
  * silently admitted or silently dropped — an unrecognised file type would
  * otherwise be a hole a source edit could pass through unnoticed.
  */
-const RUST_TEST_FILE = /_tests\.rs$/
-const JS_TEST_FILE = /\.(?:test|spec|stories)\.[cm]?[jt]sx?$/
+const JS_TEST_FILE = /\.test\.[cm]?[jt]sx?$/
 const FRONTEND_SOURCE = /\.[cm]?[jt]sx?$|\.css$|\.svg$/
 const RUST_SOURCE = /\.rs$/
 
 /**
  * Is this path a pure test source, i.e. one that cannot reach a non-test build?
  *
- * Both arguments are repo-relative POSIX paths. `testModuleFiles` holds the Rust
- * files this module found behind a `#[cfg(test)]` declaration; the suffix
- * convention is a second, independent signal because it is the only one that can
- * be evaluated without reading the tree.
+ * ## The rule: prove it, or hash it
+ *
+ * A file is excluded only when there is **positive evidence** that no non-test
+ * build can reach it. Naming is not evidence. Three naming conventions that look
+ * like proof and are not:
+ *
+ * | Convention | Why it is not enough |
+ * | --- | --- |
+ * | `*_tests.rs` suffix | the suffix is a habit, not a compiler rule — a file named `production_tests.rs` can be a plain `mod` declared from `lib.rs` |
+ * | `*.spec.*` | vitest's `include` is `src/**\/*.test.{ts,tsx}`; nothing collects `*.spec.*`, so such a file that the router imports ships in the bundle |
+ * | `*.stories.*` | this repo configures no Storybook; nothing consumes the pattern, so the same caveat applies |
+ *
+ * `*.test.*` is different: `packages/frontend/vitest.config.ts` declares
+ * `include: ['src/**\/*.test.{ts,tsx}']`, so that exact pattern *is* the runner's
+ * contract. Even then the exclusion is only sound because no production import
+ * targets those files — a plain `.test.ts` could in principle be imported by the
+ * app, which is why the pattern is kept as narrow as the configured one.
+ *
+ * Everything else is hashed. A new file is therefore tracked by default: the
+ * failure mode of hashing a test file is one unnecessary re-collection, while the
+ * failure mode of excluding a production file is evidence that stays "valid"
+ * across a real source change. The asymmetry decides the default.
+ *
+ * ## Rust: only a real `#[cfg(test)]` declaration counts
+ *
+ * `testModuleFiles` holds the files `findTestModuleFiles` resolved from actual
+ * `#[cfg(test)] mod …;` declarations, with comments and string literals stripped
+ * first. A file that merely looks like a test — by suffix, by comment, or by a
+ * string that happens to contain the attribute — is not in that set and stays in
+ * the fingerprint.
  */
 export function isTestSource(relativePath, testModuleFiles = new Set()) {
   if (relativePath.startsWith(FRONTEND_SOURCE_ROOT)) {
-    // vitest's `include` is `src/**/*.test.{ts,tsx}`, so those files are only
-    // ever collected by the runner. `test-setup.ts` is named plainly and only
-    // reachable from `vitest.config.ts`, which is why it is listed explicitly
-    // rather than matched by a pattern.
+    // `test-setup.ts` is reachable only from `vitest.config.ts`'s `setupFiles` —
+    // configured, not merely named. The vitest `include` pattern is the other.
     return JS_TEST_FILE.test(relativePath) || relativePath === TEST_SETUP
   }
 
@@ -420,10 +443,10 @@ export function isTestSource(relativePath, testModuleFiles = new Set()) {
           'the fingerprint rules do not know whether a build uses it',
       )
     }
-    // A `#[cfg(test)]` module is not compiled into the product binary, so it
-    // cannot change a measurement. The suffix convention catches the same files
-    // from the name alone.
-    return RUST_TEST_FILE.test(relativePath) || testModuleFiles.has(relativePath)
+    // Only a declaration resolved from real code. The suffix alone is not used
+    // here: `findTestModuleFiles` also strips comments and strings, so a
+    // `_tests.rs` file that nothing declares as `#[cfg(test)]` stays hashed.
+    return testModuleFiles.has(relativePath)
   }
 
   // Everything else is an explicit, hand-listed file: `package.json`,
@@ -436,6 +459,156 @@ const FRONTEND_SOURCE_ROOT = 'packages/frontend/src/'
 const RUST_SOURCE_ROOT = 'src-tauri/src/'
 
 const TEST_SETUP = 'packages/frontend/src/test-setup.ts'
+
+/**
+ * Strip Rust comments and string literals, leaving only code.
+ *
+ * Without this, `// #[cfg(test)] mod sftp;` in a doc comment or
+ * `const S: &str = "#[cfg(test)] mod sftp;";` in a string would look exactly like
+ * a real declaration to the regex below — and excluding `sftp.rs` from the
+ * fingerprint is the worst failure this module can have: a production edit would
+ * leave the evidence looking valid.
+ *
+ * Char and byte literals are handled as well (`b'#'`, `'['`), because a naive
+ * scanner that only knows `"` would be confused by `'"'` inside a char literal.
+ * Nested block comments are counted: Rust allows a comment inside a comment, and
+ * ending at the inner terminator would expose the outer comment's body as code.
+ *
+ * Not a Rust parser — it does not need to be. It only has to guarantee that no
+ * comment or literal content reaches the declaration regex, and that real code
+ * does. Anything it cannot classify is treated as code, which is the safe side.
+ */
+export function stripRustCommentsAndStrings(source) {
+  return stripRust(source, true)
+}
+
+/** Strip comments only, keeping literal bodies. Used to read `#[path = "…"]`. */
+export function stripRustComments(source) {
+  return stripRust(source, false)
+}
+
+function stripRust(source, replaceLiterals) {
+  let out = ''
+  let index = 0
+  const length = source.length
+  // The placeholder keeps its quotes so `#[path = "..."]`'s shape stays
+  // recognisable while its contents — which could fake a declaration — do not.
+  const literal = body => (replaceLiterals ? '" STR "' : `"${body}"`)
+
+  while (index < length) {
+    const char = source[index]
+    const next = source[index + 1]
+
+    // Line comment: `//` up to the newline. `///` and `//!` are the same shape.
+    if (char === '/' && next === '/') {
+      while (index < length && source[index] !== '\n') index += 1
+      continue
+    }
+
+    // Block comment, with nesting.
+    if (char === '/' && next === '*') {
+      let depth = 1
+      index += 2
+      while (index < length && depth > 0) {
+        if (source[index] === '/' && source[index + 1] === '*') {
+          depth += 1
+          index += 2
+        } else if (source[index] === '*' && source[index + 1] === '/') {
+          depth -= 1
+          index += 2
+        } else {
+          index += 1
+        }
+      }
+      // A newline keeps line numbers honest for anything downstream.
+      out += '\n'
+      continue
+    }
+
+    // Raw strings: r"…", r#"…"#, r##"…"## …
+    if (char === 'r' && (next === '"' || next === '#')) {
+      let hashes = 0
+      let probe = index + 1
+      while (source[probe] === '#') {
+        hashes += 1
+        probe += 1
+      }
+      if (source[probe] === '"') {
+        const terminator = '"' + '#'.repeat(hashes)
+        const close = source.indexOf(terminator, probe + 1)
+        const body = close === -1 ? source.slice(probe + 1) : source.slice(probe + 1, close)
+        index = close === -1 ? length : close + terminator.length
+        // Placeholder, not the body: a string that happens to contain
+        // `#[cfg(test)] mod …;` must not look like a declaration.
+        out += literal(body)
+        continue
+      }
+    }
+
+    // Byte strings: b"…" and br"…" / br#"…"#. The `r` form is handled above once
+    // the leading `b` is skipped.
+    if (char === 'b' && next === '"') {
+      const start = index + 2
+      index += 2
+      while (index < length) {
+        if (source[index] === '\\') {
+          index += 2
+          continue
+        }
+        if (source[index] === '"') {
+          break
+        }
+        index += 1
+      }
+      out += literal(source.slice(start, index))
+      index += 1
+      continue
+    }
+
+    // Ordinary string literal.
+    if (char === '"') {
+      const start = index + 1
+      index += 1
+      while (index < length) {
+        if (source[index] === '\\') {
+          index += 2
+          continue
+        }
+        if (source[index] === '"') {
+          break
+        }
+        index += 1
+      }
+      out += literal(source.slice(start, index))
+      index += 1
+      continue
+    }
+
+    // Char or byte literal: `'x'`, `'\n'`, `b'#'`. A lifetime (`'a`) has no
+    // closing quote, so look ahead for one before deciding.
+    if (char === "'" || (char === 'b' && next === "'")) {
+      const quote = char === 'b' ? index + 1 : index
+      const after = quote + 1
+      let close = after
+      if (source[after] === '\\') close = after + 2
+      else close = after + 1
+      if (source[close] === "'") {
+        index = close + 1
+        out += "''"
+        continue
+      }
+      // Not a char literal — a lifetime. Emit the quote as code.
+      out += char
+      index += 1
+      continue
+    }
+
+    out += char
+    index += 1
+  }
+
+  return out
+}
 
 /**
  * Find the Rust files that are only reachable through a `#[cfg(test)]` module.
@@ -454,32 +627,63 @@ const TEST_SETUP = 'packages/frontend/src/test-setup.ts'
  * carries its own inline `#[cfg(test)] mod tests { … }` block is *not* covered —
  * it is part of a production file, and the production file is what the
  * fingerprint hashes.
+ *
+ * The declaration text is matched against **code only**: comments and string
+ * literals are stripped first (see `stripRustCommentsAndStrings`), so a mention of
+ * the attribute in a comment cannot exclude the file it names.
+ *
+ * `#[path]` pointing outside `src-tauri/src` (e.g. `../tests/…`) is rejected: a
+ * module the fingerprint cannot see must not be silently claimed as a test.
  */
-export async function findTestModuleFiles(relativeRoots, dependencies) {
+export async function findTestModuleFiles(
+  relativeRoots,
+  dependencies,
+  root = projectRoot,
+) {
   const { readFile } = dependencies
   const found = new Set()
   const production = []
-  for (const root of relativeRoots) {
+  for (const relativeRoot of relativeRoots) {
     await collectFingerprintFiles(
-      root,
+      relativeRoot,
       production,
       dependencies,
       relativePath => RUST_SOURCE.test(relativePath),
+      root,
     )
   }
 
   for (const relativePath of production) {
-    // The suffix convention already identifies these without reading anything,
-    // so skip them here and keep this loop to the files that need inspection.
-    if (RUST_TEST_FILE.test(relativePath)) continue
-    const source = String(await readFile(path.join(projectRoot, relativePath)))
-    for (const match of source.matchAll(
-      /#\[cfg\(test\)\]\s*(?:#\[path\s*=\s*"([^"]+)"\]\s*)?mod\s+(\w+)\s*;/g,
+    const source = String(await readFile(path.join(root, relativePath)))
+    // `#[path = "…"]` needs its argument, and `stripRustCommentsAndStrings` replaces
+    // every literal with a placeholder. So collect the arguments from the **raw**
+    // source and pair them positionally with the declarations found in the stripped
+    // code. That keeps both guarantees at once: a string cannot fake a declaration
+    // (the `mod` half is matched against code only), and a real `#[path]` keeps its
+    // value.
+    //
+    // Comments are stripped from the argument list too, so `// #[path = "x.rs"]`
+    // cannot shift the positional pairing.
+    const commentFree = stripRustComments(source)
+    const paths = [...commentFree.matchAll(/#\[path\s*=\s*"([^"]+)"\]/g)].map(
+      match => match[1],
+    )
+    const code = stripRustCommentsAndStrings(source)
+    let pathIndex = 0
+    for (const match of code.matchAll(
+      /#\[cfg\(test\)\]\s*(#\[path\s*=\s*"[^"]*"\]\s*)?mod\s+(\w+)\s*;/g,
     )) {
-      const [, explicit, moduleName] = match
+      const [, pathAttribute, moduleName] = match
+      const explicit = pathAttribute === undefined ? undefined : paths[pathIndex++]
       const directory = path.posix.dirname(relativePath)
       const declared = explicit ?? `${moduleName}.rs`
-      found.add(path.posix.normalize(path.posix.join(directory, declared)))
+      const resolved = path.posix.normalize(path.posix.join(directory, declared))
+      // A `#[path]` escaping `src-tauri/src` names a file this collector cannot
+      // see. Claiming it as a test would be an assertion about content nobody
+      // read, so skip it — the module then simply stays outside the fingerprint,
+      // which is what "not visible" already meant.
+      if (!resolved.startsWith(RUST_SOURCE_ROOT)) continue
+      found.add(resolved)
     }
   }
   return found
@@ -490,12 +694,13 @@ async function collectFingerprintFiles(
   out,
   dependencies = {},
   acceptFile = null,
+  root = projectRoot,
 ) {
   const readDirectory = dependencies.readdir ?? readdir
   const statPath = dependencies.stat ?? stat
   let stats
   try {
-    stats = await statPath(path.join(projectRoot, relativePath))
+    stats = await statPath(path.join(root, relativePath))
   } catch {
     return out
   }
@@ -504,13 +709,14 @@ async function collectFingerprintFiles(
     return out
   }
   if (!stats.isDirectory()) return out
-  for (const name of await readDirectory(path.join(projectRoot, relativePath))) {
+  for (const name of await readDirectory(path.join(root, relativePath))) {
     if (FINGERPRINT_IGNORED.has(name)) continue
     await collectFingerprintFiles(
       path.join(relativePath, name),
       out,
       dependencies,
       acceptFile,
+      root,
     )
   }
   return out
