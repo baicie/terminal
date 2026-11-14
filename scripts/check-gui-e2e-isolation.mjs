@@ -113,10 +113,16 @@ const buildResult = spawnSync('pnpm', ['--filter=@terminal/frontend', 'build'], 
   shell: process.platform === 'win32',
 })
 if (buildResult.status !== 0) {
+  // Distinguish "the build failed" from "the build tool is not here". Both fail
+  // the gate, but the message has to say which: a missing pnpm once read as a
+  // leaking bundle on CI, and the fix was a setup step, not a code change.
+  const missingTool = buildResult.error?.code === 'ENOENT'
   record(
-    'production frontend builds for the bundle assertion',
+    missingTool ? 'pnpm is available to rebuild dist/' : 'production frontend builds for the bundle assertion',
     false,
-    `pnpm build exited ${buildResult.status ?? 'null'}${buildResult.error ? `: ${buildResult.error.code}` : ''}`,
+    missingTool
+      ? 'pnpm not found — install Node/pnpm before running this gate'
+      : `pnpm build exited ${buildResult.status ?? 'null'}`,
   )
 }
 function bundleContains(marker) {
