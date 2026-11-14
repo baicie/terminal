@@ -12,7 +12,7 @@
 //! asserted on, not the sink.
 
 use super::sftp_download::*;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -340,7 +340,7 @@ async fn writing_directly_to_the_target_destroys_it_even_when_the_download_fails
 
     // The pre-fix opening move.
     let mut file = tokio::fs::File::create(&path).await.unwrap();
-    file.write_all(&vec![b'x'; 64]).await.unwrap();
+    file.write_all(&[b'x'; 64]).await.unwrap();
     // …and then the transfer fails; the function returns DownloadFailed.
     drop(file);
 
