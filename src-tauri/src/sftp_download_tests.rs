@@ -1165,3 +1165,90 @@ impl FileOps for UnreadableTarget {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// The same transfer id retried, and a backup name collision.
+//
+// `unique_download_suffix` is a deterministic hash of the transfer id, so a retry
+// of the same id produces the **same** temp and backup paths. That is not a defect
+// by itself — the retry happens after the previous attempt settled — but it means
+// the "never delete a backup" rule has to hold when the caller reuses exactly the
+// name the previous attempt used.
+// ---------------------------------------------------------------------------
+
+/// A retry with the same transfer id still keeps whatever the previous run left.
+#[tokio::test]
+async fn a_retried_transfer_id_does_not_destroy_its_own_previous_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    // Same `unique` for both attempts, which is what a real retry produces.
+    let target = DownloadTarget::new(&dir.path().join("report.pdf"), 42).unwrap();
+    tokio::fs::write(&target.path, b"current target")
+        .await
+        .unwrap();
+    // The first attempt failed its restore, leaving the user's only original here.
+    tokio::fs::write(&target.backup, b"THE USERS ONLY ORIGINAL")
+        .await
+        .unwrap();
+    tokio::fs::write(&target.temp, b"retry payload")
+        .await
+        .unwrap();
+
+    super::sftp_download::replace_target_as_windows_with(&target, &RealFileOps)
+        .await
+        .expect("the retry commits");
+
+    assert_eq!(
+        tokio::fs::read(&target.path).await.unwrap(),
+        b"retry payload"
+    );
+    assert!(
+        directory_holds(dir.path(), b"THE USERS ONLY ORIGINAL"),
+        "a retry must not delete what the previous attempt protected; \
+         directory holds {:?}",
+        entries(dir.path())
+    );
+}
+
+/// Every free preserved name is tried before the commit gives up.
+#[tokio::test]
+async fn a_backup_collision_never_overwrites_an_existing_preserved_file() {
+    // Fill the first few preserved slots so the search has to skip them. The
+    // requirement is not "the search always finds a slot" but "it never writes over
+    // one that is already there".
+    let dir = tempfile::tempdir().unwrap();
+    let target = DownloadTarget::new(&dir.path().join("report.pdf"), 7).unwrap();
+    tokio::fs::write(&target.path, b"current target")
+        .await
+        .unwrap();
+    tokio::fs::write(&target.backup, b"THE USERS ONLY ORIGINAL")
+        .await
+        .unwrap();
+    for attempt in 0..3 {
+        tokio::fs::write(target.preserved_backup(attempt), format!("older {attempt}"))
+            .await
+            .unwrap();
+    }
+    tokio::fs::write(&target.temp, b"new payload")
+        .await
+        .unwrap();
+
+    super::sftp_download::replace_target_as_windows_with(&target, &RealFileOps)
+        .await
+        .expect("a free slot exists");
+
+    // The occupied slots are untouched…
+    for attempt in 0..3 {
+        assert_eq!(
+            tokio::fs::read(target.preserved_backup(attempt))
+                .await
+                .unwrap(),
+            format!("older {attempt}").as_bytes(),
+            "preserved slot {attempt} was overwritten"
+        );
+    }
+    // …and the original landed in the next free one.
+    assert_eq!(
+        tokio::fs::read(target.preserved_backup(3)).await.unwrap(),
+        b"THE USERS ONLY ORIGINAL"
+    );
+}
