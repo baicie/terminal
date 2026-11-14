@@ -312,6 +312,31 @@ describe('session claims', () => {
       expect(isSessionActive('s1')).toBe(true)
       expect(claimSession('s1').ok).toBe(true)
     })
+
+    it('repeated close requests do not lose what the session was', () => {
+      // `releaseOrDefer` is called from the effect body, the cleanup and a third time
+      // "for good measure" (see the dock-close test). Each call re-marks the session
+      // closing, so the flag describing what to restore has to survive being written
+      // over — otherwise a cancel after the second request would retire a live
+      // connection.
+      beginSessionClose('s1')
+      beginSessionClose('s1')
+      beginSessionClose('s1')
+      forgetSession('s1')
+      expect(isSessionActive('s1')).toBe(true)
+      expect(claimSession('s1').ok).toBe(true)
+    })
+
+    it('repeated close requests for an unknown id still cannot make it live', () => {
+      // The mirror of the case above: re-marking must not accumulate liveness the
+      // first request never granted.
+      beginSessionClose('ghost')
+      beginSessionClose('ghost')
+      forgetSession('ghost')
+      expect(isSessionActive('ghost')).toBe(false)
+      expect(claimSession('ghost').ok).toBe(false)
+      expect(__trackedSessionCount()).toBe(1)
+    })
   })
 
   describe('the registry is bounded by live sessions', () => {
