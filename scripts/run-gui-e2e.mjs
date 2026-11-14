@@ -93,14 +93,32 @@ log(
     .join(' ')}`,
 )
 
+// Seed a real SSH host before the app starts, so the dock spec exercises a live
+// connection instead of the empty state. Opt-in: specs that only care about layout
+// should not pay for a daemon, and a machine without `/usr/sbin/sshd` would fail
+// every spec rather than the one that needs it.
+let fixture = null
+if (flags.has('--with-ssh-fixture')) {
+  log('starting a throwaway sshd and seeding a host into the profile')
+  const { startSeededSshd } = await import('../e2e/gui/fixtures/seed-sftp-host.mjs')
+  fixture = await startSeededSshd({ home })
+  log(`sshd on 127.0.0.1:${fixture.port}; host row written to ${fixture.databaseFile}`)
+}
+
 const run = runCommand('npx', ['wdio', 'run', 'wdio.conf.mjs', ...specArgs], {
   cwd: path.join(ROOT, 'e2e/gui'),
   env: {
     ...process.env,
     GUI_E2E_BINARY: binary,
     GUI_E2E_HOME: home,
+    GUI_E2E_SSH_PORT: fixture ? String(fixture.port) : '',
   },
 })
+
+if (fixture !== null) {
+  await fixture.stop()
+  log('stopped the ssh fixture')
+}
 
 if (!run.ok && run.error) {
   // A failed spawn is not a failed test. Say so, keep the profile for inspection,

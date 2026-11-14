@@ -46,6 +46,24 @@ export function useContainerWidth(): ContainerWidth {
       if (Number.isFinite(next) && next > 0) setWidth(next)
     })
     observer.observe(element)
+
+    // Measure once immediately, before the first callback.
+    //
+    // `ResizeObserver` only fires on a *change*, and a container that mounts at its
+    // final size never changes. The `/sftp` page is exactly that case: it mounts at
+    // full width and stays there, so no callback ever arrived, `width` stayed `null`,
+    // and `pansNeedSingleColumn(null)` treated a 1370px container as narrow. The dock
+    // hid this because it mounts at 300px and is then resized by the layout decision,
+    // which does produce a callback.
+    //
+    // Reading the content box here keeps the unit identical to `contentRect`.
+    const initial = element.clientWidth
+    const style = getComputedStyle(element)
+    const horizontalPadding =
+      Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight)
+    const measured = initial - (Number.isFinite(horizontalPadding) ? horizontalPadding : 0)
+    if (Number.isFinite(measured) && measured > 0) setWidth(measured)
+
     return () => observer.disconnect()
   }, [])
 

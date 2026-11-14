@@ -72,6 +72,9 @@ export function SftpFilePanes({
         ref={ref}
         data-testid="sftp-file-panes"
         data-presentation={single ? 'single' : 'split'}
+        // The measured content width, for the real-WebView spec (E2E-03): the same
+        // number the decision uses, so the spec does not re-derive it from CSS.
+        {...{ 'data-width': width ?? undefined }}
         className={cn(
           'p-3 flex gap-3 h-full overflow-hidden',
           single ? 'flex-col' : 'flex-row',
