@@ -66,6 +66,8 @@ interface SshdHandle {
   username: string
   knownHostsPath: string
   identityKey: string
+  /** The listening daemon's pid, read fresh — `restart`/`interrupt` replace it. */
+  daemonPid: number | null
   stop: () => Promise<void>
 }
 
@@ -152,7 +154,7 @@ describeIf('24 MiB SFTP round trip', () => {
       `batch-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`,
     )
     await writeFile(batch, commands)
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
       const child = spawn(
         '/usr/bin/sftp',
         [...sftpArgs(), '-b', batch, `${sshd.username}@127.0.0.1`],
@@ -160,18 +162,58 @@ describeIf('24 MiB SFTP round trip', () => {
       )
       let stdout = ''
       let stderr = ''
+      let settled = false
       child.stdout.on('data', (chunk: Buffer) => {
         stdout += chunk.toString()
       })
       child.stderr.on('data', (chunk: Buffer) => {
         stderr += chunk.toString()
       })
-      const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs)
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL')
+        // Report the timeout as a timeout. Without this the promise would resolve
+        // with whatever partial output existed and the failure would read as an
+        // assertion problem rather than "the transfer never finished".
+        if (!settled) {
+          settled = true
+          reject(
+            new Error(
+              `sftp timed out after ${timeoutMs} ms\ncommand: ${commands}\nstderr: ${stderr}`,
+            ),
+          )
+        }
+      }, timeoutMs)
+      child.once('error', error => {
+        clearTimeout(timer)
+        if (settled) return
+        settled = true
+        // A failed spawn carries no stderr, so name the cause explicitly. Treating it
+        // as an ordinary failed transfer is how "sftp is not installed" turns into a
+        // confusing assertion failure three cases later.
+        reject(new Error(`could not start /usr/bin/sftp: ${error.message}`))
+      })
       child.once('close', code => {
         clearTimeout(timer)
+        if (settled) return
+        settled = true
         resolve({ code, stdout, stderr })
       })
     })
+  }
+
+  /**
+   * Quote one path for an `sftp` batch file.
+   *
+   * `sftp`'s batch language has no escape sequence for a quote inside a quoted
+   * string, so a path containing `"` cannot be expressed at all — refusing is more
+   * honest than sending a command that silently refers to a different file. Paths
+   * with spaces, `'`, `$` and backslashes are fine once double-quoted.
+   */
+  function batchPath(value: string): string {
+    if (value.includes('"')) {
+      throw new Error(`a path containing a double quote cannot be expressed in an sftp batch: ${value}`)
+    }
+    return `"${value}"`
   }
 
   it('the fixture reports what it actually enabled', () => {
@@ -184,7 +226,7 @@ describeIf('24 MiB SFTP round trip', () => {
 
   it('uploads 24 MiB through the sftp subsystem', async () => {
     const remote = path.join(remoteRoot, 'payload.bin')
-    const result = await runSftp(`put ${payloadPath} ${remote}\n`)
+    const result = await runSftp(`put ${batchPath(payloadPath)} ${batchPath(remote)}\n`)
     expect(result.stderr).not.toContain('subsystem request failed')
     expect(result.code, result.stderr).toBe(0)
 
@@ -199,42 +241,61 @@ describeIf('24 MiB SFTP round trip', () => {
     // trip proves the bytes on the server are the bytes that were sent.
     const remote = path.join(remoteRoot, 'payload.bin')
     const returned = path.join(workDir, 'returned.bin')
-    const result = await runSftp(`get ${remote} ${returned}\n`)
+    const result = await runSftp(`get ${batchPath(remote)} ${batchPath(returned)}\n`)
     expect(result.code, result.stderr).toBe(0)
 
     expect((await stat(returned)).size).toBe(PAYLOAD_BYTES)
     expect(sha256(await readFile(returned))).toBe(payloadHash)
   }, 420_000)
 
-  it('replacing a file leaves no backup or staging residue', async () => {
+  it('replacing a file through the CLI produces no residue beside it', async () => {
+    // What this proves, precisely: `sftp put` over an existing file leaves the
+    // directory holding exactly the files the test put there.
+    //
+    // What it does NOT prove, and must not be reported as: that the **application's**
+    // staged upload cleaned up after itself. The client here is `/usr/bin/sftp`; the
+    // Rust `sftp_upload` / `staged_upload` path never runs. An earlier version of
+    // this case asserted on `.terminal-upload-backup` / `.terminal-upload-staging`
+    // — names only the product produces — which made it a check that could not fail
+    // for the reason it claimed. Application-level staging is covered by
+    // `src-tauri/src/sftp_upload_tests.rs` (fault injection) and belongs to the
+    // command-level suite (#57) for the real-server case.
     const target = path.join(remoteRoot, 'replace.txt')
     await writeFile(target, 'original\n')
     const next = path.join(workDir, 'next.txt')
     await writeFile(next, 'replacement\n')
 
-    const result = await runSftp(`put ${next} ${target}\n`, 60_000)
+    const before = new Set(await readdir(remoteRoot))
+    const result = await runSftp(`put ${batchPath(next)} ${batchPath(target)}\n`, 60_000)
     expect(result.code, result.stderr).toBe(0)
     expect(await readFile(target, 'utf8')).toBe('replacement\n')
 
-    const entries = await readdir(remoteRoot)
-    expect(entries.filter(name => name.includes('.terminal-upload-backup'))).toEqual([])
-    expect(entries.filter(name => name.includes('.terminal-upload-staging'))).toEqual([])
+    const after = await readdir(remoteRoot)
+    const added = after.filter(name => !before.has(name))
+    expect(added, `put must not leave new files beside its target: ${added.join(', ')}`).toEqual([])
   }, 120_000)
 
   it('leaves no sshd process behind after the fixture stops', async () => {
-    // Resource release at the fixture level. If this fails, the rest of the suite
-    // is measuring a daemon nobody is going to clean up.
+    // Identity, not a text match.
+    //
+    // This used `pgrep -f <port>`, which searches the command line. sshd's argv does
+    // not reliably contain the port it listens on — the port lives in the config
+    // file — so that check could pass while the daemon was still running. It was a
+    // false-negative generator, which is worse than no check: the suite would report
+    // a clean teardown it never verified.
+    const daemonPid = sshd.daemonPid
+    expect(daemonPid, 'the fixture must report the daemon pid').toBeTypeOf('number')
+
     await sshd.stop()
-    const probe = await new Promise<{ stdout: string }>(resolve => {
-      const child = spawn('pgrep', ['-f', String(sshd.port)], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-      let stdout = ''
-      child.stdout.on('data', (chunk: Buffer) => {
-        stdout += chunk.toString()
-      })
-      child.once('close', () => resolve({ stdout }))
-    })
-    expect(probe.stdout.trim()).toBe('')
+
+    // `kill(pid, 0)` is the portable liveness probe: it throws ESRCH once the process
+    // is gone and succeeds while any process still owns the pid.
+    let alive = true
+    try {
+      process.kill(daemonPid as number, 0)
+    } catch (error) {
+      alive = (error as NodeJS.ErrnoException).code !== 'ESRCH'
+    }
+    expect(alive, `sshd ${daemonPid} is still running after stop()`).toBe(false)
   }, 60_000)
 })

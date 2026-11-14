@@ -724,6 +724,21 @@ export async function startTerminalSmokeSshd({
       shell,
       /** Raw client identity, unaffected by connectionExtra overrides. */
       identityKey: privateKey,
+      /**
+       * The listening daemon's pid, read fresh on every call.
+       *
+       * A getter, not a captured number: `restart` and `interrupt` replace the
+       * daemon handle, so a value copied at construction would go stale and a
+       * "the process is gone" assertion would be checking the wrong process.
+       *
+       * This exists so callers can verify teardown by identity instead of by
+       * matching the port in `pgrep -f` output — sshd's argv does not reliably
+       * contain the port it listens on, which made that check a false-negative
+       * generator.
+       */
+      get daemonPid() {
+        return daemon.child?.pid ?? null
+      },
       restart: () => {
         if (restartPromise) return restartPromise
         restartPromise = (async () => {
