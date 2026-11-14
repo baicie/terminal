@@ -302,8 +302,9 @@ export function validateEvidenceContract(file, evidence) {
 }
 
 // Product sources and the executable acceptance path are both part of the
-// evidence contract. Documentation, evidence records and test files are
-// excluded so unrelated edits do not invalidate measurements.
+// evidence contract. Documentation, evidence records and **pure test sources**
+// are excluded so unrelated edits do not invalidate measurements — see
+// "What counts as a product source" below for how a test source is recognised.
 export const FINGERPRINT_PATHS = [
   'packages/frontend/src',
   'packages/frontend/index.html',
@@ -347,21 +348,170 @@ export const FINGERPRINT_PATHS = [
 
 const FINGERPRINT_IGNORED = new Set(['node_modules', 'dist', 'target', '.git'])
 
-async function collectFingerprintFiles(relativePath, out) {
+/**
+ * What counts as a product source.
+ *
+ * ## The defect this fixes
+ *
+ * `FINGERPRINT_PATHS` covers all of `packages/frontend/src` and `src-tauri/src`,
+ * and the collector walked every file below them. So editing
+ * `src-tauri/src/sftp_download_tests.rs` — a `#[cfg(test)]` module that is not
+ * compiled into the product binary at all — invalidated all six acceptance
+ * evidence files, and `pnpm verify` reported a fingerprint mismatch for a change
+ * that could not possibly alter a measurement. The header of this module already
+ * claimed test files were excluded; the collector never implemented it.
+ *
+ * ## Why recognition is structural
+ *
+ * "Skip any path containing `test`" is the obvious rule and it is wrong here:
+ *
+ *   * `packages/frontend/src/experiments/textarea-test.tsx` is **not** a test —
+ *     `router/nav-config.tsx` mounts it as a real route (`experiments/` is in the
+ *     router), so it ships in the bundle and a change to it can change the app;
+ *   * `packages/frontend/src/experiments/terminal-input-probe/` is the probe the
+ *     input acceptance scenarios drive, so it is part of the measured path;
+ *   * `packages/frontend/src/test-setup.ts` is only reachable from
+ *     `vitest.config.ts`'s `setupFiles`, so it *is* test-only despite the name
+ *     reading the other way.
+ *
+ * A path rule keyed on substrings cannot separate those three. The rules below
+ * are keyed on how a file enters a build:
+ *
+ *   * a test **runner** only collects files whose name matches its own
+ *     `include` glob — `*.test.*` / `*.spec.*` for vitest (see
+ *     `packages/frontend/vitest.config.ts`) and `*.test.mjs` for `node --test`;
+ *   * a Rust test module is only reachable through a `#[cfg(test)] mod`
+ *     declaration (`#[path = "..."]` or the `<name>_tests.rs` sibling
+ *     convention), and is therefore absent from every non-test build.
+ *
+ * ## Fail-closed
+ *
+ * `isTestSource` only ever answers for shapes it recognises explicitly. A file
+ * whose extension is in neither language's source set throws instead of being
+ * silently admitted or silently dropped — an unrecognised file type would
+ * otherwise be a hole a source edit could pass through unnoticed.
+ */
+const RUST_TEST_FILE = /_tests\.rs$/
+const JS_TEST_FILE = /\.(?:test|spec|stories)\.[cm]?[jt]sx?$/
+const FRONTEND_SOURCE = /\.[cm]?[jt]sx?$|\.css$|\.svg$/
+const RUST_SOURCE = /\.rs$/
+
+/**
+ * Is this path a pure test source, i.e. one that cannot reach a non-test build?
+ *
+ * Both arguments are repo-relative POSIX paths. `testModuleFiles` holds the Rust
+ * files this module found behind a `#[cfg(test)]` declaration; the suffix
+ * convention is a second, independent signal because it is the only one that can
+ * be evaluated without reading the tree.
+ */
+export function isTestSource(relativePath, testModuleFiles = new Set()) {
+  if (relativePath.startsWith(FRONTEND_SOURCE_ROOT)) {
+    // vitest's `include` is `src/**/*.test.{ts,tsx}`, so those files are only
+    // ever collected by the runner. `test-setup.ts` is named plainly and only
+    // reachable from `vitest.config.ts`, which is why it is listed explicitly
+    // rather than matched by a pattern.
+    return JS_TEST_FILE.test(relativePath) || relativePath === TEST_SETUP
+  }
+
+  if (relativePath.startsWith(RUST_SOURCE_ROOT)) {
+    if (!RUST_SOURCE.test(relativePath)) {
+      throw new Error(
+        `${relativePath} is inside src-tauri/src but is not a Rust source file: ` +
+          'the fingerprint rules do not know whether a build uses it',
+      )
+    }
+    // A `#[cfg(test)]` module is not compiled into the product binary, so it
+    // cannot change a measurement. The suffix convention catches the same files
+    // from the name alone.
+    return RUST_TEST_FILE.test(relativePath) || testModuleFiles.has(relativePath)
+  }
+
+  // Everything else is an explicit, hand-listed file: `package.json`,
+  // `Cargo.lock`, `capabilities/*.json`, a runner script. Each of those is part
+  // of the measured path by construction, and none of them is a test.
+  return false
+}
+
+const FRONTEND_SOURCE_ROOT = 'packages/frontend/src/'
+const RUST_SOURCE_ROOT = 'src-tauri/src/'
+
+const TEST_SETUP = 'packages/frontend/src/test-setup.ts'
+
+/**
+ * Find the Rust files that are only reachable through a `#[cfg(test)]` module.
+ *
+ * Reads the production `.rs` files once and looks for the two shapes the crate
+ * uses:
+ *
+ * ```ignore
+ * #[cfg(test)]
+ * #[path = "vault_tests.rs"]
+ * mod tests;
+ * ```
+ *
+ * and the same declaration without `#[path]`, where the module file is the
+ * `<name>_tests.rs` sibling (`lib.rs`: `mod sftp_download_tests;`). A file that
+ * carries its own inline `#[cfg(test)] mod tests { … }` block is *not* covered —
+ * it is part of a production file, and the production file is what the
+ * fingerprint hashes.
+ */
+export async function findTestModuleFiles(relativeRoots, dependencies) {
+  const { readFile } = dependencies
+  const found = new Set()
+  const production = []
+  for (const root of relativeRoots) {
+    await collectFingerprintFiles(
+      root,
+      production,
+      dependencies,
+      relativePath => RUST_SOURCE.test(relativePath),
+    )
+  }
+
+  for (const relativePath of production) {
+    // The suffix convention already identifies these without reading anything,
+    // so skip them here and keep this loop to the files that need inspection.
+    if (RUST_TEST_FILE.test(relativePath)) continue
+    const source = String(await readFile(path.join(projectRoot, relativePath)))
+    for (const match of source.matchAll(
+      /#\[cfg\(test\)\]\s*(?:#\[path\s*=\s*"([^"]+)"\]\s*)?mod\s+(\w+)\s*;/g,
+    )) {
+      const [, explicit, moduleName] = match
+      const directory = path.posix.dirname(relativePath)
+      const declared = explicit ?? `${moduleName}.rs`
+      found.add(path.posix.normalize(path.posix.join(directory, declared)))
+    }
+  }
+  return found
+}
+
+async function collectFingerprintFiles(
+  relativePath,
+  out,
+  dependencies = {},
+  acceptFile = null,
+) {
+  const readDirectory = dependencies.readdir ?? readdir
+  const statPath = dependencies.stat ?? stat
   let stats
   try {
-    stats = await stat(path.join(projectRoot, relativePath))
+    stats = await statPath(path.join(projectRoot, relativePath))
   } catch {
     return out
   }
   if (stats.isFile()) {
-    out.push(relativePath)
+    if (acceptFile === null || acceptFile(relativePath)) out.push(relativePath)
     return out
   }
   if (!stats.isDirectory()) return out
-  for (const name of await readdir(path.join(projectRoot, relativePath))) {
+  for (const name of await readDirectory(path.join(projectRoot, relativePath))) {
     if (FINGERPRINT_IGNORED.has(name)) continue
-    await collectFingerprintFiles(path.join(relativePath, name), out)
+    await collectFingerprintFiles(
+      path.join(relativePath, name),
+      out,
+      dependencies,
+      acceptFile,
+    )
   }
   return out
 }
@@ -375,13 +525,27 @@ async function collectFingerprintFiles(relativePath, out) {
  * that a measurement predates a code change is to fingerprint the code
  * itself. Content hashing keeps this independent of mtimes, checkouts and
  * line endings.
+ *
+ * Pure test sources are skipped (see `isTestSource`): they are not part of any
+ * non-test build, so editing one cannot invalidate a measurement. Everything
+ * else under the listed roots is hashed — there is no allowlist of filenames
+ * that a new production file could fall outside of.
  */
 export async function computeSourceFingerprint(
   dependencies = { readdir, readFile, stat },
 ) {
+  const testModuleFiles = await findTestModuleFiles(
+    FINGERPRINT_PATHS.filter(root => root.startsWith('src-tauri/')),
+    dependencies,
+  )
   const files = []
   for (const root of FINGERPRINT_PATHS) {
-    await collectFingerprintFiles(root, files)
+    await collectFingerprintFiles(
+      root,
+      files,
+      dependencies,
+      relativePath => !isTestSource(relativePath, testModuleFiles),
+    )
   }
   files.sort()
   const hash = createHash('sha256')

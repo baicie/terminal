@@ -7,7 +7,9 @@
 
 | 规则 | 依据 | 违反后果 |
 | --- | --- | --- |
-| 改任何 `FINGERPRINT_PATHS` 内的文件（`src-tauri/**`、`packages/frontend/src/**`、`scripts/run-*.mjs`、`check-verification-evidence.mjs` 等）都会让六份 `docs/verification` 失效 | evidence gate 直接报 “was recorded against source fingerprint X, but sources now fingerprint as Y” | `pnpm verify` 红，任何「证据有效」的说法都不成立 |
+| 改任何 `FINGERPRINT_PATHS` 内的**产品**文件（`src-tauri/src/**/*.rs`、`packages/frontend/src/**` 的非测试文件、`scripts/run-*.mjs`、`check-verification-evidence.mjs` 等）都会让六份 `docs/verification` 失效 | evidence gate 直接报 “was recorded against source fingerprint X, but sources now fingerprint as Y” | `pnpm verify` 红，任何「证据有效」的说法都不成立 |
+| **纯测试源码不在指纹内**：`src-tauri/src/**/*_tests.rs`、被 `#[cfg(test)] mod` 声明的 Rust 模块（含无后缀的 `db_import/tests.rs`）、`packages/frontend/src/**/*.test.*`、`*/**.spec.*`、`test-setup.ts` | 它们不进入任何非测试构建，改它们不可能改变一次测量。依据是 issue #72：`6be74f0c` 采出的证据只因 `85daf18` 改了 `sftp_download_tests.rs` 的两行 clippy 就被判失效 | 之前每修一次测试就要重采一轮六份证据 |
+| 但**目录名或文件名带 test 不代表是测试**：`packages/frontend/src/experiments/textarea-test.tsx` 被 `router/nav-config.tsx` 挂成真实路由，`experiments/terminal-input-probe/` 是输入验收采样驱动的那段代码 | 排除规则按「如何进入构建」判定，不按字符串匹配（见 `scripts/check-verification-evidence.mjs` 的 `isTestSource`） | 按名字排除会把真实产品代码从指纹里挖掉，改动不再让证据失效——比不排除更危险 |
 | 顺序固定：**冻结源码 → 派发 macOS 证据 job → 下载产物 → 过门禁** | 门禁脚本、runner 与 workflow 本身都在指纹路径内，采集期间再改任何一处都会让刚采的证据立刻作废 | 白跑一轮 CI |
 | 插桩产物必须带 `VITE_TERMINAL_SMOKE_BUILD=1` | 普通 `tauri build` 没有 smoke/probe 入口，runner 会显式拒绝（`findInstrumentedChunkNames` 返回 0） | 采集全红 |
 | 证据数值只能来自 runner 输出；写入器要 fail-closed | 2026-10-29 首次采集时写入器拒绝写入 `attempt is not clean: password,password-reconnect` | 假证据进仓库 |
