@@ -17,7 +17,7 @@
  *
  * Exits 0 only when every assertion holds.
  */
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
@@ -99,7 +99,26 @@ record(
 // that caught a real leak: the first implementation imported the probe statically
 // and guarded inside the function, so the marker string survived into
 // `dist/js/container.*.js` even though nothing called it.
+//
+// The bundle is rebuilt here rather than inspected as it happens to sit on disk.
+// The GUI harness builds `dist/` **with** the probe enabled, so checking whatever
+// is lying around reports a leak every time a developer runs the E2E suite before
+// this gate — a false positive that teaches people to ignore the check.
 const distDir = path.join(ROOT, 'dist')
+console.log('\nbuilding the production frontend for the bundle assertion…')
+const buildResult = spawnSync('pnpm', ['--filter=@terminal/frontend', 'build'], {
+  cwd: ROOT,
+  stdio: 'ignore',
+  env: { ...process.env, VITE_TERMINAL_GUI_E2E: '' },
+  shell: process.platform === 'win32',
+})
+if (buildResult.status !== 0) {
+  record(
+    'production frontend builds for the bundle assertion',
+    false,
+    `pnpm build exited ${buildResult.status ?? 'null'}${buildResult.error ? `: ${buildResult.error.code}` : ''}`,
+  )
+}
 function bundleContains(marker) {
   if (!existsSync(distDir)) return null
   const hits = []
