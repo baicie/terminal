@@ -1,9 +1,13 @@
 # TN-SFTP — UX-1i 遗留能力定向迁移
 
 - 角色：Tauri / React / 测试工程
-- 日期：2026-11-14
-- 基线 `main`：`825bcd3deb6680f89055d21fd0c4c28e1824ad86`
+- 日期：2026-11-14（合入后更新：2026-11-14）
+- 迁移起点 `main`：`825bcd3deb6680f89055d21fd0c4c28e1824ad86`
+- 合入后 `main`：`f0aac31b`（#49 的 squash 提交）
 - 方式：**定向迁移**。未整体 merge、未 cherry-pick UX-1i 分支。
+
+> **本报告写于三个 PR 合入之前。** 下面的判定、测试数字与证据指纹都是那一刻的
+> 事实，保留原样以便审计。合入后的状态见 §1.1，它覆盖了 §1 的 PR 表格。
 
 ---
 
@@ -25,7 +29,7 @@
 
 ---
 
-## 1. 交付物
+## 1. 交付物（写作时的状态）
 
 | PR | 内容 | 基线 |
 | --- | --- | --- |
@@ -33,8 +37,31 @@
 | #48 | TN-SFTP-02 Compact Dock | `#47` @ `3281faf` |
 | #49 | TN-SFTP-03 24 MiB 真实往返 | `#48` @ `1e88a88` |
 
-三个都是 Draft，未自动合并、未打 Tag、未发布。按任务书要求**先完成第一项再推进 UI**，
-所以 02/03 依次叠在前一个之上，评审时可按顺序看。
+按任务书要求**先完成第一项再推进 UI**，所以 02/03 依次叠在前一个之上。
+
+### 1.1 合入后的实际状态
+
+| PR | 结果 |
+| --- | --- |
+| #47 | **已合并** `2d8f8d0` |
+| #48 | **已关闭未合并** — base 分支在合并 #47 时被 `--delete-branch` 删除，GitHub 自动关闭且无法重开。内容由 #50 承载 |
+| #50 | **已合并** `76690a9`（#48 的替代） |
+| #49 | **已合并** `f0aac31` |
+
+三个远端分支均已删除。合入前 `main` 是 `825bcd3`，合入后是 `f0aac31`。
+
+**`--delete-branch` 的教训已写进 `AGENTS.md`**：stacked PR 的 base 分支被删会连带
+关闭下游 PR，且 `gh pr reopen` 与 `--base main` 都会因 base 不存在而失败，只能新建
+PR 承载同一份内容。
+
+### 1.2 判定的后续变化
+
+§0 的表格是合入前的判定，其中两项已经改变：
+
+- `EVIDENCE_INTEGRITY`：合入后已派发重采 run；写作时是 FAIL（指纹不匹配），
+  现在取决于该 run 的结果，见 §12 的历史说明。
+- `HOST_SWITCH_SAFE` 与 `COMPACT_DOCK_USABLE` 保持 PARTIAL，原因不变：
+  真实 GUI 证据仍为 NOT_RUN（#58 处理）。
 
 ---
 
@@ -292,9 +319,14 @@ Host Pin 未改动；未触碰终端容器，PTY 不会重挂；`useSftpLocal`/`
 
 ---
 
-## 12. `EVIDENCE_INTEGRITY` = FAIL
+## 12. `EVIDENCE_INTEGRITY` = FAIL（写作时的实测）
 
-实测：
+> **这一节记录的是 PR 阶段的实测值，不是合入后的状态。** 合入后已在 `f0aac31` 上
+> 派发重采 run。指纹是**内容哈希、不绑定 Git SHA**，所以 rebase / squash 不影响
+> 有效性，只有源码内容变化才让证据失效。没有手改 manifest，没有改
+> `FINGERPRINT_PATHS`。
+
+写作时实测：
 
 ```
 Verification evidence gate failed: 7 problem(s).
