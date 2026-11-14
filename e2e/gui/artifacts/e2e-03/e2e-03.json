@@ -1,0 +1,27 @@
+{
+  "case": "e2e-03",
+  "verdict": "PASS",
+  "recordedAt": "2026-11-14T16:16:58.016Z",
+  "platform": {
+    "platform": "darwin",
+    "release": "24.6.0",
+    "arch": "arm64",
+    "node": "v24.16.0",
+    "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
+  },
+  "source": {
+    "sha": "f0aac31b686dc849dcc7711a7b02aafbd8677285",
+    "branch": "fix/58-gui-sftp-dock",
+    "dirty": true
+  },
+  "binary": {
+    "path": "src-tauri/target/release/terminal",
+    "sha256": "13e92e4d5cb554bead75256bb1bebbf633a58874a20f40c928a94bce6ee0dffa",
+    "bytes": 36667568
+  },
+  "window": null,
+  "terminal": null,
+  "command": null,
+  "screenshot": "e2e/gui/artifacts/e2e-03/screens/e2e-03-1794673017885.png",
+  "notes": "clicked the seeded host card: true\nswitched to the SSH tab: false\ndock width 300px, content 275px\ncontent 275px = border 299px − padding 24px\ntransfer panel absent (no transfers in this session)\n/sftp content 1370px → split\nkeyboard case NOT_RUN: the dock did not reopen after navigation\nNOT_RUN: host switch with two connected hosts (needs an SSH server); upload survives closing the dock (needs an SSH server); refresh lands only for the right session + directory (needs an SSH server); delete/rename act on the displayed host (needs an SSH server)"
+}
