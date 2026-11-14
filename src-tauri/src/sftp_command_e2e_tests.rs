@@ -361,8 +361,15 @@ async fn a_download_that_fails_never_replaces_the_local_target() {
         async fn finish(&mut self) -> Result<(), String> {
             Ok(())
         }
-        async fn abandon(&mut self) {
-            let _ = tokio::fs::remove_file(&self.temp).await;
+        async fn abandon(&mut self) -> Option<String> {
+            match tokio::fs::remove_file(&self.temp).await {
+                Ok(()) => None,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => Some(format!(
+                    "the temporary file {} could not be removed: {error}",
+                    self.temp.display()
+                )),
+            }
         }
     }
 

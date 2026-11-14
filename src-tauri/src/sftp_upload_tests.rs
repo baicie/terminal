@@ -535,7 +535,7 @@ async fn different_paths_stay_concurrent_and_the_lock_registry_stays_bounded() {
     // The registry is process-global, so other tests in this binary may have left
     // entries for their own paths. Measure what *this* test adds rather than
     // asserting an absolute count.
-    let before = upload_locks().lock().expect("upload lock registry").len();
+    let before = upload_locks().tracked();
 
     // Many distinct destinations in sequence: if the registry kept an entry per
     // path forever, this is where it would accumulate — 200 entries.
@@ -547,7 +547,7 @@ async fn different_paths_stay_concurrent_and_the_lock_registry_stays_bounded() {
             .expect("upload");
     }
 
-    let after = upload_locks().lock().expect("upload lock registry").len();
+    let after = upload_locks().tracked();
     assert!(
         after <= before + 1,
         "200 settled uploads grew the registry from {before} to {after}; \
@@ -593,10 +593,7 @@ async fn a_queued_upload_keeps_the_entry_alive() {
 
     // The entry must still be there: an upload holds it and another awaits it.
     assert!(
-        upload_locks()
-            .lock()
-            .expect("upload lock registry")
-            .contains_key("/home/u/file.txt"),
+        upload_locks().is_registered("/home/u/file.txt"),
         "the entry may not be pruned while an upload is queued on it"
     );
 
