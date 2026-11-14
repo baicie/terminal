@@ -1,6 +1,6 @@
 # Native GUI E2E — real WebView automation
 
-Status: **harness works on macOS; one real product defect found; Windows/Linux NOT_RUN**
+Status: **macOS and Linux green in CI; Windows harness works but the app fails to start a terminal there**
 
 This document records what was built, what was proven, and what was not.
 
@@ -248,3 +248,50 @@ screenshot captured by WebDriver. Screenshots are written on failure too.
 | PTY lifecycle | E2E-05 | **NOT_RUN** |
 | SFTP product path | E2E-06 | **NOT_RUN** |
 | Production driver absent | isolation gate | **PASS** |
+
+
+---
+
+## 10. CI results (run `43566483644`, main `771bf9af`)
+
+| Job | Result | Meaning |
+| --- | --- | --- |
+| Driver isolation gate | **success** | 5/5 |
+| macOS GUI E2E | **success** | E2E-01 6/6, E2E-02 5/5 |
+| Linux GUI E2E | **success** | ran for real under Xvfb |
+| Windows GUI E2E | **failure** | harness works; the app does not start a shell |
+
+### Windows: the harness is fixed, the app is not
+
+The cross-platform repair did what it was for. The Windows log now shows:
+
+```
+[gui-e2e] building frontend with the GUI E2E probe          ← was a 106 ms silent exit
+[gui-e2e] binary src-tauri\target\release\terminal.exe     ← .exe resolved
+[gui-e2e] isolation env: HOME=. USERPROFILE=. APPDATA=AppData\Roaming
+          LOCALAPPDATA=AppData\Local XDG_CONFIG_HOME=.config … ← all five set
+```
+
+Every one of those was broken before. The remaining failures are at the
+application layer, not the harness:
+
+```
+Error: expect(received).toContain(expected)   ← URL never reached /terminal
+Error: no shell prompt ever appeared in the terminal buffer
+Error: no new prompt appeared after the output
+Error: window never reached 1440px
+```
+
+So on Windows the app starts, the WebDriver server comes up, and a session is
+established — but the terminal never reaches a shell prompt. That is a product
+finding this harness produced, and it is **not** something to fix by weakening
+the assertion.
+
+`WINDOWS_GUI_E2E` is therefore **FAIL** (it ran and failed), while
+`WINDOWS_PROFILE_ISOLATION` is **PASS** (the env is verified on the runner).
+
+### Linux
+
+The Linux job ran under `xvfb-run` and passed. The job name still carries
+"(informational)" until it has a few more green runs; the failure mode it guards
+against (no display for WebKitGTK) is exactly what Xvfb solves.
