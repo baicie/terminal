@@ -57,6 +57,8 @@ export interface UploadRefreshTracker {
   /** Tell it what the panel shows now. */
   setTarget: (target: UploadRefreshTarget | null) => void
   dispose: () => void
+  /** Test-only: how many transfer ids the tracker is holding on to. */
+  __retainedForTests: () => number
 }
 
 /**
@@ -81,10 +83,18 @@ export function createUploadRefreshTracker(
   /** A refresh is scheduled and will fire unless more files land first. */
   let timer: ReturnType<typeof setTimeout> | null = null
   /**
-   * Transfers already accounted for. A transfer that reaches `done` and later has
-   * an unrelated store update must not be counted twice.
+   * Transfers counted towards the batch currently coalescing.
+   *
+   * Only lives as long as the batch: it is cleared when the refresh fires and when
+   * the target changes. Keeping it for the panel's lifetime was the leak — a dock
+   * left open accumulated one id per file ever uploaded, whether or not the store
+   * still had the record.
+   *
+   * Deduplication still holds for the case it exists for: the same `done` observed
+   * twice *during one batch* must produce one refresh.
    */
   const settled = new Set<string>()
+
 
   const cancel = () => {
     if (timer === null) return
@@ -108,6 +118,10 @@ export function createUploadRefreshTracker(
       const shown = current
       timer = setTimeout(() => {
         timer = null
+        // The batch is over; forget it entirely. A duplicate `done` arriving now is
+        // filtered by the store subscription's own diff (`seen`), which is where
+        // "this status did not change" belongs.
+        settled.clear()
         if (disposed) return
         // The panel may have moved while files were landing.
         if (current?.sessionId !== shown.sessionId) return
@@ -133,6 +147,7 @@ export function createUploadRefreshTracker(
       cancel()
       settled.clear()
     },
+    __retainedForTests: () => settled.size,
   }
 }
 
@@ -164,6 +179,16 @@ export function useUploadCompletionRefresh(target: UploadRefreshTarget | null): 
     })
     const seen = new Map<string, TransferStatus>()
     const unsubscribe = useTransferQueue.subscribe(state => {
+      // Reclaim before diffing: an id the store no longer has cannot be "already
+      // seen", and keeping it was the leak — the user can clear finished transfers
+      // while the dock stays open, and nothing told this map about it.
+      //
+      // `retain` on the live ids is exact rather than approximate: the store is the
+      // only source of transfers, so anything missing from it is gone.
+      const live = new Set(state.transfers.map(transfer => transfer.id))
+      for (const id of seen.keys()) {
+        if (!live.has(id)) seen.delete(id)
+      }
       for (const transfer of state.transfers) {
         if (seen.get(transfer.id) === transfer.status) continue
         seen.set(transfer.id, transfer.status)
