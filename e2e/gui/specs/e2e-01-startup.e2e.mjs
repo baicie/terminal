@@ -19,9 +19,30 @@ const CASE = 'e2e-01'
  * function then throws rather than silently reporting an empty terminal.
  */
 async function terminalSnapshot() {
-  const snapshot = await browser.execute(
-    () => globalThis.__terminalGuiE2E?.snapshot?.() ?? null,
-  )
+  // `ECONNREFUSED` here means the WebDriver server is gone — the app exited. That
+  // is a *different* failure from "the assertion did not hold", and reporting it
+  // as an assertion failure is how a crash gets mislabelled as a flaky test.
+  // One retry covers a transient socket close during a resize; a second failure
+  // is reported as an app lifecycle problem with the exit evidence attached.
+  let snapshot
+  try {
+    snapshot = await browser.execute(
+      () => globalThis.__terminalGuiE2E?.snapshot?.() ?? null,
+    )
+  } catch (error) {
+    if (!/ECONNREFUSED|ECONNRESET|socket hang up/i.test(String(error))) throw error
+    await new Promise(resolve => setTimeout(resolve, 1_000))
+    try {
+      snapshot = await browser.execute(
+        () => globalThis.__terminalGuiE2E?.snapshot?.() ?? null,
+      )
+    } catch (retryError) {
+      throw new Error(
+        'the app stopped responding to WebDriver (it likely exited) — ' +
+          `this is an application lifecycle failure, not an assertion failure: ${retryError.message}`,
+      )
+    }
+  }
   if (!snapshot) {
     throw new Error(
       'the read-only GUI E2E probe is absent — the frontend was built without ' +
@@ -113,8 +134,12 @@ describe('E2E-01 startup and terminal readiness', () => {
     const token = `guie2e${Date.now()}`
     const promptPattern = /[$#%]\s*$/
 
+    // Count prompt *occurrences*, not line-final ones: the shell prints its
+    // prompt and then the user's typed line on the same row, so `/[#$%]\s*$/`
+    // matches only the very last row and the before/after counts both read 1.
+    const promptToken = /[$#%]\s/g
     const before = await terminalSnapshot()
-    const promptMatchesBefore = (before.text.match(/[$#%]\s*$/gm) ?? []).length
+    const promptMatchesBefore = (before.text.match(promptToken) ?? []).length
 
     // Real keyboard path: W3C *Element Send Keys* against the focused helper
     // textarea. Not a synthesized DOM event.
@@ -159,7 +184,7 @@ describe('E2E-01 startup and terminal readiness', () => {
     expect(outputLines.length).toBe(1)
 
     // 4. More prompts than before: the shell returned to its input state.
-    const promptMatchesAfter = (after.text.match(/[$#%]\s*$/gm) ?? []).length
+    const promptMatchesAfter = (after.text.match(promptToken) ?? []).length
     expect(promptMatchesAfter).toBeGreaterThan(promptMatchesBefore)
 
     // 5. Keep the raw buffer in the evidence so a CI-only difference is
