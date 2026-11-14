@@ -3,7 +3,7 @@ import { sshService } from '@/service/ssh'
 import { toast } from '@/components/ui/sonner'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { hasTransfersForSession } from '@/service/sftp-transfer-session'
+import { isSessionBusy } from '@/service/sftp-transfer-session'
 import { releaseOrDefer } from './sftp-deferred-release'
 import { useSftpFileOperations } from './use-sftp-file-operations'
 
@@ -82,7 +82,7 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
       setSessionId(null)
       return true
     }
-    const released = releaseOrDefer(current.id, hasTransfersForSession)
+    const released = releaseOrDefer(current.id, isSessionBusy)
     if (released) {
       sessionRef.current = null
       inflightRef.current = null

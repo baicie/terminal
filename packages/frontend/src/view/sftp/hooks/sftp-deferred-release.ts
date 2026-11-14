@@ -1,4 +1,9 @@
 import { sshService } from '@/service/ssh'
+import {
+  beginSessionClose,
+  forgetSession,
+  hasClaimsForSession,
+} from '@/service/sftp-session-claim'
 
 /**
  * Sessions whose panel is gone but whose transfers are still running.
@@ -32,22 +37,49 @@ export function releaseOrDefer(
   sessionId: string,
   isBusy: (sessionId: string) => boolean,
 ): boolean {
-  if (!isBusy(sessionId)) {
+  // Refuse new work first, before asking whether the session is idle.
+  //
+  // The ordering is the whole point. Asking first and marking after leaves a gap:
+  // a transfer admitted in between takes a claim on a connection that is already
+  // on its way out, which is the same class of failure the claim mechanism exists
+  // to prevent — just moved by a few microseconds.
+  //
+  // `beginSessionClose` also reports whether any claim is still outstanding, which
+  // is half of the idle question. The queue is the other half and comes from the
+  // caller's predicate.
+  const claimIdle = beginSessionClose(sessionId)
+
+  if (claimIdle && !isBusy(sessionId)) {
     // Even on the immediate path, drop any watcher of the same id first: the
     // caller is telling us the connection is done, and a leftover timer would
     // close it a second time.
     cancelDeferredRelease(sessionId)
     void sshService.close(sessionId).catch(() => undefined)
+    // The connection is gone; so is the reason to remember anything about it.
+    // Without this the claim module keeps one record per connection the app ever
+    // made — 1000 dock open/close cycles left 1000 entries, growing without any
+    // bound. `claimIdle` guarantees no claim is outstanding here, so nothing can
+    // be released into a map that no longer has the entry.
+    forgetSession(sessionId)
     return true
   }
   // Already deferred: one watcher is enough, and the answer stays the same.
   if (deferredReleases.has(sessionId)) return false
 
+  // Outlive the claim: a claim taken before this call may still be in flight —
+  // the upload is preparing, or the user is still in the file picker. Checking
+  // only the caller's predicate here would close the connection under it, which
+  // is exactly the truncation the claim mechanism exists to stop. The claim check
+  // is intrinsic rather than left to the caller so a call site that passes the
+  // queue-only predicate cannot silently lose it.
   const timer = setInterval(() => {
-    if (isBusy(sessionId)) return
+    if (hasClaimsForSession(sessionId) || isBusy(sessionId)) return
     clearInterval(timer)
     deferredReleases.delete(sessionId)
     void sshService.close(sessionId).catch(() => undefined)
+    // Same as the immediate path: the connection is closed, so the bookkeeping
+    // goes with it. Both guards above already said nothing is using it.
+    forgetSession(sessionId)
   }, DEFERRED_RELEASE_POLL_MS)
   deferredReleases.set(sessionId, () => clearInterval(timer))
   return false
@@ -59,17 +91,34 @@ export function isDeferred(sessionId: string): boolean {
 }
 
 /**
- * Drop a session's watcher without closing anything.
+ * Drop a session's watcher without closing anything and without touching the
+ * claim-side state.
  *
- * Used when the connection is being closed by another path (a host switch that
- * has already decided to tear it down), so the watcher cannot close it a second
- * time afterwards.
+ * Used when the connection is being torn down by this same path (it is closed
+ * immediately below), so the watcher cannot close it a second time.
  */
 export function cancelDeferredRelease(sessionId: string): void {
   const dispose = deferredReleases.get(sessionId)
   if (!dispose) return
   dispose()
   deferredReleases.delete(sessionId)
+}
+
+/**
+ * Abandon a deferred release because the connection is staying after all.
+ *
+ * Distinct from `cancelDeferredRelease`: this one also clears the claim-side
+ * closing marker. Two functions because they mean opposite things — "it is being
+ * closed, stop watching" versus "it is *not* being closed, make it usable again"
+ * — and one function that did both would silently reopen a session on its way out.
+ *
+ * Today the hook does not call either: it keeps the session when it cannot release
+ * it. This exists for a caller that does decide to keep the connection, so that
+ * decision has a correct way to undo the marker.
+ */
+export function abandonDeferredRelease(sessionId: string): void {
+  cancelDeferredRelease(sessionId)
+  forgetSession(sessionId)
 }
 
 /** Test-only: how many sessions currently have a release scheduled. */

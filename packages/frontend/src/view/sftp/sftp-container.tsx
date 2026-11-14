@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useBreakpointMax } from '@/hooks/use-breakpoint'
 import { ViewContainer, ViewContent } from '@/components/view-container'
-import { uploadPaths } from '@/service/sftp-transfer'
 import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
 import { useSftpBindingStore } from '@/store/sftp-binding-store'
@@ -19,6 +18,8 @@ import { useSftpRemote } from './hooks/use-sftp-remote'
 import { useSftpLocal } from './hooks/use-sftp-local'
 import { SftpFilePanes } from './sftp-file-panes'
 import { SftpDockToolbar } from './sftp-dock-toolbar'
+import { useSftpTransferActions } from './use-sftp-transfer-actions'
+import { useUploadCompletionRefresh } from './use-upload-completion-refresh'
 
 const SftpContainer: React.FC = () => {
   const { t } = useTranslation()
@@ -66,39 +67,22 @@ const SftpContainer: React.FC = () => {
     sessionId: remoteSessionId,
   } = remote
 
-  // Upload
-  const handleUpload = useCallback(async () => {
-    if (!remoteSessionId) return
-    const { open } = await import('@tauri-apps/plugin-dialog')
-    const selected = await open({ multiple: true })
-    if (!selected) return
-    const paths = Array.isArray(selected) ? selected : [selected]
-    await uploadPaths({
+  // Upload and download, including their file pickers. See the hook: the picker is
+  // where the session-lifetime question starts, and a cancelled dialog must start
+  // nothing at all.
+  const { onUpload: handleUpload, onDownload: handleDownload } =
+    useSftpTransferActions({
       sessionId: remoteSessionId,
-      remoteDir: remotePath,
-      localPaths: paths,
+      remotePath,
     })
-    void loadRemoteDir(remotePath)
-  }, [loadRemoteDir, remotePath, remoteSessionId])
 
-  // Download
-  const handleDownload = useCallback(
-    async (file: FileItem) => {
-      if (!remoteSessionId || file.is_directory) return
-      const { save } = await import('@tauri-apps/plugin-dialog')
-      const fileName = file.name.split('/').pop() || file.name
-      const target = await save({ defaultPath: fileName })
-      if (!target) return
-      const { downloadFile } = await import('@/service/sftp-transfer')
-      await downloadFile({
-        sessionId: remoteSessionId,
-        remotePath: file.path,
-        localPath: target,
-        displayName: fileName,
-        bytesTotal: file.size,
-      })
-    },
-    [remoteSessionId],
+  // Why the listing is not refreshed by the handlers above: `uploadPaths` resolves
+  // when the files are *scheduled*, not when the bytes have landed. The listing is
+  // refreshed here, once per batch, on the transfer's own terminal event.
+  useUploadCompletionRefresh(
+    remoteSessionId
+      ? { sessionId: remoteSessionId, remoteDir: remotePath, loadDir: loadRemoteDir }
+      : null,
   )
 
   const { isDragging } = useSftpDrop({
