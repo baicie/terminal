@@ -13,6 +13,8 @@ mod raw_input_probe;
 mod remote_prompt_probe;
 mod serial;
 mod sftp;
+#[cfg(test)]
+mod sftp_command_e2e_tests;
 mod sftp_download;
 #[cfg(test)]
 mod sftp_download_tests;
