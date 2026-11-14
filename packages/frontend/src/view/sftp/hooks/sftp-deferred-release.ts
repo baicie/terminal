@@ -1,6 +1,7 @@
 import { sshService } from '@/service/ssh'
 import {
   beginSessionClose,
+  completeSessionClose,
   forgetSession,
   hasClaimsForSession,
 } from '@/service/sftp-session-claim'
@@ -54,13 +55,20 @@ export function releaseOrDefer(
     // caller is telling us the connection is done, and a leftover timer would
     // close it a second time.
     cancelDeferredRelease(sessionId)
-    void sshService.close(sessionId).catch(() => undefined)
-    // The connection is gone; so is the reason to remember anything about it.
-    // Without this the claim module keeps one record per connection the app ever
-    // made — 1000 dock open/close cycles left 1000 entries, growing without any
-    // bound. `claimIdle` guarantees no claim is outstanding here, so nothing can
-    // be released into a map that no longer has the entry.
-    forgetSession(sessionId)
+    // Retire the id only once the backend has confirmed.
+    //
+    // `close()` is an IPC round trip. Deleting the closing marker synchronously
+    // (what this used to do) opened exactly the window the claim mechanism exists
+    // to prevent: a late `uploadFile` in that round trip found no record, was
+    // admitted, and the in-flight close then dropped the connection under it.
+    //
+    // On rejection the id stays closing. The backend may or may not have torn the
+    // connection down, and admitting work onto it is the failure we are here to
+    // stop; a new connection gets a fresh `ssh-<uuid>` anyway.
+    void sshService
+      .close(sessionId)
+      .then(() => completeSessionClose(sessionId))
+      .catch(() => undefined)
     return true
   }
   // Already deferred: one watcher is enough, and the answer stays the same.
@@ -76,10 +84,13 @@ export function releaseOrDefer(
     if (hasClaimsForSession(sessionId) || isBusy(sessionId)) return
     clearInterval(timer)
     deferredReleases.delete(sessionId)
-    void sshService.close(sessionId).catch(() => undefined)
-    // Same as the immediate path: the connection is closed, so the bookkeeping
-    // goes with it. Both guards above already said nothing is using it.
-    forgetSession(sessionId)
+    // Same rule as the immediate path: the watcher has decided to close, but the
+    // id stays in `closing` until the backend confirms. Both guards above already
+    // said nothing is using it, which is what lets the close happen at all.
+    void sshService
+      .close(sessionId)
+      .then(() => completeSessionClose(sessionId))
+      .catch(() => undefined)
   }, DEFERRED_RELEASE_POLL_MS)
   deferredReleases.set(sessionId, () => clearInterval(timer))
   return false
