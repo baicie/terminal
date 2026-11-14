@@ -991,19 +991,20 @@ fn directory_holds(dir: &Path, wanted: &[u8]) -> bool {
 async fn an_existing_backup_is_never_deleted_by_a_failed_commit() {
     let dir = tempfile::tempdir().unwrap();
     let target = target_for(dir.path(), "report.pdf");
-    tokio::fs::write(&target.path, b"current target").await.unwrap();
+    tokio::fs::write(&target.path, b"current target")
+        .await
+        .unwrap();
     // Left by a previous commit whose restore failed: the user's only original.
     tokio::fs::write(&target.backup, b"THE USERS ONLY ORIGINAL")
         .await
         .unwrap();
-    tokio::fs::write(&target.temp, b"new payload").await.unwrap();
+    tokio::fs::write(&target.temp, b"new payload")
+        .await
+        .unwrap();
 
     // Both the promotion and the restore fail, so the commit cannot succeed.
-    let outcome = super::sftp_download::replace_target_as_windows_with(
-        &target,
-        &FailPromoteAndRestore,
-    )
-    .await;
+    let outcome =
+        super::sftp_download::replace_target_as_windows_with(&target, &FailPromoteAndRestore).await;
     assert!(outcome.is_err());
 
     // The bytes must still exist somewhere in the directory. Which name they are
@@ -1020,11 +1021,15 @@ async fn an_existing_backup_is_never_deleted_by_a_failed_commit() {
 async fn an_existing_backup_is_preserved_not_overwritten_by_a_successful_commit() {
     let dir = tempfile::tempdir().unwrap();
     let target = target_for(dir.path(), "report.pdf");
-    tokio::fs::write(&target.path, b"current target").await.unwrap();
+    tokio::fs::write(&target.path, b"current target")
+        .await
+        .unwrap();
     tokio::fs::write(&target.backup, b"THE USERS ONLY ORIGINAL")
         .await
         .unwrap();
-    tokio::fs::write(&target.temp, b"new payload").await.unwrap();
+    tokio::fs::write(&target.temp, b"new payload")
+        .await
+        .unwrap();
 
     super::sftp_download::replace_target_as_windows_with(&target, &RealFileOps)
         .await
@@ -1051,8 +1056,12 @@ async fn repeated_commits_to_one_target_reuse_the_same_preserved_slot() {
     let target = target_for(dir.path(), "report.pdf");
 
     for round in 0..3 {
-        tokio::fs::write(&target.path, format!("target {round}")).await.unwrap();
-        tokio::fs::write(&target.temp, format!("payload {round}")).await.unwrap();
+        tokio::fs::write(&target.path, format!("target {round}"))
+            .await
+            .unwrap();
+        tokio::fs::write(&target.temp, format!("payload {round}"))
+            .await
+            .unwrap();
         super::sftp_download::replace_target_as_windows_with(&target, &RealFileOps)
             .await
             .expect("commit");
@@ -1082,7 +1091,9 @@ async fn a_missing_target_still_preserves_a_preexisting_backup() {
     tokio::fs::write(&target.backup, b"THE USERS ONLY ORIGINAL")
         .await
         .unwrap();
-    tokio::fs::write(&target.temp, b"new payload").await.unwrap();
+    tokio::fs::write(&target.temp, b"new payload")
+        .await
+        .unwrap();
 
     super::sftp_download::replace_target_as_windows_with(&target, &RealFileOps)
         .await
@@ -1105,8 +1116,12 @@ async fn an_unreadable_target_aborts_the_commit_instead_of_overwriting() {
     // renamed straight over a file that was really there.
     let dir = tempfile::tempdir().unwrap();
     let target = target_for(dir.path(), "report.pdf");
-    tokio::fs::write(&target.path, b"the original bytes").await.unwrap();
-    tokio::fs::write(&target.temp, b"new payload").await.unwrap();
+    tokio::fs::write(&target.path, b"the original bytes")
+        .await
+        .unwrap();
+    tokio::fs::write(&target.temp, b"new payload")
+        .await
+        .unwrap();
 
     let outcome =
         super::sftp_download::replace_target_as_windows_with(&target, &UnreadableTarget).await;

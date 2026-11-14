@@ -299,16 +299,13 @@ pub(crate) async fn promote_over_existing(
     target: &DownloadTarget,
     ops: &dyn FileOps,
 ) -> Result<(), String> {
-    let had_original = ops
-        .exists(&target.path)
-        .await
-        .map_err(|error| {
-            format!(
-                "could not tell whether {} exists: {error}; the download was not \
+    let had_original = ops.exists(&target.path).await.map_err(|error| {
+        format!(
+            "could not tell whether {} exists: {error}; the download was not \
                  committed and the original was left untouched",
-                target.path.display()
-            )
-        })?;
+            target.path.display()
+        )
+    })?;
 
     // ## Why an existing backup is moved, never deleted
     //
@@ -421,7 +418,6 @@ async fn preserve_existing_backup(
         target.backup.display()
     ))
 }
-
 
 /// Copy from a remote reader into the target through a temporary file.
 ///
