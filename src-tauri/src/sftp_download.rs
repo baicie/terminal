@@ -44,6 +44,8 @@ use tokio::io::AsyncReadExt;
 const TEMP_MARKER: &str = ".terminal-download-tmp";
 /// Marker for the displaced original during a Windows-style replace.
 const BACKUP_MARKER: &str = ".terminal-download-backup";
+/// How many names to try before giving up on preserving an existing backup.
+const BACKUP_PRESERVE_ATTEMPTS: u32 = 64;
 
 /// One registry for download commits, keyed by canonical target path.
 static DOWNLOAD_LOCKS: PathLockRegistry = PathLockRegistry::new();
@@ -64,7 +66,12 @@ pub(crate) trait FileOps: Send + Sync {
     /// Rename, replacing the destination if the platform allows it.
     async fn rename(&self, from: &Path, to: &Path) -> std::io::Result<()>;
     /// Does this path exist?
-    async fn exists(&self, path: &Path) -> bool;
+    ///
+    /// Returns `Err` when the answer is unknown — a permission error or an I/O
+    /// failure is **not** "absent". Treating the two as the same makes the commit
+    /// skip the displace step for a file that is really there, so the promotion
+    /// overwrites the user's original instead of moving it aside first.
+    async fn exists(&self, path: &Path) -> std::io::Result<bool>;
     /// Remove a file, treating "not there" as success.
     async fn remove(&self, path: &Path) -> std::io::Result<()>;
 }
@@ -78,8 +85,10 @@ impl FileOps for RealFileOps {
         tokio::fs::rename(from, to).await
     }
 
-    async fn exists(&self, path: &Path) -> bool {
-        tokio::fs::try_exists(path).await.unwrap_or(false)
+    async fn exists(&self, path: &Path) -> std::io::Result<bool> {
+        // `try_exists` already separates "absent" (Ok(false)) from "could not
+        // tell" (Err); the defect was discarding the distinction.
+        tokio::fs::try_exists(path).await
     }
 
     async fn remove(&self, path: &Path) -> std::io::Result<()> {
@@ -166,6 +175,16 @@ impl DownloadTarget {
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_default();
         resolved_directory.join(name).to_string_lossy().to_string()
+    }
+
+    /// Where a pre-existing backup is moved to instead of being deleted.
+    ///
+    /// Distinct from `backup` so a commit in progress never confuses the two, and
+    /// the suffix records that this file was kept on purpose.
+    pub(crate) fn preserved_backup(&self, attempt: u32) -> PathBuf {
+        let mut name = self.backup.clone().into_os_string();
+        name.push(format!(".preserved-{attempt}"));
+        PathBuf::from(name)
     }
 
     /// A copy of the three paths, for handing to a spawned task.
@@ -280,16 +299,42 @@ pub(crate) async fn promote_over_existing(
     target: &DownloadTarget,
     ops: &dyn FileOps,
 ) -> Result<(), String> {
-    let had_original = ops.exists(&target.path).await;
+    let had_original = ops
+        .exists(&target.path)
+        .await
+        .map_err(|error| {
+            format!(
+                "could not tell whether {} exists: {error}; the download was not \
+                 committed and the original was left untouched",
+                target.path.display()
+            )
+        })?;
+
+    // ## Why an existing backup is moved, never deleted
+    //
+    // A backup file here is not debris. There are exactly two ways one exists:
+    //
+    //   1. a previous commit's restore failed, so **the user's only copy of the
+    //      original is inside it** — the error from that commit said so;
+    //   2. a previous commit succeeded and its cleanup failed, so it is a leftover
+    //      duplicate.
+    //
+    // Deleting it is correct in case 2 and destroys the user's file in case 1, and
+    // nothing at this layer can tell them apart. So it is never deleted: it is
+    // renamed to a free name that records why it was kept. That costs a file on
+    // disk and cannot cost the user their data.
+    //
+    // This runs whether or not the target exists. A missing target does not make the
+    // backup less valuable — a host that came back after a failed restore may have
+    // no target *because* the restore failed.
+    if let Err(error) = preserve_existing_backup(target, ops).await {
+        return Err(format!(
+            "could not set aside the existing backup {}: {error}; the download \
+             was not committed and nothing was deleted",
+            target.backup.display()
+        ));
+    }
     if had_original {
-        // A leftover backup from a previous crash would make the rename below fail;
-        // clearing it is safe because it is not the file the user is looking at.
-        if let Err(error) = ops.remove(&target.backup).await {
-            return Err(format!(
-                "could not clear the stale backup {}: {error}",
-                target.backup.display()
-            ));
-        }
         if let Err(error) = ops.rename(&target.path, &target.backup).await {
             return Err(format!(
                 "could not move the original {} aside: {error}",
@@ -301,9 +346,9 @@ pub(crate) async fn promote_over_existing(
     match ops.rename(&target.temp, &target.path).await {
         Ok(()) => {
             if had_original {
-                // A leftover backup is not worth failing the download over: the new
-                // bytes are already in place. But say so, because a silent failure
-                // here is a file the user does not know about.
+                // The new bytes are in place, so this backup is a duplicate of a file
+                // the user still has. Failing the download over it would be worse
+                // than leaving it, but it must not be silent.
                 if let Err(error) = ops.remove(&target.backup).await {
                     eprintln!(
                         "sftp_download: the new file is in place but the displaced \
@@ -325,9 +370,9 @@ pub(crate) async fn promote_over_existing(
                 return Err(promotion);
             }
             if let Err(restore_error) = ops.rename(&target.backup, &target.path).await {
-                // The one case that must never be silent. The backup is left exactly
-                // where it is — deleting it would destroy the only copy of the
-                // user's file.
+                // The one case that must never be silent or lossy. The backup is
+                // left exactly where it is — deleting it would destroy the only
+                // copy of the user's file.
                 return Err(format!(
                     "{promotion}; the original could not be restored to {} \
                      ({restore_error}) and is still at {}",
@@ -339,6 +384,44 @@ pub(crate) async fn promote_over_existing(
         }
     }
 }
+
+/// Move a pre-existing backup out of the way without ever deleting it.
+///
+/// The name it lands on says why it was kept, so a user who finds one has a path
+/// back: `<backup>.preserved-<n>`. The suffix is chosen to be free, and a bounded
+/// search stops rather than overwriting when it cannot find one — at that point the
+/// honest answer is "could not commit", not "deleted something".
+async fn preserve_existing_backup(
+    target: &DownloadTarget,
+    ops: &dyn FileOps,
+) -> Result<(), String> {
+    let existing = ops
+        .exists(&target.backup)
+        .await
+        .map_err(|error| format!("could not read {}: {error}", target.backup.display()))?;
+    if !existing {
+        return Ok(());
+    }
+    for attempt in 0..BACKUP_PRESERVE_ATTEMPTS {
+        let candidate = target.preserved_backup(attempt);
+        let taken = ops
+            .exists(&candidate)
+            .await
+            .map_err(|error| format!("could not read {}: {error}", candidate.display()))?;
+        if !taken {
+            return ops
+                .rename(&target.backup, &candidate)
+                .await
+                .map_err(|error| error.to_string());
+        }
+    }
+    Err(format!(
+        "{} already exists and no free name was found to keep it under; \
+         it was left in place",
+        target.backup.display()
+    ))
+}
+
 
 /// Copy from a remote reader into the target through a temporary file.
 ///
