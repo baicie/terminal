@@ -8,6 +8,7 @@ export default {
   'sftp.newFolderSoon': '新建文件夹（即将支持）',
   'sftp.upload': '上传',
   'sftp.download': '下载',
+  'sftp.fileActions': '文件操作',
   'sftp.goUp': '上级目录',
   'sftp.goHome': '主目录',
   'sftp.refresh': '刷新',

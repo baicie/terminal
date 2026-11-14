@@ -8,6 +8,7 @@ export default {
   'sftp.newFolderSoon': 'New folder (coming soon)',
   'sftp.upload': 'Upload',
   'sftp.download': 'Download',
+  'sftp.fileActions': 'File actions',
   'sftp.goUp': 'Go up',
   'sftp.goHome': 'Go home',
   'sftp.refresh': 'Refresh',
