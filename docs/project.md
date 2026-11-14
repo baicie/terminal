@@ -1384,6 +1384,47 @@ UX-1c 引入的，但 Dock 让它们从「偶尔」变成「一天几十次」�
   **`UPLOAD_SURVIVES_DOCK_CLOSE` 自动化能证明的是「会话未被 close」，不是「字节还在流」**
 - 📋 详见 `docs/design/terminal-next/ux1c-context-dock.md`
 
+### Terminal Next F0 - 布局决策与 SFTP 生命周期 🟡 Draft PR #44
+
+基线 `main = 1a24eed`，按 `Terminal-Next-v2` 设计包 F0（TN-01 / TN-02）。
+两项同时也是独立集成验收报告的 P1 —— 两条独立路径得出同一结论。
+详见 `docs/design/terminal-next/f0-layout-sftp-lifecycle.md`。
+
+- ✅ **TN-01 布局决策用真实宽度**：`usePanelLayout()` 原来只传
+  `RAIL + SEPARATOR`（52px），从不接收左栏宽度，而 `LeftPanel` 按用户保存的
+  `sidebarWidth` 渲染（176–420）。1024px 窗口 + 420px 左栏 + Dock 时预算认为
+  78 列够用、**实际只剩 29 列**（下限 60）。新增 `layout-decision.ts` 把算术与
+  策略分家：`chooseLayout` 收 `shellWidth`/`leftWidth`/`leftMode`/`rightMode`/`cellWidth`，
+  `LeftPresentation` 增加 `drawer`，**24px 滞回带**按 cellWidth 折算成列数
+  （只保持「宽裕」的上一决策，已在饿着终端的必须立即降级）；
+  `useShellWidth` 用 **ResizeObserver** 观察 shell 容器而非 `window.innerWidth`
+  （把已挤压的终端宽度送回去会反馈振荡）。接线为**必填入参**，
+  不知道宽度的调用方编译失败
+- ✅ **先红**：`layout-decision-regression.test.ts` 把旧实现原样复制为
+  `oldDecision()`，断言新旧结果不一致（1240+420px：旧 `allowLeft=true`，实际 54 列）
+- ✅ **TN-02 SFTP 注册表随会话释放**：`sftp_connect` 插入 `state.sftp_sessions`，
+  但全仓只有 `get`/`insert`/**进程退出 clear**，没有 `remove`；`session_close`
+  只清 `SessionManager`，而 `SshConnectionPool::release` 已移除 handle →
+  **悬挂引用**。新增 `forget_session` + 泛型 `remove_session_entry`（泛型是为了让
+  测试用生产代码调用的同一函数断言键语义，而不是复述标准库），在
+  `session_close` 里先释放再移除会话
+- ✅ **附带 drop 监听器**：设计包基于 `1a24eed` 快照报 GAP-DRAG-LISTENER，
+  核实 main **已修好但零测试**。补 8 项并做**变异验证**（移除 `cancelled` 保护 →
+  2 项失败 + 99 个错误，100 次循环全泄漏；恢复后 8/8），覆盖此前最多只测 5 次的
+  100 次开关
+- 门禁：前端 **243 文件 / 2191 项**（基线 240/2160）、Rust **397**（基线 394）、
+  lint 0、typecheck、source-size **675**、bundle 625.22/628 KB。
+  source-size 触发两次**均本地发现并拆分**
+- 🟡 **GUI 交叉验收 NOT_RUN**：真实二进制启动并截图（`142×43`，Focus 模式，
+  该数字来自 xterm `FitAddon` 而非本项目算法），但**合成鼠标点击不生效于
+  Tauri webview**、**辅助功能读不到 webview 内部元素**，因此「420px+Dock 同开」
+  没有实拍证据。需要能驱动 webview 的 harness，属独立任务
+- **判定**：`TN-01_LAYOUT_WIRING=PASS`（单元+接线）、`TN-02_SFTP_REGISTRY=PASS`、
+  `TN-02_DROP_LISTENER=PASS`、`F0_EXIT_GATE=PARTIAL`（GAP-SECRETS 与
+  GAP-FS-SCOPE 仍在，GUI 未做）
+- 本分支**未碰** `Cargo.toml`/`custom-protocol`/`release-*`/证据文件
+  （设计包要求不与 PR #43 重叠）
+
 ### Terminal Next - 独立集成验收与最终审查 🟡 判定 FAIL（RC 准入）
 
 基线 `main = 1a24eed`，独立 Release Gatekeeper 视角，不采信实现者总结，

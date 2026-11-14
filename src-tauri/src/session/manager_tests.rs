@@ -226,3 +226,52 @@ async fn shutdown_waits_for_a_session_removed_while_its_close_is_in_flight() {
         "shutdown must wait for an explicit close that already removed its registry entry"
     );
 }
+
+#[tokio::test]
+async fn every_removal_path_notifies_listeners() {
+    // The SFTP registry is keyed by session id but owned outside the manager. It is
+    // only correct if *every* way a session can leave the registry fires the same
+    // notification: explicit close, completion cleanup, and shutdown. Before this
+    // hook only the `session_close` command dropped the SFTP entry.
+    let manager = SessionManager::new();
+    let seen = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    {
+        let seen = Arc::clone(&seen);
+        manager.on_session_removed(Arc::new(move |id: String| {
+            seen.lock().unwrap().push(id);
+        }));
+    }
+
+    // 1. Explicit removal.
+    let session_id = "notify-explicit".to_string();
+    let (session, _) = fake_local_session(&session_id, true);
+    manager.register_session(SessionState::Local(session)).await;
+    manager.remove_session(&session_id).await.unwrap();
+    assert!(
+        seen.lock().unwrap().contains(&session_id),
+        "explicit removal must notify"
+    );
+
+    // 2. Shutdown drains every remaining session.
+    let other = "notify-shutdown".to_string();
+    let (session, _) = fake_local_session(&other, true);
+    manager.register_session(SessionState::Local(session)).await;
+    manager.shutdown().await;
+    assert!(
+        seen.lock().unwrap().contains(&other),
+        "shutdown must notify for every drained session"
+    );
+}
+
+#[tokio::test]
+async fn a_removal_listener_that_is_never_registered_is_not_required() {
+    // Regression guard: the hook must be optional. A manager with no listeners
+    // still tears sessions down normally — the SFTP registry is not a prerequisite
+    // for session lifecycle.
+    let manager = SessionManager::new();
+    let session_id = "no-listener".to_string();
+    let (session, _) = fake_local_session(&session_id, true);
+    manager.register_session(SessionState::Local(session)).await;
+    manager.remove_session(&session_id).await.unwrap();
+    assert_eq!(registry_counts(&manager).await, (0, 0, 0));
+}

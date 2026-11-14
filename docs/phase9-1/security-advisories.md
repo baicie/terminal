@@ -41,3 +41,6 @@ RustSec 未发布 CVSS 向量的共 9 条，单独计数，不计入上面任何
 | 12 | unmaintained | RUSTSEC-2026-0370 | zvariant | 5.15.1 | (not published) | (not published) | 在构建图内（normal 依赖） | Linux |
 | 13 | unmaintained | RUSTSEC-2026-0372 | zvariant_derive | 5.15.1 | (not published) | (not published) | 在构建图内（normal 依赖） | Linux |
 | 14 | vulnerability | RUSTSEC-2026-0459 | libsqlite3-sys | 0.30.1 | (not published) | CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:P/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N | 在构建图内（normal 依赖，`bundled` 编译进二进制） | 全部 |
+| 15 | vulnerability | RUSTSEC-2026-0523 | quinn-proto | 0.11.14 | (not published) | (not published) | 不在构建图（Cargo.lock 残留） | — |
+| 16 | vulnerability | RUSTSEC-2026-0524 | quinn-proto | 0.11.14 | (not published) | (not published) | 不在构建图（Cargo.lock 残留） | — |
+| 17 | vulnerability | RUSTSEC-2026-0538 | quinn-udp | 0.5.14 | (not published) | (not published) | 不在构建图（Cargo.lock 残留） | — |

@@ -116,6 +116,9 @@ struct SessionMeta {
 ///
 /// 负责创建、存储、查询和销毁 Session 实例，
 /// 同时管理对应的输出通道。
+/// Fired with the session id whenever one leaves the registry.
+pub type SessionRemovedListener = Arc<dyn Fn(String) + Send + Sync>;
+
 pub struct SessionManager {
     /// 所有活跃的 Session
     sessions: Arc<Mutex<HashMap<String, SessionState>>>,
@@ -124,6 +127,15 @@ pub struct SessionManager {
     /// Session 元信息
     session_meta: Arc<Mutex<HashMap<String, SessionMeta>>>,
     lifecycle: Arc<Mutex<SessionManagerLifecycle>>,
+    /// Notified whenever a session id leaves the registry, for *any* reason.
+    ///
+    /// `shared_resources` owns maps keyed by session id that the manager itself
+    /// does not know about — the SFTP registry is the one that matters. Before
+    /// this hook only the explicit `session_close` command dropped its entry, so
+    /// a session that ended any other way (remote disconnect, auth failure,
+    /// shutdown, completion cleanup) left its SFTP channel behind: a dangling
+    /// `Arc<SftpSession>` whose transport was already gone.
+    removed_listeners: Arc<std::sync::Mutex<Vec<SessionRemovedListener>>>,
 }
 
 struct SessionManagerLifecycle {
@@ -138,6 +150,7 @@ impl SessionManager {
             channel_manager: Arc::new(ChannelManager::new()),
             session_meta: Arc::new(Mutex::new(HashMap::new())),
             lifecycle: Arc::new(Mutex::new(SessionManagerLifecycle { closing: false })),
+            removed_listeners: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 
@@ -260,6 +273,33 @@ impl SessionManager {
         (sessions, metadata, channels)
     }
 
+    /// Register a callback fired after a session id leaves the registry.
+    ///
+    /// Called for every removal path so a second registry keyed by the same id
+    /// cannot outlive the session it describes.
+    /// Register a listener. Synchronous on purpose: the caller may be outside a
+    /// Tokio runtime (app setup runs before the async scheduler is entered), and a
+    /// `tokio::sync::Mutex` would panic there.
+    pub fn on_session_removed(&self, listener: SessionRemovedListener) {
+        self.removed_listeners
+            .lock()
+            .expect("session removal listener registry")
+            .push(listener);
+    }
+
+    /// Fire the removal listeners. Best effort: a panicking listener must not
+    /// abort session teardown.
+    async fn notify_removed(&self, session_id: &str) {
+        let listeners = self
+            .removed_listeners
+            .lock()
+            .expect("session removal listener registry")
+            .clone();
+        for listener in listeners {
+            listener(session_id.to_string());
+        }
+    }
+
     /// 移除 Session
     pub async fn remove_session(&self, session_id: &str) -> Result<(), SessionError> {
         // Serialize explicit close with shutdown so a session that has left
@@ -276,6 +316,9 @@ impl SessionManager {
         if let Some(session) = session {
             session.close().await;
         }
+        // Even when the session was already gone: the SFTP entry may still be
+        // there, and dropping it twice is a no-op.
+        self.notify_removed(session_id).await;
 
         Ok(())
     }
@@ -296,17 +339,22 @@ impl SessionManager {
     }
 
     async fn close_registered_sessions(&self) {
-        let sessions = self
-            .sessions
-            .lock()
-            .await
-            .drain()
-            .map(|(_, session)| session)
-            .collect::<Vec<_>>();
+        let (ids, sessions): (Vec<String>, Vec<SessionState>) = {
+            let mut guard = self.sessions.lock().await;
+            let ids = guard.keys().cloned().collect();
+            let sessions = guard.drain().map(|(_, session)| session).collect();
+            (ids, sessions)
+        };
 
         self.session_meta.lock().await.clear();
         self.channel_manager.clear().await;
         join_all(sessions.into_iter().map(SessionState::close)).await;
+
+        // Shutdown is a removal path too. Without this the SFTP registry outlives
+        // every session it describes until the whole map is cleared at exit.
+        for id in ids {
+            self.notify_removed(&id).await;
+        }
     }
 
     /// 发送输出数据

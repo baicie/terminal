@@ -30,6 +30,17 @@ export const USABLE_COLS = 60
 export const DESIGN_FLOOR_NARROW = 80
 export const DESIGN_FLOOR_WIDE = 120
 
+/**
+ * Hysteresis band around every presentation threshold.
+ *
+ * A layout that flips the moment `cols` crosses 60 will thrash: the dock becoming
+ * an overlay widens the terminal, which pushes `cols` back over 60, which makes it
+ * a column again. The design package therefore requires the decision to hold for
+ * 24px before reversing. `chooseLayout` takes the previous decision for exactly
+ * this reason — without it there is nothing to be sticky about.
+ */
+export const HYSTERESIS_PX = 24
+
 export interface LayoutMetrics {
   /** Viewport width in CSS pixels. */
   viewportWidth: number
