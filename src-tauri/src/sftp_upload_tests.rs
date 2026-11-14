@@ -6,7 +6,8 @@
 
 use super::*;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 #[derive(Default, Clone)]
 struct Faults {
@@ -34,8 +35,26 @@ struct State {
     renames: usize,
     /// Age in seconds of a staged file, keyed by full path.
     staging_ages: HashMap<String, u64>,
+    /// Deterministic pause point for the lock-race tests.
+    ///
+    /// `create_exclusive` is the first thing a staged upload does to the remote
+    /// after it takes the path lock, so blocking here proves the lock is held.
+    gate: Option<Gate>,
 }
 
+/// An awaitable pause in `create_exclusive`.
+///
+/// `reached` fires once the call has arrived; the call then waits for `release`.
+/// Both halves are needed: without `reached` a test cannot tell "not yet started"
+/// from "started and finished".
+struct Gate {
+    /// Notified once, when the first caller arrives.
+    reached: Arc<tokio::sync::Notify>,
+    /// Permits handed out to every blocked caller; open it wide to let them run.
+    release: Arc<tokio::sync::Semaphore>,
+}
+
+#[derive(Clone)]
 struct MemoryFs {
     state: Arc<Mutex<State>>,
 }
@@ -111,6 +130,29 @@ impl RemoteFs for MemoryFs {
     }
 
     async fn create_exclusive(&self, path: &str) -> Result<Option<Box<dyn RemoteFile>>, String> {
+        // The gate, when set, is the deterministic pause point for the lock-race
+        // tests: it is the first remote operation after the path lock is taken.
+        //
+        // The state lock is released before awaiting — holding a `std::sync::Mutex`
+        // across an await would deadlock the runtime, and is why the fields are
+        // cloned out first.
+        let gate = {
+            let state = self.state.lock().unwrap();
+            if state.faults.offline {
+                return Err("connection lost".to_string());
+            }
+            state
+                .gate
+                .as_ref()
+                .map(|g| (Arc::clone(&g.reached), Arc::clone(&g.release)))
+        };
+        if let Some((reached, release)) = gate {
+            reached.notify_one();
+            // A permit, not a broadcast: `Notify::notify_waiters` only wakes callers
+            // already waiting, so a second upload that arrives after the release
+            // would hang. A semaphore hands out permits that stay available.
+            let _permit = release.acquire().await.expect("gate semaphore");
+        }
         let mut state = self.state.lock().unwrap();
         if state.faults.offline {
             return Err("connection lost".to_string());
@@ -401,6 +443,166 @@ async fn concurrent_uploads_to_one_path_serialise_and_leave_no_debris() {
         vec!["/home/u/file.txt".to_string()],
         "no staging or backup file may survive two serialised uploads"
     );
+}
+
+/// #52 — the lock must stay in the registry for as long as anyone holds it.
+///
+/// The defect: `upload_lock` removed the registry entry when `strong_count` was 2,
+/// which is the local `lock` binding plus the `OwnedMutexGuard` — i.e. **while the
+/// guard is still held**. A second upload to the same path then built a *new*
+/// `Mutex` from an empty registry slot and did not wait, so the two interleaved
+/// their staging/backup/rename steps.
+///
+/// This test does not race the scheduler: the first upload is paused inside
+/// `create_exclusive`, which the upload only reaches while holding the path lock.
+/// The second upload is started only after the first has demonstrably arrived
+/// there, and it must make no progress until the first is released.
+#[tokio::test]
+async fn the_path_lock_is_held_until_the_holding_upload_finishes() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = local_file(&dir, "first.bin", &vec![b'a'; 96 * 1024]);
+    let second = local_file(&dir, "second.bin", &vec![b'b'; 96 * 1024]);
+    let fs = MemoryFs::new(&[("/home/u/file.txt", b"old")]);
+    let gate = Gate {
+        reached: Arc::new(tokio::sync::Notify::new()),
+        release: Arc::new(tokio::sync::Semaphore::new(0)),
+    };
+    fs.state.lock().unwrap().gate = Some(Gate {
+        reached: Arc::clone(&gate.reached),
+        release: Arc::clone(&gate.release),
+    });
+
+    let first_fs = fs.clone();
+    let first_task = tokio::spawn(async move {
+        staged_upload(&first_fs, &first, "/home/u/file.txt", |_, _| {}, || false).await
+    });
+
+    // Wait until the first upload is inside `create_exclusive` — it can only be
+    // there while holding the path lock.
+    tokio::time::timeout(Duration::from_secs(5), gate.reached.notified())
+        .await
+        .expect("the first upload never reached the gate");
+
+    // Now the same path from a second upload. If the registry entry was dropped
+    // while the guard was still held, this builds a fresh mutex and proceeds.
+    let second_fs = fs.clone();
+    let second_task = tokio::spawn(async move {
+        staged_upload(&second_fs, &second, "/home/u/file.txt", |_, _| {}, || false).await
+    });
+
+    // Give the second upload every chance to misbehave.
+    //
+    // The observable is `ops`: every remote mutation is appended there, and the
+    // first upload is parked *before* its own `create`. So while the first holds
+    // the lock, `ops` must still be empty. If the registry entry was dropped while
+    // the guard was held, the second upload builds a fresh mutex, runs immediately,
+    // and its `create` lands here.
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    let ops_while_first_holds = {
+        let state = fs.state.lock().unwrap();
+        state.ops.clone()
+    };
+    assert!(
+        ops_while_first_holds.is_empty(),
+        "the second upload must not touch the remote while the first holds the path lock; saw {ops_while_first_holds:?}"
+    );
+
+    // Release every blocked caller; both now run to completion.
+    gate.release.add_permits(4);
+    let a = first_task.await.expect("first task panicked");
+    let b = second_task.await.expect("second task panicked");
+    a.expect("first upload");
+    b.expect("second upload");
+
+    let final_bytes = fs.content("/home/u/file.txt").unwrap();
+    assert!(
+        final_bytes == vec![b'a'; 96 * 1024] || final_bytes == vec![b'b'; 96 * 1024],
+        "the destination must be exactly one upload's payload, not a mixture"
+    );
+    assert_eq!(
+        fs.paths(),
+        vec!["/home/u/file.txt".to_string()],
+        "no staging or backup file may survive two serialised uploads"
+    );
+}
+
+/// #52 — distinct paths still run concurrently, and the registry does not grow.
+#[tokio::test]
+async fn different_paths_stay_concurrent_and_the_lock_registry_stays_bounded() {
+    let dir = tempfile::tempdir().unwrap();
+    let fs = MemoryFs::new(&[]);
+
+    // The registry is process-global, so other tests in this binary may have left
+    // entries for their own paths. Measure what *this* test adds rather than
+    // asserting an absolute count.
+    let before = upload_locks().lock().expect("upload lock registry").len();
+
+    // Many distinct destinations in sequence: if the registry kept an entry per
+    // path forever, this is where it would accumulate — 200 entries.
+    for index in 0..200 {
+        let payload = local_file(&dir, &format!("p{index}.bin"), b"payload");
+        let remote = format!("/home/u/file{index}.txt");
+        staged_upload(&fs, &payload, &remote, |_, _| {}, || false)
+            .await
+            .expect("upload");
+    }
+
+    let after = upload_locks().lock().expect("upload lock registry").len();
+    assert!(
+        after <= before + 1,
+        "200 settled uploads grew the registry from {before} to {after}; \
+         each must release its entry once no upload holds or awaits it"
+    );
+}
+
+/// #52 — an entry must survive while another upload is waiting on it.
+///
+/// The failure mode the `Weak` design has to avoid: if the entry were pruned while a
+/// second upload was queued for the same path, that upload would build a fresh mutex
+/// and stop serialising. The concurrency test above covers the held case; this one
+/// covers the queued case.
+#[tokio::test]
+async fn a_queued_upload_keeps_the_entry_alive() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = local_file(&dir, "first.bin", &vec![b'a'; 96 * 1024]);
+    let second = local_file(&dir, "second.bin", &vec![b'b'; 96 * 1024]);
+    let fs = MemoryFs::new(&[("/home/u/file.txt", b"old")]);
+    let gate = Gate {
+        reached: Arc::new(tokio::sync::Notify::new()),
+        release: Arc::new(tokio::sync::Semaphore::new(0)),
+    };
+    fs.state.lock().unwrap().gate = Some(Gate {
+        reached: Arc::clone(&gate.reached),
+        release: Arc::clone(&gate.release),
+    });
+
+    let first_fs = fs.clone();
+    let first_task = tokio::spawn(async move {
+        staged_upload(&first_fs, &first, "/home/u/file.txt", |_, _| {}, || false).await
+    });
+    tokio::time::timeout(Duration::from_secs(5), gate.reached.notified())
+        .await
+        .expect("the first upload never reached the gate");
+
+    // The second upload is now queued on the same mutex.
+    let second_fs = fs.clone();
+    let second_task = tokio::spawn(async move {
+        staged_upload(&second_fs, &second, "/home/u/file.txt", |_, _| {}, || false).await
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // The entry must still be there: an upload holds it and another awaits it.
+    assert!(
+        upload_locks()
+            .lock()
+            .expect("upload lock registry")
+            .contains_key("/home/u/file.txt"),
+        "the entry may not be pruned while an upload is queued on it"
+    );
+
+    gate.release.add_permits(4);
+    first_task.await.expect("first").expect("first upload");
+    second_task.await.expect("second").expect("second upload");
 }
 
 #[tokio::test]
