@@ -12,7 +12,7 @@
 //! asserted on, not the sink.
 
 use super::sftp_download::*;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 

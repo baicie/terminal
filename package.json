@@ -46,7 +46,8 @@
     "smoke:shell-probe:matrix": "node scripts/run-terminal-shell-probe-matrix.mjs",
     "security:ledger": "node scripts/build-security-ledger.mjs",
     "icon:source": "python3 scripts/generate-icon.py",
-    "icon": "pnpm icon:source && pnpm tauri icon src-tauri/icons/icon-source.png --output src-tauri/icons"
+    "icon": "pnpm icon:source && pnpm tauri icon src-tauri/icons/icon-source.png --output src-tauri/icons",
+    "verify:sftp-command": "node scripts/verify-install/sftp-command-e2e.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.0",
