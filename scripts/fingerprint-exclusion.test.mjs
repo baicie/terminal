@@ -352,3 +352,70 @@ test('the real crate still resolves every #[cfg(test)] module it had before', as
     assert.ok(file.startsWith('src-tauri/src/'), `${file} escapes src-tauri/src`)
   }
 })
+
+test('the real frontend tree classifies only test files as tests', async () => {
+  // A sweep of the actual tree, because the previous defects were only visible in
+  // the shape of real files. Two things are asserted:
+  //
+  //   * every `.test.*` file is excluded — they are what vitest collects;
+  //   * every file whose name merely *looks* like a test but that the router or the
+  //     smoke build uses stays in — `experiments/textarea-test.tsx` is a real route.
+  //
+  // The count is deliberately not pinned: adding a test file must not require
+  // editing this test. What is pinned is that no file which is *not* named
+  // `.test.` is excluded, and that the known production look-alikes stay.
+  const files = []
+  const walk = async directory => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name)
+      if (entry.isDirectory()) await walk(full)
+      else files.push(path.relative(projectRoot, full))
+    }
+  }
+  await walk(path.join(projectRoot, 'packages/frontend/src'))
+
+  const excluded = files.filter(file => isTestSource(file))
+  const excludedWithoutTestName = excluded.filter(
+    file => !/\.test\.[cm]?[jt]sx?$/.test(file) && file !== 'packages/frontend/src/test-setup.ts',
+  )
+  assert.deepEqual(
+    excludedWithoutTestName,
+    [],
+    'only *.test.* (and the configured setup file) may be excluded',
+  )
+
+  // The look-alikes that a name-based rule would wrongly drop.
+  for (const kept of [
+    'packages/frontend/src/experiments/textarea-test.tsx',
+    'packages/frontend/src/experiments/xterm-test.tsx',
+    'packages/frontend/src/experiments/terminal-input-probe/index.tsx',
+  ]) {
+    assert.equal(isTestSource(kept), false, `${kept} must stay in the fingerprint`)
+  }
+})
+
+test('no real Rust source is excluded unless a cfg(test) declaration names it', async () => {
+  // The mirror sweep for Rust. `src-tauri/src` is walked for real, and the only files
+  // that may be excluded are the ones `findTestModuleFiles` resolved from an actual
+  // attribute — never by suffix.
+  const modules = await findTestModuleFiles(['src-tauri/src'], real)
+  const files = []
+  const walk = async directory => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name)
+      if (entry.isDirectory()) await walk(full)
+      else if (entry.name.endsWith('.rs')) files.push(path.relative(projectRoot, full))
+    }
+  }
+  await walk(path.join(projectRoot, 'src-tauri/src'))
+
+  for (const file of files) {
+    const excluded = isTestSource(file, modules)
+    const declared = modules.has(file)
+    assert.equal(
+      excluded,
+      declared,
+      `${file} exclusion (${excluded}) must match its cfg(test) declaration (${declared})`,
+    )
+  }
+})
