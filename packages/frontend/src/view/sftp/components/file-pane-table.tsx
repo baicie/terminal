@@ -1,21 +1,7 @@
 import type { FileItem } from '@/service/ssh'
-import { Download, Edit3, Loader2, MoreHorizontal, Trash2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { format } from '@/lib/date-utils'
-import { cn } from '@/lib/utils'
-import {
-  formatFileSize,
-  getFileIcon,
-  getFileKindKey,
-} from './file-pane-file-info'
+import { FilePaneRow } from './file-pane-row'
 
 export type FilePaneSortBy = 'name' | 'size' | 'modified'
 
@@ -111,78 +97,20 @@ export function FilePaneTable({
         </thead>
         <tbody>
           {files.map(file => (
-            <tr
+            <FilePaneRow
               key={file.path}
-              className={cn(
-                'cursor-pointer hover:bg-accent/50 transition-colors',
-                (selectedFile?.path === file.path ||
-                  focusedFile?.path === file.path) &&
-                  'bg-primary/10',
-              )}
-              onClick={() => onSelect(file)}
-              onDoubleClick={() => onDoubleClick(file)}
-              tabIndex={0}
-              onFocus={() => onFocus(file)}
-            >
-              <td className="px-2 sm:px-3 py-1.5">
-                <div className="flex items-center gap-1.5 sm:gap-2">
-                  {getFileIcon(file)}
-                  <div className="min-w-0">
-                    <div className="truncate max-w-[120px] sm:max-w-none">
-                      {file.name}
-                    </div>
-                    {file.permissions && (
-                      <div className="text-[9px] sm:text-[10px] text-muted-foreground/70 font-mono truncate hidden sm:block">
-                        {file.permissions}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </td>
-              <td className="px-2 sm:px-3 py-1.5 text-muted-foreground text-[10px] sm:text-xs">
-                {file.is_directory ? '-' : formatFileSize(file.size)}
-              </td>
-              <td className="px-2 sm:px-3 py-1.5 text-muted-foreground text-[10px] sm:text-xs hidden sm:table-cell">
-                {file.modified_time === null
-                  ? '—'
-                  : format(file.modified_time, 'MMM dd, HH:mm')}
-              </td>
-              <td className="px-2 sm:px-3 py-1.5 text-muted-foreground text-[10px] sm:text-xs hidden sm:table-cell">
-                {t(getFileKindKey(file))}
-              </td>
-              <td className="px-3 py-1.5">
-                {type === 'remote' && sessionId && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-6 opacity-0 group-hover:opacity-100"
-                      >
-                        <MoreHorizontal className="size-3.5" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => onDownload?.(file)}>
-                        <Download className="size-3.5 mr-2" />{' '}
-                        {t('sftp.download')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onRename(file)}>
-                        <Edit3 className="size-3.5 mr-2" /> {t('sftp.rename')}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={() => onDelete(file)}
-                      >
-                        <Trash2 className="size-3.5 mr-2" />{' '}
-                        {t('common.delete')}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </td>
-            </tr>
+              file={file}
+              type={type}
+              sessionId={sessionId}
+              selected={selectedFile?.path === file.path}
+              focused={focusedFile?.path === file.path}
+              onSelect={onSelect}
+              onFocus={onFocus}
+              onDoubleClick={onDoubleClick}
+              onDownload={onDownload}
+              onRename={onRename}
+              onDelete={onDelete}
+            />
           ))}
         </tbody>
       </table>

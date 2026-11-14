@@ -37,7 +37,11 @@ const SftpContainer: React.FC = () => {
   const followsAnotherTab = differsFromActiveTab(pinnedHostId, activeTab?.hostId)
 
   // Mobile pane
-  const [mobilePane, setMobilePane] = useState<'local' | 'remote'>('local')
+  // Which pane a narrow container shows. Starts on `remote` because every way into
+  // this view is a remote host: the dock opens because the user wants to look at
+  // the server, and the local pane is the secondary half. A phone user coming from
+  // a host card sees the same thing for the same reason.
+  const [mobilePane, setMobilePane] = useState<'local' | 'remote'>('remote')
 
   // Dialog state
   const [deleteOpen, setDeleteOpen] = useState(false)

@@ -25,7 +25,22 @@ const TransferPanel: React.FC = () => {
   const errored = transfers.filter(t => t.status === 'error').length
 
   return (
-    <div className="absolute bottom-4 right-4 w-80 max-w-[calc(100vw-2rem)] z-30 rounded-lg border bg-popover shadow-lg overflow-hidden">
+    /*
+      Width is `min(20rem, container)`, not a flat 20rem.
+
+      Inside the 300px context dock the old `w-80` (320px) hung 20px past the right
+      edge of its own panel and was clipped — the transfer list, its progress bars
+      and its close button all lost their right end. `max-w-[calc(100%-2rem)]`
+      clamps to whichever container is actually around it, so the same component is
+      320px on the `/sftp` page and 268px in the dock without a second variant.
+
+      `right-2` in the narrow case keeps the 8px gutter the dock has; the full view
+      had 16 and keeps it, via the `sm:` step.
+    */
+    <div
+      data-testid="transfer-panel"
+      className="absolute bottom-4 right-2 sm:right-4 w-80 max-w-[calc(100%-1rem)] z-30 rounded-lg border bg-popover shadow-lg overflow-hidden"
+    >
       <button
         type="button"
         className="w-full flex items-center gap-2 px-3 py-2 bg-secondary/40 border-b border-border hover:bg-secondary/60 transition-colors"
