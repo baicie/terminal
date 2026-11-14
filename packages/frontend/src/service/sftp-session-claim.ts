@@ -1,5 +1,5 @@
 /**
- * Session claims — who is using a session right now, and which sessions are alive.
+ * Session claims — who is using a session, and which sessions are alive.
  *
  * ## The window claims close
  *
@@ -12,61 +12,29 @@
  * ## The lifecycle
  *
  * ```
- *            registerSession(id)            beginSessionClose(id)
- *   UNKNOWN ──────────────────▶ ACTIVE ───────────────────────▶ CLOSING
- *      ▲                          ▲                                │
- *      │                          │          forgetSession(id)      │
- *      │                          └────────────────────────────────┤
- *      │                                                           │
- *      └───────────────────────── completeSessionClose(id) ◀────────┘
+ *            registerSession(id)         beginSessionClose(id)
+ *   UNKNOWN ─────────────────▶ ACTIVE ────────────────────▶ CLOSING
+ *      ▲                         ▲                             │
+ *      │                         └────── forgetSession(id) ─────┤
+ *      └──────────────── completeSessionClose(id) ◀─────────────┘
  * ```
  *
- * `UNKNOWN` is not a stored state — it is the absence of an entry. That is the
- * whole design: **a claim is granted only to an id this module has been told is
- * live**, and the registry holds live connections plus in-flight closes and
- * nothing else. There is no tombstone set, no history cap, and nothing that can
- * evict a dead id back into being claimable.
+ * `UNKNOWN` is not a stored state — it is the absence of an entry. A claim is
+ * granted only to an id this module has been told is live, so the registry holds
+ * live connections plus in-flight closes and nothing else: no tombstone, no history
+ * cap, nothing that can evict a dead id back into being claimable. A retired id is
+ * refused because it is *absent*, which is why 4097 connect/close cycles leave an
+ * empty registry rather than 4096 remembered ids.
  *
- * A retired id is refused because it is *absent*, which is why 4097 connect/close
- * cycles leave an empty registry rather than 4096 remembered ids.
+ * `forgetSession` is the one transition back toward claimable, and it restores what
+ * the session was before the close was requested: a registered session returns to
+ * `ACTIVE`; one that never registered has nothing to restore and is retired. See
+ * `Entry.resumable`.
  *
- * ## What a cancelled close restores
- *
- * `forgetSession` is the one transition that moves an id back toward claimable. It
- * restores what the session was before the close was requested: a session that had
- * registered goes back to `ACTIVE`; a session that never registered has nothing to
- * restore and is retired. See `Entry.resumable`.
- *
- * ## What the previous version got wrong
- *
- * It kept a `closed` set and answered `claimSession` with "not in `closed`". Three
- * consequences followed, and this rewrite fixes all three:
- *
- * 1. **An id that was never registered was admitted** — it was not in `closed`
- *    either, so every unknown id passed. The allowlist existed only in the header
- *    comment.
- * 2. **`closed` was capped at 4096 with oldest-first eviction.** Once 4096 sessions
- *    had closed, the oldest ids fell out and became claimable again — the guard
- *    expired exactly when the app had been used the longest.
- * 3. **`completeSessionClose` removed nothing**, so the "completed" state and the
- *    "closing" state were indistinguishable, and the set grew with uptime.
- *
- * ## Why the unbounded-growth problem disappears
- *
- * The earlier fix for the leak replaced a per-connection record with a capped
- * history, which traded a leak for a correctness hole. With an allowlist neither
- * is necessary: retiring an id means **deleting its entry**, after which it is
- * unknown and therefore refused. The map is bounded by connections that exist
- * right now, which is a number the user controls.
- *
- * ## Why failing to delete matters
- *
- * If `session_close` rejects, the id stays `CLOSING`. That is deliberate: the
- * backend may or may not have torn the connection down, and admitting a transfer
- * onto a connection in that state is exactly the failure this module exists to
- * prevent. A new connection gets a new `ssh-<uuid>` from
- * `src-tauri/src/session/ssh.rs`, so nothing the user does depends on the old id
- * becoming usable again.
+ * If `session_close` rejects, the id stays `CLOSING`: the backend may or may not
+ * have torn the connection down, and admitting a transfer onto it is exactly what
+ * this module prevents. A new connection gets a new `ssh-<uuid>` from
+ * `src-tauri/src/session/ssh.rs`, so nothing depends on the old id reviving.
  */
 
 /** A session this module knows about. `UNKNOWN` is the absence of an entry. */
@@ -122,6 +90,14 @@ export type ClaimResult =
  * connection. If ids were ever recycled, this call would be the one to revisit.
  */
 export function registerSession(sessionId: string): void {
+  // A session on its way out must not be resurrected by a repeated call. The hook
+  // registers once, from the `sftpConnect` that created the id; a second call can
+  // only be a duplicate, and the one thing it must never do is turn a close in
+  // flight back into a live connection.
+  //
+  // Registering an already-ACTIVE id is a no-op too, which keeps `resumable`
+  // meaningful: it only ever describes a real transition.
+  if (sessions.has(sessionId)) return
   sessions.set(sessionId, { state: ACTIVE, resumable: false })
 }
 

@@ -32,6 +32,7 @@ const {
   claimCountForSession,
   claimSession,
   forgetSession,
+  isSessionClosing,
   registerSession,
 } = await import('./sftp-session-claim')
 
@@ -200,16 +201,24 @@ describe('closing the dock while a transfer is being set up', () => {
     expect(__trackedSessionCount()).toBe(0)
   })
 
-  it('a session is claimable again only if a new connection registers the id', async () => {
+  it('a closing id cannot be reopened by registering it again', async () => {
     // The refusal has to exist for its window: between `beginSessionClose` and the
     // actual close, new work must not be admitted.
     beginSessionClose('s1')
     expect(claimSession('s1').ok).toBe(false)
 
     // A real reconnect gets a fresh `ssh-<uuid>`, so nothing the user does depends
-    // on this id coming back. `registerSession` is the explicit way back, and it is
-    // only correct for an id that is genuinely live again.
+    // on this id coming back. A second `registerSession` for the same id can only
+    // be a duplicate call — the hook registers once, from the `sftpConnect` that
+    // created it — and resurrecting a close in flight would let the in-flight
+    // `session_close` drop the connection under whatever just claimed it.
     registerSession('s1')
+    expect(claimSession('s1').ok).toBe(false)
+    expect(isSessionClosing('s1')).toBe(true)
+
+    // The only sanctioned way back is a cancelled release, which the caller must
+    // ask for explicitly.
+    forgetSession('s1')
     expect(claimSession('s1').ok).toBe(true)
   })
 

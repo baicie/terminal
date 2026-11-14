@@ -671,4 +671,71 @@ describe('session claims', () => {
       expect(claimSession('sess-0').ok).toBe(false)
     })
   })
+
+    // -------------------------------------------------------------------------
+    // Adversarial review of #73 — the transitions the first round did not pin.
+    // -------------------------------------------------------------------------
+
+    describe('lifecycle transitions under duplicate calls', () => {
+    beforeEach(() => registerSession('s1'))
+
+    it('a repeated register must not resurrect a closing session', () => {
+      // The defect this pins: `registerSession` used to write ACTIVE
+      // unconditionally, so a duplicate call turned a close in flight back into a
+      // live connection — and the in-flight `session_close` then dropped it under
+      // whatever had just claimed it.
+      beginSessionClose('s1')
+      expect(isSessionClosing('s1')).toBe(true)
+
+      registerSession('s1')
+      expect(isSessionActive('s1')).toBe(false)
+      expect(isSessionClosing('s1')).toBe(true)
+      expect(claimSession('s1').ok).toBe(false)
+    })
+
+    it('a repeated register leaves an active session exactly as it was', () => {
+      registerSession('s1')
+      const claim = grant('s1')
+      registerSession('s1')
+      // The claim is not disturbed, and the session is still usable.
+      expect(claimCountForSession('s1')).toBe(1)
+      expect(isSessionActive('s1')).toBe(true)
+      claim.release()
+    })
+
+    it('a close that fails keeps the id refused and the entry present', () => {
+      // The reject path never calls `completeSessionClose`, so the entry stays
+      // CLOSING. What must not happen is it silently disappearing or reopening.
+      const claim = grant('s1')
+      expect(beginSessionClose('s1')).toBe(false)
+      claim.release()
+      expect(isSessionClosing('s1')).toBe(true)
+      expect(__trackedSessionCount()).toBe(1)
+      expect(claimSession('s1').ok).toBe(false)
+    })
+
+    it('a successful close returns the registry to zero', () => {
+      grant('s1').release()
+      beginSessionClose('s1')
+      completeSessionClose('s1')
+      expect(__trackedSessionCount()).toBe(0)
+      expect(__claimedSessionCount()).toBe(0)
+      expect(isSessionActive('s1')).toBe(false)
+      expect(isSessionClosing('s1')).toBe(false)
+      expect(claimSession('s1').ok).toBe(false)
+    })
+
+    it('a claim cannot be admitted while a close is requested and outstanding', () => {
+      // Both halves at once: the entry is CLOSING *and* a claim is still held, so a
+      // late caller must be refused for the closing reason rather than the unknown one.
+      const claim = grant('s1')
+      beginSessionClose('s1')
+      const late = claimSession('s1')
+      expect(late.ok).toBe(false)
+      if (late.ok) throw new Error('unreachable')
+      expect(late.reason).toBe('closing')
+      claim.release()
+      expect(claimSession('s1').ok).toBe(false)
+    })
+  })
 })
