@@ -1,0 +1,25 @@
+{
+  "ranAt": "2026-11-14T05:33:54.946Z",
+  "platform": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "release": "24.6.0"
+  },
+  "binary": {
+    "path": "src-tauri/target/release/terminal"
+  },
+  "isolatedProfile": {
+    "path": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-e2e-79492-1794634322890",
+    "variables": [
+      "HOME",
+      "USERPROFILE",
+      "APPDATA",
+      "LOCALAPPDATA",
+      "XDG_CONFIG_HOME",
+      "XDG_DATA_HOME",
+      "XDG_CACHE_HOME"
+    ]
+  },
+  "exitCode": 1,
+  "verdict": "FAIL"
+}

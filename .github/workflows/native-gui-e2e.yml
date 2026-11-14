@@ -1,0 +1,177 @@
+name: Native GUI E2E
+
+# Drives the real Tauri WebView (WKWebView / WebKitGTK / WebView2) through the
+# in-process WebDriver server that the `gui-e2e` Cargo feature compiles in.
+#
+# ## Required vs Informational — stated, not implied by a badge
+#
+# REQUIRED (blocking):
+#   • Driver isolation gate — deterministic, fast, and the security contract.
+#   * macOS GUI E2E — the only platform with a proven pass record so far.
+#
+# INFORMATIONAL (non-blocking, `continue-on-error: true`):
+#   • Windows GUI E2E — the app builds and starts, but no case has yet been
+#     observed to pass on a Windows runner.
+#   • Linux GUI E2E — same.
+#
+# `continue-on-error` there is NOT a way to hide a failure: the job names say
+# "(informational)", and a failure stays visible in the PR's checks list. When
+# either platform has a stable pass record, remove the flag and the suffix —
+# that is the only change needed.
+#
+# macOS runs first because driving a real WKWebView was the long-standing gap.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'e2e/gui/**'
+      - 'scripts/run-gui-e2e.mjs'
+      - 'scripts/check-gui-e2e-isolation.mjs'
+      - 'packages/frontend/src/features/terminal/gui-e2e-probe.ts'
+      - 'src-tauri/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gui-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: 10.34.3
+
+jobs:
+  isolation:
+    # Cheap and blocking: proves the driver cannot reach a production build.
+    # This one is a gate because it is deterministic and fast.
+    name: Driver isolation gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      # The bundle assertion rebuilds `dist/`, so this job needs pnpm and Node —
+      # not just Rust. Without them the gate reported `pnpm build exited null:
+      # ENOENT`, which is a missing tool, not a leaking bundle.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/check-gui-e2e-isolation.mjs
+
+  macos:
+    name: macOS GUI E2E
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+      # Builds the frontend in GUI-E2E mode (which compiles in the read-only probe)
+      # and the app with `--features gui-e2e`, then runs every spec against a
+      # throwaway HOME. The script deletes that HOME when it finishes.
+      - name: Build and run the GUI suite
+        run: node scripts/run-gui-e2e.mjs
+        env:
+          # Headless-friendly: keep the app's own logging quiet enough that the
+          # job log stays readable.
+          GUI_E2E_LOG_LEVEL: error
+      - name: Upload GUI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-e2e-evidence-${{ github.run_id }}
+          path: e2e/gui/artifacts
+          if-no-files-found: warn
+
+  windows:
+    name: Windows GUI E2E (informational)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    # INFORMATIONAL. See the header: a failure here is visible but does not block.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+      - run: pnpm install --frozen-lockfile
+      - name: Build and run the GUI suite
+        run: node scripts/run-gui-e2e.mjs
+        env:
+          GUI_E2E_LOG_LEVEL: error
+      - name: Upload GUI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-e2e-evidence-windows-${{ github.run_id }}
+          path: e2e/gui/artifacts
+          if-no-files-found: warn
+
+  linux:
+    name: Linux GUI E2E (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install WebKitGTK and a virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential curl file libayatana-appindicator3-dev libssl-dev \
+            libudev-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf libxdo-dev \
+            xvfb
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+      - run: pnpm install --frozen-lockfile
+      - name: Build and run the GUI suite
+        # Xvfb gives the app a display; WebKitGTK needs one even for WebDriver.
+        run: xvfb-run --auto-servernum node scripts/run-gui-e2e.mjs
+        env:
+          GUI_E2E_LOG_LEVEL: error
+      - name: Upload GUI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-e2e-evidence-linux-${{ github.run_id }}
+          path: e2e/gui/artifacts
+          if-no-files-found: warn

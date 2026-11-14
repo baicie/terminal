@@ -235,7 +235,17 @@ pub fn run() {
         // real plugins.updater.pubkey. The placeholder that ships in this
         // repository makes every check fail closed instead of trusting an
         // unsigned manifest.
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build());
+    // Native GUI E2E: an in-process W3C WebDriver HTTP server on loopback, so a
+    // real WebdriverIO client can drive this WebView. Compiled in only with the
+    // non-default `gui-e2e` feature, and that feature is what
+    // `scripts/check-gui-e2e-isolation.mjs` proves absent from a production build.
+    //
+    // The server binds loopback only; it is not a Tauri command surface and grants
+    // no IPC permission (the plugin's ACL set is empty).
+    #[cfg(feature = "gui-e2e")]
+    let app = app.plugin(tauri_plugin_wdio_webdriver::init());
+    let app = app
         .setup(|app| {
             tracing::info!("tauri app starting up");
             // Recovery runs before the webview can open the database: a partial

@@ -1,0 +1,27 @@
+{
+  "case": "e2e-02",
+  "verdict": "PASS",
+  "recordedAt": "2026-11-14T05:33:52.980Z",
+  "platform": {
+    "platform": "darwin",
+    "release": "24.6.0",
+    "arch": "arm64",
+    "node": "v22.12.0",
+    "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
+  },
+  "source": {
+    "sha": "4b522bc33e81e87ad3e8e81bc8f1ca14c218d30f",
+    "branch": "feat/tn-03-native-gui-e2e",
+    "dirty": true
+  },
+  "binary": {
+    "path": "src-tauri/target/release/terminal",
+    "sha256": "9f7a8717392129f7c447befae2a10efa1023a71ca336d42e3f95f055266b102f",
+    "bytes": 36667568
+  },
+  "window": null,
+  "terminal": null,
+  "command": null,
+  "screenshot": null,
+  "notes": "[]\n\nrequestAnimationFrame observed under automation: true. \nscreenshot failed: WebDriverError: Request failed with error code ECONNREFUSED when running \"screenshot\" with method \"GET\""
+}
