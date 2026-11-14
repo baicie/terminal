@@ -24,9 +24,15 @@ const {
   __resetTransferQueueForTests,
 } = await import('./sftp-transfer')
 
-const { __resetSessionClaimsForTests, claimCountForSession } = await import(
-  './sftp-session-claim'
-)
+const {
+  __resetSessionClaimsForTests,
+  __claimedSessionCount,
+  beginSessionClose,
+  claimCountForSession,
+  claimSession,
+  forgetSession,
+  isSessionClosing,
+} = await import('./sftp-session-claim')
 
 const {
   releaseOrDefer,
@@ -167,22 +173,33 @@ describe('closing the dock while a transfer is being set up', () => {
     expect(ssh.close).toHaveBeenCalledTimes(1)
   })
 
-  it('a closing session refuses new work and does not reopen', async () => {
+  it('a closed session leaves nothing behind for that id', async () => {
     configureTransferRuntime({
       available: true,
       installProgressListener: async () => undefined,
       run: vi.fn(async () => undefined),
     })
 
-    // Nothing is using it, so this closes immediately and forgets the session.
+    // Nothing is using it, so this closes immediately.
     expect(releaseOrDefer('s1', isSessionBusy)).toBe(true)
     expect(ssh.close).toHaveBeenCalledTimes(1)
 
-    // A new transfer on that id is refused, visibly.
-    await uploadFile({ sessionId: 's1', localPath: '/tmp/a', remotePath: '/srv/a' })
-    const transfers = useTransferQueue.getState().transfers
-    expect(transfers).toHaveLength(1)
-    expect(transfers[0].status).toBe('error')
+    // The bookkeeping goes with the connection. Keeping it was the leak: one
+    // record per connection the app ever made, with nothing to reclaim it.
+    expect(__claimedSessionCount()).toBe(0)
+    expect(isSessionClosing('s1')).toBe(false)
+  })
+
+  it('a session claimed while closing is refused, then usable once forgotten', async () => {
+    // The refusal has to exist for its window: between `beginSessionClose` and the
+    // actual close, new work must not be admitted.
+    beginSessionClose('s1')
+    expect(claimSession('s1').ok).toBe(false)
+
+    // Once the connection is gone the id is forgotten, and a *new* connection gets
+    // a fresh id from the backend (`ssh-<uuid>`), so nothing blocks the user.
+    forgetSession('s1')
+    expect(claimSession('s1').ok).toBe(true)
   })
 
   it('a claim taken during the deferred window still blocks the close', async () => {
@@ -238,6 +255,26 @@ describe('closing the dock while a transfer is being set up', () => {
     expect(useTransferQueue.getState().transfers).toHaveLength(1)
     // The upload is on the queue, so the connection must still be there.
     expect(useTransferQueue.getState().transfers[0].sessionId).toBe('old')
+  })
+
+  it('1000 dock open/close cycles leave no claim records behind', async () => {
+    // The leak review found: every close left one permanent record. Session ids are
+    // never reused, so nothing ever reclaimed them. The count is the assertion —
+    // a fix that only closes the connection still fails here.
+    configureTransferRuntime({
+      available: true,
+      installProgressListener: async () => undefined,
+      run: vi.fn(async () => undefined),
+    })
+
+    for (let index = 0; index < 1000; index += 1) {
+      const id = `ssh-cycle-${index}`
+      await uploadFile({ sessionId: id, localPath: '/tmp/a', remotePath: '/srv/a' })
+      useTransferQueue.setState({ transfers: [] })
+      releaseOrDefer(id, isSessionBusy)
+    }
+
+    expect(__claimedSessionCount()).toBe(0)
   })
 
   it('100 open/close cycles leave nothing behind', async () => {

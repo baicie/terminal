@@ -55,6 +55,12 @@ export function releaseOrDefer(
     // close it a second time.
     cancelDeferredRelease(sessionId)
     void sshService.close(sessionId).catch(() => undefined)
+    // The connection is gone; so is the reason to remember anything about it.
+    // Without this the claim module keeps one record per connection the app ever
+    // made — 1000 dock open/close cycles left 1000 entries, growing without any
+    // bound. `claimIdle` guarantees no claim is outstanding here, so nothing can
+    // be released into a map that no longer has the entry.
+    forgetSession(sessionId)
     return true
   }
   // Already deferred: one watcher is enough, and the answer stays the same.
@@ -71,6 +77,9 @@ export function releaseOrDefer(
     clearInterval(timer)
     deferredReleases.delete(sessionId)
     void sshService.close(sessionId).catch(() => undefined)
+    // Same as the immediate path: the connection is closed, so the bookkeeping
+    // goes with it. Both guards above already said nothing is using it.
+    forgetSession(sessionId)
   }, DEFERRED_RELEASE_POLL_MS)
   deferredReleases.set(sessionId, () => clearInterval(timer))
   return false
