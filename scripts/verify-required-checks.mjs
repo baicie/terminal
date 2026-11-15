@@ -46,6 +46,10 @@ export const EXPECTED_JOBS = {
   'cargo-audit': { optional: false },
   docker: { optional: false },
   tauri: { optional: false },
+  // The classifier runs first and its output decides the rest. It must succeed, but
+  // it is not part of AGGREGATED_JOBS because `required` reads its *output* rather
+  // than its result.
+  changes: { optional: false },
   // `required` itself is the aggregator and never appears in its own `needs`.
   required: { optional: true, reason: 'the aggregator' },
 }
@@ -133,7 +137,11 @@ export function unclassifiedJobs(workflowSource, expected = EXPECTED_JOBS) {
 
 function main() {
   const needs = process.env.NEEDS ? JSON.parse(process.env.NEEDS) : {}
-  const docsOnly = process.env.DOCS_ONLY === '1'
+  // The workflow passes `needs.changes.outputs.docs_only`, which is the string
+  // `'true'`, not `'1'`. Accepting only `'1'` made the docs-only branch unreachable
+  // from CI — measured: a simulated docs-only run failed with "tauri: skipped but not
+  // optional" even though every job had been skipped for that reason.
+  const docsOnly = ['1', 'true'].includes(String(process.env.DOCS_ONLY ?? '').toLowerCase())
 
   const { ok, results } = decide(needs, { docsOnly })
 

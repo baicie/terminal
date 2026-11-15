@@ -87,6 +87,32 @@ test('an unknown result string is a failure, not a pass', () => {
 test('the aggregator is not required to depend on itself', () => {
   assert.equal(EXPECTED_JOBS.required.optional, true)
   assert.equal(AGGREGATED_JOBS.includes('required'), false)
+  // The classifier is a real job and must succeed, but it is not aggregated: the
+  // aggregator reads its *output*, not its result.
+  assert.equal(EXPECTED_JOBS.changes.optional, false)
+  assert.equal(AGGREGATED_JOBS.includes('changes'), false)
+})
+
+test('DOCS_ONLY accepts the value the workflow actually passes', async () => {
+  // The job output is the string "true", not "1". An earlier version compared
+  // against '1' only, which made the docs-only branch unreachable from CI — a
+  // simulated docs-only run failed with "tauri: skipped but not optional".
+  const { execFileSync } = await import('node:child_process')
+  const needs = Object.fromEntries(AGGREGATED_JOBS.map(job => [job, { result: 'skipped' }]))
+  needs.changes = { result: 'success' }
+  const script = new URL('./verify-required-checks.mjs', import.meta.url).pathname
+  const run = value =>
+    execFileSync(process.execPath, [script], {
+      env: { ...process.env, NEEDS: JSON.stringify(needs), DOCS_ONLY: value },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    })
+  for (const value of ['true', '1', 'TRUE']) {
+    assert.doesNotThrow(() => run(value), `DOCS_ONLY=${value} should be accepted`)
+  }
+  for (const value of ['false', '0', '']) {
+    assert.throws(() => run(value), undefined, `DOCS_ONLY=${value} must not skip`)
+  }
 })
 
 test('every job in ci.yml is classified', () => {
