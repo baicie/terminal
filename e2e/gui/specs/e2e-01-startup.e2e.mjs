@@ -77,6 +77,53 @@ describe('E2E-01 startup and terminal readiness', () => {
   })
 
   it('reaches the real Tauri route, not about:blank', async () => {
+    // ## Make the local terminal the active tab
+    //
+    // Everything below reads the **active** terminal (`terminalSnapshot`), and its
+    // readiness, prompt and echo assertions are about the local shell this spec is
+    // named for. Measured on a run ordered `e2e-03 → e2e-01 → e2e-02`: the status
+    // bar said `Idle SSH 163×23`, the active tab was the SSH session `e2e-03` had
+    // connected, and the three readiness cases failed with "no shell prompt ever
+    // appeared" — a real failure, but of the precondition rather than the product.
+    //
+    // Selecting the local tab is a user action the product supports. If there is no
+    // local tab at all the spec says so instead of asserting against a stranger's
+    // terminal.
+    const activated = await browser.execute(() => {
+      const tabs = Array.from(document.querySelectorAll('[role="tab"]'))
+      const local = tabs.find(tab => /^local$/i.test(tab.getAttribute('aria-label') ?? ''))
+      if (!local) return { ok: false, tabs: tabs.length }
+      // Mark it so the WebDriver click below can find the same element.
+      local.setAttribute('data-e2e-activate', 'local')
+      return {
+        ok: true,
+        wasActive: local.getAttribute('aria-selected') === 'true',
+      }
+    })
+    // A script-driven `click()` did not switch the tab (measured: `aria-selected`
+    // stayed false and the status bar still said `Idle SSH`). WebDriver's own click
+    // dispatches the real pointer sequence, which is what a user produces — and what
+    // the product's handler is written for.
+    if (activated.ok && !activated.wasActive) {
+      await browser.$('[data-e2e-activate="local"]').click()
+      await browser.pause(500)
+      activated.afterClick = await browser.execute(() => {
+        const local = document.querySelector('[data-e2e-activate="local"]')
+        return {
+          selected: local?.getAttribute('aria-selected') === 'true',
+          statusBar: document.querySelector('[data-testid="status-bar"]')?.textContent ?? null,
+        }
+      })
+    }
+    observed.localTab = activated
+    if (!activated.ok) {
+      observed.notRun = [
+        ...(observed.notRun ?? []),
+        'no local terminal tab exists in this run',
+      ]
+    }
+    await browser.pause(400)
+
     // The window is created on `tauri://localhost` and the router replaces the
     // path once bootstrap finishes. Poll for the routed URL instead of asserting
     // on whatever it happened to be at the first frame.
@@ -90,6 +137,27 @@ describe('E2E-01 startup and terminal readiness', () => {
   })
 
   it('mounts exactly one terminal workbench', async () => {
+    // ## Why the precondition is stated and checked
+    //
+    // This case measures the **launch** state: one tab, one workbench, one xterm.
+    // It passed only because it happened to run first. Measured on a run ordered
+    // `e2e-03 → e2e-01 → e2e-02`: `e2e-03` leaves a second (SSH) tab behind, and
+    // closing that tab does not dispose its PTY, so two workbenches remain and this
+    // assertion failed with 2 nodes.
+    //
+    // A launch-state assertion cannot be met by tidying the DOM; the honest form is
+    // to say what the case needs and to report NOT_RUN when the run cannot provide
+    // it, instead of reporting a product defect that is really a spec-ordering
+    // artefact.
+    const tabs = await browser.$$('[role="tab"]')
+    if (tabs.length > 1) {
+      observed.notRun = [
+        ...(observed.notRun ?? []),
+        `launch-state case: this run already has ${tabs.length} tabs, so it did not ` +
+          'start from a fresh profile',
+      ]
+      return
+    }
     const nodes = await browser.$$('[data-terminal-workbench]')
     expect(nodes.length).toBe(1)
     const terminals = await browser.$$('.xterm')
@@ -227,8 +295,16 @@ describe('E2E-01 startup and terminal readiness', () => {
   })
 
   after(async () => {
+    // A run whose launch-state case could not run is PARTIAL, not PASS: the spec did
+    // not measure what it is named for.
+    const verdict =
+      observed.failures.length > 0
+        ? 'FAIL'
+        : (observed.notRun?.length ?? 0) > 0
+          ? 'PARTIAL'
+          : 'PASS'
     await writeEvidence(CASE, {
-      verdict: observed.failures.length === 0 ? 'PASS' : 'FAIL',
+      verdict,
       terminal: observed.terminal,
       window: observed.window,
       command: observed.command,
@@ -236,6 +312,11 @@ describe('E2E-01 startup and terminal readiness', () => {
         observed.failures.length > 0
           ? observed.failures.map(f => `${f.test}: ${f.error}`).join('\n')
           : undefined,
+      extra: {
+        ...(observed.notRun ? { notRun: observed.notRun } : {}),
+        localTab: observed.localTab,
+        statusBar: observed.terminal?.statusBarText ?? null,
+      },
     })
   })
 })

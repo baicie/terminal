@@ -28,12 +28,34 @@ import { connect, createServer } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
-import { DatabaseSync } from 'node:sqlite'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 const SSHD = '/usr/sbin/sshd'
 const SSH_KEYGEN = '/usr/bin/ssh-keygen'
+
+/**
+ * `node:sqlite` was added in Node 22.5 but stayed behind `--experimental-sqlite`
+ * until Node 23, and `.node-version` pins 24. A static import made the whole module
+ * fail to load on an older runtime, so `run-gui-e2e.mjs` could not even reach its
+ * "no sshd here" branch — measured on Node 22.12 as
+ * `No such built-in module: node:sqlite`, with the fixture reported as unavailable
+ * and every remote-directory case silently recording NOT_RUN.
+ *
+ * Importing lazily turns that into a message a reader can act on, and keeps the
+ * already-working paths (ssh-keygen, sshd, port reservation) independent of it.
+ */
+async function sqlite() {
+  try {
+    return await import('node:sqlite')
+  } catch (error) {
+    throw new Error(
+      'the SSH fixture needs `node:sqlite` to write the host row. Node >= 24 has it; ' +
+        'on 22.5–22.x run with `NODE_OPTIONS=--experimental-sqlite`. ' +
+        `Original error: ${error.message}`,
+    )
+  }
+}
 
 function reservePort() {
   return new Promise((resolve, reject) => {
@@ -92,6 +114,7 @@ export async function seedSftpHost({ home, privateKeyPath, port, username, label
   const dbPath = databasePath(home)
   await mkdir(path.dirname(dbPath), { recursive: true })
 
+  const { DatabaseSync } = await sqlite()
   const database = new DatabaseSync(dbPath)
   try {
     // The app creates the schema on first launch; if it has not run yet, create just

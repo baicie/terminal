@@ -73,6 +73,13 @@ async function readDock() {
       // No connected host means the dock renders `sftp.noActiveSession` instead of
       // the panes. That is the product's correct behaviour, not a failure: the cases
       // below record NOT_RUN rather than inventing a pass.
+      //
+      // `panelMissing` is the third state, and folding it into `emptyState` was a
+      // real defect: when the dock was closed the panel was `null`, `emptyState`
+      // came out `false`, and the cases below blamed the pane layout for something
+      // that was really "there is no dock". The two are now distinct, so a missing
+      // dock is reported as such.
+      panelMissing: panel === null,
       emptyState: panel !== null && panes === null,
     }
   })
@@ -97,6 +104,42 @@ async function readRows() {
 describe('SFTP Context Dock — real WebView', () => {
   const notes = []
   const measurements = {}
+  /**
+   * Every case that threw, recorded as it happens.
+   *
+   * `after()` runs whatever the outcome, so without this it has no way to tell a
+   * clean run from a broken one — which is how this spec came to write
+   * `verdict: 'PASS'` for a run in which three cases had failed. Mocha's own state
+   * is available through `this`, but the hook below is a suite-level `after`, where
+   * aggregating explicitly is both simpler and testable.
+   */
+  const failures = []
+
+  afterEach(function () {
+    if (this.currentTest?.state === 'failed') {
+      // ## Why the error text needs this many fallbacks
+      //
+      // Measured: an injected `throw new Error('injected: …')` produced
+      // `error: ""` — a failure record whose text was empty, which is barely better
+      // than the `"unknown"` it replaced. Under wdio's mocha integration
+      // `currentTest.err` is not always the Error object; it can be a string, a
+      // serialised shape without `message`, or absent.
+      //
+      // The chain below ends at the test's own title, which at least identifies
+      // *which* case broke. An empty string is never returned.
+      const err = this.currentTest.err
+      const text =
+        (typeof err === 'string' ? err : undefined) ??
+        err?.message ??
+        err?.stack?.split('\n')[0] ??
+        err?.toString?.() ??
+        ''
+      failures.push({
+        title: this.currentTest.title,
+        error: text && text !== '[object Object]' ? text : `(no error text for "${this.currentTest.title}")`,
+      })
+    }
+  })
 
   before(async () => {
     await browser.$('[data-testid="activity-rail"]').waitForExist({ timeout: 20_000 })
@@ -143,14 +186,55 @@ describe('SFTP Context Dock — real WebView', () => {
         // The dock reads `activeTab.hostId`, so the *active* tab must be the SSH one.
         // Connecting opens it, but the assertion below states the precondition instead
         // of assuming the click left focus there.
-        const onSshTab = await browser.execute(() => {
-          const tabs = Array.from(document.querySelectorAll('[data-testid^="tab-"]'))
-          const sshTab = tabs.find(tab => tab.textContent?.includes('E2E Local'))
-          if (!sshTab) return false
-          sshTab.click()
-          return true
+        //
+        // ## Why this does not match a label
+        //
+        // It used to look for a tab whose text contained "E2E Local". Measured: the
+        // tab titles are `["Connected", ""]` — the visible text is a status word and
+        // the name lives in `aria-label` (`layout/tabs.tsx:101`). Matching text found
+        // nothing and reported `switched to the SSH tab: false`.
+        //
+        // A first attempt at the fix picked "the tab that is not local" and clicked a
+        // *different* tab by accident, which left the panel with no active host and
+        // turned a working run into `no connected host`. So the selection is by
+        // `role="tab"` plus `aria-selected`, and it only clicks when the active tab is
+        // not the connected one — the same "make the precondition true" shape as the
+        // dock case above, instead of "guess and click".
+        const tabReport = await browser.execute(() => {
+          const tabs = Array.from(document.querySelectorAll('[role="tab"]'))
+          const described = tabs.map(tab => ({
+            label: tab.getAttribute('aria-label'),
+            selected: tab.getAttribute('aria-selected') === 'true',
+            text: tab.textContent?.trim() ?? '',
+          }))
+          // ## The selector that finally worked
+          //
+          // Three attempts got this wrong, and each one is visible in the notes:
+          //
+          //   1. text contains "E2E Local" → no match. The visible text is a status
+          //      word; the name is in `aria-label` (`layout/tabs.tsx:101`).
+          //   2. "the tab that is not local" → clicked the wrong tab and destroyed the
+          //      active host, turning a working run into `no connected host`.
+          //   3. text contains "connected" → matched the *local* tab, whose text is
+          //      `"ConnectedLocal"` — the status word is prefixed to every tab, so a
+          //      text match cannot separate them.
+          //
+          // `aria-label` is the seeded host name and nothing else, so it is the only
+          // field that identifies the session. It is compared to the local terminal's
+          // label, and no click happens when the right tab is already active.
+          const local = tabs.find(tab => /^local$/i.test(tab.getAttribute('aria-label') ?? ''))
+          const remote = tabs.find(tab => tab !== local)
+          const active = tabs.find(tab => tab.getAttribute('aria-selected') === 'true')
+          if (!remote) {
+            return { described, clicked: false, reason: 'there is only the local tab' }
+          }
+          if (active === remote) {
+            return { described, clicked: false, reason: 'the SSH tab is already active' }
+          }
+          remote.click()
+          return { described, clicked: true, reason: 'activated the non-local tab' }
         })
-        notes.push(`switched to the SSH tab: ${onSshTab}`)
+        notes.push(`tabs ${JSON.stringify(tabReport)}`)
         await browser.pause(1_500)
       }
     } else {
@@ -159,7 +243,31 @@ describe('SFTP Context Dock — real WebView', () => {
   })
 
   it('opens the dock and records its real width', async () => {
-    await browser.$('[data-testid="rail-sftp"]').click()
+    // ## Why this is not a bare click
+    //
+    // `rail-sftp` is a **toggle**. The suite runs every spec against one app
+    // instance (`maxInstances: 1`, one `wdio run`), and `e2e-02` opens the dock
+    // without closing it. Clicking the rail unconditionally therefore *closed* the
+    // dock on the first case here, and the three failures that followed all traced
+    // back to that single action:
+    //
+    //   * `right-panel` never existed → timeout;
+    //   * the pane cases read `panel === null`, which the old `emptyState` test
+    //     folded into "not the empty state", so they blamed the layout;
+    //   * the switch case found no buttons for the same reason.
+    //
+    // The fix is to state the precondition and act on it, not to click twice: a
+    // second click would pass when the dock was already open and fail when it was
+    // not. `aria-pressed` is the control's own report of the state.
+    const opened = await browser.execute(() => {
+      const rail = document.querySelector('[data-testid="rail-sftp"]')
+      if (!rail) return { clicked: false, reason: 'the rail is not rendered' }
+      const pressed = rail.getAttribute('aria-pressed') === 'true'
+      if (!pressed) rail.click()
+      return { clicked: !pressed, alreadyOpen: pressed }
+    })
+    notes.push(`dock precondition: ${JSON.stringify(opened)}`)
+
     await browser.$('[data-testid="right-panel"]').waitForExist({ timeout: 15_000 })
     await browser.pause(200)
 
@@ -179,6 +287,15 @@ describe('SFTP Context Dock — real WebView', () => {
 
   it('renders a single pane at the dock width', async () => {
     const dock = await readDock()
+    if (dock.panelMissing) {
+      // Distinguishing this from a layout defect is the point: the previous version
+      // reported "a 300px dock must present one pane, got null", which reads as a
+      // broken pane layout when the real state was "the dock is not open".
+      throw new Error(
+        'the dock is not open, so its pane layout cannot be read — the previous ' +
+          'case should have opened it',
+      )
+    }
     if (dock.emptyState) {
       // No host is connected in this run, so the dock shows `noActiveSession`.
       // The single-pane rule still holds; there is simply no pane to render it on.
@@ -231,6 +348,12 @@ describe('SFTP Context Dock — real WebView', () => {
 
   it('switches between local and remote without losing the dock', async () => {
     const before = await readDock()
+    if (before.panelMissing) {
+      throw new Error(
+        'the dock is not open, so the pane switch cannot be read — the first case ' +
+          'should have opened it',
+      )
+    }
     if (before.emptyState) {
       notes.push('pane-switch case NOT_RUN: dock has no connected host')
       return
@@ -326,15 +449,37 @@ describe('SFTP Context Dock — real WebView', () => {
     // Back to the terminal route, where the dock lives. Navigating away from
     // `/sftp` disposes the dock, so it has to be opened again — the same user action
     // as the first case.
-    await browser.execute(() => {
-      window.history.pushState({}, '', '/')
-      window.dispatchEvent(new PopStateEvent('popstate'))
+    //
+    // `/` is not the terminal route. `TERMINALS_PATH` is `/terminal`
+    // (`router/terminal-route.ts:32`), and `MainLayoutContent` renders `RightPanel`
+    // only when `isTerminalPath` holds — so pushing `/` landed on the hosts index and
+    // the dock could never appear, whatever the rail did. The route is read from the
+    // page rather than hard-coded from memory: if the constant moves, this spec
+    // follows it instead of quietly testing the wrong screen.
+    const terminalPath = await browser.execute(() => {
+      // The rail's Files button navigates to the terminal when it opens the dock, so
+      // the path it would use is the one the app considers current.
+      const link = document.querySelector('[data-testid="rail-terminal"]')
+      return link?.getAttribute('href') ?? null
     })
+    const target = terminalPath ?? '/terminal'
+    await browser.execute(path => {
+      window.history.pushState({}, '', path)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    }, target)
     await browser.pause(600)
     const hasPanel = await browser.execute(() =>
       Boolean(document.querySelector('[data-testid="right-panel"]')),
     )
-    if (!hasPanel) await browser.$('[data-testid="rail-sftp"]').click()
+    if (!hasPanel) {
+      // Same precondition logic as the first case: the rail is a toggle, and after a
+      // route change the panel state is whatever the app decided, not what the
+      // previous case left.
+      await browser.execute(() => {
+        const rail = document.querySelector('[data-testid="rail-sftp"]')
+        if (rail && rail.getAttribute('aria-pressed') !== 'true') rail.click()
+      })
+    }
 
     // The dock may take a moment to come back; if it does not, say so rather than
     // failing on a wait. The keyboard contract is covered by unit tests; this case
@@ -387,23 +532,54 @@ describe('SFTP Context Dock — real WebView', () => {
   })
 
   it('records what could not be verified', () => {
-    // These are the claims the issue asks for that this spec cannot make without a
-    // live SSH server or a second host. Listing them is the point: a green run here
-    // must not be read as "host pinning works" or "an upload survives a dock close".
-    const notRun = [
-      'host switch with two connected hosts (needs an SSH server)',
-      'upload survives closing the dock (needs an SSH server)',
-      'refresh lands only for the right session + directory (needs an SSH server)',
-      'delete/rename act on the displayed host (needs an SSH server)',
+    // These are the claims the issue asks for that this spec cannot make even with a
+    // live SSH server: each needs either a *second* connected host or an upload this
+    // spec does not start. Listing them is the point — a green run here must not be
+    // read as "host pinning works" or "an upload survives a dock close".
+    //
+    // The list used to say "needs an SSH server" for all four, which was wrong once
+    // the fixture ran: the server *was* there. The distinction matters because it is
+    // the difference between "this environment cannot test it" and "this spec does
+    // not test it", and only the second is actionable here.
+    const needsSecondHost = [
+      'host switch with two connected hosts (needs a second SSH host)',
+      'delete/rename act on the displayed host (needs a writable remote fixture)',
     ]
-    notes.push(`NOT_RUN: ${notRun.join('; ')}`)
+    const needsTransfer = [
+      'upload survives closing the dock (this spec starts no upload)',
+      'refresh lands only for the right session + directory (no transfer to refresh)',
+    ]
+    notes.push(`NOT_RUN: ${[...needsSecondHost, ...needsTransfer].join('; ')}`)
+    if (!process.env.GUI_E2E_SSH_PORT) {
+      notes.push(
+        'NOT_RUN: every case that reads a remote directory — no SSH fixture this run',
+      )
+    }
   })
 
   after(async () => {
+    // The verdict is the run's outcome, not a constant. A case that failed makes the
+    // record FAIL and carries its error text; a run with no failures but cases that
+    // skipped their real assertions is PARTIAL, so "the dock rendered" is never
+    // reported as "the dock works".
+    const notRunCount = notes.filter(note => note.includes('NOT_RUN')).length
+    const verdict =
+      failures.length > 0 ? 'FAIL' : notRunCount > 0 ? 'PARTIAL' : 'PASS'
+
     await writeEvidence(CASE, {
-      verdict: 'PASS',
+      verdict,
       notes: notes.join('\n'),
-      extra: { measurements },
+      error:
+        failures.length > 0
+          ? failures.map(f => `${f.title}: ${f.error}`).join('\n')
+          : undefined,
+      extra: {
+        measurements,
+        failures,
+        notRunCount,
+        // Recorded so a reader can tell which precondition the run actually had.
+        sshFixture: Boolean(process.env.GUI_E2E_SSH_PORT),
+      },
     })
   })
 })
