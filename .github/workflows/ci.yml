@@ -59,6 +59,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # The classification runs in a script so it can be tested. The inline version
+      # had a fail-open path nothing could see: on a failed `git diff` it fell back to
+      # `git show --name-only HEAD`, which describes **one commit** rather than the
+      # branch — so a branch whose last commit touched only Markdown was classified
+      # docs-only while earlier commits had changed `src-tauri/`.
+      #
+      # The script fails closed: an unreadable diff is not documentation
+      # (`scripts/classify-change.mjs`, 12 cases in its test file).
       - id: classify
         shell: bash
         env:
@@ -77,30 +85,28 @@ jobs:
             base="origin/$BASE"
           else
             base="$BEFORE"
-            # A zero SHA means a new branch; fall back to the previous commit.
             if [[ ! "$base" =~ ^[0-9a-f]{40}$ || "$base" =~ ^0+$ ]]; then
               base="HEAD~1"
             fi
           fi
-          mapfile -t files < <(git diff --name-only "$base"...HEAD || git show --name-only --format= HEAD)
-          {
-            echo "changed<<EOF"
-            printf '%s\n' "${files[@]}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-          # Documentation only: Markdown anywhere, docs/, and .workbuddy/.
-          docs_only=true
-          for file in "${files[@]}"; do
-            case "$file" in
-              *.md|docs/*|.workbuddy/*) ;;
-              *) docs_only=false; break ;;
-            esac
-          done
-          # An empty diff (shallow clone edge) is treated as "not docs-only": the
-          # expensive path is the safe default.
-          if [[ ${#files[@]} -eq 0 ]]; then docs_only=false; fi
-          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
-          echo "classified ${#files[@]} file(s), docs_only=$docs_only"
+          # Run once and keep both the verdict and the file list. `set -e` is off for
+          # this call because a non-zero exit from the classifier means "could not
+          # determine the diff", which is `docs_only=false` — the safe answer, not a
+          # reason to abort the job before `required` can report.
+          set +e
+          output="$(node scripts/classify-change.mjs . "$base" HEAD 2>&1)"
+          status=$?
+          set -e
+          echo "$output"
+          verdict="$(sed -n 's/^docs_only=//p' <<< "$output" | tail -1)"
+          if [[ "$status" -ne 0 || -z "$verdict" ]]; then
+            echo "classifier could not decide (exit $status); treating as not docs-only" >&2
+            verdict="false"
+          fi
+          echo "docs_only=$verdict" >> "$GITHUB_OUTPUT"
+          echo "changed<<EOF" >> "$GITHUB_OUTPUT"
+          git diff --name-only "$base"...HEAD 2>/dev/null || true >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
   frontend:
     name: Frontend quality

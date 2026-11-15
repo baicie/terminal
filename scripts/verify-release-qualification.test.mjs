@@ -156,3 +156,18 @@ test('the required check list includes the aggregate gate', () => {
   // allowed to skip the thing a merge could not.
   assert.ok(REQUIRED_RELEASE_CHECKS.includes('required'))
 })
+
+test('a fact-collection failure is reported separately from a failed check', () => {
+  // T12: the two send a reader to different places. "Checks unreadable" means look at
+  // GitHub's availability or the token; "check-not-success" means look at CI. Reporting
+  // both as the same code would erase that distinction exactly when it matters.
+  const facts = goodFacts({ checks: {}, checksError: 'check-run page 1 could not be read' })
+  const { ok, problems } = judgeRelease(facts)
+  assert.equal(ok, false)
+  assert.ok(
+    problems.some(p => p.code === 'checks-unreadable'),
+    JSON.stringify(problems),
+  )
+  // And it does not pretend the checks passed: every required name is also missing.
+  assert.ok(problems.some(p => p.code === 'check-missing'))
+})
