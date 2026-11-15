@@ -132,7 +132,22 @@ describe('E2E-01 startup and terminal readiness', () => {
       { timeout: 30_000, interval: 200, timeoutMsg: 'the router never reached /terminal' },
     )
     const url = await browser.getUrl()
-    expect(url).toContain('tauri://localhost')
+    // ## The origin differs per platform
+    //
+    // Measured on the Windows runner:
+    //
+    //     Expected substring: "tauri://localhost"
+    //     Received string:    "http://tauri.localhost/terminal"
+    //
+    // Tauri serves the custom protocol over `tauri://` on macOS and Linux (WKWebView,
+    // WebKitGTK) and over `http://tauri.localhost` on Windows (WebView2, which has no
+    // custom-protocol scheme). Asserting the Unix form made every Windows case in this
+    // spec fail at its first line — and because the rest of the spec reads the active
+    // terminal, the six failures after it were all consequences of this one.
+    //
+    // The question this case actually asks is "are we on the app's own origin and not
+    // `about:blank`", so it accepts either form and rejects anything else.
+    expect(url).toMatch(/^(tauri:\/\/localhost|http:\/\/tauri\.localhost)\//)
     expect(url).toContain('/terminal')
   })
 
