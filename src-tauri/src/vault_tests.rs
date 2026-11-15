@@ -1314,3 +1314,70 @@ fn decrypts_the_external_node_fixture_and_rejects_a_wrong_password() {
         Err(VaultError::InvalidPassword)
     ));
 }
+
+// ---------------------------------------------------------------------------
+// B01 — the read path classifies keys without echoing them.
+//
+// `vault_get` accepts an arbitrary key, so any caller with IPC access in the main
+// WebView can read any secret. That is a capability the product's own Vaults view
+// needs (its keys are user-chosen names), so it cannot be narrowed by prefix without
+// breaking a feature. What can be done without breaking anything is to make each
+// read attributable in the log — and the classifier must not become the leak it is
+// meant to help detect.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_vault_key_classifier_separates_namespaces() {
+    // The classification is what makes a log line useful when someone asks "why did
+    // the app read a credential it was not showing?".
+    assert_eq!(vault_key_kind("host:abc:2:password"), "host-credential");
+    assert_eq!(vault_key_kind("host:abc:private_key"), "host-credential");
+    assert_eq!(
+        vault_key_kind("ssh-key:abc:1:private_key"),
+        "ssh-key-credential"
+    );
+    assert_eq!(vault_key_kind("team:share:payload"), "team-secret");
+    assert_eq!(vault_key_kind("probe:secret"), "diagnostic-probe");
+    assert_eq!(vault_key_kind("my-notes"), "user-entry");
+}
+
+#[test]
+fn the_vault_key_classifier_never_echoes_the_key() {
+    // The classifier's return value goes into a log line. If it ever returned the
+    // key, the log would carry resource ids — and the whole point of logging on a
+    // secret read path is to be safe to keep.
+    for key in [
+        "host:11111111-2222-3333-4444-555555555555:7:password",
+        "ssh-key:deadbeef:1:private_key",
+        "probe:secret",
+        "a-user-chosen-name-with-a-hint-in-it",
+    ] {
+        let kind = vault_key_kind(key);
+        assert!(
+            !kind.contains(key) && !key.contains(kind),
+            "classification {kind:?} leaks {key:?}"
+        );
+        // And it is one of a fixed set, so it cannot smuggle arbitrary text.
+        assert!(
+            [
+                "host-credential",
+                "ssh-key-credential",
+                "team-secret",
+                "diagnostic-probe",
+                "user-entry"
+            ]
+            .contains(&kind),
+            "unexpected classification {kind:?}"
+        );
+    }
+}
+
+#[test]
+fn an_unknown_namespace_is_not_a_credential() {
+    // A key that merely *looks* credential-shaped must not be classified as one: the
+    // log is used to spot unexpected reads, and a false "host-credential" would send
+    // the reader looking at the wrong thing.
+    assert_eq!(vault_key_kind("hostile:entry"), "user-entry");
+    assert_eq!(vault_key_kind("ssh-keychain"), "user-entry");
+    assert_eq!(vault_key_kind(""), "user-entry");
+}
