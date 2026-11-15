@@ -1272,6 +1272,12 @@ async fn a_backup_collision_never_overwrites_an_existing_preserved_file() {
 // named back to the user under any implementation.
 // ---------------------------------------------------------------------------
 
+// Unix only: constructing a non-UTF-8 `OsStr` needs `OsStrExt::from_bytes`, which
+// does not exist on Windows — a Windows path is UTF-16 and every `OsStr` there has a
+// lossless `to_str` or is genuinely unrepresentable. The **behaviour** under test
+// (refusing rather than rewriting) still exists on Windows; it is just unreachable
+// from a test there, so the test is scoped rather than weakened.
+#[cfg(unix)]
 #[test]
 fn a_destination_name_that_is_not_utf8_is_refused() {
     use std::ffi::OsStr;
