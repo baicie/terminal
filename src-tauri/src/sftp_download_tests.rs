@@ -1258,3 +1258,47 @@ async fn a_backup_collision_never_overwrites_an_existing_preserved_file() {
         b"THE USERS ONLY ORIGINAL"
     );
 }
+
+// ---------------------------------------------------------------------------
+// T04 — a destination whose name is not valid UTF-8.
+//
+// `to_string_lossy` mapped `caf\xe9.txt` to `caf\u{FFFD}.txt`, so the temporary and
+// backup files were named after a *different* string than the target. The download
+// still worked, but the debris beside the file could not be connected back to it, and
+// every message about it named something the user never chose.
+//
+// Refusing is consistent with the rest of the pipeline: the frontend path, the
+// progress events and the error text are UTF-8 too, so such a destination cannot be
+// named back to the user under any implementation.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_destination_name_that_is_not_utf8_is_refused() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let directory = tempfile::tempdir().unwrap();
+    let bad = directory.path().join(OsStr::from_bytes(b"caf\xe9.txt"));
+
+    let error = match DownloadTarget::new(&bad, 1) {
+        Ok(_) => panic!("a non-UTF-8 name must be refused"),
+        Err(error) => error,
+    };
+    assert!(
+        error.contains("not valid UTF-8"),
+        "the error must name the reason: {error}"
+    );
+    assert!(error.contains("caf"), "and must identify the file: {error}");
+}
+
+#[test]
+fn an_ordinary_unicode_name_still_works() {
+    // The strict check must not reject legitimate names — this repository already has
+    // a test for spaces and non-ASCII staging names on the upload side.
+    let directory = tempfile::tempdir().unwrap();
+    for name in ["报告 2026.pdf", "naïve-résumé.txt", "日本語.md"] {
+        let target = DownloadTarget::new(&directory.path().join(name), 1)
+            .unwrap_or_else(|error| panic!("{name} should be accepted: {error}"));
+        assert!(target.temp.to_string_lossy().contains(name));
+    }
+}
