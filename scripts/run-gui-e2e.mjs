@@ -12,7 +12,7 @@
  *     reason spelled out rather than a bare timeout;
  *   • never turn a failed spawn into a silent exit 1 (see `gui-e2e-platform.mjs`).
  */
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -64,6 +64,34 @@ if (!skipBuild) {
     { cwd: ROOT, env: { ...process.env, VITE_TERMINAL_GUI_E2E: '1' } },
   )
   if (!build.ok) fail(describeFailure('tauri build', build))
+
+  // ## Verify the probe actually landed in the bundle
+  //
+  // Measured on the Windows runner: every spec failed with `the read-only GUI E2E
+  // probe is absent — the frontend was built without VITE_TERMINAL_GUI_E2E=1`, while
+  // the same run built the frontend twice without complaint. `tauri build` runs
+  // `beforeBuildCommand` itself, so a build that loses the variable produces a
+  // perfectly good binary with no probe in it — and the failure then looks like a
+  // product defect in every spec instead of a build misconfiguration.
+  //
+  // Checking the artifact here turns that into one message at the point it happened.
+  const probePath = path.join(ROOT, 'dist', 'js')
+  let probeFound = false
+  try {
+    probeFound = readdirSync(probePath).some(name => name.startsWith('gui-e2e-probe'))
+  } catch {
+    probeFound = false
+  }
+  if (!probeFound) {
+    fail(
+      'the GUI E2E probe is missing from dist/js after the build.\n' +
+        `  looked in: ${path.relative(ROOT, probePath)}\n` +
+        '  `tauri build` runs beforeBuildCommand itself; if that step did not inherit\n' +
+        '  VITE_TERMINAL_GUI_E2E=1 the bundle is a normal production build and every\n' +
+        '  spec fails claiming the probe is absent. Re-run, and if it persists check\n' +
+        '  that the variable reaches the beforeBuildCommand subprocess.',
+    )
+  }
 }
 
 const binary = appBinaryPath(ROOT)
@@ -94,25 +122,114 @@ log(
 )
 
 // Seed a real SSH host before the app starts, so the dock spec exercises a live
-// connection instead of the empty state. Opt-in: specs that only care about layout
-// should not pay for a daemon, and a machine without `/usr/sbin/sshd` would fail
-// every spec rather than the one that needs it.
+// connection instead of the empty state.
+//
+// ## Why this is no longer opt-in
+//
+// It was `--with-ssh-fixture`, and no workflow passed it — so every CI run had no
+// SSH host, the dock spec took its empty-state branch, and the cases that need a
+// live connection recorded NOT_RUN instead of running. The opt-in turned the
+// interesting half of the suite off by default and nothing noticed.
+//
+// The fixture needs `sshd` and `ssh-keygen` at Unix paths, which Windows does not
+// have. So availability is probed rather than assumed:
+//
+//   * available → start it, and `GUI_E2E_SSH_PORT` tells the specs they may connect;
+//   * unavailable → no fixture, and the reason is printed and carried into the
+//     evidence summary, so a run without a host is visibly different from one that
+//     never tried.
+//
+// `--no-ssh-fixture` forces the old behaviour for a machine that cannot run one.
+const sshFixtureRequested = !flags.has('--no-ssh-fixture')
 let fixture = null
-if (flags.has('--with-ssh-fixture')) {
-  log('starting a throwaway sshd and seeding a host into the profile')
-  const { startSeededSshd } = await import('../e2e/gui/fixtures/seed-sftp-host.mjs')
-  fixture = await startSeededSshd({ home })
-  log(`sshd on 127.0.0.1:${fixture.port}; host row written to ${fixture.databaseFile}`)
+let fixtureSkipReason = null
+if (sshFixtureRequested) {
+  try {
+    const { startSeededSshd } = await import('../e2e/gui/fixtures/seed-sftp-host.mjs')
+    log('starting a throwaway sshd and seeding a host into the profile')
+    fixture = await startSeededSshd({ home })
+    log(`sshd on 127.0.0.1:${fixture.port}; host row written to ${fixture.databaseFile}`)
+  } catch (error) {
+    // A missing daemon is not a failed suite. It is a missing precondition, and it
+    // is reported as one — the specs then record NOT_RUN for the cases that need it
+    // instead of failing on a timeout that says nothing about the product.
+    fixtureSkipReason = error.message
+    log(`no SSH fixture: ${error.message}`)
+  }
 }
 
-const run = runCommand('npx', ['wdio', 'run', 'wdio.conf.mjs', ...specArgs], {
-  cwd: path.join(ROOT, 'e2e/gui'),
-  env: {
-    ...process.env,
-    GUI_E2E_BINARY: binary,
-    GUI_E2E_HOME: home,
-    GUI_E2E_SSH_PORT: fixture ? String(fixture.port) : '',
-  },
+/**
+ * Run the specs, isolating each from the next.
+ *
+ * ## Why per-spec instead of one `wdio run`
+ *
+ * `maxInstances: 1` means one app process serves every spec, so state carried over:
+ * measured, `e2e-03` ends with the dock open on a connected SSH host, and running it
+ * *before* `e2e-01` made the launch-state assertions fail — the suite only worked in
+ * the one order it was written in.
+ *
+ * Two things were tried first and both were wrong:
+ *
+ *   * closing the extra tab in a baseline hook — closing a tab does not dispose its
+ *     PTY, so `e2e-01` still saw two `[data-terminal-workbench]` nodes;
+ *   * resetting the dock and route per suite — that fixed the dock, but the active
+ *     tab was still the previous spec's SSH session, so the readiness assertions
+ *     read a connection that had never shown a local prompt.
+ *
+ * A fresh process per spec is the only reset that makes the order irrelevant, and it
+ * is cheap next to the build: each spec already pays for a WebDriver session.
+ * `--one-run` keeps the old single-process behaviour for debugging state carry-over.
+ */
+function runSpecs(specFiles, environment) {
+  if (!process.env.GUI_E2E_ONE_RUN && specFiles.length > 0) {
+    const runs = []
+    for (const spec of specFiles) {
+      log(`running ${spec} in its own app process`)
+      runs.push(
+        runCommand('npx', ['wdio', 'run', 'wdio.conf.mjs', '--spec', spec], {
+          cwd: path.join(ROOT, 'e2e/gui'),
+          env: {
+            ...environment,
+            // A distinct profile per spec: the app is new, so its state must be too.
+            GUI_E2E_HOME: `${environment.GUI_E2E_HOME}-${path.basename(spec, '.e2e.mjs')}`,
+          },
+        }),
+      )
+    }
+    const failed = runs.filter(run => !run.ok)
+    return {
+      ok: failed.length === 0,
+      // The first failure's status is what the process exit code should be, and its
+      // spawn error (if any) is the one worth printing.
+      status: failed.length === 0 ? 0 : (failed[0].status ?? 1),
+      error: failed[0]?.error,
+    }
+  }
+  return runCommand('npx', ['wdio', 'run', 'wdio.conf.mjs', ...specArgs], {
+    cwd: path.join(ROOT, 'e2e/gui'),
+    env: environment,
+  })
+}
+
+// Which specs to run, in order. An explicit `--spec` wins so a developer can run one
+// case; otherwise every spec, alphabetically, which is the documented order.
+const explicitSpecs = argv
+  .map((arg, index) => (arg === '--spec' ? argv[index + 1] : null))
+  .filter(value => typeof value === 'string')
+const specFiles = flags.has('--one-run')
+  ? []
+  : explicitSpecs.length > 0
+    ? explicitSpecs
+    : readdirSync(path.join(ROOT, 'e2e/gui/specs'))
+        .filter(name => name.endsWith('.e2e.mjs'))
+        .sort()
+        .map(name => `./specs/${name}`)
+
+const run = runSpecs(specFiles, {
+  ...process.env,
+  GUI_E2E_BINARY: binary,
+  GUI_E2E_HOME: home,
+  GUI_E2E_SSH_PORT: fixture ? String(fixture.port) : '',
 })
 
 if (fixture !== null) {
@@ -138,6 +255,11 @@ const summary = {
   },
   binary: { path: path.relative(ROOT, binary) },
   isolatedProfile: { path: home, variables: Object.keys(profile) },
+  // Recorded explicitly: a run with no SSH host cannot make the claims that need
+  // one, and the summary has to say which run this was.
+  sshFixture: fixture
+    ? { started: true, port: fixture.port }
+    : { started: false, reason: fixtureSkipReason ?? 'disabled by --no-ssh-fixture' },
   exitCode: run.status,
   verdict: run.ok ? 'PASS' : 'FAIL',
 }
