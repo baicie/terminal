@@ -83,9 +83,28 @@ export function binaryInfo() {
  * Persist one case's evidence.
  *
  * `verdict` is one of PASS / FAIL / PARTIAL / NOT_RUN and is written verbatim —
- * this module never upgrades an outcome.
+ * this module never upgrades an outcome. When the caller omits it, the verdict is
+ * derived from whether an `error` was supplied, so a spec that forgets to pass one
+ * cannot produce a PASS for a failing case.
+ *
+ * `extra` carries per-case measurements. It is spread into the record rather than
+ * nested, and it is `redact`ed like `notes`: a measurement that happens to include a
+ * path or a command must not smuggle a secret past the redaction step.
  */
-export async function writeEvidence(caseId, { verdict = 'PASS', terminal, window, command, notes, error } = {}) {
+export async function writeEvidence(
+  caseId,
+  { verdict, terminal, window, command, notes, error, extra } = {},
+) {
+  // No caller may choose a softer verdict than the outcome it is recording. A case
+  // that errored cannot be reported as anything but FAIL, and the default when
+  // neither is supplied is NOT_RUN rather than PASS.
+  const resolved = error ? 'FAIL' : (verdict ?? 'NOT_RUN')
+  if (error && verdict && verdict !== 'FAIL') {
+    throw new Error(
+      `writeEvidence(${caseId}): verdict ${verdict} contradicts the recorded error`,
+    )
+  }
+
   const dir = path.join(ARTIFACTS, caseId)
   mkdirSync(path.join(dir, 'screens'), { recursive: true })
 
@@ -102,7 +121,7 @@ export async function writeEvidence(caseId, { verdict = 'PASS', terminal, window
 
   const record = {
     case: caseId,
-    verdict,
+    verdict: resolved,
     recordedAt: new Date().toISOString(),
     platform: platformInfo(),
     source: sourceInfo(),
@@ -115,8 +134,39 @@ export async function writeEvidence(caseId, { verdict = 'PASS', terminal, window
     screenshot,
     notes: notes ? redact(notes) : undefined,
     error: error ? redact(error) : undefined,
+    ...(extra ? { extra: redactDeep(extra) } : {}),
   }
   const file = path.join(dir, `${caseId}.json`)
   writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
   return file
 }
+
+/** `redact` every string inside a JSON-shaped measurement tree. */
+function redactDeep(value) {
+  if (typeof value === 'string') return redact(value)
+  if (Array.isArray(value)) return value.map(redactDeep)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, inner]) => [
+        key,
+        // Keyed by name, because `redact` only recognises `password: x` in a single
+        // string. A measurement written as `{ password: 'hunter2' }` reaches it as
+        // two separate strings — the key in one call, the value in another — and
+        // neither looks like a secret on its own. Measured: that shape passed
+        // through untouched before this check existed.
+        SECRET_KEY.test(key) ? '[redacted]' : redactDeep(inner),
+      ]),
+    )
+  }
+  return value
+}
+
+/**
+ * Names that make a value a secret regardless of what the value looks like.
+ *
+ * Deliberately broad: a measurement is not supposed to contain any of these, so a
+ * false positive costs one unreadable number while a false negative writes a
+ * credential to a committed artefact.
+ */
+const SECRET_KEY =
+  /^(pass(word|phrase)?|secret|token|api[-_]?key|private[-_]?key|credential|authorization)$/i
