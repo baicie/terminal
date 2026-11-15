@@ -988,14 +988,66 @@ pub fn vault_set(key: String, value: String) -> Result<(), VaultError> {
     vault.set(&key, &value)
 }
 
+/// Read one secret.
+///
+/// ## The capability question this answers, and the one it does not
+///
+/// `vault_get` takes an arbitrary key, so any caller with IPC access inside the main
+/// WebView can read **any** secret the vault holds, including ones belonging to a
+/// host the UI is not currently showing. That is a real widening of the capability
+/// surface, and it is worth stating precisely what it is *not*:
+///
+/// * **No untrusted content reaches this WebView.** `tauri.conf.json` sets
+///   `withGlobalTauri: false` and a CSP of `script-src 'self'`, and the app registers
+///   a single `main` window. Nothing remote executes here, so "reachable from IPC"
+///   currently means "reachable from code we shipped", not "reachable from a page".
+/// * The only in-tree callers are `vault-secret-provider.ts` (keys built by
+///   `vaultKey()`, so `host:<id>:…` / `ssh-key:<id>:…`) and the Vaults view, whose
+///   keys are the user's own entries. Both need arbitrary keys; a prefix allowlist
+///   would break the product's own vault manager.
+///
+/// So this is **not** a remotely exploitable defect, and calling it one would be
+/// wrong. What it *is* is a capability that will stop being safe the moment anything
+/// else can execute in this WebView — an extension platform, a remote page, a
+/// `withGlobalTauri` flip. The mitigation that does not break the product is
+/// observability: every read is logged with who asked for what *shape* of key, never
+/// the value, so an unexpected caller leaves a trail.
+///
+/// The durable fix is to move secret consumption into Rust (a command per resource
+/// rather than a command per key), which is a separate, larger change — see
+/// `docs/phase-b/b01-vault-ipc-boundary.md`.
 #[tauri::command]
 pub fn vault_get(key: String) -> Result<String, VaultError> {
     if key.is_empty() {
         return Err(VaultError::KeyNotFound("Key cannot be empty".into()));
     }
+    // The key shape, never the key's value and never the secret. Enough to tell a
+    // credential read apart from a user-entry read in a log, and useless to anyone
+    // who obtains the log.
+    log::info!("vault_get kind={}", vault_key_kind(&key));
     let state = VAULT_STATE.lock();
     let vault = state.as_ref().ok_or(VaultError::VaultLocked)?;
     vault.get(&key)
+}
+
+/// Classify a vault key by its namespace, without echoing it.
+///
+/// Keys look like `host:<id>[:<version>]:<kind>`, `ssh-key:<id>[:<version>]:<kind>`,
+/// or a user-chosen name in the Vaults view. The id and the name are omitted: the
+/// classification is what makes a log line useful, and the rest is what makes it a
+/// privacy problem.
+fn vault_key_kind(key: &str) -> &'static str {
+    if key.starts_with("host:") {
+        "host-credential"
+    } else if key.starts_with("ssh-key:") {
+        "ssh-key-credential"
+    } else if key.starts_with("team:") {
+        "team-secret"
+    } else if key.starts_with("probe:") {
+        "diagnostic-probe"
+    } else {
+        "user-entry"
+    }
 }
 
 #[tauri::command]
