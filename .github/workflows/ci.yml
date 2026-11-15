@@ -817,3 +817,28 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
         run: node scripts/verify-required-checks.mjs
+      # ## Say what kind of failure this is
+      #
+      # "CI is red" is not actionable. The dominant failure in this repository's
+      # history is stale acceptance evidence — not a code problem — and before this
+      # step the only way to tell it from a regression was to open the log.
+      #
+      # The attribution runs on failure only. A clean run does not need a table, and
+      # writing one anyway would train readers to skip it.
+      - name: Attribute the failure
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Job conclusions come from the API rather than `needs`, because `needs`
+          # carries only the aggregated jobs and the attribution wants every one.
+          gh api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '[.jobs[] | {name, conclusion, informational: (.name | test("informational"))}]' \
+            > /tmp/jobs.json
+          node scripts/attribute-ci-failure.mjs /tmp/jobs.json | tee -a "$GITHUB_STEP_SUMMARY"
+        # A failure while explaining a failure must not replace the real verdict.
+        continue-on-error: true
