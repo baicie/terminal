@@ -1,7 +1,27 @@
 name: CI
 
+# ## Why a push on a feature branch no longer runs this
+#
+# Measured before this change: every commit produced **two** full runs, one for
+# `push` and one for `pull_request` —
+#
+#     43692358326 pull_request  e67ee9f2
+#     43692356593 push          e67ee9f2
+#
+# and the two did not cancel each other, because their concurrency groups differ:
+# `push` keys on `refs/heads/<branch>` and `pull_request` on `refs/pull/N/merge`.
+# Eleven jobs ran twice per commit, including a three-platform Tauri build.
+#
+# The PR run is the one that matters for merging, and it is the one branch protection
+# can require. A push to a feature branch adds nothing: it asserts the same tree the PR
+# run already asserted. So `push` is narrowed to `main`, which is the case that has no
+# PR run at all — a merged commit needs its own integration result.
+#
+# Release-tag pushes are deliberately **not** here: `release.yml` owns tags, and a
+# cancelled release run is not recoverable the way a cancelled PR run is.
 on:
   push:
+    branches: [main]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -15,6 +35,9 @@ on:
 permissions:
   contents: read
 
+# `cancel-in-progress` stays true for PRs only: a new commit on a PR makes the old
+# run's verdict irrelevant, while a `main` run's verdict is the record of that commit
+# and must not be thrown away because a later commit arrived.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -243,11 +266,29 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check:source-size
-      # Fails when any recorded evidence describes a different checkout than the
-      # one being built. It is intentionally NOT advisory: `continue-on-error`
-      # here would recreate the exact gap this job was widened to close.
-      - name: Verification evidence matches this checkout
-        run: node scripts/check-verification-evidence.mjs
+      # ## Integrity, not qualification
+      #
+      # This job runs on every PR, so it asks the question a PR can answer: **is the
+      # evidence internally trustworthy?** — schema, manifest completeness, raw logs
+      # present, binary hashes agreeing with the manifest, run id matching, no run
+      # mixing, no fabricated PASS.
+      #
+      # It deliberately does **not** compare against the current tree. Six files
+      # captured on an older commit are valid evidence of that commit; requiring them
+      # to match every newer commit made this job red on every branch for months
+      # (measured 2026-11-15: seven problems on `main`, all "recorded against
+      # fingerprint d45be813…") and buried a genuine evidence problem inside the noise.
+      #
+      # The strict question — "does this evidence describe the checkout we are about
+      # to release?" — belongs to `release.yml`, which runs
+      # `--mode=qualification`. Dropping it there would let a release ship evidence of
+      # different code; dropping it here costs nothing, because a release cannot happen
+      # without that job.
+      #
+      # Still not advisory: `continue-on-error` on either mode would recreate the gap
+      # this job was widened to close.
+      - name: Verification evidence is internally consistent
+        run: node scripts/check-verification-evidence.mjs --mode=integrity
       - run: node --test scripts/*.test.mjs scripts/verify-install/*.test.mjs
 
   rust:
@@ -605,3 +646,56 @@ jobs:
           name: install-data-retention-${{ matrix.os }}
           path: verify-install-evidence/
           if-no-files-found: warn
+
+  # ## The one check branch protection can require
+  #
+  # Before this job there was nothing to require: `ci.yml` had eleven jobs and no
+  # aggregator, so a ruleset could only list them by name — and `paths-ignore` means
+  # a docs-only PR never creates those check runs at all. A required check that never
+  # reports is a permanently pending PR.
+  #
+  # `CI / required` always runs and always reports. It decides from what actually ran:
+  #
+  #   * an **expected** job that succeeded → fine;
+  #   * an expected job that was **skipped** → fine only if `optional: true` in the
+  #     table below, or if the whole workflow was a docs-only run;
+  #   * failure, cancelled, or a missing result → fail.
+  #
+  # `needs.*.result == 'success'` alone is not enough, for two reasons that are both
+  # observable in this repository's history:
+  #
+  #   1. `paths-ignore` turns a docs-only push into a run where every job is
+  #      `skipped`. A naive aggregator would either fail that (wrong: nothing
+  #      regressed) or pass it without saying so (worse: a silent pass).
+  #   2. A dependency that is itself skipped cascades `skipped` to its dependents, so
+  #      "not failed" and "ran" are different questions.
+  #
+  # The table below is the contract: it names every job and whether its absence is
+  # acceptable. Adding a job without adding it here does not silently weaken the
+  # gate — `verify-required-checks.mjs` compares the table against `ci.yml` and fails
+  # on a job nobody classified.
+  required:
+    name: required
+    needs:
+      - frontend
+      - frontend-audit
+      - team-server
+      - source-size
+      - rust
+      - cargo-audit
+      - docker
+      - tauri
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Aggregate
+        env:
+          # `toJSON(needs)` is the whole result map; passing it as one value avoids a
+          # step per job and keeps the contract in one file.
+          NEEDS: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: node scripts/verify-required-checks.mjs

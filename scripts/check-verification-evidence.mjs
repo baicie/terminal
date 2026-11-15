@@ -994,11 +994,39 @@ export function validateEvidenceManifest(
   return problems
 }
 
+/**
+ * Which contract to enforce.
+ *
+ * - `integrity` — is this evidence **internally** trustworthy? Schema, manifest
+ *   completeness, raw logs present, binary hashes agreeing with the manifest, run id
+ *   matching, no run mixing. It deliberately does **not** compare against the current
+ *   tree: six files captured on an older commit are valid evidence of *that* commit.
+ * - `qualification` — everything above **plus** "does this evidence describe the
+ *   checkout we are about to release?" That adds the source fingerprint comparison.
+ *
+ * ## Why the split exists
+ *
+ * Measured on 2026-11-15: `main` had seven problems, all of the form "recorded
+ * against fingerprint d45be813…, sources now fingerprint as …". Every PR inherited
+ * them, so `Repository gates` was red on every branch for a reason no PR could fix —
+ * and a genuine evidence problem would have been indistinguishable from the noise.
+ *
+ * Collapsing the two would be worse than the noise: dropping the fingerprint check
+ * from PRs is correct, dropping it from releases would let a release ship evidence
+ * that describes different code. Keeping them apart is what lets each answer its own
+ * question.
+ */
+export const EVIDENCE_MODES = ['integrity', 'qualification']
+
 export async function checkVerificationEvidence({
   dependencies = { readdir, readFile },
   availableFiles,
   sourceFingerprint,
+  mode = 'qualification',
 } = {}) {
+  if (!EVIDENCE_MODES.includes(mode)) {
+    throw new Error(`unknown evidence mode ${JSON.stringify(mode)}`)
+  }
   const present =
     availableFiles ?? (await dependencies.readdir(verificationRoot))
   // Every registered file must exist. Filtering the registry down to whatever
@@ -1122,7 +1150,7 @@ export async function checkVerificationEvidence({
   // that kept an older fingerprint cannot ride along on a fresh manifest. Both
   // profiles are covered: release evidence states it in provenance.fingerprint,
   // debug evidence in provenance.fingerprint and source.fingerprint.
-  if (sourceFingerprint !== undefined) {
+  if (mode === 'qualification' && sourceFingerprint !== undefined) {
     for (const [file] of entries) {
       const evidence = evidenceByFile.get(file)
       const statements = []
@@ -1179,19 +1207,42 @@ const invokedPath =
 const isDirectRun = modulePath !== null && modulePath === invokedPath
 
 if (isDirectRun) {
-  const fingerprint = await computeSourceFingerprint()
+  // `--mode=integrity` is what a pull request runs; `qualification` (the default,
+  // and what a release must run) additionally requires the evidence to describe the
+  // current checkout. The default stays `qualification` so an invocation that forgets
+  // the flag is the strict one.
+  const modeFlag = process.argv.find(arg => arg.startsWith('--mode='))
+  const mode = modeFlag ? modeFlag.slice('--mode='.length) : 'qualification'
+  if (!EVIDENCE_MODES.includes(mode)) {
+    console.error(
+      `Unknown --mode=${mode}. Expected one of: ${EVIDENCE_MODES.join(', ')}`,
+    )
+    process.exit(2)
+  }
+
+  const fingerprint =
+    mode === 'qualification' ? await computeSourceFingerprint() : undefined
   const { checked, problems } = await checkVerificationEvidence({
     sourceFingerprint: fingerprint,
+    mode,
   })
   if (problems.length > 0) {
     console.error(
-      `Verification evidence gate failed: ${problems.length} problem(s).`,
+      `Verification evidence gate failed (${mode} mode): ${problems.length} problem(s).`,
     )
     for (const problem of problems) console.error(`- ${problem}`)
+    if (mode === 'integrity') {
+      console.error(
+        '\nIntegrity mode checks the evidence against itself and against its CI run. ' +
+          'A fingerprint mismatch with the current tree is NOT reported here — that is ' +
+          'why a stale-but-valid evidence set no longer fails every PR. Use ' +
+          '`--mode=qualification` to also require the evidence to describe this checkout.',
+      )
+    }
     process.exitCode = 1
   } else {
     console.log(
-      `Verification evidence gate passed for ${checked} current evidence file(s).`,
+      `Verification evidence gate passed (${mode} mode) for ${checked} evidence file(s).`,
     )
   }
 }
