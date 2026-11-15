@@ -1,20 +1,36 @@
 name: CI
 
+# ## Why a push on a feature branch no longer runs this
+#
+# Measured before this change: every commit produced **two** full runs, one for
+# `push` and one for `pull_request` —
+#
+#     43692358326 pull_request  e67ee9f2
+#     43692356593 push          e67ee9f2
+#
+# and the two did not cancel each other, because their concurrency groups differ:
+# `push` keys on `refs/heads/<branch>` and `pull_request` on `refs/pull/N/merge`.
+# Eleven jobs ran twice per commit, including a three-platform Tauri build.
+#
+# The PR run is the one that matters for merging, and it is the one branch protection
+# can require. A push to a feature branch adds nothing: it asserts the same tree the PR
+# run already asserted. So `push` is narrowed to `main`, which is the case that has no
+# PR run at all — a merged commit needs its own integration result.
+#
+# Release-tag pushes are deliberately **not** here: `release.yml` owns tags, and a
+# cancelled release run is not recoverable the way a cancelled PR run is.
 on:
   push:
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - '.workbuddy/**'
+    branches: [main]
   pull_request:
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# `cancel-in-progress` stays true for PRs only: a new commit on a PR makes the old
+# run's verdict irrelevant, while a `main` run's verdict is the record of that commit
+# and must not be thrown away because a later commit arrived.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -23,8 +39,75 @@ env:
   PNPM_VERSION: 10.34.3
 
 jobs:
+  # ## Classify the change before deciding what to run
+  #
+  # `paths-ignore` used to sit on the workflow trigger, which meant a docs-only PR
+  # created **no run at all** — and a required check that never reports leaves the PR
+  # permanently pending. That is the failure mode this job exists to avoid: classify
+  # inside the run so `required` always has something to report on.
+  #
+  # `docs-only` is what lets the expensive jobs skip while `CI / required` still passes
+  # honestly. Any change outside the documentation globs — including a change to this
+  # workflow — clears it.
+  changes:
+    name: Classify change
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      changed: ${{ steps.classify.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: classify
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == "workflow_dispatch" ]]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "changed=manual dispatch" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$EVENT" == "pull_request" ]]; then
+            git fetch --no-tags --depth=200 origin "$BASE" || true
+            base="origin/$BASE"
+          else
+            base="$BEFORE"
+            # A zero SHA means a new branch; fall back to the previous commit.
+            if [[ ! "$base" =~ ^[0-9a-f]{40}$ || "$base" =~ ^0+$ ]]; then
+              base="HEAD~1"
+            fi
+          fi
+          mapfile -t files < <(git diff --name-only "$base"...HEAD || git show --name-only --format= HEAD)
+          {
+            echo "changed<<EOF"
+            printf '%s\n' "${files[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          # Documentation only: Markdown anywhere, docs/, and .workbuddy/.
+          docs_only=true
+          for file in "${files[@]}"; do
+            case "$file" in
+              *.md|docs/*|.workbuddy/*) ;;
+              *) docs_only=false; break ;;
+            esac
+          done
+          # An empty diff (shallow clone edge) is treated as "not docs-only": the
+          # expensive path is the safe default.
+          if [[ ${#files[@]} -eq 0 ]]; then docs_only=false; fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          echo "classified ${#files[@]} file(s), docs_only=$docs_only"
+
   frontend:
     name: Frontend quality
+    # Docs-only changes skip this job; `CI / required` still reports, and its
+    # docs-only branch is what keeps a README edit mergeable.
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -66,6 +149,10 @@ jobs:
     # It audits the *installed production tree*, not just this package's own
     # dependencies: a vulnerable transitive package is still shipped.
     name: Dependency audit (npm)
+    # Docs-only changes skip this job; `CI / required` still reports, and its
+    # docs-only branch is what keeps a README edit mergeable.
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -93,6 +180,10 @@ jobs:
 
   team-server:
     name: Team Server quality
+    # Docs-only changes skip this job; `CI / required` still reports, and its
+    # docs-only branch is what keeps a README edit mergeable.
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -177,6 +268,10 @@ jobs:
     # branch, so it lives here where it also runs on every push. It is cheap: it
     # starts shells, it does not build the app.
     name: zsh probe diagnostic
+    # Docs-only changes skip this job; `CI / required` still reports, and its
+    # docs-only branch is what keeps a README edit mergeable.
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # This job collects evidence; it does not validate the product. Its script
@@ -230,6 +325,10 @@ jobs:
     # The verify-install upgrade harness tests live one level down because they
     # exercise the same installer fixtures as the platform scripts.
     name: Repository gates (source size, evidence, script tests)
+    # Docs-only changes skip this job; `CI / required` still reports, and its
+    # docs-only branch is what keeps a README edit mergeable.
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -243,15 +342,37 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check:source-size
-      # Fails when any recorded evidence describes a different checkout than the
-      # one being built. It is intentionally NOT advisory: `continue-on-error`
-      # here would recreate the exact gap this job was widened to close.
-      - name: Verification evidence matches this checkout
-        run: node scripts/check-verification-evidence.mjs
+      # ## Integrity, not qualification
+      #
+      # This job runs on every PR, so it asks the question a PR can answer: **is the
+      # evidence internally trustworthy?** — schema, manifest completeness, raw logs
+      # present, binary hashes agreeing with the manifest, run id matching, no run
+      # mixing, no fabricated PASS.
+      #
+      # It deliberately does **not** compare against the current tree. Six files
+      # captured on an older commit are valid evidence of that commit; requiring them
+      # to match every newer commit made this job red on every branch for months
+      # (measured 2026-11-15: seven problems on `main`, all "recorded against
+      # fingerprint d45be813…") and buried a genuine evidence problem inside the noise.
+      #
+      # The strict question — "does this evidence describe the checkout we are about
+      # to release?" — belongs to `release.yml`, which runs
+      # `--mode=qualification`. Dropping it there would let a release ship evidence of
+      # different code; dropping it here costs nothing, because a release cannot happen
+      # without that job.
+      #
+      # Still not advisory: `continue-on-error` on either mode would recreate the gap
+      # this job was widened to close.
+      - name: Verification evidence is internally consistent
+        run: node scripts/check-verification-evidence.mjs --mode=integrity
       - run: node --test scripts/*.test.mjs scripts/verify-install/*.test.mjs
 
   rust:
     name: Rust quality
+    # Docs-only changes skip this job; `CI / required` still reports, and its
+    # docs-only branch is what keeps a README edit mergeable.
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -343,6 +464,10 @@ jobs:
     # with no fixed release upstream. Green here means "no unrecorded advisory",
     # not "no known vulnerabilities". See docs/phase9-2/security-remediation.md.
     name: cargo audit (blocking)
+    # Docs-only changes skip this job; `CI / required` still reports, and its
+    # docs-only branch is what keeps a README edit mergeable.
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -443,6 +568,10 @@ jobs:
 
   docker:
     name: Team Server container
+    # Docs-only changes skip this job; `CI / required` still reports, and its
+    # docs-only branch is what keeps a README edit mergeable.
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -461,6 +590,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
+    # Docs-only changes skip this job; `CI / required` still reports, and its
+    # docs-only branch is what keeps a README edit mergeable.
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ${{ matrix.os }}
     env:
       # Where every verification script writes its evidence snapshots; the upload
@@ -605,3 +738,58 @@ jobs:
           name: install-data-retention-${{ matrix.os }}
           path: verify-install-evidence/
           if-no-files-found: warn
+
+  # ## The one check branch protection can require
+  #
+  # Before this job there was nothing to require: `ci.yml` had eleven jobs and no
+  # aggregator, so a ruleset could only list them by name — and `paths-ignore` means
+  # a docs-only PR never creates those check runs at all. A required check that never
+  # reports is a permanently pending PR.
+  #
+  # `CI / required` always runs and always reports. It decides from what actually ran:
+  #
+  #   * an **expected** job that succeeded → fine;
+  #   * an expected job that was **skipped** → fine only if `optional: true` in the
+  #     table below, or if the whole workflow was a docs-only run;
+  #   * failure, cancelled, or a missing result → fail.
+  #
+  # `needs.*.result == 'success'` alone is not enough, for two reasons that are both
+  # observable in this repository's history:
+  #
+  #   1. `paths-ignore` turns a docs-only push into a run where every job is
+  #      `skipped`. A naive aggregator would either fail that (wrong: nothing
+  #      regressed) or pass it without saying so (worse: a silent pass).
+  #   2. A dependency that is itself skipped cascades `skipped` to its dependents, so
+  #      "not failed" and "ran" are different questions.
+  #
+  # The table below is the contract: it names every job and whether its absence is
+  # acceptable. Adding a job without adding it here does not silently weaken the
+  # gate — `verify-required-checks.mjs` compares the table against `ci.yml` and fails
+  # on a job nobody classified.
+  required:
+    name: required
+    needs:
+      - changes
+      - frontend
+      - frontend-audit
+      - team-server
+      - source-size
+      - rust
+      - cargo-audit
+      - docker
+      - tauri
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Aggregate
+        env:
+          # `toJSON(needs)` is the whole result map; passing it as one value avoids a
+          # step per job and keeps the contract in one file.
+          NEEDS: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+        run: node scripts/verify-required-checks.mjs

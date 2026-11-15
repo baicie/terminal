@@ -94,6 +94,25 @@ jobs:
 
           echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      # ## Qualification: the evidence must describe *this* commit
+      #
+      # A release is the one place the strict question belongs. `--mode=integrity`
+      # (what every PR runs) only asks whether the evidence is internally
+      # trustworthy; it cannot tell whether the files describe the code being
+      # shipped, because evidence captured on an older commit is valid evidence of
+      # *that* commit.
+      #
+      # Here that question is the whole point: shipping installers whose acceptance
+      # evidence was measured on different sources is exactly the failure this gate
+      # exists to prevent. If it fails, the answer is to re-run
+      # `.github/workflows/real-machine-matrix.yml` on this commit and commit the
+      # fetched evidence — never to edit the manifest or the recorded fingerprint.
+      - name: Verification evidence qualifies this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/check-verification-evidence.mjs --mode=qualification
+
       - name: Validate the release mode
         shell: bash
         env:
