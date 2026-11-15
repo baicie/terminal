@@ -31,8 +31,44 @@ import process from 'node:process'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
-const SSHD = '/usr/sbin/sshd'
-const SSH_KEYGEN = '/usr/bin/ssh-keygen'
+
+/**
+ * Where the OpenSSH tools live, per platform.
+ *
+ * The Unix paths were hard-coded, so on Windows the first attempt was
+ * `spawn /usr/bin/ssh-keygen ENOENT` — measured on the Windows runner, reported as
+ * "no SSH fixture" and every remote-directory case silently recorded NOT_RUN.
+ *
+ * Windows ships `ssh.exe` and `ssh-keygen.exe` in `System32\OpenSSH`, but **not**
+ * `sshd.exe`: the OpenSSH *server* is an optional feature. So the keys can be
+ * generated there and the daemon still cannot start, which is a different answer from
+ * "the tools are missing" and has to be reported as such rather than guessed at.
+ */
+const OPENSSH_DIRS =
+  process.platform === 'win32'
+    ? [
+        path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'OpenSSH'),
+        'C:\\Program Files\\OpenSSH-Win64',
+      ]
+    : ['/usr/bin', '/usr/sbin', '/usr/local/bin', '/usr/local/sbin', '/opt/homebrew/bin']
+
+/** First existing executable among `names`, searched in the platform's OpenSSH dirs. */
+async function findExecutable(names) {
+  const { access, constants } = await import('node:fs/promises')
+  for (const directory of OPENSSH_DIRS) {
+    for (const name of names) {
+      const candidate = path.join(directory, name)
+      try {
+        await access(candidate, constants.X_OK)
+        return candidate
+      } catch {
+        // Not here; keep looking. The absence of every candidate is reported by the
+        // caller with the list it tried.
+      }
+    }
+  }
+  return null
+}
 
 /**
  * `node:sqlite` was added in Node 22.5 but stayed behind `--experimental-sqlite`
@@ -183,6 +219,29 @@ async function sshdConfig({ port, paths, username }) {
  * Returns the pieces a caller needs to stop it again.
  */
 export async function startSeededSshd({ home, label = 'E2E Local' }) {
+  // Resolve the tools before doing anything else, and name what is missing. On
+  // Windows the *client* tools exist but `sshd.exe` is an optional feature, so this
+  // check is what separates "this platform cannot host the fixture" from "the
+  // fixture is broken" — and the message is what the runner records.
+  const keygen = await findExecutable(['ssh-keygen', 'ssh-keygen.exe'])
+  if (!keygen) {
+    throw new Error(
+      `ssh-keygen was not found in ${OPENSSH_DIRS.join(', ')}. The SSH fixture needs ` +
+        'it to mint a throwaway host key and user key.',
+    )
+  }
+  const sshd = await findExecutable(['sshd', 'sshd.exe'])
+  if (!sshd) {
+    throw new Error(
+      `sshd was not found in ${OPENSSH_DIRS.join(', ')}. ` +
+        (process.platform === 'win32'
+          ? 'Windows ships the OpenSSH client but the server is an optional feature ' +
+            '(Settings → Optional Features → OpenSSH Server); without it this ' +
+            'platform cannot run the SSH-backed cases.'
+          : 'Install the OpenSSH server package.'),
+    )
+  }
+
   const workDirectory = await mkdtemp(path.join(os.tmpdir(), 'terminal-gui-sftp-'))
   await chmod(workDirectory, 0o700)
   const paths = {
@@ -193,8 +252,8 @@ export async function startSeededSshd({ home, label = 'E2E Local' }) {
     config: path.join(workDirectory, 'sshd_config'),
   }
 
-  await execFileAsync(SSH_KEYGEN, ['-q', '-t', 'ed25519', '-N', '', '-f', paths.hostKey])
-  await execFileAsync(SSH_KEYGEN, ['-q', '-t', 'ed25519', '-N', '', '-f', paths.userKey])
+  await execFileAsync(keygen, ['-q', '-t', 'ed25519', '-N', '', '-f', paths.hostKey])
+  await execFileAsync(keygen, ['-q', '-t', 'ed25519', '-N', '', '-f', paths.userKey])
   await chmod(paths.userKey, 0o600)
   const publicKey = (await readFile(`${paths.userKey}.pub`, 'utf8')).trim()
   await writeFile(paths.authorizedKeys, `${publicKey}\n`, { mode: 0o600 })
@@ -206,7 +265,7 @@ export async function startSeededSshd({ home, label = 'E2E Local' }) {
   })
 
   // sshd requires an absolute config path and refuses a world-writable directory.
-  const daemon = spawn(SSHD, ['-D', '-e', '-f', paths.config], {
+  const daemon = spawn(sshd, ['-D', '-e', '-f', paths.config], {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let diagnostics = ''

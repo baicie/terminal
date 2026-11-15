@@ -64,6 +64,34 @@ if (!skipBuild) {
     { cwd: ROOT, env: { ...process.env, VITE_TERMINAL_GUI_E2E: '1' } },
   )
   if (!build.ok) fail(describeFailure('tauri build', build))
+
+  // ## Verify the probe actually landed in the bundle
+  //
+  // Measured on the Windows runner: every spec failed with `the read-only GUI E2E
+  // probe is absent — the frontend was built without VITE_TERMINAL_GUI_E2E=1`, while
+  // the same run built the frontend twice without complaint. `tauri build` runs
+  // `beforeBuildCommand` itself, so a build that loses the variable produces a
+  // perfectly good binary with no probe in it — and the failure then looks like a
+  // product defect in every spec instead of a build misconfiguration.
+  //
+  // Checking the artifact here turns that into one message at the point it happened.
+  const probePath = path.join(ROOT, 'dist', 'js')
+  let probeFound = false
+  try {
+    probeFound = readdirSync(probePath).some(name => name.startsWith('gui-e2e-probe'))
+  } catch {
+    probeFound = false
+  }
+  if (!probeFound) {
+    fail(
+      'the GUI E2E probe is missing from dist/js after the build.\n' +
+        `  looked in: ${path.relative(ROOT, probePath)}\n` +
+        '  `tauri build` runs beforeBuildCommand itself; if that step did not inherit\n' +
+        '  VITE_TERMINAL_GUI_E2E=1 the bundle is a normal production build and every\n' +
+        '  spec fails claiming the probe is absent. Re-run, and if it persists check\n' +
+        '  that the variable reaches the beforeBuildCommand subprocess.',
+    )
+  }
 }
 
 const binary = appBinaryPath(ROOT)
