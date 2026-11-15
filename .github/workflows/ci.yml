@@ -423,6 +423,24 @@ jobs:
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --features smoke-vault-probe vault_probe
+      # ## The production SFTP paths against a real OpenSSH server
+      #
+      # `staged_upload` and `receive_download` are what the `#[tauri::command]`
+      # handlers call, and their tests are `#[ignore]` because they need a server.
+      # Measured: until this step existed, `scripts/verify-install/sftp-command-e2e.mjs`
+      # and `sftp-staged-upload-e2e.mjs` appeared in `package.json` and nowhere under
+      # `.github/`, so the only tests that exercise the real byte path never ran in CI.
+      #
+      # The runner starts a throwaway sshd on 127.0.0.1 with its own host key and user
+      # key, runs the ignored tests, and removes the fixture. It exits non-zero when
+      # sshd never listened, so a missing server is a failure rather than a silent
+      # skip of the only tests that move real bytes.
+      #
+      # What this does **not** prove: the Tauri command wrappers, the frontend
+      # transfer queue, or any GUI. Those are different layers with their own suites,
+      # and conflating them is the mistake this comment exists to prevent.
+      - name: SFTP command-level acceptance (real sshd)
+        run: node scripts/verify-install/sftp-command-e2e.mjs
 
   cargo-audit:
     # RustSec sweep over src-tauri/Cargo.lock, as a REAL GATE.
