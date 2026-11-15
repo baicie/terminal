@@ -65,7 +65,11 @@ const groups = {
   scripts: [['node', ['--test', ...scriptsTestFiles]]],
   source: [
     ['node', ['scripts/check-source-size.mjs']],
-    ['node', ['scripts/check-verification-evidence.mjs']],
+    // `qualification` (the default) is deliberate here: `pnpm verify` is what a
+    // maintainer runs before claiming a checkout is releasable, so it should answer
+    // the strict question. CI's PR gate runs `--mode=integrity` instead, because a PR
+    // cannot be asked to re-capture evidence that only a macOS runner can produce.
+    ['node', ['scripts/check-verification-evidence.mjs', '--mode=qualification']],
   ],
 }
 

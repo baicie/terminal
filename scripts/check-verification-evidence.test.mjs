@@ -742,3 +742,81 @@ test('rejects a manifest that lists no per-file evidence entry', async () => {
     assert.match(problem, /records no evidenceFiles entry for this file/)
   }
 })
+
+// ---------------------------------------------------------------------------
+// The two modes answer different questions.
+//
+// Measured before the split: `main` had seven problems, every one of the form
+// "recorded against fingerprint d45be813…, sources now fingerprint as …". Every PR
+// inherited them, so the gates job was red on every branch for something no PR could
+// fix. The split lets a PR ask "is this evidence trustworthy?" while a release asks
+// "does it describe the code I am shipping?".
+// ---------------------------------------------------------------------------
+
+test('integrity mode does not compare against the current tree', async () => {
+  // Internally sound evidence that describes an older checkout. In integrity mode
+  // that is not a problem: it is a true statement about a different commit.
+  const { problems } = await checkVerificationEvidence({
+    ...createHarness({ evidenceFingerprint: 'fingerprint-of-older-source' }),
+    mode: 'integrity',
+  })
+  assert.deepEqual(
+    problems.filter(problem => /source fingerprint/.test(problem)),
+    [],
+    `integrity mode must not report a fingerprint mismatch: ${JSON.stringify(problems)}`,
+  )
+})
+
+test('qualification mode rejects evidence from an older checkout', async () => {
+  const { problems } = await checkVerificationEvidence({
+    ...createHarness({ evidenceFingerprint: 'fingerprint-of-older-source' }),
+    sourceFingerprint: 'fingerprint-of-newer-source',
+    mode: 'qualification',
+  })
+  assert.ok(
+    problems.some(problem => /source fingerprint/.test(problem)),
+    'qualification mode must report the mismatch',
+  )
+})
+
+test('qualification mode accepts evidence from this checkpoint', async () => {
+  const { problems } = await checkVerificationEvidence({
+    ...createHarness(),
+    sourceFingerprint: CURRENT_SOURCE,
+    mode: 'qualification',
+  })
+  assert.deepEqual(
+    problems.filter(problem => /source fingerprint/.test(problem)),
+    [],
+  )
+})
+
+test('an unknown mode is an error, not a silent default', async () => {
+  // Defaulting an unrecognised mode to the lenient one would turn a typo in a
+  // workflow into a silently weakened release gate.
+  await assert.rejects(
+    () => checkVerificationEvidence({ mode: 'permissive' }),
+    /unknown evidence mode/,
+  )
+})
+
+test('integrity mode still fails on a manifest that does not match its files', async () => {
+  // The point of integrity: dropping the tree comparison must not drop the checks
+  // that catch fabricated or mixed evidence.
+  const { problems } = await checkVerificationEvidence({
+    ...createHarness({ manifest: JSON.stringify(manifestFor({ debugSha: 'f'.repeat(64) })) }),
+    mode: 'integrity',
+  })
+  assert.ok(problems.length > 0, 'a manifest/artifact disagreement must still fail')
+})
+
+test('integrity mode still fails when a raw log is missing', async () => {
+  const { problems } = await checkVerificationEvidence({
+    ...createHarness({ rawLogs: [] }),
+    mode: 'integrity',
+  })
+  assert.ok(
+    problems.some(problem => /raw log/i.test(problem)),
+    `a missing raw log must fail integrity mode; got ${JSON.stringify(problems)}`,
+  )
+})
