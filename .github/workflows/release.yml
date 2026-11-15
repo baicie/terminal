@@ -92,8 +92,55 @@ jobs:
             exit 1
           fi
 
-          echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          {
+            echo "tag=$REQUESTED_TAG"
+            echo "version=$version"
+            # Consumed by the release-qualification step: the checks must have run on
+            # this exact sha, not merely on the branch.
+            echo "commit=$checkout_commit"
+          } >> "$GITHUB_OUTPUT"
+      # ## Qualification: the evidence must describe *this* commit
+      #
+      # A release is the one place the strict question belongs. `--mode=integrity`
+      # (what every PR runs) only asks whether the evidence is internally
+      # trustworthy; it cannot tell whether the files describe the code being
+      # shipped, because evidence captured on an older commit is valid evidence of
+      # *that* commit.
+      #
+      # Here that question is the whole point: shipping installers whose acceptance
+      # evidence was measured on different sources is exactly the failure this gate
+      # exists to prevent. If it fails, the answer is to re-run
+      # `.github/workflows/real-machine-matrix.yml` on this commit and commit the
+      # fetched evidence — never to edit the manifest or the recorded fingerprint.
+      - name: Verification evidence qualifies this commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/check-verification-evidence.mjs --mode=qualification
+      # ## The rest of the release question
+      #
+      # The step above answers "does the evidence describe this commit?". A release
+      # also needs "did this commit pass CI, on this commit, in every job a merge
+      # would have required?" — a green run of a *different* commit is not evidence
+      # for this one, and that is the failure mode a tag can hide.
+      #
+      # Facts are collected with `gh` and judged by a pure function, so the decision
+      # is unit-tested (16 cases) instead of only exercised during a real release.
+      - name: Release qualification
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+          RELEASE_COMMIT: ${{ steps.metadata.outputs.commit }}
+          RELEASE_MODE: ${{ env.RELEASE_MODE }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          facts_file="$(node scripts/release-facts.mjs)"
+          echo "facts: $facts_file"
+          cat "$facts_file"
+          node scripts/verify-release-qualification.mjs "$facts_file"
+
       - name: Validate the release mode
         shell: bash
         env:
@@ -636,8 +683,57 @@ jobs:
           # (in updater-signed mode) the signature/manifest gate passed. A single
           # earlier failure leaves the release as a draft, which is the point.
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
-          if [ "$MODE" = "unsigned-qa" ]; then
-            echo "Published $RELEASE_TAG as an unsigned QA prerelease (no OS code signing, no notarization, no updater signatures)."
-          else
+
+          # ## Verify the published state instead of asserting it
+          #
+          # `gh release edit` returning 0 means GitHub accepted the request. It does
+          # not mean the release is visible, that every asset is still attached, or
+          # that the updater manifest is reachable — and those are the three things a
+          # user or an updater client actually depends on.
+          #
+          # The order matters and is deliberate: the release is published **before**
+          # the updater manifest is confirmed reachable, because a manifest pointing at
+          # a draft is a broken update for every client. If this check fails, the
+          # release is left published (reverting is a manual decision) but the job is
+          # red so nobody reads it as a clean ship.
+          published="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}")"
+          if [[ "$(jq -r '.draft' <<< "$published")" != "false" ]]; then
+            echo "Release $RELEASE_TAG is still a draft after publish" >&2
+            exit 1
+          fi
+          asset_count="$(jq -r '.assets | length' <<< "$published")"
+          if [[ "$asset_count" -eq 0 ]]; then
+            echo "Published release $RELEASE_TAG has no assets" >&2
+            exit 1
+          fi
+
+          # Every expected installer must still be attached *and* downloadable. A
+          # HEAD against the browser_download_url is what a user's browser does.
+          for asset_url in $(jq -r '.assets[].browser_download_url' <<< "$published"); do
+            if ! curl --fail --silent --show-error --location --head --max-time 30 "$asset_url" >/dev/null; then
+              echo "Published asset is not downloadable: $asset_url" >&2
+              exit 1
+            fi
+          done
+          echo "published $asset_count asset(s), all reachable"
+
+          if [ "$MODE" = "updater-signed" ]; then
+            # The updater manifest must be attached and parse as JSON *after* the
+            # release went public — a manifest that only exists on a draft is not an
+            # update path.
+            latest_name="$(jq -r '.assets[] | select(.name == "latest.json") | .name' <<< "$published")"
+            if [[ "$latest_name" != "latest.json" ]]; then
+              echo "Published release is missing the updater manifest latest.json" >&2
+              exit 1
+            fi
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir published-updater
+            if ! jq -e '.version and .platforms' published-updater/latest.json >/dev/null; then
+              echo "latest.json is not a usable updater manifest" >&2
+              exit 1
+            fi
+            platforms="$(jq -r '.platforms | keys | join(", ")' published-updater/latest.json)"
+            echo "updater manifest published for: $platforms"
             echo "Published $RELEASE_TAG with updater artifacts and signatures; OS code signing is still absent."
+          else
+            echo "Published $RELEASE_TAG as an unsigned QA prerelease (no OS code signing, no notarization, no updater signatures)."
           fi
