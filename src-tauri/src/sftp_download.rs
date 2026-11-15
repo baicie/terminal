@@ -139,10 +139,25 @@ impl DownloadTarget {
             .filter(|parent| !parent.as_os_str().is_empty())
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."));
+        // `to_str`, not `to_string_lossy`: a name that is not valid UTF-8 would be
+        // silently rewritten to U+FFFD, so the temporary and backup files would sit
+        // beside the target under names derived from a *different* string. The user
+        // would see debris they cannot connect to the file they downloaded. Measured:
+        // `caf\xe9.txt` becomes `caf\u{FFFD}.txt` under the lossy conversion.
+        //
+        // Refusing is the honest answer here because the rest of the pipeline (the
+        // frontend path, the progress events, the error messages) is UTF-8 as well;
+        // a non-UTF-8 destination cannot be named back to the user either way.
         let name = target
             .file_name()
             .ok_or_else(|| format!("the destination {} has no file name", target.display()))?
-            .to_string_lossy()
+            .to_str()
+            .ok_or_else(|| {
+                format!(
+                    "the destination {} has a file name that is not valid UTF-8",
+                    target.display(),
+                )
+            })?
             .to_string();
         Ok(Self {
             path: target.to_path_buf(),

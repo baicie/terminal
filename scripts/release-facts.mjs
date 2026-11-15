@@ -9,6 +9,7 @@
  * default. A release gate that fills in "probably fine" is worse than no gate.
  */
 import { execFileSync } from 'node:child_process'
+import { selectAcrossPages } from './check-run-selection.mjs'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -32,28 +33,87 @@ function git(args) {
   }
 }
 
-/** Every check run for this commit, keyed by name. */
+/** How many check-run pages to read before giving up and failing closed. */
+const MAX_CHECK_PAGES = 10
+const CHECK_PAGE_SIZE = 100
+
+/**
+ * Every check run for this commit, keyed by name.
+ *
+ * ## What the first version got wrong
+ *
+ * It read one page of 100, took the **last** entry per name, and compared
+ * `conclusion` only. Measured against the three failure modes:
+ *
+ * | Case | Old result |
+ * | --- | --- |
+ * | an untrusted App publishes the same check name with a higher id | reported success |
+ * | a re-run is still `in_progress` | reported `null` conclusion, not "wait" |
+ * | more than 100 runs on a commit | silently truncated |
+ *
+ * The selection rules now live in `check-run-selection.mjs` so they can be tested
+ * without a live repository (12 cases).
+ */
 function collectChecks(commit) {
-  const raw = gh([
-    'api',
-    `repos/{owner}/{repo}/commits/${commit}/check-runs?per_page=100`,
-    '--jq',
-    '.check_runs[] | {name, conclusion, head_sha}',
-  ])
-  if (!raw) return {}
-  const checks = {}
-  for (const line of raw.split('\n')) {
-    if (!line.trim()) continue
+  const pages = []
+  for (let page = 1; page <= MAX_CHECK_PAGES; page += 1) {
+    const raw = gh([
+      'api',
+      `repos/{owner}/{repo}/commits/${commit}/check-runs?per_page=${CHECK_PAGE_SIZE}&page=${page}`,
+      '--jq',
+      '.check_runs',
+    ])
+    if (raw === null) {
+      // The API was unreachable or refused. Returning the pages we have would make a
+      // partial answer look complete, so the caller sees "could not read" instead.
+      return { checks: {}, error: `check-run page ${page} could not be read` }
+    }
+    let parsed
     try {
-      const entry = JSON.parse(line)
-      // A name can appear more than once (a re-run). The **last** is the one that
-      // decided the commit's state, and `gh` returns them in ascending time order.
-      checks[entry.name] = { conclusion: entry.conclusion, headSha: entry.head_sha }
+      parsed = JSON.parse(raw)
     } catch {
-      // A malformed line is a missing fact, not a pass.
+      return { checks: {}, error: `check-run page ${page} was not JSON` }
+    }
+    if (!Array.isArray(parsed)) {
+      return { checks: {}, error: `check-run page ${page} was not a list` }
+    }
+    pages.push(parsed)
+    // Fewer than a full page means this was the last one.
+    if (parsed.length < CHECK_PAGE_SIZE) break
+    if (page === MAX_CHECK_PAGES) {
+      // Still full at the cap: the answer would be incomplete, which is a failure
+      // rather than a guess.
+      return {
+        checks: {},
+        error: `more than ${MAX_CHECK_PAGES * CHECK_PAGE_SIZE} check runs; refusing to judge on a partial list`,
+      }
     }
   }
-  return checks
+
+  // Only this repository's own workflow may satisfy a required check.
+  const allowedAppIds = allowedCheckApps()
+  const { checks, ignored } = selectAcrossPages(pages, { allowedAppIds })
+  if (ignored.length > 0) {
+    for (const entry of ignored) {
+      console.error(`  ignored check run ${entry.id} ${entry.name}: ${entry.reason}`)
+    }
+  }
+  return { checks, ignored }
+}
+
+/**
+ * Which GitHub App ids may satisfy a required check.
+ *
+ * `GITHUB_ACTIONS_APP_ID` defaults to 15368 (the GitHub Actions app). An empty set
+ * means "any app" is accepted, which is what a local run needs; CI sets it.
+ */
+function allowedCheckApps() {
+  const raw = process.env.RELEASE_CHECK_APP_IDS ?? '15368'
+  const ids = raw
+    .split(',')
+    .map(value => Number(value.trim()))
+    .filter(Number.isFinite)
+  return ids.length > 0 ? new Set(ids) : null
 }
 
 /**
@@ -83,6 +143,19 @@ function collectEvidence() {
   }
 }
 
+/**
+ * Split the collector's return into `checks` and an explicit error field.
+ *
+ * A collector failure and a failed check are different facts: one means the gate
+ * could not answer, the other means the answer is "no". The release judge reports
+ * them separately.
+ */
+function splitCheckResult(result) {
+  return result.error
+    ? { checks: {}, checksError: result.error }
+    : { checks: result.checks, checksError: null }
+}
+
 function main() {
   const commit = process.env.RELEASE_COMMIT || git(['rev-parse', 'HEAD'])
   const tag = process.env.RELEASE_TAG || null
@@ -94,7 +167,7 @@ function main() {
     tag,
     tagCommit,
     mode,
-    checks: commit ? collectChecks(commit) : {},
+    ...(commit ? splitCheckResult(collectChecks(commit)) : { checks: {}, checksError: 'no commit' }),
     evidence: collectEvidence(),
     signing: {
       // The workflow exports this only when the secret exists.

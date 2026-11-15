@@ -652,16 +652,15 @@ jobs:
               '{version:$version, notes:$notes, pub_date:$pub_date, platforms: {"darwin-aarch64": {signature:$darwin_arm_sig, url:$darwin_arm_url}, "darwin-x86_64": {signature:$darwin_intel_sig, url:$darwin_intel_url}, "windows-x86_64": {signature:$windows_sig, url:$windows_url}, "linux-x86_64": {signature:$linux_sig, url:$linux_url}}}' > latest.json
             gh release upload "$RELEASE_TAG" latest.json --repo "$GITHUB_REPOSITORY" --clobber
 
-            if gh release view updater-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              gh release upload updater-latest latest.json --repo "$GITHUB_REPOSITORY" --clobber
-            else
-              gh release create updater-latest --repo "$GITHUB_REPOSITORY" \
-                --title "Updater channel: stable" \
-                --notes "Holds the latest updater manifest for the stable channel. Do not download installers from this tag." \
-                --prerelease
-              gh release upload updater-latest latest.json --repo "$GITHUB_REPOSITORY" --clobber
-            fi
-            echo "updater manifest uploaded with 4 platform entries and mirrored to updater-latest"
+            # ## The channel is switched later, not here
+            #
+            # `latest.json` is attached to this release now, because the asset must
+            # exist before the post-publish check looks for it. What must **not**
+            # happen yet is pointing the stable channel at it: at this moment the
+            # release is still a draft, so every URL in the manifest 404s. Moving this
+            # to the publish step closes the window where a client could read a
+            # manifest that describes an undownloadable version.
+            echo "updater manifest uploaded with 4 platform entries (channel switch follows publication)"
           fi
       - name: Upload QA assets to Actions artifacts
         uses: actions/upload-artifact@v4
@@ -733,6 +732,30 @@ jobs:
             fi
             platforms="$(jq -r '.platforms | keys | join(", ")' published-updater/latest.json)"
             echo "updater manifest published for: $platforms"
+
+            # ## Last step: point the stable channel at a release that is known good
+            #
+            # Ordering is the whole contract here:
+            #
+            #   1. the release is public (`--draft=false` succeeded);
+            #   2. every asset answers a HEAD;
+            #   3. `latest.json` parses and lists its platforms;
+            #   4. **only then** does `updater-latest` point at it.
+            #
+            # Doing this earlier — as the previous version did, in the asset step
+            # before publication — left a window in which the channel advertised a
+            # version whose URLs 404'd. A client that polled during that window got a
+            # failed update with no way to tell it from a real one.
+            if gh release view updater-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release upload updater-latest published-updater/latest.json --repo "$GITHUB_REPOSITORY" --clobber
+            else
+              gh release create updater-latest --repo "$GITHUB_REPOSITORY" \
+                --title "Updater channel: stable" \
+                --notes "Holds the latest updater manifest for the stable channel. Do not download installers from this tag." \
+                --prerelease
+              gh release upload updater-latest published-updater/latest.json --repo "$GITHUB_REPOSITORY" --clobber
+            fi
+            echo "stable channel now points at $RELEASE_TAG"
             echo "Published $RELEASE_TAG with updater artifacts and signatures; OS code signing is still absent."
           else
             echo "Published $RELEASE_TAG as an unsigned QA prerelease (no OS code signing, no notarization, no updater signatures)."

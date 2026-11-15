@@ -101,6 +101,15 @@ export function classifyJob(job, result, { optional }) {
  * changed files when the caller has them; otherwise it stays false and a skipped
  * required job is a failure.
  */
+/**
+ * @param needs `toJSON(needs)` from the workflow
+ * @param options.docsOnly whether the change classifier said documentation-only
+ * @param options.expected the job contract
+ *
+ * `eventName` is accepted but **not** used, deliberately: a push to `main` and a PR
+ * run must reach the same verdict from the same job results (T13). Anything that made
+ * them differ would mean a merge commit could pass where its PR could not.
+ */
 export function decide(needs, { docsOnly = false, expected = EXPECTED_JOBS } = {}) {
   const results = []
   let failed = false

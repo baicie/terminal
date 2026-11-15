@@ -97,7 +97,21 @@ export function judgeRelease(facts) {
   // The failure this prevents: a release cut from a branch whose CI was green on an
   // earlier commit, with the last few commits untested. A run of a different SHA is
   // reported here rather than being allowed to stand in.
+  //
+  // ## A collector failure is not a check failure
+  //
+  // If the API could not be read, the honest answer is "we do not know", and the two
+  // must not be reported as the same thing: one sends someone to look at CI, the other
+  // sends them to look at GitHub's availability. `checksError` carries the first.
   const checks = facts.checks ?? {}
+  if (facts.checksError) {
+    push(
+      'checks-unreadable',
+      `the check-run listing could not be read (${facts.checksError}); this is a ` +
+        'fact-collection failure, not a failed check — re-run the release after the API ' +
+        'is reachable rather than treating the release as reviewed',
+    )
+  }
   for (const name of REQUIRED_RELEASE_CHECKS) {
     const entry = checks[name]
     if (!entry) {

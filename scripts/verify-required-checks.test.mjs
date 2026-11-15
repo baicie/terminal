@@ -131,3 +131,55 @@ test('an unclassified job is reported', () => {
   )
   assert.deepEqual(unclassifiedJobs(workflow), ['brand-new'])
 })
+
+// ---------------------------------------------------------------------------
+// T13 — the cases a review of the aggregator has to consider.
+// ---------------------------------------------------------------------------
+
+test('a matrix job where one leg fails is a failure', () => {
+  // `tauri` is a 3-platform matrix. GitHub reports one `needs` result for the job, and
+  // it is `failure` when any leg failed — but that is a property of the platform, not
+  // of this code, so the test states the expected answer rather than the mechanism.
+  const needs = allSuccess()
+  needs.tauri = { result: 'failure' }
+  assert.equal(decide(needs).ok, false)
+})
+
+test('a timed-out job is a failure', () => {
+  // GitHub reports `cancelled` for a timeout in `needs`, which is already covered —
+  // this pins it explicitly so the reason is not lost if the platform changes.
+  const needs = allSuccess()
+  needs.rust = { result: 'cancelled' }
+  const { ok, results } = decide(needs)
+  assert.equal(ok, false)
+  assert.match(results.find(r => r.detail.startsWith('rust')).detail, /cancelled/)
+})
+
+test('a merge-commit run aggregates the same way as a PR run', () => {
+  // `github.event_name` differs (`push` on main vs `pull_request`) but the decision
+  // does not depend on it: the same `needs` shape must give the same answer.
+  const needs = allSuccess()
+  assert.equal(decide(needs, { docsOnly: false }).ok, true)
+  assert.equal(decide(needs, { docsOnly: false, eventName: 'push' }).ok, true)
+})
+
+test('a shallow clone that yields an empty diff is not docs-only', () => {
+  // The classifier's fail-closed path: no changed paths means `docs_only=false`, so
+  // the aggregator must see running jobs. This asserts the *combination* — a skipped
+  // job alongside a docs-only flag of false is a failure.
+  const needs = allSuccess()
+  for (const job of AGGREGATED_JOBS) needs[job] = { result: 'skipped' }
+  assert.equal(decide(needs, { docsOnly: false }).ok, false)
+  assert.equal(decide(needs, { docsOnly: true }).ok, true)
+})
+
+test('a renamed or deleted file does not change the aggregation rule', () => {
+  // Renames and deletions are the classifier's problem (it treats both sides as
+  // changed); the aggregator only ever sees job results, and must not invent a third
+  // state for them.
+  const needs = allSuccess()
+  assert.equal(decide(needs).ok, true)
+  // A `skipped` result for a non-optional job is a failure regardless of why.
+  needs['source-size'] = { result: 'skipped' }
+  assert.equal(decide(needs, { docsOnly: false }).ok, false)
+})
