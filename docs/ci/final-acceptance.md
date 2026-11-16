@@ -243,6 +243,10 @@ workflow runs。真实 commit 验证：两个 GUI check 均被采集，`workflow
   `reset --soft` 撤回
 - 验证 docs-only 可合并时执行了真实的 `gh pr merge 88`，该探针 PR 被真的合并为
   `3b0152f`（只追加一个空行，无功能影响，但违反「探针不合并」）
+- `db_recovery.rs` 的 doc comment 后留了空行，`cargo clippy --all-features` 报
+  `empty line after doc comment`，PR #92 的 `Rust quality` 因此失败。本地只跑了
+  `cargo fmt` 与 `cargo test`，**没跑 clippy** —— 与 AGENTS.md 记录的「改完代码要先跑
+  全部门禁」同类，本轮已修正并补跑
 
 ---
 
