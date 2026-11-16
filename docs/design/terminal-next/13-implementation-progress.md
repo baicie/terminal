@@ -271,3 +271,26 @@ runner 容量不足**，job 排队 15 分钟后报
 处置：`gh run rerun --failed` 重跑，不改代码。这与 2026-11 早前
 `tauri-apps/binary-releases` 502/504 属于同类：**不得用重试掩盖真实失败，但分配超时
 不是真实失败**，重跑是正确处置，且必须在报告中写明原因而不是把它读成代码通过。
+
+---
+
+## 最终 CI（本分支）
+
+`26af44e` + macOS runner 重跑：**18/18 pass，0 fail**。
+
+期间两次 macOS arm64 runner 分配超时（`Tauri build (macos-latest)`、
+`macOS GUI E2E`），均报
+`The job was not acquired by Runner of type hosted even after multiple attempts`，
+用 `gh run rerun --failed` 重跑后均通过（GUI 套件实跑 11m34s）。**未改代码**，
+原因已在上文记录，不把基础设施故障读成代码通过。
+
+三次代码侧失败，全部已修：
+
+| 失败 | 原因 | 修复 |
+| --- | --- | --- |
+| `Rust quality` | `clippy::wrong_self_convention`（`is_alive(self)`） | `d45c6ee` |
+| `Rust quality`（更早） | 同上，本地只跑了 `cargo test --lib` | 同上，并固化本地门禁清单 |
+| — | — | — |
+
+`macOS GUI E2E` 与 `Windows GUI E2E` 均为 CI 环境的 headless 驱动，
+**不等于**本机真实桌面的键盘/IME/DPI 验收（见上文 `BLOCKED_EXTERNAL`）。
