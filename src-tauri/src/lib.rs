@@ -515,3 +515,12 @@ mod vault_probe_tests {
         );
     }
 }
+
+
+#[cfg(test)]
+mod protection_probe_v2 {
+    #[test]
+    fn probe_must_fail() {
+        assert_eq!(1, 2, "intentional failure: verifies the narrowed ruleset still blocks");
+    }
+}
