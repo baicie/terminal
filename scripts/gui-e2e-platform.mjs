@@ -185,6 +185,26 @@ export function binaryHasWebDriver(binaryPath) {
  * Vault, SQLite database and SSH keys — which is exactly what the isolation
  * requirement forbids.
  */
+/**
+ * Environment for a throwaway profile.
+ *
+ * ## Why `TERMINAL_GUI_E2E_CONFIG_DIR` is here
+ *
+ * The env vars below work on Linux and macOS because `dirs::config_dir()` reads them
+ * there (`XDG_CONFIG_HOME` on Linux, `$HOME` on macOS). **On Windows it does not**:
+ * it calls `SHGetKnownFolderPath(FOLDERID_RoamingAppData)`, so `APPDATA` is ignored and
+ * the app keeps using the real profile.
+ *
+ * Measured on the Windows runner: the harness seeded
+ * `…\Temp\terminal-gui-e2e-…\AppData\Roaming\<id>\terminal.db` while the app opened
+ * `C:\Users\runneradmin\AppData\Roaming\<id>\terminal.db`, found no database, and
+ * the startup gate correctly refused to mount the UI with
+ * `MANUAL_INTERVENTION_REQUIRED · the application config directory is unknown`.
+ *
+ * The env vars are kept for the platforms that honour them; the explicit override is
+ * what makes all three agree. It is read only when the app is built with the `gui-e2e`
+ * feature (see `db_recovery::config_root`).
+ */
 export function isolatedProfileEnv(home) {
   return {
     HOME: home,
@@ -194,5 +214,7 @@ export function isolatedProfileEnv(home) {
     XDG_CONFIG_HOME: path.join(home, '.config'),
     XDG_DATA_HOME: path.join(home, '.local/share'),
     XDG_CACHE_HOME: path.join(home, '.cache'),
+    // The one source both sides read on every platform.
+    TERMINAL_GUI_E2E_CONFIG_DIR: path.join(home, 'AppData/Roaming/com.baicie.termius'),
   }
 }

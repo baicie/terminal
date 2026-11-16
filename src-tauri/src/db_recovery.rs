@@ -417,14 +417,60 @@ fn status(state: RecoveryState, reason: impl Into<String>) -> RecoveryStatus {
     }
 }
 
+/// The configuration root this process uses, or an explicit override.
+///
+/// ## Why an override exists, and why it is feature-gated
+///
+/// `app_config_dir()` resolves through `dirs::config_dir()`, and that is **not** the
+/// same source on every platform:
+///
+/// | Platform | Reads | An `APPDATA` env var… |
+/// | --- | --- | --- |
+/// | Linux | `XDG_CONFIG_HOME`, else `$HOME/.config` | n/a (honours `XDG_CONFIG_HOME`) |
+/// | macOS | `$HOME/Library/Application Support` | n/a |
+/// | **Windows** | `SHGetKnownFolderPath(FOLDERID_RoamingAppData)` | **is ignored** |
+///
+/// So a test harness that isolates a profile by setting `APPDATA` works on Linux and
+/// macOS and silently does nothing on Windows. Measured on the Windows runner: the
+/// harness seeded `…\Temp\terminal-gui-e2e-…\AppData\Roaming\<id>\terminal.db`
+/// while the app opened `C:\Users\runneradmin\AppData\Roaming\<id>\terminal.db`,
+/// found no database, and the startup gate correctly refused to mount the UI with
+/// `MANUAL_INTERVENTION_REQUIRED · the application config directory is unknown`.
+///
+/// `TERMINAL_GUI_E2E_CONFIG_DIR` closes that: the harness sets it to the same directory
+/// it seeds, and both sides read the same value instead of guessing. It is compiled in
+/// **only** with the `gui-e2e` feature, which no release build enables and which
+/// `scripts/check-gui-e2e-isolation.mjs` proves absent from the production bundle.
+
+/// The override rule, as a pure function so it is testable without process globals.
+#[cfg(feature = "gui-e2e")]
+fn resolve_override(raw: Option<std::ffi::OsString>) -> Option<Result<PathBuf, String>> {
+    let dir = raw?;
+    let path = PathBuf::from(dir);
+    Some(if path.is_absolute() {
+        Ok(path)
+    } else {
+        Err(format!(
+            "TERMINAL_GUI_E2E_CONFIG_DIR is not absolute: {}",
+            path.display()
+        ))
+    })
+}
+
+pub(crate) fn config_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+    #[cfg(feature = "gui-e2e")]
+    if let Some(resolved) = resolve_override(std::env::var_os("TERMINAL_GUI_E2E_CONFIG_DIR")) {
+        return resolved;
+    }
+    app.path()
+        .app_config_dir()
+        .map_err(|error| format!("the application config directory is unknown: {error}"))
+}
+
 /// Application database and marker live in the app config directory, next to the
 /// snapshot directory the backup command already owns.
 pub fn database_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    let base = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| format!("the application config directory is unknown: {error}"))?;
-    Ok(base.join("terminal.db"))
+    Ok(config_root(app)?.join("terminal.db"))
 }
 
 pub fn marker_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
@@ -2592,5 +2638,51 @@ mod windows_fs_tests {
             assert_eq!(retry.state, RecoveryState::Recovered, "{retry:?}");
             assert!(!dir.path().join(TEMP_FILE).exists());
         }
+    }
+}
+
+// The mock runtime comes from `tauri/test`, which only the `gui-e2e` feature enables
+// (`gui-e2e = [..., "tauri/test"]`). Gating the whole module the same way keeps a plain
+// `cargo test --lib` compiling.
+#[cfg(all(test, feature = "gui-e2e"))]
+mod config_root_tests {
+    use super::*;
+
+    /// The override is what makes the harness and the app agree on Windows.
+    ///
+    /// `dirs::config_dir()` on Windows calls `SHGetKnownFolderPath(FOLDERID_RoamingAppData)`
+    /// and **ignores `APPDATA`**, so a harness that isolates a profile by setting
+    /// `APPDATA` seeds a directory the app never opens. Measured consequence on the
+    /// Windows runner: the startup gate refused to mount the UI with
+    /// `MANUAL_INTERVENTION_REQUIRED · the application config directory is unknown`.
+    ///
+    /// The rule is tested through `resolve_override` rather than by setting the real
+    /// variable: `#[test]` functions run in parallel threads, and a `set_var` /
+    /// `remove_var` pair from one test races its siblings. That race made the first
+    /// version of this test fail intermittently.
+    /// The parsing rule, tested without touching process-global state.
+    ///
+    /// An earlier version of this test set and cleared the real environment variable.
+    /// Cargo runs `#[test]` functions in parallel threads, so `remove_var` from this test
+    /// raced `set_var` in its sibling and the suite failed intermittently — the classic
+    /// reason to keep `std::env` out of parallel tests. `resolve_override` takes the raw
+    /// value, so the rule is testable in isolation.
+    #[test]
+    fn the_override_rule_is_absolute_or_refused() {
+        let absolute = std::env::temp_dir().join("terminal-config-root-rule");
+        assert_eq!(
+            resolve_override(Some(absolute.clone().into_os_string())).map(|p| p.ok()),
+            Some(Some(absolute))
+        );
+        let relative = resolve_override(Some(std::ffi::OsString::from("relative/path")));
+        assert!(
+            matches!(relative, Some(Err(ref message)) if message.contains("not absolute")),
+            "a relative path must be refused with a reason"
+        );
+        assert_eq!(
+            resolve_override(None),
+            None,
+            "no override means no override"
+        );
     }
 }

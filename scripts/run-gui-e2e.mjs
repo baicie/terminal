@@ -149,6 +149,7 @@ if (sshFixtureRequested) {
     log('starting a throwaway sshd and seeding a host into the profile')
     fixture = await startSeededSshd({ home })
     log(`sshd on 127.0.0.1:${fixture.port}; host row written to ${fixture.databaseFile}`)
+
   } catch (error) {
     // A missing daemon is not a failed suite. It is a missing precondition, and it
     // is reported as one — the specs then record NOT_RUN for the cases that need it
@@ -191,7 +192,20 @@ function runSpecs(specFiles, environment) {
           env: {
             ...environment,
             // A distinct profile per spec: the app is new, so its state must be too.
-            GUI_E2E_HOME: `${environment.GUI_E2E_HOME}-${path.basename(spec, '.e2e.mjs')}`,
+            ...(() => {
+              const specHome = `${environment.GUI_E2E_HOME}-${path.basename(spec, '.e2e.mjs')}`
+              return {
+                GUI_E2E_HOME: specHome,
+                // ## Recomputed from the spec's own home
+                //
+                // `TERMINAL_GUI_E2E_CONFIG_DIR` is an absolute path the app reads
+                // directly. Copying the parent's value here would point every spec at
+                // the *first* spec's profile — the app would open one database while
+                // the harness inspected another, which is the same class of mismatch
+                // that made Windows fail. Derive it from the home this spec will use.
+                TERMINAL_GUI_E2E_CONFIG_DIR: isolatedProfileEnv(specHome).TERMINAL_GUI_E2E_CONFIG_DIR,
+              }
+            })(),
           },
         }),
       )
@@ -224,6 +238,33 @@ const specFiles = flags.has('--one-run')
         .filter(name => name.endsWith('.e2e.mjs'))
         .sort()
         .map(name => `./specs/${name}`)
+
+// ## Every spec gets its own profile, so every profile needs the seeded host row
+//
+// `runSpecs` derives `${home}-${spec}` per spec (a fresh app must start from fresh
+// state). Seeding only `home` left those profiles without a database, so the
+// SFTP-backed cases recorded NOT_RUN against a host list that was never populated —
+// and on Windows the startup gate refused to mount the UI at all, because the database
+// it looked for did not exist in the profile it was actually using.
+if (fixture !== null && specFiles.length > 0) {
+  const { seedSftpHost } = await import('../e2e/gui/fixtures/seed-sftp-host.mjs')
+  fixture.seededProfiles = []
+  for (const spec of specFiles) {
+    const specHome = `${home}-${path.basename(spec, '.e2e.mjs')}`
+    const configDir = isolatedProfileEnv(specHome).TERMINAL_GUI_E2E_CONFIG_DIR
+    fixture.seededProfiles.push(
+      await seedSftpHost({
+        home: specHome,
+        configDir,
+        privateKeyPath: fixture.userKeyPath,
+        port: fixture.port,
+        username: fixture.username,
+        label: 'E2E Local',
+      }),
+    )
+  }
+  log(`seeded ${fixture.seededProfiles.length} per-spec profile(s)`)
+}
 
 const run = runSpecs(specFiles, {
   ...process.env,
