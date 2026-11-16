@@ -80,10 +80,11 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 
 | 能力 | 状态 |
 | --- | --- |
-| Extension Manifest / Registry / SDK / Disposable | `NOT_RUN` |
-| Snippet Dock 扩展 | `NOT_RUN` |
-| Typed Capability Gateway | `NOT_RUN` |
-| 扩展异常隔离与资源回收 | `NOT_RUN` |
+| **Typed Capability Gateway** | **`IMPLEMENTED`** | `features/extensions/capability-gateway.ts` + `approval-book.ts`。25 条对抗性测试。无 Registry / Manifest 加载器 |
+| Extension Manifest / Registry / SDK | `NOT_RUN` | Gateway 是前置，本轮先建边界 |
+| Snippet Dock 扩展 | `NOT_RUN` | — |
+| 扩展异常隔离与资源回收 | `PARTIAL` | `Disposable` 幂等与 generation 失效已实现并有测试；完整 activate/deactivate 状态机未实现 |
+| Rust 侧 `ExtensionIntent` Gateway | `NOT_RUN` | 本版本不允许扩展跨进程边界，暂不需要 |
 
 整阶段未开始。依赖 UX-1 的 Dock 单占位者契约（当前 `PARTIAL`）。
 
@@ -168,8 +169,8 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 
 ## 下一项最优先工程任务
 
-**Typed Capability Gateway 的调用点清单与最小骨架**（`TN-CORE-01`）。
+**Extension Registry + Manifest（`TN-UX3-02`），然后接 Snippet Dock 作为首个内置扩展。**
 
-理由：Dock 单占位者契约本轮已完成，UX-1 不再有阻塞后续阶段的缺口。剩下唯一同时卡住 UX-3 与 UX-4 的是能力边界 —— 扩展要访问 Snippet 数据、AI 要读取选中文本并持有 API Key，两者都必须经过同一套受控接口，且设计要求 `Capability Gateway` 先于敏感 AI/扩展操作。
+理由：Gateway 本轮已建好，它定义了"扩展能做什么"。没有 Registry，就没有东西能拿到 Gateway 授予的 context —— 边界存在但无人使用，这是"代码存在、链路不通"的失败模式。Registry 是让 Gateway 真正被使用的最小下一步，且它不依赖任何外部设备或证书。
 
-它与 `Provider Registry` 可以并行：Gateway 定义"谁能调用什么"，Registry 定义"秘密存在哪里"。两者不互相阻塞，但都必须在任何 AI 或扩展读取敏感数据之前完成。
+Snippet Dock 紧随其后，因为它是设计指定的第一个内置扩展，且只依赖已有的 Snippet service 与 `terminal.read-selected`，不需要 AI、网络或新的 Rust 权限 —— 它是验证整条扩展链路（注册 → 激活 → 命令/菜单/Dock 注册 → 停用清理）的最短路径。
