@@ -303,15 +303,47 @@ export function classifyRun({
     }
   }
 
+  // ## A non-success job with no category is not a "failure" entry
+  //
+  // `notEvaluated` holds jobs whose conclusion is `neutral` or unrecognised — real
+  // cases, because `continue-on-error: true` jobs report `neutral` on failure (e.g.
+  // `zsh probe diagnostic`). An earlier version built the chosen entry from
+  // `notEvaluated` and then read `chosen.category`, which is not a field those entries
+  // have:
+  //
+  //   classifyRun({ conclusion: 'failure', jobs: [
+  //     { name: 'zsh probe diagnostic', conclusion: 'neutral' },
+  //   ]})  ->  TypeError: Cannot read properties of undefined (reading 'category')
+  //
+  // The step is `continue-on-error: true`, so the crash was silent — the exact
+  // "looks like it ran, told you nothing" shape this module exists to remove.
+  if (failures.length === 0) {
+    return {
+      category: 'UNKNOWN',
+      action: FAILURE_CATEGORIES.UNKNOWN.action,
+      blocking: true,
+      detail:
+        `the run does not show a clean verdict and ${notEvaluated.length} job(s) had no ` +
+        'usable conclusion, so there is nothing to attribute',
+      runVerdict: run.verdict,
+      // Reported in the `notEvaluated` table, not as classified failures: an entry
+      // here has no category and must not be presented as one.
+      jobs: [],
+      notEvaluated,
+      requiredCheckFailed,
+      mergeEligibility:
+        requiredCheckFailed === true ? 'blocked' : requiredCheckFailed === false ? 'eligible' : 'not-evaluated',
+    }
+  }
+
   const blocking = failures.filter(failure => failure.blocking)
   const chosen = (blocking.length > 0 ? blocking : failures)[0]
-  const informative = failures.length > 0 ? failures : notEvaluated.map(entry => ({ job: entry.job }))
 
   return {
     category: chosen.category,
     action: chosen.action,
     blocking: blocking.length > 0,
-    detail: `${informative.length} non-success job(s), ${blocking.length} blocking`,
+    detail: `${failures.length} non-success job(s), ${blocking.length} blocking`,
     runVerdict: run.verdict,
     // Merge eligibility is decided by the required check, never by this classifier.
     // "Blocking: no" is a statement about the code's cause, not about the gate.

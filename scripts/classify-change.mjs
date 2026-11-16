@@ -139,7 +139,11 @@ function main() {
       `could not compute the diff between ${base} and ${head}: ${error.message}\n` +
         'Refusing to classify: an unreadable diff is not documentation.',
     )
-    console.log('docs_only=false')
+    // In `--print-files` mode stdout is the machine-readable path list, so the verdict
+    // goes to stderr here too. Writing `docs_only=false` to stdout put a non-path line
+    // into the list the workflow publishes as `changed`.
+    if (printFiles) console.error('docs_only=false')
+    else console.log('docs_only=false')
     return 2
   }
 

@@ -109,11 +109,16 @@ test('an empty platforms object is rejected — jq accepted it', () => {
   assert.ok(problems.some(problem => problem.code === 'manifest-platforms-incomplete'))
 })
 
-test('an unexpected platform is reported', () => {
-  const broken = manifest()
-  broken.platforms['freebsd-x86_64'] = { signature: SIG, url: `${BASE}bsd` }
-  const { problems } = judgeManifest(broken, EXPECTED)
-  assert.ok(problems.some(problem => problem.code === 'manifest-platforms-unexpected'))
+test('an unexpected platform is a warning, not a rejection', () => {
+  // The comment said "not fatal by itself" while the code pushed it into `problems`,
+  // making `ok` false — so a manifest that added `windows-aarch64` was rejected outright
+  // even though every required platform was still verified.
+  const extra = manifest()
+  extra.platforms['windows-aarch64'] = { signature: SIG, url: `${BASE}aarch64` }
+  const { ok, problems, warnings } = judgeManifest(extra, EXPECTED)
+  assert.equal(ok, true, JSON.stringify(problems))
+  assert.deepEqual(problems, [])
+  assert.ok(warnings.some(warning => warning.code === 'manifest-platforms-unexpected'))
 })
 
 test('a malformed pub_date is reported', () => {

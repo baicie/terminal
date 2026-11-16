@@ -39,14 +39,13 @@ import {
 import { renderTestReport } from './ci-test-report-render.mjs'
 
 function parseArgs(argv) {
-  const options = { dir: null, sha: null, json: null, skipped: [] }
+  const options = { dir: null, sha: null, json: null, blocked: [] }
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === '--dir') options.dir = argv[++i]
     else if (arg === '--sha') options.sha = argv[++i]
     else if (arg === '--json') options.json = argv[++i]
-    else if (arg === '--skipped') options.skipped.push(argv[++i])
-    else if (arg === '--blocked') options.skipped.push(argv[++i])
+    else if (arg === '--skipped' || arg === '--blocked') options.blocked.push(argv[++i])
   }
   return options
 }
@@ -69,28 +68,42 @@ function findReportFile(root, relative) {
  * prerequisite failed and `NOT_RUN` otherwise. It is passed explicitly because a
  * missing file cannot tell the two apart.
  */
-export function collectLayers({ root, plan = INGESTION_PLAN, skipped = [], commitSha = null, runId = null, platform = null }) {
+export function collectLayers({ root, plan = INGESTION_PLAN, blocked = [], commitSha = null, runId = null, platform = null }) {
   const entries = []
-  const skippedSet = new Set(skipped)
+  const blockedSet = new Set(blocked)
 
   for (const layer of LAYERS) {
     const source = plan.find(candidate => candidate.layer === layer.id)
-    if (skippedSet.has(layer.id)) {
-      entries.push(
-        blockedEntry(layer.id, `the job for this layer was skipped in CI (${layer.id})`, { commitSha, runId, platform }),
-      )
-      continue
-    }
     if (!source) {
       entries.push(notRunEntry(layer.id, 'no ingestion adapter is configured for this layer', { commitSha, runId }))
       continue
     }
     const file = findReportFile(root, source.glob)
+
+    // ## The report wins over the job result
+    //
+    // A job that FAILED still uploads its report (`if: always()`), and that report is
+    // the only place its real counts live. An earlier version checked the job result
+    // first and labelled the layer `BLOCKED` with zero totals — discarding the failing
+    // suite's numbers, which is exactly what this report exists to publish.
+    //
+    // `blocked` therefore means only "the job did not run", derived by the caller from
+    // a `skipped` result. `failure` is not blocked: it is a measured FAIL.
     if (file === null) {
-      // Missing is NOT_RUN, never zero-and-green.
-      entries.push(
-        notRunEntry(layer.id, `no report was uploaded (expected ${source.glob})`, { commitSha, runId, platform }),
-      )
+      if (blockedSet.has(layer.id)) {
+        entries.push(
+          blockedEntry(layer.id, `the job for this layer was skipped in CI (${layer.id})`, {
+            commitSha,
+            runId,
+            platform,
+          }),
+        )
+      } else {
+        // Missing is NOT_RUN, never zero-and-green.
+        entries.push(
+          notRunEntry(layer.id, `no report was uploaded (expected ${source.glob})`, { commitSha, runId, platform }),
+        )
+      }
       continue
     }
     let counts
@@ -133,7 +146,7 @@ function main() {
   try {
     entries = collectLayers({
       root: options.dir,
-      skipped: options.skipped,
+      blocked: options.blocked,
       commitSha: options.sha ?? process.env.GITHUB_SHA ?? null,
       runId: process.env.GITHUB_RUN_ID ?? null,
       platform: process.env.RUNNER_OS ?? null,

@@ -198,3 +198,31 @@ test('both evidence sentences are recognised (measured on a real log)', () => {
   })
   assert.equal(perFile.category, 'EVIDENCE_STALE')
 })
+
+test('a run whose only non-success job is neutral does not throw', () => {
+  // Measured crash: `continue-on-error: true` jobs report `neutral`, and the old code
+  // built the chosen entry from `notEvaluated` (which has no `category`) and read it.
+  // The attribution step is `continue-on-error: true`, so the TypeError was silent.
+  const result = classifyRun({
+    conclusion: 'failure',
+    jobs: [{ name: 'zsh probe diagnostic', conclusion: 'neutral' }],
+  })
+  assert.equal(result.category, 'UNKNOWN')
+  assert.equal(result.blocking, true)
+  assert.equal(result.jobs.length, 0, 'a not-evaluated job must not be presented as classified')
+  assert.equal(result.notEvaluated.length, 1)
+  assert.match(result.detail, /no usable conclusion/)
+})
+
+test('a neutral job alongside a real failure does not disturb the classification', () => {
+  const result = classifyRun({
+    conclusion: 'failure',
+    jobs: [
+      { name: 'zsh probe diagnostic', conclusion: 'neutral' },
+      { name: 'Rust quality', conclusion: 'failure', logText: 'error[E0433]: cannot find unix' },
+    ],
+  })
+  assert.equal(result.category, 'PRODUCT_REGRESSION')
+  assert.equal(result.jobs.length, 1)
+  assert.equal(result.notEvaluated.length, 1)
+})

@@ -108,6 +108,17 @@ export function judgeRelease(facts) {
   // must not be reported as the same thing: one sends someone to look at CI, the other
   // sends them to look at GitHub's availability. `checksError` carries the first.
   const checks = facts.checks ?? {}
+  if (facts.prEvidenceError) {
+    // The PR-evidence collector (the GUI gate) could not read the commit's workflow
+    // runs. That is a fact-collection failure, and it must be reported as one rather
+    // than surfacing as two missing checks — a reader would then look for a broken GUI
+    // workflow instead of the API.
+    push(
+      'pr-evidence-unreadable',
+      `the PR-time workflow listing for this commit could not be read ` +
+        `(${facts.prEvidenceError}); the GUI gate cannot be evaluated`,
+    )
+  }
   if (facts.checksError) {
     push(
       'checks-unreadable',

@@ -143,3 +143,22 @@ test('the plan ids are unique', () => {
   const ids = INGESTION_PLAN.map(entry => entry.layer)
   assert.equal(new Set(ids).size, ids.length)
 })
+
+test('an extra platform in a manifest is a warning, not a hard failure', async () => {
+  // Cross-module consistency: the manifest judge and this ingestion layer must agree
+  // that unknown-but-present data is reported rather than rejected.
+  const { judgeManifest, REQUIRED_PLATFORMS } = await import('./updater-manifest-check.mjs')
+  const base = 'https://github.com/o/r/releases/download/v1/x'
+  const manifest = {
+    version: '1.0.0',
+    platforms: Object.fromEntries(
+      [...REQUIRED_PLATFORMS, 'windows-aarch64'].map(platform => [
+        platform,
+        { signature: 'sig', url: `${base}${platform}` },
+      ]),
+    ),
+  }
+  const verdict = judgeManifest(manifest, { version: '1.0.0', tag: 'v1', repository: 'o/r' })
+  assert.equal(verdict.ok, true)
+  assert.equal((verdict.warnings ?? []).length, 1)
+})

@@ -76,12 +76,33 @@ test('a failing suite is FAIL, not PASS', () => {
   assert.equal(frontend.failed, 2)
 })
 
-test('a skipped job is BLOCKED, and named as such', () => {
+test('a skipped job with no report is BLOCKED, and named as such', () => {
   const root = makeTree({ 'packages/frontend/test-results/vitest.json': VITEST })
-  const layers = collectLayers({ root, skipped: ['ipc-e2e'] })
+  const layers = collectLayers({ root, blocked: ['ipc-e2e'] })
   const ipc = layers.find(layer => layer.layer === 'ipc-e2e')
   assert.equal(ipc.status, 'BLOCKED')
   assert.match(ipc.reason, /skipped in CI/)
+})
+
+test('a FAILED job keeps its real counts instead of being marked BLOCKED', () => {
+  // The defect: the workflow passed `--skipped` for any non-success result, and
+  // `collectLayers` checked that before looking for the file — so a failing suite's
+  // report was discarded and the layer reported zero totals. That loses the only number
+  // this report exists to publish.
+  const root = makeTree({ 'packages/frontend/test-results/vitest.json': VITEST })
+  const layers = collectLayers({ root, blocked: ['unit-frontend'] })
+  const frontend = layers.find(layer => layer.layer === 'unit-frontend')
+  // The report exists, so it wins: FAIL with real counts, not BLOCKED with zeros.
+  assert.equal(frontend.status, 'FAIL')
+  assert.equal(frontend.total, 100)
+  assert.equal(frontend.failed, 2)
+})
+
+test('a failed job that uploaded nothing is NOT_RUN, not BLOCKED and not zero-failure', () => {
+  const root = makeTree({})
+  const layers = collectLayers({ root })
+  const frontend = layers.find(layer => layer.layer === 'unit-frontend')
+  assert.equal(frontend.status, 'NOT_RUN')
 })
 
 test('libtest text is summed across binaries in the report', () => {

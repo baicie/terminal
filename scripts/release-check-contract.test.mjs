@@ -212,3 +212,28 @@ test('the App allowlist is documented as insufficient on its own', () => {
   assert.match(source, /App id is identical for every workflow/, 'the limitation must stay documented')
   assert.match(source, /carries the workflow/, 'the resolution via details_url must stay documented')
 })
+
+test('a PR-evidence check is collectable from the commit workflow runs, not just check-runs', () => {
+  // The defect this pins: adding the GUI checks to the contract without a collector made
+  // every release fail with `check-missing-pr-evidence`, because `native-gui-e2e.yml` has
+  // no tag trigger. The collector must exist and the workflow must not have a push/tag
+  // trigger — the two facts together are what make the design coherent.
+  const gui = readFileSync(path.join(ROOT, '.github/workflows/native-gui-e2e.yml'), 'utf8')
+  const triggers = gui.split(/^on:\s*$/m)[1]?.split(/^permissions:/m)[0] ?? ''
+  assert.doesNotMatch(triggers, /^\s{2}push:/m, 'a push trigger would make PR-evidence unnecessary')
+
+  const facts = readFileSync(path.join(ROOT, 'scripts/release-facts.mjs'), 'utf8')
+  assert.match(
+    facts,
+    /actions\/runs\?head_sha=/,
+    'release-facts must look up the commit\'s workflow runs; otherwise the GUI gate can ' +
+      'never be satisfied on a tag commit',
+  )
+  assert.match(facts, /PR_EVIDENCE_CHECK_NAMES|PR_EVIDENCE_CHECKS/, 'the collector must know which checks it supplies')
+})
+
+test('an unreadable PR-evidence listing is a collection failure, not two missing checks', () => {
+  const judge = readFileSync(path.join(ROOT, 'scripts/verify-release-qualification.mjs'), 'utf8')
+  assert.match(judge, /prEvidenceError/, 'the judge must distinguish unreadable from missing')
+  assert.match(judge, /pr-evidence-unreadable/, 'the code must name the collection failure')
+})

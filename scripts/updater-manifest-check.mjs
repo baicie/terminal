@@ -91,12 +91,15 @@ export function judgeManifest(manifest, expected) {
   if (missing.length > 0) {
     push('manifest-platforms-incomplete', `missing platform(s): ${missing.join(', ')}`)
   }
+  // An extra platform is **not** fatal: it means the release ships an installer for a
+  // platform this list does not track, and every listed platform is still verified
+  // below. The first version pushed it into `problems`, which made `ok` false while the
+  // comment said "not fatal by itself" — a manifest that added `windows-aarch64` was
+  // rejected outright. Reported as a warning so the distinction is real.
   const unexpected = present.filter(name => !REQUIRED_PLATFORMS.includes(name))
-  if (unexpected.length > 0) {
-    // Not fatal by itself, but it means a client on that platform would be offered a
-    // payload nobody tested. Reported so it is a decision rather than an accident.
-    push('manifest-platforms-unexpected', `unexpected platform(s): ${unexpected.join(', ')}`)
-  }
+  const warnings = unexpected.length > 0
+    ? [{ code: 'manifest-platforms-unexpected', message: `extra platform(s): ${unexpected.join(', ')}` }]
+    : []
 
   const baseUrl =
     expected?.repository && expected?.tag
@@ -146,7 +149,7 @@ export function judgeManifest(manifest, expected) {
     }
   }
 
-  return { ok: problems.length === 0, problems }
+  return { ok: problems.length === 0, problems, warnings }
 }
 
 /**

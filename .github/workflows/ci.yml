@@ -183,8 +183,23 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p test-results
-          pnpm --filter=@terminal/frontend test -- \
-            --reporter=default --reporter=json --outputFile=../test-results/vitest.json
+          # ## No `--`
+          #
+          # `pnpm run test -- --flag` forwards the `--` **and** the flags, so vitest
+          # receives `vitest run -- --reporter=json …` and treats everything after `--`
+          # as positional arguments. Measured on this worktree: the full suite ran and
+          # **no** JSON file was written anywhere. The `--` is only needed for npm; pnpm
+          # passes extra args through directly.
+          #
+          # The output path is relative to vite's `root` (`packages/frontend`), so it
+          # must be `../../test-results/` to reach the repo root the artifact upload
+          # reads — `../test-results` lands in `packages/test-results`, which nothing
+          # uploads.
+          pnpm --filter=@terminal/frontend test \
+            --reporter=default --reporter=json --outputFile=../../test-results/vitest.json
+          # The guard is at the repo root: the shell's cwd is not changed by
+          # `pnpm --filter`, so this is `test-results/`, not `../test-results/`.
+          test -s test-results/vitest.json
       - name: Upload frontend test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -289,8 +304,12 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p test-results
-          pnpm --filter=team-server test -- \
+          # Same two corrections as the frontend job: no `--` (pnpm forwards it, and
+          # vitest then ignores the flags), and the path is relative to vite's root
+          # (`packages/team-server`) so it needs `../../test-results/`.
+          pnpm --filter=team-server test \
             --reporter=default --reporter=json --outputFile=../../test-results/team-server-vitest.json
+          test -s test-results/team-server-vitest.json
       - name: Upload Team Server test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -1066,8 +1085,14 @@ jobs:
               const needs = JSON.parse(process.env.NEEDS || '{}');
               process.stdout.write(String((needs['$job'] || {}).result || ''));
             ")"
-            if [[ "$result" != "success" ]]; then
-              SKIPPED_ARGS="$SKIPPED_ARGS --skipped $layer"
+            # ## Only `skipped` means the layer did not run
+            #
+            # A `failure` job still uploads its report (the artifact upload is
+            # `if: always()`), and that report carries the failing suite's real counts —
+            # the only numbers this report exists to publish. Marking a failed job
+            # `BLOCKED` discarded them and reported zero totals.
+            if [[ "$result" == "skipped" || "$result" == "" ]]; then
+              SKIPPED_ARGS="$SKIPPED_ARGS --blocked $layer"
             fi
           done
           # shellcheck disable=SC2086
