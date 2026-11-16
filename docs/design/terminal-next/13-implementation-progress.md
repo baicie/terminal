@@ -83,8 +83,8 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | **Typed Capability Gateway** | **`PASS`** | `capability-gateway.ts` + `approval-book.ts`。25 条对抗性测试。grant 按 extension id 查询（修复了「返回当前 grant、事后再比 id」的错配风险） |
 | **Extension Manifest 校验** | **`PASS`** | `extension-manifest.ts`。10 类拒绝，含拒绝可命名动态代码的 `entry` |
 | **Extension Registry（生命周期）** | **`PASS`** | `extension-registry.ts`。55 条测试：回滚、generation、幂等启用、失败隔离 |
-| **Snippet Dock 扩展（逻辑 + UI + 开关）** | **`PARTIAL`** | 扩展逻辑 14 条、设置开关 8 条测试 PASS；已挂进 RightPanel，Settings 有启用开关并同步调用 registry.enable/deactivate。**缺口**：真实 GUI 未点击验证；`read-selected` 无选择源 |
-| `terminal.read-selected` 真实选择源 | `NOT_RUN` | 全应用尚无发布「当前终端选择」的表面，`selectedText()` 返回 null 是安全默认；capture 因此返回 false |
+| **Snippet Dock 扩展（完整链路）** | **`PARTIAL`** | 逻辑 14 条 + 开关 8 条 + 选择发布 11 条测试 PASS；已挂进 RightPanel，Settings 有开关，`read-selected` 接真实 `term.getSelection()`。**唯一缺口**：真实 GUI 未点击验证 |
+| **`terminal.read-selected` 真实选择源** | **`PASS`（自动化）** | `terminal-selection.ts` + `use-publish-terminal-selection.ts`。只有活动 tab 发布；gateway 双源一致才可读（发布值 + 活动 tab）。后台 tab 的选择读不到 |
 | Rust 侧 `ExtensionIntent` Gateway | `NOT_RUN` | 本版本不允许扩展跨进程边界，暂不需要 |
 
 整阶段未开始。依赖 UX-1 的 Dock 单占位者契约（当前 `PARTIAL`）。
