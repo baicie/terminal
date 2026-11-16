@@ -685,6 +685,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          # The manifest is judged against THIS version. It was not in this step's env
+          # before the manifest check was added, so `VERSION="$VERSION"` would have
+          # passed an empty string and `verify-updater-manifest.mjs` would exit 2 —
+          # failing every updater-signed release at its last step.
+          VERSION: ${{ needs.prepare-release.outputs.version }}
           MODE: ${{ env.RELEASE_MODE }}
         run: |
           set -euo pipefail

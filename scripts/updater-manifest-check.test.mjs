@@ -188,3 +188,48 @@ test('a channel clobber after verification is not a gap', () => {
 test('the required platform set has no duplicates', () => {
   assert.equal(new Set(REQUIRED_PLATFORMS).size, REQUIRED_PLATFORMS.length)
 })
+
+test('the release step that runs the manifest check defines VERSION', async () => {
+  // The bug this pins: the check was added to `Publish the draft release`, whose `env:`
+  // did not include VERSION. `VERSION="$VERSION"` then passed an empty string and
+  // `verify-updater-manifest.mjs` exited 2 — failing every updater-signed release at its
+  // last step, after the artifacts were already built and published.
+  const { readFileSync } = await import('node:fs')
+  const path = await import('node:path')
+  const workflow = readFileSync(
+    path.resolve(import.meta.dirname, '..', '.github/workflows/release.yml'),
+    'utf8',
+  )
+
+  const step = workflow.slice(workflow.indexOf('- name: Publish the draft release'))
+  const envBlock = step.slice(step.indexOf('env:'), step.indexOf('run: |'))
+  assert.match(envBlock, /RELEASE_TAG:/, 'the step must define RELEASE_TAG')
+  assert.match(
+    envBlock,
+    /VERSION:\s*\$\{\{\s*needs\.prepare-release\.outputs\.version\s*\}\}/,
+    'the step must define VERSION from prepare-release; without it the manifest check ' +
+      'receives an empty string and exits 2',
+  )
+  assert.match(
+    envBlock,
+    /GITHUB_REPOSITORY|\$\{\{\s*github\.repository\s*\}\}|GH_TOKEN/,
+    'the step must be able to resolve the repository',
+  )
+})
+
+test('the CLI refuses to judge a manifest without an expected version', async () => {
+  // The safe direction: without an expected version there is nothing to compare against,
+  // and "the version field exists" is exactly what the old jq check did.
+  const { main } = await import('./verify-updater-manifest.mjs')
+  const errors = []
+  const code = main({
+    manifestPath: '/dev/null',
+    version: '',
+    tag: 'v1',
+    repository: 'a/b',
+    log: () => {},
+    logError: message => errors.push(message),
+  })
+  assert.equal(code, 2)
+  assert.match(errors.join('\n'), /must be set/)
+})
