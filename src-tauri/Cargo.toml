@@ -43,7 +43,11 @@ custom-protocol = ["tauri/custom-protocol"]
 # This feature exists so the driver can be *proven absent* from a production
 # binary rather than merely documented as absent: `scripts/check-gui-e2e-isolation.mjs`
 # builds without it and asserts the symbols and the config are gone.
-gui-e2e = ["dep:tauri-plugin-wdio-webdriver", "custom-protocol"]
+# `tauri/test` gives `tauri::test::mock_runtime`, which runs the real
+# `invoke_handler` — the IPC-boundary tests use it. It is part of `gui-e2e` rather than a
+# separate feature so the suite that already builds a test-only binary is the one that
+# carries the mock runtime, and no production build acquires it.
+gui-e2e = ["dep:tauri-plugin-wdio-webdriver", "custom-protocol", "tauri/test"]
 
 [dependencies]
 tauri = { version = "2.10", features = ["macos-private-api", "tray-icon", "image-png"] }
