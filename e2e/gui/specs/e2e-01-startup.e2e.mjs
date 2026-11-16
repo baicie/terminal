@@ -11,6 +11,32 @@ import { writeEvidence } from '../fixtures/evidence.mjs'
 const CASE = 'e2e-01'
 
 /**
+ * What a shell prompt looks like, on every platform this suite runs on.
+ *
+ * ## The defect this replaces
+ *
+ * Every prompt assertion tested `/[$#%]/` and the poll-until-ready case timed out with
+ * `no shell prompt ever appeared in the terminal buffer`. Measured on the Windows
+ * runner: the terminal had mounted, the status bar read `Connected · Local · 120×40`,
+ * and the buffer contained
+ *
+ *     PS C:\Users\runneradmin> echo guie2e1794819052900
+ *     guie2e1794819052900
+ *     PS C:\Users\runneradmin>
+ *
+ * — a working shell whose prompt ends in `>`. `$ # %` is the POSIX set; PowerShell and
+ * cmd use `>`. The assertion was making a platform assumption, not checking the product.
+ *
+ * `>` is deliberately included only when the *last* non-empty line ends with it, which is
+ * what `promptPattern` below does: a bare `>` mid-buffer is common in ordinary output
+ * (redirects, diffs) and matching it anywhere would make the poll pass on unrelated text.
+ */
+const PROMPT_CHARS = /[$#%>]/
+
+/** The final non-empty line looks like a prompt (used where an anchor at the end matters). */
+const promptAtEnd = /[$#%>]\s*$/
+
+/**
  * Read the terminal buffer through the build-gated read-only probe.
  *
  * The terminal renders through WebGL, so `.xterm-rows > div` is empty in the real
@@ -183,7 +209,7 @@ describe('E2E-01 startup and terminal readiness', () => {
     // Poll a real condition: the terminal has printed a prompt. A fixed sleep is
     // exactly the proof the task forbids.
     await browser.waitUntil(
-      async () => /[$#%]/.test(await terminalText()),
+      async () => PROMPT_CHARS.test(await terminalText()),
       {
         timeout: 60_000,
         interval: 250,
@@ -194,7 +220,7 @@ describe('E2E-01 startup and terminal readiness', () => {
 
   it('shows a real shell prompt produced inside the PTY', async () => {
     const text = await terminalText()
-    expect(text).toMatch(/[$#%]/)
+    expect(text).toMatch(PROMPT_CHARS)
   })
 
   it('echoes a command and returns the shell output', async () => {
@@ -215,12 +241,12 @@ describe('E2E-01 startup and terminal readiness', () => {
     // Uniqueness comes from a token that cannot appear by accident; alphanumeric
     // only, because WebDriver parses `-` in a key string as a modifier separator.
     const token = `guie2e${Date.now()}`
-    const promptPattern = /[$#%]\s*$/
+    const promptPattern = promptAtEnd
 
     // Count prompt *occurrences*, not line-final ones: the shell prints its
     // prompt and then the user's typed line on the same row, so `/[#$%]\s*$/`
     // matches only the very last row and the before/after counts both read 1.
-    const promptToken = /[$#%]\s/g
+    const promptToken = /[$#%>]\s/g
     const before = await terminalSnapshot()
     const promptMatchesBefore = (before.text.match(promptToken) ?? []).length
 

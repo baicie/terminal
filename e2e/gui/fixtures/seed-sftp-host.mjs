@@ -132,11 +132,23 @@ async function waitForPort(port, deadline) {
 /**
  * Where the app puts its database inside the throwaway profile.
  *
- * `app_config_dir()` on macOS is `~/Library/Application Support/<identifier>`, and the
- * harness already points HOME at a temp directory.
+ * ## Read the override first; the per-platform guesses are a fallback
+ *
+ * `TERMINAL_GUI_E2E_CONFIG_DIR` is what the app itself resolves when built with the
+ * `gui-e2e` feature, so using it here makes the two sides agree **by construction**
+ * rather than by two independent guesses that happen to match.
+ *
+ * That distinction is not academic. The per-platform paths below are correct on macOS
+ * (`$HOME/Library/Application Support`) and Linux (`$XDG_CONFIG_HOME`), but **Windows
+ * ignores them**: `dirs::config_dir()` calls `SHGetKnownFolderPath`, not `APPDATA`. The
+ * seeded database landed in the temp profile and the app looked in the real one, so the
+ * startup gate refused to mount the UI.
  */
 function databasePath(home) {
   const identifier = 'com.baicie.termius'
+  if (process.env.TERMINAL_GUI_E2E_CONFIG_DIR) {
+    return path.join(process.env.TERMINAL_GUI_E2E_CONFIG_DIR, 'terminal.db')
+  }
   if (process.platform === 'darwin') {
     return path.join(home, 'Library', 'Application Support', identifier, 'terminal.db')
   }
@@ -146,8 +158,13 @@ function databasePath(home) {
   return path.join(home, '.config', identifier, 'terminal.db')
 }
 
-export async function seedSftpHost({ home, privateKeyPath, port, username, label }) {
-  const dbPath = databasePath(home)
+export async function seedSftpHost({ home, configDir, privateKeyPath, port, username, label }) {
+  // `configDir` lets one sshd serve several per-spec profiles: each spec gets its own
+  // throwaway home, so the row has to be written into each one. Without it the seeded
+  // database only lands in the parent's profile and every spec sees an empty host list.
+  const dbPath = configDir
+    ? path.join(configDir, 'terminal.db')
+    : databasePath(home)
   await mkdir(path.dirname(dbPath), { recursive: true })
 
   const { DatabaseSync } = await sqlite()
@@ -292,6 +309,8 @@ export async function startSeededSshd({ home, label = 'E2E Local' }) {
     port,
     username,
     databaseFile,
+    // Needed to seed additional per-spec profiles against this same sshd.
+    userKeyPath: paths.userKey,
     async stop() {
       if (daemon.exitCode === null) {
         daemon.kill('SIGTERM')

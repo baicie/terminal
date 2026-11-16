@@ -163,3 +163,73 @@ test('macOS is the only platform currently asserted blocking', () => {
     .map(job => job.name)
   assert.deepEqual(blocking, ['Driver isolation gate', 'macOS GUI E2E'])
 })
+
+test('GUI prompt assertions are not POSIX-only', async () => {
+  // Measured on the Windows runner: the terminal had mounted and the buffer contained
+  // `PS C:\Users\runneradmin>` while every readiness case timed out with
+  // `no shell prompt ever appeared in the terminal buffer`. The assertions tested
+  // `/[$#%]/` — the POSIX prompt set. PowerShell and cmd end their prompt with `>`.
+  //
+  // The screenshot from that run shows a fully working UI (status bar
+  // `Connected · Local · 120×40`, a real echo round-trip), so the failure was the
+  // assertion's platform assumption rather than the product.
+  const { readdirSync } = await import('node:fs')
+  const specsDir = path.join(ROOT, 'e2e/gui/specs')
+  const offenders = []
+  for (const name of readdirSync(specsDir).filter(n => n.endsWith('.e2e.mjs'))) {
+    const source = readFileSync(path.join(specsDir, name), 'utf8')
+    for (const line of source.split('\n')) {
+      // A bare POSIX-only prompt character class used as a *test*, not mentioned in prose.
+      const isComment = /^\s*(\/\/|\*|\/\*)/.test(line)
+      if (!isComment && /\/\[\$#%\]\//.test(line)) {
+        offenders.push(`${name}: ${line.trim()}`)
+      }
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    'a prompt assertion without `>` cannot pass on Windows PowerShell or cmd:\n' +
+      offenders.join('\n'),
+  )
+})
+
+test('a spec that resizes below the breakpoint does not require the status bar', () => {
+  // `useIsMobile()` is `innerWidth < BREAKPOINTS.md` (640) and `main-layout-content.tsx`
+  // renders `isMobile ? <BottomNav /> : <StatusBar />`. So at 640px and below there is no
+  // `[data-testid="status-bar"]` in the DOM — the product's responsive behaviour, not a
+  // defect.
+  //
+  // Measured: `e2e-02`'s matrix includes 640 and failed with
+  // `status bar never became readable … last text: null` while every wider width passed.
+  const source = readFileSync(path.join(ROOT, 'e2e/gui/specs/e2e-02-layout.e2e.mjs'), 'utf8')
+
+  // The breakpoint constant must match the product's, or the guard silently drifts.
+  const productBreakpoints = readFileSync(
+    path.join(ROOT, 'packages/frontend/src/hooks/use-breakpoint.ts'),
+    'utf8',
+  )
+  const mdMatch = /\bmd:\s*(\d+)/.exec(productBreakpoints)
+  assert.ok(mdMatch, 'the product breakpoint table is missing `md`')
+  const specBreakpoint = /const MOBILE_BREAKPOINT_PX = (\d+)/.exec(source)
+  assert.ok(specBreakpoint, 'the spec must define the mobile breakpoint it special-cases')
+  assert.equal(
+    Number(specBreakpoint[1]),
+    Number(mdMatch[1]),
+    'the spec\'s breakpoint must equal the product\'s `md` breakpoint',
+  )
+
+  // The narrow widths in the matrix must be covered by the special case.
+  const widths = /const WIDTHS = \[([^\]]+)\]/.exec(source)
+  assert.ok(widths, 'the width matrix is missing')
+  const narrow = widths[1]
+    .split(',')
+    .map(value => Number(value.trim()))
+    .filter(value => value <= Number(mdMatch[1]))
+  assert.ok(narrow.length > 0, 'this guard is pointless if the matrix has no narrow width')
+  assert.match(
+    source,
+    /width <= MOBILE_BREAKPOINT_PX/,
+    'every narrow width must take the terminal-geometry path instead of reading the bar',
+  )
+})

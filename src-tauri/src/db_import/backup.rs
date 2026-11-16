@@ -20,7 +20,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteConnection};
 use sqlx::{Connection, Pool, Sqlite};
-use tauri::{AppHandle, Manager, Runtime, State};
+use tauri::{AppHandle, Runtime, State};
 
 /// Budget for one snapshot, from `VACUUM INTO` through the read-back verification.
 pub const BACKUP_BUDGET: Duration = Duration::from_secs(60);
@@ -488,12 +488,13 @@ fn quoted(table: &str) -> String {
 }
 
 /// Directory the snapshots live in, next to the database they copy.
+///
+/// Resolved through `db_recovery::config_root` rather than `app.path().app_config_dir()`
+/// directly, so a GUI E2E run cannot write pre-migration snapshots into the developer's
+/// real config directory. On Windows the two would otherwise disagree: the env-var
+/// profile is ignored by `dirs::config_dir()`. See that function for the full table.
 fn backup_directory<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    let base = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| format!("the application config directory is unknown: {error}"))?;
-    Ok(base.join("backups"))
+    Ok(crate::db_recovery::config_root(app)?.join("backups"))
 }
 
 /// A snapshot path that nothing occupies yet: `pre-migration-<epoch-ms>.db`.
