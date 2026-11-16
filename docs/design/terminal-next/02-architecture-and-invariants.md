@@ -42,7 +42,7 @@ flowchart TB
 
 | 资源 | 创建条件 | Owner | 关键状态 | 取消/超时 | 清理/崩溃恢复 |
 | --- | --- | --- | --- | --- | --- |
-| Terminal Session | 用户创建 Local/SSH/Serial Tab | Rust `SessionManager`；前端 `TerminalSessionManager` 只映射 | `created → connecting → active → reconnecting → failed → closing → closed` | 连接阶段有共享预算；关闭/退出取消 attempt | 注册 gate 防迟到 session；自然 EOF、显式 close、shutdown 都移除 registry |
+| Terminal Session | 用户创建 Local/SSH/Serial Tab | Rust `SessionManager`；前端 `TerminalSessionManager` 只映射 | 代码事实：`TerminalSessionStatus = idle \| connecting \| reconnecting \| connected \| disconnected \| error`（`terminal-session-manager-types.ts`）。本节是唯一权威枚举 | 连接阶段有共享预算；关闭/退出取消 attempt | 注册 gate 防迟到 session；自然 EOF、显式 close、shutdown 都移除 registry |
 | PTY | Local Session 创建成功 | Rust `LocalSession`/portable-pty | `spawned → running → eof/failed → reaped` | spawn/read/write/close 均有界 | kill/wait/reap；不因 React unmount 关闭 |
 | SSH Connection | Session 进入 remote connecting | Rust `SshSession`/pool | `tcp → auth → hostkey → channel → shell` | 每阶段 timeout；凭据/HostKey 失败不重试 | transport/channel/writer 一起关闭；generation 拒绝迟到输出 |
 | xterm Surface | Tab/Panes 需要显示 | 前端 TerminalContainer | `created → attached → hidden → disposed` | 无网络取消；隐藏不 dispose | 仅关闭 Tab/prune dispose；路由和 Dock 变化只隐藏 |
@@ -55,7 +55,7 @@ flowchart TB
 | Approval | 未来 Tool 或明确发送动作 | Approval service | `proposed → approved/rejected/expired/consumed` | expiry；双击由 action hash 幂等 | 绑定 `runId + hostId + sessionId + actionHash + userGesture` |
 | Inspector Probe | 已连接 Host 且用户点击 Refresh | `InspectorSupervisor` | `queued → running → completed/stale/error/cancelled` | 单 probe timeout；Host 切换取消旧 probe | 只存内存短缓存；关闭 Dock 停止不必要采集；旧结果不能写新 Host |
 
-当前实现差距：`SessionManager` 的自然 completion cleanup 直接移除 session/channel/meta registry，尚未调用 `removed_listeners`；而 `sftp_connect` 对同一 `session_id` 的重复调用会覆盖旧 SFTP entry。目标契约必须由后续代码 PR 通过自然 EOF、重复初始化、shutdown 和迟到回调测试闭合，不能把显式 `remove_session` 的测试结果外推到所有退出路径。
+当前实现差距：`SessionManager` 的自然 completion cleanup 直接移除 session/channel/meta registry，未把 `removed_listeners` 传入 `spawn_completion_cleanup`，因此不触发 `notify_removed`；而 `sftp_connect` 对同一 `session_id` 的重复调用会覆盖旧 SFTP entry。`manager_tests.rs::every_removal_path_notifies_listeners` 的注释声称覆盖三条路径，函数体只断言了显式移除与 shutdown —— **注释比测试强，缺陷因此长期隐形**。目标契约必须由后续代码 PR 用 `simulate_natural_eof` 补 completion cleanup 断言，并覆盖重复初始化、shutdown 和迟到回调，不能把显式 `remove_session` 的测试结果外推到所有退出路径。
 
 ## 3. 事件流和代际
 

@@ -24,13 +24,13 @@ scope: "Canonical source rules, historical archives, supersession notes, referen
 | `docs/design/terminal-next/archive/legacy-drafts/03-extension-platform.md` | 归档 | `06-ux3-extension-platform.md` | v0 API 和第一个扩展选择已重审 |
 | `docs/design/terminal-next/archive/legacy-drafts/04-rust-rig-ai.md` | 归档 | `07-ux4-ai-inspector.md` | Rig/MSRV 事实需要当前重新核对，推荐先 ModelDriver |
 | `docs/design/terminal-next/archive/legacy-drafts/05-test-matrix-and-rollback.md` | 归档 | `09-test-acceptance-release.md` | 测试层级、当前证据和发布规则已扩展 |
-| `docs/design/terminal-next/ux1a-review-fixes.md`、`ux1b-connection-explorer.md`、`ux1c-context-dock.md` | 保留为交付记录 | `04-ux1-terminal-workspace.md` | 它们含已执行的 PR/测试/变异/证据，不能删除 |
-| `docs/design/terminal-next/f0-*`、`tn-sftp-*` | 保留为交付/审计记录 | `04`、`09` | 真实生命周期和 E2E 证据可追溯 |
-| `docs/design/terminal-next/integrated-acceptance-report.md` | 保留 | `09` 引用 | 真实集成验收记录，不是设计重复 |
-| `docs/design/terminal-next/release-engineering-*`、`release-engineering-evidence/**` | 保留 | `09` 引用 | 构建、符号和体积是发布证据 |
-| `docs/design.md` | 保留并加 legacy banner | `00`、`README` | 根文档仍被项目索引/历史链接引用，内容需明确不再是 TN 权威规范 |
-| `docs/plans/terminal-workbench-rebuild.md`、`terminal-reliability-rebuild.md` | 保留并标历史计划 | `02`、`04`、`09` | 含实现历史和可靠性事实，不能误删 |
-| `docs/phase9*`、`docs/phase10*`、`docs/phase-b/**`、`docs/ci/**` | 保留 | `01`、`08`、`09` 引用 | 安全、恢复、CI、发布和迁移原始证据必须可审计 |
+| `docs/design/terminal-next/ux1a-review-fixes.md`、`ux1b-connection-explorer.md`、`ux1c-context-dock.md` | 保留为独立交付记录 | 无 canonical 接替；结论已吸收进 `04`，但文件本身不被 `04` 引用 | 它们含已执行的 PR/测试/变异/证据，不能删除 |
+| `docs/design/terminal-next/f0-*`、`tn-sftp-*` | 保留为独立交付/审计记录 | 无 canonical 接替；`04`/`09` 未引用它们 | 真实生命周期和 E2E 证据可追溯 |
+| `docs/design/terminal-next/integrated-acceptance-report.md` | 保留为历史验收快照（已加 supersession 注记） | 无 canonical 引用；`09` 不复制其结论 | 记录的是 `1a24eed` 基线的真实审查，不等于当前事实 |
+| `docs/design/terminal-next/release-engineering-*`、`release-engineering-evidence/**` | 保留为独立发布证据 | 无 canonical 引用 | 构建、符号和体积是发布证据 |
+| `docs/design.md` | 已加 legacy banner | `00`、`README` | 根文档仍被项目索引/历史链接引用，内容需明确不再是 TN 权威规范 |
+| `docs/plans/terminal-workbench-rebuild.md`、`terminal-reliability-rebuild.md` | **保留，尚未加 legacy 标记（待办）** | 无 canonical 接替 | 含实现历史和可靠性事实，不能误删；补标记属于后续治理提交，不在本 PR 假装已完成 |
+| `docs/phase9*`、`docs/phase10*`、`docs/phase-b/**`、`docs/ci/**` | 保留为原始证据 | 无 canonical 引用；只在需要时按路径查阅 | 安全、恢复、CI、发布和迁移原始证据必须可审计 |
 | `docs/project.md`、`docs/todo.md`、`docs/issue.md` | 保留并更新入口/当前摘要 | `README` + `01` + `10` | 项目状态索引，不把它们当作新的 UX 规范 |
 
 ## 3. 清理执行顺序
@@ -38,7 +38,7 @@ scope: "Canonical source rules, historical archives, supersession notes, referen
 1. 先创建 canonical 文档和 `archive/legacy-drafts/README.md`。
 2. 使用 `git mv` 归档 6 个纯 Draft 设计文件，保留 git history。
 3. 全仓搜索旧路径并修复 README、AGENTS、project/todo/design 中的引用。
-4. 对 `docs/design.md`、旧 plans 加“Legacy / historical”说明和 canonical 链接，不直接删除仍被引用的文件。
+4. 对 `docs/design.md` 加“Legacy / historical”说明和 canonical 链接；旧 plans 的同样标记仍是待办，不直接删除仍被引用的文件。
 5. 对真实 evidence、安全审计、迁移/恢复、发布报告、CI 规则不做批量清理。
 6. 运行 Markdown link scan、路径存在性检查、`git diff --check`。
 7. 把文档治理作为独立 commit；代码/运行时 PR 不得依赖未审查的路径移动。

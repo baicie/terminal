@@ -12,7 +12,7 @@
 
 | 状态 | 差距 | 当前证据/后续边界 |
 | --- | --- | --- |
-| 📋 待修 | 自然 EOF/远端断开 completion cleanup 未通知 Session removal listener；重复 `sftp_connect` 会覆盖同一 `session_id` 的旧 entry | `src-tauri/src/session/manager.rs`、`src-tauri/src/sftp.rs`；需补 listener、幂等/`AlreadyConnected` 和迟到回调测试 |
+| 📋 待修 | 自然 EOF/远端断开 completion cleanup 未通知 Session removal listener；重复 `sftp_connect` 会覆盖同一 `session_id` 的旧 entry。`manager_tests.rs::every_removal_path_notifies_listeners` 的注释声称已覆盖 completion cleanup，函数体只测了显式移除与 shutdown | `src-tauri/src/session/manager.rs`、`src-tauri/src/sftp.rs`；用 `simulate_natural_eof` 补第三段断言，补幂等/`AlreadyConnected` 和迟到回调测试 |
 | 📋 待测 | layout hysteresis 的收缩/恢复对称性和用户主动开关面板的交互边界 | `packages/frontend/src/layout/layout-hysteresis.ts`；需窄化→恢复→再窄化与变异测试 |
 | 📋 待修 | 损坏/未知 CredentialRef 不能被 Host/SSH key mapper 压成“无引用”；Clear 入口不能依赖解析成功 | `packages/frontend/src/components/host-list/host-dialog.tsx`、`service/database/ssh-key-credentials.ts`；需三态 ref 和安全清除/rebind |
 | 📋 待测 | GUI SFTP seed 数据库与每个 spec 的 `GUI_E2E_HOME` 必须是同一隔离 profile；关闭 Dock 的证据必须包含远端 SHA/字节结果 | `e2e/gui/fixtures/seed-sftp-host.mjs`、`scripts/gui-e2e-platform.mjs`；在 Level 3 重采前保持未验证 |

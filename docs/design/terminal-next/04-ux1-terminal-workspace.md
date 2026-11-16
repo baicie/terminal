@@ -61,7 +61,7 @@ App Shell
 - 初次启动完成 Recovery Gate 后，不因无 Host/Vault 而阻塞 Local Terminal。
 - 无 Tab 时显示明确 New Local CTA；创建第一个 Tab 后 Terminal Plane 常驻。
 - Explorer、Dock 默认关闭；Terminal Canvas 取得最大宽度并聚焦。
-- StatusBar 只显示实际 active pane 的 Session type、状态、cols×rows、编码和 live transfer count。
+- StatusBar 只显示有真实来源的值：active pane 的 Session type、状态、cols×rows 和 live transfer count。**当前实现刻意没有 encoding 和 shell name 字段**（`components/status-bar/index.tsx` 注明“nothing in the app reports either as a verified fact today”，并有测试断言不渲染）；编码只能作为未来目标，在出现真实数据源之前不得写进当前 UI 规格。
 
 ### 展开态
 
@@ -119,7 +119,8 @@ type TerminalPaneState = {
   paneId: string
   tabId: string
   sessionId: string | null
-  status: 'created' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error' | 'closing'
+  /** 必须等于 TerminalSessionStatus（见 02 的唯一权威定义）；不要在此另立枚举。 */
+  status: 'idle' | 'connecting' | 'reconnecting' | 'connected' | 'disconnected' | 'error'
   hostId: string | null
   cols?: number
   rows?: number
@@ -138,15 +139,14 @@ type SftpBinding = {
 
 ## 6. 生命周期状态机
 
+> 节点名必须落在 `TerminalSessionStatus` 的六个值内（见 `02` 的唯一权威定义）。本图额外画的 `NoTab`、`Closing`、`Closed` 是**展示层概念**（Tab/Pane 是否存在、是否正在释放），不是 Session 状态值；不要把它们加进 `TerminalPaneState.status`。
+
 ```mermaid
 stateDiagram-v2
   [*] --> NoTab
-  NoTab --> CreatingLocal: New Local
-  NoTab --> CreatingRemote: Connect Host
-  CreatingLocal --> Connected: PTY ready
-  CreatingRemote --> Connected: HostKey + Auth + Shell ready
-  CreatingLocal --> Error: spawn failure
-  CreatingRemote --> Error: auth/hostkey/network failure
+  NoTab --> Connecting: New Local / Connect Host
+  Connecting --> Connected: PTY ready 或 HostKey + Auth + Shell ready
+  Connecting --> Error: spawn / auth / hostkey / network failure
   Connected --> Reconnecting: eligible network loss
   Reconnecting --> Connected: new generation ready
   Reconnecting --> Error: budget exhausted
@@ -156,6 +156,8 @@ stateDiagram-v2
   Closing --> Closed: SessionManager release
   Closed --> [*]
 ```
+
+`idle` 是无活动连接的初始值，`disconnected` 是连接丢失但尚未进入重连预算的终态；两者都由 `TerminalSessionStatus` 定义，不要在 UI 里另造同义词。
 
 `RouterHidden`、`ExplorerOpen`、`DockOpen`、`ThemeChanged` 和 `WindowResized` 都不是状态机中的 close 事件。它们只改变展示或发送 resize。
 
@@ -181,7 +183,7 @@ stateDiagram-v2
 2. **UX1-NATIVE-02：macOS/Windows 输入矩阵**：物理重叠键、中文 IME、Option/dead key、Vim/tmux、系统粘贴和焦点恢复；没有设备时保持 `BLOCKED_EXTERNAL`。
 3. **UX1-UI-03：occupant 迁移测试**：新增 Snippet/Inspector/AI 前先让 `RightPanelMode`、单占位者和关闭不影响 Session 的测试成为公共契约。
 4. **UX1-REVIEW-04：持续资源回收**：对 SessionManager、SFTP Registry、Transfer Queue、拖放 listener 和 GUI harness 的证据继续保留，不在视觉 PR 中重写。
-5. **UX1-LIFECYCLE-05：自然退出与重复初始化**：让自然 EOF/远端断开、显式 close、shutdown 都触发同一 removal contract；重复 `sftp_connect` 明确返回幂等成功或结构化 `AlreadyConnected`，不得静默覆盖旧 entry。
+5. **UX1-LIFECYCLE-05：自然退出与重复初始化**：让自然 EOF/远端断开、显式 close、shutdown 都触发同一 removal contract；重复 `sftp_connect` 明确返回幂等成功或结构化 `AlreadyConnected`，不得静默覆盖旧 entry。现有 `every_removal_path_notifies_listeners` 的注释比测试强（只断言两条路径），必须先补 `simulate_natural_eof` 的第三段断言，否则修复没有回归保护。
 6. **UX1-LAYOUT-06：对称 hysteresis 回归**：用窄化→恢复→再窄化和 panel mode 改变矩阵锁住双向可达性；用户主动打开/关闭面板不应被宽度阻尼吞掉。
 7. **UX1-GUI-07：SFTP fixture 隔离**：每个 GUI spec 使用同一 `GUI_E2E_HOME` seed 和 app profile，先断言数据库路径、主机行和 SFTP 端口，再判断产品 UI 是否缺失主机。
 

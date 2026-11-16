@@ -62,7 +62,11 @@ Activity Rail 的 Connections 只切换 `leftPanel` 并保留 `/terminal`，Expl
 
 ### 3.3 SFTP
 
-前端 `RightPanel` 只显示 SFTP 视图；SFTP Host 由显式 binding/pin 决定。Transfer Queue 持有 transfer 状态，Rust `sftp_sessions` 在显式关闭和 shutdown 路径通过 SessionManager removal listener 清理。当前自然 EOF/远端断开路径的 completion cleanup 直接移除 session registry，尚未通知该 listener；重复 `sftp_connect` 也会在同一 `session_id` 上覆盖旧 `Arc<SftpSession>`，这两项必须在后续生命周期 PR 中明确为幂等/错误契约。Dock unmount 只影响视图；queued/running/finishing 任务通过 Lease/延迟释放保持资源，最终状态落地后再释放。
+前端 `RightPanel` 只显示 SFTP 视图；SFTP Host 由显式 binding/pin 决定。Transfer Queue 持有 transfer 状态。Rust `sftp_sessions` 只在显式 `remove_session`、shutdown 和 `session_close` 路径收到清理通知；自然 completion cleanup 走 `spawn_completion_cleanup` → `remove_registry_entries`，**没有拿到 `removed_listeners`，也没有调用 `notify_removed`**，因此远端断开后 SFTP entry 可能残留。同一函数的注释（`manager.rs` 的 `removed_listeners` 字段）声称覆盖 completion cleanup，与实现不符。重复 `sftp_connect` 还会在同一 `session_id` 上覆盖旧 `Arc<SftpSession>`，没有幂等或 `AlreadyConnected` 契约。
+
+这两项在 `manager_tests.rs::every_removal_path_notifies_listeners` 里被**误报为已覆盖**：该测试的注释写“explicit close, completion cleanup, and shutdown”，函数体只有 explicit removal 和 shutdown 两段断言，没有任何 completion cleanup 用例。这正是缺陷能长期存在的原因。后续生命周期 PR 必须用 `simulate_natural_eof` 补第三段，并单独覆盖重复初始化。
+
+Dock unmount 只影响视图；queued/running/finishing 任务通过 Lease/延迟释放保持资源，最终状态落地后再释放。
 
 ### 3.4 Credential
 

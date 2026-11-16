@@ -37,8 +37,8 @@ Application Gate
    └─ Status Bar
       ├─ current Session/Host state
       ├─ active cols×rows
-      ├─ encoding
-      └─ live transfer count
+      ├─ live transfer count
+      └─ (encoding: 设计目标，当前无数据源，不渲染)
 ```
 
 管理页 `/hosts`、`/sftp`、`/vaults`、`/teams`、`/logs`、`/settings`、`/keychain`、`/known-hosts`、`/port-forward`、`/snippets` 保留深链。管理页可以是完整工作表，但不能通过路由删除常驻 Terminal Plane。

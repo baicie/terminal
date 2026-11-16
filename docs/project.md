@@ -1443,7 +1443,7 @@ UX-1c 引入的，但 Dock 让它们从「偶尔」变成「一天几十次」�
 - ✅ **证据链复核有效**：HEAD 实算指纹 = manifest = `8129680b…`（`MATCH: true`）；
   manifest 的 commit `51599bca` 虽非 main 祖先，但与 main 在**全部指纹路径上内容一致**
 - 🔴 **本仓库没有 LLM Agent**：`src-tauri/src/agent.rs` 是 **SSH Agent 协议（RFC 4716）**；
-  全仓无 `rig-core`/`openai`/`anthropic`/`tool_call`/`composer`；`04-rust-rig-ai.md` 是 Draft。
+  全仓无 `rig-core`/`openai`/`anthropic`/`tool_call`/`composer`；`docs/design/terminal-next/archive/legacy-drafts/04-rust-rig-ai.md` 是 Draft。
   任务书 12 个竞态场景中 8 个、8 项安全检查中 3 项无对象，判 **NOT_APPLICABLE**（非 NOT_RUN）
 - 🔴 **P0-1 IPC 秘密读取面**：`vault_get(任意 key)` + `fs:allow-read/write-text-file`
   **无 `fs:scope`** + `sql:allow-*`。`session-lock-safety.md` §3 只记了 plugin-sql，
