@@ -208,15 +208,12 @@ export async function clearSSHKeyCredential(id: string): Promise<void> {
     ],
   )
 
+  // The row no longer names it, so a failure here is orphaned ciphertext rather
+  // than a dangling reference. `retireKeyVersion` already swallows and documents
+  // that; repeating the guard would imply it does not.
   const ref = readKeyCredentialRef(existing.credential_ref)
   if (!ref) return
-  try {
-    await retireKeyVersion(id, ref)
-  } catch {
-    // The row no longer names it, so this is orphaned ciphertext, not a dangling
-    // reference. Failing the whole clear here would tell the user nothing changed
-    // when the pointer is already gone.
-  }
+  await retireKeyVersion(id, ref)
 }
 
 export async function deleteSSHKey(id: string): Promise<void> {

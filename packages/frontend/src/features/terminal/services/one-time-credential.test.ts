@@ -79,6 +79,26 @@ describe('does this host need a one-time credential', () => {
   it('has no blocker for the ordinary "type it once" case', () => {
     expect(oneTimeCredentialBlocker(base)).toBeNull()
   })
+
+  it('blocks certificate auth with no certificate configured', () => {
+    // Certificate auth needs two things: the certificate (public, part of the host
+    // configuration) and the key it was issued for (the secret the dialog asks
+    // for). The dialog collects only the key, so a host with no certificate would
+    // send `certificate: ''` and fail the handshake with an error naming nothing
+    // the user can act on.
+    const host = { ...base, authType: 'cert', certificate: null } as unknown as Host
+    expect(oneTimeCredentialBlocker(host)).toMatch(/certificate/i)
+  })
+
+  it('allows certificate auth once a certificate is configured', () => {
+    const host = {
+      ...base,
+      authType: 'cert',
+      certificate: 'ssh-ed25519-cert-v01@openssh.com AAAA',
+    } as unknown as Host
+    expect(oneTimeCredentialBlocker(host)).toBeNull()
+    expect(needsOneTimeCredential(host)).toBe(true)
+  })
 })
 
 describe('registerOneTimeProfile', () => {

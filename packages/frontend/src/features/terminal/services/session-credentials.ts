@@ -19,6 +19,10 @@ import type {
   CredentialResolutionFailure,
   HostMetadata,
 } from '@/service/credential-boundary'
+import {
+  providerRegistry,
+  registerBuiltInProviders,
+} from '@/service/credential-provider-registry'
 import { vaultSecretProvider } from '@/service/vault-secret-provider'
 
 export interface SessionCredentialInput {
@@ -109,8 +113,17 @@ export async function resolveSessionCredential(
     authType: host.authType,
     credentialRef: host.credentialRef ?? null,
   }
+  // The registry is what makes `ref.provider` mean something. Registering here
+  // (idempotently) avoids pulling the Tauri-backed vault module into the registry
+  // module itself, which would make every credential test require a Tauri host.
+  //
+  // A reference naming a backend this build does not have is reported as a corrupt
+  // reference — the recovery is the same (clear or re-save) and it must not consume
+  // the reconnect budget — never resolved against the vault instead.
+  registerBuiltInProviders(providerRegistry, vaultSecretProvider)
   const resolved = await new SessionCredentialResolver(
     vaultSecretProvider,
+    providerRegistry,
   ).resolve(metadata)
   // Keep the whole failure, not just its sentence. The reason is what lets the
   // session classifier tell a locked vault from a network error instead of

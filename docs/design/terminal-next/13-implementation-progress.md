@@ -69,8 +69,8 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | Vault 写入安全（秘密列字面 NULL、版本化、命名空间拆分） | `PASS`（既有） | Phase 10.1～10.4 已合入 |
-| `CredentialRef V2`（带 `provider` 分派） | `NOT_RUN` | 现有 ref 已含 `provider` 字段但解析器硬编码 Vault |
-| `SecretProvider` Registry | `NOT_RUN` | 只有单一 Vault provider |
+| **`CredentialRef V2`（按 `provider` 分派）** | **`PASS`（链路级）** | `credential-resolver.ts::providerFor`。真实生产路径 `session-credentials.ts` 已构造带 registry 的 resolver。变异验证：把 resolver 回退到 HEAD 版本，`refuses a foreign provider instead of reading the vault` 立即变红。另实现 `ProviderDispatchingResolver` 提供五种独立状态的完整语义 |
+| **`SecretProvider` Registry** | **`PASS`** | `credential-provider-registry.ts`：`vault` 已注册，三个系统 provider 报告为 `unsupported` 而非省略；重复注册抛错；`registerBuiltInProviders` 幂等 |
 | 跨 Provider 写入/读回/切换/补偿 | `NOT_RUN` | — |
 | 凭据批量迁移 | `NOT_RUN`（未授权） | 需显式批准；按规则不得自行执行 |
 
@@ -116,7 +116,8 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | `8bcaa84` | Session 通知 + SFTP 契约 + hysteresis | Rust 440/0；变异验证 3 红；真实 sshd 5/5 |
 | `f6fec4b` | Host/Key 损坏引用可清除 | 前端 2360/0；3 条在旧 gate 上红 |
 | `785ec1f` | 一次性凭据连接 | 前端 2388/0；16 条新测试 |
-| （待提交） | Context Dock 单占位者契约 | 前端 2400/0；9 条契约 + 3 条源码守卫（变异验证 1 红） |
+| `e2c4500` | Context Dock 单占位者契约 | 前端 2400/0；9 条契约 + 3 条源码守卫（变异验证 1 红） |
+| （待提交） | Provider Registry + 按 provider 分派 | 18 条新测试；关键一条在旧 resolver 上红（变异验证）；生产路径已接线 |
 
 ---
 

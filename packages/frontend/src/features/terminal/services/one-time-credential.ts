@@ -80,6 +80,15 @@ export function oneTimeCredentialBlocker(host: Host): string | null {
   if (host.identityFilePath && !host.privateKey) {
     return 'This host was imported with a key file that has not been bound. Paste the key or use the SSH agent.'
   }
+  // Certificate auth needs *two* things: the certificate (public, part of the host
+  // configuration) and the private key it was issued for (a secret). The dialog
+  // collects only the key, because a certificate is not a secret and does not
+  // belong in a one-time prompt — so a host with no certificate configured cannot
+  // connect by typing a key. Letting it through would send `certificate: ''` and
+  // fail the handshake with an error that names nothing the user can fix.
+  if (host.authType === 'cert' && !host.certificate) {
+    return 'This host authenticates with a certificate but none is configured. Add the certificate in the host dialog, or use the SSH agent.'
+  }
   return null
 }
 
