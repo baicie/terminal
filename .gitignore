@@ -76,3 +76,7 @@ e2e/gui/artifacts/json/
 e2e/gui/artifacts/**/screens/*.png
 !e2e/gui/artifacts/e2e-01/screens/*.png
 !e2e/gui/artifacts/e2e-02/screens/*.png
+# CI test reports (machine-readable runner output). Produced by the `test-results`
+# upload steps and by `aggregate-test-report.mjs`; they are per-run artifacts, never
+# source. An earlier commit accidentally included a 763 KB vitest JSON.
+test-results/

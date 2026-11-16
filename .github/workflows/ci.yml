@@ -27,6 +27,23 @@ on:
 
 permissions:
   contents: read
+  # ## Why `actions: read` is required, and why it is the only addition
+  #
+  # The failure-attribution step lists the run's jobs and downloads a failing job's
+  # log. Both are Actions API reads:
+  #
+  #   GET /repos/{owner}/{repo}/actions/runs/{id}/jobs
+  #   GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs
+  #
+  # Without `actions: read` the first returns an empty/403 body and the second 403s.
+  # On a **public** repository these endpoints are readable anonymously, which is why
+  # the previous `contents: read` appeared to work — until the token was used and the
+  # log download redirected to a URL the token was not attached to.
+  #
+  # `write` is not needed and is not granted: nothing here cancels, re-runs or mutates
+  # a run. If this job ever needs to re-run a workflow it must request that separately,
+  # deliberately.
+  actions: read
 
 # `cancel-in-progress` stays true for PRs only: a new commit on a PR makes the old
 # run's verdict irrelevant, while a `main` run's verdict is the record of that commit
@@ -89,24 +106,50 @@ jobs:
               base="HEAD~1"
             fi
           fi
-          # Run once and keep both the verdict and the file list. `set -e` is off for
-          # this call because a non-zero exit from the classifier means "could not
-          # determine the diff", which is `docs_only=false` — the safe answer, not a
-          # reason to abort the job before `required` can report.
+          # ## One invocation, two streams
+          #
+          # `--print-files` puts the path list on stdout and the prose verdict on stderr,
+          # so a single run of the classifier produces both facts. The previous version
+          # ran the classifier once and then a *second* `git diff` for the list, with this
+          # redirect:
+          #
+          #   git diff --name-only "$base"...HEAD 2>/dev/null || true >> "$GITHUB_OUTPUT"
+          #
+          # `>>` binds to the last command in the `||` list — `true` — so the diff went to
+          # the job log and `changed` was **always empty**. Measured in a scratch repo with
+          # one changed file: the buggy form captured nothing, the fixed form captured it.
+          #
+          # Two diffs that must agree, with nothing comparing them, was the deeper
+          # problem: a rename could be classified as code-changing and published as
+          # docs-only in the same run.
+          #
+          # `set -e` is off for this call because a non-zero exit from the classifier
+          # means "could not determine the diff", which is `docs_only=false` — the safe
+          # answer, not a reason to abort the job before `required` can report.
           set +e
-          output="$(node scripts/classify-change.mjs . "$base" HEAD 2>&1)"
+          node scripts/classify-change.mjs . "$base" HEAD --print-files \
+            > /tmp/changed.txt 2> /tmp/classify.log
           status=$?
           set -e
-          echo "$output"
-          verdict="$(sed -n 's/^docs_only=//p' <<< "$output" | tail -1)"
+          cat /tmp/classify.log
+          verdict="$(sed -n 's/^docs_only=//p' /tmp/classify.log | tail -1)"
           if [[ "$status" -ne 0 || -z "$verdict" ]]; then
             echo "classifier could not decide (exit $status); treating as not docs-only" >&2
             verdict="false"
+            : > /tmp/changed.txt
           fi
           echo "docs_only=$verdict" >> "$GITHUB_OUTPUT"
-          echo "changed<<EOF" >> "$GITHUB_OUTPUT"
-          git diff --name-only "$base"...HEAD 2>/dev/null || true >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          # ## The heredoc delimiter
+          #
+          # `EOF` was the old delimiter, and a file legitimately named `EOF` would end the
+          # block early and truncate the list. `CHANGED_EOF_SENTINEL` cannot collide with a
+          # repository path in practice, and `git` itself allows a file named `EOF`.
+          {
+            echo "changed<<CHANGED_EOF_SENTINEL"
+            cat /tmp/changed.txt
+            echo "CHANGED_EOF_SENTINEL"
+          } >> "$GITHUB_OUTPUT"
+          echo "changed file(s): $(wc -l < /tmp/changed.txt | tr -d ' ')"
 
   frontend:
     name: Frontend quality
@@ -128,7 +171,43 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter=@terminal/frontend lint
       - run: pnpm --filter=@terminal/frontend typecheck
-      - run: pnpm --filter=@terminal/frontend test
+      # ## Machine-readable results, so the test report is measured rather than guessed
+      #
+      # `--reporter=json --outputFile` writes vitest's own counts. The default
+      # reporter's "255 files / 2337 passed" line is prose: a report built from it
+      # would have to re-parse a human sentence, and would silently miss skip/todo.
+      #
+      # The `if: always()` upload is what makes a *failing* suite still contribute its
+      # counts — otherwise a red job would look like a job that never ran.
+      - name: Frontend tests (machine-readable)
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          # ## No `--`
+          #
+          # `pnpm run test -- --flag` forwards the `--` **and** the flags, so vitest
+          # receives `vitest run -- --reporter=json …` and treats everything after `--`
+          # as positional arguments. Measured on this worktree: the full suite ran and
+          # **no** JSON file was written anywhere. The `--` is only needed for npm; pnpm
+          # passes extra args through directly.
+          #
+          # The output path is relative to vite's `root` (`packages/frontend`), so it
+          # must be `../../test-results/` to reach the repo root the artifact upload
+          # reads — `../test-results` lands in `packages/test-results`, which nothing
+          # uploads.
+          pnpm --filter=@terminal/frontend test \
+            --reporter=default --reporter=json --outputFile=../../test-results/vitest.json
+          # The guard is at the repo root: the shell's cwd is not changed by
+          # `pnpm --filter`, so this is `test-results/`, not `../test-results/`.
+          test -s test-results/vitest.json
+      - name: Upload frontend test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-frontend-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 7
       - run: pnpm --filter=@terminal/frontend build:budget
       - name: Vault probe is absent from the production bundle
         run: |
@@ -221,7 +300,24 @@ jobs:
       - run: pnpm --filter=team-server prisma:generate
       - run: pnpm --filter=team-server typecheck
       - run: pnpm --filter=team-server lint
-      - run: pnpm --filter=team-server test
+      - name: Team Server tests (machine-readable)
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          # Same two corrections as the frontend job: no `--` (pnpm forwards it, and
+          # vitest then ignores the flags), and the path is relative to vite's root
+          # (`packages/team-server`) so it needs `../../test-results/`.
+          pnpm --filter=team-server test \
+            --reporter=default --reporter=json --outputFile=../../test-results/team-server-vitest.json
+          test -s test-results/team-server-vitest.json
+      - name: Upload Team Server test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-team-server-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 7
       - run: pnpm --filter=team-server build
       - name: Apply migrations
         working-directory: packages/team-server
@@ -371,7 +467,21 @@ jobs:
       # this job was widened to close.
       - name: Verification evidence is internally consistent
         run: node scripts/check-verification-evidence.mjs --mode=integrity
-      - run: node --test scripts/*.test.mjs scripts/verify-install/*.test.mjs
+      - name: Gate script tests (machine-readable)
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          node --test --test-reporter=spec --test-reporter-destination=stderr \
+            --test-reporter=tap --test-reporter-destination=test-results/scripts.tap \
+            scripts/*.test.mjs scripts/verify-install/*.test.mjs
+      - name: Upload gate script test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-scripts-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 7
 
   rust:
     name: Rust quality
@@ -427,7 +537,25 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
-      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      # ## Machine-readable libtest counts
+      #
+      # `cargo test` writes one `test result: …` line per test binary, and a workspace
+      # runs several. The file is kept verbatim; `ci-test-ingest.mjs` sums the lines.
+      # Tee rather than redirect so a failure is still visible in the job log.
+      - name: Rust tests (machine-readable)
+        run: |
+          set -o pipefail
+          mkdir -p src-tauri/test-results
+          cargo test --locked --manifest-path src-tauri/Cargo.toml 2>&1 \
+            | tee src-tauri/test-results/cargo-test.txt
+      - name: Upload Rust test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-rust-${{ github.run_id }}
+          path: src-tauri/test-results/
+          if-no-files-found: warn
+          retention-days: 7
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --features smoke-vault-probe vault_probe
       # ## The production SFTP paths against a real OpenSSH server
       #
@@ -817,3 +945,167 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
         run: node scripts/verify-required-checks.mjs
+      # ## Say what kind of failure this is
+      #
+      # "CI is red" is not actionable. The dominant failure in this repository's
+      # history is stale acceptance evidence — not a code problem — and before this
+      # step the only way to tell it from a regression was to open the log.
+      #
+      # ## The `jq` projection used to drop the job id
+      #
+      # It emitted `{name, conclusion, informational}` and the CLI fetched logs with
+      # `actions/jobs/${job.id}/logs`. With no `id` every URL was `jobs/undefined/logs`,
+      # every request 404'd, and the classifier saw an empty log for every job. On run
+      # 43716684905 the Windows build failed with `error[E0433]: cannot find \`unix\` in
+      # \`os\`` and the report said `UNKNOWN`.
+      #
+      # The projection now keeps the id, the run identity, and the step list. The field
+      # names are asserted against `JOB_LIST_FIELDS` in `ci-github-api.mjs` by a test,
+      # so removing one fails locally rather than in a live report.
+      #
+      # `informational` is decided here from the allowlist module, not by a substring of
+      # the job name: `ci-informational.mjs` is the single source of which jobs may fail
+      # without blocking, and a rename cannot silently change the gate.
+      - name: Attribute the failure
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Job conclusions come from the API rather than `needs`, because `needs`
+          # carries only the aggregated jobs and the attribution wants every one.
+          # Paged: a matrix build can exceed the 100-job page size, and a truncated list
+          # would hide a failure. `--paginate` is gh's own paging, not a second loop.
+          gh api --paginate "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '.jobs[] | {id, name, conclusion, status, html_url, run_id, run_attempt, steps}' \
+            | jq -s '{jobs: .}' > /tmp/jobs.json
+          # The conclusion comes from the run itself. `failure()` made this step run, but
+          # the *run* conclusion is `failure` or `cancelled` or `timed_out`, and those
+          # are different verdicts.
+          RUN_CONCLUSION="$(gh api "repos/${REPO}/actions/runs/${RUN_ID}" --jq '.conclusion // ""')"
+          node scripts/attribute-ci-failure.mjs \
+            --jobs /tmp/jobs.json \
+            --run-id "${RUN_ID}" \
+            --repo "${REPO}" \
+            --workflow-file .github/workflows/ci.yml \
+            --required-failed true \
+            --run-conclusion "${RUN_CONCLUSION}" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+        # A failure while explaining a failure must not replace the real verdict.
+        continue-on-error: true
+
+  # ## Aggregate the per-layer test results into one report
+  #
+  # Each job above uploads its runner's own machine-readable output. This job
+  # downloads all of them and builds one report.
+  #
+  # Three rules it enforces, all of which the previous static report could not:
+  #
+  #   1. a missing artifact is `NOT_RUN` with the reason, never zero tests;
+  #   2. a job that was skipped is `BLOCKED`, visible rather than absent;
+  #   3. results from different commits never mix (the aggregator refuses them).
+  #
+  # `if: always()` because the report is most valuable when something failed — a
+  # report that only runs on success is a report nobody needs.
+  test-report:
+    name: Test execution report
+    needs:
+      - changes
+      - frontend
+      - team-server
+      - source-size
+      - rust
+    if: always() && needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Download every layer's report
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-*
+          path: reports
+          merge-multiple: true
+      # ## Every job uploads `test-results/` as its root, and `merge-multiple`
+      #
+      # So with `merge-multiple: true` all of them land flat in `reports/`:
+      #
+      #   reports/vitest.json              (frontend)
+      #   reports/team-server-vitest.json  (team server)
+      #   reports/scripts.tap              (gate scripts)
+      #   reports/cargo-test.txt           (rust)
+      #
+      # The first version of this step guessed a nested layout that does not exist, so
+      # the frontend report was never placed and the layer would have read NOT_RUN while
+      # the job had actually produced it. Copy by exact name, and print what was found so
+      # a changed artifact name shows up in the log instead of silently degrading.
+      - name: Lay the reports out where the ingestion plan expects them
+        run: |
+          set -euo pipefail
+          mkdir -p packages/frontend/test-results \
+                   packages/team-server/test-results \
+                   src-tauri/test-results \
+                   test-results
+          echo "downloaded:"; find reports -type f 2>/dev/null | sort || true
+          copy_if_present() {
+            if [ -f "reports/$1" ]; then
+              mkdir -p "$(dirname "$2")"
+              cp "reports/$1" "$2"
+              echo "  $1 -> $2"
+            else
+              echo "  MISSING reports/$1 (the $3 layer will report NOT_RUN)"
+            fi
+          }
+          copy_if_present vitest.json             packages/frontend/test-results/vitest.json       frontend
+          copy_if_present team-server-vitest.json packages/team-server/test-results/vitest.json     team-server
+          copy_if_present scripts.tap             test-results/scripts.tap                         scripts
+          copy_if_present cargo-test.txt          src-tauri/test-results/cargo-test.txt            rust
+      # Layers whose job did not produce a result are named, not inferred. `needs`
+      # says which jobs were skipped; the aggregation maps that to BLOCKED.
+      - name: Build the test execution report
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          SKIPPED_ARGS=""
+          for pair in \
+            "frontend:unit-frontend" \
+            "team-server:unit-team-server" \
+            "rust:unit-rust" \
+            "source-size:scripts"; do
+            job="${pair%%:*}"; layer="${pair##*:}"
+            result="$(node -e "
+              const needs = JSON.parse(process.env.NEEDS || '{}');
+              process.stdout.write(String((needs['$job'] || {}).result || ''));
+            ")"
+            # ## Only `skipped` means the layer did not run
+            #
+            # A `failure` job still uploads its report (the artifact upload is
+            # `if: always()`), and that report carries the failing suite's real counts —
+            # the only numbers this report exists to publish. Marking a failed job
+            # `BLOCKED` discarded them and reported zero totals.
+            if [[ "$result" == "skipped" || "$result" == "" ]]; then
+              SKIPPED_ARGS="$SKIPPED_ARGS --blocked $layer"
+            fi
+          done
+          # shellcheck disable=SC2086
+          node scripts/aggregate-test-report.mjs \
+            --dir . \
+            --sha "$HEAD_SHA" \
+            --json test-results/test-execution-report.json \
+            $SKIPPED_ARGS | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-execution-report-${{ github.run_id }}
+          path: test-results/test-execution-report.json
+          if-no-files-found: warn
+          retention-days: 30

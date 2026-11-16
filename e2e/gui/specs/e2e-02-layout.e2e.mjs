@@ -164,6 +164,48 @@ describe('E2E-02 Explorer and Dock across widths', () => {
   let failures = 0
   let rafObserved = null
   let tn01Present = false
+  /**
+   * Every case that threw, recorded as it happens.
+   *
+   * ## The defect this fixes, measured on real evidence
+   *
+   * `failures` above counts only *width-matrix violations*: it is incremented inside the
+   * matrix loop at three places and nowhere else. Every other way this file can fail —
+   * `rail-connections` never rendering, the explorer never opening, a `waitUntil`
+   * timing out — left the counter at 0.
+   *
+   * So `after()` computed `verdict: 'PASS'` from a run that Mocha had already marked
+   * failed. Measured on artifact `gui-e2e-evidence-windows-43718510663`
+   * (download `14163534444`):
+   *
+   *   json/wdio-0-0-1794749646625.json  ->  {"passed":2,"failed":3,"skipped":0}
+   *   e2e-02/e2e-02.json                ->  {"verdict":"PASS"}
+   *
+   * A record that says PASS while the runner says three failures is worse than no
+   * record: it is the exact shape of evidence the release gate is supposed to refuse.
+   * The same bug class was fixed in `e2e-03` by collecting `currentTest.state`; this is
+   * the same fix, and `e2e-01` already used it.
+   */
+  const caseFailures = []
+
+  afterEach(function () {
+    if (this.currentTest?.state === 'failed') {
+      const err = this.currentTest.err
+      const text =
+        (typeof err === 'string' ? err : undefined) ??
+        err?.message ??
+        err?.stack?.split('\n')[0] ??
+        err?.toString?.() ??
+        ''
+      caseFailures.push({
+        title: this.currentTest?.title ?? '<unknown case>',
+        error:
+          text && text !== '[object Object]'
+            ? text
+            : `(no error text for "${this.currentTest?.title ?? '<unknown case>'}")`,
+      })
+    }
+  })
 
   after(async () => {
     // The layout policy is verified; the terminal refit is not, because rAF does
@@ -173,10 +215,14 @@ describe('E2E-02 Explorer and Dock across widths', () => {
     // regression in this branch. It is reported as PENDING_REQUIRES_TN01 so the
     // distinction survives into the evidence file, while the same assertion keeps
     // running and will turn PASS once #44 lands. Nothing is skipped or deleted.
-    const pendingTn01 = !tn01Present && failures > 0
+    //
+    // `failures > 0 || caseFailures.length > 0`: a width violation and a thrown case are
+    // both failures. Reading only the counter is what produced the false PASS above.
+    const failedTotal = failures + caseFailures.length
+    const pendingTn01 = !tn01Present && failedTotal > 0
     const verdict = pendingTn01
       ? 'PENDING_REQUIRES_TN01'
-      : failures > 0
+      : failedTotal > 0
         ? 'FAIL'
         : rafObserved
           ? 'PASS'
@@ -191,7 +237,17 @@ describe('E2E-02 Explorer and Dock across widths', () => {
           ? ''
           : 'The terminal refit path is rAF-driven and therefore NOT exercised here; ' +
             'xterm cols are reported for information only. See docs/testing/native-gui-e2e.md.'),
-      error: failures > 0 ? `${failures} width(s) violated the layout policy` : undefined,
+      error:
+        failedTotal > 0
+          ? [
+              failures > 0 ? `${failures} width(s) violated the layout policy` : null,
+              caseFailures.length > 0
+                ? caseFailures.map(entry => `${entry.title}: ${entry.error}`).join('\n')
+                : null,
+            ]
+              .filter(Boolean)
+              .join('\n')
+          : undefined,
     })
   })
 

@@ -31,24 +31,24 @@ import path from 'node:path'
 import process from 'node:process'
 
 /**
- * Jobs that must have succeeded **on the release commit itself**.
+ * The checks a release must prove, and where each comes from.
  *
- * Deliberately the same list as `CI / required` plus the GUI gate: a release makes
- * stronger claims than a merge (installers, updater payloads, notarization state), so
- * it cannot be allowed to skip a check a merge would have required.
+ * This used to be a hand-typed list of job display names whose comment claimed it
+ * mirrored `CI / required` "plus the GUI gate". The GUI gate was not in it — a release
+ * could ship with the GUI E2E red while the comment said otherwise, and no test
+ * compared the two lists.
+ *
+ * The list now comes from `release-check-contract.mjs`, which is validated against the
+ * real workflow files by `release-check-contract.test.mjs`. Re-exported here so existing
+ * callers keep working.
  */
-export const REQUIRED_RELEASE_CHECKS = [
-  'required',
-  'Frontend quality',
-  'Rust quality',
-  'Team Server quality',
-  'Repository gates (source size, evidence, script tests)',
-  'Tauri build (macos-latest)',
-  'Tauri build (ubuntu-latest)',
-  'Tauri build (windows-latest)',
-  'cargo audit (blocking)',
-  'Dependency audit (npm)',
-]
+export {
+  RELEASE_CHECKS,
+  REQUIRED_RELEASE_CHECKS,
+  PR_EVIDENCE_CHECKS,
+} from './release-check-contract.mjs'
+// A re-export does not create a local binding, so the loop below needs its own import.
+import { RELEASE_CHECKS as CHECKS } from './release-check-contract.mjs'
 
 /** Modes and what each promises the user. */
 export const RELEASE_MODES = {
@@ -104,6 +104,17 @@ export function judgeRelease(facts) {
   // must not be reported as the same thing: one sends someone to look at CI, the other
   // sends them to look at GitHub's availability. `checksError` carries the first.
   const checks = facts.checks ?? {}
+  if (facts.prEvidenceError) {
+    // The PR-evidence collector (the GUI gate) could not read the commit's workflow
+    // runs. That is a fact-collection failure, and it must be reported as one rather
+    // than surfacing as two missing checks — a reader would then look for a broken GUI
+    // workflow instead of the API.
+    push(
+      'pr-evidence-unreadable',
+      `the PR-time workflow listing for this commit could not be read ` +
+        `(${facts.prEvidenceError}); the GUI gate cannot be evaluated`,
+    )
+  }
   if (facts.checksError) {
     push(
       'checks-unreadable',
@@ -112,10 +123,22 @@ export function judgeRelease(facts) {
         'is reachable rather than treating the release as reviewed',
     )
   }
-  for (const name of REQUIRED_RELEASE_CHECKS) {
+  for (const check of CHECKS) {
+    const name = check.name
     const entry = checks[name]
     if (!entry) {
-      push('check-missing', `required check ${JSON.stringify(name)} has no run for this commit`)
+      // A PR-evidence check is expected on the *commit's PR run*, not on the tag. Its
+      // absence is a distinct problem: the fact collector must supply it, and a
+      // missing one means the release cannot be qualified — not that it may proceed.
+      const code = check.freshness === 'pr-evidence' ? 'check-missing-pr-evidence' : 'check-missing'
+      push(
+        code,
+        `required check ${JSON.stringify(name)} has no run for this commit` +
+          (check.freshness === 'pr-evidence'
+            ? ` (this gate is verified against the commit's PR-time run in ${check.owner}; ` +
+              'the workflow has no tag trigger, so a tag run cannot satisfy it)'
+            : ''),
+      )
       continue
     }
     if (entry.headSha !== facts.commit) {
@@ -131,6 +154,44 @@ export function judgeRelease(facts) {
         'check-not-success',
         `required check ${JSON.stringify(name)} concluded ${JSON.stringify(entry.conclusion ?? null)}`,
       )
+      continue
+    }
+    // ## A `success` conclusion is not enough: the run must have finished
+    //
+    // The Checks API reports `status` and `conclusion` separately, and GitHub writes
+    // `conclusion: "success"` on a re-requested or re-run check whose new attempt is
+    // still queued — the previous attempt's conclusion lingers. `summarizeForRelease`
+    // in `check-run-selection.mjs` guards this; `judgeRelease` is the function the
+    // release path actually calls, and it did not. Measured: facts with every required
+    // check `{status: 'in_progress', conclusion: 'success'}` returned ok=true.
+    // A missing `status` is treated the same as a non-final one: the facts file must
+    // be able to say the run finished, or the release cannot claim it did.
+    if (entry.status !== 'completed') {
+      push(
+        'check-incomplete',
+        `required check ${JSON.stringify(name)} has status ` +
+          `${JSON.stringify(entry.status ?? null)}, so its success is not final; ` +
+          'a release must wait for the run to finish',
+      )
+    }
+    // ## Provenance, not just a name
+    //
+    // `entry.workflowPath` is what the collector resolved from the check's details URL.
+    // Without this comparison, a workflow file added to the repository could publish a
+    // check named `Rust quality` and satisfy this gate — GitHub Actions is one App for
+    // every workflow, so app id proves nothing.
+    //
+    // The field is **required**. An earlier version skipped the comparison when it was
+    // absent, which meant a collector that never populated it (or a facts file written
+    // by hand) passed with no provenance at all — the check would have been decorative.
+    // `null` means "could not determine", and that is a refusal, not a pass.
+    if (entry.workflowPath !== check.owner) {
+      push(
+        'check-wrong-workflow',
+        `required check ${JSON.stringify(name)} came from ` +
+          `${entry.workflowPath === null || entry.workflowPath === undefined ? '<unresolved>' : entry.workflowPath}, ` +
+          `not from ${check.owner}; its name is not proof of its source`,
+      )
     }
   }
 
@@ -143,7 +204,21 @@ export function judgeRelease(facts) {
         'real-machine-matrix.yml on this commit instead of editing the manifest',
     )
   }
-  const missingScenarios = facts.evidence?.missingScenarios ?? []
+  // ## Scenario-level detail is not collected; the aggregate verdict is
+  //
+  // The evidence gate (`check-verification-evidence.mjs --mode=qualification`) reports a
+  // problem count and prose, not a machine-readable list of scenario names. An earlier
+  // version of this judge read `missingScenarios`/`notPassed` fields that the collector
+  // always left empty, so those two rules could never fire — they were decoration in
+  // the release path and only real in tests that hand-built the facts.
+  //
+  // Rather than parse prose (which would break on the first rewording), the aggregate
+  // `qualificationPassed` carries the whole decision, and the fields are honoured **if
+  // a future collector supplies them**. Absent fields are not a failure: the gate above
+  // already failed.
+  const missingScenarios = Array.isArray(facts.evidence?.missingScenarios)
+    ? facts.evidence.missingScenarios
+    : []
   if (missingScenarios.length > 0) {
     push(
       'evidence-missing-scenarios',
@@ -151,7 +226,7 @@ export function judgeRelease(facts) {
         missingScenarios.join(', '),
     )
   }
-  const notPassed = facts.evidence?.notPassed ?? []
+  const notPassed = Array.isArray(facts.evidence?.notPassed) ? facts.evidence.notPassed : []
   if (notPassed.length > 0) {
     push(
       'evidence-not-passed',

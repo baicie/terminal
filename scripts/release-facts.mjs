@@ -9,7 +9,11 @@
  * default. A release gate that fills in "probably fine" is worse than no gate.
  */
 import { execFileSync } from 'node:child_process'
+import { parseDetailsUrl } from './check-run-provenance.mjs'
 import { selectAcrossPages } from './check-run-selection.mjs'
+import { PR_EVIDENCE_CHECKS } from './release-check-contract.mjs'
+
+const PR_EVIDENCE_CHECK_NAMES = PR_EVIDENCE_CHECKS
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -98,7 +102,59 @@ function collectChecks(commit) {
       console.error(`  ignored check run ${entry.id} ${entry.name}: ${entry.reason}`)
     }
   }
-  return { checks, ignored }
+
+  const withProvenance = attachProvenance(checks, pages)
+  return { checks: withProvenance, ignored }
+}
+
+/**
+ * Resolve which workflow produced each check, from its details URL.
+ *
+ * ## Why this is necessary
+ *
+ * App id is identical for every workflow in the repository (measured: 15368), and a
+ * job name is data any workflow file can set. Neither is proof of source. The
+ * `details_url` points at `actions/runs/<id>`, and that endpoint carries the workflow
+ * path — which the workflow itself cannot forge.
+ *
+ * The resolution is best-effort per check and never throws: a failure leaves
+ * `workflowPath` as `null`, which the judge treats as a provenance problem rather than
+ * a pass.
+ */
+function attachProvenance(checks, pages) {
+  // Index the details URLs from the raw pages so the mapping is by check id.
+  const detailsById = new Map()
+  for (const page of pages) {
+    if (!Array.isArray(page)) continue
+    for (const run of page) {
+      if (run && run.id !== undefined && run.details_url) detailsById.set(Number(run.id), run.details_url)
+    }
+  }
+
+  const cache = new Map()
+  const resolved = {}
+  for (const [name, entry] of Object.entries(checks)) {
+    const detailsUrl = detailsById.get(Number(entry.id)) ?? null
+    const parsed = parseDetailsUrl(detailsUrl)
+    let workflowPath = null
+    if (parsed !== null) {
+      if (cache.has(parsed.runId)) {
+        workflowPath = cache.get(parsed.runId)
+      } else {
+        const raw = gh(['api', `repos/{owner}/{repo}/actions/runs/${parsed.runId}`, '--jq', '.path'])
+        workflowPath = raw === null ? null : raw.trim()
+        cache.set(parsed.runId, workflowPath)
+      }
+    }
+    resolved[name] = {
+      ...entry,
+      runId: parsed?.runId ?? null,
+      jobId: parsed?.jobId ?? null,
+      // `null` means "could not determine", which the judge reports as a problem.
+      workflowPath,
+    }
+  }
+  return resolved
 }
 
 /**
@@ -109,11 +165,32 @@ function collectChecks(commit) {
  */
 function allowedCheckApps() {
   const raw = process.env.RELEASE_CHECK_APP_IDS ?? '15368'
-  const ids = raw
+  const parts = raw
     .split(',')
-    .map(value => Number(value.trim()))
-    .filter(Number.isFinite)
-  return ids.length > 0 ? new Set(ids) : null
+    .map(value => value.trim())
+    .filter(Boolean)
+  const ids = parts.map(Number).filter(value => Number.isInteger(value) && value > 0)
+
+  if (ids.length !== parts.length) {
+    // ## Fail closed on a malformed value
+    //
+    // The previous version filtered out non-numeric entries and returned `null` when
+    // nothing was left — and `null` means "any App may satisfy a required check". So
+    // `RELEASE_CHECK_APP_IDS=none`, or any typo, silently widened the trust boundary to
+    // every App on the commit. A value the operator typed wrong must stop the release,
+    // not relax the gate.
+    throw new Error(
+      `RELEASE_CHECK_APP_IDS=${JSON.stringify(raw)} is not a comma-separated list of positive ` +
+        'integers. Refusing to run: an unparseable value would otherwise mean "trust every App"',
+    )
+  }
+  // An explicitly empty value is the local-development escape hatch, and it is spelled
+  // out rather than reached by accident.
+  if (ids.length === 0) {
+    console.error('RELEASE_CHECK_APP_IDS is empty: NO App may satisfy a required check')
+    return new Set()
+  }
+  return new Set(ids)
 }
 
 /**
@@ -130,17 +207,110 @@ function collectEvidence() {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     })
-    return { qualificationPassed: true, problemCount: 0, missingScenarios: [], notPassed: [] }
+    // `missingScenarios`/`notPassed` are null, not `[]`: the gate reports an aggregate
+    // verdict and prose, so scenario-level detail is genuinely not collected here.
+    // `[]` would claim "collected, and there are none".
+    return { qualificationPassed: true, problemCount: 0, missingScenarios: null, notPassed: null }
   } catch (error) {
     const output = `${error.stdout ?? ''}${error.stderr ?? ''}`
     const count = /(\d+) problem\(s\)/.exec(output)
     return {
       qualificationPassed: false,
       problemCount: count ? Number(count[1]) : null,
-      missingScenarios: [],
-      notPassed: [],
+      // Not collected — see the success branch.
+      missingScenarios: null,
+      notPassed: null,
     }
   }
+}
+
+/**
+ * Collect the checks that are verified from the commit's PR-time run.
+ *
+ * ## Why a separate collector
+ *
+ * `native-gui-e2e.yml` has no `push`/tag trigger — it is path-filtered on
+ * `pull_request`. So a tag commit has **no** GUI run of its own, and the two GUI checks
+ * would always be `check-missing` if the release gate looked only at `commits/{sha}/check-runs`.
+ *
+ * The runs API can find them by commit anyway: `actions/runs?head_sha=<sha>` returns every
+ * workflow run for that commit regardless of event. Verified against this repository:
+ *
+ *   gh api "repos/{owner}/{repo}/actions/runs?head_sha=<sha>" --jq '[.workflow_runs[].path]'
+ *   -> [".github/workflows/native-gui-e2e.yml", ".github/workflows/ci.yml"]
+ *
+ * The newest run of each required workflow supplies its jobs' conclusions, which are
+ * mapped back into the same `checks[name]` shape. A run that is still in progress, or a
+ * workflow with no run, produces a `prEvidence` entry the judge refuses — never a
+ * silent pass.
+ */
+function collectPrEvidenceChecks(commit, requiredNames) {
+  if (!commit) return { checks: {}, error: 'no commit' }
+
+  const raw = gh([
+    'api',
+    `repos/{owner}/{repo}/actions/runs?head_sha=${commit}&per_page=100`,
+    '--jq',
+    '.workflow_runs',
+  ])
+  if (raw === null) {
+    return { checks: {}, error: 'the workflow-run listing for this commit could not be read' }
+  }
+  let runs
+  try {
+    runs = JSON.parse(raw)
+  } catch {
+    return { checks: {}, error: 'the workflow-run listing was not JSON' }
+  }
+  if (!Array.isArray(runs)) {
+    return { checks: {}, error: 'the workflow-run listing was not a list' }
+  }
+
+  // Newest first by id: a re-run produces a second entry for the same path, and the
+  // latest attempt is the statement about this commit.
+  const byPath = new Map()
+  for (const run of runs) {
+    const key = run?.path
+    if (typeof key !== 'string') continue
+    const id = Number(run.id)
+    if (!Number.isFinite(id)) continue
+    const current = byPath.get(key)
+    if (!current || id > Number(current.id)) byPath.set(key, run)
+  }
+
+  const checks = {}
+  const unresolved = []
+  for (const [path, run] of byPath) {
+    const jobsRaw = gh([
+      'api',
+      `repos/{owner}/{repo}/actions/runs/${run.id}/jobs?per_page=100`,
+      '--jq',
+      '.jobs',
+    ])
+    if (jobsRaw === null) {
+      unresolved.push({ path, runId: run.id, reason: 'job listing unreadable' })
+      continue
+    }
+    let jobs
+    try {
+      jobs = JSON.parse(jobsRaw)
+    } catch {
+      unresolved.push({ path, runId: run.id, reason: 'job listing was not JSON' })
+      continue
+    }
+    for (const job of Array.isArray(jobs) ? jobs : []) {
+      if (!requiredNames.includes(job?.name)) continue
+      checks[job.name] = {
+        conclusion: job.conclusion ?? null,
+        status: job.status ?? null,
+        headSha: run.head_sha ?? null,
+        workflowPath: path,
+        runId: run.id,
+        runAttempt: run.run_attempt ?? null,
+      }
+    }
+  }
+  return { checks, error: null, unresolved }
 }
 
 /**
@@ -162,12 +332,19 @@ function main() {
   const mode = process.env.RELEASE_MODE || null
   const tagCommit = tag ? git(['rev-list', '-n', '1', tag]) : null
 
+  // PR-evidence checks (the GUI gate) come from the commit's workflow runs, not from
+  // `commits/{sha}/check-runs`, because `native-gui-e2e.yml` never runs on a tag.
+  const prEvidence = commit
+    ? collectPrEvidenceChecks(commit, PR_EVIDENCE_CHECK_NAMES)
+    : { checks: {}, error: 'no commit' }
+
   const facts = {
     commit,
     tag,
     tagCommit,
     mode,
     ...(commit ? splitCheckResult(collectChecks(commit)) : { checks: {}, checksError: 'no commit' }),
+    prEvidence,
     evidence: collectEvidence(),
     signing: {
       // The workflow exports this only when the secret exists.
@@ -176,6 +353,18 @@ function main() {
       // can produce it yet, so it is reported as the workflow knows it.
       notarized: process.env.RELEASE_NOTARIZED === 'true',
     },
+  }
+
+  // Merge the PR-evidence checks into `checks` so the judge sees one map, and keep the
+  // collection status separate so an unreadable listing is a fact-collection failure
+  // rather than a missing check.
+  if (prEvidence?.checks) {
+    for (const [name, entry] of Object.entries(prEvidence.checks)) {
+      if (facts.checks[name] === undefined) facts.checks[name] = entry
+    }
+  }
+  if (prEvidence?.error) {
+    facts.prEvidenceError = prEvidence.error
   }
 
   const dir = mkdtempSync(path.join(os.tmpdir(), 'release-facts-'))
