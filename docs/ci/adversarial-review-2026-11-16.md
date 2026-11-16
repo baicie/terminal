@@ -386,6 +386,44 @@ release qualification: FAIL — 1 problem(s)
 
 ---
 
+## 6.7 最后一次 CI 反馈暴露的两个问题
+
+| # | 严重度 | 问题 | 证据 |
+| --- | --- | --- | --- |
+| T1 | P1 | 证据守卫拒绝了合法的非 PASS 标签，把真实失败替换成守卫错误 | Windows GUI E2E 日志：`Error: writeEvidence(e2e-02): verdict PENDING_REQUIRES_TN01 contradicts the recorded error` |
+| T2 | **P1（危险）** | 测试的清理删除了**仓库里所有已提交的验收证据** | 单独跑 `evidence.test.mjs` 后 `git status` 显示 `e2e-01/`、`e2e-02/`、`e2e-03/`、`run-summary.json` 全部被删除 |
+
+### T2 的机制
+
+`written()` 的清理原本是：
+
+```js
+await rm(path.dirname(path.dirname(file)), { recursive: true, force: true })
+```
+
+对 `writeEvidence('e2e-test-error')`，文件是
+`e2e/gui/artifacts/e2e-test-error/<case>.json`，两次 `dirname` 正好落在
+`e2e/gui/artifacts` —— `recursive: true` 于是清空了整个证据目录。
+
+这是本轮最危险的一处：它不会让 CI 变红（测试自己是通过的），只会静默删掉
+`docs/verification` 体系之外的另一套验收证据。已经被 git 恢复。
+
+修复三件事：
+1. 清理只删本次创建的 case 目录（一次 `dirname`）
+2. helper 只接受 `e2e-test-` 前缀的临时 id，真实 case id 直接抛错
+3. 新增两条测试：拒绝真实 id；跑完整测试文件后 artifacts 目录仍在且含三份已提交证据
+
+### T1 的机制
+
+守卫规则是 `error ⇒ verdict 必须是 FAIL`。`PENDING_REQUIRES_TN01` 是给「已知历史
+缺陷」用的合法非通过标签，被这条规则拒绝——而写入发生在运行已失败之后，于是真实的
+UI 失败（`activity-rail` 没渲染）被一条守卫错误顶掉，日志里再也看不到它。
+
+守卫真正要防的是「失败却写 PASS」。改为：带 `error` 时不得写通过类 verdict
+（PASS/OK/SUCCESS），其它显式非通过标签允许。
+
+---
+
 ## 7. 过程中的自伤（记录而非隐藏）
 
 本轮我自己引入并修复的缺陷，全部由门禁或真实数据发现：
@@ -404,6 +442,18 @@ release qualification: FAIL — 1 problem(s)
    开后门。改为**必填**。
 8. GUI 测试的 job 切分用正则，把一个 job 的 `continue-on-error` 算到相邻 job 头上。
 9. `paths:` 提取器把块内注释当作列表结束 → 一个都读不到。
+10. `pnpm test -- --reporter=json` 转发 `--` → 机器可读报告从未产出（真实 suite 跑完无文件）。
+11. 失败 job 被标 `BLOCKED`，真实计数归零。
+12. `classifyRun` 在只有 `neutral` job 的 run 上抛 `TypeError`。
+13. GUI 契约加了 GUI check 却没写采集器 → 每次发布必然失败。
+14. `--print-files` 的失败路径把 `docs_only=false` 写进文件列表。
+15. 日志摘要保留「所有 anchor 窗口的尾部」，仍可截掉最早的编译错误。
+16. 误提交 763 KB 的 `test-results/vitest.json`。
+17. `shas` 挪进 `findMixedCommits` 后，写 JSON 处仍引用它 → `ReferenceError`。
+18. **测试的清理 `rm(dirname(dirname(file)))` 删除了整个 `e2e/gui/artifacts`**——
+    全部已提交的 GUI 验收证据。测试自身是通过的，所以只有 `git status` 能发现。
+19. 证据守卫拒绝 `PENDING_REQUIRES_TN01 + error`，把 Windows 的真实 UI 失败
+    替换成守卫错误。
 
 ---
 
