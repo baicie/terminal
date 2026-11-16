@@ -147,7 +147,7 @@ describe('sending text needs a one-shot, expiring, user-bound approval', () => {
     const subject = gateway()
     const result = await subject.requestSendText('snippet-dock', 1, {
       sessionId: 'ssh-1',
-      text: 'npm test',
+      text: 'ls -la',
     })
     expect(result).toEqual({ approved: true, token: expect.stringMatching(/^approval-/) })
   })
@@ -167,7 +167,7 @@ describe('sending text needs a one-shot, expiring, user-bound approval', () => {
     const subject = gateway({ host: host({ selectedText: () => null }) })
     const result = await subject.requestSendText('snippet-dock', 1, {
       sessionId: 'ssh-1',
-      text: 'composed by the extension',
+      text: 'ls -la',
     })
     expect(result).toEqual({ approved: false, reason: 'no-selection' })
   })
@@ -177,15 +177,15 @@ describe('sending text needs a one-shot, expiring, user-bound approval', () => {
     const subject = gateway()
     const result = await subject.requestSendText('snippet-dock', 1, {
       sessionId: 'ssh-1',
-      text: 'npm test',
+      text: 'ls -la',
     })
     expect(result.approved).toBe(true)
     const token = result.approved ? result.token : ''
 
-    expect(subject.consumeApproval(token, 'snippet-dock', 1, 'npm test')).toEqual({
+    expect(subject.consumeApproval(token, 'snippet-dock', 1, 'ls -la')).toEqual({
       sessionId: 'ssh-1',
     })
-    expect(() => subject.consumeApproval(token, 'snippet-dock', 1, 'npm test')).toThrow(
+    expect(() => subject.consumeApproval(token, 'snippet-dock', 1, 'ls -la')).toThrow(
       /does not exist|already used/,
     )
   })
@@ -196,7 +196,7 @@ describe('sending text needs a one-shot, expiring, user-bound approval', () => {
     const subject = gateway()
     const result = await subject.requestSendText('snippet-dock', 1, {
       sessionId: 'ssh-1',
-      text: 'ls',
+      text: 'ls -la',
     })
     const token = result.approved ? result.token : ''
     expect(() => subject.consumeApproval(token, 'snippet-dock', 1, 'rm -rf /')).toThrow()
@@ -206,7 +206,7 @@ describe('sending text needs a one-shot, expiring, user-bound approval', () => {
     const subject = gateway()
     const result = await subject.requestSendText('snippet-dock', 1, {
       sessionId: 'ssh-1',
-      text: 'ls',
+      text: 'ls -la',
     })
     const token = result.approved ? result.token : ''
     expect(() => subject.consumeApproval(token, 'server-inspector', 1, 'ls')).toThrow()
@@ -216,7 +216,7 @@ describe('sending text needs a one-shot, expiring, user-bound approval', () => {
     const subject = gateway()
     const result = await subject.requestSendText('snippet-dock', 1, {
       sessionId: 'ssh-1',
-      text: 'ls',
+      text: 'ls -la',
     })
     const token = result.approved ? result.token : ''
     expect(() => subject.consumeApproval(token, 'snippet-dock', 2, 'ls')).toThrow()
@@ -227,7 +227,7 @@ describe('sending text needs a one-shot, expiring, user-bound approval', () => {
     const subject = gateway({ now: () => now })
     const result = await subject.requestSendText('snippet-dock', 1, {
       sessionId: 'ssh-1',
-      text: 'ls',
+      text: 'ls -la',
     })
     const token = result.approved ? result.token : ''
 
@@ -242,12 +242,12 @@ describe('sending text needs a one-shot, expiring, user-bound approval', () => {
     const subject = gateway({ now: () => now })
     const result = await subject.requestSendText('snippet-dock', 1, {
       sessionId: 'ssh-1',
-      text: 'ls',
+      text: 'ls -la',
     })
     const token = result.approved ? result.token : ''
 
     now += APPROVAL_TTL_MS - 1
-    expect(subject.consumeApproval(token, 'snippet-dock', 1, 'ls')).toEqual({
+    expect(subject.consumeApproval(token, 'snippet-dock', 1, 'ls -la')).toEqual({
       sessionId: 'ssh-1',
     })
   })
@@ -255,7 +255,7 @@ describe('sending text needs a one-shot, expiring, user-bound approval', () => {
   it('drops outstanding approvals for a deactivated extension', async () => {
     // After deactivate, a token minted before it must not still be redeemable.
     const subject = gateway()
-    await subject.requestSendText('snippet-dock', 1, { sessionId: 'ssh-1', text: 'ls' })
+    await subject.requestSendText('snippet-dock', 1, { sessionId: 'ssh-1', text: 'ls -la' })
     expect(subject.approvalCount()).toBe(1)
     subject.clearApprovalsFor('snippet-dock')
     expect(subject.approvalCount()).toBe(0)
@@ -269,7 +269,7 @@ describe('sending text needs a one-shot, expiring, user-bound approval', () => {
       () => 1_000,
     )
     grants.set('snippet-dock', grant())
-    await subject.requestSendText('snippet-dock', 1, { sessionId: 'ssh-1', text: 'a' })
+    await subject.requestSendText('snippet-dock', 1, { sessionId: 'ssh-1', text: 'ls -la' })
     subject.clearApprovalsFor('someone-else')
     expect(subject.approvalCount()).toBe(1)
   })
