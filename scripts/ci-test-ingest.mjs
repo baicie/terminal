@@ -113,6 +113,33 @@ export function parseTap(text) {
  */
 export function parseHarnessJson(raw) {
   const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+  // ## A layer that already judged itself keeps that verdict
+  //
+  // `gui-e2e-report.mjs` emits `{status, reason, …}` alongside the counts, and it can
+  // say `INCOMPLETE` (a spec file was unreadable) or `NOT_RUN`. Deriving the status from
+  // the counts alone turned `INCOMPLETE 5/5` into a clean `PASS` — the counts were real
+  // but partial, and "partial" is the whole point of the sixth status.
+  //
+  // The counts are still returned so the report can print them; `declaredStatus` travels
+  // with them so `collectLayers` can honour it instead of recomputing.
+  if (
+    parsed !== null &&
+    typeof parsed === 'object' &&
+    typeof parsed.status === 'string' &&
+    ['PASS', 'FAIL', 'SKIPPED', 'NOT_RUN', 'INCOMPLETE', 'BLOCKED'].includes(parsed.status)
+  ) {
+    const skipped = Number(parsed.skipped ?? 0)
+    const passed = Number(parsed.passed ?? 0)
+    const failed = Number(parsed.failed ?? 0)
+    return {
+      total: Number(parsed.total ?? passed + failed + skipped),
+      passed,
+      failed,
+      skipped,
+      declaredStatus: parsed.status,
+      declaredReason: parsed.reason ?? null,
+    }
+  }
   if (parsed !== null && typeof parsed === 'object' && Array.isArray(parsed.cases)) {
     let passed = 0
     let failed = 0
@@ -158,7 +185,8 @@ export const INGESTION_PLAN = [
   { layer: 'unit-rust', parser: 'libtest', glob: 'src-tauri/test-results/cargo-test.txt' },
   { layer: 'unit-team-server', parser: 'vitest', glob: 'packages/team-server/test-results/vitest.json' },
   { layer: 'scripts', parser: 'tap', glob: 'test-results/scripts.tap' },
-  { layer: 'command-e2e', parser: 'harness', glob: 'test-results/sftp-command-e2e.json' },
+  // The SFTP command-level suite runs `cargo test`, so its report is libtest text.
+  { layer: 'command-e2e', parser: 'libtest', glob: 'test-results/sftp-command-e2e.txt' },
   { layer: 'ipc-e2e', parser: 'harness', glob: 'test-results/sftp-ipc-e2e.json' },
   { layer: 'gui-e2e', parser: 'harness', glob: 'test-results/gui-e2e.json' },
   { layer: 'real-machine', parser: 'harness', glob: 'test-results/real-machine.json' },

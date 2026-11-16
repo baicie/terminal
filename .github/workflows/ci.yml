@@ -574,7 +574,19 @@ jobs:
       # transfer queue, or any GUI. Those are different layers with their own suites,
       # and conflating them is the mistake this comment exists to prevent.
       - name: SFTP command-level acceptance (real sshd)
-        run: node scripts/verify-install/sftp-command-e2e.mjs
+        env:
+          SFTP_E2E_REPORT: test-results/sftp-command-e2e.txt
+        run: |
+          mkdir -p test-results
+          node scripts/verify-install/sftp-command-e2e.mjs
+      - name: Upload SFTP command-level results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-sftp-command-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 7
 
   cargo-audit:
     # RustSec sweep over src-tauri/Cargo.lock, as a REAL GATE.
