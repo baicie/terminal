@@ -14,12 +14,14 @@ on:
         description: >-
           unsigned-qa publishes QA installers without any signature;
           updater-signed additionally requires TAURI_SIGNING_PRIVATE_KEY and
-          produces updater artifacts + latest.json; fully-signed is reserved.
+          produces updater artifacts + latest.json. A fully-signed mode is not
+          offered: it needs a Developer ID certificate, notarization credentials
+          and a Windows signing identity, none of which exist in this repository.
+          Offering it here would mean the run fails after the build started.
         type: choice
         options:
           - unsigned-qa
           - updater-signed
-          - fully-signed
         default: unsigned-qa
 
 permissions:
@@ -176,9 +178,18 @@ jobs:
               echo "OS code signing is still absent, so Gatekeeper/SmartScreen warnings remain."
               ;;
             fully-signed)
-              echo "Mode fully-signed is reserved for a later phase." >&2
+              # ## Kept as a guard, not as an option
+              #
+              # `fully-signed` is no longer in the dispatch `options:` list, because
+              # offering a mode that can never succeed means the operator discovers the
+              # failure after the build has started. The branch stays so that a dispatch
+              # through the API (which is not restricted by `options:`) or a future
+              # re-addition still fails here, early, instead of producing artifacts
+              # described as signed when they are not.
+              echo "Mode fully-signed is not available." >&2
               echo "It needs a Developer ID certificate, notarization credentials and" >&2
               echo "a Windows signing identity; none of those exist in this repository yet." >&2
+              echo "Producing installers now would misdescribe them as signed." >&2
               exit 1
               ;;
             *)
@@ -726,10 +737,21 @@ jobs:
               exit 1
             fi
             gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir published-updater
-            if ! jq -e '.version and .platforms' published-updater/latest.json >/dev/null; then
-              echo "latest.json is not a usable updater manifest" >&2
-              exit 1
-            fi
+            # ## Why not `jq -e '.version and .platforms'`
+            #
+            # That expression accepts every one of these, measured:
+            #
+            #   {"version":X,"platforms":{"darwin-aarch64":{"signature":"","url":""}}}
+            #   {"version":"9.9.9", …}                       (not this release)
+            #   {"version":X,"platforms":{…url:"https://example.com/evil"}}
+            #   {"version":"","platforms":{}}
+            #
+            # and the next thing the script does is clobber the live channel with
+            # whatever it read. `scripts/updater-manifest-check.mjs` checks the version
+            # against this tag, the exact platform set, non-empty signatures, https
+            # URLs scoped to this release, and distinct payloads.
+            VERSION="$VERSION" RELEASE_TAG="$RELEASE_TAG" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+              node scripts/verify-updater-manifest.mjs published-updater/latest.json
             platforms="$(jq -r '.platforms | keys | join(", ")' published-updater/latest.json)"
             echo "updater manifest published for: $platforms"
 
@@ -739,13 +761,22 @@ jobs:
             #
             #   1. the release is public (`--draft=false` succeeded);
             #   2. every asset answers a HEAD;
-            #   3. `latest.json` parses and lists its platforms;
+            #   3. `latest.json` passes the full manifest check above;
             #   4. **only then** does `updater-latest` point at it.
             #
             # Doing this earlier — as the previous version did, in the asset step
             # before publication — left a window in which the channel advertised a
             # version whose URLs 404'd. A client that polled during that window got a
             # failed update with no way to tell it from a real one.
+            #
+            # ## The clobber window, stated rather than hidden
+            #
+            # `--clobber` deletes the live manifest before writing the new one, so there
+            # is a brief interval with no manifest at the channel. It is unavoidable with
+            # a single asset name; what makes it safe is that the replacement has already
+            # been verified on the release (step 3), so the only failure mode left is a
+            # network error during the upload. If that happens the job is red and the
+            # operator re-runs it; nothing has advertised an unverified version.
             if gh release view updater-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               gh release upload updater-latest published-updater/latest.json --repo "$GITHUB_REPOSITORY" --clobber
             else
@@ -755,7 +786,14 @@ jobs:
                 --prerelease
               gh release upload updater-latest published-updater/latest.json --repo "$GITHUB_REPOSITORY" --clobber
             fi
-            echo "stable channel now points at $RELEASE_TAG"
+            # Read it back: the upload reporting success is not proof that the channel
+            # now serves the manifest we intended.
+            gh release download updater-latest --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir channel-check --clobber
+            if ! diff -q published-updater/latest.json channel-check/latest.json >/dev/null; then
+              echo "the channel manifest differs from the verified one" >&2
+              exit 1
+            fi
+            echo "stable channel now points at $RELEASE_TAG (read back and compared)"
             echo "Published $RELEASE_TAG with updater artifacts and signatures; OS code signing is still absent."
           else
             echo "Published $RELEASE_TAG as an unsigned QA prerelease (no OS code signing, no notarization, no updater signatures)."

@@ -162,3 +162,22 @@ test('a check with no matching job is rejected', () => {
   })
   assert.ok(problems.some(problem => problem.code === 'contract-missing-job'))
 })
+
+test('every release mode offered in the dispatch input can actually succeed', () => {
+  // The trap: `fully-signed` was selectable and always failed, so an operator chose it
+  // and only learned after the build started. A mode that cannot succeed must not be
+  // offered.
+  const workflow = readFileSync(path.join(ROOT, '.github/workflows/release.yml'), 'utf8')
+  const optionsBlock = /release_mode:[\s\S]*?options:\n((?:\s{10}- .+\n)+)/.exec(workflow)
+  assert.ok(optionsBlock, 'the release_mode input no longer lists options')
+  const offered = optionsBlock[1]
+    .split('\n')
+    .map(line => line.replace(/^\s*-\s*/, '').trim())
+    .filter(Boolean)
+
+  assert.deepEqual(offered.sort(), ['unsigned-qa', 'updater-signed'].sort())
+
+  // And the runtime guard still exists for the modes that are not offered: an API
+  // dispatch is not constrained by `options:`, so the early refusal must remain.
+  assert.match(workflow, /fully-signed\)/, 'the fully-signed guard must stay as defence in depth')
+})
