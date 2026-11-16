@@ -72,9 +72,30 @@ describe('registering the shipped providers', () => {
     const vault = fakeProvider()
     registerBuiltInProviders(registry, vault)
     expect(registry.get('vault')).toBe(vault)
-    expect(() => registerBuiltInProviders(registry, fakeProvider())).not.toThrow()
-    // The first registration wins: a second call must not swap the backend under
-    // a live connection.
+    expect(() => registerBuiltInProviders(registry, vault)).not.toThrow()
     expect(registry.get('vault')).toBe(vault)
+  })
+})
+
+describe('a different provider under the same id', () => {
+  it('takes over instead of being silently ignored', () => {
+    // Found by adversarial review. The first version kept the incumbent, so a second
+    // caller's provider was discarded and every later read answered from a backend
+    // nobody passed in — the load-order dependence the registry exists to remove,
+    // moved from two callers to two registrations.
+    const registry = new ProviderRegistry()
+    const first = fakeProvider()
+    const second = fakeProvider()
+    registerBuiltInProviders(registry, first)
+    registerBuiltInProviders(registry, second)
+    expect(registry.get('vault')).toBe(second)
+  })
+
+  it('direct registration still refuses a duplicate, so only the helper is quiet', () => {
+    // Keeping the two distinct means a bug that registers twice through the normal
+    // API is still loud.
+    const registry = new ProviderRegistry()
+    registry.register('vault', fakeProvider())
+    expect(() => registry.register('vault', fakeProvider())).toThrow(/already registered/)
   })
 })

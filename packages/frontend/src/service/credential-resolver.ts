@@ -85,20 +85,20 @@ export class SessionCredentialResolver {
   }
 
   /**
-   * Ask the provider why it cannot answer, when it can say.
+   * Ask *this* backend why it cannot answer, when it can say.
    *
    * A provider that only implements `isAvailable` still works: the state is then
    * unknown, and `unusable` is the honest answer — we know the vault cannot be
    * read and we do not know why, which is exactly what that state means.
    */
-  private async availability(): Promise<
+  private async availabilityOf(provider: SecretProvider): Promise<
     | { ok: true }
     | { ok: false, state: 'uninitialized' | 'locked' | 'unusable' }
   > {
-    if (this.provider.availabilityState) {
-      return this.provider.availabilityState()
+    if (provider.availabilityState) {
+      return provider.availabilityState()
     }
-    return (await this.provider.isAvailable())
+    return (await provider.isAvailable())
       ? { ok: true }
       : { ok: false, state: 'unusable' }
   }
@@ -111,20 +111,18 @@ export class SessionCredentialResolver {
       return { ok: true, credential: {} }
     }
 
-    // A reference with no readable backend is a failure, not an empty password:
-    // the user did store a secret and it must not silently vanish.
-    const availability = await this.availability()
-    if (!availability.ok) {
-      return {
-        ok: false,
-        reason: 'vault-unavailable',
-        state: availability.state,
-        message: VAULT_UNAVAILABLE_MESSAGES[availability.state],
-      }
-    }
-
-    // Dispatch happens *after* the availability check on purpose: a reference
-    // naming an absent backend must be reported as such, not as a locked vault.
+    // Dispatch FIRST, then ask that backend whether it can answer.
+    //
+    // The original order was the reverse, and it was wrong in a way that sends the
+    // user to the wrong place: `availability()` consults `this.provider` — always
+    // the vault, because that is what the connection path injects — so a reference
+    // naming another provider was judged by the vault's state. With a locked vault,
+    // a `system-keychain` reference was reported as "the vault is locked, unlock it",
+    // an instruction that cannot possibly fix it; the correct answer is that this
+    // build cannot read that provider and the reference must be re-bound.
+    //
+    // A reference with no readable backend is a failure, not an empty password: the
+    // user did store a secret and it must not silently vanish.
     const backend = this.providerFor(ref)
     if (backend === null) {
       return {
@@ -134,6 +132,16 @@ export class SessionCredentialResolver {
           `This host's credentials are stored with "${String(ref.provider)}", which ` +
           'this build cannot read. Re-save the credentials to store them here.',
         detail: `unsupported provider ${String(ref.provider)}`,
+      }
+    }
+
+    const availability = await this.availabilityOf(backend)
+    if (!availability.ok) {
+      return {
+        ok: false,
+        reason: 'vault-unavailable',
+        state: availability.state,
+        message: VAULT_UNAVAILABLE_MESSAGES[availability.state],
       }
     }
 

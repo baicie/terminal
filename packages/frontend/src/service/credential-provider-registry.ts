@@ -103,6 +103,19 @@ export class ProviderRegistry {
     this.providers.set(id, provider)
   }
 
+  /**
+   * Replace whatever is registered under this id.
+   *
+   * Deliberately separate from `register`, which refuses a duplicate on purpose. This
+   * exists for one case: the built-in registration helper being handed a *different*
+   * instance of the same provider (a test reset, or a future re-initialisation). The
+   * alternative — silently keeping the first — means the caller's provider is ignored
+   * and every later read answers from a backend nobody asked for.
+   */
+  replace(id: ProviderId, provider: RegisteredProvider): void {
+    this.providers.set(id, provider)
+  }
+
   get(id: string): RegisteredProvider | undefined {
     if (!isKnownProvider(id)) return undefined
     return this.providers.get(id)
@@ -211,7 +224,17 @@ export function registerBuiltInProviders(
   registry: ProviderRegistry,
   vault: RegisteredProvider,
 ): ProviderRegistry {
-  if (!registry.has('vault')) registry.register('vault', vault)
+  const existing = registry.get('vault')
+  if (existing === undefined) {
+    registry.register('vault', vault)
+    return registry
+  }
+  // Same instance: nothing to do, so repeated calls on the connection path are free.
+  if (existing === vault) return registry
+  // A *different* provider under the same id. Keeping the incumbent would make the
+  // caller's argument meaningless and every later read answer from a backend nobody
+  // passed in — the load-order dependence this registry exists to remove.
+  registry.replace('vault', vault)
   return registry
 }
 
