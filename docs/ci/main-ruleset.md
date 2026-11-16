@@ -191,3 +191,4 @@ gh pr close --delete-branch
 | 是否保留 `bypass_actors` 为空 | 当前为空 | 仓库所有者 |
 
 这些都需要 GitHub 管理员权限。本文档不假装 Agent 拥有该权限。
+
