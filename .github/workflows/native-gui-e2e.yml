@@ -182,14 +182,15 @@ jobs:
         run: node scripts/run-gui-e2e.mjs
         env:
           GUI_E2E_LOG_LEVEL: error
+      # Windows runs PowerShell, which has no `\` line continuation — the previous
+      # version of this step failed with `Missing expression after unary operator
+      # '--'` on every run, so the Windows layer never reached the aggregated report.
+      # One line, no `mkdir` (`gui-e2e-report.mjs` creates the output directory) and no
+      # `$RUNNER_OS` (`process.env.RUNNER_OS` is already the default, and `$RUNNER_OS`
+      # in PowerShell is an *unset* variable that expands to an empty string).
       - name: Summarise the GUI layer
         if: always()
-        run: |
-          mkdir -p test-results
-          node scripts/gui-e2e-report.mjs \
-            --artifacts e2e/gui/artifacts \
-            --out test-results/gui-e2e.json \
-            --platform "$RUNNER_OS"
+        run: node scripts/gui-e2e-report.mjs --artifacts e2e/gui/artifacts --out test-results/gui-e2e.json --platform windows
       - name: Upload GUI layer results
         if: always()
         uses: actions/upload-artifact@v4
