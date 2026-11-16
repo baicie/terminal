@@ -17,6 +17,8 @@ import {
   prepareHistoricalClient,
 } from './prepare-team-sync-a.mjs'
 
+import { computeMatrix } from './team-cross-version-matrix.mjs'
+
 const ROOT = path.resolve(import.meta.dirname, '../..')
 const TEAM_SERVER = path.join(ROOT, 'packages/team-server')
 const STATE_DIR = process.env.TEAM_SYNC_E2E_STATE_DIR
@@ -260,43 +262,9 @@ async function main() {
       tombstone,
       verify: verify === null ? null : { ok: verify.ok, details: verify.details },
     },
-    matrix: {
-      // A PASS here would mean the released client can keep syncing. The
-      // minimum-version policy deliberately stops it, so this stays FAIL even
-      // when the refusal itself is verified below.
-      TEAM_CROSS_VERSION_A_TO_B_VERIFIED: allOk
-        && verify?.details?.legacyRejected !== true
-        ? 'PASS'
-        : 'FAIL',
-      TEAM_CROSS_VERSION_DIRTY_ROW_UPGRADE: dirtyPathOk ? 'PASS' : 'FAIL',
-      TEAM_LEGACY_CLIENT_SAFE_REJECTION: verify?.ok === true
-        && verify?.details?.legacyRejected === true
-        ? 'PASS'
-        : 'FAIL',
-      TEAM_MIN_SUPPORTED_CLIENT_POLICY: verify?.ok === true
-        && verify?.details?.legacyRejected === true
-        ? 'PASS'
-        : 'FAIL',
-      TEAM_CROSS_VERSION_TOMBSTONE_CONSUMED: verify?.ok === true
-        && verify?.details?.legacyRejected !== true
-        && verify?.details?.deletedSnippetId !== null
-        ? 'PASS'
-        : 'FAIL',
-      TEAM_CROSS_VERSION_TOMBSTONE_RESURRECTION: verify?.ok !== true
-        || verify?.details?.legacyRejected === true
-        ? 'NOT_RUN'
-        : verify?.details?.deletedSnippetStillOnServerAfterHistoricalPush === true
-          ? 'DETECTED'
-          : 'NOT_DETECTED',
-      // Observed in the seed phase: the server was handed the exact payload the
-      // historical client sends on its next update and refused it.
-      TEAM_CROSS_VERSION_UPDATE_SAFETY: (seed?.legacyUpdateProbe?.conflictIds?.length ?? 0) > 0
-        ? 'PASS'
-        : 'FAIL',
-    },
-    failures: steps.filter(entry => !entry.ok).map(entry => entry.name),
-    // Facts a reviewer can check without reading the harness: what the old
-    // client was told, and what it did with it.
+    // The rules live in `team-cross-version-matrix.mjs` so a test can exercise them
+    // without starting PostgreSQL, a Nest server and two client processes.
+    matrix: computeMatrix({ allOk, dirtyPathOk, verify }),
     findings: findingsFrom(verify),
   }
   writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`)

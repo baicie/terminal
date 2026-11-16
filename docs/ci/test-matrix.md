@@ -32,7 +32,7 @@
 
 | 项 | 状态 | 原因 |
 | --- | --- | --- |
-| Team Sync 跨版本 | 诊断（`continue-on-error`）| 已有的真实失败：服务端把毫秒游标判为超水位返回全量窗口，老客户端 `INSERT` 撞 UNIQUE。这是**已知产品缺陷**，不是测试问题；不删测试、不伪造通过 |
+| Team Sync 跨版本 | 诊断（`continue-on-error`）| **状态已变化**：原记录的真实失败（服务端把毫秒游标判为超水位返回全量窗口，老客户端 `INSERT` 撞 UNIQUE）已被 ADR `docs/phase9-7/adr-legacy-sync-policy.md` 的**最低版本策略**取代——服务端现在对毫秒游标在任何读操作之前返回 `426 CLIENT_UPGRADE_REQUIRED`。<br>因此 `TEAM_CROSS_VERSION_A_TO_B_VERIFIED=FAIL` 是**设计上期望的结果**（旧客户端不应能继续同步），而 `TEAM_LEGACY_CLIENT_SAFE_REJECTION=PASS` 与 `TEAM_MIN_SUPPORTED_CLIENT_POLICY=PASS` 才是被验证的契约。<br>harness 的退出码只看 `steps`，不看这些 matrix 值，所以「matrix 里有 FAIL 但退出 0」是**正确的**，不是掩盖。这一段此前写成「已知产品缺陷仍在」，已更正 |
 | Windows GUI E2E | informational | 终端在 Windows runner 上不挂载（AGENTS.md:567 记录的既有未验证项）|
 | 真实发布流程 | NOT_RUN | 本轮未创建 tag/Release |
 | Merge Queue | NOT_RUN | 未启用 |
