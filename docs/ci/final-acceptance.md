@@ -22,14 +22,15 @@ CI_FOUNDATION_COMPLETE
 | --- | --- | --- |
 | `BRANCH_PROTECTION_ENABLED` | **PASS** | ruleset `27354680` active，四类拦截实测 |
 | `REQUIRED_CHECK_BLOCKS_MERGE` | **PASS** | 失败 required check 的 PR 合并被拒 |
-| `WINDOWS_GUI_E2E_READY` | **FAIL（有修复，未验证）** | 五层根因已修；19 个用例首次全绿，但汇总步骤的 shell 缺陷修复未复验 |
+| `WINDOWS_GUI_E2E_READY` | **PASS** | run `43857401389` job `133265193578`：10/10 步 success，19/19 用例，报告 `status: PASS` |
 | `TEST_REPORT_COVERAGE_READY` | **PARTIAL** | 6/10 层接入真实数据；4 层无计数产物 |
 | `RELEASE_QUALIFICATION_READY` | **PARTIAL** | 结构+加密校验已接；真实 tag 发布未执行 |
 | `UPDATER_RUNTIME_READY` | **PARTIAL** | 签名校验已接；运行时下载/安装 `NOT_RUN` |
 | `SIGNED_RELEASE_READY` | **NOT_RUN** | 无 OS 签名证书、无公证 |
 
-`CI_FOUNDATION_COMPLETE` 只表示**日常工程质量体系已完成**，不代表 Windows GUI、
-OS 代码签名或正式 Release 就绪。
+`CI_FOUNDATION_COMPLETE` 只表示**日常工程质量体系已完成**，不代表 OS 代码签名、
+Apple 公证或正式 Release 就绪。Windows GUI 的 PASS 指「用例能完整跑通并产出报告」，
+不指「已作为阻塞门禁」——`continue-on-error` 仍保留。
 
 ---
 
@@ -67,7 +68,7 @@ OS 代码签名或正式 Release 就绪。
 | --- | --- | --- |
 | `Driver isolation gate` | ✅ | 确定性、快速，安全契约 |
 | `macOS GUI E2E` | ✅ | 唯一有稳定通过记录的平台 |
-| `Windows GUI E2E (informational)` | ❌ | 用例已全绿（19/19），但汇总步骤的 shell 缺陷未验证修复；**本轮不动 `continue-on-error`** |
+| `Windows GUI E2E (informational)` | ❌ | 已可完整通过（10/10 步，19/19 用例）；`continue-on-error` 保留，见下 |
 | `Linux GUI E2E (informational)` | ❌ | 同上 |
 
 ---
@@ -186,7 +187,8 @@ workflow runs。真实 commit 验证：两个 GUI check 均被采集，`workflow
 
 | 缺口 | 阻塞 PR | 阻塞 Beta | 阻塞正式 Release | 需要什么 |
 | --- | --- | --- | --- | --- |
-| Windows GUI E2E 不稳定 | 否 | **是** | **是** | Windows runner 复验（修复已提交） |
+| Windows GUI E2E 稳定性 | 否 | 否 | **是** | 已有一次完整通过；需多次运行确认后才摘 `continue-on-error` |
+| Windows GUI 阻塞化 | 否 | 否 | 否 | 稳定性确认后移除 `continue-on-error` 与 `(informational)` 后缀 |
 | Windows 终端真实挂载 | 否 | **是** | **是** | Windows PTY/WebView 调查 |
 | OS 代码签名 | 否 | 否 | **是** | Apple Developer ID + Windows 签名证书 |
 | Apple 公证 | 否 | 否 | **是** | Apple 公证凭据 |
@@ -265,6 +267,21 @@ PR 事件按 merge ref 运行，GitHub 把 main 合进分支后再跑，所以�
 `native-gui-e2e.yml` 里并没有这一行（`git show origin/main:…` 有、
 `git show origin/ci/ci-final-02-windows-gui:…` 没有）。
 
+**修完第 11/12 项后，该 job 第一次完整通过**（run `43857401389`，job
+`133265193578`，head `d5f152a`）：10/10 步 success。汇总步骤的真实输出是
+
+```
+"layer": "gui-e2e",
+"total": 19,
+"passed": 19,
+"status": "PASS",
+"specs": 3,
+"runVerdict": "PASS"
+```
+
+这是本轮唯一一次同时满足三个条件：用例全过、汇总步骤跑通、`test-results/gui-e2e.json`
+真的带着 19 个用例的数据落到 artifact 里。PR #92 已 squash 合并为 `230ffe0`。
+
 
 ### 我自己引入并修掉的
 
@@ -283,10 +300,11 @@ PR 事件按 merge ref 运行，GitHub 把 main 合进分支后再跑，所以�
 ## 7. 明确不声称的事项
 
 - **不声称 CI 全绿**：结论以本轮 PR 各自的 Actions 结果为准。
-- **不声称 Windows GUI 已修复**：五层根因已逐层定位并修复，且 run `43852491675`
-  的 19 个用例第一次真实全绿；但同一 job 因汇总步骤的 shell 缺陷仍是红的，
-  Windows 层的报告文件从未产出。等 `1620a9a`（汇总步骤改为单行 PowerShell）的
-  Windows runner 结果，在那之前 `WINDOWS_GUI_E2E_READY` 不写 PASS。
+- **不把 Windows GUI 的单次通过读成「从此不会红」**：run `43857401389`
+  （`d5f152a`）是该 job 的**第一次**完整通过——10/10 步 success、19/19 用例、
+  报告 `status: PASS`，且汇总步骤真的产出了 `test-results/gui-e2e.json`。
+  但稳定通过记录此前为零，`continue-on-error` 与 `(informational)` 后缀
+  按任务书要求**保留**，等后续多次运行仍全绿再摘。
 - **不声称更新通道无竞态窗口**：`--clobber` 的非原子性已量化并缓解，未消除。
 - **不声称管理员无法绕过** ruleset。
 - **不把** `NOT_RUN` / `PARTIAL` / `EXTERNAL_ACTION_REQUIRED` 写成 PASS。
