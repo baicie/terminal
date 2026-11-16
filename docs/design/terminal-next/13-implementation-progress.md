@@ -117,7 +117,7 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | `f6fec4b` | Host/Key 损坏引用可清除 | 前端 2360/0；3 条在旧 gate 上红 |
 | `785ec1f` | 一次性凭据连接 | 前端 2388/0；16 条新测试 |
 | `e2c4500` | Context Dock 单占位者契约 | 前端 2400/0；9 条契约 + 3 条源码守卫（变异验证 1 红） |
-| （待提交） | Provider Registry + 按 provider 分派 | 18 条新测试；关键一条在旧 resolver 上红（变异验证）；生产路径已接线 |
+| `b41a66c` | Provider Registry + 按 provider 分派 | 11 条新测试；**变异验证 2 条在旧 resolver 上红**；生产路径 `session-credentials.ts` 已接线；顺带修复 cert 认证无证书时的空证书握手 |
 
 ---
 
