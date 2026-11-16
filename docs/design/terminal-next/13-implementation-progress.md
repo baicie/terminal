@@ -175,3 +175,57 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 理由：Gateway 本轮已建好，它定义了"扩展能做什么"。没有 Registry，就没有东西能拿到 Gateway 授予的 context —— 边界存在但无人使用，这是"代码存在、链路不通"的失败模式。Registry 是让 Gateway 真正被使用的最小下一步，且它不依赖任何外部设备或证书。
 
 Snippet Dock 紧随其后，因为它是设计指定的第一个内置扩展，且只依赖已有的 Snippet service 与 `terminal.read-selected`，不需要 AI、网络或新的 Rust 权限 —— 它是验证整条扩展链路（注册 → 激活 → 命令/菜单/Dock 注册 → 停用清理）的最短路径。
+
+---
+
+## 独立对抗性审查（2026-11-17）
+
+对本分支 8 个维度做了独立审查，每个维度由未参与开发的 agent 阅读真实代码，每条发现再由独立 skeptic 尝试推翻。**26 条候选发现，9 条确认为真实缺陷并已修复**，其余记录在此。
+
+### 已修复（9）
+
+| # | 严重度 | 缺陷 | 修复提交 |
+| --- | --- | --- | --- |
+| 1 | P1 | `resolve()` 的 availability 检查在 dispatch **之前**执行且硬编码 Vault，导致命名其他 provider 的引用被按 Vault 状态判断（Vault 锁定时让用户去解锁一个无关的 Vault） | `45356df` |
+| 2 | P2 | `registerBuiltInProviders` 一次性注册，后传入的不同 provider 被静默忽略 | `45356df` |
+| 3 | P1 | `requestSendText` 只检查「存在选中」，从不比对 `intent.text` 与选中文本 —— 扩展可提交任意文本获得审批 | `fdc5af8` |
+| 4 | P1 | 审批文本只绑定 32 位 FNV 哈希，而文本由扩展在两端提供，可构造碰撞 | `fdc5af8` |
+| 5 | P1 | `consumeApproval` 不重新授权、不重读可见 session —— 停用后审批仍可兑换 | `fdc5af8` |
+| 6 | P2 | 所有非 `already-used` 失败都重抛为 `approval-expired`，掩盖替换文本的攻击 | `fdc5af8` |
+| 7 | P1 | hysteresis band 被计两次（上/下各一个），实际窗口 2×band ≈ 34px，超过一次拖拽步长 → 无限抖动 | `f9d35ae` |
+| 8 | P1 | `selectionId` 是每 tab 常量，审批可跨选择重用 | `de34f5f` |
+| 9 | P1 | `snippets` 占位者可渲染但不可达 —— 无任何代码设置 `rightPanel = 'snippets'` | `de34f5f` |
+| 10 | P1 | `notify_removed` 注释承诺 panic 不中断 teardown，实际无 `catch_unwind` | `de34f5f` |
+| 11 | P2 | `sftp_is_live` 把 `Timeout` 当作死连接（上传拥塞会产生假死） | `0394dc4` |
+| 12 | P2 | `Err(_) => true` 把 `SSH_FX_NO_CONNECTION`/`CONNECTION_LOST` 当作活连接 | `0394dc4` |
+| 13 | P2 | `Replace` 分支先删条目再握手，失败后比修复前更差（完全没有条目） | `0394dc4` |
+| 14 | P2 | insert 前不检查 session 是否已移除，会重建悬空 Arc | `0394dc4` |
+| 15 | P2 | `buildContext` 不校验 manifest 声明的 capability —— manifest 形同装饰 | `435f2fa` |
+| 16 | P1 | `enable()` 未守卫 `deactivating`，停用中途再启用会启动第二次激活 | `435f2fa` |
+
+（部分发现合并为同一提交，上表按问题计。）
+
+### 未修（需要产品决策或更大改动）
+
+| 严重度 | 发现 | 为何未修 |
+| --- | --- | --- |
+| P2 | `withHysteresis` 的 `usableColsMin` 参数，唯一生产调用方从不传入 | 需要先决定布局是否应支持每调用方的 floor；当前行为（恒用 60）是安全的 |
+| P2 | band 保持整个 presentation 对，可能让 dock 停在 overlay 而 explorer 恢复 | 两轴独立 vs 成对保持是布局语义问题，需产品决策 |
+| P2 | `emit()` 不校验 handler 的 generation；回调 rejection 会标记**当前**激活失败 | 需要 generation 感知的 handler 身份，改动大于其他修复 |
+| P2 | 关闭 dock 不清除 SFTP host pin | 需决定「重开 dock 应回到哪个主机」 |
+| P2 | 捕获的 snippet 草稿没有消费方（Snippets 页面无 handoff） | 需要跨页面草稿传递的设计 |
+| P2 | SFTP 与 manager 接线的那一行没有测试 | 需要能在无 sshd 情况下构造真实注册路径的夹具 |
+
+### 审查过程中发现并修正的两个过程问题
+
+1. **审查 agent 在共享 worktree 留下的变异与探针被误提交。** 一个 agent 把
+   `src-tauri/src/sftp.rs` 的 `on_session_removed` 改成 `let _ = &listener; // MUTATION`，
+   另一个在 `manager_tests.rs` 追加了标注「will be reverted」的临时探针。旧的
+   `git add -A` 把它们一起带进了 `f44e0ef`。已用 `--force-with-lease` 重建该提交，
+   当前 `af4bbb5..HEAD` 对 `src-tauri/` 零改动。
+   **教训**：多个 agent 共享一个 worktree 时，提交前必须 `git diff --stat` 逐项核对，
+   不能假定工作区只有自己的改动。
+
+2. **测试编码了缺陷。** `capability-gateway.test.ts` 中 8 条断言用与夹具选择不符的
+   文本请求审批并期望成功 —— 它们断言的正是「任意文本可被审批」。已修正。
+   这与 Phase 10.3 记录的 `expect(privateKey).toBe('~/.ssh/id_ed25519')` 同类。
