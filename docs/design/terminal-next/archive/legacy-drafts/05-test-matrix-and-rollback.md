@@ -1,3 +1,5 @@
+> Archived on 2026-11-16. Canonical Terminal Next design is [`../../README.md`](../../README.md) and the numbered blueprint files. This file is retained for historical traceability only.
+
 # 05 — 测试矩阵、真机验收与回滚
 
 - 状态：**提案（Draft）**

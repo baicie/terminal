@@ -1,11 +1,18 @@
 # Terminal 项目待办事项
 
-> 基于设计文档 `docs/design.md` 整理的待办事项
-> 更新时间：2026-11-01（Phase 7 已合并进 main，`aba82ed..301cf04` 共 21 个提交，覆盖 P7.0–P7.4；6 份实机证据已由 run `41112206442` 重采并通过 evidence gate，manifest 指纹 `81ffa0bf…`。文中更早的历史指纹均已失效）
+> 历史待办与实现记录；新的 Terminal Next 产品/工程设计以 [`docs/design/terminal-next/README.md`](design/terminal-next/README.md) 为准。
+> 更新时间：2026-11-16（当前事实基线 `main=5f248631e6fff10e824de34cd73b2291fc8ab416`；主线 CI `43814394847`、Upgrade E2E `43814394934` 成功；最近 Native GUI E2E SHA `71542f5`，不替代当前 HEAD 证据）
 
 > 最新一次落盘的 6 份证据来自 CI run `41077965521`（源码指纹 `99b0879d…`，debug 冷启动 7207/4105/3740 ms、release gate 3691/3309/3548 ms、debug 认证矩阵 11/11、release 8/8、shell 交互 14+7）。此后 `aba82ed..3c147e4` 的 7 个提交再次改动了 fingerprinted 路径（`packages/frontend/src`、`src-tauri/src`、`scripts/*`、工作流），**当前工作树指纹需要重新计算，证据需要按 Phase 6.107 的 runbook 重采**；在重采完成前不得声称证据有效。
 
 ---
+
+## Terminal Next 当前复审待办（2026-11-16）
+
+- [ ] SessionManager 自然 EOF/远端断开通知 SFTP removal listener；重复 `sftp_connect` 改为幂等或结构化拒绝，见 [`docs/issue.md`](issue.md)。
+- [ ] 为 layout hysteresis 增加收缩/恢复对称回归和用户主动开关面板回归。
+- [ ] Host/SSH key CredentialRef 统一 none/valid/corrupt 三态；损坏引用仍可清除或重新绑定。
+- [ ] Native GUI SFTP spec 先验证 `GUI_E2E_HOME` 与 seed 数据库一致，再以远端 SHA/字节结果判定关闭 Dock 的传输。
 
 ## 一、当前开发状态概览
 

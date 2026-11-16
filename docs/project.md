@@ -16,15 +16,18 @@
 
 ## 当前进度与当前目标
 
-> 快照日期：2026-11-01；当前分支：`feat/phase7-reliability-productization`（`origin` = `https://github.com/baicie/terminal.git`）。
+> 快照日期：2026-11-16；事实基线：`main=5f248631e6fff10e824de34cd73b2291fc8ab416`；远端：`https://github.com/baicie/terminal.git`。
+>
+> Terminal Next 唯一产品与工程设计入口是 [`docs/design/terminal-next/README.md`](design/terminal-next/README.md)。本文件继续记录项目结构、实现状态和历史验收，不复制新的 UX 规范。后文旧 Phase/Release 段落是带日期的历史快照；当前证据、权限和源码计数以 canonical 现状审计及对应 CI/evidence 文件为准。
 
 | 项目 | 状态 |
 | --- | --- |
-| 当前目标 | 🔄 先完成 macOS 人工物理键盘、中文 IME、Option/dead key 与日常交互验收；Windows/Pageant/串口因暂无设备保留待验证 |
-| 当前进度 | Phase 6.20/6.21 建立首次可靠终端 < 10 秒门禁；Phase 6.57-6.69 完成会话生命周期、自动重连、Shell Integration、串口清理与 Linux 验收 runner 加固；Phase 6.70 修复慢速 workspace 恢复与启动兜底竞争（Issue #104）；Phase 6.71 统一 xterm、移动端快捷键栏和命令总线的主动输入接管（Issue #105）；Phase 6.72 让手动输入探针可临时切换 ASCII 输入源并在验收后恢复原输入源（Issue #106）；Phase 6.73 收紧 shell probe 的 dialect 声明，fish/sh 在有独立 dialect 前 fail-fast（Issue #107）；Phase 6.74 让认证阶段的瞬时网络错误继续自动重连，同时保留凭据错误的终止语义（Issue #108）；Phase 6.77 修复同步状态监听器重入时覆盖新手动重连 promise 的会话生命周期竞态（Issue #111）；Phase 6.78 修复 WebKit 延迟 input 重叠去重并增加 composition/paste 标记清理（Issue #26）；Phase 6.79 修复首连 outage smoke 在 sshd 尚未完全停止时启动应用的 fixture 竞态（Issue #112）；Phase 6.80 增加 host-wake fallback timer 心跳与并发诊断（Issue #113）；Phase 6.81 增加独立 loopback renderer heartbeat 与严格契约（Issue #113）；Phase 6.82 增加产品 host-wake 的 timer 漂移与 Page Lifecycle 兜底；Phase 6.83 收紧 host-wake reporter 的超时/取消串行化并让 renderer heartbeat 可重试（Issue #113）；Phase 6.84 将冷启动报告拆分为 `windowReady`/`terminalReady`，严格终端模式必须提供端到端 marker（Issue #115）；Phase 6.85 增加本地 per-run PTY marker runner（Issue #116）；Phase 6.86 修复 host-wake 延迟恢复 continuation 的 generation 竞态（Issue #117）；Phase 6.87 隔离 local cold-start 环境并为 app/AX 探针增加 SIGKILL 回收（Issue #115/#116）；Phase 6.88 让挂起的事件注册等待可随会话关闭取消，保护前端启动取消代际（Issue #118）；Phase 6.89 修复 host-key 预检错误分类与 route 失效（Issue #119）；Phase 6.90 补齐证据源码指纹的构建配置覆盖（Issue #120）；Phase 6.91 修复延迟 workspace 恢复兜底（Issue #121）；Phase 6.92 收紧 cold-start 异步 deadline（Issue #122）；Phase 6.93 修复 WKWebView Option-as-Meta 输入双发（Issue #123）；Phase 6.94 修复取消 host 查询后的 loading 状态（Issue #124）；Phase 6.95 让 host-wake fixture 可取消（Issue #113）；Phase 6.96-6.97 收口首次 SSH 共享预算、IPC 毫秒边界和迟到 session 回收（Issue #119/#126/#127）；Phase 6.98-6.100 完成启动 loader deadline、probe loader deadline 和移动端首屏入口（Issue #128-#130）；Phase 6.101 修复 SSH cancellation Notify 丢唤醒竞态（Issue #118 补充）；Phase 6.103 固定前端测试并发上限（Vitest `maxWorkers: 4`），消除全量并行下 1 秒查询窗口的偶发超时（Issue #131）。Node 24 前端 126 文件/1142 项与 Rust 221 单测 + 3 集成测试、Clippy、205 项脚本测试通过。当前源码与自动化测试已验证，但 macOS 锁屏期间不能采集本轮 outage/wake 实机证据；人工键盘/IME、真实合盖唤醒、Windows Agent/Pageant/PTY 与串口硬件仍未验收。 |
-| 最新进展（Phase 7） | 2026-10-31 至 2026-11-01 的 7 个提交把「静默失败」逐处改成「可见失败」：SFTP 传输队列状态机化（并发上限 3 不可突破、终态不可再转换、取消语义如实区分）、同步导入事务化与失败可见、Team Server 离线队列条件写与并发竞争修复（含 `Share(teamId, updatedAt)` 索引迁移）、Rust 端口转发 bind 失败不再假报 active 且 writer 超时不再永久注销、脚本层去掉 macOS 专属工具的 import-time 解析修好 Linux/Windows CI、`pnpm verify` 的 scripts 组改为通配收集。详见下方 Phase 7。 | ✅ **证据已重采**：Phase 7 合并后由 run `41112206442`（sha `d530aac`）的 macOS job 重新产出，manifest 指纹 `81ffa0bf…`，`check-verification-evidence.mjs` => passed for 6 current evidence file(s)。下列 debug/release 数字属更早一轮（指纹 `99b0879d…`）的历史记录。debug `d7a4dd4c…`：本地冷启动 6654/2127/1225 ms、远程 bash prompt 4575 ms（均 `readyAt: terminal`）、13-case SSH 13/13（首连 985–9125 ms）、bash/zsh shell 14/14 + 真实 SSH 7/7。release `1e68ba73…`：本地冷启动 1827/1319/1421 ms、远程 prompt 3069 ms、shell 14/14 + 真实 SSH 7/7、10-case 认证矩阵 10/10（首连 775–4214 ms）。旧 `4368d6c8…`/`de8e49cb…`/`ab209317…` 记录均为历史。人工物理键盘/IME、真实合盖唤醒与 Windows Agent/Pageant/PTY/串口硬件仍待验收。 |
-| 输入验收增量 | Phase 6.24 最终源码构建下严格 30 轮 CGEvent 通过，全部回读 `617364`、零重发且原输入源恢复；这不是人工键盘验收。Phase 6.25 修复组合态 Escape 不写入 PTY并增加 composition 证据校验；Phase 6.26 证明 xterm 到前端输入 FIFO 的协议编码；Phase 6.27 于 2026-10-10 完成真实 Tauri/WKWebView + local PTY 的 SGR mouse、bracketed paste、raw X10 三 case 精确回读；Phase 6.31 当前工作树完成 bash/zsh 各七 case、14/14 全绿，另有默认 `/bin/sh` loopback SSH 7/7；Phase 6.52 为手动 IME 增加 TIS 非 ASCII 输入源资格门禁并记录 id/type，但没有把人工输入结果标记为通过。中文 IME 自动注入未触发真实 composition。逐轮 CGEvent 结果见 [`验收记录`](verification/2026-09-22-macos-input-probe.json)，raw probe 结果见 [`2026-10-10-macos-raw-input.json`](verification/2026-10-10-macos-raw-input.json)，当前 shell 交互结果见 [`2026-10-11-macos-shell-interaction-current.json`](verification/2026-10-11-macos-shell-interaction-current.json)，旧二进制历史记录见 [`2026-10-11-macos-shell-interaction-probe.json`](verification/2026-10-11-macos-shell-interaction-probe.json)，此前失败边界见 [`阻塞记录`](verification/2026-10-10-macos-raw-input-blocked.json)。 |
-| 下一验证目标 | 完成 macOS 人工物理键盘 30 轮、中文 IME、Option/dead key、vim/nano 交互，以及真实合盖休眠/唤醒、VPN/蜂窝切换；Windows OpenSSH Agent/Pageant/PTY 与串口硬件因暂无设备保持未验证。host-wake 自动化只证明应用内恢复协议，不替代上述实机验收。 |
+| 当前目标 | 🔄 以现有 UX-1 工作台和可靠性底座为事实基础，完成当前 HEAD 的 Native GUI/IME/跨平台证据，并按 Terminal Next 统一设计推进 UX-2a；UX-2b/UX-3/UX-4 仍为独立设计阶段 |
+| 当前进度 | 当前 main 已合入 UX-1a/b/c、F0、SFTP 生命周期与真实产品 E2E、Vault 读取审计、升级恢复和 CI/Release Qualification。主线 CI `43814394847` 与 Upgrade E2E `43814394934` 成功；最近 Native GUI E2E 成功 SHA 为 `71542f5`，不能替代当前 HEAD 的 GUI 证据。Windows 完整升级、Linux AppImage stock、正式签名/公证、Identifier 迁移、物理键盘/IME 等仍按证据等级单独记录。 |
+| 设计治理 | ✅ 统一 Terminal Next 规格见 [`docs/design/terminal-next/README.md`](design/terminal-next/README.md)，旧 Draft 已归档；真实安全、迁移、CI、发布和 GUI 证据保留在原目录 |
+| 下一验证目标 | 当前 HEAD Native GUI/窗口/DPI/IME/物理输入矩阵；UX-2a 连接时保存、Vault 状态、清除/切换认证；不把 AI、系统 Keychain 或正式 Updater 提前写成已完成 |
+
+> Terminal Next 复审补充：当前 Core 每个 SplitGroup 为双 Pane；自然 EOF/远端断开到 SFTP removal listener、重复 `sftp_connect`、hysteresis 双向恢复、损坏 CredentialRef 清除和 GUI SFTP profile 隔离仍按 canonical 规格列为待修/待测，不因历史 Phase 段落中的“生命周期完成”而提前标成 PASS。
 
 > 2026-10-28：Phase 6.103 把前端 Vitest 并行度固定为 4 个 worker（Issue #131），避免 jsdom worker 抢占 CPU 让 1 秒异步查询窗口在并行全量运行时偶发超时，不改用例超时与断言。本轮 `pnpm verify` 自动化分组全绿：前端 126 文件/1142 项、Team Server 25 文件/103 项、Rust 221 单测 + 3 集成测试、Node 脚本 205 项、550 个生产文件行数门禁与 bundle budget（initial gzip 129.55 KB、total gzip 553.15 KB）。当前 release binary 已按源码构建，但 evidence gate 仍有 9 项失败：4 份 debug 证据仍记历史源码指纹 `de8e49cb…`（当前工作树 `534405ec…`）、cold-start/release 缺 3 次 terminal marker、SSH 矩阵 case 集合不完整，以及 release 证据记录的旧 hash 与当前 binary 不一致；解锁 macOS 后按当前源码重采。
 
@@ -1285,7 +1288,7 @@ REAL_SQLITE_IMPORT_E2E              = PASS
 
 **两项 PARTIAL 的理由**：`REPLACE_REQUIRES_EXPLICIT_POLICY` —— 补「确认替换」对话框
 比不补更糟（确认清空 = 删可用凭据；确认仍 COALESCE = 对话框是谎言），须先由 UX-2a
-的凭据状态机定义语义；已写进 `docs/design/terminal-next/01-credential-keychain-vault.md` §8。
+的凭据状态机定义语义；已写进 `docs/design/terminal-next/archive/legacy-drafts/01-credential-keychain-vault.md` §8。
 `LEGACY_BACKUP_COMPATIBILITY` —— 改新版本无法改变已发布旧版本的解析行为，能证明的
 只是「新版本拒绝 version > 1e9」，不是「旧版本安全」。
 
@@ -1440,7 +1443,7 @@ UX-1c 引入的，但 Dock 让它们从「偶尔」变成「一天几十次」�
 - ✅ **证据链复核有效**：HEAD 实算指纹 = manifest = `8129680b…`（`MATCH: true`）；
   manifest 的 commit `51599bca` 虽非 main 祖先，但与 main 在**全部指纹路径上内容一致**
 - 🔴 **本仓库没有 LLM Agent**：`src-tauri/src/agent.rs` 是 **SSH Agent 协议（RFC 4716）**；
-  全仓无 `rig-core`/`openai`/`anthropic`/`tool_call`/`composer`；`04-rust-rig-ai.md` 是 Draft。
+  全仓无 `rig-core`/`openai`/`anthropic`/`tool_call`/`composer`；`docs/design/terminal-next/archive/legacy-drafts/04-rust-rig-ai.md` 是 Draft。
   任务书 12 个竞态场景中 8 个、8 项安全检查中 3 项无对象，判 **NOT_APPLICABLE**（非 NOT_RUN）
 - 🔴 **P0-1 IPC 秘密读取面**：`vault_get(任意 key)` + `fs:allow-read/write-text-file`
   **无 `fs:scope`** + `sql:allow-*`。`session-lock-safety.md` §3 只记了 plugin-sql，
@@ -1563,7 +1566,7 @@ UX-1c 引入的，但 Dock 让它们从「偶尔」变成「一天几十次」�
 
 ## 问题追踪
 
-详细问题列表请查看 [docs/issue.md](docs/issue.md)。
+详细问题列表请查看 [docs/issue.md](issue.md)。
 
 ### 关键问题
 

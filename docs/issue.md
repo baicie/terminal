@@ -1,9 +1,21 @@
 # Terminal 项目 Issues 追踪
 
-> 基于 2026-03-19 代码审查生成
-> 对应文档：`docs/design.md` 和 `docs/todo.md`
+> 基于历史代码审查与持续验收记录维护。
+> 当前 Terminal Next 产品/架构设计以 [`docs/design/terminal-next/README.md`](design/terminal-next/README.md) 为准；本文件保留问题、复现、修复与未验证边界。
+> 对应状态索引：`docs/project.md`、`docs/todo.md`
 
 ---
+
+## Terminal Next 当前复审待办（2026-11-16）
+
+以下条目来自当前 `main=5f248631…` 的设计复审，尚未在本设计 PR 中修改运行时代码；执行入口和验收口径见 [`docs/design/terminal-next/01-current-state-and-gap.md`](design/terminal-next/01-current-state-and-gap.md)、[`04-ux1-terminal-workspace.md`](design/terminal-next/04-ux1-terminal-workspace.md) 和 [`10-pr-implementation-plan.md`](design/terminal-next/10-pr-implementation-plan.md)。
+
+| 状态 | 差距 | 当前证据/后续边界 |
+| --- | --- | --- |
+| 📋 待修 | 自然 EOF/远端断开 completion cleanup 未通知 Session removal listener；重复 `sftp_connect` 会覆盖同一 `session_id` 的旧 entry。`manager_tests.rs::every_removal_path_notifies_listeners` 的注释声称已覆盖 completion cleanup，函数体只测了显式移除与 shutdown | `src-tauri/src/session/manager.rs`、`src-tauri/src/sftp.rs`；用 `simulate_natural_eof` 补第三段断言，补幂等/`AlreadyConnected` 和迟到回调测试 |
+| 📋 待测 | layout hysteresis 的收缩/恢复对称性和用户主动开关面板的交互边界 | `packages/frontend/src/layout/layout-hysteresis.ts`；需窄化→恢复→再窄化与变异测试 |
+| 📋 待修 | 损坏/未知 CredentialRef 不能被 Host/SSH key mapper 压成“无引用”；Clear 入口不能依赖解析成功 | `packages/frontend/src/components/host-list/host-dialog.tsx`、`service/database/ssh-key-credentials.ts`；需三态 ref 和安全清除/rebind |
+| 📋 待测 | GUI SFTP seed 数据库与每个 spec 的 `GUI_E2E_HOME` 必须是同一隔离 profile；关闭 Dock 的证据必须包含远端 SHA/字节结果 | `e2e/gui/fixtures/seed-sftp-host.mjs`、`scripts/gui-e2e-platform.mjs`；在 Level 3 重采前保持未验证 |
 
 ## 一、关键问题 (Critical)
 
