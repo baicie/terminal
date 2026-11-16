@@ -149,16 +149,18 @@ export class CapabilityGateway {
     if (resolved.failed) {
       throw new GatewayError('extension-failed', 'This extension is in a failed state.')
     }
-    if (!resolved.enabled) {
-      throw new GatewayError('extension-disabled', 'This extension is disabled.')
-    }
+    // Staleness is checked *before* enablement. A callback captured under an older
+    // activation is stale whether or not the extension is now enabled again — and
+    // during a deactivate both are true at once, where "stale" is the accurate
+    // explanation and "disabled" would suggest re-enabling would fix it.
     if (resolved.generation !== generation) {
-      // Deactivated — and possibly reactivated — since this callback was captured.
-      // Acting on it would write into a context that no longer exists.
       throw new GatewayError(
         'stale-generation',
         'This callback belongs to a previous activation of the extension.',
       )
+    }
+    if (!resolved.enabled) {
+      throw new GatewayError('extension-disabled', 'This extension is disabled.')
     }
     if (!resolved.capabilities.includes(capability)) {
       throw new GatewayError(
