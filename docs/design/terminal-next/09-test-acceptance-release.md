@@ -88,7 +88,7 @@ CI 绿、源码测试绿、打包成功都不能单独提升到 Level 4。
 - Upgrade E2E `43814394934`：当前成功，包含 macOS 当前版本升级/恢复、Vault app-level、磁盘满、历史升级、Linux DEB、AppImage replacement、Windows profile isolation preflight、临时 updater runtime。
 - Native GUI E2E 最近成功 run `43811877940` 对应 `71542f5`，不能作为当前 `5f24863` 的 GUI 证据；当前设计 Draft 不修改代码，最终实施 PR 必须按最终 SHA 重采。
 - SFTP GUI/命令级 E2E、staged transfer、Session Claim/Registry 相关实现已合入主线；当前 GUI 证据仍需确认 seed fixture 与每个 spec 的 `GUI_E2E_HOME` 使用同一数据库，且上传中关闭 Dock 的通过标准必须包含远端 SHA/字节结果，而不只是 Session 未关闭。每个新源代码改动仍会使指纹证据按仓库规则失效。
-- 当前 main protection ruleset 要求单一聚合 context `required`；Native GUI E2E 不在 required set。PR 绿灯不能推导 Native GUI 已通过，最终验收必须显式读取 Level 3 结果。
+- 当前 main protection ruleset 要求单一聚合 context `required`；Native GUI E2E 不在 required set。PR 绿灯不能推导 Native GUI 已通过，最终验收必须显式读取 Level 3 结果。仓库侧证据见 [`../../ci/final-acceptance.md`](../../ci/final-acceptance.md)：`WINDOWS_GUI_E2E_READY=FAIL（有修复，未验证）`、`LINUX GUI E2E` 同为 informational、`SIGNED_RELEASE_READY=NOT_RUN`。
 - macOS/Windows 正式签名、公证、正式 Updater key、Identifier 迁移和部分平台实机项仍是 Level 4 的独立边界。
 
 ## 4. 证据冻结流程
