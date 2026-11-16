@@ -121,6 +121,22 @@ export function collectLayers({ root, plan = INGESTION_PLAN, blocked = [], commi
       )
       continue
     }
+    // ## A layer that judged itself keeps that verdict
+    //
+    // `gui-e2e-report.mjs` emits `INCOMPLETE` when a spec file was unreadable. Recomputing
+    // the status from the counts turned that into `PASS` — the counts were real but
+    // partial, which is exactly the distinction the sixth status exists for.
+    if (counts.declaredStatus === 'INCOMPLETE' || counts.declaredStatus === 'NOT_RUN') {
+      entries.push(
+        incompleteEntry(layer.id, counts.declaredReason ?? 'the layer reported itself incomplete', {
+          commitSha,
+          runId,
+          platform,
+          artifact: source.glob,
+        }),
+      )
+      continue
+    }
     entries.push(
       layerEntry(layer.id, {
         ...counts,
@@ -129,6 +145,7 @@ export function collectLayers({ root, plan = INGESTION_PLAN, blocked = [], commi
         platform,
         artifact: source.glob,
         runner: source.parser,
+        reason: counts.declaredReason ?? null,
       }),
     )
   }
