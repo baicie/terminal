@@ -224,7 +224,7 @@ mock-runtime 可覆盖命令集合、app-level 权限数为 0、以及缺口本�
 
 | 门禁 | 结果 |
 | --- | --- |
-| Gate scripts (`node --test`) | **797 项 / 793 pass / 4 skipped / 0 fail** |
+| Gate scripts (`node --test`) | **800 项 / 796 pass / 4 skipped / 0 fail** |
 | Rust (`cargo test --lib`) | **434 passed / 0 failed / 9 ignored** |
 | Rust (`--features gui-e2e`, IPC) | **7 passed / 0 failed** |
 | GUI 证据完整性（新增） | **6 项** |
@@ -350,6 +350,8 @@ Windows artifact 里。
 | S4 | P1 | 发布门禁在本仓库永远无法通过 | GUI check 标 `pr-evidence` 但 `release-facts` 只读 `commits/{sha}/check-runs`，而 GUI workflow 无 tag 触发 → 绿 tag 上必然 `check-missing-pr-evidence` ×2 |
 | S5 | P1 | `--print-files` 失败路径污染文件列表 | `catch` 硬编码 `console.log('docs_only=false')` 到 stdout，而该模式下 stdout 是纯路径列表 |
 | S6 | P2 | 未预期平台被当作硬失败 | 注释写「not fatal」，代码却 `push` 进 `problems` → 加了 `windows-aarch64` 的 manifest 被整体拒绝 |
+| S7 | P2 | 日志摘要仍可截掉最早的编译错误 | 真实错误在第一行、后面 300 行 runner `##[error]` 时：`contains the real error? false` |
+| S8 | P2 | `missingScenarios`/`notPassed` 在真实路径上永远为空 | 采集器两个分支都返回 `[]`，judge 的两条规则在发布路径不可能触发 |
 
 ### S4 的修复与验证
 
