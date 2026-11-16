@@ -5,14 +5,12 @@
  * re-renders when it changes. This hook is that adapter and nothing more — it does
  * not own extension state, decide what is enabled, or implement any extension.
  *
- * ## Selection is not wired yet, and says so
+ * ## Selection comes from the active terminal, not from a guess
  *
- * `selectedText()` returns `null` because there is no global surface that reports the
- * terminal's current selection. That is the safe default — an extension cannot read
- * text nobody registered — but it means `captureSelection` returns false today. The
- * alternative, publishing a selection from somewhere that only *approximates* what
- * the user highlighted, would hand extensions text the user did not choose, which is
- * the specific thing `terminal.read-selected` exists to prevent.
+ * `selectedText()` reads what `TerminalContainer` published via
+ * `publishTerminalSelection`, which is `term.getSelection()` on the *active* tab — the
+ * same call the context menu's Copy uses. A background tab publishes nothing, so an
+ * extension cannot read text the user highlighted on a host they have since left.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -25,6 +23,7 @@ import {
   type SnippetDockHandle,
 } from '@/features/extensions/snippet-dock-extension'
 import { useAppStore } from '@/store/app'
+import { currentTerminalSelection } from '@/features/terminal/services/terminal-selection'
 
 export interface ExtensionRuntime {
   /** Non-null only while `snippet-dock` is active. */
@@ -52,7 +51,20 @@ export function getExtensionRegistry(): ExtensionRegistry {
       // The active tab is the session the user can see. Not "the last session that
       // connected": a background reconnect must not become the target of a capture.
       visibleSessionId: () => useAppStore.getState().activeTabId ?? null,
-      selectedText: () => null,
+      selectedText: () => {
+        const published = currentTerminalSelection()
+        if (!published) return null
+        // The tab the user is looking at must be the tab that published it. Two
+        // independent sources agreeing is what makes "currently selected" true
+        // rather than merely recent.
+        const activeTabId = useAppStore.getState().activeTabId
+        if (!activeTabId || published.sessionId !== activeTabId) return null
+        return {
+          text: published.text,
+          selectionId: `selection-${activeTabId}`,
+          sessionId: published.sessionId,
+        }
+      },
     },
   )
   registry.attachGateway(gateway)
