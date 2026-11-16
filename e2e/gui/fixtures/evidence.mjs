@@ -82,10 +82,13 @@ export function binaryInfo() {
 /**
  * Persist one case's evidence.
  *
- * `verdict` is one of PASS / FAIL / PARTIAL / NOT_RUN and is written verbatim —
- * this module never upgrades an outcome. When the caller omits it, the verdict is
- * derived from whether an `error` was supplied, so a spec that forgets to pass one
- * cannot produce a PASS for a failing case.
+ * `verdict` is written verbatim — this module never upgrades an outcome. The canonical
+ * values are PASS / FAIL / PARTIAL / NOT_RUN; a spec may use a more specific **non-passing**
+ * label (e.g. `PENDING_REQUIRES_TN01`) when it records a known historical defect, and the
+ * guard below permits that as long as the verdict is not claiming success.
+ *
+ * When the caller omits `verdict`, it is derived from whether an `error` was supplied, so
+ * a spec that forgets to pass one cannot produce a PASS for a failing case.
  *
  * `extra` carries per-case measurements. It is spread into the record rather than
  * nested, and it is `redact`ed like `notes`: a measurement that happens to include a
@@ -95,11 +98,21 @@ export async function writeEvidence(
   caseId,
   { verdict, terminal, window, command, notes, error, extra } = {},
 ) {
-  // No caller may choose a softer verdict than the outcome it is recording. A case
-  // that errored cannot be reported as anything but FAIL, and the default when
-  // neither is supplied is NOT_RUN rather than PASS.
-  const resolved = error ? 'FAIL' : (verdict ?? 'NOT_RUN')
-  if (error && verdict && verdict !== 'FAIL') {
+  // ## The guard is against *claiming success*, not against specific labels
+  //
+  // The original rule was `error ⇒ verdict must be FAIL`. That rejected
+  // `PENDING_REQUIRES_TN01`, which is a legitimate non-passing label for a known
+  // historical defect — and it did so *after* the run had already failed, so the
+  // evidence write threw and the real failure was replaced by a guard error:
+  //
+  //   Error: writeEvidence(e2e-02): verdict PENDING_REQUIRES_TN01 contradicts the recorded error
+  //
+  // The danger this guard exists for is a PASS written over a failure. So: an error may
+  // never accompany a passing verdict, and any other explicit non-passing label is
+  // allowed. A verdict that claims success is the only one rejected.
+  const PASSING = new Set(['PASS', 'OK', 'SUCCESS'])
+  const resolved = error ? (verdict ?? 'FAIL') : (verdict ?? 'NOT_RUN')
+  if (error && verdict && PASSING.has(String(verdict).toUpperCase())) {
     throw new Error(
       `writeEvidence(${caseId}): verdict ${verdict} contradicts the recorded error`,
     )

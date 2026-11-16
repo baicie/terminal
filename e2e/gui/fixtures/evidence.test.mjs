@@ -18,11 +18,28 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-/** Read the record the writer just produced. */
+/**
+ * Read the record the writer just produced, then clean up after it.
+ *
+ * ## The cleanup once deleted the repository's committed evidence
+ *
+ * It was `rm(path.dirname(path.dirname(file)))`. For `writeEvidence('e2e-test-error')`
+ * the file is `e2e/gui/artifacts/e2e-test-error/<case>.json`, so two `dirname`s reach
+ * `e2e/gui/artifacts` — and `recursive: true` removed **every committed evidence file**
+ * in the repository. Measured: running this test alone deleted `e2e-01/`, `e2e-02/`,
+ * `e2e-03/` and `run-summary.json`.
+ *
+ * The fix removes only the case directory the call created, and only when the id is
+ * one this test generated (never a real case).
+ */
 async function written(caseId, options) {
+  if (!caseId.startsWith('e2e-test-')) {
+    throw new Error(`this helper only creates throwaway cases; got ${caseId}`)
+  }
   const file = await writeEvidence(caseId, options)
   const record = JSON.parse(await readFile(file, 'utf8'))
-  await rm(path.dirname(path.dirname(file)), { recursive: true, force: true })
+  // `file` is <artifacts>/<caseId>/<caseId>.json — one dirname is the case directory.
+  await rm(path.dirname(file), { recursive: true, force: true })
   return record
 }
 
@@ -84,4 +101,25 @@ test('redact leaves ordinary text alone', () => {
   // A filter that mangles every string is a filter people turn off.
   const text = 'dock width 300px, content 276px, presentation single'
   assert.equal(redact(text), text)
+})
+
+test('the test helper refuses a real case id', async () => {
+  // Guards the cleanup path: `written('e2e-02')` would build a real case directory and
+  // then delete it — and an earlier version's two-`dirname` cleanup deleted the whole
+  // artifacts directory. Only throwaway ids may flow through the helper.
+  await assert.rejects(() => written('e2e-02', { verdict: 'PASS' }), /only creates throwaway cases/)
+})
+
+test('the artifacts directory survives a full run of this test file', async () => {
+  // Direct assertion on the hazard that actually happened: a single test file run wiped
+  // every committed evidence file. Reading the directory afterwards is cheap and makes
+  // the regression impossible to reintroduce silently.
+  const { readdir } = await import('node:fs/promises')
+  const artifacts = path.join(import.meta.dirname, '..', 'artifacts')
+  const entries = await readdir(artifacts)
+  assert.ok(entries.length > 0, `the artifacts directory is empty: ${artifacts}`)
+  // The committed cases must still be there.
+  for (const expected of ['e2e-01', 'e2e-02', 'e2e-03']) {
+    assert.ok(entries.includes(expected), `${expected} is missing from the artifacts directory`)
+  }
 })
