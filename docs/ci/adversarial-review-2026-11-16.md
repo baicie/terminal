@@ -197,9 +197,17 @@ Windows/Linux 仍 `informational`。
 确实拒绝无权限命令且命令体未执行、前端 camelCase ↔ 命令 snake_case 双向契约、
 mock-runtime 可覆盖命令集合、app-level 权限数为 0、以及缺口本身写在源码里。
 
-**T20 Team Sync 跨版本 — `NOT_RUN`**
-需要历史客户端二进制 + 真实 PostgreSQL 的跨版本矩阵。本机无该 fixture 的完整链，
-不伪造证据。
+**T20 Team Sync 跨版本 — `PARTIAL`**
+需要历史客户端二进制 + 真实 PostgreSQL 的跨版本矩阵；本机无该 fixture 的完整链，
+**不伪造执行证据**。
+
+但判定逻辑是可测的，且此前完全没有测试保护：`TEAM_CROSS_VERSION_A_TO_B_VERIFIED`
+设计上必须是 `FAIL`（ADR 最低版本策略用 426 提前拒绝旧客户端），而这个「看起来坏、
+其实正确」的字段若被将来某次「修成绿色」改动，真正的回归检测会静默消失。
+
+处理：抽成 `team-cross-version-matrix.mjs` 纯函数（已验证与原文 20 种输入组合逐一
+等价），9 项测试钉住两个方向——健康 run 必须 `A_TO_B=FAIL` 且
+`SAFE_REJECTION`/`MIN_POLICY=PASS`；旧客户端能继续同步必须被判为不健康。
 
 ### Phase 6：Ruleset — `EXTERNAL_ACTION_REQUIRED`
 
@@ -216,9 +224,11 @@ mock-runtime 可覆盖命令集合、app-level 权限数为 0、以及缺口本�
 
 | 门禁 | 结果 |
 | --- | --- |
-| Gate scripts (`node --test`) | **778 项 / 774 pass / 4 skipped / 0 fail** |
+| Gate scripts (`node --test`) | **787 项 / 783 pass / 4 skipped / 0 fail** |
 | Rust (`cargo test --lib`) | **434 passed / 0 failed / 9 ignored** |
 | Rust (`--features gui-e2e`, IPC) | **7 passed / 0 failed** |
+| GUI 证据完整性（新增） | **6 项** |
+| Team Sync 判定契约（新增） | **9 项** |
 | Frontend vitest | **255 文件 / 2337 项 / 0 fail** |
 | source-size | **684 个生产文件通过** |
 | verification evidence (integrity) | **6 份证据通过** |
@@ -279,12 +289,51 @@ mock-runtime 可覆盖命令集合、app-level 权限数为 0、以及缺口本�
 | T16 `changed` 契约 | **COMPLETE** |
 | T17 GUI 触发 | **COMPLETE** |
 | T18 Windows GUI 挂载 | **NOT_RUN**（需 Windows runner） |
-| T19 SFTP IPC E2E | **PARTIAL** — 边界事实已钉住，执行层 `NOT_ACHIEVABLE` |
-| T20 Team Sync 跨版本 | **NOT_RUN**（需历史客户端 + 真实 PG） |
+| T19 SFTP IPC E2E | **PARTIAL** — 边界事实已钉住（7 项测试），执行层 `NOT_ACHIEVABLE` |
+| T20 Team Sync 跨版本 | **PARTIAL** — 判定逻辑已纯函数化并测试（9 项）；真实跨版本矩阵执行仍 `NOT_RUN`（需历史客户端 + 真实 PG） |
 | Ruleset | **EXTERNAL_ACTION_REQUIRED** |
 | `REQUIRED_CHECK_BLOCKS_MERGE` | **NOT_VERIFIED** |
 | `GUI_SFTP_REAL_E2E` | **NOT_RUN** |
 | `MOCK_IPC_SFTP_E2E` | **NOT_ACHIEVABLE**（原因已证） |
+
+---
+
+## 6.5 独立复审后又发现并修复的问题
+
+第一轮报告写完后，三个独立来源（对抗性复审 agent、完整性 critic、我自己的复审）又找出以下问题。
+全部已修复。
+
+| # | 严重度 | 问题 | 证据 |
+| --- | --- | --- | --- |
+| R1 | **P0** | `e2e-02` 的 verdict 只看宽度计数，真实失败 run 被记成 PASS | artifact `gui-e2e-evidence-windows-43718510663`：`wdio-…json` 为 `{"passed":2,"failed":3}`，而 `e2e-02.json` 写 `{"verdict":"PASS"}` |
+| R2 | P1 | 新增的 manifest 校验步骤缺 `VERSION` 环境变量 | `VERSION=… node verify-updater-manifest.mjs` → exit 2；会让每次 updater-signed 发布在最后一步失败 |
+| R3 | P1 | 聚合步骤复制不存在的嵌套路径 | 各 job 都以 `test-results/` 为根 + `merge-multiple`，文件平铺在 `reports/`；原代码找 `reports/test-results/vitest.json` |
+| R4 | P1 | `judgeRelease` 不读 `status`（第一轮遗漏的 P0） | 全部 `{status:'in_progress', conclusion:'success'}` → `ok:true` |
+| R5 | P1 | `RELEASE_CHECK_APP_IDS` 拼错 → 信任所有 App | `=none` → `null` → 任意 App |
+| R6 | P2 | 旧 `ci-coverage-report.mjs` 仍会误报且已成死代码 | `layerEntry(total=100,passed=50)` → 渲染 `100.0%`；除自身测试外无引用，已删除 |
+| R7 | P2 | `docs/ci/test-matrix.md` 的 Team Sync 描述与当前代码矛盾 | 文档说「已知产品缺陷仍在」，代码已改为 426 提前拒绝 |
+| R8 | P2 | Team Sync 的 `A_TO_B_VERIFIED=FAIL` 无任何测试保护 | 将来「修成绿色」会静默去掉真正的回归检测；已抽离为纯函数 + 9 项测试 |
+
+### R1 的完整判定
+
+`e2e-02-layout.e2e.mjs` 的 `failures` 只在宽度矩阵循环里自增，其余任何失败
+（`waitUntil` 超时、explorer 没打开）都不影响它。修复照 `e2e-03` 已验证的做法加
+`afterEach` 收集 `currentTest.state`。
+
+新增 `scripts/gui-evidence-integrity.test.mjs`（6 项）把规则统一到整个 GUI 套件：
+每个写证据的 spec 必须读 `currentTest.state`、必须有 `afterEach`、不得写字面量
+`verdict: 'PASS'`，且已提交证据中 `PASS` 不得伴随 failures 或 error。
+
+已核查：**已提交**的 `e2e/gui/artifacts` 是 macOS 2026-11-14 的结果，三份
+`PASS` 且 `failures=0`、`error` 为空，内部一致。假 PASS 出现在**未提交**的
+Windows artifact 里。
+
+### R7 的完整判定
+
+复审说「harness 在自己 matrix 报 FAIL 时仍退出 0」。核实：**退出码由 `allOk`
+（步骤是否跑成）驱动，`A_TO_B_VERIFIED=FAIL` 是 ADR 最低版本策略设计上期望的
+结果**——所以退出 0 是正确的。但复审指出的可混淆性是真实的，且文档确实过期。
+处理：文档改为描述当前策略；判定抽成纯函数并加测试钉住两个方向。
 
 ---
 
