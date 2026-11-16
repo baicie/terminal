@@ -229,3 +229,31 @@ Snippet Dock 紧随其后，因为它是设计指定的第一个内置扩展，�
 2. **测试编码了缺陷。** `capability-gateway.test.ts` 中 8 条断言用与夹具选择不符的
    文本请求审批并期望成功 —— 它们断言的正是「任意文本可被审批」。已修正。
    这与 Phase 10.3 记录的 `expect(privateKey).toBe('~/.ssh/id_ed25519')` 同类。
+
+### 门禁纪律：本地必须复现 CI 的确切命令
+
+本轮 `CI / Rust quality` 因 `clippy::wrong_self_convention` 失败一次（`d45c6ee` 修复），
+因为本地只跑了 `cargo test --lib`，而 CI 跑的是：
+
+```
+cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+```
+
+`--all-targets` 覆盖测试代码，`--all-features` 启用 `custom-protocol`，`-D warnings`
+把 lint 变成错误 —— 三者缺一都会漏掉这类问题。
+
+这是本项目第三次记录同一类失误（Phase 10.1.1 漏 `source-size`、Phase 10.2 漏
+`build:budget`）。**提交前的本地门禁清单**：
+
+| 门禁 | 命令 |
+| --- | --- |
+| 前端测试 | `pnpm --filter=@terminal/frontend test` |
+| typecheck | `pnpm typecheck` |
+| ESLint | `pnpm lint` |
+| 源码规模 | `pnpm check:source-size` |
+| bundle 预算 | `pnpm --filter=@terminal/frontend build:budget` |
+| 脚本测试 | `node --test scripts/*.test.mjs` |
+| Rust 格式 | `cargo fmt --manifest-path src-tauri/Cargo.toml --check` |
+| **Rust lint（CI 等价）** | `cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings` |
+| **Rust 全量测试** | `cargo test --locked --manifest-path src-tauri/Cargo.toml` |
+| 真实 SFTP | `node scripts/verify-install/sftp-command-e2e.mjs` |
