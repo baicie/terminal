@@ -163,3 +163,33 @@ test('macOS is the only platform currently asserted blocking', () => {
     .map(job => job.name)
   assert.deepEqual(blocking, ['Driver isolation gate', 'macOS GUI E2E'])
 })
+
+test('GUI prompt assertions are not POSIX-only', async () => {
+  // Measured on the Windows runner: the terminal had mounted and the buffer contained
+  // `PS C:\Users\runneradmin>` while every readiness case timed out with
+  // `no shell prompt ever appeared in the terminal buffer`. The assertions tested
+  // `/[$#%]/` — the POSIX prompt set. PowerShell and cmd end their prompt with `>`.
+  //
+  // The screenshot from that run shows a fully working UI (status bar
+  // `Connected · Local · 120×40`, a real echo round-trip), so the failure was the
+  // assertion's platform assumption rather than the product.
+  const { readdirSync } = await import('node:fs')
+  const specsDir = path.join(ROOT, 'e2e/gui/specs')
+  const offenders = []
+  for (const name of readdirSync(specsDir).filter(n => n.endsWith('.e2e.mjs'))) {
+    const source = readFileSync(path.join(specsDir, name), 'utf8')
+    for (const line of source.split('\n')) {
+      // A bare POSIX-only prompt character class used as a *test*, not mentioned in prose.
+      const isComment = /^\s*(\/\/|\*|\/\*)/.test(line)
+      if (!isComment && /\/\[\$#%\]\//.test(line)) {
+        offenders.push(`${name}: ${line.trim()}`)
+      }
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    'a prompt assertion without `>` cannot pass on Windows PowerShell or cmd:\n' +
+      offenders.join('\n'),
+  )
+})
