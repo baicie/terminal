@@ -3,6 +3,8 @@ import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { useRightPanelStore } from '@/store/right-panel-store'
 import { isRightPanelImplemented } from '@/store/right-panel-state'
+import { useExtensionRuntime } from '@/features/extensions/use-extension-runtime'
+import { SnippetDock } from './snippet-dock-view'
 
 /**
  * The right column.
@@ -50,6 +52,7 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
   const { t } = useTranslation()
   const rightPanel = useRightPanelStore(state => state.rightPanel)
   const setRightPanel = useRightPanelStore(state => state.setRightPanel)
+  const extensions = useExtensionRuntime()
   if (rightPanel === 'none') return null
   // A mode the union names but this build does not render — `snippets`, `inspector`
   // and `ai` are declared for the contract, not shipped. Rendering the dock empty
@@ -64,7 +67,11 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
           ? 'absolute inset-y-0 right-0 z-20 overflow-hidden border-l border-border/60 bg-background shadow-xl'
           : 'h-full shrink-0 overflow-hidden border-l border-border/60 bg-background',
       )}
-      aria-label={t('sftp.dockTitle')}
+      aria-label={
+        rightPanel === 'snippets'
+          ? t('extensions.snippetDock.name')
+          : t('sftp.dockTitle')
+      }
       data-testid="right-panel"
       data-panel={rightPanel}
       data-presentation={mode}
@@ -80,17 +87,24 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
           <CloseGlyph />
         </button>
       ) : null}
-      <Suspense
-        fallback={
-          <div
-            className="h-full w-full bg-background"
-            aria-hidden="true"
-            data-testid="right-panel-loading"
-          />
-        }
-      >
-        <SftpContainer />
-      </Suspense>
+      {rightPanel === 'snippets' ? (
+        <SnippetDock
+          handle={extensions.snippetDock}
+          onClose={() => setRightPanel('none')}
+        />
+      ) : (
+        <Suspense
+          fallback={
+            <div
+              className="h-full w-full bg-background"
+              aria-hidden="true"
+              data-testid="right-panel-loading"
+            />
+          }
+        >
+          <SftpContainer />
+        </Suspense>
+      )}
     </aside>
   )
 }

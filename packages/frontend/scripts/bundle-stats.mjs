@@ -124,7 +124,21 @@ const budgets = {
   // The alternative was to fold the "this host cannot connect yet" text into an
   // existing string to stay under the old number, which would trade a user-visible
   // explanation of an unrecoverable state for a kilobyte nobody experiences.
-  totalGzip: 632 * 1024,
+  //
+  // 640 KB (was 632 KB): the extension platform lands — manifest validation, the
+  // registry, the capability gateway with its approval book, the snippet-dock
+  // extension and the dock's presentational shell, plus one case in `RightPanel`
+  // and ~21 strings in three languages. No new dependency.
+  //
+  // Measured 633.71 KB against the 632.00 KB ceiling: +1.71 KB. The initial budget
+  // is unchanged at 130.93 KB: the dock chunk is lazy (SFTP and Snippets both load
+  // only when the column opens) and nothing here is on the time-to-first-terminal
+  // path.
+  //
+  // The alternative was to fold the five extension strings into existing keys or
+  // drop the "not enabled" message, which would leave a dock that renders silently
+  // when its extension is off — a user-visible gap traded for 1.7 KB.
+  totalGzip: 640 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

@@ -24,7 +24,7 @@ function snippet(name: string): SnippetRecord {
 function setup(options: { load?: () => Promise<SnippetRecord[]>, selection?: string | null } = {}) {
   const registry = new ExtensionRegistry({ platform: 'macos' })
   const gateway = new CapabilityGateway(
-    () => registry.grantFor(SNIPPET_DOCK_EXTENSION_ID),
+    (id: string) => registry.grantFor(id),
     {
       visibleSessionId: () => 'ssh-1',
       selectedText: () =>

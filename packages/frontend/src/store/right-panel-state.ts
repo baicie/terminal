@@ -44,8 +44,13 @@ export const RIGHT_PANEL_OCCUPANTS = [
 
 export type RightPanelMode = (typeof RIGHT_PANEL_OCCUPANTS)[number]
 
-/** The panels that exist in this build. The rest are named for the contract. */
-export const IMPLEMENTED_RIGHT_PANEL_OCCUPANTS = ['none', 'sftp'] as const
+/**
+ * The panels that exist in this build. The rest are named for the contract.
+ *
+ * `snippets` moved here when `snippet-dock` shipped: it is the first occupant added
+ * *through* the contract rather than beside it, which is what the union was for.
+ */
+export const IMPLEMENTED_RIGHT_PANEL_OCCUPANTS = ['none', 'sftp', 'snippets'] as const
 
 export interface RightPanelState {
   rightPanel: RightPanelMode

@@ -204,7 +204,7 @@ describe('deactivation with work in flight', () => {
     // reference to `context.terminal` and calls it after deactivate.
     const registry = new ExtensionRegistry()
     const gateway = new CapabilityGateway(
-      () => registry.grantFor('snippet-dock'),
+      (id: string) => registry.grantFor(id),
       {
         visibleSessionId: () => 'ssh-1',
         selectedText: () => ({ text: 'ls', selectionId: 's1', sessionId: 'ssh-1' }),
@@ -232,7 +232,7 @@ describe('deactivation with work in flight', () => {
   it('dropping the extension takes its approvals with it', async () => {
     const registry = new ExtensionRegistry()
     const gateway = new CapabilityGateway(
-      () => registry.grantFor('snippet-dock'),
+      (id: string) => registry.grantFor(id),
       {
         visibleSessionId: () => 'ssh-1',
         selectedText: () => ({ text: 'ls', selectionId: 's1', sessionId: 'ssh-1' }),

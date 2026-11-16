@@ -124,7 +124,15 @@ export class CapabilityGateway {
   private readonly approvalBook: ApprovalBook
 
   constructor(
-    private readonly grants: () => ExtensionGrant | undefined,
+    /**
+     * Look up the grant for one extension id.
+     *
+     * Takes the id rather than returning "the current extension's grant": with a
+     * no-argument accessor, one extension could only be told apart from another by
+     * comparing ids *after* receiving the grant, which means a lookup that returns
+     * the wrong extension's grant is indistinguishable from a correct one.
+     */
+    private readonly grants: (extensionId: string) => ExtensionGrant | undefined,
     private readonly host: GatewayHost,
     now: () => number = () => Date.now(),
   ) {
@@ -142,7 +150,7 @@ export class CapabilityGateway {
     generation: number,
     capability: ExtensionCapability,
   ): ExtensionGrant {
-    const resolved = this.grants()
+    const resolved = this.grants(extensionId)
     if (!resolved || resolved.extensionId !== extensionId) {
       throw new GatewayError('extension-unknown', 'This extension is not registered.')
     }

@@ -2,6 +2,7 @@ import app from './app'
 import common from './common'
 import cmdPalette from './cmdPalette'
 import explorer from './explorer'
+import extensions from './extensions'
 import home from './home'
 import hosts from './hosts'
 import keychain from './keychain'
@@ -23,6 +24,7 @@ export default {
   ...common,
   ...cmdPalette,
   ...explorer,
+  ...extensions,
   ...home,
   ...hosts,
   ...keychain,
