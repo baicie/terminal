@@ -36,7 +36,46 @@ const WIDTHS = [1440, 1280, 1024, 900, 768, 640]
  * actually matters, and it also covers the case where the element is present but its
  * text has not updated to the new geometry yet.
  */
-async function readCols({ timeout = 10_000, interval = 100 } = {}) {
+/**
+ * Below this width the product deliberately replaces the status bar with the bottom nav.
+ *
+ * `useIsMobile()` is `useBreakpointMax('md')`, i.e. `innerWidth < BREAKPOINTS.md`, and
+ * `BREAKPOINTS.md` is 640. `main-layout-content.tsx` renders
+ *
+ *     isMobile ? <BottomNav /> : <StatusBar />
+ *
+ * so at 640px and below there is no `[data-testid="status-bar"]` in the DOM at all.
+ * The matrix includes 640, which is why the narrowest width failed with
+ * `status bar never became readable … last text: null` while every wider width passed.
+ *
+ * That is the product's responsive behaviour working, not a defect. When the bar is not
+ * part of the layout, the geometry comes from xterm — the same numbers the bar renders.
+ */
+const MOBILE_BREAKPOINT_PX = 640
+
+/** Read cols×rows from xterm, for widths where the status bar is not rendered. */
+async function readColsFromTerminal() {
+  const geometry = await browser.execute(() => {
+    const snapshot = globalThis.__terminalGuiE2E?.snapshot?.()
+    if (snapshot && Number.isFinite(snapshot.cols) && Number.isFinite(snapshot.rows)) {
+      return { cols: snapshot.cols, rows: snapshot.rows }
+    }
+    return null
+  })
+  return geometry
+}
+
+async function readCols({ timeout = 10_000, interval = 100, width = null } = {}) {
+  // The bar is not part of the layout below the breakpoint; ask xterm instead of failing.
+  if (width !== null && width <= MOBILE_BREAKPOINT_PX) {
+    const fromTerminal = await readColsFromTerminal()
+    if (fromTerminal) return { ...fromTerminal, source: 'terminal' }
+    throw new Error(
+      `at ${width}px the status bar is replaced by the bottom nav (product behaviour) ` +
+        'and the terminal geometry could not be read from the probe either',
+    )
+  }
+
   const deadline = Date.now() + timeout
   let lastText = null
   while (Date.now() < deadline) {
@@ -46,7 +85,7 @@ async function readCols({ timeout = 10_000, interval = 100 } = {}) {
         const text = await element.getText()
         lastText = text
         const match = /(\d+)\s*[×x]\s*(\d+)/.exec(text)
-        if (match) return { cols: Number(match[1]), rows: Number(match[2]) }
+        if (match) return { cols: Number(match[1]), rows: Number(match[2]), source: 'status-bar' }
       }
     } catch {
       // The element was detached between the existence check and the read: the layout is
@@ -310,7 +349,7 @@ describe('E2E-02 Explorer and Dock across widths', () => {
     for (const width of WIDTHS) {
       const resize = await resizeWindow(width)
       const seen = await readPresentations()
-      const { cols, rows: termRows } = await readCols()
+      const { cols, rows: termRows } = await readCols({ width })
       const entry = {
         requestedWidth: width,
         // What the OS granted. Kept separate from the request so a clamped width is
