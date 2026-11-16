@@ -1013,29 +1013,40 @@ jobs:
           pattern: test-results-*
           path: reports
           merge-multiple: true
-      # The artifact layout is reports/<file> for the top-level ones and
-      # reports/<subdir>/<file> for the frontend/rust ones; flatten so the ingestion
-      # plan's paths resolve.
-      - name: Lay the reports out where the plan expects them
+      # ## Every job uploads `test-results/` as its root, and `merge-multiple`
+      #
+      # So with `merge-multiple: true` all of them land flat in `reports/`:
+      #
+      #   reports/vitest.json              (frontend)
+      #   reports/team-server-vitest.json  (team server)
+      #   reports/scripts.tap              (gate scripts)
+      #   reports/cargo-test.txt           (rust)
+      #
+      # The first version of this step guessed a nested layout that does not exist, so
+      # the frontend report was never placed and the layer would have read NOT_RUN while
+      # the job had actually produced it. Copy by exact name, and print what was found so
+      # a changed artifact name shows up in the log instead of silently degrading.
+      - name: Lay the reports out where the ingestion plan expects them
         run: |
           set -euo pipefail
-          mkdir -p packages/frontend/test-results src-tauri/test-results test-results
-          for source in reports/vitest.json reports/*/vitest.json; do
-            [ -f "$source" ] || continue
-            case "$source" in
-              *frontend*) cp "$source" packages/frontend/test-results/vitest.json ;;
-            esac
-          done
-          # A single vitest.json from the frontend job; the team-server job writes
-          # team-server-vitest.json, which ingestion reads separately.
-          [ -f reports/test-results/vitest.json ] && cp reports/test-results/vitest.json packages/frontend/test-results/vitest.json || true
-          [ -f reports/team-server-vitest.json ] && cp reports/team-server-vitest.json packages/team-server/test-results/vitest.json || true
-          [ -f reports/test-results/team-server-vitest.json ] && cp reports/test-results/team-server-vitest.json packages/team-server/test-results/vitest.json || true
-          [ -f reports/scripts.tap ] && cp reports/scripts.tap test-results/scripts.tap || true
-          [ -f reports/test-results/scripts.tap ] && cp reports/test-results/scripts.tap test-results/scripts.tap || true
-          [ -f reports/cargo-test.txt ] && cp reports/cargo-test.txt src-tauri/test-results/cargo-test.txt || true
-          [ -f reports/test-results/cargo-test.txt ] && cp reports/test-results/cargo-test.txt src-tauri/test-results/cargo-test.txt || true
-          find reports -type f | sort || true
+          mkdir -p packages/frontend/test-results \
+                   packages/team-server/test-results \
+                   src-tauri/test-results \
+                   test-results
+          echo "downloaded:"; find reports -type f 2>/dev/null | sort || true
+          copy_if_present() {
+            if [ -f "reports/$1" ]; then
+              mkdir -p "$(dirname "$2")"
+              cp "reports/$1" "$2"
+              echo "  $1 -> $2"
+            else
+              echo "  MISSING reports/$1 (the $3 layer will report NOT_RUN)"
+            fi
+          }
+          copy_if_present vitest.json             packages/frontend/test-results/vitest.json       frontend
+          copy_if_present team-server-vitest.json packages/team-server/test-results/vitest.json     team-server
+          copy_if_present scripts.tap             test-results/scripts.tap                         scripts
+          copy_if_present cargo-test.txt          src-tauri/test-results/cargo-test.txt            rust
       # Layers whose job did not produce a result are named, not inferred. `needs`
       # says which jobs were skipped; the aggregation maps that to BLOCKED.
       - name: Build the test execution report

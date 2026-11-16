@@ -144,3 +144,45 @@ test('a NOT_RUN layer never reads as a pass in the rendered text', () => {
   assert.doesNotMatch(text, /\| PASS \|/)
   assert.match(text, /NOT_RUN/)
 })
+
+test('the CI artifact names the workflow copies match what the jobs upload', async () => {
+  // The class of bug this pins: the aggregator copied `reports/test-results/vitest.json`
+  // (a nested layout that does not exist) while the frontend job uploaded
+  // `test-results/vitest.json` from a `test-results/` root with `merge-multiple`, which
+  // lands flat as `reports/vitest.json`. The layer would have read NOT_RUN even though
+  // the job produced the report.
+  const { readFileSync } = await import('node:fs')
+  const path = await import('node:path')
+  const workflow = readFileSync(
+    path.resolve(import.meta.dirname, '..', '.github/workflows/ci.yml'),
+    'utf8',
+  )
+  const step = workflow.slice(workflow.indexOf('Lay the reports out where the ingestion plan'))
+  const layout = step.slice(0, step.indexOf('- name: Build the test execution report'))
+
+  // Every file the layout copies must be named in a `--outputFile` / `--test-reporter`
+  // destination or a `tee` target elsewhere in the workflow.
+  const copies = [...layout.matchAll(/copy_if_present\s+(\S+)/g)].map(match => match[1])
+  assert.ok(copies.length >= 4, `expected at least 4 report copies, found ${copies.length}`)
+  for (const file of copies) {
+    assert.ok(
+      workflow.includes(file),
+      `${file} is copied by the aggregator but no job in ci.yml produces it`,
+    )
+  }
+})
+
+test('the aggregator merges artifacts flat, and the layout assumes that', async () => {
+  const { readFileSync } = await import('node:fs')
+  const path = await import('node:path')
+  const workflow = readFileSync(
+    path.resolve(import.meta.dirname, '..', '.github/workflows/ci.yml'),
+    'utf8',
+  )
+  assert.match(workflow, /merge-multiple:\s*true/, 'merge-multiple decides the layout')
+  assert.doesNotMatch(
+    workflow,
+    /reports\/test-results\//,
+    'with merge-multiple the files are flat under reports/; a nested path cannot exist',
+  )
+})
