@@ -48,11 +48,7 @@ export {
   PR_EVIDENCE_CHECKS,
 } from './release-check-contract.mjs'
 // A re-export does not create a local binding, so the loop below needs its own import.
-import {
-  PR_EVIDENCE_CHECKS as PR_CHECKS,
-  RELEASE_CHECKS as CHECKS,
-  REQUIRED_RELEASE_CHECKS as REQUIRED_NAMES,
-} from './release-check-contract.mjs'
+import { RELEASE_CHECKS as CHECKS } from './release-check-contract.mjs'
 
 /** Modes and what each promises the user. */
 export const RELEASE_MODES = {

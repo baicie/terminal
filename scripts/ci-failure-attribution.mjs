@@ -30,7 +30,6 @@
  *   requiredCheckResult  did a check GitHub gates merges on fail (never softened)
  *   mergeEligibility     is this commit mergeable, given the above and the gate result
  */
-import { LOG_UNAVAILABLE_REASONS } from './ci-log-status.mjs'
 import { judgeJob, judgeRun } from './ci-run-state.mjs'
 import { isKnownIssue, parseKnownIssueReference } from './ci-known-issue.mjs'
 

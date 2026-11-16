@@ -23,7 +23,7 @@
  *
  * Exit codes: 0 report written (whatever its verdict), 1 the report could not be built.
  */
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 
@@ -135,6 +135,21 @@ export function collectLayers({ root, plan = INGESTION_PLAN, blocked = [], commi
   return entries
 }
 
+/**
+ * The distinct commits present in a set of layer entries.
+ *
+ * Exported so a test can assert the guard's actual behaviour rather than re-describing
+ * it. Returns `null` when the entries describe at most one commit.
+ */
+export function findMixedCommits(entries) {
+  const shas = new Set(
+    (Array.isArray(entries) ? entries : [])
+      .map(entry => entry?.commitSha)
+      .filter(sha => typeof sha === 'string' && sha.length > 0),
+  )
+  return shas.size > 1 ? shas : null
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2))
   if (options.dir === null) {
@@ -157,9 +172,9 @@ function main() {
   }
 
   // Mixed SHAs would make one report describe two commits.
-  const shas = new Set(entries.map(entry => entry.commitSha).filter(Boolean))
-  if (shas.size > 1) {
-    console.error(`refusing to aggregate results from ${shas.size} commits: ${[...shas].join(', ')}`)
+  const mixed = findMixedCommits(entries)
+  if (mixed !== null) {
+    console.error(`refusing to aggregate results from ${mixed.size} commits: ${[...mixed].join(', ')}`)
     return 1
   }
 
@@ -173,11 +188,14 @@ function main() {
 
   console.log(renderTestReport(report))
 
+  // The guard above proved at most one commit is present; name it explicitly so a
+  // consumer does not have to re-derive it from the layers.
+  const commits = new Set(entries.map(entry => entry.commitSha).filter(Boolean))
   if (options.json) {
     mkdirSync(path.dirname(path.resolve(options.json)), { recursive: true })
     writeFileSync(
       path.resolve(options.json),
-      JSON.stringify({ schemaVersion: 1, generatedFor: [...shas][0] ?? null, ...report }, null, 2),
+      JSON.stringify({ schemaVersion: 1, generatedFor: [...commits][0] ?? null, ...report }, null, 2),
     )
   }
   return 0

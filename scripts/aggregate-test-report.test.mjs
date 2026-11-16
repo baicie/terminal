@@ -118,15 +118,36 @@ test('libtest text is summed across binaries in the report', () => {
   assert.equal(rust.status, 'PASS')
 })
 
-test('two different commits in one report are refused', async () => {
-  // The guard lives in the CLI's main(), so exercise the same predicate it uses.
-  const root = makeTree({
-    'packages/frontend/test-results/vitest.json': VITEST,
-    'src-tauri/test-results/cargo-test.txt': LIBTEST,
-  })
-  const layers = collectLayers({ root, commitSha: 'c'.repeat(40) })
-  const shas = new Set(layers.map(layer => layer.commitSha).filter(Boolean))
-  assert.equal(shas.size, 1, 'one report must describe one commit')
+test('mixed commits are detected by the guard the CLI actually uses', async () => {
+  // The first version built a Set from identical values, so it could not fail. This one
+  // calls the exported guard.
+  const { findMixedCommits } = await import('./aggregate-test-report.mjs')
+  assert.equal(findMixedCommits([{ commitSha: 'a'.repeat(40) }]), null)
+  assert.equal(
+    findMixedCommits([{ commitSha: null }, { commitSha: 'a'.repeat(40) }]),
+    null,
+    'a missing sha is not a competing commit',
+  )
+  const mixed = findMixedCommits([{ commitSha: 'a'.repeat(40) }, { commitSha: 'b'.repeat(40) }])
+  assert.ok(mixed instanceof Set)
+  assert.equal(mixed.size, 2)
+})
+
+test('the CLI refuses mixed commits and still writes a coherent report otherwise', async () => {
+  const { execFileSync } = await import('node:child_process')
+  const { readFileSync } = await import('node:fs')
+  const root = makeTree({ 'packages/frontend/test-results/vitest.json': VITEST })
+  const out = path.join(root, 'report.json')
+  const script = path.resolve(import.meta.dirname, 'aggregate-test-report.mjs')
+
+  const stdout = execFileSync(
+    process.execPath,
+    [script, '--dir', root, '--sha', 'd'.repeat(40), '--json', out],
+    { encoding: 'utf8' },
+  )
+  assert.match(stdout, /Test execution report/)
+  // Every layer in one invocation carries the same SHA, so the report names one commit.
+  assert.equal(JSON.parse(readFileSync(out, 'utf8')).generatedFor, 'd'.repeat(40))
 })
 
 test('every canonical layer appears in the report, including the ones with no file', () => {
@@ -259,4 +280,28 @@ test('the real CI invocation works end-to-end on a realistic fixture tree', asyn
   ]) {
     assert.ok(field in frontend, `the JSON contract is missing \`${field}\``)
   }
+})
+
+test('generated test reports are gitignored, not committed', async () => {
+  // A 763 KB vitest JSON was accidentally committed once. These files are per-run
+  // machine output, and a committed copy is both noise and a stale snapshot that reads
+  // like current data.
+  const { execFileSync } = await import('node:child_process')
+  const { readFileSync } = await import('node:fs')
+  const gitignore = readFileSync(path.resolve(import.meta.dirname, '..', '.gitignore'), 'utf8')
+  assert.match(gitignore, /^test-results\/$/m, 'the reports directory must be ignored')
+
+  // And nothing under it is tracked. `git ls-files` reads the index, so this fails if a
+  // generated report is ever staged again.
+  let tracked = ''
+  try {
+    tracked = execFileSync('git', ['ls-files', 'test-results'], {
+      cwd: path.resolve(import.meta.dirname, '..'),
+      encoding: 'utf8',
+    })
+  } catch {
+    // Not a git checkout (e.g. a tarball); nothing to assert.
+    return
+  }
+  assert.equal(tracked.trim(), '', `generated reports are tracked: ${tracked.trim()}`)
 })
