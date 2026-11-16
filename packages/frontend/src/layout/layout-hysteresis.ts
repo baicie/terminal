@@ -87,10 +87,25 @@ export function withHysteresis(
   }
 
   if (leftCameUp || rightCameUp) {
-    // Coming back up: only restore the column layout when it buys more than the
-    // band's worth of columns. Otherwise a one-pixel widening would flip it back
-    // and a one-pixel narrowing would flip it away again.
-    if (next.predictedCols - previousNow.predictedCols > band) {
+    // Coming back up: restore once the column layout clears the floor by more
+    // than the band.
+    //
+    // This branch used to ask `next.predictedCols - previousNow.predictedCols >
+    // band`, and that comparison can never be true. A column layout *costs*
+    // width — that is why it was demoted — so `next` (column at this width) is
+    // always smaller than `previousNow` (the drawer at this width). At 1500px
+    // with a 420px explorer and a 300px dock the column measures 85 columns and
+    // the drawer measures 135, so the difference is -50 and the condition is
+    // false at every width that will ever exist. The panel was demoted once at a
+    // narrow width and never came back: widening the window to 3000px left the
+    // explorer in a drawer forever, and only closing and reopening it fixed it.
+    //
+    // The symmetric rule is the one the descending branch already uses: hold the
+    // demoted layout until keeping the column layout is *comfortably* affordable,
+    // with the band on the far side of the floor so a one-pixel wiggle at the
+    // boundary flips neither way. Down at floor-band, up at floor+band — that gap
+    // is the hysteresis, and it is the only shape that allows both directions.
+    if (next.predictedCols >= usableColsMin + band) {
       return next
     }
     return previousNow

@@ -338,6 +338,90 @@ describe('withHysteresis judges the previous presentation on the current width',
     expect(previousNow.predictedCols).toBeLessThan(USABLE_COLS)
   })
 
+  it('narrows, widens, then narrows again without getting stuck demoted', () => {
+    // The reported failure mode is one-directional: the band engages going down
+    // and then never lets the layout come back, so the user is left with a drawer
+    // at a width where the column layout fits. A single round trip does not catch
+    // it — the second descent starts from a decision the first round trip left
+    // behind. This walks Narrow -> Wide -> Narrow -> Wide -> Narrow and asserts
+    // both the demotion and the restoration are reachable at every stage.
+    const wide = { ...base, shellWidth: 1500 }
+    const narrow = { ...base, shellWidth: 900 }
+
+    let previous: LayoutDecision | null = null
+    const visit = (input: LayoutInput) => {
+      const next = chooseLayout(input)
+      const stable = withHysteresis(next, previous, input)
+      previous = stable
+      return stable
+    }
+
+    const atWideOne = visit(wide)
+    expect(atWideOne.leftPresentation, 'wide must start as a column').toBe('column')
+    expect(atWideOne.rightPresentation).toBe('column')
+
+    const atNarrowOne = visit(narrow)
+    expect(atNarrowOne.leftPresentation, 'narrow must yield the explorer').not.toBe('column')
+    expect(atNarrowOne.predictedCols).toBeGreaterThanOrEqual(USABLE_COLS)
+
+    const atWideTwo = visit(wide)
+    expect(atWideTwo.leftPresentation, 'widening must restore the column').toBe('column')
+    expect(atWideTwo.rightPresentation).toBe('column')
+
+    const atNarrowTwo = visit(narrow)
+    expect(atNarrowTwo.leftPresentation, 'the second descent must yield again').not.toBe('column')
+
+    const atWideThree = visit(wide)
+    expect(atWideThree.leftPresentation, 'the second restoration must still work').toBe('column')
+  })
+
+  it('restores each side independently when only one of them was demoted', () => {
+    // Explorer and dock are separate axes, and the band must not couple them: a
+    // width that forces the dock to an overlay must not leave the explorer
+    // demoted once the dock is closed at that same width.
+    const dockClosed = { ...base, rightMode: 'none' as const }
+    const tight = { ...dockClosed, shellWidth: 1024 }
+
+    // At 1024 with a 420px explorer and no dock the explorer still fits as a
+    // column; the dock is what does not.
+    const noDock = chooseLayout(tight)
+    expect(noDock.leftPresentation).toBe('column')
+    expect(noDock.predictedCols).toBeGreaterThanOrEqual(USABLE_COLS)
+
+    // Opening the dock at the same width demotes the explorer, not the terminal.
+    const openDock = chooseLayout({ ...base, shellWidth: 1024 })
+    expect(openDock.predictedCols).toBeGreaterThanOrEqual(USABLE_COLS)
+
+    // And closing it restores the explorer: the demotion must not be sticky.
+    const reopened = chooseLayout({ ...tight, shellWidth: 1024 })
+    expect(reopened.leftPresentation).toBe('column')
+  })
+
+  it('restores a demoted panel even when the drawer would show more columns', () => {
+    // The regression this pins: the old "came up" branch required the column
+    // layout to beat the drawer by more than the band, and a column layout can
+    // never beat a drawer — it *costs* width. At 1500px the drawer measured 135
+    // columns against the column's 85, so the difference was negative and the
+    // explorer was locked in a drawer until the panel was closed and reopened.
+    //
+    // Widening far past the point where the column is comfortable must restore
+    // it. This is the assertion the old implementation fails; nothing about a
+    // drawer's larger column count may count as a reason to keep it.
+    const wideInput: LayoutInput = { ...base, shellWidth: 1500 }
+    const narrowInput: LayoutInput = { ...base, shellWidth: 900 }
+    const wide = chooseLayout(wideInput)
+    expect(wide.leftPresentation, 'the wide layout is a column').toBe('column')
+
+    const demoted = withHysteresis(chooseLayout(narrowInput), wide, narrowInput)
+    expect(demoted.leftPresentation, 'the narrow width demotes the explorer').not.toBe('column')
+
+    const back = withHysteresis(chooseLayout(wideInput), demoted, wideInput)
+    expect(
+      back.leftPresentation,
+      'widening must restore the column, however many columns the drawer would show',
+    ).toBe('column')
+  })
+
   it('handles a font change through the same path', () => {
     const narrow = { ...base, shellWidth: 1100 }
     const at14 = chooseLayout({ ...narrow, cellWidth: 8.4 })

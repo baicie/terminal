@@ -206,6 +206,7 @@ impl SessionManager {
             Arc::downgrade(&self.sessions),
             Arc::downgrade(&self.channel_manager),
             Arc::downgrade(&self.session_meta),
+            Arc::downgrade(&self.removed_listeners),
         );
         true
     }
@@ -313,12 +314,17 @@ impl SessionManager {
         )
         .await;
 
+        let removed = session.is_some();
         if let Some(session) = session {
             session.close().await;
         }
-        // Even when the session was already gone: the SFTP entry may still be
-        // there, and dropping it twice is a no-op.
-        self.notify_removed(session_id).await;
+        // Only the caller that actually took the entry out of the registry
+        // notifies. Two removals racing for one id — a tab closed at the same
+        // moment the remote drops is the normal case — both succeed, but only
+        // one wins the `HashMap::remove`, so listeners fire exactly once.
+        if removed {
+            self.notify_removed(session_id).await;
+        }
 
         Ok(())
     }
@@ -391,6 +397,7 @@ fn spawn_completion_cleanup(
     sessions: Weak<Mutex<HashMap<String, SessionState>>>,
     channel_manager: Weak<ChannelManager>,
     session_meta: Weak<Mutex<HashMap<String, SessionMeta>>>,
+    removed_listeners: Weak<std::sync::Mutex<Vec<SessionRemovedListener>>>,
 ) {
     tokio::spawn(async move {
         completion.wait().await;
@@ -403,7 +410,30 @@ fn spawn_completion_cleanup(
             return;
         };
 
-        remove_registry_entries(sessions, channel_manager, session_meta, &session_id).await;
+        let removed =
+            remove_registry_entries(sessions, channel_manager, session_meta, &session_id).await;
+
+        // Natural completion — remote EOF, the remote dropping, the shell
+        // exiting — is a removal path, and until this it was the only one that
+        // did not fire the listeners: `session_close` and `shutdown` did. So a
+        // session that ended on its own left its SFTP registry entry behind, an
+        // `Arc<SftpSession>` whose channel the connection pool had already torn
+        // down. Whatever is keyed by session id outside this manager depends on
+        // this call.
+        //
+        // Guarded on `removed`: an explicit close racing this cleanup wins one
+        // of the two `HashMap::remove` calls, and only the winner notifies.
+        if removed.is_some() {
+            if let Some(listeners) = removed_listeners.upgrade() {
+                let listeners = listeners
+                    .lock()
+                    .expect("session removal listener registry")
+                    .clone();
+                for listener in listeners {
+                    listener(session_id.clone());
+                }
+            }
+        }
     });
 }
 
