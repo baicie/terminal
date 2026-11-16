@@ -2,20 +2,16 @@
  * The built-in extension registry: registration, activation, deactivation.
  *
  * Guarantees: nothing runs until enabled; a partial activation rolls back; a
- * deactivation settles every registration it handed out and bumps the generation so
- * a captured callback is refused; one extension's failure lands in `failed` and
- * touches no PTY, SSH session or transfer.
- *
- * It owns no terminal, transfer, credential or layout state, so no code path here
- * could close a session even if an extension asked.
+ * deactivation settles every registration and bumps the generation so a captured
+ * callback is refused; one extension's failure touches no PTY, SSH session or
+ * transfer. It owns no terminal, transfer, credential or layout state.
  */
 
 import type { CapabilityGateway, ExtensionCapability } from './capability-gateway'
 import {
   ACTIVATION_BUDGET_MS,
-  addHandler,
   emptyContributions,
-  track,
+  buildExtensionContext,
   withBudget,
   type Contributions,
   type ExtensionContext,
@@ -112,7 +108,12 @@ export class ExtensionRegistry {
     const record = this.records.get(extensionId)
     if (!record) return false
     // Already usable: re-enabling must not create a second set of registrations.
-    if (record.status === 'active' || record.status === 'activating') return true
+    if (record.status === 'active') return true
+    // A second activation while the first is still starting would register twice; a
+    // second one while the first is *stopping* is worse — its ledger entries are
+    // deleted by the rollback that is already in flight, so the extension reports
+    // active with nothing registered.
+    if (record.status === 'activating' || record.status === 'deactivating') return false
     if (!supportsPlatform(record.manifest, this.platform)) {
       record.status = 'disabled'
       this.options.onChanged?.()
@@ -130,7 +131,13 @@ export class ExtensionRegistry {
     const bucket: Disposable[] = []
     this.disposables.set(extensionId, bucket)
 
-    const context = this.buildContext(record, generation, contributions, bucket)
+    const context = buildExtensionContext({
+      record,
+      generation,
+      contributions,
+      bucket,
+      terminal: this.gateway?.terminalContextFor(record.manifest.id, generation),
+    })
 
     try {
       const returned = await withBudget(
@@ -228,53 +235,6 @@ export class ExtensionRegistry {
     this.options.onChanged?.()
   }
 
-  private buildContext(
-    record: ExtensionRecord,
-    generation: number,
-    contributions: Contributions,
-    bucket: Disposable[],
-  ): ExtensionContext {
-    return {
-      extensionId: record.manifest.id,
-      apiVersion: 1,
-      subscriptions: bucket,
-      commands: {
-        register: def => {
-          contributions.commands.set(def.id, def)
-          return track(bucket, () => contributions.commands.delete(def.id))
-        },
-      },
-      menus: {
-        register: def => {
-          contributions.menus.push(def)
-          return track(bucket, () => {
-            const index = contributions.menus.indexOf(def)
-            if (index >= 0) contributions.menus.splice(index, 1)
-          })
-        },
-      },
-      views: {
-        register: def => {
-          contributions.views.set(def.id, def)
-          return track(bucket, () => contributions.views.delete(def.id))
-        },
-      },
-      events: {
-        on: (event, handler) => {
-          addHandler(contributions, event, handler)
-          return track(bucket, () => {
-            contributions.events.get(event)?.delete(handler)
-          })
-        },
-      },
-      terminal:
-        this.gateway?.terminalContextFor(record.manifest.id, generation) ??
-        // No gateway attached: every call fails closed. A no-op would let an
-        // extension believe it read something it did not.
-        noGatewayTerminal(),
-    }
-  }
-
   private async rollback(extensionId: string, bucket: Disposable[]): Promise<void> {
     // Reverse order: a later registration may depend on an earlier one.
     for (const disposable of [...bucket].reverse()) {
@@ -291,10 +251,3 @@ export class ExtensionRegistry {
   }
 }
 
-/** The terminal context when no gateway is attached: refuse everything. */
-function noGatewayTerminal(): ExtensionContext['terminal'] {
-  const refuse = async (): Promise<never> => {
-    throw new Error('the capability gateway is not attached')
-  }
-  return { readSelectedText: refuse, requestSendText: refuse }
-}

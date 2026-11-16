@@ -9,7 +9,7 @@
  */
 
 import { createDisposable } from './capability-gateway'
-import type { CapabilityGateway } from './capability-gateway'
+import type { CapabilityGateway, ExtensionCapability } from './capability-gateway'
 import type { Disposable, SafeEvent, SafeEventName } from './extension-types'
 import type { BuiltInExtensionManifest, ExtensionPlatform } from './extension-manifest'
 
@@ -139,4 +139,96 @@ export function withBudget<T>(promise: Promise<T>, ms: number): Promise<T> {
       },
     )
   })
+}
+
+/**
+ * Refuse a registration the manifest did not declare.
+ *
+ * Throws rather than ignoring: an extension whose registration silently vanished is
+ * a feature that does not work for a reason nobody can see. A throw during activation
+ * rolls the whole extension back and reports why.
+ */
+export function requireCapability(
+  declared: ReadonlySet<string>,
+  capability: ExtensionCapability,
+  extensionId: string,
+): void {
+  if (!declared.has(capability)) {
+    throw new Error(
+      `extension "${extensionId}" did not declare the "${capability}" capability`,
+    )
+  }
+}
+
+/** Which read-event capability covers this event. */
+export function eventCapability(event: SafeEventName): ExtensionCapability {
+  if (event === 'session.connected' || event === 'session.disconnected') {
+    return 'session.read-events'
+  }
+  if (event === 'workspace.changed') return 'workspace.read-events'
+  return 'transfer.read-events'
+}
+
+export function buildExtensionContext(input: {
+  record: ExtensionRecord
+  generation: number
+  contributions: Contributions
+  bucket: Disposable[]
+  terminal: ExtensionContext['terminal'] | undefined
+}): ExtensionContext {
+  const { contributions, bucket } = input
+  const record = input.record
+  const declared = new Set<string>(record.manifest.capabilities)
+  return {
+      extensionId: record.manifest.id,
+      apiVersion: 1,
+      subscriptions: bucket,
+      commands: {
+        register: def => {
+          requireCapability(declared, 'commands.register', record.manifest.id)
+          contributions.commands.set(def.id, def)
+          return track(bucket, () => contributions.commands.delete(def.id))
+        },
+      },
+      menus: {
+        register: def => {
+          requireCapability(declared, 'menus.register', record.manifest.id)
+          contributions.menus.push(def)
+          return track(bucket, () => {
+            const index = contributions.menus.indexOf(def)
+            if (index >= 0) contributions.menus.splice(index, 1)
+          })
+        },
+      },
+      views: {
+        register: def => {
+          requireCapability(declared, 'ui.right-dock', record.manifest.id)
+          contributions.views.set(def.id, def)
+          return track(bucket, () => contributions.views.delete(def.id))
+        },
+      },
+      events: {
+        on: (event, handler) => {
+          // The three read-event capabilities are declared separately, and until now
+          // nothing checked them: an extension that declared only `commands.register`
+          // could subscribe to session facts anyway. The manifest is the declaration
+          // the whole platform is reviewed against; a registration that ignores it
+          // makes the manifest decorative.
+          requireCapability(declared, eventCapability(event), record.manifest.id)
+          addHandler(contributions, event, handler)
+          return track(bucket, () => {
+            contributions.events.get(event)?.delete(handler)
+          })
+        },
+      },
+      terminal: input.terminal ?? noGatewayTerminal(),
+    }
+  }
+
+/** The terminal context when no gateway is attached: refuse everything. */
+function noGatewayTerminal(): ExtensionContext['terminal'] {
+  const refuse = async (): Promise<never> => {
+    throw new Error('the capability gateway is not attached')
+  }
+  return { readSelectedText: refuse, requestSendText: refuse }
 }

@@ -186,11 +186,16 @@ describe('partial activation', () => {
   it('can be retried after a failure', async () => {
     let attempt = 0
     const registry = new ExtensionRegistry()
-    registry.register(manifest(), context => {
-      attempt += 1
-      if (attempt === 1) throw new Error('first attempt fails')
-      registerAll(context)
-    })
+    // `registerAll` touches all four surfaces, so the manifest has to declare all
+    // four capabilities — an undeclared registration now throws.
+    registry.register(
+      manifest({ capabilities: [...manifest().capabilities, 'session.read-events'] }),
+      context => {
+        attempt += 1
+        if (attempt === 1) throw new Error('first attempt fails')
+        registerAll(context)
+      },
+    )
 
     await expect(registry.enable('snippet-dock')).resolves.toBe(false)
     await expect(registry.enable('snippet-dock')).resolves.toBe(true)
@@ -334,3 +339,68 @@ function registerAll(context: ExtensionContext): void {
   context.views.register({ id: 'snippet-dock', titleKey: 'v' })
   context.events.on('session.connected', () => undefined)
 }
+
+describe('capabilities are enforced on registration, not just declared', () => {
+  it('refuses commands from an extension that did not declare commands.register', async () => {
+    // Found by adversarial review: the manifest was the declaration the whole platform
+    // is reviewed against, and nothing checked it.
+    const registry = new ExtensionRegistry()
+    registry.register(manifest({ capabilities: ['ui.right-dock'] }), context => {
+      context.commands.register({ id: 'x', titleKey: 'x', run: async () => null })
+    })
+    await expect(registry.enable('snippet-dock')).resolves.toBe(false)
+    expect(registry.get('snippet-dock')?.status).toBe('failed')
+    expect(registry.get('snippet-dock')?.failure).toMatch(/commands\.register/)
+  })
+
+  it('refuses an event subscription without the matching read capability', async () => {
+    const registry = new ExtensionRegistry()
+    registry.register(manifest({ capabilities: ['commands.register'] }), context => {
+      context.events.on('session.connected', () => undefined)
+    })
+    await expect(registry.enable('snippet-dock')).resolves.toBe(false)
+    expect(registry.get('snippet-dock')?.failure).toMatch(/session\.read-events/)
+  })
+
+  it('maps each event to its own capability', async () => {
+    // A single "read events" flag would let a workspace subscriber listen to transfer
+    // facts. The three are declared separately for that reason.
+    const registry = new ExtensionRegistry()
+    registry.register(manifest({ capabilities: ['workspace.read-events'] }), context => {
+      context.events.on('transfer.changed', () => undefined)
+    })
+    await expect(registry.enable('snippet-dock')).resolves.toBe(false)
+    expect(registry.get('snippet-dock')?.failure).toMatch(/transfer\.read-events/)
+  })
+
+  it('allows a registration the manifest did declare', async () => {
+    const registry = new ExtensionRegistry()
+    registry.register(manifest({ capabilities: ['commands.register'] }), context => {
+      context.commands.register({ id: 'x', titleKey: 'x', run: async () => null })
+    })
+    await expect(registry.enable('snippet-dock')).resolves.toBe(true)
+    expect(registry.commands()).toHaveLength(1)
+  })
+})
+
+describe('enable does not race a deactivate', () => {
+  it('refuses to re-enable while the previous activation is still stopping', async () => {
+    // The first version guarded 'active' and 'activating' but not 'deactivating', so a
+    // re-enable during teardown started a second activation whose ledger entries were
+    // then deleted by the rollback already in flight.
+    const registry = new ExtensionRegistry()
+    let release: () => void = () => undefined
+    registry.register(manifest(), context => {
+      context.commands.register({ id: 'x', titleKey: 'x', run: async () => null })
+      return { dispose: () => new Promise<void>(resolve => { release = resolve }) }
+    })
+
+    await registry.enable('snippet-dock')
+    const stopping = registry.deactivate('snippet-dock')
+    await expect(registry.enable('snippet-dock')).resolves.toBe(false)
+    release()
+    await stopping
+    expect(registry.get('snippet-dock')?.status).toBe('disabled')
+    await expect(registry.enable('snippet-dock')).resolves.toBe(true)
+  })
+})
