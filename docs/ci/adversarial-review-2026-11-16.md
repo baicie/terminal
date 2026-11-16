@@ -224,10 +224,11 @@ mock-runtime 可覆盖命令集合、app-level 权限数为 0、以及缺口本�
 
 | 门禁 | 结果 |
 | --- | --- |
-| Gate scripts (`node --test`) | **787 项 / 783 pass / 4 skipped / 0 fail** |
+| Gate scripts (`node --test`) | **797 项 / 793 pass / 4 skipped / 0 fail** |
 | Rust (`cargo test --lib`) | **434 passed / 0 failed / 9 ignored** |
 | Rust (`--features gui-e2e`, IPC) | **7 passed / 0 failed** |
 | GUI 证据完整性（新增） | **6 项** |
+| 报告聚合端到端（新增） | **19 项**（含真实命令与真实目录布局） |
 | Team Sync 判定契约（新增） | **9 项** |
 | Frontend vitest | **255 文件 / 2337 项 / 0 fail** |
 | source-size | **684 个生产文件通过** |
@@ -334,6 +335,52 @@ Windows artifact 里。
 （步骤是否跑成）驱动，`A_TO_B_VERIFIED=FAIL` 是 ADR 最低版本策略设计上期望的
 结果**——所以退出 0 是正确的。但复审指出的可混淆性是真实的，且文档确实过期。
 处理：文档改为描述当前策略；判定抽成纯函数并加测试钉住两个方向。
+
+---
+
+## 6.6 第三次独立复审（逐文件对抗性复核）后又修复的问题
+
+这次由未参与开发的 agent 逐文件复核，报出的问题全部用命令复现后修复。
+
+| # | 严重度 | 问题 | 复现 |
+| --- | --- | --- | --- |
+| S1 | **P0** | 机器可读测试报告从未产出 | `pnpm test -- --reporter=json` 把 `--` 一起转发，vitest 当作位置参数；实测跑完 2337 项**没有任何 JSON 写出**。另外 `../test-results` 相对 vite root 解析到 `packages/test-results`，而 artifact 上传仓库根的 `test-results/` |
+| S2 | **P0** | 失败的 job 被标 `BLOCKED`，真实报告被丢弃 | workflow 对任何非 success 结果传 `--skipped`，`collectLayers` 先查它再找文件 → 失败套件的真实计数归零 |
+| S3 | P1 | `classifyRun` 在只有 `neutral` job 的 run 上抛 `TypeError` | `notEvaluated` 条目无 `category`，旧代码却读 `chosen.category`；归因步骤 `continue-on-error`，所以崩溃是静默的 |
+| S4 | P1 | 发布门禁在本仓库永远无法通过 | GUI check 标 `pr-evidence` 但 `release-facts` 只读 `commits/{sha}/check-runs`，而 GUI workflow 无 tag 触发 → 绿 tag 上必然 `check-missing-pr-evidence` ×2 |
+| S5 | P1 | `--print-files` 失败路径污染文件列表 | `catch` 硬编码 `console.log('docs_only=false')` 到 stdout，而该模式下 stdout 是纯路径列表 |
+| S6 | P2 | 未预期平台被当作硬失败 | 注释写「not fatal」，代码却 `push` 进 `problems` → 加了 `windows-aarch64` 的 manifest 被整体拒绝 |
+
+### S4 的修复与验证
+
+新增 `collectPrEvidenceChecks`：用 `actions/runs?head_sha=<sha>` 取该 commit 的全部
+workflow runs（此接口对任何 event 都返回，已实测），取最新一次 run 的 jobs 映射回
+`checks`。真实 commit 上验证：
+
+```
+prEvidence checks: ['Driver isolation gate', 'macOS GUI E2E']
+Driver isolation gate -> {conclusion: success, workflowPath: .github/workflows/native-gui-e2e.yml, runId: 43803610192}
+macOS GUI E2E        -> {conclusion: success, workflowPath: .github/workflows/native-gui-e2e.yml, runId: 43803610192}
+```
+
+修复后跑完整发布门禁（同一真实 commit，只合成一个匹配的 tag 以隔离 check 评估）：
+
+```
+release qualification: FAIL — 1 problem(s)
+  [evidence-not-qualified] the acceptance evidence does not describe this commit (7 problem(s))
+```
+
+**13 个 required check 全部通过**，GUI 两个也在内；唯一剩下的失败是证据确实过期——
+这是正确报告的事实，不是缺陷。
+
+### 我自己引入又修掉的三处
+
+- 把 `shas` 挪进 `findMixedCommits` 后，写 JSON 处仍引用 `shas` → `ReferenceError`。
+  端到端测试立刻抓到（带堆栈），已改为写前重新求值 `commits`。
+- 在 `a94919a` 里把 `test-results/vitest.json`（763 KB 生成物）一起提交了。
+  已移除、加入 `.gitignore`、并加一条测试断言 `git ls-files test-results` 为空。
+- `test -s` 守卫写成 `../test-results/`（shell 的 cwd 不被 `pnpm --filter` 改变），
+  已改为 `test-results/`。
 
 ---
 
