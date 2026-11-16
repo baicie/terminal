@@ -22,7 +22,7 @@ CI_FOUNDATION_COMPLETE
 | --- | --- | --- |
 | `BRANCH_PROTECTION_ENABLED` | **PASS** | ruleset `27354680` active，四类拦截实测 |
 | `REQUIRED_CHECK_BLOCKS_MERGE` | **PASS** | 失败 required check 的 PR 合并被拒 |
-| `WINDOWS_GUI_E2E_READY` | **FAIL（有修复，未验证）** | 根因已定位并修复，Windows runner 复验 `NOT_RUN` |
+| `WINDOWS_GUI_E2E_READY` | **FAIL（有修复，未验证）** | 五层根因已修；19 个用例首次全绿，但汇总步骤的 shell 缺陷修复未复验 |
 | `TEST_REPORT_COVERAGE_READY` | **PARTIAL** | 6/10 层接入真实数据；4 层无计数产物 |
 | `RELEASE_QUALIFICATION_READY` | **PARTIAL** | 结构+加密校验已接；真实 tag 发布未执行 |
 | `UPDATER_RUNTIME_READY` | **PARTIAL** | 签名校验已接；运行时下载/安装 `NOT_RUN` |
@@ -67,7 +67,7 @@ OS 代码签名或正式 Release 就绪。
 | --- | --- | --- |
 | `Driver isolation gate` | ✅ | 确定性、快速，安全契约 |
 | `macOS GUI E2E` | ✅ | 唯一有稳定通过记录的平台 |
-| `Windows GUI E2E (informational)` | ❌ | 无稳定通过记录；**本轮不动 `continue-on-error`** |
+| `Windows GUI E2E (informational)` | ❌ | 用例已全绿（19/19），但汇总步骤的 shell 缺陷未验证修复；**本轮不动 `continue-on-error`** |
 | `Linux GUI E2E (informational)` | ❌ | 同上 |
 
 ---
@@ -235,6 +235,36 @@ workflow runs。真实 commit 验证：两个 GUI check 均被采集，`workflow
 | 8 | **P1** | `verifyUpdaterSignatures` 是死代码 | 无生产调用者 |
 | 9 | **P1** | `TAURI_UPDATER_PUBKEY` 被引用但不在 env | 与上轮 `VERSION` 同类 |
 | 10 | **P2** | SFTP E2E 的 glob 是 `.json` 而产物是 libtest 文本 | 永远不会命中 |
+| 11 | **P0** | Windows GUI 汇总步骤用 POSIX 续行写进了 `pwsh` | `ParserError: …Missing expression after unary operator '--'` |
+| 12 | **P1** | 同一步骤里 `$RUNNER_OS` 在 PowerShell 中是未设置变量，展开为空串 | 即使续行能解析也会写 `--platform ""` |
+
+### Windows GUI 的真实失败链（五层，逐层剥离）
+
+`WINDOWS_GUI_E2E_READY` 在此之前一直无法判定，因为每一轮的红都只暴露最外层。
+按发现顺序，前一层修好才会看到下一层：
+
+| 层 | 缺陷 | 判据 |
+| --- | --- | --- |
+| 1 | 测试 harness 用 `XDG_CONFIG_HOME` 推导 profile 路径，产品用 `app_config_dir()`；两者在 Windows 上不是同一目录 | 截图 `MANUAL_INTERVENTION_REQUIRED · the application config directory is unknown`，计数 1→0 |
+| 2 | seed 只写父 profile，per-spec profile 没有宿主行 | seed 到 `…-1794808629500`，spec 跑在 `…-…-e2e-01-startup` |
+| 3 | `readCols()` 在窗口重排期间读 DOM，竞态导致 `status-bar` 找不到 | Windows 失败 9→2 |
+| 4 | 640px 是移动断点，产品换成 `BottomNav` + drawer，spec 仍在找 `status-bar` | 该档在 Linux 上剩 49 列 |
+| 5 | `setWindowSize` 设的是**外框**，Windows 内容框恒定少 16px；spec 把「比请求窄」判成 `policyViolation`，6 档同时误报「跌破 60 列」 | 实测 cols 是 132/112，而断言认为应为 60+ |
+
+第 4、5 层由项目负责人在 `b8056d7` / `00773fa` 补修，第 5 层是我漏掉的 ——
+我只盯住 `status-bar` 找不到这个症状，没有验证断言链的其余部分。
+
+**第 5 层修好后，Windows GUI 用例第一次真实全绿**（run `43852491675`
+job `133248321306`）：`e2e-01` 6 passing / `e2e-02` 5 passing / `e2e-03` 8
+passing，共 19 个用例。但 job 仍然是红的，因为第 11/12 项缺陷让汇总步骤在
+node 启动前就死了 —— **用例的结果从未进入 `test-results/gui-e2e.json`**，
+聚合报告里 Windows GUI 这一层是空的。
+
+第 11/12 项由 main 上的 `82c3d22`（PR #93）引入，不是 PR #92 的分支引入的：
+PR 事件按 merge ref 运行，GitHub 把 main 合进分支后再跑，所以分支自己的
+`native-gui-e2e.yml` 里并没有这一行（`git show origin/main:…` 有、
+`git show origin/ci/ci-final-02-windows-gui:…` 没有）。
+
 
 ### 我自己引入并修掉的
 
@@ -253,8 +283,10 @@ workflow runs。真实 commit 验证：两个 GUI check 均被采集，`workflow
 ## 7. 明确不声称的事项
 
 - **不声称 CI 全绿**：结论以本轮 PR 各自的 Actions 结果为准。
-- **不声称 Windows GUI 已修复**：根因已定位、修复已提交，但没有 Windows runner 的
-  复验证据，`WINDOWS_GUI_E2E_READY=FAIL`。
+- **不声称 Windows GUI 已修复**：五层根因已逐层定位并修复，且 run `43852491675`
+  的 19 个用例第一次真实全绿；但同一 job 因汇总步骤的 shell 缺陷仍是红的，
+  Windows 层的报告文件从未产出。等 `1620a9a`（汇总步骤改为单行 PowerShell）的
+  Windows runner 结果，在那之前 `WINDOWS_GUI_E2E_READY` 不写 PASS。
 - **不声称更新通道无竞态窗口**：`--clobber` 的非原子性已量化并缓解，未消除。
 - **不声称管理员无法绕过** ruleset。
 - **不把** `NOT_RUN` / `PARTIAL` / `EXTERNAL_ACTION_REQUIRED` 写成 PASS。
