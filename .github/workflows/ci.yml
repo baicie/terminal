@@ -145,7 +145,28 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter=@terminal/frontend lint
       - run: pnpm --filter=@terminal/frontend typecheck
-      - run: pnpm --filter=@terminal/frontend test
+      # ## Machine-readable results, so the test report is measured rather than guessed
+      #
+      # `--reporter=json --outputFile` writes vitest's own counts. The default
+      # reporter's "255 files / 2337 passed" line is prose: a report built from it
+      # would have to re-parse a human sentence, and would silently miss skip/todo.
+      #
+      # The `if: always()` upload is what makes a *failing* suite still contribute its
+      # counts — otherwise a red job would look like a job that never ran.
+      - name: Frontend tests (machine-readable)
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          pnpm --filter=@terminal/frontend test -- \
+            --reporter=default --reporter=json --outputFile=../test-results/vitest.json
+      - name: Upload frontend test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-frontend-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 7
       - run: pnpm --filter=@terminal/frontend build:budget
       - name: Vault probe is absent from the production bundle
         run: |
@@ -238,7 +259,20 @@ jobs:
       - run: pnpm --filter=team-server prisma:generate
       - run: pnpm --filter=team-server typecheck
       - run: pnpm --filter=team-server lint
-      - run: pnpm --filter=team-server test
+      - name: Team Server tests (machine-readable)
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          pnpm --filter=team-server test -- \
+            --reporter=default --reporter=json --outputFile=../../test-results/team-server-vitest.json
+      - name: Upload Team Server test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-team-server-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 7
       - run: pnpm --filter=team-server build
       - name: Apply migrations
         working-directory: packages/team-server
@@ -388,7 +422,21 @@ jobs:
       # this job was widened to close.
       - name: Verification evidence is internally consistent
         run: node scripts/check-verification-evidence.mjs --mode=integrity
-      - run: node --test scripts/*.test.mjs scripts/verify-install/*.test.mjs
+      - name: Gate script tests (machine-readable)
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          node --test --test-reporter=spec --test-reporter-destination=stderr \
+            --test-reporter=tap --test-reporter-destination=test-results/scripts.tap \
+            scripts/*.test.mjs scripts/verify-install/*.test.mjs
+      - name: Upload gate script test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-scripts-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 7
 
   rust:
     name: Rust quality
@@ -444,7 +492,25 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
-      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      # ## Machine-readable libtest counts
+      #
+      # `cargo test` writes one `test result: …` line per test binary, and a workspace
+      # runs several. The file is kept verbatim; `ci-test-ingest.mjs` sums the lines.
+      # Tee rather than redirect so a failure is still visible in the job log.
+      - name: Rust tests (machine-readable)
+        run: |
+          set -o pipefail
+          mkdir -p src-tauri/test-results
+          cargo test --locked --manifest-path src-tauri/Cargo.toml 2>&1 \
+            | tee src-tauri/test-results/cargo-test.txt
+      - name: Upload Rust test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-rust-${{ github.run_id }}
+          path: src-tauri/test-results/
+          if-no-files-found: warn
+          retention-days: 7
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --features smoke-vault-probe vault_probe
       # ## The production SFTP paths against a real OpenSSH server
       #
@@ -885,3 +951,99 @@ jobs:
             | tee -a "$GITHUB_STEP_SUMMARY"
         # A failure while explaining a failure must not replace the real verdict.
         continue-on-error: true
+
+  # ## Aggregate the per-layer test results into one report
+  #
+  # Each job above uploads its runner's own machine-readable output. This job
+  # downloads all of them and builds one report.
+  #
+  # Three rules it enforces, all of which the previous static report could not:
+  #
+  #   1. a missing artifact is `NOT_RUN` with the reason, never zero tests;
+  #   2. a job that was skipped is `BLOCKED`, visible rather than absent;
+  #   3. results from different commits never mix (the aggregator refuses them).
+  #
+  # `if: always()` because the report is most valuable when something failed — a
+  # report that only runs on success is a report nobody needs.
+  test-report:
+    name: Test execution report
+    needs:
+      - changes
+      - frontend
+      - team-server
+      - source-size
+      - rust
+    if: always() && needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Download every layer's report
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-*
+          path: reports
+          merge-multiple: true
+      # The artifact layout is reports/<file> for the top-level ones and
+      # reports/<subdir>/<file> for the frontend/rust ones; flatten so the ingestion
+      # plan's paths resolve.
+      - name: Lay the reports out where the plan expects them
+        run: |
+          set -euo pipefail
+          mkdir -p packages/frontend/test-results src-tauri/test-results test-results
+          for source in reports/vitest.json reports/*/vitest.json; do
+            [ -f "$source" ] || continue
+            case "$source" in
+              *frontend*) cp "$source" packages/frontend/test-results/vitest.json ;;
+            esac
+          done
+          # A single vitest.json from the frontend job; the team-server job writes
+          # team-server-vitest.json, which ingestion reads separately.
+          [ -f reports/test-results/vitest.json ] && cp reports/test-results/vitest.json packages/frontend/test-results/vitest.json || true
+          [ -f reports/team-server-vitest.json ] && cp reports/team-server-vitest.json packages/team-server/test-results/vitest.json || true
+          [ -f reports/test-results/team-server-vitest.json ] && cp reports/test-results/team-server-vitest.json packages/team-server/test-results/vitest.json || true
+          [ -f reports/scripts.tap ] && cp reports/scripts.tap test-results/scripts.tap || true
+          [ -f reports/test-results/scripts.tap ] && cp reports/test-results/scripts.tap test-results/scripts.tap || true
+          [ -f reports/cargo-test.txt ] && cp reports/cargo-test.txt src-tauri/test-results/cargo-test.txt || true
+          [ -f reports/test-results/cargo-test.txt ] && cp reports/test-results/cargo-test.txt src-tauri/test-results/cargo-test.txt || true
+          find reports -type f | sort || true
+      # Layers whose job did not produce a result are named, not inferred. `needs`
+      # says which jobs were skipped; the aggregation maps that to BLOCKED.
+      - name: Build the test execution report
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          SKIPPED_ARGS=""
+          for pair in \
+            "frontend:unit-frontend" \
+            "team-server:unit-team-server" \
+            "rust:unit-rust" \
+            "source-size:scripts"; do
+            job="${pair%%:*}"; layer="${pair##*:}"
+            result="$(node -e "
+              const needs = JSON.parse(process.env.NEEDS || '{}');
+              process.stdout.write(String((needs['$job'] || {}).result || ''));
+            ")"
+            if [[ "$result" != "success" ]]; then
+              SKIPPED_ARGS="$SKIPPED_ARGS --skipped $layer"
+            fi
+          done
+          # shellcheck disable=SC2086
+          node scripts/aggregate-test-report.mjs \
+            --dir . \
+            --sha "$HEAD_SHA" \
+            --json test-results/test-execution-report.json \
+            $SKIPPED_ARGS | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-execution-report-${{ github.run_id }}
+          path: test-results/test-execution-report.json
+          if-no-files-found: warn
+          retention-days: 30

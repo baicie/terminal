@@ -52,6 +52,17 @@ export const EXPECTED_JOBS = {
   changes: { optional: false },
   // `required` itself is the aggregator and never appears in its own `needs`.
   required: { optional: true, reason: 'the aggregator' },
+  // ## The test execution report
+  //
+  // Reporting, not gating. It aggregates the per-layer test reports and is
+  // `continue-on-error: true` by design, so its own failure must not turn a merge red —
+  // the individual test jobs are the gates. It is listed here (rather than left
+  // unclassified) so that changing it from advisory to blocking is a deliberate edit:
+  // move it into AGGREGATED_JOBS *and* remove the continue-on-error.
+  'test-report': {
+    optional: true,
+    reason: 'reporting only; continue-on-error by design, the per-layer jobs are the gates',
+  },
 }
 
 /** Jobs whose results arrive through `needs` for the `required` job. */
