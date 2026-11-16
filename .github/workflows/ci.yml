@@ -106,24 +106,50 @@ jobs:
               base="HEAD~1"
             fi
           fi
-          # Run once and keep both the verdict and the file list. `set -e` is off for
-          # this call because a non-zero exit from the classifier means "could not
-          # determine the diff", which is `docs_only=false` — the safe answer, not a
-          # reason to abort the job before `required` can report.
+          # ## One invocation, two streams
+          #
+          # `--print-files` puts the path list on stdout and the prose verdict on stderr,
+          # so a single run of the classifier produces both facts. The previous version
+          # ran the classifier once and then a *second* `git diff` for the list, with this
+          # redirect:
+          #
+          #   git diff --name-only "$base"...HEAD 2>/dev/null || true >> "$GITHUB_OUTPUT"
+          #
+          # `>>` binds to the last command in the `||` list — `true` — so the diff went to
+          # the job log and `changed` was **always empty**. Measured in a scratch repo with
+          # one changed file: the buggy form captured nothing, the fixed form captured it.
+          #
+          # Two diffs that must agree, with nothing comparing them, was the deeper
+          # problem: a rename could be classified as code-changing and published as
+          # docs-only in the same run.
+          #
+          # `set -e` is off for this call because a non-zero exit from the classifier
+          # means "could not determine the diff", which is `docs_only=false` — the safe
+          # answer, not a reason to abort the job before `required` can report.
           set +e
-          output="$(node scripts/classify-change.mjs . "$base" HEAD 2>&1)"
+          node scripts/classify-change.mjs . "$base" HEAD --print-files \
+            > /tmp/changed.txt 2> /tmp/classify.log
           status=$?
           set -e
-          echo "$output"
-          verdict="$(sed -n 's/^docs_only=//p' <<< "$output" | tail -1)"
+          cat /tmp/classify.log
+          verdict="$(sed -n 's/^docs_only=//p' /tmp/classify.log | tail -1)"
           if [[ "$status" -ne 0 || -z "$verdict" ]]; then
             echo "classifier could not decide (exit $status); treating as not docs-only" >&2
             verdict="false"
+            : > /tmp/changed.txt
           fi
           echo "docs_only=$verdict" >> "$GITHUB_OUTPUT"
-          echo "changed<<EOF" >> "$GITHUB_OUTPUT"
-          git diff --name-only "$base"...HEAD 2>/dev/null || true >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          # ## The heredoc delimiter
+          #
+          # `EOF` was the old delimiter, and a file legitimately named `EOF` would end the
+          # block early and truncate the list. `CHANGED_EOF_SENTINEL` cannot collide with a
+          # repository path in practice, and `git` itself allows a file named `EOF`.
+          {
+            echo "changed<<CHANGED_EOF_SENTINEL"
+            cat /tmp/changed.txt
+            echo "CHANGED_EOF_SENTINEL"
+          } >> "$GITHUB_OUTPUT"
+          echo "changed file(s): $(wc -l < /tmp/changed.txt | tr -d ' ')"
 
   frontend:
     name: Frontend quality

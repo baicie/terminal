@@ -105,11 +105,22 @@ function git(args, cwd) {
 }
 
 function main() {
-  const [repo, base, head = 'HEAD'] = process.argv.slice(2)
+  const args = process.argv.slice(2)
+  // `--print-files` writes the changed path list to stdout (one per line) and the
+  // verdict to stderr, so the workflow can publish the SAME list the verdict came from.
+  // A second `git diff` in the workflow was two diffs that had to agree with nothing
+  // comparing them — and its redirection bound to the wrong command.
+  const printFiles = args.includes('--print-files')
+  const positional = args.filter(arg => !arg.startsWith('--'))
+  const [repo, base, head = 'HEAD'] = positional
   if (!repo || !base) {
-    console.error('usage: classify-change.mjs <repo> <base> [head]')
+    console.error('usage: classify-change.mjs <repo> <base> [head] [--print-files]')
     return 2
   }
+
+  // In `--print-files` mode the machine-readable list goes to stdout and the prose to
+  // stderr, so a caller can redirect stdout without capturing commentary.
+  const say = printFiles ? (...parts) => console.error(...parts) : (...parts) => console.log(...parts)
 
   let entries
   try {
@@ -133,8 +144,13 @@ function main() {
   }
 
   const { docsOnly, reason, files } = classifyPaths(entries)
-  console.log(`classified ${files.length} path(s): ${reason}`)
-  console.log(`docs_only=${docsOnly}`)
+  say(`classified ${files.length} path(s): ${reason}`)
+  say(`docs_only=${docsOnly}`)
+  if (printFiles) {
+    // Deduplicated and sorted: a rename contributes both sides, and a reader wants one
+    // line per path. Sorting also makes the output stable across git versions.
+    for (const file of [...new Set(files)].sort()) console.log(file)
+  }
   return 0
 }
 

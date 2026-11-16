@@ -25,11 +25,42 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      # ## The workflow and its harness
+      #
+      # The workflow file itself was missing. A PR that weakens this gate — removing a
+      # job, flipping `continue-on-error`, narrowing these filters — produced **no GUI
+      # run at all**, so the change could not be observed by the very check it edits.
+      - '.github/workflows/native-gui-e2e.yml'
       - 'e2e/gui/**'
       - 'scripts/run-gui-e2e.mjs'
       - 'scripts/check-gui-e2e-isolation.mjs'
-      - 'packages/frontend/src/features/terminal/gui-e2e-probe.ts'
+      - 'scripts/check-gui-e2e-profile-isolation.mjs'
+      - 'scripts/gui-e2e-platform.mjs'
+      # ## The UI the specs actually drive
+      #
+      # Measured from the specs: they assert on `activity-rail`, `app-sidebar`,
+      # `connection-explorer`, `rail-*`, `terminal-workbench`, `right-panel`, and the
+      # SFTP dock's `file-row`. Those live in `components/`, `view/`, `router/` and
+      # `store/` — none of which was in the filter. Editing the terminal workspace, the
+      # session store or the router therefore triggered no GUI run, which is the
+      # opposite of what a GUI gate is for.
+      - 'packages/frontend/src/components/**'
+      - 'packages/frontend/src/view/**'
+      - 'packages/frontend/src/router/**'
+      - 'packages/frontend/src/store/**'
+      - 'packages/frontend/src/features/terminal/**'
+      - 'packages/frontend/src/layout/**'
+      - 'packages/frontend/src/app/**'
+      - 'packages/frontend/src/index.css'
+      - 'packages/frontend/src/main.tsx'
+      - 'packages/frontend/src/App.tsx'
+      - 'packages/frontend/package.json'
+      # ## The native side
+      #
+      # Tauri commands, the WebView configuration, the capabilities that grant the
+      # driver access, and the PTY layer the terminal specs exercise.
       - 'src-tauri/**'
+      - 'e2e/native-gui/**'
 
 permissions:
   contents: read

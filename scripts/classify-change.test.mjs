@@ -89,3 +89,56 @@ test('blank lines and whitespace do not create phantom entries', () => {
   assert.equal(docsOnly, true)
   assert.deepEqual(files, ['README.md'])
 })
+
+test('--print-files keeps the same file list the verdict came from', async () => {
+  // The workflow used to run the classifier for the verdict and a SECOND `git diff` for
+  // the list, with `git diff … || true >> "$GITHUB_OUTPUT"` — where the redirect bound
+  // to `true`. `changed` was always empty, and a rename could be classified as
+  // code-changing while published as docs-only.
+  const { execFileSync } = await import('node:child_process')
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+
+  const repo = mkdtempSync(path.join(os.tmpdir(), 'classify-print-'))
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' })
+  git('init', '-q', '.')
+  git('config', 'user.email', 't@t.invalid')
+  git('config', 'user.name', 't')
+  mkdirSync(path.join(repo, 'docs'))
+  writeFileSync(path.join(repo, 'docs/a.md'), '# a\n')
+  writeFileSync(path.join(repo, 'code.rs'), 'fn main() {}\n')
+  git('add', '.')
+  git('commit', '-qm', 'one')
+
+  writeFileSync(path.join(repo, 'code.rs'), 'fn main() { /* changed */ }\n')
+  writeFileSync(path.join(repo, 'docs/b.md'), '# b\n')
+  git('add', '.')
+  git('commit', '-qm', 'two')
+
+  const script = path.resolve(import.meta.dirname, 'classify-change.mjs')
+  let stdout = ''
+  let stderr = ''
+  try {
+    stdout = execFileSync(process.execPath, [script, repo, 'HEAD~1', 'HEAD', '--print-files'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch (error) {
+    stdout = error.stdout ?? ''
+    stderr = error.stderr ?? ''
+  }
+  const files = stdout.split('\n').filter(Boolean)
+  assert.deepEqual(files.sort(), ['code.rs', 'docs/b.md'])
+  // The verdict went to stderr in this mode, so stdout is a clean machine-readable list.
+  assert.doesNotMatch(stdout, /docs_only=/)
+})
+
+test('a rename contributes both sides to the classified list', () => {
+  // `classifyPaths` records both sides on purpose: moving a source file into docs/ still
+  // removed it from the build. The CLI deduplicates when printing, which the test above
+  // covers end-to-end; here the underlying behaviour is pinned.
+  const { files, docsOnly } = classifyPaths(['R100\tsrc/lib.rs\tdocs/lib.rs'])
+  assert.deepEqual(files.sort(), ['docs/lib.rs', 'src/lib.rs'])
+  assert.equal(docsOnly, false, 'a rename out of src/ is a code change')
+})
