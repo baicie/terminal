@@ -691,6 +691,11 @@ jobs:
           # failing every updater-signed release at its last step.
           VERSION: ${{ needs.prepare-release.outputs.version }}
           MODE: ${{ env.RELEASE_MODE }}
+          # Needed to verify the updater signatures against the downloaded payloads.
+          # Empty in `unsigned-qa`, where the CLI then says "structure only" instead of
+          # implying a check it could not perform. Same class as the `VERSION` omission
+          # above: a variable referenced by the script but absent from this step's env.
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
         run: |
           set -euo pipefail
 
@@ -755,7 +760,22 @@ jobs:
             # whatever it read. `scripts/updater-manifest-check.mjs` checks the version
             # against this tag, the exact platform set, non-empty signatures, https
             # URLs scoped to this release, and distinct payloads.
+            # ## Structural + cryptographic
+            #
+            # With `TAURI_UPDATER_PUBKEY` and the downloaded payloads present, every
+            # platform's signature is verified against its payload. Without them the CLI
+            # says "structure only" out loud rather than letting a reader assume the
+            # stronger claim — and it *refuses* when a key is supplied but a payload is
+            # missing, because "could not check" is not "checked".
+            mkdir -p published-updater/payloads
+            jq -r '.platforms[].url' published-updater/latest.json | while read -r asset_url; do
+              asset_name="$(basename "$asset_url")"
+              gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+                --pattern "$asset_name" --dir published-updater/payloads --clobber || true
+            done
             VERSION="$VERSION" RELEASE_TAG="$RELEASE_TAG" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+              TAURI_UPDATER_PUBKEY="${TAURI_UPDATER_PUBKEY:-}" \
+              UPDATER_PAYLOAD_DIR="published-updater/payloads" \
               node scripts/verify-updater-manifest.mjs published-updater/latest.json
             platforms="$(jq -r '.platforms | keys | join(", ")' published-updater/latest.json)"
             echo "updater manifest published for: $platforms"

@@ -776,6 +776,23 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96.0
+      # ## The one measurable cost win
+      #
+      # Measured on run 43814394847: `Tauri build (windows-latest)` takes **17.1 min**
+      # and is the critical path — the next longest job is 10.6 min and everything runs
+      # in parallel from +0.3 min. This job had no Rust cache at all (only the `rust`
+      # job did), so all three platforms recompiled the whole dependency graph on every
+      # run.
+      #
+      # `Swatinem/rust-cache` keys on Cargo.lock plus the toolchain, and it is scoped per
+      # `workspaces:` and per OS by default, so the three matrix legs do not share a
+      # cache (they cannot — the artifacts differ per platform).
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # No custom `key:`: the action already scopes by OS and hashes Cargo.lock, and
+          # an explicit key would defeat its `restore-keys` fallback, so a branch could
+          # not reuse the main branch's warm cache. The `rust` job uses the same shape.
+          workspaces: src-tauri -> target
       - name: Install Tauri Linux dependencies
         if: runner.os == 'Linux'
         run: |
