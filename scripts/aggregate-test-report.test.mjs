@@ -186,3 +186,52 @@ test('the aggregator merges artifacts flat, and the layout assumes that', async 
     'with merge-multiple the files are flat under reports/; a nested path cannot exist',
   )
 })
+
+test('the real CI invocation works end-to-end on a realistic fixture tree', async () => {
+  // Runs the exact command the workflow runs, against the exact layout the jobs upload
+  // (`merge-multiple: true` flattens them). This covers what the unit tests above
+  // cannot: argument parsing, the report JSON write, and the exit code.
+  const { execFileSync } = await import('node:child_process')
+  const { readFileSync } = await import('node:fs')
+  const root = makeTree({
+    'packages/frontend/test-results/vitest.json': {
+      numTotalTests: 2337,
+      numPassedTests: 2337,
+      numFailedTests: 0,
+      numPendingTests: 0,
+    },
+    'packages/team-server/test-results/vitest.json': {
+      numTotalTests: 96,
+      numPassedTests: 96,
+      numFailedTests: 0,
+    },
+    'src-tauri/test-results/cargo-test.txt':
+      'test result: ok. 434 passed; 0 failed; 9 ignored; 0 measured; 0 filtered out\n',
+    'test-results/scripts.tap': 'TAP version 13\nok 1 - a\nok 2 - b\nnot ok 3 - c\n1..3\n',
+  })
+  const out = path.join(root, 'test-results/test-execution-report.json')
+  const script = path.resolve(import.meta.dirname, 'aggregate-test-report.mjs')
+
+  const stdout = execFileSync(
+    process.execPath,
+    [script, '--dir', root, '--sha', 'a'.repeat(40), '--json', out, '--skipped', 'gui-e2e'],
+    { encoding: 'utf8' },
+  )
+
+  assert.match(stdout, /Gate scripts \(node --test\) \| `FAIL`/)
+  assert.match(stdout, /Unit — frontend \(vitest\) \| `PASS` \| — \| 2337 \| 2337/)
+  assert.match(stdout, /GUI E2E — real WebView \| `BLOCKED`/)
+  assert.match(stdout, /Real machine — SSH\/PTY matrix \| `NOT_RUN`/)
+  assert.match(stdout, /Verdict:\*\* NOT GREEN/)
+
+  const report = JSON.parse(readFileSync(out, 'utf8'))
+  assert.equal(report.schemaVersion, 1)
+  assert.equal(report.generatedFor, 'a'.repeat(40))
+  const frontend = report.layers.find(layer => layer.layer === 'unit-frontend')
+  for (const field of [
+    'layer', 'platform', 'runner', 'runId', 'commitSha', 'total', 'passed',
+    'failed', 'skipped', 'notRun', 'durationMs', 'artifact', 'status',
+  ]) {
+    assert.ok(field in frontend, `the JSON contract is missing \`${field}\``)
+  }
+})
