@@ -86,3 +86,33 @@ test('the failing step name is used as an anchor when the runner prints no error
   const excerpt = extractFailureExcerpt(log, { stepNames: ['node scripts/run-gui-e2e.mjs'] })
   assert.match(excerpt, /webview never became ready/)
 })
+
+test('a compiler error survives 300 runner ##[error] lines at the end', () => {
+  // The measured defect after the FIRST fix: collecting all anchor windows and then
+  // keeping the tail meant a log whose real error came first and whose runner markers
+  // filled the rest produced an excerpt with none of the real error.
+  //
+  //   excerpt length: 12000 | contains the real error? false
+  //
+  // The budget is now spent on real anchors (compiler/test errors) before runner ones.
+  const lines = ['setup', '2026-11-15T13:10:37Z error[E0433]: cannot find `unix` in `os`']
+  for (let i = 0; i < 300; i += 1) lines.push(`2026-11-15T13:20:0${i % 9}Z ##[error]step ${i} failed`)
+  const excerpt = extractFailureExcerpt(lines.join('\n'))
+  assert.match(excerpt, /E0433/)
+})
+
+test('the earliest of several real errors is the one kept', () => {
+  const lines = ['setup']
+  for (let i = 0; i < 40; i += 1) {
+    lines.push(`2026-11-15T13:1${i % 10}:00Z error[E000${i}]: distinct failure ${i}`)
+  }
+  for (let i = 0; i < 200; i += 1) lines.push(`2026-11-15T13:30:00Z ##[error]noise ${i}`)
+  const excerpt = extractFailureExcerpt(lines.join('\n'), { maxChars: 4000 })
+  assert.match(excerpt, /E0000/, 'the first real error must survive')
+})
+
+test('runner markers still appear when there is room', () => {
+  const log = ['setup', 'error[E0433]: x', 'filler', '##[error]Process completed with exit code 1.'].join('\n')
+  const excerpt = extractFailureExcerpt(log)
+  assert.match(excerpt, /Process completed with exit code 1/)
+})

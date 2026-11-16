@@ -204,7 +204,21 @@ export function judgeRelease(facts) {
         'real-machine-matrix.yml on this commit instead of editing the manifest',
     )
   }
-  const missingScenarios = facts.evidence?.missingScenarios ?? []
+  // ## Scenario-level detail is not collected; the aggregate verdict is
+  //
+  // The evidence gate (`check-verification-evidence.mjs --mode=qualification`) reports a
+  // problem count and prose, not a machine-readable list of scenario names. An earlier
+  // version of this judge read `missingScenarios`/`notPassed` fields that the collector
+  // always left empty, so those two rules could never fire — they were decoration in
+  // the release path and only real in tests that hand-built the facts.
+  //
+  // Rather than parse prose (which would break on the first rewording), the aggregate
+  // `qualificationPassed` carries the whole decision, and the fields are honoured **if
+  // a future collector supplies them**. Absent fields are not a failure: the gate above
+  // already failed.
+  const missingScenarios = Array.isArray(facts.evidence?.missingScenarios)
+    ? facts.evidence.missingScenarios
+    : []
   if (missingScenarios.length > 0) {
     push(
       'evidence-missing-scenarios',
@@ -212,7 +226,7 @@ export function judgeRelease(facts) {
         missingScenarios.join(', '),
     )
   }
-  const notPassed = facts.evidence?.notPassed ?? []
+  const notPassed = Array.isArray(facts.evidence?.notPassed) ? facts.evidence.notPassed : []
   if (notPassed.length > 0) {
     push(
       'evidence-not-passed',

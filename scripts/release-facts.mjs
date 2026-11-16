@@ -207,15 +207,19 @@ function collectEvidence() {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     })
-    return { qualificationPassed: true, problemCount: 0, missingScenarios: [], notPassed: [] }
+    // `missingScenarios`/`notPassed` are null, not `[]`: the gate reports an aggregate
+    // verdict and prose, so scenario-level detail is genuinely not collected here.
+    // `[]` would claim "collected, and there are none".
+    return { qualificationPassed: true, problemCount: 0, missingScenarios: null, notPassed: null }
   } catch (error) {
     const output = `${error.stdout ?? ''}${error.stderr ?? ''}`
     const count = /(\d+) problem\(s\)/.exec(output)
     return {
       qualificationPassed: false,
       problemCount: count ? Number(count[1]) : null,
-      missingScenarios: [],
-      notPassed: [],
+      // Not collected — see the success branch.
+      missingScenarios: null,
+      notPassed: null,
     }
   }
 }

@@ -77,37 +77,69 @@ export function makeRunner({ ghBinary = 'gh', timeoutMs = 60_000, maxBuffer = 32
 export function extractFailureExcerpt(logText, { stepNames = [], maxChars = 12_000, windowLines = 40 } = {}) {
   if (!logText) return ''
   const lines = String(logText).split('\n')
+  const plain = line => line.replace(/\u001b\[[0-9;]*m/g, '')
 
-  const anchors = new Set()
+  // ## Two classes of anchor, ordered by how much they explain
+  //
+  //   real   — a compiler/linter/test error: `error[E0433]:`, `error:`, `panicked at`,
+  //            `test result: FAILED`. These say *what broke*.
+  //   runner — `##[error]` lines the Actions runner emits, including
+  //            `Process completed with exit code 1`. These say *that* the step ended.
+  //
+  // The previous version treated them alike and then kept the **tail** of the joined
+  // windows, so a log with a compiler error early and 300 runner `##[error]` lines at
+  // the end produced an excerpt containing none of the former:
+  //
+  //   excerpt length: 12000 | contains the real error? false
+  //
+  // The budget is therefore spent on real anchors first, from the earliest, and runner
+  // anchors only fill what is left.
+  const realAnchors = []
+  const runnerAnchors = []
   for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i]
-    // Compiler/linter errors and the runner's own error markers.
-    if (/##\[error\]/.test(line)) anchors.add(i)
-    if (/(^|\s)error(\[E\d+\])?:/.test(line.replace(/\u001b\[[0-9;]*m/g, ''))) anchors.add(i)
-    if (/panicked at/.test(line)) anchors.add(i)
-    if (/test result: FAILED/.test(line)) anchors.add(i)
-    if (stepNames.some(name => name && line.includes('##[group]') && line.includes(name))) anchors.add(i)
+    const bare = plain(lines[i])
+    if (/(^|\s)error(\[E\d+\])?:/.test(bare) || /panicked at/.test(bare) || /test result: FAILED/.test(bare)) {
+      realAnchors.push(i)
+    } else if (/##\[error\]/.test(lines[i])) {
+      runnerAnchors.push(i)
+    }
+    if (stepNames.some(name => name && lines[i].includes('##[group]') && lines[i].includes(name))) {
+      realAnchors.push(i)
+    }
   }
 
-  if (anchors.size === 0) {
-    // No markers: the tail, but a longer tail than 4000 characters so a Rust error's
-    // surrounding context survives.
+  if (realAnchors.length === 0 && runnerAnchors.length === 0) {
+    // No markers: the tail, but a longer tail than the original 4000 characters so a
+    // Rust error's surrounding context survives.
     return String(logText).slice(-maxChars)
   }
 
-  // Include a window around each anchor so the surrounding context is present, then
-  // de-duplicate while preserving order.
+  // Build windows in priority order, stopping when the budget is spent. Real anchors
+  // come first and in file order, so the earliest — usually the root cause — is kept.
   const included = new Set()
-  for (const index of anchors) {
+  const addWindow = index => {
+    let added = 0
     for (let i = Math.max(0, index - 5); i <= Math.min(lines.length - 1, index + windowLines); i += 1) {
+      if (included.has(i)) continue
       included.add(i)
+      added += lines[i].length + 1
+      if (added >= maxChars) return false
     }
+    return true
   }
+  let budget = maxChars
+  for (const index of [...realAnchors, ...runnerAnchors]) {
+    if (budget <= 0) break
+    const before = included.size
+    addWindow(index)
+    budget -= [...included].slice(before).reduce((sum, i) => sum + lines[i].length + 1, 0)
+  }
+
   const ordered = [...included].sort((a, b) => a - b)
   return ordered
     .map(index => lines[index])
     .join('\n')
-    .slice(-maxChars)
+    .slice(0, maxChars)
 }
 
 /**
