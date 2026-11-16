@@ -2,12 +2,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import {
-  FAILURE_CATEGORIES,
-  classifyFailure,
-  classifyRun,
-  renderReport,
-} from './ci-failure-attribution.mjs'
+import { FAILURE_CATEGORIES, classifyFailure, classifyRun } from './ci-failure-attribution.mjs'
+import { renderReport } from './ci-failure-report.mjs'
 
 test('stale evidence is not a code failure', () => {
   // The dominant failure in this repository's history. It reads like a gate failure
@@ -142,9 +138,20 @@ test('a run whose only failures are informational does not block', () => {
 })
 
 test('a clean run reports nothing failed', () => {
-  const result = classifyRun({ conclusion: 'success', jobs: [] })
+  // `jobCount` matters now: `success` with an empty job list is not proof of a clean
+  // run, because the jobs endpoint always returns the run's own jobs. The old version
+  // of this test pinned `success` + `[]` as clean, which is the assertion that let a
+  // truncated job list read as a pass.
+  const result = classifyRun({
+    conclusion: 'success',
+    jobs: [{ name: 'Rust quality', conclusion: 'success' }],
+  })
   assert.equal(result.category, null)
   assert.equal(result.detail, 'clean')
+
+  const truncated = classifyRun({ conclusion: 'success', jobs: [] })
+  assert.notEqual(truncated.detail, 'clean')
+  assert.equal(truncated.category, 'UNKNOWN')
 })
 
 test('every category has an action, and only three are non-blocking', () => {

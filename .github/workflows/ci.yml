@@ -27,6 +27,23 @@ on:
 
 permissions:
   contents: read
+  # ## Why `actions: read` is required, and why it is the only addition
+  #
+  # The failure-attribution step lists the run's jobs and downloads a failing job's
+  # log. Both are Actions API reads:
+  #
+  #   GET /repos/{owner}/{repo}/actions/runs/{id}/jobs
+  #   GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs
+  #
+  # Without `actions: read` the first returns an empty/403 body and the second 403s.
+  # On a **public** repository these endpoints are readable anonymously, which is why
+  # the previous `contents: read` appeared to work — until the token was used and the
+  # log download redirected to a URL the token was not attached to.
+  #
+  # `write` is not needed and is not granted: nothing here cancels, re-runs or mutates
+  # a run. If this job ever needs to re-run a workflow it must request that separately,
+  # deliberately.
+  actions: read
 
 # `cancel-in-progress` stays true for PRs only: a new commit on a PR makes the old
 # run's verdict irrelevant, while a `main` run's verdict is the record of that commit
@@ -823,8 +840,21 @@ jobs:
       # history is stale acceptance evidence — not a code problem — and before this
       # step the only way to tell it from a regression was to open the log.
       #
-      # The attribution runs on failure only. A clean run does not need a table, and
-      # writing one anyway would train readers to skip it.
+      # ## The `jq` projection used to drop the job id
+      #
+      # It emitted `{name, conclusion, informational}` and the CLI fetched logs with
+      # `actions/jobs/${job.id}/logs`. With no `id` every URL was `jobs/undefined/logs`,
+      # every request 404'd, and the classifier saw an empty log for every job. On run
+      # 43716684905 the Windows build failed with `error[E0433]: cannot find \`unix\` in
+      # \`os\`` and the report said `UNKNOWN`.
+      #
+      # The projection now keeps the id, the run identity, and the step list. The field
+      # names are asserted against `JOB_LIST_FIELDS` in `ci-github-api.mjs` by a test,
+      # so removing one fails locally rather than in a live report.
+      #
+      # `informational` is decided here from the allowlist module, not by a substring of
+      # the job name: `ci-informational.mjs` is the single source of which jobs may fail
+      # without blocking, and a rename cannot silently change the gate.
       - name: Attribute the failure
         if: failure()
         shell: bash
@@ -836,9 +866,22 @@ jobs:
           set -euo pipefail
           # Job conclusions come from the API rather than `needs`, because `needs`
           # carries only the aggregated jobs and the attribution wants every one.
-          gh api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
-            --jq '[.jobs[] | {name, conclusion, informational: (.name | test("informational"))}]' \
-            > /tmp/jobs.json
-          node scripts/attribute-ci-failure.mjs /tmp/jobs.json | tee -a "$GITHUB_STEP_SUMMARY"
+          # Paged: a matrix build can exceed the 100-job page size, and a truncated list
+          # would hide a failure. `--paginate` is gh's own paging, not a second loop.
+          gh api --paginate "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '.jobs[] | {id, name, conclusion, status, html_url, run_id, run_attempt, steps}' \
+            | jq -s '{jobs: .}' > /tmp/jobs.json
+          # The conclusion comes from the run itself. `failure()` made this step run, but
+          # the *run* conclusion is `failure` or `cancelled` or `timed_out`, and those
+          # are different verdicts.
+          RUN_CONCLUSION="$(gh api "repos/${REPO}/actions/runs/${RUN_ID}" --jq '.conclusion // ""')"
+          node scripts/attribute-ci-failure.mjs \
+            --jobs /tmp/jobs.json \
+            --run-id "${RUN_ID}" \
+            --repo "${REPO}" \
+            --workflow-file .github/workflows/ci.yml \
+            --required-failed true \
+            --run-conclusion "${RUN_CONCLUSION}" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
         # A failure while explaining a failure must not replace the real verdict.
         continue-on-error: true
