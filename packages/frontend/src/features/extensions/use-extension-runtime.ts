@@ -61,7 +61,10 @@ export function getExtensionRegistry(): ExtensionRegistry {
         if (!activeTabId || published.sessionId !== activeTabId) return null
         return {
           text: published.text,
-          selectionId: `selection-${activeTabId}`,
+          // The publisher's sequence, not the tab id: within one tab the user can
+          // select, select something else, and come back to the first text. An
+          // approval minted for the first must not authorise the third.
+          selectionId: `selection-${published.seq}`,
           sessionId: published.sessionId,
         }
       },

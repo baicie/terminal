@@ -297,7 +297,28 @@ impl SessionManager {
             .expect("session removal listener registry")
             .clone();
         for listener in listeners {
-            listener(session_id.to_string());
+            // Each listener is isolated. The doc comment above promises that a
+            // panicking listener does not abort teardown, and the loop did not
+            // deliver it: one panic unwound through the caller, skipped every later
+            // listener, and left the registries keyed by this session id
+            // un-notified. Those registries hold the secrets of a *dead* transport,
+            // so "we skipped the notification" is a leak, not a missed courtesy.
+            //
+            // `AssertUnwindSafe` is the right tool rather than a workaround: the
+            // listeners this manager ships do not share mutable state with the
+            // session being torn down — they remove a key from a map — so observing
+            // a partially-updated listener is not a hazard the way observing a
+            // partially-updated session would be.
+            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                listener(session_id.to_string())
+            }))
+            .is_err()
+            {
+                tracing::warn!(
+                    session_id,
+                    "a session removal listener panicked; continuing with the rest"
+                );
+            }
         }
     }
 

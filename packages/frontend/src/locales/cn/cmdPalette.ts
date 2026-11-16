@@ -71,4 +71,6 @@ export default {
   'cmdHistory.daysAgo': '{{count}} 天前',
   'cmdHistory.hostLabel': '主机：{{host}}',
   'cmdHistory.noMatchingCommands': '没有匹配的命令',
+  'cmdPalette.openSnippetDock': '打开片段面板',
+  'cmdPalette.openSnippetDockDesc': '在右侧栏显示片段',
 }

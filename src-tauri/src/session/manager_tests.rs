@@ -406,3 +406,49 @@ async fn shutdown_after_natural_completion_still_notifies_once() {
         "shutdown must not re-notify a session completion already retired"
     );
 }
+
+// ---------------------------------------------------------------------------
+// A panicking listener must not abort teardown
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_panicking_removal_listener_does_not_abort_the_others() {
+    // `notify_removed`'s own doc comment promises this, and the code did not do it:
+    // the loop called each listener with no guard, so one panic unwound through
+    // session teardown, skipped every later listener, and — depending on the caller —
+    // either aborted the close or poisoned the removal path. Every registry keyed by
+    // session id depends on this notification arriving.
+    let manager = SessionManager::new();
+    let reached = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let reached = Arc::clone(&reached);
+        manager.on_session_removed(Arc::new(move |_id: String| {
+            reached.store(true, std::sync::atomic::Ordering::SeqCst);
+        }));
+    }
+    manager.on_session_removed(Arc::new(|_id: String| {
+        panic!("a listener that panics");
+    }));
+    {
+        // Registered after the panicker, so it only runs if the panic was contained.
+        let reached = Arc::clone(&reached);
+        manager.on_session_removed(Arc::new(move |_id: String| {
+            reached.store(true, std::sync::atomic::Ordering::SeqCst);
+        }));
+    }
+
+    let session_id = "panicking-listener".to_string();
+    let (session, _) = fake_local_session(&session_id, true);
+    manager.register_session(SessionState::Local(session)).await;
+
+    // The removal itself must still succeed.
+    manager
+        .remove_session(&session_id)
+        .await
+        .expect("a panicking listener must not fail the removal");
+    assert!(
+        reached.load(std::sync::atomic::Ordering::SeqCst),
+        "listeners registered after a panicking one must still run"
+    );
+    assert_eq!(registry_counts(&manager).await, (0, 0, 0));
+}

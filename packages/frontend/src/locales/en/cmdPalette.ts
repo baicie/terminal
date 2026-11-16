@@ -73,4 +73,6 @@ export default {
   'cmdHistory.daysAgo': '{{count}} days ago',
   'cmdHistory.hostLabel': 'Host: {{host}}',
   'cmdHistory.noMatchingCommands': 'No matching commands',
+  'cmdPalette.openSnippetDock': 'Open the snippet dock',
+  'cmdPalette.openSnippetDockDesc': 'Snippets in the right column',
 }

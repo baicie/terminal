@@ -20,7 +20,7 @@ beforeEach(() => {
 describe('publishing a selection', () => {
   it('reports what was published', () => {
     publishTerminalSelection('tab-1', 'kubectl get pods')
-    expect(currentTerminalSelection()).toEqual({
+    expect(currentTerminalSelection()).toMatchObject({
       text: 'kubectl get pods',
       sessionId: 'tab-1',
     })
@@ -45,7 +45,7 @@ describe('publishing a selection', () => {
     // active one's selection.
     publishTerminalSelection('tab-2', 'from tab 2')
     clearTerminalSelection('tab-1')
-    expect(currentTerminalSelection()).toEqual({ text: 'from tab 2', sessionId: 'tab-2' })
+    expect(currentTerminalSelection()).toMatchObject({ text: 'from tab 2', sessionId: 'tab-2' })
   })
 
   it('the latest publish wins', () => {
@@ -58,3 +58,15 @@ describe('publishing a selection', () => {
     expect(currentTerminalSelection()).toBeNull()
   })
 })
+
+  it('gives every publish a new identity', () => {
+    // The approval binding needs this. Within one tab the user selects, selects
+    // something else, and selects the original text again — an approval minted for
+    // the first must not authorise the third, so the id has to change on every
+    // gesture, including a re-selection of identical text.
+    publishTerminalSelection('tab-1', 'ls')
+    const first = currentTerminalSelection()?.seq
+    publishTerminalSelection('tab-1', 'ls')
+    const second = currentTerminalSelection()?.seq
+    expect(first).not.toBe(second)
+  })

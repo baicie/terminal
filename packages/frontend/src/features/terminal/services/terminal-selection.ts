@@ -21,7 +21,16 @@
  * nothing more.
  */
 
-let current: { text: string, sessionId: string } | null = null
+let current: { text: string, sessionId: string, seq: number } | null = null
+/**
+ * Bumped on every publish.
+ *
+ * The identity of a selection cannot be derived from its session: within one tab the
+ * user selects, selects something else, and selects the original text again. An
+ * approval minted for the first selection must not authorise the third, so the id has
+ * to change whenever the selection does — which only the publisher can know.
+ */
+let nextSeq = 0
 
 /**
  * Publish the active terminal's selection.
@@ -38,7 +47,11 @@ export function publishTerminalSelection(
     if (current?.sessionId === sessionId) current = null
     return
   }
-  current = { text, sessionId }
+  // Re-selecting identical text is a new selection as far as an approval is
+  // concerned: the user performed the gesture again. Bumping unconditionally keeps
+  // the rule simple and errs toward requiring a fresh approval.
+  nextSeq += 1
+  current = { text, sessionId, seq: nextSeq }
 }
 
 /** Withdraw a selection if it belongs to this session (unmount, tab close). */
@@ -47,11 +60,16 @@ export function clearTerminalSelection(sessionId: string): void {
 }
 
 /** What the user currently has selected, or null. */
-export function currentTerminalSelection(): { text: string, sessionId: string } | null {
+export function currentTerminalSelection(): {
+  text: string
+  sessionId: string
+  seq: number
+} | null {
   return current
 }
 
 /** Test-only: forget any published selection. */
 export function __resetTerminalSelectionForTests(): void {
   current = null
+  nextSeq = 0
 }
