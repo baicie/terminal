@@ -13,7 +13,7 @@
 import { describe, expect, it } from 'vitest'
 import { USABLE_COLS, terminalColumns } from './terminal-width-budget'
 import { chooseLayout, type LayoutDecision, type LayoutInput } from './layout-decision'
-import { bandColumns, evaluatePresentation, withHysteresis } from './layout-hysteresis'
+import { evaluatePresentation, withHysteresis } from './layout-hysteresis'
 
 /** A 8.4px cell is xterm's default 14px monospace, which is what ships. */
 const CELL = 8.4
@@ -262,9 +262,13 @@ describe('withHysteresis judges the previous presentation on the current width',
     }
   })
 
-  it('holds the column layout for the band before yielding', () => {
-    // Find the width where a column layout stops being comfortable, then check it
-    // is still held a few pixels below that point.
+  it('holds the column layout exactly down to the floor, not below it', () => {
+    // The descending gate used to be `floor - band`, and the ascending gate
+    // `floor + band`, which together made the no-decision window 2 × band. At the
+    // shipping cell width that is ~34px — wider than one drag step — so a window
+    // dragged back and forth across it thrashed indefinitely.
+    //
+    // The window is now one band wide: descend at the floor, ascend at floor + band.
     let threshold = 0
     for (let w = 1500; w >= 900; w -= 1) {
       const cols = terminalColumns({
@@ -281,32 +285,48 @@ describe('withHysteresis judges the previous presentation on the current width',
     }
     expect(threshold).toBeGreaterThan(900)
 
-    const band = bandColumns(CELL)
-    // Prime with a comfortable width.
     const primeInput = { ...base, shellWidth: threshold + 40 }
     const previous = chooseLayout(primeInput)
     expect(previous.leftPresentation).toBe('column')
 
+    // One pixel below the threshold the column layout has just fallen under the
+    // floor, so it yields. There is no negative half of the band any more: the only
+    // slack is on the way back up.
     const justBelow = { ...base, shellWidth: threshold - 1 }
-    const held = withHysteresis(chooseLayout(justBelow), previous, justBelow)
-    const colsJustBelow = terminalColumns({
-      viewportWidth: threshold - 1,
-      leftWidth: 420,
-      rightWidth: DOCK,
-      chromeWidth: RAIL,
-      cellWidth: CELL,
-    })
+    const yielded = withHysteresis(chooseLayout(justBelow), previous, justBelow)
+    expect(yielded.leftPresentation).not.toBe('column')
+    expect(yielded.predictedCols).toBeGreaterThanOrEqual(USABLE_COLS)
+  })
 
-    if (USABLE_COLS - colsJustBelow <= band) {
-      // Inside the band the old presentation is held — but never below the floor
-      // minus the band. That is the whole trade: a couple of columns of slack to
-      // stop the flip, not permission to starve the terminal indefinitely.
-      expect(held.leftPresentation).toBe('column')
-      expect(held.predictedCols).toBeGreaterThanOrEqual(USABLE_COLS - band)
-    } else {
-      expect(held.leftPresentation).not.toBe('column')
-      expect(held.predictedCols).toBeGreaterThanOrEqual(USABLE_COLS)
+  it('cannot be made to thrash by a drag narrower than the band', () => {
+    // The regression the double-band window caused: alternate between two widths
+    // spanning less than one band and the layout must settle, not flip.
+    const narrow = { ...base, shellWidth: 1010 }
+    const wide = { ...base, shellWidth: 1057 }
+
+    let previous: LayoutDecision | null = null
+    const visit = (input: LayoutInput) => {
+      const stable = withHysteresis(chooseLayout(input), previous, input)
+      previous = stable
+      return stable
     }
+
+    // Descend to the drawer first.
+    visit({ ...base, shellWidth: 1039 })
+    const demoted = visit({ ...base, shellWidth: 900 })
+    expect(demoted.leftPresentation).not.toBe('column')
+
+    // Then oscillate. The first flip in one direction is allowed; a *repeated*
+    // flip back and forth is the thrash.
+    const sequence: string[] = []
+    for (let index = 0; index < 4; index += 1) {
+      sequence.push(visit(narrow).leftPresentation)
+      sequence.push(visit(wide).leftPresentation)
+    }
+    const flips = sequence.filter(
+      (value, index) => index > 0 && value !== sequence[index - 1],
+    ).length
+    expect(flips, `sequence was ${sequence.join(',')}`).toBeLessThanOrEqual(1)
   })
 
   it('still yields immediately once the excursion leaves the band', () => {

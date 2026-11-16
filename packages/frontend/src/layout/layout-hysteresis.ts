@@ -77,34 +77,34 @@ export function withHysteresis(
   const rightCameUp = previous.rightPresentation !== 'column' && next.rightPresentation === 'column'
 
   if (leftWentDown || rightWentDown) {
-    // Going down: hold the old presentation while it still clears the floor minus
-    // the band. Below that the panels must yield — hysteresis damps, it does not
-    // lock, and it never lets the terminal starve by more than the band.
-    if (previousNow.predictedCols >= usableColsMin - band) {
+    // Going down: hold the old presentation while it still clears the floor. Below
+    // that the panels must yield — hysteresis damps, it does not lock.
+    if (previousNow.predictedCols >= usableColsMin) {
       return previousNow
     }
     return next
   }
 
   if (leftCameUp || rightCameUp) {
-    // Coming back up: restore once the column layout clears the floor by more
-    // than the band.
+    // Coming back up: restore once the column layout clears the floor *plus* the
+    // band.
     //
-    // This branch used to ask `next.predictedCols - previousNow.predictedCols >
-    // band`, and that comparison can never be true. A column layout *costs*
-    // width — that is why it was demoted — so `next` (column at this width) is
-    // always smaller than `previousNow` (the drawer at this width). At 1500px
-    // with a 420px explorer and a 300px dock the column measures 85 columns and
-    // the drawer measures 135, so the difference is -50 and the condition is
-    // false at every width that will ever exist. The panel was demoted once at a
-    // narrow width and never came back: widening the window to 3000px left the
-    // explorer in a drawer forever, and only closing and reopening it fixed it.
+    // The first version asked `next.predictedCols - previousNow.predictedCols >
+    // band`, which can never be true: a column layout costs width, so `next` is
+    // always smaller than `previousNow` and the difference is negative at every
+    // width that will exist. The panel was demoted once and never came back.
     //
-    // The symmetric rule is the one the descending branch already uses: hold the
-    // demoted layout until keeping the column layout is *comfortably* affordable,
-    // with the band on the far side of the floor so a one-pixel wiggle at the
-    // boundary flips neither way. Down at floor-band, up at floor+band — that gap
-    // is the hysteresis, and it is the only shape that allows both directions.
+    // The second version — mine — used `floor - band` down and `floor + band` up.
+    // That restores both directions, but it counts the band twice: each gate is
+    // evaluated against a presentation measured at the *current* width, so the total
+    // no-decision window is 2 × band. At the shipping 8.4px cell the band is 2
+    // columns, making the real reversal window ~34px — wider than a single drag step,
+    // so a window dragged back and forth thrashed indefinitely (1010 ↔ 1057 with a
+    // 176px explorer and the dock open, 8 flips in 8 steps).
+    //
+    // The band now sits on *one* side only: descend at the floor, ascend at
+    // floor + band. The gap between the two thresholds is exactly one band, which is
+    // what the design asks for, and a drag smaller than that cannot cross it.
     if (next.predictedCols >= usableColsMin + band) {
       return next
     }
