@@ -49,6 +49,8 @@
 | **docs/phase9-2/**            | Phase 9.2 交付：同步冲突五处 P0 根因、双客户端真实 PG 端到端、依赖安全整改台账、证据门禁、身份迁移方案、最终报告（PASS/FAIL/NOT_RUN 分列） | 接手同步、安全或验收证据相关工作时必读 |
 | **AGENTS.md**                  | 本文件 - Agent 使用指南               | 初次接手项目时阅读 |
 
+> Terminal Next 的当前产品/架构/UX/安全/验收规范以 [`docs/design/terminal-next/README.md`](docs/design/terminal-next/README.md) 及其编号文件为准。本文后面的 Phase/Release 数字是带日期的历史快照；不要用其中旧的源码文件计数、旧证据 SHA 或旧权限审计替代当前 `main` 和对应证据文件。历史设计草稿已移入 `docs/design/terminal-next/archive/legacy-drafts/`。
+
 ---
 
 ## 项目结构概览

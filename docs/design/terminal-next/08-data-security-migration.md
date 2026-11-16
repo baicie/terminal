@@ -1,3 +1,10 @@
+---
+status: canonical-draft
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "Persistent and runtime data, IPC boundary, migration, recovery, rollback and identifier continuity"
+---
+
 # 08 · 数据、安全、迁移与回滚
 
 ## 1. 数据分类

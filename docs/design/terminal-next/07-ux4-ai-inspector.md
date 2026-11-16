@@ -1,3 +1,10 @@
+---
+status: canonical-draft
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "Optional AI ModelDriver, context review, approval boundary and read-only Server Inspector"
+---
+
 # 07 · UX-4 Optional Intelligence：AI Assistant 与 Server Inspector
 
 ## 1. 目标与边界

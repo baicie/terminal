@@ -15,4 +15,15 @@
 | [`09_Settings_and_Preferences.png`](desktop/09_Settings_and_Preferences.png) | `03` Settings |
 | [`10_Command_Palette_and_Global_Search.png`](desktop/10_Command_Palette_and_Global_Search.png) | `03` Command Palette |
 
-v2.0 合订版还声称有 4 张 Windows 参考图，但在本轮可访问的仓库和 Downloads 目录中未找到它们。Windows 的真实验收必须使用 `03-ui-ux-blueprint.md` 的平台矩阵；收到原图后再增加资产，不使用其他图片代替。
+v2.0 合订版还声称有 4 张 Windows 参考图，但在本轮可访问的仓库和外部输入目录中未找到它们。Windows 的真实验收必须使用 `03-ui-ux-blueprint.md` 的平台矩阵；收到原图后再增加资产，不使用其他图片代替。
+
+## 反面参考与验收边界
+
+以下内容即使出现在参考图中，也不能从图片推导出来：
+
+- 图中的 Host、在线状态、Recent 顺序、传输进度、指标数字和 AI 回答都不是 fixture 或产品证据。
+- `04_Split_Terminal_Workspace.png` 的四格视觉只能说明层级关系；当前 Core 每个 SplitGroup 仍限制为双 Pane，2×2 需要独立实现和验收。
+- 图中 SFTP 的列表或进度不能证明 UI→Tauri IPC→Rust→sshd 的真实链路、远端 SHA 或关闭 Dock 后的字节完整性。
+- 图中的 Vault/Keychain 表单不能证明系统 Provider、签名身份、升级/回退或真实密钥存储可用。
+- 图中的 Operations Dashboard 不能把 Terminal Next 变成常驻监控平台；Inspector 仍是用户触发的短时只读 probe。
+- 图片不能替代真实 Tauri 窗口、DPI、Window Controls、焦点、物理键盘和 IME 验收。

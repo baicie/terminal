@@ -1,5 +1,7 @@
 # Terminal Next — Integrated Acceptance & Independent Final Review
 
+> Historical snapshot: this report was captured against `main=1a24eed…` on 2026-11-13 and is retained as release/audit evidence. The current canonical baseline is `main=5f248631…`; read [`README.md`](README.md) and [`01-current-state-and-gap.md`](01-current-state-and-gap.md) for current facts. Later B01 capability auditing superseded the report's blanket “FS 无 scope” wording; the original body is preserved for traceability and must not be used as a current permission statement.
+
 - 审查角色：独立 Release Quality Gatekeeper
 - 审查日期：2026-11-13
 - 审查基线：`main` = **`1a24eed0c1a89994a317776a2a6ce2ee3e49053a`**

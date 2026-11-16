@@ -1,3 +1,10 @@
+---
+status: canonical-governance
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "Canonical source rules, historical archives, supersession notes, references and document gates"
+---
+
 # 11 · 文档治理、旧设计清理与引用迁移
 
 ## 1. 唯一来源规则
@@ -10,13 +17,13 @@
 
 | 旧文件/区域 | 处理 | 新来源 | 原因 |
 | --- | --- | --- | --- |
-| `docs/design/terminal-next/terminal-next-design-package-v1.md` | 归档 | `00`～`12` | v1 产品/架构/阶段被统一规格取代 |
-| `docs/design/terminal-next/00-adr-architecture.md` | 归档，保留历史 ADR 证据 | `02-architecture-and-invariants.md` | 旧基线和 UX-0 状态过时，关键不变量已吸收 |
-| `docs/design/terminal-next/01-credential-keychain-vault.md` | 归档 | `05-ux2-credentials.md`、`08-data-security-migration.md` | 单 Provider 时代的 Draft，作为历史审查输入保留 |
-| `docs/design/terminal-next/02-terminal-workspace.md` | 归档 | `03-ui-ux-blueprint.md`、`04-ux1-terminal-workspace.md` | UX-1 已经多轮合入，旧实现计划不再作为施工单 |
-| `docs/design/terminal-next/03-extension-platform.md` | 归档 | `06-ux3-extension-platform.md` | v0 API 和第一个扩展选择已重审 |
-| `docs/design/terminal-next/04-rust-rig-ai.md` | 归档 | `07-ux4-ai-inspector.md` | Rig/MSRV 事实需要当前重新核对，推荐先 ModelDriver |
-| `docs/design/terminal-next/05-test-matrix-and-rollback.md` | 归档 | `09-test-acceptance-release.md` | 测试层级、当前证据和发布规则已扩展 |
+| `docs/design/terminal-next/archive/legacy-drafts/terminal-next-design-package-v1.md` | 归档 | `00`～`12` | v1 产品/架构/阶段被统一规格取代 |
+| `docs/design/terminal-next/archive/legacy-drafts/00-adr-architecture.md` | 归档，保留历史 ADR 证据 | `02-architecture-and-invariants.md` | 旧基线和 UX-0 状态过时，关键不变量已吸收 |
+| `docs/design/terminal-next/archive/legacy-drafts/01-credential-keychain-vault.md` | 归档 | `05-ux2-credentials.md`、`08-data-security-migration.md` | 单 Provider 时代的 Draft，作为历史审查输入保留 |
+| `docs/design/terminal-next/archive/legacy-drafts/02-terminal-workspace.md` | 归档 | `03-ui-ux-blueprint.md`、`04-ux1-terminal-workspace.md` | UX-1 已经多轮合入，旧实现计划不再作为施工单 |
+| `docs/design/terminal-next/archive/legacy-drafts/03-extension-platform.md` | 归档 | `06-ux3-extension-platform.md` | v0 API 和第一个扩展选择已重审 |
+| `docs/design/terminal-next/archive/legacy-drafts/04-rust-rig-ai.md` | 归档 | `07-ux4-ai-inspector.md` | Rig/MSRV 事实需要当前重新核对，推荐先 ModelDriver |
+| `docs/design/terminal-next/archive/legacy-drafts/05-test-matrix-and-rollback.md` | 归档 | `09-test-acceptance-release.md` | 测试层级、当前证据和发布规则已扩展 |
 | `docs/design/terminal-next/ux1a-review-fixes.md`、`ux1b-connection-explorer.md`、`ux1c-context-dock.md` | 保留为交付记录 | `04-ux1-terminal-workspace.md` | 它们含已执行的 PR/测试/变异/证据，不能删除 |
 | `docs/design/terminal-next/f0-*`、`tn-sftp-*` | 保留为交付/审计记录 | `04`、`09` | 真实生命周期和 E2E 证据可追溯 |
 | `docs/design/terminal-next/integrated-acceptance-report.md` | 保留 | `09` 引用 | 真实集成验收记录，不是设计重复 |
@@ -41,7 +48,7 @@
 `archive/legacy-drafts/` 中的文件只用于了解历史决策，不能作为编码输入。每个归档文件在顶部添加：
 
 ```md
-> Archived on 2026-11-16. Canonical Terminal Next design is ../README.md and the numbered blueprint files. This file is retained for historical traceability only.
+> Archived on 2026-11-16. Canonical Terminal Next design is ../../README.md and the numbered blueprint files. This file is retained for historical traceability only.
 ```
 
 归档文件不能被新的 PR 追加产品决策；如有历史事实错误，改为在 canonical 现状审计中说明，而不是重写历史记录。
@@ -49,7 +56,7 @@
 ## 5. 引用规则
 
 - 设计文档引用相对路径和稳定的仓库文件路径；不引用 `/Users/.../Downloads` 作为编码依赖。
-- 外部 v2 原件路径只在 `README.md` 的 provenance 记录出现；提交的 10 张图在 `assets/reference/desktop` 有稳定路径。
+- 外部 v2 provenance 只记录版本、行数和“外部原件”属性，不把个人机器的绝对路径写进仓库；提交的 10 张图在 `assets/reference/desktop` 有稳定路径。
 - 真实运行证据必须指向 `docs/verification`、`docs/phase-*`、`docs/ci` 或 GitHub run；设计图链接不能承担证据作用。
 - PR body 指向本目录的章节和实际 source/test 文件；实现完成后回写 current-state/PR plan 的状态，但不复制整段规格。
 

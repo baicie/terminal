@@ -1,3 +1,5 @@
+> Archived on 2026-11-16. Canonical Terminal Next design is [`../../README.md`](../../README.md) and the numbered blueprint files. This file is retained for historical traceability only.
+
 # 01 — 凭据：Keychain / Vault 交互状态机与迁移方案
 
 - 状态：**提案（Draft）**

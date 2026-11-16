@@ -7,6 +7,13 @@
 
 ---
 
+## Terminal Next 当前复审待办（2026-11-16）
+
+- [ ] SessionManager 自然 EOF/远端断开通知 SFTP removal listener；重复 `sftp_connect` 改为幂等或结构化拒绝，见 [`docs/issue.md`](issue.md)。
+- [ ] 为 layout hysteresis 增加收缩/恢复对称回归和用户主动开关面板回归。
+- [ ] Host/SSH key CredentialRef 统一 none/valid/corrupt 三态；损坏引用仍可清除或重新绑定。
+- [ ] Native GUI SFTP spec 先验证 `GUI_E2E_HOME` 与 seed 数据库一致，再以远端 SHA/字节结果判定关闭 Dock 的传输。
+
 ## 一、当前开发状态概览
 
 ### Phase 1 - MVP (最低可行产品) ✅ 已完成

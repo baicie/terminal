@@ -1,3 +1,10 @@
+---
+status: canonical-plan
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "Independent implementation PRs, dependencies, exclusions, rollback and done definitions"
+---
+
 # 10 · Engineering Execution Plan
 
 ## 1. 总规则
@@ -46,13 +53,13 @@
 
 ### TN-UX1-01 · Current HEAD Native Workspace Acceptance
 
-- **目标**：在最终代码 SHA 上重采 Focus/Explorer/Dock/Split/错误/Window Controls/PTY 保活证据。
+- **目标**：在最终代码 SHA 上重采 Focus/Explorer/Dock/双 Pane Split/错误/Window Controls/PTY 保活证据，并先证明 GUI fixture 的数据库路径、seed host 和每个 spec 的 `GUI_E2E_HOME` 一致。
 - **依赖**：当前 UX-1 代码；不依赖 UX-2～UX-4。
-- **模块**：`e2e/gui/**`、`scripts/run-gui-e2e.mjs`、`docs/verification/**`（若按官方流程生成）。
+- **模块**：`e2e/gui/**`、`scripts/run-gui-e2e.mjs`、`scripts/gui-e2e-platform.mjs`、`docs/verification/**`（若按官方流程生成）。
 - **不修改**：SessionManager、Credential、AI、Extension；不为 GUI 通过改生产逻辑。
-- **测试**：Level 1 全门禁、Level 2 SFTP/SSH、Level 3 Native GUI；当前 HEAD evidence gate。
+- **测试**：Level 1 全门禁、Level 2 SFTP/SSH、Level 3 Native GUI；当前 HEAD evidence gate；上传中关 Dock 必须有远端 SHA/字节证据。
 - **回滚**：证据为追加资产；失败保持 NOT_RUN/BLOCKED，不改变产品。
-- **完成定义**：当前 SHA 的证据清单完整；缺平台逐项标注。
+- **完成定义**：当前 SHA 的证据清单完整；双 Pane、fixture isolation、真实 SFTP 状态和缺平台逐项标注。
 
 ### TN-UX1-02 · Native Input and Platform Matrix
 
@@ -73,6 +80,15 @@
 - **测试**：互斥 occupant、窄屏 overlay、开关 100 次、Session/ACK/Transfer 数稳定。
 - **完成定义**：新增 occupant 只需注册 union/case；测试能阻止第二布尔状态回归。
 
+### TN-UX1-04 · Session/SFTP Lifecycle Contract
+
+- **目标**：让自然 EOF、远端断开、显式 close、shutdown 共用 removal notification；为重复 `sftp_connect` 定义幂等成功或 `AlreadyConnected`，禁止静默覆盖旧 entry；补齐 hysteresis 双向回归。
+- **依赖**：UX-1 当前 SessionManager、SFTP Registry、`layout-hysteresis`；不依赖 UX-2～UX-4。
+- **模块**：`src-tauri/src/session/manager.rs`、`src-tauri/src/sftp.rs`、相关 Rust tests、`packages/frontend/src/layout/*` tests。
+- **不修改**：不改变 Transfer Queue 的 owner，不把 Dock cleanup 变成 transport close，不扩展到 2×2 Pane。
+- **测试**：自然 completion 触发 listener、重复初始化不覆盖、迟到回调、shutdown 幂等、窄化→恢复→再窄化、用户主动开关面板不被 hysteresis 阻止。
+- **完成定义**：SFTP Registry 不残留 session、不丢旧连接、不因展示层变化重复建立；双 Pane 和 layout decision 的边界有变异测试。
+
 ### TN-CORE-01 · Typed IPC/Capability Audit
 
 - **目标**：在不破坏兼容调用链的情况下，给 Vault/SQL/FS/Session 建立调用点清单和最小 Gateway 方向。
@@ -86,17 +102,17 @@
 
 ### TN-UX2A-01 · Connect-Time Credential Experience
 
-- **目标**：认证与保存分离；首次连接可一次性输入；成功后保存；Vault 三态内联恢复；清除/切换认证。
+- **目标**：认证与保存分离；首次连接可一次性输入；成功后保存；Vault 三态内联恢复；清除/切换认证；损坏引用也能清除或重新绑定。
 - **依赖**：TN-CORE-01、现有 Credential boundary、HostDialog/launcher。
-- **模块**：`view/hosts`、`features/terminal/services`、`service/credential-*`、i18n、component tests。
+- **模块**：`view/hosts`、`features/terminal/services`、`service/credential-*`、`service/database/ssh-key-credentials`、i18n、component tests。
 - **不修改**：不新增系统 Keychain，不自动迁移明文，不改 Rust 密码学。
-- **测试**：错误凭据不保存、成功后保存、locked/uninitialized/unusable、Agent/Jump 两侧、切换 key/password/agent、真实 Tauri launcher/sshd。
+- **测试**：错误凭据不保存、成功后保存、locked/uninitialized/unusable、Agent/Jump 两侧、切换 key/password/agent、损坏/未知 ref 的清除、真实 Tauri launcher/sshd。
 - **回滚**：feature flag/旧 HostDialog 保存路径保留；数据只加字段不删旧列。
-- **完成定义**：用户能“只本次连接”，错误提示提供正确下一步且不消耗网络重试预算。
+- **完成定义**：用户能“只本次连接”，错误提示提供正确下一步且不消耗网络重试预算；SSH key 与 Host 都能区分 none/valid/corrupt，不把损坏引用伪装成无凭据。
 
 ### TN-UX2A-02 · Provider Registry and Resolver Dispatch
 
-- **目标**：`CredentialRefV2`、Provider Registry、按 ref.provider dispatch、SSH key 三态、模型 namespace 预留。
+- **目标**：`CredentialRefV2`、Provider Registry、按 `ref.provider` dispatch、Host/SSH key 一致的三态 ref、模型 namespace 预留。
 - **依赖**：TN-UX2A-01、TN-CORE-01。
 - **模块**：`credential-boundary/ref/resolver`、Host/SSH key database、Rust import/export policy。
 - **不修改**：默认 provider 仍 Vault；不实现 OS provider。

@@ -1,3 +1,10 @@
+---
+status: canonical-draft
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "Shared shell, resource ownership, lifecycle, IPC and safety invariants"
+---
+
 # 02 · Architecture Blueprint、生命周期与不变量
 
 ## 1. 总体结构
@@ -47,6 +54,8 @@ flowchart TB
 | Model Connection | AI Run 需要 profile | `ModelDriver`/HTTP client | `idle → connecting → streaming → closed` | connect/request/stream 各有界 | 不持有 SSH Secret；重试新 runId；不在默认构建启动 |
 | Approval | 未来 Tool 或明确发送动作 | Approval service | `proposed → approved/rejected/expired/consumed` | expiry；双击由 action hash 幂等 | 绑定 `runId + hostId + sessionId + actionHash + userGesture` |
 | Inspector Probe | 已连接 Host 且用户点击 Refresh | `InspectorSupervisor` | `queued → running → completed/stale/error/cancelled` | 单 probe timeout；Host 切换取消旧 probe | 只存内存短缓存；关闭 Dock 停止不必要采集；旧结果不能写新 Host |
+
+当前实现差距：`SessionManager` 的自然 completion cleanup 直接移除 session/channel/meta registry，尚未调用 `removed_listeners`；而 `sftp_connect` 对同一 `session_id` 的重复调用会覆盖旧 SFTP entry。目标契约必须由后续代码 PR 通过自然 EOF、重复初始化、shutdown 和迟到回调测试闭合，不能把显式 `remove_session` 的测试结果外推到所有退出路径。
 
 ## 3. 事件流和代际
 
@@ -172,7 +181,7 @@ interface ModelProfilePublic {
 - 首个可输入时间按真实 Tauri + PTY 测量；目标是当前固定环境基线不退化，不能用 DB recovery healthy 代替终端可输入。
 - Terminal 输出继续使用已有有界泵、ACK、高低水位和 UTF-8 边界；任何 UI 重构都不改协议。
 - 终端 Shell、xterm core 和应用 Shell 的 bundle 必须分开报告 Initial/All gzip/raw；新增 Rig/markdown/图表依赖必须报告增量。
-- 4 Pane、活跃 SFTP、Explorer、Dock、Inspector 和 AI 同时运行要分别测内存、线程、网络和 Session 数，不能只测空闲窗口。
+- 当前 Core 只承诺 2 Pane、活跃 SFTP、Explorer、Dock、Inspector 和 AI 的资源预算；2×2/4 Pane 属于未来扩展，若开启必须重新测内存、线程、网络、Session 数、焦点和恢复，不能只把参考图画成四格。
 - Layout 算法使用真实 Shell 宽度和 xterm cellWidth；Terminal 优先保留 60 cols，无法满足时把次要面板转 overlay 或提示，而不是裁切终端。
 
 ## 8. 统一不变量

@@ -1,3 +1,10 @@
+---
+status: canonical-draft
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "UX-1 implemented-state review, workspace behavior, layout, lifecycle and acceptance gaps"
+---
+
 # 04 · UX-1 Terminal Workspace
 
 ## 1. 目标和判定
@@ -7,8 +14,8 @@ UX-1 的目标不是重新做一个视觉壳，而是在当前已合入的 UX-1a
 判定：
 
 - `TERMINAL_WORKSPACE_CODE = IMPLEMENTED`
-- `TERMINAL_LIFECYCLE = IMPLEMENTED`
-- `SFTP_DOCK_LIFECYCLE = IMPLEMENTED`，真实产品路径证据按运行 SHA 单独记录
+- `TERMINAL_LIFECYCLE = PARTIAL`：显式 close/shutdown 有清理通知，但自然 EOF/远端断开 cleanup 尚未覆盖 removal listener
+- `SFTP_DOCK_LIFECYCLE = PARTIAL`：Dock/Queue/Lease 语义已实现，重复 `sftp_connect` 和自然断开注册表清理仍需闭合；真实产品路径证据按运行 SHA 单独记录
 - `NATIVE_GUI_CURRENT_HEAD = UNVERIFIED`
 - `IME_AND_PHYSICAL_KEYBOARD = UNVERIFIED/BLOCKED_EXTERNAL`
 - `TABBY_REPLACEMENT_READY = NO`
@@ -21,10 +28,10 @@ UX-1 的目标不是重新做一个视觉壳，而是在当前已合入的 UX-1a
 - `TerminalByUrl` 是常驻层；路由变化通过 `isTerminalPath`/`terminalTabPath` 处理，不创建第二个 TerminalContainer。
 - `leftPanel: none|explorer|navigation` 消除了 Rail 与永久导航侧栏双轨。
 - `rightPanel: none|sftp` 采用单占位者规则；新增 Snippet/Inspector/AI 时必须扩展这个 union，不得添加并行布尔量。
-- `usePanelLayout({ explorerWidth })` 传入 LeftPanel 实际宽度，使用 Shell ResizeObserver、cellWidth、chrome width 和 hysteresis。
+- `usePanelLayout({ explorerWidth })` 传入 LeftPanel 实际宽度，使用 Shell ResizeObserver、cellWidth、chrome width 和 hysteresis；现有实现需要补收缩/恢复对称回归，证明不会单向卡在 drawer/overlay。
 - Connection Explorer 的 Recent 来自 `connection_logs`；连接路径复用 `useConnectToHost`。
 - SFTP binding 明确 Pin/Follow 语义，Transfer Queue 和 Rust SFTP Registry 不由 Dock React cleanup 直接拥有。
-- SessionManager 通过 removal listener 清理 SFTP registry；Transfer Queue、staged upload/download、真实 OpenSSH fixture 和产品 E2E 已有多层覆盖。
+- SessionManager 显式 close/shutdown 通过 removal listener 清理 SFTP registry；自然 completion cleanup 当前直接移除 registry，重复 `sftp_connect` 当前会覆盖旧 entry。Transfer Queue、staged upload/download、真实 OpenSSH fixture 和产品 E2E 已有多层覆盖，但这两个退出/初始化边界仍需单独证据。
 
 ### 不能误报为完成
 
@@ -82,7 +89,8 @@ Explorer 切换不离开 Terminal route；点击管理页的 Host 只打开详�
 ### Tab/Split
 
 - 新建 Local/SSH Tab 使用稳定 `tabId`。
-- Split 创建新的 Pane/Tab 映射，不能复用一个 Session 的输出到两个 xterm。
+- Split 创建新的 Pane/Tab 映射，不能复用一个 Session 的输出到两个 xterm；当前每个 SplitGroup 只允许两个 Pane。
+- Core 的 2×2/4 Pane 不属于当前实现或验收目标；未来扩展必须先改 SplitTree、焦点、关闭、恢复和真实输入证据，再改 UI 入口。
 - active Pane 决定输入目标、命令面板、Snippet 和当前状态栏。
 - 关闭 Pane 是 Session close；关闭 Dock 是 view close，两者必须在 UI 上有不同语义。
 - Workspace 恢复布局和 Tab 元数据，不自动重连未知远程 Session；用户明确 reconnect 才创建新 attempt。
@@ -161,7 +169,8 @@ stateDiagram-v2
 | 512×370 | 所有 Drawer 可关闭，Terminal 仍可输入，错误可见 |
 | 390×844/360×800 | BottomNav、移动会话栏、安全区和长按菜单可用 |
 | 100 次切 Tab/开关 Dock | PTY/SSH/SFTP/监听器数量不增加，ACK 继续 |
-| 100 次分屏拖动 | cols/rows 最终与 DOM 一致，无 remount/thrash |
+| 100 次分屏拖动 | 两 Pane 的 cols/rows 最终与 DOM 一致，无 remount/thrash |
+| 反复窄化/放宽 | hysteresis 收缩与恢复均可达，不单向锁在 drawer/overlay |
 | 125%/150% DPI | Window Controls、Dialog、Focus ring、Tab labels 不遮挡 |
 
 ## 8. UX-1 剩余实现任务
@@ -172,6 +181,9 @@ stateDiagram-v2
 2. **UX1-NATIVE-02：macOS/Windows 输入矩阵**：物理重叠键、中文 IME、Option/dead key、Vim/tmux、系统粘贴和焦点恢复；没有设备时保持 `BLOCKED_EXTERNAL`。
 3. **UX1-UI-03：occupant 迁移测试**：新增 Snippet/Inspector/AI 前先让 `RightPanelMode`、单占位者和关闭不影响 Session 的测试成为公共契约。
 4. **UX1-REVIEW-04：持续资源回收**：对 SessionManager、SFTP Registry、Transfer Queue、拖放 listener 和 GUI harness 的证据继续保留，不在视觉 PR 中重写。
+5. **UX1-LIFECYCLE-05：自然退出与重复初始化**：让自然 EOF/远端断开、显式 close、shutdown 都触发同一 removal contract；重复 `sftp_connect` 明确返回幂等成功或结构化 `AlreadyConnected`，不得静默覆盖旧 entry。
+6. **UX1-LAYOUT-06：对称 hysteresis 回归**：用窄化→恢复→再窄化和 panel mode 改变矩阵锁住双向可达性；用户主动打开/关闭面板不应被宽度阻尼吞掉。
+7. **UX1-GUI-07：SFTP fixture 隔离**：每个 GUI spec 使用同一 `GUI_E2E_HOME` seed 和 app profile，先断言数据库路径、主机行和 SFTP 端口，再判断产品 UI 是否缺失主机。
 
 ## 9. UX-1 完成定义
 

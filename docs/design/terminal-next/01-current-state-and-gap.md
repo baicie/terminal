@@ -1,3 +1,10 @@
+---
+status: canonical-audit
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "Current source facts, evidence boundaries, implementation states and gaps"
+---
+
 # 01 · 当前源码事实与差距
 
 > 取证日期：2026-11-16
@@ -26,9 +33,9 @@
 | UX-1a Shell | Activity Rail、StatusBar、精简 TitleBar、默认终端层已合入 | `IMPLEMENTED` | 只做统一视觉和原生验收 |
 | UX-1b Explorer | 搜索、收藏、分组、Recent、单左面板和唯一连接 Hook 已合入 | `IMPLEMENTED` | 继续改善管理态和 GUI 证据 |
 | UX-1c Dock | `RightPanelMode` 当前为 `none\|sftp`，SFTP Pin/Follow 和关闭延迟释放已合入 | `IMPLEMENTED/PARTIAL` | Snippet/Inspector/AI 以后以 occupant 扩展，不另建布尔量 |
-| Layout budget | `usePanelLayout({ explorerWidth })` 使用真实 Shell/Explorer/Dock/cellWidth，带 hysteresis | `IMPLEMENTED` | 继续用实际 cols/rows 做原生验收 |
-| Tab/Split/Workspace | Zustand/AppStore、SplitTree、tab URL、恢复和 SessionManager 已有 | `IMPLEMENTED/UNVERIFIED` | 不能重新从零规划；补 4-pane、IME、跨平台 GUI |
-| SFTP | Full/Dock、Queue、staged upload/download、Session claim/allowlist、Rust registry lifecycle、GUI/命令 E2E 已有 | `IMPLEMENTED/UNVERIFIED` | 以真实 UI→IPC→Rust→sshd 和关闭 Dock 证据为准 |
+| Layout budget | `usePanelLayout({ explorerWidth })` 使用真实 Shell/Explorer/Dock/cellWidth，带 hysteresis；回弹方向和反复宽度变化仍需对称回归 | `IMPLEMENTED/PARTIAL` | 继续用实际 cols/rows 做原生验收，并锁住收缩/恢复不产生单向棘轮 |
+| Tab/Split/Workspace | Zustand/AppStore、SplitTree、tab URL、恢复和 SessionManager 已有；每个 SplitGroup 当前硬限制为两个 Pane | `IMPLEMENTED/UNVERIFIED` | Core 以双 Pane 为目标；2×2 仅作未来设计，不能写成当前验收项 |
+| SFTP | Full/Dock、Queue、staged upload/download、Session claim/allowlist、Rust registry lifecycle、GUI/命令 E2E 已有；自然 EOF 通知和重复连接契约仍需补强 | `IMPLEMENTED/PARTIAL/UNVERIFIED` | 以真实 UI→IPC→Rust→sshd、关闭 Dock、自然断开和重复 `sftp_connect` 证据为准 |
 | SSH | password/key/agent/cert/Jump/known-hosts、timeouts、writer、ACK、自动重连已有 | `IMPLEMENTED/UNVERIFIED` | 真机平台矩阵和人工输入继续独立验收 |
 | Host/Import | Host CRUD、OpenSSH Import、IdentityFile、ProxyJump、HostKey、Recent/Groups 已有 | `IMPLEMENTED/PARTIAL` | 编辑/导入失败状态和跨平台路径继续补齐 |
 | Credentials | Vault AES-GCM/Argon2、版本化 ref、host/key 命名空间、结构化 Vault 状态、迁移/清除 UI 已有 | `IMPLEMENTED/PARTIAL` | UX-2a 交互与 Provider Registry 尚未完成 |
@@ -55,11 +62,11 @@ Activity Rail 的 Connections 只切换 `leftPanel` 并保留 `/terminal`，Expl
 
 ### 3.3 SFTP
 
-前端 `RightPanel` 只显示 SFTP 视图；SFTP Host 由显式 binding/pin 决定。Transfer Queue 持有 transfer 状态，Rust `sftp_sessions` 通过 SessionManager removal listener 清理。Dock unmount 只影响视图；queued/running/finishing 任务通过 Lease/延迟释放保持资源，最终状态落地后再释放。
+前端 `RightPanel` 只显示 SFTP 视图；SFTP Host 由显式 binding/pin 决定。Transfer Queue 持有 transfer 状态，Rust `sftp_sessions` 在显式关闭和 shutdown 路径通过 SessionManager removal listener 清理。当前自然 EOF/远端断开路径的 completion cleanup 直接移除 session registry，尚未通知该 listener；重复 `sftp_connect` 也会在同一 `session_id` 上覆盖旧 `Arc<SftpSession>`，这两项必须在后续生命周期 PR 中明确为幂等/错误契约。Dock unmount 只影响视图；queued/running/finishing 任务通过 Lease/延迟释放保持资源，最终状态落地后再释放。
 
 ### 3.4 Credential
 
-Host/SSH key 行只保存 `credential_ref` 和公开元数据；SecretProvider 在连接时读取。当前 `SessionCredentialResolver` 接收一个固定的 `VaultSecretProvider`，没有按 `ref.provider` 选择 provider。损坏/未知引用通过 `credentialRefProblem` fail-closed；Vault 未初始化、锁定、不可用和读取失败已经有结构化字段。Jump Host 的目标和跳板机分别解析凭据。
+Host/SSH key 行只保存 `credential_ref` 和公开元数据；SecretProvider 在连接时读取。当前 `SessionCredentialResolver` 接收一个固定的 `VaultSecretProvider`，没有按 `ref.provider` 选择 provider。Host 路径已有损坏/未知引用的 fail-closed 结构化错误；SSH key 的 `readKeyCredentialRef` 仍把损坏或未知 provider 压成 `null`，需要与 Host 对齐为三态结果，否则 UI 可能把“引用损坏”误当成“从未保存”。Host 编辑清除入口也只在可解析且有 kind 时显示，损坏引用会形成“不能读、也不能清除”的恢复死结。Vault 未初始化、锁定、不可用和读取失败已有结构化字段。Jump Host 的目标和跳板机分别解析凭据。
 
 ### 3.5 Release/Recovery
 
@@ -78,7 +85,10 @@ Rust 数据恢复、单实例锁、迁移标记、备份和升级 E2E 已在多�
 ### 仍需补齐或重新测量
 
 - 当前 `RightPanelMode` 只有 SFTP；Snippet、Inspector、AI 必须沿用 occupant 模型，不得各加布尔开关。
-- Native GUI 最新成功 SHA 尚未跟随当前 `main` 重采；窗口控件、DPI、中文 IME、真实物理键盘、Vim/tmux、跨平台焦点仍分层记录。
+- 当前每个 SplitGroup 只渲染两个 Pane；2×2 是未来 SplitTree/焦点/恢复/真实输入共同扩展，不列入当前 Core Done Definition。
+- 自然 EOF/远端断开未经过 SFTP removal listener，重复 `sftp_connect` 的覆盖行为也没有稳定契约；需要真实生命周期回归，而不是只测显式 close。
+- 布局 hysteresis 已有收缩/恢复逻辑和注释，但缺少证明反复窄化/放宽不会单向卡在 drawer/overlay 的对称回归。
+- Native GUI 最新成功 SHA 尚未跟随当前 `main` 重采；窗口控件、DPI、中文 IME、真实物理键盘、Vim/tmux、跨平台焦点仍分层记录。GUI SFTP fixture 还必须证明 seed 数据目录与每个 spec 的 `GUI_E2E_HOME` 完全一致，否则“主机为空”不能归因于产品。
 - UX-1 的代码实现不能写成 `TABBY_REPLACEMENT_READY=YES`；7 天日用数据仍是独立门禁。
 - `ActivityRail` 仍保留部分管理路由入口；新设计不要求删除 `/hosts`、`/sftp`、`/vaults`、`/teams` 等深链。
 
@@ -90,7 +100,7 @@ Rust 数据恢复、单实例锁、迁移标记、备份和升级 E2E 已在多�
 - `SessionCredentialResolver` 的 provider 在构造时固定，未知 provider 只会被标记为不可读，不存在系统存储分派。
 - Vault key 使用 `host:` 与 `ssh-key:` 独立命名空间，版本写入顺序是写入→读回→更新行→清理旧版本。
 - SQLite 的旧明文兼容读取和迁移代码仍存在；迁移必须保持用户显式授权和回滚，不能在设计 PR 中自动执行。
-- `vault_get` 的通用 KV 权限目前依赖可信单一 WebView 的边界；未来 Extension/AI 不得继承此命令。
+- `vault_get` 的通用 KV 权限目前依赖可信单一 WebView 的边界；后续 B01 审计已经收窄文件系统 allowlist，历史报告中“FS 无 scope”的说法是过期快照，不能继续当作当前事实；未来 Extension/AI 不得继承通用 KV 命令。
 
 因此 UX-2 不能被简化成“加一个 Keychain 库”。它需要 Provider Registry、按 ref 分派、跨 Provider 迁移、旧版本安全拒绝、导入导出保留未知引用和平台稳定访问证据。
 

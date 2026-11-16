@@ -1,3 +1,10 @@
+---
+status: canonical-draft
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "Trusted built-in extension registry, lifecycle, capabilities and isolation boundary"
+---
+
 # 06 · UX-3 Extension Platform
 
 ## 1. 目标和边界

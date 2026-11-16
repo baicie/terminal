@@ -1,3 +1,10 @@
+---
+status: canonical-index
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "Terminal Next product, architecture, UX, security, acceptance and document governance entry"
+---
+
 # Terminal Next 统一设计规格
 
 > 版本：3.0 设计收口稿
@@ -54,7 +61,7 @@
 
 本轮已经完整读取用户提供的 v2.0 合订版：
 
-`/Users/liuzhiwei/Downloads/Terminal-Next-完整设计规格-合订版.md`（2275 行）
+用户提供的 v2.0 合订版（2275 行；外部原件，不作为仓库内编码依赖）
 
 v2.0 的文档头部声称基线为 `1a24eed`，并声称 10 张桌面图与 4 张 Windows 图已经位于 `assets/reference/`。本轮重新核对后，以当前仓库 HEAD 为准：
 

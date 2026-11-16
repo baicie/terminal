@@ -1,3 +1,10 @@
+---
+status: canonical-draft
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "Level 1-4 testing, evidence freeze, performance, platform matrix and release blockers"
+---
+
 # 09 · 测试、验收、证据与发布
 
 ## 1. 四级验收模型
@@ -55,13 +62,13 @@ CI 绿、源码测试绿、打包成功都不能单独提升到 Level 4。
 | CORE-01 | Focus 1440/1024 | 截图 + xterm actual cols | ≥120/≥80，终端不重建 |
 | CORE-02 | Explorer/Dock/字体变化 | layout decision + actual cols | 低于 60 时正确让位 |
 | CORE-03 | 100 次开关 Dock/Route | Session/Listener/ACK trace | 不新增 PTY、无 listener 增长 |
-| CORE-04 | 4 Pane/Tab/Workspace | shell output + pane IDs | 输入/输出正确，恢复字段完整 |
+| CORE-04 | 2 Pane/Tab/Workspace | shell output + pane IDs | 当前 Core 仅验收双 Pane 的输入/输出、焦点和恢复字段；2×2/4 Pane 另立扩展门禁 |
 | CORE-05 | 后台长命令 + 隐藏 | ACK/session trace | 输出继续，恢复可见 |
 | CONN-01 | password/key/agent/cert/Jump | sshd fixture + app logs | 真实产品链路成功和准确错误 |
 | CONN-02 | locked/unknown/corrupt credential | UI + DB ref diff | 不清 ref，不网络重试 |
 | SFTP-01 | Rust staged upload | 双端 SHA + logs | 完整性匹配 |
 | SFTP-02 | UI Queue→IPC→Rust | GUI + Rust + SHA | 产品链路完成 |
-| SFTP-03 | 上传中关 Dock | progress + registry delta | 字节继续、最终清零 |
+| SFTP-03 | 上传中关 Dock | 产品 GUI progress + Rust registry/remote SHA | 传输在产品链路中继续或明确取消；最终状态只结算一次并清零，不能只用“Session 未 close”代替字节完整性 |
 | SFTP-04 | Host A pin / Tab B | remote paths + GUI | 不串台、不误传 |
 | SFTP-05 | 100 次 drag mount | listener/transfer count | 一次拖放一次上传 |
 | CRED-01 | Provider write/read/fail | fixture + ref diff | 旧代可读、新代完整 |
@@ -80,7 +87,8 @@ CI 绿、源码测试绿、打包成功都不能单独提升到 Level 4。
 - 主线 CI `43814394847`：当前 `5f24863` 成功，覆盖前端、Rust、Team Server、脚本、源规模和发布门禁。
 - Upgrade E2E `43814394934`：当前成功，包含 macOS 当前版本升级/恢复、Vault app-level、磁盘满、历史升级、Linux DEB、AppImage replacement、Windows profile isolation preflight、临时 updater runtime。
 - Native GUI E2E 最近成功 run `43811877940` 对应 `71542f5`，不能作为当前 `5f24863` 的 GUI 证据；当前设计 Draft 不修改代码，最终实施 PR 必须按最终 SHA 重采。
-- SFTP GUI/命令级 E2E、staged transfer、Session Claim/Registry 相关实现已合入主线；每个新源代码改动仍会使指纹证据按仓库规则失效。
+- SFTP GUI/命令级 E2E、staged transfer、Session Claim/Registry 相关实现已合入主线；当前 GUI 证据仍需确认 seed fixture 与每个 spec 的 `GUI_E2E_HOME` 使用同一数据库，且上传中关闭 Dock 的通过标准必须包含远端 SHA/字节结果，而不只是 Session 未关闭。每个新源代码改动仍会使指纹证据按仓库规则失效。
+- 当前 main protection ruleset 要求单一聚合 context `required`；Native GUI E2E 不在 required set。PR 绿灯不能推导 Native GUI 已通过，最终验收必须显式读取 Level 3 结果。
 - macOS/Windows 正式签名、公证、正式 Updater key、Identifier 迁移和部分平台实机项仍是 Level 4 的独立边界。
 
 ## 4. 证据冻结流程
@@ -103,7 +111,7 @@ CI 绿、源码测试绿、打包成功都不能单独提升到 Level 4。
 | Layout reflow | 100 次拖拽/字体变化 | 无 remount/thrash；最终 cols 准确 |
 | Bundle | Initial/All gzip/raw | 同时报告，新增依赖给 delta |
 | Binary | release/strip/LTO/strip+LTO | 同 SHA、同 dist、符号配对 |
-| RAM | idle/4 pane/SFTP/AI | 面板反复开关不线性增长 |
+| RAM | idle/2 pane/SFTP/AI | 当前 Core 以双 Pane 测量；未来 2×2 需另行建立预算 |
 | Transfer | 固定大小真实 sshd | SHA、速度、CPU、资源回收分开记录 |
 
 二进制 `release-small`、strip 和 LTO 是独立发布工程议题；未归档 dSYM/PDB/debug symbols 前不能只看体积决定上线 profile。

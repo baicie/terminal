@@ -1,3 +1,10 @@
+---
+status: canonical-draft
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "Credential interaction, Provider Registry, references, migration, recovery and security acceptance"
+---
+
 # 05 · UX-2 Credential Experience & Secure Storage
 
 ## 1. 目标与当前判定
@@ -7,8 +14,9 @@ UX-2 要让用户在第一次连接前不必先理解 Vault，也不牺牲安全
 当前判定：
 
 - Vault 加密存储、版本化写入、Host/SSH key 命名空间、结构化锁定/未初始化/不可用状态：`IMPLEMENTED`。
-- Host/SSH key 与实际连接的 resolver 链路：`IMPLEMENTED`，有真实 sshd 和 Upgrade E2E 证据，但三平台 GUI 仍分层。
+- Host/SSH key 与实际连接的 resolver 链路：`PARTIAL/UNVERIFIED`。Host 侧有真实 sshd 和 Upgrade E2E 证据，但 SSH key 损坏/未知 provider 仍可能被 mapper 压成 `null`；三平台 GUI 仍分层。
 - 认证与保存完全分离、首次连接内联保存状态机：`PARTIAL`，需要 UX-2a 的产品化表单流程。
+- 损坏 CredentialRef 的可恢复清除：`PARTIAL`。当前 HostDialog 只在可解析且存在 kind 时显示 Clear，损坏引用可能既不能读取也不能清除；UX-2a 必须提供不依赖解析成功的“移除存储引用/重新绑定”路径。
 - 多 Provider Registry、按 `ref.provider` 分派、系统 Keychain/Windows Credential Manager/Secret Service：`DESIGN_ONLY`。
 - 系统 Provider 作为默认存储：`BLOCKED`，缺跨构建/升级/回退稳定读取证据。
 
@@ -103,9 +111,14 @@ interface ProviderRegistry {
   get(provider: ProviderId): SecretProvider | undefined
   listAvailability(): Promise<Array<{ provider: ProviderId; availability: ProviderAvailability }>>
 }
+
+type CredentialRefRead =
+  | { state: 'none'; ref: null }
+  | { state: 'valid'; ref: CredentialRefV2 }
+  | { state: 'corrupt'; ref: null; reason: 'malformed' | 'unsupported-provider' | 'unsupported-version' }
 ```
 
-`SessionCredentialResolver` 必须根据 `CredentialRef.provider` 分派，而不是在构造时固定一个 Vault provider。未知 provider 的结构化错误是 `unsupported-provider`，不能归类为 Vault locked，也不能转换成空引用。
+`SessionCredentialResolver` 必须根据 `CredentialRef.provider` 分派，而不是在构造时固定一个 Vault provider。未知 provider 的结构化错误是 `unsupported-provider`，不能归类为 Vault locked，也不能转换成空引用。Host 和 SSH key mapper 都必须返回上述三态；`corrupt` 仍然要让 UI 看见清除、导出保留和重新绑定动作，不能因为 `ref` 为 `null` 就被当成 `none`。
 
 ### 4.2 CredentialRef
 
@@ -158,8 +171,8 @@ SQLite 与 Provider 没有跨系统事务，因此安全保证是“行只指向
 
 ### 清除/切换
 
-- 清除：先让 Host/SSH key 行失去引用，再删除旧 Provider secret；删除失败只能留下无引用密文，不能留下悬空引用。
-- `authType` 切换：只丢弃旧认证方式不再使用的 kind；key auth 下的 `passphrase` 仍可以保留。
+- 清除：先让 Host/SSH key 行失去引用，再删除旧 Provider secret；删除失败只能留下无引用密文，不能留下悬空引用。即使引用损坏或 provider 未知，也必须能执行“清除行上的引用”并把无法寻址的密文记入 rebind/cleanup 报告；不能要求先成功解析才显示清除入口。
+- `authType` 切换：只丢弃旧认证方式不再使用的 kind；key auth 下的 `passphrase` 仍可以保留。切换 password→key、key→agent、agent→password 均要按旧/新认证方式的 kind 集合计算，而不能按当前 authType 一刀切或用 `COALESCE` 静默保留旧 ref。
 - Provider 切换：新 Provider 写入、读回、更新 ref、确认新 ref 可读后，才退役旧 Provider。失败保留旧 ref。
 - 删除 Host/Key：先删除引用行，再 best-effort 清除 Provider；UI 报告“配置已删除/秘密清理待完成”而不是重复删除。
 
@@ -217,7 +230,7 @@ Linux 没有统一“Keychain”时，必须明确 Secret Service/平台支持�
 
 - parser：空、合法、未知 provider、未来 version、错误 JSON、空 kinds、恶意类型。
 - provider：available/locked/uninitialized/unsupported/unusable、read missing、decrypt failure、write failure、delete failure。
-- lifecycle：部分更新、认证切换、Agent、Jump Host 两边、清除、重复迁移、进程中断后重试。
+- lifecycle：部分更新、认证切换、Agent、Jump Host 两边、清除（含损坏/未知 ref）、重复迁移、进程中断后重试；逐 kind 断言“不重输的仍保留、切换后旧方式不误带入”。
 - 真实 SQLite：Host/SSH key 写入 SQL 的秘密列仍为字面 `NULL`；导入/导出真实 `run_import` 不静默丢 ref。
 - 真实 sshd：password/key/agent/cert/Jump 成功和错误路径，不用 CLI 测试替代 Tauri launcher 链路。
 

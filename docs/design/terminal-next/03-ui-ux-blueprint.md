@@ -1,3 +1,10 @@
+---
+status: canonical-draft
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "Information architecture, visual language, responsive behavior, input and reference-image constraints"
+---
+
 # 03 · UI/UX Blueprint
 
 ## 1. 信息架构

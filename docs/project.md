@@ -18,7 +18,7 @@
 
 > 快照日期：2026-11-16；事实基线：`main=5f248631e6fff10e824de34cd73b2291fc8ab416`；远端：`https://github.com/baicie/terminal.git`。
 >
-> Terminal Next 唯一产品与工程设计入口是 [`docs/design/terminal-next/README.md`](design/terminal-next/README.md)。本文件继续记录项目结构、实现状态和历史验收，不复制新的 UX 规范。
+> Terminal Next 唯一产品与工程设计入口是 [`docs/design/terminal-next/README.md`](design/terminal-next/README.md)。本文件继续记录项目结构、实现状态和历史验收，不复制新的 UX 规范。后文旧 Phase/Release 段落是带日期的历史快照；当前证据、权限和源码计数以 canonical 现状审计及对应 CI/evidence 文件为准。
 
 | 项目 | 状态 |
 | --- | --- |
@@ -26,6 +26,8 @@
 | 当前进度 | 当前 main 已合入 UX-1a/b/c、F0、SFTP 生命周期与真实产品 E2E、Vault 读取审计、升级恢复和 CI/Release Qualification。主线 CI `43814394847` 与 Upgrade E2E `43814394934` 成功；最近 Native GUI E2E 成功 SHA 为 `71542f5`，不能替代当前 HEAD 的 GUI 证据。Windows 完整升级、Linux AppImage stock、正式签名/公证、Identifier 迁移、物理键盘/IME 等仍按证据等级单独记录。 |
 | 设计治理 | ✅ 统一 Terminal Next 规格见 [`docs/design/terminal-next/README.md`](design/terminal-next/README.md)，旧 Draft 已归档；真实安全、迁移、CI、发布和 GUI 证据保留在原目录 |
 | 下一验证目标 | 当前 HEAD Native GUI/窗口/DPI/IME/物理输入矩阵；UX-2a 连接时保存、Vault 状态、清除/切换认证；不把 AI、系统 Keychain 或正式 Updater 提前写成已完成 |
+
+> Terminal Next 复审补充：当前 Core 每个 SplitGroup 为双 Pane；自然 EOF/远端断开到 SFTP removal listener、重复 `sftp_connect`、hysteresis 双向恢复、损坏 CredentialRef 清除和 GUI SFTP profile 隔离仍按 canonical 规格列为待修/待测，不因历史 Phase 段落中的“生命周期完成”而提前标成 PASS。
 
 > 2026-10-28：Phase 6.103 把前端 Vitest 并行度固定为 4 个 worker（Issue #131），避免 jsdom worker 抢占 CPU 让 1 秒异步查询窗口在并行全量运行时偶发超时，不改用例超时与断言。本轮 `pnpm verify` 自动化分组全绿：前端 126 文件/1142 项、Team Server 25 文件/103 项、Rust 221 单测 + 3 集成测试、Node 脚本 205 项、550 个生产文件行数门禁与 bundle budget（initial gzip 129.55 KB、total gzip 553.15 KB）。当前 release binary 已按源码构建，但 evidence gate 仍有 9 项失败：4 份 debug 证据仍记历史源码指纹 `de8e49cb…`（当前工作树 `534405ec…`）、cold-start/release 缺 3 次 terminal marker、SSH 矩阵 case 集合不完整，以及 release 证据记录的旧 hash 与当前 binary 不一致；解锁 macOS 后按当前源码重采。
 

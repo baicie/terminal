@@ -1,3 +1,10 @@
+---
+status: canonical-review
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "Independent architecture review, conflict resolution, release risks and product decisions"
+---
+
 # 12 · Final Design Review、冲突收口与开放决策
 
 ## 1. 复审方法
@@ -48,6 +55,21 @@
 - “确认替换”如果清空仍可用凭据会有数据风险；如果继续 COALESCE 又没有实际作用。
 - 处理：保持当前安全默认并把 `secretPolicy` 交给 UX-2a 定义；不加语义未定义的确认对话框。
 
+### 冲突 H：参考图的四格分屏与当前实现
+
+- 参考图展示了四格工作区，但当前 `splitTerminalTab`、layout normalize 和 renderer 都把每个 SplitGroup 限制为两个 Pane。
+- 处理：Core 规格统一为双 Pane；2×2 只作为未来扩展，必须先有 SplitTree、焦点、恢复、资源预算和真实输入证据，不能由图片或 `CORE-04` 旧文字提前承诺。
+
+### 冲突 I：历史报告中的文件权限结论
+
+- `integrated-acceptance-report.md` 的旧基线段落把 FS 权限写成“无 scope”；后续 B01 审计已核实 allowlist，当前 canonical 不能重复旧结论。
+- 处理：保留历史报告和原始审查语境，在报告顶部加 supersession 注记；`01`/`10` 只引用当前 capability 事实和未来 Gateway 收敛方向。
+
+### 冲突 J：自然退出与 SFTP registry 通知
+
+- 显式 `remove_session`/shutdown 会通知 removal listener，但 completion cleanup 直接移除 registry；重复 `sftp_connect` 也可能覆盖旧 entry。
+- 处理：把它列为独立生命周期 PR 和验收门禁，不把“显式 close 测试通过”外推为自然 EOF/重复初始化已闭合。
+
 ## 3. 设计中被拒绝的不可行方案
 
 | 方案 | 拒绝原因 | 采用的替代 |
@@ -73,7 +95,7 @@
 ### 终端与传输
 
 - Native GUI 当前最终 SHA 的真实输入/IME/窗口焦点、Windows OpenSSH Agent/Pageant、Linux stock WebKit、串口硬件仍有边界。
-- 资源 owner 被新 Dock/Extension/Inspector 改坏，重新出现重复 Session、幽灵 listener、SFTP 截断或错误 Host 操作。
+- 资源 owner 被新 Dock/Extension/Inspector 改坏，重新出现重复 Session、幽灵 listener、SFTP 截断或错误 Host 操作；当前自然 EOF listener 缺口和重复 `sftp_connect` 覆盖行为必须先闭合。
 
 ### 发布链
 
@@ -97,6 +119,9 @@
 5. **团队/云同步范围**：保留现有入口和兼容，暂不为 Terminal Next 重做完整团队平台，是否确认？
 6. **AI 数据发送策略**：第一版只允许用户选中的文本/错误片段，禁止全量 scrollback/命令历史/环境变量，是否确认？
 7. **Extension 第一对象**：推荐 `snippet-dock`，而不是依赖 AI 的 `command-explainer`，是否确认？
+8. **分屏目标**：Core 是否接受当前双 Pane；2×2 是否明确延后到另一个版本和独立资源/输入/恢复门禁？
+9. **SFTP 运行中取消**：底层支持安全取消时显示取消并验证远端结果；不支持时是否只显示“停止后续/等待完成”而不伪造可取消？
+10. **Native GUI required context**：是否把当前 Native GUI 聚合结果纳入 main 的 required context，还是继续由发布验收单独阻断？
 
 ## 6. 设计冻结条件
 

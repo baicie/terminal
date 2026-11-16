@@ -1,3 +1,5 @@
+> Archived on 2026-11-16. Canonical Terminal Next design is [`../../README.md`](../../README.md) and the numbered blueprint files. This file is retained for historical traceability only.
+
 # Terminal Next — Vault UX × Terminal Workspace × Extension Platform × Rust Rig
 
 > 设计包 v1.0 · 2026-11-11 · 目标仓库 `baicie/terminal` · 仅设计与实施规划，尚未实施  

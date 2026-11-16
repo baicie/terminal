@@ -1,3 +1,10 @@
+---
+status: canonical-draft
+updated: 2026-11-16
+fact_baseline: "main@5f248631e6fff10e824de34cd73b2291fc8ab416"
+scope: "Product definition, milestones, non-goals and release boundary"
+---
+
 # 00 · Product Blueprint
 
 ## 1. 产品定义
@@ -83,7 +90,7 @@ Terminal Canvas → Activity Rail 的 Connections → Explorer 搜索/Recent/Fav
 
 | 阶段 | 目标 | 当前状态 | 进入条件 | 退出条件 |
 | --- | --- | --- | --- | --- |
-| UX-1 | Terminal Workspace | `IMPLEMENTED`，持续做原生验收 | 当前 UX-1a/b/c、F0、SFTP 和 GUI harness 事实冻结 | 真实 GUI/IME/平台矩阵补齐；核心不变量持续通过 |
+| UX-1 | Terminal Workspace | `IMPLEMENTED/PARTIAL`，持续做生命周期和原生验收 | 当前 UX-1a/b/c、F0、SFTP 和 GUI harness 事实冻结；双 Pane 是当前 Core 边界 | 自然退出/重复 SFTP 初始化、真实 GUI/IME/平台矩阵补齐；核心不变量持续通过 |
 | UX-2a | Provider 无关的凭据交互 | `PARTIAL` | UX-1 生命周期稳定 | 连接时输入、成功后保存、内联 Vault 状态、清除/切换认证、真实 SSH 负向路径 |
 | UX-2b | 系统 Provider | `DESIGN_ONLY` | UX-2a、Provider Registry、稳定签名/升级环境 | macOS/Windows/Linux 对应存储的创建/重启/升级/回退证据；默认 Provider 由产品决定 |
 | UX-3 | 可信内置扩展 v0 | `DESIGN_ONLY` | IPC 权限审计、右 Dock 单占位者、Extension API | 启停/异常/异步回调清理不影响 PTY；没有第三方沙箱误声明 |
