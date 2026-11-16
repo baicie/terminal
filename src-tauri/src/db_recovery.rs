@@ -441,7 +441,6 @@ fn status(state: RecoveryState, reason: impl Into<String>) -> RecoveryStatus {
 /// it seeds, and both sides read the same value instead of guessing. It is compiled in
 /// **only** with the `gui-e2e` feature, which no release build enables and which
 /// `scripts/check-gui-e2e-isolation.mjs` proves absent from the production bundle.
-
 /// The override rule, as a pure function so it is testable without process globals.
 #[cfg(feature = "gui-e2e")]
 fn resolve_override(raw: Option<std::ffi::OsString>) -> Option<Result<PathBuf, String>> {
