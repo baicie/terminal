@@ -192,4 +192,15 @@ export default {
   'hosts.form.discardDescription': '对该主机的修改尚未保存，关闭将丢弃这些修改。',
   'hosts.form.discard': '放弃',
   'hosts.form.keepEditing': '继续编辑',
+  'hosts.connect.blocked': '这台主机暂时无法连接',
+  'hosts.connectCredential.title': '使用密码连接',
+  'hosts.connectCredential.description':
+    '登录 {{name}}（{{user}}@{{hostname}}）。除非之后主动保存，否则不会存储任何内容。',
+  'hosts.connectCredential.passwordLabel': '密码',
+  'hosts.connectCredential.passwordRequired': '请输入密码后再连接',
+  'hosts.connectCredential.keyLabel': '私钥',
+  'hosts.connectCredential.keyRequired': '请粘贴私钥后再连接',
+  'hosts.connectCredential.passphraseLabel': '口令（可选）',
+  'hosts.connectCredential.notSaved': '该凭据仅用于本次连接。',
+  'hosts.connectCredential.connect': '连接',
 }

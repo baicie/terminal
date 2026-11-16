@@ -196,4 +196,15 @@ export default {
   'hosts.form.discardDescription': 'Les modifications de cet hôte ne sont pas enregistrées. Fermer les abandonnera.',
   'hosts.form.discard': 'Abandonner',
   'hosts.form.keepEditing': 'Continuer',
+  'hosts.connect.blocked': 'Cet hôte ne peut pas encore se connecter',
+  'hosts.connectCredential.title': 'Se connecter avec un mot de passe',
+  'hosts.connectCredential.description':
+    'Connexion à {{name}} ({{user}}@{{hostname}}). Rien n’est enregistré sauf si vous l’enregistrez ensuite.',
+  'hosts.connectCredential.passwordLabel': 'Mot de passe',
+  'hosts.connectCredential.passwordRequired': 'Saisissez un mot de passe pour vous connecter',
+  'hosts.connectCredential.keyLabel': 'Clé privée',
+  'hosts.connectCredential.keyRequired': 'Collez la clé privée pour vous connecter',
+  'hosts.connectCredential.passphraseLabel': 'Phrase de passe (facultatif)',
+  'hosts.connectCredential.notSaved': 'Cet identifiant sert uniquement à cette connexion.',
+  'hosts.connectCredential.connect': 'Se connecter',
 }
