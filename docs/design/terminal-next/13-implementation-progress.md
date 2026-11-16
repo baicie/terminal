@@ -80,10 +80,11 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 
 | 能力 | 状态 |
 | --- | --- |
-| **Typed Capability Gateway** | **`IMPLEMENTED`** | `features/extensions/capability-gateway.ts` + `approval-book.ts`。25 条对抗性测试。无 Registry / Manifest 加载器 |
-| Extension Manifest / Registry / SDK | `NOT_RUN` | Gateway 是前置，本轮先建边界 |
-| Snippet Dock 扩展 | `NOT_RUN` | — |
-| 扩展异常隔离与资源回收 | `PARTIAL` | `Disposable` 幂等与 generation 失效已实现并有测试；完整 activate/deactivate 状态机未实现 |
+| **Typed Capability Gateway** | **`PASS`** | `capability-gateway.ts` + `approval-book.ts`。25 条对抗性测试。grant 按 extension id 查询（修复了「返回当前 grant、事后再比 id」的错配风险） |
+| **Extension Manifest 校验** | **`PASS`** | `extension-manifest.ts`。10 类拒绝，含拒绝可命名动态代码的 `entry` |
+| **Extension Registry（生命周期）** | **`PASS`** | `extension-registry.ts`。55 条测试：回滚、generation、幂等启用、失败隔离 |
+| **Snippet Dock 扩展（逻辑 + UI）** | **`PARTIAL`** | 扩展逻辑 14 条测试 PASS；已挂进 RightPanel 并有真正的 presentational shell。**设置开关未接线**，默认关闭 → 应用内显示「已关闭」 |
+| `terminal.read-selected` 真实选择源 | `NOT_RUN` | 全应用尚无发布「当前终端选择」的表面，`selectedText()` 返回 null 是安全默认；capture 因此返回 false |
 | Rust 侧 `ExtensionIntent` Gateway | `NOT_RUN` | 本版本不允许扩展跨进程边界，暂不需要 |
 
 整阶段未开始。依赖 UX-1 的 Dock 单占位者契约（当前 `PARTIAL`）。
