@@ -10,7 +10,7 @@ A cross-platform terminal application built with Tauri, React, and TypeScript. C
 | **SFTP File Transfer** | Dual-pane file browser, drag-and-drop upload/download, progress tracking, checksum verification. |
 | **Terminal Emulation** | Full xterm.js integration with search, Unicode 11, ligatures, and WebGL acceleration. |
 | **Port Forwarding** | Local (`-L`), remote (`-R`), and dynamic (SOCKS5) port forwarding. |
-| **SSH Key Management** | Generate Ed25519/RSA/ECDSA keys, import existing keys, Keychain integration. |
+| **SSH Key Management** | Generate Ed25519/RSA/ECDSA keys, import existing keys, and manage Vault-backed credentials. System Keychain providers remain an explicit design/verification track. |
 | **Code Snippets** | Save and reuse command snippets with variable substitution. |
 | **Command Completion** | Tab completion for commands, paths, hosts, and snippets. |
 | **Batch Script Execution** | Run a command across multiple hosts simultaneously. |
@@ -131,7 +131,7 @@ pnpm format
 pnpm analyze:bundle
 ```
 
-For architecture details, API references, and contributing guidelines, see the [developer docs](docs/).
+For architecture details, API references, and contributing guidelines, see the [developer docs](docs/). The single Terminal Next product and engineering design entry is [docs/design/terminal-next/README.md](docs/design/terminal-next/README.md).
 
 ## License
 

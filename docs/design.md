@@ -1,5 +1,7 @@
 # Terminal - SSH/SFTP 客户端设计文档
 
+> Legacy product overview retained for historical compatibility. The authoritative Terminal Next product, UX, architecture, security, testing and release design is [`docs/design/terminal-next/README.md`](design/terminal-next/README.md). Do not use the historical technology table or feature priority as a current implementation plan.
+>
 > 参考 Termius 功能集设计
 
 ## 1. 产品概述

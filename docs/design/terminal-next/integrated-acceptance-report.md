@@ -1,5 +1,7 @@
 # Terminal Next — Integrated Acceptance & Independent Final Review
 
+> Historical snapshot: this report was captured against `main=1a24eed…` on 2026-11-13 and is retained as release/audit evidence. The current canonical baseline is `main=5f248631…`; read [`README.md`](README.md) and [`01-current-state-and-gap.md`](01-current-state-and-gap.md) for current facts. Later B01 capability auditing superseded the report's blanket “FS 无 scope” wording; the original body is preserved for traceability and must not be used as a current permission statement.
+
 - 审查角色：独立 Release Quality Gatekeeper
 - 审查日期：2026-11-13
 - 审查基线：`main` = **`1a24eed0c1a89994a317776a2a6ce2ee3e49053a`**
@@ -66,7 +68,7 @@
 | `src-tauri/src/lib.rs:5` | `mod agent;` —— 该模块就是上述 SSH Agent |
 | 全仓 grep | `rig-core` / `openai` / `anthropic` / `chat_completion` / `tool_call` / `composer` **命中 0** |
 | `src-tauri/Cargo.toml` / `Cargo.lock` | LLM 相关依赖 **0** |
-| `docs/design/terminal-next/04-rust-rig-ai.md:3-4` | 「状态：**提案（Draft）**，UX-4 才实施」；「**默认构建不包含 AI**」 |
+| `docs/design/terminal-next/archive/legacy-drafts/04-rust-rig-ai.md`（banner 之后第 3 行起） | 「状态：**提案（Draft）**，UX-4 才实施」；「**默认构建不包含 AI**」（同文件后段） |
 | `packages/frontend/src/store/right-panel-state.ts:16` | `export type RightPanelMode = 'none' \| 'sftp'` —— 注释提到 `snippets`/`ai`，**代码里没有** |
 | `src-tauri/src/lib.rs:5-31` | `mod` 列表无 `ai` 模块 |
 

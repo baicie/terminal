@@ -1,5 +1,7 @@
 # Release Engineering — Updater、产品身份与原生构建验收
 
+> Historical snapshot: this report targets `f5c0434`/2026-11-13 and remains release evidence for that SHA. It is not the current `main=5f248631…` qualification. Read [`README.md`](README.md), [`01-current-state-and-gap.md`](01-current-state-and-gap.md) and [`09-test-acceptance-release.md`](09-test-acceptance-release.md) for current design and evidence rules; do not promote its PASS/PARTIAL values to current release status.
+
 - 审查角色：Tauri Release Engineer
 - 日期：2026-11-13
 - 源码基线：`f5c0434`（`docs/terminal-next-integrated-acceptance`）
