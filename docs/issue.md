@@ -1,7 +1,8 @@
 # Terminal 项目 Issues 追踪
 
-> 基于 2026-03-19 代码审查生成
-> 对应文档：`docs/design.md` 和 `docs/todo.md`
+> 基于历史代码审查与持续验收记录维护。
+> 当前 Terminal Next 产品/架构设计以 [`docs/design/terminal-next/README.md`](design/terminal-next/README.md) 为准；本文件保留问题、复现、修复与未验证边界。
+> 对应状态索引：`docs/project.md`、`docs/todo.md`
 
 ---
 

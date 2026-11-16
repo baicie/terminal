@@ -34,6 +34,7 @@
 | 文档                           | 用途                                  | 何时查阅           |
 | ------------------------------ | ------------------------------------- | ------------------ |
 | **docs/project.md**            | 完整项目结构、实现状态、数据库结构    | 每次开发前必读     |
+| **docs/design/terminal-next/README.md** | Terminal Next 唯一产品/架构/UX/安全/验收设计入口 | Terminal Next 设计或实现前必读 |
 | **docs/issue.md**              | 所有已知问题、BUG、待修复项           | 解决问题时查阅     |
 | **docs/design.md**             | 产品设计、功能规划、优先级            | 新功能设计时查阅   |
 | **docs/todo.md**               | 开发待办事项清单                      | 规划开发任务时查阅 |
@@ -1123,7 +1124,7 @@ REAL_SQLITE_IMPORT_E2E              = PASS
 
 **两项 PARTIAL 的理由**：`REPLACE_REQUIRES_EXPLICIT_POLICY` —— 补「确认替换」对话框
 比不补更糟（确认清空 = 删可用凭据；确认仍 COALESCE = 对话框是谎言），须先由 UX-2a
-的凭据状态机定义语义；已写进 `docs/design/terminal-next/01-credential-keychain-vault.md` §8。
+的凭据状态机定义语义；已写进 `docs/design/terminal-next/archive/legacy-drafts/01-credential-keychain-vault.md` §8。
 `LEGACY_BACKUP_COMPATIBILITY` —— 改新版本无法改变已发布旧版本的解析行为，能证明的
 只是「新版本拒绝 version > 1e9」，不是「旧版本安全」。
 
