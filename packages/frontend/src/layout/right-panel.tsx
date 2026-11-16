@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { useRightPanelStore } from '@/store/right-panel-store'
+import { isRightPanelImplemented } from '@/store/right-panel-state'
 
 /**
  * The right column.
@@ -50,6 +51,10 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
   const rightPanel = useRightPanelStore(state => state.rightPanel)
   const setRightPanel = useRightPanelStore(state => state.setRightPanel)
   if (rightPanel === 'none') return null
+  // A mode the union names but this build does not render — `snippets`, `inspector`
+  // and `ai` are declared for the contract, not shipped. Rendering the dock empty
+  // would look like a broken panel; staying closed is the honest answer.
+  if (!isRightPanelImplemented(rightPanel)) return null
   const overlay = mode === 'overlay'
   return (
     <aside
