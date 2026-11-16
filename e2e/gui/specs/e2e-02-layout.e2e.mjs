@@ -18,11 +18,46 @@ const FLOOR = 60
 /** Widths from the task's matrix, in CSS pixels. */
 const WIDTHS = [1440, 1280, 1024, 900, 768, 640]
 
-async function readCols() {
-  const text = await browser.$('[data-testid="status-bar"]').getText()
-  const match = /(\d+)\s*[×x]\s*(\d+)/.exec(text)
-  if (!match) throw new Error(`status bar has no cols×rows: ${JSON.stringify(text)}`)
-  return { cols: Number(match[1]), rows: Number(match[2]) }
+/**
+ * Read cols×rows from the status bar, waiting for it to be readable again.
+ *
+ * ## The defect this fixes
+ *
+ * The matrix calls `resizeWindow(width)` and then `readCols()` immediately. A window
+ * resize reflows the layout, and during the reflow the status bar is briefly detached —
+ * so `browser.$('[data-testid="status-bar"]').getText()` threw
+ * `Can't call getText … because element wasn't found`.
+ *
+ * Measured on the Windows runner: the failure screenshot **shows the status bar**
+ * (`Connected · Local` on the left, `170×47` on the right). The element existed; the
+ * read raced the reflow.
+ *
+ * A fixed `sleep` would hide this. Polling for a readable value is the condition that
+ * actually matters, and it also covers the case where the element is present but its
+ * text has not updated to the new geometry yet.
+ */
+async function readCols({ timeout = 10_000, interval = 100 } = {}) {
+  const deadline = Date.now() + timeout
+  let lastText = null
+  while (Date.now() < deadline) {
+    try {
+      const element = await browser.$('[data-testid="status-bar"]')
+      if (await element.isExisting()) {
+        const text = await element.getText()
+        lastText = text
+        const match = /(\d+)\s*[×x]\s*(\d+)/.exec(text)
+        if (match) return { cols: Number(match[1]), rows: Number(match[2]) }
+      }
+    } catch {
+      // The element was detached between the existence check and the read: the layout is
+      // still settling. Retry rather than failing.
+    }
+    await new Promise(resolve => globalThis.setTimeout(resolve, interval))
+  }
+  throw new Error(
+    `status bar never became readable with cols×rows within ${timeout}ms; ` +
+      `last text: ${JSON.stringify(lastText)}`,
+  )
 }
 
 /**
