@@ -19,11 +19,11 @@ mod sftp_command_e2e_tests;
 // IPC-boundary tests: `tauri::test::mock_runtime` runs the real `#[tauri::command]`
 // wrapper, which the command-level suite above explicitly does not. Gated on `gui-e2e`
 // because it needs the `tauri/test` feature.
-#[cfg(all(test, feature = "gui-e2e"))]
-mod sftp_ipc_e2e_tests;
 mod sftp_download;
 #[cfg(test)]
 mod sftp_download_tests;
+#[cfg(all(test, feature = "gui-e2e"))]
+mod sftp_ipc_e2e_tests;
 mod sftp_upload;
 mod shell_interaction_probe;
 mod shutdown;
