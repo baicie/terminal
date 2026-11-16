@@ -153,18 +153,77 @@ pub(crate) fn remove_session_entry<V>(map: &mut HashMap<String, V>, session_id: 
 /// The command used to `insert` unconditionally, so a second connect replaced the
 /// first `Arc<SftpSession>` with a brand-new one: the old channel was dropped
 /// wherever it was referenced (a listing in flight, an upload holding it) and the
-/// caller had no way to know. That is the silent-overwrite half of the contract
-/// the design calls out. The other half is that *not* overwriting must not break
-/// a dead session — an entry survives a transport that died without the removal
-/// listener running, and reusing that one would hand the user a dead channel.
+/// caller had no way to know.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum SftpAttach {
     /// Nothing registered: open a channel and insert it.
     Open,
     /// A live entry exists: keep it, open nothing.
     Reuse,
-    /// An entry exists but its transport is gone: drop it and open a new one.
+    /// An entry exists but its transport is gone: open a new one, and only then
+    /// replace the old entry.
     Replace,
+}
+
+/// Is the registered channel still usable?
+///
+/// `true` means "assume live", and every uncertain case is deliberately resolved in
+/// that direction. The cost of a wrong `true` is one failed operation on a dead
+/// channel, which the next call replaces. The cost of a wrong `false` is throwing
+/// away a channel that a running transfer is using.
+///
+/// Two cases used to be resolved the other way and were wrong:
+///
+/// * `Timeout` means "this request got no reply within the client's deadline", not
+///   "the transport is gone". The deadline starts when the packet is enqueued on a
+///   pipe shared with every other request on the session, so a large upload
+///   saturating the SSH window produces a timeout on an entirely healthy channel.
+///   Treating that as death would drop a live session's SFTP mid-transfer.
+/// * `Status` is the server answering. `SSH_FX_NO_CONNECTION` and
+///   `SSH_FX_CONNECTION_LOST` are the exception: a server that answers REALPATH with
+///   one of those is telling us the connection is gone, and the previous catch-all
+///   classified them as alive.
+///
+/// A status code that a server returns for a *successful* round trip is not evidence
+/// of a dead transport, so the remaining codes stay `true`.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum SftpLiveness {
+    Alive,
+    Dead,
+}
+
+impl SftpLiveness {
+    fn is_alive(self) -> bool {
+        matches!(self, SftpLiveness::Alive)
+    }
+}
+
+/// Classify a probe failure, without any I/O so every case is testable.
+pub(crate) fn classify_probe_failure(error: &russh_sftp::client::error::Error) -> SftpLiveness {
+    use russh_sftp::client::error::Error;
+    match error {
+        // The stream could not carry the request at all.
+        Error::IO(_) => SftpLiveness::Dead,
+        // A packet arrived that makes no sense for this request: the channel's
+        // framing is broken rather than merely slow.
+        Error::UnexpectedPacket => SftpLiveness::Dead,
+        // The server answered, and said the connection is gone. (6 and 7 are
+        // `SSH_FX_NO_CONNECTION` / `SSH_FX_CONNECTION_LOST`.)
+        Error::Status(status) => {
+            if status.status_code == russh_sftp::protocol::StatusCode::NoConnection
+                || status.status_code == russh_sftp::protocol::StatusCode::ConnectionLost
+            {
+                SftpLiveness::Dead
+            } else {
+                SftpLiveness::Alive
+            }
+        }
+        // Enqueued and not answered in time — could be a slow server, could be a
+        // saturated window. Not evidence of death.
+        Error::Timeout => SftpLiveness::Alive,
+        // The server is refusing this particular request for its own reasons.
+        Error::Limited(_) | Error::UnexpectedBehavior(_) => SftpLiveness::Alive,
+    }
 }
 
 /// The whole decision, with no I/O in it, so every registry state is testable.
@@ -222,12 +281,7 @@ fn connect_error(stage: SftpConnectStage, error: &dyn std::fmt::Display) -> Sftp
 async fn sftp_is_live(sftp: &Arc<SftpSession>) -> bool {
     match sftp.canonicalize(".").await {
         Ok(_) => true,
-        Err(russh_sftp::client::error::Error::Timeout) => false,
-        Err(russh_sftp::client::error::Error::IO(_)) => false,
-        Err(russh_sftp::client::error::Error::UnexpectedBehavior(_)) => false,
-        // A protocol-level refusal (no such file, permission denied) is the
-        // server answering: the channel works.
-        Err(_) => true,
+        Err(error) => classify_probe_failure(&error).is_alive(),
     }
 }
 
@@ -270,16 +324,12 @@ pub async fn sftp_connect(
     match attach_decision(existing.is_some(), entry_is_live) {
         SftpAttach::Reuse => return Ok(()),
         SftpAttach::Replace => {
-            // Take the dead handle out *before* opening the new one. If another
-            // caller wins the race below, this leaves the map with exactly one
-            // entry rather than two.
-            let mut map = state.sftp_sessions.lock().await;
-            if map
-                .get(&session_id)
-                .is_some_and(|current| Arc::ptr_eq(current, existing.as_ref().expect("checked")))
-            {
-                map.remove(&session_id);
-            }
+            // Nothing is removed yet. The old entry is replaced only after a new
+            // channel has been opened and handshaked, so a connect that fails
+            // (MaxSessions, subsystem refused, handshake timeout) leaves the session
+            // with the entry it had rather than with none at all — which was worse
+            // than the pre-change behaviour, where the map was touched only on
+            // success.
         }
         SftpAttach::Open => {}
     }
@@ -303,11 +353,31 @@ pub async fn sftp_connect(
         .await
         .map_err(|error| connect_error(SftpConnectStage::Handshake, &error))?;
 
-    // The handshake ran without the lock, so a concurrent connect may have
-    // finished first. Losing that race is success, not an error: there is a live
-    // channel and the caller asked for one. The value this caller built is
-    // dropped, which closes the channel it was holding — the alternative,
-    // overwriting the winner, would strand a channel somebody may be using.
+    // The handshake ran without the lock, so the world may have moved:
+    //
+    // * a concurrent connect may have finished first — losing that race is success,
+    //   not an error, because there is a live channel and the caller asked for one.
+    //   The value this caller built is dropped, closing the channel it held; the
+    //   alternative, overwriting the winner, would strand a channel somebody may be
+    //   using.
+    //
+    // * the session itself may have ended. The removal notification runs between
+    //   our `get_ssh_handle` and this insert, and inserting after it would re-create
+    //   exactly the dangling `Arc<SftpSession>` this whole change exists to prevent —
+    //   a fresh channel whose SSH connection is already gone, with no session left to
+    //   fire a second notification for it. Checking the manager here, under the same
+    //   lock as the insert, is what closes that window.
+    // Ask the manager *before* taking the registry lock, so this never holds two
+    // locks at once. The check is still meaningful: it is the last look before the
+    // insert, and a removal that lands between them would also run the listener,
+    // which removes the key this insert is about to add.
+    if get_session_manager()
+        .get_ssh_handle(&session_id)
+        .await
+        .is_none()
+    {
+        return Err(SftpError::SessionNotFound);
+    }
     let mut map = state.sftp_sessions.lock().await;
     insert_unless_present(&mut map, &session_id, Arc::new(sftp));
 
@@ -1070,6 +1140,81 @@ mod tests {
     // -----------------------------------------------------------------------
     // TN-UX1-04 · repeated `sftp_connect` has an explicit contract
     // -----------------------------------------------------------------------
+
+    #[test]
+    fn a_timeout_does_not_prove_the_transport_is_dead() {
+        // `Timeout` means "this request got no reply within the client's deadline",
+        // and that deadline starts when the packet is enqueued on a pipe shared with
+        // every other request on the session. A large upload saturating the SSH
+        // window produces a timeout on a perfectly healthy channel; treating it as
+        // death would drop a live session's SFTP mid-transfer.
+        use russh_sftp::client::error::Error;
+        assert_eq!(
+            super::classify_probe_failure(&Error::Timeout),
+            super::SftpLiveness::Alive
+        );
+    }
+
+    #[test]
+    fn a_broken_stream_proves_the_transport_is_dead() {
+        use russh_sftp::client::error::Error;
+        assert_eq!(
+            super::classify_probe_failure(&Error::IO("broken pipe".into())),
+            super::SftpLiveness::Dead
+        );
+        assert_eq!(
+            super::classify_probe_failure(&Error::UnexpectedPacket),
+            super::SftpLiveness::Dead
+        );
+    }
+
+    #[test]
+    fn a_status_that_says_the_connection_is_gone_is_dead() {
+        // 6 and 7 are `SSH_FX_NO_CONNECTION` / `SSH_FX_CONNECTION_LOST`. The previous
+        // catch-all treated every `Status` as "the server answered, so the channel
+        // works", which kept a dead channel for the rest of the session.
+        use russh_sftp::client::error::Error;
+        use russh_sftp::protocol::{Status, StatusCode};
+        let no_connection = Error::Status(Status {
+            id: 0,
+            status_code: StatusCode::NoConnection,
+            error_message: "gone".into(),
+            language_tag: "en".into(),
+        });
+        let lost = Error::Status(Status {
+            id: 0,
+            status_code: StatusCode::ConnectionLost,
+            error_message: "gone".into(),
+            language_tag: "en".into(),
+        });
+        assert_eq!(
+            super::classify_probe_failure(&no_connection),
+            super::SftpLiveness::Dead
+        );
+        assert_eq!(
+            super::classify_probe_failure(&lost),
+            super::SftpLiveness::Dead
+        );
+    }
+
+    #[test]
+    fn an_ordinary_status_refusal_leaves_the_channel_alive() {
+        // "No such file" and "permission denied" are the server answering a working
+        // channel. Demoting those to dead would replace a healthy session on every
+        // probe against a directory the user cannot read.
+        use russh_sftp::client::error::Error;
+        use russh_sftp::protocol::{Status, StatusCode};
+        let denied = Error::Status(Status {
+            id: 0,
+            status_code: StatusCode::PermissionDenied,
+            error_message: "denied".into(),
+            language_tag: "en".into(),
+        });
+        assert_eq!(
+            super::classify_probe_failure(&denied),
+            super::SftpLiveness::Alive
+        );
+    }
 
     #[test]
     fn a_repeated_connect_never_silently_overwrites_a_live_entry() {
