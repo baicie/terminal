@@ -1,12 +1,40 @@
-# `main` 分支保护与 Required Checks 配置（EXTERNAL_ACTION_REQUIRED）
+# `main` 分支保护与 Required Checks 配置（ENABLED）
 
-> 状态：**EXTERNAL_ACTION_REQUIRED**
-> 实测（2026-11-16）：`gh api repos/baicie/terminal/rulesets` 返回 `[]`；
-> `gh api repos/baicie/terminal/branches/main/protection` 返回 404 `Branch not protected`。
-> 即：**当前 `main` 完全不受保护**，任何具有写权限的账号都可以直接推送。
+> 状态：**ENABLED**（2026-11-16 实测）
+> Ruleset id `27354680`，`enforcement: active`，`bypass_actors: []`。
 >
-> 本文档给出精确配置与验证命令。在 GitHub 实际返回启用证据之前，该项保持
-> `EXTERNAL_ACTION_REQUIRED`，**不得**记为 PASS。
+> ## 实测的拦截证据
+>
+> | 操作 | 结果 |
+> | --- | --- |
+> | 直推 `main` | 拒绝：`Changes must be made through a pull request` + `11 of 11 required status checks are expected` |
+> | `git push --force origin HEAD:main` | 拒绝：同上 |
+> | `git push origin --delete main` | 拒绝：`refusing to delete the current branch` |
+> | 带失败 required check 的 PR 合并 | 拒绝：`the base branch policy prohibits the merge` |
+> | docs-only PR | `mergeState: CLEAN`，可合并（详见第 4.1 节） |
+>
+> ## 一个必须记录的例外
+>
+> `bypass_actors: []` 阻止了普通账号，但**仓库管理员仍可用 `gh pr merge --admin` 绕过**
+> （GitHub 对 admin 角色的既有行为，ruleset 不覆盖）。这是平台限制，不是配置缺陷；
+> 任何要求「管理员也不能绕过」的表述都是不准确的。
+>
+> ## 4.1 为什么 only `required`，不列 11 个具体 job 名
+>
+> 第一版 ruleset 把 11 个 job 名逐条列为 required。实测发现这让 **docs-only PR 永久
+> 无法合并**：
+>
+> ```
+> docs-only PR 的 check 状态：
+>   Frontend quality / Rust quality / Tauri build (…) / …  -> completed  skipped
+>   required                                              -> completed  success
+> mergeState: BLOCKED        （所有具体 job 都是 skipped，GitHub 不接受 skipped 为满足）
+> ```
+>
+> `required` 是聚合器，它已经读取 `needs` 并对每个 job 的结论做裁决（docs-only 时
+> 正确地判为通过）。把具体 job 名也列进去是**双重裁决**，而第二重不理解 docs-only。
+>
+> 收窄为只要求 `required` 后，同一 docs-only PR 变为 `mergeState: CLEAN`。
 
 ---
 
@@ -74,12 +102,7 @@
   "name": "main-protection",
   "target": "branch",
   "enforcement": "active",
-  "conditions": {
-    "ref_name": {
-      "include": ["refs/heads/main"],
-      "exclude": []
-    }
-  },
+  "conditions": { "ref_name": { "include": ["refs/heads/main"], "exclude": [] } },
   "bypass_actors": [],
   "rules": [
     { "type": "deletion" },
@@ -99,19 +122,7 @@
       "parameters": {
         "strict_required_status_checks_policy": true,
         "do_not_enforce_on_create": false,
-        "required_status_checks": [
-          { "context": "CI / required" },
-          { "context": "Frontend quality" },
-          { "context": "Rust quality" },
-          { "context": "Team Server quality" },
-          { "context": "Repository gates (source size, evidence, script tests)" },
-          { "context": "Dependency audit (npm)" },
-          { "context": "cargo audit (blocking)" },
-          { "context": "Team Server container" },
-          { "context": "Tauri build (macos-latest)" },
-          { "context": "Tauri build (ubuntu-latest)" },
-          { "context": "Tauri build (windows-latest)" }
-        ]
+        "required_status_checks": [{ "context": "required" }]
       }
     }
   ]
@@ -191,3 +202,4 @@ gh pr close --delete-branch
 | 是否保留 `bypass_actors` 为空 | 当前为空 | 仓库所有者 |
 
 这些都需要 GitHub 管理员权限。本文档不假装 Agent 拥有该权限。
+
