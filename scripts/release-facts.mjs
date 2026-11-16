@@ -9,6 +9,7 @@
  * default. A release gate that fills in "probably fine" is worse than no gate.
  */
 import { execFileSync } from 'node:child_process'
+import { parseDetailsUrl } from './check-run-provenance.mjs'
 import { selectAcrossPages } from './check-run-selection.mjs'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
@@ -98,7 +99,59 @@ function collectChecks(commit) {
       console.error(`  ignored check run ${entry.id} ${entry.name}: ${entry.reason}`)
     }
   }
-  return { checks, ignored }
+
+  const withProvenance = attachProvenance(checks, pages)
+  return { checks: withProvenance, ignored }
+}
+
+/**
+ * Resolve which workflow produced each check, from its details URL.
+ *
+ * ## Why this is necessary
+ *
+ * App id is identical for every workflow in the repository (measured: 15368), and a
+ * job name is data any workflow file can set. Neither is proof of source. The
+ * `details_url` points at `actions/runs/<id>`, and that endpoint carries the workflow
+ * path — which the workflow itself cannot forge.
+ *
+ * The resolution is best-effort per check and never throws: a failure leaves
+ * `workflowPath` as `null`, which the judge treats as a provenance problem rather than
+ * a pass.
+ */
+function attachProvenance(checks, pages) {
+  // Index the details URLs from the raw pages so the mapping is by check id.
+  const detailsById = new Map()
+  for (const page of pages) {
+    if (!Array.isArray(page)) continue
+    for (const run of page) {
+      if (run && run.id !== undefined && run.details_url) detailsById.set(Number(run.id), run.details_url)
+    }
+  }
+
+  const cache = new Map()
+  const resolved = {}
+  for (const [name, entry] of Object.entries(checks)) {
+    const detailsUrl = detailsById.get(Number(entry.id)) ?? null
+    const parsed = parseDetailsUrl(detailsUrl)
+    let workflowPath = null
+    if (parsed !== null) {
+      if (cache.has(parsed.runId)) {
+        workflowPath = cache.get(parsed.runId)
+      } else {
+        const raw = gh(['api', `repos/{owner}/{repo}/actions/runs/${parsed.runId}`, '--jq', '.path'])
+        workflowPath = raw === null ? null : raw.trim()
+        cache.set(parsed.runId, workflowPath)
+      }
+    }
+    resolved[name] = {
+      ...entry,
+      runId: parsed?.runId ?? null,
+      jobId: parsed?.jobId ?? null,
+      // `null` means "could not determine", which the judge reports as a problem.
+      workflowPath,
+    }
+  }
+  return resolved
 }
 
 /**

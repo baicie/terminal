@@ -31,24 +31,28 @@ import path from 'node:path'
 import process from 'node:process'
 
 /**
- * Jobs that must have succeeded **on the release commit itself**.
+ * The checks a release must prove, and where each comes from.
  *
- * Deliberately the same list as `CI / required` plus the GUI gate: a release makes
- * stronger claims than a merge (installers, updater payloads, notarization state), so
- * it cannot be allowed to skip a check a merge would have required.
+ * This used to be a hand-typed list of job display names whose comment claimed it
+ * mirrored `CI / required` "plus the GUI gate". The GUI gate was not in it — a release
+ * could ship with the GUI E2E red while the comment said otherwise, and no test
+ * compared the two lists.
+ *
+ * The list now comes from `release-check-contract.mjs`, which is validated against the
+ * real workflow files by `release-check-contract.test.mjs`. Re-exported here so existing
+ * callers keep working.
  */
-export const REQUIRED_RELEASE_CHECKS = [
-  'required',
-  'Frontend quality',
-  'Rust quality',
-  'Team Server quality',
-  'Repository gates (source size, evidence, script tests)',
-  'Tauri build (macos-latest)',
-  'Tauri build (ubuntu-latest)',
-  'Tauri build (windows-latest)',
-  'cargo audit (blocking)',
-  'Dependency audit (npm)',
-]
+export {
+  RELEASE_CHECKS,
+  REQUIRED_RELEASE_CHECKS,
+  PR_EVIDENCE_CHECKS,
+} from './release-check-contract.mjs'
+// A re-export does not create a local binding, so the loop below needs its own import.
+import {
+  PR_EVIDENCE_CHECKS as PR_CHECKS,
+  RELEASE_CHECKS as CHECKS,
+  REQUIRED_RELEASE_CHECKS as REQUIRED_NAMES,
+} from './release-check-contract.mjs'
 
 /** Modes and what each promises the user. */
 export const RELEASE_MODES = {
@@ -112,10 +116,22 @@ export function judgeRelease(facts) {
         'is reachable rather than treating the release as reviewed',
     )
   }
-  for (const name of REQUIRED_RELEASE_CHECKS) {
+  for (const check of CHECKS) {
+    const name = check.name
     const entry = checks[name]
     if (!entry) {
-      push('check-missing', `required check ${JSON.stringify(name)} has no run for this commit`)
+      // A PR-evidence check is expected on the *commit's PR run*, not on the tag. Its
+      // absence is a distinct problem: the fact collector must supply it, and a
+      // missing one means the release cannot be qualified — not that it may proceed.
+      const code = check.freshness === 'pr-evidence' ? 'check-missing-pr-evidence' : 'check-missing'
+      push(
+        code,
+        `required check ${JSON.stringify(name)} has no run for this commit` +
+          (check.freshness === 'pr-evidence'
+            ? ` (this gate is verified against the commit's PR-time run in ${check.owner}; ` +
+              'the workflow has no tag trigger, so a tag run cannot satisfy it)'
+            : ''),
+      )
       continue
     }
     if (entry.headSha !== facts.commit) {
@@ -130,6 +146,25 @@ export function judgeRelease(facts) {
       push(
         'check-not-success',
         `required check ${JSON.stringify(name)} concluded ${JSON.stringify(entry.conclusion ?? null)}`,
+      )
+    }
+    // ## Provenance, not just a name
+    //
+    // `entry.workflowPath` is what the collector resolved from the check's details URL.
+    // Without this comparison, a workflow file added to the repository could publish a
+    // check named `Rust quality` and satisfy this gate — GitHub Actions is one App for
+    // every workflow, so app id proves nothing.
+    //
+    // The field is **required**. An earlier version skipped the comparison when it was
+    // absent, which meant a collector that never populated it (or a facts file written
+    // by hand) passed with no provenance at all — the check would have been decorative.
+    // `null` means "could not determine", and that is a refusal, not a pass.
+    if (entry.workflowPath !== check.owner) {
+      push(
+        'check-wrong-workflow',
+        `required check ${JSON.stringify(name)} came from ` +
+          `${entry.workflowPath === null || entry.workflowPath === undefined ? '<unresolved>' : entry.workflowPath}, ` +
+          `not from ${check.owner}; its name is not proof of its source`,
       )
     }
   }
