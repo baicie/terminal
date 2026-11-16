@@ -219,7 +219,11 @@ test('the real CI invocation works end-to-end on a realistic fixture tree', asyn
   )
 
   assert.match(stdout, /Gate scripts \(node --test\) \| `FAIL`/)
-  assert.match(stdout, /Unit — frontend \(vitest\) \| `PASS` \| — \| 2337 \| 2337/)
+  // The Platform column carries `RUNNER_OS` when the environment provides one (CI has
+  // `Linux`/`macOS`/`Windows`; a local run has none and renders `—`). Asserting `—`
+  // worked locally and failed in CI — the assertion was about the test's environment,
+  // not about the product.
+  assert.match(stdout, /Unit — frontend \(vitest\) \| `PASS` \| [^|]+ \| 2337 \| 2337/)
   assert.match(stdout, /GUI E2E — real WebView \| `BLOCKED`/)
   assert.match(stdout, /Real machine — SSH\/PTY matrix \| `NOT_RUN`/)
   assert.match(stdout, /Verdict:\*\* NOT GREEN/)
