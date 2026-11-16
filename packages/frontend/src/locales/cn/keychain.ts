@@ -70,4 +70,13 @@ export default {
   'keychain.typeLabel': '类型：{{type}}',
   'keychain.sshKey': 'SSH 密钥',
   'keychain.generatedKeyName': '生成的 {{type}} 密钥',
+  'keychain.clearCredential.action': '清除已存私钥',
+  'keychain.clearCredential.title': '要清除已存储的私钥吗？',
+  'keychain.clearCredential.description':
+    '将从 Vault 中移除私钥和口令，保留密钥条目、名称与公钥部分。之后可以重新粘贴新的私钥。',
+  'keychain.clearCredential.confirm': '清除已存私钥',
+  'keychain.clearCredential.done': '已清除存储的私钥',
+  'keychain.clearCredential.failed': '无法清除已存储的私钥',
+  'keychain.clearCredential.damaged':
+    '已存储的密钥引用无法读取，这把密钥将无法使用。清除会移除这条不可用的引用，并保留密钥条目。',
 }

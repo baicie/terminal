@@ -173,6 +173,8 @@ export default {
   'hosts.clearCredential.confirm': '清除凭据',
   'hosts.clearCredential.done': '已清除存储的凭据',
   'hosts.clearCredential.failed': '无法清除凭据',
+  'hosts.clearCredential.damaged':
+    '已存储的凭据引用无法读取，这台主机将拒绝连接。清除会移除这条不可用的引用，并保留主机及其设置。',
   'hosts.vault.createTitle': '需要先创建 Vault 才能保存这个密码',
   'hosts.vault.createBody':
     '秘密不会写进数据库。在这里创建 Vault 后，会用你已填写的内容继续保存。',

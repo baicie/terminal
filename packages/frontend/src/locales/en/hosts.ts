@@ -176,6 +176,8 @@ export default {
   'hosts.clearCredential.confirm': 'Clear the credential',
   'hosts.clearCredential.done': 'Stored credential cleared',
   'hosts.clearCredential.failed': 'The credential could not be cleared',
+  'hosts.clearCredential.damaged':
+    'The stored credential reference cannot be read, so this host will refuse to connect. Clearing it removes the unusable reference and keeps the host and its settings.',
   'hosts.vault.createTitle': 'A vault is needed to store this password',
   'hosts.vault.createBody':
     'Secrets never go into the database. Create a vault here and the save continues with what you already typed.',

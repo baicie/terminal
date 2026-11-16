@@ -73,4 +73,13 @@ export default {
   'keychain.typeLabel': 'Type: {{type}}',
   'keychain.sshKey': 'SSH Key',
   'keychain.generatedKeyName': 'Generated {{type}} Key',
+  'keychain.clearCredential.action': 'Forget the stored key',
+  'keychain.clearCredential.title': 'Forget the stored private key?',
+  'keychain.clearCredential.description':
+    'Removes the private key and passphrase from the vault and keeps the key entry, its name and its public half. You can paste a new private key later.',
+  'keychain.clearCredential.confirm': 'Clear the stored key',
+  'keychain.clearCredential.done': 'Stored private key cleared',
+  'keychain.clearCredential.failed': 'The stored private key could not be cleared',
+  'keychain.clearCredential.damaged':
+    'The stored key reference cannot be read, so this key cannot be used. Clearing it removes the unusable reference and keeps the key entry.',
 }

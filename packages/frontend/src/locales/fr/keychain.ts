@@ -76,4 +76,13 @@ export default {
   'keychain.typeLabel': 'Type : {{type}}',
   'keychain.sshKey': 'Clé SSH',
   'keychain.generatedKeyName': 'Clé {{type}} générée',
+  'keychain.clearCredential.action': 'Oublier la clé enregistrée',
+  'keychain.clearCredential.title': 'Oublier la clé privée enregistrée ?',
+  'keychain.clearCredential.description':
+    'Retire la clé privée et la phrase de passe du coffre et conserve l’entrée, son nom et sa moitié publique. Vous pourrez coller une nouvelle clé privée plus tard.',
+  'keychain.clearCredential.confirm': 'Effacer la clé enregistrée',
+  'keychain.clearCredential.done': 'Clé privée enregistrée effacée',
+  'keychain.clearCredential.failed': 'La clé privée enregistrée n’a pas pu être effacée',
+  'keychain.clearCredential.damaged':
+    'La référence de clé enregistrée est illisible : cette clé est inutilisable. L’effacer retire la référence inutilisable et conserve l’entrée.',
 }

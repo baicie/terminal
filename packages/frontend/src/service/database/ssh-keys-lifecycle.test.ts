@@ -40,6 +40,7 @@ vi.mock('@/service/vault-secret-provider', () => ({
 const {
   createSSHKey,
   updateSSHKey,
+  clearSSHKeyCredential,
   deleteSSHKey,
   getSSHKeySecret,
   getSSHKeyCredentials,
@@ -348,5 +349,85 @@ describe('namespaces', () => {
     mocks.select.mockResolvedValue([keyRow({ id: 'shared' })])
 
     expect(await getSSHKeySecret('shared', 'privateKey')).toBe('key-secret')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// UX-2a · a key's stored credential can be forgotten, readable or not
+// ---------------------------------------------------------------------------
+
+describe('clearing a key credential', () => {
+  it('stops the row pointing at the secret before removing it', async () => {
+    mocks.select.mockResolvedValue([keyRow()])
+    entries.set('ssh-key:key-1:1:privateKey', PRIVATE_KEY)
+    entries.set('ssh-key:key-1:1:passphrase', PASSPHRASE)
+
+    await clearSSHKeyCredential('key-1')
+
+    // Ordering matters: the row must not name a secret that is already gone. The
+    // UPDATE has to be the executed statement, and it must null the reference.
+    const update = mocks.executeQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('UPDATE ssh_keys'),
+    )
+    expect(update).toBeDefined()
+    expect(String(update?.[0])).toMatch(/credential_ref = NULL/)
+    // Then the ciphertext goes.
+    expect(mocks.vaultRemoveVersion).toHaveBeenCalled()
+    expect(entries.get('ssh-key:key-1:1:privateKey')).toBeUndefined()
+    expect(entries.get('ssh-key:key-1:1:passphrase')).toBeUndefined()
+  })
+
+  it('clears a damaged reference without needing to parse it', async () => {
+    // The state that matters: the row holds something this build cannot name, so
+    // the user cannot read, use or replace the secret. Clearing must still null
+    // the column — that is the only way back to a key that works — and must not
+    // throw just because the version is unknowable.
+    mocks.select.mockResolvedValue([
+      keyRow({ credential_ref: '{"provider":"system-keychain","kinds":["privateKey"]}' }),
+    ])
+
+    await clearSSHKeyCredential('key-1')
+
+    const update = mocks.executeQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('UPDATE ssh_keys'),
+    )
+    expect(update).toBeDefined()
+    expect(String(update?.[0])).toMatch(/credential_ref = NULL/)
+  })
+
+  it('clears a reference that is not even valid JSON', async () => {
+    mocks.select.mockResolvedValue([keyRow({ credential_ref: 'not json at all' })])
+
+    await clearSSHKeyCredential('key-1')
+
+    const update = mocks.executeQuery.mock.calls.find(([sql]) =>
+      String(sql).includes('UPDATE ssh_keys'),
+    )
+    expect(update).toBeDefined()
+    expect(String(update?.[0])).toMatch(/credential_ref = NULL/)
+  })
+
+  it('is a no-op for a key that stores nothing', async () => {
+    mocks.select.mockResolvedValue([keyRow({ credential_ref: null })])
+
+    await clearSSHKeyCredential('key-1')
+
+    const update = mocks.executeQuery.mock.calls.find(([sql]) =>
+      String(String(sql)).includes('UPDATE ssh_keys'),
+    )
+    // Still nulls the column — idempotent — but touches no vault version, because
+    // there is no version to name.
+    expect(update).toBeDefined()
+    expect(mocks.vaultRemoveVersion).not.toHaveBeenCalled()
+    expect(mocks.vaultRemove).not.toHaveBeenCalled()
+  })
+
+  it('is a no-op for a key that does not exist', async () => {
+    mocks.select.mockResolvedValue([])
+
+    await clearSSHKeyCredential('missing')
+
+    expect(mocks.executeQuery).not.toHaveBeenCalled()
+    expect(mocks.vaultRemoveVersion).not.toHaveBeenCalled()
   })
 })

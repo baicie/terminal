@@ -24,7 +24,7 @@ import { EnvironmentVariablesDialog } from './environment-dialog'
 import { HostFormBasic } from './host-form-basic'
 import { HostFormActions } from './host-form-actions'
 import { HostDialogAdvancedFields } from './host-dialog-advanced-fields'
-import { ClearCredentialAction } from './clear-credential-action'
+import { HostStoredCredential } from './host-stored-credential'
 import { IdentityFileNotice } from './identity-file-notice'
 import { VaultRecovery } from './vault-recovery'
 import { useHostStore } from '@/store/host'
@@ -65,8 +65,6 @@ export const HostDialog: React.FC<HostDialogProps> = ({
     requestClose,
   } = useHostDialogForm({ open, host, onClose })
 
-  // "Clear" on a host that stores nothing would be a button that does nothing.
-  const hasStoredCredential = (host?.credentialRef?.kinds.length ?? 0) > 0
   if (!open) return null
 
   return (
@@ -88,9 +86,10 @@ export const HostDialog: React.FC<HostDialogProps> = ({
               the key is bound. Showing that here is the difference between a host
               that looks configured and one the user can actually fix.
             */}
-            {hasStoredCredential && (
-              <ClearCredentialAction onClear={handleClearCredential} />
-            )}
+            <HostStoredCredential
+              host={host}
+              onClear={handleClearCredential}
+            />
 
             {host?.identityFilePath !== undefined && (
               <IdentityFileNotice

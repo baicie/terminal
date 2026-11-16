@@ -176,6 +176,8 @@ export default {
   'hosts.clearCredential.confirm': 'Effacer l’identifiant',
   'hosts.clearCredential.done': 'Identifiant enregistré effacé',
   'hosts.clearCredential.failed': 'Impossible d’effacer l’identifiant',
+  'hosts.clearCredential.damaged':
+    'La référence d’identifiant enregistrée est illisible : cet hôte refusera de se connecter. L’effacer retire la référence inutilisable et conserve l’hôte ainsi que ses réglages.',
   'hosts.vault.createTitle': 'Un coffre est nécessaire pour stocker ce mot de passe',
   'hosts.vault.createBody':
     'Les secrets ne vont jamais dans la base. Créez un coffre ici et l’enregistrement reprend avec ce que vous avez déjà saisi.',

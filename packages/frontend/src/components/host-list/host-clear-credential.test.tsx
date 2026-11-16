@@ -257,4 +257,122 @@ describe('clearing a credential that fails', () => {
     expect(payload.clearCredential).toBe(true)
     expect(hostWithCredential.credentialRef).not.toBeNull()
   })
+  // -------------------------------------------------------------------------
+  // UX-2a · a reference this build cannot read must still be clearable
+  // -------------------------------------------------------------------------
+
+  it('offers clear for a reference that cannot be parsed', () => {
+    // The state the old gate got wrong. `credentialRef` is null for a corrupt or
+    // unknown-provider reference — the mapper has nothing it can name — so gating
+    // the control on `credentialRef?.kinds.length` hid it. The user then had a
+    // host that refused to connect with "credential unreadable" and no way to
+    // remove the offending pointer other than deleting the host, its groups, its
+    // tags and its favourites.
+    //
+    // The secret is still in the vault. Clearing must be offered precisely
+    // *because* the pointer cannot be followed: that is the recovery path.
+    render(
+      <HostDialog
+        open
+        host={
+          {
+            ...hostWithCredential,
+            credentialRef: null,
+            credentialRefProblem: { kind: 'malformed', detail: 'not valid JSON' },
+          } as unknown as Host
+        }
+        onClose={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('host-clear-credential')).toBeTruthy()
+  })
+
+  it('offers clear for a reference naming a provider this build does not have', () => {
+    render(
+      <HostDialog
+        open
+        host={
+          {
+            ...hostWithCredential,
+            credentialRef: null,
+            credentialRefProblem: { kind: 'unknown-provider', provider: 'system-keychain' },
+          } as unknown as Host
+        }
+        onClose={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('host-clear-credential')).toBeTruthy()
+  })
+
+  it('offers clear for a reference written by a newer build', () => {
+    render(
+      <HostDialog
+        open
+        host={
+          {
+            ...hostWithCredential,
+            credentialRef: null,
+            credentialRefProblem: { kind: 'unsupported-version', version: 2_000_000_000 },
+          } as unknown as Host
+        }
+        onClose={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('host-clear-credential')).toBeTruthy()
+  })
+
+  it('still offers nothing for a host that genuinely stores no credential', () => {
+    // The distinction the gate has to keep: `ref: null` with **no problem** is
+    // "nothing stored", and a clear button there would be a button that does
+    // nothing. Only `ref: null` *with* a problem is a damaged pointer.
+    render(
+      <HostDialog
+        open
+        host={
+          {
+            ...hostWithCredential,
+            credentialRef: null,
+            credentialRefProblem: null,
+          } as unknown as Host
+        }
+        onClose={vi.fn()}
+      />,
+    )
+    expect(screen.queryByTestId('host-clear-credential')).toBeNull()
+  })
+  it('clears a damaged reference through the same write', async () => {
+    // Offering the button is only half of recovery. The write has to be the one
+    // that stops the row pointing at a secret this build cannot name, and it must
+    // not need a parseable reference to do it — `clearCredential` nulls the column
+    // directly and the version-retirement step is a no-op when there is no
+    // readable ref. This pins that the UI reaches that write with the same
+    // payload as the readable case.
+    mocks.updateHost.mockResolvedValue(undefined)
+    render(
+      <HostDialog
+        open
+        host={
+          {
+            ...hostWithCredential,
+            credentialRef: null,
+            credentialRefProblem: { kind: 'unknown-provider', provider: 'system-keychain' },
+          } as unknown as Host
+        }
+        onClose={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('host-clear-credential'))
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /clear|confirm|清除/i }))
+
+    await waitFor(() => expect(mocks.updateHost).toHaveBeenCalledTimes(1))
+    const [id, payload] = mocks.updateHost.mock.calls[0] as [string, Record<string, unknown>]
+    expect(id).toBe('h-1')
+    expect(payload.clearCredential).toBe(true)
+    // Nothing else is written: a clear must not double as a re-save, which would
+    // write an empty secret over whatever is still in the provider.
+    expect(payload.password).toBeUndefined()
+    expect(payload.privateKey).toBeUndefined()
+  })
 })

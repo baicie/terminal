@@ -165,6 +165,60 @@ export async function updateSSHKey(
   if (hasSecrets) await retireKeyVersion(id, previousRef)
 }
 
+/**
+ * Forget a key's stored secret, keeping the key itself.
+ *
+ * The mirror of `updateHost({ clearCredential: true })`, and it was missing: the
+ * keychain could write a private key, read it back, and delete the whole key, but
+ * had no way to stop storing just the secret. `updateSSHKey` writes
+ * `credential_ref = COALESCE(?, credential_ref)`, which is correct for an edit that
+ * carries no secret and means there is no path through it that drops the pointer.
+ *
+ * Ordering is the same rule hosts follow: the row stops pointing at the secret
+ * first, then the ciphertext is removed. A failure after the UPDATE leaves an
+ * unreferenced secret — recoverable, and reported — rather than a key whose
+ * reference names a secret that is already gone.
+ *
+ * A *damaged* reference is the case this has to handle and the reason it does not
+ * route through `readKeyCredentialRef` to decide whether to run: when the pointer
+ * cannot be parsed there is no version to retire, but the row still has to lose the
+ * pointer or the user is stuck with a key that refuses to work and cannot be fixed
+ * short of deleting it. So the UPDATE always runs; only the retirement step depends
+ * on whether a readable version exists.
+ */
+export async function clearSSHKeyCredential(id: string): Promise<void> {
+  const existing = await getSSHKeyById(id)
+  if (!existing) return
+
+  await executeQuery(
+    `UPDATE ssh_keys SET
+       private_key = CASE WHEN ? = 1 THEN NULL ELSE private_key END,
+       passphrase = CASE WHEN ? = 1 THEN NULL ELSE passphrase END,
+       credential_ref = NULL,
+       updated_at = ?
+     WHERE id = ?`,
+    [
+      // A pre-migration row keeps its plaintext in these columns; blanking the row
+      // here is what the user asked for, so the marker is 1 when a secret is being
+      // cleared. (The vault-held values never live in these columns.)
+      1,
+      1,
+      Date.now(),
+      id,
+    ],
+  )
+
+  const ref = readKeyCredentialRef(existing.credential_ref)
+  if (!ref) return
+  try {
+    await retireKeyVersion(id, ref)
+  } catch {
+    // The row no longer names it, so this is orphaned ciphertext, not a dangling
+    // reference. Failing the whole clear here would tell the user nothing changed
+    // when the pointer is already gone.
+  }
+}
+
 export async function deleteSSHKey(id: string): Promise<void> {
   // Same ordering as hosts: the row goes first, so a failure after it leaves an
   // unreferenced secret rather than a key whose secret is already gone.
