@@ -257,3 +257,17 @@ cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-f
 | **Rust lint（CI 等价）** | `cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings` |
 | **Rust 全量测试** | `cargo test --locked --manifest-path src-tauri/Cargo.toml` |
 | 真实 SFTP | `node scripts/verify-install/sftp-command-e2e.mjs` |
+
+### CI 基础设施失败（非代码）
+
+`4b07d0f` 的 `Tauri build (macos-latest)` 失败一次，原因是 **GitHub 托管 macOS arm64
+runner 容量不足**，job 排队 15 分钟后报
+`The job was not acquired by Runner of type hosted even after multiple attempts`，
+导致 `CI / required` 聚合门禁失败。
+
+判据：同一 run 中 `macOS GUI E2E` **pass（12m0s）**，`Tauri build (ubuntu/windows)`
+均 pass —— 说明 macOS runner 本身可用，失败是一次分配超时。
+
+处置：`gh run rerun --failed` 重跑，不改代码。这与 2026-11 早前
+`tauri-apps/binary-releases` 502/504 属于同类：**不得用重试掩盖真实失败，但分配超时
+不是真实失败**，重跑是正确处置，且必须在报告中写明原因而不是把它读成代码通过。
