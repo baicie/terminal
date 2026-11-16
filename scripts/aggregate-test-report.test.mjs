@@ -305,3 +305,46 @@ test('generated test reports are gitignored, not committed', async () => {
   }
   assert.equal(tracked.trim(), '', `generated reports are tracked: ${tracked.trim()}`)
 })
+
+test('a GUI report that declares INCOMPLETE is not recomputed into PASS', () => {
+  // The defect: `parseHarnessJson` returned only counts, so an `INCOMPLETE 5/5` layer
+  // (one spec file unreadable) became a clean PASS downstream. The counts were real but
+  // partial, which is what the sixth status exists to express.
+  const root = makeTree({
+    'test-results/gui-e2e.json': {
+      layer: 'gui-e2e',
+      total: 5,
+      passed: 5,
+      failed: 0,
+      skipped: 0,
+      notRun: 0,
+      status: 'INCOMPLETE',
+      reason: '1 spec file was unreadable and is excluded',
+    },
+  })
+  const layers = collectLayers({ root })
+  const gui = layers.find(layer => layer.layer === 'gui-e2e')
+  assert.equal(gui.status, 'INCOMPLETE')
+  assert.match(gui.reason, /unreadable/)
+
+  const report = buildReport(layers)
+  assert.equal(report.green, false, 'an incomplete layer must not read as green')
+  assert.equal(report.complete, false)
+})
+
+test('a GUI report that declares NOT_RUN stays NOT_RUN with its reason', () => {
+  const root = makeTree({
+    'test-results/gui-e2e.json': {
+      layer: 'gui-e2e',
+      total: 0,
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+      status: 'NOT_RUN',
+      reason: 'no wdio output under json/',
+    },
+  })
+  const gui = collectLayers({ root }).find(layer => layer.layer === 'gui-e2e')
+  assert.equal(gui.status, 'INCOMPLETE', 'a declared NOT_RUN is reported as a gap, not a pass')
+  assert.match(gui.reason, /no wdio output/)
+})

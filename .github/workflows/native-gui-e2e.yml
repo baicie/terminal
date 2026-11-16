@@ -128,6 +128,28 @@ jobs:
           # Headless-friendly: keep the app's own logging quiet enough that the
           # job log stays readable.
           GUI_E2E_LOG_LEVEL: error
+      # ## Per-run counts for the aggregated test report
+      #
+      # The artifacts directory accumulates across runs, so the report groups by the
+      # newest timestamp window and excludes older files. Without that, a summary over
+      # the committed artifacts reads 590 cases / 63 failures — a number describing no
+      # run that ever happened.
+      - name: Summarise the GUI layer
+        if: always()
+        run: |
+          mkdir -p test-results
+          node scripts/gui-e2e-report.mjs \
+            --artifacts e2e/gui/artifacts \
+            --out test-results/gui-e2e.json \
+            --platform "$RUNNER_OS"
+      - name: Upload GUI layer results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-gui-${{ github.run_id }}-${{ runner.os }}
+          path: test-results/gui-e2e.json
+          if-no-files-found: warn
+          retention-days: 7
       - name: Upload GUI evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -160,6 +182,22 @@ jobs:
         run: node scripts/run-gui-e2e.mjs
         env:
           GUI_E2E_LOG_LEVEL: error
+      - name: Summarise the GUI layer
+        if: always()
+        run: |
+          mkdir -p test-results
+          node scripts/gui-e2e-report.mjs \
+            --artifacts e2e/gui/artifacts \
+            --out test-results/gui-e2e.json \
+            --platform "$RUNNER_OS"
+      - name: Upload GUI layer results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-gui-windows-${{ github.run_id }}
+          path: test-results/gui-e2e.json
+          if-no-files-found: warn
+          retention-days: 7
       - name: Upload GUI evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -199,6 +237,22 @@ jobs:
         run: xvfb-run --auto-servernum node scripts/run-gui-e2e.mjs
         env:
           GUI_E2E_LOG_LEVEL: error
+      - name: Summarise the GUI layer
+        if: always()
+        run: |
+          mkdir -p test-results
+          node scripts/gui-e2e-report.mjs \
+            --artifacts e2e/gui/artifacts \
+            --out test-results/gui-e2e.json \
+            --platform "$RUNNER_OS"
+      - name: Upload GUI layer results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-gui-linux-${{ github.run_id }}
+          path: test-results/gui-e2e.json
+          if-no-files-found: warn
+          retention-days: 7
       - name: Upload GUI evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -191,6 +191,21 @@ async function main() {
     process.stdout.write(stdout)
     if (stderr.trim() !== '') process.stderr.write(stderr)
 
+    // ## Machine-readable counts for the aggregated test report
+    //
+    // The runner already prints libtest's `test result:` lines; writing them to a file
+    // is what lets `aggregate-test-report.mjs` count this layer instead of reporting it
+    // NOT_RUN. `SFTP_E2E_REPORT` is set by CI; when unset the step still passes, it just
+    // does not contribute a report.
+    if (process.env.SFTP_E2E_REPORT) {
+      const { writeFileSync, mkdirSync } = await import('node:fs')
+      const path = await import('node:path')
+      const target = path.resolve(process.env.SFTP_E2E_REPORT)
+      mkdirSync(path.dirname(target), { recursive: true })
+      writeFileSync(target, stdout)
+      console.log(`sftp command-level report written to ${target}`)
+    }
+
     exitCode = 0
     console.log('SFTP command-level: PASS against real OpenSSH sftp-server')
   } catch (error) {
