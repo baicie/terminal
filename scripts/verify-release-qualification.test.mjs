@@ -21,6 +21,9 @@ function goodFacts(overrides = {}) {
       name,
       {
         conclusion: 'success',
+        // A `success` conclusion on a run that has not finished is not a pass: the
+        // previous attempt's conclusion lingers while a re-run is queued.
+        status: 'completed',
         headSha: COMMIT,
         // Provenance is mandatory: a check without a resolved workflow path is refused,
         // because app id and name are not proof of source.
@@ -220,11 +223,13 @@ test('the GUI gate present and green lets qualification proceed', () => {
   const facts = goodFacts()
   facts.checks['Driver isolation gate'] = {
     conclusion: 'success',
+    status: 'completed',
     headSha: COMMIT,
     workflowPath: '.github/workflows/native-gui-e2e.yml',
   }
   facts.checks['macOS GUI E2E'] = {
     conclusion: 'success',
+    status: 'completed',
     headSha: COMMIT,
     workflowPath: '.github/workflows/native-gui-e2e.yml',
   }
@@ -275,4 +280,25 @@ test('every required check is provenance-verified against its owner', () => {
   const { problems } = judgeRelease(facts)
   const wrong = problems.filter(problem => problem.code === 'check-wrong-workflow')
   assert.equal(wrong.length, REQUIRED_RELEASE_CHECKS.length, JSON.stringify(problems))
+})
+
+test('a success conclusion on a still-running check does not pass', () => {
+  // The P0: the Checks API writes `conclusion: "success"` from the previous attempt
+  // while a re-run is queued, so `conclusion` alone accepts an unfinished run.
+  const facts = goodFacts()
+  facts.checks['Rust quality'] = {
+    ...facts.checks['Rust quality'],
+    status: 'in_progress',
+  }
+  const { ok, problems } = judgeRelease(facts)
+  assert.equal(ok, false)
+  assert.ok(problems.some(problem => problem.code === 'check-incomplete'), JSON.stringify(problems))
+})
+
+test('a check with no status at all is refused, not assumed complete', () => {
+  const facts = goodFacts()
+  const { status, ...withoutStatus } = facts.checks['Rust quality']
+  facts.checks['Rust quality'] = withoutStatus
+  const { problems } = judgeRelease(facts)
+  assert.ok(problems.some(problem => problem.code === 'check-incomplete'))
 })

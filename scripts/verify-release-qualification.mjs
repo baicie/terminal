@@ -147,6 +147,25 @@ export function judgeRelease(facts) {
         'check-not-success',
         `required check ${JSON.stringify(name)} concluded ${JSON.stringify(entry.conclusion ?? null)}`,
       )
+      continue
+    }
+    // ## A `success` conclusion is not enough: the run must have finished
+    //
+    // The Checks API reports `status` and `conclusion` separately, and GitHub writes
+    // `conclusion: "success"` on a re-requested or re-run check whose new attempt is
+    // still queued — the previous attempt's conclusion lingers. `summarizeForRelease`
+    // in `check-run-selection.mjs` guards this; `judgeRelease` is the function the
+    // release path actually calls, and it did not. Measured: facts with every required
+    // check `{status: 'in_progress', conclusion: 'success'}` returned ok=true.
+    // A missing `status` is treated the same as a non-final one: the facts file must
+    // be able to say the run finished, or the release cannot claim it did.
+    if (entry.status !== 'completed') {
+      push(
+        'check-incomplete',
+        `required check ${JSON.stringify(name)} has status ` +
+          `${JSON.stringify(entry.status ?? null)}, so its success is not final; ` +
+          'a release must wait for the run to finish',
+      )
     }
     // ## Provenance, not just a name
     //

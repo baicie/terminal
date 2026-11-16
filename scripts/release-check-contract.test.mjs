@@ -181,3 +181,34 @@ test('every release mode offered in the dispatch input can actually succeed', ()
   // dispatch is not constrained by `options:`, so the early refusal must remain.
   assert.match(workflow, /fully-signed\)/, 'the fully-signed guard must stay as defence in depth')
 })
+
+test('a malformed RELEASE_CHECK_APP_IDS stops the release instead of trusting every App', async () => {
+  // The previous parser filtered non-numerics and returned null when nothing remained,
+  // and null means "any App may satisfy a required check". A typo therefore *widened*
+  // the trust boundary — the opposite of failing closed.
+  const { execFileSync } = await import('node:child_process')
+  const script = path.join(ROOT, 'scripts/release-facts.mjs')
+
+  // `release-facts.mjs` runs `main()` on import only when invoked directly; importing it
+  // would talk to `gh`. Instead assert the parser contract through the module source:
+  // the function must not return null, and must reject a non-numeric value.
+  const source = readFileSync(script, 'utf8')
+  assert.match(source, /is not a comma-separated list of positive/, 'the parser must reject a bad value')
+  assert.doesNotMatch(
+    source,
+    /return ids\.length > 0 \? new Set\(ids\) : null/,
+    'returning null means "trust every App" and must not come back',
+  )
+  // And the empty case is explicit rather than accidental.
+  assert.match(source, /return new Set\(\)/, 'an empty value must allow no App, explicitly')
+  void execFileSync
+})
+
+test('the App allowlist is documented as insufficient on its own', () => {
+  // App id is the same for every workflow in the repository, so it cannot be the whole
+  // provenance story; the workflow path comparison is what makes it meaningful.
+  // Whitespace-normalised so a re-wrapped comment still matches.
+  const source = readFileSync(path.join(ROOT, 'scripts/release-facts.mjs'), 'utf8').replace(/\s+/g, ' ')
+  assert.match(source, /App id is identical for every workflow/, 'the limitation must stay documented')
+  assert.match(source, /carries the workflow/, 'the resolution via details_url must stay documented')
+})

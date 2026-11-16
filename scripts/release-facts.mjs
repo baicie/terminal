@@ -162,11 +162,32 @@ function attachProvenance(checks, pages) {
  */
 function allowedCheckApps() {
   const raw = process.env.RELEASE_CHECK_APP_IDS ?? '15368'
-  const ids = raw
+  const parts = raw
     .split(',')
-    .map(value => Number(value.trim()))
-    .filter(Number.isFinite)
-  return ids.length > 0 ? new Set(ids) : null
+    .map(value => value.trim())
+    .filter(Boolean)
+  const ids = parts.map(Number).filter(value => Number.isInteger(value) && value > 0)
+
+  if (ids.length !== parts.length) {
+    // ## Fail closed on a malformed value
+    //
+    // The previous version filtered out non-numeric entries and returned `null` when
+    // nothing was left — and `null` means "any App may satisfy a required check". So
+    // `RELEASE_CHECK_APP_IDS=none`, or any typo, silently widened the trust boundary to
+    // every App on the commit. A value the operator typed wrong must stop the release,
+    // not relax the gate.
+    throw new Error(
+      `RELEASE_CHECK_APP_IDS=${JSON.stringify(raw)} is not a comma-separated list of positive ` +
+        'integers. Refusing to run: an unparseable value would otherwise mean "trust every App"',
+    )
+  }
+  // An explicitly empty value is the local-development escape hatch, and it is spelled
+  // out rather than reached by accident.
+  if (ids.length === 0) {
+    console.error('RELEASE_CHECK_APP_IDS is empty: NO App may satisfy a required check')
+    return new Set()
+  }
+  return new Set(ids)
 }
 
 /**
