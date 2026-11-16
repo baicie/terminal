@@ -23,6 +23,8 @@ import { DataSettings } from './data-settings'
 import { StorageSettings } from './storage-settings'
 import { TeamSettings } from './team-settings'
 import { TerminalSettings } from './terminal-settings'
+import { ExtensionSettings } from './extension-settings'
+import { getExtensionRegistry } from '@/features/extensions/use-extension-runtime'
 
 const SettingsView: React.FC = () => {
   const { t } = useTranslation()
@@ -78,6 +80,9 @@ const SettingsView: React.FC = () => {
       app.setTheme(settings.theme)
       app.setLanguage(settings.language)
       await i18nCore.changeLanguage(settings.language)
+      // A saved switch that did not take effect would read as "on" while nothing
+      // runs. The registry is told at the same moment the setting is written.
+      await applyExtensionSettings(settings.enabledExtensions ?? [])
       toast.success(t('settings.saved'))
     } catch (error) {
       console.error('Failed to save settings:', error)
@@ -100,6 +105,23 @@ const SettingsView: React.FC = () => {
     if (key === 'language') {
       app.setLanguage(value as string)
       void i18nCore.changeLanguage(value as string)
+    }
+  }
+
+  /**
+   * Make the registry match the saved list.
+   *
+   * Enables what is newly on and disables what is no longer listed, so a save is the
+   * single action that changes what runs.
+   */
+  const applyExtensionSettings = async (enabledIds: string[]) => {
+    const registry = getExtensionRegistry()
+    for (const record of registry.list()) {
+      const id = record.manifest.id
+      const shouldRun = enabledIds.includes(id)
+      const running = record.status === 'active'
+      if (shouldRun && !running) await registry.enable(id)
+      else if (!shouldRun && running) await registry.deactivate(id)
     }
   }
 
@@ -144,7 +166,7 @@ const SettingsView: React.FC = () => {
 
       <ViewContent className="px-6 pb-6">
         <Tabs defaultValue="appearance" className="w-full max-w-3xl">
-          <TabsList className="mb-6 grid h-auto w-full grid-cols-3 sm:grid-cols-6">
+          <TabsList className="mb-6 grid h-auto w-full grid-cols-3 sm:grid-cols-7">
             <TabsTrigger value="appearance">
               {t('settings.appearance')}
             </TabsTrigger>
@@ -154,6 +176,9 @@ const SettingsView: React.FC = () => {
             </TabsTrigger>
             <TabsTrigger value="storage">{t('settings.storage')}</TabsTrigger>
             <TabsTrigger value="team">{t('settings.team')}</TabsTrigger>
+            <TabsTrigger value="extensions">
+              {t('settings.extensions.title')}
+            </TabsTrigger>
             <TabsTrigger value="data">{t('settings.data')}</TabsTrigger>
           </TabsList>
 
@@ -195,6 +220,13 @@ const SettingsView: React.FC = () => {
           </TabsContent>
 
           {/* Data Tab */}
+          <TabsContent value="extensions">
+            <ExtensionSettings
+              enabled={settings.enabledExtensions ?? []}
+              onChange={enabled => updateSetting('enabledExtensions', enabled)}
+            />
+          </TabsContent>
+
           <TabsContent value="data">
             <DataSettings />
           </TabsContent>
