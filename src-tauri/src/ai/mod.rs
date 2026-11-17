@@ -43,6 +43,8 @@ mod transport;
 #[cfg(all(test, feature = "ai"))]
 mod ipc_tests;
 #[cfg(all(test, feature = "ai"))]
+mod runs_tests;
+#[cfg(all(test, feature = "ai"))]
 mod tests;
 
 use std::collections::HashMap;
@@ -122,6 +124,8 @@ pub enum AiFailureKind {
     KeyUnreadable,
     /// This build has no `ai` feature.
     FeatureDisabled,
+    /// A run with this request id is already in flight.
+    RunInProgress,
 }
 
 impl AiFailureKind {
@@ -151,6 +155,9 @@ impl AiFailureKind {
                 "The stored API key could not be read. Unlock the vault, or save the key again."
             }
             AiFailureKind::FeatureDisabled => "AI is not enabled in this build of the app.",
+            AiFailureKind::RunInProgress => {
+                "A request with this id is already running. Cancel it or wait."
+            }
         }
     }
 }
@@ -201,12 +208,22 @@ pub struct AiRuns {
 }
 
 impl AiRuns {
-    fn register(&self, request_id: &str) -> CancelFlag {
+    /// Claim a request id for one run.
+    ///
+    /// Returns `None` when that id is already running. Overwriting would silently
+    /// orphan the first run's cancellation handle: `cancel(id)` would then trip only
+    /// the second run's flag, and the first would keep streaming a token-billed answer
+    /// nobody can stop. The frontend generates monotonic ids so it does not reach this
+    /// today — but "cannot happen" is a property of the caller, and the handle that
+    /// makes it unreachable belongs here rather than in an assumption.
+    fn register(&self, request_id: &str) -> Option<CancelFlag> {
+        let mut in_flight = self.in_flight.lock();
+        if in_flight.contains_key(request_id) {
+            return None;
+        }
         let flag = CancelFlag::new();
-        self.in_flight
-            .lock()
-            .insert(request_id.to_string(), flag.clone());
-        flag
+        in_flight.insert(request_id.to_string(), flag.clone());
+        Some(flag)
     }
 
     fn finish(&self, request_id: &str) {
@@ -343,7 +360,11 @@ pub async fn ai_generate<R: Runtime>(
 
     // Registered *before* the first byte so a Cancel that arrives while the request
     // is still resolving (DNS, TLS) is not lost.
-    let cancel = runs.register(&request.request_id);
+    let Some(cancel) = runs.register(&request.request_id) else {
+        // A second run under the same id would orphan the first one's cancellation
+        // handle. Refused rather than allowed, and refused before a socket opens.
+        return Ok(refused(AiFailureKind::RunInProgress));
+    };
     let emit_channel = on_event.clone();
     let emit = move |event: AiEvent| {
         // A send failure means the webview is gone. The run keeps going rather than

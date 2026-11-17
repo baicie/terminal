@@ -65,6 +65,8 @@ export type AiFailureKind =
   | 'key-unreadable'
   /** This build was compiled without the `ai` feature. */
   | 'feature-disabled'
+  /** The backend already has a run under this request id. */
+  | 'run-in-progress'
 
 export interface AiFailure {
   kind: AiFailureKind
@@ -119,9 +121,15 @@ export function idleRun(): AiRun {
 
 /** Errors that mean "stop and tell the user", never "retry silently". */
 export function isTerminalFailure(kind: AiFailureKind): boolean {
-  // `key-unreadable` and `feature-disabled` are user actions, not transient network
-  // conditions: retrying the same request produces the same answer.
-  if (kind === 'key-unreadable' || kind === 'feature-disabled') return true
+  // `key-unreadable`, `feature-disabled` and `run-in-progress` are user actions, not
+  // transient network conditions: retrying the same request produces the same answer.
+  if (
+    kind === 'key-unreadable'
+    || kind === 'feature-disabled'
+    || kind === 'run-in-progress'
+  ) {
+    return true
+  }
   return kind !== 'rate-limited' && kind !== 'offline' && kind !== 'timeout'
 }
 

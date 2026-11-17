@@ -146,6 +146,27 @@ IPC**。PR #97 的实现走的是 **WebView 内直接 `fetch`**；本轮把三�
 里找 `/chat/completions` 与分隔符字符串（只在 `src/ai/` 出现），所以「关掉了」不是靠读
 manifest 判断的。
 
+### 合入后的补丁：同 `requestId` 不再顶掉取消句柄
+
+评估一个并行遗留 worktree 时发现的。`AiRuns::register` 原来无条件 `insert`，同 id
+的第二次运行会**覆盖第一次的取消句柄**——于是 `cancel(id)` 只打到后来那个，第一个
+继续烧 token 且无人能停。`finish()` 同样盲：先结束的那个删掉的是第二个的条目。
+
+经 dock 走不到（前端 id 单调递增），**而这正是它活过审查的原因**：安全性质长在调用方
+的 id 生成器里，而不是拥有该句柄的地方。现在 `register` 返回 `Option`，重复 id 被拒绝
+（`refused(AiFailureKind::RunInProgress)`），发生在开 socket 之前。
+
+先红后绿：`ai::runs_tests` 6 项，其中
+`a_second_run_under_the_same_id_is_refused` 与
+`cancelling_after_a_refused_registration_still_stops_the_first_run` 在旧的
+无条件 `insert` 上失败；`a_finished_run_frees_its_id_for_reuse` 钉住「旧句柄不能
+影响复用同一 id 的新运行」。
+
+同一 worktree 里还有一处**没有采纳**的设计：它把传输层作为参数注入
+`execute(request, profile, cancel, transport)`，从而能在无 socket 的情况下测整条运行链。
+那对覆盖「profile 加载后、发请求前」的失败分支确实更有力，但属于测试重构，收益/风险比
+不如上面这条，记为后续项而不是本轮顺带改。
+
 ### 迁移中自己引入又修掉的两个缺陷
 
 两个都是**顺着调用链读出来**的，不是测试变红发现的——与 Phase 10.3 记录的那类问题同形，

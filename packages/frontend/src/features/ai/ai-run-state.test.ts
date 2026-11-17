@@ -138,6 +138,9 @@ describe('failure', () => {
     expect(isTerminalFailure('unauthorized')).toBe(true)
     expect(isTerminalFailure('forbidden')).toBe(true)
     expect(isTerminalFailure('context-changed')).toBe(true)
+    // Neither of these is fixed by waiting, so a silent retry would loop.
+    expect(isTerminalFailure('feature-disabled')).toBe(true)
+    expect(isTerminalFailure('run-in-progress')).toBe(true)
     expect(isTerminalFailure('rate-limited')).toBe(false)
     expect(isTerminalFailure('offline')).toBe(false)
     expect(isTerminalFailure('timeout')).toBe(false)
