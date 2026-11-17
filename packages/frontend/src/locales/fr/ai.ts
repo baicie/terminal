@@ -3,6 +3,7 @@ export default {
   'ai.profile': 'Profil de modèle',
   'ai.noProfile': 'Aucun profil de modèle sélectionné.',
   'ai.noProfileHint': 'Ajoutez un profil de modèle dans les réglages pour utiliser l’assistant.',
+  'ai.openSettings': 'Ouvrir les réglages',
   'ai.action': 'Action',
   'ai.action.explain-selection': 'Expliquer la sélection',
   'ai.action.explain-error': 'Expliquer l’erreur',

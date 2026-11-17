@@ -3,6 +3,7 @@ export default {
   'ai.profile': '模型配置',
   'ai.noProfile': '尚未选择模型配置。',
   'ai.noProfileHint': '请先在设置中添加一个模型配置。',
+  'ai.openSettings': '打开设置',
   'ai.action': '操作',
   'ai.action.explain-selection': '解释选中内容',
   'ai.action.explain-error': '解释错误',

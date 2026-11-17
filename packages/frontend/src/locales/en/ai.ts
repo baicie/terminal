@@ -3,6 +3,7 @@ export default {
   'ai.profile': 'Model profile',
   'ai.noProfile': 'No model profile selected.',
   'ai.noProfileHint': 'Add a model profile in Settings to use the assistant.',
+  'ai.openSettings': 'Open Settings',
   'ai.action': 'Action',
   'ai.action.explain-selection': 'Explain selection',
   'ai.action.explain-error': 'Explain error',

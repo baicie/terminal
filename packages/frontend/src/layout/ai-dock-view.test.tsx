@@ -7,6 +7,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/locales'
+
+const navigateMock = vi.fn()
+vi.mock('react-router-dom', () => ({ useNavigate: () => navigateMock }))
 import { AiDock } from './ai-dock-view'
 import { AiRunner, type AiRuntimeDeps } from '@/features/ai/ai-runner'
 import type { ModelProfilePublic } from '@/features/ai/model-profile'
@@ -206,5 +209,16 @@ describe('closing', () => {
     const { onClose } = setup()
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(onClose).toHaveBeenCalled()
+  })
+})
+
+describe('the first-run path has an entry point', () => {
+  it('offers a way into Settings instead of only describing it', () => {
+    // Telling the user "add a profile in Settings" without a control leaves them to
+    // find the exact tab. The dock's first-run state is the only thing they see.
+    setup({ profiles: [] })
+    const button = screen.getByRole('button', { name: 'Open Settings' })
+    fireEvent.click(button)
+    expect(navigateMock).toHaveBeenCalledWith('/settings')
   })
 })

@@ -7,6 +7,7 @@
  */
 
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { AI_ACTIONS, type AiAction } from '@/features/ai/ai-run-state'
@@ -32,6 +33,7 @@ export function AiDockConfig({
   onActionChange,
 }: AiDockConfigProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
 
   return (
     <div className="space-y-2 border-b p-3">
@@ -40,7 +42,17 @@ export function AiDockConfig({
           controls, and the list is short enough that a row of choices reads better. */}
       <div className="flex flex-wrap gap-1" role="listbox" aria-label={t('ai.profile')}>
         {profiles.length === 0 && (
-          <p className="text-xs text-muted-foreground">{t('ai.noProfileHint')}</p>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">{t('ai.noProfileHint')}</p>
+            {/* A sentence telling the user where to go is not an entry point. The
+                first-run path is: open the dock, find nothing, and need to land on the
+                exact settings tab — so the link goes there rather than describing it.
+                A button with a router navigation, not an `<a href>`: a bare href would
+                do a full page load and tear down every open session. */}
+            <Button size="sm" variant="outline" onClick={() => navigate('/settings')}>
+              {t('ai.openSettings')}
+            </Button>
+          </div>
         )}
         {profiles.map(candidate => (
           <Button
