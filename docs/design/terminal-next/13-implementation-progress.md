@@ -322,14 +322,14 @@ id 生成器里，而不是拥有该句柄的地方。现在 `register` 返回 `
 
 - ~~`CredentialRef V2` + Provider Registry + 按 provider 分派~~ —— PR #95 已落地（UX-2b 表，链路级 `PASS`）
 - 系统 Keychain / Credential Manager / Secret Service 的真实稳定访问门禁 `BLOCKED_EXTERNAL`
-- 跨 provider 写入 / 读回 / 切换 / 补偿 `NOT_RUN`
-- 成功后显式保存 `NOT_RUN`
+- 跨 provider 写入 / 读回 / 切换 / 补偿 `NOT_RUN`（vault provider 内的写入/读回/回滚已 `PASS`，见 UX-2b 表）
+- ~~成功后显式保存~~ —— PR #103 已落地（`IMPLEMENTED`，真实 sshd E2E `NOT_RUN`）
 - 凭据批量迁移需显式授权（未执行）
 
 ### Extension Ready
 
 - ~~Typed Capability Gateway~~ / ~~Manifest 校验~~ / ~~Registry 生命周期~~ —— PR #95 已落地
-- Snippet Dock 完整链路 `PARTIAL`（逻辑与接线有测试，真实 GUI 未点击）
+- Snippet Dock 完整链路 `PARTIAL`（逻辑/接线/草稿消费方均有测试，真实 GUI 未点击）
 - Rust 侧 `ExtensionIntent` Gateway `NOT_RUN`（本版本不允许扩展跨进程边界）
 
 ### AI MVP Ready
