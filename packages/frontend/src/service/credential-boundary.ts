@@ -123,7 +123,16 @@ export interface SecretProvider {
 
 /** Which kind of row owns a secret. The two namespaces never overlap. */
 export interface CredentialResource {
-  type: 'host' | 'ssh-key'
+  /**
+   * Which kind of row owns the secret.
+   *
+   * Three namespaces, never merged. `model` was added for AI profile API keys; the
+   * mapping in `vaultKey` is an explicit table rather than an `a ? x : y` expression,
+   * because that expression silently put every new type into the `ssh-key`
+   * namespace — which is exactly how a host and a key with the same id once read each
+   * other's secret.
+   */
+  type: 'host' | 'ssh-key' | 'model'
   id: string
 }
 
@@ -187,13 +196,26 @@ export function vaultKey(
   version: number,
   kind: CredentialKind,
 ): string {
-  const namespace = resource.type === 'host' ? 'host' : 'ssh-key'
+  const namespace = NAMESPACE_BY_RESOURCE_TYPE[resource.type]
   if (version === LEGACY_VERSION) {
     // Pre-10.1 keys carried no version segment. Reconstructing them exactly is what
     // lets an un-migrated host keep connecting.
     return `${namespace}:${resource.id}:${kind}`
   }
   return `${namespace}:${resource.id}:${version}:${kind}`
+}
+
+/**
+ * Resource type → vault key namespace.
+ *
+ * A table rather than an inline conditional: adding a type to `CredentialResource`
+ * without adding it here is a compile error, whereas `type === 'host' ? 'host' :
+ * 'ssh-key'` would silently give the new type the `ssh-key` namespace.
+ */
+const NAMESPACE_BY_RESOURCE_TYPE: Record<CredentialResource['type'], string> = {
+  host: 'host',
+  'ssh-key': 'ssh-key',
+  model: 'model',
 }
 
 /** The credential kinds present in a set of secrets, in a stable order. */
