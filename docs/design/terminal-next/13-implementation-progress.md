@@ -308,3 +308,29 @@ runner 容量不足**，job 排队 15 分钟后报
 
 `macOS GUI E2E` 与 `Windows GUI E2E` 均为 CI 环境的 headless 驱动，
 **不等于**本机真实桌面的键盘/IME/DPI 验收（见上文 `BLOCKED_EXTERNAL`）。
+
+### `REAL_MODEL_E2E` 的状态：`BLOCKED_EXTERNAL`
+
+需要的是一次对**真实** OpenAI-compatible provider 的调用，用来覆盖 401/403/429、断流、
+取消、超时、Prompt Injection 和 Secret 泄漏的真实行为。
+
+本机检查结果：
+
+| 检查项 | 结果 |
+| --- | --- |
+| `127.0.0.1:11434`（Ollama 默认） | 无响应 |
+| `127.0.0.1:1234`（LM Studio 默认） | 无响应 |
+| `127.0.0.1:8080` / `:8000` | 无响应 |
+| `ollama` / `llama-server` 可执行文件 | 未安装 |
+
+环境里有 `ANTHROPIC_BASE_URL`，但那是**当前开发会话自己的凭据**。用它跑产品测试有两
+个问题：一是把会话凭据用于会话之外的目的，二是被测对象与验证凭据同源，结果说明不了
+产品在用户凭据下的行为。因此不使用。
+
+**结论**：`REAL_MODEL_E2E` 标记为 `BLOCKED_EXTERNAL`，阻塞项是一个可用的 provider
+端点或本地模型运行时。已有证据等级不变：本地 fake HTTP server 覆盖了状态码映射、流式
+解析、取消与超时（24 项），但没有真实 provider 的响应形态与限流行为。
+
+解除阻塞的方式（任一）：
+1. 在开发机启动 Ollama 或 LM Studio，`pnpm` 侧无需改代码，直接跑既有 adapter 测试；
+2. 提供一个测试用 OpenAI-compatible endpoint 与 key（写入隔离的测试 profile，不提交）。
