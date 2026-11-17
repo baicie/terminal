@@ -10,7 +10,8 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 > `NOT_RUN`、`PARTIAL`、`BLOCKED` 不是 `PASS` 的同义词，不得向上折算。
 >
 > 基线：`main@ff01f60`（PR #90～#94 已合并，main Ruleset 生效）。
-> 当前工作分支：`feat/tn-ux1-04-session-sftp-lifecycle`（Draft PR #95）。
+> 当前工作分支：`feat/tn-ux4-ai-dock`（PR #97，base `main@02c6495`）。
+> `main` 已含 PR #95（`dbbde31`）与 #96（`02c6495`）。
 
 ## 状态定义
 
@@ -93,7 +94,8 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 
 ## UX-4 · AI Assistant 与 Server Inspector
 
-PR **#96**（`feat/tn-ux4-ai-inspector`），三个提交，**Draft，未合并**。
+契约层在 PR **#96**（已合并 `02c6495`），存储 / 编排 / Dock / 设置编辑器 / Server
+Inspector 在 PR **#97**（`feat/tn-ux4-ai-dock`，12 个提交）。
 
 | 能力 | 状态 | 位置 | 说明 |
 | --- | --- | --- | --- |
@@ -138,7 +140,8 @@ PR **#96**（`feat/tn-ux4-ai-inspector`），三个提交，**Draft，未合并*
 | PR | 分支 | Head SHA | CI | 状态 | 风险 / 回滚 |
 | --- | --- | --- | --- | --- | --- |
 | [#95](https://github.com/baicie/terminal/pull/95) | `feat/tn-ux1-04-session-sftp-lifecycle` | `7a532cd` | **18/18 pass** | **已合并 `dbbde31`** | 各提交可独立回滚；无 schema / IPC / Identifier 变更 |
-| [#96](https://github.com/baicie/terminal/pull/96) | `feat/tn-ux4-ai-inspector` | `ea62e76` | **18/18 pass** | 待合并（base 已含 #95） | 四个提交可独立回滚；无 schema / IPC / Rust 变更 |
+| [#96](https://github.com/baicie/terminal/pull/96) | `feat/tn-ux4-ai-inspector` | `ea62e76` | **18/18 pass** | **已合并 `02c6495`** | 四个提交可独立回滚；无 schema / IPC / Rust 变更 |
+| [#97](https://github.com/baicie/terminal/pull/97) | `feat/tn-ux4-ai-dock` | `537bca9` | 见下文 | 待合并（base `main@02c6495`） | 12 个提交可独立回滚；新增一张 `CREATE TABLE IF NOT EXISTS`，无 Identifier / Vault 迁移 / AI 自动执行 |
 
 ### 提交明细
 
