@@ -103,9 +103,13 @@ PR **#96**（`feat/tn-ux4-ai-inspector`），三个提交，**Draft，未合并*
 | **Prompt 构造与注入防护** | **`PASS`（自动化）** | `features/ai/ai-prompt.ts` | 14 条测试。指令不随内容变化、分隔符逐级升级、`draftRisk` 只标记不改写 |
 | **OpenAI-compatible HTTP Adapter** | **`PASS`（真实本地 HTTP server）** | `features/ai/openai-compatible-driver.ts` | 24 条测试。流式/取消/超时/401/403/429/500/400；provider body 与 key 不进入错误消息；连接测试不携带终端文本 |
 | **Server Inspector 解析与策略层** | **`PASS`（自动化）** | `features/inspector/server-inspector.ts` | 21 条测试。固定 probe allowlist（无插值点）、缺失数据为 null 而非 0、TTL 边界含等号、平台不认识则拒绝猜测 |
-| AI Dock UI / Profile 存储 / `ai_generate` IPC | `NOT_RUN` | — | 契约已就绪，UI 与持久化未接 |
+| **Profile 存储** | **`PASS`（自动化）** | `service/database/ai-profiles.ts` | 17 条测试。表无 key 列；写入→读回→指向；三 namespace 隔离（修了 `vaultKey` 把新类型落进 ssh-key namespace 的真 bug） |
+| **运行编排 `AiRunner`** | **`PASS`（自动化）** | `features/ai/ai-runner.ts` | 15 条测试。7 类拒绝均在发送前；事件穿过 reducer；异常关闭上报；取消被确认 |
+| **AI Dock UI** | **`IMPLEMENTED`** | `layout/ai-dock-{view,config,result}.tsx` | 14 条组件测试。`ai` 已是可渲染占位者 + Command Palette 入口。**真实 GUI 未点击** |
+| **Profile 编辑器** | **`IMPLEMENTED`** | `view/settings/ai-profile-{editor,form}.tsx` | Settings 新增 AI 标签页；明文确认不继承；key 留空即保留 |
 | `INSPECTOR_SSH_PROBE`（真实 SSH 执行） | `NOT_RUN` | — | 需要真实主机；当前只有解析/格式化/策略层 |
-| `REAL_MODEL_E2E` | `NOT_RUN` | — | 只有本地 fake HTTP server |
+| `REAL_MODEL_E2E` | `NOT_RUN` | — | 只有本地 fake HTTP server；未调用真实 provider |
+| `AI_DOCK_REAL_GUI` | `NOT_RUN` | — | 无人真实点击 |
 | Rig MSRV / 体积 / Audit 评估 | `NOT_RUN` | — | 按设计延后，需独立 ADR |
 
 **`AI_MVP_READY = NO`、`SERVER_INSPECTOR_READY = NO`。** 自动化契约完整，但用户今天无法在应用里使用 AI 或 Inspector。
