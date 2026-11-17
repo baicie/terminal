@@ -116,7 +116,8 @@ PR **#96**（`feat/tn-ux4-ai-inspector`），三个提交，**Draft，未合并*
 
 | PR | 分支 | Head SHA | CI | 状态 | 风险 / 回滚 |
 | --- | --- | --- | --- | --- | --- |
-| [#95](https://github.com/baicie/terminal/pull/95) | `feat/tn-ux1-04-session-sftp-lifecycle` | `785ec1f` | 见 PR（17+ 通过 / 0 失败） | Draft | 三次提交可独立回滚；无 schema / IPC / Identifier 变更 |
+| [#95](https://github.com/baicie/terminal/pull/95) | `feat/tn-ux1-04-session-sftp-lifecycle` | `7a532cd` | **18/18 pass** | **已合并 `dbbde31`** | 各提交可独立回滚；无 schema / IPC / Identifier 变更 |
+| [#96](https://github.com/baicie/terminal/pull/96) | `feat/tn-ux4-ai-inspector` | `ea62e76` | **18/18 pass** | 待合并（base 已含 #95） | 四个提交可独立回滚；无 schema / IPC / Rust 变更 |
 
 ### 提交明细
 
