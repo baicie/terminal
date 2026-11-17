@@ -150,6 +150,13 @@ export interface AppSettings {
   nativeNotifications?: boolean
   /** 仅在窗口失焦时弹原生通知（默认 true） */
   notifyOnlyWhenUnfocused?: boolean
+  /**
+   * 用户显式启用的内置扩展 id。
+   *
+   * 缺省（undefined 或空数组）表示没有任何可选项在运行 —— 设计明确要求可选
+   * 扩展默认关闭。`app_settings` 是键值存储，新增可选字段不需要 schema 迁移。
+   */
+  enabledExtensions?: string[]
 }
 
 // Terminal theme presets

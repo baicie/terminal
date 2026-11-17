@@ -111,7 +111,34 @@ const budgets = {
   // task explicitly requires. Both trade a delivered requirement for a number no
   // user experiences, so raising the ceiling with the measurement written down is
   // the honest move.
-  totalGzip: 628 * 1024,
+  //
+  // 632 KB (was 628 KB): UX-2a adds the connect-time credential dialog and the
+  // hook that decides what "connect" means per credential state, the damaged-
+  // reference clear action on both hosts and SSH keys (with its own confirmation
+  // and three-state rule), and ~40 strings in three languages. No new dependency.
+  //
+  // Measured 628.94 KB against the 628.00 KB ceiling: +0.94 KB. The initial budget
+  // moved by 0.33 KB (130.92 KB), because the dialog is rendered by the hosts view
+  // which is already lazy — nothing new is on the time-to-first-terminal path.
+  //
+  // The alternative was to fold the "this host cannot connect yet" text into an
+  // existing string to stay under the old number, which would trade a user-visible
+  // explanation of an unrecoverable state for a kilobyte nobody experiences.
+  //
+  // 640 KB (was 632 KB): the extension platform lands — manifest validation, the
+  // registry, the capability gateway with its approval book, the snippet-dock
+  // extension and the dock's presentational shell, plus one case in `RightPanel`
+  // and ~21 strings in three languages. No new dependency.
+  //
+  // Measured 633.71 KB against the 632.00 KB ceiling: +1.71 KB. The initial budget
+  // is unchanged at 130.93 KB: the dock chunk is lazy (SFTP and Snippets both load
+  // only when the column opens) and nothing here is on the time-to-first-terminal
+  // path.
+  //
+  // The alternative was to fold the five extension strings into existing keys or
+  // drop the "not enabled" message, which would leave a dock that renders silently
+  // when its extension is off — a user-visible gap traded for 1.7 KB.
+  totalGzip: 640 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

@@ -21,7 +21,7 @@ import { useAppStore } from '@/store/app'
 import { useHostStore } from '@/store/host'
 import { useTeamStore } from '@/store/team'
 import { decryptWithPassword, isEncryptedData, type EncryptedData } from '@/utils/team-encryption'
-import { useConnectToHost } from '@/features/connection-explorer/use-connect-to-host'
+import { useHostConnectActions } from './use-host-connect-actions'
 import { terminalTabPath } from '@/router/terminal-route'
 
 export function useHostsViewHandlers() {
@@ -31,7 +31,12 @@ export function useHostsViewHandlers() {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const currentTeam = useTeamStore(s => s.currentTeam)
-  const { connectToHost } = useConnectToHost()
+  const {
+    credentialPromptHost,
+    setCredentialPromptHost,
+    handleConnect,
+    handleOneTimeConnect,
+  } = useHostConnectActions()
 
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [shareDialogHost, setShareDialogHost] = useState<Host | null>(null)
@@ -141,16 +146,6 @@ export function useHostsViewHandlers() {
       await useTeamStore.getState().shareHost(currentTeam.id, hostData, permission)
     },
     [currentTeam],
-  )
-
-  const handleConnect = useCallback(
-    (host: Host) => {
-      // One connect path for the whole app: the Connection Explorer calls the same
-      // hook. Duplicating `addTab` + `navigate` here is how the two surfaces would
-      // drift into opening sessions differently.
-      connectToHost(host)
-    },
-    [connectToHost],
   )
 
   const handleNewLocalTerminal = useCallback(() => {
@@ -279,6 +274,9 @@ export function useHostsViewHandlers() {
     handleConnect,
     handleNewLocalTerminal,
     handleQuickConnect,
+    credentialPromptHost,
+    setCredentialPromptHost,
+    handleOneTimeConnect,
     handleConnectBarSubmit,
     handleConnectSerial,
   }

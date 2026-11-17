@@ -77,20 +77,35 @@ export function withHysteresis(
   const rightCameUp = previous.rightPresentation !== 'column' && next.rightPresentation === 'column'
 
   if (leftWentDown || rightWentDown) {
-    // Going down: hold the old presentation while it still clears the floor minus
-    // the band. Below that the panels must yield — hysteresis damps, it does not
-    // lock, and it never lets the terminal starve by more than the band.
-    if (previousNow.predictedCols >= usableColsMin - band) {
+    // Going down: hold the old presentation while it still clears the floor. Below
+    // that the panels must yield — hysteresis damps, it does not lock.
+    if (previousNow.predictedCols >= usableColsMin) {
       return previousNow
     }
     return next
   }
 
   if (leftCameUp || rightCameUp) {
-    // Coming back up: only restore the column layout when it buys more than the
-    // band's worth of columns. Otherwise a one-pixel widening would flip it back
-    // and a one-pixel narrowing would flip it away again.
-    if (next.predictedCols - previousNow.predictedCols > band) {
+    // Coming back up: restore once the column layout clears the floor *plus* the
+    // band.
+    //
+    // The first version asked `next.predictedCols - previousNow.predictedCols >
+    // band`, which can never be true: a column layout costs width, so `next` is
+    // always smaller than `previousNow` and the difference is negative at every
+    // width that will exist. The panel was demoted once and never came back.
+    //
+    // The second version — mine — used `floor - band` down and `floor + band` up.
+    // That restores both directions, but it counts the band twice: each gate is
+    // evaluated against a presentation measured at the *current* width, so the total
+    // no-decision window is 2 × band. At the shipping 8.4px cell the band is 2
+    // columns, making the real reversal window ~34px — wider than a single drag step,
+    // so a window dragged back and forth thrashed indefinitely (1010 ↔ 1057 with a
+    // 176px explorer and the dock open, 8 flips in 8 steps).
+    //
+    // The band now sits on *one* side only: descend at the floor, ascend at
+    // floor + band. The gap between the two thresholds is exactly one band, which is
+    // what the design asks for, and a drag smaller than that cannot cross it.
+    if (next.predictedCols >= usableColsMin + band) {
       return next
     }
     return previousNow

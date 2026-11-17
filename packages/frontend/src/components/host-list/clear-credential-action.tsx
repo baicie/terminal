@@ -30,11 +30,21 @@ interface ClearCredentialActionProps {
   /** Called once the user confirms. The caller owns the database write. */
   onClear: () => Promise<void> | void
   disabled?: boolean
+  /**
+   * The stored reference cannot be read by this build.
+   *
+   * Changes what the control says, not what it does. Clearing a readable
+   * credential is housekeeping; clearing a damaged one is the only way back to a
+   * working host, so the user needs to know why the button is there — otherwise
+   * it reads as an unrelated destructive action next to an auth form.
+   */
+  damaged?: boolean
 }
 
 export function ClearCredentialAction({
   onClear,
   disabled = false,
+  damaged = false,
 }: ClearCredentialActionProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -58,17 +68,24 @@ export function ClearCredentialAction({
 
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        data-testid="host-clear-credential"
-        disabled={disabled}
-        onClick={() => setOpen(true)}
-      >
-        <KeyRound className="size-4" data-icon="inline-start" />
-        {t('hosts.clearCredential.action')}
-      </Button>
+      <div className="flex flex-col items-start gap-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="host-clear-credential"
+          disabled={disabled}
+          onClick={() => setOpen(true)}
+        >
+          <KeyRound className="size-4" data-icon="inline-start" />
+          {t('hosts.clearCredential.action')}
+        </Button>
+        {damaged && (
+          <p className="text-xs text-muted-foreground" data-testid="host-clear-credential-damaged">
+            {t('hosts.clearCredential.damaged')}
+          </p>
+        )}
+      </div>
 
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>

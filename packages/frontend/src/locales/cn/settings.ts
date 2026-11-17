@@ -231,4 +231,8 @@ export default {
   'settings.loadFailed': '加载设置失败。',
   'settings.saving': '保存中…',
   'settings.unsavedChanges': '有未保存的更改',
+  'settings.extensions.title': '扩展',
+  'settings.extensions.description': '内置扩展默认关闭，需要你主动启用。',
+  'settings.extensions.version': '版本 {{version}}',
+  'settings.extensions.empty': '此版本未包含任何扩展。',
 }

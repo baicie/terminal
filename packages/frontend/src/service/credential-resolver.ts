@@ -21,6 +21,7 @@ import type {
   SecretProvider,
 } from './credential-boundary'
 import { refVersion } from './credential-boundary'
+import type { ProviderRegistry } from './credential-provider-registry'
 
 const KINDS: CredentialKind[] = ['password', 'privateKey', 'passphrase']
 
@@ -51,23 +52,53 @@ const VAULT_UNAVAILABLE_MESSAGES: Record<
  * was never meant to exist.
  */
 export class SessionCredentialResolver {
-  constructor(private readonly provider: SecretProvider) {}
+  /**
+   * `provider` is the fallback used when no registry is supplied — it keeps the
+   * existing single-backend call sites and their tests working unchanged.
+   *
+   * `registry` is the dispatch path: when present, `resolve` asks it for the
+   * backend the reference *names*, instead of the one this resolver was built
+   * with. That is the whole point of `CredentialRef.provider` existing.
+   */
+  constructor(
+    private readonly provider: SecretProvider,
+    private readonly registry?: ProviderRegistry,
+  ) {}
 
   /**
-   * Ask the provider why it cannot answer, when it can say.
+   * Which backend answers this reference.
+   *
+   * Three outcomes, and the middle one is why this is not an inline lookup:
+   *
+   * - no registry → the single provider (legacy behaviour, unchanged);
+   * - registry and the reference's provider resolves → that backend;
+   * - registry and the provider is missing → `null`, which the caller reports as
+   *   an unsupported provider. It must NOT fall back to `this.provider`: reading
+   *   the vault for a reference that names another backend returns a different
+   *   secret or none, and either way the user is told the wrong thing.
+   */
+  private providerFor(ref: CredentialRef): SecretProvider | null {
+    if (!this.registry) return this.provider
+    const named = ref.provider
+    if (named === undefined) return this.provider
+    return this.registry.get(named) ?? null
+  }
+
+  /**
+   * Ask *this* backend why it cannot answer, when it can say.
    *
    * A provider that only implements `isAvailable` still works: the state is then
    * unknown, and `unusable` is the honest answer — we know the vault cannot be
    * read and we do not know why, which is exactly what that state means.
    */
-  private async availability(): Promise<
+  private async availabilityOf(provider: SecretProvider): Promise<
     | { ok: true }
     | { ok: false, state: 'uninitialized' | 'locked' | 'unusable' }
   > {
-    if (this.provider.availabilityState) {
-      return this.provider.availabilityState()
+    if (provider.availabilityState) {
+      return provider.availabilityState()
     }
-    return (await this.provider.isAvailable())
+    return (await provider.isAvailable())
       ? { ok: true }
       : { ok: false, state: 'unusable' }
   }
@@ -80,9 +111,31 @@ export class SessionCredentialResolver {
       return { ok: true, credential: {} }
     }
 
-    // A reference with no readable backend is a failure, not an empty password:
-    // the user did store a secret and it must not silently vanish.
-    const availability = await this.availability()
+    // Dispatch FIRST, then ask that backend whether it can answer.
+    //
+    // The original order was the reverse, and it was wrong in a way that sends the
+    // user to the wrong place: `availability()` consults `this.provider` — always
+    // the vault, because that is what the connection path injects — so a reference
+    // naming another provider was judged by the vault's state. With a locked vault,
+    // a `system-keychain` reference was reported as "the vault is locked, unlock it",
+    // an instruction that cannot possibly fix it; the correct answer is that this
+    // build cannot read that provider and the reference must be re-bound.
+    //
+    // A reference with no readable backend is a failure, not an empty password: the
+    // user did store a secret and it must not silently vanish.
+    const backend = this.providerFor(ref)
+    if (backend === null) {
+      return {
+        ok: false,
+        reason: 'corrupt-reference',
+        message:
+          `This host's credentials are stored with "${String(ref.provider)}", which ` +
+          'this build cannot read. Re-save the credentials to store them here.',
+        detail: `unsupported provider ${String(ref.provider)}`,
+      }
+    }
+
+    const availability = await this.availabilityOf(backend)
     if (!availability.ok) {
       return {
         ok: false,
@@ -99,7 +152,7 @@ export class SessionCredentialResolver {
       if (!ref.kinds.includes(kind)) continue
       let value: string | undefined
       try {
-        value = await this.provider.read(resource, version, kind)
+        value = await backend.read(resource, version, kind)
       } catch (error) {
         return {
           ok: false,

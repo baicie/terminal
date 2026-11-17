@@ -5,6 +5,7 @@ import { HostsMobileToolbar } from './hosts-mobile-toolbar'
 import { HostsToolbar } from './hosts-toolbar'
 import { MobileToolbarSheet } from './mobile-toolbar-sheet'
 import { QuickConnectDialog } from './quick-connect-dialog'
+import { ConnectCredentialDialog } from './connect-credential-dialog'
 import { TeamSharedSection } from './team-shared-section'
 import { useHostsViewHandlers } from './use-hosts-view-handlers'
 import { RenderListBody } from './components/render-list-body'
@@ -70,6 +71,9 @@ const HostsView: React.FC = () => {
     handleNewLocalTerminal,
     handleQuickConnect,
     handleConnectBarSubmit,
+    credentialPromptHost,
+    setCredentialPromptHost,
+    handleOneTimeConnect,
   } = handlers
 
   useEffect(() => {
@@ -246,6 +250,13 @@ const HostsView: React.FC = () => {
           if (!open) setQuickConnectTarget(null)
         }}
         onConnect={handleQuickConnect}
+      />
+      <ConnectCredentialDialog
+        host={credentialPromptHost}
+        onOpenChange={open => {
+          if (!open) setCredentialPromptHost(null)
+        }}
+        onConnect={handleOneTimeConnect}
       />
       <SerialDialog
         open={serialDialogOpen}

@@ -5,6 +5,7 @@ import KeychainView from './index'
 
 vi.mock('@/service/database', () => ({
   createSSHKey: vi.fn(),
+  clearSSHKeyCredential: vi.fn(),
   deleteSSHKey: vi.fn(),
   getSSHKeys: vi.fn().mockResolvedValue([]),
   searchSSHKeys: vi.fn().mockResolvedValue([]),

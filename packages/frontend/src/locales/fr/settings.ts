@@ -255,4 +255,8 @@ export default {
   'settings.loadFailed': 'Échec du chargement des paramètres.',
   'settings.saving': 'Enregistrement…',
   'settings.unsavedChanges': 'Modifications non enregistrées',
+  'settings.extensions.title': 'Extensions',
+  'settings.extensions.description': 'Les extensions intégrées sont désactivées jusqu’à ce que vous les activiez.',
+  'settings.extensions.version': 'Version {{version}}',
+  'settings.extensions.empty': 'Cette version ne contient aucune extension.',
 }

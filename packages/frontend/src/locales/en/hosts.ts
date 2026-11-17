@@ -176,6 +176,8 @@ export default {
   'hosts.clearCredential.confirm': 'Clear the credential',
   'hosts.clearCredential.done': 'Stored credential cleared',
   'hosts.clearCredential.failed': 'The credential could not be cleared',
+  'hosts.clearCredential.damaged':
+    'The stored credential reference cannot be read, so this host will refuse to connect. Clearing it removes the unusable reference and keeps the host and its settings.',
   'hosts.vault.createTitle': 'A vault is needed to store this password',
   'hosts.vault.createBody':
     'Secrets never go into the database. Create a vault here and the save continues with what you already typed.',
@@ -194,4 +196,15 @@ export default {
   'hosts.form.discardDescription': 'Your edits to this host have not been saved. Closing now discards them.',
   'hosts.form.discard': 'Discard',
   'hosts.form.keepEditing': 'Keep editing',
+  'hosts.connect.blocked': 'This host cannot connect yet',
+  'hosts.connectCredential.title': 'Connect with a password',
+  'hosts.connectCredential.description':
+    'Sign in to {{name}} ({{user}}@{{hostname}}). Nothing is stored unless you save it afterwards.',
+  'hosts.connectCredential.passwordLabel': 'Password',
+  'hosts.connectCredential.passwordRequired': 'Enter a password to connect',
+  'hosts.connectCredential.keyLabel': 'Private key',
+  'hosts.connectCredential.keyRequired': 'Paste the private key to connect',
+  'hosts.connectCredential.passphraseLabel': 'Passphrase (optional)',
+  'hosts.connectCredential.notSaved': 'This credential is used for this connection only.',
+  'hosts.connectCredential.connect': 'Connect',
 }

@@ -43,6 +43,15 @@ export function usePaletteQuickActions(t: TFunction): SearchResult[] {
         score: 0,
       },
       {
+        id: 'open-snippet-dock',
+        type: 'action',
+        title: t('cmdPalette.openSnippetDock'),
+        description: t('cmdPalette.openSnippetDockDesc'),
+        icon: <Zap className="size-4" />,
+        data: { action: 'open-snippet-dock' },
+        score: 0,
+      },
+      {
         id: 'split-horizontal',
         type: 'action',
         title: t('cmdPalette.splitHorizontal'),

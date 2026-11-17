@@ -275,3 +275,180 @@ async fn a_removal_listener_that_is_never_registered_is_not_required() {
     manager.remove_session(&session_id).await.unwrap();
     assert_eq!(registry_counts(&manager).await, (0, 0, 0));
 }
+
+// ---------------------------------------------------------------------------
+// TN-UX1-04 · every removal path must notify, including natural completion
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn natural_completion_notifies_removal_listeners() {
+    // The gap this closes: `spawn_completion_cleanup` dropped the three
+    // registries but never fired `notify_removed`, so a session that ended on
+    // its own (remote EOF, remote disconnect, shell exit) left its SFTP registry
+    // entry behind — a dangling `Arc<SftpSession>` on a dead transport. Only
+    // `session_close` and `shutdown` notified, which is why the SFTP map used to
+    // grow for the lifetime of the process.
+    let manager = SessionManager::new();
+    let seen = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    {
+        let seen = Arc::clone(&seen);
+        manager.on_session_removed(Arc::new(move |id: String| {
+            seen.lock().unwrap().push(id);
+        }));
+    }
+
+    let session_id = "notify-natural-eof".to_string();
+    let (session, _) = fake_local_session(&session_id, true);
+    manager
+        .register_session(SessionState::Local(session.clone()))
+        .await;
+    simulate_natural_eof(&session).await;
+    wait_for_empty_registries(&manager).await;
+
+    // The listener is what drops the SFTP entry, so it must have run by the time
+    // the registries are empty. Poll rather than assume the spawn already ran.
+    let notified = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if seen.lock().unwrap().contains(&session_id) {
+                return true;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap_or(false);
+
+    assert!(
+        notified,
+        "natural completion must fire the removal listeners, not just drop the registries"
+    );
+}
+
+#[tokio::test]
+async fn every_removal_path_notifies_exactly_once_per_session() {
+    // Duplicate notification is not harmless: the SFTP listener is idempotent
+    // today, but a second registry added later would see two closes for one
+    // session. Completion cleanup and an explicit close race constantly — a user
+    // closing a tab at the same moment the remote drops is the normal case.
+    let manager = SessionManager::new();
+    let seen = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    {
+        let seen = Arc::clone(&seen);
+        manager.on_session_removed(Arc::new(move |id: String| {
+            seen.lock().unwrap().push(id);
+        }));
+    }
+
+    // 1. Natural completion followed by an explicit close of the same id.
+    let natural_id = "once-natural-then-close".to_string();
+    let (session, _) = fake_local_session(&natural_id, true);
+    manager
+        .register_session(SessionState::Local(session.clone()))
+        .await;
+    simulate_natural_eof(&session).await;
+    wait_for_empty_registries(&manager).await;
+    manager.remove_session(&natural_id).await.unwrap();
+
+    // 2. Two concurrent explicit closes of one session.
+    let race_id = "once-double-close".to_string();
+    let (session, _) = fake_local_session(&race_id, true);
+    manager.register_session(SessionState::Local(session)).await;
+    let (a, b) = tokio::join!(
+        manager.remove_session(&race_id),
+        manager.remove_session(&race_id)
+    );
+    a.unwrap();
+    b.unwrap();
+
+    let counts = {
+        let seen = seen.lock().unwrap();
+        (
+            seen.iter().filter(|id| **id == natural_id).count(),
+            seen.iter().filter(|id| **id == race_id).count(),
+        )
+    };
+
+    assert_eq!(
+        counts,
+        (1, 1),
+        "each session must notify exactly once, however its removal raced"
+    );
+}
+
+#[tokio::test]
+async fn shutdown_after_natural_completion_still_notifies_once() {
+    let manager = SessionManager::new();
+    let seen = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    {
+        let seen = Arc::clone(&seen);
+        manager.on_session_removed(Arc::new(move |id: String| {
+            seen.lock().unwrap().push(id);
+        }));
+    }
+
+    let session_id = "shutdown-after-eof".to_string();
+    let (session, _) = fake_local_session(&session_id, true);
+    manager
+        .register_session(SessionState::Local(session.clone()))
+        .await;
+    simulate_natural_eof(&session).await;
+    wait_for_empty_registries(&manager).await;
+    manager.shutdown().await;
+
+    let count = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|id| **id == session_id)
+        .count();
+    assert_eq!(
+        count, 1,
+        "shutdown must not re-notify a session completion already retired"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A panicking listener must not abort teardown
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_panicking_removal_listener_does_not_abort_the_others() {
+    // `notify_removed`'s own doc comment promises this, and the code did not do it:
+    // the loop called each listener with no guard, so one panic unwound through
+    // session teardown, skipped every later listener, and — depending on the caller —
+    // either aborted the close or poisoned the removal path. Every registry keyed by
+    // session id depends on this notification arriving.
+    let manager = SessionManager::new();
+    let reached = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let reached = Arc::clone(&reached);
+        manager.on_session_removed(Arc::new(move |_id: String| {
+            reached.store(true, std::sync::atomic::Ordering::SeqCst);
+        }));
+    }
+    manager.on_session_removed(Arc::new(|_id: String| {
+        panic!("a listener that panics");
+    }));
+    {
+        // Registered after the panicker, so it only runs if the panic was contained.
+        let reached = Arc::clone(&reached);
+        manager.on_session_removed(Arc::new(move |_id: String| {
+            reached.store(true, std::sync::atomic::Ordering::SeqCst);
+        }));
+    }
+
+    let session_id = "panicking-listener".to_string();
+    let (session, _) = fake_local_session(&session_id, true);
+    manager.register_session(SessionState::Local(session)).await;
+
+    // The removal itself must still succeed.
+    manager
+        .remove_session(&session_id)
+        .await
+        .expect("a panicking listener must not fail the removal");
+    assert!(
+        reached.load(std::sync::atomic::Ordering::SeqCst),
+        "listeners registered after a panicking one must still run"
+    );
+    assert_eq!(registry_counts(&manager).await, (0, 0, 0));
+}

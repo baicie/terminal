@@ -10,6 +10,7 @@ import { useAppStore, type RecentlyClosedTab } from '@/store/app'
 import { useTransferQueue } from '@/store/transfer-queue'
 import type { SearchResult } from './command-palette-types'
 import { terminalTabPath } from '@/router/terminal-route'
+import { useRightPanelStore } from '@/store/right-panel-store'
 
 export function usePaletteSelection(onClose: () => void) {
   const { t } = useTranslation()
@@ -115,6 +116,12 @@ export function usePaletteSelection(onClose: () => void) {
               break
             case 'transfer-queue':
               setPanelOpen(true)
+              break
+            case 'open-snippet-dock':
+              // The dock's occupant is a value, so opening it is one assignment.
+              // Without this entry point `'snippets'` was renderable but unreachable:
+              // the extension could be enabled in Settings and still never appear.
+              useRightPanelStore.getState().setRightPanel('snippets')
               break
           }
         }

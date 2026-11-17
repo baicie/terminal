@@ -173,6 +173,8 @@ export default {
   'hosts.clearCredential.confirm': '清除凭据',
   'hosts.clearCredential.done': '已清除存储的凭据',
   'hosts.clearCredential.failed': '无法清除凭据',
+  'hosts.clearCredential.damaged':
+    '已存储的凭据引用无法读取，这台主机将拒绝连接。清除会移除这条不可用的引用，并保留主机及其设置。',
   'hosts.vault.createTitle': '需要先创建 Vault 才能保存这个密码',
   'hosts.vault.createBody':
     '秘密不会写进数据库。在这里创建 Vault 后，会用你已填写的内容继续保存。',
@@ -190,4 +192,15 @@ export default {
   'hosts.form.discardDescription': '对该主机的修改尚未保存，关闭将丢弃这些修改。',
   'hosts.form.discard': '放弃',
   'hosts.form.keepEditing': '继续编辑',
+  'hosts.connect.blocked': '这台主机暂时无法连接',
+  'hosts.connectCredential.title': '使用密码连接',
+  'hosts.connectCredential.description':
+    '登录 {{name}}（{{user}}@{{hostname}}）。除非之后主动保存，否则不会存储任何内容。',
+  'hosts.connectCredential.passwordLabel': '密码',
+  'hosts.connectCredential.passwordRequired': '请输入密码后再连接',
+  'hosts.connectCredential.keyLabel': '私钥',
+  'hosts.connectCredential.keyRequired': '请粘贴私钥后再连接',
+  'hosts.connectCredential.passphraseLabel': '口令（可选）',
+  'hosts.connectCredential.notSaved': '该凭据仅用于本次连接。',
+  'hosts.connectCredential.connect': '连接',
 }

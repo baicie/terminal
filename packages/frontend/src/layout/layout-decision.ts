@@ -9,6 +9,8 @@
 
 import { terminalColumns, USABLE_COLS } from './terminal-width-budget'
 
+import type { RightPanelMode } from '@/store/right-panel-state'
+
 export type LeftPresentation = 'none' | 'column' | 'drawer'
 export type RightPresentation = 'none' | 'column' | 'overlay'
 export type LimitingReason = 'width' | 'font-size' | 'mobile'
@@ -34,7 +36,15 @@ export interface LayoutInput {
    * user is looking at 420px of it.
    */
   leftWidth: number
-  rightMode: 'none' | 'sftp'
+  /**
+   * The dock's occupant.
+   *
+   * Typed as the shared union rather than `'none' | 'sftp'` so adding `snippets`,
+   * `inspector` or `ai` does not silently narrow here: the layout only cares
+   * whether the column is open, but the decision carries the mode so `withHysteresis`
+   * can tell a width-driven flip from the user opening something.
+   */
+  rightMode: RightPanelMode
   preferredRightWidth: number
   cellWidth: number
   paddingAndBorders?: number
@@ -55,7 +65,7 @@ export interface LayoutDecision {
    * and the band suppresses the user's own action.
    */
   leftMode: 'none' | 'explorer' | 'navigation'
-  rightMode: 'none' | 'sftp'
+  rightMode: RightPanelMode
   /** Width the terminal canvas is expected to get, in CSS pixels. */
   terminalCssWidth: number
   /** Columns that width buys at the measured cell width. */

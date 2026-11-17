@@ -6,6 +6,7 @@ import { Eye, EyeOff, Copy, Loader2 } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { ClearKeyCredentialAction } from './clear-key-credential-action'
 import { toast } from '@/components/ui/sonner'
 
 /**
@@ -26,8 +27,11 @@ import { toast } from '@/components/ui/sonner'
  */
 export function KeySecretActions({
   selectedKey,
+  onCleared,
 }: {
   selectedKey: SSHKeyRecord | null
+  /** Called after the stored secret is forgotten, so the list can re-read. */
+  onCleared?: () => Promise<void> | void
 }) {
   const { t } = useTranslation()
   const [revealed, setRevealed] = useState<string | null>(null)
@@ -134,11 +138,15 @@ export function KeySecretActions({
         )}
         {t('keychain.copyPrivateKey')}
       </Button>
-      {revealed !== null && (
-        <p className="text-xs text-muted-foreground w-full">
-          {t('keychain.privateKeyVisibleWarning')}
-        </p>
-      )}
+      <ClearKeyCredentialAction
+        keyId={selectedKey.id}
+        damaged={Boolean(refProblem)}
+        disabled={busy !== null}
+        onCleared={async () => {
+          setRevealed(null)
+          await onCleared?.()
+        }}
+      />
     </div>
   )
 }

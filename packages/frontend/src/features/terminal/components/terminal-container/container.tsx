@@ -32,6 +32,7 @@ import { useTabConnectionStatus } from './use-tab-connection-status'
 import { useTabTitle } from './use-tab-title'
 import '@baicie/xterm/css/xterm.css'
 import { isTerminalPath } from '@/router/terminal-route'
+import { usePublishTerminalSelection } from './use-publish-terminal-selection'
 
 export interface TerminalContainerProps {
   tabId: string
@@ -132,6 +133,8 @@ export function TerminalContainer({
   useEffect(() => {
     if (isReady) requestFit()
   }, [isReady, requestFit, status])
+
+  usePublishTerminalSelection({ tabId, isActive: terminalIsActive, term: terminal.termInstance })
   usePublishTerminalSize({
     tabId,
     isActive,

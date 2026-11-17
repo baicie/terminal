@@ -104,6 +104,7 @@ export {
   getSSHKeyById,
   createSSHKey,
   updateSSHKey,
+  clearSSHKeyCredential,
   deleteSSHKey,
   searchSSHKeys,
   // On-demand only: these read the vault, never the row.

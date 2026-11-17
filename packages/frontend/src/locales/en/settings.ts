@@ -246,4 +246,8 @@ export default {
   'settings.loadFailed': 'Failed to load settings.',
   'settings.saving': 'Saving…',
   'settings.unsavedChanges': 'Unsaved changes',
+  'settings.extensions.title': 'Extensions',
+  'settings.extensions.description': 'Built-in extensions are off until you turn them on.',
+  'settings.extensions.version': 'Version {{version}}',
+  'settings.extensions.empty': 'This build includes no extensions.',
 }
