@@ -59,7 +59,7 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | Vault 三态（uninitialized / locked / unusable）内联恢复 | `PASS`（既有） | `vault-recovery.tsx` | Phase 10.2 A2 已合入 |
 | 成功后显式保存 | `NOT_RUN` | — | 设计要求独立的确认步骤；本轮只做"仅本次使用" |
 | `authType` 切换丢弃旧方式 kind | `PASS`（既有） | `hosts.ts` | Phase 10.3 已修 |
-| **CredentialRef V2 / Provider Registry / 按 provider 分派** | `NOT_RUN` | — | `TN-UX2A-02` 未开始 |
+| **CredentialRef V2 / Provider Registry / 按 provider 分派** | **`PASS`（链路级）** | `credential-resolver.ts`、`credential-provider-registry.ts` | PR #95 已落地，详见 UX-2b 表。生产路径 `session-credentials.ts` 已接线；变异验证让旧 resolver 立即变红 |
 | 系统 Keychain / Credential Manager / Secret Service | `BLOCKED_EXTERNAL` | — | 需跨平台真实签名与隔离 profile 证据 |
 | Replace 导入的 `secretPolicy` | `PARTIAL` | `db_import` | 当前 `COALESCE` 是安全兼容行为；显式策略需状态机语义先行 |
 
@@ -79,8 +79,8 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 
 ## UX-3 · 内置扩展平台
 
-| 能力 | 状态 |
-| --- | --- |
+| 能力 | 状态 | 说明 |
+| --- | --- | --- |
 | **Typed Capability Gateway** | **`PASS`** | `capability-gateway.ts` + `approval-book.ts`。25 条对抗性测试。grant 按 extension id 查询（修复了「返回当前 grant、事后再比 id」的错配风险） |
 | **Extension Manifest 校验** | **`PASS`** | `extension-manifest.ts`。10 类拒绝，含拒绝可命名动态代码的 `entry` |
 | **Extension Registry（生命周期）** | **`PASS`** | `extension-registry.ts`。55 条测试：回滚、generation、幂等启用、失败隔离 |
@@ -88,7 +88,7 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | **`terminal.read-selected` 真实选择源** | **`PASS`（自动化）** | `terminal-selection.ts` + `use-publish-terminal-selection.ts`。只有活动 tab 发布；gateway 双源一致才可读（发布值 + 活动 tab）。后台 tab 的选择读不到 |
 | Rust 侧 `ExtensionIntent` Gateway | `NOT_RUN` | 本版本不允许扩展跨进程边界，暂不需要 |
 
-整阶段未开始。依赖 UX-1 的 Dock 单占位者契约（当前 `PARTIAL`）。
+UX-3 的边界与生命周期层已由 PR #95 落地；缺的是 Snippet Dock 的真实 GUI 点击验收，以及 Rust 侧跨进程 Gateway（本版本按设计不做）。
 
 ---
 
@@ -112,9 +112,28 @@ Inspector 在 PR **#97**（`feat/tn-ux4-ai-dock`，12 个提交）。
 | **Inspector 真实探测链** | **`PASS`（自动化）** | `features/inspector/inspector-probe.ts` | 13 条测试。先 `uname -s` 再选命令集；未知平台报 `unsupported-platform` 不猜测；权限/缺工具/超时/断连分别分类；部分数据仍返回 |
 | **Server Inspector 面板** | **`IMPLEMENTED`** | `layout/server-inspector-{view,metrics}.tsx` | 11 条组件测试。无 timer（三次 TTL 后 exec 仍只调用 2 次）；缺失数据显示 N/A；切 host 清空结果 |
 | **`INSPECTOR_REAL_SSH`** | **`PASS`** | `src-tauri/src/inspector_probe_e2e_tests.rs` + `scripts/verify-install/inspector-probe-e2e.mjs` | 真实 OpenSSH：平台探测返回 `uname -s`、探测输出含全部 `key=` 行、两条并发 exec 各自完成、关闭连接后探测快速失败不挂起。本机跑 **4/4 PASS** |
-| `REAL_MODEL_E2E` | `NOT_RUN` | — | 只有本地 fake HTTP server；未调用真实 provider |
+| `REAL_MODEL_E2E` | `BLOCKED_EXTERNAL` | — | 只有本地 fake HTTP server；未调用真实 provider（本机无 ollama / LM Studio / 任何 11434·1234·8080·8000 监听） |
 | `AI_DOCK_REAL_GUI` / `INSPECTOR_REAL_GUI` | `NOT_RUN` | — | 无人真实点击 |
 | Rig MSRV / 体积 / Audit 评估 | `NOT_RUN` | — | 按设计延后，需独立 ADR |
+
+### ⚠️ 与设计的三处偏离（未修复，合并前须知）
+
+`07-ux4-ai-inspector.md` 要求 AI 请求走 **Rust `ai` feature + `reqwest` + typed IPC**。
+PR #97 的实现走的是 **WebView 内直接 `fetch`**。这不是等价替换：
+
+| # | 偏离 | 设计条款 | 实际后果 |
+| --- | --- | --- | --- |
+| 1 | **API key 进入 WebView 内存** | 第 94 行：「普通前端查询、Extension API、日志和错误对象都不能返回 key」 | `getProfileSecret()` 把明文 key 取到 JS 侧内存并传给 `fetch`。设计要求的形态是 key 永不出现在渲染进程。Vault 静态存储是安全的，**运行时的暴露面不符合设计** |
+| 2 | **无 `ai` feature 开关** | `10-pr-implementation-plan.md`：「默认 AI feature 仍关闭」「feature-off build 无模型网络请求」 | 目前 AI 能力随前端 bundle 恒常存在，没有编译期关闭路径；bundle 也无法按 feature 裁剪 |
+| 3 | **无 Rust typed IPC 边界** | `ai_generate` / `ai_cancel` 的 `requestId`、size、profile 状态、timeout 校验在 Rust | 全部校验在 JS 侧（`ai-runner.ts` 的 5 类前置拒绝）。校验本身是完整的，但它与被保护的对象在同一个信任域 |
+
+**为什么本轮没改**：把 `AiRunner` 整体迁到 Rust 是重写而非修补，规模大于本 PR 剩余范围，
+且会让已经通过的 2706 项前端测试与真实 sshd 探测链同时失去意义。**正确做法是单独一个
+PR**：新增 `ai` feature、`reqwest` typed command，前端只保留 `invoke` 与状态渲染，
+key 在 Rust 侧取用。
+
+**风险等级**：偏离 1 是安全性质的。它不泄露到磁盘、日志或错误对象（这三点有测试钉住），
+但 WebView 进程被攻破时 key 在内存中可达 —— 这是设计当初选择 Rust 侧的原因。
 
 **`AI_MVP_READY = NO`、`SERVER_INSPECTOR_READY = NO`。** 契约与 UI 都已落地，但
 没有真实模型证据（`REAL_MODEL_E2E` = `BLOCKED_EXTERNAL`），也没有真实 GUI 点击验收。
@@ -143,7 +162,21 @@ Inspector 在 PR **#97**（`feat/tn-ux4-ai-dock`，12 个提交）。
 | [#96](https://github.com/baicie/terminal/pull/96) | `feat/tn-ux4-ai-inspector` | `ea62e76` | **18/18 pass** | **已合并 `02c6495`** | 四个提交可独立回滚；无 schema / IPC / Rust 变更 |
 | [#97](https://github.com/baicie/terminal/pull/97) | `feat/tn-ux4-ai-dock` | `537bca9` | 见下文 | 待合并（base `main@02c6495`） | 12 个提交可独立回滚；新增一张 `CREATE TABLE IF NOT EXISTS`，无 Identifier / Vault 迁移 / AI 自动执行 |
 
-### 提交明细
+### PR #97 提交明细（12 个，均可单独 revert）
+
+| SHA | 内容 |
+| --- | --- |
+| `9594432` | Profile 存储 + `AiRunner` 编排（TN-UX4-04） |
+| `d680590` | AI Dock 接进产品（TN-UX4-05） |
+| `82f7502` | 设置里的 profile 编辑器（TN-UX4-06） |
+| `2eeffd8` | Inspector 探测走真实 SSH 会话（TN-UX4-07） |
+| `d933a2a` | Server Inspector 面板，从 Context Dock 进入（TN-UX4-08） |
+| `b66f39e` | 真实 OpenSSH 上的探测 E2E（TN-UX4-09） |
+| `420d693` | **修复**：Dock 看不到打开之后才做的选中 |
+| `c0955b0` | **修复**：首次使用没有可点入口 |
+| 其余 4 个 | 文档与进度矩阵 |
+
+### PR #95 提交明细（已 squash，下列为合并前原始 SHA）
 
 | SHA | 内容 | 关键证据 |
 | --- | --- | --- |
@@ -165,20 +198,24 @@ Inspector 在 PR **#97**（`feat/tn-ux4-ai-dock`，12 个提交）。
 
 ### Credential Ready
 
-- `CredentialRef V2` + Provider Registry + 按 provider 分派（UX-2b 主体）
-- 系统 Keychain / Credential Manager / Secret Service 的真实稳定访问门禁
-- 成功后显式保存
-- 凭据批量迁移需显式授权
+- ~~`CredentialRef V2` + Provider Registry + 按 provider 分派~~ —— PR #95 已落地（UX-2b 表，链路级 `PASS`）
+- 系统 Keychain / Credential Manager / Secret Service 的真实稳定访问门禁 `BLOCKED_EXTERNAL`
+- 跨 provider 写入 / 读回 / 切换 / 补偿 `NOT_RUN`
+- 成功后显式保存 `NOT_RUN`
+- 凭据批量迁移需显式授权（未执行）
 
 ### Extension Ready
 
-- UX-3 全部
-- Dock 单占位者公共契约（UX-1 遗留 `PARTIAL`）
+- ~~Typed Capability Gateway~~ / ~~Manifest 校验~~ / ~~Registry 生命周期~~ —— PR #95 已落地
+- Snippet Dock 完整链路 `PARTIAL`（逻辑与接线有测试，真实 GUI 未点击）
+- Rust 侧 `ExtensionIntent` Gateway `NOT_RUN`（本版本不允许扩展跨进程边界）
 
 ### AI MVP Ready
 
-- UX-4 全部
-- 前置依赖：安全 SecretProvider（存 API Key）+ Capability Gateway
+- ~~Capability Gateway~~、~~安全 SecretProvider（存 API Key）~~ —— 均已落地
+- ~~AI Dock / 设置编辑器 / Server Inspector 面板~~ —— PR #97 已落地且可达
+- **`REAL_MODEL_E2E` `BLOCKED_EXTERNAL`** —— 缺一个真实 OpenAI-compatible 端点
+- `AI_DOCK_REAL_GUI` / `INSPECTOR_REAL_GUI` `NOT_RUN`
 
 ### Signed Release Ready
 
@@ -212,11 +249,18 @@ Snippet Dock 紧随其后，因为它是设计指定的第一个内置扩展，�
 
 ## 独立对抗性审查（2026-11-17）
 
-对本分支 8 个维度做了独立审查，每个维度由未参与开发的 agent 阅读真实代码，每条发现再由独立 skeptic 尝试推翻。**26 条候选发现，9 条确认为真实缺陷并已修复**，其余记录在此。
+对 PR #95 与 #97 的 8 个维度做了独立审查，每个维度由未参与开发的 agent 阅读真实代码，
+每条发现再由独立 skeptic 尝试推翻。**26 条候选发现，16 条确认为真实缺陷并已修复**，
+其余记录在此。
 
-### 已修复（9）
+> 下表的修复提交是**合并前的原始 SHA**。PR #95 已 squash 为 `dbbde31`、#96 为 `02c6495`，
+> 这些 SHA 在 `main` 与当前分支上都不再可达（`git cat-file` 仅因本地对象未回收才找得到）。
+> 需要追溯时按 PR 与缺陷描述检索，**不要**把这些 SHA 当作可 checkout 的引用。原始提交
+> 内容由 `dbbde31` 的提交信息与本节描述共同承载。
 
-| # | 严重度 | 缺陷 | 修复提交 |
+### 已修复（16）
+
+| # | 严重度 | 缺陷 | 修复提交（原始 SHA，已 squash） |
 | --- | --- | --- | --- |
 | 1 | P1 | `resolve()` 的 availability 检查在 dispatch **之前**执行且硬编码 Vault，导致命名其他 provider 的引用被按 Vault 状态判断（Vault 锁定时让用户去解锁一个无关的 Vault） | `45356df` |
 | 2 | P2 | `registerBuiltInProviders` 一次性注册，后传入的不同 provider 被静默忽略 | `45356df` |
@@ -235,7 +279,7 @@ Snippet Dock 紧随其后，因为它是设计指定的第一个内置扩展，�
 | 15 | P2 | `buildContext` 不校验 manifest 声明的 capability —— manifest 形同装饰 | `435f2fa` |
 | 16 | P1 | `enable()` 未守卫 `deactivating`，停用中途再启用会启动第二次激活 | `435f2fa` |
 
-（部分发现合并为同一提交，上表按问题计。）
+（部分发现合并为同一提交，上表按问题计。合计 16 条，与本节开头一致。）
 
 ### 未修（需要产品决策或更大改动）
 
@@ -306,7 +350,9 @@ runner 容量不足**，job 排队 15 分钟后报
 
 ---
 
-## 最终 CI（本分支）
+## 最终 CI
+
+### PR #95（已合并 `dbbde31`）
 
 `26af44e` + macOS runner 重跑：**18/18 pass，0 fail**。
 
