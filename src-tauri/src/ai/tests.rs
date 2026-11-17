@@ -17,7 +17,76 @@ use std::thread;
 
 use super::prompt::AiAction;
 use super::transport::{self, AiEvent, CancelFlag, RunRequest};
-use super::AiFailureKind;
+use super::{AiFailureKind, AiRuns};
+
+/// The run registry: why a duplicate id must be refused rather than overwrite.
+///
+/// These exist because the overwrite was invisible: every other test drove one run at a
+/// time, so `insert` and "refuse the duplicate" behaved identically. The defect only
+/// appears with two runs sharing an id — and then it is a Cancel button that reports
+/// success while the answer keeps streaming.
+#[test]
+fn a_duplicate_request_id_is_refused_not_overwritten() {
+    let runs = AiRuns::default();
+    let first = runs.register("run-1").expect("first registration succeeds");
+    assert!(
+        runs.register("run-1").is_none(),
+        "a second run with the same id must be refused; overwriting the flag would make \
+         the first run uncancellable while its Cancel still reports success"
+    );
+    // The first run's flag is the one `ai_cancel` reaches, and it still works.
+    assert!(runs.cancel("run-1"));
+    assert!(
+        first.is_cancelled(),
+        "the first run must actually observe the cancel"
+    );
+}
+
+#[test]
+fn an_id_is_reusable_once_its_run_finished() {
+    // Refusing duplicates must not leak ids: a retry after a completed run is the
+    // normal path, and it would be broken if `finish` did not free the slot.
+    let runs = AiRuns::default();
+    runs.register("run-1").expect("first");
+    runs.finish("run-1");
+    assert!(
+        runs.register("run-1").is_some(),
+        "a finished id must be reusable"
+    );
+}
+
+#[test]
+fn cancelling_an_unknown_id_reports_that_it_did_nothing() {
+    let runs = AiRuns::default();
+    assert!(!runs.cancel("never-registered"));
+}
+
+#[test]
+fn cancelling_one_run_does_not_trip_another() {
+    let runs = AiRuns::default();
+    let first = runs.register("run-1").expect("first");
+    let second = runs.register("run-2").expect("second");
+    assert!(runs.cancel("run-1"));
+    assert!(first.is_cancelled());
+    assert!(
+        !second.is_cancelled(),
+        "two docks must not cancel each other"
+    );
+}
+
+#[test]
+fn a_cancel_for_a_finished_run_does_not_trip_the_next_one() {
+    // The id is reused after `finish`; a late cancel for the old run must not stop the
+    // new one. This is the other half of "refuse duplicates": the registry must not
+    // hand a stale flag to a fresh run either.
+    let runs = AiRuns::default();
+    let first = runs.register("run-1").expect("first");
+    runs.finish("run-1");
+    assert!(!runs.cancel("run-1"), "the finished run is gone");
+    let second = runs.register("run-1").expect("reused");
+    assert!(!second.is_cancelled(), "the new run must start uncancelled");
+    assert!(!first.is_cancelled());
+}
 
 /// What one request the server received looked like.
 #[derive(Debug, Clone)]
