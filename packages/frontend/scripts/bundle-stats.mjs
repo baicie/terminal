@@ -138,7 +138,19 @@ const budgets = {
   // The alternative was to fold the five extension strings into existing keys or
   // drop the "not enabled" message, which would leave a dock that renders silently
   // when its extension is off — a user-visible gap traded for 1.7 KB.
-  totalGzip: 640 * 1024,
+  //
+  // 652 KB (was 640 KB): the AI dock lands — three components (view, config strip,
+  // result area), the runtime adapter, profile storage wiring, one Command Palette
+  // entry and ~21 strings in three languages. No new dependency.
+  //
+  // Measured 643.05 KB against the 640.00 KB ceiling: +3.05 KB. The initial budget is
+  // unchanged at 130.93 KB: the dock is behind the right-panel chunk, which only loads
+  // once the column opens, so nothing here is on the time-to-first-terminal path.
+  //
+  // The alternative was to drop the risk-flags line or the "nothing is run
+  // automatically" footer to stay under the old number, which would trade the two
+  // statements that make the feature honest for 3 KB nobody experiences.
+  totalGzip: 652 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

@@ -73,6 +73,8 @@ export default {
   'cmdHistory.daysAgo': '{{count}} days ago',
   'cmdHistory.hostLabel': 'Host: {{host}}',
   'cmdHistory.noMatchingCommands': 'No matching commands',
+  'cmdPalette.openAiDock': 'Open the AI assistant',
+  'cmdPalette.openAiDockDesc': 'Ask about the selected text',
   'cmdPalette.openSnippetDock': 'Open the snippet dock',
   'cmdPalette.openSnippetDockDesc': 'Snippets in the right column',
 }

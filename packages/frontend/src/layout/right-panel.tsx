@@ -5,6 +5,10 @@ import { useRightPanelStore } from '@/store/right-panel-store'
 import { isRightPanelImplemented } from '@/store/right-panel-state'
 import { useExtensionRuntime } from '@/features/extensions/use-extension-runtime'
 import { SnippetDock } from './snippet-dock-view'
+import { AiDock } from './ai-dock-view'
+import { useAiRuntime } from '@/features/ai/use-ai-runtime'
+import { currentTerminalSelection } from '@/features/terminal/services/terminal-selection'
+import { useAppStore } from '@/store/app'
 
 /**
  * The right column.
@@ -53,6 +57,13 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
   const rightPanel = useRightPanelStore(state => state.rightPanel)
   const setRightPanel = useRightPanelStore(state => state.setRightPanel)
   const extensions = useExtensionRuntime()
+  const ai = useAiRuntime()
+  const activeTab = useAppStore(state =>
+    state.tabs.find(tab => tab.id === state.activeTabId),
+  )
+  // The selection the user made, published by the active terminal. Reading it here is
+  // what keeps "the dock saw text" and "the user selected text" the same thing.
+  const selection = rightPanel === 'ai' ? currentTerminalSelection() : null
   if (rightPanel === 'none') return null
   // A mode the union names but this build does not render — `snippets`, `inspector`
   // and `ai` are declared for the contract, not shipped. Rendering the dock empty
@@ -68,9 +79,11 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
           : 'h-full shrink-0 overflow-hidden border-l border-border/60 bg-background',
       )}
       aria-label={
-        rightPanel === 'snippets'
-          ? t('extensions.snippetDock.name')
-          : t('sftp.dockTitle')
+        rightPanel === 'ai'
+          ? t('ai.title')
+          : rightPanel === 'snippets'
+            ? t('extensions.snippetDock.name')
+            : t('sftp.dockTitle')
       }
       data-testid="right-panel"
       data-panel={rightPanel}
@@ -87,7 +100,16 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
           <CloseGlyph />
         </button>
       ) : null}
-      {rightPanel === 'snippets' ? (
+      {rightPanel === 'ai' ? (
+        <AiDock
+          runner={ai.runner}
+          profiles={ai.profiles}
+          selectedText={selection?.text ?? null}
+          sessionId={selection?.sessionId ?? null}
+          hostId={activeTab?.hostId ?? null}
+          onClose={() => setRightPanel('none')}
+        />
+      ) : rightPanel === 'snippets' ? (
         <SnippetDock
           handle={extensions.snippetDock}
           onClose={() => setRightPanel('none')}

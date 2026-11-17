@@ -63,23 +63,28 @@ describe('which occupants this build renders', () => {
     expect([...RIGHT_PANEL_OCCUPANTS]).toContain('snippets')
     expect([...RIGHT_PANEL_OCCUPANTS]).toContain('inspector')
     expect([...RIGHT_PANEL_OCCUPANTS]).toContain('ai')
-    // `snippets` moved into the implemented list when `snippet-dock` shipped: it is
-    // the first occupant added *through* the contract, which is what the union was
-    // for. `inspector` and `ai` stay declared-but-not-built.
-    expect([...IMPLEMENTED_RIGHT_PANEL_OCCUPANTS]).toEqual(['none', 'sftp', 'snippets'])
+    // Each occupant moved here when its view shipped, through the contract rather than
+    // beside it: `snippets` with the snippet dock, `ai` with the assistant dock.
+    // `inspector` stays declared-but-not-built.
+    expect([...IMPLEMENTED_RIGHT_PANEL_OCCUPANTS]).toEqual([
+      'none',
+      'sftp',
+      'snippets',
+      'ai',
+    ])
     expect(isRightPanelImplemented('sftp')).toBe(true)
     expect(isRightPanelImplemented('snippets')).toBe(true)
+    expect(isRightPanelImplemented('ai')).toBe(true)
     expect(isRightPanelImplemented('inspector')).toBe(false)
-    expect(isRightPanelImplemented('ai')).toBe(false)
   })
 
   it('stays closed rather than rendering an empty panel for a future occupant', () => {
     // Falling back to a *different* panel would open something the user did not
     // choose; falling back to `none` keeps the dock closed and says nothing false.
-    expect(resolveRightPanelMode('ai')).toBe('none')
     expect(resolveRightPanelMode('inspector')).toBe('none')
-    // The one that shipped is kept.
+    // The ones that shipped are kept.
     expect(resolveRightPanelMode('snippets')).toBe('snippets')
+    expect(resolveRightPanelMode('ai')).toBe('ai')
   })
 
   it('keeps the implemented modes it was given', () => {

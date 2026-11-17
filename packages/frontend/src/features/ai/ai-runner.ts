@@ -80,11 +80,26 @@ const REFUSAL_MESSAGES: Record<StartRefusal, string> = {
 export class AiRunner {
   private state: AiRun = idleRun()
   private signal: (CancelSignal & { cancel(): void }) | null = null
+  private readonly listeners = new Set<(state: AiRun) => void>()
 
   constructor(private readonly deps: AiRuntimeDeps) {}
 
   current(): AiRun {
     return this.state
+  }
+
+  /**
+   * Subscribe to state changes.
+   *
+   * A component needs to re-render when a chunk arrives, and polling would either lag
+   * or make the dock re-render on a timer for no reason. Returns an unsubscribe;
+   * `deps.onState` remains the app-level hook, so both see every transition.
+   */
+  subscribe(listener: (state: AiRun) => void): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
   }
 
   /**
@@ -247,6 +262,14 @@ export class AiRunner {
     if (next === this.state) return
     this.state = next
     this.deps.onState(next)
+    for (const listener of this.listeners) {
+      // One broken subscriber must not stop the others or the run itself.
+      try {
+        listener(next)
+      } catch {
+        // Ignored deliberately.
+      }
+    }
   }
 
   private refuse(refusal: StartRefusal, message?: string): StartResult {

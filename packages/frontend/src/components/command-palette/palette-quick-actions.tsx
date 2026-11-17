@@ -43,6 +43,15 @@ export function usePaletteQuickActions(t: TFunction): SearchResult[] {
         score: 0,
       },
       {
+        id: 'open-ai-dock',
+        type: 'action',
+        title: t('cmdPalette.openAiDock'),
+        description: t('cmdPalette.openAiDockDesc'),
+        icon: <Zap className="size-4" />,
+        data: { action: 'open-ai-dock' },
+        score: 0,
+      },
+      {
         id: 'open-snippet-dock',
         type: 'action',
         title: t('cmdPalette.openSnippetDock'),

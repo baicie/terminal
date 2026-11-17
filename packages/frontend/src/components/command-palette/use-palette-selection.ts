@@ -117,6 +117,11 @@ export function usePaletteSelection(onClose: () => void) {
             case 'transfer-queue':
               setPanelOpen(true)
               break
+            case 'open-ai-dock':
+              // Same one-assignment contract as the snippet dock: the occupant is a
+              // value, so opening the assistant is a single state change.
+              useRightPanelStore.getState().setRightPanel('ai')
+              break
             case 'open-snippet-dock':
               // The dock's occupant is a value, so opening it is one assignment.
               // Without this entry point `'snippets'` was renderable but unreachable:
