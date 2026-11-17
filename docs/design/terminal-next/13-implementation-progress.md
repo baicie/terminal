@@ -57,7 +57,7 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | **Host 损坏/未知引用可清除** | **`PASS`** | `host-stored-credential.tsx`、`host-clear-credential.test.tsx` | 三态规则；malformed / unknown-provider / unsupported-version 均显示清除入口。3 条在旧 gate 上红 |
 | **SSH Key 损坏引用可清除** | **`PASS`** | `ssh-keys.ts::clearSSHKeyCredential`、`clear-key-credential-action.tsx` | 此前完全无入口。先失去引用再删密文；无法解析时仍执行 UPDATE |
 | Vault 三态（uninitialized / locked / unusable）内联恢复 | `PASS`（既有） | `vault-recovery.tsx` | Phase 10.2 A2 已合入 |
-| 成功后显式保存 | `NOT_RUN` | — | 设计要求独立的确认步骤；本轮只做"仅本次使用" |
+| **成功后显式保存** | **`IMPLEMENTED`** | `save-after-auth.ts`、`pending-save.ts`、`save-credential-dialog.tsx`、`use-save-after-auth.ts` | 本轮实现。只在 tab 报 `connected` 后询问——`arm` 不等于 `show`，被拒绝的密码永远不产生 `connected`，因此不可能为未证实的凭据提示保存。写走 `updateHost`（复用损坏引用守卫与 authType 切换规则）。回答后同时清空 pending 与临时 profile 上的明文。真实 sshd E2E `NOT_RUN` |
 | `authType` 切换丢弃旧方式 kind | `PASS`（既有） | `hosts.ts` | Phase 10.3 已修 |
 | **CredentialRef V2 / Provider Registry / 按 provider 分派** | **`PASS`（链路级）** | `credential-resolver.ts`、`credential-provider-registry.ts` | PR #95 已落地，详见 UX-2b 表。生产路径 `session-credentials.ts` 已接线；变异验证让旧 resolver 立即变红 |
 | 系统 Keychain / Credential Manager / Secret Service | `BLOCKED_EXTERNAL` | — | 需跨平台真实签名与隔离 profile 证据 |

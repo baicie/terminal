@@ -1,14 +1,24 @@
 import { useEffect } from 'react'
 import type { TerminalSessionStatus } from '@/features/terminal/services/terminal-session-manager-types'
 import { useAppStore } from '@/store/app'
+import { settleOnConnectionStatus } from '@/view/hosts/use-save-after-auth'
+import { useSavePromptStore } from '@/view/hosts/save-prompt-store'
 
-/** Projects session manager state into the owning tab metadata. */
+/**
+ * Projects session manager state into the owning tab metadata.
+ *
+ * It also settles the "save this credential?" question, because this is the one place
+ * that already knows when a tab's session became `connected` — the only moment a typed
+ * credential is known to work. A second handler watching the same status would be a
+ * second notion of connected, and the two would eventually disagree.
+ */
 export function useTabConnectionStatus(
   tabId: string,
   status: TerminalSessionStatus,
 ): void {
   const tab = useAppStore(state => state.tabs.find(item => item.id === tabId))
   const updateTab = useAppStore(state => state.updateTab)
+  const offerSave = useSavePromptStore(state => state.offer)
 
   useEffect(() => {
     if (!tab) return
@@ -19,4 +29,13 @@ export function useTabConnectionStatus(
     if (tab.connectionStatus === connectionStatus) return
     updateTab(tabId, { connectionStatus })
   }, [status, tab, tabId, updateTab])
+
+  // Settled on the *transition* into `connected`, not on every render while connected:
+  // `takeSaveAfterAuth` consumes the entry, so a re-render cannot re-ask, but guarding
+  // here keeps the call out of the common path entirely.
+  useEffect(() => {
+    if (status !== 'connected') return
+    const entry = settleOnConnectionStatus(tabId, true)
+    if (entry) offerSave(entry)
+  }, [status, tabId, offerSave])
 }

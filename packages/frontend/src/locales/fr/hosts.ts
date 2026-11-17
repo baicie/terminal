@@ -207,4 +207,11 @@ export default {
   'hosts.connectCredential.passphraseLabel': 'Phrase de passe (facultatif)',
   'hosts.connectCredential.notSaved': 'Cet identifiant sert uniquement à cette connexion.',
   'hosts.connectCredential.connect': 'Se connecter',
+  'hosts.saveCredential.title': 'Enregistrer cet identifiant ?',
+  'hosts.saveCredential.description':
+    'L’identifiant pour {{name}} ({{user}}@{{hostname}}) a fonctionné. L’enregistrer pour ne pas le ressaisir ?',
+  'hosts.saveCredential.whyNow':
+    'Cette question n’est posée qu’après une connexion réussie : rien de non vérifié n’est enregistré.',
+  'hosts.saveCredential.save': 'Enregistrer',
+  'hosts.saveCredential.notNow': 'Pas maintenant',
 }

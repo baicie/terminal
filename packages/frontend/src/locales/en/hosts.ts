@@ -207,4 +207,11 @@ export default {
   'hosts.connectCredential.passphraseLabel': 'Passphrase (optional)',
   'hosts.connectCredential.notSaved': 'This credential is used for this connection only.',
   'hosts.connectCredential.connect': 'Connect',
+  'hosts.saveCredential.title': 'Save this credential?',
+  'hosts.saveCredential.description':
+    'The credential for {{name}} ({{user}}@{{hostname}}) worked. Store it so you do not have to type it again?',
+  'hosts.saveCredential.whyNow':
+    'This is only asked after a successful sign-in, so nothing unproven is stored.',
+  'hosts.saveCredential.save': 'Save',
+  'hosts.saveCredential.notNow': 'Not now',
 }
