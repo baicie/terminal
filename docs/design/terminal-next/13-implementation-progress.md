@@ -98,9 +98,26 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | **Typed Capability Gateway** | **`PASS`** | `capability-gateway.ts` + `approval-book.ts`。25 条对抗性测试。grant 按 extension id 查询（修复了「返回当前 grant、事后再比 id」的错配风险） |
 | **Extension Manifest 校验** | **`PASS`** | `extension-manifest.ts`。10 类拒绝，含拒绝可命名动态代码的 `entry` |
 | **Extension Registry（生命周期）** | **`PASS`** | `extension-registry.ts`。55 条测试：回滚、generation、幂等启用、失败隔离 |
-| **Snippet Dock 扩展（完整链路）** | **`PARTIAL`** | 逻辑 14 条 + 开关 8 条 + 选择发布 11 条测试 PASS；已挂进 RightPanel，Settings 有开关，`read-selected` 接真实 `term.getSelection()`。**唯一缺口**：真实 GUI 未点击验证 |
+| **Snippet Dock 扩展（完整链路）** | **`PARTIAL`** | 逻辑 14 条 + 开关 8 条 + 选择发布 11 条测试 PASS；已挂进 RightPanel，Settings 有开关，`read-selected` 接真实 `term.getSelection()`。本轮补齐**草稿消费方**（见下）。**剩余缺口**：真实 GUI 未点击验证 |
 | **`terminal.read-selected` 真实选择源** | **`PASS`（自动化）** | `terminal-selection.ts` + `use-publish-terminal-selection.ts`。只有活动 tab 发布；gateway 双源一致才可读（发布值 + 活动 tab）。后台 tab 的选择读不到 |
 | Rust 侧 `ExtensionIntent` Gateway | `NOT_RUN` | 本版本不允许扩展跨进程边界，暂不需要 |
+
+### 本轮修复的断链：捕获的草稿没有消费方
+
+矩阵此前把它记作「已知未修」，但按调用链读下来它比记录更严重：
+
+| 事实 | 位置 |
+| --- | --- |
+| `captureSelection()` 把文本存进 `pendingDraft` | `snippet-dock-extension.ts` |
+| dock 把 `pendingDraft` 渲染成一个 `<pre>` | `snippet-dock-view.tsx` |
+| **没有任何代码读它** | 全仓 grep 只有渲染点与类型定义 |
+| 原文案写「到 Snippets 页面保存」 | 但那个页面不知道这份草稿存在 —— 用户去了也找不到 |
+
+用户能选中文本、捕获、看到它出现，然后**什么也做不了**。功能在每一个既有测试里都是「完成」的，因为每个测试都停在「草稿在 state 里」。
+
+修复：命名 + 就地保存（走既有 `createSnippet`，不经扩展 capability）、保存后刷新列表、丢弃入口。**扩展本身仍然不写库** —— 保存是 UI 调既有服务的职责，与扩展契约一致。
+
+`SnippetDock` 此前**没有任何组件测试**，这正是断链没被发现的原因。本轮补 6 条。
 
 UX-3 的边界与生命周期层已由 PR #95 落地；缺的是 Snippet Dock 的真实 GUI 点击验收，以及 Rust 侧跨进程 Gateway（本版本按设计不做）。
 

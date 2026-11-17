@@ -14,8 +14,11 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { SnippetDockHandle, SnippetDockState } from '@/features/extensions/snippet-dock-extension'
+import { saveDraftAsSnippet } from '@/features/extensions/snippet-draft-save'
 
 interface SnippetDockProps {
   /** Null while the extension is not active: the dock shows why, not an empty list. */
@@ -73,14 +76,16 @@ export function SnippetDock({ handle, onClose }: SnippetDockProps) {
       )}
 
       {handle && state.pendingDraft && (
-        <div className="border-b p-3" data-testid="snippet-draft">
-          <p className="mb-1 text-xs text-muted-foreground">
-            {t('extensions.snippetDock.draftHint')}
-          </p>
-          <pre className="max-h-24 overflow-auto rounded bg-muted p-2 text-xs">
-            {state.pendingDraft.text}
-          </pre>
-        </div>
+        <DraftPanel
+          text={state.pendingDraft.text}
+          onSaved={async () => {
+            // Reload so the new row is in the list the user is looking at. Without this
+            // the save succeeds and the dock still shows the old set, which reads as
+            // "it did not save".
+            await handle.refresh()
+          }}
+          onDiscard={() => void handle.discardDraft()}
+        />
       )}
 
       <ScrollArea className="min-h-0 flex-1">
@@ -98,6 +103,84 @@ export function SnippetDock({ handle, onClose }: SnippetDockProps) {
           </p>
         )}
       </ScrollArea>
+    </div>
+  )
+}
+
+/**
+ * The captured draft, with the two things a user can do about it.
+ *
+ * Before this, the draft was rendered and nothing read it: the text appeared and then
+ * the only route forward was a note pointing at the Snippets page — which has no
+ * knowledge of a draft captured here. Naming and saving happens in place, because that
+ * is where the text is.
+ *
+ * The script is shown verbatim and is saved verbatim. The user selected it; trimming or
+ * reformatting would store something they did not choose.
+ */
+function DraftPanel({
+  text,
+  onSaved,
+  onDiscard,
+}: {
+  text: string
+  onSaved: () => Promise<void>
+  onDiscard: () => void
+}) {
+  const { t } = useTranslation()
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+
+  const save = async () => {
+    if (busy) return
+    setBusy(true)
+    setFailure(null)
+    const result = await saveDraftAsSnippet({ text, name })
+    setBusy(false)
+    if (!result.ok) {
+      // The draft stays on screen: it is the only copy of the user's selection, and
+      // discarding it because a write failed would mean selecting it again.
+      setFailure(result.message)
+      return
+    }
+    await onSaved()
+  }
+
+  return (
+    <div className="border-b p-3" data-testid="snippet-draft">
+      <p className="mb-1 text-xs text-muted-foreground">
+        {t('extensions.snippetDock.draftHint')}
+      </p>
+      <pre className="mb-2 max-h-24 overflow-auto rounded bg-muted p-2 text-xs">{text}</pre>
+      <div className="space-y-1">
+        <Label htmlFor="snippet-draft-name">{t('extensions.snippetDock.draftName')}</Label>
+        <Input
+          id="snippet-draft-name"
+          value={name}
+          placeholder={t('extensions.snippetDock.draftNamePlaceholder')}
+          onChange={event => {
+            setName(event.target.value)
+            setFailure(null)
+          }}
+          onKeyDown={event => {
+            if (event.key === 'Enter') void save()
+          }}
+        />
+      </div>
+      {failure && (
+        <p className="mt-2 text-sm text-destructive" role="alert">
+          {failure}
+        </p>
+      )}
+      <div className="mt-2 flex gap-2">
+        <Button size="sm" onClick={() => void save()} disabled={busy}>
+          {t('extensions.snippetDock.draftSave')}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onDiscard} disabled={busy}>
+          {t('extensions.snippetDock.draftDiscard')}
+        </Button>
+      </div>
     </div>
   )
 }

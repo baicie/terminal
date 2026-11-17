@@ -74,6 +74,15 @@ export interface SnippetDockHandle {
   subscribe(listener: () => void): () => void
   /** Capture the current selection as a draft, without storing or running it. */
   captureSelection(): Promise<boolean>
+  /**
+   * Drop the draft.
+   *
+   * The dock offers this because a captured draft that can only be saved is a trap: the
+   * user who captured the wrong text has to save it somewhere and then delete it from
+   * the Snippets page. Clearing is one state change, and it is the only cleanup path the
+   * draft has.
+   */
+  discardDraft(): void
 }
 
 /**
@@ -121,6 +130,10 @@ export function createSnippetDock(
     return true
   }
 
+  const discardDraft = (): void => {
+    setState({ pendingDraft: null })
+  }
+
   // Registrations go through the context bucket, so a deactivate takes them all with
   // it. A registration made outside the bucket is the leak deactivation exists to
   // prevent.
@@ -162,5 +175,6 @@ export function createSnippetDock(
       return () => listeners.delete(listener)
     },
     captureSelection,
+    discardDraft,
   }
 }
