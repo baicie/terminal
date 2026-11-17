@@ -352,6 +352,29 @@ runner 容量不足**，job 排队 15 分钟后报
 
 ## 最终 CI
 
+### PR #97（`feat/tn-ux4-ai-dock`，已合并 `100cfce`）
+
+HEAD `82b4fb0` 的 **14 个必检作业全部 success**：三平台 Tauri build（macOS / ubuntu /
+Windows）、Rust quality、Frontend quality、Repository gates、cargo audit、Team Server
+quality 与 container、Dependency audit、zsh probe、Test execution report，以及
+`required` 聚合门禁。
+
+**GUI E2E 最终 4/4 success**，run `44035811576`（`workflow_dispatch`，
+`head=82b4fb0`，与 PR head 一致）：`Driver isolation gate`、`macOS GUI E2E`、
+`Windows GUI E2E`、`Linux GUI E2E` 全部完成。
+
+合并前的三次状态变化，记下来是因为它们容易被误读：
+
+| 现象 | 真实结论 | 判据 |
+| --- | --- | --- |
+| 三个 GUI 作业显示 `fail` | **`cancelled`** | 耗时 1m23s–1m32s（正常 10–20 分钟）；job 的 `conclusion` 字段是 `cancelled`，`gh pr checks` 把它渲染成 fail |
+| `gh run rerun` 后无限排队 >25 分钟 | **重跑在取消自己** | workflow 设了 `concurrency: group: gui-e2e-${{ github.ref }}` + `cancel-in-progress: true`，attempt 2 与原 attempt 同组 |
+| 推送纯文档提交却触发完整 CI | **正确行为** | `classify-change.mjs` 算的是 `base...HEAD` 全分支 diff，不是单次推送 |
+
+**正确的重跑方式**是 `gh workflow run native-gui-e2e.yml --ref <branch>` 另起独立
+run，不是 `gh run rerun`。另记：该 workflow 的 `pull_request` paths 过滤器包含
+`packages/frontend/src/layout/**`，本 PR 改了这个目录，所以每次 push 都会触发 GUI E2E。
+
 ### PR #95（已合并 `dbbde31`）
 
 `26af44e` + macOS runner 重跑：**18/18 pass，0 fail**。
