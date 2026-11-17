@@ -86,7 +86,8 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | Vault 写入安全（秘密列字面 NULL、版本化、命名空间拆分） | `PASS`（既有） | Phase 10.1～10.4 已合入 |
 | **`CredentialRef V2`（按 `provider` 分派）** | **`PASS`（链路级）** | `credential-resolver.ts::providerFor`。真实生产路径 `session-credentials.ts` 已构造带 registry 的 resolver。变异验证：把 resolver 回退到 HEAD 版本，`refuses a foreign provider instead of reading the vault` 立即变红。另实现 `ProviderDispatchingResolver` 提供五种独立状态的完整语义 |
 | **`SecretProvider` Registry** | **`PASS`** | `credential-provider-registry.ts`：`vault` 已注册，三个系统 provider 报告为 `unsupported` 而非省略；重复注册抛错；`registerBuiltInProviders` 幂等 |
-| 跨 Provider 写入/读回/切换/补偿 | `NOT_RUN` | — |
+| 写入 / 读回 / 回滚补偿（vault provider） | **`PASS`（自动化）** | `host-credentials.ts::persistHostSecrets`：写入前捕获旧值 → 逐 kind 写入 → **读回全量核对**（含 carry-forward 的 kind）→ 任一不符即 `removeVersion` 回滚。`retirePreviousVersion` 的失败只上报不抛（行已指向新版本，抛错会谎报保存失败）。覆盖见 `hosts-credential-versions.test.ts`、`import-security.test.ts`（断言 `vault did not return`） |
+| **跨 Provider** 写入/读回/切换/补偿 | `NOT_RUN` | — | 上面那条路径全部走 `vaultSecretProvider` 单例。没有第二个 provider 实现，所以「同一份逻辑在别的 provider 下也成立」未被验证。解除需要真实的 Keychain / Secret Service（`BLOCKED_EXTERNAL`）或一个测试用第二 provider |
 | 凭据批量迁移 | `NOT_RUN`（未授权） | 需显式批准；按规则不得自行执行 |
 
 ---
