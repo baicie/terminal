@@ -1,8 +1,8 @@
 /**
  * The React adapter for the AI runner.
  *
- * Three jobs, all thin: load profiles from SQLite, build one runner wired to the real
- * credential provider and the real active tab, and expose a way to start a run.
+ * Three jobs, all thin: load profiles from SQLite, build one runner wired to the
+ * backend over IPC, and expose a way to start a run.
  *
  * ## Why one runner for the process
  *
@@ -11,21 +11,24 @@
  * refuses. One instance, created lazily, mirrors `vaultService` and the extension
  * registry.
  *
- * ## Why the key is read through the storage layer
+ * ## Why there is no key here any more
  *
- * `readKey` delegates to `getProfileSecret`, which reads the vault. The runner never
- * sees a provider: it receives a string and hands it to the driver. That keeps the
- * secret's path in one module.
+ * This module used to pass `readKey: () => getProfileSecret(profileId)`; the runner
+ * then handed the plaintext key to a `fetch` inside the WebView, which is what the
+ * design (§4) forbids. The runner's dependencies now have no way to obtain a key, and
+ * the request it sends carries a `profileId` rather than a secret — so the exposure
+ * cannot return without changing this file's shape first.
+ *
+ * Reading the profile *row* here is fine and stays: endpoint, model and limits are
+ * configuration, and `secretRef` is a pointer, not a key. Only the key itself moved.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import { useAppStore } from '@/store/app'
-import { AiRunner, driverRegistry } from '@/features/ai/ai-runner'
+import { AiRunner } from '@/features/ai/ai-runner'
+import { cancelRun, generate } from '@/features/ai/ai-ipc'
 import type { ModelProfilePublic } from '@/features/ai/model-profile'
-import {
-  getProfileSecret,
-  listModelProfiles,
-} from '@/service/database/ai-profiles'
+import { listModelProfiles } from '@/service/database/ai-profiles'
 
 export interface AiRuntime {
   runner: AiRunner
@@ -36,49 +39,18 @@ export interface AiRuntime {
 }
 
 let runnerSingleton: AiRunner | null = null
-
-/**
- * A cancellation signal that a caller can trip.
- *
- * `whenCancelled` never rejects, which is what the driver contract promises and what
- * lets the HTTP adapter use it for `AbortController` without a try/catch.
- */
-function createCancelSignal(): { cancelled: boolean, cancel(): void, whenCancelled(): Promise<void> } {
-  let cancelled = false
-  let cancel: () => void = () => undefined
-  const promise = new Promise<void>(resolve => {
-    cancel = resolve
-  })
-  return {
-    // A getter over a closure variable, not a mutable field: the driver reads
-    // `cancelled` between chunks, and a plain property would let a caller that kept a
-    // reference see a stale value.
-    get cancelled() {
-      return cancelled
-    },
-    cancel() {
-      cancelled = true
-      cancel()
-    },
-    whenCancelled: () => promise,
-  }
-}
-
 let runCounter = 0
 
 function getRunner(): AiRunner {
   if (runnerSingleton) return runnerSingleton
-  const drivers = driverRegistry()
   runnerSingleton = new AiRunner({
-    driverFor: provider => drivers.get(provider),
-    readKey: profileId => getProfileSecret(profileId),
+    generate: (input, onEvent) => generate(input, onEvent),
+    cancel: requestId => cancelRun(requestId),
     // The visible session is the active tab: a result for a tab the user left is
     // marked stale rather than presented as the current one's.
     visibleSessionId: () => useAppStore.getState().activeTabId ?? null,
     onState: () => undefined,
     nextRunId: () => `ai-run-${++runCounter}`,
-    // A fresh signal per run: reusing one would make the second cancel a no-op.
-    createSignal: () => createCancelSignal(),
   })
   return runnerSingleton
 }

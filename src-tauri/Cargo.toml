@@ -22,6 +22,25 @@ smoke-vault-probe = []
 # Test-only updater runtime: check, download, verify and install from a loopback
 # endpoint. Absent from every production build.
 smoke-updater = []
+# The AI model transport (UX-4). Empty on purpose.
+#
+# `docs/design/terminal-next/07-ux4-ai-inspector.md` §4 puts the OpenAI-compatible
+# request behind a Rust feature: the API key must not enter the renderer, and a build
+# without the feature must have no model network path at all — not a disabled one, an
+# absent one.
+#
+# The feature gates the *commands and the transport*, not `reqwest`: `reqwest` is
+# already a non-optional dependency of `storage.rs` (WebDAV/S3/REST), so making it
+# optional here would buy nothing and would couple this feature to storage. What a
+# feature-off build loses is `ai_generate`, `ai_cancel`, `ai_profiles_list`,
+# `ai_available` and the whole `src/ai/` module — proven by
+# `scripts/check-ai-isolation.mjs`, which builds without it and asserts the symbols
+# and the `/chat/completions` string are gone.
+#
+# Not a default feature: `cargo build` alone produces a binary with no AI transport.
+# `tauri.conf.json`'s `build.features` turns it on for the product build, the same
+# shape `custom-protocol` uses.
+ai = []
 # Embeds the frontend from `frontendDist` into the binary via Tauri's custom
 # protocol. Without it `tauri/build.rs` sets `dev = !custom_protocol`, and a bare
 # `cargo build --release` produces an executable that loads an empty shell from a

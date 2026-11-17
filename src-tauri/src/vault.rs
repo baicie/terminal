@@ -1033,14 +1033,19 @@ pub fn vault_get(key: String) -> Result<String, VaultError> {
 /// Classify a vault key by its namespace, without echoing it.
 ///
 /// Keys look like `host:<id>[:<version>]:<kind>`, `ssh-key:<id>[:<version>]:<kind>`,
-/// or a user-chosen name in the Vaults view. The id and the name are omitted: the
-/// classification is what makes a log line useful, and the rest is what makes it a
-/// privacy problem.
+/// `model:<id>[:<version>]:<kind>`, or a user-chosen name in the Vaults view. The id
+/// and the name are omitted: the classification is what makes a log line useful, and
+/// the rest is what makes it a privacy problem.
 fn vault_key_kind(key: &str) -> &'static str {
     if key.starts_with("host:") {
         "host-credential"
     } else if key.starts_with("ssh-key:") {
         "ssh-key-credential"
+    } else if key.starts_with("model:") {
+        // Its own class: `model:` was falling through to `user-entry`, which is the
+        // opposite of what this classifier is for — a model key read is exactly the
+        // kind of read someone would want to find in the log.
+        "model-credential"
     } else if key.starts_with("team:") {
         "team-secret"
     } else if key.starts_with("probe:") {
@@ -1124,6 +1129,54 @@ pub fn vault_decrypt_for_team(encrypted_data: String) -> Result<String, VaultErr
 pub fn vault_can_encrypt_for_team() -> bool {
     let state = VAULT_STATE.lock();
     state.is_some()
+}
+
+// ---------------------------------------------------------------------------
+// In-process secret reads
+//
+// Not `#[tauri::command]`: nothing here is reachable from the WebView. These exist
+// for backend features that must consume a secret without it ever crossing the IPC
+// boundary — the AI transport is the first one. The distinction matters: `vault_get`
+// is a general "read any key" capability that the Vaults view genuinely needs, and
+// adding a second command with the same power would widen the surface this module
+// exists to keep narrow.
+// ---------------------------------------------------------------------------
+
+/// Why an in-process secret read failed, without the secret or the key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VaultReadError {
+    /// The vault has not been created or unlocked in this process.
+    Locked,
+    /// The key is not in the vault.
+    NotFound,
+    /// The vault holds the key but the value could not be decrypted.
+    Undecryptable,
+}
+
+impl VaultReadError {
+    /// A short, log-safe name. Never the key and never the value.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            VaultReadError::Locked => "locked",
+            VaultReadError::NotFound => "not-found",
+            VaultReadError::Undecryptable => "undecryptable",
+        }
+    }
+}
+
+/// Read one secret for a backend feature.
+///
+/// Same log discipline as `vault_get`: the key's *kind* is recorded so an unexpected
+/// read leaves a trail, and the key itself never does.
+pub fn vault_read_secret(key: &str) -> Result<String, VaultReadError> {
+    log::info!("vault read (in-process) kind={}", vault_key_kind(key));
+    let state = VAULT_STATE.lock();
+    let vault = state.as_ref().ok_or(VaultReadError::Locked)?;
+    vault.get(key).map_err(|error| match error {
+        VaultError::KeyNotFound(_) => VaultReadError::NotFound,
+        VaultError::VaultLocked => VaultReadError::Locked,
+        _ => VaultReadError::Undecryptable,
+    })
 }
 
 #[cfg(test)]

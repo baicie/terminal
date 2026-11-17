@@ -49,6 +49,17 @@ pub async fn import_backup_data<R: Runtime>(
         .map_err(|error| error.to_string())
 }
 
+/// The plugin's own pool for the application database.
+///
+/// Reuse rather than open a second pool: every backend feature that reads the
+/// application database has to serialize against the same connections the frontend's
+/// `execute` calls use, or two writers disagree about what the file contains.
+pub(crate) async fn application_pool<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<Pool<Sqlite>, String> {
+    sqlite_pool(app).await
+}
+
 /// Reuse the plugin's loaded pool instead of opening a second one: the import
 /// must serialize against the same connections the rest of the app writes on.
 async fn sqlite_pool<R: Runtime>(app: &AppHandle<R>) -> Result<Pool<Sqlite>, String> {

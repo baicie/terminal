@@ -1,19 +1,25 @@
 /**
  * Running one AI request: the glue between the contracts.
  *
- * Every rule it enforces was established by a module that tests it in isolation; this
- * file is where they meet, and it is deliberately thin. It:
+ * ## Where the request actually goes now
  *
- * 1. refuses a context the user has not approved, or one whose text changed since
- *    approval, or one bound to a session the user has left;
- * 2. resolves the profile's key at the moment of the call and refuses if the profile
- *    is unusable;
- * 3. builds the delimited payload;
- * 4. streams the driver's events through the reducer, so the late-chunk rule holds on
- *    the real path and not only in a test;
- * 5. cancels by tripping a signal, and reports the cancellation as its own state.
+ * It goes to Rust. This class keeps the checks that are about the *user's intent* —
+ * a context they approved, a text that has not changed since, a session they have not
+ * left, one run at a time — and hands the approved text across the IPC boundary.
+ * Everything that touches the network or the key (endpoint validation against the
+ * stored row, the vault read, the HTTP request, the SSE parse, the timeout) is on the
+ * other side, in `src-tauri/src/ai/`.
  *
- * What it never does: write to a terminal. A `draft-command` result is text.
+ * The pre-flight checks here are not the security boundary and are not presented as
+ * one: the backend repeats every one of them on the values it re-reads from the
+ * profile row. What they buy is a refusal that names the one thing the user has to do
+ * ("review the text again") without a round trip.
+ *
+ * ## What it never does
+ *
+ * Write to a terminal. A `draft-command` result is text. And: hold an API key. There
+ * is no `readKey` in the dependencies any more — the caller cannot supply one, which
+ * is a stronger guarantee than a comment saying not to.
  */
 
 import {
@@ -24,31 +30,34 @@ import {
   type AiFailure,
   type AiRun,
 } from './ai-run-state'
-import { buildRequestPayload } from './ai-prompt'
-import { contextMatchesSession, contextStillApproved, type ApprovedContext } from './context-review'
 import {
-  checkEndpoint,
-  profileProblem,
-  type AiProvider,
-  type ModelProfilePublic,
-} from './model-profile'
-import type { CancelSignal, DriverRequest, ModelDriver } from './model-driver'
-import { OpenAiCompatibleDriver } from './openai-compatible-driver'
+  contextMatchesSession,
+  contextStillApproved,
+  type ApprovedContext,
+} from './context-review'
+import { checkEndpoint, profileProblem, type ModelProfilePublic } from './model-profile'
+import { contextForIpc, type AiBackendEvent, type AiGenerateOutcome } from './ai-ipc'
 
 /** What the orchestration needs from the app, injected so it is testable. */
 export interface AiRuntimeDeps {
-  /** The driver for a provider family. */
-  driverFor(provider: AiProvider): ModelDriver | undefined
-  /** Read a profile's key. Throws when a *stored* key cannot be read. */
-  readKey(profileId: string): Promise<string | undefined>
+  /** Send one request to the backend and stream its events. */
+  generate(
+    input: {
+      requestId: string
+      profileId: string
+      action: AiAction
+      context: ReturnType<typeof contextForIpc>
+    },
+    onEvent: (event: AiBackendEvent) => void,
+  ): Promise<AiGenerateOutcome>
+  /** Ask the backend to cancel one run. */
+  cancel(requestId: string): Promise<unknown>
   /** The session the user can see, for the approval check. */
   visibleSessionId(): string | null
   /** Called with each new state so a component can render it. */
   onState(state: AiRun): void
   /** Monotonic ids, injected so tests are deterministic. */
   nextRunId(): string
-  /** One-shot cancellation token per run. */
-  createSignal(): CancelSignal & { cancel(): void }
 }
 
 /** The outcome of asking to start a run. */
@@ -75,11 +84,12 @@ const REFUSAL_MESSAGES: Record<StartRefusal, string> = {
  * The orchestrator.
  *
  * Holds no state of its own beyond the current run: the reducer owns it, and this
- * class exists to sequence the checks and translate driver events into reducer events.
+ * class exists to sequence the checks and translate backend events into reducer
+ * events.
  */
 export class AiRunner {
   private state: AiRun = idleRun()
-  private signal: (CancelSignal & { cancel(): void }) | null = null
+  private currentRunId: string | null = null
   private readonly listeners = new Set<(state: AiRun) => void>()
 
   constructor(private readonly deps: AiRuntimeDeps) {}
@@ -105,9 +115,10 @@ export class AiRunner {
   /**
    * Start a run.
    *
-   * All the refusals happen before a single byte is sent, and each names the one thing
-   * the user has to do — "review the text again" is actionable; "the request failed"
-   * is not.
+   * All the refusals happen before the IPC call, and each names the one thing the
+   * user has to do — "review the text again" is actionable; "the request failed" is
+   * not. The backend re-checks the same rules against the stored profile, so a
+   * refusal here is a courtesy, never the guarantee.
    */
   async start(input: {
     action: AiAction
@@ -130,12 +141,8 @@ export class AiRunner {
       return this.refuse('profile-unusable', 'That endpoint is not allowed.')
     }
 
-    const driver = this.deps.driverFor(input.profile.provider)
-    if (!driver) {
-      return this.refuse('profile-unusable', 'No driver is available for that provider.')
-    }
-
     const runId = this.deps.nextRunId()
+    this.currentRunId = runId
     this.transition({
       type: 'prepare',
       runId,
@@ -144,53 +151,30 @@ export class AiRunner {
       hostId: input.context.hostId,
     })
 
-    let apiKey: string | undefined
-    try {
-      apiKey = await this.deps.readKey(input.profile.id)
-    } catch (error) {
-      // A key that exists but cannot be read is a provider problem, not a missing
-      // key. Reporting it as "no key" would send the user to re-enter one.
-      this.transition({
-        type: 'fail',
-        runId,
-        failure: {
-          kind: 'unauthorized',
-          message: error instanceof Error ? error.message : String(error),
-        },
-      })
-      return { ok: true, runId }
-    }
-
-    const payload = buildRequestPayload(input.action, input.context.text)
-    const request: DriverRequest = {
-      requestId: runId,
-      profileId: input.profile.id,
-      endpoint: input.profile.endpoint,
-      modelId: input.profile.modelId,
-      temperature: input.profile.temperature,
-      maxOutputTokens: input.profile.maxOutputTokens,
-      timeoutMs: input.profile.timeoutMs,
-      streaming: input.profile.streaming,
-      apiKey: apiKey ?? null,
-      action: input.action,
-      context: input.context,
-      messages: payload.messages,
-    }
-
-    const signal = this.deps.createSignal()
-    this.signal = signal
+    const ipcContext = contextForIpc(input.context)
     this.transition({ type: 'start', runId })
 
     // Not awaited: the caller gets the run id immediately and observes progress
     // through `onState`. Waiting here would make the UI block for the whole answer.
-    void this.pump(runId, driver, request, signal)
+    void this.pump(
+      runId,
+      {
+        requestId: runId,
+        profileId: input.profile.id,
+        action: input.action,
+        context: ipcContext,
+      },
+    )
     return { ok: true, runId }
   }
 
   /** Cancel the current run. Idempotent, and a no-op when nothing is running. */
   cancel(): void {
     if (!this.state.runId) return
-    this.signal?.cancel()
+    // The backend holds the flag, so the rejection here is not ours to interpret:
+    // a run that already finished has nothing to cancel, and the stream's own
+    // terminal event is what moves the state.
+    void this.deps.cancel(this.state.runId).catch(() => undefined)
     this.transition({ type: 'cancel', runId: this.state.runId })
   }
 
@@ -206,35 +190,21 @@ export class AiRunner {
 
   private async pump(
     runId: string,
-    driver: ModelDriver,
-    request: DriverRequest,
-    signal: CancelSignal,
+    request: Parameters<AiRuntimeDeps['generate']>[0],
   ): Promise<void> {
     try {
-      for await (const event of driver.stream(request, signal)) {
+      const outcome = await this.deps.generate(request, event => {
         // Every event goes through the reducer, which is what applies the late-chunk
         // rule on the real path rather than only in a test.
-        if (event.type === 'chunk') {
-          this.transition({ type: 'chunk', runId, text: event.text })
-        } else if (event.type === 'done') {
-          this.transition({ type: 'complete', runId })
-        } else {
-          if (event.failure.kind === 'cancelled') {
-            this.transition({ type: 'cancelled', runId })
-          } else {
-            this.transition({ type: 'fail', runId, failure: event.failure })
-          }
+        this.applyBackendEvent(runId, event)
+      })
+      // A refusal never reached a socket. The state machine shows it as a failure of
+      // this run, with the backend's sentence, so the dock has one thing to render.
+      if (!outcome.sent && outcome.failure && this.state.runId === runId) {
+        const status = this.state.status
+        if (status === 'running' || status === 'streaming' || status === 'cancelling') {
+          this.transition({ type: 'fail', runId, failure: outcome.failure })
         }
-      }
-      // A stream that ended without `done` and without a failure: the reducer's state
-      // decides whether that is a completion (it already got `done`) or an abrupt
-      // close, which is reported rather than silently left running.
-      if (this.state.runId === runId && (this.state.status === 'running' || this.state.status === 'streaming')) {
-        this.transition({
-          type: 'fail',
-          runId,
-          failure: { kind: 'bad-response', message: 'The response ended unexpectedly.' },
-        })
       }
     } catch (error) {
       if (this.state.runId === runId) {
@@ -242,7 +212,7 @@ export class AiRunner {
           type: 'fail',
           runId,
           failure: {
-            kind: signal.cancelled ? 'cancelled' : 'bad-response',
+            kind: 'bad-response',
             message: error instanceof Error ? error.message : String(error),
           },
         })
@@ -253,12 +223,41 @@ export class AiRunner {
         // "cancelling" forever.
         this.transition({ type: 'cancelled', runId })
       }
-      this.signal = null
+      if (this.currentRunId === runId) this.currentRunId = null
     }
   }
 
-  private transition(event: Parameters<typeof reduceRun>[1]): void {
-    const next = reduceRun(this.state, event)
+  /** Translate one backend event into a reducer event. */
+  private applyBackendEvent(runId: string, event: AiBackendEvent): void {
+    if (event.type === 'chunk') {
+      this.transition({ type: 'chunk', runId, text: event.text })
+      return
+    }
+    if (event.type === 'done') {
+      this.transition({ type: 'complete', runId })
+      return
+    }
+    const failure: AiFailure = event.failure
+    if (failure.kind === 'cancelled') {
+      // The reducer only accepts the acknowledgement from `cancelling` — a rule that
+      // exists so "cancelled" is never shown while chunks may still arrive. The
+      // backend can be the one that ends the run though (its own cancel flag, or a
+      // stop request from another surface), so record the cancel first rather than
+      // dropping the event and leaving the dock streaming forever.
+      if (this.state.runId === runId && !this.isCancelling()) {
+        this.transition({ type: 'cancel', runId })
+      }
+      this.transition({ type: 'cancelled', runId })
+    } else {
+      this.transition({ type: 'fail', runId, failure })
+    }
+  }
+
+  private isCancelling(): boolean {
+    return this.state.status === 'cancelling'
+  }
+
+  private transition(event: Parameters<typeof reduceRun>[1]): void {    const next = reduceRun(this.state, event)
     if (next === this.state) return
     this.state = next
     this.deps.onState(next)
@@ -275,18 +274,6 @@ export class AiRunner {
   private refuse(refusal: StartRefusal, message?: string): StartResult {
     return { ok: false, refusal, message: message ?? REFUSAL_MESSAGES[refusal] }
   }
-}
-
-/** The driver registry. One entry today; a second provider is a line here. */
-export function driverRegistry(): Map<AiProvider, ModelDriver> {
-  const registry = new Map<AiProvider, ModelDriver>()
-  const openai = new OpenAiCompatibleDriver()
-  // `local` speaks the same wire format, which is the whole reason one adapter covers
-  // both. `anthropic` is declared in the profile type and has no driver yet, so
-  // `driverFor` returns undefined and the run is refused rather than attempted.
-  registry.set('openai-compatible', openai)
-  registry.set('local', openai)
-  return registry
 }
 
 /** A failure the UI can render without inventing one. */

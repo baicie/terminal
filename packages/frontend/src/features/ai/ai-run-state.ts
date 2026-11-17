@@ -56,9 +56,15 @@ export type AiFailureKind =
   | 'offline'
   | 'bad-response'
   | 'no-profile'
+  | 'profile-unusable'
+  | 'context-not-approved'
   | 'context-changed'
   | 'context-too-large'
   | 'cancelled'
+  /** The stored key exists but could not be read: unlock the vault, or re-save it. */
+  | 'key-unreadable'
+  /** This build was compiled without the `ai` feature. */
+  | 'feature-disabled'
 
 export interface AiFailure {
   kind: AiFailureKind
@@ -113,6 +119,9 @@ export function idleRun(): AiRun {
 
 /** Errors that mean "stop and tell the user", never "retry silently". */
 export function isTerminalFailure(kind: AiFailureKind): boolean {
+  // `key-unreadable` and `feature-disabled` are user actions, not transient network
+  // conditions: retrying the same request produces the same answer.
+  if (kind === 'key-unreadable' || kind === 'feature-disabled') return true
   return kind !== 'rate-limited' && kind !== 'offline' && kind !== 'timeout'
 }
 
