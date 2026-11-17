@@ -93,15 +93,22 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 
 ## UX-4 · AI Assistant 与 Server Inspector
 
-| 能力 | 状态 |
-| --- | --- |
-| ModelDriver / OpenAI-compatible Adapter | `NOT_RUN` |
-| Model Profiles / API Key 安全存储 | `NOT_RUN`（依赖 Provider Registry） |
-| 四项能力（Explain Selection / Error / Summarize / Draft Command） | `NOT_RUN` |
-| Server Inspector | `NOT_RUN` |
-| Rig MSRV / 体积 / Audit 评估 | `NOT_RUN` |
+PR **#96**（`feat/tn-ux4-ai-inspector`），三个提交，**Draft，未合并**。
 
-整阶段未开始。
+| 能力 | 状态 | 位置 | 说明 |
+| --- | --- | --- | --- |
+| **Model Profile 契约 + endpoint 安全规则** | **`PASS`（自动化）** | `features/ai/model-profile.ts` | 16 条测试。HTTPS 允许 / 回环 HTTP 允许 / 远程明文 HTTP 需显式确认 / 其他 scheme 拒绝。`ModelProfilePublic` **没有可放 API key 的字段** |
+| **Context Review（用户明确选择）** | **`PASS`（自动化）** | `features/ai/context-review.ts` | 16 条测试。64 KiB **字节**上限（CJK 用例）、脱敏编辑列表、发送时重算摘要、会话绑定 |
+| **AI Run 状态机** | **`PASS`（自动化）** | `features/ai/ai-run-state.ts` | 16 条测试。迟到 chunk 三方向丢弃、取消需确认、完成后失败不污染好结果、stale 标记 |
+| **Prompt 构造与注入防护** | **`PASS`（自动化）** | `features/ai/ai-prompt.ts` | 14 条测试。指令不随内容变化、分隔符逐级升级、`draftRisk` 只标记不改写 |
+| **OpenAI-compatible HTTP Adapter** | **`PASS`（真实本地 HTTP server）** | `features/ai/openai-compatible-driver.ts` | 24 条测试。流式/取消/超时/401/403/429/500/400；provider body 与 key 不进入错误消息；连接测试不携带终端文本 |
+| **Server Inspector 解析与策略层** | **`PASS`（自动化）** | `features/inspector/server-inspector.ts` | 21 条测试。固定 probe allowlist（无插值点）、缺失数据为 null 而非 0、TTL 边界含等号、平台不认识则拒绝猜测 |
+| AI Dock UI / Profile 存储 / `ai_generate` IPC | `NOT_RUN` | — | 契约已就绪，UI 与持久化未接 |
+| `INSPECTOR_SSH_PROBE`（真实 SSH 执行） | `NOT_RUN` | — | 需要真实主机；当前只有解析/格式化/策略层 |
+| `REAL_MODEL_E2E` | `NOT_RUN` | — | 只有本地 fake HTTP server |
+| Rig MSRV / 体积 / Audit 评估 | `NOT_RUN` | — | 按设计延后，需独立 ADR |
+
+**`AI_MVP_READY = NO`、`SERVER_INSPECTOR_READY = NO`。** 自动化契约完整，但用户今天无法在应用里使用 AI 或 Inspector。
 
 ---
 
@@ -109,7 +116,8 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 
 | PR | 分支 | Head SHA | CI | 状态 | 风险 / 回滚 |
 | --- | --- | --- | --- | --- | --- |
-| [#95](https://github.com/baicie/terminal/pull/95) | `feat/tn-ux1-04-session-sftp-lifecycle` | `785ec1f` | 见 PR（17+ 通过 / 0 失败） | Draft | 三次提交可独立回滚；无 schema / IPC / Identifier 变更 |
+| [#95](https://github.com/baicie/terminal/pull/95) | `feat/tn-ux1-04-session-sftp-lifecycle` | `7a532cd` | **18/18 pass** | **已合并 `dbbde31`** | 各提交可独立回滚；无 schema / IPC / Identifier 变更 |
+| [#96](https://github.com/baicie/terminal/pull/96) | `feat/tn-ux4-ai-inspector` | `ea62e76` | **18/18 pass** | 待合并（base 已含 #95） | 四个提交可独立回滚；无 schema / IPC / Rust 变更 |
 
 ### 提交明细
 
