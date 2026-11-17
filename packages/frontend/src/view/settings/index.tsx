@@ -24,6 +24,8 @@ import { StorageSettings } from './storage-settings'
 import { TeamSettings } from './team-settings'
 import { TerminalSettings } from './terminal-settings'
 import { ExtensionSettings } from './extension-settings'
+import { ModelProfileEditor } from './ai-profile-editor'
+import { useAiRuntime } from '@/features/ai/use-ai-runtime'
 import { getExtensionRegistry } from '@/features/extensions/use-extension-runtime'
 
 const SettingsView: React.FC = () => {
@@ -34,6 +36,7 @@ const SettingsView: React.FC = () => {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const ai = useAiRuntime()
 
   const dirty = settings !== null && savedSettings !== null
     && JSON.stringify(settings) !== JSON.stringify(savedSettings)
@@ -166,7 +169,7 @@ const SettingsView: React.FC = () => {
 
       <ViewContent className="px-6 pb-6">
         <Tabs defaultValue="appearance" className="w-full max-w-3xl">
-          <TabsList className="mb-6 grid h-auto w-full grid-cols-3 sm:grid-cols-7">
+          <TabsList className="mb-6 grid h-auto w-full grid-cols-3 sm:grid-cols-8">
             <TabsTrigger value="appearance">
               {t('settings.appearance')}
             </TabsTrigger>
@@ -176,6 +179,7 @@ const SettingsView: React.FC = () => {
             </TabsTrigger>
             <TabsTrigger value="storage">{t('settings.storage')}</TabsTrigger>
             <TabsTrigger value="team">{t('settings.team')}</TabsTrigger>
+            <TabsTrigger value="ai">{t('settings.ai.title')}</TabsTrigger>
             <TabsTrigger value="extensions">
               {t('settings.extensions.title')}
             </TabsTrigger>
@@ -220,6 +224,10 @@ const SettingsView: React.FC = () => {
           </TabsContent>
 
           {/* Data Tab */}
+          <TabsContent value="ai">
+            <ModelProfileEditor profiles={ai.profiles} onChanged={() => ai.reload()} />
+          </TabsContent>
+
           <TabsContent value="extensions">
             <ExtensionSettings
               enabled={settings.enabledExtensions ?? []}
