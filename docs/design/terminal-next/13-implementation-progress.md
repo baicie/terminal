@@ -146,7 +146,7 @@ Inspector 在 PR **#97**（`feat/tn-ux4-ai-dock`，12 个提交）。
 | **`INSPECTOR_REAL_SSH`** | **`PASS`** | `src-tauri/src/inspector_probe_e2e_tests.rs` + `scripts/verify-install/inspector-probe-e2e.mjs` | 真实 OpenSSH：平台探测返回 `uname -s`、探测输出含全部 `key=` 行、两条并发 exec 各自完成、关闭连接后探测快速失败不挂起。本机跑 **4/4 PASS** |
 | `REAL_MODEL_E2E` | `BLOCKED_EXTERNAL` | — | 只有本地 fake HTTP server；未调用真实 provider（本机无 ollama / LM Studio / 任何 11434·1234·8080·8000 监听） |
 | `AI_DOCK_REAL_GUI` / `INSPECTOR_REAL_GUI` | `NOT_RUN` | — | 无人真实点击 |
-| Rig MSRV / 体积 / Audit 评估 | `NOT_RUN` | — | 按设计延后，需独立 ADR |
+| Rig MSRV / 体积 / Audit 评估 | **`PASS`** | `14-rig-msrv-adr.md` | 本轮实测：MSRV 硬冲突（0.45+ 要 1.97.1，我们锁 1.96，只有 0.44 可用）、依赖 +20 crate、体积 **+6.14 MB**（strip 后 +5.05 MB）、audit 0 vulnerabilities、冷构建 108 s。**决定不采用 Rig**，维持现有 Rust ModelDriver |
 
 ### ✅ 与设计的三处偏离已闭合（AI transport 迁到 Rust）
 
