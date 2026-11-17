@@ -47,6 +47,33 @@ function setup(options: { load?: () => Promise<SnippetRecord[]>, selection?: str
   return { registry, gateway, dock: () => dock! }
 }
 
+describe('the captured draft has a way out', () => {
+  it('captures a draft, then discards it without writing anything', async () => {
+    // A capture that can only be saved is a trap: the user who grabbed the wrong text
+    // would have to save it and then delete it from the Snippets page. This is the only
+    // cleanup path the draft has, so it is asserted on the real handle rather than
+    // assumed to exist.
+    const { registry, dock } = setup({ selection: 'kubectl get pods' })
+    await registry.enable(SNIPPET_DOCK_EXTENSION_ID)
+
+    expect(await dock().captureSelection()).toBe(true)
+    expect(dock().state().pendingDraft?.text).toBe('kubectl get pods')
+
+    dock().discardDraft()
+    expect(dock().state().pendingDraft).toBeNull()
+  })
+
+  it('discarding an empty draft is a no-op, not a throw', () => {
+    // The button is rendered next to a draft, but a double click or a fast disable can
+    // reach this with nothing pending.
+    const { registry, dock } = setup()
+    return registry.enable(SNIPPET_DOCK_EXTENSION_ID).then(() => {
+      expect(() => dock().discardDraft()).not.toThrow()
+      expect(dock().state().pendingDraft).toBeNull()
+    })
+  })
+})
+
 describe('the shipped snippet-dock manifest', () => {
   it('declares only capabilities it uses', () => {
     // A manifest that asks for more than it needs is a manifest that has to be
