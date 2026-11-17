@@ -203,4 +203,10 @@ export default {
   'hosts.connectCredential.passphraseLabel': '口令（可选）',
   'hosts.connectCredential.notSaved': '该凭据仅用于本次连接。',
   'hosts.connectCredential.connect': '连接',
+  'hosts.saveCredential.title': '保存这个凭据？',
+  'hosts.saveCredential.description':
+    '{{name}}（{{user}}@{{hostname}}）的凭据已验证可用。是否保存，以免下次重新输入？',
+  'hosts.saveCredential.whyNow': '只会在登录成功后询问，不会保存未经证实的凭据。',
+  'hosts.saveCredential.save': '保存',
+  'hosts.saveCredential.notNow': '暂不保存',
 }

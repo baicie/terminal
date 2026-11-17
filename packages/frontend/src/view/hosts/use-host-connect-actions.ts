@@ -28,6 +28,7 @@ import {
   type OneTimeSecret,
 } from '@/features/terminal/services/one-time-credential'
 import { removeTemporaryTerminalProfile } from '@/features/terminal/services/temporary-terminal-profiles'
+import { armSaveAfterAuthForTab } from './use-save-after-auth'
 
 export interface HostConnectActions {
   credentialPromptHost: Host | null
@@ -76,6 +77,10 @@ export function useHostConnectActions(): HostConnectActions {
           profileId,
           hostId: host.id,
         })
+        // Armed, not shown: the connection has not been attempted yet. The prompt
+        // appears only if this tab's session reports `connected`, which a rejected
+        // credential never does — see `pending-save.ts`.
+        armSaveAfterAuthForTab(newTab.id, host, secret, profileId)
         setCredentialPromptHost(null)
         navigate(terminalTabPath(newTab.id))
       } catch (error) {

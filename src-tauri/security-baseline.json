@@ -256,6 +256,29 @@
       "reason": "Same absent QUIC subtree as RUSTSEC-2026-0185: quinn-udp <- quinn <- reqwest behind the unused `http3` feature. Disclosed 2026-11-13.",
       "evidence": "`cargo tree --invert quinn-udp --target all --all-features` prints `nothing to print`; the full tree contains no quinn-udp node.",
       "reReviewWhen": "Same as RUSTSEC-2026-0185."
+    },
+    {
+      "id": "RUSTSEC-2026-0548",
+      "crate": "zip",
+      "version": "9.0.0",
+      "title": "ZipStreamReader extracts entries under local-header names that can differ from the central directory",
+      "severity": "unscored",
+      "reachable": false,
+      "reason": "Compiled into the binary but not on an attacker-controlled path. The crate is built — tauri-plugin-updater is a non-optional dependency and its installer calls zip::ZipArchive — but the archive it extracts is the app update package, and minisign verification rejects anything not signed by this project's updater key. The advisory needs the attacker to supply the ZIP: a local-header/central-directory name mismatch only matters when untrusted bytes reach the extractor, and here they would have to carry a valid signature first. Not patched because zip >= 9.0.5 cannot be selected: it pulls a nix requirement that conflicts with the version russh-cryptovec locks.",
+      "evidence": "cargo tree --locked --target all -i zip -e normal prints zip 9.0.0 <- tauri-plugin-updater 2.14.1 <- terminal, so the crate is built. In tauri-plugin-updater 2.14.1 src/updater.rs the verify_signature call is at line 902 and the ZipArchive extraction at line 1145, so the signature check precedes extraction. cargo update -p zip --precise 9.0.5 fails with the nix conflict (previously selected nix 0.31.2 from russh-cryptovec 0.62.0 via russh 0.65.0) rather than silently succeeding. Full chain checked, not just the two line numbers: install() calls self.verify(bytes)? before install_inner() (updater.rs:921-925); download_and_install() reaches install_inner() only after download() has verified (:933-941); install_inner() calls self.extract(bytes) (:1015); extract() dispatches to extract_zip() only when the bytes are a zip (:1119-1126); extract_zip() is the sole caller of zip::ZipArchive (:1141-1146). There is no path to the extractor that skips verification.",
+      "reReviewWhen": "zip gains a release resolving against russh-cryptovec's nix pin; tauri-plugin-updater changes how it extracts; or this project starts extracting user-supplied archives anywhere — that last one makes this a live exposure immediately, because the signature gate would no longer sit in front of the extractor."
+    },
+    {
+      "id": "RUSTSEC-2026-0543",
+      "crate": "chrono",
+      "version": "0.4.44",
+      "title": "chrono is unmaintained",
+      "severity": "unscored",
+      "reachable": false,
+      "reason": "Unmaintained notice, not a vulnerability: there is no exploit path, the crate has simply stopped receiving fixes. Reached transitively through the Tauri stack; no maintained fork is drop-in compatible, and switching would be a larger change than a dependency bump. Recorded so the gate stays honest about what it accepts rather than silently ignoring it.",
+      "evidence": "cargo tree --locked --target all -i chrono -e normal shows the chain into the Tauri crates. The advisory carries no patched version to move to because the issue is the absence of a maintainer, not a defect.",
+      "reReviewWhen": "A maintained successor replaces chrono anywhere in the Tauri tree, or a real vulnerability is filed against a chrono API this build uses.",
+      "kind": "unmaintained"
     }
   ],
   "advisoryDatabase": {

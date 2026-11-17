@@ -8,6 +8,23 @@ import { useWorkspaceStore } from '@/store/workspace'
 import { TerminalWorkbench } from './terminal-workbench'
 import { isTerminalPath } from '@/router/terminal-route'
 
+/**
+ * The save prompt for a one-time credential.
+ *
+ * Mounted here rather than in the Hosts view because the question is raised by the
+ * connection that proved the credential, and connecting navigates to the terminal — so
+ * by the time the answer is needed the Hosts route may no longer exist. This component
+ * only renders while the terminal layer does, which is exactly the lifetime the question
+ * has.
+ *
+ * Lazy so a build without any one-time connection never loads it.
+ */
+const SaveCredentialPrompt = React.lazy(() =>
+  import('@/view/hosts/save-credential-prompt').then(module => ({
+    default: module.SaveCredentialPrompt,
+  })),
+)
+
 const TerminalContainer = React.lazy(() =>
   import('@/features/terminal/components/terminal-container/container').then(
     module => ({ default: module.TerminalContainer }),
@@ -107,6 +124,7 @@ export function TerminalByUrl() {
 
   return (
     <React.Suspense fallback={<TerminalLoadingFallback />}>
+      <SaveCredentialPrompt />
       <TerminalWorkbench
         tabs={tabs}
         visibleTabIds={visibleIds}
