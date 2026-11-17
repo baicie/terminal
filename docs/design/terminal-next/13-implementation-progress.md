@@ -177,6 +177,57 @@ manifest 判断的。
 OpenAI-compatible 端点，也不用开发会话自身的凭据冒充验收），`AI_DOCK_REAL_GUI` 仍是
 `NOT_RUN`。**`AI_MVP_READY` 与 `SERVER_INSPECTOR_READY` 仍为 `NO`。**
 
+### 迁移中自己引入又修掉的两个缺陷
+
+两个都是**顺着调用链读出来**的，不是测试变红发现的——与 Phase 10.3 记录的那类问题同形，
+这次是自己写的新代码里重演。
+
+1. **SSE 多字节字符被按块解码切碎。** 移植时把 WebView 里的
+   `TextDecoder({stream: true})` 写成了 `String::from_utf8_lossy(&chunk)`，于是任何跨
+   TCP 读边界的 UTF-8 序列都会变成替换字符。前端实现本来是流式解码的，**照抄语义时漏了
+   这一层**。修法是把缓冲区改成 `Vec<u8>`，只在遇到 `\n` 时才解码整行（多字节 UTF-8
+   里不可能出现 `0x0A`，所以按行切一定不会切在字符中间）。先红后绿：
+   `a_multibyte_character_split_across_tcp_reads_is_not_corrupted` 在旧实现上得到
+   `"\u{fffd}\u{fffd}\u{fffd}误：权限不足"`，新实现得到 `"错误：权限不足"`。
+
+2. **`AiRuns` 的 `len()` 是无人使用的测试脚手架。** clippy 报 `never used`。删掉而不是
+   加 `#[allow]`：它在唯一用途（断言 in-flight 计数）上本来也不成立——那个计数应该由
+   `ai_generate` 的真实生命周期证明，不是由一个只在测试里存在的方法。
+
+另外三处是**测试自身的**问题，修的是测试不是产品：`signature_of()` 一开始不跨行、也不
+跳过 `<R: Runtime>` 泛型，扫描密钥命令时还会扫到自己的断言文本。这三条都会让测试**假
+失败**，所以按「测试必须证明它声称的事」处理。
+
+**代码读取链的实测**（按本项目历史缺陷的要求走一遍）：`Command Palette open-ai-dock`
+→ `setRightPanel('ai')` → `RightPanel` 渲染 `AiDock` → `runner.start()` →
+`deps.generate` → `invoke('ai_generate', { request, onEvent })` → `lib.rs` 的
+`ai::ai_generate`。参数重命名 `requestId→request_id` / `onEvent→on_event` 由
+`ai::ipc_tests` 按两侧源码钉住——这条链在本轮之前没有任何东西守着。
+
+### 合入后补丁：重复 `requestId` 不再顶掉取消句柄（#100）
+
+`AiRuns::register` 原来无条件 `insert`，同 id 的第二次运行会**覆盖第一次的取消句柄**——
+`cancel(id)` 只打到后来那个，第一个继续烧 token 且无人能停。`finish()` 同样盲：先结束的
+那个删掉的是第二个的条目。
+
+经 dock 走不到（前端 id 单调递增），**而这正是它活过审查的原因**：安全性质长在调用方的
+id 生成器里，而不是拥有该句柄的地方。现在 `register` 返回 `Option`，重复 id 被拒绝
+（`AiFailureKind::Busy`），发生在开 socket 之前。
+
+**过程记录：这件事被两个会话同时发现并各自修了一遍。** 评估一个遗留的并行 worktree 时
+发现它，同一时间另一个会话也开了 PR。两份实现最终在 `register()` 上**字节级相同**，
+差异只是 failure kind 命名（`RunInProgress` vs `Busy`，采用后者）与测试组织。先创建、
+注释更完整的那份被合并（#100），另一份关闭并把本节文字补到这里。
+
+**我在这轮判断上错过一次，值得记下来**：我最初用 `git diff A...B` 对比两条分支，把方向
+读反了，于是得出「#100 没有实现修复」——差点据此建议关闭别人正确的 PR。功能等价的判断
+必须先确认 diff 的 A/B 方向，再下结论。
+
+同一 worktree 里还有一处**没有采纳**的设计：它把传输层作为参数注入
+`execute(request, profile, cancel, transport)`，从而能在无 socket 的情况下测整条运行链。
+那对覆盖「profile 加载后、发请求前」的失败分支确实更有力，但属于测试重构，收益/风险比
+不如缺陷修复本身，记为后续项。
+
 ### 本轮自己发现并修复的两个可达性缺陷
 
 这两个都不是「测试变红」发现的，而是**顺着调用链读出来**的——正是 Phase 10.3
