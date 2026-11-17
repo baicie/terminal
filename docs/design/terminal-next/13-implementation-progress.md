@@ -107,7 +107,9 @@ PR **#96**（`feat/tn-ux4-ai-inspector`），三个提交，**Draft，未合并*
 | **运行编排 `AiRunner`** | **`PASS`（自动化）** | `features/ai/ai-runner.ts` | 15 条测试。7 类拒绝均在发送前；事件穿过 reducer；异常关闭上报；取消被确认 |
 | **AI Dock UI** | **`IMPLEMENTED`** | `layout/ai-dock-{view,config,result}.tsx` | 14 条组件测试。`ai` 已是可渲染占位者 + Command Palette 入口。**真实 GUI 未点击** |
 | **Profile 编辑器** | **`IMPLEMENTED`** | `view/settings/ai-profile-{editor,form}.tsx` | Settings 新增 AI 标签页；明文确认不继承；key 留空即保留 |
-| `INSPECTOR_SSH_PROBE`（真实 SSH 执行） | `NOT_RUN` | — | 需要真实主机；当前只有解析/格式化/策略层 |
+| **Inspector 真实探测链** | **`PASS`（自动化）** | `features/inspector/inspector-probe.ts` | 13 条测试。先 `uname -s` 再选命令集；未知平台报 `unsupported-platform` 不猜测；权限/缺工具/超时/断连分别分类；部分数据仍返回 |
+| **Server Inspector 面板** | **`IMPLEMENTED`** | `layout/server-inspector-{view,metrics}.tsx` | 11 条组件测试。无 timer（三次 TTL 后 exec 仍只调用 2 次）；缺失数据显示 N/A；切 host 清空结果 |
+| `INSPECTOR_REAL_SSH`（真实 sshd） | `NOT_RUN` | — | exec 层在测试中是替身；未在真实主机执行 |
 | `REAL_MODEL_E2E` | `NOT_RUN` | — | 只有本地 fake HTTP server；未调用真实 provider |
 | `AI_DOCK_REAL_GUI` | `NOT_RUN` | — | 无人真实点击 |
 | Rig MSRV / 体积 / Audit 评估 | `NOT_RUN` | — | 按设计延后，需独立 ADR |
