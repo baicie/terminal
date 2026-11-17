@@ -65,6 +65,8 @@ export type AiFailureKind =
   | 'key-unreadable'
   /** This build was compiled without the `ai` feature. */
   | 'feature-disabled'
+  /** A run with this request id is already in flight. */
+  | 'busy'
 
 export interface AiFailure {
   kind: AiFailureKind
