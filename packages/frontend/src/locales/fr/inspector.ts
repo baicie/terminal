@@ -1,0 +1,15 @@
+export default {
+  'inspector.title': 'Inspecteur de serveur',
+  'inspector.noSession': 'Ouvrez une session pour inspecter l’hôte.',
+  'inspector.running': 'Lecture de l’hôte…',
+  'inspector.observedAt': 'Relevé à {{time}}',
+  'inspector.stale': 'Périmé — actualisez',
+  'inspector.os': 'Système',
+  'inspector.uptime': 'Durée de fonctionnement',
+  'inspector.load': 'Charge',
+  'inspector.cpu': 'CPU',
+  'inspector.memory': 'Mémoire',
+  'inspector.disk': 'Disque (/)',
+  'inspector.memoryUsed': '{{percent}} % de mémoire utilisée',
+  'inspector.source': 'Recueilli avec',
+}

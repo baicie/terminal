@@ -1,0 +1,15 @@
+export default {
+  'inspector.title': 'Server inspector',
+  'inspector.noSession': 'Open a session to inspect the host.',
+  'inspector.running': 'Reading the host…',
+  'inspector.observedAt': 'Observed {{time}}',
+  'inspector.stale': 'Stale — refresh',
+  'inspector.os': 'OS',
+  'inspector.uptime': 'Uptime',
+  'inspector.load': 'Load',
+  'inspector.cpu': 'CPU',
+  'inspector.memory': 'Memory',
+  'inspector.disk': 'Disk (/)',
+  'inspector.memoryUsed': '{{percent}}% of memory in use',
+  'inspector.source': 'Collected with',
+}

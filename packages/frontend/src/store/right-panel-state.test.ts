@@ -63,28 +63,29 @@ describe('which occupants this build renders', () => {
     expect([...RIGHT_PANEL_OCCUPANTS]).toContain('snippets')
     expect([...RIGHT_PANEL_OCCUPANTS]).toContain('inspector')
     expect([...RIGHT_PANEL_OCCUPANTS]).toContain('ai')
-    // Each occupant moved here when its view shipped, through the contract rather than
-    // beside it: `snippets` with the snippet dock, `ai` with the assistant dock.
-    // `inspector` stays declared-but-not-built.
+    // Every occupant in the union now has a view, so the declared list and the
+    // implemented list are the same set. The distinction stays in the code because
+    // the *next* occupant will be declared before it ships — that is what the union
+    // is for.
     expect([...IMPLEMENTED_RIGHT_PANEL_OCCUPANTS]).toEqual([
       'none',
       'sftp',
       'snippets',
       'ai',
+      'inspector',
     ])
-    expect(isRightPanelImplemented('sftp')).toBe(true)
-    expect(isRightPanelImplemented('snippets')).toBe(true)
-    expect(isRightPanelImplemented('ai')).toBe(true)
-    expect(isRightPanelImplemented('inspector')).toBe(false)
+    for (const mode of RIGHT_PANEL_OCCUPANTS) {
+      expect(isRightPanelImplemented(mode), mode).toBe(true)
+    }
   })
 
   it('stays closed rather than rendering an empty panel for a future occupant', () => {
     // Falling back to a *different* panel would open something the user did not
     // choose; falling back to `none` keeps the dock closed and says nothing false.
-    expect(resolveRightPanelMode('inspector')).toBe('none')
-    // The ones that shipped are kept.
-    expect(resolveRightPanelMode('snippets')).toBe('snippets')
-    expect(resolveRightPanelMode('ai')).toBe('ai')
+    // Every shipped occupant survives a round trip through persisted state.
+    for (const mode of RIGHT_PANEL_OCCUPANTS) {
+      expect(resolveRightPanelMode(mode), mode).toBe(mode)
+    }
   })
 
   it('keeps the implemented modes it was given', () => {

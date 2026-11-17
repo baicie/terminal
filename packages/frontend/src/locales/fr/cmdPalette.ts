@@ -73,6 +73,8 @@ export default {
   'cmdHistory.daysAgo': 'il y a {{count}} j',
   'cmdHistory.hostLabel': 'Hôte : {{host}}',
   'cmdHistory.noMatchingCommands': 'Aucune commande correspondante',
+  'cmdPalette.openInspector': 'Inspecter le serveur',
+  'cmdPalette.openInspectorDesc': 'Informations d’hôte en lecture seule',
   'cmdPalette.openAiDock': 'Ouvrir l’assistant IA',
   'cmdPalette.openAiDockDesc': 'Interroger le texte sélectionné',
   'cmdPalette.openSnippetDock': 'Ouvrir le panneau des extraits',

@@ -117,6 +117,9 @@ export function usePaletteSelection(onClose: () => void) {
             case 'transfer-queue':
               setPanelOpen(true)
               break
+            case 'open-inspector':
+              useRightPanelStore.getState().setRightPanel('inspector')
+              break
             case 'open-ai-dock':
               // Same one-assignment contract as the snippet dock: the occupant is a
               // value, so opening the assistant is a single state change.

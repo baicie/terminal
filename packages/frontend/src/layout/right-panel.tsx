@@ -6,6 +6,8 @@ import { isRightPanelImplemented } from '@/store/right-panel-state'
 import { useExtensionRuntime } from '@/features/extensions/use-extension-runtime'
 import { SnippetDock } from './snippet-dock-view'
 import { AiDock } from './ai-dock-view'
+import { ServerInspector } from './server-inspector-view'
+import { tauriInspectorExec } from '@/features/inspector/tauri-inspector-exec'
 import { useAiRuntime } from '@/features/ai/use-ai-runtime'
 import { currentTerminalSelection } from '@/features/terminal/services/terminal-selection'
 import { useAppStore } from '@/store/app'
@@ -79,11 +81,13 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
           : 'h-full shrink-0 overflow-hidden border-l border-border/60 bg-background',
       )}
       aria-label={
-        rightPanel === 'ai'
-          ? t('ai.title')
-          : rightPanel === 'snippets'
-            ? t('extensions.snippetDock.name')
-            : t('sftp.dockTitle')
+        rightPanel === 'inspector'
+          ? t('inspector.title')
+          : rightPanel === 'ai'
+            ? t('ai.title')
+            : rightPanel === 'snippets'
+              ? t('extensions.snippetDock.name')
+              : t('sftp.dockTitle')
       }
       data-testid="right-panel"
       data-panel={rightPanel}
@@ -100,7 +104,14 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
           <CloseGlyph />
         </button>
       ) : null}
-      {rightPanel === 'ai' ? (
+      {rightPanel === 'inspector' ? (
+        <ServerInspector
+          hostId={activeTab?.hostId ?? null}
+          sessionId={activeTab?.id ?? null}
+          exec={tauriInspectorExec}
+          onClose={() => setRightPanel('none')}
+        />
+      ) : rightPanel === 'ai' ? (
         <AiDock
           runner={ai.runner}
           profiles={ai.profiles}

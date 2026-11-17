@@ -43,6 +43,15 @@ export function usePaletteQuickActions(t: TFunction): SearchResult[] {
         score: 0,
       },
       {
+        id: 'open-inspector',
+        type: 'action',
+        title: t('cmdPalette.openInspector'),
+        description: t('cmdPalette.openInspectorDesc'),
+        icon: <Server className="size-4" />,
+        data: { action: 'open-inspector' },
+        score: 0,
+      },
+      {
         id: 'open-ai-dock',
         type: 'action',
         title: t('cmdPalette.openAiDock'),
