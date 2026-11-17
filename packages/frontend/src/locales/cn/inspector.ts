@@ -1,0 +1,15 @@
+export default {
+  'inspector.title': '服务器检查',
+  'inspector.noSession': '请先打开一个会话。',
+  'inspector.running': '正在读取主机…',
+  'inspector.observedAt': '采集于 {{time}}',
+  'inspector.stale': '已过期，请刷新',
+  'inspector.os': '系统',
+  'inspector.uptime': '运行时长',
+  'inspector.load': '负载',
+  'inspector.cpu': 'CPU',
+  'inspector.memory': '内存',
+  'inspector.disk': '磁盘（/）',
+  'inspector.memoryUsed': '内存已用 {{percent}}%',
+  'inspector.source': '采集命令',
+}

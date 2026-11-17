@@ -63,23 +63,29 @@ describe('which occupants this build renders', () => {
     expect([...RIGHT_PANEL_OCCUPANTS]).toContain('snippets')
     expect([...RIGHT_PANEL_OCCUPANTS]).toContain('inspector')
     expect([...RIGHT_PANEL_OCCUPANTS]).toContain('ai')
-    // `snippets` moved into the implemented list when `snippet-dock` shipped: it is
-    // the first occupant added *through* the contract, which is what the union was
-    // for. `inspector` and `ai` stay declared-but-not-built.
-    expect([...IMPLEMENTED_RIGHT_PANEL_OCCUPANTS]).toEqual(['none', 'sftp', 'snippets'])
-    expect(isRightPanelImplemented('sftp')).toBe(true)
-    expect(isRightPanelImplemented('snippets')).toBe(true)
-    expect(isRightPanelImplemented('inspector')).toBe(false)
-    expect(isRightPanelImplemented('ai')).toBe(false)
+    // Every occupant in the union now has a view, so the declared list and the
+    // implemented list are the same set. The distinction stays in the code because
+    // the *next* occupant will be declared before it ships — that is what the union
+    // is for.
+    expect([...IMPLEMENTED_RIGHT_PANEL_OCCUPANTS]).toEqual([
+      'none',
+      'sftp',
+      'snippets',
+      'ai',
+      'inspector',
+    ])
+    for (const mode of RIGHT_PANEL_OCCUPANTS) {
+      expect(isRightPanelImplemented(mode), mode).toBe(true)
+    }
   })
 
   it('stays closed rather than rendering an empty panel for a future occupant', () => {
     // Falling back to a *different* panel would open something the user did not
     // choose; falling back to `none` keeps the dock closed and says nothing false.
-    expect(resolveRightPanelMode('ai')).toBe('none')
-    expect(resolveRightPanelMode('inspector')).toBe('none')
-    // The one that shipped is kept.
-    expect(resolveRightPanelMode('snippets')).toBe('snippets')
+    // Every shipped occupant survives a round trip through persisted state.
+    for (const mode of RIGHT_PANEL_OCCUPANTS) {
+      expect(resolveRightPanelMode(mode), mode).toBe(mode)
+    }
   })
 
   it('keeps the implemented modes it was given', () => {

@@ -1,10 +1,19 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useReducer } from 'react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { useRightPanelStore } from '@/store/right-panel-store'
 import { isRightPanelImplemented } from '@/store/right-panel-state'
 import { useExtensionRuntime } from '@/features/extensions/use-extension-runtime'
 import { SnippetDock } from './snippet-dock-view'
+import { AiDock } from './ai-dock-view'
+import { ServerInspector } from './server-inspector-view'
+import { tauriInspectorExec } from '@/features/inspector/tauri-inspector-exec'
+import { useAiRuntime } from '@/features/ai/use-ai-runtime'
+import {
+  currentTerminalSelection,
+  subscribeTerminalSelection,
+} from '@/features/terminal/services/terminal-selection'
+import { useAppStore } from '@/store/app'
 
 /**
  * The right column.
@@ -53,6 +62,15 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
   const rightPanel = useRightPanelStore(state => state.rightPanel)
   const setRightPanel = useRightPanelStore(state => state.setRightPanel)
   const extensions = useExtensionRuntime()
+  const ai = useAiRuntime()
+  const activeTab = useAppStore(state =>
+    state.tabs.find(tab => tab.id === state.activeTabId),
+  )
+  // The selection the user made, published by the active terminal. Subscribed rather
+  // than read once: the dock renders while text is being selected, and a one-time read
+  // left it showing "select something" after the user had already done so.
+  useTerminalSelectionSubscription(rightPanel === 'ai')
+  const selection = rightPanel === 'ai' ? currentTerminalSelection() : null
   if (rightPanel === 'none') return null
   // A mode the union names but this build does not render — `snippets`, `inspector`
   // and `ai` are declared for the contract, not shipped. Rendering the dock empty
@@ -68,9 +86,13 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
           : 'h-full shrink-0 overflow-hidden border-l border-border/60 bg-background',
       )}
       aria-label={
-        rightPanel === 'snippets'
-          ? t('extensions.snippetDock.name')
-          : t('sftp.dockTitle')
+        rightPanel === 'inspector'
+          ? t('inspector.title')
+          : rightPanel === 'ai'
+            ? t('ai.title')
+            : rightPanel === 'snippets'
+              ? t('extensions.snippetDock.name')
+              : t('sftp.dockTitle')
       }
       data-testid="right-panel"
       data-panel={rightPanel}
@@ -87,7 +109,23 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
           <CloseGlyph />
         </button>
       ) : null}
-      {rightPanel === 'snippets' ? (
+      {rightPanel === 'inspector' ? (
+        <ServerInspector
+          hostId={activeTab?.hostId ?? null}
+          sessionId={activeTab?.id ?? null}
+          exec={tauriInspectorExec}
+          onClose={() => setRightPanel('none')}
+        />
+      ) : rightPanel === 'ai' ? (
+        <AiDock
+          runner={ai.runner}
+          profiles={ai.profiles}
+          selectedText={selection?.text ?? null}
+          sessionId={selection?.sessionId ?? null}
+          hostId={activeTab?.hostId ?? null}
+          onClose={() => setRightPanel('none')}
+        />
+      ) : rightPanel === 'snippets' ? (
         <SnippetDock
           handle={extensions.snippetDock}
           onClose={() => setRightPanel('none')}
@@ -124,4 +162,20 @@ function CloseGlyph() {
       <path d="M18 6 6 18M6 6l12 12" />
     </svg>
   )
+}
+
+/**
+ * Re-render when the terminal's selection changes.
+ *
+ * A small hook written out rather than `useSyncExternalStore`: the value has no
+ * snapshot identity to compare — `currentTerminalSelection()` returns a fresh object
+ * each call — so that hook would loop. A boolean tick is enough, because the component
+ * reads the value itself on the render the tick causes.
+ */
+function useTerminalSelectionSubscription(enabled: boolean): void {
+  const [, forceRender] = useReducer((value: number) => value + 1, 0)
+  useEffect(() => {
+    if (!enabled) return
+    return subscribeTerminalSelection(() => forceRender())
+  }, [enabled])
 }

@@ -48,6 +48,11 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS idx_scripts_enabled ON scripts(enabled)`,
   `CREATE TABLE IF NOT EXISTS script_executions (id TEXT PRIMARY KEY, script_id TEXT, script_name TEXT NOT NULL, host_id TEXT, host_name TEXT, host_address TEXT, status TEXT NOT NULL, output TEXT, error TEXT, started_at INTEGER NOT NULL, ended_at INTEGER, duration_ms INTEGER, FOREIGN KEY (script_id) REFERENCES scripts(id) ON DELETE SET NULL)`,
   `CREATE INDEX IF NOT EXISTS idx_script_executions_started_at ON script_executions(started_at DESC)`,
+  // AI model profiles: the public half only. The API key lives in the credential
+  // provider under `model:<profileId>:<version>:apiKey`, so this table has a
+  // `secret_ref` and no column a key could be written into — the design's rule
+  // enforced by the schema rather than by a comment.
+  `CREATE TABLE IF NOT EXISTS ai_model_profiles (id TEXT PRIMARY KEY, name TEXT NOT NULL, provider TEXT NOT NULL, endpoint TEXT NOT NULL, model_id TEXT NOT NULL, temperature REAL, max_output_tokens INTEGER NOT NULL, timeout_ms INTEGER NOT NULL, streaming INTEGER NOT NULL, secret_ref TEXT, enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 ]
 
 export { columnMigrations } from './connection-schema-migrations'

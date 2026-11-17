@@ -1,4 +1,6 @@
+import ai from './ai'
 import app from './app'
+import inspector from './inspector'
 import common from './common'
 import cmdPalette from './cmdPalette'
 import explorer from './explorer'
@@ -20,7 +22,9 @@ import vaults from './vaults'
 import workspace from './workspace'
 
 export default {
+  ...ai,
   ...app,
+  ...inspector,
   ...common,
   ...cmdPalette,
   ...explorer,

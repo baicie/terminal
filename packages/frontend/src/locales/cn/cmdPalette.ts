@@ -71,6 +71,10 @@ export default {
   'cmdHistory.daysAgo': '{{count}} 天前',
   'cmdHistory.hostLabel': '主机：{{host}}',
   'cmdHistory.noMatchingCommands': '没有匹配的命令',
+  'cmdPalette.openInspector': '检查服务器',
+  'cmdPalette.openInspectorDesc': '只读的主机信息',
+  'cmdPalette.openAiDock': '打开 AI 助手',
+  'cmdPalette.openAiDockDesc': '针对选中文本提问',
   'cmdPalette.openSnippetDock': '打开片段面板',
   'cmdPalette.openSnippetDockDesc': '在右侧栏显示片段',
 }
