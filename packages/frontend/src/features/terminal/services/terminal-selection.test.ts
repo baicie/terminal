@@ -11,6 +11,7 @@ import {
   clearTerminalSelection,
   currentTerminalSelection,
   publishTerminalSelection,
+  subscribeTerminalSelection,
 } from './terminal-selection'
 
 beforeEach(() => {
@@ -70,3 +71,54 @@ describe('publishing a selection', () => {
     const second = currentTerminalSelection()?.seq
     expect(first).not.toBe(second)
   })
+
+describe('the selection notifies subscribers', () => {
+  it('calls a subscriber when a selection is published', () => {
+    // The AI dock reads this value while rendering. A module-level read with no
+    // notification means selecting text after the dock is open never reaches it —
+    // the dock stays on "select something" while text is visibly selected.
+    const seen: Array<string | null> = []
+    const unsubscribe = subscribeTerminalSelection(() => {
+      seen.push(currentTerminalSelection()?.text ?? null)
+    })
+    publishTerminalSelection('tab-1', 'ls -la')
+    unsubscribe()
+    expect(seen).toEqual(['ls -la'])
+  })
+
+  it('calls a subscriber when the selection is cleared', () => {
+    const seen: Array<string | null> = []
+    publishTerminalSelection('tab-1', 'ls')
+    const unsubscribe = subscribeTerminalSelection(() => {
+      seen.push(currentTerminalSelection()?.text ?? null)
+    })
+    publishTerminalSelection('tab-1', null)
+    unsubscribe()
+    expect(seen).toEqual([null])
+  })
+
+  it('stops calling after unsubscribe', () => {
+    let calls = 0
+    const unsubscribe = subscribeTerminalSelection(() => {
+      calls += 1
+    })
+    unsubscribe()
+    publishTerminalSelection('tab-1', 'ls')
+    expect(calls).toBe(0)
+  })
+
+  it('a throwing subscriber does not stop the others', () => {
+    // One broken component must not stop the dock from updating.
+    const seen: string[] = []
+    const unsubscribeBad = subscribeTerminalSelection(() => {
+      throw new Error('broken subscriber')
+    })
+    const unsubscribeGood = subscribeTerminalSelection(() => {
+      seen.push('ok')
+    })
+    publishTerminalSelection('tab-1', 'ls')
+    unsubscribeBad()
+    unsubscribeGood()
+    expect(seen).toEqual(['ok'])
+  })
+})

@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useReducer } from 'react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { useRightPanelStore } from '@/store/right-panel-store'
@@ -9,7 +9,10 @@ import { AiDock } from './ai-dock-view'
 import { ServerInspector } from './server-inspector-view'
 import { tauriInspectorExec } from '@/features/inspector/tauri-inspector-exec'
 import { useAiRuntime } from '@/features/ai/use-ai-runtime'
-import { currentTerminalSelection } from '@/features/terminal/services/terminal-selection'
+import {
+  currentTerminalSelection,
+  subscribeTerminalSelection,
+} from '@/features/terminal/services/terminal-selection'
 import { useAppStore } from '@/store/app'
 
 /**
@@ -63,8 +66,10 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
   const activeTab = useAppStore(state =>
     state.tabs.find(tab => tab.id === state.activeTabId),
   )
-  // The selection the user made, published by the active terminal. Reading it here is
-  // what keeps "the dock saw text" and "the user selected text" the same thing.
+  // The selection the user made, published by the active terminal. Subscribed rather
+  // than read once: the dock renders while text is being selected, and a one-time read
+  // left it showing "select something" after the user had already done so.
+  useTerminalSelectionSubscription(rightPanel === 'ai')
   const selection = rightPanel === 'ai' ? currentTerminalSelection() : null
   if (rightPanel === 'none') return null
   // A mode the union names but this build does not render — `snippets`, `inspector`
@@ -157,4 +162,20 @@ function CloseGlyph() {
       <path d="M18 6 6 18M6 6l12 12" />
     </svg>
   )
+}
+
+/**
+ * Re-render when the terminal's selection changes.
+ *
+ * A small hook written out rather than `useSyncExternalStore`: the value has no
+ * snapshot identity to compare — `currentTerminalSelection()` returns a fresh object
+ * each call — so that hook would loop. A boolean tick is enough, because the component
+ * reads the value itself on the render the tick causes.
+ */
+function useTerminalSelectionSubscription(enabled: boolean): void {
+  const [, forceRender] = useReducer((value: number) => value + 1, 0)
+  useEffect(() => {
+    if (!enabled) return
+    return subscribeTerminalSelection(() => forceRender())
+  }, [enabled])
 }

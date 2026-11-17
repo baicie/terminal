@@ -31,6 +31,39 @@ let current: { text: string, sessionId: string, seq: number } | null = null
  * to change whenever the selection does — which only the publisher can know.
  */
 let nextSeq = 0
+/**
+ * Components that render the current selection.
+ *
+ * A module-level value with no notification is invisible to React: the dock reads it
+ * during render, so a selection made *after* the dock opened never reached it and the
+ * panel stayed on "select something" while text was visibly selected.
+ */
+const listeners = new Set<() => void>()
+
+/** Notify every subscriber, containing a throwing one. */
+function notify(): void {
+  for (const listener of listeners) {
+    try {
+      listener()
+    } catch {
+      // One broken subscriber must not stop the others or the publish itself.
+    }
+  }
+}
+
+/**
+ * Subscribe to selection changes. Returns an unsubscribe.
+ *
+ * The callback takes no argument: a subscriber reads `currentTerminalSelection()`,
+ * which is the same value the dock uses, so there is one source and no second copy to
+ * drift.
+ */
+export function subscribeTerminalSelection(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
 
 /**
  * Publish the active terminal's selection.
@@ -44,7 +77,10 @@ export function publishTerminalSelection(
   text: string | null | undefined,
 ): void {
   if (!text) {
-    if (current?.sessionId === sessionId) current = null
+    if (current?.sessionId === sessionId) {
+      current = null
+      notify()
+    }
     return
   }
   // Re-selecting identical text is a new selection as far as an approval is
@@ -52,11 +88,15 @@ export function publishTerminalSelection(
   // the rule simple and errs toward requiring a fresh approval.
   nextSeq += 1
   current = { text, sessionId, seq: nextSeq }
+  notify()
 }
 
 /** Withdraw a selection if it belongs to this session (unmount, tab close). */
 export function clearTerminalSelection(sessionId: string): void {
-  if (current?.sessionId === sessionId) current = null
+  if (current?.sessionId === sessionId) {
+    current = null
+    notify()
+  }
 }
 
 /** What the user currently has selected, or null. */
@@ -72,4 +112,5 @@ export function currentTerminalSelection(): {
 export function __resetTerminalSelectionForTests(): void {
   current = null
   nextSeq = 0
+  listeners.clear()
 }
