@@ -14,6 +14,18 @@
 - [ ] Host/SSH key CredentialRef 统一 none/valid/corrupt 三态；损坏引用仍可清除或重新绑定。
 - [ ] Native GUI SFTP spec 先验证 `GUI_E2E_HOME` 与 seed 数据库一致，再以远端 SHA/字节结果判定关闭 Dock 的传输。
 
+## Terminal Next AI transport 迁到 Rust（2026-11-17）
+
+闭合 PR #97 记录的三处设计偏离（`07-ux4-ai-inspector.md` §4）。
+
+- [x] `src-tauri/src/ai/`：`profile`（后端按 id 重读行）、`prompt`（指令 + 不可信块分隔符）、`endpoint`（HTTPS / 回环 HTTP / 其余拒绝）、`transport`（reqwest + SSE + 取消 + 超时）、`digest`（UTF-16 KAT，与前端逐位一致）。
+- [x] 四个 typed IPC 命令 `ai_available` / `ai_profiles_list` / `ai_generate` / `ai_cancel`；**没有** `read_secret` 一类通用命令。
+- [x] 非默认 feature `ai`；`tauri.conf.json` 的产品构建打开它；`scripts/check-ai-isolation.mjs` 用两份独立 target 目录构建开/关两种库并断言标记字符串的去留。
+- [x] 删除 WebView 内的 `fetch` 路径：`openai-compatible-driver.ts`、`model-driver.ts`、`ai-prompt.ts` 的 payload 构造、`getProfileSecret()`。
+- [x] `vault::vault_read_secret`（非 IPC）供后端取 key；`vault_key_kind` 新增 `model:` 分类。
+- [ ] `REAL_MODEL_E2E`（BLOCKED_EXTERNAL：本机无可用 provider）。
+- [ ] `AI_DOCK_REAL_GUI`（NOT_RUN：无人真实点击）。
+
 ## 一、当前开发状态概览
 
 ### Phase 1 - MVP (最低可行产品) ✅ 已完成

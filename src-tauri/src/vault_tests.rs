@@ -1336,6 +1336,10 @@ fn the_vault_key_classifier_separates_namespaces() {
         vault_key_kind("ssh-key:abc:1:private_key"),
         "ssh-key-credential"
     );
+    // A model key is its own class. It used to fall through to `user-entry`, which is
+    // the one answer this classifier must not give for a credential read.
+    assert_eq!(vault_key_kind("model:p-1:3:password"), "model-credential");
+    assert_eq!(vault_key_kind("model:p-1:password"), "model-credential");
     assert_eq!(vault_key_kind("team:share:payload"), "team-secret");
     assert_eq!(vault_key_kind("probe:secret"), "diagnostic-probe");
     assert_eq!(vault_key_kind("my-notes"), "user-entry");
@@ -1349,6 +1353,7 @@ fn the_vault_key_classifier_never_echoes_the_key() {
     for key in [
         "host:11111111-2222-3333-4444-555555555555:7:password",
         "ssh-key:deadbeef:1:private_key",
+        "model:deadbeef:2:password",
         "probe:secret",
         "a-user-chosen-name-with-a-hint-in-it",
     ] {
@@ -1362,6 +1367,7 @@ fn the_vault_key_classifier_never_echoes_the_key() {
             [
                 "host-credential",
                 "ssh-key-credential",
+                "model-credential",
                 "team-secret",
                 "diagnostic-probe",
                 "user-entry"

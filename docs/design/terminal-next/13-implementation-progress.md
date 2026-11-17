@@ -102,11 +102,11 @@ Inspector 在 PR **#97**（`feat/tn-ux4-ai-dock`，12 个提交）。
 | **Model Profile 契约 + endpoint 安全规则** | **`PASS`（自动化）** | `features/ai/model-profile.ts` | 16 条测试。HTTPS 允许 / 回环 HTTP 允许 / 远程明文 HTTP 需显式确认 / 其他 scheme 拒绝。`ModelProfilePublic` **没有可放 API key 的字段** |
 | **Context Review（用户明确选择）** | **`PASS`（自动化）** | `features/ai/context-review.ts` | 16 条测试。64 KiB **字节**上限（CJK 用例）、脱敏编辑列表、发送时重算摘要、会话绑定 |
 | **AI Run 状态机** | **`PASS`（自动化）** | `features/ai/ai-run-state.ts` | 16 条测试。迟到 chunk 三方向丢弃、取消需确认、完成后失败不污染好结果、stale 标记 |
-| **Prompt 构造与注入防护** | **`PASS`（自动化）** | `features/ai/ai-prompt.ts` | 14 条测试。指令不随内容变化、分隔符逐级升级、`draftRisk` 只标记不改写 |
-| **OpenAI-compatible HTTP Adapter** | **`PASS`（真实本地 HTTP server）** | `features/ai/openai-compatible-driver.ts` | 24 条测试。流式/取消/超时/401/403/429/500/400；provider body 与 key 不进入错误消息；连接测试不携带终端文本 |
+| **Prompt 构造与注入防护** | **`PASS`（自动化，已迁到 Rust）** | `src-tauri/src/ai/prompt.rs` | 指令不随内容变化、分隔符逐级升级、payload 不能提前闭合不可信块。`draftRisk` 只标记不改写，留在 `features/ai/ai-prompt.ts`（UI 文本分类） |
+| **OpenAI-compatible HTTP Adapter** | **`PASS`（真实本地 HTTP server，已在 Rust）** | `src-tauri/src/ai/transport.rs` + `ai/tests.rs` | 流式/取消/超时/401/403/500/404/429（含 `Retry-After`）、空流报 bad-response；provider body 与 key 不进入错误消息。DTO 改动前的 WebView `fetch` 路径已删除 |
 | **Server Inspector 解析与策略层** | **`PASS`（自动化）** | `features/inspector/server-inspector.ts` | 21 条测试。固定 probe allowlist（无插值点）、缺失数据为 null 而非 0、TTL 边界含等号、平台不认识则拒绝猜测 |
 | **Profile 存储** | **`PASS`（自动化）** | `service/database/ai-profiles.ts` | 17 条测试。表无 key 列；写入→读回→指向；三 namespace 隔离（修了 `vaultKey` 把新类型落进 ssh-key namespace 的真 bug） |
-| **运行编排 `AiRunner`** | **`PASS`（自动化）** | `features/ai/ai-runner.ts` | 15 条测试。7 类拒绝均在发送前；事件穿过 reducer；异常关闭上报；取消被确认 |
+| **运行编排 `AiRunner`** | **`PASS`（自动化）** | `features/ai/ai-runner.ts` | 16 条测试。7 类拒绝均在发送前；事件来自 Rust 通道并穿过 reducer；异常关闭上报；取消按 requestId；请求体**不含 key/endpoint/model** |
 | **AI Dock UI** | **`IMPLEMENTED`** | `layout/ai-dock-{view,config,result}.tsx` | 14 条组件测试。`ai` 已是可渲染占位者 + Command Palette 入口。**真实 GUI 未点击** |
 | **Profile 编辑器** | **`IMPLEMENTED`** | `view/settings/ai-profile-{editor,form}.tsx` | Settings 新增 AI 标签页；明文确认不继承；key 留空即保留 |
 | **Inspector 真实探测链** | **`PASS`（自动化）** | `features/inspector/inspector-probe.ts` | 13 条测试。先 `uname -s` 再选命令集；未知平台报 `unsupported-platform` 不猜测；权限/缺工具/超时/断连分别分类；部分数据仍返回 |
@@ -116,27 +116,66 @@ Inspector 在 PR **#97**（`feat/tn-ux4-ai-dock`，12 个提交）。
 | `AI_DOCK_REAL_GUI` / `INSPECTOR_REAL_GUI` | `NOT_RUN` | — | 无人真实点击 |
 | Rig MSRV / 体积 / Audit 评估 | `NOT_RUN` | — | 按设计延后，需独立 ADR |
 
-### ⚠️ 与设计的三处偏离（未修复，合并前须知）
+### ✅ 与设计的三处偏离已闭合（AI transport 迁到 Rust）
 
-`07-ux4-ai-inspector.md` 要求 AI 请求走 **Rust `ai` feature + `reqwest` + typed IPC**。
-PR #97 的实现走的是 **WebView 内直接 `fetch`**。这不是等价替换：
+`07-ux4-ai-inspector.md` 第 4、5 节要求 AI 请求走 **Rust `ai` feature + `reqwest` + typed
+IPC**。PR #97 的实现走的是 **WebView 内直接 `fetch`**；本轮把三处偏离全部闭合。
 
-| # | 偏离 | 设计条款 | 实际后果 |
-| --- | --- | --- | --- |
-| 1 | **API key 进入 WebView 内存** | 第 94 行：「普通前端查询、Extension API、日志和错误对象都不能返回 key」 | `getProfileSecret()` 把明文 key 取到 JS 侧内存并传给 `fetch`。设计要求的形态是 key 永不出现在渲染进程。Vault 静态存储是安全的，**运行时的暴露面不符合设计** |
-| 2 | **无 `ai` feature 开关** | `10-pr-implementation-plan.md`：「默认 AI feature 仍关闭」「feature-off build 无模型网络请求」 | 目前 AI 能力随前端 bundle 恒常存在，没有编译期关闭路径；bundle 也无法按 feature 裁剪 |
-| 3 | **无 Rust typed IPC 边界** | `ai_generate` / `ai_cancel` 的 `requestId`、size、profile 状态、timeout 校验在 Rust | 全部校验在 JS 侧（`ai-runner.ts` 的 5 类前置拒绝）。校验本身是完整的，但它与被保护的对象在同一个信任域 |
+| # | 原偏离 | 现在 |
+| --- | --- | --- |
+| 1 | **API key 进入 WebView 内存** | `getProfileSecret()` 已从 `service/database/ai-profiles.ts` **删除**（不是留着不用）。key 由 `ai_generate` 在 Rust 侧经 `vault::vault_read_secret`（非 IPC 命令）读出，以 `Zeroizing<String>` 交给 `reqwest`，全程不跨 IPC。runner 的依赖里已经没有能取得 key 的入口 |
+| 2 | **无 `ai` feature 开关** | `src-tauri/Cargo.toml` 新增 **非默认** feature `ai`；`tauri.conf.json` 的 `build.features` 为产品构建打开它。feature-off 时 `src/ai/` 整个模块、四个命令都不存在 |
+| 3 | **无 Rust typed IPC 边界** | `ai_available` / `ai_profiles_list` / `ai_generate` / `ai_cancel`。**profile 由后端按 `profileId` 重新从 SQLite 读取**（enabled、endpoint、model、limits、timeout），请求里没有这些字段，所以被校验的值与被发送的值不可能不同 |
 
-**为什么本轮没改**：把 `AiRunner` 整体迁到 Rust 是重写而非修补，规模大于本 PR 剩余范围，
-且会让已经通过的 2706 项前端测试与真实 sshd 探测链同时失去意义。**正确做法是单独一个
-PR**：新增 `ai` feature、`reqwest` typed command，前端只保留 `invoke` 与状态渲染，
-key 在 Rust 侧取用。
+**没有 `read_secret(id)` 这类通用命令**：设计明确禁止，加了就等于把这次迁移撤销。
 
-**风险等级**：偏离 1 是安全性质的。它不泄露到磁盘、日志或错误对象（这三点有测试钉住），
-但 WebView 进程被攻破时 key 在内存中可达 —— 这是设计当初选择 Rust 侧的原因。
+边界上的分工：
 
-**`AI_MVP_READY = NO`、`SERVER_INSPECTOR_READY = NO`。** 契约与 UI 都已落地，但
-没有真实模型证据（`REAL_MODEL_E2E` = `BLOCKED_EXTERNAL`），也没有真实 GUI 点击验收。
+- **Rust**：HTTP 请求、SSE 解析、取消、超时、key 取用、**prompt 构造与注入防护**、endpoint
+  规则、上下文 64 KiB 与摘要重算、profile 状态。
+- **前端**：context review UI、审批、状态渲染、`draftRisk` 标记。
+
+摘要算法（`createHashOf`）在 Rust 侧按 **UTF-16 code unit** 逐位复刻，并有 4 条 KAT 向量
+（由 TypeScript 实现实际跑出）。后端用它重算并比对，所以「审批后文本被改」在**真正发包
+的那一侧**被拦住，而不是信任调用方递来的 digest。
+
+**为什么没有把 `reqwest` 一起 feature 化**：它已经是 `storage.rs`（WebDAV/S3/REST）的非可选
+依赖，设成 optional 买不到任何东西，还会把 AI feature 和 storage 耦合起来。feature 关闭时
+丢掉的是**命令与整个 `src/ai/` 模块**，这正是
+`scripts/check-ai-isolation.mjs` 断言的对象——它分别构建开/关两种目标目录，并在编译产物
+里找 `/chat/completions` 与分隔符字符串（只在 `src/ai/` 出现），所以「关掉了」不是靠读
+manifest 判断的。
+
+### 迁移中自己引入又修掉的两个缺陷
+
+两个都是**顺着调用链读出来**的，不是测试变红发现的——与 Phase 10.3 记录的那类问题同形，
+这次是自己写的新代码里重演。
+
+1. **SSE 多字节字符被按块解码切碎。** 移植时我把 WebView 里的
+   `TextDecoder({stream: true})` 写成了 `String::from_utf8_lossy(&chunk)`，于是任何跨
+   TCP 读边界的 UTF-8 序列都会变成替换字符。前端实现本来是流式解码的，**照抄语义时漏了
+   这一层**。修法是把缓冲区改成 `Vec<u8>`，只在遇到 `\n` 时才解码整行（多字节 UTF-8
+   里不可能出现 `0x0A`，所以按行切一定不会切在字符中间）。先红后绿：
+   `a_multibyte_character_split_across_tcp_reads_is_not_corrupted` 在旧实现上得到
+   `"\u{fffd}\u{fffd}\u{fffd}误：权限不足"`，新实现得到 `"错误：权限不足"`。
+
+2. **`AiRuns` 的 `len()` 是无人使用的测试脚手架。** clippy 报 `never used`。删掉而不是
+   加 `#[allow]`：它在唯一用途（断言 in-flight 计数）上本来也不成立——那个计数应该由
+   `ai_generate` 的真实生命周期证明，不是由一个只在测试里存在的方法。
+
+另外两处是**测试自身的**问题，修的是测试不是产品：`signature_of()` 一开始不跨行、也不
+跳过 `<R: Runtime>` 泛型，扫描密钥命令时还会扫到自己的断言文本。这三条都会让测试**假
+失败**，所以按「测试必须证明它声称的事」处理。
+
+**代码读取链的实测**（按本项目历史缺陷的要求走一遍）：`Command Palette open-ai-dock`
+→ `setRightPanel('ai')` → `RightPanel` 渲染 `AiDock` → `runner.start()` →
+`deps.generate` → `invoke('ai_generate', { request, onEvent })` → `lib.rs` 的
+`ai::ai_generate`。参数重命名 `requestId→request_id` / `onEvent→on_event` 由
+`ai::ipc_tests` 按两侧源码钉住——这条链在本轮之前没有任何东西守着。
+
+**未变**：`REAL_MODEL_E2E` 仍是 `BLOCKED_EXTERNAL`（本机没有 ollama / LM Studio / 任何
+OpenAI-compatible 端点，也不用开发会话自身的凭据冒充验收），`AI_DOCK_REAL_GUI` 仍是
+`NOT_RUN`。**`AI_MVP_READY` 与 `SERVER_INSPECTOR_READY` 仍为 `NO`。**
 
 ### 本轮自己发现并修复的两个可达性缺陷
 

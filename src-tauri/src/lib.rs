@@ -3,6 +3,10 @@
 //! This module provides re-exports for terminal-related types and functions.
 
 mod agent;
+// UX-4's model transport. Non-default: a build without `ai` has no IPC command that
+// can reach a model at all. `scripts/check-ai-isolation.mjs` proves the absence.
+#[cfg(feature = "ai")]
+mod ai;
 mod commands;
 mod db_import;
 mod db_recovery;
@@ -223,6 +227,12 @@ pub fn run() {
     let raw_input_probe_state = RawInputProbeState::from_env();
     let remote_prompt_probe_state = RemotePromptProbeState::from_env();
     let shell_probe_state = ShellProbeState::from_env();
+    // One registry of in-flight AI runs: `ai_cancel` addresses a request id rather
+    // than a global flag, so two surfaces cannot cancel each other and a late cancel
+    // for a finished run cannot trip the next one. The whole module is compiled out
+    // of a feature-off build, so this binding disappears with it.
+    #[cfg(feature = "ai")]
+    let ai_runs = ai::AiRuns::default();
 
     let app = tauri::Builder::default()
         // Must be the first plugin: the second launch has to be intercepted
@@ -236,7 +246,10 @@ pub fn run() {
         .manage(input_probe_state)
         .manage(raw_input_probe_state)
         .manage(remote_prompt_probe_state)
-        .manage(shell_probe_state)
+        .manage(shell_probe_state);
+    #[cfg(feature = "ai")]
+    let app = app.manage(ai_runs);
+    let app = app
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -366,6 +379,18 @@ pub fn run() {
             vault_encrypt_for_team,
             vault_decrypt_for_team,
             vault_can_encrypt_for_team,
+            // AI transport (UX-4). `#[cfg]` on a handler entry is supported by
+            // `generate_handler!`, which re-emits the attribute above each match arm —
+            // so a feature-off build has no arm for these names, not a stub that
+            // refuses. There is deliberately no command that returns a key.
+            #[cfg(feature = "ai")]
+            ai::ai_available,
+            #[cfg(feature = "ai")]
+            ai::ai_profiles_list,
+            #[cfg(feature = "ai")]
+            ai::ai_generate,
+            #[cfg(feature = "ai")]
+            ai::ai_cancel,
             // Serial commands
             serial_list,
             serial_baud_rates,

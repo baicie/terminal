@@ -13,7 +13,7 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => navigateMock }))
 import { AiDock } from './ai-dock-view'
 import { AiRunner, type AiRuntimeDeps } from '@/features/ai/ai-runner'
 import type { ModelProfilePublic } from '@/features/ai/model-profile'
-import type { CancelSignal, DriverEvent, DriverRequest, ModelDriver } from '@/features/ai/model-driver'
+import type { AiBackendEvent } from '@/features/ai/ai-ipc'
 
 function profile(overrides: Partial<ModelProfilePublic> = {}): ModelProfilePublic {
   return {
@@ -34,50 +34,38 @@ function profile(overrides: Partial<ModelProfilePublic> = {}): ModelProfilePubli
   }
 }
 
-function signal(): CancelSignal & { cancel(): void } {
-  let cancelled = false
-  let resolve: () => void = () => undefined
-  const promise = new Promise<void>(r => {
-    resolve = r
-  })
+function backend(events: AiBackendEvent[]) {
+  const calls: unknown[] = []
   return {
-    get cancelled() {
-      return cancelled
+    calls,
+    generate: async (
+      input: unknown,
+      onEvent: (event: AiBackendEvent) => void,
+    ) => {
+      calls.push(input)
+      for (const event of events) onEvent(event)
+      return { sent: true }
     },
-    whenCancelled: () => promise,
-    cancel() {
-      cancelled = true
-      resolve()
-    },
-  }
-}
-
-function driver(events: DriverEvent[]): ModelDriver {
-  return {
-    provider: 'local',
-    async test() {
-      return { ok: true as const }
-    },
-    async *stream(_request: DriverRequest): AsyncIterable<DriverEvent> {
-      for (const event of events) yield event
-    },
+    cancel: async () => true,
   }
 }
 
 function setup(options: {
-  events?: DriverEvent[]
+  events?: AiBackendEvent[]
   profiles?: ModelProfilePublic[]
   selectedText?: string | null
   sessionId?: string | null
 } = {}) {
   let counter = 0
+  const ipc = backend(
+    options.events ?? [{ type: 'chunk', text: 'It lists pods.' }, { type: 'done' }],
+  )
   const deps: AiRuntimeDeps = {
-    driverFor: () => driver(options.events ?? [{ type: 'chunk', text: 'It lists pods.' }, { type: 'done' }]),
-    readKey: async () => undefined,
+    generate: ipc.generate,
+    cancel: ipc.cancel,
     visibleSessionId: () => options.sessionId === undefined ? 'tab-1' : options.sessionId,
     onState: () => undefined,
     nextRunId: () => `run-${++counter}`,
-    createSignal: () => signal(),
   }
   const runner = new AiRunner(deps)
   const onClose = vi.fn()

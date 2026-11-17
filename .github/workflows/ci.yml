@@ -537,6 +537,21 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features
       - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+      # ## Is the AI transport actually gated?
+      #
+      # `07-ux4-ai-inspector.md` §4 puts the model request behind a non-default
+      # feature, and the guarantee that matters is "a build without it has no path to
+      # a model — not a disabled one, an absent one". A comment saying the feature
+      # gates the module is not evidence. This builds the crate twice into separate
+      # target dirs (so a stale artifact cannot answer for either) and asserts the
+      # AI module's marker strings are in the feature-on library and absent from the
+      # feature-off one. It also checks the feature is not a default and that
+      # `tauri.conf.json` enables it for the product build.
+      #
+      # Not advisory: a feature that silently stopped gating would put the transport
+      # back into every build while every other job stayed green.
+      - name: AI transport is absent without the `ai` feature
+        run: node scripts/check-ai-isolation.mjs
       # ## Machine-readable libtest counts
       #
       # `cargo test` writes one `test result: …` line per test binary, and a workspace

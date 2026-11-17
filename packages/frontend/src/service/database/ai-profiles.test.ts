@@ -33,7 +33,6 @@ const {
   getModelProfile,
   upsertModelProfile,
   setProfileSecret,
-  getProfileSecret,
   deleteModelProfile,
   hasProfileSecret,
 } = await import('./ai-profiles')
@@ -223,32 +222,24 @@ describe('the key lives in the provider, under its own namespace', () => {
 })
 
 describe('reading a key', () => {
-  it('returns undefined when no key is stored', async () => {
-    mocks.select.mockResolvedValue([row({ secret_ref: null })])
-    expect(await getProfileSecret('p-1')).toBeUndefined()
-    expect(mocks.vaultRead).not.toHaveBeenCalled()
-  })
-
-  it('reads the stored key through the provider', async () => {
-    const ref = JSON.stringify({ kinds: ['password'], provider: 'vault', version: 1 })
-    mocks.select.mockResolvedValue([row({ secret_ref: ref })])
-    mocks.vaultRead.mockResolvedValueOnce('sk-stored')
-    expect(await getProfileSecret('p-1')).toBe('sk-stored')
-  })
-
-  it('propagates a provider failure instead of reporting "no key"', async () => {
-    // A locked vault must not look like a profile without a key.
-    const ref = JSON.stringify({ kinds: ['password'], provider: 'vault', version: 1 })
-    mocks.select.mockResolvedValue([row({ secret_ref: ref })])
-    mocks.vaultRead.mockRejectedValue(new Error('vault is locked'))
-    await expect(getProfileSecret('p-1')).rejects.toThrow(/locked/)
-  })
+  // Reading a stored key into the renderer is gone with the request: the key is read
+  // on the backend now (`src-tauri/src/ai/`), so there is no function here that could
+  // return one. `hasProfileSecret` answers the only question the UI needs.
 
   it('reports whether a key exists without reading it', () => {
     const ref = JSON.stringify({ kinds: ['password'], provider: 'vault', version: 1 })
     expect(hasProfileSecret(profile({ secretRef: ref }))).toBe(true)
     expect(hasProfileSecret(profile({ secretRef: null }))).toBe(false)
     expect(hasProfileSecret(profile({ secretRef: 'broken' }))).toBe(false)
+    // No vault read happens for the existence question.
+    expect(mocks.vaultRead).not.toHaveBeenCalled()
+  })
+
+  it('exports no function that returns a key', async () => {
+    // The absence is the guarantee. A future edit that reintroduced a reader would
+    // have to change this assertion too, which is the point of asserting it.
+    const module = await import('./ai-profiles')
+    expect('getProfileSecret' in module).toBe(false)
   })
 })
 

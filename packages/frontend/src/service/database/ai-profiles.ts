@@ -202,24 +202,12 @@ export async function setProfileSecret(profileId: string, apiKey: string): Promi
   }
 }
 
-/**
- * Read a profile's API key, for the one caller that needs it: the driver.
- *
- * Returns `undefined` when the profile stores no key, which is a valid state for a
- * local endpoint. Throws when a *stored* key cannot be read, because answering
- * `undefined` there would make a locked vault look like a profile without a key.
- */
-export async function getProfileSecret(profileId: string): Promise<string | undefined> {
-  const existing = await getModelProfile(profileId)
-  if (!existing) return undefined
-  const ref = parseRef(existing.secretRef)
-  if (!ref) return undefined
-  return vaultSecretProvider.read(
-    modelSecretResource(profileId),
-    refVersion(ref),
-    'password',
-  )
-}
+// `getProfileSecret` used to live here: it read the stored API key into JavaScript
+// for the driver's `fetch`. The request moved to Rust (`src-tauri/src/ai/`), where the
+// key is read from the vault and passed to `reqwest` without ever crossing the IPC
+// boundary — which is what `07-ux4-ai-inspector.md` §4 requires. The function is gone
+// rather than unused: a read that exists is a read something can call, and the next
+// caller would have re-opened the exposure this migration removed.
 
 /**
  * Delete a profile.

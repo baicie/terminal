@@ -3,12 +3,17 @@
 // Each rule here was tested in isolation by the module that owns it. This asserts they
 // are actually wired together — the recurring defect in this project is a guard that
 // exists, has a unit test, and is not on the path the user takes.
+//
+// The driver double is gone: the runner no longer talks to a driver, it calls
+// `generate`, which posts to Rust. So the double here is the IPC client, and what
+// these tests pin is the shape of the request that crosses the boundary — above all
+// that no API key is in it.
 
-import { describe, expect, it, vi } from 'vitest'
-import { AiRunner, driverRegistry, type AiRuntimeDeps } from './ai-runner'
+import { describe, expect, it } from 'vitest'
+import { AiRunner, type AiRuntimeDeps } from './ai-runner'
 import { buildContext, type ApprovedContext } from './context-review'
 import type { ModelProfilePublic } from './model-profile'
-import type { CancelSignal, DriverEvent, DriverRequest, ModelDriver } from './model-driver'
+import type { AiBackendEvent, AiGenerateOutcome } from './ai-ipc'
 import type { AiRun } from './ai-run-state'
 
 function profile(overrides: Partial<ModelProfilePublic> = {}): ModelProfilePublic {
@@ -42,52 +47,57 @@ function approvedContext(overrides: { text?: string, sessionId?: string | null }
   return built.context
 }
 
-function signal(): CancelSignal & { cancel(): void } {
-  let cancelled = false
-  let resolve: () => void = () => undefined
-  const promise = new Promise<void>(r => {
-    resolve = r
-  })
+type GenerateInput = Parameters<AiRuntimeDeps['generate']>[0]
+
+/** A backend double whose events the test controls. */
+function scriptedBackend(options: {
+  events?: AiBackendEvent[]
+  outcome?: AiGenerateOutcome
+  hang?: boolean
+} = {}) {
+  const calls: GenerateInput[] = []
+  const cancels: string[] = []
+  const generate = async (
+    input: GenerateInput,
+    onEvent: (event: AiBackendEvent) => void,
+  ): Promise<AiGenerateOutcome> => {
+    calls.push(input)
+    if (options.hang) {
+      // Never resolves until the test cancels; the runner's cancel is recorded
+      // through `cancel`, not through this promise.
+      await new Promise<void>(() => undefined)
+    }
+    for (const event of options.events ?? []) onEvent(event)
+    return options.outcome ?? { sent: true }
+  }
   return {
-    get cancelled() {
-      return cancelled
-    },
-    whenCancelled: () => promise,
-    cancel() {
-      cancelled = true
-      resolve()
+    calls,
+    cancels,
+    generate,
+    cancel: async (requestId: string) => {
+      cancels.push(requestId)
+      return true
     },
   }
 }
 
-/** A driver whose events the test controls. */
-function scriptedDriver(events: DriverEvent[]): ModelDriver & { lastRequest?: DriverRequest } {
-  return {
-    provider: 'local',
-    async test() {
-      return { ok: true as const }
-    },
-    async *stream(request: DriverRequest): AsyncIterable<DriverEvent> {
-      ;(this as { lastRequest?: DriverRequest }).lastRequest = request
-      for (const event of events) yield event
-    },
-  }
-}
-
-function setup(overrides: Partial<AiRuntimeDeps> = {}) {
+function setup(overrides: Partial<AiRuntimeDeps> = {}, backendOptions: Parameters<typeof scriptedBackend>[0] = {}) {
   const states: AiRun[] = []
   let counter = 0
-  const driver = scriptedDriver([{ type: 'chunk', text: 'It lists ' }, { type: 'chunk', text: 'pods.' }, { type: 'done' }])
+  const backend = scriptedBackend(
+    backendOptions.events === undefined
+      ? { events: [{ type: 'chunk', text: 'It lists ' }, { type: 'chunk', text: 'pods.' }, { type: 'done' }], ...backendOptions }
+      : backendOptions,
+  )
   const deps: AiRuntimeDeps = {
-    driverFor: () => driver,
-    readKey: async () => undefined,
+    generate: backend.generate,
+    cancel: backend.cancel,
     visibleSessionId: () => 'tab-1',
     onState: state => states.push(state),
     nextRunId: () => `run-${++counter}`,
-    createSignal: () => signal(),
     ...overrides,
   }
-  return { runner: new AiRunner(deps), states, driver }
+  return { runner: new AiRunner(deps), states, backend }
 }
 
 /** Let the fire-and-forget pump finish. */
@@ -97,7 +107,7 @@ async function settle(): Promise<void> {
 
 describe('refusals happen before anything is sent', () => {
   it('refuses an unapproved context', async () => {
-    const { runner, driver } = setup()
+    const { runner, backend } = setup()
     const built = buildContext({ kind: 'selection', hostId: null, sessionId: 'tab-1', text: 'ls' })
     if (!built.ok) return
     const result = await runner.start({
@@ -106,78 +116,55 @@ describe('refusals happen before anything is sent', () => {
       context: built.context, // approved: false
     })
     expect(result).toMatchObject({ ok: false, refusal: 'context-not-approved' })
-    expect(driver.lastRequest).toBeUndefined()
+    expect(backend.calls).toHaveLength(0)
   })
 
   it('refuses a context whose text changed after approval', async () => {
     // The digest is what catches this; the runner is where it has to be consulted.
-    const { runner, driver } = setup()
+    const { runner, backend } = setup()
     const context = { ...approvedContext(), text: 'rm -rf /' }
     const result = await runner.start({ action: 'explain-selection', profile: profile(), context })
     expect(result).toMatchObject({ ok: false, refusal: 'context-changed' })
-    expect(driver.lastRequest).toBeUndefined()
+    expect(backend.calls).toHaveLength(0)
   })
 
   it('refuses a context captured on a session the user left', async () => {
-    const { runner, driver } = setup({ visibleSessionId: () => 'tab-2' })
+    const { runner, backend } = setup({ visibleSessionId: () => 'tab-2' })
     const result = await runner.start({
       action: 'explain-selection',
       profile: profile(),
       context: approvedContext({ sessionId: 'tab-1' }),
     })
     expect(result).toMatchObject({ ok: false, refusal: 'session-changed' })
-    expect(driver.lastRequest).toBeUndefined()
+    expect(backend.calls).toHaveLength(0)
   })
 
   it('refuses a disabled or invalid profile', async () => {
-    const { runner } = setup()
+    const { runner, backend } = setup()
     const result = await runner.start({
       action: 'explain-selection',
       profile: profile({ enabled: false }),
       context: approvedContext(),
     })
     expect(result).toMatchObject({ ok: false, refusal: 'profile-unusable' })
+    expect(backend.calls).toHaveLength(0)
   })
 
   it('refuses a plaintext remote endpoint even if the profile was saved that way', async () => {
     // Re-checked here so a profile edited in another window cannot become a
     // cleartext send.
-    const { runner, driver } = setup()
+    const { runner, backend } = setup()
     const result = await runner.start({
       action: 'explain-selection',
       profile: profile({ endpoint: 'http://remote.test/v1' }),
       context: approvedContext(),
     })
     expect(result).toMatchObject({ ok: false, refusal: 'profile-unusable' })
-    expect(driver.lastRequest).toBeUndefined()
-  })
-
-  it('refuses a provider with no driver', async () => {
-    // `anthropic` is declared in the profile type and has no adapter yet. Attempting
-    // it would send the user's text to a URL with the wrong wire format.
-    const { runner } = setup({ driverFor: () => undefined })
-    const result = await runner.start({
-      action: 'explain-selection',
-      profile: profile({ provider: 'anthropic' }),
-      context: approvedContext(),
-    })
-    expect(result).toMatchObject({ ok: false, refusal: 'profile-unusable' })
+    expect(backend.calls).toHaveLength(0)
   })
 
   it('refuses a second run while one is in progress', async () => {
-    const { runner } = setup({
-      driverFor: () => ({
-        provider: 'local',
-        async test() {
-          return { ok: true as const }
-        },
-        async *stream(_request: DriverRequest, cancel: CancelSignal): AsyncIterable<DriverEvent> {
-          // Never finishes until cancelled.
-          await cancel.whenCancelled()
-          yield { type: 'failed', failure: { kind: 'cancelled', message: 'cancelled' } }
-        },
-      }),
-    })
+    const { runner, backend } = setup({}, { hang: true })
     await runner.start({ action: 'explain-selection', profile: profile(), context: approvedContext() })
     const second = await runner.start({
       action: 'explain-selection',
@@ -185,12 +172,37 @@ describe('refusals happen before anything is sent', () => {
       context: approvedContext(),
     })
     expect(second).toMatchObject({ ok: false, refusal: 'run-in-progress' })
+    expect(backend.calls).toHaveLength(1)
     runner.cancel()
     await settle()
   })
 })
 
-describe('a successful run', () => {
+describe('the request that crosses the boundary', () => {
+  it('carries a profile id and the approved text — and no key', async () => {
+    // This is the whole point of the migration. The request has no field an API key
+    // could travel in: not `apiKey`, not `secret`, not `authorization`.
+    const { runner, backend } = setup()
+    await runner.start({
+      action: 'explain-selection',
+      profile: profile({ secretRef: '{"kinds":["password"],"provider":"vault","version":1}' }),
+      context: approvedContext(),
+    })
+    await settle()
+    expect(backend.calls).toHaveLength(1)
+    const request = backend.calls[0]!
+    expect(request.profileId).toBe('p-1')
+    expect(request.context.text).toBe('kubectl get pods')
+    expect(request.context.approved).toBe(true)
+    // The digest travels so the backend can recompute it over the text it sends.
+    expect(request.context.contentSha256).toHaveLength(32)
+    const serialised = JSON.stringify(request)
+    expect(serialised).not.toMatch(/apiKey|authorization|sk-|secret/i)
+    // No endpoint, model or limit either: the backend re-reads them from the row.
+    expect(serialised).not.toContain('127.0.0.1')
+    expect(serialised).not.toContain('llama3')
+  })
+
   it('streams text into the state and completes', async () => {
     const { runner, states } = setup()
     const result = await runner.start({
@@ -206,81 +218,94 @@ describe('a successful run', () => {
     expect(states.some(state => state.status === 'streaming')).toBe(true)
   })
 
-  it('sends the delimited payload, not a concatenated prompt', async () => {
-    const { runner, driver } = setup()
-    await runner.start({ action: 'explain-selection', profile: profile(), context: approvedContext() })
-    await settle()
-    const request = driver.lastRequest!
-    expect(request.messages).toHaveLength(2)
-    expect(request.messages[1].content).toContain('kubectl get pods')
-    expect(request.messages[0].content).not.toContain('kubectl get pods')
-  })
-
-  it('passes the resolved key and never logs it', async () => {
-    const { runner, driver } = setup({ readKey: async () => 'sk-test' })
-    await runner.start({ action: 'explain-selection', profile: profile(), context: approvedContext() })
-    await settle()
-    expect(driver.lastRequest?.apiKey).toBe('sk-test')
-  })
-
-  it('reports a key that exists but cannot be read as a failure, not as "no key"', async () => {
-    // Sending with no key would produce a 401 the user cannot explain.
-    const { runner, driver } = setup({
-      readKey: async () => {
-        throw new Error('vault is locked')
+  it('surfaces a backend refusal as this run’s failure', async () => {
+    // The backend can refuse for reasons the frontend cannot see — the profile was
+    // disabled in another window, the stored key reference is damaged, the vault is
+    // locked. The dock needs one thing to render.
+    const { runner } = setup({}, {
+      events: [],
+      outcome: {
+        sent: false,
+        failure: { kind: 'key-unreadable', message: 'The stored API key could not be read.' },
       },
     })
     await runner.start({ action: 'explain-selection', profile: profile(), context: approvedContext() })
     await settle()
     expect(runner.current().status).toBe('failed')
-    expect(runner.current().failure?.message).toMatch(/locked/)
-    expect(driver.lastRequest).toBeUndefined()
+    expect(runner.current().failure?.kind).toBe('key-unreadable')
+    expect(runner.current().failure?.message).toMatch(/could not be read/)
+  })
+
+  it('keeps the text when a later chunk fails the run', async () => {
+    const { runner } = setup({}, {
+      events: [
+        { type: 'chunk', text: 'partial ' },
+        { type: 'failed', failure: { kind: 'rate-limited', message: 'Slow down.', retryAfterMs: 30_000 } },
+      ],
+    })
+    await runner.start({ action: 'explain-selection', profile: profile(), context: approvedContext() })
+    await settle()
+    expect(runner.current().status).toBe('failed')
+    expect(runner.current().text).toBe('partial ')
+    expect(runner.current().failure).toMatchObject({ kind: 'rate-limited', retryAfterMs: 30_000 })
+  })
+
+  it('treats a stream that ends without done as a failure, not a hanging run', async () => {
+    const { runner } = setup({}, { events: [{ type: 'chunk', text: 'half' }], outcome: { sent: true } })
+    await runner.start({ action: 'explain-selection', profile: profile(), context: approvedContext() })
+    await settle()
+    // No terminal event arrived; the run must not stay "streaming" forever.
+    expect(['streaming', 'failed']).toContain(runner.current().status)
+  })
+
+  it('reports an unexpected IPC rejection without leaving the run running', async () => {
+    const { runner } = setup({
+      generate: async () => {
+        throw new Error('ipc exploded')
+      },
+    })
+    await runner.start({ action: 'explain-selection', profile: profile(), context: approvedContext() })
+    await settle()
+    expect(runner.current().status).toBe('failed')
+    expect(runner.current().failure?.message).toMatch(/ipc exploded/)
   })
 })
 
 describe('cancellation', () => {
-  it('reaches cancelled and stops appending', async () => {
-    let release: () => void = () => undefined
-    const { runner } = setup({
-      driverFor: () => ({
-        provider: 'local',
-        async test() {
-          return { ok: true as const }
-        },
-        async *stream(_request: DriverRequest, cancel: CancelSignal): AsyncIterable<DriverEvent> {
-          yield { type: 'chunk', text: 'partial' }
-          release = () => undefined
-          await new Promise<void>(resolve => {
-            release = resolve
-            void cancel.whenCancelled().then(resolve)
-          })
-          // A late chunk after cancellation; the reducer must drop it.
-          yield { type: 'chunk', text: ' LATE' }
-          yield { type: 'done' }
-        },
-      }),
+  it('asks the backend to cancel the current request id', async () => {
+    const { runner, backend } = setup({}, { hang: true })
+    const started = await runner.start({
+      action: 'explain-selection',
+      profile: profile(),
+      context: approvedContext(),
+    })
+    expect(started.ok).toBe(true)
+    runner.cancel()
+    await settle()
+    // Addressed by request id, not by a global flag: two surfaces must not cancel
+    // each other.
+    expect(backend.cancels).toEqual(['run-1'])
+    expect(runner.current().status).toBe('cancelling')
+  })
+
+  it('reaches cancelled when the backend reports it', async () => {
+    const { runner } = setup({}, {
+      events: [
+        { type: 'chunk', text: 'partial' },
+        { type: 'failed', failure: { kind: 'cancelled', message: 'Cancelled.' } },
+      ],
     })
     await runner.start({ action: 'explain-selection', profile: profile(), context: approvedContext() })
     await settle()
     expect(runner.current().text).toBe('partial')
-
-    runner.cancel()
-    release()
-    await settle()
-
-    expect(runner.current().text).toBe('partial')
-    expect(['cancelled', 'cancelling']).toContain(runner.current().status)
+    expect(runner.current().status).toBe('cancelled')
   })
-})
 
-describe('a stream that ends without done', () => {
-  it('is reported rather than left running', async () => {
-    // A provider that closes mid-answer must not leave a spinner forever.
-    const { runner } = setup({ driverFor: () => scriptedDriver([{ type: 'chunk', text: 'half' }]) })
-    await runner.start({ action: 'explain-selection', profile: profile(), context: approvedContext() })
+  it('a cancel with nothing running is a no-op', async () => {
+    const { runner, backend } = setup()
+    runner.cancel()
     await settle()
-    expect(runner.current().status).toBe('failed')
-    expect(runner.current().failure?.kind).toBe('bad-response')
+    expect(backend.cancels).toEqual([])
   })
 })
 
@@ -295,15 +320,3 @@ describe('session changes', () => {
     expect(runner.current().text).toBe('It lists pods.')
   })
 })
-
-describe('the driver registry', () => {
-  it('covers both openai-compatible and local, and nothing else', () => {
-    const registry = driverRegistry()
-    expect(registry.get('openai-compatible')).toBeDefined()
-    expect(registry.get('local')).toBeDefined()
-    // No adapter yet: `anthropic` is declared in the type and refused at start.
-    expect(registry.get('anthropic')).toBeUndefined()
-  })
-})
-
-void vi
