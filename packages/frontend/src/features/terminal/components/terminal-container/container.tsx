@@ -116,12 +116,12 @@ export function TerminalContainer({
     onOutput: remotePrompt.onOutput,
     onInput: onUserInput,
   })
-  const { status, error, write } = session
+  const { status, error, write, sessionId } = session
   const { disconnect, reconnectAction, hostKeyGate } = session
   const { isReady, requestFit } = terminal
   const errorSurface = useTerminalErrorSurface(error)
   const { readableError } = errorSurface
-  useTabConnectionStatus(tabId, status)
+  useTabConnectionStatus(tabId, status, sessionId)
   useTerminalStatusEffects({
     status,
     error,

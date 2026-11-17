@@ -3,6 +3,7 @@ import type { TerminalSessionStatus } from '@/features/terminal/services/termina
 import { useAppStore } from '@/store/app'
 import { settleOnConnectionStatus } from '@/view/hosts/use-save-after-auth'
 import { useSavePromptStore } from '@/view/hosts/save-prompt-store'
+import { usePublishTerminalSessionId } from './use-publish-terminal-session-id'
 
 /**
  * Projects session manager state into the owning tab metadata.
@@ -15,10 +16,18 @@ import { useSavePromptStore } from '@/view/hosts/save-prompt-store'
 export function useTabConnectionStatus(
   tabId: string,
   status: TerminalSessionStatus,
+  sessionId: string | null = null,
 ): void {
   const tab = useAppStore(state => state.tabs.find(item => item.id === tabId))
   const updateTab = useAppStore(state => state.updateTab)
   const offerSave = useSavePromptStore(state => state.offer)
+  // The backend session id for the panels beside the terminal. Published here because
+  // this hook already runs on every status change, and the id changes with the status:
+  // a session id that moved without a status transition, or the reverse, is not a
+  // state the manager produces. `container.tsx` is at its size limit, so a second call
+  // site there was not an option — and two effects watching the same pair would be a
+  // second notion of "the session changed".
+  usePublishTerminalSessionId(tabId, sessionId)
 
   useEffect(() => {
     if (!tab) return

@@ -92,7 +92,7 @@ export function ServerInspector({ hostId, sessionId, exec, onClose }: ServerInsp
             size="sm"
             variant="outline"
             onClick={() => void refresh()}
-            disabled={state.kind === 'running' || !sessionId}
+            disabled={state.kind === 'running' || !sessionId || !hostId}
           >
             {t('common.refresh')}
           </Button>
@@ -103,8 +103,17 @@ export function ServerInspector({ hostId, sessionId, exec, onClose }: ServerInsp
       </div>
 
       <div className="space-y-3 p-3">
-        {!sessionId && (
-          <p className="text-sm text-muted-foreground">{t('inspector.noSession')}</p>
+        {/*
+          The panel can read a host over SSH only when both are present. A **local**
+          terminal has a session id and no host, and the old condition tested the id
+          alone — so the panel showed neither "open a session" nor any result, just the
+          title and two buttons. Found by e2e-04 driving a real WebView: the whole body
+          read `"Server inspectorRefreshClose"`.
+        */}
+        {(!sessionId || !hostId) && (
+          <p className="text-sm text-muted-foreground" data-testid="inspector-no-session">
+            {t('inspector.noSession')}
+          </p>
         )}
 
         {state.kind === 'running' && (
