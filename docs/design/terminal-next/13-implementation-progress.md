@@ -114,7 +114,22 @@ PR **#96**（`feat/tn-ux4-ai-inspector`），三个提交，**Draft，未合并*
 | `AI_DOCK_REAL_GUI` / `INSPECTOR_REAL_GUI` | `NOT_RUN` | — | 无人真实点击 |
 | Rig MSRV / 体积 / Audit 评估 | `NOT_RUN` | — | 按设计延后，需独立 ADR |
 
-**`AI_MVP_READY = NO`、`SERVER_INSPECTOR_READY = NO`。** 自动化契约完整，但用户今天无法在应用里使用 AI 或 Inspector。
+**`AI_MVP_READY = NO`、`SERVER_INSPECTOR_READY = NO`。** 契约与 UI 都已落地，但
+没有真实模型证据（`REAL_MODEL_E2E` = `BLOCKED_EXTERNAL`），也没有真实 GUI 点击验收。
+
+### 本轮自己发现并修复的两个可达性缺陷
+
+这两个都不是「测试变红」发现的，而是**顺着调用链读出来**的——正是 Phase 10.3
+记录的那类问题：守卫存在、有单测、真实入口却在它之前返回。
+
+1. **AI Dock 看不到打开之后才做的选中。** `RightPanel` 只在渲染时读一次
+   `currentTerminalSelection()`，无订阅。「先开 Dock、再选文本」是最自然的使用顺序，
+   于是功能的主路径是坏的：面板一直显示「请先选中」。已加
+   `subscribeTerminalSelection`，7 项测试，含一个组件形状的探针断言重渲染真的发生。
+2. **首次使用只被告知去哪，没有可点的入口。** 无 profile 时只说「去设置添加」，
+   而这是新用户唯一能看到的东西。已加「打开设置」按钮，用 router 导航而非
+   `<a href>`——裸 href 会整页加载并拆掉所有会话（Phase 10.4.1 记录过同一陷阱）。
+
 
 ---
 
