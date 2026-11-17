@@ -109,9 +109,9 @@ PR **#96**（`feat/tn-ux4-ai-inspector`），三个提交，**Draft，未合并*
 | **Profile 编辑器** | **`IMPLEMENTED`** | `view/settings/ai-profile-{editor,form}.tsx` | Settings 新增 AI 标签页；明文确认不继承；key 留空即保留 |
 | **Inspector 真实探测链** | **`PASS`（自动化）** | `features/inspector/inspector-probe.ts` | 13 条测试。先 `uname -s` 再选命令集；未知平台报 `unsupported-platform` 不猜测；权限/缺工具/超时/断连分别分类；部分数据仍返回 |
 | **Server Inspector 面板** | **`IMPLEMENTED`** | `layout/server-inspector-{view,metrics}.tsx` | 11 条组件测试。无 timer（三次 TTL 后 exec 仍只调用 2 次）；缺失数据显示 N/A；切 host 清空结果 |
-| `INSPECTOR_REAL_SSH`（真实 sshd） | `NOT_RUN` | — | exec 层在测试中是替身；未在真实主机执行 |
+| **`INSPECTOR_REAL_SSH`** | **`PASS`** | `src-tauri/src/inspector_probe_e2e_tests.rs` + `scripts/verify-install/inspector-probe-e2e.mjs` | 真实 OpenSSH：平台探测返回 `uname -s`、探测输出含全部 `key=` 行、两条并发 exec 各自完成、关闭连接后探测快速失败不挂起。本机跑 **4/4 PASS** |
 | `REAL_MODEL_E2E` | `NOT_RUN` | — | 只有本地 fake HTTP server；未调用真实 provider |
-| `AI_DOCK_REAL_GUI` | `NOT_RUN` | — | 无人真实点击 |
+| `AI_DOCK_REAL_GUI` / `INSPECTOR_REAL_GUI` | `NOT_RUN` | — | 无人真实点击 |
 | Rig MSRV / 体积 / Audit 评估 | `NOT_RUN` | — | 按设计延后，需独立 ADR |
 
 **`AI_MVP_READY = NO`、`SERVER_INSPECTOR_READY = NO`。** 自动化契约完整，但用户今天无法在应用里使用 AI 或 Inspector。
