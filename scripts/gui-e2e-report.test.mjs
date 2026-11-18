@@ -1,6 +1,6 @@
 // The GUI layer report: per-run counts, never a history-wide sum, never a stale verdict.
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -231,4 +231,36 @@ test('all-green cases with no gaps report PASS and name no partial case', () => 
   assert.equal(report.status, 'PASS')
   assert.deepEqual(report.partialCases, [])
   assert.deepEqual(report.unexplainedNotRun, [])
+})
+
+// ---------------------------------------------------------------------------
+// The exit status. `main()` used to return 0 unconditionally, so a report that said
+// `status: "FAIL"` still left the job green — the third way the same job described a
+// broken run as a passing one.
+// ---------------------------------------------------------------------------
+
+test('main() exits 1 when the report status is FAIL', async () => {
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', { verdict: 'FAIL', failures: [{ title: 'x', error: 'y' }] }),
+  })
+  const out = path.join(root, 'out.json')
+  const { main } = await import('./gui-e2e-report.mjs')
+  assert.equal(main(['--artifacts', root, '--out', out]), 1)
+  // The file is still written, so the artifact upload keeps the diagnosis.
+  const written = JSON.parse(readFileSync(out, 'utf8'))
+  assert.equal(written.status, 'FAIL')
+})
+
+test('main() exits 0 for PASS, and for NOT_RUN where nothing usable ran', async () => {
+  const { main } = await import('./gui-e2e-report.mjs')
+  const passRoot = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', { verdict: 'PASS' }),
+  })
+  assert.equal(main(['--artifacts', passRoot]), 0)
+  // An empty artifacts dir is NOT_RUN: the runner step is what failed to produce
+  // output, and failing here too would report one problem twice.
+  const emptyRoot = mkdtempSync(path.join(os.tmpdir(), 'gui-report-empty-'))
+  assert.equal(main(['--artifacts', emptyRoot]), 0)
 })

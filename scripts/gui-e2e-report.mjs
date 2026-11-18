@@ -330,8 +330,20 @@ export function buildGuiReport({ artifactsDir, platform = null }) {
   }
 }
 
-function main() {
-  const options = parseArgs(process.argv.slice(2))
+/**
+ * Exit status is part of the contract, not a formality.
+ *
+ * This used to `return 0` unconditionally. Combined with the workflow step being
+ * `if: always()`, that meant the report could say `status: "FAIL"` and the job would
+ * still be green — a third way for the same green job to describe a broken run. The
+ * file is still written before exiting, so the artifact upload keeps the diagnosis.
+ *
+ * Only FAIL fails the step. `NOT_RUN` and `INCOMPLETE` stay exit 0: they say the
+ * suite produced nothing usable, which the *runner* step already failed to produce,
+ * and turning them into a second failure here would report one problem twice.
+ */
+function main(argv = process.argv.slice(2)) {
+  const options = parseArgs(argv)
   const report = buildGuiReport({ artifactsDir: path.resolve(options.artifacts), platform: options.platform })
   const text = `${JSON.stringify(report, null, 2)}\n`
   process.stdout.write(text)
@@ -340,9 +352,11 @@ function main() {
     mkdirSync(path.dirname(target), { recursive: true })
     writeFileSync(target, text)
   }
-  return 0
+  return report.status === 'FAIL' ? 1 : 0
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   process.exit(main())
 }
+
+export { main }
