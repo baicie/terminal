@@ -5,7 +5,7 @@
 use crate::session::local::LocalSession;
 use crate::session::ssh::{
     register_connection_attempt, run_cancellable_connection, ssh_connection_deadline_with_timeout,
-    SshSession,
+    ExecCancellation, SshSession,
 };
 use crate::session::terminal_output::{ack_session_output, finish_session_output};
 use crate::session::{
@@ -455,6 +455,31 @@ pub async fn session_create_ssh_jump(
 
 use std::time::Duration;
 
+/// Live exec calls, keyed by the id the caller supplied.
+///
+/// ## Why the caller supplies the id
+///
+/// The id has to be known **before** the call blocks, because cancelling means calling
+/// `session_exec_cancel` from another IPC call while the first one is still awaiting.
+/// Generating it inside `session_exec` would return it only on completion — after the
+/// point where anyone could use it.
+static ACTIVE_EXECS: std::sync::OnceLock<
+    tokio::sync::Mutex<std::collections::HashMap<String, ExecCancellation>>,
+> = std::sync::OnceLock::new();
+
+fn active_execs() -> &'static tokio::sync::Mutex<std::collections::HashMap<String, ExecCancellation>>
+{
+    ACTIVE_EXECS.get_or_init(|| tokio::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Remove an exec from the registry, whichever way it finished.
+///
+/// Called on every exit path including errors: a token left behind would keep the map
+/// growing for the life of the process, and a re-used id would find a stale entry.
+async fn forget_exec(exec_id: &str) {
+    active_execs().lock().await.remove(exec_id);
+}
+
 /// Execute a shell command and return its output.
 /// Used for shell completion (aliases, functions) and RC file parsing.
 /// - Local sessions: runs via tokio::process with matching shell.
@@ -464,6 +489,7 @@ pub async fn session_exec(
     session_id: String,
     command: String,
     timeout_ms: Option<u64>,
+    exec_id: Option<String>,
 ) -> Result<ExecResult, SessionError> {
     let manager = get_session_manager();
     let Some(session) = manager.get_session(&session_id).await else {
@@ -471,14 +497,47 @@ pub async fn session_exec(
     };
 
     let timeout = Duration::from_millis(timeout_ms.unwrap_or(5000));
+    let cancel = ExecCancellation::new();
+    if let Some(id) = exec_id.as_deref() {
+        active_execs()
+            .lock()
+            .await
+            .insert(id.to_string(), cancel.clone());
+    }
 
-    match session {
-        crate::session::SessionState::Local(_) => exec_local(&command, timeout).await,
-        crate::session::SessionState::Ssh(ssh) => ssh.exec(&command, timeout).await,
+    let outcome = match session {
+        crate::session::SessionState::Local(_) => {
+            exec_local(&command, timeout, cancel.clone()).await
+        }
+        crate::session::SessionState::Ssh(ssh) => ssh.exec(&command, timeout, cancel.clone()).await,
+    };
+
+    if let Some(id) = exec_id.as_deref() {
+        forget_exec(id).await;
+    }
+    outcome
+}
+
+/// Stop one in-flight exec. The session and its interactive shell are untouched.
+#[tauri::command]
+pub async fn session_exec_cancel(exec_id: String) -> Result<bool, SessionError> {
+    let token = active_execs().lock().await.get(&exec_id).cloned();
+    match token {
+        Some(token) => {
+            token.cancel();
+            Ok(true)
+        }
+        // Already finished, or never existed. Not an error: the caller races the probe's
+        // natural completion, and reporting a failure for that would be a false alarm.
+        None => Ok(false),
     }
 }
 
-async fn exec_local(command: &str, timeout: Duration) -> Result<ExecResult, SessionError> {
+async fn exec_local(
+    command: &str,
+    timeout: Duration,
+    cancel: ExecCancellation,
+) -> Result<ExecResult, SessionError> {
     let shell = if let Ok(s) = std::env::var("TERMINAL_DEFAULT_SHELL") {
         s
     } else if cfg!(windows) {
@@ -499,10 +558,16 @@ async fn exec_local(command: &str, timeout: Duration) -> Result<ExecResult, Sess
         cmd.current_dir(PathBuf::from(&home));
     }
 
-    let output = tokio::time::timeout(timeout, cmd.output())
-        .await
-        .map_err(|_| SessionError::ExecTimeout)?
-        .map_err(|e| SessionError::ExecFailed(format!("exec failed: {}", e)))?;
+    // `kill_on_drop(true)` is set on the command above, so returning early from this
+    // `select!` drops the future and takes the child process with it. A cancelled local
+    // exec therefore leaves no stray probe process behind.
+    let output = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Err(SessionError::ExecCancelled),
+        result = tokio::time::timeout(timeout, cmd.output()) => result
+            .map_err(|_| SessionError::ExecTimeout)?,
+    }
+    .map_err(|e| SessionError::ExecFailed(format!("exec failed: {}", e)))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -546,7 +611,7 @@ fn local_exec_args(shell: &str, command: &str, windows: bool) -> [String; 2] {
 
 #[cfg(test)]
 mod local_exec_tests {
-    use super::{local_exec_args, local_exec_command};
+    use super::{exec_local, local_exec_args, local_exec_command, ExecCancellation, SessionError};
 
     #[test]
     fn windows_cmd_uses_slash_c() {
@@ -577,6 +642,59 @@ mod local_exec_tests {
         let command = local_exec_command("/bin/bash", "sleep 60", false);
 
         assert!(command.get_kill_on_drop());
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_local_exec_returns_promptly_and_leaves_no_child() {
+        // The flag test above only proves `kill_on_drop` was set. This drives the real
+        // path: a command that would run far past the cancel, cancelled after 50 ms.
+        //
+        // Without cancellation this would return after the 10 s timeout; the assertion
+        // on elapsed time is what distinguishes "stopped" from "waited it out".
+        let cancel = ExecCancellation::new();
+        let tripper = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            tripper.cancel();
+        });
+
+        let marker = std::env::temp_dir().join(format!(
+            "tn-cancel-marker-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let marker_path = marker.to_string_lossy().to_string();
+
+        let started = std::time::Instant::now();
+        let outcome = exec_local(
+            &format!("sleep 3; touch '{}'", marker_path),
+            std::time::Duration::from_secs(10),
+            cancel,
+        )
+        .await;
+        let elapsed = started.elapsed();
+
+        assert!(
+            matches!(outcome, Err(SessionError::ExecCancelled)),
+            "expected ExecCancelled, got {:?}",
+            outcome.err()
+        );
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "cancel must interrupt the wait rather than the deadline: took {:?}",
+            elapsed
+        );
+
+        // Give a killed child any chance to run its remaining command, then confirm it
+        // did not. A child that outlived the cancel would still create this file.
+        tokio::time::sleep(std::time::Duration::from_millis(3_500)).await;
+        assert!(
+            !marker.exists(),
+            "the cancelled exec's child kept running and created {marker_path}"
+        );
     }
 }
 

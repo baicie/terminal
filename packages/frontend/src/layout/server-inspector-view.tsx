@@ -56,19 +56,23 @@ export function ServerInspector({ hostId, sessionId, exec, onClose, probe = runI
   // is no longer wanted.
   const generationRef = useRef(0)
 
-  // Unmount cancels: no probe survives the panel, which is the design's "closing the
-  // dock stops everything".
+  // Closing used to abandon the promise while the exec stayed open until its timeout.
+  // `cancelLast` stops that exec and nothing else: not the session, not the shell.
   useEffect(() => {
     return () => {
       generationRef.current += 1
+      void exec.cancelLast?.()
     }
-  }, [])
+  }, [exec])
 
-  // A host change invalidates the displayed result: it describes a different machine.
+  // Skips the first run: on mount there is no exec to cancel.
+  const mountedRef = useRef(false)
   useEffect(() => {
     generationRef.current += 1
     setState({ kind: 'idle' })
-  }, [hostId, sessionId])
+    if (mountedRef.current) void exec.cancelLast?.()
+    mountedRef.current = true
+  }, [hostId, sessionId, exec])
 
   const refresh = useCallback(async () => {
     if (!hostId || !sessionId) return

@@ -54,6 +54,14 @@ export interface InspectorExec {
     command: string,
     timeoutMs: number,
   ): Promise<{ stdout: string; stderr: string; exitCode: number | null }>
+  /**
+   * Stop the exec in flight, if there is one.
+   *
+   * Optional because the interface is also satisfied by test doubles that never block.
+   * A transport without it still works — the probe keeps its own timeout — it just
+   * cannot stop early, which is the behaviour this exists to improve on.
+   */
+  cancelLast?(): Promise<void>
 }
 
 export interface ProbeOptions {

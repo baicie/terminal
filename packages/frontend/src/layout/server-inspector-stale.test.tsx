@@ -123,3 +123,83 @@ describe('a reading becomes stale without any user action', () => {
     expect(vi.getTimerCount()).toBeLessThanOrEqual(1)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Closing the panel must stop the exec, not just stop believing its result.
+//
+// `generationRef` decides which outcome to display. Before this, it was the *only*
+// thing closing did: the promise was abandoned while the SSH exec channel stayed
+// open on the server, streaming output nobody would read, until its own timeout.
+// ---------------------------------------------------------------------------
+
+describe('closing the panel stops the exec itself', () => {
+  it('calls cancelLast on unmount', async () => {
+    const cancelLast = vi.fn(async () => {})
+    const exec = {
+      exec: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
+      cancelLast,
+    }
+    const view = render(
+      <ServerInspector
+        hostId="h-1"
+        sessionId="ssh-1"
+        exec={exec}
+        onClose={() => undefined}
+        probe={async () => ({ ok: true as const, result: result(Date.now()) })}
+      />,
+    )
+    expect(cancelLast).not.toHaveBeenCalled()
+    view.unmount()
+    expect(
+      cancelLast,
+      'unmounting must stop the in-flight exec, not only discard what it returns',
+    ).toHaveBeenCalledTimes(1)
+  })
+
+  it('calls cancelLast when the host changes', async () => {
+    // The old probe targets the old host; letting it run keeps a channel open on a
+    // machine the user has navigated away from.
+    const cancelLast = vi.fn(async () => {})
+    const exec = {
+      exec: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
+      cancelLast,
+    }
+    const view = render(
+      <ServerInspector
+        hostId="h-1"
+        sessionId="ssh-1"
+        exec={exec}
+        onClose={() => undefined}
+        probe={async () => ({ ok: true as const, result: result(Date.now()) })}
+      />,
+    )
+    cancelLast.mockClear()
+    view.rerender(
+      <ServerInspector
+        hostId="h-2"
+        sessionId="ssh-2"
+        exec={exec}
+        onClose={() => undefined}
+        probe={async () => ({ ok: true as const, result: result(Date.now()) })}
+      />,
+    )
+    expect(cancelLast).toHaveBeenCalled()
+  })
+
+  it('works when the transport has no cancelLast at all', async () => {
+    // The method is optional: a transport that cannot cancel still renders, it just
+    // falls back to the probe's own timeout. Making this required would break every
+    // existing test double for no gain.
+    const exec = { exec: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })) }
+    const view = render(
+      <ServerInspector
+        hostId="h-1"
+        sessionId="ssh-1"
+        exec={exec}
+        onClose={() => undefined}
+        probe={async () => ({ ok: true as const, result: result(Date.now()) })}
+      />,
+    )
+    expect(() => view.unmount()).not.toThrow()
+  })
+})

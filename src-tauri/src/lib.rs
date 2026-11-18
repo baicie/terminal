@@ -58,7 +58,7 @@ use commands::{
     key_generate, session_ack_output, session_cancel_connection, session_close,
     session_create_local, session_create_ssh_agent, session_create_ssh_cert,
     session_create_ssh_jump, session_create_ssh_key, session_create_ssh_password, session_exec,
-    session_list, session_resize, session_write, session_write_raw,
+    session_exec_cancel, session_list, session_resize, session_write, session_write_raw,
 };
 use db_import::{backup_database_before_migration, import_backup_data};
 use db_recovery::{
@@ -346,6 +346,7 @@ pub fn run() {
             session_close,
             session_list,
             session_exec,
+            session_exec_cancel,
             key_generate,
             ssh_host_key_probe,
             ssh_host_key_probe_via_jump,
