@@ -343,6 +343,81 @@ e2e-04 的「6/6 通过」被我自己写成了 `PASS`。审计逐条核对后�
 
 ---
 
+## 第二轮复审（2026-11-18）：消灭假绿与真实缺口
+
+基线与上一轮相同：`main@efe551b` 起。任务书要求消灭「测试通过但产品实际失败」，六批按顺序执行。
+
+### 已完成并合并
+
+| PR | 内容 | 证据 |
+| --- | --- | --- |
+| [#110](https://github.com/baicie/terminal/pull/110) | **GUI 三层假绿** | 已合并 `efe551b` |
+| [#111](https://github.com/baicie/terminal/pull/111) | **Vitest 全量稳定性** | 已合并 `5dce9d4` |
+
+### 第一层：聚合器只数「有没有 throw」
+
+`gui-e2e-report.mjs` 只对 wdio 的 `state.failed` 求和。spec 判定前置条件不满足时记 `NOT_RUN` 然后正常返回——`failed: 0`，层报告 PASS。
+
+**用真实 run `44230712100` 的 artifact 实测**：
+
+```
+修复前: macOS PASS / Windows PASS / Linux PASS
+修复后: macOS FAIL / Windows FAIL / Linux FAIL
+```
+
+Linux 的 `NOT_RUN` 比另外两个平台多一个，正是没打开的 Snippet Dock。
+
+### 第二层：spec 有不会失败的路
+
+- `!state.panelExists` → 记 `NOT_RUN` 后 `continue`。三个 occupant 现在都是 **REQUIRED**
+- 零断言的「records what could not be verified」已删除（6 用例 → 5 个真用例）
+- 面板打开用固定 `sleep(400)`，而**实测首次打开 macOS 482 ms / Linux 539 ms** → 有界条件轮询
+
+### 第三层：报告算出 FAIL，step 仍 exit 0
+
+`main()` 无条件 `return 0`，macOS 的 Summarise step 没有 `continue-on-error`。现在 FAIL → exit 1。
+
+### 故意破坏实验（真实构建 + 真实 WebKit）
+
+把 snippet 的 palette 标题改成不存在的名字：
+
+```
+snippets is REQUIRED but did not open: {"clicked":false,
+  "labels":[... "Open the snippet dock" ...], "waitedMs":10068}
+```
+
+spec FAILED → 证据 `verdict: FAIL` → 聚合器 `status: FAIL, failedCases: ["e2e-04"]`。
+恢复后 **5/5 通过**。
+
+### 全量 Vitest：成败由 CPU 负载决定
+
+先前的「跨文件污染」结论**建立在一个样本上**。同命令连跑 5 次得到 pass-fail-pass-pass-pass 后推翻。真正的确定性复现是饱和 CPU：
+
+```
+空闲 12/12 通过    ←→    8 个 `yes` 进程 6/6 失败
+```
+
+根因：`terminal-by-url.test.tsx` 渲染的 `TerminalByUrl` 把 `SaveCredentialPrompt`（`React.lazy`）和被测的 workbench 放在同一个 Suspense 边界，而 prompt **没有被 mock**。
+
+| 条件 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 满载，单对文件 | 6/6 失败 | **0/6** |
+| 全量（空闲） | 2–3 失败 | **2746/2746** ×2 |
+| 满载，layout 子集 | 2 失败 | **0/3** |
+
+### 自己写了一个抓不到目标的守卫，删掉了
+
+先写了静态审计「渲染 lazy 边界但没有 await」。用它验证自己：**去掉 mock 后什么都没报**——那个 spec 的 `waitFor` 等的是 store 值，正则无法区分「等对了」和「等错了」。看不见自己目标的守卫比没有更糟。
+
+### 顺带发现的真实缺陷
+
+| 缺陷 | 位置 | 证据 |
+| --- | --- | --- |
+| `.mjs` 文件里有 2 个 NUL 字节，`file(1)` 判为 `data`，`grep` 对它完全失效 | `check-verification-evidence.mjs` | 找 `--mode` 时 grep 返回空，差点得出「选项不存在」的错误结论。改为 `\u0000` 转义 |
+| 该文件的 `stripRustCommentsAndStrings` **零测试** | 同上 | 补 4 条，变异验证 3 红 |
+
+---
+
 ## 本轮 PR
 
 | PR | 分支 | Head SHA | CI | 状态 | 风险 / 回滚 |

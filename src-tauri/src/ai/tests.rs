@@ -540,6 +540,87 @@ fn a_no_key_request_sends_no_authorization_header() {
 }
 
 #[test]
+fn the_api_key_reaches_the_provider_and_nowhere_else() {
+    /*
+     * Task G's rule, stated as a test rather than as a comment on a struct field.
+     *
+     * The key is read in Rust from the vault, wrapped in `Zeroizing`, and sent as a
+     * header. Three things must hold, and only the first was covered before:
+     *
+     *   1. it reaches the provider (a key that is silently dropped is a broken feature)
+     *   2. it does not appear in any emitted event — those are what the WebView sees
+     *   3. it does not appear in a failure message — those are what gets displayed,
+     *      logged, and pasted into bug reports
+     *
+     * A distinctive value on purpose: a key like `sk-test` could coincide with the
+     * words in a message, and then this would pass for the wrong reason.
+     */
+    const KEY: &str = "sk-distinctive-9f3a2b7c1d4e-do-not-log-me";
+    let (endpoint, received) = serve_once(json_response(
+        200,
+        "OK",
+        r#"{"choices":[{"message":{"content":"ok"}}]}"#,
+    ));
+    let (events, failure) = collect(request(endpoint, |request| {
+        request.api_key = Some(zeroize::Zeroizing::new(KEY.to_string()));
+        request.streaming = false;
+    }));
+
+    let captured = received.recv().expect("request");
+    assert_eq!(
+        captured.header("authorization"),
+        Some(format!("Bearer {KEY}").as_str()),
+        "the key must actually be sent, or the rest of this test proves nothing"
+    );
+
+    let rendered = format!("{events:?}");
+    assert!(
+        !rendered.contains(KEY),
+        "the API key reached an emitted event, which the WebView receives"
+    );
+    if let Some(failure) = failure {
+        assert!(
+            !failure.message.contains(KEY),
+            "the API key reached a failure message, which is displayed and logged"
+        );
+    } else {
+        // The run succeeded, so there is no failure to inspect. Assert the successful
+        // path is also clean rather than skipping the check silently.
+        assert!(
+            !rendered.contains("sk-distinctive"),
+            "the key's shape reached an event"
+        );
+    }
+}
+
+#[test]
+fn a_provider_error_body_does_not_echo_into_the_failure_message() {
+    /*
+     * A provider that echoes the request's Authorization header into its error body is
+     * not hypothetical — proxies and debugging endpoints do it. The failure text is
+     * built from `AiFailureKind`, never from the response body, and this pins that:
+     * the body below contains the key and a stack of provider internals.
+     */
+    let (endpoint, _received) = serve_once(json_response(
+        500,
+        "Internal Server Error",
+        r#"{"error":{"message":"upstream rejected Bearer sk-echoed-abc123 at handler.rs:88"}}"#,
+    ));
+    let (_events, failure) = collect(request(endpoint, |request| {
+        request.api_key = Some(zeroize::Zeroizing::new("sk-echoed-abc123".to_string()));
+        request.streaming = false;
+    }));
+
+    let failure = failure.expect("a 500 must produce a failure");
+    assert!(!failure.message.contains("sk-echoed-abc123"));
+    assert!(
+        !failure.message.contains("handler.rs"),
+        "the provider's internals must not reach a user-facing message: {}",
+        failure.message
+    );
+}
+
+#[test]
 fn the_endpoint_path_tolerates_a_full_completions_url() {
     let (endpoint, received) = serve_once(json_response(
         200,
