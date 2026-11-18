@@ -208,6 +208,32 @@ describe('Context Dock occupants — real WebView', () => {
     currentCase = this?.currentTest?.title ?? 'unknown case'
   })
 
+  /*
+   * The backstop `check()` cannot provide.
+   *
+   * `check()` records the reason for every assertion this spec makes, but a case can
+   * also fail without reaching one: a `waitUntil` that times out, a WebDriver error, an
+   * exception in a helper. Those never pass through `check()`, and without this hook the
+   * verdict would be computed from `failures` alone and could report PASS over them —
+   * the exact false-PASS shape `scripts/gui-evidence-integrity.test.mjs` was written for.
+   *
+   * `currentTest.err` is undefined in this runner (measured), so the message may be
+   * missing; the *fact* of the failure is what matters here, and `check()` supplies the
+   * text wherever it can.
+   */
+  afterEach(function () {
+    if (this?.currentTest?.state !== 'failed') return
+    const title = this.currentTest.title ?? currentCase
+    if (failures.some(entry => entry.title === title)) return
+    const err = this.currentTest.err
+    failures.push({
+      title,
+      error:
+        (typeof err === 'string' ? err : err?.message) ??
+        `case failed without reaching an assertion (${title})`,
+    })
+  })
+
   before(async () => {
     await browser.$('[data-testid="activity-rail"]').waitForExist({ timeout: 20_000 })
     await browser.setWindowSize(1440, 900)
