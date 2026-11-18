@@ -41,6 +41,35 @@ describe('MenuTabs', () => {
     })
   })
 
+  it('exposes each tab type, because the label is not a stable identifier', () => {
+    /*
+     * The GUI spec needs "the local tab" and used to match `/^local$/i` on
+     * `aria-label`. That label is `tab.title ?? tab.label`, and `title` is whatever
+     * the shell wrote into its OSC title sequence — so the same local session was
+     * "Local" on macOS and "Administrator: C:\Windows\...\powershell.exe" on
+     * Windows, where the spec then recorded NOT_RUN for a tab that existed.
+     *
+     * This pins the attribute the spec now uses. The `title` on the local tab below
+     * is the Windows form on purpose: a future change that drops `data-tab-type` and
+     * goes back to matching the label will fail here before it reaches CI.
+     */
+    useAppStore.setState({
+      tabs: [
+        { id: 'one', label: 'Local', title: 'Administrator: powershell.exe', type: 'local' },
+        { id: 'two', label: 'Box', type: 'remote', hostId: 'host-1' },
+      ],
+      splitGroups: [],
+      activeTabId: 'one',
+      recentlyClosedTabs: [],
+    })
+    renderTabs()
+    const tabs = Array.from(document.querySelectorAll('[role="tab"]')) as HTMLElement[]
+    expect(tabs.map(tab => tab.getAttribute('data-tab-type'))).toEqual(['local', 'remote'])
+    const local = tabs.find(tab => tab.getAttribute('data-tab-type') === 'local')
+    // The label still shows the shell title; that is why the type attribute exists.
+    expect(local?.getAttribute('aria-label')).toBe('Administrator: powershell.exe')
+  })
+
   it('activates a session and opens the terminal route', () => {
     renderTabs()
 

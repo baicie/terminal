@@ -117,7 +117,20 @@ describe('E2E-01 startup and terminal readiness', () => {
     // terminal.
     const activated = await browser.execute(() => {
       const tabs = Array.from(document.querySelectorAll('[role="tab"]'))
-      const local = tabs.find(tab => /^local$/i.test(tab.getAttribute('aria-label') ?? ''))
+      /*
+       * Identify the local tab by **type**, not by its label.
+       *
+       * The label is `tab.title ?? tab.label`, and `title` is whatever the shell put
+       * in its OSC title sequence. Measured on run 44230712100, the same local
+       * session: macOS "Local", Linux "Local", Windows
+       * "Administrator: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe".
+       * The old matcher was `/^local$/i` on that string, so on Windows it found no
+       * local tab and the case recorded NOT_RUN — the product had the tab all along,
+       * and the status bar in the same run said `ConnectedLocal142×43`.
+       */
+      const local =
+        tabs.find(tab => tab.getAttribute('data-tab-type') === 'local') ??
+        tabs.find(tab => /^local$/i.test(tab.getAttribute('aria-label') ?? ''))
       if (!local) return { ok: false, tabs: tabs.length }
       // Mark it so the WebDriver click below can find the same element.
       local.setAttribute('data-e2e-activate', 'local')
