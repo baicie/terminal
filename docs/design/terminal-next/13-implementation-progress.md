@@ -36,7 +36,7 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | **SFTP 重复连接契约（幂等 / 替换死条目）** | **`IMPLEMENTED`** | `sftp.rs` | 本轮修复；3 条契约测试 + 真实 sshd 5/5（既有用例，覆盖上传/下载/并发路径，**不覆盖**重复 connect 场景） |
 | **Layout hysteresis 双向恢复** | **`PASS`** | `layout/layout-hysteresis.ts` | 本轮修复真实缺陷：回升分支永不成立。3 条新测试在旧实现上全部变红 |
 | 双 Pane / 分屏 | `PASS`（既有） | `terminal-split-sash` | PR #44 起 |
-| 三平台 Native GUI E2E | **`PASS`（e2e-04）** | `e2e/gui/specs/e2e-04-dock-occupants.e2e.mjs` | PR #108 的 run `44230712100`：**macOS（WKWebView）、Windows（WebView2/msedge 156）、Linux（WebKitGTK 605）各 6/6**，逐条用例名相同，每份 spec 在各自独立的应用进程里跑。**这证明的是 Dock 占位者的 UI 契约与「关闭 Dock 不关闭会话」，不是 PTY 存活**——旧用例集里的 PTY I/O 断言（真实 shell 提示符、回显命令）在同一次运行中同样 6/6，但那是 e2e-01，不是本 spec |
+| 三平台 Native GUI E2E | **`PARTIAL`（e2e-04）** | `e2e/gui/specs/e2e-04-dock-occupants.e2e.mjs` | run `44230712100`：**macOS（WKWebView）、Windows（WebView2）、Linux（WebKitGTK）各执行 6 个用例、0 失败**，每份 spec 在独立应用进程里跑。**但 spec 自己产出的 verdict 是 `PARTIAL`（`notRunCount: 3`），不是 PASS**，本行随之降级。独立审计逐条核对后的成色：①用例 6「records what could not be verified」只有三条 `notes.push`，**零断言**——6/6 是「五个真实用例 + 一个记录器」；②「关闭 Dock 不关闭会话」读的是 `terminalCanvas` / `.xterm` 节点 / tab 数量，**全是 DOM 存在性**，打断 PTY 也能通过；真实 PTY 证据在 e2e-01；③「从用户手势打开」实际是 `dispatchEvent(CustomEvent('shortcut:command-palette'))` + 脚本 `.click()`，**不是 WebDriver 真实键鼠**；④检查器用例的 `data-metric` 选择器**在产品源码里不存在**，该数值守卫恒为空集 |
 | 物理键盘 / IME / Vim / tmux / DPI | `BLOCKED_EXTERNAL` | — | 需真实输入设备与交互环境 |
 | **Context Dock 单占位者公共契约** | **`PASS`** | `store/right-panel-state.ts` | 本轮实现：union 命名 `none/sftp/snippets/inspector/ai`，`IMPLEMENTED_RIGHT_PANEL_OCCUPANTS` 区分「已声明」与「已实现」，`resolveRightPanelMode` 对未实现占位者回落 `none`。源码级守卫测试禁止重新引入第二个布尔量，已用变异验证（加 `sftpOpen` 即变红） |
 
@@ -277,6 +277,48 @@ id 生成器里，而不是拥有该句柄的地方。现在 `register` 返回 `
    而这是新用户唯一能看到的东西。已加「打开设置」按钮，用 router 导航而非
    `<a href>`——裸 href 会整页加载并拆掉所有会话（Phase 10.4.1 记录过同一陷阱）。
 
+
+---
+
+## 独立审计推翻的两条（PR #108 第一版）
+
+任务书写明「每个结论由独立 agent 尝试推翻」。本轮照做，十个审计代理逐条证伪，**有两条我自己声称已修的缺陷是错的**。
+
+### T04：守卫存在，但没有任何东西驱动它
+
+`backendSessionId` 的整条链路都写好了：终端发布它、selection 携带它、`contextMatchesSession` 比较它、`ai-runner` 把 `visibleBackendSessionId()` 作为第三个参数传进去。**唯独 `buildContext` 不接受它。**
+
+于是每个生产环境构造的 `ApprovedContext` 的 `backendSessionId` 都是 `undefined`，而守卫的第一行是：
+
+```ts
+if (context.backendSessionId === undefined || context.backendSessionId === null) {
+  return true   // ← 永远走这里
+}
+```
+
+重连（同 tab、新 session）照样通过审批。
+
+**为什么我的测试没抓到**：`ai-session-identity.test.ts` 直接构造 `ApprovedContext` 字面量并手工填上 `backendSessionId`，绕过了唯一的生产构造路径。测试断言的是一条产品不走的路。
+
+这是我在这个项目里记录过多次的同一形状——Phase 10.1 的 DEFECT-1（守卫在 early return 之后）、Phase 10.3 的 `identityFilePath`（同一形状）。**第三次了。**
+
+修复：`right-panel` 把 `selection.backendSessionId` 交给 dock，dock 传给 builder。
+变异验证：三项新测试在旧 builder 上 **3 红 / 5 绿**，修复后 **8/8**。
+
+### T09：分段算术重复计算
+
+`firstStageSeenMs` = spawn 到「第一次观测到 stage 文件」的距离，**已经包含 app 自己的时间线**。把它和 `inAppMs` 相加不是分段，是重复计算，可能得到超过预算本身的数。
+
+实测后果是消息自相矛盾：`8000 ms 花在前端第一个 stage 之前（最后 stage 的墙钟：2100 ms）`。
+
+改为预算的分割：`outsideAppMs = max(0, timeoutMs - inAppMs)`。
+变异验证：两项新测试在旧算术上 **2 红 / 48 绿**，修复后 **50/50**。
+
+### 顺带被推翻的过度声明
+
+e2e-04 的「6/6 通过」被我自己写成了 `PASS`。审计逐条核对后降为 `PARTIAL`：spec 自己产出的证据文件 verdict 就是 `PARTIAL`（`notRunCount: 3`）；用例 6 零断言；「关闭 Dock 不关闭会话」只有 DOM 存在性；「用户手势」实为合成 CustomEvent；检查器用例的选择器 `data-metric` **在产品源码里不存在**。
+
+**一条方法论教训**：第一版 PR 的证据是「声明 + 我自己的测试」，而测试写在我自己以为对的假设上。审计代理没有这些假设，所以它们能看到 builder 从未被调用。**测试通过只证明代码符合我的理解，不证明我的理解对。**
 
 ---
 
