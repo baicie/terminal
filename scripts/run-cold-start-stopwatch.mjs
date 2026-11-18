@@ -824,6 +824,27 @@ export async function runColdStartStopwatch({
         reject(error)
       }
 
+      /**
+       * Split the elapsed time into "before the front end ran" and "inside the app".
+       *
+       * Not a diagnostic nicety: measured on run 43861936042, the app's own stages ended
+       * at 2612 ms while the watcher did not see `frontend-boot` until 7387 ms. The
+       * deadline was spent before the product had started doing anything, and the
+       * message blamed the product. A sample that fails this way must be legible as a
+       * warm-up/runner sample without anyone loosening the gate to make it pass.
+       */
+      const budgetSplit = () => {
+        const inAppMs =
+          lastStages.length > 0
+            ? Math.max(...lastStages.map(stage => Number(stage.atMs ?? 0)))
+            : null
+        const preFrontendMs =
+          firstStageSeenMs === null || inAppMs === null
+            ? null
+            : firstStageSeenMs + inAppMs
+        return { inAppMs, preFrontendMs }
+      }
+
       const failReadinessTimeout = () => {
         if (spawnStartedAt === null) {
           fail(
@@ -868,11 +889,31 @@ export async function runColdStartStopwatch({
         const requestedSession = stageNames.includes('session-create-requested')
         const sessionCreated = stageNames.includes('session-created')
         const enteredSsh = stageNames.includes('ssh-connect-start')
+        // ## Where the time went, so a failure names its own cause
+        //
+        // Measured on run 43861936042: the app's own timeline finished at
+        // `session-created@2612ms` — comfortably inside the budget — while the watcher
+        // did not see `frontend-boot` until **7387 ms**. The 10 s deadline was spent
+        // almost entirely *before* the front end's first stage, so the failure said
+        // "never reached db ready" about a front end that had run in 2.6 s.
+        //
+        // That misdirection is what invites "raise the timeout". The split below makes
+        // the two halves visible instead: pre-frontend time is the WebView getting to
+        // the bundle (a runner/warm-up property), and in-app time is the product. A
+        // sample that fails only because the former was slow is then legible as such
+        // without loosening the gate.
+        const { inAppMs, preFrontendMs } = budgetSplit()
         const stageSummary =
           `stages: ${describeStages(lastStages)}`
           + (firstStageSeenMs === null
             ? '; no stage ever arrived'
             : `; first stage at ${firstStageSeenMs} ms`)
+          + (inAppMs === null
+            ? ''
+            : `; the app's own stages ended at ${inAppMs} ms, so `
+              + `${Math.max(0, timeoutMs - inAppMs)} ms of the ${timeoutMs} ms budget `
+              + `was spent before the front end's first stage`)
+          + (preFrontendMs === null ? '' : ` (wall clock at last stage: ${preFrontendMs} ms)`)
           + '; '
           + (!reachedFrontend
             ? 'the front end never evaluated (WebView never ran the bundle)'
@@ -1022,6 +1063,10 @@ export async function runColdStartStopwatch({
               requestToReadyMs: readyNow - requestStartedAt,
               spawnToReadyMs: readyNow - spawnStartedAt,
               firstStageSeenMs,
+              // The two halves of the budget. A sample that fails with a large
+              // `preFrontendMs` and a small `inAppMs` is a runner/warm-up sample, not a
+              // product regression — and that must be readable without re-deriving it.
+              ...budgetSplit(),
               stages: lastStages,
               // Recorded, not enforced: the readiness deadline remains the gate.
               stageBudgets: evaluateStageBudgets(lastStages),
