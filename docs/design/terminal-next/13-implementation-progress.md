@@ -9,9 +9,9 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 > 本文记录**真实**完成状态。`PASS` 只表示指定 SHA、指定环境与指定证据均通过。
 > `NOT_RUN`、`PARTIAL`、`BLOCKED` 不是 `PASS` 的同义词，不得向上折算。
 >
-> 基线：`main@ff01f60`（PR #90～#94 已合并，main Ruleset 生效）。
-> 当前工作分支：`feat/tn-ux4-ai-dock`（PR #97，base `main@02c6495`）。
-> `main` 已含 PR #95（`dbbde31`）与 #96（`02c6495`）。
+> 基线：`main@cb7704e`（PR #95～#108 已全部合并；main Ruleset 生效）。
+> 本文件没有任何「当前工作分支」——每条状态都标注它属于哪个 PR 与哪个 run，
+> 因为它们合入后状态就不再变化，而 `main` 会。
 
 ## 状态定义
 
@@ -36,7 +36,7 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | **SFTP 重复连接契约（幂等 / 替换死条目）** | **`IMPLEMENTED`** | `sftp.rs` | 本轮修复；3 条契约测试 + 真实 sshd 5/5（既有用例，覆盖上传/下载/并发路径，**不覆盖**重复 connect 场景） |
 | **Layout hysteresis 双向恢复** | **`PASS`** | `layout/layout-hysteresis.ts` | 本轮修复真实缺陷：回升分支永不成立。3 条新测试在旧实现上全部变红 |
 | 双 Pane / 分屏 | `PASS`（既有） | `terminal-split-sash` | PR #44 起 |
-| 三平台 Native GUI E2E | **`PARTIAL`（e2e-04）** | `e2e/gui/specs/e2e-04-dock-occupants.e2e.mjs` | run `44230712100`：**macOS（WKWebView）、Windows（WebView2）、Linux（WebKitGTK）各执行 6 个用例、0 失败**，每份 spec 在独立应用进程里跑。**但 spec 自己产出的 verdict 是 `PARTIAL`（`notRunCount: 3`），不是 PASS**，本行随之降级。独立审计逐条核对后的成色：①用例 6「records what could not be verified」只有三条 `notes.push`，**零断言**——6/6 是「五个真实用例 + 一个记录器」；②「关闭 Dock 不关闭会话」读的是 `terminalCanvas` / `.xterm` 节点 / tab 数量，**全是 DOM 存在性**，打断 PTY 也能通过；真实 PTY 证据在 e2e-01；③「从用户手势打开」实际是 `dispatchEvent(CustomEvent('shortcut:command-palette'))` + 脚本 `.click()`，**不是 WebDriver 真实键鼠**；④检查器用例的 `data-metric` 选择器**在产品源码里不存在**，该数值守卫恒为空集 |
+| 三平台 Native GUI E2E | **`PARTIAL`（e2e-04）** | `e2e/gui/specs/e2e-04-dock-occupants.e2e.mjs` | run `44230712100`：三个平台都**执行了全部 6 个用例、0 失败**（macOS WKWebView / Windows WebView2 / Linux WebKitGTK），每份 spec 在独立应用进程里跑。**但三份运行并不等价**：`notRunCount` 在 macOS 与 Windows 上是 3，**Linux 上是 4**。从证据文件读出的具体差异：Linux 上 **snippet dock 根本没打开**（`snippets` 测量为 `panelExists: false, occupant: null`），而 macOS / Windows 同一测量是 `occupant: "snippets"`、`panel: {width: 300, left: 1140/1124}`。用例因此走了 NOT_RUN 分支而不是失败——**这是 Linux 上的真实产品行为差异，不是测试瑕疵**，而「各 6/6」这种写法会把它抹平。未定位根因。**但 spec 自己产出的 verdict 是 `PARTIAL`（`notRunCount: 3`），不是 PASS**，本行随之降级。独立审计逐条核对后的成色：①用例 6「records what could not be verified」只有三条 `notes.push`，**零断言**——6/6 是「五个真实用例 + 一个记录器」；②「关闭 Dock 不关闭会话」读的是 `terminalCanvas` / `.xterm` 节点 / tab 数量，**全是 DOM 存在性**，打断 PTY 也能通过；真实 PTY 证据在 e2e-01；③「从用户手势打开」实际是 `dispatchEvent(CustomEvent('shortcut:command-palette'))` + 脚本 `.click()`，**不是 WebDriver 真实键鼠**；④检查器用例的 `data-metric` 选择器**在产品源码里不存在**，该数值守卫恒为空集 |
 | 物理键盘 / IME / Vim / tmux / DPI | `BLOCKED_EXTERNAL` | — | 需真实输入设备与交互环境 |
 | **Context Dock 单占位者公共契约** | **`PASS`** | `store/right-panel-state.ts` | 本轮实现：union 命名 `none/sftp/snippets/inspector/ai`，`IMPLEMENTED_RIGHT_PANEL_OCCUPANTS` 区分「已声明」与「已实现」，`resolveRightPanelMode` 对未实现占位者回落 `none`。源码级守卫测试禁止重新引入第二个布尔量，已用变异验证（加 `sftpOpen` 即变红） |
 
@@ -102,7 +102,7 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | --- | --- | --- |
 | **Typed Capability Gateway** | **`PASS`** | `capability-gateway.ts` + `approval-book.ts`。25 条对抗性测试。grant 按 extension id 查询（修复了「返回当前 grant、事后再比 id」的错配风险） |
 | **Extension Manifest 校验** | **`PASS`** | `extension-manifest.ts`。10 类拒绝，含拒绝可命名动态代码的 `entry` |
-| **Extension Registry（生命周期）** | **`PASS`** | `extension-registry.ts`。55 条测试：回滚、generation、幂等启用、失败隔离 |
+| **Extension Registry（生命周期）** | **`PASS`** | `extension-registry.ts`。**35 条**测试（实测；此前写作 55 条）：回滚、generation、幂等启用、失败隔离；另有本轮新增的 generation 感知用例 |
 | **Snippet Dock 扩展（完整链路）** | **`PARTIAL`** | 逻辑 14 条 + 开关 8 条 + 选择发布 11 条测试 PASS；已挂进 RightPanel，Settings 有开关，`read-selected` 接真实 `term.getSelection()`。本轮补齐**草稿消费方**（见下）。**剩余缺口**：真实 GUI 未点击验证 |
 | **`terminal.read-selected` 真实选择源** | **`PASS`（自动化）** | `terminal-selection.ts` + `use-publish-terminal-selection.ts`。只有活动 tab 发布；gateway 双源一致才可读（发布值 + 活动 tab）。后台 tab 的选择读不到 |
 | Rust 侧 `ExtensionIntent` Gateway | `NOT_RUN` | 本版本不允许扩展跨进程边界，暂不需要 |
@@ -141,7 +141,7 @@ Inspector 在 PR **#97**（`feat/tn-ux4-ai-dock`，12 个提交）。
 | **Prompt 构造与注入防护** | **`PASS`（自动化，已迁到 Rust）** | `src-tauri/src/ai/prompt.rs` | 指令不随内容变化、分隔符逐级升级、payload 不能提前闭合不可信块。`draftRisk` 只标记不改写，留在 `features/ai/ai-prompt.ts`（UI 文本分类） |
 | **OpenAI-compatible HTTP Adapter** | **`PASS`（真实本地 HTTP server，已在 Rust）** | `src-tauri/src/ai/transport.rs` + `ai/tests.rs` | 流式/取消/超时/401/403/500/404/429（含 `Retry-After`）、空流报 bad-response；provider body 与 key 不进入错误消息。DTO 改动前的 WebView `fetch` 路径已删除 |
 | **Server Inspector 解析与策略层** | **`PASS`（自动化）** | `features/inspector/server-inspector.ts` | 21 条测试。固定 probe allowlist（无插值点）、缺失数据为 null 而非 0、TTL 边界含等号、平台不认识则拒绝猜测 |
-| **Profile 存储** | **`PASS`（自动化）** | `service/database/ai-profiles.ts` | 17 条测试。表无 key 列；写入→读回→指向；三 namespace 隔离（修了 `vaultKey` 把新类型落进 ssh-key namespace 的真 bug） |
+| **Profile 存储** | **`PASS`（自动化）** | `service/database/ai-profiles.ts` | **15 条**测试（实测；此前写作 17 条）。表无 key 列；写入→读回→指向；三 namespace 隔离（修了 `vaultKey` 把新类型落进 ssh-key namespace 的真 bug） |
 | **运行编排 `AiRunner`** | **`PASS`（自动化）** | `features/ai/ai-runner.ts` | 16 条测试。7 类拒绝均在发送前；事件来自 Rust 通道并穿过 reducer；异常关闭上报；取消按 requestId；请求体**不含 key/endpoint/model** |
 | **AI Dock UI** | **`IMPLEMENTED`** | `layout/ai-dock-{view,config,result}.tsx` | 14 条组件测试。`ai` 已是可渲染占位者 + Command Palette 入口。**真实 GUI 未点击** |
 | **Profile 编辑器** | **`IMPLEMENTED`** | `view/settings/ai-profile-{editor,form}.tsx` | Settings 新增 AI 标签页；明文确认不继承；key 留空即保留 |
@@ -322,6 +322,27 @@ e2e-04 的「6/6 通过」被我自己写成了 `PASS`。审计逐条核对后�
 
 ---
 
+## 本机全量测试的 flaky 失败（合并前后都存在）
+
+单独跑任何一个文件都通过，跑全量时每次有 **3 条** 失败，且**失败的用例集合每次不同**。
+这不是本轮引入的：在合并前的 `191d032` 上跑全量同样 3 条失败（`terminal-bootstrap` 一条 + `terminal-by-url` 两条），
+合并后变成 `terminal-bootstrap` 一条 + `ai-dock-view` 一条 + `server-inspector-view` 一条。
+
+| 事实 | 值 |
+| --- | --- |
+| `vitest run` 全量 | 2744 项，**3 failed / 2741 passed**（合并后）；2723 项 3 failed（合并前） |
+| 单文件运行 | 各自 **全绿**（`terminal-by-url` 4/4、`ai-dock-view` 15/15、`server-inspector-view` 11/11、`terminal-bootstrap` 17/17） |
+| 复现率 | `vitest run src/layout` **3/3 稳定复现**两条；全量每次不同 |
+| CI | 绿——CI 的调度恰好避开了 |
+
+**原因判断**：`vitest.config.ts` 自己的注释就写了这件事——「jsdom worker 数量不设上限会让同一 worker 被饿到 1s 的 Testing Library 查询超时」。当前 `maxWorkers: 4`，本机 4 worker 争用下 5s 超时不够。失败的用例全部是**超时**（`Test timed out in 5000ms`），不是断言错误。
+
+**所以「前端 2741 项通过」这个数字只在 CI 的调度下成立**，本机全量是有失败的。本轮没有修它（超出范围），但不再把本机的全量结果说成干净。
+
+**未做**：没有提高 `testTimeout` 来掩盖它——那正是任务书禁止的「扩大超时掩盖异常」。要真正修，需要找出哪个文件的副作用跨文件泄漏（`ai-dock-view` 与 `server-inspector-view` 都在 `src/layout/` 下，且后者本轮新增了一个 interval）。
+
+---
+
 ## 本轮 PR
 
 | PR | 分支 | Head SHA | CI | 状态 | 风险 / 回滚 |
@@ -339,7 +360,7 @@ e2e-04 的「6/6 通过」被我自己写成了 `PASS`。审计逐条核对后�
 | [#105](https://github.com/baicie/terminal/pull/105) | `docs/tn-matrix-ux2b-correction` | `1d9d9b1` | — | **已合并 `1d9d9b1`** | 纯文档 |
 | [#106](https://github.com/baicie/terminal/pull/106) | `docs/tn-rig-adr` | `caab908` | — | **已合并 `caab908`** | TN-UX4-01 ADR：实测后不采用 Rig |
 | [#107](https://github.com/baicie/terminal/pull/107) | `docs/tn-milestone-refresh` | `191d032` | — | **已合并 `191d032`** | 纯文档 |
-| [#108](https://github.com/baicie/terminal/pull/108) | `feat/tn-gui-dock-e2e` | `7fcfee5` | 见下 | **OPEN**（本轮 T01–T09） | 8 个提交可独立回滚；无 Identifier / Vault 迁移 / schema 变更 |
+| [#108](https://github.com/baicie/terminal/pull/108) | `feat/tn-gui-dock-e2e` | `5ab153e` | **18/18 pass** | **已合并 `cb7704e`**（本轮 T01–T09） | 13 个提交可独立回滚；无 Identifier / Vault 迁移 / schema 变更 |
 
 
 ### PR #97 提交明细（12 个，均可单独 revert）
@@ -469,7 +490,7 @@ Snippet Dock 紧随其后，因为它是设计指定的第一个内置扩展，�
 | P2 | band 保持整个 presentation 对，可能让 dock 停在 overlay 而 explorer 恢复 | 两轴独立 vs 成对保持是布局语义问题，需产品决策 |
 | ~~P2~~ **已修** | `emit()` 不校验 handler 的 generation；回调 rejection 会标记**当前**激活失败 | 实际只需三行：emit 捕获 generation，只有它仍是当前激活时才 fail。变异验证：恢复旧调用即变红 |
 | P2 | 关闭 dock 不清除 SFTP host pin | 需决定「重开 dock 应回到哪个主机」 |
-| P2 | 捕获的 snippet 草稿没有消费方（Snippets 页面无 handoff） | 需要跨页面草稿传递的设计 |
+| ~~P2~~ **已修** | 捕获的 snippet 草稿没有消费方（Snippets 页面无 handoff） | PR #104（`f6bacc2`）已补消费方；此表漏更新，由本轮审计发现 |
 | P2 | SFTP 与 manager 接线的那一行没有测试 | 需要能在无 sshd 情况下构造真实注册路径的夹具 |
 
 ### 审查过程中发现并修正的两个过程问题
