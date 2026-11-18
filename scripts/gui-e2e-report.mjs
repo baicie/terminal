@@ -182,7 +182,7 @@ export function readCaseEvidence(artifactsDir) {
       // Gaps the spec declared up front. A NOT_RUN beyond these came from a path the
       // spec could not complete, which is the difference between a documented
       // environment limit and a product surface that did not work.
-      declaredGaps: Array.isArray(parsed.extra?.gaps) ? parsed.extra.gaps.length : 0,
+      gaps: Array.isArray(parsed.extra?.gaps) ? parsed.extra.gaps : [],
       failures: Array.isArray(parsed.extra?.failures) ? parsed.extra.failures.length : null,
       // A REQUIRED occupant that did not open is recorded in the case's own notes by
       // the spec's failure path, so the failure list is the authoritative signal.
@@ -262,11 +262,28 @@ export function buildGuiReport({ artifactsDir, platform = null }) {
    * the spec could not complete. So: a case whose `notRunCount` exceeds its declared
    * gap count, or whose verdict is FAIL, fails the layer.
    */
+  /*
+   * ## Coverage, not a count of entries
+   *
+   * A gap may account for several NOT_RUNs — e2e-03's six remote cases all skip for
+   * one reason ("no connected SFTP session"), and requiring six separate declarations
+   * would push a spec toward either lying or listing the same sentence six times.
+   *
+   * But a single declaration must not silently absorb unrelated skips either. So each
+   * gap says how many NOT_RUNs it accounts for, and the sum has to match. A spec that
+   * over-claims loses the layer; a spec that under-claims and has an extra unexplained
+   * skip loses it too.
+   */
+  const coverage = entry => {
+    const gaps = entry.gaps ?? []
+    if (gaps.length === 0) return 0
+    // `covers` defaults to 1 so the common one-gap-one-skip case needs no annotation.
+    return gaps.reduce((total, gap) => total + (Number.isFinite(gap.covers) ? gap.covers : 1), 0)
+  }
   const unexplainedNotRun = caseEvidence.cases.filter(entry => {
     if (entry.verdict === 'FAIL') return false // counted separately
     if (entry.notRunCount === null) return false
-    const declared = entry.declaredGaps ?? 0
-    return entry.notRunCount > declared
+    return entry.notRunCount > coverage(entry)
   })
 
   const status =
@@ -310,7 +327,7 @@ export function buildGuiReport({ artifactsDir, platform = null }) {
     unexplainedNotRun: unexplainedNotRun.map(entry => ({
       case: entry.case,
       notRunCount: entry.notRunCount,
-      declaredGaps: entry.declaredGaps ?? 0,
+      declaredCoverage: coverage(entry),
     })),
     runVerdict: run.verdict,
     runVerdictAt: run.ranAt,

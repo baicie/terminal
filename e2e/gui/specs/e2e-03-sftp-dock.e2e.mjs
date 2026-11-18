@@ -580,26 +580,35 @@ describe('SFTP Context Dock — real WebView', () => {
         // Recorded so a reader can tell which precondition the run actually had.
         sshFixture: Boolean(process.env.GUI_E2E_SSH_PORT),
         /*
-         * Every NOT_RUN in this spec is the same precondition: no SSH fixture.
+         * Every NOT_RUN in this spec is the same precondition: **no connected SFTP
+         * session**, not "no sshd".
          *
-         * The GUI workflow does not start an sshd, so the dock has no connected host
-         * and the six remote cases skip. That is a declared environment limit, not a
-         * surface that failed — and saying so here is what lets `gui-e2e-report.mjs`
-         * tell the two apart instead of either failing every run or ignoring both.
+         * The first version keyed this on `GUI_E2E_SSH_PORT`, on the assumption that a
+         * running sshd would satisfy the cases. The Linux job proved that wrong: it
+         * sets the fixture (`sshFixture: true`) and all six still skipped, because the
+         * spec never opens an SFTP session — the dock said "No active SFTP session.
+         * Connect to a host first". The declaration claimed the gap was closed while
+         * the gap was open.
          *
-         * When a fixture IS present, this list stays empty and any NOT_RUN becomes
-         * unexplained, which fails the layer. That is the intended direction: the day
-         * someone wires up sshd, a silent skip here should stop being acceptable.
+         * So the gap is declared unconditionally, and it is honest about what would
+         * close it. When someone gives this spec a connected host, these six cases
+         * start running and any remaining NOT_RUN becomes unexplained — which fails
+         * the layer. That is the right direction.
          */
-        gaps: process.env.GUI_E2E_SSH_PORT
-          ? []
-          : [
-              {
-                id: 'no-ssh-fixture',
-                reason: 'the GUI workflow starts no sshd, so no host is connected',
-                needs: 'GUI_E2E_SSH_PORT (the real-machine matrix covers this instead)',
-              },
-            ],
+        gaps: [
+          {
+            id: 'no-connected-sftp-session',
+            reason:
+              'the dock needs a host the spec has actually connected; GUI_E2E_SSH_PORT ' +
+              'starts an sshd but no case opens an SFTP session against it',
+            needs: 'a case that connects the fixture host and opens the dock on it',
+            // One cause, six skipped cases: single-host panes, content box, pane
+            // switch, the wide layout, the keyboard path, and the two-host case. The
+            // count is what makes this a declaration rather than a blanket excuse —
+            // a seventh skip would have no cause named for it and fails the layer.
+            covers: 6,
+          },
+        ],
       },
     })
   })

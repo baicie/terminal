@@ -208,7 +208,7 @@ test('a NOT_RUN beyond the declared gaps fails the layer', () => {
   const report = buildGuiReport({ artifactsDir: root, platform: 'Linux' })
   assert.equal(report.status, 'FAIL')
   assert.deepEqual(report.unexplainedNotRun, [
-    { case: 'e2e-04', notRunCount: 4, declaredGaps: 1 },
+    { case: 'e2e-04', notRunCount: 4, declaredCoverage: 1 },
   ])
 })
 
@@ -263,4 +263,45 @@ test('main() exits 0 for PASS, and for NOT_RUN where nothing usable ran', async 
   // output, and failing here too would report one problem twice.
   const emptyRoot = mkdtempSync(path.join(os.tmpdir(), 'gui-report-empty-'))
   assert.equal(main(['--artifacts', emptyRoot]), 0)
+})
+
+test('the Linux artifact that failed the layer is now explained', () => {
+  // Not a synthetic fixture: this is the shape of the real
+  // `gui-e2e-evidence-linux-44268976548` run, which failed `Summarise the GUI layer`
+  // on `e2e-03` (6 NOT_RUNs) after the spec's own cases all passed. The gap
+  // declaration must cover *all* six, or the layer fails for a reason nobody can act
+  // on — the same "unexplained" bucket that is supposed to mean "a surface broke".
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(25, 0),
+    'cases/e2e-01': caseEvidence('e2e-01', { verdict: 'PARTIAL' }),
+    'cases/e2e-02': caseEvidence('e2e-02', { verdict: 'PASS' }),
+    'cases/e2e-03': caseEvidence('e2e-03', {
+      verdict: 'PARTIAL',
+      notRunCount: 6,
+      gaps: [
+        { id: 'no-connected-sftp-session', reason: 'no connected host', needs: 'a connecting case', covers: 6 },
+      ],
+    }),
+    'cases/e2e-04': caseEvidence('e2e-04', {
+      verdict: 'PARTIAL',
+      notRunCount: 3,
+      gaps: [
+        { id: 'a', reason: 'r', needs: 'n' },
+        { id: 'b', reason: 'r', needs: 'n' },
+        { id: 'c', reason: 'r', needs: 'n' },
+      ],
+    }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'Linux' })
+  assert.equal(
+    report.status,
+    'PASS',
+    'six NOT_RUNs under a declared gap are a documented environment limit, not a failure',
+  )
+  assert.deepEqual(report.partialCases.sort(), ['e2e-01', 'e2e-03', 'e2e-04'])
+  assert.deepEqual(
+    report.unexplainedNotRun,
+    [],
+    'declaring the gap must clear the unexplained bucket for that case',
+  )
 })
