@@ -13,6 +13,8 @@ import {
   groupEvidenceByProfile,
   MISSING_MANIFEST_MESSAGE,
   RELEASE_SSH_CASES,
+  stripRustComments,
+  stripRustCommentsAndStrings,
 } from './check-verification-evidence.mjs'
 
 const RELEASE_COLD_START = '2026-10-11-macos-release-terminal-gate.json'
@@ -819,4 +821,47 @@ test('integrity mode still fails when a raw log is missing', async () => {
     problems.some(problem => /raw log/i.test(problem)),
     `a missing raw log must fail integrity mode; got ${JSON.stringify(problems)}`,
   )
+})
+
+
+// ---------------------------------------------------------------------------
+// The two exported strippers. They take Rust source and blank out literals so a
+// string containing fake declarations cannot be read as real ones. They had no
+// tests at all until the NUL-sentinel line below was mutated and every suite stayed
+// green — a guard nothing observes is a guard that can be broken silently.
+// ---------------------------------------------------------------------------
+
+test('a Rust string literal is replaced, keeping its shape', () => {
+  const source = 'const X: &str = "hello";'
+  const stripped = stripRustCommentsAndStrings(source)
+  // The quotes survive so `#[path = "..."]` still looks like an attribute argument.
+  assert.match(stripped, /const X: &str = ".*";/)
+  assert.doesNotMatch(stripped, /hello/, 'the contents must not survive')
+})
+
+test('a declaration hidden inside a string does not look like a declaration', () => {
+  // The threat this exists for: generated or quoted Rust that mentions a capability
+  // file must not be counted as one.
+  const source = 'let fake = "include!(\"capabilities/default.json\")";'
+  const stripped = stripRustCommentsAndStrings(source)
+  assert.doesNotMatch(stripped, /include!/)
+})
+
+test('comments are stripped, but a path argument survives the comment pass', () => {
+  const source = '#[path = "capabilities/default.json"]\n// a comment\nfn main() {}'
+  const stripped = stripRustComments(source)
+  assert.match(stripped, /capabilities\/default\.json/, 'the path is the point of the call')
+  assert.doesNotMatch(stripped, /a comment/)
+})
+
+test('the literal placeholder is invisible to a reader of the stripped text', () => {
+  // The sentinel is NUL-wrapped in the implementation. This asserts the observable
+  // property rather than the encoding: whatever the replacement is, it must not leak
+  // into anything a downstream check matches on, and it must not be what the literal
+  // said. Both a NUL sentinel and a plain placeholder satisfy this; the encoding
+  // changed once to keep the file out of `file(1)`'s binary bucket, and this test
+  // stayed green through it, which is the point.
+  const stripped = stripRustCommentsAndStrings('let s = "SECRET_CONTENTS";')
+  assert.doesNotMatch(stripped, /SECRET_CONTENTS/)
+  assert.match(stripped, /let s = "/)
 })
