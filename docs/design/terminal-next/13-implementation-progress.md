@@ -282,7 +282,19 @@ id 生成器里，而不是拥有该句柄的地方。现在 `register` 返回 `
 | --- | --- | --- | --- | --- | --- |
 | [#95](https://github.com/baicie/terminal/pull/95) | `feat/tn-ux1-04-session-sftp-lifecycle` | `7a532cd` | **18/18 pass** | **已合并 `dbbde31`** | 各提交可独立回滚；无 schema / IPC / Identifier 变更 |
 | [#96](https://github.com/baicie/terminal/pull/96) | `feat/tn-ux4-ai-inspector` | `ea62e76` | **18/18 pass** | **已合并 `02c6495`** | 四个提交可独立回滚；无 schema / IPC / Rust 变更 |
-| [#97](https://github.com/baicie/terminal/pull/97) | `feat/tn-ux4-ai-dock` | `537bca9` | 见下文 | 待合并（base `main@02c6495`） | 12 个提交可独立回滚；新增一张 `CREATE TABLE IF NOT EXISTS`，无 Identifier / Vault 迁移 / AI 自动执行 |
+| [#97](https://github.com/baicie/terminal/pull/97) | `feat/tn-ux4-ai-dock` | `537bca9` | 见下文 | **已合并 `100cfce`** | 12 个提交可独立回滚；新增一张 `CREATE TABLE IF NOT EXISTS`，无 Identifier / Vault 迁移 / AI 自动执行 |
+| [#98](https://github.com/baicie/terminal/pull/98) | `docs/tn-97-ci-notes` | — | — | **已合并 `6ec9ce4`** | 纯文档 |
+| [#99](https://github.com/baicie/terminal/pull/99) | `claude/blissful-turing-91e5b7` | — | **18/18 pass** | **已合并 `9d22d04`** | AI 请求移入 Rust，`ai` feature 默认关闭 |
+| [#100](https://github.com/baicie/terminal/pull/100) | `fix/ai-duplicate-request-id-guard` | `c75771c` | **18/18 pass** | **已合并 `c75771c`** | 重复 request id 拒绝第二个运行 |
+| [#101](https://github.com/baicie/terminal/pull/101) | `fix/ai-duplicate-request-id` | — | — | **已关闭未合并**（由 #100 取代） | 无未合并提交留在 main 之外 |
+| [#102](https://github.com/baicie/terminal/pull/102) | `docs/tn-ai-duplicate-id-record` | — | — | **已合并 `47ce20c`** | 纯文档 |
+| [#103](https://github.com/baicie/terminal/pull/103) | `feat/tn-ux2a-save-after-auth` | `6e617d4` | **18/18 pass** | **已合并 `6e617d4`** | 认证成功后才询问保存 |
+| [#104](https://github.com/baicie/terminal/pull/104) | `feat/tn-ux3-snippet-draft-save` | `f6bacc2` | **18/18 pass** | **已合并 `f6bacc2`** | 捕获的草稿有了消费方 |
+| [#105](https://github.com/baicie/terminal/pull/105) | `docs/tn-matrix-ux2b-correction` | `1d9d9b1` | — | **已合并 `1d9d9b1`** | 纯文档 |
+| [#106](https://github.com/baicie/terminal/pull/106) | `docs/tn-rig-adr` | `caab908` | — | **已合并 `caab908`** | TN-UX4-01 ADR：实测后不采用 Rig |
+| [#107](https://github.com/baicie/terminal/pull/107) | `docs/tn-milestone-refresh` | `191d032` | — | **已合并 `191d032`** | 纯文档 |
+| [#108](https://github.com/baicie/terminal/pull/108) | `feat/tn-gui-dock-e2e` | `7fcfee5` | 见下 | **OPEN**（本轮 T01–T09） | 8 个提交可独立回滚；无 Identifier / Vault 迁移 / schema 变更 |
+
 
 ### PR #97 提交明细（12 个，均可单独 revert）
 
