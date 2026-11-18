@@ -1,6 +1,6 @@
 // The GUI layer report: per-run counts, never a history-wide sum, never a stale verdict.
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -120,4 +120,188 @@ test('summariseGuiArtifacts reports how many files it excluded', () => {
   const counts = summariseGuiArtifacts(root)
   assert.equal(counts.specs, 1)
   assert.equal(counts.excluded, 1)
+})
+
+// ---------------------------------------------------------------------------
+// The cases' own verdicts. wdio counts only say whether a case threw, and a spec
+// that records NOT_RUN and returns normally produces `failed: 0` — which is how a
+// green job shipped with the snippet dock not opening on Linux (run 44230712100).
+// ---------------------------------------------------------------------------
+
+/** The exact shape `writeEvidence` produces for one case. */
+function caseEvidence(caseId, { verdict, notRunCount = 0, gaps = null, failures = [] }) {
+  return {
+    case: caseId,
+    verdict,
+    recordedAt: '2026-01-01T00:00:00Z',
+    notes: '',
+    extra: {
+      failures,
+      notRunCount,
+      ...(gaps === null ? {} : { gaps }),
+    },
+  }
+}
+
+function artifactsWithCases(files) {
+  const flat = {}
+  for (const [name, contents] of Object.entries(files)) {
+    if (name.startsWith('cases/')) {
+      const caseId = name.slice('cases/'.length)
+      flat[`${caseId}/${caseId}.json`] = contents
+    } else {
+      flat[name] = contents
+    }
+  }
+  return artifacts(flat)
+}
+
+test('a case that recorded FAIL fails the layer even though no case threw', () => {
+  // The measured shape: wdio says 5 passed / 0 failed, the case says FAIL.
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', {
+      verdict: 'FAIL',
+      failures: [{ title: 'a required dock did not open', error: 'no palette row' }],
+    }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'Linux' })
+  assert.equal(report.status, 'FAIL', 'a case-level FAIL must not be reported as a passing layer')
+  assert.deepEqual(report.failedCases, ['e2e-04'])
+})
+
+test('a PARTIAL over a declared gap does not fail, and is never counted as a pass', () => {
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-03': caseEvidence('e2e-03', {
+      verdict: 'PARTIAL',
+      notRunCount: 1,
+      gaps: [{ id: 'no-ssh-fixture', reason: 'no sshd', needs: 'GUI_E2E_SSH_PORT' }],
+    }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'Linux' })
+  assert.equal(report.status, 'PASS')
+  assert.deepEqual(report.unexplainedNotRun, [])
+  assert.deepEqual(
+    report.partialCases,
+    ['e2e-03'],
+    'the gap must still be visible, not absorbed into passed',
+  )
+  assert.deepEqual(
+    report.cases,
+    [{ case: 'e2e-03', verdict: 'PARTIAL', notRunCount: 1 }],
+    'the NOT_RUN count must survive into the report',
+  )
+})
+
+test('a NOT_RUN beyond the declared gaps fails the layer', () => {
+  // This is the Linux defect expressed as a unit: four NOT_RUNs, one declared gap.
+  // The extra three came from a surface that should have worked.
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', {
+      verdict: 'PARTIAL',
+      notRunCount: 4,
+      gaps: [{ id: 'real-model-answer', reason: 'no endpoint', needs: 'a model endpoint' }],
+    }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'Linux' })
+  assert.equal(report.status, 'FAIL')
+  assert.deepEqual(report.unexplainedNotRun, [
+    { case: 'e2e-04', notRunCount: 4, declaredCoverage: 1 },
+  ])
+})
+
+test('a case with no declared gaps and any NOT_RUN fails', () => {
+  // The default must be strict: a spec that forgets to declare its gaps cannot coast.
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', { verdict: 'PARTIAL', notRunCount: 3 }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'darwin' })
+  assert.equal(report.status, 'FAIL')
+})
+
+test('all-green cases with no gaps report PASS and name no partial case', () => {
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', { verdict: 'PASS' }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'darwin' })
+  assert.equal(report.status, 'PASS')
+  assert.deepEqual(report.partialCases, [])
+  assert.deepEqual(report.unexplainedNotRun, [])
+})
+
+// ---------------------------------------------------------------------------
+// The exit status. `main()` used to return 0 unconditionally, so a report that said
+// `status: "FAIL"` still left the job green — the third way the same job described a
+// broken run as a passing one.
+// ---------------------------------------------------------------------------
+
+test('main() exits 1 when the report status is FAIL', async () => {
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', { verdict: 'FAIL', failures: [{ title: 'x', error: 'y' }] }),
+  })
+  const out = path.join(root, 'out.json')
+  const { main } = await import('./gui-e2e-report.mjs')
+  assert.equal(main(['--artifacts', root, '--out', out]), 1)
+  // The file is still written, so the artifact upload keeps the diagnosis.
+  const written = JSON.parse(readFileSync(out, 'utf8'))
+  assert.equal(written.status, 'FAIL')
+})
+
+test('main() exits 0 for PASS, and for NOT_RUN where nothing usable ran', async () => {
+  const { main } = await import('./gui-e2e-report.mjs')
+  const passRoot = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', { verdict: 'PASS' }),
+  })
+  assert.equal(main(['--artifacts', passRoot]), 0)
+  // An empty artifacts dir is NOT_RUN: the runner step is what failed to produce
+  // output, and failing here too would report one problem twice.
+  const emptyRoot = mkdtempSync(path.join(os.tmpdir(), 'gui-report-empty-'))
+  assert.equal(main(['--artifacts', emptyRoot]), 0)
+})
+
+test('the Linux artifact that failed the layer is now explained', () => {
+  // Not a synthetic fixture: this is the shape of the real
+  // `gui-e2e-evidence-linux-44268976548` run, which failed `Summarise the GUI layer`
+  // on `e2e-03` (6 NOT_RUNs) after the spec's own cases all passed. The gap
+  // declaration must cover *all* six, or the layer fails for a reason nobody can act
+  // on — the same "unexplained" bucket that is supposed to mean "a surface broke".
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(25, 0),
+    'cases/e2e-01': caseEvidence('e2e-01', { verdict: 'PARTIAL' }),
+    'cases/e2e-02': caseEvidence('e2e-02', { verdict: 'PASS' }),
+    'cases/e2e-03': caseEvidence('e2e-03', {
+      verdict: 'PARTIAL',
+      notRunCount: 6,
+      gaps: [
+        { id: 'no-connected-sftp-session', reason: 'no connected host', needs: 'a connecting case', covers: 6 },
+      ],
+    }),
+    'cases/e2e-04': caseEvidence('e2e-04', {
+      verdict: 'PARTIAL',
+      notRunCount: 3,
+      gaps: [
+        { id: 'a', reason: 'r', needs: 'n' },
+        { id: 'b', reason: 'r', needs: 'n' },
+        { id: 'c', reason: 'r', needs: 'n' },
+      ],
+    }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'Linux' })
+  assert.equal(
+    report.status,
+    'PASS',
+    'six NOT_RUNs under a declared gap are a documented environment limit, not a failure',
+  )
+  assert.deepEqual(report.partialCases.sort(), ['e2e-01', 'e2e-03', 'e2e-04'])
+  assert.deepEqual(
+    report.unexplainedNotRun,
+    [],
+    'declaring the gap must clear the unexplained bucket for that case',
+  )
 })

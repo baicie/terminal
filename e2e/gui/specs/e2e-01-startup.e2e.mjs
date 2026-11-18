@@ -115,9 +115,42 @@ describe('E2E-01 startup and terminal readiness', () => {
     // Selecting the local tab is a user action the product supports. If there is no
     // local tab at all the spec says so instead of asserting against a stranger's
     // terminal.
+    /*
+     * Wait for the tab strip to have tabs before concluding there is no local one.
+     *
+     * Measured on run 44268976548 (Linux): `localTab: {ok: false, tabs: 0}` in the
+     * same evidence file where the status bar said `ConnectedLocal142x43` and the
+     * terminal reported 142x43. The session existed; the tab strip had not rendered
+     * when this read ran, and the case recorded "no local terminal tab exists in this
+     * run". e2e-04, later in that same run, read `tabCount: 1` from the same app.
+     *
+     * Reading launch-state DOM once is the same race as the palette's fixed sleep:
+     * poll the condition, do not sleep longer.
+     */
+    await browser.waitUntil(
+      async () => (await browser.$$('[role="tab"]')).length > 0,
+      {
+        timeout: 20_000,
+        interval: 250,
+        timeoutMsg: 'no tab ever appeared in the tab strip',
+      },
+    )
     const activated = await browser.execute(() => {
       const tabs = Array.from(document.querySelectorAll('[role="tab"]'))
-      const local = tabs.find(tab => /^local$/i.test(tab.getAttribute('aria-label') ?? ''))
+      /*
+       * Identify the local tab by **type**, not by its label.
+       *
+       * The label is `tab.title ?? tab.label`, and `title` is whatever the shell put
+       * in its OSC title sequence. Measured on run 44230712100, the same local
+       * session: macOS "Local", Linux "Local", Windows
+       * "Administrator: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe".
+       * The old matcher was `/^local$/i` on that string, so on Windows it found no
+       * local tab and the case recorded NOT_RUN — the product had the tab all along,
+       * and the status bar in the same run said `ConnectedLocal142×43`.
+       */
+      const local =
+        tabs.find(tab => tab.getAttribute('data-tab-type') === 'local') ??
+        tabs.find(tab => /^local$/i.test(tab.getAttribute('aria-label') ?? ''))
       if (!local) return { ok: false, tabs: tabs.length }
       // Mark it so the WebDriver click below can find the same element.
       local.setAttribute('data-e2e-activate', 'local')

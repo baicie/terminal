@@ -493,7 +493,10 @@ function stripRust(source, replaceLiterals) {
   const length = source.length
   // The placeholder keeps its quotes so `#[path = "..."]`'s shape stays
   // recognisable while its contents — which could fake a declaration — do not.
-  const literal = body => (replaceLiterals ? '" STR "' : `"${body}"`)
+  // `\u0000` rather than a literal NUL byte: embedding one makes this whole file
+  // binary to `file(1)`, `grep` and every diff tool, which is how a real change here
+  // would first show up as "Binary files differ" instead of a reviewable line.
+  const literal = body => (replaceLiterals ? '"\u0000STR\u0000"' : `"${body}"`)
 
   while (index < length) {
     const char = source[index]

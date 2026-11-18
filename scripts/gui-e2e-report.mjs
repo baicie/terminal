@@ -139,6 +139,60 @@ export function summariseGuiArtifacts(artifactsDir) {
 }
 
 /**
+ * Read the per-case evidence files the specs themselves write.
+ *
+ * ## Why the wdio counts are not enough
+ *
+ * `json/wdio-*.json` only records whether a case **threw**. A spec that decides a
+ * precondition is missing can record `NOT_RUN` and return normally — the case passes,
+ * the wdio file says `failed: 0`, and the layer reports PASS.
+ *
+ * Measured on run 44230712100: all three platforms reported `status: PASS,
+ * passed: 25, failed: 0`, while `e2e-04.json` recorded `verdict: PARTIAL` on macOS and
+ * Windows and `PARTIAL` with **four** NOT_RUNs on Linux, where the snippet dock never
+ * opened at all. The one thing the GUI gate exists to catch had no way to fail.
+ *
+ * So the specs' own verdicts are read and reported, and a failing verdict makes the
+ * layer fail. `PARTIAL` does not fail the build on its own — a documented gap (no
+ * model endpoint) is not a regression — but it is never counted as a pass either, and
+ * a `PARTIAL` whose NOT_RUN entries name something REQUIRED does.
+ */
+export function readCaseEvidence(artifactsDir) {
+  const cases = []
+  let names
+  try {
+    names = readdirSync(artifactsDir, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+  } catch {
+    return { cases, missing: true }
+  }
+  for (const name of names) {
+    const file = path.join(artifactsDir, name, `${name}.json`)
+    let parsed
+    try {
+      parsed = JSON.parse(readFileSync(file, 'utf8'))
+    } catch {
+      continue
+    }
+    cases.push({
+      case: parsed.case ?? name,
+      verdict: parsed.verdict ?? null,
+      notRunCount: parsed.extra?.notRunCount ?? null,
+      // Gaps the spec declared up front. A NOT_RUN beyond these came from a path the
+      // spec could not complete, which is the difference between a documented
+      // environment limit and a product surface that did not work.
+      gaps: Array.isArray(parsed.extra?.gaps) ? parsed.extra.gaps : [],
+      failures: Array.isArray(parsed.extra?.failures) ? parsed.extra.failures.length : null,
+      // A REQUIRED occupant that did not open is recorded in the case's own notes by
+      // the spec's failure path, so the failure list is the authoritative signal.
+      recordedAt: parsed.recordedAt ?? null,
+    })
+  }
+  return { cases, missing: false }
+}
+
+/**
  * The run's own verdict, when it is available.
  *
  * ## Reported, never authoritative
@@ -171,6 +225,7 @@ export function readRunVerdict(artifactsDir) {
 export function buildGuiReport({ artifactsDir, platform = null }) {
   const counts = summariseGuiArtifacts(artifactsDir)
   const run = readRunVerdict(artifactsDir)
+  const caseEvidence = readCaseEvidence(artifactsDir)
 
   if (!counts.ran) {
     return {
@@ -187,10 +242,52 @@ export function buildGuiReport({ artifactsDir, platform = null }) {
   }
 
   const total = counts.passed + counts.failed + counts.skipped
+  // A case's own verdict can fail the layer even when no case threw. This is the half
+  // the wdio counts cannot see: a spec that records NOT_RUN and returns normally still
+  // reports `failed: 0`.
+  const failedCases = caseEvidence.cases.filter(entry => entry.verdict === 'FAIL')
+  const partialCases = caseEvidence.cases.filter(entry => entry.verdict === 'PARTIAL')
   // An unreadable spec file makes the total a lower bound. That is INCOMPLETE, not PASS —
   // and not FAIL either, because nothing here says those cases failed.
+  /*
+   * ## A PARTIAL over a gap that should not exist is a failure
+   *
+   * `PARTIAL` means "some claims were not exercised". That is legitimate for a missing
+   * model endpoint. It is NOT legitimate for a REQUIRED UI surface: the Linux run
+   * recorded `PARTIAL` with four NOT_RUNs because the snippet dock did not open, and a
+   * `PARTIAL`-tolerant status let the job stay green.
+   *
+   * The spec distinguishes the two itself: a gap it declares in `gaps` is expected
+   * (no endpoint, no sshd), and anything else that produced a NOT_RUN came from a path
+   * the spec could not complete. So: a case whose `notRunCount` exceeds its declared
+   * gap count, or whose verdict is FAIL, fails the layer.
+   */
+  /*
+   * ## Coverage, not a count of entries
+   *
+   * A gap may account for several NOT_RUNs — e2e-03's six remote cases all skip for
+   * one reason ("no connected SFTP session"), and requiring six separate declarations
+   * would push a spec toward either lying or listing the same sentence six times.
+   *
+   * But a single declaration must not silently absorb unrelated skips either. So each
+   * gap says how many NOT_RUNs it accounts for, and the sum has to match. A spec that
+   * over-claims loses the layer; a spec that under-claims and has an extra unexplained
+   * skip loses it too.
+   */
+  const coverage = entry => {
+    const gaps = entry.gaps ?? []
+    if (gaps.length === 0) return 0
+    // `covers` defaults to 1 so the common one-gap-one-skip case needs no annotation.
+    return gaps.reduce((total, gap) => total + (Number.isFinite(gap.covers) ? gap.covers : 1), 0)
+  }
+  const unexplainedNotRun = caseEvidence.cases.filter(entry => {
+    if (entry.verdict === 'FAIL') return false // counted separately
+    if (entry.notRunCount === null) return false
+    return entry.notRunCount > coverage(entry)
+  })
+
   const status =
-    counts.failed > 0
+    counts.failed > 0 || failedCases.length > 0 || unexplainedNotRun.length > 0
       ? 'FAIL'
       : total === 0
         ? 'NOT_RUN'
@@ -212,6 +309,26 @@ export function buildGuiReport({ artifactsDir, platform = null }) {
         : null,
     specs: counts.specs,
     corruptFiles: counts.corrupt,
+    // ## What the cases said about themselves
+    //
+    // Kept separate from `passed` on purpose. A NOT_RUN that is folded into a pass
+    // count is the exact failure this report was extended to prevent, so the gaps are
+    // listed by name and the count is visible next to the wdio numbers rather than
+    // inside them.
+    cases: caseEvidence.cases.map(entry => ({
+      case: entry.case,
+      verdict: entry.verdict,
+      notRunCount: entry.notRunCount,
+    })),
+    partialCases: partialCases.map(entry => entry.case),
+    failedCases: failedCases.map(entry => entry.case),
+    // The NOT_RUNs that are not covered by a declared gap: a surface that should have
+    // worked and did not. These fail the layer.
+    unexplainedNotRun: unexplainedNotRun.map(entry => ({
+      case: entry.case,
+      notRunCount: entry.notRunCount,
+      declaredCoverage: coverage(entry),
+    })),
     runVerdict: run.verdict,
     runVerdictAt: run.ranAt,
     // ## When the summary disagrees with the counts, say so
@@ -230,8 +347,20 @@ export function buildGuiReport({ artifactsDir, platform = null }) {
   }
 }
 
-function main() {
-  const options = parseArgs(process.argv.slice(2))
+/**
+ * Exit status is part of the contract, not a formality.
+ *
+ * This used to `return 0` unconditionally. Combined with the workflow step being
+ * `if: always()`, that meant the report could say `status: "FAIL"` and the job would
+ * still be green — a third way for the same green job to describe a broken run. The
+ * file is still written before exiting, so the artifact upload keeps the diagnosis.
+ *
+ * Only FAIL fails the step. `NOT_RUN` and `INCOMPLETE` stay exit 0: they say the
+ * suite produced nothing usable, which the *runner* step already failed to produce,
+ * and turning them into a second failure here would report one problem twice.
+ */
+function main(argv = process.argv.slice(2)) {
+  const options = parseArgs(argv)
   const report = buildGuiReport({ artifactsDir: path.resolve(options.artifacts), platform: options.platform })
   const text = `${JSON.stringify(report, null, 2)}\n`
   process.stdout.write(text)
@@ -240,9 +369,11 @@ function main() {
     mkdirSync(path.dirname(target), { recursive: true })
     writeFileSync(target, text)
   }
-  return 0
+  return report.status === 'FAIL' ? 1 : 0
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   process.exit(main())
 }
+
+export { main }

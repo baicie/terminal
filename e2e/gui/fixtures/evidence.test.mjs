@@ -97,6 +97,27 @@ test('a secret inside a measurement is redacted like any other text', async () =
   assert.equal(serialised.includes('hunter2'), false)
 })
 
+test('a PARTIAL must declare what it could not do, or it is not readable', async () => {
+  // The layer report distinguishes a documented gap from a surface that failed by
+  // comparing `notRunCount` against the gaps the spec declared. A PARTIAL with no
+  // `gaps` therefore reads as "everything was unexplained", which failed the layer —
+  // correct for a run that skipped real assertions, but it must be a deliberate choice
+  // rather than an oversight. This pins the convention: a PARTIAL carries `gaps`.
+  const record = await written('e2e-test-partial-gaps', {
+    verdict: 'PARTIAL',
+    notes: 'NOT_RUN one\nNOT_RUN two',
+    extra: {
+      notRunCount: 2,
+      gaps: [
+        { id: 'a', reason: 'r', needs: 'n' },
+        { id: 'b', reason: 'r', needs: 'n' },
+      ],
+    },
+  })
+  assert.equal(record.verdict, 'PARTIAL')
+  assert.equal(record.extra.gaps.length, record.extra.notRunCount)
+})
+
 test('redact leaves ordinary text alone', () => {
   // A filter that mangles every string is a filter people turn off.
   const text = 'dock width 300px, content 276px, presentation single'

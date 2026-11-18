@@ -75,6 +75,7 @@ const MenuTabs: React.FC = () => {
     >
       {tabs.map((tab, index) => {
         const active = activeTabId === tab.id
+        // `data-tab-type` below: this label is not a stable identifier.
         const displayLabel = getTabDisplayLabel(tab)
         const split = Boolean(tab.splitId)
         const groupStart = split ? splitIds.indexOf(tab.splitId) : index
@@ -99,6 +100,7 @@ const MenuTabs: React.FC = () => {
                   role="tab"
                   aria-selected={active}
                   aria-label={displayLabel}
+                  data-tab-type={tab.type}
                   tabIndex={active ? 0 : -1}
                   className={cn(
                     'h-11 min-w-11 flex-1 touch-manipulation justify-start gap-1 rounded-r-none px-2 font-normal sm:h-8 sm:min-w-0',
@@ -190,7 +192,6 @@ const MenuTabs: React.FC = () => {
     </div>
   )
 }
-
 function SplitStatus({ tab }: { tab: Tab }) {
   if (!tab.splitId || !tab.splitMode || tab.splitMode === 'none') return null
   const Icon = tab.splitMode === 'horizontal' ? Columns2 : Rows2
