@@ -36,7 +36,7 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | **SFTP 重复连接契约（幂等 / 替换死条目）** | **`IMPLEMENTED`** | `sftp.rs` | 本轮修复；3 条契约测试 + 真实 sshd 5/5（既有用例，覆盖上传/下载/并发路径，**不覆盖**重复 connect 场景） |
 | **Layout hysteresis 双向恢复** | **`PASS`** | `layout/layout-hysteresis.ts` | 本轮修复真实缺陷：回升分支永不成立。3 条新测试在旧实现上全部变红 |
 | 双 Pane / 分屏 | `PASS`（既有） | `terminal-split-sash` | PR #44 起 |
-| 三平台 Native GUI E2E | `NOT_RUN` | `e2e/gui` | 本轮未重跑；Windows 曾有 19/19 首次通过记录（PR #94） |
+| 三平台 Native GUI E2E | **`PASS`（e2e-04）** | `e2e/gui/specs/e2e-04-dock-occupants.e2e.mjs` | PR #108 的 run `44230712100`：**macOS（WKWebView）、Windows（WebView2/msedge 156）、Linux（WebKitGTK 605）各 6/6**，逐条用例名相同，每份 spec 在各自独立的应用进程里跑。**这证明的是 Dock 占位者的 UI 契约与「关闭 Dock 不关闭会话」，不是 PTY 存活**——旧用例集里的 PTY I/O 断言（真实 shell 提示符、回显命令）在同一次运行中同样 6/6，但那是 e2e-01，不是本 spec |
 | 物理键盘 / IME / Vim / tmux / DPI | `BLOCKED_EXTERNAL` | — | 需真实输入设备与交互环境 |
 | **Context Dock 单占位者公共契约** | **`PASS`** | `store/right-panel-state.ts` | 本轮实现：union 命名 `none/sftp/snippets/inspector/ai`，`IMPLEMENTED_RIGHT_PANEL_OCCUPANTS` 区分「已声明」与「已实现」，`resolveRightPanelMode` 对未实现占位者回落 `none`。源码级守卫测试禁止重新引入第二个布尔量，已用变异验证（加 `sftpOpen` 即变红） |
 
