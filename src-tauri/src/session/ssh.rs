@@ -2246,6 +2246,7 @@ impl SshSession {
         &self,
         command: &str,
         timeout: std::time::Duration,
+        cancel: ExecCancellation,
     ) -> Pin<Box<dyn Future<Output = Result<ExecResult, SessionError>> + Send>> {
         let command = command.to_string();
         let state = self.state.clone();
@@ -2272,12 +2273,12 @@ impl SshSession {
                 .await?
                 .map_err(|e| SessionError::ExecFailed(format!("exec request failed: {}", e)))?;
 
-            // Read output under one absolute deadline.
+            // Read output under one absolute deadline, interruptible by `cancel`.
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
             let mut exit_code: Option<u32> = None;
 
-            enforce_exec_deadline(deadline, async {
+            enforce_exec_deadline_with(deadline, &cancel, async {
                 loop {
                     match channel.wait().await {
                         Some(ChannelMsg::Data { data }) => {
@@ -2613,6 +2614,77 @@ async fn enforce_exec_deadline<T>(
     tokio::time::timeout_at(deadline, future)
         .await
         .map_err(|_| SessionError::ExecTimeout)
+}
+
+/// A handle that stops **one** exec, and nothing else.
+///
+/// ## Why this exists rather than reusing the session's own teardown
+///
+/// Closing the Inspector dock used to abandon the frontend's promise while Rust kept
+/// the exec channel open and kept reading until the full timeout. The obvious fix —
+/// close the session — is wrong: the exec channel shares the connection with the
+/// user's interactive PTY, so stopping a probe that way kills their shell.
+///
+/// The token is per-exec and one-shot. Dropping it does nothing; only `cancel` trips
+/// it, so an exec that is never cancelled cannot be stopped by an unrelated cleanup.
+#[derive(Clone, Default)]
+pub struct ExecCancellation {
+    notify: std::sync::Arc<Notify>,
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl ExecCancellation {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Stop the exec waiting on this token. Idempotent.
+    pub fn cancel(&self) {
+        // Set the flag before waking: a waiter that checks after being woken must see
+        // it, and one that checked before the flag was set is woken by `notify_waiters`.
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.notify.notify_waiters();
+    }
+
+    /// Has this token been tripped?
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Resolve when the token is tripped. Returns immediately if it already is.
+    pub async fn cancelled(&self) {
+        // Double check in a loop: `notify_waiters` only wakes waiters registered at the
+        // moment it is called, so a `cancel` that lands between the check and the await
+        // would otherwise be lost.
+        loop {
+            if self.is_cancelled() {
+                return;
+            }
+            self.notify.notified().await;
+            if self.is_cancelled() {
+                return;
+            }
+        }
+    }
+}
+
+/// The deadline, or the cancellation — whichever comes first.
+///
+/// Written as a sibling of `enforce_exec_deadline` rather than a change to it so the
+/// existing call sites (and their tests) keep their exact semantics.
+async fn enforce_exec_deadline_with<T>(
+    deadline: tokio::time::Instant,
+    cancel: &ExecCancellation,
+    future: impl Future<Output = T>,
+) -> Result<T, SessionError> {
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Err(SessionError::ExecCancelled),
+        result = tokio::time::timeout_at(deadline, future) => {
+            result.map_err(|_| SessionError::ExecTimeout)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -3096,6 +3168,72 @@ mod tests {
             enforce_exec_deadline(deadline, active).await,
             Err(SessionError::ExecTimeout)
         ));
+    }
+
+    #[tokio::test]
+    async fn one_exec_can_be_cancelled_without_closing_the_session() {
+        // ## The defect this pins
+        //
+        // `exec` had one way to stop: its deadline. Closing the Inspector dock threw
+        // the frontend's promise away, but the Rust side kept the channel open and kept
+        // reading until the full 5 s timeout — for a result nobody would look at, on a
+        // server the user may be debugging.
+        //
+        // The requirement is narrow on purpose: cancel **this exec**, not the session.
+        // The interactive PTY shares the connection, so tearing the session down to
+        // stop a probe would kill the user's shell.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+        let cancel = ExecCancellation::new();
+        let tripper = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+            tripper.cancel();
+        });
+
+        let started = std::time::Instant::now();
+        let outcome = enforce_exec_deadline_with(deadline, &cancel, async {
+            // Stands in for `channel.wait()` blocking on a slow server.
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        })
+        .await;
+
+        assert!(
+            matches!(outcome, Err(SessionError::ExecCancelled)),
+            "a cancelled exec must report ExecCancelled, got {:?}",
+            outcome.err()
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "cancel must interrupt the wait, not wait out the deadline: took {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelling_one_exec_does_not_cancel_the_next() {
+        // A token that stayed latched would make every later probe on that session fail
+        // instantly — a worse defect than the one being fixed.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        let cancel = ExecCancellation::new();
+        cancel.cancel();
+
+        let fresh = ExecCancellation::new();
+        let ok = enforce_exec_deadline_with(deadline, &fresh, async { 7u32 }).await;
+        assert_eq!(ok.expect("a fresh token must not be cancelled"), 7);
+
+        // And the cancelled one is still cancelled for itself.
+        let cancelled = enforce_exec_deadline_with(deadline, &cancel, async { 9u32 }).await;
+        assert!(matches!(cancelled, Err(SessionError::ExecCancelled)));
+    }
+
+    #[tokio::test]
+    async fn an_exec_that_finishes_first_is_not_disturbed_by_cancel() {
+        // The cancel path must not turn a completed exec into an error.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        let cancel = ExecCancellation::new();
+        let outcome = enforce_exec_deadline_with(deadline, &cancel, async { "done" }).await;
+        assert_eq!(outcome.expect("completed work must survive"), "done");
+        cancel.cancel();
     }
 
     #[tokio::test]
