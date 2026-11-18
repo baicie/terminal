@@ -40,7 +40,20 @@ export interface RedactionEdit {
 export interface ApprovedContext {
   kind: ContextKind
   hostId: string | null
+  /** The tab that published the selection. Identifies *where*, not *what*. */
   sessionId: string | null
+  /**
+   * The backend session the text was read from, when it had one.
+   *
+   * This is the id that changes on an SSH reconnect. `sessionId` above is the tab id and
+   * does not move, so a guard built on it alone calls a reconnect "the same session" —
+   * the approval then outlives the session it was given for.
+   *
+   * `null` for a selection with no backend session (a local terminal, or a pane that
+   * has not connected); those cannot be compared and are accepted, which is what the
+   * guard did before.
+   */
+  backendSessionId?: string | null
   /** Bytes of `text` after redaction, in UTF-8. */
   bytes: number
   /** SHA-256 of `text` after redaction. Recomputed on every change. */
@@ -167,7 +180,18 @@ export function contextStillApproved(context: ApprovedContext): boolean {
 export function contextMatchesSession(
   context: ApprovedContext,
   visibleSessionId: string | null,
+  visibleBackendSessionId: string | null = null,
 ): boolean {
   if (context.sessionId === null) return true
-  return context.sessionId === visibleSessionId
+  if (context.sessionId !== visibleSessionId) return false
+  // The tab matched. Now the session: a reconnect keeps the tab and replaces the
+  // backend session, so an approval captured before the drop must not survive it.
+  //
+  // Only compared when the context actually recorded one. A selection with no backend
+  // session cannot be checked against a real one, and refusing it would break every
+  // local-terminal case — where there is no remote host to be wrong about.
+  if (context.backendSessionId === undefined || context.backendSessionId === null) {
+    return true
+  }
+  return context.backendSessionId === visibleBackendSessionId
 }

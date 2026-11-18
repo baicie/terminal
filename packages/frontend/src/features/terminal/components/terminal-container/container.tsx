@@ -134,7 +134,9 @@ export function TerminalContainer({
     if (isReady) requestFit()
   }, [isReady, requestFit, status])
 
-  usePublishTerminalSelection({ tabId, isActive: terminalIsActive, term: terminal.termInstance })
+  // `backendSessionId` ties an approval to the session that produced the text, not to
+  // the tab that happens to still be open after a reconnect.
+  usePublishTerminalSelection({ tabId, isActive: terminalIsActive, term: terminal.termInstance, backendSessionId: sessionId })
   usePublishTerminalSize({
     tabId,
     isActive,

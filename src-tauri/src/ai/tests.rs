@@ -449,6 +449,79 @@ fn a_cancel_stops_the_stream_and_is_reported_as_cancelled() {
         .all(|event| !matches!(event, AiEvent::Chunk { .. })));
 }
 
+/// A server that sends headers and one chunk, then holds the socket open.
+///
+/// The client is blocked inside `response.chunk().await` with nothing arriving — the
+/// exact state a cancel has to interrupt. `serve_once` cannot express it: it writes the
+/// whole body and closes, so the read never blocks.
+fn serve_stalling() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let address = listener.local_addr().expect("addr");
+    thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        let _ = read_request(&stream);
+        let body = "data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}\n\n";
+        let head = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n{:x}\r\n{}\r\n",
+            body.len(),
+            body
+        );
+        let _ = stream.write_all(head.as_bytes());
+        let _ = stream.flush();
+        // Hold the connection without sending the terminating chunk. The read blocks
+        // here until the client gives up — which, without a raced cancel, is the full
+        // request timeout.
+        thread::sleep(std::time::Duration::from_secs(30));
+    });
+    format!("http://{address}/v1")
+}
+
+#[test]
+fn a_cancel_interrupts_a_read_that_is_blocked_waiting_for_the_provider() {
+    // ## Why the pre-trip test above is not enough
+    //
+    // `a_cancel_stops_the_stream_and_is_reported_as_cancelled` trips the flag *before*
+    // the run starts, which proves the run refuses to send. It says nothing about a
+    // cancel issued while the client is parked inside a socket read.
+    //
+    // A provider that accepts the request and then goes quiet is not hypothetical —
+    // a slow model, a half-open connection, a proxy holding the stream. Checking
+    // `is_cancelled()` between chunks never fires in that state, so before the
+    // `select!` the only exit was the timeout, and Cancel looked broken for its whole
+    // duration.
+    let endpoint = serve_stalling();
+    let cancel = CancelFlag::new();
+    let tripper = cancel.clone();
+    thread::spawn(move || {
+        // Long enough that the first chunk has arrived and the loop is parked, short
+        // enough that a timeout-based exit (the default is seconds) cannot be what
+        // ends the run.
+        thread::sleep(std::time::Duration::from_millis(150));
+        tripper.cancel();
+    });
+
+    let started = std::time::Instant::now();
+    let events = Arc::new(parking_lot::Mutex::new(Vec::new()));
+    let sink = Arc::clone(&events);
+    let outcome = block_on(transport::run(
+        request(endpoint, |_| {}),
+        cancel,
+        move |event| sink.lock().push(event),
+    ));
+    let elapsed = started.elapsed();
+
+    let failure = outcome.expect_err("a cancelled run is not a success");
+    assert_eq!(failure.kind, AiFailureKind::Cancelled);
+    // The bound is what makes this a cancellation test rather than a timeout test: the
+    // run must end because of the cancel, not because the clock ran out.
+    assert!(
+        elapsed < std::time::Duration::from_secs(3),
+        "the cancel must interrupt the blocked read, not wait for the timeout; took {elapsed:?}"
+    );
+}
+
 #[test]
 fn a_no_key_request_sends_no_authorization_header() {
     // A local model server needs no key, and sending `Bearer ` with an empty value

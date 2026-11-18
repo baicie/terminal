@@ -23,31 +23,37 @@ interface Options {
   tabId: string
   isActive: boolean
   term: TerminalComponent | null
+  /**
+   * The backend session the terminal is attached to.
+   *
+   * Published alongside the tab id so an approval can be tied to the *session*: a
+   * reconnect keeps the tab and replaces this value, and an approval captured before
+   * the drop must not survive it.
+   */
+  backendSessionId?: string | null
 }
 
-export function usePublishTerminalSelection({ tabId, isActive, term }: Options): void {
+export function usePublishTerminalSelection({
+  tabId,
+  isActive,
+  term,
+  backendSessionId = null,
+}: Options): void {
   useEffect(() => {
     if (!term || !isActive) {
       clearTerminalSelection(tabId)
       return
     }
-    // ## The id published here is the tab id, deliberately, and the name lies
-    //
-    // `ApprovedContext.sessionId` is compared against `visibleSessionId()`, which
-    // returns the active tab id. Both carry the same value, so the guard works for
-    // what it covers: a selection does not survive a *tab* switch.
-    //
-    // It does not cover a reconnect — same tab, new backend session — and the field
-    // name suggests it does. Renaming it is a wider change than this fix; what matters
-    // here is that the two ends agree, so a change to one is not silently unmatchable
-    // with the other. `ai-session-identity.test.ts` records the limitation instead of
-    // leaving it to be discovered.
-    const publish = () => publishTerminalSelection(tabId, term.getSelection())
+    // Both ids travel: the tab identifies where, the backend session identifies what.
+    // Only the second changes on a reconnect, which is why an approval has to be
+    // checked against it — a tab comparison calls a reconnect "the same session".
+    const publish = () =>
+      publishTerminalSelection(tabId, term.getSelection(), backendSessionId)
     publish()
     const subscription = term.onSelectionChange(publish)
     return () => {
       subscription.dispose()
       clearTerminalSelection(tabId)
     }
-  }, [term, isActive, tabId])
+  }, [term, isActive, tabId, backendSessionId])
 }

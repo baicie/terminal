@@ -44,27 +44,31 @@ beforeEach(() => {
   __resetTerminalSessionIdsForTests()
 })
 
-describe('a tab id is not enough to identify a session', () => {
-  it('a reconnect that keeps the tab but changes the backend session must invalidate', () => {
-    // The scenario the current guard cannot see: same tab, new backend session. An
-    // approval captured before the drop names a session that no longer exists, and the
-    // text could belong to a different host now.
+describe('a reconnect invalidates an approval', () => {
+  it('rejects when the backend session changed under the same tab', () => {
+    // The defect this now guards: same tab, new backend session. Before
+    // `backendSessionId` existed the approval still matched, and the text being sent
+    // could belong to a different host.
     publishTerminalSessionId('tab-1', 'ssh-session-1')
-    const approved = context({ sessionId: 'tab-1' })
+    const approved = context({ sessionId: 'tab-1', backendSessionId: 'ssh-session-1' })
 
-    // Before the drop: same tab, same backend session — still valid.
-    expect(contextMatchesSession(approved, 'tab-1')).toBe(true)
-
-    // After the drop and reconnect: same tab, different backend session.
-    publishTerminalSessionId('tab-1', 'ssh-session-2')
-
-    // The tab-level comparison says "same", which is the defect.
-    const tabLevelSays = contextMatchesSession(approved, 'tab-1')
+    expect(contextMatchesSession(approved, 'tab-1', 'ssh-session-1')).toBe(true)
     expect(
-      tabLevelSays,
-      'a tab-id comparison cannot see a reconnect; this asserts the limitation rather ' +
-        'than pretending the guard covers it',
-    ).toBe(true)
+      contextMatchesSession(approved, 'tab-1', 'ssh-session-2'),
+      'a reconnect must invalidate the approval even though the tab id did not move',
+    ).toBe(false)
+  })
+
+  it('rejects when the session is gone', () => {
+    const approved = context({ sessionId: 'tab-1', backendSessionId: 'ssh-session-1' })
+    expect(contextMatchesSession(approved, 'tab-1', null)).toBe(false)
+  })
+
+  it('still accepts a context that recorded no backend session', () => {
+    // A local terminal has a tab and no backend session. Refusing it would break the
+    // case where there is no remote host to be wrong about.
+    const approved = context({ sessionId: 'tab-1', backendSessionId: null })
+    expect(contextMatchesSession(approved, 'tab-1', null)).toBe(true)
   })
 })
 

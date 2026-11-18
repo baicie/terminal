@@ -54,6 +54,8 @@ export interface AiRuntimeDeps {
   cancel(requestId: string): Promise<unknown>
   /** The session the user can see, for the approval check. */
   visibleSessionId(): string | null
+  /** The backend session behind the visible tab, when it has one. */
+  visibleBackendSessionId?(): string | null
   /** Called with each new state so a component can render it. */
   onState(state: AiRun): void
   /** Monotonic ids, injected so tests are deterministic. */
@@ -132,7 +134,13 @@ export class AiRunner {
     if (problem) return this.refuse('profile-unusable', problem)
     if (!input.context.approved) return this.refuse('context-not-approved')
     if (!contextStillApproved(input.context)) return this.refuse('context-changed')
-    if (!contextMatchesSession(input.context, this.deps.visibleSessionId())) {
+    if (
+      !contextMatchesSession(
+        input.context,
+        this.deps.visibleSessionId(),
+        this.deps.visibleBackendSessionId?.() ?? null,
+      )
+    ) {
       return this.refuse('session-changed')
     }
     // The endpoint was validated when the profile was saved, but re-checking here is

@@ -43,8 +43,38 @@ pub const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 /// A shared atomic rather than a `Notify`: the loop has to decide "did the user
 /// cancel?" at each boundary, and an atomic read is the non-blocking form of exactly
 /// that question. `cancelled` is only ever set, never cleared.
-#[derive(Debug, Default, Clone)]
-pub struct CancelFlag(Arc<AtomicBool>);
+#[derive(Debug)]
+pub struct CancelFlag {
+    flag: Arc<AtomicBool>,
+    /**
+     * Wakes a task that is waiting for the flag.
+     *
+     * The atomic alone answers "is it cancelled?" but cannot wake anything. A streaming
+     * read sits inside `response.chunk().await`, and without a notification the only
+     * way to observe a cancel is for the next chunk to arrive — so a provider that
+     * stalls holds the run until the full timeout, which is exactly the "cancel waits
+     * for the timeout instead of cancelling" behaviour this exists to prevent.
+     */
+    notify: Arc<tokio::sync::Notify>,
+}
+
+impl Default for CancelFlag {
+    fn default() -> Self {
+        Self {
+            flag: Arc::new(AtomicBool::new(false)),
+            notify: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+}
+
+impl Clone for CancelFlag {
+    fn clone(&self) -> Self {
+        Self {
+            flag: Arc::clone(&self.flag),
+            notify: Arc::clone(&self.notify),
+        }
+    }
+}
 
 impl CancelFlag {
     pub fn new() -> Self {
@@ -52,11 +82,30 @@ impl CancelFlag {
     }
 
     pub fn cancel(&self) {
-        self.0.store(true, Ordering::SeqCst);
+        self.flag.store(true, Ordering::SeqCst);
+        // `notify_waiters` rather than `notify_one`: a clone held by the read loop and
+        // one held by the UI must both wake, and this flag is never reused for another
+        // run.
+        self.notify.notify_waiters();
     }
 
     pub fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
+        self.flag.load(Ordering::SeqCst)
+    }
+
+    /// Resolves as soon as the flag is set — including when it was already set.
+    pub async fn cancelled(&self) {
+        if self.is_cancelled() {
+            return;
+        }
+        // Re-checked after registering: a `cancel` that landed between the check above
+        // and this await would otherwise be missed, and the read would block until the
+        // next chunk.
+        let wait = self.notify.notified();
+        if self.is_cancelled() {
+            return;
+        }
+        wait.await;
     }
 }
 
@@ -290,7 +339,23 @@ pub async fn run(
             });
             return Err(failure);
         }
-        let chunk = match response.chunk().await {
+        // ## The read is raced against cancellation, not checked between reads
+        //
+        // Checking `is_cancelled()` at the top of the loop only notices a cancel when
+        // the *next* chunk arrives. A provider that accepts the request and then goes
+        // quiet would hold the run for the whole timeout, so Cancel would look broken
+        // for as long as the provider kept the socket open — the failure this select
+        // exists to prevent.
+        let read = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => {
+                let failure = AiFailure::new(AiFailureKind::Cancelled);
+                emit(AiEvent::Failed { failure: failure.clone() });
+                return Err(failure);
+            }
+            chunk = response.chunk() => chunk,
+        };
+        let chunk = match read {
             Ok(Some(chunk)) => chunk,
             Ok(None) => break,
             Err(error) => {
