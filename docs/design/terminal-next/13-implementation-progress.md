@@ -52,7 +52,7 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 
 | 能力 | 状态 | 位置 | 说明 |
 | --- | --- | --- | --- |
-| **连接时一次性密码 / 私钥，不保存** | **`IMPLEMENTED`** | `one-time-credential.ts`、`connect-credential-dialog.tsx`、`use-host-connect-actions.ts` | 16 条新测试。秘密只进进程内 profile，不进 tab/store/DB/vault/localStorage。真实 sshd 端到端 `NOT_RUN` |
+| **连接时一次性密码 / 私钥，不保存** | **`PARTIAL`** | `one-time-credential.ts`、`connect-credential-dialog.tsx`、`use-host-connect-actions.ts`、`one-time-key-real.e2e.test.ts` | 16 条单元测试。**私钥路径已有真实 sshd 证据**：加密私钥 + 口令经 `saveOneTimeSecretForHost` 的字段映射后，真实 OpenSSH 接受（3/3）。密码路径仍 `NOT_RUN`（见下） |
 | **认证失败不持久化** | **`PASS`** | 同上 | 结构上无写入可失败：唯一持久副作用是进程内 profile，取消或 tab 打开失败即丢弃，有测试钉住 |
 | **Host 损坏/未知引用可清除** | **`PASS`** | `host-stored-credential.tsx`、`host-clear-credential.test.tsx` | 三态规则；malformed / unknown-provider / unsupported-version 均显示清除入口。3 条在旧 gate 上红 |
 | **SSH Key 损坏引用可清除** | **`PASS`** | `ssh-keys.ts::clearSSHKeyCredential`、`clear-key-credential-action.tsx` | 此前完全无入口。先失去引用再删密文；无法解析时仍执行 UPDATE |
