@@ -121,3 +121,114 @@ test('summariseGuiArtifacts reports how many files it excluded', () => {
   assert.equal(counts.specs, 1)
   assert.equal(counts.excluded, 1)
 })
+
+// ---------------------------------------------------------------------------
+// The cases' own verdicts. wdio counts only say whether a case threw, and a spec
+// that records NOT_RUN and returns normally produces `failed: 0` — which is how a
+// green job shipped with the snippet dock not opening on Linux (run 44230712100).
+// ---------------------------------------------------------------------------
+
+/** The exact shape `writeEvidence` produces for one case. */
+function caseEvidence(caseId, { verdict, notRunCount = 0, gaps = null, failures = [] }) {
+  return {
+    case: caseId,
+    verdict,
+    recordedAt: '2026-01-01T00:00:00Z',
+    notes: '',
+    extra: {
+      failures,
+      notRunCount,
+      ...(gaps === null ? {} : { gaps }),
+    },
+  }
+}
+
+function artifactsWithCases(files) {
+  const flat = {}
+  for (const [name, contents] of Object.entries(files)) {
+    if (name.startsWith('cases/')) {
+      const caseId = name.slice('cases/'.length)
+      flat[`${caseId}/${caseId}.json`] = contents
+    } else {
+      flat[name] = contents
+    }
+  }
+  return artifacts(flat)
+}
+
+test('a case that recorded FAIL fails the layer even though no case threw', () => {
+  // The measured shape: wdio says 5 passed / 0 failed, the case says FAIL.
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', {
+      verdict: 'FAIL',
+      failures: [{ title: 'a required dock did not open', error: 'no palette row' }],
+    }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'Linux' })
+  assert.equal(report.status, 'FAIL', 'a case-level FAIL must not be reported as a passing layer')
+  assert.deepEqual(report.failedCases, ['e2e-04'])
+})
+
+test('a PARTIAL over a declared gap does not fail, and is never counted as a pass', () => {
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-03': caseEvidence('e2e-03', {
+      verdict: 'PARTIAL',
+      notRunCount: 1,
+      gaps: [{ id: 'no-ssh-fixture', reason: 'no sshd', needs: 'GUI_E2E_SSH_PORT' }],
+    }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'Linux' })
+  assert.equal(report.status, 'PASS')
+  assert.deepEqual(report.unexplainedNotRun, [])
+  assert.deepEqual(
+    report.partialCases,
+    ['e2e-03'],
+    'the gap must still be visible, not absorbed into passed',
+  )
+  assert.deepEqual(
+    report.cases,
+    [{ case: 'e2e-03', verdict: 'PARTIAL', notRunCount: 1 }],
+    'the NOT_RUN count must survive into the report',
+  )
+})
+
+test('a NOT_RUN beyond the declared gaps fails the layer', () => {
+  // This is the Linux defect expressed as a unit: four NOT_RUNs, one declared gap.
+  // The extra three came from a surface that should have worked.
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', {
+      verdict: 'PARTIAL',
+      notRunCount: 4,
+      gaps: [{ id: 'real-model-answer', reason: 'no endpoint', needs: 'a model endpoint' }],
+    }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'Linux' })
+  assert.equal(report.status, 'FAIL')
+  assert.deepEqual(report.unexplainedNotRun, [
+    { case: 'e2e-04', notRunCount: 4, declaredGaps: 1 },
+  ])
+})
+
+test('a case with no declared gaps and any NOT_RUN fails', () => {
+  // The default must be strict: a spec that forgets to declare its gaps cannot coast.
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', { verdict: 'PARTIAL', notRunCount: 3 }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'darwin' })
+  assert.equal(report.status, 'FAIL')
+})
+
+test('all-green cases with no gaps report PASS and name no partial case', () => {
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(5, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', { verdict: 'PASS' }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'darwin' })
+  assert.equal(report.status, 'PASS')
+  assert.deepEqual(report.partialCases, [])
+  assert.deepEqual(report.unexplainedNotRun, [])
+})

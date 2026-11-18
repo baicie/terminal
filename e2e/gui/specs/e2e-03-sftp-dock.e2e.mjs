@@ -579,6 +579,27 @@ describe('SFTP Context Dock — real WebView', () => {
         notRunCount,
         // Recorded so a reader can tell which precondition the run actually had.
         sshFixture: Boolean(process.env.GUI_E2E_SSH_PORT),
+        /*
+         * Every NOT_RUN in this spec is the same precondition: no SSH fixture.
+         *
+         * The GUI workflow does not start an sshd, so the dock has no connected host
+         * and the six remote cases skip. That is a declared environment limit, not a
+         * surface that failed — and saying so here is what lets `gui-e2e-report.mjs`
+         * tell the two apart instead of either failing every run or ignoring both.
+         *
+         * When a fixture IS present, this list stays empty and any NOT_RUN becomes
+         * unexplained, which fails the layer. That is the intended direction: the day
+         * someone wires up sshd, a silent skip here should stop being acceptable.
+         */
+        gaps: process.env.GUI_E2E_SSH_PORT
+          ? []
+          : [
+              {
+                id: 'no-ssh-fixture',
+                reason: 'the GUI workflow starts no sshd, so no host is connected',
+                needs: 'GUI_E2E_SSH_PORT (the real-machine matrix covers this instead)',
+              },
+            ],
       },
     })
   })

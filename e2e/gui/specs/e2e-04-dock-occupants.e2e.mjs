@@ -9,8 +9,11 @@
 //   * does opening one of them really replace the other, in the one right-hand column
 //     the design specifies — or do two render side by side?
 //   * does closing the dock leave the PTY alive, or does the session go with it?
-//   * does an occupant open from a user gesture (the command palette) rather than
-//     only from a store write a test made?
+//   * does an occupant open through the command palette rather than only from a
+//     store write a test made? (The palette is triggered by the same window event a
+//     keyboard shortcut dispatches, then its row is clicked. That is one step above a
+//     store write — it exercises the action handler and the render — but it is not a
+//     real key or pointer event, and this spec does not claim to be one.)
 //   * does the Inspector, with no SSH session, say why instead of showing zeros?
 //
 // ## The two rules from the design this is really testing
@@ -46,10 +49,28 @@ const CASE = 'e2e-04'
  * read "expected the ai occupant, the panel reports snippets" and blamed the product
  * for a spec that could not tell two rows apart.
  */
+/**
+ * Whether an occupant MUST open in this environment.
+ *
+ * The first version treated every occupant as optional: if the panel did not appear
+ * it pushed a `NOT_RUN` note and moved on. That is how Linux shipped a green GUI job
+ * while the snippet dock never opened at all — the one thing this spec exists to
+ * catch had a path that could not fail.
+ *
+ * - `REQUIRED`  — must open here. Failure to open is a FAIL.
+ * - `OPTIONAL`  — opens only when a precondition holds (a compiled-in feature, a
+ *                 configured profile). Absence is recorded, not failed.
+ * - `UNAVAILABLE` — cannot be exercised in this environment at all.
+ *
+ * All three occupants are REQUIRED: opening a dock needs no network, no model and no
+ * SSH session. The AI dock renders a "no profile" state rather than refusing to mount,
+ * which is exactly what the design specifies, and the Inspector renders its no-session
+ * state. If any of them cannot mount on a platform, that is a product defect.
+ */
 const OCCUPANTS = [
-  { action: 'open-snippet-dock', title: 'Open the snippet dock', label: 'snippets' },
-  { action: 'open-ai-dock', title: 'Open the AI assistant', label: 'ai' },
-  { action: 'open-inspector', title: 'Inspect the server', label: 'inspector' },
+  { action: 'open-snippet-dock', title: 'Open the snippet dock', label: 'snippets', need: 'REQUIRED' },
+  { action: 'open-ai-dock', title: 'Open the AI assistant', label: 'ai', need: 'REQUIRED' },
+  { action: 'open-inspector', title: 'Inspect the server', label: 'inspector', need: 'REQUIRED' },
 ]
 
 /**
@@ -118,23 +139,43 @@ async function runPaletteAction(title) {
   await browser.execute(() => {
     window.dispatchEvent(new CustomEvent('shortcut:command-palette'))
   })
-  await browser.pause(400)
 
-  const ran = await browser.execute(wanted => {
-    // Palette rows are `role="option"` buttons; there is no `data-value` to match on
-    // (`command-palette-result.tsx:27-35`). The title is compared exactly — a
-    // substring match is what crossed two entries on the first attempt.
-    const rows = Array.from(document.querySelectorAll('[role="option"]'))
-    const labels = rows.map(row =>
-      (row.querySelector('div > div')?.textContent ?? row.textContent ?? '').trim(),
-    )
-    const index = labels.findIndex(label => label === wanted)
-    if (index < 0) return { clicked: false, labels }
-    rows[index].click()
-    return { clicked: true, label: labels[index] }
-  }, title)
+  /*
+   * Wait for the palette to have *rows*, then for the row we want.
+   *
+   * The first version slept 400 ms and read the list once. On Linux that read the
+   * palette before its first results had been computed and got `labels: []` — an
+   * empty list, not a missing entry — which the case then recorded as NOT_RUN. The
+   * next two actions in the same run worked, so it was a first-open timing problem,
+   * not a missing command.
+   *
+   * A longer fixed sleep would hide the same race again on a slower runner. This
+   * polls a *condition* (the row we asked for exists) with a bounded deadline, so a
+   * palette that genuinely lacks the command still fails quickly and loudly.
+   */
+  const deadline = 10_000
+  const started = Date.now()
+  let last = { clicked: false, labels: [], waitedMs: 0 }
+  while (Date.now() - started < deadline) {
+    last = await browser.execute(wanted => {
+      // Palette rows are `role="option"` buttons; there is no `data-value` to match on
+      // (`command-palette-result.tsx:27-35`). The title is compared exactly — a
+      // substring match is what crossed two entries on the first attempt.
+      const rows = Array.from(document.querySelectorAll('[role="option"]'))
+      const labels = rows.map(row =>
+        (row.querySelector('div > div')?.textContent ?? row.textContent ?? '').trim(),
+      )
+      const index = labels.findIndex(label => label === wanted)
+      if (index < 0) return { clicked: false, labels }
+      rows[index].click()
+      return { clicked: true, label: labels[index] }
+    }, title)
+    if (last.clicked) break
+    await browser.pause(100)
+  }
+  last.waitedMs = Date.now() - started
   await browser.pause(600)
-  return ran
+  return last
 }
 
 describe('Context Dock occupants — real WebView', () => {
@@ -142,19 +183,29 @@ describe('Context Dock occupants — real WebView', () => {
   const measurements = {}
   const failures = []
 
-  afterEach(function () {
-    if (this.currentTest?.state === 'failed') {
-      const err = this.currentTest.err
-      const text =
-        (typeof err === 'string' ? err : undefined) ??
-        err?.message ??
-        err?.stack?.split('\n')[0] ??
-        ''
-      failures.push({
-        title: this.currentTest.title,
-        error: text && text !== '[object Object]' ? text : `(no error text for "${this.currentTest.title}")`,
-      })
+  /*
+   * Failures are recorded by `check()` below, at the throw site.
+   *
+   * Mocha's `currentTest` here carries `state: "failed"` but `err` is `undefined` —
+   * measured with a deliberately broken spec, whose recorded evidence came out as the
+   * placeholder `(no error text for "...")`. The mechanism that was supposed to
+   * capture the reason did not have access to it. Rather than guess at another
+   * undocumented field, every assertion in this spec goes through `check()`, which
+   * records the message where it is still in hand.
+   */
+
+  /** Assert, and record the reason before rethrowing so the evidence keeps it. */
+  function check(condition, message) {
+    if (!condition) {
+      failures.push({ title: currentCase, error: message })
+      throw new Error(message)
     }
+  }
+
+  /** The case currently executing, for the failure record. */
+  let currentCase = 'unknown case'
+  beforeEach(function () {
+    currentCase = this?.currentTest?.title ?? 'unknown case'
   })
 
   before(async () => {
@@ -170,7 +221,7 @@ describe('Context Dock occupants — real WebView', () => {
     measurements.before = await readState()
   })
 
-  it('each occupant opens from a user gesture and fills the same column', async () => {
+  it('each occupant opens through the command palette and fills the same column', async () => {
     for (const occupant of OCCUPANTS) {
       const opened = await runPaletteAction(occupant.title)
       notes.push(`${occupant.action}: ${JSON.stringify(opened)}`)
@@ -179,16 +230,25 @@ describe('Context Dock occupants — real WebView', () => {
       measurements[occupant.label] = state
 
       if (!state.panelExists) {
-        // Some occupants refuse to render in a build without their precondition
-        // (the AI dock when no model is compiled in). That is the product's designed
-        // behaviour, not a defect — recorded, not failed.
+        // A REQUIRED occupant that does not open is a failure, not a note.
+        //
+        // This branch used to record NOT_RUN and continue, which is how the Linux job
+        // stayed green while the snippet dock never mounted. The palette result is
+        // included because "the command was not found" and "the command ran but the
+        // panel did not render" are different defects with different owners.
+        if (occupant.need === 'REQUIRED') {
+          check(false, 
+            `${occupant.label} is REQUIRED but did not open: ` +
+              `${JSON.stringify(opened)}`,
+          )
+        }
         notes.push(
-          `${occupant.label} NOT_RUN: the dock did not open (palette reported ${JSON.stringify(opened)})`,
+          `${occupant.label} UNAVAILABLE: the dock did not open (palette reported ${JSON.stringify(opened)})`,
         )
         continue
       }
       if (state.occupant !== occupant.label) {
-        throw new Error(
+        check(false, 
           `expected the ${occupant.label} occupant, the panel reports ${state.occupant}`,
         )
       }
@@ -214,7 +274,7 @@ describe('Context Dock occupants — real WebView', () => {
       notes.push(`${occupant.label}: docks present = ${JSON.stringify(present)}`)
     }
     if (worst.present) {
-      throw new Error(
+      check(false, 
         `two docks rendered at once after opening ${worst.label}: ${JSON.stringify(worst.present)}`,
       )
     }
@@ -254,13 +314,13 @@ describe('Context Dock occupants — real WebView', () => {
 
     notes.push(`closed via ${closed}`)
     if (!after.terminalCanvas) {
-      throw new Error('closing the dock removed the terminal canvas')
+      check(false, 'closing the dock removed the terminal canvas')
     }
     if (!after.terminalMounted) {
-      throw new Error('closing the dock unmounted the terminal')
+      check(false, 'closing the dock unmounted the terminal')
     }
     if (after.tabCount < before.tabCount) {
-      throw new Error(
+      check(false, 
         `closing the dock closed a tab: ${before.tabCount} → ${after.tabCount}`,
       )
     }
@@ -272,8 +332,13 @@ describe('Context Dock occupants — real WebView', () => {
     const opened = await runPaletteAction('Inspect the server')
     const state = await readState()
     if (!state.panelExists || state.occupant !== 'inspector') {
-      notes.push(`inspector NOT_RUN: dock did not open (${JSON.stringify(opened)})`)
-      return
+      // REQUIRED: opening the inspector needs no SSH session — it has a designed
+      // no-session state that this very case asserts below. Failing to mount it is a
+      // product defect, and the previous NOT_RUN path hid it.
+      check(false, 
+        `the inspector is REQUIRED but did not open: ${JSON.stringify(opened)} ` +
+          `(panelExists=${state.panelExists}, occupant=${state.occupant})`,
+      )
     }
 
     const inspector = await browser.execute(() => {
@@ -291,12 +356,12 @@ describe('Context Dock occupants — real WebView', () => {
     })
     measurements.inspector = inspector
     if (!inspector) {
-      throw new Error('the inspector occupant rendered no body')
+      check(false, 'the inspector occupant rendered no body')
     }
     notes.push(`inspector text: ${JSON.stringify(inspector.text)}`)
 
     if (inspector.percentages.length > 0 && !inspector.hasMetrics) {
-      throw new Error(
+      check(false, 
         `the inspector showed percentages with no metric data: ${JSON.stringify(inspector.percentages)}`,
       )
     }
@@ -310,7 +375,7 @@ describe('Context Dock occupants — real WebView', () => {
     if (!inspector.hasError && !inspector.hasRunning && !inspector.hasMetrics) {
       // No state marker at all: it rendered something, but nothing says what. That is
       // the "looks like it works" failure the design's null-not-zero rule prevents.
-      throw new Error(
+      check(false, 
         `the inspector showed neither an error, a running state, nor metrics: ${JSON.stringify(inspector.text)}`,
       )
     }
@@ -323,10 +388,14 @@ describe('Context Dock occupants — real WebView', () => {
     const opened = await runPaletteAction('Open the AI assistant')
     const state = await readState()
     if (!state.panelExists || state.occupant !== 'ai') {
-      // A build without the `ai` feature hides the dock entirely — the design's
-      // "feature-off 无 profile UI 假入口". Recorded as such.
-      notes.push(`ai dock NOT_RUN: dock did not open (${JSON.stringify(opened)})`)
-      return
+      // The binary under test is built with the `ai` feature (the workflow builds with
+      // `--features gui-e2e`, and this dock is part of the default UI). A dock that
+      // does not mount is a defect; the old NOT_RUN path would have called a build
+      // without the feature "unavailable" even when the feature was present.
+      check(false, 
+        `the AI dock is REQUIRED but did not open: ${JSON.stringify(opened)} ` +
+          `(panelExists=${state.panelExists}, occupant=${state.occupant})`,
+      )
     }
 
     const dock = await browser.execute(() => {
@@ -352,30 +421,52 @@ describe('Context Dock occupants — real WebView', () => {
       }
     })
     measurements.aiDock = dock
-    if (!dock) throw new Error('the AI dock rendered no body')
+    if (!dock) check(false, 'the AI dock rendered no body')
     notes.push(`ai dock text: ${JSON.stringify(dock.text)}`)
 
     if (!dock.saysNeverRuns) {
-      throw new Error('the AI dock must state that nothing is run automatically')
+      check(false, 'the AI dock must state that nothing is run automatically')
     }
     if (dock.contextPreview && dock.noSelection) {
-      throw new Error('the AI dock showed both a context preview and a no-selection state')
+      check(false, 'the AI dock showed both a context preview and a no-selection state')
     }
   })
 
-  it('records what could not be verified', () => {
-    notes.push(
-      'NOT_RUN: a real model answer (no OpenAI-compatible endpoint in this environment)',
-    )
-    notes.push(
-      'NOT_RUN: real Inspector metrics (no SSH session is opened by this spec)',
-    )
-    notes.push(
-      'NOT_RUN: snippet draft capture (needs a terminal selection and an enabled extension)',
-    )
-  })
+  // ## There is no "records what could not be verified" case any more
+  //
+  // That case asserted nothing — its body was three `notes.push` calls — yet it counted
+  // as one of the six cases "passing", which is how a suite reports 6/6 while one sixth
+  // of it could not fail. The gaps it listed are real, so they are declared here in
+  // `after()` as structured `NOT_RUN` entries, where they are counted as NOT_RUN rather
+  // than as passes.
 
   after(async () => {
+    /*
+     * Gaps that this environment genuinely cannot close.
+     *
+     * Declared once, as data, so the evidence file carries them without a fake case
+     * inflating the pass count. Each names what would be needed to close it.
+     */
+    const GAPS = [
+      {
+        id: 'real-model-answer',
+        reason: 'no OpenAI-compatible endpoint in this environment',
+        needs: 'a model endpoint (BLOCKED_EXTERNAL; the suite must not consume a paid key)',
+      },
+      {
+        id: 'real-inspector-metrics',
+        reason: 'no SSH session is opened by this spec',
+        needs: 'a reachable sshd; covered by the real-machine matrix instead',
+      },
+      {
+        id: 'snippet-draft-capture',
+        reason: 'needs a terminal selection and an enabled extension',
+        needs: 'the snippet workflow spec (e2e-05)',
+      },
+    ]
+    for (const gap of GAPS) {
+      notes.push(`NOT_RUN ${gap.id}: ${gap.reason} (needs ${gap.needs})`)
+    }
     const notRunCount = notes.filter(note => note.includes('NOT_RUN')).length
     const verdict = failures.length > 0 ? 'FAIL' : notRunCount > 0 ? 'PARTIAL' : 'PASS'
     await writeEvidence(CASE, {
@@ -385,7 +476,8 @@ describe('Context Dock occupants — real WebView', () => {
         failures.length > 0
           ? failures.map(f => `${f.title}: ${f.error}`).join('\n')
           : undefined,
-      extra: { measurements, failures, notRunCount },
+      extra: { measurements, failures, notRunCount, gaps: GAPS },
     })
   })
+
 })
