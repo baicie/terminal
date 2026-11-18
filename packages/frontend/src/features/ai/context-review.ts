@@ -125,6 +125,15 @@ export function buildContext(input: {
   kind: ContextKind
   hostId: string | null
   sessionId: string | null
+  /**
+   * The backend session the text was read from.
+   *
+   * Without this the approval is bound to the *tab* only, and a reconnect — same tab,
+   * new session — leaves it looking valid. `contextMatchesSession` accepts a missing
+   * value because a local terminal genuinely has none; that tolerance is exactly why
+   * this has to be supplied wherever a real session exists, rather than defaulted.
+   */
+  backendSessionId?: string | null
   text: string
   redactionEdits?: readonly RedactionEdit[]
   approved?: boolean
@@ -150,6 +159,7 @@ export function buildContext(input: {
       kind: input.kind,
       hostId: input.hostId,
       sessionId: input.sessionId,
+      backendSessionId: input.backendSessionId ?? null,
       bytes,
       contentSha256: createHashOf(text),
       preview: text,

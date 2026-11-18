@@ -128,6 +128,7 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
           profiles={ai.profiles}
           selectedText={selection?.text ?? null}
           sessionId={selection?.sessionId ?? null}
+          backendSessionId={selection?.backendSessionId ?? null}
           hostId={activeTab?.hostId ?? null}
           onClose={() => setRightPanel('none')}
         />

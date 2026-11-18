@@ -71,11 +71,15 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | --- | --- |
 | fixture 没有 password 模式 | `terminal-smoke-sshd.mjs` 只有 `key` / `cert`。我加过 password 模式，然后撤销 |
 | 加不进去的原因 | fixture 用**当前系统用户**（`userInfo().username`）跑 sshd。密码认证需要该账户的真实系统密码 —— 在 hermetic fixture 里做不到，且**绝不该改用户的系统密码** |
-| key 路径也没走通 | fixture 给每个授权 key 都带 `command="<wrapper>"`，且私钥加密后需要交互式解口令。`sshpass` 只处理 **password 认证**，不处理私钥口令 —— 这一点是确定的（我最初误判了它的作用范围）。`SSH_ASKPASS_REQUIRE=force` 配一个打印口令的 helper 能让 `ssh-keygen -y -f <key>` 成功解密，但同配置下 `ssh` 仍卡在 `Server accepts key` 之后又回到 `Authentications that can continue`。**未能隔离出确切原因**：可能是 helper 未被调用、可能是 tty 抢占、也可能是 `setsid` 缺失（macOS 无此命令）。因此这一条记为「key 路径未打通」，而不是「ASKPASS 对 ssh 无效」——后者我也没有证据 |
+| key 路径 —— **已打通**（见下） | 早期尝试卡在 `Server accepts key` 之后又回到 `Authentications that can continue`，当时记为「未隔离出确切原因」。现在能跑通的配置是 **`SSH_ASKPASS=helper` + `SSH_ASKPASS_REQUIRE=force`**，helper 从环境变量读口令并打印到 stdout；`one-time-key-real.e2e.test.ts` 在此配置下 **3/3 通过**。初期失败与现在成功之间**只差这一项环境变量**，但当时的具体失败原因没有留下可复现的记录，**所以不声称已经确定根因** |
+| password 路径 —— 仍阻塞 | 同上：fixture 用**当前系统用户**跑 sshd，密码认证需要该账户的真实系统密码 |
 
-**要真正解除**，需要 fixture 支持一个隔离的专用账户（`useradd` / `dscl` + 受控密码），这是一个独立的基础设施改动，不该塞进本 PR。
+**密码路径要真正解除**，需要 fixture 支持一个隔离的专用账户（`useradd` / `dscl` + 受控密码），这是一个独立的基础设施改动，不该塞进本 PR。
 
-现状：决策与写入两端有 14 项自动化测试覆盖；**没有**证据表明这条链路在真实 SSH 认证下触发。
+现状：决策与写入两端有 14 项自动化测试覆盖；**key 路径**有真实 sshd 认证证据（3/3，`one-time-key-real.e2e.test.ts`）；
+**password 路径**没有，且本轮不会为了跑测试去改用户的系统密码或关闭 fixture 的安全限制。
+
+**这条证据证明到什么程度**：它证明「应用会交给 SSH 层的值」本身可用 —— 从 `saveOneTimeSecretForHost` 的字段映射（口令进 `password`）到真实 OpenSSH 接受。它**不**证明 Tauri 应用的 Rust 会话驱动了那次握手，那是另一条链路。
 
 ---
 

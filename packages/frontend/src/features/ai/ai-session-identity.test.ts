@@ -18,7 +18,7 @@
 // not only the tab.
 
 import { describe, expect, it, beforeEach } from 'vitest'
-import { contextMatchesSession } from './context-review'
+import { buildContext, contextMatchesSession } from './context-review'
 import type { ApprovedContext } from './context-review'
 import {
   publishTerminalSessionId,
@@ -82,5 +82,56 @@ describe('switching tabs invalidates the approval', () => {
     // A selection that names no session cannot be compared; refusing it would break
     // every local-terminal case, where there is no remote host to be wrong about.
     expect(contextMatchesSession(context({ sessionId: null }), 'tab-9')).toBe(true)
+  })
+})
+
+describe('the approval actually records the backend session', () => {
+  // The guard in `contextMatchesSession` is only worth anything if a real context
+  // carries the id. It did not: `backendSessionId` was published and compared, but
+  // `buildContext` never accepted it, so every production context had `undefined`
+  // and the comparison was skipped — a mechanism with nothing driving it.
+  it('buildContext copies the backend session onto the context it returns', () => {
+    const built = buildContext({
+      kind: 'selection',
+      hostId: 'h-1',
+      sessionId: 'tab-1',
+      backendSessionId: 'ssh-session-1',
+      text: 'kubectl get pods',
+    })
+    expect(built.ok).toBe(true)
+    if (!built.ok) throw new Error('unreachable')
+    expect(
+      built.context.backendSessionId,
+      'a context built for a real session must record it, or the reconnect guard never runs',
+    ).toBe('ssh-session-1')
+  })
+
+  it('a reconnect invalidates a context that came through buildContext', () => {
+    // End to end through the builder rather than a hand-built literal: this is the
+    // shape the dock actually produces.
+    const built = buildContext({
+      kind: 'selection',
+      hostId: 'h-1',
+      sessionId: 'tab-1',
+      backendSessionId: 'ssh-session-1',
+      text: 'kubectl get pods',
+      approved: true,
+    })
+    if (!built.ok) throw new Error('unreachable')
+    expect(contextMatchesSession(built.context, 'tab-1', 'ssh-session-1')).toBe(true)
+    expect(contextMatchesSession(built.context, 'tab-1', 'ssh-session-2')).toBe(false)
+  })
+
+  it('a local terminal context still passes, with no backend session to compare', () => {
+    const built = buildContext({
+      kind: 'selection',
+      hostId: null,
+      sessionId: 'tab-1',
+      text: 'echo hi',
+      approved: true,
+    })
+    if (!built.ok) throw new Error('unreachable')
+    expect(built.context.backendSessionId).toBeNull()
+    expect(contextMatchesSession(built.context, 'tab-1', null)).toBe(true)
   })
 })

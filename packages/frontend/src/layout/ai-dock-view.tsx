@@ -35,6 +35,8 @@ interface AiDockProps {
   selectedText: string | null
   /** The session the selection came from, for the binding check. */
   sessionId: string | null
+  /** The backend session behind the selection; see `buildContext`. */
+  backendSessionId?: string | null
   hostId: string | null
   onClose: () => void
   /** Called when the user asks to save a draft as a snippet. */
@@ -54,6 +56,7 @@ export function AiDock({
   profiles,
   selectedText,
   sessionId,
+  backendSessionId = null,
   hostId,
   onClose,
   onSaveSnippet,
@@ -81,10 +84,11 @@ export function AiDock({
       kind: ACTION_CONTEXT[action],
       hostId,
       sessionId,
+      backendSessionId,
       text: selectedText,
     })
     return built.ok ? built.context : null
-  }, [selectedText, action, hostId, sessionId])
+  }, [selectedText, action, hostId, sessionId, backendSessionId])
 
   // A new selection invalidates a previous approval — the user must see the text they
   // are about to send, and the old approval was for different text.
