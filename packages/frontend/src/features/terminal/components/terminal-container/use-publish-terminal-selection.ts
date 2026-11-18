@@ -31,6 +31,17 @@ export function usePublishTerminalSelection({ tabId, isActive, term }: Options):
       clearTerminalSelection(tabId)
       return
     }
+    // ## The id published here is the tab id, deliberately, and the name lies
+    //
+    // `ApprovedContext.sessionId` is compared against `visibleSessionId()`, which
+    // returns the active tab id. Both carry the same value, so the guard works for
+    // what it covers: a selection does not survive a *tab* switch.
+    //
+    // It does not cover a reconnect — same tab, new backend session — and the field
+    // name suggests it does. Renaming it is a wider change than this fix; what matters
+    // here is that the two ends agree, so a change to one is not silently unmatchable
+    // with the other. `ai-session-identity.test.ts` records the limitation instead of
+    // leaving it to be discovered.
     const publish = () => publishTerminalSelection(tabId, term.getSelection())
     publish()
     const subscription = term.onSelectionChange(publish)
