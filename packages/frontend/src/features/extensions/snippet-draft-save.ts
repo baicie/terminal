@@ -95,3 +95,23 @@ export async function saveDraftAsSnippet(
 function defaultId(): string {
   return `snippet-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
 }
+
+/*
+ * A read-only lookup for the GUI E2E probe.
+ *
+ * It lives here because this module is already in the product's graph and already
+ * imports the database service, so the probe does not have to `import()` anything at
+ * runtime — measured: a dynamic import inside `browser.execute` fails over Tauri's
+ * custom protocol with `'text/html' is not a valid JavaScript MIME type`.
+ *
+ * Read-only, one row by exact name, and only when the GUI E2E build flag is set. The
+ * production bundle never defines it.
+ */
+if (import.meta.env.VITE_TERMINAL_GUI_E2E === '1') {
+  ;(globalThis as { __terminalSnippetProbe?: (name: string) => Promise<unknown> })
+    .__terminalSnippetProbe = async (name: string) => {
+      const { getDb } = await import('@/service/database/connection')
+      const db = await getDb()
+      return db.select('SELECT name, script FROM snippets WHERE name = ?', [name])
+    }
+}

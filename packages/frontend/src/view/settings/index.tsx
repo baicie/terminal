@@ -109,6 +109,22 @@ const SettingsView: React.FC = () => {
       app.setLanguage(value as string)
       void i18nCore.changeLanguage(value as string)
     }
+    /*
+     * Extensions apply on toggle, not only on save.
+     *
+     * Measured in the GUI: clicking the snippet dock's switch rendered it "checked"
+     * while `registry.list()` still reported `active: []`, `menusFor` was empty and the
+     * dock still said "turned off" — because `applyExtensionSettings` ran only inside
+     * `handleSave`. A user who toggles the switch and switches to the terminal sees
+     * nothing happen, with no hint that a Save button elsewhere is required.
+     *
+     * Theme and language already apply immediately for the same reason: they are
+     * visible preferences, and a preference that appears to apply and does not is
+     * worse than one that does not appear to apply at all.
+     */
+    if (key === 'enabledExtensions') {
+      void applyExtensionSettings(value as string[])
+    }
   }
 
   /**
