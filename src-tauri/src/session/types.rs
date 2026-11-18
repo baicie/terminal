@@ -122,6 +122,8 @@ pub enum SessionError {
     ExecFailed(String),
     #[error("exec timed out")]
     ExecTimeout,
+    #[error("exec cancelled")]
+    ExecCancelled,
     #[error("key generation failed: {0}")]
     KeyGenerationFailed(String),
 }
@@ -188,6 +190,10 @@ impl From<SessionError> for SessionErrorDto {
                 kind: "exec_timeout",
                 message: None,
             },
+            SessionError::ExecCancelled => Self {
+                kind: "exec_cancelled",
+                message: None,
+            },
             SessionError::KeyGenerationFailed(m) => Self {
                 kind: "key_generation_failed",
                 message: Some(m.clone()),
@@ -212,6 +218,7 @@ impl From<SessionErrorDto> for SessionError {
             ("certificate_parse_failed", Some(m)) => SessionError::CertificateParseFailed(m),
             ("exec_failed", Some(m)) => SessionError::ExecFailed(m),
             ("exec_timeout", _) => SessionError::ExecTimeout,
+            ("exec_cancelled", _) => SessionError::ExecCancelled,
             ("key_generation_failed", Some(m)) => SessionError::KeyGenerationFailed(m),
             _ => SessionError::ConnectionFailed("unknown error".to_string()),
         }
