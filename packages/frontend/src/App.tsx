@@ -8,6 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import locales from './locales'
 import { router } from './router'
+import { applyEnabledExtensions } from '@/features/extensions/apply-enabled-extensions'
 import { useAppStore } from './store/app'
 import { useTeamStore } from './store/team'
 import { getAppSettings } from './service/database'
@@ -71,6 +72,19 @@ export default function App({ startupTerminalFallbackAt }: AppProps) {
           notifyOnlyWhenUnfocused: s.notifyOnlyWhenUnfocused ?? true,
         })
         await syncCloseToTray(!!s.minimizeToTray)
+        /*
+         * Extensions the user enabled in a previous session.
+         *
+         * `enabledExtensions` is persisted, and the Settings page applies it on save and
+         * on toggle — but nothing applied it at startup. A user who enabled the snippet
+         * dock, quit and relaunched found the switch still on and the dock still saying
+         * "turned off": the setting was stored and never read.
+         *
+         * `defaultEnabled: false` means an unlisted extension must stay off, so this is
+         * an apply, not an enable-everything: `applyExtensionSettings` enables what the
+         * list names and deactivates anything else that is running.
+         */
+        await applyEnabledExtensions(s.enabledExtensions ?? [])
       } catch (e) {
         console.warn('Failed to apply desktop UX prefs on startup:', e)
       }

@@ -26,7 +26,7 @@ import { TerminalSettings } from './terminal-settings'
 import { ExtensionSettings } from './extension-settings'
 import { ModelProfileEditor } from './ai-profile-editor'
 import { useAiRuntime } from '@/features/ai/use-ai-runtime'
-import { getExtensionRegistry } from '@/features/extensions/use-extension-runtime'
+import { applyEnabledExtensions } from '@/features/extensions/apply-enabled-extensions'
 
 const SettingsView: React.FC = () => {
   const { t } = useTranslation()
@@ -85,7 +85,7 @@ const SettingsView: React.FC = () => {
       await i18nCore.changeLanguage(settings.language)
       // A saved switch that did not take effect would read as "on" while nothing
       // runs. The registry is told at the same moment the setting is written.
-      await applyExtensionSettings(settings.enabledExtensions ?? [])
+      await applyEnabledExtensions(settings.enabledExtensions ?? [])
       toast.success(t('settings.saved'))
     } catch (error) {
       console.error('Failed to save settings:', error)
@@ -123,7 +123,7 @@ const SettingsView: React.FC = () => {
      * worse than one that does not appear to apply at all.
      */
     if (key === 'enabledExtensions') {
-      void applyExtensionSettings(value as string[])
+      void applyEnabledExtensions(value as string[])
     }
   }
 
@@ -133,16 +133,6 @@ const SettingsView: React.FC = () => {
    * Enables what is newly on and disables what is no longer listed, so a save is the
    * single action that changes what runs.
    */
-  const applyExtensionSettings = async (enabledIds: string[]) => {
-    const registry = getExtensionRegistry()
-    for (const record of registry.list()) {
-      const id = record.manifest.id
-      const shouldRun = enabledIds.includes(id)
-      const running = record.status === 'active'
-      if (shouldRun && !running) await registry.enable(id)
-      else if (!shouldRun && running) await registry.deactivate(id)
-    }
-  }
 
   if (status === 'loading') {
     return (
