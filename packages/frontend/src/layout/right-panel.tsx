@@ -14,6 +14,7 @@ import {
   subscribeTerminalSelection,
 } from '@/features/terminal/services/terminal-selection'
 import { useAppStore } from '@/store/app'
+import { useInspectorSessionId } from './use-inspector-session-id'
 
 /**
  * The right column.
@@ -71,6 +72,11 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
   // left it showing "select something" after the user had already done so.
   useTerminalSelectionSubscription(rightPanel === 'ai')
   const selection = rightPanel === 'ai' ? currentTerminalSelection() : null
+  // The Inspector needs the **backend** session id — the one `session_exec` accepts —
+  // not the tab id. They are different values: the session manager keys its records by
+  // tab id and the backend has never seen that value, so passing it meant an exec
+  // against a session that does not exist.
+  const inspectorSessionId = useInspectorSessionId(rightPanel === 'inspector', activeTab?.id ?? null)
   if (rightPanel === 'none') return null
   // A mode the union names but this build does not render — `snippets`, `inspector`
   // and `ai` are declared for the contract, not shipped. Rendering the dock empty
@@ -112,7 +118,7 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
       {rightPanel === 'inspector' ? (
         <ServerInspector
           hostId={activeTab?.hostId ?? null}
-          sessionId={activeTab?.id ?? null}
+          sessionId={inspectorSessionId}
           exec={tauriInspectorExec}
           onClose={() => setRightPanel('none')}
         />
@@ -122,6 +128,7 @@ export function RightPanel({ mode = 'column' }: { mode?: 'column' | 'overlay' })
           profiles={ai.profiles}
           selectedText={selection?.text ?? null}
           sessionId={selection?.sessionId ?? null}
+          backendSessionId={selection?.backendSessionId ?? null}
           hostId={activeTab?.hostId ?? null}
           onClose={() => setRightPanel('none')}
         />

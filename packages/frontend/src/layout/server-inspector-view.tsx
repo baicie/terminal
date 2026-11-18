@@ -33,6 +33,14 @@ interface ServerInspectorProps {
   /** The exec bridge. Injected so the panel has no Tauri dependency of its own. */
   exec: InspectorExec
   onClose: () => void
+  /**
+   * The probe itself, injectable so a test can produce a reading without a server.
+   *
+   * Defaults to the real `runInspectorProbe`. It is a separate prop from `exec`
+   * because the two answer different questions: `exec` is the transport, this is the
+   * policy — which commands run, in what order, and what a partial result means.
+   */
+  probe?: (exec: InspectorExec, options: { hostId: string, sessionId: string }) => Promise<InspectorOutcome>
 }
 
 type PanelState =
@@ -41,7 +49,7 @@ type PanelState =
   | { kind: 'result'; result: ProbeResult }
   | { kind: 'error'; reason: string; message: string }
 
-export function ServerInspector({ hostId, sessionId, exec, onClose }: ServerInspectorProps) {
+export function ServerInspector({ hostId, sessionId, exec, onClose, probe = runInspectorProbe }: ServerInspectorProps) {
   const { t } = useTranslation()
   const [state, setState] = useState<PanelState>({ kind: 'idle' })
   // Bumped on every refresh and on unmount, so a probe that finishes late can tell it
@@ -68,7 +76,7 @@ export function ServerInspector({ hostId, sessionId, exec, onClose }: ServerInsp
     const generation = generationRef.current
     setState({ kind: 'running' })
 
-    const outcome: InspectorOutcome = await runInspectorProbe(exec, { hostId, sessionId })
+    const outcome: InspectorOutcome = await probe(exec, { hostId, sessionId })
 
     // The user refreshed again, switched host, or closed the panel while this ran.
     if (generation !== generationRef.current) return
@@ -78,10 +86,27 @@ export function ServerInspector({ hostId, sessionId, exec, onClose }: ServerInsp
     } else {
       setState({ kind: 'error', reason: outcome.reason, message: outcome.message })
     }
-  }, [exec, hostId, sessionId])
+  }, [exec, hostId, sessionId, probe])
 
   const result = state.kind === 'result' ? state.result : null
-  const stale = result ? isStale(result, Date.now()) : false
+  // ## Staleness has to be driven, not computed once
+  //
+  // `isStale(result, Date.now())` during render reads the clock but does not react to
+  // it. React has no reason to re-render when the TTL passes, so a panel left open kept
+  // showing "Observed 14:02:11" as though the numbers were live — the rule existed, was
+  // unit-tested, and nothing drove it.
+  //
+  // A `now` that ticks is what makes the badge appear on its own. The interval is one
+  // second rather than the TTL: the remaining time is not displayed, so a coarse tick
+  // would do, but a one-second one keeps the transition within a second of the moment
+  // it becomes true, and a single interval per open panel is not a cost.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!result) return
+    const timer = setInterval(() => setNow(Date.now()), 1_000)
+    return () => clearInterval(timer)
+  }, [result])
+  const stale = result ? isStale(result, now) : false
 
   return (
     <div className="flex h-full flex-col" data-testid="server-inspector">
@@ -92,7 +117,7 @@ export function ServerInspector({ hostId, sessionId, exec, onClose }: ServerInsp
             size="sm"
             variant="outline"
             onClick={() => void refresh()}
-            disabled={state.kind === 'running' || !sessionId}
+            disabled={state.kind === 'running' || !sessionId || !hostId}
           >
             {t('common.refresh')}
           </Button>
@@ -103,8 +128,17 @@ export function ServerInspector({ hostId, sessionId, exec, onClose }: ServerInsp
       </div>
 
       <div className="space-y-3 p-3">
-        {!sessionId && (
-          <p className="text-sm text-muted-foreground">{t('inspector.noSession')}</p>
+        {/*
+          The panel can read a host over SSH only when both are present. A **local**
+          terminal has a session id and no host, and the old condition tested the id
+          alone — so the panel showed neither "open a session" nor any result, just the
+          title and two buttons. Found by e2e-04 driving a real WebView: the whole body
+          read `"Server inspectorRefreshClose"`.
+        */}
+        {(!sessionId || !hostId) && (
+          <p className="text-sm text-muted-foreground" data-testid="inspector-no-session">
+            {t('inspector.noSession')}
+          </p>
         )}
 
         {state.kind === 'running' && (
@@ -125,7 +159,10 @@ export function ServerInspector({ hostId, sessionId, exec, onClose }: ServerInsp
         {result && (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={stale ? 'destructive' : 'secondary'} data-testid="inspector-age">
+              <Badge
+                variant={stale ? 'destructive' : 'secondary'}
+                data-testid={stale ? 'inspector-stale-badge' : 'inspector-age'}
+              >
                 {stale
                   ? t('inspector.stale')
                   : t('inspector.observedAt', {

@@ -116,12 +116,12 @@ export function TerminalContainer({
     onOutput: remotePrompt.onOutput,
     onInput: onUserInput,
   })
-  const { status, error, write } = session
+  const { status, error, write, sessionId } = session
   const { disconnect, reconnectAction, hostKeyGate } = session
   const { isReady, requestFit } = terminal
   const errorSurface = useTerminalErrorSurface(error)
   const { readableError } = errorSurface
-  useTabConnectionStatus(tabId, status)
+  useTabConnectionStatus(tabId, status, sessionId)
   useTerminalStatusEffects({
     status,
     error,
@@ -134,7 +134,9 @@ export function TerminalContainer({
     if (isReady) requestFit()
   }, [isReady, requestFit, status])
 
-  usePublishTerminalSelection({ tabId, isActive: terminalIsActive, term: terminal.termInstance })
+  // `backendSessionId` ties an approval to the session that produced the text, not to
+  // the tab that happens to still be open after a reconnect.
+  usePublishTerminalSelection({ tabId, isActive: terminalIsActive, term: terminal.termInstance, backendSessionId: sessionId })
   usePublishTerminalSize({
     tabId,
     isActive,

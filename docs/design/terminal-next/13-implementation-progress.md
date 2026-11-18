@@ -36,7 +36,7 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | **SFTP 重复连接契约（幂等 / 替换死条目）** | **`IMPLEMENTED`** | `sftp.rs` | 本轮修复；3 条契约测试 + 真实 sshd 5/5（既有用例，覆盖上传/下载/并发路径，**不覆盖**重复 connect 场景） |
 | **Layout hysteresis 双向恢复** | **`PASS`** | `layout/layout-hysteresis.ts` | 本轮修复真实缺陷：回升分支永不成立。3 条新测试在旧实现上全部变红 |
 | 双 Pane / 分屏 | `PASS`（既有） | `terminal-split-sash` | PR #44 起 |
-| 三平台 Native GUI E2E | `NOT_RUN` | `e2e/gui` | 本轮未重跑；Windows 曾有 19/19 首次通过记录（PR #94） |
+| 三平台 Native GUI E2E | **`PARTIAL`（e2e-04）** | `e2e/gui/specs/e2e-04-dock-occupants.e2e.mjs` | run `44230712100`：**macOS（WKWebView）、Windows（WebView2）、Linux（WebKitGTK）各执行 6 个用例、0 失败**，每份 spec 在独立应用进程里跑。**但 spec 自己产出的 verdict 是 `PARTIAL`（`notRunCount: 3`），不是 PASS**，本行随之降级。独立审计逐条核对后的成色：①用例 6「records what could not be verified」只有三条 `notes.push`，**零断言**——6/6 是「五个真实用例 + 一个记录器」；②「关闭 Dock 不关闭会话」读的是 `terminalCanvas` / `.xterm` 节点 / tab 数量，**全是 DOM 存在性**，打断 PTY 也能通过；真实 PTY 证据在 e2e-01；③「从用户手势打开」实际是 `dispatchEvent(CustomEvent('shortcut:command-palette'))` + 脚本 `.click()`，**不是 WebDriver 真实键鼠**；④检查器用例的 `data-metric` 选择器**在产品源码里不存在**，该数值守卫恒为空集 |
 | 物理键盘 / IME / Vim / tmux / DPI | `BLOCKED_EXTERNAL` | — | 需真实输入设备与交互环境 |
 | **Context Dock 单占位者公共契约** | **`PASS`** | `store/right-panel-state.ts` | 本轮实现：union 命名 `none/sftp/snippets/inspector/ai`，`IMPLEMENTED_RIGHT_PANEL_OCCUPANTS` 区分「已声明」与「已实现」，`resolveRightPanelMode` 对未实现占位者回落 `none`。源码级守卫测试禁止重新引入第二个布尔量，已用变异验证（加 `sftpOpen` 即变红） |
 
@@ -52,7 +52,7 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 
 | 能力 | 状态 | 位置 | 说明 |
 | --- | --- | --- | --- |
-| **连接时一次性密码 / 私钥，不保存** | **`IMPLEMENTED`** | `one-time-credential.ts`、`connect-credential-dialog.tsx`、`use-host-connect-actions.ts` | 16 条新测试。秘密只进进程内 profile，不进 tab/store/DB/vault/localStorage。真实 sshd 端到端 `NOT_RUN` |
+| **连接时一次性密码 / 私钥，不保存** | **`PARTIAL`** | `one-time-credential.ts`、`connect-credential-dialog.tsx`、`use-host-connect-actions.ts`、`one-time-key-real.e2e.test.ts` | 16 条单元测试。**私钥路径已有真实 sshd 证据**：加密私钥 + 口令经 `saveOneTimeSecretForHost` 的字段映射后，真实 OpenSSH 接受（3/3）。密码路径仍 `NOT_RUN`（见下） |
 | **认证失败不持久化** | **`PASS`** | 同上 | 结构上无写入可失败：唯一持久副作用是进程内 profile，取消或 tab 打开失败即丢弃，有测试钉住 |
 | **Host 损坏/未知引用可清除** | **`PASS`** | `host-stored-credential.tsx`、`host-clear-credential.test.tsx` | 三态规则；malformed / unknown-provider / unsupported-version 均显示清除入口。3 条在旧 gate 上红 |
 | **SSH Key 损坏引用可清除** | **`PASS`** | `ssh-keys.ts::clearSSHKeyCredential`、`clear-key-credential-action.tsx` | 此前完全无入口。先失去引用再删密文；无法解析时仍执行 UPDATE |
@@ -71,11 +71,15 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | --- | --- |
 | fixture 没有 password 模式 | `terminal-smoke-sshd.mjs` 只有 `key` / `cert`。我加过 password 模式，然后撤销 |
 | 加不进去的原因 | fixture 用**当前系统用户**（`userInfo().username`）跑 sshd。密码认证需要该账户的真实系统密码 —— 在 hermetic fixture 里做不到，且**绝不该改用户的系统密码** |
-| key 路径也没走通 | fixture 给每个授权 key 都带 `command="<wrapper>"`，且私钥加密后需要交互式解口令。`sshpass` 只处理 **password 认证**，不处理私钥口令 —— 这一点是确定的（我最初误判了它的作用范围）。`SSH_ASKPASS_REQUIRE=force` 配一个打印口令的 helper 能让 `ssh-keygen -y -f <key>` 成功解密，但同配置下 `ssh` 仍卡在 `Server accepts key` 之后又回到 `Authentications that can continue`。**未能隔离出确切原因**：可能是 helper 未被调用、可能是 tty 抢占、也可能是 `setsid` 缺失（macOS 无此命令）。因此这一条记为「key 路径未打通」，而不是「ASKPASS 对 ssh 无效」——后者我也没有证据 |
+| key 路径 —— **已打通**（见下） | 早期尝试卡在 `Server accepts key` 之后又回到 `Authentications that can continue`，当时记为「未隔离出确切原因」。现在能跑通的配置是 **`SSH_ASKPASS=helper` + `SSH_ASKPASS_REQUIRE=force`**，helper 从环境变量读口令并打印到 stdout；`one-time-key-real.e2e.test.ts` 在此配置下 **3/3 通过**。初期失败与现在成功之间**只差这一项环境变量**，但当时的具体失败原因没有留下可复现的记录，**所以不声称已经确定根因** |
+| password 路径 —— 仍阻塞 | 同上：fixture 用**当前系统用户**跑 sshd，密码认证需要该账户的真实系统密码 |
 
-**要真正解除**，需要 fixture 支持一个隔离的专用账户（`useradd` / `dscl` + 受控密码），这是一个独立的基础设施改动，不该塞进本 PR。
+**密码路径要真正解除**，需要 fixture 支持一个隔离的专用账户（`useradd` / `dscl` + 受控密码），这是一个独立的基础设施改动，不该塞进本 PR。
 
-现状：决策与写入两端有 14 项自动化测试覆盖；**没有**证据表明这条链路在真实 SSH 认证下触发。
+现状：决策与写入两端有 14 项自动化测试覆盖；**key 路径**有真实 sshd 认证证据（3/3，`one-time-key-real.e2e.test.ts`）；
+**password 路径**没有，且本轮不会为了跑测试去改用户的系统密码或关闭 fixture 的安全限制。
+
+**这条证据证明到什么程度**：它证明「应用会交给 SSH 层的值」本身可用 —— 从 `saveOneTimeSecretForHost` 的字段映射（口令进 `password`）到真实 OpenSSH 接受。它**不**证明 Tauri 应用的 Rust 会话驱动了那次握手，那是另一条链路。
 
 ---
 
@@ -142,7 +146,7 @@ Inspector 在 PR **#97**（`feat/tn-ux4-ai-dock`，12 个提交）。
 | **AI Dock UI** | **`IMPLEMENTED`** | `layout/ai-dock-{view,config,result}.tsx` | 14 条组件测试。`ai` 已是可渲染占位者 + Command Palette 入口。**真实 GUI 未点击** |
 | **Profile 编辑器** | **`IMPLEMENTED`** | `view/settings/ai-profile-{editor,form}.tsx` | Settings 新增 AI 标签页；明文确认不继承；key 留空即保留 |
 | **Inspector 真实探测链** | **`PASS`（自动化）** | `features/inspector/inspector-probe.ts` | 13 条测试。先 `uname -s` 再选命令集；未知平台报 `unsupported-platform` 不猜测；权限/缺工具/超时/断连分别分类；部分数据仍返回 |
-| **Server Inspector 面板** | **`IMPLEMENTED`** | `layout/server-inspector-{view,metrics}.tsx` | 11 条组件测试。无 timer（三次 TTL 后 exec 仍只调用 2 次）；缺失数据显示 N/A；切 host 清空结果 |
+| **Server Inspector 面板** | **`IMPLEMENTED`** | `layout/server-inspector-{view,metrics}.tsx` | 11 条组件测试 + 2 条 staleness 测试。**TTL 到期由 1s tick 驱动**（此前只在渲染时算 `Date.now()`，没人重渲染就永远显示新鲜）；缺失数据显示 N/A；无 session 时说明原因（本地终端也有 sessionId，旧条件只看 id） |
 | **`INSPECTOR_REAL_SSH`** | **`PASS`** | `src-tauri/src/inspector_probe_e2e_tests.rs` + `scripts/verify-install/inspector-probe-e2e.mjs` | 真实 OpenSSH：平台探测返回 `uname -s`、探测输出含全部 `key=` 行、两条并发 exec 各自完成、关闭连接后探测快速失败不挂起。本机跑 **4/4 PASS** |
 | `REAL_MODEL_E2E` | `BLOCKED_EXTERNAL` | — | 只有本地 fake HTTP server；未调用真实 provider（本机无 ollama / LM Studio / 任何 11434·1234·8080·8000 监听） |
 | `AI_DOCK_REAL_GUI` / `INSPECTOR_REAL_GUI` | `NOT_RUN` | — | 无人真实点击 |
@@ -276,13 +280,67 @@ id 生成器里，而不是拥有该句柄的地方。现在 `register` 返回 `
 
 ---
 
+## 独立审计推翻的两条（PR #108 第一版）
+
+任务书写明「每个结论由独立 agent 尝试推翻」。本轮照做，十个审计代理逐条证伪，**有两条我自己声称已修的缺陷是错的**。
+
+### T04：守卫存在，但没有任何东西驱动它
+
+`backendSessionId` 的整条链路都写好了：终端发布它、selection 携带它、`contextMatchesSession` 比较它、`ai-runner` 把 `visibleBackendSessionId()` 作为第三个参数传进去。**唯独 `buildContext` 不接受它。**
+
+于是每个生产环境构造的 `ApprovedContext` 的 `backendSessionId` 都是 `undefined`，而守卫的第一行是：
+
+```ts
+if (context.backendSessionId === undefined || context.backendSessionId === null) {
+  return true   // ← 永远走这里
+}
+```
+
+重连（同 tab、新 session）照样通过审批。
+
+**为什么我的测试没抓到**：`ai-session-identity.test.ts` 直接构造 `ApprovedContext` 字面量并手工填上 `backendSessionId`，绕过了唯一的生产构造路径。测试断言的是一条产品不走的路。
+
+这是我在这个项目里记录过多次的同一形状——Phase 10.1 的 DEFECT-1（守卫在 early return 之后）、Phase 10.3 的 `identityFilePath`（同一形状）。**第三次了。**
+
+修复：`right-panel` 把 `selection.backendSessionId` 交给 dock，dock 传给 builder。
+变异验证：三项新测试在旧 builder 上 **3 红 / 5 绿**，修复后 **8/8**。
+
+### T09：分段算术重复计算
+
+`firstStageSeenMs` = spawn 到「第一次观测到 stage 文件」的距离，**已经包含 app 自己的时间线**。把它和 `inAppMs` 相加不是分段，是重复计算，可能得到超过预算本身的数。
+
+实测后果是消息自相矛盾：`8000 ms 花在前端第一个 stage 之前（最后 stage 的墙钟：2100 ms）`。
+
+改为预算的分割：`outsideAppMs = max(0, timeoutMs - inAppMs)`。
+变异验证：两项新测试在旧算术上 **2 红 / 48 绿**，修复后 **50/50**。
+
+### 顺带被推翻的过度声明
+
+e2e-04 的「6/6 通过」被我自己写成了 `PASS`。审计逐条核对后降为 `PARTIAL`：spec 自己产出的证据文件 verdict 就是 `PARTIAL`（`notRunCount: 3`）；用例 6 零断言；「关闭 Dock 不关闭会话」只有 DOM 存在性；「用户手势」实为合成 CustomEvent；检查器用例的选择器 `data-metric` **在产品源码里不存在**。
+
+**一条方法论教训**：第一版 PR 的证据是「声明 + 我自己的测试」，而测试写在我自己以为对的假设上。审计代理没有这些假设，所以它们能看到 builder 从未被调用。**测试通过只证明代码符合我的理解，不证明我的理解对。**
+
+---
+
 ## 本轮 PR
 
 | PR | 分支 | Head SHA | CI | 状态 | 风险 / 回滚 |
 | --- | --- | --- | --- | --- | --- |
 | [#95](https://github.com/baicie/terminal/pull/95) | `feat/tn-ux1-04-session-sftp-lifecycle` | `7a532cd` | **18/18 pass** | **已合并 `dbbde31`** | 各提交可独立回滚；无 schema / IPC / Identifier 变更 |
 | [#96](https://github.com/baicie/terminal/pull/96) | `feat/tn-ux4-ai-inspector` | `ea62e76` | **18/18 pass** | **已合并 `02c6495`** | 四个提交可独立回滚；无 schema / IPC / Rust 变更 |
-| [#97](https://github.com/baicie/terminal/pull/97) | `feat/tn-ux4-ai-dock` | `537bca9` | 见下文 | 待合并（base `main@02c6495`） | 12 个提交可独立回滚；新增一张 `CREATE TABLE IF NOT EXISTS`，无 Identifier / Vault 迁移 / AI 自动执行 |
+| [#97](https://github.com/baicie/terminal/pull/97) | `feat/tn-ux4-ai-dock` | `537bca9` | 见下文 | **已合并 `100cfce`** | 12 个提交可独立回滚；新增一张 `CREATE TABLE IF NOT EXISTS`，无 Identifier / Vault 迁移 / AI 自动执行 |
+| [#98](https://github.com/baicie/terminal/pull/98) | `docs/tn-97-ci-notes` | — | — | **已合并 `6ec9ce4`** | 纯文档 |
+| [#99](https://github.com/baicie/terminal/pull/99) | `claude/blissful-turing-91e5b7` | — | **18/18 pass** | **已合并 `9d22d04`** | AI 请求移入 Rust，`ai` feature 默认关闭 |
+| [#100](https://github.com/baicie/terminal/pull/100) | `fix/ai-duplicate-request-id-guard` | `c75771c` | **18/18 pass** | **已合并 `c75771c`** | 重复 request id 拒绝第二个运行 |
+| [#101](https://github.com/baicie/terminal/pull/101) | `fix/ai-duplicate-request-id` | — | — | **已关闭未合并**（由 #100 取代） | 无未合并提交留在 main 之外 |
+| [#102](https://github.com/baicie/terminal/pull/102) | `docs/tn-ai-duplicate-id-record` | — | — | **已合并 `47ce20c`** | 纯文档 |
+| [#103](https://github.com/baicie/terminal/pull/103) | `feat/tn-ux2a-save-after-auth` | `6e617d4` | **18/18 pass** | **已合并 `6e617d4`** | 认证成功后才询问保存 |
+| [#104](https://github.com/baicie/terminal/pull/104) | `feat/tn-ux3-snippet-draft-save` | `f6bacc2` | **18/18 pass** | **已合并 `f6bacc2`** | 捕获的草稿有了消费方 |
+| [#105](https://github.com/baicie/terminal/pull/105) | `docs/tn-matrix-ux2b-correction` | `1d9d9b1` | — | **已合并 `1d9d9b1`** | 纯文档 |
+| [#106](https://github.com/baicie/terminal/pull/106) | `docs/tn-rig-adr` | `caab908` | — | **已合并 `caab908`** | TN-UX4-01 ADR：实测后不采用 Rig |
+| [#107](https://github.com/baicie/terminal/pull/107) | `docs/tn-milestone-refresh` | `191d032` | — | **已合并 `191d032`** | 纯文档 |
+| [#108](https://github.com/baicie/terminal/pull/108) | `feat/tn-gui-dock-e2e` | `7fcfee5` | 见下 | **OPEN**（本轮 T01–T09） | 8 个提交可独立回滚；无 Identifier / Vault 迁移 / schema 变更 |
+
 
 ### PR #97 提交明细（12 个，均可单独 revert）
 
@@ -409,7 +467,7 @@ Snippet Dock 紧随其后，因为它是设计指定的第一个内置扩展，�
 | --- | --- | --- |
 | P2 | `withHysteresis` 的 `usableColsMin` 参数，唯一生产调用方从不传入 | 需要先决定布局是否应支持每调用方的 floor；当前行为（恒用 60）是安全的 |
 | P2 | band 保持整个 presentation 对，可能让 dock 停在 overlay 而 explorer 恢复 | 两轴独立 vs 成对保持是布局语义问题，需产品决策 |
-| P2 | `emit()` 不校验 handler 的 generation；回调 rejection 会标记**当前**激活失败 | 需要 generation 感知的 handler 身份，改动大于其他修复 |
+| ~~P2~~ **已修** | `emit()` 不校验 handler 的 generation；回调 rejection 会标记**当前**激活失败 | 实际只需三行：emit 捕获 generation，只有它仍是当前激活时才 fail。变异验证：恢复旧调用即变红 |
 | P2 | 关闭 dock 不清除 SFTP host pin | 需决定「重开 dock 应回到哪个主机」 |
 | P2 | 捕获的 snippet 草稿没有消费方（Snippets 页面无 handoff） | 需要跨页面草稿传递的设计 |
 | P2 | SFTP 与 manager 接线的那一行没有测试 | 需要能在无 sshd 情况下构造真实注册路径的夹具 |

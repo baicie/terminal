@@ -29,6 +29,7 @@ import { AiRunner } from '@/features/ai/ai-runner'
 import { cancelRun, generate } from '@/features/ai/ai-ipc'
 import type { ModelProfilePublic } from '@/features/ai/model-profile'
 import { listModelProfiles } from '@/service/database/ai-profiles'
+import { sessionIdForTab } from '@/features/terminal/services/terminal-session-ids'
 
 export interface AiRuntime {
   runner: AiRunner
@@ -49,6 +50,12 @@ function getRunner(): AiRunner {
     // The visible session is the active tab: a result for a tab the user left is
     // marked stale rather than presented as the current one's.
     visibleSessionId: () => useAppStore.getState().activeTabId ?? null,
+    // The backend session behind that tab, so a reconnect invalidates an approval that
+    // named the previous one. Read from the registry the terminal publishes into.
+    visibleBackendSessionId: () => {
+      const activeTabId = useAppStore.getState().activeTabId
+      return activeTabId ? sessionIdForTab(activeTabId) : null
+    },
     onState: () => undefined,
     nextRunId: () => `ai-run-${++runCounter}`,
   })

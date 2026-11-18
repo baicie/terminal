@@ -191,19 +191,47 @@ export class ExtensionRegistry {
     this.options.onChanged?.()
   }
 
-  /** Emit a safe event to every active subscriber. A throwing handler is contained. */
+  /**
+   * Emit a safe event to every active subscriber. A throwing handler is contained.
+   *
+   * ## Why the generation is captured here
+   *
+   * A handler is a promise, and an extension can be deactivated and re-enabled while
+   * one is still running. `fail()` marks whatever activation is *current*, so without
+   * the check below a rejection from the retired activation lands on the new one:
+   *
+   *     activate (gen 1) → handler starts → deactivate → enable (gen 2)
+   *                                       ↘ rejects → gen 2 marked FAILED
+   *
+   * The user then sees an extension that failed to start, blamed on an error produced
+   * by a version of it that is no longer running — and the capability gate refuses the
+   * new activation because the record says `failed`.
+   *
+   * A rejection is only the extension's fault if the activation that registered the
+   * handler is still the current one. Otherwise it is the noise of a teardown.
+   */
   emit(event: SafeEvent): void {
     for (const [extensionId, record] of this.records) {
       if (record.status !== 'active') continue
       const handlers = this.contributions.get(extensionId)?.events.get(event.type)
       if (!handlers) continue
+      // Captured per emission: this is the activation these handlers belong to.
+      const generation = record.generation
+      const blame = (error: unknown) => {
+        const current = this.records.get(extensionId)
+        // The activation that registered this handler has been replaced or retired.
+        // Its failures are not the live extension's, and reporting them as such is
+        // worse than dropping them: it disables a working extension.
+        if (!current || current.generation !== generation) return
+        this.fail(extensionId, error)
+      }
       for (const handler of handlers) {
         try {
           // Not awaited: one slow handler must not delay the others, and the design
           // forbids an extension callback from blocking the shell.
-          void Promise.resolve(handler(event)).catch(error => this.fail(extensionId, error))
+          void Promise.resolve(handler(event)).catch(blame)
         } catch (error) {
-          this.fail(extensionId, error)
+          blame(error)
         }
       }
     }

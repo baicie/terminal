@@ -21,7 +21,27 @@
  * nothing more.
  */
 
-let current: { text: string, sessionId: string, seq: number } | null = null
+/**
+ * A published selection.
+ *
+ * `tabId` and `backendSessionId` are both carried, and they answer different questions:
+ *
+ * - `tabId` identifies *where* the user selected, and stays the same across a drop;
+ * - `backendSessionId` identifies the **session** the text came from, and changes when
+ *   the SSH connection is re-established.
+ *
+ * Carrying only the tab id is what let an approval outlive the session it was given
+ * for: the tab is the same tab after a reconnect, so a tab comparison says "same" while
+ * the session — and possibly the host behind it — is different.
+ */
+let current: {
+  text: string
+  /** Kept for the gateway's existing contract; equals the tab that published it. */
+  sessionId: string
+  /** The backend session the text was read from, when there was one. */
+  backendSessionId: string | null
+  seq: number
+} | null = null
 /**
  * Bumped on every publish.
  *
@@ -75,6 +95,7 @@ export function subscribeTerminalSelection(listener: () => void): () => void {
 export function publishTerminalSelection(
   sessionId: string,
   text: string | null | undefined,
+  backendSessionId: string | null = null,
 ): void {
   if (!text) {
     if (current?.sessionId === sessionId) {
@@ -87,7 +108,7 @@ export function publishTerminalSelection(
   // concerned: the user performed the gesture again. Bumping unconditionally keeps
   // the rule simple and errs toward requiring a fresh approval.
   nextSeq += 1
-  current = { text, sessionId, seq: nextSeq }
+  current = { text, sessionId, backendSessionId, seq: nextSeq }
   notify()
 }
 
@@ -99,10 +120,27 @@ export function clearTerminalSelection(sessionId: string): void {
   }
 }
 
+/**
+ * Withdraw a selection when its backend session goes away.
+ *
+ * A reconnect replaces the session but keeps the tab. Without this, the published
+ * selection still names the *old* session, and an approval minted against it would be
+ * compared with a tab id that has not moved — so it would still look valid.
+ *
+ * Only clears when the id actually matches: a reconnect on tab B must not wipe a
+ * selection on tab A.
+ */
+export function clearSelectionForBackendSession(backendSessionId: string): void {
+  if (current?.backendSessionId !== backendSessionId) return
+  current = null
+  notify()
+}
+
 /** What the user currently has selected, or null. */
 export function currentTerminalSelection(): {
   text: string
   sessionId: string
+  backendSessionId: string | null
   seq: number
 } | null {
   return current

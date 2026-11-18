@@ -1028,6 +1028,91 @@ test('records first stage arrival and the timeline on success', async () => {
   assert.equal(result.firstStageSeenMs, 700)
 })
 
+test('records the budget split on success, and the halves are not double-counted', async () => {
+  // `firstStageSeenMs` is the spawn-to-first-observation distance: it already contains
+  // the app's own timeline. Adding `inAppMs` to it double-counts, and the sum can
+  // exceed the budget it is meant to explain. The split is a partition of the budget
+  // instead: app time on one side, everything else on the other.
+  const harness = createHarness({ readiness: ['0,0,0,0'] })
+  const stagesPath = '/private/tmp/terminal-cold-start-fixture/terminal-startup-stages.jsonl'
+  const markerPath = '/private/tmp/local-terminal-ready'
+  const readFile = harness.dependencies.readFile
+  let clock = 0
+  harness.dependencies.now = () => clock
+  harness.dependencies.readFile = async (filePath, encoding) => {
+    if (filePath === markerPath && harness.calls.applicationSpawned) {
+      clock = 700
+      return 'LOCAL_TERMINAL_READY'
+    }
+    if (filePath === stagesPath && harness.calls.applicationSpawned) {
+      // The app spent 400 ms of its own timeline finishing its stages.
+      return '{"at_ms":400,"stage":"frontend-boot","detail":"main.tsx evaluated"}'
+    }
+    return readFile(filePath, encoding)
+  }
+  const result = await runColdStartStopwatch({
+    appPath: '/Applications/Termius.app/Contents/MacOS/terminal',
+    timeoutMs: 5_000,
+    readinessMode: 'remote',
+    homeDirectory: '/private/tmp/terminal-cold-start-fixture',
+    markerPath,
+    markerContent: 'LOCAL_TERMINAL_READY',
+    dependencies: harness.dependencies,
+  })
+
+  assert.equal(result.inAppMs, 400)
+  assert.equal(
+    result.outsideAppMs,
+    4_600,
+    'the split is a partition of the budget, not a sum of two overlapping clocks',
+  )
+  assert.equal(
+    result.inAppMs + result.outsideAppMs,
+    result.timeoutMs ?? 5_000,
+    'the two halves must add back to the budget they split',
+  )
+  // The old, double-counting form produced 700 + 400 = 1100 here. Asserting the
+  // invariant rather than the literal is what makes this fail on that version.
+  assert.notEqual(
+    result.outsideAppMs,
+    result.firstStageSeenMs + result.inAppMs,
+    'outside-app time must not be the sum of two overlapping clocks',
+  )
+})
+
+test('the timeout message states the split without contradicting itself', async () => {
+  const harness = createHarness({ readiness: ['0,0,0,0'] })
+  const stagesPath = '/private/tmp/terminal-cold-start-fixture/terminal-startup-stages.jsonl'
+  const readFile = harness.dependencies.readFile
+  let clock = 0
+  harness.dependencies.now = () => clock
+  harness.dependencies.readFile = async (filePath, encoding) => {
+    if (filePath === stagesPath && harness.calls.applicationSpawned) {
+      clock = 900
+      return '{"at_ms":850,"stage":"frontend-boot","detail":"main.tsx evaluated"}'
+    }
+    return readFile(filePath, encoding)
+  }
+  await assert.rejects(
+    runColdStartStopwatch({
+      appPath: '/Applications/Termius.app/Contents/MacOS/terminal',
+      timeoutMs: 10,
+      readinessMode: 'remote',
+      homeDirectory: '/private/tmp/terminal-cold-start-fixture',
+      markerPath: '/private/tmp/remote-marker',
+      markerContent: 'REMOTE_COLD_MARKER',
+      dependencies: harness.dependencies,
+    }),
+    error => {
+      assert.match(error.message, /the app's own stages ended at 850 ms of the 10 ms budget/)
+      // The number must be clamped, not negative: 10 - 850 is not a duration.
+      assert.match(error.message, /leaving 0 ms/)
+      assert.doesNotMatch(error.message, /-\d+ ms/)
+      return true
+    },
+  )
+})
+
 test('names the stage that exceeded its measured budget', () => {
   const { checked, violations } = evaluateStageBudgets([
     { atMs: 0, stage: 'ssh-connect-start', detail: '' },

@@ -23,20 +23,37 @@ interface Options {
   tabId: string
   isActive: boolean
   term: TerminalComponent | null
+  /**
+   * The backend session the terminal is attached to.
+   *
+   * Published alongside the tab id so an approval can be tied to the *session*: a
+   * reconnect keeps the tab and replaces this value, and an approval captured before
+   * the drop must not survive it.
+   */
+  backendSessionId?: string | null
 }
 
-export function usePublishTerminalSelection({ tabId, isActive, term }: Options): void {
+export function usePublishTerminalSelection({
+  tabId,
+  isActive,
+  term,
+  backendSessionId = null,
+}: Options): void {
   useEffect(() => {
     if (!term || !isActive) {
       clearTerminalSelection(tabId)
       return
     }
-    const publish = () => publishTerminalSelection(tabId, term.getSelection())
+    // Both ids travel: the tab identifies where, the backend session identifies what.
+    // Only the second changes on a reconnect, which is why an approval has to be
+    // checked against it — a tab comparison calls a reconnect "the same session".
+    const publish = () =>
+      publishTerminalSelection(tabId, term.getSelection(), backendSessionId)
     publish()
     const subscription = term.onSelectionChange(publish)
     return () => {
       subscription.dispose()
       clearTerminalSelection(tabId)
     }
-  }, [term, isActive, tabId])
+  }, [term, isActive, tabId, backendSessionId])
 }
