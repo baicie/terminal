@@ -28,6 +28,7 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
+import { ExtensionMenuItems } from './extension-menu-items'
 import { useSafePaste } from './use-safe-paste'
 import { PasteConfirmDialog } from './paste-confirm-dialog'
 import type { PasteConfirmRequest } from './paste-confirm-dialog'
@@ -158,6 +159,8 @@ export function TerminalContextMenu({
             <ContextMenuShortcut>{`${modKey}+F`}</ContextMenuShortcut>
           </ContextMenuItem>
         )}
+        {/* Extension contributions; see ./extension-menu-items.tsx */}
+        <ExtensionMenuItems />
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => onFontSizeChange(1)}>
           <ZoomIn />
