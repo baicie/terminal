@@ -71,6 +71,24 @@ export function getExtensionRegistry(): ExtensionRegistry {
     },
   )
   registry.attachGateway(gateway)
+  // ## A read-only snapshot for the GUI E2E probe
+  //
+  // The switch and the registry can disagree — a switch rendering "checked" while the
+  // registry still has the extension disabled is a defect, and a spec that only reads
+  // the switch would call it working. Gated on the same build flag as the probe, so a
+  // production bundle never defines it.
+  if (import.meta.env.VITE_TERMINAL_GUI_E2E === '1') {
+    ;(globalThis as { __terminalExtensionProbe?: () => unknown }).__terminalExtensionProbe =
+      () => ({
+        active: registry
+          .list()
+          .filter(record => record.status === 'active')
+          .map(record => record.manifest.id),
+        snippetDockHandle: snippetDockHandle !== null,
+        menus: registry.menusFor('terminal.context').map(menu => menu.commandId),
+      })
+  }
+
   registrySingleton = registry
   return registry
 }

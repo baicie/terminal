@@ -18,6 +18,7 @@ import {
   type ExtensionRecord,
   type ExtensionRegistryOptions,
   type ExtensionCommand,
+  type ExtensionMenuItem,
 } from './extension-registry-types'
 import type { Disposable, SafeEvent } from './extension-types'
 import {
@@ -250,6 +251,25 @@ export class ExtensionRegistry {
   }
 
   /**
+   * Menu contributions at `location`, from active extensions only. Nothing read these before: `terminal.context` was dead, so the snippet dock's
+   * these before: `terminal.context` was dead, so the dock's capture was unreachable.
+   */
+  menusFor(location: string): ExtensionMenuItem[] {
+    const result: ExtensionMenuItem[] = []
+    for (const [extensionId, record] of this.records) {
+      if (record.status !== 'active') continue
+      const contributions = this.contributions.get(extensionId)
+      if (!contributions) continue
+      for (const { location: at, commandId } of contributions.menus) {
+        if (at !== location) continue
+        const command = contributions.commands.get(commandId)
+        // An entry pointing at an unregistered command would render a dead item.
+        if (command) result.push({ extensionId, commandId, titleKey: command.titleKey })
+      }
+    }
+    return result
+  }
+  /**
    * Mark an extension failed without going through deactivate.
    *
    * Used when a callback throws: it still holds registrations, and leaving it
@@ -278,4 +298,3 @@ export class ExtensionRegistry {
     this.disposables.delete(extensionId)
   }
 }
-

@@ -74,6 +74,13 @@ export interface ExtensionRecord {
 }
 
 /** The registrations one extension made, so deactivation can settle them. */
+/** One menu entry an active extension contributed, ready for a host to render. */
+export interface ExtensionMenuItem {
+  extensionId: string
+  commandId: string
+  titleKey: string
+}
+
 export interface Contributions {
   commands: Map<string, { id: string, titleKey: string, run(): Promise<unknown> }>
   menus: Array<{ location: string, commandId: string }>

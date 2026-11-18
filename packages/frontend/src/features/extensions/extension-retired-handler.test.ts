@@ -31,14 +31,20 @@ import type { ExtensionContext } from './extension-registry-types'
  * supposed to be checking as "no handler ran". A registry that refused the manifest
  * looked exactly like a registry that dropped the event.
  */
-function manifest(id = 'late-handler'): BuiltInExtensionManifest {
+function manifest(
+  id = 'late-handler',
+  capabilities: BuiltInExtensionManifest['capabilities'] = [
+    'commands.register',
+    'session.read-events',
+  ],
+): BuiltInExtensionManifest {
   return {
     id,
     nameKey: 'extensions.lateHandler.name',
     version: '1.0.0',
     apiVersion: 1,
     entry: 'built-in:late-handler',
-    capabilities: ['commands.register', 'session.read-events'],
+    capabilities,
     platforms: ['macos', 'windows', 'linux'],
     defaultEnabled: false,
   }
@@ -115,5 +121,120 @@ describe('a handler from a retired activation cannot fail the current one', () =
     // Only the live activation's handler ran. A retired handler running would be the
     // leak the design's "deactivate settles every registration" rule prevents.
     expect(calls).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// `menusFor`: the read side of `context.menus.register`.
+//
+// Nothing consumed these contributions before, so `terminal.context` registrations
+// were dead and the snippet dock's capture step had no reachable entry in the app.
+// The registry now exposes them; these pin the rules a host can rely on.
+// ---------------------------------------------------------------------------
+
+describe('menu contributions are readable by the host that renders them', () => {
+  function registeringExtension(id: string) {
+    return (context: ExtensionContext) => {
+      context.commands.register({
+        id: `${id}.capture`,
+        titleKey: 'extensions.capture.title',
+        run: async () => undefined,
+      })
+      context.menus.register({ location: 'terminal.context', commandId: `${id}.capture` })
+      context.menus.register({ location: 'elsewhere', commandId: `${id}.capture` })
+    }
+  }
+
+  it('returns only the entries for the requested location', async () => {
+    const registry = new ExtensionRegistry({ platform: 'macos' })
+    expect(registry.register(
+      manifest('menu-ext', ['commands.register', 'menus.register']),
+      registeringExtension('menu-ext'),
+    )).toBeNull()
+    await registry.enable('menu-ext')
+
+    const items = registry.menusFor('terminal.context')
+    expect(items).toHaveLength(1)
+    expect(items[0]).toEqual({
+      extensionId: 'menu-ext',
+      commandId: 'menu-ext.capture',
+      // The title comes from the command, so a host renders one translation, not two.
+      titleKey: 'extensions.capture.title',
+    })
+    expect(registry.menusFor('elsewhere')).toHaveLength(1)
+    expect(registry.menusFor('nowhere')).toEqual([])
+  })
+
+  it('contributes nothing while the extension is disabled', async () => {
+    // A disabled extension's menu entry would invoke a command that no longer exists.
+    const registry = new ExtensionRegistry({ platform: 'macos' })
+    registry.register(
+      manifest('menu-ext', ['commands.register', 'menus.register']),
+      registeringExtension('menu-ext'),
+    )
+    await registry.enable('menu-ext')
+    expect(registry.menusFor('terminal.context')).toHaveLength(1)
+
+    await registry.deactivate('menu-ext')
+    expect(
+      registry.menusFor('terminal.context'),
+      'a retired activation must not leave a clickable entry behind',
+    ).toEqual([])
+  })
+
+  it('does not offer a failed extension\'s menu entry', async () => {
+    /*
+     * A `failed` extension keeps its contributions — `fail()` only flips the status —
+     * so the active check in `menusFor` is load-bearing, not redundant with
+     * `deactivate` clearing them. Measured: removing that check left every other test
+     * green, because the disabled case is handled by deactivation instead.
+     *
+     * A clickable entry for an extension that just crashed would invoke a command
+     * whose handler already threw.
+     */
+    const registry = new ExtensionRegistry({ platform: 'macos' })
+    const gate = deferred<void>()
+    registry.register(
+      manifest('menu-ext', ['commands.register', 'menus.register', 'session.read-events']),
+      context => {
+        context.commands.register({
+          id: 'menu-ext.capture',
+          titleKey: 'extensions.capture.title',
+          run: async () => undefined,
+        })
+        context.menus.register({
+          location: 'terminal.context',
+          commandId: 'menu-ext.capture',
+        })
+        context.events.on('session.connected', async () => {
+          await gate.promise
+          throw new Error('the handler blew up')
+        })
+      },
+    )
+    await registry.enable('menu-ext')
+    registry.emit({ type: 'session.connected', at: 0 })
+    gate.reject(new Error('boom'))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(registry.get('menu-ext')?.status).toBe('failed')
+    expect(
+      registry.menusFor('terminal.context'),
+      'a failed extension must not keep a clickable menu entry',
+    ).toEqual([])
+  })
+
+  it('is empty for an extension that never registered a menu', async () => {
+    const registry = new ExtensionRegistry({ platform: 'macos' })
+    registry.register(manifest('no-menu'), (context: ExtensionContext) => {
+      context.commands.register({
+        id: 'no-menu.run',
+        titleKey: 't',
+        run: async () => undefined,
+      })
+    })
+    await registry.enable('no-menu')
+    expect(registry.menusFor('terminal.context')).toEqual([])
   })
 })
