@@ -568,7 +568,7 @@ fn the_api_key_reaches_the_provider_and_nowhere_else() {
 
     let captured = received.recv().expect("request");
     assert_eq!(
-        captured.header("authorization").as_deref(),
+        captured.header("authorization"),
         Some(format!("Bearer {KEY}").as_str()),
         "the key must actually be sent, or the rest of this test proves nothing"
     );

@@ -123,3 +123,55 @@ describe('a reading becomes stale without any user action', () => {
     expect(vi.getTimerCount()).toBeLessThanOrEqual(1)
   })
 })
+
+// ---------------------------------------------------------------------------
+// The 1 s tick is UI-only.
+//
+// It re-renders so `isStale` can see the clock. Task D asks for this specifically:
+// a stale badge is a rendering concern, and a tick that also re-probed would be a
+// resident collector — the thing the design forbids and the earlier test guards from
+// the other direction.
+// ---------------------------------------------------------------------------
+
+describe('the stale tick never probes', () => {
+  it('advances the clock many times without calling exec again', async () => {
+    const exec = { exec: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })) }
+    const view = render(
+      <ServerInspector
+        hostId="h-1"
+        sessionId="ssh-1"
+        exec={exec}
+        onClose={() => undefined}
+        // The probe must actually use the injected exec: a stub that returns a
+        // canned result never calls it, and then "exec was not called again" is
+        // true for the wrong reason.
+        probe={async injected => {
+          await injected.exec('ssh-1', 'uname -s', 1_000)
+          await injected.exec('ssh-1', 'uptime', 1_000)
+          return { ok: true as const, result: result(Date.now()) }
+        }}
+      />,
+    )
+
+    await act(async () => {
+      screen.getByRole('button', { name: /refresh/i }).click()
+      await Promise.resolve()
+    })
+    expect(exec.exec).toHaveBeenCalledTimes(2)
+
+    // More ticks than the 60 s TTL covers, so the badge has certainly flipped.
+    for (let i = 0; i < 70; i += 1) {
+      await act(async () => {
+        vi.advanceTimersByTime(1_000)
+        await Promise.resolve()
+      })
+    }
+
+    expect(
+      exec.exec.mock.calls.length,
+      'the 1 s tick is a UI clock; a tick that re-probes is a resident collector',
+    ).toBe(2)
+    expect(screen.getByTestId('inspector-stale-badge')).toBeTruthy()
+    view.unmount()
+  })
+})
