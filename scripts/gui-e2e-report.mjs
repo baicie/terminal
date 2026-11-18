@@ -167,18 +167,52 @@ export function readCaseEvidence(artifactsDir) {
   } catch {
     return { cases, missing: true }
   }
+  const unreadable = []
   for (const name of names) {
     const file = path.join(artifactsDir, name, `${name}.json`)
     let parsed
     try {
       parsed = JSON.parse(readFileSync(file, 'utf8'))
-    } catch {
+    } catch (error) {
+      /*
+       * Not every directory under the artifacts root is a case: `json/` holds the
+       * wdio files, `screens/` sits inside each case. A directory with no
+       * `<name>.json` at all is not a case that failed to write evidence — it is not
+       * a case. Only a file that exists and cannot be parsed is a problem.
+       */
+      if (error?.code === 'ENOENT') continue
+      /*
+       * A case directory whose evidence cannot be read is recorded, not skipped.
+       *
+       * The wdio side already treats this as INCOMPLETE (a 0-byte `wdio-*.json` is
+       * what a crashed spec leaves behind). The case side did not, so a spec that
+       * died inside `after()` — the one place its verdict is written — looked like a
+       * spec that simply ran no cases. Measured before this: illegal JSON in
+       * `e2e-04/e2e-04.json` with `wdio passed:6/failed:0` produced `status: PASS`.
+       */
+      unreadable.push(name)
       continue
     }
     cases.push({
       case: parsed.case ?? name,
       verdict: parsed.verdict ?? null,
-      notRunCount: parsed.extra?.notRunCount ?? null,
+      /*
+       * Two shapes exist in this repository, and only one was read.
+       *
+       * `e2e-04` writes `extra.notRunCount` (a number). `e2e-01` writes
+       * `extra.notRun` (an array of reasons) and has no count. Reading only the
+       * number meant e2e-01's PARTIAL — including its "no local terminal tab exists
+       * in this run" path, which is a launch regression — sailed through the
+       * declared-gap rule untouched: measured, a PARTIAL e2e-01 with one NOT_RUN
+       * produced `status: PASS` and `unexplainedNotRun: []`.
+       *
+       * Reading both is not a compatibility shim: it is what makes the rule apply to
+       * every spec that writes evidence. The array form is at least as specific as
+       * the count, since each entry names a reason.
+       */
+      notRunCount:
+        parsed.extra?.notRunCount ??
+        (Array.isArray(parsed.extra?.notRun) ? parsed.extra.notRun.length : null),
       // Gaps the spec declared up front. A NOT_RUN beyond these came from a path the
       // spec could not complete, which is the difference between a documented
       // environment limit and a product surface that did not work.
@@ -189,7 +223,7 @@ export function readCaseEvidence(artifactsDir) {
       recordedAt: parsed.recordedAt ?? null,
     })
   }
-  return { cases, missing: false }
+  return { cases, missing: false, unreadable }
 }
 
 /**
@@ -291,7 +325,7 @@ export function buildGuiReport({ artifactsDir, platform = null }) {
       ? 'FAIL'
       : total === 0
         ? 'NOT_RUN'
-        : counts.corrupt.length > 0
+        : counts.corrupt.length > 0 || (caseEvidence.unreadable ?? []).length > 0
           ? 'INCOMPLETE'
           : 'PASS'
   return {
@@ -309,6 +343,10 @@ export function buildGuiReport({ artifactsDir, platform = null }) {
         : null,
     specs: counts.specs,
     corruptFiles: counts.corrupt,
+    // Case evidence that exists but could not be parsed. A spec writes its verdict in
+    // `after()`; a crash there leaves exactly this, and calling it "no cases ran" is
+    // how a broken run reads as a clean one.
+    unreadableCaseEvidence: caseEvidence.unreadable ?? [],
     // ## What the cases said about themselves
     //
     // Kept separate from `passed` on purpose. A NOT_RUN that is folded into a pass
