@@ -89,5 +89,24 @@ export function useAiRuntime(): AiRuntime {
     void reload()
   }, [reload])
 
+  /*
+   * Tell the runner when the user moves to another tab.
+   *
+   * ## What this was, and what it cost
+   *
+   * `AiRunner.sessionChanged` existed, the reducer handled its event, and the only
+   * caller anywhere in the repository was a test. Nothing told the runner that the
+   * session under an in-flight request had changed, so an answer computed for the host
+   * the user was looking at could land after they moved to another one — and the dock
+   * would show it against the new tab.
+   *
+   * The guard on the *send* side (`contextMatchesSession`) refuses to start in that
+   * situation. This is the other half: what to do about a run already in flight.
+   */
+  const activeTabId = useAppStore(state => state.activeTabId)
+  useEffect(() => {
+    runner.sessionChanged(activeTabId ?? null)
+  }, [runner, activeTabId])
+
   return { runner, profiles, loading, reload }
 }
