@@ -12,7 +12,6 @@ import {
   ACTIVATION_BUDGET_MS,
   emptyContributions,
   buildExtensionContext,
-  withBudget,
   type Contributions,
   type ExtensionContext,
   type ExtensionRecord,
@@ -21,7 +20,8 @@ import {
   type ExtensionMenuItem,
 } from './extension-registry-types'
 import { CleanupLedger } from './cleanup-ledger'
-import { disposeAll } from './dispose-all'
+import { runActivation } from './run-activation'
+import { settleOwnedContributions } from './settle-owned'
 import type { Disposable, SafeEvent } from './extension-types'
 import {
   currentExtensionPlatform,
@@ -49,10 +49,8 @@ export class ExtensionRegistry {
   /**
    * Attach the capability gateway.
    *
-   * Separate from the constructor because the gateway needs the *host* — the
-   * visible session and the current selection — which does not exist until the
-   * terminal does. Attaching later keeps the registry constructible in tests that
-   * care only about lifecycle.
+   * Separate from the constructor because the gateway needs the *host* — the visible
+   * session and current selection — which does not exist until the terminal does.
    */
   attachGateway(gateway: CapabilityGateway): void {
     this.gateway = gateway
@@ -61,9 +59,8 @@ export class ExtensionRegistry {
   /**
    * Register a manifest and its activation factory.
    *
-   * Refuses on any manifest problem, including a duplicate id — the failure that
-   * would otherwise give two extensions one disposable bucket, so deactivating one
-   * silently clears the other.
+   * Refuses on any manifest problem, including a duplicate id — two extensions sharing
+   * one bucket means deactivating one silently clears the other.
    */
   register(
     manifest: BuiltInExtensionManifest,
@@ -106,18 +103,15 @@ export class ExtensionRegistry {
    * Turn an extension on.
    *
    * Returns whether it ended up active. A platform mismatch, a missing factory or a
-   * throw during activation all leave it inactive; a throw additionally disposes
-   * whatever it had already registered.
+   * throw during activation all leave it inactive; a throw settles what it registered.
    */
   async enable(extensionId: string): Promise<boolean> {
     const record = this.records.get(extensionId)
     if (!record) return false
     // Already usable: re-enabling must not create a second set of registrations.
     if (record.status === 'active') return true
-    // A second activation while the first is still starting would register twice; a
-    // second one while the first is *stopping* is worse — its ledger entries are
-    // deleted by the rollback that is already in flight, so the extension reports
-    // active with nothing registered.
+    // A second activation mid-flight would register twice; while stopping it is worse —
+    // the in-flight rollback would clear what the second one just registered.
     if (record.status === 'activating' || record.status === 'deactivating') return false
     if (!supportsPlatform(record.manifest, this.platform)) {
       record.status = 'disabled'
@@ -142,31 +136,33 @@ export class ExtensionRegistry {
       contributions,
       bucket,
       terminal: this.gateway?.terminalContextFor(record.manifest.id, generation),
+      // The gate a late factory hits: this activation is current only while the record
+      // still points at its generation.
+      isCurrent: () => this.records.get(extensionId)?.generation === generation,
     })
 
-    try {
-      const returned = await withBudget(
-        Promise.resolve().then(() => factory(context)),
-        ACTIVATION_BUDGET_MS,
-      )
-      if (returned) bucket.push(returned)
-    } catch (error) {
-      await this.rollback(extensionId, bucket)
-      // Only mark failed if this activation is still the current one: a deactivate
-      // racing an activation must not be overwritten by its outcome.
-      if (record.generation === generation) {
+    const outcome = await runActivation({
+      factory,
+      context,
+      budgetMs: ACTIVATION_BUDGET_MS,
+      generation,
+      currentGeneration: () => record.generation,
+      retire: () => {
+        if (record.generation === generation) record.generation += 1
+      },
+    })
+
+    if (outcome.kind !== 'activated') {
+      await this.rollback(extensionId, bucket, generation)
+      if (outcome.kind === 'failed' && record.status === 'activating') {
         record.status = 'failed'
-        record.failure = error instanceof Error ? error.message : String(error)
+        record.failure =
+          outcome.error instanceof Error ? outcome.error.message : String(outcome.error)
       }
       this.options.onChanged?.()
       return false
     }
-
-    // A deactivate that landed while the factory was awaiting wins.
-    if (record.generation !== generation) {
-      await this.rollback(extensionId, bucket)
-      return false
-    }
+    if (outcome.returned) bucket.push(outcome.returned)
 
     record.status = 'active'
     delete record.failure
@@ -178,16 +174,21 @@ export class ExtensionRegistry {
   /**
    * Turn an extension off and settle everything it handed out.
    *
-   * The generation bump happens first, so a callback already in flight finds a stale
+   * The generation bumps first, so a callback already in flight finds a stale
    * generation rather than registering into a context being torn down.
    */
   async deactivate(extensionId: string): Promise<void> {
     const record = this.records.get(extensionId)
     if (!record) return
     if (record.status === 'registered' || record.status === 'disabled') return
+    const retiredGeneration = record.generation
     record.status = 'deactivating'
     record.generation += 1
-    await this.rollback(extensionId, this.disposables.get(extensionId) ?? [])
+    await this.rollback(
+      extensionId,
+      this.disposables.get(extensionId) ?? [],
+      retiredGeneration,
+    )
     this.gateway?.clearApprovalsFor(extensionId)
     record.status = 'disabled'
     this.options.setEnabled?.(extensionId, false)
@@ -197,15 +198,8 @@ export class ExtensionRegistry {
   /**
    * Emit a safe event to every active subscriber. A throwing handler is contained.
    *
-   * A handler is a promise, and an extension can be deactivated and re-enabled while
-   * one is still running:
-   *
-   *     activate (gen 1) → handler starts → deactivate → enable (gen 2)
-   *                                       ↘ rejects → gen 2 marked FAILED
-   *
-   * A rejection is only the extension's fault if the activation that registered the
-   * handler is still the current one; otherwise it is the noise of a teardown, and
-   * blaming the new activation disables a working extension.
+   * A rejection from a retired activation is teardown noise: blaming the activation
+   * that replaced it would disable a working extension.
    */
   emit(event: SafeEvent): void {
     for (const [extensionId, record] of this.records) {
@@ -263,15 +257,10 @@ export class ExtensionRegistry {
     return result
   }
   /**
-   * Mark failed **and settle what it still holds**.
+   * Mark failed and settle what it still holds.
    *
-   * Leaving it `active` keeps invoking a handler that just failed; leaving its
-   * registrations in place is the other half of the same mistake — `status` says
-   * `failed` while its commands, menus and views are still live.
-   *
-   * Guarded by generation: a failure from an activation that is no longer current must
-   * not tear down its replacement. That is the same rule `emit` applies to a late
-   * rejection.
+   * Guarded by generation: a failure from a retired activation must not tear down its
+   * successor.
    */
   private fail(extensionId: string, error: unknown, generation?: number): void {
     const record = this.records.get(extensionId)
@@ -280,16 +269,26 @@ export class ExtensionRegistry {
     record.status = 'failed'
     record.failure = error instanceof Error ? error.message : String(error)
     // Cannot await (the caller may be a sync emitter). `rollback` records failures.
-    void this.rollback(extensionId, this.disposables.get(extensionId) ?? [])
+    void this.rollback(extensionId, this.disposables.get(extensionId) ?? [], record.generation)
     this.options.onChanged?.()
   }
 
-  /** Clear the ledger and remember which disposers threw; attempting is `disposeAll`'s job. */
-  private async rollback(extensionId: string, bucket: Disposable[]): Promise<void> {
-    const { problems } = await disposeAll(bucket)
-    bucket.length = 0
-    this.contributions.delete(extensionId)
-    this.disposables.delete(extensionId)
+  /** Settle one activation's registrations — see `settle-owned.ts` for why by generation. */
+  private async rollback(
+    extensionId: string,
+    bucket: Disposable[],
+    generation: number,
+  ): Promise<void> {
+    const { problems } = await settleOwnedContributions({
+      bucket,
+      extensionId,
+      generation,
+      currentGeneration: () => this.records.get(extensionId)?.generation,
+      clear: () => {
+        this.contributions.delete(extensionId)
+        this.disposables.delete(extensionId)
+      },
+    })
     this.cleanupProblems.record(extensionId, problems)
   }
 
