@@ -48,7 +48,10 @@ vi.mock('@/features/extensions/apply-enabled-extensions', () => ({
 }))
 
 vi.mock('@/features/extensions/use-extension-runtime', () => ({
-  getExtensionRegistry: () => ({ list: mocks.list }),
+  getExtensionRegistry: () => ({
+    list: mocks.list,
+    cleanupProblemsFor: () => [],
+  }),
   useExtensionRuntime: () => ({ activeIds: () => [] }),
 }))
 

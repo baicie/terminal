@@ -258,6 +258,8 @@ export default {
   'settings.extensions.title': 'Extensions',
   'settings.extensions.description': 'Les extensions intégrées sont désactivées jusqu’à ce que vous les activiez.',
   'settings.extensions.version': 'Version {{version}}',
+  'settings.extensions.cleanupFailed':
+    "La désactivation n'a pas tout libéré ({{count}} étape(s) de nettoyage ont échoué). Recharger l'application efface le reste.",
   'settings.extensions.empty': 'Cette version ne contient aucune extension.',
   'settings.ai.title': 'IA',
   'settings.ai.description': 'Profils de modèle utilisables par l’assistant. La clé API est stockée dans le coffre, jamais dans cette table.',

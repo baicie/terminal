@@ -249,6 +249,8 @@ export default {
   'settings.extensions.title': 'Extensions',
   'settings.extensions.description': 'Built-in extensions are off until you turn them on.',
   'settings.extensions.version': 'Version {{version}}',
+  'settings.extensions.cleanupFailed':
+    'Turning this off did not release everything ({{count}} cleanup step(s) failed). Reloading the app clears the rest.',
   'settings.extensions.empty': 'This build includes no extensions.',
   'settings.ai.title': 'AI',
   'settings.ai.description': 'Model profiles that the assistant can use. The API key is stored in the vault, never in this table.',

@@ -61,6 +61,15 @@ export function ExtensionSettings({ enabled, onChange }: ExtensionSettingsProps)
       <ul className="space-y-3">
         {extensions.map(record => {
           const id = record.manifest.id
+          /*
+           * Cleanup problems surface here, and only when there are any.
+           *
+           * A deactivation that reported success while a disposer threw is a leak the
+           * user cannot otherwise see: the switch reads "off", the dock is gone, and a
+           * listener somewhere is still attached. This is the smallest place to say so —
+           * the row for the extension it belongs to, no new panel and no plugin console.
+           */
+          const cleanupProblems = getExtensionRegistry().cleanupProblemsFor(id)
           return (
             <li key={id} className="flex items-start justify-between gap-4">
               <div className="min-w-0">
@@ -70,6 +79,11 @@ export function ExtensionSettings({ enabled, onChange }: ExtensionSettingsProps)
                 <p className="text-xs text-muted-foreground">
                   {t('settings.extensions.version', { version: record.manifest.version })}
                 </p>
+                {cleanupProblems.length > 0 ? (
+                  <p className="text-xs text-destructive" role="status">
+                    {t('settings.extensions.cleanupFailed', { count: cleanupProblems.length })}
+                  </p>
+                ) : null}
               </div>
               <Switch
                 id={`extension-${id}`}
