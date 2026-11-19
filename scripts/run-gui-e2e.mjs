@@ -247,7 +247,7 @@ const specFiles = flags.has('--one-run')
 // and on Windows the startup gate refused to mount the UI at all, because the database
 // it looked for did not exist in the profile it was actually using.
 if (fixture !== null && specFiles.length > 0) {
-  const { seedSftpHost } = await import('../e2e/gui/fixtures/seed-sftp-host.mjs')
+  const { seedSftpHost, trustHostKey } = await import('../e2e/gui/fixtures/seed-sftp-host.mjs')
   fixture.seededProfiles = []
   for (const spec of specFiles) {
     const specHome = `${home}-${path.basename(spec, '.e2e.mjs')}`
@@ -262,6 +262,18 @@ if (fixture !== null && specFiles.length > 0) {
         label: 'E2E Local',
       }),
     )
+    /*
+     * Each profile is a separate `HOME`, so each needs the host key trusted too.
+     *
+     * The app refuses an unknown host key. Without this the seeded host connects and
+     * then fails verification, which the dock renders as an empty directory — the
+     * exact shape the SFTP cases recorded NOT_RUN against for several rounds.
+     */
+    await trustHostKey({
+      home: specHome,
+      hostKeyPath: fixture.hostKeyPath,
+      port: fixture.port,
+    })
   }
   log(`seeded ${fixture.seededProfiles.length} per-spec profile(s)`)
 }

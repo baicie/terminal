@@ -6,6 +6,8 @@ import { useTranslation } from 'react-i18next'
 import { registerSession } from '@/service/sftp-session-claim'
 import { isSessionBusy } from '@/service/sftp-transfer-session'
 import { releaseOrDefer } from './sftp-deferred-release'
+import { resolveListingPath } from './resolve-listing-path'
+import { traceSftp } from './sftp-trace'
 import { useSftpFileOperations } from './use-sftp-file-operations'
 
 interface UseSftpRemoteOptions {
@@ -133,6 +135,7 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
           return null
         }
         if (!connResult.success || !connResult.sessionId) {
+          traceSftp(`connect failed: ${JSON.stringify(connResult.message)}`)
           toast.error(t('sftp.connectionFailed', { error: connResult.message }))
           return null
         }
@@ -142,6 +145,7 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
           return null
         }
         if (!sftpResult.success) {
+          traceSftp(`sftpConnect failed: ${JSON.stringify(sftpResult.message)}`)
           toast.error(t('sftp.initFailed', { error: sftpResult.message }))
           void sshService.close(connResult.sessionId).catch(() => undefined)
           return null
@@ -172,14 +176,22 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
       setLoading(true)
       try {
         const sid = await ensureSession(activeHost, key)
+        traceSftp(`loadDir ${p} sid=${sid ?? 'null'}`)
         if (!sid) return
-        const result = await sshService.sftpList(sid, p)
+        // `.` first; absolute after. See `resolve-listing-path.ts`.
+        const effectivePath = await resolveListingPath(sid, p)
+        if (generation !== generationRef.current || key !== hostKeyRef.current) return
+        if (effectivePath === null) {
+          toast.error(t('sftp.listFailed'))
+          return
+        }
+        const result = await sshService.sftpList(sid, effectivePath)
         // The host may have changed while the listing was in flight; the
         // answer describes the previous host and must not reach the UI.
         if (generation !== generationRef.current || key !== hostKeyRef.current) return
         if (result.success && result.files) {
           setFiles(result.files)
-          setPath(p)
+          setPath(effectivePath)
         } else {
           toast.error(result.message || t('sftp.listFailed'))
         }
@@ -198,29 +210,24 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
     unmountedRef.current = true
   }, [])
 
-  // Reset and release on host change; on unmount, release only when nothing is
-  // still using the connection.
-  //
-  // `INV-14`: every transfer carries the session id of the connection this hook
-  // opened. Closing it on unmount truncated an upload that was halfway through —
-  // the file on the far side stopped growing and the transfer reported an error
-  // the user did not cause. Closing a *panel* must not do that.
-  // `releaseSessionUnlessBusy` decides *whether* the connection may close; the
-  // effect decides *when* to ask. Calling it from both the body and the cleanup
-  // double-released: the body cleared `sessionRef`, then `loadDir` reconnected,
-  // then the cleanup cleared it again on the next host change.
+  // `INV-14`: closing a panel must not truncate a transfer. The effect decides *when*
+  // to ask; `releaseSessionUnlessBusy` decides *whether*. Calling it from both the body
+  // and the cleanup double-released: the body cleared `sessionRef`, `loadDir`
+  // reconnected, then the cleanup cleared it again on the next host change.
   useEffect(() => {
     generationRef.current += 1
     // The previous host's connection is released here, not in the cleanup: by
     // the time the cleanup runs, `loadDir` below has already opened the new one.
     releaseSessionUnlessBusy()
     setFiles([])
-    setPath('/')
-    setHistory(['/'])
+    // `.` so the server decides where the user starts (`resolve-listing-path.ts`).
+    const startPath = '.'
+    setPath(startPath)
+    setHistory([startPath])
     setHistoryIndex(0)
     setSelectedFile(null)
     setLoading(false)
-    if (hostKey !== null) void loadDir('/')
+    if (hostKey !== null) void loadDir(startPath)
     return () => {
       // Unmount only. Nothing to reconnect to, so this is the last chance to
       // release — and it still refuses while a transfer is using the session.

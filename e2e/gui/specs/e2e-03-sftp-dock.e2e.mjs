@@ -157,7 +157,41 @@ describe('SFTP Context Dock — real WebView', () => {
     // "the dock has a host" is a click away, not a given.
     if (process.env.GUI_E2E_SSH_PORT) {
       await browser.$('[data-testid="rail-hosts"]').click()
-      await browser.pause(800)
+      /*
+       * Wait for the card, not for a duration.
+       *
+       * Hosts is a lazy route that then reads SQLite asynchronously, so the cards appear
+       * well after the route does. A fixed 800 ms was the first version: measured on a
+       * run where the seeded host existed and was never clicked, because the read had
+       * not finished. The condition is the card itself.
+       */
+      const found = await browser.waitUntil(
+        async () =>
+          browser.execute(() => {
+            const texts = Array.from(document.querySelectorAll('button')).map(
+              button => button.textContent ?? '',
+            )
+            return texts.some(text => text.includes('E2E Local'))
+          }),
+        {
+          timeout: 20_000,
+          interval: 250,
+          timeoutMsg: 'the seeded host card never appeared on the Hosts page',
+        },
+      ).catch(() => false)
+      if (!found) {
+        // What the page shows, so the next failure names the state instead of
+        // leaving "the card never appeared" to be interpreted.
+        const seen = await browser.execute(() => ({
+          path: location.pathname,
+          buttons: Array.from(document.querySelectorAll('button'))
+            .map(button => (button.textContent ?? '').trim().slice(0, 40))
+            .filter(Boolean)
+            .slice(0, 12),
+          body: (document.body.textContent ?? '').slice(0, 300),
+        }))
+        notes.push(`seeded host card never appeared: ${JSON.stringify(seen)}`)
+      }
       const opened = await browser.execute(() => {
         const card = Array.from(document.querySelectorAll('button')).find(button =>
           button.textContent?.includes('E2E Local'),
@@ -506,6 +540,10 @@ describe('SFTP Context Dock — real WebView', () => {
         return (panel?.textContent ?? '').replace(/\s+/g, ' ').slice(0, 120)
       })
       notes.push(`keyboard case NOT_RUN: no file rows; dock said ${JSON.stringify(why)}`)
+      const loadTrace = await browser.execute(
+        () => globalThis.__sftpLoadTrace ?? 'no trace',
+      )
+      notes.push(`sftp load trace: ${JSON.stringify(loadTrace)}`)
       return
     }
 

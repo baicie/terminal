@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import test from 'node:test'
 
-import { isolatedProfileEnv } from './gui-e2e-platform.mjs'
+import { appConfigDir, isolatedProfileEnv } from './gui-e2e-platform.mjs'
 
 const ROOT = path.resolve(import.meta.dirname, '..')
 
@@ -40,9 +40,31 @@ test('the profile env carries an explicit config-dir override', () => {
 test('the override lives inside the throwaway home', () => {
   const home = '/tmp/example-home'
   const profile = isolatedProfileEnv(home)
+  /*
+   * The property that matters is containment, not which subdirectory.
+   *
+   * This used to require `AppData/Roaming`. That is the Windows location, and demanding
+   * it everywhere is what made the override point at a directory macOS never reads —
+   * measured: the harness seeded `AppData/Roaming/…` while the app opened
+   * `Library/Application Support/…`, so every seeded host was invisible and the SFTP
+   * cases recorded NOT_RUN for four rounds.
+   */
   assert.ok(
-    profile.TERMINAL_GUI_E2E_CONFIG_DIR.startsWith(path.join(home, 'AppData/Roaming')),
+    profile.TERMINAL_GUI_E2E_CONFIG_DIR.startsWith(home),
     'the override must stay inside the profile, or a run could touch real user data',
+  )
+  assert.ok(
+    path.isAbsolute(profile.TERMINAL_GUI_E2E_CONFIG_DIR),
+    'and it must be absolute: the app rejects a relative override',
+  )
+})
+
+test('the override is the directory the app itself would open', () => {
+  // The defect this pins: two sides computing the config directory differently.
+  const home = '/tmp/example-home'
+  assert.equal(
+    isolatedProfileEnv(home).TERMINAL_GUI_E2E_CONFIG_DIR,
+    appConfigDir(home),
   )
 })
 
