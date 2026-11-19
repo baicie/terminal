@@ -115,6 +115,51 @@ async function readState() {
 }
 
 /** Navigate with the History API — `createBrowserRouter` ignores hash changes. */
+/**
+ * Connect the host the launcher seeded, and leave its tab active.
+ *
+ * The same two steps e2e-03 needed: the card only exists once the Hosts route has read
+ * SQLite, and connecting opens a second tab that the panel then has to be reading.
+ */
+async function connectSeededHost() {
+  await browser.$('[data-testid="rail-hosts"]').click()
+  const found = await browser
+    .waitUntil(
+      async () =>
+        browser.execute(() =>
+          Array.from(document.querySelectorAll('button')).some(button =>
+            (button.textContent ?? '').includes('E2E Local'),
+          ),
+        ),
+      { timeout: 20_000, interval: 250, timeoutMsg: 'seeded host card never appeared' },
+    )
+    .catch(() => false)
+  if (!found) return false
+
+  const clicked = await browser.execute(() => {
+    const card = Array.from(document.querySelectorAll('button')).find(button =>
+      (button.textContent ?? '').includes('E2E Local'),
+    )
+    if (!card) return false
+    card.click()
+    return true
+  })
+  if (!clicked) return false
+
+  // A second tab is the connection landing: the restored local tab is already one.
+  await browser
+    .waitUntil(
+      async () =>
+        browser.execute(
+          () => document.querySelectorAll('[data-testid^="tab-"]').length >= 2,
+        ),
+      { timeout: 45_000, interval: 300, timeoutMsg: 'the SSH host never connected' },
+    )
+    .catch(() => undefined)
+  await browser.pause(2_000)
+  return true
+}
+
 async function goTo(path) {
   await browser.execute(target => {
     window.history.pushState({}, '', target)
@@ -238,6 +283,17 @@ describe('Context Dock occupants — real WebView', () => {
     await browser.$('[data-testid="activity-rail"]').waitForExist({ timeout: 20_000 })
     await browser.setWindowSize(1440, 900)
     await browser.pause(300)
+    /*
+     * Connect the seeded host, so the inspector has a backend session to probe.
+     *
+     * `real-inspector-metrics` was NOT_RUN for four rounds because this spec never
+     * opened an SSH session — the panel could only ever show its no-session state. The
+     * fixture, the per-spec profile and the host row already exist; what was missing
+     * was this spec using them.
+     */
+    if (process.env.GUI_E2E_SSH_PORT) {
+      await connectSeededHost()
+    }
     // The docks live on the terminal route; the app may have booted onto it already.
     const state = await readState()
     if (!state.terminalCanvas) {
@@ -352,9 +408,9 @@ describe('Context Dock occupants — real WebView', () => {
     }
   })
 
-  it('the inspector says why it has no metrics instead of showing zeros', async () => {
-    // "No SSH session" must not look like "everything is 0%". The panel's own state
-    // is read, and the absence of numeric metrics is asserted alongside the reason.
+  it('the inspector reads real metrics from the connected host, or says why not', async () => {
+    // "No SSH session" must not look like "everything is 0%": the panel's own state is
+    // read, and when a session exists a Refresh must produce real values.
     const opened = await runPaletteAction('Inspect the server')
     const state = await readState()
     if (!state.panelExists || state.occupant !== 'inspector') {
@@ -364,6 +420,52 @@ describe('Context Dock occupants — real WebView', () => {
       check(false, 
         `the inspector is REQUIRED but did not open: ${JSON.stringify(opened)} ` +
           `(panelExists=${state.panelExists}, occupant=${state.occupant})`,
+      )
+    }
+
+    /*
+     * Press Refresh the way a user does.
+     *
+     * The panel probes on open, but the probe needs the active tab's backend session id,
+     * and that is only known once the connection has registered it. A real click also
+     * covers the wiring the component tests cannot: button → probe → state.
+     */
+    const refreshed = await browser.executeAsync(async done => {
+      const root = document.querySelector('[data-testid="server-inspector"]')
+      const button = Array.from(root?.querySelectorAll('button') ?? []).find(candidate =>
+        /refresh/i.test(candidate.textContent ?? ''),
+      )
+      if (!button) {
+        done({ ok: false, reason: 'no refresh button' })
+        return
+      }
+      button.click()
+      // Wait for the panel to settle into one of its three terminal states.
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 250))
+        const metrics = document.querySelectorAll('[data-testid="server-inspector"] [data-metric]')
+        if (metrics.length > 0) {
+          done({ ok: true, metrics: metrics.length, state: 'metrics' })
+          return
+        }
+        if (document.querySelector('[data-testid="inspector-error"]')) {
+          done({ ok: true, state: 'error' })
+          return
+        }
+        if (document.querySelector('[data-testid="inspector-no-session"]')) {
+          done({ ok: true, state: 'no-session' })
+          return
+        }
+      }
+      done({ ok: false, state: 'timed out' })
+    })
+    measurements.inspectorRefresh = refreshed
+    notes.push(`inspector refresh: ${JSON.stringify(refreshed)}`)
+    if (process.env.GUI_E2E_SSH_PORT && refreshed.state === 'no-session') {
+      // A connected host must not read as "no session": that is the panel ignoring a
+      // live connection, which is the defect this case exists to catch.
+      check(false,
+        `the inspector reports no session while an SSH tab is connected: ${JSON.stringify(refreshed)}`,
       )
     }
 
@@ -480,14 +582,9 @@ describe('Context Dock occupants — real WebView', () => {
         needs: 'a model endpoint (BLOCKED_EXTERNAL; the suite must not consume a paid key)',
       },
       {
-        id: 'real-inspector-metrics',
-        reason: 'no SSH session is opened by this spec',
-        needs: 'a reachable sshd; covered by the real-machine matrix instead',
-      },
-      {
         id: 'snippet-draft-capture',
         reason: 'needs a terminal selection and an enabled extension',
-        needs: 'the snippet workflow spec (e2e-05)',
+        needs: 'the snippet workflow spec (e2e-05), where that workflow is driven',
       },
     ]
     for (const gap of GAPS) {
