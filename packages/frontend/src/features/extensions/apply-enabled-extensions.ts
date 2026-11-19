@@ -59,7 +59,37 @@ export function nextExtensionListSequence(): number {
   return currentSequence
 }
 
-export async function applyEnabledExtensions(
+/**
+ * The apply that is currently running, or a resolved sentinel.
+ *
+ * ## Why applies are serialised rather than merely guarded by a sequence
+ *
+ * A sequence check tells a *stale* apply not to start. It cannot stop an apply that has
+ * already suspended inside `enable`/`deactivate` from finishing after a newer one and
+ * writing the older state back — measured: two applies issued together ended with the
+ * extension active when the newer one asked for off.
+ *
+ * Serialising makes the interleaving impossible instead of detecting it: the second
+ * apply waits for the first to finish, then reconciles from the current registry state,
+ * so the last one to run is the one whose list wins.
+ */
+let inFlight: Promise<void> = Promise.resolve()
+
+/** Test-only: forget the in-flight chain between suites. */
+export function __resetExtensionApplyQueueForTests(): void {
+  inFlight = Promise.resolve()
+}
+
+export function applyEnabledExtensions(
+  enabledIds: readonly string[] | StoredExtensionList,
+): Promise<void> {
+  const run = inFlight.then(() => applyNow(enabledIds))
+  // The chain must not break on a rejection: the next apply still has to run.
+  inFlight = run.catch(() => undefined)
+  return run
+}
+
+async function applyNow(
   enabledIds: readonly string[] | StoredExtensionList,
 ): Promise<void> {
   const list: StoredExtensionList = Array.isArray(enabledIds)
