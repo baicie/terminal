@@ -82,7 +82,28 @@ export function getExtensionRegistry(): ExtensionRegistry {
   if (registrySingleton) return registrySingleton
   const registry = new ExtensionRegistry({ onChanged: notifyActivationChanged })
   registry.register(snippetDockManifest, context => {
-    snippetDockHandle = createSnippetDock(context)
+    /*
+     * Returned, not just assigned.
+     *
+     * The registry settles a deactivation by running every disposable the factory
+     * handed back. This factory used to be a block body with no `return`, so the handle
+     * — its listeners, its pending draft and its in-flight refresh — kept living after
+     * the extension was disabled, and nothing outside the handle could tell.
+     *
+     * Measured before the fix: the disposable bucket held exactly the five
+     * registrations and no handle at all.
+     */
+    const handle = createSnippetDock(context)
+    snippetDockHandle = handle
+    return {
+      dispose: () => {
+        // Only clear the module-level pointer if it still points at *this* activation.
+        // A disable followed by a quick enable creates a second handle, and the first
+        // one's rollback must not wipe the pointer to the second.
+        if (snippetDockHandle === handle) snippetDockHandle = null
+        handle.dispose()
+      },
+    }
   })
 
   const gateway = new CapabilityGateway(
@@ -138,6 +159,18 @@ export function __resetExtensionRegistryForTests(): void {
   registrySingleton = null
   snippetDockHandle = null
   activationListeners.clear()
+}
+
+/**
+ * Test-only: the handle the current activation created.
+ *
+ * A test that wants to prove the *production factory* hands its handle to the registry
+ * cannot build one itself — the defect being guarded against is precisely that the
+ * factory did not return it. Reading the live handle is what makes the assertion about
+ * the real assembly rather than about a `Disposable` the test constructed.
+ */
+export function __currentSnippetDockForTests(): SnippetDockHandle | null {
+  return snippetDockHandle
 }
 
 export function useExtensionRuntime(): ExtensionRuntime {
