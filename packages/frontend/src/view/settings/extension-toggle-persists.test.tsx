@@ -116,4 +116,42 @@ describe('toggling an extension writes it to the settings row', () => {
     // process knows about and claims its sequence at apply time.
     expect(mocks.applyEnabledExtensions).toHaveBeenCalledWith(['snippet-dock'])
   })
+
+  it('persists an empty list and applies it when the switch goes off', async () => {
+    /*
+     * The direction the first version of this test did not cover.
+     *
+     * Turning an extension *on* is the branch that builds `[...enabled, id]`. Turning
+     * it *off* filters the id out, and a real WebView run showed the switch rendering
+     * "unchecked" while the registry still reported the extension active — so the two
+     * directions do not go through the same code, and only one of them was pinned.
+     */
+    mocks.getAppSettings.mockResolvedValue({
+      ...(SETTINGS as Record<string, unknown>),
+      enabledExtensions: ['snippet-dock'],
+    })
+
+    render(<SettingsView />)
+
+    const tab = await screen.findByRole('tab', { name: /extension/i })
+    await act(async () => {
+      fireEvent.keyDown(tab, { key: 'Enter' })
+      await Promise.resolve()
+    })
+    const toggle = await screen.findByRole('switch', {}, { timeout: 3000 })
+    expect(toggle.getAttribute('data-state') ?? toggle.getAttribute('aria-checked')).toBe(
+      'checked',
+    )
+
+    await act(async () => {
+      fireEvent.click(toggle)
+      await Promise.resolve()
+    })
+
+    expect(
+      mocks.saveAppSettings,
+      'turning it off must be written too, or the next re-apply turns it back on',
+    ).toHaveBeenCalledWith(expect.objectContaining({ enabledExtensions: [] }))
+    expect(mocks.applyEnabledExtensions).toHaveBeenCalledWith([])
+  })
 })

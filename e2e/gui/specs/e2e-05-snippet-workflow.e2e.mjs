@@ -71,26 +71,129 @@ async function runPaletteAction(title) {
 }
 
 /**
- * Flip an extension switch to a target state and wait for it to settle.
+ * Drive an extension switch to a target state through a real pointer sequence.
  *
- * A real WebDriver click on the trigger — a script `.click()` does not switch a Radix
- * control, which this suite already learned twice. Returns the resulting `data-state`.
+ * ## Why this asserts the direction, not the click count
+ *
+ * A script `.click()` on a Radix control does not flip it — this suite learned that
+ * twice already. Worse, a *real* WebDriver click that lands is indistinguishable from
+ * one that does not, unless the resulting state is checked: measured on a run where the
+ * switch stayed "checked" through ten retries, the failure looked like "the toggle
+ * cannot turn things off" when it was "the click never switched it".
+ *
+ * So callers ask for a target and this asserts the switch reached the *other* state,
+ * giving the log enough to tell those two apart.
  */
-async function toggleSwitch(selector, target) {
-  const deadline = 10_000
-  const started = Date.now()
-  let state = null
-  const wanted = target === 'on' ? ['checked', 'true'] : ['unchecked', 'false']
-  while (Date.now() - started < deadline) {
-    state = await browser.execute(sel => {
-      const el = document.querySelector(sel)
-      return el ? el.getAttribute('data-state') ?? el.getAttribute('aria-checked') : null
-    }, selector)
-    if (state && wanted.includes(state)) return state
-    await browser.$(selector).click()
-    await browser.pause(600)
-  }
-  return state
+async function driveSwitch(selector, from) {
+  const to = from === 'checked' ? 'unchecked' : 'checked'
+  await browser.$(selector).click()
+  /*
+   * Wait on the page's own clock, not by polling from the driver.
+   *
+   * The toggle's handler `await`s a database write, and that write goes through
+   * `invoke()` on the same WebView the driver is talking to. Polling `data-state` from
+   * outside means issuing a driver command every 300 ms while the app is trying to
+   * finish its own IPC — the measurement can starve the thing it measures. So the
+   * waiting happens inside one `executeAsync`, which resolves as soon as the attribute
+   * settles and otherwise reports what it last saw.
+   */
+  const result = await browser.executeAsync(async (sel, want, done) => {
+    const el = document.querySelector(sel)
+    if (!el) {
+      done({ ok: false, to: null })
+      return
+    }
+    const read = () => el.getAttribute('data-state') ?? el.getAttribute('aria-checked')
+    const deadline = Date.now() + 8_000
+    while (Date.now() < deadline) {
+      if (read() === want) {
+        done({ ok: true, to: read() })
+        return
+      }
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    done({ ok: false, to: read() })
+  }, selector, to)
+  return { ...result, from }
+}
+
+function switchState(selector) {
+  return browser.execute((sel) => {
+    const el = document.querySelector(sel)
+    return el ? el.getAttribute('data-state') ?? el.getAttribute('aria-checked') : null
+  }, selector)
+}
+
+/**
+ * Wait until the stored enabled list is what the toggle should have written.
+ *
+ * ## Why the switch's own state is not the thing to wait for
+ *
+ * Radix flips `data-state` synchronously on click. The write that makes the choice
+ * durable is asynchronous (measured: 251 ms), so a read taken when the switch looks
+ * settled can still see the previous list — which reads as "the toggle did not
+ * persist", when it simply had not finished. The durable value is the one worth
+ * waiting on, and it is also the one this case exists to check.
+ */
+async function waitForStoredList(expected) {
+  return browser.executeAsync(async (want, done) => {
+    const probe = window.__terminalGuiE2E
+    if (!probe?.readSetting) {
+      done({ ok: false, reason: 'no probe', elapsedMs: 0 })
+      return
+    }
+    const started = Date.now()
+    // The product's own SQLite `busy_timeout` is 30 s; waiting less cannot distinguish
+    // a slow write from a missing one.
+    const deadline = started + 35_000
+    let last = null
+    while (Date.now() < deadline) {
+      const read = await probe.readSetting('app_settings')
+      last = read?.value?.enabledExtensions ?? null
+      if (JSON.stringify(last) === JSON.stringify(want)) {
+        done({ ok: true, value: last, elapsedMs: Date.now() - started })
+        return
+      }
+      await new Promise(resolve => setTimeout(resolve, 200))
+    }
+    done({ ok: false, value: last, elapsedMs: Date.now() - started })
+  }, expected)
+}
+
+/**
+ * Wait until the extension's activation matches what the toggle asked for.
+ *
+ * ## Why this is separate from the stored list
+ *
+ * The toggle does two things in sequence: it writes, then it makes the registry match.
+ * The write lands first (measured 227 ms), so a registry read taken as soon as the
+ * database agrees sees the *old* activation — the extension is still running while its
+ * stored list already says off. Asserting the registry without waiting therefore
+ * reports a real inconsistency ("stored off, still active") that is actually just the
+ * second half of the same action still in flight.
+ *
+ * Both facts are still asserted; this only waits for the one that settles last.
+ */
+async function waitForActivation(expectedActive) {
+  return browser.executeAsync(async (want, done) => {
+    const started = Date.now()
+    const deadline = started + 30_000
+    let last = null
+    while (Date.now() < deadline) {
+      const snapshot = window.__terminalGuiE2E?.extensionSnapshot?.() ?? {}
+      last = Array.isArray(snapshot.active) ? snapshot.active : null
+      const matches =
+        want === 'on'
+          ? Array.isArray(last) && last.includes('snippet-dock')
+          : Array.isArray(last) && !last.includes('snippet-dock')
+      if (matches) {
+        done({ ok: true, active: last, elapsedMs: Date.now() - started })
+        return
+      }
+      await new Promise(resolve => setTimeout(resolve, 200))
+    }
+    done({ ok: false, active: last, elapsedMs: Date.now() - started })
+  }, expectedActive)
 }
 
 describe('a snippet survives the round trip a user makes', () => {
@@ -498,50 +601,66 @@ describe('a snippet survives the round trip a user makes', () => {
     const switchSelector = '#extension-snippet-dock'
     await browser.$(switchSelector).waitForExist({ timeout: 15_000 })
 
-    const off = await toggleSwitch(switchSelector, 'off')
+    const started = await switchState(switchSelector)
+    notes.push(`switch before the cycle: ${JSON.stringify(started)}`)
+    check(
+      started === 'checked',
+      `the switch should be on from the earlier cases: ${JSON.stringify(started)}`,
+    )
+
+    const off = await driveSwitch(switchSelector, 'checked')
     notes.push(`switch off: ${JSON.stringify(off)}`)
-    check(off === 'unchecked', `the extension did not turn off: switch reports ${JSON.stringify(off)}`)
-    const runtimeOff = await browser.execute(
-      () => window.__terminalGuiE2E?.extensionSnapshot?.() ?? {},
-    )
-    notes.push(`runtime while off: ${JSON.stringify(runtimeOff)}`)
     check(
-      !(Array.isArray(runtimeOff?.active) && runtimeOff.active.includes('snippet-dock')),
-      `the switch is off but the extension is still active: ${JSON.stringify(runtimeOff)}`,
+      off.ok && off.to === 'unchecked',
+      `the switch did not go off — a click that never lands looks the same as a toggle that does not work: ${JSON.stringify(off)}`,
     )
-
-    const on = await toggleSwitch(switchSelector, 'on')
-    notes.push(`switch on: ${JSON.stringify(on)}`)
-    check(on === 'checked', `the extension did not turn back on: switch reports ${JSON.stringify(on)}`)
-
     /*
-     * The choice must be in SQLite, not only in the registry.
+     * The durable half, waited on rather than sampled once.
      *
-     * This is the half the old toggle was missing, and reading the registry would not
-     * reveal it: the registry was correct right up until something re-applied the
-     * stored (stale) list. The app setting is the durable record.
+     * Measured: the write lands 251 ms after the click, so a read taken as soon as the
+     * switch looks settled sees the *previous* list and reports a persistence bug that
+     * is not there. The list is what this case exists to check, so the wait is on it.
      */
-    const stored = await browser.executeAsync(async done => {
-      const probe = window.__terminalGuiE2E
-      if (!probe?.readSetting) {
-        done({ ok: false, reason: 'the GUI probe cannot read app settings' })
-        return
-      }
-      done(await probe.readSetting('app_settings'))
-    })
-    const ids = stored?.value?.enabledExtensions
-    notes.push(`stored enabledExtensions: ${JSON.stringify(ids)}`)
+    const offStored = await waitForStoredList([])
+    notes.push(`stored after switching off: ${JSON.stringify(offStored)}`)
     check(
-      Array.isArray(ids) && ids.includes('snippet-dock'),
-      `the switch is on but app_settings does not list it: ${JSON.stringify(stored)}`,
+      offStored.ok,
+      `switching off did not reach the database: ${JSON.stringify(offStored)}`,
+    )
+    const offActive = await waitForActivation('off')
+    notes.push(`activation after switching off: ${JSON.stringify(offActive)}`)
+    check(
+      offActive.ok,
+      `the switch is off but the extension is still active: ${JSON.stringify(offActive)}`,
+    )
+
+    const on = await driveSwitch(switchSelector, 'unchecked')
+    notes.push(`switch on: ${JSON.stringify(on)}`)
+    check(
+      on.ok && on.to === 'checked',
+      `the switch did not turn back on: ${JSON.stringify(on)}`,
+    )
+    const onStored = await waitForStoredList(['snippet-dock'])
+    notes.push(`stored after switching on: ${JSON.stringify(onStored)}`)
+    check(
+      onStored.ok,
+      `switching back on did not reach the database: ${JSON.stringify(onStored)}`,
     )
 
     await goTo('/terminal')
     await browser.pause(600)
+    // Same reason as the off direction: activation settles after the write, so the
+    // contribution is waited on rather than sampled once.
+    const backActive = await waitForActivation('on')
+    notes.push(`activation after re-enable: ${JSON.stringify(backActive)}`)
     const runtimeBack = await browser.execute(
       () => window.__terminalGuiE2E?.extensionSnapshot?.() ?? {},
     )
     notes.push(`runtime after re-enable: ${JSON.stringify(runtimeBack)}`)
+    check(
+      backActive.ok,
+      `the extension did not come back after a disable/enable cycle: ${JSON.stringify(backActive)}`,
+    )
     check(
       Array.isArray(runtimeBack?.menus) &&
         runtimeBack.menus.includes('snippet-dock.capture-selection'),
