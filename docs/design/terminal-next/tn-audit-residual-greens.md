@@ -128,6 +128,36 @@ Linux 上 dock 正常打开，`notRunCount` 与另外两个平台一致。
 | 关闭 dock 后同一 PTY 仍能执行命令 | 不是 `xterm` DOM 存在性 |
 | SQLite 里按名字查到行 | 不是 React state |
 
+**三平台结果**（run `44458963869`，`0d1a21f`）：macOS / Linux / Windows 全部
+`verdict: PASS`、`notRunCount: 0`、`gaps: []`。关闭与重新开启两个方向各四项：
+
+| 平台 | 关闭后写库 | 关闭后 registry | 重开后写库 | 重开后 registry |
+| --- | --- | --- | --- | --- |
+| macOS | 212 ms → `[]` | `[]` | 216 ms | `["snippet-dock"]` |
+| Linux | 204 ms → `[]` | `[]` | 4 ms | `["snippet-dock"]` |
+| Windows | 229 ms → `[]` | `[]` | 215 ms | `["snippet-dock"]` |
+
+三份运行**是等价的**：上一轮 Linux 的 `notRunCount` 比另外两个平台多 1（dock 未打开），
+本轮为 0。
+
+### 5.6 这一节我错了三次
+
+三个结论依次被下一次测量推翻，形状完全相同：**把「我读得太早」当成「产品没做到」。**
+
+| 错误结论 | 推翻它的事实 |
+| --- | --- |
+| 「菜单读到陈旧值」 | Radix 每次打开重挂载；产物里 registry 是单一模块单例；生产只有两条 deactivate 路径，其中 `disable()` 无调用方 |
+| 「`save` 的 promise 从不 settle」 | 驱动侧轮询每 300 ms 发一次 `browser.execute`，饿死了被测写入需要的 WebView IPC。等待移进页面内后，同一写入 **251 ms** 完成 |
+| 「关了开关但数据库没更新」 | 在 `save` 完成、`apply` 未结束时取样。写库先落（227 ms），registry 稍后才变 |
+
+现在的等待分两段（`waitForStoredList` → `waitForActivation`），因为它们是两个先后的
+动作；窗口对齐产品自己的 30 秒 `busy_timeout`——比它短的等待分不清「慢」和「没发生」。
+
+**另一个独立发现（未修）**：`createSnippetDock` 返回的对象没有 `dispose`，
+而 `enable()` 把它当 `Disposable` 推进 bucket、`rollback` 会对它调用 `dispose()`。
+`TypeError` 被 `rollback` 的空 `catch` 吞掉，所以停用时的清理静默失败。
+这不影响 `status` 翻转（已在同一轮实测），但属于「清理看起来执行了、其实没执行」。
+
 ---
 
 ## 6. 真实 SSH 密码认证（Task F）
