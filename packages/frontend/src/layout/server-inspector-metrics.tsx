@@ -69,10 +69,18 @@ export function InspectorMetrics({ result }: InspectorMetricsProps) {
   )
 }
 
+/**
+ * One label/value pair.
+ *
+ * `data-metric` is what makes "this panel is showing data" checkable at all. Without it
+ * the GUI spec's guard (`[data-testid="server-inspector"] [data-metric]`) selected
+ * nothing, so an assertion built on it could never fail — the suite was checking a set
+ * that was permanently empty and reporting it as a passing check.
+ */
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <>
-      <dt className="text-muted-foreground">{label}</dt>
+      <dt className="text-muted-foreground" data-metric={label}>{label}</dt>
       <dd className="tabular-nums">{value}</dd>
     </>
   )

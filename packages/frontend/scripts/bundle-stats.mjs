@@ -172,7 +172,17 @@ const budgets = {
   //
   // The baseline was measured at `47426c5` before raising this: 652.30 KB, i.e. this
   // round accounts for the whole difference rather than inheriting headroom.
-  totalGzip: 653 * 1024,
+  // 653.5 KB (was 653 KB): the Inspector round (PR #119) added a `data-metric`
+  // attribute to every metric row — the marker a GUI assertion needs to tell "this
+  // panel shows data" from "it shows an error" — plus the darwin uptime probe's
+  // corrected sed expression. Measured 653.09 KB against the 653.00 KB ceiling:
+  // **+0.34 KB**, no dependency and nothing on the initial path (unchanged at 131 KB).
+  //
+  // The baseline was measured at `63e0731` before raising this: 652.75 KB, so this
+  // round accounts for the whole difference rather than inheriting headroom. The
+  // attribute is not decorative: without it the spec's `[data-metric]` guard selected
+  // nothing and its assertion could never fail.
+  totalGzip: 653.5 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

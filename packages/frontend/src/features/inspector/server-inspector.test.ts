@@ -200,3 +200,44 @@ describe('an all-null metric set is the starting point', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// The macOS uptime probe must read `sec`, not `usec`.
+//
+// Measured on a real SSH session: the dock showed `Uptime 20767d 18h` — 56 years.
+// The command was
+//
+//     sed 's/.*sec = \([0-9]*\).*/\1/'
+//
+// and `kern.boottime` is `{ sec = 1795089539, usec = 761765 } …`. `.*` is greedy, so
+// it matched through to the *last* `= ` and returned the microseconds field.
+// ---------------------------------------------------------------------------
+
+describe('the darwin uptime probe command', () => {
+  it('anchors on the sec field so usec cannot be selected', () => {
+    // `PROBE_COMMANDS.darwin` is already the joined shell script.
+    const command = String(PROBE_COMMANDS.darwin)
+    const uptimeLine = command
+      .split('; ')
+      .find(part => part.includes('kern.boottime'))
+    expect(uptimeLine, 'the darwin probe must read kern.boottime').toBeTruthy()
+    // A leading `.*` is what allowed usec to win: `[^0-9]*` cannot cross a digit,
+    // so the match stops at the first `sec = `.
+    expect(
+      uptimeLine,
+      'a greedy leading .* selects the usec field',
+    ).not.toMatch(/s\/\.\*sec/)
+    expect(uptimeLine).toMatch(/s\/\[\^0-9\]\*sec/)
+  })
+
+  it('extracts the seconds field from a real kern.boottime line', () => {
+    // The parser side is already covered; this pins the field the command must yield.
+    const { metrics } = parseProbeOutput('os=Darwin\nuptime=1795089539\n', 'darwin')
+    const age = Math.round(Date.now() / 1000) - 1795089539
+    expect(metrics.uptimeSeconds).toBeGreaterThan(0)
+    expect(
+      age,
+      'a plausible uptime, not the ~56 years a microsecond field produces',
+    ).toBeLessThan(60 * 60 * 24 * 365 * 30)
+  })
+})
