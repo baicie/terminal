@@ -129,6 +129,10 @@ class SSHServiceLegacy {
     return sftpService.connect(sessionId)
   }
 
+  async sftpResolvePath(sessionId: string, path: string) {
+    return sftpService.resolvePath(sessionId, path)
+  }
+
   async sftpList(sessionId: string, path: string) {
     return sftpService.list(sessionId, path)
   }

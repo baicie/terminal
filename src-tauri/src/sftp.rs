@@ -384,6 +384,29 @@ pub async fn sftp_connect(
     Ok(())
 }
 
+/// Resolve a path against the session's own directory.
+///
+/// The dock opens at `.` so that it lands where the server puts the user. That is the
+/// right starting point — listing `/` shows "Empty directory" to someone whose home is
+/// full — but `.` cannot be used to build the paths of the files inside it, and
+/// `mkdir`/`rename` need a real directory to prefix.
+///
+/// One round trip, the same `canonicalize` `sftp_is_live` already uses.
+#[tauri::command]
+pub async fn sftp_resolve_path(
+    state: tauri::State<'_, SharedStateType>,
+    session_id: String,
+    path: String,
+) -> Result<String, SftpError> {
+    if session_id.is_empty() {
+        return Err(SftpError::SessionNotFound);
+    }
+    let sftp = get_sftp(&state, &session_id).await?;
+    sftp.canonicalize(&path)
+        .await
+        .map_err(|e| SftpError::InvalidPath(format!("Failed to resolve {path}: {e}")))
+}
+
 #[tauri::command]
 pub async fn sftp_list(
     state: tauri::State<'_, SharedStateType>,
@@ -399,10 +422,40 @@ pub async fn sftp_list(
 
     let sftp = get_sftp(&state, &session_id).await?;
 
-    let dir_path = if path.ends_with('/') {
+    let mut dir_path = if path.ends_with('/') && path.len() > 1 {
         path.trim_end_matches('/').to_string()
     } else {
         path.clone()
+    };
+    /*
+     * Resolve a relative path against the session's own directory.
+     *
+     * `.` is what the SFTP dock opens with, because that is the only way to land where
+     * the server puts the user: `/` is frequently unreadable or genuinely empty, and a
+     * dock that opens on it shows "Empty directory" to someone whose home is full.
+     *
+     * The resolution is not cosmetic. Every entry's `path` is built from `dir_path`, so
+     * leaving `.` unresolved would hand the UI `./name`, which cannot be opened or
+     * downloaded — the listing would look right and every action would fail.
+     *
+     * `canonicalize` is the same one round trip `sftp_is_live` already relies on, so a
+     * relative path costs no extra protocol traffic here.
+     */
+    if !dir_path.starts_with('/') {
+        match sftp.canonicalize(&dir_path).await {
+            Ok(resolved) => dir_path = resolved,
+            Err(e) => {
+                return Err(SftpError::ReadDirFailed(format!(
+                    "Failed to resolve {dir_path}: {e}"
+                )))
+            }
+        }
+    }
+    let dir_path = dir_path.trim_end_matches('/').to_string();
+    let dir_path = if dir_path.is_empty() {
+        String::from("/")
+    } else {
+        dir_path
     };
 
     let mut items = Vec::new();

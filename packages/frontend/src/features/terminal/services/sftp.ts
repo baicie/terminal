@@ -32,8 +32,20 @@ export class SftpService {
   // ========================================================================
 
   /**
-   * 列出目录内容
+   * Resolve a relative path against the session's own directory.
+   *
+   * The dock starts at `.` so it opens on the server's home rather than `/`, and every
+   * path it builds afterwards (`mkdir`, `rename`, the breadcrumb) needs the absolute
+   * form. One round trip, and only on the first listing of a session.
    */
+  async resolvePath(sessionId: string, path: string): Promise<string | null> {
+    try {
+      return await invoke<string>('sftp_resolve_path', { sessionId, path })
+    } catch {
+       return null
+    }
+  }
+
   async list(sessionId: string, path: string): Promise<SftpListResult> {
     try {
       const files = await invoke<SftpFile[]>('sftp_list', { sessionId, path })

@@ -158,6 +158,39 @@ function databasePath(home) {
   return path.join(home, '.config', identifier, 'terminal.db')
 }
 
+/**
+ * Write this sshd's host key into a profile's `known_hosts`.
+ *
+ * ## Why the fixture has to do this
+ *
+ * The app verifies host keys against `~/.ssh/known_hosts` and refuses an unknown one —
+ * correct behaviour, and the reason every SFTP case recorded NOT_RUN rather than a
+ * false PASS: the connection failed with `host key verification failed … key not found
+ * in known_hosts`, which the dock rendered as an empty directory.
+ *
+ * Trusting the throwaway key here is the fixture's job. It is scoped to a throwaway
+ * `HOME`, so nothing outside the test profile learns this key.
+ */
+export async function trustHostKey({ home, hostKeyPath, port, hostname = '127.0.0.1' }) {
+  const keygen = await findExecutable(['ssh-keygen', 'ssh-keygen.exe'])
+  if (!keygen) throw new Error('ssh-keygen is required to trust the fixture host key')
+  const { execFile } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const run = promisify(execFile)
+  // `ssh-keygen -y` prints the public key in `known_hosts` form.
+  const { stdout } = await run(keygen, ['-y', '-f', hostKeyPath])
+  const publicKey = stdout.trim()
+  const sshDir = path.join(home, '.ssh')
+  await mkdir(sshDir, { recursive: true, mode: 0o700 })
+  const knownHosts = path.join(sshDir, 'known_hosts')
+  // Non-default port is bracketed, which is how OpenSSH and russh both spell it.
+  const hostField = port === 22 ? hostname : `[${hostname}]:${port}`
+  const existing = await readFile(knownHosts, 'utf8').catch(() => '')
+  if (existing.includes(publicKey)) return knownHosts
+  await writeFile(knownHosts, `${existing}${hostField} ${publicKey}\n`, { mode: 0o600 })
+  return knownHosts
+}
+
 export async function seedSftpHost({ home, configDir, privateKeyPath, port, username, label }) {
   // `configDir` lets one sshd serve several per-spec profiles: each spec gets its own
   // throwaway home, so the row has to be written into each one. Without it the seeded
@@ -304,11 +337,16 @@ export async function startSeededSshd({ home, label = 'E2E Local' }) {
     username,
     label,
   })
+  // The app refuses an unknown host key, which is correct; the fixture's job is to make
+  // its throwaway key known inside the throwaway profile.
+  const knownHostsFile = await trustHostKey({ home, hostKeyPath: paths.hostKey, port })
 
   return {
     port,
     username,
     databaseFile,
+    knownHostsFile,
+    hostKeyPath: paths.hostKey,
     // Needed to seed additional per-spec profiles against this same sshd.
     userKeyPath: paths.userKey,
     async stop() {

@@ -205,6 +205,33 @@ export function binaryHasWebDriver(binaryPath) {
  * what makes all three agree. It is read only when the app is built with the `gui-e2e`
  * feature (see `db_recovery::config_root`).
  */
+/**
+ * Where the app's own `app_config_dir()` points inside a throwaway profile.
+ *
+ * ## Why this is per platform, and why the override was not enough
+ *
+ * `tauri-plugin-sql` resolves `sqlite:terminal.db` through Tauri's `app_config_dir()`;
+ * it never reads `TERMINAL_GUI_E2E_CONFIG_DIR`. The Rust side does read that override
+ * (`db_recovery::config_root`), so on macOS the two sides disagreed:
+ *
+ *     seeded   …/AppData/Roaming/com.baicie.termius/terminal.db   (1 host row)
+ *     opened   …/Library/Application Support/com.baicie.termius/terminal.db   (0 rows)
+ *
+ * The symptom was an empty Hosts page with no error, and six SFTP cases recorded
+ * NOT_RUN against a database the app had never looked at.
+ *
+ * Windows was "fixed" earlier because there `app_config_dir()` ignores `APPDATA` and
+ * honours the explicit override — which is exactly why this stayed hidden: the one
+ * platform where the override took effect is the one where it was tested.
+ */
+export function appConfigDir(home) {
+  if (IS_WINDOWS) return path.join(home, 'AppData/Roaming/com.baicie.termius')
+  if (process.platform === 'darwin') {
+    return path.join(home, 'Library/Application Support/com.baicie.termius')
+  }
+  return path.join(home, '.config/com.baicie.termius')
+}
+
 export function isolatedProfileEnv(home) {
   return {
     HOME: home,
@@ -214,7 +241,9 @@ export function isolatedProfileEnv(home) {
     XDG_CONFIG_HOME: path.join(home, '.config'),
     XDG_DATA_HOME: path.join(home, '.local/share'),
     XDG_CACHE_HOME: path.join(home, '.cache'),
-    // The one source both sides read on every platform.
-    TERMINAL_GUI_E2E_CONFIG_DIR: path.join(home, 'AppData/Roaming/com.baicie.termius'),
+    // Read by the Rust side (`db_recovery::config_root`), which is where the recovery
+    // machinery and the marker live. It is also the path `appConfigDir` returns, so a
+    // seeding caller cannot pick a different one by accident.
+    TERMINAL_GUI_E2E_CONFIG_DIR: appConfigDir(home),
   }
 }

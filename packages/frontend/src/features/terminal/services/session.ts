@@ -237,7 +237,19 @@ export class SessionService {
     host: SshPasswordOptions['host'],
     error: unknown,
   ): ConnectionResult {
-    const message = error instanceof Error ? error.message : String(error)
+    /*
+     * A rejected `invoke` is not always an `Error`.
+     *
+     * Tauri serialises a Rust command's error across the IPC boundary, and what
+     * arrives is a plain object for any error type that is not a string. `String()` on
+     * one produces `"[object Object]"`, which is what the SFTP dock showed its user:
+     * a connection that failed with no reason at all.
+     *
+     * Measured: the E2E dock reported `connect failed: "[object Object]"` for an sshd
+     * that answered the same key over the `sftp` client. The message was there; the
+     * formatting threw it away.
+     */
+    const message = describeInvokeError(error)
     void recordConnectionFailure(
       {
         id: host.id,
@@ -250,6 +262,35 @@ export class SessionService {
     )
     return { success: false, message }
   }
+}
+
+/**
+ * Turn whatever `invoke` rejected with into something a user can read.
+ *
+ * Prefers the shapes Rust actually sends — a string, an `Error`, or a tagged object
+ * such as `{ kind, message }` — and falls back to a JSON rendering rather than
+ * `"[object Object]"`, which is indistinguishable from "no reason given".
+ */
+export function describeInvokeError(error: unknown): string {
+  if (typeof error === 'string') return error
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error !== null) {
+    const record = error as Record<string, unknown>
+    for (const key of ['message', 'error', 'reason', 'detail']) {
+      const value = record[key]
+      if (typeof value === 'string' && value.length > 0) return value
+    }
+    try {
+      const json = JSON.stringify(error)
+      if (json && json !== '{}') return json
+    } catch {
+      // A circular or otherwise unserialisable error: fall through.
+    }
+    // An object with no usable field at all. Naming the situation beats `[object
+    // Object]`, which reads as if the failure had no cause.
+    return 'the connection failed without reporting a reason'
+  }
+  return String(error)
 }
 
 /** 会话服务单例 */

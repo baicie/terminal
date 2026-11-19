@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   createSshSessionPassword: vi.fn(),
   sftpConnect: vi.fn(),
   sftpList: vi.fn(),
+  sftpResolvePath: vi.fn(),
   sftpDelete: vi.fn(),
   sftpRename: vi.fn(),
   sftpMkdir: vi.fn(),
@@ -46,6 +47,7 @@ describe('useSftpRemote host isolation', () => {
       sessionId: host.id === 'host-a' ? 'sess-a' : 'sess-b',
     }))
     mocks.sftpConnect.mockResolvedValue({ success: true })
+    mocks.sftpResolvePath.mockResolvedValue('/home/u')
     mocks.sftpDelete.mockResolvedValue({ success: true })
     mocks.sftpRename.mockResolvedValue({ success: true })
     mocks.sftpMkdir.mockResolvedValue({ success: true })
@@ -183,8 +185,10 @@ describe('useSftpRemote host isolation', () => {
     })
 
     expect(mocks.sftpDelete).toHaveBeenCalledWith('sess-b', '/b.txt', false)
-    expect(mocks.sftpRename).toHaveBeenCalledWith('sess-b', '/b.txt', '/c.txt')
-    expect(mocks.sftpMkdir).toHaveBeenCalledWith('sess-b', '/dir')
+    expect(mocks.sftpRename).toHaveBeenCalledWith('sess-b', '/b.txt', '/home/u/c.txt')
+    // `mkdir` prefixes the resolved directory, not `/`: the dock now opens where the
+    // server puts the user, so a new folder goes next to their files.
+    expect(mocks.sftpMkdir).toHaveBeenCalledWith('sess-b', '/home/u/dir')
     expect(mocks.sftpDelete).not.toHaveBeenCalledWith('sess-a', expect.anything(), expect.anything())
   })
 })
