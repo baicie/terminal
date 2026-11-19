@@ -132,6 +132,15 @@ export function createSnippetDock(
   }
 
   const refresh = async (): Promise<void> => {
+    /*
+     * Refused at the door, not only on the way back.
+     *
+     * The checks after the await stop a *stale result* from being published, but they
+     * run after the read has already happened. Measured: two `refresh()` calls on a
+     * disposed handle still issued three loader calls — a disabled extension reading
+     * the database on behalf of a dock that no longer exists.
+     */
+    if (disposed) return
     // Captured before the await: this is the activation the result belongs to.
     const startedIn = generation
     try {

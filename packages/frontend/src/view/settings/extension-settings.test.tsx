@@ -14,7 +14,10 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/features/extensions/use-extension-runtime', () => ({
-  getExtensionRegistry: () => ({ list: mocks.list }),
+  getExtensionRegistry: () => ({
+    list: mocks.list,
+    cleanupProblemsFor: () => (mocks as unknown as { cleanupProblems?: string[] }).cleanupProblems ?? [],
+  }),
 }))
 
 function record(id: string, nameKey: string, status = 'registered') {
@@ -104,5 +107,30 @@ describe('extension settings', () => {
   it('states that extensions are off by default', () => {
     render(<ExtensionSettings enabled={[]} onChange={vi.fn()} />)
     expect(screen.getByText(/off until you turn them on/i)).toBeTruthy()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A cleanup failure must be visible where the extension is.
+//
+// A deactivation that reports success while a disposer threw is a leak the user cannot
+// otherwise see: the switch reads "off", the dock is gone, and a listener somewhere is
+// still attached.
+// ---------------------------------------------------------------------------
+
+describe('cleanup problems surface next to the extension', () => {
+  it('shows a message when the last settlement left cleanup failures', () => {
+    const registryModule = mocks as unknown as { cleanupProblems: string[] }
+    registryModule.cleanupProblems = ['dispose exploded']
+    render(
+      <ExtensionSettings enabled={[]} onChange={() => undefined} />,
+    )
+    expect(screen.getByRole('status').textContent).toMatch(/cleanup|nettoyage|清理/i)
+    registryModule.cleanupProblems = []
+  })
+
+  it('shows nothing when the last settlement was clean', () => {
+    render(<ExtensionSettings enabled={[]} onChange={() => undefined} />)
+    expect(screen.queryByRole('status')).toBeNull()
   })
 })

@@ -182,10 +182,31 @@ export function buildExtensionContext(input: {
   contributions: Contributions
   bucket: Disposable[]
   terminal: ExtensionContext['terminal'] | undefined
+  /**
+   * Whether this activation may still register.
+   *
+   * The budget only rejects the *await*; a factory that overruns keeps running and can
+   * reach its registrations afterwards. Measured: without this gate a timed-out factory
+   * still executed `commands.register(...)`, appending to a ledger the registry had
+   * already dropped — a resource no one would ever release.
+   *
+   * `record.generation` is what the gate reads, so a registration from a retired
+   * activation is refused rather than silently accepted.
+   */
+  isCurrent: () => boolean
 }): ExtensionContext {
   const { contributions, bucket } = input
   const record = input.record
   const declared = new Set<string>(record.manifest.capabilities)
+  /**
+   * Refuse a registration from an activation that is no longer current.
+   *
+   * Returning a no-op disposable rather than throwing: a late factory is already past
+   * the point where its error would be seen, and throwing inside an unobserved promise
+   * only produces an unhandled rejection.
+   */
+  const refuseIfRetired = (): Disposable | null =>
+    input.isCurrent() ? null : { dispose: () => undefined }
   return {
       extensionId: record.manifest.id,
       apiVersion: 1,
@@ -193,6 +214,8 @@ export function buildExtensionContext(input: {
       commands: {
         register: def => {
           requireCapability(declared, 'commands.register', record.manifest.id)
+          const refused = refuseIfRetired()
+          if (refused) return refused
           contributions.commands.set(def.id, def)
           return track(bucket, () => contributions.commands.delete(def.id))
         },
@@ -200,6 +223,8 @@ export function buildExtensionContext(input: {
       menus: {
         register: def => {
           requireCapability(declared, 'menus.register', record.manifest.id)
+          const refused = refuseIfRetired()
+          if (refused) return refused
           contributions.menus.push(def)
           return track(bucket, () => {
             const index = contributions.menus.indexOf(def)
@@ -210,6 +235,8 @@ export function buildExtensionContext(input: {
       views: {
         register: def => {
           requireCapability(declared, 'ui.right-dock', record.manifest.id)
+          const refused = refuseIfRetired()
+          if (refused) return refused
           contributions.views.set(def.id, def)
           return track(bucket, () => contributions.views.delete(def.id))
         },
@@ -222,6 +249,10 @@ export function buildExtensionContext(input: {
           // the whole platform is reviewed against; a registration that ignores it
           // makes the manifest decorative.
           requireCapability(declared, eventCapability(event), record.manifest.id)
+          // A retired activation must not subscribe either: its handler would be
+          // invoked for an extension that is no longer running.
+          const refused = refuseIfRetired()
+          if (refused) return refused
           addHandler(contributions, event, handler)
           return track(bucket, () => {
             contributions.events.get(event)?.delete(handler)
