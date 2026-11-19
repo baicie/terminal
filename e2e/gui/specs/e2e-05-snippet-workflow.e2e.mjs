@@ -70,6 +70,29 @@ async function runPaletteAction(title) {
   return { clicked, labels, waitedMs: Date.now() - started }
 }
 
+/**
+ * Flip an extension switch to a target state and wait for it to settle.
+ *
+ * A real WebDriver click on the trigger — a script `.click()` does not switch a Radix
+ * control, which this suite already learned twice. Returns the resulting `data-state`.
+ */
+async function toggleSwitch(selector, target) {
+  const deadline = 10_000
+  const started = Date.now()
+  let state = null
+  const wanted = target === 'on' ? ['checked', 'true'] : ['unchecked', 'false']
+  while (Date.now() - started < deadline) {
+    state = await browser.execute(sel => {
+      const el = document.querySelector(sel)
+      return el ? el.getAttribute('data-state') ?? el.getAttribute('aria-checked') : null
+    }, selector)
+    if (state && wanted.includes(state)) return state
+    await browser.$(selector).click()
+    await browser.pause(600)
+  }
+  return state
+}
+
 describe('a snippet survives the round trip a user makes', () => {
   const notes = []
   const failures = []
@@ -180,6 +203,31 @@ describe('a snippet survives the round trip a user makes', () => {
       return probe?.extensionSnapshot ? probe.extensionSnapshot() : { unsupported: true }
     })
     notes.push(`runtime after enabling: ${JSON.stringify(runtime)}`)
+    /*
+     * Assert the registry, not the switch.
+     *
+     * The first version only recorded this snapshot. It was in the evidence file and
+     * looked like a check, but nothing compared it — so on a CI run where the switch
+     * flipped and the registry stayed empty, this case reported ✓ and the next three
+     * failed with "the terminal context menu offers no extension entry" and a dock
+     * that still said "turned off".
+     *
+     * The switch rendering "checked" while `registry.list()` disagrees is the defect
+     * this spec exists to catch, and recording it without asserting it made the spec
+     * blind to exactly that.
+     */
+    check(
+      Array.isArray(runtime?.active) && runtime.active.includes('snippet-dock'),
+      `the extension is not active after enabling it: ${JSON.stringify(runtime)}`,
+    )
+    check(
+      Array.isArray(runtime?.menus) && runtime.menus.includes('snippet-dock.capture-selection'),
+      `no terminal.context menu was contributed: ${JSON.stringify(runtime)}`,
+    )
+    check(
+      runtime?.snippetDockHandle === true,
+      `the dock has no handle, so it renders its "turned off" state: ${JSON.stringify(runtime)}`,
+    )
 
     await goTo('/terminal')
     await browser.pause(500)
@@ -215,6 +263,27 @@ describe('a snippet survives the round trip a user makes', () => {
     check(opened.clicked, `the snippet dock command is missing: ${JSON.stringify(opened)}`)
     const dockPresent = await browser.$('[data-testid="snippet-dock"]').isExisting()
     check(dockPresent, 'the dock reported open but rendered no body')
+
+    /*
+     * The registry at the moment of the capture, not only back on the Settings page.
+     *
+     * The enabling case asserts the registry right after the switch flips, and that
+     * passed on a run where this case failed with "the terminal context menu offers no
+     * extension entry" — the menu's items come from the same registry, so either it
+     * lost the activation between the two cases or the menu rendered from something
+     * else. Recording it here makes those two hypotheses distinguishable in the
+     * evidence instead of leaving a plausible story in their place.
+     */
+    const runtimeHere = await browser.execute(() => {
+      const probe = window.__terminalGuiE2E
+      return probe?.extensionSnapshot ? probe.extensionSnapshot() : { unsupported: true }
+    })
+    notes.push(`runtime before capture: ${JSON.stringify(runtimeHere)}`)
+    check(
+      Array.isArray(runtimeHere?.menus) &&
+        runtimeHere.menus.includes('snippet-dock.capture-selection'),
+      `the extension lost its contribution before the capture: ${JSON.stringify(runtimeHere)}`,
+    )
 
     // 3. Capture through the **terminal context menu** — the surface the extension
     //    registers into. Before this batch the contribution was stored and never
@@ -407,6 +476,79 @@ describe('a snippet survives the round trip a user makes', () => {
     )
   })
 
+  /*
+   * Turning it off and on again, through the switch a user actually clicks.
+   *
+   * Task E names this sequence explicitly, and it is where two defects lived at once:
+   * the toggle applied the new list without persisting it, so anything that re-applied
+   * the stored list put the registry back to the old value with the switch still
+   * rendering "on". A case that only ever turns the switch on cannot see that.
+   */
+  it('survives being switched off and on again, and the choice is persisted', async () => {
+    await goTo('/settings')
+    await browser.$('[role="tablist"]').waitForExist({ timeout: 20_000 })
+    const tabIndex = await browser.execute(sel => {
+      const tabs = Array.from(document.querySelectorAll(sel))
+      return tabs.findIndex(tab => /extension/i.test(tab.textContent ?? ''))
+    }, '[role="tab"]')
+    check(tabIndex >= 0, 'no Extensions tab in Settings')
+    await browser.$$('[role="tab"]')[tabIndex].click()
+    await browser.pause(800)
+
+    const switchSelector = '#extension-snippet-dock'
+    await browser.$(switchSelector).waitForExist({ timeout: 15_000 })
+
+    const off = await toggleSwitch(switchSelector, 'off')
+    notes.push(`switch off: ${JSON.stringify(off)}`)
+    check(off === 'unchecked', `the extension did not turn off: switch reports ${JSON.stringify(off)}`)
+    const runtimeOff = await browser.execute(
+      () => window.__terminalGuiE2E?.extensionSnapshot?.() ?? {},
+    )
+    notes.push(`runtime while off: ${JSON.stringify(runtimeOff)}`)
+    check(
+      !(Array.isArray(runtimeOff?.active) && runtimeOff.active.includes('snippet-dock')),
+      `the switch is off but the extension is still active: ${JSON.stringify(runtimeOff)}`,
+    )
+
+    const on = await toggleSwitch(switchSelector, 'on')
+    notes.push(`switch on: ${JSON.stringify(on)}`)
+    check(on === 'checked', `the extension did not turn back on: switch reports ${JSON.stringify(on)}`)
+
+    /*
+     * The choice must be in SQLite, not only in the registry.
+     *
+     * This is the half the old toggle was missing, and reading the registry would not
+     * reveal it: the registry was correct right up until something re-applied the
+     * stored (stale) list. The app setting is the durable record.
+     */
+    const stored = await browser.executeAsync(async done => {
+      const probe = window.__terminalGuiE2E
+      if (!probe?.readSetting) {
+        done({ ok: false, reason: 'the GUI probe cannot read app settings' })
+        return
+      }
+      done(await probe.readSetting('app_settings'))
+    })
+    const ids = stored?.value?.enabledExtensions
+    notes.push(`stored enabledExtensions: ${JSON.stringify(ids)}`)
+    check(
+      Array.isArray(ids) && ids.includes('snippet-dock'),
+      `the switch is on but app_settings does not list it: ${JSON.stringify(stored)}`,
+    )
+
+    await goTo('/terminal')
+    await browser.pause(600)
+    const runtimeBack = await browser.execute(
+      () => window.__terminalGuiE2E?.extensionSnapshot?.() ?? {},
+    )
+    notes.push(`runtime after re-enable: ${JSON.stringify(runtimeBack)}`)
+    check(
+      Array.isArray(runtimeBack?.menus) &&
+        runtimeBack.menus.includes('snippet-dock.capture-selection'),
+      `the extension lost its contribution after a disable/enable cycle: ${JSON.stringify(runtimeBack)}`,
+    )
+  })
+
   it('closing the dock leaves the same PTY able to run a command', async () => {
     // The design's rule — closing a dock is a presentation change — verified by
     // running a command afterwards and reading its output back, not by checking that
@@ -438,15 +580,7 @@ describe('a snippet survives the round trip a user makes', () => {
   })
 
   after(async () => {
-    const GAPS = [
-      {
-        id: 'extension-enable-toggle',
-        reason:
-          'disabling and re-enabling the extension from Settings is not driven here; ' +
-          'the dock is opened through the palette in both cases',
-        needs: 'a Settings-panel driver for the extensions tab',
-      },
-    ]
+    const GAPS = []
     for (const gap of GAPS) notes.push(`NOT_RUN ${gap.id}: ${gap.reason} (needs ${gap.needs})`)
 
     const notRunCount = notes.filter(note => note.includes('NOT_RUN')).length

@@ -83,6 +83,7 @@ interface ProbeWindow extends Window {
     selectTextInActiveTerminal(text: string): { ok: boolean; reason?: string; selected?: string }
     extensionSnapshot(): unknown
     findSnippetByName(name: string): Promise<unknown>
+    readSetting(key: string): Promise<unknown>
   }
 }
 
@@ -190,6 +191,24 @@ export function installGuiE2EProbe(terminal: ProbeTerminal): () => void {
       if (typeof reader !== 'function') return { ok: false, reason: 'probe not installed' }
       try {
         return { ok: true, rows: await reader(name) }
+      } catch (error) {
+        return { ok: false, reason: String(error) }
+      }
+    },
+
+    /**
+     * One `app_settings` row, parsed.
+     *
+     * The registry answers "is it running now"; this answers "is the choice stored",
+     * and a toggle that applies without persisting differs between them.
+     */
+    async readSetting(key: string) {
+      const reader = (globalThis as {
+        __terminalSettingsProbe?: (key: string) => Promise<unknown>
+      }).__terminalSettingsProbe
+      if (typeof reader !== 'function') return { ok: false, reason: 'probe not installed' }
+      try {
+        return { ok: true, value: await reader(key) }
       } catch (error) {
         return { ok: false, reason: String(error) }
       }

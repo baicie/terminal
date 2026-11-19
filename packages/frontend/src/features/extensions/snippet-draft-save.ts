@@ -114,4 +114,30 @@ if (import.meta.env.VITE_TERMINAL_GUI_E2E === '1') {
       const db = await getDb()
       return db.select('SELECT name, script FROM snippets WHERE name = ?', [name])
     }
+  /*
+   * The durable half of an extension toggle.
+   *
+   * A spec that only asks the registry whether an extension is active cannot see the
+   * defect this exists for: the registry was correct until something re-applied the
+   * *stored* list, which was stale because the toggle never wrote it. The app setting
+   * is what survives a re-apply, so it is what "the choice was persisted" means.
+   *
+   * Read-only, and behind the same build flag as every other probe.
+   */
+  ;(globalThis as { __terminalSettingsProbe?: (key: string) => Promise<unknown> })
+    .__terminalSettingsProbe = async (key: string) => {
+      const { getDb } = await import('@/service/database/connection')
+      const db = await getDb()
+      const rows = await db.select<Array<{ value: string }>>(
+        'SELECT value FROM settings WHERE key = ?',
+        [key],
+      )
+      const raw = rows[0]?.value
+      if (typeof raw !== 'string') return null
+      try {
+        return JSON.parse(raw) as unknown
+      } catch {
+        return null
+      }
+    }
 }

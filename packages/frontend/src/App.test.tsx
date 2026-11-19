@@ -69,6 +69,9 @@ vi.mock('./service/database', () => ({
 }))
 vi.mock('@/features/extensions/apply-enabled-extensions', () => ({
   applyEnabledExtensions: mocks.applyEnabledExtensions,
+  // Startup claims a sequence before reading, so the list it applies later can be
+  // recognised as stale if the user changed the switches in the meantime.
+  nextExtensionListSequence: () => 1,
 }))
 vi.mock('./service/notifications', () => ({ applyNotificationPrefs: vi.fn() }))
 vi.mock('./service/window-ux', () => ({ syncCloseToTray: vi.fn() }))
@@ -133,7 +136,7 @@ describe('startup terminal fallback', () => {
       expect(
         mocks.applyEnabledExtensions,
         'startup must apply the saved list, or the persisted setting is never read',
-      ).toHaveBeenCalledWith(['snippet-dock'])
+      ).toHaveBeenCalledWith(expect.objectContaining({ ids: ['snippet-dock'] }))
     })
   })
 

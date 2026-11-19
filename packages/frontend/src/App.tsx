@@ -8,7 +8,10 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import locales from './locales'
 import { router } from './router'
-import { applyEnabledExtensions } from '@/features/extensions/apply-enabled-extensions'
+import {
+  applyEnabledExtensions,
+  nextExtensionListSequence,
+} from '@/features/extensions/apply-enabled-extensions'
 import { useAppStore } from './store/app'
 import { useTeamStore } from './store/team'
 import { getAppSettings } from './service/database'
@@ -66,6 +69,16 @@ export default function App({ startupTerminalFallbackAt }: AppProps) {
         toast.error(t('startup.settingsRestoreFailed'))
       }
       try {
+        /*
+         * Claimed *before* the read, not when the apply happens.
+         *
+         * Everything between here and the `applyEnabledExtensions` below awaits, so the
+         * list this reads is a snapshot from earlier in the startup. If the user flips
+         * a switch while those awaits are outstanding, their write is newer than this
+         * one and this apply must lose — otherwise startup deactivates the extension
+         * the user just enabled, with the switch still rendering "on".
+         */
+        const extensionListSequence = nextExtensionListSequence()
         const s = await getAppSettings()
         applyNotificationPrefs({
           nativeNotifications: s.nativeNotifications ?? true,
@@ -84,7 +97,10 @@ export default function App({ startupTerminalFallbackAt }: AppProps) {
          * an apply, not an enable-everything: `applyExtensionSettings` enables what the
          * list names and deactivates anything else that is running.
          */
-        await applyEnabledExtensions(s.enabledExtensions ?? [])
+        await applyEnabledExtensions({
+          ids: s.enabledExtensions ?? [],
+          sequence: extensionListSequence,
+        })
       } catch (e) {
         console.warn('Failed to apply desktop UX prefs on startup:', e)
       }

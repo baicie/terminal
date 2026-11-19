@@ -26,7 +26,11 @@ import { TerminalSettings } from './terminal-settings'
 import { ExtensionSettings } from './extension-settings'
 import { ModelProfileEditor } from './ai-profile-editor'
 import { useAiRuntime } from '@/features/ai/use-ai-runtime'
-import { applyEnabledExtensions } from '@/features/extensions/apply-enabled-extensions'
+import {
+  applyEnabledExtensions,
+  nextExtensionListSequence,
+} from '@/features/extensions/apply-enabled-extensions'
+import { persistAndApplyExtensionToggle } from './persist-extension-toggle'
 
 const SettingsView: React.FC = () => {
   const { t } = useTranslation()
@@ -78,6 +82,9 @@ const SettingsView: React.FC = () => {
     if (!settings || saving) return
     setSaving(true)
     try {
+      // Claimed before the write: the page's `settings` was read when it loaded, so
+      // this list describes that moment, not the one the write lands in.
+      const extensionListSequence = nextExtensionListSequence()
       await saveAppSettings(settings)
       setSavedSettings(settings)
       app.setTheme(settings.theme)
@@ -85,7 +92,10 @@ const SettingsView: React.FC = () => {
       await i18nCore.changeLanguage(settings.language)
       // A saved switch that did not take effect would read as "on" while nothing
       // runs. The registry is told at the same moment the setting is written.
-      await applyEnabledExtensions(settings.enabledExtensions ?? [])
+      await applyEnabledExtensions({
+        ids: settings.enabledExtensions ?? [],
+        sequence: extensionListSequence,
+      })
       toast.success(t('settings.saved'))
     } catch (error) {
       console.error('Failed to save settings:', error)
@@ -123,16 +133,18 @@ const SettingsView: React.FC = () => {
      * worse than one that does not appear to apply at all.
      */
     if (key === 'enabledExtensions') {
-      void applyEnabledExtensions(value as string[])
+      void persistAndApplyExtensionToggle(value as string[], {
+        onSaved: saved =>
+          setSavedSettings(current =>
+            current === null ? current : { ...current, enabledExtensions: saved },
+          ),
+        onError: error => {
+          console.error('Failed to persist extension settings:', error)
+          toast.error(t('settings.saveFailed'))
+        },
+      })
     }
   }
-
-  /**
-   * Make the registry match the saved list.
-   *
-   * Enables what is newly on and disables what is no longer listed, so a save is the
-   * single action that changes what runs.
-   */
 
   if (status === 'loading') {
     return (

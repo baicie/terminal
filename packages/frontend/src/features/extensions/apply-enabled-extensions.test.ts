@@ -16,7 +16,10 @@ vi.mock('./use-extension-runtime', () => ({
   getExtensionRegistry: () => registry,
 }))
 
-import { applyEnabledExtensions } from './apply-enabled-extensions'
+import {
+  applyEnabledExtensions,
+  nextExtensionListSequence,
+} from './apply-enabled-extensions'
 
 function record(id: string, status: 'active' | 'disabled' | 'failed') {
   return { manifest: { id }, status }
@@ -68,5 +71,43 @@ describe('applying the persisted extension list', () => {
     registry.list.mockReturnValue([record('snippet-dock', 'disabled')])
     await applyEnabledExtensions([])
     expect(registry.enable).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A list read earlier must not undo a choice made later.
+//
+// Startup reads `app_settings`, then awaits several other preferences, then applies.
+// Its list describes the moment it was read. Measured in a real WebView: the Settings
+// switch flipped, the extension was active, and a few seconds later the registry was
+// empty again with the switch still rendering "on" — a stale list arriving late is the
+// only caller that deactivates without anyone clicking anything.
+// ---------------------------------------------------------------------------
+
+describe('a stale list does not undo a newer choice', () => {
+  it('refuses a list whose sequence was taken before a newer one', async () => {
+    registry.list.mockReturnValue([record('snippet-dock', 'active')])
+
+    // Startup takes its sequence, then the user toggles the extension on, writing a
+    // newer list. Startup's apply finally runs with the old (empty) list.
+    const startupSequence = nextExtensionListSequence()
+    await applyEnabledExtensions(['snippet-dock'])
+    registry.list.mockReturnValue([record('snippet-dock', 'active')])
+
+    registry.deactivate.mockClear()
+    await applyEnabledExtensions({ ids: [], sequence: startupSequence })
+
+    expect(
+      registry.deactivate,
+      'a list read before the user changed the switches must not deactivate what they enabled',
+    ).not.toHaveBeenCalled()
+  })
+
+  it('still applies a list that is current or newer', async () => {
+    registry.list.mockReturnValue([record('snippet-dock', 'active')])
+    const sequence = nextExtensionListSequence()
+    registry.deactivate.mockClear()
+    await applyEnabledExtensions({ ids: [], sequence })
+    expect(registry.deactivate).toHaveBeenCalledWith('snippet-dock')
   })
 })
