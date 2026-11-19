@@ -98,7 +98,12 @@ export const PROBE_COMMANDS = {
   darwin: [
     'echo "os=$(uname -s)"',
     'echo "load=$(sysctl -n vm.loadavg 2>/dev/null | tr -d "{}" | xargs)"',
-    'echo "uptime=$(sysctl -n kern.boottime 2>/dev/null | sed \'s/.*sec = \\([0-9]*\\).*/\\1/\')"',
+    // The old expression began with `.*`, which is greedy and matched through to the
+    // *last* `= ` in `kern.boottime` — so it returned `usec` (761765) instead of `sec`.
+    // Measured on macOS: `{ sec = 1795089539, usec = 761765 }` became `761765`, the
+    // panel reported `now - 761765`, and the user saw `Uptime 20767d 18h`.
+    // `[^0-9]*` cannot cross a digit, so the match now stops at the first `sec = `.
+    'echo "uptime=$(sysctl -n kern.boottime 2>/dev/null | sed \'s/[^0-9]*sec = \\([0-9]*\\).*/\\1/\')"',
     'echo "mem=$(vm_stat 2>/dev/null | head -3 | tr "\\n" " ")"',
     'echo "disk=$(df -k / 2>/dev/null | awk \'NR==2 {print $2*1024" "$3*1024}\')"',
   ].join('; '),
