@@ -26,6 +26,10 @@ function handleWith(state: SnippetDockState, overrides: Partial<SnippetDockHandl
       current = { ...current, pendingDraft: null }
       for (const listener of listeners) listener()
     }),
+    dispose: vi.fn(() => {
+      listeners.clear()
+    }),
+    disposed: false,
     ...overrides,
   }
 }

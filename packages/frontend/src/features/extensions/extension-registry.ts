@@ -20,6 +20,8 @@ import {
   type ExtensionCommand,
   type ExtensionMenuItem,
 } from './extension-registry-types'
+import { CleanupLedger } from './cleanup-ledger'
+import { disposeAll } from './dispose-all'
 import type { Disposable, SafeEvent } from './extension-types'
 import {
   currentExtensionPlatform,
@@ -34,6 +36,8 @@ export class ExtensionRegistry {
   private readonly records = new Map<string, ExtensionRecord>()
   private readonly contributions = new Map<string, Contributions>()
   private readonly disposables = new Map<string, Disposable[]>()
+  /** Disposers that threw during the last settlement of each extension. */
+  private readonly cleanupProblems = new CleanupLedger()
   private readonly factories = new Map<string, (context: ExtensionContext) => Disposable | void>()
   private readonly platform: ExtensionPlatform
   private gateway: CapabilityGateway | null = null
@@ -181,11 +185,9 @@ export class ExtensionRegistry {
     const record = this.records.get(extensionId)
     if (!record) return
     if (record.status === 'registered' || record.status === 'disabled') return
-
     record.status = 'deactivating'
     record.generation += 1
     await this.rollback(extensionId, this.disposables.get(extensionId) ?? [])
-
     this.gateway?.clearApprovalsFor(extensionId)
     record.status = 'disabled'
     this.options.setEnabled?.(extensionId, false)
@@ -195,21 +197,15 @@ export class ExtensionRegistry {
   /**
    * Emit a safe event to every active subscriber. A throwing handler is contained.
    *
-   * ## Why the generation is captured here
-   *
    * A handler is a promise, and an extension can be deactivated and re-enabled while
-   * one is still running. `fail()` marks whatever activation is *current*, so without
-   * the check below a rejection from the retired activation lands on the new one:
+   * one is still running:
    *
    *     activate (gen 1) → handler starts → deactivate → enable (gen 2)
    *                                       ↘ rejects → gen 2 marked FAILED
    *
-   * The user then sees an extension that failed to start, blamed on an error produced
-   * by a version of it that is no longer running — and the capability gate refuses the
-   * new activation because the record says `failed`.
-   *
    * A rejection is only the extension's fault if the activation that registered the
-   * handler is still the current one. Otherwise it is the noise of a teardown.
+   * handler is still the current one; otherwise it is the noise of a teardown, and
+   * blaming the new activation disables a working extension.
    */
   emit(event: SafeEvent): void {
     for (const [extensionId, record] of this.records) {
@@ -220,11 +216,8 @@ export class ExtensionRegistry {
       const generation = record.generation
       const blame = (error: unknown) => {
         const current = this.records.get(extensionId)
-        // The activation that registered this handler has been replaced or retired.
-        // Its failures are not the live extension's, and reporting them as such is
-        // worse than dropping them: it disables a working extension.
         if (!current || current.generation !== generation) return
-        this.fail(extensionId, error)
+        this.fail(extensionId, error, generation)
       }
       for (const handler of handlers) {
         try {
@@ -270,31 +263,38 @@ export class ExtensionRegistry {
     return result
   }
   /**
-   * Mark an extension failed without going through deactivate.
+   * Mark failed **and settle what it still holds**.
    *
-   * Used when a callback throws: it still holds registrations, and leaving it
-   * `active` would keep invoking a handler that just failed.
+   * Leaving it `active` keeps invoking a handler that just failed; leaving its
+   * registrations in place is the other half of the same mistake — `status` says
+   * `failed` while its commands, menus and views are still live.
+   *
+   * Guarded by generation: a failure from an activation that is no longer current must
+   * not tear down its replacement. That is the same rule `emit` applies to a late
+   * rejection.
    */
-  private fail(extensionId: string, error: unknown): void {
+  private fail(extensionId: string, error: unknown, generation?: number): void {
     const record = this.records.get(extensionId)
     if (!record) return
+    if (generation !== undefined && record.generation !== generation) return
     record.status = 'failed'
     record.failure = error instanceof Error ? error.message : String(error)
+    // Cannot await (the caller may be a sync emitter). `rollback` records failures.
+    void this.rollback(extensionId, this.disposables.get(extensionId) ?? [])
     this.options.onChanged?.()
   }
 
+  /** Clear the ledger and remember which disposers threw; attempting is `disposeAll`'s job. */
   private async rollback(extensionId: string, bucket: Disposable[]): Promise<void> {
-    // Reverse order: a later registration may depend on an earlier one.
-    for (const disposable of [...bucket].reverse()) {
-      try {
-        await disposable.dispose()
-      } catch {
-        // One failed cleanup must not strand the rest. The extension is going down
-        // either way, and leaving the remaining disposables unrun leaks more.
-      }
-    }
+    const { problems } = await disposeAll(bucket)
     bucket.length = 0
     this.contributions.delete(extensionId)
     this.disposables.delete(extensionId)
+    this.cleanupProblems.record(extensionId, problems)
+  }
+
+  /** Cleanup failures from the last settlement, if any. */
+  cleanupProblemsFor(extensionId: string): readonly string[] {
+    return this.cleanupProblems.get(extensionId)
   }
 }

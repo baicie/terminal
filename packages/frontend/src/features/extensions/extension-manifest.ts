@@ -180,12 +180,20 @@ export function supportsPlatform(
  * outside a Tauri host — the same reason the credential registry takes its provider
  * as an argument. `linux` is the fallback: an unrecognised platform is not macOS or
  * Windows, and guessing one of those would enable extensions that cannot work.
+ *
+ * ## Why `darwin` counts as macOS
+ *
+ * It is the platform token macOS user agents actually carry — jsdom sends
+ * `Mozilla/5.0 (darwin) …`, and WebKit on macOS does the same. Matching only `mac`
+ * meant a macOS host reported `linux`, so an extension declaring `platforms: ['macos']`
+ * was refused activation with `supportsPlatform` false and no failure to show for it.
+ * Measured: the same manifest returned `enabled: false` under jsdom.
  */
 export function currentExtensionPlatform(
   userAgent: string = typeof navigator === 'undefined' ? '' : navigator.userAgent,
 ): ExtensionPlatform {
   const agent = userAgent.toLowerCase()
-  if (agent.includes('mac')) return 'macos'
+  if (agent.includes('mac') || agent.includes('darwin')) return 'macos'
   if (agent.includes('win')) return 'windows'
   return 'linux'
 }
