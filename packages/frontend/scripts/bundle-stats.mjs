@@ -165,7 +165,14 @@ const budgets = {
   //
   // The 0.5 KB is deliberately not rounded up to 1 KB: a ceiling that grows by round
   // numbers stops recording how much was actually added.
-  totalGzip: 652.5 * 1024,
+  // 653 KB (was 652.5 KB): the extension concurrency round (PR #117) added a cleanup
+  // indicator to the settings panel plus three locale strings. Measured 652.75 KB
+  // against the 652.50 KB ceiling: +0.25 KB, all of it the diagnostic line and its
+  // copy — no dependency, nothing on the initial path (initial is unchanged at 131 KB).
+  //
+  // The baseline was measured at `47426c5` before raising this: 652.30 KB, i.e. this
+  // round accounts for the whole difference rather than inheriting headroom.
+  totalGzip: 653 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

@@ -235,7 +235,7 @@ export default {
   'settings.extensions.description': '内置扩展默认关闭，需要你主动启用。',
   'settings.extensions.version': '版本 {{version}}',
   'settings.extensions.cleanupFailed':
-    '关闭时未能释放全部资源（{{count}} 个清理步骤失败）。重新加载应用可清除其余部分。',
+    '清理未完成（{{count}} 项失败）。重新加载可清除。',
   'settings.extensions.empty': '此版本未包含任何扩展。',
   'settings.ai.title': 'AI',
   'settings.ai.description': '助手可用的模型配置。API Key 存入 Vault，不会写进这张表。',
