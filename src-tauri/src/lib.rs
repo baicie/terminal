@@ -79,8 +79,7 @@ use serial::{
 };
 use sftp::{
     sftp_cancel_transfer, sftp_connect, sftp_delete, sftp_download, sftp_list, sftp_local_checksum,
-    sftp_resolve_path,
-    sftp_mkdir, sftp_remote_checksum, sftp_rename, sftp_upload,
+    sftp_mkdir, sftp_remote_checksum, sftp_rename, sftp_resolve_path, sftp_upload,
 };
 use shell_interaction_probe::{shell_probe_config, shell_probe_result, ShellProbeState};
 use ssh_host_key::{ssh_host_key_learn, ssh_host_key_probe, ssh_host_key_probe_via_jump};
