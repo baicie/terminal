@@ -22,9 +22,9 @@ vi.mock('@/service/database/snippets', () => ({
   getSnippets: vi.fn(async () => []),
 }))
 
-const { getExtensionRegistry, __resetExtensionRegistryForTests } = await import(
-  './use-extension-runtime'
-)
+const { getExtensionRegistry, __resetExtensionRegistryForTests, subscribeExtensionActivations } =
+  await import('./use-extension-runtime')
+const { applyEnabledExtensions } = await import('./apply-enabled-extensions')
 
 /** Reach the gateway the runtime attached — the same object extensions receive. */
 function attachedGateway() {
@@ -107,5 +107,49 @@ describe('the gateway sees a selection only when two sources agree', () => {
     await expect(
       attachedGateway().readSelectedText('snippet-dock', generation),
     ).rejects.toMatchObject({ denial: 'stale-generation' })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Every activation path notifies the subscribers.
+//
+// The Settings switch does not call `useExtensionRuntime().enable`. It calls
+// `applyEnabledExtensions`, which drives `registry.enable()` directly. A notify
+// placed in the hook's own `enable` therefore never fired on the one path the user
+// actually takes: measured in a real WebView, the switch flipped, the registry
+// activated, and the dock still rendered "turned off" while the terminal's context
+// menu still had no extension entry.
+//
+// This test uses the real registry and the real `applyEnabledExtensions` — the mocks
+// in `apply-enabled-extensions.test.ts` cannot see this, because they replace the
+// module the notify lives in.
+// ---------------------------------------------------------------------------
+
+describe('the registry notifies subscribers however it was activated', () => {
+  it('fires for a direct registry.enable, which is what applyEnabledExtensions calls', async () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeExtensionActivations(listener)
+    await applyEnabledExtensions(['snippet-dock'])
+    unsubscribe()
+    expect(
+      listener,
+      'the Settings switch activates through applyEnabledExtensions, not through the hook',
+    ).toHaveBeenCalled()
+  })
+
+  it('fires for deactivation too', async () => {
+    await applyEnabledExtensions(['snippet-dock'])
+    const listener = vi.fn()
+    const unsubscribe = subscribeExtensionActivations(listener)
+    await applyEnabledExtensions([])
+    unsubscribe()
+    expect(listener).toHaveBeenCalled()
+  })
+
+  it('stops calling a listener that unsubscribed', async () => {
+    const listener = vi.fn()
+    subscribeExtensionActivations(listener)()
+    await applyEnabledExtensions(['snippet-dock'])
+    expect(listener).not.toHaveBeenCalled()
   })
 })

@@ -9,17 +9,38 @@
  * selected, a user had nothing to click. The dock's whole workflow was unreachable
  * through the surface it was designed for.
  *
- * Read on open rather than subscribed: a menu is built fresh each time it appears, and
- * a subscription would re-render the terminal tree every time an extension activates.
+ * ## Why it subscribes rather than reading once
+ *
+ * The items are read from the registry during render, which is correct on its own. But
+ * a menu that is already mounted has no reason to re-render when an extension
+ * activates, and the only thing that settles the question is a measurement: the most
+ * direct fix for the observed failure was to notify every activation, so this component
+ * reacts however the extension was enabled. See the comment on the subscription below.
  */
 
 import { Puzzle } from 'lucide-react'
+import { useEffect, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu'
-import { getExtensionRegistry } from '@/features/extensions/use-extension-runtime'
+import {
+  getExtensionRegistry,
+  subscribeExtensionActivations,
+} from '@/features/extensions/use-extension-runtime'
 
 export function ExtensionMenuItems() {
   const { t } = useTranslation()
+  /*
+   * Re-render when an extension is enabled or disabled.
+   *
+   * The items below are read from the registry during render. Measured on a real
+   * WebView run: `menusFor()` returned the entry, the probe agreed the extension was
+   * active, and the menu offered only Copy / Paste / Select All / Clear / Find / Zoom —
+   * the snippet workflow was unreachable through the surface it registers for. Nothing
+   * re-rendered this component after the activation, so subscribing to the registry's
+   * change notification is what makes the entry appear without a remount.
+   */
+  const [, rerender] = useReducer((value: number) => value + 1, 0)
+  useEffect(() => subscribeExtensionActivations(rerender), [])
   const items = (() => {
     try {
       const registry = getExtensionRegistry()

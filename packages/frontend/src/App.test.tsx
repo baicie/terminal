@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => ({
     addTab: vi.fn(),
   },
   hostState: { hosts: [] as Array<{ id: string }> },
+  getAppSettings: vi.fn(),
+  applyEnabledExtensions: vi.fn(),
 }))
 
 vi.mock('react-i18next', () => ({
@@ -63,7 +65,13 @@ vi.mock('./store/host', () => ({
   useHostStore: { getState: () => mocks.hostState },
 }))
 vi.mock('./service/database', () => ({
-  getAppSettings: vi.fn().mockResolvedValue({}),
+  getAppSettings: mocks.getAppSettings,
+}))
+vi.mock('@/features/extensions/apply-enabled-extensions', () => ({
+  applyEnabledExtensions: mocks.applyEnabledExtensions,
+  // Startup claims a sequence before reading, so the list it applies later can be
+  // recognised as stale if the user changed the switches in the meantime.
+  nextExtensionListSequence: () => 1,
 }))
 vi.mock('./service/notifications', () => ({ applyNotificationPrefs: vi.fn() }))
 vi.mock('./service/window-ux', () => ({ syncCloseToTray: vi.fn() }))
@@ -85,6 +93,8 @@ beforeEach(() => {
   })
   mocks.hydrateFromDatabase.mockResolvedValue(undefined)
   mocks.initializeTeam.mockResolvedValue(undefined)
+  mocks.getAppSettings.mockResolvedValue({})
+  mocks.applyEnabledExtensions.mockResolvedValue(undefined)
   mocks.startWorkspaceRecovery.mockResolvedValue({
     flush: vi.fn(),
     dispose: mocks.disposeRecovery,
@@ -107,6 +117,29 @@ it('starts workspace recovery with the app and disposes it on unmount', async ()
 })
 
 describe('startup terminal fallback', () => {
+  it('applies the extensions the previous session left enabled', async () => {
+    /*
+     * `enabledExtensions` is persisted in `app_settings`. Before this, it was applied
+     * only while the Settings page was open, so a user who enabled an extension, quit
+     * and relaunched found the switch still on and the extension still off: stored and
+     * never read.
+     *
+     * This asserts the *call*, not the effect — the effect is `applyEnabledExtensions`'s
+     * own test. What is being pinned here is that startup reaches it at all, because a
+     * correct function nobody calls is the exact failure this round kept finding.
+     */
+    mocks.getAppSettings.mockResolvedValue({ enabledExtensions: ['snippet-dock'] })
+
+    render(<App />)
+
+    await vi.waitFor(() => {
+      expect(
+        mocks.applyEnabledExtensions,
+        'startup must apply the saved list, or the persisted setting is never read',
+      ).toHaveBeenCalledWith(expect.objectContaining({ ids: ['snippet-dock'] }))
+    })
+  })
+
   it('opens a local terminal when recovery misses the startup deadline', async () => {
     vi.useFakeTimers()
     render(<App />)

@@ -37,10 +37,50 @@ export interface ExtensionRuntime {
 let registrySingleton: ExtensionRegistry | null = null
 let snippetDockHandle: SnippetDockHandle | null = null
 
+/**
+ * Listeners told whenever any extension's activation changes.
+ *
+ * ## Why a module-level set rather than a registry field
+ *
+ * The registry already accepts an `onChanged` callback, but it is fixed at
+ * construction and single-valued. Three different parts of the tree need to react:
+ * the Settings page (to re-render the switches), the right panel (to mount or unmount
+ * the dock) and the terminal's context menu (to gain or lose its extension entries).
+ *
+ * ## Why the registry's own `onChanged` drives this
+ *
+ * Wired at construction below, so *every* activation path notifies — not just the two
+ * the hook happens to wrap. Measured on a real WebView run: the Settings switch called
+ * `applyEnabledExtensions`, which calls `registry.enable()` directly, so a notify
+ * placed in `useExtensionRuntime().enable` never fired. The switch flipped, the
+ * registry activated, and the dock still rendered "turned off" while the context menu
+ * still had no extension entry.
+ */
+const activationListeners = new Set<() => void>()
+
+/** Notify every listener, containing one that throws. */
+function notifyActivationChanged(): void {
+  for (const listener of activationListeners) {
+    try {
+      listener()
+    } catch {
+      // One broken subscriber must not stop the others or the activation itself.
+    }
+  }
+}
+
+/** Subscribe to activation changes. Returns an unsubscribe. */
+export function subscribeExtensionActivations(listener: () => void): () => void {
+  activationListeners.add(listener)
+  return () => {
+    activationListeners.delete(listener)
+  }
+}
+
 /** One registry for the process, mirroring `vaultService` and `providerRegistry`. */
 export function getExtensionRegistry(): ExtensionRegistry {
   if (registrySingleton) return registrySingleton
-  const registry = new ExtensionRegistry()
+  const registry = new ExtensionRegistry({ onChanged: notifyActivationChanged })
   registry.register(snippetDockManifest, context => {
     snippetDockHandle = createSnippetDock(context)
   })
@@ -97,6 +137,7 @@ export function getExtensionRegistry(): ExtensionRegistry {
 export function __resetExtensionRegistryForTests(): void {
   registrySingleton = null
   snippetDockHandle = null
+  activationListeners.clear()
 }
 
 export function useExtensionRuntime(): ExtensionRuntime {
@@ -104,13 +145,10 @@ export function useExtensionRuntime(): ExtensionRuntime {
   const [, forceRender] = useState(0)
   const registryRef = useRef(registry)
 
-  // The registry has no subscription API — it reports changes through
-  // `onChanged`. Re-rendering on mount and after each explicit action is enough for
-  // the surfaces that exist; a subscription would be the right answer once a settings
-  // page lists live status.
-  useEffect(() => {
-    forceRender(value => value + 1)
-  }, [])
+  // Re-render when *any* path changes activation — the Settings switch calls
+  // `applyEnabledExtensions`, which drives the registry directly, so reacting only to
+  // this hook's own `enable`/`disable` leaves the panel showing a retired state.
+  useEffect(() => subscribeExtensionActivations(() => forceRender(value => value + 1)), [])
 
   const enable = useCallback(async (extensionId: string) => {
     const ok = await registryRef.current.enable(extensionId)

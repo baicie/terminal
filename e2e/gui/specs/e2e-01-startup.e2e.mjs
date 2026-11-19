@@ -390,6 +390,33 @@ describe('E2E-01 startup and terminal readiness', () => {
         ...(observed.notRun ? { notRun: observed.notRun } : {}),
         localTab: observed.localTab,
         statusBar: observed.terminal?.statusBarText ?? null,
+        /*
+         * Only the spec-ordering gap is declared; the other NOT_RUN is a product signal.
+         *
+         * `gui-e2e-report.mjs` now reads this case's `notRun` array (it previously read
+         * only `notRunCount`, which this spec never wrote, so every skip here was
+         * invisible to the declared-gap rule).
+         *
+         * Two things can produce a NOT_RUN:
+         *
+         *  - "this run already has N tabs, so it did not start from a fresh profile" —
+         *    an artefact of running several specs against one app process. Declared.
+         *  - "no local terminal tab exists in this run" — a launch regression. NOT
+         *    declared: if the app comes up with no tab, this layer must go red.
+         */
+        gaps:
+          (observed.notRun?.length ?? 0) > 0 &&
+          observed.notRun.every(reason => /fresh profile/.test(reason))
+            ? [
+                {
+                  id: 'shared-app-profile',
+                  reason:
+                    'specs share one app process, so a later spec does not see a fresh profile',
+                  needs: 'per-spec app launch, or ordering the launch-state case first',
+                  covers: observed.notRun.length,
+                },
+              ]
+            : [],
       },
     })
   })

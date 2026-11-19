@@ -1,6 +1,6 @@
 ---
 status: progress-matrix
-updated: 2026-11-16
+updated: 2026-11-19
 scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余风险"
 ---
 
@@ -103,7 +103,7 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | **Typed Capability Gateway** | **`PASS`** | `capability-gateway.ts` + `approval-book.ts`。25 条对抗性测试。grant 按 extension id 查询（修复了「返回当前 grant、事后再比 id」的错配风险） |
 | **Extension Manifest 校验** | **`PASS`** | `extension-manifest.ts`。10 类拒绝，含拒绝可命名动态代码的 `entry` |
 | **Extension Registry（生命周期）** | **`PASS`** | `extension-registry.ts`。**35 条**测试（实测；此前写作 55 条）：回滚、generation、幂等启用、失败隔离；另有本轮新增的 generation 感知用例 |
-| **Snippet Dock 扩展（完整链路）** | **`PARTIAL`** | 逻辑 14 条 + 开关 8 条 + 选择发布 11 条测试 PASS；已挂进 RightPanel，Settings 有开关，`read-selected` 接真实 `term.getSelection()`。本轮补齐**草稿消费方**（见下）。**剩余缺口**：真实 GUI 未点击验证 |
+| **Snippet Dock 扩展（完整链路）** | **`PARTIAL`** | 逻辑 14 条 + 开关 8 条 + 选择发布 11 条测试 PASS；已挂进 RightPanel，Settings 有开关，`read-selected` 接真实 `term.getSelection()`。本轮补齐**草稿消费方**（见下）。**剩余缺口**：真实 GUI 未点击验证。**2026-11-19 更新**：真实 WebView 已跑通全链路（`e2e-05`，6 用例），过程中修掉四处产品缺陷（`terminal.context` 菜单从未渲染、开关只在保存时生效、启动不读 `enabledExtensions`、开关只激活不落库）。证据与推翻过程见 [`tn-audit-residual-greens.md`](./tn-audit-residual-greens.md) |
 | **`terminal.read-selected` 真实选择源** | **`PASS`（自动化）** | `terminal-selection.ts` + `use-publish-terminal-selection.ts`。只有活动 tab 发布；gateway 双源一致才可读（发布值 + 活动 tab）。后台 tab 的选择读不到 |
 | Rust 侧 `ExtensionIntent` Gateway | `NOT_RUN` | 本版本不允许扩展跨进程边界，暂不需要 |
 
@@ -483,7 +483,7 @@ spec FAILED → 证据 `verdict: FAIL` → 聚合器 `status: FAIL, failedCases:
 ### Extension Ready
 
 - ~~Typed Capability Gateway~~ / ~~Manifest 校验~~ / ~~Registry 生命周期~~ —— PR #95 已落地
-- Snippet Dock 完整链路 `PARTIAL`（逻辑/接线/草稿消费方均有测试，真实 GUI 未点击）
+- Snippet Dock 完整链路 `PARTIAL`（逻辑/接线/草稿消费方均有测试；真实 WebView 全链路 2026-11-19 已跑通，见 [`tn-audit-residual-greens.md`](./tn-audit-residual-greens.md)。仍为 `PARTIAL` 的原因：只有 macOS 本机 WebView 证据，三平台 CI 结论以对应 run 为准）
 - Rust 侧 `ExtensionIntent` Gateway `NOT_RUN`（本版本不允许扩展跨进程边界）
 
 ### AI MVP Ready

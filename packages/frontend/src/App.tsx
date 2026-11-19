@@ -8,6 +8,10 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import locales from './locales'
 import { router } from './router'
+import {
+  applyEnabledExtensions,
+  nextExtensionListSequence,
+} from '@/features/extensions/apply-enabled-extensions'
 import { useAppStore } from './store/app'
 import { useTeamStore } from './store/team'
 import { getAppSettings } from './service/database'
@@ -65,12 +69,38 @@ export default function App({ startupTerminalFallbackAt }: AppProps) {
         toast.error(t('startup.settingsRestoreFailed'))
       }
       try {
+        /*
+         * Claimed *before* the read, not when the apply happens.
+         *
+         * Everything between here and the `applyEnabledExtensions` below awaits, so the
+         * list this reads is a snapshot from earlier in the startup. If the user flips
+         * a switch while those awaits are outstanding, their write is newer than this
+         * one and this apply must lose — otherwise startup deactivates the extension
+         * the user just enabled, with the switch still rendering "on".
+         */
+        const extensionListSequence = nextExtensionListSequence()
         const s = await getAppSettings()
         applyNotificationPrefs({
           nativeNotifications: s.nativeNotifications ?? true,
           notifyOnlyWhenUnfocused: s.notifyOnlyWhenUnfocused ?? true,
         })
         await syncCloseToTray(!!s.minimizeToTray)
+        /*
+         * Extensions the user enabled in a previous session.
+         *
+         * `enabledExtensions` is persisted, and the Settings page applies it on save and
+         * on toggle — but nothing applied it at startup. A user who enabled the snippet
+         * dock, quit and relaunched found the switch still on and the dock still saying
+         * "turned off": the setting was stored and never read.
+         *
+         * `defaultEnabled: false` means an unlisted extension must stay off, so this is
+         * an apply, not an enable-everything: `applyExtensionSettings` enables what the
+         * list names and deactivates anything else that is running.
+         */
+        await applyEnabledExtensions({
+          ids: s.enabledExtensions ?? [],
+          sequence: extensionListSequence,
+        })
       } catch (e) {
         console.warn('Failed to apply desktop UX prefs on startup:', e)
       }

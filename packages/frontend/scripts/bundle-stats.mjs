@@ -150,7 +150,22 @@ const budgets = {
   // The alternative was to drop the risk-flags line or the "nothing is run
   // automatically" footer to stay under the old number, which would trade the two
   // statements that make the feature honest for 3 KB nobody experiences.
-  totalGzip: 652 * 1024,
+  //
+  // 652.5 KB (was 652 KB): the snippet workflow (#104, #113) and the extension switch
+  // (#114) added user-facing strings in all three languages — the draft save/name
+  // controls, the imports panel, the host edit entry. Measured 652.12 KB against the
+  // 652.00 KB ceiling: **+124 bytes**, entirely locale text; no dependency, no code
+  // path, nothing on the initial path.
+  //
+  // This overshoot predates the round that found it: the strings landed in commits
+  // whose gate runs did not include `build:budget`, so the ceiling was never re-measured.
+  // Raising it here rather than trimming the copy, for the same reason as the entry
+  // above — these are the labels of controls that already exist, and removing them
+  // would leave controls with no text.
+  //
+  // The 0.5 KB is deliberately not rounded up to 1 KB: a ceiling that grows by round
+  // numbers stops recording how much was actually added.
+  totalGzip: 652.5 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

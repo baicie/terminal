@@ -129,7 +129,7 @@ test('summariseGuiArtifacts reports how many files it excluded', () => {
 // ---------------------------------------------------------------------------
 
 /** The exact shape `writeEvidence` produces for one case. */
-function caseEvidence(caseId, { verdict, notRunCount = 0, gaps = null, failures = [] }) {
+function caseEvidence(caseId, { verdict, notRunCount = 0, notRun = null, gaps = null, failures = [] }) {
   return {
     case: caseId,
     verdict,
@@ -137,7 +137,7 @@ function caseEvidence(caseId, { verdict, notRunCount = 0, gaps = null, failures 
     notes: '',
     extra: {
       failures,
-      notRunCount,
+      ...(notRun === null ? { notRunCount } : { notRun }),
       ...(gaps === null ? {} : { gaps }),
     },
   }
@@ -304,4 +304,75 @@ test('the Linux artifact that failed the layer is now explained', () => {
     [],
     'declaring the gap must clear the unexplained bucket for that case',
   )
+})
+
+// ---------------------------------------------------------------------------
+// `e2e-01` writes `extra.notRun` (an array of reasons), `e2e-04` writes
+// `extra.notRunCount` (a number). The reader knew only the second, so every skip in
+// e2e-01 was invisible to the declared-gap rule — including its launch-regression
+// path. Measured before the fix: a PARTIAL e2e-01 with one NOT_RUN produced
+// `status: PASS, unexplainedNotRun: []`.
+// ---------------------------------------------------------------------------
+
+test('a case that reports NOT_RUN as an array of reasons is still checked', () => {
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(6, 0),
+    'cases/e2e-01': caseEvidence('e2e-01', {
+      verdict: 'PARTIAL',
+      // No `notRunCount` at all — the shape e2e-01 actually writes.
+      notRun: ['no local terminal tab exists in this run'],
+      localTab: { ok: false, tabs: 0 },
+    }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'linux' })
+  assert.equal(
+    report.status,
+    'FAIL',
+    'a launch regression recorded as an array must not be invisible to the layer',
+  )
+  assert.deepEqual(report.unexplainedNotRun, [
+    { case: 'e2e-01', notRunCount: 1, declaredCoverage: 0 },
+  ])
+})
+
+test('the array form honours a declared gap the same way the number does', () => {
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(6, 0),
+    'cases/e2e-01': caseEvidence('e2e-01', {
+      verdict: 'PARTIAL',
+      notRun: ['launch-state case: this run did not start from a fresh profile'],
+      gaps: [
+        { id: 'shared-app-profile', reason: 'shared app process', needs: 'per-spec launch', covers: 1 },
+      ],
+    }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'linux' })
+  assert.equal(report.status, 'PASS', 'a declared gap must clear it whichever shape reported it')
+  assert.deepEqual(report.unexplainedNotRun, [])
+  assert.deepEqual(report.cases, [{ case: 'e2e-01', verdict: 'PARTIAL', notRunCount: 1 }])
+})
+
+test('case evidence that exists but cannot be parsed is INCOMPLETE, not a pass', () => {
+  // A spec writes its verdict in `after()`. A crash there leaves a case directory
+  // with a truncated or 0-byte file — measured before this: `status: PASS` with
+  // `cases: []`, indistinguishable from a spec that ran nothing.
+  const root = artifacts({
+    'json/wdio-0-0-1000000000000.json': wdio(6, 0),
+    'e2e-04/e2e-04.json': '{"case":"e2e-04","verdict":',
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'linux' })
+  assert.equal(report.status, 'INCOMPLETE')
+  assert.deepEqual(report.unreadableCaseEvidence, ['e2e-04'])
+})
+
+test('a directory that simply has no evidence file is not counted as unreadable', () => {
+  // `json/` holds the wdio files and `screens/` lives inside each case. Treating any
+  // directory without a matching .json as corrupt made every ordinary run INCOMPLETE.
+  const root = artifacts({
+    'json/wdio-0-0-1000000000000.json': wdio(6, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', { verdict: 'PASS' }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'linux' })
+  assert.equal(report.status, 'PASS')
+  assert.deepEqual(report.unreadableCaseEvidence, [])
 })
