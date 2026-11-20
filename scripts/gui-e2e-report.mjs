@@ -314,6 +314,20 @@ export function buildGuiReport({ artifactsDir, platform = null }) {
     // `covers` defaults to 1 so the common one-gap-one-skip case needs no annotation.
     return gaps.reduce((total, gap) => total + (Number.isFinite(gap.covers) ? gap.covers : 1), 0)
   }
+  /**
+   * Gaps another spec is responsible for.
+   *
+   * A capability verified end to end elsewhere must not be listed as an open gap here:
+   * the matrix then shows the same thing as PASS and as NOT_RUN, which reads as
+   * half-finished and invites re-implementing a shipped feature.
+   *
+   * That claim is checkable, not a note — the entry names the covering spec, and this
+   * list is what lets a reader confirm it. It is deliberately *not* subtracted from
+   * `notRunCount`: the cases really did not run here, and pretending otherwise would
+   * hide a spec that stopped exercising its own surface.
+   */
+  const coveredElsewhere = entry =>
+    (entry.gaps ?? []).filter(gap => typeof gap.coveredBy === 'string' && gap.coveredBy.length > 0)
   const unexplainedNotRun = caseEvidence.cases.filter(entry => {
     if (entry.verdict === 'FAIL') return false // counted separately
     if (entry.notRunCount === null) return false
@@ -357,6 +371,12 @@ export function buildGuiReport({ artifactsDir, platform = null }) {
       case: entry.case,
       verdict: entry.verdict,
       notRunCount: entry.notRunCount,
+      // Gaps another spec owns — surfaced so the matrix does not report the same
+      // capability as both PASS and NOT_RUN.
+      coveredElsewhere: coveredElsewhere(entry).map(gap => ({
+        id: gap.id,
+        by: gap.coveredBy,
+      })),
     })),
     partialCases: partialCases.map(entry => entry.case),
     failedCases: failedCases.map(entry => entry.case),
@@ -366,6 +386,10 @@ export function buildGuiReport({ artifactsDir, platform = null }) {
       case: entry.case,
       notRunCount: entry.notRunCount,
       declaredCoverage: coverage(entry),
+      coveredElsewhere: coveredElsewhere(entry).map(gap => ({
+        id: gap.id,
+        by: gap.coveredBy,
+      })),
     })),
     runVerdict: run.verdict,
     runVerdictAt: run.ranAt,
