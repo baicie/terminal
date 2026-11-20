@@ -13,8 +13,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { redact, writeEvidence } from './evidence.mjs'
+import { dirtySourceLines, redact, sourceInfo, writeEvidence } from './evidence.mjs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -143,4 +144,61 @@ test('the artifacts directory survives a full run of this test file', async () =
   for (const expected of ['e2e-01', 'e2e-02', 'e2e-03']) {
     assert.ok(entries.includes(expected), `${expected} is missing from the artifacts directory`)
   }
+})
+
+/*
+ * ## `dirty` must mean something
+ *
+ * It read `git status --porcelain` over the whole tree. The files under
+ * `e2e/gui/artifacts/e2e-0X/` are tracked (they are the committed evidence) and every
+ * spec run overwrites its own, so the moment a spec wrote its JSON the tree was dirty.
+ *
+ * Measured on the merged evidence for `main@486ca6e`: **all ten case files reported
+ * `dirty: true`**, on macOS, Linux and Windows, from clean CI checkouts. A flag that is
+ * always true tells a reader nothing, and the thing it is supposed to tell them —
+ * "can this binary be rebuilt from the recorded SHA" — was never answered.
+ *
+ * The fix excludes the evidence directory. These tests pin both directions: evidence
+ * alone does not make the tree dirty, and real source changes still do.
+ */
+test('sourceInfo reports a sha and a boolean dirty flag', () => {
+  const info = sourceInfo()
+  assert.match(info.sha, /^[0-9a-f]{7,40}$|^unknown$/, `sha was ${info.sha}`)
+  assert.equal(typeof info.dirty, 'boolean')
+})
+
+test('a change inside the evidence directory does not count as dirty', () => {
+  /*
+   * Behavioural, not a source grep: the predicate is given literal porcelain lines and
+   * its answer is what is asserted. The previous shape checked for a regex in this
+   * file, which would pass for any implementation that happened to spell the prefix the
+   * same way while filtering the wrong column.
+   */
+  const onlyEvidence = [
+    ' M e2e/gui/artifacts/e2e-03/e2e-03.json',
+    '?? e2e/gui/artifacts/e2e-04/',
+    'M  e2e/gui/artifacts/json/wdio-0-0-1795000000000.json',
+  ].join('\n')
+  assert.deepEqual(
+    dirtySourceLines(onlyEvidence),
+    [],
+    'a run that only rewrote its own evidence did not change the source',
+  )
+})
+
+test('a real source change still counts as dirty', () => {
+  const mixed = [
+    ' M e2e/gui/artifacts/e2e-03/e2e-03.json',
+    ' M packages/frontend/src/view/sftp/components/file-pane.tsx',
+    '?? scripts/new-thing.mjs',
+  ].join('\n')
+  const kept = dirtySourceLines(mixed)
+  assert.equal(kept.length, 2, `expected the two source lines, got ${JSON.stringify(kept)}`)
+  assert.ok(kept.some(line => line.includes('file-pane.tsx')))
+  assert.ok(kept.some(line => line.includes('new-thing.mjs')))
+})
+
+test('an unavailable git counts as dirty, not clean', () => {
+  // Evidence that cannot name its source cannot claim to be reproducible.
+  assert.deepEqual(dirtySourceLines('unknown'), ['?? git-unavailable'])
 })

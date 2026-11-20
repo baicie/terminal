@@ -57,11 +57,55 @@ export function platformInfo() {
   }
 }
 
+/**
+ * What the evidence is evidence *of*.
+ *
+ * ## Why `dirty` excludes the evidence directory
+ *
+ * It used to be `git(['status', '--porcelain']).length > 0`, over the whole tree. The
+ * files under `e2e/gui/artifacts/e2e-0X/` are **tracked** (they are the committed
+ * evidence), and every spec run overwrites its own — so the moment a spec wrote its
+ * JSON, the tree was dirty and the flag said `true`.
+ *
+ * Measured on the merged evidence for `main@486ca6e`: **all ten case files reported
+ * `dirty: true`**, on three platforms, on a clean CI checkout. A field that is always
+ * true describes nothing, and a reader who checks it learns only that the spec wrote
+ * its own output.
+ *
+ * What the field is *for* is "can this binary be rebuilt from the recorded SHA". The
+ * evidence files are not part of that build, so they are excluded. Everything else —
+ * a modified source file, an untracked script — still counts, because that genuinely
+ * makes the recorded SHA insufficient.
+ *
+ * `--porcelain` paths are NUL-free and one per line, so matching the artifacts prefix
+ * on the path portion is enough; the two-character status prefix is skipped.
+ */
+/**
+ * Which porcelain lines represent a change that matters for reproducibility.
+ *
+ * Exported so the rule is testable against literal input rather than by grepping this
+ * file's source. The evidence directory is excluded because those files are tracked,
+ * rewritten by every run, and are not part of the build the SHA names.
+ */
+export function dirtySourceLines(porcelain) {
+  if (porcelain === 'unknown') {
+    // `git` failed. Evidence that cannot name its source is not evidence of a
+    // rebuildable build, so this is reported as dirty rather than clean.
+    return ['?? git-unavailable']
+  }
+  return porcelain
+    .split('\n')
+    .map(line => line.trimEnd())
+    .filter(Boolean)
+    // `XY <path>` — two status characters, one space, then the path.
+    .filter(line => !line.slice(3).startsWith('e2e/gui/artifacts'))
+}
+
 export function sourceInfo() {
   return {
     sha: git(['rev-parse', 'HEAD']),
     branch: git(['rev-parse', '--abbrev-ref', 'HEAD']),
-    dirty: git(['status', '--porcelain']).length > 0,
+    dirty: dirtySourceLines(git(['status', '--porcelain'])).length > 0,
   }
 }
 

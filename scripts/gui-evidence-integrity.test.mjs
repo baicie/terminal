@@ -23,6 +23,8 @@ import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import test from 'node:test'
 
+import { buildGuiReport } from './gui-e2e-report.mjs'
+
 const ROOT = path.resolve(import.meta.dirname, '..')
 const SPECS = path.join(ROOT, 'e2e/gui/specs')
 
@@ -144,4 +146,139 @@ test('a committed evidence file never claims PASS with recorded failures', () =>
   // clean checkout. The rule above is what matters, and it is checked for every file
   // that is present.
   assert.ok(checked >= 0)
+})
+
+/*
+ * ## A run whose specs span more than the window must not shrink into a pass
+ *
+ * `newestRunFiles` groups a run as "files within `RUN_WINDOW_MS` (60 minutes) of the
+ * newest". That is right for five specs that start seconds apart, and it is how older
+ * runs are excluded from the count.
+ *
+ * It is wrong in one direction that matters. Measured: a fixture with five specs where
+ * the last one took 70 minutes produced
+ *
+ *     { ran: true, passed: 1, failed: 0, specs: 1, excluded: 4 }
+ *
+ * — a report describing **one** spec, green, while four others (any of which could have
+ * failed) fell outside the window. The `excluded` count was computed and put in the
+ * JSON's `extra`, but it never reached `status`, so the layer said PASS.
+ *
+ * That is the same failure the report exists to prevent, arriving from the other side:
+ * instead of a NOT_RUN being counted as a pass, a *failure* is dropped before counting.
+ *
+ * The fix is that exclusion of a substantial fraction of the files makes the layer
+ * INCOMPLETE — the counts are real but describe only part of the run, which is a
+ * different claim from "the run passed".
+ */
+test('specs excluded by the time window make the layer INCOMPLETE, not PASS', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const dir = mkdtempSync(path.join(tmpdir(), 'gui-window-'))
+  mkdirSync(path.join(dir, 'json'), { recursive: true })
+
+  const base = 1795000000000
+  // Four specs at the start of the run, one that finished 70 minutes later.
+  const offsets = [0, 60_000, 120_000, 180_000, 70 * 60_000]
+  for (const [index, offset] of offsets.entries()) {
+    writeFileSync(
+      path.join(dir, 'json', `wdio-0-0-${base + offset}.json`),
+      JSON.stringify({
+        suites: [{ name: `spec-${index}`, uid: `s${index}` }],
+        state: { passed: 1, failed: 0 },
+      }),
+    )
+  }
+
+  try {
+    const report = buildGuiReport({ artifactsDir: dir })
+    assert.ok(
+      report.excludedOlderFiles > 0 || report.status === 'INCOMPLETE',
+      `expected the dropped specs to be visible; got ${JSON.stringify(report)}`,
+    )
+    assert.notEqual(
+      report.status,
+      'PASS',
+      'four of five specs were excluded from the count, so "PASS" describes a run ' +
+        'nobody observed complete',
+    )
+    assert.equal(report.status, 'INCOMPLETE')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+/*
+ * ## Old artifacts must not cover a new failure
+ *
+ * The artifacts directory accumulates across runs. Summing everything once produced
+ * `total: 590, passed: 527, failed: 63` — a number describing no run that ever happened.
+ * The time window fixed that, and this test pins the property that matters most: a
+ * previous green run cannot dilute the current one.
+ */
+test('a green run three hours earlier does not dilute a failing run now', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const dir = mkdtempSync(path.join(tmpdir(), 'gui-old-'))
+  mkdirSync(path.join(dir, 'json'), { recursive: true })
+  const base = 1795000000000
+
+  writeFileSync(
+    path.join(dir, 'json', `wdio-0-0-${base - 3 * 3600_000}.json`),
+    JSON.stringify({ suites: [{ name: 'old', uid: 'o' }], state: { passed: 99, failed: 0 } }),
+  )
+  writeFileSync(
+    path.join(dir, 'json', `wdio-0-0-${base}.json`),
+    JSON.stringify({ suites: [{ name: 'new', uid: 'n' }], state: { passed: 1, failed: 4 } }),
+  )
+
+  try {
+    const report = buildGuiReport({ artifactsDir: dir })
+    assert.equal(report.failed, 4, 'the old run contributed no failures')
+    assert.equal(report.passed, 1, 'the old run contributed no passes either')
+    assert.equal(report.status, 'FAIL')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+/*
+ * ## A NOT_RUN beyond the declared gaps fails the layer
+ *
+ * This is the rule that turns "the spec skipped something" into a failure when the skip
+ * has no cause named for it. Without it, deleting a case's real assertion and leaving a
+ * NOT_RUN behind would read as a soft partial instead of a regression.
+ */
+test('a NOT_RUN with no declared gap fails the layer', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const dir = mkdtempSync(path.join(tmpdir(), 'gui-gap-'))
+  mkdirSync(path.join(dir, 'json'), { recursive: true })
+  mkdirSync(path.join(dir, 'e2e-03'), { recursive: true })
+  const base = 1795000000000
+
+  writeFileSync(
+    path.join(dir, 'json', `wdio-0-0-${base}.json`),
+    JSON.stringify({ suites: [{ name: 'e2e-03', uid: 'a' }], state: { passed: 8, failed: 0 } }),
+  )
+  writeFileSync(
+    path.join(dir, 'e2e-03', 'e2e-03.json'),
+    JSON.stringify({
+      case: 'e2e-03',
+      verdict: 'PARTIAL',
+      notes: 'skipped some things',
+      // Two gaps declared, five NOT_RUNs recorded: three have no cause named.
+      extra: { notRunCount: 5, gaps: [{ id: 'declared', covers: 2 }] },
+    }),
+  )
+
+  try {
+    const report = buildGuiReport({ artifactsDir: dir })
+    assert.equal(report.status, 'FAIL', 'an unexplained skip is not a soft partial')
+    assert.equal(report.unexplainedNotRun.length, 1)
+    assert.equal(report.unexplainedNotRun[0].notRunCount, 5)
+    assert.equal(report.unexplainedNotRun[0].declaredCoverage, 2)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
