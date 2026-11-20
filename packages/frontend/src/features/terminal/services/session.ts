@@ -271,6 +271,8 @@ export class SessionService {
  * such as `{ kind, message }` — and falls back to a JSON rendering rather than
  * `"[object Object]"`, which is indistinguishable from "no reason given".
  */
+import { redactSecrets } from './redact-secrets'
+
 export function describeInvokeError(error: unknown): string {
   if (typeof error === 'string') return error
   if (error instanceof Error) return error.message
@@ -281,7 +283,7 @@ export function describeInvokeError(error: unknown): string {
       if (typeof value === 'string' && value.length > 0) return value
     }
     try {
-      const json = JSON.stringify(error)
+      const json = JSON.stringify(redactSecrets(error))
       if (json && json !== '{}') return json
     } catch {
       // A circular or otherwise unserialisable error: fall through.

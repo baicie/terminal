@@ -320,3 +320,105 @@ describe('session changes', () => {
     expect(runner.current().text).toBe('It lists pods.')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Two runs sharing one id must not be able to cancel each other.
+//
+// `requestId` is the run id, and the run id comes from the caller (`nextRunId`). A
+// counter reset, a page reload that resumes an old id, or a future change to the id
+// scheme all produce a collision — and `cancel(requestId)` then addresses whichever
+// backend request happens to hold that id, not the one the user is looking at.
+//
+// The guard is in the runner because the runner is what knows which id is current; a
+// caller cannot be trusted to mint unique ids forever.
+// ---------------------------------------------------------------------------
+
+describe('run id collisions', () => {
+  it('never issues a request id it has already used', async () => {
+    const { runner, backend } = setup({ nextRunId: () => 'run-same' })
+    const first = await runner.start({
+      action: 'explain-selection', profile: profile(), context: approvedContext(),
+    })
+    await settle()
+    runner.cancel()
+    await settle()
+
+    const second = await runner.start({
+      action: 'explain-selection', profile: profile(), context: approvedContext(),
+    })
+    await settle()
+
+    const ids = backend.calls.map(call => call.requestId)
+    expect(
+      new Set(ids).size,
+      'two runs were issued the same request id; cancelling one would address both',
+    ).toBe(ids.length)
+    expect(first.ok && second.ok).toBe(true)
+  })
+
+  it('cancels the run the user is looking at, not an earlier one with the same id', async () => {
+    const { runner, backend } = setup({ nextRunId: () => 'run-same' }, { hang: true })
+    await runner.start({
+      action: 'explain-selection', profile: profile(), context: approvedContext(),
+    })
+    await settle()
+    runner.cancel()
+    await settle()
+
+    // A second run now shares the minted id unless the runner guards against it.
+    await runner.start({
+      action: 'explain-selection', profile: profile(), context: approvedContext(),
+    })
+    await settle()
+    const cancelsBefore = backend.cancels.length
+    runner.cancel()
+    await settle()
+
+    expect(backend.cancels.length).toBe(cancelsBefore + 1)
+    const issued = backend.calls.map(call => call.requestId)
+    expect(
+      new Set(issued).size,
+      'the second cancel addressed an id already used by a finished run',
+    ).toBe(issued.length)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Text is carried through unchanged, including characters outside the BMP.
+//
+// The dock renders whatever the backend sends. A chunk carrying a surrogate pair
+// (emoji, some CJK extension blocks) split across two events is the case a naive
+// `slice` or a byte-length limit breaks — and it breaks *silently*: the panel shows
+// a replacement character instead of the user's text.
+// ---------------------------------------------------------------------------
+
+describe('text fidelity', () => {
+  it('keeps a surrogate pair that spans two chunks', async () => {
+    const emoji = '🙂' // U+1F642: two UTF-16 code units
+    const { runner, states } = setup(
+      {},
+      {
+        events: [
+          { type: 'chunk', text: `before ${emoji[0]}` },
+          { type: 'chunk', text: `${emoji[1]} after` },
+          { type: 'done' },
+        ],
+      },
+    )
+    await runner.start({ action: 'explain-selection', profile: profile(), context: approvedContext() })
+    await settle()
+
+    const text = states[states.length - 1]?.text ?? ''
+    expect(text).toBe(`before ${emoji} after`)
+    expect(text).not.toMatch(/�/)
+  })
+
+  it('keeps multi-byte CJK intact', async () => {
+    const { runner, states } = setup({}, {
+      events: [{ type: 'chunk', text: '列出所有容器' }, { type: 'done' }],
+    })
+    await runner.start({ action: 'explain-selection', profile: profile(), context: approvedContext() })
+    await settle()
+    expect(states[states.length - 1]?.text).toBe('列出所有容器')
+  })
+})
