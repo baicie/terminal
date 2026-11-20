@@ -57,6 +57,26 @@ function parseArgs(argv) {
  */
 const RUN_WINDOW_MS = 60 * 60 * 1000
 
+/**
+ * How close to the window edge a dropped file must be before the run is suspect.
+ *
+ * ## The distinction this encodes
+ *
+ * The window exists to separate *this run* from previous ones. Those are hours or days
+ * apart, so they sit far below `windowStart`. Specs of one run are minutes apart.
+ *
+ * So the question "did the window cut a spec we should have counted?" is not "how many
+ * files were excluded" — an artifacts directory with a hundred historical runs always
+ * excludes a lot — but "was something excluded that ended just before the edge". A file
+ * within this margin of `windowStart` belongs to the same invocation: it means the run
+ * spanned longer than the window, and the counts describe only its tail.
+ *
+ * Measured case this must catch: five specs, the last finishing 70 minutes after the
+ * first. Four fall outside a 60-minute window and the old code reported
+ * `{ passed: 1, failed: 0, specs: 1 }` — a green number for a run nobody watched finish.
+ */
+const NEAR_EDGE_MS = 15 * 60 * 1000
+
 function newestRunFiles(files) {
   const stamped = files
     .map(name => {
@@ -66,14 +86,26 @@ function newestRunFiles(files) {
     .filter(Boolean)
   if (stamped.length === 0) {
     // No timestamps at all (e.g. a hand-written fixture): use everything as one run.
-    return { files, windowStart: null, newest: null }
+    return { files, windowStart: null, newest: null, truncated: [] }
   }
   const newest = Math.max(...stamped.map(entry => entry.at))
   const windowStart = newest - RUN_WINDOW_MS
+  const inside = stamped.filter(entry => entry.at >= windowStart)
+  /*
+   * Files just below the edge are the ones that reveal a truncated run.
+   *
+   * A historical run is hours below it; a spec of the same invocation that fell out is
+   * seconds or minutes below. Those are reported by name so the reason is checkable
+   * rather than a bare count.
+   */
+  const truncated = stamped
+    .filter(entry => entry.at < windowStart && entry.at >= windowStart - NEAR_EDGE_MS)
+    .map(entry => entry.name)
   return {
-    files: stamped.filter(entry => entry.at >= windowStart).map(entry => entry.name),
+    files: inside.map(entry => entry.name),
     windowStart,
     newest,
+    truncated,
   }
 }
 
@@ -86,7 +118,7 @@ export function summariseGuiArtifacts(artifactsDir) {
   } catch {
     return { ran: false, reason: `no wdio output under ${jsonDir}`, passed: 0, failed: 0, skipped: 0, specs: 0 }
   }
-  const { files, windowStart, newest } = newestRunFiles(all)
+  const { files, windowStart, newest, truncated } = newestRunFiles(all)
   const excluded = all.length - files.length
 
   let passed = 0
@@ -135,7 +167,7 @@ export function summariseGuiArtifacts(artifactsDir) {
       corrupt,
     }
   }
-  return { ran: true, passed, failed, skipped, specs, corrupt, windowStart, newest, excluded }
+  return { ran: true, passed, failed, skipped, specs, corrupt, windowStart, newest, excluded, truncated }
 }
 
 /**
@@ -334,12 +366,27 @@ export function buildGuiReport({ artifactsDir, platform = null }) {
     return entry.notRunCount > coverage(entry)
   })
 
+  /*
+   * ## Truncation outranks PASS
+   *
+   * A spec of this very run falling outside the time window means the counts describe
+   * part of an invocation, not all of it. The numbers are real; the claim "the run
+   * passed" is not. `INCOMPLETE` is the honest label, and it sits beside the existing
+   * `corrupt` and unreadable-evidence cases for the same reason: each says "what I
+   * measured is not the whole story".
+   *
+   * It does not outrank `FAIL` — a real failure is still a failure even if the window
+   * also truncated something.
+   */
+  const truncated = counts.truncated ?? []
   const status =
     counts.failed > 0 || failedCases.length > 0 || unexplainedNotRun.length > 0
       ? 'FAIL'
       : total === 0
         ? 'NOT_RUN'
-        : counts.corrupt.length > 0 || (caseEvidence.unreadable ?? []).length > 0
+        : counts.corrupt.length > 0 ||
+            (caseEvidence.unreadable ?? []).length > 0 ||
+            truncated.length > 0
           ? 'INCOMPLETE'
           : 'PASS'
   return {
@@ -354,7 +401,10 @@ export function buildGuiReport({ artifactsDir, platform = null }) {
     reason:
       counts.corrupt.length > 0
         ? `${counts.corrupt.length} spec file(s) were unreadable and are excluded: ${counts.corrupt.join(', ')}`
-        : null,
+        : truncated.length > 0
+          ? `${truncated.length} spec file(s) finished just outside the run window and are ` +
+            `not counted, so these numbers describe part of the run: ${truncated.join(', ')}`
+          : null,
     specs: counts.specs,
     corruptFiles: counts.corrupt,
     // Case evidence that exists but could not be parsed. A spec writes its verdict in
