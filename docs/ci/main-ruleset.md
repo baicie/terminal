@@ -1,9 +1,94 @@
-# `main` 分支保护与 Required Checks 配置（ENABLED）
+# `main` 分支保护与合并前检查（部分规则已按授权移除）
 
+> ## ⚠️ 当前状态与本文下半部分不一致，先读这一节
+>
+> **2026-11-20**：仓库所有者明确指示移除 `main` 的 CI 前置门禁，理由是采用
+> OpsWeave 0.0.1 平台发行版的做法——「pr 可以绕过 ci 检验直接合并」「取消掉 main 的前置 ci」。
+> 这是**产品负责人对策略的明确要求**，因此未被撤销。
+>
+> `gh api repos/baicie/terminal/rulesets/27354680` 实测现状：
+>
+> | 规则 | 现状 |
+> | --- | --- |
+> | `deletion` | ✅ 保留 —— `main` 不能被删除 |
+> | `non_fast_forward` | ✅ 保留 —— 不能强推改写历史 |
+> | `pull_request` | ✅ 保留 —— 一切改动必须走 PR |
+> | `required_status_checks` | ❌ **已移除**（授权变更） |
+>
+> `bypass_actors: []`、`enforcement: active`、`updated_at: 2026-11-20T12:14:39+08:00`。
+>
+> ## 代价是真实的，且已经发生过
+>
+> 移除后的**同一天**，两个 PR 在门禁全红的情况下被合并：
+>
+> | PR | 合并时失败的检查 |
+> | --- | --- |
+> | #128 | `Frontend quality`、`required`、macOS/Windows/Linux GUI E2E |
+> | #129 | `Frontend quality`、`required` |
+>
+> 后果不是理论上的：`Frontend quality` 的红是 bundle 预算
+> （实测 653.63 KB > 653.50 KB 上限）。两个 PR 合入后 **`main` 自己过不了自己的门禁**，
+> 一直到下一次任务复核才发现。这不是「CI 慢一点」的代价，是「红线不再意味着任何东西」。
+>
+> ## 因此门禁移到合并前检查脚本
+>
+> 规则集不再拦「检查是否通过」，那这件事就必须由**一个能重跑、规则可读、可测试**的地方来做，
+> 而不是靠记忆。见 `scripts/check-merge-gate.mjs`：
+>
+> ```bash
+> node scripts/check-merge-gate.mjs --pr <number>
+> ```
+>
+> 退出码 0 = 可合并，1 = 阻止，2 = 无法判定（认证/网络）。
+>
+> 它拒绝三种特定的错误，每一种都对应一次真实事故：
+>
+> 1. **旧的 PASS 不是 PASS** —— 只读 PR 当前 head SHA 的检查；报告里打印 SHA，
+>    因为读者看的浏览器标签页可能比合并按钮旧。
+> 2. **pending 不是 pass** —— 检查没跑完时合并，等于没有门禁，只是*看起来*有。
+> 3. **可以缺席的检查不设为必需** —— `native-gui-e2e.yml` 是 `paths:` 过滤的，
+>    docs-only PR 根本不会产生这些 run。这正是本文 §4.1 记录的第一版 ruleset P0。
+>
+> 它的规则由 `scripts/merge-gate.test.mjs` 的 9 个用例钉住，其中 3 个变异验证成立
+> （把 pending 当 pass、把 skip 全放行、把「没有检查」当已验证，各自让对应用例变红）。
+>
+> **这份流程是约定，不是强制。** 它拦不住 `gh pr merge` 直接执行——只有规则集能拦，
+> 而规则集按授权不再拦这一条。任何人跳过这一步，仓库不会阻止他。
+>
+> ## 2026-11-20 的探针实测（以下是实跑结果，不是描述）
+>
+> 移除 `required_status_checks` 后，逐条确认留下来的规则仍然生效：
+>
+> ```text
+> $ git push origin HEAD:main
+>  ! [remote rejected] HEAD -> main (push declined due to repository rule violations)
+>
+> $ git push --force origin HEAD:main
+>  ! [remote rejected] HEAD -> main (push declined due to repository rule violations)
+>
+> $ git push origin --delete main
+>  ! [remote rejected] main (refusing to delete the current branch: refs/heads/main)
+> ```
+>
+> ```text
+> $ gh api repos/baicie/terminal/rulesets/27354680 --jq '…'
+> { "enforcement": "active", "bypass_actors": [],
+>   "rules": ["deletion", "non_fast_forward", "pull_request"],
+>   "has_required_checks": false,
+>   "updated_at": "2026-11-20T12:14:39.837+08:00" }
+> ```
+>
+> 三项全部拒绝，规则集如授权所述不含 `required_status_checks`。
+> **合并前的检查是否通过，现在完全取决于 `check-merge-gate.mjs` 有没有被运行。**
+>
+> ---
+>
+> ## 以下为 2026-11-16 首次启用时的记录（历史）
+>
 > 状态：**ENABLED**（2026-11-16 实测）
 > Ruleset id `27354680`，`enforcement: active`，`bypass_actors: []`。
 >
-> ## 实测的拦截证据
+> ## 实测的拦截证据（2026-11-16，`required_status_checks` 尚在时）
 >
 > | 操作 | 结果 |
 > | --- | --- |
