@@ -19,8 +19,14 @@ vi.mock('@/components/ui/sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }))
 
-const HOST_A = { id: 'host-a', name: 'A', authType: 'password' }
-const HOST_B = { id: 'host-b', name: 'B', authType: 'password' }
+const HOST_A = {
+  id: 'host-a', name: 'A', authType: 'password' as const,
+  hostname: 'a.example', port: 22, username: 'u',
+}
+const HOST_B = {
+  id: 'host-b', name: 'B', authType: 'password' as const,
+  hostname: 'b.example', port: 22, username: 'u',
+}
 
 function file(name: string): FileItem {
   return {
