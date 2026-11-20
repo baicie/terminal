@@ -1,6 +1,6 @@
 ---
 status: progress-matrix
-updated: 2026-11-19
+updated: 2026-11-20
 scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余风险"
 ---
 
@@ -10,6 +10,11 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 > `NOT_RUN`、`PARTIAL`、`BLOCKED` 不是 `PASS` 的同义词，不得向上折算。
 >
 > 基线：`main@cb7704e`（PR #95～#108 已全部合并；main Ruleset 生效）。
+>
+> **2026-11-20 更新**：`main = 2bd29c1`（PR #113–#120 已合入）。当前在验的是 #121
+> （SFTP 导航竞态）、#122（Host 身份）、#123（`effect` ReDoS）、#124（GUI 覆盖映射）、
+> #125（AI endpoint 契约）。**下方各节的历史 SHA 不再代表当前状态**，新增结论一律
+> 标注实测提交。
 > 本文件没有任何「当前工作分支」——每条状态都标注它属于哪个 PR 与哪个 run，
 > 因为它们合入后状态就不再变化，而 `main` 会。
 
@@ -106,6 +111,14 @@ scope: "Terminal Next UX-1 → UX-4 实际完成状态、证据、PR 与剩余�
 | **Snippet Dock 扩展（完整链路）** | **`PARTIAL`** | 逻辑 14 条 + 开关 8 条 + 选择发布 11 条测试 PASS；已挂进 RightPanel，Settings 有开关，`read-selected` 接真实 `term.getSelection()`。本轮补齐**草稿消费方**（见下）。**剩余缺口**：真实 GUI 未点击验证。**2026-11-19 更新**：真实 WebView 已跑通全链路（`e2e-05`，6 用例），过程中修掉四处产品缺陷（`terminal.context` 菜单从未渲染、开关只在保存时生效、启动不读 `enabledExtensions`、开关只激活不落库）。证据与推翻过程见 [`tn-audit-residual-greens.md`](./tn-audit-residual-greens.md)。**同日第二轮（PR #116）**：销毁契约收口——见下方「扩展生命周期」 |
 | **扩展停用后的资源回收** | **`PASS`（自动化）** | `SnippetDockHandle extends Disposable`，工厂现在 `return` 它，`deactivate` 时 listeners / pendingDraft / 在途 refresh 一并 settle。**纠正原审计归因**：此前说「Registry 把无 `dispose` 的 Handle 推入 Bucket 导致 `TypeError`」——不成立，工厂是块体无 `return`，bucket 里只有 5 个注册项、从未有过 Handle。真实缺口是 Handle 生命周期不受管理。2026-11-19 补充：`fail()` 现在按 generation 守卫后回收（原实现只标记 `failed` 而保留全部注册项）；`rollback` 不再空 catch，失败记入 `CleanupLedger`。**顺带修**：`currentExtensionPlatform` 只认 `mac` 不认 `darwin`，导致 macOS 主机被判为 `linux`、`platforms: ['macos']` 的扩展永不激活 |
 | **扩展激活的并发安全** | **`PASS`（自动化）** | PR #117。四处竞态，全部用确定性时序先复现：①`rollback` 在挂起点后按 `extensionId` 清账，新激活落在窗口里会被删空（实测 `active` 但 `commands()` 为空）；②`withBudget` 超时只 reject await，迟到的 Factory 仍能注册进已孤立的 bucket；③并发的 `applyEnabledExtensions` 在 `await` 处交错，先开始的可能后结束并覆盖新选择；④已销毁的 Handle 调用 `refresh()` 仍访问数据库（实测 2 次调用产生 3 次加载器调用）。修复：清理按代际归属（`settle-owned.ts`）、失败先退役再结算、注册入口过 `isCurrent()` 闸门、apply 串行化、refresh 入口即拒。四个变异各自变红。`CleanupLedger` 现于设置面板逐行显示，三语 |
+| **SFTP 同 Host 导航竞态** | **`PASS`（自动化，PR #121）** | `loadDir` 的守卫只认 host 切换，两次同 Host 导航共享 generation，**慢的那个最后完成就赢**。实测：导航到慢 `/a` 再导航到快 `/b`，`/b` 先显示、`/a` 后到把用户移回已离开的目录。修复：每次导航领序号（`navigation-token.ts`），token 携带 generation + hostKey，三者都匹配才算当前。`loading` 也只由最新那次清除。变异：去掉序号比较 → 1 红 |
+| **SFTP Host 身份** | **`PASS`（自动化，PR #122）** | 会话按 `id:authType` 绑定，改了 hostname/port/username/凭据版本/跳板机**都不会改变这个键**，于是继续用为旧地址打开的会话——列目录、上传、删除全打到用户刚不再指向的机器上。修复：`connectionIdentity` 用决定「连到哪、以谁连」的字段。刻意不含名称与颜色（化妆性编辑不该断在途传输）。变异：改回 `id:authType` → 5 红 |
+| **GUI 覆盖映射** | **`PASS`（自动化，PR #124）** | e2e-04 把 `snippet-draft-capture` 记为未覆盖缺口，而 e2e-05 三平台完整驱动了它 → 同一能力同时报 PASS 与 NOT_RUN。修复：缺口声明加 `coveredBy`，汇总器输出 `coveredElsewhere`。**不减计数**：那两个用例在本 spec 里确实没跑。两条测试钉住「声明 owner 不能洗白计数」 |
+| **AI endpoint 两侧一致性** | **`PASS`（自动化，PR #125）** | UI 的 `allowPlaintextRemote` 让用户确认后保存非回环 `http://`，而 Rust `check_endpoint` **无条件拒绝**——保存成功但每次请求失败。配对测试跑 11 个 URL，`http://api.example.com/v1` 是唯一不一致项。修复：移除 opt-in（不放宽 transport）。变异：把参数加回签名 → 1 红 |
+| **`effect` ReDoS** | **`PASS`（PR #123，审计 job 实测通过）** | `effect <=3.22.0` 的新披露 advisory，与本轮改动无关，但阻塞了 #121/#122 的审计。override 到 3.22.1，lockfile 两处均解析到新版。CI 的 `Dependency audit (npm)` 由 fail 转 pass |
+| **e2e-03 四层缺陷** | **`PASS`（已合入 PR #118）** | `notRun 6 → 1`，三平台一致。四层：seed 与应用打开不同 DB（macOS `app_config_dir` 与 override 不一致）、SFTP 初始列 `/` 而非 home、连接错误被格式化成 `[object Object]`、fixture 未把 host key 写进 known_hosts |
+| **Windows GUI 标签识别** | **`PASS`（已合入 PR #120）** | Windows 上 `notRun 6 → 1`（已从证据 JSON 核实）。根因是 spec 用「非本地标签」找 SSH 标签，而 Windows 恢复出**两个**本地终端。修复为按主机名匹配 |
+
 | **`terminal.read-selected` 真实选择源** | **`PASS`（自动化）** | `terminal-selection.ts` + `use-publish-terminal-selection.ts`。只有活动 tab 发布；gateway 双源一致才可读（发布值 + 活动 tab）。后台 tab 的选择读不到 |
 | Rust 侧 `ExtensionIntent` Gateway | `NOT_RUN` | 本版本不允许扩展跨进程边界，暂不需要 |
 
@@ -517,11 +530,23 @@ spec FAILED → 证据 `verdict: FAIL` → 聚合器 `status: FAIL, failedCases:
 
 ## 下一项最优先工程任务
 
-**Extension Registry + Manifest（`TN-UX3-02`），然后接 Snippet Dock 作为首个内置扩展。**
+> **本节已于 2026-11-20 重写。** 旧的建议是「Extension Registry + Manifest，然后接
+> Snippet Dock」——这两项分别在 PR #95 与 #104 交付，Registry 的生命周期与并发安全
+> 又在 #116/#117 收口。继续按旧建议做事就是重复开发已交付的功能，所以留下这段说明
+> 而不是删掉它：**一条过期的建议比没有建议更危险**，因为它看起来仍然权威。
 
-理由：Gateway 本轮已建好，它定义了"扩展能做什么"。没有 Registry，就没有东西能拿到 Gateway 授予的 context —— 边界存在但无人使用，这是"代码存在、链路不通"的失败模式。Registry 是让 Gateway 真正被使用的最小下一步，且它不依赖任何外部设备或证书。
+按当前实测状态，未闭合且不依赖外部授权的工作：
 
-Snippet Dock 紧随其后，因为它是设计指定的第一个内置扩展，且只依赖已有的 Snippet service 与 `terminal.read-selected`，不需要 AI、网络或新的 Rust 权限 —— 它是验证整条扩展链路（注册 → 激活 → 命令/菜单/Dock 注册 → 停用清理）的最短路径。
+| 优先级 | 工作 | 为什么是它 |
+| --- | --- | --- |
+| 1 | **SFTP 同 Host 导航与 Host 身份** | PR #121/#122 修的这两个缺陷会让文件操作打到错误的机器上，属安全范畴 |
+| 2 | **GUI 覆盖映射** | PR #124：同一能力被同时报 PASS 与 NOT_RUN，会误导后续排期 |
+| 3 | **AI endpoint 两侧一致性** | PR #125：UI 能保存的配置后端永远拒绝 |
+| 4 | e2e-03 的第二个 SSH Host | 唯一剩余的产品级 NOT_RUN，需要第二个 fixture |
+| 5 | Inspector 三平台 uptime 语义 | macOS 已修（PR #119），Linux/Windows 未逐一复验 |
+
+依赖外部条件、本轮不动：真实模型端点（`BLOCKED_EXTERNAL`）、签名/公证/Updater 运行时
+（`BLOCKED_EXTERNAL`）、七天真实使用（只能 `NOT_RUN`）。
 
 ---
 
