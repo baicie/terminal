@@ -31,7 +31,10 @@ vi.mock('react-i18next', () => ({
 const { useSftpRemote } = await import('@/view/sftp/hooks/use-sftp-remote')
 const { __resetDeferredReleases } = await import('./sftp-deferred-release')
 
-const HOST = { id: 'host-prod', name: 'prod', authType: 'password' }
+const HOST = {
+  id: 'host-prod', name: 'prod', authType: 'password' as const,
+  hostname: 'prod.example', port: 22, username: 'u',
+}
 
 function transfer(sessionId: string, status: TransferRecord['status']): TransferRecord {
   return {
@@ -150,7 +153,10 @@ describe('unmounting the SFTP view', () => {
     const hook = await mountAndConnect()
 
     hook.rerender({
-      activeHost: { id: 'host-staging', name: 'staging', authType: 'password' },
+      activeHost: {
+        id: 'host-staging', name: 'staging', authType: 'password' as const,
+        hostname: 'staging.example', port: 22, username: 'u',
+      },
     })
     await act(async () => {
       await Promise.resolve()
@@ -173,7 +179,10 @@ describe('unmounting the SFTP view', () => {
     useTransferQueue.setState({ transfers: [transfer('sess-1', 'running')] })
 
     hook.rerender({
-      activeHost: { id: 'host-staging', name: 'staging', authType: 'password' },
+      activeHost: {
+        id: 'host-staging', name: 'staging', authType: 'password' as const,
+        hostname: 'staging.example', port: 22, username: 'u',
+      },
     })
     await act(async () => {
       await Promise.resolve()

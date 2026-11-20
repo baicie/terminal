@@ -40,8 +40,14 @@ const { __resetDeferredReleases, __deferredSessions } = await import(
   './sftp-deferred-release'
 )
 
-const HOST_A = { id: 'host-a', name: 'a', authType: 'password' }
-const HOST_B = { id: 'host-b', name: 'b', authType: 'password' }
+const HOST_A = {
+  id: 'host-a', name: 'a', authType: 'password' as const,
+  hostname: 'a.example', port: 22, username: 'u',
+}
+const HOST_B = {
+  id: 'host-b', name: 'b', authType: 'password' as const,
+  hostname: 'b.example', port: 22, username: 'u',
+}
 
 function transfer(sessionId: string, status: TransferRecord['status']): TransferRecord {
   return {

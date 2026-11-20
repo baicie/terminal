@@ -2,6 +2,7 @@ import type { FileItem } from '@/service/ssh'
 import { sshService } from '@/service/ssh'
 import { toast } from '@/components/ui/sonner'
 import { useCallback } from 'react'
+import type { ConnectionFields } from './host-identity'
 import { useTranslation } from 'react-i18next'
 
 /**
@@ -16,7 +17,7 @@ import { useTranslation } from 'react-i18next'
  * flight.
  */
 export interface FileOperationArgs {
-  activeHost: { id: string, authType: string, name: string } | null
+  activeHost: (ConnectionFields & { name: string }) | null
   hostKey: string | null
   hostKeyRef: { current: string | null }
   currentSession: (
