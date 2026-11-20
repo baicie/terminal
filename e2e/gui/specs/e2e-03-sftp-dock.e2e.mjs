@@ -134,9 +134,32 @@ describe('SFTP Context Dock — real WebView', () => {
         err?.stack?.split('\n')[0] ??
         err?.toString?.() ??
         ''
+      /*
+       * ## Why the fallback now carries the shape, not just the title
+       *
+       * Measured on the macOS runner (run 44694682531): the write case failed and the
+       * record said `(no error text for "creates, renames and deletes…")`. A failure
+       * record whose only content is the title cannot be acted on — I had to download
+       * the artifact and guess which step threw.
+       *
+       * The chain above already tried `err`, `err.message`, `err.stack` and
+       * `toString()`. When all four are empty the value is not an Error and not a
+       * string — so record *what it actually is* rather than inventing nothing.
+       * JSON.stringify is tried last because a circular value throws, which is why it
+       * is inside the guard.
+       */
+      let shape = ''
+      try {
+        shape = err === undefined ? 'undefined' : JSON.stringify(err)
+      } catch {
+        shape = `<unserialisable ${typeof err}>`
+      }
       failures.push({
         title: this.currentTest.title,
-        error: text && text !== '[object Object]' ? text : `(no error text for "${this.currentTest.title}")`,
+        error:
+          text && text !== '[object Object]'
+            ? text
+            : `(no error text for "${this.currentTest.title}"; err=${shape})`,
       })
     }
   })
@@ -790,6 +813,56 @@ async function activateRemoteTab(options = {}) {
 }
 
 /**
+ * Open a file row's actions menu, the way a user does.
+ *
+ * ## Why not `element.click()`
+ *
+ * The trigger is `opacity-0 group-hover:opacity-100` (`file-pane-row.tsx`): it is
+ * transparent until the row is hovered. A script-driven `.click()` on an element with
+ * `opacity: 0` dispatches an event the browser considers untrusted, and Radix's
+ * `DropdownMenuTrigger` does not open on it — measured on the macOS runner
+ * (run 44694682531), where the write case failed at exactly this step and the record
+ * carried no error text at all.
+ *
+ * The fix is the same one `e2e-01` already needed for tabs: use WebDriver's own
+ * `moveTo()` + `click()`, which produce the real pointer sequence. A synthetic
+ * `.click()` would make this case test whether a handler is attached, not whether a
+ * user can open the menu.
+ *
+ * The wait on the row is what makes the hover land: `moveTo` on an element that the
+ * listing has not rendered yet hovers nothing.
+ */
+async function openRowMenu(name) {
+  /*
+   * Matched on the name cell's `title`, which is exactly `file.name`
+   * (`file-pane-row.tsx:122`) — not on `contains(., …)`, where a shorter name is a
+   * prefix of a longer one and the wrong row gets hovered.
+   */
+  const row = await browser.$(
+    `//*[@data-testid="file-row"][.//*[@title=${JSON.stringify(name)}]]`,
+  )
+  await row.waitForExist({ timeout: 20_000 })
+
+  /*
+   * ## The hover is the mechanism; the wait below is not a visibility check
+   *
+   * `waitForDisplayed` is deliberately *not* used on the trigger: the element is
+   * `opacity-0` until hovered, and WebDriver's displayed test covers `display` and
+   * `visibility`, not `opacity`. It would return true immediately and prove nothing —
+   * which is exactly the "looks like it is checking" shape this repository keeps
+   * finding.
+   *
+   * So the sequence is: hover the row (the real pointer event that flips
+   * `group-hover`), then open the menu. If the hover does not land, the menu simply
+   * does not appear and the caller's `waitForDisplayed` on the *menu item* fails —
+   * a real assertion about a real outcome.
+   */
+  await row.moveTo()
+  const trigger = await row.$('[data-testid="file-row-actions"]')
+  await trigger.click()
+}
+
+/**
  * Wait until the dock has finished listing, then read it.
  *
  * ## Why this waits on a condition and not on a pause
@@ -1109,8 +1182,9 @@ function readDockBinding() {
     if (!mkdirOpened) {
       throw new Error('the remote pane has no mkdir control (data-testid="sftp-mkdir")')
     }
-    await browser.$('[data-testid="sftp-mkdir-input"]').waitForExist({ timeout: 5_000 })
+    await browser.$('[data-testid="sftp-mkdir-input"]').waitForDisplayed({ timeout: 5_000 })
     await browser.$('[data-testid="sftp-mkdir-input"]').setValue(dirName)
+    await browser.$('[data-testid="sftp-mkdir-confirm"]').waitForDisplayed({ timeout: 5_000 })
     await browser.$('[data-testid="sftp-mkdir-confirm"]').click()
 
     /*
@@ -1146,21 +1220,14 @@ function readDockBinding() {
     notes.push(`mkdir created ${dirName} and it is in the listing`)
 
     // ── rename ───────────────────────────────────────────────────────────────
-    const openedMenu = await browser.execute(name => {
-      const row = Array.from(document.querySelectorAll('[data-testid="file-row"]')).find(
-        candidate => (candidate.textContent ?? '').includes(name),
-      )
-      const menu = row?.querySelector('[data-testid="file-row-actions"]')
-      if (!menu) return false
-      menu.click()
-      return true
-    }, dirName)
-    if (!openedMenu) throw new Error(`no row actions menu for ${dirName}`)
-    await browser.$('[data-testid="file-row-rename"]').waitForExist({ timeout: 5_000 })
+    await openRowMenu(dirName)
+
+    await browser.$('[data-testid="file-row-rename"]').waitForDisplayed({ timeout: 5_000 })
     await browser.$('[data-testid="file-row-rename"]').click()
 
-    await browser.$('[data-testid="sftp-rename-input"]').waitForExist({ timeout: 5_000 })
+    await browser.$('[data-testid="sftp-rename-input"]').waitForDisplayed({ timeout: 5_000 })
     await browser.$('[data-testid="sftp-rename-input"]').setValue(renamed)
+    await browser.$('[data-testid="sftp-rename-confirm"]').waitForDisplayed({ timeout: 5_000 })
     await browser.$('[data-testid="sftp-rename-confirm"]').click()
 
     const renamedAppeared = await browser
@@ -1197,22 +1264,14 @@ function readDockBinding() {
     notes.push(`rename: ${dirName} → ${renamed}, old name gone`)
 
     // ── delete ───────────────────────────────────────────────────────────────
-    const openedDelete = await browser.execute(name => {
-      const row = Array.from(document.querySelectorAll('[data-testid="file-row"]')).find(
-        candidate => (candidate.textContent ?? '').includes(name),
-      )
-      const menu = row?.querySelector('[data-testid="file-row-actions"]')
-      if (!menu) return false
-      menu.click()
-      return true
-    }, renamed)
-    if (!openedDelete) throw new Error(`no row actions menu for ${renamed}`)
-    await browser.$('[data-testid="file-row-delete"]').waitForExist({ timeout: 5_000 })
+    await openRowMenu(renamed)
+
+    await browser.$('[data-testid="file-row-delete"]').waitForDisplayed({ timeout: 5_000 })
     await browser.$('[data-testid="file-row-delete"]').click()
 
     // The confirmation is the product's guard against an accidental delete; a case that
     // skipped it would not be testing the path a user takes.
-    await browser.$('[data-testid="sftp-delete-confirm"]').waitForExist({ timeout: 5_000 })
+    await browser.$('[data-testid="sftp-delete-confirm"]').waitForDisplayed({ timeout: 5_000 })
     await browser.$('[data-testid="sftp-delete-confirm"]').click()
 
     const gone = await browser
