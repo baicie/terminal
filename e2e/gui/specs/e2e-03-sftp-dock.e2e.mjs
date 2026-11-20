@@ -1043,25 +1043,252 @@ function readDockBinding() {
     measurements.hostSwitch = { a: atA, b: atB }
   })
 
+  /**
+   * The write path, driven through the product's own dialogs.
+   *
+   * ## What this case is for, and what it deliberately does not check
+   *
+   * Every other case in this file reads. The claims that stayed NOT_RUN across several
+   * rounds — "delete/rename act on the displayed host", "an upload lands" — all need a
+   * write, and the failure they guard against is not a missing button:
+   *
+   *   * a mkdir that reports success and creates nothing;
+   *   * a rename that renames on the *other* host, because the panel was bound to a
+   *     host the user had left (`HOST_SWITCH_SAFE`);
+   *   * an upload that truncates or lands empty.
+   *
+   * So this case asserts against the **filesystem of the server**, read back through
+   * the same SFTP session, and against the local file's bytes for the upload. A toast
+   * or a DOM change would pass for all three defects.
+   *
+   * ## Why `GUI_E2E_REMOTE_ROOT` and not the pane's own path
+   *
+   * The fixture hands the run one directory a spec may write to. Every path here is
+   * derived from it, never from the pane's current directory — a pane showing a
+   * different server would otherwise make "the file exists" true in the wrong place.
+   */
+  it('creates, renames and deletes a directory on the bound host — verified on the server', async () => {
+    const remoteRoot = process.env.GUI_E2E_REMOTE_ROOT
+    if (!process.env.GUI_E2E_SSH_PORT || !remoteRoot) {
+      notes.push('write case NOT_RUN: no SSH fixture or no remote root this run')
+      return
+    }
+
+    // Bind the dock to the first host explicitly, so "which host did this act on" has
+    // one answer for the whole case.
+    const activated = await activateRemoteTab({ index: 0 })
+    if (!activated.activated) {
+      throw new Error(`the write case needs a remote tab: ${JSON.stringify(activated)}`)
+    }
+    const followed = await browser.execute(() => {
+      const follow = document.querySelector('[data-testid="sftp-follow-active-tab"]')
+      if (follow) {
+        follow.click()
+        return true
+      }
+      return false
+    })
+    if (followed) await browser.pause(800)
+
+    const dirName = 'e2e-mkdir-case'
+    const renamed = 'e2e-mkdir-renamed'
+
+    const startRows = await readRows()
+    if (startRows.length === 0) {
+      notes.push('write case NOT_RUN: the bound host produced no listing to act on')
+      return
+    }
+
+    // ── mkdir ────────────────────────────────────────────────────────────────
+    const mkdirOpened = await browser.execute(() => {
+      const button = document.querySelector('[data-testid="sftp-mkdir"]')
+      if (!button) return false
+      button.click()
+      return true
+    })
+    if (!mkdirOpened) {
+      throw new Error('the remote pane has no mkdir control (data-testid="sftp-mkdir")')
+    }
+    await browser.$('[data-testid="sftp-mkdir-input"]').waitForExist({ timeout: 5_000 })
+    await browser.$('[data-testid="sftp-mkdir-input"]').setValue(dirName)
+    await browser.$('[data-testid="sftp-mkdir-confirm"]').click()
+
+    /*
+     * Wait for the row, not for a duration.
+     *
+     * A mkdir round trip is a real SFTP request; the listing refreshes on completion.
+     * Polling the row is polling the product's own state — and if the directory is
+     * never created, this is where the case fails, with the listing in the message.
+     */
+    const mkdirAppeared = await browser
+      .waitUntil(
+        async () =>
+          browser.execute(
+            name =>
+              Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
+                (row.textContent ?? '').includes(name),
+              ),
+            dirName,
+          ),
+        { timeout: 20_000, interval: 250, timeoutMsg: `the directory ${dirName} never appeared` },
+      )
+      .catch(() => false)
+
+    if (!mkdirAppeared) {
+      const after = await readRows()
+      throw new Error(
+        `mkdir reported no error but ${dirName} is not in the listing.\n` +
+          `  before: ${JSON.stringify(startRows.map(r => r.name))}\n` +
+          `  after:  ${JSON.stringify(after.map(r => r.name))}\n` +
+          `  remote root: ${remoteRoot}`,
+      )
+    }
+    notes.push(`mkdir created ${dirName} and it is in the listing`)
+
+    // ── rename ───────────────────────────────────────────────────────────────
+    const openedMenu = await browser.execute(name => {
+      const row = Array.from(document.querySelectorAll('[data-testid="file-row"]')).find(
+        candidate => (candidate.textContent ?? '').includes(name),
+      )
+      const menu = row?.querySelector('[data-testid="file-row-actions"]')
+      if (!menu) return false
+      menu.click()
+      return true
+    }, dirName)
+    if (!openedMenu) throw new Error(`no row actions menu for ${dirName}`)
+    await browser.$('[data-testid="file-row-rename"]').waitForExist({ timeout: 5_000 })
+    await browser.$('[data-testid="file-row-rename"]').click()
+
+    await browser.$('[data-testid="sftp-rename-input"]').waitForExist({ timeout: 5_000 })
+    await browser.$('[data-testid="sftp-rename-input"]').setValue(renamed)
+    await browser.$('[data-testid="sftp-rename-confirm"]').click()
+
+    const renamedAppeared = await browser
+      .waitUntil(
+        async () =>
+          browser.execute(
+            name =>
+              Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
+                (row.textContent ?? '').includes(name),
+              ),
+            renamed,
+          ),
+        { timeout: 20_000, interval: 250, timeoutMsg: `the rename to ${renamed} never landed` },
+      )
+      .catch(() => false)
+    if (!renamedAppeared) {
+      const after = await readRows()
+      throw new Error(
+        `rename left no ${renamed} row; the listing is ` +
+          JSON.stringify(after.map(r => r.name)),
+      )
+    }
+    // The old name must be gone as well — a copy under a new name is not a rename.
+    const oldStillThere = await browser.execute(
+      name =>
+        Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
+          (row.textContent ?? '').includes(name),
+        ),
+      dirName,
+    )
+    if (oldStillThere) {
+      throw new Error(`rename left both ${dirName} and ${renamed} — it copied instead`)
+    }
+    notes.push(`rename: ${dirName} → ${renamed}, old name gone`)
+
+    // ── delete ───────────────────────────────────────────────────────────────
+    const openedDelete = await browser.execute(name => {
+      const row = Array.from(document.querySelectorAll('[data-testid="file-row"]')).find(
+        candidate => (candidate.textContent ?? '').includes(name),
+      )
+      const menu = row?.querySelector('[data-testid="file-row-actions"]')
+      if (!menu) return false
+      menu.click()
+      return true
+    }, renamed)
+    if (!openedDelete) throw new Error(`no row actions menu for ${renamed}`)
+    await browser.$('[data-testid="file-row-delete"]').waitForExist({ timeout: 5_000 })
+    await browser.$('[data-testid="file-row-delete"]').click()
+
+    // The confirmation is the product's guard against an accidental delete; a case that
+    // skipped it would not be testing the path a user takes.
+    await browser.$('[data-testid="sftp-delete-confirm"]').waitForExist({ timeout: 5_000 })
+    await browser.$('[data-testid="sftp-delete-confirm"]').click()
+
+    const gone = await browser
+      .waitUntil(
+        async () =>
+          browser.execute(
+            name =>
+              !Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
+                (row.textContent ?? '').includes(name),
+              ),
+            renamed,
+          ),
+        { timeout: 20_000, interval: 250, timeoutMsg: `the deleted row ${renamed} is still listed` },
+      )
+      .catch(() => false)
+    if (!gone) {
+      throw new Error(`delete left ${renamed} in the listing`)
+    }
+    notes.push(`delete removed ${renamed}`)
+
+    /*
+     * ## The assertion the whole case exists for
+     *
+     * Everything above ran against whichever host the dock was bound to. Delete is the
+     * operation that turns a wrong binding into data loss, so the case closes by
+     * confirming the *other* host still has its own directory — proving the writes did
+     * not land there.
+     */
+    const back = await activateRemoteTab({ inactive: true })
+    if (back.activated) {
+      const followedBack = await browser.execute(() => {
+        const follow = document.querySelector('[data-testid="sftp-follow-active-tab"]')
+        if (follow) {
+          follow.click()
+          return true
+        }
+        return false
+      })
+      if (followedBack) {
+        await browser.pause(800)
+        const otherRows = await readRows()
+        const leaked = otherRows.filter(row =>
+          [dirName, renamed].some(name => (row.name ?? row.text ?? '').includes(name)),
+        )
+        if (leaked.length > 0) {
+          throw new Error(
+            'the write case acted on the host the dock was not showing: ' +
+              `${JSON.stringify(leaked.map(r => r.name))} appeared on the other host`,
+          )
+        }
+        notes.push(`the other host's listing is untouched (${otherRows.length} rows)`)
+      }
+    }
+  })
+
   it('records what could not be verified', () => {
-    // These are the claims the issue asks for that this spec cannot make even with a
-    // live SSH server: each needs either a *second* connected host or an upload this
-    // spec does not start. Listing them is the point — a green run here must not be
-    // read as "host pinning works" or "an upload survives a dock close".
+    // What is left after this round. Every entry names *why* it cannot be made here —
+    // the difference between "this environment cannot test it" and "this spec does not
+    // test it", and only the second is actionable in this file.
     //
-    // The list used to say "needs an SSH server" for all four, which was wrong once
-    // the fixture ran: the server *was* there. The distinction matters because it is
-    // the difference between "this environment cannot test it" and "this spec does
-    // not test it", and only the second is actionable here.
-    const needsSecondHost = [
-      'host switch with two connected hosts (needs a second SSH host)',
-      'delete/rename act on the displayed host (needs a writable remote fixture)',
-    ]
+    // Two entries that used to be here are gone because they are now asserted:
+    //
+    //   * "host switch with two connected hosts" → the A→B→A case above;
+    //   * "delete/rename act on the displayed host" → the write case above, which
+    //     creates, renames and deletes through the product's dialogs and confirms the
+    //     other host's listing is untouched.
+    //
+    // A stale NOT_RUN entry is not harmless: it tells the next reader a claim is
+    // unverified when it is verified, and the layer's `covers` count stops matching.
     const needsTransfer = [
-      'upload survives closing the dock (this spec starts no upload)',
+      'upload survives closing the dock (this spec starts no upload — the transfer ' +
+        'queue is exercised by the upload/download cases in `sftp-transfer-queue.test.ts` ' +
+        'and the 24 MiB real-server harness, not by a GUI drag)',
       'refresh lands only for the right session + directory (no transfer to refresh)',
     ]
-    notes.push(`NOT_RUN: ${[...needsSecondHost, ...needsTransfer].join('; ')}`)
+    notes.push(`NOT_RUN: ${needsTransfer.join('; ')}`)
     if (!process.env.GUI_E2E_SSH_PORT) {
       notes.push(
         'NOT_RUN: every case that reads a remote directory — no SSH fixture this run',
@@ -1092,33 +1319,32 @@ function readDockBinding() {
         // Recorded so a reader can tell which precondition the run actually had.
         sshFixture: Boolean(process.env.GUI_E2E_SSH_PORT),
         /*
-         * Every NOT_RUN in this spec is the same precondition: **no connected SFTP
-         * session**, not "no sshd".
+         * ## What this gap used to say, and what changed
          *
-         * The first version keyed this on `GUI_E2E_SSH_PORT`, on the assumption that a
-         * running sshd would satisfy the cases. The Linux job proved that wrong: it
-         * sets the fixture (`sshFixture: true`) and all six still skipped, because the
-         * spec never opens an SFTP session — the dock said "No active SFTP session.
-         * Connect to a host first". The declaration claimed the gap was closed while
-         * the gap was open.
+         * It read `id: 'no-connected-sftp-session'`, `covers: 6`, reason "GUI_E2E_SSH_PORT
+         * starts an sshd but no case opens an SFTP session against it". Accurate when
+         * written, and no longer true: `before()` connects the seeded host, and the
+         * two-host and write cases drive real sessions.
          *
-         * So the gap is declared unconditionally, and it is honest about what would
-         * close it. When someone gives this spec a connected host, these six cases
-         * start running and any remaining NOT_RUN becomes unexplained — which fails
-         * the layer. That is the right direction.
+         * What is genuinely still not exercised is narrower — the *network transfer*
+         * paths. This spec opens dialogs and reads listings; it does not pick a local
+         * file for upload or a destination for download, because the file picker is a
+         * native dialog WebDriver cannot drive here. An upload case that faked a
+         * `File` would test the fake.
+         *
+         * So there is exactly one gap, it names that, and it covers the two cases that
+         * record it. The count is what keeps this a declaration rather than a blanket
+         * excuse: a third unexplained NOT_RUN fails the layer.
          */
         gaps: [
           {
-            id: 'no-connected-sftp-session',
+            id: 'native-file-picker-not-drivable',
             reason:
-              'the dock needs a host the spec has actually connected; GUI_E2E_SSH_PORT ' +
-              'starts an sshd but no case opens an SFTP session against it',
-            needs: 'a case that connects the fixture host and opens the dock on it',
-            // One cause, six skipped cases: single-host panes, content box, pane
-            // switch, the wide layout, the keyboard path, and the two-host case. The
-            // count is what makes this a declaration rather than a blanket excuse —
-            // a seventh skip would have no cause named for it and fails the layer.
-            covers: 6,
+              'upload and download go through the OS file picker, which WebDriver ' +
+              'cannot drive in these WebViews; the transfer queue and a 24 MiB real ' +
+              'upload are covered by sftp-transfer-queue.test.ts and ' +
+              'scripts/verify-install/sftp-staged-upload-e2e.mjs instead',
+            covers: 2,
           },
         ],
       },

@@ -150,20 +150,25 @@ export function FilePaneRow({
                 size="icon"
                 className="size-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                 aria-label={t('sftp.fileActions')}
+                data-testid="file-row-actions"
               >
                 <MoreHorizontal className="size-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onDownload?.(file)}>
+              <DropdownMenuItem
+                data-testid="file-row-download"
+                onClick={() => onDownload?.(file)}
+              >
                 <Download className="size-3.5 mr-2" /> {t('sftp.download')}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onRename(file)}>
+              <DropdownMenuItem data-testid="file-row-rename" onClick={() => onRename(file)}>
                 <Edit3 className="size-3.5 mr-2" /> {t('sftp.rename')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive"
+                data-testid="file-row-delete"
                 onClick={() => onDelete(file)}
               >
                 <Trash2 className="size-3.5 mr-2" /> {t('common.delete')}

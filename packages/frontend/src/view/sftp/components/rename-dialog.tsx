@@ -36,7 +36,7 @@ export const RenameDialog: React.FC<RenameDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent data-testid="sftp-rename-dialog" className="max-w-sm">
         <DialogHeader>
           <DialogTitle>{t('sftp.renameTitle')}</DialogTitle>
           <DialogDescription>
@@ -44,6 +44,7 @@ export const RenameDialog: React.FC<RenameDialogProps> = ({
           </DialogDescription>
         </DialogHeader>
         <Input
+          data-testid="sftp-rename-input"
           value={value}
           onChange={e => setValue(e.target.value)}
           onKeyDown={e => {
@@ -55,7 +56,11 @@ export const RenameDialog: React.FC<RenameDialogProps> = ({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={() => value.trim() && onConfirm(value.trim())} disabled={!value.trim()}>
+          <Button
+            data-testid="sftp-rename-confirm"
+            onClick={() => value.trim() && onConfirm(value.trim())}
+            disabled={!value.trim()}
+          >
             {t('sftp.rename')}
           </Button>
         </DialogFooter>

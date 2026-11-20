@@ -31,7 +31,7 @@ export const MkdirDialog: React.FC<MkdirDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm" data-testid="sftp-mkdir-dialog">
         <DialogHeader>
           <DialogTitle>{t('sftp.newFolder')}</DialogTitle>
           <DialogDescription>
@@ -39,6 +39,7 @@ export const MkdirDialog: React.FC<MkdirDialogProps> = ({
           </DialogDescription>
         </DialogHeader>
         <Input
+          data-testid="sftp-mkdir-input"
           value={value}
           onChange={e => setValue(e.target.value)}
           placeholder="folder-name"
@@ -51,7 +52,11 @@ export const MkdirDialog: React.FC<MkdirDialogProps> = ({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={() => value.trim() && onConfirm(value.trim())} disabled={!value.trim()}>
+          <Button
+            data-testid="sftp-mkdir-confirm"
+            onClick={() => value.trim() && onConfirm(value.trim())}
+            disabled={!value.trim()}
+          >
             {t('sftp.create')}
           </Button>
         </DialogFooter>

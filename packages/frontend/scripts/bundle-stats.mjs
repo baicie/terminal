@@ -182,7 +182,42 @@ const budgets = {
   // round accounts for the whole difference rather than inheriting headroom. The
   // attribute is not decorative: without it the spec's `[data-metric]` guard selected
   // nothing and its assertion could never fail.
-  totalGzip: 653.5 * 1024,
+  //
+  // ## 654 KB (was 653.5 KB), and why the ceiling kept being crossed
+  //
+  // Measured at `43dd4b7` (PR #128): **653.63 KB**, i.e. 0.13 KB over the 653.50 KB
+  // ceiling. PR #128 merged with `Frontend quality` red — and so did PR #129, which
+  // inherits the same tree — because the `required_status_checks` rule was removed
+  // from the `main` ruleset on 2026-11-20 by owner instruction. Nothing caught it
+  // afterwards either, so `main` could not pass its own gate.
+  //
+  // Baseline measured at `65a34e8` (the commit that set the 653.5 ceiling) with the
+  // same toolchain: **653.17 KB**. PR #128's four new production modules account for
+  // the whole difference:
+  //
+  //   features/ai/run-id-issuer.ts                      — request-id deduplication
+  //   features/terminal/services/redact-secrets.ts      — credential-safe error text
+  //   service/in-memory-secret-provider.ts              — second SecretProvider impl
+  //   view/sftp/hooks/host-identity.ts                  — the SFTP session key
+  //
+  // All four are correctness fixes for defects with failing tests (see PR #128); none
+  // is a new dependency, and the initial path is unchanged at 131.18 KB.
+  //
+  // ### This branch adds +0.06 KB, measured on its own tree
+  //
+  // The SFTP write path needed `data-testid` on six controls a real-GUI case could not
+  // otherwise reach (`sftp-upload`, `sftp-mkdir`, the mkdir/rename/delete dialogs and
+  // the per-row action menu). Measured **653.70 KB** on this branch — the two other
+  // rounds that push the tree past 654 (credential scrubbing, AI request ids) ship in a
+  // separate PR, so borrowing their number here would give this branch 0.8 KB of slack
+  // it did not earn.
+  //
+  // 654 KB therefore leaves **0.30 KB**, which is the measured difference and not a
+  // round number. The pattern worth naming: each of the last three ceilings was set
+  // with under 0.4 KB of slack, so the next honest change crossed it. If that keeps
+  // happening the number is too tight for how the project ships, and that deserves a
+  // deliberate decision rather than another 0.1 KB step each time.
+  totalGzip: 654 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 
