@@ -183,3 +183,53 @@ describe('closing', () => {
     expect(onClose).toHaveBeenCalled()
   })
 })
+
+describe('a probe that finishes after the host changed', () => {
+  /**
+   * The race the existing host test does not cover.
+   *
+   * `clears a result when the host changes` renders, waits for the reading, *then*
+   * switches — so the old probe has already returned and only the clearing is under
+   * test. The dangerous order is the other one: the user asks for a reading, switches
+   * to another host while the probe is still in flight, and the slow answer arrives
+   * afterwards. Showing that answer would put machine A's uptime under machine B's
+   * name, which is the exact confusion the panel exists to avoid.
+   *
+   * `server-inspector-view.tsx` has a `generationRef` guard for this. Whether it works
+   * is a different question from whether it exists, and until now nothing asked.
+   */
+  it('does not show host A\'s reading under host B\'s name', async () => {
+    let release: (() => void) | null = null
+    const slow: InspectorExec = {
+      exec: vi.fn(async (_sessionId: string, command: string) => {
+        if (command === 'uname -s') return { stdout: 'Linux', stderr: '', exitCode: 0 }
+        // Hold the probe open until the test says so.
+        await new Promise<void>(resolve => {
+          release = resolve
+        })
+        return { stdout: LINUX_OUTPUT, stderr: '', exitCode: 0 }
+      }),
+    }
+
+    const { rerender } = render(
+      <ServerInspector hostId="h-1" sessionId="tab-1" exec={slow} onClose={vi.fn()} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+
+    // The probe for h-1 is now blocked. Switch to a different host while it is open.
+    await waitFor(() => expect(release).not.toBeNull())
+    rerender(
+      <ServerInspector hostId="h-2" sessionId="tab-2" exec={slow} onClose={vi.fn()} />,
+    )
+
+    // Let the old probe finish. Its answer belongs to h-1.
+    release!()
+    // Give the microtask queue room to deliver it.
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(
+      screen.queryByText('Linux'),
+      'host A\'s reading appeared while the panel was showing host B',
+    ).toBeNull()
+  })
+})
