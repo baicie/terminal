@@ -191,7 +191,15 @@ export async function trustHostKey({ home, hostKeyPath, port, hostname = '127.0.
   return knownHosts
 }
 
-export async function seedSftpHost({ home, configDir, privateKeyPath, port, username, label }) {
+export async function seedSftpHost({
+  home,
+  configDir,
+  privateKeyPath,
+  port,
+  username,
+  label,
+  hostId = 'e2e-sftp-host',
+}) {
   // `configDir` lets one sshd serve several per-spec profiles: each spec gets its own
   // throwaway home, so the row has to be written into each one. Without it the seeded
   // database only lands in the parent's profile and every spec sees an empty host list.
@@ -228,7 +236,7 @@ export async function seedSftpHost({ home, configDir, privateKeyPath, port, user
          VALUES (?, ?, ?, ?, ?, 'key', ?, 1, ?, ?)`,
       )
       .run(
-        'e2e-sftp-host',
+        hostId,
         label,
         '127.0.0.1',
         port,
@@ -243,7 +251,7 @@ export async function seedSftpHost({ home, configDir, privateKeyPath, port, user
   return dbPath
 }
 
-async function sshdConfig({ port, paths, username }) {
+async function sshdConfig({ port, paths, username, chroot }) {
   const text = [
     `Port ${port}`,
     'ListenAddress 127.0.0.1',
@@ -256,11 +264,28 @@ async function sshdConfig({ port, paths, username }) {
     'PermitRootLogin no',
     'UsePAM no',
     'StrictModes no',
-    `AllowUsers ${username}`,
     'Subsystem sftp internal-sftp',
     'LogLevel ERROR',
-  ].join('\n')
-  return `${text}\n`
+  ]
+  /*
+   * ## Why there is no `ChrootDirectory` here
+   *
+   * Confining the session to a throwaway directory is the right goal — the fixture runs
+   * as the developer's own account, so an unconfined SFTP pane lists their real `$HOME`
+   * (44 entries on the machine this was written on), and a spec that uploads, renames
+   * or deletes would act on real files.
+   *
+   * `ChrootDirectory` cannot do it: OpenSSH requires the chroot path to be owned by
+   * root and not group/world writable, which a per-user sshd started as an ordinary
+   * account cannot arrange. `ForceCommand internal-sftp` alone does not confine
+   * either — it only refuses shell commands.
+   *
+   * So containment is the caller's job: `startSeededSshd` creates a private directory
+   * and hands it to the specs as `remoteRoot`, and every write in a spec is relative to
+   * it. The alternative (running sshd as root) is worse than the risk it removes.
+   */
+  text.push(`AllowUsers ${username}`)
+  return `${text.join('\n')}\n`
 }
 
 /**
@@ -268,7 +293,20 @@ async function sshdConfig({ port, paths, username }) {
  *
  * Returns the pieces a caller needs to stop it again.
  */
-export async function startSeededSshd({ home, label = 'E2E Local' }) {
+export async function startSeededSshd({
+  home,
+  label = 'E2E Local',
+  /**
+   * Whether to write a host row pointing at this server.
+   *
+   * A second server exists so a spec can hold two connections; it must not also write
+   * a second row, because `INSERT OR REPLACE` on the fixed id would replace the first
+   * one and leave the suite with one host again.
+   */
+  seedRow = true,
+  /** Row id and name for a second host; the default keeps the original single row. */
+  hostId = 'e2e-sftp-host',
+} = {}) {
   // Resolve the tools before doing anything else, and name what is missing. On
   // Windows the *client* tools exist but `sshd.exe` is an optional feature, so this
   // check is what separates "this platform cannot host the fixture" from "the
@@ -294,6 +332,18 @@ export async function startSeededSshd({ home, label = 'E2E Local' }) {
 
   const workDirectory = await mkdtemp(path.join(os.tmpdir(), 'terminal-gui-sftp-'))
   await chmod(workDirectory, 0o700)
+  /*
+   * Where a spec is allowed to write.
+   *
+   * The sshd runs as the developer's account, so the pane can reach their real `$HOME`.
+   * Every upload, rename and delete in a spec must name a path under this directory —
+   * that is what makes "the bytes arrived" checkable without touching user data.
+   *
+   * Created here rather than by the spec so the path is reported once, in the fixture's
+   * return value, instead of each spec inventing its own.
+   */
+  const remoteRoot = path.join(workDirectory, 'remote')
+  await mkdir(remoteRoot, { recursive: true, mode: 0o700 })
   const paths = {
     hostKey: path.join(workDirectory, 'host_key'),
     userKey: path.join(workDirectory, 'user_key'),
@@ -330,13 +380,16 @@ export async function startSeededSshd({ home, label = 'E2E Local' }) {
     throw new Error(`sshd did not listen on ${port}:\n${diagnostics}`)
   }
 
-  const databaseFile = await seedSftpHost({
-    home,
-    privateKeyPath: paths.userKey,
-    port,
-    username,
-    label,
-  })
+  const databaseFile = seedRow
+    ? await seedSftpHost({
+        home,
+        privateKeyPath: paths.userKey,
+        port,
+        username,
+        label,
+        hostId,
+      })
+    : null
   // The app refuses an unknown host key, which is correct; the fixture's job is to make
   // its throwaway key known inside the throwaway profile.
   const knownHostsFile = await trustHostKey({ home, hostKeyPath: paths.hostKey, port })
@@ -347,6 +400,8 @@ export async function startSeededSshd({ home, label = 'E2E Local' }) {
     databaseFile,
     knownHostsFile,
     hostKeyPath: paths.hostKey,
+    /** The only directory a spec may write to over SFTP. */
+    remoteRoot,
     // Needed to seed additional per-spec profiles against this same sshd.
     userKeyPath: paths.userKey,
     async stop() {

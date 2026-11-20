@@ -149,6 +149,27 @@ if (sshFixtureRequested) {
     log('starting a throwaway sshd and seeding a host into the profile')
     fixture = await startSeededSshd({ home })
     log(`sshd on 127.0.0.1:${fixture.port}; host row written to ${fixture.databaseFile}`)
+    /*
+     * A second server, for the cases that need two *different* hosts.
+     *
+     * `e2e-03` records "host switch with two connected hosts" as NOT_RUN because it
+     * has only one. A second sshd on its own port with its own host key is what makes
+     * "the panel follows the tab, not the last connection" checkable: with one server
+     * a wrong binding still lists the right files.
+     *
+     * A failure here is not fatal — the single-host cases still run, and the two-host
+     * case keeps recording NOT_RUN with the reason.
+     */
+    try {
+      fixture.secondary = await startSeededSshd({
+        home,
+        label: 'E2E Second',
+        hostId: 'e2e-sftp-host-second',
+      })
+      log(`second sshd on 127.0.0.1:${fixture.secondary.port}`)
+    } catch (error) {
+      log(`no second sshd: ${error.message}`)
+    }
 
   } catch (error) {
     // A missing daemon is not a failed suite. It is a missing precondition, and it
@@ -263,6 +284,24 @@ if (fixture !== null && specFiles.length > 0) {
       }),
     )
     /*
+     * The second server needs its own row in the same profile.
+     *
+     * Seeding it only into the parent profile left the per-spec one with a single
+     * host, and the two-host case failed with "no card labelled E2E Second" — the case
+     * was correct, the fixture had not put the row where the app reads it.
+     */
+    if (fixture.secondary) {
+      await seedSftpHost({
+        home: specHome,
+        configDir,
+        privateKeyPath: fixture.secondary.userKeyPath,
+        port: fixture.secondary.port,
+        username: fixture.secondary.username,
+        label: 'E2E Second',
+        hostId: 'e2e-sftp-host-second',
+      })
+    }
+    /*
      * Each profile is a separate `HOME`, so each needs the host key trusted too.
      *
      * The app refuses an unknown host key. Without this the seeded host connects and
@@ -274,6 +313,15 @@ if (fixture !== null && specFiles.length > 0) {
       hostKeyPath: fixture.hostKeyPath,
       port: fixture.port,
     })
+    if (fixture.secondary) {
+      // A different server presents a different host key; trusting only the first
+      // would leave the second refused with the same "unknown key" failure.
+      await trustHostKey({
+        home: specHome,
+        hostKeyPath: fixture.secondary.hostKeyPath,
+        port: fixture.secondary.port,
+      })
+    }
   }
   log(`seeded ${fixture.seededProfiles.length} per-spec profile(s)`)
 }
@@ -283,6 +331,16 @@ const run = runSpecs(specFiles, {
   GUI_E2E_BINARY: binary,
   GUI_E2E_HOME: home,
   GUI_E2E_SSH_PORT: fixture ? String(fixture.port) : '',
+  /*
+   * The only directory a spec may write to over SFTP.
+   *
+   * The fixture's sshd runs as the developer's account, so the pane can reach their
+   * real `$HOME`. Handing every spec the same contained directory is what lets an
+   * upload test assert on real bytes without touching user files.
+   */
+  GUI_E2E_REMOTE_ROOT: fixture ? fixture.remoteRoot : '',
+  /** Port of the second server, for the two-host cases. Empty when unavailable. */
+  GUI_E2E_SSH_PORT_2: fixture?.secondary ? String(fixture.secondary.port) : '',
 })
 
 if (fixture !== null) {
