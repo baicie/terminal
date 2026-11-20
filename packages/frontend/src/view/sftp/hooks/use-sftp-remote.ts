@@ -6,13 +6,14 @@ import { useTranslation } from 'react-i18next'
 import { registerSession } from '@/service/sftp-session-claim'
 import { isSessionBusy } from '@/service/sftp-transfer-session'
 import { releaseOrDefer } from './sftp-deferred-release'
+import { connectionIdentity, type ConnectionFields } from './host-identity'
 import { loadDirectory } from './load-directory'
 import { createNavigationTracker, isTicketCurrent } from './navigation-token'
 import { traceSftp } from './sftp-trace'
 import { useSftpFileOperations } from './use-sftp-file-operations'
 
 interface UseSftpRemoteOptions {
-  activeHost: { id: string, authType: string, name: string } | null
+  activeHost: (ConnectionFields & { name: string }) | null
 }
 
 interface UseSftpRemoteResult {
@@ -53,15 +54,13 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
   // binding next to the id is what makes "switch host then load" safe: the
   // previous implementation kept the old id in the state closure and could
   // list the new host through the old connection.
-  const hostKey = activeHost ? `${activeHost.id}:${activeHost.authType}` : null
+  const hostKey = activeHost ? connectionIdentity(activeHost) : null
   const hostKeyRef = useRef(hostKey)
   hostKeyRef.current = hostKey
   const sessionRef = useRef<SessionBinding | null>(null)
   // A second caller while the first is still connecting must wait for that
   // connection instead of opening another SSH+SFTP session that nobody owns.
-  const inflightRef = useRef<{ key: string, promise: Promise<string | null> } | null>(
-    null,
-  )
+  const inflightRef = useRef<{ key: string, promise: Promise<string | null> } | null>(null)
   // Every host switch starts a new generation; responses from older
   // generations are dropped instead of overwriting the new host's listing.
   const generationRef = useRef(0)
