@@ -149,6 +149,23 @@ if (sshFixtureRequested) {
     log('starting a throwaway sshd and seeding a host into the profile')
     fixture = await startSeededSshd({ home })
     log(`sshd on 127.0.0.1:${fixture.port}; host row written to ${fixture.databaseFile}`)
+    /*
+     * A second server, for the cases that need two *different* hosts.
+     *
+     * `e2e-03` records "host switch with two connected hosts" as NOT_RUN because it
+     * has only one. A second sshd on its own port with its own host key is what makes
+     * "the panel follows the tab, not the last connection" checkable: with one server
+     * a wrong binding still lists the right files.
+     *
+     * A failure here is not fatal — the single-host cases still run, and the two-host
+     * case keeps recording NOT_RUN with the reason.
+     */
+    try {
+      fixture.secondary = await startSeededSshd({ home, label: 'E2E Second', seedRow: false })
+      log(`second sshd on 127.0.0.1:${fixture.secondary.port}`)
+    } catch (error) {
+      log(`no second sshd: ${error.message}`)
+    }
 
   } catch (error) {
     // A missing daemon is not a failed suite. It is a missing precondition, and it
@@ -283,6 +300,16 @@ const run = runSpecs(specFiles, {
   GUI_E2E_BINARY: binary,
   GUI_E2E_HOME: home,
   GUI_E2E_SSH_PORT: fixture ? String(fixture.port) : '',
+  /*
+   * The only directory a spec may write to over SFTP.
+   *
+   * The fixture's sshd runs as the developer's account, so the pane can reach their
+   * real `$HOME`. Handing every spec the same contained directory is what lets an
+   * upload test assert on real bytes without touching user files.
+   */
+  GUI_E2E_REMOTE_ROOT: fixture ? fixture.remoteRoot : '',
+  /** Port of the second server, for the two-host cases. Empty when unavailable. */
+  GUI_E2E_SSH_PORT_2: fixture?.secondary ? String(fixture.secondary.port) : '',
 })
 
 if (fixture !== null) {
