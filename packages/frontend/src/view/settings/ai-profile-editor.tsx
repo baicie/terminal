@@ -61,14 +61,10 @@ export function ModelProfileEditor({ profiles, onChanged }: ModelProfileEditorPr
   const { t } = useTranslation()
   const [draft, setDraft] = useState<ModelProfilePublic | null>(null)
   const [apiKey, setApiKey] = useState('')
-  const [plaintextConfirmed, setPlaintextConfirmed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  // A new or different profile invalidates the previous plaintext confirmation: it was
-  // given for a different endpoint.
   useEffect(() => {
-    setPlaintextConfirmed(false)
     setApiKey('')
     setError(null)
   }, [draft?.id])
@@ -80,7 +76,7 @@ export function ModelProfileEditor({ profiles, onChanged }: ModelProfileEditorPr
 
   const save = async () => {
     if (!draft || busy) return
-    const problem = validateProfile(draft, { allowPlaintextRemote: plaintextConfirmed })
+    const problem = validateProfile(draft)
     if (problem) {
       setError(problem.reason)
       return
@@ -114,8 +110,8 @@ export function ModelProfileEditor({ profiles, onChanged }: ModelProfileEditorPr
     }
   }
 
-  const endpointVerdict = draft ? checkEndpoint(draft.endpoint, plaintextConfirmed) : null
-  const needsPlaintextConfirmation =
+  const endpointVerdict = draft ? checkEndpoint(draft.endpoint) : null
+  const needsPlaintextWarning =
     endpointVerdict !== null && !endpointVerdict.ok && endpointVerdict.reason === 'plaintext-remote'
 
   return (
@@ -167,13 +163,11 @@ export function ModelProfileEditor({ profiles, onChanged }: ModelProfileEditorPr
         <AiProfileForm
           draft={draft}
           apiKey={apiKey}
-          plaintextConfirmed={plaintextConfirmed}
-          needsPlaintextConfirmation={needsPlaintextConfirmation}
+          needsPlaintextWarning={needsPlaintextWarning}
           error={error}
           busy={busy}
           onChange={update}
           onApiKeyChange={setApiKey}
-          onPlaintextConfirm={setPlaintextConfirmed}
           onSave={() => void save()}
           onCancel={() => setDraft(null)}
         />

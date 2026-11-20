@@ -189,7 +189,7 @@ test('a PARTIAL over a declared gap does not fail, and is never counted as a pas
   )
   assert.deepEqual(
     report.cases,
-    [{ case: 'e2e-03', verdict: 'PARTIAL', notRunCount: 1 }],
+    [{ case: 'e2e-03', verdict: 'PARTIAL', notRunCount: 1, coveredElsewhere: [] }],
     'the NOT_RUN count must survive into the report',
   )
 })
@@ -208,7 +208,7 @@ test('a NOT_RUN beyond the declared gaps fails the layer', () => {
   const report = buildGuiReport({ artifactsDir: root, platform: 'Linux' })
   assert.equal(report.status, 'FAIL')
   assert.deepEqual(report.unexplainedNotRun, [
-    { case: 'e2e-04', notRunCount: 4, declaredCoverage: 1 },
+    { case: 'e2e-04', notRunCount: 4, declaredCoverage: 1, coveredElsewhere: [] },
   ])
 })
 
@@ -331,7 +331,7 @@ test('a case that reports NOT_RUN as an array of reasons is still checked', () =
     'a launch regression recorded as an array must not be invisible to the layer',
   )
   assert.deepEqual(report.unexplainedNotRun, [
-    { case: 'e2e-01', notRunCount: 1, declaredCoverage: 0 },
+    { case: 'e2e-01', notRunCount: 1, declaredCoverage: 0, coveredElsewhere: [] },
   ])
 })
 
@@ -349,7 +349,9 @@ test('the array form honours a declared gap the same way the number does', () =>
   const report = buildGuiReport({ artifactsDir: root, platform: 'linux' })
   assert.equal(report.status, 'PASS', 'a declared gap must clear it whichever shape reported it')
   assert.deepEqual(report.unexplainedNotRun, [])
-  assert.deepEqual(report.cases, [{ case: 'e2e-01', verdict: 'PARTIAL', notRunCount: 1 }])
+  assert.deepEqual(report.cases, [
+    { case: 'e2e-01', verdict: 'PARTIAL', notRunCount: 1, coveredElsewhere: [] },
+  ])
 })
 
 test('case evidence that exists but cannot be parsed is INCOMPLETE, not a pass', () => {
@@ -375,4 +377,53 @@ test('a directory that simply has no evidence file is not counted as unreadable'
   const report = buildGuiReport({ artifactsDir: root, platform: 'linux' })
   assert.equal(report.status, 'PASS')
   assert.deepEqual(report.unreadableCaseEvidence, [])
+})
+
+// ---------------------------------------------------------------------------
+// A gap another spec owns is reported, not hidden.
+//
+// e2e-04 used to list `snippet-draft-capture` as an open gap while e2e-05 verified
+// that exact workflow on every platform. The matrix then showed one capability as both
+// PASS and NOT_RUN — which reads as half-finished and invites re-implementing it.
+//
+// The fix is a declaration, not a subtraction: the case really did not run there, and
+// erasing the count would hide a spec that stopped exercising its own surface.
+// ---------------------------------------------------------------------------
+
+test('a gap covered by another spec is surfaced with the spec that owns it', () => {
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(6, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', {
+      verdict: 'PARTIAL',
+      notRunCount: 1,
+      gaps: [
+        {
+          id: 'snippet-draft-capture',
+          reason: 'driven end to end by e2e-05',
+          needs: 'nothing',
+          coveredBy: 'e2e-05',
+        },
+      ],
+    }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'macOS' })
+  const entry = report.cases.find(entry => entry.case === 'e2e-04')
+  assert.deepEqual(entry.coveredElsewhere, [
+    { id: 'snippet-draft-capture', by: 'e2e-05' },
+  ])
+})
+
+test('a covered gap still counts as a NOT_RUN for the case', () => {
+  // The other half of the rule: declaring an owner must not launder the count.
+  const root = artifactsWithCases({
+    'json/wdio-0-0-1000000000000.json': wdio(6, 0),
+    'cases/e2e-04': caseEvidence('e2e-04', {
+      verdict: 'PARTIAL',
+      notRunCount: 2,
+      gaps: [{ id: 'covered', reason: 'r', needs: 'n', coveredBy: 'e2e-05' }],
+    }),
+  })
+  const report = buildGuiReport({ artifactsDir: root, platform: 'macOS' })
+  // One gap declared, two NOT_RUNs → still unexplained.
+  assert.equal(report.status, 'FAIL')
 })

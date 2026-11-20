@@ -23,29 +23,26 @@ import {
 import { hasProfileSecret } from '@/service/database/ai-profiles'
 
 interface AiProfileFormProps {
+  /** True when the typed endpoint is plain HTTP to a remote host. */
+  needsPlaintextWarning: boolean
   draft: ModelProfilePublic
   apiKey: string
-  plaintextConfirmed: boolean
-  needsPlaintextConfirmation: boolean
   error: string | null
   busy: boolean
   onChange(partial: Partial<ModelProfilePublic>): void
   onApiKeyChange(value: string): void
-  onPlaintextConfirm(value: boolean): void
   onSave(): void
   onCancel(): void
 }
 
 export function AiProfileForm({
+  needsPlaintextWarning,
   draft,
   apiKey,
-  plaintextConfirmed,
-  needsPlaintextConfirmation,
   error,
   busy,
   onChange,
   onApiKeyChange,
-  onPlaintextConfirm,
   onSave,
   onCancel,
 }: AiProfileFormProps) {
@@ -88,17 +85,12 @@ export function AiProfileForm({
         />
       </div>
 
-      {needsPlaintextConfirmation && (
-        <div className="flex items-start gap-2" data-testid="ai-plaintext-warning">
-          <Switch
-            id="ai-plaintext-confirm"
-            checked={plaintextConfirmed}
-            onCheckedChange={onPlaintextConfirm}
-          />
-          <Label htmlFor="ai-plaintext-confirm" className="text-xs">
-            {t('settings.ai.plaintextConfirm')}
-          </Label>
-        </div>
+      {/* Plain HTTP to a remote host is refused outright, so there is nothing to
+          confirm: a switch here saved a profile that could never send a request. */}
+      {needsPlaintextWarning && (
+        <p className="text-xs text-destructive" role="alert" data-testid="ai-plaintext-warning">
+          {t('settings.ai.plaintextRefused')}
+        </p>
       )}
 
       <div className="space-y-1">

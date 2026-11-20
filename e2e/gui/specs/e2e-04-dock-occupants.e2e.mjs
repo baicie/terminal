@@ -582,9 +582,23 @@ describe('Context Dock occupants — real WebView', () => {
         needs: 'a model endpoint (BLOCKED_EXTERNAL; the suite must not consume a paid key)',
       },
       {
+        /*
+         * Covered by another spec, not unverified.
+         *
+         * `e2e-05` drives the whole workflow on every platform — enable through the
+         * Settings switch, select text in a live terminal, capture the draft, name it,
+         * save it, read the row back from SQLite, close and reopen the dock. Recording
+         * it here as an open gap made the same capability appear twice in the matrix:
+         * once PASS and once NOT_RUN, which reads as "half done" and invites someone
+         * to re-implement a shipped feature.
+         *
+         * The claim is only as good as that spec's evidence, so it names the case
+         * explicitly rather than saying "covered elsewhere".
+         */
         id: 'snippet-draft-capture',
-        reason: 'needs a terminal selection and an enabled extension',
-        needs: 'the snippet workflow spec (e2e-05), where that workflow is driven',
+        reason: 'driven end to end by e2e-05, not by this spec',
+        needs: 'nothing — see e2e-05/snippet-draft-save and its PASS verdict',
+        coveredBy: 'e2e-05',
       },
     ]
     for (const gap of GAPS) {

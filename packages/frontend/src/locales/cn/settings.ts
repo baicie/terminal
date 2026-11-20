@@ -254,5 +254,6 @@ export default {
   'settings.ai.maxTokens': '最大输出 token',
   'settings.ai.timeout': '超时（毫秒）',
   'settings.ai.streaming': '流式返回',
-  'settings.ai.plaintextConfirm': '该 endpoint 使用明文 HTTP，我明白终端文本将以未加密方式发送。',
+  'settings.ai.plaintextRefused':
+    '拒绝明文 HTTP 的远程地址：请求会以未加密方式携带终端文本。请改用 HTTPS，或本机上的本地服务。',
 }

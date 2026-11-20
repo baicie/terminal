@@ -6,7 +6,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { runInspectorProbe, type InspectorExec } from './inspector-probe'
-import { PROBE_COMMANDS } from './server-inspector'
+import { PROBE_COMMANDS, parseProbeOutput } from './server-inspector'
 
 /** An exec double that answers per command. */
 function exec(answer: (command: string) => { stdout: string, stderr?: string, exitCode?: number | null }): InspectorExec {
@@ -175,5 +175,57 @@ describe('the probe is one command string with no interpolation', () => {
     }
     await runInspectorProbe(subject, { ...options, hostId: 'host-with-quotes\'; rm -rf /' })
     expect(seen).toEqual(['uname -s', PROBE_COMMANDS.linux])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Platforms the inspector does not support must say so, not guess.
+//
+// The task asked for "Windows uptime semantics". The product answer is that Windows
+// remote hosts are **not** probed: `platformFor` recognises Linux and Darwin only, and
+// anything else is reported as `unsupported-platform`.
+//
+// That is the right shape — running Linux commands against a Windows host produces
+// errors that read like permission problems — but it means the honest answer to
+// "what is uptime on Windows?" is "there is none, and the panel says so".
+// ---------------------------------------------------------------------------
+
+describe('an unsupported remote platform', () => {
+  it('reports Windows as unsupported rather than probing it', async () => {
+    const subject = exec(command => {
+      if (command === 'uname -s') return { stdout: 'MINGW64_NT-10.0-19045\n' }
+      // Reaching here would mean a command set was guessed for Windows.
+      return { stdout: '', stderr: 'must not run', exitCode: 1 }
+    })
+    const outcome = await runInspectorProbe(subject, options)
+
+    expect(outcome).toMatchObject({
+      ok: false,
+      reason: 'unsupported-platform',
+      platform: 'MINGW64_NT-10.0-19045',
+    })
+    // The call count is the assertion: a guessed-at command would have run.
+    expect(subject.exec).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the linux uptime field', () => {
+  it('reads seconds from /proc/uptime, not the idle field', () => {
+    /*
+     * `/proc/uptime` is two numbers: `12345.67 89012.34` — uptime then total idle.
+     * `cut -d. -f1` splits on the dot and takes the first field, which is the uptime's
+     * integer part. If the command were `awk '{print $2}'` the panel would show idle
+     * time as uptime, which drifts toward the machine's age and looks plausible.
+     */
+    const command = String(PROBE_COMMANDS.linux)
+    const uptimeLine = command.split('; ').find(part => part.includes('/proc/uptime'))
+    expect(uptimeLine).toBeTruthy()
+    expect(uptimeLine).toMatch(/cut -d\. -f1/)
+    expect(uptimeLine).not.toMatch(/\$2/)
+  })
+
+  it('parses the integer into seconds', () => {
+    const { metrics } = parseProbeOutput('os=Linux\nuptime=12345\n', 'linux')
+    expect(metrics.uptimeSeconds).toBe(12345)
   })
 })

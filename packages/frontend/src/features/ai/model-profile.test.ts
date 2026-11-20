@@ -56,8 +56,20 @@ describe('endpoint rules', () => {
     expect(verdict).toMatchObject({ ok: false, reason: 'plaintext-remote' })
   })
 
-  it('allows plain http to a remote host once the user confirms', () => {
-    expect(checkEndpoint('http://api.example.test/v1', true)).toEqual({ ok: true })
+  it('refuses plain http to a remote host even with confirmation', () => {
+    /*
+     * The confirmation used to produce `{ ok: true }` here. The Rust transport refuses
+     * the same URL unconditionally, so the accepted profile saved cleanly and then
+     * failed every request — the save was a promise the app could not keep.
+     *
+     * The transport rule is the one that must not weaken, so the UI matches it. There
+     * is no parameter to pass any more: a caller cannot opt in by accident.
+     */
+    expect(checkEndpoint('http://api.example.test/v1')).toEqual({
+      ok: false,
+      reason: 'plaintext-remote',
+      endpoint: 'http://api.example.test/v1',
+    })
   })
 
   it('refuses a scheme that is not http(s)', () => {
@@ -89,12 +101,10 @@ describe('profile validation', () => {
     expect(validateProfile(profile({ endpoint: 'http://remote.test/v1' }))).toMatchObject({
       field: 'endpoint',
     })
-    // ...unless the caller confirms.
-    expect(
-      validateProfile(profile({ endpoint: 'http://remote.test/v1' }), {
-        allowPlaintextRemote: true,
-      }),
-    ).toBeNull()
+    // ...and there is no confirmation that turns it into a valid profile.
+    expect(validateProfile(profile({ endpoint: 'http://remote.test/v1' }))).toMatchObject({
+      field: 'endpoint',
+    })
   })
 
   it('bounds every number', () => {
