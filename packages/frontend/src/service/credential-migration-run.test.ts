@@ -316,3 +316,139 @@ describe('verification', () => {
     expect(verification.ok).toBe(true)
   })
 })
+
+/*
+ * ## The secret the vault kept, that no row points at
+ *
+ * `MigrationResult.orphanedSecrets` is documented as "secrets the vault accepted but
+ * whose row could not be updated". It was **never incremented** — the field was
+ * initialised to 0 in the result literal and no code path touched it again.
+ *
+ * The case is real. The runner writes the secret, reads it back to confirm, and then
+ * calls `store.commitHost`. If that last step fails — SQLite busy, disk full, the app
+ * killed between the two — the catch records the row as failed and leaves it holding
+ * its plaintext, which is correct. But the ciphertext written a moment earlier is now
+ * unreferenced: the row still names no version, nothing will ever read those keys, and
+ * nothing will ever delete them.
+ *
+ * Reporting `failed` alone tells the operator "retry fixes this". It does, for the row.
+ * It does not recover the orphan, and a vault that fills with unreachable generations
+ * is a cost the user pays for a migration that claims to be safe.
+ */
+describe('a secret the vault kept when the row could not be committed', () => {
+  it('is counted, not silently left behind', async () => {
+    // The vault accepts everything; the row update is what fails.
+    mocks.executeQuery.mockImplementation(async (sql: string) => {
+      if (sql.startsWith('UPDATE hosts')) throw new Error('database is locked')
+      return undefined
+    })
+
+    const result = await migratePlaintextCredentials({ authorized: true })
+
+    // The row keeps its plaintext — that part is right.
+    expect(hosts[0].password).toBe('host-password')
+    expect(hosts[0].credential_ref).toBeNull()
+    expect(result.failed.map(entry => entry.id)).toContain('h1')
+
+    /*
+     * And the ciphertext is accounted for — cleaned up, or counted.
+     *
+     * Both are honest outcomes and the runner may prefer either. What is not honest is
+     * what the code did before: leave `host:h1:1:password` in the vault with
+     * `orphanedSecrets: 0`, so every run reported zero orphans while accumulating them.
+     *
+     * Measured before the fix: the vault held the value, the row held the plaintext,
+     * and the counter was 0.
+     */
+    const leftover = vaultEntries.get('host:h1:1:password')
+    if (leftover !== undefined) {
+      expect(
+        result.orphanedSecrets,
+        'the vault holds a value no row references, and nothing reported it',
+      ).toBeGreaterThan(0)
+    } else {
+      // Cleaned up. The counter correctly stays at zero because nothing was orphaned.
+      expect(result.orphanedSecrets).toBe(0)
+      // And this is the branch the current implementation takes, which is worth naming
+      // so a future change that stops cleaning up does not quietly pass by counting.
+      expect(mocks.vaultRemove).toHaveBeenCalled()
+    }
+  })
+})
+
+/*
+ * The other half: when the cleanup itself fails, the orphan must be counted.
+ *
+ * Removing what was just written is the preferred outcome, so the test above passes on
+ * that branch and would not notice a counter that never moves. This case makes removal
+ * impossible and asserts the number moves — the only way `orphanedSecrets` can be shown
+ * to be live rather than another field initialised to zero.
+ */
+describe('the orphan counter, on both paths', () => {
+  it('counts the generation the vault kept when the row could not commit', async () => {
+    /*
+     * The design keeps the ciphertext rather than deleting it: the version is
+     * deterministic, so a retry overwrites the same keys and re-does nothing it does
+     * not have to. That is `credential-migration.test.ts`'s "retry is safe (same vault
+     * key)" case, and it is correct.
+     *
+     * What was missing is the count. Between the failed commit and the successful
+     * retry the vault holds a generation no row references, and `orphanedSecrets` —
+     * the field documented as exactly this — was initialised to 0 and never touched.
+     */
+    mocks.executeQuery.mockImplementation(async (sql: string) => {
+      if (sql.startsWith('UPDATE hosts')) throw new Error('database is locked')
+      return undefined
+    })
+
+    const result = await migratePlaintextCredentials({ authorized: true })
+
+    // The row keeps its plaintext, so the old read path still works.
+    expect(hosts[0].password).toBe('host-password')
+    expect(hosts[0].credential_ref).toBeNull()
+    expect(result.failed.map(entry => entry.id)).toContain('h1')
+
+    // The ciphertext is kept on purpose, and now it is also reported.
+    expect(vaultEntries.get('host:h1:1:password')).toBe('host-password')
+    expect(
+      result.orphanedSecrets,
+      'the vault holds a generation no row references and the run claimed zero orphans',
+    ).toBeGreaterThan(0)
+  })
+
+  it('counts one per kind, so a host with a key and a password reports two', async () => {
+    /*
+     * `written.length`, not `1`. A host can carry both a password and a private key;
+     * reporting one orphan for two stranded generations would understate it by exactly
+     * the amount that matters when someone is auditing what a failed migration left.
+     */
+    hosts = [
+      {
+        id: 'h1',
+        name: 'prod',
+        password: 'host-password',
+        private_key: 'host-key',
+        credential_ref: null,
+      },
+    ]
+    installDatabase()
+    mocks.executeQuery.mockImplementation(async (sql: string) => {
+      if (sql.startsWith('UPDATE hosts')) throw new Error('database is locked')
+      return undefined
+    })
+
+    const result = await migratePlaintextCredentials({ authorized: true })
+
+    expect(result.orphanedSecrets).toBe(2)
+    expect(vaultEntries.get('host:h1:1:password')).toBe('host-password')
+    expect(vaultEntries.get('host:h1:1:privateKey')).toBe('host-key')
+  })
+
+  it('is zero when every row commits', async () => {
+    // The control: a counter that moves must also be capable of staying at zero for an
+    // honest reason, or "greater than zero" above would prove nothing.
+    const result = await migratePlaintextCredentials({ authorized: true })
+    expect(result.failed).toEqual([])
+    expect(result.orphanedSecrets).toBe(0)
+  })
+})
