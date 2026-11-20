@@ -148,9 +148,7 @@ describe('E2E-01 startup and terminal readiness', () => {
        * local tab and the case recorded NOT_RUN — the product had the tab all along,
        * and the status bar in the same run said `ConnectedLocal142×43`.
        */
-      const local =
-        tabs.find(tab => tab.getAttribute('data-tab-type') === 'local') ??
-        tabs.find(tab => /^local$/i.test(tab.getAttribute('aria-label') ?? ''))
+      const local = tabs.find(tab => tab.getAttribute('data-tab-type') === 'local')
       if (!local) return { ok: false, tabs: tabs.length }
       // Mark it so the WebDriver click below can find the same element.
       local.setAttribute('data-e2e-activate', 'local')

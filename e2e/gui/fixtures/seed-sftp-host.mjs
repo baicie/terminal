@@ -33,6 +33,50 @@ import { promisify } from 'node:util'
 const execFileAsync = promisify(execFile)
 
 /**
+ * Every sshd this module has started and not yet seen exit.
+ *
+ * The cleanup hook below is why this exists: without it, a cancelled CI job or a
+ * Ctrl-C leaves a listening daemon behind with `ppid=1`, and on a long-lived machine
+ * they accumulate (measured: five, the oldest a day old). Registered here rather than
+ * in the harness because the harness is not the only caller — a probe script that
+ * imports `startSeededSshd` gets the same protection.
+ */
+const liveDaemons = new Set()
+
+/** Stop everything still running. Idempotent; safe to call from any path. */
+function reapAllDaemons() {
+  for (const daemon of liveDaemons) {
+    try {
+      if (daemon.exitCode === null && daemon.signalCode === null) daemon.kill('SIGKILL')
+    } catch {
+      // A daemon that is already gone throws ESRCH; nothing to do.
+    }
+  }
+  liveDaemons.clear()
+}
+
+/*
+ * ## Why SIGKILL and not a graceful stop on the way out
+ *
+ * There is nothing to flush: these servers have no state beyond the throwaway profile
+ * they were pointed at, and the profile is deleted separately. What matters is that
+ * the process is *gone*, because a listener holding a reserved port is what makes the
+ * next run flaky. `stop()` still does SIGTERM→SIGKILL for the orderly path.
+ *
+ * `beforeExit` covers the normal end of a script that forgot to call `stop()`; the
+ * signals cover the two ways a developer or CI actually interrupts one.
+ */
+process.once('beforeExit', reapAllDaemons)
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  // Re-raise so the process still dies with the signal it was sent — a hook that
+  // swallows SIGINT would make Ctrl-C stop working.
+  process.once(signal, () => {
+    reapAllDaemons()
+    process.kill(process.pid, signal)
+  })
+}
+
+/**
  * Where the OpenSSH tools live, per platform.
  *
  * The Unix paths were hard-coded, so on Windows the first attempt was
@@ -251,7 +295,7 @@ export async function seedSftpHost({
   return dbPath
 }
 
-async function sshdConfig({ port, paths, username, chroot }) {
+async function sshdConfig({ port, paths, username, chroot, sftpStart }) {
   const text = [
     `Port ${port}`,
     'ListenAddress 127.0.0.1',
@@ -264,7 +308,18 @@ async function sshdConfig({ port, paths, username, chroot }) {
     'PermitRootLogin no',
     'UsePAM no',
     'StrictModes no',
-    'Subsystem sftp internal-sftp',
+    /*
+     * ## Why `-d`
+     *
+     * Both fixtures run as the same OS account, so without this every server resolves
+     * `.` to the same `$HOME` and both panes render byte-identical rows. The two-host
+     * case then cannot distinguish "the panel followed the tab" from "the panel never
+     * moved" — measured: its binding assertion compared two connections listing the
+     * same directory, which is precisely the wrong-binding failure it exists to catch.
+     *
+     * `-d` gives each server its own start directory, so the rows really differ.
+     */
+    `Subsystem sftp internal-sftp${sftpStart ? ` -d ${sftpStart}` : ''}`,
     'LogLevel ERROR',
   ]
   /*
@@ -283,6 +338,25 @@ async function sshdConfig({ port, paths, username, chroot }) {
    * So containment is the caller's job: `startSeededSshd` creates a private directory
    * and hands it to the specs as `remoteRoot`, and every write in a spec is relative to
    * it. The alternative (running sshd as root) is worse than the risk it removes.
+   *
+   * ## What "containment is the caller's job" actually means
+   *
+   * It is a **convention the specs follow**, not a bound the server enforces. The
+   * product's `sftp_delete` / `sftp_rename` / `sftp_mkdir` reject only an empty path
+   * (`src-tauri/src/sftp.rs`) and pass the string to the server, which is correct —
+   * the remote server's own permissions are the authority on what a user may touch.
+   * The fixture's sshd runs as the developer's account, so a spec that named
+   * `/Users/<dev>/Documents` would really delete from there.
+   *
+   * `sftpStart` below narrows this in practice: the pane opens in `remoteRoot` and a
+   * spec reaches a file through the listing, so a path outside it takes a deliberate
+   * `..` or an absolute path in spec code. That is a real reduction in the blast
+   * radius but **not a guarantee**, and no test can prove a negative about the next
+   * spec someone writes. The two rules that follow from it:
+   *
+   *   * every write names a path under `GUI_E2E_REMOTE_ROOT`;
+   *   * a spec that needs to prove a write happened reads it back **through the same
+   *     root**, so a wrong path fails loudly instead of succeeding elsewhere.
    */
   text.push(`AllowUsers ${username}`)
   return `${text.join('\n')}\n`
@@ -344,6 +418,16 @@ export async function startSeededSshd({
    */
   const remoteRoot = path.join(workDirectory, 'remote')
   await mkdir(remoteRoot, { recursive: true, mode: 0o700 })
+  /*
+   * A marker file per server, so "these are different directories" is checkable by
+   * content rather than by a path string the spec would have to trust.
+   *
+   * Named after the label because that is what the spec already matches on, and a
+   * reader comparing two listings can see which server produced which.
+   */
+  await writeFile(path.join(remoteRoot, `${label.replace(/\s+/g, '-').toLowerCase()}.marker`), `${label}\n`, {
+    mode: 0o600,
+  })
   const paths = {
     hostKey: path.join(workDirectory, 'host_key'),
     userKey: path.join(workDirectory, 'user_key'),
@@ -360,14 +444,43 @@ export async function startSeededSshd({
 
   const port = await reservePort()
   const username = os.userInfo().username
-  await writeFile(paths.config, await sshdConfig({ port, paths, username }), {
-    mode: 0o600,
-  })
+  await writeFile(
+    paths.config,
+    await sshdConfig({ port, paths, username, sftpStart: remoteRoot }),
+    { mode: 0o600 },
+  )
 
   // sshd requires an absolute config path and refuses a world-writable directory.
   const daemon = spawn(sshd, ['-D', '-e', '-f', paths.config], {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
+  /*
+   * ## Why the daemon is registered for death, not only stopped politely
+   *
+   * Measured on a developer machine: five `sshd -D -e -f …terminal-gui-sftp-XXXX/sshd_config`
+   * processes still listening, the oldest from the previous evening. Every one had
+   * `ppid=1` — the harness that spawned it was gone.
+   *
+   * `stop()` is only called on the happy path (`run-gui-e2e.mjs:347`). A cancelled CI
+   * job, a Ctrl-C during a long spec, or any thrown error between `startSeededSshd`
+   * and that line leaves the server running for as long as the machine is up. That is
+   * both a port leak (the reserved port stays bound, so the next run's `reservePort`
+   * can pick one that a stale daemon is about to answer on) and, on a shared runner,
+   * a process nobody owns.
+   *
+   * The registry below makes cleanup independent of the caller remembering: an exit
+   * hook and the three fatal signals all stop every live daemon. `stop()` stays as the
+   * explicit path and is idempotent, so both can run without a double kill.
+   */
+  liveDaemons.add(daemon)
+  const stop = async () => {
+    liveDaemons.delete(daemon)
+    if (daemon.exitCode !== null || daemon.signalCode !== null) return
+    daemon.kill('SIGTERM')
+    await new Promise(resolve => globalThis.setTimeout(resolve, 200))
+    if (daemon.exitCode === null && daemon.signalCode === null) daemon.kill('SIGKILL')
+  }
+
   let diagnostics = ''
   daemon.stdout.setEncoding('utf8')
   daemon.stderr.setEncoding('utf8')
@@ -376,7 +489,7 @@ export async function startSeededSshd({
 
   const ready = await waitForPort(port, Date.now() + 15_000)
   if (!ready) {
-    daemon.kill('SIGKILL')
+    await stop()
     throw new Error(`sshd did not listen on ${port}:\n${diagnostics}`)
   }
 
@@ -402,15 +515,11 @@ export async function startSeededSshd({
     hostKeyPath: paths.hostKey,
     /** The only directory a spec may write to over SFTP. */
     remoteRoot,
+    /** The row of `remoteRoot` the server opens at; the spec reads the same path. */
+    sftpStart: remoteRoot,
     // Needed to seed additional per-spec profiles against this same sshd.
     userKeyPath: paths.userKey,
-    async stop() {
-      if (daemon.exitCode === null) {
-        daemon.kill('SIGTERM')
-        await new Promise(resolve => globalThis.setTimeout(resolve, 200))
-        if (daemon.exitCode === null) daemon.kill('SIGKILL')
-      }
-    },
+    stop,
   }
 }
 

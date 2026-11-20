@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Plus, Upload } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useBreakpointMax } from '@/hooks/use-breakpoint'
+import { useFilePaneShortcuts } from './use-file-pane-shortcuts'
 import type { FileItem } from '@/service/ssh'
 import { FilePaneNavigation } from './file-pane-navigation'
 import { FilePaneTable, type FilePaneSortBy } from './file-pane-table'
@@ -55,19 +56,16 @@ export const FilePane: React.FC<FilePaneProps> = ({
   const [focusedFile, setFocusedFile] = useState<FileItem | null>(null)
   const isMobile = useBreakpointMax('md')
 
-  // Delete key: delete the currently selected/focused file
-  useEffect(() => {
-    if (type !== 'remote' || !sessionId) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Delete' && selectedFile && !e.defaultPrevented) {
-        e.preventDefault()
-        onDelete(selectedFile)
-        void setFocusedFile(null)
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [type, sessionId, selectedFile, onDelete])
+  useFilePaneShortcuts({
+    type,
+    sessionId,
+    selectedFile,
+    onRename,
+    onDelete,
+    // The row this named is gone after a delete, so the selection is cleared rather
+    // than left pointing at a file that no longer exists.
+    onAfterDelete: () => setFocusedFile(null),
+  })
 
   const filteredFiles = files
     .filter(f => f.name.toLowerCase().includes(filter.toLowerCase()))
@@ -148,9 +146,22 @@ export const FilePane: React.FC<FilePaneProps> = ({
       {/* Actions for remote — hidden on mobile (tabs handle it there) */}
       {!isMobile && type === 'remote' && (
         <div className="shrink-0 px-3 py-2 border-t border-border/50 flex gap-2">
+          {/*
+            ## Why these carry test ids
+
+            They were found only by their localised text (`Upload`, `New folder`), which
+            makes any real-GUI assertion depend on the language *and* on the tab's own
+            label — the same class of mistake as identifying a tab by `aria-label`,
+            which the remote shell rewrites.
+
+            The ids are not decorative: `e2e-03`'s write cases (mkdir, rename, delete,
+            upload, download) have to open these dialogs the way a user does, and there
+            was no stable way to do it.
+          */}
           <Button
             size="sm"
             className="h-7 text-xs gap-1"
+            data-testid="sftp-upload"
             onClick={() => onUpload?.(currentPath)}
           >
             <Upload className="size-3" /> {t('sftp.upload')}
@@ -159,6 +170,7 @@ export const FilePane: React.FC<FilePaneProps> = ({
             size="sm"
             variant="outline"
             className="h-7 text-xs gap-1"
+            data-testid="sftp-mkdir"
             onClick={onMkdir}
           >
             <Plus className="size-3" />

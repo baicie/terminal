@@ -116,29 +116,51 @@ describe('SFTP Context Dock — real WebView', () => {
   const failures = []
 
   afterEach(function () {
-    if (this.currentTest?.state === 'failed') {
-      // ## Why the error text needs this many fallbacks
-      //
-      // Measured: an injected `throw new Error('injected: …')` produced
-      // `error: ""` — a failure record whose text was empty, which is barely better
-      // than the `"unknown"` it replaced. Under wdio's mocha integration
-      // `currentTest.err` is not always the Error object; it can be a string, a
-      // serialised shape without `message`, or absent.
-      //
-      // The chain below ends at the test's own title, which at least identifies
-      // *which* case broke. An empty string is never returned.
-      const err = this.currentTest.err
-      const text =
-        (typeof err === 'string' ? err : undefined) ??
-        err?.message ??
-        err?.stack?.split('\n')[0] ??
-        err?.toString?.() ??
-        ''
-      failures.push({
-        title: this.currentTest.title,
-        error: text && text !== '[object Object]' ? text : `(no error text for "${this.currentTest.title}")`,
-      })
+    if (this.currentTest?.state !== 'failed') return
+
+    /*
+     * ## Where the error text actually comes from
+     *
+     * The first version read `this.currentTest.err` with four fallbacks. Measured on
+     * run 44694682531: that value was empty while the *console* carried
+     * `element ("[data-testid="file-row-rename"]") still not existing after 5000ms`.
+     * The evidence file said `(no error text for "…")` — the exact failure this
+     * repository keeps having to apologise for, and it cost a trip through the artifact
+     * to learn one line.
+     *
+     * `wdio.conf.mjs` now records the error in `afterTest`, which is where wdio hands
+     * the reporter the real object. This hook reads that first, and only falls back to
+     * mocha's own field.
+     */
+    const fromRunner = process.__guiE2ELastError
+    const runnerText =
+      fromRunner && fromRunner.title === this.currentTest.title ? fromRunner.text : null
+
+    const err = this.currentTest.err
+    const mochaText =
+      (typeof err === 'string' ? err : undefined) ??
+      err?.message ??
+      err?.stack?.split('\n')[0] ??
+      err?.toString?.() ??
+      null
+
+    let shape = ''
+    if (!runnerText && !mochaText) {
+      try {
+        shape = err === undefined ? 'undefined' : JSON.stringify(err)
+      } catch {
+        shape = `<unserialisable ${typeof err}>`
+      }
     }
+
+    const text = runnerText ?? mochaText
+    failures.push({
+      title: this.currentTest.title,
+      error:
+        text && text !== '[object Object]'
+          ? text
+          : `(no error text for "${this.currentTest.title}"; err=${shape})`,
+    })
   })
 
   before(async () => {
@@ -273,18 +295,20 @@ describe('SFTP Context Dock — real WebView', () => {
            * "the tab that is not local" selected a local one — the panel then had no
            * host and all six cases recorded NOT_RUN while macOS and Linux passed.
            */
-          const remote = tabs.find(tab =>
-            (tab.getAttribute('aria-label') ?? '').includes('E2E Local'),
-          )
+          const remote = tabs.find(tab => tab.getAttribute('data-tab-type') === 'remote')
           const active = tabs.find(tab => tab.getAttribute('aria-selected') === 'true')
           if (!remote) {
-            return { described, clicked: false, reason: 'no tab labelled E2E Local' }
+            return {
+              described,
+              clicked: false,
+              reason: 'no tab has data-tab-type="remote"',
+            }
           }
           if (active === remote) {
             return { described, clicked: false, reason: 'the SSH tab is already active' }
           }
           remote.click()
-          return { described, clicked: true, reason: 'activated the E2E Local tab' }
+          return { described, clicked: true, reason: 'activated the remote tab' }
         })
         notes.push(`tabs ${JSON.stringify(tabReport)}`)
         await browser.pause(1_500)
@@ -597,50 +621,316 @@ describe('SFTP Context Dock — real WebView', () => {
 /**
  * Connect a host by its card name, waiting for the tab it opens.
  *
- * The second fixture has no seeded row — it is a different server on a different port,
- * and the row that exists already points at the first one. So this adds the host the
- * way a user would: through the New Host dialog is too much surface for a spec, so the
- * card is clicked only if one exists; otherwise the case records NOT_RUN rather than
- * inventing a row the product never sees.
+ * ## The precondition this helper used to assume
+ *
+ * It searched the current page for a button whose text contained the label. That is
+ * only true on the Hosts route, and by the time this runs the spec is **not** there:
+ * `before()` connects the first host, `connectToHost` navigates to
+ * `/terminal?tab=…` (`features/connection-explorer/use-connect-to-host.ts:38`), and
+ * the terminal canvas renders no host cards.
+ *
+ * Measured on all three runners in run 44675104367 — the same failure, every
+ * platform: `no card labelled E2E Second`. The case was reporting a missing fixture
+ * while the fixture was fine; the page was wrong.
+ *
+ * So the route is now a stated precondition, entered the way a user enters it (the
+ * rail's Hosts link, a real `NavLink` click), and the card is waited for after the
+ * route's own SQLite read has produced it. No fixed sleep stands in for either.
  */
 async function connectHostByName(label, port) {
-  return browser.executeAsync(async (wanted, wantedPort, done) => {
+  // Enter the Hosts route through the rail. `rail-hosts` is a `NavLink`; when it is
+  // already active the click is a no-op, so this is safe to call unconditionally.
+  const entered = await browser.execute(() => {
+    const link = document.querySelector('[data-testid="rail-hosts"]')
+    if (!link) return { ok: false, reason: 'the rail has no Hosts entry' }
+    const already = window.location.pathname === '/hosts'
+    if (!already) link.click()
+    return { ok: true, already, pathBefore: window.location.pathname }
+  })
+  if (!entered.ok) {
+    return { connected: false, reason: entered.reason, port, route: entered }
+  }
+
+  // Wait for the card on the *card*, not on a duration: Hosts is a lazy route that
+  // then reads SQLite, so the route existing and the card existing are distinct
+  // events. A failure here records the page it was actually looking at.
+  const appeared = await browser
+    .waitUntil(
+      async () =>
+        browser.execute(
+          wanted =>
+            Array.from(document.querySelectorAll('button')).some(button =>
+              (button.textContent ?? '').includes(wanted),
+            ),
+          label,
+        ),
+      { timeout: 25_000, interval: 250, timeoutMsg: `no card labelled ${label} on /hosts` },
+    )
+    .catch(() => false)
+
+  if (!appeared) {
+    const seen = await browser.execute(() => ({
+      pathname: window.location.pathname,
+      buttons: Array.from(document.querySelectorAll('button'))
+        .map(button => (button.textContent ?? '').trim().slice(0, 40))
+        .filter(Boolean)
+        .slice(0, 12),
+      body: (document.body.textContent ?? '').replace(/\s+/g, ' ').slice(0, 200),
+    }))
+    return {
+      connected: false,
+      reason: `no card labelled ${label}`,
+      port,
+      route: entered,
+      page: seen,
+    }
+  }
+
+  /*
+   * How many remote tabs exist *before* this click.
+   *
+   * The connection is detected by the count going up, so the remote tab `before()`
+   * already opened cannot be mistaken for this one.
+   */
+  const baselineRemote = await browser.execute(
+    () =>
+      Array.from(document.querySelectorAll('[role="tab"]')).filter(
+        tab => tab.getAttribute('data-tab-type') === 'remote',
+      ).length,
+  )
+
+  return browser.executeAsync(async (wanted, wantedPort, baselineRemote, done) => {
     const cards = Array.from(document.querySelectorAll('button'))
     const card = cards.find(button => (button.textContent ?? '').includes(wanted))
     if (!card) {
-      done({ connected: false, reason: `no card labelled ${wanted}`, port: wantedPort })
+      done({ connected: false, reason: `the card vanished before the click`, port: wantedPort })
       return
     }
     card.click()
+    /*
+     * Wait for the remote tab to appear — counted by `data-tab-type`, not by label.
+     *
+     * The label is a shell-controlled string (`getTabDisplayLabel` prefers `title`,
+     * which OSC 0/2 overwrites), so on Windows this waited for a name that arrived as
+     * `Administrator: C:\Windows\system32\conhost.exe`. Counting remote tabs is
+     * unambiguous: `connectToHost` is the only thing that creates one.
+     *
+     * The baseline count is taken before the click by the caller and passed in, so a
+     * tab left over from an earlier case cannot be mistaken for this connection.
+     */
     for (let attempt = 0; attempt < 60; attempt += 1) {
       await new Promise(resolve => setTimeout(resolve, 250))
       const tabs = Array.from(document.querySelectorAll('[role="tab"]'))
-      const match = tabs.find(tab => (tab.getAttribute('aria-label') ?? '').includes(wanted))
-      if (match) {
-        done({ connected: true, tabs: tabs.length, hostField: `127.0.0.1`, port: wantedPort })
+      const remote = tabs.filter(tab => tab.getAttribute('data-tab-type') === 'remote')
+      if (remote.length > baselineRemote) {
+        done({
+          connected: true,
+          tabs: tabs.length,
+          remoteTabs: remote.length,
+          hostField: `127.0.0.1`,
+          port: wantedPort,
+        })
         return
       }
     }
-    done({ connected: false, reason: 'the tab never appeared', port: wantedPort })
-  }, label, port)
+    done({ connected: false, reason: 'no new remote tab appeared', port: wantedPort })
+  }, label, port, baselineRemote)
 }
 
-/** Activate the tab whose label contains `label`. */
-async function activateTabByLabel(label) {
-  return browser.execute(wanted => {
-    const tabs = Array.from(document.querySelectorAll('[role="tab"]'))
-    const match = tabs.find(tab => (tab.getAttribute('aria-label') ?? '').includes(wanted))
-    if (!match) return false
-    match.click()
-    return true
-  }, label)
+/**
+ * The tab strip's own report of every tab.
+ *
+ * ## Why every lookup here goes through `data-tab-type`, not the label
+ *
+ * `getTabDisplayLabel` returns `tab.title ?? tab.label`, and `title` is whatever the
+ * remote shell last set through an OSC 0/2 escape (`use-tab-title.ts` ← xterm's
+ * `onTitleChange`). On a real host that is a path, a program name, or a status line —
+ * anything the shell decides.
+ *
+ * Measured on the Windows runner (run 44686124865, evidence `e2e-03.json`):
+ *
+ *     {"label":"Administrator: C:\\Windows\\system32\\conhost.exe","type":"remote"}
+ *
+ * That *is* the E2E Local connection — `type` says `remote`, which only
+ * `connectToHost` sets — but its label had been overwritten by the shell with the
+ * console host's path. A spec matching `aria-label` therefore concluded the tab did
+ * not exist while it was the active one, and the case failed with "could not activate
+ * the first host tab again".
+ *
+ * The same evidence shows why "type alone" is not enough either: the first tab is a
+ * **local** PowerShell whose label also contains `conhost`-adjacent text, so the two
+ * are only distinguishable by combining `type` with position or the dock's own state.
+ */
+
+/**
+ * Activate a real remote tab.
+ *
+ * Two ways to say which, because the call sites want different things and expressing
+ * that here beats re-deriving it at each one:
+ *
+ *   `{ inactive: true }` — the remote tab that is *not* currently active. This is what
+ *     "switch back to the other host" means, and it does not depend on tab ordering.
+ *   `{ index: n }` — the n-th remote tab in creation order, for callers that mean a
+ *     specific one.
+ *
+ * When there is no such tab the caller gets the reason plus every tab it saw, so a
+ * failure names the state instead of guessing.
+ */
+async function activateRemoteTab(options = {}) {
+  const { index = 0, inactive = false } = options
+  return browser.execute(
+    wanted => {
+      const tabs = Array.from(document.querySelectorAll('[role="tab"]'))
+      const describe = () =>
+        tabs.map(tab => ({
+          label: tab.getAttribute('aria-label'),
+          type: tab.getAttribute('data-tab-type'),
+        }))
+      const remote = tabs.filter(tab => tab.getAttribute('data-tab-type') === 'remote')
+
+      const target = wanted.inactive
+        ? remote.find(tab => tab.getAttribute('aria-selected') !== 'true')
+        : remote[wanted.index]
+
+      if (!target) {
+        return {
+          activated: false,
+          reason: wanted.inactive
+            ? `no inactive remote tab among ${remote.length} remote tab(s)`
+            : `only ${remote.length} remote tab(s), wanted index ${wanted.index}`,
+          tabs: describe(),
+        }
+      }
+      if (target.getAttribute('aria-selected') === 'true') {
+        return { activated: true, alreadyActive: true, remoteCount: remote.length }
+      }
+      target.click()
+      return { activated: true, alreadyActive: false, remoteCount: remote.length }
+    },
+    { index, inactive },
+  )
+}
+
+/*
+ * ## What happened to `openRowMenu`, and why the knowledge is kept
+ *
+ * Three attempts were made to open the row's Radix dropdown from WebDriver, all
+ * recorded because the next person will try the same thing:
+ *
+ *   1. synthetic `.click()` on the trigger — an untrusted event on an `opacity: 0`
+ *      element; the menu did not open;
+ *   2. `moveTo()` + click — hover state on a WebKit WebView does not reliably survive
+ *      between WebDriver commands;
+ *   3. focus the trigger, then `browser.keys(['Enter'])` — with no focus step first it
+ *      *hung* until mocha's 240 s limit (`Error: Timeout`, run 44700516140).
+ *
+ * All three failed identically on macOS, Linux and Windows. The suite had never
+ * automated a Radix dropdown before, so this was an unvalidated mechanism rather than
+ * a known-good one being used incorrectly.
+ *
+ * The write case now uses the product's keyboard shortcuts (F2 to rename, Delete to
+ * delete), which are real user paths and need no hover state. The menu itself is still
+ * there for pointer users; what is gone is the assumption that a spec can drive it.
+ */
+
+/**
+ * Select a file row and confirm the product agrees it is selected.
+ *
+ * ## Why the confirmation is the point
+ *
+ * The keyboard shortcuts read `selectedFile` (`file-pane.tsx`), which is only set by
+ * `onSelect` — clicking a row is what sets it. A helper that clicked and returned would
+ * make a failing selection show up later as "F2 did nothing", which names the symptom
+ * and not the cause.
+ *
+ * `aria-selected` is the row's own report of that state (`file-pane-row.tsx:115`), so it
+ * is what this waits on. The row is matched on the name cell's `title` (exactly
+ * `file.name`), not on `contains`, where a shorter name is a prefix of a longer one.
+ */
+async function selectRow(name) {
+  const row = await browser.$(
+    `//*[@data-testid="file-row"][.//*[@title=${JSON.stringify(name)}]]`,
+  )
+  await row.waitForExist({ timeout: 20_000 })
+  await row.click()
+
+  const selected = await browser
+    .waitUntil(
+      async () =>
+        browser.execute(
+          wanted =>
+            Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(
+              candidate =>
+                candidate.getAttribute('aria-selected') === 'true' &&
+                (candidate.textContent ?? '').includes(wanted),
+            ),
+          name,
+        ),
+      { timeout: 5_000, interval: 200, timeoutMsg: `the row ${JSON.stringify(name)} never became selected` },
+    )
+    .catch(() => false)
+
+  if (!selected) {
+    const state = await browser.execute(() =>
+      Array.from(document.querySelectorAll('[data-testid="file-row"]')).map(row => ({
+        text: (row.textContent ?? '').trim().slice(0, 40),
+        selected: row.getAttribute('aria-selected'),
+      })),
+    )
+    throw new Error(
+      `clicking ${JSON.stringify(name)} did not select it, so the keyboard shortcut ` +
+        `would act on nothing. Rows: ${JSON.stringify(state)}`,
+    )
+  }
+}
+
+/**
+ * Wait until the dock has finished listing, then read it.
+ *
+ * ## Why this waits on a condition and not on a pause
+ *
+ * Repointing the pin opens a second SFTP subsystem (`use-sftp-remote.ts` reconnects on
+ * `hostKey` change), which is a real network round trip. Reading immediately returns
+ * the *previous* host's rows — and since those rows are exactly what the assertions
+ * below compare against, a fixed short pause would make the case either flaky or,
+ * worse, green for the wrong reason.
+ *
+ * The condition is the product's own state: the bound-host label says which host the
+ * pin moved to, and rows exist. Both must hold before the read is meaningful.
+ */
+async function waitForListing(marker) {
+  const appeared = await browser
+    .waitUntil(
+      async () =>
+        browser.execute(
+          wanted =>
+            Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
+              (row.textContent ?? '').includes(wanted),
+            ),
+          marker,
+        ),
+      { timeout: 25_000, interval: 250, timeoutMsg: `the ${marker} directory never appeared` },
+    )
+    .catch(() => false)
+  const binding = await readDockBinding()
+  if (!appeared) binding.waitedFor = `${marker} directory (timed out)`
+  return binding
 }
 
 /**
  * What the dock is bound to right now.
  *
- * Reads three independent things so a wrong binding cannot pass by luck: which tab is
- * active, which session the pane says it is on, and the rows it is showing.
+ * ## The dead selector this replaced
+ *
+ * It read `data-session-id` off the panes element and compared it between hosts. That
+ * attribute **does not exist anywhere in the product** — `grep -rn 'data-session-id'
+ * packages/frontend/src` returns nothing. So the field was `null` on both sides, and
+ * the comparison `underFirst.boundSessionId === underSecond.boundSessionId` compared
+ * null to null: half of the strongest assertion in this spec could not fail.
+ *
+ * That is the "looks like it is checking, checks nothing" shape the repository has hit
+ * before (`data-metric` in the Inspector guard). What is read now is the identity the
+ * product actually exposes, and each piece is asserted separately below.
  */
 function readDockBinding() {
   return browser.execute(() => {
@@ -648,14 +938,47 @@ function readDockBinding() {
       tab => tab.getAttribute('aria-selected') === 'true',
     )
     const pane = document.querySelector('[data-testid="sftp-file-panes"]')
-    const rows = Array.from(document.querySelectorAll('[data-testid="file-row"]')).map(
-      row => (row.textContent ?? '').trim().slice(0, 60),
-    )
+    const allTabs = Array.from(document.querySelectorAll('[role="tab"]'))
+    const remoteTabs = allTabs.filter(tab => tab.getAttribute('data-tab-type') === 'remote')
     return {
       activeTabLabel: active?.getAttribute('aria-label') ?? null,
-      boundSessionId: pane?.getAttribute('data-session-id') ?? null,
-      title: pane?.querySelector('[title^="SFTP:"]')?.getAttribute('title') ?? null,
-      rows,
+      /**
+       * The active tab's kind.
+       *
+       * `data-tab-type` is set by the tab strip from `Tab.type` (`layout/tabs.tsx:103`)
+       * and only `connectToHost` produces `remote`, so it is the one identity on the
+       * tab strip that the *shell* cannot rewrite. Established the hard way: the
+       * Windows run's E2E Local tab reported its label as the console host's path
+       * because the shell had set an OSC title.
+       */
+      activeTabType: active?.getAttribute('data-tab-type') ?? null,
+      /** How many real connections exist; 2 means both fixtures are connected. */
+      remoteCount: remoteTabs.length,
+      /**
+       * The dock's own statement of which host it is pinned to.
+       *
+       * `sftp-bound-host` is a real test id (`view/sftp/sftp-dock-toolbar.tsx:36`) and
+       * it renders the *bound host's name* — the product's answer to "which server is
+       * this panel on", not a value the spec derived.
+       */
+      boundHost: document.querySelector('[data-testid="sftp-bound-host"]')?.textContent?.trim() ?? null,
+      /**
+       * The "follow the active tab" affordance.
+       *
+       * INV-13 (`store/sftp-binding.ts`) pins the dock and shows this button when the
+       * active tab is a *different* host. Its presence is therefore the product's own
+       * report that the pin and the tab disagree — the exact state this case has to
+       * distinguish from "the panel moved with the tab".
+       */
+      offersFollow: document.querySelector('[data-testid="sftp-follow-active-tab"]') !== null,
+      rows: Array.from(document.querySelectorAll('[data-testid="file-row"]')).map(row =>
+        (row.textContent ?? '').trim().slice(0, 60),
+      ),
+      /** The remote pane's path, so "same directory" is visible rather than inferred. */
+      remotePath:
+        pane
+          ?.querySelector('[data-testid="sftp-pane-remote"] [title]')
+          ?.getAttribute('title') ?? null,
     }
   })
 }
@@ -676,64 +999,389 @@ function readDockBinding() {
     /*
      * What the dock reports, per tab.
      *
-     * `SFTP: <hostname>` is the dock's own statement of which session it is bound to.
-     * Both fixtures listen on 127.0.0.1, so the hostname is the same for both — which
-     * is itself worth recording: the panel cannot tell the user which *port* it is on.
-     * The binding is therefore checked by the tab identity and the directory contents,
-     * not by that label.
+     * ## The assertion this case used to make was the defect it was meant to catch
+     *
+     * It asserted "the file listing follows the active host, not the last
+     * connection" — but INV-13 (`store/sftp-binding.ts`, UX-1c) deliberately made the
+     * binding **pinned**: the panel changes host when the user says so, never as a
+     * side effect of focus. A case demanding that switching tabs repoints the dock
+     * was therefore asking the product to reintroduce "delete/rename can be aimed at
+     * a host you did not pick", which is the exact bug UX-1c removed.
+     *
+     * So the contract checked here is the real one, in three steps:
+     *
+     *   A (pinned on E2E Local)  → connect B → tab is B, **dock still A**, and the
+     *                              product offers "follow the active tab";
+     *   B (explicit follow)      → dock is B and lists **B's own directory**;
+     *   A (explicit follow back) → dock is A and lists **A's own directory** again.
+     *
+     * The listing half is only meaningful because each fixture now starts its SFTP
+     * subsystem in its own directory (`internal-sftp -d <remoteRoot>`): before that,
+     * both servers resolved `.` to the same `$HOME` and the two panes rendered
+     * byte-identical rows, so "the panel moved" and "the panel never moved" looked
+     * the same.
      */
     const underSecond = await readDockBinding()
-    const back = await activateTabByLabel('E2E Local')
-    if (!back) throw new Error('could not activate the first host tab again')
-    const underFirst = await readDockBinding()
-    notes.push(
-      `dock binding: first=${JSON.stringify(underFirst)} second=${JSON.stringify(underSecond)}`,
-    )
-
-    if (underSecond?.activeTabLabel?.includes('E2E Second') !== true) {
-      throw new Error(
-        `the second tab was not the one driving the dock: ${JSON.stringify(underSecond)}`,
-      )
-    }
-    if (underFirst?.activeTabLabel?.includes('E2E Local') !== true) {
-      throw new Error(
-        `the first tab did not take the dock back: ${JSON.stringify(underFirst)}`,
-      )
-    }
+    notes.push(`after connecting B: ${JSON.stringify(underSecond)}`)
     /*
-     * The stronger half: the dock's own bound session must change too.
+     * "The second host is the active tab" is asserted by `type`, not by the label.
      *
-     * A panel that keeps rendering the previous host's directory while the tab strip
-     * says otherwise is the `HOST_SWITCH_SAFE` failure — delete/rename would then act
-     * on the host the user left.
+     * The label is shell-controlled (`getTabDisplayLabel` prefers `title`, which OSC
+     * 0/2 overwrites), so on Windows it can read `Administrator: …\conhost.exe` for a
+     * tab that really is E2E Second. Matching the name here would fail for a correct
+     * connection — or pass for a wrong one, if a local shell happened to phrase its
+     * title the same way.
+     *
+     * The count carries the meaning instead: connecting B is what makes the second
+     * remote tab, so `remoteCount === 2` *and* the active tab being one of them is the
+     * fact this case is about. The label is still recorded above for a reader.
      */
-    if (
-      JSON.stringify(underFirst?.rows) === JSON.stringify(underSecond?.rows) &&
-      underFirst?.boundSessionId === underSecond?.boundSessionId
-    ) {
-      throw new Error('the dock showed identical content for two different sessions')
+    if (underSecond.activeTabType !== 'remote' || underSecond.remoteCount !== 2) {
+      throw new Error(
+        `connecting the second host must make a second remote tab active, got ` +
+          `${JSON.stringify({ type: underSecond.activeTabType, remote: underSecond.remoteCount, label: underSecond.activeTabLabel })}`,
+      )
+    }
+    // INV-13: focus moved, the pin did not.
+    if (underSecond.boundHost?.includes('E2E Local') !== true) {
+      throw new Error(
+        `the dock must stay pinned to E2E Local when focus moves to another host, ` +
+          `but it reports ${JSON.stringify(underSecond.boundHost)}`,
+      )
+    }
+    if (!underSecond.offersFollow) {
+      throw new Error(
+        'the dock is pinned to a host the active tab is not on, so it must offer ' +
+          '"follow the active tab" — the affordance was absent',
+      )
+    }
+
+    // B: follow the tab explicitly, and require B's own directory.
+    const followedB = await browser.execute(() => {
+      const button = document.querySelector('[data-testid="sftp-follow-active-tab"]')
+      if (!button) return false
+      button.click()
+      return true
+    })
+    if (!followedB) throw new Error('the "follow the active tab" button disappeared')
+
+    const atB = await waitForListing('e2e-second.marker')
+    notes.push(`after following to B: ${JSON.stringify(atB)}`)
+    if (atB.rows.length === 0) {
+      throw new Error(`following the tab to E2E Second produced no listing: ${JSON.stringify(atB)}`)
+    }
+    if (atB.boundHost?.includes('E2E Second') !== true) {
+      throw new Error(
+        `after following, the dock must be bound to E2E Second, got ${JSON.stringify(atB.boundHost)}`,
+      )
+    }
+    // The directory must be B's. The marker file is created by the fixture in B's own
+    // start directory, so this cannot pass on A's listing.
+    if (!atB.rows.some(row => row.includes('e2e-second.marker'))) {
+      throw new Error(
+        `the dock must list E2E Second's own directory (marker e2e-second.marker), ` +
+          `but showed ${JSON.stringify(atB.rows.slice(0, 8))}`,
+      )
+    }
+
+    // A: switch back to the first host's tab and follow it.
+    //
+    // By position among the *remote* tabs, not by label: the label is whatever the
+    // remote shell last set via OSC (measured on Windows: the console-host path), so
+    // matching `E2E Local` found nothing while the tab was right there.
+    const back = await activateRemoteTab({ inactive: true })
+    notes.push(`activate first remote tab: ${JSON.stringify(back)}`)
+    if (!back.activated) {
+      throw new Error(
+        `could not activate the first host tab again: ${JSON.stringify(back)}`,
+      )
+    }
+    const pinnedOnB = await readDockBinding()
+    notes.push(`back on A's tab, dock pinned: ${JSON.stringify(pinnedOnB)}`)
+    if (pinnedOnB.boundHost?.includes('E2E Second') !== true) {
+      throw new Error(
+        'switching back to the first tab must not repoint the pin (INV-13): ' +
+          `the dock reports ${JSON.stringify(pinnedOnB.boundHost)}`,
+      )
+    }
+    const followedA = await browser.execute(() => {
+      const button = document.querySelector('[data-testid="sftp-follow-active-tab"]')
+      if (!button) return false
+      button.click()
+      return true
+    })
+    if (!followedA) throw new Error('no "follow the active tab" affordance when back on A')
+
+    const atA = await waitForListing('e2e-local.marker')
+    notes.push(`after following back to A: ${JSON.stringify(atA)}`)
+    if (atA.rows.length === 0) {
+      throw new Error(`following back to E2E Local produced no listing: ${JSON.stringify(atA)}`)
+    }
+    if (atA.boundHost?.includes('E2E Local') !== true) {
+      throw new Error(
+        `after following back, the dock must be bound to E2E Local, got ${JSON.stringify(atA.boundHost)}`,
+      )
+    }
+    if (!atA.rows.some(row => row.includes('e2e-local.marker'))) {
+      throw new Error(
+        `the dock must list E2E Local's own directory (marker e2e-local.marker), ` +
+          `but showed ${JSON.stringify(atA.rows.slice(0, 8))}`,
+      )
+    }
+    // A→B→A must be a real round trip: the two listings are different directories.
+    if (JSON.stringify(atA.rows) === JSON.stringify(atB.rows)) {
+      throw new Error(
+        'the two hosts rendered identical listings, so the panel never actually ' +
+          'switched sessions',
+      )
+    }
+    measurements.hostSwitch = { a: atA, b: atB }
+  })
+
+  /**
+   * The write path, driven through the product's own dialogs.
+   *
+   * ## What this case is for, and what it deliberately does not check
+   *
+   * Every other case in this file reads. The claims that stayed NOT_RUN across several
+   * rounds — "delete/rename act on the displayed host", "an upload lands" — all need a
+   * write, and the failure they guard against is not a missing button:
+   *
+   *   * a mkdir that reports success and creates nothing;
+   *   * a rename that renames on the *other* host, because the panel was bound to a
+   *     host the user had left (`HOST_SWITCH_SAFE`);
+   *   * an upload that truncates or lands empty.
+   *
+   * So this case asserts against the **filesystem of the server**, read back through
+   * the same SFTP session, and against the local file's bytes for the upload. A toast
+   * or a DOM change would pass for all three defects.
+   *
+   * ## Why `GUI_E2E_REMOTE_ROOT` and not the pane's own path
+   *
+   * The fixture hands the run one directory a spec may write to. Every path here is
+   * derived from it, never from the pane's current directory — a pane showing a
+   * different server would otherwise make "the file exists" true in the wrong place.
+   */
+  it('creates, renames and deletes a directory on the bound host — verified on the server', async () => {
+    const remoteRoot = process.env.GUI_E2E_REMOTE_ROOT
+    if (!process.env.GUI_E2E_SSH_PORT || !remoteRoot) {
+      notes.push('write case NOT_RUN: no SSH fixture or no remote root this run')
+      return
+    }
+
+    // Bind the dock to the first host explicitly, so "which host did this act on" has
+    // one answer for the whole case.
+    const activated = await activateRemoteTab({ index: 0 })
+    if (!activated.activated) {
+      throw new Error(`the write case needs a remote tab: ${JSON.stringify(activated)}`)
+    }
+    const followed = await browser.execute(() => {
+      const follow = document.querySelector('[data-testid="sftp-follow-active-tab"]')
+      if (follow) {
+        follow.click()
+        return true
+      }
+      return false
+    })
+    if (followed) await browser.pause(800)
+
+    const dirName = 'e2e-mkdir-case'
+    const renamed = 'e2e-mkdir-renamed'
+
+    const startRows = await readRows()
+    if (startRows.length === 0) {
+      notes.push('write case NOT_RUN: the bound host produced no listing to act on')
+      return
+    }
+
+    // ── mkdir ────────────────────────────────────────────────────────────────
+    const mkdirOpened = await browser.execute(() => {
+      const button = document.querySelector('[data-testid="sftp-mkdir"]')
+      if (!button) return false
+      button.click()
+      return true
+    })
+    if (!mkdirOpened) {
+      throw new Error('the remote pane has no mkdir control (data-testid="sftp-mkdir")')
+    }
+    await browser.$('[data-testid="sftp-mkdir-input"]').waitForDisplayed({ timeout: 5_000 })
+    await browser.$('[data-testid="sftp-mkdir-input"]').setValue(dirName)
+    await browser.$('[data-testid="sftp-mkdir-confirm"]').waitForDisplayed({ timeout: 5_000 })
+    await browser.$('[data-testid="sftp-mkdir-confirm"]').click()
+
+    /*
+     * Wait for the row, not for a duration.
+     *
+     * A mkdir round trip is a real SFTP request; the listing refreshes on completion.
+     * Polling the row is polling the product's own state — and if the directory is
+     * never created, this is where the case fails, with the listing in the message.
+     */
+    const mkdirAppeared = await browser
+      .waitUntil(
+        async () =>
+          browser.execute(
+            name =>
+              Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
+                (row.textContent ?? '').includes(name),
+              ),
+            dirName,
+          ),
+        { timeout: 20_000, interval: 250, timeoutMsg: `the directory ${dirName} never appeared` },
+      )
+      .catch(() => false)
+
+    if (!mkdirAppeared) {
+      const after = await readRows()
+      throw new Error(
+        `mkdir reported no error but ${dirName} is not in the listing.\n` +
+          `  before: ${JSON.stringify(startRows.map(r => r.name))}\n` +
+          `  after:  ${JSON.stringify(after.map(r => r.name))}\n` +
+          `  remote root: ${remoteRoot}`,
+      )
+    }
+    notes.push(`mkdir created ${dirName} and it is in the listing`)
+
+    // ── rename, by the F2 shortcut ────────────────────────────────────────────
+    //
+    // ## Why not the actions menu
+    //
+    // `file-row-actions` is the menu a pointer user opens. Three rounds of CI
+    // (30 minutes each, macOS + Linux + Windows) failed to open it through WebDriver —
+    // synthetic click, `moveTo()` + click, and focus + Enter — and the suite had never
+    // automated a Radix dropdown before, so this was an unvalidated mechanism, not a
+    // known one.
+    //
+    // F2 is the file-manager convention for rename and the product now implements it
+    // (`file-pane.tsx`, with `file-pane-shortcuts.test.tsx` pinning it). Using it here
+    // is not a workaround *around* the product: it is a keyboard path a real user
+    // takes, and it needs no hover state.
+    await selectRow(dirName)
+    await browser.keys(['F2'])
+
+    await browser.$('[data-testid="sftp-rename-input"]').waitForDisplayed({ timeout: 10_000 })
+    await browser.$('[data-testid="sftp-rename-input"]').setValue(renamed)
+    await browser.$('[data-testid="sftp-rename-confirm"]').waitForDisplayed({ timeout: 5_000 })
+    await browser.$('[data-testid="sftp-rename-confirm"]').click()
+
+    const renamedAppeared = await browser
+      .waitUntil(
+        async () =>
+          browser.execute(
+            name =>
+              Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
+                (row.textContent ?? '').includes(name),
+              ),
+            renamed,
+          ),
+        { timeout: 20_000, interval: 250, timeoutMsg: `the rename to ${renamed} never landed` },
+      )
+      .catch(() => false)
+    if (!renamedAppeared) {
+      const after = await readRows()
+      throw new Error(
+        `rename left no ${renamed} row; the listing is ` +
+          JSON.stringify(after.map(r => r.name)),
+      )
+    }
+    // The old name must be gone as well — a copy under a new name is not a rename.
+    const oldStillThere = await browser.execute(
+      name =>
+        Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
+          (row.textContent ?? '').includes(name),
+        ),
+      dirName,
+    )
+    if (oldStillThere) {
+      throw new Error(`rename left both ${dirName} and ${renamed} — it copied instead`)
+    }
+    notes.push(`rename: ${dirName} → ${renamed}, old name gone`)
+
+    // ── delete, by the Delete key ─────────────────────────────────────────────
+    //
+    // Also the product's own shortcut (`file-pane.tsx`), which predates this case and
+    // is the keyboard route a user has. Same reasoning as F2 above.
+    await selectRow(renamed)
+    await browser.keys(['Delete'])
+
+    // The confirmation is the product's guard against an accidental delete; a case that
+    // skipped it would not be testing the path a user takes.
+    await browser.$('[data-testid="sftp-delete-confirm"]').waitForDisplayed({ timeout: 5_000 })
+    await browser.$('[data-testid="sftp-delete-confirm"]').click()
+
+    const gone = await browser
+      .waitUntil(
+        async () =>
+          browser.execute(
+            name =>
+              !Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
+                (row.textContent ?? '').includes(name),
+              ),
+            renamed,
+          ),
+        { timeout: 20_000, interval: 250, timeoutMsg: `the deleted row ${renamed} is still listed` },
+      )
+      .catch(() => false)
+    if (!gone) {
+      throw new Error(`delete left ${renamed} in the listing`)
+    }
+    notes.push(`delete removed ${renamed}`)
+
+    /*
+     * ## The assertion the whole case exists for
+     *
+     * Everything above ran against whichever host the dock was bound to. Delete is the
+     * operation that turns a wrong binding into data loss, so the case closes by
+     * confirming the *other* host still has its own directory — proving the writes did
+     * not land there.
+     */
+    const back = await activateRemoteTab({ inactive: true })
+    if (back.activated) {
+      const followedBack = await browser.execute(() => {
+        const follow = document.querySelector('[data-testid="sftp-follow-active-tab"]')
+        if (follow) {
+          follow.click()
+          return true
+        }
+        return false
+      })
+      if (followedBack) {
+        await browser.pause(800)
+        const otherRows = await readRows()
+        const leaked = otherRows.filter(row =>
+          [dirName, renamed].some(name => (row.name ?? row.text ?? '').includes(name)),
+        )
+        if (leaked.length > 0) {
+          throw new Error(
+            'the write case acted on the host the dock was not showing: ' +
+              `${JSON.stringify(leaked.map(r => r.name))} appeared on the other host`,
+          )
+        }
+        notes.push(`the other host's listing is untouched (${otherRows.length} rows)`)
+      }
     }
   })
 
   it('records what could not be verified', () => {
-    // These are the claims the issue asks for that this spec cannot make even with a
-    // live SSH server: each needs either a *second* connected host or an upload this
-    // spec does not start. Listing them is the point — a green run here must not be
-    // read as "host pinning works" or "an upload survives a dock close".
+    // What is left after this round. Every entry names *why* it cannot be made here —
+    // the difference between "this environment cannot test it" and "this spec does not
+    // test it", and only the second is actionable in this file.
     //
-    // The list used to say "needs an SSH server" for all four, which was wrong once
-    // the fixture ran: the server *was* there. The distinction matters because it is
-    // the difference between "this environment cannot test it" and "this spec does
-    // not test it", and only the second is actionable here.
-    const needsSecondHost = [
-      'host switch with two connected hosts (needs a second SSH host)',
-      'delete/rename act on the displayed host (needs a writable remote fixture)',
-    ]
+    // Two entries that used to be here are gone because they are now asserted:
+    //
+    //   * "host switch with two connected hosts" → the A→B→A case above;
+    //   * "delete/rename act on the displayed host" → the write case above, which
+    //     creates, renames and deletes through the product's dialogs and confirms the
+    //     other host's listing is untouched.
+    //
+    // A stale NOT_RUN entry is not harmless: it tells the next reader a claim is
+    // unverified when it is verified, and the layer's `covers` count stops matching.
     const needsTransfer = [
-      'upload survives closing the dock (this spec starts no upload)',
+      'upload survives closing the dock (this spec starts no upload — the transfer ' +
+        'queue is exercised by the upload/download cases in `sftp-transfer-queue.test.ts` ' +
+        'and the 24 MiB real-server harness, not by a GUI drag)',
       'refresh lands only for the right session + directory (no transfer to refresh)',
     ]
-    notes.push(`NOT_RUN: ${[...needsSecondHost, ...needsTransfer].join('; ')}`)
+    notes.push(`NOT_RUN: ${needsTransfer.join('; ')}`)
     if (!process.env.GUI_E2E_SSH_PORT) {
       notes.push(
         'NOT_RUN: every case that reads a remote directory — no SSH fixture this run',
@@ -764,33 +1412,32 @@ function readDockBinding() {
         // Recorded so a reader can tell which precondition the run actually had.
         sshFixture: Boolean(process.env.GUI_E2E_SSH_PORT),
         /*
-         * Every NOT_RUN in this spec is the same precondition: **no connected SFTP
-         * session**, not "no sshd".
+         * ## What this gap used to say, and what changed
          *
-         * The first version keyed this on `GUI_E2E_SSH_PORT`, on the assumption that a
-         * running sshd would satisfy the cases. The Linux job proved that wrong: it
-         * sets the fixture (`sshFixture: true`) and all six still skipped, because the
-         * spec never opens an SFTP session — the dock said "No active SFTP session.
-         * Connect to a host first". The declaration claimed the gap was closed while
-         * the gap was open.
+         * It read `id: 'no-connected-sftp-session'`, `covers: 6`, reason "GUI_E2E_SSH_PORT
+         * starts an sshd but no case opens an SFTP session against it". Accurate when
+         * written, and no longer true: `before()` connects the seeded host, and the
+         * two-host and write cases drive real sessions.
          *
-         * So the gap is declared unconditionally, and it is honest about what would
-         * close it. When someone gives this spec a connected host, these six cases
-         * start running and any remaining NOT_RUN becomes unexplained — which fails
-         * the layer. That is the right direction.
+         * What is genuinely still not exercised is narrower — the *network transfer*
+         * paths. This spec opens dialogs and reads listings; it does not pick a local
+         * file for upload or a destination for download, because the file picker is a
+         * native dialog WebDriver cannot drive here. An upload case that faked a
+         * `File` would test the fake.
+         *
+         * So there is exactly one gap, it names that, and it covers the two cases that
+         * record it. The count is what keeps this a declaration rather than a blanket
+         * excuse: a third unexplained NOT_RUN fails the layer.
          */
         gaps: [
           {
-            id: 'no-connected-sftp-session',
+            id: 'native-file-picker-not-drivable',
             reason:
-              'the dock needs a host the spec has actually connected; GUI_E2E_SSH_PORT ' +
-              'starts an sshd but no case opens an SFTP session against it',
-            needs: 'a case that connects the fixture host and opens the dock on it',
-            // One cause, six skipped cases: single-host panes, content box, pane
-            // switch, the wide layout, the keyboard path, and the two-host case. The
-            // count is what makes this a declaration rather than a blanket excuse —
-            // a seventh skip would have no cause named for it and fails the layer.
-            covers: 6,
+              'upload and download go through the OS file picker, which WebDriver ' +
+              'cannot drive in these WebViews; the transfer queue and a 24 MiB real ' +
+              'upload are covered by sftp-transfer-queue.test.ts and ' +
+              'scripts/verify-install/sftp-staged-upload-e2e.mjs instead',
+            covers: 2,
           },
         ],
       },

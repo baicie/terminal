@@ -28,7 +28,7 @@ export const DeleteDialog: React.FC<DeleteDialogProps> = ({
   const { t } = useTranslation()
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent data-testid="sftp-delete-dialog">
         <AlertDialogHeader>
           <AlertDialogTitle>
             {file?.is_directory
@@ -42,6 +42,7 @@ export const DeleteDialog: React.FC<DeleteDialogProps> = ({
         <AlertDialogFooter>
           <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
           <AlertDialogAction
+            data-testid="sftp-delete-confirm"
             onClick={onConfirm}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
