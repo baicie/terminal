@@ -280,11 +280,20 @@ describe('cancellation', () => {
       context: approvedContext(),
     })
     expect(started.ok).toBe(true)
+    const runId = started.ok ? started.runId : ''
     runner.cancel()
     await settle()
-    // Addressed by request id, not by a global flag: two surfaces must not cancel
-    // each other.
-    expect(backend.cancels).toEqual(['run-1'])
+    /*
+     * Addressed by request id, not by a global flag: two surfaces must not cancel
+     * each other.
+     *
+     * The id is compared to the one `start` returned rather than to the literal
+     * `run-1` the counter minted. `RunIdIssuer` prefixes it with a per-realm nonce so
+     * two windows cannot mint the same id (`run-id-issuer.ts`), which means the
+     * literal is no longer the contract — "cancel addresses *this* run" is.
+     */
+    expect(backend.cancels).toEqual([runId])
+    expect(runId).toContain('run-1')
     expect(runner.current().status).toBe('cancelling')
   })
 

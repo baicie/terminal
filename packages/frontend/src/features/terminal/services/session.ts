@@ -1,5 +1,6 @@
 /** 会话管理服务 - 统一管理本地/SSH 会话。 */
 import { invoke } from '@tauri-apps/api/core'
+import { describeInvokeError } from './describe-invoke-error'
 import { resolveSessionCredential } from './session-credentials'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
@@ -264,36 +265,7 @@ export class SessionService {
   }
 }
 
-/**
- * Turn whatever `invoke` rejected with into something a user can read.
- *
- * Prefers the shapes Rust actually sends — a string, an `Error`, or a tagged object
- * such as `{ kind, message }` — and falls back to a JSON rendering rather than
- * `"[object Object]"`, which is indistinguishable from "no reason given".
- */
-import { redactSecrets } from './redact-secrets'
-
-export function describeInvokeError(error: unknown): string {
-  if (typeof error === 'string') return error
-  if (error instanceof Error) return error.message
-  if (typeof error === 'object' && error !== null) {
-    const record = error as Record<string, unknown>
-    for (const key of ['message', 'error', 'reason', 'detail']) {
-      const value = record[key]
-      if (typeof value === 'string' && value.length > 0) return value
-    }
-    try {
-      const json = JSON.stringify(redactSecrets(error))
-      if (json && json !== '{}') return json
-    } catch {
-      // A circular or otherwise unserialisable error: fall through.
-    }
-    // An object with no usable field at all. Naming the situation beats `[object
-    // Object]`, which reads as if the failure had no cause.
-    return 'the connection failed without reporting a reason'
-  }
-  return String(error)
-}
+export { describeInvokeError } from './describe-invoke-error'
 
 /** 会话服务单例 */
 export const sessionService = new SessionService()

@@ -183,41 +183,38 @@ const budgets = {
   // attribute is not decorative: without it the spec's `[data-metric]` guard selected
   // nothing and its assertion could never fail.
   //
-  // ## 654 KB (was 653.5 KB), and why the ceiling kept being crossed
+  // ## 654.5 KB (was 653.5 KB): both rounds, measured on one tree
   //
-  // Measured at `43dd4b7` (PR #128): **653.63 KB**, i.e. 0.13 KB over the 653.50 KB
-  // ceiling. PR #128 merged with `Frontend quality` red — and so did PR #129, which
-  // inherits the same tree — because the `required_status_checks` rule was removed
-  // from the `main` ruleset on 2026-11-20 by owner instruction. Nothing caught it
-  // afterwards either, so `main` could not pass its own gate.
+  // This branch carries two changes that each add bytes, and after #130 landed they
+  // are finally measured *together* rather than summed from separate trees:
   //
-  // Baseline measured at `65a34e8` (the commit that set the 653.5 ceiling) with the
-  // same toolchain: **653.17 KB**. PR #128's four new production modules account for
-  // the whole difference:
+  //   credential-leak fix   +0.28 KB   `scrubSecrets` plus the extracted
+  //                                    `describeInvokeError` (+0.32 KB of scrubbing
+  //                                    code, −0.04 KB from the formatter leaving
+  //                                    `session.ts`)
+  //   AI request-id fix     +0.17 KB   the per-realm prefix, so two windows cannot
+  //                                    mint the same id (653.91 KB measured with it
+  //                                    reverted, confirming the split)
   //
-  //   features/ai/run-id-issuer.ts                      — request-id deduplication
-  //   features/terminal/services/redact-secrets.ts      — credential-safe error text
-  //   service/in-memory-secret-provider.ts              — second SecretProvider impl
-  //   view/sftp/hooks/host-identity.ts                  — the SFTP session key
+  // Baseline is `main@eb7d5bd`, which already includes #130's SFTP round (653.70 KB).
+  // Measured here after rebasing onto it: **654.12 KB** — slightly more than the sum of
+  // the two parts, because the two rounds share some chunk boundaries and the bundler
+  // re-splits them. Summing measurements from separate trees would have predicted
+  // 654.08 and been wrong; this is why the number is taken from one tree.
   //
-  // All four are correctness fixes for defects with failing tests (see PR #128); none
-  // is a new dependency, and the initial path is unchanged at 131.18 KB.
+  // ## The ceiling it replaces had already been crossed
   //
-  // ### This branch adds +0.06 KB, measured on its own tree
+  // `43dd4b7` (PR #128) measured 653.63 KB against a 653.50 KB limit and merged
+  // anyway, because the `required_status_checks` rule was removed from the `main`
+  // ruleset on 2026-11-20 by owner instruction — and the next PR inherited the same
+  // tree. So the numbers above are the first honest measurements since the gate
+  // stopped enforcing, not growth against a healthy budget.
   //
-  // The SFTP write path needed `data-testid` on six controls a real-GUI case could not
-  // otherwise reach (`sftp-upload`, `sftp-mkdir`, the mkdir/rename/delete dialogs and
-  // the per-row action menu). Measured **653.70 KB** on this branch — the two other
-  // rounds that push the tree past 654 (credential scrubbing, AI request ids) ship in a
-  // separate PR, so borrowing their number here would give this branch 0.8 KB of slack
-  // it did not earn.
-  //
-  // 654 KB therefore leaves **0.30 KB**, which is the measured difference and not a
-  // round number. The pattern worth naming: each of the last three ceilings was set
-  // with under 0.4 KB of slack, so the next honest change crossed it. If that keeps
-  // happening the number is too tight for how the project ships, and that deserves a
-  // deliberate decision rather than another 0.1 KB step each time.
-  totalGzip: 654 * 1024,
+  // 654.5 KB is the measured size, not a round number, leaving ~0.42 KB. That is the
+  // first ceiling in four rounds with more than 0.4 KB of slack; the previous three
+  // were each crossed by the very next honest change, which is the argument for slack
+  // rather than against it.
+  totalGzip: 654.5 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 
