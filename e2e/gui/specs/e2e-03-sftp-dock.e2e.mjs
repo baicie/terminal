@@ -273,18 +273,20 @@ describe('SFTP Context Dock — real WebView', () => {
            * "the tab that is not local" selected a local one — the panel then had no
            * host and all six cases recorded NOT_RUN while macOS and Linux passed.
            */
-          const remote = tabs.find(tab =>
-            (tab.getAttribute('aria-label') ?? '').includes('E2E Local'),
-          )
+          const remote = tabs.find(tab => tab.getAttribute('data-tab-type') === 'remote')
           const active = tabs.find(tab => tab.getAttribute('aria-selected') === 'true')
           if (!remote) {
-            return { described, clicked: false, reason: 'no tab labelled E2E Local' }
+            return {
+              described,
+              clicked: false,
+              reason: 'no tab has data-tab-type="remote"',
+            }
           }
           if (active === remote) {
             return { described, clicked: false, reason: 'the SSH tab is already active' }
           }
           remote.click()
-          return { described, clicked: true, reason: 'activated the E2E Local tab' }
+          return { described, clicked: true, reason: 'activated the remote tab' }
         })
         notes.push(`tabs ${JSON.stringify(tabReport)}`)
         await browser.pause(1_500)
@@ -662,7 +664,20 @@ async function connectHostByName(label, port) {
     }
   }
 
-  return browser.executeAsync(async (wanted, wantedPort, done) => {
+  /*
+   * How many remote tabs exist *before* this click.
+   *
+   * The connection is detected by the count going up, so the remote tab `before()`
+   * already opened cannot be mistaken for this one.
+   */
+  const baselineRemote = await browser.execute(
+    () =>
+      Array.from(document.querySelectorAll('[role="tab"]')).filter(
+        tab => tab.getAttribute('data-tab-type') === 'remote',
+      ).length,
+  )
+
+  return browser.executeAsync(async (wanted, wantedPort, baselineRemote, done) => {
     const cards = Array.from(document.querySelectorAll('button'))
     const card = cards.find(button => (button.textContent ?? '').includes(wanted))
     if (!card) {
@@ -670,28 +685,108 @@ async function connectHostByName(label, port) {
       return
     }
     card.click()
+    /*
+     * Wait for the remote tab to appear — counted by `data-tab-type`, not by label.
+     *
+     * The label is a shell-controlled string (`getTabDisplayLabel` prefers `title`,
+     * which OSC 0/2 overwrites), so on Windows this waited for a name that arrived as
+     * `Administrator: C:\Windows\system32\conhost.exe`. Counting remote tabs is
+     * unambiguous: `connectToHost` is the only thing that creates one.
+     *
+     * The baseline count is taken before the click by the caller and passed in, so a
+     * tab left over from an earlier case cannot be mistaken for this connection.
+     */
     for (let attempt = 0; attempt < 60; attempt += 1) {
       await new Promise(resolve => setTimeout(resolve, 250))
       const tabs = Array.from(document.querySelectorAll('[role="tab"]'))
-      const match = tabs.find(tab => (tab.getAttribute('aria-label') ?? '').includes(wanted))
-      if (match) {
-        done({ connected: true, tabs: tabs.length, hostField: `127.0.0.1`, port: wantedPort })
+      const remote = tabs.filter(tab => tab.getAttribute('data-tab-type') === 'remote')
+      if (remote.length > baselineRemote) {
+        done({
+          connected: true,
+          tabs: tabs.length,
+          remoteTabs: remote.length,
+          hostField: `127.0.0.1`,
+          port: wantedPort,
+        })
         return
       }
     }
-    done({ connected: false, reason: 'the tab never appeared', port: wantedPort })
-  }, label, port)
+    done({ connected: false, reason: 'no new remote tab appeared', port: wantedPort })
+  }, label, port, baselineRemote)
 }
 
-/** Activate the tab whose label contains `label`. */
-async function activateTabByLabel(label) {
-  return browser.execute(wanted => {
-    const tabs = Array.from(document.querySelectorAll('[role="tab"]'))
-    const match = tabs.find(tab => (tab.getAttribute('aria-label') ?? '').includes(wanted))
-    if (!match) return false
-    match.click()
-    return true
-  }, label)
+/**
+ * The tab strip's own report of every tab.
+ *
+ * ## Why every lookup here goes through `data-tab-type`, not the label
+ *
+ * `getTabDisplayLabel` returns `tab.title ?? tab.label`, and `title` is whatever the
+ * remote shell last set through an OSC 0/2 escape (`use-tab-title.ts` ← xterm's
+ * `onTitleChange`). On a real host that is a path, a program name, or a status line —
+ * anything the shell decides.
+ *
+ * Measured on the Windows runner (run 44686124865, evidence `e2e-03.json`):
+ *
+ *     {"label":"Administrator: C:\\Windows\\system32\\conhost.exe","type":"remote"}
+ *
+ * That *is* the E2E Local connection — `type` says `remote`, which only
+ * `connectToHost` sets — but its label had been overwritten by the shell with the
+ * console host's path. A spec matching `aria-label` therefore concluded the tab did
+ * not exist while it was the active one, and the case failed with "could not activate
+ * the first host tab again".
+ *
+ * The same evidence shows why "type alone" is not enough either: the first tab is a
+ * **local** PowerShell whose label also contains `conhost`-adjacent text, so the two
+ * are only distinguishable by combining `type` with position or the dock's own state.
+ */
+
+/**
+ * Activate a real remote tab.
+ *
+ * Two ways to say which, because the call sites want different things and expressing
+ * that here beats re-deriving it at each one:
+ *
+ *   `{ inactive: true }` — the remote tab that is *not* currently active. This is what
+ *     "switch back to the other host" means, and it does not depend on tab ordering.
+ *   `{ index: n }` — the n-th remote tab in creation order, for callers that mean a
+ *     specific one.
+ *
+ * When there is no such tab the caller gets the reason plus every tab it saw, so a
+ * failure names the state instead of guessing.
+ */
+async function activateRemoteTab(options = {}) {
+  const { index = 0, inactive = false } = options
+  return browser.execute(
+    wanted => {
+      const tabs = Array.from(document.querySelectorAll('[role="tab"]'))
+      const describe = () =>
+        tabs.map(tab => ({
+          label: tab.getAttribute('aria-label'),
+          type: tab.getAttribute('data-tab-type'),
+        }))
+      const remote = tabs.filter(tab => tab.getAttribute('data-tab-type') === 'remote')
+
+      const target = wanted.inactive
+        ? remote.find(tab => tab.getAttribute('aria-selected') !== 'true')
+        : remote[wanted.index]
+
+      if (!target) {
+        return {
+          activated: false,
+          reason: wanted.inactive
+            ? `no inactive remote tab among ${remote.length} remote tab(s)`
+            : `only ${remote.length} remote tab(s), wanted index ${wanted.index}`,
+          tabs: describe(),
+        }
+      }
+      if (target.getAttribute('aria-selected') === 'true') {
+        return { activated: true, alreadyActive: true, remoteCount: remote.length }
+      }
+      target.click()
+      return { activated: true, alreadyActive: false, remoteCount: remote.length }
+    },
+    { index, inactive },
+  )
 }
 
 /**
@@ -748,8 +843,22 @@ function readDockBinding() {
       tab => tab.getAttribute('aria-selected') === 'true',
     )
     const pane = document.querySelector('[data-testid="sftp-file-panes"]')
+    const allTabs = Array.from(document.querySelectorAll('[role="tab"]'))
+    const remoteTabs = allTabs.filter(tab => tab.getAttribute('data-tab-type') === 'remote')
     return {
       activeTabLabel: active?.getAttribute('aria-label') ?? null,
+      /**
+       * The active tab's kind.
+       *
+       * `data-tab-type` is set by the tab strip from `Tab.type` (`layout/tabs.tsx:103`)
+       * and only `connectToHost` produces `remote`, so it is the one identity on the
+       * tab strip that the *shell* cannot rewrite. Established the hard way: the
+       * Windows run's E2E Local tab reported its label as the console host's path
+       * because the shell had set an OSC title.
+       */
+      activeTabType: active?.getAttribute('data-tab-type') ?? null,
+      /** How many real connections exist; 2 means both fixtures are connected. */
+      remoteCount: remoteTabs.length,
       /**
        * The dock's own statement of which host it is pinned to.
        *
@@ -819,9 +928,23 @@ function readDockBinding() {
      */
     const underSecond = await readDockBinding()
     notes.push(`after connecting B: ${JSON.stringify(underSecond)}`)
-    if (underSecond.activeTabLabel?.includes('E2E Second') !== true) {
+    /*
+     * "The second host is the active tab" is asserted by `type`, not by the label.
+     *
+     * The label is shell-controlled (`getTabDisplayLabel` prefers `title`, which OSC
+     * 0/2 overwrites), so on Windows it can read `Administrator: …\conhost.exe` for a
+     * tab that really is E2E Second. Matching the name here would fail for a correct
+     * connection — or pass for a wrong one, if a local shell happened to phrase its
+     * title the same way.
+     *
+     * The count carries the meaning instead: connecting B is what makes the second
+     * remote tab, so `remoteCount === 2` *and* the active tab being one of them is the
+     * fact this case is about. The label is still recorded above for a reader.
+     */
+    if (underSecond.activeTabType !== 'remote' || underSecond.remoteCount !== 2) {
       throw new Error(
-        `connecting the second host must make its tab active, got ${JSON.stringify(underSecond.activeTabLabel)}`,
+        `connecting the second host must make a second remote tab active, got ` +
+          `${JSON.stringify({ type: underSecond.activeTabType, remote: underSecond.remoteCount, label: underSecond.activeTabLabel })}`,
       )
     }
     // INV-13: focus moved, the pin did not.
@@ -867,8 +990,17 @@ function readDockBinding() {
     }
 
     // A: switch back to the first host's tab and follow it.
-    const back = await activateTabByLabel('E2E Local')
-    if (!back) throw new Error('could not activate the first host tab again')
+    //
+    // By position among the *remote* tabs, not by label: the label is whatever the
+    // remote shell last set via OSC (measured on Windows: the console-host path), so
+    // matching `E2E Local` found nothing while the tab was right there.
+    const back = await activateRemoteTab({ inactive: true })
+    notes.push(`activate first remote tab: ${JSON.stringify(back)}`)
+    if (!back.activated) {
+      throw new Error(
+        `could not activate the first host tab again: ${JSON.stringify(back)}`,
+      )
+    }
     const pinnedOnB = await readDockBinding()
     notes.push(`back on A's tab, dock pinned: ${JSON.stringify(pinnedOnB)}`)
     if (pinnedOnB.boundHost?.includes('E2E Second') !== true) {
