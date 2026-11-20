@@ -119,7 +119,30 @@ export async function runCredentialMigration(
         throw error
       }
 
-      await store.commitHost(host.id, ref)
+      /*
+       * ## The commit can fail after the vault already has the secret
+       *
+       * If `commitHost` throws — a busy database, a full disk — the row keeps its
+       * plaintext, which is correct: the old read path still works and a retry writes
+       * the same version again, overwriting rather than duplicating.
+       *
+       * What the row does not do is *reference* those keys. Until the retry lands, the
+       * vault holds a generation nothing points at. `orphanedSecrets` is the field that
+       * reports it — declared, documented as exactly this case, initialised to 0, and
+       * **never incremented**. A counter that cannot move says "no orphans" for every
+       * run, including the ones that made some.
+       *
+       * The cleanup that runs for a *write* failure (above) does not apply here: those
+       * keys were fully written and verified, and removing them would only make the
+       * retry do the same work again. So this branch counts instead of removing, which
+       * is also what lets the operator see that a migration left something behind.
+       */
+      try {
+        await store.commitHost(host.id, ref)
+      } catch (error) {
+        result.orphanedSecrets += written.length
+        throw error
+      }
       result.migratedHosts += 1
     } catch (error) {
       result.failed.push({
