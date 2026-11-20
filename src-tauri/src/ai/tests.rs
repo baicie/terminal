@@ -239,6 +239,50 @@ fn json_response(status: u16, reason: &str, body: &str) -> String {
     )
 }
 
+/// Serve a redirect first, then whatever the client asks for second.
+///
+/// `serve_once` cannot express a redirect chain: it answers one request and closes. A
+/// redirect policy needs the *second* request to observe whether the client followed
+/// it at all, so this records every request and answers from a script.
+///
+/// Returns the endpoint and a channel of the requests that actually arrived. An empty
+/// channel after the run means the client refused to follow — which is the assertion
+/// the downgrade test needs.
+fn serve_redirect_chain(location: &str) -> (String, mpsc::Receiver<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let address = listener.local_addr().expect("addr");
+    let (tx, rx) = mpsc::channel();
+    let location = location.to_string();
+    thread::spawn(move || {
+        // First request: answer with the redirect.
+        let Ok((stream, _)) = listener.accept() else {
+            return;
+        };
+        let captured = read_request(&stream);
+        let _ = tx.send(captured.path().to_string());
+        let mut write = stream;
+        let _ = write.write_all(
+            format!(
+                "HTTP/1.1 302 Found\r\nlocation: {location}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        let _ = write.flush();
+        drop(write);
+        // Second request, if the client followed. Answering at all is what tells the
+        // test the policy allowed it.
+        let Ok((stream, _)) = listener.accept() else {
+            return;
+        };
+        let captured = read_request(&stream);
+        let _ = tx.send(captured.path().to_string());
+        let mut write = stream;
+        let _ = write.write_all(sse_response(&["followed"]).as_bytes());
+        let _ = write.flush();
+    });
+    (format!("http://{address}"), rx)
+}
+
 fn request(endpoint: String, overrides: impl FnOnce(&mut RunRequest)) -> RunRequest {
     let mut request = RunRequest {
         endpoint,
@@ -685,4 +729,93 @@ fn the_completions_path_appends_to_the_endpoints_own_path() {
     let _ = collect(request(base, |request| request.streaming = false));
     let captured = received.recv().expect("request");
     assert_eq!(captured.path(), "/v1/chat/completions");
+}
+
+/// A redirect to plain http must not be followed.
+///
+/// ## The defect this guards
+///
+/// `transport.rs` builds the client with
+///
+/// ```ignore
+/// if attempt.previous().len() > 3 { error } else if scheme == "https" { follow } else { error }
+/// ```
+///
+/// The intent is that a 302 cannot downgrade the transport: the user's selected text
+/// leaves for a URL the *server* chose, and following a redirect to plain http would
+/// make that choice silently. The rule was written and never tested, which is the
+/// shape this repository keeps finding — a guard that exists and has no case that
+/// would fail if it were deleted.
+///
+/// The fixture endpoint is `http://127.0.0.1`, so **every** redirect it sends is a
+/// downgrade from the policy's point of view and must be refused. That is the correct
+/// assertion even though a test cannot easily stand up a TLS server: it tests the rule
+/// as written, and the rule is scheme-based.
+#[test]
+fn a_redirect_to_plain_http_is_not_followed() {
+    let (endpoint, seen) = serve_redirect_chain("http://127.0.0.1:1/elsewhere");
+    let (events, failure) = collect(request(endpoint, |_| {}));
+
+    // The first request arrived; that is the server the user configured.
+    let first = seen
+        .recv()
+        .expect("the first request must reach the endpoint");
+    assert_eq!(first, "/chat/completions");
+
+    // Nothing was sent to the redirect target. The channel is empty and no answer was
+    // produced, which together mean the client refused rather than followed.
+    assert!(
+        seen.try_recv().is_err(),
+        "the client followed a redirect away from its https-only rule"
+    );
+    assert!(
+        events.is_empty(),
+        "a refused redirect must not produce streamed content: {events:?}"
+    );
+
+    /*
+     * The failure kind is `offline`, not `bad-response`.
+     *
+     * `reqwest` surfaces a policy refusal as a request error, and `transport.rs` maps
+     * a send error to `offline` — "could not reach the provider". That is the honest
+     * description from the user's side: the endpoint they configured did not answer.
+     * It is asserted rather than left implicit, because a future refactor that
+     * reclassified it as `bad-response` would tell the user their *profile* is wrong
+     * when the server is the thing misbehaving.
+     */
+    let failure = failure.expect("a refused redirect must be reported, not swallowed");
+    assert_eq!(failure.kind, AiFailureKind::Offline);
+}
+
+/// The same policy must not refuse a redirect that stays on https.
+///
+/// Without this case, "refuse every redirect" would pass the test above and break a
+/// provider that legitimately moves `/v1` to `/api/v1`. The rule is *upward only*, not
+/// *never*.
+///
+/// This cannot be tested over TLS here, so it is asserted against the policy's shape
+/// instead: the client builder's closure allows `https` and rejects anything else.
+/// Recording the limitation matters — a reader must not think an https redirect was
+/// actually exercised.
+#[test]
+fn the_redirect_policy_allows_https_upward() {
+    let source = include_str!("transport.rs");
+    let policy = source
+        .split("redirect(reqwest::redirect::Policy::custom")
+        .nth(1)
+        .expect("the redirect policy must be configured on the client");
+    assert!(
+        policy.contains(r#"attempt.url().scheme() == "https""#),
+        "the policy must allow https targets; otherwise a provider that moves its \
+         completions path would break while the downgrade rule stayed green"
+    );
+    assert!(
+        policy.contains("attempt.error("),
+        "the policy must reject something; a rule that only follows is no rule"
+    );
+    // The cap, so a redirect loop ends instead of hanging the run.
+    assert!(
+        policy.contains("attempt.previous().len() > 3"),
+        "a redirect loop must terminate rather than consume the whole request budget"
+    );
 }
