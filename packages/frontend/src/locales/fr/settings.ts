@@ -278,5 +278,6 @@ export default {
   'settings.ai.maxTokens': 'Tokens de sortie max.',
   'settings.ai.timeout': 'Délai (ms)',
   'settings.ai.streaming': 'Réponse en flux',
-  'settings.ai.plaintextConfirm': 'Ce point de terminaison utilise HTTP en clair. Je comprends que mon texte serait envoyé non chiffré.',
+  'settings.ai.plaintextRefused':
+    "HTTP en clair vers un hôte distant est refusé : le texte du terminal partirait non chiffré. Utilisez HTTPS ou un serveur local.",
 }
