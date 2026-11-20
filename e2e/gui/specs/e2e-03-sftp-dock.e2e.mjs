@@ -116,52 +116,51 @@ describe('SFTP Context Dock — real WebView', () => {
   const failures = []
 
   afterEach(function () {
-    if (this.currentTest?.state === 'failed') {
-      // ## Why the error text needs this many fallbacks
-      //
-      // Measured: an injected `throw new Error('injected: …')` produced
-      // `error: ""` — a failure record whose text was empty, which is barely better
-      // than the `"unknown"` it replaced. Under wdio's mocha integration
-      // `currentTest.err` is not always the Error object; it can be a string, a
-      // serialised shape without `message`, or absent.
-      //
-      // The chain below ends at the test's own title, which at least identifies
-      // *which* case broke. An empty string is never returned.
-      const err = this.currentTest.err
-      const text =
-        (typeof err === 'string' ? err : undefined) ??
-        err?.message ??
-        err?.stack?.split('\n')[0] ??
-        err?.toString?.() ??
-        ''
-      /*
-       * ## Why the fallback now carries the shape, not just the title
-       *
-       * Measured on the macOS runner (run 44694682531): the write case failed and the
-       * record said `(no error text for "creates, renames and deletes…")`. A failure
-       * record whose only content is the title cannot be acted on — I had to download
-       * the artifact and guess which step threw.
-       *
-       * The chain above already tried `err`, `err.message`, `err.stack` and
-       * `toString()`. When all four are empty the value is not an Error and not a
-       * string — so record *what it actually is* rather than inventing nothing.
-       * JSON.stringify is tried last because a circular value throws, which is why it
-       * is inside the guard.
-       */
-      let shape = ''
+    if (this.currentTest?.state !== 'failed') return
+
+    /*
+     * ## Where the error text actually comes from
+     *
+     * The first version read `this.currentTest.err` with four fallbacks. Measured on
+     * run 44694682531: that value was empty while the *console* carried
+     * `element ("[data-testid="file-row-rename"]") still not existing after 5000ms`.
+     * The evidence file said `(no error text for "…")` — the exact failure this
+     * repository keeps having to apologise for, and it cost a trip through the artifact
+     * to learn one line.
+     *
+     * `wdio.conf.mjs` now records the error in `afterTest`, which is where wdio hands
+     * the reporter the real object. This hook reads that first, and only falls back to
+     * mocha's own field.
+     */
+    const fromRunner = process.__guiE2ELastError
+    const runnerText =
+      fromRunner && fromRunner.title === this.currentTest.title ? fromRunner.text : null
+
+    const err = this.currentTest.err
+    const mochaText =
+      (typeof err === 'string' ? err : undefined) ??
+      err?.message ??
+      err?.stack?.split('\n')[0] ??
+      err?.toString?.() ??
+      null
+
+    let shape = ''
+    if (!runnerText && !mochaText) {
       try {
         shape = err === undefined ? 'undefined' : JSON.stringify(err)
       } catch {
         shape = `<unserialisable ${typeof err}>`
       }
-      failures.push({
-        title: this.currentTest.title,
-        error:
-          text && text !== '[object Object]'
-            ? text
-            : `(no error text for "${this.currentTest.title}"; err=${shape})`,
-      })
     }
+
+    const text = runnerText ?? mochaText
+    failures.push({
+      title: this.currentTest.title,
+      error:
+        text && text !== '[object Object]'
+          ? text
+          : `(no error text for "${this.currentTest.title}"; err=${shape})`,
+    })
   })
 
   before(async () => {
@@ -815,51 +814,70 @@ async function activateRemoteTab(options = {}) {
 /**
  * Open a file row's actions menu, the way a user does.
  *
- * ## Why not `element.click()`
+ * ## Two real user gestures, in order
  *
- * The trigger is `opacity-0 group-hover:opacity-100` (`file-pane-row.tsx`): it is
- * transparent until the row is hovered. A script-driven `.click()` on an element with
- * `opacity: 0` dispatches an event the browser considers untrusted, and Radix's
- * `DropdownMenuTrigger` does not open on it — measured on the macOS runner
- * (run 44694682531), where the write case failed at exactly this step and the record
- * carried no error text at all.
+ * The trigger is `opacity-0 group-hover:opacity-100` (`file-pane-row.tsx`): transparent
+ * until the row is hovered. Three attempts failed on all three runners
+ * (runs 44694682531 and the one before it) with
+ * `element ("[data-testid="file-row-rename"]") still not existing after 5000ms`, so
+ * the mechanism matters and is recorded here rather than retried blind:
  *
- * The fix is the same one `e2e-01` already needed for tabs: use WebDriver's own
- * `moveTo()` + `click()`, which produce the real pointer sequence. A synthetic
- * `.click()` would make this case test whether a handler is attached, not whether a
- * user can open the menu.
+ *   1. **Synthetic `.click()`** — dispatched an untrusted event on an `opacity: 0`
+ *      element; Radix's `DropdownMenuTrigger` does not open on it.
+ *   2. **`moveTo()` then click** — WebDriver's real pointer sequence, tried next. It
+ *      is the same mechanism `e2e-01` needed for tabs, but hover state on a WebKit
+ *      WebView is not guaranteed to survive between two WebDriver commands, and the
+ *      runs show it did not.
+ *   3. **Focus + Enter on the trigger** — the ARIA menu-button keyboard path. Radix
+ *      implements it (`DropdownMenuTrigger` opens on Enter and Space), every WebView
+ *      supports `element.sendKeys`, and it needs no hover state at all.
  *
- * The wait on the row is what makes the hover land: `moveTo` on an element that the
- * listing has not rendered yet hovers nothing.
+ * The keyboard path is not a workaround around the product: a keyboard user opens this
+ * menu with Enter, and the product must support that. The hover is still attempted
+ * first so the common pointer path is exercised when it works.
+ *
+ * The row is matched on the name cell's `title`, which is exactly `file.name`
+ * (`file-pane-row.tsx:122`) — not `contains(., …)`, where a shorter name is a prefix of
+ * a longer one and the wrong row gets hovered.
  */
 async function openRowMenu(name) {
-  /*
-   * Matched on the name cell's `title`, which is exactly `file.name`
-   * (`file-pane-row.tsx:122`) — not on `contains(., …)`, where a shorter name is a
-   * prefix of a longer one and the wrong row gets hovered.
-   */
   const row = await browser.$(
     `//*[@data-testid="file-row"][.//*[@title=${JSON.stringify(name)}]]`,
   )
   await row.waitForExist({ timeout: 20_000 })
 
-  /*
-   * ## The hover is the mechanism; the wait below is not a visibility check
-   *
-   * `waitForDisplayed` is deliberately *not* used on the trigger: the element is
-   * `opacity-0` until hovered, and WebDriver's displayed test covers `display` and
-   * `visibility`, not `opacity`. It would return true immediately and prove nothing —
-   * which is exactly the "looks like it is checking" shape this repository keeps
-   * finding.
-   *
-   * So the sequence is: hover the row (the real pointer event that flips
-   * `group-hover`), then open the menu. If the hover does not land, the menu simply
-   * does not appear and the caller's `waitForDisplayed` on the *menu item* fails —
-   * a real assertion about a real outcome.
-   */
-  await row.moveTo()
   const trigger = await row.$('[data-testid="file-row-actions"]')
-  await trigger.click()
+
+  const menuOpen = async () => (await browser.$('[data-testid="file-row-rename"]')).isExisting()
+
+  // ---- path 1: hover, then click ------------------------------------------------
+  await row.moveTo().catch(() => undefined)
+  await trigger.click().catch(() => undefined)
+  if (await menuOpen()) return
+
+  /*
+   * ---- path 2: focus the trigger and press Enter ---------------------------------
+   *
+   * A single `click()` is used to focus, and that click may itself open the menu on a
+   * platform where path 1's hover did not land but the click does. So the state is
+   * re-checked before the key is sent: pressing Enter while the menu is already open
+   * activates its first item, which is **Download** — a case that meant to test rename
+   * would silently start a download instead.
+   *
+   * That is not a hypothetical: it is why this guard exists rather than a bare
+   * `click(); keys(['Enter'])`.
+   */
+  await trigger.click().catch(() => undefined)
+  if (await menuOpen()) return
+
+  await browser.keys(['Enter'])
+  if (!(await menuOpen())) {
+    throw new Error(
+      `the row actions menu for ${JSON.stringify(name)} did not open by hover-click or ` +
+        'by keyboard. Both are user-reachable paths, so this is a product finding, not ' +
+        'a spec convenience problem.',
+    )
+  }
 }
 
 /**

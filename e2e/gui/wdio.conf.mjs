@@ -139,6 +139,51 @@ export const config = {
    * connections is out of contract, and the evidence records what it saw rather
    * than pretending the state was clean.
    */
+  /**
+   * Hand every spec the *authoritative* error for a failed test.
+   *
+   * ## Why a runner hook instead of `this.currentTest.err`
+   *
+   * Measured on run 44694682531: the spec's own `afterEach` recorded
+   * `(no error text for "creates, renames and deletes…")` in the evidence file, while
+   * the same run's console log carried the exact cause —
+   * `element ("[data-testid="file-row-rename"]") still not existing after 5000ms`.
+   *
+   * The text existed; `this.currentTest.err` was empty when `afterEach` ran. A record
+   * that says only "no error text" cost a round trip through the artifact to learn a
+   * one-line fact.
+   *
+   * wdio passes the same error to `afterTest` in its third argument, where the reporter
+   * reads it. That is the source to record.
+   *
+   * ## Why `process`, not `globalThis`
+   *
+   * The hook runs in wdio's worker process; the spec runs in the same one, but neither
+   * shares scope with the other. `process` is the object both already hold — and it is
+   * per-worker, so two specs cannot read each other's error. `globalThis` would work
+   * inside one process too, but `process.env`-style sharing makes the intent obvious
+   * and survives a future move to a different hook scope.
+   */
+  afterTest: async function (test, _context, result) {
+    const error = result?.error
+    if (!error) {
+      delete process.__guiE2ELastError
+      return
+    }
+    const text =
+      (typeof error === 'string' ? error : undefined) ??
+      error?.message ??
+      (error?.stack ? String(error.stack).split('\n')[0] : undefined) ??
+      (() => {
+        try {
+          return JSON.stringify(error)
+        } catch {
+          return `<unserialisable ${typeof error}>`
+        }
+      })()
+    process.__guiE2ELastError = { title: test?.title ?? null, text: text || '(empty)' }
+  },
+
   beforeSuite: async function () {
     const reset = await browser.execute(() => {
       const report = { closedDock: false, pathname: window.location.pathname }
