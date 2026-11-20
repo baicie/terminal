@@ -191,7 +191,15 @@ export async function trustHostKey({ home, hostKeyPath, port, hostname = '127.0.
   return knownHosts
 }
 
-export async function seedSftpHost({ home, configDir, privateKeyPath, port, username, label }) {
+export async function seedSftpHost({
+  home,
+  configDir,
+  privateKeyPath,
+  port,
+  username,
+  label,
+  hostId = 'e2e-sftp-host',
+}) {
   // `configDir` lets one sshd serve several per-spec profiles: each spec gets its own
   // throwaway home, so the row has to be written into each one. Without it the seeded
   // database only lands in the parent's profile and every spec sees an empty host list.
@@ -228,7 +236,7 @@ export async function seedSftpHost({ home, configDir, privateKeyPath, port, user
          VALUES (?, ?, ?, ?, ?, 'key', ?, 1, ?, ?)`,
       )
       .run(
-        'e2e-sftp-host',
+        hostId,
         label,
         '127.0.0.1',
         port,
@@ -296,6 +304,8 @@ export async function startSeededSshd({
    * one and leave the suite with one host again.
    */
   seedRow = true,
+  /** Row id and name for a second host; the default keeps the original single row. */
+  hostId = 'e2e-sftp-host',
 } = {}) {
   // Resolve the tools before doing anything else, and name what is missing. On
   // Windows the *client* tools exist but `sshd.exe` is an optional feature, so this
@@ -371,7 +381,14 @@ export async function startSeededSshd({
   }
 
   const databaseFile = seedRow
-    ? await seedSftpHost({ home, privateKeyPath: paths.userKey, port, username, label })
+    ? await seedSftpHost({
+        home,
+        privateKeyPath: paths.userKey,
+        port,
+        username,
+        label,
+        hostId,
+      })
     : null
   // The app refuses an unknown host key, which is correct; the fixture's job is to make
   // its throwaway key known inside the throwaway profile.

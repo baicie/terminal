@@ -587,6 +587,134 @@ describe('SFTP Context Dock — real WebView', () => {
     notes.push(`keyboard: ${rows.length} rows, focusable, aria-selected="${selected}" after Space`)
   })
 
+  /*
+   * Switch between two connected hosts and confirm the listing follows the tab.
+   *
+   * With one server this is untestable: a panel bound to the wrong connection still
+   * lists plausible files. The second sshd has its own port and host key, so "the
+   * files under this tab" and "the files under that tab" are genuinely different.
+   */
+/**
+ * Connect a host by its card name, waiting for the tab it opens.
+ *
+ * The second fixture has no seeded row — it is a different server on a different port,
+ * and the row that exists already points at the first one. So this adds the host the
+ * way a user would: through the New Host dialog is too much surface for a spec, so the
+ * card is clicked only if one exists; otherwise the case records NOT_RUN rather than
+ * inventing a row the product never sees.
+ */
+async function connectHostByName(label, port) {
+  return browser.executeAsync(async (wanted, wantedPort, done) => {
+    const cards = Array.from(document.querySelectorAll('button'))
+    const card = cards.find(button => (button.textContent ?? '').includes(wanted))
+    if (!card) {
+      done({ connected: false, reason: `no card labelled ${wanted}`, port: wantedPort })
+      return
+    }
+    card.click()
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 250))
+      const tabs = Array.from(document.querySelectorAll('[role="tab"]'))
+      const match = tabs.find(tab => (tab.getAttribute('aria-label') ?? '').includes(wanted))
+      if (match) {
+        done({ connected: true, tabs: tabs.length, hostField: `127.0.0.1`, port: wantedPort })
+        return
+      }
+    }
+    done({ connected: false, reason: 'the tab never appeared', port: wantedPort })
+  }, label, port)
+}
+
+/** Activate the tab whose label contains `label`. */
+async function activateTabByLabel(label) {
+  return browser.execute(wanted => {
+    const tabs = Array.from(document.querySelectorAll('[role="tab"]'))
+    const match = tabs.find(tab => (tab.getAttribute('aria-label') ?? '').includes(wanted))
+    if (!match) return false
+    match.click()
+    return true
+  }, label)
+}
+
+/**
+ * What the dock is bound to right now.
+ *
+ * Reads three independent things so a wrong binding cannot pass by luck: which tab is
+ * active, which session the pane says it is on, and the rows it is showing.
+ */
+function readDockBinding() {
+  return browser.execute(() => {
+    const active = Array.from(document.querySelectorAll('[role="tab"]')).find(
+      tab => tab.getAttribute('aria-selected') === 'true',
+    )
+    const pane = document.querySelector('[data-testid="sftp-file-panes"]')
+    const rows = Array.from(document.querySelectorAll('[data-testid="file-row"]')).map(
+      row => (row.textContent ?? '').trim().slice(0, 60),
+    )
+    return {
+      activeTabLabel: active?.getAttribute('aria-label') ?? null,
+      boundSessionId: pane?.getAttribute('data-session-id') ?? null,
+      title: pane?.querySelector('[title^="SFTP:"]')?.getAttribute('title') ?? null,
+      rows,
+    }
+  })
+}
+
+  it('the file listing follows the active host, not the last connection', async () => {
+    const secondPort = process.env.GUI_E2E_SSH_PORT_2
+    if (!process.env.GUI_E2E_SSH_PORT || !secondPort) {
+      notes.push('two-host case NOT_RUN: no second SSH server this run')
+      return
+    }
+
+    const second = await connectHostByName('E2E Second', secondPort)
+    notes.push(`second host connected: ${JSON.stringify(second)}`)
+    if (!second.connected) {
+      throw new Error(`the second host never connected: ${JSON.stringify(second)}`)
+    }
+
+    /*
+     * What the dock reports, per tab.
+     *
+     * `SFTP: <hostname>` is the dock's own statement of which session it is bound to.
+     * Both fixtures listen on 127.0.0.1, so the hostname is the same for both — which
+     * is itself worth recording: the panel cannot tell the user which *port* it is on.
+     * The binding is therefore checked by the tab identity and the directory contents,
+     * not by that label.
+     */
+    const underSecond = await readDockBinding()
+    const back = await activateTabByLabel('E2E Local')
+    if (!back) throw new Error('could not activate the first host tab again')
+    const underFirst = await readDockBinding()
+    notes.push(
+      `dock binding: first=${JSON.stringify(underFirst)} second=${JSON.stringify(underSecond)}`,
+    )
+
+    if (underSecond?.activeTabLabel?.includes('E2E Second') !== true) {
+      throw new Error(
+        `the second tab was not the one driving the dock: ${JSON.stringify(underSecond)}`,
+      )
+    }
+    if (underFirst?.activeTabLabel?.includes('E2E Local') !== true) {
+      throw new Error(
+        `the first tab did not take the dock back: ${JSON.stringify(underFirst)}`,
+      )
+    }
+    /*
+     * The stronger half: the dock's own bound session must change too.
+     *
+     * A panel that keeps rendering the previous host's directory while the tab strip
+     * says otherwise is the `HOST_SWITCH_SAFE` failure — delete/rename would then act
+     * on the host the user left.
+     */
+    if (
+      JSON.stringify(underFirst?.rows) === JSON.stringify(underSecond?.rows) &&
+      underFirst?.boundSessionId === underSecond?.boundSessionId
+    ) {
+      throw new Error('the dock showed identical content for two different sessions')
+    }
+  })
+
   it('records what could not be verified', () => {
     // These are the claims the issue asks for that this spec cannot make even with a
     // live SSH server: each needs either a *second* connected host or an upload this

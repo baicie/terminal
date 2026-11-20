@@ -161,7 +161,11 @@ if (sshFixtureRequested) {
      * case keeps recording NOT_RUN with the reason.
      */
     try {
-      fixture.secondary = await startSeededSshd({ home, label: 'E2E Second', seedRow: false })
+      fixture.secondary = await startSeededSshd({
+        home,
+        label: 'E2E Second',
+        hostId: 'e2e-sftp-host-second',
+      })
       log(`second sshd on 127.0.0.1:${fixture.secondary.port}`)
     } catch (error) {
       log(`no second sshd: ${error.message}`)
@@ -280,6 +284,24 @@ if (fixture !== null && specFiles.length > 0) {
       }),
     )
     /*
+     * The second server needs its own row in the same profile.
+     *
+     * Seeding it only into the parent profile left the per-spec one with a single
+     * host, and the two-host case failed with "no card labelled E2E Second" — the case
+     * was correct, the fixture had not put the row where the app reads it.
+     */
+    if (fixture.secondary) {
+      await seedSftpHost({
+        home: specHome,
+        configDir,
+        privateKeyPath: fixture.secondary.userKeyPath,
+        port: fixture.secondary.port,
+        username: fixture.secondary.username,
+        label: 'E2E Second',
+        hostId: 'e2e-sftp-host-second',
+      })
+    }
+    /*
      * Each profile is a separate `HOME`, so each needs the host key trusted too.
      *
      * The app refuses an unknown host key. Without this the seeded host connects and
@@ -291,6 +313,15 @@ if (fixture !== null && specFiles.length > 0) {
       hostKeyPath: fixture.hostKeyPath,
       port: fixture.port,
     })
+    if (fixture.secondary) {
+      // A different server presents a different host key; trusting only the first
+      // would leave the second refused with the same "unknown key" failure.
+      await trustHostKey({
+        home: specHome,
+        hostKeyPath: fixture.secondary.hostKeyPath,
+        port: fixture.secondary.port,
+      })
+    }
   }
   log(`seeded ${fixture.seededProfiles.length} per-spec profile(s)`)
 }
