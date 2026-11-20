@@ -256,17 +256,26 @@ describe('SFTP Context Dock — real WebView', () => {
           // `aria-label` is the seeded host name and nothing else, so it is the only
           // field that identifies the session. It is compared to the local terminal's
           // label, and no click happens when the right tab is already active.
-          const local = tabs.find(tab => /^local$/i.test(tab.getAttribute('aria-label') ?? ''))
-          const remote = tabs.find(tab => tab !== local)
+          /*
+           * Identify the SSH tab by the seeded host's name, not by "not local".
+           *
+           * Measured on the Windows runner: the app restored **two** local terminals
+           * (`powershell.exe` and `conhost.exe`), neither labelled "Local", so
+           * "the tab that is not local" selected a local one — the panel then had no
+           * host and all six cases recorded NOT_RUN while macOS and Linux passed.
+           */
+          const remote = tabs.find(tab =>
+            (tab.getAttribute('aria-label') ?? '').includes('E2E Local'),
+          )
           const active = tabs.find(tab => tab.getAttribute('aria-selected') === 'true')
           if (!remote) {
-            return { described, clicked: false, reason: 'there is only the local tab' }
+            return { described, clicked: false, reason: 'no tab labelled E2E Local' }
           }
           if (active === remote) {
             return { described, clicked: false, reason: 'the SSH tab is already active' }
           }
           remote.click()
-          return { described, clicked: true, reason: 'activated the non-local tab' }
+          return { described, clicked: true, reason: 'activated the E2E Local tab' }
         })
         notes.push(`tabs ${JSON.stringify(tabReport)}`)
         await browser.pause(1_500)
