@@ -36,6 +36,7 @@ import {
   type ApprovedContext,
 } from './context-review'
 import { checkEndpoint, profileProblem, type ModelProfilePublic } from './model-profile'
+import { RunIdIssuer } from './run-id-issuer'
 import { contextForIpc, type AiBackendEvent, type AiGenerateOutcome } from './ai-ipc'
 
 /** What the orchestration needs from the app, injected so it is testable. */
@@ -92,6 +93,8 @@ const REFUSAL_MESSAGES: Record<StartRefusal, string> = {
 export class AiRunner {
   private state: AiRun = idleRun()
   private currentRunId: string | null = null
+  /** Unique request ids; see `run-id-issuer.ts` for why the caller's are not enough. */
+  private readonly runIds = new RunIdIssuer()
   private readonly listeners = new Set<(state: AiRun) => void>()
 
   constructor(private readonly deps: AiRuntimeDeps) {}
@@ -149,7 +152,7 @@ export class AiRunner {
       return this.refuse('profile-unusable', 'That endpoint is not allowed.')
     }
 
-    const runId = this.deps.nextRunId()
+    const runId = this.runIds.next(this.deps.nextRunId())
     this.currentRunId = runId
     this.transition({
       type: 'prepare',
