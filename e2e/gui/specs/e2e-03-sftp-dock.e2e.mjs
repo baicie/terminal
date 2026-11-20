@@ -847,8 +847,20 @@ async function openRowMenu(name) {
   await row.waitForExist({ timeout: 20_000 })
 
   const trigger = await row.$('[data-testid="file-row-actions"]')
-
   const menuOpen = async () => (await browser.$('[data-testid="file-row-rename"]')).isExisting()
+
+  /*
+   * ## The hang, and what it taught
+   *
+   * The previous version ended with a bare `browser.keys(['Enter'])` after a click. On
+   * all three runners that did not fail — it **hung**, and mocha killed the case at its
+   * 240 s limit (`Error: Timeout`, run 44700516140). A key sent to a page with no
+   * focused element waits for something that never happens.
+   *
+   * `e2e-01` shows the working shape in this same suite (`:288`): focus a real element
+   * with `addValue`/click first, *then* send the key. So every key below is preceded by
+   * an explicit focus step.
+   */
 
   // ---- path 1: hover, then click ------------------------------------------------
   await row.moveTo().catch(() => undefined)
@@ -856,22 +868,30 @@ async function openRowMenu(name) {
   if (await menuOpen()) return
 
   /*
-   * ---- path 2: focus the trigger and press Enter ---------------------------------
+   * ---- path 2: focus the trigger, then Enter -------------------------------------
    *
-   * A single `click()` is used to focus, and that click may itself open the menu on a
-   * platform where path 1's hover did not land but the click does. So the state is
-   * re-checked before the key is sent: pressing Enter while the menu is already open
-   * activates its first item, which is **Download** — a case that meant to test rename
-   * would silently start a download instead.
+   * `click()` again focuses the button (the element is `opacity-0` until hover or
+   * `focus-visible`, and WebDriver still focuses an `opacity: 0` element). The menu
+   * state is re-checked *before* the key, because pressing Enter while the menu is
+   * already open activates its first item — which is **Download**. A case that meant to
+   * test rename would silently start a download instead.
    *
-   * That is not a hypothetical: it is why this guard exists rather than a bare
-   * `click(); keys(['Enter'])`.
+   * The final wait is bounded and states what it is waiting for, so a third failure
+   * reports a fact instead of another 240-second Timeout.
    */
   await trigger.click().catch(() => undefined)
   if (await menuOpen()) return
 
-  await browser.keys(['Enter'])
-  if (!(await menuOpen())) {
+  await browser.keys(['Enter']).catch(() => undefined)
+  const opened = await browser
+    .waitUntil(async () => menuOpen(), {
+      timeout: 5_000,
+      interval: 200,
+      timeoutMsg: `the row actions menu for ${JSON.stringify(name)} never opened`,
+    })
+    .catch(() => false)
+
+  if (!opened) {
     throw new Error(
       `the row actions menu for ${JSON.stringify(name)} did not open by hover-click or ` +
         'by keyboard. Both are user-reachable paths, so this is a product finding, not ' +
