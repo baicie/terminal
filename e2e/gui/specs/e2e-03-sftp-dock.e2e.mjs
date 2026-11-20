@@ -597,18 +597,76 @@ describe('SFTP Context Dock — real WebView', () => {
 /**
  * Connect a host by its card name, waiting for the tab it opens.
  *
- * The second fixture has no seeded row — it is a different server on a different port,
- * and the row that exists already points at the first one. So this adds the host the
- * way a user would: through the New Host dialog is too much surface for a spec, so the
- * card is clicked only if one exists; otherwise the case records NOT_RUN rather than
- * inventing a row the product never sees.
+ * ## The precondition this helper used to assume
+ *
+ * It searched the current page for a button whose text contained the label. That is
+ * only true on the Hosts route, and by the time this runs the spec is **not** there:
+ * `before()` connects the first host, `connectToHost` navigates to
+ * `/terminal?tab=…` (`features/connection-explorer/use-connect-to-host.ts:38`), and
+ * the terminal canvas renders no host cards.
+ *
+ * Measured on all three runners in run 44675104367 — the same failure, every
+ * platform: `no card labelled E2E Second`. The case was reporting a missing fixture
+ * while the fixture was fine; the page was wrong.
+ *
+ * So the route is now a stated precondition, entered the way a user enters it (the
+ * rail's Hosts link, a real `NavLink` click), and the card is waited for after the
+ * route's own SQLite read has produced it. No fixed sleep stands in for either.
  */
 async function connectHostByName(label, port) {
+  // Enter the Hosts route through the rail. `rail-hosts` is a `NavLink`; when it is
+  // already active the click is a no-op, so this is safe to call unconditionally.
+  const entered = await browser.execute(() => {
+    const link = document.querySelector('[data-testid="rail-hosts"]')
+    if (!link) return { ok: false, reason: 'the rail has no Hosts entry' }
+    const already = window.location.pathname === '/hosts'
+    if (!already) link.click()
+    return { ok: true, already, pathBefore: window.location.pathname }
+  })
+  if (!entered.ok) {
+    return { connected: false, reason: entered.reason, port, route: entered }
+  }
+
+  // Wait for the card on the *card*, not on a duration: Hosts is a lazy route that
+  // then reads SQLite, so the route existing and the card existing are distinct
+  // events. A failure here records the page it was actually looking at.
+  const appeared = await browser
+    .waitUntil(
+      async () =>
+        browser.execute(
+          wanted =>
+            Array.from(document.querySelectorAll('button')).some(button =>
+              (button.textContent ?? '').includes(wanted),
+            ),
+          label,
+        ),
+      { timeout: 25_000, interval: 250, timeoutMsg: `no card labelled ${label} on /hosts` },
+    )
+    .catch(() => false)
+
+  if (!appeared) {
+    const seen = await browser.execute(() => ({
+      pathname: window.location.pathname,
+      buttons: Array.from(document.querySelectorAll('button'))
+        .map(button => (button.textContent ?? '').trim().slice(0, 40))
+        .filter(Boolean)
+        .slice(0, 12),
+      body: (document.body.textContent ?? '').replace(/\s+/g, ' ').slice(0, 200),
+    }))
+    return {
+      connected: false,
+      reason: `no card labelled ${label}`,
+      port,
+      route: entered,
+      page: seen,
+    }
+  }
+
   return browser.executeAsync(async (wanted, wantedPort, done) => {
     const cards = Array.from(document.querySelectorAll('button'))
     const card = cards.find(button => (button.textContent ?? '').includes(wanted))
     if (!card) {
-      done({ connected: false, reason: `no card labelled ${wanted}`, port: wantedPort })
+      done({ connected: false, reason: `the card vanished before the click`, port: wantedPort })
       return
     }
     card.click()
@@ -637,10 +695,52 @@ async function activateTabByLabel(label) {
 }
 
 /**
+ * Wait until the dock has finished listing, then read it.
+ *
+ * ## Why this waits on a condition and not on a pause
+ *
+ * Repointing the pin opens a second SFTP subsystem (`use-sftp-remote.ts` reconnects on
+ * `hostKey` change), which is a real network round trip. Reading immediately returns
+ * the *previous* host's rows — and since those rows are exactly what the assertions
+ * below compare against, a fixed short pause would make the case either flaky or,
+ * worse, green for the wrong reason.
+ *
+ * The condition is the product's own state: the bound-host label says which host the
+ * pin moved to, and rows exist. Both must hold before the read is meaningful.
+ */
+async function waitForListing(marker) {
+  const appeared = await browser
+    .waitUntil(
+      async () =>
+        browser.execute(
+          wanted =>
+            Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
+              (row.textContent ?? '').includes(wanted),
+            ),
+          marker,
+        ),
+      { timeout: 25_000, interval: 250, timeoutMsg: `the ${marker} directory never appeared` },
+    )
+    .catch(() => false)
+  const binding = await readDockBinding()
+  if (!appeared) binding.waitedFor = `${marker} directory (timed out)`
+  return binding
+}
+
+/**
  * What the dock is bound to right now.
  *
- * Reads three independent things so a wrong binding cannot pass by luck: which tab is
- * active, which session the pane says it is on, and the rows it is showing.
+ * ## The dead selector this replaced
+ *
+ * It read `data-session-id` off the panes element and compared it between hosts. That
+ * attribute **does not exist anywhere in the product** — `grep -rn 'data-session-id'
+ * packages/frontend/src` returns nothing. So the field was `null` on both sides, and
+ * the comparison `underFirst.boundSessionId === underSecond.boundSessionId` compared
+ * null to null: half of the strongest assertion in this spec could not fail.
+ *
+ * That is the "looks like it is checking, checks nothing" shape the repository has hit
+ * before (`data-metric` in the Inspector guard). What is read now is the identity the
+ * product actually exposes, and each piece is asserted separately below.
  */
 function readDockBinding() {
   return browser.execute(() => {
@@ -648,14 +748,33 @@ function readDockBinding() {
       tab => tab.getAttribute('aria-selected') === 'true',
     )
     const pane = document.querySelector('[data-testid="sftp-file-panes"]')
-    const rows = Array.from(document.querySelectorAll('[data-testid="file-row"]')).map(
-      row => (row.textContent ?? '').trim().slice(0, 60),
-    )
     return {
       activeTabLabel: active?.getAttribute('aria-label') ?? null,
-      boundSessionId: pane?.getAttribute('data-session-id') ?? null,
-      title: pane?.querySelector('[title^="SFTP:"]')?.getAttribute('title') ?? null,
-      rows,
+      /**
+       * The dock's own statement of which host it is pinned to.
+       *
+       * `sftp-bound-host` is a real test id (`view/sftp/sftp-dock-toolbar.tsx:36`) and
+       * it renders the *bound host's name* — the product's answer to "which server is
+       * this panel on", not a value the spec derived.
+       */
+      boundHost: document.querySelector('[data-testid="sftp-bound-host"]')?.textContent?.trim() ?? null,
+      /**
+       * The "follow the active tab" affordance.
+       *
+       * INV-13 (`store/sftp-binding.ts`) pins the dock and shows this button when the
+       * active tab is a *different* host. Its presence is therefore the product's own
+       * report that the pin and the tab disagree — the exact state this case has to
+       * distinguish from "the panel moved with the tab".
+       */
+      offersFollow: document.querySelector('[data-testid="sftp-follow-active-tab"]') !== null,
+      rows: Array.from(document.querySelectorAll('[data-testid="file-row"]')).map(row =>
+        (row.textContent ?? '').trim().slice(0, 60),
+      ),
+      /** The remote pane's path, so "same directory" is visible rather than inferred. */
+      remotePath:
+        pane
+          ?.querySelector('[data-testid="sftp-pane-remote"] [title]')
+          ?.getAttribute('title') ?? null,
     }
   })
 }
@@ -676,43 +795,120 @@ function readDockBinding() {
     /*
      * What the dock reports, per tab.
      *
-     * `SFTP: <hostname>` is the dock's own statement of which session it is bound to.
-     * Both fixtures listen on 127.0.0.1, so the hostname is the same for both — which
-     * is itself worth recording: the panel cannot tell the user which *port* it is on.
-     * The binding is therefore checked by the tab identity and the directory contents,
-     * not by that label.
+     * ## The assertion this case used to make was the defect it was meant to catch
+     *
+     * It asserted "the file listing follows the active host, not the last
+     * connection" — but INV-13 (`store/sftp-binding.ts`, UX-1c) deliberately made the
+     * binding **pinned**: the panel changes host when the user says so, never as a
+     * side effect of focus. A case demanding that switching tabs repoints the dock
+     * was therefore asking the product to reintroduce "delete/rename can be aimed at
+     * a host you did not pick", which is the exact bug UX-1c removed.
+     *
+     * So the contract checked here is the real one, in three steps:
+     *
+     *   A (pinned on E2E Local)  → connect B → tab is B, **dock still A**, and the
+     *                              product offers "follow the active tab";
+     *   B (explicit follow)      → dock is B and lists **B's own directory**;
+     *   A (explicit follow back) → dock is A and lists **A's own directory** again.
+     *
+     * The listing half is only meaningful because each fixture now starts its SFTP
+     * subsystem in its own directory (`internal-sftp -d <remoteRoot>`): before that,
+     * both servers resolved `.` to the same `$HOME` and the two panes rendered
+     * byte-identical rows, so "the panel moved" and "the panel never moved" looked
+     * the same.
      */
     const underSecond = await readDockBinding()
+    notes.push(`after connecting B: ${JSON.stringify(underSecond)}`)
+    if (underSecond.activeTabLabel?.includes('E2E Second') !== true) {
+      throw new Error(
+        `connecting the second host must make its tab active, got ${JSON.stringify(underSecond.activeTabLabel)}`,
+      )
+    }
+    // INV-13: focus moved, the pin did not.
+    if (underSecond.boundHost?.includes('E2E Local') !== true) {
+      throw new Error(
+        `the dock must stay pinned to E2E Local when focus moves to another host, ` +
+          `but it reports ${JSON.stringify(underSecond.boundHost)}`,
+      )
+    }
+    if (!underSecond.offersFollow) {
+      throw new Error(
+        'the dock is pinned to a host the active tab is not on, so it must offer ' +
+          '"follow the active tab" — the affordance was absent',
+      )
+    }
+
+    // B: follow the tab explicitly, and require B's own directory.
+    const followedB = await browser.execute(() => {
+      const button = document.querySelector('[data-testid="sftp-follow-active-tab"]')
+      if (!button) return false
+      button.click()
+      return true
+    })
+    if (!followedB) throw new Error('the "follow the active tab" button disappeared')
+
+    const atB = await waitForListing('e2e-second.marker')
+    notes.push(`after following to B: ${JSON.stringify(atB)}`)
+    if (atB.rows.length === 0) {
+      throw new Error(`following the tab to E2E Second produced no listing: ${JSON.stringify(atB)}`)
+    }
+    if (atB.boundHost?.includes('E2E Second') !== true) {
+      throw new Error(
+        `after following, the dock must be bound to E2E Second, got ${JSON.stringify(atB.boundHost)}`,
+      )
+    }
+    // The directory must be B's. The marker file is created by the fixture in B's own
+    // start directory, so this cannot pass on A's listing.
+    if (!atB.rows.some(row => row.includes('e2e-second.marker'))) {
+      throw new Error(
+        `the dock must list E2E Second's own directory (marker e2e-second.marker), ` +
+          `but showed ${JSON.stringify(atB.rows.slice(0, 8))}`,
+      )
+    }
+
+    // A: switch back to the first host's tab and follow it.
     const back = await activateTabByLabel('E2E Local')
     if (!back) throw new Error('could not activate the first host tab again')
-    const underFirst = await readDockBinding()
-    notes.push(
-      `dock binding: first=${JSON.stringify(underFirst)} second=${JSON.stringify(underSecond)}`,
-    )
+    const pinnedOnB = await readDockBinding()
+    notes.push(`back on A's tab, dock pinned: ${JSON.stringify(pinnedOnB)}`)
+    if (pinnedOnB.boundHost?.includes('E2E Second') !== true) {
+      throw new Error(
+        'switching back to the first tab must not repoint the pin (INV-13): ' +
+          `the dock reports ${JSON.stringify(pinnedOnB.boundHost)}`,
+      )
+    }
+    const followedA = await browser.execute(() => {
+      const button = document.querySelector('[data-testid="sftp-follow-active-tab"]')
+      if (!button) return false
+      button.click()
+      return true
+    })
+    if (!followedA) throw new Error('no "follow the active tab" affordance when back on A')
 
-    if (underSecond?.activeTabLabel?.includes('E2E Second') !== true) {
+    const atA = await waitForListing('e2e-local.marker')
+    notes.push(`after following back to A: ${JSON.stringify(atA)}`)
+    if (atA.rows.length === 0) {
+      throw new Error(`following back to E2E Local produced no listing: ${JSON.stringify(atA)}`)
+    }
+    if (atA.boundHost?.includes('E2E Local') !== true) {
       throw new Error(
-        `the second tab was not the one driving the dock: ${JSON.stringify(underSecond)}`,
+        `after following back, the dock must be bound to E2E Local, got ${JSON.stringify(atA.boundHost)}`,
       )
     }
-    if (underFirst?.activeTabLabel?.includes('E2E Local') !== true) {
+    if (!atA.rows.some(row => row.includes('e2e-local.marker'))) {
       throw new Error(
-        `the first tab did not take the dock back: ${JSON.stringify(underFirst)}`,
+        `the dock must list E2E Local's own directory (marker e2e-local.marker), ` +
+          `but showed ${JSON.stringify(atA.rows.slice(0, 8))}`,
       )
     }
-    /*
-     * The stronger half: the dock's own bound session must change too.
-     *
-     * A panel that keeps rendering the previous host's directory while the tab strip
-     * says otherwise is the `HOST_SWITCH_SAFE` failure — delete/rename would then act
-     * on the host the user left.
-     */
-    if (
-      JSON.stringify(underFirst?.rows) === JSON.stringify(underSecond?.rows) &&
-      underFirst?.boundSessionId === underSecond?.boundSessionId
-    ) {
-      throw new Error('the dock showed identical content for two different sessions')
+    // A→B→A must be a real round trip: the two listings are different directories.
+    if (JSON.stringify(atA.rows) === JSON.stringify(atB.rows)) {
+      throw new Error(
+        'the two hosts rendered identical listings, so the panel never actually ' +
+          'switched sessions',
+      )
     }
+    measurements.hostSwitch = { a: atA, b: atB }
   })
 
   it('records what could not be verified', () => {
