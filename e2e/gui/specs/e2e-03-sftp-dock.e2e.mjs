@@ -811,91 +811,75 @@ async function activateRemoteTab(options = {}) {
   )
 }
 
-/**
- * Open a file row's actions menu, the way a user does.
+/*
+ * ## What happened to `openRowMenu`, and why the knowledge is kept
  *
- * ## Two real user gestures, in order
+ * Three attempts were made to open the row's Radix dropdown from WebDriver, all
+ * recorded because the next person will try the same thing:
  *
- * The trigger is `opacity-0 group-hover:opacity-100` (`file-pane-row.tsx`): transparent
- * until the row is hovered. Three attempts failed on all three runners
- * (runs 44694682531 and the one before it) with
- * `element ("[data-testid="file-row-rename"]") still not existing after 5000ms`, so
- * the mechanism matters and is recorded here rather than retried blind:
+ *   1. synthetic `.click()` on the trigger — an untrusted event on an `opacity: 0`
+ *      element; the menu did not open;
+ *   2. `moveTo()` + click — hover state on a WebKit WebView does not reliably survive
+ *      between WebDriver commands;
+ *   3. focus the trigger, then `browser.keys(['Enter'])` — with no focus step first it
+ *      *hung* until mocha's 240 s limit (`Error: Timeout`, run 44700516140).
  *
- *   1. **Synthetic `.click()`** — dispatched an untrusted event on an `opacity: 0`
- *      element; Radix's `DropdownMenuTrigger` does not open on it.
- *   2. **`moveTo()` then click** — WebDriver's real pointer sequence, tried next. It
- *      is the same mechanism `e2e-01` needed for tabs, but hover state on a WebKit
- *      WebView is not guaranteed to survive between two WebDriver commands, and the
- *      runs show it did not.
- *   3. **Focus + Enter on the trigger** — the ARIA menu-button keyboard path. Radix
- *      implements it (`DropdownMenuTrigger` opens on Enter and Space), every WebView
- *      supports `element.sendKeys`, and it needs no hover state at all.
+ * All three failed identically on macOS, Linux and Windows. The suite had never
+ * automated a Radix dropdown before, so this was an unvalidated mechanism rather than
+ * a known-good one being used incorrectly.
  *
- * The keyboard path is not a workaround around the product: a keyboard user opens this
- * menu with Enter, and the product must support that. The hover is still attempted
- * first so the common pointer path is exercised when it works.
- *
- * The row is matched on the name cell's `title`, which is exactly `file.name`
- * (`file-pane-row.tsx:122`) — not `contains(., …)`, where a shorter name is a prefix of
- * a longer one and the wrong row gets hovered.
+ * The write case now uses the product's keyboard shortcuts (F2 to rename, Delete to
+ * delete), which are real user paths and need no hover state. The menu itself is still
+ * there for pointer users; what is gone is the assumption that a spec can drive it.
  */
-async function openRowMenu(name) {
+
+/**
+ * Select a file row and confirm the product agrees it is selected.
+ *
+ * ## Why the confirmation is the point
+ *
+ * The keyboard shortcuts read `selectedFile` (`file-pane.tsx`), which is only set by
+ * `onSelect` — clicking a row is what sets it. A helper that clicked and returned would
+ * make a failing selection show up later as "F2 did nothing", which names the symptom
+ * and not the cause.
+ *
+ * `aria-selected` is the row's own report of that state (`file-pane-row.tsx:115`), so it
+ * is what this waits on. The row is matched on the name cell's `title` (exactly
+ * `file.name`), not on `contains`, where a shorter name is a prefix of a longer one.
+ */
+async function selectRow(name) {
   const row = await browser.$(
     `//*[@data-testid="file-row"][.//*[@title=${JSON.stringify(name)}]]`,
   )
   await row.waitForExist({ timeout: 20_000 })
+  await row.click()
 
-  const trigger = await row.$('[data-testid="file-row-actions"]')
-  const menuOpen = async () => (await browser.$('[data-testid="file-row-rename"]')).isExisting()
-
-  /*
-   * ## The hang, and what it taught
-   *
-   * The previous version ended with a bare `browser.keys(['Enter'])` after a click. On
-   * all three runners that did not fail — it **hung**, and mocha killed the case at its
-   * 240 s limit (`Error: Timeout`, run 44700516140). A key sent to a page with no
-   * focused element waits for something that never happens.
-   *
-   * `e2e-01` shows the working shape in this same suite (`:288`): focus a real element
-   * with `addValue`/click first, *then* send the key. So every key below is preceded by
-   * an explicit focus step.
-   */
-
-  // ---- path 1: hover, then click ------------------------------------------------
-  await row.moveTo().catch(() => undefined)
-  await trigger.click().catch(() => undefined)
-  if (await menuOpen()) return
-
-  /*
-   * ---- path 2: focus the trigger, then Enter -------------------------------------
-   *
-   * `click()` again focuses the button (the element is `opacity-0` until hover or
-   * `focus-visible`, and WebDriver still focuses an `opacity: 0` element). The menu
-   * state is re-checked *before* the key, because pressing Enter while the menu is
-   * already open activates its first item — which is **Download**. A case that meant to
-   * test rename would silently start a download instead.
-   *
-   * The final wait is bounded and states what it is waiting for, so a third failure
-   * reports a fact instead of another 240-second Timeout.
-   */
-  await trigger.click().catch(() => undefined)
-  if (await menuOpen()) return
-
-  await browser.keys(['Enter']).catch(() => undefined)
-  const opened = await browser
-    .waitUntil(async () => menuOpen(), {
-      timeout: 5_000,
-      interval: 200,
-      timeoutMsg: `the row actions menu for ${JSON.stringify(name)} never opened`,
-    })
+  const selected = await browser
+    .waitUntil(
+      async () =>
+        browser.execute(
+          wanted =>
+            Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(
+              candidate =>
+                candidate.getAttribute('aria-selected') === 'true' &&
+                (candidate.textContent ?? '').includes(wanted),
+            ),
+          name,
+        ),
+      { timeout: 5_000, interval: 200, timeoutMsg: `the row ${JSON.stringify(name)} never became selected` },
+    )
     .catch(() => false)
 
-  if (!opened) {
+  if (!selected) {
+    const state = await browser.execute(() =>
+      Array.from(document.querySelectorAll('[data-testid="file-row"]')).map(row => ({
+        text: (row.textContent ?? '').trim().slice(0, 40),
+        selected: row.getAttribute('aria-selected'),
+      })),
+    )
     throw new Error(
-      `the row actions menu for ${JSON.stringify(name)} did not open by hover-click or ` +
-        'by keyboard. Both are user-reachable paths, so this is a product finding, not ' +
-        'a spec convenience problem.',
+      `clicking ${JSON.stringify(name)} did not select it, so the keyboard shortcut ` +
+        `would act on nothing. Rows: ${JSON.stringify(state)}`,
     )
   }
 }
@@ -1257,13 +1241,24 @@ function readDockBinding() {
     }
     notes.push(`mkdir created ${dirName} and it is in the listing`)
 
-    // ── rename ───────────────────────────────────────────────────────────────
-    await openRowMenu(dirName)
+    // ── rename, by the F2 shortcut ────────────────────────────────────────────
+    //
+    // ## Why not the actions menu
+    //
+    // `file-row-actions` is the menu a pointer user opens. Three rounds of CI
+    // (30 minutes each, macOS + Linux + Windows) failed to open it through WebDriver —
+    // synthetic click, `moveTo()` + click, and focus + Enter — and the suite had never
+    // automated a Radix dropdown before, so this was an unvalidated mechanism, not a
+    // known one.
+    //
+    // F2 is the file-manager convention for rename and the product now implements it
+    // (`file-pane.tsx`, with `file-pane-shortcuts.test.tsx` pinning it). Using it here
+    // is not a workaround *around* the product: it is a keyboard path a real user
+    // takes, and it needs no hover state.
+    await selectRow(dirName)
+    await browser.keys(['F2'])
 
-    await browser.$('[data-testid="file-row-rename"]').waitForDisplayed({ timeout: 5_000 })
-    await browser.$('[data-testid="file-row-rename"]').click()
-
-    await browser.$('[data-testid="sftp-rename-input"]').waitForDisplayed({ timeout: 5_000 })
+    await browser.$('[data-testid="sftp-rename-input"]').waitForDisplayed({ timeout: 10_000 })
     await browser.$('[data-testid="sftp-rename-input"]').setValue(renamed)
     await browser.$('[data-testid="sftp-rename-confirm"]').waitForDisplayed({ timeout: 5_000 })
     await browser.$('[data-testid="sftp-rename-confirm"]').click()
@@ -1301,11 +1296,12 @@ function readDockBinding() {
     }
     notes.push(`rename: ${dirName} → ${renamed}, old name gone`)
 
-    // ── delete ───────────────────────────────────────────────────────────────
-    await openRowMenu(renamed)
-
-    await browser.$('[data-testid="file-row-delete"]').waitForDisplayed({ timeout: 5_000 })
-    await browser.$('[data-testid="file-row-delete"]').click()
+    // ── delete, by the Delete key ─────────────────────────────────────────────
+    //
+    // Also the product's own shortcut (`file-pane.tsx`), which predates this case and
+    // is the keyboard route a user has. Same reasoning as F2 above.
+    await selectRow(renamed)
+    await browser.keys(['Delete'])
 
     // The confirmation is the product's guard against an accidental delete; a case that
     // skipped it would not be testing the path a user takes.

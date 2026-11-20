@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Plus, Upload } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useBreakpointMax } from '@/hooks/use-breakpoint'
+import { useFilePaneShortcuts } from './use-file-pane-shortcuts'
 import type { FileItem } from '@/service/ssh'
 import { FilePaneNavigation } from './file-pane-navigation'
 import { FilePaneTable, type FilePaneSortBy } from './file-pane-table'
@@ -55,19 +56,16 @@ export const FilePane: React.FC<FilePaneProps> = ({
   const [focusedFile, setFocusedFile] = useState<FileItem | null>(null)
   const isMobile = useBreakpointMax('md')
 
-  // Delete key: delete the currently selected/focused file
-  useEffect(() => {
-    if (type !== 'remote' || !sessionId) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Delete' && selectedFile && !e.defaultPrevented) {
-        e.preventDefault()
-        onDelete(selectedFile)
-        void setFocusedFile(null)
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [type, sessionId, selectedFile, onDelete])
+  useFilePaneShortcuts({
+    type,
+    sessionId,
+    selectedFile,
+    onRename,
+    onDelete,
+    // The row this named is gone after a delete, so the selection is cleared rather
+    // than left pointing at a file that no longer exists.
+    onAfterDelete: () => setFocusedFile(null),
+  })
 
   const filteredFiles = files
     .filter(f => f.name.toLowerCase().includes(filter.toLowerCase()))
