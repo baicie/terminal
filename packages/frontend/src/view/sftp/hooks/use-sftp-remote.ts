@@ -7,7 +7,8 @@ import { registerSession } from '@/service/sftp-session-claim'
 import { isSessionBusy } from '@/service/sftp-transfer-session'
 import { releaseOrDefer } from './sftp-deferred-release'
 import { connectionIdentity, type ConnectionFields } from './host-identity'
-import { resolveListingPath } from './resolve-listing-path'
+import { loadDirectory } from './load-directory'
+import { createNavigationTracker, isTicketCurrent } from './navigation-token'
 import { traceSftp } from './sftp-trace'
 import { useSftpFileOperations } from './use-sftp-file-operations'
 
@@ -63,6 +64,8 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
   // Every host switch starts a new generation; responses from older
   // generations are dropped instead of overwriting the new host's listing.
   const generationRef = useRef(0)
+  /** Which listing is current; `generationRef` only moves on a host change. */
+  const navigations = useRef(createNavigationTracker())
   const unmountedRef = useRef(false)
 
   /**
@@ -172,34 +175,28 @@ export function useSftpRemote({ activeHost }: UseSftpRemoteOptions): UseSftpRemo
       const key = hostKey
       if (key === null) return
       const generation = generationRef.current
+      const ticket = navigations.current.next(generation, key)
+      // A host change OR a newer navigation makes this answer irrelevant.
+      const stale = () =>
+        !isTicketCurrent(ticket, navigations.current, generationRef.current, hostKeyRef.current)
       setLoading(true)
       try {
         const sid = await ensureSession(activeHost, key)
         traceSftp(`loadDir ${p} sid=${sid ?? 'null'}`)
         if (!sid) return
-        // `.` first; absolute after. See `resolve-listing-path.ts`.
-        const effectivePath = await resolveListingPath(sid, p)
-        if (generation !== generationRef.current || key !== hostKeyRef.current) return
-        if (effectivePath === null) {
-          toast.error(t('sftp.listFailed'))
+        const outcome = await loadDirectory({ sessionId: sid, requestedPath: p, isStale: stale })
+        if (outcome.kind === 'stale' || outcome.kind === 'no-session') return
+        if (outcome.kind === 'failed') {
+          toast.error(outcome.message || t('sftp.listFailed'))
           return
         }
-        const result = await sshService.sftpList(sid, effectivePath)
-        // The host may have changed while the listing was in flight; the
-        // answer describes the previous host and must not reach the UI.
-        if (generation !== generationRef.current || key !== hostKeyRef.current) return
-        if (result.success && result.files) {
-          setFiles(result.files)
-          setPath(effectivePath)
-        } else {
-          toast.error(result.message || t('sftp.listFailed'))
-        }
+        setFiles(outcome.files as FileItem[])
+        setPath(outcome.path)
       } catch (e) {
-        if (generation === generationRef.current && key === hostKeyRef.current) {
-          toast.error(t('sftp.genericError', { error: String(e) }))
-        }
+        if (!stale()) toast.error(t('sftp.genericError', { error: String(e) }))
       } finally {
-        if (generation === generationRef.current) setLoading(false)
+        // Only the newest listing owns the spinner.
+        if (ticket.navigation === navigations.current.newest()) setLoading(false)
       }
     },
     [activeHost, hostKey, ensureSession, t],

@@ -269,5 +269,6 @@ export default {
   'settings.ai.maxTokens': 'Max output tokens',
   'settings.ai.timeout': 'Timeout (ms)',
   'settings.ai.streaming': 'Stream the response',
-  'settings.ai.plaintextConfirm': 'This endpoint uses plain HTTP. I understand my terminal text would be sent unencrypted.',
+  'settings.ai.plaintextRefused':
+    'Plain HTTP to a remote host is refused: the request would carry your terminal text unencrypted. Use HTTPS, or a local server on this machine.',
 }

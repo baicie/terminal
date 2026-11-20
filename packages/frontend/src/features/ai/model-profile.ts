@@ -97,14 +97,22 @@ function isLoopbackHost(hostname: string): boolean {
 /**
  * Decide whether a profile's endpoint is acceptable.
  *
- * `allowPlaintextRemote` is the user's explicit confirmation. It is a parameter
- * rather than a module flag so the decision is visible at the call site and can be
- * tested in both directions.
+ * ## Why there is no "confirm and continue" for plaintext remote
+ *
+ * There was: `allowPlaintextRemote` let the UI save a non-loopback `http://` endpoint
+ * after the user confirmed it. The Rust transport refuses that same URL
+ * unconditionally — deliberately, because "consent recorded earlier is not a property
+ * of this request". So the confirmation produced a profile that saved cleanly and then
+ * failed every single request.
+ *
+ * Measured by a pairing test over eleven URLs: `http://api.example.com/v1` was the one
+ * the UI accepted and the transport always refused.
+ *
+ * The transport rule is the one that must not weaken, so the UI now matches it. The
+ * parameter is gone rather than defaulted to false — a caller that passes `true` and
+ * gets `false` back is harder to notice than a parameter that no longer exists.
  */
-export function checkEndpoint(
-  endpoint: string,
-  allowPlaintextRemote = false,
-): EndpointVerdict {
+export function checkEndpoint(endpoint: string): EndpointVerdict {
   let url: URL
   try {
     url = new URL(endpoint)
@@ -115,9 +123,9 @@ export function checkEndpoint(
   if (url.protocol !== 'http:') {
     return { ok: false, reason: 'unsupported-scheme' }
   }
-  // Plain HTTP. Loopback is a local model server; anything else needs consent.
+  // Plain HTTP is only acceptable to a local model server: the transport refuses the
+  // rest, so accepting it here would only move the failure later.
   if (isLoopbackHost(url.hostname)) return { ok: true }
-  if (allowPlaintextRemote) return { ok: true }
   return { ok: false, reason: 'plaintext-remote', endpoint }
 }
 
@@ -150,7 +158,6 @@ export function validateProfile(
     ModelProfilePublic,
     'name' | 'endpoint' | 'modelId' | 'maxOutputTokens' | 'timeoutMs' | 'temperature'
   >,
-  options: { allowPlaintextRemote?: boolean } = {},
 ): ProfileProblem | null {
   const name = profile.name.trim()
   if (name.length < PROFILE_LIMITS.nameLength.min) {
@@ -168,14 +175,14 @@ export function validateProfile(
     return { field: 'modelId', reason: `A model id is at most ${PROFILE_LIMITS.modelIdLength.max} characters.` }
   }
 
-  const endpoint = checkEndpoint(profile.endpoint, options.allowPlaintextRemote ?? false)
+  const endpoint = checkEndpoint(profile.endpoint)
   if (!endpoint.ok) {
     const reason =
       endpoint.reason === 'not-a-url'
         ? 'That is not a valid URL.'
         : endpoint.reason === 'unsupported-scheme'
           ? 'Use https://, or http:// for a local server.'
-          : 'Plain HTTP would send your terminal text unencrypted. Use HTTPS, or confirm you trust this endpoint.'
+          : 'Plain HTTP would send your terminal text unencrypted. Use HTTPS, or a local server on this machine.'
     return { field: 'endpoint', reason }
   }
 

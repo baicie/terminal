@@ -240,6 +240,15 @@ describe('SFTP Context Dock — real WebView', () => {
             label: tab.getAttribute('aria-label'),
             selected: tab.getAttribute('aria-selected') === 'true',
             text: tab.textContent?.trim() ?? '',
+            /*
+             * `type` answers "is a second local tab expected?".
+             *
+             * Measured on the Windows runner: two tabs, both showing a shell process
+             * path rather than a host name. Whether that is a restored session, a
+             * duplicated fallback or a second PTY is not decidable from the labels;
+             * `data-tab-type` is what separates those cases.
+             */
+            type: tab.getAttribute('data-tab-type'),
           }))
           // ## The selector that finally worked
           //
