@@ -819,3 +819,142 @@ fn the_redirect_policy_allows_https_upward() {
         "a redirect loop must terminate rather than consume the whole request budget"
     );
 }
+
+/// A server with a certificate this machine does not trust must be refused.
+///
+/// ## The defect this guards, and why it needs a real TLS server
+///
+/// `client()` builds `reqwest::Client` without `danger_accept_invalid_certs`, which
+/// means rustls verifies the chain. That is the correct default — and it was **not
+/// tested at all**. A one-line `.danger_accept_invalid_certs(true)` added for
+/// convenience while debugging a local endpoint would turn every user's API key into
+/// something an on-path attacker can collect, and no test would have objected.
+///
+/// A stubbed `reqwest` cannot check this: the verification happens inside the TLS
+/// stack, below anything a mock replaces. So this starts a real `openssl s_server`
+/// with a freshly generated self-signed certificate. `curl -k` reaches it (measured:
+/// HTTP 200), and `curl` without `-k` does not (measured: connection failure) — the
+/// server is genuinely serving TLS with an untrusted chain.
+///
+/// ## Why the failure kind is `Offline`
+///
+/// `transport_failure` classifies every non-timeout send error as `Offline`, so a
+/// rejected certificate reads as "the endpoint could not be reached". That is a
+/// separate question from this test — the assertion here is that the handshake does
+/// not succeed, which is the security property. The message quality is noted in
+/// `docs/design/terminal-next/16-nightly-task-matrix.md` rather than changed here.
+#[test]
+fn a_certificate_this_machine_does_not_trust_is_refused() {
+    use std::process::{Command, Stdio};
+
+    let dir = std::env::temp_dir().join(format!("ai-tls-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let key = dir.join("key.pem");
+    let cert = dir.join("cert.pem");
+
+    let generated = Command::new("openssl")
+        .args([
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-keyout",
+            key.to_str().expect("key path"),
+            "-out",
+            cert.to_str().expect("cert path"),
+            "-days",
+            "1",
+            "-nodes",
+            "-subj",
+            "/CN=127.0.0.1",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    if !matches!(generated, Ok(status) if status.success()) {
+        // No `openssl` on this machine. Reported as a skip with the reason rather than
+        // as a pass: "we could not build the fixture" is not "the client verified".
+        eprintln!("skipping: openssl is unavailable, so no untrusted certificate can be served");
+        return;
+    }
+
+    // A port of our own; `s_server` is told to bind it and the client is pointed at it.
+    let port = {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("reserve a port");
+        listener.local_addr().expect("addr").port()
+    };
+
+    let mut server = Command::new("openssl")
+        .args([
+            "s_server",
+            "-accept",
+            &port.to_string(),
+            "-cert",
+            cert.to_str().expect("cert"),
+            "-key",
+            key.to_str().expect("key"),
+            "-www",
+            "-quiet",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("start s_server");
+
+    // Wait for the listener rather than sleeping a guessed amount.
+    let ready = {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut ready = false;
+        while std::time::Instant::now() < deadline {
+            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                ready = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        ready
+    };
+
+    let outcome = if ready {
+        let (events, failure) = collect(request(format!("https://127.0.0.1:{port}"), |_| {}));
+        // Nothing may be streamed from a server we cannot trust.
+        assert!(
+            events.is_empty(),
+            "a refused handshake produced streamed content: {events:?}"
+        );
+        let failure = failure.expect("an untrusted certificate must be reported as a failure");
+        Some(failure.kind)
+    } else {
+        None
+    };
+
+    let _ = server.kill();
+    let _ = server.wait();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    match outcome {
+        Some(kind) => {
+            /*
+             * ## `Offline` specifically, not "any failure"
+             *
+             * The first version of this test accepted `Offline | Timeout | Cancelled`.
+             * Measured against the mutation `.danger_accept_invalid_certs(true)`: the
+             * test still **passed** — the handshake succeeded, `s_server -www` answered
+             * with HTML instead of an SSE stream, and the run ended as `Timeout` after
+             * ten seconds. A certificate check that accepts a broken connection is not
+             * a certificate check.
+             *
+             * rustls refuses the handshake immediately, so the failure is `Offline`
+             * ("the send failed"), not `Timeout` ("we waited"). Accepting `Timeout`
+             * here would make "the server hung" indistinguishable from "the chain was
+             * rejected", and only the second is what this test is about.
+             */
+            assert_eq!(
+                kind,
+                AiFailureKind::Offline,
+                "an untrusted certificate must fail at the handshake (Offline). A Timeout                  means the connection was accepted and the client waited — i.e. the                  certificate was not verified"
+            );
+        }
+        None => panic!("s_server never accepted a connection, so nothing was tested"),
+    }
+}
