@@ -13,6 +13,8 @@
  *   • never turn a failed spawn into a silent exit 1 (see `gui-e2e-platform.mjs`).
  */
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { sqliteProblem } from './gui-e2e-preconditions.mjs'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -143,6 +145,28 @@ log(
 const sshFixtureRequested = !flags.has('--no-ssh-fixture')
 let fixture = null
 let fixtureSkipReason = null
+
+/*
+ * ## Refuse to run the SSH-backed suite on a Node that cannot start the fixture
+ *
+ * Measured on this machine: Node 22.12.0, `node:sqlite` is `No such built-in module`.
+ * The fixture starts sshd and then cannot write the host row, so it is declared
+ * unavailable — and **every spec still reports green**. `e2e-03` was observed at
+ * "11 passing, exit 0" with `verdict: PARTIAL`, `notRunCount: 10` and every remote case
+ * recording NOT_RUN. The reason existed only as one line of `fixtureSkipReason` in a
+ * summary written after the run.
+ *
+ * A run that cannot touch a server must not look like a run that checked one. This is
+ * checked here rather than left to the fixture's own error message because by then the
+ * suite has already started, and wdio's reporter is what a reader looks at.
+ */
+function requireSqliteForFixture() {
+  if (!sshFixtureRequested) return
+  const problem = sqliteProblem(createRequire(import.meta.url))
+  if (problem !== null) fail(problem)
+}
+requireSqliteForFixture()
+
 if (sshFixtureRequested) {
   try {
     const { startSeededSshd } = await import('../e2e/gui/fixtures/seed-sftp-host.mjs')

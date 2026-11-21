@@ -56,10 +56,25 @@ export function FilePaneNavigation({
           </span>
         </div>
         <div className="flex-1" />
+        {/*
+          ## Why these three carry test ids and accessible names
+
+          They were icon-only buttons with no name at all: no text, no `aria-label`, no
+          `data-testid`. That is a real accessibility gap first (`<Button>` with one
+          child `<ArrowLeft>` announces as "button"), and the reason `e2e-03`'s
+          navigation case could not refresh a directory: the spec had to find the Home
+          control by "the first svg-only button", which is a guess about document order.
+
+          The ids are per-`type` because both panes render this component at once in the
+          split layout, and a spec that refreshes "the remote pane" must not refresh the
+          local one.
+        */}
         <Button
           variant="ghost"
           size="icon"
           className="size-7"
+          data-testid={`sftp-${type}-back`}
+          aria-label={t('sftp.back')}
           onClick={onBack}
           disabled={pathHistoryIndex <= 0}
         >
@@ -69,6 +84,8 @@ export function FilePaneNavigation({
           variant="ghost"
           size="icon"
           className="size-7"
+          data-testid={`sftp-${type}-forward`}
+          aria-label={t('sftp.forward')}
           onClick={onForward}
           disabled={pathHistoryIndex >= pathHistoryLength - 1}
         >
@@ -78,6 +95,8 @@ export function FilePaneNavigation({
           variant="ghost"
           size="icon"
           className="size-7"
+          data-testid={`sftp-${type}-refresh`}
+          aria-label={t('sftp.refresh')}
           onClick={onRefresh}
         >
           <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
@@ -85,9 +104,26 @@ export function FilePaneNavigation({
       </div>
 
       <div className="shrink-0 px-3 py-1.5 flex items-center gap-1 text-xs border-b border-border/50 overflow-x-auto">
+        {/*
+          ## Home means the session's home directory, not the server's root
+
+          This was `onNavigate(type === 'remote' ? '/' : '')`, so on a remote pane the
+          Home button listed `/` — measured in `e2e-03`: `.nofollow, .vol,
+          Applications, bin, cores, dev, Library, opt, private, sbin, System, Users,
+          usr, Volumes, …`. A user pressing Home in a file browser expects their own
+          directory; listing the whole filesystem instead is both surprising and, on a
+          shared server, a way to browse paths they were not looking for.
+
+          `.` is what the pane opens at and what `resolveListingPath` turns into the
+          server's answer for "where this user starts" (`sftp_list` resolves it, the
+          same round trip the first load uses). Passing `.` reuses that path rather than
+          inventing a second notion of home.
+        */}
         <button
           className="hover:text-primary shrink-0"
-          onClick={() => onNavigate(type === 'remote' ? '/' : '')}
+          data-testid={`sftp-${type}-home`}
+          aria-label={t('sftp.goHome')}
+          onClick={() => onNavigate(type === 'remote' ? '.' : '')}
         >
           <Home className="size-3.5" />
         </button>

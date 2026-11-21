@@ -855,6 +855,85 @@ async function activateRemoteTab(options = {}) {
  * is what this waits on. The row is matched on the name cell's `title` (exactly
  * `file.name`), not on `contains`, where a shorter name is a prefix of a longer one.
  */
+/**
+ * Wait until a control exists and has a box, then click it from the page.
+ *
+ * ## Why not `browser.$(sel).click()`
+ *
+ * Two independent measurements on this WebView say the driver's own hit-testing does
+ * not agree with the page:
+ *
+ *   * `waitForDisplayed` rejected an input inside a dialog whose element reported
+ *     `data-state="open"`, `display: grid`, `visibility: visible`, 486×190;
+ *   * `waitForClickable` rejected the pane's refresh button, which the screenshot of
+ *     that same moment shows in the toolbar.
+ *
+ * Both were real findings about the harness, not about the product — the dialog had
+ * *not* actually opened in the first case, which is what this distinction exposed.
+ * So the contract here is what the browser itself would use: the element exists, it
+ * has a non-zero box, and `elementFromPoint` at its centre lands inside it.
+ */
+async function clickWhenReady(selector) {
+  const ready = await browser
+    .waitUntil(
+      async () =>
+        browser.execute(sel => {
+          const element = document.querySelector(sel)
+          if (!element) return false
+          const box = element.getBoundingClientRect()
+          if (box.width <= 0 || box.height <= 0) return false
+          const onTop = document.elementFromPoint(
+            box.left + box.width / 2,
+            box.top + box.height / 2,
+          )
+          return onTop === element || element.contains(onTop)
+        }, sel),
+      { timeout: 10_000, interval: 200, timeoutMsg: `never became clickable: ${selector}` },
+    )
+    .catch(() => false)
+
+  if (!ready) {
+    /*
+     * When this fails, "what is on top of it" is the whole answer — and the first
+     * version of this message did not collect it, so a 72×34 button that the browser
+     * refused to hit-test read as "the button is missing".
+     */
+    const state = await browser.execute(sel => {
+      const element = document.querySelector(sel)
+      if (!element) return { present: false }
+      const box = element.getBoundingClientRect()
+      const centreX = box.left + box.width / 2
+      const centreY = box.top + box.height / 2
+      const onTop = document.elementFromPoint(centreX, centreY)
+      const describe = node =>
+        node === null
+          ? null
+          : {
+              tag: node.tagName,
+              testId: node.getAttribute?.('data-testid') ?? null,
+              slot: node.getAttribute?.('data-slot') ?? null,
+              className: String(node.className ?? '').slice(0, 120),
+            }
+      return {
+        present: true,
+        width: box.width,
+        height: box.height,
+        disabled: element.disabled ?? null,
+        onTop: describe(onTop),
+        onTopIsElement: onTop === element || element.contains(onTop),
+        /// The dialog's own layer, so an overlay painting above it is visible here.
+        dialogZ: (() => {
+          const dialog = element.closest('[data-slot="dialog-content"]')
+          return dialog ? getComputedStyle(dialog).zIndex : null
+        })(),
+        viewport: { width: innerWidth, height: innerHeight },
+      }
+    }, selector)
+    throw new Error(`${selector} never became clickable: ${JSON.stringify(state, null, 2)}`)
+  }
+  await browser.execute(sel => document.querySelector(sel).click(), selector)
+}
+
 async function selectRow(name) {
   const row = await browser.$(
     `//*[@data-testid="file-row"][.//*[@title=${JSON.stringify(name)}]]`,
@@ -1247,19 +1326,133 @@ function readDockBinding() {
     notes.push(`pane and server agree on the starting listing (${startEntries.length} entries)`)
 
     // ── mkdir ────────────────────────────────────────────────────────────────
-    const mkdirOpened = await browser.execute(() => {
-      const button = document.querySelector('[data-testid="sftp-mkdir"]')
-      if (!button) return false
-      button.click()
-      return true
+    //
+    // ## Two controls carry this test id
+    //
+    // `sftp-file-panes.tsx` renders one in the single-pane header (`single &&`, so it
+    // exists only when the pane is narrow) and `file-pane.tsx` renders one in the
+    // actions bar at the bottom of every remote pane. `browser.$` answers with the
+    // first in document order, which in the split layout is the header one — present
+    // in the DOM, hidden by its `single &&` guard. Clicking it does nothing, and the
+    // failure reads as "the dialog does not open".
+    //
+    // Measured on the run at 1795272367778: the screenshot shows the split layout with
+    // a visible "New Folder" in the bottom bar, and the click had gone to the
+    // invisible header one. The earlier scripted `.click()` failed for a second,
+    // independent reason — this suite has recorded twice (`e2e-05`'s `driveSwitch`)
+    // that a synthetic click does not reach React's root listener.
+    //
+    // So: only the control the browser says is hittable, and clicked from the page —
+    // `isDisplayed`/`waitForClickable` are the pair that answered "not clickable" for
+    // a toolbar button the screenshot shows, so they are not used to choose here
+    // either. See `clickWhenReady`.
+    const mkdirChosen = await browser.execute(() => {
+      const candidates = Array.from(
+        document.querySelectorAll('[data-testid="sftp-mkdir"]'),
+      )
+      const hittable = element => {
+        const box = element.getBoundingClientRect()
+        if (box.width <= 0 || box.height <= 0) return false
+        const onTop = document.elementFromPoint(
+          box.left + box.width / 2,
+          box.top + box.height / 2,
+        )
+        return onTop === element || element.contains(onTop)
+      }
+      const target = candidates.find(hittable)
+      if (!target) {
+        return {
+          clicked: false,
+          count: candidates.length,
+          states: candidates.map(element => {
+            const box = element.getBoundingClientRect()
+            return { width: box.width, height: box.height }
+          }),
+        }
+      }
+      target.click()
+      return { clicked: true, count: candidates.length }
     })
-    if (!mkdirOpened) {
-      throw new Error('the remote pane has no mkdir control (data-testid="sftp-mkdir")')
+    if (!mkdirChosen.clicked) {
+      throw new Error(
+        `no mkdir control is hittable (${mkdirChosen.count} in the page): ` +
+          JSON.stringify(mkdirChosen.states),
+      )
     }
-    await browser.$('[data-testid="sftp-mkdir-input"]').waitForDisplayed({ timeout: 5_000 })
-    await browser.$('[data-testid="sftp-mkdir-input"]').setValue(dirName)
-    await browser.$('[data-testid="sftp-mkdir-confirm"]').waitForDisplayed({ timeout: 5_000 })
-    await browser.$('[data-testid="sftp-mkdir-confirm"]').click()
+
+    /*
+     * ## Why this reads the DOM instead of calling `waitForDisplayed`
+     *
+     * `waitForDisplayed` answered "not displayed" for an input inside a dialog that
+     * the page reported as `data-state="open"`, `display: grid`, `visibility: visible`,
+     * 486×190 — and a screenshot of that moment shows no dialog on screen at all. So
+     * two facts are true and they disagree: the DOM says the dialog is open and
+     * laid out, the pixels say it is not there.
+     *
+     * Either way `waitForDisplayed` is not answering the question this case needs
+     * ("can a user see and type into it"), and guessing between "wdio's visibility
+     * heuristic does not work in this WebView" and "the product renders a dialog
+     * nobody can see" is not something to settle by re-running.
+     *
+     * The probe below collects what separates those: where the box actually is, what
+     * is painted on top of it, and whether the input is reachable by the browser's own
+     * hit-testing. `document.elementFromPoint` in the middle of the input answers
+     * "would a click land on it" in one call.
+     */
+    const mkdirProbe = await browser.execute(() => {
+      const input = document.querySelector('[data-testid="sftp-mkdir-input"]')
+      if (!input) return { input: null }
+      const box = input.getBoundingClientRect()
+      const style = getComputedStyle(input)
+      const centre = { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+      const onTop =
+        box.width > 0 && box.height > 0
+          ? document.elementFromPoint(centre.x, centre.y)
+          : null
+      const dialog = document.querySelector('[data-testid="sftp-mkdir-dialog"]')
+      const dialogBox = dialog?.getBoundingClientRect() ?? null
+      const overlay = document.querySelector('[data-slot="dialog-overlay"]')
+      const overlayStyle = overlay ? getComputedStyle(overlay) : null
+      return {
+        path: location.pathname,
+        input: {
+          width: box.width,
+          height: box.height,
+          top: box.top,
+          left: box.left,
+          display: style.display,
+          visibility: style.visibility,
+          opacity: style.opacity,
+          // The point wdio's own heuristic would use.
+          hitTest: onTop ? `${onTop.tagName}.${onTop.className}`.slice(0, 80) : null,
+          hitTestIsInput: onTop === input || input.contains(onTop),
+        },
+        dialog: dialogBox
+          ? { width: dialogBox.width, height: dialogBox.height, top: dialogBox.top }
+          : null,
+        overlay: overlayStyle
+          ? {
+              background: overlayStyle.backgroundColor,
+              opacity: overlayStyle.opacity,
+              zIndex: overlayStyle.zIndex,
+            }
+          : null,
+        viewport: { width: innerWidth, height: innerHeight },
+      }
+    })
+
+    if (!mkdirProbe.input || !mkdirProbe.input.hitTestIsInput) {
+      throw new Error(
+        'the mkdir input is not reachable by the browser itself.\n' +
+          `  ${JSON.stringify(mkdirProbe, null, 2)}\n` +
+          '  hitTestIsInput:false means a real click at its centre would land on ' +
+          'something else — that is a product defect (an invisible overlay, a dialog ' +
+          'outside the viewport, or a layer painted on top), not a test-harness one.',
+      )
+    }
+    const mkdirInput = await browser.$('[data-testid="sftp-mkdir-input"]')
+    await mkdirInput.setValue(dirName)
+    await clickWhenReady('[data-testid="sftp-mkdir-confirm"]')
 
     /*
      * Poll the **server's** directory, not the pane.
@@ -1310,10 +1503,9 @@ function readDockBinding() {
     await selectRow(dirName)
     await browser.keys(['F2'])
 
-    await browser.$('[data-testid="sftp-rename-input"]').waitForDisplayed({ timeout: 10_000 })
+    await clickWhenReady('[data-testid="sftp-rename-input"]')
     await browser.$('[data-testid="sftp-rename-input"]').setValue(renamed)
-    await browser.$('[data-testid="sftp-rename-confirm"]').waitForDisplayed({ timeout: 5_000 })
-    await browser.$('[data-testid="sftp-rename-confirm"]').click()
+    await clickWhenReady('[data-testid="sftp-rename-confirm"]')
 
     /*
      * Both halves are read from the server, and both are required.
@@ -1357,8 +1549,7 @@ function readDockBinding() {
 
     // The confirmation is the product's guard against an accidental delete; a case that
     // skipped it would not be testing the path a user takes.
-    await browser.$('[data-testid="sftp-delete-confirm"]').waitForDisplayed({ timeout: 5_000 })
-    await browser.$('[data-testid="sftp-delete-confirm"]').click()
+    await clickWhenReady('[data-testid="sftp-delete-confirm"]')
 
     /*
      * A delete is the one operation where the DOM is actively misleading: the pane
@@ -1499,6 +1690,62 @@ function readDockBinding() {
       return
     }
 
+    // ── refresh, so the directory this case just seeded is actually listed ────
+    //
+    // The listing was fetched before `seedFile` ran, and **nothing tells the pane
+    // about a file written by another process**. Without this the case waits 20 s for
+    // a row the pane has no reason to have, and the failure looks like a navigation
+    // defect rather than a stale listing. Measured on run 1795272367778: the directory
+    // was on the server and absent from the pane.
+    //
+    // The refresh control is `sftp-<type>-refresh` — added in this change, because it
+    // was an icon-only button with no name, and the spec could only have found it by
+    // guessing at document order.
+    //
+    // Clicked from the page rather than through `waitForClickable`: on the run that
+    // added this, WebDriver answered "still not clickable after 20000ms" for a button
+    // the screenshot shows in the toolbar. The same run had `waitForDisplayed` reject
+    // an input inside a dialog the DOM described as open and laid out, so the driver's
+    // own visibility/clickability checks are not trustworthy in this WebView.
+    const refreshClick = await browser.execute(() => {
+      const button = document.querySelector('[data-testid="sftp-remote-refresh"]')
+      if (!button) return { clicked: false, reason: 'no sftp-remote-refresh in the page' }
+      const box = button.getBoundingClientRect()
+      button.click()
+      return {
+        clicked: true,
+        width: box.width,
+        height: box.height,
+        disabled: button.disabled,
+      }
+    })
+    if (!refreshClick.clicked) {
+      throw new Error(`could not refresh the remote pane: ${JSON.stringify(refreshClick)}`)
+    }
+
+    const navDirListed = await browser
+      .waitUntil(
+        async () =>
+          browser.execute(
+            name =>
+              Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
+                Array.from(row.querySelectorAll('[title]')).some(
+                  cell => cell.getAttribute('title') === name,
+                ),
+              ),
+            navDir,
+          ),
+        { timeout: 20_000, interval: 250, timeoutMsg: `the refreshed listing never showed ${navDir}` },
+      )
+      .catch(() => false)
+    if (!navDirListed) {
+      throw new Error(
+        `refreshing did not list ${navDir}, which is on the server ` +
+          `(${JSON.stringify(serverEntries())}). The pane shows ` +
+          JSON.stringify((await readRows()).map(r => r.name)),
+      )
+    }
+
     // ── open the directory, by Enter on its focused row ──────────────────────
     //
     // ## Why Enter and not a double-click
@@ -1571,23 +1818,20 @@ function readDockBinding() {
 
     // ── and back out, by the breadcrumb's Home control ───────────────────────
     //
-    // The breadcrumb's first button is the Home control (`file-pane-navigation.tsx`),
-    // which is the keyboard/mouse route a user takes back to the root. Using it here
-    // rather than calling `navigate` keeps the case on a path the product has.
-    const wentHome = await browser.execute(() => {
-      const nav = document.querySelector('[data-testid="sftp-pane-remote"]')
-      if (!nav) return false
-      const buttons = Array.from(nav.querySelectorAll('button'))
-      // The Home control is the first button inside the breadcrumb row; the row is the
-      // element after the toolbar, and it is the only one holding an svg-only button.
-      const home = buttons.find(button => button.querySelector('svg') && !button.textContent?.trim())
-      if (!home) return false
-      home.click()
-      return true
+    // `sftp-remote-home`, added in this change. The control had no name and no id, and
+    // it navigated to `/` — the server's root — which `e2e-03` measured as the whole
+    // filesystem (`.vol, Applications, bin, cores, dev, Library, …`). It now goes to
+    // `.`, the same "where this user starts" the pane opens at, and this case asserts
+    // that by name: the listing after Home must contain the directory this case made,
+    // which is in the session's home and is *not* in `/`.
+    const homeClick = await browser.execute(() => {
+      const button = document.querySelector('[data-testid="sftp-remote-home"]')
+      if (!button) return { clicked: false, reason: 'no sftp-remote-home' }
+      button.click()
+      return { clicked: true }
     })
-    if (!wentHome) {
-      notes.push('navigation case: the breadcrumb Home control was not found; skipped the return leg')
-      return
+    if (!homeClick.clicked) {
+      throw new Error(`could not press Home: ${JSON.stringify(homeClick)}`)
     }
 
     const backAtRoot = await browser
