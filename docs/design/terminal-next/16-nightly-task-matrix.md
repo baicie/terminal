@@ -27,10 +27,10 @@
 | T04 | SFTP 写路径 | `DONE` | #130 | 真实 GUI 创建/重命名/删除，断言服务器状态而非按钮 |
 | T05 | 凭据泄漏 | `DONE` | #131 | 6/7 分支先红；两处不可修边界写成断言当前行为的测试 |
 | T06 | AI 请求 id 多实例 | `DONE` | #131 | 双窗口 realm 前缀；变异 2/2 |
-| T07 | AI 协议与安全 | `PARTIAL` | 待开 | redirect 测试 + prompt injection 修复；错误证书 `NOT_RUN` |
+| T07 | AI 协议与安全 | `PARTIAL` | #136 | redirect + prompt injection + **真实 TLS 自签证书拒绝**；真实模型端点 `BLOCKED_EXTERNAL` |
 | T08 | Daily Driver 评分器 | `DONE` | #132 | 三类状态分离；参数错误退出码 2；变异 3/3 |
-| T09 | GUI 证据完整性 | `PARTIAL` | #133 +#136 | 窗口截断 + `dirty` + 孤儿测试；用例标题与断言不符已修；「删断言则 job 红」**结构上无法满足**，见 §七 |
-| T10 | Credential Provider 迁移 | `PARTIAL` | #134 | 孤儿计数修复 + 7 项跨 Provider 测试；真实进程崩溃恢复 `NOT_RUN` |
+| T09 | GUI 证据完整性 | `PARTIAL` | #133 +#138 | 窗口截断 + `dirty` + 孤儿测试；用例标题与断言不符已修；「删断言则 job 红」**结构上无法满足**，见 §七 |
+| T10 | Credential Provider 迁移 | `DONE` | #134 +#137 | 孤儿计数修复、7 项跨 Provider 测试、**真实 SIGKILL 崩溃矩阵 7 点位 × 2** |
 | T11 | Inspector 平台回归 | `DONE` | #131 | host 切换竞态测试，变异精确命中 |
 | T12 | 发布质量收口 | `PARTIAL` | 待开 | zip 漏洞已修（13→12 条）+ npm 审计 0；签名/更新器 `BLOCKED_EXTERNAL` |
 
@@ -155,3 +155,51 @@ SIGNED_RELEASE_READY         = BLOCKED_EXTERNAL
 
 这比裸的「断言存在」grep 有意义：它检查的是**声称与事实是否一致**，而那正是
 T09 这一项真正关心的东西。
+
+---
+
+## 八、T10 的真实崩溃矩阵（已闭合）
+
+`scripts/verify-install/migration-worker.mjs` 在**独立进程**里跑真实的凭据迁移
+（真实 SQLite 文件 + 落盘 vault 目录），`--crash-at <stage>` 让它在指定阶段
+给自己发 SIGKILL。父进程通过 `spawnSync` 观察到的是 `status: 137`
+（128+9；`tsx` 包了一层，所以 `signal` 是 null —— 两种形状都接受，`status: 0`
+不接受，那意味着崩溃点根本没到）。
+
+### 不变量
+
+每行只能是这两种之一：
+
+| 状态 | 含义 |
+| --- | --- |
+| 有明文、无引用 | 未迁移，重跑能取走 |
+| 无明文、有引用 | 已迁移，密文在 vault 的那个版本 |
+
+**禁止**出现：
+
+| 状态 | 为什么 |
+| --- | --- |
+| 有明文**且**有引用 | `torn` —— 两份拷贝，引用可能指向从未验证过的版本 |
+| **两者都无** | `lost` —— 秘密没了，不可恢复 |
+
+### 覆盖
+
+7 个崩溃点位 × 2（崩溃后不变量 + 重跑收敛）= 14 项，加 1 项无中断对照。
+
+```
+read-plaintext / plan / execute:before-commit:h0 / execute:after-commit:h0
+execute:before-commit:k0 / execute:after-commit:k0 / done
+```
+
+### 变异验证（决定性）
+
+把 `commitHost` 的一条 `UPDATE`（写引用并清明文）拆成两条，中间加崩溃点：
+
+```
+实测：{"lost":["h0"], ...}   —— 密文在 vault 里，行却既无明文也无引用
+变异 → 2 项红（崩溃不变量 + 重跑收敛）
+恢复 → 15 项全绿
+```
+
+这条变异正是这个 harness 存在的理由：**异常可以 unwind，SIGKILL 不能**。
+一个对异常安全的迁移，仍可能在清明文之后、写引用之前被杀，从而永久丢秘密。
