@@ -32,7 +32,7 @@
 | T09 | GUI 证据完整性 | `PARTIAL` | #133 +#137 | 窗口截断 + `dirty` + 孤儿测试；用例标题与断言不符已修；「删断言则 job 红」**结构上无法满足**，见 §七 |
 | T10 | Credential Provider 迁移 | `DONE` | #134 +#138 | 孤儿计数修复、7 项跨 Provider 测试、**真实 SIGKILL 崩溃矩阵 7 点位 × 2** |
 | T11 | Inspector 平台回归 | `DONE` | #131 | host 切换竞态测试，变异精确命中 |
-| T12 | 发布质量收口 | `PARTIAL` | 待开 | zip 漏洞已修（13→12 条）+ npm 审计 0；签名/更新器 `BLOCKED_EXTERNAL` |
+| T12 | 发布质量收口 | `PARTIAL` | #135 | zip 漏洞已修（13→12 条）+ npm 审计 0；签名/更新器 `BLOCKED_EXTERNAL` |
 
 ---
 
@@ -156,6 +156,7 @@ SIGNED_RELEASE_READY         = BLOCKED_EXTERNAL
 这比裸的「断言存在」grep 有意义：它检查的是**声称与事实是否一致**，而那正是
 T09 这一项真正关心的东西。
 
+
 ---
 
 ## 八、T10 的真实崩溃矩阵（已闭合）
@@ -203,3 +204,4 @@ execute:before-commit:k0 / execute:after-commit:k0 / done
 
 这条变异正是这个 harness 存在的理由：**异常可以 unwind，SIGKILL 不能**。
 一个对异常安全的迁移，仍可能在清明文之后、写引用之前被杀，从而永久丢秘密。
+

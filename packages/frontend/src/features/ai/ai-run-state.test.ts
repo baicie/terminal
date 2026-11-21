@@ -175,3 +175,61 @@ describe('reset', () => {
     }
   })
 })
+
+/*
+ * ## A 401 ends the run, and nothing restarts it
+ *
+ * The task asks for "401 → the UI does not retry". The module has a predicate for it,
+ * `isTerminalFailure`, and a test that the predicate answers `true` for `unauthorized`.
+ *
+ * What no test asked — until this one — is whether anything **acts** on that answer.
+ * `grep -rn isTerminalFailure packages/frontend/src` returns the definition and the
+ * test file, and no production caller. The AI surface has no retry loop at all, so
+ * "does not retry a 401" holds for a reason that has nothing to do with the predicate:
+ * it holds because nothing retries anything.
+ *
+ * That is worth pinning as two separate facts, because they can diverge:
+ *
+ *   1. the *state machine* never moves a failed run back to running on its own;
+ *   2. the *predicate* would be the thing to consult if a retry loop were added.
+ *
+ * Only (1) is a property of today's product. (2) is a rule waiting for a consumer, and
+ * saying so here is more useful than a comment claiming the behaviour is enforced.
+ */
+describe('a rejected API key ends the run', () => {
+  const rejected = { kind: 'unauthorized' as const, message: 'The API key was rejected.' }
+
+  it('leaves the run failed and does not restart it', () => {
+    let state = reduceRun(started(), { type: 'fail', runId: 'r1', failure: rejected })
+    expect(state.status).toBe('failed')
+
+    /*
+     * No event in the vocabulary moves `failed` back to a running state except a
+     * deliberate new `prepare`, which is a user action (`canStartRun` gates it).
+     * Feeding every other event is the check: none of them revive the run.
+     */
+    for (const event of [
+      { type: 'start', runId: 'r1' } as const,
+      { type: 'chunk', runId: 'r1', text: 'late' } as const,
+      { type: 'complete', runId: 'r1' } as const,
+    ]) {
+      state = reduceRun(state, event)
+      expect(state.status, `event ${event.type} revived a failed run`).toBe('failed')
+    }
+    expect(state.failure).toMatchObject({ kind: 'unauthorized' })
+  })
+
+  it('only a user-initiated start can begin again', () => {
+    // `canStartRun` is the gate the runtime consults before accepting a new request.
+    // It answers "yes" for a failed run — that is the *user* retrying, which is the
+    // behaviour we want, and it is a different thing from an automatic retry.
+    const failed = reduceRun(started(), { type: 'fail', runId: 'r1', failure: rejected })
+    expect(canStartRun(failed)).toBe(true)
+    expect(canStartRun({ ...failed, status: 'running' })).toBe(false)
+  })
+
+  it('the predicate agrees, for whoever wires a retry loop next', () => {
+    expect(isTerminalFailure('unauthorized')).toBe(true)
+    expect(isTerminalFailure('rate-limited')).toBe(false)
+  })
+})
