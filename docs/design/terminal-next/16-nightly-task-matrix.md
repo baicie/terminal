@@ -29,8 +29,8 @@
 | T06 | AI 请求 id 多实例 | `DONE` | #131 | 双窗口 realm 前缀；变异 2/2 |
 | T07 | AI 协议与安全 | `PARTIAL` | #136 | redirect + prompt injection + **真实 TLS 自签证书拒绝**；真实模型端点 `BLOCKED_EXTERNAL` |
 | T08 | Daily Driver 评分器 | `DONE` | #132 | 三类状态分离；参数错误退出码 2；变异 3/3 |
-| T09 | GUI 证据完整性 | `PARTIAL` | #133 +#138 | 窗口截断 + `dirty` + 孤儿测试；用例标题与断言不符已修；「删断言则 job 红」**结构上无法满足**，见 §七 |
-| T10 | Credential Provider 迁移 | `DONE` | #134 +#137 | 孤儿计数修复、7 项跨 Provider 测试、**真实 SIGKILL 崩溃矩阵 7 点位 × 2** |
+| T09 | GUI 证据完整性 | `PARTIAL` | #133 +#137 | 窗口截断 + `dirty` + 孤儿测试；用例标题与断言不符已修；「删断言则 job 红」**结构上无法满足**，见 §七 |
+| T10 | Credential Provider 迁移 | `DONE` | #134 +#138 | 孤儿计数修复、7 项跨 Provider 测试、**真实 SIGKILL 崩溃矩阵 7 点位 × 2** |
 | T11 | Inspector 平台回归 | `DONE` | #131 | host 切换竞态测试，变异精确命中 |
 | T12 | 发布质量收口 | `PARTIAL` | 待开 | zip 漏洞已修（13→12 条）+ npm 审计 0；签名/更新器 `BLOCKED_EXTERNAL` |
 
