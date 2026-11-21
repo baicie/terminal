@@ -874,19 +874,51 @@ async function activateRemoteTab(options = {}) {
  * has a non-zero box, and `elementFromPoint` at its centre lands inside it.
  */
 async function clickWhenReady(selector) {
+  /*
+   * ## Why the predicate writes its reason to the page
+   *
+   * `waitUntil` swallows whatever the callback returns and retries; when it gives up
+   * it says only "never became clickable". Measured on a CI run where the button was
+   * 76×36, not disabled, and `elementFromPoint` reported the button itself: every
+   * visible condition held, the wait still expired, and nothing said why.
+   *
+   * A thrown exception inside the page function is one way to fail silently — `waitUntil`
+   * treats it as a false answer. Recording the last answer turns the next failure into
+   * a fact instead of a guess.
+   */
   const ready = await browser
     .waitUntil(
       async () =>
         browser.execute(sel => {
-          const element = document.querySelector(sel)
-          if (!element) return false
-          const box = element.getBoundingClientRect()
-          if (box.width <= 0 || box.height <= 0) return false
-          const onTop = document.elementFromPoint(
-            box.left + box.width / 2,
-            box.top + box.height / 2,
-          )
-          return onTop === element || element.contains(onTop)
+          const record = outcome => {
+            globalThis.__clickWhenReady = { selector: sel, outcome }
+            return outcome.ready === true
+          }
+          try {
+            const element = document.querySelector(sel)
+            if (!element) return record({ why: 'no element' })
+            const box = element.getBoundingClientRect()
+            if (box.width <= 0 || box.height <= 0) {
+              return record({ why: 'zero box', width: box.width, height: box.height })
+            }
+            const onTop = document.elementFromPoint(
+              box.left + box.width / 2,
+              box.top + box.height / 2,
+            )
+            if (onTop === null) {
+              return record({ why: 'elementFromPoint returned null' })
+            }
+            const ready = onTop === element || element.contains(onTop)
+            return record({
+              ready,
+              why: ready ? 'ok' : 'covered',
+              onTopTag: onTop.tagName,
+              onTopTestId: onTop.getAttribute?.('data-testid') ?? null,
+            })
+          } catch (error) {
+            // A throw here used to vanish into `waitUntil`'s false branch.
+            return record({ why: 'threw', message: String(error) })
+          }
         }, sel),
       { timeout: 10_000, interval: 200, timeoutMsg: `never became clickable: ${selector}` },
     )
@@ -920,7 +952,7 @@ async function clickWhenReady(selector) {
         height: box.height,
         disabled: element.disabled ?? null,
         onTop: describe(onTop),
-        onTopIsElement: onTop === element || element.contains(onTop),
+        onTopIsElement: onTop !== null && (onTop === element || element.contains(onTop)),
         /// The dialog's own layer, so an overlay painting above it is visible here.
         dialogZ: (() => {
           const dialog = element.closest('[data-slot="dialog-content"]')
@@ -929,7 +961,11 @@ async function clickWhenReady(selector) {
         viewport: { width: innerWidth, height: innerHeight },
       }
     }, selector)
-    throw new Error(`${selector} never became clickable: ${JSON.stringify(state, null, 2)}`)
+    const lastOutcome = await browser.execute(() => globalThis.__clickWhenReady ?? null)
+    throw new Error(
+      `${selector} never became clickable: ${JSON.stringify(state, null, 2)}\n` +
+        `  last predicate answer: ${JSON.stringify(lastOutcome)}`,
+    )
   }
   await browser.execute(sel => document.querySelector(sel).click(), selector)
 }
@@ -1357,7 +1393,7 @@ function readDockBinding() {
           box.left + box.width / 2,
           box.top + box.height / 2,
         )
-        return onTop === element || element.contains(onTop)
+        return onTop !== null && (onTop === element || element.contains(onTop))
       }
       const target = candidates.find(hittable)
       if (!target) {
