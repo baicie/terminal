@@ -104,3 +104,46 @@ test('the two-host case counts remote tabs rather than naming them', () => {
     'the two-host case must assert two remote tabs exist',
   )
 })
+
+/*
+ * ## A case title that contradicts its assertions is a small lie with a long life
+ *
+ * `e2e-03`'s two-host case was titled
+ *
+ *     the file listing follows the active host, not the last connection
+ *
+ * and asserted the opposite. INV-13 (`store/sftp-binding.ts`, UX-1c) made the binding
+ * **pinned** precisely so that switching tabs does *not* repoint the panel — the case
+ * checks that the pin holds, that the "follow" affordance appears, and that following
+ * is what moves it.
+ *
+ * The title survived because the behaviour it described is the thing UX-1c removed.
+ * Anyone reading CI output would conclude the product still follows focus, which is the
+ * exact bug the case exists to prevent from returning.
+ *
+ * This guard is narrow on purpose: it checks the words that have a known-correct
+ * meaning in this codebase, not general prose quality.
+ */
+test('no case title claims the dock follows focus', () => {
+  const offenders = []
+  for (const { name, source } of specFiles()) {
+    const lines = source.split('\n')
+    lines.forEach((line, index) => {
+      const match = /it\(\s*'([^']+)'/.exec(line)
+      if (!match) return
+      const title = match[1]
+      // "follows the active host" / "follows focus" describe the behaviour INV-13
+      // removed. A case may still test the *affordance* — that is "when asked".
+      if (/follows (the )?(active|current) (host|tab|focus)/i.test(title)) {
+        offenders.push(`${name}:${index + 1}: ${title}`)
+      }
+    })
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    'the dock is pinned (INV-13); a title saying it follows focus describes the defect ' +
+      'that rule removed. Reword to "stays pinned … follows only when asked":\n' +
+      offenders.join('\n'),
+  )
+})

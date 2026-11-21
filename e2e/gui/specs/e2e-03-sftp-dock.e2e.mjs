@@ -983,7 +983,7 @@ function readDockBinding() {
   })
 }
 
-  it('the file listing follows the active host, not the last connection', async () => {
+  it('the dock stays pinned when focus moves, and follows only when asked', async () => {
     const secondPort = process.env.GUI_E2E_SSH_PORT_2
     if (!process.env.GUI_E2E_SSH_PORT || !secondPort) {
       notes.push('two-host case NOT_RUN: no second SSH server this run')
