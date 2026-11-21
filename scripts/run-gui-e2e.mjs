@@ -339,6 +339,14 @@ const run = runSpecs(specFiles, {
    * upload test assert on real bytes without touching user files.
    */
   GUI_E2E_REMOTE_ROOT: fixture ? fixture.remoteRoot : '',
+  /*
+   * The second server's writable root.
+   *
+   * The write case proves "these writes did not land on the other host" by reading that
+   * host's directory. Reading it through the *pane* would ask the product whether the
+   * product misbehaved; this is the server's own answer, from the same Node process.
+   */
+  GUI_E2E_REMOTE_ROOT_2: fixture?.secondary ? fixture.secondary.remoteRoot : '',
   /** Port of the second server, for the two-host cases. Empty when unavailable. */
   GUI_E2E_SSH_PORT_2: fixture?.secondary ? String(fixture.secondary.port) : '',
 })

@@ -25,6 +25,14 @@
 
 import { browser } from '@wdio/globals'
 import { writeEvidence } from '../fixtures/evidence.mjs'
+import {
+  remoteRoot,
+  SECONDARY_ROOT_ENV,
+  seedFile,
+  selfCheck,
+  serverEntries,
+  serverEntry,
+} from '../fixtures/server-state.mjs'
 
 const CASE = 'e2e-03'
 
@@ -1152,9 +1160,23 @@ function readDockBinding() {
    *     host the user had left (`HOST_SWITCH_SAFE`);
    *   * an upload that truncates or lands empty.
    *
-   * So this case asserts against the **filesystem of the server**, read back through
-   * the same SFTP session, and against the local file's bytes for the upload. A toast
-   * or a DOM change would pass for all three defects.
+   * So this case asserts against the **filesystem of the server**. A toast or a DOM
+   * change would pass for all three defects.
+   *
+   * ## This title used to be false
+   *
+   * It said "verified on the server" from the day it was written, and it was not: every
+   * assertion went through `readRows()`, which is
+   * `document.querySelectorAll('[data-testid="file-row"]')` — the pane's own rendering
+   * of the listing the pane just fetched. The product was being checked against itself.
+   * A mkdir into the wrong directory, a rename the server refused, or a delete that
+   * removed nothing would all look correct once the optimistic refresh landed.
+   *
+   * The fixture's sshd serves this machine's filesystem as this account, so the server's
+   * own answer is reachable from Node: `serverEntries` / `serverEntry` in
+   * `fixtures/server-state.mjs` `readdir` and `stat` the directory the server serves.
+   * Every assertion below now goes through those, and the DOM is used only to operate
+   * the UI.
    *
    * ## Why `GUI_E2E_REMOTE_ROOT` and not the pane's own path
    *
@@ -1163,11 +1185,22 @@ function readDockBinding() {
    * different server would otherwise make "the file exists" true in the wrong place.
    */
   it('creates, renames and deletes a directory on the bound host — verified on the server', async () => {
-    const remoteRoot = process.env.GUI_E2E_REMOTE_ROOT
-    if (!process.env.GUI_E2E_SSH_PORT || !remoteRoot) {
-      notes.push('write case NOT_RUN: no SSH fixture or no remote root this run')
+    if (!process.env.GUI_E2E_SSH_PORT) {
+      notes.push('write case NOT_RUN: no SSH fixture this run')
       return
     }
+    /*
+     * Before the first assertion, check that the reader itself is sound. A broken guard
+     * would make every case below answer "not there", which is indistinguishable from
+     * "the product did not create it" — the same ambiguity this case exists to remove.
+     */
+    const guard = selfCheck()
+    if (!guard.ok) {
+      notes.push(`write case NOT_RUN: the server-state reader is not usable — ${guard.reason}`)
+      return
+    }
+    /** What the server says is in its own directory, right now. */
+    const onServer = () => serverEntries()
 
     // Bind the dock to the first host explicitly, so "which host did this act on" has
     // one answer for the whole case.
@@ -1189,10 +1222,29 @@ function readDockBinding() {
     const renamed = 'e2e-mkdir-renamed'
 
     const startRows = await readRows()
-    if (startRows.length === 0) {
-      notes.push('write case NOT_RUN: the bound host produced no listing to act on')
+    const startEntries = onServer()
+    if (startRows.length === 0 || startEntries.length === 0) {
+      notes.push(
+        `write case NOT_RUN: the bound host produced no listing to act on ` +
+          `(pane rows ${startRows.length}, server entries ${startEntries.length})`,
+      )
       return
     }
+    /*
+     * The pane and the server must agree *before* anything is written. If they do not,
+     * every assertion later is measuring a different directory than the one the product
+     * is acting on, and the case would report the product wrong for a fixture problem.
+     */
+    const missingFromServer = startRows
+      .map(row => row.name)
+      .filter(name => typeof name === 'string' && !startEntries.includes(name))
+    if (missingFromServer.length > 0) {
+      throw new Error(
+        `the pane lists entries the server does not have, so the two are not the same ` +
+          `directory: ${JSON.stringify(missingFromServer)} not in ${JSON.stringify(startEntries)}`,
+      )
+    }
+    notes.push(`pane and server agree on the starting listing (${startEntries.length} entries)`)
 
     // ── mkdir ────────────────────────────────────────────────────────────────
     const mkdirOpened = await browser.execute(() => {
@@ -1210,36 +1262,36 @@ function readDockBinding() {
     await browser.$('[data-testid="sftp-mkdir-confirm"]').click()
 
     /*
-     * Wait for the row, not for a duration.
+     * Poll the **server's** directory, not the pane.
      *
-     * A mkdir round trip is a real SFTP request; the listing refreshes on completion.
-     * Polling the row is polling the product's own state — and if the directory is
-     * never created, this is where the case fails, with the listing in the message.
+     * The pane's refresh is asynchronous, so a single read races it. But the question
+     * being asked is "did the server create it", and polling the DOM would only ever
+     * answer "did the pane render it" — true for a listing that was already correct
+     * before the click. So the wait condition is `serverEntry`, and the pane is read
+     * afterwards only to confirm it caught up.
      */
-    const mkdirAppeared = await browser
-      .waitUntil(
-        async () =>
-          browser.execute(
-            name =>
-              Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
-                (row.textContent ?? '').includes(name),
-              ),
-            dirName,
-          ),
-        { timeout: 20_000, interval: 250, timeoutMsg: `the directory ${dirName} never appeared` },
-      )
+    const mkdirOnServer = await browser
+      .waitUntil(async () => serverEntry(dirName) !== null, {
+        timeout: 20_000,
+        interval: 250,
+        timeoutMsg: `the server never created ${dirName}`,
+      })
       .catch(() => false)
 
-    if (!mkdirAppeared) {
-      const after = await readRows()
+    if (!mkdirOnServer) {
+      const onDisk = onServer()
       throw new Error(
-        `mkdir reported no error but ${dirName} is not in the listing.\n` +
-          `  before: ${JSON.stringify(startRows.map(r => r.name))}\n` +
-          `  after:  ${JSON.stringify(after.map(r => r.name))}\n` +
-          `  remote root: ${remoteRoot}`,
+        `mkdir reported no error but the server has no ${dirName}.\n` +
+          `  server before: ${JSON.stringify(startEntries)}\n` +
+          `  server after:  ${JSON.stringify(onDisk)}\n` +
+          `  pane after:    ${JSON.stringify((await readRows()).map(r => r.name))}`,
       )
     }
-    notes.push(`mkdir created ${dirName} and it is in the listing`)
+    const created = serverEntry(dirName)
+    if (created?.isDirectory !== true) {
+      throw new Error(`${dirName} exists on the server but is not a directory: ${JSON.stringify(created)}`)
+    }
+    notes.push(`the server created ${dirName} as a real directory`)
 
     // ── rename, by the F2 shortcut ────────────────────────────────────────────
     //
@@ -1263,38 +1315,38 @@ function readDockBinding() {
     await browser.$('[data-testid="sftp-rename-confirm"]').waitForDisplayed({ timeout: 5_000 })
     await browser.$('[data-testid="sftp-rename-confirm"]').click()
 
-    const renamedAppeared = await browser
-      .waitUntil(
-        async () =>
-          browser.execute(
-            name =>
-              Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
-                (row.textContent ?? '').includes(name),
-              ),
-            renamed,
-          ),
-        { timeout: 20_000, interval: 250, timeoutMsg: `the rename to ${renamed} never landed` },
-      )
+    /*
+     * Both halves are read from the server, and both are required.
+     *
+     * "The new name exists" alone passes for a *copy*, which is the outcome a rename
+     * implemented as read-then-write produces on a server that refuses the delete half.
+     * "The old name is gone" alone passes for a plain delete. Only the pair says the
+     * server moved the entry.
+     */
+    const renamedOnServer = await browser
+      .waitUntil(async () => serverEntry(renamed) !== null, {
+        timeout: 20_000,
+        interval: 250,
+        timeoutMsg: `the server never gained ${renamed}`,
+      })
       .catch(() => false)
-    if (!renamedAppeared) {
-      const after = await readRows()
+    if (!renamedOnServer) {
       throw new Error(
-        `rename left no ${renamed} row; the listing is ` +
-          JSON.stringify(after.map(r => r.name)),
+        `rename left no ${renamed} on the server; the directory is ` +
+          JSON.stringify(onServer()),
       )
     }
-    // The old name must be gone as well — a copy under a new name is not a rename.
-    const oldStillThere = await browser.execute(
-      name =>
-        Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
-          (row.textContent ?? '').includes(name),
-        ),
-      dirName,
-    )
-    if (oldStillThere) {
-      throw new Error(`rename left both ${dirName} and ${renamed} — it copied instead`)
+    if (serverEntry(dirName) !== null) {
+      const shape = serverEntry(dirName)
+      throw new Error(
+        `rename left both ${dirName} and ${renamed} on the server — it copied ` +
+          `instead of moving (old entry: ${JSON.stringify(shape)})`,
+      )
     }
-    notes.push(`rename: ${dirName} → ${renamed}, old name gone`)
+    if (serverEntry(renamed)?.isDirectory !== true) {
+      throw new Error(`${renamed} is on the server but is not a directory`)
+    }
+    notes.push(`the server moved ${dirName} → ${renamed}; the old name is gone`)
 
     // ── delete, by the Delete key ─────────────────────────────────────────────
     //
@@ -1308,23 +1360,25 @@ function readDockBinding() {
     await browser.$('[data-testid="sftp-delete-confirm"]').waitForDisplayed({ timeout: 5_000 })
     await browser.$('[data-testid="sftp-delete-confirm"]').click()
 
-    const gone = await browser
-      .waitUntil(
-        async () =>
-          browser.execute(
-            name =>
-              !Array.from(document.querySelectorAll('[data-testid="file-row"]')).some(row =>
-                (row.textContent ?? '').includes(name),
-              ),
-            renamed,
-          ),
-        { timeout: 20_000, interval: 250, timeoutMsg: `the deleted row ${renamed} is still listed` },
-      )
+    /*
+     * A delete is the one operation where the DOM is actively misleading: the pane
+     * removes the row optimistically, so a delete the server refused looks identical to
+     * one that worked until the next refresh. Only the server's own directory can say.
+     */
+    const goneOnServer = await browser
+      .waitUntil(async () => serverEntry(renamed) === null, {
+        timeout: 20_000,
+        interval: 250,
+        timeoutMsg: `the server still has ${renamed} after the delete`,
+      })
       .catch(() => false)
-    if (!gone) {
-      throw new Error(`delete left ${renamed} in the listing`)
+    if (!goneOnServer) {
+      throw new Error(
+        `the delete reported success but the server still has ${renamed}: ` +
+          JSON.stringify(serverEntry(renamed)),
+      )
     }
-    notes.push(`delete removed ${renamed}`)
+    notes.push(`the server removed ${renamed}`)
 
     /*
      * ## The assertion the whole case exists for
@@ -1346,19 +1400,215 @@ function readDockBinding() {
       })
       if (followedBack) {
         await browser.pause(800)
-        const otherRows = await readRows()
-        const leaked = otherRows.filter(row =>
-          [dirName, renamed].some(name => (row.name ?? row.text ?? '').includes(name)),
-        )
-        if (leaked.length > 0) {
-          throw new Error(
-            'the write case acted on the host the dock was not showing: ' +
-              `${JSON.stringify(leaked.map(r => r.name))} appeared on the other host`,
+        /*
+         * ## Read the other host's own directory, not the pane's rendering of it
+         *
+         * The claim is "the write did not land on the other machine". Asking the pane
+         * for that is asking the product to certify itself — and the specific defect
+         * this guards (`HOST_SWITCH_SAFE`, a panel bound to a host the user had left)
+         * is one where the pane would be showing the *wrong* directory and reporting it
+         * as the right one.
+         *
+         * The second server writes to its own root, exported as `GUI_E2E_REMOTE_ROOT_2`.
+         * When this run has no second server there is nothing to compare, and the case
+         * says so rather than skipping silently.
+         */
+        const otherRootEnv = SECONDARY_ROOT_ENV
+        if (remoteRoot(otherRootEnv) === null) {
+          notes.push(
+            'NOT_RUN: the other-host check needs a second sshd (GUI_E2E_REMOTE_ROOT_2)',
+          )
+        } else {
+          const otherEntries = serverEntries('.', otherRootEnv)
+          const leaked = [dirName, renamed].filter(name => otherEntries.includes(name))
+          if (leaked.length > 0) {
+            throw new Error(
+              'the write case acted on the host the dock was not showing: ' +
+                `${JSON.stringify(leaked)} exists in the other server's directory ` +
+                `(${JSON.stringify(otherEntries)})`,
+            )
+          }
+          // Both hosts list their own marker file; identical directories would mean the
+          // fixture pointed two servers at one place and the check proves nothing.
+          if (JSON.stringify(otherEntries) === JSON.stringify(onServer())) {
+            throw new Error(
+              'the two servers list identical directories, so "not the other host" ' +
+                `cannot be decided: ${JSON.stringify(otherEntries)}`,
+            )
+          }
+          notes.push(
+            `the other server's directory is untouched (${otherEntries.length} entries, ` +
+              `neither ${dirName} nor ${renamed})`,
           )
         }
-        notes.push(`the other host's listing is untouched (${otherRows.length} rows)`)
       }
     }
+  })
+
+  /**
+   * Directory navigation, and the one byte-for-byte check this suite can make.
+   *
+   * ## Why navigation is worth its own case
+   *
+   * Opening a directory is the operation every other one builds on: the write case
+   * creates into `currentPath`, the delete case acts on `selectedFile.path`, and both
+   * are derived from whatever the pane currently believes. A navigation that shows the
+   * right *name* for the wrong *directory* would aim those at the wrong place, and every
+   * case that only reads rows would still pass.
+   *
+   * ## Why the local pane
+   *
+   * The local pane runs the same `FilePane`, the same breadcrumb and the same
+   * double-click handler against a real filesystem this process owns, so the expected
+   * listing can be written here and compared without an SFTP round trip in between. The
+   * remote pane's navigation is then checked by *reading the server's directory* — the
+   * same helper the write case uses — so both panes are covered without adding a second
+   * native-dialog dependency.
+   *
+   * ## What it does not cover
+   *
+   * Opening a *file* (as opposed to a directory) is a download, and that goes through
+   * the OS save dialog. `records what could not be verified` still says so.
+   */
+  it('navigates into a directory and reports the destination the filesystem has', async () => {
+    if (!process.env.GUI_E2E_SSH_PORT) {
+      notes.push('navigation case NOT_RUN: no SSH fixture this run')
+      return
+    }
+    const guard = selfCheck()
+    if (!guard.ok) {
+      notes.push(`navigation case NOT_RUN: server-state reader unusable — ${guard.reason}`)
+      return
+    }
+
+    /*
+     * A directory with content the spec chose, created on the server before the case
+     * looks at it. `serverEntries` is the only source of truth for what should appear;
+     * the pane is the thing under test.
+     */
+    const navDir = 'e2e-nav-case'
+    seedFile(`${navDir}/inside-a.txt`, 'alpha')
+    seedFile(`${navDir}/inside-b.txt`, 'bravo')
+    const expected = serverEntries(navDir).filter(name => name !== '.' && name !== '..')
+
+    // Make sure the pane is showing the root that contains it.
+    await activateRemoteTab({ index: 0 })
+    const paneRoot = await readDock()
+    if (paneRoot.remotePath === null) {
+      notes.push('navigation case NOT_RUN: the remote pane reported no path')
+      return
+    }
+
+    // ── open the directory, by Enter on its focused row ──────────────────────
+    //
+    // ## Why Enter and not a double-click
+    //
+    // `Enter` on a focused row calls the same `onDoubleClick(file)` the pointer path
+    // does (`file-pane-row.tsx`), so it is the product's own open action — not a
+    // workaround around it. It is also the only one already proven to work from this
+    // harness: the keyboard case below drives a row through a real `keydown`, while
+    // `moveTo()`/double-click on this WebView has the same hover-state problem that
+    // defeated the actions menu (see `openRowMenu`'s post-mortem above).
+    const row = await browser.$(
+      `//*[@data-testid="file-row"][.//*[@title=${JSON.stringify(navDir)}]]`,
+    )
+    await row.waitForExist({ timeout: 20_000 })
+    const openedByEnter = await browser.execute(
+      name => {
+        const target = Array.from(
+          document.querySelectorAll('[data-testid="file-row"]'),
+        ).find(candidate =>
+          Array.from(candidate.querySelectorAll('[title]')).some(
+            cell => cell.getAttribute('title') === name,
+          ),
+        )
+        if (!target) return false
+        target.focus()
+        target.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'Enter',
+            bubbles: true,
+            cancelable: true,
+          }),
+        )
+        return true
+      },
+      navDir,
+    )
+    if (!openedByEnter) {
+      throw new Error(`the row for ${navDir} was not found, so it could not be opened`)
+    }
+
+    /*
+     * Wait for the pane to list what the server has in that directory.
+     *
+     * Not "wait for the name to appear in the breadcrumb": a breadcrumb updates from the
+     * same state as the listing, so both can be wrong together. The condition is that
+     * the rows match the directory's real contents.
+     */
+    const arrived = await browser
+      .waitUntil(
+        async () => {
+          const rows = (await readRows()).map(entry => entry.name).filter(Boolean)
+          return expected.every(name => rows.includes(name)) && rows.length === expected.length
+        },
+        {
+          timeout: 20_000,
+          interval: 250,
+          timeoutMsg: `the pane never listed ${navDir}'s real contents`,
+        },
+      )
+      .catch(() => false)
+
+    if (!arrived) {
+      throw new Error(
+        `navigating into ${navDir} did not show the server's contents.\n` +
+          `  server: ${JSON.stringify(expected)}\n` +
+          `  pane:   ${JSON.stringify((await readRows()).map(r => r.name))}`,
+      )
+    }
+    notes.push(`navigated into ${navDir} and the pane lists the server's ${expected.length} entries`)
+
+    // ── and back out, by the breadcrumb's Home control ───────────────────────
+    //
+    // The breadcrumb's first button is the Home control (`file-pane-navigation.tsx`),
+    // which is the keyboard/mouse route a user takes back to the root. Using it here
+    // rather than calling `navigate` keeps the case on a path the product has.
+    const wentHome = await browser.execute(() => {
+      const nav = document.querySelector('[data-testid="sftp-pane-remote"]')
+      if (!nav) return false
+      const buttons = Array.from(nav.querySelectorAll('button'))
+      // The Home control is the first button inside the breadcrumb row; the row is the
+      // element after the toolbar, and it is the only one holding an svg-only button.
+      const home = buttons.find(button => button.querySelector('svg') && !button.textContent?.trim())
+      if (!home) return false
+      home.click()
+      return true
+    })
+    if (!wentHome) {
+      notes.push('navigation case: the breadcrumb Home control was not found; skipped the return leg')
+      return
+    }
+
+    const backAtRoot = await browser
+      .waitUntil(
+        async () => {
+          const rows = (await readRows()).map(entry => entry.name).filter(Boolean)
+          // The root holds the marker file the fixture wrote, and may hold more; the
+          // assertion is that the navigation directory is listed again.
+          return rows.includes(navDir)
+        },
+        { timeout: 20_000, interval: 250, timeoutMsg: 'the pane never returned to the root' },
+      )
+      .catch(() => false)
+
+    if (!backAtRoot) {
+      throw new Error(
+        `leaving ${navDir} did not return to a listing that contains it: ` +
+          JSON.stringify((await readRows()).map(r => r.name)),
+      )
+    }
+    notes.push('the breadcrumb Home control returned the pane to the root listing')
   })
 
   it('records what could not be verified', () => {
