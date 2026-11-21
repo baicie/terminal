@@ -650,13 +650,11 @@ describe('two panes hold two terminals', () => {
     mocks.scrollToBottom.mockImplementation(() => {})
     mocks.scrollToLine.mockImplementation(() => {})
   })
-
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.clearAllMocks()
   })
-
   /** Mount one hook the way the existing cases do: container, then a tab id. */
   function mountPane(tabId: string, scrollback: number, active: boolean) {
     const hook = renderHook(
@@ -672,7 +670,6 @@ describe('two panes hold two terminals', () => {
     act(() => vi.runAllTimers())
     return hook
   }
-
   it('constructs a separate xterm for each pane', () => {
     mocks.construct.mockClear()
 
@@ -709,5 +706,135 @@ describe('two panes hold two terminals', () => {
       call => call[0] as { scrollback?: number },
     )
     expect(options.map(entry => entry.scrollback)).toEqual([1000, 5000])
+  })
+})
+
+/*
+ * ## Fifty re-renders must not mean fifty terminals
+ *
+ * T06 asks for 100 open/close or resize cycles with no repeated terminal creation. The
+ * expensive mistake is not a slow `fit()` — it is constructing a second `Terminal`,
+ * which throws away scrollback, selection, the cursor and the shell's own state. A hook
+ * that keys its effect on an object literal, on a callback identity, or on `fontSize`
+ * changing by identity would do exactly that, and the symptom a user reports is "the
+ * screen went blank when I resized".
+ *
+ * `recreates xterm when the workspace changes` already covers the case where a rebuild
+ * is *correct*. What was missing is the opposite: the cases where nothing about the
+ * session changed and a rebuild would be a bug.
+ *
+ * The mock counts constructions, so fifty re-renders with a single construction is the
+ * assertion, not something inferred from the DOM.
+ */
+describe('re-rendering does not create a second terminal', () => {
+  beforeEach(() => {
+    /*
+     * The outer stubs live in another `describe`, so this block needs its own.
+     *
+     * `clearAllMocks` first, not only in `afterEach`: the previous describe's hooks are
+     * unmounted by the testing-library cleanup, which runs *after* this file's
+     * `afterEach`. Their `dispose` calls would otherwise land in this block's first case
+     * and read as "a re-render disposed the terminal".
+     */
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    mocks.proposeDimensions.mockReturnValue({ cols: 132, rows: 43 })
+    mocks.scrollToBottom.mockImplementation(() => {})
+    mocks.scrollToLine.mockImplementation(() => {})
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.clearAllMocks()
+  })
+  /** Mount one pane the way the other cases do: container first, then a tab id. */
+  function mount(initial: Partial<typeof baseOptions> = {}) {
+    const props = { ...baseOptions, tabId: '', ...initial }
+    const hook = renderHook(
+      ({ p }) => useTerminalInstance(p),
+      { initialProps: { p: props } },
+    )
+    hook.result.current.containerRef.current = document.createElement('div')
+    hook.rerender({ p: { ...props, tabId: 'terminal-one' } })
+    act(() => vi.runAllTimers())
+    return hook
+  }
+  it('keeps one terminal across fifty identical re-renders', () => {
+    const hook = mount()
+    expect(mocks.construct).toHaveBeenCalledTimes(1)
+
+    for (let i = 0; i < 50; i += 1) {
+      // A fresh object each time, which is what a parent re-render produces.
+      hook.rerender({
+        p: { ...baseOptions, tabId: 'terminal-one', active: i % 2 === 0 },
+      })
+      act(() => vi.runAllTimers())
+    }
+
+    expect(
+      mocks.construct,
+      'a re-render must not construct a second terminal: that discards scrollback, ' +
+        'selection and the shell state the user is looking at',
+    ).toHaveBeenCalledTimes(1)
+    expect(mocks.dispose).not.toHaveBeenCalled()
+  })
+
+  it('survives a font-size change without rebuilding', () => {
+    /*
+     * Font size is a *presentation* change. xterm can apply it through its options, and
+     * rebuilding for it is the classic way to lose a user's scrollback when they pinch
+     * or press Ctrl+= in the middle of reading a log.
+     *
+     * Whether the hook actually applies the new size is a separate question; this asserts
+     * only that it does not pay for it with a new terminal.
+     */
+    const hook = mount()
+    expect(mocks.construct).toHaveBeenCalledTimes(1)
+
+    for (const fontSize of [12, 14, 16, 18, 20]) {
+      hook.rerender({ p: { ...baseOptions, tabId: 'terminal-one', fontSize } })
+      act(() => vi.runAllTimers())
+    }
+
+    expect(mocks.construct).toHaveBeenCalledTimes(1)
+  })
+
+  it('survives a theme change without rebuilding', () => {
+    // Theme is applied through `term.options.theme`; constructing a new Terminal for it
+    // would also drop every addon the user's session relies on.
+    const hook = mount()
+    expect(mocks.construct).toHaveBeenCalledTimes(1)
+
+    const themes = [
+      { background: '#000000' },
+      { background: '#ffffff' },
+      { background: '#1e1e2e' },
+    ]
+    for (const theme of themes) {
+      hook.rerender({ p: { ...baseOptions, tabId: 'terminal-one', theme } })
+      act(() => vi.runAllTimers())
+    }
+
+    expect(mocks.construct).toHaveBeenCalledTimes(1)
+  })
+
+  it('does rebuild when the tab itself changes', () => {
+    /*
+     * The control. Without it, a hook that never rebuilt anything would pass all three
+     * cases above while showing the wrong session after a tab switch.
+     */
+    const hook = mount()
+    expect(mocks.construct).toHaveBeenCalledTimes(1)
+
+    hook.rerender({ p: { ...baseOptions, tabId: 'terminal-two' } })
+    act(() => vi.runAllTimers())
+
+    expect(mocks.construct).toHaveBeenCalledTimes(2)
   })
 })
