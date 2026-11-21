@@ -1631,12 +1631,59 @@ function readDockBinding() {
     seedFile(`${navDir}/inside-b.txt`, 'bravo')
     const expected = serverEntries(navDir).filter(name => name !== '.' && name !== '..')
 
-    // Make sure the pane is showing the root that contains it.
+    /*
+     * Bind the dock to the first host, explicitly.
+     *
+     * `activateRemoteTab` only switches the tab. INV-13 pins the dock to the host the
+     * user chose, so switching tabs deliberately does **not** repoint it — that is the
+     * behaviour the two-host case above exists to assert, and the write case follows
+     * the same rule.
+     *
+     * This case used to assume the opposite, and the failure was exact about it:
+     * `the pane shows ["e2e-second.marker"]` while the server check looked at the first
+     * host's directory. The dock was still pinned to the second host from the previous
+     * case, and the spec's own precondition was the thing that was wrong — not the
+     * binding, which was doing what it was designed to do.
+     */
     await activateRemoteTab({ index: 0 })
+    const followed = await browser.execute(() => {
+      const follow = document.querySelector('[data-testid="sftp-follow-active-tab"]')
+      if (!follow) return false
+      follow.click()
+      return true
+    })
+    if (followed) {
+      // The follow control disappears once the binding matches the active tab, which
+      // is a better completion signal than a fixed pause.
+      await browser
+        .waitUntil(
+          async () =>
+            browser.execute(
+              () => document.querySelector('[data-testid="sftp-follow-active-tab"]') === null,
+            ),
+          { timeout: 10_000, interval: 200 },
+        )
+        .catch(() => undefined)
+    }
+
     const paneRoot = await readDock()
     if (paneRoot.remotePath === null) {
       notes.push('navigation case NOT_RUN: the remote pane reported no path')
       return
+    }
+    /*
+     * The pane must now be on the host whose directory `serverEntries` reads. Without
+     * this check the case can compare one host's listing against another host's disk,
+     * and the only symptom is a confusing "did not list" message.
+     */
+    const bound = await browser.execute(
+      () => document.querySelector('[data-testid="sftp-bound-host"]')?.textContent?.trim() ?? null,
+    )
+    if (bound !== null && !bound.includes('E2E Local')) {
+      throw new Error(
+        `this case seeds and reads the first host's directory, but the dock is bound ` +
+          `to ${JSON.stringify(bound)}`,
+      )
     }
 
     // ── refresh, so the directory this case just seeded is actually listed ────
