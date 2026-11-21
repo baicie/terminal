@@ -5,6 +5,7 @@ import test from 'node:test'
 
 import {
   createLocalColdStartNonce,
+  probeBuildHint,
   runLocalColdStartStopwatch,
 } from './run-local-cold-start-stopwatch.mjs'
 
@@ -199,4 +200,52 @@ test('removes startup hooks that could preempt the PTY marker', async () => {
     ),
     true,
   )
+})
+
+/*
+ * ## The hint that would have saved an afternoon
+ *
+ * Measured on 2026-11-21: a binary built without `VITE_TERMINAL_SMOKE_BUILD=1` made the
+ * stopwatch report `the front end evaluated but never reached db ready`. The probe UI
+ * was simply not in the bundle — `loadShellProbeRoot` throws, bootstrap's fail-closed
+ * path swallows it, and the timeout message describes the symptom.
+ *
+ * Diagnosis went: timeout (25 s still failed) → database path (a manual launch with the
+ * same HOME reached `terminal-mounted`) → missing `TERMINAL_SHELL_PROBE` (which the
+ * script already sets). None of those were the cause.
+ *
+ * These cases pin both directions: the hint appears for the messages that mean "the
+ * probe never ran", and **stays out of the way** for a slow start, where it would send
+ * the reader to rebuild for nothing.
+ */
+test('a readiness failure explains the build variant that causes it', () => {
+  const hint = probeBuildHint('the front end evaluated but never reached db ready')
+  assert.ok(hint, 'the hint must be produced for a readiness failure')
+  assert.match(hint, /VITE_TERMINAL_SMOKE_BUILD=1/)
+  assert.match(hint, /pnpm tauri build/)
+  // The mechanism, so a reader can check the claim rather than trust it.
+  assert.match(hint, /loadShellProbeRoot/)
+})
+
+test('the hint also covers the remote-readiness wording', () => {
+  assert.ok(probeBuildHint('never reached terminal readiness'))
+})
+
+test('a different failure gets no build hint', () => {
+  /*
+   * The narrowness is the value. A hint printed for every failure is noise; a hint
+   * printed for a slow-but-working start would send someone to rebuild a binary that
+   * was fine.
+   */
+  for (const message of [
+    'terminal readiness did not complete within 10000 ms',
+    'spawn ENOENT',
+    'the app reached db ready but no terminal surface mounted',
+  ]) {
+    assert.equal(
+      probeBuildHint(message),
+      null,
+      `no build hint should be printed for: ${message}`,
+    )
+  }
 })

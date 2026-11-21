@@ -138,6 +138,38 @@ export async function runLocalColdStartStopwatch({
   }
 }
 
+/**
+ * The build-variant hint for a readiness failure, or `null` when it does not apply.
+ *
+ * ## Why this is a function and not three lines in the catch
+ *
+ * The sentence it produces is the whole point: when the binary was built without
+ * `VITE_TERMINAL_SMOKE_BUILD=1`, `loadShellProbeRoot` throws
+ * `'Terminal shell probe UI is not included in this build'`, bootstrap's fail-closed
+ * path swallows it, and the stopwatch reports
+ * `the front end evaluated but never reached db ready`.
+ *
+ * That message describes the *symptom of a build variant* and sends the reader
+ * everywhere except the build. Measured cost: first diagnosed as a timeout (25 s still
+ * failed), then as a database-path problem (a manual launch with the same HOME reached
+ * `terminal-mounted` and `session-created` normally), then as a missing
+ * `TERMINAL_SHELL_PROBE` variable — which this script already sets.
+ *
+ * Extracted so a test can assert the hint is produced for the messages that mean it,
+ * and **not** produced for a genuine slow start, where it would be a false lead.
+ */
+export function probeBuildHint(message) {
+  const readinessFailure = /never reached db ready|never reached terminal readiness/.test(message)
+  if (!readinessFailure) return null
+  return (
+    '\nThe probe never wrote its result. A common cause is a binary built ' +
+    'without the probe UI:\n' +
+    '  VITE_TERMINAL_SMOKE_BUILD=1 pnpm tauri build --no-bundle -- --features custom-protocol\n' +
+    '`loadShellProbeRoot` throws when that flag is absent, and the throw is ' +
+    'swallowed into the readiness timeout above.'
+  )
+}
+
 const isDirectRun =
   process.argv[1] !== undefined &&
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
@@ -151,7 +183,10 @@ if (isDirectRun) {
     runLocalColdStartStopwatch(options)
       .then(result => console.log(JSON.stringify(result, null, 2)))
       .catch(error => {
-        console.error(error instanceof Error ? error.message : String(error))
+        const message = error instanceof Error ? error.message : String(error)
+        console.error(message)
+        const hint = probeBuildHint(message)
+        if (hint !== null) console.error(hint)
         process.exitCode = 1
       })
   }

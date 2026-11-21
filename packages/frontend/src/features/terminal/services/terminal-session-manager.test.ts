@@ -1571,3 +1571,99 @@ describe('TerminalSessionManager', () => {
     )
   })
 })
+
+/*
+ * ## `prune` — the one function that closes sessions the user did not close
+ *
+ * `terminal-by-url.tsx` calls `terminalSessionManager.prune(new Set(tabs.map(t => t.id)))`
+ * on every `tabs` change, and `prune` closes every record whose tab id is not in the
+ * set. That makes the *caller's* set the whole safety property: pass a set that is
+ * missing a live tab — a filtered list, a visible-only list, a stale closure over an
+ * older `tabs` — and that session's PTY is closed while its pane is still on screen.
+ *
+ * The task's T02 requirement is exactly this: "任何一个 UI 变化都不能误关其他 Session".
+ * There was no test for `prune` at all (measured: `grep -c prune …test.ts` → 0), so the
+ * function could have been changed to close everything and the suite would have stayed
+ * green.
+ */
+describe('prune', () => {
+  function attachLocal(manager: TerminalSessionManager, tabId: string) {
+    const states: string[] = []
+    manager.attach(
+      { tabId, tabType: 'local', cols: 80, rows: 24 },
+      { onOutput: () => {}, onState: snapshot => states.push(snapshot.status) },
+    )
+    return states
+  }
+
+  it('closes a session whose tab is gone', async () => {
+    vi.mocked(startTerminalShell)
+      .mockResolvedValueOnce('session-a')
+      .mockResolvedValueOnce('session-b')
+    const manager = new TerminalSessionManager()
+    const a = attachLocal(manager, 'local-a')
+    const b = attachLocal(manager, 'local-b')
+    await vi.waitFor(() => expect(a.at(-1)).toBe('connected'))
+    await vi.waitFor(() => expect(b.at(-1)).toBe('connected'))
+
+    // `local-b` was closed by the user; the tab list no longer contains it.
+    manager.prune(new Set(['local-a']))
+
+    await vi.waitFor(() =>
+      expect(sessionService.close).toHaveBeenCalledWith('session-b'),
+    )
+    // And the surviving session is untouched.
+    expect(sessionService.close).not.toHaveBeenCalledWith('session-a')
+  })
+
+  it('keeps every live tab when the whole set is passed', async () => {
+    /*
+     * The calls that must be no-ops. `terminal-by-url` passes the full tab list on
+     * every change, so a theme switch, a dock toggle or a route change reaches this
+     * with an unchanged set — and closing anything here would tear down a working
+     * terminal for a purely visual action.
+     */
+    vi.mocked(startTerminalShell)
+      .mockResolvedValueOnce('session-a')
+      .mockResolvedValueOnce('session-b')
+      .mockResolvedValueOnce('session-c')
+    const manager = new TerminalSessionManager()
+    const states = [
+      attachLocal(manager, 'local-a'),
+      attachLocal(manager, 'local-b'),
+      attachLocal(manager, 'local-c'),
+    ]
+    for (const state of states) {
+      await vi.waitFor(() => expect(state.at(-1)).toBe('connected'))
+    }
+    vi.mocked(sessionService.close).mockClear()
+
+    // Called repeatedly, as `useEffect` on `tabs` would be.
+    for (let i = 0; i < 3; i += 1) {
+      manager.prune(new Set(['local-a', 'local-b', 'local-c']))
+    }
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(sessionService.close).not.toHaveBeenCalled()
+    expect(states.map(state => state.at(-1))).toEqual([
+      'connected',
+      'connected',
+      'connected',
+    ])
+  })
+
+  it('closes nothing when the set names tabs that never had a session', async () => {
+    // A tab can exist in the store without a PTY (a restored tab not yet mounted).
+    // Its id appearing in the set is not a reason to close anything.
+    vi.mocked(startTerminalShell).mockResolvedValueOnce('session-a')
+    const manager = new TerminalSessionManager()
+    const a = attachLocal(manager, 'local-a')
+    await vi.waitFor(() => expect(a.at(-1)).toBe('connected'))
+    vi.mocked(sessionService.close).mockClear()
+
+    manager.prune(new Set(['local-a', 'restored-tab-with-no-session']))
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(sessionService.close).not.toHaveBeenCalled()
+  })
+})
