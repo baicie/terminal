@@ -14,8 +14,10 @@
  *   renders as zero.
  * - **No stale result posing as current.** Past the TTL the panel badges the result
  *   rather than quietly showing old numbers as if they were fresh.
- * - **No host confusion.** A result whose `hostId` is not the panel's host is
- *   discarded, so a probe that finishes after the user switched tabs cannot land here.
+ * - **No host confusion.** Two checks: `generationRef` (bumped on refresh, host
+ *   change and unmount) stops a slow answer landing after a switch, and
+ *   `result.hostId === hostId` drops a reading that names a different host. The
+ *   comment here once claimed the second and only the first existed.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -86,6 +88,10 @@ export function ServerInspector({ hostId, sessionId, exec, onClose, probe = runI
     if (generation !== generationRef.current) return
 
     if (outcome.ok) {
+      // The reading names its host; a mismatch means the caller wired the wrong value,
+      // which would show machine A's uptime under machine B's name.
+
+      if (outcome.result.hostId !== hostId) return
       setState({ kind: 'result', result: outcome.result })
     } else {
       setState({ kind: 'error', reason: outcome.reason, message: outcome.message })
@@ -93,17 +99,9 @@ export function ServerInspector({ hostId, sessionId, exec, onClose, probe = runI
   }, [exec, hostId, sessionId, probe])
 
   const result = state.kind === 'result' ? state.result : null
-  // ## Staleness has to be driven, not computed once
-  //
-  // `isStale(result, Date.now())` during render reads the clock but does not react to
-  // it. React has no reason to re-render when the TTL passes, so a panel left open kept
-  // showing "Observed 14:02:11" as though the numbers were live — the rule existed, was
-  // unit-tested, and nothing drove it.
-  //
-  // A `now` that ticks is what makes the badge appear on its own. The interval is one
-  // second rather than the TTL: the remaining time is not displayed, so a coarse tick
-  // would do, but a one-second one keeps the transition within a second of the moment
-  // it becomes true, and a single interval per open panel is not a cost.
+  // Staleness is driven by a 1s tick, not computed once during render: React has no
+  // reason to re-render when the TTL passes, so a panel left open kept showing
+  // "Observed 14:02:11" as though the numbers were live.
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (!result) return

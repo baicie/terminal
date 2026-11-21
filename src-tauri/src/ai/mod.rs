@@ -124,6 +124,12 @@ pub enum AiFailureKind {
     FeatureDisabled,
     /// A run with this request id is already in flight.
     Busy,
+    /// The stream ended without the provider's own completion signal.
+    ///
+    /// Distinct from `BadResponse`, which means "nothing usable arrived". Here the
+    /// answer arrived but stopped: the user may still want to read the part that
+    /// came, and needs to know it is not the whole thing.
+    Incomplete,
 }
 
 impl AiFailureKind {
@@ -140,6 +146,10 @@ impl AiFailureKind {
             AiFailureKind::Offline => "The provider could not be reached.",
             AiFailureKind::BadResponse => {
                 "The provider returned a response this app could not read."
+            }
+            AiFailureKind::Incomplete => {
+                "The provider stopped mid-answer. What arrived is shown, but it is not \
+                 the complete response."
             }
             AiFailureKind::NoProfile => "Choose a model profile first.",
             AiFailureKind::ProfileUnusable => "That model profile cannot be used right now.",

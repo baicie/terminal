@@ -18,14 +18,59 @@ import { describe, expect, it } from 'vitest'
 const AI_DIR = path.join(import.meta.dirname)
 const LAYOUT_DIR = path.resolve(import.meta.dirname, '../../layout')
 
-/** Calls that would put bytes into a session. */
+/**
+ * Calls that would put bytes into a session.
+ *
+ * ## The list was incomplete, and the omission was the important one
+ *
+ * It named `session_write`, `terminal.write(` and the two service writes. The path a
+ * command palette actually uses to run something — `terminalEmitter.writeCommand`,
+ * which the snippet and command-history entries both go through
+ * (`components/command-palette/use-palette-selection.ts:62,67`) — was not on it.
+ *
+ * Measured consequence: if an AI module imported `terminalEmitter` and called
+ * `writeCommand`, this test would have stayed green. The property it claims to guard
+ * ("the AI dock cannot run anything") would have been false while the guard reported
+ * it true, which is the exact shape this repository keeps finding.
+ *
+ * `terminalEmitter.write` and the bus underneath it are now listed. They are also
+ * checked through the import name rather than only the call text, because `write(`
+ * is too common to grep for and an aliased import would slip past a call-shaped
+ * pattern.
+ */
 const EXECUTION_CALLS = [
   'session_write',
   'terminal.write(',
   'sshService.write(',
   'sessionService.write(',
   'sftp_upload',
+  // The real path: `writeCommand` appends CR and emits on `terminalWriteBus`, which
+  // `use-terminal.ts:202` forwards into the PTY of the active tab.
+  'writeCommand(',
+  'terminalEmitter',
 ]
+
+/** Imports that would give an AI module a way to run something. */
+const EXECUTION_MODULES = [
+  'service/terminal-emitter',
+  'service/terminal-write-bus',
+  'service/ssh',
+  'service/sftp-transfer',
+]
+
+/**
+ * Strip comments before matching.
+ *
+ * Every module in this repository explains itself at length, and several of them
+ * name `terminalEmitter` in prose precisely to say they do not use it. A guard that
+ * counted those would fail on documentation, which teaches the next person to delete
+ * the explanation rather than fix the code.
+ */
+function code(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+}
 
 function sources(dir: string, prefix: string): Array<{ file: string, text: string }> {
   return readdirSync(dir)
@@ -40,8 +85,19 @@ describe('the AI feature cannot execute anything', () => {
   it('no AI module calls a session-writing function', () => {
     const offenders: string[] = []
     for (const { file, text } of sources(AI_DIR, 'features/ai/')) {
+      const body = code(text)
       for (const call of EXECUTION_CALLS) {
-        if (text.includes(call)) offenders.push(`${file}: ${call}`)
+        if (body.includes(call)) offenders.push(`${file}: ${call}`)
+      }
+      for (const module of EXECUTION_MODULES) {
+        // An import is enough: the call could be behind any name.
+        // Built from a string so the quote characters stay readable; a template with
+        // escaped quotes inside a character class trips `no-useless-escape`, and a
+        // regex where every other character is a backslash is not one to proofread.
+        const importPattern = new RegExp(`from\\s+['"][^'"]*${module}['"]`)
+        if (importPattern.test(body)) {
+          offenders.push(`${file}: imports ${module}`)
+        }
       }
     }
     expect(
@@ -54,8 +110,18 @@ describe('the AI feature cannot execute anything', () => {
     const offenders: string[] = []
     for (const { file, text } of sources(LAYOUT_DIR, 'layout/')) {
       if (!file.startsWith('layout/ai-dock')) continue
+      const body = code(text)
       for (const call of EXECUTION_CALLS) {
-        if (text.includes(call)) offenders.push(`${file}: ${call}`)
+        if (body.includes(call)) offenders.push(`${file}: ${call}`)
+      }
+      for (const module of EXECUTION_MODULES) {
+        // Built from a string so the quote characters stay readable; a template with
+        // escaped quotes inside a character class trips `no-useless-escape`, and a
+        // regex where every other character is a backslash is not one to proofread.
+        const importPattern = new RegExp(`from\\s+['"][^'"]*${module}['"]`)
+        if (importPattern.test(body)) {
+          offenders.push(`${file}: imports ${module}`)
+        }
       }
     }
     expect(offenders).toEqual([])
