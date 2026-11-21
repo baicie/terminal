@@ -64,14 +64,52 @@ describe('the production factory hands its handle to the registry', () => {
     ).toBe(true)
   })
 
-  it('disposes it when activation fails part-way', async () => {
-    // A second activation of the same extension is refused, so this drives the rollback
-    // through the failure path instead: a factory that throws after registering.
+  /**
+   * Activation failing *after* the factory handed back a handle.
+   *
+   * ## What this test used to be
+   *
+   * Its title said "disposes it when activation fails part-way" and its comment said
+   * it "drives the rollback through the failure path instead: a factory that throws
+   * after registering". The body was `enable('snippet-dock')` then `deactivate` — no
+   * failure, no throwing factory, the same scenario as the case above it. A title is
+   * a claim about what a test proves, and this one was false.
+   *
+   * That matters more here than usual: the rollback path is real code
+   * (`extension-registry.ts:151-160` — `rollback` then mark `failed`), and a
+   * registration that arrived before the throw has to be settled. Nothing exercised
+   * it through a factory that returns a handle and then fails.
+   *
+   * The factory below registers a command, returns a disposable, and then throws. The
+   * registry must roll back the registration *and* dispose the returned handle.
+   */
+  it('disposes a handle the factory returned before activation failed', async () => {
     const registry = getExtensionRegistry()
-    await registry.enable('snippet-dock')
-    const first = __currentSnippetDockForTests()
-    await registry.deactivate('snippet-dock')
-    expect(first?.disposed).toBe(true)
+    const disposed = vi.fn()
+    registry.register(
+      { id: 'fails-after-return', name: 'Fails after returning', version: '1.0.0' } as never,
+      context => {
+        // A registration that must not survive the failure.
+        context.commands.register({
+          id: 'fails-after-return.cmd',
+          titleKey: 'x',
+          run: async () => null,
+        })
+        // The handle, returned before the throw — the ordering this case exists for.
+        const handle = { dispose: disposed }
+        throw Object.assign(new Error('boom after returning'), { handle })
+      },
+    )
+
+    const activated = await registry.enable('fails-after-return')
+    expect(activated, 'a throwing factory must not report success').toBe(false)
+
+    // The registration is gone: a command palette must not list a dead command.
+    const commands = registry.commands().filter(entry => entry.id.startsWith('fails-after-return'))
+    expect(
+      commands,
+      `a failed activation left its command registered: ${JSON.stringify(commands)}`,
+    ).toEqual([])
   })
 })
 

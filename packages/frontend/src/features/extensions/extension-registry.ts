@@ -22,6 +22,14 @@ import {
 import { CleanupLedger } from './cleanup-ledger'
 import { runActivation } from './run-activation'
 import { settleOwnedContributions } from './settle-owned'
+import {
+  activeCommands,
+  activeMenuItems,
+  asLedgerMap,
+  collectDiagnostics,
+  emitToSubscribers,
+} from './registry-diagnostics'
+import type { RegistryDiagnostics, RegistryLedgerView } from './registry-diagnostics'
 import type { Disposable, SafeEvent } from './extension-types'
 import {
   currentExtensionPlatform,
@@ -189,73 +197,63 @@ export class ExtensionRegistry {
       this.disposables.get(extensionId) ?? [],
       retiredGeneration,
     )
+    /*
+     * The buckets must be dropped here. `rollback` passes a `clear` callback that
+     * `settleOwnedContributions` only calls when `currentGeneration() === generation`,
+     * and this method bumps the generation *before* calling it — so `clear` never ran
+     * and both ledgers kept one bucket per disabled extension forever.
+     *
+     * Measured: after one enable+deactivate both maps still had size 1, holding the
+     * dead activation's disposers and event handlers. Unconditional deletion is correct
+     * because this method owns the transition to `disabled`; a concurrent activation
+     * creates its own bucket under a fresh generation.
+     */
+    this.contributions.delete(extensionId)
+    this.disposables.delete(extensionId)
     this.gateway?.clearApprovalsFor(extensionId)
     record.status = 'disabled'
     this.options.setEnabled?.(extensionId, false)
     this.options.onChanged?.()
   }
 
-  /**
-   * Emit a safe event to every active subscriber. A throwing handler is contained.
-   *
-   * A rejection from a retired activation is teardown noise: blaming the activation
-   * that replaced it would disable a working extension.
-   */
+  /** Emit a safe event. The walk lives in `registry-diagnostics.ts`; this supplies `fail`. */
   emit(event: SafeEvent): void {
-    for (const [extensionId, record] of this.records) {
-      if (record.status !== 'active') continue
-      const handlers = this.contributions.get(extensionId)?.events.get(event.type)
-      if (!handlers) continue
-      // Captured per emission: this is the activation these handlers belong to.
-      const generation = record.generation
-      const blame = (error: unknown) => {
-        const current = this.records.get(extensionId)
-        if (!current || current.generation !== generation) return
-        this.fail(extensionId, error, generation)
-      }
-      for (const handler of handlers) {
-        try {
-          // Not awaited: one slow handler must not delay the others, and the design
-          // forbids an extension callback from blocking the shell.
-          void Promise.resolve(handler(event)).catch(blame)
-        } catch (error) {
-          blame(error)
-        }
-      }
-    }
+    emitToSubscribers(this.ledgerView(), event, (extensionId, error, generation) =>
+      this.fail(extensionId, error, generation),
+    )
+  }
+
+  /** What the ledgers hold. See `registry-diagnostics.ts` for what each number means. */
+  diagnostics(): RegistryDiagnostics {
+    return collectDiagnostics(
+      this.ledgerView(),
+      this.gateway?.approvalCount?.() ?? 0,
+      this.commands().length,
+    )
   }
 
   /** Commands every active extension registered, for the Command Palette. */
   commands(): ExtensionCommand[] {
-    const result: ExtensionCommand[] = []
-    for (const [extensionId, record] of this.records) {
-      if (record.status !== 'active') continue
-      for (const [id, command] of this.contributions.get(extensionId)?.commands ?? []) {
-        result.push({ extensionId, id, titleKey: command.titleKey, run: command.run })
-      }
-    }
-    return result
+    return activeCommands(this.ledgerView()) as ExtensionCommand[]
   }
 
-  /**
-   * Menu contributions at `location`, from active extensions only. Nothing read these before: `terminal.context` was dead, so the snippet dock's
-   * these before: `terminal.context` was dead, so the dock's capture was unreachable.
-   */
-  menusFor(location: string): ExtensionMenuItem[] {
-    const result: ExtensionMenuItem[] = []
-    for (const [extensionId, record] of this.records) {
-      if (record.status !== 'active') continue
-      const contributions = this.contributions.get(extensionId)
-      if (!contributions) continue
-      for (const { location: at, commandId } of contributions.menus) {
-        if (at !== location) continue
-        const command = contributions.commands.get(commandId)
-        // An entry pointing at an unregistered command would render a dead item.
-        if (command) result.push({ extensionId, commandId, titleKey: command.titleKey })
-      }
+  /** The ledgers, in the shape `registry-diagnostics.ts` reads. */
+  private ledgerView(): RegistryLedgerView {
+    return {
+      records: this.records,
+      contributions: asLedgerMap(this.contributions),
+      disposables: this.disposables,
     }
-    return result
   }
+
+  /** Menu entries at `location`. Dead entries are dropped — see `registry-diagnostics.ts`. */
+  menusFor(location: string): ExtensionMenuItem[] {
+    return activeMenuItems(
+      this.ledgerView(),
+      location,
+    ) as ExtensionMenuItem[]
+  }
+
   /**
    * Mark failed and settle what it still holds.
    *

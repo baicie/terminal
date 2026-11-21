@@ -232,4 +232,61 @@ describe('a probe that finishes after the host changed', () => {
       'host A\'s reading appeared while the panel was showing host B',
     ).toBeNull()
   })
+
+  /**
+   * The guard the file's own comment claimed, which did not exist.
+   *
+   * `server-inspector-view.tsx` said "a result whose `hostId` is not the panel's host
+   * is discarded". The code compared a generation counter and never read
+   * `result.hostId` — it was written by the probe and read by nobody.
+   *
+   * The generation counter happens to cover the case above, which is why the missing
+   * check never showed up as a defect. It does not cover this one: a probe that
+   * *returns* a reading for a host the panel is not showing. That cannot happen with
+   * the real probe, because it echoes back the hostId it was given — and that is
+   * precisely why the check is worth having. It turns "the caller passed the wrong
+   * value" from something that would silently render as fact into something dropped.
+   */
+  it('drops a reading whose hostId is not the host the panel shows', async () => {
+    const lying = vi.fn(async () => ({
+      ok: true as const,
+      result: {
+        hostId: 'someone-else',
+        sessionId: 'tab-1',
+        observedAt: Date.now(),
+        ttlMs: PROBE_TTL_MS,
+        source: [],
+        samplingWindowMs: null,
+        metrics: {
+          load1: null, load5: null, load15: null,
+          uptimeSeconds: null,
+          memoryUsedBytes: null, memoryTotalBytes: null,
+          diskUsedBytes: null, diskTotalBytes: null,
+          cpuPercent: null,
+          os: 'Linux',
+        },
+        notes: [],
+      },
+    }))
+
+    render(
+      <ServerInspector
+        hostId="h-1"
+        sessionId="tab-1"
+        exec={exec()}
+        onClose={vi.fn()}
+        probe={lying as unknown as Parameters<typeof ServerInspector>[0]['probe']}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(lying).toHaveBeenCalled())
+
+    // Give the state write a chance to happen.
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(
+      screen.queryByText('Linux'),
+      "a reading naming another host was rendered as this host's",
+    ).toBeNull()
+  })
 })
