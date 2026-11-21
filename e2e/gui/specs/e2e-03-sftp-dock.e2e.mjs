@@ -856,118 +856,66 @@ async function activateRemoteTab(options = {}) {
  * `file.name`), not on `contains`, where a shorter name is a prefix of a longer one.
  */
 /**
- * Wait until a control exists and has a box, then click it from the page.
+ * Wait for a control to be clickable and click it, trying every match.
  *
- * ## Why not `browser.$(sel).click()`
- *
- * Two independent measurements on this WebView say the driver's own hit-testing does
- * not agree with the page:
- *
- *   * `waitForDisplayed` rejected an input inside a dialog whose element reported
- *     `data-state="open"`, `display: grid`, `visibility: visible`, 486×190;
- *   * `waitForClickable` rejected the pane's refresh button, which the screenshot of
- *     that same moment shows in the toolbar.
- *
- * Both were real findings about the harness, not about the product — the dialog had
- * *not* actually opened in the first case, which is what this distinction exposed.
- * So the contract here is what the browser itself would use: the element exists, it
- * has a non-zero box, and `elementFromPoint` at its centre lands inside it.
+ * See the note inside: this was rebuilt three times and is now deliberately the
+ * boring version.
  */
 async function clickWhenReady(selector) {
   /*
-   * ## Why the predicate writes its reason to the page
+   * ## Back to the native primitive, after three rounds of not improving this
    *
-   * `waitUntil` swallows whatever the callback returns and retries; when it gives up
-   * it says only "never became clickable". Measured on a CI run where the button was
-   * 76×36, not disabled, and `elementFromPoint` reported the button itself: every
-   * visible condition held, the wait still expired, and nothing said why.
+   * The custom hit-test above replaced `waitForClickable` on the theory that the
+   * driver's visibility checks were lying. Three attempts followed, each adding
+   * machinery to work around the previous attempt:
    *
-   * A thrown exception inside the page function is one way to fail silently — `waitUntil`
-   * treats it as a false answer. Recording the last answer turns the next failure into
-   * a fact instead of a guess.
+   *   1. a page-side predicate inside `waitUntil` — CI reported
+   *      `last predicate answer: null` on macOS, Linux **and** Windows: the predicate
+   *      never wrote its record;
+   *   2. the same predicate with the selector interpolated instead of passed — same;
+   *   3. `new Function(source)()` handed to `execute` — a **syntax error**, measured
+   *      locally: `SyntaxError: Unexpected token '-'`, because wdio serialises the
+   *      function's source and a `new Function` result has none.
+   *
+   * Three platforms failing identically on (1) ruled out environment difference. The
+   * honest reading is that the custom hit-test was never the problem, and each round
+   * made the failure harder to read rather than the wait more reliable.
+   *
+   * So this is the boring version. What it keeps from the rounds above is the one
+   * fact they were missing: **how many elements the selector matched**. `browser.$`
+   * answers with the first in document order, and `sftp-mkdir` has two — the second
+   * hidden by the single-pane layout. A timeout with no count reads as "the button
+   * never appeared"; a timeout that says "2 matched, both hidden" names the cause.
    */
-  const ready = await browser
-    .waitUntil(
-      async () =>
-        browser.execute(sel => {
-          const record = outcome => {
-            globalThis.__clickWhenReady = { selector: sel, outcome }
-            return outcome.ready === true
-          }
-          try {
-            const element = document.querySelector(sel)
-            if (!element) return record({ why: 'no element' })
-            const box = element.getBoundingClientRect()
-            if (box.width <= 0 || box.height <= 0) {
-              return record({ why: 'zero box', width: box.width, height: box.height })
-            }
-            const onTop = document.elementFromPoint(
-              box.left + box.width / 2,
-              box.top + box.height / 2,
-            )
-            if (onTop === null) {
-              return record({ why: 'elementFromPoint returned null' })
-            }
-            const ready = onTop === element || element.contains(onTop)
-            return record({
-              ready,
-              why: ready ? 'ok' : 'covered',
-              onTopTag: onTop.tagName,
-              onTopTestId: onTop.getAttribute?.('data-testid') ?? null,
-            })
-          } catch (error) {
-            // A throw here used to vanish into `waitUntil`'s false branch.
-            return record({ why: 'threw', message: String(error) })
-          }
-        }, sel),
-      { timeout: 10_000, interval: 200, timeoutMsg: `never became clickable: ${selector}` },
-    )
-    .catch(() => false)
-
-  if (!ready) {
-    /*
-     * When this fails, "what is on top of it" is the whole answer — and the first
-     * version of this message did not collect it, so a 72×34 button that the browser
-     * refused to hit-test read as "the button is missing".
-     */
-    const state = await browser.execute(sel => {
-      const element = document.querySelector(sel)
-      if (!element) return { present: false }
-      const box = element.getBoundingClientRect()
-      const centreX = box.left + box.width / 2
-      const centreY = box.top + box.height / 2
-      const onTop = document.elementFromPoint(centreX, centreY)
-      const describe = node =>
-        node === null
-          ? null
-          : {
-              tag: node.tagName,
-              testId: node.getAttribute?.('data-testid') ?? null,
-              slot: node.getAttribute?.('data-slot') ?? null,
-              className: String(node.className ?? '').slice(0, 120),
-            }
-      return {
-        present: true,
-        width: box.width,
-        height: box.height,
-        disabled: element.disabled ?? null,
-        onTop: describe(onTop),
-        onTopIsElement: onTop !== null && (onTop === element || element.contains(onTop)),
-        /// The dialog's own layer, so an overlay painting above it is visible here.
-        dialogZ: (() => {
-          const dialog = element.closest('[data-slot="dialog-content"]')
-          return dialog ? getComputedStyle(dialog).zIndex : null
-        })(),
-        viewport: { width: innerWidth, height: innerHeight },
-      }
-    }, selector)
-    const lastOutcome = await browser.execute(() => globalThis.__clickWhenReady ?? null)
-    throw new Error(
-      `${selector} never became clickable: ${JSON.stringify(state, null, 2)}\n` +
-        `  last predicate answer: ${JSON.stringify(lastOutcome)}`,
-    )
+  const matches = await browser.$$(selector)
+  if (matches.length === 0) {
+    throw new Error(`no element matches ${selector}`)
   }
-  await browser.execute(sel => document.querySelector(sel).click(), selector)
+
+  let lastError = null
+  for (const element of matches) {
+    if (!(await element.isDisplayed().catch(() => false))) continue
+    try {
+      await element.waitForClickable({ timeout: 15_000 })
+      await element.click()
+      return
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  const states = []
+  for (const element of matches) {
+    states.push({
+      displayed: await element.isDisplayed().catch(() => 'unknown'),
+      enabled: await element.isEnabled().catch(() => 'unknown'),
+    })
+  }
+  throw new Error(
+    `no candidate for ${selector} became clickable; ${matches.length} matched, ` +
+      `states: ${JSON.stringify(states)}` +
+      (lastError ? `, last error: ${String(lastError).split('\n')[0]}` : ''),
+  )
 }
 
 async function selectRow(name) {
@@ -1374,47 +1322,12 @@ function readDockBinding() {
     //
     // Measured on the run at 1795272367778: the screenshot shows the split layout with
     // a visible "New Folder" in the bottom bar, and the click had gone to the
-    // invisible header one. The earlier scripted `.click()` failed for a second,
-    // independent reason — this suite has recorded twice (`e2e-05`'s `driveSwitch`)
-    // that a synthetic click does not reach React's root listener.
+    // invisible header one.
     //
-    // So: only the control the browser says is hittable, and clicked from the page —
-    // `isDisplayed`/`waitForClickable` are the pair that answered "not clickable" for
-    // a toolbar button the screenshot shows, so they are not used to choose here
-    // either. See `clickWhenReady`.
-    const mkdirChosen = await browser.execute(() => {
-      const candidates = Array.from(
-        document.querySelectorAll('[data-testid="sftp-mkdir"]'),
-      )
-      const hittable = element => {
-        const box = element.getBoundingClientRect()
-        if (box.width <= 0 || box.height <= 0) return false
-        const onTop = document.elementFromPoint(
-          box.left + box.width / 2,
-          box.top + box.height / 2,
-        )
-        return onTop !== null && (onTop === element || element.contains(onTop))
-      }
-      const target = candidates.find(hittable)
-      if (!target) {
-        return {
-          clicked: false,
-          count: candidates.length,
-          states: candidates.map(element => {
-            const box = element.getBoundingClientRect()
-            return { width: box.width, height: box.height }
-          }),
-        }
-      }
-      target.click()
-      return { clicked: true, count: candidates.length }
-    })
-    if (!mkdirChosen.clicked) {
-      throw new Error(
-        `no mkdir control is hittable (${mkdirChosen.count} in the page): ` +
-          JSON.stringify(mkdirChosen.states),
-      )
-    }
+    // `clickWhenReady` now handles the choice — it tries each candidate that is
+    // displayed and reports how many matched when none works. That is the same logic
+    // this block had, in one place instead of two.
+    await clickWhenReady('[data-testid="sftp-mkdir"]')
 
     /*
      * ## Why this reads the DOM instead of calling `waitForDisplayed`
@@ -1737,27 +1650,7 @@ function readDockBinding() {
     // The refresh control is `sftp-<type>-refresh` — added in this change, because it
     // was an icon-only button with no name, and the spec could only have found it by
     // guessing at document order.
-    //
-    // Clicked from the page rather than through `waitForClickable`: on the run that
-    // added this, WebDriver answered "still not clickable after 20000ms" for a button
-    // the screenshot shows in the toolbar. The same run had `waitForDisplayed` reject
-    // an input inside a dialog the DOM described as open and laid out, so the driver's
-    // own visibility/clickability checks are not trustworthy in this WebView.
-    const refreshClick = await browser.execute(() => {
-      const button = document.querySelector('[data-testid="sftp-remote-refresh"]')
-      if (!button) return { clicked: false, reason: 'no sftp-remote-refresh in the page' }
-      const box = button.getBoundingClientRect()
-      button.click()
-      return {
-        clicked: true,
-        width: box.width,
-        height: box.height,
-        disabled: button.disabled,
-      }
-    })
-    if (!refreshClick.clicked) {
-      throw new Error(`could not refresh the remote pane: ${JSON.stringify(refreshClick)}`)
-    }
+    await clickWhenReady('[data-testid="sftp-remote-refresh"]')
 
     const navDirListed = await browser
       .waitUntil(
