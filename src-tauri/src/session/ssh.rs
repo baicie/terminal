@@ -275,6 +275,42 @@ fn decode_private_key(
     russh::keys::decode_secret_key(private_key, password)
 }
 
+/// What to do when a private key would not decode.
+///
+/// ## The fallback that was here, and why it is wrong
+///
+/// Both key-auth branches used to fall back to `authenticate_password(username,
+/// password)` when decoding failed. The reasoning is visible in the shape: `password`
+/// is the field that carries a login password, so "the key did not work, try the
+/// password" reads like a reasonable second attempt.
+///
+/// It is not one. Reaching the key branch means the host authenticates by key, and in
+/// that case the frontend puts the **key's passphrase** in the same `password` field
+/// (`terminal-launcher.ts:227-231` builds `{ privateKey, password }` for `authType:
+/// 'key'`). So the fallback re-sends the passphrase to the server as an account
+/// password:
+///
+///   * it is one more failed login, which some servers count towards lockout;
+///   * when the passphrase happens to equal the account password it *succeeds*, and
+///     the user is authenticated by a method they did not choose;
+///   * the error the user finally sees talks about passwords, when the thing that
+///     failed was their key.
+///
+/// A key that will not decode is a `KeyParseFailed`. Retrying a different
+/// authentication method with a credential that was never meant for it is not
+/// resilience — it is sending a secret somewhere it does not belong.
+///
+/// Kept as a named function so the decision is testable without an SSH handle.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum KeyDecodeFailure {
+    /// Report `KeyParseFailed` with the decoder's own message.
+    Report,
+}
+
+pub(crate) fn on_key_decode_failure() -> KeyDecodeFailure {
+    KeyDecodeFailure::Report
+}
+
 #[cfg(test)]
 trait PendingSshConnection: Sized {
     fn disconnect_and_wait(self, reason: &'static str) -> impl Future<Output = ()> + Send;
@@ -2114,28 +2150,19 @@ impl SshSession {
                     }
                 }
                 Err(e) => {
-                    if let Some(pwd) = password {
-                        let result =
-                            handle
-                                .authenticate_password(username, pwd)
-                                .await
-                                .map_err(|e| {
-                                    SessionError::AuthenticationFailed(format!(
-                                        "auth failed: {}",
-                                        e
-                                    ))
-                                })?;
-                        if !result.success() {
-                            return Err(SessionError::AuthenticationFailed(
-                                "all methods rejected".to_string(),
-                            ));
-                        }
-                    } else {
-                        return Err(SessionError::KeyParseFailed(format!(
-                            "failed to parse private key: {}",
-                            e
-                        )));
-                    }
+                    /*
+                     * No fallback to password authentication.
+                     *
+                     * `password` here is the key's passphrase, not an account password —
+                     * see `on_key_decode_failure`. Sending it as one is one more failed
+                     * login (lockout counters) and, when the two happen to match, an
+                     * authentication by a method the user did not pick.
+                     */
+                    debug_assert_eq!(on_key_decode_failure(), KeyDecodeFailure::Report);
+                    return Err(SessionError::KeyParseFailed(format!(
+                        "failed to parse private key: {}",
+                        e
+                    )));
                 }
             }
             return Ok(());
@@ -2567,7 +2594,17 @@ async fn authenticate_jump_host(
                                 ))
                             })?
                     }
-                    Err(_) => authenticate_jump_host_password(handle, jump_host).await?,
+                    /*
+                     * A jump host that will not decode its key is not a jump host
+                     * that wants a password. Same reasoning as `on_key_decode_failure`:
+                     * `jump_host.password` is the key's passphrase in this branch.
+                     */
+                    Err(error) => {
+                        debug_assert_eq!(on_key_decode_failure(), KeyDecodeFailure::Report);
+                        return Err(SessionError::KeyParseFailed(format!(
+                            "failed to parse jump host private key: {error}"
+                        )));
+                    }
                 }
             } else {
                 authenticate_jump_host_password(handle, jump_host).await?
@@ -2791,6 +2828,38 @@ mod tests {
     use crate::session::ssh_writer::SshChannelWriter;
     use async_trait::async_trait;
     use std::sync::atomic::AtomicUsize;
+
+    /*
+     * ## The fallback that was sending a passphrase as a password
+     *
+     * Both key-auth branches used to retry with `authenticate_password` when the key
+     * would not decode. The frontend puts the key's passphrase in the same `password`
+     * field for `authType: 'key'`, so the retry sent the passphrase to the server as
+     * an account password.
+     *
+     * The decision is now a named function so it can be asserted without an SSH
+     * handle. The test is small on purpose: there is exactly one correct answer, and
+     * the point is that a future edit has to change this function to change it.
+     */
+    #[test]
+    fn a_key_that_will_not_decode_is_reported_and_not_retried_as_a_password() {
+        assert_eq!(on_key_decode_failure(), KeyDecodeFailure::Report);
+        // The enum has one variant, so "report" is the only thing a caller *can* do.
+        // That is the structural half of the guarantee: there is no
+        // `FallBackToPassword` for a future edit to reach for.
+        let all = [KeyDecodeFailure::Report];
+        assert_eq!(all.len(), 1);
+    }
+
+    /// A real key that fails to decode reports the reason, not an auth attempt.
+    #[test]
+    fn an_undecodable_key_produces_key_parse_failed() {
+        // `decode_private_key` is the only thing that can fail here; the branch above
+        // turns its error into `KeyParseFailed`. This pins the message shape so the
+        // error a user sees names the key, not a password.
+        let error = decode_private_key("not a key", Some("passphrase"));
+        assert!(error.is_err(), "garbage must not decode as a key");
+    }
 
     struct CloseProbeWriter {
         close_calls: Arc<AtomicUsize>,

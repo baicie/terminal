@@ -422,8 +422,28 @@ pub async fn run(
         });
         return Err(failure);
     }
-    emit(AiEvent::Done);
-    Ok(())
+    /*
+     * ## Falling out of the loop is not completion
+     *
+     * `[DONE]` is the protocol's completion signal, and the branch above returns as
+     * soon as it arrives. Reaching here means the connection closed without it — the
+     * provider sent some tokens and stopped.
+     *
+     * This used to `emit(AiEvent::Done)`, with `saw_content` as the only test. Measured:
+     * a stream of two chunks and no sentinel produced `Chunk, Chunk, Done`, which the
+     * UI renders as a finished answer. The user gets a truncated explanation with
+     * nothing saying so, which is worse than an error — they cannot tell it is wrong.
+     *
+     * The chunks that did arrive stay emitted; this only refuses to call the run
+     * complete. `Incomplete` is a distinct kind from `BadResponse` because the two
+     * need different words: an empty 200 is "the provider sent nothing", this is
+     * "the answer stopped part-way and may be worth reading anyway".
+     */
+    let failure = AiFailure::new(AiFailureKind::Incomplete);
+    emit(AiEvent::Failed {
+        failure: failure.clone(),
+    });
+    Err(failure)
 }
 
 /// Classify a transport error without ever echoing its text.

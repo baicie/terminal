@@ -363,6 +363,73 @@ fn a_streamed_answer_arrives_chunk_by_chunk_and_completes() {
     assert!(!captured.body.contains("sk-test-key"));
 }
 
+/// A stream that sends content and then the connection closes without `[DONE]`.
+///
+/// This is the shape of a provider that dies mid-answer: some tokens arrived, the
+/// final sentinel never did. The body declares more bytes than it sends, so the client
+/// sees a short read rather than a well-formed end of response.
+fn truncated_sse_response(chunks: &[&str]) -> String {
+    let mut body = String::new();
+    for chunk in chunks {
+        body.push_str(&format!(
+            "data: {{\"choices\":[{{\"delta\":{{\"content\":{}}}}}]}}\n\n",
+            serde_json::to_string(chunk).unwrap()
+        ));
+    }
+    /*
+     * No `data: [DONE]`, and the declared length is **exactly** what is sent.
+     *
+     * The first version declared 64 extra bytes. That produced a passing test for the
+     * wrong reason: reqwest itself rejects a body shorter than `content-length`, so the
+     * run failed at the transport layer and never reached the code under test. A
+     * well-formed response that simply omits the sentinel is the honest simulation of
+     * "the provider finished the HTTP response without finishing the answer", and it is
+     * the only shape that tests the `[DONE]` logic.
+     */
+    format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    )
+}
+
+/**
+ * A truncated stream must not be reported as a completed answer.
+ *
+ * ## The defect this pins
+ *
+ * The loop broke out on `Ok(None)` — the connection closing — and then fell through to
+ * `if !saw_content { BadResponse } else { Done }`. So the **only** thing that decided
+ * "this answer is complete" was whether *anything* had arrived. A provider that sent
+ * three tokens and died produced `Chunk, Chunk, Chunk, Done`, which the UI renders as
+ * a finished answer. The user gets a truncated explanation with nothing saying so.
+ *
+ * `[DONE]` is the protocol's own completion signal and it is the only honest one.
+ * Content without it is a stream that stopped, not a stream that finished.
+ */
+#[test]
+fn a_stream_that_stops_without_done_is_not_reported_as_complete() {
+    let (endpoint, _received) = serve_once(truncated_sse_response(&["It lists ", "pods"]));
+    let (events, failure) = collect(request(endpoint, |_| {}));
+
+    assert!(
+        !events.contains(&AiEvent::Done),
+        "a stream with no [DONE] was reported as complete; events: {events:?}"
+    );
+    assert!(
+        failure.is_some(),
+        "a truncated stream must fail, not complete silently; events: {events:?}"
+    );
+    // What did arrive is still delivered — the point is not to discard it, it is to
+    // say it is unfinished.
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AiEvent::Chunk { text } if text == "It lists ")),
+        "the received chunks must still be emitted; events: {events:?}"
+    );
+}
+
 #[test]
 fn a_non_streamed_answer_is_one_chunk_then_done() {
     let (endpoint, _received) = serve_once(json_response(
