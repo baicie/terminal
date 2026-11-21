@@ -214,7 +214,28 @@ const budgets = {
   // first ceiling in four rounds with more than 0.4 KB of slack; the previous three
   // were each crossed by the very next honest change, which is the argument for slack
   // rather than against it.
-  totalGzip: 654.5 * 1024,
+  //
+  // 656 KB (was 654.5 KB): the SFTP pane's four icon buttons gained `aria-label`s and
+  // test ids, which is six new strings in three languages. Measured on CI run
+  // 44935706255, on a tree that already contained T21–T30:
+  //
+  //   Total: raw=2.23 MB gzip=654.63 KB     against the 654.50 KB ceiling
+  //
+  // The ceiling had effectively been reached before that change: the same run reports
+  // 654.63 KB, and local builds report 654.35–654.43 KB for both `main` and this
+  // branch. A ±0.1 KB spread between machines means 654.5 was inside the measurement
+  // noise — a ceiling that tight is a coin flip, not a gate.
+  //
+  // What this deliberately does *not* do is buy the space back by moving
+  // `registry-diagnostics.ts` out of the initial graph. It is 2 KB of source and gzips
+  // to a fraction of the overage, so the split would have been a change made to look
+  // responsive rather than one that helps, and it would remove the accessors the
+  // ledger tests read. The two honest options were "raise the ceiling with the
+  // measurement written down" or "drop the accessible names"; the second trades a real
+  // accessibility fix for 0.13 KB.
+  //
+  // 656 KB leaves ~1.4 KB, comfortably more than the spread.
+  totalGzip: 656 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 
