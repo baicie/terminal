@@ -620,3 +620,94 @@ describe('useTerminalInstance activation', () => {
     expect(mocks.clipboardConstruct).not.toHaveBeenCalled()
   })
 })
+
+/*
+ * ## Two panes must not share one terminal
+ *
+ * A split shows two `useTerminalInstance` hooks at once. Everything a user notices
+ * about "the two panes are separate" — scrollback, the selection, the cursor, the
+ * measured cols/rows, the shell prompt itself — lives on the xterm object each hook
+ * constructs. If a refactor moved that object to module scope, hoisted it into a
+ * context, or memoised it on something that does not include the tab id, both panes
+ * would drive one buffer and the spec's "do not cross streams" requirement would fail
+ * in a way that looks like a rendering glitch.
+ *
+ * The mock counts constructions, so this asserts the object identity directly rather
+ * than inferring it from what gets drawn.
+ */
+describe('two panes hold two terminals', () => {
+  beforeEach(() => {
+    // The outer `beforeEach` only runs for cases inside its own `describe`, so the
+    // globals this hook needs are re-stubbed here.
+    vi.useFakeTimers()
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    mocks.proposeDimensions.mockReturnValue({ cols: 132, rows: 43 })
+    mocks.scrollToBottom.mockImplementation(() => {})
+    mocks.scrollToLine.mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.clearAllMocks()
+  })
+
+  /** Mount one hook the way the existing cases do: container, then a tab id. */
+  function mountPane(tabId: string, scrollback: number, active: boolean) {
+    const hook = renderHook(
+      ({ current }) => useTerminalInstance(current),
+      {
+        initialProps: {
+          current: { ...baseOptions, tabId: '', scrollback, active: false },
+        },
+      },
+    )
+    hook.result.current.containerRef.current = document.createElement('div')
+    hook.rerender({ current: { ...baseOptions, tabId, scrollback, active } })
+    act(() => vi.runAllTimers())
+    return hook
+  }
+
+  it('constructs a separate xterm for each pane', () => {
+    mocks.construct.mockClear()
+
+    const left = mountPane('pane-left', 1000, true)
+    const right = mountPane('pane-right', 1000, false)
+
+    /*
+     * Two constructions, not one shared by both. Everything a user notices about "the
+     * two panes are separate" — scrollback, selection, cursor, measured cols/rows, the
+     * shell prompt — lives on the xterm object each hook creates. A refactor that moved
+     * it to module scope or memoised it on something not including the tab id would
+     * make both panes drive one buffer.
+     */
+    expect(mocks.construct).toHaveBeenCalledTimes(2)
+    // The hook exposes the live instance as `termInstance` and the ref that owns it.
+    const terminals = [left, right].map(
+      hook => hook.result.current.termInstance ?? hook.result.current.termRef.current,
+    )
+    expect(terminals[0]).toBeTruthy()
+    expect(terminals[1]).toBeTruthy()
+    expect(terminals[0]).not.toBe(terminals[1])
+  })
+
+  it('gives each pane its own scrollback setting', () => {
+    /*
+     * A split where both panes shared one object would also mean the second pane's
+     * setting overwrote the first's — invisible until the user scrolls back in one.
+     */
+    mocks.construct.mockClear()
+    mountPane('pane-a', 1000, true)
+    mountPane('pane-b', 5000, false)
+
+    const options = mocks.construct.mock.calls.map(
+      call => call[0] as { scrollback?: number },
+    )
+    expect(options.map(entry => entry.scrollback)).toEqual([1000, 5000])
+  })
+})
