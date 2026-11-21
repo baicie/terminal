@@ -11,6 +11,8 @@ export default {
   'sftp.fileActions': 'File actions',
   'sftp.goUp': 'Go up',
   'sftp.goHome': 'Go home',
+  'sftp.back': 'Back',
+  'sftp.forward': 'Forward',
   'sftp.refresh': 'Refresh',
   'sftp.uploadFile': 'Upload file',
   'sftp.downloadFile': 'Download file',

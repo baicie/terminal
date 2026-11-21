@@ -471,17 +471,23 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p test-results
-          # `e2e/gui/fixtures/evidence.test.mjs` is included deliberately.
+          # The GUI fixture tests are listed one by one rather than globbed, which is
+          # how two of them came to be excluded:
           #
-          # It guards the GUI evidence format — a verdict may not be a constant, a
-          # secret must be redacted, a PARTIAL must declare what it could not do — and
-          # it was **not** in this glob, so none of those rules ran in CI. Measured:
-          # ten passing tests that nothing executed. A guard nobody runs is the shape
-          # this repository keeps having to fix.
+          #   * `evidence.test.mjs` guards the evidence format — a verdict may not be a
+          #     constant, a secret must be redacted, a PARTIAL must declare what it could
+          #     not do — and it was **not** in this glob. Measured: ten passing tests
+          #     that nothing executed.
+          #   * `server-state.test.mjs` guards the SFTP server-state reader, which is
+          #     what makes "verified on the server" mean the server and not the pane.
+          #
+          # A guard nobody runs is the shape this repository keeps having to fix. When
+          # another fixture test is added, add it here too — or replace the list with a
+          # glob, which is what this should have been.
           node --test --test-reporter=spec --test-reporter-destination=stderr \
             --test-reporter=tap --test-reporter-destination=test-results/scripts.tap \
             scripts/*.test.mjs scripts/verify-install/*.test.mjs \
-            e2e/gui/fixtures/evidence.test.mjs
+            e2e/gui/fixtures/evidence.test.mjs e2e/gui/fixtures/server-state.test.mjs
       - name: Upload gate script test results
         if: always()
         uses: actions/upload-artifact@v4

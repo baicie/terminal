@@ -11,6 +11,8 @@ export default {
   'sftp.fileActions': '文件操作',
   'sftp.goUp': '上级目录',
   'sftp.goHome': '主目录',
+  'sftp.back': '后退',
+  'sftp.forward': '前进',
   'sftp.refresh': '刷新',
   'sftp.uploadFile': '上传文件',
   'sftp.downloadFile': '下载文件',
