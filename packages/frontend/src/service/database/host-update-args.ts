@@ -69,6 +69,62 @@ export function hostUpdateArgs(
       id,
     ]
   }
+  /*
+   * ## Two clear shapes were binding four values too many
+   *
+   * `dropIdentityFilePathArgument` was declared in the options type and never read.
+   * Both clear call sites passed it, the function ignored it, and the result was a
+   * 23-value list bound to a 19-placeholder statement.
+   *
+   * sqlx binds positionally up to the placeholder count and silently ignores the rest
+   * (`sqlx-sqlite` `arguments.rs`: `for param_i in 1..=cnt`). It does not error. From
+   * the seventh placeholder on every value was shifted by four, `WHERE id = ?` bound
+   * `agent_forwarding` (0 or 1), and the UPDATE matched no row — after which `hosts.ts`
+   * deleted the referenced vault version anyway, because `retirePreviousVersion` does
+   * not consult `rowsAffected`.
+   *
+   * Clearing a credential therefore removed the secret while the row kept claiming to
+   * have one. That is the exact outcome the ordering in `hosts.ts` exists to prevent,
+   * defeated by an argument count.
+   *
+   * `host-update-args.test.ts` now compares every statement's placeholder count with
+   * the list it is given, so this cannot recur silently.
+   */
+  if (options.dropIdentityFilePathArgument) {
+    /*
+     * The clear shape, in statement order.
+     *
+     * Read off the two `identity_file_path = NULL` statements in `hosts.ts`:
+     *
+     *   name, hostname, port, username, auth_type, certificate, group_id,
+     *   is_favorite, color, tags, port_forwards, startup_command, environment,
+     *   jump_host_id, jump_host_auth_type, agent_forwarding, shell_integration,
+     *   updated_at, id
+     *
+     * `password`, `private_key`, `credential_ref` and `identity_file_path` are all
+     * literals here, which is why this list is four shorter than the ordinary write.
+     * There is no `rewriteSecrets` and no `newRef`: clearing writes NULL into those
+     * columns by name, it does not bind them.
+     */
+    return [
+      ...base,
+      merged.certificate ?? null,
+      merged.groupId ?? null,
+      merged.isFavorite ? 1 : 0,
+      merged.color ?? null,
+      merged.tags ? JSON.stringify(merged.tags) : null,
+      JSON.stringify(merged.portForwards ?? []),
+      merged.startupCommand ?? null,
+      merged.environment ? JSON.stringify(merged.environment) : null,
+      merged.jumpHostId ?? null,
+      merged.jumpHostAuthType ?? null,
+      merged.agentForwarding ? 1 : 0,
+      merged.shellIntegration ?? 'off',
+      // `identity_file_path = NULL` is literal in this statement, so nothing is bound.
+      now,
+      id,
+    ]
+  }
   return [
     ...base,
     rewriteSecrets,

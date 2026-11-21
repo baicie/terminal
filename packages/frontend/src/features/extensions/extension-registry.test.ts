@@ -340,6 +340,81 @@ function registerAll(context: ExtensionContext): void {
   context.events.on('session.connected', () => undefined)
 }
 
+/**
+ * T26 verbatim: one hundred enable/disable cycles with nothing left behind.
+ *
+ * ## Why the existing coverage did not answer this
+ *
+ * `returns every registration to baseline across enable/disable/enable` does one
+ * cycle. One cycle catches "disable forgot to clear commands" and nothing else. The
+ * residue this platform can realistically accumulate is state that a *second* cycle
+ * adds to: listeners appended to a set, approvals kept in a map, disposers pushed into
+ * a bucket that is never emptied. Those look identical after one cycle and different
+ * after a hundred.
+ *
+ * ## Why this asserts absolute numbers, not baseline-vs-after
+ *
+ * The first version captured `diagnostics()` before the loop and compared it to the
+ * same call after. That is self-comparison: when `diagnostics()` was mutated to always
+ * return zeros, both sides were zero and the test still passed. A guard whose two
+ * sides come from the same possibly-broken observer verifies nothing.
+ *
+ * So the counts are asserted against what the extension actually registers: one
+ * command, one menu entry, one view, one listener. Zero after a disable. A hundred
+ * cycles must not change either number.
+ */
+describe('a hundred enable/disable cycles leave nothing behind', () => {
+  it('holds exactly the extension\'s contributions while active, and none after', async () => {
+    const registry = new ExtensionRegistry()
+    registry.register(
+      manifest({ capabilities: [...manifest().capabilities, 'session.read-events'] }),
+      context => {
+        registerAll(context)
+      },
+    )
+
+    /*
+     * One cycle first, so the first assertion is not the only thing standing between a
+     * working observer and a vacuous test.
+     */
+    await registry.enable('snippet-dock')
+    const active = registry.diagnostics()
+    // `registerAll` registers one command, one menu entry, one view and one listener.
+    expect(active.commands, 'the extension must actually be active').toBe(1)
+    expect(active.contributions, 'command + menu + view').toBe(3)
+    expect(active.events, 'one session.connected listener').toBe(1)
+    await registry.deactivate('snippet-dock')
+
+    const idle = registry.diagnostics()
+    expect(idle.commands).toBe(0)
+    expect(idle.contributions, 'a disabled extension must hold no contributions').toBe(0)
+    expect(idle.events, 'a disabled extension must hold no listeners').toBe(0)
+    expect(idle.approvals).toBe(0)
+    expect(
+      idle.orphanedBuckets,
+      'deactivate left a ledger bucket behind — the counts above are filtered to active ' +
+        'extensions, so a leak is invisible there',
+    ).toBe(0)
+
+    for (let cycle = 0; cycle < 100; cycle += 1) {
+      await registry.enable('snippet-dock')
+      const during = registry.diagnostics()
+      expect(during.commands, `cycle ${cycle}: active command count`).toBe(1)
+      expect(during.contributions, `cycle ${cycle}: active contribution count`).toBe(3)
+      expect(during.events, `cycle ${cycle}: active listener count`).toBe(1)
+
+      await registry.deactivate('snippet-dock')
+      const after = registry.diagnostics()
+      expect(after.contributions, `cycle ${cycle}: contributions survived disable`).toBe(0)
+      expect(after.events, `cycle ${cycle}: listeners survived disable`).toBe(0)
+      expect(after.disposables, `cycle ${cycle}: disposers survived disable`).toBe(0)
+      expect(after.orphanedBuckets, `cycle ${cycle}: a ledger bucket leaked`).toBe(0)
+      expect(registry.commands(), `cycle ${cycle}: a command is still visible`).toHaveLength(0)
+    }
+    expect(registry.get('snippet-dock')?.status).toBe('disabled')
+  })
+})
+
 describe('capabilities are enforced on registration, not just declared', () => {
   it('refuses commands from an extension that did not declare commands.register', async () => {
     // Found by adversarial review: the manifest was the declaration the whole platform

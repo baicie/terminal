@@ -134,6 +134,36 @@ describe('failure', () => {
     expect(state.status).toBe('completed')
   })
 
+  it('keeps the partial text when the stream stopped without a completion signal', () => {
+    /*
+     * ## The distinction this pins
+     *
+     * `incomplete` and `bad-response` are both failures, and collapsing them would be
+     * the easy thing to do. They are not the same event: `bad-response` means nothing
+     * usable arrived, `incomplete` means the answer arrived and stopped.
+     *
+     * The Rust side used to report the second as `Done` (measured: a two-chunk stream
+     * with no `[DONE]` produced `Chunk, Chunk, Done`). Now it fails with `Incomplete`,
+     * and what matters on the frontend is that the chunks already delivered stay on
+     * screen — a user reading a cut-off explanation is better served by the text plus a
+     * warning than by an empty panel.
+     */
+    let state = reduceRun(started(), { type: 'start', runId: 'r1' })
+    state = reduceRun(state, { type: 'chunk', runId: 'r1', text: 'It lists ' })
+    state = reduceRun(state, { type: 'chunk', runId: 'r1', text: 'pods' })
+    state = reduceRun(state, {
+      type: 'fail', runId: 'r1',
+      failure: { kind: 'incomplete', message: 'The provider stopped mid-answer.' },
+    })
+
+    expect(state.status).toBe('failed')
+    expect(state.failure?.kind).toBe('incomplete')
+    expect(
+      state.text,
+      'the text that did arrive must survive the failure that says it is unfinished',
+    ).toBe('It lists pods')
+  })
+
   it('distinguishes retryable failures from terminal ones', () => {
     expect(isTerminalFailure('unauthorized')).toBe(true)
     expect(isTerminalFailure('forbidden')).toBe(true)

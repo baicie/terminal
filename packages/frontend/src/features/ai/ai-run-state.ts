@@ -67,6 +67,15 @@ export type AiFailureKind =
   | 'feature-disabled'
   /** A run with this request id is already in flight. */
   | 'busy'
+  /**
+   * The stream ended without the provider's completion signal.
+   *
+   * Distinct from `bad-response`: the answer arrived but stopped, so what is on screen
+   * is worth reading and is not the whole thing. Collapsing the two would tell a user
+   * whose answer was cut off that nothing usable arrived, and losing the partial text
+   * over a missing sentinel is worse than showing it with a warning.
+   */
+  | 'incomplete'
 
 export interface AiFailure {
   kind: AiFailureKind
