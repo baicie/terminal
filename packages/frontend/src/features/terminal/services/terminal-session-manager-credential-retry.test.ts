@@ -355,3 +355,78 @@ describe('recovery, not retryable, decides the automatic ladder', () => {
     }
   })
 })
+
+/*
+ * ## The gap this classifier cannot close, recorded rather than pretended
+ *
+ * `authentication_failed` covers two situations that need opposite handling:
+ *
+ *   * the connection died during the handshake — nothing was authenticated, a retry is
+ *     right, and `terminal-session-manager-reconnect.test.ts` pins that case;
+ *   * the server checked the credential and refused it — a retry resends a secret the
+ *     server already rejected, and the user waits out the whole backoff to be told
+ *     something the first attempt established.
+ *
+ * Rust emits one `kind` for both, so the frontend can only compare words, and the two
+ * sentences share every word class. An attempt to split them lexically ("names a
+ * credential AND a refusal verb") was written, then reverted: it made
+ * `auth failed: connection reset by peer` terminal, breaking a case that exists because
+ * a dropped connection during auth genuinely must be retried.
+ *
+ * What is asserted below is the part that *is* true today: an authentication failure
+ * whose message names neither a transport fault nor an agent problem is terminal. That
+ * is a weaker claim than "a rejected password never retries", and the difference is the
+ * remaining gap — the structural fix belongs in the Rust error enum (a distinct kind
+ * for "transport failed before authentication"), not in a string match.
+ */
+describe('an authentication failure with no transport signal is terminal', () => {
+  it('does not spend the reconnect budget when nothing suggests a network fault', async () => {
+    vi.mocked(startTerminalShell).mockRejectedValue({
+      type: 'authentication_failed',
+      message: 'authentication failed: all methods rejected',
+    })
+    const sleep = vi.fn(async () => {})
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 5,
+      sleep,
+      jitter: delayMs => delayMs,
+    })
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+
+    await vi.waitFor(() => expect(states.at(-1)?.status).toBe('error'))
+    /*
+     * The assertion is the sleep count, not just the status: the defect this guards
+     * shows up as five backoff delays before the user learns the credential is wrong.
+     */
+    expect(sleep, 'a plain rejection must not be retried').toHaveBeenCalledTimes(0)
+    expect(states.at(-1)?.recovery).toBe('manual')
+    await manager.close(remoteRequest.tabId)
+  })
+
+  it('still retries a genuine transport failure during auth', async () => {
+    // The control, and the case the whole heuristic exists for.
+    vi.mocked(startTerminalShell)
+      .mockRejectedValueOnce({
+        type: 'authentication_failed',
+        message: 'failed to connect SSH agent: connection refused',
+      })
+      .mockResolvedValueOnce('session-2')
+    const states: TerminalSessionSnapshot[] = []
+    const manager = new TerminalSessionManager({
+      maxAttempts: 2,
+      sleep: async () => {},
+      jitter: delayMs => delayMs,
+    })
+    manager.attach(remoteRequest, {
+      onOutput: () => {},
+      onState: state => states.push(state),
+    })
+
+    await vi.waitFor(() => expect(states.at(-1)?.sessionId).toBe('session-2'))
+    await manager.close(remoteRequest.tabId)
+  })
+})
