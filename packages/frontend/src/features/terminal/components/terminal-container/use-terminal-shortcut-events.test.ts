@@ -168,12 +168,14 @@ describe('useTerminalShortcutEvents', () => {
 // them. They assert today's behaviour, which is already correct: an unbound
 // control key is left alone for the terminal.
 describe('readline keys are never taken by the application', () => {
-  // `f` is deliberately absent: `Ctrl+F` is bound to `search-terminal` today and
-  // therefore never reaches the shell, which breaks readline's forward-char. It is
-  // pre-existing behaviour, recorded in `docs/design/terminal-next/02-*.md` and in
-  // the UX-1a delivery notes rather than changed here — taking it back would be a
-  // product decision about search, not a side effect of a layout change.
-  const readlineKeys = ['p', 'n', 'r', 'a', 'e', 'u', 'y', 'd', 'c']
+  /*
+   * `f` used to be deliberately absent, with a note that reclaiming it "would be a
+   * product decision about search". T05 made that decision and `Ctrl+F` now passes
+   * through, so it belongs in this list like the rest — a readline key the application
+   * must not take. It is asserted separately below because the surrounding trade
+   * (search keeps its other entries) is worth stating, not just the key.
+   */
+  const readlineKeys = ['p', 'n', 'r', 'a', 'e', 'u', 'y', 'd', 'c', 'f']
 
   it.each(readlineKeys)('leaves physical Ctrl+%s to the shell', key => {
     const event = keydown(key.toUpperCase(), { ctrlKey: true })
@@ -248,5 +250,49 @@ describe('a shortcut with a modifier is the application\'s, not the shell\'s', (
         expect(event.defaultPrevented).toBe(false)
       }
     })
+  })
+})
+
+/*
+ * ## Ctrl+F belongs to readline, not to search
+ *
+ * The suite above already pins Ctrl+P/N/R/A/E/U/Y/D/C to the shell and says, in a
+ * comment, that Ctrl+F is deliberately absent:
+ *
+ *   > `Ctrl+F` is bound to `search-terminal` today and therefore never reaches the
+ *   > shell, which breaks readline's forward-char. It is pre-existing behaviour …
+ *   > taking it back would be a product decision about search.
+ *
+ * The task makes that decision: T05 lists "readline 快捷键冲突" as something that must
+ * be resolved, and the product blueprint's first principle is terminal-first. `C-f` is
+ * forward-char in emacs-mode readline — one of the keys a shell user presses without
+ * thinking — while search has a right-click menu entry and the command palette.
+ *
+ * So the trade is: keep the less-used affordance reachable, stop stealing the
+ * more-used key.
+ */
+describe('Ctrl+F reaches the shell', () => {
+  it('does not prevent Ctrl+F from reaching readline', () => {
+    const event = keydown('F', { ctrlKey: true })
+    const reachedShell = handleXtermShortcut(event, true)
+    expect(
+      reachedShell,
+      'Ctrl+F must reach the shell: it is readline forward-char, and search is ' +
+        'reachable from the context menu and the command palette',
+    ).toBe(true)
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  it('search is still reachable without the key', () => {
+    /*
+     * The trade only holds if the capability survives. `search-terminal` keeps its
+     * action and its handler; only the *default key* stops being applied to a terminal
+     * pane. Asserting the action still exists is what stops a future cleanup from
+     * deleting search along with its shortcut.
+     */
+    const action = shortcutsService
+      .getShortcuts()
+      .find(shortcut => shortcut.action === 'search-terminal' || shortcut.id === 'search-terminal')
+    expect(action, 'search-terminal must remain a defined shortcut').toBeDefined()
   })
 })

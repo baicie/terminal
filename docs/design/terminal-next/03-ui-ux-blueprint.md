@@ -175,6 +175,10 @@ Settings 按 General、Terminal、Appearance、Connections、Shortcuts、Securit
 - 新绑定必须先检查 xterm 放行表、编辑控件和路由作用域。
 - 快捷键的显示和实际 handler 必须来自同一 registry；禁止仅修改 Settings 展示。
 - `Ctrl+P/N/R` 保留 readline 语义；命令面板默认使用 ⌘K/Ctrl+K；用户可配置但冲突必须显式拒绝。
+- **`Ctrl+F` 也保留给 shell**（readline `forward-char`）。它此前被绑成「终端内搜索」并被
+  应用吃掉 —— 一条注释记录了这个取舍，理由是「收回属于搜索的产品决策」。T05 做了那个
+  决策：搜索在右键菜单与命令面板各有入口，而 `C-f` 是 shell 用户不假思索会按的键。
+  完整放行表见 `use-terminal-shortcut-events.ts` 的 `DEFAULT_SHELL_CTRL_BINDINGS`。
 - Command Palette、Dialog、AI Composer 和 xterm 各自有焦点 owner；焦点不清楚时不得提交动作。
 
 ### IME

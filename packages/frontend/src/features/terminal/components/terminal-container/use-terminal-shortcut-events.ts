@@ -2,6 +2,33 @@ import { useEffect } from 'react'
 import { SHORTCUT_EVENT_PREFIX } from '@/hooks/use-global-shortcuts'
 import { shortcutsService } from '@/service/shortcuts'
 
+/**
+ * Application shortcuts that a **terminal pane** must nonetheless pass to the shell.
+ *
+ * ## What this set actually is
+ *
+ * The name says "shell bindings"; the contents are application actions. What they share
+ * is that a terminal-first product must not consume them inside a terminal: each one is a
+ * key a shell or readline uses, and the application capability has another way in.
+ *
+ * | Key | Shell meaning | Where the app action still lives |
+ * | --- | --- | --- |
+ * | `Ctrl+L` | clear screen | the same key still clears here — see the handler |
+ * | `Ctrl+W` | delete word | tab strip, command palette |
+ * | `Ctrl+T` | transpose chars | command palette, new-tab button |
+ * | `Ctrl+B` | back one char | rail toggle |
+ * | `Ctrl+J` | line feed | command palette |
+ * | `Ctrl+K` | kill to end of line | command palette |
+ * | `Ctrl+F` | **forward-char** | right-click menu, command palette |
+ *
+ * ## Why `Ctrl+F` was added
+ *
+ * It was previously left out, with a comment saying the omission was pre-existing and
+ * that reclaiming the key "would be a product decision about search". T05 makes that
+ * decision: `C-f` is one of the readline keys a shell user presses without thinking,
+ * and search keeps two other entry points. A terminal that steals forward-char is not
+ * terminal-first.
+ */
 const DEFAULT_SHELL_CTRL_BINDINGS = new Set([
   'command-palette:Ctrl+J',
   'command-palette:Ctrl+K',
@@ -9,6 +36,7 @@ const DEFAULT_SHELL_CTRL_BINDINGS = new Set([
   'close-tab:Ctrl+W',
   'new-tab:Ctrl+T',
   'toggle-sidebar:Ctrl+B',
+  'search-terminal:Ctrl+F',
 ])
 
 export function handleXtermShortcut(
