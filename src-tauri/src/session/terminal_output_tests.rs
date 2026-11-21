@@ -523,3 +523,158 @@ fn late_ack_after_output_cleanup_is_idempotent() {
         "a delayed xterm callback must not turn natural EOF into an I/O error"
     );
 }
+
+/// Ten mebibytes through the real pump: order preserved, nothing dropped.
+///
+/// ## What the existing cases cover, and what they do not
+///
+/// The module already has thorough small-scale coverage — unicode across byte
+/// boundaries, batching without reordering, the bounded queue applying backpressure,
+/// ACK resuming only below the low watermark, over-ACK failing closed, a missing ACK
+/// releasing a blocked producer after the deadline. None of those pushes **volume**
+/// through: the largest payload in the suite is a handful of bytes, and `max_batch_bytes`
+/// is never exercised at a realistic size.
+///
+/// That leaves a class of bug untested: something that only shows up when a real command
+/// (`yes`, a build log, `cat` of a large file) fills the pipe. A batcher that mishandles
+/// a boundary at 64 KiB, a watermark that stops being enforced once the queue rotates
+/// many times, or an ACK path that loses a batch after the hundredth round would all
+/// pass every existing case.
+///
+/// The task asks for at least 10 MiB with ordering checked, so this drives exactly that
+/// and verifies the stream against its own structure rather than a length alone.
+#[tokio::test]
+async fn ten_mebibytes_survive_the_pump_in_order() {
+    const TOTAL: usize = 10 * 1024 * 1024;
+    const CHUNK: usize = 32 * 1024;
+
+    let emitted = Arc::new(Mutex::new(Vec::with_capacity(TOTAL)));
+    let captured = Arc::clone(&emitted);
+    let (sender, control, handle) = spawn_terminal_output_pump_with_flow_control(
+        Duration::from_millis(1),
+        /*
+         * A small batch size on purpose: 8 KiB against 32 KiB chunks means the batcher
+         * crosses its byte limit four times per chunk. With 64 KiB against 32 KiB chunks
+         * the boundary is almost never hit — measured: a mutation that skipped a byte at
+         * every batch boundary still passed, because there were barely any boundaries.
+         */
+        8 * 1024,
+        64,
+        // A real watermark: the pump must pause and rely on ACKs, as it does in the app.
+        TerminalOutputFlowControl::new(256 * 1024, 64 * 1024, Duration::from_secs(30)),
+        move |output| {
+            captured
+                .lock()
+                .expect("capture mutex")
+                .extend_from_slice(output.data.as_bytes());
+            Ok(())
+        },
+    );
+
+    /*
+     * Producer and acknowledger both run in this task's runtime.
+     *
+     * The producer is spawned because `send` blocks once the queue fills — the same
+     * backpressure the PTY reader meets. The acknowledger runs below, releasing the
+     * watermark as output lands, which is what the front end does on every receipt.
+     */
+    let producer = tokio::spawn(async move {
+        let mut written = 0usize;
+        let mut counter: u32 = 0;
+        while written < TOTAL {
+            /*
+             * ## ASCII, not raw counters
+             *
+             * The first version filled the body with little-endian `u32` counters. The
+             * pump decodes with `String::from_utf8_lossy`, so bytes that are not valid
+             * UTF-8 become U+FFFD — three bytes each — and a 10 MiB target arrived as
+             * 15,275,520 bytes. That is correct behaviour, not a defect: a PTY carries
+             * text, and the decoder's job is to keep going when a command emits a stray
+             * byte.
+             *
+             * The test was wrong to use binary. Eight-hex-digit groups per counter keep
+             * the payload position-recoverable **and** valid ASCII, so the byte count
+             * and the ordering check both describe the stream the product actually sees.
+             */
+            let mut body = String::with_capacity(CHUNK);
+            while body.len() < CHUNK {
+                body.push_str(&format!("{counter:08x}"));
+                counter = counter.wrapping_add(1);
+            }
+            let mut body = body.into_bytes();
+            let remaining = TOTAL - written;
+            if body.len() > remaining {
+                body.truncate(remaining);
+            }
+            let sent = body.len();
+            if sender
+                .send(TerminalOutputChunk::new(&body, false))
+                .await
+                .is_err()
+            {
+                break;
+            }
+            written += sent;
+        }
+        written
+    });
+
+    /*
+     * Acknowledge what has actually been received, which is what the front end does.
+     *
+     * `TerminalOutputControl` exposes `ack`, `finish` and the session-level helpers, but
+     * no accessor for the outstanding count — the pump owns that number. So the test
+     * tracks what it has seen and acknowledges the difference; acknowledging more than
+     * the pump has emitted would (correctly) fail it closed and the `handle.await` below
+     * would report the error instead of a silent pass.
+     */
+    let mut acked = 0usize;
+    for _ in 0..500_000 {
+        let received = emitted.lock().expect("capture mutex").len();
+        if received > acked {
+            control.ack(received - acked);
+            acked = received;
+        }
+        if producer.is_finished() && received >= TOTAL {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+
+    let produced = producer.await.expect("producer must not panic");
+    assert_eq!(produced, TOTAL, "the producer must have written every byte");
+
+    control.finish();
+    handle
+        .await
+        .expect("pump task must join")
+        .expect("pump must not report an error");
+
+    let bytes = emitted.lock().expect("capture mutex").clone();
+    assert_eq!(bytes.len(), TOTAL, "every byte must arrive exactly once");
+
+    // Ordering, at the granularity the payload provides: eight hex digits per counter.
+    let text = String::from_utf8(bytes).expect("the payload is ASCII by construction");
+    let mut expected: u32 = 0;
+    for (index, group) in text.as_bytes().chunks_exact(8).enumerate() {
+        let value = u32::from_str_radix(
+            std::str::from_utf8(group).expect("hex digits are ASCII"),
+            16,
+        )
+        .expect("each group is eight hex digits");
+        assert_eq!(
+            value, expected,
+            "the stream is out of order at group {index} (expected counter {expected})"
+        );
+        expected = expected.wrapping_add(1);
+    }
+    assert_eq!(
+        text.len() % 8,
+        0,
+        "a truncated tail means the body was split mid-counter"
+    );
+    assert!(
+        acked >= TOTAL / 2,
+        "the acknowledger must have released most of the stream, acked={acked}"
+    );
+}
