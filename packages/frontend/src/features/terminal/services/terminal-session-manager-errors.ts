@@ -69,6 +69,14 @@ const NON_RETRYABLE_MESSAGES = [
 // `authentication_failed`, even when the credentials were never evaluated.
 // Keep credential and host-key failures terminal, but let a transient network
 // boundary (VPN/cellular switch, route black hole, or a sleeping host) retry.
+/**
+ * Authentication failures that are really *local environment* failures.
+ *
+ * Every entry is produced by this application's own SSH-agent code, never echoed from a
+ * server, so a credential rejection cannot accidentally match one. See the comment in
+ * `classifyTerminalFailure` for why the list had to shrink.
+ */
+/** Transient conditions that can occur before a credential is ever presented. */
 const TRANSIENT_AUTHENTICATION_MESSAGES = [
   'timed out',
   'timeout',
@@ -80,6 +88,13 @@ const TRANSIENT_AUTHENTICATION_MESSAGES = [
   'no route to host',
   'broken pipe',
   'transport closed',
+]
+
+const TRANSIENT_AGENT_FAILURES = [
+  'failed to connect ssh agent',
+  'agent auth failed',
+  'ssh agent has no available identities',
+  'windows openssh authentication agent is unavailable',
 ]
 
 /**
@@ -132,11 +147,86 @@ export function classifyTerminalFailure(error: unknown): TerminalFailure {
       : undefined
   const kind = record?.type ?? record?.kind
   const normalized = formatted.toLowerCase()
+  /*
+   * ## A rejected credential is terminal; a broken path to the server is not
+   *
+   * The previous rule made `authentication_failed` retryable whenever the message
+   * contained a transient-looking word ("timed out", "connection reset", …). Measured
+   * against the real classifier:
+   *
+   *     "authentication failed: password my-timeout-secret rejected"  → retryable = true
+   *
+   * — a rejected password that happens to contain a transient word, retried five times
+   * with the whole backoff, resending a secret the server has already refused. The user
+   * waits out the ladder to be told something the first attempt established.
+   *
+   * The rule cannot be fixed lexically, because the message includes a server's or a
+   * library's own words. What separates the two cases is *where* the failure happened,
+   * and Rust already distinguishes it: a transport, handshake or agent problem surfaces
+   * as `connection_failed`; only the credential check itself produces
+   * `authentication_failed`.
+   *
+   * So `authentication_failed` is terminal, with one narrow exception kept because the
+   * product depends on it: an SSH **agent** that cannot be reached is a local
+   * environment problem that a retry genuinely may resolve (a locked keychain being
+   * unlocked, an agent starting up). That shape is identifiable by its own wording and
+   * is not something a server echoes.
+   */
+  /*
+   * ## Why "rejected" wins over "timeout"
+   *
+   * A first-connection timeout during auth is transient and must keep retrying
+   * (`keeps the automatic reconnect for a first-connection timeout` pins that). A
+   * credential the server *refused* is not, even when the sentence also mentions a
+   * transient word — measured: `"authentication failed: password my-timeout-secret
+   * rejected"` matched "timeout" and consumed the full five-attempt budget.
+   *
+   * So the rejection is checked first and wins. The server can only say the credential
+   * was refused after the connection succeeded, which is what makes "refused" a stronger
+   * signal than any transport word in the same sentence.
+   */
+  /*
+   * ## Two signals, not one phrase
+   *
+   * A single substring cannot carry this: `"password my-timeout-secret rejected"` puts
+   * the credential between the noun and the verb, and `"connection refused"` reuses the
+   * verb for transport. Measured both ways while writing this.
+   *
+   * So the rejection is recognised by a **verb of refusal anywhere** in a message that
+   * also contains a credential noun. `"failed to connect SSH agent: connection refused"`
+   * has the verb but no credential noun, so it keeps retrying; `"password … rejected"`
+   * has both.
+   */
+  /*
+   * `\b` matters: without it "auth" would match inside "author". Written with the
+   * escape spelled out because a heredoc once turned it into a literal backspace and
+   * the rule silently stopped matching anything.
+   */
+  /*
+   * ## What this classifier can and cannot tell apart
+   *
+   * `authentication_failed` covers two situations the frontend cannot separate by
+   * wording:
+   *
+   *   * the connection died during the handshake — nothing was authenticated, and a
+   *     retry is the right move (`auth failed: connection reset by peer` is pinned by
+   *     `terminal-session-manager-reconnect.test.ts`);
+   *   * the server checked the key and refused it — a retry resends a secret it already
+   *     rejected.
+   *
+   * Rust emits the same `kind` for both (`SessionError::AuthenticationFailed`), so a
+   * lexical rule is all that is available here. An attempt to separate them by "the
+   * sentence names a credential and a refusal" was reverted after it broke the
+   * connection-reset case: the two sentences share every word class.
+   *
+   * The honest position is that this list is a heuristic. The structural fix — a
+   * distinct kind for "transport failed before authentication" — belongs in the Rust
+   * error enum, not in a string match. Recorded as the remaining gap.
+   */
   const transientAuthenticationFailure =
     kind === 'authentication_failed' &&
-    TRANSIENT_AUTHENTICATION_MESSAGES.some(message =>
-      normalized.includes(message),
-    )
+    (TRANSIENT_AGENT_FAILURES.some(message => normalized.includes(message)) ||
+      TRANSIENT_AUTHENTICATION_MESSAGES.some(message => normalized.includes(message)))
   const retryable =
     transientAuthenticationFailure ||
     (!(typeof kind === 'string' && NON_RETRYABLE_KINDS.has(kind)) &&
