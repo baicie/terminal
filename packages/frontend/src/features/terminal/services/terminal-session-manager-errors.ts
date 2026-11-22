@@ -229,26 +229,12 @@ export function classifyTerminalFailure(error: unknown): TerminalFailure {
    * error enum, not in a string match. Recorded as the remaining gap.
    */
   /*
-   * ## The structural fix this comment asked for
-   *
-   * `terminal-session-manager-errors.ts` used to say, in a comment kept here in spirit:
-   * "the structural fix — a distinct kind for 'transport failed before authentication'
-   * — belongs in the Rust error enum, not in a string match."
-   *
-   * Rust now emits three kinds:
-   *
-   *   * `authentication_rejected` — the server evaluated the credential and refused it.
-   *     Terminal. Retrying resends a secret that was already refused.
-   *   * `authentication_transport_failed` — the agent was unreachable, the channel
-   *     reset, or the auth stage timed out. Nothing was decided about the credential,
-   *     so the network ladder applies.
-   *   * `host_key_rejected` — terminal, and it points at `known_hosts`, not at the
-   *     credential.
-   *
-   * `authentication_failed` is kept for the two remaining cases that really are the
-   * caller's fault (no method supplied, jump host missing a password), and it stays
-   * terminal. The wording heuristics below therefore only ever describe *legacy*
-   * errors now; new errors are classified by structure.
+   * The structural fix this module used to ask for: Rust now distinguishes
+   * `authentication_rejected` (terminal — the server refused the credential),
+   * `authentication_transport_failed` (retry — nothing was decided about it) and
+   * `host_key_rejected` (terminal, about `known_hosts`). `authentication_failed`
+   * remains for caller errors (no method supplied). The wording heuristics below
+   * therefore only describe *legacy* errors; new ones are classified by structure.
    */
   const transportAuthenticationFailure = kind === 'authentication_transport_failed'
 
