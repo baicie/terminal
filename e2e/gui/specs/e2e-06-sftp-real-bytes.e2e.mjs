@@ -73,6 +73,35 @@ const notes = []
 const failures = []
 const measurements = {}
 
+/*
+ * ## Why every case needs a failure collector
+ *
+ * `scripts/gui-evidence-integrity.test.mjs` enforces this on every spec that writes
+ * evidence, after a measured false PASS: a case that throws never reaches the code that
+ * builds the verdict, so the evidence says `verdict: PASS` over a failure. The guard is
+ * not decoration — this spec's upload case really did throw ("the upload control is not
+ * reachable") before the seeded host was connected.
+ *
+ * `currentTest.err` is undefined in this runner (measured by e2e-04), so the message
+ * may be missing; the *fact* of the failure is what must reach the evidence.
+ */
+let currentCase = 'unknown case'
+beforeEach(function () {
+  currentCase = this?.currentTest?.title ?? 'unknown case'
+})
+afterEach(function () {
+  if (this?.currentTest?.state !== 'failed') return
+  const title = this.currentTest.title ?? currentCase
+  if (failures.some(entry => entry.title === title)) return
+  const err = this.currentTest.err
+  failures.push({
+    title,
+    error:
+      (typeof err === 'string' ? err : err?.message) ??
+      `case failed without reaching an assertion (${title})`,
+  })
+})
+
 /** Read the transfer queue's rows as the UI shows them. */
 async function transferRows() {
   return browser.execute(() => {
