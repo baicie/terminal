@@ -1,7 +1,7 @@
 {
   "case": "e2e-03",
-  "verdict": "PASS",
-  "recordedAt": "2026-11-14T16:16:58.016Z",
+  "verdict": "FAIL",
+  "recordedAt": "2026-11-22T11:09:19.810Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
@@ -10,18 +10,94 @@
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "f0aac31b686dc849dcc7711a7b02aafbd8677285",
-    "branch": "fix/58-gui-sftp-dock",
+    "sha": "962369f1a9e29b8c47a92561965f3a5ea5e98042",
+    "branch": "feat/t01-t36-sftp-integrity-rc",
     "dirty": true
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "13e92e4d5cb554bead75256bb1bebbf633a58874a20f40c928a94bce6ee0dffa",
-    "bytes": 36667568
+    "sha256": "bed812c250875d1c3c3323bbb3aefa68e51abb8ba985224bc0b561a18f0855e4",
+    "bytes": 37209136
   },
   "window": null,
   "terminal": null,
   "command": null,
-  "screenshot": "e2e/gui/artifacts/e2e-03/screens/e2e-03-1794673017885.png",
-  "notes": "clicked the seeded host card: true\nswitched to the SSH tab: false\ndock width 300px, content 275px\ncontent 275px = border 299px − padding 24px\ntransfer panel absent (no transfers in this session)\n/sftp content 1370px → split\nkeyboard case NOT_RUN: the dock did not reopen after navigation\nNOT_RUN: host switch with two connected hosts (needs an SSH server); upload survives closing the dock (needs an SSH server); refresh lands only for the right session + directory (needs an SSH server); delete/rename act on the displayed host (needs an SSH server)"
+  "screenshot": "e2e/gui/artifacts/e2e-03/screens/e2e-03-1795345759540.png",
+  "notes": "clicked the seeded host card: true\ntabs {\"clicked\":false,\"described\":[{\"label\":\"Local\",\"selected\":false,\"text\":\"ConnectedLocal\",\"type\":\"local\"},{\"label\":\"E2E Local\",\"selected\":true,\"text\":\"ConnectedE2E Local\",\"type\":\"remote\"}],\"reason\":\"the SSH tab is already active\"}\ndock precondition: {\"alreadyOpen\":false,\"clicked\":true}\ndock width 300px, content 275px\ncontent 275px = border 299px − padding 24px\ntransfer panel absent (no transfers in this session)\n/sftp content 1370px → split\nkeyboard: 1 rows, focusable, aria-selected=\"false\" after Space\nsecond host connected: {\"connected\":true,\"hostField\":\"127.0.0.1\",\"port\":\"54614\",\"remoteTabs\":2,\"tabs\":3}\nafter connecting B: {\"activeTabLabel\":\"E2E Second\",\"activeTabType\":\"remote\",\"boundHost\":\"E2E Local\",\"offersFollow\":true,\"remoteCount\":2,\"remotePath\":\"SFTP: 127.0.0.1\",\"rows\":[]}\nafter following to B: {\"activeTabLabel\":\"E2E Second\",\"activeTabType\":\"remote\",\"boundHost\":\"E2E Second\",\"offersFollow\":false,\"remoteCount\":2,\"remotePath\":\"SFTP: 127.0.0.1\",\"rows\":[\"e2e-second.markerrw-------11 BJan 22, 02:42File\"]}\nactivate first remote tab: {\"activated\":true,\"alreadyActive\":false,\"remoteCount\":2}\nback on A's tab, dock pinned: {\"activeTabLabel\":\"E2E Local\",\"activeTabType\":\"remote\",\"boundHost\":\"E2E Second\",\"offersFollow\":true,\"remoteCount\":2,\"remotePath\":\"SFTP: 127.0.0.1\",\"rows\":[\"e2e-second.markerrw-------11 BJan 22, 02:42File\"]}\nafter following back to A: {\"activeTabLabel\":\"E2E Local\",\"activeTabType\":\"remote\",\"boundHost\":\"E2E Local\",\"offersFollow\":false,\"remoteCount\":2,\"remotePath\":\"SFTP: 127.0.0.1\",\"rows\":[\"e2e-local.markerrw-------10 BJan 22, 02:42File\"]}\npane and server agree on the starting listing (1 entries)\nthe server created e2e-mkdir-case as a real directory\nthe server moved e2e-mkdir-case → e2e-mkdir-renamed; the old name is gone\nNOT_RUN: upload survives closing the dock (this spec starts no upload — the transfer queue is exercised by the upload/download cases in `sftp-transfer-queue.test.ts` and the 24 MiB real-server harness, not by a GUI drag); refresh lands only for the right session + directory (no transfer to refresh)",
+  "error": "creates, renames and deletes a directory on the bound host — verified on the server: Timeout\nnavigates into a directory and reports the destination the filesystem has: no candidate for [data-testid=\"sftp-remote-refresh\"] became clickable; 1 matched, states: [{\"displayed\":true,\"enabled\":true}], covering: [{\"box\":{\"h\":28,\"w\":28,\"x\":1401,\"y\":223},\"dialog\":null,\"topmost\":\"div[]\",\"topmostDetail\":{\"cls\":\"fixed inset-0 z-[210] bg-black/50\",\"rect\":{\"h\":900,\"w\":1440,\"x\":0,\"y\":0},\"tag\":\"div\",\"testid\":null},\"topmostIsSelf\":false}], last error: Error: element (\"[data-testid=\"sftp-remote-refresh\"]\") still not clickable after 15000ms",
+  "extra": {
+    "measurements": {
+      "dock": {
+        "emptyState": false,
+        "hasSwitch": true,
+        "panel": {
+          "height": 832,
+          "left": 1140,
+          "right": 1440,
+          "width": 300
+        },
+        "panelMissing": false,
+        "panes": {
+          "height": 776,
+          "left": 1141,
+          "right": 1440,
+          "width": 299
+        },
+        "panesContentWidth": 275,
+        "panesPadding": 24,
+        "presentation": "single",
+        "transfer": null
+      },
+      "wideView": {
+        "contentWidth": 1370,
+        "dataWidth": "1370",
+        "hasPanes": true,
+        "presentation": "split",
+        "width": 1394
+      },
+      "hostSwitch": {
+        "a": {
+          "activeTabLabel": "E2E Local",
+          "activeTabType": "remote",
+          "boundHost": "E2E Local",
+          "offersFollow": false,
+          "remoteCount": 2,
+          "remotePath": "SFTP: 127.0.0.1",
+          "rows": [
+            "e2e-local.markerrw-------10 BJan 22, 02:42File"
+          ]
+        },
+        "b": {
+          "activeTabLabel": "E2E Second",
+          "activeTabType": "remote",
+          "boundHost": "E2E Second",
+          "offersFollow": false,
+          "remoteCount": 2,
+          "remotePath": "SFTP: 127.0.0.1",
+          "rows": [
+            "e2e-second.markerrw-------11 BJan 22, 02:42File"
+          ]
+        }
+      }
+    },
+    "failures": [
+      {
+        "title": "creates, renames and deletes a directory on the bound host — verified on the server",
+        "error": "Timeout"
+      },
+      {
+        "title": "navigates into a directory and reports the destination the filesystem has",
+        "error": "no candidate for [data-testid=\"sftp-remote-refresh\"] became clickable; 1 matched, states: [{\"displayed\":true,\"enabled\":true}], covering: [{\"box\":{\"h\":28,\"w\":28,\"x\":1401,\"y\":223},\"dialog\":null,\"topmost\":\"div[]\",\"topmostDetail\":{\"cls\":\"fixed inset-0 z-[210] bg-black/50\",\"rect\":{\"h\":900,\"w\":1440,\"x\":0,\"y\":0},\"tag\":\"div\",\"testid\":null},\"topmostIsSelf\":false}], last error: Error: element (\"[data-testid=\"sftp-remote-refresh\"]\") still not clickable after 15000ms"
+      }
+    ],
+    "notRunCount": 1,
+    "sshFixture": true,
+    "gaps": [
+      {
+        "id": "native-file-picker-not-drivable",
+        "reason": "upload and download go through the OS file picker, which WebDriver cannot drive in these WebViews; the transfer queue and a 24 MiB real upload are covered by sftp-transfer-queue.test.ts and scripts/verify-install/sftp-staged-upload-e2e.mjs instead",
+        "covers": 2
+      }
+    ]
+  }
 }

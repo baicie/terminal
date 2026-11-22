@@ -38,7 +38,7 @@ function SheetOverlay({
       data-slot="sheet-overlay"
       data-tauri-drag-region="false"
       className={cn(
-        'fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0',
+        'fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in',
         className,
       )}
       {...props}
