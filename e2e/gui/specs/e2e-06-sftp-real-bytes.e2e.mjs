@@ -750,13 +750,35 @@ describe('SFTP — real bytes through the product UI', () => {
         failures,
         notRunCount: notes.filter(note => note.includes('NOT_RUN')).length,
         gaps: [
+          /*
+           * Four gaps for four NOT_RUNs — `scripts/gui-e2e-report.mjs` fails the layer
+           * when `notRunCount > sum(covers)`, so an under-claimed spec loses just as a
+           * over-claiming one does. Each `covers: 1` below corresponds to one line the
+           * spec pushes into `notes`.
+           */
           {
-            id: 'native-file-picker-not-driven',
+            id: 'native-file-dialog-not-driven',
             reason:
-              'the OS file dialog cannot be driven by WebDriver; the path source is ' +
-              'substituted in an E2E-only build, and everything after the path is the ' +
-              'production code path',
+              'the OS open/save dialog cannot be driven by WebDriver; the path source ' +
+              'is substituted in an E2E-only build, and everything after the path is ' +
+              'the production code path',
             covers: 2,
+          },
+          {
+            id: 'high-latency-link-not-simulated',
+            reason:
+              'the fixture sshd is loopback, so a flaky or high-RTT link is not ' +
+              'represented; the transfer queue has backpressure tests, the bytes here ' +
+              'travel over a fast local link',
+            covers: 1,
+          },
+          {
+            id: 'concurrent-ui-uploads-not-driven',
+            reason:
+              'exceeding MAX_CONCURRENT through the UI needs several files picked at ' +
+              'once; the limit itself is covered by sftp-transfer-queue.test.ts, not ' +
+              'by real bytes in a WebView',
+            covers: 1,
           },
         ],
       },

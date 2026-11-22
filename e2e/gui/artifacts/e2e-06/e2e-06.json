@@ -1,7 +1,7 @@
 {
   "case": "e2e-06",
   "verdict": "PARTIAL",
-  "recordedAt": "2026-11-22T12:01:26.023Z",
+  "recordedAt": "2026-11-22T13:08:21.047Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
@@ -10,24 +10,24 @@
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "35690409df310ecdd2bf57ba31dcb9a92d04d011",
+    "sha": "800dd6770358c59d5e74e10ec5c3ad23ce8c2809",
     "branch": "feat/t01-t36-sftp-integrity-rc",
-    "dirty": false
+    "dirty": true
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "a8113d6c24e0d9e9755068c5072c3ec65a9118dba2cbde66254f34b51b8e3c1a",
+    "sha256": "4a63191421c2bd022232e27cee8c162b55858272e5c12e94db13d1188ffda2f5",
     "bytes": 37208416
   },
   "window": null,
   "terminal": null,
   "command": null,
-  "screenshot": "e2e/gui/artifacts/e2e-06/screens/e2e-06-1795348885897.png",
-  "notes": "preconditions {\"remoteRoot\":\"/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-7Of0Mw/remote\",\"guard\":{\"ok\":true,\"reason\":\"the guard rejects both a relative and an absolute escape\"},\"pickerMarker\":true,\"sshFixture\":true}\nclicked the product upload control\ninvoked the product download action for the seeded file\nNOT_RUN upload through the *native* dialog (this case substitutes the path source; the operating system dialog itself is not driven)\nNOT_RUN download to a path chosen in the native save panel (same substitution)\nNOT_RUN transfers over a flaky or high-latency link (the fixture is loopback)\nNOT_RUN concurrent uploads exceeding MAX_CONCURRENT through the UI (covered by sftp-transfer-queue.test.ts, not by real bytes in a WebView)",
+  "screenshot": "e2e/gui/artifacts/e2e-06/screens/e2e-06-1795352900763.png",
+  "notes": "preconditions {\"remoteRoot\":\"/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-IEDOIW/remote\",\"guard\":{\"ok\":true,\"reason\":\"the guard rejects both a relative and an absolute escape\"},\"pickerMarker\":true,\"sshFixture\":true}\nclicked the product upload control\ninvoked the product download action for the seeded file\nNOT_RUN upload through the *native* dialog (this case substitutes the path source; the operating system dialog itself is not driven)\nNOT_RUN download to a path chosen in the native save panel (same substitution)\nNOT_RUN transfers over a flaky or high-latency link (the fixture is loopback)\nNOT_RUN concurrent uploads exceeding MAX_CONCURRENT through the UI (covered by sftp-transfer-queue.test.ts, not by real bytes in a WebView)",
   "extra": {
     "measurements": {
       "preconditions": {
-        "remoteRoot": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-7Of0Mw/remote",
+        "remoteRoot": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-IEDOIW/remote",
         "guard": {
           "ok": true,
           "reason": "the guard rejects both a relative and an absolute escape"
@@ -50,14 +50,14 @@
         "entry": {
           "isDirectory": false,
           "size": 3145728,
-          "mtimeMs": 1795348823866.4946,
+          "mtimeMs": 1795352828626.4849,
           "realSize": 3145728
         },
         "matches": true
       },
       "integritySamples": [
         {
-          "ms": 4,
+          "ms": 14,
           "verdicts": [
             "verified"
           ],
@@ -77,7 +77,7 @@
       "download": {
         "settled": true,
         "sourceSha256": "edaabdbd9cc3c0b361f40d6154dcef0b02cb1b0bb0a80f5e3738f910eb03deac",
-        "destination": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/e2e-06-cAXHh4/e2e-06-download.bin",
+        "destination": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/e2e-06-9qruwA/e2e-06-download.bin",
         "queue": {
           "integrity": [
             "computing",
@@ -100,9 +100,19 @@
     "notRunCount": 4,
     "gaps": [
       {
-        "id": "native-file-picker-not-driven",
-        "reason": "the OS file dialog cannot be driven by WebDriver; the path source is substituted in an E2E-only build, and everything after the path is the production code path",
+        "id": "native-file-dialog-not-driven",
+        "reason": "the OS open/save dialog cannot be driven by WebDriver; the path source is substituted in an E2E-only build, and everything after the path is the production code path",
         "covers": 2
+      },
+      {
+        "id": "high-latency-link-not-simulated",
+        "reason": "the fixture sshd is loopback, so a flaky or high-RTT link is not represented; the transfer queue has backpressure tests, the bytes here travel over a fast local link",
+        "covers": 1
+      },
+      {
+        "id": "concurrent-ui-uploads-not-driven",
+        "reason": "exceeding MAX_CONCURRENT through the UI needs several files picked at once; the limit itself is covered by sftp-transfer-queue.test.ts, not by real bytes in a WebView",
+        "covers": 1
       }
     ]
   }
