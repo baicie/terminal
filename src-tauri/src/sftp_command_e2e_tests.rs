@@ -491,7 +491,11 @@ async fn reading_the_remote_file_right_after_an_upload_completes() {
     match hash {
         Ok((total, digest)) => {
             assert_eq!(total, bytes.len(), "the whole file must be read");
-            assert_eq!(digest, sha256(&bytes), "the hash must match the uploaded bytes");
+            assert_eq!(
+                digest,
+                sha256(&bytes),
+                "the hash must match the uploaded bytes"
+            );
         }
         Err(_) => panic!(
             "hashing the remote file right after an upload did not finish within 30 s — \
@@ -503,18 +507,18 @@ async fn reading_the_remote_file_right_after_an_upload_completes() {
 /// Write `contents` to a local temp file and return its path.
 async fn write_local(name: &str, contents: &[u8]) -> String {
     let path = std::env::temp_dir().join(format!("terminal-e2e-{name}"));
-    tokio::fs::write(&path, contents).await.expect("write the local seed");
+    tokio::fs::write(&path, contents)
+        .await
+        .expect("write the local seed");
     path.to_string_lossy().into_owned()
 }
 
 /// Put `contents` on the fixture server under `path`.
-async fn seed_remote(
-    session: &russh_sftp::client::SftpSession,
-    path: &str,
-    contents: &[u8],
-) {
+async fn seed_remote(session: &russh_sftp::client::SftpSession, path: &str, contents: &[u8]) {
     use tokio::io::AsyncWriteExt;
     let mut file = session.create(path).await.expect("create the seed file");
-    file.write_all(contents).await.expect("seed the remote file");
+    file.write_all(contents)
+        .await
+        .expect("seed the remote file");
     file.flush().await.expect("flush the seed file");
 }

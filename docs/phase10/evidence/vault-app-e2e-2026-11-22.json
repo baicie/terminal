@@ -1,0 +1,59 @@
+{
+  "platform": "darwin",
+  "work": "/tmp/vault-e2e-2/vault-app-sQt6Lw",
+  "app": null,
+  "binary": "/Users/liuzhiwei/Desktop/workspace/git-code/terminal/src-tauri/target/release/terminal",
+  "binarySha256": "20a7258224e547d8055e96e2d94b3e9d15fba5911cf952b94e00fa6f23db41b4",
+  "checks": {
+    "application binary resolved": {
+      "status": "PASS",
+      "detail": "/Users/liuzhiwei/Desktop/workspace/git-code/terminal/src-tauri/target/release/terminal sha256=20a7258224e547d8055e96e2d94b3e9d15fba5911cf952b94e00fa6f23db41b4"
+    },
+    "vault created and secret stored": {
+      "status": "PASS",
+      "detail": "{\"phase\":\"create\",\"ok\":true,\"created\":true,\"wrongRejected\":true,\"secretOk\":true,\"rotated\":true,\"oldRejected\":true,\"afterRotation\":true}"
+    },
+    "wrong master password rejected": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "correct password reads the secret": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "master password rotated": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "old password rejected after rotation": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "new password reads the secret": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "first launch stopped": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "restart keeps the vault unlockable with the new password": {
+      "status": "PASS",
+      "detail": "{\"phase\":\"verify\",\"ok\":true,\"oldRejected\":true,\"secretOk\":true,\"unlocked\":true}"
+    },
+    "old password still rejected after restart": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "secret survives the restart": {
+      "status": "PASS",
+      "detail": ""
+    },
+    "passwords and secret never appear in logs": {
+      "status": "PASS",
+      "detail": ""
+    }
+  },
+  "error": null,
+  "status": "PASS"
+}

@@ -37,6 +37,11 @@ export type TerminalFailureRecovery =
 
 const NON_RETRYABLE_KINDS = new Set([
   'authentication_failed',
+  // The server evaluated the credential and refused it. Retrying resends a secret it
+  // has already rejected; the user has to change something.
+  'authentication_rejected',
+  // `known_hosts` disagrees with the server. Nothing about a retry can fix that.
+  'host_key_rejected',
   'connection_cancelled',
   'invalid_input',
   'key_parse_failed',
@@ -223,10 +228,37 @@ export function classifyTerminalFailure(error: unknown): TerminalFailure {
    * distinct kind for "transport failed before authentication" — belongs in the Rust
    * error enum, not in a string match. Recorded as the remaining gap.
    */
+  /*
+   * ## The structural fix this comment asked for
+   *
+   * `terminal-session-manager-errors.ts` used to say, in a comment kept here in spirit:
+   * "the structural fix — a distinct kind for 'transport failed before authentication'
+   * — belongs in the Rust error enum, not in a string match."
+   *
+   * Rust now emits three kinds:
+   *
+   *   * `authentication_rejected` — the server evaluated the credential and refused it.
+   *     Terminal. Retrying resends a secret that was already refused.
+   *   * `authentication_transport_failed` — the agent was unreachable, the channel
+   *     reset, or the auth stage timed out. Nothing was decided about the credential,
+   *     so the network ladder applies.
+   *   * `host_key_rejected` — terminal, and it points at `known_hosts`, not at the
+   *     credential.
+   *
+   * `authentication_failed` is kept for the two remaining cases that really are the
+   * caller's fault (no method supplied, jump host missing a password), and it stays
+   * terminal. The wording heuristics below therefore only ever describe *legacy*
+   * errors now; new errors are classified by structure.
+   */
+  const transportAuthenticationFailure = kind === 'authentication_transport_failed'
+
   const transientAuthenticationFailure =
-    kind === 'authentication_failed' &&
-    (TRANSIENT_AGENT_FAILURES.some(message => normalized.includes(message)) ||
-      TRANSIENT_AUTHENTICATION_MESSAGES.some(message => normalized.includes(message)))
+    transportAuthenticationFailure ||
+    (kind === 'authentication_failed' &&
+      (TRANSIENT_AGENT_FAILURES.some(message => normalized.includes(message)) ||
+        TRANSIENT_AUTHENTICATION_MESSAGES.some(message =>
+          normalized.includes(message),
+        )))
   const retryable =
     transientAuthenticationFailure ||
     (!(typeof kind === 'string' && NON_RETRYABLE_KINDS.has(kind)) &&

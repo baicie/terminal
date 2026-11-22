@@ -35,7 +35,6 @@
  * silently kept stale assets.
  */
 fn main() {
-    let attributes = tauri_build::Attributes::new()
-        .codegen(tauri_build::CodegenContext::new());
+    let attributes = tauri_build::Attributes::new().codegen(tauri_build::CodegenContext::new());
     tauri_build::try_build(attributes).expect("failed to run tauri-build");
 }
