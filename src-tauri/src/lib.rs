@@ -450,7 +450,7 @@ pub fn run() {
             shell_probe_config,
             shell_probe_result,
         ])
-        .build(tauri::generate_context!())
+        .build(tauri::tauri_build_context!())
         .expect("error while building tauri application");
 
     let exit_state = std::sync::Arc::new(GracefulExitState::default());

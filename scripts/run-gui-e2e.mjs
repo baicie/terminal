@@ -94,6 +94,33 @@ if (!skipBuild) {
         '  that the variable reaches the beforeBuildCommand subprocess.',
     )
   }
+
+  // ## The file-picker substitution is a second, independent flag site
+  //
+  // Same failure, different symptom. Measured on this machine: a run whose binary had
+  // no `__terminalE2EFilePickerMarker` still printed **6 passing** for e2e-06, while
+  // its evidence recorded `notRunCount: 9` and a null marker. Every upload/download
+  // case had returned early, so nothing was driven and nothing failed — the exact
+  // shape the probe guard above exists to prevent, one build flag later.
+  //
+  // Checking the chunk here is what makes that a build error instead of a green run
+  // that proves nothing.
+  let pickerFound = false
+  try {
+    pickerFound = readdirSync(probePath).some(name =>
+      name.startsWith('e2e-file-picker'),
+    )
+  } catch {
+    pickerFound = false
+  }
+  if (!pickerFound) {
+    fail(
+      'the E2E file-picker substitution is missing from dist/js after the build.\n' +
+        `  looked in: ${path.relative(ROOT, probePath)}\n` +
+        '  Without it every upload/download case records NOT_RUN while the spec\n' +
+        '  still reports "passing", so the suite would prove nothing about real bytes.',
+    )
+  }
 }
 
 const binary = appBinaryPath(ROOT)

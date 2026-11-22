@@ -68,6 +68,17 @@ function recordMarker(): void {
   holder.__terminalE2EFilePickerMarker = FILE_PICKER_MARKER
 }
 
+/*
+ * Set it at module scope as well.
+ *
+ * The first version only wrote it inside `e2eOpenFiles` / `e2eSaveFile`, so a spec that
+ * asked "is this build able to drive the picker?" **before** clicking upload got `null`
+ * — the module had not been imported yet, because the dynamic import only runs when the
+ * picker is reached. That made a working build look like a production one, and every
+ * upload case reported NOT_RUN on it.
+ */
+recordMarker()
+
 function staged(): StagedPaths | null {
   const holder = (globalThis as PickerGlobal).__terminalE2EFilePicker as
     | StagedPaths

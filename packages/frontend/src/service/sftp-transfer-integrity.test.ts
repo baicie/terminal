@@ -224,3 +224,83 @@ describe('a finished transfer is actually verified', () => {
     expect(mocks.checksumRemote).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('checksum events from both Rust commands do not reset each other', () => {
+  it('the remote checksum-start must not wipe the local result that already landed', async () => {
+    /*
+     * ## The stall the GUI measured
+     *
+     * `verifyChecksum` runs `sftp_local_checksum`, writes its result, then runs
+     * `sftp_remote_checksum`. **Both** Rust commands emit `checksum-start`, and the
+     * channel handler answered every `checksum-start` with `initChecksum` — which
+     * rebuilds the record's `checksum` object from scratch:
+     *
+     *     localStatus:  kind === 'download' ? 'pending' : 'computing'
+     *     remoteStatus: kind === 'upload' ? 'pending' : 'computing'
+     *
+     * So the remote command's `checksum-start`, arriving *after* the local hash had
+     * been recorded, reset `localStatus` from `done` to `pending`. `checksum-progress`
+     * only carries the remote side, so nothing ever set local back: the row stayed
+     * `computing` for ever with `matches` never decided.
+     *
+     * Measured in `e2e-06` on a 3 MiB upload: the verdict stopped at 85% and did not
+     * move for 30 s of sampling (`integritySamples`, twelve identical readings).
+     *
+     * The fix is that a start event only initialises what is not already known.
+     */
+    mocks.checksumLocal.mockResolvedValue({ success: true, hash: 'aa' })
+    let releaseRemote: ((value: unknown) => void) | null = null
+    mocks.checksumRemote.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          releaseRemote = resolve
+        }),
+    )
+
+    const id = await startedUpload()
+    handleProgressEvent({ transferId: id, kind: 'done', bytesDone: 1024, bytesTotal: 1024 })
+    await vi.waitFor(() => expect(mocks.checksumRemote).toHaveBeenCalled())
+    // The local hash has landed by now.
+    expect(record(id)!.checksum!.localStatus).toBe('done')
+
+    // The remote command announces itself — the event that used to reset local.
+    handleProgressEvent({
+      transferId: id,
+      kind: 'checksum-start',
+      bytesDone: 0,
+      bytesTotal: 1024,
+      side: 'remote',
+    })
+    await flush()
+
+    expect(record(id)!.checksum!.localStatus).toBe('done')
+    expect(record(id)!.checksum!.localHash).toBe('aa')
+
+    releaseRemote!({ success: true, hash: 'aa' })
+    await vi.waitFor(() => expect(checksumVerdict(record(id)).verdict).toBe('verified'))
+  })
+
+  it('a checksum-start for a side that is still pending does initialise it', async () => {
+    // The fix must not turn the start event into a no-op: when nothing has been
+    // recorded for that side yet, it is what puts the side into `computing` so the UI
+    // can show progress at all.
+    mocks.checksumLocal.mockResolvedValue({ success: true, hash: 'aa' })
+    mocks.checksumRemote.mockResolvedValue({ success: true, hash: 'aa' })
+    const id = await startedUpload()
+
+    // Before any transfer/verify activity the record has no checksum at all.
+    expect(record(id)!.checksum).toBeUndefined()
+    handleProgressEvent({
+      transferId: id,
+      kind: 'checksum-start',
+      bytesDone: 0,
+      bytesTotal: 1024,
+      side: 'remote',
+    })
+    await flush()
+
+    const checksum = record(id)!.checksum!
+    expect(checksum.algorithm).toBe('sha256')
+    expect(checksum.remoteStatus).toBe('computing')
+  })
+})

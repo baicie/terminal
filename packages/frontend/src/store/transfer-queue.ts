@@ -96,8 +96,13 @@ interface TransferQueueState {
   clearFinished: () => void
   setPanelOpen: (open: boolean) => void
   togglePanel: () => void
-  /** 初始化 checksum 状态（传输完成时调用） */
-  initChecksum: (id: string) => void
+  /**
+   * 初始化 checksum 状态。
+   *
+   * `side` 是刚刚开始计算的那一侧（Rust 的 `checksum-start` 事件携带它）。省略时表示
+   * 「按传输方向推断」，即把未定论的一侧置为 computing。
+   */
+  initChecksum: (id: string, side?: 'local' | 'remote') => void
   /** 更新 checksum 进度（remote checksum 进度） */
   updateChecksumProgress: (id: string, bytesDone: number, bytesTotal: number) => void
   /** 设置 checksum 结果（任一端计算完成时调用） */
@@ -194,20 +199,54 @@ export const useTransferQueue = create<TransferQueueState>((set, get) => ({
     set({ panelOpen: !get().panelOpen })
   },
 
-  initChecksum(id) {
+  initChecksum(id, side) {
     set(state => ({
-      transfers: state.transfers.map(t =>
-        t.id === id
-          ? {
-              ...t,
-              checksum: {
-                algorithm: 'sha256',
-                localStatus: t.kind === 'download' ? 'pending' : 'computing',
-                remoteStatus: t.kind === 'upload' ? 'pending' : 'computing',
-              },
-            }
-          : t,
-      ),
+      transfers: state.transfers.map(t => {
+        if (t.id !== id) return t
+        /*
+         * ## Initialise, do not reset
+         *
+         * Both Rust commands emit `checksum-start`, and the channel answers each one
+         * with this call. `verifyChecksum` runs them in sequence — local first, then
+         * remote — so the *remote* command's start event arrives after the local hash
+         * has already been recorded. Rebuilding the object from scratch here reset
+         * `localStatus` from `done` back to `pending`, and nothing ever set it again:
+         * `checksum-progress` carries only the remote side.
+         *
+         * The result was a verdict stuck on `computing` for ever. Measured in e2e-06:
+         * a 3 MiB upload's check stopped at 85% and did not move across 30 s of
+         * sampling.
+         *
+         * A side that already has an outcome keeps it. A side with no outcome is
+         * (re)initialised, which is what lets the UI show progress for it at all.
+         */
+        const previous = t.checksum
+        const settled = (status: ChecksumStatus | undefined) =>
+          status === 'done' || status === 'error'
+
+        // A side this event names is *starting*; a side it does not name is left as
+        // it was, or pending when nothing has happened to it yet.
+        const starting = (which: 'local' | 'remote'): ChecksumStatus => {
+          const key = which === 'local' ? 'localStatus' : 'remoteStatus'
+          if (settled(previous?.[key])) return previous![key]!
+          if (side !== undefined) return side === which ? 'computing' : 'pending'
+          // No side named: the direction of the transfer decides which one runs first.
+          const first = t.kind === 'download' ? 'remote' : 'local'
+          return which === first ? 'computing' : 'pending'
+        }
+        const localStatus = starting('local')
+        const remoteStatus = starting('remote')
+
+        return {
+          ...t,
+          checksum: {
+            ...previous,
+            algorithm: 'sha256',
+            localStatus,
+            remoteStatus,
+          },
+        }
+      }),
     }))
   },
 

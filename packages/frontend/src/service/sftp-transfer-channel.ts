@@ -128,7 +128,16 @@ export function handleProgressEvent(payload: SftpProgressPayload): void {
       failTransfer(payload.transferId, payload.message ?? 'Transfer failed')
       return
     case 'checksum-start':
-      store.initChecksum(payload.transferId)
+      // The event names the side that is starting; passing it through keeps the other
+      // side's settled result intact (see `initChecksum`).
+      store.initChecksum(
+        payload.transferId,
+        payload.side === 'local'
+          ? 'local'
+          : payload.side === 'remote'
+            ? 'remote'
+            : undefined,
+      )
       return
     case 'checksum-progress':
       store.updateChecksumProgress(

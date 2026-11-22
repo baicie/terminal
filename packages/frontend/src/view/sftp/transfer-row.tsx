@@ -76,6 +76,10 @@ const TransferRow: React.FC<{ record: TransferRecord }> = ({ record }) => {
         'group flex flex-col gap-1 px-3 py-2 border-b border-border/40 last:border-b-0',
         record.status === 'error' && 'bg-destructive/5',
       )}
+      // The row itself, so a GUI case can count transfers without depending on which
+      // child happens to render a test id.
+      data-testid="transfer-row"
+      data-transfer-status={record.status}
     >
       <div className="flex items-center gap-2 min-w-0">
         {statusIcon}
