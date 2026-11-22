@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-11-22T17:46:49.605Z",
+  "ranAt": "2026-11-22T18:00:21.271Z",
   "platform": {
     "platform": "darwin",
     "arch": "arm64",
@@ -9,7 +9,7 @@
     "path": "src-tauri/target/release/terminal"
   },
   "isolatedProfile": {
-    "path": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-e2e-15437-1795369596301",
+    "path": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-e2e-26241-1795370400311",
     "variables": [
       "HOME",
       "USERPROFILE",
@@ -23,7 +23,7 @@
   },
   "sshFixture": {
     "started": true,
-    "port": 59672
+    "port": 60922
   },
   "exitCode": 0,
   "verdict": "PASS"

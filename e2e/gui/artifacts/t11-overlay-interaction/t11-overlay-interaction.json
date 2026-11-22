@@ -1,0 +1,198 @@
+{
+  "case": "t11-overlay-interaction",
+  "verdict": "PARTIAL",
+  "recordedAt": "2026-11-22T18:00:20.303Z",
+  "platform": {
+    "platform": "darwin",
+    "release": "24.6.0",
+    "arch": "arm64",
+    "node": "v24.16.0",
+    "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
+  },
+  "source": {
+    "sha": "6a97ce7dd9537acca38564e58fe501d44e9db5a4",
+    "branch": "fix/tn-sftp-gui-closure",
+    "dirty": true
+  },
+  "binary": {
+    "path": "src-tauri/target/release/terminal",
+    "sha256": "74e64971a966e26005fbe75f10778543fc11d179065e02789e31f85aad4a6081",
+    "bytes": 37208432
+  },
+  "window": null,
+  "terminal": null,
+  "command": null,
+  "screenshot": "e2e/gui/artifacts/t11-overlay-interaction/screens/t11-overlay-interaction-1795370420195.png",
+  "notes": "NOT_RUN tab order: Tab performs no default action in this WebView under WebDriver (focus moves when set programmatically, so the trap is not holding it), which makes the tab order unobservable here\nDialog closed by an overlay click, as designed\nAlertDialog survived an overlay click, as designed\nterminal centre resolves to \"canvas[]\"\nNOT_RUN Select / Sheet / Context Menu surfaced from the dock (this build renders the SFTP panes, which use Dialog, AlertDialog and DropdownMenu; the other three are driven from Settings and the terminal context menu, covered by their component tests rather than here)\nNOT_RUN physical mouse and keyboard — WebDriver input only goes through the WebView",
+  "extra": {
+    "measurements": {
+      "failures": [],
+      "dialog": {
+        "opened": {
+          "fullScreenLayers": [
+            {
+              "cls": "fixed inset-0 z-[200] bg-black/50",
+              "opacity": "1",
+              "pointerEvents": "auto"
+            }
+          ],
+          "openDialogs": 1,
+          "point": {
+            "x": 720,
+            "y": 450
+          },
+          "terminalReachable": false,
+          "top": "input[sftp-mkdir-input]"
+        },
+        "focusAtOpen": {
+          "activeInDialog": true,
+          "activeTag": "input",
+          "activeTestId": "sftp-mkdir-input"
+        },
+        "focusAfterTab": {
+          "before": {
+            "activeInDialog": true,
+            "activeTag": "input",
+            "activeTestId": "sftp-mkdir-input"
+          },
+          "afterBrowserKeys": {
+            "activeInDialog": true,
+            "activeTag": "input",
+            "activeTestId": "sftp-mkdir-input"
+          },
+          "tabbables": [
+            {
+              "tabIndex": 0,
+              "tag": "input",
+              "testid": "sftp-mkdir-input"
+            },
+            {
+              "tabIndex": 0,
+              "tag": "button",
+              "testid": null
+            },
+            {
+              "tabIndex": 0,
+              "tag": "button",
+              "testid": null
+            }
+          ],
+          "defaultActionProbe": {
+            "landedOn": null,
+            "movedByFocusCall": true
+          },
+          "movedByTab": false
+        },
+        "afterEscape": {
+          "fullScreenLayers": [],
+          "openDialogs": 0,
+          "point": {
+            "x": 720,
+            "y": 450
+          },
+          "terminalReachable": false,
+          "top": "canvas[]"
+        },
+        "overlayClick": {
+          "fullScreenLayers": [],
+          "openDialogs": 0,
+          "point": {
+            "x": 720,
+            "y": 450
+          },
+          "terminalReachable": false,
+          "top": "canvas[]"
+        }
+      },
+      "alertDialog": {
+        "opened": {
+          "fullScreenLayers": [
+            {
+              "cls": "fixed inset-0 z-[210] bg-black/50",
+              "opacity": "1",
+              "pointerEvents": "auto"
+            }
+          ],
+          "openDialogs": 1,
+          "point": {
+            "x": 720,
+            "y": 450
+          },
+          "terminalReachable": false,
+          "top": "p[]"
+        },
+        "afterOverlayClick": {
+          "fullScreenLayers": [
+            {
+              "cls": "fixed inset-0 z-[210] bg-black/50",
+              "opacity": "1",
+              "pointerEvents": "auto"
+            }
+          ],
+          "openDialogs": 1,
+          "point": {
+            "x": 720,
+            "y": 450
+          },
+          "terminalReachable": false,
+          "top": "p[]"
+        },
+        "afterEscape": {
+          "fullScreenLayers": [],
+          "openDialogs": 0,
+          "point": {
+            "x": 720,
+            "y": 450
+          },
+          "terminalReachable": false,
+          "top": "canvas[]"
+        }
+      },
+      "reopen": {
+        "fullScreenLayers": [
+          {
+            "cls": "fixed inset-0 z-[200] bg-black/50",
+            "opacity": "1",
+            "pointerEvents": "auto"
+          }
+        ],
+        "openDialogs": 1,
+        "point": {
+          "x": 720,
+          "y": 450
+        },
+        "terminalReachable": false,
+        "top": "input[sftp-mkdir-input]",
+        "overlayCount": 1
+      },
+      "finalState": {
+        "fullScreenLayers": [],
+        "openDialogs": 0,
+        "point": {
+          "x": 720,
+          "y": 450
+        },
+        "terminalReachable": false,
+        "top": "canvas[]"
+      }
+    },
+    "notRunCount": 3,
+    "gaps": [
+      {
+        "id": "overlays-not-reachable-from-dock",
+        "reason": "Select, Sheet and Context Menu are not mounted by the SFTP dock; this case covers the three that are",
+        "covers": 1
+      },
+      {
+        "id": "tab-order-not-observable",
+        "reason": "the WebView under WebDriver performs no default Tab action; focus stays inside the dialog, but the tab order itself cannot be observed here",
+        "covers": 1
+      },
+      {
+        "id": "physical-input-not-available",
+        "reason": "WebDriver input goes through the WebView input path, which is what a keystroke does, but it is not a physical device",
+        "covers": 1
+      }
+    ]
+  }
+}
