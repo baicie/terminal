@@ -184,6 +184,41 @@ export const config = {
     process.__guiE2ELastError = { title: test?.title ?? null, text: text || '(empty)' }
   },
 
+  /*
+   * ## Why every case spent 18 s inside `element.click()`
+   *
+   * Measured on e2e-03: `waitForClickable` resolved in 11–13 ms and the click that
+   * followed took **18 010 ms**, four times in one case. The run logged **69** lines
+   * of `Tauri core.invoke not available after 5s timeout` — 5 s each, in front of
+   * `$`, `$$`, `findElement` and `elementClick`.
+   *
+   * The cause is `@wdio/tauri-service`'s `beforeCommand`: for those commands it calls
+   * `ensureActiveWindowFocus`, which asks the app for its window states over
+   * `core.invoke`. This build deliberately does **not** install `tauri-plugin-wdio`
+   * (it would need `withGlobalTauri` and `wdio:allow-execute`, both forbidden in a
+   * product build — see docs/testing/native-gui-e2e.md), so that invoke is answered by
+   * nothing and every check waits out its 5 s timeout.
+   *
+   * The service already has an escape hatch: `ensureActiveWindowFocus` returns
+   * immediately once the session is marked as a user-chosen window
+   * (`userSwitchedWindowCache`). `switchToWindow` sets it. One call here costs a
+   * single timeout and removes one per command for the rest of the session.
+   *
+   * What this does not change: no `waitUntil` timeout, no assertion, no click target.
+   * The budget a case spends on the *product* is unchanged; only the budget it was
+   * wasting on a call this build cannot answer goes away.
+   */
+  before: async function () {
+    try {
+      const handles = await browser.getWindowHandles()
+      if (handles.length > 0) await browser.switchToWindow(handles[0])
+    } catch (error) {
+      // Not fatal: the cost is the 5 s timeout per command returning, which makes the
+      // suite slow rather than wrong.
+      console.warn('[gui-e2e] could not pre-set the active window:', String(error).slice(0, 200))
+    }
+  },
+
   beforeSuite: async function () {
     const reset = await browser.execute(() => {
       const report = { closedDock: false, pathname: window.location.pathname }
