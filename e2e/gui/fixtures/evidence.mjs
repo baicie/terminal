@@ -36,6 +36,37 @@ export function redact(text) {
     .replace(/\b(sk|pk|ghp|gho|github_pat)_[A-Za-z0-9_]{16,}\b/g, '[redacted token]')
     .replace(/\bBearer\s+[A-Za-z0-9._-]{20,}/g, 'Bearer [redacted]')
     .replace(/(password|passphrase|secret|token)\s*[:=]\s*\S+/gi, '$1=[redacted]')
+    /*
+     * The developer's own account, in the two shapes it reaches evidence.
+     *
+     * Measured in e2e-05's notes: the PTY echoes the shell prompt, which carries
+     * `user@machine`; and Rust-side paths under `/Users/<name>/…` appear in startup
+     * traces. Neither is a credential, but a public repository is not the place to
+     * publish who ran the suite on which laptop.
+     *
+     * Anchored to those shapes on purpose: `@` alone is far too common (mail
+     * addresses in prose, `user@host` arguments that are product data) to rewrite
+     * globally, and a rule that mangled ordinary text would make the evidence
+     * unreadable for the reader it exists for.
+     */
+    .replace(
+      // The host part must NOT look like a domain: a prompt's host is a machine name
+      // (`macbook-pro`, `RUNNER~1`), while an address has a dot-suffixed TLD. Requiring
+      // "no dot after the first segment" keeps `dev@example.com` intact.
+      // The left boundary is "start, whitespace, or a JSON/quote delimiter": notes
+      // carry PTY output inside an escaped JSON string, where the prompt is preceded
+      // by `\"` rather than a space (measured — the first version of this rule missed
+      // it for exactly that reason).
+      // The boundary set includes `\\` as well: multi-line PTY output reaches the record
+      // with literal `\n` sequences, so the prompt after a newline is preceded by a
+      // backslash, not whitespace. Both shapes were measured; the first rule missed the
+      // second and left one running prompt in e2e-01's measurements.
+      /(^|[\s"':=\\])([A-Za-z0-9._-]+)@([A-Za-z0-9-]+)(?=\s)/g,
+      '$1[user]@[host]',
+    )
+    .replace(/\/Users\/[A-Za-z0-9._-]+\//g, '/Users/[user]/')
+    .replace(/\/home\/[A-Za-z0-9._-]+\//g, '/home/[user]/')
+    .replace(/C:\\Users\\[A-Za-z0-9._-]+\\/gi, 'C:\\Users\\[user]\\')
 }
 
 function git(args) {
@@ -184,10 +215,19 @@ export async function writeEvidence(
     source: sourceInfo(),
     binary: binaryInfo(),
     window: window ?? null,
-    terminal: terminal ?? null,
-    // Raw command buffer evidence: when a case fails only in CI, the buffer tail
-    // is what makes the difference diagnosable without a re-run.
-    command: command ?? null,
+    /*
+     * `terminal` carries the PTY snapshot — the one field where a shell prompt is the
+     * *subject* of the measurement rather than incidental output. It went through
+     * neither `redact` nor `redactDeep` (measured: e2e-01's `bufferTail` held a real
+     * `user@machine` while every other field was clean), so the rule that covers notes
+     * and measurements was silently not covering this one.
+     */
+    terminal: terminal ? redactDeep(terminal) : null,
+    // Raw command buffer evidence: when a case fails only in CI, the buffer tail is
+    // what makes the difference diagnosable without a re-run. It is also a PTY
+    // snapshot — the same `user@machine` exposure as `terminal`, and it was passing
+    // through untouched for the same reason.
+    command: command ? redactDeep(command) : null,
     screenshot,
     notes: notes ? redact(notes) : undefined,
     error: error ? redact(error) : undefined,
