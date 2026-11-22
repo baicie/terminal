@@ -18,6 +18,7 @@
  */
 import { useTransferQueue } from '@/store/transfer-queue'
 import { claimSession } from './sftp-session-claim'
+import { changedSince, generationOf } from './sftp-transfer-path-generation'
 import type { TransferArgs } from './sftp-transfer-types'
 
 /**
@@ -111,6 +112,25 @@ export function handOffVerification(
     return
   }
 
+  /*
+   * ## Snapshot the path's generation before reading it
+   *
+   * The check reads a **remote path**, not "the bytes I wrote". Two transfers onto one
+   * path therefore race: A finishes, A starts hashing, B overwrites, and A's read
+   * returns B's content. Measured: A reported `verified` after its path was overwritten
+   * by B — a transfer certifying itself with a file that no longer exists anywhere.
+   *
+   * The generation is bumped at every `done` for that (session, path). Taking it here
+   * and re-reading it after the hash answers tells us whether the path changed while we
+   * were reading it. When it did, the honest answer is `indeterminate`: the app no
+   * longer knows whose bytes it hashed, and neither `verified` nor `mismatch` would be
+   * a statement about this transfer.
+   *
+   * The snapshot is taken *before* the verifier runs, so a change that happened between
+   * `done` and this point is caught too.
+   */
+  const generation = generationOf(args)
+
   const task = verifier(id, args)
   // Not verifying this transfer: nothing to hold the session for.
   if (task === null) {
@@ -123,6 +143,22 @@ export function handOffVerification(
     .catch((error: unknown) => {
       // A verifier that throws must not leave the row reading "computing" forever.
       failChecksum(id, error instanceof Error ? error.message : String(error))
+    })
+    .then(() => {
+      /*
+       * The path changed under us? Then the verdict we just computed is about another
+       * transfer's bytes. Overwrite it with an `indeterminate` reason rather than
+       * leaving a claim we cannot support — including the `verified` case, which is the
+       * one that does damage.
+       */
+      if (changedSince(args, generation)) {
+        useTransferQueue.getState().setChecksumResult(id, 'remote', {
+          success: false,
+          error:
+            'The file was overwritten by another transfer while its integrity was ' +
+            'being checked, so this result is about different bytes.',
+        })
+      }
     })
     .finally(() => {
       verifyingIds.delete(id)

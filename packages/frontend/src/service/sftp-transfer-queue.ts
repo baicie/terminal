@@ -28,6 +28,7 @@ import {
 } from '@/store/transfer-queue'
 import { notify } from '@/service/notifications'
 import { handOffVerification, verifyingTransferIds } from './sftp-transfer-verify'
+import { noteWrite } from './sftp-transfer-path-generation'
 import type { TransferArgs } from './sftp-transfer-types'
 
 export const MAX_CONCURRENT = 3
@@ -149,7 +150,12 @@ export function completeTransfer(
   dispatch()
   // Verification starts only for the transition that actually completed: a
   // duplicate `done` must not hash the remote file a second time.
-  if (applied && args) handOffVerification(id, args)
+  if (applied && args) {
+    // The path was written: bump its generation *before* the check snapshots it, so a
+    // second write during the check is visible as a changed generation.
+    noteWrite(args)
+    handOffVerification(id, args)
+  }
   return applied
 }
 
