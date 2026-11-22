@@ -285,3 +285,35 @@ test('every field of a written record is redacted, not just notes and extra', as
   )
   assert.match(raw, /echo marker/, 'the command itself must survive')
 })
+
+/**
+ * `dirty` 必须只在**源码**变化时为真 —— 四种 porcelain 前缀都要认出来。
+ *
+ * ## 缺陷
+ *
+ * `dirtySourceLines` 用 `line.slice(3).startsWith('e2e/gui/artifacts')` 判断。三种形
+ * 式里两种是错的：
+ *
+ *     ` M e2e/…`   未暂存修改（空格+状态+空格+路径）→ slice(3) 正确
+ *     `M  e2e/…`   已暂存修改（状态+空格+空格+路径）→ slice(3) 正确
+ *     `M e2e/…`    已暂存、另一列为空（状态+空格+路径）→ slice(3) **多切一个字符**
+ *     `?? e2e/…`   未跟踪 → 由 startsWith 侥幸命中
+ *
+ * 第三种的后果实测过：一次只改了证据文件的运行报 `dirty: true`，而这个字段的含义是
+ * 「这个二进制能否从记录的 SHA 重建」—— 一条永远为真的脏标记描述不了任何东西。
+ */
+test('every porcelain status shape excludes the evidence directory', () => {
+  for (const line of [
+    'M e2e/gui/artifacts/e2e-01/e2e-01.json',
+    ' M e2e/gui/artifacts/e2e-01/e2e-01.json',
+    'M  e2e/gui/artifacts/e2e-01/e2e-01.json',
+    '?? e2e/gui/artifacts/e2e-01/screens/new.png',
+    '?? e2e/gui/artifacts',
+  ]) {
+    assert.deepEqual(dirtySourceLines(line), [], `should be ignored: ${line}`)
+  }
+  // …and a real source change still counts, in every shape.
+  for (const line of ['M src/app.ts', ' M src/app.ts', 'M  src/app.ts', '?? scripts/x.mjs']) {
+    assert.equal(dirtySourceLines(line).length, 1, `should be kept: ${line}`)
+  }
+})

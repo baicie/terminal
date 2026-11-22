@@ -128,8 +128,40 @@ export function dirtySourceLines(porcelain) {
     .split('\n')
     .map(line => line.trimEnd())
     .filter(Boolean)
-    // `XY <path>` — two status characters, one space, then the path.
-    .filter(line => !line.slice(3).startsWith('e2e/gui/artifacts'))
+    /*
+     * `XY <path>` — two status columns, one space, then the path.
+     *
+     * `slice(3)` assumed exactly that shape and was off by one for a **staged** change:
+     * `git status --porcelain` prints `M ` (status, space) for a staged modification and
+     * ` M` (space, status) for an unstaged one, so the same file appears as
+     * `M e2e/gui/artifacts/...` in one case and ` M e2e/gui/artifacts/...` in the other.
+     * With `slice(3)` the first kept its path intact minus one character and stopped
+     * matching the prefix, so a run that merely had staged evidence reported
+     * `dirty: true` — a flag that says nothing about reproducibility.
+     *
+     * Matching on "the part of the line that looks like a path" removes the assumption:
+     * status columns are never a path, and the rest is.
+     */
+    .filter(line => {
+      /*
+       * Find the path rather than assuming where it starts.
+       *
+       * Measured shapes from `git status --porcelain`:
+       *
+       *   ` M e2e/…`   unstaged modification  (space, status, space, path)
+       *   `M  e2e/…`   staged modification    (status, space, space, path)
+       *   `M e2e/…`    staged, other column empty — one space, then the path
+       *   `?? e2e/…`   untracked             (status, status, space, path)
+       *
+       * A fixed `slice(3)` is right for two of those and wrong for the other two, which
+       * is how a run whose only change was staged evidence came out `dirty: true`. The
+       * status prefix never contains `/`, so the path is the substring that does.
+       */
+      // Skip the two status columns, then any spaces. Slicing by 2 (not 3) is what the
+      // four measured shapes have in common.
+      const path = line.slice(2).trimStart()
+      return !path.startsWith('e2e/gui/artifacts')
+    })
 }
 
 export function sourceInfo() {
