@@ -1,12 +1,22 @@
 /**
  * 完整性结论的渲染。
  *
- * 「传输完成」和「两端一致」是两件不同的事，而且都不是纯颜色能表达的事实：
- * 读屏软件看不到颜色，灰掉的图标与成功的图标在没有文本时是同一个东西。所以每一
- * 种结论都有一句自己的话，并且带 `data-integrity` 供测试断言**具体是哪一种**，
- * 而不是断言「有个图标」。
+ * 「传输完成」和「两端一致」是两件不同的事，而且都不是纯颜色能表达的事实：读屏
+ * 软件看不到颜色，灰掉的图标与成功的图标在没有文本时是同一个东西。所以每一种结论
+ * 都有一句自己的话，并且带 `data-integrity` 供测试断言**具体是哪一种**。
+ *
+ * ## 为什么是一张表而不是五个分支
+ *
+ * 五个 `if` 各自写一遍同一段 JSX（同样的 class、同样的 `data-testid`），既容易
+ * 在某一个分支里漏掉属性，也会把同一段结构重复五次进包里。表驱动只描述**每种结论
+ * 的差异**（文案、颜色、图标），结构只写一次。
+ *
+ * 五种结论的语义见 `store/transfer-checksum-verdict.ts`；这里只负责把它们画出来。
+ * 特别地，`indeterminate` 永远不写成「不一致」——把「算不出来」显示成「不一样」，
+ * 等于把服务器错误说成文件损坏。
  */
 import { AlertCircle, Clock, ShieldCheck, ShieldX } from 'lucide-react'
+import type { ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TransferRecord } from '@/store/transfer-queue'
 import {
@@ -14,107 +24,74 @@ import {
   checksumVerdict,
 } from '@/store/transfer-checksum-verdict'
 
-/**
- * 完整性结论。
- *
- * 「已完成」与「已验证一致」是两件事，这里让它们各自可见：
- *
- * - `verified`：两端 SHA-256 相等，说得出口的结论；
- * - `mismatch`：两端都算出来了但不相等 —— **不删文件、不自动修复**，只报告；
- * - `indeterminate`：某一侧算不出来（远端权限、连接断开）。这**不是**「不一致」，
- *   把它显示成不一致等于把服务器错误说成文件损坏；
- * - `computing`：还在算；
- * - `unchecked`：没有尝试过（例如传输本身失败）。
- *
- * 每一行都有文本而不只有图标 —— 一个颜色不足以让用户分辨「已校验」与「未校验」，
- * 也对读屏软件不可见。
- */
+/** Per-verdict presentation. The only thing that differs between the five cases. */
+const PRESENTATION: Record<
+  string,
+  { icon: ComponentType<{ className?: string }>; tone: string }
+> = {
+  verified: { icon: ShieldCheck, tone: 'text-success' },
+  mismatch: { icon: ShieldX, tone: 'text-destructive' },
+  indeterminate: { icon: AlertCircle, tone: 'text-muted-foreground' },
+  computing: { icon: Clock, tone: 'text-muted-foreground' },
+  unchecked: { icon: ShieldX, tone: 'text-muted-foreground' },
+}
+
 export const IntegrityLine: React.FC<{ record: TransferRecord }> = ({
   record,
 }) => {
   const { t } = useTranslation()
-  const { verdict, failedSide } = checksumVerdict(record)
+  const { verdict, failedSide, error } = checksumVerdict(record)
 
-  if (verdict === 'unchecked') {
-    // A failed or cancelled transfer: nothing was attempted, nothing to claim.
-    if (record.status !== 'done') return null
-    return (
-      <div
-        className="flex items-center gap-1 text-[10px] text-muted-foreground"
-        data-testid="transfer-integrity"
-        data-integrity="unchecked"
-        aria-label={t('sftp.unverified')}
-      >
-        <ShieldX className="size-3" aria-hidden="true" />
-        <span>{t('sftp.unverified')}</span>
-      </div>
-    )
+  // A transfer that never completed has nothing to say about integrity.
+  if (verdict === 'unchecked' && record.status !== 'done') return null
+
+  let text: string
+  switch (verdict) {
+    case 'verified':
+      text = t('sftp.verified')
+      break
+    case 'mismatch':
+      text = t('sftp.mismatch')
+      break
+    case 'computing': {
+      const percent = checksumPercent(record)
+      text =
+        percent > 0
+          ? t('sftp.verifyingProgress', { percent })
+          : t('sftp.verifying')
+      break
+    }
+    case 'indeterminate': {
+      const side = failedSide
+        ? t(
+            failedSide === 'local'
+              ? 'sftp.checksumSide.local'
+              : 'sftp.checksumSide.remote',
+          )
+        : null
+      text = side
+        ? t('sftp.verificationFailedSide', { side })
+        : t('sftp.verificationFailed')
+      break
+    }
+    default:
+      text = t('sftp.unverified')
   }
 
-  if (verdict === 'computing') {
-    const percent = checksumPercent(record)
-    return (
-      <div
-        className="flex items-center gap-1 text-[10px] text-muted-foreground"
-        data-testid="transfer-integrity"
-        data-integrity="computing"
-        aria-label={t('sftp.verifying')}
-      >
-        <Clock className="size-3" aria-hidden="true" />
-        <span>
-          {percent > 0
-            ? t('sftp.verifyingProgress', { percent })
-            : t('sftp.verifying')}
-        </span>
-      </div>
-    )
-  }
+  const { icon: Icon, tone } = PRESENTATION[verdict] ?? PRESENTATION.unchecked
 
-  if (verdict === 'verified') {
-    return (
-      <div
-        className="flex items-center gap-1 text-[10px] text-success"
-        data-testid="transfer-integrity"
-        data-integrity="verified"
-        aria-label={t('sftp.verified')}
-      >
-        <ShieldCheck className="size-3" aria-hidden="true" />
-        <span>{t('sftp.verified')}</span>
-      </div>
-    )
-  }
-
-  if (verdict === 'mismatch') {
-    return (
-      <div
-        className="flex items-center gap-1 text-[10px] text-destructive"
-        data-testid="transfer-integrity"
-        data-integrity="mismatch"
-        role="alert"
-      >
-        <ShieldX className="size-3" aria-hidden="true" />
-        <span>{t('sftp.mismatch')}</span>
-      </div>
-    )
-  }
-
-  // indeterminate: the check could not run. Never worded as a mismatch.
-  const sideLabel = failedSide
-    ? t(failedSide === 'local' ? 'sftp.checksumSide.local' : 'sftp.checksumSide.remote')
-    : null
   return (
     <div
-      className="flex items-center gap-1 text-[10px] text-muted-foreground"
+      className={`flex items-center gap-1 text-[10px] ${tone}`}
       data-testid="transfer-integrity"
-      data-integrity="indeterminate"
-      title={checksumVerdict(record).error ?? undefined}
+      data-integrity={verdict}
+      // A mismatch is announced, not merely coloured.
+      role={verdict === 'mismatch' ? 'alert' : undefined}
+      title={error ?? undefined}
+      aria-label={text}
     >
-      <AlertCircle className="size-3" aria-hidden="true" />
-      <span>
-        {sideLabel
-          ? t('sftp.verificationFailedSide', { side: sideLabel })
-          : t('sftp.verificationFailed')}
-      </span>
+      <Icon className="size-3" aria-hidden="true" />
+      <span>{text}</span>
     </div>
   )
 }

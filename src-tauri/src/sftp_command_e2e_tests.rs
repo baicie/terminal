@@ -462,7 +462,7 @@ async fn reading_the_remote_file_right_after_an_upload_completes() {
     let remote = crate::sftp_upload::SftpRemote { session: &session };
     let upload = crate::sftp_upload::staged_upload(
         &remote,
-        &std::path::Path::new(&write_local(name, &bytes).await),
+        std::path::Path::new(&write_local(name, &bytes).await),
         &path,
         |_, _| {},
         || false,
