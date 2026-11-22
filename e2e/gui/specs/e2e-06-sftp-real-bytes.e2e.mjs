@@ -120,21 +120,47 @@ async function transferRows() {
 }
 
 /** Wait until the queue has a settled row matching `name`. */
-async function waitForTransfer(name, timeout = 90_000) {
+/**
+ * Wait until **this** transfer's row is terminal.
+ *
+ * ## The false settle measured on the Windows runner
+ *
+ * The first version searched the whole document:
+ *
+ *     const text = document.body.textContent
+ *     done: text.includes('Completed') || text.includes('已完成') || ...
+ *
+ * With an upload and a download in the panel at once, the *upload's* "Completed"
+ * satisfied the predicate for the *download's* name, which was still at
+ * `0 B / 2.0 MB Transferring`. The download case then asserted on a file the product
+ * had not written yet and failed with "the product reported success but wrote no
+ * file" — a correct complaint about a wrong measurement, on Windows only because that
+ * run happened to reach this case with both rows present.
+ *
+ * So the row is located first (`transfer-row` contains the name), and *that* row's
+ * own text decides. A row's status word is inside the row, not anywhere in the page.
+ */
+async function waitForTransfer(name, timeout = 120_000) {
   return browser.waitUntil(
     async () => {
       const state = await browser.execute(target => {
-        const text = document.body.textContent ?? ''
+        const rows = Array.from(
+          document.querySelectorAll('[data-testid="transfer-row"]'),
+        )
+        const row = rows.find(candidate =>
+          (candidate.textContent ?? '').includes(target),
+        )
+        if (!row) return { found: false }
+        const text = row.textContent ?? ''
+        const terminal = row.getAttribute('data-transfer-status')
         return {
-          mentions: text.includes(target),
-          done:
-            text.includes('Completed') ||
-            text.includes('已完成') ||
-            text.includes('Terminé'),
-          failed: text.includes('failed') || text.includes('失败'),
+          found: true,
+          terminal,
+          done: terminal === 'done',
+          failed: terminal === 'error' || text.includes('failed') || text.includes('失败'),
         }
       }, name)
-      return state.mentions && (state.done || state.failed)
+      return state.found && (state.done || state.failed)
     },
     { timeout, interval: 500, timeoutMsg: `transfer ${name} never settled` },
   ).catch(() => false)
@@ -672,8 +698,30 @@ describe('SFTP — real bytes through the product UI', () => {
     }
     measurements.download.queue = await transferRows()
 
-    if (!existsSync(destination)) {
-      throw new Error(`the product reported success but wrote no file at ${destination}`)
+    /*
+     * The row said `done`; give the filesystem a moment to reflect it.
+     *
+     * `done` is emitted by Rust after the staged file is renamed into place, so the
+     * file is expected to exist by now — but asserting immediately made this case
+     * fail on Windows with "reported success but wrote no file", where the *wait* was
+     * the actual defect (it had settled on the upload's row). Keep the short wait so a
+     * genuinely missing file still fails, and record how long it took so a future
+     * reader can tell "slow" from "absent".
+     */
+    const appeared = await browser
+      .waitUntil(async () => existsSync(destination), {
+        timeout: 15_000,
+        interval: 250,
+        timeoutMsg: 'the downloaded file never appeared',
+      })
+      .catch(() => false)
+    measurements.download.appeared = appeared
+    if (!appeared) {
+      const queue = await transferRows()
+      throw new Error(
+        `the product reported success but wrote no file at ${destination} ` +
+          `(queue: ${JSON.stringify(queue).slice(0, 300)})`,
+      )
     }
     const written = readFileSync(destination)
     measurements.download.writtenBytes = written.length

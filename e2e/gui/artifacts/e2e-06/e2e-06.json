@@ -1,7 +1,7 @@
 {
   "case": "e2e-06",
   "verdict": "PARTIAL",
-  "recordedAt": "2026-11-22T13:08:21.047Z",
+  "recordedAt": "2026-11-22T13:52:44.336Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
@@ -10,7 +10,7 @@
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "800dd6770358c59d5e74e10ec5c3ad23ce8c2809",
+    "sha": "65454a1df6ccd9700333ebaf6be3c4cbe9330197",
     "branch": "feat/t01-t36-sftp-integrity-rc",
     "dirty": true
   },
@@ -22,12 +22,12 @@
   "window": null,
   "terminal": null,
   "command": null,
-  "screenshot": "e2e/gui/artifacts/e2e-06/screens/e2e-06-1795352900763.png",
-  "notes": "preconditions {\"remoteRoot\":\"/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-IEDOIW/remote\",\"guard\":{\"ok\":true,\"reason\":\"the guard rejects both a relative and an absolute escape\"},\"pickerMarker\":true,\"sshFixture\":true}\nclicked the product upload control\ninvoked the product download action for the seeded file\nNOT_RUN upload through the *native* dialog (this case substitutes the path source; the operating system dialog itself is not driven)\nNOT_RUN download to a path chosen in the native save panel (same substitution)\nNOT_RUN transfers over a flaky or high-latency link (the fixture is loopback)\nNOT_RUN concurrent uploads exceeding MAX_CONCURRENT through the UI (covered by sftp-transfer-queue.test.ts, not by real bytes in a WebView)",
+  "screenshot": "e2e/gui/artifacts/e2e-06/screens/e2e-06-1795355564034.png",
+  "notes": "preconditions {\"remoteRoot\":\"/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-C5Qe5a/remote\",\"guard\":{\"ok\":true,\"reason\":\"the guard rejects both a relative and an absolute escape\"},\"pickerMarker\":true,\"sshFixture\":true}\nclicked the product upload control\ninvoked the product download action for the seeded file\nNOT_RUN upload through the *native* dialog (this case substitutes the path source; the operating system dialog itself is not driven)\nNOT_RUN download to a path chosen in the native save panel (same substitution)\nNOT_RUN transfers over a flaky or high-latency link (the fixture is loopback)\nNOT_RUN concurrent uploads exceeding MAX_CONCURRENT through the UI (covered by sftp-transfer-queue.test.ts, not by real bytes in a WebView)",
   "extra": {
     "measurements": {
       "preconditions": {
-        "remoteRoot": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-IEDOIW/remote",
+        "remoteRoot": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-C5Qe5a/remote",
         "guard": {
           "ok": true,
           "reason": "the guard rejects both a relative and an absolute escape"
@@ -50,14 +50,14 @@
         "entry": {
           "isDirectory": false,
           "size": 3145728,
-          "mtimeMs": 1795352828626.4849,
+          "mtimeMs": 1795355491723.3975,
           "realSize": 3145728
         },
         "matches": true
       },
       "integritySamples": [
         {
-          "ms": 14,
+          "ms": 12,
           "verdicts": [
             "verified"
           ],
@@ -77,15 +77,16 @@
       "download": {
         "settled": true,
         "sourceSha256": "edaabdbd9cc3c0b361f40d6154dcef0b02cb1b0bb0a80f5e3738f910eb03deac",
-        "destination": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/e2e-06-9qruwA/e2e-06-download.bin",
+        "destination": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/e2e-06-VWBknL/e2e-06-download.bin",
         "queue": {
           "integrity": [
-            "computing",
+            "verified",
             "verified"
           ],
           "panelPresent": true,
-          "text": "Transfers · 2[data-radix-scroll-area-viewport]{scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch;}[data-radix-scroll-area-viewport]::-webkit-scrollbar{display:none}e2e-06-download.bin2.0 MB / 2.0 MBCompletedChecking integrity…e2e-06-upload.bin3.0 MB / 3.0 MBCompletedVerified · SHA-256 matchesClear finishedClose"
+          "text": "Transfers · 2[data-radix-scroll-area-viewport]{scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch;}[data-radix-scroll-area-viewport]::-webkit-scrollbar{display:none}e2e-06-download.bin2.0 MB / 2.0 MBCompletedVerified · SHA-256 matchese2e-06-upload.bin3.0 MB / 3.0 MBCompletedVerified · SHA-256 matchesClear finishedClose"
         },
+        "appeared": true,
         "writtenBytes": 2097152,
         "writtenSha256": "edaabdbd9cc3c0b361f40d6154dcef0b02cb1b0bb0a80f5e3738f910eb03deac",
         "serverSize": 2097152,
