@@ -165,6 +165,38 @@ async function main() {
     }
 
     console.log(`sshd listening on 127.0.0.1:${port}; running the command-level tests`)
+
+    /*
+     * ## Optional shaping proxy
+     *
+     * `T16_SHAPING` names a scenario in `sftp-shaping-proxy.mjs`'s vocabulary
+     * (`slow-upload`, `cut-upload`, …). When set, the tests connect through a user-space
+     * proxy that adds delay/rate limits or resets the connection, so the product's
+     * behaviour on a bad link is exercised against the **same** real sshd.
+     *
+     * The fixture's own port stays private to this process; only the proxy's port is
+     * exported to the tests. A reader can therefore tell "shaped" from "direct" by which
+     * port the tests were given.
+     */
+    let proxyPort = port
+    let proxy = null
+    if (process.env.T16_SHAPING) {
+      const { startShapingProxy, SHAPING_SCENARIOS } = await import('../sftp-shaping-proxy.mjs')
+      const shaping = SHAPING_SCENARIOS[process.env.T16_SHAPING]
+      if (!shaping) {
+        throw new Error(
+          `unknown T16_SHAPING "${process.env.T16_SHAPING}"; known: ` +
+            Object.keys(SHAPING_SCENARIOS).join(', '),
+        )
+      }
+      proxy = await startShapingProxy({ targetPort: port, ...shaping })
+      proxyPort = proxy.port
+      console.log(
+        `shaping "${process.env.T16_SHAPING}" on 127.0.0.1:${proxyPort}: ` +
+          JSON.stringify(shaping),
+      )
+    }
+
     const { stdout, stderr } = await execFileAsync(
       'cargo',
       [
@@ -181,7 +213,7 @@ async function main() {
         maxBuffer: 16 * 1024 * 1024,
         env: {
           ...process.env,
-          SFTP_E2E_PORT: String(port),
+          SFTP_E2E_PORT: String(proxyPort),
           SFTP_E2E_USER: os.userInfo().username,
           SFTP_E2E_KEY: paths.userKey,
           SFTP_E2E_DIR: remoteDirectory,
@@ -213,6 +245,7 @@ async function main() {
     console.error(error.stderr ?? '')
     console.error(`SFTP command-level: FAIL — ${error.message}`)
   } finally {
+    if (typeof proxy !== 'undefined' && proxy) await proxy.close()
     if (daemon !== null && daemon.exitCode === null) {
       daemon.kill('SIGTERM')
       await new Promise(resolve => globalThis.setTimeout(resolve, 200))
