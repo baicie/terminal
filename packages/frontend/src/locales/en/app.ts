@@ -184,6 +184,18 @@ export default {
   'sftp.transferErrors_other': '{{count}} failed',
   'sftp.transferEta': '{{eta}} left',
   'sftp.transferDone': 'Completed',
+  // Integrity check, shown after the bytes are done. "Completed" and "verified" are
+  // deliberately different sentences: one is about writing, the other about both
+  // ends agreeing on the bytes.
+  'sftp.verified': 'Verified · SHA-256 matches',
+  'sftp.verifying': 'Checking integrity…',
+  'sftp.verifyingProgress': 'Checking integrity… {{percent}}%',
+  'sftp.mismatch': 'Integrity mismatch · the two sides differ',
+  'sftp.verificationFailed': 'Integrity check could not run',
+  'sftp.verificationFailedSide': 'Integrity check could not run ({{side}})',
+  'sftp.unverified': 'Not verified',
+  'sftp.checksumSide.local': 'local file',
+  'sftp.checksumSide.remote': 'remote file',
   'sftp.clearFinished': 'Clear finished',
   'sftp.dropToUpload': 'Drop files to upload to {{path}}',
 

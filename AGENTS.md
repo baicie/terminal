@@ -1053,6 +1053,63 @@ typecheck、ESLint、source-size **638**、bundle **615.74 / 624 KB**；
 **停止线**：按任务书，本轮后停止新增 Phase 10.x 功能，下一阶段只做真实 macOS
 Daily Driver 验收。详见 `docs/phase10/18-phase10-4-1-pre-merge-review.md`。
 
+### SFTP Integrity & Core Daily Driver RC 🟡 PR #148（待合并）
+
+基线 `main = 11855e6`，分支 `feat/t01-t36-sftp-integrity-rc`。目标是把「机制存在但
+没人驱动」的三件事接上生产路径，并在真实环境里验证。
+
+**完整性与校验（T03–T06）**
+
+- `verifyChecksum` 此前**零调用方**：每次上传下载都以 `checksum: undefined` 结束，
+  「完成」与「两端一致」在 UI 上不可区分。现在 `done` 之后、槽位释放之后启动校验，
+  由 `sftp-transfer-verify.ts` 持有**本次传输自己的 `sessionId`** 取的 claim。
+- **真实 GUI 实测发现校验永久停在 85%**（e2e-06，30 秒 12 次采样同值）：两个 Rust
+  命令都发 `checksum-start`，后一个 `initChecksum` 把已完成的 `localStatus` 重置。
+  修复后 9 ms 完成。`initChecksum` 现在只初始化**事件命名的那一侧**。
+- `updateChecksumProgress` 不再覆盖传输的 `bytesDone`（曾是「100 MiB 传完显示
+  20 MB」）。判定改为 `checksumVerdict()` 派生五态，`matches?: boolean` 删除。
+
+**Host 与凭据（T10–T12）**
+
+- UPDATE 匹配 0 行时仍删除 Vault 旧版本 → 三条凭据路径都要求行真的命中。
+- `select()` 吞错被当成「没有这台主机」→ 凭据决策路径改用 `selectStrict`。
+- 两个并发 `updateHost` 都算出同一版本、互相覆盖 → `host-write-lock.ts` 按主机串行化。
+
+**认证错误结构化（T16）**
+
+新增 `authentication_rejected`（终态）/ `authentication_transport_failed`（可重试）/
+`host_key_rejected`（终态），按构造点分类；前端 `NON_RETRYABLE_KINDS` 按结构判定，
+不再读文案。
+
+**两个会让应用看起来死掉的缺陷**
+
+- 浮层可见性由 CSS 动画承担，而离屏 WebView 不推进动画时间轴：对话框存在、可聚焦、
+  `elementFromPoint` 命中它自己，但用户看不到点不到；关闭后全屏 overlay 永不卸载。
+  dialog / alert-dialog / dropdown-menu / context-menu / select / sheet 去掉动画类，
+  由 `overlay-animation-policy.test.ts` 守护（该守护第一版是空转的，已修）。
+- `generate_context!` 让 Cargo 看不见 `dist/`，只改前端的构建会发布上一版 UI；改用
+  `tauri-build` 的 `codegen` + `tauri_build_context!`。
+
+**真实环境证据**
+
+| 项 | 结果 |
+| --- | --- |
+| GUI 上传 3 MiB / 下载 2 MiB（e2e-06，新增） | 双侧 SHA-256 独立计算一致，产品 verdict `verified` |
+| Vault 应用链路 | 12/12 PASS，含重启持久化与「日志无秘密」 |
+| 真实 sshd SFTP（Rust） | 6/6，含「上传完成后立刻读同一 session」 |
+| fixture 路径守卫 | 10 项，修复前 4 红（symlink 可越界写真实目录） |
+
+**门禁**：前端 322 文件 / 2979 项、typecheck、ESLint 0 warning、source-size 768、
+Rust 456 + 6、`cargo fmt --check`、GUI 隔离 7/7、fixture 32/34（2 项平台跳过）。
+
+**未修**：dock 300px 下 refresh 不可点（已量到 `elementFromPoint` 被 div 遮挡）；
+e2e-03 的 mkdir/rename/delete 后续超时（服务器侧三步已确认真实发生）。两者**在改动前
+的 main 基线上同样失败**，不是本回归。
+
+**判定**：`DAILY_DRIVER_READY=NO`（七天真人使用未执行）、
+`SIGNED_PUBLIC_RELEASE_READY=NO`（签名/公证/updater 密钥 `BLOCKED_EXTERNAL`）。
+详见 `docs/design/terminal-next/21-sftp-integrity-rc-acceptance.md`。
+
 ### Credential Export / Import Preservation ✅ 已合入（PR #35 → `e710369`）
 
 独立于 Terminal Next 设计的一次修复：三条**现在就存在**的凭据引用关联丢失路径。

@@ -13,6 +13,7 @@ import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 import { cancelTransfer, removeTransfer } from '@/service/sftp-transfer'
 import type { TransferRecord } from '@/store/transfer-queue'
+import { IntegrityLine } from './transfer-integrity-line'
 
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
@@ -75,6 +76,10 @@ const TransferRow: React.FC<{ record: TransferRecord }> = ({ record }) => {
         'group flex flex-col gap-1 px-3 py-2 border-b border-border/40 last:border-b-0',
         record.status === 'error' && 'bg-destructive/5',
       )}
+      // The row itself, so a GUI case can count transfers without depending on which
+      // child happens to render a test id.
+      data-testid="transfer-row"
+      data-transfer-status={record.status}
     >
       <div className="flex items-center gap-2 min-w-0">
         {statusIcon}
@@ -159,7 +164,10 @@ const TransferRow: React.FC<{ record: TransferRecord }> = ({ record }) => {
         </div>
       )}
       {record.status === 'done' && (
-        <div className="text-[10px] text-success">{t('sftp.transferDone')}</div>
+        <>
+          <div className="text-[10px] text-success">{t('sftp.transferDone')}</div>
+          <IntegrityLine record={record} />
+        </>
       )}
       {record.status === 'queued' && (
         <div className="text-[10px] text-muted-foreground">

@@ -242,7 +242,22 @@ const budgets = {
   // accessibility fix for 0.13 KB.
   //
   // 656 KB leaves ~1.4 KB, comfortably more than the spread.
-  totalGzip: 656 * 1024,
+  //
+  // 657 KB (was 656 KB). The integrity verdict UI — `transfer-integrity-line.tsx`
+  // plus the five trilingual strings behind it — is the feature that spent the 1.4 KB
+  // and then 0.22 KB more. Measured on CI run 45019483911:
+  //
+  //   Total: raw=2.24 MB gzip=656.22 KB     against a 656.00 KB ceiling
+  //
+  // What this does NOT do is buy the space back by hiding the verdict behind a
+  // disclosure or by dropping its text for an icon. Both would undo the point: the
+  // distinction between "the bytes were written" and "both ends agree" is the thing
+  // that was missing, and a colour-only or collapsed indicator reintroduces it.
+  //
+  // 657 KB leaves ~0.8 KB — under the ±0.1 KB spread only just, which is stated
+  // rather than glossed: the next contributor should expect to justify their own gap
+  // instead of assuming headroom exists.
+  totalGzip: 657 * 1024,
   maxJavaScriptRaw: 500 * 1024,
 }
 

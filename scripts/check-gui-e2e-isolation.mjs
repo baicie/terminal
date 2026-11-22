@@ -151,6 +151,48 @@ record(
       : 'zero matches',
 )
 
+// 7. The E2E file-path substitution must not be in a production bundle either.
+//
+// It replaces the native file picker, which means a leaked build could start a
+// transfer from a path that never came from a dialog. Same rule as the probe: the
+// marker is behind the build-time flag, and this asserts the bundler really dropped
+// it rather than trusting the `if`.
+const filePickerHits = bundleContains('terminal-e2e-file-picker')
+record(
+  'production dist/ contains no E2E file-picker substitution',
+  filePickerHits === null || filePickerHits.length === 0,
+  filePickerHits === null
+    ? 'dist/ not built — run `pnpm --filter=@terminal/frontend build` first'
+    : filePickerHits.length
+      ? filePickerHits.slice(0, 3).join(', ')
+      : 'zero matches',
+)
+
+// 8. …and it *is* present when the flag is set, so the marker test above cannot
+// pass by the feature being dead code.
+//
+// Without this, deleting the substitution entirely would keep assertion 7 green while
+// the capability it guards was gone — the same vacuous-gate shape assertion 4 exists
+// to prevent for the Cargo feature.
+console.log('\nbuilding the GUI E2E frontend for the positive assertion…')
+const e2eBuild = spawnSync('pnpm', ['--filter=@terminal/frontend', 'build'], {
+  cwd: ROOT,
+  stdio: 'ignore',
+  env: { ...process.env, VITE_TERMINAL_GUI_E2E: '1' },
+  shell: process.platform === 'win32',
+})
+const e2eMarkerPresent =
+  e2eBuild.status === 0 && (bundleContains('terminal-e2e-file-picker')?.length ?? 0) > 0
+record(
+  'the E2E file-picker substitution is reachable when the flag is set',
+  e2eMarkerPresent,
+  e2eBuild.status !== 0
+    ? `pnpm build exited ${e2eBuild.status ?? 'null'} with VITE_TERMINAL_GUI_E2E=1`
+    : e2eMarkerPresent
+      ? 'marker found in the E2E bundle'
+      : 'marker absent from an E2E build — the substitution is dead code',
+)
+
 const failed = results.filter(r => !r.ok)
 console.log(
   `\n${results.length - failed.length}/${results.length} assertions passed`,

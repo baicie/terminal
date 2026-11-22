@@ -130,15 +130,15 @@ export function FilePaneRow({
           </div>
         </div>
       </td>
-      <td className="px-2 sm:px-3 py-1.5 text-muted-foreground text-[10px] sm:text-xs">
+      <td className="hidden @md/pane:table-cell px-2 sm:px-3 py-1.5 text-muted-foreground text-[10px] sm:text-xs">
         {file.is_directory ? '-' : formatFileSize(file.size)}
       </td>
-      <td className="px-2 sm:px-3 py-1.5 text-muted-foreground text-[10px] sm:text-xs hidden sm:table-cell">
+      <td className="hidden @lg/pane:table-cell px-2 sm:px-3 py-1.5 text-muted-foreground text-[10px] sm:text-xs">
         {file.modified_time === null
           ? '—'
           : format(file.modified_time, 'MMM dd, HH:mm')}
       </td>
-      <td className="px-2 sm:px-3 py-1.5 text-muted-foreground text-[10px] sm:text-xs hidden sm:table-cell">
+      <td className="hidden @lg/pane:table-cell px-2 sm:px-3 py-1.5 text-muted-foreground text-[10px] sm:text-xs">
         {t(getFileKindKey(file))}
       </td>
       <td className="px-3 py-1.5">

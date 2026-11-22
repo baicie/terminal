@@ -9,7 +9,7 @@ import { create } from 'zustand'
 export type TransferKind = 'upload' | 'download'
 export type TransferStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
 export type ChecksumAlgorithm = 'sha256'
-export type ChecksumStatus = 'pending' | 'computing' | 'done' | 'error' | 'mismatch'
+export type ChecksumStatus = 'pending' | 'computing' | 'done' | 'error'
 
 /** 单侧 checksum 计算结果 */
 export interface TransferChecksumResult {
@@ -42,7 +42,18 @@ export interface TransferRecord {
   /** 上一次速度采样的时间戳和字节数（仅内部使用） */
   _prevSampleAt?: number
   _prevSampleBytes?: number
-  /** Checksum 状态（传输完成前为 pending，完成后触发校验） */
+  /**
+   * 传输后完整性校验的状态。
+   *
+   * **没有 `matches`**：`matches: undefined` 有歧义 —— 它既表示「还没算完」，也
+   * 表示「一侧算失败」。两个都算成功且不相等才是 mismatch，两个都成功且相等才是
+   * verified，其余一律是「未验证」。判定放在 `checksumVerdict()` 里，是一个从
+   * 这两个状态推导出来的纯函数，而不是第三个可以与之不一致的字段。
+   *
+   * **没有 `bytesDone` / `bytesTotal`**：校验进度曾经直接写进传输记录的同名字段，
+   * 于是 100 MiB 传完之后一次 20 MiB 的校验会把 UI 报成「20 MB / 100 MB，80%」。
+   * 校验有自己的体积，与已完成的文件字节无关，见 `checksumDone` / `checksumTotal`。
+   */
   checksum?: {
     algorithm: ChecksumAlgorithm
     localHash?: string
@@ -51,8 +62,9 @@ export interface TransferRecord {
     remoteStatus: ChecksumStatus
     localError?: string
     remoteError?: string
-    /** 两端 hash 是否一致 */
-    matches?: boolean
+    /** 远端一侧的校验进度（SHA-256 流式读取），与传输字节分开统计 */
+    bytesDone?: number
+    bytesTotal?: number
   }
 }
 
@@ -84,8 +96,13 @@ interface TransferQueueState {
   clearFinished: () => void
   setPanelOpen: (open: boolean) => void
   togglePanel: () => void
-  /** 初始化 checksum 状态（传输完成时调用） */
-  initChecksum: (id: string) => void
+  /**
+   * 初始化 checksum 状态。
+   *
+   * `side` 是刚刚开始计算的那一侧（Rust 的 `checksum-start` 事件携带它）。省略时表示
+   * 「按传输方向推断」，即把未定论的一侧置为 computing。
+   */
+  initChecksum: (id: string, side?: 'local' | 'remote') => void
   /** 更新 checksum 进度（remote checksum 进度） */
   updateChecksumProgress: (id: string, bytesDone: number, bytesTotal: number) => void
   /** 设置 checksum 结果（任一端计算完成时调用） */
@@ -182,20 +199,54 @@ export const useTransferQueue = create<TransferQueueState>((set, get) => ({
     set({ panelOpen: !get().panelOpen })
   },
 
-  initChecksum(id) {
+  initChecksum(id, side) {
     set(state => ({
-      transfers: state.transfers.map(t =>
-        t.id === id
-          ? {
-              ...t,
-              checksum: {
-                algorithm: 'sha256',
-                localStatus: t.kind === 'download' ? 'pending' : 'computing',
-                remoteStatus: t.kind === 'upload' ? 'pending' : 'computing',
-              },
-            }
-          : t,
-      ),
+      transfers: state.transfers.map(t => {
+        if (t.id !== id) return t
+        /*
+         * ## Initialise, do not reset
+         *
+         * Both Rust commands emit `checksum-start`, and the channel answers each one
+         * with this call. `verifyChecksum` runs them in sequence — local first, then
+         * remote — so the *remote* command's start event arrives after the local hash
+         * has already been recorded. Rebuilding the object from scratch here reset
+         * `localStatus` from `done` back to `pending`, and nothing ever set it again:
+         * `checksum-progress` carries only the remote side.
+         *
+         * The result was a verdict stuck on `computing` for ever. Measured in e2e-06:
+         * a 3 MiB upload's check stopped at 85% and did not move across 30 s of
+         * sampling.
+         *
+         * A side that already has an outcome keeps it. A side with no outcome is
+         * (re)initialised, which is what lets the UI show progress for it at all.
+         */
+        const previous = t.checksum
+        const settled = (status: ChecksumStatus | undefined) =>
+          status === 'done' || status === 'error'
+
+        // A side this event names is *starting*; a side it does not name is left as
+        // it was, or pending when nothing has happened to it yet.
+        const starting = (which: 'local' | 'remote'): ChecksumStatus => {
+          const key = which === 'local' ? 'localStatus' : 'remoteStatus'
+          if (settled(previous?.[key])) return previous![key]!
+          if (side !== undefined) return side === which ? 'computing' : 'pending'
+          // No side named: the direction of the transfer decides which one runs first.
+          const first = t.kind === 'download' ? 'remote' : 'local'
+          return which === first ? 'computing' : 'pending'
+        }
+        const localStatus = starting('local')
+        const remoteStatus = starting('remote')
+
+        return {
+          ...t,
+          checksum: {
+            ...previous,
+            algorithm: 'sha256',
+            localStatus,
+            remoteStatus,
+          },
+        }
+      }),
     }))
   },
 
@@ -204,10 +255,12 @@ export const useTransferQueue = create<TransferQueueState>((set, get) => ({
       transfers: state.transfers.map(t => {
         if (t.id !== id) return t
         if (!t.checksum) return t
+        // Deliberately NOT `t.bytesDone`: the transfer has already finished, and its
+        // byte count is the file's size. Writing the checksum's own counter over it
+        // made a finished 100 MiB upload report "20 MB / 100 MB" while the hash ran.
         return {
           ...t,
-          bytesDone,
-          bytesTotal,
+          checksum: { ...t.checksum, bytesDone, bytesTotal },
         }
       }),
     }))
@@ -227,15 +280,10 @@ export const useTransferQueue = create<TransferQueueState>((set, get) => ({
           newChecksum.remoteStatus = result.success ? 'done' : 'error'
           newChecksum.remoteError = result.error
         }
-        // Auto-compare if both are done
-        if (
-          newChecksum.localStatus === 'done' &&
-          newChecksum.remoteStatus === 'done' &&
-          newChecksum.localHash &&
-          newChecksum.remoteHash
-        ) {
-          newChecksum.matches = newChecksum.localHash === newChecksum.remoteHash
-        }
+        // No comparison is recorded here. The verdict is derived on read
+        // (`checksumVerdict`), so it cannot disagree with the two statuses it is
+        // supposed to describe — the shape that let `matches: false` stand for
+        // "one side errored" as well as "the bytes differ".
         return { ...t, checksum: newChecksum }
       }),
     }))

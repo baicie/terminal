@@ -17,6 +17,21 @@
 | 📋 待修 | 损坏/未知 CredentialRef 不能被 Host/SSH key mapper 压成“无引用”；Clear 入口不能依赖解析成功 | `packages/frontend/src/components/host-list/host-dialog.tsx`、`service/database/ssh-key-credentials.ts`；需三态 ref 和安全清除/rebind |
 | 📋 待测 | GUI SFTP seed 数据库与每个 spec 的 `GUI_E2E_HOME` 必须是同一隔离 profile；关闭 Dock 的证据必须包含远端 SHA/字节结果 | `e2e/gui/fixtures/seed-sftp-host.mjs`、`scripts/gui-e2e-platform.mjs`；在 Level 3 重采前保持未验证 |
 
+## SFTP 完整性 / RC 轮次的未修项（2026-11-22）
+
+来自 PR #148 的真实环境验收。已修项见
+[`docs/design/terminal-next/21-sftp-integrity-rc-acceptance.md`](design/terminal-next/21-sftp-integrity-rc-acceptance.md)，
+这里只记录**没有修**的。
+
+| 状态 | 差距 | 证据 / 后续边界 |
+| --- | --- | --- |
+| 📋 待定位 | dock 宽度 300px 时 `sftp-remote-refresh` 不可点。实测 `displayed: true, enabled: true`，但 `elementFromPoint` 在按钮中心返回一个 `div` —— 15 秒后仍不可点 | `e2e-03` 的 `covering` 诊断已入库；需要确认那个 div 是滚动容器还是残留浮层。修复前 `DOCK_REFRESH_CLICKABLE = PARTIAL` |
+| 📋 待定位 | `e2e-03` 的 mkdir→rename→delete 用例在删除步骤之后超时。服务器侧的三步**都已确认真实发生**，失败在其后的 GUI 断言 | 同一 case；先修 refresh 再复跑，两个失败可能同源 |
+| 📋 待修 | `e2e-05` 证据的 `notes` 含本机用户名与设备名（`user@hostname` 的 shell 提示符回显）。仓库为 public | 处理方案：给 `e2e/gui/fixtures/evidence.mjs` 的 `redact()` 加提示符形态规则，再用官方流程重跑。**不得手改已入库证据** |
+| 📋 待验证 | `T17` 的真实双 sshd 重试预算（尝试次数与退避次数）。分类逻辑有 Rust + 前端测试，但「拒绝一次就停」只在 mock 上验证过 | 需要一个允许密码认证的隔离 sshd fixture；当前 fixture 只开 `PasswordAuthentication no` |
+| 📋 待验证 | `T13` 的 Host 状态矩阵在真实 SQLite 上。各方向（密码↔密钥↔agent、清除、改名）有 mock 测试，真实库上的行/CredentialRef/Vault 三方对照未建 | 现有 `hosts-auth-switch` / `hosts-partial-secret-update` / `hosts-credential-versions` 覆盖语义，但都在 mock 上 |
+| 📋 待验证 | 长时间运行的资源泄漏（`T22`）。`1000` 次循环的有界性有测试，RSS 曲线未采 | 需真实 GUI 连续 100 轮并采样 |
+
 ## 一、关键问题 (Critical)
 
 ### Issue #0: 本地终端连接慢 + 屏幕空白 + 无法输入 ✅ 已修复

@@ -978,18 +978,24 @@ async fn authenticate_with_agent_inner(
     {
         use russh::keys::agent::client::AgentClient;
 
+        // Transport: the agent could not be reached, so no credential was evaluated.
+        // "Authentication failed" would tell the user their key was rejected, which
+        // nobody has claimed yet.
         let agent = AgentClient::connect_env().await.map_err(|e| {
-            SessionError::AuthenticationFailed(format!("failed to connect SSH agent: {}", e))
+            SessionError::AuthenticationTransportFailed(format!(
+                "failed to connect SSH agent: {}",
+                e
+            ))
         })?;
         let mut agent = OwnedIdentityAgentSigner(agent.dynamic());
         let identities = agent.0.request_identities().await.map_err(|e| {
-            SessionError::AuthenticationFailed(format!(
+            SessionError::AuthenticationTransportFailed(format!(
                 "failed to read identities from SSH agent: {}",
                 e
             ))
         })?;
         if identities.is_empty() {
-            return Err(SessionError::AuthenticationFailed(
+            return Err(SessionError::AuthenticationTransportFailed(
                 "SSH agent has no available identities".to_string(),
             ));
         }
@@ -1004,7 +1010,7 @@ async fn authenticate_with_agent_inner(
                 .authenticate_publickey_with(username.clone(), public_key, alg, &mut agent)
                 .await
                 .map_err(|e| {
-                    SessionError::AuthenticationFailed(format!("agent auth failed: {}", e))
+                    SessionError::AuthenticationTransportFailed(format!("agent auth failed: {}", e))
                 })?;
             if auth.success() {
                 return Ok(true);
@@ -1049,7 +1055,8 @@ async fn authenticate_with_agent_inner(
                             pipe_for_error, error
                         ),
                     };
-                    SessionError::AuthenticationFailed(message)
+                    // The agent pipe could not be opened: no credential was offered.
+                    SessionError::AuthenticationTransportFailed(message)
                 })?
                 .dynamic()
         } else {
@@ -1057,7 +1064,7 @@ async fn authenticate_with_agent_inner(
                 Ok(agent) => agent.dynamic(),
                 Err(open_ssh_error) => {
                     let pageant = AgentClient::connect_pageant().await.map_err(|pageant_error| {
-                        SessionError::AuthenticationFailed(format!(
+                        SessionError::AuthenticationTransportFailed(format!(
                             "Windows OpenSSH Authentication Agent is unavailable ({}), and Pageant does not appear to be running ({})",
                             open_ssh_error, pageant_error
                         ))
@@ -1070,13 +1077,13 @@ async fn authenticate_with_agent_inner(
 
         let mut agent = OwnedIdentityAgentSigner(agent);
         let identities = agent.0.request_identities().await.map_err(|e| {
-            SessionError::AuthenticationFailed(format!(
+            SessionError::AuthenticationTransportFailed(format!(
                 "failed to read identities from SSH agent: {}",
                 e
             ))
         })?;
         if identities.is_empty() {
-            return Err(SessionError::AuthenticationFailed(
+            return Err(SessionError::AuthenticationTransportFailed(
                 "SSH agent has no available identities".to_string(),
             ));
         }
@@ -1091,7 +1098,7 @@ async fn authenticate_with_agent_inner(
                 .authenticate_publickey_with(username.clone(), public_key, alg, &mut agent)
                 .await
                 .map_err(|e| {
-                    SessionError::AuthenticationFailed(format!("Agent auth failed: {}", e))
+                    SessionError::AuthenticationTransportFailed(format!("Agent auth failed: {}", e))
                 })?;
             if auth.success() {
                 return Ok(true);
@@ -1103,7 +1110,7 @@ async fn authenticate_with_agent_inner(
     #[cfg(not(any(unix, windows)))]
     {
         let _ = (handle, username);
-        return Err(SessionError::AuthenticationFailed(
+        return Err(SessionError::AuthenticationTransportFailed(
             "SSH agent authentication is not available on this platform yet".to_string(),
         ));
     }
@@ -1702,8 +1709,10 @@ impl SshSession {
                 .await
                 .and_then(|success| {
                     success.then_some(()).ok_or_else(|| {
-                        SessionError::AuthenticationFailed(
-                            "all SSH agent identities rejected".to_string(),
+                        // Every identity was offered and refused — a credential
+                        // answer, not a transport one.
+                        SessionError::AuthenticationRejected(
+                            "all SSH agent identities were rejected".to_string(),
                         )
                     })
                 })
@@ -2049,8 +2058,8 @@ impl SshSession {
             .await
             .and_then(|success| {
                 success.then_some(()).ok_or_else(|| {
-                    SessionError::AuthenticationFailed(
-                        "Target host: all SSH agent identities rejected".to_string(),
+                    SessionError::AuthenticationRejected(
+                        "Target host: all SSH agent identities were rejected".to_string(),
                     )
                 })
             })
@@ -2141,11 +2150,19 @@ impl SshSession {
                         .authenticate_publickey(username, key_with_hash)
                         .await
                         .map_err(|e| {
-                            SessionError::AuthenticationFailed(format!("auth failed: {}", e))
+                            // The exchange did not complete, so nothing was decided
+                            // about the key.
+                            SessionError::AuthenticationTransportFailed(format!(
+                                "auth failed: {}",
+                                e
+                            ))
                         })?;
                     if !result.success() {
-                        return Err(SessionError::AuthenticationFailed(
-                            "all methods rejected".to_string(),
+                        // The server evaluated the key and refused it. That is a
+                        // credential problem, not a transport one: retrying the same
+                        // key will fail the same way.
+                        return Err(SessionError::AuthenticationRejected(
+                            "the server rejected the private key".to_string(),
                         ));
                     }
                 }
@@ -2173,17 +2190,21 @@ impl SshSession {
             let result = handle
                 .authenticate_password(username, pwd)
                 .await
-                .map_err(|e| SessionError::AuthenticationFailed(format!("auth failed: {}", e)))?;
+                .map_err(|e| {
+                    SessionError::AuthenticationTransportFailed(format!("auth failed: {}", e))
+                })?;
             if !result.success() {
-                return Err(SessionError::AuthenticationFailed(
-                    "all methods rejected".to_string(),
+                // Evaluated and refused: the password is wrong, or the account cannot
+                // use password auth. Retrying it unchanged cannot help.
+                return Err(SessionError::AuthenticationRejected(
+                    "the server rejected the password".to_string(),
                 ));
             }
             return Ok(());
         }
 
         Err(SessionError::AuthenticationFailed(
-            "no authentication method provided".to_string(),
+            "no authentication method was provided for this connection".to_string(),
         ))
     }
 
@@ -2239,15 +2260,15 @@ impl SshSession {
             .authenticate_openssh_cert(username, std::sync::Arc::new(private_key), cert)
             .await
             .map_err(|e| {
-                SessionError::AuthenticationFailed(format!(
+                SessionError::AuthenticationTransportFailed(format!(
                     "certificate authentication failed: {}",
                     e
                 ))
             })?;
 
         if !result.success() {
-            return Err(SessionError::AuthenticationFailed(
-                "certificate authentication was rejected by server".to_string(),
+            return Err(SessionError::AuthenticationRejected(
+                "the server rejected the certificate".to_string(),
             ));
         }
 
@@ -2589,7 +2610,7 @@ async fn authenticate_jump_host(
                             .await
                             .map(|result| result.success())
                             .map_err(|error| {
-                                SessionError::AuthenticationFailed(format!(
+                                SessionError::AuthenticationTransportFailed(format!(
                                     "Jump host auth failed: {error}"
                                 ))
                             })?
@@ -2616,8 +2637,8 @@ async fn authenticate_jump_host(
     if authenticated {
         Ok(())
     } else {
-        Err(SessionError::AuthenticationFailed(
-            "Jump host authentication was rejected".to_string(),
+        Err(SessionError::AuthenticationRejected(
+            "the jump host rejected authentication".to_string(),
         ))
     }
 }
@@ -2640,7 +2661,7 @@ async fn authenticate_jump_host_password(
         .await
         .map(|result| result.success())
         .map_err(|error| {
-            SessionError::AuthenticationFailed(format!("Jump host auth failed: {error}"))
+            SessionError::AuthenticationTransportFailed(format!("Jump host auth failed: {error}"))
         })
 }
 
@@ -2749,10 +2770,17 @@ where
 {
     tokio::time::timeout_at(deadline, future)
         .await
+        // Neither arm says anything about the credential: one ran out of time, the
+        // other failed at the transport. Labelling them "authentication failed" made
+        // the UI offer "re-enter your password" for a network problem.
         .map_err(|_| {
-            SessionError::AuthenticationFailed(format!("{operation} timed out before its deadline"))
+            SessionError::AuthenticationTransportFailed(format!(
+                "{operation} timed out before its deadline"
+            ))
         })?
-        .map_err(|error| SessionError::AuthenticationFailed(format!("{operation} failed: {error}")))
+        .map_err(|error| {
+            SessionError::AuthenticationTransportFailed(format!("{operation} failed: {error}"))
+        })
 }
 
 async fn enforce_ssh_operation_deadline<T, E>(
@@ -3683,7 +3711,9 @@ mod tests {
                 stalled,
             )
             .await,
-            Err(SessionError::AuthenticationFailed(message))
+            // A deadline is a transport fact. It used to be reported as
+            // `AuthenticationFailed`, which told the UI the password was wrong.
+            Err(SessionError::AuthenticationTransportFailed(message))
                 if message.contains("authenticate SSH user") && message.contains("timed out")
         ));
     }

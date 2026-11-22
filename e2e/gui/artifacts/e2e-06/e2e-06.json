@@ -1,0 +1,120 @@
+{
+  "case": "e2e-06",
+  "verdict": "PARTIAL",
+  "recordedAt": "2026-11-22T13:52:44.336Z",
+  "platform": {
+    "platform": "darwin",
+    "release": "24.6.0",
+    "arch": "arm64",
+    "node": "v24.16.0",
+    "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
+  },
+  "source": {
+    "sha": "65454a1df6ccd9700333ebaf6be3c4cbe9330197",
+    "branch": "feat/t01-t36-sftp-integrity-rc",
+    "dirty": true
+  },
+  "binary": {
+    "path": "src-tauri/target/release/terminal",
+    "sha256": "4a63191421c2bd022232e27cee8c162b55858272e5c12e94db13d1188ffda2f5",
+    "bytes": 37208416
+  },
+  "window": null,
+  "terminal": null,
+  "command": null,
+  "screenshot": "e2e/gui/artifacts/e2e-06/screens/e2e-06-1795355564034.png",
+  "notes": "preconditions {\"remoteRoot\":\"/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-C5Qe5a/remote\",\"guard\":{\"ok\":true,\"reason\":\"the guard rejects both a relative and an absolute escape\"},\"pickerMarker\":true,\"sshFixture\":true}\nclicked the product upload control\ninvoked the product download action for the seeded file\nNOT_RUN upload through the *native* dialog (this case substitutes the path source; the operating system dialog itself is not driven)\nNOT_RUN download to a path chosen in the native save panel (same substitution)\nNOT_RUN transfers over a flaky or high-latency link (the fixture is loopback)\nNOT_RUN concurrent uploads exceeding MAX_CONCURRENT through the UI (covered by sftp-transfer-queue.test.ts, not by real bytes in a WebView)",
+  "extra": {
+    "measurements": {
+      "preconditions": {
+        "remoteRoot": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-C5Qe5a/remote",
+        "guard": {
+          "ok": true,
+          "reason": "the guard rejects both a relative and an absolute escape"
+        },
+        "pickerMarker": true,
+        "sshFixture": true
+      },
+      "upload": {
+        "settled": true,
+        "localSha256": "d1284c8905c3be4c24711eba819ab26ee70302ef5036e3ed8fb8aaa131789155",
+        "queue": {
+          "integrity": [
+            "verified"
+          ],
+          "panelPresent": true,
+          "text": "Transfers · 1[data-radix-scroll-area-viewport]{scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch;}[data-radix-scroll-area-viewport]::-webkit-scrollbar{display:none}e2e-06-upload.bin3.0 MB / 3.0 MBCompletedVerified · SHA-256 matchesClear finishedClose"
+        },
+        "remoteBytes": 3145728,
+        "remoteSha256": "d1284c8905c3be4c24711eba819ab26ee70302ef5036e3ed8fb8aaa131789155",
+        "entry": {
+          "isDirectory": false,
+          "size": 3145728,
+          "mtimeMs": 1795355491723.3975,
+          "realSize": 3145728
+        },
+        "matches": true
+      },
+      "integritySamples": [
+        {
+          "ms": 12,
+          "verdicts": [
+            "verified"
+          ],
+          "percent": null
+        }
+      ],
+      "integrity": {
+        "integrity": [
+          "verified"
+        ],
+        "panelPresent": true,
+        "text": "Transfers · 1[data-radix-scroll-area-viewport]{scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch;}[data-radix-scroll-area-viewport]::-webkit-scrollbar{display:none}e2e-06-upload.bin3.0 MB / 3.0 MBCompletedVerified · SHA-256 matchesClear finishedClose",
+        "verdicts": [
+          "verified"
+        ]
+      },
+      "download": {
+        "settled": true,
+        "sourceSha256": "edaabdbd9cc3c0b361f40d6154dcef0b02cb1b0bb0a80f5e3738f910eb03deac",
+        "destination": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/e2e-06-VWBknL/e2e-06-download.bin",
+        "queue": {
+          "integrity": [
+            "verified",
+            "verified"
+          ],
+          "panelPresent": true,
+          "text": "Transfers · 2[data-radix-scroll-area-viewport]{scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch;}[data-radix-scroll-area-viewport]::-webkit-scrollbar{display:none}e2e-06-download.bin2.0 MB / 2.0 MBCompletedVerified · SHA-256 matchese2e-06-upload.bin3.0 MB / 3.0 MBCompletedVerified · SHA-256 matchesClear finishedClose"
+        },
+        "appeared": true,
+        "writtenBytes": 2097152,
+        "writtenSha256": "edaabdbd9cc3c0b361f40d6154dcef0b02cb1b0bb0a80f5e3738f910eb03deac",
+        "serverSize": 2097152,
+        "matches": true
+      },
+      "cancelled": {
+        "before": 2,
+        "after": 2
+      }
+    },
+    "failures": [],
+    "notRunCount": 4,
+    "gaps": [
+      {
+        "id": "native-file-dialog-not-driven",
+        "reason": "the OS open/save dialog cannot be driven by WebDriver; the path source is substituted in an E2E-only build, and everything after the path is the production code path",
+        "covers": 2
+      },
+      {
+        "id": "high-latency-link-not-simulated",
+        "reason": "the fixture sshd is loopback, so a flaky or high-RTT link is not represented; the transfer queue has backpressure tests, the bytes here travel over a fast local link",
+        "covers": 1
+      },
+      {
+        "id": "concurrent-ui-uploads-not-driven",
+        "reason": "exceeding MAX_CONCURRENT through the UI needs several files picked at once; the limit itself is covered by sftp-transfer-queue.test.ts, not by real bytes in a WebView",
+        "covers": 1
+      }
+    ]
+  }
+}

@@ -911,9 +911,66 @@ async function clickWhenReady(selector) {
       enabled: await element.isEnabled().catch(() => 'unknown'),
     })
   }
+  /*
+   * When nothing is clickable, say **what is on top of it**.
+   *
+   * `displayed: true, enabled: true` and a 15 s "still not clickable" is the signature
+   * of an overlay: WebDriver's actionability check refuses an element that another
+   * node would receive the click. Naming that node is the difference between "the
+   * button is broken" and "something covers the dock".
+   */
+  const covering = await browser
+    .execute(target => {
+      const elements = Array.from(document.querySelectorAll(target))
+      const dialog = document.querySelector('[data-testid="sftp-mkdir-dialog"]')
+      const dialogBox = dialog?.getBoundingClientRect()
+      return elements.slice(0, 3).map(element => {
+        const box = element.getBoundingClientRect()
+        const x = Math.round(box.left + box.width / 2)
+        const y = Math.round(box.top + box.height / 2)
+        const top = document.elementFromPoint(x, y)
+        return {
+          box: { x, y, w: Math.round(box.width), h: Math.round(box.height) },
+          topmost: top
+            ? `${top.tagName.toLowerCase()}[${top.getAttribute('data-testid') ?? ''}]`
+            : null,
+          topmostIsSelf: element.contains(top),
+          topmostDetail: top
+            ? {
+                tag: top.tagName.toLowerCase(),
+                testid: top.getAttribute('data-testid'),
+                cls: top.className?.toString().slice(0, 90),
+                rect: (() => {
+                  const r = top.getBoundingClientRect()
+                  return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }
+                })(),
+              }
+            : null,
+          dialog: dialogBox
+            ? {
+                x: Math.round(dialogBox.left),
+                y: Math.round(dialogBox.top),
+                w: Math.round(dialogBox.width),
+                h: Math.round(dialogBox.height),
+                visible: getComputedStyle(dialog).visibility,
+                opacity: getComputedStyle(dialog).opacity,
+                display: getComputedStyle(dialog).display,
+                animation: getComputedStyle(dialog).animationName,
+                animationState: getComputedStyle(dialog).animationPlayState,
+                reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+                animations:
+                  typeof dialog.getAnimations === 'function'
+                    ? dialog.getAnimations().map(a => a.playState)
+                    : 'unsupported',
+              }
+            : null,
+        }
+      })
+    }, selector)
+    .catch(() => null)
   throw new Error(
     `no candidate for ${selector} became clickable; ${matches.length} matched, ` +
-      `states: ${JSON.stringify(states)}` +
+      `states: ${JSON.stringify(states)}, covering: ${JSON.stringify(covering)}` +
       (lastError ? `, last error: ${String(lastError).split('\n')[0]}` : ''),
   )
 }

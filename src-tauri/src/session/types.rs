@@ -110,6 +110,19 @@ pub enum SessionError {
     ConnectionCancelled,
     #[error("authentication failed: {0}")]
     AuthenticationFailed(String),
+    /// 凭据本身被拒绝：密码错、密钥不被接受。**服务端明确说过「不」**。
+    ///
+    /// 与 `AuthenticationFailed` 的区别不是措辞，而是重试语义：重新输入密码或换一把
+    /// 密钥可能有用，退避重连没有用。此前两者共用一个 kind，前端只能靠文案猜。
+    #[error("authentication rejected: {0}")]
+    AuthenticationRejected(String),
+    /// 认证**进行中**的传输故障：agent socket 连不上、agent 没有任何身份、
+    /// 认证通道被重置。凭据对不对还不知道。
+    #[error("authentication transport failed: {0}")]
+    AuthenticationTransportFailed(String),
+    /// 服务器的主机密钥被拒绝（`known_hosts` 不匹配，或用户拒绝）。
+    #[error("host key rejected: {0}")]
+    HostKeyRejected(String),
     #[error("invalid input: {0}")]
     InvalidInput(String),
     #[error("channel error: {0}")]
@@ -166,6 +179,18 @@ impl From<SessionError> for SessionErrorDto {
                 kind: "authentication_failed",
                 message: Some(m.clone()),
             },
+            SessionError::AuthenticationRejected(m) => Self {
+                kind: "authentication_rejected",
+                message: Some(m.clone()),
+            },
+            SessionError::AuthenticationTransportFailed(m) => Self {
+                kind: "authentication_transport_failed",
+                message: Some(m.clone()),
+            },
+            SessionError::HostKeyRejected(m) => Self {
+                kind: "host_key_rejected",
+                message: Some(m.clone()),
+            },
             SessionError::InvalidInput(m) => Self {
                 kind: "invalid_input",
                 message: Some(m.clone()),
@@ -212,6 +237,11 @@ impl From<SessionErrorDto> for SessionError {
             ("connection_failed", Some(m)) => SessionError::ConnectionFailed(m),
             ("connection_cancelled", _) => SessionError::ConnectionCancelled,
             ("authentication_failed", Some(m)) => SessionError::AuthenticationFailed(m),
+            ("authentication_rejected", Some(m)) => SessionError::AuthenticationRejected(m),
+            ("authentication_transport_failed", Some(m)) => {
+                SessionError::AuthenticationTransportFailed(m)
+            }
+            ("host_key_rejected", Some(m)) => SessionError::HostKeyRejected(m),
             ("invalid_input", Some(m)) => SessionError::InvalidInput(m),
             ("channel_error", Some(m)) => SessionError::ChannelError(m),
             ("key_parse_failed", Some(m)) => SessionError::KeyParseFailed(m),
@@ -575,5 +605,95 @@ mod tests {
         assert_eq!(back.stdout, "hello");
         assert_eq!(back.stderr, "err");
         assert_eq!(back.exit_code, 0);
+    }
+}
+
+/// 认证错误的分类必须能被前端**按结构**消费，而不是读文案。
+///
+/// ## 缺陷
+///
+/// 握手期的传输失败（agent socket 连不上、agent 没有任何身份、认证通道被重置、
+/// 认证阶段超时）与「服务器明确拒绝了这组凭据」共用 `authentication_failed`。前端
+/// 只能靠 `message.includes(...)` 猜，而猜错的代价是两个方向的：
+///
+/// - 密码错了却提示「网络问题，正在重试」—— 用户等着一个不可能成功的重连；
+/// - 网络断了却提示「请重新输入密码」—— 用户重输正确密码仍然失败。
+///
+/// ## 三条语义
+///
+/// | kind | 含义 | 重试有意义吗 |
+/// | --- | --- | --- |
+/// | `authentication_rejected` | 服务器评估并拒绝了这组凭据 | 换凭据，不是重连 |
+/// | `authentication_transport_failed` | 凭据还没被评估 | 退避重连可能有用 |
+/// | `host_key_rejected` | 主机密钥不被接受 | 检查 known_hosts |
+#[cfg(test)]
+mod auth_kind_tests {
+    use super::*;
+
+    fn kind_of(error: SessionError) -> String {
+        let dto = SessionErrorDto::from(error);
+        // Round-trip through the same JSON shape the frontend receives.
+        let json = serde_json::to_value(&dto).expect("serialize");
+        json.get("type")
+            .and_then(|value| value.as_str())
+            .expect("a type field")
+            .to_string()
+    }
+
+    #[test]
+    fn a_rejected_credential_is_not_a_transport_failure() {
+        assert_eq!(
+            kind_of(SessionError::AuthenticationRejected("password".into())),
+            "authentication_rejected"
+        );
+        assert_eq!(
+            kind_of(SessionError::AuthenticationTransportFailed("agent".into())),
+            "authentication_transport_failed"
+        );
+        assert_ne!(
+            kind_of(SessionError::AuthenticationRejected("x".into())),
+            kind_of(SessionError::AuthenticationTransportFailed("x".into())),
+            "the two must be distinguishable by structure alone"
+        );
+    }
+
+    #[test]
+    fn a_rejected_host_key_is_its_own_kind() {
+        assert_eq!(
+            kind_of(SessionError::HostKeyRejected("mismatch".into())),
+            "host_key_rejected"
+        );
+    }
+
+    #[test]
+    fn the_new_kinds_round_trip_through_the_dto() {
+        for (kind, message) in [
+            ("authentication_rejected", "rejected"),
+            ("authentication_transport_failed", "transport"),
+            ("host_key_rejected", "hostkey"),
+        ] {
+            let dto = SessionErrorDto {
+                kind,
+                message: Some(message.to_string()),
+            };
+            let error = SessionError::from(dto);
+            let back = SessionErrorDto::from(error);
+            assert_eq!(back.kind, kind);
+            assert_eq!(back.message.as_deref(), Some(message));
+        }
+    }
+
+    #[test]
+    fn the_legacy_kind_still_deserializes() {
+        // Compatibility: an older build (or a stored error) that only knows
+        // `authentication_failed` must still be understood.
+        let dto = SessionErrorDto {
+            kind: "authentication_failed",
+            message: Some("legacy".into()),
+        };
+        assert!(matches!(
+            SessionError::from(dto),
+            SessionError::AuthenticationFailed(message) if message == "legacy"
+        ));
     }
 }
