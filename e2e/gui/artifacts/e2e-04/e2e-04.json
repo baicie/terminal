@@ -1,29 +1,29 @@
 {
   "case": "e2e-04",
   "verdict": "PARTIAL",
-  "recordedAt": "2026-11-19T14:01:02.717Z",
+  "recordedAt": "2026-11-22T19:22:53.991Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
     "arch": "arm64",
-    "node": "v22.12.0",
+    "node": "v24.16.0",
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "cb045a875447a564065524ed1c4b88b0d57efdfe",
-    "branch": "fix/tn-e2e03-sftp-real-connection",
-    "dirty": true
+    "sha": "95611660367bfcc56b6168ef59f8f54524ca2db4",
+    "branch": "fix/tn-sftp-gui-closure",
+    "dirty": false
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "dbaaa519782febba668f148d245547f7bc2d15eeca07fb43e5461b88824a01f2",
-    "bytes": 37279248
+    "sha256": "b9b7c5ecf30f039d2eb0d6c7fdcb7b98b3689f5819bb8ebab24bc4ad3ed9f501",
+    "bytes": 37208432
   },
   "window": null,
   "terminal": null,
   "command": null,
-  "screenshot": "e2e/gui/artifacts/e2e-04/screens/e2e-04-1795096862599.png",
-  "notes": "open-snippet-dock: {\"clicked\":true,\"label\":\"Open the snippet dock\",\"waitedMs\":507}\nsnippets: panel 300px wide, occupant snippets\nopen-ai-dock: {\"clicked\":true,\"label\":\"Open the AI assistant\",\"waitedMs\":168}\nai: panel 300px wide, occupant ai\nopen-inspector: {\"clicked\":true,\"label\":\"Inspect the server\",\"waitedMs\":23}\ninspector: panel 300px wide, occupant inspector\nsnippets: docks present = [\"snippets\"]\nai: docks present = [\"ai\"]\ninspector: docks present = [\"inspector\"]\nclosed via rail toggle\ninspector refresh: {\"metrics\":6,\"ok\":true,\"state\":\"metrics\"}\ninspector text: \"Server inspectorRefreshCloseObserved 22:01:01OSDarwinUptime20767d 18hLoad11.92 / 10.44 / 7.31CPUN/AMemoryN/ADisk (/)10.5 GiB / 228.3 GiBmemory is not read on macOS without a verified parserCollected withuname -s echo \\\"os=$(uname -s)\\\"; echo \\\"load=$(sysctl -n vm.loadavg 2>/dev/null | tr -d \\\"{}\\\" | xargs)\\\"; echo \\\"uptime=$(sysctl -n kern.boottime 2>/dev/null | sed 's/.*sec = \\\\([0-9]*\\\\).*/\\\\1/')\\\"; echo \\\"mem=$(vm_stat 2>/dev/null | head -3 | tr \\\"\\\\n\\\" \\\" \\\")\\\"; echo \\\"disk=$(df -k / 2>/dev/null | awk 'NR==2 {print $2*1024\\\" \\\"$3*1024}')\\\"\"\nai dock text: \"AICloseModel profileAdd a model profile in Settings to use the assistant.Open SettingsNo model profile selected.Explain selectionExplain errorSummarize outputDraft command[data-radix-scroll-area-viewport]{scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch;}[data-radix-scroll-area-viewport]::-webkit-scrollbar{display:none}Select text in the terminal to use the assistant.Anything generated here is text. Nothing is run automatically.\"\nNOT_RUN real-model-answer: no OpenAI-compatible endpoint in this environment (needs a model endpoint (BLOCKED_EXTERNAL; the suite must not consume a paid key))\nNOT_RUN snippet-draft-capture: needs a terminal selection and an enabled extension (needs the snippet workflow spec (e2e-05), where that workflow is driven)",
+  "screenshot": "e2e/gui/artifacts/e2e-04/screens/e2e-04-1795375373887.png",
+  "notes": "open-snippet-dock: {\"clicked\":true,\"label\":\"Open the snippet dock\",\"waitedMs\":569}\nsnippets: panel 300px wide, occupant snippets\nopen-ai-dock: {\"clicked\":true,\"label\":\"Open the AI assistant\",\"waitedMs\":22}\nai: panel 300px wide, occupant ai\nopen-inspector: {\"clicked\":true,\"label\":\"Inspect the server\",\"waitedMs\":32}\ninspector: panel 300px wide, occupant inspector\nsnippets: docks present = [\"snippets\"]\nai: docks present = [\"ai\"]\ninspector: docks present = [\"inspector\"]\nclosed via rail toggle\ninspector refresh: {\"metrics\":6,\"ok\":true,\"state\":\"metrics\"}\ninspector text: \"Server inspectorRefreshCloseObserved 03:22:53OSDarwinUptime3d 7hLoad3.65 / 4.08 / 3.58CPUN/AMemoryN/ADisk (/)10.5 GiB / 228.3 GiBmemory is not read on macOS without a verified parserCollected withuname -s echo \\\"os=$(uname -s)\\\"; echo \\\"load=$(sysctl -n vm.loadavg 2>/dev/null | tr -d \\\"{}\\\" | xargs)\\\"; echo \\\"uptime=$(sysctl -n kern.boottime 2>/dev/null | sed 's/[^0-9]*sec = \\\\([0-9]*\\\\).*/\\\\1/')\\\"; echo \\\"mem=$(vm_stat 2>/dev/null | head -3 | tr \\\"\\\\n\\\" \\\" \\\")\\\"; echo \\\"disk=$(df -k / 2>/dev/null | awk 'NR==2 {print $2*1024\\\" \\\"$3*1024}')\\\"\"\nai dock text: \"AICloseModel profileAdd a model profile in Settings to use the assistant.Open SettingsNo model profile selected.Explain selectionExplain errorSummarize outputDraft command[data-radix-scroll-area-viewport]{scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch;}[data-radix-scroll-area-viewport]::-webkit-scrollbar{display:none}Select text in the terminal to use the assistant.Anything generated here is text. Nothing is run automatically.\"\nNOT_RUN real-model-answer: no OpenAI-compatible endpoint in this environment (needs a model endpoint (BLOCKED_EXTERNAL; the suite must not consume a paid key))\nNOT_RUN snippet-draft-capture: driven end to end by e2e-05, not by this spec (needs nothing — see e2e-05/snippet-draft-save and its PASS verdict)",
   "extra": {
     "measurements": {
       "before": {
@@ -117,7 +117,7 @@
         "hasNoSession": false,
         "hasRunning": false,
         "percentages": [],
-        "text": "Server inspectorRefreshCloseObserved 22:01:01OSDarwinUptime20767d 18hLoad11.92 / 10.44 / 7.31CPUN/AMemoryN/ADisk (/)10.5 GiB / 228.3 GiBmemory is not read on macOS without a verified parserCollected withuname -s echo \"os=$(uname -s)\"; echo \"load=$(sysctl -n vm.loadavg 2>/dev/null | tr -d \"{}\" | xargs)\"; echo \"uptime=$(sysctl -n kern.boottime 2>/dev/null | sed 's/.*sec = \\([0-9]*\\).*/\\1/')\"; echo \"mem=$(vm_stat 2>/dev/null | head -3 | tr \"\\n\" \" \")\"; echo \"disk=$(df -k / 2>/dev/null | awk 'NR==2 {print $2*1024\" \"$3*1024}')\""
+        "text": "Server inspectorRefreshCloseObserved 03:22:53OSDarwinUptime3d 7hLoad3.65 / 4.08 / 3.58CPUN/AMemoryN/ADisk (/)10.5 GiB / 228.3 GiBmemory is not read on macOS without a verified parserCollected withuname -s echo \"os=$(uname -s)\"; echo \"load=$(sysctl -n vm.loadavg 2>/dev/null | tr -d \"{}\" | xargs)\"; echo \"uptime=$(sysctl -n kern.boottime 2>/dev/null | sed 's/[^0-9]*sec = \\([0-9]*\\).*/\\1/')\"; echo \"mem=$(vm_stat 2>/dev/null | head -3 | tr \"\\n\" \" \")\"; echo \"disk=$(df -k / 2>/dev/null | awk 'NR==2 {print $2*1024\" \"$3*1024}')\""
       },
       "closeSurvival": {
         "before": {
@@ -200,8 +200,9 @@
       },
       {
         "id": "snippet-draft-capture",
-        "reason": "needs a terminal selection and an enabled extension",
-        "needs": "the snippet workflow spec (e2e-05), where that workflow is driven"
+        "reason": "driven end to end by e2e-05, not by this spec",
+        "needs": "nothing — see e2e-05/snippet-draft-save and its PASS verdict",
+        "coveredBy": "e2e-05"
       }
     ]
   }

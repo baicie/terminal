@@ -1,7 +1,7 @@
 {
   "case": "t09-refresh-hit-test",
   "verdict": "PASS",
-  "recordedAt": "2026-11-22T16:51:04.246Z",
+  "recordedAt": "2026-11-22T19:24:04.367Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
@@ -10,37 +10,37 @@
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "e2a2e5853925edfd7a679f2a906b81bd1cc490c6",
+    "sha": "95611660367bfcc56b6168ef59f8f54524ca2db4",
     "branch": "fix/tn-sftp-gui-closure",
-    "dirty": true
+    "dirty": false
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "74e64971a966e26005fbe75f10778543fc11d179065e02789e31f85aad4a6081",
+    "sha256": "b9b7c5ecf30f039d2eb0d6c7fdcb7b98b3689f5819bb8ebab24bc4ad3ed9f501",
     "bytes": 37208432
   },
   "window": null,
   "terminal": null,
   "command": null,
-  "screenshot": "e2e/gui/artifacts/t09-refresh-hit-test/screens/t09-refresh-hit-test-1795366263995.png",
-  "notes": "round trip (ms): {\"samples\":[3,4,5,5,5,6,6,7,7,8],\"median\":6,\"max\":8}\ndefault width: dock={\"contentWidth\":\"275\",\"panel\":{\"h\":832,\"w\":300,\"x\":1140,\"y\":44},\"panes\":{\"h\":776,\"w\":299,\"x\":1141,\"y\":100},\"presentation\":\"single\",\"railPressed\":\"true\"}\nrefresh: {\"centre\":{\"x\":1401,\"y\":223},\"present\":true,\"rect\":{\"bottom\":237,\"h\":28,\"left\":1387,\"right\":1415,\"top\":209,\"w\":28},\"self\":{\"display\":\"flex\",\"opacity\":\"1\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},\"stack\":[{\"cls\":\"cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap r\",\"isSelf\":true,\"opacity\":\"1\",\"overflow\":\"visible/visible\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":28,\"w\":28,\"x\":1387,\"y\":209},\"role\":null,\"state\":null,\"tag\":\"button\",\"testid\":\"sftp-remote-refresh\",\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"shrink-0 px-3 py-2 bg-secondary/40 border-b border-border/50 flex items-center g\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"visible/visible\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":45,\"w\":273,\"x\":1154,\"y\":201},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":null,\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"flex flex-col h-full border border-border/50 rounded-lg overflow-hidden bg-card\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"hidden/hidden\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":664,\"w\":275,\"x\":1153,\"y\":200},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":null,\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"flex-1 min-w-0 flex flex-col gap-2\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"visible/visible\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":700,\"w\":275,\"x\":1153,\"y\":164},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":\"sftp-pane-remote\",\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"p-3 flex gap-3 h-full overflow-hidden flex-col\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"hidden/hidden\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":776,\"w\":299,\"x\":1141,\"y\":100},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":\"sftp-file-panes\",\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"flex-1 overflow-auto h-full\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"auto/auto\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":776,\"w\":299,\"x\":1141,\"y\":100},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":null,\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"}],\"topmostIsSelf\":true}\nwindow 1024: dockW=300 presentation=single contentW=275 topmostIsSelf=true\nwindow 1440: dockW=300 presentation=single contentW=275 topmostIsSelf=true\nwindow 2560: dockW=300 presentation=single contentW=275 topmostIsSelf=true\nfull window: {\"bottom\":237,\"h\":28,\"left\":1867,\"right\":1895,\"top\":209,\"w\":28}\nresize: {\"before\":{\"bottom\":237,\"h\":28,\"left\":1387,\"right\":1415,\"top\":209,\"w\":28},\"shrunk\":{\"bottom\":237,\"h\":28,\"left\":1227,\"right\":1255,\"top\":209,\"w\":28},\"restored\":{\"bottom\":237,\"h\":28,\"left\":1387,\"right\":1415,\"top\":209,\"w\":28},\"sameTopmost\":true}\nreal click: before={\"rows\":1,\"traceLen\":2} after={\"last\":\"listed /private/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-B8WjGy/remote -> 1 entries\",\"rows\":1,\"traceLen\":4}\nhit test says the button IS the topmost node at both widths — the failure WebDriver reported is a scaffolding coordinate problem, not occlusion",
+  "screenshot": "e2e/gui/artifacts/t09-refresh-hit-test/screens/t09-refresh-hit-test-1795375444263.png",
+  "notes": "round trip (ms): {\"samples\":[3,3,3,4,4,4,4,5,5,6],\"median\":4,\"max\":6}\ndefault width: dock={\"contentWidth\":\"275\",\"panel\":{\"h\":832,\"w\":300,\"x\":1140,\"y\":44},\"panes\":{\"h\":776,\"w\":299,\"x\":1141,\"y\":100},\"presentation\":\"single\",\"railPressed\":\"true\"}\nrefresh: {\"centre\":{\"x\":1401,\"y\":223},\"present\":true,\"rect\":{\"bottom\":237,\"h\":28,\"left\":1387,\"right\":1415,\"top\":209,\"w\":28},\"self\":{\"display\":\"flex\",\"opacity\":\"1\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},\"stack\":[{\"cls\":\"cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap r\",\"isSelf\":true,\"opacity\":\"1\",\"overflow\":\"visible/visible\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":28,\"w\":28,\"x\":1387,\"y\":209},\"role\":null,\"state\":null,\"tag\":\"button\",\"testid\":\"sftp-remote-refresh\",\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"shrink-0 px-3 py-2 bg-secondary/40 border-b border-border/50 flex items-center g\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"visible/visible\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":45,\"w\":273,\"x\":1154,\"y\":201},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":null,\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"flex flex-col h-full border border-border/50 rounded-lg overflow-hidden bg-card\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"hidden/hidden\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":664,\"w\":275,\"x\":1153,\"y\":200},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":null,\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"flex-1 min-w-0 flex flex-col gap-2\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"visible/visible\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":700,\"w\":275,\"x\":1153,\"y\":164},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":\"sftp-pane-remote\",\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"p-3 flex gap-3 h-full overflow-hidden flex-col\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"hidden/hidden\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":776,\"w\":299,\"x\":1141,\"y\":100},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":\"sftp-file-panes\",\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"},{\"cls\":\"flex-1 overflow-auto h-full\",\"isSelf\":false,\"opacity\":\"1\",\"overflow\":\"auto/auto\",\"pointerEvents\":\"auto\",\"position\":\"static\",\"rect\":{\"h\":776,\"w\":299,\"x\":1141,\"y\":100},\"role\":null,\"state\":null,\"tag\":\"div\",\"testid\":null,\"transform\":\"none\",\"visibility\":\"visible\",\"zIndex\":\"auto\"}],\"topmostIsSelf\":true}\nwindow 1024: dockW=300 presentation=single contentW=275 topmostIsSelf=true\nwindow 1440: dockW=300 presentation=single contentW=275 topmostIsSelf=true\nwindow 2560: dockW=300 presentation=single contentW=275 topmostIsSelf=true\nfull window: {\"bottom\":237,\"h\":28,\"left\":1867,\"right\":1895,\"top\":209,\"w\":28}\nresize: {\"before\":{\"bottom\":237,\"h\":28,\"left\":1387,\"right\":1415,\"top\":209,\"w\":28},\"shrunk\":{\"bottom\":237,\"h\":28,\"left\":1227,\"right\":1255,\"top\":209,\"w\":28},\"restored\":{\"bottom\":237,\"h\":28,\"left\":1387,\"right\":1415,\"top\":209,\"w\":28},\"sameTopmost\":true}\nreal click: before={\"rows\":4,\"traceLen\":2} after={\"last\":\"listed /private/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-WnbVrx/remote -> 4 entries\",\"rows\":4,\"traceLen\":4}\nhit test says the button IS the topmost node at both widths — the failure WebDriver reported is a scaffolding coordinate problem, not occlusion",
   "extra": {
     "measurements": {
       "roundTrip": {
         "samples": [
           3,
+          3,
+          3,
+          4,
+          4,
+          4,
           4,
           5,
           5,
-          5,
-          6,
-          6,
-          7,
-          7,
-          8
+          6
         ],
-        "median": 6,
-        "max": 8
+        "median": 4,
+        "max": 6
       },
       "dock": {
         "contentWidth": "275",
@@ -60,7 +60,7 @@
         "railPressed": "true"
       },
       "residue": {
-        "path": "/terminal?tab=remote-1795366210347",
+        "path": "/terminal?tab=remote-1795375431707",
         "portals": [
           {
             "cls": "cursor-pointer inline-flex items-center whitespace-nowrap text-sm tran",
@@ -196,6 +196,23 @@
             "state": "closed",
             "tag": "button",
             "testid": "rail-sftp",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 20,
+              "w": 20,
+              "x": 13,
+              "y": 185
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "a",
+            "testid": "rail-hosts",
             "zIndex": "auto"
           },
           {
@@ -471,6 +488,57 @@
             "zIndex": "auto"
           },
           {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "0",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 24,
+              "w": 24,
+              "x": 1391,
+              "y": 379
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": "file-row-actions",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "0",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 24,
+              "w": 24,
+              "x": 1391,
+              "y": 425
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": "file-row-actions",
+            "zIndex": "auto"
+          },
+          {
+            "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+            "opacity": "0",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 24,
+              "w": 24,
+              "x": 1391,
+              "y": 471
+            },
+            "role": null,
+            "state": "closed",
+            "tag": "button",
+            "testid": "file-row-actions",
+            "zIndex": "auto"
+          },
+          {
             "cls": "",
             "opacity": "1",
             "pointerEvents": "auto",
@@ -483,6 +551,23 @@
             },
             "role": null,
             "state": null,
+            "tag": "div",
+            "testid": null,
+            "zIndex": "50"
+          },
+          {
+            "cls": "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-i",
+            "opacity": "1",
+            "pointerEvents": "auto",
+            "position": "static",
+            "rect": {
+              "h": 28,
+              "w": 57,
+              "x": 43,
+              "y": 181
+            },
+            "role": null,
+            "state": "closed",
             "tag": "div",
             "testid": null,
             "zIndex": "50"
@@ -820,7 +905,7 @@
             "topmostIsSelf": true
           },
           "residue": {
-            "path": "/terminal?tab=remote-1795366210347",
+            "path": "/terminal?tab=remote-1795375431707",
             "portals": [
               {
                 "cls": "cursor-pointer inline-flex items-center whitespace-nowrap text-sm tran",
@@ -956,6 +1041,23 @@
                 "state": "closed",
                 "tag": "button",
                 "testid": "rail-sftp",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 185
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-hosts",
                 "zIndex": "auto"
               },
               {
@@ -1231,6 +1333,57 @@
                 "zIndex": "auto"
               },
               {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 975,
+                  "y": 379
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 975,
+                  "y": 425
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 975,
+                  "y": 471
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
                 "cls": "",
                 "opacity": "1",
                 "pointerEvents": "auto",
@@ -1243,6 +1396,23 @@
                 },
                 "role": null,
                 "state": null,
+                "tag": "div",
+                "testid": null,
+                "zIndex": "50"
+              },
+              {
+                "cls": "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-i",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 57,
+                  "x": 43,
+                  "y": 181
+                },
+                "role": null,
+                "state": "closed",
                 "tag": "div",
                 "testid": null,
                 "zIndex": "50"
@@ -1427,7 +1597,7 @@
             "topmostIsSelf": true
           },
           "residue": {
-            "path": "/terminal?tab=remote-1795366210347",
+            "path": "/terminal?tab=remote-1795375431707",
             "portals": [
               {
                 "cls": "cursor-pointer inline-flex items-center whitespace-nowrap text-sm tran",
@@ -1563,6 +1733,23 @@
                 "state": "closed",
                 "tag": "button",
                 "testid": "rail-sftp",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 185
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-hosts",
                 "zIndex": "auto"
               },
               {
@@ -1838,6 +2025,57 @@
                 "zIndex": "auto"
               },
               {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 1391,
+                  "y": 379
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 1391,
+                  "y": 425
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 1391,
+                  "y": 471
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
                 "cls": "",
                 "opacity": "1",
                 "pointerEvents": "auto",
@@ -1850,6 +2088,23 @@
                 },
                 "role": null,
                 "state": null,
+                "tag": "div",
+                "testid": null,
+                "zIndex": "50"
+              },
+              {
+                "cls": "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-i",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 57,
+                  "x": 43,
+                  "y": 181
+                },
+                "role": null,
+                "state": "closed",
                 "tag": "div",
                 "testid": null,
                 "zIndex": "50"
@@ -2034,7 +2289,7 @@
             "topmostIsSelf": true
           },
           "residue": {
-            "path": "/terminal?tab=remote-1795366210347",
+            "path": "/terminal?tab=remote-1795375431707",
             "portals": [
               {
                 "cls": "cursor-pointer inline-flex items-center whitespace-nowrap text-sm tran",
@@ -2170,6 +2425,23 @@
                 "state": "closed",
                 "tag": "button",
                 "testid": "rail-sftp",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "({isActive:e})=>k(Y(),e&&`bg-secondary text-foreground`)",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 20,
+                  "w": 20,
+                  "x": 13,
+                  "y": 185
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "a",
+                "testid": "rail-hosts",
                 "zIndex": "auto"
               },
               {
@@ -2445,6 +2717,57 @@
                 "zIndex": "auto"
               },
               {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 2511,
+                  "y": 379
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 2511,
+                  "y": 425
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
+                "cls": "cursor-pointer inline-flex items-center justify-center gap-2 whitespac",
+                "opacity": "0",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 24,
+                  "w": 24,
+                  "x": 2511,
+                  "y": 471
+                },
+                "role": null,
+                "state": "closed",
+                "tag": "button",
+                "testid": "file-row-actions",
+                "zIndex": "auto"
+              },
+              {
                 "cls": "",
                 "opacity": "1",
                 "pointerEvents": "auto",
@@ -2457,6 +2780,23 @@
                 },
                 "role": null,
                 "state": null,
+                "tag": "div",
+                "testid": null,
+                "zIndex": "50"
+              },
+              {
+                "cls": "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-i",
+                "opacity": "1",
+                "pointerEvents": "auto",
+                "position": "static",
+                "rect": {
+                  "h": 28,
+                  "w": 57,
+                  "x": 43,
+                  "y": 181
+                },
+                "role": null,
+                "state": "closed",
                 "tag": "div",
                 "testid": null,
                 "zIndex": "50"
@@ -2671,12 +3011,12 @@
       },
       "realClick": {
         "before": {
-          "rows": 1,
+          "rows": 4,
           "traceLen": 2
         },
         "after": {
-          "last": "listed /private/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-B8WjGy/remote -> 1 entries",
-          "rows": 1,
+          "last": "listed /private/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-WnbVrx/remote -> 4 entries",
+          "rows": 4,
           "traceLen": 4
         },
         "clicked": true
@@ -2706,7 +3046,7 @@
           "visibility": "visible",
           "zIndex": "auto"
         },
-        "residueCount": 25
+        "residueCount": 30
       }
     },
     "notRunCount": 0

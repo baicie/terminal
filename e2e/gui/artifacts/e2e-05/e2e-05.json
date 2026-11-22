@@ -1,7 +1,7 @@
 {
   "case": "e2e-05",
   "verdict": "PASS",
-  "recordedAt": "2026-11-22T17:42:23.276Z",
+  "recordedAt": "2026-11-22T19:23:17.017Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
@@ -10,24 +10,24 @@
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "1459902b76775e55f3000df3d46cfbfecf5f5f85",
+    "sha": "95611660367bfcc56b6168ef59f8f54524ca2db4",
     "branch": "fix/tn-sftp-gui-closure",
-    "dirty": true
+    "dirty": false
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "74e64971a966e26005fbe75f10778543fc11d179065e02789e31f85aad4a6081",
+    "sha256": "b9b7c5ecf30f039d2eb0d6c7fdcb7b98b3689f5819bb8ebab24bc4ad3ed9f501",
     "bytes": 37208432
   },
   "window": null,
   "terminal": null,
   "command": null,
-  "screenshot": "e2e/gui/artifacts/e2e-05/screens/e2e-05-1795369343194.png",
-  "notes": "settings diagnostics: {\"switches\":[],\"tabs\":[\"ConnectedLocal\",\"Appearance\",\"Terminal\",\"Connection\",\"Storage\",\"Team\",\"AI\",\"Extensions\",\"Data\"],\"url\":\"/settings\"}\nextension switch before: \"unchecked\"\nextension switch after: \"checked\"\nruntime after enabling: {\"active\":[\"snippet-dock\"],\"menus\":[\"snippet-dock.capture-selection\"],\"snippetDockHandle\":true}\nselection: {\"ok\":true,\"selected\":\"echo e2e-05-selection-marker\"}\nruntime before capture: {\"active\":[\"snippet-dock\"],\"menus\":[\"snippet-dock.capture-selection\"],\"snippetDockHandle\":true}\ncontext menu opened: {\"ok\":true,\"tag\":\"absolute inset-0 overflow-hidden focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40\"}\ndom after dispatch: {\"anyRole\":1,\"bodyTail\":\"[data-radix-scroll-area-viewport]::-webkit-scrollbar{display:none}No snippets yet.ConnectedLocal142×43\\n  \\n\\nCopy⌘CPaste⌘VSelect All⌘+AClear⌘+KFind⌘+FSave selection as a snippet draftZoom In⌘+Zoom Out⌘-\",\"menuItems\":8,\"menus\":1}\ncontext menu: {\"labels\":[\"Copy⌘C\",\"Paste⌘V\",\"Select All⌘+A\",\"Clear⌘+K\",\"Find⌘+F\",\"Save selection as a snippet draft\",\"Zoom In⌘+\",\"Zoom Out⌘-\"]}\ndraft text: \"echo e2e-05-selection-marker\"\ndatabase lookup: {\"ok\":true,\"rows\":[{\"name\":\"e2e-05 probe 1795369331179\",\"script\":\"echo e2e-05-selection-marker\"}]}\nafter reopen: {\"present\":true,\"text\":\"SnippetsRefreshCloseCaptured from the terminal. Name it to keep it.echo e2e-05-selection-markerSnippet nameSave snippetDiscard[data-radix-scroll-area-viewport]{scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch;}[data-radix-scroll-area-viewport]::-webkit-scrollbar{display:none}e2e-05 probe 1795369331179echo e2e-05-selection-marker\"}\nswitch before the cycle: \"checked\"\nswitch off: {\"ok\":true,\"to\":\"unchecked\",\"from\":\"checked\"}\nstored after switching off: {\"elapsedMs\":4,\"ok\":true,\"value\":[]}\nactivation after switching off: {\"active\":[],\"elapsedMs\":0,\"ok\":true}\nswitch on: {\"ok\":true,\"to\":\"checked\",\"from\":\"unchecked\"}\nstored after switching on: {\"elapsedMs\":6,\"ok\":true,\"value\":[\"snippet-dock\"]}\nactivation after re-enable: {\"active\":[\"snippet-dock\"],\"elapsedMs\":0,\"ok\":true}\nruntime after re-enable: {\"active\":[\"snippet-dock\"],\"menus\":[\"snippet-dock.capture-selection\"],\"snippetDockHandle\":true}\npty after dock close: {\"ok\":true,\"tail\":\"[user]@[host] terminal-gui-e2e-12525-1795369321768-e2e-05-snippet-workflow % echo e2e-05-selection-marker\\necho e2e05-1795369342937\"}",
+  "screenshot": "e2e/gui/artifacts/e2e-05/screens/e2e-05-1795375396912.png",
+  "notes": "settings diagnostics: {\"switches\":[],\"tabs\":[\"ConnectedLocal\",\"Appearance\",\"Terminal\",\"Connection\",\"Storage\",\"Team\",\"AI\",\"Extensions\",\"Data\"],\"url\":\"/settings\"}\nextension switch before: \"unchecked\"\nextension switch after: \"checked\"\nruntime after enabling: {\"active\":[\"snippet-dock\"],\"menus\":[\"snippet-dock.capture-selection\"],\"snippetDockHandle\":true}\nselection: {\"ok\":true,\"selected\":\"echo e2e-05-selection-marker\"}\nruntime before capture: {\"active\":[\"snippet-dock\"],\"menus\":[\"snippet-dock.capture-selection\"],\"snippetDockHandle\":true}\ncontext menu opened: {\"ok\":true,\"tag\":\"absolute inset-0 overflow-hidden focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40\"}\ndom after dispatch: {\"anyRole\":1,\"bodyTail\":\"[data-radix-scroll-area-viewport]::-webkit-scrollbar{display:none}No snippets yet.ConnectedLocal142×43\\n  \\n\\nCopy⌘CPaste⌘VSelect All⌘+AClear⌘+KFind⌘+FSave selection as a snippet draftZoom In⌘+Zoom Out⌘-\",\"menuItems\":8,\"menus\":1}\ncontext menu: {\"labels\":[\"Copy⌘C\",\"Paste⌘V\",\"Select All⌘+A\",\"Clear⌘+K\",\"Find⌘+F\",\"Save selection as a snippet draft\",\"Zoom In⌘+\",\"Zoom Out⌘-\"]}\ndraft text: \"echo e2e-05-selection-marker\"\ndatabase lookup: {\"ok\":true,\"rows\":[{\"name\":\"e2e-05 probe 1795375384976\",\"script\":\"echo e2e-05-selection-marker\"}]}\nafter reopen: {\"present\":true,\"text\":\"SnippetsRefreshCloseCaptured from the terminal. Name it to keep it.echo e2e-05-selection-markerSnippet nameSave snippetDiscard[data-radix-scroll-area-viewport]{scrollbar-width:none;-ms-overflow-style:none;-webkit-overflow-scrolling:touch;}[data-radix-scroll-area-viewport]::-webkit-scrollbar{display:none}e2e-05 probe 1795375384976echo e2e-05-selection-marker\"}\nswitch before the cycle: \"checked\"\nswitch off: {\"ok\":true,\"to\":\"unchecked\",\"from\":\"checked\"}\nstored after switching off: {\"elapsedMs\":3,\"ok\":true,\"value\":[]}\nactivation after switching off: {\"active\":[],\"elapsedMs\":0,\"ok\":true}\nswitch on: {\"ok\":true,\"to\":\"checked\",\"from\":\"unchecked\"}\nstored after switching on: {\"elapsedMs\":2,\"ok\":true,\"value\":[\"snippet-dock\"]}\nactivation after re-enable: {\"active\":[\"snippet-dock\"],\"elapsedMs\":0,\"ok\":true}\nruntime after re-enable: {\"active\":[\"snippet-dock\"],\"menus\":[\"snippet-dock.capture-selection\"],\"snippetDockHandle\":true}\npty after dock close: {\"ok\":true,\"tail\":\"[user]@[host] terminal-gui-e2e-52105-1795375302881-e2e-05-snippet-workflow % echo e2e-05-selection-marker\\necho e2e05-1795375396653\"}",
   "extra": {
     "failures": [],
     "notRunCount": 0,
     "gaps": [],
-    "snippetName": "e2e-05 probe 1795369331179"
+    "snippetName": "e2e-05 probe 1795375384976"
   }
 }

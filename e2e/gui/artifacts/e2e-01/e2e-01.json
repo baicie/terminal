@@ -1,7 +1,7 @@
 {
   "case": "e2e-01",
   "verdict": "PASS",
-  "recordedAt": "2026-11-22T17:46:48.649Z",
+  "recordedAt": "2026-11-22T19:21:55.489Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
@@ -10,13 +10,13 @@
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "1459902b76775e55f3000df3d46cfbfecf5f5f85",
+    "sha": "95611660367bfcc56b6168ef59f8f54524ca2db4",
     "branch": "fix/tn-sftp-gui-closure",
-    "dirty": true
+    "dirty": false
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "74e64971a966e26005fbe75f10778543fc11d179065e02789e31f85aad4a6081",
+    "sha256": "b9b7c5ecf30f039d2eb0d6c7fdcb7b98b3689f5819bb8ebab24bc4ad3ed9f501",
     "bytes": 37208432
   },
   "window": {
@@ -36,9 +36,9 @@
     "outputLines": 1,
     "promptMatchesBefore": 1,
     "promptMatchesAfter": 2,
-    "bufferTail": "[user]@[host] terminal-gui-e2e-15437-1795369596301-e2e-01-startup % echo guie2e1795369608512\nguie2e1795369608512\n[user]@[host] terminal-gui-e2e-15437-1795369596301-e2e-01-startup % "
+    "bufferTail": "[user]@[host] terminal-gui-e2e-52105-1795375302881-e2e-01-startup % echo guie2e1795375315341\nguie2e1795375315341\n[user]@[host] terminal-gui-e2e-52105-1795375302881-e2e-01-startup % "
   },
-  "screenshot": "e2e/gui/artifacts/e2e-01/screens/e2e-01-1795369608585.png",
+  "screenshot": "e2e/gui/artifacts/e2e-01/screens/e2e-01-1795375315420.png",
   "extra": {
     "localTab": {
       "ok": true,
