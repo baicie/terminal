@@ -7,7 +7,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./connection', () => ({
   executeQuery: mocks.executeQuery,
+  // The credential paths read strictly; the same mock answers both so an
+  // expectation written against `select` still describes the behaviour.
   select: mocks.select,
+  selectStrict: mocks.select,
 }))
 
 import { removeUnauthorizedTeamShares } from './teams'

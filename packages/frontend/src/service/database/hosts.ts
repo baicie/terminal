@@ -10,25 +10,21 @@ import type { Host } from '@/types'
 import { refVersion } from '@/service/credential-boundary'
 import { hostRowToHost } from '@/store/host-mappers'
 import { vaultSecretProvider } from '@/service/vault-secret-provider'
-import { executeQuery, select } from './connection'
+import { executeQuery, select, selectStrict } from './connection'
 import {
   persistHostSecrets,
   retirePreviousVersion,
 } from './host-credentials'
+import { assertRowUpdated } from './host-update-guard'
 import { hostUpdateArgs } from './host-update-args'
+import { deleteHost, getHostById } from './host-rows-lifecycle'
+import { withHostWriteLock } from './host-write-lock'
+export { deleteHost, getHostById }
 import type { HostRecord } from './types'
 
 export async function getHosts(): Promise<Host[]> {
   const rows = await select<HostRecord>('SELECT * FROM hosts ORDER BY name')
   return rows.map(hostRowToHost)
-}
-
-export async function getHostById(id: string): Promise<Host | null> {
-  const rows = await select<HostRecord>('SELECT * FROM hosts WHERE id = ?', [
-    id,
-  ])
-  if (rows.length === 0) return null
-  return hostRowToHost(rows[0])
 }
 
 export async function createHost(
@@ -91,12 +87,30 @@ export async function updateHost(
   id: string,
   updates: Partial<Host>,
 ): Promise<void> {
+  /*
+   * Serialised per host. Two saves that both read version N would both compute N+1,
+   * and the second would overwrite the first's ciphertext while each retired "N" —
+   * two "saved" messages and one surviving value. See `host-write-lock.ts`.
+   *
+   * Read-modify-write of a *credential* is what needs this. An unrelated edit (a
+   * rename) also takes the lock: it reads the same row and would otherwise write back
+   * a stale `updated_at` and stale fields over a concurrent credential save.
+   */
+  return withHostWriteLock(`host:${id}`, () => updateHostLocked(id, updates))
+}
+
+async function updateHostLocked(
+  id: string,
+  updates: Partial<Host>,
+): Promise<void> {
   const now = Date.now()
 
   // Merge onto the row that is actually stored. A caller may send only the field
   // it changed — `toggleFavorite` sends `{ isFavorite }` — and binding the raw
   // `Partial` would write NULL into every required column.
-  const existingRows = await select<HostRecord>(
+  // Strict: a failed read here would otherwise be reported as "does not exist",
+  // sending the user to re-create a host that is still in the database.
+  const existingRows = await selectStrict<HostRecord>(
     'SELECT * FROM hosts WHERE id = ?',
     [id],
   )
@@ -146,10 +160,12 @@ export async function updateHost(
     // Same ordering as `clearing`: stop pointing at the credential first, then
     // remove it. A late failure leaves orphaned ciphertext rather than a row that
     // names a key nothing holds.
-    await executeQuery(
+    const switched = await executeQuery(
       `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = NULL, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, identity_file_path = NULL, updated_at = ? WHERE id = ?`,
       hostUpdateArgs(merged, now, id, { dropIdentityFilePathArgument: true }),
     )
+    // The row must have stopped pointing at the credential before it is removed.
+    assertRowUpdated(switched, id)
     await retirePreviousVersion(id, {
       ref: null,
       previousVersion: existing.credentialRef
@@ -166,10 +182,13 @@ export async function updateHost(
     // leaves a host whose reference names a key that is already gone — and if the
     // UPDATE then failed, the user would have lost the credential with the row
     // still claiming to have one.
-    await executeQuery(
+    const cleared = await executeQuery(
       `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = NULL, private_key = NULL, certificate = ?, credential_ref = NULL, group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, identity_file_path = NULL, updated_at = ? WHERE id = ?`,
       hostUpdateArgs(merged, now, id, { dropIdentityFilePathArgument: true }),
     )
+    // If this matched nothing the row still names the secret, and deleting it would
+    // leave the secret gone with the reference intact — the worst of both.
+    assertRowUpdated(cleared, id)
     // Now that nothing references them, the secrets can go. A failure here leaves
     // orphaned ciphertext, never a host pointing at nothing.
     await retirePreviousVersion(id, {
@@ -197,7 +216,7 @@ export async function updateHost(
     : null
 
   try {
-    await executeQuery(
+    const written = await executeQuery(
       `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, auth_type = ?, password = CASE WHEN ? = 1 THEN NULL ELSE password END, private_key = CASE WHEN ? = 1 THEN NULL ELSE private_key END, certificate = ?, credential_ref = COALESCE(?, credential_ref), group_id = ?, is_favorite = ?, color = ?, tags = ?, port_forwards = ?, startup_command = ?, environment = ?, jump_host_id = ?, jump_host_auth_type = ?, agent_forwarding = ?, shell_integration = ?, identity_file_path = ?, updated_at = ? WHERE id = ?`,
       hostUpdateArgs(merged, now, id, {
         rewriteSecrets: hasSecrets,
@@ -207,6 +226,9 @@ export async function updateHost(
         clearIdentityFilePath: hasSecrets,
       }),
     )
+    // No match ⇒ the row still points at the previous version, so the throw below
+    // discards the new generation. Checked here so the two paths cannot diverge.
+    assertRowUpdated(written, id)
   } catch (error) {
     // The row still points at the previous version, so the generation this attempt
     // wrote is unreachable data. Remove *that* generation — not the previous one,
@@ -230,30 +252,6 @@ export async function updateHost(
         `[credential] ${failed.length} previous secret(s) for host ${id} could not be removed; the host now uses a newer version`,
       )
     }
-  }
-}
-
-export async function deleteHost(id: string): Promise<void> {
-  // Row first, then the vault: a failure between the two leaves an unreferenced
-  // secret (wasteful) rather than a host whose secret is already gone (broken).
-  // The reverse order would make the host unrecoverable if the delete failed.
-  const rows = await select<HostRecord>(
-    'SELECT credential_ref FROM hosts WHERE id = ?',
-    [id],
-  )
-  const ref = rows.length > 0 ? hostRowToHost(rows[0]).credentialRef : null
-  await executeQuery('DELETE FROM hosts WHERE id = ?', [id])
-  if (!ref) return
-  try {
-    await vaultSecretProvider.removeVersion(
-      { type: 'host', id },
-      refVersion(ref),
-      ref.kinds,
-    )
-  } catch {
-    // A vault that is locked must not make the delete look failed — the row is
-    // already gone, so reporting an error here would push the caller into retrying
-    // a delete that already happened.
   }
 }
 
@@ -287,6 +285,4 @@ export async function getFavoriteHosts(): Promise<Host[]> {
 }
 
 /** The host row as stored, for callers that need the reference it now carries. */
-export async function getPersistedHost(id: string): Promise<Host | null> {
-  return getHostById(id)
-}
+export const getPersistedHost = getHostById

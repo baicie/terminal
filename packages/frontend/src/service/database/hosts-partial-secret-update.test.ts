@@ -29,6 +29,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./connection', () => ({
   executeQuery: mocks.executeQuery,
   select: mocks.select,
+  // The credential paths now read strictly; the same mock answers both,
+  // so an existing expectation on `select` still describes the behaviour.
+  selectStrict: mocks.select,
 }))
 
 vi.mock('@/service/vault-secret-provider', () => ({
