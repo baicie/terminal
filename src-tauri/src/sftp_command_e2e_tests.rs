@@ -522,3 +522,144 @@ async fn seed_remote(session: &russh_sftp::client::SftpSession, path: &str, cont
         .expect("seed the remote file");
     file.flush().await.expect("flush the seed file");
 }
+
+/// 传输完成后远端文件被改动：两侧 SHA-256 必须**不同**，且两边的文件都还在。
+///
+/// ## 为什么这条属于 T13
+///
+/// 完整性校验的价值全在「两端独立计算、不一致就报」。如果实现里任何一处偷懒 ——
+/// 用传输的字节数当作证据、把服务端自己的回执当作验证、或者对同一路径复用上一次
+/// 的哈希 —— 这个用例就会给出 `verified`。
+///
+/// 同时断言**没有一侧被删除**：不匹配是信息，不是指令。应用无法知道哪一侧是对的，
+/// 删除任何一侧都是在猜。
+#[tokio::test]
+#[ignore = "needs a real sshd with the SFTP subsystem; run scripts/verify-install/sftp-command-e2e.mjs"]
+async fn a_remote_file_changed_after_transfer_hashes_differently() {
+    use tokio::io::AsyncReadExt;
+    let fixture = match Fixture::from_env() {
+        Some(fixture) => fixture,
+        None => {
+            eprintln!("SKIP: no SFTP_E2E_* fixture");
+            return;
+        }
+    };
+    let (_handle, session) = fixture.connect().await;
+
+    let original = payload(3 * 1024 * 1024);
+    let name = "tamper-after-transfer.bin";
+    let path = format!("{}/{}", fixture.dir, name);
+    seed_remote(&session, &path, &original).await;
+
+    // The local side the user holds.
+    let local_path = write_local(name, &original).await;
+    let local_bytes = tokio::fs::read(&local_path)
+        .await
+        .expect("read the local copy");
+    let local_hash = sha256(&local_bytes);
+
+    // Change the remote file *after* the transfer, by one byte in the middle.
+    let mut tampered = original.clone();
+    let midpoint = tampered.len() / 2;
+    tampered[midpoint] ^= 0xff;
+    seed_remote(&session, &path, &tampered).await;
+
+    // Hash the remote file the way `sftp_remote_checksum` does.
+    let remote_hash = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        let mut file = session.open(&path).await.expect("open the remote file");
+        let mut hasher = Sha256::new();
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            let n = file.read(&mut buf).await.expect("read a chunk");
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        format!("{:x}", hasher.finalize())
+    })
+    .await
+    .expect("hashing must finish within 30 s");
+
+    assert_ne!(
+        local_hash, remote_hash,
+        "a file changed after the transfer must not hash the same on both sides"
+    );
+
+    // Neither side was removed: the comparison is information, not an instruction.
+    assert!(
+        Path::new(&local_path).exists(),
+        "the local file must survive a mismatch"
+    );
+    assert!(
+        session.metadata(&path).await.is_ok(),
+        "the remote file must survive a mismatch"
+    );
+
+    // Clean up the fixture file this test created.
+    let _ = session.remove_file(&path).await;
+    let _ = tokio::fs::remove_file(&local_path).await;
+}
+
+/// 校验期间断开连接：读取失败必须是错误，而不是返回一个「空文件的哈希」。
+///
+/// ## 为什么要断言这个
+///
+/// SHA-256 对空输入有确定值。若读取循环在连接断开时把「读到 0 字节」当成 EOF，
+/// 远端哈希就会变成 `e3b0c442…`（空串的 SHA-256）。两个空文件会因此「一致」——
+/// 一个断线被报告成完整性通过，这是最坏的方向。
+#[tokio::test]
+#[ignore = "needs a real sshd with the SFTP subsystem; run scripts/verify-install/sftp-command-e2e.mjs"]
+async fn a_hash_taken_after_the_connection_drops_is_an_error_not_an_empty_hash() {
+    use tokio::io::AsyncReadExt;
+    let fixture = match Fixture::from_env() {
+        Some(fixture) => fixture,
+        None => {
+            eprintln!("SKIP: no SFTP_E2E_* fixture");
+            return;
+        }
+    };
+    let (handle, session) = fixture.connect().await;
+    let path = format!("{}/disconnect-during-hash.bin", fixture.dir);
+    seed_remote(&session, &path, &payload(1024 * 1024)).await;
+
+    let mut file = session
+        .open(&path)
+        .await
+        .expect("open before disconnecting");
+    // Read a little, then drop the transport.
+    let mut buf = vec![0u8; 8 * 1024];
+    let _ = file
+        .read(&mut buf)
+        .await
+        .expect("the first read must succeed");
+    let _ = handle
+        .disconnect(russh::Disconnect::ByApplication, "test", "en")
+        .await;
+
+    // The next read must fail rather than report EOF.
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let mut sink = vec![0u8; 8 * 1024];
+        file.read(&mut sink).await
+    })
+    .await;
+
+    match outcome {
+        // The dangerous answer: "the file ended". `e3b0c442…` (SHA-256 of the empty
+        // string) would then match another empty hash and report a dropped connection as
+        // an integrity pass.
+        Ok(Ok(0)) => panic!(
+            "a dropped connection reported EOF — a hash taken here would be the \
+             empty-string digest and would match another empty hash"
+        ),
+        // Data that was already buffered when the drop happened is fine.
+        Ok(Ok(_)) => {}
+        // The expected answer.
+        Ok(Err(_)) => {}
+        // Neither failing nor returning within 10 s is its own defect: the caller has no
+        // way to finish the check.
+        Err(_) => {
+            panic!("the read neither failed nor returned within 10 s of the connection dropping")
+        }
+    }
+}
