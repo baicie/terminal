@@ -16,23 +16,30 @@ import {
   recordBlockedTransfer,
 } from './sftp-transfer-channel'
 import { configureTransferRunner, scheduleTransfer } from './sftp-transfer-queue'
+import { createTransferVerifier } from './sftp-transfer-checksum'
+import { configureTransferVerifier } from './sftp-transfer-verify'
 import type { TransferArgs } from './sftp-transfer-types'
 
 export {
   MAX_CONCURRENT,
   RUNNING_CANCEL_SUPPORTED,
-  cancelTransfer,
-  removeTransfer,
   canTransition,
   isTerminalStatus,
   getTransferQueueDiagnostics,
   __resetTransferQueueForTests,
 } from './sftp-transfer-queue'
+export type { TransferQueueDiagnostics } from './sftp-transfer-queue'
+export { cancelTransfer, removeTransfer } from './sftp-transfer-controls'
 export type {
   TransferCancelResult,
   TransferRemoveResult,
-  TransferQueueDiagnostics,
-} from './sftp-transfer-queue'
+} from './sftp-transfer-controls'
+export {
+  configureTransferVerifier,
+  isVerifying,
+  verifyingTransferIds,
+} from './sftp-transfer-verify'
+export type { TransferVerifier } from './sftp-transfer-verify'
 export { verifyChecksum } from './sftp-transfer-checksum'
 // The channel lives in its own module for size, not for layering — its exports are
 // part of this service's surface and callers import them from here.
@@ -155,3 +162,19 @@ export async function uploadPaths(args: {
 // The queue needs a runner; it is the channel's `run`, resolved at call time so a
 // runtime installed by a test after this module loads still takes effect.
 configureTransferRunner((id, args) => currentRuntime().run(id, args))
+
+// …and a verifier, so a finished transfer is checked rather than assumed. Without
+// this line every upload and download ended with `checksum: undefined`: the
+// capability existed, was tested, and nothing drove it.
+//
+// Availability is asked **at call time**, like the runner above. Deciding it here
+// would freeze the answer at module load, and a runtime installed later (by a test,
+// or by Tauri finishing its injection) would never get verified.
+//
+// No backend to hash with (a browser dev session) answers `null`: the queue then
+// leaves `checksum` undefined, which the UI reads as "not verified" — truthful,
+// where a silent pass is not.
+const verifyWithBackend = createTransferVerifier()
+configureTransferVerifier((id, args) =>
+  currentRuntime().available ? verifyWithBackend(id, args) : null,
+)

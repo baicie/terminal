@@ -16,11 +16,10 @@ import {
   MAX_CONCURRENT,
   __resetTransferQueueForTests,
   canTransition,
-  cancelTransfer,
   dispatch,
   getTransferQueueDiagnostics,
-  removeTransfer,
 } from './sftp-transfer-queue'
+import { cancelTransfer, removeTransfer } from './sftp-transfer-controls'
 import {
   __resetProgressListenerForTests,
   configureTransferRuntime,

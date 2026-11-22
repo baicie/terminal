@@ -487,7 +487,8 @@ jobs:
           node --test --test-reporter=spec --test-reporter-destination=stderr \
             --test-reporter=tap --test-reporter-destination=test-results/scripts.tap \
             scripts/*.test.mjs scripts/verify-install/*.test.mjs \
-            e2e/gui/fixtures/evidence.test.mjs e2e/gui/fixtures/server-state.test.mjs
+            e2e/gui/fixtures/evidence.test.mjs e2e/gui/fixtures/server-state.test.mjs \
+            e2e/gui/fixtures/server-state-escape.test.mjs
       - name: Upload gate script test results
         if: always()
         uses: actions/upload-artifact@v4

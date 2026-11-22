@@ -1,33 +1,23 @@
-// The integrity check's capability, held apart from whether anything starts it.
+// The integrity check, driven the way production drives it.
 //
-// ## What is wired end to end
+// ## What changed and why the old file had to be rewritten
 //
-// `sftp_local_checksum` and `sftp_remote_checksum` are real Rust commands
-// (`src-tauri/src/sftp.rs`: one hashes a local file, one streams the remote file).
-// `sftpService.checksumLocal` / `checksumRemote` invoke them; `verifyChecksum` runs
-// both and writes the results into the transfer record; the store compares the two
-// hashes and sets `matches`.
+// The previous version of this file tested `verifyChecksum` in isolation and said, in
+// a comment, that nothing called it. That was honest, but it left the actual defect
+// untested: **a completed transfer was never verified, and the UI had no way to tell
+// "bytes written" from "both ends agree"**.
 //
-// These tests cover that chain, because the store's comparison logic — where a "both
-// sides hashed but the verdict was never computed" bug would live — had no test at all.
+// The red test for that is not `expect(checksumLocal).not.toHaveBeenCalled()` — a
+// test that asserts the absence of behaviour passes on the broken implementation and
+// then has to be deleted. The red test is the positive one: drive the queue's own
+// completion event and require that a hash actually gets computed. On the
+// pre-change implementation the remote hash was never requested, so it fails.
 //
-// ## What is NOT wired, and is deliberately not asserted here
+// ## What "verified" means
 //
-// Nothing calls `verifyChecksum`. One hit in the whole frontend: the re-export in
-// `sftp-transfer.ts`. Every upload and download therefore completes with `checksum`
-// undefined, and no UI renders `record.checksum` either.
-//
-// That gap is **recorded, not tested**. A test asserting
-// `expect(checksumLocal).not.toHaveBeenCalled()` would pass, would look like coverage,
-// and would make the defect permanent. This repository has hit that shape before:
-// `orphanedSecrets` was declared, documented as exactly its one use case, initialised
-// to 0 and never incremented; and a green test once asserted that a forged delimiter
-// left in the body was correct behaviour. Both survived review precisely because a
-// passing test vouched for them.
-//
-// The wiring is its own change: making verification run on every transfer changes what
-// "done" means, and a mismatch the user cannot see is not a fix. See the T08 notes.
-
+// `done` is the transfer. `verified` is the check. They are separate fields, and
+// `checksumVerdict()` derives the verdict from the two hash statuses rather than
+// storing a third value that can drift from them.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -46,124 +36,191 @@ vi.mock('@/service/notifications', () => ({
   notify: vi.fn(async () => undefined),
 }))
 
-vi.mock('@/service/ssh', () => ({
-  sshService: {},
-}))
-
 import { useTransferQueue } from '@/store/transfer-queue'
+import { checksumVerdict } from '@/store/transfer-checksum-verdict'
+import { __resetSessionClaimsForTests, registerSession } from './sftp-session-claim'
+import {
+  __resetProgressListenerForTests,
+  configureTransferRuntime,
+  handleProgressEvent,
+  uploadFile,
+  type TransferRuntime,
+} from './sftp-transfer'
 import { __resetTransferQueueForTests } from './sftp-transfer-queue'
-import { verifyChecksum } from './sftp-transfer'
 
-/** A transfer record for `verifyChecksum` to write into. */
-function finishedUpload(): string {
-  return useTransferQueue.getState().enqueue({
-    // Empty id: the store's own `makeId()` fills it in, the same path every real
-    // transfer takes. `enqueue` is the store's constructor, not a test fixture.
-    id: '',
-    kind: 'upload',
-    name: 'payload.bin',
-    localPath: '/tmp/payload.bin',
-    remotePath: '/srv/payload.bin',
-    sessionId: 's1',
-    bytesTotal: 1024,
-  })
+/** A runtime whose transfer never settles on its own; the test emits `done`. */
+function installRuntime(): void {
+  const runtime: TransferRuntime = {
+    available: true,
+    async installProgressListener() {},
+    run: () => new Promise<void>(() => {}),
+  }
+  configureTransferRuntime(runtime)
 }
 
-const checksumOf = (id: string) =>
-  useTransferQueue.getState().transfers.find(record => record.id === id)?.checksum
+async function flush(): Promise<void> {
+  for (let index = 0; index < 12; index += 1) await Promise.resolve()
+}
+
+/** Enqueue one upload and let the queue start it; returns its transfer id. */
+async function startedUpload(): Promise<string> {
+  await uploadFile({
+    sessionId: 's1',
+    localPath: '/tmp/payload.bin',
+    remotePath: '/srv/payload.bin',
+    bytesTotal: 1024,
+  })
+  await flush()
+  const running = useTransferQueue
+    .getState()
+    .transfers.find(record => record.status === 'running')
+  if (!running) throw new Error('the upload was not started')
+  return running.id
+}
+
+const record = (id: string) =>
+  useTransferQueue.getState().transfers.find(entry => entry.id === id)
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  useTransferQueue.setState({ transfers: [], panelOpen: false })
   __resetTransferQueueForTests()
+  __resetProgressListenerForTests()
+  __resetSessionClaimsForTests()
+  registerSession('s1')
+  vi.clearAllMocks()
+  installRuntime()
 })
 
-describe('verifyChecksum hashes both sides and decides', () => {
-  it('asks for the local and the remote hash with the paths it was given', async () => {
+describe('a finished transfer is actually verified', () => {
+  it('hashes both sides after the backend reports done — the wiring that did not exist', async () => {
     mocks.checksumLocal.mockResolvedValue({ success: true, hash: 'aa' })
     mocks.checksumRemote.mockResolvedValue({ success: true, hash: 'aa' })
-    const id = finishedUpload()
+    const id = await startedUpload()
 
-    await verifyChecksum({
+    handleProgressEvent({
       transferId: id,
-      sessionId: 's1',
-      localPath: '/tmp/payload.bin',
-      remotePath: '/srv/payload.bin',
+      kind: 'done',
+      bytesDone: 1024,
+      bytesTotal: 1024,
     })
+    await flush()
+    // The hashes are async; give the verifier's microtasks room to finish.
+    await vi.waitFor(() => expect(mocks.checksumRemote).toHaveBeenCalled())
 
     expect(mocks.checksumLocal).toHaveBeenCalledWith(id, '/tmp/payload.bin')
     expect(mocks.checksumRemote).toHaveBeenCalledWith(id, 's1', '/srv/payload.bin')
+    expect(checksumVerdict(record(id)).verdict).toBe('verified')
   })
 
-  it('records a match when the two hashes agree', async () => {
-    mocks.checksumLocal.mockResolvedValue({ success: true, hash: 'aa' })
-    mocks.checksumRemote.mockResolvedValue({ success: true, hash: 'aa' })
-    const id = finishedUpload()
-
-    await verifyChecksum({
-      transferId: id, sessionId: 's1',
-      localPath: '/tmp/payload.bin', remotePath: '/srv/payload.bin',
-    })
-
-    expect(checksumOf(id)).toMatchObject({
-      algorithm: 'sha256',
-      localStatus: 'done',
-      remoteStatus: 'done',
-      matches: true,
-    })
-  })
-
-  it('records a mismatch when they disagree — the case the feature exists for', async () => {
-    /*
-     * The one outcome that matters. A truncated upload, a server that wrote a different
-     * file, a decode that changed the bytes: all three land here, and all three would
-     * otherwise be reported as a successful transfer.
-     */
+  it('reports a mismatch when the two hashes disagree — the case the feature exists for', async () => {
     mocks.checksumLocal.mockResolvedValue({ success: true, hash: 'aa' })
     mocks.checksumRemote.mockResolvedValue({ success: true, hash: 'bb' })
-    const id = finishedUpload()
+    const id = await startedUpload()
+    handleProgressEvent({ transferId: id, kind: 'done', bytesDone: 1024, bytesTotal: 1024 })
+    await vi.waitFor(() => expect(mocks.checksumRemote).toHaveBeenCalled())
 
-    await verifyChecksum({
-      transferId: id, sessionId: 's1',
-      localPath: '/tmp/payload.bin', remotePath: '/srv/payload.bin',
-    })
-
-    expect(checksumOf(id)?.matches).toBe(false)
+    expect(record(id)!.status).toBe('done')
+    expect(checksumVerdict(record(id)).verdict).toBe('mismatch')
   })
 
-  it('leaves matches undecided when one side failed, rather than guessing', async () => {
+  it('does not call a one-sided failure a mismatch', async () => {
     /*
-     * `matches` must stay unset, not become `false`. "The remote hash could not be
-     * computed" and "the hashes differ" are different facts, and collapsing them would
-     * report a server error as a corrupted file.
+     * "The remote hash could not be computed" and "the hashes differ" are different
+     * facts. Collapsing them reports a server error as a corrupted file.
      */
     mocks.checksumLocal.mockResolvedValue({ success: true, hash: 'aa' })
     mocks.checksumRemote.mockResolvedValue({ success: false, message: 'permission denied' })
-    const id = finishedUpload()
+    const id = await startedUpload()
+    handleProgressEvent({ transferId: id, kind: 'done', bytesDone: 1024, bytesTotal: 1024 })
+    await vi.waitFor(() => expect(mocks.checksumRemote).toHaveBeenCalled())
 
-    await verifyChecksum({
-      transferId: id, sessionId: 's1',
-      localPath: '/tmp/payload.bin', remotePath: '/srv/payload.bin',
-    })
-
-    const checksum = checksumOf(id)
-    expect(checksum?.remoteStatus).toBe('error')
-    expect(checksum?.remoteError).toBe('permission denied')
-    expect(checksum?.matches).toBeUndefined()
+    const verdict = checksumVerdict(record(id))
+    expect(verdict.verdict).toBe('indeterminate')
+    expect(verdict.failedSide).toBe('remote')
+    expect(verdict.error).toBe('permission denied')
   })
 
   it('carries the local failure reason through as well', async () => {
     mocks.checksumLocal.mockResolvedValue({ success: false, message: 'ENOENT' })
     mocks.checksumRemote.mockResolvedValue({ success: true, hash: 'bb' })
-    const id = finishedUpload()
+    const id = await startedUpload()
+    handleProgressEvent({ transferId: id, kind: 'done', bytesDone: 1024, bytesTotal: 1024 })
+    await vi.waitFor(() => expect(mocks.checksumRemote).toHaveBeenCalled())
 
-    await verifyChecksum({
-      transferId: id, sessionId: 's1',
-      localPath: '/tmp/payload.bin', remotePath: '/srv/payload.bin',
+    const verdict = checksumVerdict(record(id))
+    expect(verdict.verdict).toBe('indeterminate')
+    expect(verdict.failedSide).toBe('local')
+    expect(verdict.error).toBe('ENOENT')
+  })
+
+  it('a transfer that failed is never verified at all', async () => {
+    const id = await startedUpload()
+    handleProgressEvent({
+      transferId: id,
+      kind: 'error',
+      bytesDone: 0,
+      bytesTotal: 1024,
+      message: 'connection reset',
     })
+    await flush()
 
-    const checksum = checksumOf(id)
-    expect(checksum?.localStatus).toBe('error')
-    expect(checksum?.localError).toBe('ENOENT')
-    expect(checksum?.matches).toBeUndefined()
+    expect(record(id)!.status).toBe('error')
+    expect(mocks.checksumLocal).not.toHaveBeenCalled()
+    expect(checksumVerdict(record(id)).verdict).toBe('unchecked')
+  })
+
+  it('checksum progress never rewrites the finished transfer\'s byte count', async () => {
+    /*
+     * The scenario from the task, driven through the queue's event entry point: a
+     * 100 MiB upload finishes, then the remote checksum reports 20 MiB read. The row
+     * used to render "20 MB / 100 MB, 20%" for a transfer that had completed, with a
+     * negative speed and an ETA for bytes that were already on the server.
+     */
+    const bytes = 100 * 1024 * 1024
+    let releaseRemote: (() => void) | null = null
+    mocks.checksumLocal.mockResolvedValue({ success: true, hash: 'aa' })
+    mocks.checksumRemote.mockImplementation(
+      () => new Promise(resolve => {
+        releaseRemote = () => resolve({ success: true, hash: 'aa' })
+      }),
+    )
+    const id = await startedUpload()
+    handleProgressEvent({ transferId: id, kind: 'progress', bytesDone: bytes, bytesTotal: bytes })
+    handleProgressEvent({ transferId: id, kind: 'done', bytesDone: bytes, bytesTotal: bytes })
+    await vi.waitFor(() => expect(mocks.checksumRemote).toHaveBeenCalled())
+
+    handleProgressEvent({
+      transferId: id,
+      kind: 'checksum-progress',
+      bytesDone: 20 * 1024 * 1024,
+      bytesTotal: bytes,
+      side: 'remote',
+    })
+    await flush()
+
+    const during = record(id)!
+    expect(during.bytesDone).toBe(bytes)
+    expect(during.bytesTotal).toBe(bytes)
+    expect(during.checksum!.bytesDone).toBe(20 * 1024 * 1024)
+
+    releaseRemote!()
+    await vi.waitFor(() => expect(checksumVerdict(record(id)).verdict).toBe('verified'))
+    const after = record(id)!
+    expect(after.bytesDone).toBe(bytes)
+    expect(after.bytesTotal).toBe(bytes)
+  })
+
+  it('a duplicate done event does not hash the remote file twice', async () => {
+    // A second `done` cannot start a second verification: the first one already
+    // released the slot, and a double remote read is a real cost on a real server.
+    mocks.checksumLocal.mockResolvedValue({ success: true, hash: 'aa' })
+    mocks.checksumRemote.mockResolvedValue({ success: true, hash: 'aa' })
+    const id = await startedUpload()
+    handleProgressEvent({ transferId: id, kind: 'done', bytesDone: 1024, bytesTotal: 1024 })
+    handleProgressEvent({ transferId: id, kind: 'done', bytesDone: 1024, bytesTotal: 1024 })
+    await vi.waitFor(() => expect(mocks.checksumRemote).toHaveBeenCalled())
+    await flush()
+
+    expect(mocks.checksumRemote).toHaveBeenCalledTimes(1)
   })
 })

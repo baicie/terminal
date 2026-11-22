@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { checksumVerdict } from './transfer-checksum-verdict'
 import { useTransferQueue } from './transfer-queue'
 
 function reset() {
@@ -445,31 +446,43 @@ describe('useTransferQueue -- checksum methods', () => {
     expect(t.checksum!.localError).toBe('File not found')
   })
 
-  it('auto-compares when both sides are done and hashes match', () => {
+  it('reads verified when both sides are done and hashes match', () => {
     const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }) })
     useTransferQueue.getState().initChecksum(id)
     useTransferQueue.getState().setChecksumResult(id, 'local', { success: true, hash: 'same-hash' })
     useTransferQueue.getState().setChecksumResult(id, 'remote', { success: true, hash: 'same-hash' })
     const t = useTransferQueue.getState().transfers.find(tr => tr.id === id)!
-    expect(t.checksum!.matches).toBe(true)
+    expect(checksumVerdict(t).verdict).toBe('verified')
   })
 
-  it('marks mismatch when hashes differ', () => {
+  it('reads mismatch when hashes differ', () => {
     const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }) })
     useTransferQueue.getState().initChecksum(id)
     useTransferQueue.getState().setChecksumResult(id, 'local', { success: true, hash: 'hash-a' })
     useTransferQueue.getState().setChecksumResult(id, 'remote', { success: true, hash: 'hash-b' })
     const t = useTransferQueue.getState().transfers.find(tr => tr.id === id)!
-    expect(t.checksum!.matches).toBe(false)
+    expect(checksumVerdict(t).verdict).toBe('mismatch')
   })
 
-  it('updateChecksumProgress updates bytes while computing', () => {
-    const id = useTransferQueue.getState().enqueue({ ...makeRecord({ kind: 'upload' }) })
+  it('checksum progress is kept apart from the transfer bytes', () => {
+    /*
+     * The transfer's own byte count is the file's size and is final once the bytes
+     * are written. Writing the checksum read's counter over it made a finished
+     * 100 MiB upload report "20 MB / 100 MB, 20%" while its hash ran — a finished
+     * transfer that appears to have gone backwards.
+     */
+    const id = useTransferQueue.getState().enqueue({
+      ...makeRecord({ kind: 'upload', bytesTotal: 100 * 1024 * 1024 }),
+    })
+    useTransferQueue.getState().updateProgress(id, 100 * 1024 * 1024, 100 * 1024 * 1024)
     useTransferQueue.getState().initChecksum(id)
-    useTransferQueue.getState().updateChecksumProgress(id, 512, 1024)
+    useTransferQueue.getState().updateChecksumProgress(id, 20 * 1024 * 1024, 100 * 1024 * 1024)
+
     const t = useTransferQueue.getState().transfers.find(tr => tr.id === id)!
-    expect(t.bytesDone).toBe(512)
-    expect(t.bytesTotal).toBe(1024)
+    expect(t.bytesDone).toBe(100 * 1024 * 1024)
+    expect(t.bytesTotal).toBe(100 * 1024 * 1024)
+    expect(t.checksum!.bytesDone).toBe(20 * 1024 * 1024)
+    expect(t.checksum!.bytesTotal).toBe(100 * 1024 * 1024)
   })
 
   it('initChecksum is idempotent on already-initialized record', () => {

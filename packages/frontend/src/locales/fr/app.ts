@@ -184,6 +184,16 @@ export default {
   'sftp.transferErrors_other': '{{count}} échecs',
   'sftp.transferEta': '{{eta}} restantes',
   'sftp.transferDone': 'Terminé',
+  'sftp.verified': 'Vérifié · SHA-256 identique',
+  'sftp.verifying': 'Vérification de l’intégrité…',
+  'sftp.verifyingProgress': 'Vérification de l’intégrité… {{percent}} %',
+  'sftp.mismatch': 'Intégrité non concordante · les deux côtés diffèrent',
+  'sftp.verificationFailed': 'La vérification de l’intégrité n’a pas pu s’exécuter',
+  'sftp.verificationFailedSide':
+    'La vérification de l’intégrité n’a pas pu s’exécuter ({{side}})',
+  'sftp.unverified': 'Non vérifié',
+  'sftp.checksumSide.local': 'fichier local',
+  'sftp.checksumSide.remote': 'fichier distant',
   'sftp.clearFinished': 'Effacer terminés',
   'sftp.dropToUpload': 'Déposez les fichiers pour les envoyer dans {{path}}',
 

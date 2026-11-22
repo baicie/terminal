@@ -10,6 +10,16 @@
  *
  * 并发不变式：runningSlots 是运行槽位的唯一真值来源，在**任何 await 之前**同步预占，
  * 所以短时间连续提交也无法突破 MAX_CONCURRENT；store 只用于渲染，不参与限流判断。
+ *
+ * ## `done` 不等于「已验证一致」
+ *
+ * 后端 `done` 的含义只有「字节写完了」。此后还要做完整性校验，而校验发生在传输
+ * 结束之后：准入层的 claim 早已释放，不自己声明会话仍在使用的话，关闭 Dock /
+ * 切换 Host 会让 `isSessionIdle()` 回答「空闲」并关掉连接，而校验仍在读远端。
+ *
+ * 所以这里在槽位释放之后把校验交接给 `sftp-transfer-verify.ts`，由它持有一个用
+ * **本次传输自己的 `sessionId`** 取的 claim。校验不占用并发槽位——传输已经完成，
+ * 让它继续占着会让排队的第 4 个文件等到哈希跑完。
  */
 import {
   useTransferQueue,
@@ -17,6 +27,7 @@ import {
   type TransferStatus,
 } from '@/store/transfer-queue'
 import { notify } from '@/service/notifications'
+import { handOffVerification, verifyingTransferIds } from './sftp-transfer-verify'
 import type { TransferArgs } from './sftp-transfer-types'
 
 export const MAX_CONCURRENT = 3
@@ -63,12 +74,13 @@ const pendingArgs = new Map<string, TransferArgs>()
 let dispatching = false
 let redispatchNeeded = false
 
-function findRecord(id: string): TransferRecord | undefined {
+export function findRecord(id: string): TransferRecord | undefined {
   return useTransferQueue.getState().transfers.find(t => t.id === id)
 }
 
 /** 唯一的状态写入点：非法转换直接拒绝，绝不半途改 store */
-function transition(
+
+export function transition(
   id: string,
   to: TransferStatus,
   patch: Partial<TransferRecord> = {},
@@ -88,7 +100,7 @@ function transition(
  * 释放槽位与参数（幂等）。
  * 即使记录已被 UI 移除也必须释放，否则关闭页面再进入会永久泄漏槽位。
  */
-function settle(id: string): void {
+export function settle(id: string): void {
   runningSlots.delete(id)
   pendingArgs.delete(id)
 }
@@ -126,8 +138,18 @@ export function completeTransfer(
         bytesTotal: bytesTotal || record.bytesTotal,
       })
     : false
+  // Read the args before `settle()` drops them.
+  const args = pendingArgs.get(id)
+  // `settle` runs even when the transition was refused. Two legitimate reasons for
+  // that: the event is a duplicate, or the UI removed the record while the backend
+  // was still running (closing the panel and reopening it). Releasing the slot in
+  // both cases is what keeps the queue moving — returning early here leaked the
+  // slot permanently, which is the failure the old unconditional `settle` prevented.
   settle(id)
-  dispatch() // 槽位可能已释放：即使记录被 UI 移除也要继续推进队列
+  dispatch()
+  // Verification starts only for the transition that actually completed: a
+  // duplicate `done` must not hash the remote file a second time.
+  if (applied && args) handOffVerification(id, args)
   return applied
 }
 
@@ -225,48 +247,14 @@ export function scheduleTransfer(args: TransferArgs): string {
   return id
 }
 
-export type TransferCancelResult =
-  | { ok: true; mode: 'queued' }
-  | { ok: false; reason: 'not-found' | 'finished' | 'unsupported-running' }
-
-/** 取消：排队任务可真正取消；运行中任务后端无取消能力，明确拒绝而不是删记录 */
-export function cancelTransfer(id: string): TransferCancelResult {
-  const record = findRecord(id)
-  if (!record) return { ok: false, reason: 'not-found' }
-  if (record.status === 'running') {
-    return { ok: false, reason: 'unsupported-running' }
-  }
-  if (record.status !== 'queued') return { ok: false, reason: 'finished' }
-  if (!transition(id, 'cancelled', { message: 'Cancelled before start' })) {
-    return { ok: false, reason: 'finished' }
-  }
-  settle(id)
-  dispatch()
-  return { ok: true, mode: 'queued' }
-}
-
-export type TransferRemoveResult =
-  | { ok: true }
-  | { ok: false; reason: 'not-found' | 'active' }
-
-/** 移除：只允许终态记录，运行中/排队中移除会破坏并发统计 */
-export function removeTransfer(id: string): TransferRemoveResult {
-  const record = findRecord(id)
-  if (!record) return { ok: false, reason: 'not-found' }
-  if (!isTerminalStatus(record.status)) return { ok: false, reason: 'active' }
-  useTransferQueue.setState(state => ({
-    transfers: state.transfers.filter(t => t.id !== id),
-  }))
-  settle(id)
-  return { ok: true }
-}
-
 export interface TransferQueueDiagnostics {
   maxConcurrent: number
   runningSlotIds: string[]
   startedCount: number
   pendingArgIds: string[]
   statusCounts: Record<TransferStatus, number>
+  /** Transfers whose bytes are done and whose integrity check is still running. */
+  verifyingIds: string[]
 }
 
 export function getTransferQueueDiagnostics(): TransferQueueDiagnostics {
@@ -285,6 +273,7 @@ export function getTransferQueueDiagnostics(): TransferQueueDiagnostics {
     startedCount: startedIds.size,
     pendingArgIds: [...pendingArgs.keys()],
     statusCounts,
+    verifyingIds: verifyingTransferIds(),
   }
 }
 

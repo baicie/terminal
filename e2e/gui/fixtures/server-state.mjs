@@ -27,7 +27,16 @@
  * `$HOME` just as happily (see `seed-sftp-host.mjs` §containment). Containment is this
  * convention, which is why the root is validated before any read.
  */
-import { readdirSync, statSync, existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
+import {
+  readdirSync,
+  statSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  realpathSync,
+  writeFileSync,
+  readFileSync,
+} from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 
@@ -57,14 +66,77 @@ export function remoteRoot(envName = PRIMARY_ROOT_ENV) {
 /**
  * Guard every path this module is asked to touch.
  *
- * `path.resolve` collapses `..` and `//`, so a caller cannot escape the root by
- * accident. A caller that *tries* gets `null` and the case refuses to run, rather than
+ * Two checks, and both are needed:
+ *
+ * 1. **Lexical.** `path.resolve` collapses `..` and `//`, so a caller cannot escape by
+ *    accident, and a sibling whose name shares the root's prefix (`remote` vs
+ *    `remote-evil`) is refused by comparing with a trailing separator.
+ *
+ * 2. **Physical.** `root/link -> /Users/someone` passes check 1 — it is lexically
+ *    inside the root — and every `fs` call after it follows the link. A staged
+ *    symlink therefore read files outside the fixture and, through `seedFile`, could
+ *    *write* into a real directory. The physical check walks the path one component
+ *    at a time and refuses any component that is a symbolic link (or, on Windows, a
+ *    reparse point) whose target leaves the root.
+ *
+ * Why walk components instead of `realpathSync` on the leaf: the leaf often does not
+ * exist yet (a file about to be created, a directory about to be made), and
+ * `realpathSync` throws for a missing path. Its parent must still be checked, and the
+ * walk does that without requiring presence. A component that does not exist yet is
+ * fine — an attacker cannot stage a link there — so the walk accepts it and stops.
+ *
+ * A caller that fails either check gets `null` and the case refuses to run, rather than
  * acting on the developer's home directory.
  */
+function realRoot(root) {
+  try {
+    return realpathSync(root)
+  } catch {
+    return root
+  }
+}
+
 function underRoot(root, relative) {
+  if (typeof relative !== 'string') return null
   const resolved = path.resolve(root, relative)
   const withSeparator = root.endsWith(path.sep) ? root : root + path.sep
   if (resolved !== root && !resolved.startsWith(withSeparator)) return null
+
+  // Physical containment. `realRoot` normalises the root itself (a fixture under
+  // `/tmp` is a symlink to `/private/tmp` on macOS); each remaining component is
+  // examined in place so a link *anywhere* on the way is caught, not only the last.
+  const base = realRoot(root)
+  const baseWithSeparator = base.endsWith(path.sep) ? base : base + path.sep
+  if (resolved === root) return resolved
+  const remainder = resolved.slice(withSeparator.length)
+  let cursor = root
+  for (const part of remainder.split(path.sep)) {
+    if (part === '') continue
+    cursor = path.join(cursor, part)
+    let stats = null
+    try {
+      stats = lstatSync(cursor)
+    } catch {
+      // Does not exist yet: nothing can be staged there, and the caller (a write)
+      // will create a real directory or file. Accept and stop walking.
+      return resolved
+    }
+    if (stats.isSymbolicLink()) {
+      let target
+      try {
+        target = realpathSync(cursor)
+      } catch {
+        // A dangling link resolves nowhere. `existsSync` reports it as absent while
+        // `writeFileSync` would follow it and create the target — refuse instead.
+        return null
+      }
+      // A link must land strictly *inside* the fixture. Landing exactly on the root
+      // is a loop, not an escape, and it is refused for the same reason a loop is
+      // dangerous: a walk that follows it has no fixed point to stop at.
+      if (!target.startsWith(baseWithSeparator)) return null
+      cursor = target
+    }
+  }
   return resolved
 }
 

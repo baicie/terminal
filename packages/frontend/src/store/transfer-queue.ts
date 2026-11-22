@@ -9,7 +9,7 @@ import { create } from 'zustand'
 export type TransferKind = 'upload' | 'download'
 export type TransferStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
 export type ChecksumAlgorithm = 'sha256'
-export type ChecksumStatus = 'pending' | 'computing' | 'done' | 'error' | 'mismatch'
+export type ChecksumStatus = 'pending' | 'computing' | 'done' | 'error'
 
 /** 单侧 checksum 计算结果 */
 export interface TransferChecksumResult {
@@ -42,7 +42,18 @@ export interface TransferRecord {
   /** 上一次速度采样的时间戳和字节数（仅内部使用） */
   _prevSampleAt?: number
   _prevSampleBytes?: number
-  /** Checksum 状态（传输完成前为 pending，完成后触发校验） */
+  /**
+   * 传输后完整性校验的状态。
+   *
+   * **没有 `matches`**：`matches: undefined` 有歧义 —— 它既表示「还没算完」，也
+   * 表示「一侧算失败」。两个都算成功且不相等才是 mismatch，两个都成功且相等才是
+   * verified，其余一律是「未验证」。判定放在 `checksumVerdict()` 里，是一个从
+   * 这两个状态推导出来的纯函数，而不是第三个可以与之不一致的字段。
+   *
+   * **没有 `bytesDone` / `bytesTotal`**：校验进度曾经直接写进传输记录的同名字段，
+   * 于是 100 MiB 传完之后一次 20 MiB 的校验会把 UI 报成「20 MB / 100 MB，80%」。
+   * 校验有自己的体积，与已完成的文件字节无关，见 `checksumDone` / `checksumTotal`。
+   */
   checksum?: {
     algorithm: ChecksumAlgorithm
     localHash?: string
@@ -51,8 +62,9 @@ export interface TransferRecord {
     remoteStatus: ChecksumStatus
     localError?: string
     remoteError?: string
-    /** 两端 hash 是否一致 */
-    matches?: boolean
+    /** 远端一侧的校验进度（SHA-256 流式读取），与传输字节分开统计 */
+    bytesDone?: number
+    bytesTotal?: number
   }
 }
 
@@ -204,10 +216,12 @@ export const useTransferQueue = create<TransferQueueState>((set, get) => ({
       transfers: state.transfers.map(t => {
         if (t.id !== id) return t
         if (!t.checksum) return t
+        // Deliberately NOT `t.bytesDone`: the transfer has already finished, and its
+        // byte count is the file's size. Writing the checksum's own counter over it
+        // made a finished 100 MiB upload report "20 MB / 100 MB" while the hash ran.
         return {
           ...t,
-          bytesDone,
-          bytesTotal,
+          checksum: { ...t.checksum, bytesDone, bytesTotal },
         }
       }),
     }))
@@ -227,15 +241,10 @@ export const useTransferQueue = create<TransferQueueState>((set, get) => ({
           newChecksum.remoteStatus = result.success ? 'done' : 'error'
           newChecksum.remoteError = result.error
         }
-        // Auto-compare if both are done
-        if (
-          newChecksum.localStatus === 'done' &&
-          newChecksum.remoteStatus === 'done' &&
-          newChecksum.localHash &&
-          newChecksum.remoteHash
-        ) {
-          newChecksum.matches = newChecksum.localHash === newChecksum.remoteHash
-        }
+        // No comparison is recorded here. The verdict is derived on read
+        // (`checksumVerdict`), so it cannot disagree with the two statuses it is
+        // supposed to describe — the shape that let `matches: false` stand for
+        // "one side errored" as well as "the bytes differ".
         return { ...t, checksum: newChecksum }
       }),
     }))

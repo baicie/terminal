@@ -95,3 +95,125 @@ describe('TransferRow states', () => {
     expect(screen.queryByTestId('transfer-status-running')).toBeNull()
   })
 })
+
+/**
+ * 传输完成之后的那一行，必须让用户分辨「字节写完了」和「两端一致」。
+ *
+ * 这些用例断言的是**具体结论**（`data-integrity` 的值 + 屏幕上那句话），不是
+ * 「有一个图标」。两个原因：
+ *
+ * 1. 图标和颜色对读屏软件不存在，也容易被下一次样式重构成同一个样子；
+ * 2. 本仓已经吃过「用一个值代表两种事实」的亏 —— `matches: undefined` 同时表示
+ *    「还在算」与「一侧失败」。断言 `data-integrity="indeterminate"` 就要求产品
+ *    真的把这两件事分开。
+ */
+describe('TransferRow integrity verdict', () => {
+  const done = (checksum?: TransferRecord['checksum']) =>
+    transferRecord({ status: 'done', bytesDone: 1000, checksum })
+
+  it('says verified only when both sides hashed and agree', () => {
+    render(
+      <TransferRow
+        record={done({
+          algorithm: 'sha256',
+          localStatus: 'done',
+          remoteStatus: 'done',
+          localHash: 'aa',
+          remoteHash: 'aa',
+        })}
+      />,
+    )
+
+    const line = screen.getByTestId('transfer-integrity')
+    expect(line.getAttribute('data-integrity')).toBe('verified')
+    expect(line.textContent).toContain(i18n.t('sftp.verified'))
+    // "Completed" alone is not the same claim, so both are on screen.
+    expect(screen.getByText(i18n.t('sftp.transferDone'))).toBeTruthy()
+  })
+
+  it('says mismatch when both sides hashed and differ, and still shows the file as transferred', () => {
+    render(
+      <TransferRow
+        record={done({
+          algorithm: 'sha256',
+          localStatus: 'done',
+          remoteStatus: 'done',
+          localHash: 'aa',
+          remoteHash: 'bb',
+        })}
+      />,
+    )
+
+    const line = screen.getByTestId('transfer-integrity')
+    expect(line.getAttribute('data-integrity')).toBe('mismatch')
+    expect(line.textContent).toContain(i18n.t('sftp.mismatch'))
+    // Reported as an alert so it is announced, not only coloured.
+    expect(line.getAttribute('role')).toBe('alert')
+    // The transfer itself still completed: nothing was deleted or undone.
+    expect(screen.getByText(i18n.t('sftp.transferDone'))).toBeTruthy()
+  })
+
+  it('never calls a one-sided failure a mismatch', () => {
+    for (const side of ['local', 'remote'] as const) {
+      const { unmount } = render(
+        <TransferRow
+          record={done({
+            algorithm: 'sha256',
+            localStatus: side === 'local' ? 'error' : 'done',
+            remoteStatus: side === 'remote' ? 'error' : 'done',
+            localHash: side === 'local' ? undefined : 'aa',
+            remoteHash: side === 'remote' ? undefined : 'aa',
+            localError: side === 'local' ? 'ENOENT' : undefined,
+            remoteError: side === 'remote' ? 'permission denied' : undefined,
+          })}
+        />,
+      )
+      const line = screen.getByTestId('transfer-integrity')
+      expect(line.getAttribute('data-integrity')).toBe('indeterminate')
+      expect(line.textContent).not.toContain(i18n.t('sftp.mismatch'))
+      // Which side failed is named, so the user knows what to fix.
+      expect(line.textContent).toContain(
+        i18n.t(side === 'local' ? 'sftp.checksumSide.local' : 'sftp.checksumSide.remote'),
+      )
+      unmount()
+    }
+  })
+
+  it('shows progress while hashing without touching the finished byte count', () => {
+    render(
+      <TransferRow
+        record={done({
+          algorithm: 'sha256',
+          localStatus: 'done',
+          remoteStatus: 'computing',
+          localHash: 'aa',
+          bytesDone: 200,
+          bytesTotal: 1000,
+        })}
+      />,
+    )
+
+    const line = screen.getByTestId('transfer-integrity')
+    expect(line.getAttribute('data-integrity')).toBe('computing')
+    expect(line.textContent).toContain('20%')
+    // The transfer's own figures are what is printed above it.
+    expect(screen.getByText('1000 B / 1000 B')).toBeTruthy()
+  })
+
+  it('says not verified when the transfer completed without a check', () => {
+    render(<TransferRow record={done(undefined)} />)
+
+    const line = screen.getByTestId('transfer-integrity')
+    expect(line.getAttribute('data-integrity')).toBe('unchecked')
+    expect(line.textContent).toContain(i18n.t('sftp.unverified'))
+  })
+
+  it('shows no integrity line for a transfer that failed', () => {
+    render(
+      <TransferRow
+        record={transferRecord({ status: 'error', message: 'connection reset' })}
+      />,
+    )
+    expect(screen.queryByTestId('transfer-integrity')).toBeNull()
+  })
+})
