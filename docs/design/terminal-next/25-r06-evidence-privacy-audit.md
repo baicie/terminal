@@ -49,9 +49,9 @@ clean  2026-10-11-macos-ssh-matrix-current.json
 典型形态：
 
 ```json
-"command": "PATH=/Users/liuzhiwei/n/bin:$PATH pnpm smoke:ssh-matrix"
-"application": { "bundle": "/Users/liuzhiwei/Desktop/.../Termius.app/..." }
-"fixture": { "username": "liuzhiwei", ... }
+"command": "PATH=/Users/<user>/n/bin:$PATH pnpm smoke:ssh-matrix"
+"application": { "bundle": "/Users/<user>/Desktop/.../Termius.app/..." }
+"fixture": { "username": "<user>", ... }
 ```
 
 **这 6 个都不再被 manifest 引用** —— 它们被同名的 `-current` / `-rerun` 版本取代，

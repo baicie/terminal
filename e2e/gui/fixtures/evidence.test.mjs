@@ -208,12 +208,15 @@ test('an unavailable git counts as dirty, not clean', () => {
  *
  * ## 为什么
  *
- * e2e-05 的证据 `notes` 里带着 PTY 回显：
+ * e2e-05 的证据 `notes` 里带着 PTY 回显：一个 **真实的开发机用户名与设备名**，形如
+ * `<user>@<user>sMacBook-Pro terminal-gui-e2e-… % echo …`。
  *
- *     liuzhiwei@liuzhiweideMacBook-Pro terminal-gui-e2e-… % echo …
+ * 那不是凭据，但它把「谁在哪台机器上跑的」写进了仓库（本仓为 public）。证据是用来
+ * 证明产品行为的，不是用来记录跑它的人。
  *
- * 那不是凭据，但它把**开发机的用户名与设备名**写进了仓库（本仓为 public）。证据是
- * 用来证明产品行为的，不是用来记录谁在哪台机器上跑的。
+ * 下面的夹具用**合成的**用户名 `runner`：断言的是「这一形态被脱敏」，不是「某个特定
+ * 名字被脱敏」。用真名做夹具会让这个测试文件本身变成那台机器用户名的副本 —— 一个为了
+ * 隐私而写的测试，不该把隐私写进自己的源码里。
  *
  * ## 边界
  *
@@ -223,15 +226,15 @@ test('an unavailable git counts as dirty, not clean', () => {
  * 但那是另一种形态，由已有的 key=value 规则处理。
  */
 test('a shell prompt user@host is redacted', () => {
-  const prompt = 'liuzhiwei@liuzhiweideMacBook-Pro terminal-gui-e2e-99802 % echo hi'
+  const prompt = 'runner@runners-MacBook-Pro terminal-gui-e2e-99802 % echo hi'
   const out = redact(prompt)
-  assert.doesNotMatch(out, /liuzhiwei/)
+  assert.doesNotMatch(out, /runner@/)
   assert.match(out, /% echo hi/, 'the command after the prompt must survive')
 })
 
 test('a username alone in a home path is redacted', () => {
-  const line = 'at /Users/liuzhiwei/Library/Application Support/com.baicie.termius'
-  assert.doesNotMatch(redact(line), /liuzhiwei/)
+  const line = 'at /Users/runner/Library/Application Support/com.baicie.termius'
+  assert.doesNotMatch(redact(line), /\/Users\/runner\//)
 })
 
 test('redaction does not touch an email address in prose', () => {
