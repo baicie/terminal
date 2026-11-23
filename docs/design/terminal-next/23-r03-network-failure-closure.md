@@ -177,6 +177,61 @@ exit=0
 下行断流后读取会报错并结束；上行断流后写入**不返回**。这指向 `russh-sftp` 的写路径在底层
 连接被 RST 后不会让 pending 的写 future 失败——正是 §二 要单独复现的那件事。
 
+### 五个场景的完整矩阵（全部有界运行）
+
+| 场景 | 时长 | 结果 | 判定 |
+| --- | --- | --- | --- |
+| 无整形（基线） | **20 s** | 8/8 通过 | `PASS` |
+| `slow-uplink-only`（512 KiB/s） | **151 s** | 8/8 通过 | `PASS` |
+| `cut-download`（下行 4 MiB RST） | **37 s** | 6 过 / 2 失败 | `EXPECTED_NETWORK_FAILURE` |
+| `handshake-reset`（握手期 RST） | **56 s** | 6 失败 | `EXPECTED_NETWORK_FAILURE`（不可确定子集） |
+| `silent-server`（接受后不应答） | **166 s** | 8/8 失败 | `EXPECTED_NETWORK_FAILURE` |
+| `cut-upload`（上行 4 MiB RST） | ≥300 s | **无 verdict** | `TEST_INFRA_FAILURE`（待修） |
+
+## 五之二、三个场景的共同根因：`Fixture::connect` 没有截止时间
+
+`handshake-reset` 与 `silent-server` 最初都是**永久挂起**（45 s / 150 s / 450 s 全部无
+verdict）。根因不在整形代理，也不在 `russh-sftp`：
+
+```rust
+// 修改前
+let mut handle = russh::client::connect(config, ("127.0.0.1", self.port), AcceptAnyHostKey)
+    .await
+    .expect("connect to the fixture sshd");
+```
+
+`russh::client::connect` 没有超时参数，一个永不完成的握手就是一个永不返回的 future。
+
+**产品路径没有这个问题。** `src-tauri/src/session/ssh.rs` 的 `connect_tcp_with_shutdown`
+用的是 `tokio::time::timeout_at` **加** `TcpShutdownGuard` —— 而且那个 guard 是必需的：
+注释里写明 pending 的握手 future 不一定会自己观察到 socket 关闭。测试 fixture 两样都没有。
+
+修复是给 `Fixture::connect` 的**每一步**加 20 秒上限（connect / auth / channel / subsystem
+/ SFTP 握手）。选择每步而不是一个总 deadline：总 deadline 会让负载高但正常的 CI 机器误红，
+而这个套件要区分的是「这一步从未完成」。
+
+**修复后同一场景的行为**：
+
+| 场景 | 修复前 | 修复后 |
+| --- | --- | --- |
+| `silent-server` | 无 verdict（≥450 s） | **166 s，8/8 失败，有 verdict** |
+| `handshake-reset` | 无 verdict（≥450 s） | **56 s，6/8 失败，有 verdict** |
+
+### 为什么 `handshake-reset` 声明成「任意子集」
+
+第一次修好后它给出 3 通过 / 5 失败，声明「每个测试都失败」立刻变红并指出 3 个「声明会失败
+却通过了」。那不是缺陷：代理在 accept 后 250 ms 才 RST，某个测试的握手能否挤进这个窗口
+取决于机器负载，**这个场景本来就不确定**。
+
+所以它用 `anySubsetMayFail`：下限是「至少一个失败」，并且**必须产出 verdict**。
+
+关键是这个下限不是空的——如果一个都没失败，说明整形根本没生效（代理不在路径上，或 RST
+没发出），这次运行什么也没证明，必须报错。
+
+顺便，这个「恰好相等」的检查抓到了我自己的一个错误：`ALL_COMMAND_TESTS` 里我凭印象写了
+`a_download_that_fails_never_replaces_the_local_target`，而那个测试**不存在**。判定立刻
+报 `expected but passed: [a_download_that_fails_never_replaces_the_local_target]`。
+
 ---
 
 ## 六、`EXPECTED_NETWORK_FAILURE` 与 `TEST_INFRA_FAILURE`
@@ -206,9 +261,10 @@ RST 后产品报告成功      → PRODUCT_FAILURE
 | 项 | 状态 | 原因 |
 | --- | --- | --- |
 | 断流后 Rust **写**路径是否必然中止 | `NOT_PROVEN`（已复现为「不中止」） | 需要不经过测试框架的最小复现，见 §二「处置」 |
-| 下载中 RST | **已测**，`cut-download` 37 秒给出结果 | §五 |
-| Checksum 期间 RST / SSH 握手中断 / 远端无响应 | `NOT_RUN` | 逐场景补测中 |
-| 延迟 + 限速 + 断流组合 | `NOT_RUN` | — |
+| 下载中 RST | **已测** | `cut-download` 37 秒给出结果 |
+| SSH 握手中断 | **已测** | `handshake-reset` 56 秒给出 verdict |
+| 远端无响应 | **已测** | `silent-server` 166 秒给出 verdict |
+| 延迟 + 限速 + 断流组合 | `NOT_RUN` | 已有 `delayMs` / `rateBytesPerSec` / `cutAfterBytes`，尚未组合跑 |
 | 超时后重试 / UI 错误状态 / Session claim 释放 / 服务器端残留文件 | `NOT_RUN` | 需要 GUI 层；整形代理只接在 Rust 命令行路径 |
 | GUI 层慢网（WebView 内传输队列） | `NOT_RUN` | 同上 |
 
@@ -218,5 +274,7 @@ RST 后产品报告成功      → PRODUCT_FAILURE
 | --- | --- |
 | 整形场景有硬时限，超时杀整棵进程树 | 30 s 时限 → 31 s exit=2，零残留（§三） |
 | 超时与产品失败可区分 | `TEST_INFRA_FAILURE`(2) / `TEST_FAILURE`(1) / `EXPECTED_NETWORK_FAILURE`(0) |
+| `Fixture::connect` 不再无限等待 | `silent-server` 与 `handshake-reset` 从「无 verdict」变成 166 s / 56 s 有 verdict（§五之二） |
+| 期望失败集合可双向验证 | 声明错 → 报 `unexpected`；漏声明 → 报 `expected but passed`；抓到了我写错的一个测试名 |
 | fixture 生命周期测试不再挂死与泄漏 | 5/5，3.7 s，零残留；变异后 3.9 s 红色失败（§四） |
 | 脚本套件 | **819/819，26 秒**（此前 819 项 2 失败，且曾挂 1 小时 17 分） |

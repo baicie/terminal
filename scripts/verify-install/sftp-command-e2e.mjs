@@ -277,8 +277,25 @@ async function main() {
      *
      * Every entry states the mechanism, so a reader can check the claim rather than trust it.
      */
-    const SHAPING_EXPECTATIONS = {
-      'cut-upload': {
+    /*
+     * The eight `#[ignore]`d command-level tests, named once.
+     *
+     * Duplicating this list per scenario would let a newly added test silently escape the
+     * "everything is expected to fail" claim, so the scenarios that break *every* test
+     * reference this instead of repeating names. Kept in sync by the harness itself: if a
+     * test here stops existing, the "expected but passed" branch reports it.
+     */
+    const ALL_COMMAND_TESTS = [
+      'uploads_24_mib_through_the_production_upload_path',
+      'downloads_24_mib_through_the_production_download_path',
+      'replacing_an_existing_remote_file_leaves_no_debris',
+      'a_failed_upload_keeps_the_previous_remote_file',
+      'distinct_paths_upload_concurrently',
+      'reading_the_remote_file_right_after_an_upload_completes',
+      'a_remote_file_changed_after_transfer_hashes_differently',
+      'a_hash_taken_after_the_connection_drops_is_an_error_not_an_empty_hash',
+    ]
+    const SHAPING_EXPECTATIONS = {      'cut-upload': {
         expectedFailures: [
           'uploads_24_mib_through_the_production_upload_path',
           'downloads_24_mib_through_the_production_download_path',
@@ -294,6 +311,30 @@ async function main() {
           'downloads_24_mib_through_the_production_download_path',
         ],
         note: 'the downlink dies at 4 MiB, so every 24 MiB transfer must fail',
+      },
+      'handshake-reset': {
+        /*
+         * `anySubsetMayFail`: this scenario is **not deterministic**.
+         *
+         * Measured: one run gave 3 passed / 5 failed. The proxy resets 250 ms after
+         * accepting, and whether a given test's handshake completes inside that window is a
+         * race — the fixture's first connection is warmed by the OS, later ones vary. So
+         * "every test fails" is a claim this scenario cannot support, and requiring it would
+         * make the result depend on machine load.
+         *
+         * What the scenario *can* claim is weaker but still real: some connections are
+         * reset mid-handshake, therefore at least one test fails, and — the part this task
+         * exists for — the run still produces a **verdict** instead of hanging. The
+         * unbounded version of this same scenario produced no verdict at 45 s, 150 s and
+         * 450 s before `Fixture::connect` had a deadline.
+         */
+        anySubsetMayFail: true,
+        expectedFailures: [],
+        note: 'connections are reset mid-handshake; which tests fail is timing-dependent',
+      },
+      'silent-server': {
+        expectedFailures: ALL_COMMAND_TESTS,
+        note: 'the server accepts and never answers, so every test times out at connect',
       },
     }
     let scenarioExpectation = null
@@ -398,26 +439,49 @@ async function main() {
       const failedNames = [...stdout.matchAll(/^    (sftp_command_e2e_tests::\S+)$/gm)]
         .map(match => match[1].split('::').pop())
       const expected = scenarioExpectation?.expectedFailures ?? []
-      const unexpected = failedNames.filter(name => !expected.includes(name))
-      const missing = expected.filter(name => !failedNames.includes(name))
-      if (scenarioExpectation && unexpected.length === 0 && missing.length === 0) {
+      if (scenarioExpectation?.anySubsetMayFail) {
+        /*
+         * A timing-dependent scenario still has to prove *something*, and a run where every
+         * test passed proves nothing happened at all — the shaping may not have taken
+         * effect, or the proxy may not have been in the path. So the floor is "at least one
+         * failure", not "exactly these failures".
+         */
+        if (failedNames.length === 0) {
+          const noEffect = new Error(
+            `the "${process.env.T16_SHAPING}" scenario produced no failures at all; the ` +
+              `shaping may not have been applied, so this run proves nothing`,
+          )
+          noEffect.stdout = stdout
+          noEffect.stderr = cargoResult.stderr
+          throw noEffect
+        }
         exitCode = 0
         console.log(
           `SFTP command-level: EXPECTED_NETWORK_FAILURE (by design for ` +
-            `"${process.env.T16_SHAPING}"): ${failedNames.join(', ')} failed because the ` +
-            `link was cut; every other test passed`,
+            `"${process.env.T16_SHAPING}"): ${failedNames.length} of ` +
+            `${failedNames.length + (stdout.match(/\.\.\. ok$/gm) ?? []).length} tests failed ` +
+            `because the handshake was reset; the run produced a verdict`,
         )
       } else {
-        const failed = new Error(
-          `cargo test exited with code ${String(cargoResult.code)}` +
-            (scenarioExpectation
-              ? `; unexpected failures: [${unexpected.join(', ')}]` +
-                `; expected but passed: [${missing.join(', ')}]`
-              : ''),
-        )
-        failed.stdout = stdout
-        failed.stderr = cargoResult.stderr
-        throw failed
+        const unexpected = failedNames.filter(name => !expected.includes(name))
+        const missing = expected.filter(name => !failedNames.includes(name))
+        if (unexpected.length === 0 && missing.length === 0) {
+          exitCode = 0
+          console.log(
+            `SFTP command-level: EXPECTED_NETWORK_FAILURE (by design for ` +
+              `"${process.env.T16_SHAPING}"): ${failedNames.join(', ')} failed because the ` +
+              `link was cut; every other test passed`,
+          )
+        } else {
+          const failed = new Error(
+            `cargo test exited with code ${String(cargoResult.code)}` +
+              `; unexpected failures: [${unexpected.join(', ')}]` +
+              `; expected but passed: [${missing.join(', ')}]`,
+          )
+          failed.stdout = stdout
+          failed.stderr = cargoResult.stderr
+          throw failed
+        }
       }
     }
 

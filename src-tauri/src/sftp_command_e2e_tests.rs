@@ -82,26 +82,63 @@ impl Fixture {
         russh_sftp::client::SftpSession,
     ) {
         use russh::keys::PrivateKeyWithHashAlg;
+        /*
+         * Every step is bounded, and a failure is reported as a failure.
+         *
+         * ## Why this has to be here rather than in the caller
+         *
+         * Measured (R03): with `T16_SHAPING=handshake-reset` (connection reset during the
+         * banner exchange) and `T16_SHAPING=silent-server` (accepted, then nothing), this
+         * function **never returned**. The whole suite produced no verdict and had to be
+         * killed at its outer deadline — 45 s in that run, and 1 h 17 min in an earlier one.
+         *
+         * The production path already handles this: `session/ssh.rs` wraps
+         * `client::connect_stream` in `tokio::time::timeout_at` **and** holds a
+         * `TcpShutdownGuard` that shuts the socket down when the deadline fires, because a
+         * pending handshake future does not necessarily observe the socket closing on its
+         * own. This helper had neither, so it could not tell "the server is slow" from
+         * "the server will never answer".
+         *
+         * The bound is per-step rather than one deadline for the whole function: a single
+         * deadline would make a slow-but-working fixture fail on a loaded CI machine, and
+         * the distinction this suite needs is "this step never completed", not "the whole
+         * thing took too long".
+         */
+        const STEP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
         let config = Arc::new(russh::client::Config::default());
-        let mut handle = russh::client::connect(config, ("127.0.0.1", self.port), AcceptAnyHostKey)
-            .await
-            .expect("connect to the fixture sshd");
-        let auth = handle
-            .authenticate_publickey(
+        let mut handle = tokio::time::timeout(
+            STEP_TIMEOUT,
+            russh::client::connect(config, ("127.0.0.1", self.port), AcceptAnyHostKey),
+        )
+        .await
+        .expect("the TCP connect and SSH handshake must finish within the per-step timeout")
+        .expect("connect to the fixture sshd");
+        let auth = tokio::time::timeout(
+            STEP_TIMEOUT,
+            handle.authenticate_publickey(
                 self.user.clone(),
                 PrivateKeyWithHashAlg::new(Arc::clone(&self.key), None),
-            )
-            .await
-            .expect("authenticate");
+            ),
+        )
+        .await
+        .expect("public key authentication must finish within the per-step timeout")
+        .expect("authenticate");
         assert!(auth.success(), "public key authentication must succeed");
-        let channel = handle.channel_open_session().await.expect("open a session");
-        channel
-            .request_subsystem(false, "sftp")
+        let channel = tokio::time::timeout(STEP_TIMEOUT, handle.channel_open_session())
             .await
+            .expect("opening a session channel must finish within the per-step timeout")
+            .expect("open a session");
+        tokio::time::timeout(STEP_TIMEOUT, channel.request_subsystem(false, "sftp"))
+            .await
+            .expect("requesting the sftp subsystem must finish within the per-step timeout")
             .expect("request the sftp subsystem");
-        let session = russh_sftp::client::SftpSession::new(channel.into_stream())
-            .await
-            .expect("sftp handshake");
+        let session = tokio::time::timeout(
+            STEP_TIMEOUT,
+            russh_sftp::client::SftpSession::new(channel.into_stream()),
+        )
+        .await
+        .expect("the SFTP handshake must finish within the per-step timeout")
+        .expect("sftp handshake");
         (handle, session)
     }
 }

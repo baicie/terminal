@@ -43,6 +43,16 @@ export async function startShapingProxy({
   cutAfterBytes = { up: 0, down: 0 },
   /** Destroy the connection this long after it opened, regardless of traffic. */
   resetAfterMs = 0,
+  /**
+   * Accept the connection and then forward **nothing**, in either direction, until the
+   * proxy is closed.
+   *
+   * Unlike `cutAfterBytes`/`resetAfterMs` there is no event on the wire to react to: the
+   * peer's TCP connect succeeds, its writes are accepted by the kernel, and no reply ever
+   * arrives. That is what a server that has stopped answering looks like, and it is the
+   * case a client without its own connect/read deadline cannot distinguish from "slow".
+   */
+  blackhole = false,
 } = {}) {
   if (!Number.isInteger(targetPort) || targetPort < 1 || targetPort > 65_535) {
     throw new Error(`targetPort must be a TCP port, got ${targetPort}`)
@@ -116,6 +126,24 @@ export async function startShapingProxy({
     sockets.add(upstream)
 
     let done = false
+    /*
+     * Blackhole: hold the connection open and forward nothing.
+     *
+     * Deliberately **not** connecting to the real sshd for this mode — a second connection
+     * to the daemon would let it make progress and consume a session slot while nobody is
+     * listening to it. `pause()` on the client stops even the banner from being read, so
+     * the peer's kernel accepts the bytes and no reply is ever produced.
+     *
+     * The sockets are kept referenced (they are in `sockets`) so `close()` can end them;
+     * the point of this scenario is that the *client* has to bound itself.
+     */
+    if (blackhole) {
+      client.pause()
+      upstream.destroy()
+      sockets.delete(upstream)
+      client.on('error', () => {})
+      return
+    }
     /*
      * A cut must be a **reset**, not a polite close.
      *
@@ -211,5 +239,29 @@ export const SHAPING_SCENARIOS = {
   },
   'cut-download': {
     cutAfterBytes: { down: 4 * 1024 * 1024 },
+  },
+  /**
+   * Every connection is reset 250 ms after it is accepted — during the SSH banner
+   * exchange, before a session exists.
+   *
+   * This is a different failure from `cut-*`: those break a stream that was working, and
+   * the product's error paths for a live session are what they exercise. A handshake that
+   * never completes has no session id to fail, so it takes the connect path instead. The
+   * 250 ms is not arbitrary: it must be long enough for the TCP connect to succeed (so the
+   * client sees a reset, not a refused connection) and short enough that the key exchange
+   * cannot finish first.
+   */
+  'handshake-reset': {
+    resetAfterMs: 250,
+  },
+  /**
+   * The connection is accepted and then nothing moves: no banner, no reply, no reset.
+   *
+   * The hardest case to bound, because there is no error to react to — only absence. A
+   * client without a connect timeout waits forever, which is indistinguishable from a
+   * healthy but slow server unless something measures it.
+   */
+  'silent-server': {
+    blackhole: true,
   },
 }
