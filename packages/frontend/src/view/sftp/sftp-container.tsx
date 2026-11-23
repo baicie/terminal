@@ -78,6 +78,15 @@ const SftpContainer: React.FC = () => {
     useSftpTransferActions({
       sessionId: remoteSessionId,
       remotePath,
+      // The server the dock is bound to. The integrity check needs it to tell "another
+      // transfer wrote this file" from "another server happens to have the same path".
+      connection: activeHost
+        ? {
+            hostname: activeHost.hostname,
+            port: activeHost.port,
+            username: activeHost.username,
+          }
+        : null,
     })
 
   // Why the listing is not refreshed by the handlers above: `uploadPaths` resolves

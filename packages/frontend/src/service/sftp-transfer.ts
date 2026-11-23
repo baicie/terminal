@@ -151,8 +151,10 @@ export async function uploadPaths(args: {
   sessionId: string
   remoteDir: string
   localPaths: string[]
+  /** The server these land on; each file's own path completes the target. */
+  connection?: { hostname: string; port: number; username: string } | null
 }): Promise<void> {
-  const { sessionId, remoteDir, localPaths } = args
+  const { sessionId, remoteDir, localPaths, connection } = args
   const uploads = localPaths.map(localPath => {
     const parts = localPath.split(/[\\/]+/)
     const name = parts[parts.length - 1] || localPath
@@ -161,7 +163,13 @@ export async function uploadPaths(args: {
   })
   await Promise.allSettled(
     uploads.map(({ localPath, remotePath, name }) =>
-      uploadFile({ sessionId, localPath, remotePath, displayName: name }),
+      uploadFile({
+        sessionId,
+        localPath,
+        remotePath,
+        displayName: name,
+        target: connection ? { ...connection, remotePath } : undefined,
+      }),
     ),
   )
 }
