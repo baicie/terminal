@@ -211,8 +211,4 @@ export function handOffVerification(
       verifyingIds.delete(id)
       claim.release()
     })
-    .finally(() => {
-      verifyingIds.delete(id)
-      claim.release()
-    })
 }

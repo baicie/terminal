@@ -43,7 +43,11 @@ vi.mock('@/service/notifications', () => ({
 
 import { useTransferQueue } from '@/store/transfer-queue'
 import { checksumVerdict } from '@/store/transfer-checksum-verdict'
-import { __resetSessionClaimsForTests, registerSession } from './sftp-session-claim'
+import {
+  __resetSessionClaimsForTests,
+  beginSessionClose,
+  registerSession,
+} from './sftp-session-claim'
 import {
   __resetProgressListenerForTests,
   configureTransferRuntime,
@@ -224,5 +228,48 @@ describe('T13 — a changed file is never reported as verified', () => {
     expect(mocks.sftpDelete).not.toHaveBeenCalled()
     // The record still exists and still says the transfer completed.
     expect(record(id)!.status).toBe('done')
+  })
+})
+
+describe('R07 — a check that could not run is an error, not a silent pass', () => {
+  it('a session that is closing makes the check fail with an explicit reason', async () => {
+    /*
+     * ## The guard this pins
+     *
+     * R07's mutation pass found that turning `failChecksum`'s `success: false` into
+     * `success: true` left every test green. The reason is not that the code is wrong —
+     * it is that `checksumVerdict` derives its answer from `localStatus`/`remoteStatus`
+     * and never reads the `success` flag, so a `done` with no hash still degrades to
+     * `indeterminate`.
+     *
+     * That is a *second* line of defence, not the first. The first is that the check must
+     * not be recorded as having run at all. This case asserts the observable contract
+     * directly: when the session is going away before the hash can start, the remote side
+     * is `error`, the verdict is `indeterminate`, and there is a reason a user can read.
+     *
+     * Without it, `failChecksum` could be changed to report success and the only thing
+     * catching it would be an unrelated type mismatch downstream.
+     */
+    const id = await startedUpload()
+    // The connection goes away between `done` and the check, which is the window the
+    // `claimSession` guard at the top of `verifyChecksum` exists for.
+    beginSessionClose('s1')
+    handleProgressEvent({ transferId: id, kind: 'done', bytesDone: 1024, bytesTotal: 1024 })
+
+    await vi.waitFor(() => {
+      const checksum = record(id)?.checksum
+      expect(checksum?.remoteStatus).toBe('error')
+    })
+
+    const verdict = checksumVerdict(record(id))
+    expect(verdict.verdict).toBe('indeterminate')
+    expect(verdict.failedSide).toBe('remote')
+    // A reason, not an empty string: the UI shows this, and "the check failed" with no
+    // explanation is the shape that makes a user distrust the whole feature.
+    expect(verdict.error).toBeTruthy()
+    expect(verdict.error).toMatch(/connection/i)
+    // The expensive hashes must not have been attempted against a dying session.
+    expect(mocks.checksumLocal).not.toHaveBeenCalled()
+    expect(mocks.checksumRemote).not.toHaveBeenCalled()
   })
 })
