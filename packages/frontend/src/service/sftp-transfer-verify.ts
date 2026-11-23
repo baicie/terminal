@@ -18,7 +18,14 @@
  */
 import { useTransferQueue } from '@/store/transfer-queue'
 import { claimSession } from './sftp-session-claim'
-import { changedSince, generationOf } from './sftp-transfer-path-generation'
+import {
+  beginRead,
+  completionsOf,
+  isContended,
+  releaseIfIdle,
+  targetKeyOf,
+  targetOfArgs,
+} from './sftp-transfer-target'
 import type { TransferArgs } from './sftp-transfer-types'
 
 /**
@@ -113,27 +120,53 @@ export function handOffVerification(
   }
 
   /*
-   * ## Snapshot the path's generation before reading it
+   * ## A target is a server plus a path, and a live write is already a conflict
    *
-   * The check reads a **remote path**, not "the bytes I wrote". Two transfers onto one
-   * path therefore race: A finishes, A starts hashing, B overwrites, and A's read
-   * returns B's content. Measured: A reported `verified` after its path was overwritten
-   * by B — a transfer certifying itself with a file that no longer exists anywhere.
+   * The check reads a **remote file**, not "the bytes I wrote". Two transfers onto one
+   * file therefore race: A finishes, A starts hashing, B overwrites, and A's read returns
+   * B's content. Measured: A reported `verified` after its path was overwritten — a
+   * transfer certifying itself with a file that no longer exists anywhere.
    *
-   * The generation is bumped at every `done` for that (session, path). Taking it here
-   * and re-reading it after the hash answers tells us whether the path changed while we
-   * were reading it. When it did, the honest answer is `indeterminate`: the app no
-   * longer knows whose bytes it hashed, and neither `verified` nor `mismatch` would be
-   * a statement about this transfer.
+   * Two things had to change from the first attempt at this guard:
    *
-   * The snapshot is taken *before* the verifier runs, so a change that happened between
-   * `done` and this point is caught too.
+   * 1. **The identity cannot be the path alone.** `/srv/shared.bin` on host1 and on host2
+   *    are different files; keying on the path made unrelated servers collide and turned
+   *    a correct check into `indeterminate`. It cannot be the Host row either — two Host
+   *    configs may point at one machine, which is the case where a conflict is most
+   *    likely and least visible. The key is the connection coordinates plus the
+   *    normalised path (see `sftp-transfer-target.ts`).
+   *
+   * 2. **A write that has started counts, not only one that finished.** A counter bumped
+   *    at `done` is blind to B beginning after A's snapshot and still running when A's
+   *    read returns. The read claim below is taken *and* the target is inspected while
+   *    the check is in flight; a writer that overlaps the check is visible even before its
+   *    `done` arrives.
+   *
+   * When the target is unknown (no connection coordinates on the args) the check cannot
+   * decide whether it had a competitor. That is recorded as `indeterminate` — never as
+   * `verified`, because "I could not rule out an overwrite" is not a clean bill of health.
    */
-  const generation = generationOf(args)
+  const target = targetOfArgs(args)
+  const readHold = target ? beginRead(target) : null
+  const targetKey = target ? targetKeyOf(target) : null
+  /*
+   * Two independent signals, both taken before the read:
+   *
+   *   - `contendedAtStart`: a writer is running right now. Covers a long write that began
+   *     before this check and is still going.
+   *   - `completionsAtStart`: how many writes had already finished. A check that sees this
+   *     number move later knows a write completed inside its window — the other half of
+   *     the race, which a live counter alone cannot see because the writer released its
+   *     hold before the check looked.
+   */
+  const contendedAtStart =
+    target !== null && isContended(targetKeyOf(target), 'writers')
+  const completionsAtStart = targetKey ? completionsOf(targetKey) : 0
 
   const task = verifier(id, args)
   // Not verifying this transfer: nothing to hold the session for.
   if (task === null) {
+    readHold?.release()
     claim.release()
     return
   }
@@ -146,19 +179,37 @@ export function handOffVerification(
     })
     .then(() => {
       /*
-       * The path changed under us? Then the verdict we just computed is about another
-       * transfer's bytes. Overwrite it with an `indeterminate` reason rather than
-       * leaving a claim we cannot support — including the `verified` case, which is the
-       * one that does damage.
+       * Did anything write this target while the check was reading it?
+       *
+       * `readHold` is still held here, so `writers > 0` means a writer overlapped the
+       * check — whether or not it has finished. `contendedAtStart` covers the writer that
+       * began before this check and is still going; without it, a long write that started
+       * first would be invisible to a short check that ran entirely inside it.
        */
-      if (changedSince(args, generation)) {
+      const contested =
+        target === null ||
+        contendedAtStart ||
+        isContended(targetKeyOf(target), 'writers') ||
+        completionsOf(targetKeyOf(target)) > completionsAtStart
+      if (contested) {
         useTransferQueue.getState().setChecksumResult(id, 'remote', {
           success: false,
           error:
-            'The file was overwritten by another transfer while its integrity was ' +
-            'being checked, so this result is about different bytes.',
+            target === null
+              ? 'This transfer has no server identity, so an overwrite by another ' +
+                'transfer cannot be ruled out and the result is not a certification.'
+              : 'The file was overwritten or is being written by another transfer, so ' +
+                'this result is about different bytes.',
         })
       }
+    })
+    .finally(() => {
+      readHold?.release()
+      // The reader releases last, so this is where the target's entry can be reclaimed —
+      // otherwise every path the app has ever checked would stay in the map.
+      if (targetKey) releaseIfIdle(targetKey)
+      verifyingIds.delete(id)
+      claim.release()
     })
     .finally(() => {
       verifyingIds.delete(id)

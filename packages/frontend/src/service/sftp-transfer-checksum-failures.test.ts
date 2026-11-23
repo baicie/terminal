@@ -74,6 +74,7 @@ async function startedUpload(): Promise<string> {
     sessionId: 's1',
     localPath: '/tmp/payload.bin',
     remotePath: '/srv/payload.bin',
+    target: { hostname: 'test.example.com', port: 22, username: 'u', remotePath: '/srv/payload.bin' },
     bytesTotal: 1024,
   })
   await flush()

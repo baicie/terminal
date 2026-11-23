@@ -18,7 +18,7 @@ import {
 import { configureTransferRunner, scheduleTransfer } from './sftp-transfer-queue'
 import { createTransferVerifier } from './sftp-transfer-checksum'
 import { configureTransferVerifier } from './sftp-transfer-verify'
-import type { TransferArgs } from './sftp-transfer-types'
+import type { TransferArgs, TransferTarget } from './sftp-transfer-types'
 
 export {
   MAX_CONCURRENT,
@@ -99,12 +99,15 @@ export async function uploadFile({
   remotePath,
   displayName,
   bytesTotal,
+  target,
 }: {
   sessionId: string
   localPath: string
   remotePath: string
   displayName?: string
   bytesTotal?: number
+  /** The server this file lands on; omitted means "unknown", never "no conflict". */
+  target?: TransferTarget
 }): Promise<void> {
   await startTransfer({
     kind: 'upload',
@@ -113,6 +116,7 @@ export async function uploadFile({
     remotePath,
     displayName,
     bytesTotal,
+    target,
   })
 }
 
@@ -122,12 +126,14 @@ export async function downloadFile({
   localPath,
   displayName,
   bytesTotal,
+  target,
 }: {
   sessionId: string
   remotePath: string
   localPath: string
   displayName?: string
   bytesTotal?: number
+  target?: TransferTarget
 }): Promise<void> {
   await startTransfer({
     kind: 'download',
@@ -136,6 +142,7 @@ export async function downloadFile({
     localPath,
     displayName,
     bytesTotal,
+    target,
   })
 }
 

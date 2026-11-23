@@ -28,7 +28,7 @@ import {
 } from '@/store/transfer-queue'
 import { notify } from '@/service/notifications'
 import { handOffVerification, verifyingTransferIds } from './sftp-transfer-verify'
-import { noteWrite } from './sftp-transfer-path-generation'
+import { releaseTarget, retainTarget } from './sftp-transfer-target'
 import type { TransferArgs } from './sftp-transfer-types'
 
 export const MAX_CONCURRENT = 3
@@ -101,8 +101,11 @@ export function transition(
  * 释放槽位与参数（幂等）。
  * 即使记录已被 UI 移除也必须释放，否则关闭页面再进入会永久泄漏槽位。
  */
-export function settle(id: string): void {
+export function settle(id: string, completed = false): void {
   runningSlots.delete(id)
+  // The single place a transfer stops using its target: completed, failed, cancelled
+  // before start, or removed. `pendingArgs` is still needed for the completion note.
+  releaseTarget(id, pendingArgs.get(id) ?? null, completed)
   pendingArgs.delete(id)
 }
 
@@ -146,16 +149,11 @@ export function completeTransfer(
   // was still running (closing the panel and reopening it). Releasing the slot in
   // both cases is what keeps the queue moving — returning early here leaked the
   // slot permanently, which is the failure the old unconditional `settle` prevented.
-  settle(id)
+  settle(id, /* completed */ applied)
   dispatch()
   // Verification starts only for the transition that actually completed: a
   // duplicate `done` must not hash the remote file a second time.
-  if (applied && args) {
-    // The path was written: bump its generation *before* the check snapshots it, so a
-    // second write during the check is visible as a changed generation.
-    noteWrite(args)
-    handOffVerification(id, args)
-  }
+  if (applied && args) handOffVerification(id, args)
   return applied
 }
 
@@ -208,6 +206,9 @@ function pump(): void {
 
     runningSlots.add(next.id) // ← 同步预占：此处之后才允许出现 await
     startedIds.add(next.id)
+    // Before the first byte moves: a write that is still running must be visible to any
+    // integrity check that overlaps it, so the claim cannot wait for `done`.
+    retainTarget(next.id, args)
     if (!transition(next.id, 'running')) {
       runningSlots.delete(next.id)
       startedIds.delete(next.id)

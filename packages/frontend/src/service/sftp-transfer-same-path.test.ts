@@ -61,7 +61,7 @@ import {
   type TransferRuntime,
 } from './sftp-transfer'
 import { __resetTransferQueueForTests } from './sftp-transfer-queue'
-import { __resetPathGenerationsForTests } from './sftp-transfer-path-generation'
+import { __resetTargetsForTests } from './sftp-transfer-target'
 
 /**
  * A runtime whose transfers settle only when the test says so, and whose remote hash is
@@ -129,11 +129,23 @@ const records = () => useTransferQueue.getState().transfers
 const record = (id: string) => records().find(entry => entry.id === id)
 
 async function uploadTo(sessionId: string, remotePath: string): Promise<string> {
+  /*
+   * Both sessions write to the **same server** here: that is the case this file is about
+   * (two SSH sessions onto one machine, each dragging the same file). R01 showed a path
+   * alone is not an identity — two servers can share a path — so the target says which
+   * server, and it is deliberately identical for `s1` and `s2`.
+   */
   await uploadFile({
     sessionId,
     localPath: `/tmp/${remotePath.split('/').pop()}`,
     remotePath,
     bytesTotal: 1024,
+    target: {
+      hostname: 'shared.example.com',
+      port: 22,
+      username: 'deploy',
+      remotePath,
+    },
   })
   await flush()
   const running = records().filter(entry => entry.status === 'running')
@@ -147,7 +159,7 @@ beforeEach(() => {
   __resetTransferQueueForTests()
   __resetProgressListenerForTests()
   __resetSessionClaimsForTests()
-  __resetPathGenerationsForTests()
+  __resetTargetsForTests()
   registerSession('s1')
   registerSession('s2')
   vi.clearAllMocks()
@@ -255,7 +267,7 @@ describe('T14 — two transfers onto one remote path', () => {
     ).not.toBe('verified')
   })
 
-  it('the overwriting transfer can still verify itself', async () => {
+  it('the last writer still verifies itself, while the overwritten one does not', async () => {
     // The rule must not be so blunt that it suppresses B's verdict: B's bytes are on the
     // path, so B's read is a true statement about B. Every transfer's remote hash is its
     // own local hash here — the "everything is fine" input.
@@ -274,8 +286,24 @@ describe('T14 — two transfers onto one remote path', () => {
       { timeout: 3_000 },
     )
 
+    /*
+     * ## Whether B can certify itself depends on timing, and the test says which case it
+     * is exercising
+     *
+     * B's write is the **last** one on this target and it has finished by the time B's own
+     * check runs, so from B's position the file it reads is the file it wrote. Nothing
+     * overlapped B's check: A's write completed before it began. `verified` is therefore
+     * correct here.
+     *
+     * R01's stricter rule changed the answer only for the case where a write overlaps the
+     * check — which `sftp-transfer-target.test.ts` covers with a held write. Certifying B
+     * because it "happens to be later" would be guessing; certifying it because no writer
+     * touched the target during its window is not.
+     *
+     * The invariant this case exists for is the one below: A, whose file was overwritten,
+     * must not be certified as a side effect of B finishing.
+     */
     expect(checksumVerdict(record(secondId)).verdict).toBe('verified')
-    // And A is not silently called verified as a side effect.
     expect(checksumVerdict(record(firstId)).verdict).not.toBe('verified')
   })
 

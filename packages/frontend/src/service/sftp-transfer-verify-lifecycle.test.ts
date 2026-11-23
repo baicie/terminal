@@ -97,6 +97,7 @@ async function startUpload(sessionId = 's1'): Promise<string> {
     sessionId,
     localPath: '/tmp/payload.bin',
     remotePath: '/srv/payload.bin',
+    target: { hostname: 'test.example.com', port: 22, username: 'u', remotePath: '/srv/payload.bin' },
     bytesTotal: 100,
   })
   await flush()
@@ -149,6 +150,7 @@ describe('a finished transfer keeps its session alive until the check ends', () 
           sessionId: 's1',
           localPath: `/tmp/file-${index}.bin`,
           remotePath: `/srv/file-${index}.bin`,
+          target: { hostname: 'test.example.com', port: 22, username: 'u', remotePath: `/srv/file-${index}.bin` },
         }),
       ),
     )
