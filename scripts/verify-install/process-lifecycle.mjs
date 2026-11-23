@@ -63,6 +63,13 @@ export function launchProcess(command, args = [], options = {}) {
     detached: options.detached === true,
   })
   child.lifecycle = state
+  /*
+   * The collected output is exposed on the lifecycle state so a caller that is not
+   * using `logPath` (the SFTP harness bounds its own child with a deadline) can still
+   * read what the process wrote. It is the same array the stream handlers push into,
+   * not a copy.
+   */
+  state.output = output
   child.once('spawn', () => { state.spawned = true })
   child.once('error', error => {
     state.spawnError = error
