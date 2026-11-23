@@ -21,13 +21,14 @@
 // Exits 0 only when sshd started, every ignored test passed, and the fixture was
 // removed.
 
-import { execFile, spawn } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { connect, createServer } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { promisify } from 'node:util'
+import { launchProcess, stopProcess } from './process-lifecycle.mjs'
 
 const execFileAsync = promisify(execFile)
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..')
@@ -146,17 +147,32 @@ async function main() {
       sshdConfig({ port, paths, username: os.userInfo().username }),
       { mode: 0o600 },
     )
-    daemon = spawn(SSHD, ['-D', '-e', '-f', paths.config], {
+    /*
+     * ## `detached: true`, and a stop that is checked
+     *
+     * `sshd -D` forks a session child for every accepted connection. Killing only the
+     * daemon leaves those children reparented to init: measured on this machine, **103**
+     * `sshd -D -e -f …` parents with PPID 1 accumulated across runs, each still holding a
+     * config path into a directory that no longer existed.
+     *
+     * `detached: true` makes the daemon the leader of its own process group, so one signal
+     * reaches everything it forked. `stopProcess` then does the part the old hand-written
+     * cleanup did not: SIGTERM, wait for a **real** exit, SIGKILL, wait again, and report
+     * `timeout` rather than claiming success for a process that would not die.
+     */
+    daemon = launchProcess(SSHD, ['-D', '-e', '-f', paths.config], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
     })
     let diagnostics = ''
-    daemon.stdout.setEncoding('utf8')
-    daemon.stderr.setEncoding('utf8')
-    daemon.stdout.on('data', chunk => (diagnostics += chunk))
-    daemon.stderr.on('data', chunk => (diagnostics += chunk))
+    const child = daemon
+    child.stdout?.setEncoding('utf8')
+    child.stderr?.setEncoding('utf8')
+    child.stdout?.on('data', chunk => (diagnostics += chunk))
+    child.stderr?.on('data', chunk => (diagnostics += chunk))
     const spawned = new Promise((resolve, reject) => {
-      daemon.once('error', reject)
-      daemon.once('exit', code => resolve({ code }))
+      child.once('error', reject)
+      child.once('exit', code => resolve({ code }))
     })
 
     const ready = await waitForPort(port, Date.now() + READY_TIMEOUT_MS)
@@ -246,10 +262,34 @@ async function main() {
     console.error(`SFTP command-level: FAIL — ${error.message}`)
   } finally {
     if (typeof proxy !== 'undefined' && proxy) await proxy.close()
-    if (daemon !== null && daemon.exitCode === null) {
-      daemon.kill('SIGTERM')
-      await new Promise(resolve => globalThis.setTimeout(resolve, 200))
-      if (daemon.exitCode === null) daemon.kill('SIGKILL')
+    if (daemon !== null) {
+      /*
+       * Signal the **process group**, not just the daemon.
+       *
+       * With `detached: true` the daemon's PID is also its PGID, so `kill(-pid)` reaches
+       * the session children it forked. `stopProcess` already escalates and waits; what it
+       * cannot know is that signalling the group is what this caller needs, so the group
+       * signal is sent first and the per-process stop is kept as the checked backstop.
+       */
+      const pid = daemon.pid
+      if (pid) {
+        try {
+          process.kill(-pid, 'SIGTERM')
+        } catch {
+          // The group is already gone, or the platform has no process groups; the
+          // per-process stop below still runs.
+        }
+      }
+      const stopped = await stopProcess(daemon)
+      if (stopped.outcome === 'timeout') {
+        // Not a silent pass: a daemon that survives SIGKILL means the next run will bind a
+        // port something else still holds.
+        console.error(
+          `SFTP fixture: sshd ${stopped.pid} did not exit after SIGKILL — ` +
+            `run \`ps -p ${stopped.pid}\` before the next attempt`,
+        )
+        exitCode = 1
+      }
     }
     // A scenario makes one fixture directory read-only on purpose; restore the
     // permissions so the fixture can be removed.
