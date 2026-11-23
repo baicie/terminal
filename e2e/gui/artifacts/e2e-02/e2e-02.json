@@ -1,7 +1,7 @@
 {
   "case": "e2e-02",
   "verdict": "PARTIAL",
-  "recordedAt": "2026-11-22T19:22:08.254Z",
+  "recordedAt": "2026-11-23T13:20:20.032Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
@@ -10,14 +10,14 @@
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "95611660367bfcc56b6168ef59f8f54524ca2db4",
+    "sha": "64cdb0e9092db2ba4e49c6cd254e06b02460ecfa",
     "branch": "fix/tn-sftp-gui-closure",
-    "dirty": false
+    "dirty": true
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "b9b7c5ecf30f039d2eb0d6c7fdcb7b98b3689f5819bb8ebab24bc4ad3ed9f501",
-    "bytes": 37208432
+    "sha256": "17fdfb1fc677c5efcbd1f80586137b1f3188cdbd4d63a15f5f84be52e836d4ce",
+    "bytes": 37224944
   },
   "window": {
     "requestedWidth": 1440,
@@ -37,6 +37,6 @@
   },
   "terminal": null,
   "command": null,
-  "screenshot": "e2e/gui/artifacts/e2e-02/screens/e2e-02-1795375328169.png",
-  "notes": "[\n  {\n    \"requestedWidth\": 1440,\n    \"observedWidth\": 1440,\n    \"osClamped\": false,\n    \"cssWidth\": 1440,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 182,\n    \"leftCostsWidth\": true,\n    \"right\": \"column\",\n    \"rightCostsWidth\": true,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 43\n  },\n  {\n    \"requestedWidth\": 1280,\n    \"observedWidth\": 1280,\n    \"osClamped\": false,\n    \"cssWidth\": 1280,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 182,\n    \"leftCostsWidth\": true,\n    \"right\": \"column\",\n    \"rightCostsWidth\": true,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 43\n  },\n  {\n    \"requestedWidth\": 1024,\n    \"observedWidth\": 1024,\n    \"osClamped\": false,\n    \"cssWidth\": 1024,\n    \"devicePixelRatio\": 2,\n    \"left\": \"drawer\",\n    \"leftColumnWidth\": 176,\n    \"leftCostsWidth\": false,\n    \"right\": \"column\",\n    \"rightCostsWidth\": true,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 43\n  },\n  {\n    \"requestedWidth\": 900,\n    \"observedWidth\": 900,\n    \"osClamped\": false,\n    \"cssWidth\": 900,\n    \"devicePixelRatio\": 2,\n    \"left\": \"drawer\",\n    \"leftColumnWidth\": 176,\n    \"leftCostsWidth\": false,\n    \"right\": \"column\",\n    \"rightCostsWidth\": true,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 43\n  },\n  {\n    \"requestedWidth\": 768,\n    \"observedWidth\": 768,\n    \"osClamped\": false,\n    \"cssWidth\": 768,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 182,\n    \"leftCostsWidth\": true,\n    \"right\": \"overlay\",\n    \"rightCostsWidth\": false,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 43\n  },\n  {\n    \"requestedWidth\": 640,\n    \"observedWidth\": 640,\n    \"osClamped\": false,\n    \"cssWidth\": 640,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 182,\n    \"leftCostsWidth\": true,\n    \"right\": \"overlay\",\n    \"rightCostsWidth\": false,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 43\n  }\n]\n\nrequestAnimationFrame observed under automation: false. The terminal refit path is rAF-driven and therefore NOT exercised here; xterm cols are reported for information only. See docs/testing/native-gui-e2e.md."
+  "screenshot": "e2e/gui/artifacts/e2e-02/screens/e2e-02-1795440019944.png",
+  "notes": "[\n  {\n    \"requestedWidth\": 1440,\n    \"observedWidth\": 1440,\n    \"osClamped\": false,\n    \"cssWidth\": 1440,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 182,\n    \"leftCostsWidth\": true,\n    \"right\": \"column\",\n    \"rightCostsWidth\": true,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 43\n  },\n  {\n    \"requestedWidth\": 1280,\n    \"observedWidth\": 1280,\n    \"osClamped\": false,\n    \"cssWidth\": 1280,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 182,\n    \"leftCostsWidth\": true,\n    \"right\": \"column\",\n    \"rightCostsWidth\": true,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 43\n  },\n  {\n    \"requestedWidth\": 1024,\n    \"observedWidth\": 1024,\n    \"osClamped\": false,\n    \"cssWidth\": 1024,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 182,\n    \"leftCostsWidth\": true,\n    \"right\": \"column\",\n    \"rightCostsWidth\": true,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 43\n  },\n  {\n    \"requestedWidth\": 900,\n    \"observedWidth\": 900,\n    \"osClamped\": false,\n    \"cssWidth\": 900,\n    \"devicePixelRatio\": 2,\n    \"left\": \"drawer\",\n    \"leftColumnWidth\": 176,\n    \"leftCostsWidth\": false,\n    \"right\": \"column\",\n    \"rightCostsWidth\": true,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 43\n  },\n  {\n    \"requestedWidth\": 768,\n    \"observedWidth\": 768,\n    \"osClamped\": false,\n    \"cssWidth\": 768,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 182,\n    \"leftCostsWidth\": true,\n    \"right\": \"overlay\",\n    \"rightCostsWidth\": false,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 43\n  },\n  {\n    \"requestedWidth\": 640,\n    \"observedWidth\": 640,\n    \"osClamped\": false,\n    \"cssWidth\": 640,\n    \"devicePixelRatio\": 2,\n    \"left\": \"column\",\n    \"leftColumnWidth\": 182,\n    \"leftCostsWidth\": true,\n    \"right\": \"overlay\",\n    \"rightCostsWidth\": false,\n    \"rightWidth\": 300,\n    \"terminalWidth\": 1136,\n    \"cols\": 142,\n    \"rows\": 43\n  }\n]\n\nrequestAnimationFrame observed under automation: false. The terminal refit path is rAF-driven and therefore NOT exercised here; xterm cols are reported for information only. See docs/testing/native-gui-e2e.md."
 }

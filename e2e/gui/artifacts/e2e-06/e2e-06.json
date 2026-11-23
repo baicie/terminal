@@ -1,7 +1,7 @@
 {
   "case": "e2e-06",
   "verdict": "PARTIAL",
-  "recordedAt": "2026-11-22T19:23:39.690Z",
+  "recordedAt": "2026-11-23T13:21:51.906Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
@@ -10,24 +10,24 @@
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "95611660367bfcc56b6168ef59f8f54524ca2db4",
+    "sha": "64cdb0e9092db2ba4e49c6cd254e06b02460ecfa",
     "branch": "fix/tn-sftp-gui-closure",
-    "dirty": false
+    "dirty": true
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "b9b7c5ecf30f039d2eb0d6c7fdcb7b98b3689f5819bb8ebab24bc4ad3ed9f501",
-    "bytes": 37208432
+    "sha256": "17fdfb1fc677c5efcbd1f80586137b1f3188cdbd4d63a15f5f84be52e836d4ce",
+    "bytes": 37224944
   },
   "window": null,
   "terminal": null,
   "command": null,
-  "screenshot": "e2e/gui/artifacts/e2e-06/screens/e2e-06-1795375419585.png",
-  "notes": "preconditions {\"remoteRoot\":\"/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-WnbVrx/remote\",\"guard\":{\"ok\":true,\"reason\":\"the guard rejects both a relative and an absolute escape\"},\"pickerMarker\":true,\"sshFixture\":true}\nclicked the product upload control\ninvoked the product download action for the seeded file\nNOT_RUN upload through the *native* dialog (this case substitutes the path source; the operating system dialog itself is not driven)\nNOT_RUN download to a path chosen in the native save panel (same substitution)\nNOT_RUN transfers over a flaky or high-latency link (the fixture is loopback)\nNOT_RUN concurrent uploads exceeding MAX_CONCURRENT through the UI (covered by sftp-transfer-queue.test.ts, not by real bytes in a WebView)",
+  "screenshot": "e2e/gui/artifacts/e2e-06/screens/e2e-06-1795440111780.png",
+  "notes": "preconditions {\"remoteRoot\":\"/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-TYe5zw/remote\",\"guard\":{\"ok\":true,\"reason\":\"the guard rejects both a relative and an absolute escape\"},\"pickerMarker\":true,\"sshFixture\":true}\nclicked the product upload control\ninvoked the product download action for the seeded file\nNOT_RUN upload through the *native* dialog (this case substitutes the path source; the operating system dialog itself is not driven)\nNOT_RUN download to a path chosen in the native save panel (same substitution)\nNOT_RUN transfers over a flaky or high-latency link (the fixture is loopback)\nNOT_RUN concurrent uploads exceeding MAX_CONCURRENT through the UI (covered by sftp-transfer-queue.test.ts, not by real bytes in a WebView)",
   "extra": {
     "measurements": {
       "preconditions": {
-        "remoteRoot": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-WnbVrx/remote",
+        "remoteRoot": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/terminal-gui-sftp-TYe5zw/remote",
         "guard": {
           "ok": true,
           "reason": "the guard rejects both a relative and an absolute escape"
@@ -50,14 +50,14 @@
         "entry": {
           "isDirectory": false,
           "size": 3145728,
-          "mtimeMs": 1795375412641.7605,
+          "mtimeMs": 1795440104902.8433,
           "realSize": 3145728
         },
         "matches": true
       },
       "integritySamples": [
         {
-          "ms": 3,
+          "ms": 2,
           "verdicts": [
             "verified"
           ],
@@ -77,7 +77,7 @@
       "download": {
         "settled": true,
         "sourceSha256": "edaabdbd9cc3c0b361f40d6154dcef0b02cb1b0bb0a80f5e3738f910eb03deac",
-        "destination": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/e2e-06-D5qch8/e2e-06-download.bin",
+        "destination": "/var/folders/5k/ryhv7yxj2blc55wk9g4jwl5r0000gn/T/e2e-06-gTTiuV/e2e-06-download.bin",
         "queue": {
           "integrity": [
             "verified",

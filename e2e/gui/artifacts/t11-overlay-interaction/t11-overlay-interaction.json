@@ -1,7 +1,7 @@
 {
   "case": "t11-overlay-interaction",
   "verdict": "PARTIAL",
-  "recordedAt": "2026-11-22T19:24:24.790Z",
+  "recordedAt": "2026-11-23T13:22:39.926Z",
   "platform": {
     "platform": "darwin",
     "release": "24.6.0",
@@ -10,19 +10,19 @@
     "osVersion": "Darwin Kernel Version 24.6.0: Tue Apr 21 20:18:14 PDT 2026; root:xnu-11417.140.69.710.16~1/RELEASE_ARM64_T8103"
   },
   "source": {
-    "sha": "95611660367bfcc56b6168ef59f8f54524ca2db4",
+    "sha": "64cdb0e9092db2ba4e49c6cd254e06b02460ecfa",
     "branch": "fix/tn-sftp-gui-closure",
-    "dirty": false
+    "dirty": true
   },
   "binary": {
     "path": "src-tauri/target/release/terminal",
-    "sha256": "b9b7c5ecf30f039d2eb0d6c7fdcb7b98b3689f5819bb8ebab24bc4ad3ed9f501",
-    "bytes": 37208432
+    "sha256": "17fdfb1fc677c5efcbd1f80586137b1f3188cdbd4d63a15f5f84be52e836d4ce",
+    "bytes": 37224944
   },
   "window": null,
   "terminal": null,
   "command": null,
-  "screenshot": "e2e/gui/artifacts/t11-overlay-interaction/screens/t11-overlay-interaction-1795375464684.png",
+  "screenshot": "e2e/gui/artifacts/t11-overlay-interaction/screens/t11-overlay-interaction-1795440159791.png",
   "notes": "NOT_RUN tab order: Tab performs no default action in this WebView under WebDriver (focus moves when set programmatically, so the trap is not holding it), which makes the tab order unobservable here\nDialog closed by an overlay click, as designed\nAlertDialog survived an overlay click, as designed\nterminal centre resolves to \"canvas[]\"\nNOT_RUN Select / Sheet / Context Menu surfaced from the dock (this build renders the SFTP panes, which use Dialog, AlertDialog and DropdownMenu; the other three are driven from Settings and the terminal context menu, covered by their component tests rather than here)\nNOT_RUN physical mouse and keyboard — WebDriver input only goes through the WebView",
   "extra": {
     "measurements": {
