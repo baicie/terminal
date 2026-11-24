@@ -63,6 +63,58 @@ function alive(pid) {
   }
 }
 
+/**
+ * Wait until `daemon` is actually serving, or explain why it never did.
+ *
+ * ## Why `portFree(port) === false` is not readiness
+ *
+ * The original check asked only whether *something* held the port. That is a weaker
+ * question than "this daemon is listening", and the difference is what made this case
+ * fail on the Linux runner while passing on macOS:
+ *
+ *   - the daemon can exit during startup (a privilege-separation directory, a config the
+ *     platform rejects) while the loop keeps polling a port nobody is bound to;
+ *   - a daemon that exits is never noticed, because nothing asked the child;
+ *   - the failure message was `the daemon must be listening` with **no sshd stderr at
+ *     all** — `launchProcess` collects it in `lifecycle.output`, and this file never read
+ *     it.
+ *
+ * So the wait checks the child first and reports what it said. The message is the point:
+ * a CI failure that costs a rerun to diagnose is a defect in the test, not a slow machine.
+ */
+async function waitUntilListening(daemon, port, timeoutMs = 8_000) {
+  const deadline = Date.now() + timeoutMs
+  const listening = async () => (await portFree(port)) === false
+  while (Date.now() < deadline) {
+    if (daemon.exitCode !== null || daemon.lifecycle?.exitObserved) {
+      return {
+        ok: false,
+        reason:
+          `sshd exited during startup (code=${daemon.exitCode ?? 'null'}, ` +
+          `signal=${daemon.lifecycle?.signal ?? 'null'})`,
+      }
+    }
+    if (await listening()) return { ok: true, reason: null }
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  return {
+    ok: false,
+    reason: (await listening())
+      ? 'the port is held but sshd never reported ready'
+      : `sshd did not listen on 127.0.0.1:${port} within ${timeoutMs} ms`,
+  }
+}
+
+/** What the daemon wrote, so a failure says *why* rather than "still not listening". */
+function daemonDiagnostics(daemon, config) {
+  const output = (daemon.lifecycle?.output ?? []).join('').trim()
+  return [
+    `config: ${config}`,
+    `exit: code=${daemon.exitCode ?? 'null'} signal=${daemon.lifecycle?.signal ?? 'null'}`,
+    output ? `sshd output:\n${output}` : 'sshd wrote nothing to stdout or stderr',
+  ].join('\n  ')
+}
+
 async function until(predicate, timeoutMs = 8_000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -97,8 +149,19 @@ function writeConfig(directory, port) {
     `PidFile ${path.join(directory, 'sshd.pid')}`,
     'UsePAM no',
     'PasswordAuthentication no',
+    'KbdInteractiveAuthentication no',
+    'PermitEmptyPasswords no',
     'PermitRootLogin no',
-    'LogLevel ERROR',
+    'StrictModes yes',
+    'PermitUserRC no',
+    'AllowAgentForwarding no',
+    'X11Forwarding no',
+    'PermitTunnel no',
+    'GatewayPorts no',
+    'UseDNS no',
+    'PrintMotd no',
+    'PrintLastLog no',
+    'LogLevel VERBOSE',
     // A throwaway daemon needs a valid privilege-separation directory; without this sshd
     // refuses to start on a config it otherwise accepts under `-t`.
     `AuthorizedKeysFile ${path.join(directory, 'authorized_keys')}`,
@@ -135,9 +198,21 @@ describe('R02 — the SFTP harness daemon is reclaimed', () => {
       const config = writeConfig(root, port)
       const daemon = launchProcess(SSHD, ['-D', '-e', '-f', config], {
         detached: true,
+        /*
+         * `cwd` is the fixture directory, matching `terminal-smoke-sshd`'s daemon — which
+         * starts on the same runner in the same job and *passes*. Without it the daemon
+         * inherits the repository root, and on the Linux runner that is the one
+         * environmental difference between the two fixtures.
+         *
+         * A daemon that starts in the wrong directory is not a flaky daemon; it is a
+         * fixture that asks for something different than the one next to it and then
+         * reports the difference as "never listened".
+         */
+        cwd: root,
       })
 
-      assert.ok(await until(async () => (await portFree(port)) === false), 'the daemon must be listening')
+      const ready = await waitUntilListening(daemon, port)
+      assert.ok(ready.ok, `${ready.reason}\n  ${daemonDiagnostics(daemon, config)}`)
       const pid = daemon.pid
       assert.ok(pid && alive(pid), 'the daemon must be alive')
 
