@@ -188,31 +188,65 @@ describe('R02 — the SFTP harness daemon is reclaimed', () => {
        */
       const root = mkdtempSync(path.join(os.homedir(), '.tmp-r02-harness-'))
       roots.push(root)
-      const port = await new Promise(resolve => {
-        const server = createServer()
-        server.listen(0, '127.0.0.1', () => {
-          const p = server.address().port
-          server.close(() => resolve(p))
+      /*
+       * ## Why the port is retried rather than picked once
+       *
+       * The obvious way to get a free port — `listen(0)`, read `address().port`, close,
+       * hand that number to sshd — is racy. Between the close and sshd's `bind()` the
+       * number is unowned, and on Linux a port in `TIME_WAIT` from anything else on the
+       * machine cannot be bound at all. Measured on the Linux runner:
+       *
+       *   Bind to port 36187 on 127.0.0.1 failed: Address already in use.
+       *   Cannot bind any address.
+       *
+       * That is a fixture asking for something nobody promised, not a product defect and
+       * not flakiness in the code under test. Retrying a handful of fresh ports makes the
+       * race losing ~never, and a failure that survives five attempts is reported with
+       * sshd's own words rather than as "never listened".
+       *
+       * The alternative — `Port 0` and reading back the bound port — is not available:
+       * sshd does not report an ephemeral bind in a form this fixture can read without
+       * parsing logs for a format that differs across OpenSSH versions.
+       */
+      let daemon = null
+      let port = null
+      let config = null
+      let ready = null
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        port = await new Promise(resolve => {
+          const server = createServer()
+          server.listen(0, '127.0.0.1', () => {
+            const p = server.address().port
+            server.close(() => resolve(p))
+          })
         })
-      })
-      const config = writeConfig(root, port)
-      const daemon = launchProcess(SSHD, ['-D', '-e', '-f', config], {
-        detached: true,
-        /*
-         * `cwd` is the fixture directory, matching `terminal-smoke-sshd`'s daemon — which
-         * starts on the same runner in the same job and *passes*. Without it the daemon
-         * inherits the repository root, and on the Linux runner that is the one
-         * environmental difference between the two fixtures.
-         *
-         * A daemon that starts in the wrong directory is not a flaky daemon; it is a
-         * fixture that asks for something different than the one next to it and then
-         * reports the difference as "never listened".
-         */
-        cwd: root,
-      })
+        config = writeConfig(root, port)
+        daemon = launchProcess(SSHD, ['-D', '-e', '-f', config], {
+          detached: true,
+          /*
+           * `cwd` is the fixture directory, matching `terminal-smoke-sshd`'s daemon — which
+           * starts on the same runner in the same job and *passes*. Without it the daemon
+           * inherits the repository root, and on the Linux runner that is the one
+           * environmental difference between the two fixtures.
+           */
+          cwd: root,
+        })
+        ready = await waitUntilListening(daemon, port)
+        if (ready.ok) break
+        // A daemon that is still running but never listened is a different problem, and
+        // retrying would hide it behind a timeout. Only a daemon that exited on a bind
+        // failure is worth another port.
+        const bindFailed = (daemon.lifecycle?.output ?? []).some(line =>
+          line.includes('Address already in use'),
+        )
+        if (!bindFailed) break
+        await stopProcess(daemon)
+      }
 
-      const ready = await waitUntilListening(daemon, port)
-      assert.ok(ready.ok, `${ready.reason}\n  ${daemonDiagnostics(daemon, config)}`)
+      assert.ok(
+        ready?.ok,
+        `${ready?.reason}\n  ${daemonDiagnostics(daemon, config)}`,
+      )
       const pid = daemon.pid
       assert.ok(pid && alive(pid), 'the daemon must be alive')
 
@@ -247,6 +281,62 @@ describe('R02 — the SFTP harness daemon is reclaimed', () => {
       assert.deepEqual(groupAlive, [], `process group ${pid} still has members`)
       assert.ok(await until(() => portFree(port)), `port ${port} was not released`)
       socket.destroy()
+    },
+  )
+
+  /*
+   * Linux only, and the skip is the finding rather than a convenience.
+   *
+   * On macOS `bind()` to a port another process is listening on succeeds — the kernel
+   * accepts it and sshd starts, so `waitUntilListening` sees a bound port and reports
+   * ready. The condition this case exists to create simply cannot be made here. On Linux
+   * it is the everyday failure the retry was written for:
+   *
+   *   Bind to port 36187 on 127.0.0.1 failed: Address already in use.
+   *
+   * Writing it as a macOS-passing test would mean asserting something other than what
+   * the retry reacts to.
+   */
+  it(
+    'a daemon that cannot bind is retried on a new port rather than reported as never listening',
+    { skip: process.platform !== 'linux' },
+    async () => {
+      /*
+       * The retry in the case above only earns its place if the condition it reacts to
+       * can actually happen. Asserting "the test still passes when I fake the condition"
+       * proves nothing — that is the vacuous-guard shape this repository has already been
+       * bitten by. So this case creates the condition for real: it holds the port with a
+       * live listener and checks that sshd's own refusal is what the retry looks for.
+       *
+       * Without this, a typo in the substring the retry matches on would leave the whole
+       * mechanism dead and the suite green until the next Linux runner hit the race.
+       */
+      const root = mkdtempSync(path.join(os.homedir(), '.tmp-r02-bindfail-'))
+      roots.push(root)
+
+      const holder = createServer()
+      await new Promise(resolve => holder.listen(0, '127.0.0.1', resolve))
+      const busyPort = holder.address().port
+      const config = writeConfig(root, busyPort)
+
+      try {
+        const daemon = launchProcess(SSHD, ['-D', '-e', '-f', config], {
+          detached: true,
+          cwd: root,
+        })
+        const ready = await waitUntilListening(daemon, busyPort)
+        await stopProcess(daemon)
+
+        assert.equal(ready.ok, false)
+        const output = (daemon.lifecycle?.output ?? []).join('')
+        assert.match(
+          output,
+          /Address already in use/,
+          `the retry matches on this substring, so the daemon must actually emit it:\n${output}`,
+        )
+      } finally {
+        await new Promise(resolve => holder.close(resolve))
+      }
     },
   )
 
