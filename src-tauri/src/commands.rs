@@ -137,29 +137,29 @@ pub async fn session_create_ssh_password(
     profile: Option<crate::session::TerminalProfile>,
     attempt_id: Option<String>,
     connection_timeout_ms: Option<u64>,
-) -> Result<String, SessionError> {
+) -> Result<String, SessionFailure> {
     let attempt = register_connection_attempt(attempt_id.as_deref());
     let connection_deadline = ssh_connection_deadline_with_timeout(connection_timeout_ms);
     // 验证输入
     if host.is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Host cannot be empty".to_string(),
-        ));
+        )));
     }
     if !(1..=65535).contains(&port) {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Port must be between 1 and 65535".to_string(),
-        ));
+        )));
     }
     if username.is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Username cannot be empty".to_string(),
-        ));
+        )));
     }
     if password.is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Password cannot be empty".to_string(),
-        ));
+        )));
     }
 
     let session = run_cancellable_connection(
@@ -177,14 +177,14 @@ pub async fn session_create_ssh_password(
             profile,
             connection_deadline,
         ),
-        || SessionError::ConnectionCancelled,
+        || SessionFailure::bare(SessionError::ConnectionCancelled),
     )
     .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
     if !manager.register_session(SessionState::Ssh(session)).await {
-        return Err(SessionError::ConnectionCancelled);
+        return Err(SessionFailure::bare(SessionError::ConnectionCancelled));
     }
 
     Ok(session_id)
@@ -207,29 +207,29 @@ pub async fn session_create_ssh_key(
     profile: Option<crate::session::TerminalProfile>,
     attempt_id: Option<String>,
     connection_timeout_ms: Option<u64>,
-) -> Result<String, SessionError> {
+) -> Result<String, SessionFailure> {
     let attempt = register_connection_attempt(attempt_id.as_deref());
     let connection_deadline = ssh_connection_deadline_with_timeout(connection_timeout_ms);
     // 验证输入
     if host.is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Host cannot be empty".to_string(),
-        ));
+        )));
     }
     if !(1..=65535).contains(&port) {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Port must be between 1 and 65535".to_string(),
-        ));
+        )));
     }
     if username.is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Username cannot be empty".to_string(),
-        ));
+        )));
     }
     if private_key.is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Private key cannot be empty".to_string(),
-        ));
+        )));
     }
 
     let session = run_cancellable_connection(
@@ -248,14 +248,14 @@ pub async fn session_create_ssh_key(
             profile,
             connection_deadline,
         ),
-        || SessionError::ConnectionCancelled,
+        || SessionFailure::bare(SessionError::ConnectionCancelled),
     )
     .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
     if !manager.register_session(SessionState::Ssh(session)).await {
-        return Err(SessionError::ConnectionCancelled);
+        return Err(SessionFailure::bare(SessionError::ConnectionCancelled));
     }
 
     Ok(session_id)
@@ -276,23 +276,23 @@ pub async fn session_create_ssh_agent(
     profile: Option<crate::session::TerminalProfile>,
     attempt_id: Option<String>,
     connection_timeout_ms: Option<u64>,
-) -> Result<String, SessionError> {
+) -> Result<String, SessionFailure> {
     let attempt = register_connection_attempt(attempt_id.as_deref());
     let connection_deadline = ssh_connection_deadline_with_timeout(connection_timeout_ms);
     if host.is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Host cannot be empty".to_string(),
-        ));
+        )));
     }
     if !(1..=65535).contains(&port) {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Port must be between 1 and 65535".to_string(),
-        ));
+        )));
     }
     if username.is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Username cannot be empty".to_string(),
-        ));
+        )));
     }
 
     let session = run_cancellable_connection(
@@ -309,14 +309,14 @@ pub async fn session_create_ssh_agent(
             profile,
             connection_deadline,
         ),
-        || SessionError::ConnectionCancelled,
+        || SessionFailure::bare(SessionError::ConnectionCancelled),
     )
     .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
     if !manager.register_session(SessionState::Ssh(session)).await {
-        return Err(SessionError::ConnectionCancelled);
+        return Err(SessionFailure::bare(SessionError::ConnectionCancelled));
     }
 
     Ok(session_id)
@@ -343,33 +343,33 @@ pub async fn session_create_ssh_cert(
     profile: Option<crate::session::TerminalProfile>,
     attempt_id: Option<String>,
     connection_timeout_ms: Option<u64>,
-) -> Result<String, SessionError> {
+) -> Result<String, SessionFailure> {
     let attempt = register_connection_attempt(attempt_id.as_deref());
     let connection_deadline = ssh_connection_deadline_with_timeout(connection_timeout_ms);
     if host.is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Host cannot be empty".to_string(),
-        ));
+        )));
     }
     if !(1..=65535).contains(&port) {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Port must be between 1 and 65535".to_string(),
-        ));
+        )));
     }
     if username.is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Username cannot be empty".to_string(),
-        ));
+        )));
     }
     if certificate.is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Certificate cannot be empty".to_string(),
-        ));
+        )));
     }
     if private_key.is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Private key cannot be empty".to_string(),
-        ));
+        )));
     }
 
     let session = run_cancellable_connection(
@@ -389,14 +389,14 @@ pub async fn session_create_ssh_cert(
             profile,
             connection_deadline,
         ),
-        || SessionError::ConnectionCancelled,
+        || SessionFailure::bare(SessionError::ConnectionCancelled),
     )
     .await?;
     let session_id = session.session_id().to_string();
 
     let manager = get_session_manager();
     if !manager.register_session(SessionState::Ssh(session)).await {
-        return Err(SessionError::ConnectionCancelled);
+        return Err(SessionFailure::bare(SessionError::ConnectionCancelled));
     }
 
     Ok(session_id)
@@ -749,7 +749,7 @@ mod ssh_command_future_tests {
         };
     }
 
-    assert_send_command!(
+    assert_send_failure_command!(
         password_command_future_is_send,
         (
             AppHandle,
@@ -766,7 +766,7 @@ mod ssh_command_future_tests {
             Option<u64>
         )
     );
-    assert_send_command!(
+    assert_send_failure_command!(
         key_command_future_is_send,
         (
             AppHandle,
@@ -784,7 +784,7 @@ mod ssh_command_future_tests {
             Option<u64>
         )
     );
-    assert_send_command!(
+    assert_send_failure_command!(
         agent_command_future_is_send,
         (
             AppHandle,
@@ -800,7 +800,7 @@ mod ssh_command_future_tests {
             Option<u64>
         )
     );
-    assert_send_command!(
+    assert_send_failure_command!(
         cert_command_future_is_send,
         (
             AppHandle,

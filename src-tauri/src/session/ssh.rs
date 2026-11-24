@@ -11,8 +11,8 @@ use super::ssh_writer::{
 };
 use super::terminal_output::{emit_terminal_error, spawn_session_output_pump, TerminalOutputChunk};
 use super::types::{
-    validate_terminal_size, ExecResult, JumpHostConfig, SessionError, SessionFailure, SessionType,
-    TerminalProfile,
+    validate_terminal_size, ConnectionHop, ConnectionStage, ExecResult, JumpHostConfig,
+    SessionError, SessionFailure, SessionType, TerminalProfile,
 };
 use futures::task::AtomicWaker;
 use russh::client;
@@ -1410,7 +1410,7 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> BoxedSshFuture<'static, Self> {
+    ) -> BoxedConnectionFuture<'static, Self> {
         Box::pin(Self::create(
             app,
             host,
@@ -1446,7 +1446,7 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> BoxedSshFuture<'static, Self> {
+    ) -> BoxedConnectionFuture<'static, Self> {
         Box::pin(Self::create(
             app,
             host,
@@ -1487,7 +1487,7 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> BoxedSshFuture<'static, Self> {
+    ) -> BoxedConnectionFuture<'static, Self> {
         Box::pin(Self::create(
             app,
             host,
@@ -1521,7 +1521,7 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> BoxedSshFuture<'static, Self> {
+    ) -> BoxedConnectionFuture<'static, Self> {
         Box::pin(Self::create(
             app,
             host,
@@ -1652,25 +1652,34 @@ impl SshSession {
         rows: u16,
         profile: Option<TerminalProfile>,
         deadline: tokio::time::Instant,
-    ) -> Result<Self, SessionError> {
-        // 验证输入
-        validate_terminal_size(cols, rows)?;
+    ) -> Result<Self, SessionFailure> {
+        /*
+         * `create` is shared by the direct and jump constructors, so it carries the wider
+         * error type. A direct connection fails with `hop: None` — the documented meaning
+         * of the field, not "unknown" — and a jump failure keeps the context that
+         * `connect_via_jump_inner` attached.
+         *
+         * The alternative — keeping `SessionError` here and taking `.error` at the jump
+         * call — would attach a hop two frames deeper and then discard it on the way out,
+         * which is the exact shape this feature exists to remove.
+         */
+        validate_terminal_size(cols, rows).map_err(SessionError::from)?;
         let profile = profile.unwrap_or_default();
-        profile.validate()?;
+        profile.validate().map_err(SessionError::from)?;
         if host.is_empty() {
-            return Err(SessionError::InvalidInput(
+            return Err(SessionFailure::bare(SessionError::InvalidInput(
                 "Host cannot be empty".to_string(),
-            ));
+            )));
         }
         if !(1..=65535).contains(&port) {
-            return Err(SessionError::InvalidInput(
+            return Err(SessionFailure::bare(SessionError::InvalidInput(
                 "Port must be between 1 and 65535".to_string(),
-            ));
+            )));
         }
         if username.is_empty() {
-            return Err(SessionError::InvalidInput(
+            return Err(SessionFailure::bare(SessionError::InvalidInput(
                 "Username cannot be empty".to_string(),
-            ));
+            )));
         }
         let expected_host_key = parse_expected_host_key(expected_host_key)?;
 
@@ -1765,7 +1774,8 @@ impl SshSession {
                     cleanup_deadline(deadline),
                 )
                 .await;
-                return Err(error);
+                // A direct connection has no hop; the stage is known (authentication).
+                return Err(SessionFailure::from(error).with_stage(ConnectionStage::Authentication));
             }
             crate::startup_trace::stage("ssh-auth-done", &stage_target);
             raw_handle = direct;
@@ -1803,7 +1813,8 @@ impl SshSession {
                     )
                     .await;
                 }
-                return Err(error);
+                // Direct path: no hop to name.
+                return Err(SessionFailure::from(error));
             }
         };
 
@@ -1990,7 +2001,7 @@ impl SshSession {
         target: JumpTarget,
         jump_host: JumpHostConfig,
         deadline: tokio::time::Instant,
-    ) -> BoxedSshFuture<
+    ) -> BoxedConnectionFuture<
         'static,
         (
             client::Handle<ClientHandler>,
@@ -2016,7 +2027,7 @@ impl SshSession {
             TcpShutdownGuard,
             crate::state::ForwardListenerSlot,
         ),
-        SessionError,
+        SessionFailure,
     > {
         // 第一步：验证并认证跳板机。主会话与 TOFU 隧道探测共用此路径，
         // 避免 password/key/agent/cert 语义随时间漂移。
@@ -2046,7 +2057,16 @@ impl SshSession {
                     cleanup_deadline(deadline),
                 )
                 .await;
-                return Err(error);
+                /*
+                 * SSH08 — the `direct-tcpip` channel could not be opened.
+                 *
+                 * `Bastion` names the connection that *holds* the channel, not where the
+                 * physical fault is: the bastion may refuse forwarding, or the target
+                 * address may be unreachable from it. This API does not distinguish those,
+                 * so only the stage is claimed — the tunnel never opened.
+                 */
+                return Err(SessionFailure::from(error)
+                    .at(ConnectionHop::Bastion, ConnectionStage::TunnelOpen));
             }
         };
 
@@ -2078,7 +2098,10 @@ impl SshSession {
                     cleanup_deadline(deadline),
                 )
                 .await;
-                return Err(error);
+                // SSH09 — the tunnel opened, the host behind it did not complete a
+                // handshake. A successful bastion says nothing about that host.
+                return Err(SessionFailure::from(error)
+                    .at(ConnectionHop::Target, ConnectionStage::Handshake));
             }
         };
 
@@ -2119,7 +2142,9 @@ impl SshSession {
                 cleanup_deadline(deadline),
             )
             .await;
-            return Err(error);
+            // SSH09 — the bastion authenticated; this refusal is the host behind it.
+            return Err(SessionFailure::from(error)
+                .at(ConnectionHop::Target, ConnectionStage::Authentication));
         }
 
         Ok((
@@ -2519,21 +2544,21 @@ pub(crate) async fn connect_authenticated_jump_host_with_shutdown(
     config: Arc<client::Config>,
     jump_host: &JumpHostConfig,
     connection_deadline: Option<tokio::time::Instant>,
-) -> Result<(client::Handle<ClientHandler>, TcpShutdownGuard), SessionError> {
+) -> Result<(client::Handle<ClientHandler>, TcpShutdownGuard), SessionFailure> {
     if jump_host.host.trim().is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Jump host cannot be empty".to_string(),
-        ));
+        )));
     }
     if jump_host.port == 0 {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Jump host port must be between 1 and 65535".to_string(),
-        ));
+        )));
     }
     if jump_host.username.trim().is_empty() {
-        return Err(SessionError::InvalidInput(
+        return Err(SessionFailure::bare(SessionError::InvalidInput(
             "Jump host username cannot be empty".to_string(),
-        ));
+        )));
     }
     validate_auth_config(
         "jump host",
@@ -2559,7 +2584,18 @@ pub(crate) async fn connect_authenticated_jump_host_with_shutdown(
         connect_deadline,
         "connect jump host",
     )
-    .await?;
+    .await
+    /*
+     * SSH07 — the bastion's TCP connect and SSH handshake.
+     *
+     * `connect_tcp_with_shutdown` performs both under one deadline and does not report
+     * which failed, so `TcpConnect` is the honest label: the tunnel never got far enough
+     * to authenticate. Claiming `Handshake` here would be a guess about an API that does
+     * not distinguish.
+     */
+    .map_err(|error| {
+        SessionFailure::from(error).at(ConnectionHop::Bastion, ConnectionStage::TcpConnect)
+    })?;
 
     let authentication_deadline = connection_deadline
         .map(|deadline| stage_deadline(deadline, SSH_AUTH_TIMEOUT))
@@ -2581,7 +2617,11 @@ pub(crate) async fn connect_authenticated_jump_host_with_shutdown(
             cleanup_at,
         )
         .await;
-        return Err(error);
+        // SSH07 — the bastion refused the credential. `kind` still says which kind of
+        // refusal; this only adds *where*.
+        return Err(
+            SessionFailure::from(error).at(ConnectionHop::Bastion, ConnectionStage::Authentication)
+        );
     }
 
     Ok((handle, shutdown_guard))

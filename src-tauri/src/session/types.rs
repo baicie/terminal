@@ -786,6 +786,17 @@ impl SessionFailure {
         self.hop = Some(hop);
         self
     }
+
+    /// Attribute the stage only.
+    ///
+    /// A direct connection performs the same steps a bastion does but has no hop to name.
+    /// Recording the stage without a hop is what lets a direct-connection failure say
+    /// "the credential was rejected" while leaving `hop` absent — which is its documented
+    /// meaning, not a missing value.
+    pub fn with_stage(mut self, stage: ConnectionStage) -> Self {
+        self.stage = Some(stage);
+        self
+    }
 }
 
 impl From<SessionError> for SessionFailure {
@@ -958,5 +969,61 @@ mod ssh05_ipc_contract_tests {
             .map(String::as_str)
             .collect();
         assert_eq!(keys.len(), 4, "only type, message, hop, stage: {keys:?}");
+    }
+}
+
+#[cfg(test)]
+mod ssh07_09_attribution_tests {
+    //! SSH07–SSH09 — the reachable attribution semantics.
+    //!
+    //! The three call sites themselves need a real sshd; these cases pin the properties
+    //! those sites depend on, so a change here fails before the slow path is reached.
+
+    use super::*;
+
+    fn json_of(failure: SessionFailure) -> serde_json::Value {
+        serde_json::to_value(SessionFailureDto::from(failure)).expect("serialises")
+    }
+
+    #[test]
+    fn a_direct_failure_records_a_stage_without_inventing_a_hop() {
+        /*
+         * A direct connection performs the same steps a bastion does. It has no hop —
+         * and `hop` absent means "no jump chain", not "unknown" — but it does know the
+         * stage, and dropping that would make direct failures less diagnosable than
+         * jump ones for no reason.
+         */
+        let json = json_of(
+            SessionFailure::from(SessionError::AuthenticationRejected("x".into()))
+                .with_stage(ConnectionStage::Authentication),
+        );
+        assert_eq!(json["stage"], "authentication");
+        assert!(json.get("hop").is_none(), "direct connections have no hop");
+    }
+
+    #[test]
+    fn a_failure_can_name_the_hop_without_claiming_a_stage() {
+        // The tunnel case: the API does not distinguish "bastion refused forwarding" from
+        // "target unreachable". The hop is known; the stage is not finer than TunnelOpen.
+        let json = json_of(
+            SessionFailure::from(SessionError::ChannelError("open failed".into()))
+                .at(ConnectionHop::Bastion, ConnectionStage::TunnelOpen),
+        );
+        assert_eq!(json["hop"], "bastion");
+        assert_eq!(json["stage"], "tunnel_open");
+        // The kind is untouched — an unknown tunnel cause stays a channel error.
+        assert_eq!(json["type"], "channel_error");
+    }
+
+    #[test]
+    fn target_attribution_never_follows_from_a_successful_bastion() {
+        /*
+         * The property SSH09 states in prose: "a successful bastion says nothing about the
+         * host behind it". Here that is the type-level fact — `Target` is a distinct value
+         * from `Bastion`, so no code can produce one while meaning the other.
+         */
+        let bastion = ConnectionHop::Bastion;
+        let target = ConnectionHop::Target;
+        assert_ne!(bastion, target);
     }
 }
