@@ -156,6 +156,32 @@ async function readPresentations() {
     const rightPresentation = rightPanel
       ? (rightPanel.getAttribute('data-presentation') ?? 'column')
       : 'none'
+    /*
+     * ## Where the width actually went
+     *
+     * Measured on the Linux runner: at 768 px the decision says `left: column,
+     * right: overlay` — so the dock costs nothing and the canvas should be
+     * `768 − rail − leftColumn`. The terminal got **400 px / 50 columns** against a
+     * predicted 65. Every other width in the matrix matches its prediction exactly
+     * (1280 → 92, 1024 → 60, 640 → 72), so this is one specific configuration, not a
+     * rounding difference.
+     *
+     * Four plausible owners each account for part of the gap and none for all of it:
+     * the rail (46), the left column's separator (6), the terminal padding (14), and the
+     * dock if its overlay still occupied flow width (300). Guessing between them from
+     * three numbers is what produced two wrong fixes already, so the next run records
+     * every candidate's real width instead.
+     *
+     * `canvasWidth` is the `[data-terminal-canvas]` container — the element the layout
+     * actually sizes before xterm fits into it. Comparing it with `terminalWidth` says
+     * whether the loss happens in layout or inside xterm.
+     */
+    const canvas = document.querySelector('[data-terminal-canvas]')
+    const rail = document.querySelector('[data-testid="activity-rail"]')
+    const xtermHost = document.querySelector('.xterm')
+    const main = canvas?.closest('main')
+    const measure = element =>
+      element ? Math.round(element.getBoundingClientRect().width) : null
     return {
       left,
       leftColumnWidth: leftAny ? Math.round(leftAny.getBoundingClientRect().width) : 0,
@@ -175,6 +201,11 @@ async function readPresentations() {
        */
       rightCostsWidth: rightPresentation === 'column',
       terminalWidth: rect ? Math.round(rect.width) : 0,
+      // Every candidate owner of the missing width, measured in the same pass.
+      canvasWidth: measure(canvas),
+      mainWidth: measure(main),
+      railWidthActual: measure(rail),
+      xtermHostWidth: measure(xtermHost),
       cssWidth: document.documentElement.clientWidth,
       devicePixelRatio: window.devicePixelRatio,
     }
