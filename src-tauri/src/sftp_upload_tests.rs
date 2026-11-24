@@ -25,6 +25,13 @@ struct Faults {
     /// Report this many more bytes than were stored, like a server whose
     /// close acknowledged a truncated file.
     report_extra_bytes: u64,
+    /// Never answer a write, like a link that was reset while a chunk was in flight.
+    ///
+    /// The write future stays pending forever — it does not error, because the peer
+    /// never sent anything to error *on*. That is the shape RC07 measured in the GUI
+    /// fixture's seed path: `russh-sftp`'s own `write_all` has no timeout, so a bare
+    /// call parks on `mio::poll` with no socket left to wake it.
+    hang_writes: bool,
 }
 
 #[derive(Default)]
@@ -212,6 +219,15 @@ struct MemoryFile {
 #[async_trait]
 impl RemoteFile for MemoryFile {
     async fn write_chunk(&mut self, data: &[u8]) -> Result<(), String> {
+        // Read the flag, drop the guard, *then* park: holding the mutex would make the
+        // whole fake unreachable and turn "the write hangs" into "the test deadlocks".
+        let hangs = {
+            let state = self.state.lock().unwrap();
+            state.faults.hang_writes
+        };
+        if hangs {
+            std::future::pending::<()>().await;
+        }
         let mut state = self.state.lock().unwrap();
         if state.faults.offline {
             return Err("connection lost".to_string());
@@ -1017,4 +1033,72 @@ async fn a_size_mismatch_from_the_server_is_refused_and_cleaned_up() {
     );
     assert_eq!(fs.content("/home/u/file.txt").unwrap(), b"old");
     assert_eq!(fs.paths(), vec!["/home/u/file.txt".to_string()]);
+}
+
+/// RC07 — a write that never answers must still let the upload finish.
+///
+/// ## What this pins, and what it does not
+///
+/// `staged_upload` wraps every remote call in `bounded()`, which is
+/// `tokio::time::timeout(REMOTE_TIMEOUT)` with a 20-second budget. A peer that stops
+/// answering therefore cannot park the upload forever: the write future is dropped and
+/// the caller gets `UploadError::Remote("the server stopped answering…")`.
+///
+/// This is the difference RC07 found between the product path and the GUI fixture's seed
+/// helper. `seed_remote` in `sftp_command_e2e_tests.rs` calls
+/// `session.create(...).write_all(...)` — `russh-sftp`'s own `AsyncWrite` impl, which has
+/// no timeout of its own — so a cut uplink parks it on `mio::poll` indefinitely. That is
+/// what #149 measured as "no verdict at 30/60/180/300 s"; the hang was in the fixture,
+/// not in the shipping upload.
+///
+/// The assertion is on **returning at all** plus the staging file being cleaned up, not on
+/// the exact elapsed time: `tokio::time` is not paused here, so the real 20-second budget
+/// runs. A test that asserted "under 25 s" would fail on a loaded CI machine for reasons
+/// unrelated to the code, and the property that matters is "bounded, not infinite".
+#[tokio::test]
+async fn a_write_that_never_answers_is_bounded_and_cleans_up() {
+    /*
+     * `start_paused` moves the clock forward when every task is idle, so this exercises
+     * the 20-second budget in microseconds.
+     *
+     * Without it the test really waits 20 s, and that broke a neighbouring case:
+     * `the_path_lock_is_held_until_the_holding_upload_finishes` waits 5 s on its gate and
+     * timed out ("the first upload never reached the gate") purely because this test was
+     * holding the runtime. Measured — the neighbouring test passes alone and fails only
+     * when this one runs beside it. A test that makes others fail for reasons unrelated to
+     * their subject is a test-suite defect, not a slow test.
+     */
+    tokio::time::pause();
+    let dir = tempfile::tempdir().unwrap();
+    // Larger than one chunk so the write path is actually entered.
+    let payload = vec![7u8; 256 * 1024];
+    let local = local_file(&dir, "payload.bin", &payload);
+    let fs = MemoryFs::new(&[("/home/u/file.txt", b"old")]).with_faults(Faults {
+        hang_writes: true,
+        ..Faults::default()
+    });
+
+    let started = std::time::Instant::now();
+    let error = run(&fs, &local, "/home/u/file.txt")
+        .await
+        .expect_err("a hung write must become an error, not a forever-pending future");
+    let elapsed = started.elapsed();
+
+    assert!(
+        matches!(error, UploadError::Remote(ref message) if message.contains("stopped answering")),
+        "expected the bounded-timeout error, got {error:?}"
+    );
+    // The budget is 20 s; anything far beyond it means the bound did not fire.
+    assert!(
+        elapsed < std::time::Duration::from_secs(60),
+        "the write was not bounded: took {elapsed:?}"
+    );
+
+    // The destination is untouched and the staging file is gone.
+    assert_eq!(fs.content("/home/u/file.txt").unwrap(), b"old");
+    assert_eq!(
+        fs.paths(),
+        vec!["/home/u/file.txt".to_string()],
+        "the staging file must not survive a bounded timeout"
+    );
 }
