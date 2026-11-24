@@ -4130,6 +4130,113 @@ mod ssh_jump_e2e_tests {
         assert_eq!(failure.stage, Some(ConnectionStage::Authentication));
     }
 
+    /// SSH13 — a bastion that refuses the credential is attributed to the bastion.
+    ///
+    /// The pair to `a_target_refusal_is_attributed_to_the_target`. Together they are the
+    /// whole point of the feature: the same `kind` on two machines means two different
+    /// logins to fix, and only the hop says which.
+    ///
+    /// The bastion is given the **target's** key — one it has never seen — while the
+    /// target would accept it. So the refusal cannot be blamed on the far end.
+    #[tokio::test]
+    #[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+    async fn a_bastion_refusal_is_attributed_to_the_bastion() {
+        let fixture = match fixture() {
+            FixtureLookup::Ready(fixture) => fixture,
+            FixtureLookup::NotConfigured => {
+                eprintln!("SSH_JUMP_E2E_* not set; skipping");
+                return;
+            }
+            FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+        };
+        let mut jump = jump_config(&fixture);
+        // The target's key, offered to the bastion. The target accepts it, so if this
+        // were attributed to the target the test would be describing a connection that
+        // never reached it.
+        jump.private_key = Some(fixture.target_key.clone());
+
+        let target = JumpTarget {
+            host: "127.0.0.1".to_string(),
+            port: fixture.target_port,
+            username: fixture.user.clone(),
+            password: None,
+            private_key: Some(fixture.target_key.clone()),
+            certificate: None,
+            expected_host_key: Some(russsh_public_key(&fixture.target_host_key)),
+            use_agent: false,
+            allow_agent_forwarding: false,
+        };
+        let result = SshSession::connect_via_jump(
+            Arc::new(interactive_ssh_config()),
+            target,
+            jump,
+            tokio::time::Instant::now() + std::time::Duration::from_secs(30),
+        )
+        .await;
+
+        let failure = result
+            .err()
+            .expect("the bastion must refuse a key it does not know");
+        assert_eq!(
+            failure.hop,
+            Some(ConnectionHop::Bastion),
+            "the target never saw this connection: {:?}",
+            failure.error
+        );
+        assert_eq!(failure.stage, Some(ConnectionStage::Authentication));
+    }
+
+    /// SSH13 — a bastion whose host key is not the pinned one is refused before any
+    /// credential is offered.
+    ///
+    /// This is the case that had no producer before SSH11: the refusal came back as
+    /// `connection_failed`, so the pane could not tell a changed server identity from a
+    /// network fault. It is asserted here on a real handshake, not a mock, because the
+    /// side channel that carries it lives inside `check_server_key`.
+    #[tokio::test]
+    #[ignore = "needs scripts/verify-install/ssh-jump-e2e.mjs to start two daemons"]
+    async fn a_bastion_host_key_mismatch_is_refused_as_its_own_kind() {
+        let fixture = match fixture() {
+            FixtureLookup::Ready(fixture) => fixture,
+            FixtureLookup::NotConfigured => {
+                eprintln!("SSH_JUMP_E2E_* not set; skipping");
+                return;
+            }
+            FixtureLookup::Broken(reason) => panic!("the harness is not usable: {reason}"),
+        };
+        let mut jump = jump_config(&fixture);
+        // The *target's* host key, pinned as the bastion's. A real server presenting a
+        // key the client did not expect is exactly what a changed identity looks like.
+        jump.expected_host_key = Some(fixture.target_host_key.clone());
+
+        let target = JumpTarget {
+            host: "127.0.0.1".to_string(),
+            port: fixture.target_port,
+            username: fixture.user.clone(),
+            password: None,
+            private_key: Some(fixture.target_key.clone()),
+            certificate: None,
+            expected_host_key: Some(russsh_public_key(&fixture.target_host_key)),
+            use_agent: false,
+            allow_agent_forwarding: false,
+        };
+        let result = SshSession::connect_via_jump(
+            Arc::new(interactive_ssh_config()),
+            target,
+            jump,
+            tokio::time::Instant::now() + std::time::Duration::from_secs(30),
+        )
+        .await;
+
+        let failure = result.err().expect("the pinned key is not the bastion's");
+        assert!(
+            matches!(failure.error, SessionError::HostKeyRejected(_)),
+            "a changed identity must keep its own kind, got {:?}",
+            failure.error
+        );
+        assert_eq!(failure.hop, Some(ConnectionHop::Bastion));
+    }
+
     /// Reads a public key from the fixture's `.pub` text.
     fn russsh_public_key(value: &str) -> russh::keys::PublicKey {
         russh::keys::PublicKey::from_openssh(value.trim())
