@@ -57,10 +57,30 @@ export function normalisePath(file) {
   return parts.join('/')
 }
 
+/**
+ * Acceptance evidence: not documentation, even though it lives under `docs/`.
+ *
+ * Measured on PR #151: fourteen paths under `docs/verification/` classified as
+ * `docs_only=true`, so every heavy job skipped — including `Repository gates`, where
+ * `check-verification-evidence.mjs` runs. Changing the evidence therefore never ran the
+ * gate that validates it: the one input the gate reads was also the one change that
+ * bypassed it.
+ *
+ * The distinction the classifier is really drawing is "can this break the product". A
+ * design note cannot; an evidence JSON can, because a stale or hand-edited one makes a
+ * release claim something that was never measured.
+ *
+ * Anchored to the directory, not to a bare prefix: `docs/verification-notes.md` is prose
+ * and stays documentation.
+ */
+export const EVIDENCE_PATTERN = /^docs\/verification\//
+
 /** Is this one path documentation-only? */
 export function isDocPath(file) {
   const normalised = normalisePath(file)
   if (normalised.startsWith('../')) return false
+  // Evidence outranks the `docs/` glob: it is prose-shaped but gate-shaped in effect.
+  if (EVIDENCE_PATTERN.test(normalised)) return false
   return DOC_PATTERNS.some(pattern => pattern.test(normalised))
 }
 

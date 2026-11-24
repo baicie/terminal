@@ -142,3 +142,58 @@ test('a rename contributes both sides to the classified list', () => {
   assert.deepEqual(files.sort(), ['docs/lib.rs', 'src/lib.rs'])
   assert.equal(docsOnly, false, 'a rename out of src/ is a code change')
 })
+
+// RC — acceptance evidence is not documentation.
+//
+// ## The gap this pins
+//
+// Measured on PR #151: fourteen paths under `docs/verification/` classified as
+// `docs_only=true`, so all eight heavy jobs skipped — including `Repository gates`,
+// which is where `check-verification-evidence.mjs` runs.
+//
+// That is a loop with no exit: the evidence files are the input to the release gate,
+// and changing them is precisely the case that gate exists to check, yet changing them
+// is the one case that never runs it.
+//
+// `docs/` means "nothing here can break the product". `docs/verification/` is the
+// exception: those JSON files are what the release gate reads, and the logs beside them
+// are the audit trail for measurements. A typo in a design note cannot fail a release;
+// a stale or hand-edited evidence file can.
+
+test('a change under docs/verification/ is not docs-only', () => {
+  const result = classifyPaths([
+    'docs/verification/evidence-manifest.json',
+    'docs/verification/2026-10-11-macos-cold-start-current.json',
+  ])
+  assert.equal(result.docsOnly, false, result.reason)
+})
+
+test('the raw evidence logs are not docs-only either', () => {
+  const result = classifyPaths(['docs/verification/raw/45365549213/debug-ssh-matrix.log'])
+  assert.equal(result.docsOnly, false, result.reason)
+})
+
+test('an ordinary design note is still docs-only', () => {
+  // The narrowing must not turn every docs change into a full CI run.
+  const result = classifyPaths([
+    'docs/design/terminal-next/32-rc-readiness-report.md',
+    'docs/issue.md',
+    'README.md',
+  ])
+  assert.equal(result.docsOnly, true, result.reason)
+})
+
+test('a mixed change with one evidence file is not docs-only', () => {
+  const result = classifyPaths([
+    'docs/design/terminal-next/README.md',
+    'docs/verification/evidence-manifest.json',
+  ])
+  assert.equal(result.docsOnly, false, result.reason)
+})
+
+test('a path that merely starts with the same letters is still documentation', () => {
+  // `docs/verification-notes.md` is prose, not the evidence directory. An anchored
+  // prefix match must not swallow it.
+  assert.equal(isDocPath('docs/verification-notes.md'), true)
+  assert.equal(isDocPath('docs/verification/evidence-manifest.json'), false)
+})
